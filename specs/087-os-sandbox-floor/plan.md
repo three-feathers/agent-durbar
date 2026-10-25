@@ -7,7 +7,7 @@
 Add a pure "floor" mapping per adapter (Claude Code: a `sandbox` block in the `--settings` JSON; Copilot: `sandboxConfig` through
 the SDK's experimental `session.options.update`; Codex: unchanged), a normalized `SandboxState` that each adapter reports, and its
 display in the chat header chip, the card's mode tooltip and Settings > Agent apps. Durbar's own checks do not change. Built and
-checked on the simulator and with fakes; the real per-OS checks are separate, budgeted tasks. Blocked on Q1-Q5.
+checked on the simulator and with fakes; the real per-OS checks are separate, budgeted tasks. Owner decisions Q1-Q5 recorded 2026-10-25 (all as recommended).
 
 ## Technical Context
 
@@ -106,7 +106,7 @@ scripts/                      test-sandbox-floor.ts (new), driver check for the 
 
 ## Phases
 
-1. Spec deltas in 003, 012, 018, 061, 076 (cross references) once Q1-Q5 are answered.
+1. Spec deltas in 003, 012, 018, 061, 076 (cross references) (Q1-Q5 decided 2026-10-25).
 2. Pure modules and their tests (all OS × mode × app cells, SC-001/SC-002).
 3. Adapters (Claude, Copilot, Codex state).
 4. Window and simulator; screenshots.

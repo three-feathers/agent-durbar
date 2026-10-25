@@ -6,7 +6,7 @@ description: "Tasks for spec 087: each agent app's OS sandbox as the floor under
 
 **Input**: [spec.md](spec.md), [plan.md](plan.md), [research.md](research.md)
 
-**Prerequisites**: the owner's answers to Q1-Q5 in spec.md. T001 records them; no implementation task starts before it.
+**Prerequisites**: the owner's decisions Q1-Q5 (Vikram, 2026-10-25, all as recommended) are recorded in spec.md (T001 done).
 
 **Rules for every task**:
 
@@ -21,7 +21,7 @@ description: "Tasks for spec 087: each agent app's OS sandbox as the floor under
 
 ## Phase 0: Decisions and spec deltas
 
-- [ ] T001 Record the owner's answers to Q1-Q5 in spec.md (*Changes*, dated) and adjust FR-003, FR-004, FR-007, FR-009, FR-019. [Q1-Q5]
+- [x] T001 Record the owner's answers to Q1-Q5 in spec.md (*Changes*, dated) and adjust FR-003, FR-004, FR-007, FR-009, FR-019. [Q1-Q5]
   - AC1: every FR that names a question says the answer; no FR still reads "proposal".
 - [ ] T002 [P] Spec deltas pointing to 087: 003 (the floor under the three modes), 012 (Claude `--settings` sandbox block; Codex state reporting), 018 (the chip segment), 061 (folder `sandbox` keys cannot widen), 076 (`permissions.requireOsSandbox`, FR-173 closed by FR-012). [FR-001, FR-003, FR-009, FR-012, FR-019]
   - AC1: `npm run specs:check` passes.
@@ -31,7 +31,7 @@ description: "Tasks for spec 087: each agent app's OS sandbox as the floor under
 - [ ] T010 [P] `src/adapters/sandboxRoots.ts` shared with Codex (`codexWorkspaceRoots` moves or calls it). [FR-015]
   - AC1: filesystem roots, UNC share roots, `..`, control characters and quotes are dropped; an empty result refuses; Windows-form paths compare case-insensitively; existing `test-codex-modes` still passes.
 - [ ] T011 [P] [US1] [US2] [US3] `src/adapters/claudeSandbox.ts`: `claudeSandboxSettings` and `claudeSandboxState`. [FR-001..FR-003, FR-006, FR-007]
-  - AC1: Read-only and Ask first give `enabled: true`, `failIfUnavailable: true`, `allowUnsandboxedCommands: false`, `autoAllowBashIfSandboxed: false`, `excludedCommands: []`, the read rules (Q4) and network rules (Q2); Read-only adds `denyWrite` = roots; Allow all gives `undefined`.
+  - AC1: Read-only and Ask first give `enabled: true`, `failIfUnavailable: true`, `allowUnsandboxedCommands: false`, `autoAllowBashIfSandboxed: false`, `excludedCommands: []`, the read rules (decision Q4) and network rules (decision Q2); Read-only adds `denyWrite` = roots; Allow all gives `undefined`.
   - AC2: pre-checks: version below 2.1.219 or unreadable → `off` (too old); `win32` → `off` with the Windows reason; `linux` without `bwrap` or `socat` → `off` naming the missing package; otherwise `unknown` (never `on`).
   - AC3: `startExit` = a sandbox exit → `off` with the masked reason; a start that survives → `on`; no input gives `on` without a surviving start.
 - [ ] T012 [P] [US1] [US2] `src/adapters/copilotSandbox.ts`: `copilotSandboxConfig` and `copilotSandboxState` (structural types, no SDK import). [FR-001, FR-002, FR-004, FR-006, FR-014]
@@ -83,7 +83,7 @@ description: "Tasks for spec 087: each agent app's OS sandbox as the floor under
 
 ## Phase 6: Real checks (owner's OK and budget first; constitution IV)
 
-Total cost: **about 5 tiny prompts** (Linux 2, macOS 2, Windows 1), plus 1 for T063 only if Q2 is answered "ask". Each check uses
+Total cost: **about 5 tiny prompts** (Linux 2, macOS 2, Windows 1); T063 is dropped (decision Q2 = off). Each check uses
 a throw-away folder with an accepted folder allow rule (`Bash(touch:*)`, spec 061) so the command passes Durbar's check and only
 the OS sandbox can stop it.
 
@@ -93,8 +93,7 @@ the OS sandbox can stop it.
   - AC1: as T060 AC1, macOS entry.
 - [ ] T062 Windows: Copilot on a Windows 11 build with ProcessContainer (one prompt), and Claude's *Not sandboxed* note recorded with no prompt. [FR-020, SC-004, K9]
   - AC1: as T060 AC1, Windows entry for Copilot only.
-- [ ] T063 Ask first network prompt shape for Claude (K3), only if Q2 is answered "ask". [K3]
-  - AC1: the request shape is written in research.md R2 with `real:`; one prompt.
+- ~~T063 Ask first network prompt shape for Claude (K3)~~ dropped: decision Q2 = network off (2026-10-25). K3 stays a `[KNOWN GAP]` for a later per-host ask.
 
 ## Dependencies
 
