@@ -231,6 +231,10 @@ async function main(): Promise<void> {
     results = ['paused-all'];
     await ops.pump('a1');
     assert.deepStrictEqual([released, dd.view('key-a1').held, dd.releasing('key-a1'), stops], [['one', 'three'], 1, false, ['a1:paused-all']], 'Pause all: Send all stops, the run stays held and the window is told');
+    // review on #631 (Ruben, at 84614557): an agent app that is updating stops Send all with that reason (unlike busy, no idle comes to resume it)
+    results = ['updating'];
+    await ops.release('a1', 'send');
+    assert.deepStrictEqual([released, dd.view('key-a1').held, dd.releasing('key-a1'), stops], [['one', 'three'], 1, false, ['a1:paused-all', 'a1:updating']], 'updating: Send all stops, the run stays held and the window is told why');
     assert.deepStrictEqual(await ops.release('a1', 'discard'), { ok: true, discarded: 1 });
   }
 
