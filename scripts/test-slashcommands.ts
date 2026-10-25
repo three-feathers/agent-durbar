@@ -16,6 +16,7 @@
  *    and the option row's escaping (a hostile entry).
  */
 import * as assert from 'assert';
+import { SANDBOX_HOST_OK } from './fakes/claude-cli';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -306,7 +307,7 @@ async function main(): Promise<void> {
 
   await test('Claude adapter: files first, then the initialize built-ins (one probe for models and commands)', async () => {
     let probes = 0;
-    const ad = new ClaudeAdapter({
+    const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK,
       claudePath: async () => '/usr/bin/claude',
       configDir: cfg,
       vscodePromptDirs: [], // never this machine's own VS Code prompts

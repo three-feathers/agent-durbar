@@ -33,7 +33,8 @@ import type { McpServerStatus } from './types';
 import { cleanSessionTitle } from './history';
 import type { HistoryResult, PreviousSession } from './history';
 import type { ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
-import { CODEX_INITIALIZE_CAPABILITIES, codexFileChanges, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexSpawnPath, codexWorkspaceRoots } from './codexModes';
+import type { SandboxHostView } from '../shared/api';
+import { CODEX_INITIALIZE_CAPABILITIES, codexSandboxHost, codexSandboxState, codexFileChanges, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexSpawnPath, codexWorkspaceRoots } from './codexModes';
 import type { CodexFileChange, DurbarAnswer } from './codexModes';
 import { CODEX_BINARY, detectBinary, nodeExec } from './detect';
 import type { DetectEnv } from './detect';
@@ -78,6 +79,7 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   renameSession: 'any', // spec 059 FR-007: thread/name/set on the live child or a short-lived app-server (real 2026-10-20: codex resume lists the name once the thread has had a turn)
   deleteSession: true, // spec 006 FR-028: thread/delete (hard delete; read: upstream app-server protocol, Codex 0.163; never run on a real thread)
   oneShot: true, // spec 040 FR-015: an ephemeral read-only thread in an empty temp folder
+  osSandbox: true, // spec 087 FR-005: durbar_ro already is the floor; the state is reported, never continued without (fail closed)
 });
 
 /** Where the `codex` binary is and which version it reports. */
@@ -711,6 +713,7 @@ export class CodexAdapter implements AgentAdapter {
       throw new Error('Codex stopped unexpectedly while starting.');
     }
     if (!options.quiet) this.emit(live.sid, { type: 'status', status: 'idle', intent: `Ready in ${cwd}` });
+    this.emit(live.sid, { type: 'sandbox', sandbox: codexSandboxState(mode, this.platform) }); // spec 087 FR-011: from the checks above (a refused start never gets here)
     if (!options.quiet) void this.refreshMcp(live); // FR-147: the session's MCP servers; a quiet start emits nothing (C3), so its first message reads them
     return live.sid;
   }
@@ -913,6 +916,11 @@ export class CodexAdapter implements AgentAdapter {
    * policy cannot change on a loaded thread, so the next message reopens the thread on a fresh child with the new settings.
    * A stricter mode during a running turn interrupts that turn, so nothing more runs under the looser mode.
    */
+  /** Spec 087 FR-012: the Settings > Agent apps line (from the platform; Codex's own check runs at each start). */
+  async sandboxHost(): Promise<SandboxHostView> {
+    return codexSandboxHost(this.platform);
+  }
+
   setPermMode(sessionId: string, mode: PermissionMode, opts: { clearGrants?: boolean; approvePending?: boolean } = {}): { pending: number } {
     const live = this.sessions.get(sessionId);
     if (!live) return { pending: 0 };
@@ -1159,6 +1167,7 @@ export class CodexAdapter implements AgentAdapter {
       serverName: perm.serverName,
       // FR-172: the file change's diff with secrets masked (env values and key shapes), and its own card line
       ...(perm.kind === 'write' ? { cardSummary: perm.summary } : {}),
+      ...(perm.sandboxNote ? { sandboxNote: perm.sandboxNote } : {}), // spec 087 FR-021: its own line on the card
       ...(perm.diff ? { diff: redact(perm.diff, { ...process.env, ...this.env }) } : {}),
     });
     const answer: DurbarAnswer = decision.kind === 'approve-once' ? 'approve' : live.stopping || live.interrupting ? 'stop' : 'deny';

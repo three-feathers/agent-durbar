@@ -62,11 +62,12 @@ assert.strictEqual(maskMcpError(undefined), undefined);
   const other = { type: 'status', sessionId: 's1', timestamp: 1, status: 'idle' } as unknown as AgentEvent;
   assert.strictEqual(maskMcpEvent(other, [SESSION]), other, 'other events pass through as the same object');
 }
-// FR-022 wiring: both outward paths in main.ts send the masked copy, never the raw event
+// FR-022 wiring: both outward paths in main.ts send the masked copy, never the raw event (spec 087: `toWindowEvent(e, outward)` applies
+// outward() first, then the sandbox event's cleaning; `test-sandbox-ops` checks that function)
 {
   const main = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
   const sends = main.split('\n').filter((l) => l.includes('router.onEvent') && l.includes("'agent:event'")); // router events only (the window's own synthesized events carry no MCP text)
-  assert.ok(sends.length >= 1 && sends.every((x) => x.includes('outward(')), `agent:event to the window goes through outward(): ${sends.join(' | ')}`);
+  assert.ok(sends.length >= 1 && sends.every((x) => x.includes('outward(') || x.includes('toWindowEvent(e, outward)')), `agent:event to the window goes through outward(): ${sends.join(' | ')}`);
   const sink = main.match(/write\(\{ t: Date\.now\(\), event: [^}]*\}/g) ?? [];
   assert.ok(sink.length === 1 && sink[0].includes('outward('), `the DURBAR_LOG sink writes outward(e): ${sink.join(' | ')}`);
 }

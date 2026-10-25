@@ -9,6 +9,7 @@
  *  5. personal data stays out of the debug log, `adapters:list` (withSignIn) and the log and export paths (FR-015).
  */
 import * as assert from 'assert';
+import { SANDBOX_HOST_OK } from './fakes/claude-cli';
 import * as fs from 'fs';
 import * as path from 'path';
 import { accountLine, accountView, cleanName, maskName, planWord, NAME_MAX } from '../src/shared/account';
@@ -248,7 +249,7 @@ void (async () => {
   {
     const debug: string[] = [];
     const mk = (j: unknown) => {
-      const a = new ClaudeAdapter({ claudePath: async () => '/x/claude', authJson: async () => { if (j === 'throw') throw new Error(MARK); return j as Record<string, unknown> | undefined; } });
+      const a = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/x/claude', authJson: async () => { if (j === 'throw') throw new Error(MARK); return j as Record<string, unknown> | undefined; } });
       a.debug = (m) => debug.push(m);
       return a;
     };
@@ -256,7 +257,7 @@ void (async () => {
     assert.deepStrictEqual(await mk({ loggedIn: false }).accountInfo(), { status: 'signed-out' });
     assert.deepStrictEqual(await mk(undefined).accountInfo(), { status: 'unknown' });
     assert.deepStrictEqual(await mk('throw').accountInfo(), { status: 'unknown' });
-    assert.deepStrictEqual(await new ClaudeAdapter({ claudePath: async () => undefined }).accountInfo(), { status: 'unknown' }, 'no claude found: unknown, nothing runs');
+    assert.deepStrictEqual(await new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => undefined }).accountInfo(), { status: 'unknown' }, 'no claude found: unknown, nothing runs');
     assert.ok(!debug.join('\n').includes(MARK), 'nothing of the account reaches debug');
     // claudeAuthStatus / claudeLoggedIn through a fake exec: the same single call detection makes
     const env = { platform: 'linux', env: {}, homedir: '/h', isFile: () => true, listDir: () => [] } as unknown as DetectEnv;
@@ -397,7 +398,7 @@ void (async () => {
   // ---- 5. personal data stays on the window path (FR-015)
   {
     // adapters:list goes through withSignIn: the Claude adapter's sign-in check never carries the account, even when auth status has it
-    const claude = new ClaudeAdapter({ claudePath: async () => '/x/claude', loggedIn: async () => true, authJson: async () => ({ loggedIn: true, authMethod: 'claude.ai', email: MARK }) });
+    const claude = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/x/claude', loggedIn: async () => true, authJson: async () => ({ loggedIn: true, authMethod: 'claude.ai', email: MARK }) });
     const listed = await withSignIn([info('claude', 'ready')], () => () => claude.verifySignIn());
     assert.ok(!JSON.stringify(listed).includes(MARK), 'adapters:list carries no account');
     // Copilot's sign-in check (verifySignIn) answers no login either

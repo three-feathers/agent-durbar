@@ -53,6 +53,7 @@ const DRIVERS = [
   { name: 'shots-054-remote' },
   { name: 'shots-006-prevmarks' },
   { name: 'shots-003-mode-back' },
+  { name: 'check-sandbox-floor' }, // spec 087: the OS sandbox chip, tooltips, note (Continue / Always / Change mode…), Codex card line, Settings line
   { name: 'shots-012-signin-chat' },
   { name: 'shots-058-mcp-restart' }, // spec 058: per-server Restart and Restart session with these servers
   { name: 'shots-058-mcp-signin' }, // spec 058 T102/T104: Sign in for a Copilot server that needs it (simmcpauth), the two-step open, the steps

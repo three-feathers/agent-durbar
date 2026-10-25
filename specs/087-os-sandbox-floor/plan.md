@@ -9,6 +9,8 @@ the SDK's experimental `session.options.update`; Codex: unchanged), a normalized
 display in the chat header chip, the card's mode tooltip and Settings > Agent apps. Durbar's own checks do not change. Built and
 checked on the simulator and with fakes; the real per-OS checks are separate, budgeted tasks. Owner decisions Q1-Q5 recorded 2026-10-25 (all as recommended).
 
+**As built (2026-10-25):** the design below holds; the details the build settled (the `sandbox` event and its `notice`, the `osSandbox` capability, the exit classifier, the Copilot time limits, the policy rule without a spec 076 reader) are in spec.md, *Changes*, 2026-10-25: built.
+
 ## Technical Context
 
 **Language/Version**: TypeScript (Electron main + plain renderer), as the rest of the app

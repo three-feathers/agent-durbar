@@ -15,6 +15,7 @@ import type { HistoryResult, PreviousSession } from './history';
 import type { RemoteState } from '../shared/remote';
 import type { EditInfo } from '../shared/edits';
 import type { AccountIdentity, AccountInfoOptions } from '../shared/account';
+import type { SandboxHostView, SandboxState } from '../shared/api';
 export type { EditInfo };
 export type { ElicitAction, ElicitAnswer, ElicitRequest, McpServerSpec, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult, AdapterCapabilities, PermissionMode };
 
@@ -78,6 +79,13 @@ export interface StartOptions {
    * passes them to its agent app's own filter and refuses them in its permission broker (FR-063).
    */
   disabledMcpTools?: Record<string, string[]>;
+  /**
+   * Spec 087 FR-019/FR-007d: the organization requires the agent app's OS sandbox in Read-only and Ask first: an unavailable sandbox is
+   * refused every time (no *Continue*). Set by main from the policy reader; absent = not required.
+   */
+  requireOsSandbox?: boolean;
+  /** Spec 087 FR-007c: *Always continue on this computer* is stored for this app; it only skips the note (the pre-check and the attempt still run). */
+  sandboxAlwaysContinue?: boolean;
 }
 
 export interface Attachment {
@@ -145,6 +153,11 @@ export interface PermissionInfo {
    * simulator). Copilot and Codex leave it out. Display text only: never run or applied.
    */
   diff?: string;
+  /**
+   * Spec 087 FR-021: what approving may mean for the OS sandbox, a line of its own on the card (never cut, never part of `summary`):
+   * Codex's Ask first says an approved command or file change may run outside its sandbox. Display text only.
+   */
+  sandboxNote?: string;
 }
 
 /** A remembered "Approve for this session" permission; can be revoked. */
@@ -529,10 +542,22 @@ export interface PlanEvent extends BaseEvent {
   action?: 'approve' | 'reject' | 'revise';
 }
 
+/**
+ * Spec 087 FR-006..FR-011: the session's OS sandbox changed (`sandbox`: null = nothing to show, Allow all with the app default). With
+ * `notice`, the sandbox could not start: nothing was sent, the message stays as not sent, and the chat shows `text` with the actions
+ * offered (*Continue without the OS sandbox*, *Always continue on this computer*) beside *Change mode…*; `refused` = policy, no action.
+ */
+export interface SandboxEvent extends BaseEvent {
+  type: 'sandbox';
+  sandbox: SandboxState | null;
+  notice?: { text: string; actions: Array<'continue' | 'always'>; refused?: boolean };
+}
+
 /** Spec 066 FR-002: the user's answer to a proposed plan. */
 export type PlanAnswer = { kind: 'approve' } | { kind: 'reject' } | { kind: 'revise'; feedback: string };
 
 export type AgentEvent =
+  | SandboxEvent
   | PlanEvent
   | RemoteEvent
   | AgentScheduleEvent
@@ -705,6 +730,14 @@ export interface AgentAdapter {
   deleteSession?(sessionId: string): Promise<void>;
   /** The vendor's own id to resume this session later, when it differs from Durbar's session id (spec 006 FR-020; Codex's thread id). */
   resumeIdOf?(sessionId: string): string | undefined;
+  /**
+   * Spec 087 FR-007a: the person chose *Continue without the OS sandbox* for this session (`always`: also *Always continue on this
+   * computer*, FR-007c). Durbar's own checks stay; nothing is sent. Rejects with a plain sentence when the policy requires the sandbox
+   * (FR-007d) or `always` is not offered here. Optional (`capabilities.osSandbox`).
+   */
+  continueWithoutSandbox?(sessionId: string, opts?: { always?: boolean }): Promise<void>;
+  /** Spec 087 FR-012: whether this app's OS sandbox can run on this computer, for Settings > Agent apps. Optional (`capabilities.osSandbox`). */
+  sandboxHost?(): Promise<SandboxHostView>;
   /** Subscribe to normalized events from all sessions of this adapter. */
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe;
 }

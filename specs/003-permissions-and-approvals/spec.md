@@ -235,3 +235,10 @@ The mode names stay **Read-only / Ask first / Allow all** (internal `read-only` 
 - Not changed: what Read-only denies (FR-001), the denial text the agent receives, the Codex send refusal (spec 012 FR-087), Allow all's confirmation, remote and Telegram text.
 - `[KNOWN GAP]` Not run on a real Copilot, Claude Code or Codex session (no credits spent): the real adapters' denial reaches the same `showPerm` path the driver checks with a synthetic `needs-permission` event; the simulator's own denial goes through `settlePerm`. FR-097 (Needs you) is checked in the simulator with a synthetic `needs-permission` event (`sim:`), not with a real waiting agent.
 
+
+### 2026-10-25: the agent app's OS sandbox as a floor under Read-only and Ask first (spec 087)
+
+Under the three modes of this spec, [spec 087](../087-os-sandbox-floor/spec.md) (issue #611) turns on each agent app's own OS sandbox as a second
+lock in **Read-only** and **Ask first**: Claude Code's bash sandbox and Copilot's local sandbox (writes none or only the session's folders,
+network off), Codex's read-limited profile unchanged; **Allow all** keeps the app's default. Durbar's own checks (FR-001..FR-028) do not
+change and nothing here approves a call they would deny or ask about (spec 087 FR-002). Simulator and fakes only (spec 087 T060-T062 open).

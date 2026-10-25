@@ -1,4 +1,5 @@
 import { isObj } from '../shared/guards';
+import { cleanSandboxState } from '../shared/sandbox';
 /**
  * A runtime check of normalized events (spec 010 FR-010, T023): what every producer (the real adapters, the simulator) must send
  * so the renderer can rely on it. Pure; returns the problems found (none = valid). Shared by the simulator contract test and the
@@ -9,7 +10,7 @@ const optStr = (v: unknown): boolean => v === undefined || typeof v === 'string'
 const optNum = (v: unknown): boolean => v === undefined || (typeof v === 'number' && Number.isFinite(v) && v >= 0);
 const oneOf = (v: unknown, xs: readonly string[]): boolean => typeof v === 'string' && xs.includes(v);
 
-export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'usageLimit', 'retry', 'title', 'agentSchedule', 'remote', 'plan'] as const;
+export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'usageLimit', 'retry', 'title', 'agentSchedule', 'remote', 'plan', 'sandbox'] as const;
 const RETRY_REASONS = ['rate-limit', 'overloaded', 'server', 'network', 'timeout', 'auth', 'other'] as const;
 const STATUSES = ['idle', 'working', 'needs-permission', 'error', 'stopped'] as const;
 /** Spec 058 FR-180: the values of `McpServerStatus.signInEnd`. */
@@ -148,6 +149,11 @@ export function eventProblems(e: unknown): string[] {
       if (typeof e.on !== 'boolean') out.push('remote.on is not a boolean');
       if (!optStr(e.reason)) out.push('remote.reason is not a string');
       if (!optStr(e.url)) out.push('remote.url is not a string');
+      break;
+    case 'sandbox': // spec 087 FR-011
+      if (e.sandbox !== null && !cleanSandboxState(e.sandbox)) out.push('sandbox.sandbox malformed');
+      if (e.notice !== undefined && (!isObj(e.notice) || !str(e.notice.text) || !e.notice.text || !Array.isArray(e.notice.actions) || e.notice.actions.some((a) => a !== 'continue' && a !== 'always') || (e.notice.refused !== undefined && typeof e.notice.refused !== 'boolean'))) out.push('sandbox.notice malformed');
+      if (isObj(e.notice) && e.notice.refused === true && Array.isArray(e.notice.actions) && e.notice.actions.length) out.push('sandbox.notice refused with actions');
       break;
     case 'agentSchedule':
       if (!oneOf(e.phase, ['created', 'cancelled', 'rearmed'])) out.push(`agentSchedule.phase ${String(e.phase)}`);
