@@ -251,6 +251,7 @@ module.exports = async (ctx) => {
         await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>x.textContent==='Open the doors').click()`);
       }
       assert.ok(await until(`document.querySelector('[data-officelayout="${which}"]').getAttribute('aria-pressed')==='true'`, 3000), which + ' is pressed: ' + (await js(`JSON.stringify({dlg:!!document.getElementById('modeDlg'),dt:(document.querySelector('#modeDlg h3')||{}).textContent,segs:[...document.querySelectorAll('[data-officelayout]')].map((b)=>b.dataset.officelayout+'='+b.getAttribute('aria-pressed')),ls:localStorage.getItem('durbar.doorsigns'),doors:Object.keys(window.__durbarSimUi.agents()).length})`)));
+      if (w === 1440 && which === 'open') await js(`document.querySelector('[data-officelayout]').closest('.scr-row').scrollIntoView({block:'center'})`);
       if (w === 1440 && which === 'open') await H.shot(path.join(OUT, '017-office-layout-1440x900.png'), { prep: 'none', tag: '017-signs', what: 'Office layout setting' });
       await H.key('Escape'); await ctx.sleep(500);
     };
