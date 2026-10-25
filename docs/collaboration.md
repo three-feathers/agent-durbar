@@ -51,6 +51,7 @@ For a new contributor and their Claude agent. Plain steps; the full rules are in
 
 ## Team norms
 
+- **Test once, then trust the record.** CI runs the full suites; reviewers read CI for the exact sha and run only their own mutations, probes and what CI can't cover (a macOS-only path that cannot run is written "not verified on macOS"). A `reviewing at` note expires after 1 hour without a review. Post `reviewing at <sha>` before a review and `checks run at <sha>: …` after your own checks, and answer a round's review list with `taking #N` (AGENTS.md, *Working as a team*).
 - **Write team decisions down the same day** as a dated FR in spec 021 (FR-037), and in [AGENTS.md](../AGENTS.md) if it changes how agents work.
 - **Review teammates' PRs first, one list per round** (FR-042, FR-043): a teammate's PR waiting for review comes before new work; each review round is one chat message in landing order, and agents say `taking #N` before reviewing.
 - **Land before building** (FR-039): at most 8 open PRs per side, at most 5 of them new features waiting for a first review; over that, only fix and land.
