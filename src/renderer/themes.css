@@ -40,7 +40,7 @@ html[data-ui]:not([data-ui="clean"]) .room-name{overflow:hidden;text-overflow:el
 
 /* ---------- Corporate: glass and steel. Navy bar, white rooms with an accent edge, tag pills, square corners ---------- */
 html[data-ui="corporate"]{--ui-display:"Segoe UI","Helvetica Neue",Arial,system-ui,sans-serif;--ui-top-ink:#ffffff;--ui-top-ink-2:#d5e2f0}
-html[data-ui="corporate"] .topbar{background:var(--ink);border-bottom-color:var(--ink);box-shadow:inset 0 -3px 0 var(--brand-bg)}
+html[data-ui="corporate"] .topbar{background:var(--ink);--st-glyph:var(--ink);border-bottom-color:var(--ink);box-shadow:inset 0 -3px 0 var(--brand-bg)}
 html[data-ui="corporate"] .brand-mark{border-radius:6px}
 html[data-ui="corporate"] .brand h1{font-weight:700;letter-spacing:.01em}
 html[data-ui="corporate"] .stat,html[data-ui="corporate"] .btn,html[data-ui="corporate"] .seg,html[data-ui="corporate"] .select-wrap select,html[data-ui="corporate"] .defaults-grp select{border-radius:5px}

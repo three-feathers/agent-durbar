@@ -161,7 +161,7 @@
     /* the app's own shortcuts */
     ['mod+KeyK','the command palette'],['mod+KeyO','Add folder'],['mod+shift+KeyO','Add VS Code workspace'],
     ['mod+shift+KeyA','the Needs you inbox'],['mod+shift+KeyN','the next agent that needs you'],['mod+shift+KeyH','Previous sessions'],
-    ['mod+shift+KeyS','Schedules'], /* PR #560 (Schedules in the top bar); reserved here before it lands */
+    ['mod+shift+KeyS','Schedules'], /* spec 044 FR-031: the top-bar Schedules button */
     ['mod+Backquote','Back to the previous chat','other'],['ctrl+Backquote','Back to the previous chat','mac'],['mod+Comma','Settings','mac'],
     ['alt+KeyA','Allow once in a waiting chat','other'],['alt+KeyS','Allow for this session in a waiting chat','other'],['alt+KeyD','Deny in a waiting chat','other'],['alt+KeyN','the next agent that needs you','other'],
     ['mod+alt+KeyA','Allow once in a waiting chat','mac'],['mod+alt+KeyS','Allow for this session in a waiting chat','mac'],['mod+alt+KeyD','Deny in a waiting chat (and the Dock)','mac'],['mod+alt+KeyN','the next agent that needs you','mac'],
