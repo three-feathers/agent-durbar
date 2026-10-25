@@ -6,6 +6,8 @@
  *
  * Not in this file yet (T043b): resume of a known thread (FR-093) and its folder and profile checks.
  */
+import { readCodexOrgPolicy } from './codexOrgPolicy';
+import type { OrgPolicy } from '../shared/orgpolicy';
 import { randomUUID } from 'crypto';
 import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import * as fs from 'fs';
@@ -479,6 +481,11 @@ export class CodexAdapter implements AgentAdapter {
     } catch (e) {
       return { status: signInFromError(e) };
     }
+  }
+
+  /** Spec 076 FR-198 (issue #602): the app's own machine policy, read-only. */
+  readOrgPolicy(): OrgPolicy {
+    return readCodexOrgPolicy();
   }
 
   /**

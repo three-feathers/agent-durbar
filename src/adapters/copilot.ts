@@ -1,4 +1,7 @@
 import { copilotHooksJson } from '../shared/foldersetup';
+import { readCopilotOrgPolicy, resolveCopilotManaged } from './copilotOrgPolicy';
+import type { CopilotManagedClient } from './copilotOrgPolicy';
+import type { OrgPolicy } from '../shared/orgpolicy';
 import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import { randomUUID } from 'crypto';
 import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
@@ -480,6 +483,17 @@ export class CopilotAdapter implements AgentAdapter {
     return { signedIn: !!s.isAuthenticated };
   }
 
+  /** Spec 076 FR-198 (issue #602): the app's own machine policy, read-only. */
+  async readOrgPolicy(): Promise<OrgPolicy> {
+    let client: CopilotManagedClient | undefined;
+    try {
+      client = (await this.getClient()) as unknown as CopilotManagedClient;
+    } catch {
+      client = undefined; // no runtime: the machine file is the fallback
+    }
+    return readCopilotOrgPolicy(client);
+  }
+
   /**
    * Spec 051 FR-011, FR-018, FR-022: the account the runtime reports (`getAuthStatus()`: login, host, how it signed in) and its plan.
    * No prompt; no credits (FR-022 evidence). `statusMessage` is not read. Personal data: never passed to `debug` (FR-015).
@@ -638,10 +652,9 @@ export class CopilotAdapter implements AgentAdapter {
   /** The organization's Auto tier (cached until the next listing). Read through the runtime only; Durbar never opens the policy files. */
   private autoTierPolicy(): Promise<ManagedAutoTier | undefined> {
     this.managedTier ??= (async () => {
-      const client = await this.getClient();
-      const ms = (client as unknown as { rpc?: { managedSettings?: { resolve?: (p: Record<string, never>) => Promise<unknown> } } }).rpc?.managedSettings;
-      if (typeof ms?.resolve !== 'function') return undefined;
-      return managedAutoTierFrom(await this.capped(ms.resolve({}), this.policyTimeoutMs));
+      // spec 076 FR-198 (review on PR 644): the one shared Copilot policy reader, also used for the organization policy greying
+      const r = await resolveCopilotManaged((await this.getClient()) as unknown as CopilotManagedClient, this.policyTimeoutMs);
+      return r === undefined ? undefined : managedAutoTierFrom(r);
     })().catch(() => undefined);
     return this.managedTier;
   }

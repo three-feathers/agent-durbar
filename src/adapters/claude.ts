@@ -11,6 +11,8 @@
  * - Settings files are never loaded (`--setting-sources ""`, Q8); the folder's `CLAUDE.md` (with `@` imports inside the
  *   folder) goes in as an appended system prompt instead (owner decision, review of #160).
  */
+import { readClaudeOrgPolicy } from './claudeOrgPolicy';
+import type { OrgPolicy } from '../shared/orgpolicy';
 import { claudeSettingsJson } from '../shared/foldersetup';
 import { claudeSandboxExit, claudeSandboxHost, claudeSandboxPrecheck, claudeSandboxSettings, claudeSandboxState, withSandboxSettings } from './claudeSandbox';
 import type { ClaudeSandboxBlock, ClaudeSandboxFacts, ClaudeSandboxPre } from './claudeSandbox';
@@ -691,6 +693,11 @@ export class ClaudeAdapter implements AgentAdapter {
     const loggedIn = await probe().catch(() => undefined);
     if (loggedIn === false) return { status: 'signed-out', detail: 'No Claude Code sign-in on this computer.' };
     return { status: 'unknown', detail: CLAUDE_LOCAL_SIGN_IN };
+  }
+
+  /** Spec 076 FR-198 (issue #602): the app's own machine policy, read-only. */
+  readOrgPolicy(): OrgPolicy {
+    return readClaudeOrgPolicy();
   }
 
   /**
