@@ -4,6 +4,7 @@ import * as path from 'path';
 import { PermissionBroker, cleanGrantKey, grantScope, revokeGrantFor, isInsideRoots } from '../src/adapters/permissions';
 import type { BrokerEvent } from '../src/adapters/permissions';
 import { eventProblems } from '../src/adapters/eventguard';
+import { ALLOWED_BY_KEYS_MAX } from '../src/adapters/types';
 import { codexPermission } from '../src/adapters/codexModes';
 
 async function main(): Promise<void> {
@@ -311,7 +312,7 @@ async function main(): Promise<void> {
   // spec 003 FR-099..FR-103 (issue #605): why a request ran without asking; undo through the existing revoke
   {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const W = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'whyallowed.js')) as { describe: (by: unknown, live: unknown, opts?: unknown) => null | { kind: string; pill: string; sentence: string; label?: string; undoKeys?: string[]; gone?: boolean } };
+    const W = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'whyallowed.js')) as { KEYS_MAX: number; describe: (by: unknown, live: unknown, opts?: unknown) => null | { kind: string; pill: string; sentence: string; label?: string; undoKeys?: string[]; gone?: boolean } };
     const perm = (ev: BrokerEvent[], from = 0) => ev.slice(from).filter((e): e is Extract<BrokerEvent, { permission: unknown }> => 'permission' in e).map((e) => e.permission);
 
     // a session rule: the grant's key and label ride on the auto-approved request
@@ -448,6 +449,32 @@ const mkRoots2 = (m: { ask?: boolean; allow?: boolean }, roots?: string[]) => {
       assert.ok(perm(mf.ev, m6).every((x) => x.allowedBy === undefined));
       mf.b.resolve('f3', false);
       await p3;
+    }
+
+    // review of #729 (round 2) item 1: a write in more folders than the list holds: one limit end to end, the rest counted, nothing dropped quietly
+    {
+      assert.strictEqual(W.KEYS_MAX, ALLOWED_BY_KEYS_MAX, 'the window and the broker use the same limit');
+      const mf = mkRoots2({ ask: true });
+      const N = ALLOWED_BY_KEYS_MAX + 10;
+      const files = Array.from({ length: N }, (_, i) => `/w/d${i}/x.ts`);
+      const req = (id: string) => ({ kind: 'write', fileName: files[0], paths: files, toolCallId: id }) as never;
+      const p1 = mf.b.request(req('g1'));
+      await tick();
+      mf.b.resolve('g1', true, true);
+      await p1;
+      assert.strictEqual(mf.b.listGrants().length, N, 'one rule per folder');
+      const m7 = mf.ev.length;
+      await mf.b.request(req('g2'));
+      const ev2 = perm(mf.ev, m7).find((x) => x.requestId === 'g2')!;
+      const ab = ev2.allowedBy;
+      assert.ok(ab && ab.kind === 'session-grant' && ab.keys && ab.keys.length === ALLOWED_BY_KEYS_MAX && ab.more === 10, `capped list plus the count: ${JSON.stringify(ab && { n: ab.kind === 'session-grant' ? ab.keys?.length : 0, more: ab.kind === 'session-grant' ? ab.more : 0 })}`);
+      assert.deepStrictEqual(eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: ev2 }), [], 'the guard accepts what the broker emits');
+      const d = W.describe(ab, new Set(mf.b.listGrants().map((g) => g.key)), { seen: [] });
+      assert.ok(d && d.undoKeys?.length === ALLOWED_BY_KEYS_MAX && /10 more rules/.test(d.sentence), 'the card says 10 more and Undo covers the listed ones');
+      for (const k of d?.undoKeys ?? []) mf.b.revoke(k);
+      assert.strictEqual(mf.b.listGrants().length, 10, 'Undo removed the listed rules; the other 10 are said to need Revoke all');
+      assert.notStrictEqual(eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: { ...ev2, allowedBy: { kind: 'session-grant', key: 'k', label: 'l', keys: Array.from({ length: ALLOWED_BY_KEYS_MAX + 1 }, (_, i) => 'k' + i) } } }).length, 0, 'the guard refuses a list over the limit');
+      assert.notStrictEqual(eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: { ...ev2, allowedBy: { kind: 'session-grant', key: 'k', label: 'l', more: 0 } } }).length, 0, 'and a bad count');
     }
 
     // review of #729 item 11: the revoke IPC's own check (main, pure part)

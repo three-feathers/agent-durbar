@@ -1,3 +1,4 @@
+import { ALLOWED_BY_KEYS_MAX } from './types';
 import { isObj } from '../shared/guards';
 /**
  * A runtime check of normalized events (spec 010 FR-010, T023): what every producer (the real adapters, the simulator) must send
@@ -22,7 +23,8 @@ function allowedByProblems(a: unknown, where: string): string[] {
   if (!isObj(a)) return [`${where}: not an object`];
   if (a.kind === 'session-grant') {
     if (!(str(a.key) && a.key && str(a.label))) return [`${where}: session-grant needs a key and a label`];
-    if (a.keys !== undefined && (!Array.isArray(a.keys) || a.keys.length < 1 || a.keys.length > 50 || a.keys.some((k) => !str(k) || !k))) return [`${where}: session-grant keys malformed`];
+    if (a.keys !== undefined && (!Array.isArray(a.keys) || a.keys.length < 1 || a.keys.length > ALLOWED_BY_KEYS_MAX || a.keys.some((k) => !str(k) || !k))) return [`${where}: session-grant keys malformed`];
+    if (a.more !== undefined && !(typeof a.more === 'number' && Number.isInteger(a.more) && a.more >= 1 && a.more <= 100000)) return [`${where}: session-grant more malformed`];
     return [];
   }
   if (a.kind === 'allow-all' || a.kind === 'in-folder' || a.kind === 'attachment') return [];

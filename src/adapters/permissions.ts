@@ -10,6 +10,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { AllowedBy, PermissionInfo, SessionGrant, StartOptions } from './types';
+import { ALLOWED_BY_KEYS_MAX } from './types';
 
 /** The subset of the SDK's PermissionRequest the broker reads (all optional strings besides kind). */
 export interface PermissionLike {
@@ -418,7 +419,7 @@ export class PermissionBroker {
     if (hits.length && hits.every((h) => h !== undefined)) {
       const keys = (hits as SessionGrant[]).map((h) => h.key);
       const label = scope.folders ? scope.label : (hits[0] as SessionGrant).label;
-      this.opts.emit({ type: 'resolved', permission: { ...base, state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: keys[0], label, keys } } });
+      this.opts.emit({ type: 'resolved', permission: { ...base, state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: keys[0], label, keys: keys.slice(0, ALLOWED_BY_KEYS_MAX), ...(keys.length > ALLOWED_BY_KEYS_MAX ? { more: keys.length - ALLOWED_BY_KEYS_MAX } : {}) } } });
       return this.approveWrite(req);
     }
     const info: PermissionInfo = { ...base, state: 'pending', ...(typeof req.diff === 'string' && req.diff ? { diff: req.diff } : {}) }; // spec 052 FR-063: the diff rides on the pending request only

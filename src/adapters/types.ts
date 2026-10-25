@@ -158,8 +158,10 @@ export interface PermissionInfo {
  * `keys` every rule that allowed it: a write in several folders needs one rule per folder; all can be revoked); `allow-all`: the mode; `in-folder`: a read that Durbar checked to be inside the session's folders; `attachment`: a read of a file the user attached; `app`: reserved for an adapter that really
  * reports the agent app's own decision (no adapter sets it yet, FR-106).
  */
+/** Spec 003 FR-102: most rule keys one `allowedBy` lists. The broker, `eventguard` and the window (`whyallowed.js` `KEYS_MAX`, same number, checked by test:permissions) all use it; more rules are counted in `more`, not dropped silently. */
+export const ALLOWED_BY_KEYS_MAX = 50;
 export type AllowedBy =
-  | { kind: 'session-grant'; key: string; label: string; keys?: string[] }
+  | { kind: 'session-grant'; key: string; label: string; keys?: string[]; more?: number }
   | { kind: 'allow-all' }
   | { kind: 'in-folder' }
   | { kind: 'attachment' }

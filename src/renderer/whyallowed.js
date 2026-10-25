@@ -10,6 +10,7 @@
 })(typeof self!=='undefined'?self:this, function(CT){
   'use strict';
   const LABEL_MAX=240;
+  const KEYS_MAX=50; /* = ALLOWED_BY_KEYS_MAX in src/adapters/types.ts (test:permissions checks they agree) */
   const APP={config:'config',hook:'hook',classifier:'classifier'};
   const APP_WORDS={config:"the agent app's config",hook:"a hook of the agent app",classifier:"the agent app's auto-mode classifier"};
   const cutLabel=l=>{const s=String(l);return CT&&typeof CT.cutText==='function'?CT.cutText(s,LABEL_MAX):s.slice(0,LABEL_MAX);};
@@ -28,16 +29,18 @@
         if(typeof by.key!=='string'||!by.key||typeof by.label!=='string')return null;
         let keys=[by.key];
         if(by.keys!==undefined){
-          if(!Array.isArray(by.keys)||by.keys.length<1||by.keys.length>50||by.keys.some(k=>typeof k!=='string'||!k))return null;
+          if(!Array.isArray(by.keys)||by.keys.length<1||by.keys.length>KEYS_MAX||by.keys.some(k=>typeof k!=='string'||!k))return null;
           keys=[...new Set(by.keys)];
         }
-        const label=cutLabel(by.label), many=keys.length>1;
+        let more=0;
+        if(by.more!==undefined){if(!Number.isInteger(by.more)||by.more<1||by.more>100000)return null;more=by.more;}
+        const label=cutLabel(by.label), many=keys.length>1||more>0;
         const anyLive=lv?keys.some(k=>lv.has(k)):true;
         const wasKnown=o.undone===true||(seen?keys.some(k=>seen.has(k)):false);
         if(lv&&!anyLive&&wasKnown)return {kind:'session-grant',pill:'Rule removed',sentence:'This was allowed by a session rule that you have since removed: Durbar asks again.',label,gone:true};
         const liveKeys=lv?keys.filter(k=>lv.has(k)):keys;
-        return {kind:'session-grant',pill:many?'Allowed: session rules':'Allowed: session rule',
-          sentence:many?'Allowed because you chose Approve for this session for each of these folders: ':'Allowed because you chose Approve for this session for: ',label,undoKeys:liveKeys.length?liveKeys:keys};
+        return {kind:'session-grant',more,pill:many?'Allowed: session rules':'Allowed: session rule',
+          sentence:many?'Allowed because you chose Approve for this session for each of these folders'+(more?' ('+more+' more rules are not listed: Undo removes the listed ones, Revoke all removes the rest)':'')+': ':'Allowed because you chose Approve for this session for: ',label,undoKeys:liveKeys.length?liveKeys:keys};
       }
       case 'allow-all':
         return {kind:'allow-all',pill:'Allowed: Allow all',sentence:'Allowed because this agent is in Allow all: it runs without asking. '+MODE_WHERE};
@@ -52,5 +55,5 @@
       default:return null;
     }
   }
-  return {describe,LABEL_MAX};
+  return {describe,LABEL_MAX,KEYS_MAX};
 });
