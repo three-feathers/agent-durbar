@@ -3,7 +3,7 @@
  * (spec 012 FR-054). Moved verbatim from `main.ts` and `mcpipc.ts` so they can be tested: no Electron, no file system.
  */
 import type { AdapterRouter } from '../adapters/router';
-import type { AgentAdapter, AgentMessage } from '../adapters/types';
+import type { AgentAdapter, AgentMessage, StartOptions } from '../adapters/types';
 import { interruptOf, refusesLive, setCapOf, setMcpEnabledOf, setPermModeOf } from '../adapters/router';
 import { parseCapIn } from '../shared/credits';
 import type { AgentInfo, PermMode } from '../shared/api';
@@ -19,6 +19,10 @@ export interface OpsDeps {
   sessionKey?(a: AgentInfo): string;
   /** Local activity log (spec 052 FR-071): one row per applied mode or limit change. Recorded here, in main, never by the window. */
   log?(a: AgentInfo, decision: 'mode-change' | 'limit-change', action: string): void;
+  /** Spec 076 FR-203 (issue #602): why the agent app's own organization policy refuses this mode, or undefined. */
+  orgRefusal?(a: AgentInfo, mode: PermMode): string | undefined;
+  /** Spec 076 FR-203: why the agent app's own organization policy refuses switching this MCP server on, or undefined. */
+  orgMcpRefusal?(a: AgentInfo, name: string): Promise<string | undefined>;
 }
 
 const MODE_WORDS: Record<PermMode, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
@@ -37,6 +41,8 @@ export function setModeOp(d: OpsDeps, id: unknown, mode: unknown, opts: unknown)
   if (!a || !ad) return { ok: false, error: 'unknown agent' };
   const o = (opts && typeof opts === 'object' ? opts : {}) as Record<string, unknown>;
   const m = validMode(mode);
+  const no = d.orgRefusal?.(a, m); // FR-203: refused before anything changes
+  if (no) return { ok: false, error: no };
   const r = setPermModeOf(ad, a.id, m, { clearGrants: o.clearGrants === true, approvePending: o.approvePending === true });
   // A live session that cannot switch keeps its old mode: say so and save nothing (constitution III, spec 012 FR-050). Not live: it applies at the next start.
   if (refusesLive(ad, a.id, r.applied)) return { ok: false, error: NO_LIVE_SETTING };
@@ -100,6 +106,8 @@ export async function setMcpOp(d: OpsDeps, off: Map<string, Set<string>>, id: un
   const ad = d.router.forAgent(a.id);
   // A live session whose adapter cannot switch servers keeps them as they are: refuse and save nothing (spec 012 FR-050).
   if (ad && refusesLive(ad, a.id, !!ad.setMcpEnabled)) return { ok: false, error: 'This agent cannot switch MCP servers while its session is running.' };
+  const org = enabled === true ? await d.orgMcpRefusal?.(a, name) : undefined; // spec 076 FR-203: refused before anything changes
+  if (org) return { ok: false, error: org };
   const set = off.get(a.id) ?? new Set<string>();
   if (enabled === true) set.delete(name);
   else set.add(name);
@@ -156,4 +164,36 @@ export async function sendWithSlash(
   await ad.send(id, { ...msg, text: expanded ? expanded.text : text });
   if (slash?.asTyped) return slash.note ? { slashNote: slash.note } : {};
   return expanded ? { slash: expanded.where, ...(expanded.note ? { slashNote: expanded.note } : {}) } : {};
+}
+
+/** What `startGuardOp` asks about the agent app's own organization policy (spec 076 FR-203): `OrgPolicyCache` fits. */
+export interface StartGuardDeps {
+  /** Why the policy refuses this start (`blocked` / `fatal`), after a fresh enough read. */
+  refusal(adapterId: string | undefined, ask: { mode?: string; model?: string }): Promise<string | undefined>;
+  /** The advice words when Durbar could not read the policy the vendor's way (`doubt`): the start goes ahead. */
+  advice?(adapterId: string | undefined, ask: { mode?: string; model?: string }): Promise<string | undefined>;
+  /** Shows the advice once the session has started (main: a toast in the window, `agents:orgNote`). */
+  onNote?(note: string, sessionId: string): void;
+}
+
+/** The permission mode a set of start options really asks for: `permissionMode` wins; an unknown value is read-only (as the adapters read it). */
+export function startModeOf(o: Pick<StartOptions, 'permissionMode' | 'allow' | 'ask'>): PermMode {
+  if (o.permissionMode !== undefined) return o.permissionMode === 'ask' || o.permissionMode === 'allow' ? o.permissionMode : 'read-only';
+  return o.allow === true ? 'allow' : o.ask === true ? 'ask' : 'read-only';
+}
+
+/**
+ * Spec 076 FR-203: every start and resume of a session (`addWorkspace` and the lazy start in main.ts) goes through here, and only here
+ * calls the adapter's `start`. The check is made on exactly the options that are started (their mode and model) and the adapter's own id,
+ * so it cannot drift from what runs. A refused mode or model throws its words before `start`, so nothing is started or saved; advice does
+ * not stop the start, is shown through `onNote`, and comes back as `note`.
+ */
+export async function startGuardOp(d: StartGuardDeps, ad: Pick<AgentAdapter, 'id' | 'start'>, opts: StartOptions): Promise<{ result: string; note?: string }> {
+  const ask = { mode: startModeOf(opts), model: opts.model ?? '' };
+  const no = await d.refusal(ad.id, ask);
+  if (no) throw new Error(no);
+  const note = await d.advice?.(ad.id, ask);
+  const result = await ad.start(opts);
+  if (note) d.onNote?.(note, result);
+  return note ? { result, note } : { result };
 }
