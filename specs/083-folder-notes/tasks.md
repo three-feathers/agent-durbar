@@ -24,7 +24,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
 
 ## Phase 0: Spec deltas
 
-- [ ] T001 [P] Spec deltas in the owning specs, each a dated `## Changes` entry pointing to 083. [FR-010, FR-020, FR-026, FR-030, FR-031, FR-044, FR-048]
+- [x] T001 [P] Spec deltas in the owning specs, each a dated `## Changes` entry pointing to 083. [FR-010, FR-020, FR-026, FR-030, FR-031, FR-044, FR-048]
   - AC1: spec 005: the per-message `⋯` (next to *Copy*), the Notes drawer over `#chat` in the Chat view, *Notes…* in the More menu, the header count.
   - AC2: spec 073: the `note` source and `insertText` entries; the list opens in a chat with notes even without adapter commands.
   - AC3: spec 074: `mod+shift+KeyM` in `TAKEN` (*the Notes drawer*).

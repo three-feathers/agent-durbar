@@ -328,3 +328,12 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 *Corrected:*
 - **FR-057** The panel header gets two tabs, **Chat** (default) and **Browser** (`role="tablist"`, arrow keys, names read by screen readers); their content and behaviour are specified in spec 080 FR-002, FR-003 and FR-090. The chat view, its composer and its shortcuts are unchanged while *Chat* is selected.
 - **FR-058** FR-040's 480px rule applies to the tab bar too: with the panel 480px wide the tabs and the existing header controls fit on one row without overlap, and the office still fits 15 agents at 1440x900 and 1280x800 with the Browser tab open (`check:office` and screenshots, 080 FR-090).
+
+### 2026-10-25: a `⋯` on every message, a Notes drawer and a header count (spec 083 T001, issue #699)
+
+*Missing:* the chat has *Copy* on a message but no way to keep a message for later, and nowhere to see or reuse what was kept. Spec 083 (folder notes, issue #699) adds notes per folder; this spec owns the chat's own surface for them. The behaviour is specified in spec 083 FR-010..FR-014 and FR-020..FR-027; this entry names what changes in the chat.
+
+*Corrected:*
+- **FR-173** Every finished message (an agent reply's bubble and the user's own message; not a tool chip, a thinking block or a request card) gets a **`⋯`** (*Actions for this message*) next to *Copy*, shown on hover and on focus like *Copy*. It opens the shared menu element with the Previous sessions row menu's keyboard rules and holds *Save to notes* (spec 083 FR-010, FR-011).
+- **FR-174** A **Notes drawer** covers the chat log (`#chat`) only: the header, the answer bar and the message box stay visible and usable. It opens from *Notes…* in the chat's More menu, from the header **count** (the number of this folder's notes, spec 083 FR-040) and from the keys of spec 074 FR-085; Esc closes it before it closes the chat (spec 083 FR-020, FR-026).
+- **FR-175** FR-040's 480px rule applies with the drawer open: the header and the message box fit without overlap, the text is never under 10.5px, and the office still fits 15 agents at 1440x900 and 1280x800 (`check:office` and screenshots, spec 083 T024).
