@@ -22,12 +22,17 @@ const cpuMs = (f: () => void, capMs: number): number => {
 };
 
 // Adversarial cases (sections 9 and 14e R12): no fixed millisecond limit, because a loaded machine pushes a linear rule past any one (#684, like
-// #657 and #668). Each case runs on the full input and, in the same run, on a baseline of the same shape (a quarter of it: the shapes repeat, so a
-// prefix has the same shape); the best CPU time of up to 3 tries each is compared. Linear growth is a ratio of about 4 for 4x the input and
-// quadratic about 16, so the limit is `factor * 3` (12; the loaded runs saw up to 8.6 on linear code: cache effects at 1 MB), with a floor (`floorMs`) that is far above timer steps and CI load but still under
-// what a quadratic rule costs on these inputs, plus a big absolute backstop (10 s of CPU) for catastrophic slowness only. A try that passes
-// stops the loop, so the common case costs one pair of runs. `run` times one input in a worker and gives its CPU and wall time in ms.
-const FACTOR = 4;
+// #657 and #668). Each case runs on the full input and, in the same run, on a baseline of the same shape (1/16 of it: the shapes repeat, so a
+// prefix has the same shape); the best CPU time of up to 3 tries each is compared. For 16x the input, linear growth is a ratio of about 16
+// (13-20 seen on this code, also under load), n log n about 30, n^1.5 about 64, quadratic about 256 (65-88 measured, because of the floor
+// and the fixed costs). The limit is 40: growth up to about n log n passes, n^1.5 and quadratic fail, with at least 60% between the limit and
+// the nearest failing mutant (a 4x factor with a limit of 12 left only 5-12% and linear code under load reached 8.6 of it). The floor
+// (`floorMs`) is far above timer steps and CI load but still under what a quadratic rule costs on these inputs. Two backstops for
+// catastrophic slowness only: 10 s of CPU and 10 s of wall time (the original wall limit of section 9; a blocking wait in the timed code
+// shows there, CPU time does not see it). A try that passes stops the loop, so the common case costs one pair of runs. `run` times one input
+// in a worker and gives its CPU and wall time in ms.
+const FACTOR = 16;
+const MAX_RATIO = 40;
 let worstGrowth = { ratio: 0, label: '' }; // the highest full/baseline ratio seen, printed at the end
 const assertLinearGrowth = (label: string, run: (input: string) => { cpu: number; wall: number }, input: string, floorMs = 100): void => {
   const small = input.slice(0, Math.ceil(input.length / FACTOR));
@@ -39,12 +44,12 @@ const assertLinearGrowth = (label: string, run: (input: string) => { cpu: number
     wall = Math.max(wall, f.wall);
     full = Math.min(full, f.cpu);
     base = Math.min(base, run(small).cpu);
-    if (full < Math.max(floorMs, Math.max(base, 2) * FACTOR * 3)) break;
+    if (full < Math.max(floorMs, Math.max(base, 2) * MAX_RATIO)) break;
   }
   if (full / Math.max(base, 2) > worstGrowth.ratio && full >= floorMs) worstGrowth = { ratio: full / Math.max(base, 2), label };
   assert.ok(full < 10_000, `${label}: ${full.toFixed(1)} ms CPU, backstop 10000 ms (catastrophic)`);
-  assert.ok(wall < 100_000, `${label}: wall-time backstop: ${wall.toFixed(1)} ms wall for ${full.toFixed(1)} ms CPU (a blocking wait?)`);
-  assert.ok(full < Math.max(floorMs, Math.max(base, 2) * FACTOR * 3), `${label}: ${full.toFixed(1)} ms CPU for ${input.length} chars, ${base.toFixed(1)} ms for ${small.length} chars (ratio ${(full / Math.max(base, 2)).toFixed(1)}, limit ${FACTOR * 3} for ${FACTOR}x input: linear is about ${FACTOR}, quadratic about ${FACTOR * FACTOR}; floor ${floorMs} ms)`);
+  assert.ok(wall < 10_000, `${label}: wall-time backstop: ${wall.toFixed(1)} ms wall for ${full.toFixed(1)} ms CPU, limit 10000 ms (a blocking wait?)`);
+  assert.ok(full < Math.max(floorMs, Math.max(base, 2) * MAX_RATIO), `${label}: ${full.toFixed(1)} ms CPU for ${input.length} chars, ${base.toFixed(1)} ms for ${small.length} chars (ratio ${(full / Math.max(base, 2)).toFixed(1)}, limit ${MAX_RATIO} for ${FACTOR}x input: linear is about ${FACTOR}, n log n about 30, quadratic over 65; floor ${floorMs} ms)`);
 };
 // One worker run of `code` (a worker script that writes CPU and wall ms into shared memory like the ones below): a worker that does not answer
 // in `waitMs` is stopped and the case retried once. The test stays synchronous (Atomics).
@@ -1564,7 +1569,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.strictEqual(maskSecretCommand(`srv @{token="${'a'.repeat(1500)}"}`), 'srv @{token="[redacted]"}', 'R12: a value of 1500 chars');
   assert.strictEqual(redact('see @{token=1} here'), 'see @{token=1} here', 'R12 is not part of redact(): free text keeps the pattern rules');
   // Adversarial runs: 1 MB in one arg when it has no space (the scanner and the arg path), and 50k through every path (split into words, command, -c payload).
-  // A worker times each with the thread's CPU time, like section 9, and the growth check is the same. The words-and-spaces paths cost seconds per MB even without R12
+  // A worker warms the code up on the first 5000 characters (so the baseline does not carry the cold start) and times each with the thread's CPU time, like section 9, and the growth check is the same. The words-and-spaces paths cost seconds per MB even without R12
   // (the control rows of 14c and 14d run at 200k), so a text with spaces uses 50k.
   const MB = 1_000_000;
   const adv: Record<string, string> = {
@@ -1595,7 +1600,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   };
   const mod = require.resolve('../src/shared/redact');
   const code = `const {workerData:w}=require('worker_threads');const flag=new Int32Array(w.sab,0,1),out=new Float64Array(w.sab,8,2);` +
-    `try{const {_uncappedForTest:u}=require(w.mod);const tc=typeof process.threadCpuUsage==='function';const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;[()=>u.maskSecretArgs([w.input]),()=>u.maskSecretArgs(['pwsh','-c',w.input]),()=>u.maskSecretArgs(w.input.split(' ')),()=>u.maskSecretCommand(w.input),()=>u.maskSecretCommand('pwsh -c '+JSON.stringify(w.input))][w.path]();const wall=Number(process.hrtime.bigint()-w0)/1e6;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
+    `try{const {_uncappedForTest:u}=require(w.mod);const go=(x)=>[()=>u.maskSecretArgs([x]),()=>u.maskSecretArgs(['pwsh','-c',x]),()=>u.maskSecretArgs(x.split(' ')),()=>u.maskSecretCommand(x),()=>u.maskSecretCommand('pwsh -c '+JSON.stringify(x))][w.path]();go(w.input.slice(0,5000));const tc=typeof process.threadCpuUsage==='function';const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;go(w.input);const wall=Number(process.hrtime.bigint()-w0)/1e6;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
     `catch(e){Atomics.store(flag,0,2)}Atomics.notify(flag,0)`;
   const cases = Object.entries(adv).flatMap(([k2, v2]) => (/\s/.test(v2) ? [] : [[k2, v2, 0]]).concat([0, 1, 2, 3, 4].map((i) => [k2 + '-50k', v2.slice(0, 50_000), i])) as Array<[string, string, number]>);
   for (const [k0, v, pi] of cases) {
@@ -1627,5 +1632,5 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   }
 }
 
-console.log(`redact: worst growth ratio among the adversarial cases over the floor: ${worstGrowth.ratio.toFixed(1)} (${worstGrowth.label}; linear is about ${FACTOR}, limit ${FACTOR * 3})`);
+console.log(`redact: worst growth ratio among the adversarial cases over the floor: ${worstGrowth.ratio.toFixed(1)} (${worstGrowth.label}; linear is about ${FACTOR}, limit ${MAX_RATIO})`);
 console.log('redact: all checks passed');
