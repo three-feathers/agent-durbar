@@ -152,6 +152,15 @@ function releaseNotes(root, { tag, repo, mainRef = MAIN_REF }) {
 }
 
 /* The job summary: what was checked and the fold PR's commands with the exact heading (changelog.d/README.md). */
+
+// A fold branch name must pass the Spec Kit gate (^NNN-[a-z0-9][a-z0-9-]*$): no dots.
+// v0.1.0-alpha.11 -> fold-alpha-11 (the name in changelog.d/README.md); other tags keep their letters and digits.
+function foldSlug(tag) {
+  const m = /^v\d+\.\d+\.\d+-(alpha|beta|rc)\.(\d+)$/.exec(tag);
+  if (m) return `fold-${m[1]}-${m[2]}`;
+  return `fold-${tag.slice(1).replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}`;
+}
+
 function summary({ kind, heading, previous, source, commits }, tag) {
   if (kind === 'test') {
     return [
@@ -168,7 +177,7 @@ function summary({ kind, heading, previous, source, commits }, tag) {
         'Fold PR (a normal pull request through the queue; nothing pushes to `main`), from the tag so later fragments stay for the next release:',
         '',
         '```bash',
-        `git fetch origin --tags && git switch -c <NNN>-fold-${tag.slice(1)} ${tag}`,
+        `git fetch origin --tags && git switch -c <NNN>-${foldSlug(tag)} ${tag}`,
         `npm run changelog:build -- --release "${heading}"`,
         'git merge origin/main   # the fragments merged after the tag come back for the next release',
         '# a modify/delete conflict on a fragment edited after the tag: keep the deletion (git rm it), new text goes in a new fragment',

@@ -101,6 +101,10 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
 
 ## Changes
 
+### 2026-10-25: fold branch names without dots (Spec Kit gate; found cutting v0.1.0-alpha.17)
+
+- **FR-121** `[IMPLEMENTED]` `test:` The fold PR's branch is `NNN-fold-alpha-N` (for tag `v0.1.0-alpha.N`), never with dots: the Spec Kit gate accepts only `^[0-9]{3}-[a-z0-9][a-z0-9-]*$`, and a dotted name failed CI (PR #740, replaced by #741). `scripts/release-notes.js` prints that name (`foldSlug`), and `scripts/test-changelog.js` checks it. Docs fixed: `changelog.d/README.md`, `docs/collaboration.md`; the historical `plan.md` examples of specs 082, 086 and 088 carry a note and keep their text. Paco's agent listed the places. Verified by `npm run test:changelog`, `npm run specs:check` and `npm run changelog:check`.
+
 ### 2026-10-24: macOS navigator simulator assertion in nightly UI (#683)
 
 The scheduled run `40076601038` failed only on macOS in `shots-074-navigator`: after a synthetic ⌘⌫, the driver expected text

@@ -204,7 +204,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     assert.strictEqual(r.notes, `${rn.PREAMBLE}\n\n## ${h}\n\n- Change A.\n- Change B.\n`, 'exactly the tagged commit\'s fragments, after the fixed paragraph');
     assert.strictEqual(g(d, 'status', '--porcelain'), status, 'no tracked file changed');
     const sum = rn.summary(r, opts.tag);
-    assert.ok(sum.includes(`git switch -c <NNN>-fold-0.1.0-alpha.11 v0.1.0-alpha.11`) && sum.includes(`npm run changelog:build -- --release "${h}"`), 'the summary gives the fold PR commands, from the tag');
+    assert.ok(sum.includes(`git switch -c <NNN>-fold-alpha-11 v0.1.0-alpha.11`) && !/\.\d+-fold|fold-0\.1/.test(sum) && sum.includes(`npm run changelog:build -- --release "${h}"`), 'the summary gives the fold PR commands, from the tag');
     assert.ok(!/git push/.test(sum), 'the summary never tells anyone to push to main');
     // the CLI writes --out and appends to --summary
     const out = path.join(d, '..', `${path.basename(d)}-notes.md`);
