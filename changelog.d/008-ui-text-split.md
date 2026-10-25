@@ -1,1 +1,0 @@
-- The `check-ui-text` UI check now runs as two drivers at once (light and dark parts), so it no longer hits the suite's 600 s limit; the same surfaces, themes and sizes are checked (#738).
