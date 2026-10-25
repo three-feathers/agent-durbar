@@ -997,6 +997,35 @@ export interface DurbarApi {
   onFullScreen?(cb: (on: boolean) => void): () => void;
   /** A double-click on a drag area of the top bar, spec 052 FR-085 (Mac only; main zooms, minimizes or ignores it by the system setting). */
   titleDoubleClick?(): void;
+  /**
+   * Spec 080 T014 (FR-003): the session browser. Every call names a top-level session; main looks it up and answers only with `BrowserState`
+   * (URL, title, loading, history, mute and driver state): never the page's DOM, text, cookies or storage.
+   */
+  browserOpen?(id: string, address?: string): Promise<BrowserResult>;
+  browserState?(id: string): Promise<BrowserResult>;
+  browserNavigate?(id: string, address: string): Promise<BrowserResult>;
+  browserBack?(id: string): Promise<BrowserResult>;
+  browserForward?(id: string): Promise<BrowserResult>;
+  browserReload?(id: string): Promise<BrowserResult>;
+  browserStop?(id: string): Promise<BrowserResult>;
+  /** The page area's rectangle in CSS pixels, relative to the window's page; main checks it and sets the native view's bounds. */
+  browserBounds?(id: string, bounds: BrowserBounds): Promise<{ ok: boolean }>;
+  /** Attach (true) or detach (false) the session's view. Only the Browser tab shown asks for true. */
+  browserVisible?(id: string, visible: boolean): Promise<{ ok: boolean }>;
+  /** A Durbar overlay covers the page area (FR-008): main hides the view while it is open. */
+  browserOverlay?(id: string, open: boolean): Promise<{ ok: boolean }>;
+  browserMute?(id: string, muted: boolean): Promise<BrowserResult>;
+  /** Open the view's current http(s) address in the system browser (the existing external-link path). */
+  browserOpenSystem?(id: string): Promise<{ ok: boolean }>;
+  onBrowserState?(cb: (s: BrowserState) => void): () => void;
+  /** The user accepted the one-time note (FR-025d); remembered in settings, never asked again. */
+  browserConsentAccept?(): Promise<{ ok: boolean }>;
+  /** FR-008: a still picture of the page area (an in-memory data URL) while an overlay hides the view. */
+  browserSnapshot?(id: string): Promise<{ ok: boolean; image?: string }>;
+  /** FR-025e: the user's answer to *Leave this page?* (true = Leave). */
+  browserLeaveAnswer?(req: string, leave: boolean): Promise<{ ok: boolean }>;
+  onBrowserDialog?(cb: (d: BrowserDialogEvent) => void): () => void;
+  onBrowserLeave?(cb: (a: BrowserLeaveAsk) => void): () => void;
   /** The OS the app runs on ('darwin', 'win32', 'linux'), spec 052 FR-085: the Mac title bar styles. */
   platform?: string;
 }
@@ -1017,3 +1046,31 @@ export interface CheckpointPreview { ok: true; turn: number; files: { path: stri
 export type CheckpointUndo =
   | { ok: true; restored: number; removed: number; created: number; undo: Omit<CheckpointNote, 'id'> }
   | { ok: false; error: string; conflicts?: string[] };
+
+/** Spec 080 T014: what the session browser tells the window. Plain data, no page content. */
+export interface BrowserState {
+  id: string;
+  /** False before the first open and after the session ended (the view is gone). */
+  open: boolean;
+  /** The page's address, userinfo dropped; '' for about:blank. */
+  url: string;
+  title: string;
+  loading: boolean;
+  canBack: boolean;
+  canForward: boolean;
+  muted: boolean;
+  /** Who drives the view (FR-060). Always 'user' in Phase 1. */
+  driver: 'user' | 'agent' | 'none';
+  /** A page dialog (`alert`, `confirm`) is open and waiting for the user: the *Dialog open* marker (FR-025d). */
+  dialogOpen: boolean;
+  /** The note of a dialog main closed for the agent (FR-025d); the bar shows it with an icon. Page text, already masked. */
+  note?: string;
+  /** A Chromium network error name such as ERR_CONNECTION_REFUSED after the last load failed. */
+  error?: string;
+}
+export type BrowserResult = { ok: true; state: BrowserState } | { ok: false; reason: string; state?: BrowserState; needsConsent?: true };
+/** A page dialog opened (FR-025d): the window raises a toast naming the session and, for a hidden view, brings its chat forward. `text` is masked page text. */
+export interface BrowserDialogEvent { id: string; type: string; text: string; shown: boolean }
+/** FR-025e: ask *Leave this page?*; answer with `browserLeaveAnswer(req, leave)`. */
+export interface BrowserLeaveAsk { id: string; req: string; known: boolean; shown: boolean }
+export interface BrowserBounds { x: number; y: number; width: number; height: number }

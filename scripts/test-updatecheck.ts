@@ -8,13 +8,13 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { EventEmitter } from 'events';
-import { killChildTree, makeExec } from '../src/adapters/detect';
+import { displayWhere, withWhere, killChildTree, makeExec } from '../src/adapters/detect';
 import type { DetectEnv, ExecResult } from '../src/adapters/detect';
 import { CASKS, PACKAGES } from '../src/shared/harnesssetup';
 import type { SetupKind } from '../src/shared/harnesssetup';
 import {
   CODEX_UPDATE_COMMAND, LOOKUPS, MAX_VERSION_LENGTH, announceRule, brewInfoCmd, brewOutdatedCmd, classifyFailure, codexNeedsFallback, codexUpdateEnv, copilotVersionFromPath, decide, decideClaudeChannels,
-  isOfficialCodex, lookupAllowed, lookupLatest, npmCheck, npmOwns, parseBrewInfo, parseBrewOutdated, parseNpmView, parseVersionField, parseWingetList, policyView, sourceOf, startCheckAllowed, updateDecision,
+  isOfficialCodex, lookupAllowed, pathWithToolDir, lookupLatest, npmCheck, npmOwns, parseBrewInfo, parseBrewOutdated, parseNpmView, parseVersionField, parseWingetList, policyView, sourceOf, startCheckAllowed, updateDecision,
   updateOutcomeNote, versionFromCaskroom, versionFromPackageJson, versionFromWingetPath, versionLabel, wingetCheck,
 } from '../src/shared/updatecheck';
 import type { CheckResult, LookupGet, UpdatePolicy } from '../src/shared/updatecheck';
@@ -400,6 +400,7 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     const deferred: Array<() => void> = [];
     const deps: CheckerDeps = {
       detectEnv,
+      trustedPath: () => true,
       exec: async (file, args, opts) => { const c = { file, args: [...args], ...(opts.env ? { env: { ...opts.env } } : {}) }; calls.push(c); return o.answers ? o.answers(c) : { code: 0, stdout: '', stderr: '' }; },
       lookup: o.lookup ?? (async (url, opts) => { lookups.push(url + ' ' + opts.method); throw new Error('no network in this test'); }),
       copies: async () => o.copies,
@@ -465,7 +466,7 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     const npm = '/home/u/.nvm/versions/node/v22.3.0/bin/npm';
     const t = checkerWith({ platform: 'linux', real: { codex: real }, copies: { codex: { state: 'ready', version: '0.163.0' } }, tools: { npm: '/usr/bin/npm', [`x`]: npm }, answers: () => ({ code: 0, stdout: fx('npm-view-codex'), stderr: '' }) });
     await t.checker.checkAll();
-    assert.deepStrictEqual(t.calls.map((c) => [c.file, c.args.join(' '), c.env]), [[npm, 'view @openai/codex version --json --no-update-notifier', { npm_config_update_notifier: 'false' }]]);
+    assert.deepStrictEqual(t.calls.map((c) => [c.file, c.args.join(' '), c.env]), [[npm, 'view @openai/codex version --json --no-update-notifier', { npm_config_update_notifier: 'false', PATH: '/home/u/.nvm/versions/node/v22.3.0/bin' }]], 'FR-042: the npm folder is first on the child PATH, so npm\'s `env node` finds the node beside it');
     assert.strictEqual(t.checker.result('codex')?.state, 'update-available');
     // npm's error line is not a version
     const e = checkerWith({ platform: 'linux', real: { codex: real }, copies: { codex: { state: 'ready', version: '0.163.0' } }, tools: { x: npm }, answers: () => ({ code: 0, stdout: fx('npm-error-node'), stderr: '' }) });
@@ -625,6 +626,57 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     c.copies = async () => ({ codex: { state: 'ready', version: '0.163.0' } });
     await t.checker.afterUpdate('codex');
     assert.strictEqual(t.checker.result('codex'), undefined, 'still old: the answer is dropped, not shown stale');
+  }
+  {
+    // FR-042 (the owner's Mac): a GUI app's PATH has no node; npm answers 127 -> an honest message, and the PATH given to npm has its own folder first
+    const real = '/home/u/.nvm/versions/node/v22.3.0/lib/node_modules/@github/copilot/index.js';
+    const npm = '/home/u/.nvm/versions/node/v22.3.0/bin/npm';
+    const mk = (answers: (c: Call) => ExecResult) => checkerWith({ platform: 'darwin', real: { copilot: real }, copies: {}, tools: { npm }, texts: { '/home/u/.nvm/versions/node/v22.3.0/lib/node_modules/@github/copilot/package.json': '{"version":"1.0.98"}' }, answers });
+    const noNode = mk((c) => ((c.env?.PATH ?? '').split(':').includes('/home/u/.nvm/versions/node/v22.3.0/bin') ? { code: 0, stdout: '"1.0.103"', stderr: '' } : { code: 127, stdout: '', stderr: 'env: node: No such file or directory' }));
+    await noNode.checker.checkApp('copilot');
+    assert.strictEqual(noNode.checker.result('copilot')?.state, 'update-available', 'with the npm folder on PATH the check works');
+    const lost = mk(() => ({ code: 127, stdout: '', stderr: 'env: node: No such file or directory' }));
+    await lost.checker.checkApp('copilot');
+    assert.deepStrictEqual([lost.checker.result('copilot')?.state, lost.checker.result('copilot')?.reason], ['could-not-check', 'npm or node was not found'], '127 is never shown as "exit 127"');
+    const gone = mk(() => ({ code: null, stdout: '', stderr: '', errorCode: 'ENOENT' }));
+    await gone.checker.checkApp('copilot');
+    assert.strictEqual(gone.checker.result('copilot')?.reason, 'npm or node was not found');
+    const other = mk(() => ({ code: 2, stdout: '', stderr: '' }));
+    await other.checker.checkApp('copilot');
+    assert.strictEqual(other.checker.result('copilot')?.reason, 'exit 2', 'other codes keep their number');
+    // the pure PATH builder: the npm folder first, no duplicates, only absolute folders, the Windows key spelling kept
+    assert.deepStrictEqual(pathWithToolDir({ PATH: '/usr/bin:/bin' }, '/opt/homebrew/bin/npm', 'darwin', ['/usr/bin', '/opt/x', 'rel']), { PATH: '/opt/homebrew/bin:/usr/bin:/bin:/opt/x' });
+    assert.deepStrictEqual(pathWithToolDir({}, '/a/npm', 'linux'), { PATH: '/a' });
+    assert.deepStrictEqual(pathWithToolDir({ Path: 'C:\\Windows;c:\\nodejs' }, 'C:\\Nodejs\\npm.cmd', 'win32'), { Path: 'C:\\Nodejs;C:\\Windows' });
+  }
+  {
+    // FR-042: the folder goes on PATH only when it passes the runner's trust rule (a folder anyone can write could plant its own `node`)
+    const real = '/home/u/.nvm/versions/node/v22.3.0/lib/node_modules/@github/copilot/index.js';
+    const npm = '/home/u/.nvm/versions/node/v22.3.0/bin/npm';
+    const mk = (trusted: boolean) => {
+      const t = checkerWith({ platform: 'darwin', real: { copilot: real }, copies: {}, tools: { npm }, texts: { '/home/u/.nvm/versions/node/v22.3.0/lib/node_modules/@github/copilot/package.json': '{"version":"1.0.98"}' }, answers: () => ({ code: 127, stdout: '', stderr: '' }) });
+      (t.checker['d'] as CheckerDeps).trustedPath = (p) => { assert.strictEqual(p, npm, 'the npm as found is checked'); return trusted; };
+      return t;
+    };
+    const bad = mk(false);
+    await bad.checker.checkApp('copilot');
+    assert.strictEqual(bad.calls[0].env?.PATH, undefined, 'untrusted folder: no PATH given');
+    assert.strictEqual(bad.checker.result('copilot')?.reason, 'npm or node was not found, and the npm folder is not trusted');
+    const good = mk(true);
+    await good.checker.checkApp('copilot');
+    assert.strictEqual(good.calls[0].env?.PATH, '/home/u/.nvm/versions/node/v22.3.0/bin');
+    // the detector wiring: a system path is shown in full in `where`
+    assert.strictEqual((withWhere({ state: 'ready', version: '1', hint: '', path: '/opt/homebrew/bin/codex' } as never, { platform: 'darwin', homedir: '/Users/v', env: {}, isFile: () => true }) as { where?: string }).where, '/opt/homebrew/bin/codex');
+  }
+  {
+    // FR-042: "Found at" is a path (a system path in full, ~/ under home, only the name inside another person's folder)
+    const e = { platform: 'darwin' as const, homedir: '/Users/vikram' };
+    assert.strictEqual(displayWhere('/opt/homebrew/bin/codex', e), '/opt/homebrew/bin/codex');
+    assert.strictEqual(displayWhere('/Users/vikram/.nvm/bin/codex', e), '~/.nvm/bin/codex');
+    assert.strictEqual(displayWhere('/Users/other/bin/codex', e), 'codex');
+    assert.strictEqual(displayWhere('/home/other/bin/codex', { platform: 'linux', homedir: '/home/me' }), 'codex');
+    assert.strictEqual(displayWhere('C:\\Program Files\\nodejs\\codex.cmd', { platform: 'win32', homedir: 'C:\\Users\\a' }), 'C:\\Program Files\\nodejs\\codex.cmd');
+    assert.strictEqual(displayWhere('C:\\Users\\b\\codex.cmd', { platform: 'win32', homedir: 'C:\\Users\\a' }), 'codex.cmd');
   }
   {
     // the timeout (30 s in the app, injected here) ends a check that never answers

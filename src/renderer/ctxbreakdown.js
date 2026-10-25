@@ -17,6 +17,10 @@
   function summary(ctx,o){
     o=o||{};
     const app=o.app||'this agent app', fmt=S.fmtTokens;
+    if(o.waiting==='truncation') return {known:false,limit:0,pct:null,level:'unknown',bars:[],note:'Older messages were dropped. The new size is reported with your next message.',
+      tip:'Context: waiting for the next message after older messages were dropped',name:'Context window: waiting for the next message after older messages were dropped. Open the token summary'};
+    if(o.waiting==='compaction') return {known:false,limit:0,pct:null,level:'unknown',bars:[],note:'The conversation was compacted. The new size is reported with your next message.',
+      tip:'Context: waiting for the next message after the compaction',name:'Context window: waiting for the next message after the compaction. Open the token summary'}; /* spec 015 FR-012 */
     if(o.waiting) return {known:false,limit:0,pct:null,level:'unknown',bars:[],note:'The model changed. The new window is reported with your next message.',
       tip:'Context: waiting for the next message after the model change',name:'Context window: waiting for the next message after the model change. Open the token summary'};
     if(!ctx||!num(ctx.tokens)) return {known:false,limit:0,pct:null,level:'unknown',bars:[],note:'Not known yet. It shows after the first message.',

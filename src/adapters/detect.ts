@@ -135,6 +135,16 @@ export function displayPath(file: string, env: Pick<DetectEnv, 'platform' | 'hom
   return p.basename(file);
 }
 
+/**
+ * The "Found at" line of a card (spec 081 FR-042: "Found at codex" was not a path): `displayPath`, but a system path such as
+ * /opt/homebrew/bin/codex is shown in full (it names no person); a path inside another person's folder (/Users, /home, \\Users\\) stays the file name.
+ */
+export function displayWhere(file: string, env: Pick<DetectEnv, 'platform' | 'homedir'>): string {
+  const shown = displayPath(file, env);
+  if (shown !== pathFor(env.platform).basename(file)) return shown;
+  return pathFor(env.platform).isAbsolute(file) && !/(^|[\\/])(users|home)([\\/]|$)/i.test(file) ? file : shown;
+}
+
 /** Candidate file paths in search order: configured path, PATH entries, known install folders. */
 export function candidates(spec: BinarySpec, env: DetectEnv, configuredPath?: string): string[] {
   const p = pathFor(env.platform);
@@ -388,9 +398,9 @@ export function nodeDetectEnv(): DetectEnv {
 }
 
 /** Adds where the app was found, safe to show (`~/…` or only the file name, never the user name: `displayPath`). */
-const withWhere = (r: DetectResult & { path?: string }, env: DetectEnv): DetectResult => {
+export const withWhere = (r: DetectResult & { path?: string }, env: DetectEnv): DetectResult => {
   const { path: p, ...rest } = r;
-  return p ? { ...rest, where: displayPath(p, env) } : rest;
+  return p ? { ...rest, where: displayWhere(p, env) } : rest;
 };
 
 export function detectorFor(id: string): ((d: AdapterDescriptor) => Promise<DetectResult>) | undefined {

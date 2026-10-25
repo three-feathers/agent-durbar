@@ -57,6 +57,17 @@ export class SettingsStore {
     return cap;
   }
 
+  /** Spec 080 FR-025d (Q2): the session browser's one-time note was accepted. */
+  get browserNoteAccepted(): boolean {
+    return this.s.browserNoteAccepted === true;
+  }
+
+  /** Remembers the acceptance for this app profile; never asked again. */
+  acceptBrowserNote(): void {
+    this.s = { ...this.s, browserNoteAccepted: true };
+    this.save();
+  }
+
   /** Serious mode (spec 034): off by default. */
   get seriousMode(): boolean {
     return this.s.seriousMode === true;
