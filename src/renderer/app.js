@@ -2992,18 +2992,23 @@ async function endAllSessions(anchor){
 }
 /* spec 006 FR-038..FR-046 (issue 606): the last run ended abnormally with sessions mid-turn. One calm card; resuming is the same wake as
    opening a restored chat (own mode and caps, no prompt), one after another. */
-const crashSt={loaded:false,items:[],missing:0,pick:false,done:new Set(),busy:false};
+const crashSt={loaded:false,items:[],first:null,missing:0,pick:false,done:new Set(),busy:false};
 const crashLeft=()=>crashSt.items.filter(i=>!crashSt.done.has(i.id)&&liveById(i.id)&&liveById(i.id).info&&liveById(i.id).info.resumeLast);
 async function renderCrashStrip(){
   const el=$('crashStrip'); if(!el||!bridge||!bridge.interrupted||demoOn)return;
   if(!crashSt.loaded){let s=null; try{s=await bridge.interrupted();}catch(e){s=null;}
-    crashSt.loaded=true; crashSt.items=(s&&Array.isArray(s.items))?s.items.filter(i=>i&&liveById(i.id)):[]; crashSt.missing=(s&&s.missing>0)?s.missing:0;}
+    crashSt.loaded=true; crashSt.items=(s&&Array.isArray(s.items))?s.items.filter(i=>i&&liveById(i.id)):[]; crashSt.missing=(s&&s.missing>0)?s.missing:0;crashSt.first=crashSt.items.length?crashSt.items[0].id:null;}
   paintCrashStrip();
 }
 function paintCrashStrip(focusSel){
   const el=$('crashStrip'); if(!el)return;
   const left=crashLeft();
-  if(!left.length){const was=!el.hidden;el.hidden=true;el.innerHTML='';crashSt.pick=false;if(was){if(bridge.dismissInterrupted)bridge.dismissInterrupted().catch(()=>{});scheduleRender();}return;}
+  if(!left.length){const was=!el.hidden,had=el.contains(document.activeElement);el.hidden=true;el.innerHTML='';crashSt.pick=false;
+    if(was){if(bridge.dismissInterrupted)bridge.dismissInterrupted().catch(()=>{});scheduleRender();
+      /* review of #720: focus does not fall to <body>: it goes to the desk of the card's first session (after the office redraws), else the office */
+      if(had||document.activeElement===document.body)requestAnimationFrame(()=>{const ae=document.activeElement;if(ae&&ae!==document.body&&document.contains(ae))return;
+        const d=crashSt.first&&document.querySelector('#stage .desk[data-id="'+CSS.escape(crashSt.first)+'"]');if(d)focusIn(d);else focusAfterGone('gone');});}
+    return;}
   const n=left.length, ex=crashSt.missing>0?' ('+crashSt.missing+(crashSt.missing===1?' more':' others')+' could not be reopened.)':'';
   el.innerHTML='<span class="ns-ic" aria-hidden="true">i</span><span class="ns-t"><b>'+(n===1?'1 session was interrupted':n+' sessions were interrupted')+'</b> when Durbar stopped unexpectedly. The reply '+(n===1?'it was':'each was')+' writing is lost, and nothing is sent again.'+ex+'</span>'+
     '<span class="ns-act"><button class="btn primary" type="button" data-cr="all">Resume all</button>'+

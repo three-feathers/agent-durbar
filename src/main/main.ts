@@ -59,7 +59,7 @@ import { CheckpointStore } from './checkpoints';
 import { DEFAULT_ADAPTER, FolderStore, modeForSession, restoreMode, sessionsToRestore } from './folders';
 import { AppStateStore, buildSinceAway, placeWindow, quitMessage } from './daily';
 import type { SinceAway } from './daily';
-import { CrashMarker, interruptedFrom } from './crashmarker';
+import { CrashMarker, installCrashMarker, interruptedFrom } from './crashmarker';
 import type { Interrupted } from './crashmarker';
 import { navigationAllowed, permissionAllowed } from './hardening';
 import type { ChatFileRef } from '../adapters/vscodeChat';
@@ -939,14 +939,13 @@ app.whenReady().then(() => {
   agentTrust.load();
   usageTotalsStore.load();
   restoreFolders();
-  if (!SIMULATOR) {
-    // spec 006 FR-038..FR-040: a marker left by the last run means it did not end normally; the card offers the sessions that were mid-turn
-    crashMarker = new CrashMarker(path.join(app.getPath('userData'), 'durbar-running.json'));
-    const began = crashMarker.begin();
-    const cm = crashMarker;
-    process.once('exit', () => cm.clear()); // Quit, a confirmed close and app.exit; a crash, kill or power loss never gets here
+  // spec 006 FR-038..FR-040: markers left by earlier runs mean they did not end normally; the card offers the sessions that were mid-turn.
+  // None under the simulator; removed on every normal exit (will-quit and the process exit hook, inside installCrashMarker).
+  const cmi = installCrashMarker({ simulator: SIMULATOR, dir: app.getPath('userData'), onWillQuit: (fn) => app.on('will-quit', fn), onExit: (fn) => process.once('exit', fn) });
+  if (cmi) {
+    crashMarker = cmi.marker;
     const restored = [...agents.values()].map((a) => ({ id: a.id, adapterId: router.adapterIdOf(a.id) ?? DEFAULT_ADAPTER, resumeLast: !!a.resumeLast, folderName: a.label || a.name }));
-    const found = interruptedFrom(began.marker, restored);
+    const found = interruptedFrom(cmi.began.marker, restored);
     interrupted = found.items.length ? found : null;
   }
   {
@@ -1043,7 +1042,6 @@ app.on('before-quit', (ev) => {
     .finally(() => app.quit());
 });
 app.on('will-quit', () => {
-  crashMarker?.clear(); // spec 006 FR-038: a normal exit leaves no marker
   void destroyAllViews(); // spec 080 FR-023: the session browsers (none exist until the browser pane lands)
   usageStore?.flush();
   usageTotalsStore?.flush();

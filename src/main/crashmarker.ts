@@ -14,8 +14,16 @@ export interface BusySession {
 export interface RunMarker {
   version: 1;
   startedAt: number;
+  /** The process that writes it (FR-038, review of #720): another Durbar on the same profile that is still running is not a crash. */
+  pid?: number;
   busy: BusySession[];
 }
+
+/** FR-038: each Durbar process keeps its own marker, `durbar-running.<pid>.json`, so two processes on one profile never read or remove each other's. */
+export const MARKER_RE = /^durbar-running\.([1-9][0-9]{0,9})\.json$/;
+export const markerName = (pid: number): string => `durbar-running.${pid}.json`;
+/** A marker larger than this is not ours (24 ids are about 2 KB); it is never read into memory. */
+export const MAX_MARKER_BYTES = 64 * 1024;
 
 /** At most this many busy sessions are kept (the office holds 15 agents and a folder restores at most 6 sessions). */
 export const MAX_BUSY = 24;
@@ -40,7 +48,7 @@ export function cleanBusy(v: unknown): BusySession[] {
 
 /** Parses a marker file. Null when it is not a marker at all; a marker with bad entries keeps the good ones (the run was still unclean). */
 export function parseMarker(text: string): RunMarker | null {
-  if (text.length > 64 * 1024) return null;
+  if (text.length > MAX_MARKER_BYTES) return null;
   let j: unknown;
   try {
     j = JSON.parse(text);
@@ -50,11 +58,52 @@ export function parseMarker(text: string): RunMarker | null {
   if (!j || typeof j !== 'object' || Array.isArray(j)) return null;
   const o = j as Record<string, unknown>;
   const startedAt = typeof o.startedAt === 'number' && Number.isFinite(o.startedAt) ? Math.round(o.startedAt) : 0;
-  return { version: 1, startedAt, busy: cleanBusy(o.busy) };
+  const pid = typeof o.pid === 'number' && Number.isInteger(o.pid) && o.pid > 0 ? o.pid : undefined;
+  return { version: 1, startedAt, ...(pid ? { pid } : {}), busy: cleanBusy(o.busy) };
 }
 
 export function serializeMarker(m: RunMarker): string {
-  return JSON.stringify({ version: 1, startedAt: m.startedAt, busy: cleanBusy(m.busy) });
+  return JSON.stringify({ version: 1, startedAt: m.startedAt, ...(m.pid ? { pid: m.pid } : {}), busy: cleanBusy(m.busy) });
+}
+
+/** Reads a marker file with the size checked first (fstat), so a huge file is never read. Undefined: no file; null: there, but not a marker. */
+export function readMarkerFile(file: string): RunMarker | null | undefined {
+  let fd: number;
+  try {
+    fd = fs.openSync(file, 'r');
+  } catch {
+    return undefined;
+  }
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.size > MAX_MARKER_BYTES) return null;
+    const buf = Buffer.alloc(st.size);
+    let off = 0;
+    while (off < st.size) {
+      const n = fs.readSync(fd, buf, off, st.size - off, off);
+      if (n <= 0) break;
+      off += n;
+    }
+    return parseMarker(buf.subarray(0, off).toString('utf8'));
+  } catch {
+    return null;
+  } finally {
+    try {
+      fs.closeSync(fd);
+    } catch {
+      /* closed */
+    }
+  }
+}
+
+/** Whether a process with this id runs now (EPERM: it runs, as another user). Works on Windows, macOS and Linux. */
+export function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException)?.code === 'EPERM';
+  }
 }
 
 export interface RestoredSession {
@@ -87,6 +136,10 @@ export function interruptedFrom(prev: RunMarker | null, restored: Iterable<Resto
 type Timer = ReturnType<typeof setTimeout>;
 export interface MarkerDeps {
   now?: () => number;
+  /** This process's id (tests). */
+  pid?: number;
+  /** Whether another process runs (tests). */
+  alive?: (pid: number) => boolean;
   setTimer?: (fn: () => void, ms: number) => Timer;
   clearTimer?: (t: Timer) => void;
 }
@@ -99,29 +152,63 @@ export class CrashMarker {
   private readonly now: () => number;
   private readonly setTimer: (fn: () => void, ms: number) => Timer;
   private readonly clearTimer: (t: Timer) => void;
+  private readonly pid: number;
+  private readonly alive: (pid: number) => boolean;
+  /** This process's own marker file. */
+  readonly file: string;
   private startedAt = 0;
 
-  constructor(private readonly file: string, deps: MarkerDeps = {}) {
+  /** `dir` is the profile folder; the file is `durbar-running.<pid>.json` in it. */
+  constructor(private readonly dir: string, deps: MarkerDeps = {}) {
     this.now = deps.now ?? Date.now;
     this.setTimer = deps.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
     this.clearTimer = deps.clearTimer ?? ((t) => clearTimeout(t));
+    this.pid = deps.pid ?? process.pid;
+    this.alive = deps.alive ?? pidAlive;
+    this.file = path.join(dir, markerName(this.pid));
   }
 
-  /** Reads the marker the last run left (null: it ended normally, or this is the first run) and writes this run's own. */
+  /**
+   * Reads the markers earlier runs left and writes this run's own. A marker whose process still runs belongs to another Durbar on the
+   * same profile: it is left alone and is not a crash. The others are from runs that never ended normally: their busy sessions are
+   * merged (in order, no duplicates) and the files removed. Null marker: nothing was left (a clean exit or a first run).
+   */
   begin(): { unclean: boolean; marker: RunMarker | null } {
-    let text: string | undefined;
+    let names: string[] = [];
     try {
-      text = fs.readFileSync(this.file, 'utf8');
+      names = fs.readdirSync(this.dir);
     } catch {
-      text = undefined;
+      names = [];
     }
-    const marker = text === undefined ? null : parseMarker(text);
+    let unclean = false;
+    let startedAt = 0;
+    const busy: BusySession[] = [];
+    for (const name of names.sort()) {
+      const m = MARKER_RE.exec(name);
+      if (!m) continue;
+      const pid = Number(m[1]);
+      const full = path.join(this.dir, name);
+      if (pid !== this.pid && this.alive(pid)) continue; // another Durbar that is running now: its sessions are its own
+      const found = readMarkerFile(full);
+      if (found === undefined) continue;
+      unclean = true;
+      if (found) {
+        startedAt = Math.max(startedAt, found.startedAt);
+        busy.push(...found.busy);
+      }
+      try {
+        fs.rmSync(full, { force: true });
+      } catch {
+        /* read-only profile */
+      }
+    }
     this.active = true;
     this.startedAt = this.now();
     this.busy = [];
     this.written = '';
     this.write();
-    return { unclean: text !== undefined, marker };
+    const clean = cleanBusy(busy);
+    return { unclean, marker: unclean ? { version: 1, startedAt, busy: clean } : null };
   }
 
   /** The busy set changed: written within 250 ms, and not at all when it is the same as the file already holds. */
@@ -135,7 +222,7 @@ export class CrashMarker {
     }, 250);
   }
 
-  /** A normal exit: no timer, no file. Synchronous, so it can run in a `process` exit hook. */
+  /** A normal exit: no timer, no file (only this process's own). Synchronous, so it can run in a `process` exit hook. */
   clear(): void {
     this.active = false;
     if (this.timer !== undefined) {
@@ -159,11 +246,11 @@ export class CrashMarker {
   }
 
   private write(): void {
-    const text = serializeMarker({ version: 1, startedAt: this.startedAt, busy: this.busy });
-    if (text === this.written) return;
+    const text = serializeMarker({ version: 1, startedAt: this.startedAt, pid: this.pid, busy: this.busy });
+    if (text === this.written && fs.existsSync(this.file)) return; // the same set is not written again, unless something removed the file
     try {
-      fs.mkdirSync(path.dirname(this.file), { recursive: true });
-      const tmp = `${this.file}.${process.pid}.tmp`;
+      fs.mkdirSync(this.dir, { recursive: true });
+      const tmp = `${this.file}.tmp`;
       fs.writeFileSync(tmp, text, { mode: 0o600 });
       fs.renameSync(tmp, this.file);
       this.written = text;
@@ -171,4 +258,17 @@ export class CrashMarker {
       /* read-only profile, disk full: keep working without it */
     }
   }
+}
+
+/**
+ * FR-038 wiring for main.ts, kept here so it is tested: no marker under the simulator; otherwise one is begun and removed on every
+ * normal exit, through both `will-quit` and the process `exit` hook (app.exit skips will-quit; a crash, kill or power loss runs neither).
+ */
+export function installCrashMarker(o: { simulator: boolean; dir: string; onWillQuit: (fn: () => void) => void; onExit: (fn: () => void) => void; deps?: MarkerDeps }): { marker: CrashMarker; began: { unclean: boolean; marker: RunMarker | null } } | undefined {
+  if (o.simulator) return undefined;
+  const marker = new CrashMarker(o.dir, o.deps);
+  const began = marker.begin();
+  o.onExit(() => marker.clear());
+  o.onWillQuit(() => marker.clear());
+  return { marker, began };
 }

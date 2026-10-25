@@ -75,4 +75,5 @@
 - [x] T061 Simulator: `simcrash=N`, `DURBAR_SIM_CRASH`, bridge `interrupted`/`dismissInterrupted` [FR-046]
 - [x] T062 Driver `scripts/shots-006-crash.js` at 1440x900 and 1280x800 (until() waits, assertions, mutation checks), registered in `ui-suite.js`; screenshots `docs/screenshots/006-crash-*.png` and `shots-docs.js` [FR-041..FR-046]
 - [x] T063 Docs: README, changelog fragment, `docs/agent-notes.md`, spec index status, `[IMPLEMENTED]`/`[KNOWN GAP]` tags
+- [x] T064 Review of #720: per-process marker with a liveness check (two Durbar processes on one profile), size checked before reading, `installCrashMarker` and its `main.ts` call tested, simulator probe and driver checks for no prompt / no mode change / modes kept / one at a time / Dismiss wakes nothing, focus to the first session's desk, wrapping Pick list (no badge over a name at 1280x800), FR-042 aligned with the code [FR-038, FR-039, FR-042..FR-044]
 

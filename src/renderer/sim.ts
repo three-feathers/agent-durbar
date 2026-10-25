@@ -540,6 +540,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     while (rows.length < n) rows.push(['Agent' + (rows.length + 1), 'Worker', 'blog', 'working', 'Working through a queued task', 0, ['src/index.ts']]);
 
     const crashIds = new Set<string>(); // spec 006 FR-046 (simcrash=N): the sessions the faked crash left mid-turn
+    /* spec 006 FR-043/FR-044 (review of #720): under simcrash=N the bridge counts what the card makes it do, for the driver: every wake
+       (and how many run at once: a wake then takes 150 ms), every prompt sent and every permission-mode change */
+    const crashProbe: { on: boolean; wakes: string[]; inFlight: number; maxInFlight: number; sends: number; modeSets: number; sessions?: () => Array<{ id: string; mode: string; lazy: boolean; resumeLast: boolean }> } = { on: false, wakes: [], inFlight: 0, maxInFlight: 0, sends: 0, modeSets: 0 };
     const sims: SimAgent[] = rows.map((r, i) => {
       const [name, role, room0, state, intent, helpers0, files] = r;
       const k = simRooms ? Math.max(1, Math.min(SIM_ROOM_ORDER.length, Math.floor(simRooms))) : 0;
@@ -2370,6 +2373,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (typeof location !== 'undefined') {
           const n = Math.min(5, parseInt(new URLSearchParams(location.search).get('simcrash') ?? '0', 10) || 0);
           if (n > 0 && crashIds.size === 0) {
+            crashProbe.on = true;
+            crashProbe.sessions = () => sims.slice(0, 6).map((x) => ({ id: x.info.id, mode: x.info.permMode, lazy: !!x.info.lazy, resumeLast: !!x.info.resumeLast }));
+            (window as unknown as { __durbarSimCrash?: unknown }).__durbarSimCrash = crashProbe;
             for (const x of sims.slice(0, n)) {
               if (x.info.resumeLast !== undefined) continue;
               x.info.lazy = true; x.info.resumeLast = true; x.info.permFrom = 'session'; crashIds.add(x.info.id);
@@ -2386,6 +2392,13 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       wake: async (id) => { // FR-021: the canned last session comes back, as the main process resumes it (no prompt)
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
+        if (crashProbe.on) {
+          crashProbe.wakes.push(id);
+          crashProbe.inFlight++;
+          crashProbe.maxInFlight = Math.max(crashProbe.maxInFlight, crashProbe.inFlight);
+          await new Promise((r) => setTimeout(r, 150));
+          crashProbe.inFlight--;
+        }
         if (!s.info.resumeLast) return { ok: true };
         s.info.resumeLast = false;
         s.info.lazy = false;
@@ -2406,6 +2419,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true, file: { path: '/tmp/agent-durbar-att-sim/' + clean, name: clean, kind: /^image\//.test(mime) ? 'image' : 'file', size: data.byteLength } };
       },
       send: async (id, text, _atts?: unknown, opts?: { plan?: boolean }) => {
+        if (crashProbe.on) crashProbe.sends++;
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
         if (opts?.plan) {
@@ -2534,6 +2548,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
       setRoomClosed: async () => ({ ok: true }),
       setPermMode: async (id, mode, o) => {
+        if (crashProbe.on) crashProbe.modeSets++;
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
         const MW: Record<string, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
