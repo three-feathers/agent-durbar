@@ -505,82 +505,94 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
 }
 
 // --- spec 058 T160 (#509): the safety properties of .github/workflows/mcp-oauth-real.yml (a manual run with the real CI secret) ---
+// An exact structural allowlist: after dropping comments, blank lines and trailing spaces, EVERY line of the workflow must be the next
+// expected line below. Any other trigger, job, runner, matrix key, permission, input use or secret placement is an unexpected line.
+// Free text (name:/description: values, which may only hold text and ${{ matrix.os }}) and the pinned action SHAs may change.
 {
-  const OPTIONS = ['windows-and-ubuntu', 'windows-latest', 'ubuntu-latest', 'macos-latest'];
+  const FIXED = (ind, dash) => new RegExp(`^ {${ind}}${dash}(?:name|description): [^$]+$`);
+  const SHA = (a) => new RegExp(`^ {6}- uses: actions/${a}@[0-9a-f]{40}$`);
+  const MATRIX_OS = "        os: ${{ fromJSON(inputs.oses == 'windows-and-ubuntu' && '[\"windows-latest\",\"ubuntu-latest\"]' || inputs.oses == 'windows-latest' && '[\"windows-latest\"]' || inputs.oses == 'ubuntu-latest' && '[\"ubuntu-latest\"]' || inputs.oses == 'macos-latest' && '[\"macos-latest\"]' || '[\"windows-latest\",\"ubuntu-latest\"]') }}";
+  const EXPECTED = [
+    FIXED(0, ''), 'on:', '  workflow_dispatch:', '    inputs:', '      oses:', '        type: choice', FIXED(8, ''),
+    '        required: true', '        default: windows-and-ubuntu', '        options:',
+    '          - windows-and-ubuntu', '          - windows-latest', '          - ubuntu-latest', '          - macos-latest',
+    'permissions:', '  contents: read', 'concurrency:', '  group: mcp-oauth-real', '  cancel-in-progress: false',
+    'jobs:', '  check:', FIXED(4, ''), '    runs-on: ${{ matrix.os }}', '    timeout-minutes: 20',
+    '    strategy:', '      fail-fast: false', '      matrix:', MATRIX_OS, '    steps:',
+    SHA('checkout'), '        with:', '          persist-credentials: false',
+    SHA('setup-node'), '        with:', '          node-version: 22', '          cache: npm',
+    '      - run: npm ci', '      - run: npx tsc -p tsconfig.scripts.json', '      - run: node dist-scripts/scripts/test-demo-oauth-mcp.js',
+    FIXED(6, '- '), '        shell: bash', '        env:',
+    '          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_CODEX_GITHUB_FINE_GRAINED_TOKEN }}',
+    '        run: node dist-scripts/scripts/mcp-oauth-real.js "$RUNNER_TEMP/mcp-oauth.json"',
+    FIXED(6, '- '), '        if: always()', '        shell: bash',
+    `        run: '[ -f "$RUNNER_TEMP/mcp-oauth.md" ] && cat "$RUNNER_TEMP/mcp-oauth.md" >> "$GITHUB_STEP_SUMMARY" || true'`,
+    SHA('upload-artifact'), '        if: always()', '        with:', FIXED(10, ''), '          path: |',
+    '            ${{ runner.temp }}/mcp-oauth.json', '            ${{ runner.temp }}/mcp-oauth.md',
+    '          retention-days: 30', '          if-no-files-found: ignore',
+  ];
   const checkOauthWorkflow = (text) => {
-    const wf = text.replace(/\r\n?/g, '\n');
     const fail = (m) => { throw new assert.AssertionError({ message: `mcp-oauth-real.yml: ${m}` }); };
-    const ok = (c, m) => { if (!c) fail(m); };
-    // `on:` holds exactly workflow_dispatch with exactly one input, `oses` (an allowlist, not a denylist of triggers)
-    const onBlock = /^on:\n((?: {2,}[^\n]*\n|[ \t]*\n)+)/m.exec(wf);
-    ok(onBlock, 'a block `on:`');
-    const keysAt = (block, n) => [...block.matchAll(new RegExp(`^ {${n}}([\\w-]+):`, 'gm'))].map((m) => m[1]);
-    ok(JSON.stringify(keysAt(onBlock[1], 2)) === '["workflow_dispatch"]', `workflow_dispatch is the only trigger, got ${keysAt(onBlock[1], 2).join(',')}`);
-    ok(JSON.stringify(keysAt(onBlock[1], 4)) === '["inputs"]' && JSON.stringify(keysAt(onBlock[1], 6)) === '["oses"]', 'one input `oses`');
-    ok(!/^on:[ \t]*\S/m.test(wf) && (wf.match(/^on:/gm) || []).length === 1, 'one `on:`');
-    // comments are not part of the workflow
-    const code = wf.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
-    const rest = code.replace(onBlock[0].split('\n').filter((l) => !/^\s*#/.test(l)).join('\n'), '');
-    ok(rest.length < code.length, 'the on block is found in the code');
-    const jobsBlock = /^jobs:\n((?: {2,}[^\n]*\n|[ \t]*\n)+)/m.exec(`${rest}\n`);
-    ok(jobsBlock && keysAt(jobsBlock[1], 2).length === 1, 'exactly one job');
-    ok((rest.match(/^\s*runs-on:/gm) || []).length === 1 && /^ {4}runs-on: \$\{\{ matrix\.os \}\}$/m.test(rest), 'exactly one runs-on, the matrix value');
-    ok(!/(?:^|\s)(?:container|services|self-hosted)\b/i.test(rest), 'no container, services or self-hosted');
-    ok((rest.match(/\bpermissions\s*:/gi) || []).length === 1 && /^permissions:\n {2}contents: read\n(?! {2}\w)/m.test(`${rest}\n`), 'one permissions block, at the top, contents: read only');
-    ok(!/\bwrite(?:-all)?\b/i.test(rest), 'no write permission anywhere');
-    // every use of `inputs` in the file (also github.event.inputs, in a github-script, in any job) is one of the four fixed == comparisons
-    const uses = rest.match(/\binputs\b/gi) || [];
-    const cmp = rest.match(/\binputs\.oses == '[\w-]+'/g) || [];
-    ok(uses.length === OPTIONS.length && cmp.length === OPTIONS.length && OPTIONS.every((o) => cmp.includes(`inputs.oses == '${o}'`)), `inputs is used only in the ${OPTIONS.length} fixed comparisons (got ${uses.length} uses, ${cmp.length} comparisons)`);
-    ok((rest.match(/fromjson\s*\(/gi) || []).length === 1, 'one fromJSON (case-insensitive), of the fixed mapping');
-    const inp = /^ {6}oses:\n((?: {8}[^\n]*\n)+)/m.exec(wf);
-    ok(inp, 'the oses input block');
-    ok(/^ {8}type: choice$/m.test(inp[1]), 'the input is type: choice');
-    const opts = [...(/^ {8}options:\n((?: {10}- [^\n]*\n)+)/m.exec(inp[1]) || [, ''])[1].matchAll(/^ {10}- (\S+)$/gm)].map((m) => m[1]);
-    ok(JSON.stringify(opts) === JSON.stringify(OPTIONS), `exactly the allowed options, got ${opts.join(',')}`);
-    const mx = /^ {8}os: (.*)$/m.exec(wf);
-    ok(mx, 'the matrix os line');
-    // every runner label in the matrix is a fixed GitHub-hosted label
-    const labels = [...mx[1].matchAll(/'\[([^\]]*)\]'/g)].flatMap((m) => [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]));
-    ok(labels.length >= 4 && labels.every((l) => /^(windows|ubuntu|macos)-latest$/.test(l)), `fixed GitHub-hosted labels only, got ${labels.join(',')}`);
-    ok(!/self-hosted/.test(wf), 'never self-hosted');
-    ok(/^ {4}runs-on: \$\{\{ matrix\.os \}\}$/m.test(wf), 'runs-on is the matrix value only');
-    // each option appears as a fixed comparison and maps to a fixed list
-    for (const o of OPTIONS) ok(mx[1].includes(`inputs.oses == '${o}'`), `${o} is mapped`);
-    ok(mx[1].replace(/inputs\.oses == '[\w-]+'/g, '').indexOf('inputs.') < 0, 'inputs.oses appears only in == comparisons with a fixed option');
-    // no input anywhere in a run: script
-    for (const m of wf.matchAll(/^( +)(?:- )?run: ?([^\n]*)\n((?: *\1 {2,}[^\n]*\n|\s*\n)*)/gm)) ok(!/\$\{\{[^}]*\binputs\./.test(`${m[2]}\n${m[3]}`), 'no ${{ inputs.* }} inside a run script');
-    ok(!/^ +run: .*\$\{\{\s*(?:inputs|github\.event)/m.test(wf), 'no input or event text in run');
+    // CRLF to LF; drop comment lines, trailing ` # comment`, trailing spaces and blank lines
+    const lines = text.replace(/\r\n?/g, '\n').split('\n')
+      .filter((l) => !/^\s*#/.test(l)).map((l) => l.replace(/\s+#.*$/, '').replace(/\s+$/, '')).filter((l) => l !== '');
+    // the secret boundary: `secrets.` once, on an env entry, never in a run body
+    const withSecret = lines.filter((l) => /secrets\./i.test(l));
+    if (withSecret.length !== 1 || !/^ +\w+: \$\{\{ secrets\.\w+ \}\}$/.test(withSecret[0])) fail(`secrets. must appear exactly once, on an env: entry, got ${JSON.stringify(withSecret)}`);
+    lines.forEach((l, i) => {
+      if (i >= EXPECTED.length) fail(`unexpected extra line ${i + 1}: ${JSON.stringify(l)}`);
+      const e = EXPECTED[i];
+      // the free-text lines may hold text and the matrix label only
+      const probe = e instanceof RegExp ? l.replace(/\$\{\{ matrix\.os \}\}/g, 'X') : l;
+      if (e instanceof RegExp ? !e.test(probe) : l !== e) fail(`unexpected line ${i + 1}: ${JSON.stringify(l)} (expected ${e instanceof RegExp ? `a line like ${e}` : JSON.stringify(e)})`);
+    });
+    if (lines.length < EXPECTED.length) fail(`missing line ${lines.length + 1}: ${EXPECTED[lines.length]}`);
   };
-  // read once with LF endings: a Windows checkout has CRLF and the mutants below match on "\n"
+  // read once with LF endings: the mutants below match on "\n"; the check itself also takes CRLF (a Windows checkout)
   const file = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'mcp-oauth-real.yml'), 'utf8').replace(/\r\n?/g, '\n');
   checkOauthWorkflow(file);
   checkOauthWorkflow(file.replace(/\n/g, '\r\n'));
+  // harmless edits stay green: a renamed step, a comment or trailing comment that says "inputs"/"write", other pinned SHAs
+  checkOauthWorkflow(file.replace('name: Summary', 'name: Write summary of the inputs'));
+  checkOauthWorkflow(file.replace('timeout-minutes: 20', 'timeout-minutes: 20 # inputs.x write-all'));
+  checkOauthWorkflow(file.replace('permissions:', '# inputs: write-all\npermissions:'));
+  checkOauthWorkflow(file.replace(/(actions\/checkout@)[0-9a-f]{40}/, '$1' + 'a'.repeat(40)));
+  const sub = (a, b) => file.replace(a, b);
   const mutants = {
-    'type: string': file.replace('type: choice', 'type: string'),
-    'fromJSON(inputs.oses)': file.replace(/os: \$\{\{ fromJSON\(.*\) \}\}/, 'os: ${{ fromJSON(inputs.oses) }}'),
-    'an input in run:': file.replace('- run: npm ci', '- run: echo ${{ inputs.oses }}'),
-    'an input in a multi-line run:': file.replace('- run: npm ci', '- run: |\n          echo ${{ inputs.oses }}'),
-    'a self-hosted label': file.replace('"macos-latest"', '"self-hosted"'),
-    'an extra option': file.replace('- macos-latest\n', '- macos-latest\n          - self-hosted\n'),
-    'write permission': file.replace('contents: read', 'contents: write'),
-    'a workflow_run trigger': file.replace('  workflow_dispatch:\n', '  workflow_run:\n    workflows: [x]\n  workflow_dispatch:\n'),
-    'an issue_comment trigger': file.replace('  workflow_dispatch:\n', '  issue_comment:\n  workflow_dispatch:\n'),
-    'job-level write-all': file.replace('    timeout-minutes: 20\n', '    timeout-minutes: 20\n    permissions: write-all\n'),
-    'job-level contents write': file.replace('    timeout-minutes: 20\n', '    timeout-minutes: 20\n    permissions:\n      contents: write\n'),
-    'a second job on a custom runner': `${file}  other:\n    runs-on: my-runner\n    steps:\n      - run: echo hi\n`,
-    'a second string input as runs-on': file.replace('      oses:\n', '      target:\n        type: string\n      oses:\n').replace('runs-on: ${{ matrix.os }}', 'runs-on: ${{ inputs.target }}'),
-    'a second string input': file.replace('      oses:\n', '      target:\n        type: string\n      oses:\n'),
-    'FROMJSON of the input': file.replace(/os: \$\{\{ fromJSON\(.*\) \}\}/, 'os: ${{ FROMJSON(inputs.oses) }}'),
-    'fromjson of the input': file.replace(/os: \$\{\{ fromJSON\(.*\) \}\}/, 'os: ${{ fromjson(inputs.oses) }}'),
-    'an input in a github-script': `${file.trimEnd()}\n      - uses: actions/github-script@0000000000000000000000000000000000000000\n        with:\n          script: console.log('\${{ inputs.oses }}')\n`,
-    'github.event.inputs': file.replace('- run: npm ci', '- run: echo ${{ github.event.inputs.oses }}'),
-    'a fifth comparison': file.replace("|| '[\"windows-latest\",\"ubuntu-latest\"]') }}", "|| inputs.oses == 'x' && '[\"y\"]' || '[\"windows-latest\",\"ubuntu-latest\"]') }}"),
-    'runs-on from the input': file.replace('runs-on: ${{ matrix.os }}', 'runs-on: ${{ inputs.oses }}'),
+    'type: string': [sub('type: choice', 'type: string'), /type: string/],
+    'fromJSON(inputs.oses)': [sub(/os: \$\{\{ fromJSON\(.*\) \}\}/, 'os: ${{ fromJSON(inputs.oses) }}'), /fromJSON\(inputs\.oses\) \}\}"/],
+    'an input in run:': [sub('- run: npm ci', '- run: echo ${{ inputs.oses }}'), /echo \$\{\{ inputs/],
+    'an input in a multi-line run:': [sub('- run: npm ci', '- run: |\n          echo ${{ inputs.oses }}'), /run: \|/],
+    'a self-hosted label': [sub('"macos-latest"', '"self-hosted"'), /self-hosted/],
+    'an extra option': [sub('- macos-latest\n', '- macos-latest\n          - self-hosted\n'), /- self-hosted/],
+    'write permission': [sub('contents: read', 'contents: write'), /contents: write/],
+    'a workflow_run trigger': [sub('  workflow_dispatch:\n', '  workflow_run:\n    workflows: [x]\n  workflow_dispatch:\n'), /workflow_run/],
+    'an issue_comment trigger': [sub('  workflow_dispatch:\n', '  issue_comment:\n  workflow_dispatch:\n'), /issue_comment/],
+    'a pull_request_target trigger': [sub('on:\n', 'on:\n  pull_request_target:\n'), /pull_request_target/],
+    'flow-style on': [sub('on:\n  workflow_dispatch:\n', 'on: [push, workflow_dispatch]\n  workflow_dispatch:\n'), /on: \[push/],
+    'job-level write-all': [sub('    timeout-minutes: 20\n', '    timeout-minutes: 20\n    permissions: write-all\n'), /write-all/],
+    'job-level contents write': [sub('    timeout-minutes: 20\n', '    timeout-minutes: 20\n    permissions:\n      contents: write\n'), /permissions:/],
+    'a second job on a custom runner': [`${file}  other:\n    runs-on: my-runner\n    steps:\n      - run: echo hi\n`, /other:/],
+    'a second string input as runs-on': [sub('      oses:\n', '      target:\n        type: string\n      oses:\n').replace('runs-on: ${{ matrix.os }}', 'runs-on: ${{ inputs.target }}'), /target:/],
+    'a second string input': [sub('      oses:\n', '      target:\n        type: string\n      oses:\n'), /target:/],
+    'FROMJSON of the input': [sub(/os: \$\{\{ fromJSON\(.*\) \}\}/, 'os: ${{ FROMJSON(inputs.oses) }}'), /FROMJSON/],
+    'an input in a github-script': [`${file.trimEnd()}\n      - uses: actions/github-script@0000000000000000000000000000000000000000\n        with:\n          script: console.log('\${{ inputs.oses }}')\n`, /github-script|extra line/],
+    'github.event.inputs': [sub('- run: npm ci', '- run: echo ${{ github.event.inputs.oses }}'), /github\.event\.inputs/],
+    'a fifth comparison': [sub("|| '[\"windows-latest\",\"ubuntu-latest\"]') }}", "|| inputs.oses == 'x' && '[\"y\"]' || '[\"windows-latest\",\"ubuntu-latest\"]') }}"), /inputs\.oses == 'x'/],
+    'runs-on from the input': [sub('runs-on: ${{ matrix.os }}', 'runs-on: ${{ inputs.oses }}'), /runs-on: \$\{\{ inputs/],
+    'matrix include on a custom runner': [sub('    steps:\n', '        include:\n          - os: my-runner\n    steps:\n'), /include:/],
+    'matrix include from a variable': [sub('    steps:\n', '        include:\n          - os: ${{ vars.RUNNER }}\n    steps:\n'), /include:/],
+    'github.event in a - run: line': [sub('- run: npm ci', '- run: echo "${{ github.event.sender.login }}"'), /github\.event\.sender/],
+    'github.head_ref in a - run: line': [sub('- run: npm ci', '- run: echo "${{ github.head_ref }}"'), /github\.head_ref/],
+    'github.event in a multi-line run': [sub('- run: npm ci', '- run: |\n          echo "${{ github.event.sender.login }}"'), /run: \|/],
+    'the secret in a - run: line': [sub('- run: npm ci', '- run: echo ${{ secrets.COPILOT_CODEX_GITHUB_FINE_GRAINED_TOKEN }}'), /secrets\. must appear exactly once/],
+    'the secret in a second env entry': [sub('        run: node dist-scripts/scripts/mcp-oauth-real.js', '          OTHER: ${{ secrets.X }}\n        run: node dist-scripts/scripts/mcp-oauth-real.js'), /secrets\. must appear exactly once/],
+    'the secret in a step name': [sub('name: Summary', 'name: ${{ secrets.X }}'), /secrets\. must appear exactly once/],
+    'an input in a step name': [sub('name: Summary', 'name: ${{ inputs.oses }}'), /name: \$\{\{ inputs/],
   };
-  for (const [name, text] of Object.entries(mutants)) {
+  for (const [name, [text, reason]] of Object.entries(mutants)) {
     assert.notStrictEqual(text, file, `mutation "${name}" changed the file`);
-    assert.throws(() => checkOauthWorkflow(text), /mcp-oauth-real\.yml/, `the check must fail for: ${name}`);
+    assert.throws(() => checkOauthWorkflow(text), (e) => /mcp-oauth-real\.yml/.test(e.message) && reason.test(e.message), `the check must fail for "${name}" with ${reason}`);
   }
 }
 
