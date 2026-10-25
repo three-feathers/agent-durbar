@@ -1,0 +1,24 @@
+# Weekly test audit (spec 021 FR-058): a template. Copy to ~/.config/systemd/user/weekly-test-audit.service and fill <workspace>.
+[Unit]
+Description=Weekly test audit of agent-durbar main (read-only; files at most 5 issues)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# The token file: a fine-grained token with only Issues read and write on three-feathers/agent-durbar, mode 0600 (see README.md).
+Environment=DURBAR_AUDIT_GH_TOKEN_FILE=%h/.config/durbar-weekly-audit/gh-token
+# Claude Code and node must be on PATH; add the folders your install uses.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/<workspace>/agent-durbar/scripts/weekly-test-audit.sh --file
+# Below the interactive session, and stopped if the script's own time limit does not end it.
+Nice=10
+TimeoutStartSec=4500
+# Hardening. Drop the lines your distro refuses. It writes the temp worktree, git's worktree list, npm's cache, Claude's own state
+# and the log folder (a leading "-" skips a path that does not exist).
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=-%h/<workspace>/agent-durbar/.git -%h/.npm -%h/.claude -%h/.claude.json -%h/.local/state -%h/.cache
+ProtectKernelTunables=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

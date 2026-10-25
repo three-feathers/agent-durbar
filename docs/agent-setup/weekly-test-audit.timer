@@ -1,0 +1,10 @@
+# Weekly test audit (spec 021 FR-058): a template. Copy to ~/.config/systemd/user/weekly-test-audit.timer.
+[Unit]
+Description=Weekly test audit of agent-durbar, Fridays early morning (Madrid time)
+
+[Timer]
+OnCalendar=Fri *-*-* 06:30 Europe/Madrid
+Persistent=true
+
+[Install]
+WantedBy=timers.target
