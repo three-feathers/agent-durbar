@@ -189,7 +189,7 @@ assert.deepStrictEqual(wd.words, { 'place-web': 'Radio' }, 'only short scene wor
 
 // --- Pixel maps (spec 038) ---
 assert.ok(T._compilePixelMap({cell:2,palette:{a:'#fff'},rows:['a.a','.a.']}),'pixel map compiles');
-assert.strictEqual(T._compilePixelMap({palette:{a:'#fff'},rows:['a']}),T._compilePixelMap({palette:{a:'#fff'},rows:['a']}),'default cell size');
+assert.strictEqual(T._compilePixelMap({palette:{a:'#fff'},rows:['a']}),'<rect x="0" y="0" width="3" height="3" fill="#fff"/>','default cell size is 3');
 assert.strictEqual(T._compilePixelMap({palette:{a:'red'},rows:['z']}),null,'unknown palette key rejected');
 assert.strictEqual(T._compilePixelMap({palette:{a:'url(x)'},rows:['a']}),null,'non-colour palette value rejected');
 assert.strictEqual(T._compilePixelMap({palette:{},rows:['a']}),null,'empty palette rejected');

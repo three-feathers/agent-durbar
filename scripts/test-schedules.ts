@@ -1,10 +1,10 @@
 /** Scheduled prompts (spec 044): the store and the scheduler with a fake clock and sender. `npm run test:schedules`. No session, no credits. */
 import * as assert from 'assert';
 import { Scheduler, alignedNext, loopSupport, cleanSchedule, dueAt, parseSchedules } from '../src/main/schedules';
-import type { Schedule, SchedulesDoc } from '../src/main/schedules';
+import type { Schedule, SchedulesDoc, SchedulerDeps } from '../src/main/schedules';
 
 const MIN = 60_000;
-export function harness(doc: SchedulesDoc, t0 = 1_000_000_000_000) {
+export function harness(doc: SchedulesDoc, t0 = 1_000_000_000_000, extra: Partial<SchedulerDeps> = {}) {
   let now = t0;
   const sent: string[] = [];
   const busy = new Set<string>();
@@ -22,6 +22,7 @@ export function harness(doc: SchedulesDoc, t0 = 1_000_000_000_000) {
     setTimer: (ms, fn) => { const t = { at: now + ms, fn }; timers.push(t); return t; },
     clearTimer: (t) => { const i = timers.indexOf(t as never); if (i >= 0) timers.splice(i, 1); },
     save: () => { saved++; },
+    ...extra,
   });
   const advance = async (ms: number): Promise<void> => {
     now += ms;
