@@ -242,15 +242,15 @@ module.exports = async (ctx) => {
     /* FR-008, FR-027 (owner 2026-10-24): Settings > Office layout: Open office brings back the plain desks, Office with cabins the signs */
     const toggle = async (which) => {
       await js(`window.DurbarScreens.openSettings()`);
-      assert.ok(await until(`!!document.querySelector('[data-officelayout="${which}"]')`, 4000), 'Settings has Office layout: ' + which);
-      await js(`document.querySelector('[data-officelayout="${which}"]').click()`);
+      assert.ok(await until(`!!document.querySelector(${jsLiteral('[data-officelayout="' + which + '"]')})`, 4000), 'Settings has Office layout: ' + which);
+      await js(`document.querySelector(${jsLiteral('[data-officelayout="' + which + '"]')}).click()`);
       /* FR-027: a door closed earlier in this pass: Open office asks first; open it (nothing is held here) */
       if (which === 'open' && await until(`!!document.getElementById('modeDlg')`, 1500)) {
         const b = await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].map((x)=>x.textContent)`);
         assert.deepStrictEqual(b, ['Keep cabins', 'Open the doors'], 'Open office asks about the door you closed: ' + JSON.stringify(b));
         await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>x.textContent==='Open the doors').click()`);
       }
-      assert.ok(await until(`document.querySelector('[data-officelayout="${which}"]').getAttribute('aria-pressed')==='true'`, 3000), which + ' is pressed: ' + (await js(`JSON.stringify({dlg:!!document.getElementById('modeDlg'),dt:(document.querySelector('#modeDlg h3')||{}).textContent,segs:[...document.querySelectorAll('[data-officelayout]')].map((b)=>b.dataset.officelayout+'='+b.getAttribute('aria-pressed')),ls:localStorage.getItem('durbar.doorsigns'),doors:Object.keys(window.__durbarSimUi.agents()).length})`)));
+      assert.ok(await until(`document.querySelector(${jsLiteral('[data-officelayout="' + which + '"]')}).getAttribute('aria-pressed')==='true'`, 3000), which + ' is pressed: ' + (await js(`JSON.stringify({dlg:!!document.getElementById('modeDlg'),dt:(document.querySelector('#modeDlg h3')||{}).textContent,segs:[...document.querySelectorAll('[data-officelayout]')].map((b)=>b.dataset.officelayout+'='+b.getAttribute('aria-pressed')),ls:localStorage.getItem('durbar.doorsigns'),doors:Object.keys(window.__durbarSimUi.agents()).length})`)));
       if (w === 1440 && which === 'open') await js(`document.querySelector('[data-officelayout]').closest('.scr-row').scrollIntoView({block:'center'})`);
       if (w === 1440 && which === 'open') await H.shot(path.join(OUT, '017-office-layout-1440x900.png'), { prep: 'none', tag: '017-signs', what: 'Office layout setting' });
       await H.key('Escape'); await ctx.sleep(500);
@@ -362,31 +362,31 @@ module.exports = async (ctx) => {
   {
     await H.load({ w: 1280, h: 800, focus: true, query: { density: 'card' } });
     await until(settled, 3000);
-    const sb = 'window.__durbarSimUi.bridge()';
     const target = await js(`(window.__durbarSimUi.agents().find((a)=>!a.parent&&a.state==='idle')||{}).id||''`);
     assert.ok(target, 'an idle main agent');
     const NAME = 'Eve" data-x="1 <b>bold</b> & co';
     await js(`(()=>{const a=window.__durbarSimUi.agents().find((x)=>x.id===${jsLiteral(target)});a.name=${jsLiteral(NAME)};window.__durbarSimUi.render();})()`);
-    const desk = `document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(target)})+'"]')`;
-    const btn = `document.querySelector('#stage .unit [data-doorset="'+CSS.escape(${jsLiteral(target)})+'"]')`;
-    assert.ok(await until(`!!${btn}&&(${btn}.getAttribute('aria-label')||'').includes('Eve')`, 4000), 'the door button, with the new name');
-    const b0 = await js(`({l:${btn}.getAttribute('aria-label'),t:${btn}.getAttribute('title'),x:!!document.querySelector('#stage [data-x]'),b:!!${btn}.querySelector('b')})`);
+    /* the desk and its door button, as page helpers (no code strings spliced into page code) */
+    const helpers17 = `window.__d17={d:()=>document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(target)})+'"]'),b:()=>document.querySelector('#stage .unit [data-doorset="'+CSS.escape(${jsLiteral(target)})+'"]')};0`;
+    await js(helpers17);
+    assert.ok(await until(`!!__d17.b()&&(__d17.b().getAttribute('aria-label')||'').includes('Eve')`, 4000), 'the door button, with the new name');
+    const b0 = await js(`({l:__d17.b().getAttribute('aria-label'),t:__d17.b().getAttribute('title'),x:!!document.querySelector('#stage [data-x]'),b:!!__d17.b().querySelector('b')})`);
     assert.strictEqual(b0.l, 'Close the door (do not disturb): ' + NAME, 'the button names the agent whole, as text (escaped): ' + b0.l);
     assert.ok(b0.t.endsWith(NAME) && !b0.x && !b0.b, 'its tooltip too, and no markup from the name reached the page: ' + JSON.stringify(b0));
-    await js(`${btn}.click()`);
-    assert.ok(await until(`${btn}.getAttribute('aria-pressed')==='true'`, 4000), 'the door is closed');
+    await js(`__d17.b().click()`);
+    assert.ok(await until(`__d17.b().getAttribute('aria-pressed')==='true'`, 4000), 'the door is closed');
     /* a held prompt with a token-shaped secret in it (built here, never a real token) */
     const TOKEN = ['ghp', '_', 'Z9'.repeat(18)].join('');
-    const saved = await js(`${sb}.saveSchedule({folder:(window.__durbarSimUi.agents().find((a)=>a.id===${jsLiteral(target)}).info||{}).cwd||window.__durbarSimUi.agents().find((a)=>a.id===${jsLiteral(target)}).cwd,prompt:${jsLiteral('deploy with ' + TOKEN + ' please')},at:Date.now()+1500,target:{session:${jsLiteral(target)}}}).then((r)=>!!r.ok||JSON.stringify(r))`);
+    const saved = await js(`window.__durbarSimUi.bridge().saveSchedule({folder:(window.__durbarSimUi.agents().find((a)=>a.id===${jsLiteral(target)}).info||{}).cwd||window.__durbarSimUi.agents().find((a)=>a.id===${jsLiteral(target)}).cwd,prompt:${jsLiteral('deploy with ' + TOKEN + ' please')},at:Date.now()+1500,target:{session:${jsLiteral(target)}}}).then((r)=>!!r.ok||JSON.stringify(r))`);
     assert.strictEqual(saved, true, 'a one-off schedule for that agent: ' + saved);
-    assert.ok(await until(`${sb}.doorsList().then((d)=>(d[${jsLiteral(target)}]||{}).held===1)`, 10000), 'its run is held at the closed door');
+    assert.ok(await until(`window.__durbarSimUi.bridge().doorsList().then((d)=>(d[${jsLiteral(target)}]||{}).held===1)`, 10000), 'its run is held at the closed door');
     /* FR-028: on a card desk the door you closed shows its word, and the desk's name says it */
-    assert.ok(await until(`(()=>{const w=${desk}.querySelector('.cb-sign[data-sign="shut"] .cb-w');return !!w&&getComputedStyle(w).display!=='none'&&/^DND/.test(w.dataset.w)})()`, 4000), 'card desk: the DND word is shown for a door you closed');
-    await until(`/, 1 held, /.test(${desk}.getAttribute('aria-label'))`, 8000);
-    const dl = await js(`${desk}.getAttribute('aria-label')`);
+    assert.ok(await until(`(()=>{const w=__d17.d().querySelector('.cb-sign[data-sign="shut"] .cb-w');return !!w&&getComputedStyle(w).display!=='none'&&/^DND/.test(w.dataset.w)})()`, 4000), 'card desk: the DND word is shown for a door you closed');
+    await until(`/, 1 held, /.test(__d17.d().getAttribute('aria-label'))`, 8000);
+    const dl = await js(`__d17.d().getAttribute('aria-label')`);
     assert.ok(dl.startsWith(NAME) && /, door closed by you \(do not disturb\), 1 held, /.test(dl), 'the desk name says the door is closed by you and what it holds: ' + dl);
     /* spec 054 FR-040: remote control offers to open the door */
-    await js(`${desk}.click()`);
+    await js(`__d17.d().click()`);
     assert.ok(await until(`!!document.getElementById('moreBtn')`, 4000), 'the chat is open');
     await js(`document.getElementById('moreBtn').click()`); await until(`!!document.getElementById('remoteBtn')`, 3000);
     await H.clearToasts();
@@ -400,7 +400,7 @@ module.exports = async (ctx) => {
     assert.ok(ln.length === 1 && /^deploy with /.test(ln[0]) && !ln[0].includes(TOKEN) && !ln[0].includes('Z9Z9Z9Z9'), 'the held prompt is listed masked: ' + JSON.stringify(ln));
     await H.key('Escape');
     assert.ok(await until(`!document.getElementById('modeDlg')`, 3000));
-    assert.strictEqual(await js(`${btn}.getAttribute('aria-pressed')`), 'true', 'Escape keeps it closed');
+    assert.strictEqual(await js(`__d17.b().getAttribute('aria-pressed')`), 'true', 'Escape keeps it closed');
     await H.key('Escape');
     /* (2, FR-027) Open office asks first; Keep cabins keeps them */
     await js(`window.DurbarScreens.openSettings()`);
@@ -420,14 +420,14 @@ module.exports = async (ctx) => {
     await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>/^Send all/.test(x.textContent)).click()`);
     assert.ok(await until(`document.querySelector('[data-officelayout="open"]').getAttribute('aria-pressed')==='true'`, 4000), 'then Open office');
     await H.key('Escape');
-    assert.ok(await until(`${sb}.doorsList().then((d)=>!d[${jsLiteral(target)}])`, 10000), 'the door is open and nothing is held');
+    assert.ok(await until(`window.__durbarSimUi.bridge().doorsList().then((d)=>!d[${jsLiteral(target)}])`, 10000), 'the door is open and nothing is held');
     assert.ok(await until(`document.querySelectorAll('#stage .cabin,#stage .cb-toggle,#stage .cb-sign').length===0`, 4000), 'an open office: no doors left');
     /* a door still closed in an open office (main kept it, e.g. a restart) stays visible with its button, so it can be opened */
-    await js(`${sb}.setDoor(${jsLiteral(target)},true)`);
+    await js(`window.__durbarSimUi.bridge().setDoor(${jsLiteral(target)},true)`);
     await js(`window.__durbarSimUi.render()`);
-    assert.ok(await until(`!!${btn}&&${btn}.getAttribute('aria-pressed')==='true'&&!!${desk}.querySelector('.cb-sign[data-sign="shut"]')`, 4000), 'open office: a door closed by you still shows its cabin, sign and button');
-    await js(`${btn}.click()`);
-    assert.ok(await until(`${btn}===null||${btn}.getAttribute('aria-pressed')==='false'`, 4000), 'and can be opened');
+    assert.ok(await until(`!!__d17.b()&&__d17.b().getAttribute('aria-pressed')==='true'&&!!__d17.d().querySelector('.cb-sign[data-sign="shut"]')`, 4000), 'open office: a door closed by you still shows its cabin, sign and button');
+    await js(`__d17.b().click()`);
+    assert.ok(await until(`__d17.b()===null||__d17.b().getAttribute('aria-pressed')==='false'`, 4000), 'and can be opened');
     assert.ok(await until(`document.querySelectorAll('#stage .cabin,#stage .cb-toggle').length===0`, 4000), 'then the open office is plain again');
     await js(`localStorage.setItem('durbar.doorsigns','on')`);
     console.log('[017-signs] open office, masked held prompt, escaped name, DND word on a card desk, remote offers to open the door');
