@@ -1223,6 +1223,7 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .note.info{background:var(--note);border-color:var(--line);font-size:12px;padding:5px 10px;color:var(--ink-2)}
 .note.info.cline.failed{background:var(--bad-bg);border-color:var(--tone-bad-line);color:var(--red-ink)}
 .note.fresh{max-width:560px}
+.note.sum-note{background:var(--note);border-color:var(--line)} /* spec 085: the end-of-session card is a calm record, not a warning */
 .toast.with-act{display:flex;align-items:center;gap:14px}
 .toast-act{white-space:nowrap;flex:none;background:transparent;color:#f7f4ee;border:1px solid color-mix(in srgb,var(--raised) 45%,transparent);border-radius:8px;padding:2px 12px;font-size:12px;font-weight:700;cursor:pointer}
 .toast-act:hover{background:color-mix(in srgb,var(--raised) 14%,transparent)}

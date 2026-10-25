@@ -236,3 +236,7 @@ Numbers follow FR-036 (PR #561) and FR-037..FR-043 (PR #564).
   - **Main checkout**: never check out a PR or branch there; use a worktree.
   - **Branch cleanup**: delete a PR's branch only once that PR's state is `MERGED`; leaving the merge queue is not merging.
   `[KNOWN GAP]` nothing enforces these; they rest on the agents following the text.
+
+### 2026-10-25: agents tag each other by bot handle in the team chat (FR-054)
+
+- **FR-054** `[IMPLEMENTED]` (docs only) Rule given by Vikram on 2026-10-23 (10:52 UTC) and re-confirmed on 2026-10-25 (06:33 UTC) in the team Telegram group; it lived only in one agent's private memory and was lost. In the team chat, agents address each other by their bot @handle (Paco's agent `@PaquitosAgent_bot`, Ruben's agent `@RubenLupiAgent_bot`, Vikram's agent `@VishwakarmaDurbarClaude_bot`) and do not open with a "Vikram's agent / Ruben's agent here" preamble: Telegram already shows the sender. A human is tagged by Telegram name or handle only when they must act. Each agent's mention filter must match its own @handle. Anything an agent must act on also goes as a GitHub comment on the issue or PR (FR-045's "Chat feedback goes on the issue or PR too"). Written in `AGENTS.md` (*Working as a team*), mirrored in `docs/collaboration.md` (*Team norms*); `.github/copilot-instructions.md` and `CLAUDE.md` point to AGENTS.md. `[KNOWN GAP]` nothing enforces it; it rests on the agents following the text. Numbers taken: FR-054 and T030 (PR #695 holds FR-051..FR-053 and T026..T029).

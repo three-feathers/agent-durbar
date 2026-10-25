@@ -4,16 +4,18 @@
  * Kept in its own small module so settings can use it without pulling in the detection code.
  */
 
-/**
- * Longest version accepted: longer is rejected and never cut. PR #698 (spec 012 T133) exports the same constant from
- * `src/adapters/detect.ts`; once it is merged this becomes `import { MAX_VERSION_LENGTH } from '../adapters/detect'` (tasks.md T008).
- */
+/** Longest version accepted: longer is rejected and never cut. The one constant; `src/adapters/detect.ts` (spec 012 FR-039) imports it. */
 export const MAX_VERSION_LENGTH = 64;
-/** The one field pattern: anchored, every part bounded. */
-const FIELD_RE = /^v?(\d{1,9})\.(\d{1,9})\.(\d{1,9})(?:-[0-9A-Za-z.-]{1,40})?$/;
+/**
+ * The one version-token pattern (source text, so each caller anchors it its own way): three ASCII numbers of 1-9 digits and an optional
+ * pre-release of 1-40 ASCII letters, digits, dots or hyphens. `\d` has no `u` flag, so it is ASCII-only; leading zeros are accepted.
+ */
+export const VERSION_TOKEN_SOURCE = '\\d{1,9}\\.\\d{1,9}\\.\\d{1,9}(?:-[0-9A-Za-z.-]{1,40})?';
+const FIELD_RE = new RegExp('^v?(' + VERSION_TOKEN_SOURCE + ')$');
 
 /** A version from one structured field, without a leading `v`, or undefined. */
 export function parseVersionField(field: unknown): string | undefined {
   if (typeof field !== 'string' || field.length > MAX_VERSION_LENGTH) return undefined;
-  return FIELD_RE.test(field) ? field.replace(/^v/, '') : undefined;
+  const m = FIELD_RE.exec(field);
+  return m ? m[1] : undefined;
 }

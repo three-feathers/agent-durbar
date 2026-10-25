@@ -59,6 +59,7 @@ Do it **adversarially**: assume your diff is wrong, read the real diff (`git dif
 
 ### Hostile input and security
 
+- [ ] **A parser input cap preserves token boundaries.** Inspect the next character when a match ends at the cap; truncating `1.2.30` to `1.2.3` must not turn invalid input into a valid version. Test exact-cap success and continuations; removing the boundary guard must fail. *Evidence:* [#664](https://github.com/three-feathers/agent-durbar/issues/664).
 - [ ] **Anything copied from user config goes through an allow-list:** own properties only, unknown keys dropped, and a bad value in an allowed key means nothing is copied (all-or-nothing). Test a hostile matrix (nested objects, huge strings, out-of-range numbers, `__proto__`). *Evidence:* [#629](https://github.com/three-feathers/agent-durbar/pull/629), [#500](https://github.com/three-feathers/agent-durbar/pull/500), [#535](https://github.com/three-feathers/agent-durbar/pull/535).
 - [ ] **Escaping has a test:** a hostile name or title with markup, so dropping `esc()` fails a test. *Evidence:* [#552](https://github.com/three-feathers/agent-durbar/pull/552), [#511](https://github.com/three-feathers/agent-durbar/pull/511), [#535](https://github.com/three-feathers/agent-durbar/pull/535).
 - [ ] **Files and paths:** links (`lstat`), absolute-path checks for every env var (`APPDATA` as well as `XDG_CONFIG_HOME`), size caps, Windows reserved names. *Evidence:* [#535](https://github.com/three-feathers/agent-durbar/pull/535), [#615](https://github.com/three-feathers/agent-durbar/pull/615), [#488](https://github.com/three-feathers/agent-durbar/pull/488).
@@ -68,6 +69,7 @@ Do it **adversarially**: assume your diff is wrong, read the real diff (`git dif
 - [ ] **Undo restores the user's own choice, "none" included**, never the value in effect or a default (*Paco's agent*). *Evidence:* [#642](https://github.com/three-feathers/agent-durbar/pull/642).
 - [ ] **Map the vendor's failure event too**, not only the success one: a "requested" state shown without its failure path claims something untrue. *Evidence:* [#642](https://github.com/three-feathers/agent-durbar/pull/642) (`session.auto_tier_switch_failed`).
 - [ ] **Timers use a monotonic clock, and a bad value falls back to the most restrictive choice** (*Paco's agent*). *Evidence:* [#635](https://github.com/three-feathers/agent-durbar/pull/635) (monotonic sign-in clock, minimum for a broken time limit).
+- [ ] **A tool run inside the user's folder obeys that folder's config** (*Ruben's agent*): `git` (`core.fsmonitor`, filter drivers, external diff, lazy-fetch ssh, submodules) and any tool with a per-folder config file. Run git only through `nodeGitExec`, and test with a planted command that writes a marker. *Evidence:* [#718](https://github.com/three-feathers/agent-durbar/pull/718), [#719](https://github.com/three-feathers/agent-durbar/issues/719).
 - [ ] **Text guards that emulate a parser** (YAML, shell): use the parser's own whitespace (`[ \t]`, not JS `\s`, which also matches NBSP/U+3000) and refuse non-ASCII in the guarded file. *Evidence:* [#700](https://github.com/three-feathers/agent-durbar/pull/700).
 
 ### Tests
@@ -93,6 +95,7 @@ Do it **adversarially**: assume your diff is wrong, read the real diff (`git dif
 
 - [ ] **No POSIX-only defaults** (output folders, separators), and paths compared case-sensitively except on Windows and macOS. *Evidence:* [#496](https://github.com/three-feathers/agent-durbar/pull/496), [#572](https://github.com/three-feathers/agent-durbar/pull/572).
 - [ ] **macOS is not run on PRs** (spec 008 FR-106): a macOS-only path says "not verified on macOS" in the PR. *Evidence:* [#561](https://github.com/three-feathers/agent-durbar/pull/561), [#625](https://github.com/three-feathers/agent-durbar/pull/625).
+- [ ] **Synthetic native text keys are not native editing.** Electron's macOS `webContents.sendInputEvent` delivers ⌘⌫ / ⌘A to the renderer but does not perform deletion / selection. Assert the app does not intercept the event; do not treat the unchanged input as real-Mac behavior. *Evidence:* issue #683, spec 074.
 
 ### Reuse and docs
 
