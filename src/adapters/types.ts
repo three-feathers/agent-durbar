@@ -9,6 +9,7 @@ import type { ElicitAction, ElicitAnswer, ElicitRequest } from '../shared/elicit
 import type { McpServerSpec } from '../shared/mcp';
 import type { AutoTier, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import type { AdapterCapabilities, PermissionMode } from './capabilities';
+import type { OrgPolicy } from '../shared/orgpolicy';
 import type { HandoffResult } from './handoff';
 import type { HistoryResult, PreviousSession } from './history';
 import type { RemoteState } from '../shared/remote';
@@ -278,11 +279,15 @@ export interface AutoTierFailedEvent extends BaseEvent {
   reason: 'policy-rejected' | 'request-failed' | 'setup-failed' | 'unsupported' | 'unknown';
 }
 
-/** Compaction of the context (spec 030): `auto` = the runtime did it at its threshold, `manual` = the user asked, `model-switch` = before a switch to a smaller window, `overflow` = after the window was exceeded. */
+/**
+ * Compaction of the context (spec 030): `auto` = the runtime did it at its threshold, `manual` = the user asked, `model-switch` = before a switch to a smaller window,
+ * `overflow` = after the window was exceeded. Spec 015 (issue #601): `truncation` = the older messages were dropped, not summarised; `unknown` = the agent app does
+ * not say who started it (Claude's start message, Codex's item).
+ */
 export interface CompactionEvent extends BaseEvent {
   type: 'compaction';
   phase: 'start' | 'complete' | 'failed';
-  trigger: 'auto' | 'manual' | 'model-switch' | 'overflow';
+  trigger: 'auto' | 'manual' | 'model-switch' | 'overflow' | 'truncation' | 'unknown';
   tokensBefore?: number;
   tokensAfter?: number;
   tokensRemoved?: number;
@@ -409,6 +414,9 @@ export interface AskedQuestion {
   options: { label: string; description?: string }[];
 }
 
+/** Why a question ended unanswered (spec 052 FR-178): a code for the event and the debug log, never text. `user`: the window sent Skip; `unreadable`: an answer that held nothing usable. */
+export type QuestionSkipReason = 'user' | 'stop' | 'interrupt' | 'reconnect' | 'exit' | 'unreadable';
+
 /** The agent asks the user to choose (spec 012 FR-128): `asked` with the questions, then `answered` or `cancelled`. */
 export interface QuestionEvent extends BaseEvent {
   type: 'question';
@@ -421,6 +429,8 @@ export interface QuestionEvent extends BaseEvent {
   elicitation?: ElicitRequest;
   /** `answered` of an elicitation: what the user did (`accept` = submitted or Done, `decline`); a cancel is `phase: 'cancelled'`. */
   elicitAction?: ElicitAction;
+  /** `cancelled` only (spec 052 FR-178): why the question ended unanswered. */
+  reason?: QuestionSkipReason;
 }
 
 /** A custom agent the user can select for a session (spec 043 FR-001); generic across adapters. */
@@ -655,6 +665,11 @@ export interface AgentAdapter {
   renameSession?(sessionId: string, name: string): Promise<void>;
   /** Spec 051 FR-007: whether this harness is signed in, checked without a prompt (no credits). Only the yes/no leaves the adapter. */
   authStatus?(): Promise<{ signedIn: boolean }>;
+  /**
+   * Spec 076 FR-198 (issue #602): this agent app's OWN organization policy on this machine (its documented machine files), read-only,
+   * normalized the way the app reads it; an empty policy when there is none. Copilot asks its runtime first (FR-198).
+   */
+  readOrgPolicy?(): OrgPolicy | Promise<OrgPolicy>;
   /**
    * Spec 012 FR-156: whether the sign-in really works, asked of the service where the app offers a free call (no prompt, no
    * credits); `unknown` when it cannot tell. `detail` is a short, safe sentence: never a token, email or account name.

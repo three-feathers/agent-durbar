@@ -1,0 +1,2 @@
+# source: read: claude-code cask follows the stable channel (research R2); values are made up
+{"formulae":[],"casks":[{"token":"claude-code","version":"2.1.308","installed":"2.1.308","outdated":false,"auto_updates":false}]}

@@ -4,9 +4,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { EventEmitter } from 'events';
-import { MAX_REDIRECTS, MAX_SCRIPT_BYTES, allowedScriptUrl, downloadScript, looksLikeScript, makeGet } from '../src/main/officialinstall';
+import { MAX_REDIRECTS, MAX_SCRIPT_BYTES, allowedScriptUrl, downloadScript, looksLikeScript } from '../src/main/officialinstall';
 import * as http from 'http';
 import type { HttpGet } from '../src/main/officialinstall';
+import { makeDownloadGet } from '../src/main/netget';
+import type { NetRequestFactory, NetRequestLike } from '../src/main/netget';
 import { HarnessSetup, confirmText, setupEnv } from '../src/main/harnesssetup';
 import { installPlans, routeOwning } from '../src/shared/harnesssetup';
 import type { OfficialScript, PackageManager } from '../src/shared/harnesssetup';
@@ -68,27 +70,25 @@ async function main(): Promise<void> {
     const f = fake({ 'https://claude.ai/install.sh': { status: 200, body: Buffer.from('<html><body>Verify you are human</body></html>') } });
     await assert.rejects(downloadScript(claude, '.sh', { get: f.get, tmpdir: tmp }), /not the vendor's install script/);
   }
-  // the real stream code against a local server (review on #393: the size cap and the total timeout must be proven)
+  // the download's stream code (netget.makeDownloadGet over a fake net.request; review on #393: the size cap and the TOTAL time limit must be proven)
   {
-    const server = http.createServer((req, res) => {
-      if (req.url === '/ok') { res.writeHead(200, { 'Content-Type': 'text/x-sh' }); res.end('#!/bin/sh\necho ok\n'); return; }
-      if (req.url === '/big') { res.writeHead(200); res.write(Buffer.alloc(600)); res.write(Buffer.alloc(600)); res.end(); return; }
-      if (req.url === '/drip') { res.writeHead(200); const t = setInterval(() => res.write('x'), 40); req.on('close', () => clearInterval(t)); return; }
-      if (req.url === '/redir') { res.writeHead(302, { Location: '/ok' }); res.end(); return; }
-      res.writeHead(404); res.end();
-    });
-    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
-    const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-    const get = makeGet(http.get as never);
-    const okr = await get(base + '/ok', { timeoutMs: 2000, maxBytes: 1000 });
+    const mkRes = (status: number, headers: Record<string, string>, feed: (res: EventEmitter, req: EventEmitter) => void): NetRequestFactory => () => {
+      const r = Object.assign(new EventEmitter(), { headers: {} as Record<string, string>, setHeader(k: string, v: string) { this.headers[k] = v; }, abort() { (this as unknown as EventEmitter).emit('aborted'); }, followRedirect: () => { throw new Error('never followed'); }, end() { setImmediate(() => { const res = Object.assign(new EventEmitter(), { statusCode: status, headers }); (r as EventEmitter).emit('response', res); feed(res, r as EventEmitter); }); } });
+      return r as unknown as NetRequestLike;
+    };
+    const okr = await makeDownloadGet(mkRes(200, { 'content-type': 'text/x-sh' }, (res) => { res.emit('data', Buffer.from('#!/bin/sh\necho ok\n')); res.emit('end'); }))('https://x/ok', { timeoutMs: 2000, maxBytes: 1000 });
     assert.deepStrictEqual([okr.status, okr.contentType, okr.body.toString()], [200, 'text/x-sh', '#!/bin/sh\necho ok\n']);
-    const rd = await get(base + '/redir', { timeoutMs: 2000, maxBytes: 1000 });
+    const rd = await makeDownloadGet(mkRes(302, { location: '/ok' }, () => undefined))('https://x/redir', { timeoutMs: 2000, maxBytes: 1000 });
     assert.deepStrictEqual([rd.status, rd.location], [302, '/ok'], 'redirects are reported, not followed');
-    await assert.rejects(get(base + '/big', { timeoutMs: 2000, maxBytes: 1000 }), /larger than expected/, 'the size cap works while streaming');
+    await assert.rejects(makeDownloadGet(mkRes(200, {}, (res) => { res.emit('data', Buffer.alloc(600)); res.emit('data', Buffer.alloc(600)); res.emit('end'); }))('https://x/big', { timeoutMs: 2000, maxBytes: 1000 }), /larger than expected/, 'the size cap works while streaming');
+    let aborted = false;
     const t0 = Date.now();
-    await assert.rejects(get(base + '/drip', { timeoutMs: 300, maxBytes: 100000 }), /took too long/, 'a dripping server hits the TOTAL time limit');
-    assert.ok(Date.now() - t0 < 2000, 'and promptly (the idle timeout alone would never fire)');
-    server.close();
+    await assert.rejects(makeDownloadGet(mkRes(200, {}, (res, req) => { const t = setInterval(() => res.emit('data', Buffer.from('x')), 40); req.on('aborted', () => { aborted = true; clearInterval(t); }); }))('https://x/drip', { timeoutMs: 300, maxBytes: 100000 }), /took too long/, 'a dripping server hits the TOTAL time limit');
+    assert.ok(Date.now() - t0 < 2000 && aborted, 'promptly, and the request is aborted');
+    // FR-017: the fixed headers, no locale
+    let seen: Record<string, string> = {};
+    await makeDownloadGet((o) => { const r = mkRes(200, {}, (res) => res.emit('end'))(o) as unknown as { headers: Record<string, string> }; seen = r.headers; return r as unknown as NetRequestLike; })('https://x/h', { timeoutMs: 2000, maxBytes: 10 });
+    assert.deepStrictEqual(seen, { 'User-Agent': 'AgentDurbar', 'Accept': '*/*', 'Accept-Language': 'en' });
   }
 
   // the runner: an official plan runs bash with the downloaded file as the last argument, and the folder goes when it ends
@@ -177,6 +177,31 @@ async function main(): Promise<void> {
     const hs = new HarnessSetup({ detectEnv: { platform: 'darwin', env: { PATH: '/opt/homebrew/bin:/usr/bin:/bin' }, homedir: '/Users/u', isFile: (p: string) => files.has(p) }, spawn: () => { throw new Error('no'); }, killTree: () => undefined, send: () => undefined, redetect: async () => undefined, ownedByOther: () => false, realpath: (p: string) => (p === '/opt/homebrew/bin/claude' ? '/opt/homebrew/Caskroom/claude-code/2.1.305/claude' : p) } as never);
     assert.strictEqual(hs.plans('claude', 'install').plans[0].manager, 'official', 'install: least privilege first');
     assert.strictEqual(hs.plans('claude', 'update').plans[0].manager, 'brew', 'update: the route that owns the copy comes first');
+  }
+  // spec 081 T024: the download through net.request: a redirect is read from the event and not followed; an off-list hop is refused BEFORE it is asked for
+  {
+    const requested: string[] = [];
+    let followed = 0;
+    const mkReq = (script: (u: string, r: EventEmitter) => void): NetRequestFactory => (o) => {
+      requested.push(o.url);
+      const r = Object.assign(new EventEmitter(), { setHeader: () => undefined, abort: () => undefined, followRedirect: () => { followed++; }, end() { setImmediate(() => script(o.url, r)); } });
+      return r as unknown as NetRequestLike;
+    };
+    const net = mkReq((u, r) => {
+      if (u === 'https://claude.ai/install.sh') r.emit('redirect', 302, 'GET', 'https://evil.example/install.sh');
+      else throw new Error('the off-list hop must never be requested: ' + u);
+    });
+    await assert.rejects(downloadScript(claude, '.sh', { get: makeDownloadGet(net), tmpdir: tmp }), /not the vendor's/);
+    assert.deepStrictEqual(requested, ['https://claude.ai/install.sh'], 'the off-list hop was refused before it was requested');
+    assert.strictEqual(followed, 0, 'followRedirect is never called');
+    requested.length = 0;
+    const ok = mkReq((u, r) => {
+      if (u === 'https://claude.ai/install.sh') r.emit('redirect', 302, 'GET', 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh');
+      else { const res = Object.assign(new EventEmitter(), { statusCode: 200, headers: { 'content-type': 'text/x-shellscript' } }); r.emit('response', res); setImmediate(() => { res.emit('data', body); res.emit('end'); }); }
+    });
+    const got = await downloadScript(claude, '.sh', { get: makeDownloadGet(ok), tmpdir: tmp });
+    assert.deepStrictEqual(fs.readFileSync(got.file), body);
+    assert.deepStrictEqual(requested, ['https://claude.ai/install.sh', 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh']);
   }
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log('officialinstall: allow-list, redirects, size, private files, runner (bash/powershell argv, cleanup, never root) OK');

@@ -259,6 +259,13 @@ T120 (spec) first; T121 (unit tests) and T122 (driver) before T123-T124 (code); 
   - VII (honest limits): `[KNOWN GAP]`s until the Mac checks (T136, T138). No purchase (spec 014 stays separate).
 - **Order**: T130 first; T131 and T132 independent; T133 docs; T134 on a Mac; T135 and T137 after the owner's results; T139 and T159 review fixes.
 
+## Delta: constrain the manual OAuth check's runner input (#509)
+
+The manual-only workflow must not accept runner labels from dispatch input. Name the default pair `windows-and-ubuntu` so the choice
+states exactly which runners it selects; offer each supported GitHub-hosted runner separately, and map each choice to fixed JSON runner
+labels in the matrix expression. Unknown input falls back to the original hosted pair; the input is never inserted into `runs-on`. This
+preserves the workflow's manual-only trigger and secret boundary; no workflow dispatch is part of implementation or validation.
+
 ## Delta: MCP health, failure reason, when, Copy diagnostics, chip dot (issue #603, 2026-10-23)
 
 ### Summary

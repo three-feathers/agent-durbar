@@ -265,4 +265,4 @@ No token, auth file or keychain entry is read: only what the app itself reports.
   - never as root;
   - the native confirmation shows the exact command and says Durbar cannot see or check the script.
 - **Everything else is unchanged.** Every other route and app keeps D1 and 060 FR-001, and a missing or failing `codex update` falls back to the checked 060 installer.
-- Status: `[PLANNED]` in spec 081 (T020, T021); nothing built here.
+- Status: `[IMPLEMENTED]` in spec 081 (T020, T021); `test:harnesssetup` and `test:updatecheck` (fakes only, 2026-10-25).

@@ -1,8 +1,12 @@
 import { copilotHooksJson } from '../shared/foldersetup';
+import { readCopilotOrgPolicy, resolveCopilotManaged } from './copilotOrgPolicy';
+import type { CopilotManagedClient } from './copilotOrgPolicy';
+import type { OrgPolicy } from '../shared/orgpolicy';
 import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import { randomUUID } from 'crypto';
 import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
-import { parseQuestions } from './questions';
+import { MAX_ANSWER, parseQuestions, SkipNotes } from './questions';
+import type { SkipReason } from './questions';
 import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaiter } from './elicitation';
 import type { ElicitAnswer } from '../shared/elicit';
 import type { CopilotSession, MCPServerConfig, ModelInfo, PermissionRequest, PermissionRequestResult, ResumeSessionConfig, SessionConfig, SessionEvent } from '@github/copilot-sdk';
@@ -385,7 +389,7 @@ export class CopilotAdapter implements AgentAdapter {
       busy.set(sid, await this.processing(live));
       live.unsubscribe();
       live.broker.denyPending(); // the old runtime's requests and questions die with it
-      this.cancelQuestions(live);
+      this.cancelQuestions(live, 'reconnect');
       live.limitRequestId = undefined;
       this.emit(sid, { type: 'status', status: 'working', intent: 'Reconnecting Copilot…' });
     }
@@ -440,6 +444,17 @@ export class CopilotAdapter implements AgentAdapter {
   async authStatus(): Promise<{ signedIn: boolean }> {
     const s = await (await this.getClient()).getAuthStatus();
     return { signedIn: !!s.isAuthenticated };
+  }
+
+  /** Spec 076 FR-198 (issue #602): the app's own machine policy, read-only. */
+  async readOrgPolicy(): Promise<OrgPolicy> {
+    let client: CopilotManagedClient | undefined;
+    try {
+      client = (await this.getClient()) as unknown as CopilotManagedClient;
+    } catch {
+      client = undefined; // no runtime: the machine file is the fallback
+    }
+    return readCopilotOrgPolicy(client);
   }
 
   /**
@@ -600,10 +615,9 @@ export class CopilotAdapter implements AgentAdapter {
   /** The organization's Auto tier (cached until the next listing). Read through the runtime only; Durbar never opens the policy files. */
   private autoTierPolicy(): Promise<ManagedAutoTier | undefined> {
     this.managedTier ??= (async () => {
-      const client = await this.getClient();
-      const ms = (client as unknown as { rpc?: { managedSettings?: { resolve?: (p: Record<string, never>) => Promise<unknown> } } }).rpc?.managedSettings;
-      if (typeof ms?.resolve !== 'function') return undefined;
-      return managedAutoTierFrom(await this.capped(ms.resolve({}), this.policyTimeoutMs));
+      // spec 076 FR-198 (review on PR 644): the one shared Copilot policy reader, also used for the organization policy greying
+      const r = await resolveCopilotManaged((await this.getClient()) as unknown as CopilotManagedClient, this.policyTimeoutMs);
+      return r === undefined ? undefined : managedAutoTierFrom(r);
     })().catch(() => undefined);
     return this.managedTier;
   }
@@ -721,7 +735,9 @@ export class CopilotAdapter implements AgentAdapter {
       });
       live.questions.delete(requestId);
       if (answer === null) {
-        this.emit(sid, { type: 'question', phase: 'cancelled', requestId });
+        const reason = this.skips.take(requestId);
+        this.debug?.(`question ${requestId.slice(0, 8)} cancelled: ${reason}`); // spec 052 FR-178: a code, never the question or an answer
+        this.emit(sid, { type: 'question', phase: 'cancelled', requestId, reason });
         return { answer: SKIPPED_ANSWER, wasFreeform: true };
       }
       this.emit(sid, { type: 'question', phase: 'answered', requestId, answers: { [asked[0].question]: answer } });
@@ -892,7 +908,8 @@ export class CopilotAdapter implements AgentAdapter {
     const q = this.sessions.get(sessionId)?.questions?.get(requestId);
     if (!q) return;
     const v = answers ? Object.values(answers).find((x) => typeof x === 'string' && x.trim()) : undefined;
-    q.resolve(v ? v.replace(/\s+/g, ' ').trim().slice(0, 500) : null);
+    if (answers === null) this.skips.note(requestId, 'user');
+    q.resolve(v ? v.replace(/\s+/g, ' ').trim().slice(0, MAX_ANSWER) : null);
   }
 
   /** spec 012 FR-151: the user's answer to an MCP elicitation (main checked it against the fields). */
@@ -906,8 +923,11 @@ export class CopilotAdapter implements AgentAdapter {
     if (w) w(answer);
   }
 
-  private cancelQuestions(live: Live): void {
-    for (const q of [...(live.questions?.values() ?? [])]) q.resolve(null);
+  /** Why each skipped question was skipped (spec 052 FR-178). */
+  private readonly skips = new SkipNotes();
+
+  private cancelQuestions(live: Live, why: SkipReason): void {
+    for (const [id, q] of [...(live.questions ?? [])]) { this.skips.note(id, why); q.resolve(null); }
     for (const p of [...(live.plans?.values() ?? [])]) p({ kind: 'reject' }); // spec 066: Stop / End reject an open plan
     cancelElicitations(live.elicitations);
   }
@@ -965,7 +985,7 @@ export class CopilotAdapter implements AgentAdapter {
     const live = this.sessions.get(sessionId);
     if (!live) return;
     live.broker.denyPending();
-    this.cancelQuestions(live);
+    this.cancelQuestions(live, 'interrupt');
     await this.cancelLimit(live);
     try {
       await live.session.abort();
@@ -982,7 +1002,7 @@ export class CopilotAdapter implements AgentAdapter {
     if (!live) return;
     await this.cancelLimit(live);
     live.broker.stop(); // pending permissions are denied cleanly (renderer clears Approve/Deny) and grants are dropped
-    this.cancelQuestions(live);
+    this.cancelQuestions(live, 'stop');
     try {
       await live.session.abort();
     } catch {
