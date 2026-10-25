@@ -566,11 +566,11 @@ export interface AgentMcpEntry {
   off: boolean;
   /** Spec 069 FR-011: every list that has this name. */
   sources?: McpSourceTag[];
-  /** Spec 069 FR-061: tools of this server turned off in this agent's folder. */
   /** Spec 076 FR-202 (issue #602): the agent app's own organization policy blocks this server; the reason to show. */
   orgBlocked?: string;
   /** Spec 076 FR-201: the policy may block it (Durbar could not read all of it); advice, still usable. */
   orgDoubt?: string;
+  /** Spec 069 FR-061: tools of this server turned off in this agent's folder. */
   toolsOff?: string[];
   /** Spec 058 FR-020: Restart is offered: the agent app can restart one server, the session runs and knows this server, and it is on. */
   canRestart?: boolean;

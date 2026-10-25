@@ -8,7 +8,7 @@ status: **draft** 2026-10-23 (spec only): samples, JSON schemas and hostile test
 
 **Feature Branch**: `076-managed-config`
 **Created**: 2026-10-23
-**Status**: Draft (spec only). Nothing built. Q1-Q12 answered by Vikram on 2026-10-23 (defaults, except Q10: admin token pricing). A1-A19 accepted by Vikram on 2026-10-23 as requirements (section N); the code-signing certificate purchase still needs his explicit OK at purchase time. Security review by Paco's agent (2026-10-23, 17 items) folded in; R1-R8 answered by Vikram on 2026-10-23 (recommended defaults).
+**Status**: Draft. Section O (FR-198..FR-207, phase P27, issue #602) is built (PR 644; `[IMPLEMENTED]` tags there); everything else is spec only, nothing built. Q1-Q12 answered by Vikram on 2026-10-23 (defaults, except Q10: admin token pricing). A1-A19 accepted by Vikram on 2026-10-23 as requirements (section N); the code-signing certificate purchase still needs his explicit OK at purchase time. Security review by Paco's agent (2026-10-23, 17 items) folded in; R1-R8 answered by Vikram on 2026-10-23 (recommended defaults).
 **Input**: Owner request by Vikram (2026-10-23): "Durbar must be packageable and usable in corporate environments. All of it is driven by a config folder (config files plus icons), and anything set there is locked, i.e. not editable in the UI (shown as *Set by your organization*):
 1. change the app display name and icon (the original name stays in About and credits);
 2. restrict which agent apps (harnesses) are allowed;
@@ -897,6 +897,8 @@ https://learn.chatgpt.com/docs/enterprise/managed-configuration.md (`allowed_app
   from and what was wrong (paths and kinds only). Each question answers a **verdict**: the words and whether main refuses it. A mark is
   `blocked` (a rule of the policy; refused), `fatal` (the app does not start with this policy at all; refused) or `doubt` (Durbar
   cannot know how the vendor reads it; shown as advice, **never refused**).
+  `[IMPLEMENTED]` test: `test-orgpolicy.ts` (a, b, c: paths per OS, drop-ins, Copilot runtime first and the file as fallback, ownership rule). `[KNOWN GAP]` no real managed machine (FR-206).
+  `[IMPLEMENTED]` test: `test-orgpolicy.ts` (a-e: every key through the one shape and its verdicts).
 - **FR-200 Mapping (only these keys are read; every other key is ignored).**
 
   | Durbar thing | Claude Code | Copilot | Codex |
@@ -917,6 +919,7 @@ https://learn.chatgpt.com/docs/enterprise/managed-configuration.md (`allowed_app
   allow-list with URL or command rules it cannot check gives advice. URL patterns are matched after the canonicalization GitHub
   documents (lower-case scheme and host, default port and fragment dropped, credentials ignored, `*` in the host never crosses `/`),
   one pass, no regular expressions built from the file.
+  `[IMPLEMENTED]` test: `test-orgpolicy.ts` (a-c: the mapping per app, model, URL and glob matching, a rule Durbar cannot check is advice).
 - **FR-201 Hostile input, read the vendor's way (changed 2026-10-23, review on PR 644).** Only the keys of FR-200 are read, as **own
   properties** of plain objects (merged drop-ins go into prototype-free objects, depth capped). Each bad value gets **the vendor's own
   documented fallback**, never a stricter one, and is refused only where the vendor itself refuses:
@@ -933,12 +936,26 @@ https://learn.chatgpt.com/docs/enterprise/managed-configuration.md (`allowed_app
     value it cannot read, a file that is not JSON, an allow-list that lost entries.
   - Codex: its docs do not say what Codex does with a `requirements.toml` or value it cannot parse (question on PR 644), so Durbar does
     not guess a refusal: a file or key it cannot read is advice for the modes that key governs.
-  - Durbar's own limits are advice, never a refusal: a file over 1 MiB, more than 64 drop-ins, a list over 4,096 entries or an entry over
-    2,048 characters, nesting over 32 levels, and more than 64 KiB of model, server and tool rules in total (review on PR 644: a whole
-    verdict stays cheap; verdicts are also remembered per policy read, so a repaint of the MCP list does not work them out again).
+  - **Durbar's own limits (changed 2026-10-25, review on PR 644 item 3).** Policy files are hostile input and are read on the main
+    thread, so every limit is a cap on **count and bytes**, and every pass over the input is linear (duplicates are removed with a `Set`
+    of keys, never a pairwise scan; a 4,096-name, 93 KB `managed-settings.json` and a 900 KB URL list read in milliseconds, tested with
+    a time bound). Counts: 64 drop-ins, 4,096 entries per list, 256 command parts, nesting 32. Bytes: 1 MiB per file, **4 MiB over all
+    files of one app** (and of the Copilot runtime's answer), 2,048 characters per entry, **256 KiB of characters per list**, and
+    64 KiB of model, server and tool rules in total. **The fail-closed rule:** over any cap Durbar does not read the area partly, and does
+    not read it as permissive: that area (the whole policy for a file or total cap, that one list for a list cap) becomes advice
+    (`doubt`: every choice in it shows *may be blocked by your organization* and stays selectable), the problem is named by path and kind,
+    and nothing is refused on a guess. Mode locks that were read before the cap keep their verdict, and `fatal` stays `fatal`. A whole
+    verdict stays cheap and verdicts are remembered per policy read, so a repaint of the MCP list does not work them out again.
+  - **Unchanged input is not read again.** The last read of a source is kept with a signature of what it was made from: for files,
+    each file's path, size, modification time and change time (a permission change moves the change time), plus the host names for
+    Codex; for the Copilot runtime, a SHA-256 of its answer. The same signature gives back the same policy object (so the verdict memo
+    stays), and a changed one reads again. Without modification times (a file system that does not give them) nothing is reused.
+    `[KNOWN GAP]` a file replaced by one of the same size, with the same modification and change time, is not noticed until the process
+    restarts; the 60-second cache of FR-204 does not change that.
 
   Nothing from a policy is ever logged or put in an error; a problem names the path and what was wrong (*not valid JSON*,
   *`allowedMcpServers` has 2 invalid entries (stripped)*).
+  `[IMPLEMENTED]` test: `test-orgpolicy.ts` (d hostile matrix, e nothing leaves, g and i the caps, the linear read and the skip of an unchanged file).
 - **FR-202 Greyed out, with the reason, before a start.** The window shows each **refused** choice disabled with the words **Blocked by
   your organization's <app> policy** (or *<app> will not start: …*) as visible small text or the option's label, and as its tooltip:
   the permission mode menu of a session (`#modeChip` menu), the defaults' mode select (`#permMode`) and the new-session dialog's
@@ -950,6 +967,7 @@ https://learn.chatgpt.com/docs/enterprise/managed-configuration.md (`allowed_app
   by your organization)* in a select) but stays selectable. A blocked menu item stays focusable like the menus' other `aria-disabled`
   items (spec 069 FR-064) and does nothing when chosen; a select never holds a refused value and falls back to the first allowed one,
   the most restrictive (Read-only first).
+  `[IMPLEMENTED]` sim: `scripts/shots-076-orgpolicy.js` (every surface at 1440x900 and 1280x800, the run without a policy; a blocked mode menu item sends no `setPermMode`); test: `test-orgwiring.ts` (`models:list`, `agents:mcp`, `agents:mcpTools` carry the reasons).
 - **FR-203 Main refuses as well (the window is not the guard), only `blocked` and `fatal`.**
   - **Starts and resumes.** `startGuardOp(deps, adapter, startOptions)` in `agentops.ts` is the only code in main that calls an adapter's
     `start`; both start paths of main.ts (`addWorkspace` and the lazy start/resume) hand it the adapter and the options only. It checks
@@ -963,28 +981,37 @@ https://learn.chatgpt.com/docs/enterprise/managed-configuration.md (`allowed_app
     another mode or model, which applies at the next start (spec 018).
   - **A blocked MCP server does not stop the session** (re-check on PR 644): the session starts, the server's row is off and
     disabled, and the agent app skips that server itself (the vendors document it as not loaded).
+  `[IMPLEMENTED]` test: `test-orgpolicy.ts` (f: the start guard, `setModeOp`, `setModelOp`, `setMcpOp`, each refusal and what is not changed), `test-orgwiring.ts` (the registered `agents:setModel` and `agents:setMcp` channels and the lines of main.ts that hand each dependency over).
 - **FR-204 Fresh enough, cheap.** Each app's policy is read when first needed and again when the last read is older than 60 seconds
   (monotonic clock; a vendor changes it rarely: Claude re-reads every 30 minutes, Copilot hourly); one read at a time per app. Starts,
   `setModel`, `setMcp` and the window's view wait for a fresh read; the mode switch and the often repainted MCP list use the last read
-  and start a new one in the background. No watcher, no write. Copilot's runtime may fetch the enterprise's server policy over the
+  and start a new one in the background. **Until the first read has landed the mode switch is not refused** (`refusalNow` answers
+  nothing, the read starts); the window's view, fetched at start, already greys the choice, and the next start, which waits for a fresh
+  read, is refused by main. No watcher, no write. Copilot's runtime may fetch the enterprise's server policy over the
   network (its own cache, at most hourly).
+  `[IMPLEMENTED]` test: `test-orgpolicy.ts` (f: TTL, a clock that went back, one read at a time, no refusal before the first read).
 - **FR-205 The simulator.** `?simorgpolicy=1` gives the simulator a canned policy (Claude Code and Copilot: Allow all blocked; Claude
   Code: model `haiku` blocked and the `create_issue` tool of `github` blocked; Copilot: MCP server `my-notes` blocked; Codex: Allow all
   advice) so the greyed and advice states can be checked and pictured with no agent app and no policy file. The simulator answers
   `orgpolicy:view` from its own canned bridge (main refuses every channel under `DURBAR_SIM`).
+  `[IMPLEMENTED]` sim: `?simorgpolicy=1`, `scripts/shots-076-orgpolicy.js`.
 - **FR-206 Honest limits.** `[KNOWN GAP]` Not read directly: macOS MDM profiles and the Windows registry for Claude Code and Codex
   (`com.anthropic.claudecode`, `HKLM\SOFTWARE\Policies\ClaudeCode`, `com.openai.codex`) need native code (FR-176, P17); Copilot's
   come through its runtime. Claude Code's server-managed settings and Codex's cloud requirements are not on disk; Codex
   `managed_config.toml` and its `mcp_servers` identities (command and argument rules with regular expressions) are not evaluated;
   Codex's fully qualified host name is not resolved; Claude Code's `managed-mcp.json` exclusive mode, `allowManagedPermissionRulesOnly`
   and non-MCP tool rules (Durbar lists no built-in tools); Copilot's `sandbox` and `permissions.deny/ask` rules (they block single
-  operations, not a Durbar choice). Where these apply, the session still fails the vendor's way, as before. `[KNOWN GAP]` No real
+  operations, not a Durbar choice). Where these apply, the session still fails the vendor's way, as before. `[KNOWN GAP]` **Claude's stand-alone one-shot** (`generateText` through `oneShotArgs`: the AI theme maker and the folder setup) is pinned to `--model haiku` (`claude.ts`); a policy that
+  denies or does not allow `haiku` makes it fail with Claude Code's own message, and Durbar does not check it. It is not a
+  user choice that can be greyed; the failure text is the vendor's. `[KNOWN GAP]` No real
   managed machine was used: the mapping is `read:` from the vendors' docs and the SDK's types, and `test:` on fixtures and a fake
   runtime, not checked against a real Claude Code, Copilot or Codex refusing a start.
+  `[KNOWN GAP]` as listed; the one-shot above is the newest.
 - **FR-207 For the Organization page.** `orgpolicy:view` returns, per app: whether a policy applies, whether part of it could not be
   read, where it came from (`paths`: file paths, or *the Copilot runtime*), what was wrong (`problems`: path and kind, never a value),
   the mode verdicts (words and whether refused), and counts of the model, server and tool rules (no values). The window uses it for the
   mode menus; spec 076's Settings > Organization page (FR-194) will list it.
+  `[IMPLEMENTED]` test: `test-orgpolicy.ts` (e: no value of any list, valid or not, reaches the view). The Organization page itself is FR-194 (not built).
 
 ### M. Testing
 
@@ -1153,6 +1180,13 @@ All three answered on PR #575 (09:03-09:06 UTC) with option a, the recommended o
   Copilot is now read through its runtime's `managedSettings.resolve` (one shared reader, used by spec 007's Auto tier as well), with
   the file as a fallback. The main-side refusals moved behind injectable ops (`setModelOp`, `setMcpOp`, `startGuardOp`,
   `withOrgModels`) and are tested by behaviour.
+
+- **2026-10-25** Review on PR 644 (Ruben's agent, 11 items): FR-201 now states the caps on count **and** bytes (per list, per source, the
+  Copilot answer), the **fail-closed rule** (over a cap the area is advice, never read as permissive, never half-read) and that an
+  unchanged source is not read again; the dedupe is linear. FR-204 says the mode switch is not refused before the first read. FR-206 adds
+  the `[KNOWN GAP]` for Claude's haiku one-shot. FR-198..FR-207 carry `[IMPLEMENTED]`, `test:` and `sim:` tags. Tasks T203, T204.
+  `permissions.requireOsSandbox` (spec 087, PR 733) is Durbar's own policy key, read from Durbar's `policy.json` (P1), not from a vendor's
+  managed file: this section's readers are not its home.
 
 ### 2026-10-25: FR-158/FR-159 and FR-174 cover spec 081's agent-app update check (owner decision Q6 = A)
 

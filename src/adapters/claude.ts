@@ -642,15 +642,15 @@ export class ClaudeAdapter implements AgentAdapter {
     return { status: 'unknown', detail: CLAUDE_LOCAL_SIGN_IN };
   }
 
-  /**
-   * Spec 051 FR-011: the account `claude auth status --json` reports (email and plan for a Claude sign-in, an API key, a provider).
-   * Local, no prompt, nothing billed. Personal data: never passed to `debug` (FR-015).
-   */
   /** Spec 076 FR-198 (issue #602): the app's own machine policy, read-only. */
   readOrgPolicy(): OrgPolicy {
     return readClaudeOrgPolicy();
   }
 
+  /**
+   * Spec 051 FR-011: the account `claude auth status --json` reports (email and plan for a Claude sign-in, an API key, a provider).
+   * Local, no prompt, nothing billed. Personal data: never passed to `debug` (FR-015).
+   */
   async accountInfo(): Promise<AccountIdentity> {
     const probe = this.deps.authJson ?? (async () => {
       const p = await this.deps.claudePath();

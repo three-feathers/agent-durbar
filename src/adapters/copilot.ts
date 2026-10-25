@@ -445,10 +445,6 @@ export class CopilotAdapter implements AgentAdapter {
     return { signedIn: !!s.isAuthenticated };
   }
 
-  /**
-   * Spec 051 FR-011, FR-018, FR-022: the account the runtime reports (`getAuthStatus()`: login, host, how it signed in) and its plan.
-   * No prompt; no credits (FR-022 evidence). `statusMessage` is not read. Personal data: never passed to `debug` (FR-015).
-   */
   /** Spec 076 FR-198 (issue #602): the app's own machine policy, read-only. */
   async readOrgPolicy(): Promise<OrgPolicy> {
     let client: CopilotManagedClient | undefined;
@@ -460,6 +456,10 @@ export class CopilotAdapter implements AgentAdapter {
     return readCopilotOrgPolicy(client);
   }
 
+  /**
+   * Spec 051 FR-011, FR-018, FR-022: the account the runtime reports (`getAuthStatus()`: login, host, how it signed in) and its plan.
+   * No prompt; no credits (FR-022 evidence). `statusMessage` is not read. Personal data: never passed to `debug` (FR-015).
+   */
   async accountInfo(opts: AccountInfoOptions = {}): Promise<AccountIdentity> {
     try {
       const client = await this.getClient();

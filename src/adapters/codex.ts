@@ -481,15 +481,15 @@ export class CodexAdapter implements AgentAdapter {
     }
   }
 
-  /**
-   * Spec 051 FR-011: the account Codex reports, from `account/read` with `refreshToken: false` on a short-lived app-server (local
-   * auth state; no prompt, nothing billed). An older Codex without the method is `unknown`. Personal data: never passed to `debug`.
-   */
   /** Spec 076 FR-198 (issue #602): the app's own machine policy, read-only. */
   readOrgPolicy(): OrgPolicy {
     return readCodexOrgPolicy();
   }
 
+  /**
+   * Spec 051 FR-011: the account Codex reports, from `account/read` with `refreshToken: false` on a short-lived app-server (local
+   * auth state; no prompt, nothing billed). An older Codex without the method is `unknown`. Personal data: never passed to `debug`.
+   */
   async accountInfo(): Promise<AccountIdentity> {
     try {
       return codexAccount(await this.probe((rpc) => rpc.request('account/read', { refreshToken: false })));

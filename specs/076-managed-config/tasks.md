@@ -1,6 +1,6 @@
 # Tasks 076: managed configuration for organizations
 
-Each phase is one small PR. Tasks reference the spec's FRs. Nothing is built yet. Phase order follows the owner's build order
+Each phase is one small PR. Tasks reference the spec's FRs. Only P27 (section O, T192..T204) is built; nothing else is. Phase order follows the owner's build order
 (spec, *Phases*).
 
 ## P0: spec (this PR)
@@ -194,3 +194,5 @@ Each phase is one small PR. Tasks reference the spec's FRs. Nothing is built yet
 - [x] T200 Re-review on PR 644: `startGuardOp` (alias `orgGuardedStart`) wraps both adapter starts in main.ts, tested by behaviour and a static check; drop-ins only lower-case `*.json`; the whole verdict is bounded (64 KiB of rules in total, else advice) and memoized per policy read [FR-201, FR-203]
 - [x] T201 Re-check on PR 644: `startGuardOp(deps, adapter, startOptions)` checks exactly what is started (the adapter's id, the options' mode and model) and is the only adapter `start` in main; advice at start shown as a toast (`agents:orgNote`); FR-203 says a blocked MCP server does not stop the session [FR-203]
 - [x] T202 Re-check on PR 644: section (f) of `test-orgpolicy.ts` restored (an edit-script slip in 51a24dd2 had dropped it); the static check pins both start calls exactly, so an override after the spread fails; the stale comment at the start guard fixed; a review-checklist line about lost test sections [FR-203]
+- [x] T203 Review on PR 644 (Ruben's agent): merge main; IPC and main wiring tests (`scripts/test-orgwiring.ts`, `test:orgwiring`) plus the `main.ts` hand-over pinned by text; linear dedupe (Set), byte caps (per list, per source, the Copilot answer) and the fail-closed rule written in FR-201; unchanged files and an unchanged Copilot answer are not read again; perf tests with the biggest allowed input; tests for `false` vs `undefined`, valid deny lists in the view and the driver's mode-menu guard (no `setPermMode` sent) [FR-201, FR-202, FR-203]
+- [x] T204 Review on PR 644: stale status text fixed; `[IMPLEMENTED]`/`test:`/`sim:` tags on FR-198..FR-207; detached doc comments fixed; FR-204 says the mode switch is not refused before the first read; FR-206 `[KNOWN GAP]` for Claude's haiku one-shot [FR-204, FR-206]
