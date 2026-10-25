@@ -92,4 +92,20 @@ assert.match(big, /Message cut for display/);
 assert.ok(big.length < md.MAX_CHARS + 500);
 // no state leaks between calls (hooks added once)
 assert.strictEqual(html('x'), html('x'));
+{
+  // count the hooks and sanitizer calls: a hook added on every render would pile up (and slow every chat message)
+  let hooks = 0, sanitizes = 0;
+  const spy = new Proxy(purify, { get(t, k) {
+    const v = (t as any)[k]; // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (k === 'addHook') return (...a: unknown[]) => { hooks++; return v.apply(t, a); };
+    if (k === 'sanitize') return (...a: unknown[]) => { sanitizes++; return v.apply(t, a); };
+    return typeof v === 'function' ? v.bind(t) : v;
+  } });
+  const md2 = create(marked, spy) as { render(t: string): string };
+  const hooksAtStart = hooks;
+  assert.strictEqual(hooksAtStart, 1, 'one hook is added when the renderer is created');
+  for (let i = 0; i < 5; i++) md2.render('[x](https://a.example) ' + i);
+  assert.strictEqual(sanitizes, 5, 'one sanitizer call per render');
+  assert.strictEqual(hooks, hooksAtStart, 'rendering adds no hooks');
+}
 console.log('markdown tests passed');
