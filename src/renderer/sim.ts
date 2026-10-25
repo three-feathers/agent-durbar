@@ -29,6 +29,132 @@ type ModelSwitchResult = import('../shared/modelswitch').ModelSwitchResult;
 type ContextTier = import('../shared/modelswitch').ContextTier;
 type ActivityRow = import('../shared/activity').ActivityRow;
 type EditInfo = import('../shared/edits').EditInfo;
+type SimNote = import('../shared/notes').Note;
+type SimNotesWrote = import('../shared/notes').NotesWrote;
+type SimNotesView = import('../shared/notes').NotesView;
+
+/**
+ * Spec 083 FR-060 (issue 699): the simulator's notes. In memory per folder; nothing is written anywhere. The same rules as main's store in
+ * miniature: masked before kept (the page's own `maskNoteText`, failing closed), a stale `rev` refused, 300 notes at most, the same
+ * message saved twice makes one note. Page address `simnotes=some|many|long|secret` seeds each folder the first time it is asked.
+ * Fake tokens are built at run time (push protection).
+ */
+function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: string; name: string; session: string } | undefined): Pick<DurbarApi, 'notesList' | 'notesSave' | 'notesAdd' | 'notesUpdate' | 'notesDelete' | 'notesDeleteAll' | 'notesStartOver' | 'notesSetFile' | 'onNotesChanged'> {
+  const MAX = 300;
+  const store = new Map<string, SimNote[]>();
+  const subs: Array<(v: { fingerprint: string }) => void> = [];
+  const mask = (t: string): { text: string; changed: boolean } | undefined => {
+    const r = (window as unknown as { DurbarRedact?: { maskNoteText?: (t: string) => { text: string; changed: boolean } } }).DurbarRedact;
+    // controls are removed BEFORE the mask (a secret split by one shows its shape only without it), as main does
+    try { return r && typeof r.maskNoteText === 'function' ? r.maskNoteText(clean(t)) : undefined; } catch { return undefined; }
+  };
+  const stamp = (minAgo: number): string => new Date(Date.now() - minAgo * 60_000).toISOString();
+  const mk = (i: number, over: Partial<SimNote>): SimNote => ({
+    id: 'n-' + String(i).padStart(12, '0'), title: 'Note ' + i, text: 'Note ' + i, createdAt: stamp(10 + i), updatedAt: stamp(10 + i), rev: 1, done: false, from: 'typed', fileEdited: false, hidden: false, ...over,
+  });
+  const src = (session: string, ord: number, role: 'user' | 'agent' = 'agent') => ({ app: 'copilot', session, role, ord, digest: ('0000000000000000' + (ord + 1).toString(16)).slice(-16), at: stamp(20) });
+  const seed = (session: string): SimNote[] => {
+    const mode = qs.get('simnotes');
+    if (mode === 'some') return [
+      mk(1, { title: 'Plan for the migration', text: '## Plan for the migration\n\n1. Back up the tables\n2. Run the dry run\n3. Switch the reader', from: 'agent', source: src(session, 2) }),
+      mk(2, { title: 'Ask about the staging quota', text: 'Ask about the staging quota before Friday.', from: 'typed' }),
+      mk(3, { title: 'Done: rename the config keys', text: 'Rename the config keys.', from: 'agent', done: true, source: src('sim-earlier-1', 4) }),
+    ];
+    if (mode === 'many') return Array.from({ length: MAX }, (_x, i) => mk(i + 1, { title: 'Idea number ' + (i + 1), text: 'Idea number ' + (i + 1) + '\n\nA short body for the list.', source: i % 3 === 0 ? src(session, i) : undefined }));
+    if (mode === 'long') return [mk(1, { title: 'T'.repeat(80), text: ('A long line of a plan that keeps going. '.repeat(400)).slice(0, 15_900) + '\n\n' + '[Cut: the message was longer than 16,000 characters.]'.slice(0, 54), from: 'agent', source: src(session, 1) })];
+    if (mode === 'secret') {
+      const tok = 'gh' + 'p_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4';
+      const m = mask('Use the token ' + tok + ' for the deploy script.')!;
+      return [mk(1, { title: 'Deploy script token', text: m?.text ?? '[redacted]', hidden: true, from: 'agent', source: src(session, 3) })];
+    }
+    return [];
+  };
+  const list = (key: string, session: string): SimNote[] => {
+    let l = store.get(key);
+    if (!l) { l = seed(session); store.set(key, l); }
+    return l;
+  };
+  const gone = { ok: false, code: 'invalid', error: 'That chat is not open.' } as const;
+  const noMask = { ok: false, code: 'invalid', error: 'Masking is not available.' } as const;
+  const tell = (key: string): void => subs.slice().forEach((f) => f({ fingerprint: 'sim-' + key.length }));
+  const titleOf = (text: string): string => (text.split('\n').find((l) => l.trim()) ?? 'Note').replace(/^[#>\-*\s]+/, '').trim().slice(0, 80) || 'Note';
+  const clean = (t: string): string => t.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
+  const add = (id: string, text: string, from: SimNote['from'], source?: SimNote['source']): SimNotesWrote => {
+    const f = folderOf(id);
+    if (!f) return gone;
+    const l = list(f.key, f.session);
+    if (source) { const same = l.find((n) => n.source && n.source.session === source.session && n.source.digest === source.digest); if (same) return { ok: true, fingerprint: 'sim', note: same, existing: true }; }
+    if (l.length >= MAX) return { ok: false, code: 'cap', error: 'This folder has 300 notes. Delete or export some first.' };
+    if (typeof text !== 'string' || !text.trim() || text.length > 65_536) return { ok: false, code: 'invalid', error: 'The note is empty or too long.' };
+    const m = mask(text);
+    if (!m) return noMask;
+    let body = clean(m.text);
+    if (body.length > 16_000) body = body.slice(0, body.lastIndexOf('\n', 15_900)) + '\n\n[Cut: the message was longer than 16,000 characters.]';
+    const now = new Date().toISOString();
+    const note: SimNote = { id: 'n-' + Math.random().toString(36).slice(2, 14).padEnd(12, '0'), title: titleOf(body), text: body, createdAt: now, updatedAt: now, rev: 1, done: false, from, fileEdited: false, hidden: m.changed, ...(source ? { source } : {}) };
+    l.push(note);
+    tell(f.key);
+    return { ok: true, fingerprint: 'sim', note: { ...note } };
+  };
+  return {
+    notesList: async (id): Promise<SimNotesView> => {
+      const f = folderOf(id);
+      if (!f) return gone;
+      return { ok: true, fingerprint: 'sim-' + f.key.length, folderName: f.name, notes: list(f.key, f.session).map((n) => ({ ...n })), max: MAX };
+    },
+    notesSave: async (id, input) => {
+      const f = folderOf(id);
+      if (!f || !input || typeof input.text !== 'string') return gone;
+      const text = input.text;
+      let h = 0;
+      for (let i = 0; i < text.length; i++) h = (Math.imul(h, 31) + text.charCodeAt(i)) >>> 0;
+      const role = input.role === 'user' ? 'user' : 'agent';
+      return add(id, text, input.from ?? role, { ...src(f.session, input.ord, role), digest: ('0000000000000000' + h.toString(16) + text.length.toString(16)).slice(-16) });
+    },
+    notesAdd: async (id, input) => add(id, input && input.text, 'typed'),
+    notesUpdate: async (id, noteId, rev, patch) => {
+      const f = folderOf(id);
+      if (!f) return gone;
+      const l = list(f.key, f.session);
+      const i = l.findIndex((n) => n.id === noteId);
+      if (i < 0) return { ok: false, code: 'missing', error: 'That note is not there any more.' };
+      if (l[i].rev !== rev) return { ok: false, code: 'stale', error: 'That note changed since you opened it.', current: { ...l[i] } };
+      const next = { ...l[i] };
+      let hidden = false;
+      if (patch && typeof patch.text === 'string') { const m = mask(patch.text); if (!m) return noMask; next.text = clean(m.text).slice(0, 16_000); hidden = hidden || m.changed; }
+      if (patch && typeof patch.title === 'string' && /[\u0000-\u001f\u007f-\u009f]/.test(patch.title)) return { ok: false, code: 'invalid', error: 'The title is empty or has control characters.' };
+      if (patch && typeof patch.title === 'string') { const m = mask(patch.title); if (!m) return noMask; next.title = clean(m.text).replace(/\s+/g, ' ').trim().slice(0, 80) || next.title; hidden = hidden || m.changed; }
+      if (patch && typeof patch.done === 'boolean') next.done = patch.done;
+      next.hidden = next.hidden || hidden;
+      next.rev = l[i].rev + 1;
+      next.updatedAt = new Date().toISOString();
+      l[i] = next;
+      tell(f.key);
+      return { ok: true, fingerprint: 'sim', note: { ...next } };
+    },
+    notesDelete: async (id, noteId, rev) => {
+      const f = folderOf(id);
+      if (!f) return gone;
+      const l = list(f.key, f.session);
+      const i = l.findIndex((n) => n.id === noteId);
+      if (i < 0) return { ok: false, code: 'missing', error: 'That note is not there any more.' };
+      if (l[i].rev !== rev) return { ok: false, code: 'stale', error: 'That note changed since you opened it.', current: { ...l[i] } };
+      const [gone1] = l.splice(i, 1);
+      tell(f.key);
+      return { ok: true, fingerprint: 'sim', note: gone1 };
+    },
+    notesDeleteAll: async (id) => {
+      const f = folderOf(id);
+      if (!f) return gone;
+      store.set(f.key, []);
+      tell(f.key);
+      return { ok: true, fingerprint: 'sim' };
+    },
+    notesStartOver: async (id) => (folderOf(id) ? { ok: true, fingerprint: 'sim' } : gone),
+    notesSetFile: async () => ({ ok: true, demo: true, message: 'Demo: no file written' }),
+    onNotesChanged: (cb) => { subs.push(cb); return () => { const i = subs.indexOf(cb); if (i >= 0) subs.splice(i, 1); }; },
+  };
+}
 
 /** Spec 005 FR-026: a simulated diff (removed lines, then added lines) with its counts. */
 function simDiffOf(oldL: string[], newL: string[], at: number): { diff: string; added: number; removed: number } {
@@ -230,13 +356,13 @@ const SIM_MODEL_BY_AGENT: Record<number, string> = { 3: 'sim-fast', 4: 'sim-fast
 const SIM_CAPS: Record<string, number> = { Ada: 50, Mira: 30, Omar: 30 };
 /** spec 012 FR-150: dollar caps for kinds that cap their dollar estimate (simulated Claude Code). */
 /* spec 059 FR-002 (the same messages as src/shared/names.ts; the simulator keeps its own copy, it never imports main code) */
-function simNameError(v: unknown): string {
-  if (typeof v !== 'string') return 'Use 1 to 60 characters.';
+function simNameError(v: unknown, max = 60): string {
+  if (typeof v !== 'string') return `Use 1 to ${max} characters.`;
   if (/[\u00ad\u034f\u115f\u180e\u200b\u2028\u2029\u202a-\u202e\u2060-\u2064\u2066-\u2069\u3164\ufeff\ufff9-\ufffb]/.test(v)) return 'Remove control or hidden characters.';
   const n = v.replace(/\s+/g, ' ').trim();
   // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001f\u007f-\u009f]/.test(n)) return 'Remove control or hidden characters.';
-  if ([...n].length > 60) return 'Use 1 to 60 characters.';
+  if ([...n].length > max) return `Use 1 to ${max} characters.`;
   if (/gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}/.test(n)) return 'That looks like a secret. Use another name.';
   return '';
 }
@@ -413,6 +539,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const listeners = new Set<(e: AgentEvent) => void>();
     const addedListeners = new Set<(a: AgentInfo) => void>();
     const renamedListeners = new Set<(e: { id: string; alias?: string }) => void>();
+    /* spec 059 T076: every renameSession / renameFolder call, in order, for drivers (simulator only) */
+    const simRenameCalls = { session: [] as { id: string; sessionId: string | null; name: string }[], folder: [] as string[] };
+    (window as unknown as { __simRenameCalls?: unknown }).__simRenameCalls = simRenameCalls;
     const simPrevNames = new Map<string, string>(); // spec 059: names of the simulated Previous sessions rows
     const n = Math.max(1, opts.n);
     // spec 001 FR-046: read here from the page address (like simkinds), so app.js's option list stays as it is
@@ -1592,10 +1721,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     } catch {
       simUserTheme = null;
     }
+    const simNotesBridge = simNotesApi(simQuery, (id) => { const s = sims.find((x) => x.info.id === id); return s ? { key: s.info.workspaceFile || s.info.cwd, name: (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name, session: s.info.id } : undefined; }); // spec 083 FR-060
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0-alpha.14 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0-alpha.15 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
@@ -1665,6 +1795,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         // come first, for check:ui-text's long-text pass; simslash=secret: fake token shapes (FR-014, issue #608)
         return { ok: true, entries: simSlashFor(s.info.adapterId ?? 'copilot', simQuery).map((e) => { const c = { ...e }; delete c.note; return c; }) }; // the note is the send's, not the list's
       },
+      ...simNotesBridge, // spec 083 FR-060
       listProfiles: async (id) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || (s.info.adapterId && s.info.adapterId !== 'copilot')) return { ok: false, error: 'This agent app has no profiles.', profiles: [] };
@@ -2429,9 +2560,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true };
       },
       renameFolder: async (id, label) => { // spec 006 FR-018: the same trimming as main's parseLabel, nothing saved
+        simRenameCalls.folder.push(String(label ?? '')); // spec 059 T076: a driver asserts "no call" and what was sent
         if (!sims.some((x) => x.info.id === id)) return { ok: false };
-        const t = String(label ?? '').replace(/\s+/g, ' ').trim();
-        return { ok: true, label: t && [...t].length <= 40 ? t : undefined };
+        const bad = simNameError(label, 40); // main's rule: the session-name rule at 40 characters, refused with its reason
+        if (bad) return { ok: false, error: bad };
+        const t = String(label).replace(/\s+/g, ' ').trim();
+        return { ok: true, label: t || undefined };
       },
       setFolderDefaultAgent: async (id, profileId) => { // spec 043 FR-009: kept for this run only, the same id rule as main
         const src = sims.find((x) => x.info.id === id);
@@ -2439,7 +2573,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         for (const x of sims) if (x.info.cwd === src.info.cwd) x.info.defaultAgent = profileId ?? undefined;
         return { ok: true, defaultAgent: profileId ?? undefined };
       },
-      renameSession: async (id, sessionId, name) => { // spec 059 FR-013, FR-015: in memory; the same rule and answers as main; __simRenameFail makes the next app-side rename fail
+      renameSession: async (id, sessionId, name) => { // (call counter: spec 059 T076) spec 059 FR-013, FR-015: in memory; the same rule and answers as main; __simRenameFail makes the next app-side rename fail
+        simRenameCalls.session.push({ id, sessionId, name: String(name ?? '') });
         const src = sims.find((x) => x.info.id === id);
         if (!src) return { ok: false, error: 'Unknown session.' };
         const bad = simNameError(name);

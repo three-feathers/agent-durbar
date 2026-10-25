@@ -14,7 +14,7 @@
  * exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
 const path = require('path');
-const { helpers } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const assert = require('assert');
 const OUT = process.env.OUT || require('os').tmpdir();
 module.exports = async (ctx) => {
@@ -68,6 +68,12 @@ module.exports = async (ctx) => {
     await js(`(()=>{const d=document.createElement('div');const c=document.querySelector('#chat .note.cline');c.parentNode.appendChild(d);d.remove();})()`); await ctx.sleep(120);
     const kept = await js(`(()=>{const i=document.querySelector('#answerBar input.ab-other');return {v:i&&i.value,focus:document.activeElement===i}})()`);
     assert.ok(kept.v === 'Teal, like the links' && kept.focus, `${w}: what you type in the bar survives a change in the chat: ${JSON.stringify(kept)}`);
+    // FR-177: a late title or a rename changes the name in the bar in place: the typed text and the focus stay
+    const NEW = 'Renamed while you type: a different session name';
+    await js(`window.__durbarSimRetitle(${jsLiteral(NEW)},'')`); await ctx.sleep(200);
+    const ren = await js(`(()=>{const i=document.querySelector('#answerBar input.ab-other'),n=document.querySelector('#answerBar .ab-n');return {v:i&&i.value,focus:document.activeElement===i,name:n&&n.textContent,title:n&&n.title}})()`);
+    assert.ok(ren.name === NEW && ren.title === NEW, `${w}: the bar shows the new name and title: ${JSON.stringify(ren)}`);
+    assert.ok(ren.v === 'Teal, like the links' && ren.focus, `${w}: a rename keeps what you typed and the focus: ${JSON.stringify(ren)}`);
     await H.key('Enter', [], { pause: 0 });
     await until(`!!document.querySelector('#chat .note.question.settled')`);
     const st = await js(`document.querySelector('#chat .note.question.settled .pstate').textContent`);

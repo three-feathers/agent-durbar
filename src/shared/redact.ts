@@ -21,13 +21,31 @@ const LONG_OK_NAME = /^(PATH|PATHEXT|PSMODULEPATH|HOME|HOMEPATH|HOMEDRIVE|USERPR
    (`%253D`, `%2525253D`): the last escape of a re-encoded `%` always follows `25`, so `(?:%|25)XX` covers every depth with a
    fixed-width lookbehind (T130; over-masks a token glued to a literal `25XX`, fail-safe). It may also start right after a backslash
    escape (`\n`, `\t`, `\uXXXX`, `\xXX`), because the debug log redacts *after* `JSON.stringify`, which turns a token at the start of a
-   line into `\nghp_…` (T130, review of PR #549). Every branch is fixed-width, so each position costs O(1): still linear. */
-const PCT = String.raw`(?<=(?:%|25)[0-9A-Fa-f]{2}|\\(?:[nrtbfv]|u[0-9A-Fa-f]{4}|x[0-9A-Fa-f]{2}))`;
-/** Where a token shape may start: no letter or digit before it, or right after a `%XX` or backslash escape. */
+   line into `\nghp_…` (T130, review of PR #549). A quoted-printable escape (`=3Dghp_…`: `=` and two upper-case hex digits) and a
+   `%uXXXX` escape (`%u003Dghp_…`, merged into the `%XX` branch so the start costs no more per position) start a token too (T132, issue #551). Every branch is fixed-width, so each position costs O(1): still linear. */
+const PCT = String.raw`(?<=(?:%(?:u[0-9A-Fa-f]{2})?|25)[0-9A-Fa-f]{2}|=[0-9A-F]{2}|\\(?:[nrtbfv]|u[0-9A-Fa-f]{4}|x[0-9A-Fa-f]{2}))`;
+/** Where a token shape may start: no letter or digit before it, or right after a `%XX`, `%uXXXX`, `=XX` or backslash escape. */
 const START = String.raw`(?:(?<![A-Za-z0-9])|${PCT})`;
 const shape = (body: string, flags = 'g'): RegExp => new RegExp(START + body, flags);
-/** Bare token shapes (GitHub, OpenAI/Anthropic, Bearer, JWT, AWS); also used by the folder-setup display (spec 061 FR-014). */
-const TOKEN_SHAPES: RegExp[] = [
+/** A shape that is only tried when the text matches its marker (a cheap test before a 1 MB regex scan). The marker is a superset of
+    every spelling the shape accepts (case-insensitive; `:` also as `\u003a`, `\x3a` or `%…3a`), which `test-redact.ts` checks
+    against the unguarded run (`maskTokenShapesUnguarded`). */
+type Guarded = { re: RegExp; marker: RegExp };
+const guarded = (re: RegExp, marker: RegExp): Guarded => ({ re, marker });
+/** A literal host or word matched in any case: `[Hh][Oo]…`, dots escaped. */
+const ci = (lit: string): string => lit.replace(/[A-Za-z]/g, (c) => `[${c.toUpperCase()}${c.toLowerCase()}]`).replace(/\./g, String.raw`\.`);
+/** A `/` as written in a URL, JSON-escaped (`\/`, `\\/`, `\u002f`, `\x2f`) or percent-encoded any number of times (`%2F`, `%252F`, up to 8 re-encodings). */
+const SL = String.raw`(?:\\{0,2}\/|\\{1,2}(?:u002[Ff]|x2[Ff])|%(?:25){0,8}2[Ff])`;
+/** One or two of them (`//`) between URL segments. */
+const SL2 = String.raw`(?:${SL}){1,2}`;
+/** A `:` written the same ways (`:`, `\u003a`, `\x3a`, `%3A`, `%253A`, ...). */
+const COLON = String.raw`(?::|\\{1,2}(?:u003[Aa]|x3[Aa])|%(?:25){0,8}3[Aa])`;
+/** A `.` as written, or percent-encoded any number of times (`%2E`). */
+const DOT = String.raw`(?:\.|%(?:25){0,8}2[Ee])`;
+/** After a webhook host: an optional trailing dot and an optional `:port` (the colon in any spelling). */
+const HOSTX = String.raw`\.?(?:${COLON}[0-9]{1,5})?`;
+/** Bare token shapes (GitHub, OpenAI/Anthropic, Bearer, JWT, AWS, Slack, Discord, Telegram); also used by the folder-setup display (spec 061 FR-014). */
+const TOKEN_SHAPES: Array<RegExp | Guarded> = [
   shape(String.raw`gh[pousr]_[A-Za-z0-9]{20,}`),
   shape(String.raw`github_pat_[A-Za-z0-9_]{20,}`),
   shape(String.raw`sk-(?:ant-)?[A-Za-z0-9_-]{20,}`),
@@ -38,19 +56,46 @@ const TOKEN_SHAPES: RegExp[] = [
   // the `%XX` start (`2525…`): linear, but about 40x the cost of the other shapes (T130, review of PR #549). The prefix stays.
   new RegExp(String.raw`(?<=(?:(?<![A-Za-z0-9_-])|${PCT})_{0,8}(?:[A-Za-z0-9]{1,40}_{1,3}){0,4})eyJ[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}`, 'g'),
   shape(String.raw`(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9])`),
+  // Chat-tool secrets (T132, issue #551). Slack tokens: `xoxb-`, `xoxp-`, `xoxa-`, `xoxc-`, `xoxd-` (browser session), `xoxr-`, `xoxs-`,
+  // `xoxe-` and `xapp-`, then 10+ token characters or `%XX` escapes (a URL-encoded `xoxd-…%2B…%2F`); `xoxo-` is not a Slack prefix.
+  guarded(shape(String.raw`(?:xox[abcdeprs]|xapp)-(?:[A-Za-z0-9-]|%[0-9A-Fa-f]{2}){10,}`), /xox|xapp-/i),
+  // Webhooks: the fixed host and path sit in a lookbehind (host in any case, optional trailing dot and `:port`), so the scheme and host
+  // stay and only the secret path is masked. Between segments one or two slashes (`//`); the segments before the last are bounded
+  // classes split by a fixed `/`, the last one is unbounded (`[A-Za-z0-9_-]+`, a long or underscore secret is masked whole), so there
+  // is no nested quantifier. Slack: `services`, `workflows` and `triggers` paths.
+  guarded(new RegExp(String.raw`(?<=${ci('hooks.slack.com')}${HOSTX}${SL2}(?:${ci('services')}|${ci('workflows')}|${ci('triggers')})${SL2})(?:[A-Za-z0-9]{1,64}${SL2}){2,3}[A-Za-z0-9_-]+`, 'g'), /hooks\.slack\.com/i),
+  guarded(new RegExp(String.raw`(?<=${ci('discord')}(?:${ci('app')})?${ci('.com')}${HOSTX}${SL2}${ci('api')}${SL2}(?:[Vv][0-9]{1,2}${SL2})?${ci('webhooks')}${SL2})[0-9]{5,30}${SL2}[A-Za-z0-9_-]{20,}`, 'g'), /discord(?:app)?\.com/i),
+  // Telegram bot token: `<6-12 digits>:<exactly 35 chars>` (the real shape, so an id, a session or a file name is not one), bare or
+  // right after `/bot` on any host, port or path (`api.telegram.org/bot…`, `api.telegram.org/file/bot…`, a local Bot API server, a
+  // proxy): a letter then precedes it, so the lookbehind is host-free.
+  guarded(shape(String.raw`[0-9]{6,12}${COLON}[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])`), /[0-9]{6}[:%\\]/),
+  guarded(new RegExp(String.raw`(?<=${SL}[Bb][Oo][Tt])[0-9]{6,12}${COLON}[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])`, 'g'), /bot[0-9]{6}/i),
+  // Discord bot token (the id is the base64 of a numeric id, so its second character is D, T, j or z; the dots may be percent-encoded): base64 user id, `.`, 6-character timestamp, `.`, HMAC (27 or more); the first character is M, N or O.
+  guarded(shape(String.raw`[MNO][DTjz][A-Za-z0-9_-]{21,26}${DOT}[A-Za-z0-9_-]{6}${DOT}[A-Za-z0-9_-]{27,}`), /(?:\.|%(?:25){0,8}2[Ee])[A-Za-z0-9_-]{6}(?:\.|%(?:25){0,8}2[Ee])/),
 ];
+
+function maskShapes(text: string, mask: string, guard: boolean): string {
+  let out = text;
+  // A function, so `$&` or `$1` in the mask stays literal; the JWT's prefix is outside its match (lookbehind), so it stays too.
+  for (const t of TOKEN_SHAPES) {
+    if (t instanceof RegExp) out = out.replace(t, () => mask);
+    else if (!guard || t.marker.test(out)) out = out.replace(t.re, () => mask);
+  }
+  return out;
+}
 
 /** Replaces every bare token shape with `mask` (a JWT's leading underscores and words stay). Linear; no env rules, no header or URL rules. */
 export function maskTokenShapes(text: string, mask: string): string {
-  let out = text;
-  // A function, so `$&` or `$1` in the mask stays literal; the JWT's prefix is outside its match (lookbehind), so it stays too.
-  for (const re of TOKEN_SHAPES) out = out.replace(re, () => mask);
-  return out;
+  return maskShapes(text, mask, true);
+}
+/** Test only: the same without the marker guard, to prove the guard never changes the result. */
+export function maskTokenShapesUnguarded(text: string, mask: string): string {
+  return maskShapes(text, mask, false);
 }
 
 /** Key-like shapes. Each is linear: bounded classes, no nested quantifiers, starts anchored where a token cannot already be running. Order matters: header and URL first. */
 const PATTERNS: Array<[RegExp, string]> = [
-  [shape(String.raw`(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8})?[^\s",;]+`, 'gi'), '$1[redacted]'],
+  [shape(String.raw`(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8})?(?!'?\[redacted\]'?\}*(?:[\s",;]|$))[^\s",;]+`, 'gi'), '$1[redacted]'], // a value R12 already hid, whole, inside single quotes (`Authorization='[redacted]'}`) stays as it is; `[redacted]TOKEN` is not a hidden value
   [shape(String.raw`([a-z][a-z0-9+.-]{1,20}:\/\/)[^\s/:@"]{1,200}:[^\s/@"]{1,200}@`, 'gi'), '$1[redacted]@'],
   [/(?<![A-Za-z0-9_-])tid=[0-9a-f]{8,64};[^\s"]{0,2000}/g, '[redacted]'],
   // OAuth values in a URL's query or fragment (an authorization address, a loopback callback), also percent-encoded inside another
@@ -283,7 +328,10 @@ function maskJsonPairs(v: string, force = false): string {
 function maskKv(part: string, depth: number, env?: Env): string {
   const kv = KV.exec(part);
   if (kv) {
-    if (secretFlag(kv[2].replace(ENV_PREFIX, ''))) return `${kv[1]}${kv[2]}=${MASK}`;
+    if (secretFlag(kv[2].replace(ENV_PREFIX, ''))) { // R12: a hashtable member already hidden (`'[redacted]'}`) keeps its quotes and what closes it
+      const hid = /^(\s*)(["']?)\[redacted\](["';}\s]*)$/.exec(kv[4]);
+      return hid ? `${kv[1]}${kv[2]}${kv[3]}${hid[1]}${hid[2]}${MASK}${hid[3]}` : `${kv[1]}${kv[2]}=${MASK}`;
+    }
     const hv = HDR_NAME_ONLY.exec(kv[4].trim());
     if (hv && secretFlag(hv[1])) return part; // `NAME=Name:` (R5): the value of `Name:` is the next word, masked by maskArgs; masking `Name:` here repeated `[redacted]` at each depth level
     // `OPTS=\"--token x\"`: a stray quote in front of a flag-shaped value is set aside so the flag is seen
@@ -372,7 +420,7 @@ function maskShellString(v0: string, depth: number, env?: Env, plain = false): s
     outWords[i] = lead + tail;
     if (core !== '') { cores.push(core); idx.push(i); }
   });
-  const masked = maskArgs(cores, snapshot(env), depth);
+  const masked = maskArgs(cores, snapshot(env), depth, false, false);
   idx.forEach((wi, k) => { outWords[wi] = leads[wi] + masked[k] + tails[wi]; });
   let out = seps[0];
   for (let i = 0; i < outWords.length; i++) out += outWords[i] + seps[i + 1];
@@ -635,12 +683,285 @@ function maskShWords(s: string, d: number, env: Env | undefined): string {
   return failAt < 0 ? out + s.slice(cur) : out + s.slice(cur, failAt) + MASK;
 }
 
+// ---- R12 (spec 041 FR-053, T072, issue #502): PowerShell hashtable literals `@{ Name = Value; ... }` ----
+const HT_LITERAL_MAX = 4000; // a literal is read up to this many characters from its `@{`; past that the rest up to its `}` is hidden
+const WORD_END = /[\s;}]/g;
+
+/** The index of the quote that closes the string opened at `p` (`""` / `''` doubled, and `` `x `` in a double-quoted one, are escapes), or -1 before `max`. */
+function htCloseQuote(s: string, p: number, max: number): number {
+  const q = s[p];
+  for (let k = p + 1; k < max; k++) {
+    if (q === '"' && s[k] === '`') k++;
+    else if (s[k] === q) { if (s[k + 1] === q) k++; else return k; }
+  }
+  return -1;
+}
+
+/** Fast character tests for the scanner below (ASCII first; a regex only for the rest of Unicode white space). */
+const htWs = (c: string): boolean => { const k = c.charCodeAt(0); return k < 128 ? k === 32 || (k >= 9 && k <= 13) : /\s/.test(c); };
+const htWordStop = (c: string): boolean => c === ';' || c === '}' || htWs(c);
+const htNameStop = (c: string): boolean => c === '=' || c === '"' || c === "'" || c === '{' || htWordStop(c);
+
+/** The name test for a member name (`secretFlag` after the quote marks are removed), remembered for the short names a literal repeats (bounded). */
+const HT_NAMES = new Map<string, boolean>();
+function htSecretName(raw: string): boolean {
+  if (raw.length > 64) return secretFlag(raw.replace(/[`"']/g, ''));
+  let r = HT_NAMES.get(raw);
+  if (r === undefined) {
+    r = secretFlag(raw.replace(/[`"']/g, ''));
+    if (HT_NAMES.size >= 512) HT_NAMES.clear();
+    HT_NAMES.set(raw, r);
+  }
+  return r;
+}
+
+/** Where a PowerShell expression that starts at `p` ends: the next `;`, `}` or line break outside brackets and strings (a backtick continues the line). Never past `max`. */
+function htExprEnd(s: string, p: number, max: number): number {
+  let d = 0;
+  let k = p;
+  while (k < max) {
+    const c = s[k];
+    if (c === '"' || c === "'") { const e = htCloseQuote(s, k, max); if (e < 0) return max; k = e + 1; continue; }
+    if (c === '`') { k += s[k + 1] === '\r' && s[k + 2] === '\n' ? 3 : 2; continue; }
+    if (c === '(' || c === '{') d++;
+    else if (c === ')') { if (d > 0) d--; }
+    else if (c === '}') { if (d === 0) break; d--; }
+    else if ((c === ';' || c === '\n') && d === 0) break;
+    k++;
+  }
+  k = Math.min(k, max);
+  while (k > p && /\s/.test(s[k - 1])) k--;
+  return k;
+}
+
+/** Where the literal that is open at `p` (with `depth` levels open) ends: the index of its closing `}`, or the end of the text. Quote-aware, one pass. */
+function htLitEnd(s: string, p: number, depth: number): number {
+  const n = s.length;
+  for (let k = p; k < n; k++) {
+    const c = s[k];
+    if (c === '"' || c === "'") { const e = htCloseQuote(s, k, n); if (e < 0) return n; k = e; }
+    else if (c === '`') k++;
+    else if (c === '{') depth++;
+    else if (c === '}' && --depth <= 0) return k;
+  }
+  return n;
+}
+
+/**
+ * The value ranges to hide in the hashtable literals of `s`: for each member whose name looks secret (`secretFlag`, the test of R7 and the
+ * secret flags) the value, without its quotes when it is one plain quoted string or bare word. Any other value of a secret member (an
+ * expression, a here-string, a string followed by more code) is hidden whole up to the member's end (fail closed). A member whose value
+ * is a nested literal restarts the scan inside it (any depth). `<#...#>` is white space (an unclosed one hides the rest of the literal).
+ * A literal is read up to HT_LITERAL_MAX characters; past that everything up to its closing `}` (or the end of the text) is hidden. One
+ * pass: every character is read a constant number of times, so the cost is linear in the text. `\"` counts as a quote (the args form).
+ */
+function hashtableRanges(s: string): Array<[number, number]> {
+  if (!s.includes('\\"')) return htRanges(s);
+  const r = htRanges(s.replace(/\\+"/g, (m) => ' '.repeat(m.length - 1) + '"')); // same length: backslashes then a quote are spaces and a quote
+  const out: Array<[number, number]> = [];
+  for (const [a, b] of r) { let b2 = b; if (s[b] === '"') while (b2 > a && s[b2 - 1] === '\\') b2--; if (b2 > a) out.push([a, b2]); }
+  return out;
+}
+function htRanges(s: string): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  const n = s.length;
+  const hide = (from2: number, to: number): void => {
+    if (to <= from2) return;
+    const last = out[out.length - 1];
+    if (last && last[1] === from2) last[1] = to; else out.push([from2, to]);
+  };
+  const toEnd = (q: number): boolean => { // after a value ending at q: only spaces then `;`, `}`, a line break or the end
+    while (q < n && (s[q] === ' ' || s[q] === '\t')) q++;
+    return q >= n || s[q] === ';' || s[q] === '}' || s[q] === '\n' || s[q] === '\r';
+  };
+  let from = 0;
+  let depth = 1;
+  let limit = 0;
+  let sp = 0; // the last token boundary (outside any quote) and the bracket depth there: where the past-the-bound scan starts
+  let sd = 1;
+  const hsAt = [-2, -2]; // cached here-string closer position per kind ('@ and "@), -1 = none after the scan point
+  let ld = -2; // the last `"` and the last `'`, found once (linear)
+  let ls = -2;
+  const lastDq = (): number => (ld === -2 ? (ld = s.lastIndexOf('"')) : ld);
+  const lastSq = (): number => (ls === -2 ? (ls = s.lastIndexOf("'")) : ls);
+  let cmAt = -2; // cached `#>` position
+  const skipSp = (p0: number): number => { // the gap between a name, `=` and a value: white space (line breaks too) and block comments; a comment with an `=` in it is hidden (it may be a commented-out member)
+    let p = p0;
+    for (;;) {
+      const ch = s[p];
+      if (ch === undefined) return p;
+      if (htWs(ch)) p++;
+      else if (ch === '<' && s[p + 1] === '#') {
+        if (cmAt === -2 || (cmAt >= 0 && cmAt < p + 2)) cmAt = s.indexOf('#>', p + 2);
+        if (cmAt < 0) p += 2; // never closes: only the mark is white space, the text behind it is read as code
+        else { let eq = false; for (let k = p + 2; k < cmAt && !eq; k++) eq = s[k] === '='; if (eq) hide(p + 2, cmAt); p = cmAt + 2; } // (read once: the comment is passed)
+      }
+      else if (ch === '#' && s[p + 1] === '>') p += 2;
+      else return p;
+    }
+  };
+  for (;;) {
+    const at = s.indexOf('@{', from);
+    if (at < 0) return out;
+    limit = Math.min(n, at + HT_LITERAL_MAX);
+    let p = at + 2;
+    depth = 1;
+    sp = p;
+    sd = depth;
+    while (p < limit && depth > 0) {
+      sp = p;
+      sd = depth;
+      const c = s[p];
+      if (c === '}') { p++; depth--; continue; }
+      if (c === ';' || htWs(c)) { p++; continue; }
+      if ((c === '<' && s[p + 1] === '#') || (c === '#' && s[p + 1] === '>')) { p += 2; continue; } // block comment marks are white space; the inside is read as code
+      if (c === '@' && s[p + 1] === '{') { p += 2; depth++; continue; }
+      const mEnd = limit;
+      let ns: number;
+      let ne: number;
+      if (c === '"' || c === "'") {
+        const e = htCloseQuote(s, p, mEnd);
+        if (e < 0) { p++; continue; } // a stray quote: the text behind it is read as it is
+        ns = p + 1; ne = e; p = e + 1;
+      } else {
+        ns = p;
+        while (p < mEnd && !htNameStop(s[p])) p++;
+        ne = p;
+        if (ne === ns) { p++; continue; }
+      }
+      p = skipSp(p);
+      if (s[p] !== '=' || p >= mEnd) { if ((c === '"' || c === "'") && s.indexOf(c, ns) >= ne) p = ns; continue; } // not `Name = Value`: a bare word is passed, a quoted one with no doubled quote in it is read again from inside (its quotes may be the stray ones; reading a doubled-quote run again would be quadratic)
+      p = skipSp(p + 1);
+      const secret = htSecretName(s.slice(ns, ne)); // `"api""key"` is the name api"key: the quote marks go before the test
+      if (s.startsWith('[ordered]', p)) p += 9;
+      while (s[p] === '`' && (s[p + 1] === '\n' || (s[p + 1] === '\r' && s[p + 2] === '\n'))) { // a line continuation right after `=`
+        p += s[p + 1] === '\n' ? 2 : 3;
+        while (p < mEnd && (s[p] === ' ' || s[p] === '\t')) p++;
+      }
+      const vc = s[p];
+      if (vc === '@' && s[p + 1] === '{' && !secret) { p += 2; depth++; continue; } // a nested literal: scanned in place
+      if (vc === '@' && (s[p + 1] === "'" || s[p + 1] === '"')) { // here-string: up to its closing `'@` / `"@` at a line start
+        const hq = s[p + 1] === "'" ? 0 : 1; // the closer is searched once per kind, then reused: a text of `@'` openers with no closer stays linear
+        if (hsAt[hq] === -2 || (hsAt[hq] >= 0 && hsAt[hq] < p + 2)) hsAt[hq] = s.indexOf('\n' + s[p + 1] + '@', p + 2); // (positions only grow, so -1 stays -1)
+        const close = hsAt[hq];
+        const end = close < 0 || close + 3 > limit ? limit : close + 3;
+        if (secret) hide(p, end);
+        p = Math.max(end, p + 2); // (always forward, whatever the cache holds)
+        continue;
+      }
+      if (vc === '"' || vc === "'") {
+        const e = htCloseQuote(s, p, mEnd);
+        if (e < 0) { // unclosed: a secret's rest is hidden (fail closed); to the end of the text when no such quote follows at all, else to the literal bound
+          const none = (vc === '"' ? lastDq() : lastSq()) <= p;
+          if (secret) hide(p + 1, none ? n : mEnd);
+          p = none ? n : mEnd;
+          continue;
+        }
+        if (!secret) { p = e + 1; continue; }
+        const hidden = e - p === MASK.length + 1 && s.startsWith(MASK, p + 1); // a value hidden already: said again it must give the same text; more after it is code
+        if (toEnd(e + 1)) { if (!hidden) hide(p + 1, e); p = e + 1; continue; }
+        const end = htExprEnd(s, p, mEnd); // a string followed by more code
+        hide(p, end);
+        p = Math.max(end, e + 1);
+        continue;
+      }
+      const vs = p;
+      while (p < mEnd && !htWordStop(s[p])) p++;
+      if (secret && p >= mEnd && p < n) { // a bare word longer than the literal bound: hidden to its end (fail closed), found in one pass
+        WORD_END.lastIndex = p;
+        p = WORD_END.exec(s)?.index ?? n;
+        hide(vs, p);
+        continue;
+      }
+      if (!secret) continue;
+      const hidden = p - vs === MASK.length && s.startsWith(MASK, vs);
+      if (toEnd(p) && !/[({]/.test(s.slice(vs, p))) { if (!hidden) hide(vs, p); continue; } // a bare word with brackets (`(Get-Secret)`, `@{a=1}`) is an expression
+      const end = htExprEnd(s, vs, mEnd);
+      hide(vs, end);
+      p = Math.max(end, p);
+    }
+    if (depth > 0 && p >= limit && limit < n) { // past the literal bound: the rest up to the literal's end is hidden (fail closed)
+      const e = htLitEnd(s, sp, sd); // from the last token boundary: the bound may fall inside a string
+      if (e > p) {
+        if (!(s.startsWith(MASK, p) && /^[\s"';]*$/.test(s.slice(p + MASK.length, e)))) hide(p, e); // (an earlier [redacted] and its closers stay as they are)
+        p = e;
+      }
+    }
+    from = Math.max(at + 2, p);
+  }
+}
+
+/** `s` with the value of each secret-looking hashtable member shown as `[redacted]` (R12), quotes kept. */
+function maskHashtables(s: string): string {
+  if (!s.includes('@{')) return s;
+  const r = hashtableRanges(s);
+  if (!r.length) return s;
+  let out = '';
+  let cur = 0;
+  for (const [a, b] of r) { out += s.slice(cur, a) + MASK; cur = b; }
+  return out + s.slice(cur);
+}
+
+/** Reads `a` from `from` and says whether every literal opened so far is closed at its end: `{` and `}` count outside quotes only (`st` carries the state to the next arg). Linear. */
+function htClosed(a: string, from: number, st: { depth: number; q: string }): boolean {
+  for (let k = from; k < a.length; k++) {
+    const c = a[k];
+    if (st.q) {
+      if (c === '`' && st.q === '"') k++;
+      else if (c === st.q) st.q = ''; // a doubled quote closes and opens again
+    } else if (c === '"' || c === "'") st.q = c;
+    else if (c === '{') st.depth++;
+    else if (c === '}' && st.depth > 0) st.depth--;
+  }
+  return st.depth === 0 && st.q === '';
+}
+
+/** R12 for an args list: a literal split across args (`@{token=`, `SEC;`, `port=8080}`) is read as the args joined by a space; a value that spans args is hidden in the first and cut from the later ones. */
+function maskHashtableArgs(args: readonly string[]): readonly string[] {
+  if (!Array.isArray(args) || !args.some((a) => typeof a === 'string' && a.includes('@{'))) return args;
+  const out: string[] = [];
+  let i = 0;
+  while (i < args.length) {
+    const a = args[i];
+    if (typeof a !== 'string' || !a.includes('@{')) { out.push(a); i++; continue; }
+    let j = i;
+    const st = { depth: 0, q: '' }; // brackets outside quotes, across the args: a `}` inside quotes does not close the literal
+    let closed = htClosed(a, a.indexOf('@{'), st);
+    while (!closed && j + 1 < args.length && typeof args[j + 1] === 'string') { // (no length bound: a literal that is still open past the bound has its later args hidden)
+      j++;
+      closed = htClosed(args[j], 0, st);
+    }
+    const group = args.slice(i, j + 1) as string[];
+    const joined = group.join(' ');
+    const ranges = hashtableRanges(joined);
+    if (!ranges.length) { out.push(...group); i = j + 1; continue; }
+    let off = 0;
+    for (const g of group) {
+      const end = off + g.length;
+      let t = '';
+      let cur = off;
+      for (const [r0, r1] of ranges) {
+        if (r1 <= off || r0 >= end) continue;
+        t += joined.slice(cur, Math.max(r0, off, cur));
+        if (r0 >= off) t += MASK; // the range starts here; in a later arg only its tail is cut
+        cur = Math.min(r1, end);
+      }
+      t += joined.slice(cur, end);
+      if (t !== '' || g === '') out.push(t);
+      off = end + 1;
+    }
+    i = j + 1;
+  }
+  return out;
+}
+
 /** A free-standing value or arg: JSON, URL, connection string (`;`/`,`-separated pairs), `NAME=value`, `Name: value`, a shell string. The caller finishes with `redact()`. */
 function maskText(v: string, depth: number, env?: Env, noScript = false): string {
   if (!noScript && SCRIPT_GATE.test(v) && /\s/.test(v)) { // T067 (#447): a shell wrapper whose payload has escaped quotes, decoded one level first
     const sc = maskScriptText(v, depth, env, (seg) => maskText(seg, depth, env, true));
     if (sc !== undefined) return sc;
   }
+  if (v.includes('@{')) v = maskHashtables(v); // R12
   // T067: a leading quote that closes nowhere in the value (`--opt="token=x`) is set aside, so the rules see what is behind it (fail closed)
   if ((v[0] === '"' || v[0] === "'") && v.indexOf(v[0], 1) < 0) return v[0] + maskText(v.slice(1), depth, env, noScript);
   if (v.startsWith('{') || v.startsWith('[')) {
@@ -704,7 +1025,8 @@ function maskArgsImpl(args: readonly string[], envIn: Env | undefined, cap: bool
   return maskArgs((cap && Array.isArray(args) ? args.map(capped) : args) as string[], snapshot(envIn), MAX_DEPTH, true);
 }
 
-function maskArgs(args: readonly string[], env: Env, d: number, top = false): string[] {
+function maskArgs(args0: readonly string[], env: Env, d: number, top = false, ht = true): string[] {
+  const args = ht ? maskHashtableArgs(args0) : args0; // R12 (not for the words of a text that maskText already read whole: the `;` that ended a member is not in them)
   const rd = (x: string): string => (top ? redact(x, env) : x); // a nested call is redacted by the outer one, over the whole arg
   const out: string[] = [];
   let pending: 'secret' | 'header' | undefined;
@@ -745,7 +1067,7 @@ function maskArgs(args: readonly string[], env: Env, d: number, top = false): st
       if (lead) a0 = a0.slice(1);
       const push = (x: string): void => { out.push(lead && x !== MASK ? lead + x : x); };
       const [a, q] = unquote(a0);
-      const W = (x: string): string => (q && x !== MASK ? q + x + q : x);
+      const W = (x: string): string => (q && (x !== MASK || a === MASK) ? q + x + q : x); // R12: a value already hidden inside its quotes keeps them
       const f = a.startsWith('-') || a.startsWith('/') ? parseFlag(a) : undefined;
       if (pending && !LONG_FLAG.test(a) && (pending === 'secret' || !a.startsWith('-'))) {
         if (pending === 'header' && HDR_NAME_ONLY.test(a)) { push(W(a)); pending = 'secret'; continue; } // R5: `Name:` then its value as the next arg
@@ -846,7 +1168,7 @@ function maskCommandImpl(command: unknown, envIn: Env | undefined, cap: boolean,
     if (cap && typeof command === 'string' && command.length > MASK_INPUT_MAX) return MASK;
     const env = snapshot(envIn);
     const plain = (c: string): string => {
-      const out = maskArgs(joinUnclosed(splitCommand(redact(maskSchemeSecrets(c), env))), env, MAX_DEPTH, true);
+      const out = maskArgs(joinUnclosed(splitCommand(redact(maskSchemeSecrets(maskHashtables(c)), env))), env, MAX_DEPTH, true);
       return (mapWord ? out.map((x) => mapWord(x)) : out).join(' ');
     };
     const c = typeof command === 'string' ? command : '';
@@ -928,4 +1250,133 @@ export function createDebugSink(file: string, env: Env, append: (file: string, d
     const safe = redact(line, env);
     append(file, (over ? JSON.stringify({ truncated: true, head: safe }) : safe) + '\n');
   };
+}
+
+// ---- Notes (spec 083 FR-005, issue 699) ----
+
+/** Characters that can sit inside a token without being part of it: emphasis, code, strike, link brackets, a Markdown escape's backslash, zero-width characters. */
+const NOTE_MARK = /[*`~[\]\\​-‍﻿]/;
+const NOTE_ESCAPABLE = '\\`*_{}[]()#+-.!~|<>';
+const NOTE_RUN = /[A-Za-z0-9_\-.+/=:@%]{12,}/g;
+
+/** `s` without its split marks, and for each kept character its index in `s` (plus a final entry, `s.length`). */
+function withoutMarks(s: string): { k: string; at: number[] } {
+  const keep: string[] = [];
+  const at: number[] = [];
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\') {
+      if (i + 1 < s.length && NOTE_ESCAPABLE.includes(s[i + 1])) { keep.push(s[i + 1]); at.push(i + 1); i++; }
+      else { keep.push(c); at.push(i); } // a Windows path's backslash is a character
+      continue;
+    }
+    if (NOTE_MARK.test(c)) continue;
+    keep.push(c);
+    at.push(i);
+  }
+  at.push(s.length);
+  return { k: keep.join(''), at };
+}
+
+/** Replace each [a, b) span of `s` (in `s` coordinates, overlapping ones joined) with the mask. */
+function maskSpans(s: string, spans: Array<[number, number]>): string {
+  if (!spans.length) return s;
+  spans.sort((x, y) => x[0] - y[0] || y[1] - x[1]);
+  let out = '';
+  let pos = 0;
+  let cur: [number, number] | undefined;
+  const flush = (): void => { if (cur) { out += s.slice(pos, cur[0]) + MASK; pos = cur[1]; } };
+  for (const sp of spans) {
+    if (cur && sp[0] <= cur[1]) cur[1] = Math.max(cur[1], sp[1]);
+    else { flush(); cur = [sp[0], sp[1]]; }
+  }
+  flush();
+  return out + s.slice(pos);
+}
+
+/** The first and last character of `k` that `r` (its masked copy) changed, line by line when the line count is kept (else for the whole text). */
+function changedRegions(k: string, r: string): Array<[number, number]> {
+  const diff = (a: string, b: string, base: number): [number, number] | undefined => {
+    if (a === b) return undefined;
+    let p = 0;
+    const max = Math.min(a.length, b.length);
+    while (p < max && a[p] === b[p]) p++;
+    let q = 0;
+    while (q < max - p && a[a.length - 1 - q] === b[b.length - 1 - q]) q++;
+    let from = p;
+    let to = a.length - q;
+    if (to <= from) { if (from > 0) from--; else to = Math.min(a.length, from + 1); } // only inserted text: take a neighbouring character
+    return [base + from, base + to];
+  };
+  const ka = k.split('\n');
+  const ra = r.split('\n');
+  if (ka.length !== ra.length) { const d = diff(k, r, 0); return d ? [d] : []; }
+  const out: Array<[number, number]> = [];
+  let base = 0;
+  for (let i = 0; i < ka.length; i++) {
+    const d = diff(ka[i], ra[i], base);
+    if (d) out.push(d);
+    base += ka[i].length + 1;
+  }
+  return out;
+}
+
+/**
+ * Masks what a mark hides: a secret split by `**`, a backtick, `~`, a bracket or a Markdown escape. Works on the text without marks and
+ * maps each find back to the text as written, so the Markdown around it stays. `find` gives the spans (in `k` coordinates) to mask.
+ */
+function maskAcrossMarks(s: string, find: (k: string, at: number[], u: string) => Array<[number, number]>): string {
+  if (!NOTE_MARK.test(s)) return s;
+  const { k, at } = withoutMarks(s);
+  const spans: Array<[number, number]> = [];
+  for (const [a, b] of find(k, at, s)) if (b > a) spans.push([at[a], at[b - 1] + 1]);
+  return maskSpans(s, spans);
+}
+
+/**
+ * Spec 083 FR-005 (D3): the one mask every note passes before it is stored, keeping the Markdown as written. In this order:
+ * (1) the known secret values (the folder's and the session's; under 4 characters skipped, longest first), also when marks split them;
+ * (2) every token-like run, or region, that `redact` only finds once the Markdown marks are removed (a token split by `**` or a backtick,
+ * or glued to the word before it), judged on the text as written, before `redact` can mask a head and leave its tail; (3) `redact`
+ * (env secrets and token shapes) on the whole text. Mask first, cut after (the caller): a secret across
+ * the cut would leave a head. `changed` says whether anything was masked (the note's `hidden`). Linear: one pass per step.
+ */
+export function maskNoteText(text: unknown, values: readonly string[] = []): { text: string; changed: boolean } {
+  const original = typeof text === 'string' ? text : text == null ? '' : String(text);
+  let s = original;
+  const vals = [...new Set(values.filter((v) => typeof v === 'string' && v.length >= 4))].sort((a, b) => b.length - a.length);
+  for (const v of vals) if (s.includes(v)) s = s.split(v).join(MASK);
+  if (vals.length) {
+    s = maskAcrossMarks(s, (k) => {
+      const out: Array<[number, number]> = [];
+      for (const v of vals) for (let i = k.indexOf(v); i >= 0; i = k.indexOf(v, i + v.length)) out.push([i, i + v.length]);
+      return out;
+    });
+  }
+  s = maskAcrossMarks(s, (k, at, u) => {
+    const out: Array<[number, number]> = [];
+    // a run of `u` (marks are not run characters) that `redact` changes on its own, with the token characters glued after it across marks
+    const kIndex = new Map<number, number>();
+    at.forEach((uIdx, kIdx) => kIndex.set(uIdx, kIdx));
+    const seen = new Map<string, boolean>();
+    for (const m of u.matchAll(NOTE_RUN)) {
+      const i = m.index ?? 0;
+      const touches = (i > 0 && NOTE_MARK.test(u[i - 1])) || (i + m[0].length < u.length && NOTE_MARK.test(u[i + m[0].length]));
+      if (!touches) continue;
+      let hit = seen.get(m[0]);
+      if (hit === undefined) { hit = redact(m[0]) !== m[0]; seen.set(m[0], hit); }
+      if (!hit) continue;
+      const a = kIndex.get(i);
+      const lastK = kIndex.get(i + m[0].length - 1);
+      if (a === undefined || lastK === undefined) continue;
+      let b = lastK + 1;
+      while (b < k.length && /[A-Za-z0-9_-]/.test(k[b])) b++;
+      out.push([a, b]);
+    }
+    // whatever `redact` finds in the text without marks that it did not find in the text as written
+    out.push(...changedRegions(k, redact(k)));
+    return out;
+  });
+  s = redact(s);
+  return { text: s, changed: s !== original };
 }
