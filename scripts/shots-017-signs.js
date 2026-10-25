@@ -23,7 +23,11 @@
  *   - the mini/micro status word does not use the short word, or shows a door (icon and short word only there) (Alert, Waiting, DND, Away, Meeting, Busy, Available);
  *   - the office breaks a layout rule (check-office-overlap's pageCheck: overlap, clipping, office scroll, text size) or shows fewer than 15 desks;
  *   - a resting agent's lounge peek does not say Away;
- *   - Settings > "Meeting-room signs on desks" off does not bring back the plain status words (and on again the signs).
+ *   - Settings > Office layout > Open office does not bring back the plain desks (no cabin part, office rules) and Office with cabins the signs;
+ *   - (review on PR 631) Open office hides a door you closed (it must ask, list it, keep the cabins on Keep cabins, open it on Send all,
+ *     and keep a door still closed visible with its button); remote control behind a closed door does not offer Open the door; a held
+ *     prompt with a token-shaped secret reaches the dialog unmasked; a name with markup is not escaped on the door button; a door you
+ *     closed has no DND word on a card desk or is not in the desk's accessible name; an agent compacting has no Compacting sign.
  * Screenshots: <SHOTS_OUT>/017-signs-<w>x<h>.png (default: a temp folder, never docs/screenshots).
  */
 const os = require('os');
@@ -46,6 +50,7 @@ const TABLE = {
   away: { word: 'Away', short: 'Away', icon: 'clock', open: false },
   meeting: { word: 'In a meeting', short: 'Meeting', icon: 'people', open: false },
   retrying: { word: 'Retrying', short: 'Retrying', icon: 'retry', open: false },
+  compacting: { word: 'Compacting', short: 'Compact', icon: 'compress', open: false },
   failing: { word: 'Failing', short: 'Failing', icon: 'bolt', open: false },
   thinking: { word: 'Thinking', short: 'Thinking', icon: 'bubble', open: false },
   busy: { word: 'Busy', short: 'Busy', icon: 'dot', open: false },
@@ -61,7 +66,7 @@ function expected(d) {
   if (d.userClosed) return ['shut', 'idle'];
   if (d.paused) return ['dnd', 'idle'];
   if (d.ended) return ['away', 'idle'];
-  if (work(d.state)) return d.retrying ? ['retrying', 'retrying'] : d.failing ? ['failing', 'failing'] : d.helpers.some(work) ? ['meeting', d.state] : d.state === 'thinking' ? ['thinking', 'thinking'] : ['busy', 'working'];
+  if (work(d.state)) return d.retrying ? ['retrying', 'retrying'] : d.compacting ? ['compacting', 'compacting'] : d.failing ? ['failing', 'failing'] : d.helpers.some(work) ? ['meeting', d.state] : d.state === 'thinking' ? ['thinking', 'thinking'] : ['busy', 'working'];
   return d.state === 'done' ? ['done', 'done'] : ['available', 'idle'];
 }
 
@@ -104,7 +109,7 @@ function readDesks() {
     const cabin = cab ? { underBadge: !!(CN && CR && meets(CN, CR)), wordShown: !!cw && getComputedStyle(cw).display !== 'none', density: document.getElementById('stage').dataset.d, kind: cab.dataset.cabin, wallet: !!cab.querySelector('.cb-wallet'), fire: !!fire, fireIn: !!FR && FR.left >= SB.left - 0.5 && FR.right <= SB.right + 0.5 && FR.top >= SB.top - 0.5 && FR.bottom <= SB.bottom + 0.5 && !(CR && meets(FR, CR)), flicker: !!fire && [...fire.querySelectorAll('.fl')].some((g) => g.getAnimations().length > 0), figure: !!(fig && fig.querySelector('svg:not(.cb-arm)')), arm: !!arm, waving: !!arm && arm.getAnimations().length > 0, reduced: matchMedia('(prefers-reduced-motion: reduce)').matches, onTop, photo: !!cab.querySelector('.cb-photo svg'), door: !!cab.querySelector('.cb-door'), leaf: !!cab.querySelector('.cb-leaf-open'), sign: csg && csg.dataset.sign, word: cw && cw.dataset.w, icon: cic && cic.dataset.icon,
       font: cw ? parseFloat(getComputedStyle(cw).fontSize) : 0, contrast: ctc ? Math.round(ratio(ctc, cbg) * 100) / 100 : 0, cut: !!cw && cw.scrollWidth > cw.clientWidth + 0.5,
       inDesk: !!CR && CR.width > 1 && CR.left >= D0.left - 0.5 && CR.right <= D0.right + 0.5 && CR.top >= D0.top - 0.5 && CR.bottom <= D0.bottom + 0.5 } : null;
-    const base = { toggle: tg ? { pressed: tg.getAttribute('aria-pressed'), label: tg.getAttribute('aria-label') || '', hits: tgHits, w: Math.round(TG.width), h: Math.round(TG.height) } : null, userClosed: !!tg && tg.getAttribute('aria-pressed') === 'true', limit: !!a.limit, cabin, scene: scn, id: d.dataset.id, name: a.name, parent: !!a.parent, state: d.dataset.state, paused: !!a.paused, coffee: !!a.coffee, ended: d.dataset.state === 'idle' && a.label === 'Ended', helpers: kids, failing: d.classList.contains('is-failing'), retrying: d.classList.contains('is-retrying'), label: d.getAttribute('aria-label') || '', helper: d.classList.contains('helper') };
+    const base = { toggle: tg ? { pressed: tg.getAttribute('aria-pressed'), label: tg.getAttribute('aria-label') || '', hits: tgHits, w: Math.round(TG.width), h: Math.round(TG.height) } : null, userClosed: !!tg && tg.getAttribute('aria-pressed') === 'true', limit: !!a.limit, cabin, scene: scn, id: d.dataset.id, name: a.name, parent: !!a.parent, state: d.dataset.state, paused: !!a.paused, coffee: !!a.coffee, ended: d.dataset.state === 'idle' && a.label === 'Ended', helpers: kids, failing: d.classList.contains('is-failing'), retrying: d.classList.contains('is-retrying'), compacting: !d.classList.contains('is-retrying') && !!(window.DurbarModels && window.DurbarModels.compactingNow(a)), label: d.getAttribute('aria-label') || '', helper: d.classList.contains('helper') };
     /* review on PR 631 (shots-034-retry): the desk's pill and status word stay the plain ones (Working, Retrying with spec 034's line,
        Error ...); the meeting-room sign is on the cabin door */
     const pl = [...d.querySelectorAll('.pill,.stl')].find((x) => x.getClientRects().length);
@@ -145,7 +150,7 @@ module.exports = async (ctx) => {
       assert.ok(d.cls.split(' ').includes('st-' + tone), `${tag}: colour st-${tone} (${d.cls})`);
       assert.strictEqual(d.icColor, d.txColor, `${tag}: the icon is drawn in the text colour`);
       /* review on PR 631: the pill or status word stays the plain one (other features read it: spec 034's Retrying line, 052's Failing) */
-      assert.ok(!d.pillSign && /^(Working|Thinking|Retrying|Failing|Waiting|Idle|Error|Done|Paused|Ended|Limit reached|Stopped|Coffee break|Away)/.test(d.pill), `${tag}: the pill keeps the plain status word: ${d.pill}`);
+      assert.ok(!d.pillSign && /^(Working|Thinking|Retrying|Compacting|Failing|Waiting|Idle|Error|Done|Paused|Ended|Limit reached|Stopped|Coffee break|Away)/.test(d.pill), `${tag}: the pill keeps the plain status word: ${d.pill}`);
       /* owner 2026-10-23: a real office cabin */
       const c = d.cabin;
       assert.ok(c, `${tag}: has a cabin`);
@@ -156,7 +161,7 @@ module.exports = async (ctx) => {
       else assert.ok(!d.scene && c.door && c.photo && !c.figure, `${tag}: closed: the door with the agent's photo in place of the desk scene`);
       assert.strictEqual(c.sign, key, `${tag}: the door's sign`);
       assert.strictEqual(c.word, t.short, `${tag}: the door's sign word`);
-      assert.strictEqual(c.wordShown, ['roomy', 'full'].includes(c.density), `${tag}: the door's sign shows its word only where the desk is wide (${c.density})`);
+      assert.strictEqual(c.wordShown, ['roomy', 'full'].includes(c.density) || d.sign === 'shut', `${tag}: the door's sign shows its word where the desk is wide, and a door you closed everywhere (FR-028) (${c.density})`);
       assert.ok(!c.underBadge, `${tag}: the chat number does not cover the door's sign`);
       assert.strictEqual(c.icon, t.icon, `${tag}: the door's sign icon`);
       assert.ok(c.font >= 10.5 && c.contrast >= 3 && !c.cut && c.inDesk, `${tag}: the door's sign is legible and whole: ${JSON.stringify(c)}`);
@@ -168,7 +173,7 @@ module.exports = async (ctx) => {
       /* FR-015: every main desk has its door button: 24px, pressed exactly when the user closed the door, on the scene and clear of the words */
       assert.ok(d.toggle && d.toggle.w >= 24 && d.toggle.h >= 24 && d.toggle.hits.length === 0, `${tag}: the door button is there, 24px, clear of the words: ${JSON.stringify(d.toggle)}`);
       assert.ok(key === 'shut' ? /^Open the door: /.test(d.toggle.label) : /^Close the door \(do not disturb\): /.test(d.toggle.label), `${tag}: the door button says what it does: ${d.toggle.label}`);
-      assert.ok(/(Working|Thinking|Retrying|Failing|Waiting|Idle|Error|Done|Paused|Ended|Limit reached|Stopped|Coffee break)/.test(d.label), `${tag}: the accessible name keeps the plain word: ${d.label.slice(0, 120)}`);
+      assert.ok(/(Working|Thinking|Retrying|Compacting|Failing|Waiting|Idle|Error|Done|Paused|Ended|Limit reached|Stopped|Coffee break)/.test(d.label), `${tag}: the accessible name keeps the plain word: ${d.label.slice(0, 120)}`);
       seen.add(key);
     }
   };
@@ -234,14 +239,33 @@ module.exports = async (ctx) => {
       await js(`window.THEME.setTheme('clean-office')`);
     }
 
-    /* FR-008: the Settings switch brings back the plain words, and the signs again */
-    const toggle = async () => { await js(`window.DurbarScreens.openSettings()`); assert.ok(await until(`!!document.getElementById('signSw')`, 4000), 'Settings has the signs switch'); await js(`document.getElementById('signSw').click()`); await H.key('Escape'); await ctx.sleep(500); };
-    await toggle();
+    /* FR-008, FR-027 (owner 2026-10-24): Settings > Office layout: Open office brings back the plain desks, Office with cabins the signs */
+    const toggle = async (which) => {
+      await js(`window.DurbarScreens.openSettings()`);
+      assert.ok(await until(`!!document.querySelector('[data-officelayout="${which}"]')`, 4000), 'Settings has Office layout: ' + which);
+      await js(`document.querySelector('[data-officelayout="${which}"]').click()`);
+      /* FR-027: a door closed earlier in this pass: Open office asks first; open it (nothing is held here) */
+      if (which === 'open' && await until(`!!document.getElementById('modeDlg')`, 1500)) {
+        const b = await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].map((x)=>x.textContent)`);
+        assert.deepStrictEqual(b, ['Keep cabins', 'Open the doors'], 'Open office asks about the door you closed: ' + JSON.stringify(b));
+        await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>x.textContent==='Open the doors').click()`);
+      }
+      assert.ok(await until(`document.querySelector('[data-officelayout="${which}"]').getAttribute('aria-pressed')==='true'`, 3000), which + ' is pressed: ' + (await js(`JSON.stringify({dlg:!!document.getElementById('modeDlg'),dt:(document.querySelector('#modeDlg h3')||{}).textContent,segs:[...document.querySelectorAll('[data-officelayout]')].map((b)=>b.dataset.officelayout+'='+b.getAttribute('aria-pressed')),ls:localStorage.getItem('durbar.doorsigns'),doors:Object.keys(window.__durbarSimUi.agents()).length})`)));
+      if (w === 1440 && which === 'open') await H.shot(path.join(OUT, '017-office-layout-1440x900.png'), { prep: 'none', tag: '017-signs', what: 'Office layout setting' });
+      await H.key('Escape'); await ctx.sleep(500);
+    };
+    await toggle('open');
     assert.ok(await until(`document.querySelectorAll('#stage .cb-sign').length===0`, 4000), `${w}: switch off: no sign`);
     const plain = await js(`[...document.querySelectorAll('#stage .desk[data-id]:not(.helper):not(.shut)')].map(d=>[...d.querySelectorAll('.pill,.stl')].find(x=>x.getClientRects().length)).filter(Boolean).map(x=>x.textContent.trim())`);
     assert.ok(plain.length >= 13 && plain.some((t) => /^(Working|Thinking)/.test(t)) && plain.some((t) => /^Waiting/.test(t)), `${w}: switch off: plain words ${JSON.stringify(plain)}`);
     assert.strictEqual(await js(`localStorage.getItem('durbar.doorsigns')`), 'off', 'kept per computer');
-    await toggle();
+    /* FR-027: an open office is the office from before the cabins: no cabin, door button, sign or door figure anywhere */
+    assert.strictEqual(await js(`document.querySelectorAll('#stage .cabin,#stage .cb-toggle,#stage .cb-sign,#stage .dsign-tx,#stage .cb-arm,#stage .cb-wallet,#stage .cb-fire').length`), 0, `${w}: open office: no cabin parts`);
+    await until(settled, 3000);
+    const op = await js(`(${pageCheck.toString()})(false, 5)`);
+    assert.deepStrictEqual(op.problems, [], `${w}: open office: office layout rules`);
+    await H.shot(path.join(OUT, `017-open-office-${w}x${h}.png`), { prep: 'calm', tag: '017-signs', what: 'open office' });
+    await toggle('cabins');
     assert.ok(await until(`document.querySelectorAll('#stage .cb-sign').length>=13`, 4000), `${w}: switch on: signs back`);
     console.log('[017-signs]', w, 'ok');
   }
@@ -257,6 +281,16 @@ module.exports = async (ctx) => {
     const br = ds.filter((d) => d.coffee && !d.limit);
     assert.ok(br.length >= 1 && br.every((d) => d.state === 'waiting' && d.sign === 'dnd' && d.cabin && d.cabin.kind === 'closed'), 'break: shown as Do not disturb behind a closed door: ' + JSON.stringify(br.map((d) => [d.name, d.state, d.sign, d.cabin && d.cabin.kind])));
     console.log('[017-signs] break:', br.map((d) => `${d.name}=${d.sign}`).join(' '));
+  }
+  /* ---- FR-026: spec 015's Compacting (simcompact=1: Clara mid-compaction) has its own sign, after Retrying, before Failing ---- */
+  {
+    await H.load({ w: 1440, h: 900, focus: true, query: { simcompact: '1' } });
+    assert.ok(await until(`window.__durbarSimUi.agents().some((a)=>!a.parent&&window.DurbarModels.compactingNow(a))`, 10000), 'compact: an agent is compacting');
+    await until(settled, 3000);
+    const ds = await desks();
+    checkDesks('compact', ds, seen);
+    const cp = ds.filter((d) => d.compacting);
+    assert.ok(cp.length >= 1 && cp.every((d) => d.sign === 'compacting' && /\bst-compacting\b/.test(d.cls) && d.icon === 'compress'), 'FR-026: an agent compacting shows its own Compacting sign: ' + JSON.stringify(cp.map((d) => [d.name, d.sign, d.icon])));
   }
   /* ---- FR-015..FR-017, spec 044 FR-110: a scheduled run for an agent behind a door you closed is held (not sent, not lost), and Send all
      sends it when you open the door. The simulator's one-off schedule (simschedfire) targets the first idle agent. ---- */
@@ -320,6 +354,82 @@ module.exports = async (ctx) => {
     assert.ok(await until(`${sb}.doorsList().then((d)=>!d[${jsLiteral(target)}])`, 8000), 'nothing is held any more');
     assert.ok(await until(`['working','thinking'].includes((window.__durbarSimUi.agents().find((a)=>a.id===${jsLiteral(target)})||{}).state)`, 8000), 'the held run reached the agent');
     console.log('[017-signs] held run: held at the closed door, kept by Escape, sent by Send all');
+  }
+  /* ---- review on #631 (Ruben): (2, FR-027) Open office never hides a door you closed while it holds prompts, and remote control offers to
+     open it; (7) held prompts are masked in the dialog, a name with markup is escaped on the door button; (10, FR-028) a door you
+     closed has its word on narrow desks and in the desk's name. Card density at 1280x800. ---- */
+  {
+    await H.load({ w: 1280, h: 800, focus: true, query: { density: 'card' } });
+    await until(settled, 3000);
+    const sb = 'window.__durbarSimUi.bridge()';
+    const target = await js(`(window.__durbarSimUi.agents().find((a)=>!a.parent&&a.state==='idle')||{}).id||''`);
+    assert.ok(target, 'an idle main agent');
+    const NAME = 'Eve" data-x="1 <b>bold</b> & co';
+    await js(`(()=>{const a=window.__durbarSimUi.agents().find((x)=>x.id===${jsLiteral(target)});a.name=${jsLiteral(NAME)};window.__durbarSimUi.render();})()`);
+    const desk = `document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(target)})+'"]')`;
+    const btn = `document.querySelector('#stage .unit [data-doorset="'+CSS.escape(${jsLiteral(target)})+'"]')`;
+    assert.ok(await until(`!!${btn}&&(${btn}.getAttribute('aria-label')||'').includes('Eve')`, 4000), 'the door button, with the new name');
+    const b0 = await js(`({l:${btn}.getAttribute('aria-label'),t:${btn}.getAttribute('title'),x:!!document.querySelector('#stage [data-x]'),b:!!${btn}.querySelector('b')})`);
+    assert.strictEqual(b0.l, 'Close the door (do not disturb): ' + NAME, 'the button names the agent whole, as text (escaped): ' + b0.l);
+    assert.ok(b0.t.endsWith(NAME) && !b0.x && !b0.b, 'its tooltip too, and no markup from the name reached the page: ' + JSON.stringify(b0));
+    await js(`${btn}.click()`);
+    assert.ok(await until(`${btn}.getAttribute('aria-pressed')==='true'`, 4000), 'the door is closed');
+    /* a held prompt with a token-shaped secret in it (built here, never a real token) */
+    const TOKEN = ['ghp', '_', 'Z9'.repeat(18)].join('');
+    const saved = await js(`${sb}.saveSchedule({folder:(window.__durbarSimUi.agents().find((a)=>a.id===${jsLiteral(target)}).info||{}).cwd||window.__durbarSimUi.agents().find((a)=>a.id===${jsLiteral(target)}).cwd,prompt:${jsLiteral('deploy with ' + TOKEN + ' please')},at:Date.now()+1500,target:{session:${jsLiteral(target)}}}).then((r)=>!!r.ok||JSON.stringify(r))`);
+    assert.strictEqual(saved, true, 'a one-off schedule for that agent: ' + saved);
+    assert.ok(await until(`${sb}.doorsList().then((d)=>(d[${jsLiteral(target)}]||{}).held===1)`, 10000), 'its run is held at the closed door');
+    /* FR-028: on a card desk the door you closed shows its word, and the desk's name says it */
+    assert.ok(await until(`(()=>{const w=${desk}.querySelector('.cb-sign[data-sign="shut"] .cb-w');return !!w&&getComputedStyle(w).display!=='none'&&/^DND/.test(w.dataset.w)})()`, 4000), 'card desk: the DND word is shown for a door you closed');
+    await until(`/, 1 held, /.test(${desk}.getAttribute('aria-label'))`, 8000);
+    const dl = await js(`${desk}.getAttribute('aria-label')`);
+    assert.ok(dl.startsWith(NAME) && /, door closed by you \(do not disturb\), 1 held, /.test(dl), 'the desk name says the door is closed by you and what it holds: ' + dl);
+    /* spec 054 FR-040: remote control offers to open the door */
+    await js(`${desk}.click()`);
+    assert.ok(await until(`!!document.getElementById('moreBtn')`, 4000), 'the chat is open');
+    await js(`document.getElementById('moreBtn').click()`); await until(`!!document.getElementById('remoteBtn')`, 3000);
+    await H.clearToasts();
+    await js(`document.getElementById('remoteBtn').click()`);
+    assert.ok(await until(`[...document.querySelectorAll('#toasts .toast')].some((t)=>/door is closed/.test(t.textContent)&&!!t.querySelector('.toast-act'))`, 4000), 'remote control says the door is closed and offers to open it');
+    assert.strictEqual(await js(`[...document.querySelectorAll('#toasts .toast-act')].map((b)=>b.textContent).join('|')`), 'Open the door');
+    await js(`[...document.querySelectorAll('#toasts .toast-act')].find((b)=>b.textContent==='Open the door').click()`);
+    assert.ok(await until(`!!document.getElementById('modeDlg')`, 4000), 'Open the door asks about the held prompt');
+    /* (7) mask, then cut: the token never reaches the dialog */
+    const ln = await js(`[...document.querySelectorAll('#modeDlg li')].map((x)=>x.textContent)`);
+    assert.ok(ln.length === 1 && /^deploy with /.test(ln[0]) && !ln[0].includes(TOKEN) && !ln[0].includes('Z9Z9Z9Z9'), 'the held prompt is listed masked: ' + JSON.stringify(ln));
+    await H.key('Escape');
+    assert.ok(await until(`!document.getElementById('modeDlg')`, 3000));
+    assert.strictEqual(await js(`${btn}.getAttribute('aria-pressed')`), 'true', 'Escape keeps it closed');
+    await H.key('Escape');
+    /* (2, FR-027) Open office asks first; Keep cabins keeps them */
+    await js(`window.DurbarScreens.openSettings()`);
+    assert.ok(await until(`!!document.querySelector('[data-officelayout="open"]')`, 4000));
+    await js(`document.querySelector('[data-officelayout="open"]').click()`);
+    assert.ok(await until(`!!document.getElementById('modeDlg')`, 4000), 'switching to Open office with a door you closed asks first');
+    const od = await js(`({t:document.querySelector('#modeDlg h3').textContent,b:[...document.querySelectorAll('#modeDlg .dbtn button')].map((x)=>x.textContent),l:[...document.querySelectorAll('#modeDlg li')].map((x)=>x.textContent)})`);
+    assert.deepStrictEqual(od.b, ['Keep cabins', 'Discard', 'Send all (1)'], 'Keep cabins, Discard, Send all: ' + JSON.stringify(od));
+    assert.deepStrictEqual(od.l, [NAME + ' · door closed · 1 held'], 'it names the door');
+    await H.key('Escape');
+    assert.ok(await until(`!document.getElementById('modeDlg')`, 3000));
+    assert.ok(await until(`document.querySelector('[data-officelayout="cabins"]').getAttribute('aria-pressed')==='true'`, 3000), 'Keep cabins: the office keeps its cabins');
+    assert.strictEqual(await js(`localStorage.getItem('durbar.doorsigns')`), 'on');
+    /* Send all: the door opens, the office switches, the prompt goes to the agent */
+    await js(`document.querySelector('[data-officelayout="open"]').click()`);
+    assert.ok(await until(`!!document.getElementById('modeDlg')`, 4000));
+    await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>/^Send all/.test(x.textContent)).click()`);
+    assert.ok(await until(`document.querySelector('[data-officelayout="open"]').getAttribute('aria-pressed')==='true'`, 4000), 'then Open office');
+    await H.key('Escape');
+    assert.ok(await until(`${sb}.doorsList().then((d)=>!d[${jsLiteral(target)}])`, 10000), 'the door is open and nothing is held');
+    assert.ok(await until(`document.querySelectorAll('#stage .cabin,#stage .cb-toggle,#stage .cb-sign').length===0`, 4000), 'an open office: no doors left');
+    /* a door still closed in an open office (main kept it, e.g. a restart) stays visible with its button, so it can be opened */
+    await js(`${sb}.setDoor(${jsLiteral(target)},true)`);
+    await js(`window.__durbarSimUi.render()`);
+    assert.ok(await until(`!!${btn}&&${btn}.getAttribute('aria-pressed')==='true'&&!!${desk}.querySelector('.cb-sign[data-sign="shut"]')`, 4000), 'open office: a door closed by you still shows its cabin, sign and button');
+    await js(`${btn}.click()`);
+    assert.ok(await until(`${btn}===null||${btn}.getAttribute('aria-pressed')==='false'`, 4000), 'and can be opened');
+    assert.ok(await until(`document.querySelectorAll('#stage .cabin,#stage .cb-toggle').length===0`, 4000), 'then the open office is plain again');
+    await js(`localStorage.setItem('durbar.doorsigns','on')`);
+    console.log('[017-signs] open office, masked held prompt, escaped name, DND word on a card desk, remote offers to open the door');
   }
   assert.deepStrictEqual([...seen].sort(), Object.keys(TABLE).sort(), 'every sign is seen at least once across the passes');
   console.log('[017-signs] all checks passed; shots in', OUT);

@@ -2,7 +2,7 @@
 import * as assert from 'assert';
 import * as path from 'path';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-type SignIn = { retrying?: boolean; state?: string; paused?: boolean; coffee?: boolean; limit?: boolean; ended?: boolean; resting?: boolean; failing?: boolean; helpers?: string[]; userClosed?: boolean; held?: number };
+type SignIn = { retrying?: boolean; compacting?: boolean; state?: string; paused?: boolean; coffee?: boolean; limit?: boolean; ended?: boolean; resting?: boolean; failing?: boolean; helpers?: string[]; userClosed?: boolean; held?: number };
 type Sign = { key: string; word: string; short: string; tone: string; door: string; icon: string; figure: string; effect: string };
 const { summarizeRoom, doorSign, SIGN_KEYS } = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'roomsummary.js')) as {
   summarizeRoom: (m: { state: string; helpers?: string[] }[]) => { text: string; tone: string; attention: boolean };
@@ -37,6 +37,8 @@ assert.deepStrictEqual(row({ state: 'thinking' }), ['thinking', 'Thinking', 'thi
 assert.deepStrictEqual(row({ state: 'working', failing: true }), ['failing', 'Failing', 'failing', 'closed'], 'review on #631: failing tool calls keep their own word (not colour only)');
 assert.deepStrictEqual(row({ state: 'thinking', failing: true, helpers: ['working'] }), ['failing', 'Failing', 'failing', 'closed'], 'failing wins over a meeting');
 assert.deepStrictEqual(row({ state: 'working', retrying: true, failing: true }), ['retrying', 'Retrying', 'retrying', 'closed'], 'spec 034 FR-018: Retrying keeps its own word (before Failing, as the pill)');
+assert.deepStrictEqual(row({ state: 'working', compacting: true, failing: true, helpers: ['working'] }), ['compacting', 'Compacting', 'compacting', 'closed'], 'spec 017 FR-026: Compacting keeps its own word (after Retrying, before Failing, as the pill)');
+assert.deepStrictEqual(row({ state: 'working', retrying: true, compacting: true }), ['retrying', 'Retrying', 'retrying', 'closed'], 'Retrying before Compacting');
 assert.deepStrictEqual(row({ state: 'working', helpers: ['working'] }), ['meeting', 'In a meeting', 'working', 'closed']);
 assert.deepStrictEqual(row({ state: 'thinking', helpers: ['done', 'thinking'] }), ['meeting', 'In a meeting', 'thinking', 'closed']);
 assert.deepStrictEqual(row({ state: 'working', helpers: ['done', 'idle'] }), ['busy', 'Busy', 'working', 'closed'], 'finished helpers are no meeting');
@@ -59,12 +61,12 @@ assert.deepStrictEqual(row({}), ['available', 'Available', 'idle', 'open'], 'mis
 assert.deepStrictEqual(row(undefined as never), ['available', 'Available', 'idle', 'open'], 'undefined input never throws');
 assert.deepStrictEqual(row({ state: 'bogus' }), ['available', 'Available', 'idle', 'open'], 'unknown state');
 /* every sign has its own icon and word (colour is never the only cue, FR-005) */
-const all = [{ state: 'error' }, { state: 'waiting', limit: true }, { state: 'waiting' }, { state: 'idle', userClosed: true }, { state: 'idle', paused: true }, { state: 'idle', ended: true }, { state: 'working', helpers: ['working'] }, { state: 'working', retrying: true }, { state: 'working', failing: true }, { state: 'thinking' }, { state: 'working' }, { state: 'done' }, { state: 'idle' }, { state: 'idle', held: 2 }].map(sg);
+const all = [{ state: 'error' }, { state: 'waiting', limit: true }, { state: 'waiting' }, { state: 'idle', userClosed: true }, { state: 'idle', paused: true }, { state: 'idle', ended: true }, { state: 'working', helpers: ['working'] }, { state: 'working', retrying: true }, { state: 'working', compacting: true }, { state: 'working', failing: true }, { state: 'thinking' }, { state: 'working' }, { state: 'done' }, { state: 'idle' }, { state: 'idle', held: 2 }].map(sg);
 assert.deepStrictEqual(all.map((r) => r.key), SIGN_KEYS, 'SIGN_KEYS lists the signs in priority order');
 assert.strictEqual(new Set(all.map((r) => r.icon)).size, all.length, 'one icon per sign');
 assert.strictEqual(new Set(all.map((r) => r.word)).size, all.length, 'one word per sign');
 assert.strictEqual(new Set(all.map((r) => r.short)).size, all.length - 1, 'one short word per sign (both kinds of Do not disturb say DND; their icons differ)');
-assert.deepStrictEqual(all.map((r) => r.short), ['Alert', 'Limit', 'Waiting', 'DND', 'DND', 'Away', 'Meeting', 'Retrying', 'Failing', 'Thinking', 'Busy', 'Done', 'Available', '2 held']);
+assert.deepStrictEqual(all.map((r) => r.short), ['Alert', 'Limit', 'Waiting', 'DND', 'DND', 'Away', 'Meeting', 'Retrying', 'Compact', 'Failing', 'Thinking', 'Busy', 'Done', 'Available', '2 held']);
 assert.ok(all.every((r) => r.short.length <= 9), 'short words fit the narrowest desks');
 assert.deepStrictEqual(all.filter((r) => r.door === 'open').map((r) => r.key), ['attention', 'done', 'available', 'pending'], 'the cabin is open when done, free or in trouble; closed while busy, waiting, DND or away');
 assert.ok(Object.isFrozen(SIGN_KEYS), 'SIGN_KEYS cannot be changed by a caller');

@@ -137,7 +137,7 @@ module.exports = async (ctx) => {
   /* the lounge setting, as a person turns it (Settings) */
   /* spec 017 FR-014: the cabins (on by default) draw a closed door in place of a busy desk's scene; the scene checks below switch them off
      for the measurement and on again for the screenshot (the cabins have their own driver, shots-017-signs) */
-  const cabins = async (on) => { await js(`window.DurbarScreens.openSettings()`); await H.until(`!!document.getElementById('signSw')`, 4000); const cur = await js(`document.getElementById('signSw').getAttribute('aria-checked')==='true'`); if (cur !== on) await js(`document.getElementById('signSw').click()`); await H.key('Escape'); await ctx.sleep(500); };
+  const cabins = async (on) => { const k = on ? 'cabins' : 'open'; await js(`window.DurbarScreens.openSettings()`); await H.until(`!!document.querySelector('[data-officelayout="${k}"]')`, 4000); await js(`document.querySelector('[data-officelayout="${k}"]').click()`); await H.until(`document.querySelector('[data-officelayout="${k}"]').getAttribute('aria-pressed')==='true'`, 3000); await H.key('Escape'); await ctx.sleep(500); }; // spec 017 FR-027: Settings > Office layout
   const toggle = async () => { await js(`window.DurbarScreens.openSettings()`); await H.until(`!!document.getElementById('shutSw')`, 4000); await js(`document.getElementById('shutSw').click()`); await H.key('Escape'); await ctx.sleep(500); };
   /* how sharp a scene is drawn: the share (%) of its pixels that are exactly one of its flat colours (+-2 per channel); a blurred drawing
      loses most of them. Under load a capture can show an older frame: read again (up to 3 times) and keep the best */

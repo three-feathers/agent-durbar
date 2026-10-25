@@ -1229,7 +1229,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .cabin.cb-f.cb-waiting .cb-sign{top:auto;bottom:6%}
 /* review on PR 631: where the desk is narrow (card, mini, micro) the door's sign is its icon only, so it never runs under the chat number;
    the word is on the desk's status pill or word right beside it (colour is still never the only cue) */
-.stage:is([data-d="card"],[data-d="mini"],[data-d="micro"]) .cb-sign .cb-w{display:none}
+.stage:is([data-d="card"],[data-d="mini"],[data-d="micro"]) .cb-sign:not([data-sign="shut"]) .cb-w{display:none} /* FR-028: a door you closed keeps its word (DND) on every desk */
 .stage:is([data-d="card"],[data-d="mini"],[data-d="micro"]) .cb-sign{padding:0 3px;gap:0}
 .cb-open{position:absolute;inset:0;pointer-events:none}
 .cb-leaf-open{position:absolute;left:0;top:4%;bottom:0;width:11%;background:var(--door-leaf);border:1px solid var(--door-leaf-line);clip-path:polygon(0 0,100% 9%,100% 91%,0 100%)}
