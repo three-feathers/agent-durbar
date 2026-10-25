@@ -71,6 +71,16 @@ module.exports = async (ctx) => {
     assert.ok(psbx.whole && psbx.inside && psbx.px >= 10.5, `${w}: the line is whole and legible: ${JSON.stringify(psbx)}`);
     assert.ok(!/sandbox/.test(psbx.sum), `${w}: the summary itself is unchanged`);
     await H.shot(path.join(OUT, `087-codex-card-${w}x${h}.png`), { prep: 'mouse' });
+    // ---- FR-021a (K15): Copilot Ask first: Kenji (Copilot without simkinds=mixed) waits on a shell command; the card has its own line ----
+    await H.load({ w, h, query: {} });
+    await expectChip(w, 'sim-8', /Ask first · Sandboxed\b/, (c) => /Copilot may run it outside its sandbox \(seen on Linux, 2026-10-25\)/.test(c.title));
+    assert.ok(await until(`!!document.querySelector('#chat .note.perm.pending .psbx')`, 8000), `${w}: Copilot's waiting shell card has its sandbox line`);
+    const cps = await js(`(()=>{const p=document.querySelector('#chat .note.perm.pending .psbx');p.scrollIntoView({block:'nearest'});const n=p.closest('.note').getBoundingClientRect(),r=p.getBoundingClientRect(),cs=getComputedStyle(p);return {text:p.textContent,whole:p.scrollWidth<=p.clientWidth+0.5&&cs.textOverflow!=='ellipsis',inside:r.right<=n.right+0.5&&r.left>=n.left-0.5,px:parseFloat(cs.fontSize)}})()`);
+    assert.strictEqual(cps.text, 'If you approve, Copilot may run this outside its sandbox (seen on Linux, 2026-10-25).', `${w}: Copilot's exact line`);
+    assert.ok(cps.whole && cps.inside && cps.px >= 10.5, `${w}: Copilot's line is whole and legible: ${JSON.stringify(cps)}`);
+    await H.shot(path.join(OUT, `087-copilot-card-${w}x${h}.png`), { prep: 'mouse' });
+    await H.load({ w, h, query: { simkinds: 'mixed', simsendfail: 'sandbox-choice' } });
+    await openAgent('sim-8'); // back to Codex's chat for the hostile-text checks
     // ---- hostile text: a reason and a note with markup and a token are shown as masked text, never as markup ----
     const TOK = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
     await js(`window.__durbarSimEmit({type:'sandbox',sessionId:'sim-8',timestamp:Date.now(),sandbox:{state:'off',covers:['shell'],verified:false,reason:${jsLiteral('<img src=x class=evil> blocked by ' + TOK)}},notice:{text:${jsLiteral('<b class=evil>bad</b> could not start its OS sandbox: ' + TOK + '. Nothing was sent.')},actions:['continue']}})`);

@@ -315,7 +315,8 @@ Allow all keeps the app's default. When the vendor's managed policy forces a san
   (file edits, which Durbar checks itself, MCP) and a session whose sandbox is not on get no line. Copilot's `SandboxState` in Ask
   first with the floor on has `approvedMayLeave: true`, so the chip tooltip adds "If you approve a command, Copilot may run it
   outside its sandbox (seen on Linux, 2026-10-25)." and still ends with "Requested; not verified on a real session." Removed only
-  when a real run shows an approved command stays sandboxed (K15).
+  when a real run shows an approved command stays sandboxed (K15). Simulator: [1440x900](../../docs/screenshots/087-copilot-card-1440x900.png),
+  [1280x800](../../docs/screenshots/087-copilot-card-1280x800.png) (`scripts/check-sandbox-floor.js`, Kenji without `simkinds=mixed`).
 
 ### Key Entities
 
@@ -399,8 +400,8 @@ your shell tool: touch sandbox-probe.txt ...".
   off the verified list. Usage: 0.161 AIU (2 model calls, 25.4k input tokens of which 12.6k cache reads, 148 output tokens).
   Not a sign that Copilot auto-approves sandboxed shell commands: the broker was asked and answered.
 - **Settled:** K1 (Claude honours a `sandbox` block given by `--settings` with `--setting-sources ""`), K2 (`denyWrite` on the
-  working folder makes it read-only on Linux), and the Linux half of K13's unwritten case (Claude's own write grant on its working
-  folder versus a `denyWrite` on that same path: the deny wins). **Still open:** K4 (the sandbox started, so no
+  working folder makes it read-only on Linux), and, consistent with it but without a control run, the Linux half of K13's unwritten
+  case (Claude's own write grant on its working folder versus a `denyWrite` on that same path: the deny held). **Still open:** K4 (the sandbox started, so no
   `failIfUnavailable` exit was seen), K8 (`options.update` was accepted and the state is `on`, but no shell command ran inside
   Copilot's sandbox, so its effect on a created session is not proven), and SC-004's Ask first half on Linux. A Copilot check
   that reaches its OS layer needs Ask first with an approved command that writes outside the folder (one more prompt, owner's OK):
@@ -419,7 +420,9 @@ your shell tool: touch sandbox-probe.txt ...".
   reads, 50 output tokens). Copilot gets **no** verified entry. The script now also records the bounded enum fields of
   `sandbox.decision` (kind, outcome, control, enforcement point, state; never a resource or command) for the next run.
   `[KNOWN GAP]` K15: on Linux an approved Copilot command in Ask first wrote outside the session folder although the chip said
-  *Sandboxed*; cause unknown. Until a run explains it, the Copilot Ask first tooltip's "writes: this folder" is a request, not a
+  *Sandboxed*; cause unknown. Because one possible cause is that the `sandboxConfig` was never applied (K8), the Copilot floor may not
+  be in force at all (Read-only's shell commands and MCP servers included) until K8 and K15 are settled; the README says so (review
+  on PR #753). The chip's *Sandboxed* means Copilot accepted the settings, not that a refusal was seen. Until a run explains it, the Copilot Ask first tooltip's "writes: this folder" is a request, not a
   limit (it still ends with "Requested; not verified on a real session."). FR-021a (added in the same PR) says so on the approval
   card and in the chip tooltip; finding the cause needs one more prompt with the new capture, the owner's OK.
 
