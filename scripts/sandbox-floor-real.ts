@@ -7,7 +7,12 @@
  * argv (home masked), so the `--settings` JSON with the `sandbox` block is on record. Never a token, a value from the vendor's
  * config or session data.
  *
- *   node dist-scripts/scripts/sandbox-floor-real.js <claude|copilot> <out.json>
+ *   node dist-scripts/scripts/sandbox-floor-real.js <claude|copilot> <out.json> [ask]
+ *
+ * `ask` (Copilot only; spec 087 K8, owner-approved 2026-10-25 19:35 UTC): Ask first instead, and the prompt asks to `touch` a file
+ * in a second throw-away folder that is NOT a session root. The script answers Durbar's own approval request as a person would:
+ * it approves only a shell request whose summary names that probe file, and denies anything else. Then whether Copilot's OS
+ * sandbox refused the approved write (file absent, error text) is recorded.
  *
  * Claude Code: Read-only denies Bash outright, so the only shell that runs in Read-only is one an accepted folder allow rule lets
  * through (spec 087 US1, spec 061). The script passes the accepted rule `Bash(touch:*)` so the command reaches the OS sandbox,
@@ -27,6 +32,8 @@ import type { AgentAdapter, AgentEvent } from '../src/adapters/types';
 
 const app = process.argv[2] as 'claude' | 'copilot';
 const outFile = process.argv[3];
+const askOutside = process.argv[4] === 'ask';
+if (askOutside && app !== 'copilot') throw new Error('ask: Copilot only');
 if (!['claude', 'copilot'].includes(app) || !outFile) throw new Error('usage: sandbox-floor-real.js <claude|copilot> <out.json>');
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 const HOME = os.homedir();
@@ -54,8 +61,10 @@ const rawTypes: string[] = [];
 const orig = (EventMapper as unknown as { prototype: { map(x: unknown): void } }).prototype.map;
 (EventMapper as unknown as { prototype: { map(x: unknown): void } }).prototype.map = function (this: unknown, x: unknown): void {
   try {
-    const e = x as { type?: string; data?: { warningType?: string } };
-    rawTypes.push(`${e?.type}${e?.data?.warningType ? ':' + e.data.warningType : ''}`);
+    const e = x as { type?: string; data?: { warningType?: string; kind?: unknown; outcome?: unknown; control?: unknown; enforcementPoint?: unknown; state?: unknown } };
+    // `sandbox.decision`: only its bounded enum fields (kind, outcome, control, enforcement point, state), never a resource or command
+    const d = e?.type === 'sandbox.decision' && e.data ? ':' + ['kind', 'outcome', 'control', 'enforcementPoint', 'state'].map((k) => { const v = (e.data as Record<string, unknown>)[k]; return typeof v === 'string' && /^[a-z_]{1,40}$/.test(v) ? v : '-'; }).join('/') : '';
+    rawTypes.push(`${e?.type}${e?.data?.warningType ? ':' + e.data.warningType : ''}${d}`);
   } catch { /* types only */ }
   return orig.call(this, x);
 };
@@ -64,7 +73,8 @@ async function main(): Promise<void> {
   const descriptor = app === 'claude' ? CLAUDE_DESCRIPTOR : COPILOT_DESCRIPTOR;
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `durbar-t060-${app}-`)));
   fs.writeFileSync(path.join(dir, 'README.txt'), 'throw-away folder for the spec 087 T060 sandbox check\n');
-  const probe = path.join(dir, 'sandbox-probe.txt');
+  const outside = askOutside ? fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-t060-outside-'))) : '';
+  const probe = askOutside ? path.join(outside, 'copilot-probe.txt') : path.join(dir, 'sandbox-probe.txt');
   const ad: AgentAdapter = descriptor.create();
   const evs: Array<AgentEvent & { t: number }> = [];
   const perms: unknown[] = [];
@@ -73,11 +83,13 @@ async function main(): Promise<void> {
     evs.push({ ...e, t: now() });
     const p = e.type === 'status' && e.status === 'needs-permission' ? e.permission : undefined;
     if (p && p.state === 'pending' && sid && e.sessionId === sid) {
-      perms.push({ t: now(), kind: p.kind, summary: mask(String(p.summary)).slice(0, 200), answered: 'deny' });
-      setTimeout(() => ad.resolvePermission?.(sid, p.requestId, false), 200); // Read-only should never ask; deny whatever does
+      // Read-only should never ask: deny whatever does. Ask first: approve only the shell call that names the outside probe file
+      const ok = askOutside && p.kind === 'shell' && String(p.summary).includes('copilot-probe.txt');
+      perms.push({ t: now(), kind: p.kind, summary: mask(String(p.summary)).slice(0, 200), answered: ok ? 'approve' : 'deny' });
+      setTimeout(() => ad.resolvePermission?.(sid, p.requestId, ok), 200); // a later tick, like the UI (docs/agent-notes.md)
     }
   });
-  const base = { workspace: dir, permissionMode: 'read-only' as const, quiet: true };
+  const base = { workspace: dir, permissionMode: (askOutside ? 'ask' : 'read-only') as 'ask' | 'read-only', quiet: true };
   sid = await ad.start(app === 'claude'
     ? { ...base, model: 'haiku', maxAiCredits: 0.25, folderSetup: { rules: { allow: ['Bash(touch:*)'], deny: [], ask: [] } } }
     : ({ ...base, model: 'auto', autoTier: 'efficiency', maxAiCredits: 30 } as never));
@@ -87,7 +99,7 @@ async function main(): Promise<void> {
   const sandboxBeforeSend = evs.filter((e) => e.type === 'sandbox').map((e) => ({ t: e.t, ...(e as unknown as { sandbox: unknown; notice?: unknown }) }));
   t0 = Date.now();
   const sentAt = evs.length;
-  if (!(app === 'copilot' && process.env.T060_DRY === '1')) await ad.send(sid, { text: 'Run this exact shell command in the current folder with your shell tool: touch sandbox-probe.txt  Then reply with the exact error text if it failed, or only the word done.' });
+  if (!(app === 'copilot' && process.env.T060_DRY === '1')) await ad.send(sid, { text: askOutside ? `Run this exact shell command with your shell tool: touch ${probe}  Then reply with the exact error text if it failed, or only the word done.` : 'Run this exact shell command in the current folder with your shell tool: touch sandbox-probe.txt  Then reply with the exact error text if it failed, or only the word done.' });
   const deadline = Date.now() + (app === 'copilot' && process.env.T060_DRY === '1' ? 0 : 180_000);
   while (Date.now() < deadline && !evs.slice(sentAt).some((e) => e.type === 'status' && (e.status === 'idle' || e.status === 'error') && e.sessionId === sid)) await sleep(250);
   await sleep(1500);
@@ -98,7 +110,7 @@ async function main(): Promise<void> {
   });
   const usage = evs.filter((e) => e.type === 'usage') as Array<{ model?: string; costUsd?: number; nanoAiu?: number; inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; costMultiplier?: number }>;
   const result = {
-    app, mode: 'read-only', date: new Date().toISOString(), node: process.version,
+    app, mode: askOutside ? 'ask' : 'read-only', outside: outside ? mask(outside) : undefined, date: new Date().toISOString(), node: process.version,
     folder: mask(dir),
     probeExists,
     sandboxBeforeSend,
@@ -124,6 +136,7 @@ async function main(): Promise<void> {
   }
   await ad.dispose().catch(() => undefined);
   fs.rmSync(dir, { recursive: true, force: true });
+  if (outside) fs.rmSync(outside, { recursive: true, force: true });
   console.log(`done ${app}: probeExists=${probeExists} tools=${tools.length} -> ${outFile}`);
 }
 main().then(() => process.exit(0), (e) => { console.error('FAILED', mask(String(e instanceof Error ? e.message : e)).slice(0, 300)); process.exit(1); });

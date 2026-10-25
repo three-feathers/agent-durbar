@@ -3,14 +3,14 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: OS sandbox floor (issue #611): under Read-only and Ask first Durbar also turns on each agent app's own OS sandbox (Claude Code's bash sandbox, Copilot's local sandbox; Codex's read-limited profile already does it), so a command that slips past Durbar's checks still cannot write outside the folder or reach the network; Allow all keeps the app default; the chat header says Sandboxed or Not sandboxed, and why
-status: Built 2026-10-25 (simulator and fakes only): Claude Code and Copilot floors, Codex state and card line, the chip, tooltips, the sandbox note with Continue / Always / Change mode…, Settings > Agent apps line, the policy rule; real check on Linux 2026-10-25 (T060): Claude Code's sandbox refused a Read-only write, Copilot's floor was on but Durbar refused the command first; macOS and Windows not verified (T061, T062 open); the policy key is not reachable until spec 076 has a reader
+status: Built 2026-10-25 (simulator and fakes only): Claude Code and Copilot floors, Codex state and card line, the chip, tooltips, the sandbox note with Continue / Always / Change mode…, Settings > Agent apps line, the policy rule; real check on Linux 2026-10-25 (T060): Claude Code's sandbox refused a Read-only write (verified for Linux Read-only only); Copilot's floor was on, Durbar refused the Read-only command first, and in Ask first an approved write outside the folder was not refused (K15, cause unknown); macOS and Windows not verified (T061, T062 open); the policy key is not reachable until spec 076 has a reader
 -->
 
 **Feature Branch**: `087-os-sandbox-floor` (touches 003 permission modes, 012 Claude and Codex adapters, 002 Copilot adapter, 018 mode switch, 076 organization policy, 081 Settings > Agent apps, 010 simulator)
 
 **Created**: 2026-10-25
 
-**Status**: Built (2026-10-25) on the simulator and with fakes; Linux checked on a real session 2026-10-25 (T060: Claude Code verified, Copilot's OS layer not exercised); macOS and Windows not verified (T061, T062 open). See *Changes*.
+**Status**: Built (2026-10-25) on the simulator and with fakes; Linux checked on a real session 2026-10-25 (T060: Claude Code verified in Read-only; Copilot Ask first let an approved write outside the folder through, K15); macOS and Windows not verified (T061, T062 open). See *Changes*.
 
 **Input**: Issue #611, owner decision (Vikram, 2026-10-23, *go*): "Today Read-only / Ask first are enforced by Durbar's permission
 checks. Turn on each agent app's real OS sandbox underneath, so writes outside the folder or network calls are blocked by the OS
@@ -298,7 +298,7 @@ Allow all keeps the app's default. When the vendor's managed policy forces a san
 - **FR-019** `[IMPLEMENTED]` for the rule (test: `scripts/test-sandbox-floor.ts` T050; adapter refusals in the T020/T021 tests) `[KNOWN GAP]` not reachable in the app: spec 076 has no policy reader yet, so `requireOsSandbox()` answers `false` (the reader: issue #734) Organization policy (spec 076): a new key `permissions.requireOsSandbox` (boolean, default `false`) makes FR-007
   refuse instead of warn. It can only narrow (spec 076's narrow-only rule); bad values count as `true` (fail closed). Confirmed by
   owner decision Q1.
-- **FR-020** `[IMPLEMENTED]` Linux, Claude Code (real: T060, 2026-10-25, *Changes*) `[KNOWN GAP]` Linux Copilot (its OS layer was not reached: Durbar's Read-only refused the command first), Linux Ask first and network, macOS (T061), Windows (T062) Real checks are separate tasks (constitution IV): one tiny read-only prompt per app and OS within the owner's budget
+- **FR-020** `[IMPLEMENTED]` Linux, Claude Code, Read-only only (real: T060, 2026-10-25, *Changes*) `[KNOWN GAP]` Linux Copilot (Read-only: Durbar refused the command first; Ask first: an approved write outside the folder was **not** refused, K15), Linux Claude Ask first and network, macOS (T061), Windows (T062) Real checks are separate tasks (constitution IV): one tiny read-only prompt per app and OS within the owner's budget
   (macOS, Linux, Windows), recording that a sandboxed command cannot write outside the folder or reach the network. Until then each
   claim is `sim:`/`test:` only, and both the tooltip (FR-010) and the README say "not verified on a real session".
 - **FR-021** `[IMPLEMENTED]` (test: `scripts/test-sandbox-floor.ts`; sim: `scripts/check-sandbox-floor.js` whole line at both sizes) **Codex approval cards in Ask first** say what approval may mean, in a line of its own that is never cut (a separate
@@ -377,9 +377,10 @@ your shell tool: touch sandbox-probe.txt ...".
   answer (the rule passes the hook; no permission request). Bash ran `touch sandbox-probe.txt` and failed: `Exit code 1` /
   `touch: cannot touch 'sandbox-probe.txt': Read-only file system`. The file was absent afterwards. **The OS refused the write.**
   Usage: Claude's estimate $0.0078 (2 model calls, 72.6k input tokens of which 36.2k cache reads, 17 output tokens; cap $0.25).
-  So `CLAUDE_SANDBOX_VERIFIED` is now `['linux']` (T060 AC1): the tooltip on Linux no longer ends with "Requested; not verified on
-  a real session." Not run: the network refusal and Ask first's write outside the folder (SC-004's second half); the Linux entry
-  rests on the Read-only write refusal, as AC1 defines.
+  So `CLAUDE_SANDBOX_VERIFIED` is now `{ linux: ['read-only'] }` (T060 AC1, per platform **and mode**, review on PR #753 by Ruben's
+  agent: a run in one mode proves nothing about the other, constitution VIII): on Linux the Read-only tooltip no longer ends with
+  "Requested; not verified on a real session."; Ask first keeps it. Not run for Claude: the network refusal and Ask first's write
+  outside the folder (SC-004's second half).
 - **Copilot CLI 1.0.101 / SDK 1.0.22, Read-only, model `auto` (efficiency tier, resolved to a 1x model)** (`real:`).
   `getHostSupport()` answered supported and `options.update` with Durbar's `sandboxConfig` resolved: the chip reached *Sandboxed*
   (state `on`, bubblewrap, covers shell and MCP) before the send; no `session.warning` of type `sandbox` came. The model called
@@ -393,7 +394,25 @@ your shell tool: touch sandbox-probe.txt ...".
   folder versus a `denyWrite` on that same path: the deny wins). **Still open:** K4 (the sandbox started, so no
   `failIfUnavailable` exit was seen), K8 (`options.update` was accepted and the state is `on`, but no shell command ran inside
   Copilot's sandbox, so its effect on a created session is not proven), and SC-004's Ask first half on Linux. A Copilot check
-  that reaches its OS layer needs Ask first with an approved command that writes outside the folder (one more prompt, owner's OK).
+  that reaches its OS layer needs Ask first with an approved command that writes outside the folder (one more prompt, owner's OK):
+  run below.
+- **Copilot, Ask first, write outside the folder** (`real:` 2026-10-25 19:38 UTC, owner's OK Vikram 19:35 UTC for exactly one
+  prompt, recorded on PR #753; same versions and host; `scripts/sandbox-floor-real.ts copilot <out> ask`, dry run first). Session
+  folder `/tmp/durbar-t060-copilot-XXXXXX`; a second throw-away folder `/tmp/durbar-t060-outside-XXXXXX`, not a session root.
+  The chip was *Sandboxed* (state `on`, bubblewrap, writes: folders) before the send. The model called `bash` with `touch
+  /tmp/durbar-t060-outside-XXXXXX/copilot-probe.txt`; Durbar's broker asked (`shell`, "run touch …/copilot-probe.txt") and the
+  script approved it as a person would. The command **exited 0 and the file existed afterwards: the OS did not refuse the write
+  outside the session folder.** One vendor event of type `sandbox.decision` came; the script then recorded event types only, so
+  its variant (`bypass_decided`, `access_recorded`, `enforcement_state`, …, `read:` `session-events.schema.json` of
+  `@github/copilot-sdk-linux-x64` 1.0.22) is unknown, and why the write went through is **not known**: an approval that runs the
+  command outside the sandbox (as Codex may, K6), a policy that does not limit writes to the folder, or a `sandboxConfig` that
+  did not apply to the created session (K8) all fit. Usage: 0.077 AIU (2 model calls, 25.4k input tokens of which 20.4k cache
+  reads, 50 output tokens). Copilot gets **no** verified entry. The script now also records the bounded enum fields of
+  `sandbox.decision` (kind, outcome, control, enforcement point, state; never a resource or command) for the next run.
+  `[KNOWN GAP]` K15: on Linux an approved Copilot command in Ask first wrote outside the session folder although the chip said
+  *Sandboxed*; cause unknown. Until a run explains it, the Copilot Ask first tooltip's "writes: this folder" is a request, not a
+  limit (it still ends with "Requested; not verified on a real session."). A fix (for example saying so in the tooltip and the
+  approval card, as FR-021 does for Codex) needs the cause first: one more prompt with the new capture, the owner's OK.
 
 ### 2026-10-25: review round 8 on PR #733 (Ruben's agent, 6 items)
 

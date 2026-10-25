@@ -103,8 +103,11 @@ the user's full rights today), and any bug in Durbar's own checks. In Ask first 
   parameter list). So Durbar would set it with `session.rpc.options.update` right after create/resume and before the first send.
   `[KNOWN GAP]` K8: that `options.update` with `sandboxConfig` applies to shell commands of an already-created session (the type
   calls it "the genuinely-mutable subset"). T060 (`real:` 2026-10-25, Linux, CLI 1.0.101 / SDK 1.0.22) got only half: the update
-  resolved and no `session.warning` came, but the one shell call was refused by Durbar's Read-only broker before it ran, so no
-  command ran inside the sandbox. Proving it needs an approved command in Ask first that writes outside the folder.
+  resolved and no `session.warning` came, but the one shell call was refused by Durbar's Read-only broker before it ran. The Ask
+  first run (`real:` 2026-10-25 19:38 UTC, one prompt) then **contradicts or bypasses it**: an approved `touch` in a folder outside
+  the session roots exited 0 and the file was created, with the state `on`; one `sandbox.decision` event came (variant not
+  recorded). K8 stays open, and K15 (spec *Changes*) records the write: the cause (approval runs outside the sandbox, policy, or the
+  update not applied) needs one more run with the new `sandbox.decision` capture.
 - **Unavailable:** docs: the app "fails the shell with an unsupported-platform or unsupported-policy message. It does not run
   unsandboxed"; on Windows, denied paths that cannot be enforced make the command "fail with an explanation". Managed
   `sandbox.failIfUnavailable` keeps a server force-on so "the session fails loudly instead of quietly running unsandboxed"

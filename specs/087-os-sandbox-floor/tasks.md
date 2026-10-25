@@ -95,7 +95,7 @@ the OS sandbox can stop it.
 
 - [x] T060 Linux: one tiny Read-only prompt each for Claude Code and Copilot that asks to `touch` a file in the folder; record that the OS refuses it (or the gap); record usage. [FR-020, SC-004, K1, K2, K4, K8]
   - AC1: the result and usage are written in spec.md (`real:`), and the verified list gets the Linux entry only for an app whose write was refused.
-  - Done 2026-10-25 (spec *Changes*, T060): Claude Code's OS refused the write (`CLAUDE_SANDBOX_VERIFIED = ['linux']`); Copilot's floor was on but Durbar refused the command first, so Copilot gets no entry (K8 still open). 2 prompts.
+  - Done 2026-10-25 (spec *Changes*, T060): Claude Code's OS refused the write (`CLAUDE_SANDBOX_VERIFIED = { linux: ['read-only'] }`, per mode after review on PR #753); Copilot's floor was on but Durbar refused the Read-only command first, and an extra owner-approved Ask first run let an approved write outside the folder through (K15), so Copilot gets no entry (K8 still open). 3 prompts.
 - [ ] T061 macOS: the same for both apps. [FR-020, SC-004]
   - AC1: as T060 AC1, macOS entry.
 - [ ] T062 Windows: Copilot on a Windows 11 build with ProcessContainer (one prompt), and Claude's *Not sandboxed* note recorded with no prompt. [FR-020, SC-004, K9]
