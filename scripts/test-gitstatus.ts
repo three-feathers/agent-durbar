@@ -1,7 +1,14 @@
-/** Unit test (spec 063): git status parsing, the runner's limits and read-only argv, and the window's words. No real git needed. */
+/**
+ * Unit test (spec 063): git status parsing, the runner's limits and read-only argv, and the window's words.
+ * FR-008 (2026-10-25, #719): the real runner against a scratch repository whose own config plants every command-running
+ * setting (needs `git` on PATH; skipped with a note when it is absent).
+ */
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
-import { GIT_MAX_FILES, folderGitStatus, parseNumstatZ, parsePorcelainZ } from '../src/main/gitstatus';
+import { execFileSync } from 'child_process';
+import { GIT_MAX_FILES, filterDrivers, folderGitStatus, makeGitExec, nodeGitExec, parseNumstatZ, parsePorcelainZ } from '../src/main/gitstatus';
 import type { GitExec } from '../src/main/gitstatus';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -46,9 +53,41 @@ async function main(): Promise<void> {
   const big = await folderGitStatus('/w/big', exec(many, ''));
   assert.ok(big.repo && big.files.length === GIT_MAX_FILES && big.more === 7, 'at most 200 files, the rest counted');
 
-  // the nodeGitExec argv starts with --no-optional-locks (no lock files written): read from the source, no git run here
+  // FR-008: the runner's argv (fake run, no git): every override is asserted one by one, so dropping any of them fails here
+  const calls: Array<{ argv: string[]; env: NodeJS.ProcessEnv }> = [];
+  const fake = (drivers: string): GitExec => makeGitExec(async (argv, env) => { calls.push({ argv, env }); return argv.includes('config') ? drivers : 'out'; });
+  assert.strictEqual(await fake('filter.evil.clean\0filter.evil.process\0filter.a.b.smudge\0')(['-C', '/w/api', 'diff', 'HEAD', '--numstat', '-z']), 'out');
+  const [list, call] = calls;
+  const pairs = (argv: string[]): string[] => argv.flatMap((a, i) => (argv[i - 1] === '-c' ? [a] : []));
+  for (const c of ['core.fsmonitor=false', 'core.useBuiltinFSMonitor=false', 'protocol.allow=never', 'protocol.file.allow=never', 'protocol.git.allow=never', 'protocol.ssh.allow=never', 'protocol.http.allow=never', 'protocol.https.allow=never', 'protocol.ext.allow=never', 'log.showSignature=false']) {
+    assert.ok(pairs(call.argv).includes(c), 'the call overrides ' + c);
+    assert.ok(pairs(list.argv).includes(c), 'the config read overrides ' + c);
+  }
+  for (const d of ['evil', 'a.b']) for (const kv of ['clean=', 'smudge=', 'process=', 'required=false']) assert.ok(pairs(call.argv).includes(`filter.${d}.${kv}`), `filter ${d} ${kv}`);
+  assert.deepStrictEqual(call.argv.slice(0, 2), ['--no-pager', '--no-optional-locks'], 'global options first');
+  assert.deepStrictEqual(call.argv.slice(call.argv.indexOf('-C')), ['-C', '/w/api', 'diff', '--no-ext-diff', '--no-textconv', '--ignore-submodules=dirty', 'HEAD', '--numstat', '-z'], 'diff: no external diff, no textconv, submodules not entered');
+  assert.deepStrictEqual(list.argv.slice(list.argv.indexOf('-C')), ['-C', '/w/api', 'config', '-z', '--name-only', '--get-regexp', '^filter\\.'], 'the driver names are read in the same folder');
+  for (const e of [list.env, call.env]) assert.deepStrictEqual([e.GIT_NO_LAZY_FETCH, e.GIT_TERMINAL_PROMPT, e.GIT_OPTIONAL_LOCKS], ['1', '0', '0'], 'env');
+  calls.length = 0;
+  await fake('')(['-C', '/w/api', 'status', '--porcelain=v1']);
+  assert.deepStrictEqual(calls[1].argv.slice(calls[1].argv.indexOf('-C')), ['-C', '/w/api', 'status', '--ignore-submodules=dirty', '--porcelain=v1'], 'status: submodules not entered');
+  calls.length = 0;
+  await fake('')(['-C', '/w/api', 'rev-list', '--count', 'HEAD']);
+  assert.ok(calls[1].argv.includes('rev-list') && !calls[1].argv.includes('--ignore-submodules=dirty'), 'rev-list as is');
+  // refused before any git runs: a writing subcommand, an alias name, a caller's own -c, nothing at all
+  calls.length = 0;
+  for (const bad of [['-C', '/w', 'commit'], ['-C', '/w', 'st'], ['-C', '/w', '-c', 'core.fsmonitor=x', 'status'], ['-C', '/w', 'fetch'], []]) await assert.rejects(fake('')(bad), /not allowed/, bad.join(' '));
+  assert.strictEqual(calls.length, 0, 'nothing ran for a refused call');
+  // a driver name -c cannot express is refused (git splits -c at the first "=")
+  await assert.rejects(fake('filter.a=b.clean\0')(['-C', '/w', 'status']), /cannot be overridden/);
+  assert.deepStrictEqual(filterDrivers('filter.x.clean\0filter.x.required\0filter.y.z.process\0filterx.clean\0'), ['x', 'y.z']);
+  // "no filter at all" (git config exits 1) is fine; any other failure of the config read fails the call
+  const exit = (code: number): GitExec => makeGitExec(async (argv) => { if (argv.includes('config')) throw Object.assign(new Error('x'), { code }); return 'ok'; });
+  assert.strictEqual(await exit(1)(['-C', '/w', 'status']), 'ok');
+  await assert.rejects(exit(128)(['-C', '/w', 'status']));
+  // the real runner is this one, over execFile with an argv array and no shell
   const src = require('fs').readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'gitstatus.ts'), 'utf8') as string;
-  assert.ok(/execFile\('git', \['--no-optional-locks', \.\.\.args\]/.test(src), 'git runs with --no-optional-locks, argv only');
+  assert.ok(/export const nodeGitExec: GitExec = makeGitExec\(/.test(src) && /execFile\('git', argv, \{[^}]*env \}/.test(src) && !/shell:\s*true/.test(src), 'nodeGitExec: makeGitExec over execFile, argv and env, no shell');
 
   // the window's words (text only)
   assert.strictEqual(GS.chipText({ repo: false }), '');
@@ -61,4 +100,117 @@ async function main(): Promise<void> {
   assert.strictEqual(GS.chipText({ repo: true, branch: 'HEAD', detached: true, files: [], more: 0 }), ' · detached HEAD');
   console.log('gitstatus: porcelain/numstat parsing, read-only argv, limits, failures, window words OK');
 }
-main().catch((e) => { console.error(e); process.exit(1); });
+
+/**
+ * FR-008 real-git check. A scratch repository plants, in its own `.git/config`, every setting that makes git run a command,
+ * each command appending its own name to a marker folder outside the repository. Then the real runner (`nodeGitExec`) makes
+ * every call the app makes (spec 063 status and numstat, spec 085 rev-parse, rev-list, shortstat) plus a full patch diff
+ * (the only diff that would start `diff.external`, `diff.<name>.command` or a textconv). Nothing may have run.
+ * Portability: the planted commands are plain `sh` lines (`echo NAME >> 'path'`): git runs config commands through `sh` on
+ * every platform (Git for Windows ships its own), and the marker path is written with forward slashes, which that `sh`
+ * accepts on Windows too. Hooks are `#!/bin/sh` files (Git for Windows runs those through its `sh` as well).
+ * Without the hardening (main before FR-008) this run lists fsmonitor, filter, process and submodule markers.
+ */
+async function realGitCheck(): Promise<void> {
+  try { execFileSync('git', ['--version'], { stdio: 'ignore', windowsHide: true }); } catch { console.log('gitstatus: real-git check SKIPPED (no git on PATH)'); return; }
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-git-'));
+  try {
+    const marks = path.join(root, 'marks');
+    fs.mkdirSync(marks);
+    const slash = (p: string): string => p.split(path.sep).join('/');
+    assert.ok(!/['\n]/.test(slash(marks)), 'the temp path can be single-quoted for sh');
+    const cmd = (name: string): string => `echo ${name} >> '${slash(marks)}/${name}'`;
+    const g = (cwd: string, ...args: string[]): string => execFileSync('git', ['-c', 'user.email=t@example.invalid', '-c', 'user.name=t', '-c', 'core.fsmonitor=false', '-c', 'advice.addEmbeddedRepo=false', '-c', 'init.defaultBranch=main', ...args], { cwd, encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+    const old = new Date('2001-01-01T00:00:00Z');
+    const sameSize = (file: string, text: string): void => { fs.writeFileSync(file, text); fs.utimesSync(file, old, old); }; // same size, old time: only hashing (through the clean filter) can tell
+
+    // the folder: a.txt uses driver "evil" (clean/smudge, textconv, diff command), b.txt driver "evil2" (a long-running process filter)
+    const repo = path.join(root, 'repo');
+    fs.mkdirSync(repo);
+    g(repo, 'init', '-q');
+    fs.writeFileSync(path.join(repo, '.gitattributes'), 'a.txt filter=evil diff=evil\nb.txt filter=evil2\n');
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'one\n');
+    fs.writeFileSync(path.join(repo, 'b.txt'), 'two\n');
+    // an embedded repository (a gitlink), with its own fsmonitor and filter: `status` would start a git inside it
+    const sub = path.join(repo, 's');
+    fs.mkdirSync(sub);
+    g(sub, 'init', '-q');
+    fs.writeFileSync(path.join(sub, '.gitattributes'), '*.txt filter=subevil\n');
+    fs.writeFileSync(path.join(sub, 'g.txt'), 'sub\n');
+    g(sub, 'add', '.');
+    g(sub, 'commit', '-qm', 'sub');
+    g(repo, 'add', '.');
+    g(repo, 'commit', '-qm', 'base');
+    const hooks = path.join(root, 'hooks');
+    fs.mkdirSync(hooks);
+    for (const h of ['post-index-change', 'reference-transaction', 'pre-auto-gc', 'post-checkout', 'fsmonitor-watchman']) {
+      fs.writeFileSync(path.join(hooks, h), `#!/bin/sh\n${cmd('hook-' + h)}\n`);
+      fs.chmodSync(path.join(hooks, h), 0o755);
+    }
+    const plant: Array<[string, string]> = [
+      ['core.fsmonitor', cmd('fsmonitor')],
+      ['filter.evil.clean', cmd('clean') + '; cat'],
+      ['filter.evil.smudge', cmd('smudge') + '; cat'],
+      ['filter.evil.required', 'true'],
+      ['filter.evil2.process', cmd('process')],
+      ['diff.evil.textconv', cmd('textconv') + '; cat'],
+      ['diff.evil.command', cmd('diffcommand')],
+      ['diff.external', cmd('external')],
+      ['core.pager', cmd('pager') + '; cat'],
+      ['pager.status', cmd('pagerstatus') + '; cat'],
+      ['pager.diff', cmd('pagerdiff') + '; cat'],
+      ['core.editor', cmd('editor')],
+      ['sequence.editor', cmd('seqeditor')],
+      ['core.hooksPath', slash(hooks)],
+      ['core.sshCommand', cmd('ssh')],
+      ['gpg.program', cmd('gpg')],
+      ['log.showSignature', 'true'],
+      ['alias.st', '!' + cmd('alias')],
+      ['alias.status', '!' + cmd('aliasstatus')], // git never lets an alias replace a built-in; planted to prove it
+    ];
+    for (const [k, v] of plant) g(repo, 'config', k, v);
+    g(sub, 'config', 'core.fsmonitor', cmd('subfsmonitor'));
+    g(sub, 'config', 'filter.subevil.clean', cmd('subclean') + '; cat');
+    sameSize(path.join(repo, 'a.txt'), 'ONE\n');
+    sameSize(path.join(repo, 'b.txt'), 'TWO\n');
+    sameSize(path.join(sub, 'g.txt'), 'SUB\n');
+
+    // a partial clone whose missing blob a diff would fetch over ssh (core.sshCommand) unless every transport is refused
+    const lazy = path.join(root, 'lazy');
+    fs.mkdirSync(lazy);
+    g(lazy, 'init', '-q');
+    fs.writeFileSync(path.join(lazy, 'f.txt'), 'old\n');
+    g(lazy, 'add', '.');
+    g(lazy, 'commit', '-qm', 'base');
+    const blob = g(lazy, 'rev-parse', 'HEAD:f.txt').trim();
+    const obj = path.join(lazy, '.git', 'objects', blob.slice(0, 2), blob.slice(2));
+    fs.chmodSync(obj, 0o644); // git writes objects read-only, which Windows refuses to delete
+    fs.rmSync(obj);
+    for (const [k, v] of [['core.repositoryformatversion', '1'], ['extensions.partialClone', 'origin'], ['remote.origin.url', 'ssh://example.invalid/x'], ['remote.origin.promisor', 'true'], ['core.sshCommand', cmd('lazyssh')]]) g(lazy, 'config', k, v);
+    fs.writeFileSync(path.join(lazy, 'f.txt'), 'new\n');
+
+    // every call the app makes, through the real runner
+    const st = await folderGitStatus(repo, nodeGitExec);
+    await nodeGitExec(['-C', repo, 'rev-parse', '--verify', '-q', 'HEAD']);
+    await nodeGitExec(['-C', repo, 'rev-list', '--count', 'HEAD']);
+    await nodeGitExec(['-C', repo, 'diff', '--shortstat', 'HEAD', '--']).catch(() => '');
+    await nodeGitExec(['-C', repo, 'diff', 'HEAD']).catch(() => ''); // a full patch: the diff that would run diff.external, the driver command and textconv
+    await nodeGitExec(['-C', lazy, 'diff', 'HEAD', '--numstat', '-z']).catch(() => '');
+    await folderGitStatus(lazy, nodeGitExec);
+    // refused without running git: a writing command, and an alias name
+    await assert.rejects(nodeGitExec(['-C', repo, 'st']), /not allowed/);
+    await assert.rejects(nodeGitExec(['-C', repo, 'commit', '-m', 'x']), /not allowed/);
+    await assert.rejects(nodeGitExec(['-C', repo, '-c', 'core.fsmonitor=x', 'status']), /not allowed/, 'a caller cannot add its own -c');
+
+    const ran = fs.readdirSync(marks).sort();
+    assert.deepStrictEqual(ran, [], 'no command from the folder config ran: ' + ran.join(', '));
+    // and the status is still right (filters off: the files compare by their raw bytes)
+    assert.ok(st.repo, 'still a repository');
+    if (st.repo) assert.deepStrictEqual(st.files.map((f) => `${f.state}:${f.path}`).sort(), ['modified:a.txt', 'modified:b.txt'], 'a.txt and b.txt changed; the dirty submodule is not entered');
+    console.log(`gitstatus: real git (${execFileSync('git', ['--version'], { encoding: 'utf8', windowsHide: true }).trim()}): ${plant.length + 3} planted settings, none ran`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
+main().then(realGitCheck).catch((e) => { console.error(e); process.exit(1); });

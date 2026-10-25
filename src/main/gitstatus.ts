@@ -1,6 +1,7 @@
 /**
  * Spec 063: the git branch and uncommitted changes of a session's folder, read-only. `git` runs with argv only (no shell),
- * `--no-optional-locks` (no lock files, no index refresh written), 4 s and 512 KB per command, at most 200 files listed.
+ * `--no-optional-locks` (no lock files, no index refresh written), 4 s and 512 KB per command, at most 200 files listed;
+ * no command from the folder's own git config runs (FR-008, `makeGitExec`).
  * Any failure (no git, not a repository, a timeout) is `{ repo: false }`: the window then shows nothing extra.
  */
 import { execFile } from 'child_process';
@@ -74,11 +75,82 @@ export function parseNumstatZ(out: string): Map<string, { added?: number; remove
 
 export type GitExec = (args: string[]) => Promise<string>;
 
-/** The real runner: `git` from PATH, argv only, time and size limits, no optional locks. */
-export const nodeGitExec: GitExec = (args) =>
+/**
+ * FR-008 (2026-10-25, #719): git honours the folder's own `.git/config`, and some settings there are commands git runs.
+ * Every git call in `src/main` goes through this runner, which allows only read-only subcommands and turns those settings off.
+ * Not overridden because they cannot fire here (the real-git test plants them anyway): `core.pager`/`pager.*` (stdout is a
+ * pipe, and `--no-pager`), `core.editor`/`sequence.editor` (no editing command is allowed), hooks and `core.hooksPath` (none
+ * runs for these subcommands; `--no-optional-locks` keeps the index unwritten, so no `post-index-change`), aliases (git never
+ * lets an alias replace a built-in, and only built-ins are allowed), `core.sshCommand` (only for a transport, refused below).
+ */
+export const GIT_READ_ONLY = ['status', 'diff', 'rev-parse', 'rev-list'] as const;
+export const GIT_SAFE_CONFIG: readonly string[] = [
+  'core.fsmonitor=false', // no fsmonitor hook (passed down to the git a submodule check would start, too)
+  'core.useBuiltinFSMonitor=false', // the older Git for Windows spelling
+  'protocol.allow=never', // no transport at all: a partial clone's lazy fetch cannot start core.sshCommand, an uploadpack or a credential helper
+  ...['file', 'git', 'ssh', 'http', 'https', 'ext'].map((p) => `protocol.${p}.allow=never`), // the folder's own protocol.<name>.allow would beat protocol.allow
+  'log.showSignature=false', // no gpg.program
+];
+export const GIT_SAFE_ENV: Readonly<Record<string, string>> = { GIT_NO_LAZY_FETCH: '1', GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' };
+const GLOBAL = ['--no-pager', '--no-optional-locks'];
+const AFTER: Record<string, string[]> = {
+  status: ['--ignore-submodules=dirty'], // do not start a git inside each submodule (its own filter drivers were not read)
+  diff: ['--no-ext-diff', '--no-textconv', '--ignore-submodules=dirty'], // no diff.external, diff.<name>.command or textconv
+};
+
+/** Filter driver names from `git config -z --name-only --get-regexp '^filter\.'` (`filter.<name>.<key>`, the name may hold dots). */
+export function filterDrivers(out: string): string[] {
+  const names = new Set<string>();
+  for (const k of out.split('\0')) {
+    const m = /^filter\.(.+)\.[^.]+$/s.exec(k);
+    if (m) names.add(m[1]);
+  }
+  return [...names];
+}
+
+/** `-c` pairs that switch a filter driver off. A name `-c` cannot express (git splits `-c` at the first `=`) is refused. */
+export function filterOverrides(names: string[]): string[] {
+  const out: string[] = [];
+  for (const n of names) {
+    if (n.includes('=')) throw new Error('git: a filter driver name that cannot be overridden');
+    for (const kv of ['clean=', 'smudge=', 'process=', 'required=false']) out.push('-c', `filter.${n}.${kv}`);
+  }
+  return out;
+}
+
+/** The leading `-C <dir>` of a call (where it runs), then the subcommand and its arguments; anything else is refused. */
+function split(args: string[]): { at: string[]; sub: string; rest: string[] } {
+  const at = args[0] === '-C' && typeof args[1] === 'string' ? args.slice(0, 2) : [];
+  const sub = args[at.length];
+  if (!(GIT_READ_ONLY as readonly string[]).includes(sub)) throw new Error(`git: subcommand not allowed: ${String(sub).slice(0, 40)}`);
+  return { at, sub, rest: args.slice(at.length + 1) };
+}
+
+/** The full argv of one call: global options, the safe config, the filter overrides, then the call with its subcommand's flags. */
+export function hardenedArgv(args: string[], drivers: string[]): string[] {
+  const { at, sub, rest } = split(args);
+  return [...GLOBAL, ...GIT_SAFE_CONFIG.flatMap((c) => ['-c', c]), ...filterOverrides(drivers), ...at, sub, ...(AFTER[sub] ?? []), ...rest];
+}
+
+export type GitRun = (argv: string[], env: NodeJS.ProcessEnv) => Promise<string>;
+
+/** The runner over any `run` (tests pass a fake): first the filter driver names (reading config runs nothing), then the call. */
+export function makeGitExec(run: GitRun): GitExec {
+  return async (args) => {
+    const { at } = split(args);
+    const env = { ...process.env, ...GIT_SAFE_ENV };
+    const list = [...GLOBAL, ...GIT_SAFE_CONFIG.flatMap((c) => ['-c', c]), ...at, 'config', '-z', '--name-only', '--get-regexp', '^filter\\.'];
+    // exit status 1: no such key (no filter driver at all); anything else is a failure
+    const names = await run(list, env).catch((e: { code?: unknown }) => { if (e && e.code === 1) return ''; throw e; });
+    return run(hardenedArgv(args, filterDrivers(names)), env);
+  };
+}
+
+/** The real runner: `git` from PATH, argv only (no shell), time and size limits. */
+export const nodeGitExec: GitExec = makeGitExec((argv, env) =>
   new Promise((resolve, reject) => {
-    execFile('git', ['--no-optional-locks', ...args], { timeout: GIT_TIMEOUT_MS, maxBuffer: GIT_MAX_BYTES, windowsHide: true, encoding: 'utf8' }, (err, stdout) => (err ? reject(err) : resolve(stdout)));
-  });
+    execFile('git', argv, { timeout: GIT_TIMEOUT_MS, maxBuffer: GIT_MAX_BYTES, windowsHide: true, encoding: 'utf8', env }, (err, stdout) => (err ? reject(err) : resolve(stdout)));
+  }));
 
 export async function folderGitStatus(dir: string, exec: GitExec = nodeGitExec): Promise<GitStatus> {
   try {
