@@ -12,6 +12,7 @@ export type { McpServerInput, McpServerView, McpTransport, McpTrustInfo };
 import type { AdapterInfo } from './adapters';
 import type { ActivityRow } from './activity';
 import type { RemoteState } from './remote';
+import type { NotesView, NotesWrote } from './notes';
 export type { RemoteState };
 export type { AdapterInfo };
 
@@ -684,7 +685,7 @@ export interface DurbarApi {
   /** Ends one main session and takes it out of the office (spec 006 FR-017); refused for the last main session of a folder and for helpers. */
   removeSession?(id: string): Promise<{ ok: boolean; error?: string }>;
   /** Sets the folder's display name (spec 006 FR-018); empty = the folder's own name. */
-  renameFolder?(id: string, label: string): Promise<{ ok: boolean; label?: string }>;
+  renameFolder?(id: string, label: string): Promise<{ ok: boolean; label?: string; error?: string }>;
   setFolderDefaultAgent?(id: string, profileId: string | null): Promise<{ ok: boolean; defaultAgent?: string }>;
   /** Spec 006 FR-021: start a restored agent now (no prompt). `resumed` says whether its last session came back, with its history. */
   wake?(id: string): Promise<{ ok: boolean; error?: string; resumed?: boolean; history?: { items: HistoryItem[]; total: number; truncated: boolean }; title?: string }>;
@@ -866,6 +867,20 @@ export interface DurbarApi {
   send(id: string, text: string, attachments: PickedFile[], opts?: { plan?: boolean }): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string }>;
   /** Spec 073 FR-010: the "/" entries of the agent's app in its folder (folder, user, app). */
   slashCommands?(id: string): Promise<{ ok: boolean; error?: string; entries: SlashCommandInfo[] }>;
+  /**
+   * Spec 083 FR-062 (issue 699): the folder's notes, by agent id (the window never passes a path). Everything stored is masked in main
+   * before it is written; a refusal carries a short reason. `notesSetFile` is answered by the simulator only for now (*Demo: no file written*).
+   */
+  notesList?(id: string): Promise<NotesView>;
+  notesSave?(id: string, input: { role: 'user' | 'agent'; ord: number; text: string; from?: 'agent' | 'user' | 'selection' }): Promise<NotesWrote>;
+  notesAdd?(id: string, input: { text: string }): Promise<NotesWrote>;
+  notesUpdate?(id: string, noteId: string, rev: number, patch: { title?: string; text?: string; done?: boolean }): Promise<NotesWrote>;
+  notesDelete?(id: string, noteId: string, rev: number): Promise<NotesWrote>;
+  notesDeleteAll?(id: string): Promise<NotesWrote>;
+  notesStartOver?(id: string): Promise<NotesWrote>;
+  notesSetFile?(id: string, on: boolean): Promise<{ ok: boolean; demo?: boolean; message?: string; error?: string }>;
+  /** A folder's notes changed (another chat, another process): refetch the open folder's notes when the fingerprint is its own. */
+  onNotesChanged?(cb: (v: { fingerprint: string }) => void): () => void;
   /** Spec 066: answer a proposed plan (window only). */
   resolvePlan?(id: string, requestId: string, answer: { kind: 'approve' | 'reject' | 'revise'; feedback?: string }): Promise<{ ok: boolean; error?: string }>;
   /** Interrupt the current turn only; the agent returns to Ready. */

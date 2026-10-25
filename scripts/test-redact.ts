@@ -1360,12 +1360,14 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.strictEqual(redact('see ?codec=1&statement=2'), 'see ?codec=1&statement=2', 'a longer name is not one of them');
   assert.ok(!JSON.parse(lines[0]).stderr.includes('AUTHCODE'), 'the line stays valid JSON');
   // bounded and linear: long values and long runs of separators
-  const t1 = cpuMs(() => void redact('?code=' + 'a'.repeat(200_000)), 2000);
-  const t2 = cpuMs(() => void redact('?code=' + 'a'.repeat(800_000)), 2000);
-  const r1 = cpuMs(() => void redact('&state='.repeat(30_000)), 2000);
-  const r2 = cpuMs(() => void redact('&state='.repeat(120_000)), 2000);
-  const s1 = cpuMs(() => void redact('%3F'.repeat(60_000)), 2000);
-  const s2 = cpuMs(() => void redact('%3F'.repeat(240_000)), 2000);
+  // best of three runs: one GC pause or a busy core under a parallel `npm test` must not fail it; a quadratic rule is slow every run
+  const best3 = (f: () => void, cap: number): number => Math.min(cpuMs(f, cap), cpuMs(f, cap), cpuMs(f, cap));
+  const t1 = best3(() => void redact('?code=' + 'a'.repeat(200_000)), 2000);
+  const t2 = best3(() => void redact('?code=' + 'a'.repeat(800_000)), 2000);
+  const r1 = best3(() => void redact('&state='.repeat(30_000)), 2000);
+  const r2 = best3(() => void redact('&state='.repeat(120_000)), 2000);
+  const s1 = best3(() => void redact('%3F'.repeat(60_000)), 2000);
+  const s2 = best3(() => void redact('%3F'.repeat(240_000)), 2000);
   console.log(`redact: oauth query linearity value ${t1.toFixed(0)}/${t2.toFixed(0)} ms, names ${r1.toFixed(0)}/${r2.toFixed(0)} ms, separators ${s1.toFixed(0)}/${s2.toFixed(0)} ms`);
   for (const [a, b, what] of [[t1, t2, 'value'], [r1, r2, 'names'], [s1, s2, 'separators']] as const) assert.ok(b < Math.max(250, a * 10), `oauth query rule is linear (${what}: ${a} -> ${b} ms CPU for 4x input)`); // a floor well above Windows' ~16 ms timer step and CI load; backtracking would take seconds
 }

@@ -1251,3 +1251,132 @@ export function createDebugSink(file: string, env: Env, append: (file: string, d
     append(file, (over ? JSON.stringify({ truncated: true, head: safe }) : safe) + '\n');
   };
 }
+
+// ---- Notes (spec 083 FR-005, issue 699) ----
+
+/** Characters that can sit inside a token without being part of it: emphasis, code, strike, link brackets, a Markdown escape's backslash, zero-width characters. */
+const NOTE_MARK = /[*`~[\]\\​-‍﻿]/;
+const NOTE_ESCAPABLE = '\\`*_{}[]()#+-.!~|<>';
+const NOTE_RUN = /[A-Za-z0-9_\-.+/=:@%]{12,}/g;
+
+/** `s` without its split marks, and for each kept character its index in `s` (plus a final entry, `s.length`). */
+function withoutMarks(s: string): { k: string; at: number[] } {
+  const keep: string[] = [];
+  const at: number[] = [];
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\') {
+      if (i + 1 < s.length && NOTE_ESCAPABLE.includes(s[i + 1])) { keep.push(s[i + 1]); at.push(i + 1); i++; }
+      else { keep.push(c); at.push(i); } // a Windows path's backslash is a character
+      continue;
+    }
+    if (NOTE_MARK.test(c)) continue;
+    keep.push(c);
+    at.push(i);
+  }
+  at.push(s.length);
+  return { k: keep.join(''), at };
+}
+
+/** Replace each [a, b) span of `s` (in `s` coordinates, overlapping ones joined) with the mask. */
+function maskSpans(s: string, spans: Array<[number, number]>): string {
+  if (!spans.length) return s;
+  spans.sort((x, y) => x[0] - y[0] || y[1] - x[1]);
+  let out = '';
+  let pos = 0;
+  let cur: [number, number] | undefined;
+  const flush = (): void => { if (cur) { out += s.slice(pos, cur[0]) + MASK; pos = cur[1]; } };
+  for (const sp of spans) {
+    if (cur && sp[0] <= cur[1]) cur[1] = Math.max(cur[1], sp[1]);
+    else { flush(); cur = [sp[0], sp[1]]; }
+  }
+  flush();
+  return out + s.slice(pos);
+}
+
+/** The first and last character of `k` that `r` (its masked copy) changed, line by line when the line count is kept (else for the whole text). */
+function changedRegions(k: string, r: string): Array<[number, number]> {
+  const diff = (a: string, b: string, base: number): [number, number] | undefined => {
+    if (a === b) return undefined;
+    let p = 0;
+    const max = Math.min(a.length, b.length);
+    while (p < max && a[p] === b[p]) p++;
+    let q = 0;
+    while (q < max - p && a[a.length - 1 - q] === b[b.length - 1 - q]) q++;
+    let from = p;
+    let to = a.length - q;
+    if (to <= from) { if (from > 0) from--; else to = Math.min(a.length, from + 1); } // only inserted text: take a neighbouring character
+    return [base + from, base + to];
+  };
+  const ka = k.split('\n');
+  const ra = r.split('\n');
+  if (ka.length !== ra.length) { const d = diff(k, r, 0); return d ? [d] : []; }
+  const out: Array<[number, number]> = [];
+  let base = 0;
+  for (let i = 0; i < ka.length; i++) {
+    const d = diff(ka[i], ra[i], base);
+    if (d) out.push(d);
+    base += ka[i].length + 1;
+  }
+  return out;
+}
+
+/**
+ * Masks what a mark hides: a secret split by `**`, a backtick, `~`, a bracket or a Markdown escape. Works on the text without marks and
+ * maps each find back to the text as written, so the Markdown around it stays. `find` gives the spans (in `k` coordinates) to mask.
+ */
+function maskAcrossMarks(s: string, find: (k: string, at: number[], u: string) => Array<[number, number]>): string {
+  if (!NOTE_MARK.test(s)) return s;
+  const { k, at } = withoutMarks(s);
+  const spans: Array<[number, number]> = [];
+  for (const [a, b] of find(k, at, s)) if (b > a) spans.push([at[a], at[b - 1] + 1]);
+  return maskSpans(s, spans);
+}
+
+/**
+ * Spec 083 FR-005 (D3): the one mask every note passes before it is stored, keeping the Markdown as written. In this order:
+ * (1) the known secret values (the folder's and the session's; under 4 characters skipped, longest first), also when marks split them;
+ * (2) every token-like run, or region, that `redact` only finds once the Markdown marks are removed (a token split by `**` or a backtick,
+ * or glued to the word before it), judged on the text as written, before `redact` can mask a head and leave its tail; (3) `redact`
+ * (env secrets and token shapes) on the whole text. Mask first, cut after (the caller): a secret across
+ * the cut would leave a head. `changed` says whether anything was masked (the note's `hidden`). Linear: one pass per step.
+ */
+export function maskNoteText(text: unknown, values: readonly string[] = []): { text: string; changed: boolean } {
+  const original = typeof text === 'string' ? text : text == null ? '' : String(text);
+  let s = original;
+  const vals = [...new Set(values.filter((v) => typeof v === 'string' && v.length >= 4))].sort((a, b) => b.length - a.length);
+  for (const v of vals) if (s.includes(v)) s = s.split(v).join(MASK);
+  if (vals.length) {
+    s = maskAcrossMarks(s, (k) => {
+      const out: Array<[number, number]> = [];
+      for (const v of vals) for (let i = k.indexOf(v); i >= 0; i = k.indexOf(v, i + v.length)) out.push([i, i + v.length]);
+      return out;
+    });
+  }
+  s = maskAcrossMarks(s, (k, at, u) => {
+    const out: Array<[number, number]> = [];
+    // a run of `u` (marks are not run characters) that `redact` changes on its own, with the token characters glued after it across marks
+    const kIndex = new Map<number, number>();
+    at.forEach((uIdx, kIdx) => kIndex.set(uIdx, kIdx));
+    const seen = new Map<string, boolean>();
+    for (const m of u.matchAll(NOTE_RUN)) {
+      const i = m.index ?? 0;
+      const touches = (i > 0 && NOTE_MARK.test(u[i - 1])) || (i + m[0].length < u.length && NOTE_MARK.test(u[i + m[0].length]));
+      if (!touches) continue;
+      let hit = seen.get(m[0]);
+      if (hit === undefined) { hit = redact(m[0]) !== m[0]; seen.set(m[0], hit); }
+      if (!hit) continue;
+      const a = kIndex.get(i);
+      const lastK = kIndex.get(i + m[0].length - 1);
+      if (a === undefined || lastK === undefined) continue;
+      let b = lastK + 1;
+      while (b < k.length && /[A-Za-z0-9_-]/.test(k[b])) b++;
+      out.push([a, b]);
+    }
+    // whatever `redact` finds in the text without marks that it did not find in the text as written
+    out.push(...changedRegions(k, redact(k)));
+    return out;
+  });
+  s = redact(s);
+  return { text: s, changed: s !== original };
+}
