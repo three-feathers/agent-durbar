@@ -108,7 +108,7 @@ assert.match(docs, /<a class="keep" href="index\.html#download">Download<\/a>/, 
 
 const size = (dir) => fs.readdirSync(dir, { withFileTypes: true }).reduce((n, e) => n + (e.isDirectory() ? size(path.join(dir, e.name)) : fs.statSync(path.join(dir, e.name)).size), 0);
 const total = size(out);
-// 16 MB since spec 083 (2026-10-26): the Notes pictures and the retaken chat pictures (every bubble now has a ⋯) took the site from 14.7 to 15.5 MB; the coordinator decides whether to keep this ceiling
+// 16 MB since spec 083 (2026-10-26): the Notes pictures and the retaken chat pictures (every bubble now has a ⋯) took the site from 14.7 to 15.5 MB; spec 050 FR-011 records it
 assert.ok(total < 16 * 1024 * 1024, `site under 16 MB (is ${(total / 1048576).toFixed(1)} MB)`);
 fs.rmSync(out, { recursive: true, force: true });
 console.log(`site: ok (${attrCount} links and images on two pages, ${(total / 1048576).toFixed(1)} MB)`);

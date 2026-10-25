@@ -96,3 +96,12 @@ Evidence:
   - **Curiosity:** a one-line name note under the hero ("A durbar is a royal court where everyone gets a hearing…").
   - `test:` `scripts/test-site.js` asserts each of these (zoom links, crop, FAQ and its anchors, no overclaim, security link, phone Download, phone hint, docs `minmax`).
   - Not changed here (owned by the docs sweep, #404): the hero status line and the agent apps' "not yet" lines. Measured: no text under 10.5 px and no sideways scroll on either page at either width.
+
+### 2026-10-26: the site size budget is 16 MB (spec 083 T024; decided by the coordinator under Ruben's delegation)
+
+*Missing:* FR-005 caps the generated site at 15 MB. Every UI pull request retakes all the linked pictures that show a changed screen (`AGENTS.md`, *Keep docs in sync*), and the Notes pictures plus the retaken chat pictures (every message now has a `⋯`) took the site from 14.7 to 15.5 MB, so `test:site` failed.
+
+*Corrected:*
+- **FR-011** FR-005's budget is **16 MB** (`scripts/test-site.js`). The cap stays a hard check: a site over it fails `npm test`.
+- `[KNOWN GAP]` The screenshots are plain PNGs, not compressed. Compressing them is the real fix and would give the budget back; tracked in an issue (2026-10-26) so each UI pull request does not eat the margin again.
+

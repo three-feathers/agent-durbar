@@ -14,3 +14,4 @@
 - [x] T023 `scripts/test-site.js` extended for both pages and the validation function [FR-010]
 - [x] T024 `docs/site/gallery.json` leads with the current office screenshot; spec, tasks, specs index and CHANGELOG updated
 - [x] T025 Screenshots of both pages at desktop and phone width, and the phone height target (lead, before merge) [FR-009]
+- [x] T026 (2026-10-26) the site size budget is 16 MB in `scripts/test-site.js`, with the reason and a `[KNOWN GAP]` for uncompressed screenshots [FR-011]
