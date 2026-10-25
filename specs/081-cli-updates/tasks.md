@@ -83,17 +83,30 @@ Revised on 2026-10-24 after Paco's review of #663. Tasks marked *(Q3)*, *(Q6)* o
 - [ ] T020 [US2] `src/shared/harnesssetup.ts`:
   - npm and winget update argv pinned to the checked version (FR-023);
   - Copilot brew adds `--greedy`, and `claude-code@latest` updates that cask;
-  - own-updater plans `claude update` and `copilot update`; Codex keeps the 060 installer plan with `CODEX_NON_INTERACTIVE=1` *(Q3)*;
+  - own-updater plans `claude update` and `copilot update`, plus `codex update` only for an official Codex CLI (Q3 = C, limited). `isOfficialCodex` in `src/shared/updatecheck.ts` (plan D3). Every other Codex copy, and the fallback, uses the 060 installer plan with `CODEX_NON_INTERACTIVE=1`;
   - for an update, only the owning route is shown, with the others behind *Show other ways* (FR-008).
 
-  Extend `test-harnesssetup`: argv per source and OS, owning route only, the pin present. Mutations: offer npm first for a brew copy; drop the pin.
+  Extend `test-harnesssetup`, and test `isOfficialCodex` in `test-updatecheck`:
+  - argv per source and OS, owning route only, the pin present;
+  - official versus non-official Codex: standalone root, Windows root, a look-alike `…/packages/standalonex/`, a link that leaves the root, a relative `CODEX_HOME`, a world-writable folder, a missing `codex-cli` label, npm and brew copies (own route, never `codex update`).
+
+  Mutations: offer npm first for a brew copy; drop the pin; accept a prefix match without a path separator; skip the label check.
 - [ ] T021 [US2] `src/main/harnesssetup.ts`:
   - `prepare` accepts an own-updater plan (the app's binary, real path, `trustedPath`);
   - the `isRoot` refusal covers own updaters and every official installer (FR-025);
-  - Codex's official run sets `CODEX_NON_INTERACTIVE=1` in that child's environment only;
+  - Codex's official installer run sets `CODEX_NON_INTERACTIVE=1` in that child's environment only;
+  - `codex update` gets the plain-words confirmation with the exact `CODEX_UPDATE_COMMAND` for the OS, and *Durbar cannot see or check that script*;
+  - the fallback: `finish` reports `fallback: 'official'` for an unknown subcommand, "Could not detect the Codex installation method", or another failing exit that is not in-use or managed, and the window offers the 060 route with its own confirmation;
   - the confirmation shows the target version, pinned or not, the integrity line (FR-024) and Copilot's sign-in note.
 
-  Tests: root refused for `claude update`, `copilot update` and Codex official; the env var only on that child. Mutation: check `isRoot` only for `plan.script`.
+  Tests:
+  - root refused for `claude update`, `copilot update`, `codex update` and Codex official;
+  - the env var only on that child;
+  - each fallback trigger offers the 060 route and never retries by itself;
+  - in-use gives no fallback;
+  - the confirmation text holds the exact command.
+
+  Mutations: check `isRoot` only for `plan.script`; retry `codex update` automatically; drop the command from the confirmation.
 - [ ] T022 [US2] Version drift and `max` (FR-023): a fresh check of that app before the confirmation; with a `max`, only pinnable routes, pinned and within range; a non-pinnable owning route gives the explanation. After the run, detection runs again, and the shadowing-copy message appears when relevant (FR-011). An `outside` copy gets a hint and no Update (FR-012). Test the decision table, including the source moving on between check and confirm. Driver: dialog, progress, new version.
 - [ ] T023 [US2] SC-003: every path to `start` passes the native confirmation (own updater, Codex official, waiting update).
 
@@ -135,7 +148,7 @@ Revised on 2026-10-24 after Paco's review of #663. Tasks marked *(Q3)*, *(Q6)* o
 ## Phase 8: Docs and polish
 
 - [ ] T035 [P] README (*Safety model*, *Agent apps*): the start check and its switch, the FR-017 table (IP, time, User-Agent, npm's token and notifier, brew runs), the policy keys, the integrity per updater (FR-024), no root and no auto-accepted winget terms. Also `changelog.d/081-cli-updates.md`. Retake the linked Agent apps screenshots with `npm run shots:docs -- --only <setup driver>`.
-- [ ] T036 [P] `docs/agent-notes.md`: add an entry saying that `codex update` is curl-to-shell, that GitHub `releases/latest` is too big and the `Location` header gives the tag, and that `copilot` may update itself when started. Add the vendor updater facts with evidence once T040-T042 run. Spec 076: add `features.agentAppUpdateCheck` to its feature list (FR-159), in this PR or in 076's.
+- [ ] T036 [P] `docs/agent-notes.md`: add an entry saying that `codex update` is curl-to-shell (used only for the official Codex CLI, Q3), that GitHub `releases/latest` is too big and the `Location` header gives the tag, and that `copilot` may update itself when started. Add the vendor updater facts with evidence once T040-T042 run. Spec 076: add `features.agentAppUpdateCheck` to its feature list (FR-159), in this PR or in 076's.
 - [ ] T037 `npm run typecheck && npm run build && npm test`; run `docs/review-checklist.md`; `/speckit-converge`.
 
 ## Phase 9: Real-machine checks (owner-approved; each changes an installed app; 0 AI credits)

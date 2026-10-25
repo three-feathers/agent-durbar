@@ -3,14 +3,14 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Agent-app updates (owner request, issue #662): Settings > Agent apps shows "installed X, latest Y" per app, checked in the background at every Durbar start and on "Check for updates" (owner decision Q1 = C; organization policy can turn it off); a new version gets a badge and one toast; Update runs the updater of the source that installed the copy Durbar uses (no shell, argv, native confirmation, masked output); open sessions are warned about, ended or waited for; failures (admin rights, managed machines, locked files on Windows) say what to do
-status: Draft (2026-10-24): spec, research, plan and tasks; Q1, Q2, Q4, Q5 answered by Vikram (C, A, A, B); Q3 re-asked and Q6-Q7 open after Paco's review of #663; nothing built
+status: Draft (2026-10-25): spec, research, plan and tasks; Q1-Q5 answered by Vikram (C, A, C limited to the official Codex CLI, A, B); Q6-Q7 open after Paco's review of #663; nothing built
 -->
 
 **Feature Branch**: `081-cli-updates` (extends 051 harness setup, 060 platform parity and 012 detection; reads 076 managed config)
 
 **Created**: 2026-10-23
 
-**Status**: Draft. Spec, research, plan and tasks. Q1, Q2, Q4 and Q5 are answered by the owner (Clarifications). Q3 is asked again, and Q6 and Q7 are open after Paco's review of #663. Nothing is built. Every requirement is `[PLANNED]` unless tagged otherwise.
+**Status**: Draft. Spec, research, plan and tasks. Q1-Q5 are answered by the owner (Clarifications; Q3 asked again and answered on 2026-10-25). Q6 and Q7 are open after Paco's review of #663. Nothing is built. Every requirement is `[PLANNED]` unless tagged otherwise.
 
 **Input**: Issue #662, owner request (Vikram, 2026-10-23, DM): "lets add support to check updates on cli and upgrade it". The CLIs are the agent apps Durbar drives: Codex CLI, Claude Code and the GitHub Copilot CLI. The trigger was a Codex 0.163.0 sandbox bug on macOS (Homebrew cask, `/opt/homebrew/bin/codex`): today the only way to get a fixed Codex is to leave Durbar and update it by hand, and Durbar does not even say that a newer version exists.
 
@@ -234,8 +234,17 @@ When the start check finds a new version, the Settings entry and the card get a 
   - **Official installer**:
     - Claude Code native: `claude update` (documented).
     - GitHub Copilot CLI: `copilot update` (documented). The dialog says that it uses the user's GitHub sign-in to ask GitHub's release API (research R7).
-    - **Codex**: the official installer, run as spec 060 FR-001 runs it: downloaded from the allow-listed hosts to a private file, size-capped, refused as root, with the native confirmation naming the URL. `CODEX_NON_INTERACTIVE=1` is set in that child's environment only, as OpenAI's own update hint does (research R3).
-    - **`codex update` is not used**, pending [NEEDS CLARIFICATION: Q3, asked again]. `read:` openai/codex @970111f6 `codex-rs/tui/src/update_action.rs` (review on #663): for a standalone install it runs `sh -c "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh"` (Windows: `powershell -ExecutionPolicy Bypass -c "irm …install.ps1 | iex"`), with `sh`, `curl` and `powershell` taken from `PATH`. That skips 060's host allow-list, private file, size cap and root refusal, and the confirmation could not show what runs. For an install method Codex cannot detect, it exits with "Could not detect the Codex installation method".
+    - **Codex** (owner decision Q3 = C, limited, 2026-10-25: *"if it is official codex cli, it is ok"*): `codex update`, **only when the copy is the official Codex CLI**. Otherwise, and as the fallback, the official installer runs the way spec 060 FR-001 runs it: downloaded from the allow-listed hosts to a private file, size-capped, refused as root, with the native confirmation naming the URL, and `CODEX_NON_INTERACTIVE=1` set in that child's environment only, as OpenAI's own update hint does (research R3).
+      - **Official means all of these** (a pure check with an injected environment; anything else is refused, and the checked 060 route is offered instead):
+        - the binary's real path (symlinks resolved) lies inside an official vendor install root: `<CODEX_HOME>/packages/standalone/releases/<version>-<target>/` (default `~/.codex`; the standalone layout, research R1), or on Windows `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\` (OpenAI's `install.ps1`, spec 060 `real:` 2026-10-20). Copies from npm (`node_modules/@openai/codex/`) and Homebrew (`Caskroom/codex/`) are official too, but they update through their own route (FR-009 npm and Homebrew rows), never through `codex update`;
+        - `CODEX_HOME`, when set, is an absolute path, and the root is compared after resolving it (no `..`, no link that leaves it), case-insensitive on Windows and macOS;
+        - the file passes the existing `trustedPath` check (not in a folder anyone can change) and is a regular file;
+        - `codex --version` (already run by detection) printed the official label `codex-cli <version>` through spec 012's bounded parse (PR #698).
+        - A binary outside those roots (a fork, a self-built copy, an unknown folder) never gets `codex update`.
+      - **The confirmation says plainly what runs.** *`codex update` downloads OpenAI's installer script and runs it: `sh -c "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh"`*. On Windows it shows *`powershell -ExecutionPolicy Bypass -c "irm https://chatgpt.com/codex/install.ps1 | iex"`*. It also says *Durbar cannot see or check that script; `sh`, `curl` or `powershell` come from your PATH*, with the exact command copied from `update_action.rs` at the pinned commit and kept in one constant with its `read:` source.
+      - **Root**: refused as root (FR-025).
+      - **Fallback**: when `codex update` is missing (an unknown-subcommand answer), says "Could not detect the Codex installation method", or fails (non-zero exit that is not FR-014 *File in use* or *Managed*), the card offers the checked 060 installer route with its own native confirmation. It never retries `codex update` by itself.
+    - **Why it needs the limit** (`read:` openai/codex @970111f6 `codex-rs/tui/src/update_action.rs` (review on #663): for a standalone install it runs `sh -c "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh"` (Windows: `powershell -ExecutionPolicy Bypass -c "irm …install.ps1 | iex"`), with `sh`, `curl` and `powershell` taken from `PATH`. That skips 060's host allow-list, private file, size cap and root refusal, and the confirmation could not show what runs. For an install method Codex cannot detect, it exits with "Could not detect the Codex installation method".)
   - **No elevation.** Never `sudo`, `runas` or an elevation of Durbar's own. winget may raise Windows' own UAC prompt for a machine-wide package.
   - **Root** (FR-025).
 - **FR-010** `[PLANNED]` **Output.** The existing masked last-lines view: ANSI stripped, `redact()`, the OAuth mask, 200 characters per line. The full output is never logged, saved or sent. Durbar's existing time limit and Cancel for a setup step apply, with the tree kill of plan D1, so a Windows `npm.cmd` run is ended with its children and not only `cmd.exe`.
@@ -315,6 +324,7 @@ When the start check finds a new version, the Settings entry and the card get a 
   - **`claude update`**: Anthropic publishes a GPG-signed `manifest.json` with each binary's SHA256 (`read:` code.claude.com/docs/en/setup, *Binary integrity and code signing*). Whether `claude update` checks that signature itself is *unconfirmed*: the docs describe a manual check.
   - **`copilot update`**: *unconfirmed* (not documented in the pages read).
   - **The official installers** (Codex; spec 060): TLS plus Durbar's host allow-list only, with no pin or checksum by Durbar. What `install.sh` or `install.ps1` checks itself is *unconfirmed*.
+  - **`codex update`** (official Codex CLI only): TLS from `curl` or `irm`, with no allow-list, cap or check by Durbar. The script's own checks are *unconfirmed*. The confirmation says so.
 - **FR-025** `[PLANNED]` **Never as root.** The `isRoot` refusal (`src/main/harnesssetup.ts`, today only for `plan.script`) covers every vendor updater too: `claude update`, `copilot update` and the official installers. Message: *These updaters write into your home folder: run Agent Durbar as yourself, not as root.* npm, Homebrew and winget keep their current behaviour (Homebrew refuses root itself).
 - **FR-026** `[PLANNED]` **The lookup allow-list** for Durbar's own requests (FR-004, FR-017), exact host and exact path, https only, no redirects followed:
   - `github.com` `/openai/codex/releases/latest` and `/github/copilot-cli/releases/latest`. The answer must be a 3xx whose `Location` matches FR-004's anchored pattern, and the body is not read.
@@ -358,6 +368,7 @@ When the start check finds a new version, the Settings entry and the card get a 
 
 - `[KNOWN GAP]` Not run on a real machine yet for any source; the parsers rely on documented output (`read:` in research.md) until a recorded run.
 - `[KNOWN GAP]` Homebrew's "latest" is as fresh as its local data (Q4 = A: no `brew update`).
+- `[KNOWN GAP]` `codex update` downloads and runs a script Durbar cannot see or check (Q3 = C, limited to the official Codex CLI; FR-009, FR-024). The *official* check is by install path, file trust and the version label, not by a code signature (not verified on macOS or Windows).
 - `[KNOWN GAP]` The Claude channel files (`downloads.claude.ai/claude-code-releases/stable|latest`) are not a documented API; a change shows as *Could not check*.
 - `[KNOWN GAP]` Integrity: `claude update`'s use of the signed manifest, `copilot update`'s checks and the official installers' own checks are *unconfirmed* (FR-024).
 - `[KNOWN GAP]` Until spec 076's reader exists, no organization policy can turn the start check off; only the user's switch does (FR-022).
@@ -377,8 +388,8 @@ When the start check finds a new version, the Settings entry and the card get a 
   - A: offer *Update when they end* (default) or *End N sessions and update*, and Cancel. *Recommended*: never breaks a session; works on Windows, where a running program cannot be replaced.
   - B: refuse until I end them myself.
   - C: also offer *Update now anyway* on macOS and Linux (open sessions keep the old program until they end; resumed ones get the new one).
-- **Q3** (answered **C** on 2026-10-23, **asked again** on 2026-10-24 after Paco's review of #663) **For an app installed by its vendor's own installer, what runs?** New fact: `codex update` runs `curl … | sh` (Windows: `irm … | iex`) through `sh`, `curl` or `powershell` from `PATH`, which skips spec 060's allow-list, private file, size cap and root refusal (FR-009). [NEEDS CLARIFICATION]
-  - A: `claude update` and `copilot update`; Codex gets the official installer again through spec 060's checked download, with `CODEX_NON_INTERACTIVE=1`. (What the spec says until the answer.)
+- **Q3** (answered **C** on 2026-10-23; asked again on 2026-10-24 after Paco's review of #663; **answered C, limited to the official Codex CLI**, on 2026-10-25) **For an app installed by its vendor's own installer, what runs?** New fact: `codex update` runs `curl … | sh` (Windows: `irm … | iex`) through `sh`, `curl` or `powershell` from `PATH`, which skips spec 060's allow-list, private file, size cap and root refusal (FR-009).
+  - A: `claude update` and `copilot update`; Codex gets the official installer again through spec 060's checked download, with `CODEX_NON_INTERACTIVE=1`.
   - B: always the vendor's installer through spec 060's checked download, for all three apps (Durbar sees and caps every script; the apps' own updaters are not used).
   - C: as A, plus `codex update`, with the facts above shown in the confirmation (Durbar cannot show or check what the script does).
 - **Q4** (answered: **A**) **May a Homebrew check refresh Homebrew's data?**
@@ -427,6 +438,14 @@ When the start check finds a new version, the Settings entry and the card get a 
   - root refused for every updater (FR-025);
   - integrity per updater (FR-024);
   - the `nodeExec` env option and tree kill (plan D1).
+
+### Session 2026-10-25: owner decision on Q3 (Vikram, 00:07 UTC, after Paco's finding)
+
+- Q3 → **C, limited**: *"if it is official codex cli, it is ok"*. Durbar may run `codex update` only when the copy is the official Codex CLI: a real path inside OpenAI's standalone layout or its Windows install root, `trustedPath`, and the official `--version` label. Unknown or forked binaries are refused.
+- The confirmation says plainly that `codex update` downloads and runs OpenAI's installer script (`curl | sh`, `irm | iex`) and shows the exact command.
+- The root refusal applies (FR-025).
+- A missing or failing `codex update` falls back to the checked spec 060 installer route.
+- Recorded in FR-009 and Known limits, plan D3, and tasks T020-T021.
 
 ## Changes
 

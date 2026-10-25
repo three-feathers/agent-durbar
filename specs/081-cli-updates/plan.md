@@ -8,7 +8,7 @@
 
 For each agent app, show the installed version, its install source and the latest version that source offers. Offer **Update…** when a newer version exists. A background check runs once at every Durbar start, after the office is shown, and again on *Check for updates*.
 
-The update reuses spec 051's runner and native confirmation, and its route order puts the owning source first (`routeOwning`). For a vendor-installer copy it runs the app's own documented updater (`claude update`, `copilot update`). Codex runs spec 060's checked installer with `CODEX_NON_INTERACTIVE=1`; `codex update` is not used, because it is curl-to-shell, and Q3 is pending. Versions are pinned where the route allows, and checked again before the confirmation. An update lock, held from the count to the finish, waits for or ends open sessions of that app. Failures are classified and come with advice. A new version gets a badge, plus one toast per app and version.
+The update reuses spec 051's runner and native confirmation, and its route order puts the owning source first (`routeOwning`). For a vendor-installer copy it runs the app's own documented updater (`claude update`, `copilot update`). Codex runs `codex update` only when the copy is the official Codex CLI (Q3 = C, limited; the confirmation shows the curl-to-shell command it runs), and otherwise, or as the fallback, spec 060's checked installer with `CODEX_NON_INTERACTIVE=1`. Versions are pinned where the route allows, and checked again before the confirmation. An update lock, held from the count to the finish, waits for or ends open sessions of that app. Failures are classified and come with advice. A new version gets a badge, plus one toast per app and version.
 
 This adds no parallel installer, runner, dialog or IPC family. It adds a pure *version-check* module and a main-side *checker* beside `HarnessSetup`. Spec 051's channels gain one channel and one event, and the existing `harness:run` gains a gate argument.
 
@@ -28,7 +28,7 @@ This adds no parallel installer, runner, dialog or IPC family. It adds a pure *v
 |---|---|
 | I Spec Kit | Spec, plan and tasks come before any `src/` change. Q1-Q5 are answered by the owner and recorded. |
 | II Adapter boundary | Version, source and update knowledge for the CLIs lives in `src/shared/updatecheck.ts` (pure) and `src/main/updatecheck.ts`, beside the existing `harnesssetup` modules. The renderer sees only app ids, version strings, the source label and states. No vendor event names are involved. The bundled Copilot runtime stays pinned (FR-002). |
-| III Safe by default | Nothing updates without the native confirmation (SC-003), including a waiting update, which is confirmed again when it runs. Argv arrays only, `shell: false`. No curl-to-shell: `codex update` is not used. Fixed hosts and paths for the lookups, with no body read for GitHub. No credentials from Durbar: `.npmrc` is never read (npm may send its token; FR-017 says so), and `copilot` is never run to read a version. Every vendor updater is refused as root (FR-025). winget terms are never auto-accepted in the background. Output is masked. The start check is the owner's decision (Q1 = C), with a user switch and an organization key that fails closed (FR-022), and FR-017 lists everything it reveals. |
+| III Safe by default | Nothing updates without the native confirmation (SC-003), including a waiting update, which is confirmed again when it runs. Argv arrays only, `shell: false`. Curl-to-shell only with the owner's limited OK: `codex update` runs only for the official Codex CLI, refused as root, with the exact command shown, and anything else gets the checked installer. Fixed hosts and paths for the lookups, with no body read for GitHub. No credentials from Durbar: `.npmrc` is never read (npm may send its token; FR-017 says so), and `copilot` is never run to read a version. Every vendor updater is refused as root (FR-025). winget terms are never auto-accepted in the background. Output is masked. The start check is the owner's decision (Q1 = C), with a user switch and an organization key that fails closed (FR-022), and FR-017 lists everything it reveals. |
 | IV No AI credits | Checks and updates call package managers and the vendors' release endpoints, never a model. Tests use fixtures. A real update is a separate, owner-approved task (T040). |
 | V Calm UI | One status line and a chip with a word on each card. A quiet badge. One toast per new version only. The 1440x900 and 1280x800 screenshots are part of the tasks. |
 | VI Platforms | Per-OS routes. Windows locked files are handled through the session gate and the failure classes. Real-machine checks are `[KNOWN GAP]` until T040, T041 and T042 record them. |
@@ -87,9 +87,15 @@ It reuses `routeOwning` for the kind and adds the tool path, prefix and cask fro
   - npm: `['install', '-g', pkg + '@' + checked, '--no-update-notifier']`.
   - winget: `['upgrade', '--id', id, '-e', '--source', 'winget', '--version', checked, ...agreementAfterNote]`.
   - brew: the existing `ROUTES[*].update` (plus `--greedy` for `copilot-cli`).
-  - Own updaters: `['update']` for `claude` and `copilot` only, run as the found binary of that copy (its real path, `trustedPath`, refused as root).
-  - Codex official: the existing spec 060 plan (checked download, private file, size cap, root refusal) with `CODEX_NON_INTERACTIVE=1` in that child's environment only.
-  - `codex update` is not in the table (FR-009, Q3 pending). If the owner picks Q3 = C, it becomes an own-updater plan with the facts shown in the confirmation, and T021 changes.
+  - Own updaters: `['update']` for `claude` and `copilot`, run as the found binary of that copy (its real path, `trustedPath`, refused as root).
+  - Codex: `['update']` **only when `isOfficialCodex(realPath, env, versionLabel)`** says yes. That is a pure function in `src/shared/updatecheck.ts`:
+    - the real path is inside `<CODEX_HOME or ~/.codex>/packages/standalone/releases/`, or on Windows `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\`, compared after resolving links, with `path.win32`/`path.posix` and no case on Windows and macOS;
+    - `CODEX_HOME`, if set, is absolute;
+    - `trustedPath` passes and the file is regular;
+    - detection's label is `codex-cli`.
+
+    The confirmation text comes from one constant `CODEX_UPDATE_COMMAND` (`sh -c "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh"` / the `irm … | iex` form on Windows), with its `read:` source (`update_action.rs` @970111f6), and says Durbar cannot see or check the script. Refused as root.
+  - Codex fallback, and every non-official Codex copy: the existing spec 060 plan (checked download, private file, size cap, root refusal) with `CODEX_NON_INTERACTIVE=1` in that child's environment only. `finish` reports `fallback: 'official'` when `codex update` exits with an unknown-subcommand answer, with "Could not detect the Codex installation method", or with another non-zero exit that is not *in-use* or *managed*. The window then offers the fallback with its own confirmation, and nothing retries by itself.
 
 ### D4 Lookups through Chromium
 
