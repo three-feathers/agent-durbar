@@ -301,7 +301,10 @@ export class PermissionBroker {
   private seq = 0;
   private grants = new Map<string, SessionGrant>();
   /** Spec 003 FR-101: per tool call (request id), every grant key that allowed it, so Undo can remove them all by call id. Insertion order = age: oldest evicted first. */
-  private callKeys = new Map<string, string[]>();
+  private callKeys = new Map<string, { k: string; g: number }[]>();
+  /** Which grant a key names now: a number that changes each time the rule is created again, so Undo on an old card cannot remove a rule granted later under the same key. */
+  private grantGen = new Map<string, number>();
+  private genCounter = 0;
   private pending = new Map<string, Pending>();
   private stopped = false;
   private mode: BrokerMode;
@@ -440,7 +443,10 @@ export class PermissionBroker {
     this.pending.delete(requestId);
     if (r.approve && r.remember && !this.stopped) {
       const gs = r.broad && scope.broad ? [scope.broad] : scope.folders ?? [scope];
-      for (const g of gs) this.grants.set(g.key, { key: g.key, kind, label: g.label });
+      for (const g of gs) {
+        if (!this.grants.has(g.key)) this.grantGen.set(g.key, ++this.genCounter);
+        this.grants.set(g.key, { key: g.key, kind, label: g.label });
+      }
       this.opts.emit({ type: 'grants', grants: this.listGrants() });
     }
     this.opts.emit({ type: 'resolved', permission: { ...base, state: r.approve ? 'approved' : 'denied', via: r.via, remembered: r.approve && r.remember ? true : undefined } });
@@ -461,7 +467,7 @@ export class PermissionBroker {
   private rememberCall(callId: string, keys: string[]): void {
     this.callKeys.delete(callId);
     if (keys.length > CALL_KEYS_MAX) return; // too many to remember: Undo for this call is honest about not knowing it
-    this.callKeys.set(callId, [...keys]);
+    this.callKeys.set(callId, keys.map((k) => ({ k, g: this.grantGen.get(k) ?? 0 })));
     while (this.callKeys.size > CALLS_MAX) this.callKeys.delete(this.callKeys.keys().next().value as string);
   }
 
@@ -474,9 +480,10 @@ export class PermissionBroker {
     const ks = c === undefined ? undefined : this.callKeys.get(c);
     if (!ks) return -1;
     let changed = false;
-    for (const k of ks) if (this.grants.delete(k)) changed = true;
+    const same = (x: { k: string; g: number }): boolean => this.grants.has(x.k) && this.grantGen.get(x.k) === x.g; // the very rule that allowed the call, not one granted again later
+    for (const x of ks) if (same(x) && this.grants.delete(x.k)) changed = true;
     if (changed) this.opts.emit({ type: 'grants', grants: this.listGrants() });
-    return ks.filter((k) => this.grants.has(k)).length;
+    return ks.filter(same).length;
   }
 
   revoke(key: string): boolean {
@@ -498,6 +505,7 @@ export class PermissionBroker {
     if (this.grants.size) {
       this.grants.clear();
       this.callKeys.clear();
+      this.grantGen.clear();
       this.opts.emit({ type: 'grants', grants: [] });
     }
   }

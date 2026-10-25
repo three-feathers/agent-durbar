@@ -495,6 +495,29 @@ const mkRoots2 = (m: { ask?: boolean; allow?: boolean }, roots?: string[]) => {
       assert.notStrictEqual(eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: { ...ev2, allowedBy: { kind: 'session-grant', key: 'k', label: 'l', more: 0 } } }).length, 0, 'and a bad count');
     }
 
+    // a rule granted again later under the same key is not the rule that allowed an older call: that card's Undo leaves it alone
+    {
+      const mf = mkRoots2({ ask: true });
+      const req = (id: string) => ({ kind: 'write', fileName: '/w/a/x.ts', paths: ['/w/a/x.ts'], toolCallId: id }) as never;
+      const p1 = mf.b.request(req('r1'));
+      await tick();
+      mf.b.resolve('r1', true, true);
+      await p1;
+      await mf.b.request(req('r2')); // allowed by the rule: remembered under r2
+      const key = mf.b.listGrants()[0].key;
+      assert.strictEqual(mf.b.revoke(key), true, 'removed with the grant chip');
+      const p3 = mf.b.request(req('r3'));
+      await tick();
+      mf.b.resolve('r3', true, true); // the same key granted again
+      await p3;
+      assert.strictEqual(mf.b.listGrants().length, 1);
+      assert.strictEqual(mf.b.revokeCall('r2'), 0, 'the old card: its own rule is already gone');
+      assert.strictEqual(mf.b.listGrants().length, 1, 'the newer rule is still live');
+      await mf.b.request(req('r4'));
+      assert.strictEqual(mf.b.revokeCall('r4'), 0);
+      assert.strictEqual(mf.b.listGrants().length, 0, 'the call that the newer rule allowed removes it');
+    }
+
     // review of #729 item 11: the revoke IPC's own check (main, pure part)
     {
       const calls: string[] = [];
