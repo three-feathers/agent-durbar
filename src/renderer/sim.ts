@@ -6,7 +6,7 @@
  * Enable with `DURBAR_SIM=15 npm start` (Electron main passes ?sim=15) or open
  * dist/renderer/index.html?sim=15 in a browser. Extra query params: simwaitold=1 (waiting requests look 2 minutes old), simtotals=1 (totals saved by a previous run), simunreported=<room>
  * (that room reports usage without credits), simfreeze=1 (no ticking),
- * simrooms=solo (one folder per agent), simrooms=1..5 (the agents spread over that many folders, in blocks; spec 001 FR-046), simhelpers=0 (no helpers), simplaces=1..3 (that many custom places, spec 024), simretry=1 (spec 034 FR-020: one agent retrying, one that gave up), seed=N, density=full|card|mini, open=<agent id>.
+ * simrooms=solo (one folder per agent), simrooms=1..5 (the agents spread over that many folders, in blocks; spec 001 FR-046), simhelpers=0 (no helpers), simplaces=1..3 (that many custom places, spec 024), simretry=1 (spec 034 FR-020: one agent retrying, one that gave up), simcompact=1 (spec 015 FR-014: one agent mid-compaction), seed=N, density=full|card|mini, open=<agent id>.
  *
  * Plain script (no imports/exports) so it runs unchanged in the sandboxed renderer.
  */
@@ -14,6 +14,7 @@ type AgentEvent = import('../adapters/types').AgentEvent;
 type McpServerStatus = import('../adapters/types').McpServerStatus;
 type AgentInfo = import('../shared/api').AgentInfo;
 type DurbarApi = import('../shared/api').DurbarApi;
+type UpdatesView = import('../shared/api').UpdatesView;
 type FolderSetupItem = import('../shared/foldersetup').FolderSetupItem;
 type PickedFile = import('../shared/api').PickedFile;
 type ModelChoice = import('../shared/api').ModelChoice;
@@ -212,6 +213,8 @@ interface SimAgent {
   info: AgentInfo;
   /** Spec 034 FR-020 (simretry=1): the agent app keeps retrying, so the background ticks leave this agent alone. */
   retryHold?: boolean;
+  /** Spec 015 FR-014 (simcompact=1): a compaction that never ends by itself, so the background ticks leave this agent alone. */
+  compactHold?: boolean;
   room: string;
   state: 'working' | 'thinking' | 'waiting' | 'error' | 'done' | 'idle';
   intent: string;
@@ -539,6 +542,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     if (n < 12) rows = ROSTER.filter((r) => r[0] !== 'Hugo' && r[0] !== 'Priya' && r[0] !== 'Noor' && r[0] !== 'Omar').slice(0, n);
     while (rows.length < n) rows.push(['Agent' + (rows.length + 1), 'Worker', 'blog', 'working', 'Working through a queued task', 0, ['src/index.ts']]);
 
+    const crashIds = new Set<string>(); // spec 006 FR-046 (simcrash=N): the sessions the faked crash left mid-turn
+    /* spec 006 FR-043/FR-044 (review of PR 720): under simcrash=N the bridge counts what the card makes it do, for the driver: every wake
+       (and how many run at once: a wake then takes 150 ms), every prompt sent and every permission-mode change */
+    const crashProbe: { on: boolean; wakes: string[]; inFlight: number; maxInFlight: number; sends: number; modeSets: number; sessions?: () => Array<{ id: string; mode: string; lazy: boolean; resumeLast: boolean }> } = { on: false, wakes: [], inFlight: 0, maxInFlight: 0, sends: 0, modeSets: 0 };
     const sims: SimAgent[] = rows.map((r, i) => {
       const [name, role, room0, state, intent, helpers0, files] = r;
       const k = simRooms ? Math.max(1, Math.min(SIM_ROOM_ORDER.length, Math.floor(simRooms))) : 0;
@@ -1124,6 +1131,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     };
     /* spec 034 FR-020 (simretry=1): Clara's agent app is retrying a model call (attempt 3 of 10, servers busy, HTTP 529) and stays so;
        Tomas's retries twice for a rate limit and gives up before his error. Normalized `retry` events, as the adapters send them. */
+    /* spec 015 FR-014 (issue 601, simcompact=1): Clara's agent app is compacting the conversation (a Claude-style start: the trigger is not known) and stays so until a driver ends it */
+    const simCompact = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simcompact') === '1';
     const simRetry = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simretry') === '1';
     const simRetries = (s: SimAgent, n: number, max: number | undefined, reason: 'overloaded' | 'rate-limit', httpStatus: number): void => {
       for (let k = 1; k <= n; k++) emit({ type: 'retry', sessionId: sid(s), timestamp: now(), phase: 'retrying', attempt: k, ...(max ? { maxAttempts: max } : {}), reason, httpStatus, delayMs: 2000 * k });
@@ -1158,6 +1167,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: 'Moved the company handlers first and kept a thin re-export in `registry.ts` so the public API is unchanged. Next I am running the **tests** for the three new modules.' + (opts.reply === 'long' ? ' ' + LONG_TEXT : '') });
           if (simBreakSecs && s.info.name === 'Rosa') window.setTimeout(() => { s.breakUntil = Date.now() + 2 * simBreakSecs * 1000; simLimit(s, 'quota'); }, 1500); // spec 068
           if (simRetry && s.info.name === 'Clara') { s.retryHold = true; simRetries(s, 3, 10, 'overloaded', 529); } // spec 034 FR-020
+          if (simCompact && s.info.name === 'Clara') { s.compactHold = true; emit({ type: 'compaction', sessionId: sid(s), timestamp: now(), phase: 'start', trigger: 'unknown' }); } // spec 015 FR-014
           break;
         case 'thinking':
           think(s, 2);
@@ -1189,7 +1199,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     // Slow, calm background activity: one agent advances every few seconds.
     let timer: number | undefined;
     function tick(): void {
-      const live = sims.filter((s) => (s.state === 'working' || s.state === 'thinking') && !s.limitReq && !s.retryHold);
+      const live = sims.filter((s) => (s.state === 'working' || s.state === 'thinking') && !s.limitReq && !s.retryHold && !s.compactHold);
       if (!live.length) return;
       const s = pick(live);
       if (s.state === 'working') {
@@ -1757,7 +1767,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0-alpha.15 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0-alpha.16 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
@@ -2331,6 +2341,49 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     let extra = 0;
     type HsCb = (p: never) => void;
     const simHarness: { progress: HsCb[]; done: HsCb[]; running: null | { kind: string; finish: () => void } } = { progress: [], done: [], running: null };
+    /*
+     * Spec 081 FR-020: agent-app updates in the simulator: canned results, no network, no package manager. `simupd=avail|mixed|off|unreadable`
+     * chooses what the check "finds" (default: nothing checked yet); `simupdrun=ok|uptodate|admin|inuse|managed|network|other|fallback` what the next
+     * update does; `simsessions=N` pretends N Claude Code sessions are open (the open-sessions dialog); `simupdchk=1` makes a check take a moment.
+     */
+    type UpdRes = NonNullable<UpdatesView['results']>[number];
+    const simUpdMode = simQuery.get('simupd') ?? '';
+    const simUpdRun = simQuery.get('simupdrun') ?? 'ok';
+    let simSessions = Math.max(0, Math.min(9, Number(simQuery.get('simsessions')) || 0));
+    const simStartCheck = { on: true };
+    const simUpdWaiting: Record<string, number> = {};
+    const simUpdCb: Array<(v: UpdatesView) => void> = [];
+    const simUpdChecking = new Set<string>();
+    const NOW = Date.now();
+    const canned = (): UpdRes[] => {
+      if (simUpdMode === 'off' || simUpdMode === '' || simUpdMode === 'unreadable') return [];
+      const copilot: UpdRes = { app: 'copilot', state: 'up-to-date', installed: '1.0.103', latest: '1.0.103', source: 'Homebrew', sourceKind: 'brew', asHomebrew: true, checkedAt: NOW };
+      if (simUpdMode === 'mixed') return [
+        { app: 'claude', state: 'up-to-date', installed: '2.1.308', latest: '2.1.309', stable: '2.1.308', newerOnLatest: '2.1.309', source: 'the official installer', sourceKind: 'official', checkedAt: NOW },
+        { app: 'codex', state: 'could-not-check', installed: '0.9.0', source: 'npm', sourceKind: 'npm', reason: 'network problem', checkedAt: NOW },
+        { ...copilot, state: 'outside', source: "installed outside Durbar's routes", sourceKind: 'outside', hint: 'distro' },
+      ];
+      return [
+        { app: 'claude', state: 'update-available', installed: '2.1.300', latest: '2.1.309', stable: '2.1.308', source: 'the official installer', sourceKind: 'official', checkedAt: NOW },
+        // the same copy as the card (simkinds: too-old 0.9.0 found in an nvm folder, so npm owns it; review on #721)
+        { app: 'codex', state: 'update-available', installed: '0.9.0', latest: '1.0.2', source: 'npm', sourceKind: 'npm', checkedAt: NOW },
+        copilot,
+      ];
+    };
+    // `simupdstart=1`: the start check "already found" them (the badge is there at load and one toast follows); otherwise nothing is checked until the user asks
+    const simUpdStart = simQuery.get('simupdstart') === '1';
+    const simUpdResults = new Map<string, UpdRes>(simUpdStart ? canned().map((r) => [r.app, r]) : []);
+    const simUpdView = (announce?: UpdatesView['announce']): UpdatesView => ({
+      results: [...simUpdResults.values()], checking: [...simUpdChecking], startCheck: simStartCheck.on,
+      policy: { checkHidden: simUpdMode === 'off', installBlocked: false, unreadable: simUpdMode === 'unreadable', startAllowed: simUpdMode !== 'off' && simUpdMode !== 'unreadable' },
+      runtime: '1.0.22', waiting: { ...simUpdWaiting }, ...(announce ? { announce } : {}),
+    });
+    const simUpdEmit = (announce?: UpdatesView['announce']): void => simUpdCb.forEach((cb) => cb(simUpdView(announce)));
+    // the canned plans: the owning route first, behind it the others (the real ones come from main, which has no copy to look at under the simulator)
+    const simUpdPlans = (kind: string) => (kind === 'claude'
+      ? [{ manager: 'official', own: 'claude', owner: true, display: 'claude update', note: 'Installs into your home folder; no administrator rights needed.' }, { manager: 'official', bin: 'bash', script: {}, display: 'https://claude.ai/install.sh (downloaded, then run with bash)' }]
+      : kind === 'codex' ? [{ manager: 'npm', owner: true, pinned: '1.0.2', display: 'npm install -g @openai/codex@1.0.2 --no-update-notifier' }, { manager: 'official', bin: 'bash', script: {}, display: 'https://chatgpt.com/codex/install.sh (downloaded, then run with bash)' }]
+      : [{ manager: 'brew', owner: true, display: 'brew upgrade --cask copilot-cli --greedy', note: 'May ask for administrator rights.' }]);
     const api: DurbarApi = {
       ...floorApi,
       ...mcpApi,
@@ -2369,12 +2422,42 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       // spec 060 FR-002: in the app, ask main for the real routes of this OS (main assumes a typical new machine under the simulator);
       // the made-up list below is only for the page opened in a plain browser, where there is no main process
       harnessPlans: async (kind, op) => {
+        if (op === 'update' && simUpdMode && simUpdMode !== 'off') return { name: kind === 'copilot' ? 'the GitHub Copilot CLI' : kind === 'codex' ? 'the Codex CLI' : 'Claude Code', page: 'https://example.invalid/', plans: simUpdPlans(kind) };
         const real = typeof window !== 'undefined' ? (window as unknown as { agentDurbar?: DurbarApi }).agentDurbar : undefined;
         if (real?.harnessPlans) return real.harnessPlans(kind, op);
         return { name: kind === 'copilot' ? 'the GitHub Copilot CLI' : kind === 'codex' ? 'the Codex CLI' : 'Claude Code', page: 'https://example.invalid/', plans: kind === 'codex' ? [{ manager: 'npm', display: (op === 'update' ? 'npm install -g @openai/codex@latest' : 'npm install -g @openai/codex') }] : [{ manager: 'brew', display: 'brew install --cask claude-code' }, { manager: 'npm', display: 'npm install -g @anthropic-ai/claude-code', note: 'Needs Node.js 22 or later. Anthropic recommends its native installer.' }] };
       },
-      harnessRun: async (kind, op, planIndex) => {
+      harnessRun: async (kind, op, planIndex, gate) => {
         const t0 = Date.now();
+        if (typeof window !== 'undefined' && gate !== 'cancel') (window as unknown as { __simHarnessLast?: unknown }).__simHarnessLast = { kind, op, planIndex }; // spec 060 FR-012: the driver checks only an index is sent
+        if (op === 'update' && simUpdMode) {
+          // spec 081 FR-013: the gate. Claude Code has the pretend open sessions; the others have none.
+          if (gate === 'cancel') { delete simUpdWaiting[kind]; simUpdEmit(); return { ok: false, cancelled: true, error: 'Cancelled.' }; }
+          const open = kind === 'claude' ? simSessions : 0;
+          if (open > 0 && !gate) return { ok: false, needsGate: { open, busy: Math.min(open, 1), pendingPermissions: 0, heldPrompts: 0 } };
+          if (open > 0 && gate === 'wait') {
+            simUpdWaiting[kind] = open; simUpdEmit();
+            setTimeout(() => { simSessions = 0; delete simUpdWaiting[kind]; simUpdEmit(); void api.harnessRun?.(kind, 'update', planIndex, undefined); }, 4000);
+            return { ok: true, waiting: open };
+          }
+          if (open > 0 && gate === 'end') simSessions = 0;
+        }
+        if (op === 'update' && simUpdMode) {
+          const prog = (p: Record<string, unknown>) => simHarness.progress.forEach((cb) => cb({ kind, op, elapsedMs: Date.now() - t0, lines: [], ...p } as never));
+          const finish = (extra: Record<string, unknown>, ok: boolean) => {
+            if (ok) { const r = simUpdResults.get(kind); if (r) simUpdResults.set(kind, { ...r, state: 'up-to-date', installed: r.stable ?? r.latest ?? r.installed }); }
+            simUpdEmit();
+            simHarness.done.forEach((cb) => cb({ kind, op, ok, exitCode: ok ? 0 : 1, lines: ['(simulated)'], ...extra } as never));
+          };
+          const FAIL: Record<string, Record<string, unknown>> = { admin: { failure: 'admin' }, inuse: { failure: 'in-use' }, managed: { failure: 'managed' }, network: { failure: 'network' }, other: { failure: 'other' }, fallback: { failure: 'other', fallback: 'official' } };
+          setTimeout(() => prog({ lines: ['Updating (simulated)…'] }), 300);
+          setTimeout(() => {
+            if (FAIL[simUpdRun]) finish(FAIL[simUpdRun], false);
+            else if (simUpdRun === 'uptodate') finish({ failure: 'vendor-up-to-date' }, true);
+            else finish({}, true);
+          }, simUpdRun === 'slow' ? 60000 : 2200);
+          return { ok: true };
+        }
         // spec 060 FR-012: the driver checks which route a Run button asked for (only an index is sent; nothing runs here)
         if (typeof window !== 'undefined') (window as unknown as { __simHarnessLast?: unknown }).__simHarnessLast = { kind, op, planIndex };
         const prog = (p: Record<string, unknown>) => simHarness.progress.forEach((cb) => cb({ kind, op, elapsedMs: Date.now() - t0, lines: [], ...p } as never));
@@ -2391,6 +2474,22 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
       harnessPaste: async (text) => { if (!simHarness.running || !String(text || '').trim()) return { ok: false, error: 'Paste the code from the sign-in page (one line).' }; const r = simHarness.running; setTimeout(() => r.finish(), 400); return { ok: true }; },
       harnessCancel: async () => { const r = simHarness.running; simHarness.running = null; if (r) simHarness.done.forEach((cb) => cb({ kind: r.kind, op: 'signin', ok: false, reason: 'cancelled', lines: [] } as never)); return !!r; },
+      harnessUpdates: async (what, app) => {
+        if (what === 'check' && simUpdMode !== 'off') {
+          // no network: the canned answer arrives after a moment, like a real check
+          const apps = app ? [app] : ['claude', 'codex', 'copilot'];
+          apps.forEach((a) => simUpdChecking.add(a)); simUpdEmit();
+          await new Promise((r) => setTimeout(r, simQuery.get('simupdchk') === '1' ? 1500 : 150));
+          apps.forEach((a) => simUpdChecking.delete(a));
+          for (const r of canned()) if (apps.includes(r.app) && !simUpdResults.has(r.app)) simUpdResults.set(r.app, r);
+          if (!simUpdMode) for (const a of apps) if (a === 'copilot') simUpdResults.set('copilot', { app: 'copilot', state: 'up-to-date', installed: '1.0.103', latest: '1.0.103', source: 'Homebrew', sourceKind: 'brew', asHomebrew: true, checkedAt: Date.now() });
+          simUpdEmit();
+        }
+        return simUpdView();
+      },
+      onHarnessUpdates: (cb) => { simUpdCb.push(cb); if (simUpdStart && simUpdCb.length === 1) setTimeout(() => simUpdEmit({ app: 'codex', version: '1.0.2', name: 'the Codex CLI' }), 600); return () => { const i = simUpdCb.indexOf(cb); if (i >= 0) simUpdCb.splice(i, 1); }; },
+      harnessVisible: async () => true,
+      setCheckUpdatesAtStart: async (on) => { simStartCheck.on = on !== false; return { ok: true, checkUpdatesAtStart: simStartCheck.on }; },
       harnessOpenPage: async () => ({ ok: true }),
       harnessOpenSignIn: async () => ({ ok: true }),
       onHarnessProgress: (cb) => { simHarness.progress.push(cb); return () => { simHarness.progress = simHarness.progress.filter((x) => x !== cb); }; },
@@ -2431,11 +2530,36 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           const r = sims.find((x) => x.info.name === 'Priya');
           if (r && r.info.resumeLast === undefined) { r.info.lazy = true; r.info.resumeLast = true; r.info.permFrom = 'session'; }
         }
+        /* simcrash=N (spec 006 FR-046): the last run "crashed" with the first N main agents mid-turn; they come back as restored, not started */
+        if (typeof location !== 'undefined') {
+          const n = Math.min(5, parseInt(new URLSearchParams(location.search).get('simcrash') ?? '0', 10) || 0);
+          if (n > 0 && crashIds.size === 0) {
+            crashProbe.on = true;
+            crashProbe.sessions = () => sims.slice(0, 6).map((x) => ({ id: x.info.id, mode: x.info.permMode, lazy: !!x.info.lazy, resumeLast: !!x.info.resumeLast }));
+            (window as unknown as { __durbarSimCrash?: unknown }).__durbarSimCrash = crashProbe;
+            for (const x of sims.slice(0, n)) {
+              if (x.info.resumeLast !== undefined) continue;
+              x.info.lazy = true; x.info.resumeLast = true; x.info.permFrom = 'session'; crashIds.add(x.info.id);
+            }
+          }
+        }
         return sims.map((s) => s.info);
       },
+      interrupted: async () => {
+        const items = sims.filter((x) => crashIds.has(x.info.id) && x.info.resumeLast).map((x) => ({ id: x.info.id, adapterId: x.info.adapterId ?? 'copilot', folderName: x.info.label || x.info.name }));
+        return items.length ? { items, missing: 0 } : null;
+      },
+      dismissInterrupted: async () => { crashIds.clear(); return { ok: true }; },
       wake: async (id) => { // FR-021: the canned last session comes back, as the main process resumes it (no prompt)
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
+        if (crashProbe.on) {
+          crashProbe.wakes.push(id);
+          crashProbe.inFlight++;
+          crashProbe.maxInFlight = Math.max(crashProbe.maxInFlight, crashProbe.inFlight);
+          await new Promise((r) => setTimeout(r, 150));
+          crashProbe.inFlight--;
+        }
         if (!s.info.resumeLast) return { ok: true };
         s.info.resumeLast = false;
         s.info.lazy = false;
@@ -2456,6 +2580,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true, file: { path: '/tmp/agent-durbar-att-sim/' + clean, name: clean, kind: /^image\//.test(mime) ? 'image' : 'file', size: data.byteLength } };
       },
       send: async (id, text, _atts?: unknown, opts?: { plan?: boolean }) => {
+        if (crashProbe.on) crashProbe.sends++;
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
         if (opts?.plan) {
@@ -2584,6 +2709,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
       setRoomClosed: async () => ({ ok: true }),
       setPermMode: async (id, mode, o) => {
+        if (crashProbe.on) crashProbe.modeSets++;
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
         const MW: Record<string, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
@@ -2744,6 +2870,16 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           { path: 'docs/notes.md', state: 'untracked' as const },
         ];
         return { repo: true as const, branch: n % 3 === 1 ? 'feature/login' : 'main', ...(n % 4 === 1 ? { ahead: 2 } : {}), files: pool.slice(0, n % 5), more: 0 };
+      },
+      // spec 085 FR-007: `simsummary=1` gives the card shown when a session ends fixed numbers: sim-1 a repository with changes, a commit and a
+      // reported pull request (a fixture: no adapter reports them yet), sim-2 a folder that is not git, sim-3 a folder that already had changes; others a repository with no changes
+      sessionSummary: async (id: string) => {
+        if (!simQuery.get('simsummary')) return { ok: false as const, error: 'not in the simulator' };
+        const n = Number(String(id).replace(/\D/g, '')) || 0;
+        if (n === 1) return { ok: true as const, ms: 25 * 60000 + 20000, pullRequests: 1, git: { repo: true as const, files: 12, added: 340, removed: 80, binary: 0, newFiles: 3, commits: 1, dirtyAtStart: false } };
+        if (n === 2) return { ok: true as const, ms: 3 * 60000, git: { repo: false as const } };
+        if (n === 3) return { ok: true as const, ms: 65 * 60000, git: { repo: true as const, files: 2, added: 5, removed: 1, binary: 0, newFiles: 0, commits: 0, dirtyAtStart: true } };
+        return { ok: true as const, ms: 20000, git: { repo: true as const, files: 0, added: 0, removed: 0, binary: 0, newFiles: 0, commits: 0, dirtyAtStart: false } };
       },
       onEvent: (cb) => { listeners.add(cb); return () => listeners.delete(cb); },
       // spec 065 FR-007: `simcheckpoint=1` gives Ada (sim-1) a turn that changed three files; `=conflict` makes one of them changed since

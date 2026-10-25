@@ -1,0 +1,4 @@
+# source: read: clap error shape for an unknown subcommand
+error: unrecognized subcommand 'update'
+
+Usage: codex [OPTIONS] [PROMPT]

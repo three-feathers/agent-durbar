@@ -16,12 +16,13 @@
 
   /* Context window level for the bar colour; limit 0/undefined/unknown -> 'unknown'. */
   function ctxLevel(used,limit){
-    if(!(limit>0)||!(used>=0)||used===undefined||used===null)return {pct:null,level:'unknown'};
+    if(typeof used!=='number'||typeof limit!=='number'||!(limit>0)||!(used>=0)||!Number.isFinite(used)||!Number.isFinite(limit))return {pct:null,level:'unknown'}; /* spec 015 FR-013: numbers only; NaN, Infinity and strings are unknown */
     const pct=Math.max(0,Math.min(100,Math.round(used/limit*100)));
+    if(!Number.isFinite(pct))return {pct:null,level:'unknown'};
     return {pct,level:pct>90?'high':pct>=70?'warn':'ok'};
   }
   function fmtTokens(n){
-    if(!(n>=0))return '?';
+    if(typeof n!=='number'||!Number.isFinite(n)||!(n>=0)||n>=1e12)return '?'; /* spec 015 FR-013: not a number, negative or absurd */
     if(n>=1e6)return (n/1e6).toFixed(n>=1e7?0:1).replace(/\.0$/,'')+'M';
     if(n>=1000)return (n/1000).toFixed(n>=1e5?0:1).replace(/\.0$/,'')+'k';
     return String(Math.round(n));
@@ -90,6 +91,8 @@
         if(!ctx||!(ctx.tokens>=0))return;
         get(id).ctx={tokens:ctx.tokens,limit:ctx.limit>0?ctx.limit:0,system:ctx.system,conversation:ctx.conversation,toolDefinitions:ctx.toolDefinitions,model:ctx.model};
       },
+      /* spec 015 FR-012: the figure is out of date (a compaction whose new size the app did not report): show none until the next context event */
+      clearContext(id){const x=agents.get(id);if(x)x.ctx=null;},
       forget(id){agents.delete(id);},
       has(id){return agents.has(id);},
       agentIds(){return [...agents.keys()];},

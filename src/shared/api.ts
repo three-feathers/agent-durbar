@@ -240,6 +240,13 @@ export interface SinceAwayInfo {
   missed: Array<{ id: string; folderName: string; prompt: string; repeats: boolean }>;
 }
 
+/** Spec 006 FR-040..FR-041 (issue #606): sessions the last run left in the middle of a turn, still resumable. Ids and folder names only. */
+export interface InterruptedInfo {
+  items: Array<{ id: string; adapterId: string; folderName: string }>;
+  /** Busy sessions of the last run that could not be brought back (removed, folder gone): the card says "N of M". */
+  missing: number;
+}
+
 export interface SchedulesInfo {
   pausedAll: boolean;
   schedules: ScheduleInfo[];
@@ -641,6 +648,23 @@ export interface McpRestartSessionResult {
 }
 
 /** Bridge exposed by the preload script as `window.agentDurbar`. */
+/** Spec 081: one app's check result as the window sees it (plain data; `src/shared/updatecheck.ts` has the rules). */
+export interface UpdateResultView {
+  app: string;
+  state: 'up-to-date' | 'update-available' | 'could-not-check' | 'outside' | 'checking' | 'not-checked';
+  installed?: string; latest?: string; stable?: string; newerOnLatest?: string; installedNewer?: boolean;
+  source: string; sourceKind: string; hint?: string; reason?: string; checkedAt?: number; asHomebrew?: boolean;
+}
+export interface UpdatesView {
+  results: UpdateResultView[];
+  checking: string[];
+  startCheck: boolean;
+  policy: { checkHidden: boolean; installBlocked: boolean; unreadable: boolean; startAllowed: boolean };
+  runtime?: string;
+  waiting: Record<string, number>;
+  announce?: { app: string; version: string; name: string };
+}
+
 export interface DurbarApi {
   version(): Promise<string>;
   addFolder(permMode: PermMode, opts?: SessionOptions): Promise<AddResult>;
@@ -734,8 +758,15 @@ export interface DurbarApi {
   /** Example looks for the AI theme maker (spec 040 FR-021). */
   themeIdeas?(): Promise<string[]>;
   /* Spec 051: harness setup inside the app (install, update, sign in). Fixed commands only; the window never names a command. */
-  harnessPlans?(kind: string, op: 'install' | 'update'): Promise<{ plans: Array<{ manager: string; display: string; note?: string }>; page: string; name: string }>;
-  harnessRun?(kind: string, op: 'install' | 'update' | 'signin', planIndex?: number): Promise<{ ok: boolean; error?: string; cancelled?: boolean }>;
+  harnessPlans?(kind: string, op: 'install' | 'update'): Promise<{ plans: Array<{ manager: string; display: string; note?: string; owner?: boolean; pinned?: string; own?: string; script?: unknown }>; page: string; name: string; blocked?: string }>;
+  /** `gate` (spec 081 FR-013): the answer to the open-sessions dialog ('wait', 'end', or 'cancel' to release the update lock). A reply with `needsGate` asks the window to show that dialog. */
+  harnessRun?(kind: string, op: 'install' | 'update' | 'signin', planIndex?: number, gate?: 'wait' | 'end' | 'cancel'): Promise<{ ok: boolean; error?: string; cancelled?: boolean; busy?: boolean; waiting?: number; needsGate?: { open: number; busy: number; pendingPermissions: number; heldPrompts: number } }>;
+  /** Spec 081 FR-003: the kept update-check results; `'check'` asks the sources anew (all apps, or one). Accepting winget's source terms is main's own native question (FR-004). */
+  harnessUpdates?(what?: 'check', app?: string): Promise<UpdatesView>;
+  onHarnessUpdates?(cb: (v: UpdatesView) => void): () => void;
+  /** Spec 081 FR-016: whether Settings > Agent apps is on screen (then the card is the announcement and no toast is shown). */
+  harnessVisible?(on: boolean): Promise<boolean>;
+  setCheckUpdatesAtStart?(on: boolean): Promise<{ ok: boolean; checkUpdatesAtStart?: boolean }>;
   harnessPaste?(text: string): Promise<{ ok: boolean; error?: string }>;
   harnessCancel?(): Promise<boolean>;
   harnessOpenPage?(kind: string): Promise<{ ok: boolean }>;
@@ -761,7 +792,7 @@ export interface DurbarApi {
   onDoorsFull?(cb: (p: { id: string }) => void): () => void;
   /** Spec 054 FR-062: remote control is still on with a new (checked) link after a relaunch. */
   onRemoteUrl?(cb: (p: { id: string; url: string }) => void): () => void;
-  onHarnessDone?(cb: (p: { kind: string; op: string; ok: boolean; exitCode?: number | null; reason?: string; lines: string[] }) => void): () => void;
+  onHarnessDone?(cb: (p: { kind: string; op: string; ok: boolean; exitCode?: number | null; reason?: string; lines: string[]; error?: string; failure?: string; fallback?: 'official'; note?: string }) => void): () => void;
   exportTheme?(id: string): Promise<{ ok: boolean; to?: string; error?: string; cancelled?: boolean }>;
   setCap?(id: string, credits: number | null): Promise<{ ok: boolean; error?: string; maxAiCredits?: number }>;
   /** One-way: the window tells main an agent was paused or resumed (spec 041 T014); Paused exists only in the window. */
@@ -777,6 +808,9 @@ export interface DurbarApi {
   /** Spec 052 FR-089: what happened while the app was closed (more than 30 minutes), or null. */
   sinceAway?(): Promise<SinceAwayInfo | null>;
   dismissSinceAway?(): Promise<{ ok: boolean }>;
+  /** Spec 006 FR-041: the crash card's sessions (null: none, or dismissed). Resuming one is `wake`. */
+  interrupted?(): Promise<InterruptedInfo | null>;
+  dismissInterrupted?(): Promise<{ ok: boolean }>;
   onSchedules?(cb: (doc: SchedulesInfo) => void): () => void;
   onScheduleRan?(cb: (r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void): () => void;
   /** Answer the agent's question (spec 012 FR-128): question text -> answer; null = skip. */
@@ -903,6 +937,8 @@ export interface DurbarApi {
   openInVSCode(id: string): Promise<{ ok: boolean; error?: string; edition?: string }>;
   /** Spec 063: the git branch and uncommitted changes of the agent's folder (read-only). Optional: older bridges lack it. */
   gitStatus?(id: string): Promise<FolderGitStatus>;
+  /** Spec 085: what the session did since its first message in this run (time, git files and lines, commits), for the card shown when it ends. Optional: older bridges lack it. */
+  sessionSummary?(id: string): Promise<SessionSummaryInfo>;
   /** Earlier Copilot CLI/SDK sessions in this agent's folder (newest first). Optional: not in the simulator. */
   listPrevious?(id: string): Promise<{ ok: boolean; error?: string; sessions: PreviousSession[]; pinned?: string[]; hidden?: string[]; names?: Record<string, string> }>;
   /** Pin, unpin, hide or unhide one row (spec 006 FR-026). `src` is the agent's adapter id or `vscode`; ids only, never a path. */
@@ -928,6 +964,35 @@ export interface DurbarApi {
   onFullScreen?(cb: (on: boolean) => void): () => void;
   /** A double-click on a drag area of the top bar, spec 052 FR-085 (Mac only; main zooms, minimizes or ignores it by the system setting). */
   titleDoubleClick?(): void;
+  /**
+   * Spec 080 T014 (FR-003): the session browser. Every call names a top-level session; main looks it up and answers only with `BrowserState`
+   * (URL, title, loading, history, mute and driver state): never the page's DOM, text, cookies or storage.
+   */
+  browserOpen?(id: string, address?: string): Promise<BrowserResult>;
+  browserState?(id: string): Promise<BrowserResult>;
+  browserNavigate?(id: string, address: string): Promise<BrowserResult>;
+  browserBack?(id: string): Promise<BrowserResult>;
+  browserForward?(id: string): Promise<BrowserResult>;
+  browserReload?(id: string): Promise<BrowserResult>;
+  browserStop?(id: string): Promise<BrowserResult>;
+  /** The page area's rectangle in CSS pixels, relative to the window's page; main checks it and sets the native view's bounds. */
+  browserBounds?(id: string, bounds: BrowserBounds): Promise<{ ok: boolean }>;
+  /** Attach (true) or detach (false) the session's view. Only the Browser tab shown asks for true. */
+  browserVisible?(id: string, visible: boolean): Promise<{ ok: boolean }>;
+  /** A Durbar overlay covers the page area (FR-008): main hides the view while it is open. */
+  browserOverlay?(id: string, open: boolean): Promise<{ ok: boolean }>;
+  browserMute?(id: string, muted: boolean): Promise<BrowserResult>;
+  /** Open the view's current http(s) address in the system browser (the existing external-link path). */
+  browserOpenSystem?(id: string): Promise<{ ok: boolean }>;
+  onBrowserState?(cb: (s: BrowserState) => void): () => void;
+  /** The user accepted the one-time note (FR-025d); remembered in settings, never asked again. */
+  browserConsentAccept?(): Promise<{ ok: boolean }>;
+  /** FR-008: a still picture of the page area (an in-memory data URL) while an overlay hides the view. */
+  browserSnapshot?(id: string): Promise<{ ok: boolean; image?: string }>;
+  /** FR-025e: the user's answer to *Leave this page?* (true = Leave). */
+  browserLeaveAnswer?(req: string, leave: boolean): Promise<{ ok: boolean }>;
+  onBrowserDialog?(cb: (d: BrowserDialogEvent) => void): () => void;
+  onBrowserLeave?(cb: (a: BrowserLeaveAsk) => void): () => void;
   /** The OS the app runs on ('darwin', 'win32', 'linux'), spec 052 FR-085: the Mac title bar styles. */
   platform?: string;
 }
@@ -937,9 +1002,42 @@ export type FolderGitStatus =
   | { repo: false }
   | { repo: true; branch: string; detached?: boolean; ahead?: number; behind?: number; files: Array<{ path: string; state: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflict'; added?: number; removed?: number; binary?: boolean }>; more: number };
 
+/** Spec 085: what `sessionSummary` answers (mirrors `SessionSummary` in src/main/sessionsummary.ts; `unreadable`: git could not be read, which is not "not a git folder"). `pullRequests`: only when the adapter reports them (none does yet). */
+export type SessionSummaryInfo =
+  | { ok: false; error: string }
+  | { ok: true; ms: number; pullRequests?: number; git: { repo: false; unreadable?: true } | { repo: true; files: number; added: number; removed: number; binary: number; newFiles: number; commits: number; dirtyAtStart: boolean; noHead?: boolean; newFilesUnknown?: boolean } };
+
 /** Spec 065: the note after a turn whose file-edit tools changed files. */
 export interface CheckpointNote { id: string; turn: number; kind: 'turn' | 'undo'; files: { path: string; change: 'changed' | 'created' | 'deleted' }[]; notCovered: { path: string; why: string }[] }
 export interface CheckpointPreview { ok: true; turn: number; files: { path: string; action: 'restore' | 'remove' | 'create'; diff?: string; binary?: boolean }[]; conflicts: string[]; notCovered: { path: string; why: string }[] }
 export type CheckpointUndo =
   | { ok: true; restored: number; removed: number; created: number; undo: Omit<CheckpointNote, 'id'> }
   | { ok: false; error: string; conflicts?: string[] };
+
+/** Spec 080 T014: what the session browser tells the window. Plain data, no page content. */
+export interface BrowserState {
+  id: string;
+  /** False before the first open and after the session ended (the view is gone). */
+  open: boolean;
+  /** The page's address, userinfo dropped; '' for about:blank. */
+  url: string;
+  title: string;
+  loading: boolean;
+  canBack: boolean;
+  canForward: boolean;
+  muted: boolean;
+  /** Who drives the view (FR-060). Always 'user' in Phase 1. */
+  driver: 'user' | 'agent' | 'none';
+  /** A page dialog (`alert`, `confirm`) is open and waiting for the user: the *Dialog open* marker (FR-025d). */
+  dialogOpen: boolean;
+  /** The note of a dialog main closed for the agent (FR-025d); the bar shows it with an icon. Page text, already masked. */
+  note?: string;
+  /** A Chromium network error name such as ERR_CONNECTION_REFUSED after the last load failed. */
+  error?: string;
+}
+export type BrowserResult = { ok: true; state: BrowserState } | { ok: false; reason: string; state?: BrowserState; needsConsent?: true };
+/** A page dialog opened (FR-025d): the window raises a toast naming the session and, for a hidden view, brings its chat forward. `text` is masked page text. */
+export interface BrowserDialogEvent { id: string; type: string; text: string; shown: boolean }
+/** FR-025e: ask *Leave this page?*; answer with `browserLeaveAnswer(req, leave)`. */
+export interface BrowserLeaveAsk { id: string; req: string; known: boolean; shown: boolean }
+export interface BrowserBounds { x: number; y: number; width: number; height: number }

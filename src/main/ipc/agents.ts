@@ -9,6 +9,8 @@ import { endSessionOp, errText, setCapOp, setModeOp, stopTurnOp, validMode } fro
 import type { OpsDeps } from '../agentops';
 import { folderGitStatus } from '../gitstatus';
 import type { GitStatus } from '../gitstatus';
+import { SessionStarts } from '../sessionsummary';
+import type { SessionSummary } from '../sessionsummary';
 import { applySetPaused } from '../mcp/agentstate';
 import { mcpRestartSessionOp } from '../mcpsession';
 import type { AgentStateTracker } from '../mcp/agentstate';
@@ -19,6 +21,8 @@ import { openInVSCode } from '../vscode';
 import type { AddWorkspace, EnsureLive, SendOp } from './types';
 
 export interface AgentsIpcDeps {
+  /** Spec 080 FR-023: the session's browser view and partition are destroyed when it ends or is removed. */
+  browserGone?(id: string): void;
   agents: Map<string, AgentInfo>;
   router: AdapterRouter;
   agentState: AgentStateTracker;
@@ -52,6 +56,7 @@ export interface AgentsIpcDeps {
 export function register(deps: AgentsIpcDeps): void {
   const { agents, router, agentState, opsDeps, remoteOps, mcpSecrets, logMcp, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, vsChatRefs, continued, maskHistory } = deps;
   const scheduler = deps.getScheduler;
+  const sessionStarts = new SessionStarts(); // spec 085: when and from which commit each session began in this run (memory only)
   const checkpointStore = deps.getCheckpointStore;
   ipcHandle('agents:list', () => [...agents.values()]);
   const sessionOpts = (o: unknown): SessionOptions & { persist: boolean } => {
@@ -79,6 +84,8 @@ export function register(deps: AgentsIpcDeps): void {
     // spec 066 FR-001/FR-007: plan first only from Durbar's own window and only for an agent app that has a plan mode
     const plan = !!opts && typeof opts === 'object' && (opts as { plan?: unknown }).plan === true;
     if (plan && (!fromApp(e) || !ad.capabilities.planMode)) return { ok: false, error: 'This agent app cannot plan first.' };
+    const ag = agents.get(id);
+    if (ag && ag.cwd) await sessionStarts.noteStart(id, ag.cwd); // spec 085 FR-001: before the turn can change a file; first send only
     agentState.ensure(id, agents.get(id)?.lazy);
     agentState.noteSend(id); // the window shows Thinking from the moment the user sends (app.js sendLive)
     const r = await sendOp(id, text, attachments, ad, plan);
@@ -93,7 +100,9 @@ export function register(deps: AgentsIpcDeps): void {
   ipcHandle('agents:end', async (_e, id: string) => {
     if (!agents.has(id)) return;
     await endSession(id);
+    sessionStarts.forget(id); // spec 085: the next session in this folder starts its own count
     deps.profileFreshness?.forget(id); // spec 043 FR-041
+    deps.browserGone?.(id); // spec 080 FR-023
   });
   /** Spec 058 FR-022: Restart session with these servers: End session, then the same id through the resume path; no prompt is sent. */
   const restartingSessions = new Set<string>();
@@ -167,7 +176,9 @@ export function register(deps: AgentsIpcDeps): void {
     }
     router.unbind(a.id);
     checkpointStore()?.forget(a.id); // spec 065 FR-006
+    sessionStarts.forget(a.id); // spec 085
     deps.profileFreshness?.forget(a.id); // spec 043 FR-041
+    deps.browserGone?.(a.id); // spec 080 FR-023
     agents.delete(a.id);
     agentState.remove(a.id);
     vsChatRefs.delete(a.id);
@@ -209,6 +220,11 @@ export function register(deps: AgentsIpcDeps): void {
   ipcHandle('agents:gitStatus', async (e, id: unknown): Promise<GitStatus> => {
     const a = fromApp(e) && typeof id === 'string' ? agents.get(id) : undefined;
     return a && a.cwd ? folderGitStatus(a.cwd) : { repo: false };
+  });
+  // spec 085 FR-002: what the session did (files, lines, commits, time), read from git; the window passes only the id
+  ipcHandle('agents:sessionSummary', async (e, id: unknown): Promise<SessionSummary> => {
+    const a = fromApp(e) && typeof id === 'string' ? agents.get(id) : undefined;
+    return a && a.cwd ? sessionStarts.summarize(a.id, a.cwd) : { ok: false, error: 'unknown agent' };
   });
   ipcHandle('agents:openInVSCode', (_e, id: string) => {
     const a = agents.get(id);
