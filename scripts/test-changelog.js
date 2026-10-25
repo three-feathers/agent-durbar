@@ -509,7 +509,8 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
 // expected line below. Any other trigger, job, runner, matrix key, permission, input use or secret placement is an unexpected line.
 // Free text (name:/description: values, which may only hold text and ${{ matrix.os }}) and the pinned action SHAs may change.
 {
-  const FIXED = (ind, dash) => new RegExp(`^ {${ind}}${dash}(?:name|description): [^$]+$`);
+  // plain text only (letters, digits, spaces and . , ( ) / + _ -), optionally in one pair of single quotes: no YAML syntax ({ } [ ] | > & * ! % @ # " ` ' inside, a colon)
+  const FIXED = (ind, dash) => new RegExp(`^ {${ind}}${dash}(?:name|description): (?:'[A-Za-z0-9][A-Za-z0-9 .,()/+_-]*'|[A-Za-z0-9][A-Za-z0-9 .,()/+_-]*)$`);
   const SHA = (a) => new RegExp(`^ {6}- uses: actions/${a}@[0-9a-f]{40}$`);
   const MATRIX_OS = "        os: ${{ fromJSON(inputs.oses == 'windows-and-ubuntu' && '[\"windows-latest\",\"ubuntu-latest\"]' || inputs.oses == 'windows-latest' && '[\"windows-latest\"]' || inputs.oses == 'ubuntu-latest' && '[\"ubuntu-latest\"]' || inputs.oses == 'macos-latest' && '[\"macos-latest\"]' || '[\"windows-latest\",\"ubuntu-latest\"]') }}";
   const EXPECTED = [
@@ -533,20 +534,31 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   ];
   const checkOauthWorkflow = (text) => {
     const fail = (m) => { throw new assert.AssertionError({ message: `mcp-oauth-real.yml: ${m}` }); };
-    // CRLF to LF; drop comment lines, trailing ` # comment`, trailing spaces and blank lines
-    const lines = text.replace(/\r\n?/g, '\n').split('\n')
-      .filter((l) => !/^\s*#/.test(l)).map((l) => l.replace(/\s+#.*$/, '').replace(/\s+$/, '')).filter((l) => l !== '');
+    // CRLF to LF; drop comment lines, trailing ` # comment`, trailing spaces and blank lines, but keep each line's real number in the file.
+    // The body of the `path: |` block scalar is content for YAML (a `#` line or ` # x` there is part of the upload path): compared raw.
+    const lines = [];
+    let block = false;
+    text.replace(/\r\n?/g, '\n').split('\n').forEach((raw, idx) => {
+      if (block && (raw === '' || /^ {11}/.test(raw))) { lines.push({ n: idx + 1, l: raw }); return; }
+      block = false;
+      if (/^\s*#/.test(raw)) return;
+      const l = raw.replace(/\s+#.*$/, '').replace(/\s+$/, '');
+      if (l === '') return;
+      lines.push({ n: idx + 1, l });
+      if (l === '          path: |') block = true;
+    });
+    const hint = ' (if this change is intended, update EXPECTED in scripts/test-changelog.js, spec 058 T160)';
     // the secret boundary: `secrets.` once, on an env entry, never in a run body
-    const withSecret = lines.filter((l) => /secrets\./i.test(l));
-    if (withSecret.length !== 1 || !/^ +\w+: \$\{\{ secrets\.\w+ \}\}$/.test(withSecret[0])) fail(`secrets. must appear exactly once, on an env: entry, got ${JSON.stringify(withSecret)}`);
-    lines.forEach((l, i) => {
-      if (i >= EXPECTED.length) fail(`unexpected extra line ${i + 1}: ${JSON.stringify(l)}`);
+    const withSecret = lines.filter(({ l }) => /secrets\./i.test(l));
+    if (withSecret.length !== 1 || !/^ +\w+: \$\{\{ secrets\.\w+ \}\}$/.test(withSecret[0].l)) fail(`secrets. must appear exactly once, on an env: entry, got ${JSON.stringify(withSecret.map((x) => `line ${x.n}: ${x.l}`))}`);
+    lines.forEach(({ n, l }, i) => {
+      if (i >= EXPECTED.length) fail(`unexpected extra line ${n}: ${JSON.stringify(l)}${hint}`);
       const e = EXPECTED[i];
       // the free-text lines may hold text and the matrix label only
       const probe = e instanceof RegExp ? l.replace(/\$\{\{ matrix\.os \}\}/g, 'X') : l;
-      if (e instanceof RegExp ? !e.test(probe) : l !== e) fail(`unexpected line ${i + 1}: ${JSON.stringify(l)} (expected ${e instanceof RegExp ? `a line like ${e}` : JSON.stringify(e)})`);
+      if (e instanceof RegExp ? !e.test(probe) : l !== e) fail(`unexpected line ${n}: ${JSON.stringify(l)} (expected ${e instanceof RegExp ? `a line like ${e}` : JSON.stringify(e)})${hint}`);
     });
-    if (lines.length < EXPECTED.length) fail(`missing line ${lines.length + 1}: ${EXPECTED[lines.length]}`);
+    if (lines.length < EXPECTED.length) fail(`missing line after file line ${lines.length ? lines[lines.length - 1].n : 0}: ${EXPECTED[lines.length]}${hint}`);
   };
   // read once with LF endings: the mutants below match on "\n"; the check itself also takes CRLF (a Windows checkout)
   const file = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'mcp-oauth-real.yml'), 'utf8').replace(/\r\n?/g, '\n');
@@ -588,6 +600,15 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     'the secret in a - run: line': [sub('- run: npm ci', '- run: echo ${{ secrets.COPILOT_CODEX_GITHUB_FINE_GRAINED_TOKEN }}'), /secrets\. must appear exactly once/],
     'the secret in a second env entry': [sub('        run: node dist-scripts/scripts/mcp-oauth-real.js', '          OTHER: ${{ secrets.X }}\n        run: node dist-scripts/scripts/mcp-oauth-real.js'), /secrets\. must appear exactly once/],
     'the secret in a step name': [sub('name: Summary', 'name: ${{ secrets.X }}'), /secrets\. must appear exactly once/],
+    'a # line inside the path block': [sub('mcp-oauth.json\n', 'mcp-oauth.json\n            # ~/.copilot/**\n'), /line 6\d: "            # ~\/\.copilot/],
+    'a trailing # path in the path block': [sub('mcp-oauth.md\n', 'mcp-oauth.md # /../../../.copilot/**\n'), /mcp-oauth\.md # \/\.\./],
+    'flow mapping as a step name': [sub('name: Summary', 'name: {run: x}'), /name: \{run/],
+    'a block scalar as a step name': [sub('name: Summary', 'name: |'), /name: \|/],
+    'an anchor as a step name': [sub('name: Summary', 'name: &a Summary'), /name: &a/],
+    'an alias as a step name': [sub('name: Summary', 'name: *a'), /name: \*a/],
+    'a tag as a step name': [sub('name: Summary', 'name: !!str Summary'), /name: !!str/],
+    'an open quote as a step name': [sub('name: Summary', 'name: "Summary'), /name: \\"Summary/],
+    'a real file line number is reported': [sub('node-version: 22', 'node-version: 20'), /unexpected line 4\d: .*update EXPECTED/],
     'an input in a step name': [sub('name: Summary', 'name: ${{ inputs.oses }}'), /name: \$\{\{ inputs/],
   };
   for (const [name, [text, reason]] of Object.entries(mutants)) {
