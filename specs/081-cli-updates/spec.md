@@ -3,14 +3,14 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Agent-app updates (owner request, issue #662): Settings > Agent apps shows "installed X, latest Y" per app, checked in the background at every Durbar start and on "Check for updates" (owner decision Q1 = C; organization policy can turn it off); a new version gets a badge and one toast; Update runs the updater of the source that installed the copy Durbar uses (no shell, argv, native confirmation, masked output); open sessions are warned about, ended or waited for; failures (admin rights, managed machines, locked files on Windows) say what to do
-status: Draft (2026-10-25): spec, research, plan and tasks; Q1-Q6 answered by Vikram (C, A, C limited to the official Codex CLI, A, B, A); Q7 open; nothing built
+status: Draft (2026-10-25): spec, research, plan and tasks; Q1-Q7 answered by Vikram (C, A, C limited to the official Codex CLI, A, B, A, C); Paco's 15 review items folded in; nothing built
 -->
 
 **Feature Branch**: `081-cli-updates` (extends 051 harness setup, 060 platform parity and 012 detection; reads 076 managed config)
 
 **Created**: 2026-10-23
 
-**Status**: Draft. Spec, research, plan and tasks. Q1-Q6 are answered by the owner (Clarifications; Q3 asked again and answered, and Q6 answered, on 2026-10-25). Q7 is open. Nothing is built. Every requirement is `[PLANNED]` unless tagged otherwise.
+**Status**: Draft. Spec, research, plan and tasks. Q1-Q7 are answered by the owner (Clarifications; Q3 asked again and answered, and Q6 and Q7 answered, on 2026-10-25). Nothing is built. Every requirement is `[PLANNED]` unless tagged otherwise.
 
 **Input**: Issue #662, owner request (Vikram, 2026-10-23, DM): "lets add support to check updates on cli and upgrade it". The CLIs are the agent apps Durbar drives: Codex CLI, Claude Code and the GitHub Copilot CLI. The trigger was a Codex 0.163.0 sandbox bug on macOS (Homebrew cask, `/opt/homebrew/bin/codex`): today the only way to get a fixed Codex is to leave Durbar and update it by hand, and Durbar does not even say that a newer version exists.
 
@@ -191,7 +191,7 @@ When the start check finds a new version, the Settings entry and the card get a 
       - The location must be exactly `https://github.com/openai/codex/releases/tag/rust-v<version>` (or `…/github/copilot-cli/releases/tag/v<version>`), checked by an anchored pattern.
       - `real:` 2026-10-24: a HEAD request answered `302` with `location: https://github.com/openai/codex/releases/tag/rust-v0.164.0`, and `…/github/copilot-cli/releases/tag/v1.0.103`.
       - The API's `releases/latest` JSON is about 570 KB (measured by Paco's agent, 2026-10-24), well over the 64 KiB cap, so it is not used.
-    - **Claude Code native**: both channel files on `downloads.claude.ai` are read, `/claude-code-releases/stable` and `/claude-code-releases/latest`. Each is plain text holding one version (`real:` 2026-10-24: `2.1.308` and `2.1.309`; not a documented API, research R7). The card shows both (*latest 2.1.309 · stable 2.1.308*). Which one decides *Update available* while Durbar cannot know the user's `autoUpdatesChannel` is [NEEDS CLARIFICATION: Q7].
+    - **Claude Code native**: both channel files on `downloads.claude.ai` are read, `/claude-code-releases/stable` and `/claude-code-releases/latest`. Each is plain text holding one version (`real:` 2026-10-24: `2.1.308` and `2.1.309`; not a documented API, research R7). The card shows both (*latest 2.1.309 · stable 2.1.308*). **`stable` decides** (owner decision Q7 = C): *Update available* (with its badge and toast) only when the installed version is below `stable`. When the installed version is at or above `stable` but below `latest`, the card shows only a quiet note, *A newer latest-channel build exists (x.y.z)*, with no chip change, no badge and no toast. Durbar does not read Claude's settings to learn the user's `autoUpdatesChannel`.
     - **Claude Code from npm** uses npm. A source with no way to ask gives *Latest: cannot be checked for this install*, never a guess.
 - **FR-005** `[PLANNED]` **Strict version parsing** (review on #663: `parseVersion` is unanchored and quadratic on long digit runs, and it would take `22.11.0` out of `npm ERR! … node v22.11.0`). A version is accepted only like this:
   - Take the **structured field**: the JSON string (`npm view --json`, `brew info` `version`), the `Location` path segment, or the channel file's text after trimming. Never search free text.
@@ -265,7 +265,7 @@ When the start check finds a new version, the Settings entry and the card get a 
     - a winget or Group Policy refusal;
     - **only on the vendor's own text that updates are disabled** (for example Claude Code's message when `DISABLE_UPDATES` or a managed setting blocks it), matched against a recorded fixture.
 
-    `claude update` saying "up to date" is **not** *Managed*. It follows the user's channel (FR-004, Q7), so the card says *Claude Code says it is up to date on its channel* and shows no toast. No retry is offered for *Managed*.
+    `claude update` saying "up to date" is **not** *Managed*. It follows the user's channel (FR-004, Q7 = C), so the card says *Claude Code says it is up to date on its channel* and shows no toast. No retry is offered for *Managed*.
   - *Cancelled at the administrator prompt* (UAC refused).
   - *Network or source problem* (timeout, DNS, proxy, 4xx/5xx, a `Location` that does not match).
   - Otherwise *Update failed (exit N)* with the last lines and the vendor's page.
@@ -378,7 +378,7 @@ When the start check finds a new version, the Settings entry and the card get a 
 - `[KNOWN GAP]` winget's text output (language-dependent column names) is parsed from recorded fixtures only once a Windows run records them (research R4).
 - `[KNOWN GAP]` Windows ACLs are not read for the trust check (as in spec 051).
 
-## Questions *(Q1, Q2, Q4, Q5 answered on 2026-10-23; Q3 asked again and answered, and Q6 answered, on 2026-10-25; Q7 open)*
+## Questions *(all answered by the owner: Q1, Q2, Q4, Q5 on 2026-10-23; Q3 asked again, Q6 and Q7 on 2026-10-25)*
 
 - **Q1** (answered: **C**, changed from B) **When may Durbar contact the package sources?**
   - A: only when I choose *Check for updates*, plus the daily switch (off by default). *Recommended*: no surprise network use (constitution III, no telemetry), matches the request.
@@ -405,7 +405,7 @@ When the start check finds a new version, the Settings entry and the card get a 
   - A: on by default (as Q1 = C reads), and `updates.mode: "off"` also turns it off.
   - B: on by default; only `features.agentAppUpdateCheck` and `agentApps.allowInAppInstall` turn it off (`updates.mode` stays about Durbar's own updater, 076 FR-174).
   - C: off by default (the check then runs at start only for users who turn it on).
-- **Q7** [NEEDS CLARIFICATION] **Claude Code native: which channel decides *Update available* while Durbar cannot know the user's `autoUpdatesChannel`?** (Both files are read and shown, FR-004.)
+- **Q7** (answered: **C**, 2026-10-25) **Claude Code native: which channel decides *Update available* while Durbar cannot know the user's `autoUpdatesChannel`?** (Both files are read and shown, FR-004.)
   - A: the `stable` file (a user on `latest` sees *Up to date* while a newer `latest` exists; the card shows it).
   - B: the `latest` file (a user on `stable` sees *Update available* while `claude update` installs nothing).
   - C: *Update available* only below `stable`, and a separate quiet line *newer on the latest channel: x.y.z* (no toast) when between the two.
@@ -455,6 +455,10 @@ When the start check finds a new version, the Settings entry and the card get a 
   - `agentApps.allowInAppInstall: false`;
   - an unreadable policy (fail closed).
 - Recorded in FR-022, plan D6, and tasks T007, T011 and T033.
+
+### Session 2026-10-25: owner decision on Q7 (Vikram, 00:10 UTC)
+
+- Q7 → **C**: for Claude Code native, *Update available* only when the installed version is below `stable`. When a newer `latest` exists, a quiet note (*A newer latest-channel build exists*) appears, with no badge and no toast. Recorded in FR-004, FR-014, plan D4, and tasks T010, T013 and T034.
 
 ## Changes
 

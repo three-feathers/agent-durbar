@@ -12,7 +12,7 @@ description: "Tasks for spec 081: agent-app updates"
 
 Nothing here is started. The owner starts implementation after review.
 
-Revised on 2026-10-24 after Paco's review of #663. Q3 and Q6 were answered on 2026-10-25 and are folded in. Tasks marked *(Q7)* change with the owner's answer.
+Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered on 2026-10-25 and are folded in.
 
 ## Phase 1: Setup
 
@@ -60,7 +60,7 @@ Revised on 2026-10-24 after Paco's review of #663. Q3 and Q6 were answered on 20
   - in-memory results with monotonic and wall times;
   - a manual check during the start check joins it;
   - the Copilot CLI version read from the copy's files, **never by running `copilot`** (FR-002);
-  - Claude records both channels and decides with the *(Q7)* rule.
+  - Claude records both channels, and `stable` decides (Q7 = C): `update-available` only below `stable`, plus `newerOnLatest` for the quiet note. Test the three positions (below `stable`, between, at or above `latest`). Mutation: decide by `latest`.
 
   Test with a fake exec and fake fetch: one run per app (two for brew at most), no doubling, results kept, no call for an `outside` source, and no spawn of `copilot`.
 - [ ] T011 [US1] Start scheduling (plan D6, FR-003, FR-022): `main.ts` calls `scheduleStart()` after the first `did-finish-load` and after `adaptersInfo`. It is skipped under the simulator, when the user's switch is off, when policy is unreadable (fail closed), or when policy disallows (`allowInAppInstall: false`, `features.agentAppUpdateCheck: false`, `updates.mode: "off"`; Q6 = A).
@@ -68,7 +68,7 @@ Revised on 2026-10-24 after Paco's review of #663. Q3 and Q6 were answered on 20
   - Mutation: treat unreadable as allowed.
 - [ ] T012 [US1] IPC `harness:updates` (get the kept results, or `'check'` to check anew) and the event `harness:updatesChanged`. `preload.ts` gets `harnessUpdates` and `onHarnessUpdates`, and `scripts/test-ipc-channels` is updated. Sender-frame check, as the other harness calls have.
 - [ ] T013 [US1] `src/renderer/harnesses.js` card:
-  - *Installed x · <source>*, and *Latest y (as Homebrew knows it)* or *latest a · stable b* for Claude native;
+  - *Installed x · <source>*, and *Latest y (as Homebrew knows it)* or *latest a · stable b* for Claude native, with the quiet note *A newer latest-channel build exists* when `newerOnLatest` is set (Q7 = C);
   - the check time and a chip with a word;
   - *Check for updates*, plus *Check* on each card;
   - the switch *Check for updates when Durbar starts* with its note (*Durbar checks for updates each time it starts*);
@@ -140,7 +140,7 @@ Revised on 2026-10-24 after Paco's review of #663. Q3 and Q6 were answered on 20
 - [ ] T034 [US5] The announce rule (plan D7, Q5 = B):
   - a badge on the card and the Settings entry;
   - one toast per app and version, saved in `announcedVersions`;
-  - no toast when Settings > Agent apps is visible, for a failed check, or for `vendor-up-to-date`;
+  - no toast when Settings > Agent apps is visible, for a failed check, for `vendor-up-to-date`, or for a Claude `newerOnLatest` note (Q7 = C);
   - no system notification.
 
   Tests: the same version on the next start gives no toast; a newer one gets a toast. Mutation: compare against the installed version instead of the announced one. Driver: badge and toast.

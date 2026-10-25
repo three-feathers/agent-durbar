@@ -2,7 +2,7 @@
 
 **Branch**: `081-cli-updates` | **Date**: 2026-10-23 | **Spec**: [spec.md](spec.md) | **Research**: [research.md](research.md)
 
-**Input**: Feature specification from `specs/081-cli-updates/spec.md`, with the owner's answers (Clarifications, 2026-10-23: Q1 = C, Q2 = A, Q4 = A, Q5 = B) and Paco's review of #663 (2026-10-24, 15 items). Later answers (2026-10-25): Q3 = C, limited to the official Codex CLI, and Q6 = A. Q7 is open. Where the plan depends on Q7 it says so.
+**Input**: Feature specification from `specs/081-cli-updates/spec.md`, with the owner's answers (Clarifications, 2026-10-23: Q1 = C, Q2 = A, Q4 = A, Q5 = B) and Paco's review of #663 (2026-10-24, 15 items). Later answers (2026-10-25): Q3 = C, limited to the official Codex CLI; Q6 = A; Q7 = C.
 
 ## Summary
 
@@ -104,7 +104,7 @@ It reuses `routeOwning` for the kind and adds the tool path, prefix and cask fro
 - **GitHub**: the status must be 301/302/303/307/308, and `Location` must match the anchored pattern exactly (`https://github.com/openai/codex/releases/tag/rust-v` plus the version). The body is never read.
 - **Claude**: both channel files, with the body read up to 64 bytes through a capped reader. Each passes `parseVersionField`.
 
-Which file decides *Update available* is Q7. Until it is answered, the checker records both, and the decision function takes the channel as a parameter, so Q7's answer is a one-line choice plus its test. `[KNOWN GAP]`: the channel files are not a documented API.
+**`stable` decides** (Q7 = C): `update-available` only when installed < `stable`. When `stable` <= installed < `latest`, the result is `up-to-date` with `newerOnLatest: x.y.z`, which the card shows as a quiet note with no badge or toast. `[KNOWN GAP]`: the channel files are not a documented API.
 
 ### D5 Update lock and session gate (Q2 = A, review item 10)
 
