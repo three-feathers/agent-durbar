@@ -177,6 +177,9 @@ export function candidates(spec: BinarySpec, env: DetectEnv, configuredPath?: st
   });
 }
 
+/** Longest version accepted, longer is rejected and never cut (spec 081 FR-005 and spec 012 FR-039); the one constant for both. */
+export const MAX_VERSION_LENGTH = 64;
+
 /** A bounded version token on the first line; known app labels and version prefixes are omitted. */
 export function parseVersion(stdout: string): string | undefined {
   if (typeof stdout !== 'string') return undefined;
@@ -185,6 +188,7 @@ export function parseVersion(stdout: string): string | undefined {
   const line = prefix.split(/[\r\n]/, 1)[0];
   const m = /^[ \t]*(?:(?:codex-cli|codex|claude|Claude Code)[ \t]+)?\(?(?:rust-v|v)?(\d{1,9}\.\d{1,9}\.\d{1,9}(?:-[0-9A-Za-z.-]{1,40})?)(?:\+[0-9A-Za-z.-]{1,40})?(?=$|[ \t)])/.exec(line.slice(0, 200));
   if (!m || (m[0].length === 200 && line.length > 200 && !/[ \t)]/.test(line[200]))) return undefined;
+  if (m[1].length > MAX_VERSION_LENGTH) return undefined;
   return m[1];
 }
 

@@ -1,6 +1,6 @@
 /** Binary detection for Claude and Codex (spec 012 T012, FR-035..FR-041): fake isFile and fake exec only. No process, no credits. */
 import * as assert from 'assert';
-import { CLAUDE_BINARY, CLAUDE_SIGN_IN_HINT, CODEX_BINARY, CODEX_SIGN_IN_HINT, detectCodex, candidates, compareVersions, detectBinary, detectClaude, detectCopilot, detectorFor, parseVersion } from '../src/adapters/detect';
+import { CLAUDE_BINARY, CLAUDE_SIGN_IN_HINT, CODEX_BINARY, CODEX_SIGN_IN_HINT, detectCodex, candidates, compareVersions, detectBinary, detectClaude, detectCopilot, detectorFor, parseVersion, MAX_VERSION_LENGTH } from '../src/adapters/detect';
 import type { DetectEnv, Exec, ExecResult } from '../src/adapters/detect';
 import { newestFirst, isAppAlias, statIsFile, windowsAppsDir } from '../src/adapters/detect';
 import { loginShellCommand, mergeLoginPath, parseLoginPath, readLoginShellPath, MAX_LOGIN_DIRS } from '../src/main/loginpath';
@@ -122,7 +122,8 @@ async function main(): Promise<void> {
     ['codex 0.200.0', '0.200.0'], ['claude 2.1.3', '2.1.3'], ['Claude Code v2.1.3', '2.1.3'],
     [' \t(1.2.3)', '1.2.3'], ['codex-cli (rust-v0.163.0+build.5)', '0.163.0'],
     ['1.2.3\nnot a version', '1.2.3'], ['1.2.3\r\nnot a version', '1.2.3'],
-    ['999999999.123456789.123456789-' + 'r'.repeat(40) + '+' + 'b'.repeat(40), '999999999.123456789.123456789-' + 'r'.repeat(40)],
+    // exactly the 64-character cap (spec 081 FR-005), build metadata not counted
+    ['999999999.123456789.123456789-' + 'r'.repeat(MAX_VERSION_LENGTH - 30) + '+' + 'b'.repeat(40), '999999999.123456789.123456789-' + 'r'.repeat(MAX_VERSION_LENGTH - 30)],
     [' '.repeat(195) + '1.2.3', '1.2.3'],
     [' '.repeat(195) + '1.2.3 trailing text', '1.2.3'],
   ]) assert.strictEqual(parseVersion(input), version, 'f: accepted ' + JSON.stringify(input));
@@ -130,6 +131,10 @@ async function main(): Promise<void> {
     'npm ERR! … node v22.11.0', 'error: 1.2.3', 'other-tool 1.2.3',
     'hello\n1.2.3', 'hello\r1.2.3', '\n1.2.3', '\r\n1.2.3',
     'x1.2.3', '1.2.3x', '1.2.3.4', '1234567890.2.3', '1.1234567890.3', '1.2.1234567890',
+    // one over the cap is rejected, never cut to a shorter version
+    '999999999.123456789.123456789-' + 'r'.repeat(MAX_VERSION_LENGTH - 29), 'v999999999.123456789.123456789-' + 'r'.repeat(MAX_VERSION_LENGTH - 29), '999999999.123456789.123456789-' + 'r'.repeat(40),
+    // markup in the pre-release (spec 081 FR-005 class [0-9A-Za-z.-])
+    '1.2.3-<img/src=x/onerror=alert(1)>', '1.2.3-a<b', '1.2.3-"x', '1.2.3-a;b', '1.2.3-a/b', '1.2.3-a&b', '1.2.3-a`b',
     '1.2.3-' + 'r'.repeat(41), '1.2.3+' + 'b'.repeat(41), '1.2.3-', '1.2.3+',
     ' '.repeat(200) + '1.2.3', ' '.repeat(196) + '1.2.3',
     ' '.repeat(195) + '1.2.30', ' '.repeat(195) + '1.2.3x',
