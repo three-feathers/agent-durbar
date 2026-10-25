@@ -296,6 +296,22 @@ module.exports = async (ctx) => {
         const pr2 = await page(); check(!pr2.length, `${tag}, after the chat: ${pr2.slice(0, 4).join('; ')}`);
       }
     }
+    /* (1b) a live resize recomputes the level (issue #697 acceptance: resize recomputes fit): 1440x900 -> 1280x600 -> 1440x900, no reload */
+    {
+      const tag = 'live resize, 2 parents, 3 helpers';
+      check(await hxLoad(2, 3, 1440, 900), `${tag}: no cards`);
+      const big = await hxPage();
+      for (const [w, h] of [[1280, 520], [1440, 900]]) {
+        ctx.win.setContentSize(w, h);
+        check(await H.until(`document.getElementById('floor').clientWidth===${q(w)}&&document.getElementById('stage').dataset.fit==='ok'`, 8000), `${tag}: the office did not settle at ${w}x${h}`);
+        await H.settle();
+        const st = await hxPage(), pr = await page();
+        check(st.strips.length === 2 && st.strips.every((x) => (x.hx === '1' || x.hx === '2') && x.n === 3 && x.allHx), `${tag}, ${w}x${h}: strips ${JSON.stringify(st.strips.map((x) => [x.hx, x.n]))}`);
+        check(!pr.length, `${tag}, ${w}x${h}: ${pr.slice(0, 4).join('; ')}`);
+        rows.push(`${tag}, ${w}x${h}: levels ${st.strips.map((x) => x.hx).join('/')}, f=${st.gf}`);
+        if (w === 1440) check(st.strips.map((x) => x.hx).join('') === big.strips.map((x) => x.hx).join('') && Math.abs(st.gf - big.gf) < 0.05, `${tag}: back at 1440x900 the layout is ${st.strips.map((x) => x.hx)} f=${st.gf}, it was ${big.strips.map((x) => x.hx)} f=${big.gf}`);
+      }
+    }
     /* (2) connectors: strips of 1, 2 and 3 columns */
     const colsSeen = new Set();
     for (const [n, hp, w, h] of [[3, 2, 1280, 800], [2, 3, 1440, 900], [1, 3, 1440, 900]]) {
