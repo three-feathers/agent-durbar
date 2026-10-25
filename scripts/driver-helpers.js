@@ -114,13 +114,13 @@ function helpers(ctx) {
     if (o.focus) wc().focus();
   };
   /**
-   * A screenshot of the page as it is now: `prep` first ('toasts' removes the toasts on screen, 'calm' hides them with a style (`keepActions`, `blur` as in calm),
+   * A screenshot of the page as it is now: `prep` first ('toasts' removes the toasts on screen, 'calm' moves the pointer off the controls (unless `keepHover`) and hides them with a style (`keepActions`, `blur` as in calm),
    * 'mouse' moves the pointer off the controls, 'none'), then (`settle: true`) the page settles, then `delay` ms for paint (default 150). `file` is the full path.
    */
   const shot = async (file, o = {}) => {
     const prep = o.prep || 'none';
     if (prep === 'toasts') await clearToasts();
-    else if (prep === 'calm') await calm({ keepActions: o.keepActions, blur: o.blur });
+    else if (prep === 'calm') { if (!o.keepHover) { wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await new Promise((r) => setTimeout(r, 120)); } await calm({ keepActions: o.keepActions, blur: o.blur }); } // PR 631: under xvfb the pointer rests mid-window (on a desk): its hover pencil and the room's hover buttons were pictured
     else if (prep === 'mouse') wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
     if (o.settle) await w.settle();
     if (prep !== 'calm' && !o.walking) await w.settleWalk(); // FR-085 (calm already waited); `walking: true` keeps a figure mid-walk on purpose
