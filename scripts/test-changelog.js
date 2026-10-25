@@ -504,4 +504,51 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   for (const [, u] of wf.matchAll(/uses: (\S+)/g)) assert.match(u, /^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/, `${u} pinned by commit sha`);
 }
 
+// --- spec 058 T160 (#509): the safety properties of .github/workflows/mcp-oauth-real.yml (a manual run with the real CI secret) ---
+{
+  const OPTIONS = ['windows-and-ubuntu', 'windows-latest', 'ubuntu-latest', 'macos-latest'];
+  const checkOauthWorkflow = (text) => {
+    const wf = text.replace(/\r\n?/g, '\n');
+    const fail = (m) => { throw new assert.AssertionError({ message: `mcp-oauth-real.yml: ${m}` }); };
+    const ok = (c, m) => { if (!c) fail(m); };
+    ok(/^on:\n {2}workflow_dispatch:\n {4}inputs:\n {6}oses:\n/m.test(wf) && !/^ {2}(push|pull_request\w*|schedule):/m.test(wf), 'manual dispatch only, one input `oses`');
+    const inp = /^ {6}oses:\n((?: {8}[^\n]*\n)+)/m.exec(wf);
+    ok(inp, 'the oses input block');
+    ok(/^ {8}type: choice$/m.test(inp[1]), 'the input is type: choice');
+    const opts = [...(/^ {8}options:\n((?: {10}- [^\n]*\n)+)/m.exec(inp[1]) || [, ''])[1].matchAll(/^ {10}- (\S+)$/gm)].map((m) => m[1]);
+    ok(JSON.stringify(opts) === JSON.stringify(OPTIONS), `exactly the allowed options, got ${opts.join(',')}`);
+    ok(/^permissions:\n {2}contents: read\n(?! {2}\w)/m.test(wf) && !/^ +(?:contents|id-token|pull-requests|actions|packages): write/m.test(wf), 'permissions: contents: read only');
+    ok(!/fromJSON\(\s*inputs\.[\w-]+\s*\)/.test(wf), 'no fromJSON of a bare input (only fixed strings are parsed)');
+    const mx = /^ {8}os: (.*)$/m.exec(wf);
+    ok(mx, 'the matrix os line');
+    // every runner label in the matrix is a fixed GitHub-hosted label
+    const labels = [...mx[1].matchAll(/'\[([^\]]*)\]'/g)].flatMap((m) => [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]));
+    ok(labels.length >= 4 && labels.every((l) => /^(windows|ubuntu|macos)-latest$/.test(l)), `fixed GitHub-hosted labels only, got ${labels.join(',')}`);
+    ok(!/self-hosted/.test(wf), 'never self-hosted');
+    ok(/^ {4}runs-on: \$\{\{ matrix\.os \}\}$/m.test(wf), 'runs-on is the matrix value only');
+    // each option appears as a fixed comparison and maps to a fixed list
+    for (const o of OPTIONS) ok(mx[1].includes(`inputs.oses == '${o}'`), `${o} is mapped`);
+    ok(mx[1].replace(/inputs\.oses == '[\w-]+'/g, '').indexOf('inputs.') < 0, 'inputs.oses appears only in == comparisons with a fixed option');
+    // no input anywhere in a run: script
+    for (const m of wf.matchAll(/^( +)(?:- )?run: ?([^\n]*)\n((?: *\1 {2,}[^\n]*\n|\s*\n)*)/gm)) ok(!/\$\{\{[^}]*\binputs\./.test(`${m[2]}\n${m[3]}`), 'no ${{ inputs.* }} inside a run script');
+    ok(!/^ +run: .*\$\{\{\s*(?:inputs|github\.event)/m.test(wf), 'no input or event text in run');
+  };
+  const file = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'mcp-oauth-real.yml'), 'utf8');
+  checkOauthWorkflow(file);
+  const mutants = {
+    'type: string': file.replace('type: choice', 'type: string'),
+    'fromJSON(inputs.oses)': file.replace(/os: \$\{\{ fromJSON\(.*\) \}\}/, 'os: ${{ fromJSON(inputs.oses) }}'),
+    'an input in run:': file.replace('- run: npm ci', '- run: echo ${{ inputs.oses }}'),
+    'an input in a multi-line run:': file.replace('- run: npm ci', '- run: |\n          echo ${{ inputs.oses }}'),
+    'a self-hosted label': file.replace('"macos-latest"', '"self-hosted"'),
+    'an extra option': file.replace('- macos-latest\n', '- macos-latest\n          - self-hosted\n'),
+    'write permission': file.replace('contents: read', 'contents: write'),
+    'runs-on from the input': file.replace('runs-on: ${{ matrix.os }}', 'runs-on: ${{ inputs.oses }}'),
+  };
+  for (const [name, text] of Object.entries(mutants)) {
+    assert.notStrictEqual(text, file, `mutation "${name}" changed the file`);
+    assert.throws(() => checkOauthWorkflow(text), /mcp-oauth-real\.yml/, `the check must fail for: ${name}`);
+  }
+}
+
 console.log('test-changelog: ok');
