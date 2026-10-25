@@ -6,7 +6,7 @@ title: Release v0.1.0-alpha.16 (pre-release)
 status: in progress (version PR open)
 -->
 
-**Feature Branch**: `086-version-0.1.0-alpha.16`
+**Feature Branch**: `086-release-alpha16`
 **Created**: 2026-10-25
 **Status**: In progress
 **Input**: Vikram (owner, Telegram DM 2026-10-25 05:37 UTC): the standing OK of 2026-10-23 for a pre-release (not latest) about every 8 hours; alpha.15 was published 2026-10-24 09:55 UTC and this one is overdue.
