@@ -126,6 +126,18 @@ module.exports = async (ctx) => {
     assert.strictEqual(hs[1].why, '', `${w}: an unknown reason kind shows no tag`);
     assert.strictEqual(hs[2].why, '', `${w}: an unknown app source shows no tag`);
     assert.strictEqual(await js(`window.__pwn===undefined`), true, `${w}: the label ran nothing`);
+    // a write in several folders: one card, every rule listed, Undo asks main to revoke each of them (and only those)
+    await ev({ type: 'grants', grants: [{ key: 'multi:a', kind: 'write', label: 'write in a/' }, { key: 'multi:b', kind: 'write', label: 'write in b/' }, { key: 'multi:other', kind: 'write', label: 'write in other/' }] });
+    await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__revoked=[];const o=b.revokeGrant;b.revokeGrant=(i,k)=>{window.__revoked.push(k);return o.call(b,i,k);};})()`);
+    await ev({ permission: { requestId: 'mk1', kind: 'write', summary: 'write a/x and b/y', state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: 'multi:a', keys: ['multi:a', 'multi:b'], label: 'write in a/, b/' } } });
+    await js(`window.__durbarSimUi.emit({type:'toolCall',sessionId:${jsLiteral(id)},timestamp:Date.now(),callId:'mk1',tool:'bash',phase:'start',args:{command:'echo multi'}})`);
+    assert.ok(await until(`[...document.querySelectorAll('#chat .chip')].some(c=>(c.querySelector(':scope>.why')||{}).textContent==='Allowed: session rules')`, 5000), `${w}: a several-folder write says rules (plural)`);
+    await js(`(()=>{const c=[...document.querySelectorAll('#chat .chip')].find(c=>(c.querySelector(':scope>.why')||{}).textContent==='Allowed: session rules');if(!c.classList.contains('open'))c.click();})()`);
+    assert.ok(await until(`!!document.querySelector('#chat .chip.open .why-undo')`, 5000), `${w}: the several-folder card offers Undo`);
+    await js(`document.querySelector('#chat .chip.open .why-undo').click()`);
+    assert.ok(await until(`window.__revoked.length>=2`, 5000), `${w}: Undo revoked each rule: ${JSON.stringify(await js('window.__revoked'))}`);
+    assert.deepStrictEqual(await js('window.__revoked.slice().sort()'), ['multi:a', 'multi:b'], `${w}: exactly the rules that allowed it, not the unrelated one`);
+    await ev({ type: 'grants', grants: [{ key: 'ghost:key', kind: 'write', label: evil }] }); // back to the one rule the next checks use
     // a window that reloaded knows no rules: a rule it never saw is not "removed" (it was just reported as the reason)
     await ev({ permission: { requestId: 'hx4', kind: 'shell', summary: 'run echo', state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: 'never:seen', label: 'run echo4' } } });
     await call('hx4');
