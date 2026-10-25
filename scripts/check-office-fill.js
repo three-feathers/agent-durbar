@@ -15,7 +15,9 @@
  * Then (FR-047..FR-050, owner 2026-10-22), 1 and 2 agents at 1440x900, 1280x800 and 1920x1080: the desk shows its columns (main, last reply
  *   masked, facts), every grown line is at most 90 characters (measured per line), the columns stay apart and inside the desk, side text is
  *   at least 10.5px, the desk stays at most 92 x 2.5 px tall, streaming moves nothing.
- * Screenshots (simulator, `OUT=<folder>`): 001-fill-{4,6,15}-{1440x900,1280x800}.png (the simulator's own folders and helpers),
+ * Spec 001 FR-089..FR-096 (issue #697): expanded helper cards (levels 1 and 2) in the two reported sparse offices, the Claude-shaped helper (`FILL_ONLY=claude`),
+ * connectors, streaming (no box moves, at most 4 repaints a second), a theme switch, a late helper and the cases where nothing changes (`FILL_ONLY=hx`).
+ * Screenshots (simulator, `OUT=<folder>`): 001-helpers-{2,3}-{1440x900,1280x800}.png, 001-fill-{4,6,15}-{1440x900,1280x800}.png (the simulator's own folders and helpers),
  *   001-fill-1-{1440x900,1920x1080}.png (one agent, the columns).
  * Spec 001 FR-051..FR-057 (finished agents rest in the lounge), at 1440x900 and 1280x800: a folder with 2 working agents, 2 that finished
  * minutes ago (couch) and 3 long ago (nap beds), next to a busy folder: the lounge is in the desk row at its height and its width is counted,
@@ -166,6 +168,266 @@ module.exports = async (ctx) => {
     if (st.fit === 'ok') for (const p of spareProblems(label, await js(`(${ROWS.toString()})()`))) failures.push(p); /* FR-087 in every layout that fits */
     return st;
   };
+
+  const done = () => {
+    rows.forEach((r) => console.log('[office-fill]', r));
+    if (failures.length) { failures.forEach((f) => console.log('[office-fill] FAIL', f)); assert.fail(`${failures.length} problems`); }
+    console.log(`[office-fill] all checks passed (${rows.length} layouts)`);
+  };
+
+  /* ---- spec 001 FR-095 (issue #697, T114): a Claude Code helper, with Claude-shaped normalized events in the order the Claude mapper
+     sends them (src/adapters/claudeMap.ts): the parent's `Agent` / `Task` toolCall start (before any subagent event; early argument
+     streaming is for edit tools only), then `subagent` started with the task, the helper's own events, then the toolCall complete with
+     the output. A labelled DEFENSIVE input (not something Claude sends) adds a toolCall `update` for that call id. Expected: the update
+     ends nothing, the result reaches the record, and the parent chat has no tool chip for the call, only the sub-agent block. ---- */
+  const claudeCase = async () => {
+    await load(3, 1440, 900, { simrooms: '1', simhelpers: '0' });
+    const P = 'sim-1';
+    const view = (call) => js(`(()=>{const A=window.__durbarSimUi.agents(),h=A.find(x=>x.id===${q(P + ':' + call)}),p=A.find(x=>x.id===${q(P)}),s=h&&h.sub,t=p&&p.turn;
+      return {rec:!!s,status:s&&s.status,result:s&&s.result,cardState:h&&h.state,expanded:s&&s.block&&s.block.toggle.getAttribute('aria-expanded'),
+        chip:!!(t&&t.T.chipEls[${q(call)}]),chipsNamed:t?[...t.m.querySelectorAll('.chip')].filter(c=>/^(Agent|Task)$/.test((c.querySelector('b')||{}).textContent||'')).length:0,
+        blocks:t?t.m.querySelectorAll('.subblk').length:0,blocksOfCall:t?t.m.querySelectorAll('.subblk[data-sub='+JSON.stringify(${q(call)})+']').length:0}})()`);
+    for (const tool of ['Agent', 'Task']) {
+      const call = 'cl-' + tool.toLowerCase(), tag = `Claude-shaped helper (${tool})`;
+      const base = { sessionId: P };
+      const before = (await view(call)).blocks;
+      await emit({ ...base, type: 'toolCall', callId: call, tool, phase: 'start', args: { description: 'Check the lockfile', prompt: 'Check the lockfile for drift and report back' } });
+      const pre = await view(call);
+      check(pre.chip, `${tag}: the plain start (before any subagent event) draws a chip (the premise of the case) ${JSON.stringify(pre)}`);
+      await emit({ ...base, type: 'toolCall', callId: call, tool, phase: 'update', args: { description: 'Check the lockfile' } }); /* defensive, not sent by Claude */
+      await emit({ ...base, type: 'subagent', subagentId: call, phase: 'started', task: 'Check the lockfile for drift' });
+      await emit({ ...base, type: 'toolCall', callId: call, tool, phase: 'update', args: { description: 'Check the lockfile' } }); /* defensive, after the subagent event */
+      await emit({ ...base, type: 'status', status: 'working', agentId: call, intent: 'Reading package-lock.json' });
+      const mid = await view(call);
+      check(mid.rec && mid.status === 'running' && mid.cardState !== 'done' && mid.cardState !== 'error', `${tag}: a toolCall update ended the helper ${JSON.stringify(mid)}`);
+      check(mid.expanded === 'true', `${tag}: the sub-agent block collapsed after an update (${mid.expanded})`);
+      check(!mid.chip && mid.chipsNamed === 0, `${tag}: a tool chip for the call is still in the parent chat ${JSON.stringify(mid)}`);
+      check(mid.blocksOfCall === 1, `${tag}: ${mid.blocksOfCall} sub-agent blocks for the call (one expected)`);
+      await emit({ ...base, type: 'toolCall', callId: call, tool, phase: 'complete', output: 'The lockfile is in step with package.json.' });
+      const end = await view(call);
+      check(end.status === 'done' && end.result === 'The lockfile is in step with package.json.', `${tag}: the result did not reach the record ${JSON.stringify(end)}`);
+      check(!end.chip && end.chipsNamed === 0, `${tag}: a tool chip appeared at the end ${JSON.stringify(end)}`);
+      check(end.blocks === before + 1, `${tag}: ${end.blocks - before} blocks added for one call`);
+      /* a failed call keeps its error and ends the helper too */
+      const bad = call + '-bad';
+      await emit({ ...base, type: 'toolCall', callId: bad, tool, phase: 'start', args: { prompt: 'Break it' } });
+      await emit({ ...base, type: 'subagent', subagentId: bad, phase: 'started', task: 'Break it' });
+      await emit({ ...base, type: 'toolCall', callId: bad, tool, phase: 'failed', output: 'It broke' });
+      const f = await view(bad);
+      check(f.status === 'failed' && !f.chip && f.chipsNamed === 0, `${tag}: a failed call ${JSON.stringify(f)}`);
+      rows.push(`${tag}: update ends nothing, result reaches the record, no chip`);
+    }
+  };
+
+  /* ---- spec 001 FR-089..FR-096 (issue #697, T116): expanded helper cards when the office has room ---- */
+  const hxPage = () => js(`(()=>{const s=document.getElementById('stage');
+    const strips=[...s.querySelectorAll('.helpers.hstrip')].map(e=>{const u=e.closest('.unit'),cs=[...e.querySelectorAll(':scope>.helper')],ur=u.getBoundingClientRect(),sr=e.getBoundingClientRect();
+      const lefts=new Set(cs.map(c=>Math.round(c.getBoundingClientRect().left)));
+      const pb=getComputedStyle(e,'::before'),pa=getComputedStyle(e,'::after');
+      return {hx:e.dataset.hx||'',n:cs.length,cols:lefts.size,allHx:cs.every(c=>c.classList.contains('hx')),noneHx:cs.every(c=>!c.classList.contains('hx')),
+        cardBefore:cs.every(c=>getComputedStyle(c,'::before').content==='none'),stubW:parseFloat(pb.width),stubContent:pb.content!=='none',dotContent:pa.content!=='none',
+        stripW:sr.width,inUnit:sr.left>=ur.left-1&&sr.right<=ur.right+1&&sr.top>=ur.top-1&&sr.bottom<=ur.bottom+1}});
+    const cards=[...s.querySelectorAll('.helper.hx')].map(c=>({id:c.dataset.id,labels:[...c.querySelectorAll('.hx-l b')].map(b=>b.textContent),nr:[...c.querySelectorAll('.hx-nr')].map(x=>x.textContent),
+      text:c.innerText,aria:c.getAttribute('aria-label')||'',title:c.title||'',lines:[...c.querySelectorAll('.hx-l')].map(l=>[...l.textContent].length-(l.querySelector('b')?[...l.querySelector('b').textContent].length+1:0))}));
+    return {d:s.dataset.d,fit:s.dataset.fit,gf:parseFloat(s.style.getPropertyValue('--gf'))||0,strips,cards,tiles:s.querySelectorAll('.helper.hc:not(.hx)').length}})()`);
+  /* every box of the office, to compare two draws: desks by id, strips in order, cards as a sorted list (a finishing helper changes their order, not the boxes) */
+  const BOXES = () => {
+    const r = (e) => { const b = e.getBoundingClientRect(); return [b.left, b.top, b.width, b.height].map((x) => Math.round(x * 100) / 100); };
+    return { desks: [...document.querySelectorAll('#stage .desk[data-id]')].map((e) => [e.dataset.id, ...r(e)]), rooms: [...document.querySelectorAll('#stage .room, #stage .lobby, #stage .unit')].map((e) => r(e)),
+      strips: [...document.querySelectorAll('#stage .helpers')].map((e) => r(e)), cards: [...document.querySelectorAll('#stage .helper, #stage .more')].map((e) => r(e).join()).sort() };
+  };
+  const sameBoxes = (a, b, tag) => {
+    const bad = [];
+    const eq = (x, y) => x.length === y.length && x.every((v, i) => Math.abs(v - y[i]) <= 0.5);
+    if (a.desks.length !== b.desks.length || a.desks.some((d, i) => d[0] !== b.desks[i][0] || !eq(d.slice(1), b.desks[i].slice(1)))) bad.push('desks');
+    for (const k of ['rooms', 'strips']) if (a[k].length !== b[k].length || a[k].some((x, i) => !eq(x, b[k][i]))) bad.push(k);
+    if (a.cards.length !== b.cards.length || a.cards.some((x, i) => !eq(x.split(',').map(Number), b.cards[i].split(',').map(Number)))) bad.push('helper cards');
+    return bad.length ? [`${tag}: boxes moved (${bad.join(', ')})`] : [];
+  };
+  const hxLoad = async (n, hp, w, h, extra) => {
+    await load(n, w, h, { simrooms: '1', simhelpers: String(hp), ...(extra || {}) });
+    return H.until(`document.querySelectorAll('#stage .helper').length>=${q(n * Math.min(hp, 4))}`, 8000);
+  };
+  const cardOf = (st, id) => st.cards.find((c) => c.id === id);
+  const labelled = (st, tag) => {
+    for (const c of st.cards) {
+      check(c.lines.length > 0 && c.lines.every((n) => n <= 240), `${tag}: card ${c.id} has no text line or one over 240 characters (${c.lines})`);
+      check(c.labels.every((l) => ['Task', 'Now', 'Result', 'Failed'].includes(l)), `${tag}: card ${c.id} has a label that is not Task, Now, Result or Failed (${c.labels})`);
+      check(c.labels.length + c.nr.length >= 1, `${tag}: card ${c.id} shows no labelled line and no "not reported" line`);
+      check(/, helper of /.test(c.aria) && c.aria.length < 4 * 240 + 400, `${tag}: card ${c.id} aria-label ${c.aria.length} characters: ${c.aria.slice(0, 80)}`);
+      check([...c.title].length <= 200, `${tag}: card ${c.id} title is ${[...c.title].length} characters (at most 200)`);
+    }
+  };
+  const hxCases = async () => {
+    /* (1) the two reported sparse layouts, at both sizes; the chat replaces the office while it is open (#stage-host is hidden, floor width 0), so
+       "chat open" is checked as closed -> open -> closed: the office comes back with the same level and the same rules */
+    const LV = new Map();
+    for (const [w, h] of [[1440, 900], [1280, 800]]) {
+      for (const [n, hp] of [[2, 3], [3, 2]]) {
+        const tag = `${n} parents in one room, ${hp} helpers each, ${w}x${h}`;
+        check(await hxLoad(n, hp, w, h), `${tag}: the helper cards did not appear`);
+        const st = await hxPage();
+        check(st.strips.length === n && st.strips.every((x) => (x.hx === '1' || x.hx === '2') && x.n === hp && x.allHx), `${tag}: strips ${JSON.stringify(st.strips.map((x) => [x.hx, x.n]))} (every parent needs a strip of ${hp} expanded cards)`);
+        check(st.d === 'roomy' && st.gf >= 1.4 && st.fit === 'ok', `${tag}: ${st.d} f=${st.gf} fit=${st.fit} (grown desks at least 1.4x)`);
+        check(st.cards.length === n * hp, `${tag}: ${st.cards.length} cards, not ${n * hp}`);
+        labelled(st, tag);
+        const pr = await page(); check(!pr.length, `${tag}: ${pr.slice(0, 4).join('; ')}`);
+        check(await js(`(()=>{const f=document.getElementById('floor'),de=document.documentElement;return f.scrollHeight<=f.clientHeight+1&&de.scrollHeight<=innerHeight+1&&de.scrollWidth<=innerWidth+1})()`), `${tag}: the office scrolls`);
+        if (OUT) await ctx.shot(path.join(OUT, `001-helpers-${n}-${w}x${h}.png`));
+        if (n === 2) {
+          const cx = cardOf(st, 'sim-1:sim-1-cx1');
+          check(!!cx && cx.nr.some((t) => /Result not reported/.test(t)), `${tag}: the Codex-shaped helper does not read "Result not reported" ${JSON.stringify(cx && cx.nr)}`);
+          if (cx && st.strips[0].hx === '2') check(cx.nr.some((t) => /Task not reported/.test(t)), `${tag}: the Codex-shaped helper does not read "Task not reported"`);
+          const kinds = new Set(st.cards.flatMap((c) => c.labels));
+          check(kinds.has('Failed') && kinds.has('Result') && (kinds.has('Now') || kinds.has('Task')), `${tag}: the helpers show ${[...kinds]} (running, done and failed expected)`);
+          const dn = st.cards.find((c) => /Result/.test(c.labels.join()) && !c.nr.length);
+          check(!!dn && !/Task/.test(dn.labels.join()) === (st.strips[0].hx === '1'), `${tag}: a done card at level ${st.strips[0].hx} shows ${dn && dn.labels}`);
+        }
+        LV.set(tag, st.strips.map((x) => x.hx).join(''));
+        rows.push(`${tag}: levels ${st.strips.map((x) => x.hx).join('/')}, f=${st.gf}`);
+        /* the chat open: the office is not drawn; back to the office, the same layout */
+        const o = await H.openSimAgent(`a=>!a.parent&&a.live`, '#msgInput');
+        check(o.ok, `${tag}: the chat did not open ${JSON.stringify(o.seen)}`);
+        await H.key('Escape');
+        check(await H.until(`!document.body.classList.contains('panel-open')&&document.querySelectorAll('#stage .helper.hx').length===${q(n * hp)}`, 8000), `${tag}: the office did not come back with its expanded cards after the chat`);
+        await H.settle();
+        const back = await hxPage();
+        check(back.strips.map((x) => x.hx).join('') === LV.get(tag), `${tag}: the levels after the chat are ${back.strips.map((x) => x.hx)}, not ${LV.get(tag)}`);
+        const pr2 = await page(); check(!pr2.length, `${tag}, after the chat: ${pr2.slice(0, 4).join('; ')}`);
+      }
+    }
+    /* (2) connectors: strips of 1, 2 and 3 columns */
+    const colsSeen = new Set();
+    for (const [n, hp, w, h] of [[3, 2, 1280, 800], [2, 3, 1440, 900], [1, 3, 1440, 900]]) {
+      const tag = `connectors, ${n} parents, ${hp} helpers, ${w}x${h}`;
+      check(await hxLoad(n, hp, w, h), `${tag}: no cards`);
+      const st = await hxPage();
+      for (const x of st.strips) {
+        colsSeen.add(x.cols);
+        check(x.cardBefore, `${tag}: a card of a data-hx strip still draws its own connector`);
+        check(x.stubContent && x.dotContent, `${tag}: the strip lost its stub or its dot`);
+        check(Math.abs(x.stubW - x.stripW) <= 1.5, `${tag}: the top line is ${x.stubW}px over a strip of ${x.stripW}px`);
+        check(x.inUnit, `${tag}: the strip leaves its unit`);
+      }
+    }
+    check([1, 2, 3].every((c) => colsSeen.has(c)), `connectors were checked on strips of ${[...colsSeen]} columns, not 1, 2 and 3`);
+    rows.push(`connectors: strips of ${[...colsSeen].sort().join(', ')} columns`);
+    /* (3) streaming: helper events change no box; text from the helper is cut and labelled; a completion too */
+    {
+      const tag = 'streaming, 2 parents, 3 helpers, 1440x900';
+      check(await hxLoad(2, 3, 1440, 900), `${tag}: no cards`);
+      await H.settle();
+      const before = await js(`(${BOXES.toString()})()`);
+      const L = 'src/very/long/path/'.repeat(30) + 'file.ts';
+      const ev = { sessionId: 'sim-1', agentId: 'sim-1-task0' };
+      await emit({ ...ev, type: 'toolCall', callId: 'sx-1', tool: 'view', phase: 'start', args: { path: L } });
+      check(await H.until(`(document.querySelector('.helper[data-id="sim-1:sim-1-task0"]')||{innerText:''}).innerText.includes('very/long/path')`, 6000), `${tag}: the card never showed the new activity`);
+      await emit({ ...ev, type: 'thinking', reasoningId: 'sx-r', delta: '**Looking** at the whole tree. ' + 'more words '.repeat(80) });
+      await emit({ ...ev, type: 'status', status: 'working', intent: 'Checking everything in turn, ' + 'and then some more '.repeat(40) });
+      check(await H.until(`(document.querySelector('.helper[data-id="sim-1:sim-1-task0"]')||{innerText:''}).innerText.includes('Checking everything')`, 6000), `${tag}: the card never showed the new intent`);
+      await H.settle();
+      sameBoxes(before, await js(`(${BOXES.toString()})()`), `${tag}, helper events`).forEach((m) => failures.push(m));
+      const mid = await hxPage(); labelled(mid, `${tag}, after events`);
+      const now = cardOf(mid, 'sim-1:sim-1-task0');
+      check(!!now && now.lines.every((x) => x <= 240), `${tag}: a streamed line is over 240 characters ${now && now.lines}`);
+      /* FR-092: a burst of helper tool starts repaints its card at most 4 times a second (one batch of changes per repaint) */
+      await js(`(()=>{const c=document.querySelector('.helper[data-id="sim-2:sim-2-task0"]');window.__hxMut=0;window.__hxObs&&window.__hxObs.disconnect();window.__hxObs=new MutationObserver(()=>{window.__hxMut++;});window.__hxObs.observe(c,{subtree:true,childList:true,characterData:true,attributes:true});})()`);
+      const t0 = Date.now();
+      for (let i = 0; i < 40; i++) await emit({ sessionId: 'sim-2', agentId: 'sim-2-task0', type: 'toolCall', callId: 'burst-' + i, tool: 'view', phase: 'start', args: { path: 'burst/file-' + i + '.ts' } });
+      const took = Date.now() - t0;
+      check(await H.until(`(document.querySelector('.helper[data-id="sim-2:sim-2-task0"]')||{innerText:''}).innerText.includes('file-39')`, 6000), `${tag}: the last event of a burst never reached the card`);
+      const paints = await js(`window.__hxMut`);
+      check(paints >= 1 && paints <= Math.ceil(took / 250) + 3, `${tag}: ${paints} repaints of one card for 40 events in ${took} ms (at most ${Math.ceil(took / 250) + 3})`);
+      await js(`window.__hxObs.disconnect()`);
+      rows.push(`${tag}: ${paints} repaints for 40 events in ${took} ms`);
+      await emit({ sessionId: 'sim-1', type: 'subagent', subagentId: 'sim-1-task0', name: 'Tests', phase: 'completed', durationMs: 5000, totalTokens: 900, totalToolCalls: 4 });
+      await emit({ sessionId: 'sim-1', type: 'toolCall', callId: 'sim-1-task0', tool: 'task', phase: 'complete', output: 'A very long result. '.repeat(400) });
+      check(await H.until(`(document.querySelector('.helper[data-id="sim-1:sim-1-task0"]')||{innerText:''}).innerText.includes('Result')`, 6000), `${tag}: the finished helper never showed its Result`);
+      await H.settle();
+      sameBoxes(before, await js(`(${BOXES.toString()})()`), `${tag}, after a helper finished`).forEach((m) => failures.push(m));
+      const end = await hxPage(); labelled(end, `${tag}, after the result`);
+      const r = cardOf(end, 'sim-1:sim-1-task0');
+      check(!!r && r.lines.every((x) => x <= 240) && r.title.length <= 200, `${tag}: the long result is not cut (${r && r.lines})`);
+      /* a cached render (same layout key): a status event draws again with the level kept */
+      await emit({ sessionId: 'sim-2', agentId: 'sim-2-task0', type: 'toolCall', callId: 'sx-2', tool: 'view', phase: 'start', args: { path: 'cached-render.ts' } });
+      check(await H.until(`[...document.querySelectorAll('.helper.hx')].some(c=>c.innerText.includes('cached-render'))`, 6000), `${tag}: the new activity was not drawn on an expanded card`);
+      const cached = await hxPage();
+      check(cached.strips.length === 2 && cached.strips.every((x) => x.hx === '1' || x.hx === '2'), `${tag}: after a cached render the strips are ${JSON.stringify(cached.strips.map((x) => x.hx))}`);
+      rows.push(`${tag}: no box moved`);
+    }
+    /* (4) a theme switch through the real Settings path, and back */
+    {
+      const tag = 'theme switch, 2 parents, 3 helpers, 1440x900';
+      check(await hxLoad(2, 3, 1440, 900), `${tag}: no cards`);
+      const base = await js(`window.THEME.current().id`);
+      const pick = async (id) => {
+        await js(`window.DurbarScreens.openSettings()`);
+        check(await H.until(`!!document.querySelector('#thList [data-theme=${q(id)}]')`, 6000), `${tag}: the theme ${id} is not in Settings`);
+        await js(`document.querySelector('#thList [data-theme=${q(id)}]').click()`);
+        check(await H.until(`window.THEME.current().id===${q(id)}`, 6000), `${tag}: the theme did not change to ${id}`);
+        await H.key('Escape');
+        check(await H.until(`!document.body.classList.contains('screen-open')&&document.querySelectorAll('#stage .helper.hx').length===6`, 8000), `${tag}: the office did not come back with its cards in ${id}`);
+        await H.settle();
+      };
+      await pick('retro');
+      const r = await hxPage(); const pr = await page();
+      check(r.strips.length === 2 && r.strips.every((x) => x.hx === '1' || x.hx === '2'), `${tag}: Retro Pixel strips ${JSON.stringify(r.strips.map((x) => x.hx))}`);
+      check(!pr.length, `${tag}, Retro Pixel: ${pr.slice(0, 4).join('; ')}`);
+      await pick(base);
+      const b = await hxPage(); const pr2 = await page();
+      check(b.strips.every((x) => x.hx === '1' || x.hx === '2') && !pr2.length, `${tag}, back in ${base}: ${pr2.slice(0, 4).join('; ')}`);
+      rows.push(`${tag}: ${base} -> retro -> ${base}, rules hold`);
+    }
+    /* (5) a helper added after the first layout */
+    {
+      const tag = 'a helper added after the layout, 2 parents, 3 helpers, 1440x900';
+      check(await hxLoad(2, 3, 1440, 900), `${tag}: no cards`);
+      await emit({ sessionId: 'sim-1', type: 'toolCall', callId: 'late-1', tool: 'task', phase: 'start', args: { description: 'A late helper', prompt: 'Do the late thing' } });
+      await emit({ sessionId: 'sim-1', type: 'subagent', subagentId: 'late-1', name: 'Late', phase: 'started', task: 'A late helper' });
+      check(await H.until(`!!document.querySelector('#stage .helper[data-id="sim-1:late-1"]')`, 6000), `${tag}: the new helper has no card`);
+      await H.settle();
+      const st = await hxPage();
+      check(st.strips.every((x) => x.allHx || x.noneHx), `${tag}: a strip mixes tiles and expanded cards`);
+      check(!!cardOf(st, 'sim-1:late-1') || st.strips.every((x) => x.noneHx), `${tag}: the late helper is not an expanded card although the strip is`);
+      const pr = await page(); check(!pr.length, `${tag}: ${pr.slice(0, 4).join('; ')}`);
+      rows.push(`${tag}: ${st.strips.map((x) => x.hx || '0').join('/')}`);
+    }
+    /* (6) FR-091 item 2: with no room for a level at f 1.4, the layout is today's, box for box (and the level is gone) */
+    {
+      const tag = 'no room for expanded cards, 2 parents, 3 helpers, 1120x480';
+      check(await hxLoad(2, 3, 1280, 480), `${tag}: no cards at 1280x480`);
+      const wide = await hxPage();
+      check(wide.strips.every((x) => x.hx === '1' || x.hx === '2') && wide.gf >= 1.4, `${tag}: 1280x480 should still take a level (${JSON.stringify(wide.strips.map((x) => x.hx))}, f=${wide.gf})`);
+      check(await hxLoad(2, 3, 1120, 480), `${tag}: the helpers are not drawn`);
+      const st = await hxPage();
+      check(st.strips.every((x) => x.hx === '' && x.noneHx) && st.tiles === 6 && !st.cards.length, `${tag}: expanded cards where neither level fits at f 1.4 (${JSON.stringify(st.strips.map((x) => x.hx))})`);
+      await H.settle();
+      const mine = await js(`(${BOXES.toString()})()`);
+      await js(`window.__durbarSimUi.hxOff(true)`); await H.settle(); await ctx.sleep(300);
+      const off = await js(`(${BOXES.toString()})()`);
+      await js(`window.__durbarSimUi.hxOff(false)`);
+      sameBoxes(mine, off, tag).forEach((m) => failures.push(m));
+      const pr = await page(); check(!pr.length, `${tag}: ${pr.slice(0, 4).join('; ')}`);
+      rows.push(`${tag}: ${st.d} f=${st.gf}, compact tiles, boxes equal to the layout without the step (measured on main too: 14 boxes, 0 differences; 1160x480 still takes level 1)`);
+    }
+    /* (7) the simulator's own 15 agents: compact tiles and main's densities, chat closed; the chat replaces the office, so "open" is closed -> open -> closed */
+    for (const [w, h, d] of [[1440, 900, 'card'], [1280, 800, 'mini']]) {
+      const tag = `15 agents, ${w}x${h}`;
+      await load(15, w, h);
+      const st = await hxPage();
+      check(st.d === d && !st.cards.length && st.strips.every((x) => x.hx === '' && x.noneHx) && st.tiles > 0, `${tag}: ${st.d}, ${st.cards.length} expanded cards (expected ${d} with compact tiles only; densities measured on main at this commit: 1440x900 card, 1280x800 mini, chat closed and chat open)`);
+      const o = await H.openSimAgent(`a=>!a.parent&&a.live`, '#msgInput');
+      check(o.ok, `${tag}: the chat did not open`);
+      await H.key('Escape');
+      check(await H.until(`!document.body.classList.contains('panel-open')&&document.getElementById('stage').dataset.d===${q(d)}`, 8000), `${tag}: after the chat the density is not ${d}`);
+      const st2 = await hxPage(); check(!st2.cards.length && st2.d === d, `${tag}, after the chat: ${st2.d}, ${st2.cards.length} expanded cards`);
+      rows.push(`${tag}: ${st.d}, compact tiles`);
+    }
+  };
+  const only = process.env.FILL_ONLY || '';
+  if (!only || only.includes('claude')) await claudeCase();
+  if (!only || only.includes('hx')) await hxCases();
+  if (only) { done(); return; }
 
   /* ---- spare height (FR-086..FR-088, owner report issue #619): few rooms, a short wide window too; the space is not all left at the bottom ---- */
   for (const [w, h] of [[1280, 600], [1280, 800], [1440, 900], [1920, 1080]]) {
@@ -472,7 +734,5 @@ module.exports = async (ctx) => {
     }
   }
 
-  rows.forEach((r) => console.log('[office-fill]', r));
-  if (failures.length) { failures.forEach((f) => console.log('[office-fill] FAIL', f)); assert.fail(`${failures.length} problems`); }
-  console.log(`[office-fill] all checks passed (${rows.length} layouts)`);
+  done();
 };

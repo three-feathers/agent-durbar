@@ -104,5 +104,18 @@
     if(g>=gap)return {rx,top:r2(g),rowGap:r2(g)};
     return {rx,top:r2(rest/2),rowGap:gap};
   }
-  return {svgHollow,styleSplit,GROW,largest,better,pick,GCOL,grownCols,spreadRows};
+  /* ---- The helper step (spec 001 FR-091, issue 697): with few agents the layout may draw each helper as an expanded card (level 2: task,
+        activity or result, facts; level 1: one line) when the parent desks can stay at least HX_MIN_F grown.
+        stepRuns({d, forced, fit, helpers}): does the step run? Only after the search picked a fitting `full` or `roomy`, with no density
+        forced and at least one open main agent with a helper; never after card, mini or micro (the 15 simulated agents lay out as before).
+        helperStep(search, minF): the richest level first: search(level, minF) -> the grown result or null; returns {level, g} for the first
+        level that fits, or null (today's path then runs). ---- */
+  function stepRuns(x){
+    return !!x&&(x.d==='full'||x.d==='roomy')&&!x.forced&&!!x.fit&&!!x.helpers;
+  }
+  function helperStep(search,minF){
+    for(const level of [2,1]){const g=search(level,minF);if(g)return {level,g};}
+    return null;
+  }
+  return {svgHollow,styleSplit,GROW,largest,better,pick,GCOL,grownCols,spreadRows,stepRuns,helperStep};
 })());

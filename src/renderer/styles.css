@@ -725,6 +725,27 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .stage[data-d="roomy"] .helper.hc .hname{font-size:12.5px;line-height:16px}
 .stage[data-d="roomy"] .helper.hc .hs{font-size:11px;line-height:14px}
 .stage[data-d="roomy"] .helpers.hstrip>.more{font-size:12px}
+/* spec 001 FR-089..FR-094 (issue 697): expanded helper cards, level 1 (name + one line) and level 2 (name, task, activity or result, facts). They only appear in a
+   grown roomy strip. A fixed height per level and whole-line clamps, so text that streams never changes a box or the fit; theme tokens only; nothing under
+   10.5px; no transition or animation. A strip of cards takes as many columns as fit with each card at least --hxw wide (about 85 characters at most per line). */
+.helpers.hstrip[data-hx]{align-self:stretch;grid-template-columns:repeat(auto-fill,minmax(var(--hxw),1fr))}
+.helpers.hstrip[data-hx="1"]{--hxw:220px;--hxh:50px}
+.helpers.hstrip[data-hx="2"]{--hxw:260px;--hxh:106px}
+.helpers.hstrip[data-hx]>*::before{content:none}
+.helpers.hstrip[data-hx]::before{left:0;width:100%;top:-10px;height:5px;border-left:0;border-bottom:1px solid var(--line);background:linear-gradient(var(--line),var(--line)) var(--stub) 0/1px 100% no-repeat}
+.helper.hc.hx{height:var(--hxh);max-width:460px;align-items:start;padding:5px 8px 5px 5px;overflow:hidden;transition:none}
+.helper.hc.hx>.sc{align-self:start}
+.helper.hc.hx .badge{top:5px;right:5px}
+.helper.hc.hx .hi{min-width:0;height:100%;gap:2px}
+.helper.hc.hx .hh{display:flex;align-items:baseline;gap:6px;min-width:0;padding-right:16px}
+.helper.hc.hx .hname{flex:0 1 auto;min-width:0}
+.helper.hc.hx .hs{flex:none}
+.helper.hc.hx .hx-b{display:flex;flex-direction:column;gap:2px;min-width:0;min-height:0;overflow:hidden}
+.helper.hc.hx .hx-l{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden;overflow-wrap:anywhere;min-width:0;font-size:11px;line-height:14px;font-weight:500;color:var(--ink-2)}
+.helper.hc.hx .hx-l b{font-weight:650;color:var(--ink)}
+.helpers.hstrip[data-hx="2"] .hx-l:is(.hx-task,.hx-now,.hx-result,.hx-failed){-webkit-line-clamp:2}
+.helper.hc.hx .hx-l.hx-nr{color:var(--muted)}
+.helper.hc.hx .hx-l.hx-facts{color:var(--muted)}
 /* spec 001 FR-041..FR-045: grown desks. With few agents a roomy card grows by --gf (1 to 2.5, set with data-grow on the stage by the layout
    search): taller, a wider column and drawing, the same text sizes. Its text line fills the card (at most 8 lines) and keeps the newest
    lines in view like the side panel (.over, set by measuring); from --gf 1.4 (data-grow="2") the name may take two lines. */
