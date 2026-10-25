@@ -17,7 +17,7 @@ export const COPILOT_SANDBOX_VERIFIED: readonly string[] = Object.freeze([]);
  * (2026-10-25, Linux, CLI 1.0.101 / SDK 1.0.22): an approved `touch` outside the session folder exited 0 and wrote the file although
  * the state was `on`; the cause is unknown, so the card does not promise the sandbox holds an approved command.
  */
-export const COPILOT_SANDBOX_NOTE_COMMAND = 'If you approve, Copilot may run this outside its sandbox (seen on Linux, 2026-10-25).';
+export const COPILOT_SANDBOX_NOTE_COMMAND = 'If you approve, Copilot’s sandbox may still let this write outside the folder (seen on Linux, 2026-10-25).';
 export const COPILOT_NO_REPORT = 'this Copilot cannot report its sandbox';
 
 /** `SandboxHostSupport`, checked (FR-006). */

@@ -62,16 +62,30 @@ cpm.spawn = function (this: unknown, ...a: unknown[]): unknown {
   if (replace) return origSpawn.apply(this, [process.execPath, ['-e', 'process.exit(3)'], ...a.slice(2)]);
   return origSpawn.apply(this, a);
 };
-/** Copilot's vendor stream: event types, and for `sandbox.decision` only its bounded enum fields (never a resource or command). */
+/**
+ * Copilot's vendor stream: event types, and for `sandbox.decision` only its bounded fields (`read:` `session-events.schema.json` of
+ * `@github/copilot-sdk-linux-x64` 1.0.22): enum values (a short lower-case word), booleans and counts. Never `command`,
+ * `deniedResource`, `processName`, `toolCallId` or `effectiveFilesystemPolicy` (they can hold paths or commands).
+ */
 const rawTypes: string[] = [];
+const DECISION_ENUMS = ['kind', 'outcome', 'control', 'enforcementPoint', 'backend', 'degradationReason', 'platform', 'policySource', 'proxyMode', 'attestation', 'confidence', 'denialClass', 'permissiveSource', 'source'];
+const DECISION_FLAGS = ['addCurrentWorkingDirectory', 'allowBypass', 'allowLocalNetwork', 'allowOutbound', 'ghAuth', 'gitAuth', 'keychainAccess'];
+const DECISION_COUNTS = ['deniedPathsCount', 'readonlyPathsCount', 'readwritePathsCount', 'durationMs'];
+const decisions: Array<Record<string, string | boolean | number>> = [];
 const mapProto = (EventMapper as unknown as { prototype: { map(x: unknown): void } }).prototype;
 const origMap = mapProto.map;
 mapProto.map = function (this: unknown, x: unknown): void {
   try {
     const e = x as { type?: string; data?: Record<string, unknown> };
-    const d = e?.type === 'sandbox.decision' && e.data ? ':' + ['kind', 'outcome', 'control', 'enforcementPoint', 'state'].map((k) => { const v = e.data?.[k]; return typeof v === 'string' && /^[a-z_]{1,40}$/.test(v) ? v : '-'; }).join('/') : '';
+    if (e?.type === 'sandbox.decision' && e.data && decisions.length < 50) {
+      const r: Record<string, string | boolean | number> = {};
+      for (const k of DECISION_ENUMS) { const v = e.data[k]; if (typeof v === 'string' && /^[a-z][a-z0-9_-]{0,40}$/.test(v)) r[k] = v; }
+      for (const k of DECISION_FLAGS) { const v = e.data[k]; if (typeof v === 'boolean') r[k] = v; }
+      for (const k of DECISION_COUNTS) { const v = e.data[k]; if (typeof v === 'number' && Number.isFinite(v)) r[k] = v; }
+      decisions.push(r);
+    }
     const w = typeof e?.data?.warningType === 'string' && /^[a-z_]{1,40}$/.test(e.data.warningType) ? ':' + e.data.warningType : '';
-    rawTypes.push(`${String(e?.type).slice(0, 60)}${w}${d}`);
+    rawTypes.push(`${String(e?.type).slice(0, 60)}${w}`);
   } catch { /* types only */ }
   return origMap.call(this, x);
 };
@@ -136,6 +150,7 @@ async function main(): Promise<number> {
       usage: { models: [...new Set(usage.map((u) => u.model).filter(Boolean))], calls: usage.length, costUsd: usage.reduce((s, u) => s + (u.costUsd ?? 0), 0), aiu: usage.reduce((s, u) => s + (u.nanoAiu ?? 0), 0) / 1e9, in: usage.reduce((s, u) => s + (u.inputTokens ?? 0), 0), out: usage.reduce((s, u) => s + (u.outputTokens ?? 0), 0), cacheRead: usage.reduce((s, u) => s + (u.cacheReadTokens ?? 0), 0), multipliers: [...new Set(usage.map((u) => u.costMultiplier).filter((x) => x !== undefined))] },
       spawns,
       rawTypes: [...new Set(rawTypes)],
+      decisions,
     };
     fs.writeFileSync(outFile, JSON.stringify(result, null, 2));
     const on = sbx.some((x) => (x.sandbox as { state?: string } | null)?.state === 'on');

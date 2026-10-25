@@ -308,14 +308,15 @@ Allow all keeps the app's default. When the vendor's managed policy forces a san
   and the Codex `SandboxState` has `approvedMayLeave: true` so the chip tooltip says it too. Removed only when a real check (or the
   vendor docs) shows an approved escalation stays sandboxed (K6). Read-only is unaffected (every approval is declined).
 - **FR-021a** `[IMPLEMENTED]` (test: `scripts/test-copilot-sandbox.ts`, `scripts/test-sandbox-floor.ts`; sim: `scripts/check-sandbox-floor.js`
-  tooltip at both sizes; added 2026-10-25 after the T060 run, K15, review on PR #753) **Copilot approval cards in Ask first** get the
-  same kind of line as FR-021, through the same `sandboxNote` field: a `shell` request while Copilot's state is `on` carries "If you
-  approve, Copilot may run this outside its sandbox (seen on Linux, 2026-10-25)." (`COPILOT_SANDBOX_NOTE_COMMAND`,
-  `src/adapters/copilotSandbox.ts`; set on a copy of the request in `copilot.ts`, the runtime's object is unchanged). Other kinds
-  (file edits, which Durbar checks itself, MCP) and a session whose sandbox is not on get no line. Copilot's `SandboxState` in Ask
-  first with the floor on has `approvedMayLeave: true`, so the chip tooltip adds "If you approve a command, Copilot may run it
-  outside its sandbox (seen on Linux, 2026-10-25)." and still ends with "Requested; not verified on a real session." Removed only
-  when a real run shows an approved command stays sandboxed (K15). Simulator: [1440x900](../../docs/screenshots/087-copilot-card-1440x900.png),
+  card line and tooltip at both sizes; added 2026-10-25 after the T060 runs, K15, review on PR #753) **Copilot approval cards in Ask
+  first** get their own line, through the same `sandboxNote` field as FR-021: a `shell` request while Copilot's state is `on` carries
+  "If you approve, Copilot’s sandbox may still let this write outside the folder (seen on Linux, 2026-10-25)."
+  (`COPILOT_SANDBOX_NOTE_COMMAND`, `src/adapters/copilotSandbox.ts`; set on a copy of the request in `copilot.ts`, the runtime's
+  object is unchanged). Other kinds (file edits, which Durbar checks itself, MCP) and a session whose sandbox is not on get no line;
+  the simulator shows it only in Ask first. Copilot's `SandboxState` in Ask first with the floor on has `approvedMayLeave: true`, so
+  the chip tooltip says "writes: not only this folder" and adds "An approved command could write outside the folder (Copilot, seen
+  on Linux, 2026-10-25)."; it still ends with "Requested; not verified on a real session." Removed only when Durbar can make
+  Copilot's sandbox hold writes to the session folders (K15). Simulator: [1440x900](../../docs/screenshots/087-copilot-card-1440x900.png),
   [1280x800](../../docs/screenshots/087-copilot-card-1280x800.png) (`scripts/check-sandbox-floor.js`, Kenji without `simkinds=mixed`).
 
 ### Key Entities
@@ -420,11 +421,28 @@ your shell tool: touch sandbox-probe.txt ...".
   reads, 50 output tokens). Copilot gets **no** verified entry. The script now also records the bounded enum fields of
   `sandbox.decision` (kind, outcome, control, enforcement point, state; never a resource or command) for the next run.
   `[KNOWN GAP]` K15: on Linux an approved Copilot command in Ask first wrote outside the session folder although the chip said
-  *Sandboxed*; cause unknown. Because one possible cause is that the `sandboxConfig` was never applied (K8), the Copilot floor may not
-  be in force at all (Read-only's shell commands and MCP servers included) until K8 and K15 are settled; the README says so (review
-  on PR #753). The chip's *Sandboxed* means Copilot accepted the settings, not that a refusal was seen. Until a run explains it, the Copilot Ask first tooltip's "writes: this folder" is a request, not a
-  limit (it still ends with "Requested; not verified on a real session."). FR-021a (added in the same PR) says so on the approval
-  card and in the chip tooltip; finding the cause needs one more prompt with the new capture, the owner's OK.
+  *Sandboxed*. The first run could not say why; the run below does.
+- **Copilot, Ask first, write outside the folder, with `sandbox.decision` recorded** (`real:` 2026-10-25 ~20:05 UTC, owner's OK
+  Vikram 19:57 UTC for exactly one prompt, recorded on PR #753; same versions and host; `scripts/sandbox-floor-real.ts copilot <out>
+  ask --spend` after the review fixes, dry run first). Same setup and outcome: chip *Sandboxed*, Durbar asked, the script approved the
+  exact `run touch /tmp/durbar-t060-outside-XXXXXX/copilot-probe.txt`, exit 0, **file created**. The vendor's `sandbox.decision`
+  events (bounded fields only): `policy_resolved` (outcome `resolved`, backend `bubblewrap`, `policySource: user_policy`,
+  `allowBypass: false`, `allowOutbound: false`, `allowLocalNetwork: false`, `addCurrentWorkingDirectory: false`, git/gh auth and
+  keychain off, **`readwritePathsCount: 2`**, `readonlyPathsCount: 13`, `deniedPathsCount: 16`), `spawn_completed` (`succeeded`,
+  shell, bubblewrap) and `enforcement_state` (**`engaged`**, attestation `spawn_succeeded`). No `bypass_decided`, `access_denied`,
+  `access_recorded` or permissive retry. Durbar's planned `sandboxConfig` for that folder has 1 read-write, 12 read-only and 16 denied
+  paths (the script's dry run). **Cause, as far as the bounded fields show:** the command ran **inside** an engaged bubblewrap sandbox
+  built from Durbar's own policy (so K8 holds: `options.update` applied to the created session, and the approval did not bypass the
+  sandbox), and that effective policy has **one read-write rule Durbar did not send**; the write to a folder under `/tmp` went
+  through it. Which path that extra rule names is not known (Copilot reports paths only with content capture on, which Durbar does
+  not enable); a temp-folder grant fits what was seen but is not proven. Usage: 0.077 AIU (2 model calls, 25.4k input tokens of which
+  20.4k cache reads, 49 output tokens).
+- **K15 now:** of the three explanations, "the approval runs the command outside the sandbox" and "the `sandboxConfig` was not
+  applied" are ruled out by the events above; "the effective policy allows more writes than Durbar sent" is what happened. So the
+  Copilot floor **is** applied (Read-only's shell commands and MCP servers run in it), but in Ask first its writes are not limited
+  to the session folders: at least one more place (probably the temp folder) is writable. FR-021a says so on the card and in the
+  tooltip. `[KNOWN GAP]` K15 (narrowed): the extra read-write path, and whether Durbar can remove it (for example a `deniedPaths` entry
+  for the temp folder); finding it needs a run with content capture or the vendor's docs.
 
 ### 2026-10-25: review round 8 on PR #733 (Ruben's agent, 6 items)
 
