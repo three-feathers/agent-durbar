@@ -227,12 +227,15 @@ module.exports = async (ctx) => {
       const event = await js(`window.__navigatorBackspaceProbe`);
       assert.ok(event.key === 'Backspace' && event.code === 'Backspace' && event.target === 'msgInput' && !event.defaultPrevented,
         `${w}: synthetic ⌘⌫ reaches the message box without the app preventing native text editing: ${JSON.stringify(event)}`);
-      assert.strictEqual(c.v, TXT, `${w}: synthetic ⌘⌫ does not model native macOS text deletion`);
+      // Electron's synthetic ⌘⌫ may or may not delete (a runner with native deletion removes text): the value must only never grow and stay a prefix.
+      assert.ok(TXT.startsWith(c.v), `${w}: synthetic ⌘⌫ leaves the draft unchanged or a prefix of it: ${JSON.stringify(c.v)}`);
+      const before = c.v.length;
+      const expectLen = Math.max(0, before - 1);
       await key('Backspace', [], { char: 'never' });
-      assert.ok(await until(`document.getElementById('msgInput').value.length===${jsLiteral(TXT.length - 1)}`, 5000),
+      assert.ok(await until(`document.getElementById('msgInput').value.length===${jsLiteral(expectLen)}`, 5000),
         `${w}: ordinary Backspace edits the focused message box`);
       c = await box();
-      assert.ok(c.open && c.focus === 'msgInput' && c.v.length === TXT.length - 1 && TXT.startsWith(c.v),
+      assert.ok(c.open && c.focus === 'msgInput' && c.v.length === expectLen && TXT.startsWith(c.v),
         `${w}: ordinary Backspace edits the message box and keeps the chat open: ${JSON.stringify(c)}`);
     } else {
       assert.ok(c.v.length < TXT.length && TXT.startsWith(c.v), `${w}: Ctrl+Backspace deleted text the normal way, nothing else: ${JSON.stringify(c.v)}`);
