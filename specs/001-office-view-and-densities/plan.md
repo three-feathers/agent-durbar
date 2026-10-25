@@ -175,7 +175,7 @@ Started from scratch on the owner's decision (Vikram, 2026-10-25); nothing from 
 - `memo()`: a per-helper cache keyed by field and raw value, so `lines` masks a field once per change and a repaint with unchanged fields calls no mask (review on #714).
 - `HX_TIP` (200): the tooltip cut, the number `deskTip` uses (`app.js`; `cuttext.js` has no shared tooltip constant).
 - `label(rec, parts)` → the accessible name text (each part the `HX_CHARS` cut, already masked) and `tip(...)` cut to `HX_TIP`.
-Listed in `copy-assets.js` and `index.html` like `shutters.js`.
+Listed in `copy-assets.js` and `index.html` like `shutters.js` (after it, before `app.js`; built 2026-10-25). It also holds `html(view, esc)`, the markup of the lines, so the escaping is tested with a DOM; `helperStep(search, minF)` and `stepRuns` are in `probe.js`.
 
 **In the existing `src/renderer/probe.js`** (the layout's pure helpers): `stepRuns({d, forced, fit, helpers})` → true only for `full` / `roomy`, not forced, fitting, with at least one helper on an open main: the gate of the helper step, pure so `test:probe` can catch "a dense density runs the step" (15 simulated agents never fit grown `roomy`, so a driver could not).
 
@@ -208,6 +208,8 @@ probe cleared; HX = 0
 - Connectors: today's per-tile connectors assume two columns (`repeat(2,…)`, `:nth-child(2)`, `:nth-child(n+3)` in `styles.css`). On a `data-hx` strip the per-card connectors (`.helpers.hstrip>*::before`) are switched off; the strip keeps its stub and dot from the parent (`.helpers.hstrip::before`, `::after`) and gains one horizontal line along its top edge over the full strip width, so 1..N columns read as one group under the parent. Level 0 strips keep today's connectors exactly.
 - Chat block: `subBlock`'s one-line summary (`.sub-task`: result, else last reply, else error, else task) stays as it is. It is a header line in the chat, with the labelled **Task** (prompt) and **Result** right below it in the same block, not a labelled result on the floor; FR-089's "never another field" rule is for the office cards. The compact tile (level 0) also keeps its tooltip and accessible name (the card's `task` line), unchanged.
 - Chat routing (FR-095): in the parent's tool handler, `a.subs.has(e.callId)` is checked first and sends every phase to `onTaskTool`; in `onTaskTool` only `complete` and `failed` end the helper (an `update` returns without a status change or collapse); `subRec`, when it creates a record whose call id already has a chip (`chipEls[id]`), removes that chip and clears the entry.
+
+**Built 2026-10-25 (changes to the design above, all in the spec's *build* section):** the repaint of an expanded card is capped at 4 a second by `scheduleRenderSoon` (a render asked for only by a helper's own `setState` while `HX` > 0 waits up to 250 ms); the chat replaces the office, so "chat open" is checked as closed, open, closed; the simulator-only hook `__durbarSimUi.hxOff` draws the office without the helper step, so a driver compares the no-room layout box for box in the same run (and it was compared with `main` by hand); a failed helper's `Failed:` prefix is dropped (the label says it).
 
 ### Failure modes and what prevents them
 
