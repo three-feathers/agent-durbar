@@ -1,5 +1,6 @@
 /** Label backfill inference (spec 021 FR-045): `npm run test:labelsbackfill`. Pure functions on fixtures; no gh, no network. */
 import * as assert from 'assert';
+import * as fs from 'fs';
 import * as path from 'path';
 import { inferAreas, inferSpecs, inferType, propose, totals, wantedLabels, Item, SPEC_AREAS } from './labels-backfill';
 
@@ -84,6 +85,12 @@ assert.deepStrictEqual(totals([{ item: issue({}), add: ['a', 'b'], notes: [] }, 
 
 // the label set: labels.tsv holds the new areas, and every spec folder gets spec:NNN
 const wanted = wantedLabels(root).map((l) => l.name);
-for (const n of ['area:security', 'area:schedules', 'task', 'status:claimed', 'docs-n/a', 'spec:021', 'spec:044']) assert.ok(wanted.includes(n), n);
+for (const n of ['area:security', 'area:schedules', 'task', 'status:claimed', 'docs-n/a', 'incident', 'spec:021', 'spec:044']) assert.ok(wanted.includes(n), n);
+
+// every labels.tsv line is name<TAB>colour<TAB>description: a space instead of a tab must fail
+for (const line of fs.readFileSync(path.join(root, '.github', 'labels.tsv'), 'utf8').split(/\r?\n/)) {
+  if (!line || line.startsWith('#')) continue;
+  assert.ok(/^[^\t]+\t[0-9a-f]{6}\t[^\t]+$/i.test(line), `labels.tsv line is not name<TAB>colour<TAB>description: ${line.slice(0, 40)}`);
+}
 
 console.log('labels-backfill: ok');
