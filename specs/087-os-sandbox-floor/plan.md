@@ -1,0 +1,105 @@
+# Implementation Plan: OS sandbox floor under Read-only and Ask first
+
+**Branch**: `087-os-sandbox-floor` | **Date**: 2026-10-25 | **Spec**: [spec.md](spec.md) | **Research**: [research.md](research.md)
+
+## Summary
+
+Add a pure "floor" mapping per adapter (Claude Code: a `sandbox` block in the `--settings` JSON; Copilot: `sandboxConfig` through
+the SDK's experimental `session.options.update`; Codex: unchanged), a normalized `SandboxState` that each adapter reports, and its
+display in the chat header chip, the card's mode tooltip and Settings > Agent apps. Durbar's own checks do not change. Built and
+checked on the simulator and with fakes; the real per-OS checks are separate, budgeted tasks. Blocked on Q1-Q5.
+
+## Technical Context
+
+**Language/Version**: TypeScript (Electron main + plain renderer), as the rest of the app
+**Primary Dependencies**: `@github/copilot-sdk` 1.0.22 (pinned; the sandbox RPCs are `@experimental`); Claude Code CLI (not a
+dependency, located at run time); Codex app-server (not a dependency)
+**Storage**: none (the state is shown, never saved)
+**Testing**: `scripts/test-*.ts` unit tests with injected platform facts; simulator driver for the chip; zero credits
+**Target Platform**: Windows, macOS, Linux (each fact per OS in research R5)
+**Constraints**: constitution II (no vendor type outside `src/adapters`), III (fail toward stricter, no secrets, argv only),
+IV (no credits), V (layout unchanged), VI (per-OS logic in pure functions), VIII (honest wording)
+
+## Reused capabilities (AGENTS.md: look for an existing capability first)
+
+- Claude's `--settings` JSON composer `claudeSettingsJson` (`src/shared/foldersetup.ts`, spec 061): the `sandbox` block is merged
+  there, Durbar's keys last so a folder's own `sandbox` keys cannot widen them.
+- Claude's relaunch on a mode change (spec 012 FR-115/FR-116): carries the new floor; no new switch path.
+- Codex's root normalisation `codexWorkspaceRoots` and `codexReadRoot` (`src/adapters/codexModes.ts`): moved or shared into
+  `src/adapters/sandboxRoots.ts` so all three use one rule (FR-015).
+- Codex's start hints `linuxSandboxHint`/`macSandboxHint` (`src/adapters/codex.ts`): same style and the same README section
+  (Ubuntu AppArmor) for Claude's and Copilot's Linux reasons.
+- The mode chip and its tooltip (spec 018, spec 003 FR-026's *restored* note): one more text segment, no new control.
+- Settings > Agent apps rows (spec 081): one more line per app.
+- Redaction `redact` (spec 012) for vendor reasons; executable lookup from spec 012 detection (`src/adapters/detect.ts`) for
+  `bwrap`/`socat` on `PATH`, no shell.
+- Organization policy loader and narrow-only rule (spec 076) for `permissions.requireOsSandbox`.
+
+## Constitution Check
+
+| Principle | How this plan holds it |
+| --- | --- |
+| I Spec Kit | spec, plan, research, tasks first; no `src/` change in this PR |
+| II Adapters are plug-ins | `SandboxState` is a normalized optional field; vendor names stay in `src/adapters`; the UI shows nothing when it is missing |
+| III Safe by default | the floor only narrows; `autoAllowBashIfSandboxed: false`, no bypass, no credential injection; unknown → treated as off and shown; bad policy value → fail closed |
+| IV No credits | sim and fakes; real checks are separate tasks with a stated cost |
+| V Calm UI | words in the chat header chip and tooltips only; 15-agent layout unchanged |
+| VI Parity | per-OS decisions in pure functions with injected `platform` and `PATH` lookup; Windows gaps written as `[KNOWN GAP]` |
+| VII Quality gates | unit tests for every mapping; sim screenshots for the chip; docs |
+| VIII Honest limits | the tooltip says file tools are checked by Durbar, not the OS; every vendor fact `read:`; K1-K11 open |
+
+## Design
+
+### Pure modules (new, `src/adapters/`)
+
+- `sandboxRoots.ts`: `sandboxRoots(cwd, folders, platform)` → normalised roots or `undefined` (refuse); shared with Codex.
+- `claudeSandbox.ts`: `claudeSandboxSettings({ mode, roots, platform, require })` → the `sandbox` object or `undefined` (Allow
+  all); `claudeSandboxState({ platform, haveBwrap, haveSocat, startError })` → `SandboxState`.
+- `copilotSandbox.ts`: `copilotSandboxConfig({ mode, roots, host })` → `SandboxConfig`-shaped object (local structural type, no SDK
+  import in the pure module); `copilotSandboxState(host, source?)` → `SandboxState`.
+- `SandboxState` type in `src/adapters/types.ts` (normalized), carried on `AgentInfo` to the renderer.
+
+### Adapters
+
+- **Claude** (`claude.ts`): at launch, compute the state; when available (or required), pass the block into
+  `claudeSettingsJson` so `--settings` is always sent in Read-only and Ask first; `failIfUnavailable` = policy requires. A start
+  that exits with the sandbox error is mapped to a plain reason (K4) and, when required, to a refusal.
+- **Copilot** (`copilot.ts`): one `getHostSupport()` per runtime start (cached, refreshed on *Check again*); after
+  `createSession`/`resumeSession` and before the first `send`, `session.rpc.options.update(...)`. A thrown or `false` result →
+  state off with reason; refusal when required. Listen for `session.warning` type `sandbox` (FR-008).
+- **Codex**: report `SandboxState` from the existing checks (`on`, mechanism by platform, `covers: ['shell','files']`).
+
+### Window
+
+- Mode chip text segment and tooltip (FR-009, FR-010); card mode icon tooltip; Settings > Agent apps line (FR-012).
+
+### Simulator
+
+- Sim agents get a `sandbox` state from a fixed table (on/seatbelt, on/bubblewrap, off/"no OS sandbox on Windows", managed),
+  no real call.
+
+## Project Structure
+
+```text
+specs/087-os-sandbox-floor/   spec.md plan.md research.md tasks.md checklists/requirements.md
+src/adapters/                 sandboxRoots.ts claudeSandbox.ts copilotSandbox.ts (new); claude.ts copilot.ts codex.ts types.ts
+src/shared/foldersetup.ts     sandbox block merge
+src/renderer/                 chip, tooltip, Settings > Agent apps line
+scripts/                      test-sandbox-floor.ts (new), driver check for the chip
+```
+
+## Phases
+
+1. Spec deltas in 003, 012, 018, 061, 076 (cross references) once Q1-Q5 are answered.
+2. Pure modules and their tests (all OS × mode × app cells, SC-001/SC-002).
+3. Adapters (Claude, Copilot, Codex state).
+4. Window and simulator; screenshots.
+5. Docs (README safety model and known limits, changelog fragment).
+6. Real checks per OS (budgeted, owner's OK; constitution IV).
+
+## Complexity Tracking
+
+| Item | Why it is needed | Simpler option rejected because |
+| --- | --- | --- |
+| Copilot via an `@experimental` RPC | the high-level `createSession` of SDK 1.0.22 does not forward a sandbox field | waiting for a stable field leaves Copilot with no floor |
+| Per-app coverage text | each sandbox covers different tools | one generic "Sandboxed" would overclaim (constitution VIII) |
