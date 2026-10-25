@@ -273,7 +273,7 @@ module.exports = async (ctx) => {
         labelled(st, tag);
         const pr = await page(); check(!pr.length, `${tag}: ${pr.slice(0, 4).join('; ')}`);
         check(await js(`(()=>{const f=document.getElementById('floor'),de=document.documentElement;return f.scrollHeight<=f.clientHeight+1&&de.scrollHeight<=innerHeight+1&&de.scrollWidth<=innerWidth+1})()`), `${tag}: the office scrolls`);
-        if (OUT) await ctx.shot(path.join(OUT, `001-helpers-${n}-${w}x${h}.png`));
+        if (OUT) { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(200); await ctx.shot(path.join(OUT, `001-helpers-${n}-${w}x${h}.png`)); } /* the pointer rests off the cards: a hovered card shows its rename pencil */
         if (n === 2) {
           const cx = cardOf(st, 'sim-1:sim-1-cx1');
           check(!!cx && cx.nr.some((t) => /Result not reported/.test(t)), `${tag}: the Codex-shaped helper does not read "Result not reported" ${JSON.stringify(cx && cx.nr)}`);
@@ -511,7 +511,7 @@ module.exports = async (ctx) => {
         check(same >= 10, `15 agents at ${w}x${h}: only ${same} desks open with the lounge on and off`);
         rows.push(`15 agents at ${w}x${h}: ${same} scenes the same with the lounge on and off (sharpness ${[...lon].map(([id, a]) => id + ' ' + a.sharp + '/' + (loff.get(id) || {}).sharp).join(', ')})`);
       }
-      if (OUT && w !== 1920) await ctx.shot(path.join(OUT, `001-fill-${n}-${w}x${h}.png`));
+      if (OUT && w !== 1920) { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(200); await ctx.shot(path.join(OUT, `001-fill-${n}-${w}x${h}.png`)); }
     }
   }
 
