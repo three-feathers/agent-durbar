@@ -939,6 +939,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       const d = defs[kind];
       const mcpFields = d.mcp ? { mcpServer: d.mcp[0], mcpTool: d.mcp[1] } : {};
       if (d.mcp && (s.mcpOff?.has(d.mcp[0]) || (d.mcp[0] === 'playwright' && !serversOf(s).some((m) => m.name === 'playwright')))) return toolStep(s, keepOpen);
+      // spec 003 FR-099: like the broker, a read that needs no question leaves one quiet note for its card's tag (no card, no log row)
+      if (d.tool === 'read_file') emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { requestId: id, kind: 'read', summary: 'read ' + file, state: 'approved', via: 'quiet', allowedBy: s.info.permMode === 'allow' ? { kind: 'allow-all' } : { kind: 'in-folder' } } });
       emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: d.tool, phase: 'start', args: d.args, ...mcpFields, ...(d.edit ? { edit: d.edit } : {}) });
       if (keepOpen) { s.open = id; return; }
       const complete = (): void => emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: d.tool, phase: 'complete', output: d.out, ...mcpFields });
@@ -1221,7 +1223,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       }
       if (/\b(edit|write|change|fix|rename)\b/i.test(text)) {
         // Edit request: ask for write permission (or use a session grant), then edit inline in the timeline.
-        const file = s.files[0];
+        const file = /\b(other|second)\b/i.test(text) ? 'sim-docs/NOTES.md' : s.files[0]; // "the other file": a second folder, so a second session rule
         toolStep(s, false);
         usage(s);
         const r = askWrite(s, file, 'write ' + file, 'edit', 'Waiting for permission: write ' + file);

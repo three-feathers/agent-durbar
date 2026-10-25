@@ -20,8 +20,12 @@ export const validSignInEnd = (v: unknown): v is (typeof SIGN_IN_ENDS)[number] =
 /** Spec 003 FR-102: the optional `allowedBy` of a permission (display only): a known kind and string fields, else the event is refused. */
 function allowedByProblems(a: unknown, where: string): string[] {
   if (!isObj(a)) return [`${where}: not an object`];
-  if (a.kind === 'session-grant') return str(a.key) && a.key && str(a.label) ? [] : [`${where}: session-grant needs a key and a label`];
-  if (a.kind === 'allow-all' || a.kind === 'in-folder') return [];
+  if (a.kind === 'session-grant') {
+    if (!(str(a.key) && a.key && str(a.label))) return [`${where}: session-grant needs a key and a label`];
+    if (a.keys !== undefined && (!Array.isArray(a.keys) || a.keys.length < 1 || a.keys.length > 50 || a.keys.some((k) => !str(k) || !k))) return [`${where}: session-grant keys malformed`];
+    return [];
+  }
+  if (a.kind === 'allow-all' || a.kind === 'in-folder' || a.kind === 'attachment') return [];
   if (a.kind === 'app') return oneOf(a.source, ['config', 'hook', 'classifier']) ? [] : [`${where}: app source ${String(a.source)}`];
   return [`${where}.kind is ${String(a.kind)}`];
 }

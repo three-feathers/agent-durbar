@@ -9,7 +9,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import type { PermissionInfo, SessionGrant, StartOptions } from './types';
+import type { AllowedBy, PermissionInfo, SessionGrant, StartOptions } from './types';
 
 /** The subset of the SDK's PermissionRequest the broker reads (all optional strings besides kind). */
 export interface PermissionLike {
@@ -262,6 +262,16 @@ function blockedMcp(req: PermissionLike, set: ReadonlySet<string> | undefined): 
 
 /** Spec 003 FR-102: the key of a grant to revoke, from a page: a non-empty string of at most 512 characters, else undefined (ignored). */
 export const GRANT_KEY_MAX = 512;
+/**
+ * Spec 003 FR-102: the main-process side of the revoke IPC, pure so it can be tested: a known agent id (a string) and a clean key,
+ * else nothing happens. The broker then removes only a rule it holds.
+ */
+export function revokeGrantFor(has: (id: string) => boolean, revoke: (id: string, key: string) => void, id: unknown, key: unknown): boolean {
+  const k = cleanGrantKey(key);
+  if (typeof id !== 'string' || k === undefined || !has(id)) return false;
+  revoke(id, k);
+  return true;
+}
 export function cleanGrantKey(key: unknown): string | undefined {
   return typeof key === 'string' && key.length > 0 && key.length <= GRANT_KEY_MAX ? key : undefined;
 }
@@ -292,6 +302,15 @@ export class PermissionBroker {
   /** The user attached these files to a message: the runtime may read them even when they are outside the roots. */
   allowReadPaths(paths: readonly string[]): void {
     for (const p of paths) if (p && !this.extraRoots.includes(p)) this.extraRoots.push(p);
+  }
+
+  /** Spec 003 FR-099: why a read that needs no question was allowed, from what the broker itself checked (undefined = nothing to claim). */
+  private readReason(req: PermissionLike): AllowedBy | undefined {
+    if (this.mode === 'allow') return { kind: 'allow-all' };
+    const roots = this.opts.roots;
+    if (roots && roots.length && isInsideRoots(req.path, roots, this.opts.pathCheck)) return { kind: 'in-folder' };
+    if (this.extraRoots.length && isInsideRoots(req.path, this.extraRoots, this.opts.pathCheck)) return { kind: 'attachment' };
+    return undefined;
   }
 
   private readIsOutside(req: PermissionLike): boolean {
@@ -364,8 +383,10 @@ export class PermissionBroker {
     }
     const outsideRead = kind === 'read' && this.mode !== 'allow' && this.readIsOutside(req);
     if (kind === 'read' && !outsideRead) {
-      // spec 003 FR-099: a quiet note for the tool card's tag (no card, no log row); Allow all reads say so, the rest are folder reads
-      this.opts.emit({ type: 'auto', permission: { requestId, kind, summary, state: 'approved', via: 'quiet', allowedBy: this.mode === 'allow' ? { kind: 'allow-all' } : { kind: 'in-folder' } } });
+      // spec 003 FR-099: a quiet note for the tool card's tag (no card, no log row). Only a reason Durbar really checked: Allow all;
+      // else a path inside the session's own roots; else a file the user attached. With no roots nothing was checked: no tag.
+      const by = this.readReason(req);
+      if (by) this.opts.emit({ type: 'auto', permission: { requestId, kind, summary, state: 'approved', via: 'quiet', allowedBy: by } });
       return { kind: 'approve-once' };
     }
     if (this.mode === 'allow') {
@@ -392,9 +413,12 @@ export class PermissionBroker {
           : 'Agent Durbar is in read-only mode: this action was denied. Do not retry it.',
       };
     }
-    const hit = scope.folders ? (scope.folders.every((x) => this.grants.has(x.key)) ? this.grants.get(scope.folders[0].key) : undefined) : this.grants.get(scope.key) ?? (scope.broad ? this.grants.get(scope.broad.key) : undefined);
-    if (hit) {
-      this.opts.emit({ type: 'resolved', permission: { ...base, state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: hit.key, label: hit.label } } });
+    // every rule that allowed it: a write in several folders needs one rule per folder, and undoing only one would leave the rest approving
+    const hits = scope.folders ? scope.folders.map((x) => this.grants.get(x.key)) : [this.grants.get(scope.key) ?? (scope.broad ? this.grants.get(scope.broad.key) : undefined)];
+    if (hits.length && hits.every((h) => h !== undefined)) {
+      const keys = (hits as SessionGrant[]).map((h) => h.key);
+      const label = scope.folders ? scope.label : (hits[0] as SessionGrant).label;
+      this.opts.emit({ type: 'resolved', permission: { ...base, state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: keys[0], label, keys } } });
       return this.approveWrite(req);
     }
     const info: PermissionInfo = { ...base, state: 'pending', ...(typeof req.diff === 'string' && req.diff ? { diff: req.diff } : {}) }; // spec 052 FR-063: the diff rides on the pending request only

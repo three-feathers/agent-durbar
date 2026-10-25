@@ -13,22 +13,38 @@
   const APP={config:'config',hook:'hook',classifier:'classifier'};
   const APP_WORDS={config:"the agent app's config",hook:"a hook of the agent app",classifier:"the agent app's auto-mode classifier"};
   const cutLabel=l=>{const s=String(l);return CT&&typeof CT.cutText==='function'?CT.cutText(s,LABEL_MAX):s.slice(0,LABEL_MAX);};
-  /* by: the event's allowedBy (untrusted); liveKeys: the keys of the session grants that exist now (a Set or an array), or null when unknown.
-     Returns null (no tag) or { kind, pill, sentence, label?, undoKey?, gone? }. */
-  function describe(by, liveKeys){
+  const MODE_WHERE='Change the mode with the mode chip under the message box.';
+  /* by: the event's allowedBy (untrusted); live: the keys of the session rules this window knows now (a Set or an array), or null when
+     unknown; opts.seen: keys this window has seen live; opts.undone: this window removed the rule from the card.
+     "Rule removed" is said only when none of the rule's keys is live AND this window saw it live or removed it itself (a window that
+     reloaded with sessions running knows no rules, and must not claim one is gone, spec 003 FR-101).
+     Returns null (no tag) or { kind, pill, sentence, label?, undoKeys?, gone? }. */
+  function describe(by, live, opts){
     if(!by||typeof by!=='object'||Array.isArray(by))return null;
-    const live=liveKeys==null?null:new Set(Array.isArray(liveKeys)?liveKeys:[...liveKeys]);
+    const lv=live==null?null:new Set(Array.isArray(live)?live:[...live]);
+    const o=opts||{}, seen=o.seen==null?null:new Set(Array.isArray(o.seen)?o.seen:[...o.seen]);
     switch(by.kind){
       case 'session-grant':{
         if(typeof by.key!=='string'||!by.key||typeof by.label!=='string')return null;
-        const label=cutLabel(by.label);
-        if(live&&!live.has(by.key))return {kind:'session-grant',pill:'Rule removed',sentence:'This was allowed by a session rule that you have since removed: Durbar asks again.',label,gone:true};
-        return {kind:'session-grant',pill:'Allowed: session rule',sentence:'Allowed because you chose Approve for this session for: ',label,undoKey:by.key};
+        let keys=[by.key];
+        if(by.keys!==undefined){
+          if(!Array.isArray(by.keys)||by.keys.length<1||by.keys.length>50||by.keys.some(k=>typeof k!=='string'||!k))return null;
+          keys=[...new Set(by.keys)];
+        }
+        const label=cutLabel(by.label), many=keys.length>1;
+        const anyLive=lv?keys.some(k=>lv.has(k)):true;
+        const wasKnown=o.undone===true||(seen?keys.some(k=>seen.has(k)):false);
+        if(lv&&!anyLive&&wasKnown)return {kind:'session-grant',pill:'Rule removed',sentence:'This was allowed by a session rule that you have since removed: Durbar asks again.',label,gone:true};
+        const liveKeys=lv?keys.filter(k=>lv.has(k)):keys;
+        return {kind:'session-grant',pill:many?'Allowed: session rules':'Allowed: session rule',
+          sentence:many?'Allowed because you chose Approve for this session for each of these folders: ':'Allowed because you chose Approve for this session for: ',label,undoKeys:liveKeys.length?liveKeys:keys};
       }
       case 'allow-all':
-        return {kind:'allow-all',pill:'Allowed: Allow all',sentence:'Allowed because this agent is in Allow all: it runs without asking. Change the mode in the chat header.'};
+        return {kind:'allow-all',pill:'Allowed: Allow all',sentence:'Allowed because this agent is in Allow all: it runs without asking. '+MODE_WHERE};
       case 'in-folder':
-        return {kind:'in-folder',pill:'Allowed: folder read',sentence:"Allowed: reading inside this agent's folders is always allowed. Change the mode in the chat header to limit the agent."};
+        return {kind:'in-folder',pill:'Allowed: folder read',sentence:"Allowed: this file is inside this agent's folders, and reads there never ask, in every mode."};
+      case 'attachment':
+        return {kind:'attachment',pill:'Allowed: attached file',sentence:'Allowed: you attached this file to a message, so the agent may read it.'};
       case 'app':{
         if(typeof by.source!=='string'||!Object.prototype.hasOwnProperty.call(APP,by.source))return null;
         return {kind:'app',pill:'Allowed: agent app '+APP[by.source],sentence:'Allowed by '+APP_WORDS[by.source]+'. Durbar does not own this rule: change it in the agent app.'};

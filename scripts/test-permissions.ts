@@ -1,7 +1,7 @@
 /** Unit test for the permission broker (no Copilot session, no AI credits): `npm run test:permissions`. */
 import * as assert from 'assert';
 import * as path from 'path';
-import { PermissionBroker, cleanGrantKey, grantScope, isInsideRoots } from '../src/adapters/permissions';
+import { PermissionBroker, cleanGrantKey, grantScope, revokeGrantFor, isInsideRoots } from '../src/adapters/permissions';
 import type { BrokerEvent } from '../src/adapters/permissions';
 import { eventProblems } from '../src/adapters/eventguard';
 import { codexPermission } from '../src/adapters/codexModes';
@@ -31,7 +31,7 @@ async function main(): Promise<void> {
   let t = mk({});
   assert.strictEqual((await t.b.request({ kind: 'read', path: '/x' })).kind, 'approve-once');
   assert.strictEqual((await t.b.request({ kind: 'write', fileName: '/x/y.ts', toolCallId: 'w1' })).kind, 'reject');
-  assert.deepStrictEqual(t.ev.map((e) => e.type), ['auto', 'denied-policy'], 'the read left one quiet note (spec 003 FR-099), the write a refusal');
+  assert.deepStrictEqual(t.ev.map((e) => e.type), ['denied-policy'], 'a read with no roots checked nothing, so it claims nothing (spec 003 FR-099); the write got a refusal');
 
   // ask: pending -> approve once (no grant) -> asks again
   t = mk({ ask: true });
@@ -311,7 +311,7 @@ async function main(): Promise<void> {
   // spec 003 FR-099..FR-103 (issue #605): why a request ran without asking; undo through the existing revoke
   {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const W = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'whyallowed.js')) as { describe: (by: unknown, live: unknown) => null | { kind: string; pill: string; sentence: string; label?: string; undoKey?: string; gone?: boolean } };
+    const W = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'whyallowed.js')) as { describe: (by: unknown, live: unknown, opts?: unknown) => null | { kind: string; pill: string; sentence: string; label?: string; undoKeys?: string[]; gone?: boolean } };
     const perm = (ev: BrokerEvent[], from = 0) => ev.slice(from).filter((e): e is Extract<BrokerEvent, { permission: unknown }> => 'permission' in e).map((e) => e.permission);
 
     // a session rule: the grant's key and label ride on the auto-approved request
@@ -327,7 +327,7 @@ async function main(): Promise<void> {
     const hit = perm(w.ev, mark).find((x) => x.requestId === 'a2');
     const g0 = w.b.listGrants()[0];
     assert.ok(hit && hit.via === 'session' && hit.allowedBy?.kind === 'session-grant', 'the session grant is the reason');
-    assert.deepStrictEqual(hit.allowedBy, { kind: 'session-grant', key: g0.key, label: g0.label }, 'the matching grant, not another');
+    assert.deepStrictEqual(hit.allowedBy, { kind: 'session-grant', key: g0.key, label: g0.label, keys: [g0.key] }, 'the matching grant, not another');
     assert.deepStrictEqual(eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: hit }), [], 'the event passes the guard');
 
     // the exact shell grant and the broad one name their own key
@@ -339,7 +339,7 @@ async function main(): Promise<void> {
     const m2 = w.ev.length;
     await w.b.request({ kind: 'shell', fullCommandText: 'git push', toolCallId: 's2' });
     const broad = perm(w.ev, m2).find((x) => x.requestId === 's2');
-    assert.deepStrictEqual(broad?.allowedBy, { kind: 'session-grant', key: 'shell:git', label: w.b.listGrants()[0].label }, 'the broad rule is named');
+    assert.deepStrictEqual(broad?.allowedBy, { kind: 'session-grant', key: 'shell:git', label: w.b.listGrants()[0].label, keys: ['shell:git'] }, 'the broad rule is named');
 
     // after a revoke the same request asks and has no reason
     assert.strictEqual(w.b.revoke('shell:git'), true);
@@ -358,10 +358,39 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(pm.find((x) => x.requestId === 'm1'), { requestId: 'm1', kind: 'write', summary: pm[0].summary, state: 'approved', via: 'policy', allowedBy: { kind: 'allow-all' } });
     assert.strictEqual(pm.find((x) => x.requestId === 'm2')?.via, 'quiet', 'a read is not logged and has no card');
     assert.deepStrictEqual(pm.find((x) => x.requestId === 'm2')?.allowedBy, { kind: 'allow-all' });
-    const ro = mk({ ask: true });
+const mkRoots2 = (m: { ask?: boolean; allow?: boolean }, roots?: string[]) => {
+      const ev: BrokerEvent[] = [];
+      return { ev, b: new PermissionBroker({ ...m, ...(roots ? { roots } : {}), pathCheck: { realpath: (x) => x }, emit: (e) => ev.push(e) }) };
+    };
+    const ro = mkRoots2({ ask: true }, ['/x']);
     await ro.b.request({ kind: 'read', path: '/x/a.ts', toolCallId: 'r1' });
     const rp = perm(ro.ev).find((x) => x.requestId === 'r1');
-    assert.ok(rp && rp.via === 'quiet' && rp.allowedBy?.kind === 'in-folder' && rp.state === 'approved', 'a folder read says so, quietly');
+    assert.ok(rp && rp.via === 'quiet' && rp.allowedBy?.kind === 'in-folder' && rp.state === 'approved', 'a read the broker checked against the roots says so, quietly');
+    // review of #729 item 2: a read nothing was checked for never claims "folder"
+    for (const m of [{}, { ask: true }]) {
+      const nr = mkRoots2(m, []);
+      assert.strictEqual((await nr.b.request({ kind: 'read', path: '/etc/shadow', toolCallId: 'n1' })).kind, 'approve-once', 'no roots: reads are not path-checked (unchanged)');
+      assert.ok(perm(nr.ev).every((x) => x.allowedBy === undefined), 'no roots: no reason is claimed');
+      const un = mkRoots2(m);
+      await un.b.request({ kind: 'read', path: '/etc/shadow', toolCallId: 'n2' });
+      assert.ok(perm(un.ev).every((x) => x.allowedBy === undefined), 'roots unset: no reason is claimed');
+    }
+    const inAll = mkRoots2({ allow: true }, []);
+    await inAll.b.request({ kind: 'read', path: '/etc/shadow', toolCallId: 'n3' });
+    assert.deepStrictEqual(perm(inAll.ev)[0]?.allowedBy, { kind: 'allow-all' }, 'Allow all with empty roots says Allow all, not folder');
+    const att = mkRoots2({ ask: true }, ['/x']);
+    att.b.allowReadPaths(['/tmp/att.png']);
+    await att.b.request({ kind: 'read', path: '/tmp/att.png', toolCallId: 'n4' });
+    assert.deepStrictEqual(perm(att.ev).find((x) => x.requestId === 'n4')?.allowedBy, { kind: 'attachment' }, 'an attached file outside the folders is an attachment');
+    await att.b.request({ kind: 'read', path: '/x/in.ts', toolCallId: 'n5' });
+    assert.deepStrictEqual(perm(att.ev).find((x) => x.requestId === 'n5')?.allowedBy, { kind: 'in-folder' }, 'a path inside the roots stays folder');
+    // a read outside the roots in Ask first is asked, never tagged
+    const outside = mkRoots2({ ask: true }, ['/x']);
+    const po = outside.b.request({ kind: 'read', path: '/etc/passwd', toolCallId: 'n6' });
+    await tick();
+    assert.ok(perm(outside.ev).every((x) => x.allowedBy === undefined) && outside.b.pendingCount() === 1);
+    outside.b.resolve('n6', false);
+    await po;
     // a denied request never claims a reason
     const rd = mk({});
     await rd.b.request({ kind: 'write', fileName: '/x/a.ts', toolCallId: 'd1' });
@@ -392,23 +421,86 @@ async function main(): Promise<void> {
     assert.strictEqual(w.b.listGrants().length, 0);
     assert.strictEqual(w.b.revoke(keep), false, 'a second revoke of the same rule is a no-op');
 
+    // review of #729 item 1: a write in several folders is allowed by every one of its rules, and all of them are named
+    {
+      const mf = mkRoots2({ ask: true });
+      const req = (id: string, fs: string[]) => ({ kind: 'write', fileName: fs[0], paths: fs, toolCallId: id }) as never;
+      const p1 = mf.b.request(req('f1', ['/w/a/x.ts', '/w/b/y.ts']));
+      await tick();
+      mf.b.resolve('f1', true, true);
+      await p1;
+      const gk = mf.b.listGrants().map((g) => g.key).sort();
+      assert.strictEqual(gk.length, 2, 'one rule per folder');
+      const m5 = mf.ev.length;
+      await mf.b.request(req('f2', ['/w/a/x2.ts', '/w/b/y2.ts']));
+      const ab = perm(mf.ev, m5).find((x) => x.requestId === 'f2')?.allowedBy;
+      assert.ok(ab && ab.kind === 'session-grant', 'allowed by session rules');
+      assert.deepStrictEqual([...(ab.keys ?? [])].sort(), gk, 'every folder rule is named');
+      assert.ok(/w\/a.*w\/b|w\\a.*w\\b/.test(ab.label), `the label names both folders: ${ab.label}`);
+      assert.deepStrictEqual(eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: perm(mf.ev, m5).find((x) => x.requestId === 'f2')! }), []);
+      const dd2 = W.describe(ab, new Set(gk), { seen: gk });
+      assert.deepStrictEqual([...(dd2?.undoKeys ?? [])].sort(), gk, 'Undo covers every rule');
+      for (const k of dd2?.undoKeys ?? []) mf.b.revoke(k);
+      const m6 = mf.ev.length;
+      const p3 = mf.b.request(req('f3', ['/w/b/only.ts']));
+      await tick();
+      assert.strictEqual(mf.b.pendingCount(), 1, 'after Undo a write in the second folder asks too (no rule keeps approving silently)');
+      assert.ok(perm(mf.ev, m6).every((x) => x.allowedBy === undefined));
+      mf.b.resolve('f3', false);
+      await p3;
+    }
+
+    // review of #729 item 11: the revoke IPC's own check (main, pure part)
+    {
+      const calls: string[] = [];
+      const has = (id: string) => id === 'agent-1';
+      const rv = (id: string, k: string) => void calls.push(id + '|' + k);
+      assert.strictEqual(revokeGrantFor(has, rv, 'agent-1', 'write:/x'), true);
+      assert.deepStrictEqual(calls, ['agent-1|write:/x']);
+      for (const [i, k] of [['nope', 'write:/x'], [5, 'k'], [null, 'k'], [{}, 'k'], [['agent-1'], 'k'], ['agent-1', 5], ['agent-1', ''], ['agent-1', null], ['agent-1', { toString: () => 'k' }], ['agent-1', 'x'.repeat(513)], ['__proto__', 'k'], ['agent-1', undefined]] as [unknown, unknown][])
+        assert.strictEqual(revokeGrantFor(has, rv, i, k), false, `refused: ${JSON.stringify([i, k]).slice(0, 40)}`);
+      assert.strictEqual(calls.length, 1, 'no hostile call reached the adapter');
+    }
+
     // the event guard refuses a malformed reason
     const ev = (allowedBy: unknown) => eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: { requestId: 'q', kind: 'write', summary: 'x', state: 'approved', allowedBy } });
-    for (const ok of [{ kind: 'allow-all' }, { kind: 'in-folder' }, { kind: 'session-grant', key: 'k', label: 'l' }, { kind: 'app', source: 'config' }, undefined]) assert.deepStrictEqual(ev(ok), [], JSON.stringify(ok));
-    for (const bad of [{ kind: 'x' }, 'allow-all', null, [], { kind: 'session-grant' }, { kind: 'session-grant', key: '', label: 'l' }, { kind: 'session-grant', key: 1, label: 'l' }, { kind: 'app', source: 'root' }, { kind: 'app' }])
+    for (const ok of [{ kind: 'allow-all' }, { kind: 'in-folder' }, { kind: 'attachment' }, { kind: 'session-grant', key: 'k', label: 'l', keys: ['k', 'j'] }, { kind: 'session-grant', key: 'k', label: 'l' }, { kind: 'app', source: 'config' }, undefined]) assert.deepStrictEqual(ev(ok), [], JSON.stringify(ok));
+    for (const bad of [{ kind: 'x' }, 'allow-all', null, [], { kind: 'session-grant' }, { kind: 'session-grant', key: '', label: 'l' }, { kind: 'session-grant', key: 1, label: 'l' }, { kind: 'app', source: 'root' }, { kind: 'app' }, { kind: 'session-grant', key: 'k', label: 'l', keys: [] }, { kind: 'session-grant', key: 'k', label: 'l', keys: 'k' }, { kind: 'session-grant', key: 'k', label: 'l', keys: [1] }])
       assert.ok(ev(bad).length > 0, `refused: ${JSON.stringify(bad)}`);
 
     // the words (renderer module): fixed table, only the label comes from the event, cut; unknown = no tag
     const live = new Set(['k1']);
     const d = W.describe({ kind: 'session-grant', key: 'k1', label: 'write in src/' }, live);
-    assert.ok(d && d.pill === 'Allowed: session rule' && d.undoKey === 'k1' && d.label === 'write in src/' && !d.gone);
-    const gone = W.describe({ kind: 'session-grant', key: 'k1', label: 'write in src/' }, new Set());
-    assert.ok(gone && gone.gone === true && gone.pill === 'Rule removed' && gone.undoKey === undefined, 'a removed rule offers no undo');
-    assert.strictEqual(W.describe({ kind: 'session-grant', key: 'k1', label: 'l' }, null)?.undoKey, 'k1', 'unknown live set: offered');
-    assert.strictEqual(W.describe({ kind: 'allow-all' }, live)?.undoKey, undefined, 'Allow all has no rule to undo');
-    assert.strictEqual(W.describe({ kind: 'in-folder' }, live)?.undoKey, undefined);
+    assert.ok(d && d.pill === 'Allowed: session rule' && d.undoKeys?.[0] === 'k1' && d.label === 'write in src/' && !d.gone);
+    const gone = W.describe({ kind: 'session-grant', key: 'k1', label: 'write in src/' }, new Set(), { seen: ['k1'] });
+    assert.ok(gone && gone.gone === true && gone.pill === 'Rule removed' && gone.undoKeys === undefined, 'a removed rule offers no undo');
+    // a window that reloaded with sessions running knows no rules: it must not call a rule removed (spec 003 FR-101, review of #729 item 10)
+    const reloaded = W.describe({ kind: 'session-grant', key: 'k1', label: 'l' }, new Set(), { seen: [] });
+    assert.ok(reloaded && !reloaded.gone && reloaded.pill === 'Allowed: session rule' && reloaded.undoKeys?.[0] === 'k1', 'a rule this window never saw is not "removed"');
+    assert.ok(W.describe({ kind: 'session-grant', key: 'k1', label: 'l' }, new Set(), { undone: true })?.gone === true, 'removed from the card: removed');
+    assert.ok(!W.describe({ kind: 'session-grant', key: 'k1', label: 'l' }, null, { undone: true })?.gone, 'unknown rules: never removed');
+    // several rules: removed only when all are gone; undo covers every live one
+    const two = { kind: 'session-grant', key: 'a', label: 'write in w/a/, w/b/', keys: ['a', 'b'] };
+    assert.deepStrictEqual(W.describe(two, new Set(['a', 'b']), { seen: ['a', 'b'] })?.undoKeys, ['a', 'b']);
+    assert.strictEqual(W.describe(two, new Set(['b']), { seen: ['a', 'b'] })?.gone, undefined, 'one rule left: still allowed by it');
+    assert.deepStrictEqual(W.describe(two, new Set(['b']), { seen: ['a', 'b'] })?.undoKeys, ['b']);
+    assert.strictEqual(W.describe(two, new Set(), { seen: ['a'] })?.gone, true);
+    assert.strictEqual(W.describe({ ...two, keys: [] }, null), null, 'empty keys list: no tag');
+    assert.strictEqual(W.describe({ ...two, keys: ['a', 5] }, null), null);
+    assert.strictEqual(W.describe({ ...two, keys: Array.from({ length: 51 }, (_, i) => 'k' + i) }, null), null);
+    assert.strictEqual(W.describe({ kind: 'session-grant', key: 'k1', label: 'l' }, null)?.undoKeys?.[0], 'k1', 'unknown live set: offered');
+    assert.strictEqual(W.describe({ kind: 'allow-all' }, live)?.undoKeys, undefined, 'Allow all has no rule to undo');
+    assert.strictEqual(W.describe({ kind: 'in-folder' }, live)?.undoKeys, undefined);
+    assert.strictEqual(W.describe({ kind: 'attachment' }, live)?.pill, 'Allowed: attached file');
+    // the sentences point at the real place and promise nothing a mode cannot do (review of #729 item 3)
+    for (const k of ['allow-all', 'in-folder', 'attachment']) {
+      const sd = W.describe({ kind: k }, live)?.sentence ?? '';
+      assert.ok(!/chat header/i.test(sd), `${k}: the mode chip is under the message box`);
+      assert.ok(!/limit/i.test(sd), `${k}: no promise that a mode limits it`);
+    }
+    assert.ok(/mode chip under the message box/.test(W.describe({ kind: 'allow-all' }, live)?.sentence ?? ''));
     assert.strictEqual(W.describe({ kind: 'app', source: 'classifier' }, live)?.pill, 'Allowed: agent app classifier');
-    assert.strictEqual(W.describe({ kind: 'app', source: 'classifier' }, live)?.undoKey, undefined, 'Durbar does not own an app rule');
+    assert.strictEqual(W.describe({ kind: 'app', source: 'classifier' }, live)?.undoKeys, undefined, 'Durbar does not own an app rule');
     const evil = '<img src=x onerror=alert(1)>' + 'A'.repeat(1000);
     const dd = W.describe({ kind: 'session-grant', key: 'k1', label: evil }, live);
     assert.ok(dd && typeof dd.label === 'string' && dd.label.length <= 241, 'the label is cut');

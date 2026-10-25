@@ -153,14 +153,15 @@ export interface PermissionInfo {
 }
 
 /**
- * Spec 003 FR-099: the reason a request ran without a question. `session-grant`: the user's "Approve for this session" rule (its key
- * can be revoked); `allow-all`: the mode; `in-folder`: a read inside the session's folders; `app`: reserved for an adapter that really
+ * Spec 003 FR-099: the reason a request ran without a question. `session-grant`: the user's "Approve for this session" rule(s) (`key` is the first,
+ * `keys` every rule that allowed it: a write in several folders needs one rule per folder; all can be revoked); `allow-all`: the mode; `in-folder`: a read that Durbar checked to be inside the session's folders; `attachment`: a read of a file the user attached; `app`: reserved for an adapter that really
  * reports the agent app's own decision (no adapter sets it yet, FR-106).
  */
 export type AllowedBy =
-  | { kind: 'session-grant'; key: string; label: string }
+  | { kind: 'session-grant'; key: string; label: string; keys?: string[] }
   | { kind: 'allow-all' }
   | { kind: 'in-folder' }
+  | { kind: 'attachment' }
   | { kind: 'app'; source: 'config' | 'hook' | 'classifier' };
 
 /** A remembered "Approve for this session" permission; can be revoked. */

@@ -109,11 +109,10 @@ specs/003-permissions-and-approvals/
 - Needs you (`paintInbox`): a copied `ro-ask` button closes the inbox, opens the chat and clicks the chat's button.
 - Test: `scripts/check-ro-ask.js` in `scripts/ui-suite.js`: a synthetic `needs-permission` denial and a real simulator denial (a Read-only agent asked to edit), the menu's items and ticks, Ask first chosen, the mode changed (chip and `#modeChip` text), keyboard path (Enter, Arrow, Enter; Escape returns focus), Allow all cancel keeps Read-only. Mutation check: the old FR-074 button (switch at once, no menu) fails it.
 
-## 2026-10-25 delta: "Why was this allowed?" tag and undo (T032..T036, FR-099..FR-106)
+## 2026-10-25 delta: "Why was this allowed?" tag and undo (T032..T036, FR-099..FR-107)
 
 - Types: `PermissionInfo.allowedBy` (`AllowedBy`) and `via: 'quiet'` in `src/adapters/types.ts`; `eventguard.ts` validates `allowedBy`.
 - Broker (`src/adapters/permissions.ts`): `request()` sets `allowedBy` on the session-grant `resolved` event (the matching grant), on the Allow all `auto` event, and emits one quiet event for a read it approves silently; `cleanGrantKey` for the IPC. `src/main/ipc/agents.ts` `agents:revokeGrant` uses it. `decisionOf` (`src/shared/activity.ts`) ignores `quiet`.
 - Reuse, no new channel: the undo is the existing `bridge.revokeGrant` -> `agents:revokeGrant` -> adapter `revokeGrant` -> `broker.revoke`, the same call as the grant chips' x.
 - Renderer: `src/renderer/whyallowed.js` (pure: reason -> pill word, sentence, undo key; `DurbarWhyAllowed`), `app.js` (`a.why` by request id, the chip's `c.why`, `whyPaint`, undo click, `grants` event refresh), `styles.css` (`.chip .why`, `.whybody`). Simulator (`sim.ts`) emits the same reasons (its edit's request id is the tool call id).
-- Tests: `scripts/test-permissions.ts` (reasons per path, hostile ids, `cleanGrantKey`, the pure module), `scripts/test-events.ts`-style guard cases, `scripts/check-why-allowed.js` in `scripts/ui-suite.js` (simulator: session rule, Undo, Allow all, folder read, no tag after a user approval; both sizes). Mutation checks in the PR.
-
+- Tests: `scripts/test-permissions.ts` (reasons per path on the real broker incl. a write across two folders, reads with no roots / Allow all / attachments, hostile ids, `cleanGrantKey`, `revokeGrantFor`, event guard, the pure words module), `scripts/check-why-allowed.js` in `scripts/ui-suite.js` (simulator, both sizes: session rule tag, two rules and Undo removing one, folder-read tag from the simulator's quiet note and no permission note, Allow all, hostile label and key, a rule this window never saw). Attachments and the broker's no-roots case are covered by the unit tests only (the simulator does not model them). Mutation checks in the PR.

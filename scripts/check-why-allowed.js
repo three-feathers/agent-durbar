@@ -22,7 +22,7 @@ module.exports = async (ctx) => {
   const { js, until } = H;
   const send = (text) => js(`(()=>{const i=document.getElementById('msgInput');i.value=${jsLiteral(text)};i.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('sendBtn').click();})()`);
   // the simulator also draws a read card per turn: the edit cards are the ones this check is about
-  const defs = () => js(`window.__wa={edits:()=>[...document.querySelectorAll('#chat .chip')].filter(c=>!c.classList.contains('att-chip')&&/edit/i.test((c.querySelector('b')||c).textContent)),last:()=>{const l=window.__wa.edits();return l[l.length-1]}};0`);
+  const defs = () => js(`window.__wa={edits:()=>[...document.querySelectorAll('#chat .chip')].filter(c=>!c.classList.contains('att-chip')&&/edit/i.test((c.querySelector('b')||c).textContent)),last:()=>{const l=window.__wa.edits();return l[l.length-1]},reads:()=>[...document.querySelectorAll('#chat .chip')].filter(c=>!c.classList.contains('att-chip')&&/read/i.test((c.querySelector('b')||c).textContent))};0`);
   const chips = () => js(`window.__wa.edits().map(c=>({name:(c.querySelector('b')||c).textContent,why:(c.querySelector(':scope>.why')||{}).textContent||''}))`);
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
@@ -45,6 +45,22 @@ module.exports = async (ctx) => {
     assert.ok(await until(`document.querySelectorAll('#grants .gchip').length===1&&!!document.querySelector('#chat .chip')`, 15000), `${w}: the rule shows as a chip`);
     assert.ok(await until(`document.getElementById('sendBtn')&&!document.getElementById('sendBtn').disabled`, 15000), `${w}: the first turn ended`);
     assert.deepStrictEqual((await chips()).map((c) => c.why), [''], `${w}: a call the user approved has no tag: ${JSON.stringify(await chips())}`);
+    // a read inside the folder: the simulator sends the broker's quiet note: its card says so, and no permission note is added for it
+    const rd = await js(`window.__wa.reads().map(c=>(c.querySelector(':scope>.why')||{}).textContent||'')`);
+    assert.ok(rd.length >= 1 && rd.every((x) => x === 'Allowed: folder read'), `${w}: read cards carry the folder-read tag: ${JSON.stringify(rd)}`);
+    assert.strictEqual(await js(`document.querySelectorAll('#chat .note.perm').length`), 1, `${w}: only the edit's question is a note: a quiet read adds none`);
+    // the same quiet note for one more read, sent by hand: still no note, one more tag
+    const nReads = rd.length;
+    await js(`(()=>{const e=window.__durbarSimUi.emit;e({type:'permission',sessionId:${jsLiteral(id)},timestamp:Date.now(),permission:{requestId:'rq1',kind:'read',summary:'read x',state:'approved',via:'quiet',allowedBy:{kind:'in-folder'}}});e({type:'toolCall',sessionId:${jsLiteral(id)},timestamp:Date.now(),callId:'rq1',tool:'read_file',phase:'start',args:{path:'x.md'}});})()`);
+    assert.ok(await until(`window.__wa.reads().length===${jsLiteral(nReads + 1)}&&!!window.__wa.reads().pop().querySelector('.why')`, 5000), `${w}: the hand-made read is tagged`);
+    assert.strictEqual(await js(`document.querySelectorAll('#chat .note.perm').length`), 1, `${w}: a quiet event never draws a permission note`);
+
+    // 1b) a second folder, a second rule (so Undo can be shown to remove one rule only)
+    await send('Please edit the other file.');
+    assert.ok(await until(`!!document.querySelector('#chat .note.perm:not(.settled) .note-actions .btn')`, 15000), `${w}: the other folder asks`);
+    await js(`[...document.querySelectorAll('#chat .note.perm:not(.settled) .note-actions .btn')].find(b=>/for this session/.test(b.textContent)).click()`);
+    assert.ok(await until(`document.querySelectorAll('#grants .gchip').length===2`, 15000), `${w}: two rules now`);
+    assert.ok(await until(`document.getElementById('sendBtn')&&!document.getElementById('sendBtn').disabled`, 15000), `${w}: that turn ended`);
 
     // 2) the second edit runs under the rule: tag on its card
     await send('Please edit it again.');
@@ -74,12 +90,19 @@ module.exports = async (ctx) => {
 
     // 4) Undo: the same revoke as the grant chip's x: the chip goes, the tag says so, the focus stays on the card
     await js(`window.__wa.last().querySelector('.why-undo').click()`);
-    assert.ok(await until(`document.querySelectorAll('#grants .gchip').length===0`, 8000), `${w}: the grant chip is gone (the existing revoke ran)`);
+    assert.ok(await until(`document.querySelectorAll('#grants .gchip').length===1`, 8000), `${w}: one grant chip is gone (the existing revoke ran) and the other rule stays`);
+    assert.ok(/sim-docs/.test(await js(`document.querySelector('#grants .gchip').textContent`)), `${w}: the surviving rule is the other folder's`);
     assert.ok(await until(`(window.__wa.last().querySelector(':scope>.why')||{}).textContent==='Rule removed'&&!window.__wa.last().querySelector('.why-undo')`, 8000), `${w}: the tag says the rule is removed and offers no second undo`);
     assert.ok(await until(`document.activeElement===window.__wa.last()`, 3000), `${w}: focus stays on the card`);
     const both = await chips();
-    assert.deepStrictEqual(both.map((c) => c.why), ['', 'Rule removed'], `${w}: the first card is untouched, the second says the rule is gone: ${JSON.stringify(both)}`);
-    // the next edit asks again
+    assert.deepStrictEqual(both.map((c) => c.why), ['', '', 'Rule removed'], `${w}: the first card is untouched, the second says the rule is gone: ${JSON.stringify(both)}`);
+    // the other rule still approves silently, and says so
+    await send('Please edit the other file again.');
+    assert.ok(await until(`window.__wa.edits().length===4&&!!window.__wa.last().querySelector('.why')`, 15000), `${w}: the surviving rule still allows its folder`);
+    assert.strictEqual(await js(`window.__wa.last().querySelector(':scope>.why').textContent`), 'Allowed: session rule');
+    assert.strictEqual(await js(`document.querySelectorAll('#chat .note.perm:not(.settled)').length`), 0, `${w}: nothing asked`);
+    assert.ok(await until(`document.getElementById('sendBtn')&&!document.getElementById('sendBtn').disabled`, 15000), `${w}: that turn ended`);
+    // the next edit in the first folder asks again
     await send('Please edit once more.');
     assert.ok(await until(`!!document.querySelector('#chat .note.perm:not(.settled) .note-actions .btn')`, 15000), `${w}: with the rule gone the next edit asks`);
     await js(`document.querySelector('#chat .note.perm:not(.settled) .note-actions .btn').click()`); // Allow once
@@ -103,8 +126,12 @@ module.exports = async (ctx) => {
     assert.strictEqual(hs[1].why, '', `${w}: an unknown reason kind shows no tag`);
     assert.strictEqual(hs[2].why, '', `${w}: an unknown app source shows no tag`);
     assert.strictEqual(await js(`window.__pwn===undefined`), true, `${w}: the label ran nothing`);
+    // a window that reloaded knows no rules: a rule it never saw is not "removed" (it was just reported as the reason)
+    await ev({ permission: { requestId: 'hx4', kind: 'shell', summary: 'run echo', state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: 'never:seen', label: 'run echo4' } } });
+    await call('hx4');
+    assert.ok(await until(`[...document.querySelectorAll('#chat .chip')].some(c=>/echo/.test(c.textContent)&&(c.querySelector(':scope>.why')||{}).textContent==='Allowed: session rule'&&c.querySelector('.why-undo'))`, 5000), `${w}: a rule this window never saw is tagged as a rule, not as removed`);
     // its Undo asks main to revoke a key nobody holds: nothing changes, nothing breaks
-    await js(`(()=>{const c=[...document.querySelectorAll('#chat .chip')].filter(c=>!c.classList.contains('att-chip')).slice(-3)[0];if(!c.classList.contains('open'))c.click();})()`);
+    await js(`(()=>{const c=[...document.querySelectorAll('#chat .chip')].find(c=>/onerror/.test((c.querySelector('.why-l')||{}).textContent||''));if(!c.classList.contains('open'))c.click();})()`);
     assert.ok(await until(`!!document.querySelector('#chat .chip.open .why-undo')`, 5000), `${w}: the hostile card offers Undo`);
     await js(`document.querySelector('#chat .chip.open .why-undo').click()`);
     await H.settle?.();
@@ -123,12 +150,11 @@ module.exports = async (ctx) => {
     await js(`(()=>{const c=document.querySelector('#chat .chip .why[data-why="allow-all"]').closest('.chip');if(!c.classList.contains('open'))c.click();})()`);
     assert.ok(await until(`!!document.querySelector('#chat .chip.open .why-t')`, 5000), `${w}: the open card explains`);
     assert.strictEqual(await js(`document.querySelectorAll('#chat .chip .why-undo').length`), 0, `${w}: no rule to undo under Allow all`);
-    assert.ok(/Change the mode in the chat header/.test(await js(`document.querySelector('#chat .chip.open .why-t').textContent`)), `${w}: says where to change it`);
+    assert.ok(/mode chip under the message box/.test(await js(`document.querySelector('#chat .chip.open .why-t').textContent`)), `${w}: says where to change it`);
     await H.shot(path.join(OUT, `003-why-allowed-allowall-${w}x${h}.png`), { prep: 'calm', delay: 150 });
 
     // 7) Read-only agent: refused, nothing is tagged
     await setMode(ids[1], 'read-only');
-    assert.ok(await until(`((window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(ids[1])})||{}).info||{}).permMode==='read-only'||true`, 3000));
     const tagged = await js(`document.querySelectorAll('#chat .why').length`);
     const notes = await js(`document.querySelectorAll('#chat .note.perm').length`);
     await send('Please edit the file.');

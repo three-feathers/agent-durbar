@@ -5,7 +5,7 @@ import type { AdapterRouter } from '../../adapters/router';
 import { historyOf } from '../../adapters/router';
 import type { AddResult, AgentInfo, PickedFile, ResumeResult, SessionOptions } from '../../shared/api';
 import { parseAmount, parseCapIn } from '../../shared/credits';
-import { cleanGrantKey } from '../../adapters/permissions';
+import { revokeGrantFor } from '../../adapters/permissions';
 import { endSessionOp, errText, setCapOp, setModeOp, stopTurnOp, validMode } from '../agentops';
 import type { OpsDeps } from '../agentops';
 import { folderGitStatus } from '../gitstatus';
@@ -202,9 +202,8 @@ export function register(deps: AgentsIpcDeps): void {
     if (agents.has(id)) router.forAgent(id)?.resolvePermission?.(id, String(requestId), approve === true, approve === true && remember === true, approve === true && remember === true && broad === true);
   });
 
-  ipcHandle('agents:revokeGrant', (_e, id: string, key: string) => {
-    const k = cleanGrantKey(key); // spec 003 FR-102: a string of sane length; the broker removes only a rule it holds
-    if (typeof id === 'string' && k !== undefined && agents.has(id)) router.forAgent(id)?.revokeGrant?.(id, k);
+  ipcHandle('agents:revokeGrant', (_e, id: unknown, key: unknown) => {
+    revokeGrantFor((x) => agents.has(x), (x, k) => router.forAgent(x)?.revokeGrant?.(x, k), id, key); // spec 003 FR-102: known id, clean key; the broker removes only a rule it holds
   });
 
   // spec 063: the git branch and changed files of an agent's own folder (read-only; the window never passes a path)

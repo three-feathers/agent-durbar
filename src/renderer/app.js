@@ -3429,11 +3429,13 @@ function whySet(a,c,by){
   while(set.size>WHY_KEEP)set.delete(set.values().next().value);
   whyPaint(c);
 }
-function whyLive(aid){const a=byId(aid);return a?new Set((liveRoot(a).grants||[]).map(g=>g.key)):null;}
+/* the rules this window knows (null until the first grants event: a window that reloaded with sessions running knows none, and must not call a rule removed) */
+function whyLive(aid){const a=byId(aid),r=a&&liveRoot(a);return r&&r.grantsKnown?new Set((r.grants||[]).map(g=>g.key)):null;}
+function whyOpts(c){const a=byId(c.aid),r=a&&liveRoot(a);return {seen:r&&r.grantSeen?r.grantSeen:null,undone:c.undone===true};}
 function whyPaint(c){
   const el=c.el;if(!el)return;
   el.querySelectorAll(':scope>.why,:scope>.whybody').forEach(x=>x.remove());
-  const d=WHY&&c.whyBy?WHY.describe(c.whyBy,whyLive(c.aid)):null;
+  const d=WHY&&c.whyBy?WHY.describe(c.whyBy,whyLive(c.aid),whyOpts(c)):null;
   el._whyC=c;
   if(!d)return;
   const pill=document.createElement('span');pill.className='why';pill.dataset.why=d.kind;if(d.gone)pill.dataset.gone='1';pill.textContent=d.pill;
@@ -3442,17 +3444,17 @@ function whyPaint(c){
   const t=document.createElement('span');t.className='why-t';t.textContent=d.sentence;
   body.appendChild(t);
   if(d.label&&!d.gone){const code=document.createElement('code');code.className='why-l';code.textContent=d.label;body.appendChild(code);}
-  if(d.undoKey){const b=document.createElement('button');b.type='button';b.className='why-undo';b.textContent='Undo this rule';b.title='Remove this session rule: Durbar asks again next time';b.setAttribute('aria-label','Undo this rule: '+d.label);body.appendChild(b);}
+  if(d.undoKeys){const b=document.createElement('button');b.type='button';b.className='why-undo';b.textContent='Undo this rule';b.title='Remove this session rule: Durbar asks again next time';b.setAttribute('aria-label','Undo this rule: '+d.label);body.appendChild(b);}
   el.append(pill,body);
   if(c._refocus){c._refocus=false;focusIn(el);announce(d.gone?'Rule removed: Durbar asks again.':'');}
 }
 function whyRefresh(a){if(a.whyCs)for(const c of a.whyCs)if(c.el)whyPaint(c);}
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#chat .chip .why-undo');if(!b)return;
-  const chip=b.closest('.chip'),c=chip&&chip._whyC,d=c&&WHY?WHY.describe(c.whyBy,whyLive(c.aid)):null;
-  if(!d||!d.undoKey)return;
-  b.disabled=true;c._refocus=true;
-  Promise.resolve().then(()=>bridge.revokeGrant(c.aid,d.undoKey)).catch(()=>{});
-  setTimeout(()=>{if(c._refocus){c._refocus=false;whyPaint(c);}},2000); /* a revoke that did not remove the rule: the button comes back */
+  const chip=b.closest('.chip'),c=chip&&chip._whyC,d=c&&WHY?WHY.describe(c.whyBy,whyLive(c.aid),whyOpts(c)):null;
+  if(!d||!d.undoKeys)return;
+  b.disabled=true;c._refocus=true;c.undone=true;
+  Promise.resolve().then(()=>Promise.all(d.undoKeys.map(k=>bridge.revokeGrant(c.aid,k)))).catch(()=>{}); /* every rule that allowed it: the grant chips' own revoke, once per key */
+  setTimeout(()=>{if(c._refocus){c._refocus=false;c.undone=false;whyPaint(c);}},2000); /* a revoke that did not remove the rule: the button comes back */
 });
 /* ---- spec 005 FR-020..FR-023: file edits as an edit row ("Editing app.js  src  +12 −3") and an inline diff below it ---- */
 const EV=window.DurbarEditView;
@@ -4269,7 +4271,7 @@ function settlePerm(a,p){
   if(word==='denied'&&!p.via)roAskHint(a,e.n); /* denied by the mode (no one answered it): Read-only */
   stickyScroll(liveChat(a));
 }
-function setGrants(a,list){a.grants=list;if(ui.selected&&liveRoot(byId(ui.selected)||a)===a)renderGrants();whyRefresh(a);}
+function setGrants(a,list){a.grants=list;a.grantsKnown=true;const sn=a.grantSeen||(a.grantSeen=new Set());for(const g of list)sn.add(g.key);while(sn.size>500)sn.delete(sn.values().next().value);if(ui.selected&&liveRoot(byId(ui.selected)||a)===a)renderGrants();whyRefresh(a);}
 /* spec 052 FR-141: 1-2 grants are single chips; 3 or more are one "Allowed (N)" chip that opens a list (a row per grant, Revoke all).
    The label drops a tool-name prefix that repeats the server name; the title and the accessible name keep the full label. */
 let grantsAllBusy=''; /* the agent id while its Revoke all is under way (the revokes arrive one by one and the focus may be lost in between); '' otherwise */
