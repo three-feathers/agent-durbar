@@ -260,6 +260,12 @@ function blockedMcp(req: PermissionLike, set: ReadonlySet<string> | undefined): 
   return undefined;
 }
 
+/** Spec 003 FR-102: the key of a grant to revoke, from a page: a non-empty string of at most 512 characters, else undefined (ignored). */
+export const GRANT_KEY_MAX = 512;
+export function cleanGrantKey(key: unknown): string | undefined {
+  return typeof key === 'string' && key.length > 0 && key.length <= GRANT_KEY_MAX ? key : undefined;
+}
+
 const WRITE_GUARD_MS = 2000;
 /** Spec 065: most files of one write the undo guard copies (a Codex change can name more; its card says so, spec 052 FR-172). */
 export const WRITE_GUARD_MAX_PATHS = 200;
@@ -357,9 +363,13 @@ export class PermissionBroker {
       return { kind: 'reject', feedback: `This tool is turned off in Agent Durbar (${what}). Do not retry it.` };
     }
     const outsideRead = kind === 'read' && this.mode !== 'allow' && this.readIsOutside(req);
-    if (kind === 'read' && !outsideRead) return { kind: 'approve-once' };
+    if (kind === 'read' && !outsideRead) {
+      // spec 003 FR-099: a quiet note for the tool card's tag (no card, no log row); Allow all reads say so, the rest are folder reads
+      this.opts.emit({ type: 'auto', permission: { requestId, kind, summary, state: 'approved', via: 'quiet', allowedBy: this.mode === 'allow' ? { kind: 'allow-all' } : { kind: 'in-folder' } } });
+      return { kind: 'approve-once' };
+    }
     if (this.mode === 'allow') {
-      if (kind !== 'read') this.opts.emit({ type: 'auto', permission: { requestId, kind, summary, state: 'approved', via: 'policy' } });
+      this.opts.emit({ type: 'auto', permission: { requestId, kind, summary, state: 'approved', via: 'policy', allowedBy: { kind: 'allow-all' } } });
       return this.approveWrite(req);
     }
     const scope = grantScope(req, this.opts.pathCheck?.flavor);
@@ -382,9 +392,9 @@ export class PermissionBroker {
           : 'Agent Durbar is in read-only mode: this action was denied. Do not retry it.',
       };
     }
-    const granted = scope.folders ? scope.folders.every((x) => this.grants.has(x.key)) : this.grants.has(scope.key) || (!!scope.broad && this.grants.has(scope.broad.key));
-    if (granted) {
-      this.opts.emit({ type: 'resolved', permission: { ...base, state: 'approved', via: 'session' } });
+    const hit = scope.folders ? (scope.folders.every((x) => this.grants.has(x.key)) ? this.grants.get(scope.folders[0].key) : undefined) : this.grants.get(scope.key) ?? (scope.broad ? this.grants.get(scope.broad.key) : undefined);
+    if (hit) {
+      this.opts.emit({ type: 'resolved', permission: { ...base, state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: hit.key, label: hit.label } } });
       return this.approveWrite(req);
     }
     const info: PermissionInfo = { ...base, state: 'pending', ...(typeof req.diff === 'string' && req.diff ? { diff: req.diff } : {}) }; // spec 052 FR-063: the diff rides on the pending request only
@@ -412,7 +422,8 @@ export class PermissionBroker {
   }
 
   revoke(key: string): boolean {
-    const had = this.grants.delete(key);
+    const k = cleanGrantKey(key);
+    const had = k !== undefined && this.grants.delete(k);
     if (had) this.opts.emit({ type: 'grants', grants: this.listGrants() });
     return had;
   }

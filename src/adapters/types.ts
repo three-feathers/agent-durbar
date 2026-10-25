@@ -135,7 +135,13 @@ export interface PermissionInfo {
   broadScopeKey?: string;
   broadScopeLabel?: string;
   /** Who decided: the user, an earlier "Approve for this session" grant, the session being stopped, or Allow all (`policy`: no card is shown, spec 052 FR-071). */
-  via?: 'user' | 'session' | 'stopped' | 'policy';
+  via?: 'user' | 'session' | 'stopped' | 'policy' | 'quiet';
+  /**
+   * Spec 003 FR-099 (issue #605): why this request ran without asking, only from what Durbar itself decided. Absent when the user
+   * answered it. Display only: nothing reads it back to approve anything. `quiet` events carry it for a read and are never shown as
+   * a card or logged.
+   */
+  allowedBy?: AllowedBy;
   /** True when the user approved this one *and* remembered the scope for the session. */
   remembered?: boolean;
   /**
@@ -145,6 +151,17 @@ export interface PermissionInfo {
    */
   diff?: string;
 }
+
+/**
+ * Spec 003 FR-099: the reason a request ran without a question. `session-grant`: the user's "Approve for this session" rule (its key
+ * can be revoked); `allow-all`: the mode; `in-folder`: a read inside the session's folders; `app`: reserved for an adapter that really
+ * reports the agent app's own decision (no adapter sets it yet, FR-106).
+ */
+export type AllowedBy =
+  | { kind: 'session-grant'; key: string; label: string }
+  | { kind: 'allow-all' }
+  | { kind: 'in-folder' }
+  | { kind: 'app'; source: 'config' | 'hook' | 'classifier' };
 
 /** A remembered "Approve for this session" permission; can be revoked. */
 export interface SessionGrant {

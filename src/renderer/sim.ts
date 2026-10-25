@@ -227,6 +227,8 @@ interface SimAgent {
   perm?: { requestId: string; kind: string; summary: string; scopeKey: string; scopeLabel: string; file: string; cont: 'tool' | 'edit'; folders?: SimScope[] };
   /** "Allow for this session" grants: key -> chip label. */
   grants: Map<string, string>;
+  /** The id the next edit's tool call uses (the permission request for it carries the same id). */
+  editCall?: string;
   /** Context window of the fake session (tokens now / size). */
   ctx?: { tokens: number; limit: number };
   /** Models the fake runtime "routes" this agent's calls to (auto). */
@@ -1009,15 +1011,23 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     /** Like the real broker: auto-approve under a session grant, otherwise leave the request pending. */
     function askWrite(s: SimAgent, file: string, summary: string, cont: 'tool' | 'edit', intent: string, force = false, kind: 'write' | 'shell' = 'write', diff?: string, scope?: SimScope & { folders?: SimScope[] }): boolean | 'denied' {
       const sc: SimScope & { folders?: SimScope[] } = scope ?? (kind === 'shell' ? { key: 'shell:' + file, label: 'run ' + file } : scopeOf(file));
-      if (!force && s.info.permMode === 'allow') { simLog(s, 'auto-allow-all', summary); return true; } // Allow all: no question asked
+      const callId = sid(s) + '-edit' + s.tool; // the tool call this request is for (the real adapters use the tool call's id as the request id)
+      if (!force && s.info.permMode === 'allow') { // Allow all: no question asked
+        emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { requestId: callId, kind, summary, state: 'approved', via: 'policy', allowedBy: { kind: 'allow-all' } } });
+        simLog(s, 'auto-allow-all', summary);
+        s.editCall = callId;
+        return true;
+      }
       if (!force && s.info.permMode === 'read-only') {
         emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { requestId: 'perm-' + sid(s) + '-' + now(), kind, summary, state: 'denied' } });
         return 'denied';
       }
-      const requestId = 'perm-' + sid(s) + '-' + now();
+      const requestId = cont === 'edit' ? callId : 'perm-' + sid(s) + '-' + now();
+      if (cont === 'edit') s.editCall = callId;
       const base = { requestId, kind, summary, scopeKey: sc.key, scopeLabel: sc.label };
-      if (sc.folders ? sc.folders.every((x) => s.grants.has(x.key)) : s.grants.has(sc.key)) { // like the broker: every folder granted
-        emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { ...base, state: 'approved', via: 'session' } });
+      const hitKey = sc.folders ? (sc.folders.every((x) => s.grants.has(x.key)) ? sc.folders[0].key : undefined) : s.grants.has(sc.key) ? sc.key : undefined;
+      if (hitKey !== undefined) { // like the broker: every folder granted
+        emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { ...base, state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: hitKey, label: s.grants.get(hitKey) ?? '' } } });
         simLog(s, 'auto-session-grant', summary);
         return true;
       }
@@ -1027,7 +1037,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       return false;
     }
     function editTool(s: SimAgent, file: string, ok: boolean): void {
-      const id = sid(s) + '-edit' + s.tool++;
+      const id = s.editCall ?? sid(s) + '-edit' + s.tool; // the id the permission request used, so its tag finds this card
+      s.editCall = undefined;
+      s.tool++;
       emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: 'edit_file', phase: 'start', args: { path: file } });
       emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: 'edit_file', phase: ok ? 'complete' : 'failed', output: ok ? '+4 -1' : 'Denied by user in Agent Durbar.' });
     }
