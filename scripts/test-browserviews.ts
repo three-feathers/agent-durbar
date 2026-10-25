@@ -392,7 +392,28 @@ function fakeElectron() {
     assert.deepStrictEqual(f.log, [], 'beforeunload is never answered');
     f.created[0].wc.msg.emit('message', {}, 'Page.javascriptDialogOpening', { type: 'confirm', message: 'ok?' });
     assert.deepStrictEqual(f.log, ['0:cmd Page.handleJavaScriptDialog {"accept":false}'], 'driver agent: closed with Cancel');
-    // downloads: cancelled by the handler, and a running one is cancelled on teardown
+      // FR-025d: the window hears of an alert or confirm (not beforeunload) and of its closing; FR-025e: Leave knows whether main started the navigation
+    {
+      const seen: unknown[] = [];
+      const f2 = fakeElectron(); f2.gate.unloadBlocks = true;
+      const v2 = makeViews(f2.deps);
+      const sv2 = await v2.ensureSessionView('s2', { onPageDialog: (_s, d) => void seen.push(['open', d]), onPageDialogClosed: () => void seen.push('closed'), askLeave: async (_s, known) => (seen.push(['leave', known]), false) });
+      const msg2 = f2.created[0].wc.msg;
+      msg2.emit('message', {}, 'Page.javascriptDialogOpening', { type: 'confirm', message: 'Delete? token=' + 'gh' + 'p_' + 'A1b2'.repeat(9) });
+      msg2.emit('message', {}, 'Page.javascriptDialogOpening', { type: 'beforeunload', message: '' });
+      msg2.emit('message', {}, 'Page.javascriptDialogClosed', { result: false });
+      sv2.driver = 'agent';
+      msg2.emit('message', {}, 'Page.javascriptDialogOpening', { type: 'alert', message: 'hi' });
+      assert.deepStrictEqual(seen.map((x) => (Array.isArray(x) ? [x[0], (x[1] as { type: string; forAgent: boolean }).type, (x[1] as { forAgent: boolean }).forAgent] : x)), [['open', 'confirm', false], 'closed', ['open', 'alert', true]], 'confirm for the user, closed, alert closed for the agent; beforeunload is never reported');
+      assert.ok(!/ghp_/.test(JSON.stringify(seen)), 'the text is masked');
+      sv2.driver = 'user'; seen.length = 0;
+      await sv2.navigate({ url: 'https://b.com/' });
+      await new Promise((r) => setTimeout(r, 40));
+      f2.created[0].wc.unload();
+      await new Promise((r) => setTimeout(r, 40));
+      assert.deepStrictEqual(seen, [['leave', true], ['leave', false]], 'a navigation main started: target known (the in-flight one is also asked); a page-started unload: unknown');
+    }
+  // downloads: cancelled by the handler, and a running one is cancelled on teardown
     const ev1 = ev(); let cancelled = 0;
     f.created[0].ses.emit('will-download', ev1, { cancel: () => cancelled++, once() {} });
     assert.strictEqual(ev1.prevented, 1);

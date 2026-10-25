@@ -82,6 +82,8 @@ export interface AppSettings {
   notifyNeedsMe?: false;
   /** Spec 068 FR-006: after a coffee break, always ask before going on. The default (resume by itself when it costs nothing extra) is not written. */
   breakResume?: 'ask';
+  /** Spec 080 FR-025d (Q2): the user accepted the one-time note of the session browser. Asked once per app profile; only `true` is kept. */
+  browserNoteAccepted?: true;
   /** Spec 081 FR-016: the last version announced by a toast, per agent app (version strings only). */
   announcedVersions?: Record<string, string>;
   /** Spec 081 FR-022 (Q6 = A): the start check for agent-app updates is on by default; only `false` is kept. */
@@ -105,7 +107,7 @@ export function parseAnnounced(v: unknown): Record<string, string> {
 /** Tolerant parse: a missing, corrupt or odd file means no settings. */
 export function parseSettings(text: string): AppSettings {
   try {
-    const doc = JSON.parse(text) as { defaultMaxAiCredits?: unknown; placeMap?: unknown; customPlaces?: unknown; seriousMode?: unknown; theme?: unknown; notifyNeedsMe?: unknown; breakResume?: unknown } | null;
+    const doc = JSON.parse(text) as { defaultMaxAiCredits?: unknown; placeMap?: unknown; customPlaces?: unknown; seriousMode?: unknown; theme?: unknown; notifyNeedsMe?: unknown; breakResume?: unknown; browserNoteAccepted?: unknown } | null;
     const obj = doc && typeof doc === 'object' && !Array.isArray(doc) ? doc : {};
     const cap = parseCap((obj as { defaultMaxAiCredits?: unknown }).defaultMaxAiCredits);
     // the custom places first: the mapping may only point to ones that exist (spec 024 FR-019)
@@ -113,7 +115,7 @@ export function parseSettings(text: string): AppSettings {
     const places = parsePlaceMap((obj as { placeMap?: unknown }).placeMap, custom.map((p) => p.id));
     const theme = parseThemeId((obj as { theme?: unknown }).theme);
     const announced = parseAnnounced((obj as { announcedVersions?: unknown }).announcedVersions);
-    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...(custom.length ? { customPlaces: custom } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}), ...(theme === undefined ? {} : { theme }), ...((obj as { notifyNeedsMe?: unknown }).notifyNeedsMe === false ? { notifyNeedsMe: false as const } : {}), ...((obj as { breakResume?: unknown }).breakResume === 'ask' ? { breakResume: 'ask' as const } : {}), ...(Object.keys(announced).length ? { announcedVersions: announced } : {}), ...((obj as { checkUpdatesAtStart?: unknown }).checkUpdatesAtStart === false ? { checkUpdatesAtStart: false as const } : {}) };
+    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...(custom.length ? { customPlaces: custom } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}), ...(theme === undefined ? {} : { theme }), ...((obj as { notifyNeedsMe?: unknown }).notifyNeedsMe === false ? { notifyNeedsMe: false as const } : {}), ...((obj as { breakResume?: unknown }).breakResume === 'ask' ? { breakResume: 'ask' as const } : {}), ...(Object.keys(announced).length ? { announcedVersions: announced } : {}), ...((obj as { checkUpdatesAtStart?: unknown }).checkUpdatesAtStart === false ? { checkUpdatesAtStart: false as const } : {}), ...((obj as { browserNoteAccepted?: unknown }).browserNoteAccepted === true ? { browserNoteAccepted: true as const } : {}) };
   } catch {
     return {};
   }
