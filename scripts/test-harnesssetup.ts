@@ -583,6 +583,9 @@ void (async () => {
       const npmC = mkU('linux', [`${NVM}/bin/codex`, `${NVM}/bin/npm`, '/usr/bin/bash'], { [`${NVM}/bin/codex`]: `${NVM}/lib/node_modules/@openai/codex/bin/codex.js` }, label('codex-cli 0.163.0'), `${NVM}/bin:/usr/bin`);
       await npmC.setup.warm('codex');
       assert.deepStrictEqual(npmC.setup.plans('codex', 'update').plans.map((p) => p.manager), ['npm', 'official']);
+      // spec 081 FR-042: the npm update carries its folder (before the real path is resolved) so `env node` finds the node beside it
+      const npmJob = npmC.setup.prepare('codex', 'update', 0);
+      assert.ok(npmJob.ok && (npmJob as { job: { toolFile?: string } }).job.toolFile === `${NVM}/bin/npm`, JSON.stringify(npmJob));
       const winC = mkU('win32', ['C:\\Users\\u\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe', 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'], {}, label('codex-cli 0.163.0'));
       await winC.setup.warm('codex');
       const wp = winC.setup.plans('codex', 'update').plans;

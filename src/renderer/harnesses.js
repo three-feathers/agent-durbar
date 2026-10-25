@@ -183,7 +183,7 @@
           if (r.state === 'up-to-date' && r.installedNewer) out.push('<p class="scr-note small">Installed is newer than the source\'s latest.</p>');
           if (r.newerOnLatest) out.push(`<p class="scr-note small hs-quiet">A newer latest-channel build exists (${esc(r.newerOnLatest)}).</p>`);
         }
-        if (r.state === 'could-not-check') out.push(`<p class="scr-note small">Could not check: ${esc(r.reason || 'unexpected answer')}${r.reason === 'winget needs its terms accepted' ? '. Check asks you whether to accept them.' : ''}</p>`);
+        if (r.state === 'could-not-check') out.push(`<p class="scr-note small">Could not check: ${esc(r.reason || 'unexpected answer')}${r.reason === 'winget needs its terms accepted' ? '. Check for update asks you whether to accept them.' : r.reason === 'npm or node was not found' ? ". Durbar could not run npm with a node beside it: install Node.js (it brings npm), or start Durbar from a terminal where npm works, then choose Check for update." : ''}</p>`);
         if (r.checkedAt) out.push(`<p class="scr-note small hs-when">Checked ${esc(timeOf(r.checkedAt))}</p>`);
       }
     } else if (busy) out.push(`<p class="scr-note small" aria-busy="true">${chip('checking')}</p>`);
@@ -197,8 +197,8 @@
     const r = updResult(id);
     const act = base || (st !== 'not-installed' && r && r.state === 'update-available' && !polOf().installBlocked && !polOf().checkHidden && !(UPD.waiting && UPD.waiting[id]) ? 'update' : '');
     const label = { install: 'Install…', update: 'Update…', signin: 'Sign in…' }[act];
-    const chk = UPD && !polOf().checkHidden && st !== 'not-installed' ? `<button class="btn sm" type="button" data-hs="updcheck" data-kind="${esc(id)}" aria-label="Check for updates for ${esc(SOURCE_NAME[id] || id)}">Check</button>` : '';
-    return `${act ? `<button class="btn primary" type="button" data-hs="${act}" data-kind="${esc(id)}">${esc(label)}</button>` : ''}<button class="btn sm" type="button" data-hs="check" data-kind="${esc(id)}">Check again</button>${chk}`;
+    const chk = UPD && !polOf().checkHidden && st !== 'not-installed' ? `<button class="btn sm" type="button" data-hs="updcheck" data-kind="${esc(id)}" title="Ask whether a newer version exists" aria-label="Check for updates for ${esc(SOURCE_NAME[id] || id)}">Check for update</button>` : '';
+    return `${act ? `<button class="btn primary" type="button" data-hs="${act}" data-kind="${esc(id)}">${esc(label)}</button>` : ''}<button class="btn sm" type="button" data-hs="check" data-kind="${esc(id)}" title="Look at the installed app again: its version and sign-in">Check again</button>${chk}`;
   }
   /* the section's bar: Check for updates, the start-check switch and its note, or the organization's word */
   function barHTML() {

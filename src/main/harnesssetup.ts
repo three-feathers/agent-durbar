@@ -12,7 +12,7 @@ import { CMD_UNSAFE, windowsCmd } from '../shared/wincmd';
 import { redact } from '../shared/redact';
 import { SIGN_IN, installPlans, integrityLine, lastLines, managersFor, manualCommands, parseSignIn, stripAnsi, updatePlans, validPaste, OFFICIAL_PAGES, SETUP_NAMES } from '../shared/harnesssetup';
 import type { ManualCommand, OfficialScript, PackageManager, SetupKind, SetupPlan, SignInView, UpdatePlanOpts } from '../shared/harnesssetup';
-import { CODEX_UPDATE_COMMAND, classifyFailure, codexNeedsFallback, codexUpdateEnv, isOfficialCodex, npmOwns, sourceOf, updateDecision, updateOutcomeNote, versionLabel } from '../shared/updatecheck';
+import { CODEX_UPDATE_COMMAND, classifyFailure, codexNeedsFallback, codexUpdateEnv, isOfficialCodex, npmOwns, pathWithToolDir, sourceOf, updateDecision, updateOutcomeNote, versionLabel } from '../shared/updatecheck';
 import type { FailureClass, UpdatePolicy, UpdateSource } from '../shared/updatecheck';
 import * as fs from 'fs';
 import { downloadScript } from './officialinstall';
@@ -37,6 +37,8 @@ export interface PreparedRun {
   kind: SetupKind; op: SetupOp; file: string; args: string[]; spawnFile: string; spawnArgs: string[]; verbatim: boolean; paste: boolean; script?: OfficialScript; cleanupDir?: string;
   /** Spec 081: the app's own updater (`claude update` ...), `codex update` (curl-to-shell, official Codex only), the version it installs, what its route checks. */
   own?: SetupKind; codexUpdate?: boolean; pinned?: string; checked?: string; integrity?: string; sourceKind?: UpdateSource['kind'];
+  /** Spec 081 FR-042: the npm that runs; its folder is put first on that child's PATH so npm's `env node` finds the node beside it. */
+  toolFile?: string;
 }
 export interface SetupDone {
   kind: SetupKind; op: SetupOp; ok: boolean; exitCode?: number | null; reason?: 'timeout' | 'cancelled' | 'error'; lines: string[];
@@ -252,6 +254,7 @@ export class HarnessSetup {
     let pinned: string | undefined;
     let integrity: string | undefined;
     let sourceKind: UpdateSource['kind'] | undefined;
+    let toolFile: string | undefined;
     if (op === 'signin') {
       const s = SIGN_IN[kind];
       file = this.find(s.bin);
@@ -267,6 +270,7 @@ export class HarnessSetup {
         const t = this.ownerTool(kind, plan.manager);
         if (typeof t === 'object') return { ok: false, error: t.error };
         file = t;
+        toolFile = t;
       } else file = this.find(plan.bin);
       if (!file) return { ok: false, error: `${plan.bin} was not found.` };
       args = [...plan.args];
@@ -292,7 +296,7 @@ export class HarnessSetup {
       spawnArgs = ['/d', '/s', '/c', `"${file}" ${args.join(' ')}`];
       verbatim = true;
     }
-    return { ok: true, job: { kind, op, file, args, spawnFile, spawnArgs, verbatim, paste: op === 'signin' && SIGN_IN[kind].mode === 'paste', ...(script ? { script } : {}), ...(own ? { own } : {}), ...(codexUpdate ? { codexUpdate } : {}), ...(pinned ? { pinned } : {}), ...(op === 'update' && this.deps.checked?.(kind) ? { checked: this.deps.checked(kind) } : {}), ...(integrity ? { integrity } : {}), ...(sourceKind ? { sourceKind } : {}) } };
+    return { ok: true, job: { kind, op, file, args, spawnFile, spawnArgs, verbatim, paste: op === 'signin' && SIGN_IN[kind].mode === 'paste', ...(script ? { script } : {}), ...(own ? { own } : {}), ...(codexUpdate ? { codexUpdate } : {}), ...(pinned ? { pinned } : {}), ...(op === 'update' && this.deps.checked?.(kind) ? { checked: this.deps.checked(kind) } : {}), ...(integrity ? { integrity } : {}), ...(sourceKind ? { sourceKind } : {}), ...(toolFile ? { toolFile } : {}) } };
   }
 
   /** Spec 081 FR-006: the npm (or brew) that owns the copy, not the first one on PATH; a string is the file, an object an error. */
@@ -336,6 +340,7 @@ export class HarnessSetup {
     const env = this.deps.detectEnv;
     let child: ChildLike;
     let childEnv = setupEnv(process.env, env.platform, !!job.script);
+    if (job.toolFile) childEnv = { ...childEnv, ...pathWithToolDir(childEnv, job.toolFile, env.platform, env.loginPath ?? []) };
     let cwd: string | undefined;
     if (job.codexUpdate) {
       // spec 081 FR-009: `codex update` runs OpenAI's installer through a shell Codex starts, so it gets no CODEX_MANAGED_BY_*, a fixed
