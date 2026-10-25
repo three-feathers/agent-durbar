@@ -169,7 +169,8 @@ export async function runContract(name: string, make: () => ContractTarget, hook
     assert.ok(first && first.type === 'status' && first.status === 'idle', M('C3', 'the first event is status idle unless quiet'));
     const q = fresh();
     await q.start('read-only', true);
-    assert.strictEqual(q.events.length, 0, M('C3', 'a quiet start emits nothing'));
+    // spec 087 FR-009: the OS sandbox state is reported at start (state, not a chat line); nothing else
+    assert.strictEqual(q.events.filter((e) => e.type !== 'sandbox').length, 0, M('C3', 'a quiet start emits nothing but its sandbox state'));
     const beforeUnknown = t.events.length;
     await assert.rejects(() => t.ad.send('no-such-session', { text: 'hi' }), M('C3', 'send to an unknown id rejects'));
     assert.deepStrictEqual(t.events.slice(beforeUnknown), [], M('C3', 'send to an unknown id emits no event'));
@@ -601,7 +602,7 @@ async function main(): Promise<void> {
       try {
         const sid = await ad.start({ workspace: ws, quiet: true });
         await ad.send(sid, { text: 'go' });
-        stream = [...got];
+        stream = got.filter((e) => e.type !== 'sandbox'); // spec 087: the start's sandbox state is not part of the recorded turn
         await ad.dispose();
       } finally {
         fs.rmSync(ws, { recursive: true, force: true });
