@@ -100,7 +100,12 @@ module.exports = async (ctx) => {
       const r1=b.getBoundingClientRect(),r2=n.getBoundingClientRect();const ov=Math.min(r1.right,r2.right)-Math.max(r1.left,r2.left),ovy=Math.min(r1.bottom,r2.bottom)-Math.max(r1.top,r2.top);
       return ov>1&&ovy>1?d.dataset.id+':'+n.textContent:null}).filter(Boolean)`);
     assert.deepStrictEqual(covered, [], `${w}: chat badges cover names: ${covered.join(', ')}`);
+    // the picture shows the open list (review of PR 720, round 2: one was taken of the closed card): the list is laid out and painted first
+    const listOpen = `(()=>{const l=document.getElementById('crashList');return !!l&&l.getBoundingClientRect().height>20&&l.querySelectorAll('[data-crrow]').length===3})()`;
+    assert.ok(await until(listOpen, 6000), `${w}: the list is visible before the picture`);
+    await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`);
     await shot('pick', w, h);
+    assert.ok(await js(listOpen), `${w}: and still open after it`);
 
     // ---- one row: only that session resumes
     await click('#crashStrip [data-crrow="sim-2"]');

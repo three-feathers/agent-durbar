@@ -4,6 +4,7 @@
  * says which sessions were in the middle of a turn. Principle III: ids only, no prompt, reply, title, path or token; mode 0600.
  */
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { sessionIdOk } from '../shared/sessionid';
 
@@ -22,6 +23,14 @@ export interface RunMarker {
 /** FR-038: each Durbar process keeps its own marker, `durbar-running.<pid>.json`, so two processes on one profile never read or remove each other's. */
 export const MARKER_RE = /^durbar-running\.([1-9][0-9]{0,9})\.json$/;
 export const markerName = (pid: number): string => `durbar-running.${pid}.json`;
+/** The temp file a write goes through; a crash inside `write()` can leave one behind (removed at the next start when its process is gone). */
+export const TMP_RE = /^durbar-running\.([1-9][0-9]{0,9})\.json\.tmp$/;
+/** At most this many marker and temp files are looked at in one start (a profile folder holds one per Durbar process). */
+export const MAX_SCAN = 64;
+/** A marker written more than this before the current boot is from an earlier boot (the boot time from uptime is approximate). */
+export const BOOT_MARGIN_MS = 5 * 60_000;
+/** When this computer started, in ms since the epoch. */
+export const bootTime = (): number => Date.now() - os.uptime() * 1000;
 /** A marker larger than this is not ours (24 ids are about 2 KB); it is never read into memory. */
 export const MAX_MARKER_BYTES = 64 * 1024;
 
@@ -97,9 +106,9 @@ export function readMarkerFile(file: string): RunMarker | null | undefined {
 }
 
 /** Whether a process with this id runs now (EPERM: it runs, as another user). Works on Windows, macOS and Linux. */
-export function pidAlive(pid: number): boolean {
+export function pidAlive(pid: number, kill: (pid: number, sig: 0) => unknown = (p, sig) => process.kill(p, sig)): boolean {
   try {
-    process.kill(pid, 0);
+    kill(pid, 0);
     return true;
   } catch (e) {
     return (e as NodeJS.ErrnoException)?.code === 'EPERM';
@@ -140,6 +149,8 @@ export interface MarkerDeps {
   pid?: number;
   /** Whether another process runs (tests). */
   alive?: (pid: number) => boolean;
+  /** When this computer started, ms since the epoch (tests). */
+  bootTime?: () => number;
   setTimer?: (fn: () => void, ms: number) => Timer;
   clearTimer?: (t: Timer) => void;
 }
@@ -154,6 +165,7 @@ export class CrashMarker {
   private readonly clearTimer: (t: Timer) => void;
   private readonly pid: number;
   private readonly alive: (pid: number) => boolean;
+  private readonly bootTime: () => number;
   /** This process's own marker file. */
   readonly file: string;
   private startedAt = 0;
@@ -164,7 +176,8 @@ export class CrashMarker {
     this.setTimer = deps.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
     this.clearTimer = deps.clearTimer ?? ((t) => clearTimeout(t));
     this.pid = deps.pid ?? process.pid;
-    this.alive = deps.alive ?? pidAlive;
+    this.alive = deps.alive ?? ((p) => pidAlive(p));
+    this.bootTime = deps.bootTime ?? bootTime;
     this.file = path.join(dir, markerName(this.pid));
   }
 
@@ -183,24 +196,38 @@ export class CrashMarker {
     let unclean = false;
     let startedAt = 0;
     const busy: BusySession[] = [];
+    const boot = this.bootTime();
+    let scanned = 0;
     for (const name of names.sort()) {
       const m = MARKER_RE.exec(name);
-      if (!m) continue;
-      const pid = Number(m[1]);
+      const t = m ? null : TMP_RE.exec(name);
+      if (!m && !t) continue; // only our own names: anything else in the profile is never read or removed
+      if (++scanned > MAX_SCAN) break;
+      const pid = Number((m ?? t)![1]);
       const full = path.join(this.dir, name);
-      if (pid !== this.pid && this.alive(pid)) continue; // another Durbar that is running now: its sessions are its own
+      if (t) {
+        // a temp file a crash inside write() left behind; a live process's own temp file is its write in progress
+        let mtime = 0;
+        try {
+          mtime = fs.statSync(full).mtimeMs;
+        } catch {
+          mtime = 0;
+        }
+        if (pid === this.pid || (mtime > 0 && mtime < boot - BOOT_MARGIN_MS) || !this.alive(pid)) this.remove(full);
+        continue;
+      }
       const found = readMarkerFile(full);
       if (found === undefined) continue;
+      // A live pid is another Durbar on this profile, unless the marker was written before this boot: after a power loss
+      // pids start again, and the dead run's pid may now belong to some other program.
+      const earlierBoot = !!found && found.startedAt > 0 && found.startedAt < boot - BOOT_MARGIN_MS;
+      if (pid !== this.pid && !earlierBoot && this.alive(pid)) continue;
       unclean = true;
       if (found) {
         startedAt = Math.max(startedAt, found.startedAt);
         busy.push(...found.busy);
       }
-      try {
-        fs.rmSync(full, { force: true });
-      } catch {
-        /* read-only profile */
-      }
+      this.remove(full);
     }
     this.active = true;
     this.startedAt = this.now();
@@ -233,6 +260,14 @@ export class CrashMarker {
       fs.rmSync(this.file, { force: true });
     } catch {
       /* read-only profile: nothing to do */
+    }
+  }
+
+  private remove(file: string): void {
+    try {
+      fs.rmSync(file, { force: true });
+    } catch {
+      /* read-only profile */
     }
   }
 

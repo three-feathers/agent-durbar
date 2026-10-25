@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CrashMarker, MAX_BUSY, MAX_MARKER_BYTES, cleanBusy, installCrashMarker, interruptedFrom, markerName, parseMarker, readMarkerFile, serializeMarker } from '../src/main/crashmarker';
+import { BOOT_MARGIN_MS, CrashMarker, MAX_BUSY, MAX_SCAN, pidAlive, MAX_MARKER_BYTES, cleanBusy, installCrashMarker, interruptedFrom, markerName, parseMarker, readMarkerFile, serializeMarker } from '../src/main/crashmarker';
 
 const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
@@ -37,7 +37,7 @@ assert.deepStrictEqual(parseMarker(serializeMarker({ version: 1, startedAt: 5.4,
 // ---- the file: first run, busy changes, clean exit, crash
 const timers: Array<() => void> = [];
 let cleared = 0;
-const deps = { pid: PID, alive: dead, now: () => 1000, setTimer: (fn: () => void) => { timers.push(fn); return timers.length as never; }, clearTimer: () => { cleared++; } };
+const deps = { pid: PID, alive: dead, bootTime: () => 0, now: () => 1000, setTimer: (fn: () => void) => { timers.push(fn); return timers.length as never; }, clearTimer: () => { cleared++; } };
 const m1 = new CrashMarker(sub, deps);
 assert.strictEqual(m1.file, file, 'the file is named after this process');
 let r = m1.begin();
@@ -161,6 +161,57 @@ assert.deepStrictEqual(procD.begin().marker?.busy.map((x) => x.id), [A, B, C], '
 procD.clear();
 assert.deepStrictEqual(fs.readdirSync(sub).sort(), ['durbar-running.json'], 'the crashed runs\' files are gone');
 fs.rmSync(path.join(sub, 'durbar-running.json'));
+
+// ---- pidAlive (review of PR 720, round 2): success and EPERM (another user's process) are alive, ESRCH is gone
+const err = (code: string) => () => { throw Object.assign(new Error(code), { code }); };
+assert.strictEqual(pidAlive(5, () => true), true, 'a signal that goes through: alive');
+assert.strictEqual(pidAlive(5, err('EPERM')), true, 'EPERM: it runs, as someone else');
+assert.strictEqual(pidAlive(5, err('ESRCH')), false, 'ESRCH: no such process');
+assert.strictEqual(pidAlive(process.pid), true, 'this process, for real');
+
+// ---- a power loss: pids start again, so a marker from before this boot is dead whatever its pid says (round 2, item 1)
+const BOOT = 10_000_000;
+fs.writeFileSync(path.join(sub, markerName(77)), serializeMarker({ version: 1, startedAt: BOOT - BOOT_MARGIN_MS - 1, pid: 77, busy: [{ id: A, adapterId: 'copilot' }] }));
+const afterReboot = new CrashMarker(sub, { ...deps, pid: 500, alive: () => true, bootTime: () => BOOT });
+assert.deepStrictEqual(afterReboot.begin().marker?.busy, [{ id: A, adapterId: 'copilot' }], 'written before this boot: a crash, although pid 77 now runs (some other program)');
+assert.ok(!fs.existsSync(path.join(sub, markerName(77))), 'and its file is removed');
+afterReboot.clear();
+fs.writeFileSync(path.join(sub, markerName(78)), serializeMarker({ version: 1, startedAt: BOOT - BOOT_MARGIN_MS + 1000, pid: 78, busy: [{ id: A, adapterId: 'copilot' }] }));
+const sameBoot = new CrashMarker(sub, { ...deps, pid: 500, alive: (p) => p === 78, bootTime: () => BOOT });
+assert.deepStrictEqual(sameBoot.begin(), { unclean: false, marker: null }, 'within the margin of this boot and its pid runs: another live Durbar');
+sameBoot.clear();
+fs.rmSync(path.join(sub, markerName(78)));
+
+// ---- only our own names (round 2, item 3): other files are never read or removed
+const strangers = ['durbar-running.abc.json', 'durbar-running.0.json', 'durbar-running.012.json', 'xdurbar-running.12.json', 'durbar-running.12.json.bak', 'durbar-running.12345678901.json', 'durbar-running..json'];
+for (const n of strangers) fs.writeFileSync(path.join(sub, n), serializeMarker({ version: 1, startedAt: 1, busy: [{ id: C, adapterId: 'codex' }] }));
+const picky = new CrashMarker(sub, deps);
+assert.deepStrictEqual(picky.begin(), { unclean: false, marker: null }, 'no stranger is read as a marker');
+picky.clear();
+assert.deepStrictEqual(fs.readdirSync(sub).sort(), [...strangers].sort(), 'and every stranger is left on disk');
+for (const n of strangers) fs.rmSync(path.join(sub, n));
+
+// ---- temp files a crash inside write() left behind (round 2, item 4)
+fs.writeFileSync(path.join(sub, markerName(31) + '.tmp'), '{"version":1');
+fs.writeFileSync(path.join(sub, markerName(32) + '.tmp'), '{"version":1');
+fs.writeFileSync(path.join(sub, markerName(33) + '.tmp'), '{"version":1');
+fs.writeFileSync(path.join(sub, markerName(PID) + '.tmp'), '{"version":1');
+const sweeper = new CrashMarker(sub, { ...deps, alive: (p) => p === 32 || p === 33, bootTime: () => fs.statSync(path.join(sub, markerName(32) + '.tmp')).mtimeMs });
+const rs = sweeper.begin();
+assert.strictEqual(rs.unclean, false, 'a temp file alone is not a crash marker');
+assert.deepStrictEqual(fs.readdirSync(sub).sort(), [markerName(32) + '.tmp', markerName(33) + '.tmp', markerName(PID)].sort(), 'a dead process\'s temp file and our own pid\'s old one are removed; a live one\'s write in progress stays');
+sweeper.clear();
+const later = new CrashMarker(sub, { ...deps, alive: (p) => p === 32 || p === 33, bootTime: () => Date.now() + BOOT_MARGIN_MS + 60_000 });
+later.begin();
+later.clear();
+assert.deepStrictEqual(fs.readdirSync(sub), [], 'after a reboot a temp file is removed whatever its pid says');
+// bounded: at most MAX_SCAN of our files are looked at in one start
+for (let i = 1; i <= MAX_SCAN + 10; i++) fs.writeFileSync(path.join(sub, markerName(1000 + i) + '.tmp'), '');
+const bounded = new CrashMarker(sub, deps);
+bounded.begin();
+bounded.clear();
+assert.strictEqual(fs.readdirSync(sub).length, 10, `at most ${MAX_SCAN} files per start`);
+for (const n of fs.readdirSync(sub)) fs.rmSync(path.join(sub, n));
 
 // ---- main.ts wiring (review of #720 item 1): installCrashMarker, and main.ts calls it with the simulator flag and both exit hooks
 const hooks: Record<string, Array<() => void>> = { willQuit: [], exit: [] };
