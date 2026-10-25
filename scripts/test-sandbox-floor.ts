@@ -165,6 +165,7 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.deepStrictEqual(copilotPathReadDirs(['C:\\USERS', 'c:\\users\\ME', 'C:\\Users\\x', 'C:\\Windows'], 'C:\\Users\\me', 'win32'), ['C:\\Windows']);
   assert.deepStrictEqual(copilotPathReadDirs(['/users/ME', '/opt/homebrew/bin'], '/Users/me', 'darwin'), ['/opt/homebrew/bin'], 'macOS compares case-insensitively');
   assert.deepStrictEqual(copilotPathReadDirs(['/HOME/ME'], '/home/me', 'linux'), ['/HOME/ME'], 'Linux compares case-sensitively');
+  assert.deepStrictEqual(copilotPathReadDirs(['/srv', '/srv/users', '/srv/users/me', '/srv/users/me/bin', '/srv/tools/bin'], '/srv/users/me', 'linux'), ['/srv/users/me/bin', '/srv/tools/bin'], 'a home outside /home: every ancestor of it is dropped');
   ok('FR-004: PATH folders: home, its ancestors and any profile root dropped');
 }
 
@@ -199,12 +200,15 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.deepStrictEqual(cleanSandboxState(good), good);
   for (const bad of [null, [], { ...good, state: 'yes' }, { ...good, covers: ['net'] }, { ...good, mechanism: 'landlock' }, { ...good, verified: 'no' }, { ...good, managed: 1 }, { ...good, reason: 5 }, { ...good, writes: 'all' }, { covers: [], verified: true }])
     assert.strictEqual(cleanSandboxState(bad), undefined, `rejected: ${JSON.stringify(bad)}`);
-  const proto = JSON.parse('{"state":"on","covers":[],"verified":true,"__proto__":{"managed":true}}');
-  assert.strictEqual(cleanSandboxState(proto)?.managed, undefined, 'own properties only');
+  const inherited = Object.assign(Object.create({ managed: true, reason: 'inherited', approvedMayLeave: true }), { state: 'on', covers: [], verified: true });
+  const ci = cleanSandboxState(inherited);
+  assert.ok(ci && ci.managed === undefined && ci.reason === undefined && ci.approvedMayLeave === undefined, 'own properties only: ' + JSON.stringify(ci));
   const long = sandboxReason('x '.repeat(400) + 'ghp_abcdefghijklmnopqrstuvwxyz0123456789')!;
   assert.ok(long.length <= 200, 'at most 200 characters');
-  const tok = sandboxReason('a'.repeat(170) + ' ghp_abcdefghijklmnopqrstuvwxyz0123456789 tail')!;
-  assert.ok(!/ghp_/.test(tok), 'masked before it is cut: no token prefix survives');
+  for (const n of [150, 170, 185, 190, 194]) {
+    const tok = sandboxReason('a'.repeat(n) + ' ghp_abcdefghijklmnopqrstuvwxyz0123456789 tail')!;
+    assert.ok(!/ghp_/.test(tok) && tok.length <= 200, `masked before it is cut (token at ${n}): no token prefix survives: ${tok.slice(-30)}`);
+  }
   assert.strictEqual(sandboxReason('  \u0007\n '), undefined);
   assert.strictEqual(sandboxReason('line1\nline2\u2028x'), 'line1 line2 x');
   ok('T013: the normalized state holds no vendor key; malformed states are dropped; reasons masked, then cut');
@@ -226,5 +230,30 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.deepStrictEqual(parseSettings(JSON.stringify({ sandboxAlwaysContinue: ['claude', 'evil', 'claude', 3] })).sandboxAlwaysContinue, ['claude']);
   assert.strictEqual(parseSettings(JSON.stringify({ sandboxAlwaysContinue: 'claude' })).sandboxAlwaysContinue, undefined);
   ok('T050: requireOsSandbox is narrow-only and fails closed; the stored Always choice keeps known app ids only');
+}
+// ---- FR-009/FR-010: the window's words (src/renderer/sandboxtext.js) ----
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const T = require('../../src/renderer/sandboxtext.js') as { chipWord(s: unknown): string; tooltip(s: unknown, app: string, mask?: (t: string) => string): string; hostLine(v: unknown): string; NOT_VERIFIED: string };
+  const on = { state: 'on', mechanism: 'bubblewrap', covers: ['shell'], writes: 'none', verified: false };
+  assert.strictEqual(T.chipWord(on), 'Sandboxed');
+  assert.strictEqual(T.chipWord({ ...on, state: 'unknown' }), 'Sandbox: checking');
+  assert.strictEqual(T.chipWord({ ...on, state: 'off' }), 'Not sandboxed');
+  assert.strictEqual(T.chipWord({ ...on, managed: true }), 'Sandboxed (managed)');
+  assert.strictEqual(T.chipWord({ ...on, untilNewSession: true }), 'Sandboxed (until a new session)');
+  assert.strictEqual(T.chipWord(null), '', 'no state: nothing (the UI degrades, constitution II)');
+  assert.strictEqual(T.chipWord({ ...on, mechanism: 'landlock' }), '', 'malformed: nothing');
+  const tip = T.tooltip(on, 'Claude Code');
+  assert.ok(tip.endsWith(T.NOT_VERIFIED) && T.NOT_VERIFIED === 'Requested; not verified on a real session.', 'ends with the not-verified sentence');
+  assert.ok(/MCP servers, file reads and edits are checked by Durbar, not the OS\./.test(tip), 'Claude: MCP not covered');
+  assert.ok(!T.tooltip({ ...on, verified: true }, 'Claude Code').includes('not verified'), 'a verified state drops it');
+  assert.ok(/Shell commands and MCP servers run in the macOS sandbox \(writes: this folder/.test(T.tooltip({ ...on, mechanism: 'seatbelt', covers: ['shell', 'mcp'], writes: 'folders' }, 'Copilot')));
+  assert.ok(/Commands and file changes run in the Codex sandbox \(writes: none, network: off\)\. If you approve a command, Codex may run it outside the sandbox\./.test(T.tooltip({ state: 'on', mechanism: 'vendor', covers: ['shell', 'files'], approvedMayLeave: true, verified: false }, 'Codex')));
+  const off = T.tooltip({ state: 'off', covers: ['shell'], verified: false, reason: 'no bwrap ghp_abcdefghijklmnopqrstuvwxyz0123456789' }, 'Claude Code', () => '');
+  assert.ok(!off.includes('ghp_') && !off.includes('no bwrap'), 'no mask: the reason is not shown (fail closed)');
+  assert.ok(/own checks still apply/.test(off));
+  assert.strictEqual(T.hostLine({ available: true, mechanism: 'processcontainer' }), 'OS sandbox: available (Windows ProcessContainer)');
+  assert.strictEqual(T.hostLine({ available: false, reason: 'r' }), 'OS sandbox: not available: r');
+  ok('FR-009/FR-010: the chip words and the tooltip per app; the reason only through the mask');
 }
 console.log('sandbox floor (spec 087): all checks passed');

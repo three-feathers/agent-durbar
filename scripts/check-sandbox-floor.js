@@ -68,6 +68,13 @@ module.exports = async (ctx) => {
     assert.ok(psbx.whole && psbx.inside && psbx.px >= 10.5, `${w}: the line is whole and legible: ${JSON.stringify(psbx)}`);
     assert.ok(!/sandbox/.test(psbx.sum), `${w}: the summary itself is unchanged`);
     await H.shot(path.join(OUT, `087-codex-card-${w}x${h}.png`), { prep: 'mouse' });
+    // ---- hostile text: a reason and a note with markup and a token are shown as masked text, never as markup ----
+    const TOK = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+    await js(`window.__durbarSimEmit({type:'sandbox',sessionId:'sim-8',timestamp:Date.now(),sandbox:{state:'off',covers:['shell'],verified:false,reason:${jsLiteral('<img src=x class=evil> blocked by ' + TOK)}},notice:{text:${jsLiteral('<b class=evil>bad</b> could not start its OS sandbox: ' + TOK + '. Nothing was sent.')},actions:['continue']}})`);
+    assert.ok(await until(`[...document.querySelectorAll('#chat .note.sbx-note')].some(n=>n.textContent.includes('<b class=evil>'))`, 5000), `${w}: the note shows the markup as text`);
+    const hostile = await js(`(()=>{const c=document.getElementById('modeChip');const n=[...document.querySelectorAll('#chat .note.sbx-note')].pop();return {evil:!!document.querySelector('#chat .evil, #modeChip .evil'),tok:(c.title+n.textContent).includes(${jsLiteral(TOK)}),chipTitle:c.title}})()`);
+    assert.ok(!hostile.evil && !hostile.tok, `${w}: no markup, no token: ${JSON.stringify(hostile)}`);
+    assert.ok(/<img src=x class=evil>/.test(hostile.chipTitle) && /redacted/.test(hostile.chipTitle), `${w}: the reason is text, masked`);
     // ---- the card's mode icon tooltip (no new word on the office card: decision Q5) ----
     await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
     assert.ok(await until(`!document.body.classList.contains('panel-open')`, 8000));
