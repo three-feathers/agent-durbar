@@ -19,6 +19,7 @@ class SbxCopilot extends FakeCopilot {
     this.sandboxHome = () => o.home ?? '/home/me';
     this.sandboxPathDirs = () => o.path ?? ['/usr/bin', '/home/me/.local/bin', '/home/me', '/home', '/home/other', '/'];
     this.sandboxRealpath = (p) => p;
+    this.sandboxTimeoutMs = 50;
   }
 }
 function make(o: { platform?: string; home?: string; path?: string[]; prep?: (c: FakeClient) => void } = {}) {
@@ -149,6 +150,25 @@ async function main(): Promise<void> {
     const o = await start(old.ad, 'read-only');
     assert.match(String(last(old.events, o)?.reason), /cannot report its sandbox/);
     await old.ad.dispose();
+  }
+
+  // ---- a runtime that never answers: the start goes on, the first send is held (fail closed); a failed host check is asked again ----
+  {
+    const { ad, fake, events } = make();
+    const orig = fake.createSession.bind(fake);
+    fake.createSession = async (cfg) => { const s = await orig(cfg); s.rpc.options.update = () => new Promise(() => undefined); return s; };
+    const sid = await start(ad, 'read-only');
+    assert.match(String(last(events, sid)?.reason), /did not answer in time/);
+    await ad.send(sid, { text: 'x' });
+    assert.strictEqual(sends(fake, sid), 0, 'held');
+    await ad.dispose();
+    const m2 = make({ prep: (c) => { c.sandboxHostFail = 'boom'; } });
+    await start(m2.ad, 'read-only');
+    m2.fake.sandboxHostFail = '';
+    const ok2 = await start(m2.ad, 'read-only');
+    assert.strictEqual(m2.fake.hostCalls, 2, 'a failed host check is not kept');
+    assert.strictEqual(last(m2.events, ok2)?.state, 'on');
+    await m2.ad.dispose();
   }
 
   // ---- AC2: a switch to Allow all sends nothing and keeps the floor until a new session; back to Ask first sends the new floor ----

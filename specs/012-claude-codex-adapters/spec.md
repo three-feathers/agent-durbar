@@ -1010,7 +1010,7 @@ The owner asked that sessions be shared between Durbar and the Claude Code CLI. 
 
 - **2026-10-25, spec 087 (OS sandbox floor, issue #611).** Claude: in Read-only and Ask first the `--settings` JSON gets a `sandbox` key built
   in `src/adapters/claudeSandbox.ts` (merged in `claude.ts`, never in `src/shared`): `failIfUnavailable: true`, no `autoAllowBashIfSandboxed`,
-  no `allowUnsandboxedCommands`, reads limited to the session's folders, network off; *Sandboxed* only after `system`/`init`; a sandbox exit
+  no `allowUnsandboxedCommands`, home-folder reads limited to the session's folders, network off; *Sandboxed* only after `system`/`init`; a sandbox exit
   before `init` sends nothing and offers *Continue without the OS sandbox* / *Change mode…* (spec 087 FR-003, FR-006, FR-007). Codex: its
   state is reported from the existing checks (FR-086..FR-091, FR-138, FR-140, FR-162 unchanged) and `codexPermission` sets `sandboxNote` on
   command and file-change cards (spec 087 FR-005, FR-021). Root normalisation moved to `src/adapters/sandboxRoots.ts` (`codexWorkspaceRoots`

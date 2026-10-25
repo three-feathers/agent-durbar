@@ -1514,7 +1514,7 @@ export class ClaudeAdapter implements AgentAdapter {
   /* ---------------- spec 087: the OS sandbox floor ---------------- */
 
   private sandboxFactsNow(): Promise<ClaudeSandboxFacts> {
-    const now = Date.now();
+    const now = performance.now(); // monotonic: a clock jump never keeps old facts
     if (this.factsCache && now - this.factsCache.at < 60_000) return this.factsCache.facts;
     const facts = (this.deps.sandboxFacts ?? nodeClaudeSandboxFacts)().catch((): ClaudeSandboxFacts => ({ platform: process.platform })); // unreadable: no version, so unavailable
     this.factsCache = { at: now, facts };

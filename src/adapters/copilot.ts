@@ -1084,11 +1084,20 @@ export class CopilotAdapter implements AgentAdapter {
    */
   /* ---------------- spec 087: the OS sandbox floor ---------------- */
 
+  /** Spec 087: how long a sandbox call may take before it counts as refused (a hung runtime never blocks a start). */
+  protected sandboxTimeoutMs = 15_000;
+  private timed<T>(p: Promise<T>, what: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    return Promise.race([p, new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error(`${what} did not answer in time`)), this.sandboxTimeoutMs); })]).finally(() => clearTimeout(timer));
+  }
+
   private hostSupport(client: CopilotClient): Promise<CopilotHostSupport | undefined> {
     if (this.hostCache?.client === client) return this.hostCache.host;
-    const host = Promise.resolve()
-      .then(() => (client as unknown as { rpc?: { sandbox?: { getHostSupport?: () => Promise<unknown> } } }).rpc?.sandbox?.getHostSupport?.())
-      .then((r) => copilotHostSupport(r), () => undefined); // a missing method (older runtime) or an error: unavailable (FR-006)
+    const host = this.timed(Promise.resolve().then(() => (client as unknown as { rpc?: { sandbox?: { getHostSupport?: () => Promise<unknown> } } }).rpc?.sandbox?.getHostSupport?.()), 'Copilot')
+      .then((r) => copilotHostSupport(r), () => {
+        if (this.hostCache?.host === host) this.hostCache = undefined; // a failure is not kept: the next session asks again
+        return undefined; // a missing method (older runtime), an error or no answer: unavailable (FR-006)
+      });
     this.hostCache = { client, host };
     return host;
   }
@@ -1125,7 +1134,7 @@ export class CopilotAdapter implements AgentAdapter {
     }
     const sandboxConfig = copilotSandboxConfig({ mode, roots, pathDirs: this.sandboxPathDirs(), host, home: this.sandboxHome(), platform });
     try {
-      await live.session.rpc.options.update({ sandboxConfig, sandboxConfigSource: 'session_flag' });
+      await this.timed(live.session.rpc.options.update({ sandboxConfig, sandboxConfigSource: 'session_flag' }), 'Copilot');
       live.sandboxFloor = true;
       live.sandboxHold = undefined;
       this.setSandbox(sid, live, copilotSandboxState({ mode, platform, host, applied: true }));
