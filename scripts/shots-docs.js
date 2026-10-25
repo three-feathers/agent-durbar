@@ -38,6 +38,7 @@ const DOC_SHOTS = [
   { name: 'check-ro-ask', files: ['003-ro-ask-menu-1440x900.png'] },
   { name: 'check-composer-toolbar', files: ['005-composer-expert-light-1440x900.png', '005-composer-ctxsummary-1440x900.png', '005-composer-ctxsummary-1280x800.png'] },
   { name: 'check-edits', files: ['005-edit-expert-1440x900.png'] },
+  { name: 'shots-006-crash', files: ['006-crash-card-1440x900.png'] },
   { name: 'shots-006-home', files: ['006-home-warning-1440x900.png'] },
   { name: 'shots-006-prevmarks', files: ['006-prev-menu-1440x900.png', '006-sessions-expanded-1440x900.png'] },
   { name: 'shots-009-vschat', files: ['009-vschat-latest-1440x900.png'] },

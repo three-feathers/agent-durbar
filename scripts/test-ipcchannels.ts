@@ -112,7 +112,7 @@ for (const f of ipcFiles) {
 const FROM_APP = [
   'activity:clear', 'activity:export', 'activity:list',
   'agents:checkpointPreview', 'agents:checkpointUndo', 'agents:gitStatus', 'agents:mcpCancelSignIn', 'agents:mcpOpenSignIn', 'agents:mcpSignIn', 'agents:openRemote', 'agents:resolvePlan', 'agents:send', 'agents:setMode', 'agents:setRemote',
-  'app:dismissSinceAway', 'app:sinceAway',
+  'app:dismissInterrupted', 'app:dismissSinceAway', 'app:interrupted', 'app:sinceAway', // 'app:interrupted': spec 006 FR-041, ids and folder names of the sessions a crash left mid-turn
   'harness:accounts', 'harness:cancel', 'harness:copilotAuth', 'harness:openPage', 'harness:openSignIn', 'harness:paste', 'harness:plans', 'harness:run', 'harness:updates', 'harness:visible',
   'notes:add', 'notes:delete', 'notes:deleteAll', 'notes:list', 'notes:save', 'notes:startOver', 'notes:update', // spec 083 FR-062: the folder's notes, by agent id
   'profiles:create', 'profiles:delete', 'profiles:generate', 'profiles:save', // spec 043 FR-011, FR-040: writes to (or deletes) profile files

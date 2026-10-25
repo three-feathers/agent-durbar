@@ -240,6 +240,13 @@ export interface SinceAwayInfo {
   missed: Array<{ id: string; folderName: string; prompt: string; repeats: boolean }>;
 }
 
+/** Spec 006 FR-040..FR-041 (issue #606): sessions the last run left in the middle of a turn, still resumable. Ids and folder names only. */
+export interface InterruptedInfo {
+  items: Array<{ id: string; adapterId: string; folderName: string }>;
+  /** Busy sessions of the last run that could not be brought back (removed, folder gone): the card says "N of M". */
+  missing: number;
+}
+
 export interface SchedulesInfo {
   pausedAll: boolean;
   schedules: ScheduleInfo[];
@@ -790,6 +797,9 @@ export interface DurbarApi {
   /** Spec 052 FR-089: what happened while the app was closed (more than 30 minutes), or null. */
   sinceAway?(): Promise<SinceAwayInfo | null>;
   dismissSinceAway?(): Promise<{ ok: boolean }>;
+  /** Spec 006 FR-041: the crash card's sessions (null: none, or dismissed). Resuming one is `wake`. */
+  interrupted?(): Promise<InterruptedInfo | null>;
+  dismissInterrupted?(): Promise<{ ok: boolean }>;
   onSchedules?(cb: (doc: SchedulesInfo) => void): () => void;
   onScheduleRan?(cb: (r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void): () => void;
   /** Answer the agent's question (spec 012 FR-128): question text -> answer; null = skip. */
