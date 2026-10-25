@@ -149,3 +149,81 @@ The first build of this delta (a right-side rail with Needs you, Scheduled and a
 - **Risk.** The lobby's walking figures are placed from measured slot positions; the spread is set inside `renderOffice` before the figures are synced, as the rest of the drawing. `check:office`, `check:geometry` and `check:office-fill` run unchanged.
 - **Test first.** The `check:office-fill` case and the `test:probe` cases are added before the page code; the driver case fails on `main`.
 
+
+## Delta 2026-10-25: expanded helper cards when the office has room (FR-089..FR-097, issue #697)
+
+Started from scratch on the owner's decision (Vikram, 2026-10-25); nothing from the earlier `001-helper-activity` attempt is reused (that branch exists neither on `origin` nor locally).
+
+### Reuse (existing code paths; no parallel system)
+
+| Need | Existing code | How it is used |
+|---|---|---|
+| Helper data (task, prompt, status, result, own final reply, error, duration, tool calls, tokens, model) | `subRec`, `onSubagent`, `onTaskTool`, `onSubEvent` in `app.js` (the record on `card.sub`); `subFoot`, `subStatusText` | read only; the expanded card is a third view of the same record, after the chat block (`subBlock`) and the Sub-agent activity view (`buildSubTranscript`) |
+| Current activity | the helper card's `task` line, set by `onSubEvent` (`toolTask`, intent, thinking) and masked by `setState`'s backstop | shown as **Now:**; in Simple, the plain words of `plainChip` (spec 052 FR-081) instead of `toolTask`'s tool name and argument |
+| Masking and cutting | `DurbarSafeText` via `safeExcerpt`, `safeMask`, `safeToolLabel`; `DurbarCutText` (`SHORT`); `src/shared/redact.ts` in the page (`DurbarRedact`) | injected into the pure module (below); the same fail-closed wrapper (`SAFE`) |
+| Compact tile, strip, grouping | `helperTileHTML` (level 0, unchanged), `unitHTML` `.helpers.hstrip` with its connectors, `visibleHelpers` + `prio`, `moreHTML`, *Show fewer* | the strip gets `data-hx` and the cards a level; level 0 renders byte-for-byte as today |
+| Layout | `chooseLayout`, `probeSet`, `growSearch`, `DurbarProbe.pick`, `GR`, the helper boost (`HBOOST`), the layout key, `spreadOffice`, `headsFit` | one more step inside `chooseLayout`; one more field in the result (`hx`); the theme id added to the key |
+| Open, keys, names | the `[data-id]` click → `openPanel` → `buildSubTranscript`; `DESK_NAV`; the helper `aria-label` pattern | unchanged selectors, so `check:office` and the arrow-key code apply as they are |
+| Setting | *Live activity on desks* (`liveOn()`, FR-032) | governs the **Now:** line only (owner question 3) |
+| Simulator | `subRun` in `sim.ts` (task, activity, result, failure, `simreply=secrets` plants), `simrooms`, `simhelpers=0` | `simhelpers=<1..6>` and one Codex-shaped helper |
+| Checks | `check-office-fill.js` (sparse offices, page rules), `check-office-overlap.js`, `check-theme-geometry.js`, `check-done-desk-mask.js`, `test-probe.ts`, `test-safetext.ts`, `driver-helpers.js` (`until`, `openSimAgent`, `shot`), `shots-docs.js` | new cases in the existing drivers; no new driver |
+
+**New:** one pure UMD module `src/renderer/helpercard.js` (like `shutters.js`), because `app.js` is one IIFE and the field rules must be unit-tested in Node with the real masking:
+- `HX` constants: level heights and minimum widths (level 1: name line + 1 text line; level 2: name line + 2 + 2 + 1 lines; minimum widths about 220 and 260 px, maximum 460 px for the ~85-character measure), `HX_MIN_F` (1.4).
+- `lines(rec, level, {simple, live, mask, cut})` → `[{label, text, reported}]`: picks **Task**, **Now** / **Result** / **Failed**, facts; *not reported* when a field is absent; never substitutes one field for another; with no working `mask` only Durbar's own words (fail closed).
+- `label(rec, parts)` → the accessible name text (each part already masked) and `tip(...)` cut to the shared tooltip limit.
+Listed in `copy-assets.js` and `index.html` like `shutters.js`.
+
+### Layout algorithm (in `chooseLayout`)
+
+```text
+res = existing candidate loop                      # unchanged (FR-002, FR-022, FR-029)
+if res.fit and not FORCE_DENSITY and res.d in {full, roomy} and some open main has helpers:
+    for L in (2, 1):                               # richest helper level first
+        HX = L
+        g = growSearch(sizing, aw, ah, openOnly, HX_MIN_F)   # same probe, same pick() tie rules
+        if g: res = {d: roomy, grow: g.f, cap: g.c, hx: L}; break
+if res.hx is unset:
+    HX = 0; existing grow step from f 1.1          # today's path, box for box
+boost (FR-009) with HX = res.hx                    # while it fits
+probe cleared; HX = 0
+```
+
+- `HX` is a layout parameter like `HCAP`, `GROW` and `LIVE_SIDE`: set while a trial is probed and while the result is drawn; `chooseLayout` resets it first (the #532 lesson: a grown render left `GROW` on).
+- Fixed heights per level (`--hxh` by `data-hx` on the strip) make the fit independent of the text; the probe measures the strip's real height with the same CSS.
+- Cost: at most two extra grown searches (about five trials per column count each), only with few agents and some helpers; none for 15 agents (they pick `card`, `mini` or `micro`). Budget: `chooseLayout` median at most 150 ms (SC-004's number) in both regression scenarios, measured with the instrumented-copy method in `docs/agent-notes.md`.
+- The layout key gains `THEME.themeIdForCache()` (FR-092); `applyTheme` already calls `renderAll`, so a theme switch then searches again.
+
+### Rendering
+
+- `unitHTML`: when `HX>0` the compact branch emits `.helpers.hstrip[data-hx="L"]` with `helperCardHTML(h, L)` (the new card), else `helperTileHTML` as today. `full` keeps its beside-the-desk helpers (the helper step only yields grown `roomy`).
+- `helperCardHTML`: `button.helper.hc.hx` with `data-id`, the scene, the status badge, the name and status line, then the labelled lines from `DurbarHelperCard.lines`; each line `-webkit-line-clamp`ed to its level's lines; a *not reported* line in `--muted` with the fixed tooltip.
+- CSS (`styles.css`): `.helpers.hstrip[data-hx]` grid `repeat(auto-fill, minmax(var(--hxw), 1fr))` capped by `--hxmax`; `.helper.hc.hx` fixed `height: var(--hxh)`; theme tokens only; no font size under 10.5 px; no transition.
+
+### Failure modes and what prevents them
+
+| Failure | Prevention | Check |
+|---|---|---|
+| Text that streams changes a card's height and the office jumps | fixed height per level; whole-line clamps | `check:office-fill` streaming case compares every box before and after helper events |
+| A token shows on a card, in a `title` or `aria-label`, or half of one after a cut | one path, `DurbarSafeText` (mask, then plain, then cut); fail closed without redact | `check:done-desk-mask` sparse pass; `test:` `helpercard` with the real `redact.ts`; mutation: cut before mask |
+| A task shown as the result (fabrication), or invented text | `lines` reads fields by name and writes *not reported* | `test:` `helpercard` (no result → *Result not reported*, never the task); mutation: fall back to the task |
+| A cached layout from another theme overlaps | theme id in the layout key | `check:office-fill` switches the theme through Settings and re-checks the page rules; mutation: key without the theme |
+| The 15-agent office changes | `card`/`mini`/`micro` never run the helper step | `check:office`, `check:office-fill` 15-agent cases (same density as `main`), `check:geometry` |
+| Desks shrink too far for helper detail | `HX_MIN_F` (owner question 1) | `test:probe` order cases |
+| A Claude helper never gets its result | FR-095: the spawning call is recognized by the `subagent` record | `test:` with Claude-shaped events (tool start before `subagent`, `Agent` / `Task` names) |
+| A helper that appears mid-turn | helper counts are already in the layout key | `check:office-fill`: a helper added after the first layout gets a card on the next search |
+| Collision with #631 (cabins) | hand-off in the spec | whichever lands second re-runs `check:office-fill` |
+| A driver flake on a slow runner | `until()` on conditions; reduced-motion run once | the driver passes with `--force-prefers-reduced-motion` |
+
+### Constitution Check (this delta)
+
+| Principle | Result |
+|---|---|
+| I Spec Kit | spec delta, plan and tasks before any `src/` change. OK |
+| II Adapters | renderer only; reads normalized events already sent; no vendor names in the renderer (FR-095 keys on the `subagent` record, not on Claude's tool name). OK |
+| III Safe by default | display only; masked before cut on every surface; fail closed. OK |
+| IV No credits | simulator and unit tests only. OK |
+| V Calm UI | 10.5 px, fixed heights, no animation, 15 agents unchanged. OK |
+| VI Parity | renderer CSS and JS only; fonts differ per OS, the fit is measured in the page. macOS and Windows not run by hand |
+| VII Gates | `npm run typecheck && npm run build && npm test`, the drivers above, screenshots through `npm run shots:docs`. OK |
+| VIII Honest limits | per-app table with `real:` / `read:`; Codex result and Claude result order as `[KNOWN GAP]`. OK |
