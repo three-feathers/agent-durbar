@@ -1587,6 +1587,7 @@
     const st=X.stats.agent(a.id),lim=X.staticLimit(a),lv=S.ctxLevel(st.ctx&&st.ctx.tokens,st.ctx&&st.ctx.limit>0?st.ctx.limit:lim);
     const long=a.info&&a.info.tier==='long'?' · long context':'';
     /* spec 030: right after a model switch the old figure belongs to the old window; the runtime reports the new one with the next message */
+    if(a.ctxWaiting==='truncation')return {cls:'unk',text:'Context: waiting for next message',title:'Older messages were dropped. The new size is reported with your next message; the earlier figure no longer applies.'+long,pct:0};
     if(a.ctxWaiting==='compaction')return {cls:'unk',text:'Context: waiting for next message',title:'The conversation was compacted. The new size is reported with your next message; the earlier figure no longer applies.'+long,pct:0}; /* spec 015 FR-012 */
     if(a.ctxWaiting)return {cls:'unk',text:'Window: waiting for next message',title:'The model changed. The new context window is reported with your next message; the earlier figure belonged to the old window.'+long,pct:0};
     if(lv.level==='unknown')return {cls:'unk',text:'Context: unknown',title:'Context window usage appears after the first message.',pct:0};

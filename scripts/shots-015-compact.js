@@ -112,6 +112,12 @@ module.exports = async (ctx) => {
     l = await lines();
     assert.strictEqual(l[l.length - 1], 'Older messages dropped to fit the window: 30k tokens removed.');
     assert.ok(await js(`document.querySelector('#panelHead [data-f=status]').textContent==='Working'`), 'a truncation is not a Compacting state');
+    r = await ring();
+    assert.ok(/dropped/.test(r.label) && !/compact/i.test(r.label + r.title), 'the ring after a truncation says dropped, never compacted: ' + JSON.stringify(r));
+    // a hostile failed + error as the FIRST event of a new run (right after a truncation, which leaves no run): the line is text
+    await emit({ type: 'compaction', sessionId: c.id, timestamp: Date.now(), phase: 'failed', trigger: 'unknown', error: '<img src=x onerror=window.__pwn=1>' });
+    await ok(`[...document.querySelectorAll('#chat .note.cline')].some(n=>n.textContent.includes('<img src=x'))`, 'the hostile error is shown as text');
+    assert.ok(await js(`!document.querySelector('#chat img')&&window.__pwn===undefined`), 'no element and nothing ran');
 
     // hostile text in an event is text
     await emit({ type: 'compaction', sessionId: c.id, timestamp: Date.now(), phase: 'start', trigger: '<img src=x onerror=window.__pwn=1>' });

@@ -5238,7 +5238,7 @@ function onCompaction(a,e){
   if(e.trigger==='truncation'){
     a.compRun=null;
     const el=document.createElement('div');el.className='note info cline';el.setAttribute('role','status');el.textContent=DM.compactionText(e);chat.el.appendChild(el);stickyScroll(chat);
-    if(e.tokensAfter===undefined){a.ctxWaiting='compaction';STATS.clearContext(a.id);} /* the message counts say nothing about the whole window: wait for the next context event */
+    if(e.tokensAfter===undefined){a.ctxWaiting='truncation';STATS.clearContext(a.id);} /* the message counts say nothing about the whole window: wait for the next context event */
     updateCtxChip(a);scheduleRender();return;
   }
   let R=a.compRun;

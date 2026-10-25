@@ -395,6 +395,12 @@ export class EventMapper {
         this.reasoningSeen.clear();
         this.edits.clear();
         if (!agentId) this.retries.reset();
+        if (!agentId && this.compaction) {
+          // spec 015 FR-007 (review of PR 730): a compaction still open when the turn goes idle did not finish; the desk must not stay on Compacting
+          const open = this.compaction;
+          this.compaction = undefined;
+          this.emit({ type: 'compaction', phase: 'failed', trigger: open.trigger, limit: open.limit });
+        }
         return this.emit({ type: 'status', status: 'idle', intent: d.aborted ? 'Aborted' : undefined });
       case 'session.error': {
         // spec 068 FR-002: a used-up quota or a rate limit that stopped the turn is a coffee break, not an error

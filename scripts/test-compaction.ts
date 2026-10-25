@@ -37,6 +37,16 @@ const comp = (o: EventBody[]): string[] => o.filter((e) => e.type === 'compactio
   assert.deepStrictEqual(comp(o), ['start:unknown', 'complete:auto:b167000']);
   valid(o);
   assert.deepStrictEqual(comp(run([status('compacting'), boundary({ trigger: 'manual', pre_tokens: 90 })])), ['start:unknown', 'complete:manual:b90']);
+  // post_tokens (optional in the SDK): the real size after; hostile values are dropped like pre_tokens
+  o = run([boundary({ trigger: 'auto', pre_tokens: 167000, post_tokens: 31000 })]);
+  assert.deepStrictEqual(o.map((e) => (e.type === 'compaction' ? [e.tokensBefore, e.tokensAfter, e.tokensRemoved] : null)), [[167000, 31000, 136000]]);
+  valid(o);
+  for (const bad of [NaN, Infinity, -1, 1e12, '5', null, {}, 999999999.6]) {
+    o = run([boundary({ trigger: 'auto', pre_tokens: 100, post_tokens: bad })]);
+    assert.ok(o[0] && o[0].type === 'compaction' && o[0].tokensAfter === undefined && o[0].tokensRemoved === undefined, 'post_tokens ' + String(bad));
+    valid(o);
+  }
+  assert.strictEqual((run([boundary({ trigger: 'auto', pre_tokens: 999999999.6 })])[0] as { tokensBefore?: number }).tokensBefore, undefined, 'a size that rounds to 1e9 is dropped');
   assert.deepStrictEqual(comp(run([boundary({ trigger: 'auto', pre_tokens: 5 })])), ['complete:auto:b5'], 'a boundary with no start still ends');
   assert.deepStrictEqual(comp(run([status('compacting'), status('compacting')])), ['start:unknown'], 'a second compacting adds nothing');
   // hostile numbers and triggers: dropped or unknown, never copied
@@ -118,6 +128,14 @@ const comp = (o: EventBody[]): string[] => o.filter((e) => e.type === 'compactio
     valid(o);
   }
   assert.deepStrictEqual(run([trunc({}, 'sub-1')]), [], "a helper's truncation is not shown");
+  // a compaction still open when the turn goes idle did not finish: failed (the desk must not stay on Compacting); a finished one is not failed again
+  const cstart = { type: 'session.compaction_start', data: { trigger: 'manual', currentTokens: 100, tokenLimit: 1000 } };
+  const cdone = { type: 'session.compaction_complete', data: { success: true, preCompactionTokens: 100, postCompactionTokens: 20, tokenLimit: 1000 } };
+  assert.deepStrictEqual(comp(run([cstart, { type: 'session.idle', data: {} }])), ['start:manual:b100', 'failed:manual']);
+  assert.deepStrictEqual(comp(run([cstart, cdone, { type: 'session.idle', data: {} }])), ['start:manual:b100', 'complete:manual:b100']);
+  assert.deepStrictEqual(comp(run([{ type: 'session.idle', data: {} }])), [], 'nothing open: nothing said');
+  assert.deepStrictEqual(comp(run([cstart, { type: 'session.idle', agentId: 'sub-1', data: {} }])), ['start:manual:b100'], "a helper's idle does not end it");
+  assert.deepStrictEqual(comp(run([cstart, { type: 'session.idle', data: {} }, cdone])), ['start:manual:b100', 'failed:manual', 'complete:auto:b100'], 'a late complete after a failed still shows');
   o = run([{ type: 'session.compaction_start', data: { trigger: 'manual', currentTokens: 100, tokenLimit: 1000 } }, { type: 'session.compaction_complete', data: { success: true, preCompactionTokens: 100, postCompactionTokens: 20, tokenLimit: 1000 } }]);
   assert.deepStrictEqual(comp(o), ['start:manual:b100', 'complete:manual:b100']);
 }
@@ -181,7 +199,7 @@ const comp = (o: EventBody[]): string[] => o.filter((e) => e.type === 'compactio
   assert.deepStrictEqual(ST.ctxLevel(250, 100), { pct: 100, level: 'high' }, 'more than the window shows 100, not 250');
   assert.deepStrictEqual(ST.ctxLevel('50', 100), { pct: null, level: 'unknown' }, 'a string is not a size');
   assert.deepStrictEqual(ST.ctxLevel(50, '100'), { pct: null, level: 'unknown' });
-  assert.deepStrictEqual(ST.ctxLevel(Infinity, 100), { pct: 100, level: 'high' }, 'an infinite use is full');
+  assert.deepStrictEqual(ST.ctxLevel(Infinity, 100), { pct: null, level: 'unknown' }, 'an infinite use is not a size');
   assert.deepStrictEqual(ST.ctxLevel(5, Infinity), { pct: null, level: 'unknown' }, 'an infinite window is unknown');
   assert.deepStrictEqual(ST.ctxLevel(Infinity, Infinity), { pct: null, level: 'unknown' });
   assert.deepStrictEqual(ST.ctxLevel(1, 0), { pct: null, level: 'unknown' });
@@ -195,6 +213,8 @@ const comp = (o: EventBody[]): string[] => o.filter((e) => e.type === 'compactio
   assert.strictEqual(s.known, false);
   assert.strictEqual(s.pct, null);
   assert.ok(/compaction/.test(s.tip) && /compaction/.test(s.name) && !/model change/.test(s.tip + s.name), 'it says why');
+  const tr = CB.summary({ tokens: 190000, limit: 200000 }, { waiting: 'truncation' });
+  assert.ok(/dropped/.test(tr.tip + tr.name) && !/compact/i.test(tr.tip + tr.name), 'after a truncation the ring says dropped, never compacted');
   assert.ok(/model change/.test(CB.summary({ tokens: 1, limit: 2 }, { waiting: true }).tip), 'a model change still says so');
   assert.strictEqual(CB.summary({ tokens: 190000, limit: 200000 }, {}).pct, 95, 'without waiting the figure shows');
 }

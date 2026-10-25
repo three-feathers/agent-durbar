@@ -323,14 +323,18 @@ export class ClaudeMapper {
       case 'compact_boundary': {
         if (this.who(m)) return;
         const meta = m.compact_metadata && typeof m.compact_metadata === 'object' ? (m.compact_metadata as Record<string, unknown>) : {};
-        const pre = num(meta.pre_tokens);
+        const size = (v: unknown): number | undefined => { const n = num(v); const r = n === undefined ? undefined : Math.round(n); return r !== undefined && r >= 0 && r < 1e9 ? r : undefined; };
+        const pre = size(meta.pre_tokens);
+        const post = size(meta.post_tokens); // optional in the SDK (`read:` sdk.d.ts 0.3.310): the real size after, so the ring need not wait
         this.compacting = false;
         this.lastCtx = undefined; // the size it held before is gone; the next message's usage gives the new one
         return this.emit({
           type: 'compaction',
           phase: 'complete',
           trigger: meta.trigger === 'manual' ? 'manual' : meta.trigger === 'auto' ? 'auto' : 'unknown',
-          ...(pre !== undefined && pre >= 0 && pre < 1e9 ? { tokensBefore: Math.round(pre) } : {}),
+          ...(pre !== undefined ? { tokensBefore: pre } : {}),
+          ...(post !== undefined ? { tokensAfter: post } : {}),
+          ...(pre !== undefined && post !== undefined ? { tokensRemoved: Math.max(0, pre - post) } : {}),
         });
       }
       default:
