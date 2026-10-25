@@ -382,6 +382,16 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
       assert.ok(!/(^|[^e])\u0301/.test(lf) && !/\u200D(…|$)|(^|…)\u200D/.test(lf), `no broken sequence (${n}): ${JSON.stringify(lf)}`);
     }
   }
+  // review round 9: the HEAD cut never ends mid-word or mid-[redacted] mark (a word and a mark both cross the 40th character)
+  for (const pre of [30, 33, 35, 37, 39]) {
+    const head = leftOutFields([{ folder: '/' + 'p'.repeat(pre) + '/wordacrossthecut/' + TOKEN + '/' + 'q'.repeat(150), why: 'unusable' }])!.leftOut[0].split('…')[0];
+    assert.ok(/[^A-Za-z0-9_\-.~+=:@%[\]]$/.test(head) || head === '', `the head ends at a boundary (${pre}): ${JSON.stringify(head)}`);
+    assert.ok(!/word[a-z]*$/.test(head) && !/\[[a-z]*$/.test(head), `no half word or half mark at the head (${pre}): ${JSON.stringify(head)}`);
+  }
+  for (const pre of [24, 27, 30, 32]) {
+    const head = leftOutFields([{ folder: '/' + 'p'.repeat(pre) + '/' + TOKEN + '/' + 'q'.repeat(150), why: 'unusable' }])!.leftOut[0].split('…')[0];
+    assert.ok(!/\[[a-z]*$/.test(head) && !/\[redacted$/.test(head), `a [redacted] mark is never cut at the head (${pre}): ${JSON.stringify(head)}`);
+  }
   const cutTail = leftOutFields([{ folder: '/a/' + 'b'.repeat(200) + '/tailword' + 'c'.repeat(90), why: 'unusable' }])!.leftOut[0];
   const afterCut = cutTail.split('…')[1] ?? '';
   assert.ok(afterCut === '' || !/^[A-Za-z0-9]/.test(afterCut) || afterCut.length >= 79, 'the tail starts at a word boundary, never mid-word: ' + JSON.stringify(cutTail));
