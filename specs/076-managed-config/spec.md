@@ -1152,3 +1152,13 @@ All three answered on PR #575 (09:03-09:06 UTC) with option a, the recommended o
   Copilot is now read through its runtime's `managedSettings.resolve` (one shared reader, used by spec 007's Auto tier as well), with
   the file as a fallback. The main-side refusals moved behind injectable ops (`setModelOp`, `setMcpOp`, `startGuardOp`,
   `withOrgModels`) and are tested by behaviour.
+
+### 2026-10-25: FR-158/FR-159 and FR-174 cover spec 081's agent-app update check (owner decision Q6 = A)
+
+- **FR-174** `updates.mode: "off"` now also turns off spec 081's agent-app update check. The check at Durbar's start, the *Check for updates* button, the per-card *Check*, the *Latest* lines and the start-check switch are hidden, with *Turned off by your organization*, and no update host is contacted.
+  - Owner decision Q6 = A on spec 081, Vikram, 2026-10-25. The hidden-button reading follows FR-158.
+  - `notify` and `auto` keep their meaning for Durbar's own updater. Neither one starts an automatic agent-app update.
+- **FR-158/FR-159**: a new feature switch, `features.agentAppUpdateCheck: false`, with the same effect as above (spec 081 FR-022).
+- **FR-032/FR-175** are unchanged. `agentApps.allowInAppInstall: false` turns off the start check and hides Update, and the read-only *Check for updates* stays.
+- **Unreadable policy**: a policy that cannot be read or validated turns spec 081's start check off (fail closed, spec 081 FR-022).
+- Status: `[PLANNED]` (spec 081 T033, T036). Nothing is built here.

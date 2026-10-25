@@ -369,9 +369,55 @@ async function main(): Promise<void> {
     assert.strictEqual(orgGuardedStart, startGuardOp, 'f: orgGuardedStart (the review\'s name) is the same op');
     // second layer: both start paths of main.ts go through the guard with the adapter and the options only, and nothing else in main.ts starts an adapter
     const mainSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8').replace(/\r/g, '');
-    assert.strictEqual((mainSrc.match(/startGuardOp\(orgGuard, ad, \{ \.\.\.startOptionsFor\(/g) ?? []).length, 2, 'f: main.ts: addWorkspace and the lazy start call startGuardOp with the adapter and its start options');
+    // the two calls exactly: nothing after the spread may override what the guard checks (`{ ...opts, model: x }` would start x unchecked)
+    const guardCalls = mainSrc.match(/startGuardOp\(orgGuard, ad, \{[^\n]*\}\)/g) ?? [];
+    assert.deepStrictEqual(guardCalls, [
+      'startGuardOp(orgGuard, ad, { ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId })',
+      'startGuardOp(orgGuard, ad, { ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: opts.quiet ?? true })',
+    ], 'f: main.ts: addWorkspace and the lazy start call startGuardOp with the adapter and its start options, nothing overriding the mode or model');
     assert.deepStrictEqual(mainSrc.match(/\.start\(\s*[^)\s]/g) ?? [], [], 'f: main.ts: no other start call with arguments (an adapter start outside the guard)');
     assert.ok(/onNote: \(text, id\) => toRenderer\('agents:orgNote', \{ id, text \}\)/.test(mainSrc), 'f: main.ts: the advice goes to the window');
+
+    const fa = new FakeAdapter({ id: 'claude' });
+    const agents = new Map<string, AgentInfo>([['s', { id: 's', name: 's', cwd: '/w', folders: [], permMode: 'ask', adapterId: 'claude', model: 'sonnet' } as unknown as AgentInfo]]);
+    const calls: string[] = [];
+    const opsDeps = { agents, router: { forAgent: () => fa }, wsKey: (a: AgentInfo) => a.cwd, store: { setPermMode: () => (calls.push('mode'), true), setMaxAiCredits: () => true, setSessionMode: () => (calls.push('sess'), true) }, orgRefusal: (_a: AgentInfo, m: 'read-only' | 'ask' | 'allow') => (m === 'allow' ? 'no' : undefined) };
+    assert.deepStrictEqual(setModeOp(opsDeps, 's', 'allow', {}), { ok: false, error: 'no' }, 'f: setModeOp refuses a blocked mode');
+    assert.strictEqual(agents.get('s')!.permMode, 'ask', 'f: the mode is unchanged');
+    assert.deepStrictEqual(calls, [], 'f: nothing saved');
+    assert.ok(setModeOp(opsDeps, 's', 'read-only', {}).ok, 'f: another mode still works');
+    const off = new Map<string, Set<string>>([['s', new Set(['bad'])]]);
+    let mcpCalls = 0;
+    (fa as unknown as { setMcpEnabled: unknown }).setMcpEnabled = async () => {
+      mcpCalls++;
+    };
+    const mcpDeps = { ...opsDeps, orgMcpRefusal: async (_a: AgentInfo, n: string) => (n === 'bad' ? 'refused bad' : undefined) };
+    assert.deepStrictEqual(await setMcpOp(mcpDeps, off, 's', 'bad', true), { ok: false, error: 'refused bad' }, 'f: setMcpOp refuses switching a blocked server on');
+    assert.ok(off.get('s')!.has('bad') && mcpCalls === 0, 'f: nothing switched, the off list unchanged');
+    assert.ok((await setMcpOp(mcpDeps, off, 's', 'good', true)).ok, 'f: another server switches on');
+    assert.ok((await setMcpOp(mcpDeps, off, 's', 'bad', false)).ok, 'f: switching it off is never refused');
+    const saved: string[] = [];
+    let switched = 0;
+    (fa as unknown as { setModel: unknown }).setModel = async (_s: string, r: { model: string }) => (switched++, { status: 'applied', model: r.model });
+    const models: ModelChoice[] = [{ id: 'sonnet', name: 'S', efforts: [] }, { id: 'haiku', name: 'H', efforts: [] }];
+    const md = { agents, router: { forAgent: () => fa }, defaultId: 'copilot', models: async () => models, orgModel: async (_id: string, mid: string) => modelVerdict(claude({ deniedModels: ['haiku'] }), mid), save: (_a: AgentInfo, c: { model: string }) => { saved.push(c.model); } };
+    assert.deepStrictEqual(await setModelOp(md, 's', { model: 'haiku' }), { ok: false, error: `${orgBlockedText(C)}: pick another model.` }, 'f: setModelOp refuses a blocked model');
+    assert.strictEqual(agents.get('s')!.model, 'sonnet', 'f: the model is unchanged');
+    assert.deepStrictEqual(saved, [], 'f: nothing saved');
+    assert.strictEqual(switched, 0, 'f: the adapter was not asked');
+    const advice = { ...md, orgModel: async () => D(C) };
+    assert.ok((await setModelOp(advice, 's', { model: 'haiku' })).ok, 'f: advice does not refuse a model');
+    assert.deepStrictEqual(saved, ['haiku'], 'f: and it is saved');
+    const listed = await withOrgModels(models, async (id) => (id === 'haiku' ? B(C) : id === 'sonnet' ? D(C) : undefined));
+    assert.deepStrictEqual(listed, [{ id: 'sonnet', name: 'S', efforts: [], orgDoubt: orgDoubtText(C) }, { id: 'haiku', name: 'H', efforts: [], orgBlocked: orgBlockedText(C) }], 'f: models:list keeps blocked models, marked');
+    const reply = agentMcpReply({ a: agents.get('s')!, ad: fa, live: [], off: new Set(), secrets: [], cli: [{ name: 'bad', enabled: true }, { name: 'maybe', enabled: true }, { name: 'good', enabled: true }], extras: [], ambientDisabled: new Set(), orgBlocked: (n) => (n === 'bad' ? B(C) : n === 'maybe' ? D(C) : undefined) });
+    assert.strictEqual(reply.servers.find((x) => x.name === 'bad')?.orgBlocked, orgBlockedText(C), 'f: the row carries the reason');
+    assert.strictEqual(reply.servers.find((x) => x.name === 'maybe')?.orgDoubt, orgDoubtText(C), 'f: advice is its own field');
+    assert.strictEqual(reply.servers.find((x) => x.name === 'maybe')?.orgBlocked, undefined, 'f: advice is not a block');
+    assert.strictEqual(reply.servers.find((x) => x.name === 'good')?.orgBlocked, undefined, 'f: an allowed row has none');
+    const live = { ...fa, isLive: () => true, listMcpTools: async () => [{ name: 'create_issue' }, { name: 'search' }], displayName: C } as unknown as FakeAdapter;
+    const tr = await mcpToolsOp({ agents, router: { forAgent: () => live }, secrets: () => [], orgTool: async (_id, s, tool) => toolVerdict(claude({ permissions: { deny: ['mcp__github__create_issue'] } }), s, tool) }, 's', 'github');
+    assert.deepStrictEqual(tr.tools, [{ name: 'create_issue', orgBlocked: orgBlockedText(C) }, { name: 'search' }], 'f: the blocked tool carries the reason');
   }
 
   // (g) the matcher stays fast on a hostile pattern

@@ -196,10 +196,10 @@ interface SimOptions {
   seedTotals?: boolean;
   /** Spec 024 FR-026: start with this many custom places (0 to 3) and two fake servers mapped to them. Without it the page address (`simplaces=N`) decides. */
   places?: number;
+  /** Spec 044 FR-035 / spec 001 FR-038: start with schedules over two folders, one that missed its last run and one that failed (page address `simsched=1`). */
+  sched?: boolean;
   /** Pending permission requests carry a time 2 minutes in the past, so "impatient" (spec 034) can be seen at once. */
   waitOld?: boolean;
-  /** Spec 001 FR-038: start with three schedules (two folders; the last one's previous run was missed), so the Postbox has something to show. */
-  sched?: boolean;
   /** Spec 001 FR-038 (`simschedfire=N`): a one-off schedule for the first idle agent, due N seconds after start (the flying letter). */
   schedFire?: number;
   /** Spec 005 FR-026 (`simedits=1`): the first agent edits files: a two-file patch, a new file, a refused delete, then an edit whose arguments stream in and stay open. */
@@ -763,21 +763,32 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); },
       attrib: new Map<string, string>() };
     if (opts.sched) {
-      /* spec 001 FR-038: three future schedules for the Postbox (nothing is due during a driver run); the third one missed its last run */
+      /* spec 001 FR-038: four future schedules (nothing is due during a driver run); one missed its last run and one failed, a few hours ago (spec 044 FR-035) */
       const t0 = Date.now(), key = (x: SimAgent | undefined): string => (x ? x.info.workspaceFile ?? x.info.cwd ?? '' : '');
       const a = sims[0], b = sims.find((x) => x.room !== a?.room) ?? sims[1];
       const seed: ScheduleInfo[] = [
         { id: 'sched-s1', folder: key(a), prompt: (opts.reply === 'secrets' ? FILL(53) + SECRETS_TEXT + ' ' : '') + 'PR and issue sweep: list what changed since the last run', every: 30, next: t0 + 12 * 60000 },
         { id: 'sched-s2', folder: key(b), prompt: (opts.reply === 'secrets' ? FILL(53) + SECRETS_TEXT + ' ' : '') + 'Cut the pre-release notes from the merged pull requests', at: t0 + 3 * 3600000 },
         { id: 'sched-s3', folder: key(a), prompt: (opts.reply === 'secrets' ? FILL(53) + SECRETS_TEXT + ' ' : '') + 'Morning summary of failing checks', rule: { kind: 'weekdays', time: '08:30' }, next: t0 + 20 * 3600000, last: { at: t0 - 4 * 3600000, outcome: 'missed' } },
+        { id: 'sched-s4', folder: key(b), prompt: (opts.reply === 'secrets' ? FILL(53) + SECRETS_TEXT + ' ' : '') + 'Nightly dependency check', rule: { kind: 'daily', time: '23:00' }, next: t0 + 30 * 3600000, last: { at: t0 - 6 * 3600000, outcome: 'failed' } },
       ];
-      simSched.list.push(...seed.filter((x) => x.folder)); simSched.n = 3;
+      simSched.list.push(...seed.filter((x) => x.folder)); simSched.n = 4;
     }
     if (opts.schedFire && opts.schedFire > 0) {
       /* spec 001 FR-038: a one-off run for the first idle agent (its own session, so a busy folder-mate does not skip it) */
       const s = sims.find((x) => x.state === 'idle') ?? sims[sims.length - 1];
       if (s) { simSched.list.push({ id: 'sched-fire', folder: s.info.workspaceFile ?? s.info.cwd ?? '', prompt: 'Scheduled check-in: summarise what changed', at: Date.now() + opts.schedFire * 1000, target: { session: s.info.id, agent: s.info.id, name: s.info.title ?? '' } }); simSched.n += 1; }
     }
+    /* spec 044 FR-033 (check-sched-top): a driver makes a schedule's run fail now, as if the app had sent it and the send had failed */
+    (window as unknown as { __durbarSimSched?: unknown }).__durbarSimSched = {
+      fail: (id: string): boolean => {
+        const sc = simSched.list.find((x) => x.id === id);
+        if (!sc) return false;
+        sc.last = { at: Date.now(), outcome: 'failed' };
+        simSched.changed();
+        return true;
+      },
+    };
     /* spec 044 FR-012: the rule copy in schedtemplates.js (main uses src/shared/schedrules.ts; test:schedules keeps them equal) */
     type SimRules = { parseRule(v: unknown): ScheduleInfo['rule']; nextRuleRun(r: NonNullable<ScheduleInfo['rule']>, after: number): number | undefined };
     const simRules = (): SimRules | undefined => (window as unknown as { DurbarSchedTemplates?: SimRules }).DurbarSchedTemplates;

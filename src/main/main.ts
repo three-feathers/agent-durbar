@@ -352,8 +352,8 @@ async function addWorkspace(
   // Cap: explicit choice (null = none) > the folder's saved cap > the global default (spec 011); a dollar cap only when chosen (FR-150).
   const usdCap = ad.capabilities?.capUnit === 'usd';
   draft.maxAiCredits = startCap(ad.capabilities?.capUnit, opts.maxAiCredits, folderStore?.get(wsKey(draft))?.maxAiCredits, settingsStore?.defaultMaxAiCredits);
-  // spec 076 FR-203: a mode or model the app's own organization policy refuses throws before the start (nothing started, nothing written);
-  // advice was already shown in the window's menus before this start
+  // spec 076 FR-203: the guard checks the mode and model of exactly these options and only then starts the adapter; a refusal throws
+  // before the start (nothing started, nothing written), and advice is shown as a toast once the session has started (`agents:orgNote`)
   const { result: id } = await startGuardOp(orgGuard, ad, { ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId });
   router.bind(id, adapterId);
   const saved = folderStore?.get(wsKey(draft));
