@@ -171,6 +171,8 @@ Started from scratch on the owner's decision (Vikram, 2026-10-25); nothing from 
 **New:** one pure UMD module `src/renderer/helpercard.js` (like `shutters.js`), because `app.js` is one IIFE and the field rules must be unit-tested in Node with the real masking:
 - `HX` constants: level heights and minimum widths (level 1: name line + 1 text line; level 2: name line + 2 + 2 + 1 lines; minimum widths about 220 and 260 px, maximum 460 px for the ~85-character measure), `HX_MIN_F` (1.4, owner decision 1).
 - `lines(rec, level, {simple, live, mask, cut})` → `[{label, text, reported}]`: picks **Task**, **Now** / **Result** / **Failed**, facts; *not reported* when a field is absent; never substitutes one field for another; with no working `mask` only Durbar's own words (fail closed).
+- `HX_CHARS` (240): the one per-field cap; `lines` cuts every agent-written field with `safeExcerpt(text, HX_CHARS)` after masking, and the text, `title` and `aria-label` all use that cut value (review on #714).
+- `memo()`: a per-helper cache keyed by field and raw value, so `lines` masks a field once per change and a repaint with unchanged fields calls no mask (review on #714).
 - `label(rec, parts)` → the accessible name text (each part already masked) and `tip(...)` cut to the shared tooltip limit.
 Listed in `copy-assets.js` and `index.html` like `shutters.js`.
 
@@ -205,6 +207,8 @@ probe cleared; HX = 0
 | Failure | Prevention | Check |
 |---|---|---|
 | Text that streams changes a card's height and the office jumps | fixed height per level; whole-line clamps | `check:office-fill` streaming case compares every box before and after helper events |
+| A huge tool result floods the DOM, `title` or `aria-label` | `HX_CHARS` cut after masking, used by all three | `test:helpercard` cap cases; mutation: raw length left in the `aria-label` |
+| Masking on every repaint costs CPU | `memo()` per helper, field and value | `test:helpercard` mask-call count and CPU-time ratio; mutation: memo removed |
 | A token shows on a card, in a `title` or `aria-label`, or half of one after a cut | one path, `DurbarSafeText` (mask, then plain, then cut); fail closed without redact | `check:done-desk-mask` sparse pass; `test:` `helpercard` with the real `redact.ts`; mutation: cut before mask |
 | A task shown as the result (fabrication), or invented text | `lines` reads fields by name and writes *not reported* | `test:` `helpercard` (no result → *Result not reported*, never the task); mutation: fall back to the task |
 | A cached layout from another theme overlaps | theme id in the layout key | `check:office-fill` switches the theme through Settings and re-checks the page rules; mutation: key without the theme |
