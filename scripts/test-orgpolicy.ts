@@ -14,6 +14,7 @@ import * as assert from 'assert';
 import { mergeClaudeSettings, parseClaudeOrgPolicy, readClaudeOrgPolicy } from '../src/adapters/claudeOrgPolicy';
 import { copilotOrgPolicyFromResolve, parseCopilotOrgPolicy, readCopilotFileOrgPolicy, readCopilotOrgPolicy, resolveCopilotManaged } from '../src/adapters/copilotOrgPolicy';
 import { hostMatches, parseCodexOrgPolicy, readCodexOrgPolicy, tomlStatements } from '../src/adapters/codexOrgPolicy';
+import { nodeOrgFs } from '../src/adapters/orgpolicyfiles';
 import type { OrgFs } from '../src/adapters/orgpolicyfiles';
 import { FakeAdapter } from '../src/adapters/fake';
 import { boundOrgPolicy, emptyOrgPolicy, ORG_LIMITS, orgVerdictStats, globMatch, mcpVerdict, modelVerdict, modeVerdict, orgBlockedText, orgDoubtText, orgFatalText, orgPolicyView, ownValue, toolVerdict, urlMatches } from '../src/shared/orgpolicy';
@@ -21,6 +22,7 @@ import type { OrgPolicy, OrgVerdict } from '../src/shared/orgpolicy';
 import { orgGuardedStart, OrgPolicyCache, ORG_POLICY_TTL_MS } from '../src/main/orgpolicy';
 import { setMcpOp, setModeOp, startGuardOp, startModeOf } from '../src/main/agentops';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { setModelOp, withOrgModels } from '../src/main/ipc/model';
 import { agentMcpReply } from '../src/main/mcpsession';
@@ -543,51 +545,70 @@ async function main(): Promise<void> {
     const cp = await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => hugeAnswer } } }, () => emptyOrgPolicy(P));
     assert.strictEqual(cp.found, true, 'i: an oversized runtime answer is a policy Durbar could not read');
     assert.deepStrictEqual(modeVerdict(cp, 'allow'), D(P), 'i: advice, never a refusal');
-    // (5) unchanged files are not read again (path, size, modification and change time); a changed one is
+    // (5) unchanged TEXT is not parsed again (key: SHA-256 of the text read, after the size cap); a changed text is, whatever its size and times
+    const real = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-076-reuse-'));
+    try {
+      const redirect = (from: string): OrgFs => ({ ...nodeOrgFs, lstat: (q) => nodeOrgFs.lstat(q.replace(from, real)), stat: (q) => nodeOrgFs.stat(q.replace(from, real)), readFile: (q) => nodeOrgFs.readFile(q.replace(from, real)), readdir: (q) => nodeOrgFs.readdir(q.replace(from, real)) });
+      const cfs = redirect('/etc/claude-code');
+      const a1 = JSON.stringify({ deniedModels: ['haiku'] });
+      const a2 = JSON.stringify({ deniedModels: ['opus-'] }); // same length
+      assert.strictEqual(a1.length, a2.length, 'i: the two texts have the same size');
+      fs.writeFileSync(path.join(real, 'x.json'), a1);
+      fs.writeFileSync(path.join(real, 'y.json'), a2);
+      const when = new Date(1_700_000_000_000);
+      fs.utimesSync(path.join(real, 'x.json'), when, when);
+      fs.utimesSync(path.join(real, 'y.json'), when, when);
+      const link = path.join(real, 'managed-settings.json');
+      fs.symlinkSync(path.join(real, 'x.json'), link);
+      const r1 = readClaudeOrgPolicy('linux', {}, cfs);
+      assert.deepStrictEqual(r1.models.deny, ['haiku'], 'i: read through a link');
+      assert.strictEqual(readClaudeOrgPolicy('linux', {}, cfs), r1, 'i: the same text gives back the same policy object (its verdict memo is kept)');
+      fs.unlinkSync(link);
+      fs.symlinkSync(path.join(real, 'y.json'), link); // the link now names another file with the same size and the same times
+      const r2 = readClaudeOrgPolicy('linux', {}, cfs);
+      assert.notStrictEqual(r2, r1, 'i: a link swapped to another file is read again');
+      assert.deepStrictEqual(r2.models.deny, ['opus-'], 'i: and the new policy is what is returned (review on PR 644, item 2)');
+      fs.writeFileSync(path.join(real, 'x.json'), a1.replace('haiku', 'sonnt'));
+      assert.strictEqual(readClaudeOrgPolicy('linux', {}, cfs), r2, 'i: an unrelated file changing does not matter');
+    } finally {
+      fs.rmSync(real, { recursive: true, force: true });
+    }
+    // the key covers the problems too: a drop-in folder that stops being refused (same file text) drops its problem
+    const same = JSON.stringify({ deniedModels: ['haiku'] });
+    const refused = readClaudeOrgPolicy('linux', {}, fakeFs({ [CF]: same, '/etc/claude-code/managed-settings.d': { throws: 'EACCES' } }));
+    assert.ok(refused.problems.some((x) => x.includes('refused the read')), 'i: a refused drop-in folder is a problem');
+    const allowed = readClaudeOrgPolicy('linux', {}, fakeFs({ [CF]: same, '/etc/claude-code/managed-settings.d': { dir: [] } }));
+    assert.deepStrictEqual(allowed.problems, [], 'i: the same file text with the folder readable again: no stale problem from the last read');
+    assert.strictEqual(allowed.unreadable, false, 'i: and not unreadable');
+    // a plain fake file system (no times at all) works the same: the key is the text
     let reads = 0;
-    const text = () => JSON.stringify({ deniedModels: ['haiku'] });
-    const stFs = (body: () => string, m: () => number, c: () => number): OrgFs => ({
-      lstat: () => undefined,
-      stat: (p) => (p === CF ? { isFile: () => true, isDirectory: () => false, size: body().length, mtimeMs: m(), ctimeMs: c() } : undefined),
-      readFile: () => (reads++, body()),
-      readdir: () => [],
-    });
-    let mtime = 1000;
-    let ctime = 1000;
-    let body = text();
-    const sf = stFs(() => body, () => mtime, () => ctime);
-    const r1 = readClaudeOrgPolicy('linux', {}, sf);
-    const r2 = readClaudeOrgPolicy('linux', {}, sf);
-    assert.strictEqual(reads, 1, 'i: an unchanged file is read and parsed once');
-    assert.strictEqual(r2, r1, 'i: and gives back the same policy object (its verdict memo is kept)');
-    mtime++;
-    readClaudeOrgPolicy('linux', {}, sf);
-    assert.strictEqual(reads, 2, 'i: a new modification time reads again');
-    ctime++;
-    readClaudeOrgPolicy('linux', {}, sf);
-    assert.strictEqual(reads, 3, 'i: a new change time (a permission change) reads again');
-    body = JSON.stringify({ deniedModels: ['haiku', 'opus'] });
-    const r4 = readClaudeOrgPolicy('linux', {}, sf);
-    assert.strictEqual(reads, 4, 'i: a new size reads again');
-    assert.deepStrictEqual(r4.models.deny, ['haiku', 'opus'], 'i: and the new content is what is returned');
-    const plain = fakeFs({ [CF]: text() });
-    const before2 = reads;
-    readClaudeOrgPolicy('linux', {}, plain);
-    readClaudeOrgPolicy('linux', {}, plain);
-    assert.strictEqual(reads, before2, 'i: (a file system without times is never reused: the plain fake counts nothing here)');
-    let codexReads = 0;
-    const cdx: OrgFs = { lstat: () => undefined, stat: (p) => (p === XF ? { isFile: () => true, isDirectory: () => false, size: 5, mtimeMs: 1, ctimeMs: 1 } : undefined), readFile: () => (codexReads++, 'allowed_approval_policies = ["never"]\n'), readdir: () => [] };
+    const counting: OrgFs = { ...fakeFs({ [CF]: same }), readFile: () => (reads++, same) };
+    const k1 = readClaudeOrgPolicy('linux', {}, counting);
+    assert.strictEqual(readClaudeOrgPolicy('linux', {}, counting), k1, 'i: no modification times needed to reuse a parse of the same text');
+    // Codex: the same text gives the same policy; another host name or another text does not
+    const cdx: OrgFs = { lstat: () => undefined, stat: (p) => (p === XF ? { isFile: () => true, isDirectory: () => false, size: 5 } : undefined), readFile: () => 'allowed_approval_policies = ["never"]\n', readdir: () => [] };
     const cx1 = readCodexOrgPolicy('linux', {}, cdx, []);
-    assert.strictEqual(readCodexOrgPolicy('linux', {}, cdx, []), cx1, 'i: Codex: an unchanged file gives the same policy');
-    assert.strictEqual(codexReads, 1, 'i: Codex: and is read once');
-    readCodexOrgPolicy('linux', {}, cdx, ['other-host']);
-    assert.strictEqual(codexReads, 2, 'i: Codex: a different host name reads again (the host overrides depend on it)');
+    assert.strictEqual(readCodexOrgPolicy('linux', {}, cdx, []), cx1, 'i: Codex: the same text gives the same policy');
+    assert.notStrictEqual(readCodexOrgPolicy('linux', {}, cdx, ['other-host']), cx1, 'i: Codex: a different host name reads again (the host overrides depend on it)');
+    const cdx2: OrgFs = { ...cdx, readFile: () => 'allowed_approval_policies = ["on-request"]\n' };
+    assert.notStrictEqual(readCodexOrgPolicy('linux', {}, cdx2, []), cx1, 'i: Codex: another text reads again');
     const ans = copilotAnswerOf(undefined);
     const c1 = await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => ans } } }, () => emptyOrgPolicy(P));
     const c2 = await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => copilotAnswerOf(undefined) } } }, () => emptyOrgPolicy(P));
     assert.strictEqual(c2, c1, 'i: Copilot: the same runtime answer (by hash) is not parsed again');
     const c3 = await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => ({ resolved: { bypassPermissionsDisabled: false, managedKeys: ['y'] } }) } } }, () => emptyOrgPolicy(P));
     assert.notStrictEqual(c3, c1, 'i: Copilot: a different answer is parsed');
+    // a non-serialisable answer (a cycle) is not a policy Durbar can read: the file fallback answers, not a parse of the cycle
+    const cyc: Record<string, unknown> = { resolved: { bypassPermissionsDisabled: true, managedKeys: ['permissions'] } };
+    (cyc.resolved as Record<string, unknown>).self = cyc;
+    const fallback = emptyOrgPolicy(P);
+    const cy = await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => cyc } } }, () => fallback);
+    assert.strictEqual(cy, fallback, 'i: Copilot: a cyclic runtime answer falls back to the file');
+    // the string-list byte cap (the rule list is ALSO bounded in total, so the problem text proves which cap fired)
+    const bs = claude({ availableModels: Array.from({ length: 150 }, (_, i) => `${i}-` + 'y'.repeat(2000)) });
+    assert.ok(bs.problems.some((x) => x.includes('availableModels is longer than Agent Durbar reads')), 'i: a string list over the byte cap says so (the list cap, not only the total)');
+    const bd = claude({ deniedModels: Array.from({ length: 150 }, (_, i) => `${i}-` + 'y'.repeat(2000)) });
+    assert.ok(bd.problems.some((x) => x.includes('deniedModels is longer than Agent Durbar reads')), 'i: the same for a deny-list');
   }
 
   done = true;

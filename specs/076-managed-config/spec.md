@@ -946,12 +946,13 @@ https://learn.chatgpt.com/docs/enterprise/managed-configuration.md (`allowed_app
     (`doubt`: every choice in it shows *may be blocked by your organization* and stays selectable), the problem is named by path and kind,
     and nothing is refused on a guess. Mode locks that were read before the cap keep their verdict, and `fatal` stays `fatal`. A whole
     verdict stays cheap and verdicts are remembered per policy read, so a repaint of the MCP list does not work them out again.
-  - **Unchanged input is not read again.** The last read of a source is kept with a signature of what it was made from: for files,
-    each file's path, size, modification time and change time (a permission change moves the change time), plus the host names for
-    Codex; for the Copilot runtime, a SHA-256 of its answer. The same signature gives back the same policy object (so the verdict memo
-    stays), and a changed one reads again. Without modification times (a file system that does not give them) nothing is reused.
-    `[KNOWN GAP]` a file replaced by one of the same size, with the same modification and change time, is not noticed until the process
-    restarts; the 60-second cache of FR-204 does not change that.
+  - **Unchanged input is not parsed again (changed 2026-10-25, review on PR 644 item 2).** The last parse of a source is kept with a
+    SHA-256 of the **text that was read** (after the size caps; for Claude Code the texts of all files with their paths and the read
+    problems, for Codex also the host names, for the Copilot runtime its answer as JSON). The same key gives back the same policy object
+    (so the verdict memo stays); any other text, whatever its size and file times, is parsed again. A file is always read (at most
+    1 MiB), so a link swapped to another file with the same size and times, a same-size edit or a reset time cannot keep a stale policy.
+    A runtime answer that cannot be serialised (a cycle) is not read: the file fallback answers. `[KNOWN GAP]` none beyond the vendors'
+    own sources (FR-206); the cache holds the last parse only, and the 60-second read of FR-204 still applies.
 
   Nothing from a policy is ever logged or put in an error; a problem names the path and what was wrong (*not valid JSON*,
   *`allowedMcpServers` has 2 invalid entries (stripped)*).
@@ -1184,7 +1185,7 @@ All three answered on PR #575 (09:03-09:06 UTC) with option a, the recommended o
 - **2026-10-25** Review on PR 644 (Ruben's agent, 11 items): FR-201 now states the caps on count **and** bytes (per list, per source, the
   Copilot answer), the **fail-closed rule** (over a cap the area is advice, never read as permissive, never half-read) and that an
   unchanged source is not read again; the dedupe is linear. FR-204 says the mode switch is not refused before the first read. FR-206 adds
-  the `[KNOWN GAP]` for Claude's haiku one-shot. FR-198..FR-207 carry `[IMPLEMENTED]`, `test:` and `sim:` tags. Tasks T203, T204.
+  the `[KNOWN GAP]` for Claude's haiku one-shot. FR-198..FR-207 carry `[IMPLEMENTED]`, `test:` and `sim:` tags. Tasks T203, T204; round 2: T205.
   `permissions.requireOsSandbox` (spec 087, PR 733) is Durbar's own policy key, read from Durbar's `policy.json` (P1), not from a vendor's
   managed file: this section's readers are not its home.
 

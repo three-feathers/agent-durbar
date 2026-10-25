@@ -11,7 +11,7 @@
 import { boundOrgPolicy, emptyOrgPolicy, hasOwn, isPlainObject, ORG_LIMITS, ownMcpRules, ownValue, wholeOrgPolicy } from '../shared/orgpolicy';
 import type { OrgMcpRule, OrgPolicy } from '../shared/orgpolicy';
 import { createHash } from 'node:crypto';
-import { fileSignature, joinFor, jsonObject, nodeOrgFs, programFiles, readPolicyFile, reuseOrRead } from './orgpolicyfiles';
+import { joinFor, jsonObject, nodeOrgFs, programFiles, readPolicyFile, reuseOrRead, textKey } from './orgpolicyfiles';
 import type { LastRead, OrgFs } from './orgpolicyfiles';
 
 export const COPILOT_APP = 'Copilot';
@@ -151,18 +151,17 @@ export function readCopilotFileOrgPolicy(platform: string = process.platform, en
       return p;
     }
   }
-  const sig = fileSignature(fsx, [f]);
-  return reuseOrRead(lastCopilotFile, sig, () => {
-    const r = readPolicyFile(fsx, f);
-    if (r.kind === 'missing') return emptyOrgPolicy(COPILOT_APP, true);
-    if (r.kind !== 'text') return wholeOrgPolicy(COPILOT_APP, [f], [r.problem], 'doubt', true);
+  const r = readPolicyFile(fsx, f);
+  if (r.kind === 'missing') return emptyOrgPolicy(COPILOT_APP, true);
+  if (r.kind !== 'text') return wholeOrgPolicy(COPILOT_APP, [f], [r.problem], 'doubt', true);
+  return reuseOrRead(lastCopilotFile, textKey([f, r.text]), () => {
     const j = jsonObject(r.text, f);
     if (!j.ok) return wholeOrgPolicy(COPILOT_APP, [f], [j.problem], 'doubt', true);
     return parseCopilotOrgPolicy(j.value, f);
   });
 }
 
-/** The last machine-file read, kept while the file is unchanged (`reuseOrRead`). */
+/** The last machine-file read, kept while the file text is the same (`reuseOrRead`). */
 const lastCopilotFile: LastRead = {};
 
 /** Copilot's policy: the runtime's answer, else the machine file (FR-198). */
