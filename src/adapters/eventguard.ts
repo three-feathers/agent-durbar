@@ -1,3 +1,4 @@
+import { ALLOWED_BY_KEYS_MAX } from './types';
 import { isObj } from '../shared/guards';
 import { cleanSandboxState } from '../shared/sandbox';
 /**
@@ -18,6 +19,21 @@ export const SIGN_IN_ENDS = ['next-message', 'failed'] as const;
 /** Spec 058 FR-180: a `signInEnd` main accepts (anything else is ignored, as if missing). */
 export const validSignInEnd = (v: unknown): v is (typeof SIGN_IN_ENDS)[number] => oneOf(v, SIGN_IN_ENDS);
 
+/** Spec 003 FR-102: the optional `allowedBy` of a permission (display only): a known kind and string fields, else the event is refused. */
+function allowedByProblems(a: unknown, where: string): string[] {
+  if (!isObj(a)) return [`${where}: not an object`];
+  if (a.kind === 'session-grant') {
+    if (!(str(a.key) && a.key && str(a.label))) return [`${where}: session-grant needs a key and a label`];
+    if (a.keys !== undefined && (!Array.isArray(a.keys) || a.keys.length < 1 || a.keys.length > ALLOWED_BY_KEYS_MAX || a.keys.some((k) => !str(k) || !k))) return [`${where}: session-grant keys malformed`];
+    if (a.more !== undefined && !(typeof a.more === 'number' && Number.isInteger(a.more) && a.more >= 1 && a.more <= 100000)) return [`${where}: session-grant more malformed`];
+    if (a.noUndo !== undefined && a.noUndo !== true) return [`${where}: session-grant noUndo malformed`];
+    return [];
+  }
+  if (a.kind === 'allow-all' || a.kind === 'in-folder' || a.kind === 'attachment') return [];
+  if (a.kind === 'app') return oneOf(a.source, ['config', 'hook', 'classifier']) ? [] : [`${where}: app source ${String(a.source)}`];
+  return [`${where}.kind is ${String(a.kind)}`];
+}
+
 function permissionProblems(p: unknown, where: string): string[] {
   if (!isObj(p)) return [`${where}: not an object`];
   const out: string[] = [];
@@ -25,6 +41,7 @@ function permissionProblems(p: unknown, where: string): string[] {
   if (!str(p.kind)) out.push(`${where}.kind missing`);
   if (!str(p.summary)) out.push(`${where}.summary missing`);
   if (!oneOf(p.state, ['pending', 'approved', 'denied'])) out.push(`${where}.state is ${String(p.state)}`);
+  if (p.allowedBy !== undefined) out.push(...allowedByProblems(p.allowedBy, `${where}.allowedBy`));
   return out;
 }
 

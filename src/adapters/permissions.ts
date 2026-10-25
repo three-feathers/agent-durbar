@@ -9,7 +9,8 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import type { PermissionInfo, SessionGrant, StartOptions } from './types';
+import type { AllowedBy, PermissionInfo, SessionGrant, StartOptions } from './types';
+import { ALLOWED_BY_KEYS_MAX } from './types';
 
 /** The subset of the SDK's PermissionRequest the broker reads (all optional strings besides kind). */
 export interface PermissionLike {
@@ -262,6 +263,31 @@ function blockedMcp(req: PermissionLike, set: ReadonlySet<string> | undefined): 
   return undefined;
 }
 
+/** Spec 003 FR-102: the key of a grant to revoke, from a page: a non-empty string of at most 512 characters, else undefined (ignored). */
+export const GRANT_KEY_MAX = 512;
+/** Spec 003 FR-101: how many calls the broker remembers per session (oldest dropped first) and most keys it remembers for one call (a call with more is not remembered). */
+export const CALLS_MAX = 200;
+export const CALL_KEYS_MAX = 500;
+/** Spec 003 FR-101: the main-process side of Undo by call id (pure, testable): a known agent id and a clean call id, else -1 (nothing happened). Returns what the broker returns: the rules of that call still live (0 = all gone) or -1 (call unknown). */
+export function revokeCallFor(has: (id: string) => boolean, revokeCall: (id: string, callId: string) => number, id: unknown, callId: unknown): number {
+  const c = cleanGrantKey(callId);
+  if (typeof id !== 'string' || c === undefined || !has(id)) return -1;
+  return revokeCall(id, c);
+}
+/**
+ * Spec 003 FR-102: the main-process side of the revoke IPC, pure so it can be tested: a known agent id (a string) and a clean key,
+ * else nothing happens. The broker then removes only a rule it holds.
+ */
+export function revokeGrantFor(has: (id: string) => boolean, revoke: (id: string, key: string) => void, id: unknown, key: unknown): boolean {
+  const k = cleanGrantKey(key);
+  if (typeof id !== 'string' || k === undefined || !has(id)) return false;
+  revoke(id, k);
+  return true;
+}
+export function cleanGrantKey(key: unknown): string | undefined {
+  return typeof key === 'string' && key.length > 0 && key.length <= GRANT_KEY_MAX ? key : undefined;
+}
+
 const WRITE_GUARD_MS = 2000;
 /** Spec 065: most files of one write the undo guard copies (a Codex change can name more; its card says so, spec 052 FR-172). */
 export const WRITE_GUARD_MAX_PATHS = 200;
@@ -276,6 +302,11 @@ interface Pending {
 export class PermissionBroker {
   private seq = 0;
   private grants = new Map<string, SessionGrant>();
+  /** Spec 003 FR-101: per tool call (request id), every grant key that allowed it, so Undo can remove them all by call id. Insertion order = age: oldest evicted first. */
+  private callKeys = new Map<string, { k: string; g: number }[]>();
+  /** Which grant a key names now: a number that changes each time the rule is created again, so Undo on an old card cannot remove a rule granted later under the same key. */
+  private grantGen = new Map<string, number>();
+  private genCounter = 0;
   private pending = new Map<string, Pending>();
   private stopped = false;
   private mode: BrokerMode;
@@ -288,6 +319,15 @@ export class PermissionBroker {
   /** The user attached these files to a message: the runtime may read them even when they are outside the roots. */
   allowReadPaths(paths: readonly string[]): void {
     for (const p of paths) if (p && !this.extraRoots.includes(p)) this.extraRoots.push(p);
+  }
+
+  /** Spec 003 FR-099: why a read that needs no question was allowed, from what the broker itself checked (undefined = nothing to claim). */
+  private readReason(req: PermissionLike): AllowedBy | undefined {
+    if (this.mode === 'allow') return { kind: 'allow-all' };
+    const roots = this.opts.roots;
+    if (roots && roots.length && isInsideRoots(req.path, roots, this.opts.pathCheck)) return { kind: 'in-folder' };
+    if (this.extraRoots.length && isInsideRoots(req.path, this.extraRoots, this.opts.pathCheck)) return { kind: 'attachment' };
+    return undefined;
   }
 
   private readIsOutside(req: PermissionLike): boolean {
@@ -359,9 +399,15 @@ export class PermissionBroker {
       return { kind: 'reject', feedback: `This tool is turned off in Agent Durbar (${what}). Do not retry it.` };
     }
     const outsideRead = kind === 'read' && this.mode !== 'allow' && this.readIsOutside(req);
-    if (kind === 'read' && !outsideRead) return { kind: 'approve-once' };
+    if (kind === 'read' && !outsideRead) {
+      // spec 003 FR-099: a quiet note for the tool card's tag (no card, no log row). Only a reason Durbar really checked: Allow all;
+      // else a path inside the session's own roots; else a file the user attached. With no roots nothing was checked: no tag.
+      const by = this.readReason(req);
+      if (by) this.opts.emit({ type: 'auto', permission: { requestId, kind, summary, state: 'approved', via: 'quiet', allowedBy: by } });
+      return { kind: 'approve-once' };
+    }
     if (this.mode === 'allow') {
-      if (kind !== 'read') this.opts.emit({ type: 'auto', permission: { requestId, kind, summary, state: 'approved', via: 'policy' } });
+      this.opts.emit({ type: 'auto', permission: { requestId, kind, summary, state: 'approved', via: 'policy', allowedBy: { kind: 'allow-all' } } });
       return this.approveWrite(req);
     }
     const scope = grantScope(req, this.opts.pathCheck?.flavor);
@@ -384,9 +430,14 @@ export class PermissionBroker {
           : 'Agent Durbar is in read-only mode: this action was denied. Do not retry it.',
       };
     }
-    const granted = scope.folders ? scope.folders.every((x) => this.grants.has(x.key)) : this.grants.has(scope.key) || (!!scope.broad && this.grants.has(scope.broad.key));
-    if (granted) {
-      this.opts.emit({ type: 'resolved', permission: { ...base, state: 'approved', via: 'session' } });
+    // every rule that allowed it: a write in several folders needs one rule per folder, and undoing only one would leave the rest approving
+    const hits = scope.folders ? scope.folders.map((x) => this.grants.get(x.key)) : [this.grants.get(scope.key) ?? (scope.broad ? this.grants.get(scope.broad.key) : undefined)];
+    if (hits.length && hits.every((h) => h !== undefined)) {
+      const keys = (hits as SessionGrant[]).map((h) => h.key);
+      const tooMany = keys.length > CALL_KEYS_MAX;
+      this.rememberCall(requestId, keys);
+      const label = scope.folders ? scope.label : (hits[0] as SessionGrant).label;
+      this.opts.emit({ type: 'resolved', permission: { ...base, state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: keys[0], label, keys: keys.slice(0, ALLOWED_BY_KEYS_MAX), ...(tooMany ? { noUndo: true } : {}), ...(keys.length > ALLOWED_BY_KEYS_MAX ? { more: keys.length - ALLOWED_BY_KEYS_MAX } : {}) } } });
       return this.approveWrite(req);
     }
     const info: PermissionInfo = { ...base, state: 'pending', ...(typeof req.diff === 'string' && req.diff ? { diff: req.diff } : {}), ...(typeof req.sandboxNote === 'string' && req.sandboxNote ? { sandboxNote: req.sandboxNote.slice(0, 300) } : {}) }; // spec 052 FR-063: the diff rides on the pending request only; spec 087 FR-021: so does the sandbox line
@@ -395,7 +446,10 @@ export class PermissionBroker {
     this.pending.delete(requestId);
     if (r.approve && r.remember && !this.stopped) {
       const gs = r.broad && scope.broad ? [scope.broad] : scope.folders ?? [scope];
-      for (const g of gs) this.grants.set(g.key, { key: g.key, kind, label: g.label });
+      for (const g of gs) {
+        if (!this.grants.has(g.key)) this.grantGen.set(g.key, ++this.genCounter);
+        this.grants.set(g.key, { key: g.key, kind, label: g.label });
+      }
       this.opts.emit({ type: 'grants', grants: this.listGrants() });
     }
     this.opts.emit({ type: 'resolved', permission: { ...base, state: r.approve ? 'approved' : 'denied', via: r.via, remembered: r.approve && r.remember ? true : undefined } });
@@ -413,8 +467,31 @@ export class PermissionBroker {
     return true;
   }
 
+  private rememberCall(callId: string, keys: string[]): void {
+    this.callKeys.delete(callId);
+    if (keys.length > CALL_KEYS_MAX) return; // too many to remember: Undo for this call is honest about not knowing it
+    this.callKeys.set(callId, keys.map((k) => ({ k, g: this.grantGen.get(k) ?? 0 })));
+    while (this.callKeys.size > CALLS_MAX) this.callKeys.delete(this.callKeys.keys().next().value as string);
+  }
+
+  /**
+   * Spec 003 FR-101: remove every rule that allowed one tool call. Returns how many of that call's rules are still live afterwards
+   * (0 = all gone) or -1 when this broker does not know the call (never seen, forgotten, or too large): nothing is removed then.
+   */
+  revokeCall(callId: string): number {
+    const c = cleanGrantKey(callId);
+    const ks = c === undefined ? undefined : this.callKeys.get(c);
+    if (!ks) return -1;
+    let changed = false;
+    const same = (x: { k: string; g: number }): boolean => this.grants.has(x.k) && this.grantGen.get(x.k) === x.g; // the very rule that allowed the call, not one granted again later
+    for (const x of ks) if (same(x) && this.grants.delete(x.k)) changed = true;
+    if (changed) this.opts.emit({ type: 'grants', grants: this.listGrants() });
+    return ks.filter((x) => this.grants.has(x.k)).length; // a key live in any generation counts: a newer rule for the same thing is still active (the window says so, never "removed")
+  }
+
   revoke(key: string): boolean {
-    const had = this.grants.delete(key);
+    const k = cleanGrantKey(key);
+    const had = k !== undefined && this.grants.delete(k);
     if (had) this.opts.emit({ type: 'grants', grants: this.listGrants() });
     return had;
   }
@@ -430,6 +507,8 @@ export class PermissionBroker {
     for (const p of [...this.pending.values()]) p.resolve({ approve: false, remember: false, broad: false, via: 'stopped' });
     if (this.grants.size) {
       this.grants.clear();
+      this.callKeys.clear();
+      this.grantGen.clear();
       this.opts.emit({ type: 'grants', grants: [] });
     }
   }

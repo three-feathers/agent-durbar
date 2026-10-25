@@ -144,7 +144,13 @@ export interface PermissionInfo {
   broadScopeKey?: string;
   broadScopeLabel?: string;
   /** Who decided: the user, an earlier "Approve for this session" grant, the session being stopped, or Allow all (`policy`: no card is shown, spec 052 FR-071). */
-  via?: 'user' | 'session' | 'stopped' | 'policy';
+  via?: 'user' | 'session' | 'stopped' | 'policy' | 'quiet';
+  /**
+   * Spec 003 FR-099 (issue #605): why this request ran without asking, only from what Durbar itself decided. Absent when the user
+   * answered it. Display only: nothing reads it back to approve anything. `quiet` events carry it for a read and are never shown as
+   * a card or logged.
+   */
+  allowedBy?: AllowedBy;
   /** True when the user approved this one *and* remembered the scope for the session. */
   remembered?: boolean;
   /**
@@ -159,6 +165,20 @@ export interface PermissionInfo {
    */
   sandboxNote?: string;
 }
+
+/**
+ * Spec 003 FR-099: the reason a request ran without a question. `session-grant`: the user's "Approve for this session" rule(s) (`key` is the first,
+ * `keys` every rule that allowed it: a write in several folders needs one rule per folder; all can be revoked); `allow-all`: the mode; `in-folder`: a read that Durbar checked to be inside the session's folders; `attachment`: a read of a file the user attached; `app`: reserved for an adapter that really
+ * reports the agent app's own decision (no adapter sets it yet, FR-106).
+ */
+/** Spec 003 FR-102: most rule keys one `allowedBy` lists. The broker, `eventguard` and the window (`whyallowed.js` `KEYS_MAX`, same number, checked by test:permissions) all use it; more rules are counted in `more`, not dropped silently. */
+export const ALLOWED_BY_KEYS_MAX = 50;
+export type AllowedBy =
+  | { kind: 'session-grant'; key: string; label: string; keys?: string[]; more?: number; noUndo?: boolean }
+  | { kind: 'allow-all' }
+  | { kind: 'in-folder' }
+  | { kind: 'attachment' }
+  | { kind: 'app'; source: 'config' | 'hook' | 'classifier' };
 
 /** A remembered "Approve for this session" permission; can be revoked. */
 export interface SessionGrant {
@@ -615,6 +635,8 @@ export interface AgentAdapter {
   resolvePermission?(sessionId: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean): void;
   /** Forget one "Approve for this session" grant. Optional. */
   revokeGrant?(sessionId: string, key: string): void;
+  /** Spec 003 FR-101: forget every grant that allowed one tool call (its request id). Returns the call's rules still live (0 = all gone) or -1 when the call is unknown. Optional. */
+  revokeCall?(sessionId: string, callId: string): number;
   /** Change (or with `null` remove) the credit cap of a running session. Optional: adapters that cannot enforce a cap omit it (spec 011). */
   setCap?(sessionId: string, credits: number | null): Promise<void>;
   /** Answer a "limit reached" request: add credits, set a new cap, remove the cap or cancel the blocked request. Optional. */

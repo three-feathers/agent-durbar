@@ -3649,7 +3649,61 @@ function chipRepaint(c){
   el.style.animation='none'; /* a repaint is not a new call: no pop (FR-021, no jank while the arguments stream) */
   if(c.el.classList.contains('open')){el.classList.add('open');el.setAttribute('aria-expanded','true');}
   c.el.replaceWith(el);c.el=el;refreshChips(c.box);
+  if(c.whyBy)whyPaint(c);
 }
+/* ---- spec 003 FR-099..FR-103 (issue 605): "Why was this allowed?" on a tool card. The reason comes from a permission event (its
+   allowedBy, set by Durbar's broker) whose request id is the call's id, in either order of arrival; a call that Durbar did not decide
+   shows nothing. Undo is the grant chips' own revoke (bridge.revokeGrant). The words come from DurbarWhyAllowed. ---- */
+const WHY=window.DurbarWhyAllowed, WHY_KEEP=400;
+function whyNote(a,p){
+  if(!p||!p.allowedBy||typeof p.requestId!=='string'||!p.requestId||!WHY||!WHY.describe(p.allowedBy,null))return;
+  const m=a.why||(a.why=new Map());m.set(p.requestId,p.allowedBy);
+  while(m.size>WHY_KEEP)m.delete(m.keys().next().value);
+  const c=a.turn&&a.turn.T.chipEls[p.requestId];
+  if(c)whySet(a,c,p.allowedBy,p.requestId);
+}
+function whyAttach(a,T,callId){const by=a.why&&a.why.get(callId),c=T.chipEls[callId];if(by&&c)whySet(a,c,by,callId);}
+function whySet(a,c,by,callId){
+  c.whyBy=by;c.whyCall=callId;c.aid=a.id;
+  const set=a.whyCs||(a.whyCs=new Set());set.add(c);
+  while(set.size>WHY_KEEP)set.delete(set.values().next().value);
+  whyPaint(c);
+}
+/* the rules this window knows (null until the first grants event: a window that reloaded with sessions running knows none, and must not call a rule removed) */
+function whyLive(aid){const a=byId(aid),r=a&&liveRoot(a);return r&&r.grantsKnown?new Set((r.grants||[]).map(g=>g.key)):null;}
+function whyOpts(c){const a=byId(c.aid),r=a&&liveRoot(a);return {seen:r&&r.grantSeen?r.grantSeen:null,undone:c.undone===true,confirmed:c.whyConfirmed===true,state:c.whyState||null};}
+function whyPaint(c){
+  const el=c.el;if(!el)return;
+  el.querySelectorAll(':scope>.why,:scope>.whybody').forEach(x=>x.remove());
+  const d=WHY&&c.whyBy?WHY.describe(c.whyBy,whyLive(c.aid),whyOpts(c)):null;
+  el._whyC=c;
+  if(!d)return;
+  const pill=document.createElement('span');pill.className='why';pill.dataset.why=d.kind;if(d.gone)pill.dataset.gone='1';pill.textContent=d.pill;
+  pill.title=d.sentence+(d.label||'');
+  const body=document.createElement('span');body.className='xbody whybody';
+  const t=document.createElement('span');t.className='why-t';t.textContent=d.sentence;
+  body.appendChild(t);
+  if(d.label&&!d.gone){const code=document.createElement('code');code.className='why-l';code.textContent=d.label;body.appendChild(code);}
+  if(d.undoKeys){const b=document.createElement('button');b.type='button';b.className='why-undo';b.textContent='Undo this rule';b.title='Remove this session rule: Durbar asks again next time';b.setAttribute('aria-label','Undo this rule: '+d.label);body.appendChild(b);}
+  el.append(pill,body);
+  if(c._refocus){c._refocus=false;focusIn(el);announce(d.gone?'Rule removed: Durbar asks again.':'');}
+}
+function whyRefresh(a){if(a.whyCs)for(const c of a.whyCs)if(c.el)whyPaint(c);}
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#chat .chip .why-undo');if(!b)return;
+  const chip=b.closest('.chip'),c=chip&&chip._whyC,d=c&&WHY?WHY.describe(c.whyBy,whyLive(c.aid),whyOpts(c)):null;
+  if(!d||!d.undoKeys)return;
+  b.disabled=true;c._refocus=true;c.undone=true;
+  /* FR-101: main removes every rule that allowed this call (it holds the full list) and says how many of them are still live; "removed" is shown only for 0. Above 0 means a newer rule for the same key is active ("Newer rule active", until that one is removed too); -1 means main does not know the call: the card says so and nothing is removed by key. */
+  Promise.resolve().then(async()=>{
+    const left=c.whyCall?await bridge.revokeGrant(c.aid,d.undoKeys[0],c.whyCall):-1;
+    c.undone=false;
+    if(left===0)c.whyConfirmed=true; /* main: none of the call's rules is live */
+    else if(typeof left==='number'&&left>0)c.whyState='newer'; /* a newer rule for the same thing is active */
+    else c.whyState='forgotten'; /* main does not know the call: nothing was removed, and the page does not guess by key */
+    whyPaint(c);
+  }).catch(()=>{});
+  setTimeout(()=>{if(c._refocus){c._refocus=false;c.undone=false;whyPaint(c);}},2000); /* a revoke that did not remove the rule: the button comes back */
+});
 /* ---- spec 005 FR-020..FR-023: file edits as an edit row ("Editing app.js  src  +12 −3") and an inline diff below it ---- */
 const EV=window.DurbarEditView;
 /* the card's task line for a tool start: "Editing app.js" for a file edit (FR-020), else "<tool> <label>" as before */
@@ -4487,7 +4541,7 @@ function settlePerm(a,p){
   if(word==='denied'&&!p.via)roAskHint(a,e.n); /* denied by the mode (no one answered it): Read-only */
   stickyScroll(liveChat(a));
 }
-function setGrants(a,list){a.grants=list;if(ui.selected&&liveRoot(byId(ui.selected)||a)===a)renderGrants();}
+function setGrants(a,list){a.grants=list;a.grantsKnown=true;const sn=a.grantSeen||(a.grantSeen=new Set());for(const g of list)sn.add(g.key);while(sn.size>500)sn.delete(sn.values().next().value);if(ui.selected&&liveRoot(byId(ui.selected)||a)===a)renderGrants();whyRefresh(a);}
 /* spec 052 FR-141: 1-2 grants are single chips; 3 or more are one "Allowed (N)" chip that opens a list (a row per grant, Revoke all).
    The label drops a tool-name prefix that repeats the server name; the title and the accessible name keep the full label. */
 let grantsAllBusy=''; /* the agent id while its Revoke all is under way (the revokes arrive one by one and the focus may be lost in between); '' otherwise */
@@ -4607,7 +4661,8 @@ function onAgentRenamed(e){
 }
 function onLiveEvent(e){
   const a=liveById(e.sessionId); if(!a)return;
-  if(e.type==='permission'&&e.permission&&e.permission.via==='policy')return; /* spec 052 FR-071: an Allow all approval is for the activity log in main, no card */
+  if(e.type==='permission'&&e.permission)whyNote(a,e.permission); /* spec 003 FR-099: why a call ran without asking, for its tool card's tag */
+  if(e.type==='permission'&&e.permission&&(e.permission.via==='policy'||e.permission.via==='quiet'))return; /* spec 052 FR-071: an Allow all approval is for the activity log in main, no card; a quiet read is only for the tag */
   a.lastEventAt=Date.now(); /* spec 052 FR-062: last activity (when it arrived here; a helper's event counts for its main agent) */
   feedStats(a,e);
   liveFeed(a,e); /* spec 001 FR-028 */
@@ -4712,6 +4767,7 @@ function onLiveEvent(e){
   case 'toolCall':{const t=ensureTurn(a);
     if(isTaskTool(e.tool)||(a.subs&&a.subs.has(e.callId)))onTaskTool(a,e); /* spec 001 FR-095: a call with a sub-agent record goes to onTaskTool in every phase, whatever its tool name or chip (Claude sends `Agent` / `Task` before the subagent event) */
     else tTool(t.T,e);
+    if(e.phase==='start')whyAttach(a,t.T,e.callId);
     if(e.phase==='start'&&!isTaskTool(e.tool)&&!a.coffee)setState(a,a.state==='thinking'?'working':a.state,null,intentText(a.intent)||toolTask(e,a.info&&a.info.cwd,90));
     stickyScroll(chat);return;}
   case 'usage':{const u=a.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;u.usd=(u.usd||0)+(e.costUsd>0?e.costUsd:0);

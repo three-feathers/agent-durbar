@@ -976,6 +976,10 @@ export class CodexAdapter implements AgentAdapter {
     this.sessions.get(sessionId)?.broker.revoke(key);
   }
 
+  revokeCall(sessionId: string, callId: string): number {
+    return this.sessions.get(sessionId)?.broker.revokeCall(callId) ?? -1;
+  }
+
   /** Stop every session and wait for every child. [KNOWN GAP] (T042): only the direct child is signalled. */
   async dispose(): Promise<void> {
     this.generation++; // starts in flight close their child and reject

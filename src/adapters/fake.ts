@@ -15,7 +15,7 @@ import type { AgentAdapter, AgentEvent, AgentMessage, CompactResult, LimitAction
 import type { HistoryResult, PreviousSession } from './history';
 
 export type OptionalMember =
-  | 'interrupt' | 'resolvePermission' | 'revokeGrant' | 'setCap' | 'resolveLimit' | 'setMcpEnabled' | 'setModel'
+  | 'interrupt' | 'resolvePermission' | 'revokeGrant' | 'revokeCall' | 'setCap' | 'resolveLimit' | 'setMcpEnabled' | 'setModel'
   | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText' | 'renameSession' | 'deleteSession' | 'restartMcpServer' | 'listMcpTools'
   | 'startMcpSignIn' | 'cancelMcpSignIn' | 'refreshMcpStatus';
 
@@ -78,6 +78,7 @@ export class FakeAdapter implements AgentAdapter {
   declare interrupt?: (sessionId: string) => Promise<void>;
   declare resolvePermission?: (sessionId: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean) => void;
   declare revokeGrant?: (sessionId: string, key: string) => void;
+  declare revokeCall?: (sessionId: string, callId: string) => number;
   declare setCap?: (sessionId: string, credits: number | null) => Promise<void>;
   declare resolveLimit?: (sessionId: string, requestId: string, action: LimitAction) => Promise<void>;
   declare setMcpEnabled?: (sessionId: string, name: string, enabled: boolean) => Promise<void>;
@@ -166,6 +167,7 @@ export class FakeAdapter implements AgentAdapter {
     if (caps.interrupt && has('interrupt')) this.interrupt = (sid) => this.doInterrupt(sid);
     if (has('resolvePermission')) this.resolvePermission = (sid, rid, approve, remember = false, broad = false) => void this.sessions.get(sid)?.broker.resolve(rid, approve, remember, broad);
     if (has('revokeGrant')) this.revokeGrant = (sid, key) => void this.sessions.get(sid)?.broker.revoke(key);
+    if (has('revokeCall')) this.revokeCall = (sid, cid) => this.sessions.get(sid)?.broker.revokeCall(cid) ?? -1;
     if (caps.caps) {
       this.setCap = async (sid, credits) => {
         this.mustGet(sid);

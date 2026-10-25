@@ -354,7 +354,7 @@ export async function runContract(name: string, make: () => ContractTarget, hook
 
 // Every member FakeAdapter can omit. A Record, so the scripts build (`tsc -p tsconfig.scripts.json`, run by `npm test`) fails when `OptionalMember` gains a name not listed here.
 const OMITTABLE: Record<OptionalMember, true> = {
-  interrupt: true, resolvePermission: true, revokeGrant: true, setCap: true, resolveLimit: true, setMcpEnabled: true, setModel: true,
+  interrupt: true, resolvePermission: true, revokeGrant: true, revokeCall: true, setCap: true, resolveLimit: true, setMcpEnabled: true, setModel: true,
   cancelQueuedModel: true, compact: true, listModelOptions: true, listPreviousSessions: true, history: true, setPermMode: true,
   handoffSummary: true, generateText: true, deleteSession: true, renameSession: true, startMcpSignIn: true, cancelMcpSignIn: true, refreshMcpStatus: true,
   restartMcpServer: true, listMcpTools: true,

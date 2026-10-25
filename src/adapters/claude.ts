@@ -1090,6 +1090,10 @@ export class ClaudeAdapter implements AgentAdapter {
     this.sessions.get(sessionId)?.broker.revoke(key);
   }
 
+  revokeCall(sessionId: string, callId: string): number {
+    return this.sessions.get(sessionId)?.broker.revokeCall(callId) ?? -1;
+  }
+
   async dispose(): Promise<void> {
     await Promise.all([...this.sessions.keys()].map((id) => this.stop(id)));
   }
