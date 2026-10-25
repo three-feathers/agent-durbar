@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
-import { GIT_MAX_FILES, filterDrivers, folderGitStatus, makeGitExec, nodeGitExec, parseNumstatZ, parsePorcelainZ } from '../src/main/gitstatus';
+import { GIT_MAX_FILES, execFileGitRun, filterDrivers, folderGitStatus, makeGitExec, nodeGitExec, parseNumstatZ, parsePorcelainZ } from '../src/main/gitstatus';
 import type { GitExec } from '../src/main/gitstatus';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -85,9 +85,26 @@ async function main(): Promise<void> {
   const exit = (code: number): GitExec => makeGitExec(async (argv) => { if (argv.includes('config')) throw Object.assign(new Error('x'), { code }); return 'ok'; });
   assert.strictEqual(await exit(1)(['-C', '/w', 'status']), 'ok');
   await assert.rejects(exit(128)(['-C', '/w', 'status']));
-  // the real runner is this one, over execFile with an argv array and no shell
-  const src = require('fs').readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'gitstatus.ts'), 'utf8') as string;
-  assert.ok(/export const nodeGitExec: GitExec = makeGitExec\(/.test(src) && /execFile\('git', argv, \{[^}]*env \}/.test(src) && !/shell:\s*true/.test(src), 'nodeGitExec: makeGitExec over execFile, argv and env, no shell');
+  // the exact file, argv and execFile options of a real call (a fake execFile): shell:true, a missing override or another
+  // time/size bound fails here; the source check below ties nodeGitExec to exactly this runner over Node's execFile
+  const efCalls: Array<{ file: string; argv: string[]; opts: Record<string, unknown> }> = [];
+  const fakeEf = makeGitExec(execFileGitRun((file, argv, opts, cb) => { efCalls.push({ file, argv, opts: opts as unknown as Record<string, unknown> }); cb(null, argv.includes('config') ? 'filter.lfs.clean\0' : 'ok'); }));
+  assert.strictEqual(await fakeEf(['-C', '/w/api', 'diff', 'HEAD', '--numstat', '-z']), 'ok');
+  const SAFE = ['--no-pager', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.useBuiltinFSMonitor=false', '-c', 'protocol.allow=never', '-c', 'protocol.file.allow=never', '-c', 'protocol.git.allow=never', '-c', 'protocol.ssh.allow=never', '-c', 'protocol.http.allow=never', '-c', 'protocol.https.allow=never', '-c', 'protocol.ext.allow=never', '-c', 'log.showSignature=false'];
+  assert.deepStrictEqual(efCalls.map((c) => c.file), ['git', 'git']);
+  assert.deepStrictEqual(efCalls[0].argv, [...SAFE, '-C', '/w/api', 'config', '-z', '--name-only', '--get-regexp', '^filter\\.'], 'exact argv: the driver-name read');
+  assert.deepStrictEqual(efCalls[1].argv, [...SAFE, '-c', 'filter.lfs.clean=', '-c', 'filter.lfs.smudge=', '-c', 'filter.lfs.process=', '-c', 'filter.lfs.required=false', '-C', '/w/api', 'diff', '--no-ext-diff', '--no-textconv', '--ignore-submodules=dirty', 'HEAD', '--numstat', '-z'], 'exact argv: the call');
+  for (const c of efCalls) {
+    const { env, ...rest } = c.opts;
+    assert.deepStrictEqual(rest, { timeout: 4000, maxBuffer: 512 * 1024, windowsHide: true, shell: false, encoding: 'utf8' }, 'exact execFile options: no shell, 4 s, 512 KB');
+    const e = env as NodeJS.ProcessEnv;
+    assert.deepStrictEqual([e.GIT_NO_LAZY_FETCH, e.GIT_TERMINAL_PROMPT, e.GIT_OPTIONAL_LOCKS], ['1', '0', '0'], 'execFile env');
+  }
+  const src = (require('fs').readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'gitstatus.ts'), 'utf8') as string).replace(/\r\n/g, '\n');
+  assert.ok(/export const nodeGitExec: GitExec = makeGitExec\(execFileGitRun\(execFile as unknown as ExecFileFn\)\);/.test(src), 'nodeGitExec is makeGitExec over execFileGitRun over Node execFile');
+  assert.deepStrictEqual(src.match(/^import .*child_process.*$/gm), ["import { execFile } from 'child_process';"], 'only execFile is imported from child_process');
+  assert.strictEqual((src.match(/\b(?:execFile|spawn|execSync|execFileSync|spawnSync|fork)\(/g) ?? []).length, 0, 'no other process call in gitstatus.ts');
+  assert.strictEqual((src.match(/ef\('git', argv, gitExecOptions\(env\)/g) ?? []).length, 1, 'the one git process call uses gitExecOptions');
 
   // the window's words (text only)
   assert.strictEqual(GS.chipText({ repo: false }), '');

@@ -146,11 +146,18 @@ export function makeGitExec(run: GitRun): GitExec {
   };
 }
 
+/** The options of every git process: time and size limits, no window, no shell (argv only), the safe environment. */
+export const gitExecOptions = (env: NodeJS.ProcessEnv): { timeout: number; maxBuffer: number; windowsHide: true; shell: false; encoding: 'utf8'; env: NodeJS.ProcessEnv } =>
+  ({ timeout: GIT_TIMEOUT_MS, maxBuffer: GIT_MAX_BYTES, windowsHide: true, shell: false, encoding: 'utf8', env });
+
+type ExecFileFn = (file: string, args: string[], options: ReturnType<typeof gitExecOptions>, cb: (err: Error | null, stdout: string) => void) => unknown;
+
+/** A `GitRun` over an `execFile` (tests pass a fake one to pin the file, argv and options). */
+export const execFileGitRun = (ef: ExecFileFn): GitRun => (argv, env) =>
+  new Promise((resolve, reject) => { ef('git', argv, gitExecOptions(env), (err, stdout) => (err ? reject(err) : resolve(stdout))); });
+
 /** The real runner: `git` from PATH, argv only (no shell), time and size limits. */
-export const nodeGitExec: GitExec = makeGitExec((argv, env) =>
-  new Promise((resolve, reject) => {
-    execFile('git', argv, { timeout: GIT_TIMEOUT_MS, maxBuffer: GIT_MAX_BYTES, windowsHide: true, encoding: 'utf8', env }, (err, stdout) => (err ? reject(err) : resolve(stdout)));
-  }));
+export const nodeGitExec: GitExec = makeGitExec(execFileGitRun(execFile as unknown as ExecFileFn));
 
 export async function folderGitStatus(dir: string, exec: GitExec = nodeGitExec): Promise<GitStatus> {
   try {
