@@ -13,9 +13,11 @@ import { HOME_SECRETS, homeSecretPaths, secretRelation } from './sandboxRoots';
 export const CLAUDE_SANDBOX_MIN_VERSION = '2.1.219';
 /**
  * FR-010/FR-020: the platforms where a real session recorded that a sandboxed command could not write outside the folder or reach the
- * network (T060-T062). Empty until then: every tooltip ends with "Requested; not verified on a real session."
+ * network (T060-T062). A platform not listed keeps "Requested; not verified on a real session." at the end of every tooltip.
+ * `linux`: T060 (2026-10-25, real: Claude Code 2.1.309, bubblewrap 0.9.0): a Read-only `touch` in the folder failed with
+ * "Read-only file system" (spec 087 *Changes*, 2026-10-25 T060).
  */
-export const CLAUDE_SANDBOX_VERIFIED: readonly string[] = Object.freeze([]);
+export const CLAUDE_SANDBOX_VERIFIED: readonly string[] = Object.freeze(['linux']);
 
 /** The `sandbox` key of the `--settings` JSON (FR-003). Built only here. */
 export interface ClaudeSandboxBlock {

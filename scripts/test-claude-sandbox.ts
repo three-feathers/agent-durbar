@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { ClaudeAdapter, claudeArgs } from '../src/adapters/claude';
+import { CLAUDE_SANDBOX_VERIFIED, claudeSandboxState } from '../src/adapters/claudeSandbox';
 import type { ClaudeSandboxFacts } from '../src/adapters/claudeSandbox';
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import { eventProblems } from '../src/adapters/eventguard';
@@ -109,7 +110,9 @@ async function main(): Promise<void> {
         assert.strictEqual(lastState(events, sid)?.state, 'on', `${mode}: on after init`);
         const states = sbx(events, sid).map((e) => e.sandbox?.state);
         assert.ok(states.indexOf('unknown') >= 0 && states.indexOf('unknown') < states.indexOf('on'), `${mode}: unknown (checking) before on`);
-        assert.strictEqual(lastState(events, sid)?.verified, false, 'not verified on a real session');
+        assert.strictEqual(lastState(events, sid)?.verified, true, 'T060 recorded Linux on a real session (spec 087, 2026-10-25)');
+        assert.strictEqual(claudeSandboxState({ mode, facts: { ...LINUX, platform: 'darwin' }, started: true })?.verified, false, 'macOS stays unverified until T061');
+        assert.deepStrictEqual([...CLAUDE_SANDBOX_VERIFIED], ['linux'], 'only Linux is recorded');
       }
       assert.ok(JSON.stringify(settings).includes('npm test'), `${mode}: the folder-setup part of the JSON is kept`);
       await ad.dispose();

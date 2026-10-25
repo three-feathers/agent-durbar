@@ -40,18 +40,20 @@ the user's full rights today), and any bug in Durbar's own checks. In Ask first 
   false = warn and run **unsandboxed**), `sandbox.allowUnsandboxedCommands` (`false` = no `dangerouslyDisableSandbox` retry),
   `sandbox.autoAllowBashIfSandboxed` (**default `true`: auto-approves sandboxed Bash**), `sandbox.excludedCommands`,
   `sandbox.filesystem.allowWrite`/`denyWrite`/`denyRead`/`allowRead`, `sandbox.network.allowedDomains`/`strictAllowlist`.
-- `[KNOWN GAP]` K1: whether a `sandbox` block given by `--settings <json>` is honoured when `--setting-sources ""` is also given
-  (the docs describe both flags but not the pair). Managed settings still apply in any case (spec 076 research).
+- K1 **settled on Linux** (`real:` T060, 2026-10-25, Claude Code 2.1.309; spec *Changes*): a `sandbox` block given by
+  `--settings <json>` is honoured when `--setting-sources ""` is also given (a sandboxed Bash `touch` failed with "Read-only file
+  system"). Not run on macOS (T061). Managed settings still apply in any case (spec 076 research).
 - `read:` (same page, 2026-10-25, review of PR #733) path syntax: "`/tmp/build` is absolute and `~/.kube` is relative to your home
   directory"; reads: "When read rules overlap, the rule with the narrower path applies" (a deny "holds inside a wider allow"); "Other
   processes Claude Code starts: command hooks, local MCP servers, plugin monitors, LSP servers, and helper commands such as your status
   line command and `apiKeyHelper` run with your full access". Writes: see K13 below.
 - `read:` (same page, 2026-10-25, review round 2 on PR #733): the `/sandbox` Config tab lists the sandbox's own write denials "under **Denied within allowed**, mixed in with your own `denyWrite` entries"; protected paths keep their protection: "If you add an `allowWrite` entry or an `Edit` allow rule that covers one of these paths, the protection still applies"; a write outside the allowed folders "Fails with `Operation not permitted` on macOS, or `Read-only file system` on Linux and WSL2"; "On macOS, when a denied path passes through a symlink ... the sandbox also denies the path's real location" (no Linux equivalent is stated). The docs do not say which rule wins when an allow and a deny name the **same** path; Durbar never sends that: a session folder that is a credential folder or inside one is left out of `allowRead` (and never granted to Copilot), and a credential folder that is a link is denied at its link and at its real target (`homeSecretPaths`). `[KNOWN GAP]` K13 (narrowed): that a `denyWrite` entry holds inside a writable folder is documented as above but not run on a real session. Not documented at all: which rule wins between Claude's own implicit write grant on its working folder and a `denyWrite` on that **same** path; Durbar does not rely on it, because a session whose own folder is a credential folder (or inside one) is refused before launch (review round 3 on PR #733). `[KNOWN GAP]` K14: links are resolved when a session launches (Claude Code at each launch; Copilot at start, at a mode switch and after a reconnect); a credential folder that becomes a link, or a link that is repointed, during a session is denied at its new target on Linux only from the next launch.
-- `[KNOWN GAP]` K2 (narrowed, review round 2 on PR #733): that `denyWrite` on the working directory itself makes it read-only follows
-  from the docs' "Denied within allowed" (above) but was not run on a real session.
+- K2 **settled on Linux** (`real:` T060, 2026-10-25): `denyWrite` on the working directory itself makes it read-only (`touch:
+  cannot touch 'sandbox-probe.txt': Read-only file system`, file absent). This also answers, on Linux, K13's unwritten case: the
+  `denyWrite` wins over Claude's own write grant on its working folder. Not run on macOS (T061).
 - `[KNOWN GAP]` K3: how a sandbox network prompt reaches a host that runs Claude with `--permission-prompt-tool stdio` (shape of
   the request; whether it is a normal `can_use_tool` with a `WebFetch(domain:…)`-like name).
-- `[KNOWN GAP]` K4: the exact text/exit code of `failIfUnavailable` at start (needed to show a plain reason, like Codex's
+- `[KNOWN GAP]` K4 (still open after T060: the sandbox started on the Linux host, so no such exit was seen): the exact text/exit code of `failIfUnavailable` at start (needed to show a plain reason, like Codex's
   `linuxSandboxHint`), and whether it also catches an AppArmor-blocked `bwrap`, a missing ripgrep or seccomp helper (the docs say
   it exits "if the sandbox can't run", including a missing dependency).
 - Minimum version: the docs mark `strictAllowlist` as v2.1.219+; spec 087 uses that as the minimum for the whole block (an older
@@ -100,7 +102,9 @@ the user's full rights today), and any bug in Durbar's own checks. In Ask first 
 - **High-level `createSession` does not forward a sandbox field** in SDK 1.0.22 (`read:` `dist/client.js`, the `session.create`
   parameter list). So Durbar would set it with `session.rpc.options.update` right after create/resume and before the first send.
   `[KNOWN GAP]` K8: that `options.update` with `sandboxConfig` applies to shell commands of an already-created session (the type
-  calls it "the genuinely-mutable subset", but no run checked it).
+  calls it "the genuinely-mutable subset"). T060 (`real:` 2026-10-25, Linux, CLI 1.0.101 / SDK 1.0.22) got only half: the update
+  resolved and no `session.warning` came, but the one shell call was refused by Durbar's Read-only broker before it ran, so no
+  command ran inside the sandbox. Proving it needs an approved command in Ask first that writes outside the folder.
 - **Unavailable:** docs: the app "fails the shell with an unsupported-platform or unsupported-policy message. It does not run
   unsandboxed"; on Windows, denied paths that cannot be enforced make the command "fail with an explanation". Managed
   `sandbox.failIfUnavailable` keeps a server force-on so "the session fails loudly instead of quietly running unsandboxed"
