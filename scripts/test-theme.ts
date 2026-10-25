@@ -98,15 +98,79 @@ assert.strictEqual(T.token('--chair'), cleanChair, 'a dropped token falls back t
 assert.ok(!String(T.token('--chair')).includes('<'), 'no markup reaches a token');
 T.setTheme('clean-office');
 
-// themes.css changes looks, never sizes (spec 035 FR-010): no width/height/padding/margin/gap/font-size/border-width rules
+// themes.css changes looks, never sizes (spec 035 FR-010, FR-015): an allow-list of properties, so a new way to size or move
+// something (flex, transform: scale, top/left, a custom property) is refused by default. DURBAR_THEMES_CSS points the test at a mutant copy.
 {
-  const css = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'themes.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/min-width:0\b/g, ''); // min-width:0 only lets display text ellipsize
-  const sized = css.match(/(?:^|[;{])\s*(?:(?:min-|max-)?(?:width|height)|padding(?:-[a-z]+)?|margin(?:-[a-z]+)?|gap|row-gap|column-gap|font-size|line-height|border(?:-(?:top|right|bottom|left))?-width|border(?:-(?:top|right|bottom|left))?\s*:\s*[0-9.]+px)\s*:?/g);
-  assert.strictEqual(sized, null, 'themes.css sets a size: ' + (sized || []).join(' '));
-  // spec 008 FR-111: pull requests lay out Clean Office and Retro only, so these shorthands, which also carry sizes, are refused too
-  const shorthand = css.match(/(?:^|[;{])\s*(?:font|inset|border(?:-(?:top|right|bottom|left|block|inline))?|outline-offset|flex-basis|grid-template(?:-[a-z]+)?|zoom)\s*:[^;}]*?\b[0-9.]+(?:px|em|rem|%|ch|vw|vh)/g);
-  assert.strictEqual(shorthand, null, 'themes.css sets a size in a shorthand: ' + (shorthand || []).join(' '));
+  const cssPath = process.env.DURBAR_THEMES_CSS || path.join(__dirname, '..', '..', 'src', 'renderer', 'themes.css');
+  // Properties that only paint (colour, texture, shape of the corner, shadow, font face, case, ellipsis); any value.
+  const PAINT = new Set(['color', 'background', 'background-color', 'background-image', 'background-size', 'border-color', 'border-top-color', 'border-bottom-color',
+    'border-radius', 'box-shadow', 'text-shadow', 'outline-color', 'font-family', 'text-transform', 'z-index']);
+  // Properties allowed with one exact kind of value: they would size or move things with any other value.
+  const VALUE: Record<string, RegExp> = {
+    position: /^relative$/, // stacking only (z-index); never absolute/fixed + top/left
+    'min-width': /^0$/, // lets display text ellipsize
+    overflow: /^hidden$/, // clips for the ellipsis; auto/scroll would add scrollbars and change the layout
+    'text-overflow': /^(?:ellipsis|clip)$/,
+    'font-weight': /^(?:normal|bold|[4-8]00)$/, // a heavier face widens text a little; 900 and bolder/lighter are refused
+    'letter-spacing': /^(?:normal|0|0?\.(?:0[0-9]?|10?)em)$/, // at most .1em: it widens text, like a font change; today's uses are .01-.08em
+    flex: /^0 1 auto$/, // the initial value; no flex-basis or grow
+    transform: /^translate\(-?[0-2]px,-?[0-2]px\)$/, // retro button press nudge (today 2px and -1px); no scale, rotate or bigger moves
+  };
+  // Custom properties a style may declare (colours and a font family); a length in their value would feed a size.
+  const CUSTOM = new Set(['--ui-display', '--ui-top-ink', '--ui-top-ink-2', '--st-glyph']);
+  const LENGTH = /[0-9.]\s*(?:px|em|rem|%|ch|vw|vh|vmin|vmax|pt|cm|mm|in|ex)\b/i;
+  const css = fs.readFileSync(cssPath, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const bad: string[] = [];
+  // Structure (review on #751): declarations only inside a plain rule, so the per-block check below sees every one of them.
+  // Refused: a rule nested in a rule (CSS nesting would hide its parent's declarations from the block regex), a declaration
+  // directly in an @-block, and any top-level statement ending in ';' (@import, @namespace, @charset).
+  {
+    const stack: string[] = [];
+    let buf = '', q = '', paren = 0;
+    for (const ch of css) {
+      if (q) { buf += ch; if (ch === q) q = ''; continue; }
+      if (ch === '"' || ch === "'") { q = ch; buf += ch; continue; }
+      if (ch === '(') paren++;
+      if (ch === ')') paren--;
+      if (paren > 0) { buf += ch; continue; }
+      if (ch === '{') {
+        const prelude = buf.trim(), parent = stack[stack.length - 1];
+        if (parent !== undefined && !parent.startsWith('@')) bad.push(`nested rule "${prelude}" inside "${parent}"`);
+        if (parent !== undefined && parent.startsWith('@') && buf.includes(';')) bad.push(`declaration directly in "${parent}"`);
+        stack.push(prelude); buf = '';
+      } else if (ch === '}') {
+        const top = stack.pop();
+        if (top !== undefined && top.startsWith('@') && buf.trim()) bad.push(`declaration directly in "${top}"`);
+        buf = '';
+      } else if (ch === ';' && (stack.length === 0 || stack[stack.length - 1].startsWith('@'))) {
+        bad.push(`statement "${buf.trim()};" ${stack.length ? 'directly in ' + stack[stack.length - 1] : 'at the top level'}`); buf = '';
+      } else buf += ch;
+    }
+  }
+  let nRules = 0, nDecls = 0;
+  for (const m of css.matchAll(/\{([^{}]*)\}/g)) {
+    nRules++;
+    // split on ';' outside quotes and parentheses (data: URLs hold ';')
+    const decls: string[] = [];
+    let cur = '', depth = 0, q = '';
+    for (const ch of m[1]) {
+      if (q) { if (ch === q) q = ''; } else if (ch === '"' || ch === "'") q = ch; else if (ch === '(') depth++; else if (ch === ')') depth--;
+      if (ch === ';' && !q && depth === 0) { decls.push(cur); cur = ''; } else cur += ch;
+    }
+    decls.push(cur);
+    for (const d of decls) {
+      if (!d.trim()) continue;
+      nDecls++;
+      const i = d.indexOf(':');
+      const prop = (i < 0 ? d : d.slice(0, i)).trim().toLowerCase();
+      const val = (i < 0 ? '' : d.slice(i + 1)).replace(/!important\s*$/i, '').replace(/\s+/g, ' ').replace(/ ?, ?/g, ',').trim();
+      if (prop.startsWith('--')) { if (!CUSTOM.has(prop) || LENGTH.test(val)) bad.push(prop + ':' + val); }
+      else if (VALUE[prop]) { if (!VALUE[prop].test(val)) bad.push(prop + ':' + val); }
+      else if (!PAINT.has(prop)) bad.push(prop + ':' + val);
+    }
+  }
+  assert.ok(nRules > 50 && nDecls > 100, 'the themes.css parse found rules (' + nRules + ' rules, ' + nDecls + ' declarations)');
+  assert.deepStrictEqual(bad, [], 'themes.css sets a property or value that is not allowed (spec 035 FR-015): ' + bad.join(' | '));
 }
 // UI styles (spec 035 FR-009): a fixed list; anything else is clean
 assert.strictEqual(T._validateManifest({ id: 'u1' }).ui, 'clean', 'no ui = clean');
