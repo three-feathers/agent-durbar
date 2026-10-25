@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { AdapterDescriptor, DetectResult } from './capabilities';
+import { MAX_VERSION_LENGTH, VERSION_TOKEN_SOURCE } from '../shared/versionfield';
 import { pathDirs } from '../shared/pathdirs';
 import { CMD_UNSAFE, windowsCmd } from '../shared/wincmd';
 
@@ -179,8 +180,8 @@ export function candidates(spec: BinarySpec, env: DetectEnv, configuredPath?: st
   });
 }
 
-/** Longest version accepted, longer is rejected and never cut (spec 081 FR-005 and spec 012 FR-039); the one constant for both. */
-export const MAX_VERSION_LENGTH = 64;
+/** Spec 081 FR-005 and spec 012 FR-039: one limit and one token pattern, shared with `parseVersionField` (`src/shared/versionfield.ts`). */
+const VERSION_LINE_RE = new RegExp('^[ \\t]*(?:(?:codex-cli|codex|claude|Claude Code)[ \\t]+)?\\(?(?:rust-v|v)?(' + VERSION_TOKEN_SOURCE + ')(?:\\+[0-9A-Za-z.-]{1,40})?(?=$|[ \\t)])');
 
 /** A bounded version token on the first line; known app labels and version prefixes are omitted. */
 export function parseVersion(stdout: string): string | undefined {
@@ -188,7 +189,7 @@ export function parseVersion(stdout: string): string | undefined {
   // Inspect one extra character so cutting the line cannot turn an oversized token into a valid version.
   const prefix = stdout.slice(0, 201);
   const line = prefix.split(/[\r\n]/, 1)[0];
-  const m = /^[ \t]*(?:(?:codex-cli|codex|claude|Claude Code)[ \t]+)?\(?(?:rust-v|v)?(\d{1,9}\.\d{1,9}\.\d{1,9}(?:-[0-9A-Za-z.-]{1,40})?)(?:\+[0-9A-Za-z.-]{1,40})?(?=$|[ \t)])/.exec(line.slice(0, 200));
+  const m = VERSION_LINE_RE.exec(line.slice(0, 200));
   if (!m || (m[0].length === 200 && line.length > 200 && !/[ \t)]/.test(line[200]))) return undefined;
   if (m[1].length > MAX_VERSION_LENGTH) return undefined;
   return m[1];

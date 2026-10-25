@@ -1,6 +1,7 @@
 /** Binary detection for Claude and Codex (spec 012 T012, FR-035..FR-041): fake isFile and fake exec only. No process, no credits. */
 import * as assert from 'assert';
-import { CLAUDE_BINARY, CLAUDE_SIGN_IN_HINT, CODEX_BINARY, CODEX_SIGN_IN_HINT, detectCodex, candidates, compareVersions, detectBinary, detectClaude, detectCopilot, detectorFor, parseVersion, MAX_VERSION_LENGTH } from '../src/adapters/detect';
+import { CLAUDE_BINARY, CLAUDE_SIGN_IN_HINT, CODEX_BINARY, CODEX_SIGN_IN_HINT, detectCodex, candidates, compareVersions, detectBinary, detectClaude, detectCopilot, detectorFor, parseVersion } from '../src/adapters/detect';
+import { MAX_VERSION_LENGTH, parseVersionField } from '../src/shared/versionfield';
 import type { DetectEnv, Exec, ExecResult } from '../src/adapters/detect';
 import { newestFirst, isAppAlias, statIsFile, windowsAppsDir } from '../src/adapters/detect';
 import { loginShellCommand, mergeLoginPath, parseLoginPath, readLoginShellPath, MAX_LOGIN_DIRS } from '../src/main/loginpath';
@@ -117,6 +118,25 @@ async function main(): Promise<void> {
   assert.strictEqual(parseVersion('v1.2.3-beta.1'), '1.2.3-beta.1');
   assert.strictEqual(parseVersion('garbage'), undefined);
   assert.strictEqual(parseVersion('1.2'), undefined);
+  // The limit is the literal 64 (spec 081 FR-005), not only "relative to the constant": 64 accepted, 65 rejected (a 65 mutant must fail here).
+  assert.strictEqual(MAX_VERSION_LENGTH, 64);
+  const t64 = '1.2.3-' + 'r'.repeat(58);
+  assert.strictEqual(t64.length, 64);
+  assert.strictEqual(parseVersion(t64), t64);
+  assert.strictEqual(parseVersion('v' + t64), t64);
+  assert.strictEqual(parseVersion(t64 + 'r'), undefined);
+  assert.strictEqual(parseVersion('rust-v' + t64 + 'r'), undefined);
+  assert.strictEqual(parseVersionField(t64), t64);
+  assert.strictEqual(parseVersionField(t64 + 'r'), undefined);
+  // ASCII digits only (versions are ASCII); leading zeros are accepted, as in parseVersionField (compareVersions reads them as numbers).
+  for (const bad of ['\uFF11.\uFF12.\uFF13', '\u0661.\u0662.\u0663', '1.2.\u0663', 'v\uFF11.2.3']) {
+    assert.strictEqual(parseVersion(bad), undefined, 'unicode digits: ' + JSON.stringify(bad));
+    assert.strictEqual(parseVersionField(bad), undefined, 'unicode digits (field): ' + JSON.stringify(bad));
+  }
+  for (const zero of ['01.002.0003', '1.2.3-01']) {
+    assert.strictEqual(parseVersion(zero), zero, 'leading zeros: ' + zero);
+    assert.strictEqual(parseVersionField(zero), zero, 'leading zeros (field): ' + zero);
+  }
   // FR-039 / issue 664: first-line parsing never searches error prose or recovers a partial token.
   for (const [input, version] of [
     ['codex 0.200.0', '0.200.0'], ['claude 2.1.3', '2.1.3'], ['Claude Code v2.1.3', '2.1.3'],
