@@ -146,6 +146,7 @@ function pageCheck(expanded, expectPlaces) {
   });
   /* spec 059 FR-020 item 6, FR-025 (issue 636): the rename pencils are shown on every card (body.ren-show) and none covers the status word, pill,
      badge, chat number, draft mark or mode icon, or leaves its unit; they are siblings of the card button and take no layout space. */
+  const hadRenShow = document.body.classList.contains('ren-show'); /* put back afterwards: a driver's later screenshot must not show every pencil (PR 631) */
   document.body.classList.add('ren-show');
   stage.querySelectorAll('.unit > .ren[data-ren]').forEach((b) => {
     if (!b.getClientRects().length) return;
@@ -162,6 +163,7 @@ function pageCheck(expanded, expectPlaces) {
       if (B.x < r.r - T && B.r > r.x + T && B.y < r.b - T && B.b > r.y + T) problems.push(`pencil ${who} covers ${name(e)}`);
     });
   });
+  if (!hadRenShow) document.body.classList.remove('ren-show');
   /* spec 052 (2026-10-21; real 15-session office at 1280x800): inside a desk card no icon (svg, status dot, warning) and no cost text
      leaves the card or is cut by a clipping ancestor; a cut cost or icon once went unnoticed by every other rule here */
   /* spec 059 FR-020 item 4: a room header's pencil stays inside the header and covers no door, chip, siren, floor tag, cost or count */
@@ -622,6 +624,30 @@ async function driver(ctx) {
     }
     return P;
   };
+  /* spec 080 T015 AC4 / FR-090 (and spec 005 FR-058): the chat panel on its Browser tab at both sizes: the tab bar and the browser bar are inside the
+     window, nothing overlaps, every text is 10.5px or more, the page area is not squeezed to nothing, and the native view sits on it */
+  const browserTabCheck = () => {
+    const P = [], R = (e) => e.getBoundingClientRect(), T = 0.5;
+    const de = document.documentElement;
+    if (de.scrollWidth > innerWidth + 1 || de.scrollHeight > innerHeight + 1) P.push(`page overflows (${de.scrollWidth}x${de.scrollHeight} in ${innerWidth}x${innerHeight})`);
+    const tabs = document.getElementById('panelTabs'), pane = document.getElementById('browserPane'), view = document.getElementById('bView');
+    if (!tabs || !pane || pane.hidden || !view) return ['the Browser tab is not showing'];
+    const els = [...document.querySelectorAll('#panelTabs, #panelTabs *, #browserPane .bbar, #browserPane .bbar *, #browserPane .bstat, #browserPane .bstat *')].filter((e) => e.getClientRects().length && R(e).width > 0);
+    for (const e of els) { const r = R(e); if (r.left < -1 || r.right > innerWidth + 1) P.push(`${e.id || e.className} leaves the window`); }
+    for (const g of [...document.querySelectorAll('#panelTabs, #browserPane .bbar, #browserPane .bstat, #browserPane .bacts')]) {
+      const kids = [...g.children].filter((c) => c.getClientRects().length && R(c).width > 0);
+      for (let i = 0; i < kids.length; i++) for (let j = i + 1; j < kids.length; j++) {
+        const a = R(kids[i]), b = R(kids[j]);
+        if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > T && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > T) P.push(`${kids[i].id || kids[i].className} overlaps ${kids[j].id || kids[j].className}`);
+      }
+    }
+    const small = els.filter((e) => [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) && parseFloat(getComputedStyle(e).fontSize) < 10.5).map((e) => e.id || e.className);
+    if (small.length) P.push('text under 10.5px: ' + small.join(', '));
+    const v = R(view);
+    if (v.width < 300 || v.height < 150) P.push(`the page area is too small (${Math.round(v.width)}x${Math.round(v.height)})`);
+    if (v.right > innerWidth + 1 || v.bottom > innerHeight + 1) P.push('the page area leaves the window');
+    return P;
+  };
   /* FR-139: + New opens the new-session dialog; a helper's chat, the demo and an office without a ready app do not offer it */
   const newBtnFlow = async (w, h) => {
     await ctx.js(`(async()=>{const d=document.querySelector('#stage .desk[data-id]');if(d)d.click();await new Promise(r=>setTimeout(r,300));const b=document.getElementById('newSessHdrBtn');if(b)b.click();await new Promise(r=>setTimeout(r,300));return true})()`);
@@ -646,6 +672,24 @@ async function driver(ctx) {
         total++;
         if (p.length) { failed++; bad++; if (bad <= 3) console.log(`FAIL chat ${w}x${h} ${q} agent ${id}: ${p.slice(0, 4).join('; ')}`); }
         await ctx.js(`(async()=>{const b=document.getElementById('backBtn');if(b)b.click();await new Promise(r=>setTimeout(r,120));return true})()`);
+      }
+      if (q === 'sim=15&simfreeze=1') {
+        /* spec 080 T015 AC4: the chat open on the Browser tab, three agents (first, middle, last); the view sits on the page area and leaves with the panel */
+        let badB = 0;
+        for (const id of [ids[0], ids[Math.floor(ids.length / 2)], ids[ids.length - 1]]) {
+          await ctx.js(`(async()=>{const d=document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)});if(d)d.click();await new Promise(r=>setTimeout(r,250));document.querySelectorAll('#toasts .toast').forEach(x=>x.remove()); /* a start-up toast over the page area is an overlay: it rightly takes the view off */ const t=document.getElementById('tabBrowser');if(t)t.click();await new Promise(r=>setTimeout(r,900));return true})()`);
+          const pb = await ctx.js(`(${browserTabCheck.toString()})()`);
+          const kids = ctx.win.contentView.children.filter((c) => c.webContents && c.webContents !== ctx.win.webContents);
+          const cb = ctx.win.getContentBounds();
+          if (kids.length !== 1) pb.push(`${kids.length} native views are attached (expected 1)`);
+          else { const b = kids[0].getBounds(); if (b.width < 300 || b.height < 150 || b.x < 0 || b.y < 0 || b.x + b.width > cb.width + 2 || b.y + b.height > cb.height + 2) pb.push('the native view is off the window ' + JSON.stringify(b)); }
+          await ctx.js(`(async()=>{const b=document.getElementById('backBtn');if(b)b.click();await new Promise(r=>setTimeout(r,300));return true})()`);
+          const left = ctx.win.contentView.children.filter((c) => c.webContents && c.webContents !== ctx.win.webContents).length;
+          if (left) pb.push(`${left} native view(s) stay on the window after the panel closed`);
+          total++;
+          if (pb.length) { failed++; badB++; console.log(`FAIL browser tab ${w}x${h} agent ${id}: ${pb.slice(0, 4).join('; ')}`); }
+        }
+        rows.push({ label: `browser tab ${w}x${h}`, d: 'chat', h: '-', rooms: '-', plates: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: badB });
       }
       if (q === 'sim=15&simfreeze=1') {
         /* Simple hides the developer details (VS Code, model chips); the header must still fit and keep + New */

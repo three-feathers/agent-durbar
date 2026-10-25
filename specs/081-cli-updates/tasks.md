@@ -10,7 +10,7 @@ description: "Tasks for spec 081: agent-app updates"
 
 **Format**: `[ID] [P?] [Story] Description`. **[P]** means the task can run in parallel with others (different files).
 
-Built on branch `081-cli-updates-build` (2026-10-25). Ticked = built and tested on the simulator and with fake tools. **Open:** T008 (waits for PR #698), T036 (the vendor facts from the real runs), T037 (final gate, at the PR) and the real-machine checks T040-T042 (need the owner's own approval in the terminal or the team chat; none was run).
+Built on branch `081-cli-updates-build` (2026-10-25). Ticked = built and tested on the simulator and with fake tools. **Open:** T036 (the vendor facts from the real runs), T037 (final gate, at the PR) and the real-machine checks T040-T042 (need the owner's own approval in the terminal or the team chat; none was run).
 
 Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered on 2026-10-25 and are folded in.
 
@@ -46,7 +46,7 @@ Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered o
   - Tests: a look-alike host, an off-list path, a redirect URL to another host or path, a `response` with no redirect, the 570 KB body never read (the request is aborted), an oversized channel body.
   - Mutations: call `followRedirect()`; allow any path on `github.com`; skip `abort()`.
 - [x] T007 `src/main/settings.ts`: `announcedVersions` (an allowed app id and a valid version; anything else dropped) and `checkUpdatesAtStart` (a boolean, on by default per Q6 = A, only `false` written). Test a hostile matrix.
-- [ ] T008 (**open: PR #698 is not merged**; `parseVersionField` is built and tested in `src/shared/versionfield.ts` with a local `MAX_VERSION_LENGTH = 64` that becomes `import { MAX_VERSION_LENGTH } from '../adapters/detect'` when #698 lands; `detect.ts`'s `parseVersion` is #698's to fix, FR-005 for the detection path stays unbuilt here) Strict versions (FR-005, SC-008):
+- [x] T008 (built: `parseVersionField` and the one `MAX_VERSION_LENGTH = 64` and token pattern live in `src/shared/versionfield.ts`; PR #698's `detect.ts` `parseVersion` imports both, so there is one limit and one pattern) Strict versions (FR-005, SC-008):
   - **The detection path is fixed by PR #698** (spec 012 T133, FR-039 delta, `Closes #664`): a bounded `parseVersion` on the first line, cut to 200 characters, that rejects error prose and tokens cut off at the cap, with mutations and a CPU backstop. Spec 081 reuses it and does not reimplement it. If #698 has not merged when this task starts, wait for it or rebase onto it. If it was changed or closed, re-read spec 012 and only then decide.
   - **New here:** `parseVersionField` in `src/shared/updatecheck.ts`, for the structured fields that #698 does not cover (npm JSON, brew JSON, the redirect tag, the Claude channel text). A field **longer than 64 characters is rejected, never cut**; otherwise it is matched against `^v?(\d{1,9})\.(\d{1,9})\.(\d{1,9})(?:-[0-9A-Za-z.-]{1,40})?$`. Reuse #698's bounded token pattern if it fits instead of keeping a second one, and name the shared constant in the PR.
   - Tests for the field parser: 64 KiB of digits within a CPU-time limit (`process.cpuUsage`), the npm error line, `rust-v0.164.0`, `v1.0.103`, `2.1.308`, and a 65-character version.
@@ -209,3 +209,5 @@ Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered o
 - SC-006: T013
 - SC-007: T013
 - SC-008: T008
+- [ ] T043 macOS (the owner's Mac, GUI-launched Durbar with nvm or Homebrew npm): confirm Settings > Agent apps > Copilot CLI checks (no "exit 127"), and that "Found at" shows a full path (FR-042). Built and unit-tested on Linux only.
+- [x] T044 FR-042: `pathWithToolDir` for the npm check, the npm update and sign-in runs (only from a trusted folder), the 127/ENOENT message, button names, `displayWhere` (tests in `scripts/test-updatecheck.ts`).

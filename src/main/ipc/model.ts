@@ -8,6 +8,7 @@ import type { AgentEvent } from '../../adapters/types';
 import { parseFocus, parseSwitchRequest } from '../../shared/modelswitch';
 import type { ModelSwitchRequest, ModelSwitchResult } from '../../shared/modelswitch';
 import { errText } from '../agentops';
+import type { OrgVerdict } from '../../shared/orgpolicy';
 import type { FolderStore } from '../folders';
 
 export interface ModelIpcDeps {
@@ -17,6 +18,61 @@ export interface ModelIpcDeps {
   /** Created when the app is ready: read when a handler runs. */
   getFolderStore(): FolderStore | undefined;
   wsKey(a: AgentInfo): string;
+  /** Spec 076 FR-202/FR-203 (issue #602): why the agent app's own organization policy blocks this model, or undefined. */
+  orgModel?(adapterId: string, model: string): Promise<OrgVerdict | undefined>;
+}
+
+const NO_SWITCH = 'This agent cannot change its model in place. Start a new session with the model you want.';
+
+export interface SetModelDeps {
+  agents: Map<string, AgentInfo>;
+  router: Pick<AdapterRouter, 'forAgent'>;
+  defaultId: string;
+  /** The models a switch is checked against (spec 030 FR-018). */
+  models(): Promise<ModelChoice[]>;
+  /** Spec 076 FR-203: the agent app's own organization policy on this model. */
+  orgModel?(adapterId: string, model: string): Promise<OrgVerdict | undefined>;
+  /** Saves the choice in this app's own folder file. */
+  save(a: AgentInfo, choice: Parameters<FolderStore['setModelChoice']>[1]): void;
+}
+
+/** `agents:setModel` (spec 030; spec 076 FR-203: a model the organization policy blocks is refused before anything is switched or saved). */
+export async function setModelOp(d: SetModelDeps, id: unknown, raw: unknown): Promise<{ ok: boolean; error?: string; result?: ModelSwitchResult }> {
+  const a = typeof id === 'string' ? d.agents.get(id) : undefined;
+  const ad = a ? d.router.forAgent(a.id) : undefined;
+  if (!a || !ad) return { ok: false, error: 'unknown agent' };
+  if (typeof ad.setModel !== 'function') return { ok: false, error: NO_SWITCH };
+  try {
+    const parsed = parseSwitchRequest(raw, await d.models());
+    if (!parsed.ok) return { ok: false, error: parsed.error };
+    const req: ModelSwitchRequest = parsed.request;
+    // Spec 007 FR-015: the tiers come from the default kind's list (Copilot's `auto`); another agent app never gets one.
+    if (req.autoTier && a.adapterId !== d.defaultId) return { ok: false, error: 'This agent app has no Auto routing tier.' };
+    const org = await d.orgModel?.(a.adapterId ?? d.defaultId, req.model);
+    if (org?.refuse) return { ok: false, error: `${org.why}: pick another model.` };
+    // Not started (or ended) yet: nothing is running to switch. The choice is saved and the first start (create or resume) uses it (FR-013).
+    const result: ModelSwitchResult = ad.isLive(a.id) ? await ad.setModel(a.id, req) : { status: 'applied', model: req.model, message: 'Used from the first message: this agent has not started yet.' };
+    if (result.status === 'applied') {
+      // Saved only in this app's own folder file; never in Copilot's settings (no repoScope / modelChangeScope / pickerPersistence is ever sent).
+      a.model = req.model;
+      if (req.effort === null) a.effort = undefined;
+      else if (req.effort !== undefined) a.effort = req.effort;
+      a.tier = req.contextTier === 'long' ? 'long' : undefined;
+      if (req.autoTier) a.autoTier = req.autoTier; // spec 007 FR-016: remembered per agent, kept while it uses another model
+      else if (req.autoTier === null) a.autoTier = undefined; // an Undo back to "no tier of its own"
+      d.save(a, { model: req.model, effort: req.effort, contextTier: a.tier, autoTier: req.autoTier });
+    }
+    return { ok: true, result };
+  } catch (err) {
+    return { ok: false, error: errText(err) };
+  }
+}
+
+/** `models:list` (spec 076 FR-202): each model with the organization's verdict; a blocked one stays listed, greyed with the reason. */
+export async function withOrgModels<T extends { id: string }>(models: T[], verdict: ((id: string) => Promise<OrgVerdict | undefined>) | undefined): Promise<(T & { orgBlocked?: string; orgDoubt?: string })[]> {
+  if (!verdict) return models;
+  const vs = await Promise.all(models.map((m) => verdict(m.id)));
+  return models.map((m, i) => (vs[i]?.refuse ? { ...m, orgBlocked: vs[i]!.why } : vs[i] ? { ...m, orgDoubt: vs[i]!.why } : m));
 }
 
 /**
@@ -40,36 +96,8 @@ export function register(deps: ModelIpcDeps): void {
     if (!lastModels.length) lastModels = (await modelOptionsOf(router.instance(registry.defaultId))).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
     return lastModels;
   };
-  const NO_SWITCH = 'This agent cannot change its model in place. Start a new session with the model you want.';
 
-  ipcHandle('agents:setModel', async (_e, id: unknown, raw: unknown) => {
-    const a = typeof id === 'string' ? agents.get(id) : undefined;
-    const ad = a ? router.forAgent(a.id) : undefined;
-    if (!a || !ad) return { ok: false, error: 'unknown agent' };
-    if (typeof ad.setModel !== 'function') return { ok: false, error: NO_SWITCH };
-    try {
-      const parsed = parseSwitchRequest(raw, await modelsForValidation());
-      if (!parsed.ok) return { ok: false, error: parsed.error };
-      const req: ModelSwitchRequest = parsed.request;
-      // Spec 007 FR-015: the tiers come from the default kind's list (Copilot's `auto`); another agent app never gets one.
-      if (req.autoTier && a.adapterId !== registry.defaultId) return { ok: false, error: 'This agent app has no Auto routing tier.' };
-      // Not started (or ended) yet: nothing is running to switch. The choice is saved and the first start (create or resume) uses it (FR-013).
-      const result: ModelSwitchResult = ad.isLive(a.id) ? await ad.setModel(a.id, req) : { status: 'applied', model: req.model, message: 'Used from the first message: this agent has not started yet.' };
-      if (result.status === 'applied') {
-        // Saved only in this app's own folder file; never in Copilot's settings (no repoScope / modelChangeScope / pickerPersistence is ever sent).
-        a.model = req.model;
-        if (req.effort === null) a.effort = undefined;
-        else if (req.effort !== undefined) a.effort = req.effort;
-        a.tier = req.contextTier === 'long' ? 'long' : undefined;
-        if (req.autoTier) a.autoTier = req.autoTier; // spec 007 FR-016: remembered per agent, kept while it uses another model
-        else if (req.autoTier === null) a.autoTier = undefined; // an Undo back to "no tier of its own"
-        folderStore()?.setModelChoice(wsKey(a), { model: req.model, effort: req.effort, contextTier: a.tier, autoTier: req.autoTier });
-      }
-      return { ok: true, result };
-    } catch (err) {
-      return { ok: false, error: errText(err) };
-    }
-  });
+  ipcHandle('agents:setModel', (_e, id: unknown, raw: unknown) => setModelOp({ agents, router, orgModel: deps.orgModel, defaultId: registry.defaultId, models: modelsForValidation, save: (a, c) => folderStore()?.setModelChoice(wsKey(a), c) }, id, raw));
 
   ipcHandle('agents:cancelQueuedModel', async (_e, id: unknown, queueId: unknown) => {
     const a = typeof id === 'string' ? agents.get(id) : undefined;
@@ -116,7 +144,7 @@ export function register(deps: ModelIpcDeps): void {
     const id = kind === undefined || kind === null || kind === '' ? registry.defaultId : typeof kind === 'string' && registry.has(kind) ? kind : undefined;
     if (!id) return { ok: false, error: 'unknown agent app', models: [] };
     try {
-      const models = (await modelOptionsOf(router.instance(id))).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
+      const models = await withOrgModels((await modelOptionsOf(router.instance(id))).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m), deps.orgModel && ((m) => deps.orgModel!(id, m)));
       if (id !== registry.defaultId) return { ok: true, models };
       lastModels = models;
       return { ok: true, models };

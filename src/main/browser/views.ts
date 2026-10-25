@@ -5,7 +5,8 @@
  * `makeViews(deps)` takes Electron's parts as arguments so `scripts/test-browserviews.ts` can run it against a fake.
  */
 import { app, session, WebContentsView } from 'electron';
-import { buildViewHandlers, installViewHandlers, LeaveApproval, navigateChecked, newViewPartition, viewDialogPolicy, viewUserAgent, viewWebPreferences } from '../hardening';
+import { buildViewHandlers, dialogText, installViewHandlers, LeaveApproval, navigateChecked, newViewPartition, viewDialogPolicy, viewUserAgent, viewWebPreferences } from '../hardening';
+import { installSimPages } from './simpages';
 import type { NavAction, NavTarget, ViewHandlers, ViewSessionLike, ViewWebContentsLike } from '../hardening';
 
 export type ViewDriver = 'user' | 'agent' | 'none';
@@ -15,8 +16,12 @@ export interface ViewEvents {
   onDialogNote?(sessionId: string, note: string): void;
   /** A scripted popup with an http(s) URL (FR-026): the bar offers *Open in system browser*. */
   onPopupBlocked?(sessionId: string, url: string): void;
-  /** FR-025e: Durbar's *Leave this page?* box for a user-driven view; true = Leave. T015 wires `askDialog`. Absent: the view leaves. */
-  askLeave?(sessionId: string): Promise<boolean>;
+  /** FR-025e: Durbar's *Leave this page?* box for a user-driven view; true = Leave. `targetKnown`: main started the navigation (else the box says *Leave, then click again*). Absent: the view leaves. */
+  askLeave?(sessionId: string, targetKnown: boolean): Promise<boolean>;
+  /** FR-025d: a page opened an `alert` or `confirm` (not `beforeunload`). `forAgent`: main closed it with Cancel (the bar's note), so no user box exists. `text` is masked and cut. */
+  onPageDialog?(sessionId: string, d: { type: string; text: string; forAgent: boolean }): void;
+  /** FR-025d: the dialog closed (`Page.javascriptDialogClosed`): the *Dialog open* marker goes. */
+  onPageDialogClosed?(sessionId: string): void;
 }
 
 export interface SessionView {
@@ -55,6 +60,8 @@ export interface ViewDeps {
   createView(prefs: Record<string, unknown>): { webContents: WcLike };
   sessionFromPartition(name: string): SesLike;
   chromeVersion: string;
+  /** Called once per new view's partition with the simulator decision (T018: the test pages). Absent in the tests that do not need it. */
+  onPartition?(ses: SesLike, sim: boolean): void;
 }
 
 export function makeViews(deps: ViewDeps) {
@@ -64,10 +71,12 @@ export function makeViews(deps: ViewDeps) {
   /** The dialog part of a view: the one place that reacts to `Page.javascriptDialogOpening` (see `viewDialogPolicy`). */
   function wireViewDialogs(sv: SessionView, wc: WcLike, events: ViewEvents): void {
     wc.debugger.on('message', (_e, method, params) => {
+      if (method === 'Page.javascriptDialogClosed') return void events.onPageDialogClosed?.(sv.sessionId);
       if (method !== 'Page.javascriptDialogOpening') return;
       const r = viewDialogPolicy(sv.driver, { type: String(params?.type ?? ''), message: String(params?.message ?? '') });
       if (r.answer) wc.debugger.sendCommand('Page.handleJavaScriptDialog', { accept: r.answer.accept }).catch(() => undefined); // "no dialog is showing" is harmless
       if (r.note) events.onDialogNote?.(sv.sessionId, r.note);
+      if (String(params?.type ?? '') !== 'beforeunload') events.onPageDialog?.(sv.sessionId, { type: String(params?.type ?? ''), text: dialogText(params?.message, 80), forAgent: r.answer !== null });
     });
   }
 
@@ -76,6 +85,7 @@ export function makeViews(deps: ViewDeps) {
     const view = deps.createView(viewWebPreferences({ partition, packaged }));
     const wc = view.webContents;
     const ses = deps.sessionFromPartition(partition);
+    deps.onPartition?.(ses, sim);
     const leave = new LeaveApproval();
     // FR-025e: only a navigation main started, and only while it is in flight, can be repeated after *Leave*. A page-started leave is not
     // repeated (its target is not known): the page stays and the user clicks again.
@@ -138,7 +148,7 @@ export function makeViews(deps: ViewDeps) {
       onPopupBlocked: (url) => events.onPopupBlocked?.(sessionId, url),
       driver: () => sv.driver,
       currentUrl: () => wc.getURL(),
-      askLeave: events.askLeave ? () => events.askLeave!(sessionId) : undefined,
+      askLeave: events.askLeave ? () => events.askLeave!(sessionId, blocked !== undefined) : undefined,
       leave,
       onUnloadBlocked: () => {
         blocked = inFlight; // undefined for a page-started unload
@@ -220,6 +230,7 @@ const real = makeViews({
   createView: (prefs) => new WebContentsView({ webPreferences: prefs as Electron.WebPreferences }) as unknown as { webContents: WcLike },
   sessionFromPartition: (name) => session.fromPartition(name) as unknown as SesLike,
   chromeVersion: process.versions.chrome,
+  onPartition: (ses, sim) => void installSimPages(ses as unknown as Parameters<typeof installSimPages>[0], sim), // refuses (false) unless DURBAR_SIM
 });
 export const ensureSessionView = (sessionId: string, events: ViewEvents = {}, sim = false): Promise<SessionView> => real.ensureSessionView(sessionId, events, sim, app.isPackaged);
 export const destroySessionView = real.destroySessionView;

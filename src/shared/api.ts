@@ -10,6 +10,7 @@ import type { McpServerInput, McpServerView, McpTransport, McpTrustInfo } from '
 export type { McpServerInput, McpServerView, McpTransport, McpTrustInfo };
 
 import type { AdapterInfo } from './adapters';
+import type { OrgPolicyAppView } from './orgpolicy';
 import type { ActivityRow } from './activity';
 import type { RemoteState } from './remote';
 import type { NotesView, NotesWrote } from './notes';
@@ -267,6 +268,10 @@ export interface ModelChoice {
   contextTiers?: ContextTier[];
   /** Window in tokens of the long-context tier, when reported. */
   longWindow?: number;
+  /** Spec 076 FR-202 (issue #602): the agent app's own organization policy blocks this model; the reason to show. */
+  orgBlocked?: string;
+  /** Spec 076 FR-201: the policy may block it (Durbar could not read all of it); advice, still selectable. */
+  orgDoubt?: string;
   /** Spec 007 FR-012: the Auto routing tiers (Copilot's `auto` only). */
   autoTiers?: AutoTier[];
   /** Spec 007 FR-017: the organization's Auto tier, when set. */
@@ -561,6 +566,10 @@ export interface AgentMcpEntry {
   off: boolean;
   /** Spec 069 FR-011: every list that has this name. */
   sources?: McpSourceTag[];
+  /** Spec 076 FR-202 (issue #602): the agent app's own organization policy blocks this server; the reason to show. */
+  orgBlocked?: string;
+  /** Spec 076 FR-201: the policy may block it (Durbar could not read all of it); advice, still usable. */
+  orgDoubt?: string;
   /** Spec 069 FR-061: tools of this server turned off in this agent's folder. */
   toolsOff?: string[];
   /** Spec 058 FR-020: Restart is offered: the agent app can restart one server, the session runs and knows this server, and it is on. */
@@ -607,7 +616,7 @@ export interface AgentMcpReply {
 /** `agents:mcpTools` (spec 069 FR-032): one server's tools, masked and cut in main. */
 export interface McpToolsResult {
   ok: boolean;
-  tools?: { name: string; description?: string }[];
+  tools?: { name: string; description?: string; orgBlocked?: string; orgDoubt?: string }[];
   /** How many the server listed (more than `tools` when it listed over 500). */
   total?: number;
   /** The session is not running: nothing was asked. */
@@ -674,6 +683,8 @@ export interface DurbarApi {
   /** Models the account offers (no credits used). */
   /** Models of an agent kind (spec 012 FR-120); no kind = the default kind. */
   listModels?(kind?: string): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }>;
+  /** Spec 076 FR-207 (issue #602): per agent app, what its own organization policy blocks (modes with reasons, counts; no values). */
+  orgPolicyView?(): Promise<Record<string, OrgPolicyAppView>>;
   /** Adapters and whether each can run (spec 012 FR-033). `refresh` probes again instead of using the cached answer. */
   listAdapters?(refresh?: boolean): Promise<AdapterInfo[]>;
   /** Spec 012 FR-157: main changed the cached list by itself (a session was refused because of the sign-in). */
@@ -779,6 +790,8 @@ export interface DurbarApi {
   /** spec 012 FR-158: remote control ended because the agent app reconnected after a new sign-in. */
   /** Remote control ended without the user (spec 012 FR-158, spec 054 FR-062): an agent id, or the id with a plain reason. */
   onRemoteOff?(cb: (p: string | { id: string; reason?: string }) => void): () => void;
+  /** Spec 076 FR-203: a session started under advice of its agent app's organization policy; the words to show (no policy values). */
+  onOrgNote?(cb: (p: { id: string; text: string }) => void): () => void;
   /** Spec 054 FR-062: remote control is still on with a new (checked) link after a relaunch. */
   onRemoteUrl?(cb: (p: { id: string; url: string }) => void): () => void;
   onHarnessDone?(cb: (p: { kind: string; op: string; ok: boolean; exitCode?: number | null; reason?: string; lines: string[]; error?: string; failure?: string; fallback?: 'official'; note?: string }) => void): () => void;
@@ -926,6 +939,8 @@ export interface DurbarApi {
   openInVSCode(id: string): Promise<{ ok: boolean; error?: string; edition?: string }>;
   /** Spec 063: the git branch and uncommitted changes of the agent's folder (read-only). Optional: older bridges lack it. */
   gitStatus?(id: string): Promise<FolderGitStatus>;
+  /** Spec 085: what the session did since its first message in this run (time, git files and lines, commits), for the card shown when it ends. Optional: older bridges lack it. */
+  sessionSummary?(id: string): Promise<SessionSummaryInfo>;
   /** Earlier Copilot CLI/SDK sessions in this agent's folder (newest first). Optional: not in the simulator. */
   listPrevious?(id: string): Promise<{ ok: boolean; error?: string; sessions: PreviousSession[]; pinned?: string[]; hidden?: string[]; names?: Record<string, string> }>;
   /** Pin, unpin, hide or unhide one row (spec 006 FR-026). `src` is the agent's adapter id or `vscode`; ids only, never a path. */
@@ -951,6 +966,35 @@ export interface DurbarApi {
   onFullScreen?(cb: (on: boolean) => void): () => void;
   /** A double-click on a drag area of the top bar, spec 052 FR-085 (Mac only; main zooms, minimizes or ignores it by the system setting). */
   titleDoubleClick?(): void;
+  /**
+   * Spec 080 T014 (FR-003): the session browser. Every call names a top-level session; main looks it up and answers only with `BrowserState`
+   * (URL, title, loading, history, mute and driver state): never the page's DOM, text, cookies or storage.
+   */
+  browserOpen?(id: string, address?: string): Promise<BrowserResult>;
+  browserState?(id: string): Promise<BrowserResult>;
+  browserNavigate?(id: string, address: string): Promise<BrowserResult>;
+  browserBack?(id: string): Promise<BrowserResult>;
+  browserForward?(id: string): Promise<BrowserResult>;
+  browserReload?(id: string): Promise<BrowserResult>;
+  browserStop?(id: string): Promise<BrowserResult>;
+  /** The page area's rectangle in CSS pixels, relative to the window's page; main checks it and sets the native view's bounds. */
+  browserBounds?(id: string, bounds: BrowserBounds): Promise<{ ok: boolean }>;
+  /** Attach (true) or detach (false) the session's view. Only the Browser tab shown asks for true. */
+  browserVisible?(id: string, visible: boolean): Promise<{ ok: boolean }>;
+  /** A Durbar overlay covers the page area (FR-008): main hides the view while it is open. */
+  browserOverlay?(id: string, open: boolean): Promise<{ ok: boolean }>;
+  browserMute?(id: string, muted: boolean): Promise<BrowserResult>;
+  /** Open the view's current http(s) address in the system browser (the existing external-link path). */
+  browserOpenSystem?(id: string): Promise<{ ok: boolean }>;
+  onBrowserState?(cb: (s: BrowserState) => void): () => void;
+  /** The user accepted the one-time note (FR-025d); remembered in settings, never asked again. */
+  browserConsentAccept?(): Promise<{ ok: boolean }>;
+  /** FR-008: a still picture of the page area (an in-memory data URL) while an overlay hides the view. */
+  browserSnapshot?(id: string): Promise<{ ok: boolean; image?: string }>;
+  /** FR-025e: the user's answer to *Leave this page?* (true = Leave). */
+  browserLeaveAnswer?(req: string, leave: boolean): Promise<{ ok: boolean }>;
+  onBrowserDialog?(cb: (d: BrowserDialogEvent) => void): () => void;
+  onBrowserLeave?(cb: (a: BrowserLeaveAsk) => void): () => void;
   /** The OS the app runs on ('darwin', 'win32', 'linux'), spec 052 FR-085: the Mac title bar styles. */
   platform?: string;
 }
@@ -960,9 +1004,42 @@ export type FolderGitStatus =
   | { repo: false }
   | { repo: true; branch: string; detached?: boolean; ahead?: number; behind?: number; files: Array<{ path: string; state: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflict'; added?: number; removed?: number; binary?: boolean }>; more: number };
 
+/** Spec 085: what `sessionSummary` answers (mirrors `SessionSummary` in src/main/sessionsummary.ts; `unreadable`: git could not be read, which is not "not a git folder"). `pullRequests`: only when the adapter reports them (none does yet). */
+export type SessionSummaryInfo =
+  | { ok: false; error: string }
+  | { ok: true; ms: number; pullRequests?: number; git: { repo: false; unreadable?: true } | { repo: true; files: number; added: number; removed: number; binary: number; newFiles: number; commits: number; dirtyAtStart: boolean; noHead?: boolean; newFilesUnknown?: boolean } };
+
 /** Spec 065: the note after a turn whose file-edit tools changed files. */
 export interface CheckpointNote { id: string; turn: number; kind: 'turn' | 'undo'; files: { path: string; change: 'changed' | 'created' | 'deleted' }[]; notCovered: { path: string; why: string }[] }
 export interface CheckpointPreview { ok: true; turn: number; files: { path: string; action: 'restore' | 'remove' | 'create'; diff?: string; binary?: boolean }[]; conflicts: string[]; notCovered: { path: string; why: string }[] }
 export type CheckpointUndo =
   | { ok: true; restored: number; removed: number; created: number; undo: Omit<CheckpointNote, 'id'> }
   | { ok: false; error: string; conflicts?: string[] };
+
+/** Spec 080 T014: what the session browser tells the window. Plain data, no page content. */
+export interface BrowserState {
+  id: string;
+  /** False before the first open and after the session ended (the view is gone). */
+  open: boolean;
+  /** The page's address, userinfo dropped; '' for about:blank. */
+  url: string;
+  title: string;
+  loading: boolean;
+  canBack: boolean;
+  canForward: boolean;
+  muted: boolean;
+  /** Who drives the view (FR-060). Always 'user' in Phase 1. */
+  driver: 'user' | 'agent' | 'none';
+  /** A page dialog (`alert`, `confirm`) is open and waiting for the user: the *Dialog open* marker (FR-025d). */
+  dialogOpen: boolean;
+  /** The note of a dialog main closed for the agent (FR-025d); the bar shows it with an icon. Page text, already masked. */
+  note?: string;
+  /** A Chromium network error name such as ERR_CONNECTION_REFUSED after the last load failed. */
+  error?: string;
+}
+export type BrowserResult = { ok: true; state: BrowserState } | { ok: false; reason: string; state?: BrowserState; needsConsent?: true };
+/** A page dialog opened (FR-025d): the window raises a toast naming the session and, for a hidden view, brings its chat forward. `text` is masked page text. */
+export interface BrowserDialogEvent { id: string; type: string; text: string; shown: boolean }
+/** FR-025e: ask *Leave this page?*; answer with `browserLeaveAnswer(req, leave)`. */
+export interface BrowserLeaveAsk { id: string; req: string; known: boolean; shown: boolean }
+export interface BrowserBounds { x: number; y: number; width: number; height: number }

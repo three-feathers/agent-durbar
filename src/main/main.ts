@@ -1,15 +1,17 @@
 import { destroyAllViews } from './browser/views';
+import { registerSimScheme } from './browser/simpages';
 import { FolderSetupStore } from './foldersetupstore';
 import { acceptedFor, hasFolderRules, scanFolderSetupCached } from './foldersetup';
 import type { FolderSetupStart } from '../shared/foldersetup';
 import type { McpServerSpec } from '../shared/mcp';
 import { copilotDir, copilotServerNames } from './mcpfiles'; // spec 061 FR-015: the explainer switches Copilot's own servers off
 import { parseEffort } from '../shared/effort';
-import { app, BrowserWindow, dialog, Menu, screen, shell } from 'electron';
+import { app, BrowserWindow, dialog, Menu, protocol, screen, shell } from 'electron';
 import { register as registerActivityIpc } from './ipc/activity';
 import { register as registerAdaptersIpc } from './ipc/adapters';
 import { register as registerAgentsIpc } from './ipc/agents';
 import { register as registerAppIpc } from './ipc/app';
+import { register as registerBrowserIpc } from './ipc/browser';
 import { noteWindowZoom } from './titledblclick';
 import { register as registerAttachmentsIpc } from './ipc/attachments';
 import { register as registerCheckpointsIpc } from './ipc/checkpoints';
@@ -46,8 +48,8 @@ import { detectorFor, setLoginPath } from '../adapters/detect';
 import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { renameOp, titleSyncOf } from './sessionnames';
 import { adapterForAdd, createRouter, previousSessionsOf } from '../adapters/router';
-import { endSessionOp, restorable, sendWithSlash, stopTurnOp, validMode } from './agentops';
-import type { OpsDeps } from './agentops';
+import { endSessionOp, restorable, sendWithSlash, startGuardOp, stopTurnOp, validMode } from './agentops';
+import type { OpsDeps, StartGuardDeps } from './agentops';
 import { adapterOf } from './folders';
 import type { AgentAdapter, AgentEvent } from '../adapters/types';
 import type { AdapterInfo } from '../shared/adapters';
@@ -88,6 +90,8 @@ import { devEnv, devWarning } from './devhooks';
 import { isSimBlocked, sealChildProcess, simDetectorFor, simGuardDescriptors, simulatorCount, simulatorOn } from './simguard';
 import childProcess = require('child_process');
 import { initSimGuard, simRefusedChannels } from './ipcguard';
+import { OrgPolicyCache } from './orgpolicy';
+import { register as registerOrgPolicyIpc } from './ipc/orgpolicy';
 import { markSignedOut, withSignIn } from './authcheck';
 import type { SignInAnswer } from './authcheck';
 import { SettingsStore } from './settings';
@@ -153,6 +157,7 @@ const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 /** Spec 010 FR-022: the simulator runs in the window only; main then never reaches a real agent app (FR-023 in ipcguard.ts, FR-024 here). */
 const SIMULATOR = simulatorOn(dev);
 initSimGuard(SIMULATOR); // spec 010 FR-031: ipcguard uses this decision; it runs before any register* below
+registerSimScheme(protocol, SIMULATOR); // spec 080 T018: the test pages' scheme exists only under DURBAR_SIM, and must be registered before the app is ready
 // spec 010 FR-030: under the simulator no child process starts at all (detection probes, git, VS Code, installs): each starter refuses and is counted
 const childSeal = SIMULATOR ? sealChildProcess(childProcess as unknown as Record<string, unknown>) : undefined;
 // spec 001 FR-084: simulator screenshots pin the clock (the page's), the time zone and the locale, so unchanged screens give the same pixels
@@ -162,6 +167,10 @@ for (const [name, value] of simClock.switches) app.commandLine.appendSwitch(name
 // spec 010 FR-024: under the simulator every descriptor creates an inert stand-in, never the real adapter
 const registry = createRegistry(simGuardDescriptors([...PRODUCTION_DESCRIPTORS, ...offeredDescriptors(dev)], SIMULATOR)); // Copilot, then Claude Code (spec 012 FR-135); detection decides what is ready
 const router = createRouter(registry);
+/** Spec 076 section O (issue #602): each agent app's own organization policy, read by its adapter, cached 60 s. */
+const orgPolicies = new OrgPolicyCache({ ids: () => registry.list().map((d) => d.id), adapter: (id) => (registry.has(id) ? router.instance(id) : undefined) });
+/** Spec 076 FR-203: the start guard's deps; advice is shown once the session has started (a toast in the window). */
+const orgGuard: StartGuardDeps = { refusal: (id, ask) => orgPolicies.refusal(id, ask), advice: (id, ask) => orgPolicies.advice(id, ask), onNote: (text, id) => toRenderer('agents:orgNote', { id, text }) };
 const agents = new Map<string, AgentInfo>();
 /** Spec 069: the agent apps' own user-level MCP lists (read live; written only after the window's per-file confirmation). */
 const globalLists = new GlobalLists(() => globalFiles({ CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR, CODEX_HOME: process.env.CODEX_HOME, ...dev }, os.homedir()));
@@ -177,6 +186,9 @@ const mcp = registerMcpIpc({
   openUrl: (url) => shell.openExternal(url), // spec 058 FR-065: the held sign-in page, only after the user's click
   globalNames: () => Object.fromEntries(globalLists.state(() => []).apps.map((x) => [x.app, x.servers.map((v) => v.name)])),
   codexServers: () => appServerUrls(globalLists.state(() => []).apps, 'codex'), // spec 058 FR-185: the values-free view, addresses only (the "different site" line)
+  orgMcp: (id, s) => orgPolicies.mcp(appIdOf(id), s), // spec 076 FR-202/FR-203
+  orgMcpNow: (id, s) => orgPolicies.mcpNow(appIdOf(id), s),
+  orgTool: (id, server, tool) => orgPolicies.tool(appIdOf(id), server, tool),
 });
 registerMcpGlobalIpc({ lists: () => globalLists, offList: () => mcpStore?.ambientDisabled() ?? [], setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off) });
 /** Files the user picked through the native dialog; only these can be attached. */
@@ -353,7 +365,9 @@ async function addWorkspace(
   // Cap: explicit choice (null = none) > the folder's saved cap > the global default (spec 011); a dollar cap only when chosen (FR-150).
   const usdCap = ad.capabilities?.capUnit === 'usd';
   draft.maxAiCredits = startCap(ad.capabilities?.capUnit, opts.maxAiCredits, folderStore?.get(wsKey(draft))?.maxAiCredits, settingsStore?.defaultMaxAiCredits);
-  const id = await ad.start({ ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId });
+  // spec 076 FR-203: the guard checks the mode and model of exactly these options and only then starts the adapter; a refusal throws
+  // before the start (nothing started, nothing written), and advice is shown as a toast once the session has started (`agents:orgNote`)
+  const { result: id } = await startGuardOp(orgGuard, ad, { ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId });
   router.bind(id, adapterId);
   const saved = folderStore?.get(wsKey(draft));
   const info: AgentInfo = { ...draft, id, hidden: saved?.hidden, closed: saved?.closed, label: saved?.label, defaultAgent: saved?.defaultAgent };
@@ -389,7 +403,7 @@ async function ensureLive(a: AgentInfo, opts: { quiet?: boolean } = {}): Promise
         resume = !!prev;
         continued.set(a.id, { resumed: resume, title: prev?.title });
       }
-      await ad.start({ ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: opts.quiet ?? true });
+      await startGuardOp(orgGuard, ad, { ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: opts.quiet ?? true }); // spec 076 FR-203
       a.lazy = false;
       a.resumeLast = undefined;
     })();
@@ -559,7 +573,7 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
 });
 
 // The handler bodies that refuse a setting a live session cannot take live in agentops.ts (spec 012 FR-054); `store` is read when a handler runs.
-const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, sessionKey: (a) => resumeIdFor(a.id), log: (a, decision, action) => logActivity(a, decision, action) };
+const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, sessionKey: (a) => resumeIdFor(a.id), log: (a, decision, action) => logActivity(a, decision, action), orgRefusal: (a, mode) => orgPolicies.refusalNow(appIdOf(a.id), { mode }) };
 
 /* DURBAR_THEME (spec 040 FR-008): a theme for this run only, never saved; a pick in Settings replaces it and is saved as usual. */
 let runTheme: string | undefined;
@@ -699,11 +713,14 @@ registerAppIpc({
   },
   clearInterrupted: () => { interrupted = null; },
 });
+/** Spec 080 T014: the session browsers; ended, removed and folder-removed sessions destroy theirs (FR-023). */
+const browser = registerBrowserIpc({ agents, getWin: () => win, toRenderer, simulator: SIMULATOR, simAsksConsent: dev.DURBAR_SIM_BROWSER_CONSENT === 'ask', getSettingsStore: () => settingsStore });
+const browserGone = (id: string): void => void browser.destroy(id).catch(() => undefined);
 /** Spec 043 FR-041: which profile file changes each session has seen (shared by ipc/agents.ts and ipc/profiles.ts). */
 const profileFreshness = createProfileFreshness();
-registerAgentsIpc({ agents, router, agentState, opsDeps, remoteOps, mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory });
+registerAgentsIpc({ browserGone, agents, router, agentState, opsDeps, remoteOps, mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory });
 registerAttachmentsIpc({ dev, pickedFiles, getStageDir, sizeOf });
-registerPreviousIpc({ renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
+registerPreviousIpc({ browserGone, renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });
 registerSchedulesIpc({ getScheduler: () => scheduler, getFolderStore: () => folderStore });
 registerUsageIpc({ agents, getUsageStore: () => usageStore, getUsageTotalsStore: () => usageTotalsStore, usageLabel });
@@ -751,9 +768,10 @@ function oneShotFor(id: string): { name: string; generate: (prompt: string) => R
 registerProfilesIpc({ agents, router, getAgentTrust: () => agentTrust, wsKey, ensureLive, oneShot: (id) => oneShotFor(id), profileFreshness });
 registerSlashIpc({ agents, router, ensureLive }); // spec 073
 registerNotesIpc({ getOps: () => notesOps }); // spec 083
-registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey });
+registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey, orgModel: (adapterId, model) => orgPolicies.model(adapterId, model) });
+registerOrgPolicyIpc({ view: () => orgPolicies.view() });
 registerAdaptersIpc({ adaptersList });
-registerFoldersIpc({ agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey });
+registerFoldersIpc({ browserGone, agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey });
 registerFloorsIpc({ agents, getFolderStore: () => folderStore, wsKey });
 /* Spec 061: a folder's own agent setup (scan, decide, explain), window-only (FR-013); the pure handler bodies are unit-tested. */
 registerFolderSetupIpc({
@@ -853,6 +871,7 @@ function createWindow(): void {
     if (!navigationAllowed(url, INDEX_HTML)) e.preventDefault();
   };
   win.webContents.on('will-navigate', guardNav);
+  win.webContents.on('did-start-loading', () => browser.detachAll()); // spec 080: a page that loads again has forgotten its Browser tab; no view stays on top of it
   win.webContents.on('will-redirect', guardNav);
   // spec 045 FR-005: Electron grants web permissions by default; this page needs only clipboard writes (Copy buttons) and notifications (spec 052 FR-059)
   win.webContents.session.setPermissionRequestHandler((_wc, permission, done) => done(permissionAllowed(permission)));

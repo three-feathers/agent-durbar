@@ -129,7 +129,7 @@ const only = (...m: PackageManager[]) => new Set<PackageManager>(m);
 
 // FR-004/FR-005: the runner, with a fake process (nothing runs)
 void (async () => {
-  type Call = { file: string; args: readonly string[]; opts: { stdio: unknown[]; windowsVerbatimArguments?: boolean; detached?: boolean } };
+  type Call = { file: string; args: readonly string[]; opts: { stdio: unknown[]; windowsVerbatimArguments?: boolean; detached?: boolean; env?: Record<string, string | undefined> } };
   const mk = (platform: NodeJS.Platform, files: string[], extra: Partial<{ limits: { install: number; signin: number }; progressMs: number; now: () => number; realpath: (p: string) => string; trustedPath: (p: string) => boolean }> = {}) => {
     const calls: Call[] = [], prog: SetupProgress[] = [], done: SetupDone[] = [], killed: ChildLike[] = [], written: string[] = [];
     let redetects = 0, child!: ChildLike & EventEmitter & { out: EventEmitter; err: EventEmitter };
@@ -194,6 +194,35 @@ void (async () => {
     t.child().emit('close', 0); await tick(); await tick();
     const d = mk('linux', ['/usr/bin/codex']); d.setup.run('codex', 'signin');
     assert.strictEqual(d.setup.paste('x').ok, false, 'Codex takes no pasted text');
+  }
+  // spec 081 FR-042: the spawned child's PATH has the folder of the npm-installed program first (its `env node` finds the node beside it)
+  // POSIX only: a Windows host keeps `Path` and a fake 'linux' platform would read `PATH`; the Windows spelling is covered by pathWithToolDir's own test (test-updatecheck)
+  if (process.platform !== 'win32') {
+    const savedPath = process.env.PATH; process.env.PATH = '/zzz:/usr/bin'; // a GUI app's PATH, without the folder of the script
+    try {
+    const cop = mk('linux', ['/usr/local/nvmish/bin/copilot']);
+    (cop.setup['deps'].detectEnv.env as Record<string, string>).PATH = '/usr/local/nvmish/bin:/usr/bin';
+    assert.ok(cop.setup.run('copilot', 'signin').ok);
+    const pathOf = (c: Call): string[] => String(c.opts.env?.PATH).split(':');
+    assert.strictEqual(pathOf(cop.calls[0])[0], '/usr/local/nvmish/bin', 'copilot login: the folder of the copilot script first');
+    const up = mk('linux', ['/usr/bin/npm']);
+    const job = { kind: 'codex', op: 'update', file: '/x/npm-cli.js', args: ['i'], spawnFile: '/x/npm-cli.js', spawnArgs: ['i'], verbatim: false, paste: false, toolFile: '/home/u/.nvm/versions/node/v22.3.0/bin/npm' } as never;
+    assert.ok(up.setup.start(job).ok);
+    assert.strictEqual(pathOf(up.calls[0])[0], '/home/u/.nvm/versions/node/v22.3.0/bin', 'npm update: the spawn merge puts the npm folder first');
+    const other = mk('linux', ['/usr/bin/codex']);
+    other.setup.run('codex', 'signin');
+    assert.ok(pathOf(other.calls[0]).includes('/usr/bin'));
+    // untrusted folder (a symlink in a folder anyone can write): not put on PATH; a trusted one goes first
+    const seen: string[] = [];
+    const startWith = (dir: string): string => {
+      const u = mk('linux', [], { trustedPath: (p) => { seen.push(p); return !p.startsWith('/tmp/') ; } });
+      assert.ok(u.setup.start({ kind: 'codex', op: 'update', file: '/x/npm-cli.js', args: ['i'], spawnFile: '/x/npm-cli.js', spawnArgs: ['i'], verbatim: false, paste: false, toolFile: `${dir}/npm` } as never).ok);
+      return String(u.calls[0].opts.env?.PATH).split(':')[0];
+    };
+    assert.strictEqual(startWith('/opt/hb/bin'), '/opt/hb/bin');
+    assert.strictEqual(startWith('/tmp/evil'), '/zzz', 'untrusted folder: the PATH is untouched');
+    assert.ok(seen.includes('/tmp/evil/npm'));
+    } finally { process.env.PATH = savedPath; }
   }
   // Copilot sign-in needs the Copilot CLI (FR-006)
   {
@@ -517,6 +546,7 @@ void (async () => {
       assert.strictEqual(pl[0].owner, true);
       assert.strictEqual(pl[1].owner, undefined);
       assert.strictEqual(argvOf(u, 'codex').file, '/opt/homebrew/bin/brew');
+      assert.strictEqual((u.setup.prepare('codex', 'update', 0) as { job: { toolFile?: string } }).job.toolFile, undefined, 'FR-042: brew gets no node folder on PATH (it is not a node script)');
       const cl = mkU('darwin', ['/opt/homebrew/bin/claude', '/opt/homebrew/bin/brew'], { '/opt/homebrew/bin/claude': '/opt/homebrew/Caskroom/claude-code@latest/2.1.309/claude' }, {}, '/opt/homebrew/bin:/usr/bin');
       assert.deepStrictEqual(cl.setup.plans('claude', 'update').plans[0].args, ['upgrade', '--cask', 'claude-code@latest'], 'the cask of the path');
       const cs = mkU('darwin', ['/opt/homebrew/bin/claude', '/opt/homebrew/bin/brew'], { '/opt/homebrew/bin/claude': '/opt/homebrew/Caskroom/claude-code/2.1.308/claude' }, {}, '/opt/homebrew/bin:/usr/bin');
@@ -580,9 +610,12 @@ void (async () => {
       await notFile.setup.warm('codex');
       assert.ok(!notFile.setup.plans('codex', 'update').plans.some((p) => p.codexUpdate), 'not a regular file');
       // npm and Homebrew copies update through their own route, never codex update; the Windows install.ps1 folder goes to the 060 route
-      const npmC = mkU('linux', [`${NVM}/bin/codex`, `${NVM}/bin/npm`, '/usr/bin/bash'], { [`${NVM}/bin/codex`]: `${NVM}/lib/node_modules/@openai/codex/bin/codex.js` }, label('codex-cli 0.163.0'), `${NVM}/bin:/usr/bin`);
+      const npmC = mkU('linux', [`${NVM}/bin/codex`, `${NVM}/bin/npm`, '/usr/bin/bash'], { [`${NVM}/bin/codex`]: `${NVM}/lib/node_modules/@openai/codex/bin/codex.js`, [`${NVM}/bin/npm`]: `${NVM}/lib/node_modules/npm/bin/npm-cli.js` }, label('codex-cli 0.163.0'), `${NVM}/bin:/usr/bin`);
       await npmC.setup.warm('codex');
       assert.deepStrictEqual(npmC.setup.plans('codex', 'update').plans.map((p) => p.manager), ['npm', 'official']);
+      // spec 081 FR-042: the npm update carries its folder (before the real path is resolved) so `env node` finds the node beside it
+      const npmJob = npmC.setup.prepare('codex', 'update', 0);
+      assert.ok(npmJob.ok && (npmJob as { job: { toolFile?: string } }).job.toolFile === `${NVM}/bin/npm` && (npmJob as { job: { file: string } }).job.file.endsWith('npm-cli.js'), 'toolFile is the npm as found (before realpath), file is the real one: ' + JSON.stringify(npmJob));
       const winC = mkU('win32', ['C:\\Users\\u\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe', 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'], {}, label('codex-cli 0.163.0'));
       await winC.setup.warm('codex');
       const wp = winC.setup.plans('codex', 'update').plans;

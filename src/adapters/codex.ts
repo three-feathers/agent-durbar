@@ -6,6 +6,8 @@
  *
  * Not in this file yet (T043b): resume of a known thread (FR-093) and its folder and profile checks.
  */
+import { readCodexOrgPolicy } from './codexOrgPolicy';
+import type { OrgPolicy } from '../shared/orgpolicy';
 import { randomUUID } from 'crypto';
 import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import * as fs from 'fs';
@@ -23,7 +25,7 @@ import { CodexMapper } from './codexMap';
 import { CodexRpcError, createCodexRpc, realSpawn } from './codexRpc';
 import type { CodexRpc, RequestOutcome, SpawnFn } from './codexRpc';
 import { codexHistory, codexModelOptions, codexPreviousSessions } from './codexHistory';
-import { cleanAnswers, parseQuestionsWithOriginals } from './questions';
+import { cleanAnswers, parseQuestionsWithOriginals, SkipNotes } from './questions';
 import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaiter } from './elicitation';
 import type { ElicitAnswer } from '../shared/elicit';
 import { codexMcpConfig, codexMcpServers, codexMcpState } from './codexMcp';
@@ -479,6 +481,11 @@ export class CodexAdapter implements AgentAdapter {
     }
   }
 
+  /** Spec 076 FR-198 (issue #602): the app's own machine policy, read-only. */
+  readOrgPolicy(): OrgPolicy {
+    return readCodexOrgPolicy();
+  }
+
   /**
    * Spec 051 FR-011: the account Codex reports, from `account/read` with `refreshToken: false` on a short-lived app-server (local
    * auth state; no prompt, nothing billed). An older Codex without the method is `unknown`. Personal data: never passed to `debug`.
@@ -863,7 +870,7 @@ export class CodexAdapter implements AgentAdapter {
     live.interrupting = true;
     try {
       live.broker.denyPending();
-      for (const answer of [...live.questions.values()]) answer(null); // FR-146: an open question is skipped
+      for (const [id, answer] of [...live.questions]) { this.skips.note(id, 'interrupt'); answer(null); } // FR-146: an open question is skipped
       for (const p of [...(live.plans?.values() ?? [])]) p({ kind: 'reject' }); // spec 066: Stop rejects an open plan
       live.planTurn = undefined;
       cancelElicitations(live.elicitations); // FR-151
@@ -936,7 +943,7 @@ export class CodexAdapter implements AgentAdapter {
     live.stopping = true;
     live.muted = true;
     live.broker.stop();
-    for (const answer of [...live.questions.values()]) answer(null); // FR-146
+    for (const [id, answer] of [...live.questions]) { this.skips.note(id, 'stop'); answer(null); } // FR-146
     cancelElicitations(live.elicitations); // FR-151
     for (const p of [...(live.plans?.values() ?? [])]) p({ kind: 'reject' }); // spec 066: End rejects an open plan
     // Let the denied requests' answers (wire `cancel`) go out before the interrupt and the close.
@@ -1163,6 +1170,9 @@ export class CodexAdapter implements AgentAdapter {
     return { result: { decision: reply.decision } };
   }
 
+  /** Why each skipped question was skipped (spec 052 FR-178). */
+  private readonly skips = new SkipNotes();
+
   /**
    * FR-146: Codex asks the user (`item/tool/requestUserInput`). The questions go to the question card (spec 012 FR-128); the
    * answer goes back keyed by Codex's question id. Skip, Stop and End session answer with nothing. A secret question
@@ -1186,7 +1196,9 @@ export class CodexAdapter implements AgentAdapter {
     live.questions.delete(requestId);
     const clean = answers ? cleanAnswers(asked, answers) : undefined;
     if (!clean) {
-      this.emit(live.sid, { type: 'question', phase: 'cancelled', requestId });
+      const reason = this.skips.take(requestId);
+      this.debug?.(`codex: question ${requestId} cancelled: ${reason}`); // spec 052 FR-178: a code, never the question or an answer
+      this.emit(live.sid, { type: 'question', phase: 'cancelled', requestId, reason });
       return { result: { answers: {} } };
     }
     this.emit(live.sid, { type: 'question', phase: 'answered', requestId, answers: clean });
@@ -1256,7 +1268,9 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   answerQuestion(sessionId: string, requestId: string, answers: Record<string, string> | null): void {
-    this.sessions.get(sessionId)?.questions.get(requestId)?.(answers);
+    const w = this.sessions.get(sessionId)?.questions.get(requestId);
+    if (w && answers === null) this.skips.note(requestId, 'user');
+    w?.(answers);
   }
 
   /** FR-151: the user's answer to an MCP elicitation (main checked it against the fields). */

@@ -91,7 +91,7 @@ html[data-density="compact"] #topMoreMenu{--h-ctl:32px; --h-chip:26px; --h-pill:
 .stat.attn{background:var(--warn-bg)}
 .stat.attn span.l{color:var(--amber-ink);font-weight:600}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--gray);flex:none;display:inline-block}
-.dot.working{background:var(--c-working)} .dot.thinking{background:var(--c-thinking)} .dot.waiting{background:var(--c-waiting)} .dot.failing,.dot.retrying{background:var(--c-waiting)} /* spec 052 FR-092: Failing reuses the waiting colour; spec 034 FR-018: Retrying too */
+.dot.working{background:var(--c-working)} .dot.thinking,.dot.compacting{background:var(--c-thinking)} .dot.waiting{background:var(--c-waiting)} .dot.failing,.dot.retrying{background:var(--c-waiting)} /* spec 052 FR-092: Failing reuses the waiting colour; spec 034 FR-018: Retrying too */
 .dot.idle{background:transparent;border:2px solid var(--c-idle);box-shadow:0 0 0 1px var(--pc-idle)} .dot.error{background:var(--c-error)} .dot.done{background:var(--c-done)}
 /* spec 052 FR-006: a shape as well as a colour (deuteranopia): waiting is a diamond, error a triangle, idle a ring, working and done circles */
 .dot.waiting{border-radius:1.5px;transform:rotate(45deg) scale(.86);box-shadow:0 0 0 1px var(--amber-ink)} /* spec 052 FR-052: a darker edge so it shows on light surfaces (size unchanged) */
@@ -247,10 +247,11 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 .st-waiting{--pb:var(--pb-waiting);--pc:var(--amber-ink);--pd:var(--c-waiting)} .st-idle{--pb:var(--pb-idle);--pc:var(--pc-idle);--pd:var(--c-idle)}
 .st-error{--pb:var(--pb-error);--pc:var(--red-ink);--pd:var(--c-error)} .st-done{--pb:var(--pb-done);--pc:var(--pc-done);--pd:var(--c-done)}
 .st-failing,.st-retrying{--pb:var(--pb-waiting);--pc:var(--amber-ink);--pd:var(--c-waiting)} /* spec 052 FR-062: "Failing" reuses the waiting colours (no new status colour); spec 034 FR-018: "Retrying" too */
+.st-compacting{--pb:var(--pb-thinking);--pc:var(--pc-thinking);--pd:var(--c-thinking)} /* spec 015 FR-010 (issue 601): "Compacting" reuses the Thinking colours (no new status colour) */
 .st-idle i{background:transparent;border:1.5px solid var(--c-idle)}
 /* spec 052 FR-101: on cards and list rows a status that needs nothing from you is a dot and the word in its colour; Waiting, Error,
    Failing and Limit reached (a waiting state) keep the filled pill. Only colours change: the pill keeps its height and padding */
-:is(.desk,.lrow) .pill:is(.st-working,.st-thinking,.st-idle,.st-done){background:transparent;border-color:transparent}
+:is(.desk,.lrow) .pill:is(.st-working,.st-thinking,.st-compacting,.st-idle,.st-done){background:transparent;border-color:transparent}
 .stage[data-d="full"] .desk.is-idle .scene,.stage[data-d="full"] .desk.is-idle .info{opacity:.7}
 
 /* sub-agents: beside the parent, connected by a line */
@@ -733,6 +734,27 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .stage[data-d="roomy"] .helper.hc .hname{font-size:12.5px;line-height:16px}
 .stage[data-d="roomy"] .helper.hc .hs{font-size:11px;line-height:14px}
 .stage[data-d="roomy"] .helpers.hstrip>.more{font-size:12px}
+/* spec 001 FR-089..FR-094 (issue 697): expanded helper cards, level 1 (name + one line) and level 2 (name, task, activity or result, facts). They only appear in a
+   grown roomy strip. A fixed height per level and whole-line clamps, so text that streams never changes a box or the fit; theme tokens only; nothing under
+   10.5px; no transition or animation. A strip of cards takes as many columns as fit with each card at least --hxw wide (about 85 characters at most per line). */
+.helpers.hstrip[data-hx]{align-self:stretch;grid-template-columns:repeat(auto-fill,minmax(var(--hxw),1fr))}
+.helpers.hstrip[data-hx="1"]{--hxw:220px;--hxh:50px}
+.helpers.hstrip[data-hx="2"]{--hxw:260px;--hxh:106px}
+.helpers.hstrip[data-hx]>*::before{content:none}
+.helpers.hstrip[data-hx]::before{left:0;width:100%;top:-10px;height:5px;border-left:0;border-bottom:1px solid var(--line);background:linear-gradient(var(--line),var(--line)) var(--stub) 0/1px 100% no-repeat}
+.helper.hc.hx{height:var(--hxh);max-width:460px;align-items:start;padding:5px 8px 5px 5px;overflow:hidden;transition:none}
+.helper.hc.hx>.sc{align-self:start}
+.helper.hc.hx .badge{top:5px;right:5px}
+.helper.hc.hx .hi{min-width:0;height:100%;gap:2px}
+.helper.hc.hx .hh{display:flex;align-items:baseline;gap:6px;min-width:0;padding-right:16px}
+.helper.hc.hx .hname{flex:0 1 auto;min-width:0}
+.helper.hc.hx .hs{flex:none}
+.helper.hc.hx .hx-b{display:flex;flex-direction:column;gap:2px;min-width:0;min-height:0;overflow:hidden}
+.helper.hc.hx .hx-l{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden;overflow-wrap:anywhere;min-width:0;font-size:11px;line-height:14px;font-weight:500;color:var(--ink-2)}
+.helper.hc.hx .hx-l b{font-weight:650;color:var(--ink)}
+.helpers.hstrip[data-hx="2"] .hx-l:is(.hx-task,.hx-now,.hx-result,.hx-failed){-webkit-line-clamp:2}
+.helper.hc.hx .hx-l.hx-nr{color:var(--muted)}
+.helper.hc.hx .hx-l.hx-facts{color:var(--muted)}
 /* spec 001 FR-041..FR-045: grown desks. With few agents a roomy card grows by --gf (1 to 2.5, set with data-grow on the stage by the layout
    search): taller, a wider column and drawing, the same text sizes. Its text line fills the card (at most 8 lines) and keeps the newest
    lines in view like the side panel (.over, set by measuring); from --gf 1.4 (data-grow="2") the name may take two lines. */
@@ -826,6 +848,42 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .composer{padding:8px max(16px,calc((100% - 880px)/2))}
 .ph{padding-left:max(16px,calc((100% - 1240px)/2));padding-right:max(16px,calc((100% - 1240px)/2))}
 .panel-in.viewing .composer,.panel-in.viewing .prev{display:none}
+/* spec 080 T015: the Chat | Browser tabs and the browser bar. Theme tokens only; text 11px or more (FR-006); state is icon plus word. */
+.ptabs{flex:none;display:flex;gap:4px;padding:0 max(16px,calc((100% - 1240px)/2));border-bottom:1px solid var(--line);background:var(--surface)}
+.ptab{height:30px;padding:0 12px;border:0;border-bottom:2px solid transparent;background:none;color:var(--muted);font:inherit;font-size:var(--t4-size);font-weight:var(--t4-weight);cursor:pointer}
+.ptab:hover{color:var(--ink)}
+.ptab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--sage-ink);font-weight:650}
+.panel-in.on-browser #chat{flex:0 0 0;height:0;min-height:0;padding:0;overflow:hidden;visibility:hidden}
+.panel-in.on-browser .prev{display:none}
+.bpane{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--surface)}
+.bpane[hidden]{display:none}
+.bbar{flex:none;display:flex;align-items:center;gap:6px;padding:8px max(16px,calc((100% - 1240px)/2)) 4px}
+.bbtn{flex:none;width:var(--h-ctl);height:var(--h-ctl);display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line-2);border-radius:var(--r-md);background:var(--raised);color:var(--ink);cursor:pointer;padding:0}
+.bbtn svg{width:15px;height:15px}
+.bbtn:hover:not(:disabled){background:var(--surface-2)}
+.bbtn:disabled,.bchip:disabled{opacity:.45;cursor:default}
+.baddr{flex:1;min-width:0;height:var(--h-ctl);padding:0 10px;border:1px solid var(--line-2);border-radius:var(--r-md);background:var(--raised);color:var(--ink);font:inherit;font-size:var(--t4-size)}
+.bstat{flex:none;display:flex;align-items:center;gap:8px;padding:0 max(16px,calc((100% - 1240px)/2)) 6px;min-height:26px;font-size:var(--t5-size);line-height:var(--t5-lh);color:var(--muted)}
+.bnote{flex:none;display:inline-flex;align-items:center;gap:5px;max-width:60%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.bnote:empty{display:none}
+.bnote svg{width:13px;height:13px;flex:none}
+.bnote span{overflow:hidden;text-overflow:ellipsis}
+.bnote[data-kind="error"]{color:var(--tone-bad-ink)}
+.btitle{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.bacts{flex:none;margin-left:auto;display:inline-flex;align-items:center;gap:6px}
+.bchip{height:var(--h-chip);display:inline-flex;align-items:center;gap:5px;padding:0 8px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2);color:var(--ink-2);font:inherit;font-size:var(--t5-size);cursor:pointer;white-space:nowrap}
+.bchip:hover:not(:disabled){border-color:var(--line-2)}
+.bchip svg{width:13px;height:13px;flex:none}
+.bview{flex:1;min-height:120px;border-top:1px solid var(--line);background:var(--surface-2)}
+.bview{position:relative}
+.bshot{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;pointer-events:none}
+.bnote[data-kind="dialog"] svg{color:var(--ink-2)}
+.dlg-mark{flex:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-right:5px;border:1px solid var(--tone-warn-line);border-radius:4px;background:var(--warn-bg);color:var(--amber-ink);font-size:var(--t5-size);font-weight:700;line-height:1}
+.stage .desk.card .dlg-mark,.stage .desk.shut .dlg-mark{position:absolute;left:2px;top:40px;margin:0;z-index:4}
+.pagetext{font-style:italic}
+.bspin{animation:bspin 1s linear infinite}
+@keyframes bspin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.bspin{animation:none}}
 .nothink{font-size:11px;color:var(--muted)}
 .think.streaming .think-body:empty::before{content:"The model reasons privately first. A summary of its reasoning appears here when it finishes thinking.";color:var(--muted)}
 
@@ -1230,6 +1288,7 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .note.info{background:var(--note);border-color:var(--line);font-size:12px;padding:5px 10px;color:var(--ink-2)}
 .note.info.cline.failed{background:var(--bad-bg);border-color:var(--tone-bad-line);color:var(--red-ink)}
 .note.fresh{max-width:560px}
+.note.sum-note{background:var(--note);border-color:var(--line)} /* spec 085: the end-of-session card is a calm record, not a warning */
 .toast.with-act{display:flex;align-items:center;gap:14px}
 .toast-act{white-space:nowrap;flex:none;background:transparent;color:#f7f4ee;border:1px solid color-mix(in srgb,var(--raised) 45%,transparent);border-radius:8px;padding:2px 12px;font-size:12px;font-weight:700;cursor:pointer}
 .toast-act:hover{background:color-mix(in srgb,var(--raised) 14%,transparent)}

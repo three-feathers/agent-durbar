@@ -31,7 +31,7 @@ const THEMES = [['clean-office', 'clean'], ['corporate'], ['durbar-european'], [
 const DOC_SHOTS = [
   { name: 'shots-hero', files: ['m5-sim15-1440x900-closed.png', 'm6-fullchat-sim15-1280x800.png'] },
   { name: 'shots-003-011', files: ['m6-fullchat-sim15-1440x900.png', '003-allow-all-menu-1440x900.png'] },
-  { name: 'check-office-fill', files: ['001-fill-1-1440x900.png', '001-fill-1-1920x1080.png', '001-fill-4-1440x900.png', '001-fill-6-1440x900.png', '001-shutters-1440x900.png'] },
+  { name: 'check-office-fill', files: ['001-helpers-2-1440x900.png', '001-helpers-2-1280x800.png', '001-helpers-3-1440x900.png', '001-helpers-3-1280x800.png', '001-fill-1-1440x900.png', '001-fill-1-1920x1080.png', '001-fill-4-1440x900.png', '001-fill-6-1440x900.png', '001-shutters-1440x900.png'] },
   { name: 'shots-001-live-activity', freeze: false, files: ['001-live-activity-dense-1440x900.png', '001-live-activity-side-1440x900.png'] },
   { name: 'shots-001-lobby', files: ['001-lobby-15-1280x800.png', '001-lobby-15-1440x900.png', '001-lobby-15-1440x900-retro.png', '001-lobby-3-1440x900.png'] },
   { name: 'shots-005-cardmenu', files: ['005-card-menu-stop-end-1440x900.png'] },
@@ -44,6 +44,7 @@ const DOC_SHOTS = [
   { name: 'shots-006-prevmarks', files: ['006-prev-menu-1440x900.png', '006-sessions-expanded-1440x900.png'] },
   { name: 'shots-009-vschat', files: ['009-vschat-latest-1440x900.png'] },
   { name: 'shots-012-cost-cap', freeze: false, files: ['cost-cap-1440x900.png'] },
+  { name: 'shots-015-compact', files: ['015-compacting-office-1440x900.png', '015-compacting-office-1280x800.png', '015-compacting-chat-1440x900.png', '015-compacting-chat-1280x800.png'] },
   { name: 'shots-017', files: [{ to: '012-harness-picker-1440x900.png', from: '012-picker-1440x900.png' }] },
   { name: 'shots-024', files: ['024-lobby-1440x900.png'] },
   { name: 'shots-030-handoff', files: ['handoff-review-1440x900.png'] },
@@ -63,6 +64,7 @@ const DOC_SHOTS = [
   { name: 'check-slash-suggest', files: ['073-slash-1440x900.png'] },
   { name: 'shots-074-navigator', files: ['074-navigator-start-1440x900.png'] },
   { name: 'shots-058-mcp-settings', files: ['058-mcp-settings-1440x900.png'] },
+  { name: 'shots-076-orgpolicy', files: ['076-orgpolicy-mode-1440x900.png', '076-orgpolicy-server-1440x900.png'] },
   { name: 'shots-058-mcp-health', files: ['058-mcp-health-1440x900.png'] },
   // one office per theme (shots-themes.js, the Settings path); the README (035-*) and the landing page (site-theme-*) show the same
   ...THEMES.map(([id, short]) => ({

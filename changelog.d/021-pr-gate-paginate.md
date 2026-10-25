@@ -1,0 +1,1 @@
+- `scripts/pr-gate.sh` reads every comment and review of a long PR (it stopped at 30), so a ready PR is no longer reported as "not ready", and a plain comment no longer lifts a request for changes (spec 021 FR-055).

@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { AdapterDescriptor, DetectResult } from './capabilities';
+import { MAX_VERSION_LENGTH, VERSION_TOKEN_SOURCE } from '../shared/versionfield';
 import { pathDirs } from '../shared/pathdirs';
 import { CMD_UNSAFE, windowsCmd } from '../shared/wincmd';
 
@@ -134,6 +135,16 @@ export function displayPath(file: string, env: Pick<DetectEnv, 'platform' | 'hom
   return p.basename(file);
 }
 
+/**
+ * The "Found at" line of a card (spec 081 FR-042: "Found at codex" was not a path): `displayPath`, but a system path such as
+ * /opt/homebrew/bin/codex is shown in full (it names no person); a path inside another person's folder (/Users, /home, \\Users\\) stays the file name.
+ */
+export function displayWhere(file: string, env: Pick<DetectEnv, 'platform' | 'homedir'>): string {
+  const shown = displayPath(file, env);
+  if (shown !== pathFor(env.platform).basename(file)) return shown;
+  return pathFor(env.platform).isAbsolute(file) && !/(^|[\\/])(users|home)([\\/]|$)/i.test(file) ? file : shown;
+}
+
 /** Candidate file paths in search order: configured path, PATH entries, known install folders. */
 export function candidates(spec: BinarySpec, env: DetectEnv, configuredPath?: string): string[] {
   const p = pathFor(env.platform);
@@ -179,10 +190,19 @@ export function candidates(spec: BinarySpec, env: DetectEnv, configuredPath?: st
   });
 }
 
-/** The first `x.y.z` (optionally with a pre-release suffix) in the output, without a leading `v`. */
+/** Spec 081 FR-005 and spec 012 FR-039: one limit and one token pattern, shared with `parseVersionField` (`src/shared/versionfield.ts`). */
+const VERSION_LINE_RE = new RegExp('^[ \\t]*(?:(?:codex-cli|codex|claude|Claude Code)[ \\t]+)?\\(?(?:rust-v|v)?(' + VERSION_TOKEN_SOURCE + ')(?:\\+[0-9A-Za-z.-]{1,40})?(?=$|[ \\t)])');
+
+/** A bounded version token on the first line; known app labels and version prefixes are omitted. */
 export function parseVersion(stdout: string): string | undefined {
-  const m = /\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/.exec(typeof stdout === 'string' ? stdout : '');
-  return m ? m[0] : undefined;
+  if (typeof stdout !== 'string') return undefined;
+  // Inspect one extra character so cutting the line cannot turn an oversized token into a valid version.
+  const prefix = stdout.slice(0, 201);
+  const line = prefix.split(/[\r\n]/, 1)[0];
+  const m = VERSION_LINE_RE.exec(line.slice(0, 200));
+  if (!m || (m[0].length === 200 && line.length > 200 && !/[ \t)]/.test(line[200]))) return undefined;
+  if (m[1].length > MAX_VERSION_LENGTH) return undefined;
+  return m[1];
 }
 
 function cmpIdent(a: string, b: string): number {
@@ -378,9 +398,9 @@ export function nodeDetectEnv(): DetectEnv {
 }
 
 /** Adds where the app was found, safe to show (`~/…` or only the file name, never the user name: `displayPath`). */
-const withWhere = (r: DetectResult & { path?: string }, env: DetectEnv): DetectResult => {
+export const withWhere = (r: DetectResult & { path?: string }, env: DetectEnv): DetectResult => {
   const { path: p, ...rest } = r;
-  return p ? { ...rest, where: displayPath(p, env) } : rest;
+  return p ? { ...rest, where: displayWhere(p, env) } : rest;
 };
 
 export function detectorFor(id: string): ((d: AdapterDescriptor) => Promise<DetectResult>) | undefined {

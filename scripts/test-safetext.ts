@@ -164,7 +164,7 @@ eq(T.ready, true, 'redact: ready');
 // page wiring
 {
   const html = fs.readFileSync(path.join(R, 'index.html'), 'utf8');
-  ok(/<script src="exports-shim\.js"><\/script>\s*<script src="\.\.\/shared\/redact\.js"><\/script>\s*<script src="safetext\.js"><\/script>\s*<script src="liveact\.js"><\/script>\s*<script src="app\.js">/.test(html), 'script order: exports-shim, redact, safetext, liveact, app');
+  ok(/<script src="exports-shim\.js"><\/script>\s*<script src="\.\.\/shared\/redact\.js"><\/script>\s*(?:<script src="\.\.\/shared\/answerlimits\.js"><\/script>(?:<!--[^>]*-->)?\s*)?<script src="safetext\.js"><\/script>\s*<script src="liveact\.js"><\/script>\s*<script src="app\.js">/.test(html), 'script order: exports-shim, redact, safetext, liveact, app');
   const la = fs.readFileSync(path.join(R, 'liveact.js'), 'utf8');
   ok(/ST\.plain\(t\)/.test(la) && !/replace\(\/\[\*_`~\]\//.test(la), 'liveact.js keeps no plain() of its own');
   ok(fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8').includes("'safetext.js'"), 'copied to dist');
