@@ -90,12 +90,46 @@ export const GIT_SAFE_CONFIG: readonly string[] = [
   'protocol.allow=never', // no transport at all: a partial clone's lazy fetch cannot start core.sshCommand, an uploadpack or a credential helper
   ...['file', 'git', 'ssh', 'http', 'https', 'ext'].map((p) => `protocol.${p}.allow=never`), // the folder's own protocol.<name>.allow would beat protocol.allow
   'log.showSignature=false', // no gpg.program
+  'credential.helper=', // an empty value clears every helper the folder's config (or any other) lists
+  'diff.submodule=short', // a patch diff does not start `git diff` inside a submodule (whose own diff drivers would run)
+  'status.submoduleSummary=false', // no `git submodule summary` (long status only, set anyway)
 ];
-export const GIT_SAFE_ENV: Readonly<Record<string, string>> = { GIT_NO_LAZY_FETCH: '1', GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' };
+/**
+ * Set on every git process. `GIT_ALLOW_PROTOCOL` empty: no transport at all, and it replaces every `protocol.*` setting,
+ * so a folder's own `protocol.<any name>.allow=always` (ftp, or a `git-remote-<x>` helper) cannot bring one back.
+ */
+export const GIT_SAFE_ENV: Readonly<Record<string, string>> = { GIT_NO_LAZY_FETCH: '1', GIT_ALLOW_PROTOCOL: '', GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' };
+
+/**
+ * The child's environment: Durbar's own minus every `GIT_*` variable (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, GIT_CONFIG*,
+ * GIT_EXTERNAL_DIFF, GIT_PAGER, GIT_ASKPASS, ... would redirect git or start a helper) and `SSH_ASKPASS`, plus `GIT_SAFE_ENV`.
+ * Compared in upper case: Windows environment names are not case-sensitive.
+ */
+export function gitEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(base)) {
+    const u = k.toUpperCase();
+    if (u.startsWith('GIT_') || u === 'SSH_ASKPASS') continue;
+    env[k] = v;
+  }
+  return { ...env, ...GIT_SAFE_ENV };
+}
 const GLOBAL = ['--no-pager', '--no-optional-locks'];
 const AFTER: Record<string, string[]> = {
   status: ['--ignore-submodules=dirty'], // do not start a git inside each submodule (its own filter drivers were not read)
-  diff: ['--no-ext-diff', '--no-textconv', '--ignore-submodules=dirty'], // no diff.external, diff.<name>.command or textconv
+  diff: ['--no-ext-diff', '--no-textconv', '--ignore-submodules=dirty', '--submodule=short'], // no diff.external, diff.<name>.command or textconv; no git inside a submodule
+};
+/**
+ * The only options a caller may pass, per subcommand (what spec 063 and spec 085 use). A caller's flag comes after the
+ * overrides, so `--textconv`, `--ext-diff`, `--submodule=diff` or `--ignore-submodules=none` would undo them: anything not
+ * listed is refused. Arguments that do not start with `-` (a revision such as HEAD or <sha>..HEAD) are allowed, and so is
+ * everything after `--` (paths).
+ */
+export const GIT_CALLER_OPTIONS: Readonly<Record<string, readonly string[]>> = {
+  status: ['--porcelain=v1', '--branch', '-z', '--untracked-files=all'],
+  diff: ['--numstat', '--shortstat', '-z', '--no-ext-diff', '--no-textconv'],
+  'rev-parse': ['--verify', '-q'],
+  'rev-list': ['--count'],
 };
 
 /** Filter driver names from `git config -z --name-only --get-regexp '^filter\.'` (`filter.<name>.<key>`, the name may hold dots). */
@@ -123,7 +157,12 @@ function split(args: string[]): { at: string[]; sub: string; rest: string[] } {
   const at = args[0] === '-C' && typeof args[1] === 'string' ? args.slice(0, 2) : [];
   const sub = args[at.length];
   if (!(GIT_READ_ONLY as readonly string[]).includes(sub)) throw new Error(`git: subcommand not allowed: ${String(sub).slice(0, 40)}`);
-  return { at, sub, rest: args.slice(at.length + 1) };
+  const rest = args.slice(at.length + 1);
+  const end = rest.indexOf('--');
+  for (const a of end < 0 ? rest : rest.slice(0, end)) {
+    if (typeof a !== 'string' || (a.startsWith('-') && !GIT_CALLER_OPTIONS[sub].includes(a))) throw new Error(`git: option not allowed: ${String(a).slice(0, 40)}`);
+  }
+  return { at, sub, rest };
 }
 
 /** The full argv of one call: global options, the safe config, the filter overrides, then the call with its subcommand's flags. */
@@ -138,7 +177,7 @@ export type GitRun = (argv: string[], env: NodeJS.ProcessEnv) => Promise<string>
 export function makeGitExec(run: GitRun): GitExec {
   return async (args) => {
     const { at } = split(args);
-    const env = { ...process.env, ...GIT_SAFE_ENV };
+    const env = gitEnv(process.env);
     const list = [...GLOBAL, ...GIT_SAFE_CONFIG.flatMap((c) => ['-c', c]), ...at, 'config', '-z', '--name-only', '--get-regexp', '^filter\\.'];
     // exit status 1: no such key (no filter driver at all); anything else is a failure
     const names = await run(list, env).catch((e: { code?: unknown }) => { if (e && e.code === 1) return ''; throw e; });
