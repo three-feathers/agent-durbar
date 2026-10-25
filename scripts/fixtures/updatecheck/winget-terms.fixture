@@ -1,0 +1,5 @@
+# source: PLACEHOLDER (read: winget docs, source agreements); replace with a recorded Windows run (tasks.md T041)
+The `winget` source requires that you view the following agreements before using.
+Terms of Transaction: https://aka.ms/microsoft-store-terms-of-transaction
+Do you agree to all the source agreements terms?
+[Y] Yes  [N] No:

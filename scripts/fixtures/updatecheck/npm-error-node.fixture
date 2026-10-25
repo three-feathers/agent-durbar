@@ -1,0 +1,6 @@
+# source: read: npm engine-check error shape (npm ERR! notsup); the line holds a version-looking token that is NOT the answer
+npm ERR! code EBADENGINE
+npm ERR! notsup Unsupported engine for @github/copilot
+npm ERR! notsup Required: {"node":">=22"}
+npm ERR! notsup Actual:   {"npm":"10.9.0","node":"v22.11.0"}
+Unsupported node v22.11.0

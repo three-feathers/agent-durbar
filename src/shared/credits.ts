@@ -5,6 +5,7 @@
  */
 import { parseCustomPlaces, parsePlaceMap } from './places';
 import type { CustomPlace, PlaceMap } from './places';
+import { parseVersionField } from './versionfield';
 
 /** Upper bound for a cap (AI credits). Anything above is refused as a typo. */
 export const MAX_CAP = 1_000_000;
@@ -81,6 +82,24 @@ export interface AppSettings {
   notifyNeedsMe?: false;
   /** Spec 068 FR-006: after a coffee break, always ask before going on. The default (resume by itself when it costs nothing extra) is not written. */
   breakResume?: 'ask';
+  /** Spec 081 FR-016: the last version announced by a toast, per agent app (version strings only). */
+  announcedVersions?: Record<string, string>;
+  /** Spec 081 FR-022 (Q6 = A): the start check for agent-app updates is on by default; only `false` is kept. */
+  checkUpdatesAtStart?: false;
+}
+
+/** Spec 081: the app ids that may carry an announced version. */
+export const ANNOUNCE_APPS = ['claude', 'codex', 'copilot'] as const;
+/** Own properties only, an allowed app id and a valid version each; anything else is dropped. */
+export function parseAnnounced(v: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return out;
+  for (const app of ANNOUNCE_APPS) {
+    if (!Object.prototype.hasOwnProperty.call(v, app)) continue;
+    const ver = parseVersionField((v as Record<string, unknown>)[app]);
+    if (ver) out[app] = ver;
+  }
+  return out;
 }
 
 /** Tolerant parse: a missing, corrupt or odd file means no settings. */
@@ -93,7 +112,8 @@ export function parseSettings(text: string): AppSettings {
     const custom = parseCustomPlaces((obj as { customPlaces?: unknown }).customPlaces);
     const places = parsePlaceMap((obj as { placeMap?: unknown }).placeMap, custom.map((p) => p.id));
     const theme = parseThemeId((obj as { theme?: unknown }).theme);
-    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...(custom.length ? { customPlaces: custom } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}), ...(theme === undefined ? {} : { theme }), ...((obj as { notifyNeedsMe?: unknown }).notifyNeedsMe === false ? { notifyNeedsMe: false as const } : {}), ...((obj as { breakResume?: unknown }).breakResume === 'ask' ? { breakResume: 'ask' as const } : {}) };
+    const announced = parseAnnounced((obj as { announcedVersions?: unknown }).announcedVersions);
+    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...(custom.length ? { customPlaces: custom } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}), ...(theme === undefined ? {} : { theme }), ...((obj as { notifyNeedsMe?: unknown }).notifyNeedsMe === false ? { notifyNeedsMe: false as const } : {}), ...((obj as { breakResume?: unknown }).breakResume === 'ask' ? { breakResume: 'ask' as const } : {}), ...(Object.keys(announced).length ? { announcedVersions: announced } : {}), ...((obj as { checkUpdatesAtStart?: unknown }).checkUpdatesAtStart === false ? { checkUpdatesAtStart: false as const } : {}) };
   } catch {
     return {};
   }
