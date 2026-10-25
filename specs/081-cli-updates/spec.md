@@ -510,7 +510,7 @@ When the start check finds a new version, the Settings entry and the card get a 
 
 ### 2026-10-25: what the build changed against the plan (no owner decision involved)
 
-- **`src/shared/versionfield.ts`** holds `parseVersionField` and `MAX_VERSION_LENGTH` (a local 64 until #698's export exists), so settings can use them without the detection code. `updatecheck.ts` re-exports them.
+- **`src/shared/versionfield.ts`** is the one home of `MAX_VERSION_LENGTH` (64) and `VERSION_TOKEN_SOURCE` (the token pattern), with `parseVersionField`; `src/adapters/detect.ts` imports both constants, so the free-text and structured parsers cannot drift. Settings use it without the detection code. `updatecheck.ts` re-exports `MAX_VERSION_LENGTH` and `parseVersionField`.
 - **The lock and gate** are `src/main/updategate.ts` (pure of Electron; tested with fakes). `harness:run` gained a fourth argument (`'wait' | 'end' | 'cancel'`); `harness:updates` (get or `'check'`), `harness:visible` (is Settings > Agent apps on screen) and the event `harness:updatesChanged` are new; `settings:setCheckUpdatesAtStart` is the switch.
 - **Scheduled prompts** that would start or resume a session of an updating app are held (`Scheduler.heldBy`, outcome `held`, tried again every 5 s and at the release). A schedule *loop* (spec 072) is not held: its pass counts as failed `[KNOWN GAP]`.
 - **After an update** the card learns the new version from detection (`afterUpdate`), without contacting any source.
