@@ -184,6 +184,7 @@ export class ClaudeMapper {
 
   reset(): void {
     this.abortExpected = false;
+    this.compacting = false;
     this.retries.reset(); // spec 034 FR-017: a respawn starts without the old turn's retries
     this.limited = false;
     this.lastReset = undefined;
@@ -312,10 +313,50 @@ export class ClaudeMapper {
           agentId: parent,
         });
       }
+      case 'status': {
+        // spec 015 FR-007 (issue #601, `read:`): the CLI says `compacting` while it summarises the conversation; the main agent only
+        if (this.who(m)) return;
+        if (m.status === 'compacting') return this.compactionStart();
+        if (m.compact_result === 'failed') return this.compactionFailed();
+        return;
+      }
+      case 'compact_boundary': {
+        if (this.who(m)) return;
+        const meta = m.compact_metadata && typeof m.compact_metadata === 'object' ? (m.compact_metadata as Record<string, unknown>) : {};
+        const size = (v: unknown): number | undefined => { const n = num(v); const r = n === undefined ? undefined : Math.round(n); return r !== undefined && r >= 0 && r < 1e9 ? r : undefined; };
+        const pre = size(meta.pre_tokens);
+        const post = size(meta.post_tokens); // optional in the SDK (`read:` sdk.d.ts 0.3.310): the real size after, so the ring need not wait
+        this.compacting = false;
+        this.lastCtx = undefined; // the size it held before is gone; the next message's usage gives the new one
+        return this.emit({
+          type: 'compaction',
+          phase: 'complete',
+          trigger: meta.trigger === 'manual' ? 'manual' : meta.trigger === 'auto' ? 'auto' : 'unknown',
+          ...(pre !== undefined ? { tokensBefore: pre } : {}),
+          ...(post !== undefined ? { tokensAfter: post } : {}),
+          ...(pre !== undefined && post !== undefined ? { tokensRemoved: Math.max(0, pre - post) } : {}),
+        });
+      }
       default:
-        // task_progress (no `update` phase exists for sub-agents in v1), status, compact_boundary, hooks...: ignored.
+        // task_progress (no `update` phase exists for sub-agents in v1), session_state_changed, hooks...: ignored.
         return;
     }
+  }
+
+  /** Spec 015 FR-007: a compaction of the main agent is in progress (so a second `compacting` adds nothing and the turn's end can close it). */
+  private compacting = false;
+
+  private compactionStart(): void {
+    if (this.compacting) return;
+    this.compacting = true;
+    this.emit({ type: 'compaction', phase: 'start', trigger: 'unknown' });
+  }
+
+  /** No vendor text is copied: the line says only that it failed and that the conversation is unchanged. */
+  private compactionFailed(): void {
+    if (!this.compacting) return;
+    this.compacting = false;
+    this.emit({ type: 'compaction', phase: 'failed', trigger: 'unknown' });
   }
 
   /** Mark a sub-agent closed and drop its task table entries; false when it was not open (already closed or never started). */
@@ -469,6 +510,7 @@ export class ClaudeMapper {
   }
 
   private result(m: ClaudeMessage): void {
+    this.compactionFailed(); // spec 015 FR-007: a compaction still open when the turn ends did not finish; the desk must not stay on Compacting
     // End of turn: forget per-turn stream state so the tables stay bounded.
     this.thinkingStreamed.clear();
     this.edits.clear();
