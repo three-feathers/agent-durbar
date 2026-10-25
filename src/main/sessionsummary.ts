@@ -2,9 +2,10 @@
  * Spec 085: what a session did, read from git when it ends. From the first message Durbar sends in this run, main keeps a start (time,
  * start commit, whether the tree was clean); `summarize` compares the folder with it. Read-only: `git` runs with an argument array (no
  * shell), `--no-optional-locks`, the limits of spec 063; the only value that reaches an argument is a commit id that main itself read
- * and checked to be hex; `diff` runs with `--no-ext-diff --no-textconv`, so no diff helper configured for the folder runs. Nothing is stored on disk. Any failure is `{ repo: false }`, never an invented zero.
+ * and checked to be hex; `diff` runs with `--no-ext-diff --no-textconv`, so no diff helper configured for the folder runs. Nothing is stored on disk. A folder git says is not a repository is `{ repo: false }`; any other failure (a
+ * timeout, output over the limit, git missing) is `{ repo: false, unreadable: true }`, never "not a git folder" and never an invented zero.
  */
-import { folderGitStatus, nodeGitExec } from './gitstatus';
+import { nodeGitExec, parsePorcelainZ } from './gitstatus';
 import type { GitExec } from './gitstatus';
 
 export interface SessionGit {
@@ -20,8 +21,18 @@ export interface SessionGit {
   dirtyAtStart: boolean;
   /** The folder had no commit at the start: files and lines are not counted (there is nothing to compare with). */
   noHead?: boolean;
+  /** Untracked files could not be listed (for example more than the output limit): `newFiles` is 0 and not shown. */
+  newFilesUnknown?: boolean;
 }
-export type SessionSummary = { ok: true; ms: number; git: { repo: false } | SessionGit } | { ok: false; error: string };
+export type SessionNoGit = { repo: false; unreadable?: true };
+export type SessionSummary = { ok: true; ms: number; git: SessionNoGit | SessionGit } | { ok: false; error: string };
+
+/** Git said the folder is not a repository (its own message); anything else (timeout, size, git missing, another locale's words) is "could not read". */
+export const isNotRepo = (e: unknown): boolean => /not a git repository/i.test(String((e as { message?: unknown } | undefined)?.message ?? e));
+/** `rev-parse --verify -q HEAD` exits 1 with no output when there is no commit yet. */
+const isNoHead = (e: unknown): boolean => (e as { code?: unknown } | undefined)?.code === 1;
+const NOT_REPO: SessionNoGit = { repo: false };
+const UNREADABLE: SessionNoGit = { repo: false, unreadable: true };
 
 const MAX_COUNT = 1_000_000_000;
 /** A count from git output: a safe, bounded integer, else 0. */
@@ -55,7 +66,7 @@ export function countBinary(numstat: string): number {
   return Math.min(n, MAX_COUNT);
 }
 
-interface Start { at: number; ref?: string; clean: boolean; noHead: boolean; repo: boolean }
+interface Start { at: number; ready: Promise<void>; git: 'repo' | 'none' | 'unreadable'; ref?: string; clean: boolean; noHead: boolean }
 
 export class SessionStarts {
   private readonly starts = new Map<string, Start>();
@@ -65,24 +76,30 @@ export class SessionStarts {
     return this.starts.has(id);
   }
 
-  /** The first message of the session in this run; later calls do nothing. Never throws: a folder that is not a repository is a start without git. */
-  async noteStart(id: string, dir: string): Promise<void> {
-    if (this.starts.has(id)) return;
-    const at = this.now();
-    this.starts.set(id, { at, clean: false, noHead: false, repo: false }); // set at once: a second send while git runs is not a second start
-    try {
-      const st = await folderGitStatus(dir, this.exec);
-      if (!st.repo) return;
-      let ref: string | undefined;
-      try {
-        ref = validRef(await this.exec(['-C', dir, 'rev-parse', '--verify', '-q', 'HEAD']));
-      } catch {
-        ref = undefined;
-      }
-      this.starts.set(id, { at, ref, clean: st.files.length + st.more === 0, noHead: !ref, repo: true });
-    } catch {
-      /* keeps the start without git */
-    }
+  /**
+   * The first message of the session in this run; later calls return the same pending read. Two read-only calls run together, so the
+   * first message waits for at most one git time limit (4 s): `status` without untracked file names (is the tree clean?) and
+   * `rev-parse` (the start commit). Never throws. The start is stored at once with its pending read, and `summarize` waits for it, so
+   * an End right after the first message never sees a half-read start.
+   */
+  noteStart(id: string, dir: string): Promise<void> {
+    const old = this.starts.get(id);
+    if (old) return old.ready;
+    const s: Start = { at: this.now(), ready: Promise.resolve(), git: 'unreadable', clean: false, noHead: false };
+    s.ready = (async () => {
+      const [st, head] = await Promise.allSettled([
+        this.exec(['-C', dir, 'status', '--porcelain=v1', '-z', '--untracked-files=normal']),
+        this.exec(['-C', dir, 'rev-parse', '--verify', '-q', 'HEAD']),
+      ]);
+      if (st.status === 'rejected') { s.git = isNotRepo(st.reason) ? 'none' : 'unreadable'; return; }
+      if (head.status === 'fulfilled') s.ref = validRef(head.value);
+      else if (!isNoHead(head.reason)) { s.git = 'unreadable'; return; } // a timeout is not "no commit yet"
+      s.noHead = !s.ref;
+      s.clean = String(st.value) === '';
+      s.git = 'repo';
+    })().catch(() => { s.git = 'unreadable'; });
+    this.starts.set(id, s);
+    return s.ready;
   }
 
   forget(id: string): void {
@@ -93,20 +110,34 @@ export class SessionStarts {
     const s = this.starts.get(id);
     if (!s) return { ok: false, error: 'This session has not been sent a message in this run.' };
     const ms = Math.max(0, Math.min(Math.round(this.now() - s.at), 366 * 24 * 3600 * 1000));
-    if (!s.repo) return { ok: true, ms, git: { repo: false } };
-    try {
-      const stat = s.ref ? parseShortstat(await this.exec(['-C', dir, 'diff', '--no-ext-diff', '--no-textconv', '--shortstat', s.ref, '--'])) : { files: 0, added: 0, removed: 0 }; // no commit at the start: no base to compare with
-      const bin = s.ref ? countBinary(await this.exec(['-C', dir, 'diff', '--no-ext-diff', '--no-textconv', '--numstat', s.ref, '--']).catch(() => '')) : 0;
-      const commits = s.ref
-        ? parseCount(await this.exec(['-C', dir, 'rev-list', '--count', `${s.ref}..HEAD`]).catch(() => '0'))
-        : parseCount(await this.exec(['-C', dir, 'rev-list', '--count', 'HEAD']).catch(() => '0'));
-      const now = await folderGitStatus(dir, this.exec);
-      if (!now.repo) return { ok: true, ms, git: { repo: false } };
-      const untracked = now.files.filter((f) => f.state === 'untracked').length;
-      const newFiles = s.clean ? Math.min(untracked + (now.more > 0 ? now.more : 0), MAX_COUNT) : 0;
-      return { ok: true, ms, git: { repo: true, files: stat.files, added: stat.added, removed: stat.removed, binary: Math.min(bin, stat.files), newFiles, commits, dirtyAtStart: !s.clean, ...(s.noHead ? { noHead: true } : {}) } };
-    } catch {
-      return { ok: true, ms, git: { repo: false } };
-    }
+    await s.ready;
+    if (s.git === 'none') return { ok: true, ms, git: NOT_REPO };
+    if (s.git === 'unreadable') return { ok: true, ms, git: UNREADABLE };
+    const ref = s.ref;
+    const noDiff = Promise.resolve('');
+    // the reads run together: the end waits for at most one git time limit
+    const [stat, num, count, status] = await Promise.allSettled([
+      ref ? this.exec(['-C', dir, 'diff', '--no-ext-diff', '--no-textconv', '--shortstat', ref, '--']) : noDiff, // no commit at the start: no base to compare with
+      ref ? this.exec(['-C', dir, 'diff', '--no-ext-diff', '--no-textconv', '--numstat', ref, '--']) : noDiff,
+      this.exec(['-C', dir, 'rev-list', '--count', ref ? `${ref}..HEAD` : 'HEAD']),
+      s.clean ? this.exec(['-C', dir, 'status', '--porcelain=v1', '-z', '--untracked-files=all']) : noDiff,
+    ]);
+    // a folder still without a commit has no HEAD for `rev-list` either: that failure is "no commits", any other one is not a number to show
+    for (const r of ref ? [stat, count] : [stat]) if (r.status === 'rejected') return { ok: true, ms, git: isNotRepo(r.reason) ? NOT_REPO : UNREADABLE };
+    const v = (r: PromiseSettledResult<string>): string => (r.status === 'fulfilled' ? String(r.value) : '');
+    const st = parseShortstat(v(stat));
+    const bin = countBinary(v(num));
+    const commits = parseCount(v(count));
+    const newFiles = s.clean && status.status === 'fulfilled' ? Math.min(parsePorcelainZ(v(status)).files.filter((f) => f.state === 'untracked').length, MAX_COUNT) : 0;
+    const files = s.noHead ? 0 : st.files;
+    return {
+      ok: true,
+      ms,
+      git: {
+        repo: true, files, added: s.noHead ? 0 : st.added, removed: s.noHead ? 0 : st.removed, binary: Math.min(bin, files), newFiles, commits, dirtyAtStart: !s.clean,
+        ...(s.noHead ? { noHead: true } : {}),
+        ...(s.clean && status.status === 'rejected' ? { newFilesUnknown: true } : {}),
+      },
+    };
   }
 }

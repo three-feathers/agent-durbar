@@ -28,9 +28,9 @@
         const f=n(g.files),a=n(g.added),r=n(g.removed);
         parts.push(f?plural(f,'file','files')+' changed, +'+a+' −'+r:'no tracked files changed');
       }
-      const nf=n(g.newFiles);if(nf)parts.push(plural(nf,'new file','new files'));
+      const nf=n(g.newFiles);if(nf)parts.push(plural(nf,'new file','new files'));else if(g.newFilesUnknown===true)parts.push('new files not counted');
       const c=n(g.commits);parts.push(c?plural(c,'commit','commits'):'no commits');
-    }else parts.push('not a git folder, so files and lines are not counted');
+    }else parts.push(g.unreadable===true?'could not read git in the folder, so files and lines are not counted':'not a git folder, so files and lines are not counted');
     const pr=n(sum.pullRequests);if(pr)parts.push(plural(pr,'pull request','pull requests')+' opened');
     parts.push(duration(sum.ms));
     const money=typeof cost==='string'?cost.replace(/[\u0000-\u001f\u007f]/g,'').slice(0,80):'';
@@ -39,6 +39,6 @@
     return 'Session summary: '+parts.join(', ')+'.'+dirty;
   }
   /* the tooltip says where the numbers come from (Durbar’s own reading, not the agent app’s) */
-  const tip='Counted by Agent Durbar from git and its own clock since the first message of this session in this run. Changes made by other tools or people in the same folder are counted too.';
+  const tip='Counted by Agent Durbar from git and its own clock since the first message of this session in this run. Changes made by other tools or people in the same folder are counted too. Show uncommitted changes lists only what is not committed yet.';
   return {text,duration,tip};
 });

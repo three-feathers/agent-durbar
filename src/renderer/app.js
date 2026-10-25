@@ -4531,15 +4531,16 @@ async function readSessionSummary(r){
 }
 /* the cost part is the session's own usage figure (the same words as its usage line): money, tokens only for an agent app without a price, else nothing */
 function sessionSummaryCost(r){const t=costText(r);return !t?'':/ tok$/.test(t)?t.replace(/ tok$/,' tokens'):'cost '+t;}
+if(SIM)window.__durbarSumCost=id=>{const a=byId(id);return a?sessionSummaryCost(liveRoot(a)):null;}; /* simulator only: the driver checks the card's cost part against the session's own usage figure */
 function sessionSummaryNote(r,sum){
   if(!SSUM||!sum)return;
   const t=SSUM.text(sum,sessionSummaryCost(r));if(!t)return;
   const note=addNote(liveChat(r),esc(t));note.classList.add('sum-note');note.title=SSUM.tip;
   if(sum.git&&sum.git.repo===true&&bridge.gitStatus){
     const row=document.createElement('div');row.className='note-actions';
-    const b=document.createElement('button');b.type='button';b.className='btn';b.textContent='Show changed files';b.dataset.act='sumFiles';
+    const b=document.createElement('button');b.type='button';b.className='btn';b.textContent='Show uncommitted changes';b.dataset.act='sumFiles';
     b.onclick=async()=>{const st=await bridge.gitStatus(r.id).catch(()=>null);
-      if(!st||!st.repo||!GS.count(st)){toast('No uncommitted changes in the folder now.',3200);return;}
+      if(!st||!st.repo||!GS.count(st)){toast('No uncommitted changes in the folder now.'+(sum.git.commits>0?' What the session committed is in the folder\'s git history.':''),4200);return;}
       showFolderStatus(r,b,st);};
     row.appendChild(b);note.appendChild(row);
   }

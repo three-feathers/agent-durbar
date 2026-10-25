@@ -928,10 +928,10 @@ export type FolderGitStatus =
   | { repo: false }
   | { repo: true; branch: string; detached?: boolean; ahead?: number; behind?: number; files: Array<{ path: string; state: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflict'; added?: number; removed?: number; binary?: boolean }>; more: number };
 
-/** Spec 085: what `sessionSummary` answers (mirrors `SessionSummary` in src/main/sessionsummary.ts). `pullRequests`: only when the adapter reports them (none does yet). */
+/** Spec 085: what `sessionSummary` answers (mirrors `SessionSummary` in src/main/sessionsummary.ts; `unreadable`: git could not be read, which is not "not a git folder"). `pullRequests`: only when the adapter reports them (none does yet). */
 export type SessionSummaryInfo =
   | { ok: false; error: string }
-  | { ok: true; ms: number; pullRequests?: number; git: { repo: false } | { repo: true; files: number; added: number; removed: number; binary: number; newFiles: number; commits: number; dirtyAtStart: boolean; noHead?: boolean } };
+  | { ok: true; ms: number; pullRequests?: number; git: { repo: false; unreadable?: true } | { repo: true; files: number; added: number; removed: number; binary: number; newFiles: number; commits: number; dirtyAtStart: boolean; noHead?: boolean; newFilesUnknown?: boolean } };
 
 /** Spec 065: the note after a turn whose file-edit tools changed files. */
 export interface CheckpointNote { id: string; turn: number; kind: 'turn' | 'undo'; files: { path: string; change: 'changed' | 'created' | 'deleted' }[]; notCovered: { path: string; why: string }[] }

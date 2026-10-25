@@ -121,6 +121,18 @@ const FROM_APP = [
 assert.strictEqual(new Set(FROM_APP).size, FROM_APP.length, 'no channel twice in the list');
 // spec 043 FR-041 (review on #572): an ended or removed session is forgotten by the profile list freshness; a change prunes the rest
 for (const c of ['agents:end', 'agents:remove']) assert.ok(/profileFreshness\?\.forget\(/.test(regs.get(c)?.[0]?.block ?? ''), `"${c}" must forget the session's profile freshness`);
+// spec 085 (review on #718): the session-summary wiring. The start is noted before the turn is sent; the summary takes only the id and
+// main's own folder for that session; End and Remove forget the start, so the next session in the folder starts its own count.
+{
+  const send = regs.get('agents:send')?.[0]?.block ?? '';
+  const ns = send.search(/sessionStarts\.noteStart\(/), so = send.search(/\bsendOp\(/);
+  assert.ok(ns >= 0 && so > ns, '"agents:send" notes the session start before sendOp');
+  assert.ok(/await sessionStarts\.noteStart\(id, ag\.cwd\)/.test(send) && /const ag = agents\.get\(id\)/.test(send), '"agents:send" notes the start for main\'s own folder of that agent');
+  const sum = regs.get('agents:sessionSummary')?.[0]?.block ?? '';
+  assert.ok(/ipcHandle\('agents:sessionSummary', async \(e, id: unknown\)/.test(sum), '"agents:sessionSummary" takes only the id from the window');
+  assert.ok(/agents\.get\(id\)/.test(sum) && /sessionStarts\.summarize\(a\.id, a\.cwd\)/.test(sum), '"agents:sessionSummary" summarizes main\'s own folder for the session, never one the window sends');
+  for (const c of ['agents:end', 'agents:remove']) assert.ok(/sessionStarts\.forget\(/.test(regs.get(c)?.[0]?.block ?? ''), `"${c}" must forget the session start`);
+}
 assert.ok(/fresh\.prune\(/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'profiles.ts'), 'utf8')), 'profiles.ts prunes sessions no longer in the office on a change');
 for (const c of FROM_APP) {
   const r = regs.get(c);
