@@ -9,6 +9,7 @@ import { CODEX_MIN_VERSION, compareVersions } from './detect';
 import { clipDiff, simpleDiff } from '../shared/diff';
 import { WRITE_GUARD_MAX_PATHS } from './permissions';
 import { sandboxRoots } from './sandboxRoots';
+import type { SandboxHostView, SandboxState } from '../shared/api';
 
 /** Protocol `AskForApproval`, the values we use. `untrusted` is retired; `granular` is not offered. */
 export type CodexApprovalPolicy = 'never' | 'on-request';
@@ -195,6 +196,31 @@ export interface CodexPermission {
   diff?: string;
   /** One line for the needs-permission card. */
   summary: string;
+  /** Spec 087 FR-021: the card's own line: an approved command or file change may leave Codex's read-only sandbox (K6). */
+  sandboxNote?: string;
+}
+
+/** Spec 087 FR-021 (K6): the card lines, until a real check (or the vendor docs) shows an approved escalation stays sandboxed. */
+export const CODEX_SANDBOX_NOTE_COMMAND = 'If you approve, Codex may run this outside its sandbox.';
+export const CODEX_SANDBOX_NOTE_FILE = 'If you approve, Codex writes this outside its read-only sandbox.';
+/** Spec 087 FR-010/FR-020: platforms where a real session recorded Codex's floor (none yet). */
+export const CODEX_SANDBOX_VERIFIED: readonly string[] = Object.freeze([]);
+
+/**
+ * Spec 087 FR-005/FR-011: Codex's state from its existing checks: Read-only and Ask first run in `durbar_ro` (OS enforced, and a start
+ * that cannot enforce it is refused, so a started session is `on`); Allow all (`danger-full-access`) shows nothing. Ask first:
+ * `approvedMayLeave` (K6). Commands and file changes are covered (Codex's sandbox applies to its built-in file operations, research R5).
+ */
+export function codexSandboxState(mode: PermissionMode | string, platform: string): SandboxState | null {
+  if (mode === 'allow') return null;
+  return { state: 'on', mechanism: 'vendor', covers: ['shell', 'files'], writes: 'none', ...(mode === 'ask' ? { approvedMayLeave: true } : {}), verified: CODEX_SANDBOX_VERIFIED.includes(platform) };
+}
+
+/** Spec 087 FR-012: the Settings line (Codex's own check runs at each start; Windows is refused today, spec 012 FR-091). */
+export function codexSandboxHost(platform: string): SandboxHostView {
+  if (platform === 'win32') return { available: false, reason: "Durbar does not run Codex's Read-only and Ask first on Windows yet (its sandbox needs a setup Durbar cannot check).", fix: 'Use Allow all, or run Codex in WSL2.' };
+  if (platform === 'darwin') return { available: true, mechanism: 'seatbelt' };
+  return { available: true, mechanism: 'bubblewrap', fix: 'Checked at each start; on Ubuntu 24.04+ AppArmor may block bubblewrap: see the README (Codex).' };
 }
 
 /**
@@ -287,7 +313,7 @@ export function codexPermission(method: string, params: unknown, known?: readonl
       const host = str(net, 'host');
       // Always a shell request: the user must see (and a grant must key on) the command; the host is extra context.
       const netHost = net && typeof net === 'object' ? host : undefined;
-      return { kind: 'shell', fullCommandText: command, url: netHost, summary: `run ${command ?? ''}${netHost ? ` (network: ${netHost})` : ''}`.trim() };
+      return { kind: 'shell', fullCommandText: command, url: netHost, summary: `run ${command ?? ''}${netHost ? ` (network: ${netHost})` : ''}`.trim(), sandboxNote: CODEX_SANDBOX_NOTE_COMMAND };
     }
     case 'item/fileChange/requestApproval': {
       // FR-172 (real, Codex 0.163): the request names only `itemId` (generated type `FileChangeRequestApprovalParams`); the files
@@ -301,7 +327,7 @@ export function codexPermission(method: string, params: unknown, known?: readonl
       const diff = codexChangeDiff(changes);
       // the card line is display text (one line, cut); `fileName` and `paths` stay exactly as Codex sent them
       const summary = fileName ? `write ${oneLine(fileName)}${kindNote(changes[0])}${more}${undo}` : `write (${CODEX_NO_FILE})`;
-      return { kind: 'write', fileName, ...(paths.length ? { paths } : {}), ...(diff ? { diff } : {}), summary };
+      return { kind: 'write', fileName, ...(paths.length ? { paths } : {}), ...(diff ? { diff } : {}), summary, sandboxNote: CODEX_SANDBOX_NOTE_FILE };
     }
     case 'item/permissions/requestApproval':
       return { kind: 'custom-tool', toolName: 'request_permissions', summary: `request_permissions ${str(params, 'reason') ?? ''}`.trim() };

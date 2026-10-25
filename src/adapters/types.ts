@@ -152,6 +152,11 @@ export interface PermissionInfo {
    * simulator). Copilot and Codex leave it out. Display text only: never run or applied.
    */
   diff?: string;
+  /**
+   * Spec 087 FR-021: what approving may mean for the OS sandbox, a line of its own on the card (never cut, never part of `summary`):
+   * Codex's Ask first says an approved command or file change may run outside its sandbox. Display text only.
+   */
+  sandboxNote?: string;
 }
 
 /** A remembered "Approve for this session" permission; can be revoked. */

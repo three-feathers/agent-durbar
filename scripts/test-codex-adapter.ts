@@ -95,7 +95,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(CODEX_CAPABILITIES)), {
       interrupt: true, resume: true, images: true, models: true, planMode: true, effort: true, modelSwitch: { verified: true, contextTier: false },
       permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'next-message',
-      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpTools: true, mcpToolFilter: true, mcpRestart: false, handoff: true, oneShot: true, deleteSession: true, renameSession: 'any',
+      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpTools: true, mcpToolFilter: true, mcpRestart: false, handoff: true, oneShot: true, deleteSession: true, renameSession: 'any', osSandbox: true,
     });
     assert.ok(Object.isFrozen(CODEX_CAPABILITIES) && Object.isFrozen(CODEX_CAPABILITIES.permissionModes) && Object.isFrozen(CODEX_CAPABILITIES.usage), 'capabilities are deeply frozen');
     const { ad } = make();
@@ -444,9 +444,9 @@ async function main(): Promise<void> {
     const { server, ad, events } = make();
     const sid = await ad.start({ workspace: ws, permissionMode: 'read-only' });
     assert.strictEqual(sid, 'thr_1', 'the Durbar session id is the thread id');
-    assert.deepStrictEqual(events.filter((e) => e.type !== 'mcp').map((e) => [e.type, (e as { intent?: string }).intent]), [['status', `Ready in ${ws}`]], 'a loud start says Ready once (the thread/started idle is not doubled)');
+    assert.deepStrictEqual(events.filter((e) => e.type !== 'mcp' && e.type !== 'sandbox').map((e) => [e.type, (e as { intent?: string }).intent]), [['status', `Ready in ${ws}`]], 'a loud start says Ready once (the thread/started idle is not doubled)');
     await server.flush();
-    assert.strictEqual(events.filter((e) => e.type !== 'mcp').length, 1);
+    assert.strictEqual(events.filter((e) => e.type !== 'mcp' && e.type !== 'sandbox').length, 1);
     const named = await ad.start({ workspace: ws, sessionId: 'agent-7', permissionMode: 'read-only', quiet: true });
     assert.strictEqual(named, 'agent-7', 'a caller-named id is kept');
     await ad.send(named, { text: 'x' });
