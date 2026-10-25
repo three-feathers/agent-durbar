@@ -8,9 +8,15 @@ on:
   workflow_dispatch:
     inputs:
       oses:
-        description: 'Runners, as a JSON list'
-        required: false
-        default: '["windows-latest","ubuntu-latest"]'
+        type: choice
+        description: 'Run on Windows and Ubuntu together, or select one runner'
+        required: true
+        default: windows-and-ubuntu
+        options:
+          - windows-and-ubuntu
+          - windows-latest
+          - ubuntu-latest
+          - macos-latest
 
 permissions:
   contents: read
@@ -27,7 +33,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(inputs.oses) }}
+        # Map only to fixed GitHub-hosted labels; unknown input falls back to the original safe pair.
+        os: ${{ fromJSON(inputs.oses == 'windows-and-ubuntu' && '["windows-latest","ubuntu-latest"]' || inputs.oses == 'windows-latest' && '["windows-latest"]' || inputs.oses == 'ubuntu-latest' && '["ubuntu-latest"]' || inputs.oses == 'macos-latest' && '["macos-latest"]' || '["windows-latest","ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

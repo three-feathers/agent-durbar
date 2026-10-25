@@ -214,3 +214,7 @@ Phases 1 to 3 can be reviewed and merged with no vendor installed. Nothing in Ph
 ## Open items that need the owner before a task can start
 
 Q1 (Claude real run, subscription use), Q2 (any real run), Q3 (Claude SDK dependency, T040), Q4 (binary source, T041). Phases 1 and 2 are not blocked.
+
+## 2026-10-24: issue #664, bounded detection parser
+
+Architecture unchanged: extend the existing pure `parseVersion` in `src/adapters/detect.ts`; retain `detectBinary`, FR-040 states, injected exec and existing comparison. First slice stdout to at most 201 characters (one lookahead character detects token truncation), then find the first CR/LF within that bounded prefix. Use a start-anchored pattern with bounded components, known optional labels and prefixes as specified by the FR-039 delta; no free-text search. Extend `scripts/test-detect.ts`, including fake-exec detection and CPU-budget regression; retain the existing Codex mode tests. No new dependency, IPC, permission, process-launch or UI path. Update README, changelog and evidence; run typecheck, build and the full offline suite. Constitution I–VIII: spec committed first, adapter boundary unchanged, no secrets or credits, no UI change, platform-independent string operations; record platforms actually tested.

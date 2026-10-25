@@ -102,7 +102,10 @@ module.exports = async (ctx) => {
       assert.ok(/^Rename .+/.test(pen.label) && pen.tip === pen.label && pen.label.length <= 120, `${tag}: the pencil's label and tooltip: ${pen.label}`);
       await focus(`#stage .desk[data-id="${A}"]`); await key('Tab'); await settle();
       assert.strictEqual(await ae(), `button.ren|${A}`, `${tag}: Tab from the card reaches its pencil`);
-      assert.ok(await until(`getComputedStyle(document.activeElement).opacity==='1'`, 2000), `${tag}: a focused pencil is shown`);
+      /* Issue #715 (Windows CI): the opacity is animated (transition .12s) and a CI window can stop its animation clock (occluded or throttled), so the animated value may never reach 1 although the :focus-within rule matches. The driver gives the window real focus (the earlier screenshot steps can take it) and reads the rule's TARGET value with the transition switched off for this one read; the message says whether the OS gave focus. A pencil that is really hidden when focused still fails. */
+      ctx.win.show(); ctx.win.focus(); ctx.win.webContents.focus(); await until(`document.hasFocus()`, 4000);
+      const penShown = await until(`(()=>{const e=document.activeElement,t=e.style.transition;e.style.transition='none';const o=getComputedStyle(e).opacity;e.style.transition=t;return o==='1'})()`, 4000);
+      assert.ok(penShown, `${tag}: a focused pencil is shown (the window ${await hasOs()} OS focus, active: ${await ae()})`);
       await js(`document.activeElement.blur()`);
 
       // ---- helpers: no pencil, a plain title, F2 does nothing ----

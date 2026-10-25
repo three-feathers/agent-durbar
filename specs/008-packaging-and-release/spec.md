@@ -101,6 +101,20 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
 
 ## Changes
 
+### 2026-10-25: fold branch names without dots (Spec Kit gate; found cutting v0.1.0-alpha.17)
+
+- **FR-127** `[IMPLEMENTED]` `test:` The fold PR's branch is `NNN-fold-alpha-N` (for tag `v0.1.0-alpha.N`), never with dots: the Spec Kit gate accepts only `^[0-9]{3}-[a-z0-9][a-z0-9-]*$`, and a dotted name failed CI (PR #740, replaced by #741). `scripts/release-notes.js` prints that name (`foldSlug`), and `scripts/test-changelog.js` checks it. Docs fixed: `changelog.d/README.md`, `docs/collaboration.md`; the historical `plan.md` examples of specs 082, 086 and 088 carry a note and keep their text. Paco's agent listed the places. Verified by `npm run test:changelog`, `npm run specs:check` and `npm run changelog:check`.
+
+### 2026-10-24: macOS navigator simulator assertion in nightly UI (#683)
+
+The scheduled run `40076601038` failed only on macOS in `shots-074-navigator`: after a synthetic ⌘⌫, the driver expected text
+deletion but still read the original value. Reproduction on a Mac confirms `webContents.sendInputEvent` does not perform the
+native Command+Backspace text-editing action. FR-106/FR-108 remain unchanged: macOS runs nightly, after merge, and by hand.
+The regression test must check that synthetic ⌘⌫ and ⌘A reach the focused editable field without being prevented by Durbar,
+and do not close the chat; separately check ordinary Backspace editing in that field. Windows/Linux retain the
+Ctrl+Backspace word-deletion and Ctrl+A selection assertions. `read:` this is a simulator-input limitation, not evidence that
+a physical Mac fails to edit text. The nightly run after the fix reaches `main` remains the required verification for #683.
+
 ### 2026-10-16: layout check in CI (closes spec 001 FR-015 / spec 010 FR-007 for the office layout)
 
 - **FR-017** CI job `office-check` (Ubuntu only): `npm ci`, `npm run build`, then `xvfb-run -a npm run check:office` (95 combinations, simulator only, no AI credits). Measured on the maintainer's Linux box 2026-10-16: 65 s including the build, 95/95 passed, repeated runs identical. Not run on macOS/Windows (needs xvfb semantics; font metrics differ and would make the density expectations flaky). The step has `timeout-minutes: 10`.

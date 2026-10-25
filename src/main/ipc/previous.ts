@@ -20,6 +20,8 @@ import type { ActivityDecision } from '../../shared/activity';
 import type { AddWorkspace } from './types';
 
 export interface PreviousIpcDeps {
+  /** Spec 080 FR-023: a replaced session's browser view and partition are destroyed. */
+  browserGone?(id: string): void;
   /** Spec 059: the rename operation, built in main.ts; it is given the ids open in the office. */
   renameSessionOpFor(openIds: () => ReadonlySet<string>): (id: unknown, sessionId: unknown, name: unknown) => unknown;
   dev: DevEnv;
@@ -91,6 +93,7 @@ export function register(deps: PreviousIpcDeps): void {
         forgetOpenSession(wsKey(a), removedId);
         await ad.stop(removedId);
         router.unbind(removedId);
+        deps.browserGone?.(removedId); // spec 080 FR-023
         agents.delete(removedId);
         agentState.remove(removedId);
         scheduler()?.sessionsChanged(); // spec 044 FR-014: a schedule for the replaced session pauses

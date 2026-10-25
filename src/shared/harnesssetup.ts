@@ -8,6 +8,7 @@
  */
 
 export type SetupKind = 'claude' | 'codex' | 'copilot';
+import { parseVersionField } from './versionfield';
 /** What can be found on this computer: package managers and the interpreters that run an official installer. */
 export type PackageManager = 'winget' | 'brew' | 'npm' | 'bash' | 'powershell';
 /** A route's kind: a package manager, or the vendor's official installer (spec 060 FR-001). */
@@ -22,8 +23,8 @@ export interface OfficialScript {
 /** One way to install or update: the package manager's binary name and its fixed arguments. */
 export interface SetupPlan {
   manager: RouteManager;
-  /** Binary name looked up on PATH (`winget`, `brew`, `npm`; `bash`/`powershell` for an official installer). */
-  bin: PackageManager;
+  /** Binary name looked up on PATH (`winget`, `brew`, `npm`; `bash`/`powershell` for an official installer; the app itself for an own updater). */
+  bin: PackageManager | SetupKind;
   /** The official installer this plan downloads and runs (spec 060 FR-001); `args` then end with the downloaded file. */
   script?: OfficialScript;
   args: string[];
@@ -31,6 +32,14 @@ export interface SetupPlan {
   display: string;
   /** A short note shown with the plan (admin rights, what it needs). */
   note?: string;
+  /** Spec 081 FR-009: the app's own updater (`claude update`, `copilot update`, `codex update`): the app itself is run, with these fixed arguments. */
+  own?: SetupKind;
+  /** Spec 081 FR-009 (Q3 = C, limited): `codex update`, which downloads and runs OpenAI's installer script; only for the official Codex CLI. */
+  codexUpdate?: boolean;
+  /** Spec 081 FR-008: the route that installed the copy Durbar uses; an update shows it first and the others behind "Show other ways". */
+  owner?: boolean;
+  /** Spec 081 FR-023: the checked version this plan installs (npm, winget), else undefined (it installs the newest the source offers). */
+  pinned?: string;
 }
 
 interface Route {
@@ -87,6 +96,22 @@ const ROUTES: Record<SetupKind, Partial<Record<'win32' | 'darwin' | 'linux', Rou
     linux: [official(SCRIPTS.codexSh, false), npm('@openai/codex')],
   },
 };
+
+/** Spec 081: the package, winget id and cask names per app, one table (updatecheck and the update plans both use it). */
+export const PACKAGES: Readonly<Record<SetupKind, string>> = Object.freeze({ claude: '@anthropic-ai/claude-code', codex: '@openai/codex', copilot: '@github/copilot' });
+export const CASKS: Readonly<Record<SetupKind, readonly string[]>> = Object.freeze({ claude: ['claude-code', 'claude-code@latest'], codex: ['codex'], copilot: ['copilot-cli'] });
+
+/** Spec 081 FR-024: what the route checks before it installs, one line for the confirmation (`unconfirmed` where the docs say nothing). */
+export function integrityLine(p: Pick<SetupPlan, 'manager' | 'own' | 'codexUpdate' | 'script'>): string {
+  if (p.codexUpdate) return "Codex downloads OpenAI's installer with curl or PowerShell. Durbar adds no allow-list, size limit or check; what the script checks itself is unconfirmed.";
+  if (p.own === 'claude') return "Anthropic publishes a signed manifest with each binary's SHA256 (its docs describe a manual check); whether `claude update` checks it is unconfirmed.";
+  if (p.own === 'copilot') return 'What `copilot update` checks before installing is unconfirmed (not documented in the pages read).';
+  if (p.script) return "Durbar checks the download address (TLS and the vendor's fixed hosts); what the installer checks itself is unconfirmed.";
+  if (p.manager === 'npm') return "npm checks the download against the integrity hash in the registry's metadata. There is no publisher signature check.";
+  if (p.manager === 'brew') return "Homebrew checks the cask's sha256 before installing.";
+  if (p.manager === 'winget') return "winget checks the installer's SHA256 from its manifest.";
+  return '';
+}
 
 /** FR-003: the vendor's own install page, opened when no package manager is found. */
 export const OFFICIAL_PAGES: Record<SetupKind, string> = {
@@ -150,28 +175,56 @@ export const manualCommands = (kind: SetupKind, platform: string): ManualCommand
   return os ? (MANUAL[kind]?.[os] ?? []).map((c) => ({ ...c, route: LABEL_ROUTE[c.label] })) : [];
 };
 
-function plansFor(kind: SetupKind, platform: string, found: ReadonlySet<PackageManager>, op: 'install' | 'update'): SetupPlan[] {
+/** Spec 081 FR-023, FR-009: what an update plan may know about the copy it updates. */
+export interface UpdatePlanOpts {
+  /** The checked version: npm and winget install exactly it (a value that is not a valid version is ignored). */
+  pin?: string;
+  /** The Homebrew cask of the copy (`claude-code` or `claude-code@latest`), when it is one of the known casks. */
+  cask?: string;
+  /** The copy is a vendor-installer copy of Claude Code or the Copilot CLI: its own `update` runs first. */
+  ownUpdater?: boolean;
+  /** The copy is the official Codex CLI (`isOfficialCodex`): `codex update` runs first. */
+  codexOfficial?: boolean;
+}
+
+/** Self-updating casks need `--greedy` to be seen by `brew outdated` and `brew upgrade` (research R2). */
+const GREEDY_CASKS: readonly string[] = ['copilot-cli'];
+
+function plansFor(kind: SetupKind, platform: string, found: ReadonlySet<PackageManager>, op: 'install' | 'update', opts: UpdatePlanOpts = {}): SetupPlan[] {
   const os = osOf(platform);
   const routes = (os && ROUTES[kind]?.[os]) || [];
   const interp: PackageManager = os === 'win32' ? 'powershell' : 'bash';
-  return routes
+  const pin = op === 'update' ? parseVersionField(opts.pin) : undefined;
+  const out = routes
     .filter((r) => (r.manager === 'official' ? found.has(interp) : found.has(r.manager)))
-    .map((r) => {
-      const args = op === 'install' ? r.install : r.update;
+    .map((r): SetupPlan => {
+      let args = op === 'install' ? r.install : r.update;
+      if (op === 'update' && r.manager === 'npm' && pin) args = ['install', '-g', `${PACKAGES[kind]}@${pin}`, '--no-update-notifier'];
+      if (op === 'update' && r.manager === 'winget' && pin) args = [...args, '--version', pin];
+      if (op === 'update' && r.manager === 'brew') {
+        const cask = opts.cask && CASKS[kind].includes(opts.cask) ? opts.cask : undefined;
+        const base = args.map((a) => (cask && a === CASKS[kind][0] ? cask : a));
+        args = GREEDY_CASKS.includes(cask ?? CASKS[kind][0]) ? [...base, '--greedy'] : base;
+      }
       if (r.manager === 'official' && r.script) {
         // the same script installs and updates; what runs is the interpreter with the downloaded file (appended by main)
         const display = `${r.script.url} (downloaded, then run with ${interp === 'powershell' ? 'Windows PowerShell' : 'bash'})`;
         return { manager: r.manager, bin: interp, script: r.script, args: [...args], display, ...(r.note ? { note: r.note } : {}) };
       }
       const bin = r.manager as PackageManager;
-      return { manager: r.manager, bin, args: [...args], display: [bin, ...args].join(' '), ...(r.note ? { note: r.note } : {}) };
+      return { manager: r.manager, bin, args: [...args], display: [bin, ...args].join(' '), ...(r.note ? { note: r.note } : {}), ...(pin && (r.manager === 'npm' || r.manager === 'winget') ? { pinned: pin } : {}) };
     });
+  if (op !== 'update') return out;
+  // spec 081 FR-009: the app's own updater comes before the vendor's installer script (which stays as the fallback and "other way")
+  if (opts.ownUpdater && (kind === 'claude' || kind === 'copilot')) out.unshift({ manager: 'official', bin: kind, own: kind, args: ['update'], display: `${kind} update`, note: NO_ADMIN });
+  if (opts.codexOfficial && kind === 'codex') out.unshift({ manager: 'official', bin: 'codex', own: 'codex', codexUpdate: true, args: ['update'], display: 'codex update', note: NO_ADMIN });
+  return out;
 }
 
 /** FR-002: install routes for this OS whose package manager was found, in order (the first is preselected). */
 export const installPlans = (kind: SetupKind, platform: string, found: ReadonlySet<PackageManager>): SetupPlan[] => plansFor(kind, platform, found, 'install');
 /** FR-002: the same managers, upgrading. */
-export const updatePlans = (kind: SetupKind, platform: string, found: ReadonlySet<PackageManager>): SetupPlan[] => plansFor(kind, platform, found, 'update');
+export const updatePlans = (kind: SetupKind, platform: string, found: ReadonlySet<PackageManager>, opts?: UpdatePlanOpts): SetupPlan[] => plansFor(kind, platform, found, 'update', opts);
 
 /**
  * Spec 060 FR-002: what the simulator assumes is installed, per OS, so its setup screen shows the real routes for a typical new
@@ -284,6 +337,6 @@ export function routeOwning(realPath: string): RouteManager | undefined {
   if (/\/node_modules\//i.test(p) || /\/npm\/[^/]+\.cmd$/i.test(p)) return 'npm';
   if (/\/(Cellar|Caskroom)\//.test(p) || p.startsWith('/opt/homebrew/') || /\/\.?linuxbrew\//.test(p)) return 'brew';
   if (/\/WinGet\/(Packages|Links)\//i.test(p)) return 'winget';
-  if (/\/\.local\/(bin|share)\//.test(p) || /\/\.claude\/local\//.test(p) || /\/Programs\/OpenAI\/Codex\//i.test(p)) return 'official';
+  if (/\/\.local\/(bin|share)\//.test(p) || /\/\.copilot\/pkg\//.test(p) || /\/\.claude\/local\//.test(p) || /\/Programs\/OpenAI\/Codex\//i.test(p)) return 'official';
   return undefined;
 }
