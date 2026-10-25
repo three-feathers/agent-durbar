@@ -209,6 +209,24 @@ async function main(): Promise<void> {
     assert.strictEqual(plain.sandboxTimeoutMs, 15_000, 'the cap is 15 s');
   }
 
+  // ---- review round 3 on PR 733 (1): a session folder the credential filter drops (~/.config without denied_paths, ~/.ssh) is refused ----
+  {
+    const H = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-087-cphome-')));
+    fs.mkdirSync(path.join(H, '.config', 'gh'), { recursive: true });
+    fs.mkdirSync(path.join(H, '.ssh'), { recursive: true });
+    const { ad, fake, events } = make({ home: H, prep: (c) => { c.sandboxHost = { supported: true, capabilities: [{ name: 'shell', supported: true }] }; } });
+    const sid = await ad.start({ workspace: path.join(H, '.config'), quiet: true, permissionMode: 'ask' });
+    assert.strictEqual(last(events, sid)?.state, 'off', 'not shown as Sandboxed');
+    assert.match(String(last(events, sid)?.reason), /credential folder/);
+    await assert.rejects(ad.send(sid, { text: 'x' }), /credential folder.*Read-only and Ask first need/, 'refused, with the Change mode… text');
+    assert.strictEqual(sends(fake, sid), 0);
+    await assert.rejects(ad.continueWithoutSandbox!(sid), /credential folder/, 'no Continue past it');
+    const s2 = await ad.start({ workspace: path.join(H, '.ssh'), quiet: true, permissionMode: 'read-only' });
+    await assert.rejects(ad.send(s2, { text: 'x' }), /credential folder/);
+    await ad.dispose();
+    fs.rmSync(H, { recursive: true, force: true });
+  }
+
   // ---- AC2: a switch to Allow all sends nothing and keeps the floor until a new session; back to Ask first sends the new floor ----
   {
     const { ad, fake, events } = make();

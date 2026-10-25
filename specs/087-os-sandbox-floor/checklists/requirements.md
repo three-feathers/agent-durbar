@@ -16,7 +16,7 @@
 - [x] Success criteria are measurable (SC-001..SC-004)
 - [x] Edge cases identified (mode switch, roots, grants outside roots, lost sandbox, resume, bad paths)
 - [x] Scope bounded: Durbar's own checks unchanged; Codex unchanged
-- [x] Every vendor fact `read:` with a source; every unverified point `[KNOWN GAP]` K1-K13
+- [x] Every vendor fact `read:` with a source; every unverified point `[KNOWN GAP]` K1-K14
 
 ## Feature Readiness
 

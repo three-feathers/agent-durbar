@@ -359,6 +359,19 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
 
 ## Changes
 
+### 2026-10-25: review round 3 on PR #733 (Ruben's agent, 7 items)
+
+- **A session whose own folder the credential filter drops is refused** (FR-015's rule, applied after the filter): a folder that is a
+  credential folder or inside one (for Copilot without `denied_paths` also one that holds one, such as `~/.config`). Before, the session
+  started, the chip said *Sandboxed* and every sandboxed command failed on its own folder: closed, but a false claim. Refusing is the
+  honest choice because nothing useful can run there under the floor; the text contains "Read-only and Ask first need", so *Change
+  mode…* is offered, and no *Continue* passes it (`CREDENTIAL_FOLDER_REFUSAL`, `src/adapters/sandboxRoots.ts`). Tested per adapter.
+- K13 also names Claude's implicit write grant on its working folder against a `denyWrite` on the same path (undocumented; avoided by the
+  refusal above); new `[KNOWN GAP]` K14: links are resolved per launch only (research R2).
+- Tests for a credential folder in another case on macOS, the adapter's home folder (a linked `~/.ssh` denied at its target through the
+  adapter), and main forgetting a note when the adapter reports a session stopped (End session, Remove, folder removal, Restart session);
+  `folders:remove` also calls `forget`.
+
 ### 2026-10-25: review round 1 on PR #733 (Ruben's agent, 8 items)
 
 - **Continue only answers an open note** (FR-007a): main accepts *Continue* only for a session with an open sandbox note it forwarded

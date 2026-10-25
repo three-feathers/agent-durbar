@@ -28,6 +28,8 @@ export function createSandboxOps(deps: SandboxOpsDeps) {
   return {
     /** Every adapter event: a note with actions opens one; a new attempt (state on or checking) or a refusal closes it. */
     onEvent(e: AgentEvent): void {
+      // a session the adapter ended (End session, Remove, removing its folder, Restart session) takes its note with it
+      if (e.type === 'status' && e.status === 'stopped' && !e.agentId) return void open.delete(e.sessionId);
       if (e.type !== 'sandbox' || e.agentId) return;
       if (e.notice) {
         const acts = e.notice.refused === true ? [] : (Array.isArray(e.notice.actions) ? e.notice.actions : []).filter((a) => a === 'continue' || a === 'always');

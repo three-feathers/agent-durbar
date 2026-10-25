@@ -60,6 +60,14 @@ async function main(): Promise<void> {
   ops.onEvent(note('s1', ['continue']));
   ops.forget('s1');
   assert.ok(!(await ops.continueWithout(true, 's1', {})).ok, 'forget closes the note');
+  // review round 3 (6): the adapter's own "stopped" (End session, Remove, a folder removed, Restart session) closes the note too
+  ops.onEvent(note('s1', ['continue']));
+  ops.onEvent({ type: 'status', sessionId: 's1', timestamp: 3, status: 'stopped' });
+  assert.ok(!(await ops.continueWithout(true, 's1', {})).ok, 'a stopped session has no note');
+  ops.onEvent(note('s1', ['continue']));
+  ops.onEvent({ type: 'status', sessionId: 's1', timestamp: 3, status: 'stopped', agentId: 'helper' });
+  assert.deepStrictEqual(await ops.continueWithout(true, 's1', {}), { ok: true }, 'a helper stopping does not close the main session\'s note');
+  calls.pop();
   // the Settings line and the undo
   assert.deepStrictEqual(await ops.hosts(false), {}, 'owner-only');
   assert.deepStrictEqual(await ops.hosts(true), { claude: { available: false, reason: 'no sandbox here', alwaysContinue: true } }, 'ready apps with the capability; the stored choice shown');

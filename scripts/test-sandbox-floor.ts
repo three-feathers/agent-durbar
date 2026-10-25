@@ -176,6 +176,10 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.deepStrictEqual(copilotPathReadDirs(['/HOME/ME'], '/home/me', 'linux'), ['/HOME/ME'], 'Linux compares case-sensitively');
   assert.deepStrictEqual(copilotPathReadDirs(['c:\\users\\OTHER', 'C:\\Tools'], 'C:\\Users\\me', 'win32'), ['C:\\Tools'], 'another user\'s profile root, in another case, is dropped on Windows');
   assert.deepStrictEqual(copilotPathReadDirs(['/USERS/other', '/opt/x'], '/Users/me', 'darwin'), ['/opt/x'], 'and on macOS');
+  // review round 3 (4): a credential folder in another case is the same folder on macOS (and not on Linux)
+  assert.deepStrictEqual(copilotSandboxConfig({ mode: 'ask', roots: ['/Users/bob/.SSH', '/Users/bob/p'], pathDirs: [], host: FULL_HOST, home: '/Users/bob', platform: 'darwin' })!.userPolicy.filesystem.readwritePaths, ['/Users/bob/p'], 'macOS: ~/.SSH is ~/.ssh');
+  assert.deepStrictEqual(claudeSandboxSettings('ask', ['/Users/bob/.SSH', '/Users/bob/p'], '/Users/bob', (p) => p, 'darwin')!.filesystem.allowRead, ['/Users/bob/p'], 'Claude, macOS: the same');
+  assert.deepStrictEqual(claudeSandboxSettings('ask', ['/home/bob/.SSH'], '/home/bob', (p) => p, 'linux')!.filesystem.allowRead, ['/home/bob/.SSH'], 'Linux: another case is another folder');
   assert.deepStrictEqual(copilotPathReadDirs(['/srv', '/srv/users', '/srv/users/me', '/srv/users/me/bin', '/srv/tools/bin'], '/srv/users/me', 'linux'), ['/srv/users/me/bin', '/srv/tools/bin'], 'a home outside /home: every ancestor of it is dropped');
   const winDenied = copilotSandboxConfig({ mode: 'ask', roots: ['C:\\w'], pathDirs: [], host: FULL_HOST, home: 'C:\\Users\\me', platform: 'linux' })!.userPolicy.filesystem.deniedPaths;
   assert.deepStrictEqual(winDenied!.slice(0, 5), ['C:\\w\\.git\\hooks', 'C:\\w\\.git\\config', 'C:\\Users\\me\\.ssh', 'C:\\Users\\me\\.aws', 'C:\\Users\\me\\.config\\gh'], 'protected paths are joined in the form of their root');

@@ -8,6 +8,8 @@ import type { AgentStateTracker } from '../mcp/agentstate';
 import type { Scheduler } from '../schedules';
 
 export interface FoldersIpcDeps {
+  /** Spec 087 FR-007a: a removed session's open sandbox note is forgotten (main's one-shot Continue). */
+  forgetSandboxNote?(id: string): void;
   /** Spec 080 FR-023: each removed session's browser view and partition are destroyed. */
   browserGone?(id: string): void;
   agents: Map<string, AgentInfo>;
@@ -55,6 +57,7 @@ export function register(deps: FoldersIpcDeps): void {
       }
       router.unbind(rid);
       deps.browserGone?.(rid); // spec 080 FR-023
+      deps.forgetSandboxNote?.(rid); // spec 087
       agents.delete(rid);
       agentState.remove(rid);
       vsChatRefs.delete(rid);

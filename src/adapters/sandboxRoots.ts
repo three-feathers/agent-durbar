@@ -99,3 +99,11 @@ export function secretRelation(root: string, secrets: readonly string[], platfor
   }
   return contains ? 'contains' : undefined;
 }
+
+/**
+ * Spec 087 (review round 3 on PR 733): the refusal when the credential filter drops the session's own folder (it is a credential folder,
+ * sits inside one, or, for Copilot without `denied_paths`, holds one). Like FR-015's empty-roots refusal: nothing is sent, and the text
+ * contains "Read-only and Ask first need" so the window offers Change mode…; Allow all is not limited by the floor.
+ */
+export const CREDENTIAL_FOLDER_REFUSAL = (app: string): string =>
+  `${app}: this session's folder is a credential folder or holds one (for example ~/.ssh or ~/.config), so the OS sandbox keeps its commands out of it. Read-only and Ask first need at least one usable folder, so nothing was sent.`;

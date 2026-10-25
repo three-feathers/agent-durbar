@@ -51,7 +51,7 @@ function scripted(behave: () => Behave) {
   };
 }
 
-function make(o: { facts?: () => ClaudeSandboxFacts; behave?: () => Behave; exists?: (id: string) => boolean } = {}) {
+function make(o: { facts?: () => ClaudeSandboxFacts; behave?: () => Behave; exists?: (id: string) => boolean; home?: string; realpath?: (p: string) => string } = {}) {
   const sp = fakeSpawn();
   let behave: () => Behave = o.behave ?? (() => 'ok');
   sp.next = scripted(() => behave());
@@ -66,8 +66,8 @@ function make(o: { facts?: () => ClaudeSandboxFacts; behave?: () => Behave; exis
       factCalls++;
       return (o.facts ?? (() => LINUX))();
     },
-    realpath: (p) => p,
-    home: '/nonexistent-home-087',
+    realpath: o.realpath ?? ((p) => p),
+    home: o.home ?? '/nonexistent-home-087',
   });
   const events: AgentEvent[] = [];
   ad.onEvent((e) => {
@@ -322,6 +322,31 @@ async function main(): Promise<void> {
     await n.ad.continueWithoutSandbox!(nid);
     await assert.rejects(n.ad.continueWithoutSandbox!(nid), /no OS sandbox note/, 'a second Continue is refused (one-shot)');
     await n.ad.dispose();
+  }
+
+  // ---- review round 3 on PR 733 (1, 5): the adapter passes its home folder (a linked ~/.ssh is denied at its target); a session whose
+  // own folder is a credential folder is refused like FR-015 (nothing spawned, Change mode… text), never shown as Sandboxed ----
+  {
+    const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-087-home-')));
+    const home = path.join(tmp, 'me');
+    fs.mkdirSync(path.join(home, 'dot', 'ssh'), { recursive: true });
+    fs.mkdirSync(path.join(home, 'proj'), { recursive: true });
+    fs.symlinkSync(path.join(home, 'dot', 'ssh'), path.join(home, '.ssh'), 'dir');
+    const real = (p: string): string => fs.realpathSync.native(p);
+    const m = make({ home, realpath: real });
+    const sid = await m.ad.start({ workspace: path.join(home, 'proj'), quiet: true, permissionMode: 'ask' });
+    await m.ad.send(sid, { text: 'x' });
+    await until('spawned', () => m.sp.calls.length === 1);
+    const blk = sandboxOf(m.sp.calls[0].args) as { filesystem: { denyRead: string[]; denyWrite: string[] } };
+    assert.ok(blk.filesystem.denyRead.includes(path.join(home, 'dot', 'ssh')) && blk.filesystem.denyWrite.includes(path.join(home, 'dot', 'ssh')), 'the adapter denies the real target of a linked ~/.ssh');
+    await m.ad.dispose();
+    const c = make({ home, realpath: real });
+    const cs = await c.ad.start({ workspace: path.join(home, 'dot', 'ssh'), quiet: true, permissionMode: 'read-only' });
+    await assert.rejects(c.ad.send(cs, { text: 'x' }), /credential folder.*Read-only and Ask first need/, 'its own folder is a credential folder: refused');
+    assert.strictEqual(c.sp.calls.length, 0, 'nothing spawned');
+    assert.notStrictEqual(lastState(c.events, cs)?.state, 'on', 'never shown as Sandboxed');
+    await c.ad.dispose();
+    fs.rmSync(tmp, { recursive: true, force: true });
   }
 
   // ---- review round 2 on PR 733 (4): the ADAPTER's note closes when a new attempt starts (not only main's copy) ----

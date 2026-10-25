@@ -57,7 +57,7 @@ import { ACCOUNT_TEMP_PREFIXES } from '../shared/account';
 import { sweepStaleTempDirs } from '../shared/attachments';
 import { COPILOT_NO_REPORT, copilotHostSupport, copilotSandboxConfig, copilotSandboxHost, copilotSandboxState } from './copilotSandbox';
 import type { CopilotHostSupport } from './copilotSandbox';
-import { sandboxRoots } from './sandboxRoots';
+import { CREDENTIAL_FOLDER_REFUSAL, sandboxRoots } from './sandboxRoots';
 import { pathDirs as envPathDirs } from '../shared/pathdirs';
 import type { SandboxHostView, SandboxState } from '../shared/api';
 
@@ -1138,6 +1138,13 @@ export class CopilotAdapter implements AgentAdapter {
       return this.setSandbox(sid, live, { state: 'off', covers: ['shell', 'mcp'], writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: 'No usable session folder for the sandbox.' });
     }
     const sandboxConfig = copilotSandboxConfig({ mode, roots, pathDirs: this.sandboxPathDirs(), host, home: this.sandboxHome(), platform, realpath: this.sandboxRealpath });
+    // review round 3 on PR 733: the credential filter dropped the session's OWN folder: refuse (FR-015) instead of a floor that fails there
+    const own = sandboxRoots([live.cwd], this.sandboxRealpath)[0];
+    const granted = sandboxConfig ? (mode === 'ask' ? sandboxConfig.userPolicy.filesystem.readwritePaths : sandboxConfig.userPolicy.filesystem.readonlyPaths) : [];
+    if (!sandboxConfig || (own !== undefined && !granted.includes(own))) {
+      live.sandboxHold = { reason: CREDENTIAL_FOLDER_REFUSAL('Copilot'), refuse: true };
+      return this.setSandbox(sid, live, { state: 'off', covers: ['shell', 'mcp'], writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: 'This folder is a credential folder or holds one, so the OS sandbox keeps its commands out of it.' });
+    }
     try {
       await this.timed(live.session.rpc.options.update({ sandboxConfig, sandboxConfigSource: 'session_flag' }), 'Copilot');
       live.sandboxFloor = true;

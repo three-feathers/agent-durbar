@@ -14,7 +14,7 @@
 import { claudeSettingsJson } from '../shared/foldersetup';
 import { claudeSandboxExit, claudeSandboxHost, claudeSandboxPrecheck, claudeSandboxSettings, claudeSandboxState, withSandboxSettings } from './claudeSandbox';
 import type { ClaudeSandboxBlock, ClaudeSandboxFacts, ClaudeSandboxPre } from './claudeSandbox';
-import { sandboxRoots } from './sandboxRoots';
+import { CREDENTIAL_FOLDER_REFUSAL, sandboxRoots } from './sandboxRoots';
 import type { SandboxHostView, SandboxState } from '../shared/api';
 import { isAuthError, markAuthError } from './autherrors';
 import { spawn } from 'child_process';
@@ -1593,7 +1593,15 @@ export class ClaudeAdapter implements AgentAdapter {
     }
     const roots = sandboxRoots(s.roots, this.deps.realpath ?? ((p) => fs.realpathSync.native(p)));
     if (!roots.length) throw new Error("Durbar could not limit Claude Code's sandbox to this session's folders. Read-only and Ask first need at least one usable folder, so nothing was sent.");
-    s.sandboxBlock = claudeSandboxSettings(mode, roots, this.deps.home ?? homeDirOf(), this.deps.realpath ?? ((p) => fs.realpathSync.native(p)), facts.platform);
+    const block = claudeSandboxSettings(mode, roots, this.deps.home ?? homeDirOf(), this.deps.realpath ?? ((p) => fs.realpathSync.native(p)), facts.platform);
+    // review round 3 on PR 733: the credential filter runs after the roots check; when it drops the session's OWN folder every sandboxed
+    // command would fail there while the chip said Sandboxed, so refuse as FR-015 does (nothing sent, Change mode… offered)
+    const own = sandboxRoots([s.cwd], this.deps.realpath ?? ((p) => fs.realpathSync.native(p)))[0];
+    if (!block || (own !== undefined && !block.filesystem.allowRead.includes(own))) {
+      s.sandboxBlock = undefined;
+      throw new Error(CREDENTIAL_FOLDER_REFUSAL('Claude Code'));
+    }
+    s.sandboxBlock = block;
     this.setSandbox(s, claudeSandboxState({ mode, facts }));
     return true;
   }
