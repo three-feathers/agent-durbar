@@ -555,6 +555,8 @@ const mkRoots2 = (m: { ask?: boolean; allow?: boolean }, roots?: string[]) => {
       assert.strictEqual(W.describe(by, live2, { state: 'newer' })?.pill, 'Newer rule active', 'while the newer rule is live');
       assert.strictEqual(W.describe(by, new Set(), { state: 'newer' })?.pill, 'Rule removed', 'after the newer rule is removed too');
       assert.strictEqual(W.describe({ ...by, more: 3 }, new Set(), { state: 'newer' })?.pill, 'Newer rule active', 'unlisted rules: not claimed removed');
+      assert.ok(/may still be active/.test(W.describe({ ...by, more: 3 }, new Set(), { state: 'newer' })?.sentence ?? ''), 'unlisted rules: "may", not a certainty');
+      assert.ok(/is still active/.test(W.describe(by, live2, { state: 'newer' })?.sentence ?? ''), 'a listed live key: certain');
       await mf.b.request(req('r4'));
       assert.strictEqual(mf.b.revokeCall('r4'), 0);
       assert.strictEqual(mf.b.listGrants().length, 0, 'the call that the newer rule allowed removes it');

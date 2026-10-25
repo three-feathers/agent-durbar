@@ -41,7 +41,7 @@
         const goneCard={kind:'session-grant',pill:'Rule removed',sentence:'This was allowed by a session rule that you have since removed: Durbar asks again.',label,gone:true};
         /* "newer rule active" lasts only while one of the call's keys is live; once the user removes that rule too, it is removed (unless unlisted rules leave that unknown) */
         if(o.state==='newer'&&lv&&!anyLive&&more===0)return goneCard;
-        if(o.state==='newer')return {kind:'session-grant',pill:'Newer rule active',sentence:'The rule that allowed this was removed, but you have since approved the same thing again: that newer rule is still active. Manage it with the grant chips.',label};
+        if(o.state==='newer')return {kind:'session-grant',pill:'Newer rule active',sentence:'The rule that allowed this was removed, but you have since approved the same thing again: that newer rule '+(more>0&&!anyLive?'may still be active':'is still active')+'. Manage it with the grant chips.',label};
         if(o.state==='forgotten')return {kind:'session-grant',pill:many?'Allowed: session rules':'Allowed: session rule',sentence:'Durbar no longer remembers which rules allowed this call, so it removed nothing. Manage the session rules with the grant chips.',label};
         if(o.confirmed===true||(lv&&!anyLive&&wasKnown&&more===0))return goneCard;
         const liveKeys=lv?keys.filter(k=>lv.has(k)):keys;

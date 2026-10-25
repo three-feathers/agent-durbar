@@ -86,7 +86,13 @@ module.exports = async (ctx) => {
     assert.strictEqual(o.btn, 'BUTTON');
     assert.ok(/^Undo this rule: write in /.test(o.name), `${w}: the button's accessible name: ${o.name}`);
     assert.ok(o.font >= 10.5 && o.h >= 24 && o.inside, `${w}: the button is legible and inside the card: ${JSON.stringify(o)}`);
-    await H.shot(path.join(OUT, `003-why-allowed-${w}x${h}.png`), { prep: 'calm', delay: 150 });
+    // the picture must show the OPEN card: calm first (it can change the layout), re-open if needed, assert, shoot, assert again
+    await H.calm({});
+    await js(`(()=>{const c=window.__wa.last();if(!c.classList.contains('open'))c.click();})()`);
+    const openNow = `window.__wa.last().classList.contains('open')&&!!window.__wa.last().querySelector('.why-undo')&&window.__wa.last().querySelector('.why-undo').offsetParent!==null`;
+    assert.ok(await until(openNow, 5000), `${w}: the card is open right before the picture`);
+    await H.shot(path.join(OUT, `003-why-allowed-${w}x${h}.png`), { prep: 'mouse', delay: 150 });
+    assert.ok(await js(openNow), `${w}: the card was still open when the picture was taken`);
 
     // 4) Undo: the same revoke as the grant chip's x: the chip goes, the tag says so, the focus stays on the card
     await js(`window.__wa.last().querySelector('.why-undo').click()`);
@@ -192,7 +198,12 @@ module.exports = async (ctx) => {
     assert.ok(await until(`!!document.querySelector('#chat .chip.open .why-t')`, 5000), `${w}: the open card explains`);
     assert.strictEqual(await js(`document.querySelectorAll('#chat .chip .why-undo').length`), 0, `${w}: no rule to undo under Allow all`);
     assert.ok(/mode chip under the message box/.test(await js(`document.querySelector('#chat .chip.open .why-t').textContent`)), `${w}: says where to change it`);
-    await H.shot(path.join(OUT, `003-why-allowed-allowall-${w}x${h}.png`), { prep: 'calm', delay: 150 });
+    await H.calm({});
+    await js(`(()=>{const c=document.querySelector('#chat .chip .why[data-why="allow-all"]').closest('.chip');if(!c.classList.contains('open'))c.click();})()`);
+    const openAll = `!!document.querySelector('#chat .chip.open .why-t')`;
+    assert.ok(await until(openAll, 5000), `${w}: the Allow all card is open right before the picture`);
+    await H.shot(path.join(OUT, `003-why-allowed-allowall-${w}x${h}.png`), { prep: 'mouse', delay: 150 });
+    assert.ok(await js(openAll), `${w}: the Allow all card was still open when the picture was taken`);
 
     // 7) Read-only agent: refused, nothing is tagged
     await setMode(ids[1], 'read-only');
