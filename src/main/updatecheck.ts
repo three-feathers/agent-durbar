@@ -13,7 +13,7 @@ import { SETUP_NAMES } from '../shared/harnesssetup';
 import type { SetupKind } from '../shared/harnesssetup';
 import {
   MAX_TOOL_OUTPUT, announceRule, brewInfoCmd, brewOutdatedCmd, classifyFailure, copilotVersionFromPath, decide, decideClaudeChannels, lookupLatest, npmCheck, npmOwns, parseBrewInfo, parseBrewOutdated,
-  parseNpmView, parseVersionField, parseWingetList, policyView, sourceLabel, sourceOf, startCheckAllowed, versionFromCaskroom, versionFromPackageJson, versionFromWingetPath, wingetCheck, WINGET_IDS,
+  parseNpmView, parseVersionField, parseWingetList, pathFor, policyView, sourceLabel, sourceOf, startCheckAllowed, versionFromCaskroom, versionFromPackageJson, versionFromWingetPath, wingetCheck, WINGET_IDS, WINGET_TERMS_REASON,
 } from '../shared/updatecheck';
 import type { Announced, CheckCmd, CheckResult, LookupGet, PolicyView, UpdatePolicy, UpdateSource } from '../shared/updatecheck';
 
@@ -221,7 +221,7 @@ export class UpdateChecker {
         const i = segs.map((s) => s.toLowerCase()).lastIndexOf('node_modules');
         if (i < 0 || segs[i + 1]?.toLowerCase() !== '@github' || segs[i + 2]?.toLowerCase() !== 'copilot') return undefined;
         const root = segs.slice(0, i + 3).join(env.platform === 'win32' ? '\\' : '/');
-        const t = this.d.readText(path.join(root, 'package.json'), MAX_TOOL_OUTPUT);
+        const t = this.d.readText(pathFor(env.platform).join(root, 'package.json'), MAX_TOOL_OUTPUT); // the target platform's flavour, not the host's
         return t === undefined ? undefined : versionFromPackageJson(t);
       }
       case 'brew': return versionFromCaskroom(real);
@@ -282,7 +282,7 @@ export class UpdateChecker {
         if (!id) throw new Error('no winget route');
         // the background check never accepts source agreements for the user; an explicit check carries the flag only after the terms note was confirmed (FR-004)
         const a = parseWingetList(await this.toolWinget(wingetCheck(id, opts.acceptTerms === true), file), id);
-        if (a.kind === 'terms') throw new Error('winget needs its terms accepted');
+        if (a.kind === 'terms') throw new Error(WINGET_TERMS_REASON);
         if (a.kind === 'unknown') throw new Error('unexpected answer');
         if (a.kind === 'current') return { latest: installed, state: 'up-to-date' };
         const d = decide(installed, a.available);
@@ -314,7 +314,9 @@ export class UpdateChecker {
 }
 
 /** A short reason for the card: a known short word, else a generic one. Raw output is never used. */
-function shortReason(e: unknown): string {
+export function shortReason(e: unknown): string {
   const m = e instanceof Error ? e.message : String(e);
+  // Chromium's network errors (net::ERR_INTERNET_DISCONNECTED, ERR_NAME_NOT_RESOLVED, ERR_PROXY_*, ...) and Node's are a network problem (FR-003, FR-014)
+  if (/\bnet::ERR_|\b(ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENETUNREACH|EHOSTUNREACH)\b/.test(m)) return 'network problem';
   return /^[a-z0-9 .,'-]{1,80}$/i.test(m) ? m : 'unexpected answer';
 }

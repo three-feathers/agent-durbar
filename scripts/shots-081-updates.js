@@ -35,7 +35,7 @@ module.exports = async (ctx) => {
     // ---- the start check found updates (simupdstart): a badge with a number on the Settings entry and one toast, no window opened
     await H.load({ w, h, query: { simkinds: '1', simupd: 'avail', simupdstart: '1' }, ready: 'fit' });
     await until(`(document.querySelector('#settingsBtn .upd-badge')||{}).textContent==='2'`);
-    await until(`/Codex 0\.164\.0 is available/.test(document.getElementById('toasts').textContent)`);
+    await until(`/Codex 1\.0\.2 is available/.test(document.getElementById('toasts').textContent)`);
     assert.strictEqual(await js(`document.querySelectorAll('#toasts .toast').length`), 1, 'one toast');
     await shot(`081-updates-badge-${w}x${h}.png`);
     await H.load({ w, h, query: { simkinds: '1', simupd: 'avail' }, ready: 'fit' });
@@ -47,7 +47,8 @@ module.exports = async (ctx) => {
     const t = await js(`({claude:document.querySelector(${jsLiteral(card('claude'))}+' .hs-upd').textContent,codex:document.querySelector(${jsLiteral(card('codex'))}+' .hs-upd').textContent,copilot:document.querySelector(${jsLiteral(card('copilot'))}+' .hs-upd').textContent,badge:(document.querySelector('#settingsBtn .upd-badge')||{}).textContent})`);
     assert.match(t.claude, /Update available.*Installed 2\.1\.300 · the official installer/);
     assert.match(t.claude, /Latest 2\.1\.309 · stable 2\.1\.308/);
-    assert.match(t.codex, /Latest 0\.164\.0 \(as Homebrew knows it\)/);
+    assert.match(t.codex, /Installed 0\.9\.0 · npm[\s\S]*Latest 1\.0\.2/, 'the same copy as the card above it (too old, in an nvm folder)');
+    assert.match(t.copilot, /Latest 1\.0\.103 \(as Homebrew knows it\)/);
     assert.match(t.copilot, /Copilot runtime 1\.0\.22, bundled with Durbar \(updates with Durbar\)/);
     assert.match(t.copilot, /GitHub Copilot CLI 1\.0\.103 · Homebrew \(used to sign in\)/);
     assert.match(t.copilot, /Up to date/);
@@ -57,6 +58,9 @@ module.exports = async (ctx) => {
     assert.ok(await js(`!!document.querySelector('[data-hs="startchk"]:checked')`), 'the start-check switch is on by default');
     assert.match(await js(`document.getElementById('hsBar').textContent`), /Check for updates when Durbar starts[\s\S]*checks for updates each time it starts/);
     assert.ok(await js(`[...document.querySelectorAll('.hs-card .hs-upd, .hs-bar')].every(e=>{const f=parseFloat(getComputedStyle(e).fontSize);return f>=10.5})`), 'text is at least 10.5px');
+    // FR-017: the Settings note lists what the check contacts and the headers Durbar's requests carry
+    const contacts = await js(`(document.querySelector('#hsBar details.hs-contacts')||{}).textContent||''`);
+    assert.match(contacts, /What the check contacts[\s\S]*registry\.npmjs\.org[\s\S]*downloads\.claude\.ai[\s\S]*Accept-Language: en \(never your locale\)/);
     await js(`document.getElementById('hsH').scrollIntoView()`); await settle();
     await shot(`081-updates-avail-${w}x${h}.png`);
     // a hostile value would be escaped: nothing in the cards is markup

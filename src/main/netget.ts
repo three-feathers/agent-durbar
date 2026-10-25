@@ -41,6 +41,13 @@ export function electronRequestFactory(): NetRequestFactory {
 }
 
 const UA = 'AgentDurbar';
+/**
+ * Spec 081 FR-017: the headers Durbar sets on every request. Chromium would otherwise add `Accept-Language` from the user's locale;
+ * a fixed `en` sends no locale. Chromium still adds `Accept-Encoding` (gzip, deflate, br, zstd) and `Sec-Fetch-Site/Mode/Dest`
+ * itself: fixed values that carry nothing about the user, listed in FR-017 and the README.
+ */
+export const FIXED_HEADERS: Readonly<Record<string, string>> = { 'User-Agent': UA, 'Accept': '*/*', 'Accept-Language': 'en' };
+const setFixedHeaders = (req: NetRequestLike): void => { for (const [k, v] of Object.entries(FIXED_HEADERS)) req.setHeader(k, v); };
 
 /**
  * Spec 081 FR-026: a lookup of one allow-listed URL. A URL that is not exactly on the list is refused before any request. A 3xx
@@ -67,7 +74,7 @@ export function makeLookupGet(factory: NetRequestFactory): LookupGet {
         done(() => reject(e instanceof Error ? e : new Error(String(e))));
         return;
       }
-      req.setHeader('User-Agent', UA);
+      setFixedHeaders(req);
       req.on('redirect', (status, _m, redirectUrl) => done(() => resolve({ kind: 'redirect', status, url: String(redirectUrl) })));
       req.on('response', (res) => {
         if (settled) return;
@@ -91,7 +98,7 @@ export function makeLookupGet(factory: NetRequestFactory): LookupGet {
 /**
  * Spec 060 FR-001 and spec 081 T024: the installer download. One GET per hop with the redirect NOT followed: the `redirect` event
  * gives the status and the next URL, the request is aborted, and the caller (`downloadScript`) checks that URL against the
- * vendor's hosts BEFORE it asks for it. Size cap while reading, an idle limit and a total limit, as `makeGet` had.
+ * vendor's hosts BEFORE it asks for it. Size cap while reading and a total time limit.
  */
 export function makeDownloadGet(factory: NetRequestFactory): HttpGet {
   return (url, { timeoutMs, maxBytes }) =>
@@ -112,8 +119,7 @@ export function makeDownloadGet(factory: NetRequestFactory): HttpGet {
         finish(() => reject(e instanceof Error ? e : new Error(String(e))));
         return;
       }
-      req.setHeader('User-Agent', UA);
-      req.setHeader('Accept', '*/*');
+      setFixedHeaders(req);
       req.on('redirect', (status, _m, redirectUrl) => finish(() => resolve({ status, location: String(redirectUrl), body: Buffer.alloc(0) })));
       req.on('response', (res) => {
         const status = res.statusCode;

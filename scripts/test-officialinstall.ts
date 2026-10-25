@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { EventEmitter } from 'events';
-import { MAX_REDIRECTS, MAX_SCRIPT_BYTES, allowedScriptUrl, downloadScript, looksLikeScript, makeGet } from '../src/main/officialinstall';
+import { MAX_REDIRECTS, MAX_SCRIPT_BYTES, allowedScriptUrl, downloadScript, looksLikeScript } from '../src/main/officialinstall';
 import * as http from 'http';
 import type { HttpGet } from '../src/main/officialinstall';
 import { makeDownloadGet } from '../src/main/netget';
@@ -70,27 +70,25 @@ async function main(): Promise<void> {
     const f = fake({ 'https://claude.ai/install.sh': { status: 200, body: Buffer.from('<html><body>Verify you are human</body></html>') } });
     await assert.rejects(downloadScript(claude, '.sh', { get: f.get, tmpdir: tmp }), /not the vendor's install script/);
   }
-  // the real stream code against a local server (review on #393: the size cap and the total timeout must be proven)
+  // the download's stream code (netget.makeDownloadGet over a fake net.request; review on #393: the size cap and the TOTAL time limit must be proven)
   {
-    const server = http.createServer((req, res) => {
-      if (req.url === '/ok') { res.writeHead(200, { 'Content-Type': 'text/x-sh' }); res.end('#!/bin/sh\necho ok\n'); return; }
-      if (req.url === '/big') { res.writeHead(200); res.write(Buffer.alloc(600)); res.write(Buffer.alloc(600)); res.end(); return; }
-      if (req.url === '/drip') { res.writeHead(200); const t = setInterval(() => res.write('x'), 40); req.on('close', () => clearInterval(t)); return; }
-      if (req.url === '/redir') { res.writeHead(302, { Location: '/ok' }); res.end(); return; }
-      res.writeHead(404); res.end();
-    });
-    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
-    const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-    const get = makeGet(http.get as never);
-    const okr = await get(base + '/ok', { timeoutMs: 2000, maxBytes: 1000 });
+    const mkRes = (status: number, headers: Record<string, string>, feed: (res: EventEmitter, req: EventEmitter) => void): NetRequestFactory => () => {
+      const r = Object.assign(new EventEmitter(), { headers: {} as Record<string, string>, setHeader(k: string, v: string) { this.headers[k] = v; }, abort() { (this as unknown as EventEmitter).emit('aborted'); }, followRedirect: () => { throw new Error('never followed'); }, end() { setImmediate(() => { const res = Object.assign(new EventEmitter(), { statusCode: status, headers }); (r as EventEmitter).emit('response', res); feed(res, r as EventEmitter); }); } });
+      return r as unknown as NetRequestLike;
+    };
+    const okr = await makeDownloadGet(mkRes(200, { 'content-type': 'text/x-sh' }, (res) => { res.emit('data', Buffer.from('#!/bin/sh\necho ok\n')); res.emit('end'); }))('https://x/ok', { timeoutMs: 2000, maxBytes: 1000 });
     assert.deepStrictEqual([okr.status, okr.contentType, okr.body.toString()], [200, 'text/x-sh', '#!/bin/sh\necho ok\n']);
-    const rd = await get(base + '/redir', { timeoutMs: 2000, maxBytes: 1000 });
+    const rd = await makeDownloadGet(mkRes(302, { location: '/ok' }, () => undefined))('https://x/redir', { timeoutMs: 2000, maxBytes: 1000 });
     assert.deepStrictEqual([rd.status, rd.location], [302, '/ok'], 'redirects are reported, not followed');
-    await assert.rejects(get(base + '/big', { timeoutMs: 2000, maxBytes: 1000 }), /larger than expected/, 'the size cap works while streaming');
+    await assert.rejects(makeDownloadGet(mkRes(200, {}, (res) => { res.emit('data', Buffer.alloc(600)); res.emit('data', Buffer.alloc(600)); res.emit('end'); }))('https://x/big', { timeoutMs: 2000, maxBytes: 1000 }), /larger than expected/, 'the size cap works while streaming');
+    let aborted = false;
     const t0 = Date.now();
-    await assert.rejects(get(base + '/drip', { timeoutMs: 300, maxBytes: 100000 }), /took too long/, 'a dripping server hits the TOTAL time limit');
-    assert.ok(Date.now() - t0 < 2000, 'and promptly (the idle timeout alone would never fire)');
-    server.close();
+    await assert.rejects(makeDownloadGet(mkRes(200, {}, (res, req) => { const t = setInterval(() => res.emit('data', Buffer.from('x')), 40); req.on('aborted', () => { aborted = true; clearInterval(t); }); }))('https://x/drip', { timeoutMs: 300, maxBytes: 100000 }), /took too long/, 'a dripping server hits the TOTAL time limit');
+    assert.ok(Date.now() - t0 < 2000 && aborted, 'promptly, and the request is aborted');
+    // FR-017: the fixed headers, no locale
+    let seen: Record<string, string> = {};
+    await makeDownloadGet((o) => { const r = mkRes(200, {}, (res) => res.emit('end'))(o) as unknown as { headers: Record<string, string> }; seen = r.headers; return r as unknown as NetRequestLike; })('https://x/h', { timeoutMs: 2000, maxBytes: 10 });
+    assert.deepStrictEqual(seen, { 'User-Agent': 'AgentDurbar', 'Accept': '*/*', 'Accept-Language': 'en' });
   }
 
   // the runner: an official plan runs bash with the downloaded file as the last argument, and the folder goes when it ends

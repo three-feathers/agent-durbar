@@ -125,14 +125,17 @@
   }
 
   /* a small modal in the app's dialog style; returns {root, close} */
-  function modal(title, html, buttons) {
-    const old = document.getElementById('hsDlg'); if (old) old.remove();
+  /* `opts.onReplaced`: runs when another dialog takes this one's place before it was answered (review on #721: the open-sessions
+     dialog then answers Cancel, so main's update lock never waits for an answer that cannot come) */
+  function modal(title, html, buttons, opts) {
+    const old = document.getElementById('hsDlg'); if (old) { const h = old.__onReplaced; old.__onReplaced = null; old.remove(); if (typeof h === 'function') h(); }
     const d = document.createElement('div'); d.id = 'hsDlg'; d.className = 'dlg-ov';
     d.innerHTML = `<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="hsDlgT"><h3 id="hsDlgT"></h3><div class="dbody">${html}</div><div class="dbtn"></div></div>`;
     d.querySelector('#hsDlgT').textContent = title;
     const row = d.querySelector('.dbtn');
     let closed = false;
-    const close = () => { if (closed) return; closed = true; d.remove(); };
+    const close = () => { if (closed) return; closed = true; d.__onReplaced = null; d.remove(); };
+    if (opts && typeof opts.onReplaced === 'function') d.__onReplaced = () => { if (closed) return; closed = true; opts.onReplaced(); };
     for (const b of buttons) { const el = document.createElement('button'); el.type = 'button'; el.className = 'btn' + (b.cls ? ' ' + b.cls : ''); el.textContent = b.label; if (b.id) el.id = b.id; el.onclick = () => b.onClick(close); row.appendChild(el); }
     d.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); const c = buttons.find((x) => x.cancel); if (c) c.onClick(close); else close(); } });
     document.body.appendChild(d);
@@ -147,6 +150,16 @@
   const UPD_CHIP = { 'up-to-date': ['ok', 'Up to date'], 'update-available': ['warn', 'Update available'], 'could-not-check': ['off', 'Could not check'], outside: ['off', 'Outside Durbar'], checking: ['off', 'Checking…'], 'not-checked': ['off', 'Not checked'] };
   /* FR-012: where to update a copy Durbar does not manage */
   const OUTSIDE = { distro: "Update it with your system's package manager.", snap: 'Update it with Snap.', scoop: 'Update it with Scoop.', formula: 'Update it with Homebrew (brew upgrade).', winget: 'Update it with winget.' };
+  /* FR-017: what each start check contacts and sends, per install source (the README has the same table) */
+  const CONTACTS = [
+    ['npm', "the registry in your npm configuration (default registry.npmjs.org): npm's own User-Agent, the package name, and your registry token from .npmrc if one is set for it (npm sends it; Durbar never reads .npmrc)"],
+    ['Homebrew', "nothing expected: Homebrew answers from its local data (HOMEBREW_NO_AUTO_UPDATE=1); unconfirmed on a real Mac"],
+    ['winget', "the winget source (Microsoft's CDN), with winget's own client data"],
+    ["Codex and Copilot CLI, vendor installer", "github.com (the latest release's redirect, header only)"],
+    ['Claude Code, native installer', 'downloads.claude.ai (the stable and latest channel files)'],
+    ['Durbar\'s own requests', 'User-Agent: AgentDurbar, Accept-Language: en (never your locale) and Chromium\'s fixed Accept, Accept-Encoding and Sec-Fetch headers; no cookies or credentials'],
+    ["A copy outside Durbar's routes", 'nothing'],
+  ];
   const SOURCE_NAME = { claude: 'Claude Code', codex: 'Codex', copilot: 'the GitHub Copilot CLI' };
   const polOf = () => (UPD && UPD.policy) || {};
   const updResult = (id) => (UPD && Array.isArray(UPD.results) ? UPD.results.find((x) => x.app === id) : undefined);
@@ -170,7 +183,7 @@
           if (r.state === 'up-to-date' && r.installedNewer) out.push('<p class="scr-note small">Installed is newer than the source\'s latest.</p>');
           if (r.newerOnLatest) out.push(`<p class="scr-note small hs-quiet">A newer latest-channel build exists (${esc(r.newerOnLatest)}).</p>`);
         }
-        if (r.state === 'could-not-check') out.push(`<p class="scr-note small">Could not check: ${esc(r.reason || 'unexpected answer')}</p>`);
+        if (r.state === 'could-not-check') out.push(`<p class="scr-note small">Could not check: ${esc(r.reason || 'unexpected answer')}${r.reason === 'winget needs its terms accepted' ? '. Check asks you whether to accept them.' : ''}</p>`);
         if (r.checkedAt) out.push(`<p class="scr-note small hs-when">Checked ${esc(timeOf(r.checkedAt))}</p>`);
       }
     } else if (busy) out.push(`<p class="scr-note small" aria-busy="true">${chip('checking')}</p>`);
@@ -193,7 +206,8 @@
     const p = polOf();
     if (p.checkHidden) return '<p class="scr-note small hs-upd-off">Turned off by your organization: Durbar does not check for agent-app updates.</p>';
     return `<div class="hs-bar"><button class="btn sm" type="button" data-hs="checkall">Check for updates</button><label class="hs-sw"><input type="checkbox" data-hs="startchk"${UPD.startCheck ? ' checked' : ''}${p.unreadable ? ' disabled' : ''}> Check for updates when Durbar starts</label></div>
-      <p class="scr-note small">Durbar checks for updates each time it starts. It never installs one by itself.${p.installBlocked ? ' Updates are managed by your organization.' : ''}${p.unreadable ? " Not checked: your organization's settings could not be read." : ''}</p>`;
+      <p class="scr-note small">Durbar checks for updates each time it starts. It never installs one by itself.${p.installBlocked ? ' Updates are managed by your organization.' : ''}${p.unreadable ? " Not checked: your organization's settings could not be read." : ''}</p>
+      <details class="hs-cmds hs-contacts"><summary>What the check contacts</summary><p class="scr-note small">Only the source of each copy Durbar uses. Each request shows your IP address and the time to that server; none carries a Durbar identifier or a version.</p><ul class="scr-note small">${CONTACTS.map((c) => `<li><b>${esc(c[0])}</b>: ${esc(c[1])}</li>`).join('')}</ul></details>`;
   }
   function paintUpdates() {
     document.querySelectorAll('.hs-upd[data-upd]').forEach((p) => { p.innerHTML = updInner(p.dataset.upd); });
@@ -201,9 +215,9 @@
     const bar = document.getElementById('hsBar'); if (bar) bar.innerHTML = barHTML();
     onBadge(updCount());
   }
-  async function loadUpdates(check, app, opts) {
+  async function loadUpdates(check, app) {
     if (!B || !B.harnessUpdates) return UPD;
-    try { const v = await B.harnessUpdates(check ? 'check' : undefined, app, opts); if (v && typeof v === 'object') UPD = v; } catch (e) { /* keep the last */ }
+    try { const v = await B.harnessUpdates(check ? 'check' : undefined, app); if (v && typeof v === 'object') UPD = v; } catch (e) { /* keep the last */ }
     paintUpdates();
     return UPD;
   }
@@ -339,7 +353,8 @@
       modal(`${n} ${name} session${n === 1 ? ' is' : 's are'} open`, `<p class="scr-note">${esc(name)} cannot be updated safely while its sessions run (on Windows a running program cannot be replaced). Nothing new starts until the update is done.</p><p class="scr-note small">${esc(endText)}</p>${extra.map((x) => `<p class="scr-note small">${esc(x)}</p>`).join('')}`,
         [{ label: 'Cancel', cancel: true, onClick: (c2) => { c2(); res(null); } },
           { label: 'Update when they end', cls: 'primary', onClick: (c2) => { c2(); res('wait'); } },
-          { label: `End ${n} session${n === 1 ? '' : 's'} and update`, cls: 'danger', onClick: (c2) => { c2(); res('end'); } }]);
+          { label: `End ${n} session${n === 1 ? '' : 's'} and update`, cls: 'danger', onClick: (c2) => { c2(); res('end'); } }],
+        { onReplaced: () => res(null) });
     });
   }
 
@@ -399,14 +414,8 @@
 
   /* Check for updates (all apps) or one card's Check: main asks the sources; the answer arrives as an update event and in the reply */
   async function checkNow(kind) {
-    let winget = false;
-    const r0 = kind ? updResult(kind) : undefined;
-    if (r0 && r0.reason === 'winget needs its terms accepted') {
-      /* FR-004: the terms note first; only after the user's OK does that one run carry --accept-source-agreements */
-      winget = await new Promise((res) => modal('winget source terms', '<p class="scr-note">winget needs you to accept the terms of its package source before it can answer. Durbar does not accept them for you. Continue to accept them for this one check?</p>', [{ label: 'Cancel', cancel: true, onClick: (c) => { c(); res(false); } }, { label: 'Accept and check', cls: 'primary', onClick: (c) => { c(); res(true); } }]));
-      if (!winget) return;
-    }
-    await loadUpdates(true, kind, winget ? { acceptTerms: true } : undefined);
+    /* FR-004: for winget's source terms main asks itself (a native dialog the page cannot answer); the window only asks for the check */
+    await loadUpdates(true, kind);
   }
 
   /* clicks inside the Settings screen */

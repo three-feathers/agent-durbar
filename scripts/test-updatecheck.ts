@@ -18,11 +18,12 @@ import {
   updateOutcomeNote, versionFromCaskroom, versionFromPackageJson, versionFromWingetPath, versionLabel, wingetCheck,
 } from '../src/shared/updatecheck';
 import type { CheckResult, LookupGet, UpdatePolicy } from '../src/shared/updatecheck';
-import { makeDownloadGet, makeLookupGet } from '../src/main/netget';
+import { FIXED_HEADERS, makeDownloadGet, makeLookupGet } from '../src/main/netget';
 import type { NetRequestFactory, NetRequestLike, NetRequestOptions } from '../src/main/netget';
 import { UpdateChecker } from '../src/main/updatecheck';
 import type { CheckerDeps, UpdatesView } from '../src/main/updatecheck';
-import { UpdateGate } from '../src/main/updategate';
+import { wingetTermsQuestion } from '../src/shared/updatecheck';
+import { ASK_LIMIT_MS, UpdateGate, startHeldBy, updateRunRefusal } from '../src/main/updategate';
 import type { RunReply, SessionCount } from '../src/main/updategate';
 import { SettingsStore } from '../src/main/settings';
 import { HOLD_RETRY_MS, Scheduler } from '../src/main/schedules';
@@ -320,7 +321,7 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     assert.deepStrictEqual(got, { latest: want });
     const r = n.reqs[0];
     assert.deepStrictEqual([r.opts.method, r.opts.redirect, r.opts.credentials, r.opts.useSessionCookies], ['HEAD', 'manual', 'omit', false]);
-    assert.strictEqual(r.headers['User-Agent'], 'AgentDurbar');
+    assert.deepStrictEqual(r.headers, { 'User-Agent': 'AgentDurbar', 'Accept': '*/*', 'Accept-Language': 'en' }, 'FR-017: fixed headers; Accept-Language fixed, never the user\'s locale');
     assert.strictEqual(r.followed, false, 'the redirect is read from the event, never followed');
     assert.strictEqual(r.aborted, true, 'and the request is aborted, so no body is fetched');
   }
@@ -484,7 +485,13 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     const pj = '/home/u/.nvm/versions/node/v22.3.0/lib/node_modules/@github/copilot/package.json';
     const c = checkerWith({ platform: 'linux', real: { copilot: cp }, copies: {}, tools: { x: npm }, texts: { [pj]: fx('copilot-package-json') }, answers: () => ({ code: 0, stdout: fx('npm-view-copilot'), stderr: '' }) });
     await c.checker.checkAll();
-    assert.deepStrictEqual([c.checker.result('copilot')?.installed, c.checker.result('copilot')?.latest, c.checker.result('copilot')?.state], ['1.0.100', '1.0.103', 'update-available']);
+    assert.deepStrictEqual([c.checker.result('copilot')?.installed, c.checker.result('copilot')?.latest, c.checker.result('copilot')?.state], ['1.0.100', '1.0.103', 'update-available']);    // review on #721: the package.json path is joined in the TARGET platform's flavour (a Windows copy read on any host, and the reverse)
+    const wcp = 'C:\\Users\\u\\AppData\\Roaming\\npm\\node_modules\\@github\\copilot\\index.js';
+    const wpj = 'C:\\Users\\u\\AppData\\Roaming\\npm\\node_modules\\@github\\copilot\\package.json';
+    const wnpm = 'C:\\Users\\u\\AppData\\Roaming\\npm\\npm.cmd';
+    const wc = checkerWith({ platform: 'win32', real: { copilot: wcp }, copies: {}, tools: { x: wnpm }, texts: { [wpj]: fx('copilot-package-json') }, answers: () => ({ code: 0, stdout: fx('npm-view-copilot'), stderr: '' }) });
+    await wc.checker.checkAll();
+    assert.strictEqual(wc.checker.result('copilot')?.installed, '1.0.100', 'win32 flavour: ' + JSON.stringify(wc.checker.result('copilot')));
   }
   {
     // winget: no agreement flags in the background; the terms answer is a card message
@@ -514,6 +521,12 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     assert.deepStrictEqual([r.state, r.stable, r.latest, r.newerOnLatest], ['update-available', '2.1.308', '2.1.309', undefined], 'below stable');
     assert.strictEqual(cl.checker.checkedVersion('claude'), '2.1.308', 'stable is what an update installs');
     // between stable and latest: a quiet note and no update
+    // review on #721: offline (Chromium's net::ERR_*) is a network problem on the card, not "unexpected answer"
+    for (const msg of ['net::ERR_INTERNET_DISCONNECTED', 'net::ERR_NAME_NOT_RESOLVED', 'net::ERR_PROXY_CONNECTION_FAILED', 'getaddrinfo ENOTFOUND downloads.claude.ai']) {
+      const off = checkerWith({ platform: 'linux', real: { claude: '/home/u/.local/share/claude/versions/2.1.308' }, copies: { claude: { state: 'ready', version: '2.1.308' } }, lookup: async () => { throw new Error(msg); } });
+      await off.checker.checkAll();
+      assert.deepStrictEqual([off.checker.result('claude')?.state, off.checker.result('claude')?.reason], ['could-not-check', 'network problem'], msg);
+    }
     const q = checkerWith({ platform: 'linux', real: { claude: '/home/u/.local/share/claude/versions/2.1.308' }, copies: { claude: { state: 'ready', version: '2.1.308' } }, lookup: async (url) => ({ kind: 'body', status: 200, text: url.endsWith('stable') ? '2.1.308' : '2.1.309' }) });
     await q.checker.checkAll();
     assert.deepStrictEqual([q.checker.result('claude')?.state, q.checker.result('claude')?.newerOnLatest], ['up-to-date', '2.1.309']);
@@ -730,7 +743,7 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
       const r = await gate.request('codex', undefined, async (recount) => { st.open = 1; if (recount() > 0) return { ok: false, recount: true }; started++; return { ok: true }; });
       assert.deepStrictEqual([r.ok, 'needsGate' in r, started, gate.blocksStart('codex')], [false, true, 0, true]);
     }
-    // Update when they end: waits, then the confirmation comes again; a send to a live session is not blocked by the lock (it only blocks starts)
+    // Update when they end: waits, then the confirmation comes again (the live-session rule itself: startHeldBy below)
     {
       const { gate, st, tick } = mk({ open: 2 });
       await gate.request('codex', undefined, async () => ({ ok: true }));
@@ -766,6 +779,85 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
       const { gate } = mk({ open: 0 });
       await gate.request('codex', undefined, async () => ({ ok: false, error: 'nope' }));
       assert.strictEqual(gate.blocksStart('codex'), false);
+    }
+    // review on #721: a lock waiting for the window's answer is released when the window reloads or goes away, and after ASK_LIMIT_MS
+    {
+      const { gate, st } = mk({ open: 2 });
+      await gate.request('codex', undefined, async () => ({ ok: true }));
+      assert.strictEqual(gate.blocksStart('codex'), true);
+      gate.releaseAsking();
+      assert.deepStrictEqual([gate.blocksStart('codex'), st.released], [false, 1], 'released on reload');
+      // a waiting (or running) update keeps its lock: main finishes it without the window
+      await gate.request('codex', undefined, async () => ({ ok: true }));
+      await gate.request('codex', 'wait', async () => ({ ok: true }));
+      gate.releaseAsking();
+      assert.strictEqual(gate.blocksStart('codex'), true, 'a waiting update is not dropped by a reload');
+      const r = mk({ open: 0 });
+      await r.gate.request('claude', undefined, async () => ({ ok: true }));
+      r.gate.releaseAsking();
+      assert.strictEqual(r.gate.blocksStart('claude'), true, 'a running update keeps its lock');
+    }
+    {
+      const timers: Array<{ fn: () => void; ms: number; live: boolean }> = [];
+      const gate = new UpdateGate({ count: () => ({ open: 1, busy: 0, pendingPermissions: 0, heldPrompts: 0 }), endAll: async () => undefined, setTimer: (fn, ms) => { const t = { fn, ms, live: true }; timers.push(t); return t; }, clearTimer: (t) => { (t as { live: boolean }).live = false; }, changed: () => undefined, failed: () => undefined });
+      await gate.request('codex', undefined, async () => ({ ok: true }));
+      const ask = timers.find((t) => t.live && t.ms === ASK_LIMIT_MS);
+      assert.ok(ask, 'the asking phase has a time limit');
+      ask!.live = false; ask!.fn();
+      assert.strictEqual(gate.blocksStart('codex'), false, 'no answer within the limit: released');
+      await gate.request('codex', undefined, async () => ({ ok: true }));
+      await gate.request('codex', 'wait', async () => ({ ok: true }));
+      assert.ok(timers.filter((t) => t.ms === ASK_LIMIT_MS).every((t) => !t.live), 'answering stops the limit');
+    }
+    // the window side: another dialog replacing the open-sessions dialog answers Cancel (harnesses.js modal's onReplaced)
+    {
+      const hs = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'harnesses.js'), 'utf8');
+      assert.ok(/const old = document\.getElementById\('hsDlg'\); if \(old\) \{ const h = old\.__onReplaced;[^}]*h\(\); \}/.test(hs), 'modal() runs the replaced dialog\'s handler');
+      assert.ok(/\{ onReplaced: \(\) => res\(null\) \}/.test(hs.slice(hs.indexOf('function gateDialog'))), 'the gate dialog answers Cancel when replaced');
+      const main = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
+      assert.ok(/did-start-navigation', \(d\) => \{ if \(d\.isMainFrame && !d\.isSameDocument\) harnessIpc\.releaseAsking\(\); \}/.test(main) && /render-process-gone', \(\) => harnessIpc\.releaseAsking\(\)/.test(main), 'main releases on reload and on a crash');
+    }
+    // FR-013, the one rule (review on #721, mutants M21-M22): an open session is never held; a start or a resume while the lock is on is
+    {
+      assert.strictEqual(startHeldBy({ locked: true, live: true, name: 'Codex' }, 'schedule'), undefined, 'a scheduled prompt to a live session goes through');
+      assert.strictEqual(startHeldBy({ locked: true, live: true, name: 'Codex' }, 'start'), undefined, 'a message to a live session goes through');
+      assert.strictEqual(startHeldBy({ locked: true, live: false, name: 'Codex' }, 'schedule'), 'Codex is updating', 'one that would resume an ended session is held');
+      assert.match(startHeldBy({ locked: true, live: false, name: 'Codex' }, 'start') ?? '', /Codex is being updated/);
+      assert.strictEqual(startHeldBy({ locked: false, live: false, name: 'Codex' }, 'start'), undefined);
+      // the call sites use it with the real liveness (source checks: main.ts cannot be loaded in a test)
+      const main = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
+      const ensure = main.slice(main.indexOf('async function ensureLive('), main.indexOf('let p = starting.get(a.id);'));
+      assert.ok(/if \(ad\.isLive\(a\.id\)\) return;[\s\S]*updateBlocks\(router\.adapterIdOf\(a\.id\) \?\? a\.adapterId, ad\.isLive\(a\.id\)\)/.test(ensure), 'ensureLive: a live session returns first, the lock is asked with its liveness');
+      assert.ok(/const blocked = updateBlocks\(adapterId, false\);/.test(main), 'addWorkspace: a new session is never live');
+      assert.ok(/const updateBlocks = \(adapterId: string \| undefined, live: boolean\)[^\n]*startHeldBy\(\{ locked: harnessIpc\.blocksStart\(adapterId\), live,/.test(main), 'updateBlocks is startHeldBy');
+      const held = main.slice(main.indexOf('  heldBy: (s) => {'), main.indexOf('  capUnitOf: (s) => {'));
+      assert.ok(/startHeldBy\(\{ locked: harnessIpc\.blocksStart\(kind\), live: router\.forAgent\(a\.id\)\?\.isLive\(a\.id\) === true,[^}]*\}, 'schedule'\)/.test(held), 'the scheduler holds with the same rule');
+    }
+    // FR-004, review on #721: winget's terms are accepted only after main's own native question, and only when the kept result says so
+    {
+      assert.strictEqual(wingetTermsQuestion({ reason: 'winget needs its terms accepted' }), true);
+      for (const k of [undefined, { reason: 'network problem' }, { reason: 'unexpected answer' }]) assert.strictEqual(wingetTermsQuestion(k), false);
+      const ipc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'harness.ts'), 'utf8');
+      const upd = ipc.slice(ipc.indexOf("ipcHandle('harness:updates'"), ipc.indexOf("ipcHandle('harness:visible'"));
+      assert.ok(/ipcHandle\('harness:updates', async \(e, what\?: unknown, app\?: unknown\) =>/.test(upd), 'the window sends no terms answer (no third argument)');
+      assert.ok(/const acceptTerms = !simulatorOn\(dev\) && wingetTermsQuestion\(checker\.result\(app\)\) \? await askWingetTerms\(\) : false;/.test(upd), 'main decides, with its own dialog');
+      assert.ok(/dialog\.showMessageBox/.test(ipc.slice(ipc.indexOf('const askWingetTerms'), ipc.indexOf("ipcHandle('harness:updates'"))), 'a native dialog');
+      // review on #721 item 7: another frame gets an empty view, not the kept results
+      assert.ok(/if \(!fromApp\(e\)\) return emptyView\(\);/.test(upd));
+      const pre = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'preload', 'preload.ts'), 'utf8');
+      assert.ok(!/acceptTerms/.test(pre), 'the preload passes no terms flag');
+    }
+    // FR-017 (review on #721): the README and the Settings note name the headers, as sent (netget FIXED_HEADERS)
+    for (const f of ['README.md', path.join('src', 'renderer', 'harnesses.js')]) assert.match(fs.readFileSync(path.join(__dirname, '..', '..', f), 'utf8'), /Accept-Language: en[^\n]*never your locale[^\n]*Accept-Encoding[^\n]*Sec-Fetch/, f);
+    assert.deepStrictEqual(FIXED_HEADERS, { 'User-Agent': 'AgentDurbar', 'Accept': '*/*', 'Accept-Language': 'en' });
+    // FR-022 (mutant M23): an update the organization does not allow is refused in main's harness:run
+    {
+      assert.strictEqual(updateRunRefusal({ installBlocked: true, checkHidden: false }), 'Updates are managed by your organization.');
+      assert.strictEqual(updateRunRefusal({ installBlocked: false, checkHidden: false }), undefined);
+      const ipc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'harness.ts'), 'utf8');
+      const run = ipc.slice(ipc.indexOf("ipcHandle('harness:run'"), ipc.indexOf("ipcHandle('harness:updates'"));
+      const i = run.indexOf('const refused = updateRunRefusal(policyView(updatePolicy()));'), j = run.indexOf('if (refused) return'), k = run.indexOf('gate.request(');
+      assert.ok(i > 0 && j > i && k > j, 'harness:run refuses before the gate takes a lock');
     }
     // the Copilot CLI has no gate: main's count for it is 0 (sessions run Durbar's bundled runtime), so the run goes at once
     {
@@ -834,14 +926,25 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     assert.deepStrictEqual([killed.length, t.timedOut], [1, true], 'the timeout calls the tree kill');
     // the tree kill itself: POSIX signals the group; Windows runs taskkill /T /F from System32
     const sig: Array<[number, string]> = [];
-    killChildTree({ pid: 77 } as never, 'linux', {}, (() => undefined) as never, (pid, s) => { sig.push([pid, s]); });
+    const later: Array<() => void> = [];
+    const alive = { pid: 77, kill: () => true, exitCode: null, signalCode: null };
+    killChildTree(alive as never, 'linux', {}, (() => undefined) as never, (pid, s) => { sig.push([pid, s]); }, (fn, ms) => { assert.strictEqual(ms, 3000); later.push(fn); });
     assert.deepStrictEqual(sig, [[-77, 'SIGTERM']], 'the process group (a negative pid), not the child alone');
+    later.splice(0).forEach((f) => f());
+    assert.deepStrictEqual(sig, [[-77, 'SIGTERM'], [-77, 'SIGKILL']], 'still running after 3 s: SIGKILL to the group');
+    const gone = { pid: 80, kill: () => true, exitCode: 0, signalCode: null };
+    const sig2: Array<[number, string]> = [];
+    killChildTree(gone as never, 'linux', {}, (() => undefined) as never, (pid, s) => { sig2.push([pid, s]); }, (fn) => later.push(fn));
+    later.splice(0).forEach((f) => f());
+    assert.deepStrictEqual(sig2, [[-80, 'SIGTERM']], 'exited: no SIGKILL (its group id may belong to something else now)');
     const ran: Array<[string, string[]]> = [];
     killChildTree({ pid: 78 } as never, 'win32', { SystemRoot: 'C:\\Windows' }, ((f: string, a: string[]) => { ran.push([f, a]); }) as never);
     assert.deepStrictEqual(ran, [['C:\\Windows\\System32\\taskkill.exe', ['/pid', '78', '/t', '/f']]]);
     killChildTree({ pid: 79 } as never, 'win32', { SystemRoot: 'relative' }, ((f: string) => { ran.push([f, []]); }) as never);
     assert.strictEqual(ran[1][0], 'C:\\Windows\\System32\\taskkill.exe', 'SystemRoot is used only when absolute');
     killChildTree({} as never, 'linux', {}, (() => undefined) as never, () => { throw new Error('no pid: nothing to kill'); });
+    // review on #721: one tree kill: the setup runner uses this one too
+    assert.match(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'harness.ts'), 'utf8'), /killTree: \(c\) => killChildTree\(/);
   }
 
   console.log('updatecheck: versions, sources, official Codex, commands, parsers, failures, lookups, checker, policy, announce, gate, settings, exec OK');

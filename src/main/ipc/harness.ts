@@ -1,20 +1,20 @@
 /** IPC for harness setup inside the app: install, update and sign-in of an agent app, its official pages and the Copilot sign-in state (specs 051, 060; moved out of main.ts as it was, spec 045 FR-060). */
 import { BrowserWindow, dialog, shell } from 'electron';
-import { execFile, spawn } from 'child_process';
+import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
 import type { AdapterRegistry } from '../../adapters/registry';
 import type { AdapterRouter } from '../../adapters/router';
-import { nodeDetectEnv, nodeExec } from '../../adapters/detect';
+import { killChildTree, nodeDetectEnv, nodeExec } from '../../adapters/detect';
 import type { AdapterInfo } from '../../shared/adapters';
 import { OFFICIAL_PAGES, SETUP_NAMES, allowedSignInUrl, isSetupKind, runRequest, simManagers } from '../../shared/harnesssetup';
 import type { SetupKind } from '../../shared/harnesssetup';
-import { policyView } from '../../shared/updatecheck';
+import { policyView, wingetTermsQuestion } from '../../shared/updatecheck';
 import { parseVersionField } from '../../shared/versionfield';
 import { UpdateChecker } from '../updatecheck';
 import type { UpdatesView } from '../updatecheck';
-import { UpdateGate } from '../updategate';
+import { UpdateGate, updateRunRefusal } from '../updategate';
 import type { GateChoice, SessionCount } from '../updategate';
 import { electronRequestFactory, makeDownloadGet, makeLookupGet } from '../netget';
 import { updatePolicy } from '../updatepolicy';
@@ -48,13 +48,14 @@ export interface HarnessIpc {
   blocksStart(kind: string): boolean;
   checker: UpdateChecker;
   releaseAll(): void;
+  /** The window reloaded or went away: a lock waiting for its answer is released (review on #721). */
+  releaseAsking(): void;
 }
 
 export function register(deps: HarnessIpcDeps): HarnessIpc {
   const { dev, registry, router, remoteOps, toRenderer, adaptersList } = deps;
   /* Spec 051: harness setup inside the app. One fixed install, update or sign-in at a time (argv, no shell); progress and the end go to
      the window; detection runs again when it ends. Nothing of the output is logged. */
-  const sysExe = (name: string): string => path.win32.join(process.env.SystemRoot && path.win32.isAbsolute(process.env.SystemRoot) ? process.env.SystemRoot : 'C:\\Windows', 'System32', name);
   /* Spec 051 FR-014, FR-015: the account each app reports, cached for the run; sent only to the window, never logged. None under
      the simulator (spec 010 FR-030): its page answers a fake identity itself. */
   const accounts = createAccountCache({
@@ -75,17 +76,7 @@ export function register(deps: HarnessIpcDeps): HarnessIpc {
     },
     httpGet: makeDownloadGet(electronRequestFactory()), // spec 081 T024: the installer download follows the proxy and the OS certificates too
     spawn: (file, args, opts) => spawn(file, args as string[], opts),
-    killTree: (c) => {
-      const pid = c.pid;
-      if (!pid) return;
-      if (process.platform === 'win32') execFile(sysExe('taskkill.exe'), ['/pid', String(pid), '/t', '/f'], () => undefined);
-      else {
-        try { process.kill(-pid, 'SIGTERM'); } catch { /* gone */ }
-        // no SIGKILL once it has exited: its group id could already belong to something else
-        const cp = c as unknown as { exitCode: number | null; signalCode: string | null };
-        setTimeout(() => { if (cp.exitCode !== null || cp.signalCode !== null) return; try { process.kill(-pid, 'SIGKILL'); } catch { /* gone */ } }, 3000).unref();
-      }
-    },
+    killTree: (c) => killChildTree(c as unknown as Parameters<typeof killChildTree>[0], process.platform, process.env), // the one tree kill (taskkill /t /f; SIGTERM to the group, SIGKILL after 3 s)
     send: (channel: string, p: unknown) => {
       toRenderer(channel, p);
       // spec 081 FR-013: the update lock is held to the end of the run; the card then needs no network to know the new version
@@ -202,7 +193,8 @@ export function register(deps: HarnessIpcDeps): HarnessIpc {
     const req = fromApp(e) ? runRequest(kind, op, planIndex) : undefined;
     if (!req) return { ok: false, error: 'invalid request' };
     if (req.op === 'update') {
-      if (policyView(updatePolicy()).installBlocked) return { ok: false, error: 'Updates are managed by your organization.' };
+      const refused = updateRunRefusal(policyView(updatePolicy()));
+      if (refused) return { ok: false, error: refused };
       const g: GateChoice | undefined = gateArg === 'wait' || gateArg === 'end' || gateArg === 'cancel' ? gateArg : undefined;
       if (gateArg !== undefined && g === undefined) return { ok: false, error: 'invalid request' };
       return gate.request(req.kind, g, (recount) => runUpdate(req.kind, req.idx, recount));
@@ -217,13 +209,23 @@ export function register(deps: HarnessIpcDeps): HarnessIpc {
     if (!ready.ok) return ready;
     return harnessSetup.start(ready.job);
   });
-  /* Spec 081 FR-003, FR-012: the kept check results; 'check' asks anew (all apps, or one), `opts.acceptTerms` only after the winget terms note was confirmed */
-  ipcHandle('harness:updates', async (e, what?: unknown, app?: unknown, opts?: unknown) => {
-    if (!fromApp(e)) return checker.view();
+  /* Spec 081 FR-003, FR-012: the kept check results; 'check' asks anew (all apps, or one). Another frame gets an empty view (review on #721). */
+  const emptyView = (): UpdatesView => ({ results: [], checking: [], startCheck: false, policy: { checkHidden: true, installBlocked: true, unreadable: false, startAllowed: false }, waiting: {} });
+  /** FR-004: main asks itself, natively, before one winget check may accept the source terms (the window cannot approve it). */
+  const askWingetTerms = async (): Promise<boolean> => {
+    const opts = { type: 'question' as const, buttons: ['Cancel', 'Accept and check'], defaultId: 0, cancelId: 0, noLink: true, title: 'Agent Durbar', message: 'Accept the winget source terms?',
+      detail: "winget needs you to accept the terms of its package source (the Microsoft Store and winget sources) before it can answer. Durbar never accepts them for you. 'Accept and check' runs this one check with --accept-source-agreements." };
+    const win = deps.getWin();
+    const r = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
+    return r.response === 1;
+  };
+  ipcHandle('harness:updates', async (e, what?: unknown, app?: unknown) => {
+    if (!fromApp(e)) return emptyView();
     if (what === 'check') {
-      const o = { acceptTerms: !!opts && typeof opts === 'object' && (opts as { acceptTerms?: unknown }).acceptTerms === true };
-      if (isSetupKind(app)) await checker.checkApp(app, o);
-      else await checker.checkAll();
+      if (isSetupKind(app)) {
+        const acceptTerms = !simulatorOn(dev) && wingetTermsQuestion(checker.result(app)) ? await askWingetTerms() : false;
+        await checker.checkApp(app, { acceptTerms });
+      } else await checker.checkAll();
     }
     return checker.view();
   });
@@ -255,5 +257,5 @@ export function register(deps: HarnessIpcDeps): HarnessIpc {
       return { known: false, ...pw };
     }
   });
-  return { blocksStart: (kind) => isSetupKind(kind) && gate.blocksStart(kind), checker, releaseAll: () => gate.releaseAll() };
+  return { blocksStart: (kind) => isSetupKind(kind) && gate.blocksStart(kind), checker, releaseAll: () => gate.releaseAll(), releaseAsking: () => gate.releaseAsking() };
 }

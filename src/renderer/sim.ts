@@ -2285,12 +2285,13 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       const copilot: UpdRes = { app: 'copilot', state: 'up-to-date', installed: '1.0.103', latest: '1.0.103', source: 'Homebrew', sourceKind: 'brew', asHomebrew: true, checkedAt: NOW };
       if (simUpdMode === 'mixed') return [
         { app: 'claude', state: 'up-to-date', installed: '2.1.308', latest: '2.1.309', stable: '2.1.308', newerOnLatest: '2.1.309', source: 'the official installer', sourceKind: 'official', checkedAt: NOW },
-        { app: 'codex', state: 'could-not-check', installed: '0.163.0', source: 'Homebrew', sourceKind: 'brew', reason: 'network problem', checkedAt: NOW },
+        { app: 'codex', state: 'could-not-check', installed: '0.9.0', source: 'npm', sourceKind: 'npm', reason: 'network problem', checkedAt: NOW },
         { ...copilot, state: 'outside', source: "installed outside Durbar's routes", sourceKind: 'outside', hint: 'distro' },
       ];
       return [
         { app: 'claude', state: 'update-available', installed: '2.1.300', latest: '2.1.309', stable: '2.1.308', source: 'the official installer', sourceKind: 'official', checkedAt: NOW },
-        { app: 'codex', state: 'update-available', installed: '0.163.0', latest: '0.164.0', source: 'Homebrew', sourceKind: 'brew', asHomebrew: true, checkedAt: NOW },
+        // the same copy as the card (simkinds: too-old 0.9.0 found in an nvm folder, so npm owns it; review on #721)
+        { app: 'codex', state: 'update-available', installed: '0.9.0', latest: '1.0.2', source: 'npm', sourceKind: 'npm', checkedAt: NOW },
         copilot,
       ];
     };
@@ -2306,7 +2307,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     // the canned plans: the owning route first, behind it the others (the real ones come from main, which has no copy to look at under the simulator)
     const simUpdPlans = (kind: string) => (kind === 'claude'
       ? [{ manager: 'official', own: 'claude', owner: true, display: 'claude update', note: 'Installs into your home folder; no administrator rights needed.' }, { manager: 'official', bin: 'bash', script: {}, display: 'https://claude.ai/install.sh (downloaded, then run with bash)' }]
-      : kind === 'codex' ? [{ manager: 'brew', owner: true, display: 'brew upgrade --cask codex', note: 'May ask for administrator rights.' }, { manager: 'npm', display: 'npm install -g @openai/codex@latest' }]
+      : kind === 'codex' ? [{ manager: 'npm', owner: true, pinned: '1.0.2', display: 'npm install -g @openai/codex@1.0.2 --no-update-notifier' }, { manager: 'official', bin: 'bash', script: {}, display: 'https://chatgpt.com/codex/install.sh (downloaded, then run with bash)' }]
       : [{ manager: 'brew', owner: true, display: 'brew upgrade --cask copilot-cli --greedy', note: 'May ask for administrator rights.' }]);
     const api: DurbarApi = {
       ...floorApi,
@@ -2411,7 +2412,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         }
         return simUpdView();
       },
-      onHarnessUpdates: (cb) => { simUpdCb.push(cb); if (simUpdStart && simUpdCb.length === 1) setTimeout(() => simUpdEmit({ app: 'codex', version: '0.164.0', name: 'the Codex CLI' }), 600); return () => { const i = simUpdCb.indexOf(cb); if (i >= 0) simUpdCb.splice(i, 1); }; },
+      onHarnessUpdates: (cb) => { simUpdCb.push(cb); if (simUpdStart && simUpdCb.length === 1) setTimeout(() => simUpdEmit({ app: 'codex', version: '1.0.2', name: 'the Codex CLI' }), 600); return () => { const i = simUpdCb.indexOf(cb); if (i >= 0) simUpdCb.splice(i, 1); }; },
       harnessVisible: async () => true,
       setCheckUpdatesAtStart: async (on) => { simStartCheck.on = on !== false; return { ok: true, checkUpdatesAtStart: simStartCheck.on }; },
       harnessOpenPage: async () => ({ ok: true }),

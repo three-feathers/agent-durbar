@@ -50,7 +50,7 @@ export interface SourceEnv {
   env: Readonly<Record<string, string | undefined>>;
 }
 
-const pathFor = (platform: string): path.PlatformPath => (platform === 'win32' ? path.win32 : path.posix);
+export const pathFor = (platform: string): path.PlatformPath => (platform === 'win32' ? path.win32 : path.posix);
 const caseless = (platform: string): boolean => platform === 'win32' || platform === 'darwin';
 const MAX_PATH = 1024;
 
@@ -545,3 +545,11 @@ export function updateOutcomeNote(name: string, before: { version?: string; wher
   if (!reached) return `Updated, but Durbar still finds ${after.version}${at}.`;
   return undefined;
 }
+
+/** FR-004: the reason a winget check gives when its source terms are not accepted (the card shows it; main then asks itself). */
+export const WINGET_TERMS_REASON = 'winget needs its terms accepted';
+/**
+ * Review on #721 (constitution III): only main decides to add `--accept-source-agreements`, after its own native question, and only
+ * for one app's explicit Check whose kept result says the terms are not accepted. The window's word is never enough.
+ */
+export const wingetTermsQuestion = (kept: { reason?: string; sourceKind?: string } | undefined): boolean => kept?.reason === WINGET_TERMS_REASON;

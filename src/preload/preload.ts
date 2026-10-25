@@ -65,7 +65,7 @@ const api: DurbarApi = {
   themeIdeas: () => ipcRenderer.invoke('theme:ideas'),
   harnessPlans: (kind, op) => ipcRenderer.invoke('harness:plans', kind, op),
   harnessRun: (kind, op, planIndex, gate) => ipcRenderer.invoke('harness:run', kind, op, planIndex, gate),
-  harnessUpdates: (what, app, opts) => ipcRenderer.invoke('harness:updates', what === 'check' ? 'check' : undefined, typeof app === 'string' ? app : undefined, opts && opts.acceptTerms === true ? { acceptTerms: true } : undefined),
+  harnessUpdates: (what, app) => ipcRenderer.invoke('harness:updates', what === 'check' ? 'check' : undefined, typeof app === 'string' ? app : undefined),
   onHarnessUpdates: (cb) => sub('harness:updatesChanged', cb),
   harnessVisible: (on) => ipcRenderer.invoke('harness:visible', on === true),
   setCheckUpdatesAtStart: (on) => ipcRenderer.invoke('settings:setCheckUpdatesAtStart', on),

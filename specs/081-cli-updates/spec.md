@@ -272,13 +272,13 @@ When the start check finds a new version, the Settings entry and the card get a 
   - ***End N sessions and update*** uses the wording of the existing *End all sessions?* dialog (`askDialog` in `src/renderer/app.js` `endAllSessions`: "N sessions end and free their places (M still working: their replies stop). The chats stay; send a message to pick up where you left off."). It adds, when there are any, the number of pending permission requests (they are denied) and of queued or scheduled prompts for those sessions (they are not sent once the sessions have ended; one that would resume them is held, as above). Each session's running turn is interrupted first (`stopTurnOp`), then the session ends (`endSessionOp`, which does not interrupt by itself), and it stays resumable.
   - **Count again after the native confirmation.** If a session is open by then (one the lock could not stop, such as a session started from outside Durbar's own start path), the update does not start and the gate dialog comes back.
   - Durbar does not offer "update now anyway" while sessions are open.
-- **FR-014** `[IMPLEMENTED]` **Failure advice** (US4). A failed check or update is classified from the exit code, the error code and the masked output, by a pure function with fixtures per source and OS:
+- **FR-014** `[IMPLEMENTED]` for the classes and the advice; `[KNOWN GAP]` for the vendor texts: `claude-update-disabled`, `claude-update-uptodate`, `win-uac-cancelled` and the three `winget-*` fixtures are PLACEHOLDER shapes, not recorded output, until T040/T041 record them (review on #721). **Failure advice** (US4). A failed check or update is classified from the exit code, the error code and the masked output, by a pure function with fixtures per source and OS:
   - *Needs administrator rights* (`EACCES`, `EPERM` on a folder Durbar does not own, Homebrew owned by another account): the command to copy, never an offer to elevate.
   - *File in use* (Windows `EBUSY`, `EPERM` on the binary, "being used by another process", winget's in-use result): name the app and ask to close it. Inside Durbar, FR-013 already prevents this.
   - *Managed by your organization*:
     - Durbar's own policy (spec 076);
     - a winget or Group Policy refusal;
-    - **only on the vendor's own text that updates are disabled** (for example Claude Code's message when `DISABLE_UPDATES` or a managed setting blocks it), matched against a recorded fixture.
+    - **only on the vendor's own text that updates are disabled** (for example Claude Code's message when `DISABLE_UPDATES` or a managed setting blocks it), matched against a fixture of the documented shape (`[KNOWN GAP]`: not yet a recorded one, T040).
 
     `claude update` saying "up to date" is **not** *Managed*. It follows the user's channel (FR-004, Q7 = C), so the card says *Claude Code says it is up to date on its channel* and shows no toast. No retry is offered for *Managed*.
   - *Cancelled at the administrator prompt* (UAC refused).
@@ -296,7 +296,7 @@ When the start check finds a new version, the Settings entry and the card get a 
 
 ### Privacy, safety and platforms (all stories)
 
-- **FR-017** `[IMPLEMENTED]` **What each start check contacts and reveals.** The README's *Safety model* and privacy text and the Settings note list this table. Per installed app, only the source of the copy Durbar uses is asked.
+- **FR-017** `[IMPLEMENTED]` **What each start check contacts and reveals.** The README's *Safety model* and privacy text and the Settings note (*What the check contacts*, under *Check for updates*) list this table. Per installed app, only the source of the copy Durbar uses is asked.
 
   Every request reveals the machine's **IP address** and the **time** to that server. None carries a Durbar identifier, the installed version or Durbar's version.
 
@@ -305,12 +305,12 @@ When the start check finds a new version, the Settings entry and the card get a 
   | npm (any app) | the registry in the user's npm configuration (default `registry.npmjs.org`) | npm's own `User-Agent` (npm and Node.js versions, OS, CPU), the package name, and **the registry token from the user's `.npmrc` if one is set for that registry** (npm sends it; Durbar never reads `.npmrc`) | one `npm view` with `--no-update-notifier` and `npm_config_update_notifier=false` (so npm makes no second request) |
   | Homebrew (any app) | nothing expected: both runs set `HOMEBREW_NO_AUTO_UPDATE=1` and Homebrew answers from its local data (Q4 = A). *Unconfirmed* that neither run contacts `formulae.brew.sh`; T042 checks it on a real Mac | n/a | up to **two** local `brew` runs (`info`, then `outdated` only if needed) |
   | winget (Claude Code, Copilot CLI) | the winget source (Microsoft's CDN; host not documented in the pages read) | winget's own client data (not documented in the pages read) | one `winget list` |
-  | Codex, official installer | `github.com` (`/openai/codex/releases/latest`, redirect not followed) | `User-Agent: AgentDurbar` | one request, header only |
-  | Copilot CLI, install script | `github.com` (`/github/copilot-cli/releases/latest`) | `User-Agent: AgentDurbar` | one request, header only |
-  | Claude Code, native installer | `downloads.claude.ai` (`/claude-code-releases/stable` and `/latest`) | `User-Agent: AgentDurbar` | two small requests |
+  | Codex, official installer | `github.com` (`/openai/codex/releases/latest`, redirect not followed) | `User-Agent: AgentDurbar`, `Accept: */*`, `Accept-Language: en` (fixed, never the user's locale) and Chromium's own fixed `Accept-Encoding` and `Sec-Fetch-Site/Mode/Dest` | one request, header only |
+  | Copilot CLI, install script | `github.com` (`/github/copilot-cli/releases/latest`) | `User-Agent: AgentDurbar`, `Accept: */*`, `Accept-Language: en` (fixed, never the user's locale) and Chromium's own fixed `Accept-Encoding` and `Sec-Fetch-Site/Mode/Dest` | one request, header only |
+  | Claude Code, native installer | `downloads.claude.ai` (`/claude-code-releases/stable` and `/latest`) | `User-Agent: AgentDurbar`, `Accept: */*`, `Accept-Language: en` (fixed, never the user's locale) and Chromium's own fixed `Accept-Encoding` and `Sec-Fetch-Site/Mode/Dest` | two small requests |
   | outside Durbar's routes | nothing | | |
 
-  Durbar's own requests (the last three rows) go through **Chromium's network stack** (Electron `net.request` on the app's session with `redirect: 'manual'`, `credentials: 'omit'` and `useSessionCookies: false`. For GitHub, the `redirect` event's URL is read and the request is aborted. `net.fetch` with `redirect: 'manual'` rejects with "Redirect was cancelled" in Electron 44, `real:` 2026-10-25 by Ruben's and Paco's agents). They therefore follow the system or organization proxy and the OS certificate store (spec 076 FR-155, FR-156), not Node's `https.get`. Each request follows FR-026's host and path allow-list, a 10 s limit, a 64 KiB cap and no credentials or cookies (`credentials: 'omit'`). The child tools (npm, brew, winget) use their own proxy settings. Durbar keeps no log of the checks and saves nothing but the announced versions (FR-016). The bundled Copilot runtime is never checked, because it updates with Durbar.
+  The headers were read from a real Electron 44 request to a local server (`real:` 2026-10-25, review on #721: Chromium adds `Accept-Language` from the locale unless it is set, so Durbar sets `en`; with `--lang=de-CH` the request still said `en`). Durbar's own requests (the last three rows) go through **Chromium's network stack** (Electron `net.request` on the app's session with `redirect: 'manual'`, `credentials: 'omit'` and `useSessionCookies: false`. For GitHub, the `redirect` event's URL is read and the request is aborted. `net.fetch` with `redirect: 'manual'` rejects with "Redirect was cancelled" in Electron 44, `real:` 2026-10-25 by Ruben's and Paco's agents). They therefore follow the system or organization proxy and the OS certificate store (spec 076 FR-155, FR-156), not Node's `https.get`. Each request follows FR-026's host and path allow-list, a 10 s limit, a 64 KiB cap and no credentials or cookies (`credentials: 'omit'`). The child tools (npm, brew, winget) use their own proxy settings. Durbar keeps no log of the checks and saves nothing but the announced versions (FR-016). The bundled Copilot runtime is never checked, because it updates with Durbar.
 - **FR-018** `[IMPLEMENTED]` **How commands run.**
   - Every command runs as an argv array with `shell: false`, through the existing runner (`HarnessSetup` for updates, `nodeExec` for checks).
   - Arguments come only from main's fixed table, plus a package name from that table and a checked version that passed FR-005.
@@ -498,6 +498,15 @@ When the start check finds a new version, the Settings entry and the card get a 
 - **`features.agentAppUpdateCheck: false` and `updates.mode: "off"`** hide the check entirely (076 FR-158); `allowInAppInstall: false` keeps the read-only button (FR-022). T036 updates 076 FR-174.
 
 ## Changes
+
+### 2026-10-25: review on #721 (Ruben's agent), fixed in the PR
+
+- **Request headers (FR-017):** Durbar sets `Accept-Language: en` (Chromium would send the user's locale) and lists Chromium's fixed `Accept-Encoding` and `Sec-Fetch-*`; read from a real Electron 44 request (`real:`). The Settings note gained *What the check contacts*.
+- **Offline:** a `net::ERR_*` or Node network error is "network problem" on the card, never "unexpected answer".
+- **The lock (FR-013):** a lock waiting for the window's answer is released when the window reloads or crashes, after 10 minutes without an answer, and when another dialog replaces the open-sessions dialog (it answers Cancel). One rule (`startHeldBy`) for `addWorkspace`, `ensureLive` and the scheduler: a live session is never held. `harness:run` refuses an update the organization blocks before the lock is taken (`updateRunRefusal`).
+- **winget terms (FR-004):** main asks itself in a native dialog, only when the kept result says the terms are not accepted; the window sends no terms answer.
+- `harness:updates` gives another frame an empty view; one tree kill (`killChildTree`, SIGKILL after 3 s unless exited) for the checks and the runner; `makeGet` removed (the download runs on `net.request`); the target platform's path flavour for the Copilot CLI's `package.json`; the simulator's Codex card and update line describe the same copy.
+- FR-014's vendor texts are `[KNOWN GAP]` until T040/T041 record them.
 
 ### 2026-10-25: what the build changed against the plan (no owner decision involved)
 

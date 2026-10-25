@@ -754,8 +754,8 @@ export interface DurbarApi {
   harnessPlans?(kind: string, op: 'install' | 'update'): Promise<{ plans: Array<{ manager: string; display: string; note?: string; owner?: boolean; pinned?: string; own?: string; script?: unknown }>; page: string; name: string; blocked?: string }>;
   /** `gate` (spec 081 FR-013): the answer to the open-sessions dialog ('wait', 'end', or 'cancel' to release the update lock). A reply with `needsGate` asks the window to show that dialog. */
   harnessRun?(kind: string, op: 'install' | 'update' | 'signin', planIndex?: number, gate?: 'wait' | 'end' | 'cancel'): Promise<{ ok: boolean; error?: string; cancelled?: boolean; busy?: boolean; waiting?: number; needsGate?: { open: number; busy: number; pendingPermissions: number; heldPrompts: number } }>;
-  /** Spec 081 FR-003: the kept update-check results; `'check'` asks the sources anew (all apps, or one). `acceptTerms` only after the winget terms note was confirmed. */
-  harnessUpdates?(what?: 'check', app?: string, opts?: { acceptTerms?: boolean }): Promise<UpdatesView>;
+  /** Spec 081 FR-003: the kept update-check results; `'check'` asks the sources anew (all apps, or one). Accepting winget's source terms is main's own native question (FR-004). */
+  harnessUpdates?(what?: 'check', app?: string): Promise<UpdatesView>;
   onHarnessUpdates?(cb: (v: UpdatesView) => void): () => void;
   /** Spec 081 FR-016: whether Settings > Agent apps is on screen (then the card is the announcement and no toast is shown). */
   harnessVisible?(on: boolean): Promise<boolean>;

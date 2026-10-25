@@ -400,7 +400,7 @@ export interface ExecDeps {
 }
 
 /** Spec 081 T009: the real tree kill. The group exists because POSIX children are started `detached`. */
-export function killChildTree(child: ChildProcess, platform: NodeJS.Platform, env: Readonly<Record<string, string | undefined>>, exec: typeof execFile = execFile, kill: (pid: number, sig: NodeJS.Signals) => void = (pid, sig) => process.kill(pid, sig)): void {
+export function killChildTree(child: Pick<ChildProcess, 'pid' | 'kill'> & { exitCode?: number | null; signalCode?: string | null }, platform: NodeJS.Platform, env: Readonly<Record<string, string | undefined>>, exec: typeof execFile = execFile, kill: (pid: number, sig: NodeJS.Signals) => void = (pid, sig) => process.kill(pid, sig), later: (fn: () => void, ms: number) => void = (fn, ms) => { setTimeout(fn, ms).unref(); }): void {
   const pid = child.pid;
   if (!pid) return;
   if (platform === 'win32') {
@@ -409,6 +409,8 @@ export function killChildTree(child: ChildProcess, platform: NodeJS.Platform, en
     return;
   }
   try { kill(-pid, 'SIGTERM'); } catch { try { child.kill('SIGTERM'); } catch { /* gone */ } }
+  // then SIGKILL after 3 s, unless it has exited: its group id could already belong to something else (one tree kill for the checks and the runner, review on #721)
+  later(() => { if (child.exitCode != null || child.signalCode != null) return; try { kill(-pid, 'SIGKILL'); } catch { /* gone */ } }, 3000);
 }
 
 /**

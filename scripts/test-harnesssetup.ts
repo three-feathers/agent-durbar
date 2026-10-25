@@ -136,6 +136,7 @@ void (async () => {
     const setup = new HarnessSetup({
       detectEnv: { platform, env: platform === 'win32' ? { PATH: 'C:\\Program Files\\nodejs', SystemRoot: 'C:\\Windows' } : { PATH: '/usr/bin' }, homedir: platform === 'win32' ? 'C:\\Users\\u' : '/home/u', isFile: (f) => files.includes(f) },
       spawn: (file, args, opts) => {
+        assert.ok(!('shell' in opts) || (opts as { shell?: unknown }).shell === false, 'FR-018: never through a shell');
         calls.push({ file, args, opts });
         const out = new EventEmitter(), err = new EventEmitter();
         child = Object.assign(new EventEmitter(), { pid: 42, out, err, stdout: out, stderr: err, stdin: { write: (x: string) => written.push(x), end: () => undefined } }) as unknown as typeof child;
@@ -467,7 +468,8 @@ void (async () => {
       const home = platform === 'win32' ? 'C:\\Users\\u' : '/home/u';
       const setup = new HarnessSetup({
         detectEnv: { platform, env: platform === 'win32' ? { Path: pathDirs, SystemRoot: 'C:\\Windows', LOCALAPPDATA: 'C:\\Users\\u\\AppData\\Local', APPDATA: 'C:\\Users\\u\\AppData\\Roaming' } : { PATH: pathDirs }, homedir: home, isFile: (f: string) => files.includes(f) },
-        spawn: (file: string, args: readonly string[], opts: { env: NodeJS.ProcessEnv; cwd?: string }) => {
+        spawn: (file: string, args: readonly string[], opts: { env: NodeJS.ProcessEnv; cwd?: string; shell?: unknown }) => {
+          assert.ok(!('shell' in opts) || opts.shell === false, 'FR-018: an update never runs through a shell');
           calls.push({ file, args, env: opts.env, ...(opts.cwd ? { cwd: opts.cwd, cwdExisted: fs.existsSync(opts.cwd) } : {}) });
           const out = new EventEmitter(), err = new EventEmitter();
           child = Object.assign(new EventEmitter(), { pid: 42, out, err, stdout: out, stderr: err, stdin: null }) as never;
@@ -656,7 +658,7 @@ void (async () => {
         assert.strictEqual(c.env.PATH, '/usr/bin:/bin:/usr/sbin:/sbin', 'a fixed system PATH, not the user\'s with a fake sh');
         assert.strictEqual(c.env.CODEX_NON_INTERACTIVE, undefined, 'codex update sets it itself; Durbar adds nothing');
         assert.ok(c.cwd && c.cwd.startsWith(tmp) && c.cwdExisted, 'a private working folder from the OS temp folder');
-        assert.strictEqual(fs.statSync(c.cwd as string).mode & 0o777, 0o700);
+        if (process.platform !== 'win32') assert.strictEqual(fs.statSync(c.cwd as string).mode & 0o777, 0o700, 'private (POSIX modes; Windows has no such bits)');
         assert.strictEqual(process.env.CODEX_MANAGED_BY_NPM, '1', 'Durbar\'s own environment is untouched');
         // the failure: an unknown subcommand offers the checked 060 installer, never a retry by itself
         u.child().err.emit('data', fx081('codex-unknown-subcommand'));
