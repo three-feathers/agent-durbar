@@ -209,3 +209,5 @@ Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered o
 - SC-006: T013
 - SC-007: T013
 - SC-008: T008
+- [ ] T043 macOS (the owner's Mac, GUI-launched Durbar with nvm or Homebrew npm): confirm Settings > Agent apps > Copilot CLI checks (no "exit 127"), and that "Found at" shows a full path (FR-042). Built and unit-tested on Linux only.
+- [x] T044 FR-042: `pathWithToolDir` for the npm check, the npm update and sign-in runs (only from a trusted folder), the 127/ENOENT message, button names, `displayWhere` (tests in `scripts/test-updatecheck.ts`).
