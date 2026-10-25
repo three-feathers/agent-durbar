@@ -142,15 +142,23 @@ for (const [w, h] of [[1280, 800], [1440, 900], [1920, 1080]]) {
 // the app: the grow search runs after the candidates, only after `full` or `roomy`, never with a forced density; the probe is reset
 {
   const cl2 = app.slice(app.indexOf('function chooseLayout('), app.indexOf('let layoutKey='));
-  assert.ok(/if\(res&&res\.fit&&!FORCE_DENSITY&&\(res\.d==='full'\|\|res\.d==='roomy'\)\)\{\s*const g=growSearch\(sizing,aw,ah,openOnly,GR\.MIN\+GR\.STEP\);/.test(cl2), 'grow only after full or roomy, one step up at least');
+  // the helper step (FR-091): gated by DurbarProbe.stepRuns before today's grow step, level order from helperStep, a result with today's grow fields plus hx
+  assert.ok(/window\.DurbarProbe\.stepRuns\(\{d:res&&res\.d,forced:FORCE_DENSITY,fit:res&&res\.fit,helpers:/.test(cl2) && cl2.indexOf('stepRuns(') < cl2.indexOf('growSearch(sizing,aw,ah,openOnly,GR.MIN+GR.STEP)'), 'the helper step is gated by stepRuns and runs before the grown step');
+  assert.ok(/helperStep\(\(L,f\)=>\{HX=L;return growSearch\(sizing,aw,ah,openOnly,f\);\},window\.DurbarHelperCard\.HX_MIN_F\)/.test(cl2), 'the helper step searches from HX_MIN_F, one level at a time');
+  assert.ok(/res=\{d:'roomy',hcap:3,cap:hx\.g\.c,fit:true,boost:\[\],grow:hx\.g\.f,heads:res\.heads,hx:hx\.level\}/.test(cl2), 'the helper result keeps hcap 3, fit, boost and heads, and adds hx');
+  assert.ok(/GROW=0; HX=0; setGrow\(probe,0\);/.test(cl2), 'chooseLayout resets HX first');
+  assert.ok(/HX=res\.hx\|\|0;/.test(cl2), 'the boost runs with the chosen level');
+  assert.ok(/HX=layout\.hx\|\|0;/.test(app), 'renderOffice restores HX from the cached layout');
+  assert.ok(/liveOn\(\),THEME\.themeIdForCache\(\),/.test(app), 'the layout key holds the theme id');
+  assert.ok(/if\(res&&res\.fit&&!res\.hx&&!FORCE_DENSITY&&\(res\.d==='full'\|\|res\.d==='roomy'\)\)\{\s*const g=growSearch\(sizing,aw,ah,openOnly,GR\.MIN\+GR\.STEP\);/.test(cl2), 'grow only after full or roomy, one step up at least');
   assert.ok(cl2.indexOf('growSearch(sizing') > cl2.indexOf('for(const [d,hcap,side] of cands)') && cl2.indexOf('growSearch(sizing') < cl2.indexOf('Leftover floor space'), 'after the candidates, before the helper boost');
-  assert.ok(/probe\.innerHTML='';\s*probePrev=null;\s*LIVE_SIDE=false;\s*GROW=0;\s*setGrow\(probe,0\);/.test(cl2), 'the probe drops the grow factor with its content');
+  assert.ok(/probe\.innerHTML='';\s*probePrev=null;\s*LIVE_SIDE=false;\s*GROW=0;\s*HX=0;\s*setGrow\(probe,0\);/.test(cl2), 'the probe drops the grow factor with its content');
   const gs = app.slice(app.indexOf('function growSearch('), app.indexOf('let layoutKey='));
   assert.ok(/window\.DurbarProbe\.pick\(cols,lo,/.test(gs) && /probeSet\(probe,stageHTML\(sizing,'roomy',aw,c\)\)/.test(gs), 'growSearch uses pick and probeSet');
   assert.ok(/GROW=0; setGrow\(probe,0\);\s*return best;/.test(gs), 'growSearch resets the probe');
   // review of #532: a grown render leaves GROW on; each search starts with it off, before any candidate is probed
   const cl = app.slice(app.indexOf('function chooseLayout('), app.indexOf('function growSearch('));
-  const reset = cl.indexOf('GROW=0; setGrow(probe,0);');
+  const reset = cl.indexOf('GROW=0; HX=0; setGrow(probe,0);');
   assert.ok(reset > 0 && reset < cl.indexOf('for(const [d,hcap,side] of cands)') && reset < cl.indexOf('probe.innerHTML=svgHollow'), 'chooseLayout starts with GROW off');
   // styles: the grown rules exist and keep text sizes (no font-size in them)
   const grown = css.filter((l) => l.includes('[data-grow'));
@@ -254,5 +262,39 @@ for (const [w, h] of [[1280, 800], [1440, 900], [1920, 1080]]) {
   assert.ok(/function spreadOffice\(stage,on\)\{[\s\S]*?window\.DurbarProbe\.spreadRows\(/.test(app), 'spreadOffice uses spreadRows');
   assert.ok(/spreadOffice\(stage,!!layout\.fit\)/.test(app), 'renderOffice spreads the office it drew');
   assert.ok(css.some((l) => /^\.stage\[data-spread\] \.room>\.room-head\{margin-bottom:calc\(var\(--rx\) \/ 2\)\}/.test(l)), 'a grown room keeps its header at the top');
+}
+
+// ---- spec 001 FR-089..FR-091 (issue 697): the helper step. Which layouts run it (stepRuns), in which order it tries the levels (helperStep),
+//      and the floor of the grown factor (HX_MIN_F, from helpercard.js) ----
+{
+  const H = require(path.join(R, 'probe.js')) as {
+    stepRuns: (x: { d: string; forced?: string | null; fit: boolean; helpers: boolean }) => boolean;
+    helperStep: (search: (level: number, minF: number) => unknown, minF: number) => { level: number; g: unknown } | null;
+    GROW: { STEP: number };
+    pick: (cols: number[], lo: number, trial: (c: number, f: number) => { fits: boolean; h: number }) => Res;
+  };
+  const HC = require(path.join(R, 'helpercard.js')) as { HX_MIN_F: number };
+  assert.strictEqual(HC.HX_MIN_F, 1.4, 'owner decision 1: parent desks stay at least 1.4x for helper detail');
+  // the gate: only a fitting full or roomy, nothing forced, with helpers
+  for (const d of ['full', 'roomy']) assert.strictEqual(H.stepRuns({ d, forced: null, fit: true, helpers: true }), true, `${d} with helpers runs the step`);
+  for (const d of ['card', 'mini', 'micro']) assert.strictEqual(H.stepRuns({ d, forced: null, fit: true, helpers: true }), false, `${d} (15 agents) never runs the step`);
+  assert.strictEqual(H.stepRuns({ d: 'roomy', forced: 'card', fit: true, helpers: true }), false, 'a forced density never runs it');
+  assert.strictEqual(H.stepRuns({ d: 'roomy', forced: null, fit: false, helpers: true }), false, 'a layout that does not fit never runs it');
+  assert.strictEqual(H.stepRuns({ d: 'roomy', forced: null, fit: true, helpers: false }), false, 'no helper, no step');
+  assert.strictEqual(H.stepRuns(undefined as never), false, 'bad input');
+  // the order: level 2 first, then level 1, then nothing (today's path)
+  const tried: Array<[number, number]> = [];
+  const on = (fitsAt: number[]) => (level: number, minF: number) => { tried.push([level, minF]); return fitsAt.includes(level) ? { c: 1, f: 1.6, h: 300 } : null; };
+  tried.length = 0; let r = H.helperStep(on([2, 1]), HC.HX_MIN_F);
+  assert.strictEqual(r && r.level, 2, 'level 2 wins when it fits'); assert.deepStrictEqual(tried, [[2, 1.4]], 'level 1 is not tried when level 2 fits');
+  tried.length = 0; r = H.helperStep(on([1]), HC.HX_MIN_F);
+  assert.strictEqual(r && r.level, 1, 'level 1 when only it fits'); assert.deepStrictEqual(tried, [[2, 1.4], [1, 1.4]], 'level 2 first, then level 1, both from HX_MIN_F');
+  tried.length = 0; assert.strictEqual(H.helperStep(on([]), HC.HX_MIN_F), null, 'neither fits: today\'s path'); assert.deepStrictEqual(tried, [[2, 1.4], [1, 1.4]]);
+  // with synthetic fits: a level's grown search starts at HX_MIN_F, so an office whose desks would be smaller than 1.4x does not take a level
+  const search = (limit: number) => (level: number, minF: number): Res => H.pick([2, 1], minF, (_c, f) => ({ fits: f <= limit - (level === 2 ? 0.3 : 0) + 1e-9, h: 100 }));
+  assert.strictEqual(H.helperStep(search(2.0), HC.HX_MIN_F)?.level, 2, 'room for level 2 at 1.7');
+  assert.strictEqual(H.helperStep(search(1.6), HC.HX_MIN_F)?.level, 1, 'level 2 would need 1.3: level 1 at 1.6');
+  assert.strictEqual(H.helperStep(search(1.3), HC.HX_MIN_F), null, 'below 1.4 neither level fits: grown desks with compact tiles (today)');
+  const g = H.helperStep(search(1.9), HC.HX_MIN_F)!.g as { f: number }; assert.ok(g.f >= 1.4 - 1e-9 && Math.abs(g.f - 1.6) < 1e-9, `the largest f found for the level (${g.f})`);
 }
 console.log('test-probe: ok');
