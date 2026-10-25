@@ -1907,8 +1907,8 @@ function paintFolderStatus(a){
     chip.onclick=()=>showFolderStatus(a,chip);chip.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();showFolderStatus(a,chip);}};}
   else{chip.removeAttribute('role');chip.removeAttribute('tabindex');chip.setAttribute('aria-label',GS.chipLabel(st));chip.onclick=chip.onkeydown=null;}
 }
-async function showFolderStatus(a,chip){
-  const st=(FSTAT.get(a.id)||{}).st;if(!st||!st.repo)return;
+async function showFolderStatus(a,chip,st0){
+  const st=st0||(FSTAT.get(a.id)||{}).st;if(!st||!st.repo)return;
   const r=await askDialog({title:'Changes in '+(folderNameOf(a)||'this folder'),body:GS.body(st),lines:GS.lines(st),buttons:[{label:'Open in VS Code',value:'vscode'},{label:'Done',value:null,cls:'primary'}],returnFocus:chip});
   if(r&&r.value==='vscode'&&bridge.openInVSCode)openLive(a,chip);
 }
@@ -2986,7 +2986,7 @@ async function endAllSessions(anchor){
     buttons:[{label:'Cancel',value:null},{label:'End all sessions',value:'ok',cls:'primary danger'}]});
   if(!ok)return;
   const bad=[];
-  for(const a of list){try{await (bridge.end||bridge.stop)(a.id);dropDraft(a.id);}catch(err){bad.push(a.name);}}
+  for(const a of list){try{const r=liveRoot(a),sum=await readSessionSummary(r);await (bridge.end||bridge.stop)(a.id);dropDraft(a.id);sessionSummaryNote(r,sum);}catch(err){bad.push(a.name);}}
   const n=list.length-bad.length;
   toast(bad.length?'Could not end '+esc(bad.join(', '))+'.':(n===1?'1 session ended.':n+' sessions ended.')+' Sending a message resumes one.',4200).classList.add(bad.length?'err':'ok');
 }
@@ -4520,7 +4520,29 @@ async function openLive(a,btn){
   finally{done();}
 }
 async function stopLive(a,btn){const r=liveRoot(a),done=busy(btn,'Stopping…');try{await bridge.stop(r.id);}finally{done();}toast(esc(r.name)+': stopped the current turn. It is ready for your next message.').classList.add('ok');}
-async function endLive(a,btn){const r=liveRoot(a),done=busy(btn,'Ending…');try{await (bridge.end||bridge.stop)(r.id);}finally{done();}dropDraft(r.id);toast(esc(r.name)+': session ended. Sending a message resumes it.',4200).classList.add('ok');}
+async function endLive(a,btn){const r=liveRoot(a),done=busy(btn,'Ending…');let sum=null;try{sum=await readSessionSummary(r);await (bridge.end||bridge.stop)(r.id);}finally{done();}dropDraft(r.id);toast(esc(r.name)+': session ended. Sending a message resumes it.',4200).classList.add('ok');sessionSummaryNote(r,sum);}
+/* ---------------- spec 085: the card in the chat when a session ends ---------------- */
+const SSUM=window.DurbarSessionSummary||null;
+/* asked before the end (main forgets the start when the session ends); never delays the end by more than 5 s; null = no card */
+async function readSessionSummary(r){
+  if(!SSUM||!bridge.sessionSummary||!r)return null;
+  try{const s=await Promise.race([bridge.sessionSummary(r.id),new Promise(res=>setTimeout(()=>res(null),5000))]);return s&&s.ok===true?s:null;}catch(e){return null;}
+}
+/* the cost part is the session's own usage figure (the same words as its usage line): money, tokens only for an agent app without a price, else nothing */
+function sessionSummaryCost(r){const t=costText(r);return !t?'':/ tok$/.test(t)?t.replace(/ tok$/,' tokens'):'cost '+t;}
+function sessionSummaryNote(r,sum){
+  if(!SSUM||!sum)return;
+  const t=SSUM.text(sum,sessionSummaryCost(r));if(!t)return;
+  const note=addNote(liveChat(r),esc(t));note.classList.add('sum-note');note.title=SSUM.tip;
+  if(sum.git&&sum.git.repo===true&&bridge.gitStatus){
+    const row=document.createElement('div');row.className='note-actions';
+    const b=document.createElement('button');b.type='button';b.className='btn';b.textContent='Show changed files';b.dataset.act='sumFiles';
+    b.onclick=async()=>{const st=await bridge.gitStatus(r.id).catch(()=>null);
+      if(!st||!st.repo||!GS.count(st)){toast('No uncommitted changes in the folder now.',3200);return;}
+      showFolderStatus(r,b,st);};
+    row.appendChild(b);note.appendChild(row);
+  }
+}
 const failToast=what=>err=>toast('Could not '+what+': '+esc(String(err&&err.message||err)),5000).classList.add('err');
 async function copyResume(a){const r=liveRoot(a),cmd=resumeCmdOf(r); if(!cmd)return;
   try{await navigator.clipboard.writeText(cmd);toast('Copied <code>'+esc(cmd)+'</code>. End the session here first, then run it in a terminal in '+esc(roomOf(r).path)+'. In VS Code, turn on the sessions list filter External to see sessions started here.',9000).classList.add('ok');}
