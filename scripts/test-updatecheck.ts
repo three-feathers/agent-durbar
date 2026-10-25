@@ -809,6 +809,22 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
       await gate.request('codex', 'wait', async () => ({ ok: true }));
       assert.ok(timers.filter((t) => t.ms === ASK_LIMIT_MS).every((t) => !t.live), 'answering stops the limit');
     }
+    // review on #721: a RUNNING update never loses its lock to the asking limit: the limit is cleared when the run starts (leaveAsking),
+    // and a limit that fires anyway (fired here even when cleared) checks the phase first. With no sessions, and after 'end'.
+    for (const how of ['no sessions', 'end'] as const) {
+      const timers: Array<{ fn: () => void; ms: number; live: boolean }> = [];
+      let open = how === 'end' ? 2 : 0;
+      const gate = new UpdateGate({ count: () => ({ open, busy: 0, pendingPermissions: 0, heldPrompts: 0 }), endAll: async () => { open = 0; }, setTimer: (fn, ms) => { const t = { fn, ms, live: true }; timers.push(t); return t; }, clearTimer: (t) => { (t as { live: boolean }).live = false; }, changed: () => undefined, failed: () => undefined });
+      const first = await gate.request('codex', undefined, async () => ({ ok: true }));
+      if (how === 'end') {
+        assert.ok('needsGate' in first);
+        assert.strictEqual((await gate.request('codex', 'end', async () => ({ ok: true }))).ok, true);
+      } else assert.strictEqual(first.ok, true);
+      const asks = timers.filter((t) => t.ms === ASK_LIMIT_MS);
+      assert.ok(asks.length > 0 && asks.every((t) => !t.live), `${how}: the asking limit is cleared when the run starts`);
+      for (const t of asks) t.fn(); // even a limit that fires late
+      assert.strictEqual(gate.blocksStart('codex'), true, `${how}: the running update keeps its lock after ASK_LIMIT_MS`);
+    }
     // the window side: another dialog replacing the open-sessions dialog answers Cancel (harnesses.js modal's onReplaced)
     {
       const hs = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'harnesses.js'), 'utf8');
@@ -848,7 +864,11 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
       assert.ok(!/acceptTerms/.test(pre), 'the preload passes no terms flag');
     }
     // FR-017 (review on #721): the README and the Settings note name the headers, as sent (netget FIXED_HEADERS)
-    for (const f of ['README.md', path.join('src', 'renderer', 'harnesses.js')]) assert.match(fs.readFileSync(path.join(__dirname, '..', '..', f), 'utf8'), /Accept-Language: en[^\n]*never your locale[^\n]*Accept-Encoding[^\n]*Sec-Fetch/, f);
+    for (const f of ['README.md', path.join('src', 'renderer', 'harnesses.js')]) {
+      const t = fs.readFileSync(path.join(__dirname, '..', '..', f), 'utf8');
+      assert.match(t, /set by Durbar: `?User-Agent: AgentDurbar`?, `?Accept: \*\/\*`? and `?Accept-Language: en`? \(never your locale\); added by Chromium: its fixed `?Accept-Encoding`? and `?Sec-Fetch/, f);
+      assert.ok(!/Chromium's fixed `?Accept[`,]/.test(t), f + ': Accept is Durbar\'s own header, not Chromium\'s (review on #721)');
+    }
     assert.deepStrictEqual(FIXED_HEADERS, { 'User-Agent': 'AgentDurbar', 'Accept': '*/*', 'Accept-Language': 'en' });
     // FR-022 (mutant M23): an update the organization does not allow is refused in main's harness:run
     {

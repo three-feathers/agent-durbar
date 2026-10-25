@@ -157,7 +157,7 @@
     ['winget', "the winget source (Microsoft's CDN), with winget's own client data"],
     ["Codex and Copilot CLI, vendor installer", "github.com (the latest release's redirect, header only)"],
     ['Claude Code, native installer', 'downloads.claude.ai (the stable and latest channel files)'],
-    ['Durbar\'s own requests', 'User-Agent: AgentDurbar, Accept-Language: en (never your locale) and Chromium\'s fixed Accept, Accept-Encoding and Sec-Fetch headers; no cookies or credentials'],
+    ['Durbar\'s own requests', 'set by Durbar: User-Agent: AgentDurbar, Accept: */* and Accept-Language: en (never your locale); added by Chromium: its fixed Accept-Encoding and Sec-Fetch headers; no cookies or credentials'],
     ["A copy outside Durbar's routes", 'nothing'],
   ];
   const SOURCE_NAME = { claude: 'Claude Code', codex: 'Codex', copilot: 'the GitHub Copilot CLI' };
