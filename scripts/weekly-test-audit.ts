@@ -23,6 +23,38 @@ export const SCHEMA_ID = 'durbar-weekly-audit/1';
 export const MAX_FINDINGS_IN = 20;
 export const MAX_NEW = 5;
 export const MAX_OUTPUT_CHARS = 200_000;
+/** Bytes read from the outbox at most: the character cap in UTF-8 (4 bytes each at worst) plus a margin. */
+export const MAX_ANSWER_BYTES = MAX_OUTPUT_CHARS * 4 + 4096;
+
+/**
+ * Read the audit's answer as untrusted input (review of PR #756): never through a link (O_NOFOLLOW), never blocking on a FIFO
+ * (O_NONBLOCK, then a regular-file check), never more than MAX_ANSWER_BYTES. The mtime comes from the same open file.
+ */
+export function readAnswer(file: string): { text: string; mtimeMs: number } | { error: string } {
+  const c = fs.constants;
+  let fd: number;
+  try { fd = fs.openSync(file, c.O_RDONLY | (c.O_NOFOLLOW ?? 0) | (c.O_NONBLOCK ?? 0)); } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    return { error: code === 'ELOOP' ? 'the answer is a link' : code === 'ENOENT' ? 'no answer file' : 'cannot open the answer' };
+  }
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile()) return { error: 'the answer is not a regular file' };
+    if (st.size > MAX_ANSWER_BYTES) return { error: `the answer is bigger than ${MAX_ANSWER_BYTES} bytes` };
+    const buf = Buffer.alloc(MAX_ANSWER_BYTES + 1);
+    let n = 0;
+    for (;;) {
+      const r = fs.readSync(fd, buf, n, buf.length - n, null);
+      if (r <= 0) break;
+      n += r;
+      // backstop for a file that grows after the fstat (the buffer holds at most one byte more, so nothing big is ever read)
+      if (n > MAX_ANSWER_BYTES) return { error: `the answer grew past ${MAX_ANSWER_BYTES} bytes while being read` };
+    }
+    return { text: buf.subarray(0, n).toString('utf8'), mtimeMs: st.mtimeMs };
+  } finally {
+    fs.closeSync(fd);
+  }
+}
 export const FOOTER = 'Filed by the weekly test audit (spec 021 FR-058)';
 export const KINDS = ['cannot-fail', 'duplicate', 'fixed-sleep', 'wall-clock', 'other'] as const;
 export const VERIFICATIONS = ['mutation', 'read'] as const;
@@ -365,13 +397,11 @@ export async function main(argv: string[], io: { out: (s: string) => void; env: 
     const repo = flag(argv, '--repo') || 'three-feathers/agent-durbar';
     if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) throw new Error('bad repo');
     const input = flag(argv, '--input');
-    let text = '';
-    try { text = fs.readFileSync(input || '', 'utf8'); } catch { text = ''; }
-    let v = validateOutput(text);
+    const answer = readAnswer(input || '');
+    let v: Validated = 'error' in answer ? { ok: false, error: answer.error } : validateOutput(answer.text);
     const maxAge = flag(argv, '--max-age-hours');
-    if (maxAge !== undefined && v.ok) {
-      let age = Infinity;
-      try { age = (Date.now() - fs.statSync(input || '').mtimeMs) / 3_600_000; } catch { /* missing */ }
+    if (maxAge !== undefined && v.ok && !('error' in answer)) {
+      const age = (Date.now() - answer.mtimeMs) / 3_600_000;
       if (!(age <= Number(maxAge))) v = { ok: false, error: `the answer is older than ${maxAge} hours` };
     }
     const tokenFile = io.env.DURBAR_AUDIT_GH_TOKEN_FILE;

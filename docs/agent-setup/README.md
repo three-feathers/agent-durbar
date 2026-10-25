@@ -93,6 +93,7 @@ Not checked without a real session: whether `Bash(node <helper> *)` refuses `&&`
    ```bash
    sudo useradd --system --create-home --home-dir /var/lib/durbar-weekly-audit --shell /usr/sbin/nologin durbar-audit
    sudo -u durbar-audit -H bash -lc 'curl -fsSL https://claude.ai/install.sh | bash'     # Anthropic's native installer, into ~/.local/bin of that user
+   sudo -u durbar-audit install -d -m 700 /var/lib/durbar-weekly-audit/claude     # holds the plan credential; the script refuses it wider than 0700
    sudo -u durbar-audit -H env CLAUDE_CONFIG_DIR=/var/lib/durbar-weekly-audit/claude /var/lib/durbar-weekly-audit/.local/bin/claude --strict-mcp-config --setting-sources ""   # /login, then /exit
    sudo -u durbar-audit -H git clone https://github.com/three-feathers/agent-durbar.git /var/lib/durbar-weekly-audit/repo
    ```

@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
-  AREAS, CLAUDE_ENV_KEYS, DEFAULT_BUDGET_USD, FOOTER, MAX_NEW, SCHEMA_ID, buildClaudeArgv, fingerprint, ghRunner, issueBody, main, markersIn, planAndFile, readTokenFile,
+  AREAS, CLAUDE_ENV_KEYS, DEFAULT_BUDGET_USD, FOOTER, MAX_ANSWER_BYTES, MAX_NEW, SCHEMA_ID, buildClaudeArgv, fingerprint, ghRunner, issueBody, main, markersIn, planAndFile, readTokenFile,
   renderPrompt, validateOutput, Finding, Gh,
 } from './weekly-test-audit';
 import { addsForbidden, run as mutateRun, suiteSteps, targetPath } from './weekly-test-audit-mutate';
@@ -86,6 +86,7 @@ const out = (findings: unknown[], extra: Record<string, unknown> = {}): string =
     ['See [here](https://evil.example) for the fix, long enough text.', 'an inline link'],
     ['See https://evil.example/x for the fix, long enough text here.', 'a bare URL'],
     ['Long enough body text first.\n[ref]: https://evil.example/', 'a reference definition'],
+    ['Long enough body text first.\n[r]: //evil.zz', 'a reference definition without a scheme'],
     ['Long enough body text, see [ref] (/relative/path) for it.', 'an inline link with a space'],
     ['Long enough body text, see www.evil.test for the details.', 'a www host'],
     ['Long enough body text, the fix is on evil.com somewhere.', 'a bare domain'],
@@ -277,6 +278,31 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
       fs.symlinkSync(tf, link);
       assert.throws(() => readTokenFile(link), /regular file/, 'a link is refused');
     }
+    // the outbox is untrusted: a link (to /dev/zero), a FIFO and an oversized file are refused with nothing filed (review of PR #756)
+    if (posix) {
+      const tryRun = async (file: string, re: RegExp, why: string): Promise<void> => {
+        const g = fakeGh();
+        text = '';
+        const c = await main(['run', '--input', file, '--file'], io({ DURBAR_AUDIT_GH_TOKEN_FILE: tf }, () => g.gh));
+        assert.ok(c === 1 && re.test(text) && creates(g.calls).length === 0, `${why}: ${c} ${text}`);
+      };
+      const zero = path.join(tmp, 'zero-link.txt');
+      fs.symlinkSync('/dev/zero', zero);
+      await tryRun(zero, /output rejected: the answer is a link/, 'a link to /dev/zero');
+      const goodLink = path.join(tmp, 'good-link.txt');
+      fs.writeFileSync(path.join(tmp, 'real.txt'), out([good()]));
+      fs.symlinkSync(path.join(tmp, 'real.txt'), goodLink);
+      await tryRun(goodLink, /the answer is a link/, 'a link even to a valid answer');
+      const big = path.join(tmp, 'big.txt');
+      fs.writeFileSync(big, ' '.repeat(MAX_ANSWER_BYTES + 1));
+      await tryRun(big, /the answer is bigger than \d+ bytes/, 'an oversized answer (refused by fstat, before any read)');
+      const fifo = path.join(tmp, 'fifo');
+      assert.strictEqual(spawnSync('mkfifo', [fifo]).status, 0, 'mkfifo');
+      // in a child with a time limit, so a blocking open fails the test instead of hanging it
+      const probe = spawnSync(process.execPath, ['-e', `const m = require(${JSON.stringify(path.join(__dirname, 'weekly-test-audit.js'))}); process.stdout.write(JSON.stringify(m.readAnswer(${JSON.stringify(fifo)})));`], { encoding: 'utf8', timeout: 10_000 });
+      assert.ok(probe.status === 0 && /not a regular file/.test(probe.stdout), `a FIFO is refused at once: ${probe.status} ${probe.signal} ${probe.stdout}`);
+      await tryRun(path.join(tmp, 'missing.txt'), /no answer file/, 'a missing answer');
+    }
     fs.writeFileSync(path.join(tmp, 'notoken'), 'two words\n', { mode: 0o600 });
     assert.throws(() => readTokenFile(path.join(tmp, 'notoken')), /one token/);
   }
@@ -350,6 +376,21 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
     const c2 = await main(['launch', '--claude-bin', slow, '--worktree', wt, '--claude-config', cfg, '--mutate', mutate, '--prompt', path.join(tmp, 'p.txt'), '--out', path.join(tmp, 'o2.txt'), '--err', path.join(tmp, 'e2.txt'), '--timeout', '1', '--grace-ms', '200'],
       { out: (x) => { text += x; }, env: leaky });
     assert.ok(c2 === 124 && /time limit/.test(text), `a hung claude is stopped (TERM ignored, then KILL): ${c2} ${text}`);
+    // the whole process group is stopped: a grandchild the fake started is gone after the limit (only our own fake's PID is touched)
+    const pidFile = path.join(tmp, 'grandchild.pid');
+    const forker = path.join(tmp, 'forker-claude');
+    fs.writeFileSync(forker, `#!${process.execPath}\nconst c = require('child_process').spawn('sleep', ['300'], { stdio: 'ignore' }); require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(c.pid)); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);\n`, { mode: 0o700 });
+    text = '';
+    const c3 = await main(['launch', '--claude-bin', forker, '--worktree', wt, '--claude-config', cfg, '--mutate', mutate, '--prompt', path.join(tmp, 'p.txt'), '--out', path.join(tmp, 'o3.txt'), '--err', path.join(tmp, 'e3.txt'), '--timeout', '1', '--grace-ms', '200'],
+      { out: (x) => { text += x; }, env: leaky });
+    assert.strictEqual(c3, 124, text);
+    const gpid = Number(fs.readFileSync(pidFile, 'utf8'));
+    const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    const until = Date.now() + 10_000;
+    while (alive(gpid) && Date.now() < until) await new Promise((r) => setTimeout(r, 100));
+    const left = alive(gpid);
+    if (left) process.kill(gpid, 'SIGKILL'); // our own fake's child only
+    assert.ok(!left, 'the grandchild in claude\'s process group was stopped at the time limit');
     await assert.rejects(main(['launch', '--claude-bin', fake, '--worktree', 'rel', '--claude-config', cfg, '--mutate', mutate], { out: () => {}, env: leaky }), /absolute/);
   }
   // ---- the shell script's audit phase refuses to run with a token or a gh login (behaviour, POSIX bash), before it touches anything
@@ -361,7 +402,7 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
     const fakebin = fs.mkdtempSync(path.join(tmp, 'fakebin-'));
     const called = path.join(tmp, 'fake-called.txt');
     for (const b of ['git', 'npm', 'node', 'claude', 'gh']) fs.writeFileSync(path.join(fakebin, b), `#!/bin/sh\necho ${b} >> '${called}'\nexit 97\n`, { mode: 0o700 });
-    const base = { PATH: `${fakebin}:/usr/bin:/bin`, HOME: home, DURBAR_AUDIT_STATE_DIR: path.join(home, 'state'), DURBAR_AUDIT_REMOTE: path.join(tmp, 'no-such-remote') };
+    const base = { PATH: `${fakebin}:/usr/bin:/bin`, HOME: home, TMPDIR: tmp, DURBAR_AUDIT_STATE_DIR: path.join(home, 'state'), DURBAR_AUDIT_REMOTE: path.join(tmp, 'no-such-remote') };
     for (const [k, v] of [['GH_TOKEN', 'x'], ['GITHUB_TOKEN', 'x'], ['DURBAR_AUDIT_GH_TOKEN_FILE', '/t']]) {
       const r = spawnSync('bash', [sh, 'audit'], { env: { ...base, [k]: v }, encoding: 'utf8' });
       assert.ok(r.status === 2 && /token variable is set/.test(r.stderr), `${k}: ${r.status} ${r.stderr}`);
@@ -372,6 +413,19 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
     assert.ok(r.status === 2 && /gh login/.test(r.stderr), `a user with a gh login: ${r.status} ${r.stderr}`);
     assert.ok(!fs.existsSync(path.join(home, 'state')), 'nothing was created before the refusal');
     assert.ok(!fs.existsSync(called), 'no git, npm, node, claude or gh was run before the refusal');
+    // the Claude login folder: refused when wider than 0700, created 0700 when missing
+    fs.rmSync(path.join(home, '.config', 'gh'), { recursive: true });
+    const wide = path.join(home, 'claude-wide');
+    fs.mkdirSync(wide, { mode: 0o755 });
+    fs.chmodSync(wide, 0o755);
+    const rw = spawnSync('bash', [sh, 'audit'], { env: { ...base, CLAUDE_CONFIG_DIR: wide }, encoding: 'utf8' });
+    assert.ok(rw.status === 2 && /wider than 0700/.test(rw.stderr), `a 0755 Claude folder: ${rw.status} ${rw.stderr}`);
+    assert.ok(!fs.existsSync(called), 'refused before any tool ran');
+    const fresh = path.join(home, 'claude-new');
+    const rn = spawnSync('bash', [sh, 'audit'], { env: { ...base, CLAUDE_CONFIG_DIR: fresh }, encoding: 'utf8' });
+    assert.strictEqual(rn.status, 97, `then it goes on to the (fake) clone: ${rn.stderr}`);
+    assert.strictEqual(fs.statSync(fresh).mode & 0o777, 0o700, 'a missing Claude folder is created 0700');
+    fs.rmSync(called, { force: true });
   }
   // ---- the unit templates: the filer is never the audit's copy, the audit user sees no home and holds no token
   {

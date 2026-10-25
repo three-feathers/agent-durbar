@@ -68,6 +68,16 @@ umask 077
 mkdir -p "$state_dir" "$state_dir/outbox" "$state_dir/logs"
 chmod 755 "$state_dir" "$state_dir/outbox"
 claude_config="${CLAUDE_CONFIG_DIR:-$state_dir/claude}"
+# the Claude login folder holds a plan credential: created 0700, refused when wider
+if [ -e "$claude_config" ] || [ -L "$claude_config" ]; then
+  if [ -L "$claude_config" ] || [ ! -d "$claude_config" ]; then echo "weekly-test-audit: $claude_config is not a folder" >&2; exit 2; fi
+  case "$(stat -c %a "$claude_config")" in
+    700|500) ;;
+    *) echo "weekly-test-audit: $claude_config is wider than 0700; run: chmod 700 $claude_config" >&2; exit 2 ;;
+  esac
+else
+  install -d -m 700 "$claude_config"
+fi
 remote="${DURBAR_AUDIT_REMOTE:-https://github.com/three-feathers/agent-durbar.git}"
 repo_dir="$state_dir/repo"
 
