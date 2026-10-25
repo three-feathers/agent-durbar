@@ -85,6 +85,7 @@ const DRIVERS = [
   { name: 'shots-001-lobby' }, // spec 001 FR-034..FR-040: Boss queue, Bank, Postbox and its letter, who is at a place (simsched in its own query)
   { name: 'check-done-desk-mask' }, // spec 041 FR-065: no token of a done reply on the office floor
   { name: 'check-ui-text' }, // spec 052 FR-171: wrapping, sizes, box widths, field weight, dark contrast
+  { name: 'shots-006-crash' }, // spec 006 FR-038..FR-046 (#606): the crash card (Resume all, Pick…, Dismiss), per-row resume, the lost-turn note
   { name: 'shots-074-navigator', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 074: Go to (keyboard navigator), chat numbers, the shortcut in Settings
 ];
 

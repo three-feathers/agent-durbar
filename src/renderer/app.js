@@ -2990,6 +2990,42 @@ async function endAllSessions(anchor){
   const n=list.length-bad.length;
   toast(bad.length?'Could not end '+esc(bad.join(', '))+'.':(n===1?'1 session ended.':n+' sessions ended.')+' Sending a message resumes one.',4200).classList.add(bad.length?'err':'ok');
 }
+/* spec 006 FR-038..FR-046 (issue 606): the last run ended abnormally with sessions mid-turn. One calm card; resuming is the same wake as
+   opening a restored chat (own mode and caps, no prompt), one after another. */
+const crashSt={loaded:false,items:[],missing:0,pick:false,done:new Set(),busy:false};
+const crashLeft=()=>crashSt.items.filter(i=>!crashSt.done.has(i.id)&&liveById(i.id)&&liveById(i.id).info&&liveById(i.id).info.resumeLast);
+async function renderCrashStrip(){
+  const el=$('crashStrip'); if(!el||!bridge||!bridge.interrupted||demoOn)return;
+  if(!crashSt.loaded){let s=null; try{s=await bridge.interrupted();}catch(e){s=null;}
+    crashSt.loaded=true; crashSt.items=(s&&Array.isArray(s.items))?s.items.filter(i=>i&&liveById(i.id)):[]; crashSt.missing=(s&&s.missing>0)?s.missing:0;}
+  paintCrashStrip();
+}
+function paintCrashStrip(focusSel){
+  const el=$('crashStrip'); if(!el)return;
+  const left=crashLeft();
+  if(!left.length){const was=!el.hidden;el.hidden=true;el.innerHTML='';crashSt.pick=false;if(was){if(bridge.dismissInterrupted)bridge.dismissInterrupted().catch(()=>{});scheduleRender();}return;}
+  const n=left.length, ex=crashSt.missing>0?' ('+crashSt.missing+(crashSt.missing===1?' more':' others')+' could not be reopened.)':'';
+  el.innerHTML='<span class="ns-ic" aria-hidden="true">i</span><span class="ns-t"><b>'+(n===1?'1 session was interrupted':n+' sessions were interrupted')+'</b> when Durbar stopped unexpectedly. The reply '+(n===1?'it was':'each was')+' writing is lost, and nothing is sent again.'+ex+'</span>'+
+    '<span class="ns-act"><button class="btn primary" type="button" data-cr="all">Resume all</button>'+
+    '<button class="btn" type="button" data-cr="pick" aria-expanded="'+(crashSt.pick?'true':'false')+'" aria-controls="crashList">Pick…</button>'+
+    '<button class="btn" type="button" data-cr="close">Dismiss</button></span>'+
+    (crashSt.pick?'<span class="aw-list cr-list" id="crashList" role="list" aria-label="Interrupted sessions">'+left.map(i=>'<span class="aw-it" role="listitem"><span class="aw-w"><b>'+esc(i.folderName)+'</b><small>'+esc(i.adapterId)+'</small></span><button class="btn" type="button" data-crrow="'+esc(i.id)+'">Resume</button></span>').join('')+'</span>':'');
+  el.hidden=false;
+  const all=el.querySelector('[data-cr="all"]');
+  el.querySelector('[data-cr="close"]').onclick=()=>{crashSt.items=[];paintCrashStrip();};
+  el.querySelector('[data-cr="pick"]').onclick=()=>{crashSt.pick=!crashSt.pick;paintCrashStrip(crashSt.pick?'[data-crrow]':'[data-cr="pick"]');};
+  all.onclick=()=>crashResume(crashLeft().map(i=>i.id),all);
+  el.querySelectorAll('[data-crrow]').forEach(b=>b.onclick=()=>crashResume([b.dataset.crrow],b));
+  if(focusSel){const f=el.querySelector(focusSel);if(f)focusIn(f,{reveal:false});}
+  scheduleRender();
+}
+async function crashResume(ids,btn){
+  if(crashSt.busy)return; crashSt.busy=true; const done=busy(btn,'Resuming…'); let ok=0;
+  for(const id of ids){const a=liveById(id); if(!a||!a.info||!a.info.resumeLast){crashSt.done.add(id);continue;}
+    if(await wakeLast(a,true)){crashSt.done.add(id);ok++;}}
+  crashSt.busy=false; done(); paintCrashStrip(crashLeft().length?'[data-cr="all"]':null);
+  if(ok)toast((ok===1?'1 session':ok+' sessions')+' resumed. Say “continue” in a chat to go on.',4200).classList.add('ok');
+}
 /* FR-089: "Since you were away": how long the app was closed and the scheduled prompts that did not run, from main's stores only */
 const awayWords=ms=>{const m=Math.round(ms/60000),d=Math.floor(m/1440),h=Math.floor((m%1440)/60),mm=m%60;
   return d?d+(d===1?' day':' days')+(h?' '+h+' h':''):h?h+' h'+(mm?' '+mm+' min':''):mm+' min';};
@@ -6024,16 +6060,19 @@ function renderPrev(a){
   INL().follow(); /* spec 059 FR-023 item 5 */
 }
 /* spec 006 FR-021: a folder restored after a restart continues its last session when its chat is first opened (no prompt is sent) */
-async function wakeLast(a){
-  if(a.waking)return; a.waking=true;
+async function wakeLast(a,crash){
+  if(a.waking)return false; a.waking=true;
   setState(a,'working','Starting','Continuing your last session…');
   const r=await bridge.wake(a.id).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   a.waking=false;
-  if(!r||!r.ok){setState(a,'idle','Not started','Your last session here. It continues when you open it.');toast('Could not continue the last session: '+esc((r&&r.error)||'unknown error'),7000);return;}
+  if(!r||!r.ok){setState(a,'idle','Not started','Your last session here. It continues when you open it.');toast('Could not continue the last session: '+esc((r&&r.error)||'unknown error'),7000);return false;}
   if(a.info){a.info.resumeLast=false;a.info.lazy=false;}
-  if(r.resumed){a.resumed=true;replayHistory(a,r.history,r.title,'Continued after restart');setState(a,'idle',null,'Continued: '+SHORT(safeMask(r.title)||'last session',90));}
+  if(r.resumed){a.resumed=true;replayHistory(a,r.history,r.title,crash?'Resumed after a crash':'Continued after restart');setState(a,'idle',null,(crash?'Resumed after a crash: ':'Continued: ')+SHORT(safeMask(r.title)||'last session',90));
+    /* spec 006 FR-045: honest about the lost turn; nothing is sent again */
+    if(crash)addNote(liveChat(a),'Durbar stopped while this session was working, so the reply it was writing is lost. Nothing was sent again; say “continue” to go on.');}
   else{if(r.resumed===false)addNote(liveChat(a),'The last session is no longer available; this is a new session.');setState(a,'idle',null,'Ready. Send a message to start.');}
   modeBackNote(a);
+  return true;
 }
 function replayHistory(a,h,title,lead){
   const chat=liveChat(a); let m=null;
@@ -6298,6 +6337,7 @@ if(bridge){
   if(window.DurbarFolderSetup){window.DurbarFolderSetup.init({bridge,esc,toast:(t,ms)=>toast(esc(t),ms),onRules:map=>{for(const id of Object.keys(map)){const a=liveById(id);if(!a||!a.info)continue;a.info.folderRules=map[id]||undefined;const c=$('modeChip'),sel=ui.selected&&liveRoot(byId(ui.selected)||a);if(c&&sel&&sel.id===a.id)c.outerHTML=modeChipHTML(a);}}});}
   bridge.listAgents().then(l=>{l.forEach(addLiveAgent);agentsListed=true;renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});renderRestoreStrip();
     restoreUi();renderAwayStrip(); /* spec 052 FR-087 / FR-089 */
+    renderCrashStrip(); /* spec 006 FR-041 */
     /* spec 052 FR-059: what already needs you a few seconds after start is remembered, not notified */
     setTimeout(()=>{renderInboxBtn();ATT_ARMED=true;},3000);});
   loadModels();

@@ -11,10 +11,13 @@ export interface AppIpcDeps {
   getSinceAway(): SinceAway | null;
   clearSinceAway(): void;
   getWin(): BrowserWindow | undefined;
+  /** Spec 006 FR-040..FR-041: the sessions the last run left in the middle of a turn that can still be resumed (ids and folder names only). */
+  getInterrupted(): { items: Array<{ id: string; adapterId: string; folderName: string }>; missing: number } | null;
+  clearInterrupted(): void;
 }
 
 export function register(deps: AppIpcDeps): void {
-  const { getSinceAway, clearSinceAway, getWin } = deps;
+  const { getSinceAway, clearSinceAway, getWin, getInterrupted, clearInterrupted } = deps;
   const liveWin = (): BrowserWindow | undefined => {
     const win = getWin();
     return win && !win.isDestroyed() ? win : undefined;
@@ -38,6 +41,11 @@ export function register(deps: AppIpcDeps): void {
   ipcHandle('app:sinceAway', (e) => (fromApp(e) ? getSinceAway() : null));
   ipcHandle('app:dismissSinceAway', (e) => {
     if (fromApp(e)) clearSinceAway();
+    return { ok: true };
+  });
+  ipcHandle('app:interrupted', (e) => (fromApp(e) ? getInterrupted() : null));
+  ipcHandle('app:dismissInterrupted', (e) => {
+    if (fromApp(e)) clearInterrupted();
     return { ok: true };
   });
   /* spec 052 FR-059: the "needs you" count on the app icon (macOS, Linux where the desktop supports it), a taskbar flash on Windows */

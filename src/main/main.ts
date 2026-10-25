@@ -59,6 +59,8 @@ import { CheckpointStore } from './checkpoints';
 import { DEFAULT_ADAPTER, FolderStore, modeForSession, restoreMode, sessionsToRestore } from './folders';
 import { AppStateStore, buildSinceAway, placeWindow, quitMessage } from './daily';
 import type { SinceAway } from './daily';
+import { CrashMarker, interruptedFrom } from './crashmarker';
+import type { Interrupted } from './crashmarker';
 import { navigationAllowed, permissionAllowed } from './hardening';
 import type { ChatFileRef } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
@@ -138,6 +140,9 @@ let activityStore: ActivityStore | undefined;
 let appState: AppStateStore | undefined;
 /** Spec 052 FR-089: what happened while the app was closed, built once at start; null after the card is dismissed. */
 let sinceAway: SinceAway | null = null;
+/** Spec 006 FR-038..FR-046 (#606): the running marker (never under the simulator) and the sessions the last run left mid-turn. */
+let crashMarker: CrashMarker | undefined;
+let interrupted: { items: Interrupted[]; missing: number } | null = null;
 /** The folder (or .code-workspace file) an agent belongs to; the key of the saved folder list. */
 const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 
@@ -497,6 +502,11 @@ const scheduleAgent = (s: { folder: string; target?: { session: string } }): Age
   return a && wsKey(a) === s.folder ? a : undefined;
 };
 const busyStatus = (id: string): boolean => ['working', 'needs-permission'].includes(lastStatus.get(id) ?? '');
+/** Spec 006 FR-039: the main sessions that are busy, as the running marker lists them (ids and agent app only). */
+router.onEvent((e) => {
+  if (!crashMarker || e.type !== 'status' || e.agentId) return;
+  crashMarker.setBusy([...agents.keys()].filter((id) => busyStatus(id)).map((id) => ({ id, adapterId: router.adapterIdOf(id) ?? DEFAULT_ADAPTER })));
+});
 const scheduleDeps = (file: string): SchedulerDeps => ({
   now: () => Date.now(),
   /* spec 068 FR-008: an agent on a coffee break is busy too (the rule and its test: schedules.ts scheduleBusy) */
@@ -662,7 +672,18 @@ const renameSessionOpFor = (openIds: () => ReadonlySet<string>) => renameOp({
 // ---- IPC (spec 045 FR-060): every handler lives in src/main/ipc/<area>.ts, registered here through ipcHandle / ipcOn (ipcguard.ts). ----
 // Stores created in whenReady, and state that changes, are passed as getters so a handler reads them when it runs.
 const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity });
-registerAppIpc({ getSinceAway: () => sinceAway, clearSinceAway: () => { sinceAway = null; }, getWin: () => win });
+registerAppIpc({
+  getSinceAway: () => sinceAway,
+  clearSinceAway: () => { sinceAway = null; },
+  getWin: () => win,
+  // FR-040: asked again on every call, so a session that was resumed meanwhile (its chat opened) leaves the card
+  getInterrupted: () => {
+    if (!interrupted) return null;
+    const items = interrupted.items.filter((i) => agents.get(i.id)?.resumeLast);
+    return items.length ? { items, missing: interrupted.missing } : null;
+  },
+  clearInterrupted: () => { interrupted = null; },
+});
 /** Spec 043 FR-041: which profile file changes each session has seen (shared by ipc/agents.ts and ipc/profiles.ts). */
 const profileFreshness = createProfileFreshness();
 registerAgentsIpc({ agents, router, agentState, opsDeps, remoteOps, mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory });
@@ -804,6 +825,7 @@ function createWindow(): void {
     if (dev.DURBAR_SIM_FREEZE === '1') query.simfreeze = '1';
     if (dev.DURBAR_SIM_ROOMS) query.simrooms = dev.DURBAR_SIM_ROOMS;
     if (dev.DURBAR_SIM_FLOORS === '1') query.simfloors = '1';
+    if (/^[1-5]$/.test(dev.DURBAR_SIM_CRASH ?? '')) query.simcrash = dev.DURBAR_SIM_CRASH as string; // spec 006 FR-046: a faked crash marker with N interrupted sessions
     if (dev.DURBAR_THEME && /^[a-z0-9_-]{1,64}$/.test(dev.DURBAR_THEME)) query.theme = dev.DURBAR_THEME; // spec 036 FR-005: the simulator's settings carry it
     if (dev.DURBAR_SIM_TITLES === '1') query.simtitles = '1'; // spec 001/002 deltas 2026-10-18: main agents with session titles
     if (/^[0-3]$/.test(dev.DURBAR_SIM_PLACES ?? '')) query.simplaces = dev.DURBAR_SIM_PLACES as string; // spec 024 FR-026: custom places seeded in the simulator
@@ -917,6 +939,16 @@ app.whenReady().then(() => {
   agentTrust.load();
   usageTotalsStore.load();
   restoreFolders();
+  if (!SIMULATOR) {
+    // spec 006 FR-038..FR-040: a marker left by the last run means it did not end normally; the card offers the sessions that were mid-turn
+    crashMarker = new CrashMarker(path.join(app.getPath('userData'), 'durbar-running.json'));
+    const began = crashMarker.begin();
+    const cm = crashMarker;
+    process.once('exit', () => cm.clear()); // Quit, a confirmed close and app.exit; a crash, kill or power loss never gets here
+    const restored = [...agents.values()].map((a) => ({ id: a.id, adapterId: router.adapterIdOf(a.id) ?? DEFAULT_ADAPTER, resumeLast: !!a.resumeLast, folderName: a.label || a.name }));
+    const found = interruptedFrom(began.marker, restored);
+    interrupted = found.items.length ? found : null;
+  }
   {
     const file = path.join(app.getPath('userData'), 'durbar-schedules.json');
     scheduler = new Scheduler(loadSchedules(file, Date.now()), scheduleDeps(file));
@@ -1011,6 +1043,7 @@ app.on('before-quit', (ev) => {
     .finally(() => app.quit());
 });
 app.on('will-quit', () => {
+  crashMarker?.clear(); // spec 006 FR-038: a normal exit leaves no marker
   void destroyAllViews(); // spec 080 FR-023: the session browsers (none exist until the browser pane lands)
   usageStore?.flush();
   usageTotalsStore?.flush();

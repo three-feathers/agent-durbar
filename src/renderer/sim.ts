@@ -539,6 +539,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     if (n < 12) rows = ROSTER.filter((r) => r[0] !== 'Hugo' && r[0] !== 'Priya' && r[0] !== 'Noor' && r[0] !== 'Omar').slice(0, n);
     while (rows.length < n) rows.push(['Agent' + (rows.length + 1), 'Worker', 'blog', 'working', 'Working through a queued task', 0, ['src/index.ts']]);
 
+    const crashIds = new Set<string>(); // spec 006 FR-046 (simcrash=N): the sessions the faked crash left mid-turn
     const sims: SimAgent[] = rows.map((r, i) => {
       const [name, role, room0, state, intent, helpers0, files] = r;
       const k = simRooms ? Math.max(1, Math.min(SIM_ROOM_ORDER.length, Math.floor(simRooms))) : 0;
@@ -2365,8 +2366,23 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           const r = sims.find((x) => x.info.name === 'Priya');
           if (r && r.info.resumeLast === undefined) { r.info.lazy = true; r.info.resumeLast = true; r.info.permFrom = 'session'; }
         }
+        /* simcrash=N (spec 006 FR-046): the last run "crashed" with the first N main agents mid-turn; they come back as restored, not started */
+        if (typeof location !== 'undefined') {
+          const n = Math.min(5, parseInt(new URLSearchParams(location.search).get('simcrash') ?? '0', 10) || 0);
+          if (n > 0 && crashIds.size === 0) {
+            for (const x of sims.slice(0, n)) {
+              if (x.info.resumeLast !== undefined) continue;
+              x.info.lazy = true; x.info.resumeLast = true; x.info.permFrom = 'session'; crashIds.add(x.info.id);
+            }
+          }
+        }
         return sims.map((s) => s.info);
       },
+      interrupted: async () => {
+        const items = sims.filter((x) => crashIds.has(x.info.id) && x.info.resumeLast).map((x) => ({ id: x.info.id, adapterId: x.info.adapterId ?? 'copilot', folderName: x.info.label || x.info.name }));
+        return items.length ? { items, missing: 0 } : null;
+      },
+      dismissInterrupted: async () => { crashIds.clear(); return { ok: true }; },
       wake: async (id) => { // FR-021: the canned last session comes back, as the main process resumes it (no prompt)
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
