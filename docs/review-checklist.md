@@ -68,6 +68,7 @@ Do it **adversarially**: assume your diff is wrong, read the real diff (`git dif
 - [ ] **Undo restores the user's own choice, "none" included**, never the value in effect or a default (*Paco's agent*). *Evidence:* [#642](https://github.com/three-feathers/agent-durbar/pull/642).
 - [ ] **Map the vendor's failure event too**, not only the success one: a "requested" state shown without its failure path claims something untrue. *Evidence:* [#642](https://github.com/three-feathers/agent-durbar/pull/642) (`session.auto_tier_switch_failed`).
 - [ ] **Timers use a monotonic clock, and a bad value falls back to the most restrictive choice** (*Paco's agent*). *Evidence:* [#635](https://github.com/three-feathers/agent-durbar/pull/635) (monotonic sign-in clock, minimum for a broken time limit).
+- [ ] **Text guards that emulate a parser** (YAML, shell): use the parser's own whitespace (`[ \t]`, not JS `\s`, which also matches NBSP/U+3000) and refuse non-ASCII in the guarded file. *Evidence:* [#700](https://github.com/three-feathers/agent-durbar/pull/700).
 
 ### Tests
 
@@ -120,4 +121,3 @@ The same habits on all three sides; the rules behind them are in [AGENTS.md](../
 - **Re-approval after a push:** compare the PR's own code with the commit you approved by `git patch-id --stable`; same id, re-approve and say so; different, review the difference.
 - **Adversarial self-review** before you ask anyone: run this checklist on your own diff, as a reviewer who assumes it is wrong. A reviewer sub-agent (see [agent-setup](agent-setup/README.md)) helps for medium and large changes.
 - **Add what you found:** a reviewer who finds a new kind of mistake adds a line to this file.
-- **Text guards that emulate a parser:** text guards that emulate a parser (YAML, shell) must use the parser's own whitespace (`[ \t]`, not `\s`) and refuse non-ASCII in the guarded file.
