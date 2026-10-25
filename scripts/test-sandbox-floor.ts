@@ -7,7 +7,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { CLAUDE_SANDBOX_MIN_VERSION, claudeSandboxExit, claudeSandboxPrecheck, claudeSandboxSettings, claudeSandboxState, withSandboxSettings } from '../src/adapters/claudeSandbox';
-import { copilotHostSupport, copilotPathReadDirs, copilotSandboxConfig, copilotSandboxState } from '../src/adapters/copilotSandbox';
+import { COPILOT_SANDBOX_NOTE_COMMAND, copilotHostSupport, copilotPathReadDirs, copilotSandboxConfig, copilotSandboxState } from '../src/adapters/copilotSandbox';
 import { CODEX_SANDBOX_NOTE_COMMAND, CODEX_SANDBOX_NOTE_FILE, codexModeSettings, codexPermission, codexSandboxState } from '../src/adapters/codexModes';
 import { HOME_SECRETS, leftOutFields, normalizeRoot, sandboxRoots, splitFolders } from '../src/adapters/sandboxRoots';
 import * as os from 'os';
@@ -319,6 +319,12 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
 // ---- FR-009/FR-010: the window's words (src/renderer/sandboxtext.js) ----
 {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
+  // FR-021a (K15): the Copilot state says it only in Ask first with the floor on; the card line is the agreed sentence
+  const host = { supported: true, capabilities: [] };
+  assert.strictEqual(copilotSandboxState({ mode: 'ask', platform: 'linux', host, applied: true })?.approvedMayLeave, true, 'Ask first, on: may leave');
+  assert.strictEqual(copilotSandboxState({ mode: 'read-only', platform: 'linux', host, applied: true })?.approvedMayLeave, undefined, 'Read-only: never asks');
+  assert.strictEqual(copilotSandboxState({ mode: 'ask', platform: 'linux', host })?.approvedMayLeave, undefined, 'not on yet: no claim');
+  assert.strictEqual(COPILOT_SANDBOX_NOTE_COMMAND, 'If you approve, Copilot may run this outside its sandbox (seen on Linux, 2026-10-25).');
   const T = require('../../src/renderer/sandboxtext.js') as { chipWord(s: unknown): string; tooltip(s: unknown, app: string, mask?: (t: string) => string): string; hostLine(v: unknown): string; NOT_VERIFIED: string };
   const on = { state: 'on', mechanism: 'bubblewrap', covers: ['shell'], writes: 'none', verified: false };
   assert.strictEqual(T.chipWord(on), 'Sandboxed');
@@ -333,6 +339,11 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.ok(/MCP servers, hooks, the status line, file reads and edits are outside it\./.test(tip), 'Claude: MCP not covered');
   assert.ok(!T.tooltip({ ...on, verified: true }, 'Claude Code').includes('not verified'), 'a verified state drops it');
   assert.ok(/Shell commands and MCP servers run in the macOS sandbox \(writes: this folder/.test(T.tooltip({ ...on, mechanism: 'seatbelt', covers: ['shell', 'mcp'], writes: 'folders' }, 'Copilot')));
+  // FR-021a (K15): Copilot in Ask first says an approved command may leave the sandbox, and still ends with the not-verified sentence
+  const cpAsk = T.tooltip({ ...on, covers: ['shell', 'mcp'], writes: 'folders', approvedMayLeave: true }, 'Copilot');
+  assert.ok(cpAsk.includes('File reads and edits are checked by Durbar. If you approve a command, Copilot may run it outside its sandbox (seen on Linux, 2026-10-25).'), cpAsk);
+  assert.ok(cpAsk.endsWith(T.NOT_VERIFIED) && cpAsk.length <= 300, 'not cut: the not-verified sentence is kept');
+  assert.ok(!T.tooltip({ ...on, covers: ['shell', 'mcp'] }, 'Copilot').includes('may run it outside'), 'Read-only: no such sentence');
   assert.ok(/Commands and file changes run in the Codex sandbox \(writes: none, network: off\)\. If you approve a command, Codex may run it outside the sandbox\./.test(T.tooltip({ state: 'on', mechanism: 'vendor', covers: ['shell', 'files'], approvedMayLeave: true, verified: false }, 'Codex')));
   const off = T.tooltip({ state: 'off', covers: ['shell'], verified: false, reason: 'no bwrap ghp_abcdefghijklmnopqrstuvwxyz0123456789' }, 'Claude Code', () => '');
   assert.ok(!off.includes('ghp_') && !off.includes('no bwrap'), 'no mask: the reason is not shown (fail closed)');

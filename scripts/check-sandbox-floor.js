@@ -61,6 +61,8 @@ module.exports = async (ctx) => {
     await expectChip(w, 'sim-11', /Ask first · Not sandboxed/, (c) => /^Copilot says this computer cannot run its sandbox/.test(c.title) && /Durbar.s own checks still apply/.test(c.title));
     await expectChip(w, 'sim-6', /Allow all · Sandboxed \(managed\)/, (c) => /Your organization keeps/.test(c.title));
     await expectChip(w, 'sim-15', /Allow all · Sandboxed \(until a new session\)/, (c) => /stays until a new session/.test(c.title) && /Shell commands and MCP servers run in bubblewrap/.test(c.title));
+    // ---- FR-021a (K15): Copilot Ask first with the floor on: the tooltip says an approved command may leave it, and stays not verified ----
+    await expectChip(w, 'sim-2', /Ask first · Sandboxed\b/, (c) => /If you approve a command, Copilot may run it outside its sandbox \(seen on Linux, 2026-10-25\)\./.test(c.title) && c.title.endsWith(NOT_VERIFIED));
     // ---- FR-021 (T022 AC3): Codex Ask first: the card's sandbox line, whole; the chip tooltip says it too ----
     await expectChip(w, 'sim-8', /Ask first · Sandboxed/, (c) => /If you approve a command, Codex may run it outside the sandbox/.test(c.title) && /Commands and file changes run in the Codex sandbox/.test(c.title));
     assert.ok(await until(`!!document.querySelector('#chat .note.perm.pending .psbx')`, 8000), `${w}: Codex's waiting card has its sandbox line`);

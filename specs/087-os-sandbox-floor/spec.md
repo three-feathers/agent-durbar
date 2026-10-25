@@ -307,6 +307,15 @@ Allow all keeps the app's default. When the vendor's managed policy forces a san
   writes this outside its read-only sandbox." (filled in `codexPermission`, `src/adapters/codexModes.ts`),
   and the Codex `SandboxState` has `approvedMayLeave: true` so the chip tooltip says it too. Removed only when a real check (or the
   vendor docs) shows an approved escalation stays sandboxed (K6). Read-only is unaffected (every approval is declined).
+- **FR-021a** `[IMPLEMENTED]` (test: `scripts/test-copilot-sandbox.ts`, `scripts/test-sandbox-floor.ts`; sim: `scripts/check-sandbox-floor.js`
+  tooltip at both sizes; added 2026-10-25 after the T060 run, K15, review on PR #753) **Copilot approval cards in Ask first** get the
+  same kind of line as FR-021, through the same `sandboxNote` field: a `shell` request while Copilot's state is `on` carries "If you
+  approve, Copilot may run this outside its sandbox (seen on Linux, 2026-10-25)." (`COPILOT_SANDBOX_NOTE_COMMAND`,
+  `src/adapters/copilotSandbox.ts`; set on a copy of the request in `copilot.ts`, the runtime's object is unchanged). Other kinds
+  (file edits, which Durbar checks itself, MCP) and a session whose sandbox is not on get no line. Copilot's `SandboxState` in Ask
+  first with the floor on has `approvedMayLeave: true`, so the chip tooltip adds "If you approve a command, Copilot may run it
+  outside its sandbox (seen on Linux, 2026-10-25)." and still ends with "Requested; not verified on a real session." Removed only
+  when a real run shows an approved command stays sandboxed (K15).
 
 ### Key Entities
 
@@ -411,8 +420,8 @@ your shell tool: touch sandbox-probe.txt ...".
   `sandbox.decision` (kind, outcome, control, enforcement point, state; never a resource or command) for the next run.
   `[KNOWN GAP]` K15: on Linux an approved Copilot command in Ask first wrote outside the session folder although the chip said
   *Sandboxed*; cause unknown. Until a run explains it, the Copilot Ask first tooltip's "writes: this folder" is a request, not a
-  limit (it still ends with "Requested; not verified on a real session."). A fix (for example saying so in the tooltip and the
-  approval card, as FR-021 does for Codex) needs the cause first: one more prompt with the new capture, the owner's OK.
+  limit (it still ends with "Requested; not verified on a real session."). FR-021a (added in the same PR) says so on the approval
+  card and in the chip tooltip; finding the cause needs one more prompt with the new capture, the owner's OK.
 
 ### 2026-10-25: review round 8 on PR #733 (Ruben's agent, 6 items)
 

@@ -31,7 +31,7 @@
   function coverage(s,app){
     const where=mechName(s.mechanism,app), w=s.writes==='folders'?'this folder':'none';
     if(s.covers.includes('files'))return 'Commands and file changes run in '+where+' (writes: none, network: off).'+(s.approvedMayLeave?' If you approve a command, '+(app||'the app')+' may run it outside the sandbox.':'');
-    if(s.covers.includes('mcp'))return 'Shell commands and MCP servers run in '+where+' (writes: '+w+', network: off). File reads and edits are checked by Durbar.';
+    if(s.covers.includes('mcp'))return 'Shell commands and MCP servers run in '+where+' (writes: '+w+', network: off). File reads and edits are checked by Durbar.'+(s.approvedMayLeave?' If you approve a command, '+(app||'the app')+' may run it outside its sandbox (seen on Linux, 2026-10-25).':''); /* FR-021a (K15) */
     return 'Shell commands run in '+where+' (writes: '+w+', network: off). MCP servers, hooks, the status line, file reads and edits are outside it.';
   }
   /* the tooltip (at most 300 characters: a data tooltip); `mask` is the window's masking, applied to the reason once more */

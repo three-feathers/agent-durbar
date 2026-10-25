@@ -295,6 +295,35 @@ async function main(): Promise<void> {
     await mac.ad.dispose();
   }
 
+  // ---- FR-021a (K15): a shell request in Ask first with the floor on carries the card's own sandbox line; nothing else does ----
+  {
+    const NOTE = 'If you approve, Copilot may run this outside its sandbox (seen on Linux, 2026-10-25).';
+    type Decide = (r: unknown) => Promise<{ kind: string }>;
+    const pendingOf = (ev: AgentEvent[], sid: string, id: string) => ev.map((e) => (e.type === 'status' && e.sessionId === sid ? e.permission : undefined)).find((p) => p?.requestId === id && p.state === 'pending');
+    const ask = async (m: ReturnType<typeof make>, sid: string, req: Record<string, unknown>) => {
+      const r = (m.fake.sessions.get(sid)!.config.onPermissionRequest as Decide)(req);
+      await new Promise((res) => setTimeout(res, 20));
+      const p = pendingOf(m.events, sid, String(req.toolCallId));
+      assert.ok(p, `${String(req.toolCallId)}: a pending card`);
+      m.ad.resolvePermission(sid, String(req.toolCallId), false);
+      await r;
+      return p;
+    };
+    const m = make();
+    const sid = await start(m.ad, 'ask');
+    assert.strictEqual(last(m.events, sid)?.approvedMayLeave, true, 'Ask first, on: the state says an approved command may leave');
+    const shellReq = { kind: 'shell', fullCommandText: 'touch /elsewhere/x', toolCallId: 'k15-shell' };
+    assert.strictEqual((await ask(m, sid, shellReq))?.sandboxNote, NOTE, 'shell: the line is on the card');
+    assert.ok(!('sandboxNote' in shellReq), "the runtime's request object is not changed");
+    assert.strictEqual((await ask(m, sid, { kind: 'write', fileName: path.join(WS, 'a.txt'), toolCallId: 'k15-write' }))?.sandboxNote, undefined, 'a file edit (Durbar checks it, not the sandbox): no line');
+    await m.ad.dispose();
+    const off = make({ prep: (c) => { c.sandboxHost = { supported: false, reason: 'no bwrap', capabilities: [] }; } });
+    const s2 = await start(off.ad, 'ask');
+    assert.strictEqual(last(off.events, s2)?.state, 'off');
+    assert.strictEqual((await ask(off, s2, { kind: 'shell', fullCommandText: 'ls', toolCallId: 'k15-off' }))?.sandboxNote, undefined, 'no sandbox in force: no sandbox line');
+    await off.ad.dispose();
+  }
+
   // ---- FR-012: the Settings line ----
   {
     assert.deepStrictEqual(await make().ad.sandboxHost!(), { available: true, mechanism: 'bubblewrap' });
