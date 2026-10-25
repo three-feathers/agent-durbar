@@ -1,1 +1,0 @@
-- **Theme CSS check is an allow-list** (spec 035 FR-015, issue #747): `test:theme` now accepts only listed paint properties in `themes.css`, so `flex`, `transform: scale`, `top`/`left`, an unknown property or a length in a custom property fail, not only `width`/`padding`. Checked by planting each case in a copy of `themes.css`; test-only, no behaviour change.
