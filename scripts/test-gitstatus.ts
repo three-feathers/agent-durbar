@@ -321,7 +321,7 @@ async function realGitCheck(): Promise<void> {
     process.env.HOME = home;
     const stOwn = await folderGitStatus(own, nodeGitExec).finally(() => { if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome; });
     // the documented price (spec 063 FR-008, README): c.txt shows as changed, although plain git status (with the filter) is clean
-    assert.deepStrictEqual(stOwn.repo && stOwn.files.map((f) => `${f.state}:${f.path}`), ['modified:c.txt'], "the user's global filter is off too: " + JSON.stringify(stOwn));
+    assert.deepStrictEqual(stOwn.repo && stOwn.files.map((f) => `${f.state}:${f.path}`), ['modified:c.txt'], "the user's global filter is off too: " + JSON.stringify(stOwn) + ' markers: ' + fs.readdirSync(marks).join(', '));
 
     const ran = fs.readdirSync(marks).sort();
     assert.deepStrictEqual(ran, [], 'no command from the folder config ran: ' + ran.join(', '));
