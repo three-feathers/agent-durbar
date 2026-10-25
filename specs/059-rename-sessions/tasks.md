@@ -124,6 +124,9 @@ Decisions D1..D9: coordinator, under Ruben's delegation. Renderer only; no IPC, 
   `npm run shots:docs -- --only shots-hero,shots-003-011,shots-005-cardmenu,shots-006-prevmarks,shots-052-ux,shots-074-navigator`, look at
   each, commit those that changed and list the rest in the PR; close #595 as a duplicate of #636 when the PR opens (D9). Done when:
   `npm run changelog:check`, `npm run specs:check` and `npm test` (`test:uisuite`, `test:site`) pass [FR-026, FR-027]
+- [x] T079 Driver: the focused-pencil step of `scripts/check-rename-inline.js` gives the window real focus, waits for `document.hasFocus()`, and reads
+  the pencil's target opacity with its transition off (issue #715, Windows CI). Done when: `check:rename-inline` passes focused and with
+  `RI_UNFOCUSED=1`, and fails when `.unit:focus-within>.ren` is planted to opacity 0 [FR-021, FR-025]
 
 ## Dependencies
 
