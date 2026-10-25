@@ -93,13 +93,16 @@ Total cost: **about 5 tiny prompts** (Linux 2, macOS 2, Windows 1); T063 is drop
 a throw-away folder with an accepted folder allow rule (`Bash(touch:*)`, spec 061) so the command passes Durbar's check and only
 the OS sandbox can stop it.
 
-- [ ] T060 Linux: one tiny Read-only prompt each for Claude Code and Copilot that asks to `touch` a file in the folder; record that the OS refuses it (or the gap); record usage. [FR-020, SC-004, K1, K2, K4, K8]
+- [x] T060 Linux: one tiny Read-only prompt each for Claude Code and Copilot that asks to `touch` a file in the folder; record that the OS refuses it (or the gap); record usage. [FR-020, SC-004, K1, K2, K4, K8]
   - AC1: the result and usage are written in spec.md (`real:`), and the verified list gets the Linux entry only for an app whose write was refused.
+  - Done 2026-10-25 (spec *Changes*, T060): Claude Code's OS refused the write (`CLAUDE_SANDBOX_VERIFIED = { linux: ['read-only'] }`, per mode after review on PR #753); Copilot's floor was on but Durbar refused the Read-only command first, and two extra owner-approved Ask first runs let an approved write outside the folder through, the second showing why (K15, #755), so Copilot gets no entry (K8 settled for Linux with Copilot CLI 1.0.101 / SDK 1.0.22). 4 prompts.
 - [ ] T061 macOS: the same for both apps. [FR-020, SC-004]
   - AC1: as T060 AC1, macOS entry.
 - [ ] T062 Windows: Copilot on a Windows 11 build with ProcessContainer (one prompt), and Claude's *Not sandboxed* note recorded with no prompt. [FR-020, SC-004, K9]
   - AC1: as T060 AC1, Windows entry for Copilot only.
 - ~~T063 Ask first network prompt shape for Claude (K3)~~ dropped: decision Q2 = network off (2026-10-25). K3 stays a `[KNOWN GAP]` for a later per-host ask.
+- [x] T064 Copilot Ask first approval card line and tooltip sentence after K15 (FR-021a): `COPILOT_SANDBOX_NOTE_COMMAND` on a shell request while the state is `on`, `approvedMayLeave` on the Ask first state, the tooltip sentence. [FR-021a, K15]
+  - AC1: tests show the line on a shell card with the floor on, none on a file edit or with the floor off, the state flag only in Ask first, and the tooltip sentence with the not-verified ending; each fails when its code is removed (done 2026-10-25, PR #753).
 
 ## Dependencies
 

@@ -13,9 +13,15 @@ import { HOME_SECRETS, homeSecretPaths, secretRelation } from './sandboxRoots';
 export const CLAUDE_SANDBOX_MIN_VERSION = '2.1.219';
 /**
  * FR-010/FR-020: the platforms where a real session recorded that a sandboxed command could not write outside the folder or reach the
- * network (T060-T062). Empty until then: every tooltip ends with "Requested; not verified on a real session."
+ * network (T060-T062), per platform AND mode (constitution VIII: a run in one mode proves nothing about the other). A platform or
+ * mode not listed keeps "Requested; not verified on a real session." at the end of its tooltip.
+ * `linux` Read-only: T060 (2026-10-25, real: Claude Code 2.1.309, bubblewrap 0.9.0): a Read-only `touch` in the folder failed with
+ * "Read-only file system" (spec 087 *Changes*, 2026-10-25 T060). Ask first was not run on a real session.
  */
-export const CLAUDE_SANDBOX_VERIFIED: readonly string[] = Object.freeze([]);
+export const CLAUDE_SANDBOX_VERIFIED: Readonly<Record<string, readonly PermissionMode[]>> = Object.freeze({ linux: Object.freeze(['read-only'] as PermissionMode[]) });
+/** True only for a platform and mode a real session recorded (own property only: a platform such as `__proto__` is never verified). */
+export const claudeSandboxVerified = (platform: string, mode: PermissionMode | string): boolean =>
+  Object.prototype.hasOwnProperty.call(CLAUDE_SANDBOX_VERIFIED, platform) && (CLAUDE_SANDBOX_VERIFIED[platform] as readonly string[]).includes(mode);
 
 /** The `sandbox` key of the `--settings` JSON (FR-003). Built only here. */
 export interface ClaudeSandboxBlock {
@@ -121,7 +127,7 @@ export function claudeSandboxExit(info: { code: number | null; stderrTail: strin
 export function claudeSandboxState(i: { mode: PermissionMode | string; facts: ClaudeSandboxFacts; started?: boolean; startExit?: string; continued?: boolean; pre?: ClaudeSandboxPre }): SandboxState | null {
   if (i.mode === 'allow') return null;
   const writes = i.mode === 'ask' ? 'folders' : 'none';
-  const verified = CLAUDE_SANDBOX_VERIFIED.includes(i.facts.platform);
+  const verified = claudeSandboxVerified(i.facts.platform, i.mode);
   const pre = i.pre ?? claudeSandboxPrecheck(i.facts);
   const base = { covers: ['shell'] as SandboxState['covers'], writes, verified } as const;
   if (!pre.try) return { ...base, state: 'off', reason: sandboxReason(pre.reason) };

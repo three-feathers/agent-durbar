@@ -55,7 +55,7 @@ function simSandboxFor(i: number, kind: string, mode: string): SandboxState | un
   if (kind === 'codex') return { state: 'on', mechanism: 'vendor', covers, writes: 'none', ...(mode === 'ask' ? { approvedMayLeave: true } : {}), verified: false };
   if (i === 3 || i === 10) return { state: 'off', covers, writes, verified: false, reason: kind === 'claude' ? SIM_SBX_WIN : SIM_SBX_COPILOT }; // · Not sandboxed
   if (i === 12) return { state: 'unknown', mechanism: 'bubblewrap', covers, writes, verified: false, reason: 'Waiting for the app to confirm its sandbox at the start.' }; // · Sandbox: checking
-  return { state: 'on', mechanism: i === 13 ? 'processcontainer' : i % 2 ? 'seatbelt' : 'bubblewrap', covers, writes, verified: false };
+  return { state: 'on', mechanism: i === 13 ? 'processcontainer' : i % 2 ? 'seatbelt' : 'bubblewrap', covers, writes, ...(kind === 'copilot' && mode === 'ask' ? { approvedMayLeave: true } : {}), verified: false }; // FR-021a (K15)
 }
 type SimNote = import('../shared/notes').Note;
 type SimNotesWrote = import('../shared/notes').NotesWrote;
@@ -1134,7 +1134,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       s.perm = { ...base, file, cont, ...(sc.folders ? { folders: sc.folders } : {}) };
       s.state = 'waiting';
       // spec 087 FR-021: a Codex approval card in Ask first says what approving may mean for its sandbox (its own line, as codexPermission)
-      const sbxNote = (s.info.adapterId ?? 'copilot') === 'codex' ? (kind === 'shell' ? 'If you approve, Codex may run this outside its sandbox.' : 'If you approve, Codex writes this outside its read-only sandbox.') : undefined;
+      const sbxApp = s.info.adapterId ?? 'copilot';
+      const sbxNote = sbxApp === 'codex' ? (kind === 'shell' ? 'If you approve, Codex may run this outside its sandbox.' : 'If you approve, Codex writes this outside its read-only sandbox.') : sbxApp === 'copilot' && kind === 'shell' && s.info.permMode === 'ask' && s.info.sandbox?.state === 'on' ? 'If you approve, Copilot’s sandbox may still let this write outside the folder (seen on Linux, 2026-10-25).' : undefined; // FR-021a (K15)
       emit({ type: 'status', sessionId: sid(s), timestamp: now() - (opts.waitOld ? 120_000 : 0), status: 'needs-permission', intent, permission: { ...base, state: 'pending', ...(diff ? { diff } : {}), ...(sbxNote ? { sandboxNote: sbxNote } : {}) } });
       return false;
     }
