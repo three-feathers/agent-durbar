@@ -4377,7 +4377,14 @@ function onLiveEvent(e){
   case 'user':{addUserMsg(chat,e.text,(e.attachments||[]).map(x=>({name:String(x.path).split(/[\\/]/).pop(),img:x.kind==='image',path:x.path})));return;}
   case 'status':{
     if(!main)return;
-    if(a.compacting&&(e.status==='error'||e.status==='stopped'||(e.status==='idle'&&e.intent==='Aborted'))){a.compacting=false;updateCtxChip(a);} /* spec 015 FR-010: a stop or an error ends the mark even if the adapter sent no end */
+    /* spec 015 FR-009b: the desk mark ends when the agent goes idle, stops or fails (a compaction in the background may still run: its line stays until the result);
+       a stop or an error also ends the line, honestly: "stopped", never "failed" */
+    if(a.compacting&&(e.status==='idle'||e.status==='error'||e.status==='stopped')){
+      a.compacting=false;
+      const R=a.compRun;
+      if(e.status!=='idle'||e.intent==='Aborted'){if(R&&R.pending&&R.el){R.el.textContent='Compaction stopped.';R.pending=false;}}
+      updateCtxChip(a);scheduleRender();
+    } /* spec 015 FR-010: a stop or an error ends the mark even if the adapter sent no end */
     const gaveUp=e.status==='error'?a.gaveUp:null; a.gaveUp=null; /* spec 034 FR-019: the line of a turn that gave up after retries */
     if(e.status==='idle')refreshFolderStatus(a); /* spec 063 FR-005: a finished turn may have changed files */
     /* spec 068: the turn that hit a usage limit ends quietly (the coffee break says why); working again, Stop or the end of the session end the break */

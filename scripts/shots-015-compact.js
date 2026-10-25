@@ -130,6 +130,15 @@ module.exports = async (ctx) => {
     await ok(`document.querySelector('#panelHead [data-f=status]').textContent==='Compacting'`, 'Compacting before the stop');
     await emit({ type: 'status', sessionId: c.id, timestamp: Date.now(), status: 'idle', intent: 'Aborted' });
     await ok(`document.querySelector('#panelHead [data-f=status]').textContent!=='Compacting'`, 'a stop ends the mark');
+    await ok(`[...document.querySelectorAll('#chat .note.cline')].some(n=>n.textContent==='Compaction stopped.')`, 'a stop ends the open line honestly (stopped, not failed)');
+    // an idle ends the desk mark but not the line: the compaction may still run in the background; its result then ends the line
+    await emit({ type: 'compaction', sessionId: c.id, timestamp: Date.now(), phase: 'start', trigger: 'manual' });
+    await ok(`document.querySelector('#panelHead [data-f=status]').textContent==='Compacting'`, 'Compacting before the idle');
+    await emit({ type: 'status', sessionId: c.id, timestamp: Date.now(), status: 'idle' });
+    await ok(`document.querySelector('#panelHead [data-f=status]').textContent!=='Compacting'`, 'an idle ends the desk mark');
+    assert.ok(await js(`[...document.querySelectorAll('#chat .note.cline')].some(n=>/^Compacting the context/.test(n.textContent))&&![...document.querySelectorAll('#chat .note.cline')].some(n=>/failed/.test(n.textContent)&&n===[...document.querySelectorAll('#chat .note.cline')].pop())`), 'the line still says Compacting and nothing failed');
+    await emit({ type: 'compaction', sessionId: c.id, timestamp: Date.now(), phase: 'complete', trigger: 'manual', tokensBefore: 100000, tokensAfter: 20000, limit: 200000 });
+    await ok(`[...document.querySelectorAll('#chat .note.cline')].pop().textContent==='Context compacted (manual): 100k → 20k tokens.'`, 'the late result ends the line, with the manual trigger');
     await closeChat();
     await ok(`!(${pillIs('Clara', 'Compacting')})`, 'the office agrees');
 

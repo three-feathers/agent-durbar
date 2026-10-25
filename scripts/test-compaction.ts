@@ -128,14 +128,23 @@ const comp = (o: EventBody[]): string[] => o.filter((e) => e.type === 'compactio
     valid(o);
   }
   assert.deepStrictEqual(run([trunc({}, 'sub-1')]), [], "a helper's truncation is not shown");
-  // a compaction still open when the turn goes idle did not finish: failed (the desk must not stay on Compacting); a finished one is not failed again
+  // FR-009b: the turn's idle does NOT end an open compaction (Copilot compacts in the background): no failed event, and the original trigger reaches the complete
   const cstart = { type: 'session.compaction_start', data: { trigger: 'manual', currentTokens: 100, tokenLimit: 1000 } };
   const cdone = { type: 'session.compaction_complete', data: { success: true, preCompactionTokens: 100, postCompactionTokens: 20, tokenLimit: 1000 } };
-  assert.deepStrictEqual(comp(run([cstart, { type: 'session.idle', data: {} }])), ['start:manual:b100', 'failed:manual']);
-  assert.deepStrictEqual(comp(run([cstart, cdone, { type: 'session.idle', data: {} }])), ['start:manual:b100', 'complete:manual:b100']);
-  assert.deepStrictEqual(comp(run([{ type: 'session.idle', data: {} }])), [], 'nothing open: nothing said');
-  assert.deepStrictEqual(comp(run([cstart, { type: 'session.idle', agentId: 'sub-1', data: {} }])), ['start:manual:b100'], "a helper's idle does not end it");
-  assert.deepStrictEqual(comp(run([cstart, { type: 'session.idle', data: {} }, cdone])), ['start:manual:b100', 'failed:manual', 'complete:auto:b100'], 'a late complete after a failed still shows');
+  const idle = { type: 'session.idle', data: {} };
+  assert.deepStrictEqual(comp(run([cstart, idle, cdone])), ['start:manual:b100', 'complete:manual:b100'], 'start, idle, complete: no failure line, trigger kept');
+  assert.deepStrictEqual(comp(run([cstart, idle])), ['start:manual:b100'], 'an idle alone ends nothing in the stream');
+  assert.ok(!JSON.stringify(run([cstart, idle, { type: 'session.error', data: { errorType: 'x', message: 'm' } }])).includes('"failed"'), 'a session error after an idle does not invent a failed compaction');
+  assert.deepStrictEqual(comp(run([cstart, cdone, idle])), ['start:manual:b100', 'complete:manual:b100']);
+  assert.deepStrictEqual(comp(run([idle])), [], 'nothing open: nothing said');
+  {
+    const out: EventBody[] = [];
+    const m = new EventMapper((b) => out.push(b));
+    for (const x of [cstart, idle]) m.map(x as never);
+    m.reset();
+    m.map(cdone as never);
+    assert.deepStrictEqual(comp(out), ['start:manual:b100', 'complete:auto:b100'], 'after a reset (session end) the open compaction is forgotten, never reported as failed');
+  }
   o = run([{ type: 'session.compaction_start', data: { trigger: 'manual', currentTokens: 100, tokenLimit: 1000 } }, { type: 'session.compaction_complete', data: { success: true, preCompactionTokens: 100, postCompactionTokens: 20, tokenLimit: 1000 } }]);
   assert.deepStrictEqual(comp(o), ['start:manual:b100', 'complete:manual:b100']);
 }
