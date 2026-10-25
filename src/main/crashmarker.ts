@@ -17,7 +17,7 @@ export interface RunMarker {
   startedAt: number;
   /** The process that writes it (FR-038, review of PR 720): another Durbar on the same profile that is still running is not a crash. */
   pid?: number;
-  /** `os.uptime()` in seconds when that process began: it only grows within one boot, whatever the wall clock does. */
+  /** `os.uptime()` in seconds at that process's last write ("last seen"): it only grows within one boot, whatever the wall clock does. */
   up?: number;
   busy: BusySession[];
 }
@@ -34,6 +34,11 @@ export const MAX_SCAN = 64;
  * within a boot), so its pid, even if alive, was reused after a reboot. The margin covers rounding and a counter read on another core.
  */
 export const UPTIME_MARGIN_S = 60;
+/**
+ * While any session is busy, the last-seen uptime is rewritten this often even when nothing else changes (a long turn has no
+ * status change), so after a crash it is at most this old. An idle Durbar is not refreshed: a crash with nothing busy shows no card.
+ */
+export const REFRESH_MS = 120_000;
 /** A marker larger than this is not ours (24 ids are about 2 KB); it is never read into memory. */
 export const MAX_MARKER_BYTES = 64 * 1024;
 
@@ -155,13 +160,14 @@ export interface MarkerDeps {
   alive?: (pid: number) => boolean;
   /** `os.uptime()` in seconds (tests). */
   uptime?: () => number;
+  /** The last-seen refresh timer (tests); the default is an unref'd setTimeout, so it never keeps the process alive. */
+  setRefresh?: (fn: () => void, ms: number) => Timer;
   setTimer?: (fn: () => void, ms: number) => Timer;
   clearTimer?: (t: Timer) => void;
 }
 
 export class CrashMarker {
   private busy: BusySession[] = [];
-  private written = '';
   private timer: Timer | undefined;
   private active = false;
   private readonly now: () => number;
@@ -170,7 +176,9 @@ export class CrashMarker {
   private readonly pid: number;
   private readonly alive: (pid: number) => boolean;
   private readonly uptime: () => number;
-  private startedUp = 0;
+  private writtenCore = '';
+  private refresh: Timer | undefined;
+  private readonly setRefresh: (fn: () => void, ms: number) => Timer;
   /** This process's own marker file. */
   readonly file: string;
   private startedAt = 0;
@@ -183,6 +191,11 @@ export class CrashMarker {
     this.pid = deps.pid ?? process.pid;
     this.alive = deps.alive ?? ((p) => pidAlive(p));
     this.uptime = deps.uptime ?? (() => os.uptime());
+    this.setRefresh = deps.setRefresh ?? ((fn, ms) => {
+      const t = setTimeout(fn, ms);
+      (t as { unref?: () => void }).unref?.();
+      return t;
+    });
     this.file = path.join(dir, markerName(this.pid));
   }
 
@@ -233,9 +246,8 @@ export class CrashMarker {
     }
     this.active = true;
     this.startedAt = this.now();
-    this.startedUp = Math.round(upNow);
     this.busy = [];
-    this.written = '';
+    this.writtenCore = '';
     this.write();
     const clean = cleanBusy(busy);
     return { unclean, marker: unclean ? { version: 1, startedAt, busy: clean } : null };
@@ -258,6 +270,10 @@ export class CrashMarker {
     if (this.timer !== undefined) {
       this.clearTimer(this.timer);
       this.timer = undefined;
+    }
+    if (this.refresh !== undefined) {
+      clearTimeout(this.refresh);
+      this.refresh = undefined;
     }
     try {
       fs.rmSync(this.file, { force: true });
@@ -283,18 +299,33 @@ export class CrashMarker {
     if (this.active) this.write();
   }
 
-  private write(): void {
-    const text = serializeMarker({ version: 1, startedAt: this.startedAt, pid: this.pid, up: this.startedUp, busy: this.busy });
-    if (text === this.written && fs.existsSync(this.file)) return; // the same set is not written again, unless something removed the file
+  /**
+   * Writes the marker with the uptime now (last seen). The same content (all but `up`) is not written again, unless something removed
+   * the file or `force` (the refresh while sessions are busy).
+   */
+  private write(force = false): void {
+    const core = serializeMarker({ version: 1, startedAt: this.startedAt, pid: this.pid, busy: this.busy });
+    if (!force && core === this.writtenCore && fs.existsSync(this.file)) return this.armRefresh();
+    const text = serializeMarker({ version: 1, startedAt: this.startedAt, pid: this.pid, up: Math.round(this.uptime()), busy: this.busy });
     try {
       fs.mkdirSync(this.dir, { recursive: true });
       const tmp = `${this.file}.tmp`;
       fs.writeFileSync(tmp, text, { mode: 0o600 });
       fs.renameSync(tmp, this.file);
-      this.written = text;
+      this.writtenCore = core;
     } catch {
       /* read-only profile, disk full: keep working without it */
     }
+    this.armRefresh();
+  }
+
+  /** While a session is busy, the last-seen uptime is refreshed every REFRESH_MS (one timer, unref'd); none while all are idle. */
+  private armRefresh(): void {
+    if (!this.active || this.busy.length === 0 || this.refresh !== undefined) return;
+    this.refresh = this.setRefresh(() => {
+      this.refresh = undefined;
+      if (this.active && this.busy.length) this.write(true);
+    }, REFRESH_MS);
   }
 }
 

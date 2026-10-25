@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CrashMarker, UPTIME_MARGIN_S, MAX_BUSY, MAX_SCAN, pidAlive, MAX_MARKER_BYTES, cleanBusy, installCrashMarker, interruptedFrom, markerName, parseMarker, readMarkerFile, serializeMarker } from '../src/main/crashmarker';
+import { CrashMarker, REFRESH_MS, UPTIME_MARGIN_S, MAX_BUSY, MAX_SCAN, pidAlive, MAX_MARKER_BYTES, cleanBusy, installCrashMarker, interruptedFrom, markerName, parseMarker, readMarkerFile, serializeMarker } from '../src/main/crashmarker';
 
 const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
@@ -238,6 +238,62 @@ bounded.begin();
 bounded.clear();
 assert.strictEqual(fs.readdirSync(sub).length, 10, `at most ${MAX_SCAN} files per start`);
 for (const n of fs.readdirSync(sub)) fs.rmSync(path.join(sub, n));
+
+// ---- last-seen uptime (round 4): written at every write, refreshed while sessions are busy, so a run that started soon after
+// a boot and crashed hours later is still told apart from the next boot
+{
+  let upv = 60; // Durbar opened a minute after login
+  const refreshes: Array<{ fn: () => void; ms: number }> = [];
+  const q: Array<() => void> = [];
+  const OLD = 4100;
+  const run = new CrashMarker(sub, { ...deps, pid: OLD, uptime: () => upv, setTimer: (fn: () => void) => { q.push(fn); return q.length as never; }, setRefresh: (fn, ms) => { refreshes.push({ fn, ms }); return refreshes.length as never; } });
+  run.begin();
+  const f = path.join(sub, markerName(OLD));
+  const upIn = (): number | undefined => parseMarker(fs.readFileSync(f, 'utf8'))?.up;
+  assert.strictEqual(upIn(), 60, 'the uptime at start');
+  assert.strictEqual(refreshes.length, 0, 'no refresh while nothing is busy');
+  upv = 65;
+  run.setBusy([{ id: A, adapterId: 'copilot' }]);
+  q.shift()!();
+  assert.strictEqual(upIn(), 65, 'a busy change writes the uptime now');
+  assert.strictEqual(refreshes.length, 1, 'one refresh is armed while a session is busy');
+  assert.strictEqual(refreshes[0]!.ms, REFRESH_MS);
+  const mt = fs.statSync(f).mtimeMs;
+  upv = 70;
+  run.setBusy([{ id: A, adapterId: 'copilot' }]);
+  q.shift()!();
+  assert.strictEqual(upIn(), 65, 'the same busy set is not rewritten for a new uptime alone');
+  assert.strictEqual(fs.statSync(f).mtimeMs, mt);
+  assert.strictEqual(refreshes.length, 1, 'and no second refresh timer');
+  // a long turn with no status change: the refresh keeps the last-seen uptime fresh
+  for (let k = 1; k <= 30; k++) { upv = 65 + k * (REFRESH_MS / 1000); refreshes.shift()!.fn(); }
+  assert.strictEqual(upIn(), 65 + 30 * (REFRESH_MS / 1000), 'the refresh rewrote the uptime');
+  assert.strictEqual(refreshes.length, 1, 'and re-armed itself once');
+  // power loss now (no clear), reboot; the next Durbar opens 90 s into the new boot and the old pid belongs to another program
+  const next = new CrashMarker(sub, { ...deps, pid: 4200, alive: (pp) => pp === OLD, uptime: () => 90 });
+  const got = next.begin();
+  assert.deepStrictEqual(got.marker?.busy, [{ id: A, adapterId: 'copilot' }], 'a long run, a crash, a reboot, an early start, the old pid alive: the card shows');
+  assert.ok(!fs.existsSync(f), 'and the old marker is removed');
+  next.clear();
+  // the same, while it is the same boot (the old Durbar still runs): its last-seen uptime is never above the uptime now
+  upv = 200;
+  const a1 = new CrashMarker(sub, { ...deps, pid: OLD, uptime: () => upv, setRefresh: (fn) => { refreshes.push({ fn, ms: 0 }); return 0 as never; } });
+  a1.begin();
+  a1.setBusy([{ id: A, adapterId: 'copilot' }]);
+  a1.flush();
+  upv = 5000;
+  refreshes.pop()!.fn();
+  const b1 = new CrashMarker(sub, { ...deps, pid: 4300, alive: (pp) => pp === OLD, uptime: () => upv });
+  assert.deepStrictEqual(b1.begin(), { unclean: false, marker: null }, 'a running Durbar\'s refreshed marker is never judged rebooted');
+  b1.clear();
+  // all idle: no refresh is armed again
+  refreshes.length = 0;
+  a1.setBusy([]);
+  a1.flush();
+  assert.strictEqual(refreshes.length, 0, 'an idle Durbar is not refreshed');
+  a1.clear();
+  assert.ok(!fs.existsSync(f));
+}
 
 // ---- main.ts wiring (review of #720 item 1): installCrashMarker, and main.ts calls it with the simulator flag and both exit hooks
 const hooks: Record<string, Array<() => void>> = { willQuit: [], exit: [] };
