@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { BOOT_MARGIN_MS, CrashMarker, MAX_BUSY, MAX_SCAN, pidAlive, MAX_MARKER_BYTES, cleanBusy, installCrashMarker, interruptedFrom, markerName, parseMarker, readMarkerFile, serializeMarker } from '../src/main/crashmarker';
+import { CrashMarker, UPTIME_MARGIN_S, MAX_BUSY, MAX_SCAN, pidAlive, MAX_MARKER_BYTES, cleanBusy, installCrashMarker, interruptedFrom, markerName, parseMarker, readMarkerFile, serializeMarker } from '../src/main/crashmarker';
 
 const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
@@ -37,7 +37,7 @@ assert.deepStrictEqual(parseMarker(serializeMarker({ version: 1, startedAt: 5.4,
 // ---- the file: first run, busy changes, clean exit, crash
 const timers: Array<() => void> = [];
 let cleared = 0;
-const deps = { pid: PID, alive: dead, bootTime: () => 0, now: () => 1000, setTimer: (fn: () => void) => { timers.push(fn); return timers.length as never; }, clearTimer: () => { cleared++; } };
+const deps = { pid: PID, alive: dead, uptime: () => 5000, now: () => 1000, setTimer: (fn: () => void) => { timers.push(fn); return timers.length as never; }, clearTimer: () => { cleared++; } };
 const m1 = new CrashMarker(sub, deps);
 assert.strictEqual(m1.file, file, 'the file is named after this process');
 let r = m1.begin();
@@ -45,7 +45,7 @@ assert.deepStrictEqual(r, { unclean: false, marker: null }, 'no file: first run,
 assert.ok(fs.existsSync(file), 'the marker exists while running');
 if (process.platform !== 'win32') assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600, 'mode 0600');
 assert.deepStrictEqual(fs.readdirSync(sub), [markerName(PID)], 'no temp file is left behind');
-assert.deepStrictEqual(parseMarker(fs.readFileSync(file, 'utf8')), { version: 1, startedAt: 1000, pid: PID, busy: [] });
+assert.deepStrictEqual(parseMarker(fs.readFileSync(file, 'utf8')), { version: 1, startedAt: 1000, pid: PID, up: 5000, busy: [] });
 
 m1.setBusy([{ id: A, adapterId: 'copilot' }]);
 m1.setBusy([{ id: A, adapterId: 'copilot' }, { id: B, adapterId: 'claude' }]);
@@ -169,18 +169,30 @@ assert.strictEqual(pidAlive(5, err('EPERM')), true, 'EPERM: it runs, as someone 
 assert.strictEqual(pidAlive(5, err('ESRCH')), false, 'ESRCH: no such process');
 assert.strictEqual(pidAlive(process.pid), true, 'this process, for real');
 
-// ---- a power loss: pids start again, so a marker from before this boot is dead whatever its pid says (round 2, item 1)
-const BOOT = 10_000_000;
-fs.writeFileSync(path.join(sub, markerName(77)), serializeMarker({ version: 1, startedAt: BOOT - BOOT_MARGIN_MS - 1, pid: 77, busy: [{ id: A, adapterId: 'copilot' }] }));
-const afterReboot = new CrashMarker(sub, { ...deps, pid: 500, alive: () => true, bootTime: () => BOOT });
-assert.deepStrictEqual(afterReboot.begin().marker?.busy, [{ id: A, adapterId: 'copilot' }], 'written before this boot: a crash, although pid 77 now runs (some other program)');
+// ---- a power loss: pids start again (round 2, item 1), told apart by uptime, never by the wall clock (round 3, item 2)
+const UP = 300; // this boot is 5 minutes old
+const mk = (pid: number, up: number | undefined, startedAt = 1): void => fs.writeFileSync(path.join(sub, markerName(pid)), serializeMarker({ version: 1, startedAt, pid, ...(up !== undefined ? { up } : {}), busy: [{ id: A, adapterId: 'copilot' }] }));
+mk(77, UP + UPTIME_MARGIN_S + 1);
+const afterReboot = new CrashMarker(sub, { ...deps, pid: 500, alive: () => true, uptime: () => UP });
+assert.deepStrictEqual(afterReboot.begin().marker?.busy, [{ id: A, adapterId: 'copilot' }], 'it recorded more uptime than this boot has: an earlier boot, a crash, although pid 77 now runs (some other program)');
 assert.ok(!fs.existsSync(path.join(sub, markerName(77))), 'and its file is removed');
 afterReboot.clear();
-fs.writeFileSync(path.join(sub, markerName(78)), serializeMarker({ version: 1, startedAt: BOOT - BOOT_MARGIN_MS + 1000, pid: 78, busy: [{ id: A, adapterId: 'copilot' }] }));
-const sameBoot = new CrashMarker(sub, { ...deps, pid: 500, alive: (p) => p === 78, bootTime: () => BOOT });
-assert.deepStrictEqual(sameBoot.begin(), { unclean: false, marker: null }, 'within the margin of this boot and its pid runs: another live Durbar');
-sameBoot.clear();
+// a running Durbar is never offered or removed, whatever the wall clock says: its startedAt is days back (clock set forward), its uptime fits this boot
+for (const [up, why] of [[UP - 200, 'started earlier in this boot'], [UP + UPTIME_MARGIN_S, 'inside the margin'], [undefined, 'a marker without uptime']] as const) {
+  mk(78, up, 1);
+  const other = new CrashMarker(sub, { ...deps, pid: 500, alive: (p) => p === 78, uptime: () => UP, now: () => 9e12 });
+  assert.deepStrictEqual(other.begin(), { unclean: false, marker: null }, `a live pid, ${why}: another Durbar, not offered`);
+  assert.ok(fs.existsSync(path.join(sub, markerName(78))), `${why}: and its marker is left alone`);
+  other.clear();
+}
 fs.rmSync(path.join(sub, markerName(78)));
+// a dead pid is a crash whatever its uptime says
+mk(79, 1);
+const deadOne = new CrashMarker(sub, { ...deps, pid: 500, alive: () => false, uptime: () => UP });
+assert.strictEqual(deadOne.begin().unclean, true, 'a dead pid of this boot: a crash');
+deadOne.clear();
+assert.strictEqual(parseMarker('{"up":-1}')?.up, undefined, 'a negative uptime is dropped');
+assert.strictEqual(parseMarker('{"up":"9"}')?.up, undefined, 'so is a string');
 
 // ---- only our own names (round 2, item 3): other files are never read or removed
 const strangers = ['durbar-running.abc.json', 'durbar-running.0.json', 'durbar-running.012.json', 'xdurbar-running.12.json', 'durbar-running.12.json.bak', 'durbar-running.12345678901.json', 'durbar-running..json'];
@@ -192,19 +204,33 @@ assert.deepStrictEqual(fs.readdirSync(sub).sort(), [...strangers].sort(), 'and e
 for (const n of strangers) fs.rmSync(path.join(sub, n));
 
 // ---- temp files a crash inside write() left behind (round 2, item 4)
+let alive2 = true;
 fs.writeFileSync(path.join(sub, markerName(31) + '.tmp'), '{"version":1');
 fs.writeFileSync(path.join(sub, markerName(32) + '.tmp'), '{"version":1');
 fs.writeFileSync(path.join(sub, markerName(33) + '.tmp'), '{"version":1');
 fs.writeFileSync(path.join(sub, markerName(PID) + '.tmp'), '{"version":1');
-const sweeper = new CrashMarker(sub, { ...deps, alive: (p) => p === 32 || p === 33, bootTime: () => fs.statSync(path.join(sub, markerName(32) + '.tmp')).mtimeMs });
+const sweeper = new CrashMarker(sub, { ...deps, alive: (p) => p === 32 || p === 33 });
 const rs = sweeper.begin();
 assert.strictEqual(rs.unclean, false, 'a temp file alone is not a crash marker');
 assert.deepStrictEqual(fs.readdirSync(sub).sort(), [markerName(32) + '.tmp', markerName(33) + '.tmp', markerName(PID)].sort(), 'a dead process\'s temp file and our own pid\'s old one are removed; a live one\'s write in progress stays');
 sweeper.clear();
-const later = new CrashMarker(sub, { ...deps, alive: (p) => p === 32 || p === 33, bootTime: () => Date.now() + BOOT_MARGIN_MS + 60_000 });
+const later = new CrashMarker(sub, { ...deps, alive: (p) => p === 32 || p === 33, now: () => 9e12 });
 later.begin();
 later.clear();
-assert.deepStrictEqual(fs.readdirSync(sub), [], 'after a reboot a temp file is removed whatever its pid says');
+assert.deepStrictEqual(fs.readdirSync(sub).sort(), [markerName(32) + '.tmp', markerName(33) + '.tmp'], 'a live pid\'s temp file stays whatever the clock says (round 3: removing a running Durbar\'s write is worse than a small stray file)');
+alive2 = false;
+const after2 = new CrashMarker(sub, { ...deps, alive: () => alive2 });
+after2.begin();
+after2.clear();
+assert.deepStrictEqual(fs.readdirSync(sub), [], 'once those processes are gone, their temp files go');
+// only our own temp names (round 3, item 1): near misses are never removed, even with every pid dead
+const tmpStrangers = ['xdurbar-running.12.json.tmp', 'durbar-running.12.json.tmp.bak', 'durbar-running.012.json.tmp', 'durbar-running.0.json.tmp', 'durbar-running.abc.json.tmp', 'durbar-running.12345678901.json.tmp', 'durbar-running..json.tmp', 'durbar-running.12.tmp', 'durbar-running.12.json.tmpx'];
+for (const n of tmpStrangers) fs.writeFileSync(path.join(sub, n), 'x');
+const tmpPicky = new CrashMarker(sub, deps);
+assert.strictEqual(tmpPicky.begin().unclean, false);
+tmpPicky.clear();
+assert.deepStrictEqual(fs.readdirSync(sub).sort(), [...tmpStrangers].sort(), 'every near-miss temp name is left on disk');
+for (const n of tmpStrangers) fs.rmSync(path.join(sub, n));
 // bounded: at most MAX_SCAN of our files are looked at in one start
 for (let i = 1; i <= MAX_SCAN + 10; i++) fs.writeFileSync(path.join(sub, markerName(1000 + i) + '.tmp'), '');
 const bounded = new CrashMarker(sub, deps);

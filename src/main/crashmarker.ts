@@ -17,6 +17,8 @@ export interface RunMarker {
   startedAt: number;
   /** The process that writes it (FR-038, review of PR 720): another Durbar on the same profile that is still running is not a crash. */
   pid?: number;
+  /** `os.uptime()` in seconds when that process began: it only grows within one boot, whatever the wall clock does. */
+  up?: number;
   busy: BusySession[];
 }
 
@@ -27,10 +29,11 @@ export const markerName = (pid: number): string => `durbar-running.${pid}.json`;
 export const TMP_RE = /^durbar-running\.([1-9][0-9]{0,9})\.json\.tmp$/;
 /** At most this many marker and temp files are looked at in one start (a profile folder holds one per Durbar process). */
 export const MAX_SCAN = 64;
-/** A marker written more than this before the current boot is from an earlier boot (the boot time from uptime is approximate). */
-export const BOOT_MARGIN_MS = 5 * 60_000;
-/** When this computer started, in ms since the epoch. */
-export const bootTime = (): number => Date.now() - os.uptime() * 1000;
+/**
+ * A marker whose recorded uptime is more than this many seconds above the uptime now cannot be from this boot (uptime only grows
+ * within a boot), so its pid, even if alive, was reused after a reboot. The margin covers rounding and a counter read on another core.
+ */
+export const UPTIME_MARGIN_S = 60;
 /** A marker larger than this is not ours (24 ids are about 2 KB); it is never read into memory. */
 export const MAX_MARKER_BYTES = 64 * 1024;
 
@@ -68,11 +71,12 @@ export function parseMarker(text: string): RunMarker | null {
   const o = j as Record<string, unknown>;
   const startedAt = typeof o.startedAt === 'number' && Number.isFinite(o.startedAt) ? Math.round(o.startedAt) : 0;
   const pid = typeof o.pid === 'number' && Number.isInteger(o.pid) && o.pid > 0 ? o.pid : undefined;
-  return { version: 1, startedAt, ...(pid ? { pid } : {}), busy: cleanBusy(o.busy) };
+  const up = typeof o.up === 'number' && Number.isFinite(o.up) && o.up >= 0 ? Math.round(o.up) : undefined;
+  return { version: 1, startedAt, ...(pid ? { pid } : {}), ...(up !== undefined ? { up } : {}), busy: cleanBusy(o.busy) };
 }
 
 export function serializeMarker(m: RunMarker): string {
-  return JSON.stringify({ version: 1, startedAt: m.startedAt, ...(m.pid ? { pid: m.pid } : {}), busy: cleanBusy(m.busy) });
+  return JSON.stringify({ version: 1, startedAt: m.startedAt, ...(m.pid ? { pid: m.pid } : {}), ...(m.up !== undefined ? { up: m.up } : {}), busy: cleanBusy(m.busy) });
 }
 
 /** Reads a marker file with the size checked first (fstat), so a huge file is never read. Undefined: no file; null: there, but not a marker. */
@@ -149,8 +153,8 @@ export interface MarkerDeps {
   pid?: number;
   /** Whether another process runs (tests). */
   alive?: (pid: number) => boolean;
-  /** When this computer started, ms since the epoch (tests). */
-  bootTime?: () => number;
+  /** `os.uptime()` in seconds (tests). */
+  uptime?: () => number;
   setTimer?: (fn: () => void, ms: number) => Timer;
   clearTimer?: (t: Timer) => void;
 }
@@ -165,7 +169,8 @@ export class CrashMarker {
   private readonly clearTimer: (t: Timer) => void;
   private readonly pid: number;
   private readonly alive: (pid: number) => boolean;
-  private readonly bootTime: () => number;
+  private readonly uptime: () => number;
+  private startedUp = 0;
   /** This process's own marker file. */
   readonly file: string;
   private startedAt = 0;
@@ -177,7 +182,7 @@ export class CrashMarker {
     this.clearTimer = deps.clearTimer ?? ((t) => clearTimeout(t));
     this.pid = deps.pid ?? process.pid;
     this.alive = deps.alive ?? ((p) => pidAlive(p));
-    this.bootTime = deps.bootTime ?? bootTime;
+    this.uptime = deps.uptime ?? (() => os.uptime());
     this.file = path.join(dir, markerName(this.pid));
   }
 
@@ -196,7 +201,7 @@ export class CrashMarker {
     let unclean = false;
     let startedAt = 0;
     const busy: BusySession[] = [];
-    const boot = this.bootTime();
+    const upNow = this.uptime();
     let scanned = 0;
     for (const name of names.sort()) {
       const m = MARKER_RE.exec(name);
@@ -207,20 +212,17 @@ export class CrashMarker {
       const full = path.join(this.dir, name);
       if (t) {
         // a temp file a crash inside write() left behind; a live process's own temp file is its write in progress
-        let mtime = 0;
-        try {
-          mtime = fs.statSync(full).mtimeMs;
-        } catch {
-          mtime = 0;
-        }
-        if (pid === this.pid || (mtime > 0 && mtime < boot - BOOT_MARGIN_MS) || !this.alive(pid)) this.remove(full);
+        // (a live pid's temp file stays, even one a reused pid hides: a small file nobody reads; removing a live Durbar's write in progress is worse)
+        if (pid === this.pid || !this.alive(pid)) this.remove(full);
         continue;
       }
       const found = readMarkerFile(full);
       if (found === undefined) continue;
-      // A live pid is another Durbar on this profile, unless the marker was written before this boot: after a power loss
-      // pids start again, and the dead run's pid may now belong to some other program.
-      const earlierBoot = !!found && found.startedAt > 0 && found.startedAt < boot - BOOT_MARGIN_MS;
+      // A live pid is another Durbar on this profile: it is never offered or removed (waking a running Durbar's sessions is worse
+      // than a missing card), unless the marker is provably from an earlier boot: it recorded more uptime than this machine has now.
+      // After a power loss pids start again and the dead run's pid may belong to another program; uptime, unlike the wall clock,
+      // cannot be set forward, so a clock change never makes a running Durbar look dead.
+      const earlierBoot = !!found && found.up !== undefined && found.up > upNow + UPTIME_MARGIN_S;
       if (pid !== this.pid && !earlierBoot && this.alive(pid)) continue;
       unclean = true;
       if (found) {
@@ -231,6 +233,7 @@ export class CrashMarker {
     }
     this.active = true;
     this.startedAt = this.now();
+    this.startedUp = Math.round(upNow);
     this.busy = [];
     this.written = '';
     this.write();
@@ -281,7 +284,7 @@ export class CrashMarker {
   }
 
   private write(): void {
-    const text = serializeMarker({ version: 1, startedAt: this.startedAt, pid: this.pid, busy: this.busy });
+    const text = serializeMarker({ version: 1, startedAt: this.startedAt, pid: this.pid, up: this.startedUp, busy: this.busy });
     if (text === this.written && fs.existsSync(this.file)) return; // the same set is not written again, unless something removed the file
     try {
       fs.mkdirSync(this.dir, { recursive: true });
