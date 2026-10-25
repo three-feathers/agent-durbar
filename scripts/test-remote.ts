@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { allowedRemoteUrl, cleanRemoteError } from '../src/shared/remote';
-import { createRemoteOps, NO_REMOTE, NOT_IN_ALLOW_ALL, NOT_RUNNING } from '../src/main/remoteops';
+import { createRemoteOps, DOOR_CLOSED, NO_REMOTE, NOT_IN_ALLOW_ALL, NOT_RUNNING } from '../src/main/remoteops';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
 import type { FakeSession } from './fakes/copilot-sdk';
 import type { AgentAdapter } from '../src/adapters/types';
@@ -211,6 +211,19 @@ async function main(): Promise<void> {
     await ops.release('a');
     assert.deepStrictEqual(calls, [true, false], 'a second release does nothing');
     assert.ok((await ops.setRemote('a', false)).ok, 'turning off needs no confirmation');
+  }
+  // ---- spec 054 FR-040 (spec 017 FR-018, owner 2026-10-23): a door the user closed refuses remote control; turning it off still works
+  {
+    const calls: boolean[] = [];
+    let closed = true, asked = 0;
+    const ad = { capabilities: { remote: true }, isLive: () => true, setRemote: async (_id: string, on: boolean) => { calls.push(on); return { ok: true, on }; } } as unknown as AgentAdapter;
+    const ops = createRemoteOps({ known: () => true, adapterOf: () => ad, open: async () => undefined, modeOf: () => 'ask', confirm: async () => (asked++, true), doorClosed: () => closed });
+    assert.deepStrictEqual(await ops.setRemote('a', true), { ok: false, error: DOOR_CLOSED }, 'refused while the door is closed');
+    assert.deepStrictEqual([calls, asked], [[], 0], 'refused before the confirmation and before the adapter');
+    assert.ok((await ops.setRemote('a', false)).ok, 'turning it off is allowed while closed');
+    closed = false;
+    assert.ok((await ops.setRemote('a', true)).ok, 'an open door allows it again (with its confirmation)');
+    assert.strictEqual(asked, 1);
   }
 
   fs.rmSync(dir, { recursive: true, force: true });
