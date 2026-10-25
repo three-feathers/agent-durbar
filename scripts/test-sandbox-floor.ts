@@ -166,6 +166,8 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.deepStrictEqual(copilotPathReadDirs(['/users/ME', '/opt/homebrew/bin'], '/Users/me', 'darwin'), ['/opt/homebrew/bin'], 'macOS compares case-insensitively');
   assert.deepStrictEqual(copilotPathReadDirs(['/HOME/ME'], '/home/me', 'linux'), ['/HOME/ME'], 'Linux compares case-sensitively');
   assert.deepStrictEqual(copilotPathReadDirs(['/srv', '/srv/users', '/srv/users/me', '/srv/users/me/bin', '/srv/tools/bin'], '/srv/users/me', 'linux'), ['/srv/users/me/bin', '/srv/tools/bin'], 'a home outside /home: every ancestor of it is dropped');
+  const winDenied = copilotSandboxConfig({ mode: 'ask', roots: ['C:\\w'], pathDirs: [], host: FULL_HOST, home: 'C:\\Users\\me', platform: 'linux' })!.userPolicy.filesystem.deniedPaths;
+  assert.deepStrictEqual(winDenied, ['C:\\w\\.git\\hooks', 'C:\\w\\.git\\config', 'C:\\Users\\me\\.ssh', 'C:\\Users\\me\\.aws', 'C:\\Users\\me\\.config\\gh'], 'protected paths are joined in the form of their root');
   ok('FR-004: PATH folders: home, its ancestors and any profile root dropped');
 }
 

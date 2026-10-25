@@ -45,6 +45,8 @@ export interface CopilotSandboxConfig {
   allowDevToolAccess: false;
 }
 
+/** Joins in the form of the base path (a Windows-form path with `\`, any other with `/`), whatever platform the facts name. */
+const joinAs = (base: string, ...parts: string[]): string => (/^[A-Za-z]:[\\/]/.test(base) || base.startsWith('\\\\') ? path.win32 : path.posix).join(base, ...parts);
 const fold = (p: string, platform: string): string => (platform === 'win32' || platform === 'darwin' ? p.toLowerCase() : p);
 
 /**
@@ -92,12 +94,11 @@ export function copilotPathReadDirs(pathDirs: readonly unknown[], home: string, 
 export function copilotSandboxConfig(i: { mode: PermissionMode | string; roots: readonly string[]; pathDirs: readonly unknown[]; host: CopilotHostSupport; home: string; platform: string }): CopilotSandboxConfig | undefined {
   if (i.mode === 'allow') return undefined;
   const ask = i.mode === 'ask';
-  const api = i.platform === 'win32' ? path.win32 : path.posix;
   const tools = copilotPathReadDirs(i.pathDirs, i.home, i.platform);
   const denied = i.host.capabilities.includes('denied_paths');
   const h = normalizeRoot(i.home);
   const deniedPaths = denied
-    ? [...(ask ? i.roots.flatMap((r) => [api.join(r, '.git', 'hooks'), api.join(r, '.git', 'config')]) : []), ...(h ? [api.join(h.path, '.ssh'), api.join(h.path, '.aws'), api.join(h.path, '.config', 'gh')] : [])]
+    ? [...(ask ? i.roots.flatMap((r) => [joinAs(r, '.git', 'hooks'), joinAs(r, '.git', 'config')]) : []), ...(h ? [joinAs(h.path, '.ssh'), joinAs(h.path, '.aws'), joinAs(h.path, '.config', 'gh')] : [])]
     : undefined;
   return {
     enabled: true,

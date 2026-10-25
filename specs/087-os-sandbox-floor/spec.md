@@ -379,7 +379,8 @@ Built on branch `087-os-sandbox-build`, simulator and fakes only (zero credits).
   the first send) and at each mode switch; *Sandboxed* after `options.update` resolved (the tooltip still says not verified, K8). The
   home folder for FR-004 is `os.userInfo().homedir` (spec 076 FR-172), Windows and macOS compared case-insensitively.
   `getHostSupport()` and the update each have a 15 s limit: no answer counts as refused (the first send is held, fail closed); a host
-  check that failed is not kept, so the next session asks again (a real `supported: false` answer is kept for the runtime's life).
+  check that failed is not kept, so the next session asks again (a real `supported: false` answer is kept for the runtime's life). Protected
+  paths are joined in the form of their root (CI on Windows, PR #733).
 - **Managed (US4 AC2).** No real surface reports a managed floor (FR-008, K12), so only the simulator shows *Sandboxed (managed)*.
 - **Policy (FR-019).** `requireOsSandboxFrom(layers)` is the rule; spec 076 has no reader yet, so the app passes no layer (`[KNOWN GAP]`).
 - **Settings.** *Always continue* is stored as `sandboxAlwaysContinue` (app ids only) in the settings file and undone from the app's
