@@ -230,3 +230,7 @@ status: **built** 2026-10-17 (issue #20): simulator and unit tests, `scripts/sho
 - `[KNOWN GAP]` Not run on a real session of any agent app: no retry was provoked (it needs a failing or rate-limited model API). The shapes are `read:` only (above).
 - `[KNOWN GAP]` Claude Code's `api_retry` carries no sub-agent id, so a helper's retries (if Claude Code reports them) show on its main agent.
 - `[KNOWN GAP]` The Durbar MCP server's agent state (spec 041) does not report *Retrying* (it does not report *Failing* either).
+
+### 2026-10-25: the driver after specs 068 and 001 (issue #748)
+
+- `[KNOWN GAP]` `scripts/shots-034.js` passes again by hand (it had been failing, unrun) but is not in the UI suite (about 124 s, see `NOT_IN_SUITE` in `scripts/ui-suite.js`, spec 021 FR-057). The faint figure at the credit limit and the impatient agent tapping at its desk can no longer be shown in the simulator: Durbar's own limit is a coffee break (spec 068 FR-005) and a waiting agent walks to the Boss (spec 001 FR-034). The driver asserts the break instead, and the tap only for an impatient agent at its desk; `test:mood` still covers `troubleOf` for both.

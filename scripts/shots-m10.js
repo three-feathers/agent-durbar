@@ -91,8 +91,9 @@ module.exports = async (ctx) => {
     await click('#stage [data-id="sim-1"]'); await ctx.sleep(700);
     await click('#mcpBtn'); await ctx.sleep(500);
     const dlg = await text('#scrDlg');
-    assert.match(dlg, /Copilot CLI list/);
-    assert.match(dlg, /this folder only/);
+    assert.match(dlg, /Copilot/, "the agent apps' own list names its app (spec 069 source chips)");
+    assert.match(dlg, /Durbar folder/, "a folder's extras carry the Durbar folder chip");
+    assert.match(dlg, /Here you can only switch one off for Ada/, 'the dialog says what it can do here');
     assert.match(dlg, /playwright/);
     await shot('agent-mcp', w, h);
     await closeDlg(); await ctx.sleep(200);
