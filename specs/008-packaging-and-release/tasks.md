@@ -119,3 +119,7 @@
 ## 2026-10-24: macOS nightly UI regression (#683)
 
 - [x] T107: correct the macOS-only native text-editing assertions in `scripts/shots-074-navigator.js`: synthetic ⌘⌫ and ⌘A must reach the editable field without being prevented or closing the chat; verify normal Backspace edits text, while Windows/Linux continue to assert Ctrl+Backspace deletes a word and Ctrl+A selects all. Add the platform limitation to `docs/agent-notes.md` and a changelog fragment. Done: the navigator driver passes locally on macOS at both sizes, the planted app-interception mutation fails it, and `npm run typecheck && npm run build && npm test` pass. A post-merge nightly UI run on `main` remains required to close issue #683.
+
+## 2026-10-25: fold branch names without dots
+
+- [x] T108: fold branch name `NNN-fold-alpha-N` in `scripts/release-notes.js` (`foldSlug`) and its test in `scripts/test-changelog.js`; docs in `changelog.d/README.md` and `docs/collaboration.md`; notes on the historical plans of 082, 086, 088; `docs/agent-notes.md` entry [FR-127]
