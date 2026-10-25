@@ -10,7 +10,7 @@
  */
 const assert = require('assert');
 const path = require('path');
-const { helpers } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || "/tmp";
 module.exports = async (ctx) => {
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
@@ -20,7 +20,7 @@ module.exports = async (ctx) => {
   const open = async (val) => {
     await ctx.js(`document.getElementById('foldersBtn').click()`); await until(`!!document.querySelector('[data-fp="new"]')`, 'the folders menu');
     await ctx.js(`document.querySelector('[data-fp="new"]').click()`);
-    await until(`(()=>{const x=document.getElementById('sdAgent');return !!x&&x.options.length===4&&x.value===${JSON.stringify(val)}})()`, `the agent picker to show ${JSON.stringify(val)}`);
+    await until(`(()=>{const x=document.getElementById('sdAgent');return !!x&&x.options.length===4&&x.value===${jsLiteral(val)}})()`, `the agent picker to show ${JSON.stringify(val)}`);
   };
   const closed = () => until(`!document.getElementById('sdGo')`, 'the dialog to close');
   const state = () => ctx.js(`(()=>{const l=document.getElementById('sdAgentL');return {shown:!!l&&!l.hidden,val:document.getElementById('sdAgent')&&document.getElementById('sdAgent').value,chk:!!document.getElementById('sdAgentDef')&&document.getElementById('sdAgentDef').checked,opts:[...document.querySelectorAll('#sdAgent option')].length}})()`);

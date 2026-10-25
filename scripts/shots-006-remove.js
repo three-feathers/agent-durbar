@@ -43,7 +43,7 @@ module.exports = async (ctx) => {
     // Remove
     await js(openMenu); await until(menuItems, 'the folder menu again');
     await js(`(window.confirm=()=>true,true)`);
-    await js(`document.querySelector('#modeMenu [data-fact="rm"]').click()`); await until(`document.querySelectorAll('#stage .room [data-door]').length===${before.length - 1}`, 'the folder to go');
+    await js(`document.querySelector('#modeMenu [data-fact="rm"]').click()`); await until(`document.querySelectorAll('#stage .room [data-door]').length===${jsLiteral(before.length - 1)}`, 'the folder to go');
     const after = await rooms();
     assert.ok(!after.includes(target) && after.length === before.length - 1, `the folder is removed (${before.length} -> ${after.length})`);
     // one agent per folder: Remove folder in the chat header
@@ -53,7 +53,7 @@ module.exports = async (ctx) => {
     assert.ok(await js(`!!document.getElementById('rmFolderBtn')&&!document.getElementById('rmSessBtn')`), 'a single-session folder shows Remove folder, not Remove from office');
     await H.shot(path.join(OUT, `remove-folder-chat-${w}x${h}.png`), { prep: 'calm', delay: 200 });
     await js(`(window.confirm=()=>true,true)`);
-    await js(`document.getElementById('rmFolderBtn').click()`); await until(`document.querySelectorAll('#stage .room [data-door]').length===${solo.length - 1}`, 'the folder to go from the chat header');
+    await js(`document.getElementById('rmFolderBtn').click()`); await until(`document.querySelectorAll('#stage .room [data-door]').length===${jsLiteral(solo.length - 1)}`, 'the folder to go from the chat header');
     const solo2 = await rooms();
     assert.strictEqual(solo2.length, solo.length - 1, `the folder is removed from the chat header (${solo.length} -> ${solo2.length})`);
   }

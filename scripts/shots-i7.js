@@ -23,7 +23,7 @@ module.exports = async (ctx) => {
   /* spec 021 FR-057 (review of #752): an assert waits on the condition it asserts, never on a fixed sleep */
   const until = async (expr, what) => { assert.ok(await ctx.waitFor(expr, 10000), 'timed out waiting for ' + what); };
   const textHas = (sel, re) => until(`(()=>{const e=document.querySelector(${jsLiteral(sel)});return !!e&&new RegExp(${jsLiteral(re.source)}).test(e.textContent)})()`, `${sel} to match ${re}`);
-  const countIs = (sel, n) => until(`document.querySelectorAll(${jsLiteral(sel)}).length===${Number(n)}`, `${n} x ${sel}`);
+  const countIs = (sel, n) => until(`document.querySelectorAll(${jsLiteral(sel)}).length===${jsLiteral(Number(n))}`, `${n} x ${sel}`);
   const gone = (sel) => countIs(sel, 0);
   const closeDlg0 = () => ctx.js(`(()=>{const d=document.getElementById('scrDlg');if(d&&d._close)d._close();})()`);
   const closeDlg = async () => { await closeDlg0(); await gone('#scrDlg'); };
