@@ -158,6 +158,7 @@ module.exports = async (ctx) => {
       const b2 = await tile('boss'), nm = await nameOf(idle);
       assert.ok(b2.label.includes(nm + ' (') && b2.label.indexOf(nm + ' (') > b2.label.indexOf(sb.label.replace(/^[^:]+: /, '').split(' (')[0] + ' (') && b2.pv.some((v) => v.id === idle), `${w}: ${nm} joins the end of the queue (and is drawn): ${b2.label}`);
       await page(`${w} after a new permission`);
+      ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(200); /* the pointer rests off the cards: a hovered card shows its rename pencil */
       await H.shot(path.join(OUT, `001-lobby-boss-walk-${w}x${h}.png`), { prep: 'calm', blur: true });
     }
   }

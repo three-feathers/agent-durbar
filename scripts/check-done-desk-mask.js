@@ -253,6 +253,45 @@ module.exports = async (ctx) => {
   await H.load({ w: 1440, h: 900, query: { simsendfail: 'secret' }, ready: 'fit' });
   await sendFailStep();
   if (ONLY === 'sendfail') { console.log('[done-desk-mask] all checks passed'); return; }
+  // 6c. sparse offices with expanded helper cards (spec 001 FR-090, issue #697, T120): two and three parents in one room, helpers with the planted
+  //     secrets (task, result, error, activity; simreply=secrets), and, through the page's handler, an activity, a result and an error whose token
+  //     starts just before the card's 240-character cut. Expert and Simple, both sizes; then noredact=1 (fail closed: Durbar's own words only).
+  //     The whole page except the chat is scanned (text and every attribute): the cards' lines, title and aria-label included.
+  {
+    const PAD = (n) => 'Checking the registry module and its tests. '.repeat(8).slice(0, n - 1) + ' ';
+    const SECRETS = 'Token check: ' + GHP + ' and ' + PAT + ' and ' + SK + '.';
+    for (const redact of [true, false]) {
+      for (const [w, h] of [[1440, 900], [1280, 800]]) {
+        for (const level of ['expert', 'simple']) {
+          for (const [n, hp] of [[2, 3], [3, 2]]) {
+            const Q = { sim: String(n), simrooms: '1', simhelpers: String(hp), simreply: 'secrets', ...(redact ? {} : { noredact: '1' }) };
+            const tag = `sparse ${n}x${hp} ${w} ${level}${redact ? '' : ' noredact'}`;
+            await H.load({ w, h, query: Q, ready: 'fit', settle: false });
+            await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)})`);
+            await H.load({ query: Q, ready: 'fit' });
+            assert.ok(await until(`document.querySelectorAll('#stage .helper.hx').length===${jsLiteral(n * hp)}`, 10000), `${tag}: the expanded cards are on the floor`);
+            await scan(tag, 'expanded helper cards, planted by the simulator');
+            for (const at of [236, 238, 239, 240, 244]) { // the planted token starts at character `at` of the field, around the cut
+              const id1 = 'sim-1', c0 = id1 + '-task0';
+              await emit({ type: 'status', sessionId: id1, agentId: c0, timestamp: Date.now(), status: 'working', intent: PAD(at) + SECRETS });
+              await emit({ type: 'toolCall', sessionId: id1, agentId: c0, timestamp: Date.now(), callId: 'mk' + at, tool: 'bash', phase: 'start', args: { command: 'curl --api-key ' + KEY + ' ' + PAD(at) + GHP } });
+              await emit({ type: 'toolCall', sessionId: 'sim-2', timestamp: Date.now(), callId: 'sim-2-task1', tool: 'task', phase: 'complete', output: PAD(at) + SECRETS });
+              if (hp === 3) await emit({ type: 'toolCall', sessionId: id1, timestamp: Date.now(), callId: id1 + '-task2', tool: 'task', phase: 'failed', output: PAD(at) + SECRETS });
+              await emit({ type: 'subagent', sessionId: 'sim-2', timestamp: Date.now(), subagentId: 'sim-2-task0', phase: 'started', task: PAD(at) + SECRETS, model: 'm ' + GHP });
+              await H.settle();
+              await scan(tag, `activity, result, error, task and model with a token starting at ${at}`);
+            }
+            const seen = await js(`(()=>{const c=[...document.querySelectorAll('#stage .helper.hx')];return {n:c.length,text:c.map(x=>x.innerText).join(' | ')}})()`);
+            assert.strictEqual(seen.n, n * hp, `${tag}: cards ${seen.n}`);
+            if (redact) assert.ok(/\[redacted\]/.test(seen.text), `${tag}: the planted tokens read [redacted] on a card: ${seen.text.slice(0, 200)}`);
+            else assert.ok(!/Token check|registry module|strict-null/.test(seen.text) && /Finished\.|Failed\.|Working\.|Task hidden\./.test(seen.text), `${tag}: with no redact module a card shows Durbar's own words only: ${seen.text.slice(0, 200)}`);
+            if (level === 'simple') assert.ok(!/curl|api-key|example\.test/i.test(seen.text), `${tag}: Simple never shows a command: ${seen.text.slice(0, 200)}`);
+          }
+        }
+      }
+    }
+    await js(`localStorage.removeItem('durbar.detail')`);
+  }
   // 7. no redact module: fail closed, Durbar's own words stay
   await H.load({ w: 1440, h: 900, query: { simreply: 'secrets', simsched: '1', noredact: '1' }, ready: 'fit' });
   const nr = await js(`(()=>({fin:window.__durbarSimUi.agents().filter(a=>a.task==='Finished.').length,done:[...document.querySelectorAll('#stage .desk.is-done')].map(d=>d.title),page:document.body.innerText}))()`);

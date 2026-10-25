@@ -43,6 +43,8 @@ Do it **adversarially**: assume your diff is wrong, read the real diff (`git dif
 
 ### Spec, numbers and text
 
+- [ ] **No spec file shrank to 0 bytes or lost a large block in the diff** (`git diff --stat origin/main...HEAD`: look at every `---` column on specs/ and docs/). A script that opened a file for writing before reading it emptied `tasks.md` (T001..T124) in a late commit on #735 (*Ruben's agent*). *Evidence:* PR #735.
+
 - [ ] **New FR, task and spec numbers checked against `main` and the open PRs** that touch the same spec; the PR says which numbers it took. Three collisions on 2026-10-23 alone (*Paco's agent*). *Evidence:* [#614](https://github.com/three-feathers/agent-durbar/pull/614).
 - [ ] **No stale text after a fix.** Search the spec, plan, tasks, README, agent notes and tooltips for the old wording, numbers and `[KNOWN GAP]`s your change made untrue (`git grep` the old phrase). *Evidence:* [#628](https://github.com/three-feathers/agent-durbar/pull/628), [#625](https://github.com/three-feathers/agent-durbar/pull/625), [#554](https://github.com/three-feathers/agent-durbar/pull/554).
 - [ ] **The PR description matches the head**, not the first push: counts, "lands after #N", what was not verified. Update it with every round. *Evidence:* [#564](https://github.com/three-feathers/agent-durbar/pull/564), [#543](https://github.com/three-feathers/agent-durbar/pull/543), [#561](https://github.com/three-feathers/agent-durbar/pull/561).
