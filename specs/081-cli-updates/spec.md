@@ -205,7 +205,7 @@ When the start check finds a new version, the Settings entry and the card get a 
   - "Latest" is the newest **stable** version. Pre-releases count only when the installed one is a pre-release of the same line.
   - Versions are compared with `compareVersions` on the parsed parts.
 
-  The installed version from `--version` (detection, `src/adapters/detect.ts` `parseVersion`) gets the same treatment. Durbar reads the first line only, cut to 200 characters, and takes the version token with a bounded pattern delimited by start, space, `v` or `(` before it and end, space or `)` after it. This fixes the existing detection path too, tracked in issue #664 and done in T008.
+  The installed version from `--version` (detection, `src/adapters/detect.ts` `parseVersion`) gets the same treatment. Durbar reads the first line only, cut to 200 characters, and takes the version token with a bounded pattern delimited by start, space, `v` or `(` before it and end, space or `)` after it. The existing detection path is fixed by PR #698 (spec 012 T133, closes #664), which this feature reuses rather than reimplements (T008).
 
   Tests use hostile inputs: 64 KiB of digits within a CPU-time limit (agent-notes, *measure CPU time*), the npm error line, markup, and a 65-character version. A mutation that puts the old unanchored `parseVersion` back must fail a test.
 - **FR-006** `[PLANNED]` **The right tool for the copy:**

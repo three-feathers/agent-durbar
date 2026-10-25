@@ -43,7 +43,7 @@ No violations, so Complexity Tracking is empty.
 
 | Existing code | Reused for | Change |
 |---|---|---|
-| `src/adapters/detect.ts` `parseVersion`, `compareVersions`, `detectBinary`, `candidates`, `displayPath`, `nodeExec` | installed version, version compare, finding the tool, running checks | `parseVersion` is replaced by the bounded first-line parse of FR-005, and `parseVersionField` (strict, structured field) is added (T008, issue #664). `nodeExec` gains an `env` option, merged over `process.env` for that child only (`HOMEBREW_NO_AUTO_UPDATE`, `npm_config_update_notifier`). It also gains a **tree kill** on timeout: on Windows `taskkill /T /F /PID` from `%SystemRoot%\System32`, as `HarnessSetup` already does, because an `npm.cmd` run goes through `cmd.exe` and `execFile`'s timeout kills only `cmd.exe`; on POSIX the process group. A pre-release-aware compare goes in `updatecheck.ts` on top of `compareVersions`. |
+| `src/adapters/detect.ts` `parseVersion`, `compareVersions`, `detectBinary`, `candidates`, `displayPath`, `nodeExec` | installed version, version compare, finding the tool, running checks | `parseVersion` is the bounded first-line parse from PR #698 (spec 012 T133, closes #664), reused as is. `parseVersionField` (strict, structured field) is added in `updatecheck.ts` and reuses #698's token pattern where it fits (T008). `nodeExec` gains an `env` option, merged over `process.env` for that child only (`HOMEBREW_NO_AUTO_UPDATE`, `npm_config_update_notifier`). It also gains a **tree kill** on timeout: on Windows `taskkill /T /F /PID` from `%SystemRoot%\System32`, as `HarnessSetup` already does, because an `npm.cmd` run goes through `cmd.exe` and `execFile`'s timeout kills only `cmd.exe`; on POSIX the process group. A pre-release-aware compare goes in `updatecheck.ts` on top of `compareVersions`. |
 | `src/shared/harnesssetup.ts` `ROUTES`, `updatePlans`, `routeOwning`, `runRequest`, `lastLines`, `stripAnsi` | update argv per source, owning source, request validation, output | `routeOwning` learns Codex's `packages/standalone`, `~/.copilot/pkg`, Scoop (named, no route) and Linux `/usr/bin` / `/snap` (outside). It returns the cask name too (`claude-code` vs `claude-code@latest`). npm and winget updates take a checked version (pinned, FR-023). Copilot's brew update gains `--greedy`. Claude and Copilot official routes gain an *own updater* plan (`claude update`, `copilot update`). Codex's stays the 060 installer. winget's agreement flags are kept off checks (FR-004). |
 | `src/main/harnesssetup.ts` `HarnessSetup.plans`, `prepare`, `start`, `cancel`, `trustedPath`, `busy`, `isRoot` | the whole update run and its native confirmation | `prepare` accepts an own-updater plan: the binary is the app itself (real path, `trustedPath`) with fixed args. The `isRoot` refusal covers own updaters and every official installer (FR-025). The confirmation text shows the target version, whether it is pinned, the integrity line (FR-024) and, for `copilot update`, that it uses the GitHub sign-in. Before the confirmation, `prepare` calls the checker for a fresh check of that app (FR-023). |
 | `src/main/officialinstall.ts` allow-list style (`allowedScriptUrl`) | the pattern for the lookup allow-list | none to the file. The lookup allow-list (`LOOKUPS`, FR-026) lives in `src/shared/updatecheck.ts` with the same exact-host and path-prefix shape. The fetch is Electron `net.fetch` in `src/main/updatecheck.ts`. |
@@ -143,7 +143,7 @@ src/main/settings.ts               (announcedVersions)
 src/main/ipc/harness.ts            (harness:updates, gate arg)
 src/main/main.ts                   (start scheduling, sessionsOf, update lock in start/resume/send)
 src/main/schedules.ts              (hold due prompts while an update lock is held)
-src/adapters/detect.ts             (bounded parseVersion, parseVersionField, nodeExec env and tree kill; #664)
+src/adapters/detect.ts             (nodeExec env and tree kill; the bounded parseVersion comes from PR #698)
 src/preload/preload.ts             (harnessUpdates, onHarnessUpdates)
 src/renderer/harnesses.js          (status line, chip, Check for updates, gate dialog, badge, toast)
 src/renderer/screens.js            (Settings entry badge)
@@ -159,7 +159,6 @@ scripts/shots-081-updates.js       (new simulator driver)
 ## Docs
 
 - README *Safety model* and *Agent apps*: the start check and its switch, what it contacts and reveals (the FR-017 table), how organization policy turns it off, the integrity line per updater (FR-024), and that Durbar never runs updaters as root or auto-accepts winget terms.
-- `specs/012-*/spec.md`: a dated delta for the `parseVersion` fix (#664).
 - `docs/agent-notes.md`: an entry for each vendor's updater behaviour once it is verified on a real machine.
 - `changelog.d/081-cli-updates.md`.
 - Screenshots: Settings > Agent apps (cards with a status line), the session gate dialog and the badge, at 1440x900 and 1280x800. `npm run shots:docs -- --only <setup driver>` retakes the linked Agent apps pictures.

@@ -45,11 +45,11 @@ Revised on 2026-10-24 after Paco's review of #663. Tasks marked *(Q3)*, *(Q6)* o
   - Tests with a fake fetch: a look-alike host, an off-list path, a `Location` to another host or path, a 200 instead of a redirect, the 570 KB body never read, an oversized channel body.
   - Mutations: follow the redirect; allow any path on `github.com`.
 - [ ] T007 `src/main/settings.ts`: `announcedVersions` (an allowed app id and a valid version; anything else dropped) and `checkUpdatesAtStart` (a boolean; default per *(Q6)*). Test a hostile matrix.
-- [ ] T008 Strict versions (FR-005, SC-008, issue #664; also a dated delta in `specs/012-*/spec.md`):
-  - `parseVersionField` in `src/shared/updatecheck.ts`: a structured field, cut to 64 characters, then `^v?(\d{1,9})\.(\d{1,9})\.(\d{1,9})(?:-[0-9A-Za-z.-]{1,40})?$`.
-  - `detect.ts` `parseVersion`: the first line only, cut to 200 characters, a bounded, delimited token.
-  - Tests: 64 KiB of digits within a CPU-time limit (`process.cpuUsage`, agent-notes), the npm error line, `2.1.211 (Claude Code)`, `codex-cli 0.163.0`.
-  - Mutation: put the old unanchored pattern back, which must fail.
+- [ ] T008 Strict versions (FR-005, SC-008):
+  - **The detection path is fixed by PR #698** (spec 012 T133, FR-039 delta, `Closes #664`): a bounded `parseVersion` on the first line, cut to 200 characters, that rejects error prose and tokens cut off at the cap, with mutations and a CPU backstop. Spec 081 reuses it and does not reimplement it. If #698 has not merged when this task starts, wait for it or rebase onto it. If it was changed or closed, re-read spec 012 and only then decide.
+  - **New here:** `parseVersionField` in `src/shared/updatecheck.ts`, for the structured fields that #698 does not cover (npm JSON, brew JSON, the `Location` tag, the Claude channel text). A field is cut to 64 characters, then matched against `^v?(\d{1,9})\.(\d{1,9})\.(\d{1,9})(?:-[0-9A-Za-z.-]{1,40})?$`. Reuse #698's bounded token pattern if it fits instead of keeping a second one, and name the shared constant in the PR.
+  - Tests for the field parser: 64 KiB of digits within a CPU-time limit (`process.cpuUsage`), the npm error line, `rust-v0.164.0`, `v1.0.103`, `2.1.308`, and a 65-character version.
+  - Mutation: an unanchored field pattern must fail.
 - [ ] T009 `src/adapters/detect.ts` `nodeExec`: an `env` option (merged for that child only) and a tree kill on timeout (Windows `taskkill /T /F /PID` from `%SystemRoot%\System32`; POSIX process group). Test with a fake `execFile`/`spawn` that a timeout kills the tree and that the env reaches only that child. Mutation: kill only the direct child.
 
 ## Phase 3: US1 See whether an app is out of date (P1, MVP)
