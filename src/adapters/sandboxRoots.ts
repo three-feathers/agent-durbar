@@ -5,6 +5,7 @@
  */
 import * as path from 'path';
 import { LEFT_OUT_MAX } from '../shared/sandbox';
+import { redact } from '../shared/redact';
 
 /** Normalised absolute root and its compare key, or undefined when it must be dropped. Windows-form paths use `path.win32`, others `path.posix`. */
 export function normalizeRoot(r0: string): { path: string; key: string } | undefined {
@@ -22,6 +23,10 @@ export function normalizeRoot(r0: string): { path: string; key: string } | undef
   }
   const win = /^[A-Za-z]:[\\/]/.test(r) || r.startsWith('\\\\');
   if (!win && !r.startsWith('/')) return undefined;
+  // review round 7 on PR 733: a UNC path needs a server AND a share (`\\srv` alone names no folder); Windows ignores a trailing space or dot
+  // in a name (`C:\ ` is `C:\`), so a Windows-form path with one is dropped rather than guessed
+  if (win && r.startsWith('\\\\') && r.slice(2).split(/[\\/]/).filter(Boolean).length < 2) return undefined;
+  if (win && r.split(/[\\/]/).some((part) => /[ .]$/.test(part) && part !== '.' && part !== '..')) return undefined;
   const api = win ? path.win32 : path.posix;
   let n = api.normalize(r);
   const root = api.parse(n).root;
@@ -127,7 +132,17 @@ export interface LeftOut {
 const WHY: Record<LeftOut['why'], string> = { credential: 'credential folder', unusable: 'not usable' };
 /** The longest folder shown in the list (its start and end are kept). */
 const FOLDER_SHOWN = 120;
-const shortFolder = (f: string): string => (f.length <= FOLDER_SHOWN ? f : `${f.slice(0, 40)}…${f.slice(-(FOLDER_SHOWN - 41))}`);
+/** Review round 7 on PR 733: masked first (the app's redact), then shortened, never inside a word or a `[redacted]` mark. */
+const WORDCH = /[A-Za-z0-9_\-.~+=:@%[\]]/;
+const shortFolder = (f: string): string => {
+  const m = redact(f);
+  if (m.length <= FOLDER_SHOWN) return m;
+  let end = 40;
+  while (end > 0 && WORDCH.test(m[end - 1])) end--;
+  let start = m.length - (FOLDER_SHOWN - 41);
+  while (start < m.length && WORDCH.test(m[start])) start++;
+  return `${m.slice(0, end)}…${m.slice(start)}`;
+};
 /**
  * Spec 087 (review rounds 4-6 on PR 733): the state fields that name the folders the floor left out: a short reason, and a bounded list
  * (`LEFT_OUT_MAX` entries, each "<folder> (credential folder | not usable)", the folder shortened; main masks and cuts each) plus a count

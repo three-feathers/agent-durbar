@@ -9,9 +9,9 @@ import * as path from 'path';
 import { CLAUDE_SANDBOX_MIN_VERSION, claudeSandboxExit, claudeSandboxPrecheck, claudeSandboxSettings, claudeSandboxState, withSandboxSettings } from '../src/adapters/claudeSandbox';
 import { copilotHostSupport, copilotPathReadDirs, copilotSandboxConfig, copilotSandboxState } from '../src/adapters/copilotSandbox';
 import { CODEX_SANDBOX_NOTE_COMMAND, CODEX_SANDBOX_NOTE_FILE, codexModeSettings, codexPermission, codexSandboxState } from '../src/adapters/codexModes';
-import { HOME_SECRETS, leftOutFields, sandboxRoots, splitFolders } from '../src/adapters/sandboxRoots';
+import { HOME_SECRETS, leftOutFields, normalizeRoot, sandboxRoots, splitFolders } from '../src/adapters/sandboxRoots';
 import * as os from 'os';
-import { cleanSandboxState, sandboxReason } from '../src/shared/sandbox';
+import { cleanSandboxState, outwardSandboxEvent, sandboxReason } from '../src/shared/sandbox';
 import { requireOsSandbox, requireOsSandboxFrom } from '../src/main/sandboxpolicy';
 import { parseSettings } from '../src/shared/credits';
 
@@ -167,6 +167,9 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   // review round 6 (2): Windows extended-length and device forms: a share root or a drive root is dropped like `\\srv\sh` and `C:\`
   assert.deepStrictEqual(sandboxRoots(['\\\\?\\UNC\\srv\\sh', '\\\\?\\UNC\\srv\\sh\\', '\\\\srv\\sh', '\\\\?\\C:\\', '\\\\.\\C:\\x', '\\\\?\\Volume{1}\\x', '//?/UNC/srv/sh'], ident), [], 'share roots, drive roots, device and volume forms dropped');
   assert.deepStrictEqual(sandboxRoots(['\\\\?\\UNC\\srv\\sh\\p', '\\\\?\\C:\\w'], ident), ['\\\\srv\\sh\\p', 'C:\\w'], 'a folder below them is kept, in its plain form');
+  for (const x of ['\\\\srv', '\\\\srv\\', '\\\\?\\UNC\\srv', '\\\\?\\UNC\\srv\\']) assert.strictEqual(normalizeRoot(x), undefined, `normalizeRoot itself drops ${x} (Node normalises it to \\srv)`);
+  // review round 7 (4): a UNC path without a share names no folder; a Windows name with a trailing space or dot is what Windows trims
+  assert.deepStrictEqual(sandboxRoots(['\\\\srv', '\\\\srv\\', '\\\\?\\UNC\\srv', '\\\\?\\UNC\\srv\\', 'C:\\ ', 'C:\\. ', 'C:\\w.', 'C:\\w \\x', 'C:\\my proj'], ident), ['C:\\my proj'], 'no share; trailing space or dot dropped; a space inside a name kept');
   // review round 5: splitFolders is an allow-list: kept only when the block holds it; everything else is named with why
   const sp = splitFolders(['/w', '/', '/a/../..', '/x"y', '/gone', '/w/sub', '/home/me/.ssh'], '/w', ['/w', '/w/sub'], (p) => { if (p === '/gone') throw new Error('ENOENT'); return p; });
   assert.deepStrictEqual(sp.kept, ['/w/sub']);
@@ -355,6 +358,29 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   const three = leftOutFields([{ folder: '/', why: 'unusable' }, { folder: '/home/me/.aws', why: 'credential' }, { folder: '/home/me/x', why: 'unusable' }])!;
   assert.deepStrictEqual(three.leftOut, ['/ (not usable)', '/home/me/.aws (credential folder)', '/home/me/x (not usable)'], 'the third folder is named too');
   assert.strictEqual(cleanSandboxState({ ...on, leftOut: new Array(11).fill('x') }), undefined, 'over the cap: malformed');
+  // review round 7 (3): non-string entries make the state malformed; each entry is masked by main
+  assert.strictEqual(cleanSandboxState({ ...on, leftOut: ['/a (not usable)', 7] }), undefined, 'a non-string entry: malformed');
+  assert.strictEqual(cleanSandboxState({ ...on, leftOut: ['/a', null] }), undefined);
+  const TOKEN = 'ghp_' + 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const maskedEntry = cleanSandboxState({ ...on, leftOut: [`/h/${TOKEN} (not usable)`] })!.leftOut![0];
+  assert.ok(!maskedEntry.includes('ghp_') && /redacted/.test(maskedEntry), 'main masks each entry: ' + maskedEntry);
+  // review round 7 (1): masked BEFORE it is shortened: a token across the cut point never leaves a part of itself
+  for (const pad of [20, 30, 36, 40, 45, 60, 90]) {
+    const lf = leftOutFields([{ folder: '/' + 'a'.repeat(pad) + '/' + TOKEN + '/' + 'b'.repeat(100), why: 'unusable' }])!.leftOut[0];
+    assert.ok(!/ghp_[A-Za-z0-9]/.test(lf) && !/[a-z0-9]{8,}…|…[a-z0-9]{0,3}[0-9]{4}/.test(lf.replace(/a{5,}|b{5,}/g, '')), `token at ${pad}: no part of it survives: ${lf}`);
+    assert.ok(!lf.includes('abcdefgh') && !lf.includes('0123456789'), `token at ${pad}: ${lf}`);
+  }
+  const tail = leftOutFields([{ folder: '/' + 'a'.repeat(100) + '/' + TOKEN + '/bb', why: 'unusable' }])!.leftOut[0];
+  assert.ok(!tail.includes('ghp_') && /redacted/.test(tail), 'a token kept by the shortening is masked by the adapter itself: ' + tail);
+  // review round 7 (2): the event the window gets is cleaned too: a malformed state becomes null, every entry and the note masked
+  const raw = { type: 'sandbox', sessionId: 's', timestamp: 1, sandbox: { ...on, reason: 'r ' + TOKEN, leftOut: [`/x/${TOKEN} (not usable)`] }, notice: { text: `could not start: ${TOKEN}\u0007 Nothing was sent.`, actions: ['continue', 'evil'] } };
+  const out = outwardSandboxEvent(raw) as unknown as { sandbox: { reason?: string; leftOut?: string[] } | null; notice: { text: string; actions: string[] } };
+  assert.ok(!JSON.stringify(out).includes('ghp_'), 'no token reaches the window: ' + JSON.stringify(out));
+  assert.deepStrictEqual(out.notice.actions, ['continue'], 'unknown actions dropped');
+  assert.ok(!/\u0007/.test(out.notice.text));
+  assert.strictEqual((outwardSandboxEvent({ type: 'sandbox', sandbox: { state: 'on', covers: [42], verified: false } }) as { sandbox: unknown }).sandbox, null, 'a malformed state: null');
+  const other = { type: 'output', delta: TOKEN };
+  assert.strictEqual(outwardSandboxEvent(other), other, 'other events pass unchanged (outward() handles them)');
   assert.ok(!(T as unknown as { details(s: unknown, a: string, m: (t: string) => string): string }).details({ ...on, leftOut: ['/h/ghp_abcdefghijklmnopqrstuvwxyz0123456789 (not usable)'] }, 'C', () => '').includes('ghp_'), 'each entry only through the mask');
   ok('FR-009/FR-010: the chip words and the tooltip per app; the reason only through the mask');
 }

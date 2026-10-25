@@ -78,7 +78,7 @@ import { GlobalLists, sessionGlobalFor } from './mcpglobalio';
 import { register as registerMcpGlobalIpc } from './ipc/mcpglobal';
 import { register as registerSandboxIpc } from './ipc/sandbox';
 import { requireOsSandbox } from './sandboxpolicy';
-import { cleanSandboxState } from '../shared/sandbox';
+import { cleanSandboxState, outwardSandboxEvent } from '../shared/sandbox';
 import { UsageStore } from './usagestore';
 import { AgentTrustStore } from './agenttrust';
 import { Scheduler, loadSchedules, saveSchedules, scheduleBusy } from './schedules';
@@ -217,7 +217,7 @@ const toRenderer = (channel: string, payload: unknown): void => {
 /** An MCP status event carries server error text: masked here, once, before the window sees it (spec 019 FR-021). */
 /** Spec 019 FR-022: the masked copy of an `mcp` event, built once per event; every path out of main (window, debug sink) uses it. */
 const outward = (e: AgentEvent): AgentEvent => maskMcpEvent(e, e.type === 'mcp' || (e.type === 'toolCall' && ((e.phase !== 'start' && e.mcpServer) || e.edit)) ? mcp.secretValuesFor(e.sessionId) : []); // spec 005 FR-024: edits too
-router.onEvent((e) => toRenderer('agent:event', outward(e)));
+router.onEvent((e) => toRenderer('agent:event', outwardSandboxEvent(outward(e)))); // spec 087 (review round 7): the sandbox event cleaned too
 // Spec 087 FR-011: the OS sandbox state is kept on the agent's info (cleaned: own known fields, reason masked and cut), so a reloaded
 // window gets it from agents:list; never saved
 router.onEvent((e) => {

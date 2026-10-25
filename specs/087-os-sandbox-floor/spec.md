@@ -359,6 +359,14 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
 
 ## Changes
 
+### 2026-10-25: review round 7 on PR #733 (Ruben's agent, 5 items)
+
+- A shortened left-out folder is masked first (the app's `redact`), then cut at a word boundary. The `sandbox` event that main forwards to
+  the window is cleaned too (`outwardSandboxEvent`: the state through `cleanSandboxState`, the note's text masked), not only the copy
+  kept on `AgentInfo`. Non-string list entries make the state malformed.
+- `\\srv` and `\\?\UNC\srv` (a server without a share) are dropped by `normalizeRoot` itself; a Windows-form path with a name ending in
+  a space or a dot (`C:\ `, which Windows trims to `C:\`) is dropped rather than guessed.
+
 ### 2026-10-25: review round 6 on PR #733 (Ruben's agent, 4 items)
 
 - The left-out folders are a bounded list field of `SandboxState` (`leftOut`, at most 10 entries "<folder> (credential folder | not

@@ -29,6 +29,25 @@ export function sandboxReason(text: unknown): string | undefined {
   return (end > 0 ? plain.slice(0, end).trimEnd() : plain.slice(0, SANDBOX_REASON_MAX - 1)) + '…';
 }
 
+/**
+ * Review round 7 on PR 733: the `sandbox` event as it leaves main for the window: the state cleaned (masked, own known fields; anything
+ * malformed becomes null, nothing shown) and the note's text masked and made plain (at most 600 characters). Other events pass unchanged.
+ */
+export function outwardSandboxEvent<E extends { type: string }>(e: E): E {
+  if (e.type !== 'sandbox') return e;
+  const x = e as unknown as { sandbox?: unknown; notice?: { text?: unknown; actions?: unknown; refused?: unknown } };
+  const st = x.sandbox === null || x.sandbox === undefined ? null : cleanSandboxState(x.sandbox) ?? null;
+  let notice: { text: string; actions: Array<'continue' | 'always'>; refused?: boolean } | undefined;
+  if (x.notice && typeof x.notice === 'object') {
+    const masked = typeof x.notice.text === 'string' ? redact(x.notice.text) : '';
+    // eslint-disable-next-line no-control-regex
+    const text = masked === '[redaction failed]' ? '' : masked.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 600);
+    const actions = Array.isArray(x.notice.actions) ? x.notice.actions.filter((a): a is 'continue' | 'always' => a === 'continue' || a === 'always') : [];
+    notice = { text: text || 'The OS sandbox could not start. Nothing was sent.', actions: x.notice.refused === true ? [] : actions, ...(x.notice.refused === true ? { refused: true } : {}) };
+  }
+  return { ...e, sandbox: st, ...(notice ? { notice } : {}) } as E;
+}
+
 /** The state as main keeps it and the window shows it: own known fields only, anything malformed dropped (all-or-nothing). */
 export function cleanSandboxState(x: unknown): SandboxState | undefined {
   if (!x || typeof x !== 'object' || Array.isArray(x)) return undefined;
