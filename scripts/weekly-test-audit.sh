@@ -35,6 +35,7 @@ case "$limit" in ''|*[!0-9]*) echo "weekly-test-audit: --timeout must be a numbe
 
 if [ -z "$repo_dir" ]; then repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; fi
 repo="${DURBAR_AUDIT_REPO:-three-feathers/agent-durbar}"
+umask 077
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/durbar-weekly-audit"
 mkdir -p "$state_dir"
 chmod 700 "$state_dir"
@@ -43,7 +44,6 @@ chmod 700 "$state_dir"
 exec 9>"$state_dir/lock"
 if ! flock -n 9; then echo "weekly-test-audit: another run holds the lock; nothing to do"; exit 0; fi
 
-umask 077
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 log="$state_dir/audit-$stamp.log"
 find "$state_dir" -maxdepth 1 -name 'audit-*.log' -mtime +90 -delete 2>/dev/null || true
