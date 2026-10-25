@@ -28,3 +28,14 @@ The gate is stricter (spec folder per branch number): a legitimate PR may need `
 ### Constitution check
 
 Principle I: spec, plan and tasks are updated before guidance. Principle III: no secrets or credentials are added; the issue form warns against sharing them. Principle IV: no AI-credit spending or real agent checks. Principles II, V, VI and VII are not affected. Principle VIII: historical metrics are qualified as proxies, causal unknowns are preserved, and the limits of available evidence are stated.
+
+## Delta: weekly test audit (FR-058)
+
+- **Where:** a systemd user timer on the owner's VPS (Friday 06:30 Europe/Madrid), not GitHub Actions: it runs on the owner's Claude Code plan and needs no secret in the repo.
+- **Pieces:** `scripts/weekly-test-audit.sh` (bash, Linux-only: flock, temp worktree of `origin/main`, `npm ci`, one `tsc`, copies the compiled validator, helper and prompt to a private temp folder, runs `claude -p`, then the validator); `scripts/weekly-test-audit.ts` (Claude argv, prompt rendering, strict JSON validation, fingerprints, dedupe, cap, issue text, `gh` calls through an injected runner); `scripts/weekly-test-audit-mutate.ts` (the only Bash command Claude may run: one unique replacement, one `test:*` suite, restore); `scripts/weekly-test-audit.prompt.md`; `docs/agent-setup/weekly-test-audit.{service,timer}` and an install section.
+- **Security choices:** Claude gets no network tool, no edit tool, no `gh`/`git`, no token variable, no MCP or settings (`--strict-mcp-config --setting-sources ""`, `--restricted`); its output is data, validated in full before anything is filed; the validator runs from a copy Claude cannot change; the token is read from a 0600 file by node and handed only to `gh`; text is masked and escaped before it goes into an issue.
+- **Tests:** `scripts/test-weekly-audit.ts` in `npm test` drives the validator and filer with an injected `gh`, the helper on a scratch folder, and asserts the argv. Mutations planted: no dedupe, no cap, an unknown label allowed, `--strict-mcp-config` dropped; each fails the test.
+
+### Constitution check
+
+I: spec, plan and task first, in the same PR. III: no secret in the repo, logs or Claude's environment; the token file is the owner's, 0600. IV: no credits spent to build or test it (fakes only); the weekly run is one session on the owner's plan, approved by the owner. VI: a Linux-only VPS tool, said so; the unit test runs on every OS and skips only its POSIX file-mode and fake-`gh` checks on Windows. VIII: limits in the spec (`[KNOWN GAP]`).
