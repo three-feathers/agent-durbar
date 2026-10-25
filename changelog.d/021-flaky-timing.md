@@ -1,2 +1,0 @@
-- Tests: the edit-masking and MCP-output-masking speed checks measure CPU time against a baseline from the same run, so a loaded parallel run no longer fails them (specs 005, 019; test only).
-- Tests: the OAuth-masking linearity check takes the best of three runs per size, so one GC pause or busy core cannot fail it (spec 058; test only).

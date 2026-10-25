@@ -1,0 +1,2 @@
+# source: read: copilot-cli cask with auto_updates true (research R2); values are made up
+{"formulae":[],"casks":[{"token":"copilot-cli","version":"1.0.103","installed":"1.0.100","outdated":false,"auto_updates":true}]}

@@ -68,6 +68,7 @@ Do it **adversarially**: assume your diff is wrong, read the real diff (`git dif
 - [ ] **Undo restores the user's own choice, "none" included**, never the value in effect or a default (*Paco's agent*). *Evidence:* [#642](https://github.com/three-feathers/agent-durbar/pull/642).
 - [ ] **Map the vendor's failure event too**, not only the success one: a "requested" state shown without its failure path claims something untrue. *Evidence:* [#642](https://github.com/three-feathers/agent-durbar/pull/642) (`session.auto_tier_switch_failed`).
 - [ ] **Timers use a monotonic clock, and a bad value falls back to the most restrictive choice** (*Paco's agent*). *Evidence:* [#635](https://github.com/three-feathers/agent-durbar/pull/635) (monotonic sign-in clock, minimum for a broken time limit).
+- [ ] **A tool run inside the user's folder obeys that folder's config** (*Ruben's agent*): `git` (`core.fsmonitor`, filter drivers, external diff, lazy-fetch ssh, submodules) and any tool with a per-folder config file. Run git only through `nodeGitExec`, and test with a planted command that writes a marker. *Evidence:* [#718](https://github.com/three-feathers/agent-durbar/pull/718), [#719](https://github.com/three-feathers/agent-durbar/issues/719).
 - [ ] **Text guards that emulate a parser** (YAML, shell): use the parser's own whitespace (`[ \t]`, not JS `\s`, which also matches NBSP/U+3000) and refuse non-ASCII in the guarded file. *Evidence:* [#700](https://github.com/three-feathers/agent-durbar/pull/700).
 
 ### Tests
@@ -93,6 +94,7 @@ Do it **adversarially**: assume your diff is wrong, read the real diff (`git dif
 
 - [ ] **No POSIX-only defaults** (output folders, separators), and paths compared case-sensitively except on Windows and macOS. *Evidence:* [#496](https://github.com/three-feathers/agent-durbar/pull/496), [#572](https://github.com/three-feathers/agent-durbar/pull/572).
 - [ ] **macOS is not run on PRs** (spec 008 FR-106): a macOS-only path says "not verified on macOS" in the PR. *Evidence:* [#561](https://github.com/three-feathers/agent-durbar/pull/561), [#625](https://github.com/three-feathers/agent-durbar/pull/625).
+- [ ] **Synthetic native text keys are not native editing.** Electron's macOS `webContents.sendInputEvent` delivers ⌘⌫ / ⌘A to the renderer but does not perform deletion / selection. Assert the app does not intercept the event; do not treat the unchanged input as real-Mac behavior. *Evidence:* issue #683, spec 074.
 
 ### Reuse and docs
 

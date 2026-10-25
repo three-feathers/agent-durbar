@@ -4,7 +4,6 @@
  * goes into a new private folder (0700, file 0600) that the caller deletes when the install ends. Nothing here runs the script.
  */
 import * as fs from 'fs';
-import * as https from 'https';
 import * as os from 'os';
 import * as path from 'path';
 import type { OfficialScript } from '../shared/harnesssetup';
@@ -26,41 +25,6 @@ export interface HttpResponse { status: number; location?: string; contentType?:
 export type HttpGet = (url: string, opts: { timeoutMs: number; maxBytes: number }) => Promise<HttpResponse>;
 
 /**
- * One GET with no redirects followed, a size cap while reading, and two time limits: an idle one (nothing arrives) and a TOTAL
- * one, so a server that drips bytes cannot keep the download open (review on #393). `get` is `https.get`; a test hands in
- * `http.get` with a local server, so the real stream code is what is tested.
- */
-export function makeGet(get: typeof https.get): HttpGet {
-  return (url, { timeoutMs, maxBytes }) =>
-    new Promise((resolve, reject) => {
-      let settled = false;
-      const fail = (e: Error): void => { if (!settled) { settled = true; clearTimeout(total); reject(e); } };
-      const ok = (r: HttpResponse): void => { if (!settled) { settled = true; clearTimeout(total); resolve(r); } };
-      const req = get(url, { headers: { 'User-Agent': 'AgentDurbar', Accept: '*/*' } }, (res) => {
-        const status = res.statusCode ?? 0;
-        const location = typeof res.headers.location === 'string' ? res.headers.location : undefined;
-        const contentType = typeof res.headers['content-type'] === 'string' ? res.headers['content-type'] : undefined;
-        if (status >= 300 && status < 400) { res.resume(); ok({ status, location, contentType, body: Buffer.alloc(0) }); return; }
-        const parts: Buffer[] = [];
-        let n = 0;
-        res.on('data', (c: Buffer) => {
-          n += c.length;
-          // settle first: a fully received response can still emit 'end' after destroy() (found by the local-server test)
-          if (n > maxBytes) { fail(new Error('The installer is larger than expected; not downloaded.')); req.destroy(); return; }
-          parts.push(c);
-        });
-        res.on('end', () => ok({ status, contentType, body: Buffer.concat(parts) }));
-        res.on('error', fail);
-      });
-      const tooLong = (): void => { fail(new Error('The download took too long.')); req.destroy(); };
-      const total = setTimeout(tooLong, timeoutMs);
-      req.setTimeout(timeoutMs, tooLong);
-      req.on('error', fail);
-    });
-}
-export const httpsGet: HttpGet = makeGet(https.get);
-
-/**
  * Review on #393: what came back must look like the script, not a web page. A 200 HTML page (a CDN challenge, a login wall)
  * would otherwise go to bash, where lines such as `word > name` create or truncate files. `.sh` must start with `#!`;
  * `.ps1` must not start with `<` (after a UTF-8 BOM and whitespace); `text/html` is refused either way.
@@ -74,8 +38,8 @@ export function looksLikeScript(body: Buffer, ext: '.sh' | '.ps1', contentType?:
 }
 
 /** Downloads the script into a new private folder; returns its path and the folder to delete afterwards. */
-export async function downloadScript(script: OfficialScript, ext: '.sh' | '.ps1', deps: { get?: HttpGet; tmpdir?: string } = {}): Promise<{ file: string; dir: string }> {
-  const get = deps.get ?? httpsGet;
+export async function downloadScript(script: OfficialScript, ext: '.sh' | '.ps1', deps: { get: HttpGet; tmpdir?: string }): Promise<{ file: string; dir: string }> {
+  const get = deps.get;
   let url = script.url;
   if (!allowedScriptUrl(script, url)) throw new Error('That installer address is not allowed.');
   let res: HttpResponse | undefined;

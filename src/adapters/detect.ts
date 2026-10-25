@@ -6,6 +6,7 @@
  */
 
 import { execFile } from 'child_process';
+import type { ChildProcess, ExecFileOptionsWithStringEncoding } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -86,7 +87,8 @@ export interface ExecResult {
   errorCode?: string;
 }
 
-export type Exec = (file: string, args: readonly string[], opts: { timeoutMs: number; verbatim?: boolean }) => Promise<ExecResult>;
+/** `env` (spec 081 T009) is merged over the process environment for that one child only. */
+export type Exec = (file: string, args: readonly string[], opts: { timeoutMs: number; verbatim?: boolean; env?: Readonly<Record<string, string>> }) => Promise<ExecResult>;
 
 export interface BinarySpec {
   name: string;
@@ -238,13 +240,13 @@ export async function detectBinary(spec: BinarySpec, env: DetectEnv, exec: Exec,
 }
 
 /** Runs a found binary with fixed arguments: argv only; a Windows `.cmd` shim goes through `cmd /d /s /c` with its own quotes (the caller checked CMD_UNSAFE). */
-function execFound(found: string, args: readonly string[], env: DetectEnv, exec: Exec): Promise<ExecResult> {
+export function execFound(found: string, args: readonly string[], env: DetectEnv, exec: Exec, extra: { timeoutMs?: number; env?: Readonly<Record<string, string>> } = {}): Promise<ExecResult> {
   if (env.platform === 'win32' && found.toLowerCase().endsWith('.cmd')) {
     const file = windowsCmd(env.env); // spec 045 FR-003: never a command taken from the environment as is
     // the /c argument carries its own quotes; Node must not re-quote them
-    return exec(file, ['/d', '/s', '/c', `"${found}" ${args.join(' ')}`], { timeoutMs: TIMEOUT_MS, verbatim: true });
+    return exec(file, ['/d', '/s', '/c', `"${found}" ${args.join(' ')}`], { timeoutMs: extra.timeoutMs ?? TIMEOUT_MS, verbatim: true, ...(extra.env ? { env: extra.env } : {}) });
   }
-  return exec(found, args, { timeoutMs: TIMEOUT_MS });
+  return exec(found, args, { timeoutMs: extra.timeoutMs ?? TIMEOUT_MS, ...(extra.env ? { env: extra.env } : {}) });
 }
 
 export const CLAUDE_SIGN_IN_HINT = 'Sign in first: open Settings > Agent apps and choose Sign in… (or run `claude auth login`).';
@@ -388,23 +390,61 @@ export function detectorFor(id: string): ((d: AdapterDescriptor) => Promise<Dete
   return undefined;
 }
 
-/** The real exec: argv array, no shell, hidden window, 5 s timeout, output capped. Never logs. Used by the Claude detector (spec 012 T093). */
-export const nodeExec: Exec = (file, args, opts) =>
-  new Promise((resolve) => {
-    try {
-      execFile(file, [...args], { shell: false, windowsHide: true, windowsVerbatimArguments: opts.verbatim === true, timeout: opts.timeoutMs, maxBuffer: 64 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
-        if (!err) return resolve({ code: 0, stdout: String(stdout), stderr: String(stderr) });
-        const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string | null };
-        const numeric = typeof e.code === 'number' ? e.code : null;
-        resolve({
-          code: numeric,
-          stdout: String(stdout ?? ''),
-          stderr: String(stderr ?? ''),
-          timedOut: e.killed === true ? true : undefined,
-          errorCode: typeof e.code === 'string' ? e.code : undefined,
+/** What `makeExec` needs from the system (tests hand in fakes). */
+export interface ExecDeps {
+  execFile: typeof execFile;
+  /** Ends the child and what it started: Windows `taskkill /T /F /PID` from System32, else the child's process group. */
+  killTree(child: ChildProcess): void;
+  platform: NodeJS.Platform;
+  env: Readonly<Record<string, string | undefined>>;
+}
+
+/** Spec 081 T009: the real tree kill. The group exists because POSIX children are started `detached`. */
+export function killChildTree(child: Pick<ChildProcess, 'pid' | 'kill'> & { exitCode?: number | null; signalCode?: string | null }, platform: NodeJS.Platform, env: Readonly<Record<string, string | undefined>>, exec: typeof execFile = execFile, kill: (pid: number, sig: NodeJS.Signals) => void = (pid, sig) => process.kill(pid, sig), later: (fn: () => void, ms: number) => void = (fn, ms) => { setTimeout(fn, ms).unref(); }): void {
+  const pid = child.pid;
+  if (!pid) return;
+  if (platform === 'win32') {
+    const root = env.SystemRoot && path.win32.isAbsolute(env.SystemRoot) ? env.SystemRoot : 'C:\\Windows';
+    exec(path.win32.join(root, 'System32', 'taskkill.exe'), ['/pid', String(pid), '/t', '/f'], { windowsHide: true }, () => undefined);
+    return;
+  }
+  try { kill(-pid, 'SIGTERM'); } catch { try { child.kill('SIGTERM'); } catch { /* gone */ } }
+  // then SIGKILL after 3 s, unless it has exited: its group id could already belong to something else (one tree kill for the checks and the runner, review on #721)
+  later(() => { if (child.exitCode != null || child.signalCode != null) return; try { kill(-pid, 'SIGKILL'); } catch { /* gone */ } }, 3000);
+}
+
+/**
+ * The exec: argv array, no shell, hidden window, a time limit that ends the whole tree (an `npm.cmd` run goes through `cmd.exe`, and
+ * `execFile`'s own timeout would kill only that), output capped at 64 KiB, an optional environment for that child only. Never logs.
+ */
+export function makeExec(d: ExecDeps): Exec {
+  return (file, args, opts) =>
+    new Promise((resolve) => {
+      try {
+        let timedOut = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        // `detached` makes a POSIX child its own process group (what the tree kill ends); execFile passes it on to spawn
+        const o = { shell: false, windowsHide: true, windowsVerbatimArguments: opts.verbatim === true, maxBuffer: 64 * 1024, encoding: 'utf8', detached: d.platform !== 'win32', ...(opts.env ? { env: { ...d.env, ...opts.env } } : {}) } as unknown as ExecFileOptionsWithStringEncoding;
+        const child = d.execFile(file, [...args], o, (err, stdout, stderr) => {
+          if (timer) clearTimeout(timer);
+          if (!err) return resolve({ code: 0, stdout: String(stdout), stderr: String(stderr) });
+          const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string | null };
+          const numeric = typeof e.code === 'number' ? e.code : null;
+          resolve({
+            code: numeric,
+            stdout: String(stdout ?? ''),
+            stderr: String(stderr ?? ''),
+            timedOut: timedOut || e.killed === true ? true : undefined,
+            errorCode: typeof e.code === 'string' ? e.code : undefined,
+          });
         });
-      });
-    } catch (e) {
-      resolve({ code: null, stdout: '', stderr: '', errorCode: (e as NodeJS.ErrnoException).code ?? 'EXEC' });
-    }
-  });
+        timer = setTimeout(() => { timedOut = true; try { d.killTree(child); } catch { /* gone */ } }, opts.timeoutMs);
+      } catch (e) {
+        resolve({ code: null, stdout: '', stderr: '', errorCode: (e as NodeJS.ErrnoException).code ?? 'EXEC' });
+      }
+    });
+}
+
+/** The real exec (spec 012 T093 and spec 081). */
+// `execFile` is looked up when a command runs, not captured here: the simulator seals child_process (spec 010 FR-030) and its test spies on it
+export const nodeExec: Exec = makeExec({ execFile: ((...a: Parameters<typeof execFile>) => (execFile as (...x: unknown[]) => ChildProcess)(...a)) as typeof execFile, killTree: (c) => killChildTree(c, process.platform, process.env), platform: process.platform, env: process.env });

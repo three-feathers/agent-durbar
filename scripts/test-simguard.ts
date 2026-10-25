@@ -132,7 +132,7 @@ const REACHES_AGENT_APP = [
   'agents:listProfiles', 'agents:selectProfile', 'agents:mcp', 'agents:setMcp', 'agents:mcpSignIn', 'agents:mcpOpenSignIn', 'agents:mcpCancelSignIn', 'agents:setRemote', 'agents:openRemote',
   'sessions:listPrevious', 'sessions:rename', 'sessions:delete',
   'adapters:list', 'models:list',
-  'harness:run', 'harness:paste', 'harness:cancel', 'harness:copilotAuth', 'harness:accounts', 'harness:openSignIn',
+  'harness:run', 'harness:paste', 'harness:cancel', 'harness:copilotAuth', 'harness:accounts', 'harness:openSignIn', 'harness:updates',
   'schedules:runNow',
 ];
 // a channel added later that also reaches an agent app (PR #505's profiles:generate) is refused by the default deny; list it here when it lands

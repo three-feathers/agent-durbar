@@ -1258,6 +1258,7 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .note.info{background:var(--note);border-color:var(--line);font-size:12px;padding:5px 10px;color:var(--ink-2)}
 .note.info.cline.failed{background:var(--bad-bg);border-color:var(--tone-bad-line);color:var(--red-ink)}
 .note.fresh{max-width:560px}
+.note.sum-note{background:var(--note);border-color:var(--line)} /* spec 085: the end-of-session card is a calm record, not a warning */
 .toast.with-act{display:flex;align-items:center;gap:14px}
 .toast-act{white-space:nowrap;flex:none;background:transparent;color:#f7f4ee;border:1px solid color-mix(in srgb,var(--raised) 45%,transparent);border-radius:8px;padding:2px 12px;font-size:12px;font-weight:700;cursor:pointer}
 .toast-act:hover{background:color-mix(in srgb,var(--raised) 14%,transparent)}
@@ -1481,6 +1482,10 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
 .notice-strip .aw-w{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .notice-strip .aw-w small{color:var(--ink-2);font-size:11px}
 .notice-strip .aw-ok{color:var(--green-ink,var(--ink-2));font-weight:600}
+/* spec 006 FR-041/FR-042: the crash card reuses the Since you were away strip; its Pick… list scrolls from five rows */
+/* spec 006 FR-042 (review of PR 720): the sessions flow on one line and wrap, so an open list costs the office one row, not one row per session; past two lines it scrolls */
+.notice-strip .cr-list{flex-direction:row;flex-wrap:wrap;gap:4px 20px;max-height:68px;overflow-y:auto}
+.notice-strip .cr-list .aw-w small{margin-left:6px}
 
 /* spec 052 FR-042/FR-043: command palette (Ctrl+K) and the keyboard shortcut sheet (?) */
 .pal-ov{place-items:start center;padding-top:min(14vh,120px)}
@@ -1684,7 +1689,7 @@ html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{content:"";f
    narrower from 1600 to 1799px (the brand name gives way by measurement, .tb-tight) */
 @media (max-width:2039px){html[data-platform="darwin"]:not([data-fullscreen]) .stats>.stat:not(.stat-aiu) span.l{display:none}}
 @media (min-width:1600px) and (max-width:1799px){html[data-platform="darwin"]:not([data-fullscreen]) .topbar #defaultsBtn{max-width:140px}}
-html[data-platform="darwin"] body.panel-open :is(#restoreStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip:not([hidden])){min-height:40px}
+html[data-platform="darwin"] body.panel-open :is(#restoreStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip[hidden]+#crashStrip:not([hidden])){min-height:40px}
 html[data-platform="darwin"] .notice-strip:not([hidden]) ~ #screen .scr-head{padding-left:max(24px,calc((100% - 880px)/2 + 24px))}
 html[data-platform="darwin"] .strip{padding-right:0}
 /* FR-138: the grab area at the right end of the chat strip is a 32px handle (plus the 8px gap before it = 40px of drag) with grip dots */
@@ -1834,6 +1839,8 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 .lg-bunk{background:linear-gradient(var(--desk-front,var(--desk)),var(--desk-front,var(--desk))) left bottom/3px 100% no-repeat,linear-gradient(var(--desk-front,var(--desk)),var(--desk-front,var(--desk))) right bottom/3px 100% no-repeat} /* the bunk's posts */
 .stage .lg-bunk>.desk.shut{width:100%;flex:0 0 calc(50% - 1.5px);min-height:0}
 @container lounge (max-height:99px){.desk.shut.rest-recent .lg-av{bottom:13px;height:calc(100% - 13px)}.desk.shut .lg-name{line-height:12px}.lg-bunk{flex-direction:row;background:none}.stage .lg-bunk>.desk.shut{width:auto;flex:1 1 0;min-width:0}}
+/* spec 006 review of PR 720 (constitution V): in a corner this short the couch is under 33px, too low for the chat number above the name, so the number sits on the name's line and the name starts after it (it never covers the name) */
+@container lounge (max-height:59px){.stage .desk.shut.rest-recent .chatno{top:auto;bottom:2px;padding:0 2px}.desk.shut.rest-recent .lg-name{left:auto;max-width:calc(100% - 30px);padding:0 1px}}
 .lg-bed,.lg-blanket{position:absolute;left:0;bottom:0;width:100%;height:min(62%,34px)}
 .lg-blanket{z-index:2;pointer-events:none}
 .lg-bed .bd-frame{fill:var(--desk-front,var(--desk))}

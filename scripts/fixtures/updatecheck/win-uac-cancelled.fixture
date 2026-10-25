@@ -1,0 +1,3 @@
+# source: PLACEHOLDER (read: winget exit codes); replace with a recorded run (tasks.md T041)
+Installer failed with exit code: 1223
+The operation was cancelled by the user.

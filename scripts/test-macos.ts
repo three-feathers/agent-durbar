@@ -146,7 +146,7 @@ const rules = [
   `${D}:not([data-fullscreen]) .strip{padding-left:78px}`,
   `${D}:not([data-fullscreen]) .topbar::before{content:"";flex:none;order:-1;width:58px;margin-right:-14px}`, // room on the first row only
   `@media (max-width:1320px){${D}:not([data-fullscreen]) .topbar::before{width:64px;margin-right:-8px}}`,
-  `${D} body.panel-open :is(#restoreStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip:not([hidden])){min-height:40px}`, // the first strip clears the 78x40 box
+  `${D} body.panel-open :is(#restoreStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip[hidden]+#crashStrip:not([hidden])){min-height:40px}`, // the first strip clears the 78x40 box
   `${D}:not([data-fullscreen]) body.panel-open .notice-strip{padding-left:78px}`,
   `${D}:not([data-fullscreen]) body.panel-open.screen-open .scr-head{padding-left:max(78px,calc((100% - 880px)/2 + 24px))}`, // FR-097 alignment kept
   `${D} :is(.topbar,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.more-menu){-webkit-app-region:no-drag}`,
@@ -165,7 +165,7 @@ assert.ok(!css.includes('scr-head){padding-left:78px}') && !/\.topbar[^{]*\{padd
 const screensCss = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.css'), 'utf8');
 for (const sel of ['.mode-menu{', '.more-menu{', '#floorsPop{', '#foldersPop{', '#defaultsPop{', '.notice-strip{', '.strip-list{', '.dlg-ov{']) assert.ok(css.includes(sel), `selector exists in styles.css: ${sel}`);
 assert.ok(screensCss.includes('.scr-head{'), 'selector exists in screens.css: .scr-head');
-for (const id of ['restoreStrip', 'awayStrip', 'foldersPop', 'floorsPop', 'defaultsPop']) assert.ok(html.includes(`id="${id}"`), `index.html has #${id}`);
+for (const id of ['restoreStrip', 'awayStrip', 'crashStrip', 'foldersPop', 'floorsPop', 'defaultsPop']) assert.ok(html.includes(`id="${id}"`), `index.html has #${id}`);
 assert.ok(html.indexOf('id="restoreStrip"') < html.indexOf('class="workspace"') && html.indexOf('id="awayStrip"') < html.indexOf('id="screen"') && html.indexOf('class="workspace"') < html.indexOf('id="screen"'), 'notice strips come before .workspace and #screen (the ~ rules need it)');
 assert.ok(css.includes('@keyframes sl-fade') && css.includes('animation-timeline:scroll(self inline)') && /\.strip-list\{animation:sl-fade[^}]*mask-image/.test(css), 'the agent strip fades where it is cut off');
 assert.ok(css.includes(':root{color-scheme:light}') && css.includes(':root[data-dark]{color-scheme:dark}'), 'color-scheme follows the theme');

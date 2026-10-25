@@ -1,14 +1,17 @@
 /** Harness setup inside the app (spec 051): plans per OS, sign-in output parsing, link allowlist, paste rules. `npm run test:harnesssetup`. No process runs, nothing is installed. */
 import * as assert from 'assert';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { OFFICIAL_PAGES, SIGN_IN, allowedSignInUrl, installPlans, lastLines, managersFor, manualCommands, parseSignIn, simFoundFor, simManagers, stripAnsi, runRequest, updatePlans, validPaste, validPlanIndex } from '../src/shared/harnesssetup';
 import type { PackageManager } from '../src/shared/harnesssetup';
+import { CODEX_UPDATE_COMMAND } from '../src/shared/updatecheck';
 import { EventEmitter } from 'events';
 import { HarnessSetup, confirmText, maskOAuth, posixTrusted } from '../src/main/harnesssetup';
 import { senderAllowed } from '../src/main/hardening';
 import type { ChildLike, SetupDone, SetupProgress } from '../src/main/harnesssetup';
 
+const fx081 = (name: string): string => fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'fixtures', 'updatecheck', name + '.fixture'), 'utf8').split('\n').filter((l) => !l.startsWith('# ')).join('\n').trim();
 const all = new Set<PackageManager>(['winget', 'brew', 'npm']);
 const only = (...m: PackageManager[]) => new Set<PackageManager>(m);
 
@@ -133,6 +136,7 @@ void (async () => {
     const setup = new HarnessSetup({
       detectEnv: { platform, env: platform === 'win32' ? { PATH: 'C:\\Program Files\\nodejs', SystemRoot: 'C:\\Windows' } : { PATH: '/usr/bin' }, homedir: platform === 'win32' ? 'C:\\Users\\u' : '/home/u', isFile: (f) => files.includes(f) },
       spawn: (file, args, opts) => {
+        assert.ok(!('shell' in opts) || (opts as { shell?: unknown }).shell === false, 'FR-018: never through a shell');
         calls.push({ file, args, opts });
         const out = new EventEmitter(), err = new EventEmitter();
         child = Object.assign(new EventEmitter(), { pid: 42, out, err, stdout: out, stderr: err, stdin: { write: (x: string) => written.push(x), end: () => undefined } }) as unknown as typeof child;
@@ -452,6 +456,312 @@ void (async () => {
     assert.ok(pc.ok && pc.job.spawnFile === 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' && pc.job.script?.url === 'https://claude.ai/install.ps1', 'Claude on Windows: System32 PowerShell runs the downloaded install.ps1: ' + JSON.stringify(pc));
     assert.ok(!hs.prepare('claude', 'install', 1).ok, 'no second route found here: refused');
     assert.strictEqual(spawned, 0, 'prepare never spawns');
+  }
+
+  // ---------------------------------------------------------------------------------------------------------------------
+  // spec 081 T020-T023: updating from the source that owns the copy (nothing runs; every tool is a fake)
+  {
+    type U = { setup: HarnessSetup; calls: Array<{ file: string; args: readonly string[]; env: NodeJS.ProcessEnv; cwd?: string; cwdExisted?: boolean }>; done: SetupDone[]; child: () => ChildLike & EventEmitter & { out: EventEmitter; err: EventEmitter } };
+    const mkU = (platform: NodeJS.Platform, files: string[], real: Record<string, string>, extra: Record<string, unknown> = {}, pathDirs = platform === 'win32' ? 'C:\\Windows\\System32' : '/usr/bin'): U => {
+      const calls: U['calls'] = [], done: SetupDone[] = [];
+      let child!: ReturnType<U['child']>;
+      const home = platform === 'win32' ? 'C:\\Users\\u' : '/home/u';
+      const setup = new HarnessSetup({
+        detectEnv: { platform, env: platform === 'win32' ? { Path: pathDirs, SystemRoot: 'C:\\Windows', LOCALAPPDATA: 'C:\\Users\\u\\AppData\\Local', APPDATA: 'C:\\Users\\u\\AppData\\Roaming' } : { PATH: pathDirs }, homedir: home, isFile: (f: string) => files.includes(f) },
+        spawn: (file: string, args: readonly string[], opts: { env: NodeJS.ProcessEnv; cwd?: string; shell?: unknown }) => {
+          assert.ok(!('shell' in opts) || opts.shell === false, 'FR-018: an update never runs through a shell');
+          calls.push({ file, args, env: opts.env, ...(opts.cwd ? { cwd: opts.cwd, cwdExisted: fs.existsSync(opts.cwd) } : {}) });
+          const out = new EventEmitter(), err = new EventEmitter();
+          child = Object.assign(new EventEmitter(), { pid: 42, out, err, stdout: out, stderr: err, stdin: null }) as never;
+          return child;
+        },
+        killTree: () => undefined,
+        send: ((ch: string, p: SetupDone) => { if (ch === 'harness:done') done.push(p); }) as never,
+        redetect: async () => undefined,
+        realpath: (p: string) => real[p] ?? p,
+        progressMs: 0,
+        ...extra,
+      } as never);
+      return { setup, calls, done, child: () => child };
+    };
+    const NVM = '/home/u/.nvm/versions/node/v22.3.0';
+    const argvOf = (u: U, kind: 'claude' | 'codex' | 'copilot', i = 0) => { const p = u.setup.prepare(kind, 'update', i); assert.ok(p.ok, JSON.stringify(p)); return (p as { job: { file: string; args: string[] } }).job; };
+
+    // npm: pinned to the checked version, with the npm of the same Node folder (not the first on PATH); unpinned without a check
+    {
+      const files = [`${NVM}/bin/codex`, `${NVM}/bin/npm`, '/usr/bin/npm', '/usr/bin/bash'];
+      const real = { [`${NVM}/bin/codex`]: `${NVM}/lib/node_modules/@openai/codex/bin/codex.js` };
+      const pinned = mkU('linux', files, real, { checked: () => '0.164.0' }, `${NVM}/bin:/usr/bin`);
+      const pl = pinned.setup.plans('codex', 'update').plans;
+      assert.deepStrictEqual([pl[0].manager, pl[0].owner, pl[0].pinned, pl[0].display], ['npm', true, '0.164.0', 'npm install -g @openai/codex@0.164.0 --no-update-notifier']);
+      const j = argvOf(pinned, 'codex');
+      assert.strictEqual(j.file, `${NVM}/bin/npm`, 'the npm that owns the copy, not /usr/bin/npm');
+      assert.deepStrictEqual(j.args, ['install', '-g', '@openai/codex@0.164.0', '--no-update-notifier']);
+      const unpinned = mkU('linux', files, real, {}, `${NVM}/bin:/usr/bin`);
+      assert.deepStrictEqual(unpinned.setup.plans('codex', 'update').plans[0].args, ['install', '-g', '@openai/codex@latest'], 'no check: spec 051\'s argv');
+      // a hostile "checked" value is never put into argv
+      const bad = mkU('linux', files, real, { checked: () => '1.0.0; rm -rf /' }, `${NVM}/bin:/usr/bin`);
+      assert.deepStrictEqual(bad.setup.plans('codex', 'update').plans[0].args, ['install', '-g', '@openai/codex@latest']);
+      // no npm of that Node folder, and the first npm does not hold the copy: refused, never a guess
+      const none = mkU('linux', [`${NVM}/bin/codex`, '/usr/bin/npm', '/usr/bin/bash'], real, {}, `${NVM}/bin:/usr/bin`);
+      const r = none.setup.prepare('codex', 'update', 0);
+      assert.ok(!r.ok && /npm that installed this copy was not found/.test(r.error));
+    }
+    // Homebrew: the owning route first, npm behind "other ways"; casks and --greedy; the brew of that prefix
+    {
+      const files = ['/opt/homebrew/bin/codex', '/opt/homebrew/bin/brew', '/usr/bin/npm'];
+      const real = { '/opt/homebrew/bin/codex': '/opt/homebrew/Caskroom/codex/0.163.0/codex-aarch64-apple-darwin' };
+      const u = mkU('darwin', files, real, {}, '/opt/homebrew/bin:/usr/bin');
+      const pl = u.setup.plans('codex', 'update').plans;
+      assert.deepStrictEqual(pl.map((p) => p.manager), ['brew', 'npm'], 'an update leaves no second copy: the owner is first');
+      assert.strictEqual(pl[0].owner, true);
+      assert.strictEqual(pl[1].owner, undefined);
+      assert.strictEqual(argvOf(u, 'codex').file, '/opt/homebrew/bin/brew');
+      const cl = mkU('darwin', ['/opt/homebrew/bin/claude', '/opt/homebrew/bin/brew'], { '/opt/homebrew/bin/claude': '/opt/homebrew/Caskroom/claude-code@latest/2.1.309/claude' }, {}, '/opt/homebrew/bin:/usr/bin');
+      assert.deepStrictEqual(cl.setup.plans('claude', 'update').plans[0].args, ['upgrade', '--cask', 'claude-code@latest'], 'the cask of the path');
+      const cs = mkU('darwin', ['/opt/homebrew/bin/claude', '/opt/homebrew/bin/brew'], { '/opt/homebrew/bin/claude': '/opt/homebrew/Caskroom/claude-code/2.1.308/claude' }, {}, '/opt/homebrew/bin:/usr/bin');
+      assert.deepStrictEqual(cs.setup.plans('claude', 'update').plans[0].args, ['upgrade', '--cask', 'claude-code']);
+      const cp = mkU('darwin', ['/opt/homebrew/bin/copilot', '/opt/homebrew/bin/brew'], { '/opt/homebrew/bin/copilot': '/opt/homebrew/Caskroom/copilot-cli/1.0.100/copilot' }, {}, '/opt/homebrew/bin:/usr/bin');
+      assert.deepStrictEqual(cp.setup.plans('copilot', 'update').plans[0].args, ['upgrade', '--cask', 'copilot-cli', '--greedy'], 'a self-updating cask needs --greedy');
+      assert.deepStrictEqual(updatePlans('codex', 'darwin', only('brew'))[0].args, ['upgrade', '--cask', 'codex'], 'no --greedy for the others');
+    }
+    // winget: pinned with --version
+    {
+      const link = 'C:\\Users\\u\\AppData\\Local\\Microsoft\\WinGet\\Links\\claude.exe';
+      const real = { [link]: 'C:\\Users\\u\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Anthropic.ClaudeCode_x\\claude.exe' };
+      const u = mkU('win32', [link, 'C:\\w\\winget.exe'], real, { checked: () => '2.1.308' });
+      (u.setup['deps'].detectEnv.env as Record<string, string>).Path = 'C:\\w';
+      const pl = u.setup.plans('claude', 'update').plans;
+      assert.strictEqual(pl[0].manager, 'winget');
+      assert.deepStrictEqual(pl[0].args.slice(-2), ['--version', '2.1.308']);
+      assert.ok(pl[0].args.includes('--source') && pl[0].args.includes('winget'));
+    }
+    // the app's own updater for a vendor-installer copy; the vendor script stays behind it as "other way"
+    {
+      const files = ['/home/u/.local/bin/claude', '/usr/bin/bash'];
+      const real = { '/home/u/.local/bin/claude': '/home/u/.local/share/claude/versions/2.1.300' };
+      const u = mkU('linux', files, real, {});
+      const pl = u.setup.plans('claude', 'update').plans;
+      assert.deepStrictEqual(pl.map((p) => [p.manager, p.own, p.owner]), [['official', 'claude', true], ['official', undefined, undefined]]);
+      assert.deepStrictEqual(pl[0].display, 'claude update');
+      const j = argvOf(u, 'claude');
+      assert.deepStrictEqual([j.file, j.args], ['/home/u/.local/share/claude/versions/2.1.300', ['update']], 'the app itself, by its real path');
+      const cop = mkU('linux', ['/home/u/.local/bin/copilot', '/usr/bin/bash'], { '/home/u/.local/bin/copilot': '/home/u/.copilot/pkg/universal/1.0.100/copilot' }, {});
+      assert.strictEqual(cop.setup.plans('copilot', 'update').plans[0].display, 'copilot update');
+      // an install never gets an own updater
+      assert.ok(!u.setup.plans('claude', 'install').plans.some((p) => p.own));
+    }
+    // Codex: `codex update` only for the official standalone CLI with the codex-cli label (T020); everything else goes to its own route or the 060 route
+    {
+      const root = '/home/u/.codex/packages/standalone/releases/0.163.0-x86_64';
+      const files = ['/home/u/.local/bin/codex', '/usr/bin/bash'];
+      const label = (stdout: string) => ({ exec: async () => ({ code: 0, stdout, stderr: '' }) });
+      const real = { '/home/u/.local/bin/codex': `${root}/codex` };
+      const off = mkU('linux', files, real, label('codex-cli 0.163.0\n'));
+      assert.deepStrictEqual(off.setup.plans('codex', 'update').plans.map((p) => p.codexUpdate), [undefined], 'the label has not been read yet: not official');
+      await off.setup.warm('codex');
+      const pl = off.setup.plans('codex', 'update').plans;
+      assert.deepStrictEqual(pl.map((p) => [p.codexUpdate, p.script ? 'script' : '', p.owner]), [[true, '', true], [undefined, 'script', undefined]]);
+      assert.strictEqual(pl[0].display, 'codex update');
+      const j = argvOf(off, 'codex');
+      assert.deepStrictEqual([j.file, j.args], [`${root}/codex`, ['update']]);
+      for (const [name, out] of [['a missing label', ''], ['another label', 'codex 0.163.0'], ['a fork', 'my-codex 0.163.0']] as const) {
+        const u = mkU('linux', files, real, label(out));
+        await u.setup.warm('codex');
+        assert.ok(!u.setup.plans('codex', 'update').plans.some((p) => p.codexUpdate), name + ': no codex update');
+      }
+      const exit1 = mkU('linux', files, real, { exec: async () => ({ code: 1, stdout: 'codex-cli 0.163.0', stderr: '' }) });
+      await exit1.setup.warm('codex');
+      assert.ok(!exit1.setup.plans('codex', 'update').plans.some((p) => p.codexUpdate), 'a failing --version: not official');
+      const untrusted = mkU('linux', files, real, { ...label('codex-cli 0.163.0'), trustedPath: () => false });
+      await untrusted.setup.warm('codex');
+      assert.ok(!untrusted.setup.plans('codex', 'update').plans.some((p) => p.codexUpdate), 'a world-writable folder');
+      const notFile = mkU('linux', files, real, { ...label('codex-cli 0.163.0'), regular: () => false });
+      await notFile.setup.warm('codex');
+      assert.ok(!notFile.setup.plans('codex', 'update').plans.some((p) => p.codexUpdate), 'not a regular file');
+      // npm and Homebrew copies update through their own route, never codex update; the Windows install.ps1 folder goes to the 060 route
+      const npmC = mkU('linux', [`${NVM}/bin/codex`, `${NVM}/bin/npm`, '/usr/bin/bash'], { [`${NVM}/bin/codex`]: `${NVM}/lib/node_modules/@openai/codex/bin/codex.js` }, label('codex-cli 0.163.0'), `${NVM}/bin:/usr/bin`);
+      await npmC.setup.warm('codex');
+      assert.deepStrictEqual(npmC.setup.plans('codex', 'update').plans.map((p) => p.manager), ['npm', 'official']);
+      const winC = mkU('win32', ['C:\\Users\\u\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe', 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'], {}, label('codex-cli 0.163.0'));
+      await winC.setup.warm('codex');
+      const wp = winC.setup.plans('codex', 'update').plans;
+      assert.deepStrictEqual([wp[0].manager, wp[0].own, wp[0].codexUpdate, !!wp[0].script], ['official', undefined, undefined, true], 'the 060 installer route, never codex update');
+      // a look-alike standalone folder
+      const alike = mkU('linux', files, { '/home/u/.local/bin/codex': '/home/u/.codex/packages/standalonex/releases/1/codex' }, label('codex-cli 0.163.0'));
+      await alike.setup.warm('codex');
+      assert.ok(!alike.setup.plans('codex', 'update').plans.some((p) => p.codexUpdate));
+    }
+    // outside Durbar's routes: no owner is marked (the window shows a hint and no Update)
+    {
+      const u = mkU('linux', ['/usr/bin/claude', '/usr/bin/npm', '/usr/bin/bash'], {});
+      assert.ok(u.setup.plans('claude', 'update').plans.every((p) => !p.owner));
+    }
+
+    // T021: root is refused for every vendor updater (FR-025), not only plan.script
+    {
+      const files = ['/home/u/.local/bin/claude', '/home/u/.local/bin/codex', '/home/u/.local/bin/copilot', '/usr/bin/bash'];
+      const root = '/home/u/.codex/packages/standalone/releases/1/codex';
+      const real = { '/home/u/.local/bin/claude': '/home/u/.local/share/claude/versions/2.1.300', '/home/u/.local/bin/codex': root, '/home/u/.local/bin/copilot': '/home/u/.copilot/pkg/universal/1.0.100/copilot' };
+      const u = mkU('linux', files, real, { exec: async () => ({ code: 0, stdout: 'codex-cli 1.0.0', stderr: '' }), isRoot: () => true });
+      await u.setup.warm('codex');
+      for (const k of ['claude', 'copilot', 'codex'] as const) {
+        const r = u.setup.prepare(k, 'update', 0);
+        assert.ok(!r.ok && /not as root/.test(r.error), `${k} update is refused as root`);
+      }
+      const r1 = u.setup.prepare('codex', 'update', 1);
+      assert.ok(!r1.ok && /not as root/.test(r1.error), 'the official installer too');
+      assert.ok(mkU('linux', files, real, { isRoot: () => false }).setup.prepare('claude', 'update', 0).ok);
+    }
+    // the confirmation says what runs: target version, what the route checks, Copilot's sign-in, and codex update's exact command per OS
+    {
+      const files = ['/home/u/.local/bin/copilot', '/home/u/.local/bin/codex', '/usr/bin/bash'];
+      const real = { '/home/u/.local/bin/copilot': '/home/u/.copilot/pkg/universal/1.0.100/copilot', '/home/u/.local/bin/codex': '/home/u/.codex/packages/standalone/releases/1/codex' };
+      const u = mkU('linux', files, real, { checked: (k: string) => (k === 'copilot' ? '1.0.103' : '0.164.0'), exec: async () => ({ code: 0, stdout: 'codex-cli 1.0.0', stderr: '' }) });
+      const cop = confirmText(argvJob(u.setup.prepare('copilot', 'update', 0)));
+      assert.match(cop.detail, /copilot update/);
+      assert.match(cop.detail, /GitHub sign-in/);
+      assert.match(cop.detail, /newest version the source offers \(checked: 1\.0\.103\)/);
+      assert.match(cop.detail, /unconfirmed/);
+      await u.setup.warm('codex');
+      const cj = argvJob(u.setup.prepare('codex', 'update', 0));
+      const posix = confirmText(cj, 'linux');
+      assert.ok(posix.detail.includes(CODEX_UPDATE_COMMAND.posix), 'the exact POSIX command');
+      assert.match(posix.detail, /Durbar cannot see or check that script/);
+      assert.match(posix.detail, /decides what actually runs/);
+      assert.ok(confirmText(cj, 'win32').detail.includes(CODEX_UPDATE_COMMAND.win32), 'the exact Windows command');
+      assert.ok(!confirmText(cj, 'linux').detail.includes('irm https'), 'only the command of this OS');
+      assert.strictEqual(posix.button, 'Update');
+      // pinned routes name the exact version
+      const np = mkU('linux', [`${NVM}/bin/codex`, `${NVM}/bin/npm`], { [`${NVM}/bin/codex`]: `${NVM}/lib/node_modules/@openai/codex/bin/codex.js` }, { checked: () => '0.164.0' }, `${NVM}/bin:/usr/bin`);
+      assert.match(confirmText(argvJob(np.setup.prepare('codex', 'update', 0))).detail, /exactly 0\.164\.0/);
+      assert.match(confirmText(argvJob(np.setup.prepare('codex', 'update', 0))).detail, /integrity hash/);
+    }
+    function argvJob(p: ReturnType<HarnessSetup['prepare']>): Parameters<typeof confirmText>[0] { assert.ok(p.ok, JSON.stringify(p)); return (p as { job: Parameters<typeof confirmText>[0] }).job; }
+
+    // the codex update child: no CODEX_MANAGED_BY_*, a fixed PATH even with a fake sh on the user's, a private working folder removed afterwards
+    {
+      const files = ['/home/u/.local/bin/codex', '/usr/bin/bash'];
+      const real = { '/home/u/.local/bin/codex': '/home/u/.codex/packages/standalone/releases/1/codex' };
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-081-t-'));
+      const saved = { PATH: process.env.PATH, A: process.env.CODEX_MANAGED_BY_NPM, B: process.env.CODEX_MANAGED_BY_BUN, C: process.env.CODEX_MANAGED_BY_PNPM, D: process.env.CODEX_MANAGED_BY_VITE_PLUS, N: process.env.CODEX_NON_INTERACTIVE };
+      process.env.CODEX_MANAGED_BY_NPM = '1'; process.env.CODEX_MANAGED_BY_BUN = '1'; process.env.CODEX_MANAGED_BY_PNPM = '1'; process.env.CODEX_MANAGED_BY_VITE_PLUS = '1';
+      process.env.PATH = '/tmp/fake-sh-dir:' + (saved.PATH ?? '');
+      try {
+        const u = mkU('linux', files, real, { exec: async () => ({ code: 0, stdout: 'codex-cli 1.0.0', stderr: '' }), tmpdir: tmp });
+        await u.setup.warm('codex');
+        const p = u.setup.prepare('codex', 'update', 0);
+        assert.ok(p.ok);
+        assert.ok(u.setup.start((p as unknown as { job: never }).job).ok);
+        const c = u.calls[0];
+        for (const k of Object.keys(c.env)) assert.ok(!k.startsWith('CODEX_MANAGED_BY_'), `${k} is removed from the child`);
+        assert.strictEqual(c.env.PATH, '/usr/bin:/bin:/usr/sbin:/sbin', 'a fixed system PATH, not the user\'s with a fake sh');
+        assert.strictEqual(c.env.CODEX_NON_INTERACTIVE, undefined, 'codex update sets it itself; Durbar adds nothing');
+        assert.ok(c.cwd && c.cwd.startsWith(tmp) && c.cwdExisted, 'a private working folder from the OS temp folder');
+        if (process.platform !== 'win32') assert.strictEqual(fs.statSync(c.cwd as string).mode & 0o777, 0o700, 'private (POSIX modes; Windows has no such bits)');
+        assert.strictEqual(process.env.CODEX_MANAGED_BY_NPM, '1', 'Durbar\'s own environment is untouched');
+        // the failure: an unknown subcommand offers the checked 060 installer, never a retry by itself
+        u.child().err.emit('data', fx081('codex-unknown-subcommand'));
+        u.child().emit('close', 2); await tick(); await tick();
+        assert.deepStrictEqual([u.done[0].ok, u.done[0].fallback, u.done[0].failure, u.calls.length], [false, 'official', 'other', 1]);
+        assert.ok(!fs.existsSync(c.cwd as string), 'the working folder is removed');
+      } finally {
+        for (const [k, v] of [['PATH', saved.PATH], ['CODEX_MANAGED_BY_NPM', saved.A], ['CODEX_MANAGED_BY_BUN', saved.B], ['CODEX_MANAGED_BY_PNPM', saved.C], ['CODEX_MANAGED_BY_VITE_PLUS', saved.D], ['CODEX_NON_INTERACTIVE', saved.N]] as Array<[string, string | undefined]>) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    }
+    // each fallback trigger; in-use, managed, a cancel and a success give none
+    {
+      const files = ['/home/u/.local/bin/codex', '/usr/bin/bash'];
+      const real = { '/home/u/.local/bin/codex': '/home/u/.codex/packages/standalone/releases/1/codex' };
+      const trial = async (out: string, code: number | null, how?: 'cancel') => {
+        const u = mkU('linux', files, real, { exec: async () => ({ code: 0, stdout: 'codex-cli 1.0.0', stderr: '' }) });
+        await u.setup.warm('codex');
+        const p = u.setup.prepare('codex', 'update', 0);
+        assert.ok(p.ok && u.setup.start((p as unknown as { job: never }).job).ok);
+        u.child().out.emit('data', out);
+        if (how === 'cancel') u.setup.cancel();
+        u.child().emit('close', code); await tick(); await tick();
+        return u.done[0];
+      };
+      assert.strictEqual((await trial(fx081('codex-unknown-subcommand'), 2)).fallback, 'official');
+      assert.strictEqual((await trial(fx081('codex-no-method'), 1)).fallback, 'official');
+      assert.strictEqual((await trial('something broke', 7)).fallback, 'official', 'another failing exit');
+      assert.strictEqual((await trial('error: file is being used by another process', 1)).fallback, undefined, 'in use: closing the app is the advice');
+      assert.strictEqual((await trial(fx081('claude-update-disabled'), 1)).fallback, undefined, 'managed: no retry');
+      assert.strictEqual((await trial('', 0)).fallback, undefined, 'success');
+      const c = await trial('', null, 'cancel');
+      assert.deepStrictEqual([c.fallback, c.reason], [undefined, 'cancelled']);
+      assert.strictEqual((await trial(fx081('npm-eacces'), 1)).failure, 'admin');
+    }
+    // the Codex official-installer fallback sets CODEX_NON_INTERACTIVE=1 in that child only
+    {
+      const script = Buffer.from('#!/bin/sh\necho hi\n');
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-081-s-'));
+      const u = mkU('linux', ['/usr/bin/bash'], {}, { httpGet: async () => ({ status: 200, body: script }), tmpdir: tmp });
+      const p = u.setup.prepare('codex', 'install', 0);
+      assert.ok(p.ok);
+      const ready = await u.setup.withScript((p as unknown as { job: never }).job);
+      assert.ok(ready.ok && u.setup.start(ready.job).ok);
+      assert.strictEqual(u.calls[0].env.CODEX_NON_INTERACTIVE, '1');
+      assert.strictEqual(process.env.CODEX_NON_INTERACTIVE, undefined, 'only that child');
+      u.child().emit('close', 0); await tick(); await tick();
+      const w = mkU('linux', ['/usr/bin/bash'], {}, { httpGet: async () => ({ status: 200, body: script }), tmpdir: tmp });
+      const wp = w.setup.prepare('claude', 'install', 0);
+      const wr = await w.setup.withScript((wp as unknown as { job: never }).job);
+      assert.ok(wr.ok && w.setup.start(wr.job).ok);
+      assert.strictEqual(w.calls[0].env.CODEX_NON_INTERACTIVE, undefined, 'not for Claude');
+      w.child().emit('close', 0); await tick(); await tick();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+    // a vendor updater that says "up to date" is no failure and no "updated" claim
+    {
+      const u = mkU('linux', ['/home/u/.local/bin/claude'], { '/home/u/.local/bin/claude': '/home/u/.local/share/claude/versions/2.1.309' });
+      const p = u.setup.prepare('claude', 'update', 0);
+      assert.ok(p.ok && u.setup.start((p as unknown as { job: never }).job).ok);
+      u.child().out.emit('data', fx081('claude-update-uptodate'));
+      u.child().emit('close', 0); await tick(); await tick();
+      assert.deepStrictEqual([u.done[0].ok, u.done[0].failure, u.done[0].fallback], [true, 'vendor-up-to-date', undefined]);
+    }
+    // FR-011: after an update the done event says when Durbar still finds the old version, or another copy first
+    {
+      let version = '0.163.0', where = '/usr/local/bin/codex';
+      const snapshot = async () => ({ codex: { version, where } });
+      const u = mkU('darwin', ['/opt/homebrew/bin/codex', '/opt/homebrew/bin/brew'], { '/opt/homebrew/bin/codex': '/opt/homebrew/Caskroom/codex/0.163.0/codex' }, { snapshot, checked: () => '0.164.0' }, '/opt/homebrew/bin:/usr/bin');
+      const p = u.setup.prepare('codex', 'update', 0);
+      assert.ok(p.ok && u.setup.start((p as unknown as { job: never }).job).ok);
+      u.child().emit('close', 0); await tick(); await tick(); await tick();
+      assert.match(u.done[0].note ?? '', /Updated, but Durbar still finds 0\.163\.0 at \/usr\/local\/bin\/codex/);
+      const v = mkU('darwin', ['/opt/homebrew/bin/codex', '/opt/homebrew/bin/brew'], { '/opt/homebrew/bin/codex': '/opt/homebrew/Caskroom/codex/0.163.0/codex' }, { snapshot: async () => ({ codex: { version, where } }), checked: () => '0.164.0' }, '/opt/homebrew/bin:/usr/bin');
+      const p2 = v.setup.prepare('codex', 'update', 0);
+      assert.ok(p2.ok && v.setup.start((p2 as unknown as { job: never }).job).ok);
+      version = '0.164.0';
+      v.child().emit('close', 0); await tick(); await tick(); await tick();
+      assert.strictEqual(v.done[0].note, undefined, 'the new version is simply the new version');
+    }
+    // FR-023 with an organization max: only a pinned route, within the range; a route that cannot pin gives the explanation
+    {
+      const files = [`${NVM}/bin/codex`, `${NVM}/bin/npm`, '/usr/bin/bash'];
+      const real = { [`${NVM}/bin/codex`]: `${NVM}/lib/node_modules/@openai/codex/bin/codex.js` };
+      const pol = (max: string) => ({ checked: () => '0.164.0', policy: () => ({ state: 'ok', max: { codex: max } }) });
+      const ok = mkU('linux', files, real, pol('0.170.0'), `${NVM}/bin:/usr/bin`).setup.plans('codex', 'update');
+      assert.deepStrictEqual(ok.plans.map((p) => [p.manager, p.pinned]), [['npm', '0.164.0']], 'the unpinned official script is not offered under a max');
+      const over = mkU('linux', files, real, pol('0.160.0'), `${NVM}/bin:/usr/bin`).setup.plans('codex', 'update');
+      assert.deepStrictEqual([over.plans.length, /above the version your organization allows/.test(over.blocked ?? '')], [0, true]);
+      const brew = mkU('darwin', ['/opt/homebrew/bin/codex', '/opt/homebrew/bin/brew'], { '/opt/homebrew/bin/codex': '/opt/homebrew/Caskroom/codex/0.163.0/codex' }, pol('0.170.0'), '/opt/homebrew/bin:/usr/bin').setup.plans('codex', 'update');
+      assert.deepStrictEqual([brew.plans.length, /cannot install a chosen version/.test(brew.blocked ?? '')], [0, true]);
+    }
+    // SC-003: every path to start passes the native confirmation (main's handler; the waiting update goes through the same step)
+    {
+      const ipc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'harness.ts'), 'utf8');
+      const upd = ipc.slice(ipc.indexOf('const runUpdate'), ipc.indexOf("ipcHandle('harness:run'"));
+      assert.ok(upd.indexOf('await confirm(p.job)') > 0 && upd.indexOf('await confirm(p.job)') < upd.indexOf('harnessSetup.start('), 'an update is confirmed before it starts');
+      assert.ok(upd.indexOf('await confirm(p.job)') < upd.indexOf('recount()') && upd.indexOf('recount()') < upd.indexOf('harnessSetup.start('), 'then the sessions are counted again, then it starts');
+      const run = ipc.slice(ipc.indexOf("ipcHandle('harness:run'"), ipc.indexOf("ipcHandle('harness:updates'"));
+      assert.deepStrictEqual(run.match(/harnessSetup\.start\(/g)?.length, 1, 'harness:run starts only the install and sign-in path itself');
+      assert.ok(/gate\.request\(req\.kind, g, \(recount\) => runUpdate\(req\.kind, req\.idx, recount\)\)/.test(run), 'an update goes only through the gate and runUpdate');
+      assert.strictEqual((ipc.match(/harnessSetup\.start\(/g) ?? []).length, 2, 'two starts in the file: runUpdate and the install path');
+    }
   }
   console.log('harnesssetup: all checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });

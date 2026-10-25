@@ -1907,8 +1907,8 @@ function paintFolderStatus(a){
     chip.onclick=()=>showFolderStatus(a,chip);chip.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();showFolderStatus(a,chip);}};}
   else{chip.removeAttribute('role');chip.removeAttribute('tabindex');chip.setAttribute('aria-label',GS.chipLabel(st));chip.onclick=chip.onkeydown=null;}
 }
-async function showFolderStatus(a,chip){
-  const st=(FSTAT.get(a.id)||{}).st;if(!st||!st.repo)return;
+async function showFolderStatus(a,chip,st0){
+  const st=st0||(FSTAT.get(a.id)||{}).st;if(!st||!st.repo)return;
   const r=await askDialog({title:'Changes in '+(folderNameOf(a)||'this folder'),body:GS.body(st),lines:GS.lines(st),buttons:[{label:'Open in VS Code',value:'vscode'},{label:'Done',value:null,cls:'primary'}],returnFocus:chip});
   if(r&&r.value==='vscode'&&bridge.openInVSCode)openLive(a,chip);
 }
@@ -2988,13 +2988,55 @@ async function endAllSessions(anchor){
   const list=endAllTargets();
   if(!list.length){toast('No session is running.',2600);return;}
   const busyN=list.filter(a=>a.state==='working'||a.state==='thinking'||a.state==='waiting').length;
-  const ok=await askDialog({title:'End all sessions?',body:(list.length===1?'1 session ends':list.length+' sessions end')+' and frees '+(list.length===1?'its place':'their places')+(busyN?' ('+busyN+' still working: '+(busyN===1?'its reply stops':'their replies stop')+')':'')+'. The chats stay; send a message to pick up where you left off.',returnFocus:anchor,
+  const ok=await askDialog({title:'End all sessions?',body:DurbarDialog.endAllBody(list.length,busyN),returnFocus:anchor,
     buttons:[{label:'Cancel',value:null},{label:'End all sessions',value:'ok',cls:'primary danger'}]});
   if(!ok)return;
   const bad=[];
-  for(const a of list){try{await (bridge.end||bridge.stop)(a.id);dropDraft(a.id);}catch(err){bad.push(a.name);}}
+  const sums=await Promise.all(list.map(a=>readSessionSummary(liveRoot(a)))); // spec 085: read together, so 15 sessions wait at most 5 s, not 5 s each
+  for(const [i,a] of list.entries()){try{await (bridge.end||bridge.stop)(a.id);dropDraft(a.id);sessionSummaryNote(liveRoot(a),sums[i]);}catch(err){bad.push(a.name);}}
   const n=list.length-bad.length;
   toast(bad.length?'Could not end '+esc(bad.join(', '))+'.':(n===1?'1 session ended.':n+' sessions ended.')+' Sending a message resumes one.',4200).classList.add(bad.length?'err':'ok');
+}
+/* spec 006 FR-038..FR-046 (issue 606): the last run ended abnormally with sessions mid-turn. One calm card; resuming is the same wake as
+   opening a restored chat (own mode and caps, no prompt), one after another. */
+const crashSt={loaded:false,items:[],first:null,missing:0,pick:false,done:new Set(),busy:false};
+const crashLeft=()=>crashSt.items.filter(i=>!crashSt.done.has(i.id)&&liveById(i.id)&&liveById(i.id).info&&liveById(i.id).info.resumeLast);
+async function renderCrashStrip(){
+  const el=$('crashStrip'); if(!el||!bridge||!bridge.interrupted||demoOn)return;
+  if(!crashSt.loaded){let s=null; try{s=await bridge.interrupted();}catch(e){s=null;}
+    crashSt.loaded=true; crashSt.items=(s&&Array.isArray(s.items))?s.items.filter(i=>i&&liveById(i.id)):[]; crashSt.missing=(s&&s.missing>0)?s.missing:0;crashSt.first=crashSt.items.length?crashSt.items[0].id:null;}
+  paintCrashStrip();
+}
+function paintCrashStrip(focusSel){
+  const el=$('crashStrip'); if(!el)return;
+  const left=crashLeft();
+  if(!left.length){const was=!el.hidden,had=el.contains(document.activeElement);el.hidden=true;el.innerHTML='';crashSt.pick=false;
+    if(was){if(bridge.dismissInterrupted)bridge.dismissInterrupted().catch(()=>{});scheduleRender();
+      /* review of PR 720: focus does not fall to <body>: it goes to the desk of the card's first session (after the office redraws), else the office */
+      if(had||document.activeElement===document.body)requestAnimationFrame(()=>{const ae=document.activeElement;if(ae&&ae!==document.body&&document.contains(ae))return;
+        const d=crashSt.first&&document.querySelector('#stage .desk[data-id="'+CSS.escape(crashSt.first)+'"]');if(d)focusIn(d);else focusAfterGone('gone');});}
+    return;}
+  const n=left.length, ex=crashSt.missing>0?' ('+crashSt.missing+(crashSt.missing===1?' more':' others')+' could not be reopened.)':'';
+  el.innerHTML='<span class="ns-ic" aria-hidden="true">i</span><span class="ns-t"><b>'+(n===1?'1 session was interrupted':n+' sessions were interrupted')+'</b> when Durbar stopped unexpectedly. The reply '+(n===1?'it was':'each was')+' writing is lost, and nothing is sent again.'+ex+'</span>'+
+    '<span class="ns-act"><button class="btn primary" type="button" data-cr="all">Resume all</button>'+
+    '<button class="btn" type="button" data-cr="pick" aria-expanded="'+(crashSt.pick?'true':'false')+'" aria-controls="crashList">Pick…</button>'+
+    '<button class="btn" type="button" data-cr="close">Dismiss</button></span>'+
+    (crashSt.pick?'<span class="aw-list cr-list" id="crashList" role="list" aria-label="Interrupted sessions">'+left.map(i=>'<span class="aw-it" role="listitem"><span class="aw-w"><b>'+esc(i.folderName)+'</b><small>'+esc(i.adapterId)+'</small></span><button class="btn" type="button" data-crrow="'+esc(i.id)+'">Resume</button></span>').join('')+'</span>':'');
+  el.hidden=false;
+  const all=el.querySelector('[data-cr="all"]');
+  el.querySelector('[data-cr="close"]').onclick=()=>{crashSt.items=[];paintCrashStrip();};
+  el.querySelector('[data-cr="pick"]').onclick=()=>{crashSt.pick=!crashSt.pick;paintCrashStrip(crashSt.pick?'[data-crrow]':'[data-cr="pick"]');};
+  all.onclick=()=>crashResume(crashLeft().map(i=>i.id),all);
+  el.querySelectorAll('[data-crrow]').forEach(b=>b.onclick=()=>crashResume([b.dataset.crrow],b));
+  if(focusSel){const f=el.querySelector(focusSel);if(f)focusIn(f,{reveal:false});}
+  scheduleRender();
+}
+async function crashResume(ids,btn){
+  if(crashSt.busy)return; crashSt.busy=true; const done=busy(btn,'Resuming…'); let ok=0;
+  for(const id of ids){const a=liveById(id); if(!a||!a.info||!a.info.resumeLast){crashSt.done.add(id);continue;}
+    if(await wakeLast(a,true)){crashSt.done.add(id);ok++;}}
+  crashSt.busy=false; done(); paintCrashStrip(crashLeft().length?'[data-cr="all"]':null);
+  if(ok)toast((ok===1?'1 session':ok+' sessions')+' resumed. Say “continue” in a chat to go on.',4200).classList.add('ok');
 }
 /* FR-089: "Since you were away": how long the app was closed and the scheduled prompts that did not run, from main's stores only */
 const awayWords=ms=>{const m=Math.round(ms/60000),d=Math.floor(m/1440),h=Math.floor((m%1440)/60),mm=m%60;
@@ -4563,7 +4605,30 @@ async function openLive(a,btn){
   finally{done();}
 }
 async function stopLive(a,btn){const r=liveRoot(a),done=busy(btn,'Stopping…');try{await bridge.stop(r.id);}finally{done();}toast(esc(r.name)+': stopped the current turn. It is ready for your next message.').classList.add('ok');}
-async function endLive(a,btn){const r=liveRoot(a),done=busy(btn,'Ending…');try{await (bridge.end||bridge.stop)(r.id);}finally{done();}dropDraft(r.id);toast(esc(r.name)+': session ended. Sending a message resumes it.',4200).classList.add('ok');}
+async function endLive(a,btn){const r=liveRoot(a),done=busy(btn,'Ending…');let sum=null;try{sum=await readSessionSummary(r);await (bridge.end||bridge.stop)(r.id);}finally{done();}dropDraft(r.id);toast(esc(r.name)+': session ended. Sending a message resumes it.',4200).classList.add('ok');sessionSummaryNote(r,sum);}
+/* ---------------- spec 085: the card in the chat when a session ends ---------------- */
+const SSUM=window.DurbarSessionSummary||null;
+/* asked before the end (main forgets the start when the session ends); never delays the end by more than 5 s; null = no card */
+async function readSessionSummary(r){
+  if(!SSUM||!bridge.sessionSummary||!r)return null;
+  try{const s=await Promise.race([bridge.sessionSummary(r.id),new Promise(res=>setTimeout(()=>res(null),5000))]);return s&&s.ok===true?s:null;}catch(e){return null;}
+}
+/* the cost part is the session's own usage figure (the same words as its usage line): money, tokens only for an agent app without a price, else nothing */
+function sessionSummaryCost(r){const t=costText(r);return !t?'':/ tok$/.test(t)?t.replace(/ tok$/,' tokens'):'cost '+t;}
+if(SIM)window.__durbarSumCost=id=>{const a=byId(id);return a?sessionSummaryCost(liveRoot(a)):null;}; /* simulator only: the driver checks the card's cost part against the session's own usage figure */
+function sessionSummaryNote(r,sum){
+  if(!SSUM||!sum)return;
+  const t=SSUM.text(sum,sessionSummaryCost(r));if(!t)return;
+  const note=addNote(liveChat(r),esc(t));note.classList.add('sum-note');note.title=SSUM.tip;
+  if(sum.git&&sum.git.repo===true&&bridge.gitStatus){
+    const row=document.createElement('div');row.className='note-actions';
+    const b=document.createElement('button');b.type='button';b.className='btn';b.textContent='Show uncommitted changes';b.dataset.act='sumFiles';
+    b.onclick=async()=>{const st=await bridge.gitStatus(r.id).catch(()=>null);
+      if(!st||!st.repo||!GS.count(st)){toast('No uncommitted changes in the folder now.'+(sum.git.commits>0?' What the session committed is in the folder\'s git history.':''),4200);return;}
+      showFolderStatus(r,b,st);};
+    row.appendChild(b);note.appendChild(row);
+  }
+}
 const failToast=what=>err=>toast('Could not '+what+': '+esc(String(err&&err.message||err)),5000).classList.add('err');
 async function copyResume(a){const r=liveRoot(a),cmd=resumeCmdOf(r); if(!cmd)return;
   try{await navigator.clipboard.writeText(cmd);toast('Copied <code>'+esc(cmd)+'</code>. End the session here first, then run it in a terminal in '+esc(roomOf(r).path)+'. In VS Code, turn on the sessions list filter External to see sessions started here.',9000).classList.add('ok');}
@@ -6067,16 +6132,19 @@ function renderPrev(a){
   INL().follow(); /* spec 059 FR-023 item 5 */
 }
 /* spec 006 FR-021: a folder restored after a restart continues its last session when its chat is first opened (no prompt is sent) */
-async function wakeLast(a){
-  if(a.waking)return; a.waking=true;
+async function wakeLast(a,crash){
+  if(a.waking)return false; a.waking=true;
   setState(a,'working','Starting','Continuing your last session…');
   const r=await bridge.wake(a.id).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   a.waking=false;
-  if(!r||!r.ok){setState(a,'idle','Not started','Your last session here. It continues when you open it.');toast('Could not continue the last session: '+esc((r&&r.error)||'unknown error'),7000);return;}
+  if(!r||!r.ok){setState(a,'idle','Not started','Your last session here. It continues when you open it.');toast('Could not continue the last session: '+esc((r&&r.error)||'unknown error'),7000);return false;}
   if(a.info){a.info.resumeLast=false;a.info.lazy=false;}
-  if(r.resumed){a.resumed=true;replayHistory(a,r.history,r.title,'Continued after restart');setState(a,'idle',null,'Continued: '+SHORT(safeMask(r.title)||'last session',90));}
+  if(r.resumed){a.resumed=true;replayHistory(a,r.history,r.title,crash?'Resumed after a crash':'Continued after restart');setState(a,'idle',null,(crash?'Resumed after a crash: ':'Continued: ')+SHORT(safeMask(r.title)||'last session',90));
+    /* spec 006 FR-045: honest about the lost turn; nothing is sent again */
+    if(crash)addNote(liveChat(a),'Durbar stopped while this session was working, so the reply it was writing is lost. Nothing was sent again; say “continue” to go on.');}
   else{if(r.resumed===false)addNote(liveChat(a),'The last session is no longer available; this is a new session.');setState(a,'idle',null,'Ready. Send a message to start.');}
   modeBackNote(a);
+  return true;
 }
 function replayHistory(a,h,title,lead){
   const chat=liveChat(a); let m=null;
@@ -6324,6 +6392,13 @@ if(bridge){
   document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('.place-add'))window.DurbarScreens.placeDialog(null);});
   $('toolsBtn').onclick=()=>window.DurbarScreens.isOpen()?window.DurbarScreens.close():window.DurbarScreens.openTools(null);
   $('settingsBtn').onclick=()=>window.DurbarScreens.openSettings();
+  /* spec 081 FR-003, FR-016: the agent-app update check runs in main (at start, or when asked); the window only shows what main keeps: the badge on Settings, and one toast per new version */
+  {const real=bridge; /* the simulator's own canned bridge under DURBAR_SIM (it never talks to main) */
+    if(real&&real.onHarnessUpdates&&real.harnessUpdates&&window.DurbarHarnesses){
+      const UPD_NAME={claude:'Claude Code',codex:'Codex',copilot:'The GitHub Copilot CLI'};
+      real.onHarnessUpdates(v=>{window.DurbarHarnesses.setUpdates(v);const a=v&&v.announce;if(a&&typeof a.version==='string'&&UPD_NAME[a.app])toast(esc(UPD_NAME[a.app]+' '+a.version)+' is available. Open Settings > Agent apps to update.',6000);});
+      real.harnessUpdates().then(v=>window.DurbarHarnesses.setUpdates(v),()=>undefined);
+    }}
   $('schedTopBtn').onclick=openSchedulesView; /* spec 044 FR-030 */
   /* spec 052 FR-083: Settings… (⌘,) in the macOS app menu. The real window's preload carries it, also under the simulator. */
   {const real=window.agentDurbar;if(real&&real.onMenuSettings)real.onMenuSettings(()=>window.DurbarScreens.openSettings());
@@ -6341,6 +6416,7 @@ if(bridge){
   if(window.DurbarFolderSetup){window.DurbarFolderSetup.init({bridge,esc,toast:(t,ms)=>toast(esc(t),ms),onRules:map=>{for(const id of Object.keys(map)){const a=liveById(id);if(!a||!a.info)continue;a.info.folderRules=map[id]||undefined;const c=$('modeChip'),sel=ui.selected&&liveRoot(byId(ui.selected)||a);if(c&&sel&&sel.id===a.id)c.outerHTML=modeChipHTML(a);}}});}
   bridge.listAgents().then(l=>{l.forEach(addLiveAgent);agentsListed=true;renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});renderRestoreStrip();
     restoreUi();renderAwayStrip(); /* spec 052 FR-087 / FR-089 */
+    renderCrashStrip(); /* spec 006 FR-041 */
     /* spec 052 FR-059: what already needs you a few seconds after start is remembered, not notified */
     setTimeout(()=>{renderInboxBtn();ATT_ARMED=true;},3000);});
   loadModels();
