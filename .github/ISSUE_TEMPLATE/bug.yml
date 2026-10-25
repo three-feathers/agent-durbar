@@ -21,8 +21,8 @@ body:
   - type: input
     id: env
     attributes:
-      label: OS and version
-      description: macOS / Windows / Linux, Agent Durbar version or commit
+      label: OS
+      description: macOS / Windows / Linux (the Agent Durbar version goes in its own field below)
   - type: dropdown
     id: deployment
     attributes:
@@ -32,7 +32,7 @@ body:
         - Unknown / not applicable
         - Published user-facing release
         - Development or main build
-        - CI, simulator, or test-only build
+        - CI, simulator, or test build (a -test tag)
   - type: input
     id: release
     attributes:

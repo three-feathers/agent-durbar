@@ -13,7 +13,7 @@ Closes #<!-- issue number: one issue = one Spec Kit task -->
 - **Agent used** (which agent wrote this, and who is its human owner): <!-- e.g. Claude Code (fjcabello), Copilot CLI (vikramgorla), none -->
 - [ ] I claimed the issue (assigned + `status:claimed`) before starting
 - [ ] Every point of the linked issue is done (`Closes #N`), or what is left is written on the issue and it stays open (`Refs #N`)
-- [ ] Before asking for review, the agent ran [docs/review-checklist.md](../docs/review-checklist.md) on its own diff as an adversarial self-review (new FR/task numbers checked against `main` and open PRs, and named here)
+- [ ] Before asking for review, the agent ran [docs/review-checklist.md](../docs/review-checklist.md) on its own diff as an adversarial self-review (new FR/task numbers checked against `main` and open PRs, and named here), reconciled with current `origin/main`, confirmed mergeable (`scripts/pr-gate.sh <N>`), agreed the acceptance cases and cited CI for the exact head sha
 - [ ] The agent did a final review of the whole diff as a reviewer (not only CI) and says below what it checked; another team's agent or a human may review too
 - [ ] I posted my own `checks run at <sha>: …` comment on this PR (AGENTS.md, *Test once, then trust the record*)
 - [ ] Before merging: every review, review thread and PR comment is read and answered, and `scripts/pr-gate.sh <N>` says *ready to merge*
@@ -53,7 +53,6 @@ Docs: n/a <reason>
 
 ## Verification
 
-- [ ] Before requesting review, I reconciled with current `origin/main`, confirmed the branch is mergeable, agreed the important acceptance cases, ran relevant local preflight checks and verified the cited CI is for the exact head sha
 - [ ] `npm run typecheck && npm run build && npm test` pass locally (no AI credits spent)
 - [ ] Tests added or updated in `scripts/` (permission broker, attachments, launcher, history/VS Code readers, folder store, adapter mapping)
 - [ ] UI change: screenshots at **1440x900** and **1280x800** with 15 simulated agents (`DURBAR_SIM=15`), added under `docs/screenshots/` and linked below

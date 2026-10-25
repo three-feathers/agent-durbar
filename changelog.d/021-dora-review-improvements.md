@@ -1,1 +1,2 @@
 - **DORA evidence and review-ready preflight** (spec 021): clarify evidence-based release-incident and corrective-release records, and bring low-cost readiness checks earlier without weakening review or CI coverage.
+- **Release-cut and label steps for DORA records** (spec 021): classify the release and record its tag on the incident issues; the `incident` label is tested; test builds are not deployments.
