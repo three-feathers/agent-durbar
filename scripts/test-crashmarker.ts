@@ -327,5 +327,42 @@ assert.deepStrictEqual(interruptedFrom(null, restored), { items: [], missing: 0 
 assert.deepStrictEqual(interruptedFrom({ ...prev, busy: [] }, restored).items, [], 'a crash while everything was idle shows no card');
 assert.deepStrictEqual(interruptedFrom(prev, [restored[0]!, restored[0]!]).items.length, 1, 'a duplicate restored id counts once');
 
-fs.rmSync(dir, { recursive: true, force: true });
-console.log('crashmarker: ok');
+// ---- after clear() a refresh never brings the marker back (round 5): the guard in the callback and the cancel in clear(), each alone
+const rdir = path.join(dir, 'refresh');
+const rfile = path.join(rdir, markerName(PID));
+// (a) the guard alone: a fake timer handle, so clear()'s cancel does nothing; the kept callback is fired after clear()
+{
+  let kept: (() => void) | undefined;
+  const m = new CrashMarker(rdir, { ...deps, setRefresh: (fn) => { kept = fn; return 'fake' as never; } });
+  m.begin();
+  m.setBusy([{ id: A, adapterId: 'copilot' }]);
+  m.flush();
+  assert.ok(kept && fs.existsSync(rfile), 'a refresh is armed while a session is busy');
+  m.clear();
+  kept!();
+  assert.ok(!fs.existsSync(rfile), 'a refresh that fires after clear() writes nothing (the active guard)');
+}
+// (c) the default timer is unref'd: a pending refresh never keeps the process alive
+{
+  const m = new CrashMarker(rdir, { ...deps, setRefresh: undefined });
+  m.begin();
+  m.setBusy([{ id: A, adapterId: 'copilot' }]);
+  m.flush();
+  const t = (m as unknown as { refresh?: NodeJS.Timeout }).refresh;
+  assert.ok(t && typeof t.hasRef === 'function', 'the default refresh is a real timer');
+  assert.strictEqual(t!.hasRef(), false, 'and it is unref\'d');
+  m.clear();
+}
+// (b) the cancel alone: a real short timer; after clear() its callback never runs (the guard cannot hide a missing cancel here)
+let ran = 0;
+const mb = new CrashMarker(rdir, { ...deps, setRefresh: (fn) => setTimeout(() => { ran++; fn(); }, 5) });
+mb.begin();
+mb.setBusy([{ id: A, adapterId: 'copilot' }]);
+mb.flush();
+mb.clear();
+setTimeout(() => {
+  assert.strictEqual(ran, 0, 'clear() cancels the pending refresh');
+  assert.ok(!fs.existsSync(rfile), 'and there is no marker');
+  fs.rmSync(dir, { recursive: true, force: true });
+  console.log('crashmarker: ok');
+}, 60);
