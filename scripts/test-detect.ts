@@ -126,6 +126,7 @@ async function main(): Promise<void> {
     ['999999999.123456789.123456789-' + 'r'.repeat(MAX_VERSION_LENGTH - 30) + '+' + 'b'.repeat(40), '999999999.123456789.123456789-' + 'r'.repeat(MAX_VERSION_LENGTH - 30)],
     [' '.repeat(195) + '1.2.3', '1.2.3'],
     [' '.repeat(195) + '1.2.3 trailing text', '1.2.3'],
+    ['1.2.3 <img src=x>', '1.2.3'],
   ]) assert.strictEqual(parseVersion(input), version, 'f: accepted ' + JSON.stringify(input));
   for (const input of [
     'npm ERR! … node v22.11.0', 'error: 1.2.3', 'other-tool 1.2.3',
@@ -135,6 +136,7 @@ async function main(): Promise<void> {
     '999999999.123456789.123456789-' + 'r'.repeat(MAX_VERSION_LENGTH - 29), 'v999999999.123456789.123456789-' + 'r'.repeat(MAX_VERSION_LENGTH - 29), '999999999.123456789.123456789-' + 'r'.repeat(40),
     // markup in the pre-release (spec 081 FR-005 class [0-9A-Za-z.-])
     '1.2.3-<img/src=x/onerror=alert(1)>', '1.2.3-a<b', '1.2.3-"x', '1.2.3-a;b', '1.2.3-a/b', '1.2.3-a&b', '1.2.3-a`b',
+    '1.2.3-<b>', '<b>1.2.3</b>', '1.2.3<script>',
     '1.2.3-' + 'r'.repeat(41), '1.2.3+' + 'b'.repeat(41), '1.2.3-', '1.2.3+',
     ' '.repeat(200) + '1.2.3', ' '.repeat(196) + '1.2.3',
     ' '.repeat(195) + '1.2.30', ' '.repeat(195) + '1.2.3x',
