@@ -154,7 +154,16 @@ void (async () => {
     c1.sessions.get(a)!.processing = true; // a turn is running in a
     await ad.setCap(b, 7);
     await ad.setMcpEnabled(b, 'github', false);
+    // spec 052 FR-178: a question open while the client is replaced ends as skipped with the reason `reconnect` (a code on the event and in the log)
+    const dbg: string[] = [];
+    ad.debug = (m) => dbg.push(m);
+    const openQ = (c1.sessions.get(a)!.config.onUserInputRequest as (r: unknown) => Promise<{ answer: string }>)({ question: 'Open while reconnecting?', choices: ['Yes'] });
+    for (let i = 0; i < 500 && !events.some((e) => e.type === 'question' && (e as { phase?: string }).phase === 'asked'); i++) await new Promise((r) => setTimeout(r, 2));
+    assert.ok(events.some((e) => e.type === 'question' && (e as { phase?: string }).phase === 'asked'), 'the question was asked');
     await ad.refreshAuth();
+    assert.match((await openQ).answer, /skipped/, 'the agent is told it was skipped');
+    assert.deepStrictEqual(events.filter((e) => e.type === 'question' && (e as { phase?: string }).phase === 'cancelled').map((e) => (e as { reason?: string }).reason), ['reconnect']);
+    assert.ok(dbg.some((m) => /^question \S+ cancelled: reconnect$/.test(m)) && !dbg.some((m) => /Open while reconnecting/.test(m)), 'a debug line with the code only');
     assert.strictEqual(c1.stopped, 1, 'the old client is stopped gracefully');
     const c2 = await ad.currentClient();
     assert.notStrictEqual(c2, c1, 'getClient returns a new client');

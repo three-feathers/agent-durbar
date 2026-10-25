@@ -55,7 +55,8 @@ import type { RemoteState } from '../shared/remote';
 import { resolveWorkspaceCwd } from './workspace';
 import { claudeConfigDir, listClaudeSessions, readClaudeHistory } from './claudeHistory';
 import type { HistoryResult, PreviousSession } from './history';
-import { cleanAnswers, parseQuestionsWithOriginals } from './questions';
+import { cleanAnswers, parseQuestionsWithOriginals, SkipNotes } from './questions';
+import type { SkipReason } from './questions';
 import { claudeSlashPlaces, cleanBuiltins, mergeSlash, SlashCache, vscodeUserPromptDirs } from './slashcommands';
 import type { SlashPlace } from './slashcommands';
 import { agentsArg, listClaudeAgents } from './claudeAgents';
@@ -910,7 +911,7 @@ export class ClaudeAdapter implements AgentAdapter {
     const s = this.sessions.get(sessionId);
     if (!s) return;
     s.broker.denyPending();
-    this.cancelQuestions(s);
+    this.cancelQuestions(s, 'interrupt');
     if (s.transport?.alive) {
       s.mapper.expectAbort();
       try {
@@ -927,7 +928,7 @@ export class ClaudeAdapter implements AgentAdapter {
     if (!s) return;
     s.stopping = true;
     s.broker.stop(); // pending permissions are answered deny; grants are dropped
-    this.cancelQuestions(s);
+    this.cancelQuestions(s, 'stop');
     try {
       await s.transport?.close();
     } catch {
@@ -1072,6 +1073,7 @@ export class ClaudeAdapter implements AgentAdapter {
   /** FR-128: the user's answers (question text -> label(s)), or null when they skipped. */
   answerQuestion(sessionId: string, requestId: string, answers: Record<string, string> | null): void {
     const q = this.sessions.get(sessionId)?.questions?.get(requestId);
+    if (q && answers === null) this.skips.note(requestId, 'user');
     q?.resolve(answers);
   }
 
@@ -1495,7 +1497,9 @@ export class ClaudeAdapter implements AgentAdapter {
     s.questions.delete(requestId);
     const clean = answer ? cleanAnswers(asked, answer) : undefined;
     if (!clean) {
-      this.emit(s.id, { type: 'question', phase: 'cancelled', requestId });
+      const reason = this.skips.take(requestId);
+      this.debug?.(`question ${requestId.slice(0, 8)} cancelled: ${reason}`); // spec 052 FR-178: a code, never the question or an answer
+      this.emit(s.id, { type: 'question', phase: 'cancelled', requestId, reason });
       return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'The user skipped the question. Decide yourself, or ask in your reply.' } };
     }
     const byOriginal: Record<string, string> = {};
@@ -1507,9 +1511,12 @@ export class ClaudeAdapter implements AgentAdapter {
     return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'Answered by the user in Agent Durbar.', updatedInput: { ...input, answers: byOriginal } } };
   }
 
+  /** Why each skipped question was skipped (spec 052 FR-178). */
+  private readonly skips = new SkipNotes();
+
   /** Stop, interrupt or a crash: unanswered questions are skipped (the hook answers deny). */
-  private cancelQuestions(s: Session): void {
-    for (const q of [...(s.questions?.values() ?? [])]) q.resolve(null);
+  private cancelQuestions(s: Session, why: SkipReason): void {
+    for (const [id, q] of [...(s.questions ?? [])]) { this.skips.note(id, why); q.resolve(null); }
     for (const p of [...(s.plans?.values() ?? [])]) p({ kind: 'reject' }); // spec 066: Stop / End reject an open plan
     cancelElicitations(s.elicitations);
   }
@@ -1520,7 +1527,7 @@ export class ClaudeAdapter implements AgentAdapter {
     if (s.stopping || !this.sessions.has(s.id)) return;
     if (info.stderrTail) this.debug?.(`claude stderr (exit ${String(info.code)}): ${info.stderrTail}`);
     s.broker.denyPending();
-    this.cancelQuestions(s);
+    this.cancelQuestions(s, 'exit');
     // FR-157: Claude ended because its sign-in failed; the stderr text itself is never shown (only this sentence)
     if (isAuthError(info.stderrTail)) return this.emit(s.id, { type: 'status', status: 'error', intent: 'Claude Code could not authenticate: its sign-in is missing or has expired.', errorKind: 'auth' });
     // spec 087 FR-006/FR-007: an exit before init that is the sandbox's own refusal: nothing is re-sent, the person chooses (or the

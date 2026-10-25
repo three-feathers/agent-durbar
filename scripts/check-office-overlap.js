@@ -146,6 +146,7 @@ function pageCheck(expanded, expectPlaces) {
   });
   /* spec 059 FR-020 item 6, FR-025 (issue 636): the rename pencils are shown on every card (body.ren-show) and none covers the status word, pill,
      badge, chat number, draft mark or mode icon, or leaves its unit; they are siblings of the card button and take no layout space. */
+  const hadRenShow = document.body.classList.contains('ren-show'); /* put back afterwards: a driver's later screenshot must not show every pencil (PR 631) */
   document.body.classList.add('ren-show');
   stage.querySelectorAll('.unit > .ren[data-ren]').forEach((b) => {
     if (!b.getClientRects().length) return;
@@ -162,6 +163,7 @@ function pageCheck(expanded, expectPlaces) {
       if (B.x < r.r - T && B.r > r.x + T && B.y < r.b - T && B.b > r.y + T) problems.push(`pencil ${who} covers ${name(e)}`);
     });
   });
+  if (!hadRenShow) document.body.classList.remove('ren-show');
   /* spec 052 (2026-10-21; real 15-session office at 1280x800): inside a desk card no icon (svg, status dot, warning) and no cost text
      leaves the card or is cut by a clipping ancestor; a cut cost or icon once went unnoticed by every other rule here */
   /* spec 059 FR-020 item 4: a room header's pencil stays inside the header and covers no door, chip, siren, floor tag, cost or count */
