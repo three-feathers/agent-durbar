@@ -3,14 +3,14 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Agent-app updates (owner request, issue #662): Settings > Agent apps shows "installed X, latest Y" per app, checked in the background at every Durbar start and on "Check for updates" (owner decision Q1 = C; organization policy can turn it off); a new version gets a badge and one toast; Update runs the updater of the source that installed the copy Durbar uses (no shell, argv, native confirmation, masked output); open sessions are warned about, ended or waited for; failures (admin rights, managed machines, locked files on Windows) say what to do
-status: Draft (2026-10-25): spec, research, plan and tasks; Q1-Q7 answered by Vikram (C, A, C limited to the official Codex CLI, A, B, A, C); Paco's 15 review items folded in; nothing built
+status: Built on the simulator and with fake tools (2026-10-25): check, update, gate and failures; T008 waits for PR #698; real-machine checks T040-T042 not run; Q1-Q7 answered by Vikram
 -->
 
 **Feature Branch**: `081-cli-updates` (extends 051 harness setup, 060 platform parity and 012 detection; reads 076 managed config)
 
 **Created**: 2026-10-23
 
-**Status**: Draft. Spec, research, plan and tasks. Q1-Q7 are answered by the owner (Clarifications; Q3 asked again and answered, and Q6 and Q7 answered, on 2026-10-25). Nothing is built. Every requirement is `[PLANNED]` unless tagged otherwise.
+**Status**: Built (2026-10-25) on the simulator and with fake tools, branch `081-cli-updates-build`. Q1-Q7 are answered by the owner. Requirements are `[IMPLEMENTED]` where tagged below and `sim:`/`test:` checked; **FR-005 for the detection path waits for PR #698 (T008)** and every real-machine statement is `[KNOWN GAP]` until T040-T042 run (nothing was run on a real Mac, Windows PC or against a real source).
 
 **Input**: Issue #662, owner request (Vikram, 2026-10-23, DM): "lets add support to check updates on cli and upgrade it". The CLIs are the agent apps Durbar drives: Codex CLI, Claude Code and the GitHub Copilot CLI. The trigger was a Codex 0.163.0 sandbox bug on macOS (Homebrew cask, `/opt/homebrew/bin/codex`): today the only way to get a fixed Codex is to leave Durbar and update it by hand, and Durbar does not even say that a newer version exists.
 
@@ -147,8 +147,8 @@ When the start check finds a new version, the Settings entry and the card get a 
 
 ### Install source and installed version (US1)
 
-- **FR-001** `[PLANNED]` Each Settings > Agent apps card for Claude Code and Codex shows the installed version (from detection, spec 012) and the **install source** of the copy Durbar uses: *Homebrew*, *npm*, *winget*, *the official installer* or *installed outside Durbar's routes*. The source comes from the existing `routeOwning(realPath)` on the binary's real path (symlinks resolved), extended per research R5 (Scoop, the Claude native `versions` folder, Codex's standalone folder, `%APPDATA%\npm` shims). No new path-reading code beside it.
-- **FR-002** `[PLANNED]` The Copilot card shows two lines.
+- **FR-001** `[IMPLEMENTED]` Each Settings > Agent apps card for Claude Code and Codex shows the installed version (from detection, spec 012) and the **install source** of the copy Durbar uses: *Homebrew*, *npm*, *winget*, *the official installer* or *installed outside Durbar's routes*. The source comes from the existing `routeOwning(realPath)` on the binary's real path (symlinks resolved), extended per research R5 (Scoop, the Claude native `versions` folder, Codex's standalone folder, `%APPDATA%\npm` shims). No new path-reading code beside it.
+- **FR-002** `[IMPLEMENTED]` The Copilot card shows two lines.
   - *Copilot runtime 1.0.x, bundled with Durbar (updates with Durbar)*: read from the bundled SDK's `package.json` once, with no Update.
   - When the user's GitHub Copilot CLI is found: *GitHub Copilot CLI x.y.z · <source> (used to sign in)*, with the same check and Update as the other apps.
 
@@ -162,7 +162,7 @@ When the start check finds a new version, the Settings entry and the card get a 
 
 ### Checking for the latest version (US1, US5)
 
-- **FR-003** `[PLANNED]` **When Durbar contacts a source** (owner decision Q1 = C, changed from B on 2026-10-23). Only in two cases:
+- **FR-003** `[IMPLEMENTED]` **When Durbar contacts a source** (owner decision Q1 = C, changed from B on 2026-10-23). Only in two cases:
   - **The user asks.** *Check for updates* (all apps), or a card's own *Check*.
   - **At every Durbar start**, unless it is turned off (FR-022).
     - One check per installed app, in the background. It starts only after the office is shown and the existing startup detection has finished.
@@ -176,7 +176,7 @@ When the start check finds a new version, the Settings entry and the card get a 
   **Failures are silent** apart from the card's status (*Could not check: …*): no toast, no dialog, and no log line with output.
 
   **No periodic re-check while Durbar stays open.** The owner chose start-time checking, and a timer would add contacts nobody asked for. A long-running app shows the check's time on the card, and *Check for updates* refreshes it. The draft's daily switch is withdrawn (FR-015).
-- **FR-004** `[PLANNED]` **The latest version comes from the install source of the copy Durbar uses.** Where a tool exists, Durbar runs that source's own tool, with fixed argv, no shell, the `nodeExec` limits (no window, capped output, the env option and the tree kill of plan D1) and a 30 s limit per app.
+- **FR-004** `[IMPLEMENTED]` **The latest version comes from the install source of the copy Durbar uses.** Where a tool exists, Durbar runs that source's own tool, with fixed argv, no shell, the `nodeExec` limits (no window, capped output, the env option and the tree kill of plan D1) and a 30 s limit per app.
   - **npm**: `npm view <package> version --json --no-update-notifier`, run with the npm that owns the copy (FR-006). `<package>` comes from the route table (`@openai/codex`, `@anthropic-ai/claude-code`, `@github/copilot`). The environment also sets `npm_config_update_notifier=false`, so npm makes no second request of its own.
   - **Homebrew**: `brew info --cask --json=v2 <cask>`, which gives `version` and, where present, `installed` and `outdated`.
     - A second run, `brew outdated --cask --json=v2 <cask>`, happens only when the first answer has no `outdated` field. `--greedy` is added only for a cask marked `auto_updates` (`copilot-cli`, research R2).
@@ -193,7 +193,7 @@ When the start check finds a new version, the Settings entry and the card get a 
       - The API's `releases/latest` JSON is about 570 KB (measured by Paco's agent, 2026-10-24), well over the 64 KiB cap, so it is not used.
     - **Claude Code native**: both channel files on `downloads.claude.ai` are read, `/claude-code-releases/stable` and `/claude-code-releases/latest`. Each is plain text holding one version (`real:` 2026-10-24: `2.1.308` and `2.1.309`; not a documented API, research R7). The card shows both (*latest 2.1.309 · stable 2.1.308*). **`stable` decides** (owner decision Q7 = C): *Update available* (with its badge and toast) only when the installed version is below `stable`. When the installed version is at or above `stable` but below `latest`, the card shows only a quiet note, *A newer latest-channel build exists (x.y.z)*, with no chip change, no badge and no toast. Durbar does not read Claude's settings to learn the user's `autoUpdatesChannel`.
     - **Claude Code from npm** uses npm. A source with no way to ask gives *Latest: cannot be checked for this install*, never a guess.
-- **FR-005** `[PLANNED]` **Strict version parsing** (review on #663: `parseVersion` is unanchored and quadratic on long digit runs, and it would take `22.11.0` out of `npm ERR! … node v22.11.0`). A version is accepted only like this:
+- **FR-005** `[IMPLEMENTED]` for the structured fields (`parseVersionField`); `[PLANNED]` for the detection path until PR #698 merges (T008). **Strict version parsing** (review on #663: `parseVersion` is unanchored and quadratic on long digit runs, and it would take `22.11.0` out of `npm ERR! … node v22.11.0`). A version is accepted only like this:
   - Take the **structured field**: the JSON string (`npm view --json`, `brew info` `version`), the `Location` path segment, or the channel file's text after trimming. Never search free text.
   - **Reject anything longer than 64 characters** (never cut: a cut can leave a shortened pre-release that still matches; review on #663).
   - Match **one anchored, bounded pattern**: `^v?(\d{1,9})\.(\d{1,9})\.(\d{1,9})(?:-[0-9A-Za-z.-]{1,40})?$`. Homebrew's `,build` suffix is removed at the first comma, and the length check applies to the whole field before that.
@@ -208,12 +208,12 @@ When the start check finds a new version, the Settings entry and the card get a 
   The installed version from `--version` (detection, `src/adapters/detect.ts` `parseVersion`) gets the same treatment. Durbar reads the first line only, cut to 200 characters, and takes the version token with a bounded pattern delimited by start, space, `v` or `(` before it and end, space or `)` after it. The existing detection path is fixed by PR #698 (spec 012 T133, closes #664), which this feature reuses rather than reimplements (T008).
 
   Tests use hostile inputs: 64 KiB of digits within a CPU-time limit (agent-notes, *measure CPU time*), the npm error line, markup, and a 65-character version. A mutation that puts the old unanchored `parseVersion` back must fail a test.
-- **FR-006** `[PLANNED]` **The right tool for the copy:**
+- **FR-006** `[IMPLEMENTED]` **The right tool for the copy:**
   - npm is the `npm` (or `npm.cmd`) in the same Node.js `bin` folder as the binary's real path, since version managers keep one per Node.js version. Otherwise it is the first found npm, and only when its global prefix contains the binary.
   - Homebrew is the `brew` of the prefix the binary lives under (`/opt/homebrew`, `/usr/local`, `/home/linuxbrew/.linuxbrew`).
 
   When no matching tool is found, the card says *Cannot check: <tool> for this copy was not found*.
-- **FR-007** `[PLANNED]` The card shows:
+- **FR-007** `[IMPLEMENTED]` The card shows:
   - *Latest x.y.z* with the source's name (*as Homebrew knows it* for Homebrew, both channels for Claude native);
   - the time of the check;
   - a chip: *Up to date*, *Update available*, *Could not check*, *Checking…* or *Not checked*.
@@ -222,12 +222,12 @@ When the start check finds a new version, the Settings entry and the card get a 
 
 ### Updating (US2, US3)
 
-- **FR-008** `[PLANNED]` **Update…** appears on a card when the latest version is newer than the installed one (as well as for `too-old`, as today). It does not appear when:
+- **FR-008** `[IMPLEMENTED]` **Update…** appears on a card when the latest version is newer than the installed one (as well as for `too-old`, as today). It does not appear when:
   - the organization disables updates (spec 076 FR-032, FR-175);
   - the version range forbids the result (FR-188 and FR-023).
 
   It reuses spec 051's flow: the plan dialog lists the routes with the **owning route first and preselected** (existing `HarnessSetup.plans(kind, 'update')`), then `prepare` → native confirmation with the real path, the full argv and the target version (FR-023) → `start`. When the owning route is known, only it is offered for an update. Other routes would install a second copy, so they are hidden behind *Show other ways* with that warning.
-- **FR-009** `[PLANNED]` **The updater per source** (fixed argv, no shell; table in research R6):
+- **FR-009** `[IMPLEMENTED]` **The updater per source** (fixed argv, no shell; table in research R6):
   - **npm**: `npm install -g <package>@<checked version> --no-update-notifier`, with the owning npm (FR-006), pinned (FR-023).
   - **Homebrew**: `brew upgrade --cask <cask>`, with `--greedy` only for a self-updating cask.
   - **winget**: `winget upgrade --id <id> -e --source winget --version <checked version>` (pinned). The agreement flags are added only after the user has seen the terms note in the dialog, as spec 051 does today.
@@ -258,10 +258,10 @@ When the start check finds a new version, the Settings entry and the card get a 
     - **Why it needs the limit** (`read:` openai/codex @970111f6 `codex-rs/tui/src/update_action.rs`, review on #663): the command runs a script that skips spec 060's host allow-list, private file, size cap and root refusal. This is the one exception to spec 051 D1 and spec 060 FR-001 ("nothing downloaded is piped into a shell"), recorded as dated deltas in both specs' `## Changes`.
   - **No elevation.** Never `sudo`, `runas` or an elevation of Durbar's own. winget may raise Windows' own UAC prompt for a machine-wide package.
   - **Root** (FR-025).
-- **FR-010** `[PLANNED]` **Output.** The existing masked last-lines view: ANSI stripped, `redact()`, the OAuth mask, 200 characters per line. The full output is never logged, saved or sent. Durbar's existing time limit and Cancel for a setup step apply, with the tree kill of plan D1, so a Windows `npm.cmd` run is ended with its children and not only `cmd.exe`.
-- **FR-011** `[PLANNED]` After the update, detection runs again (spec 051 FR-004). If the version did not change, or another copy is found first, the card names the copy that was updated and the one Durbar finds. Durbar does not remove or reorder copies.
-- **FR-012** `[PLANNED]` A copy installed outside Durbar's routes (unknown source, distribution packages, a hand-copied binary) gets no Update. When the real path says where it came from (`/usr/bin` with a Linux distribution, `/snap/`), the card names that tool (*Update it with your system's package manager*) and offers the vendor's page.
-- **FR-013** `[PLANNED]` **Open sessions** (US3, owner decision Q2 = A). The sessions that count are those whose adapter runs this app: Claude Code is the `claude` adapter, Codex is the `codex` adapter, and the GitHub Copilot CLI has none (FR-002).
+- **FR-010** `[IMPLEMENTED]` **Output.** The existing masked last-lines view: ANSI stripped, `redact()`, the OAuth mask, 200 characters per line. The full output is never logged, saved or sent. Durbar's existing time limit and Cancel for a setup step apply, with the tree kill of plan D1, so a Windows `npm.cmd` run is ended with its children and not only `cmd.exe`.
+- **FR-011** `[IMPLEMENTED]` After the update, detection runs again (spec 051 FR-004). If the version did not change, or another copy is found first, the card names the copy that was updated and the one Durbar finds. Durbar does not remove or reorder copies.
+- **FR-012** `[IMPLEMENTED]` A copy installed outside Durbar's routes (unknown source, distribution packages, a hand-copied binary) gets no Update. When the real path says where it came from (`/usr/bin` with a Linux distribution, `/snap/`), the card names that tool (*Update it with your system's package manager*) and offers the vendor's page.
+- **FR-013** `[IMPLEMENTED]` **Open sessions** (US3, owner decision Q2 = A). The sessions that count are those whose adapter runs this app: Claude Code is the `claude` adapter, Codex is the `codex` adapter, and the GitHub Copilot CLI has none (FR-002).
   - **The update lock is taken first and held to the end.** The moment *Update…* is chosen, main takes an update lock for that app. From then until the update finishes, fails or is cancelled:
     - **no session of that adapter starts or resumes**, including a send or a scheduled prompt that would start one or resume an ended session. A start says why. Such a scheduled prompt is held and listed on its card as *held: Codex is updating*, then sent when the lock is released, or reported as missed if spec 044's rules say so;
     - **messages and scheduled prompts to sessions that are still open go through.** *Update when they end* waits for those sessions to finish their work, so it must not stop them (review on #663).
@@ -272,7 +272,7 @@ When the start check finds a new version, the Settings entry and the card get a 
   - ***End N sessions and update*** uses the wording of the existing *End all sessions?* dialog (`askDialog` in `src/renderer/app.js` `endAllSessions`: "N sessions end and free their places (M still working: their replies stop). The chats stay; send a message to pick up where you left off."). It adds, when there are any, the number of pending permission requests (they are denied) and of queued or scheduled prompts for those sessions (they are not sent once the sessions have ended; one that would resume them is held, as above). Each session's running turn is interrupted first (`stopTurnOp`), then the session ends (`endSessionOp`, which does not interrupt by itself), and it stays resumable.
   - **Count again after the native confirmation.** If a session is open by then (one the lock could not stop, such as a session started from outside Durbar's own start path), the update does not start and the gate dialog comes back.
   - Durbar does not offer "update now anyway" while sessions are open.
-- **FR-014** `[PLANNED]` **Failure advice** (US4). A failed check or update is classified from the exit code, the error code and the masked output, by a pure function with fixtures per source and OS:
+- **FR-014** `[IMPLEMENTED]` **Failure advice** (US4). A failed check or update is classified from the exit code, the error code and the masked output, by a pure function with fixtures per source and OS:
   - *Needs administrator rights* (`EACCES`, `EPERM` on a folder Durbar does not own, Homebrew owned by another account): the command to copy, never an offer to elevate.
   - *File in use* (Windows `EBUSY`, `EPERM` on the binary, "being used by another process", winget's in-use result): name the app and ask to close it. Inside Durbar, FR-013 already prevents this.
   - *Managed by your organization*:
@@ -288,7 +288,7 @@ When the start check finds a new version, the Settings entry and the card get a 
 ### Announcing a new version (US5)
 
 - **FR-015** `[WITHDRAWN]` The daily switch, replaced by the start check (Q1 = C) and its opt-out (FR-022). The number is kept so later references stay stable.
-- **FR-016** `[PLANNED]` A check (at start or on *Check for updates*) that finds an update:
+- **FR-016** `[IMPLEMENTED]` A check (at start or on *Check for updates*) that finds an update:
   - marks the card and the Settings entry with a quiet *Update available* badge;
   - shows **one toast per new version** (owner decision Q5 = B): *<App> <version> is available. Open Settings > Agent apps to update.*
 
@@ -296,7 +296,7 @@ When the start check finds a new version, the Settings entry and the card get a 
 
 ### Privacy, safety and platforms (all stories)
 
-- **FR-017** `[PLANNED]` **What each start check contacts and reveals.** The README's *Safety model* and privacy text and the Settings note list this table. Per installed app, only the source of the copy Durbar uses is asked.
+- **FR-017** `[IMPLEMENTED]` **What each start check contacts and reveals.** The README's *Safety model* and privacy text and the Settings note list this table. Per installed app, only the source of the copy Durbar uses is asked.
 
   Every request reveals the machine's **IP address** and the **time** to that server. None carries a Durbar identifier, the installed version or Durbar's version.
 
@@ -311,16 +311,16 @@ When the start check finds a new version, the Settings entry and the card get a 
   | outside Durbar's routes | nothing | | |
 
   Durbar's own requests (the last three rows) go through **Chromium's network stack** (Electron `net.request` on the app's session with `redirect: 'manual'`, `credentials: 'omit'` and `useSessionCookies: false`. For GitHub, the `redirect` event's URL is read and the request is aborted. `net.fetch` with `redirect: 'manual'` rejects with "Redirect was cancelled" in Electron 44, `real:` 2026-10-25 by Ruben's and Paco's agents). They therefore follow the system or organization proxy and the OS certificate store (spec 076 FR-155, FR-156), not Node's `https.get`. Each request follows FR-026's host and path allow-list, a 10 s limit, a 64 KiB cap and no credentials or cookies (`credentials: 'omit'`). The child tools (npm, brew, winget) use their own proxy settings. Durbar keeps no log of the checks and saves nothing but the announced versions (FR-016). The bundled Copilot runtime is never checked, because it updates with Durbar.
-- **FR-018** `[PLANNED]` **How commands run.**
+- **FR-018** `[IMPLEMENTED]` **How commands run.**
   - Every command runs as an argv array with `shell: false`, through the existing runner (`HarnessSetup` for updates, `nodeExec` for checks).
   - Arguments come only from main's fixed table, plus a package name from that table and a checked version that passed FR-005.
   - The window sends nothing except the app id and a route index (existing `runRequest`).
   - Windows `.cmd` shims (npm) run the way spec 051 already runs them: verbatim arguments through `cmd.exe` with the fixed, checked argv.
   - **One exception, inside the child:** Durbar starts `codex update` with argv and no shell, but Codex itself then starts a shell (`sh -c`, or `powershell -c`) for its installer command. FR-009 limits it to the official standalone Codex, with a fixed `PATH`, a temp folder and a cleaned environment.
-- **FR-019** `[PLANNED]` **Platforms** (constitution VI): macOS (Homebrew cask, npm, official installer), Linux (official installer, npm, Linuxbrew), Windows (winget, npm, official PowerShell installer; Scoop is detected and named but not run, [KNOWN GAP] until a route exists). Path checks use `path.win32`/`path.posix` in pure functions with an injected environment, case-insensitive on Windows and macOS. Not verified on a real Mac or Windows machine until a task records it (`[KNOWN GAP]` per platform).
-- **FR-020** `[PLANNED]` **Simulator** (constitution IV): canned installed and latest versions per app and source (one up to date, one with an update, one that cannot be checked), a canned update run, simulated sessions for US3; no network, no package manager.
-- **FR-021** `[PLANNED]` **No real update in tests.** `npm test` uses fixtures of each tool's output (captured from documentation or a recorded run, with the source named); a real update on a real machine is a separate, owner-approved task (it changes the user's installed app).
-- **FR-022** `[PLANNED]` **Turning the start check off** (spec 076 FR-159: a feature that sends requests off the machine needs its own switch).
+- **FR-019** `[IMPLEMENTED]` **Platforms** (constitution VI): macOS (Homebrew cask, npm, official installer), Linux (official installer, npm, Linuxbrew), Windows (winget, npm, official PowerShell installer; Scoop is detected and named but not run, [KNOWN GAP] until a route exists). Path checks use `path.win32`/`path.posix` in pure functions with an injected environment, case-insensitive on Windows and macOS. Not verified on a real Mac or Windows machine until a task records it (`[KNOWN GAP]` per platform).
+- **FR-020** `[IMPLEMENTED]` **Simulator** (constitution IV): canned installed and latest versions per app and source (one up to date, one with an update, one that cannot be checked), a canned update run, simulated sessions for US3; no network, no package manager.
+- **FR-021** `[IMPLEMENTED]` **No real update in tests.** `npm test` uses fixtures of each tool's output (captured from documentation or a recorded run, with the source named); a real update on a real machine is a separate, owner-approved task (it changes the user's installed app).
+- **FR-022** `[IMPLEMENTED]` **Turning the start check off** (spec 076 FR-159: a feature that sends requests off the machine needs its own switch).
   - **The user's switch.** Settings > Agent apps has *Check for updates when Durbar starts*. It is **on by default** (owner decision Q6 = A), saved with the other settings as a boolean (only `false` is written). *Check for updates* (the button) works whatever the switch says, unless an organization key below hides the feature.
   - **The organization's switches** (review on #663, 076 FR-158):
     - `features.agentAppUpdateCheck: false` turns the whole check off, in main and in the window. The start check, the *Check for updates* button, *Check* on each card and the *Latest* lines are hidden, with *Turned off by your organization*, and nothing is contacted. Update… then appears only for `too-old`, as spec 051 does today, with spec 051's unpinned `@latest` argv.
@@ -329,7 +329,7 @@ When the start check finds a new version, the Settings entry and the card get a 
     - Air-gapped machines (076 FR-162) set `updates.mode: "off"` or the feature key.
   - **Fail closed.** If the policy is present but cannot be read or validated (076's closed mode), the start check does not run, and the card says *Not checked: your organization's settings could not be read*.
   - Until spec 076's reader exists, `updatePolicy()` reads no policy and only the user's switch applies. This is stated as a `[KNOWN GAP]` and wired up in T033.
-- **FR-023** `[PLANNED]` **The version that gets installed** (review on #663: `@latest`, `brew upgrade`, `claude update` and `copilot update` install whatever is newest when they run).
+- **FR-023** `[IMPLEMENTED]` **The version that gets installed** (review on #663: `@latest`, `brew upgrade`, `claude update` and `copilot update` install whatever is newest when they run).
   - **Pin where the route can.** npm `<package>@<checked version>` and winget `--version <checked version>`.
   - **Check again right before the native confirmation.** This is a fresh check of that one app. If the latest has moved on, the dialog shows the new version and the user confirms that. If the source cannot be reached, the update is not offered.
   - **Routes that cannot pin** (Homebrew, `claude update`, `copilot update`, the official installers): the confirmation says *installs the newest version the source offers (checked: x.y.z)*.
@@ -337,7 +337,7 @@ When the start check finds a new version, the Settings entry and the card get a 
     - only routes that can pin are offered, pinned to the checked version, and only if that version is within the range;
     - when the owning route cannot pin, the card says *Update not available: your organization limits the version, and <source> cannot install a chosen version*.
     - After any update, detection checks the range again, as spec 076 FR-189 says.
-- **FR-024** `[PLANNED]` **What each updater checks before installing** (the dialog shows one line per route; review on #663):
+- **FR-024** `[IMPLEMENTED]` **What each updater checks before installing** (the dialog shows one line per route; review on #663):
   - **npm** checks the tarball against the `integrity` hash in the registry's metadata (npm's documented behaviour). There is no publisher signature check.
   - **Homebrew** checks the cask's `sha256` before installing (the cask JSON carries it, `read:` formulae.brew.sh/api/cask/codex.json).
   - **winget** checks the installer's SHA256 from its manifest (Microsoft's winget documentation).
@@ -345,8 +345,8 @@ When the start check finds a new version, the Settings entry and the card get a 
   - **`copilot update`**: *unconfirmed* (not documented in the pages read).
   - **The official installers** (Codex; spec 060): TLS plus Durbar's host allow-list only, with no pin or checksum by Durbar. What `install.sh` or `install.ps1` checks itself is *unconfirmed*.
   - **`codex update`** (official Codex CLI only): TLS from `curl` or `irm`, with no allow-list, cap or check by Durbar. The script's own checks are *unconfirmed*. The confirmation says so.
-- **FR-025** `[PLANNED]` **Never as root.** The `isRoot` refusal (`src/main/harnesssetup.ts`, today only for `plan.script`) covers every vendor updater too: `claude update`, `copilot update` and the official installers. Message: *These updaters write into your home folder: run Agent Durbar as yourself, not as root.* npm, Homebrew and winget keep their current behaviour (Homebrew refuses root itself).
-- **FR-026** `[PLANNED]` **The lookup allow-list** for Durbar's own requests (FR-004, FR-017), exact host and exact path, https only, no redirects followed:
+- **FR-025** `[IMPLEMENTED]` **Never as root.** The `isRoot` refusal (`src/main/harnesssetup.ts`, today only for `plan.script`) covers every vendor updater too: `claude update`, `copilot update` and the official installers. Message: *These updaters write into your home folder: run Agent Durbar as yourself, not as root.* npm, Homebrew and winget keep their current behaviour (Homebrew refuses root itself).
+- **FR-026** `[IMPLEMENTED]` **The lookup allow-list** for Durbar's own requests (FR-004, FR-017), exact host and exact path, https only, no redirects followed:
   - `github.com` `/openai/codex/releases/latest` and `/github/copilot-cli/releases/latest`. The answer must be a 3xx whose `Location` matches FR-004's anchored pattern, and the body is not read.
   - `downloads.claude.ai` `/claude-code-releases/stable` and `/claude-code-releases/latest`. The body is at most 64 bytes of text and passes FR-005.
 
@@ -499,4 +499,13 @@ When the start check finds a new version, the Settings entry and the card get a 
 
 ## Changes
 
-(none yet)
+### 2026-10-25: what the build changed against the plan (no owner decision involved)
+
+- **`src/shared/versionfield.ts`** holds `parseVersionField` and `MAX_VERSION_LENGTH` (a local 64 until #698's export exists), so settings can use them without the detection code. `updatecheck.ts` re-exports them.
+- **The lock and gate** are `src/main/updategate.ts` (pure of Electron; tested with fakes). `harness:run` gained a fourth argument (`'wait' | 'end' | 'cancel'`); `harness:updates` (get or `'check'`), `harness:visible` (is Settings > Agent apps on screen) and the event `harness:updatesChanged` are new; `settings:setCheckUpdatesAtStart` is the switch.
+- **Scheduled prompts** that would start or resume a session of an updating app are held (`Scheduler.heldBy`, outcome `held`, tried again every 5 s and at the release). A schedule *loop* (spec 072) is not held: its pass counts as failed `[KNOWN GAP]`.
+- **After an update** the card learns the new version from detection (`afterUpdate`), without contacting any source.
+- **The fresh check before the confirmation** refuses an update when the source cannot be reached and the app is not `too-old` (a `too-old` app keeps spec 051's unpinned argv).
+- **winget terms:** an explicit *Check* offers a terms note; only its OK adds `--accept-source-agreements` to that one run.
+- **Simulator knobs** (`sim:`): `simupd=avail|mixed|off|unreadable`, `simupdstart=1`, `simupdrun=ok|uptodate|admin|inuse|managed|network|other|fallback|slow`, `simsessions=N`, `simupdchk=1`.
+- **Mutations** planted and caught (`npm run test:updatecheck`, `test:harnesssetup`, `test:officialinstall`): see the PR.

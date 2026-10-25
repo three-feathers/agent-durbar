@@ -641,6 +641,23 @@ export interface McpRestartSessionResult {
 }
 
 /** Bridge exposed by the preload script as `window.agentDurbar`. */
+/** Spec 081: one app's check result as the window sees it (plain data; `src/shared/updatecheck.ts` has the rules). */
+export interface UpdateResultView {
+  app: string;
+  state: 'up-to-date' | 'update-available' | 'could-not-check' | 'outside' | 'checking' | 'not-checked';
+  installed?: string; latest?: string; stable?: string; newerOnLatest?: string; installedNewer?: boolean;
+  source: string; sourceKind: string; hint?: string; reason?: string; checkedAt?: number; asHomebrew?: boolean;
+}
+export interface UpdatesView {
+  results: UpdateResultView[];
+  checking: string[];
+  startCheck: boolean;
+  policy: { checkHidden: boolean; installBlocked: boolean; unreadable: boolean; startAllowed: boolean };
+  runtime?: string;
+  waiting: Record<string, number>;
+  announce?: { app: string; version: string; name: string };
+}
+
 export interface DurbarApi {
   version(): Promise<string>;
   addFolder(permMode: PermMode, opts?: SessionOptions): Promise<AddResult>;
@@ -734,8 +751,15 @@ export interface DurbarApi {
   /** Example looks for the AI theme maker (spec 040 FR-021). */
   themeIdeas?(): Promise<string[]>;
   /* Spec 051: harness setup inside the app (install, update, sign in). Fixed commands only; the window never names a command. */
-  harnessPlans?(kind: string, op: 'install' | 'update'): Promise<{ plans: Array<{ manager: string; display: string; note?: string }>; page: string; name: string }>;
-  harnessRun?(kind: string, op: 'install' | 'update' | 'signin', planIndex?: number): Promise<{ ok: boolean; error?: string; cancelled?: boolean }>;
+  harnessPlans?(kind: string, op: 'install' | 'update'): Promise<{ plans: Array<{ manager: string; display: string; note?: string; owner?: boolean; pinned?: string; own?: string; script?: unknown }>; page: string; name: string; blocked?: string }>;
+  /** `gate` (spec 081 FR-013): the answer to the open-sessions dialog ('wait', 'end', or 'cancel' to release the update lock). A reply with `needsGate` asks the window to show that dialog. */
+  harnessRun?(kind: string, op: 'install' | 'update' | 'signin', planIndex?: number, gate?: 'wait' | 'end' | 'cancel'): Promise<{ ok: boolean; error?: string; cancelled?: boolean; busy?: boolean; waiting?: number; needsGate?: { open: number; busy: number; pendingPermissions: number; heldPrompts: number } }>;
+  /** Spec 081 FR-003: the kept update-check results; `'check'` asks the sources anew (all apps, or one). `acceptTerms` only after the winget terms note was confirmed. */
+  harnessUpdates?(what?: 'check', app?: string, opts?: { acceptTerms?: boolean }): Promise<UpdatesView>;
+  onHarnessUpdates?(cb: (v: UpdatesView) => void): () => void;
+  /** Spec 081 FR-016: whether Settings > Agent apps is on screen (then the card is the announcement and no toast is shown). */
+  harnessVisible?(on: boolean): Promise<boolean>;
+  setCheckUpdatesAtStart?(on: boolean): Promise<{ ok: boolean; checkUpdatesAtStart?: boolean }>;
   harnessPaste?(text: string): Promise<{ ok: boolean; error?: string }>;
   harnessCancel?(): Promise<boolean>;
   harnessOpenPage?(kind: string): Promise<{ ok: boolean }>;
@@ -750,7 +774,7 @@ export interface DurbarApi {
   onRemoteOff?(cb: (p: string | { id: string; reason?: string }) => void): () => void;
   /** Spec 054 FR-062: remote control is still on with a new (checked) link after a relaunch. */
   onRemoteUrl?(cb: (p: { id: string; url: string }) => void): () => void;
-  onHarnessDone?(cb: (p: { kind: string; op: string; ok: boolean; exitCode?: number | null; reason?: string; lines: string[] }) => void): () => void;
+  onHarnessDone?(cb: (p: { kind: string; op: string; ok: boolean; exitCode?: number | null; reason?: string; lines: string[]; error?: string; failure?: string; fallback?: 'official'; note?: string }) => void): () => void;
   exportTheme?(id: string): Promise<{ ok: boolean; to?: string; error?: string; cancelled?: boolean }>;
   setCap?(id: string, credits: number | null): Promise<{ ok: boolean; error?: string; maxAiCredits?: number }>;
   /** One-way: the window tells main an agent was paused or resumed (spec 041 T014); Paused exists only in the window. */

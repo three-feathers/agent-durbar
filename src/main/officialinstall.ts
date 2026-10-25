@@ -58,7 +58,6 @@ export function makeGet(get: typeof https.get): HttpGet {
       req.on('error', fail);
     });
 }
-export const httpsGet: HttpGet = makeGet(https.get);
 
 /**
  * Review on #393: what came back must look like the script, not a web page. A 200 HTML page (a CDN challenge, a login wall)
@@ -74,8 +73,8 @@ export function looksLikeScript(body: Buffer, ext: '.sh' | '.ps1', contentType?:
 }
 
 /** Downloads the script into a new private folder; returns its path and the folder to delete afterwards. */
-export async function downloadScript(script: OfficialScript, ext: '.sh' | '.ps1', deps: { get?: HttpGet; tmpdir?: string } = {}): Promise<{ file: string; dir: string }> {
-  const get = deps.get ?? httpsGet;
+export async function downloadScript(script: OfficialScript, ext: '.sh' | '.ps1', deps: { get: HttpGet; tmpdir?: string }): Promise<{ file: string; dir: string }> {
+  const get = deps.get;
   let url = script.url;
   if (!allowedScriptUrl(script, url)) throw new Error('That installer address is not allowed.');
   let res: HttpResponse | undefined;

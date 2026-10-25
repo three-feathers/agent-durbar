@@ -1,0 +1,5 @@
+# source: PLACEHOLDER (read: winget list docs); replace with a recorded Windows run (tasks.md T041)
+Name         Id                    Version Available Source
+-----------------------------------------------------------
+Claude Code  Anthropic.ClaudeCode  2.1.300 2.1.308   winget
+1 upgrades available.

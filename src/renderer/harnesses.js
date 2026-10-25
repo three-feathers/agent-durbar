@@ -25,13 +25,17 @@
   /* FR-045: a plain label for each package manager in the install dialog; the command stays visible below it */
   const MANAGER = { official: 'Official installer', brew: 'Homebrew', npm: 'npm', winget: 'winget (Windows Package Manager)' }; /* spec 060 FR-001 */
   /* spec 060 FR-012: on Windows the official installer is the vendor's PowerShell script, so its label says so */
-  const mgr = (pl) => (pl.manager === 'official' && pl.bin === 'powershell' ? 'Official PowerShell installer' : MANAGER[pl.manager] || pl.manager);
+  const mgr = (pl) => (pl.own ? "The app's own updater" : pl.manager === 'official' && pl.bin === 'powershell' ? 'Official PowerShell installer' : MANAGER[pl.manager] || pl.manager);
   /* spec 052 FR-073: two plain hints for Copilot (the second only on Windows when PowerShell 7 is missing; text only, nothing is installed) */
   const COPILOT_VSCODE_NOTE = 'Signed in to Copilot in VS Code? That sign-in is separate: this signs in the Copilot CLI once, with the same GitHub account.';
   const PWSH_HINT = 'Copilot runs shell commands with PowerShell 7. Install it with winget: winget install --id Microsoft.PowerShell -e';
   /* spec 052 FR-072: a CLI installed just now may need Durbar to restart before it shows up (the new PATH is not re-read) */
   const RESTART_HINT = 'Installed? If Durbar still says Not installed, close and reopen Durbar, then choose Check again.';
   let B = null; /* the bridge */
+  const activeRun = new Set(); /* kinds with an open progress dialog */
+  const waitKinds = new Set(); /* spec 081: updates waiting for sessions to end, started later by main */
+  const LASTP = {}, LASTD = {}; /* the last progress and done event per app, so a dialog opened a moment late misses nothing */
+  const PLAN_SHOWN = {}; /* the command of the plan the user chose, for the admin advice */
   let onChange = () => {};
   /* spec 051 FR-013..FR-015: the last account answer per app ({ [id]: { status, text } }), in memory only; never logged or sent on */
   let ACC = null;
@@ -97,22 +101,26 @@
   function sectionHTML(kinds, copilot) {
     const list = (kinds || []).filter((k) => SETUP_KINDS.includes(k.id));
     if (!list.length) return '';
+    CARDS = {};
     const cards = list.map((k) => {
       let st = k.state;
       if (k.id === 'copilot' && st === 'ready' && copilot && copilot.known && copilot.signedIn === false) st = 'not-signed-in';
+      CARDS[k.id] = st;
       const [cls, word] = STATE[st] || STATE.unknown;
-      const act = st === 'not-installed' ? 'install' : st === 'too-old' ? 'update' : st === 'not-signed-in' ? 'signin' : '';
-      const label = { install: 'Install…', update: 'Update…', signin: 'Sign in…' }[act];
       /* spec 052 FR-097: "Simulated version." is the badge's tooltip, not a line of its own */
       const simV = st === 'ready' && k.version === 'sim';
+      /* spec 081: with a check result the update block says "Installed x · source", so the version is not said twice */
+      const hasInst = !!(updResult(k.id) && updResult(k.id).installed && !polOf().checkHidden);
       /* spec 012 FR-156: a ready card also says how far the sign-in was checked (the hint withSignIn set) */
-      const hint = st === 'ready' ? [simV ? '' : k.version ? 'Version ' + k.version + '.' : 'Ready to use.', k.hint && /^Signed in/.test(k.hint) ? k.hint : ''].filter(Boolean).join(' ') : st === 'not-signed-in' ? 'Installed; sign in once to use it.' : st === 'too-old' ? (k.hint || 'This version is too old for Durbar.') : st === 'not-installed' ? 'Not on this computer yet.' : 'Durbar could not tell; try Check again.';
+      const hint = st === 'ready' ? [simV || hasInst ? '' : k.version ? 'Version ' + k.version + '.' : 'Ready to use.', k.hint && /^Signed in/.test(k.hint) ? k.hint : ''].filter(Boolean).join(' ') : st === 'not-signed-in' ? 'Installed; sign in once to use it.' : st === 'too-old' ? (k.hint || 'This version is too old for Durbar.') : st === 'not-installed' ? 'Not on this computer yet.' : 'Durbar could not tell; try Check again.';
       return `<li class="hs-card" data-kind="${esc(k.id)}"><div class="hs-top"><span class="hs-name"><b title="${esc(k.displayName || k.id)}">${esc(k.displayName || k.id)}</b>${FOR[k.id] ? `<span class="hs-for">${esc(FOR[k.id])}</span>` : ''}</span><span class="hs-st hs-${cls}"${simV ? ' title="Simulated version."' : ''}>${esc(word)}</span></div>
         ${acctHTML(k.id, st)}${hint ? `<p class="scr-note small">${esc(hint)}</p>` : ''}${k.where && st !== 'not-installed' ? `<p class="scr-note small hs-where">Found at <code>${esc(String(k.where).slice(0, 200)).replace(/[\\/]/g, '$&<wbr>')}</code></p>` : ''}${k.id === 'copilot' && copilot && copilot.pwshMissing ? `<p class="scr-note small hs-pwsh">${esc(PWSH_HINT)}</p>` : ''}
-        <div class="hs-act">${act ? `<button class="btn primary" type="button" data-hs="${act}" data-kind="${esc(k.id)}">${esc(label)}</button>` : ''}<button class="btn sm" type="button" data-hs="check" data-kind="${esc(k.id)}">Check again</button></div></li>`;
+        <div class="hs-upd" data-upd="${esc(k.id)}">${st === 'not-installed' ? '' : updInner(k.id)}</div>
+        <div class="hs-act" data-act="${esc(k.id)}">${actInner(k.id, st)}</div></li>`;
     }).join('');
     return `<section class="scr-sec" aria-labelledby="hsH"><h3 id="hsH" tabindex="-1">Agent apps</h3>
       <p class="scr-note">Install, update or sign in. You see every command first; Durbar never sees your password.</p>
+      <div id="hsBar">${barHTML()}</div>
       <ul class="hs-list">${cards}</ul></section>`;
   }
 
@@ -132,15 +140,86 @@
     return { root: d, close, isClosed: () => closed };
   }
 
+  /* ---- spec 081: updates. The window shows what main keeps in memory (harness:updates); it contacts no source itself. ---- */
+  let UPD = null; /* { results, checking, startCheck, policy, runtime, waiting } */
+  let CARDS = {}; /* the last painted state per app, so a change repaints only the update lines and buttons */
+  let onBadge = () => {};
+  const UPD_CHIP = { 'up-to-date': ['ok', 'Up to date'], 'update-available': ['warn', 'Update available'], 'could-not-check': ['off', 'Could not check'], outside: ['off', 'Outside Durbar'], checking: ['off', 'Checking…'], 'not-checked': ['off', 'Not checked'] };
+  /* FR-012: where to update a copy Durbar does not manage */
+  const OUTSIDE = { distro: "Update it with your system's package manager.", snap: 'Update it with Snap.', scoop: 'Update it with Scoop.', formula: 'Update it with Homebrew (brew upgrade).', winget: 'Update it with winget.' };
+  const SOURCE_NAME = { claude: 'Claude Code', codex: 'Codex', copilot: 'the GitHub Copilot CLI' };
+  const polOf = () => (UPD && UPD.policy) || {};
+  const updResult = (id) => (UPD && Array.isArray(UPD.results) ? UPD.results.find((x) => x.app === id) : undefined);
+  const updCount = () => (UPD && !polOf().checkHidden && Array.isArray(UPD.results) ? UPD.results.filter((r) => r.state === 'update-available').length : 0);
+  const timeOf = (ms) => { try { return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } };
+  /* every value is escaped: a version, a source or a reason came from a tool or a server */
+  function updInner(id) {
+    if (!UPD || polOf().checkHidden) return '';
+    const r = updResult(id), busy = Array.isArray(UPD.checking) && UPD.checking.includes(id), wait = UPD.waiting && UPD.waiting[id];
+    const out = [];
+    if (id === 'copilot' && UPD.runtime) out.push(`<p class="scr-note small hs-rt">Copilot runtime ${esc(UPD.runtime)}, bundled with Durbar (updates with Durbar).</p>`);
+    const chip = (key) => { const [cls, word] = UPD_CHIP[key] || UPD_CHIP['not-checked']; return `<span class="hs-st hs-${cls}">${esc(word)}</span>`; };
+    if (r) {
+      const inst = r.installed ? (id === 'copilot' ? `GitHub Copilot CLI ${esc(r.installed)} · ${esc(r.source)} (used to sign in)` : `Installed ${esc(r.installed)} · ${esc(r.source)}`) : '';
+      if (r.state === 'outside') out.push(`<p class="scr-note small hs-upd-l">${chip('outside')} ${inst || esc("Installed outside Durbar's routes")}</p>${r.hint && OUTSIDE[r.hint] ? `<p class="scr-note small">${esc(OUTSIDE[r.hint])}</p>` : ''}`);
+      else {
+        out.push(`<p class="scr-note small hs-upd-l">${chip(busy ? 'checking' : r.state)} ${inst}</p>`);
+        if (r.state === 'update-available' || r.state === 'up-to-date') {
+          const lat = r.stable ? `Latest ${esc(r.latest)} · stable ${esc(r.stable)}` : r.latest ? `Latest ${esc(r.latest)}${r.asHomebrew ? ' (as Homebrew knows it)' : ''}` : '';
+          if (lat) out.push(`<p class="scr-note small hs-latest">${lat}</p>`);
+          if (r.state === 'up-to-date' && r.installedNewer) out.push('<p class="scr-note small">Installed is newer than the source\'s latest.</p>');
+          if (r.newerOnLatest) out.push(`<p class="scr-note small hs-quiet">A newer latest-channel build exists (${esc(r.newerOnLatest)}).</p>`);
+        }
+        if (r.state === 'could-not-check') out.push(`<p class="scr-note small">Could not check: ${esc(r.reason || 'unexpected answer')}</p>`);
+        if (r.checkedAt) out.push(`<p class="scr-note small hs-when">Checked ${esc(timeOf(r.checkedAt))}</p>`);
+      }
+    } else if (busy) out.push(`<p class="scr-note small" aria-busy="true">${chip('checking')}</p>`);
+    else out.push(`<p class="scr-note small">${chip('not-checked')}${polOf().unreadable ? ' ' + esc("Your organization's settings could not be read.") : ''}</p>`);
+    if (wait !== undefined) out.push(`<p class="scr-note small hs-wait" role="status">Update waiting for ${esc(wait)} session${wait === 1 ? '' : 's'} <button type="button" class="linkbtn" data-hs="cancelwait" data-kind="${esc(id)}">Cancel</button></p>`);
+    return out.join('');
+  }
+  /* the card's buttons: Update… when below Durbar's minimum or a newer version exists (and the organization allows installs) */
+  function actInner(id, st) {
+    const base = st === 'not-installed' ? 'install' : st === 'too-old' ? 'update' : st === 'not-signed-in' ? 'signin' : '';
+    const r = updResult(id);
+    const act = base || (st !== 'not-installed' && r && r.state === 'update-available' && !polOf().installBlocked && !polOf().checkHidden && !(UPD.waiting && UPD.waiting[id]) ? 'update' : '');
+    const label = { install: 'Install…', update: 'Update…', signin: 'Sign in…' }[act];
+    const chk = UPD && !polOf().checkHidden && st !== 'not-installed' ? `<button class="btn sm" type="button" data-hs="updcheck" data-kind="${esc(id)}" aria-label="Check for updates for ${esc(SOURCE_NAME[id] || id)}">Check</button>` : '';
+    return `${act ? `<button class="btn primary" type="button" data-hs="${act}" data-kind="${esc(id)}">${esc(label)}</button>` : ''}<button class="btn sm" type="button" data-hs="check" data-kind="${esc(id)}">Check again</button>${chk}`;
+  }
+  /* the section's bar: Check for updates, the start-check switch and its note, or the organization's word */
+  function barHTML() {
+    if (!UPD) return '';
+    const p = polOf();
+    if (p.checkHidden) return '<p class="scr-note small hs-upd-off">Turned off by your organization: Durbar does not check for agent-app updates.</p>';
+    return `<div class="hs-bar"><button class="btn sm" type="button" data-hs="checkall">Check for updates</button><label class="hs-sw"><input type="checkbox" data-hs="startchk"${UPD.startCheck ? ' checked' : ''}${p.unreadable ? ' disabled' : ''}> Check for updates when Durbar starts</label></div>
+      <p class="scr-note small">Durbar checks for updates each time it starts. It never installs one by itself.${p.installBlocked ? ' Updates are managed by your organization.' : ''}${p.unreadable ? " Not checked: your organization's settings could not be read." : ''}</p>`;
+  }
+  function paintUpdates() {
+    document.querySelectorAll('.hs-upd[data-upd]').forEach((p) => { p.innerHTML = updInner(p.dataset.upd); });
+    document.querySelectorAll('.hs-act[data-act]').forEach((p) => { p.innerHTML = actInner(p.dataset.act, CARDS[p.dataset.act] || 'ready'); });
+    const bar = document.getElementById('hsBar'); if (bar) bar.innerHTML = barHTML();
+    onBadge(updCount());
+  }
+  async function loadUpdates(check, app, opts) {
+    if (!B || !B.harnessUpdates) return UPD;
+    try { const v = await B.harnessUpdates(check ? 'check' : undefined, app, opts); if (v && typeof v === 'object') UPD = v; } catch (e) { /* keep the last */ }
+    paintUpdates();
+    return UPD;
+  }
+
   /* running an operation: progress lines, link and code; resolves when main says it is done */
-  function runDialog(kind, op, name, planIndex) {
+  function runDialog(kind, op, name, planIndex, attach) {
     return new Promise((resolve) => {
+      activeRun.add(kind);
       const isSign = op === 'signin';
       const html = `${isSign ? `<p class="scr-note" id="hsLead">Starting the sign-in…</p>${kind === 'copilot' ? `<p class="scr-note small hs-vscode">${esc(COPILOT_VSCODE_NOTE)}</p>` : ''}<div class="hs-sign" id="hsSign" hidden><p class="scr-note">1. Open the sign-in page and sign in with ${esc(ACCOUNT[kind] || 'your account')}.</p><div class="hs-row"><button class="btn primary" type="button" id="hsOpen">Open the sign-in page</button></div><div id="hsCodeBox" hidden><p class="scr-note">2. Enter this code on that page:</p><div class="hs-row"><code class="hs-code" id="hsCode"></code><button class="btn sm" type="button" id="hsCopy">Copy</button></div></div><div id="hsPasteBox" hidden><p class="scr-note">2. After signing in, the page shows a code. Paste it here:</p><div class="hs-row"><input id="hsPaste" type="text" maxlength="512" autocomplete="off" spellcheck="false" aria-label="Code from the sign-in page"><button class="btn primary" type="button" id="hsPasteGo">Continue</button></div></div><p class="scr-note">3. Come back here. This window closes by itself when you are signed in.</p></div>` : '<p class="scr-note" id="hsLead">Installing… this can take a few minutes. A system prompt may ask for permission.</p>'}
         <pre class="hs-log" id="hsLog" aria-live="polite"></pre>${isSign ? '' : '<p class="scr-note small" id="hsTime"></p>'}`;
       const m = modal(isSign ? 'Sign in to ' + name : (op === 'update' ? 'Updating ' : 'Installing ') + name, html, [{ label: 'Cancel', cancel: true, onClick: (close) => { B.harnessCancel(); close(); } }]);
       let url = '';
-      const offP = B.onHarnessProgress((p) => {
+      const offP = B.onHarnessProgress((p) => applyP(p));
+      const offP2 = (p) => applyP(p);
+      const applyP = (p) => {
         if (p.kind !== kind || m.isClosed()) return;
         const log = m.root.querySelector('#hsLog'); if (log) log.textContent = (p.lines || []).join('\n');
         const t = m.root.querySelector('#hsTime'); if (t) t.textContent = Math.round((p.elapsedMs || 0) / 1000) + ' s';
@@ -149,10 +228,10 @@
           if (p.code) { const c = m.root.querySelector('#hsCode'); if (c.textContent !== p.code) { c.textContent = p.code; m.root.querySelector('#hsCodeBox').hidden = false; } }
           if (p.needsPaste) m.root.querySelector('#hsPasteBox').hidden = false;
         }
-      });
+      };
       const offD = B.onHarnessDone((p) => {
         if (p.kind !== kind) return;
-        offP(); offD();
+        offP(); offD(); activeRun.delete(kind);
         if (!m.isClosed()) m.close();
         resolve(p);
       });
@@ -161,9 +240,16 @@
         m.root.querySelector('#hsCopy').onclick = () => { const c = m.root.querySelector('#hsCode').textContent; if (navigator.clipboard) navigator.clipboard.writeText(c).catch(() => {}); };
         m.root.querySelector('#hsPasteGo').onclick = async () => { const i = m.root.querySelector('#hsPaste'); const r = await B.harnessPaste(i.value); if (r && r.ok) { i.value = ''; m.root.querySelector('#hsLead').textContent = 'Code sent. Waiting for the sign-in to finish…'; } else m.root.querySelector('#hsLead').textContent = (r && r.error) || 'That did not work.'; };
       }
+      if (attach) {
+        /* spec 081: the update was started by main (or after a wait): what it said before this window opened is replayed */
+        const lp = LASTP[kind], ld = LASTD[kind];
+        if (lp) offP2(lp);
+        if (ld) { offP(); offD(); activeRun.delete(kind); if (!m.isClosed()) m.close(); resolve(ld); }
+        return;
+      }
       B.harnessRun(kind, op, planIndex).then((r) => {
         if (r && r.ok) return;
-        offP(); offD(); if (!m.isClosed()) m.close();
+        offP(); offD(); activeRun.delete(kind); if (!m.isClosed()) m.close();
         resolve({ kind, op, ok: false, lines: [], reason: r && r.cancelled ? 'cancelled' : 'error', error: (r && r.error) || 'Could not start.' }); // spec 051 FR-004b: Cancel in the native confirmation is not an error
       });
     });
@@ -191,6 +277,7 @@
 
   async function install(kind, op, name) {
     const p = await B.harnessPlans(kind, op);
+    if (p && p.blocked) { modal('Update ' + (p.name || name), `<p class="scr-note">${esc(p.blocked)}</p>`, [{ label: 'Close', cancel: true, onClick: (c) => c() }]); return; }
     if (!p || !p.plans || !p.plans.length) {
       modal((op === 'update' ? 'Update ' : 'Install ') + (p && p.name || name), `<p class="scr-note">No install route that Durbar can run was found on this computer (the vendor's installer needs bash or Windows PowerShell; otherwise winget, Homebrew or npm). Install ${esc(p && p.name || name)} yourself with one of these commands, or from its official page, then come back and choose <b>Check again</b>.</p>${op === 'install' ? manualHTML(p, true) : ''}`,
         [{ label: 'Close', cancel: true, onClick: (c) => c() }, { label: 'Open the official page', cls: 'primary', onClick: (c) => { B.harnessOpenPage(kind); c(); } }]);
@@ -201,8 +288,13 @@
     const simple = document.body.classList.contains('simple');
     /* spec 052 FR-077: each option leads with what differs (the manager); the shared words are in the lead sentence */
     const many = p.plans.length > 1;
-    const tag = (pl, i) => (many && i === 0 ? ' (recommended)' : many && i === p.plans.length - 1 && pl.manager === 'npm' ? ' (last resort)' : '');
-    const opts = p.plans.map((pl, i) => `<label class="hs-plan"><input type="radio" name="hsPlan" value="${i}"${i === 0 ? ' checked' : ''}> <span><b>${esc(mgr(pl))}${tag(pl, i)}</b>${pl.note ? `<small>${esc(pl.note)}</small>` : ''}</span></label>`).join('');
+    const tag = (pl, i) => (op === 'update' && pl.owner ? ' (installed this copy)' : many && i === 0 ? ' (recommended)' : many && i === p.plans.length - 1 && pl.manager === 'npm' ? ' (last resort)' : '');
+    const radio = (pl, i) => `<label class="hs-plan"><input type="radio" name="hsPlan" value="${i}"${i === 0 ? ' checked' : ''}> <span><b>${esc(mgr(pl))}${tag(pl, i)}</b>${pl.pinned ? `<small>Installs exactly ${esc(pl.pinned)}, the version just checked.</small>` : ''}${pl.note ? `<small>${esc(pl.note)}</small>` : ''}</span></label>`;
+    /* spec 081 FR-008: an update shows only the route that installed the copy; the others would leave a second copy, so they sit behind "Show other ways" */
+    const ownerFirst = op === 'update' && p.plans[0] && p.plans[0].owner;
+    const opts = ownerFirst
+      ? radio(p.plans[0], 0) + (p.plans.length > 1 ? `<details class="hs-cmds hs-other"><summary>Show other ways</summary><p class="scr-note small">Another way would install a second copy next to the one Durbar uses.</p>${p.plans.slice(1).map((pl, j) => radio(pl, j + 1)).join('')}</details>` : '')
+      : p.plans.map(radio).join('');
     const cmds = `<details class="hs-cmds"${simple ? '' : ' open'}><summary>Show the exact command</summary>${p.plans.map((pl) => `<p class="scr-note small">${esc(mgr(pl))}: <code>${esc(pl.display)}</code></p>`).join('')}</details>`;
     const choice = await new Promise((res) => {
       const md = modal((op === 'update' ? 'Update ' : 'Install ') + p.name, `<p class="scr-note">Durbar ${op === 'update' ? 'updates' : 'installs'} ${esc(p.name)} for you. Choose how:</p>${opts}${cmds}<p class="scr-note small">It runs on your computer, as you, and asks once more before it starts. Prefer to do it yourself? <button type="button" class="linkbtn" id="hsPage">Open the official page</button></p>${op === 'install' ? manualHTML(p, false) : ''}`,
@@ -212,9 +304,43 @@
       document.querySelectorAll('#hsDlg .hs-man-run').forEach((b) => { b.onclick = () => { const i = Number(b.dataset.plan); md.close(); res(i); }; });
     });
     if (choice === null) return;
-    const done = await runDialog(kind, op, p.name, choice);
-    result(done, p.name, kind);
-    if (done.ok) await signInNext(kind);
+    PLAN_SHOWN[kind] = p.plans[choice] && p.plans[choice].display;
+    const done = op === 'update' ? await updateFlow(kind, p.name, choice) : await runDialog(kind, op, p.name, choice);
+    if (!done) return; /* waiting for sessions to end, or cancelled at the gate */
+    result(done, p.name, kind, p);
+    if (done.ok && !done.failure) await signInNext(kind);
+  }
+
+  /* spec 081 FR-013, D5: Update… takes main's lock first; main counts the sessions and either runs (after its native confirmation) or asks.
+     A reply with needsGate shows the open-sessions dialog; the answer goes back as wait / end / cancel. Returns the done event, or null. */
+  async function updateFlow(kind, name, idx) {
+    let gate;
+    for (;;) {
+      LASTD[kind] = null; LASTP[kind] = null;
+      const r = await B.harnessRun(kind, 'update', idx, gate);
+      if (r && r.needsGate) {
+        const c = await gateDialog(kind, name, r.needsGate);
+        if (!c) { await B.harnessRun(kind, 'update', idx, 'cancel'); onChange(); return null; }
+        gate = c;
+        continue;
+      }
+      if (r && r.ok && r.waiting !== undefined) { waitKinds.add(kind); await loadUpdates(); toastLike(name + ' updates when its sessions end.'); return null; }
+      if (r && r.ok) return runDialog(kind, 'update', name, idx, true);
+      if (r && r.cancelled) return null;
+      return { kind, op: 'update', ok: false, lines: [], reason: 'error', error: (r && r.error) || 'Could not start.' };
+    }
+  }
+
+  /* the open-sessions dialog (spec 081 FR-013): the End all sessions? wording of the office's own dialog, shared through DurbarDialog.endAllBody */
+  function gateDialog(kind, name, c) {
+    return new Promise((res) => {
+      const n = c.open || 0, endText = (window.DurbarDialog && window.DurbarDialog.endAllBody) ? window.DurbarDialog.endAllBody(n, c.busy || 0) : '';
+      const extra = [c.pendingPermissions ? `${c.pendingPermissions} waiting for your permission (denied when they end).` : '', c.heldPrompts ? `${c.heldPrompts} scheduled ${c.heldPrompts === 1 ? 'prompt is' : 'prompts are'} held and ${c.heldPrompts === 1 ? 'is' : 'are'} not sent to ended sessions.` : ''].filter(Boolean);
+      modal(`${n} ${name} session${n === 1 ? ' is' : 's are'} open`, `<p class="scr-note">${esc(name)} cannot be updated safely while its sessions run (on Windows a running program cannot be replaced). Nothing new starts until the update is done.</p><p class="scr-note small">${esc(endText)}</p>${extra.map((x) => `<p class="scr-note small">${esc(x)}</p>`).join('')}`,
+        [{ label: 'Cancel', cancel: true, onClick: (c2) => { c2(); res(null); } },
+          { label: 'Update when they end', cls: 'primary', onClick: (c2) => { c2(); res('wait'); } },
+          { label: `End ${n} session${n === 1 ? '' : 's'} and update`, cls: 'danger', onClick: (c2) => { c2(); res('end'); } }]);
+    });
   }
 
   /* FR-045: after an install or update that worked, go straight to the sign-in when the harness still needs one */
@@ -245,14 +371,43 @@
     return done;
   }
 
-  function result(p, name, kind) {
+  /* spec 081 FR-014: plain advice per failure class, from the class main computed on the masked output; the raw text is never shown whole */
+  function adviceHTML(p, name, kind) {
+    const cmd = PLAN_SHOWN[kind];
+    switch (p.failure) {
+      case 'admin': return `<p class="scr-note">Needs administrator rights: Durbar never runs sudo or asks for elevation. Run this yourself in a terminal:</p>${cmd ? `<div class="hs-man"><code>${esc(cmd)}</code><button type="button" class="cp-btn cp-code" aria-label="Copy the command" title="Copy the command">Copy</button></div>` : ''}`;
+      case 'in-use': return `<p class="scr-note">${esc(name)} is still running somewhere (a terminal or an editor). Close it and try again.</p>`;
+      case 'managed': return '<p class="scr-note">Updates are managed by your organization on this computer. Ask whoever manages it.</p>';
+      case 'uac-cancelled': return '<p class="scr-note">Cancelled at the administrator prompt. Nothing was changed.</p>';
+      case 'network': return '<p class="scr-note">Durbar could not reach the update source (a network or proxy problem). Check the connection and try again.</p>';
+      default: return '';
+    }
+  }
+  function result(p, name, kind, plansInfo) {
     onChange();
+    if (p.ok && p.failure === 'vendor-up-to-date') { modal(name + ' is up to date', `<p class="scr-note">${esc(name)} says it is up to date on its own channel, so nothing was installed.</p>`, [{ label: 'Close', cancel: true, onClick: (c) => c() }]); return; }
+    if (p.ok && p.note) { modal(name + ' was updated', `<p class="scr-note">${esc(p.note)}</p>`, [{ label: 'Close', cancel: true, onClick: (c) => c() }]); return; }
     if (p.ok) { toastLike((name || kind) + (p.op === 'install' ? ' is installed.' : p.op === 'update' ? ' is updated.' : ' is ready.')); return; }
     if (p.reason === 'cancelled') return;
-    modal('That did not finish', `<p class="scr-note">${esc(p.error || (p.reason === 'timeout' ? 'It took too long and was stopped.' : 'It ended with an error' + (p.exitCode != null ? ' (code ' + p.exitCode + ')' : '') + '.'))}</p>${p.lines && p.lines.length ? `<pre class="hs-log">${esc(p.lines.join('\n'))}</pre>` : ''}<p class="scr-note small">You can also follow the official instructions.</p>`,
-      [{ label: 'Close', cancel: true, onClick: (c) => c() }, { label: 'Open the official page', onClick: (c) => { B.harnessOpenPage(kind); c(); } }]);
+    /* FR-009: a failing `codex update` offers the checked installer, with its own confirmation; nothing retries by itself */
+    const fb = p.fallback === 'official' && plansInfo && Array.isArray(plansInfo.plans) ? plansInfo.plans.findIndex((x) => x.script) : -1;
+    const advice = adviceHTML(p, name, kind);
+    modal('That did not finish', `${advice || `<p class="scr-note">${esc(p.error || (p.reason === 'timeout' ? 'It took too long and was stopped.' : 'It ended with an error' + (p.exitCode != null ? ' (code ' + p.exitCode + ')' : '') + '.'))}</p>`}${fb >= 0 ? `<p class="scr-note">The app's own updater did not work. Durbar can use the vendor's installer instead (it downloads it from the vendor's fixed addresses and asks again first).</p>` : ''}${!advice && p.lines && p.lines.length ? `<pre class="hs-log">${esc(p.lines.join('\n'))}</pre>` : ''}<p class="scr-note small">You can also follow the official instructions.</p>`,
+      [{ label: 'Close', cancel: true, onClick: (c) => c() }, ...(fb >= 0 ? [{ label: 'Use the vendor\'s installer…', cls: 'primary', onClick: (c) => { c(); PLAN_SHOWN[kind] = plansInfo.plans[fb].display; updateFlow(kind, name, fb).then((d) => { if (d) result(d, name, kind); }); } }] : []), { label: 'Open the official page', onClick: (c) => { B.harnessOpenPage(kind); c(); } }]);
   }
   let toastLike = () => {};
+
+  /* Check for updates (all apps) or one card's Check: main asks the sources; the answer arrives as an update event and in the reply */
+  async function checkNow(kind) {
+    let winget = false;
+    const r0 = kind ? updResult(kind) : undefined;
+    if (r0 && r0.reason === 'winget needs its terms accepted') {
+      /* FR-004: the terms note first; only after the user's OK does that one run carry --accept-source-agreements */
+      winget = await new Promise((res) => modal('winget source terms', '<p class="scr-note">winget needs you to accept the terms of its package source before it can answer. Durbar does not accept them for you. Continue to accept them for this one check?</p>', [{ label: 'Cancel', cancel: true, onClick: (c) => { c(); res(false); } }, { label: 'Accept and check', cls: 'primary', onClick: (c) => { c(); res(true); } }]));
+      if (!winget) return;
+    }
+    await loadUpdates(true, kind, winget ? { acceptTerms: true } : undefined);
+  }
 
   /* clicks inside the Settings screen */
   function onClick(e) {
@@ -260,13 +415,38 @@
     const kind = b.dataset.kind, card = b.closest('.hs-card'), name = card ? card.querySelector('b').textContent : kind;
     if (b.dataset.hs === 'reveal') reveal(b);
     else if (b.dataset.hs === 'check') onChange(true);
+    else if (b.dataset.hs === 'checkall') checkNow();
+    else if (b.dataset.hs === 'updcheck') checkNow(kind);
+    else if (b.dataset.hs === 'cancelwait') { waitKinds.delete(kind); B.harnessRun(kind, 'update', 0, 'cancel').then(() => loadUpdates()); }
+    else if (b.dataset.hs === 'startchk') { if (B.setCheckUpdatesAtStart) B.setCheckUpdatesAtStart(!!b.checked).then((r) => { if (UPD && r) UPD.startCheck = r.checkUpdatesAtStart !== false; }); return true; }
     else if (b.dataset.hs === 'install' || b.dataset.hs === 'update') install(kind, b.dataset.hs, name);
     else if (b.dataset.hs === 'signin') signin(kind, name);
     return true;
   }
 
   window.DurbarHarnesses = {
-    init(o) { B = o.bridge; onChange = o.onChange || onChange; toastLike = o.toast || toastLike; onAccounts = o.onAccounts || onAccounts; },
+    init(o) {
+      B = o.bridge; onChange = o.onChange || onChange; toastLike = o.toast || toastLike; onAccounts = o.onAccounts || onAccounts; onBadge = o.onBadge || onBadge;
+      if (B && B.onHarnessProgress) B.onHarnessProgress((p) => {
+        LASTP[p.kind] = p;
+        /* an update that waited for sessions to end has started: show its progress */
+        if (p.op === 'update' && waitKinds.has(p.kind) && !activeRun.has(p.kind)) {
+          waitKinds.delete(p.kind);
+          const nm = SOURCE_NAME[p.kind] || p.kind;
+          runDialog(p.kind, 'update', nm, 0, true).then((d) => { result(d, nm, p.kind); });
+        }
+      });
+      if (B && B.onHarnessDone) B.onHarnessDone((p) => {
+        LASTD[p.kind] = p;
+        if (p.op === 'update' && waitKinds.has(p.kind) && !activeRun.has(p.kind)) { waitKinds.delete(p.kind); if (p.reason !== 'cancelled') result(p, SOURCE_NAME[p.kind] || p.kind, p.kind); else onChange(); }
+      });
+    },
+    loadUpdates,
+    /* main sent a change (harness:updatesChanged): repaint the update lines and buttons, and the Settings badge */
+    setUpdates(v) { if (v && typeof v === 'object') { UPD = v; paintUpdates(); } },
+    updateCount: () => updCount(),
+    /* Settings > Agent apps is on screen (or not): main then knows the card is the announcement */
+    shown(on) { if (B && B.harnessVisible) B.harnessVisible(!!on).catch(() => undefined); },
     available: () => !!(B && B.harnessRun),
     sectionHTML,
     loadAccounts,

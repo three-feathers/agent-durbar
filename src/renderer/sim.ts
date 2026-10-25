@@ -14,6 +14,7 @@ type AgentEvent = import('../adapters/types').AgentEvent;
 type McpServerStatus = import('../adapters/types').McpServerStatus;
 type AgentInfo = import('../shared/api').AgentInfo;
 type DurbarApi = import('../shared/api').DurbarApi;
+type UpdatesView = import('../shared/api').UpdatesView;
 type FolderSetupItem = import('../shared/foldersetup').FolderSetupItem;
 type PickedFile = import('../shared/api').PickedFile;
 type ModelChoice = import('../shared/api').ModelChoice;
@@ -2265,6 +2266,48 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     let extra = 0;
     type HsCb = (p: never) => void;
     const simHarness: { progress: HsCb[]; done: HsCb[]; running: null | { kind: string; finish: () => void } } = { progress: [], done: [], running: null };
+    /*
+     * Spec 081 FR-020: agent-app updates in the simulator: canned results, no network, no package manager. `simupd=avail|mixed|off|unreadable`
+     * chooses what the check "finds" (default: nothing checked yet); `simupdrun=ok|uptodate|admin|inuse|managed|network|other|fallback` what the next
+     * update does; `simsessions=N` pretends N Claude Code sessions are open (the open-sessions dialog); `simupdchk=1` makes a check take a moment.
+     */
+    type UpdRes = NonNullable<UpdatesView['results']>[number];
+    const simUpdMode = simQuery.get('simupd') ?? '';
+    const simUpdRun = simQuery.get('simupdrun') ?? 'ok';
+    let simSessions = Math.max(0, Math.min(9, Number(simQuery.get('simsessions')) || 0));
+    const simStartCheck = { on: true };
+    const simUpdWaiting: Record<string, number> = {};
+    const simUpdCb: Array<(v: UpdatesView) => void> = [];
+    const simUpdChecking = new Set<string>();
+    const NOW = Date.now();
+    const canned = (): UpdRes[] => {
+      if (simUpdMode === 'off' || simUpdMode === '' || simUpdMode === 'unreadable') return [];
+      const copilot: UpdRes = { app: 'copilot', state: 'up-to-date', installed: '1.0.103', latest: '1.0.103', source: 'Homebrew', sourceKind: 'brew', asHomebrew: true, checkedAt: NOW };
+      if (simUpdMode === 'mixed') return [
+        { app: 'claude', state: 'up-to-date', installed: '2.1.308', latest: '2.1.309', stable: '2.1.308', newerOnLatest: '2.1.309', source: 'the official installer', sourceKind: 'official', checkedAt: NOW },
+        { app: 'codex', state: 'could-not-check', installed: '0.163.0', source: 'Homebrew', sourceKind: 'brew', reason: 'network problem', checkedAt: NOW },
+        { ...copilot, state: 'outside', source: "installed outside Durbar's routes", sourceKind: 'outside', hint: 'distro' },
+      ];
+      return [
+        { app: 'claude', state: 'update-available', installed: '2.1.300', latest: '2.1.309', stable: '2.1.308', source: 'the official installer', sourceKind: 'official', checkedAt: NOW },
+        { app: 'codex', state: 'update-available', installed: '0.163.0', latest: '0.164.0', source: 'Homebrew', sourceKind: 'brew', asHomebrew: true, checkedAt: NOW },
+        copilot,
+      ];
+    };
+    // `simupdstart=1`: the start check "already found" them (the badge is there at load and one toast follows); otherwise nothing is checked until the user asks
+    const simUpdStart = simQuery.get('simupdstart') === '1';
+    const simUpdResults = new Map<string, UpdRes>(simUpdStart ? canned().map((r) => [r.app, r]) : []);
+    const simUpdView = (announce?: UpdatesView['announce']): UpdatesView => ({
+      results: [...simUpdResults.values()], checking: [...simUpdChecking], startCheck: simStartCheck.on,
+      policy: { checkHidden: simUpdMode === 'off', installBlocked: false, unreadable: simUpdMode === 'unreadable', startAllowed: simUpdMode !== 'off' && simUpdMode !== 'unreadable' },
+      runtime: '1.0.22', waiting: { ...simUpdWaiting }, ...(announce ? { announce } : {}),
+    });
+    const simUpdEmit = (announce?: UpdatesView['announce']): void => simUpdCb.forEach((cb) => cb(simUpdView(announce)));
+    // the canned plans: the owning route first, behind it the others (the real ones come from main, which has no copy to look at under the simulator)
+    const simUpdPlans = (kind: string) => (kind === 'claude'
+      ? [{ manager: 'official', own: 'claude', owner: true, display: 'claude update', note: 'Installs into your home folder; no administrator rights needed.' }, { manager: 'official', bin: 'bash', script: {}, display: 'https://claude.ai/install.sh (downloaded, then run with bash)' }]
+      : kind === 'codex' ? [{ manager: 'brew', owner: true, display: 'brew upgrade --cask codex', note: 'May ask for administrator rights.' }, { manager: 'npm', display: 'npm install -g @openai/codex@latest' }]
+      : [{ manager: 'brew', owner: true, display: 'brew upgrade --cask copilot-cli --greedy', note: 'May ask for administrator rights.' }]);
     const api: DurbarApi = {
       ...floorApi,
       ...mcpApi,
@@ -2303,12 +2346,42 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       // spec 060 FR-002: in the app, ask main for the real routes of this OS (main assumes a typical new machine under the simulator);
       // the made-up list below is only for the page opened in a plain browser, where there is no main process
       harnessPlans: async (kind, op) => {
+        if (op === 'update' && simUpdMode && simUpdMode !== 'off') return { name: kind === 'copilot' ? 'the GitHub Copilot CLI' : kind === 'codex' ? 'the Codex CLI' : 'Claude Code', page: 'https://example.invalid/', plans: simUpdPlans(kind) };
         const real = typeof window !== 'undefined' ? (window as unknown as { agentDurbar?: DurbarApi }).agentDurbar : undefined;
         if (real?.harnessPlans) return real.harnessPlans(kind, op);
         return { name: kind === 'copilot' ? 'the GitHub Copilot CLI' : kind === 'codex' ? 'the Codex CLI' : 'Claude Code', page: 'https://example.invalid/', plans: kind === 'codex' ? [{ manager: 'npm', display: (op === 'update' ? 'npm install -g @openai/codex@latest' : 'npm install -g @openai/codex') }] : [{ manager: 'brew', display: 'brew install --cask claude-code' }, { manager: 'npm', display: 'npm install -g @anthropic-ai/claude-code', note: 'Needs Node.js 22 or later. Anthropic recommends its native installer.' }] };
       },
-      harnessRun: async (kind, op, planIndex) => {
+      harnessRun: async (kind, op, planIndex, gate) => {
         const t0 = Date.now();
+        if (typeof window !== 'undefined' && gate !== 'cancel') (window as unknown as { __simHarnessLast?: unknown }).__simHarnessLast = { kind, op, planIndex }; // spec 060 FR-012: the driver checks only an index is sent
+        if (op === 'update' && simUpdMode) {
+          // spec 081 FR-013: the gate. Claude Code has the pretend open sessions; the others have none.
+          if (gate === 'cancel') { delete simUpdWaiting[kind]; simUpdEmit(); return { ok: false, cancelled: true, error: 'Cancelled.' }; }
+          const open = kind === 'claude' ? simSessions : 0;
+          if (open > 0 && !gate) return { ok: false, needsGate: { open, busy: Math.min(open, 1), pendingPermissions: 0, heldPrompts: 0 } };
+          if (open > 0 && gate === 'wait') {
+            simUpdWaiting[kind] = open; simUpdEmit();
+            setTimeout(() => { simSessions = 0; delete simUpdWaiting[kind]; simUpdEmit(); void api.harnessRun?.(kind, 'update', planIndex, undefined); }, 4000);
+            return { ok: true, waiting: open };
+          }
+          if (open > 0 && gate === 'end') simSessions = 0;
+        }
+        if (op === 'update' && simUpdMode) {
+          const prog = (p: Record<string, unknown>) => simHarness.progress.forEach((cb) => cb({ kind, op, elapsedMs: Date.now() - t0, lines: [], ...p } as never));
+          const finish = (extra: Record<string, unknown>, ok: boolean) => {
+            if (ok) { const r = simUpdResults.get(kind); if (r) simUpdResults.set(kind, { ...r, state: 'up-to-date', installed: r.stable ?? r.latest ?? r.installed }); }
+            simUpdEmit();
+            simHarness.done.forEach((cb) => cb({ kind, op, ok, exitCode: ok ? 0 : 1, lines: ['(simulated)'], ...extra } as never));
+          };
+          const FAIL: Record<string, Record<string, unknown>> = { admin: { failure: 'admin' }, inuse: { failure: 'in-use' }, managed: { failure: 'managed' }, network: { failure: 'network' }, other: { failure: 'other' }, fallback: { failure: 'other', fallback: 'official' } };
+          setTimeout(() => prog({ lines: ['Updating (simulated)…'] }), 300);
+          setTimeout(() => {
+            if (FAIL[simUpdRun]) finish(FAIL[simUpdRun], false);
+            else if (simUpdRun === 'uptodate') finish({ failure: 'vendor-up-to-date' }, true);
+            else finish({}, true);
+          }, simUpdRun === 'slow' ? 60000 : 2200);
+          return { ok: true };
+        }
         // spec 060 FR-012: the driver checks which route a Run button asked for (only an index is sent; nothing runs here)
         if (typeof window !== 'undefined') (window as unknown as { __simHarnessLast?: unknown }).__simHarnessLast = { kind, op, planIndex };
         const prog = (p: Record<string, unknown>) => simHarness.progress.forEach((cb) => cb({ kind, op, elapsedMs: Date.now() - t0, lines: [], ...p } as never));
@@ -2325,6 +2398,22 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
       harnessPaste: async (text) => { if (!simHarness.running || !String(text || '').trim()) return { ok: false, error: 'Paste the code from the sign-in page (one line).' }; const r = simHarness.running; setTimeout(() => r.finish(), 400); return { ok: true }; },
       harnessCancel: async () => { const r = simHarness.running; simHarness.running = null; if (r) simHarness.done.forEach((cb) => cb({ kind: r.kind, op: 'signin', ok: false, reason: 'cancelled', lines: [] } as never)); return !!r; },
+      harnessUpdates: async (what, app) => {
+        if (what === 'check' && simUpdMode !== 'off') {
+          // no network: the canned answer arrives after a moment, like a real check
+          const apps = app ? [app] : ['claude', 'codex', 'copilot'];
+          apps.forEach((a) => simUpdChecking.add(a)); simUpdEmit();
+          await new Promise((r) => setTimeout(r, simQuery.get('simupdchk') === '1' ? 1500 : 150));
+          apps.forEach((a) => simUpdChecking.delete(a));
+          for (const r of canned()) if (apps.includes(r.app) && !simUpdResults.has(r.app)) simUpdResults.set(r.app, r);
+          if (!simUpdMode) for (const a of apps) if (a === 'copilot') simUpdResults.set('copilot', { app: 'copilot', state: 'up-to-date', installed: '1.0.103', latest: '1.0.103', source: 'Homebrew', sourceKind: 'brew', asHomebrew: true, checkedAt: Date.now() });
+          simUpdEmit();
+        }
+        return simUpdView();
+      },
+      onHarnessUpdates: (cb) => { simUpdCb.push(cb); if (simUpdStart && simUpdCb.length === 1) setTimeout(() => simUpdEmit({ app: 'codex', version: '0.164.0', name: 'the Codex CLI' }), 600); return () => { const i = simUpdCb.indexOf(cb); if (i >= 0) simUpdCb.splice(i, 1); }; },
+      harnessVisible: async () => true,
+      setCheckUpdatesAtStart: async (on) => { simStartCheck.on = on !== false; return { ok: true, checkUpdatesAtStart: simStartCheck.on }; },
       harnessOpenPage: async () => ({ ok: true }),
       harnessOpenSignIn: async () => ({ ok: true }),
       onHarnessProgress: (cb) => { simHarness.progress.push(cb); return () => { simHarness.progress = simHarness.progress.filter((x) => x !== cb); }; },

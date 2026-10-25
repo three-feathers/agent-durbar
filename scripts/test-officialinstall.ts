@@ -7,6 +7,8 @@ import { EventEmitter } from 'events';
 import { MAX_REDIRECTS, MAX_SCRIPT_BYTES, allowedScriptUrl, downloadScript, looksLikeScript, makeGet } from '../src/main/officialinstall';
 import * as http from 'http';
 import type { HttpGet } from '../src/main/officialinstall';
+import { makeDownloadGet } from '../src/main/netget';
+import type { NetRequestFactory, NetRequestLike } from '../src/main/netget';
 import { HarnessSetup, confirmText, setupEnv } from '../src/main/harnesssetup';
 import { installPlans, routeOwning } from '../src/shared/harnesssetup';
 import type { OfficialScript, PackageManager } from '../src/shared/harnesssetup';
@@ -177,6 +179,31 @@ async function main(): Promise<void> {
     const hs = new HarnessSetup({ detectEnv: { platform: 'darwin', env: { PATH: '/opt/homebrew/bin:/usr/bin:/bin' }, homedir: '/Users/u', isFile: (p: string) => files.has(p) }, spawn: () => { throw new Error('no'); }, killTree: () => undefined, send: () => undefined, redetect: async () => undefined, ownedByOther: () => false, realpath: (p: string) => (p === '/opt/homebrew/bin/claude' ? '/opt/homebrew/Caskroom/claude-code/2.1.305/claude' : p) } as never);
     assert.strictEqual(hs.plans('claude', 'install').plans[0].manager, 'official', 'install: least privilege first');
     assert.strictEqual(hs.plans('claude', 'update').plans[0].manager, 'brew', 'update: the route that owns the copy comes first');
+  }
+  // spec 081 T024: the download through net.request: a redirect is read from the event and not followed; an off-list hop is refused BEFORE it is asked for
+  {
+    const requested: string[] = [];
+    let followed = 0;
+    const mkReq = (script: (u: string, r: EventEmitter) => void): NetRequestFactory => (o) => {
+      requested.push(o.url);
+      const r = Object.assign(new EventEmitter(), { setHeader: () => undefined, abort: () => undefined, followRedirect: () => { followed++; }, end() { setImmediate(() => script(o.url, r)); } });
+      return r as unknown as NetRequestLike;
+    };
+    const net = mkReq((u, r) => {
+      if (u === 'https://claude.ai/install.sh') r.emit('redirect', 302, 'GET', 'https://evil.example/install.sh');
+      else throw new Error('the off-list hop must never be requested: ' + u);
+    });
+    await assert.rejects(downloadScript(claude, '.sh', { get: makeDownloadGet(net), tmpdir: tmp }), /not the vendor's/);
+    assert.deepStrictEqual(requested, ['https://claude.ai/install.sh'], 'the off-list hop was refused before it was requested');
+    assert.strictEqual(followed, 0, 'followRedirect is never called');
+    requested.length = 0;
+    const ok = mkReq((u, r) => {
+      if (u === 'https://claude.ai/install.sh') r.emit('redirect', 302, 'GET', 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh');
+      else { const res = Object.assign(new EventEmitter(), { statusCode: 200, headers: { 'content-type': 'text/x-shellscript' } }); r.emit('response', res); setImmediate(() => { res.emit('data', body); res.emit('end'); }); }
+    });
+    const got = await downloadScript(claude, '.sh', { get: makeDownloadGet(ok), tmpdir: tmp });
+    assert.deepStrictEqual(fs.readFileSync(got.file), body);
+    assert.deepStrictEqual(requested, ['https://claude.ai/install.sh', 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh']);
   }
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log('officialinstall: allow-list, redirects, size, private files, runner (bash/powershell argv, cleanup, never root) OK');
