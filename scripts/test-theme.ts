@@ -104,22 +104,49 @@ T.setTheme('clean-office');
   const cssPath = process.env.DURBAR_THEMES_CSS || path.join(__dirname, '..', '..', 'src', 'renderer', 'themes.css');
   // Properties that only paint (colour, texture, shape of the corner, shadow, font face, case, ellipsis); any value.
   const PAINT = new Set(['color', 'background', 'background-color', 'background-image', 'background-size', 'border-color', 'border-top-color', 'border-bottom-color',
-    'border-radius', 'box-shadow', 'text-shadow', 'outline-color', 'font-family', 'font-weight', 'text-transform', 'z-index']);
+    'border-radius', 'box-shadow', 'text-shadow', 'outline-color', 'font-family', 'text-transform', 'z-index']);
   // Properties allowed with one exact kind of value: they would size or move things with any other value.
   const VALUE: Record<string, RegExp> = {
     position: /^relative$/, // stacking only (z-index); never absolute/fixed + top/left
     'min-width': /^0$/, // lets display text ellipsize
     overflow: /^hidden$/, // clips for the ellipsis; auto/scroll would add scrollbars and change the layout
     'text-overflow': /^(?:ellipsis|clip)$/,
+    'font-weight': /^(?:normal|bold|[4-8]00)$/, // a heavier face widens text a little; 900 and bolder/lighter are refused
     'letter-spacing': /^(?:normal|0|0?\.(?:0[0-9]?|10?)em)$/, // at most .1em: it widens text, like a font change; today's uses are .01-.08em
     flex: /^0 1 auto$/, // the initial value; no flex-basis or grow
-    transform: /^translate\(-?[0-9]{1,2}px,-?[0-9]{1,2}px\)$/, // retro button press nudge; no scale, rotate or big moves
+    transform: /^translate\(-?[0-2]px,-?[0-2]px\)$/, // retro button press nudge (today 2px and -1px); no scale, rotate or bigger moves
   };
   // Custom properties a style may declare (colours and a font family); a length in their value would feed a size.
   const CUSTOM = new Set(['--ui-display', '--ui-top-ink', '--ui-top-ink-2', '--st-glyph']);
   const LENGTH = /[0-9.]\s*(?:px|em|rem|%|ch|vw|vh|vmin|vmax|pt|cm|mm|in|ex)\b/i;
   const css = fs.readFileSync(cssPath, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
   const bad: string[] = [];
+  // Structure (review on #751): declarations only inside a plain rule, so the per-block check below sees every one of them.
+  // Refused: a rule nested in a rule (CSS nesting would hide its parent's declarations from the block regex), a declaration
+  // directly in an @-block, and any top-level statement ending in ';' (@import, @namespace, @charset).
+  {
+    const stack: string[] = [];
+    let buf = '', q = '', paren = 0;
+    for (const ch of css) {
+      if (q) { buf += ch; if (ch === q) q = ''; continue; }
+      if (ch === '"' || ch === "'") { q = ch; buf += ch; continue; }
+      if (ch === '(') paren++;
+      if (ch === ')') paren--;
+      if (paren > 0) { buf += ch; continue; }
+      if (ch === '{') {
+        const prelude = buf.trim(), parent = stack[stack.length - 1];
+        if (parent !== undefined && !parent.startsWith('@')) bad.push(`nested rule "${prelude}" inside "${parent}"`);
+        if (parent !== undefined && parent.startsWith('@') && buf.includes(';')) bad.push(`declaration directly in "${parent}"`);
+        stack.push(prelude); buf = '';
+      } else if (ch === '}') {
+        const top = stack.pop();
+        if (top !== undefined && top.startsWith('@') && buf.trim()) bad.push(`declaration directly in "${top}"`);
+        buf = '';
+      } else if (ch === ';' && (stack.length === 0 || stack[stack.length - 1].startsWith('@'))) {
+        bad.push(`statement "${buf.trim()};" ${stack.length ? 'directly in ' + stack[stack.length - 1] : 'at the top level'}`); buf = '';
+      } else buf += ch;
+    }
+  }
   let nRules = 0, nDecls = 0;
   for (const m of css.matchAll(/\{([^{}]*)\}/g)) {
     nRules++;
