@@ -8,6 +8,7 @@ import type { PermissionMode } from './capabilities';
 import { CODEX_MIN_VERSION, compareVersions } from './detect';
 import { clipDiff, simpleDiff } from '../shared/diff';
 import { WRITE_GUARD_MAX_PATHS } from './permissions';
+import { sandboxRoots } from './sandboxRoots';
 
 /** Protocol `AskForApproval`, the values we use. `untrusted` is retired; `granular` is not offered. */
 export type CodexApprovalPolicy = 'never' | 'on-request';
@@ -119,54 +120,14 @@ export function codexProfileArgs(extraRead: readonly string[] = []): string[] {
 /** `initialize` capabilities: `permissions` and `runtimeWorkspaceRoots` are experimental fields. */
 export const CODEX_INITIALIZE_CAPABILITIES = Object.freeze({ experimentalApi: true });
 
-/** Normalised absolute root, or undefined when it must be dropped. Windows-form paths use `path.win32`, others `path.posix`. */
-function normalizeRoot(r: string): { path: string; key: string } | undefined {
-  if (!r || r.includes('\0')) return undefined;
-  const win = /^[A-Za-z]:[\\/]/.test(r) || r.startsWith('\\\\');
-  if (!win && !r.startsWith('/')) return undefined;
-  const api = win ? path.win32 : path.posix;
-  let n = api.normalize(r);
-  const root = api.parse(n).root;
-  if (n === root || n === root.replace(/[\\/]+$/, '') || root === '') return undefined; // a filesystem root or a UNC share root
-  n = n.replace(/[\\/]+$/, '');
-  if (n.split(/[\\/]/).includes('..')) return undefined;
-  return { path: n, key: win ? n.toLowerCase() : n };
-}
-
 /**
- * Session folders to `runtimeWorkspaceRoots`: absolute paths only, normalised (`.` and `..` resolved, no trailing
- * separator), duplicates removed (case-insensitively for Windows-form paths), order kept. A root that is a
- * filesystem root (`/`, `C:\`, `\\server\share`) or still holds `..` is dropped: a session root must never make
- * everything readable. Values are JSON params (never argv or TOML), so spaces and `=` need no escaping. A relative
- * or empty entry is dropped, never resolved: fewer roots means fewer readable files.
- *
- * Symlinks: `realpath` is required, so an adapter cannot forget it. The function stays I/O-free because the caller
- * injects it (`fs.realpathSync.native` in the adapter; tests pass a fake, or identity for path-only cases): each root
- * is resolved after normalising, and the
- * filesystem-root rule and the dedupe run on the RESOLVED path, so a root that links to `/` or `C:\` is dropped.
- * If the resolver throws (missing path, no permission) the root is dropped: fail closed. Unlike
- * `permissions.ts` `realOrNearest`, a missing root is not replaced by its nearest ancestor, because a session
- * folder that does not exist is not a folder Codex should be told to read.
+ * Session folders to `runtimeWorkspaceRoots`: the shared sandbox-root rule of spec 087 FR-015 (`sandboxRoots.ts`, T010): absolute,
+ * normalised, deduped (case-insensitively for Windows-form paths), resolved with the injected `realpath` (a link to `/` is dropped;
+ * a resolver that throws drops the root, fail closed); a filesystem or share root, `..`, a quote or a control character drops the
+ * root. Values are JSON params (never argv or TOML), so spaces and `=` need no escaping.
  */
 export function codexWorkspaceRoots(roots: readonly unknown[] | undefined | null, realpath: (p: string) => string): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const r of Array.isArray(roots) ? roots : []) {
-    if (typeof r !== 'string') continue;
-    let n = normalizeRoot(r);
-    if (n) {
-      try {
-        const real = realpath(n.path);
-        n = typeof real === 'string' ? normalizeRoot(real) : undefined;
-      } catch {
-        n = undefined;
-      }
-    }
-    if (!n || seen.has(n.key)) continue;
-    seen.add(n.key);
-    out.push(n.path);
-  }
-  return out;
+  return sandboxRoots(roots, realpath);
 }
 
 /** The Codex version researched (2026-10-18); older ones are refused because they are unchecked (spec 012 FR-087). Same value as `detect.ts`. */

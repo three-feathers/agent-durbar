@@ -23,7 +23,7 @@ import { CodexAdapter } from '../src/adapters/codex';
 import { FakeCodexServer } from './fakes/codex-app-server';
 import { ClaudeAdapter, claudeArgs } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
-import { fakeSpawn } from './fakes/claude-cli';
+import { fakeSpawn, SANDBOX_HOST_OK } from './fakes/claude-cli';
 import type { FakeClaudeChild } from './fakes/claude-cli';
 
 export type Outcome = 'approved' | 'denied';
@@ -52,7 +52,7 @@ export interface ContractReport {
 }
 
 const ID_RE = /^[a-z][a-z0-9-]{0,31}$/;
-const TYPES = new Set(['user', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit']);
+const TYPES = new Set(['user', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'sandbox']); // spec 087: the OS sandbox state
 const ALL_MODES: PermissionMode[] = ['read-only', 'ask', 'allow'];
 
 /** Waits (a few event-loop turns at most) for something that must already be on its way. */
@@ -143,6 +143,8 @@ export async function runContract(name: string, make: () => ContractTarget, hook
     assert.strictEqual(has('setRemote'), !!cap.remote, M('C2', 'setRemote() <=> capabilities.remote (spec 054 FR-001)'));
     assert.strictEqual(has('renameSession'), !!cap.renameSession, M('C2', 'renameSession() <=> capabilities.renameSession (spec 059 FR-007)'));
     assert.strictEqual(has('deleteSession'), !!cap.deleteSession, M('C2', 'deleteSession() <=> capabilities.deleteSession (spec 006 FR-028)'));
+    assert.strictEqual(has('sandboxHost'), !!cap.osSandbox, M('C2', 'sandboxHost() <=> capabilities.osSandbox (spec 087 FR-012)'));
+    if (has('continueWithoutSandbox')) assert.ok(cap.osSandbox, M('C2', 'continueWithoutSandbox() only with capabilities.osSandbox (spec 087 FR-007a)'));
     assert.strictEqual(has('startMcpSignIn'), !!cap.mcpSignIn, M('C2', 'startMcpSignIn() <=> capabilities.mcpSignIn (spec 058 FR-064)'));
     if (has('cancelMcpSignIn')) assert.ok(cap.mcpSignIn, M('C2', 'cancelMcpSignIn() only with capabilities.mcpSignIn'));
     if (has('refreshMcpStatus')) assert.ok(cap.mcpSignIn, M('C2', 'refreshMcpStatus() only with capabilities.mcpSignIn (spec 058 FR-064)'));
@@ -193,7 +195,7 @@ export async function runContract(name: string, make: () => ContractTarget, hook
     const sid = await t.start('read-only', false);
     t.events.length = 0;
     await hooks.turn(t.ad, sid);
-    const turn = [...t.events];
+    const turn = t.events.filter((e) => e.type !== 'sandbox'); // spec 087: the sandbox state is session state, not part of a turn's order
     assert.ok(turn.length > 0, M('C5', 'a turn emits events'));
     const firstWorking = turn.findIndex((e) => e.type === 'status' && e.status === 'working');
     assert.strictEqual(firstWorking, 0, M('C5', 'the turn starts with status working'));
@@ -361,6 +363,7 @@ export const ALL_OPTIONAL = Object.keys(OMITTABLE) as OptionalMember[];
 const NOT_IN_FAKE = [
   'debug', 'writeGuard', 'resolvePlan', 'answerQuestion', 'answerElicitation', 'listAgentProfiles', 'reloadAgentProfiles', 'selectAgentProfile', 'setRemote',
   'authStatus', 'verifySignIn', 'accountInfo', 'refreshAuth', 'resumeIdOf', 'listSlashCommands', 'expandSlashCommand',
+  'continueWithoutSandbox', 'sandboxHost', // spec 087: real adapters only (C2 below)
 ];
 
 /** The optional members of `interface AgentAdapter`, read from `src/adapters/types.ts` with the TypeScript parser (no hand-kept copy). */
@@ -528,7 +531,7 @@ async function main(): Promise<void> {
             }
           };
         };
-        const ad = new ClaudeAdapter({
+        const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK,
           claudePath: async () => '/usr/local/bin/claude',
           makeTransport: (x) => {
             const t = createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 5, killGraceMs: 5 });

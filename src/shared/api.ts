@@ -81,6 +81,44 @@ export interface AgentInfo {
   defaultAgent?: string;
   /** Which adapter runs this agent (spec 012 FR-058), e.g. `copilot`. */
   adapterId: string;
+  /** Spec 087 FR-011: the agent app's OS sandbox under Durbar's checks, as the adapter last reported it; absent = nothing is shown. Never saved. */
+  sandbox?: SandboxState;
+}
+
+/**
+ * Spec 087 FR-011: the OS sandbox an agent app runs its commands in, normalized (no vendor name or vendor setting key; those stay in
+ * `src/adapters/`). `on` only after the agent app confirmed it; `unknown` while its start has not confirmed it yet. `reason` is masked
+ * and at most 200 characters.
+ */
+export interface SandboxState {
+  state: 'on' | 'off' | 'unknown';
+  /** How it is enforced: the macOS sandbox, bubblewrap, Windows ProcessContainer, or the agent app's own sandbox. */
+  mechanism?: 'seatbelt' | 'bubblewrap' | 'processcontainer' | 'vendor';
+  /** The organization's own policy keeps it on (Allow all). */
+  managed?: boolean;
+  /** Set in an earlier mode of this session and kept until a new session (a switch to Allow all does not clear it). */
+  untilNewSession?: boolean;
+  /** What runs inside it: shell commands, MCP servers, the app's own file tools. */
+  covers: Array<'shell' | 'mcp' | 'files'>;
+  /** An approved request may run outside the sandbox (spec 087 FR-021). */
+  approvedMayLeave?: boolean;
+  /** Read-only (no writes) or Ask first (the session's folders). */
+  writes?: 'none' | 'folders';
+  /** A real session on this app and OS checked it (spec 087 FR-020); false: "Requested; not verified on a real session." */
+  verified: boolean;
+  /** Why it is off or unknown, in plain words (masked, at most 200 characters). */
+  reason?: string;
+}
+
+/** Spec 087 FR-012: one agent app's OS sandbox on this computer, for Settings > Agent apps. Plain words; `reason` masked and cut. */
+export interface SandboxHostView {
+  available: boolean;
+  mechanism?: SandboxState['mechanism'];
+  /** Why not (masked, at most 200 characters) and what would fix it. */
+  reason?: string;
+  fix?: string;
+  /** Spec 087 FR-007c: *Always continue on this computer* is stored for this app (shown and undone in Settings). */
+  alwaysContinue?: boolean;
 }
 
 /** Choices for a new session. */

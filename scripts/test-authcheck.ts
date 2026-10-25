@@ -3,6 +3,7 @@
  * The Copilot adapter runs on the fake SDK; no process runs, no account is used, nothing is billed.
  */
 import * as assert from 'assert';
+import { SANDBOX_HOST_OK } from './fakes/claude-cli';
 import {
   CLAUDE_SIGN_IN_HINT as MAIN_CLAUDE_HINT,
   CODEX_SIGN_IN_HINT as MAIN_CODEX_HINT,
@@ -127,13 +128,13 @@ void (async () => {
 
   // ---- Claude Code verifySignIn: local only (no free server call): signed-out when `auth status` says so, else unknown
   {
-    const mk = (v: boolean | undefined | 'throw') => new ClaudeAdapter({ claudePath: async () => '/x/claude', loggedIn: async () => { if (v === 'throw') throw new Error('x'); return v; } });
+    const mk = (v: boolean | undefined | 'throw') => new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/x/claude', loggedIn: async () => { if (v === 'throw') throw new Error('x'); return v; } });
     assert.strictEqual((await mk(false).verifySignIn()).status, 'signed-out');
     assert.deepStrictEqual(await mk(true).verifySignIn(), { status: 'unknown', detail: CLAUDE_LOCAL_SIGN_IN });
     assert.strictEqual((await mk(undefined).verifySignIn()).status, 'unknown');
     assert.strictEqual((await mk('throw').verifySignIn()).status, 'unknown');
     // default probe without a found claude: unknown, nothing runs
-    assert.strictEqual((await new ClaudeAdapter({ claudePath: async () => undefined }).verifySignIn()).status, 'unknown');
+    assert.strictEqual((await new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => undefined }).verifySignIn()).status, 'unknown');
   }
   // ---- FR-158: refreshAuth restarts Copilot's shared client and resumes the live sessions on the new one
   {
