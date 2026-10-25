@@ -88,9 +88,14 @@ module.exports = async (ctx) => {
     const mf = await minFont('#modeMenu');
     assert.ok(mf.min >= 10.5, `mode menu: text >= 10.5px (${mf.min} ${mf.who})`);
     await shot('076-orgpolicy-mode', w, h);
+    // review on PR 644 (item 6): the menu itself must not send the request (the simulator's setPermMode refuses too, so the mode alone proves nothing)
+    await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__orgModeCalls=[];if(!b.__orgWrapped){const f=b.setPermMode;b.setPermMode=function(...a){window.__orgModeCalls.push(a[1]);return f.apply(this,a);};b.__orgWrapped=true;}document.querySelectorAll('#toasts .toast').forEach(t=>t.remove());})()`);
     await js(`document.querySelector('#modeMenu [data-mode="allow"]').click()`);
     await settle();
     assert.strictEqual(await permOf(CLAUDE_ID), before, 'mode menu: choosing Allow all changes nothing');
+    assert.deepStrictEqual(await js(`window.__orgModeCalls`), [], 'mode menu: choosing Allow all sends no setPermMode request at all');
+    assert.strictEqual(await js(`[...document.querySelectorAll('#toasts .toast')].some(t=>t.textContent.includes(${jsLiteral(CLAUDE_TEXT)}))`), false, 'mode menu: and shows no refusal toast');
+    assert.ok(await js(`!!document.getElementById('modeMenu')`), 'mode menu: and stays open (nothing was chosen)');
     await closeAll();
     assert.ok(await js(`!!document.getElementById('modelChip')`), 'the Claude Code chat has a model chip');
     {

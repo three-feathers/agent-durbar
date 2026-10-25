@@ -41,6 +41,9 @@ const codex = (t: string, hosts: string[] = []): OrgPolicy => parseCodexOrgPolic
 /** The modes as three letters: `-` free, `B` blocked, `F` fatal, `D` advice. */
 const modes = (p: OrgPolicy): string => ['read-only', 'ask', 'allow'].map((m) => { const v = modeVerdict(p, m); return !v ? '-' : !v.refuse ? 'D' : v.why.includes('will not start') ? 'F' : 'B'; }).join('');
 
+/** A Copilot `managedSettings.resolve` answer that blocks Allow all (and, with `pad`, is padded to a size). */
+const copilotAnswerOf = (pad: string | undefined): unknown => ({ resolved: { bypassPermissionsDisabled: true, managedKeys: ['permissions'], settings: { allowedMcpServers: [{ serverName: 'a' }] }, ...(pad ? { pad } : {}) } });
+
 /** A fake file system from a map of path -> text (or a stat override). */
 function fakeFs(files: Record<string, string | { text?: string; uid?: number; mode?: number; link?: boolean; dir?: string[]; throws?: string; size?: number }>): OrgFs {
   const get = (p: string) => (Object.prototype.hasOwnProperty.call(files, p) ? files[p] : undefined);
@@ -275,6 +278,11 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(modeVerdict(p, 'allow'), D(C), `d: permissions ${JSON.stringify(v)} (undocumented): Allow all advice`);
       assert.deepStrictEqual(toolVerdict(p, 's', 't'), D(C), `d: permissions ${JSON.stringify(v)}: tools advice`);
     }
+    // review on PR 644 (item 4): a rule Durbar cannot check against what it knows is advice, never a refusal (`false` would refuse)
+    assert.deepStrictEqual(mcpVerdict(k({ allowedMcpServers: [{ serverCommand: ['npx', 'tool'] }] }), { name: 'known-by-name-only' }), D(C), 'd: a command-only allow-list against a server known only by name: advice');
+    assert.deepStrictEqual(mcpVerdict(k({ allowedMcpServers: [{ serverUrl: 'https://x.test/*' }] }), { name: 'known-by-name-only' }), D(C), 'd: a URL-only allow-list against a server known only by name: advice');
+    assert.deepStrictEqual(mcpVerdict(k({ deniedMcpServers: [{ serverCommand: ['npx', 'tool'] }] }), { name: 'known-by-name-only' }), undefined, 'd: and a command-only deny-list blocks nothing it cannot check');
+    assert.deepStrictEqual(mcpVerdict(k({ allowedMcpServers: [{ serverCommand: ['npx', 'tool'] }] }), { name: 'remote', url: 'https://x.test/mcp' }), B(C), 'd: a remote server is never a command rule: blocked when every rule could be checked');
     assert.ok(k({ availableModelsMatch: 'fuzzy' }).models.exact, 'd: an unknown availableModelsMatch reads as exact (documented)');
     const many = Array.from({ length: 5000 }, (_, i) => `m${i}`);
     assert.deepStrictEqual(modelVerdict(k({ availableModels: many }), 'm1'), D(C), 'd: a list longer than Durbar reads: advice');
@@ -311,6 +319,20 @@ async function main(): Promise<void> {
     for (const p of ps) {
       assert.ok(!JSON.stringify(p.problems).includes('ghp_'), 'e: no value in the problems');
       assert.ok(!JSON.stringify(orgPolicyView(p)).includes('ghp_'), 'e: no value in the window view');
+    }
+    // review on PR 644 (item 5): the VALID deny lists too (a copy of them into the view's paths or problems would leak)
+    const valid = [
+      claude({ deniedModels: [SECRET], deniedMcpServers: [{ serverName: SECRET }, { serverUrl: `https://x.test/${SECRET}` }, { serverCommand: [SECRET, '--k'] }], permissions: { deny: [`mcp__${SECRET}`, `mcp__s__${SECRET}`] } }),
+      readClaudeOrgPolicy('linux', {}, fakeFs({ [CF]: JSON.stringify({ deniedModels: [SECRET], deniedMcpServers: [{ serverName: SECRET }], permissions: { deny: [`mcp__${SECRET}`] } }) })),
+      copilot({ deniedMcpServers: [{ serverName: SECRET }, { serverUrl: `https://x.test/${SECRET}` }], allowedMcpServers: [{ serverName: SECRET }] }),
+      copilotOrgPolicyFromResolve({ resolved: { bypassPermissionsDisabled: false, managedKeys: ['x'], settings: { deniedMcpServers: [{ serverName: SECRET }] } } })!,
+    ];
+    for (const p of valid) {
+      assert.ok(p.mcp.deny.length + p.models.deny.length + p.tools.deny.length + (p.mcp.allow?.length ?? 0) > 0, 'e: the valid lists are really held (the check below is not vacuous)');
+      const view = JSON.stringify(orgPolicyView(p));
+      assert.ok(!view.includes('ghp_'), 'e: no value of a valid deny or allow list in the window view');
+      assert.ok(!JSON.stringify(p.paths).includes('ghp_') && !JSON.stringify(p.problems).includes('ghp_'), 'e: nor in paths or problems');
+      assert.ok(!view.includes('x.test'), 'e: nor a URL of a rule');
     }
     const ok = claude({ allowedMcpServers: [{ serverUrl: `https://x.test/?t=${SECRET}` }], availableModels: [SECRET] });
     assert.ok(!JSON.stringify(orgPolicyView(ok)).includes('ghp_'), 'e: a valid list is counted, not copied, in the view');
@@ -463,6 +485,109 @@ async function main(): Promise<void> {
     assert.strictEqual(globMatch('a*b*c', 'axxbyyc'), true, 'g: glob basics');
     assert.strictEqual(globMatch('a*b', 'ab'), true, 'g: empty star');
     assert.strictEqual(globMatch('a*b', 'ac'), false, 'g: no match');
+  }
+
+  // (i) review on PR 644 (item 3): reading a big policy is linear, bounded and skipped when nothing changed
+  {
+    const cpuMs = (f: () => void): number => {
+      const t0 = process.cpuUsage();
+      f();
+      const u = process.cpuUsage(t0);
+      return (u.user + u.system) / 1000;
+    };
+    const BOUND_MS = 1500; // the quadratic reading took 4.7 s (names) and 11 s (URLs) on the review machine; the linear one takes a few ms
+    // (1) 4,096 distinct server names in a ~93 KB managed-settings.json (Ruben's probe)
+    const names = Array.from({ length: ORG_LIMITS.listItems }, (_, i) => ({ serverName: `server-name-${String(i).padStart(5, '0')}` }));
+    const namesFile = JSON.stringify({ allowedMcpServers: names, deniedMcpServers: names.slice(0, 100) });
+    assert.ok(namesFile.length > 90_000, 'i: the names file is the size of the probe');
+    let pn: OrgPolicy | undefined;
+    const msNames = cpuMs(() => { pn = readClaudeOrgPolicy('linux', {}, fakeFs({ [CF]: namesFile })); });
+    assert.ok(msNames < BOUND_MS, `i: 4,096 server names took ${msNames.toFixed(0)} ms of CPU (bound ${BOUND_MS})`);
+    assert.ok(pn!.mcp.allow === undefined && pn!.mcp.all === 'doubt' || (pn!.mcp.allow?.length ?? 0) === ORG_LIMITS.listItems, 'i: read to the end (over the byte cap it is advice), not cut half-way');
+    // (2) a large URL list (about 900 KB)
+    const urls = Array.from({ length: ORG_LIMITS.listItems }, (_, i) => ({ serverUrl: `https://host${i}.example.com/` + 'p'.repeat(190) + i }));
+    const urlsFile = JSON.stringify({ allowedMcpServers: urls });
+    const msUrls = cpuMs(() => { readClaudeOrgPolicy('linux', {}, fakeFs({ [CF]: urlsFile })); });
+    assert.ok(msUrls < BOUND_MS, `i: ${(urlsFile.length / 1024).toFixed(0)} KB of URLs took ${msUrls.toFixed(0)} ms of CPU (bound ${BOUND_MS})`);
+    // (3) the same through the shared list readers, at the count cap, with duplicates (Copilot's runtime answer; strings)
+    const dup = Array.from({ length: ORG_LIMITS.listItems }, (_, i) => ({ serverName: `dup-${i % 7}` }));
+    const msCop = cpuMs(() => { copilotOrgPolicyFromResolve({ resolved: { bypassPermissionsDisabled: false, managedKeys: ['x'], settings: { allowedMcpServers: names, deniedMcpServers: dup } } }); });
+    assert.ok(msCop < BOUND_MS, `i: the Copilot runtime answer with 4,096 names took ${msCop.toFixed(0)} ms of CPU`);
+    const strs = Array.from({ length: ORG_LIMITS.listItems }, (_, i) => `model-${i}-` + 'm'.repeat(40));
+    const msStr = cpuMs(() => { claude({ availableModels: strs, deniedModels: strs }); });
+    assert.ok(msStr < BOUND_MS, `i: 4,096 model names took ${msStr.toFixed(0)} ms of CPU`);
+    assert.deepStrictEqual(claude({ deniedModels: ['a', 'b', 'a', 'b', 'c'] }).models.deny, ['a', 'b', 'c'], 'i: duplicates still removed, in first-seen order');
+    assert.deepStrictEqual(claude({ deniedMcpServers: [{ serverName: 'a' }, { serverUrl: 'a' }, { serverName: 'a' }, { serverCommand: ['a', 'b'] }, { serverCommand: ['a', 'b'] }, { serverCommand: ['a', 'b '] }] }).mcp.deny, [{ name: 'a' }, { url: 'a' }, { command: ['a', 'b'] }, { command: ['a', 'b '] }], 'i: a name, a URL and a command of the same text are different rules; only exact repeats go');
+    // growth: doubling the list must not quadruple the work (a pairwise scan would)
+    const grow = (n: number): number => cpuMs(() => { for (let r = 0; r < 20; r++) claude({ deniedMcpServers: Array.from({ length: n }, (_, i) => ({ serverUrl: `https://h${i}.example.com/` + 'q'.repeat(300) })) }); });
+    grow(500);
+    const t1 = grow(1000);
+    const t2 = grow(4000);
+    assert.ok(t2 < Math.max(t1 * 12, 300), `i: 4x the list took ${t2.toFixed(0)} ms against ${t1.toFixed(0)} ms (linear is about 4x; a pairwise scan 16x)`);
+    // (4) the byte caps, written in the spec (FR-201): over a cap the area is advice (`doubt`), never read as permissive, never half-read
+    const bigChars = Array.from({ length: 200 }, (_, i) => ({ serverUrl: `https://h${i}.example.com/` + 'z'.repeat(1500) })); // ~300 KB of rules, 200 items
+    const bc = claude({ allowedMcpServers: bigChars });
+    assert.strictEqual(bc.mcp.allow, undefined, 'i: a list over the byte cap is not held');
+    assert.deepStrictEqual(mcpVerdict(bc, { name: 'x', url: 'https://other/' }), D(C), 'i: over the byte cap: advice for every server, not "allowed" and not a refusal');
+    assert.ok(bc.problems.some((x) => x.includes('longer than Agent Durbar reads')), 'i: and said so');
+    const bigStrings = Array.from({ length: 150 }, (_, i) => `${i}-` + 'y'.repeat(2000));
+    assert.strictEqual(modelVerdict(claude({ availableModels: bigStrings }), 'sonnet')?.refuse, false, 'i: a string list over the byte cap: advice');
+    const half = JSON.stringify({ deniedModels: ['haiku'], pad: 'x'.repeat(ORG_LIMITS.fileBytes - 100) });
+    const manyFiles: Record<string, string> = { [CF]: half, '/etc/claude-code/managed-settings.d': { dir: ['10-a.json', '20-b.json', '30-c.json', '40-d.json', '50-e.json'] } as never };
+    for (const n of ['10-a', '20-b', '30-c', '40-d', '50-e']) manyFiles[`/etc/claude-code/managed-settings.d/${n}.json`] = half;
+    const together = readClaudeOrgPolicy('linux', {}, fakeFs(manyFiles as never));
+    assert.deepStrictEqual(modelVerdict(together, 'sonnet'), D(C), 'i: files that are each under the cap but together over it: advice');
+    assert.ok(together.problems.some((x) => x.includes('together')), 'i: and said so');
+    // the Copilot runtime answer has a byte cap too
+    const hugeAnswer = copilotAnswerOf('x'.repeat(ORG_LIMITS.totalFileBytes + 10));
+    const cp = await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => hugeAnswer } } }, () => emptyOrgPolicy(P));
+    assert.strictEqual(cp.found, true, 'i: an oversized runtime answer is a policy Durbar could not read');
+    assert.deepStrictEqual(modeVerdict(cp, 'allow'), D(P), 'i: advice, never a refusal');
+    // (5) unchanged files are not read again (path, size, modification and change time); a changed one is
+    let reads = 0;
+    const text = () => JSON.stringify({ deniedModels: ['haiku'] });
+    const stFs = (body: () => string, m: () => number, c: () => number): OrgFs => ({
+      lstat: () => undefined,
+      stat: (p) => (p === CF ? { isFile: () => true, isDirectory: () => false, size: body().length, mtimeMs: m(), ctimeMs: c() } : undefined),
+      readFile: () => (reads++, body()),
+      readdir: () => [],
+    });
+    let mtime = 1000;
+    let ctime = 1000;
+    let body = text();
+    const sf = stFs(() => body, () => mtime, () => ctime);
+    const r1 = readClaudeOrgPolicy('linux', {}, sf);
+    const r2 = readClaudeOrgPolicy('linux', {}, sf);
+    assert.strictEqual(reads, 1, 'i: an unchanged file is read and parsed once');
+    assert.strictEqual(r2, r1, 'i: and gives back the same policy object (its verdict memo is kept)');
+    mtime++;
+    readClaudeOrgPolicy('linux', {}, sf);
+    assert.strictEqual(reads, 2, 'i: a new modification time reads again');
+    ctime++;
+    readClaudeOrgPolicy('linux', {}, sf);
+    assert.strictEqual(reads, 3, 'i: a new change time (a permission change) reads again');
+    body = JSON.stringify({ deniedModels: ['haiku', 'opus'] });
+    const r4 = readClaudeOrgPolicy('linux', {}, sf);
+    assert.strictEqual(reads, 4, 'i: a new size reads again');
+    assert.deepStrictEqual(r4.models.deny, ['haiku', 'opus'], 'i: and the new content is what is returned');
+    const plain = fakeFs({ [CF]: text() });
+    const before2 = reads;
+    readClaudeOrgPolicy('linux', {}, plain);
+    readClaudeOrgPolicy('linux', {}, plain);
+    assert.strictEqual(reads, before2, 'i: (a file system without times is never reused: the plain fake counts nothing here)');
+    let codexReads = 0;
+    const cdx: OrgFs = { lstat: () => undefined, stat: (p) => (p === XF ? { isFile: () => true, isDirectory: () => false, size: 5, mtimeMs: 1, ctimeMs: 1 } : undefined), readFile: () => (codexReads++, 'allowed_approval_policies = ["never"]\n'), readdir: () => [] };
+    const cx1 = readCodexOrgPolicy('linux', {}, cdx, []);
+    assert.strictEqual(readCodexOrgPolicy('linux', {}, cdx, []), cx1, 'i: Codex: an unchanged file gives the same policy');
+    assert.strictEqual(codexReads, 1, 'i: Codex: and is read once');
+    readCodexOrgPolicy('linux', {}, cdx, ['other-host']);
+    assert.strictEqual(codexReads, 2, 'i: Codex: a different host name reads again (the host overrides depend on it)');
+    const ans = copilotAnswerOf(undefined);
+    const c1 = await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => ans } } }, () => emptyOrgPolicy(P));
+    const c2 = await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => copilotAnswerOf(undefined) } } }, () => emptyOrgPolicy(P));
+    assert.strictEqual(c2, c1, 'i: Copilot: the same runtime answer (by hash) is not parsed again');
+    const c3 = await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => ({ resolved: { bypassPermissionsDisabled: false, managedKeys: ['y'] } }) } } }, () => emptyOrgPolicy(P));
+    assert.notStrictEqual(c3, c1, 'i: Copilot: a different answer is parsed');
   }
 
   done = true;

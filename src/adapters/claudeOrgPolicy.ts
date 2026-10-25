@@ -6,8 +6,8 @@
  */
 import { boundOrgPolicy, emptyOrgPolicy, hasOwn, isPlainObject, mcpToolRules, ORG_LIMITS, ownMcpRules, ownStrings, ownValue, wholeOrgPolicy } from '../shared/orgpolicy';
 import type { OrgPolicy } from '../shared/orgpolicy';
-import { dropInFiles, joinFor, jsonObject, nodeOrgFs, programFiles, readPolicyFile } from './orgpolicyfiles';
-import type { OrgFs } from './orgpolicyfiles';
+import { dropInFiles, fileSignature, joinFor, jsonObject, nodeOrgFs, programFiles, readPolicyFile, reuseOrRead } from './orgpolicyfiles';
+import type { LastRead, OrgFs } from './orgpolicyfiles';
 
 export const CLAUDE_APP = 'Claude Code';
 
@@ -148,6 +148,9 @@ export function parseClaudeOrgPolicy(o: Record<string, unknown>, paths: string[]
   return boundOrgPolicy(out);
 }
 
+/** The last read, kept while no file changed (`reuseOrRead`). */
+const lastClaude: LastRead = {};
+
 /**
  * Read Claude Code's machine policy: `managed-settings.json`, then the drop-ins in name order, merged as Claude Code merges them.
  * A file that is not a JSON object, or a read that fails for another reason than the system's refusal, makes Claude Code refuse to
@@ -164,8 +167,14 @@ export function readClaudeOrgPolicy(platform: string = process.platform, env: Re
   if ('tooMany' in drop) return wholeOrgPolicy(CLAUDE_APP, [join(dir, 'managed-settings.d')], [drop.tooMany], 'doubt');
   if ('denied' in drop) problems.push(drop.denied);
   else files.push(...drop.files);
+  const key = fileSignature(fsx, files);
+  return reuseOrRead(lastClaude, key === undefined ? undefined : `${key}\n${problems.join('\n')}`, () => readClaudeFiles(files, problems, fsx));
+}
+
+function readClaudeFiles(files: string[], problems: string[], fsx: OrgFs): OrgPolicy {
   let merged: unknown;
   const read: string[] = [];
+  let bytes = 0;
   for (const f of files) {
     const r = readPolicyFile(fsx, f);
     if (r.kind === 'missing') continue;
@@ -175,6 +184,8 @@ export function readClaudeOrgPolicy(platform: string = process.platform, env: Re
     }
     if (r.kind === 'tooLarge') return wholeOrgPolicy(CLAUDE_APP, [f], [r.problem], 'doubt');
     if (r.kind === 'bad') return wholeOrgPolicy(CLAUDE_APP, [f], [r.problem], 'fatal');
+    bytes += r.text.length;
+    if (bytes > ORG_LIMITS.totalFileBytes) return wholeOrgPolicy(CLAUDE_APP, [f], [`${f}: the policy files together are larger than Agent Durbar reads`], 'doubt');
     const j = r.text.trim() === '' ? { ok: true as const, value: {} as Record<string, unknown> } : jsonObject(r.text, f); // documented: an empty file counts as {}
     if (!j.ok) return wholeOrgPolicy(CLAUDE_APP, [f], [j.problem], 'fatal');
     read.push(f);

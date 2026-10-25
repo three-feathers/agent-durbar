@@ -54,8 +54,13 @@ export interface OrgVerdict {
   refuse: boolean;
 }
 
-/** Limits on what is read (FR-201). Over a limit Durbar cannot read the key as the vendor does: `doubt`, never a refusal. */
-export const ORG_LIMITS = Object.freeze({ fileBytes: 1024 * 1024, listItems: 4096, itemChars: 2048, commandParts: 256, files: 64, depth: 32, ruleChars: 64 * 1024, memo: 4096 });
+/**
+ * Limits on what is read (FR-201, review on PR 644 item 3). Over a limit Durbar cannot read the key as the vendor does: `doubt`, never a
+ * refusal, and never read as permissive without saying so. Counts: `listItems`, `files`, `commandParts`, `depth`; bytes: `fileBytes` per
+ * file, `totalFileBytes` over all files of one app, `itemChars` per item, `listChars` per list, `ruleChars` over all rules. Every
+ * pass over them is linear (a Set of keys, never a pairwise scan), so the work is bounded by the caps.
+ */
+export const ORG_LIMITS = Object.freeze({ fileBytes: 1024 * 1024, listItems: 4096, itemChars: 2048, commandParts: 256, files: 64, depth: 32, ruleChars: 64 * 1024, memo: 4096, listChars: 256 * 1024, totalFileBytes: 4 * 1024 * 1024 });
 
 /**
  * FR-201 (review on PR 644): the whole policy's rules are bounded, not only each one. Past `ruleChars` characters of model, server and
@@ -122,39 +127,60 @@ export const hasOwn = (o: unknown, key: string): boolean => isPlainObject(o) && 
 /** A list read the vendor's way: `null` when it is not an array; `tooLong` when over Durbar's limits; otherwise the good items and how many were stripped. */
 export type OrgList<T> = null | { tooLong: true } | { tooLong?: false; items: T[]; stripped: number };
 
-/** Non-empty strings; any other item is stripped (Claude Code strips a non-string entry and enforces the rest). */
+/** Non-empty strings; any other item is stripped (Claude Code strips a non-string entry and enforces the rest). Linear: a Set removes duplicates. */
 export function ownStrings(v: unknown, maxItems: number = ORG_LIMITS.listItems): OrgList<string> {
   if (!Array.isArray(v)) return null;
   if (v.length > maxItems) return { tooLong: true };
   const items: string[] = [];
+  const seen = new Set<string>();
   let stripped = 0;
+  let chars = 0;
   for (let i = 0; i < v.length; i++) {
     const x: unknown = v[i];
-    if (typeof x === 'string' && x.length > ORG_LIMITS.itemChars) return { tooLong: true };
+    if (typeof x === 'string') {
+      if (x.length > ORG_LIMITS.itemChars) return { tooLong: true };
+      chars += x.length;
+      if (chars > ORG_LIMITS.listChars) return { tooLong: true };
+    }
     if (typeof x !== 'string' || !x) stripped++;
-    else if (!items.includes(x)) items.push(x);
+    else if (!seen.has(x)) {
+      seen.add(x);
+      items.push(x);
+    }
   }
   return { items, stripped };
 }
 
-/** MCP server rules (`serverName` | `serverCommand` | `serverUrl`, exactly one each); a bad entry is stripped, as the vendors do. */
+/** MCP server rules (`serverName` | `serverCommand` | `serverUrl`, exactly one each); a bad entry is stripped, as the vendors do. Linear, like `ownStrings`. */
 export function ownMcpRules(v: unknown): OrgList<OrgMcpRule> {
   if (!Array.isArray(v)) return null;
   if (v.length > ORG_LIMITS.listItems) return { tooLong: true };
   const items: OrgMcpRule[] = [];
+  const seen = new Set<string>();
   let stripped = 0;
+  let chars = 0;
   for (let i = 0; i < v.length; i++) {
     const e: unknown = v[i];
     const keys = isPlainObject(e) ? Object.keys(e) : [];
     const k = keys.length === 1 ? keys[0] : '';
     const val = k ? (e as Record<string, unknown>)[k] : undefined;
-    if (typeof val === 'string' && val.length > ORG_LIMITS.itemChars) return { tooLong: true };
+    if (typeof val === 'string') {
+      if (val.length > ORG_LIMITS.itemChars) return { tooLong: true };
+      chars += val.length;
+    } else if (Array.isArray(val) && val.length <= ORG_LIMITS.commandParts) {
+      for (const x of val) if (typeof x === 'string') chars += x.length;
+    }
+    if (chars > ORG_LIMITS.listChars) return { tooLong: true };
     let rule: OrgMcpRule | undefined;
-    if (k === 'serverName' && typeof val === 'string' && val) rule = { name: val };
-    else if (k === 'serverUrl' && typeof val === 'string' && val) rule = { url: val };
-    else if (k === 'serverCommand' && Array.isArray(val) && val.length > 0 && val.length <= ORG_LIMITS.commandParts && val.every((x) => typeof x === 'string' && x.length <= ORG_LIMITS.itemChars)) rule = { command: [...(val as string[])] };
+    let key = '';
+    if (k === 'serverName' && typeof val === 'string' && val) (rule = { name: val }), (key = 'n\0' + val);
+    else if (k === 'serverUrl' && typeof val === 'string' && val) (rule = { url: val }), (key = 'u\0' + val);
+    else if (k === 'serverCommand' && Array.isArray(val) && val.length > 0 && val.length <= ORG_LIMITS.commandParts && val.every((x) => typeof x === 'string' && x.length <= ORG_LIMITS.itemChars)) (rule = { command: [...(val as string[])] }), (key = 'c\0' + JSON.stringify(val));
     if (!rule) stripped++;
-    else if (!items.some((x) => JSON.stringify(x) === JSON.stringify(rule))) items.push(rule);
+    else if (!seen.has(key)) {
+      seen.add(key);
+      items.push(rule);
+    }
   }
   return { items, stripped };
 }

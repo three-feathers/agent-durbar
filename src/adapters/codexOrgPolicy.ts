@@ -11,8 +11,8 @@ import * as os from 'node:os';
 import { emptyOrgPolicy, globMatch, ORG_LIMITS, ORG_MODES, wholeOrgPolicy } from '../shared/orgpolicy';
 import type { OrgMode, OrgPolicy } from '../shared/orgpolicy';
 import { CODEX_RO_PROFILE } from './codexModes';
-import { joinFor, nodeOrgFs, programData, readPolicyFile } from './orgpolicyfiles';
-import type { OrgFs } from './orgpolicyfiles';
+import { fileSignature, joinFor, nodeOrgFs, programData, readPolicyFile, reuseOrRead } from './orgpolicyfiles';
+import type { LastRead, OrgFs } from './orgpolicyfiles';
 
 export const CODEX_APP = 'Codex';
 
@@ -292,8 +292,14 @@ export const localHostNames = (): string[] => {
 
 export function readCodexOrgPolicy(platform: string = process.platform, env: Readonly<Record<string, string | undefined>> = process.env, fsx: OrgFs = nodeOrgFs, hosts: readonly string[] = localHostNames()): OrgPolicy {
   const f = codexPolicyFile(platform, env);
-  const r = readPolicyFile(fsx, f);
-  if (r.kind === 'missing') return emptyOrgPolicy(CODEX_APP);
-  if (r.kind !== 'text') return wholeOrgPolicy(CODEX_APP, [f], [r.problem], 'doubt');
-  return parseCodexOrgPolicy(r.text, f, hosts);
+  const sig = fileSignature(fsx, [f]);
+  return reuseOrRead(lastCodex, sig === undefined ? undefined : `${sig}\n${hosts.join('\0')}`, () => {
+    const r = readPolicyFile(fsx, f);
+    if (r.kind === 'missing') return emptyOrgPolicy(CODEX_APP);
+    if (r.kind !== 'text') return wholeOrgPolicy(CODEX_APP, [f], [r.problem], 'doubt');
+    return parseCodexOrgPolicy(r.text, f, hosts);
+  });
 }
+
+/** The last read, kept while the file is unchanged (`reuseOrRead`). */
+const lastCodex: LastRead = {};

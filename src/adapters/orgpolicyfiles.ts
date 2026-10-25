@@ -6,11 +6,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { ORG_LIMITS } from '../shared/orgpolicy';
+import type { OrgPolicy } from '../shared/orgpolicy';
 
 /** The file-system calls a reader uses, injectable for tests. */
 export interface OrgFs {
   lstat(p: string): { isFile(): boolean; isDirectory(): boolean; isSymbolicLink(): boolean; size: number; uid: number; mode: number } | undefined;
-  stat(p: string): { isFile(): boolean; isDirectory(): boolean; size: number } | undefined;
+  stat(p: string): { isFile(): boolean; isDirectory(): boolean; size: number; mtimeMs?: number; ctimeMs?: number } | undefined;
   readFile(p: string): string;
   readdir(p: string): string[];
 }
@@ -96,3 +97,43 @@ export const joinFor = (platform: string): ((a: string, b: string) => string) =>
 const absWin = (v: string | undefined): string | undefined => (v && path.win32.isAbsolute(v) && /^[A-Za-z]:[\\/]/.test(v) ? v : undefined); // a drive path only, never relative or UNC
 export const programFiles = (env: Readonly<Record<string, string | undefined>>): string => absWin(env.ProgramFiles) ?? absWin(env.PROGRAMFILES) ?? 'C:\\Program Files';
 export const programData = (env: Readonly<Record<string, string | undefined>>): string => absWin(env.ProgramData) ?? absWin(env.PROGRAMDATA) ?? 'C:\\ProgramData';
+
+/**
+ * FR-201 (review on PR 644 item 3): the work is skipped when nothing changed. The last read of one source is kept with a signature of
+ * what it was made from (every file's path, size, modification and change time (a permission change moves the change time); for the runtime, a hash of its answer). The same signature gives
+ * back the same `OrgPolicy` object, which also keeps its verdict memo. No signature (a file system without modification times, an
+ * unreadable file) means no reuse: the read is done again.
+ */
+export interface LastRead {
+  key?: string;
+  policy?: OrgPolicy;
+}
+
+export function reuseOrRead(slot: LastRead, key: string | undefined, read: () => OrgPolicy): OrgPolicy {
+  if (key !== undefined && slot.key === key && slot.policy) return slot.policy;
+  const p = read();
+  if (key !== undefined) {
+    slot.key = key;
+    slot.policy = p;
+  } else {
+    slot.key = undefined;
+    slot.policy = undefined;
+  }
+  return p;
+}
+
+/** A signature of files by path, size, modification and change time (a missing file is `-`); `undefined` when any existing file has no modification time. */
+export function fileSignature(fsx: OrgFs, files: readonly string[]): string | undefined {
+  const parts: string[] = [];
+  for (const f of files) {
+    try {
+      const st = fsx.stat(f);
+      if (!st) parts.push(`${f}\0-`);
+      else if (typeof st.mtimeMs !== 'number') return undefined;
+      else parts.push(`${f}\0${st.size}\0${st.mtimeMs}\0${st.ctimeMs ?? ''}`);
+    } catch {
+      return undefined;
+    }
+  }
+  return parts.join('\n');
+}

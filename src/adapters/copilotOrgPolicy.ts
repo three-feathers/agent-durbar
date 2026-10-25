@@ -8,10 +8,11 @@
  * know (a team override of an `overridable` value, a bad value) is `doubt`, never a refusal. `read:` GitHub's *Enterprise managed
  * settings* reference and the Copilot CLI config-dir reference, 2026-10-23.
  */
-import { boundOrgPolicy, emptyOrgPolicy, hasOwn, isPlainObject, ownMcpRules, ownValue, wholeOrgPolicy } from '../shared/orgpolicy';
+import { boundOrgPolicy, emptyOrgPolicy, hasOwn, isPlainObject, ORG_LIMITS, ownMcpRules, ownValue, wholeOrgPolicy } from '../shared/orgpolicy';
 import type { OrgMcpRule, OrgPolicy } from '../shared/orgpolicy';
-import { joinFor, jsonObject, nodeOrgFs, programFiles, readPolicyFile } from './orgpolicyfiles';
-import type { OrgFs } from './orgpolicyfiles';
+import { createHash } from 'node:crypto';
+import { fileSignature, joinFor, jsonObject, nodeOrgFs, programFiles, readPolicyFile, reuseOrRead } from './orgpolicyfiles';
+import type { LastRead, OrgFs } from './orgpolicyfiles';
 
 export const COPILOT_APP = 'Copilot';
 export const COPILOT_RESOLVE_TIMEOUT_MS = 5000;
@@ -150,16 +151,42 @@ export function readCopilotFileOrgPolicy(platform: string = process.platform, en
       return p;
     }
   }
-  const r = readPolicyFile(fsx, f);
-  if (r.kind === 'missing') return emptyOrgPolicy(COPILOT_APP, true);
-  if (r.kind !== 'text') return wholeOrgPolicy(COPILOT_APP, [f], [r.problem], 'doubt', true);
-  const j = jsonObject(r.text, f);
-  if (!j.ok) return wholeOrgPolicy(COPILOT_APP, [f], [j.problem], 'doubt', true);
-  return parseCopilotOrgPolicy(j.value, f);
+  const sig = fileSignature(fsx, [f]);
+  return reuseOrRead(lastCopilotFile, sig, () => {
+    const r = readPolicyFile(fsx, f);
+    if (r.kind === 'missing') return emptyOrgPolicy(COPILOT_APP, true);
+    if (r.kind !== 'text') return wholeOrgPolicy(COPILOT_APP, [f], [r.problem], 'doubt', true);
+    const j = jsonObject(r.text, f);
+    if (!j.ok) return wholeOrgPolicy(COPILOT_APP, [f], [j.problem], 'doubt', true);
+    return parseCopilotOrgPolicy(j.value, f);
+  });
 }
+
+/** The last machine-file read, kept while the file is unchanged (`reuseOrRead`). */
+const lastCopilotFile: LastRead = {};
 
 /** Copilot's policy: the runtime's answer, else the machine file (FR-198). */
 export async function readCopilotOrgPolicy(client: CopilotManagedClient | undefined, file: () => OrgPolicy = () => readCopilotFileOrgPolicy()): Promise<OrgPolicy> {
-  const fromRuntime = copilotOrgPolicyFromResolve(await resolveCopilotManaged(client));
-  return fromRuntime ?? file();
+  const answer = await resolveCopilotManaged(client);
+  if (answer === undefined) return file();
+  // FR-201 (review on PR 644 item 3): the answer is hostile input with a size cap, and an answer that did not change is not parsed again
+  let text: string | undefined;
+  try {
+    text = JSON.stringify(answer);
+  } catch {
+    text = undefined; // a cycle or a throwing getter: not an answer Durbar can read
+  }
+  if (text === undefined) return file();
+  if (text.length > ORG_LIMITS.totalFileBytes) return wholeOrgPolicy(COPILOT_APP, ['the Copilot runtime (managed settings)'], ['the Copilot runtime answer is larger than Agent Durbar reads'], 'doubt', true);
+  const key = createHash('sha256').update(text).digest('hex');
+  const last = lastCopilot.key === key ? lastCopilot.policy : undefined;
+  if (last) return last;
+  const fromRuntime = copilotOrgPolicyFromResolve(answer);
+  if (!fromRuntime) return file();
+  lastCopilot.key = key;
+  lastCopilot.policy = fromRuntime;
+  return fromRuntime;
 }
+
+/** The last runtime answer that was read, by the hash of its text (the same answer gives the same `OrgPolicy` object). */
+const lastCopilot: LastRead = {};
