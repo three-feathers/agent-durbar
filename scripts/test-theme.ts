@@ -104,13 +104,14 @@ T.setTheme('clean-office');
   const cssPath = process.env.DURBAR_THEMES_CSS || path.join(__dirname, '..', '..', 'src', 'renderer', 'themes.css');
   // Properties that only paint (colour, texture, shape of the corner, shadow, font face, case, ellipsis); any value.
   const PAINT = new Set(['color', 'background', 'background-color', 'background-image', 'background-size', 'border-color', 'border-top-color', 'border-bottom-color',
-    'border-radius', 'box-shadow', 'text-shadow', 'outline-color', 'font-family', 'font-weight', 'text-transform', 'letter-spacing', 'z-index']);
+    'border-radius', 'box-shadow', 'text-shadow', 'outline-color', 'font-family', 'font-weight', 'text-transform', 'z-index']);
   // Properties allowed with one exact kind of value: they would size or move things with any other value.
   const VALUE: Record<string, RegExp> = {
     position: /^relative$/, // stacking only (z-index); never absolute/fixed + top/left
     'min-width': /^0$/, // lets display text ellipsize
     overflow: /^hidden$/, // clips for the ellipsis; auto/scroll would add scrollbars and change the layout
     'text-overflow': /^(?:ellipsis|clip)$/,
+    'letter-spacing': /^(?:normal|0|0?\.(?:0[0-9]?|10?)em)$/, // at most .1em: it widens text, like a font change; today's uses are .01-.08em
     flex: /^0 1 auto$/, // the initial value; no flex-basis or grow
     transform: /^translate\(-?[0-9]{1,2}px,-?[0-9]{1,2}px\)$/, // retro button press nudge; no scale, rotate or big moves
   };
