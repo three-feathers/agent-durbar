@@ -118,6 +118,7 @@ export class CodexMapper {
   }
 
   reset(): void {
+    this.compacting = false;
     this.main = this.cwd = undefined;
     this.children.clear();
     this.tools.clear();
@@ -246,6 +247,10 @@ export class CodexMapper {
 
   private turnCompleted(params: Obj, agentId: string | undefined): void {
     if (agentId === undefined) {
+      if (this.compacting) {
+        this.compacting = false;
+        this.emit({ type: 'compaction', phase: 'failed', trigger: 'unknown' }); // an open compaction at the turn's end did not finish
+      }
       // The main turn is over: nothing of it can still update, so drop what was kept for it.
       this.messages.clear();
       this.reasoningSeen.clear();
@@ -381,10 +386,24 @@ export class CodexMapper {
         }
         return;
       }
+      case 'contextCompaction': {
+        // spec 015 FR-008 (issue #601, `read:`): the app-server summarises the thread; the main agent only. The item has no numbers.
+        if (agentId) return;
+        if (!done) {
+          if (this.compacting) return;
+          this.compacting = true;
+          return this.emit({ type: 'compaction', phase: 'start', trigger: 'unknown' });
+        }
+        this.compacting = false;
+        return this.emit({ type: 'compaction', phase: 'complete', trigger: 'unknown' });
+      }
       default:
-        return; // userMessage, plan, contextCompaction, review items, unknown
+        return; // userMessage, plan, review items, unknown
     }
   }
+
+  /** Spec 015 FR-008: a context compaction of the main thread is open (ended by its completed item, or failed at the turn's end). */
+  private compacting = false;
 
   /** FR-149: helper threads already announced as started / ended (bounded by the session). */
   private helpersStarted = new Set<string>();

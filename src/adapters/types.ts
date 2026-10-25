@@ -278,11 +278,15 @@ export interface AutoTierFailedEvent extends BaseEvent {
   reason: 'policy-rejected' | 'request-failed' | 'setup-failed' | 'unsupported' | 'unknown';
 }
 
-/** Compaction of the context (spec 030): `auto` = the runtime did it at its threshold, `manual` = the user asked, `model-switch` = before a switch to a smaller window, `overflow` = after the window was exceeded. */
+/**
+ * Compaction of the context (spec 030): `auto` = the runtime did it at its threshold, `manual` = the user asked, `model-switch` = before a switch to a smaller window,
+ * `overflow` = after the window was exceeded. Spec 015 (issue #601): `truncation` = the older messages were dropped, not summarised; `unknown` = the agent app does
+ * not say who started it (Claude's start message, Codex's item).
+ */
 export interface CompactionEvent extends BaseEvent {
   type: 'compaction';
   phase: 'start' | 'complete' | 'failed';
-  trigger: 'auto' | 'manual' | 'model-switch' | 'overflow';
+  trigger: 'auto' | 'manual' | 'model-switch' | 'overflow' | 'truncation' | 'unknown';
   tokensBefore?: number;
   tokensAfter?: number;
   tokensRemoved?: number;

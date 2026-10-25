@@ -91,7 +91,7 @@ html[data-density="compact"] #topMoreMenu{--h-ctl:32px; --h-chip:26px; --h-pill:
 .stat.attn{background:var(--warn-bg)}
 .stat.attn span.l{color:var(--amber-ink);font-weight:600}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--gray);flex:none;display:inline-block}
-.dot.working{background:var(--c-working)} .dot.thinking{background:var(--c-thinking)} .dot.waiting{background:var(--c-waiting)} .dot.failing,.dot.retrying{background:var(--c-waiting)} /* spec 052 FR-092: Failing reuses the waiting colour; spec 034 FR-018: Retrying too */
+.dot.working{background:var(--c-working)} .dot.thinking,.dot.compacting{background:var(--c-thinking)} .dot.waiting{background:var(--c-waiting)} .dot.failing,.dot.retrying{background:var(--c-waiting)} /* spec 052 FR-092: Failing reuses the waiting colour; spec 034 FR-018: Retrying too */
 .dot.idle{background:transparent;border:2px solid var(--c-idle);box-shadow:0 0 0 1px var(--pc-idle)} .dot.error{background:var(--c-error)} .dot.done{background:var(--c-done)}
 /* spec 052 FR-006: a shape as well as a colour (deuteranopia): waiting is a diamond, error a triangle, idle a ring, working and done circles */
 .dot.waiting{border-radius:1.5px;transform:rotate(45deg) scale(.86);box-shadow:0 0 0 1px var(--amber-ink)} /* spec 052 FR-052: a darker edge so it shows on light surfaces (size unchanged) */
@@ -247,10 +247,11 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 .st-waiting{--pb:var(--pb-waiting);--pc:var(--amber-ink);--pd:var(--c-waiting)} .st-idle{--pb:var(--pb-idle);--pc:var(--pc-idle);--pd:var(--c-idle)}
 .st-error{--pb:var(--pb-error);--pc:var(--red-ink);--pd:var(--c-error)} .st-done{--pb:var(--pb-done);--pc:var(--pc-done);--pd:var(--c-done)}
 .st-failing,.st-retrying{--pb:var(--pb-waiting);--pc:var(--amber-ink);--pd:var(--c-waiting)} /* spec 052 FR-062: "Failing" reuses the waiting colours (no new status colour); spec 034 FR-018: "Retrying" too */
+.st-compacting{--pb:var(--pb-thinking);--pc:var(--pc-thinking);--pd:var(--c-thinking)} /* spec 015 FR-010 (issue #601): "Compacting" reuses the Thinking colours (no new status colour) */
 .st-idle i{background:transparent;border:1.5px solid var(--c-idle)}
 /* spec 052 FR-101: on cards and list rows a status that needs nothing from you is a dot and the word in its colour; Waiting, Error,
    Failing and Limit reached (a waiting state) keep the filled pill. Only colours change: the pill keeps its height and padding */
-:is(.desk,.lrow) .pill:is(.st-working,.st-thinking,.st-idle,.st-done){background:transparent;border-color:transparent}
+:is(.desk,.lrow) .pill:is(.st-working,.st-thinking,.st-compacting,.st-idle,.st-done){background:transparent;border-color:transparent}
 .stage[data-d="full"] .desk.is-idle .scene,.stage[data-d="full"] .desk.is-idle .info{opacity:.7}
 
 /* sub-agents: beside the parent, connected by a line */

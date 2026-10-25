@@ -140,26 +140,35 @@
     return (s.compactions>0)||s.lastCompactionFailed===true;
   }
 
-  const TRIGGER={auto:'automatic','model-switch':'before the model switch',manual:'manual',overflow:'after the window was exceeded'};
+  const TRIGGER={auto:'automatic','model-switch':'before the model switch',manual:'manual',overflow:'after the window was exceeded',truncation:'the oldest messages were dropped'};
+  /* spec 015 FR-006: 'unknown' = the agent app does not say who started it, so no bracket; a word that is not in the table reads like auto (as before) */
+  const howOf=e=>e.trigger==='unknown'?'':' ('+(typeof e.trigger==='string'&&Object.prototype.hasOwnProperty.call(TRIGGER,e.trigger)?TRIGGER[e.trigger]:'automatic')+')';
   /* The one line a compaction leaves in the chat. Plain text (the caller escapes it). */
   function compactionText(e){
     if(!e)return '';
-    const how=TRIGGER[e.trigger]||'automatic';
-    if(e.phase==='start')return 'Compacting the context ('+how+')…';
+    const how=howOf(e);
+    if(e.phase==='start')return 'Compacting the context'+how+'…';
     if(e.phase==='failed')return 'Compaction failed'+(e.error?': '+String(e.error).slice(0,200):'')+'. The conversation is unchanged.';
     const grew=nn(e.tokensBefore)&&nn(e.tokensAfter)&&e.tokensAfter>e.tokensBefore;
-    const span=nn(e.tokensBefore)&&nn(e.tokensAfter)?': '+fmtTokens(e.tokensBefore)+' → '+fmtTokens(e.tokensAfter)+' tokens'+(grew?' (too short to shrink)':''):nn(e.tokensRemoved)?': '+fmtTokens(e.tokensRemoved)+' tokens removed':'';
-    return 'Context compacted ('+how+')'+span+'.';
+    const span=nn(e.tokensBefore)&&nn(e.tokensAfter)?': '+fmtTokens(e.tokensBefore)+' → '+fmtTokens(e.tokensAfter)+' tokens'+(grew?' (too short to shrink)':''):nn(e.tokensRemoved)?': '+fmtTokens(e.tokensRemoved)+' tokens removed':nn(e.tokensBefore)?': it held '+fmtTokens(e.tokensBefore)+' tokens':'';
+    return (e.trigger==='truncation'?'Older messages dropped to fit the window':'Context compacted'+how)+span+'.';
   }
+  /* spec 015 FR-010 (issue #601): is this agent compacting right now, for the desk, list, header and strip? A live, main, un-paused agent whose
+     compaction is open; Waiting, Error and Done keep their own word (a compaction does not hide a question or a failure). Pure. */
+  function compactingNow(a){
+    return !!a&&!a.parent&&!!a.live&&!a.paused&&a.compacting===true&&a.state!=='waiting'&&a.state!=='error'&&a.state!=='done';
+  }
+  const COMPACTING_LINE='Compacting the conversation…';
   /* spec 052 FR-163: compactions in a row fold into one line that updates in place. `n` = compactions done in this run of lines
      (after this event), `at` = the time of the last one ("10:21"). One compaction reads exactly like compactionText. */
   function compactionFoldText(e,n,at){
     if(!e)return '';
+    if(e.trigger==='truncation')return compactionText(e); /* spec 015 FR-009: dropped messages are not a summary and never fold into "compacted N times" */
     if(!(n>=1)||(n===1&&e.phase==='complete'))return compactionText(e);
     const times=n===1?'once':n+' times', head='Context compacted '+times+(at?' · last '+at:'');
     if(e.phase==='start')return head+' · compacting again…';
     if(e.phase==='failed')return head+' · the next one failed'+(e.error?': '+String(e.error).slice(0,200):'')+'. The conversation is unchanged.';
-    const span=nn(e.tokensBefore)&&nn(e.tokensAfter)?': '+fmtTokens(e.tokensBefore)+' → '+fmtTokens(e.tokensAfter)+' tokens':nn(e.tokensRemoved)?': '+fmtTokens(e.tokensRemoved)+' tokens removed':'';
+    const span=nn(e.tokensBefore)&&nn(e.tokensAfter)?': '+fmtTokens(e.tokensBefore)+' → '+fmtTokens(e.tokensAfter)+' tokens':nn(e.tokensRemoved)?': '+fmtTokens(e.tokensRemoved)+' tokens removed':nn(e.tokensBefore)?': it held '+fmtTokens(e.tokensBefore)+' tokens':'';
     return head+span+'.';
   }
   /* ---- Spec 007 FR-012..FR-017: the routing preference of Copilot's Auto, cheapest first. Pure. ---- */
@@ -295,5 +304,5 @@
     return m.includes(cur)?cur:'read-only';
   }
 
-  return {AUTO_TIERS,AUTO_TIER_HINT,autoTiersOf,autoTierOf,autoTierLocked,autoTierConfirm,autoTierName,autoTierFailText,handoverTargets,provenanceLine,modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,compactionFoldText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows,cardMenuActions};
+  return {compactingNow,COMPACTING_LINE,AUTO_TIERS,AUTO_TIER_HINT,autoTiersOf,autoTierOf,autoTierLocked,autoTierConfirm,autoTierName,autoTierFailText,handoverTargets,provenanceLine,modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,compactionFoldText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows,cardMenuActions};
 })());

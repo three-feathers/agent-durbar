@@ -43,6 +43,7 @@ const DOC_SHOTS = [
   { name: 'shots-006-prevmarks', files: ['006-prev-menu-1440x900.png', '006-sessions-expanded-1440x900.png'] },
   { name: 'shots-009-vschat', files: ['009-vschat-latest-1440x900.png'] },
   { name: 'shots-012-cost-cap', freeze: false, files: ['cost-cap-1440x900.png'] },
+  { name: 'shots-015-compact', files: ['015-compacting-office-1440x900.png', '015-compacting-office-1280x800.png', '015-compacting-chat-1440x900.png', '015-compacting-chat-1280x800.png'] },
   { name: 'shots-017', files: [{ to: '012-harness-picker-1440x900.png', from: '012-picker-1440x900.png' }] },
   { name: 'shots-024', files: ['024-lobby-1440x900.png'] },
   { name: 'shots-030-handoff', files: ['handoff-review-1440x900.png'] },

@@ -278,6 +278,18 @@ export class EventMapper {
           limit: positive(d.tokenLimit) ?? c.limit,
         });
       }
+      case 'session.truncation': {
+        // spec 015 FR-009 (issue #601, `read:` from the SDK types): the oldest messages were dropped, no summary. Counts are of messages, not the whole window.
+        if (agentId) return;
+        const count = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 1e9 ? Math.round(v) : undefined);
+        return this.emit({
+          type: 'compaction',
+          phase: 'complete',
+          trigger: 'truncation',
+          tokensRemoved: count(d.tokensRemovedDuringTruncation),
+          limit: count(d.tokenLimit) || undefined,
+        });
+      }
       case 'session.mcp_servers_loaded':
         this.mcp.clear();
         this.derivedAuth.clear();
