@@ -598,6 +598,20 @@ async function main(): Promise<void> {
     assert.strictEqual(c2, c1, 'i: Copilot: the same runtime answer (by hash) is not parsed again');
     const c3 = await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => ({ resolved: { bypassPermissionsDisabled: false, managedKeys: ['y'] } }) } } }, () => emptyOrgPolicy(P));
     assert.notStrictEqual(c3, c1, 'i: Copilot: a different answer is parsed');
+    // review on PR 644 (round 3): the Copilot file key holds the text (the same path with a new text is read again) ...
+    const g1 = readCopilotFileOrgPolicy('linux', {}, fakeFs({ [GF]: JSON.stringify({ permissions: { disableBypassPermissionsMode: 'disable' } }) }));
+    assert.deepStrictEqual(modeVerdict(g1, 'allow'), B(P), 'i: Copilot file: blocked');
+    const g2 = readCopilotFileOrgPolicy('linux', {}, fakeFs({ [GF]: JSON.stringify({ permissions: { disableBypassPermissionsMode: 'unmanaged' } }) }));
+    assert.notStrictEqual(g2, g1, 'i: Copilot file: the same path with a new text is read again');
+    assert.strictEqual(modeVerdict(g2, 'allow'), undefined, 'i: and the new text is what applies');
+    assert.strictEqual(readCopilotFileOrgPolicy('linux', {}, fakeFs({ [GF]: JSON.stringify({ permissions: { disableBypassPermissionsMode: 'unmanaged' } }) })), g2, 'i: Copilot file: the same text gives the same policy');
+    // ... and the Claude key holds the paths (a renamed drop-in with the same text shows its new path in the view)
+    const dropFs = (name: string): OrgFs => fakeFs({ [CF]: '{}', '/etc/claude-code/managed-settings.d': { dir: [name] }, [`/etc/claude-code/managed-settings.d/${name}`]: JSON.stringify({ deniedModels: ['haiku'] }) });
+    const d1 = readClaudeOrgPolicy('linux', {}, dropFs('10-a.json'));
+    const d2 = readClaudeOrgPolicy('linux', {}, dropFs('10-b.json'));
+    assert.notStrictEqual(d2, d1, 'i: Claude: a renamed drop-in with the same text is read again');
+    assert.ok(d1.paths.some((x) => x.endsWith('10-a.json')) && !d1.paths.some((x) => x.endsWith('10-b.json')), 'i: Claude: the first view names the first path');
+    assert.ok(d2.paths.some((x) => x.endsWith('10-b.json')) && !d2.paths.some((x) => x.endsWith('10-a.json')), 'i: Claude: and the renamed one shows its new path, not a stale one (FR-207)');
     // a non-serialisable answer (a cycle) is not a policy Durbar can read: the file fallback answers, not a parse of the cycle
     const cyc: Record<string, unknown> = { resolved: { bypassPermissionsDisabled: true, managedKeys: ['permissions'] } };
     (cyc.resolved as Record<string, unknown>).self = cyc;
