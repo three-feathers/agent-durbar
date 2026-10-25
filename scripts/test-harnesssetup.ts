@@ -129,7 +129,7 @@ const only = (...m: PackageManager[]) => new Set<PackageManager>(m);
 
 // FR-004/FR-005: the runner, with a fake process (nothing runs)
 void (async () => {
-  type Call = { file: string; args: readonly string[]; opts: { stdio: unknown[]; windowsVerbatimArguments?: boolean; detached?: boolean } };
+  type Call = { file: string; args: readonly string[]; opts: { stdio: unknown[]; windowsVerbatimArguments?: boolean; detached?: boolean; env?: Record<string, string | undefined> } };
   const mk = (platform: NodeJS.Platform, files: string[], extra: Partial<{ limits: { install: number; signin: number }; progressMs: number; now: () => number; realpath: (p: string) => string; trustedPath: (p: string) => boolean }> = {}) => {
     const calls: Call[] = [], prog: SetupProgress[] = [], done: SetupDone[] = [], killed: ChildLike[] = [], written: string[] = [];
     let redetects = 0, child!: ChildLike & EventEmitter & { out: EventEmitter; err: EventEmitter };
@@ -194,6 +194,23 @@ void (async () => {
     t.child().emit('close', 0); await tick(); await tick();
     const d = mk('linux', ['/usr/bin/codex']); d.setup.run('codex', 'signin');
     assert.strictEqual(d.setup.paste('x').ok, false, 'Codex takes no pasted text');
+  }
+  // spec 081 FR-042: the spawned child's PATH has the folder of the npm-installed program first (its `env node` finds the node beside it)
+  {
+    const savedPath = process.env.PATH; process.env.PATH = '/zzz:/usr/bin'; // a GUI app's PATH, without the folder of the script
+    const cop = mk('linux', ['/usr/local/nvmish/bin/copilot']);
+    (cop.setup['deps'].detectEnv.env as Record<string, string>).PATH = '/usr/local/nvmish/bin:/usr/bin';
+    assert.ok(cop.setup.run('copilot', 'signin').ok);
+    const pathOf = (c: Call): string[] => String(c.opts.env?.PATH).split(':');
+    assert.strictEqual(pathOf(cop.calls[0])[0], '/usr/local/nvmish/bin', 'copilot login: the folder of the copilot script first');
+    const up = mk('linux', ['/usr/bin/npm']);
+    const job = { kind: 'codex', op: 'update', file: '/x/npm-cli.js', args: ['i'], spawnFile: '/x/npm-cli.js', spawnArgs: ['i'], verbatim: false, paste: false, toolFile: '/home/u/.nvm/versions/node/v22.3.0/bin/npm' } as never;
+    assert.ok(up.setup.start(job).ok);
+    assert.strictEqual(pathOf(up.calls[0])[0], '/home/u/.nvm/versions/node/v22.3.0/bin', 'npm update: the spawn merge puts the npm folder first');
+    const other = mk('linux', ['/usr/bin/codex']);
+    other.setup.run('codex', 'signin');
+    assert.ok(pathOf(other.calls[0]).includes('/usr/bin'));
+    process.env.PATH = savedPath;
   }
   // Copilot sign-in needs the Copilot CLI (FR-006)
   {

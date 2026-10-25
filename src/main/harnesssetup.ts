@@ -260,6 +260,7 @@ export class HarnessSetup {
       file = this.find(s.bin);
       if (!file) return { ok: false, error: kind === 'copilot' ? 'The GitHub Copilot CLI is not installed. Install it first; Durbar uses it only to sign in.' : `${SETUP_NAMES[kind]} is not installed.` };
       args = [...s.args];
+      toolFile = file; // the npm-installed Copilot CLI and others are node scripts: the node beside them must be found (FR-042)
     } else {
       const plan = this.plans(kind, op).plans[planIndex];
       if (!plan) return { ok: false, error: 'No package manager was found for this. Open the official page instead.' };
