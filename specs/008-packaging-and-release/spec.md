@@ -101,6 +101,10 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
 
 ## Changes
 
+### 2026-10-25: `check-ui-text` split in two drivers (#738)
+
+- **FR-128** `[IMPLEMENTED]` `sim:` The UI suite's `check-ui-text` driver ran about 650 s in one Electron (420 surfaces x 4 size/theme runs, then the six built-in themes' contrast), over the suite's 600 s limit, so it timed out with 0 violations and blocked pull requests. Measured locally under xvfb, 2026-10-25: 654 s, of which 143 s per size/theme run (93 surfaces) and 9 s per built-in theme; the time is spread evenly (median 0.78 s per surface plus open and reset), there is no single slow section, so the cause is serial work, not a sleep to remove. The driver is now two entries in `scripts/ui-suite.js`, `check-ui-text light` and `check-ui-text dark` (`UITEXT_PART`), which the suite runs at the same time (`UI_SUITE_JOBS`, default 2). **Light**: the light theme at 1440x900 and 1280x800, and the contrast of the six built-in themes. **Dark**: the dark fixture at both sizes, its tone-contrast pairs, the "every dark control was on screen" check and the stylesheet check for literal light colours. Together they check exactly what the one run checked (same surfaces, themes and sizes; the lists of `[ui-text] <surface> <theme> <size>` lines are identical, see T109). `npm run check:ui-text` (no `UITEXT_PART`) still runs all of it in one. The 600 s limit stays: no part is near it. `UITEXT_TIMING=1` adds the milliseconds of each surface to its line.
+
 ### 2026-10-24: macOS navigator simulator assertion in nightly UI (#683)
 
 The scheduled run `40076601038` failed only on macOS in `shots-074-navigator`: after a synthetic ⌘⌫, the driver expected text
