@@ -24,7 +24,7 @@ const NOT_VERIFIED = 'Requested; not verified on a real session.';
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until, settle } = H;
-  const chip = () => js(`(()=>{const c=document.getElementById('modeChip');if(!c)return null;const s=c.querySelector('.mode-sbx');return {text:c.innerText.replace(/\\s+/g,' ').trim(),title:c.title,px:s?parseFloat(getComputedStyle(s).fontSize):0,inBox:(()=>{if(!s)return false;const r=s.getBoundingClientRect(),R=c.getBoundingClientRect();return r.right<=R.right+0.5&&r.left>=R.left-0.5&&r.width>0})()}})()`);
+  const chip = () => js(`(()=>{const c=document.getElementById('modeChip');if(!c)return null;const s=c.querySelector('.mode-sbx');return {text:c.innerText.replace(/\\s+/g,' ').trim(),chipTitle:c.title,title:s?s.title:'',px:s?parseFloat(getComputedStyle(s).fontSize):0,inBox:(()=>{if(!s)return false;const r=s.getBoundingClientRect(),R=c.getBoundingClientRect();return r.right<=R.right+0.5&&r.left>=R.left-0.5&&r.width>0})()}})()`);
   const openAgent = async (id) => {
     if (await js(`document.body.classList.contains('panel-open')`)) {
       await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
@@ -39,6 +39,7 @@ module.exports = async (ctx) => {
     assert.ok(await until(`(()=>{const c=document.getElementById('modeChip');return !!c&&new RegExp(${jsLiteral(re.source)}).test(c.innerText.replace(/\\s+/g,' '))})()`, 8000), `${w}: ${id} chip ${re}: ${JSON.stringify(await chip())}`);
     const c = await chip();
     assert.ok(c.px >= 10.5 && c.inBox, `${w}: ${id}: the segment is legible text inside the chip: ${JSON.stringify(c)}`);
+    assert.ok(c.chipTitle.length <= 120 && c.title.length <= 300, `${w}: ${id}: tooltips within their limits (chip ${c.chipTitle.length}, segment ${c.title.length})`);
     assert.ok(more(c), `${w}: ${id}: tooltip ${c.title}`);
     return c;
   };
@@ -56,8 +57,8 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#modeMenu').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
     assert.ok(await until(`!document.getElementById('modeMenu')`, 3000), 'menu closed');
     void ada;
-    await expectChip(w, 'sim-13', /Read-only · Sandbox: checking/, (c) => /confirms its sandbox when it starts/.test(c.title));
-    await expectChip(w, 'sim-11', /Ask first · Not sandboxed/, (c) => /Not sandboxed\. Copilot says this computer cannot run its sandbox/.test(c.title) && /Durbar.s own checks still apply/.test(c.title));
+    await expectChip(w, 'sim-13', /Read-only · Sandbox: checking/, (c) => /^Checked when Copilot starts\./.test(c.title));
+    await expectChip(w, 'sim-11', /Ask first · Not sandboxed/, (c) => /^Copilot says this computer cannot run its sandbox/.test(c.title) && /Durbar.s own checks still apply/.test(c.title));
     await expectChip(w, 'sim-6', /Allow all · Sandboxed \(managed\)/, (c) => /Your organization keeps/.test(c.title));
     await expectChip(w, 'sim-15', /Allow all · Sandboxed \(until a new session\)/, (c) => /stays until a new session/.test(c.title) && /Shell commands and MCP servers run in bubblewrap/.test(c.title));
     // ---- FR-021 (T022 AC3): Codex Ask first: the card's sandbox line, whole; the chip tooltip says it too ----
@@ -72,14 +73,14 @@ module.exports = async (ctx) => {
     const TOK = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
     await js(`window.__durbarSimEmit({type:'sandbox',sessionId:'sim-8',timestamp:Date.now(),sandbox:{state:'off',covers:['shell'],verified:false,reason:${jsLiteral('<img src=x class=evil> blocked by ' + TOK)}},notice:{text:${jsLiteral('<b class=evil>bad</b> could not start its OS sandbox: ' + TOK + '. Nothing was sent.')},actions:['continue']}})`);
     assert.ok(await until(`[...document.querySelectorAll('#chat .note.sbx-note')].some(n=>n.textContent.includes('<b class=evil>'))`, 5000), `${w}: the note shows the markup as text`);
-    const hostile = await js(`(()=>{const c=document.getElementById('modeChip');const n=[...document.querySelectorAll('#chat .note.sbx-note')].pop();return {evil:!!document.querySelector('#chat .evil, #modeChip .evil'),tok:(c.title+n.textContent).includes(${jsLiteral(TOK)}),chipTitle:c.title}})()`);
+    const hostile = await js(`(()=>{const c=document.getElementById('modeChip');const n=[...document.querySelectorAll('#chat .note.sbx-note')].pop();const t=(c.querySelector('.mode-sbx')||{}).title||'';return {evil:!!document.querySelector('#chat .evil, #modeChip .evil'),tok:(c.title+t+n.textContent).includes(${jsLiteral(TOK)}),chipTitle:t}})()`);
     assert.ok(!hostile.evil && !hostile.tok, `${w}: no markup, no token: ${JSON.stringify(hostile)}`);
     assert.ok(/<img src=x class=evil>/.test(hostile.chipTitle) && /redacted/.test(hostile.chipTitle), `${w}: the reason is text, masked`);
     // ---- the card's mode icon tooltip (no new word on the office card: decision Q5) ----
     await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
     assert.ok(await until(`!document.body.classList.contains('panel-open')`, 8000));
     const deskTip = await js(`(()=>{const d=document.querySelector('#stage .desk[data-id="sim-1"]');const m=d&&d.querySelector('.modeic,.modebadge');return {title:m?m.title:'',words:/Sandbox/.test(d?d.innerText:'')}})()`);
-    assert.ok(/Sandboxed\. Shell commands run in/.test(deskTip.title), `${w}: the card's mode icon tooltip: ${deskTip.title}`);
+    assert.ok(/Sandboxed\. Right-click for options\.$/.test(deskTip.title), `${w}: the card's mode icon tooltip: ${deskTip.title}`);
     assert.ok(!deskTip.words, `${w}: no sandbox word on the office card`);
     // ---- FR-007 (T032): a Claude Code send whose sandbox cannot start: nothing sent, Continue / Always / Change mode… ----
     await openAgent('sim-1');

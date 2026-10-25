@@ -256,6 +256,10 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.ok(/own checks still apply/.test(off));
   assert.strictEqual(T.hostLine({ available: true, mechanism: 'processcontainer' }), 'OS sandbox: available (Windows ProcessContainer)');
   assert.strictEqual(T.hostLine({ available: false, reason: 'r' }), 'OS sandbox: not available: r');
+  const longest = T.tooltip({ state: 'unknown', mechanism: 'processcontainer', managed: true, untilNewSession: true, covers: ['shell', 'mcp'], writes: 'folders', verified: false }, 'GitHub Copilot');
+  assert.ok(longest.length <= 300, 'a data tooltip: at most 300 characters (' + longest.length + ')');
+  assert.ok(T.tooltip({ state: 'off', covers: ['shell'], verified: false, reason: 'x'.repeat(200) }, 'Claude Code', (t) => t).length <= 300);
+  assert.ok(/PATH folders/.test((T as unknown as { details(s: unknown, a: string): string }).details({ ...on, covers: ['shell', 'mcp'] }, 'Copilot')), 'the mode menu says what PATH grants (FR-004)');
   ok('FR-009/FR-010: the chip words and the tooltip per app; the reason only through the mask');
 }
 console.log('sandbox floor (spec 087): all checks passed');

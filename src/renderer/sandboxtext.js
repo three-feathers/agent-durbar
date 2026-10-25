@@ -30,18 +30,21 @@
   function coverage(s,app){
     const where=mechName(s.mechanism,app), w=s.writes==='folders'?'this folder':'none';
     if(s.covers.includes('files'))return 'Commands and file changes run in '+where+' (writes: none, network: off).'+(s.approvedMayLeave?' If you approve a command, '+(app||'the app')+' may run it outside the sandbox.':'');
-    if(s.covers.includes('mcp'))return 'Shell commands and MCP servers run in '+where+' (writes: '+w+', network: off); they can read your PATH folders, also those in your home folder. File reads and edits are checked by Durbar.';
+    if(s.covers.includes('mcp'))return 'Shell commands and MCP servers run in '+where+' (writes: '+w+', network: off). File reads and edits are checked by Durbar.';
     return 'Shell commands run in '+where+' (writes: '+w+', network: off). MCP servers, file reads and edits are checked by Durbar, not the OS.';
   }
-  /* the tooltip (and the mode menu note); `mask` is the window's masking, applied to the reason once more */
-  function tooltip(s0,app,mask){
+  /* the tooltip (at most 300 characters: a data tooltip); `mask` is the window's masking, applied to the reason once more */
+  function tooltip(s0,app,mask){const t=tip(s0,app,mask);return t.length>300?t.slice(0,299).replace(/\s+\S*$/,'')+'\u2026':t;}
+  /* the mode menu note: the tooltip and the details that do not fit in it (FR-004: what PATH grants) */
+  function details(s0,app,mask){const s=clean(s0);if(!s)return '';const t=tip(s0,app,mask);return s.state!=='off'&&s.covers.includes('mcp')?t+' Sandboxed commands can read your PATH folders, also those in your home folder.':t;}
+  function tip(s0,app,mask){
     const s=clean(s0); if(!s)return '';
     const reason=s.reason&&typeof mask==='function'?String(mask(s.reason)||''):'';
     if(s.state==='off')return (reason?reason.replace(/[.\s]+$/,'')+'.':'The OS sandbox is not in force.')+(/own checks still apply/.test(reason)?'':' Durbar’s own checks still apply.');
     const parts=[];
-    if(s.state==='unknown')parts.push('Sandbox: checking. '+(app||'The app')+' confirms its sandbox when it starts.');
+    if(s.state==='unknown')parts.push('Checked when '+(app||'the app')+' starts.');
     if(s.managed)parts.push('Your organization keeps '+(app||'the app')+'’s sandbox on.');
-    if(s.untilNewSession)parts.push('The sandbox set earlier in this session stays until a new session.');
+    if(s.untilNewSession)parts.push('Set earlier in this session; it stays until a new session.');
     parts.push(coverage(s,app));
     if(!s.verified)parts.push(NOT_VERIFIED);
     return parts.join(' ');
@@ -52,5 +55,5 @@
     if(v.available===true)return 'OS sandbox: available'+(MECHS.includes(v.mechanism)&&v.mechanism!=='vendor'?' ('+mechName(v.mechanism).replace(/^the /,'')+')':'');
     return 'OS sandbox: not available'+(typeof v.reason==='string'&&v.reason?': '+v.reason.slice(0,200):'');
   }
-  return {clean,chipWord,tooltip,hostLine,NOT_VERIFIED};
+  return {clean,chipWord,tooltip,details,hostLine,NOT_VERIFIED};
 })());

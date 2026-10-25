@@ -385,6 +385,9 @@ Built on branch `087-os-sandbox-build`, simulator and fakes only (zero credits).
 - **Policy (FR-019).** `requireOsSandboxFrom(layers)` is the rule; spec 076 has no reader yet, so the app passes no layer (`[KNOWN GAP]`).
 - **Settings.** *Always continue* is stored as `sandboxAlwaysContinue` (app ids only) in the settings file and undone from the app's
   Settings card; IPC `agents:sandboxContinue`, `adapters:sandboxHosts`, `adapters:sandboxAlwaysOff` (all owner-only, `fromApp`).
+- **Tooltips (spec 052 FR-168 limits).** The chip's own title stays short (static, 120); the sandbox segment carries the coverage tooltip
+  (a data tooltip, at most 300: `.mode-sbx` in `ui-text-page.js`'s data list); the card's mode icon gets the word only; the mode menu note
+  has the full text plus FR-004's PATH sentence.
 - **Tests:** `scripts/test-sandbox-floor.ts`, `scripts/test-claude-sandbox.ts`, `scripts/test-copilot-sandbox.ts` (in `test:runtime`),
   driver `scripts/check-sandbox-floor.js` (in `scripts/ui-suite.js`, both sizes). The README's Safety model and Known limits say all of this.
 
