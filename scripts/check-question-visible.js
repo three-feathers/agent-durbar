@@ -138,17 +138,17 @@ module.exports = async (ctx) => {
     await js(`(()=>{const n=window.__qc('Pick many?');n.querySelectorAll('.q-opt')[2].click();n.querySelectorAll('.q-opt')[1].click();[...n.querySelectorAll(':scope > .note-actions .btn.primary')].find(b=>b.textContent==='Answer').click();})()`);
     await until(done('Pick many?'));
     assert.ok(/answered: a{200}$/.test((await stateOf('Pick many?')).t), `${w}: under the limit it is sent whole`);
-    // two open at once, answered out of order: each card gets its own answer; the other stays open
+    // two open at once, the OLDER answered first (a single question slot would settle the newest card): each card gets its own answer; the other stays open
     await ask('mq1', 'Pick one?', ['A', 'B']); await ask('mq2', 'Pick two?', ['X', 'Y']);
     await until(has('Pick two?'));
-    await pick('Pick two?', 'Y');
-    await until(done('Pick two?'));
-    const o2 = await stateOf('Pick two?'), o1 = await stateOf('Pick one?');
-    assert.ok(/answered: Y$/.test(o2.t) && !o1.settled, `${w}: the answered card is settled, the other stays open: ${JSON.stringify({ o1, o2 })}`);
-    assert.strictEqual(await js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(sid)}).state`), 'waiting', `${w}: still Waiting while one question is open`);
     await pick('Pick one?', 'A');
     await until(done('Pick one?'));
-    assert.ok(/answered: A$/.test((await stateOf('Pick one?')).t), `${w}: the first card got its own answer`);
+    const o1 = await stateOf('Pick one?'), o2 = await stateOf('Pick two?');
+    assert.ok(/answered: A$/.test(o1.t) && !o2.settled, `${w}: the older card is settled with its own answer, the newer stays open: ${JSON.stringify({ o1, o2 })}`);
+    assert.strictEqual(await js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(sid)}).state`), 'waiting', `${w}: still Waiting while one question is open`);
+    await pick('Pick two?', 'Y');
+    await until(done('Pick two?'));
+    assert.ok(/answered: Y$/.test((await stateOf('Pick two?')).t) && /answered: A$/.test((await stateOf('Pick one?')).t), `${w}: the newer card got its own answer and the older one kept its own`);
     // a cancelled event with a reason: the tooltip says it
     await ask('mq3', 'Cancelled one?', ['A']);
     await until(has('Cancelled one?'));
