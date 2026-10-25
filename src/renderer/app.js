@@ -3411,7 +3411,7 @@ function chipRepaint(c){
   c.el.replaceWith(el);c.el=el;refreshChips(c.box);
   if(c.whyBy)whyPaint(c);
 }
-/* ---- spec 003 FR-099..FR-103 (issue #605): "Why was this allowed?" on a tool card. The reason comes from a permission event (its
+/* ---- spec 003 FR-099..FR-103 (issue 605): "Why was this allowed?" on a tool card. The reason comes from a permission event (its
    allowedBy, set by Durbar's broker) whose request id is the call's id, in either order of arrival; a call that Durbar did not decide
    shows nothing. Undo is the grant chips' own revoke (bridge.revokeGrant). The words come from DurbarWhyAllowed. ---- */
 const WHY=window.DurbarWhyAllowed, WHY_KEEP=400;
@@ -3444,7 +3444,7 @@ function whyPaint(c){
   if(d.label&&!d.gone){const code=document.createElement('code');code.className='why-l';code.textContent=d.label;body.appendChild(code);}
   if(d.undoKey){const b=document.createElement('button');b.type='button';b.className='why-undo';b.textContent='Undo this rule';b.title='Remove this session rule: Durbar asks again next time';b.setAttribute('aria-label','Undo this rule: '+d.label);body.appendChild(b);}
   el.append(pill,body);
-  if(c._refocus){c._refocus=false;el.focus();announce(d.gone?'Rule removed: Durbar asks again.':'');}
+  if(c._refocus){c._refocus=false;focusIn(el);announce(d.gone?'Rule removed: Durbar asks again.':'');}
 }
 function whyRefresh(a){if(a.whyCs)for(const c of a.whyCs)if(c.el)whyPaint(c);}
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#chat .chip .why-undo');if(!b)return;

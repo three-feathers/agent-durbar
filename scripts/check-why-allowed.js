@@ -22,12 +22,12 @@ module.exports = async (ctx) => {
   const { js, until } = H;
   const send = (text) => js(`(()=>{const i=document.getElementById('msgInput');i.value=${jsLiteral(text)};i.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('sendBtn').click();})()`);
   // the simulator also draws a read card per turn: the edit cards are the ones this check is about
-  const EDIT = `[...document.querySelectorAll('#chat .chip')].filter(c=>!c.classList.contains('att-chip')&&/edit/i.test((c.querySelector('b')||c).textContent))`;
-  const chips = () => js(`${EDIT}.map(c=>({name:(c.querySelector('b')||c).textContent,why:(c.querySelector(':scope>.why')||{}).textContent||''}))`);
-  const lastChip = `(()=>{const l=${EDIT};return l[l.length-1]})()`;
+  const defs = () => js(`window.__wa={edits:()=>[...document.querySelectorAll('#chat .chip')].filter(c=>!c.classList.contains('att-chip')&&/edit/i.test((c.querySelector('b')||c).textContent)),last:()=>{const l=window.__wa.edits();return l[l.length-1]}};0`);
+  const chips = () => js(`window.__wa.edits().map(c=>({name:(c.querySelector('b')||c).textContent,why:(c.querySelector(':scope>.why')||{}).textContent||''}))`);
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await H.load({ w, h, focus: true });
+    await defs();
     // the simulator's idle agents are Read-only: two of them are switched (the way the mode menu does) so each starts a quiet chat
     const ids = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent&&a.info&&a.info.permMode==='read-only'&&a.live&&(a.state==='idle'||a.state==='done')).map(a=>a.id)`);
     assert.ok(ids.length >= 2, `${w}: two idle agents: ${JSON.stringify(ids)}`);
@@ -48,22 +48,22 @@ module.exports = async (ctx) => {
 
     // 2) the second edit runs under the rule: tag on its card
     await send('Please edit it again.');
-    const okTag = await until(`${EDIT}.length>=2&&!!${lastChip}.querySelector('.why')`, 15000);
-    assert.ok(okTag, `${w}: the second card is tagged ` + JSON.stringify(await js(`(()=>{const a=window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(id)});return {why:[...(a.why||new Map()).entries()],chips:${EDIT}.map(c=>c.id+'|'+c.className+'|'+c.textContent.slice(0,60)),keys:Object.keys(a.turn?a.turn.T.chipEls:{}),grants:(a.grants||[]).length}})()`)));
-    const t = await js(`(()=>{const c=${lastChip},p=c.querySelector(':scope>.why'),r=p.getBoundingClientRect(),R=document.getElementById('chat').getBoundingClientRect();
+    const okTag = await until(`window.__wa.edits().length>=2&&!!window.__wa.last().querySelector('.why')`, 15000);
+    assert.ok(okTag, `${w}: the second card is tagged ` + JSON.stringify(await js(`(()=>{const a=window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(id)});return {why:[...(a.why||new Map()).entries()],chips:window.__wa.edits().map(c=>c.id+'|'+c.className+'|'+c.textContent.slice(0,60)),keys:Object.keys(a.turn?a.turn.T.chipEls:{}),grants:(a.grants||[]).length}})()`)));
+    const t = await js(`(()=>{const c=window.__wa.last(),p=c.querySelector(':scope>.why'),r=p.getBoundingClientRect(),R=document.getElementById('chat').getBoundingClientRect();
       return {text:p.textContent,kind:p.dataset.why,font:parseFloat(getComputedStyle(p).fontSize),inside:r.right<=R.right+0.5&&r.left>=R.left-0.5,undoVisible:!!c.querySelector('.why-undo')&&c.querySelector('.why-undo').offsetParent!==null}})()`);
     assert.strictEqual(t.text, 'Allowed: session rule', `${w}: the tag words`);
     assert.strictEqual(t.kind, 'session-grant');
     assert.ok(t.font >= 10.5, `${w}: legible (${t.font}px)`);
     assert.ok(t.inside, `${w}: the tag stays inside the chat`);
     assert.strictEqual(t.undoVisible, false, `${w}: the undo is in the open card, not the row`);
-    assert.strictEqual(await js(`${lastChip}.querySelectorAll('.why').length`), 1, `${w}: one tag per card`);
+    assert.strictEqual(await js(`window.__wa.last().querySelectorAll('.why').length`), 1, `${w}: one tag per card`);
 
     // 3) open card: the sentence, the rule's label, the Undo button (a real button, named)
     assert.ok(await until(`document.getElementById('sendBtn')&&!document.getElementById('sendBtn').disabled`, 15000), `${w}: the second turn ended`);
-    await js(`${lastChip}.click()`);
-    assert.ok(await until(`${lastChip}.classList.contains('open')&&${lastChip}.querySelector('.why-undo').offsetParent!==null`, 5000), `${w}: the open card shows Undo`);
-    const o = await js(`(()=>{const c=${lastChip},b=c.querySelector('.why-undo'),r=b.getBoundingClientRect(),R=c.getBoundingClientRect();
+    await js(`window.__wa.last().click()`);
+    assert.ok(await until(`window.__wa.last().classList.contains('open')&&window.__wa.last().querySelector('.why-undo').offsetParent!==null`, 5000), `${w}: the open card shows Undo`);
+    const o = await js(`(()=>{const c=window.__wa.last(),b=c.querySelector('.why-undo'),r=b.getBoundingClientRect(),R=c.getBoundingClientRect();
       return {sentence:c.querySelector('.why-t').textContent,label:c.querySelector('.why-l').textContent,btn:b.tagName,name:b.getAttribute('aria-label'),font:parseFloat(getComputedStyle(b).fontSize),h:r.height,inside:r.right<=R.right+0.5&&r.bottom<=R.bottom+0.5}})()`);
     assert.ok(/Approve for this session/.test(o.sentence), `${w}: the sentence names the choice: ${o.sentence}`);
     assert.ok(/^write in /.test(o.label), `${w}: the rule's own label: ${o.label}`);
@@ -73,10 +73,10 @@ module.exports = async (ctx) => {
     await H.shot(path.join(OUT, `003-why-allowed-${w}x${h}.png`), { prep: 'calm', delay: 150 });
 
     // 4) Undo: the same revoke as the grant chip's x: the chip goes, the tag says so, the focus stays on the card
-    await js(`${lastChip}.querySelector('.why-undo').click()`);
+    await js(`window.__wa.last().querySelector('.why-undo').click()`);
     assert.ok(await until(`document.querySelectorAll('#grants .gchip').length===0`, 8000), `${w}: the grant chip is gone (the existing revoke ran)`);
-    assert.ok(await until(`(${lastChip}.querySelector(':scope>.why')||{}).textContent==='Rule removed'&&!${lastChip}.querySelector('.why-undo')`, 8000), `${w}: the tag says the rule is removed and offers no second undo`);
-    assert.ok(await until(`document.activeElement===${lastChip}`, 3000), `${w}: focus stays on the card`);
+    assert.ok(await until(`(window.__wa.last().querySelector(':scope>.why')||{}).textContent==='Rule removed'&&!window.__wa.last().querySelector('.why-undo')`, 8000), `${w}: the tag says the rule is removed and offers no second undo`);
+    assert.ok(await until(`document.activeElement===window.__wa.last()`, 3000), `${w}: focus stays on the card`);
     const both = await chips();
     assert.deepStrictEqual(both.map((c) => c.why), ['', 'Rule removed'], `${w}: the first card is untouched, the second says the rule is gone: ${JSON.stringify(both)}`);
     // the next edit asks again
@@ -86,7 +86,7 @@ module.exports = async (ctx) => {
     assert.ok(await until(`document.getElementById('sendBtn')&&!document.getElementById('sendBtn').disabled`, 15000), `${w}: that turn ended`);
 
     // 5) hostile input: markup label, a key the broker never held, a malformed reason
-    const ev = (extra) => js(`window.__durbarSimUi.emit(Object.assign({type:'permission',sessionId:${jsLiteral(id)},timestamp:Date.now()},${JSON.stringify(extra)}))`);
+    const ev = (extra) => js(`window.__durbarSimUi.emit(Object.assign({type:'permission',sessionId:${jsLiteral(id)},timestamp:Date.now()},${jsLiteral(extra)}))`);
     const call = (cid) => js(`window.__durbarSimUi.emit({type:'toolCall',sessionId:${jsLiteral(id)},timestamp:Date.now(),callId:${jsLiteral(cid)},tool:'bash',phase:'start',args:{command:'echo hi'}})`);
     const evil = '<img src=x onerror="window.__pwn=1">';
     await ev({ type: 'grants', grants: [{ key: 'ghost:key', kind: 'write', label: evil }] }); // a rule the simulator's broker never held
@@ -132,7 +132,7 @@ module.exports = async (ctx) => {
     const tagged = await js(`document.querySelectorAll('#chat .why').length`);
     const notes = await js(`document.querySelectorAll('#chat .note.perm').length`);
     await send('Please edit the file.');
-    assert.ok(await until(`document.querySelectorAll('#chat .note.perm').length>${notes}`, 15000), `${w}: the edit is refused`);
+    assert.ok(await until(`document.querySelectorAll('#chat .note.perm').length>${jsLiteral(notes)}`, 15000), `${w}: the edit is refused`);
     assert.ok(await until(`document.getElementById('sendBtn')&&!document.getElementById('sendBtn').disabled`, 15000), `${w}: that turn ended`);
     assert.strictEqual(await js(`document.querySelectorAll('#chat .why').length`), tagged, `${w}: a refused call carries no reason`);
   }
