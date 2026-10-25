@@ -326,6 +326,23 @@ export class McpStore {
     return this.recsOf(key).find((r) => lc(r.name) === lc(name));
   }
 
+  /**
+   * Spec 083 FR-005 (issue 699): every secret value of one folder's extras that is known in memory right now, enabled or not, trusted or
+   * not (4 characters or more, longest first). It NEVER decrypts: a value still locked in the vault is simply not included, so a notes save
+   * cannot cause an OS keychain prompt. Main only; the values are used to mask text and never leave it.
+   */
+  knownSecretValues(key: string): string[] {
+    if (!this.validKey(key)) return [];
+    const out = new Set<string>();
+    for (const r of this.recsOf(key)) for (const v of [...r.env, ...r.headers]) if (typeof v.value === 'string' && v.value.length >= 4) out.add(v.value);
+    return [...out].sort((a, b) => b.length - a.length);
+  }
+
+  /** True when reading any session's secret values (`forSession`) cannot decrypt anything: the vault is open already, or nothing waits in it. */
+  noPrompt(): boolean {
+    return this.unlocked || !this.allRecs().some((r) => [...r.env, ...r.headers].some((s) => McpStore.pending(s)));
+  }
+
   /** The extras of one folder/workspace (secrets masked). */
   list(key: string): McpServerView[] {
     return this.validKey(key) ? this.recsOf(key).map((r) => this.view(r)) : [];

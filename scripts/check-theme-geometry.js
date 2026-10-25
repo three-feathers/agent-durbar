@@ -45,7 +45,9 @@ function measure() {
   st.textContent = '#stage *, .lobby *, header *{font-family:sans-serif!important;font-weight:400!important;font-style:normal!important;letter-spacing:normal!important;text-transform:none!important;word-spacing:normal!important;font-variant:normal!important;font-feature-settings:normal!important;font-stretch:normal!important}';
   document.head.appendChild(st);
   if (window.DurbarFit) window.DurbarFit(); /* fit the usage lines and room headers in the forced font, as the app does in its own */
-  const els = [...document.querySelectorAll('#stage, #stage *, .lobby, .lobby *, header, header *')].filter((e) => !e.closest('svg') && e.getClientRects().length);
+  const els = [...document.querySelectorAll('#stage, #stage *, .lobby, .lobby *, header, header *')].filter((e) => !e.closest('svg') && e.getClientRects().length
+    /* spec 059: the rename pencil (button.ren) is anchored to the END OF THE NAME'S TEXT (placeRen), like a label: a theme's own font moves it, so its position is text-dependent and not a layout box. Its size and overlaps are checked by check:office. */
+    && !e.closest('.ren'));
   els.forEach((e, i) => {
     const b = e.getBoundingClientRect();
     const key = `${i} ${e.tagName.toLowerCase()}.${String(e.className || '').trim().split(/\s+/).slice(0, 2).join('.')}`.slice(0, 60);
