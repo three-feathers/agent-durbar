@@ -137,8 +137,10 @@ module.exports = async (ctx) => {
     await emit({ type: 'status', sessionId: c.id, timestamp: Date.now(), status: 'idle' });
     await ok(`document.querySelector('#panelHead [data-f=status]').textContent!=='Compacting'`, 'an idle ends the desk mark');
     assert.ok(await js(`[...document.querySelectorAll('#chat .note.cline')].some(n=>/^Compacting the context/.test(n.textContent))&&![...document.querySelectorAll('#chat .note.cline')].some(n=>/failed/.test(n.textContent)&&n===[...document.querySelectorAll('#chat .note.cline')].pop())`), 'the line still says Compacting and nothing failed');
+    const nIdle = (await lines()).length;
     await emit({ type: 'compaction', sessionId: c.id, timestamp: Date.now(), phase: 'complete', trigger: 'manual', tokensBefore: 100000, tokensAfter: 20000, limit: 200000 });
     await ok(`[...document.querySelectorAll('#chat .note.cline')].pop().textContent==='Context compacted (manual): 100k → 20k tokens.'`, 'the late result ends the line, with the manual trigger');
+    assert.strictEqual((await lines()).length, nIdle, 'a plain idle does not close the run: the late result folded into the open line, no new line');
     // a stop ends an open line as "stopped"; a late result is then a NEW line and the stopped one stays as it was
     await emit({ type: 'compaction', sessionId: c.id, timestamp: Date.now(), phase: 'start', trigger: 'unknown' });
     await ok(`document.querySelector('#panelHead [data-f=status]').textContent==='Compacting'`, 'Compacting before the second stop');
@@ -150,6 +152,22 @@ module.exports = async (ctx) => {
     l = await lines();
     assert.strictEqual(l[l.length - 1], 'Context compacted (automatic): 90k → 20k tokens.', 'the new line is last');
     assert.strictEqual(l[l.length - 2], 'Compaction stopped.', 'the stopped line is unchanged');
+    // an error and a stopped status end an open line the same way (each: stopped line, then a NEW line for the late result)
+    for (const st of ['error', 'stopped']) {
+      await emit({ type: 'status', sessionId: c.id, timestamp: Date.now(), status: 'working', intent: 'Back' });
+      await emit({ type: 'compaction', sessionId: c.id, timestamp: Date.now(), phase: 'start', trigger: 'unknown' });
+      await ok(`document.querySelector('#panelHead [data-f=status]').textContent==='Compacting'`, 'Compacting before the ' + st);
+      await emit({ type: 'status', sessionId: c.id, timestamp: Date.now(), status: st, intent: 'boom' });
+      await ok(`[...document.querySelectorAll('#chat .note.cline')].some(n=>n.textContent==='Compaction stopped.')&&![...document.querySelectorAll('#chat .note.cline')].pop().textContent.startsWith('Compacting')`, 'a ' + st + ' status ends the open line as stopped');
+      const n1 = (await lines()).length;
+      const last = (await lines())[n1 - 1];
+      assert.strictEqual(last, 'Compaction stopped.', st + ': the stopped line is last');
+      await emit({ type: 'compaction', sessionId: c.id, timestamp: Date.now(), phase: 'complete', trigger: 'auto', tokensBefore: 80000, tokensAfter: 10000, limit: 100000 });
+      await ok(`document.querySelectorAll('#chat .note.cline').length===${jsLiteral(n1 + 1)}`, st + ': a late complete adds a new line');
+      l = await lines();
+      assert.strictEqual(l[l.length - 1], 'Context compacted (automatic): 80k → 10k tokens.', st + ': the new line is last');
+      assert.strictEqual(l[l.length - 2], 'Compaction stopped.', st + ': the stopped line is unchanged');
+    }
 
     await closeChat();
     await ok(`!(${pillIs('Clara', 'Compacting')})`, 'the office agrees');
