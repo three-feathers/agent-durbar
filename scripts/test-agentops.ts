@@ -4,7 +4,8 @@ import * as path from 'path';
 import * as os from 'os';
 import { FakeAdapter } from '../src/adapters/fake';
 import { ALL_OPTIONAL as ALL } from './test-adapter-contract';
-import { restorable, resumeModeOp, sendWithSlash, setCapOp, setMcpOp, setModeOp, stopTurnOp } from '../src/main/agentops';
+import { MAX_ANSWER } from '../src/shared/answerlimits';
+import { answerQuestionOp, restorable, resumeModeOp, sendWithSlash, setCapOp, setMcpOp, setModeOp, stopTurnOp } from '../src/main/agentops';
 import type { AgentMessage } from '../src/adapters/types';
 import type { OpsDeps } from '../src/main/agentops';
 import type { SavedFolder } from '../src/main/folders';
@@ -231,6 +232,37 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(sent.pop(), { text: '/p huge' }, 'f: asTyped sends the typed line');
     const failing = { send: async () => { throw new Error('send failed'); }, expandSlashCommand: async () => ({ text: 'X', where: 'w' }) };
     await assert.rejects(sendWithSlash(failing, 's1', { text: '/review' }), /send failed/, 'f: a failed send still rejects (sendOp reports it)');
+  }
+  // (g) answerQuestionOp (spec 052 FR-178, issue 689): the answer reaches the adapter as given; a long question's key is kept; nothing usable is refused, never a skip
+  {
+    const got: unknown[] = [];
+    const adapter = { answerQuestion: (sid: string, rid: string, ans: unknown) => got.push([sid, rid, ans]) };
+    const agents = new Map<string, AgentInfo>([['g1', { id: 'g1', name: 'g1', cwd: WS, folders: [], permMode: 'ask', adapterId: 'copilot' } as AgentInfo]]);
+    const d = { agents, router: { forAgent: (id: string) => (id === 'g1' ? adapter : undefined) } } as unknown as Pick<OpsDeps, 'agents' | 'router'>;
+    const longQ = 'Which of these long-running approaches should I take? '.repeat(8).trim();
+    assert.ok(longQ.length > 300 && longQ.length < 2000);
+    assert.deepStrictEqual(answerQuestionOp(d, 'g1', 'r1', { [longQ]: 'my own' }), { ok: true });
+    assert.deepStrictEqual(got.pop(), ['g1', 'r1', { [longQ]: 'my own' }], 'g: the answer to a question over 300 characters reaches the adapter');
+    assert.deepStrictEqual(answerQuestionOp(d, 'g1', 'r2', null), { ok: true });
+    assert.deepStrictEqual(got.pop(), ['g1', 'r2', null], 'g: null is a skip');
+    for (const bad of [{ q: '' }, { q: '   ' }, {}, 'text', 5, undefined, { [`${'x'.repeat(2001)}`]: 'a' }]) {
+      assert.strictEqual(answerQuestionOp(d, 'g1', 'r3', bad).ok, false, 'g: refused: ' + JSON.stringify(bad)?.slice(0, 30));
+    }
+    assert.strictEqual(got.length, 0, 'g: a refused answer never reaches the adapter as a skip');
+    // one limit end to end (FR-178): exactly the cap passes, one over is refused with a reason and never reaches the adapter cut
+    assert.strictEqual(MAX_ANSWER, 500);
+    assert.deepStrictEqual(answerQuestionOp(d, 'g1', 'r4', { q: 'x'.repeat(MAX_ANSWER) }), { ok: true });
+    assert.strictEqual((got.pop() as [string, string, Record<string, string>])[2].q.length, MAX_ANSWER, 'g: at the cap, whole');
+    const over = answerQuestionOp(d, 'g1', 'r5', { q: 'x'.repeat(MAX_ANSWER + 1) });
+    assert.ok(!over.ok && /too long: 500 characters at most/.test(over.error ?? ''), 'g: one over is refused with its reason: ' + JSON.stringify(over));
+    assert.strictEqual(got.length, 0, 'g: nothing cut was sent');
+    // the page's boxes use the same number: no literal in the card code, and the module is loaded as a page script
+    const fsx = await import('fs');
+    const appSrc = fsx.readFileSync(path.join(process.cwd(), 'src', 'renderer', 'app.js'), 'utf8');
+    assert.ok(!/maxLength=500\b/.test(appSrc) && (appSrc.match(/maxLength=window\.exports\.MAX_ANSWER/g) ?? []).length === 2, 'g: both answer boxes take the limit from MAX_ANSWER');
+    assert.ok(/shared\/answerlimits\.js/.test(fsx.readFileSync(path.join(process.cwd(), 'src', 'renderer', 'index.html'), 'utf8')), 'g: the limit is loaded in the page');
+    assert.strictEqual(answerQuestionOp(d, 'nope', 'r', { q: 'a' }).ok, false);
+    assert.strictEqual(answerQuestionOp(d, 'g1', 'r'.repeat(201), { q: 'a' }).ok, false);
   }
   console.log('agentops: ok');
 }
