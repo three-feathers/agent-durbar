@@ -169,6 +169,7 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.deepStrictEqual(sandboxRoots(['\\\\?\\UNC\\srv\\sh\\p', '\\\\?\\C:\\w'], ident), ['\\\\srv\\sh\\p', 'C:\\w'], 'a folder below them is kept, in its plain form');
   for (const x of ['\\\\srv', '\\\\srv\\', '\\\\?\\UNC\\srv', '\\\\?\\UNC\\srv\\']) assert.strictEqual(normalizeRoot(x), undefined, `normalizeRoot itself drops ${x} (Node normalises it to \\srv)`);
   // review round 7 (4): a UNC path without a share names no folder; a Windows name with a trailing space or dot is what Windows trims
+  assert.deepStrictEqual(sandboxRoots(['/home/u/proj.', '/home/u/my proj ', '/home/u/a. /b'], ident), ['/home/u/proj.', '/home/u/my proj ', '/home/u/a. /b'], 'POSIX keeps a trailing dot or space (only Windows trims them)');
   assert.deepStrictEqual(sandboxRoots(['\\\\srv', '\\\\srv\\', '\\\\?\\UNC\\srv', '\\\\?\\UNC\\srv\\', 'C:\\ ', 'C:\\. ', 'C:\\w.', 'C:\\w \\x', 'C:\\my proj'], ident), ['C:\\my proj'], 'no share; trailing space or dot dropped; a space inside a name kept');
   // review round 5: splitFolders is an allow-list: kept only when the block holds it; everything else is named with why
   const sp = splitFolders(['/w', '/', '/a/../..', '/x"y', '/gone', '/w/sub', '/home/me/.ssh'], '/w', ['/w', '/w/sub'], (p) => { if (p === '/gone') throw new Error('ENOENT'); return p; });
@@ -372,6 +373,19 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   }
   const tail = leftOutFields([{ folder: '/' + 'a'.repeat(100) + '/' + TOKEN + '/bb', why: 'unusable' }])!.leftOut[0];
   assert.ok(!tail.includes('ghp_') && /redacted/.test(tail), 'a token kept by the shortening is masked by the adapter itself: ' + tail);
+  // review round 8 (2, 5): never half an emoji or a combining sequence at either cut; the tail starts at a word boundary
+  const emoji = '\u{1F600}', comb = 'e\u0301';
+  for (const n of [36, 37, 38, 39, 40, 41]) {
+    for (const ch of [emoji, comb, '\u{1F469}\u200D\u{1F4BB}']) {
+      const lf = leftOutFields([{ folder: '/' + 'x'.repeat(n) + ch + 'y'.repeat(20) + '/' + 'z'.repeat(120) + ch + '/end', why: 'unusable' }])!.leftOut[0];
+      assert.ok(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(lf), `no lone surrogate (${n}): ${JSON.stringify(lf)}`);
+      assert.ok(!/(^|[^e])\u0301/.test(lf) && !/\u200D(…|$)|(^|…)\u200D/.test(lf), `no broken sequence (${n}): ${JSON.stringify(lf)}`);
+    }
+  }
+  const cutTail = leftOutFields([{ folder: '/a/' + 'b'.repeat(200) + '/tailword' + 'c'.repeat(90), why: 'unusable' }])!.leftOut[0];
+  const afterCut = cutTail.split('…')[1] ?? '';
+  assert.ok(afterCut === '' || !/^[A-Za-z0-9]/.test(afterCut) || afterCut.length >= 79, 'the tail starts at a word boundary, never mid-word: ' + JSON.stringify(cutTail));
+  assert.ok(!/…c{1,88}\s/.test(cutTail) && !/…c+ \(/.test(cutTail), 'no word cut in half after the …: ' + JSON.stringify(cutTail));
   // review round 7 (2): the event the window gets is cleaned too: a malformed state becomes null, every entry and the note masked
   const raw = { type: 'sandbox', sessionId: 's', timestamp: 1, sandbox: { ...on, reason: 'r ' + TOKEN, leftOut: [`/x/${TOKEN} (not usable)`] }, notice: { text: `could not start: ${TOKEN}\u0007 Nothing was sent.`, actions: ['continue', 'evil'] } };
   const out = outwardSandboxEvent(raw) as unknown as { sandbox: { reason?: string; leftOut?: string[] } | null; notice: { text: string; actions: string[] } };

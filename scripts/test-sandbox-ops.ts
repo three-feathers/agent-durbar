@@ -76,6 +76,19 @@ async function main(): Promise<void> {
   assert.deepStrictEqual(ops.alwaysOff(true, 7), { ok: false });
   assert.deepStrictEqual(ops.alwaysOff(true, 'claude'), { ok: true });
   assert.deepStrictEqual(stored.pop(), ['claude', false]);
+  // review round 8 (4): the window always gets the cleaned sandbox event: the seam, and main.ts pinned to it
+  const { toWindowEvent } = await import('../src/main/sandboxops');
+  const fs = await import('fs');
+  const path = await import('path');
+  const TOK = 'ghp_' + 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const sent = toWindowEvent({ type: 'sandbox', sessionId: 's', timestamp: 1, sandbox: { state: 'off', covers: ['shell'], verified: false, reason: TOK, leftOut: [`/x/${TOK} (not usable)`] }, notice: { text: TOK, actions: ['continue'] } } as AgentEvent, (e) => e);
+  assert.ok(!JSON.stringify(sent).includes('ghp_'), 'toWindowEvent masks the sandbox event');
+  let outwardCalled = 0;
+  toWindowEvent({ type: 'output', sessionId: 's', timestamp: 1, delta: 'x' } as AgentEvent, (e) => { outwardCalled++; return e; });
+  assert.strictEqual(outwardCalled, 1, 'and still applies outward()');
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
+  const fwd = mainSrc.match(/router\.onEvent\(\(e\) => toRenderer\('agent:event',[^\n]*/g) ?? [];
+  assert.deepStrictEqual(fwd.map((l) => /toRenderer\('agent:event', toWindowEvent\(e, outward\)\)/.test(l)), [true], 'main.ts forwards adapter events to the window only through toWindowEvent: ' + fwd.join(' | '));
   done = true;
   console.log('sandbox ops (spec 087): all checks passed');
 }

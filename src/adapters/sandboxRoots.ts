@@ -134,14 +134,19 @@ const WHY: Record<LeftOut['why'], string> = { credential: 'credential folder', u
 const FOLDER_SHOWN = 120;
 /** Review round 7 on PR 733: masked first (the app's redact), then shortened, never inside a word or a `[redacted]` mark. */
 const WORDCH = /[A-Za-z0-9_\-.~+=:@%[\]]/;
+/** Review round 8 on PR 733: user-perceived characters (an emoji or a combining sequence is never split); code points without Intl.Segmenter. */
+const graphemes = (s: string): string[] => {
+  const Seg = (Intl as unknown as { Segmenter?: new (l?: string, o?: { granularity: string }) => { segment(t: string): Iterable<{ segment: string }> } }).Segmenter;
+  return Seg ? Array.from(new Seg(undefined, { granularity: 'grapheme' }).segment(s), (x) => x.segment) : Array.from(s);
+};
 const shortFolder = (f: string): string => {
-  const m = redact(f);
-  if (m.length <= FOLDER_SHOWN) return m;
+  const m = graphemes(redact(f));
+  if (m.length <= FOLDER_SHOWN) return m.join('');
   let end = 40;
   while (end > 0 && WORDCH.test(m[end - 1])) end--;
   let start = m.length - (FOLDER_SHOWN - 41);
   while (start < m.length && WORDCH.test(m[start])) start++;
-  return `${m.slice(0, end)}…${m.slice(start)}`;
+  return `${m.slice(0, end).join('')}…${m.slice(start).join('')}`;
 };
 /**
  * Spec 087 (review rounds 4-6 on PR 733): the state fields that name the folders the floor left out: a short reason, and a bounded list

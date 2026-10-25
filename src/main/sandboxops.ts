@@ -6,7 +6,7 @@
  */
 import type { AgentAdapter, AgentEvent } from '../adapters/types';
 import type { SandboxHostView } from '../shared/api';
-import { sandboxReason } from '../shared/sandbox';
+import { outwardSandboxEvent, sandboxReason } from '../shared/sandbox';
 import { ANNOUNCE_APPS } from '../shared/credits';
 
 export interface SandboxOpsDeps {
@@ -16,6 +16,14 @@ export interface SandboxOpsDeps {
   instance(app: string): AgentAdapter;
   readyAdapterIds(): Promise<ReadonlySet<string>>;
   store(): { setSandboxAlwaysContinue(app: unknown, on: unknown): boolean; sandboxAlwaysContinue(app: string): boolean } | undefined;
+}
+
+/**
+ * Review round 8 on PR 733: what main sends to the window for an adapter event: the MCP/tool masking (`outward`), then the sandbox
+ * event's own cleaning. `main.ts` forwards through this one function (a source check in `test-sandbox-ops` pins the call).
+ */
+export function toWindowEvent(e: AgentEvent, outward: (e: AgentEvent) => AgentEvent): AgentEvent {
+  return outwardSandboxEvent(outward(e));
 }
 
 export type OpResult = { ok: true } | { ok: false; error: string };
