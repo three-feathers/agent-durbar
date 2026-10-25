@@ -5,7 +5,7 @@
   if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarSessionName=api;
 })(typeof self!=='undefined'?self:this, (function(){
   'use strict';
-  const MAX=60;
+  const MAX=60, MAX_FOLDER=40; /* a folder's display name: the same rule, this length (spec 059 delta 2026-10-24) */
   /* The user's name, else the runtime's title, else the folder label (FR-001). */
   function displayName(alias,title,folderLabel){
     const a=typeof alias==='string'?alias.trim():'', t=typeof title==='string'?title.trim():'';
@@ -22,12 +22,13 @@
   /* The pre-check of the dialog: '' = fine (empty means reset). Main checks again with the shared rule. */
   const HIDDEN=/[\u00ad\u034f\u115f\u180e\u200b\u2028\u2029\u202a-\u202e\u2060-\u2064\u2066-\u2069\u3164\ufeff\ufff9-\ufffb]/;
   const CONTROL=/[\u0000-\u001f\u007f-\u009f]/;
-  function nameError(v){
-    if(typeof v!=='string')return 'Use 1 to '+MAX+' characters.';
+  function nameError(v,max){
+    max=max||MAX;
+    if(typeof v!=='string')return 'Use 1 to '+max+' characters.';
     if(HIDDEN.test(v))return 'Remove control or hidden characters.';
     const n=v.replace(/\s+/g,' ').trim();
     if(CONTROL.test(n))return 'Remove control or hidden characters.';
-    if(Array.from(n).length>MAX)return 'Use 1 to '+MAX+' characters.';
+    if(Array.from(n).length>max)return 'Use 1 to '+max+' characters.';
     return '';
   }
   /* FR-004, FR-017: the line that says where the name goes, from the capability the agent's kind reports ('any', 'next-turn' or none). */
@@ -38,5 +39,6 @@
     if(cap==='next-turn')return 'Also saved in '+a+' at your next message: it then shows in its /resume list and when you resume this session by its id, not in the VS Code extension\'s list. It may sync with your account.';
     return 'Only in Agent Durbar. '+a+' keeps its own name.';
   }
-  return {MAX,displayName,nameTip,shortName,nameError,whereLine};
+  const folderError=v=>nameError(v,MAX_FOLDER);
+  return {MAX,MAX_FOLDER,displayName,nameTip,shortName,nameError,folderError,whereLine};
 })());

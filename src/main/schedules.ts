@@ -335,7 +335,12 @@ export interface SchedulerDeps {
   waitOf?(session: string): LoopWait | undefined;
   /** After any change (for the renderer). */
   changed?(doc: SchedulesDoc): void;
+  /** Spec 081 FR-013: a reason the run cannot go now (its agent app is updating and the run would start or resume a session); the run is held and tried again. */
+  heldBy?(s: Schedule): string | undefined;
 }
+
+/** Spec 081: how long a held run waits before it is looked at again (a release also brings it forward at once). */
+export const HOLD_RETRY_MS = 5000;
 
 export class Scheduler {
   private timer: unknown;
@@ -633,10 +638,31 @@ export class Scheduler {
     this.arm();
   }
 
+  /** Spec 081: schedules held by an update lock, and when each may be tried again. Memory only. */
+  private heldUntil = new Map<string, number>();
+
+  /** Spec 081 FR-013: the number of held runs that `pick` selects (the update gate's "held prompts" count). */
+  heldFor(pick: (s: Schedule) => boolean): number {
+    return this.doc.schedules.filter((s) => this.heldUntil.has(s.id) && pick(s)).length;
+  }
+
+  /** Spec 081 FR-013: an update lock was released: held runs are looked at again now. */
+  releaseHeld(): void {
+    if (!this.heldUntil.size) return;
+    this.heldUntil.clear();
+    this.arm();
+  }
+
+  private dueNow(s: Schedule): number | undefined {
+    const t = dueAt(s);
+    const h = this.heldUntil.get(s.id);
+    return t === undefined || h === undefined ? t : Math.max(t, h);
+  }
+
   private arm(): void {
     if (this.timer !== undefined) this.deps.clearTimer(this.timer);
     this.timer = undefined;
-    const due = this.doc.schedules.map(dueAt).filter((t): t is number => t !== undefined);
+    const due = this.doc.schedules.map((s) => this.dueNow(s)).filter((t): t is number => t !== undefined);
     if (!due.length) return;
     const wait = Math.max(0, Math.min(...due) - this.deps.now());
     this.timer = this.deps.setTimer(Math.min(wait, 2 ** 31 - 1), () => void this.tick());
@@ -649,7 +675,7 @@ export class Scheduler {
     try {
       const now = this.deps.now();
       for (const s of this.doc.schedules) {
-        const t = dueAt(s);
+        const t = this.dueNow(s);
         if (t === undefined || t > now) continue;
         if (s.loop) {
           await this.tickLoop(s, now);
@@ -660,7 +686,13 @@ export class Scheduler {
         else if (s.target && !this.deps.hasSession(s.target.session)) outcome = 'skipped-ended';
         else if (s.cap && (s.spent ?? 0) >= s.cap.amount) outcome = 'skipped-cap';
         else if (this.deps.isBusy(s.folder, s.target?.session)) outcome = 'skipped-busy';
-        else {
+        else if (this.deps.heldBy?.(s)) {
+          // spec 081 FR-013: its app is updating and this run would start or resume a session: held, looked at again soon (or at the release)
+          this.heldUntil.set(s.id, now + HOLD_RETRY_MS);
+          s.last = { at: now, outcome: 'held' };
+          continue;
+        } else {
+          this.heldUntil.delete(s.id);
           const r = await this.deps.send(s.folder, s.prompt, s).catch(() => false);
           outcome = r ? 'sent' : 'failed';
           if (typeof r === 'string' && r) this.attrib.set(r, s.id);

@@ -10,7 +10,12 @@
    steals focus is undone); Escape dismisses it (never confirms); when it closes focus goes back to `returnFocus` (an element
    or a function returning one), by default the element that had focus when it opened. Confirming is only ever an explicit
    activation of a button, so a dialog that asks for confirmation (Allow all) is never weakened by the keyboard handling. */
+/* Spec 081 FR-013: the words of the "End all sessions?" dialog, shared with the update dialog (Settings > Agent apps) so both say the same. */
+function endAllBody(n,busyN){
+  return (n===1?'1 session ends':n+' sessions end')+' and frees '+(n===1?'its place':'their places')+(busyN?' ('+busyN+' still working: '+(busyN===1?'its reply stops':'their replies stop')+')':'')+'. The chats stay; send a message to pick up where you left off.';
+}
 (function(root,factory){
+  factory.endAllBody=endAllBody;
   if(typeof module==='object'&&module.exports) module.exports=factory;
   else root.DurbarDialog=factory;
 })(typeof self!=='undefined'?self:this, function create(doc){

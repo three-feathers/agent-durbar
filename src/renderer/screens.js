@@ -29,7 +29,7 @@
   }
   function close(){
     if(!cur)return;
-    cur=null;root().hidden=true;root().innerHTML='';
+    cur=null;root().hidden=true;root().innerHTML='';if(window.DurbarHarnesses&&window.DurbarHarnesses.shown)window.DurbarHarnesses.shown(false);
     document.body.classList.remove('screen-open');
     ['toolsBtn','settingsBtn'].forEach(id=>{const b=$(id);if(b)b.setAttribute('aria-pressed','false');});
   }
@@ -37,6 +37,7 @@
   function paint(focus){
     if(!cur)return;
     if(cur.kind==='tools')paintTools(focus);else if(cur.kind==='folder')paintFolder(focus);else paintSettings(focus);
+    if(cur.kind!=='settings'&&window.DurbarHarnesses&&window.DurbarHarnesses.shown)window.DurbarHarnesses.shown(false);
   }
   /* modal: body is an element or html; buttons [{label,value,cls}]; resolves value (or null when dismissed). `validate(root)` may return an error text (keeps it open and shows it), `true` (keeps it open; the caller already showed the error) or a promise of either. */
   function dialog({title,html,buttons,wide,size,cls,validate,onOpen}){
@@ -149,7 +150,7 @@
     const oc=m?`<button class="btn sm${auth?' primary':''}" type="button" data-lvopen="1" aria-label="${esc('Open the MCP servers of '+c.name+' in its chat')}">Open in chat</button>`:'';
     const acts=auth?(oc+(rs||rsess?`<details class="scr-more lv-more" data-lvk="${esc(k)}"${liveMore.has(k)?' open':''}><summary data-lvmore="1">More</summary><div class="lv-act">${rs}${rsess}</div></details>`:'')):rs+rsess+oc;
     const authNote=auth&&m?`<span class="srv-hint lv-auth">Sign in from the chat's MCP list: Open in chat.</span>`:'';
-    return `<li class="lv-chat${auth?' auth':''}" data-lvs="${esc(r.name)}" data-lvc="${esc(c.id)}"><div class="lv-top"><b class="lv-who" title="${esc(who)}">${esc(c.name)}</b>${c.folder?`<span class="mtag">${esc(c.folder)}</span>`:''}${stat}</div>${hh.why}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${authNote}${noOne}${btnRow(det,hh.diag)}${detBox}${acts?`<div class="lv-act">${acts}</div>`:''}</li>`;
+    return `<li class="lv-chat${auth?' auth':''}" data-lvs="${esc(r.name)}" data-lvc="${esc(c.id)}"><div class="lv-top"><b class="lv-who" title="${esc(who)}">${esc(c.name)}</b>${c.folder?`<span class="mtag">${esc(c.folder)}</span>`:''}${stat}</div>${hh.why}${typeof x.orgBlocked==='string'?`<span class="srv-hint srv-org">${esc(x.orgBlocked)}.</span>`:typeof x.orgDoubt==='string'?`<span class="srv-hint srv-org">${esc(x.orgDoubt)}.</span>`:''}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${authNote}${noOne}${btnRow(det,hh.diag)}${detBox}${acts?`<div class="lv-act">${acts}</div>`:''}</li>`;
   }
   function liveInner(){
     const W=window.DurbarMcpWords, A=live.agg;
@@ -306,7 +307,7 @@
     /* Schedules (spec 044 FR-011): every folder's schedules, painted by app.js into #schedSet */
     const schedSec=X.sched&&X.sched.on()?`<section class="scr-sec" aria-labelledby="schH"><h3 id="schH" tabindex="-1">Schedules</h3>
         <p class="scr-note">Prompts sent to a folder's agent at a time, every day or at an interval, <b>only while Agent Durbar is open</b>.</p>
-        <details class="scr-more"><summary>More</summary><p class="scr-note small">A run is skipped when the agent is busy or waiting for you; the agent's own permission mode and cap apply. A folder's ⋯ menu, its clock in the room header and the Schedules button in its chat open the same list for that folder, with a starter kit of templates.</p></details>
+        <details class="scr-more"><summary>More</summary><p class="scr-note small">A run is skipped when the agent is busy or waiting for you; the agent's own permission mode and cap apply. The Schedules button in the top bar (Ctrl+Shift+S) opens this list. A folder's ⋯ menu, its clock in the room header and the Schedules button in its chat open the same list for that folder, with a starter kit of templates.</p></details>
         <div class="sched-set" id="schedSet"></div></section>`:'';
     /* Theme (specs 037-040): pick a built-in or imported pack; applies live, no restart. */
     const curTheme=(app.theme||'clean-office');
@@ -331,6 +332,7 @@
     let hsSec='',acctAgain=false;
     if(window.DurbarHarnesses&&window.DurbarHarnesses.available()&&X.bridge.listAdapters){
       let kinds=[],cp=null;try{kinds=(await X.bridge.listAdapters(!!X._hsRefresh))||[];}catch(e){kinds=[];}X._hsRefresh=false;
+      try{await window.DurbarHarnesses.loadUpdates();}catch(e){} /* spec 081: the kept results (nothing is contacted) */
       if(X.bridge.copilotAuth&&kinds.some(k=>k.id==='copilot'&&k.state==='ready')){try{cp=await X.bridge.copilotAuth();}catch(e){cp=null;}}
       hsSec=window.DurbarHarnesses.sectionHTML(kinds,cp);
       /* spec 051 FR-014: the account lines are filled in after the paint (Codex needs about 2 s); asked again on open, Check again and after a sign-in */
@@ -373,6 +375,7 @@
         <p class="scr-note">Agent Durbar can add its own servers, but <b>only per folder or workspace</b>: open the <b>MCP</b> button in a room's header.</p>
         <details class="scr-more"><summary>More</summary><p class="scr-note small"><b>Folder extras…</b> in an agent's MCP menu opens the same list. Extras apply only to agents in that folder and are never shared with other folders. Switching one on shows its exact command first, and asks again if the command changes.</p></details>
       </section></details>${aboutSec}</div>`;
+    if(window.DurbarHarnesses&&window.DurbarHarnesses.shown)window.DurbarHarnesses.shown(!!hsSec); /* spec 081 FR-016: the card is the announcement while it is on screen */
     if(hsSec)window.DurbarHarnesses.loadAccounts(acctAgain); /* spec 051 FR-014: the account lines fill in after the paint (Codex takes about 2 s) */
     wireHead();
     /* spec 051 FR-008: entry points open Settings at Agent apps */
@@ -384,7 +387,7 @@
     if(X.floors&&$('floorsSet'))X.floors.render();
     if($('navKeyRec'))wireNavKey();
     if(X.sched&&$('schedSet'))X.sched.render();
-    /* spec 001 FR-038 (review on PR 511): the Postbox (and issue 523's Schedules button) open Settings at Schedules; scrollInBody, not scrollIntoView (spec 052 FR-055) */
+    /* spec 044 FR-030: the top-bar Schedules button, Ctrl+Shift+S and Ctrl+K open Settings at the Schedules heading (also when Settings is open already) */
     if(cur.section==='schedules'){cur.section=null;const h=$('schH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}
     if($('capSave'))$('capSave').onclick=async()=>{
       const v=parseFloat($('capDef').value),msg=$('capMsg');
@@ -1151,7 +1154,11 @@
         const by=x.status==='disabled'?W.offBy(octx):'';
         /* FR-078: a server the agent app turned off (runtime `disabled`, but not off here or in Settings) shows its switch off, so the word and the switch agree */
         const appOff=by==='app';
-        const eff=x.defaultOn&&!x.off&&!appOff;
+        /* spec 076 FR-202 (issue 602): the agent app's own organization policy blocks this server: the reason, its switch off and disabled */
+        const org=typeof x.orgBlocked==='string'?x.orgBlocked:'', orgId=org?'mob-'+(++uid):'';
+        /* FR-201: Durbar could not read all of the policy: the words as advice; the switch stays as it is */
+        const orgMay=!org&&typeof x.orgDoubt==='string'?x.orgDoubt:'';
+        const eff=x.defaultOn&&!x.off&&!appOff&&!org;
         const sv=W.stateOf(x.status,octx);
         const stat=`<span class="mst ${esc(sv.cls)}"${x.status&&sv.cls==='unknown'?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(sv.icon)}<span class="mst-w">${esc(sv.word)}</span></span>`;
         const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app,by});
@@ -1175,8 +1182,8 @@
         const rmb=removable&&(X.bridge.mcpGlobalRemovePreview||X.bridge.mcpRemove)?`<button class="btn sm" type="button" data-mrm="${esc(x.name)}" aria-label="${esc('Remove '+x.name+'…')}" title="Remove it from the list it comes from (you review the change first)">Remove…</button>`:'';
         const why=removable?'':srcs.includes('builtin')?'Built into the agent app':'Reported by the running session; managed by the agent app';
         const sg=x.canSignIn||x.signInSteps||x.signIn?signHTML(x,s):'';
-        return `<li class="srv sm${open||sg?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hh.why}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${btnRow(det,hh.diag)}${detBox}</div>
-          <div class="srv-act">${rs}${againB(x)}${rmb}${sw(eff,(appOff?x.name+' is off in '+(app?W.plain(app,40):'the agent app'):(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts')),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed||appOff?' disabled':''))}</div>${sg}${open?toolsHTML(x.name):''}</li>`;}).join('');
+        return `<li class="srv sm${open||sg?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${org?'<span class="mtag warn org-tag">Blocked by your organization</span>':''}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hh.why}${org?`<span class="srv-hint srv-org" id="${orgId}">${esc(org)}.</span>`:orgMay?`<span class="srv-hint srv-org">${esc(orgMay)}.</span>`:''}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${btnRow(det,hh.diag)}${detBox}</div>
+          <div class="srv-act">${rs}${againB(x)}${rmb}${sw(eff,(appOff?x.name+' is off in '+(app?W.plain(app,40):'the agent app'):(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts')),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed||appOff||org?' disabled':'')+(org?' aria-describedby="'+orgId+'"':''))}</div>${sg}${open?toolsHTML(x.name):''}</li>`;}).join('');
       /* FR-022 / FR-030 / FR-032: Restart session lives only here (Q10) */
       const rsess=s.canRestartSession&&X.bridge.agentMcpRestartSession?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpRestartSess"${sessBusy?' disabled':''}>${sessBusy?'Restarting session…':'Restart session with these servers'}</button><span class="dsub small">${noServerRestart?esc(o.appName||'This agent app')+' cannot restart one server; use this instead. ':''}Ends this session and resumes it with the servers in Settings and the folder's extras. The conversation is kept.${s.start==='next-message'?' The servers start with your next message.':''}</span></div>`:'';
       /* spec 058 FR-164 (owner 2026-10-23): sign in again to every server Copilot can redo, so the signed runtime writes each sign-in anew */
@@ -1197,7 +1204,7 @@
       const more=r.total>r.tools.length?` (first ${r.tools.length} shown)`:'';
       /* spec 069 FR-060/FR-064: a checkbox per tool and a tri-state for the server; disabled with the reason when the app cannot filter */
       const x=(st.servers||[]).find(y=>y.name===n)||{}, off=new Set(x.toolsOff||[]), can=!!(st.toolFilter&&X.bridge.setAgentMcpToolsOff);
-      const okName=t=>/^[A-Za-z0-9_.-]{1,128}$/.test(t.name), nOff=r.tools.filter(t=>off.has(t.name)&&okName(t)).length, all=nOff===0?'true':nOff===r.tools.filter(okName).length?'false':'mixed';
+      const okName=t=>/^[A-Za-z0-9_.-]{1,128}$/.test(t.name), free=t=>okName(t)&&!t.orgBlocked, nOff=r.tools.filter(t=>off.has(t.name)&&free(t)).length, nFree=r.tools.filter(free).length, all=nOff===0?'true':nOff===nFree?'false':'mixed'; /* spec 076: a tool the organization blocks is left out of the count and the tri-state */
       /* FR-063/FR-064 (change 2026-10-22, review on PR 503): a box that cannot change is aria-disabled, not disabled: it stays in the Tab
          order, a click or Space does nothing (the click handler), and aria-describedby points to the reason, which is visible */
       const noteId='mtn-'+(++uid);
@@ -1207,8 +1214,9 @@
       const nOdd=r.tools.filter(odd).length;
       const head=`<div class="mcp-thead"><button class="mcp-all" type="button" role="checkbox" aria-checked="${all}" data-tall="${esc(n)}"${dis} aria-label="${esc('All tools of '+n)}"><span class="mcp-box" aria-hidden="true">${all==='true'?'✓':all==='mixed'?'–':''}</span>${r.total} tool${r.total===1?'':'s'}${more}${nOff?`, ${nOff} off`:''}</button>
         <span class="mcp-tnote" id="${noteId}">${can?'Turning tools on or off applies to new sessions and after Restart session with these servers.':'This app can\'t turn off single tools.'}${can&&nOdd?` ${nOdd} tool${nOdd===1?'':'s'} with other characters in the name cannot be turned off.`:''}</span></div>`;
-      const row=t=>{const why=can&&odd(t)?'mtw-'+(++uid):'';
-        return `<li><label><input type="checkbox" data-tool="${esc(t.name)}" data-tsrv="${esc(n)}"${off.has(t.name)&&!odd(t)?'':' checked'}${dis||(why?` aria-disabled="true" aria-describedby="${why}"`:'')} aria-label="${esc(t.name+' of '+n)}"><code>${esc(t.name)}</code></label>${why?`<span class="mcp-tnote" id="${why}">can't be turned off: the name has other characters</span>`:''}${t.description?`<span>${esc(t.description)}</span>`:''}</li>`;};
+      /* spec 076 FR-202: a tool the agent app's organization policy blocks: unticked, aria-disabled, the reason visible next to it */
+      const row=t=>{const ob=typeof t.orgBlocked==='string'?t.orgBlocked:'',may=!ob&&typeof t.orgDoubt==='string'?t.orgDoubt:'',why=ob||(can&&odd(t))?'mtw-'+(++uid):'';
+        return `<li${ob?' class="mcp-org"':''}><label><input type="checkbox" data-tool="${esc(t.name)}" data-tsrv="${esc(n)}"${ob||(off.has(t.name)&&!odd(t))?'':' checked'}${ob?` aria-disabled="true" aria-describedby="${why}"`:dis||(why?` aria-disabled="true" aria-describedby="${why}"`:'')} aria-label="${esc(t.name+' of '+n)}"><code>${esc(t.name)}</code></label>${ob?`<span class="mcp-tnote srv-org" id="${why}"${t.description?` title="${esc(t.description)}"`:''}>${esc(ob)}</span>`:why?`<span class="mcp-tnote" id="${why}">can't be turned off: the name has other characters</span>`:''}${may?`<span class="mcp-tnote srv-org">${esc(may)}</span>`:''}${t.description&&!ob?`<span>${esc(t.description)}</span>`:''}</li>`;};
       return `<div class="mcp-tools" id="${id}">${head}<ul class="mcp-tlist">${r.tools.map(row).join('')}</ul></div>`;
     }
     const toggleTools=async n=>{
@@ -1371,7 +1379,7 @@
       onOpen:d=>{dlg=d.querySelector('.dlg');dlg._ov=d;d.addEventListener('click',async e=>{
         const tg=e.target.closest('button[data-tools]');if(tg){void toggleTools(tg.dataset.tools);return;}
         const ad=e.target.closest('[data-tall][aria-disabled="true"],input[data-tool][aria-disabled="true"]');if(ad){e.preventDefault();return;} /* FR-064: focusable, never changed */
-        const ta=e.target.closest('button[data-tall]');if(ta&&!ta.disabled){const n=ta.dataset.tall,r=toolsOf.get(n);if(r&&r.ok){void saveOff(n,ta.getAttribute('aria-checked')==='true'?r.tools.map(t=>t.name).filter(t=>/^[A-Za-z0-9_.-]{1,128}$/.test(t)):[]);}return;}
+        const ta=e.target.closest('button[data-tall]');if(ta&&!ta.disabled){const n=ta.dataset.tall,r=toolsOf.get(n);if(r&&r.ok){void saveOff(n,ta.getAttribute('aria-checked')==='true'?r.tools.filter(t=>!t.orgBlocked).map(t=>t.name).filter(t=>/^[A-Za-z0-9_.-]{1,128}$/.test(t)):[]);}return;}
         const tc=e.target.closest('input[data-tool]');if(tc&&!tc.disabled){const n=tc.dataset.tsrv,x=(st.servers||[]).find(y=>y.name===n)||{},off=new Set(x.toolsOff||[]);if(tc.checked)off.delete(tc.dataset.tool);else off.add(tc.dataset.tool);void saveOff(n,[...off]);return;}
         const mr=e.target.closest('button[data-mrm]');if(mr){const n=mr.dataset.mrm;d._close();void removeOne(n);return;}
         const sb=e.target.closest('button[data-signin]');if(sb&&!sb.disabled){void signIn(sb.dataset.signin);return;}
@@ -1584,14 +1592,27 @@
     const st=X.stats.agent(a.id),lim=X.staticLimit(a),lv=S.ctxLevel(st.ctx&&st.ctx.tokens,st.ctx&&st.ctx.limit>0?st.ctx.limit:lim);
     const long=a.info&&a.info.tier==='long'?' · long context':'';
     /* spec 030: right after a model switch the old figure belongs to the old window; the runtime reports the new one with the next message */
+    if(a.ctxWaiting==='truncation')return {cls:'unk',text:'Context: waiting for next message',title:'Older messages were dropped. The new size is reported with your next message; the earlier figure no longer applies.'+long,pct:0};
+    if(a.ctxWaiting==='compaction')return {cls:'unk',text:'Context: waiting for next message',title:'The conversation was compacted. The new size is reported with your next message; the earlier figure no longer applies.'+long,pct:0}; /* spec 015 FR-012 */
     if(a.ctxWaiting)return {cls:'unk',text:'Window: waiting for next message',title:'The model changed. The new context window is reported with your next message; the earlier figure belonged to the old window.'+long,pct:0};
     if(lv.level==='unknown')return {cls:'unk',text:'Context: unknown',title:'Context window usage appears after the first message.',pct:0};
     const l=st.ctx&&st.ctx.limit>0?st.ctx.limit:lim;
     return {cls:lv.level,text:'Context '+lv.pct+'%'+(long?' · long':''),title:fmt(st.ctx.tokens)+' of '+fmt(l)+' tokens used ('+lv.pct+'%)'+long+(st.ctx.system!==undefined?'. System '+fmt(st.ctx.system)+', chat '+fmt(st.ctx.conversation||0)+', tools '+fmt(st.ctx.toolDefinitions||0)+'.':''),pct:lv.pct};
   }
 
+  /* spec 081 FR-016: a quiet badge with the number of agent apps that have an update on the Settings entry (a number, not only a colour) */
+  function setUpdBadge(n){
+    const b=$('settingsBtn');if(!b)return;
+    let d=b.querySelector('.upd-badge');
+    if(!n){if(d)d.remove();b.removeAttribute('aria-label');b.title='Settings: MCP servers for all agents';return;}
+    if(!d){d=document.createElement('span');d.className='upd-badge';d.setAttribute('aria-hidden','true');b.appendChild(d);}
+    d.textContent=String(n);
+    b.setAttribute('aria-label','Settings, '+n+' agent app update'+(n===1?'':'s')+' available');
+    b.title='Settings: '+n+' agent app update'+(n===1?'':'s')+' available';
+  }
+
   window.DurbarScreens={oneShotCostLine,aiCredits,
-    init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,toast:(t)=>ctx.toast(ctx.esc(t),3600),onAccounts:(a)=>{if(ctx.setAccounts)ctx.setAccounts(a);},onChange:(again)=>{X._hsRefresh=true;X._acctRefresh='check';if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
+    init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,toast:(t)=>ctx.toast(ctx.esc(t),3600),onAccounts:(a)=>{if(ctx.setAccounts)ctx.setAccounts(a);},onBadge:setUpdBadge,onChange:(again)=>{X._hsRefresh=true;X._acctRefresh='check';if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
     openSettings:(section)=>{mcp=null;X._acctRefresh=X._acctRefresh==='check'?'check':true;open('settings',section==='mcp'||section==='harnesses'||section==='schedules'?{section}:null);},
     openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},

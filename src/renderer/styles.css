@@ -91,7 +91,7 @@ html[data-density="compact"] #topMoreMenu{--h-ctl:32px; --h-chip:26px; --h-pill:
 .stat.attn{background:var(--warn-bg)}
 .stat.attn span.l{color:var(--amber-ink);font-weight:600}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--gray);flex:none;display:inline-block}
-.dot.working{background:var(--c-working)} .dot.thinking{background:var(--c-thinking)} .dot.waiting{background:var(--c-waiting)} .dot.failing,.dot.retrying{background:var(--c-waiting)} /* spec 052 FR-092: Failing reuses the waiting colour; spec 034 FR-018: Retrying too */
+.dot.working{background:var(--c-working)} .dot.thinking,.dot.compacting{background:var(--c-thinking)} .dot.waiting{background:var(--c-waiting)} .dot.failing,.dot.retrying{background:var(--c-waiting)} /* spec 052 FR-092: Failing reuses the waiting colour; spec 034 FR-018: Retrying too */
 .dot.idle{background:transparent;border:2px solid var(--c-idle);box-shadow:0 0 0 1px var(--pc-idle)} .dot.error{background:var(--c-error)} .dot.done{background:var(--c-done)}
 /* spec 052 FR-006: a shape as well as a colour (deuteranopia): waiting is a diamond, error a triangle, idle a ring, working and done circles */
 .dot.waiting{border-radius:1.5px;transform:rotate(45deg) scale(.86);box-shadow:0 0 0 1px var(--amber-ink)} /* spec 052 FR-052: a darker edge so it shows on light surfaces (size unchanged) */
@@ -247,10 +247,11 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 .st-waiting{--pb:var(--pb-waiting);--pc:var(--amber-ink);--pd:var(--c-waiting)} .st-idle{--pb:var(--pb-idle);--pc:var(--pc-idle);--pd:var(--c-idle)}
 .st-error{--pb:var(--pb-error);--pc:var(--red-ink);--pd:var(--c-error)} .st-done{--pb:var(--pb-done);--pc:var(--pc-done);--pd:var(--c-done)}
 .st-failing,.st-retrying{--pb:var(--pb-waiting);--pc:var(--amber-ink);--pd:var(--c-waiting)} /* spec 052 FR-062: "Failing" reuses the waiting colours (no new status colour); spec 034 FR-018: "Retrying" too */
+.st-compacting{--pb:var(--pb-thinking);--pc:var(--pc-thinking);--pd:var(--c-thinking)} /* spec 015 FR-010 (issue 601): "Compacting" reuses the Thinking colours (no new status colour) */
 .st-idle i{background:transparent;border:1.5px solid var(--c-idle)}
 /* spec 052 FR-101: on cards and list rows a status that needs nothing from you is a dot and the word in its colour; Waiting, Error,
    Failing and Limit reached (a waiting state) keep the filled pill. Only colours change: the pill keeps its height and padding */
-:is(.desk,.lrow) .pill:is(.st-working,.st-thinking,.st-idle,.st-done){background:transparent;border-color:transparent}
+:is(.desk,.lrow) .pill:is(.st-working,.st-thinking,.st-compacting,.st-idle,.st-done){background:transparent;border-color:transparent}
 .stage[data-d="full"] .desk.is-idle .scene,.stage[data-d="full"] .desk.is-idle .info{opacity:.7}
 
 /* sub-agents: beside the parent, connected by a line */
@@ -312,7 +313,7 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 .list-wrap{background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
 /* spec 052 FR-064: 34px rows; Agent, Agent app, Role, Folder, Current task, Last activity, Cost, Status ; FR-092: the Agent app column grows ("Basic agent (simulated)" fits) */
 .lrow{display:grid;grid-template-columns:minmax(120px,1fr) minmax(100px,1.05fr) minmax(90px,.7fr) minmax(100px,.75fr) minmax(160px,2.4fr) 78px 88px 120px;gap:12px;align-items:center;width:100%;padding:0 16px;height:34px;border:0;border-bottom:1px solid var(--line-soft);background:transparent;text-align:left;cursor:pointer;font-size:13px}
-.lrow:last-child{border-bottom:0}
+.lrow:last-child,.lrow-w:last-child>.lrow{border-bottom:0}
 button.lrow:hover{background:var(--surface-2)}
 button.lrow[aria-pressed="true"]{background:var(--tone-info-soft);box-shadow:inset 3px 0 0 var(--focus)} /* spec 052 FR-052: not colour only */
 /* spec 052 FR-008: "lhead", not "head": the avatars' .head nods (styles: animation nod), and the list header row nodded with them */
@@ -511,7 +512,10 @@ body:has(#aiTryBar) #toasts{bottom:100px}
   .stats>.stat:not(.stat-aiu) span.l{display:none}
   .stats>.stat:not(.stat-aiu){padding:0 4px 0 3px}
   .topbar #defaultsBtn{max-width:200px}
+  body:not(.simple) .sched-top .st-word{display:none} /* spec 044 FR-027: like the counters' words, the word shows from 1920px (2040px on a Mac, below); it moves to the name and the title. Simple has room for it */
+  .topbar .sched-top{padding:0 10px}
 }
+@media (max-width:2039px){html[data-platform="darwin"]:not([data-fullscreen]) body:not(.simple) .sched-top .st-word{display:none}}
 @media (max-width:1599px){
   .inbox-btn .ib-word{display:none}
   .inbox-btn{padding:0 10px}
@@ -519,13 +523,22 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 /* spec 052 FR-164: room for + Folder and + Workspace (measured in DejaVu Sans, CI's font): a narrower defaults chip (its full text is in its
    title and label). Where the row still does not fit, app.js (fitTopbar) sets .tb-tight: the brand keeps its mark and its Live/Demo pill
    and the name moves to screen readers only (it is also the window's name) */
+/* spec 044 FR-034 (review on PR 560): the folder filter is narrowed only when the row would otherwise wrap, by fitTopbar, in this order: less padding
+   (the text "All folders" still shows whole), then the short value "All", then the brand name moves (tb-tight). A select has no ellipsis, so a cut is never used. */
+.topbar.tb-filter .select-wrap select{padding:0 20px 0 7px}
+.topbar.tb-filter .select-wrap::after{right:8px}
+.topbar.tb-filter2 .select-wrap select{max-width:80px}
 .topbar.tb-tight .brand h1{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (max-width:1799px){.topbar #defaultsBtn{max-width:170px}}
 @media (max-width:1599px){.topbar #defaultsBtn{max-width:130px}.topbar #defaultsBtn .dv-r{display:none}.topbar .select-wrap select{max-width:104px}} /* the mode word only ("Read-only"); the rest is in the title, the label and the popover */
+@media (max-width:1440px){ .topbar{column-gap:8px} .topbar .controls,.topbar #liveBar{gap:4px} .topbar .sched-top{padding:0 8px} } /* also the folder filter (a fitTopbar step below), the groups' gaps and the button's padding, so the brand name stays shown in Durbar European at 1440 (it needs 102px) */ /* spec 044 FR-034: room for Schedules at 1440x900 (the 1440 window), step 3 of the levers: the bar's gaps */
 @media (max-width:1439px){
   .topbar #liveBar .top-add .btn{padding:0 8px}
   .topbar .seg button{padding:0 7px}
-  .topbar #liveBar{gap:6px}
+  .topbar #liveBar{gap:4px}
+  /* spec 044 FR-034: room for Schedules at 1280x800 in Expert, measured in DejaVu Sans with floors and mixed agent apps, in the documented
+     order: the chip's cap (not binding there: the chip is 106px), the folder filter (to 80px; its full text is in its title), the gaps */
+  .topbar .sched-top{gap:4px}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
@@ -806,6 +819,42 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .composer{padding:8px max(16px,calc((100% - 880px)/2))}
 .ph{padding-left:max(16px,calc((100% - 1240px)/2));padding-right:max(16px,calc((100% - 1240px)/2))}
 .panel-in.viewing .composer,.panel-in.viewing .prev{display:none}
+/* spec 080 T015: the Chat | Browser tabs and the browser bar. Theme tokens only; text 11px or more (FR-006); state is icon plus word. */
+.ptabs{flex:none;display:flex;gap:4px;padding:0 max(16px,calc((100% - 1240px)/2));border-bottom:1px solid var(--line);background:var(--surface)}
+.ptab{height:30px;padding:0 12px;border:0;border-bottom:2px solid transparent;background:none;color:var(--muted);font:inherit;font-size:var(--t4-size);font-weight:var(--t4-weight);cursor:pointer}
+.ptab:hover{color:var(--ink)}
+.ptab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--sage-ink);font-weight:650}
+.panel-in.on-browser #chat{flex:0 0 0;height:0;min-height:0;padding:0;overflow:hidden;visibility:hidden}
+.panel-in.on-browser .prev{display:none}
+.bpane{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--surface)}
+.bpane[hidden]{display:none}
+.bbar{flex:none;display:flex;align-items:center;gap:6px;padding:8px max(16px,calc((100% - 1240px)/2)) 4px}
+.bbtn{flex:none;width:var(--h-ctl);height:var(--h-ctl);display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line-2);border-radius:var(--r-md);background:var(--raised);color:var(--ink);cursor:pointer;padding:0}
+.bbtn svg{width:15px;height:15px}
+.bbtn:hover:not(:disabled){background:var(--surface-2)}
+.bbtn:disabled,.bchip:disabled{opacity:.45;cursor:default}
+.baddr{flex:1;min-width:0;height:var(--h-ctl);padding:0 10px;border:1px solid var(--line-2);border-radius:var(--r-md);background:var(--raised);color:var(--ink);font:inherit;font-size:var(--t4-size)}
+.bstat{flex:none;display:flex;align-items:center;gap:8px;padding:0 max(16px,calc((100% - 1240px)/2)) 6px;min-height:26px;font-size:var(--t5-size);line-height:var(--t5-lh);color:var(--muted)}
+.bnote{flex:none;display:inline-flex;align-items:center;gap:5px;max-width:60%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.bnote:empty{display:none}
+.bnote svg{width:13px;height:13px;flex:none}
+.bnote span{overflow:hidden;text-overflow:ellipsis}
+.bnote[data-kind="error"]{color:var(--tone-bad-ink)}
+.btitle{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.bacts{flex:none;margin-left:auto;display:inline-flex;align-items:center;gap:6px}
+.bchip{height:var(--h-chip);display:inline-flex;align-items:center;gap:5px;padding:0 8px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2);color:var(--ink-2);font:inherit;font-size:var(--t5-size);cursor:pointer;white-space:nowrap}
+.bchip:hover:not(:disabled){border-color:var(--line-2)}
+.bchip svg{width:13px;height:13px;flex:none}
+.bview{flex:1;min-height:120px;border-top:1px solid var(--line);background:var(--surface-2)}
+.bview{position:relative}
+.bshot{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;pointer-events:none}
+.bnote[data-kind="dialog"] svg{color:var(--ink-2)}
+.dlg-mark{flex:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-right:5px;border:1px solid var(--tone-warn-line);border-radius:4px;background:var(--warn-bg);color:var(--amber-ink);font-size:var(--t5-size);font-weight:700;line-height:1}
+.stage .desk.card .dlg-mark,.stage .desk.shut .dlg-mark{position:absolute;left:2px;top:40px;margin:0;z-index:4}
+.pagetext{font-style:italic}
+.bspin{animation:bspin 1s linear infinite}
+@keyframes bspin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.bspin{animation:none}}
 .nothink{font-size:11px;color:var(--muted)}
 .think.streaming .think-body:empty::before{content:"The model reasons privately first. A summary of its reasoning appears here when it finishes thinking.";color:var(--muted)}
 
@@ -1210,6 +1259,7 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .note.info{background:var(--note);border-color:var(--line);font-size:12px;padding:5px 10px;color:var(--ink-2)}
 .note.info.cline.failed{background:var(--bad-bg);border-color:var(--tone-bad-line);color:var(--red-ink)}
 .note.fresh{max-width:560px}
+.note.sum-note{background:var(--note);border-color:var(--line)} /* spec 085: the end-of-session card is a calm record, not a warning */
 .toast.with-act{display:flex;align-items:center;gap:14px}
 .toast-act{white-space:nowrap;flex:none;background:transparent;color:#f7f4ee;border:1px solid color-mix(in srgb,var(--raised) 45%,transparent);border-radius:8px;padding:2px 12px;font-size:12px;font-weight:700;cursor:pointer}
 .toast-act:hover{background:color-mix(in srgb,var(--raised) 14%,transparent)}
@@ -1334,11 +1384,23 @@ body.has-bridge:not(.simple) .folder-ctl #foldersBtn{border-top-left-radius:0;bo
 #topMoreMenu .tgl input{margin:2px 2px 0 0;align-self:flex-start}
 
 /* spec 052 FR-027 (#305): the Needs you inbox */
-.inbox-btn{height:32px;padding:0 12px;border-radius:999px;font-size:12.5px;gap:6px}
-/* FR-105: the counters and Needs you sit at the right end of the one row */
-.inbox-btn:not([hidden]),.inbox-btn[hidden]+.stats{margin-left:auto}
+.inbox-btn,.sched-top{height:32px;padding:0 12px;border-radius:999px;font-size:12.5px;gap:6px}
+/* FR-105: the counters and Needs you sit at the right end of the one row. Spec 044 FR-027: Schedules sits left of Needs you and takes
+   the auto margin when it is shown, so the left cluster does not move */
+.inbox-btn:not([hidden]),.inbox-btn[hidden]+.stats,.sched-top:not([hidden]){margin-left:auto}
+.sched-top:not([hidden])+.inbox-btn,.sched-top:not([hidden])+.inbox-btn[hidden]+.stats{margin-left:0}
 .inbox-btn b{font-variant-numeric:tabular-nums}
 .inbox-btn.attn{background:var(--warn-bg);border-color:var(--tone-warn-line);color:var(--amber-ink)}
+/* spec 044 FR-027..FR-029: a calm ghost button; the clock, the word (from 1920px, 2040px on a Mac, and in Simple) and the count of active schedules.
+   Pause all: dimmed with a pause glyph; a run that did not happen: a warning mark with a "!" (drawn, so it is never colour alone) */
+.sched-top{font-variant-numeric:tabular-nums}
+.sched-top .st-ico{position:relative;display:inline-flex;flex:none}
+.sched-top .st-mark,.sched-top .st-pause{display:none;position:absolute;pointer-events:none}
+.sched-top.trouble .st-mark{display:block;right:-5px;top:-4px;width:9px;height:9px;border-radius:50%;border:1.5px solid var(--c-waiting);box-sizing:content-box;background:
+  linear-gradient(var(--st-glyph,var(--surface)),var(--st-glyph,var(--surface))) 50% 2px/1.5px 3.5px no-repeat,linear-gradient(var(--st-glyph,var(--surface)),var(--st-glyph,var(--surface))) 50% 6.5px/1.5px 1.5px no-repeat,currentColor} /* --st-glyph: Corporate, whose buttons are dark on a dark bar, sets it to the bar's colour (themes.css), so the "!" always inverts the disc */ /* the disc is the button's text colour (3:1 or more against the button in every theme, checked by check-sched-top); the amber ring gives the warning tone, the drawn "!" the meaning */
+.sched-top.paused{opacity:.62}
+.sched-top.paused .st-pause{display:block;right:-4px;bottom:-3px;width:7px;height:7px;background:linear-gradient(currentColor,currentColor) 0 0/2px 7px no-repeat,linear-gradient(currentColor,currentColor) 5px 0/2px 7px no-repeat}
+.sched-top.none b{display:none}
 /* FR-167: the inbox is an L dialog (class `l`) on the dialog padding tokens; the compact rows of round 10 stay */
 .inbox-dlg .dbody{max-height:min(64vh,620px);overflow:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px}
 .inbox-row{display:grid;grid-template-columns:32px minmax(0,1fr);gap:8px;padding:var(--row-pad);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--raised)}
@@ -1385,7 +1447,7 @@ body.simple #addWs,body.simple #foldersBtn,body.simple #vList{display:none!impor
 /* primary action: solid sage ink, now the base `.btn.primary` rule in every theme (spec 052 FR-053) */
 /* top-bar counters: one segmented strip in every style, see FR-103 at the .stats rule (round 10) */
 /* the Needs you button */
-html:not([data-ui]) .inbox-btn{border-radius:8px}
+html:not([data-ui]) .inbox-btn,html:not([data-ui]) .sched-top{border-radius:8px}
 html:not([data-ui]) .inbox-btn.attn{background:var(--tone-warn-soft);border-color:var(--c-waiting)}
 /* room-header controls: quiet at rest, shown when the room is hovered or holds focus (focus ring unchanged) */
 html:not([data-ui]) .room-new,html:not([data-ui]) .room-more,html:not([data-ui]) .room-mcp,html:not([data-ui]) .room-sched{border-color:transparent;background:transparent}
@@ -1421,6 +1483,10 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
 .notice-strip .aw-w{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .notice-strip .aw-w small{color:var(--ink-2);font-size:11px}
 .notice-strip .aw-ok{color:var(--green-ink,var(--ink-2));font-weight:600}
+/* spec 006 FR-041/FR-042: the crash card reuses the Since you were away strip; its Pick… list scrolls from five rows */
+/* spec 006 FR-042 (review of PR 720): the sessions flow on one line and wrap, so an open list costs the office one row, not one row per session; past two lines it scrolls */
+.notice-strip .cr-list{flex-direction:row;flex-wrap:wrap;gap:4px 20px;max-height:68px;overflow-y:auto}
+.notice-strip .cr-list .aw-w small{margin-left:6px}
 
 /* spec 052 FR-042/FR-043: command palette (Ctrl+K) and the keyboard shortcut sheet (?) */
 .pal-ov{place-items:start center;padding-top:min(14vh,120px)}
@@ -1539,9 +1605,9 @@ html:not([data-ui]) #topBtns button:not([aria-pressed="true"]):hover{background:
 .done-tick.draw{stroke-dasharray:16;animation:tickdraw .32s cubic-bezier(.2,.8,.2,1) both}
 @keyframes tickdraw{from{stroke-dashoffset:16}to{stroke-dashoffset:0}}
 /* FR-068: the Needs you count rolls in a fixed box (tabular digits, at least one digit wide: the width never changes between digits) */
-.inbox-btn b{flex:none;display:inline-block;position:relative;overflow:hidden;min-width:1ch;text-align:center;font-variant-numeric:tabular-nums}
-.inbox-btn b>span{display:block}
-.inbox-btn b>.roll-out{position:absolute;left:0;right:0;top:0}
+.inbox-btn b,.sched-top b{flex:none;display:inline-block;position:relative;overflow:hidden;min-width:1ch;text-align:center;font-variant-numeric:tabular-nums}
+.inbox-btn b>span,.sched-top b>span{display:block}
+.inbox-btn b>.roll-out,.sched-top b>.roll-out{position:absolute;left:0;right:0;top:0}
 .roll-in.up{animation:rollinup .22s ease-out both}.roll-out.up{animation:rolloutup .22s ease-out both}
 .roll-in.down{animation:rollindown .22s ease-out both}.roll-out.down{animation:rolloutdown .22s ease-out both}
 @keyframes rollinup{from{opacity:0;transform:translateY(100%)}to{opacity:1;transform:none}}
@@ -1611,12 +1677,20 @@ html[data-platform="darwin"] .notice-strip:not([hidden]) ~ .workspace .strip{pad
    flex item that is 78px minus the padding wide and takes back the gap after it. A notice strip that is the first row is at least 40px tall, so the
    Office button below it never reaches into the 78x40 box. */
 html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{content:"";flex:none;order:-1;width:58px;margin-right:-14px}
+@media (max-width:1440px){html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{margin-right:-8px}} /* spec 044 FR-034: the bar's column gap is 8px up to 1440px; the traffic-light room stays 78px */
 @media (max-width:1320px){html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{width:64px;margin-right:-8px}}
+/* spec 044 FR-034: with the traffic-light room and the Schedules button, Expert at 1280..1400px was 54px short (the counters wrapped, measured in DejaVu Sans with floors and mixed agent apps): the buttons' side padding gives it back, after the room itself (above). Simple has room. */
+@media (max-width:1439px){
+  html[data-platform="darwin"]:not([data-fullscreen]) body:not(.simple) .topbar :is(.sched-top,.inbox-btn){padding:0 6px}
+  html[data-platform="darwin"]:not([data-fullscreen]) body:not(.simple) .topbar .top-add .btn{padding:0 5px}
+  html[data-platform="darwin"]:not([data-fullscreen]) body:not(.simple) .topbar .seg button{padding:0 4px}
+  html[data-platform="darwin"]:not([data-fullscreen]) body:not(.simple) .stats>.stat:not(.stat-aiu){padding:0 2px}
+}
 /* spec 052 FR-164: on a Mac the traffic lights take 58px more, so the counters keep their words only from 2040px and the defaults chip is
    narrower from 1600 to 1799px (the brand name gives way by measurement, .tb-tight) */
 @media (max-width:2039px){html[data-platform="darwin"]:not([data-fullscreen]) .stats>.stat:not(.stat-aiu) span.l{display:none}}
 @media (min-width:1600px) and (max-width:1799px){html[data-platform="darwin"]:not([data-fullscreen]) .topbar #defaultsBtn{max-width:140px}}
-html[data-platform="darwin"] body.panel-open :is(#restoreStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip:not([hidden])){min-height:40px}
+html[data-platform="darwin"] body.panel-open :is(#restoreStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip[hidden]+#crashStrip:not([hidden])){min-height:40px}
 html[data-platform="darwin"] .notice-strip:not([hidden]) ~ #screen .scr-head{padding-left:max(24px,calc((100% - 880px)/2 + 24px))}
 html[data-platform="darwin"] .strip{padding-right:0}
 /* FR-138: the grab area at the right end of the chat strip is a 32px handle (plus the 8px gap before it = 40px of drag) with grip dots */
@@ -1645,7 +1719,7 @@ h2,h3,h4{text-wrap:balance}
 .liveside .ls-t{flex:1 1 0;min-height:0;font-size:12px;line-height:17px;color:var(--ink-2);display:flex;flex-direction:column;justify-content:flex-start;overflow:hidden;overflow-wrap:break-word}
 .liveside .ls-t.over,.stage[data-d="roomy"][data-grow] .desk.card .intent.over{justify-content:flex-end;-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 20px);mask-image:linear-gradient(to bottom,transparent 0,#000 20px)}
 .liveside[data-lk="think"] .ls-t,:is(.task,.intent)[data-lk="think"]{font-style:italic}
-.stage[data-d="full"] .liveside+.helpers{margin-left:0} /* the helper column's -2px tuck is for its desk's connector, not the panel */
+.stage[data-d="full"] .liveside+.helpers,.stage[data-d="full"] .liveside+.ren+.helpers{margin-left:0} /* the helper column's -2px tuck is for its desk's connector, not the panel */
 
 /* spec 001 FR-037: the room header counts in words when the header has room (fitUsage drops the words first, then the path) */
 .rd .rdw{font-weight:500}
@@ -1766,6 +1840,8 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 .lg-bunk{background:linear-gradient(var(--desk-front,var(--desk)),var(--desk-front,var(--desk))) left bottom/3px 100% no-repeat,linear-gradient(var(--desk-front,var(--desk)),var(--desk-front,var(--desk))) right bottom/3px 100% no-repeat} /* the bunk's posts */
 .stage .lg-bunk>.desk.shut{width:100%;flex:0 0 calc(50% - 1.5px);min-height:0}
 @container lounge (max-height:99px){.desk.shut.rest-recent .lg-av{bottom:13px;height:calc(100% - 13px)}.desk.shut .lg-name{line-height:12px}.lg-bunk{flex-direction:row;background:none}.stage .lg-bunk>.desk.shut{width:auto;flex:1 1 0;min-width:0}}
+/* spec 006 review of PR 720 (constitution V): in a corner this short the couch is under 33px, too low for the chat number above the name, so the number sits on the name's line and the name starts after it (it never covers the name) */
+@container lounge (max-height:59px){.stage .desk.shut.rest-recent .chatno{top:auto;bottom:2px;padding:0 2px}.desk.shut.rest-recent .lg-name{left:auto;max-width:calc(100% - 30px);padding:0 1px}}
 .lg-bed,.lg-blanket{position:absolute;left:0;bottom:0;width:100%;height:min(62%,34px)}
 .lg-blanket{z-index:2;pointer-events:none}
 .lg-bed .bd-frame{fill:var(--desk-front,var(--desk))}
@@ -1801,3 +1877,30 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 .cgrip::after{content:"";position:absolute;left:50%;top:2px;width:36px;height:4px;margin-left:-18px;border-radius:999px;background:var(--line-2)}
 .cgrip:hover::after,.cgrip.dragging::after{background:var(--muted)}
 .cgrip:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+
+/* spec 059 FR-020..FR-025 (issue 636): rename in place. The field lives in a fixed layer over the name (inlinename.js), never inside a card, row or heading. */
+.inl-layer{position:fixed;z-index:45;margin:0}
+.inl-input{box-sizing:border-box;display:block;width:100%;margin:0;padding:0 5px;border:1.5px solid var(--focus);border-radius:6px;background:var(--raised);color:var(--ink);outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--focus) 25%,transparent),0 2px 8px color-mix(in srgb,var(--ink) 20%,transparent);text-overflow:clip;overflow:hidden}
+.inl-input[readonly]{opacity:.75}
+.inl-err{margin:3px 0 0;padding:3px 7px;border:1px solid var(--line-2);border-radius:6px;background:var(--raised);color:var(--red-ink);font-size:12px;line-height:1.3;box-shadow:0 2px 8px color-mix(in srgb,var(--ink) 20%,transparent)}
+.inl-err[hidden]{display:none}
+/* the chat title is a button (D1, D7) that looks like the heading; the pencil after it is a cue only */
+.ttl-btn{all:unset;box-sizing:border-box;display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;cursor:text;border-radius:4px}
+.ttl-btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.ttl-pen{display:inline-flex;vertical-align:middle;margin-left:4px;width:12px;height:12px;color:var(--ink-2);opacity:0;transition:opacity .12s}
+.ttl-pen svg{width:12px;height:12px}
+#panelTitle:hover .ttl-pen,#panelTitle:focus-within .ttl-pen,#panelTitle:focus .ttl-pen{opacity:1}
+/* the pencil beside a desk card or list row name: a sibling button (never inside the card button), placed by app.js (placeRen), seen on hover or focus, always in the Tab order (opacity, never display or visibility) */
+.lrow-w{position:relative}
+.ren{position:absolute;z-index:2;left:0;top:0;box-sizing:border-box;width:24px;height:24px;padding:4px;margin:0;display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:6px;background-color:color-mix(in srgb,var(--raised) 88%,transparent);background-clip:content-box;color:var(--ink-2);cursor:pointer;opacity:0;transition:opacity .12s}
+.ren svg{width:11px;height:11px;display:block}
+.ren:hover{color:var(--ink);background-color:var(--raised)}
+.ren:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.unit:hover>.ren,.unit:focus-within>.ren,.lrow-w:hover>.ren,.lrow-w:focus-within>.ren,.ren:focus,body.ren-show .ren{opacity:1}
+@media (hover:none){.ren,.ttl-pen{opacity:1}}
+/* the room header's pencil is placed like a card's (against the room: the header is not positioned, the plant is placed against the room); the Folders panel and Previous sessions rows have theirs in the flow, hidden with opacity until hover or focus */
+.ren.ren-in{position:static;flex:none}
+.room-head:hover>.ren,.room-head:focus-within>.ren,.fp-row:hover .ren-in,.fp-row:focus-within .ren-in,.prev-row:hover .ren-in,.prev-row:focus-within .ren-in{opacity:1}
+/* the unit scales in when its agent leaves the lounge (shut-out: from .92); the pencil counter-scales (1/.92) so its 24px target stays 24px while it plays (spec 059 FR-025, spec 052) */
+.unit.unrolling>.ren{animation:shut-out-ren .22s ease-out}
+@keyframes shut-out-ren{from{transform:scale(1.0870)}to{transform:none}}

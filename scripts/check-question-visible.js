@@ -74,10 +74,14 @@ module.exports = async (ctx) => {
     const ren = await js(`(()=>{const i=document.querySelector('#answerBar input.ab-other'),n=document.querySelector('#answerBar .ab-n');return {v:i&&i.value,focus:document.activeElement===i,name:n&&n.textContent,title:n&&n.title}})()`);
     assert.ok(ren.name === NEW && ren.title === NEW, `${w}: the bar shows the new name and title: ${JSON.stringify(ren)}`);
     assert.ok(ren.v === 'Teal, like the links' && ren.focus, `${w}: a rename keeps what you typed and the focus: ${JSON.stringify(ren)}`);
+    const users0 = await js(`document.querySelectorAll('#chat .msg.user').length`);
     await H.key('Enter', [], { pause: 0 });
     await until(`!!document.querySelector('#chat .note.question.settled')`);
     const st = await js(`document.querySelector('#chat .note.question.settled .pstate').textContent`);
     assert.ok(st.includes('answered: Teal, like the links'), `${w}: Enter in the bar's box answered the card: ${st}`);
+    // spec 052 FR-178 (issue 689): a custom answer is the answer, never a skip, and no ordinary user message follows it
+    assert.ok(!st.includes('skipped'), `${w}: not skipped: ${st}`);
+    assert.strictEqual(await js(`document.querySelectorAll('#chat .msg.user').length`), users0, `${w}: the custom answer is not sent as a message too`);
     await until(`document.getElementById('answerBar').hidden`);
     assert.ok(await js(`document.getElementById('answerBar').hidden`), `${w}: answered: the bar goes away`);
     // an option button in the bar answers too
@@ -87,6 +91,88 @@ module.exports = async (ctx) => {
     const st2 = await js(`document.querySelector('#chat .note.question.settled .pstate').textContent`);
     assert.ok(/answered: Blue$/.test(st2.trim()), `${w}: the bar's option answered the card: ${st2}`);
     await until(`document.getElementById('answerBar').hidden`);
+    // FR-178: the card's own Other box and Answer button, with a rename while typing: answered with exactly that text, no extra message
+    await open(w, h); await scroll('bottom');
+    const users1 = await js(`document.querySelectorAll('#chat .msg.user').length`);
+    await js(`document.querySelector('#chat .note.question .q-other').focus()`);
+    ctx.win.webContents.insertText('Teal  from the card');
+    await until(`document.querySelector('#chat .note.question:not(.settled) .q-other').value==='Teal  from the card'`);
+    await js(`window.__durbarSimRetitle('Renamed while typing in the card','')`);
+    await until(`document.querySelector('#chat .note.question:not(.settled) .q-other').value==='Teal  from the card'&&document.activeElement===document.querySelector('#chat .note.question:not(.settled) .q-other')`);
+    await js(`[...document.querySelectorAll('#chat .note.question:not(.settled) .note-actions .btn.primary')].find(b=>b.textContent==='Answer').click()`);
+    await until(`!!document.querySelector('#chat .note.question.settled')`);
+    const st3 = await js(`document.querySelector('#chat .note.question.settled .pstate').textContent`);
+    assert.ok(/ → answered: Teal from the card$/.test(st3), `${w}: the card's Answer sent exactly the custom text: ${st3}`);
+    assert.strictEqual(await js(`document.querySelectorAll('#chat .msg.user').length`), users1, `${w}: no ordinary user message follows the answer`);
+    // FR-178: a skipped question says why in the card's tooltip (a code from the event, never text)
+    await open(w, h); await scroll('bottom');
+    await js(`[...document.querySelectorAll('#chat .note.question:not(.settled) .note-actions .btn.danger')].find(b=>b.textContent==='Skip').click()`);
+    await until(`!!document.querySelector('#chat .note.question.settled')`);
+    const sk = await js(`(()=>{const n=document.querySelector('#chat .note.question.settled');return {t:n.querySelector('.pstate').textContent,why:n.dataset.skipWhy,title:n.title}})()`);
+    assert.ok(/skipped$/.test(sk.t) && sk.why === 'user' && sk.title === 'Skipped: you pressed Skip.', `${w}: Skip says why: ${JSON.stringify(sk)}`);
+    // FR-178: several open questions at once, a cancelled event with a reason, an Aborted idle with two open, and a late cancelled for an answered card.
+    // The simulator's bridge is stubbed to accept any answer (the sim only knows its own question), so the window's own handling is what is checked.
+    await open(w, h); await scroll('bottom');
+    const sid = await js(`window.__durbarSimUi.agents().find(a=>!a.parent&&a.question).id`);
+    await js(`[...document.querySelectorAll('#chat .note.question:not(.settled) .note-actions .btn.danger')].find(b=>b.textContent==='Skip').click()`);
+    await until(`!!document.querySelector('#chat .note.question.settled')`);
+    await js(`window.__durbarSimUi.bridge().answerQuestion=async()=>({ok:true});0`);
+    await js(`window.__qc=q=>[...document.querySelectorAll('#chat .note.question')].find(n=>n.querySelector('.q-text')&&n.querySelector('.q-text').textContent.includes(q));0`);
+    const emitEv = (e) => js(`window.__durbarSimUi.emit(JSON.parse(${jsLiteral(JSON.stringify({ sessionId: sid, timestamp: Date.now(), ...e }))}))`);
+    const ask = (rid, q, opts) => emitEv({ type: 'question', phase: 'asked', requestId: rid, questions: [{ question: q, multiSelect: false, options: opts.map((label) => ({ label })) }] });
+    const ev = emitEv;
+    const has = (q) => `!!window.__qc(${jsLiteral(q)})`;
+    const done = (q) => `window.__qc(${jsLiteral(q)}).classList.contains('settled')`;
+    const stateOf = (q) => js(`(()=>{const n=window.__qc(${jsLiteral(q)});return n?{settled:n.classList.contains('settled'),t:n.querySelector('.pstate').textContent,why:n.dataset.skipWhy||'',title:n.title,denied:n.classList.contains('denied')}:null})()`);
+    const pick = async (q, label) => { await js(`(()=>{const n=window.__qc(${jsLiteral(q)});[...n.querySelectorAll('.q-opt')].find(b=>b.textContent.includes(${jsLiteral(label)})).click();[...n.querySelectorAll(':scope > .note-actions .btn.primary')].find(b=>b.textContent==='Answer').click();})()`); };
+    // one limit end to end: the boxes take their length from MAX_ANSWER, and a combined answer over it is refused on the card, not sent cut
+    const cap = await js(`window.exports.MAX_ANSWER`);
+    assert.strictEqual(cap, 500, `${w}: the page has the limit`);
+    const longOpt = (c) => c.repeat(200);
+    await emitEv({ type: 'question', phase: 'asked', requestId: 'mq0', questions: [{ question: 'Pick many?', multiSelect: true, options: ['a', 'b', 'c'].map((c) => ({ label: longOpt(c) })) }] });
+    await until(has('Pick many?'));
+    assert.strictEqual(await js(`window.__qc('Pick many?').querySelector('.q-other').maxLength`), cap, `${w}: the card's box takes the limit`);
+    await js(`(()=>{const n=window.__qc('Pick many?');n.querySelectorAll('.q-opt').forEach(b=>b.click());[...n.querySelectorAll(':scope > .note-actions .btn.primary')].find(b=>b.textContent==='Answer').click();})()`);
+    await until(`/too long: 500 characters at most/.test(document.body.textContent)`);
+    assert.ok(!(await stateOf('Pick many?')).settled, `${w}: an over-long answer is not sent and the card stays open`);
+    await js(`(()=>{const n=window.__qc('Pick many?');n.querySelectorAll('.q-opt')[2].click();n.querySelectorAll('.q-opt')[1].click();[...n.querySelectorAll(':scope > .note-actions .btn.primary')].find(b=>b.textContent==='Answer').click();})()`);
+    await until(done('Pick many?'));
+    assert.ok(/answered: a{200}$/.test((await stateOf('Pick many?')).t), `${w}: under the limit it is sent whole`);
+    // two open at once, the OLDER answered first (a single question slot would settle the newest card): each card gets its own answer; the other stays open
+    await ask('mq1', 'Pick one?', ['A', 'B']); await ask('mq2', 'Pick two?', ['X', 'Y']);
+    await until(has('Pick two?'));
+    await pick('Pick one?', 'A');
+    await until(done('Pick one?'));
+    const o1 = await stateOf('Pick one?'), o2 = await stateOf('Pick two?');
+    assert.ok(/answered: A$/.test(o1.t) && !o2.settled, `${w}: the older card is settled with its own answer, the newer stays open: ${JSON.stringify({ o1, o2 })}`);
+    assert.strictEqual(await js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(sid)}).state`), 'waiting', `${w}: still Waiting while one question is open`);
+    await pick('Pick two?', 'Y');
+    await until(done('Pick two?'));
+    assert.ok(/answered: Y$/.test((await stateOf('Pick two?')).t) && /answered: A$/.test((await stateOf('Pick one?')).t), `${w}: the newer card got its own answer and the older one kept its own`);
+    // a cancelled event with a reason: the tooltip says it
+    await ask('mq3', 'Cancelled one?', ['A']);
+    await until(has('Cancelled one?'));
+    await ev({ type: 'question', phase: 'cancelled', requestId: 'mq3', reason: 'reconnect' });
+    await until(done('Cancelled one?'));
+    const c3 = await stateOf('Cancelled one?');
+    assert.ok(/skipped$/.test(c3.t) && c3.why === 'reconnect' && c3.title === 'Skipped: the agent app was reconnected.', `${w}: the reason is in the tooltip: ${JSON.stringify(c3)}`);
+    // an Aborted idle with two open settles both, with the window's own reason
+    await ask('mq4', 'Abort one?', ['A']); await ask('mq5', 'Abort two?', ['A']);
+    await until(has('Abort two?'));
+    await ev({ type: 'status', status: 'idle', intent: 'Aborted' });
+    await until(done('Abort one?')); await until(done('Abort two?'));
+    const a1 = await stateOf('Abort one?'), a2 = await stateOf('Abort two?');
+    assert.ok([a1, a2].every((x) => /skipped$/.test(x.t) && x.why === 'aborted' && x.title === 'Skipped: the agent app reported the turn as aborted.'), `${w}: both skipped as aborted: ${JSON.stringify({ a1, a2 })}`);
+    // a late cancelled for a card already answered: the card is corrected to skipped, with its reason
+    await ask('mq6', 'Late one?', ['A', 'B']);
+    await until(has('Late one?'));
+    await pick('Late one?', 'B');
+    await until(done('Late one?'));
+    assert.ok(/answered: B$/.test((await stateOf('Late one?')).t), `${w}: answered first`);
+    await ev({ type: 'question', phase: 'cancelled', requestId: 'mq6', reason: 'stop' });
+    await until(`/skipped$/.test(window.__qc(${jsLiteral('Late one?')}).querySelector('.pstate').textContent)`);
+    const l6 = await stateOf('Late one?');
+    assert.ok(l6.denied && l6.why === 'stop' && l6.title === 'Skipped: the turn was stopped.', `${w}: a late cancelled corrects the card: ${JSON.stringify(l6)}`);
     console.log('[question-visible]', w, 'ok');
   }
   console.log('[question-visible] all checks passed');

@@ -15,6 +15,7 @@
 - [ ] T013 Review the gate strictness after two weeks of use
 - [x] T015 (2026-10-20) Team rules into `AGENTS.md` (review findings fixed in the PR, existing-capability check, re-approval by patch id, admin merge, OKs in chat, working hours, branch cleanup, spec numbers, share what you learn) and the mirrors (`CLAUDE.md`, `.github/copilot-instructions.md`, PR template, `docs/collaboration.md`); new `docs/agent-notes.md` seeded from the agents' memory [FR-030..FR-034]
 - [x] T016 (2026-10-20) Rule *read every review and comment before a merge* in AGENTS.md and its mirrors; `scripts/pr-gate.sh` [FR-035]
+- [x] T017 (2026-10-22) Rule *test once, then trust the record* in AGENTS.md and its mirrors; `scripts/pr-gate.sh` skips `reviewing at` / `checks run at` notes [FR-036]
 - [x] T018 (2026-10-22) Team decisions from the chat recorded as FR-037..FR-043 and in AGENTS.md: record decisions the same day, sub-agents by size, land before building (team-wide), unstack with a replacement PR, merge queue usage, one review list per round, teammates' PRs first [FR-037..FR-043]
 - [x] T019 (2026-10-22) `docs/agent-setup/` (README, claude-code templates and agents, loops.md, always-on-host.md and examples), links from `docs/collaboration.md` and `AGENTS.md` [FR-044]
 - [x] T020 (2026-10-23) Label taxonomy in `AGENTS.md` and its mirrors (`docs/collaboration.md`, `.github/copilot-instructions.md`); `area:security` and `area:schedules` in `.github/labels.tsv` [FR-045]
@@ -23,3 +24,4 @@
 - [x] T023 (2026-10-23) `docs/review-checklist.md` from the review evidence (pitfall categories with counts and links, praised patterns, *How we review*), the four rules in `AGENTS.md`, and the mirrors (`docs/collaboration.md`, `docs/agent-notes.md`, PR template, `.github/copilot-instructions.md`, `docs/agent-setup` implementer and reviewer) [FR-047, FR-048]
 - [x] T024 (2026-10-23) Learn after every round: checklist updates by reviewer and author, the fast lane for checklist/agent-notes-only PRs, `git pull --ff-only origin main` at the start of each round; in `AGENTS.md`, `docs/collaboration.md` and the checklist intro [FR-049]
 - [x] T025 (2026-10-23) Chat rules recorded: review SLA, FINAL, release freeze, main checkout, branch cleanup in `AGENTS.md` and mirrors, two pitfalls in `docs/agent-notes.md` [FR-050]
+- [x] T030 (2026-10-25) Chat tagging rule (agents address each other by bot @handle, no "X's agent here" preamble, actionable items also on GitHub) in `AGENTS.md` and `docs/collaboration.md` [FR-054]

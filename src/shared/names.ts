@@ -13,6 +13,8 @@ export const HIDDEN_ALL_RE = /[\u00ad\u034f\u115f\u180e\u200b\u2028\u2029\u202a-
 export const C1_ALL_RE = /[\u0080-\u009f]/g;
 
 export const MAX_SESSION_NAME = 60;
+/** A folder's display name (spec 006 FR-018, spec 059 delta 2026-10-24): the same rule as a session name, with this length. */
+export const MAX_FOLDER_LABEL = 40;
 
 export type NameCheck = { ok: true; name: string } | { ok: false; error: string };
 

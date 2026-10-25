@@ -29,6 +29,21 @@ export const SIM_OPEN_CHANNELS: Readonly<Record<string, string>> = Object.freeze
   'harness:plans': 'the simulator asks main for this OS\'s install routes (spec 060 FR-002); main answers from the simulated managers and runs nothing',
   'app:version': 'renderer.ts asks for the app version on every page load (FR-032, review on #514); main only returns app.getVersion(): no adapter, no process, no profile file',
   'window:titleDoubleClick': 'a double-click on the Mac top bar zooms or minimizes the app\'s own window (spec 052 FR-085); main only reads a system setting and calls the window: no adapter, no process, no file',
+  'browser:open': 'spec 080 T014: creates the session browser view in the simulator and loads the bundled test pages; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
+  'browser:state': 'spec 080 T014: reads the url, title and loading state of the session browser view; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
+  'browser:navigate': 'spec 080 T014: loads an address in the session browser view (http, https or the simulator test scheme); no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
+  'browser:back': 'spec 080 T014: moves the session browser view back in its own history; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
+  'browser:forward': 'spec 080 T014: moves the session browser view forward in its own history; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
+  'browser:reload': 'spec 080 T014: reloads the page of the session browser view; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
+  'browser:stop': 'spec 080 T014: stops the page load of the session browser view; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
+  'browser:bounds': 'spec 080 T014: sets where the session browser view sits in the window, after main checked the rectangle; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
+  'browser:visible': 'spec 080 T014: attaches or detaches the session browser view to the window; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
+  'browser:overlay': 'spec 080 T014: hides the session browser view while a Durbar overlay covers it; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
+  'browser:mute': 'spec 080 T014: mutes or unmutes the session browser view; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
+  'browser:openSystem': 'spec 080 T014: asks to open the view page in the system browser; the simulator answers not ok and opens nothing; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
+  'browser:consentAccept': 'spec 080 T014: remembers that the one-time note of the session browser was accepted in the settings file of this profile; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
+  'browser:snapshot': 'spec 080 T014: returns a still picture of the session browser page area, in memory, while an overlay hides the view; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
+  'browser:leaveAnswer': 'spec 080 T014: passes the answer of the Leave this page box to the view; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
 });
 
 export function simChannelOpen(channel: string): boolean {
@@ -80,6 +95,7 @@ export const SIM_OPTIONAL_MEMBERS: Readonly<Record<string, ((c: Caps) => boolean
   resolvePermission: null, revokeGrant: null, setModel: null, cancelQueuedModel: null, compact: null, resolvePlan: null,
   answerQuestion: null, answerElicitation: null, listAgentProfiles: null, reloadAgentProfiles: null, selectAgentProfile: null, authStatus: null, verifySignIn: null, accountInfo: null,
   refreshAuth: null, resumeIdOf: null, debug: null, writeGuard: null,
+  readOrgPolicy: null, // spec 076 FR-198: absent from the stand-in; the simulator's canned policy is the window's (?simorgpolicy=1)
   listSlashCommands: null, expandSlashCommand: null, // spec 073: no capability; absent from the stand-in, so no "/" list and no expansion under the simulator
 });
 

@@ -1,0 +1,2 @@
+# source: read: brew info --cask --json=v2 shape without an `outdated` field (older Homebrew); values are made up
+{"formulae":[],"casks":[{"token":"codex","version":"0.164.0,build7","installed":"0.163.0","auto_updates":false}]}

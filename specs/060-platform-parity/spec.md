@@ -217,3 +217,12 @@ Rerun after those fixes (run 39485719890, `d600c68`): `real:` **Codex official o
   - PowerShell 7 (`pwsh`) is not used for the installers: Windows PowerShell 5.1 from the system folder only (FR-001, `setupEnv`; a 5.1 started from 7 failed on `Get-FileHash`, real 2026-10-20).
   - The setup dialog scrolls inside its body, so Cancel and Install stay visible with three routes and the command list open.
   `test:` `test-harnesssetup` (every command names a route that exists in the Windows table; PowerShell argv fixed, no `-Command`/`iex`; Copilot's winget note; `validPlanIndex` refuses negatives, 8, fractions, strings, objects and command text; an index past the found routes is refused and nothing spawns). `sim:` `shots-051-setup` win32 with `powershell,winget,npm` (Run on all three Windows rows with plan indexes 0-2, Run on "PowerShell (winget)" sends `{claude, install, 1}`; Linux: no Run on Terminal without bash; Run left of Copy and of "Copied ✓", 10.5px or more; footer visible). `[KNOWN GAP]` Run from the dialog was not clicked on a real Windows PC.
+
+### 2026-10-25: spec 081 deltas (owner decision Q3 = C, limited; re-reviews of #663)
+
+- **One exception to "no `curl … | bash` string"** (FR-001 *Safety*). Spec 081 FR-009 lets Durbar start `codex update` for the official standalone Codex only. Codex then runs OpenAI's installer through its own shell (`sh -c "curl … | sh"`, or `powershell -ExecutionPolicy Bypass -c "…irm … | iex"`).
+  - The limits are those of spec 081 FR-009: the standalone path rule, `trustedPath`, the `codex-cli` label, `CODEX_MANAGED_BY_*` stripped, a fixed system `PATH`, a temp working folder, no root, and the exact command shown in the confirmation.
+  - Every other install and update keeps FR-001's download-check-run-as-a-file path, and a missing or failing `codex update` falls back to it.
+- **The installer download moves to Chromium's network stack.** `src/main/officialinstall.ts` downloads with Electron `net.request` on the app session instead of Node's `https.get`, so it follows the system or organization proxy and the OS certificate store (spec 076 FR-155, FR-156).
+  - It keeps the per-hop host allow-list, redirects handled one hop at a time through the `redirect` event, the 3-redirect limit, the 1 MB cap, the 30 s limit and the private file.
+  - Status: `[IMPLEMENTED]` in spec 081 (T024); `test-officialinstall` has a fake `net.request` with the same matrix.

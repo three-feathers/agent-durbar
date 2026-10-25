@@ -8,7 +8,7 @@
  */
 import { isAuthError } from './autherrors';
 import { isMcpAuthChallenge } from './mcpauth';
-import { resetMs, usageLimitClosing } from './usagelimit';
+import { claudeLimitText, resetMs, usageLimitClosing } from './usagelimit';
 import { RetryTracker, claudeRetry } from './retry';
 import type { EventBody } from './map';
 import type { McpServerStatus } from './types';
@@ -176,14 +176,18 @@ export class ClaudeMapper {
   private retries = new RetryTracker();
   /** Spec 068: this turn reported a usage limit; its closing error result ends the turn quietly (the coffee break says why). */
   private limited = false;
+  /** Spec 068 FR-025: the last reset time a `rate_limit_event` named, for a limit sentence that names none. */
+  private lastReset: number | undefined;
   expectAbort(): void {
     this.abortExpected = true;
   }
 
   reset(): void {
     this.abortExpected = false;
+    this.compacting = false;
     this.retries.reset(); // spec 034 FR-017: a respawn starts without the old turn's retries
     this.limited = false;
+    this.lastReset = undefined;
     this.servers = [];
     this.skipped = [];
     this.tools.clear();
@@ -228,6 +232,7 @@ export class ClaudeMapper {
       case 'assistant':
         if (!agentId) this.retries.progress();
         if (!agentId && claudeAuthFailure(m)) this.authFailed = true;
+        if (!agentId && m.error === 'rate_limit') this.limitSentence(m.message);
         return this.assistant(m, agentId);
       case 'user':
         return this.user(m, agentId);
@@ -236,6 +241,7 @@ export class ClaudeMapper {
       case 'rate_limit_event': {
         // spec 068 FR-002: a usage window that is used up (`rejected`) or `credits_required` puts the agent on a coffee break
         const lim = claudeUsageLimit(m);
+        if (lim && lim.resetsAt) this.lastReset = lim.resetsAt;
         if (lim && !this.limited) {
           this.limited = true;
           this.emit(lim);
@@ -245,6 +251,22 @@ export class ClaudeMapper {
       default:
         return;
     }
+  }
+
+  /**
+   * Spec 068 FR-025 (issue #671): Claude Code's limit sentence, as the synthetic assistant message (`error: 'rate_limit'`) or the closing
+   * error result, puts the agent on a coffee break like a `rate_limit_event` does; once per turn. `message` may be an assistant message
+   * body or the result string.
+   */
+  private limitSentence(message: unknown): void {
+    if (this.limited) return;
+    const content = message && typeof message === 'object' ? (message as { content?: unknown }).content : undefined;
+    const text = typeof message === 'string' ? message : Array.isArray(content) ? content.map((b) => (b && typeof b === 'object' ? str((b as { text?: unknown }).text) ?? '' : '')).join(' ') : undefined;
+    const t = claudeLimitText(text);
+    if (!t) return;
+    const resetsAt = t.resetsAt ?? (this.lastReset && this.lastReset > Date.now() ? this.lastReset : undefined);
+    this.limited = true;
+    this.emit({ type: 'usageLimit', scope: 'plan', ...(resetsAt ? { resetsAt } : {}), source: `Claude ${(t.window && CLAUDE_WINDOWS[t.window]) ?? 'usage limit'}` });
   }
 
   private system(m: ClaudeMessage): void {
@@ -291,10 +313,50 @@ export class ClaudeMapper {
           agentId: parent,
         });
       }
+      case 'status': {
+        // spec 015 FR-007 (issue #601, `read:`): the CLI says `compacting` while it summarises the conversation; the main agent only
+        if (this.who(m)) return;
+        if (m.status === 'compacting') return this.compactionStart();
+        if (m.compact_result === 'failed') return this.compactionFailed();
+        return;
+      }
+      case 'compact_boundary': {
+        if (this.who(m)) return;
+        const meta = m.compact_metadata && typeof m.compact_metadata === 'object' ? (m.compact_metadata as Record<string, unknown>) : {};
+        const size = (v: unknown): number | undefined => { const n = num(v); const r = n === undefined ? undefined : Math.round(n); return r !== undefined && r >= 0 && r < 1e9 ? r : undefined; };
+        const pre = size(meta.pre_tokens);
+        const post = size(meta.post_tokens); // optional in the SDK (`read:` sdk.d.ts 0.3.310): the real size after, so the ring need not wait
+        this.compacting = false;
+        this.lastCtx = undefined; // the size it held before is gone; the next message's usage gives the new one
+        return this.emit({
+          type: 'compaction',
+          phase: 'complete',
+          trigger: meta.trigger === 'manual' ? 'manual' : meta.trigger === 'auto' ? 'auto' : 'unknown',
+          ...(pre !== undefined ? { tokensBefore: pre } : {}),
+          ...(post !== undefined ? { tokensAfter: post } : {}),
+          ...(pre !== undefined && post !== undefined ? { tokensRemoved: Math.max(0, pre - post) } : {}),
+        });
+      }
       default:
-        // task_progress (no `update` phase exists for sub-agents in v1), status, compact_boundary, hooks...: ignored.
+        // task_progress (no `update` phase exists for sub-agents in v1), session_state_changed, hooks...: ignored.
         return;
     }
+  }
+
+  /** Spec 015 FR-007: a compaction of the main agent is in progress (so a second `compacting` adds nothing and the turn's end can close it). */
+  private compacting = false;
+
+  private compactionStart(): void {
+    if (this.compacting) return;
+    this.compacting = true;
+    this.emit({ type: 'compaction', phase: 'start', trigger: 'unknown' });
+  }
+
+  /** No vendor text is copied: the line says only that it failed and that the conversation is unchanged. */
+  private compactionFailed(): void {
+    if (!this.compacting) return;
+    this.compacting = false;
+    this.emit({ type: 'compaction', phase: 'failed', trigger: 'unknown' });
   }
 
   /** Mark a sub-agent closed and drop its task table entries; false when it was not open (already closed or never started). */
@@ -448,6 +510,7 @@ export class ClaudeMapper {
   }
 
   private result(m: ClaudeMessage): void {
+    this.compactionFailed(); // spec 015 FR-007: a compaction still open when the turn ends did not finish; the desk must not stay on Compacting
     // End of turn: forget per-turn stream state so the tables stay bounded.
     this.thinkingStreamed.clear();
     this.edits.clear();
@@ -475,6 +538,8 @@ export class ClaudeMapper {
     // The text of a turn that ended well is never read (an answer may well talk about a 401); Claude's own error marker is.
     const auth = this.authFailed || ((subtype !== 'success' || m.is_error === true) && isAuthError(m.result));
     this.authFailed = false;
+    // spec 068 FR-025: a limit that came as words only (no `rate_limit_event`), as after a Retry, is still a limit, not an error
+    if (!auth && (subtype !== 'success' || m.is_error === true)) this.limitSentence(m.result);
     const limited = this.limited;
     this.limited = false;
     // spec 034 FR-017: the turn's retry run ends here; it is emitted only on the plain error path below (a usage limit, an abort and a
