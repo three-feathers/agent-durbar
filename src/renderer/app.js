@@ -3373,7 +3373,13 @@ const modeWords=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?', '+MODE_NAME[
 /* spec 052 FR-065: Allow all is a small red "Allow all" text badge in the icon's slot (the words, not only a padlock); the other modes keep the icon */
 /* spec 052 FR-065: the list row says "Allow all" in a red badge (text=true); a desk card keeps the red icon, because a text badge
    there hides the agent's name at 1280x800 (office check) */
-const modeIcon=(a,text)=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?(a.info.permMode==='allow'&&text?`<span class="modebadge" title="${esc(MODE_NAME.allow)}${a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_SHORT.allow)}. Right-click for options." aria-hidden="true">Allow all</span>`:`<span class="modeic mode-${a.info.permMode}" title="${esc(MODE_NAME[a.info.permMode])}${a.info.permMode==='allow'&&a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_SHORT[a.info.permMode])}. Right-click for options." aria-hidden="true">${MODE_IC[a.info.permMode]}</span>`):'';
+/* spec 087 FR-009/FR-010: the OS sandbox words for the chip and the tooltips (no new word on the office card: decision Q5) */
+const SBX=window.DurbarSandboxText||null;
+const sbxWord=a=>SBX&&a&&a.info?SBX.chipWord(a.info.sandbox):'';
+const sbxTip=a=>SBX&&a&&a.info&&a.info.sandbox?SBX.tooltip(a.info.sandbox,kindWord(a.info.adapterId),safeMask):'';
+const sbxTitle=a=>{const w=sbxWord(a);return w?' '+w+'.':'';}; /* the card's mode icon: the word only (its tooltip stays short); details on the chip and in the mode menu */
+const sbxDetails=a=>SBX&&a&&a.info&&a.info.sandbox?SBX.details(a.info.sandbox,kindWord(a.info.adapterId),safeMask):'';
+const modeIcon=(a,text)=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?(a.info.permMode==='allow'&&text?`<span class="modebadge" title="${esc(MODE_NAME.allow)}${a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_SHORT.allow)}.${esc(sbxTitle(a))} Right-click for options." aria-hidden="true">Allow all</span>`:`<span class="modeic mode-${a.info.permMode}" title="${esc(MODE_NAME[a.info.permMode])}${a.info.permMode==='allow'&&a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_SHORT[a.info.permMode])}.${esc(sbxTitle(a))} Right-click for options." aria-hidden="true">${MODE_IC[a.info.permMode]}</span>`):'';
 /* spec 033 SC-003 (2026-10-21, issue #454): a floor switch is timed inside the app, from the click to the end of the office render
    that shows it (that render measures the stage, so its layout is done). One User Timing entry, replaced on each switch; the
    simulator check reads it. Nothing else uses it. */
@@ -3643,7 +3649,61 @@ function chipRepaint(c){
   el.style.animation='none'; /* a repaint is not a new call: no pop (FR-021, no jank while the arguments stream) */
   if(c.el.classList.contains('open')){el.classList.add('open');el.setAttribute('aria-expanded','true');}
   c.el.replaceWith(el);c.el=el;refreshChips(c.box);
+  if(c.whyBy)whyPaint(c);
 }
+/* ---- spec 003 FR-099..FR-103 (issue 605): "Why was this allowed?" on a tool card. The reason comes from a permission event (its
+   allowedBy, set by Durbar's broker) whose request id is the call's id, in either order of arrival; a call that Durbar did not decide
+   shows nothing. Undo is the grant chips' own revoke (bridge.revokeGrant). The words come from DurbarWhyAllowed. ---- */
+const WHY=window.DurbarWhyAllowed, WHY_KEEP=400;
+function whyNote(a,p){
+  if(!p||!p.allowedBy||typeof p.requestId!=='string'||!p.requestId||!WHY||!WHY.describe(p.allowedBy,null))return;
+  const m=a.why||(a.why=new Map());m.set(p.requestId,p.allowedBy);
+  while(m.size>WHY_KEEP)m.delete(m.keys().next().value);
+  const c=a.turn&&a.turn.T.chipEls[p.requestId];
+  if(c)whySet(a,c,p.allowedBy,p.requestId);
+}
+function whyAttach(a,T,callId){const by=a.why&&a.why.get(callId),c=T.chipEls[callId];if(by&&c)whySet(a,c,by,callId);}
+function whySet(a,c,by,callId){
+  c.whyBy=by;c.whyCall=callId;c.aid=a.id;
+  const set=a.whyCs||(a.whyCs=new Set());set.add(c);
+  while(set.size>WHY_KEEP)set.delete(set.values().next().value);
+  whyPaint(c);
+}
+/* the rules this window knows (null until the first grants event: a window that reloaded with sessions running knows none, and must not call a rule removed) */
+function whyLive(aid){const a=byId(aid),r=a&&liveRoot(a);return r&&r.grantsKnown?new Set((r.grants||[]).map(g=>g.key)):null;}
+function whyOpts(c){const a=byId(c.aid),r=a&&liveRoot(a);return {seen:r&&r.grantSeen?r.grantSeen:null,undone:c.undone===true,confirmed:c.whyConfirmed===true,state:c.whyState||null};}
+function whyPaint(c){
+  const el=c.el;if(!el)return;
+  el.querySelectorAll(':scope>.why,:scope>.whybody').forEach(x=>x.remove());
+  const d=WHY&&c.whyBy?WHY.describe(c.whyBy,whyLive(c.aid),whyOpts(c)):null;
+  el._whyC=c;
+  if(!d)return;
+  const pill=document.createElement('span');pill.className='why';pill.dataset.why=d.kind;if(d.gone)pill.dataset.gone='1';pill.textContent=d.pill;
+  pill.title=d.sentence+(d.label||'');
+  const body=document.createElement('span');body.className='xbody whybody';
+  const t=document.createElement('span');t.className='why-t';t.textContent=d.sentence;
+  body.appendChild(t);
+  if(d.label&&!d.gone){const code=document.createElement('code');code.className='why-l';code.textContent=d.label;body.appendChild(code);}
+  if(d.undoKeys){const b=document.createElement('button');b.type='button';b.className='why-undo';b.textContent='Undo this rule';b.title='Remove this session rule: Durbar asks again next time';b.setAttribute('aria-label','Undo this rule: '+d.label);body.appendChild(b);}
+  el.append(pill,body);
+  if(c._refocus){c._refocus=false;focusIn(el);announce(d.gone?'Rule removed: Durbar asks again.':'');}
+}
+function whyRefresh(a){if(a.whyCs)for(const c of a.whyCs)if(c.el)whyPaint(c);}
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#chat .chip .why-undo');if(!b)return;
+  const chip=b.closest('.chip'),c=chip&&chip._whyC,d=c&&WHY?WHY.describe(c.whyBy,whyLive(c.aid),whyOpts(c)):null;
+  if(!d||!d.undoKeys)return;
+  b.disabled=true;c._refocus=true;c.undone=true;
+  /* FR-101: main removes every rule that allowed this call (it holds the full list) and says how many of them are still live; "removed" is shown only for 0. Above 0 means a newer rule for the same key is active ("Newer rule active", until that one is removed too); -1 means main does not know the call: the card says so and nothing is removed by key. */
+  Promise.resolve().then(async()=>{
+    const left=c.whyCall?await bridge.revokeGrant(c.aid,d.undoKeys[0],c.whyCall):-1;
+    c.undone=false;
+    if(left===0)c.whyConfirmed=true; /* main: none of the call's rules is live */
+    else if(typeof left==='number'&&left>0)c.whyState='newer'; /* a newer rule for the same thing is active */
+    else c.whyState='forgotten'; /* main does not know the call: nothing was removed, and the page does not guess by key */
+    whyPaint(c);
+  }).catch(()=>{});
+  setTimeout(()=>{if(c._refocus){c._refocus=false;c.undone=false;whyPaint(c);}},2000); /* a revoke that did not remove the rule: the button comes back */
+});
 /* ---- spec 005 FR-020..FR-023: file edits as an edit row ("Editing app.js  src  +12 −3") and an inline diff below it ---- */
 const EV=window.DurbarEditView;
 /* the card's task line for a tool start: "Editing app.js" for a file edit (FR-020), else "<tool> <label>" as before */
@@ -4400,6 +4460,7 @@ function showPerm(a,p){
   if(pl){ps.dataset.lblSimple=plain;ps.dataset.lblExpert=p.summary;
     if(pl.folder){const f=document.createElement('small');f.className='pfold';f.textContent=' '+pl.folder;f.hidden=!SIMPLE;ps.after(f);}} /* FR-092: the folder note belongs to the plain words only, never after a raw summary that has the path */
   if(p.state==='pending'&&typeof p.diff==='string'&&p.diff)n.appendChild(diffBlock(p.diff)); /* spec 052 FR-063 */
+  if(p.state==='pending'&&typeof p.sandboxNote==='string'&&p.sandboxNote){const sn=document.createElement('p');sn.className='psbx';sn.textContent=safeMask(p.sandboxNote.slice(0,300));n.appendChild(sn);} /* spec 087 FR-021: its own line, never cut */
   if(pl&&pl.cmd){const d=document.createElement('details');d.className='pcmd';const sm=document.createElement('summary');sm.textContent='Show the command';
     const pre=document.createElement('pre');pre.textContent=pl.cmd;d.append(sm,pre);n.appendChild(d);}
   const st=n.querySelector('.pstate');
@@ -4480,7 +4541,7 @@ function settlePerm(a,p){
   if(word==='denied'&&!p.via)roAskHint(a,e.n); /* denied by the mode (no one answered it): Read-only */
   stickyScroll(liveChat(a));
 }
-function setGrants(a,list){a.grants=list;if(ui.selected&&liveRoot(byId(ui.selected)||a)===a)renderGrants();}
+function setGrants(a,list){a.grants=list;a.grantsKnown=true;const sn=a.grantSeen||(a.grantSeen=new Set());for(const g of list)sn.add(g.key);while(sn.size>500)sn.delete(sn.values().next().value);if(ui.selected&&liveRoot(byId(ui.selected)||a)===a)renderGrants();whyRefresh(a);}
 /* spec 052 FR-141: 1-2 grants are single chips; 3 or more are one "Allowed (N)" chip that opens a list (a row per grant, Revoke all).
    The label drops a tool-name prefix that repeats the server name; the title and the accessible name keep the full label. */
 let grantsAllBusy=''; /* the agent id while its Revoke all is under way (the revokes arrive one by one and the focus may be lost in between); '' otherwise */
@@ -4600,7 +4661,8 @@ function onAgentRenamed(e){
 }
 function onLiveEvent(e){
   const a=liveById(e.sessionId); if(!a)return;
-  if(e.type==='permission'&&e.permission&&e.permission.via==='policy')return; /* spec 052 FR-071: an Allow all approval is for the activity log in main, no card */
+  if(e.type==='permission'&&e.permission)whyNote(a,e.permission); /* spec 003 FR-099: why a call ran without asking, for its tool card's tag */
+  if(e.type==='permission'&&e.permission&&(e.permission.via==='policy'||e.permission.via==='quiet'))return; /* spec 052 FR-071: an Allow all approval is for the activity log in main, no card; a quiet read is only for the tag */
   a.lastEventAt=Date.now(); /* spec 052 FR-062: last activity (when it arrived here; a helper's event counts for its main agent) */
   feedStats(a,e);
   liveFeed(a,e); /* spec 001 FR-028 */
@@ -4618,6 +4680,7 @@ function onLiveEvent(e){
     else if(e.type==='status'){if(VISITS.onStatus(a.id,e.status))scheduleRender();}
   }
   if(e.type==='title'){if(!e.agentId)applyTitle(a,e.title);return;}
+  if(e.type==='sandbox'){if(!e.agentId)onSandbox(a,e);return;} /* spec 087 */
   if(e.type==='agentSchedule'){if(!e.agentId)onAgentSchedule(a,e);return;}
   if(e.type==='subagent')return onSubagent(a,e);
   onRetry(a,e); /* spec 034 FR-018/FR-019: before the switch, so an error after a retry already knows it gave up */
@@ -4704,6 +4767,7 @@ function onLiveEvent(e){
   case 'toolCall':{const t=ensureTurn(a);
     if(isTaskTool(e.tool)||(a.subs&&a.subs.has(e.callId)))onTaskTool(a,e); /* spec 001 FR-095: a call with a sub-agent record goes to onTaskTool in every phase, whatever its tool name or chip (Claude sends `Agent` / `Task` before the subagent event) */
     else tTool(t.T,e);
+    if(e.phase==='start')whyAttach(a,t.T,e.callId);
     if(e.phase==='start'&&!isTaskTool(e.tool)&&!a.coffee)setState(a,a.state==='thinking'?'working':a.state,null,intentText(a.intent)||toolTask(e,a.info&&a.info.cwd,90));
     stickyScroll(chat);return;}
   case 'usage':{const u=a.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;u.usd=(u.usd||0)+(e.costUsd>0?e.costUsd:0);
@@ -4762,11 +4826,55 @@ async function sendLive(text,forId,opts){
    limit reads) never suggests a mode in its text; a "Change mode…" button opens the usual mode menu, with every mode and its help */
 const MODE_REFUSAL=/Read-only and Ask first need|limit reads to the session's folders/;
 function modeRefusalAction(a,note,error){
-  if(!note||!MODE_REFUSAL.test(String(error||''))||!bridge.setPermMode||!feat(a,'modes'))return;
+  if(!note||!MODE_REFUSAL.test(String(error||'')))return;
   const row=document.createElement('div');row.className='note-actions';
+  if(changeModeButton(a,row))note.appendChild(row);
+}
+/* the "Change mode…" button of a refusal note: the usual mode menu (also on spec 087's sandbox note); false when modes cannot change */
+function changeModeButton(a,row){
+  if(!bridge.setPermMode||!feat(a,'modes'))return false;
   const b=document.createElement('button');b.type='button';b.className='btn';b.textContent='Change mode…';b.dataset.act='modeRefusal';
   b.onclick=()=>{const r=b.getBoundingClientRect();openModeMenu(a,r.left,r.bottom+4,b);};
-  row.appendChild(b);note.appendChild(row);
+  row.appendChild(b);return true;
+}
+/* ---------------- spec 087: the agent app's OS sandbox (FR-007, FR-009) ---------------- */
+function onSandbox(a,e){
+  if(a.info){if(SBX&&SBX.clean(e.sandbox))a.info.sandbox=e.sandbox;else delete a.info.sandbox;}
+  if(ui.selected&&liveRoot(byId(ui.selected)||a)===a){const c=$('modeChip');if(c)c.outerHTML=modeChipHTML(a);}
+  scheduleRender();
+  if(e.notice&&typeof e.notice.text==='string')showSandboxNotice(a,e.notice);
+}
+/* FR-007: the sandbox could not start: nothing was sent. The message stays as not sent; the person chooses (or, under the policy, only
+   Change mode…). The buttons are not a permission card (class note err, not perm): the answer bar and Needs you leave them alone. */
+function showSandboxNotice(a,nt){
+  const chat=liveChat(a);closeTurn(a);
+  const last=[...chat.el.querySelectorAll('.msg.user')].pop();
+  if(last&&!last.querySelector('.unsent')){last.classList.add('not-sent');const u=document.createElement('div');u.className='unsent';u.textContent='Not sent';last.appendChild(u);}
+  const n=addNote(chat,esc(safeMask(nt.text)||'The OS sandbox could not start. Nothing was sent.'),true);
+  if(!n)return;n.classList.add('sbx-note');
+  const row=document.createElement('div');row.className='note-actions';
+  const acts=Array.isArray(nt.actions)?nt.actions:[];
+  const mk=(label,act,always)=>{const b=document.createElement('button');b.type='button';b.className='btn';b.textContent=label;b.dataset.act=act;b.onclick=()=>continueWithoutSandbox(a,n,b,always);row.appendChild(b);};
+  if(nt.refused!==true&&bridge.sandboxContinue){
+    if(acts.includes('continue'))mk('Continue without the OS sandbox','sbxContinue',false);
+    if(acts.includes('always'))mk('Always continue on this computer','sbxAlways',true);
+  }
+  changeModeButton(a,row); /* the existing Change mode… button (spec 012 FR-087, modeRefusalAction's) */
+  if(row.childElementCount)n.appendChild(row);
+  announce(safeMask(nt.text));
+}
+async function continueWithoutSandbox(a,note,btn,always){
+  const app=kindWord(a.info&&a.info.adapterId),mode=MODE_NAME[a.info&&a.info.permMode]||'this mode';
+  const ok=await askDialog({title:always?'Always continue without the OS sandbox?':'Continue without the OS sandbox?',
+    body:always?app+' runs without its OS sandbox in every session on this computer. Durbar’s own checks still apply, and it still tries the sandbox at each start. You can undo this in Settings > Agent apps.':app+' runs without its OS sandbox for this session. Durbar’s own checks still apply ('+mode+'). Nothing is sent now: send your message again.',
+    returnFocus:btn,buttons:[{label:'Cancel',value:null},{label:always?'Always continue':'Continue without the sandbox',value:'ok',cls:'primary warn'}]});
+  if(!ok)return;
+  const r=await bridge.sandboxContinue(a.id,always?{always:true}:{}).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  if(!r||!r.ok){toast('Could not continue: '+esc(safeMask((r&&r.error)||'unknown error')),6000).classList.add('err');return;} /* the refusal says why (policy, not offered) */
+  const row=note.querySelector('.note-actions');if(row)row.remove();
+  const p=document.createElement('p');p.className='sbx-done';p.textContent=always?'Continuing without the OS sandbox on this computer. Send your message again.':'Continuing without the OS sandbox for this session. Send your message again.';note.appendChild(p);
+  announce(p.textContent);
+  const mi=$('msgInput');if(mi)focusIn(mi);
 }
 /* ---------------- sign in again from the chat (spec 012 FR-157) ---------------- */
 const SIGNIN=window.DurbarSignIn||null;
@@ -4870,8 +4978,10 @@ function renderStrip(){
 function modeChipHTML(a){const m=a.info.permMode, rs=m==='allow'&&a.info.permRestored;
   /* spec 061 FR-012: Read-only still means something: when the folder's own hooks or allow rules apply, the chip says so */
   const fr=a.info.folderRules?' + folder rules':'';
-  if(!feat(a,'modes'))return `<span class="modechip${m==='allow'?' modebadge':''}" title="Set when the session starts">${esc(MODE_NAME[m]+fr)}</span>`; /* spec 052 FR-065 */
-  return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}${rs?(a.info.permFrom==='session'?' (restored: the mode you last chose for this session)':' (restored from your last run)'):''}. Click to change."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m]+fr)}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>`;}
+  /* spec 087 FR-009: the floor in force after the mode, in words (never colour alone); its tooltip says what it covers (FR-010) */
+  const sw=sbxWord(a),sbx=sw?`<span class="mode-sbx sbx-${esc(a.info.sandbox.state)}" data-sbx="${esc(a.info.sandbox.state)}" title="${esc(sbxTip(a))}"> · ${esc(sw)}</span>`:'';
+  if(!feat(a,'modes'))return `<span class="modechip${m==='allow'?' modebadge':''}" title="Set when the session starts">${esc(MODE_NAME[m]+fr)}${sbx}</span>`; /* spec 052 FR-065 */
+  return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}${rs?(a.info.permFrom==='session'?' (restored: the mode you last chose for this session)':' (restored from your last run)'):''}. Click to change."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m]+fr)}${sbx}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>`;}
 function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');document.querySelectorAll('[data-act="ro-ask"][aria-expanded="true"]').forEach(b=>b.setAttribute('aria-expanded','false'));}}
 function openModeMenu(a0,x,y,anchor,o){ /* o.modesOnly (spec 003 FR-095): the three modes and the note, without Model, Plan first, folder setup or card actions */
   const a=liveRoot(a0); if(!a||!a.live)return false;
@@ -4884,7 +4994,7 @@ function openModeMenu(a0,x,y,anchor,o){ /* o.modesOnly (spec 003 FR-095): the th
   closeModeMenu();
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',(hasOps?'Actions for ':'Permission mode for ')+a.name);
   m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>{const o=orgMode(a.info.adapterId,k),w=o?o.why:''; /* spec 076 FR-202: blocked: disabled, the reason as its text; advice (FR-201): the words, still selectable */
-    return `<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}${w?(o.refuse?' mm-org':' mm-orgdoubt'):''}"${o&&o.refuse?' aria-disabled="true"':''} title="${esc(w||MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(w||MODE_SHORT[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`;}).join('')+(!only&&bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(!only&&capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(!only&&bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`:'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
+    return `<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}${w?(o.refuse?' mm-org':' mm-orgdoubt'):''}"${o&&o.refuse?' aria-disabled="true"':''} title="${esc(w||MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(w||MODE_SHORT[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`;}).join('')+(!only&&bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(!only&&capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(!only&&bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`+(sbxWord(a)?`<p class="mm-note mm-sbx"><b>${esc(sbxWord(a))}.</b> ${esc(sbxDetails(a))}</p>`:''):'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
   document.body.appendChild(m);
   const {px,py}=placeMenu(m,x,y,anchor); /* spec 005 FR-037: above a toolbar chip */
   m.addEventListener('click',e=>{const pn=e.target.closest('[data-act="planNext"]');if(pn){a.planNext=!a.planNext;closeModeMenu();renderAttached();announce(a.planNext?'The next message asks for a plan first.':'Plan first is off.');const mi=$('msgInput');if(mi)focusIn(mi);return;}const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}if(e.target.closest('[data-act="foldersetup"]')){closeModeMenu();window.DurbarFolderSetup.openFor(a.info);return;}const o=e.target.closest('[data-op]');if(o){if(o.getAttribute('aria-disabled')==='true')return;closeModeMenu();cardOp(a,o.dataset.op,anchor);return;}const b=e.target.closest('[data-mode]');if(!b||b.getAttribute('aria-disabled')==='true')return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
@@ -6654,7 +6764,7 @@ if(bridge){
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
   document.body.classList.toggle('simple',SIMPLE);
-  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},signs:{get:()=>SIGN_PREF,set:setSignsOn,usable:()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign)},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},signs:{get:()=>SIGN_PREF,set:setSignsOn,usable:()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign)},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     previewTheme:(m)=>{swapView(()=>{THEME.setTheme(m);SC_CACHE.clear();renderAll();});}, /* spec 040 FR-014: Try it / Discard, nothing saved */

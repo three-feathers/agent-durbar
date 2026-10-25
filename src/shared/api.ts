@@ -82,6 +82,47 @@ export interface AgentInfo {
   defaultAgent?: string;
   /** Which adapter runs this agent (spec 012 FR-058), e.g. `copilot`. */
   adapterId: string;
+  /** Spec 087 FR-011: the agent app's OS sandbox under Durbar's checks, as the adapter last reported it; absent = nothing is shown. Never saved. */
+  sandbox?: SandboxState;
+}
+
+/**
+ * Spec 087 FR-011: the OS sandbox an agent app runs its commands in, normalized (no vendor name or vendor setting key; those stay in
+ * `src/adapters/`). `on` only after the agent app confirmed it; `unknown` while its start has not confirmed it yet. `reason` is masked
+ * and at most 200 characters.
+ */
+export interface SandboxState {
+  state: 'on' | 'off' | 'unknown';
+  /** How it is enforced: the macOS sandbox, bubblewrap, Windows ProcessContainer, or the agent app's own sandbox. */
+  mechanism?: 'seatbelt' | 'bubblewrap' | 'processcontainer' | 'vendor';
+  /** The organization's own policy keeps it on (Allow all). */
+  managed?: boolean;
+  /** Set in an earlier mode of this session and kept until a new session (a switch to Allow all does not clear it). */
+  untilNewSession?: boolean;
+  /** What runs inside it: shell commands, MCP servers, the app's own file tools. */
+  covers: Array<'shell' | 'mcp' | 'files'>;
+  /** An approved request may run outside the sandbox (spec 087 FR-021). */
+  approvedMayLeave?: boolean;
+  /** Read-only (no writes) or Ask first (the session's folders). */
+  writes?: 'none' | 'folders';
+  /** A real session on this app and OS checked it (spec 087 FR-020); false: "Requested; not verified on a real session." */
+  verified: boolean;
+  /** Why it is off or unknown, in plain words (masked, at most 200 characters). */
+  reason?: string;
+  /** Session folders the floor left out, each "<folder> (<why>)" (masked, cut), at most 10; `leftOutMore` counts the rest. */
+  leftOut?: string[];
+  leftOutMore?: number;
+}
+
+/** Spec 087 FR-012: one agent app's OS sandbox on this computer, for Settings > Agent apps. Plain words; `reason` masked and cut. */
+export interface SandboxHostView {
+  available: boolean;
+  mechanism?: SandboxState['mechanism'];
+  /** Why not (masked, at most 200 characters) and what would fix it. */
+  reason?: string;
+  fix?: string;
+  /** Spec 087 FR-007c: *Always continue on this computer* is stored for this app (shown and undone in Settings). */
+  alwaysContinue?: boolean;
 }
 
 /** Choices for a new session. */
@@ -695,6 +736,12 @@ export interface DurbarApi {
   openExternal?(url: string): Promise<{ ok: boolean }>;
   /** Change the permission mode of agent `id` now (applies to the next request). `clearGrants`: forget "Approve for this session"; `approvePending`: approve what is waiting. */
   setPermMode?(id: string, mode: PermMode, opts?: { clearGrants?: boolean; approvePending?: boolean }): Promise<{ ok: boolean; error?: string; mode?: PermMode; pending?: number }>;
+  /** Spec 087 FR-007a/FR-007c: *Continue without the OS sandbox* for this session (`always`: on this computer, where offered). Nothing is sent. */
+  sandboxContinue?(id: string, opts?: { always?: boolean }): Promise<{ ok: boolean; error?: string }>;
+  /** Spec 087 FR-012: per ready agent app, whether its OS sandbox can run here (Settings > Agent apps). */
+  sandboxHosts?(): Promise<Record<string, SandboxHostView>>;
+  /** Spec 087 FR-007c: undo *Always continue on this computer* for an app. */
+  sandboxAlwaysOff?(app: string): Promise<{ ok: boolean }>;
   /** Change the model, effort or context tier of agent `id` (spec 030). Validated in main; saved with the folder entry once applied. */
   setModel?(id: string, request: ModelSwitchRequest): Promise<{ ok: boolean; error?: string; result?: ModelSwitchResult }>;
   /** Remove a queued model switch (spec 030). */
@@ -946,7 +993,7 @@ export interface DurbarApi {
   /** `remember` = "Approve for this session" (ignored when denying); `broad` = the wider "any arguments" scope of a shell request (only if offered). */
   resolvePermission(id: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean): Promise<void>;
   /** Forget one "Approve for this session" grant (key from the `grants` event). */
-  revokeGrant(id: string, key: string): Promise<void>;
+  revokeGrant(id: string, key: string, callId?: string): Promise<number | void>;
   openInVSCode(id: string): Promise<{ ok: boolean; error?: string; edition?: string }>;
   /** Spec 063: the git branch and uncommitted changes of the agent's folder (read-only). Optional: older bridges lack it. */
   gitStatus?(id: string): Promise<FolderGitStatus>;

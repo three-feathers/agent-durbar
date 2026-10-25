@@ -285,3 +285,10 @@ The user's own global settings (`~/.claude/settings.json`, `~/.codex/config.toml
 ### 2026-10-22: Codex TOML strings decoded in one pass (spec 069 review on #489)
 
 - `readCodexMcpToml` now uses the TOML helpers it shares with spec 069 (`src/main/codextoml.ts`): basic strings decode every TOML escape in one pass (`\n`, `\t`, `\uXXXX`, `\UXXXXXXXX`, ...; before, only `\"` and `\\`), literal strings are taken as written. A folder `config.toml` with `"C:\\tools\\node.exe"` reads as `C:\tools\node.exe`. `test:` `test:mcpglobal` (both readers on the same fixture), `test:foldersetup`.
+
+### 2026-10-25: a folder's settings cannot widen the OS sandbox (spec 087)
+
+The composed Claude `--settings` JSON (FR-004) keeps the folder's hooks and rules, and its `sandbox` key is always Durbar's own block in
+Read-only and Ask first, or absent (a folder `sandbox` key is dropped, also in Allow all) ([spec 087](../087-os-sandbox-floor/spec.md) FR-003,
+`withSandboxSettings`, `test:` `scripts/test-sandbox-floor.ts`). An accepted folder allow rule (`Bash(npm test:*)`) still passes Durbar's
+Read-only, and the command it lets through then runs inside the app's OS sandbox where it can start.

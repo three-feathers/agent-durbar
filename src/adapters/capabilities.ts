@@ -76,6 +76,8 @@ export interface AdapterCapabilities {
   readonly deleteSession?: boolean;
   /** Spec 054 FR-060: the service a session is controlled from when `remote` is on: its name, the only host its links may use, and its phone app. */
   readonly remoteService?: Readonly<{ name: string; host: string; mobile: string }>;
+  /** Spec 087: the adapter reports its app's OS sandbox (`SandboxState` in `sandbox` events) and `sandboxHost()` exists; `continueWithoutSandbox()` only with it (Codex has none: it fails closed); missing = false. */
+  readonly osSandbox?: boolean;
   /** Spec 030 FR-040: how `setModel` behaves: `verified` = checked on a real account (else the UI says it is not), `contextTier` = a long-context tier can be chosen. Missing = not verified, tier offered (the Copilot default before this field). */
   readonly modelSwitch?: Readonly<{ verified: boolean; contextTier: boolean }>;
 }

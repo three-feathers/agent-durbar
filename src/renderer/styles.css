@@ -414,6 +414,14 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .chip.run .res{color:var(--blue-ink)}
 .chip[hidden]{display:none}
 .chip .detail,.chip .xbody{display:none}
+.chip .why{font-size:11px;padding-left:6px;border-left:1px solid var(--line);color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0;max-width:34%}
+.chip .why[data-gone]{color:var(--muted)}
+.chip.open .why{max-width:100%;border-left:0;padding-left:0}
+.chip.open .xbody.whybody{flex-direction:row;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:11px;color:var(--ink-2)}
+.chip .why-l{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--font-mono);font-size:11px;color:var(--ink)}
+.chip .why-undo{height:28px;padding:0 10px;font:inherit;font-size:11px;font-weight:600;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);cursor:pointer}
+.chip .why-undo:hover:not(:disabled){background:var(--raised)}
+.chip .why-undo:disabled{opacity:.6;cursor:default}
 .chip.open{display:flex;flex-wrap:wrap;width:100%;height:auto;min-height:var(--h-chip);padding:5px 10px 7px 8px;row-gap:4px}
 .chip.open code{white-space:pre-wrap;overflow-wrap:anywhere;flex:1 1 60%}
 .chip.open .res{max-width:100%;white-space:normal;overflow-wrap:anywhere}
@@ -1298,6 +1306,14 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .mode-menu .mm-sep{height:1px;margin:4px 6px;background:var(--line)}
 .mode-menu [aria-disabled="true"]{opacity:1;color:var(--muted);border-style:dashed;cursor:not-allowed}
 .mm-note{margin:4px 10px 4px;font-size:11px;color:var(--muted)}
+/* spec 087 FR-009/FR-010/FR-021: the OS sandbox words (text, never colour alone); the card's sandbox line and the not-sent mark are never cut */
+.mode-chip .mode-sbx,.modechip .mode-sbx{font-weight:600;white-space:nowrap}
+.mode-chip .mode-sbx.sbx-off{color:var(--amber-ink)}
+.mm-sbx{max-width:340px;white-space:normal;line-height:1.35}
+.note.perm .psbx{margin:4px 0 0;font-size:11.5px;color:var(--amber-ink);white-space:normal;overflow:visible;text-overflow:clip}
+.msg.user.not-sent .bubble{opacity:.75}
+.msg.user .unsent{font-size:11px;font-weight:600;color:var(--amber-ink);text-align:right;margin-top:2px}
+.note.sbx-note .sbx-done{margin:6px 0 0;font-size:11.5px}
 .dlg .chk{flex-direction:row;align-items:center;gap:8px;font-weight:500}
 /* spec 064: a pick list in the shared dialog (each line: checkbox, label, a muted reason when it cannot be picked) */
 .dlg .dinput textarea{min-height:84px;max-height:30vh;resize:vertical;border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:8px 10px;font:inherit;font-size:13px;color:var(--ink)}

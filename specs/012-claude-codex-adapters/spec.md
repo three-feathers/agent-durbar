@@ -1015,6 +1015,16 @@ The owner asked that sessions be shared between Durbar and the Claude Code CLI. 
 *Acceptance:* retain Claude/Codex fixtures and the Codex permission-version compatibility cases; reject the npm error line, glued/overlong components, overlong pre-release/build metadata, later-line versions and versions beyond/crossing the cap. A 64 KiB digit run returns no version within a generous 250 ms CPU budget (catastrophic backstop, not a fine timing assertion). Restore the original parser in an isolated mutation and demonstrate regression failure.
 *Evidence:* `[IMPLEMENTED]` `test:` `scripts/test-detect.ts` and `scripts/test-codex-modes.ts`. Isolated mutations each failed the regression suite: restoring the original parser, removing first-line handling, removing the cap-boundary guard, unbounding numeric components, pre-release or build metadata, removing the 64-character `MAX_VERSION_LENGTH` check (a 65-character version must be rejected), and widening the pre-release class to any non-space character (`1.2.3-<img/src=x/onerror=alert(1)>` must be rejected). Markup inputs `1.2.3-<b>`, `<b>1.2.3</b>`, `1.2.3<script>` and `1.2.3-a&b` are rejected and `1.2.3 <img src=x>` gives `1.2.3` (Paco's review on #698). The original parser also failed the 250 ms CPU backstop (2417 ms for 64 KiB of digits, measured on the author's Mac). Re-run for the review on #698 (2026-10-25): typecheck, build and the offline suite on Linux (Node 24.22.0, 120 suites); the commit is named in the PR comment *checks run at <sha>*. CI on the PR ran ubuntu and windows only; macOS ran only for the first version of this fix, not for the cap change. `[KNOWN GAP]` no real installed-binary session; macOS not re-run after the cap change.
 
+### 2026-10-25: spec 087 (OS sandbox floor, issue #611)
+
+- Claude: in Read-only and Ask first the `--settings` JSON gets a `sandbox` key built
+  in `src/adapters/claudeSandbox.ts` (merged in `claude.ts`, never in `src/shared`): `failIfUnavailable: true`, no `autoAllowBashIfSandboxed`,
+  no `allowUnsandboxedCommands`, home-folder reads limited to the session's folders, network off; *Sandboxed* only after `system`/`init`; a sandbox exit
+  before `init` sends nothing and offers *Continue without the OS sandbox* / *Change mode…* (spec 087 FR-003, FR-006, FR-007). Codex: its
+  state is reported from the existing checks (FR-086..FR-091, FR-138, FR-140, FR-162 unchanged) and `codexPermission` sets `sandboxNote` on
+  command and file-change cards (spec 087 FR-005, FR-021). Root normalisation moved to `src/adapters/sandboxRoots.ts` (`codexWorkspaceRoots`
+  calls it; quotes and control characters now drop a root too). `test:` `scripts/test-claude-sandbox.ts`, `scripts/test-sandbox-floor.ts`.
+
 ### 2026-10-25: the adversarial CPU limits of `test-redact` flaked under load (FR-080 delta, T134, issue #684)
 
 *Found* (Paco's agent on the VPS at load 6 on 4 cores: `adversarial jwtUnder: redact() took 1044.8 ms, limit 1000 ms`; Ruben's agent reviewing #668: 1 of 9 runs failed): section 9 and the R12 section of `scripts/test-redact.ts` held every 1 MB adversarial case to a fixed 1000 ms of CPU time. `redact` is linear, but the time of one run still moves with a busy machine (cache, frequency, a shared core), so the fixed limit failed a correct build.

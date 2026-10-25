@@ -92,7 +92,9 @@ export const SIM_OPTIONAL_MEMBERS: Readonly<Record<string, ((c: Caps) => boolean
   cancelMcpSignIn: (c: Caps) => !!c.mcpSignIn,
   refreshMcpStatus: (c: Caps) => !!c.mcpSignIn,
   setPermMode: (c: Caps) => c.permModeSwitch !== 'none',
-  resolvePermission: null, revokeGrant: null, setModel: null, cancelQueuedModel: null, compact: null, resolvePlan: null,
+  sandboxHost: (c: Caps) => !!c.osSandbox, // spec 087 FR-012
+  continueWithoutSandbox: null, // spec 087 FR-007a: no capability of its own (Codex has osSandbox without it); absent from the stand-in
+  resolvePermission: null, revokeGrant: null, revokeCall: null, setModel: null, cancelQueuedModel: null, compact: null, resolvePlan: null,
   answerQuestion: null, answerElicitation: null, listAgentProfiles: null, reloadAgentProfiles: null, selectAgentProfile: null, authStatus: null, verifySignIn: null, accountInfo: null,
   refreshAuth: null, resumeIdOf: null, debug: null, writeGuard: null,
   readOrgPolicy: null, // spec 076 FR-198: absent from the stand-in; the simulator's canned policy is the window's (?simorgpolicy=1)

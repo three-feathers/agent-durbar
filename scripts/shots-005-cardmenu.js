@@ -20,6 +20,8 @@ module.exports = async (ctx) => {
     const id = await ctx.js(`(()=>{const d=document.querySelector('#stage .desk.is-working:not(.is-away), #stage .desk.is-thinking:not(.is-away)');return d?d.dataset.id:null})()`);
     assert.ok(id, 'a working main agent is on the floor');
     await H.calm();
+    ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); // park the pointer: under xvfb it rests mid-window on a desk (rename pencil; agent-notes)
+    await ctx.sleep(200);
     await ctx.js(`(()=>{const d=document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)});const r=d.getBoundingClientRect();d.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+60,clientY:r.top+50}));})()`);
     await ctx.sleep(500);
     assert.ok(await ctx.js(`!!document.querySelector('#modeMenu [data-op="stop"]')&&!!document.querySelector('#modeMenu [data-op="end"]')`), 'Stop and End session are in the menu');

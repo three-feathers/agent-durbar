@@ -5,7 +5,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomInt } from 'crypto';
-import { ANNOUNCE_APPS, parseAnnounced, parseCap, parseSettings, parseThemeId } from '../shared/credits';
+import { ANNOUNCE_APPS, parseAnnounced, parseCap, parseSandboxAlways, parseSettings, parseThemeId } from '../shared/credits';
 import type { AppSettings } from '../shared/credits';
 import { addCustomPlace, removeCustomPlace, setPlaceEntry, updateCustomPlace } from '../shared/places';
 import type { CustomPlace, PlaceError, PlaceMap } from '../shared/places';
@@ -82,6 +82,26 @@ export class SettingsStore {
     this.s = next;
     this.save();
     return v;
+  }
+
+  /** Spec 087 FR-007c: the apps with *Always continue on this computer* stored. */
+  sandboxAlwaysContinue(app: string): boolean {
+    return (this.s.sandboxAlwaysContinue ?? []).includes(app);
+  }
+
+  /** Spec 087 FR-007c: store or undo the choice for a known app id; anything else changes nothing. Returns the value now in force. */
+  setSandboxAlwaysContinue(app: unknown, on: unknown): boolean {
+    if (typeof app !== 'string' || !parseSandboxAlways([app]).length || typeof on !== 'boolean') return typeof app === 'string' && this.sandboxAlwaysContinue(app);
+    const set = new Set(this.s.sandboxAlwaysContinue ?? []);
+    if (on) set.add(app);
+    else set.delete(app);
+    const next: AppSettings = { ...this.s };
+    const list = parseSandboxAlways([...set]);
+    if (list.length) next.sandboxAlwaysContinue = list;
+    else delete next.sandboxAlwaysContinue;
+    this.s = next;
+    this.save();
+    return on;
   }
 
   /** OS notifications when an agent needs you (spec 052 FR-059): on by default; only `false` is written. */
