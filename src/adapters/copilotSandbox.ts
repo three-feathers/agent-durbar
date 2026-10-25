@@ -139,7 +139,7 @@ export function copilotSandboxState(i: { mode: PermissionMode | string; platform
 
 /** FR-012 and research R4: the fix for an unsupported host, by platform. */
 export function copilotSandboxFix(platform: string): string | undefined {
-  if (platform === 'linux') return 'Install bubblewrap 0.5.0 or later and slirp4netns (for example `sudo apt install bubblewrap slirp4netns`). On Ubuntu 24.04+ AppArmor may also block bubblewrap: see the README (Safety model).';
+  if (platform === 'linux') return 'Install bubblewrap 0.5.0 or later and slirp4netns (for example: sudo apt install bubblewrap slirp4netns). On Ubuntu 24.04+ AppArmor may also block bubblewrap: see the README (Safety model).';
   if (platform === 'win32') return 'Copilot needs Windows 11 25H2 with KB5124010 or later, or 26H1 with KB5124006 or later.';
   return undefined;
 }

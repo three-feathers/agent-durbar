@@ -89,7 +89,7 @@ export function claudeSandboxPrecheck(f: ClaudeSandboxFacts): ClaudeSandboxPre {
   if (f.platform === 'darwin') return { try: true, mechanism: 'seatbelt' };
   if (f.platform === 'linux') {
     const missing = [...(f.haveBwrap ? [] : ['bubblewrap']), ...(f.haveSocat ? [] : ['socat'])];
-    if (missing.length) return { try: false, reason: `Claude Code's Linux sandbox needs ${missing.join(' and ')}, which ${missing.length > 1 ? 'are' : 'is'} not installed.`, fix: `Install ${missing.join(' and ')} (for example \`sudo apt install ${missing.join(' ')}\`). On Ubuntu 24.04+ AppArmor may also block bubblewrap: see the README (Safety model).`, permanent: false };
+    if (missing.length) return { try: false, reason: `Claude Code's Linux sandbox needs ${missing.join(' and ')}, which ${missing.length > 1 ? 'are' : 'is'} not installed.`, fix: `Install ${missing.join(' and ')} (for example: sudo apt install ${missing.join(' ')}). On Ubuntu 24.04+ AppArmor may also block bubblewrap: see the README (Safety model).`, permanent: false };
     return { try: true, mechanism: 'bubblewrap' };
   }
   return { try: false, reason: 'Claude Code has no OS sandbox Durbar knows on this system.', permanent: false };

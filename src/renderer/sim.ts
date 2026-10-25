@@ -47,8 +47,8 @@ function simSandboxFor(i: number, kind: string, mode: string): SandboxState | un
   const covers = simCovers(kind);
   if (mode === 'allow') {
     if (kind === 'codex') return undefined;
-    if (i === 2) return { state: 'on', mechanism: 'seatbelt', managed: true, covers, verified: false }; // Allow all · Sandboxed (managed)
-    if (i === 5) return { state: 'on', mechanism: 'bubblewrap', untilNewSession: true, covers, verified: false }; // Allow all · Sandboxed (until a new session)
+    if (i === 5) return { state: 'on', mechanism: 'seatbelt', managed: true, covers, verified: false }; // Allow all · Sandboxed (managed)
+    if (i === 14 && kind === 'copilot') return { state: 'on', mechanism: 'bubblewrap', untilNewSession: true, covers, verified: false }; // Allow all · Sandboxed (until a new session)
     return undefined;
   }
   const writes = mode === 'ask' ? 'folders' : 'none';
@@ -1056,7 +1056,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       }
       s.perm = { ...base, file, cont, ...(sc.folders ? { folders: sc.folders } : {}) };
       s.state = 'waiting';
-      emit({ type: 'status', sessionId: sid(s), timestamp: now() - (opts.waitOld ? 120_000 : 0), status: 'needs-permission', intent, permission: { ...base, state: 'pending', ...(diff ? { diff } : {}) } });
+      // spec 087 FR-021: a Codex approval card in Ask first says what approving may mean for its sandbox (its own line, as codexPermission)
+      const sbxNote = (s.info.adapterId ?? 'copilot') === 'codex' ? (kind === 'shell' ? 'If you approve, Codex may run this outside its sandbox.' : 'If you approve, Codex writes this outside its read-only sandbox.') : undefined;
+      emit({ type: 'status', sessionId: sid(s), timestamp: now() - (opts.waitOld ? 120_000 : 0), status: 'needs-permission', intent, permission: { ...base, state: 'pending', ...(diff ? { diff } : {}), ...(sbxNote ? { sandboxNote: sbxNote } : {}) } });
       return false;
     }
     function editTool(s: SimAgent, file: string, ok: boolean): void {
@@ -2703,7 +2705,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       sandboxHosts: async () => {
         const out: Record<string, import('../shared/api').SandboxHostView> = {
           claude: { available: false, reason: SIM_SBX_WIN, ...(simSbxAlways.has('claude') ? { alwaysContinue: true } : {}) },
-          copilot: { available: false, reason: SIM_SBX_COPILOT, fix: 'Install bubblewrap 0.5.0 or later and slirp4netns (for example `sudo apt install bubblewrap slirp4netns`). On Ubuntu 24.04+ AppArmor may also block bubblewrap: see the README (Safety model).' },
+          copilot: { available: false, reason: SIM_SBX_COPILOT, fix: 'Install bubblewrap 0.5.0 or later and slirp4netns (for example: sudo apt install bubblewrap slirp4netns). On Ubuntu 24.04+ AppArmor may also block bubblewrap: see the README (Safety model).' },
           codex: { available: true, mechanism: 'bubblewrap', fix: 'Checked at each start; on Ubuntu 24.04+ AppArmor may block bubblewrap: see the README (Codex).' },
         };
         if (new URLSearchParams(location.search).get('simsandbox') === 'ok') { out.claude = { available: true, mechanism: 'seatbelt' }; out.copilot = { available: true, mechanism: 'seatbelt' }; }

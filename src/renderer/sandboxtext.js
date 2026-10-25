@@ -37,7 +37,7 @@
   function tooltip(s0,app,mask){
     const s=clean(s0); if(!s)return '';
     const reason=s.reason&&typeof mask==='function'?String(mask(s.reason)||''):'';
-    if(s.state==='off')return 'Not sandboxed'+(reason?': '+reason.replace(/[.\s]+$/,'')+'.':'.')+' Durbar’s own checks still apply.';
+    if(s.state==='off')return (reason?reason.replace(/[.\s]+$/,'')+'.':'The OS sandbox is not in force.')+(/own checks still apply/.test(reason)?'':' Durbar’s own checks still apply.');
     const parts=[];
     if(s.state==='unknown')parts.push('Sandbox: checking. '+(app||'The app')+' confirms its sandbox when it starts.');
     if(s.managed)parts.push('Your organization keeps '+(app||'the app')+'’s sandbox on.');
