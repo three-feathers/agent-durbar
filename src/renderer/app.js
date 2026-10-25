@@ -916,6 +916,13 @@ function linksSVG(d,rows,extraMore){
   const w=d==='full'?24:16, mid=d==='full'?12:8;
   return `<svg class="links" aria-hidden="true" focusable="false"><g fill="none" stroke="${T_('--link')}" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">${ys.map(y=>`<path d="M0 ${py}H${mid}V${y}H${w}"/>`).join('')}</g><circle cx="0" cy="${py}" r="2.6" fill="${T_('--link')}"/></svg>`;
 }
+/* spec 059 FR-020 item 2 (issue 636): the pencil beside a desk card or list row name. A sibling of the card or row button (a button inside a
+   button is invalid), placed by placePencils(); hidden with opacity (never display or visibility: it stays in the Tab order). */
+const INL=()=>window.DurbarInlineName;
+const renBtn=a=>canRenameSession(a)?`<button type="button" class="ren" data-ren="${esc(a.id)}" data-key="ren:${esc(a.id)}" aria-label="Rename ${esc(a.name)}" title="Rename ${esc(a.name)}">${ICON('rename')}</button>`:'';
+/* a folder's pencil (FR-020 item 4): `inflow` in the Folders panel row, else placed over the room header like a card's */
+const canRenameFolder=r=>!!(r&&bridge&&bridge.renameFolder&&!demoOn&&agents.some(x=>!x.parent&&x.room===r.id));
+const renFolderBtn=(r,inflow)=>canRenameFolder(r)?`<button type="button" class="ren${inflow?' ren-in':''}" data-renfolder="${esc(r.id)}" data-key="renf:${esc(r.id)}" aria-label="Rename folder ${esc(r.name)}" title="Rename folder ${esc(r.name)}">${ICON('rename')}</button>`:'';
 function unitHTML(a,d){
   const st=vis(a), {shown,hidden}=visibleHelpers(a,d), nSubs=shown.length+hidden.length;
   let helpers='';
@@ -935,7 +942,7 @@ function unitHTML(a,d){
       <div class="info"><div class="who">${chatNoHTML(a)}${draftHTML(a)}<span class="name"${nameTipAttr(a)}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span></div>
       <p class="task"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</p><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}${pillWarn(a)}</span></div></button>`;    if(LIVE_SIDE)desk+=sideHTML(a);
   } else desk=cardHTML(a,d,nSubs);
-  return `<div class="unit${nSubs?' has-h':''}${SHUT_PREV&&SHUT_PREV.has(a.id)?' unrolling':''}" data-key="unit:${esc(a.id)}">${desk}${helpers}${doorBtnHTML(a)}</div>`; /* the door button last: sibling rules such as .liveside+.helpers stay true */
+  return `<div class="unit${nSubs?' has-h':''}${SHUT_PREV&&SHUT_PREV.has(a.id)?' unrolling':''}" data-key="unit:${esc(a.id)}">${desk}${renBtn(a)}${helpers}${doorBtnHTML(a)}</div>`; /* the door button last: sibling rules such as .liveside+.helpers stay true */
 }
 const unitWidth=(a,d)=>{const D=DENS[d];return D.cw+(d==='full'&&LIVE_SIDE?SIDE_W+SIDE_GAP+(helpersOf(a).length?2:0):0)+(helpersOf(a).length?(d==='full'?D.hw+14+8:D.hw+18):0);};
 /* ---- spec 001 FR-051..FR-056: finished agents rest in the lounge when their room has others at work. A resting agent is not a desk in the
@@ -1242,7 +1249,7 @@ function roomHTML({r,mains,all,rolled},d,aw,cap){
   const dots=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?`<span class="rd${k==='waiting'?' attn':(k==='done'||k==='idle')?' calm':''}" title="${n} ${LABELS[k]}"><span class="dot ${k}"></span>${n}<span class="rdw"> ${LABELS[k].toLowerCase()}</span></span>`:''}).join(''); /* spec 001 FR-037: "5 working" when the header has room */
   /* spec 052 FR-006: the counts in words too (screen readers, and a tooltip for colour-blind users) */
   const dotsLabel=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?n+' '+LABELS[k].toLowerCase():'';}).filter(Boolean).join(', ');
-  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="${esc(wordOf('door-close'))} ${esc(r.name)}" title="${esc(wordOf('door-title-prefix'))}: ${esc(r.name)} ${esc(wordOf('door-plate-suffix'))}">${doorSvg(true)}</button><span class="room-name" title="${esc(r.name)}${(()=>{const u=roomAiu(r);return u?' · '+esc(u.long):'';})()}">${esc(r.name)}</span>${al.siren&&!SIM_QUIET_HEADS.has('siren')?SIREN():''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(showPath(r.path))}</span>${(()=>{const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);return u?`<button class="room-aiu" type="button" data-costview="${esc(r.id)}" title="${esc(u.tip+'\nClick for the cost by folder.')}">${esc(u.long)}</button>`:'';})()}${dotsLabel?`<span class="room-dots" role="img" aria-label="${esc(dotsLabel)}" title="${esc(dotsLabel)}">${dots}</span>`:`<span class="room-dots" aria-hidden="true">${dots}</span>`}${bridge&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.removeFolder&&!demoOn?`<button class="room-new room-more" type="button" data-foldermenu="${esc(r.id)}" title="Folder actions: new session, schedules, rename, hide, remove" aria-label="Folder actions for ${esc(r.name)}" aria-haspopup="menu">⋯</button>`:''}${roomSchedChip(r)}${bridge&&bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT()}</div>`;
+  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="${esc(wordOf('door-close'))} ${esc(r.name)}" title="${esc(wordOf('door-title-prefix'))}: ${esc(r.name)} ${esc(wordOf('door-plate-suffix'))}">${doorSvg(true)}</button><span class="room-name" title="${esc(r.name)}${(()=>{const u=roomAiu(r);return u?' · '+esc(u.long):'';})()}">${esc(r.name)}</span>${renFolderBtn(r,false)}${al.siren&&!SIM_QUIET_HEADS.has('siren')?SIREN():''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(showPath(r.path))}</span>${(()=>{const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);return u?`<button class="room-aiu" type="button" data-costview="${esc(r.id)}" title="${esc(u.tip+'\nClick for the cost by folder.')}">${esc(u.long)}</button>`:'';})()}${dotsLabel?`<span class="room-dots" role="img" aria-label="${esc(dotsLabel)}" title="${esc(dotsLabel)}">${dots}</span>`:`<span class="room-dots" aria-hidden="true">${dots}</span>`}${bridge&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.removeFolder&&!demoOn?`<button class="room-new room-more" type="button" data-foldermenu="${esc(r.id)}" title="Folder actions: new session, schedules, rename, hide, remove" aria-label="Folder actions for ${esc(r.name)}" aria-haspopup="menu">⋯</button>`:''}${roomSchedChip(r)}${bridge&&bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT()}</div>`;
   if(d==='full'){
     const gap=6, pad=12;
     const sw=shutW(r,rolled), widths=mains.map(a=>unitWidth(a,d)).concat(sw?[sw]:[]); /* FR-053: the squeezed group sits in the desks' row */
@@ -1579,11 +1586,14 @@ function renderList(){
   const sorted=LSORT?ACT.sortBy(groups,LVAL[LSORT.key],LSORT.dir):groups;
   const rows=[];sorted.forEach(a=>{rows.push([a,false]);(LSORT?ACT.sortBy(helpersOf(a),LVAL[LSORT.key],LSORT.dir):helpersOf(a)).forEach(h=>rows.push([h,true]));});
   /* spec 034 FR-014: no figures here, so the mood words (cards: drawing + label) are written at the start of the task cell */
-  const row=([a,sub])=>{const st=pillSt(a),mw=moodFor(a).words,ago=ACT.agoShort(sinceLast(a)),agoL=ACT.agoLong(sinceLast(a)),cost=costText(a),app=appOf(a);return `<button class="lrow" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}, ${esc(a.role)}${app?', '+esc(app):''}, ${esc(roomOf(a).name)}, ${esc(stWord(a))}: ${esc(taskText(a))}${moodWords(a)}${agoL?'. Last activity '+agoL:''}${cost?'. Cost '+esc(cost):''}">
-    <span class="lname"><span class="dot ${st}"></span>${sub?'':chatNoHTML(a)+draftHTML(a)}<span class="${sub?'sub':''}" title="${esc(a.name)}">${esc(a.name)}</span>${modeIcon(a,true)}</span><span class="lcell" title="${esc(app)}">${esc(app)}</span><span class="lcell" title="${esc(a.role)}">${esc(a.role)}</span><span class="lcell mono lfold" title="${esc(roomOf(a).name)}">${esc(roomOf(a).name)}</span><span class="lcell" title="${esc(DurbarCutText.cutText((mw?mw+'. ':'')+taskText(a),300))}">${mw?`<span class="lmood">${esc(mw)}</span> · `:''}${esc(taskText(a))}</span><span class="lcell num"${agoL?` title="Last activity ${esc(agoL)}"`:''}>${esc(ago)}</span><span class="lcell num"${cost&&cost.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${esc(cost)}</span><span><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}</span></span></button>`};
+  const row0=([a,sub])=>{const st=pillSt(a),mw=moodFor(a).words,ago=ACT.agoShort(sinceLast(a)),agoL=ACT.agoLong(sinceLast(a)),cost=costText(a),app=appOf(a);return `<button class="lrow" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}, ${esc(a.role)}${app?', '+esc(app):''}, ${esc(roomOf(a).name)}, ${esc(stWord(a))}: ${esc(taskText(a))}${moodWords(a)}${agoL?'. Last activity '+agoL:''}${cost?'. Cost '+esc(cost):''}">
+    <span class="lname"><span class="dot ${st}"></span>${sub?'':chatNoHTML(a)+draftHTML(a)}<span class="lnm${sub?' sub':''}" title="${esc(a.name)}">${esc(a.name)}</span>${modeIcon(a,true)}</span><span class="lcell" title="${esc(app)}">${esc(app)}</span><span class="lcell" title="${esc(a.role)}">${esc(a.role)}</span><span class="lcell mono lfold" title="${esc(roomOf(a).name)}">${esc(roomOf(a).name)}</span><span class="lcell" title="${esc(DurbarCutText.cutText((mw?mw+'. ':'')+taskText(a),300))}">${mw?`<span class="lmood">${esc(mw)}</span> · `:''}${esc(taskText(a))}</span><span class="lcell num"${agoL?` title="Last activity ${esc(agoL)}"`:''}>${esc(ago)}</span><span class="lcell num"${cost&&cost.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${esc(cost)}</span><span><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}</span></span></button>`};
+  /* spec 059 FR-020 item 2: a main session's row sits in a wrapper with its pencil beside it (a sibling, never inside the row button) */
+  const row=([a,sub])=>{const b=row0([a,sub]),r=sub?'':renBtn(a);return r?`<div class="lrow-w">${b}${r}</div>`:b;};
   const head=LCOLS.map(([k,t])=>{const on=LSORT&&LSORT.key===k,dir=on?(LSORT.dir==='asc'?'ascending':'descending'):'none';
     return `<span role="columnheader" aria-sort="${dir}"${k==='folder'?' class="lfold"':k==='ago'||k==='cost'?' class="num"':''}><button type="button" class="lsort" data-lsort="${k}" title="Sort by ${esc(t.toLowerCase())}">${esc(t)}<span class="sarr" aria-hidden="true">${on?(LSORT.dir==='asc'?'▲':'▼'):'↕'}</span></button></span>`;}).join('');
   $('list').innerHTML=`<div class="list-wrap" role="group" aria-label="Agents"><div class="lrow lhead" role="row">${head}</div>${rows.map(row).join('')||'<div class="empty">No agents match these filters.</div>'}</div>`;
+  placePencils();
 }
 document.addEventListener('click',e=>{const b=e.target.closest('#list [data-lsort]');if(!b)return;
   LSORT=ACT.nextSort(LSORT,b.dataset.lsort);renderList();const n=document.querySelector(`#list [data-lsort="${CSS.escape(b.dataset.lsort)}"]`);if(n)focusIn(n);});
@@ -1593,8 +1603,8 @@ function renderAll(){
   AMB_ID=pickAmbulanceId();
   syncDesks(); /* spec 001 FR-034: who walks to the Boss and who comes back */
   prepareWalkers();
-  const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more||ae.dataset.door||ae.dataset.lsort), inPanel=ae&&ae.closest&&ae.closest('#panel'), scope=ae&&ae.closest?(ae.closest('#list')?'#list ':ae.closest('#stage')?'#stage ':''):''; /* FR-173: read before the render detaches it */
-  const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.more?'data-more':ae.dataset.door?'data-door':ae.dataset.lsort?'data-lsort':''); /* spec 052 FR-064: a sort header keeps focus too */
+  const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more||ae.dataset.door||ae.dataset.lsort||ae.dataset.ren), inPanel=ae&&ae.closest&&ae.closest('#panel'), scope=ae&&ae.closest?(ae.closest('#list')?'#list ':ae.closest('#stage')?'#stage ':''):''; /* FR-173: read before the render detaches it */
+  const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.more?'data-more':ae.dataset.door?'data-door':ae.dataset.lsort?'data-lsort':ae.dataset.ren?'data-ren':''); /* spec 052 FR-064: a sort header keeps focus too */
   renderStats();
   updateFloorAttention();
   if(ui.view==='office')renderOffice(); else renderList();
@@ -1604,6 +1614,7 @@ function renderAll(){
   if(id&&!inPanel){const n=document.querySelector(`${scope}[${key}="${CSS.escape(id)}"]`); if(n&&ae!==n)n.focus({preventScroll:true});}
   if(ui.selected){updatePanelHeader();renderStrip();}
   rememberUi();
+  placePencils(); INL().follow(); /* spec 059 FR-023 item 5: the open field follows its name */
   if(floorSwitchTimed)endFloorSwitchTiming();
 }
 
@@ -1619,6 +1630,7 @@ function ICON_(){return { /* token colours (spec 036): built on every call, not 
  chev:'<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg>',
  file:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4 1.8h5.2L12.5 5v9.2H4z"/><path d="M9 1.8V5.2h3.5"/></svg>',
  img:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2"/><circle cx="5.6" cy="6.4" r="1.3"/><path d="M2.5 12l3.8-3.4 2.6 2.2 2-1.6 3 2.8"/></svg>',
+ rename:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M3.2 10.6l-.5 2.2 2.2-.5 6.6-6.6-1.7-1.7z"/><path d="M1.8 15h12.4"/></svg>',
  x:'<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 3l6 6M9 3l-6 6"/></svg>'
 };}
 function ICON(k){return ICON_()[k];}
@@ -1934,9 +1946,11 @@ function wireAnswerBar(a){
     const hadFocus=bar.contains(document.activeElement);
     painted=key;bar._card=card;
     const q=card.classList.contains('question'), long=text.length>480, fit=q&&!long?qFits(card):null;
-    bar.innerHTML='<span class="ab-q"><b></b> <span></span></span><span class="ab-act"></span>';
-    bar.querySelector('b').textContent=(n>1?'1 of '+n+' · ':'')+a.name+(q?' asks:':card.classList.contains('limit')?' stopped:':' needs your OK:');
-    const qs=bar.querySelector('.ab-q span');
+    bar.innerHTML='<span class="ab-q"><b><span class="ab-n" dir="auto"></span></b> <span></span></span><span class="ab-act"></span>';
+    /* spec 052 FR-177: the name is its own one-line span, cut by CSS with an ellipsis and titled with the whole name; the count and the verb stay outside it */
+    const nm=bar.querySelector('.ab-n');nm.textContent=a.name;nm.title=a.name;
+    const lead=bar.querySelector('b');if(n>1)lead.insertBefore(document.createTextNode('1 of '+n+' \u00b7 '),nm);lead.appendChild(document.createTextNode(q?' asks:':card.classList.contains('limit')?' stopped:':' needs your OK:'));
+    const qs=bar.querySelector('.ab-q > span');
     if(fit){if(fit.tag){const tg=document.createElement('span');tg.className='tag';tg.textContent=fit.tag;qs.appendChild(tg);qs.appendChild(document.createTextNode(' '));}qs.appendChild(document.createTextNode(fit.q));}
     else{qs.textContent=long?'a long request; read it in the chat before you answer.':text;if(long)qs.title=DurbarCutText.cutText(text,300);} /* spec 052 FR-160: the full text is in the chat; FR-168: a data tooltip is at most 300 characters */
     const act=bar.querySelector('.ab-act');
@@ -1973,7 +1987,9 @@ function wireAnswerBar(a){
     if(!src)return false;
     answerPress(src,textOf(c))();return true;
   };
-  answerObs={m:mo,i:io,answerKey};check();
+  /* spec 052 FR-177: a late title or a rename changes only the name, in place: no repaint, so what you typed in the box and its focus stay */
+  const rename=()=>{const nm=bar.querySelector('.ab-n');if(nm&&!bar.hidden){nm.textContent=a.name;nm.title=a.name;}};
+  answerObs={m:mo,i:io,answerKey,rename};check();
 }
 /* ---------------- spec 063: the folder chip says the git branch and how many files changed; a click lists them ---------------- */
 const FSTAT=new Map(); /* main agent id -> {at, busy, st} */
@@ -2025,8 +2041,21 @@ function focusComposer(){
   if(m&&!m.disabled&&!m.readOnly&&m.getClientRects().length){m.focus({preventScroll:true});const n=m.value.length;try{m.setSelectionRange(n,n);}catch(e){}return true;}
   const t=$('panelTitle');if(t)t.focus({preventScroll:true});return false;
 }
+/* spec 059 FR-020 item 1 (issue 636): the chat title is a button that renames in place when this session can be renamed; helpers' titles stay plain text */
+const titleRenameable=a=>canRenameSession(a);
+const panelTipOf=a=>{const t=SN().nameTip(a.alias,a.title,a.folderLabel||a.baseName||'')||a.name;return titleRenameable(a)?t+' Click or press F2 to rename.':t;};
+const panelTitleHTML=a=>titleRenameable(a)?`<button type="button" class="ttl-btn" id="panelTitleBtn" aria-label="Rename session ${esc(a.name)}">${esc(a.name)}</button><span class="ttl-pen" aria-hidden="true">${ICON('rename')}</span>`:esc(a.name);
+/* repaintName: the labels and the text follow a new name; an open field is never touched (it is not in this markup, FR-023 item 1) */
+function paintPanelTitle(a,h){
+  h.title=panelTipOf(a);
+  const b=h.querySelector('.ttl-btn');
+  if(b){h.setAttribute('aria-label',a.name);b.textContent=a.name;b.setAttribute('aria-label','Rename session '+a.name);}
+  else h.textContent=a.name;
+}
+let PANEL_OPENED_AT=0; /* the click guard of FR-020 item 1: the second click of a double-click on a desk lands on the header of the chat it opened */
 function openPanel(id,focus){
-  const a=byId(id); if(!a)return; closeSlash(); keepDraft(); ui.selected=id; attached=(DRAFTS.get(id)||{att:[]}).att.slice();
+  const a=byId(id); if(!a)return;
+  if(ui.selected!==id||!document.body.classList.contains('panel-open'))PANEL_OPENED_AT=performance.now(); closeSlash(); keepDraft(); ui.selected=id; attached=(DRAFTS.get(id)||{att:[]}).att.slice();
   noteRecentChat(a); rememberUi();
   document.body.classList.add('panel-open');
   const room=roomOf(a), parent=a.parent?byId(a.parent):null;
@@ -2036,7 +2065,7 @@ function openPanel(id,focus){
   const subText=a.role+(parent?' · helper of '+parent.name:'');
   p.innerHTML=`<div class="panel-in">
    <div class="strip" role="navigation" aria-label="Agents"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><div class="strip-list" id="stripList"></div></div>
-   <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1"${nameTipAttr(a)||` title="${esc(a.name)}"`}>${esc(a.name)}</h2><div class="sub" title="${esc(subText)}">${parent?'':chatNoHTML(a)}${!parent&&chatNoOf(a)?'<span class="sr-only">Chat '+chatNoOf(a)+'. </span>':''}${esc(subText)}</div></div>
+   <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1" title="${esc(panelTipOf(a))}"${titleRenameable(a)?` aria-label="${esc(a.name)}"`:''}>${panelTitleHTML(a)}</h2><div class="sub" title="${esc(subText)}">${parent?'':chatNoHTML(a)}${!parent&&chatNoOf(a)?'<span class="sr-only">Chat '+chatNoOf(a)+'. </span>':''}${esc(subText)}</div></div>
       <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span><!-- spec 005 FR-039: the header keeps who and what (status, limit, remote, folder); how the next message runs is under the message box (FR-037) -->${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(showPath(room.path))}</span></span></div>      <div class="actions"><!-- spec 052 FR-003: two actions in view (FR-139: a third, + New, by owner decision), the rest under More (ids kept; End and Remove last); spec 006 FR-033 (2026-10-21): Previous sessions moved out of the actions, to their own section above the chat -->${a.live&&!a.parent&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="btn sm" id="newSessHdrBtn" type="button" title="New session in ${esc(room.name)}" aria-label="New session in ${esc(room.name)}">+ New</button>`:''}<button class="btn sm primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
         <button class="btn sm" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
         <button class="btn sm" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window"><span class="mt">Tools and usage<small>Tools used, models, context window</small></span></button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval"><span class="mt">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}<small>Prompts sent at a set time</small></span></button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder"><span class="mt">+ New session<small>Another agent in this folder</small></span></button>${canHandover(a)?'<button class="more-it" role="menuitem" tabindex="-1" id="handoverBtn" type="button" title="Start a session in another agent app from a summary of this conversation. You review it first."><span class="mt">Continue in another app…<small>Start there from a summary</small></span></button>':''}`:''}${canRemote(a)?`<button class="more-it${a.remote?' on':''}" role="menuitem" tabindex="-1" id="remoteBtn" type="button" title="Follow and steer this session from github.com and GitHub Mobile">${remoteItemInner(a)}</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}${canRenameSession(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="renameSessBtn" type="button" title="Give this session a short name"><span class="mt">Rename…<small>A short name for this session</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it danger" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>A later message resumes it</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The folder's other sessions stay."><span class="mt">Remove from office<small>Ends it; history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Forget ${esc(DurbarCutText.cutText(room.name,30))} in Agent Durbar. Its session ends; nothing on disk is deleted."><span class="mt">Remove folder<small>Forgets the folder; files stay on disk</small></span></button>`:'')}</div></div></div>
@@ -2426,6 +2455,12 @@ document.addEventListener('click',e=>{
     ROOMS.filter(r=>roomShown(r)&&(ui.ws==='all'||ui.ws===r.id)&&agents.some(a=>!a.parent&&a.room===r.id)).forEach(r=>setRoomClosed(r,shut,true));
     layoutKey='';renderAll();return;}
   const st=e.target.closest('.stat[data-k]'); if(st){const k=st.dataset.k;ui.status=ui.status===k?null:k;renderAll();const n=document.querySelector(`.stat[data-k="${k}"]`);if(n)focusIn(n);return;}
+  const rn=e.target.closest('[data-ren]'); if(rn){const a=byId(rn.dataset.ren);if(a)startSessionEdit(a,rn.closest('#list')?'list':'desk','pencil');return;} /* spec 059 FR-020 item 2: before [data-id] */
+  const rf=e.target.closest('[data-renfolder]'); if(rf){const r=ROOMS.find(x=>x.id===rf.dataset.renfolder);if(r)startFolderEdit(r,rf.closest('#foldersPop')?'fp':'room','pencil');return;}
+  const rp=e.target.closest('[data-renprev]'); if(rp){const a=byId(ui.selected);if(a)startSessionEdit(a,'prev','pencil',rp.dataset.renprev);return;}
+  if(e.target.closest('#panelTitle')&&$('panelTitleBtn')){ /* FR-020 item 1: not the second click of a double-click, not the click that came with the chat opening */
+    if(e.detail>1||(e.detail>0&&performance.now()-PANEL_OPENED_AT<400))return;
+    const a=byId(ui.selected);if(a)startSessionEdit(a,'panel','title');return;}
   const mo=e.target.closest('[data-more]'); if(mo){const id=mo.dataset.more;ui.expanded[id]=!ui.expanded[id];renderAll();return;}
   const cm=e.target.closest('.chips-more'); if(cm){const box=cm.parentNode;box.dataset.exp=box.dataset.exp==='1'?'0':'1';refreshChips(box);return;}
   const chip=e.target.closest('#chat .chip:not(.att-chip)'); if(chip){if(e.target.closest('.xbody'))return;const o=chip.classList.toggle('open');chip.setAttribute('aria-expanded',String(o));return;} /* spec 052 FR-063: the open body (Copy, Show all, selecting text) keeps it open */
@@ -2482,6 +2517,20 @@ document.addEventListener('keydown',e=>{
     if(!typing){const k=e.code.slice(3);
       if(k==='N'){e.preventDefault();openNextNeedsMe();return;}
       if(answerObs&&answerObs.answerKey&&answerObs.answerKey(k)){e.preventDefault();return;}}
+  }
+  /* spec 059 FR-020, FR-024: F2 renames the focused session (chat title, desk, list row, pencil); Enter does it on the focused chat title (D1).
+     Never in a text field or under a dialog; a field already open keeps its own keys (it stops them). */
+  if(e.target&&e.target.closest&&!modalOpen()&&!e.repeat&&!e.target.closest('input,textarea,select,[contenteditable="true"]')&&INL().startsEdit(e,e.target.id==='panelTitle')){
+    const t=e.target; let a=null,surf='',from='card',pid='';
+    if(t.id==='panelTitle'||t.id==='panelTitleBtn'){a=byId(ui.selected);surf='panel';from='title';}
+    else if(t.matches('.desk[data-id]')){a=byId(t.dataset.id);surf='desk';}
+    else if(t.matches('.lrow[data-id]')){a=byId(t.dataset.id);surf='list';}
+    else if(t.matches('.ren[data-ren]')){a=byId(t.dataset.ren);surf=t.closest('#list')?'list':'desk';from='pencil';}
+    else if(t.closest('#prev .prev-row[data-pg="cli"]')){a=byId(ui.selected);surf='prev';from=t.matches('.ren')?'pencil':'row';pid=t.closest('.prev-row').dataset.pk;}
+    if(a&&surf&&startSessionEdit(a,surf,from,pid)){e.preventDefault();return;}
+    const rid=t.matches('[data-door]')?t.dataset.door:t.matches('[data-foldermenu]')?t.dataset.foldermenu:t.matches('.ren[data-renfolder]')?t.dataset.renfolder:'';
+    const fr=rid&&ROOMS.find(x=>x.id===rid);
+    if(fr&&startFolderEdit(fr,t.closest('#foldersPop')?'fp':'room',t.matches('.ren')?'pencil':'door')){e.preventDefault();return;}
   }
   if(e.key==='Escape'){
     if($('inboxDlg')){closeInbox();return;}
@@ -2898,6 +2947,7 @@ function openKbdHelp(back){
     [['Ctrl','`'],'Back to the previous chat (on a Mac too: Control, not Cmd)'],
     [keyLabels(PREV_KEYS),SIMPLE?'Show or hide earlier chats in a chat':'Show or hide previous sessions in a chat'], /* spec 006 FR-036 */
     [['←','→','↑','↓'],'Move between desks'],
+    [['F2'],'Rename the focused session or folder (Fn+F2 on a Mac)'], /* spec 059 FR-024: in place, on a desk, row, door or chat title */
     [['Esc'],'Back, or close'],
     [keyLabels(['mod',IS_MAC?'⌫':'Backspace']),'Back to the office from a chat, outside text (in a text box it deletes)'], /* spec 074 FR-020 */
     [['?'],'This list'],
@@ -3034,9 +3084,10 @@ function setView(v){ui.view=v;document.body.classList.toggle('list-mode',v==='li
 $('vOffice').onclick=()=>setView('office');
 $('vList').onclick=()=>setView('list');
 let resizeQueued=false;
-const relayout=()=>{if(resizeQueued)return;resizeQueued=true;requestAnimationFrame(()=>{resizeQueued=false;if(ui.view==='office'){renderOffice();syncWalkers();}});}; /* spec 024: figures follow a resize */
+const relayout=()=>{if(resizeQueued)return;resizeQueued=true;requestAnimationFrame(()=>{resizeQueued=false;if(ui.view==='office'){renderOffice();syncWalkers();}placePencils();INL().follow();});}; /* spec 024: figures follow a resize */
 new ResizeObserver(relayout).observe($('floor'));
 window.addEventListener('resize',relayout);
+document.addEventListener('scroll',()=>INL().follow(),{capture:true,passive:true}); /* spec 059 FR-023 item 5: the floor, the list or the chat scrolled: the open field follows its name */
 
 
 /* ---------------- LIVE MODE (Electron bridge, or the simulated agents dev mode) ---------------- */
@@ -4015,6 +4066,7 @@ function startCoffee(a,info){
   if(VISITS.pin(a.id,b.kind==='cap'?window.DurbarPlaces.BANK:window.DurbarPlaces.COFFEE,breakWord(a)))scheduleRender();
   setState(a,'waiting',breakWord(a),coffeeTask(a));
   if(isNew)announce(a.name+': '+coffeeTask(a));
+  if(isNew&&b.rehit&&b.kind==='provider')addNote(liveChat(a),'The resume found the limit still active, so the agent is back on its '+esc(coffeeWord().toLowerCase())+'. Nothing more is sent by itself.'); /* spec 068 FR-025 (issue 671) */
   paintCoffeeBar();
 }
 /* the break ends without a resume of ours (a message, Stop, the agent went on by itself, Not now) */
@@ -4299,7 +4351,8 @@ function applyTitle(a,title){
 function repaintName(a){
   a.name=SN().displayName(a.alias,a.title,a.folderLabel);
   if(a.info)a.info.alias=a.alias;
-  if(ui.selected===a.id){const h=document.getElementById('panelTitle');if(h){h.textContent=a.name;const t=SN().nameTip(a.alias,a.title,a.folderLabel||a.baseName||'');h.title=t||a.name;}const mi=$('msgInput');if(mi){mi.setAttribute('aria-label','Message '+a.name);fitPlaceholder();}const c=document.getElementById('chat');if(c)c.setAttribute('aria-label','Chat with '+a.name);}
+  if(ui.selected===a.id){const h=document.getElementById('panelTitle');if(h)paintPanelTitle(a,h);const mi=$('msgInput');if(mi){mi.setAttribute('aria-label','Message '+a.name);fitPlaceholder();}const c=document.getElementById('chat');if(c)c.setAttribute('aria-label','Chat with '+a.name);}
+  if(ui.selected===a.id&&answerObs&&answerObs.rename)answerObs.rename(); /* spec 052 FR-177: the answer bar names the session */
   scheduleRender();
   if(document.getElementById('schedDlg'))try{renderSchedDlg();}catch(e){}
 }
@@ -4599,6 +4652,22 @@ if(window.DurbarProfileEditor)window.DurbarProfileEditor.init({bridge,askDialog,
 /* ---------------- spec 059: rename a session ---------------- */
 /* Main sessions only (never helpers); a started or not started, live or ended card. */
 const canRenameSession=a=>!!(a&&a.live&&!a.parent&&a.info&&bridge.renameSession);
+/* The submit part of a session rename (FR-022): the Rename dialog and the inline field (inlinename.js) both call it, so the call, the rule
+   check, the repaint, the announcement and the toasts exist once. `prev`: null for the agent's own session, else {id} of a Previous sessions
+   row. Resolves {ok:true,out}, {ok:false,reason} (a rule refusal, shown under the field) or {ok:false} (a toast was shown). */
+async function submitSessionName(a0,prev,text,o){
+  const a=liveRoot(a0); if(!a||!a.live||!bridge.renameSession)return {ok:false};
+  const own=!prev; let out;
+  try{out=await bridge.renameSession(a.id,own?null:prev.id,text);}catch(err){out={ok:false,error:String(err&&err.message||err)};}
+  /* main checks the name again with the shared rule (it also refuses a text that looks like a secret): that reason goes back under the field */
+  if(out&&!out.ok&&/^(Use 1 to|Remove control|That looks like a secret)/.test(out.error||''))return {ok:false,reason:out.error};
+  if(!out||!out.ok){toast(esc((out&&out.error)||'Could not rename the session.'),5000).classList.add('err');return {ok:false};}
+  if(own){a.alias=out.name||undefined;repaintName(a);}
+  else if(o&&o.onDone)o.onDone(out);
+  announce(out.name?'Renamed.':'Name reset.');
+  if(out.note)toast(esc(out.note),6000);
+  return {ok:true,out};
+}
 /* One dialog for the More menu, the card menu and the Previous sessions row menu. `prev`: null for the agent's own session, else {id,title,runtime} of a Previous sessions row. */
 async function renameSessionUi(a0,prev,o){
   const a=liveRoot(a0); if(!a||!a.live||!bridge.renameSession)return;
@@ -4607,23 +4676,17 @@ async function renameSessionUi(a0,prev,o){
   const inApp=!(own&&info.lazy&&!info.resumeLast); /* a card that never started has no session in the agent app yet */
   const lines=[SN().whereLine(cap,app,inApp)];
   if(runtime&&runtime!==cur)lines.push('Name in '+app+': '+SN().shortName(runtime,80));
-  let text=SN().shortName(cur,SN().MAX), reason='', out;
+  let text=SN().shortName(cur,SN().MAX), reason='';
   for(;;){
     const res=await askDialog({title:'Rename session',body:'A short name for this session in Agent Durbar, 1 to '+SN().MAX+' characters. Leave it empty to use '+app+"'s title again.",lines,
       input:{label:'Name',value:text,max:SN().MAX,focus:true,select:true,error:reason,submitOnEnter:true,check:SN().nameError},
       returnFocus:o&&o.opener,buttons:[{label:'Cancel',value:null},{label:'Rename',value:'ok',cls:'primary'}]});
     if(!res)return;
     text=res.text||'';
-    try{out=await bridge.renameSession(a.id,own?null:prev.id,text);}catch(err){out={ok:false,error:String(err&&err.message||err)};}
-    /* main checks the name again with the shared rule (it also refuses a text that looks like a secret): that reason goes back under the field */
-    if(out&&!out.ok&&/^(Use 1 to|Remove control|That looks like a secret)/.test(out.error||'')){reason=out.error;continue;}
-    break;
+    const r=await submitSessionName(a,prev,text,o);
+    if(r.reason){reason=r.reason;continue;}
+    return;
   }
-  if(!out||!out.ok){toast(esc((out&&out.error)||'Could not rename the session.'),5000).classList.add('err');return;}
-  if(own){a.alias=out.name||undefined;repaintName(a);}
-  else if(o&&o.onDone)o.onDone(out);
-  announce(out.name?'Renamed.':'Name reset.');
-  if(out.note)toast(esc(out.note),6000);
 }
 /* after a mode change the chip is re-rendered; put focus back on it (or the card it was opened from) unless the user moved it on */
 function refocusAnchor(anchor){
@@ -5722,8 +5785,9 @@ function renderFolders(){
   const sched=bridge.listSchedules?`<label class="fp-pause" title="Nothing scheduled is sent while this is on (kept across restarts)"><input type="checkbox" id="schedPauseAll"${SCHED.pausedAll?' checked':''}> Pause all schedules</label>`:'';
   pop.innerHTML='<div class="fp-h">Folders <small>remembered across restarts</small>'+sched+'</div>'+ROOMS.map(r=>{
     const n=agents.filter(x=>!x.parent&&x.room===r.id).length, ss=schedulesOf(r).filter(s=>!s.done), nx=nextRunOf(ss);
-    return `<div class="fp-row${r.hidden?' hid':''}"><div class="fp-t"><b title="${esc(r.name)}">${esc(r.name)}${r.hidden?' <span class="tag">hidden</span>':''}</b><small title="${esc(r.path)}">${esc(r.path)} · ${n} agent${n===1?'':'s'}${nx?' · ⏰ next '+esc(nx):''}</small></div>
+    return `<div class="fp-row${r.hidden?' hid':''}"><div class="fp-t"><b class="fpn" title="${esc(r.name)}">${esc(r.name)}${r.hidden?' <span class="tag">hidden</span>':''}</b><small title="${esc(r.path)}">${esc(r.path)} · ${n} agent${n===1?'':'s'}${nx?' · ⏰ next '+esc(nx):''}</small></div>${renFolderBtn(r,true)}
      ${bridge.listSchedules?`<button class="btn" type="button" data-fp="sched" data-room="${esc(r.id)}" title="Prompts sent to ${esc(r.name)} at a time or an interval, while the app is open">Schedules${ss.length?' ('+ss.length+')':''}</button>`:''}<button class="btn" type="button" data-fp="new" data-room="${esc(r.id)}">New session</button><button class="btn" type="button" data-fp="rename" data-room="${esc(r.id)}" title="Give ${esc(r.name)} a display name">Rename</button><button class="btn" type="button" data-fp="hide" data-room="${esc(r.id)}">${r.hidden?'Show':'Hide'}</button><button class="btn danger" type="button" data-fp="rm" data-room="${esc(r.id)}">Remove</button></div>`;}).join('');
+  INL().follow(); /* spec 059 FR-023 item 5 */
 }
 async function hideFolder(r,hidden){
   const ag=agents.find(x=>x.room===r.id); if(!ag)return;
@@ -5747,17 +5811,111 @@ async function removeFolder(r){
   renderFilter(); renderFolders(); scheduleRender(); toast(esc(r.name)+' removed.',3200).classList.add('ok');
 }
 /* spec 006 FR-018: a display name for the room; empty goes back to the folder's own name */
-async function renameFolder(r,el){
-  const ag=agents.find(x=>!x.parent&&x.room===r.id); if(!ag||!bridge.renameFolder)return;
+/* The submit part of a folder rename (FR-022): the dialog and the inline field both call it. Resolves {ok:true}, {ok:false,reason} (a rule refusal) or {ok:false} (a toast was shown). */
+async function submitFolderName(r,text){
+  const ag=agents.find(x=>!x.parent&&x.room===r.id); if(!ag||!bridge.renameFolder)return {ok:false};
   const own=r.folderName||r.name;
-  const res=await askDialog({title:'Rename '+r.name,body:'A display name for this folder in the office, 1 to 40 characters. Leave it empty to use the folder name ('+own+'). The folder on disk is not renamed.',input:{label:'Name',value:r.name,max:40,focus:true},returnFocus:el,
-    buttons:[{label:'Cancel',value:null},{label:'Rename',value:'ok',cls:'primary'}]});
-  if(!res||typeof res.text!=='string')return;
-  const out=await bridge.renameFolder(liveRoot(ag).id,res.text);
-  if(!out||!out.ok){toast('Could not rename the folder.',4000);return;}
+  const out=await bridge.renameFolder(liveRoot(ag).id,text);
+  /* main checks again with the session-name rule and refuses with its reason: it goes back under the field or the dialog's input */
+  if(out&&!out.ok&&/^(Use 1 to|Remove control|That looks like a secret)/.test(out.error||''))return {ok:false,reason:out.error};
+  if(!out||!out.ok){toast('Could not rename the folder.',4000);return {ok:false};}
   r.name=out.label||own;
   renderFilter(); renderFolders(); scheduleRender(); if(ui.selected&&roomOf(byId(ui.selected)||{})===r)openPanel(ui.selected,false);
+  return {ok:true};
 }
+async function renameFolder(r,el){
+  const ag=agents.find(x=>!x.parent&&x.room===r.id); if(!ag||!bridge.renameFolder)return;
+  const own=r.folderName||r.name; let text=r.name, reason='';
+  for(;;){
+    const res=await askDialog({title:'Rename '+r.name,body:'A display name for this folder in the office, 1 to '+SN().MAX_FOLDER+' characters. Leave it empty to use the folder name ('+own+'). The folder on disk is not renamed.',input:{label:'Name',value:text,max:SN().MAX_FOLDER,focus:true,error:reason,submitOnEnter:true,check:SN().folderError},returnFocus:el,
+      buttons:[{label:'Cancel',value:null},{label:'Rename',value:'ok',cls:'primary'}]});
+    if(!res||typeof res.text!=='string')return;
+    text=res.text;
+    const o=await submitFolderName(r,text);
+    if(o.reason){reason=o.reason;continue;}
+    return;
+  }
+}
+/* ---------------- spec 059: rename in place (inlinename.js; FR-020..FR-025, issue 636) ---------------- */
+/* The name's element for a surface ('panel' = the chat title, 'desk' = a card or desk, 'list' = a list row, 'prev' = a Previous sessions row,
+   keyed by its session id): the element, null (not on screen: the field saves as blur does) or 'gone' (the session left the window: the
+   field closes without saving, FR-023 item 4). */
+function inlineNameEl(surface,id,pid){
+  if(!byId(id))return 'gone';
+  if(surface==='panel')return ui.selected===id?$('panelTitleBtn'):null;
+  if(surface==='prev'){
+    const a=byId(id), cl=a&&prevOf(liveRoot(a)).cli;
+    if(!cl||!cl.sessions||!cl.sessions.some(x=>x.id===pid))return 'gone';
+    if(ui.selected!==id)return null;
+    const row=prevRowEl('cli',pid); return row?row.querySelector('.prev-t'):null;
+  }
+  const list=surface==='list';
+  return document.querySelector((list?'#list .lrow':'#stage .desk')+'[data-id="'+CSS.escape(id)+'"] '+(list?'.lnm':'.name'));
+}
+/* One session's name edited in place. `from`: what started it ('title', 'pencil', 'card'), so focus goes back there. The save is the
+   dialog's own submit part (submitSessionName), not a copy (FR-022). `pid`: the session id of a Previous sessions row. */
+function startSessionEdit(a0,surface,from,pid){
+  const a=liveRoot(a0); if(!a||!canRenameSession(a)||modalOpen())return false;
+  let prev=null,onDone=null,cur=a.name;
+  if(surface==='prev'){const x=prevRenameArgs(a,pid,'.ren[data-renprev]'); if(!x)return false; prev=x.prev; onDone=x.onDone; cur=prev.name||prev.title||'';}
+  const find=()=>inlineNameEl(surface,a.id,pid), el=find(); if(!el||el==='gone'||!el.getClientRects().length)return false; /* a hidden name (the other view) has no box to cover */
+  const app=kindWord((a.info||{}).adapterId), id=CSS.escape(a.id), root=surface==='list'?'#list':'#stage', row=surface==='list'?'.lrow':'.desk';
+  INL().open({doc:document,anchor:el,value:SN().shortName(cur,SN().MAX),max:SN().MAX,key:surface+':'+(pid||a.id),
+    label:'Name of session '+cur,hint:'Enter saves, Escape cancels. Empty uses '+app+"'s title again.",
+    check:SN().nameError,
+    submit:async t=>{const r=await submitSessionName(a,prev,t,{onDone});return {ok:r.ok,reason:r.reason};},
+    notify:m=>toast(esc(m),5000).classList.add('err'),onClose:focusAfterGone,
+    reanchor:find,
+    grow:surface!=='prev',maxWidth:surface==='list'?360:480,
+    clip:()=>{const n=find();return n&&n!=='gone'?(surface==='panel'?$('panelHead'):surface==='prev'?n.closest('.prev-tx'):n.closest(row)):null;},
+    focusBack:()=>surface==='panel'?($('panelTitleBtn')||$('panelTitle')):surface==='prev'?(()=>{const r=prevRowEl('cli',pid);return r&&(r.querySelector('.ren[data-renprev]')||r.querySelector('.prev-more'));})():document.querySelector(from==='pencil'?root+' .ren[data-ren="'+id+'"]':root+' '+row+'[data-id="'+id+'"]')});
+  return true;
+}
+/* the item left the window while its field was open (FR-023 item 4): the field closed without saving; keep focus somewhere real, nearest first */
+function focusAfterGone(how){
+  if(how!=='gone')return;
+  const ae=document.activeElement; if(ae&&ae!==document.body&&document.contains(ae))return;
+  const t=document.querySelector('#stage .room-head .door')||document.querySelector('#stage .desk[data-id]')||document.querySelector('#list button.lrow')||$('vOffice');
+  if(t)focusIn(t);
+}
+/* A folder's display name edited in place ('room' = the room header or the closed plate, 'fp' = the Folders panel row). Same submit part as the dialog. */
+function folderNameEl(surface,r){
+  if(!ROOMS.includes(r))return 'gone';
+  if(surface==='fp'){const p=$('foldersPop');if(!p||p.hidden)return null;const b=p.querySelector('[data-fp="rename"][data-room="'+CSS.escape(r.id)+'"]');const row=b&&b.closest('.fp-row');return row?row.querySelector('.fpn'):null;}
+  if(!roomShown(r))return 'gone';
+  const d=document.querySelector('#stage [data-door="'+CSS.escape(r.id)+'"]'); if(!d)return null;
+  const h=d.closest('.room-head'); return h?h.querySelector('.room-name'):(d.closest('.plate')?d.querySelector('.plate-tx b'):null);
+}
+function startFolderEdit(r,surface,from){
+  if(!canRenameFolder(r)||modalOpen())return false;
+  const find=()=>folderNameEl(surface,r), el=find(); if(!el||el==='gone'||!el.getClientRects().length)return false;
+  INL().open({doc:document,anchor:el,value:r.name,max:SN().MAX_FOLDER,key:'folder:'+surface+':'+r.id,
+    label:'Name of folder '+r.name,hint:'Enter saves, Escape cancels. Empty uses the folder name.',
+    check:SN().folderError,submit:async t=>{const o=await submitFolderName(r,t);return {ok:o.ok,reason:o.reason};},
+    notify:m=>toast(esc(m),5000).classList.add('err'),onClose:focusAfterGone,reanchor:find,
+    maxWidth:360,clip:()=>{const n=find();return n&&n!=='gone'?n.closest('.room-head,.plate,.fp-t'):null;},
+    focusBack:()=>{const sel=from==='pencil'?(surface==='fp'?'#foldersPop':'#stage')+' .ren[data-renfolder="'+CSS.escape(r.id)+'"]':surface==='fp'?'#foldersPop [data-fp="rename"][data-room="'+CSS.escape(r.id)+'"]':'#stage [data-door="'+CSS.escape(r.id)+'"]';return document.querySelector(sel)||document.querySelector('#stage [data-door="'+CSS.escape(r.id)+'"]');}});
+  return true;
+}
+/* The pencil of a card, row or room header sits at the end of the name (after the mode icon); when that would cover another part of it
+   (status word, pill, badge, chat number, draft mark, the header's chips) it sits over the tail of the name instead. It takes no
+   layout space (positioned). */
+function placeRen(b){
+  const wrap=b.parentElement, folder=!!b.dataset.renfolder;
+  const sib=folder?wrap:wrap&&wrap.querySelector(':scope>.desk[data-id],:scope>.lrow[data-id]'), nm=sib&&sib.querySelector('.name,.lnm,.room-name');
+  if(!nm)return;
+  const nr=nm.getBoundingClientRect(), sr=sib.getBoundingClientRect(); if(!nr.width||!sr.width)return;
+  const S=16, nx=nm.nextElementSibling, tail=nx&&nx.matches('.modeic,.modebadge')?nx:nm, tr=tail.getBoundingClientRect();
+  const protSel=folder?':scope>*:not(.door):not(.room-name):not(.room-path):not(.ren)':'.stl,.pill,.badge,.chatno,.draft-mark,.modeic,.modebadge';
+  const prot=[...sib.querySelectorAll(protSel)].filter(p=>p!==tail&&p.getClientRects().length).map(p=>p.getBoundingClientRect());
+  const top=nr.top+(nr.height-S)/2, hit=l=>prot.some(q=>l<q.right&&l+S>q.left&&top<q.bottom&&top+S>q.top);
+  let left=tr.right+3;
+  if(left+S>sr.right-2||hit(left))left=Math.max(nr.right-S,nr.left+nr.width/2); /* no room beside it: over the end of the name, never more than its right half (the click on the name's middle still opens the chat) */
+  const op=b.offsetParent||wrap, or=op.getBoundingClientRect(); /* the positioned ancestor: the unit or row wrapper, for a room header the room (the header itself is not positioned: the plant is placed against the room) */
+  const pad=(b.offsetWidth-S)/2; /* the box is 24px (a 24px target, spec 052), the glyph 16px in its middle */
+  b.style.left=Math.round(left-pad-or.left-(op.clientLeft||0))+'px'; b.style.top=Math.round(top-pad-or.top-(op.clientTop||0))+'px';
+}
+function placePencils(){document.querySelectorAll('#stage .ren[data-ren],#list .ren[data-ren],#stage .ren[data-renfolder]:not(.ren-in)').forEach(placeRen);}
 /* spec 006 FR-017: one main session out of the office; the last one of a folder stays (Folders > Remove) */
 function siblingsOf(a){const r=liveRoot(a);return agents.filter(x=>!x.parent&&x.room===r.room&&x.id!==r.id);}
 async function removeSessionUi(a){
@@ -5812,13 +5970,18 @@ function namePrev(c){
   return c;
 }
 /* Rename… for a Previous sessions row (FR-006): the row's ⋯ menu (spec 006 FR-027) calls this with the row's id. */
-async function renamePrevRow(a0,id,opener){
-  const a=liveRoot(a0), st=prevOf(a), row=st.cli&&st.cli.sessions&&st.cli.sessions.find(x=>x.id===id); if(!row)return;
-  await renameSessionUi(a,{id,title:row.title,name:row.named?row.title:'',runtime:row.runtime!==undefined?row.runtime:row.title},{opener,onDone:out=>{
+/* the row's own session and what to do when it is renamed; shared by the dialog (focus goes to the row's ⋯) and the inline field (focus to the pencil) */
+function prevRenameArgs(a0,id,focusSel){
+  const a=liveRoot(a0), st=prevOf(a), row=st.cli&&st.cli.sessions&&st.cli.sessions.find(x=>x.id===id); if(!row)return null;
+  return {a,prev:{id,title:row.title,name:row.named?row.title:'',runtime:row.runtime!==undefined?row.runtime:row.title},onDone:out=>{
     if(out.name){row.runtime=row.runtime!==undefined?row.runtime:row.title;row.title=out.name;row.named=true;}
     else{row.title=row.runtime!==undefined?row.runtime:row.title;row.named=false;}
-    if(ui.selected===a.id){renderPrev(a);const r=[...document.querySelectorAll('.prev-row')].find(x=>x.dataset.pk===id),f=r&&r.querySelector('.prev-more');if(f)focusIn(f);}
-  }});
+    if(ui.selected===a.id){renderPrev(a);const r=[...document.querySelectorAll('.prev-row')].find(x=>x.dataset.pk===id),f=r&&r.querySelector(focusSel);if(f)focusIn(f);}
+  }};
+}
+async function renamePrevRow(a0,id,opener){
+  const x=prevRenameArgs(a0,id,'.prev-more'); if(!x)return;
+  await renameSessionUi(x.a,x.prev,{opener,onDone:x.onDone});
 }
 /* spec 006 FR-035: open or closed is one display preference of this computer (localStorage, like the detail level; no session data) */
 const PREV_PREF='durbar.prevOpen';
@@ -5853,7 +6016,7 @@ const PIN_SVG='<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true
 function prevRow(x,g,k,title,sub,main,info,a){
   title=safeMask(title)||'Session'; /* spec 041 FR-065: a session title is agent text */
   const hid=info.hidden, mark=(info.pinned?`<span class="prev-pin" title="Pinned">${PIN_SVG}<span class="sr-only">Pinned</span></span>`:'')+(hid?'<span class="tag prev-hidtag">Hidden</span>':'');
-  return `<div class="prev-row${hid?' is-hidden':''}" data-pg="${g}" data-pk="${esc(k)}"><div class="prev-tx"><b title="${esc(title)}">${mark}<span class="prev-t">${esc(title)}</span></b><small>${sub}</small></div>${main}<button class="btn sm prev-more" type="button" data-pv="more" aria-haspopup="menu" aria-label="Actions for ${esc(title)}" title="${g==='cli'?'Pin, rename, hide or delete':'Pin, hide or delete'}">⋯</button></div>`;
+  return `<div class="prev-row${hid?' is-hidden':''}" data-pg="${g}" data-pk="${esc(k)}"><div class="prev-tx"><b title="${esc(title)}">${mark}<span class="prev-t">${esc(title)}</span></b><small>${sub}</small></div>${g==='cli'&&a&&canRenameSession(liveRoot(a))?`<button type="button" class="ren ren-in" data-renprev="${esc(k)}" aria-label="Rename ${esc(title)}" title="Rename ${esc(title)}">${ICON('rename')}</button>`:''}${main}<button class="btn sm prev-more" type="button" data-pv="more" aria-haspopup="menu" aria-label="Actions for ${esc(title)}" title="${g==='cli'?'Pin, rename, hide or delete':'Pin, hide or delete'}">⋯</button></div>`;
 }
 function prevListsHtml(a){
   const st=prevOf(a), c=st.cli, v=st.vs, kw=kindWord(a.info&&a.info.adapterId), hasHist=!!c, q=(st.q||'').trim();
@@ -5908,7 +6071,7 @@ function renderPrev(a){
   const st=prevOf(a), c=st.cli, v=st.vs;
   /* spec 006 FR-033: a section of its own above the chat; its toggle row stays, the lists under it show only while it is open */
   prevButton(a);
-  if(!prevShows(st)){box.hidden=true;box.classList.remove('open');panel.hidden=true;panel.innerHTML='';return;}
+  if(!prevShows(st)){box.hidden=true;box.classList.remove('open');panel.hidden=true;panel.innerHTML='';INL().follow();return;}
   const nc=c&&c.ok?c.sessions.length:0, nv=v&&v.ok?v.sessions.length:0; /* the search box counts every row, hidden or not */
   const keepScroll=(panel.querySelector('.prev-body')||{}).scrollTop||0;
   const qf=document.activeElement&&document.activeElement.id==='prevQ'?document.activeElement:null, qSel=qf?[qf.selectionStart,qf.selectionEnd]:null; /* a re-render (a list coming back) keeps focus in the search */
@@ -5927,6 +6090,7 @@ function renderPrev(a){
     /* spec 052 (2026-10-21, round 1): a cut last row read like text over the chat; fade it while more rows are below */
     const more=()=>nb.classList.toggle('more-below',nb.scrollTop+nb.clientHeight<nb.scrollHeight-2);
     more();nb.addEventListener('scroll',more,{passive:true});}
+  INL().follow(); /* spec 059 FR-023 item 5 */
 }
 /* spec 006 FR-021: a folder restored after a restart continues its last session when its chat is first opened (no prompt is sent) */
 async function wakeLast(a){
@@ -6232,5 +6396,18 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 /* spec 008 FR-113, simulator only: false until the agents are listed, the frozen simulator has replayed every script and the saved usage
    totals are read; then any queued frame is drawn now (a stalled animation frame once left a comparison driver measuring a stale page) */
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
-if(SIM)window.__durbarSimUi={agents:()=>agents,renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent}; /* bridge: the simulator's fake (spec 005 T073: a driver counts Stop calls); render: spec 001 FR-057 drivers move a finish time back; never set outside DURBAR_SIM */
+if(SIM)window.__durbarSimUi={agents:()=>agents,renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,
+  /* spec 059 T076 (FR-023): a driver makes the things that change while a field is open happen through the real paths */
+  retitle:(id,title)=>{const a=byId(id);if(!a)return false;applyTitle(a,title);return true;},
+  renamedElsewhere:(id,alias)=>{onAgentRenamed({id,alias});return true;},
+  renameRoomElsewhere:(roomId,label)=>{const r=ROOMS.find(x=>x.id===roomId);if(!r)return false;r.name=label;renderFilter();renderFolders();scheduleRender();return true;},
+  endAgent:(id)=>{onLiveEvent({type:'status',sessionId:id,timestamp:Date.now(),status:'stopped'});return true;},
+  removeAgent:(id)=>{removeLiveAgent(id);renderFolders();scheduleRender();return true;},
+  /* FR-023 item 4 for folders: a room removed or hidden while its field is open */
+  removeRoom:(roomId)=>{const r=ROOMS.find(x=>x.id===roomId);if(!r)return false;const gone=new Set(agents.filter(x=>x.room===r.id).map(x=>x.id));
+    for(let i=agents.length-1;i>=0;i--){if(gone.has(agents[i].id)||gone.has(agents[i].parent)){DRAFTS.delete(agents[i].id);delete chats[agents[i].id];delete prev[agents[i].id];agents.splice(i,1);}}
+    ROOMS.splice(ROOMS.indexOf(r),1);if(ui.ws===r.id)ui.ws='all';renderFilter();renderFolders();scheduleRender();return true;},
+  hideRoom:(roomId)=>{const r=ROOMS.find(x=>x.id===roomId);if(!r)return false;r.hidden=true;if(ui.ws===r.id)ui.ws='all';renderFilter();renderFolders();scheduleRender();return true;},
+  hidePrev:(id,pk)=>{const a=byId(id);return a?markPrev(a,'cli',pk,'hide'):false;},
+  inline:()=>INL().current()}; /* bridge: the simulator's fake (spec 005 T073: a driver counts Stop calls); render: spec 001 FR-057 drivers move a finish time back; never set outside DURBAR_SIM */
 })();

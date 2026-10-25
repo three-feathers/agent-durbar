@@ -8,7 +8,7 @@
  */
 import { isAuthError } from './autherrors';
 import { isMcpAuthChallenge } from './mcpauth';
-import { resetMs, usageLimitClosing } from './usagelimit';
+import { claudeLimitText, resetMs, usageLimitClosing } from './usagelimit';
 import { RetryTracker, claudeRetry } from './retry';
 import type { EventBody } from './map';
 import type { McpServerStatus } from './types';
@@ -176,6 +176,8 @@ export class ClaudeMapper {
   private retries = new RetryTracker();
   /** Spec 068: this turn reported a usage limit; its closing error result ends the turn quietly (the coffee break says why). */
   private limited = false;
+  /** Spec 068 FR-025: the last reset time a `rate_limit_event` named, for a limit sentence that names none. */
+  private lastReset: number | undefined;
   expectAbort(): void {
     this.abortExpected = true;
   }
@@ -184,6 +186,7 @@ export class ClaudeMapper {
     this.abortExpected = false;
     this.retries.reset(); // spec 034 FR-017: a respawn starts without the old turn's retries
     this.limited = false;
+    this.lastReset = undefined;
     this.servers = [];
     this.skipped = [];
     this.tools.clear();
@@ -228,6 +231,7 @@ export class ClaudeMapper {
       case 'assistant':
         if (!agentId) this.retries.progress();
         if (!agentId && claudeAuthFailure(m)) this.authFailed = true;
+        if (!agentId && m.error === 'rate_limit') this.limitSentence(m.message);
         return this.assistant(m, agentId);
       case 'user':
         return this.user(m, agentId);
@@ -236,6 +240,7 @@ export class ClaudeMapper {
       case 'rate_limit_event': {
         // spec 068 FR-002: a usage window that is used up (`rejected`) or `credits_required` puts the agent on a coffee break
         const lim = claudeUsageLimit(m);
+        if (lim && lim.resetsAt) this.lastReset = lim.resetsAt;
         if (lim && !this.limited) {
           this.limited = true;
           this.emit(lim);
@@ -245,6 +250,22 @@ export class ClaudeMapper {
       default:
         return;
     }
+  }
+
+  /**
+   * Spec 068 FR-025 (issue #671): Claude Code's limit sentence, as the synthetic assistant message (`error: 'rate_limit'`) or the closing
+   * error result, puts the agent on a coffee break like a `rate_limit_event` does; once per turn. `message` may be an assistant message
+   * body or the result string.
+   */
+  private limitSentence(message: unknown): void {
+    if (this.limited) return;
+    const content = message && typeof message === 'object' ? (message as { content?: unknown }).content : undefined;
+    const text = typeof message === 'string' ? message : Array.isArray(content) ? content.map((b) => (b && typeof b === 'object' ? str((b as { text?: unknown }).text) ?? '' : '')).join(' ') : undefined;
+    const t = claudeLimitText(text);
+    if (!t) return;
+    const resetsAt = t.resetsAt ?? (this.lastReset && this.lastReset > Date.now() ? this.lastReset : undefined);
+    this.limited = true;
+    this.emit({ type: 'usageLimit', scope: 'plan', ...(resetsAt ? { resetsAt } : {}), source: `Claude ${(t.window && CLAUDE_WINDOWS[t.window]) ?? 'usage limit'}` });
   }
 
   private system(m: ClaudeMessage): void {
@@ -475,6 +496,8 @@ export class ClaudeMapper {
     // The text of a turn that ended well is never read (an answer may well talk about a 401); Claude's own error marker is.
     const auth = this.authFailed || ((subtype !== 'success' || m.is_error === true) && isAuthError(m.result));
     this.authFailed = false;
+    // spec 068 FR-025: a limit that came as words only (no `rate_limit_event`), as after a Retry, is still a limit, not an error
+    if (!auth && (subtype !== 'success' || m.is_error === true)) this.limitSentence(m.result);
     const limited = this.limited;
     this.limited = false;
     // spec 034 FR-017: the turn's retry run ends here; it is emitted only on the plain error path below (a usage limit, an abort and a

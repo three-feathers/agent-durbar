@@ -194,6 +194,19 @@ const fold = (o: EventBody[]): string[] => {
   assert.ok(!kinds(o).some((k) => k.startsWith('retry:gave-up')), 'a usage limit (camelCase, as the schema) is not a gave-up');
   o = run([err('serverOverloaded'), failed('UsageLimitExceeded')]);
   assert.ok(!kinds(o).some((k) => k.startsWith('retry:gave-up')), 'nor in PascalCase');
+  // #646: after retries, the real spelling "usageLimitExceeded" runs through the renderer rule to the usage-limit line, never "Gave up"
+  for (const spelling of ['usageLimitExceeded', 'UsageLimitExceeded']) {
+    o = run([err('serverOverloaded'), err('serverOverloaded'), failed(spelling)]);
+    let st: never | null = null as never | null;
+    const lines: string[] = [];
+    for (const e of o) {
+      const x = R.next(st as never, e) as { state: never | null; action: string | null; info?: unknown; why?: string };
+      st = x.state;
+      if (x.action === 'ended') lines.push(R.endedLine(x.info, x.why));
+      if (x.action === 'gave-up') lines.push('GAVE UP');
+    }
+    assert.deepStrictEqual(lines, ['Retrying ended at a usage limit (after 2 retries).'], spelling);
+  }
   o = run([err('serverOverloaded'), { method: 'turn/completed', params: { threadId: 'th', turn: { id: 't1', status: 'completed' } } }, failed()]);
   assert.ok(!kinds(o).some((k) => k.startsWith('retry:gave-up')), 'a finished turn clears the run');
   // usage is not progress: a failed turn may report tokens

@@ -51,6 +51,7 @@ For a new contributor and their Claude agent. Plain steps; the full rules are in
 
 ## Team norms
 
+- **Test once, then trust the record.** CI runs the full suites; reviewers read CI for the exact sha and run only their own mutations, probes and what CI can't cover (a macOS-only path that cannot run is written "not verified on macOS"). A `reviewing at` note expires after 1 hour without a review. Post `reviewing at <sha>` before a review and `checks run at <sha>: …` after your own checks, and answer a round's review list with `taking #N` (AGENTS.md, *Working as a team*).
 - **Write team decisions down the same day** as a dated FR in spec 021 (FR-037), and in [AGENTS.md](../AGENTS.md) if it changes how agents work.
 - **Review teammates' PRs first, one list per round** (FR-042, FR-043): a teammate's PR waiting for review comes before new work; each review round is one chat message in landing order, and agents say `taking #N` before reviewing.
 - **Land before building** (FR-039): at most 8 open PRs per side, at most 5 of them new features waiting for a first review; over that, only fix and land.
@@ -95,3 +96,8 @@ The *Spec Kit gate* check explains itself. Common causes: branch is not `NNN-slu
   4. Check the draft, then publish it by hand as a **pre-release**, not *latest*.
 
   `changelog:build` writes the new section under *Unreleased* (every fragment by file name, then any line still under *Unreleased* from before the switch), deletes the fragments and moves "after the alpha.N tag" on. `--dry-run` prints the whole file; `--stdout` prints only the section (the notes) and edits nothing.
+- Cutting a **test build** from a branch (spec 008 FR-121..FR-124, owner decision 2026-10-23, #658), for example to try unmerged fixes on a real Mac. An owner's OK first, like any tag.
+  1. On the branch, keep `package.json`'s version as it is (say `0.1.0-alpha.15`) and tag the commit `v0.1.0-alpha.15-test.1` (annotated; the next try is `-test.2`). The exact pattern is `vX.Y.Z[-alpha|beta|rc.N]-test.M`, and the version must be the tag without `-test.M`. Old names such as `-mcptest.1` are not test tags and are refused off `main`.
+  2. `release.yml` builds it like a release into a **draft pre-release, never latest**, titled `Agent Durbar <tag> (test build)`. Its notes list the branch's commits that are not on `main` (subject lines only, masked and shown as code, at most 100) and the PRs they name, with a compare link. There is no fold PR, no `CHANGELOG.md` or README change, and a test tag is never the "previous release" of a real one.
+  3. Share the draft with the tester; delete the draft and the tag when you are done. If you publish it, keep it a pre-release, not *latest*. Regular tags (no `-test.M`) must still be on `main`.
+  Dry run before you push the tag: `node scripts/release-notes.js --tag <tag> --repo three-feathers/agent-durbar --out ../notes.md --title-out ../title.txt` on a checkout of the tag with `origin/main` fetched (needs Node 22.18 or later, for the masking).

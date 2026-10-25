@@ -37,6 +37,7 @@ const DRIVERS = [
   { name: 'shots-033-move', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 033 FR-024 (#590): Move to floor in the folder menu, with Undo
   { name: 'shots-034-list' },
   { name: 'shots-034-retry' }, // spec 034 FR-021: Retrying and Gave up (simretry=1 in its own query)
+  { name: 'check-rename-inline' }, // spec 059 FR-027 (issue #636): rename in place on every surface, Expert and Simple, both sizes
   { name: 'shots-044-everywhere' },
   { name: 'shots-044-templates' },
   // spec 060 FR-002: the per-OS assertion needs a known manager set, the one the driver expects for the host OS (a real Windows host
