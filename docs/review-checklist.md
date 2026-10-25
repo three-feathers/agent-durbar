@@ -93,6 +93,7 @@ Do it **adversarially**: assume your diff is wrong, read the real diff (`git dif
 
 - [ ] **No POSIX-only defaults** (output folders, separators), and paths compared case-sensitively except on Windows and macOS. *Evidence:* [#496](https://github.com/three-feathers/agent-durbar/pull/496), [#572](https://github.com/three-feathers/agent-durbar/pull/572).
 - [ ] **macOS is not run on PRs** (spec 008 FR-106): a macOS-only path says "not verified on macOS" in the PR. *Evidence:* [#561](https://github.com/three-feathers/agent-durbar/pull/561), [#625](https://github.com/three-feathers/agent-durbar/pull/625).
+- [ ] **Synthetic native text keys are not native editing.** Electron's macOS `webContents.sendInputEvent` delivers ⌘⌫ / ⌘A to the renderer but does not perform deletion / selection. Assert the app does not intercept the event; do not treat the unchanged input as real-Mac behavior. *Evidence:* issue #683, spec 074.
 
 ### Reuse and docs
 
