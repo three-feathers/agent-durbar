@@ -237,7 +237,7 @@ async function main(): Promise<void> {
     await m3.ad.dispose();
     // review round 5: a second folder dropped for any other reason (a filesystem root, a quote, unresolvable) is named too
     const q = path.join(H, 'it"s');
-    fs.mkdirSync(q);
+    // no folder is made: a quote drops the path before it is resolved (and Windows cannot make such a name)
     const wsOdd = path.join(H, 'odd.code-workspace');
     fs.writeFileSync(wsOdd, JSON.stringify({ folders: [{ path: path.join(H, 'proj') }, { path: path.parse(H).root }, { path: q }, { path: path.join(H, 'missing') }] }));
     const m4 = make({ home: H });

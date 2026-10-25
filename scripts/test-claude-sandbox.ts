@@ -365,8 +365,8 @@ async function main(): Promise<void> {
     // review round 5: an ALLOW-LIST: a second folder dropped for any reason (a filesystem root, a link to it, a quote, unresolvable) is
     // never an --add-dir and is named; Read-only -> Allow all passes the folders again (no floor)
     const quoted = path.join(tmp, 'it"s');
-    fs.mkdirSync(quoted);
-    fs.symlinkSync('/', path.join(tmp, 'to-root'), 'dir');
+    // no folder is made: a quote drops the path before it is resolved (and Windows cannot make such a name)
+    fs.symlinkSync(path.parse(tmp).root, path.join(tmp, 'to-root'), 'dir');
     const odd = [path.parse(tmp).root, quoted, path.join(tmp, 'missing'), path.join(tmp, 'to-root')];
     const wsOdd = path.join(tmp, 'odd.code-workspace');
     fs.writeFileSync(wsOdd, JSON.stringify({ folders: [{ path: path.join(home, 'proj') }, ...odd.map((p) => ({ path: p }))] }));
