@@ -129,7 +129,7 @@ module.exports = async (ctx) => {
     // a window that reloaded knows no rules: a rule it never saw is not "removed" (it was just reported as the reason)
     await ev({ permission: { requestId: 'hx4', kind: 'shell', summary: 'run echo', state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: 'never:seen', label: 'run echo4' } } });
     await call('hx4');
-    assert.ok(await until(`[...document.querySelectorAll('#chat .chip')].some(c=>/echo/.test(c.textContent)&&(c.querySelector(':scope>.why')||{}).textContent==='Allowed: session rule'&&c.querySelector('.why-undo'))`, 5000), `${w}: a rule this window never saw is tagged as a rule, not as removed`);
+    assert.ok(await until(`[...document.querySelectorAll('#chat .chip')].some(c=>(c.querySelector('.why-l')||{}).textContent==='run echo4'&&(c.querySelector(':scope>.why')||{}).textContent==='Allowed: session rule'&&!!c.querySelector('.why-undo'))`, 5000), `${w}: a rule this window never saw is tagged as a rule, not as removed`);
     // its Undo asks main to revoke a key nobody holds: nothing changes, nothing breaks
     await js(`(()=>{const c=[...document.querySelectorAll('#chat .chip')].find(c=>/onerror/.test((c.querySelector('.why-l')||{}).textContent||''));if(!c.classList.contains('open'))c.click();})()`);
     assert.ok(await until(`!!document.querySelector('#chat .chip.open .why-undo')`, 5000), `${w}: the hostile card offers Undo`);
