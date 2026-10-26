@@ -31,16 +31,22 @@ const DRIVERS = [
   { name: 'shots-001-welcome', sim: false }, // the first-run screen: no simulator
   { name: 'check-office-fill' }, // spec 001 FR-041..FR-046: grown desks with few agents (its own sim, simrooms and simhelpers per layout)
   { name: 'shots-017' },
+  { name: 'shots-017-signs' }, // spec 017 FR-003..FR-009: meeting-room door signs on session desks (word, icon, colour, contrast in 6 themes, fit)
   { name: 'shots-018' },
   { name: 'shots-033', env: { DURBAR_SIM_FLOORS: '1' } },
   { name: 'shots-033-move', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 033 FR-024 (#590): Move to floor in the folder menu, with Undo
   { name: 'shots-034-list' },
+  { name: 'shots-015-compact' }, // spec 015 FR-014: Compacting on the desk, list, header, strip and ring (simcompact=1 in its own query)
   { name: 'shots-034-retry' }, // spec 034 FR-021: Retrying and Gave up (simretry=1 in its own query)
+  { name: 'check-unread' }, // spec 001 FR-170..FR-177, spec 005 FR-176/FR-177 (issue #691): a finished agent's reply stays marked New until its chat is shown
+  { name: 'check-rename-inline' }, // spec 059 FR-027 (issue #636): rename in place on every surface, Expert and Simple, both sizes
+  { name: 'check-session-summary' }, // spec 085 FR-003/FR-007: the card shown in the chat when a session ends (simsummary=1), both sizes
   { name: 'shots-044-everywhere' },
   { name: 'shots-044-templates' },
   // spec 060 FR-002: the per-OS assertion needs a known manager set, the one the driver expects for the host OS (a real Windows host
   // has PowerShell; winget,brew,npm there hid the PowerShell route and failed the check)
   { name: 'shots-051-setup', env: { DURBAR_SIM_MANAGERS: process.platform === 'win32' ? 'powershell,winget,npm' : 'winget,brew,npm' } },
+  { name: 'shots-081-updates' }, // spec 081: agent-app update check and update, canned results, no network
   { name: 'shots-051-account' }, // spec 051 FR-013: the signed-in account line, the picker tooltips and About agent apps (a fake identity)
   { name: 'shots-051-setup', label: 'shots-051-setup win32', env: { DURBAR_SIM_MANAGERS: 'powershell,winget,npm', DURBAR_SIM_PLATFORM: 'win32' } }, // spec 060 FR-011/FR-012: Windows' routes (PowerShell installer, winget, npm) and Run beside each command, on every OS
   { name: 'shots-052-ux', env: { DURBAR_SIM_KINDS: 'mixed' } },
@@ -48,11 +54,13 @@ const DRIVERS = [
   { name: 'shots-054-remote' },
   { name: 'shots-006-prevmarks' },
   { name: 'shots-003-mode-back' },
+  { name: 'check-sandbox-floor' }, // spec 087: the OS sandbox chip, tooltips, note (Continue / Always / Change mode…), Codex card line, Settings line
   { name: 'shots-012-signin-chat' },
   { name: 'shots-058-mcp-restart' }, // spec 058: per-server Restart and Restart session with these servers
   { name: 'shots-058-mcp-signin' }, // spec 058 T102/T104: Sign in for a Copilot server that needs it (simmcpauth), the two-step open, the steps
   { name: 'shots-058-mcp-words' }, // spec 058 T113-T115: state words, hints, Details and live refresh in the MCP dialog
   { name: 'shots-058-mcp-settings' }, // spec 058 FR-080..FR-086 (#596): live MCP state over the running chats in Settings
+  { name: 'shots-076-orgpolicy' }, // spec 076 FR-202..FR-205 (#602): what the agent app's own organization policy blocks, greyed with the reason
   { name: 'shots-058-mcp-health' }, // spec 058 FR-090..FR-096 (#603): failure reason, when, Copy diagnostics (masked), the MCP chip dot
   { name: 'shots-model', label: 'shots-model 1440', env: { MODEL_W: '1440', MODEL_H: '900' } },
   { name: 'shots-model', label: 'shots-model 1280', env: { MODEL_W: '1280', MODEL_H: '800' } },
@@ -64,6 +72,7 @@ const DRIVERS = [
   { name: 'check-grant-chips' },
   { name: 'check-sched-sendto' },
   { name: 'check-sched-edit' },
+  { name: 'check-sched-top' }, // spec 044 FR-027..FR-035: the top-bar Schedules button
   { name: 'check-question-options' },
   { name: 'check-question-visible' },
   { name: 'check-chat-no-scroll' },
@@ -76,19 +85,56 @@ const DRIVERS = [
   { name: 'check-codex-file-card' }, // spec 052 FR-172: a Codex write card names the files and shows the change
   { name: 'check-theme-art' }, // spec 040 FR-023: a picked theme's characters and gadgets on desks, walkers, places and chips
   { name: 'check-crew' }, // spec 077: Cheeky Crew portraits: box vs protected zones, pose, sharpness, the fallback with a picture removed
+  { name: 'check-permission-scope' }, // spec 003 FR-108: the approval card says how far "for this session" reaches
   { name: 'check-ro-ask' }, // spec 003 FR-094..FR-097: a Read-only denial's "Switch to Ask first…" opens the mode menu
+  { name: 'check-why-allowed' }, // spec 003 FR-099..FR-105 (#605): the why-allowed tag on tool cards and Undo this rule
   { name: 'check-composer-toolbar' }, // spec 005 FR-037..FR-043: chat settings under the message box, one Send / Stop slot
   { name: 'check-slash-suggest' }, // spec 073: the "/" list in the message box (keyboard, ARIA, geometry)
+  { name: 'check-notes' }, // spec 083: save a message, the Notes drawer, Insert and notes in the "/" list (US1 scenarios 1..6, SC-001, SC-002)
+  { name: 'check-notes-count' }, // spec 083 T030..T032: the header count, the marker on a saved message, the drawer's search (SC-005)
   { name: 'check-edits' }, // spec 005 FR-020..FR-026: file edits in the chat
   { name: 'shots-068-coffee' }, // spec 068: coffee break (simbreak=8 in its own query)
   { name: 'shots-001-lobby' }, // spec 001 FR-034..FR-040: Boss queue, Bank, Postbox and its letter, who is at a place (simsched in its own query)
   { name: 'check-done-desk-mask' }, // spec 041 FR-065: no token of a done reply on the office floor
-  { name: 'check-ui-text' }, // spec 052 FR-171: wrapping, sizes, box widths, field weight, dark contrast
+  // spec 052 FR-171: wrapping, sizes, box widths, field weight, dark contrast. Two drivers that run at once (issue #738: one took ~650 s
+  // against the 600 s limit); the light part also has the six built-in themes' contrast, the dark part the tones and the stylesheet check
+  { name: 'check-ui-text', label: 'check-ui-text light', env: { UITEXT_PART: 'light' } },
+  { name: 'check-ui-text', label: 'check-ui-text dark', env: { UITEXT_PART: 'dark' } },
+  { name: 'shots-006-crash' }, // spec 006 FR-038..FR-046 (#606): the crash card (Resume all, Pick…, Dismiss), per-row resume, the lost-turn note
   { name: 'shots-074-navigator', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 074: Go to (keyboard navigator), chat numbers, the shortcut in Settings
+  { name: 'check-browser-dialogs', env: { DURBAR_SIM_BROWSER_CONSENT: 'ask' } }, // spec 080 T015 AC6: the once-per-app consent, Leave this page?, a hidden session's page dialog (toast, chat forward once, marker)
+  { name: 'check-browser-dialogs', label: 'check-browser-dialogs 1280', env: { DURBAR_SIM_BROWSER_CONSENT: 'ask', BROWSER_DIALOGS_SIZE: '1280x800' } }, // the same at 1280x800: the note, Leave this page?, the hidden dialog's toast
+  { name: 'check-browser-tab' }, // spec 080 T014/T015/T018: Chat | Browser tabs, the bar, the native view's attach and detach, the simulator's test pages, two sessions' own views
+  // issue #748 (spec 021 FR-057): drivers that asserted but nothing ran, each passing alone on the simulator (seconds on a 4-core Linux box)
+  { name: 'check-checkpoints' }, // spec 065 FR-003/FR-004/FR-007: the note after a turn that changed files, preview, restore, Undo the undo, the refusal (~21 s)
+  { name: 'check-mode-refusal' }, // spec 012 FR-087: Codex refusing Read-only / Ask first (simsendfail=sandbox) (~14 s)
+  { name: 'check-plan-mode' }, // spec 066: Plan first (next message), the chip, the plan card with Approve / Revise / Reject (~18 s)
+  { name: 'shots-006-continue' }, // spec 006 FR-021: a folder continues its last session after a restart (~12 s)
+  { name: 'shots-006-remove' }, // spec 006 FR-022: removing a folder is easy to find, Cancel keeps it (~26 s)
+  { name: 'shots-012-elicit' }, // spec 012 FR-151..FR-155: an MCP elicitation as a form in the question card, and the URL mode (~28 s)
+  { name: 'shots-021' }, // spec 011 FR-026..FR-029: usage totals kept across restarts, the reset, "credits not reported" (~29 s)
+  { name: 'shots-030-handover' }, // spec 030 FR-042..FR-045: continue a conversation in another agent app (mixed agent apps) (~20 s)
+  { name: 'shots-043-default' }, // spec 043 FR-009: the folder's default agent in the New session dialog (~28 s)
+  { name: 'shots-061-foldersetup' }, // spec 061: the folder-setup dialog (simfoldersetup=1) (~18 s)
+  { name: 'shots-i7' }, // spec 020 FR-020..FR-031: the per-folder Import from VS Code action (~31 s)
+  { name: 'shots-m9' }, // spec 011: the credit cap (~29 s)
+  { name: 'shots-m10' }, // spec 020: Tools This session / All time, MCP extras per folder, the agent MCP dialog (~37 s)
 ];
 
+/**
+ * Drivers that assert, pass by hand on the simulator and are on purpose NOT in DRIVERS, each with the reason (issue #748, spec 021 FR-057).
+ * scripts/test-ui-suite.ts fails on an asserting scripts/check-*.js or shots-*.js that is in neither DRIVERS, shots-docs' DOC_SHOTS nor here,
+ * so a driver can no longer be written, cited as `sim:` evidence and never run. Moving one into DRIVERS is the way out of this list.
+ */
+const NOT_IN_SUITE = {
+  'shots-034': 'passes alone but takes about 124 s (fixed settles at both sizes, Serious mode, reduced motion, mini); CI is near its limit (#738). Needs its sleeps turned into until() waits before it joins the suite. Since spec 068 FR-005 it checks that the credit limit is a break, not a faint',
+  'shots-024-custom': 'passes alone with DURBAR_SIM_PLACES=3 but takes about 89 s (custom places: seeding, Add / Edit dialog, Settings, rename, delete at both sizes); too long for the suite today. Run it by hand: DURBAR_SIM_PLACES=3 as its header says',
+  'check-rename': 'npm run check:rename, about 140 s (spec 059, issue #372: rename a session, every kind and level, both sizes); check-rename-inline in DRIVERS covers the in-place rename on every surface',
+  'check-perf': 'npm run check:perf measures frame times and DOM growth under load; its limits depend on the machine, so it is a local check, not a gate on shared runners',
+};
+
 /** The screenshot variables the drivers read; all point at one folder. */
-const OUT_VARS = ['OUT', 'SHOTS_012', 'SHOTS_021', 'SHOTS_024', 'SHOTS_033', 'SHOTS_034', 'SHOTS_OUT', 'MODEL_OUT', 'CARDMENU_OUT', 'MODE_OUT', 'ABOUT_OUT', 'HERO_OUT', 'SHOTS_DIR'];
+const OUT_VARS = ['OUT', 'SHOTS_012', 'SHOTS_021', 'SHOTS_024', 'SHOTS_033', 'SHOTS_034', 'SHOTS_OUT', 'MODEL_OUT', 'CARDMENU_OUT', 'MODE_OUT', 'ABOUT_OUT', 'HERO_OUT', 'SHOTS_DIR', 'I7_OUT', 'M9_OUT', 'M10_OUT'];
 const TIMEOUT_MS = Number(process.env.UI_SUITE_TIMEOUT_MS || 600_000);
 
 function args(a = process.argv.slice(2)) {
@@ -183,5 +229,5 @@ async function main({ ensure = ensureElectron, run = runOne, argv } = {}) {
   if (failed.length) process.exitCode = 1;
 }
 
-module.exports = { syntaxErrors, main, runOne, DRIVERS }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
+module.exports = { syntaxErrors, main, runOne, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
 if (require.main === module) main().catch((e) => { console.error('ui-suite:', e.message); process.exitCode = 1; });

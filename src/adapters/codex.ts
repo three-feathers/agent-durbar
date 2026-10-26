@@ -6,6 +6,8 @@
  *
  * Not in this file yet (T043b): resume of a known thread (FR-093) and its folder and profile checks.
  */
+import { readCodexOrgPolicy } from './codexOrgPolicy';
+import type { OrgPolicy } from '../shared/orgpolicy';
 import { randomUUID } from 'crypto';
 import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import * as fs from 'fs';
@@ -23,7 +25,7 @@ import { CodexMapper } from './codexMap';
 import { CodexRpcError, createCodexRpc, realSpawn } from './codexRpc';
 import type { CodexRpc, RequestOutcome, SpawnFn } from './codexRpc';
 import { codexHistory, codexModelOptions, codexPreviousSessions } from './codexHistory';
-import { cleanAnswers, parseQuestionsWithOriginals } from './questions';
+import { cleanAnswers, parseQuestionsWithOriginals, SkipNotes } from './questions';
 import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaiter } from './elicitation';
 import type { ElicitAnswer } from '../shared/elicit';
 import { codexMcpConfig, codexMcpServers, codexMcpState } from './codexMcp';
@@ -31,7 +33,8 @@ import type { McpServerStatus } from './types';
 import { cleanSessionTitle } from './history';
 import type { HistoryResult, PreviousSession } from './history';
 import type { ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
-import { CODEX_INITIALIZE_CAPABILITIES, codexFileChanges, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexSpawnPath, codexWorkspaceRoots } from './codexModes';
+import type { SandboxHostView } from '../shared/api';
+import { CODEX_INITIALIZE_CAPABILITIES, codexSandboxHost, codexSandboxState, codexFileChanges, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexSpawnPath, codexWorkspaceRoots } from './codexModes';
 import type { CodexFileChange, DurbarAnswer } from './codexModes';
 import { CODEX_BINARY, detectBinary, nodeExec } from './detect';
 import type { DetectEnv } from './detect';
@@ -76,6 +79,7 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   renameSession: 'any', // spec 059 FR-007: thread/name/set on the live child or a short-lived app-server (real 2026-10-20: codex resume lists the name once the thread has had a turn)
   deleteSession: true, // spec 006 FR-028: thread/delete (hard delete; read: upstream app-server protocol, Codex 0.163; never run on a real thread)
   oneShot: true, // spec 040 FR-015: an ephemeral read-only thread in an empty temp folder
+  osSandbox: true, // spec 087 FR-005: durbar_ro already is the floor; the state is reported, never continued without (fail closed)
 });
 
 /** Where the `codex` binary is and which version it reports. */
@@ -479,6 +483,11 @@ export class CodexAdapter implements AgentAdapter {
     }
   }
 
+  /** Spec 076 FR-198 (issue #602): the app's own machine policy, read-only. */
+  readOrgPolicy(): OrgPolicy {
+    return readCodexOrgPolicy();
+  }
+
   /**
    * Spec 051 FR-011: the account Codex reports, from `account/read` with `refreshToken: false` on a short-lived app-server (local
    * auth state; no prompt, nothing billed). An older Codex without the method is `unknown`. Personal data: never passed to `debug`.
@@ -704,6 +713,7 @@ export class CodexAdapter implements AgentAdapter {
       throw new Error('Codex stopped unexpectedly while starting.');
     }
     if (!options.quiet) this.emit(live.sid, { type: 'status', status: 'idle', intent: `Ready in ${cwd}` });
+    this.emit(live.sid, { type: 'sandbox', sandbox: codexSandboxState(mode, this.platform) }); // spec 087 FR-011: from the checks above (a refused start never gets here)
     if (!options.quiet) void this.refreshMcp(live); // FR-147: the session's MCP servers; a quiet start emits nothing (C3), so its first message reads them
     return live.sid;
   }
@@ -863,7 +873,7 @@ export class CodexAdapter implements AgentAdapter {
     live.interrupting = true;
     try {
       live.broker.denyPending();
-      for (const answer of [...live.questions.values()]) answer(null); // FR-146: an open question is skipped
+      for (const [id, answer] of [...live.questions]) { this.skips.note(id, 'interrupt'); answer(null); } // FR-146: an open question is skipped
       for (const p of [...(live.plans?.values() ?? [])]) p({ kind: 'reject' }); // spec 066: Stop rejects an open plan
       live.planTurn = undefined;
       cancelElicitations(live.elicitations); // FR-151
@@ -906,6 +916,11 @@ export class CodexAdapter implements AgentAdapter {
    * policy cannot change on a loaded thread, so the next message reopens the thread on a fresh child with the new settings.
    * A stricter mode during a running turn interrupts that turn, so nothing more runs under the looser mode.
    */
+  /** Spec 087 FR-012: the Settings > Agent apps line (from the platform; Codex's own check runs at each start). */
+  async sandboxHost(): Promise<SandboxHostView> {
+    return codexSandboxHost(this.platform);
+  }
+
   setPermMode(sessionId: string, mode: PermissionMode, opts: { clearGrants?: boolean; approvePending?: boolean } = {}): { pending: number } {
     const live = this.sessions.get(sessionId);
     if (!live) return { pending: 0 };
@@ -936,7 +951,7 @@ export class CodexAdapter implements AgentAdapter {
     live.stopping = true;
     live.muted = true;
     live.broker.stop();
-    for (const answer of [...live.questions.values()]) answer(null); // FR-146
+    for (const [id, answer] of [...live.questions]) { this.skips.note(id, 'stop'); answer(null); } // FR-146
     cancelElicitations(live.elicitations); // FR-151
     for (const p of [...(live.plans?.values() ?? [])]) p({ kind: 'reject' }); // spec 066: End rejects an open plan
     // Let the denied requests' answers (wire `cancel`) go out before the interrupt and the close.
@@ -959,6 +974,10 @@ export class CodexAdapter implements AgentAdapter {
 
   revokeGrant(sessionId: string, key: string): void {
     this.sessions.get(sessionId)?.broker.revoke(key);
+  }
+
+  revokeCall(sessionId: string, callId: string): number {
+    return this.sessions.get(sessionId)?.broker.revokeCall(callId) ?? -1;
   }
 
   /** Stop every session and wait for every child. [KNOWN GAP] (T042): only the direct child is signalled. */
@@ -1152,6 +1171,7 @@ export class CodexAdapter implements AgentAdapter {
       serverName: perm.serverName,
       // FR-172: the file change's diff with secrets masked (env values and key shapes), and its own card line
       ...(perm.kind === 'write' ? { cardSummary: perm.summary } : {}),
+      ...(perm.sandboxNote ? { sandboxNote: perm.sandboxNote } : {}), // spec 087 FR-021: its own line on the card
       ...(perm.diff ? { diff: redact(perm.diff, { ...process.env, ...this.env }) } : {}),
     });
     const answer: DurbarAnswer = decision.kind === 'approve-once' ? 'approve' : live.stopping || live.interrupting ? 'stop' : 'deny';
@@ -1162,6 +1182,9 @@ export class CodexAdapter implements AgentAdapter {
     if (elicit) return { result: reply.decision === 'accept' ? { action: 'accept', content: {} } : { action: answer === 'stop' ? 'cancel' : 'decline' } };
     return { result: { decision: reply.decision } };
   }
+
+  /** Why each skipped question was skipped (spec 052 FR-178). */
+  private readonly skips = new SkipNotes();
 
   /**
    * FR-146: Codex asks the user (`item/tool/requestUserInput`). The questions go to the question card (spec 012 FR-128); the
@@ -1186,7 +1209,9 @@ export class CodexAdapter implements AgentAdapter {
     live.questions.delete(requestId);
     const clean = answers ? cleanAnswers(asked, answers) : undefined;
     if (!clean) {
-      this.emit(live.sid, { type: 'question', phase: 'cancelled', requestId });
+      const reason = this.skips.take(requestId);
+      this.debug?.(`codex: question ${requestId} cancelled: ${reason}`); // spec 052 FR-178: a code, never the question or an answer
+      this.emit(live.sid, { type: 'question', phase: 'cancelled', requestId, reason });
       return { result: { answers: {} } };
     }
     this.emit(live.sid, { type: 'question', phase: 'answered', requestId, answers: clean });
@@ -1256,7 +1281,9 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   answerQuestion(sessionId: string, requestId: string, answers: Record<string, string> | null): void {
-    this.sessions.get(sessionId)?.questions.get(requestId)?.(answers);
+    const w = this.sessions.get(sessionId)?.questions.get(requestId);
+    if (w && answers === null) this.skips.note(requestId, 'user');
+    w?.(answers);
   }
 
   /** FR-151: the user's answer to an MCP elicitation (main checked it against the fields). */

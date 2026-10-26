@@ -49,6 +49,8 @@ body.screen-open .workspace{display:none}
 .mst.connected .mst-ic{color:var(--c-done)} .mst.failed .mst-ic,.mst.needs-auth .mst-ic{color:var(--c-error)} .mst.pending .mst-ic{color:var(--c-thinking)} .mst.disabled .mst-ic,.mst.stopped .mst-ic{color:var(--muted)} .mst.unknown{color:var(--muted)}
 .mst-w{font-weight:500}
 .srv-hint{display:block;font-size:11px;color:var(--ink-2);overflow-wrap:anywhere}
+.srv-hint.srv-org,.mcp-tlist .srv-org{color:var(--tone-warn-ink)} /* spec 076 FR-202: blocked by the agent app's organization policy */
+.mcp-org code{color:var(--muted)}
 .srv-detbtn{align-self:flex-start;margin-top:2px}
 /* spec 058 FR-090/FR-093 (issue 603): the reason line and the Details / Copy diagnostics buttons side by side */
 .srv-why{display:block;font-size:11px;color:var(--ink);overflow-wrap:anywhere}
@@ -268,6 +270,12 @@ body.has-bridge #topBtns{display:flex}
 .hs-st{font-size:var(--t5-size);font-weight:650;padding:2px 9px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
 .hs-ok{color:var(--tone-ok-ink);background:var(--tone-ok-bg);border-color:var(--tone-ok-line)}.hs-warn{color:var(--amber-ink);background:var(--warn-bg);border-color:var(--tone-warn-line)}.hs-off{color:var(--ink-2);background:var(--surface-2)}
 .hs-act{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}
+/* spec 081: the update lines on a card, the bar with Check for updates and the start-check switch, the Settings badge */
+.hs-upd:empty{display:none}.hs-upd .hs-st{font-size:var(--t5-size);padding:1px 8px}.hs-upd-l{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.hs-quiet{color:var(--muted)}.hs-wait .linkbtn{margin-left:6px}
+.hs-bar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:6px 0 2px}.hs-sw{display:inline-flex;gap:6px;align-items:center;font-size:var(--t5-size)}
+.hs-other{margin-top:6px}
+.upd-badge{display:inline-block;margin-left:6px;min-width:16px;padding:0 5px;border-radius:999px;background:var(--warn-bg);color:var(--amber-ink);border:1px solid var(--tone-warn-line);font-size:11px;font-weight:700;line-height:16px;text-align:center}
 .hs-log:empty{display:none} /* spec 052 FR-055: no empty box before output arrives */
 .hs-log{max-height:9em;overflow:auto;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px;font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere}
 .hs-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -471,3 +479,4 @@ body.has-bridge #topBtns{display:flex}
 .lv-who{font-size:12px;min-width:0;overflow-wrap:anywhere}
 .lv-act{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px}
 .scr-adv>summary #advMcpAtt[hidden]{display:none}
+#hsDlg .dbtn{flex-wrap:wrap} /* spec 081: the open-sessions dialog has three buttons; they wrap instead of being cut off at the left */

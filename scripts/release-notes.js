@@ -3,7 +3,7 @@
  * Spec 008 FR-117..FR-120 (2026-10-23): fold at tag time. The release workflow (`.github/workflows/release.yml`, job `verify`)
  * runs this on exactly the tagged commit, before anything is built:
  *
- *   node scripts/release-notes.js --tag v0.1.0-alpha.N --repo owner/name --out release-notes.md [--main-ref refs/remotes/origin/main] [--summary <file>] [--title-out <file>]
+ *   node scripts/release-notes.js --tag v0.1.0-alpha.N --repo owner/name --out release-notes.md [--main-ref refs/remotes/origin/main] [--summary <file>] [--title-out <file>] [--github-output <file>]
  *
  * It refuses the tag unless: the name is a version (`v1.2.3` or `v1.2.3-pre.N`), it equals `v` + package.json's version, the
  * checked-out commit is the tag's commit, that commit is an ancestor of the main ref (only tags on main are released; a full
@@ -19,6 +19,7 @@
  * any branch. Its package.json version must be the tag without `-test.M`; its notes list the commits that are not on main (subject
  * lines only, masked with src/shared/redact.ts, then cut) instead of changelog fragments, and nothing is folded afterwards.
  * `--title-out <file>` writes the release title ("(test build)" for a test tag) for the draft-release job.
+ * Spec 008 FR-129: `--github-output <file>` appends `prerelease=true|false` and `latest=true|false` (releaseKind) for the workflow.
  */
 'use strict';
 const { execFileSync } = require('child_process');
@@ -33,9 +34,17 @@ const RELEASE_TAG_RE = /^v\d+\.\d+\.\d+(-(alpha|beta|rc)\.\d+)?$/;
 // spec 008 FR-121: a test build is a release version plus `-test.M`; never a release (RELEASE_TAG_RE), and checked before TAG_RE
 const TEST_TAG_RE = /^v(\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?)-test\.(\d+)$/;
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+// spec 008 FR-130: every agent app Durbar supports, and who it is not affiliated with
+const AGENTS_CLAUSE =
+  'Needs at least one agent app signed in: GitHub Copilot, Claude Code or OpenAI Codex (Settings > Agent apps can install it). ' +
+  'Independent project, not affiliated with GitHub, Microsoft, Anthropic or OpenAI.';
 const PREAMBLE =
   'Unsigned alpha build of Agent Durbar. Not code-signed or notarized: see the README for the macOS Gatekeeper and Windows SmartScreen steps. ' +
-  'Requires GitHub Copilot (copilot login). Independent project, not affiliated with GitHub or Microsoft.';
+  AGENTS_CLAUSE;
+// a stable tag (no "-" in the version): honest about the build, no "alpha"
+const STABLE_PREAMBLE =
+  'Unsigned build of Agent Durbar. Not code-signed or notarized: see the README for the macOS Gatekeeper and Windows SmartScreen steps. ' +
+  AGENTS_CLAUSE;
 const TEST_PREAMBLE =
   '**Test build, not a release.** Built from a branch for testing changes that are not on `main` yet; it is never marked latest, ' +
   'has no CHANGELOG.md section and is not the previous release of the next one. Unsigned and not notarized, like every build: ' +
@@ -49,6 +58,22 @@ function tagKind(tag) {
   if (typeof tag !== 'string') return '';
   if (TEST_TAG_RE.test(tag)) return 'test';
   return TAG_RE.test(tag) ? 'release' : '';
+}
+
+/*
+ * Spec 008 FR-129: the one place that decides how a tag is published. A version with a "-" (alpha, beta, rc, every -test.M) is a
+ * pre-release and never latest; a stable tag (v1.2.3) is not a pre-release and is to be latest once published. Both stay DRAFTS
+ * (release.yml); `latest` is applied at publish time (see publishCommand), because the GitHub API does not keep "latest" on a draft.
+ * Anything that is not a valid tag gets the cautious answer (pre-release, not latest).
+ */
+function releaseKind(tag) {
+  const stable = typeof tag === 'string' && tagKind(tag) === 'release' && !tag.includes('-');
+  return { prerelease: !stable, latest: stable };
+}
+
+/* The command the owner runs to publish the checked draft; a stable one also marks it latest. */
+function publishCommand(tag) {
+  return `gh release edit ${tag} --draft=false${releaseKind(tag).latest ? ' --latest' : ''}`;
 }
 
 /*
@@ -146,12 +171,22 @@ function releaseNotes(root, { tag, repo, mainRef = MAIN_REF }) {
   }
   if (!gitOk(root, ['merge-base', '--is-ancestor', commit, mainRef])) throw new Error(`${tag} (${commit}) is not on ${mainRef}: only commits on main are released${RELEASE_TAG_RE.test(tag) ? ` (a test build from a branch is ${tag}-test.N)` : ''}`);
   const previous = previousRelease(root, commit, tag);
-  const heading = `${tag} ([pre-release](https://github.com/${repo}/releases/tag/${tag}), ${date})`;
+  const stable = !releaseKind(tag).prerelease;
+  const heading = `${tag} ([${stable ? 'release' : 'pre-release'}](https://github.com/${repo}/releases/tag/${tag}), ${date})`;
   const { section, source } = cl.notes(root, { release: heading, previous });
-  return { kind, title: `Agent Durbar ${tag}`, heading, previous, source, notes: `${PREAMBLE}\n\n${section}\n` };
+  return { kind, title: `Agent Durbar ${tag}`, heading, previous, source, notes: `${stable ? STABLE_PREAMBLE : PREAMBLE}\n\n${section}\n` };
 }
 
 /* The job summary: what was checked and the fold PR's commands with the exact heading (changelog.d/README.md). */
+
+// A fold branch name must pass the Spec Kit gate (^NNN-[a-z0-9][a-z0-9-]*$): no dots.
+// v0.1.0-alpha.11 -> fold-alpha-11 (the name in changelog.d/README.md); other tags keep their letters and digits.
+function foldSlug(tag) {
+  const m = /^v\d+\.\d+\.\d+-(alpha|beta|rc)\.(\d+)$/.exec(tag);
+  if (m) return `fold-${m[1]}-${m[2]}`;
+  return `fold-${tag.slice(1).replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}`;
+}
+
 function summary({ kind, heading, previous, source, commits }, tag) {
   if (kind === 'test') {
     return [
@@ -168,7 +203,7 @@ function summary({ kind, heading, previous, source, commits }, tag) {
         'Fold PR (a normal pull request through the queue; nothing pushes to `main`), from the tag so later fragments stay for the next release:',
         '',
         '```bash',
-        `git fetch origin --tags && git switch -c <NNN>-fold-${tag.slice(1)} ${tag}`,
+        `git fetch origin --tags && git switch -c <NNN>-${foldSlug(tag)} ${tag}`,
         `npm run changelog:build -- --release "${heading}"`,
         'git merge origin/main   # the fragments merged after the tag come back for the next release',
         '# a modify/delete conflict on a fragment edited after the tag: keep the deletion (git rm it), new text goes in a new fragment',
@@ -184,10 +219,13 @@ function summary({ kind, heading, previous, source, commits }, tag) {
     '',
     ...fold,
     '',
+    ...(releaseKind(tag).latest
+      ? ['A stable release: the draft is not a pre-release. GitHub keeps no "latest" mark on a draft, so publish it with:', '', '```bash', publishCommand(tag), '```', '']
+      : []),
   ].join('\n');
 }
 
-module.exports = { MAIN_REF, TAG_RE, RELEASE_TAG_RE, TEST_TAG_RE, TEST_COMMITS_MAX, TEST_SUBJECT_MAX, PREAMBLE, TEST_PREAMBLE, tagKind, loadRedact, previousRelease, testNotes, releaseNotes, summary };
+module.exports = { MAIN_REF, TAG_RE, RELEASE_TAG_RE, TEST_TAG_RE, TEST_COMMITS_MAX, TEST_SUBJECT_MAX, PREAMBLE, STABLE_PREAMBLE, TEST_PREAMBLE, tagKind, releaseKind, publishCommand, loadRedact, previousRelease, testNotes, releaseNotes, summary };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
@@ -200,6 +238,7 @@ if (require.main === module) {
     const r = releaseNotes(root, { tag, repo: opt('--repo'), mainRef: opt('--main-ref') || MAIN_REF });
     fs.writeFileSync(out, r.notes);
     if (opt('--title-out')) fs.writeFileSync(opt('--title-out'), `${r.title}\n`);
+    if (opt('--github-output')) { const k = releaseKind(tag); fs.appendFileSync(opt('--github-output'), `prerelease=${k.prerelease}\nlatest=${k.latest}\n`); }
     if (opt('--summary')) fs.appendFileSync(opt('--summary'), summary(r, tag));
     console.log(r.heading);
   } catch (e) {

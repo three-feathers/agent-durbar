@@ -3,6 +3,7 @@
  * The Copilot adapter runs on the fake SDK; no process runs, no account is used, nothing is billed.
  */
 import * as assert from 'assert';
+import { SANDBOX_HOST_OK } from './fakes/claude-cli';
 import {
   CLAUDE_SIGN_IN_HINT as MAIN_CLAUDE_HINT,
   CODEX_SIGN_IN_HINT as MAIN_CODEX_HINT,
@@ -127,13 +128,13 @@ void (async () => {
 
   // ---- Claude Code verifySignIn: local only (no free server call): signed-out when `auth status` says so, else unknown
   {
-    const mk = (v: boolean | undefined | 'throw') => new ClaudeAdapter({ claudePath: async () => '/x/claude', loggedIn: async () => { if (v === 'throw') throw new Error('x'); return v; } });
+    const mk = (v: boolean | undefined | 'throw') => new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/x/claude', loggedIn: async () => { if (v === 'throw') throw new Error('x'); return v; } });
     assert.strictEqual((await mk(false).verifySignIn()).status, 'signed-out');
     assert.deepStrictEqual(await mk(true).verifySignIn(), { status: 'unknown', detail: CLAUDE_LOCAL_SIGN_IN });
     assert.strictEqual((await mk(undefined).verifySignIn()).status, 'unknown');
     assert.strictEqual((await mk('throw').verifySignIn()).status, 'unknown');
     // default probe without a found claude: unknown, nothing runs
-    assert.strictEqual((await new ClaudeAdapter({ claudePath: async () => undefined }).verifySignIn()).status, 'unknown');
+    assert.strictEqual((await new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => undefined }).verifySignIn()).status, 'unknown');
   }
   // ---- FR-158: refreshAuth restarts Copilot's shared client and resumes the live sessions on the new one
   {
@@ -153,7 +154,16 @@ void (async () => {
     c1.sessions.get(a)!.processing = true; // a turn is running in a
     await ad.setCap(b, 7);
     await ad.setMcpEnabled(b, 'github', false);
+    // spec 052 FR-178: a question open while the client is replaced ends as skipped with the reason `reconnect` (a code on the event and in the log)
+    const dbg: string[] = [];
+    ad.debug = (m) => dbg.push(m);
+    const openQ = (c1.sessions.get(a)!.config.onUserInputRequest as (r: unknown) => Promise<{ answer: string }>)({ question: 'Open while reconnecting?', choices: ['Yes'] });
+    for (let i = 0; i < 500 && !events.some((e) => e.type === 'question' && (e as { phase?: string }).phase === 'asked'); i++) await new Promise((r) => setTimeout(r, 2));
+    assert.ok(events.some((e) => e.type === 'question' && (e as { phase?: string }).phase === 'asked'), 'the question was asked');
     await ad.refreshAuth();
+    assert.match((await openQ).answer, /skipped/, 'the agent is told it was skipped');
+    assert.deepStrictEqual(events.filter((e) => e.type === 'question' && (e as { phase?: string }).phase === 'cancelled').map((e) => (e as { reason?: string }).reason), ['reconnect']);
+    assert.ok(dbg.some((m) => /^question \S+ cancelled: reconnect$/.test(m)) && !dbg.some((m) => /Open while reconnecting/.test(m)), 'a debug line with the code only');
     assert.strictEqual(c1.stopped, 1, 'the old client is stopped gracefully');
     const c2 = await ad.currentClient();
     assert.notStrictEqual(c2, c1, 'getClient returns a new client');

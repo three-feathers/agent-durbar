@@ -9,11 +9,13 @@ import type { ElicitAction, ElicitAnswer, ElicitRequest } from '../shared/elicit
 import type { McpServerSpec } from '../shared/mcp';
 import type { AutoTier, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import type { AdapterCapabilities, PermissionMode } from './capabilities';
+import type { OrgPolicy } from '../shared/orgpolicy';
 import type { HandoffResult } from './handoff';
 import type { HistoryResult, PreviousSession } from './history';
 import type { RemoteState } from '../shared/remote';
 import type { EditInfo } from '../shared/edits';
 import type { AccountIdentity, AccountInfoOptions } from '../shared/account';
+import type { SandboxHostView, SandboxState } from '../shared/api';
 export type { EditInfo };
 export type { ElicitAction, ElicitAnswer, ElicitRequest, McpServerSpec, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult, AdapterCapabilities, PermissionMode };
 
@@ -77,6 +79,13 @@ export interface StartOptions {
    * passes them to its agent app's own filter and refuses them in its permission broker (FR-063).
    */
   disabledMcpTools?: Record<string, string[]>;
+  /**
+   * Spec 087 FR-019/FR-007d: the organization requires the agent app's OS sandbox in Read-only and Ask first: an unavailable sandbox is
+   * refused every time (no *Continue*). Set by main from the policy reader; absent = not required.
+   */
+  requireOsSandbox?: boolean;
+  /** Spec 087 FR-007c: *Always continue on this computer* is stored for this app; it only skips the note (the pre-check and the attempt still run). */
+  sandboxAlwaysContinue?: boolean;
 }
 
 export interface Attachment {
@@ -135,7 +144,13 @@ export interface PermissionInfo {
   broadScopeKey?: string;
   broadScopeLabel?: string;
   /** Who decided: the user, an earlier "Approve for this session" grant, the session being stopped, or Allow all (`policy`: no card is shown, spec 052 FR-071). */
-  via?: 'user' | 'session' | 'stopped' | 'policy';
+  via?: 'user' | 'session' | 'stopped' | 'policy' | 'quiet';
+  /**
+   * Spec 003 FR-099 (issue #605): why this request ran without asking, only from what Durbar itself decided. Absent when the user
+   * answered it. Display only: nothing reads it back to approve anything. `quiet` events carry it for a read and are never shown as
+   * a card or logged.
+   */
+  allowedBy?: AllowedBy;
   /** True when the user approved this one *and* remembered the scope for the session. */
   remembered?: boolean;
   /**
@@ -144,7 +159,26 @@ export interface PermissionInfo {
    * simulator). Copilot and Codex leave it out. Display text only: never run or applied.
    */
   diff?: string;
+  /**
+   * Spec 087 FR-021: what approving may mean for the OS sandbox, a line of its own on the card (never cut, never part of `summary`):
+   * Codex's Ask first says an approved command or file change may run outside its sandbox. Display text only.
+   */
+  sandboxNote?: string;
 }
+
+/**
+ * Spec 003 FR-099: the reason a request ran without a question. `session-grant`: the user's "Approve for this session" rule(s) (`key` is the first,
+ * `keys` every rule that allowed it: a write in several folders needs one rule per folder; all can be revoked); `allow-all`: the mode; `in-folder`: a read that Durbar checked to be inside the session's folders; `attachment`: a read of a file the user attached; `app`: reserved for an adapter that really
+ * reports the agent app's own decision (no adapter sets it yet, FR-106).
+ */
+/** Spec 003 FR-102: most rule keys one `allowedBy` lists. The broker, `eventguard` and the window (`whyallowed.js` `KEYS_MAX`, same number, checked by test:permissions) all use it; more rules are counted in `more`, not dropped silently. */
+export const ALLOWED_BY_KEYS_MAX = 50;
+export type AllowedBy =
+  | { kind: 'session-grant'; key: string; label: string; keys?: string[]; more?: number; noUndo?: boolean }
+  | { kind: 'allow-all' }
+  | { kind: 'in-folder' }
+  | { kind: 'attachment' }
+  | { kind: 'app'; source: 'config' | 'hook' | 'classifier' };
 
 /** A remembered "Approve for this session" permission; can be revoked. */
 export interface SessionGrant {
@@ -278,11 +312,15 @@ export interface AutoTierFailedEvent extends BaseEvent {
   reason: 'policy-rejected' | 'request-failed' | 'setup-failed' | 'unsupported' | 'unknown';
 }
 
-/** Compaction of the context (spec 030): `auto` = the runtime did it at its threshold, `manual` = the user asked, `model-switch` = before a switch to a smaller window, `overflow` = after the window was exceeded. */
+/**
+ * Compaction of the context (spec 030): `auto` = the runtime did it at its threshold, `manual` = the user asked, `model-switch` = before a switch to a smaller window,
+ * `overflow` = after the window was exceeded. Spec 015 (issue #601): `truncation` = the older messages were dropped, not summarised; `unknown` = the agent app does
+ * not say who started it (Claude's start message, Codex's item).
+ */
 export interface CompactionEvent extends BaseEvent {
   type: 'compaction';
   phase: 'start' | 'complete' | 'failed';
-  trigger: 'auto' | 'manual' | 'model-switch' | 'overflow';
+  trigger: 'auto' | 'manual' | 'model-switch' | 'overflow' | 'truncation' | 'unknown';
   tokensBefore?: number;
   tokensAfter?: number;
   tokensRemoved?: number;
@@ -409,6 +447,9 @@ export interface AskedQuestion {
   options: { label: string; description?: string }[];
 }
 
+/** Why a question ended unanswered (spec 052 FR-178): a code for the event and the debug log, never text. `user`: the window sent Skip; `unreadable`: an answer that held nothing usable. */
+export type QuestionSkipReason = 'user' | 'stop' | 'interrupt' | 'reconnect' | 'exit' | 'unreadable';
+
 /** The agent asks the user to choose (spec 012 FR-128): `asked` with the questions, then `answered` or `cancelled`. */
 export interface QuestionEvent extends BaseEvent {
   type: 'question';
@@ -421,6 +462,8 @@ export interface QuestionEvent extends BaseEvent {
   elicitation?: ElicitRequest;
   /** `answered` of an elicitation: what the user did (`accept` = submitted or Done, `decline`); a cancel is `phase: 'cancelled'`. */
   elicitAction?: ElicitAction;
+  /** `cancelled` only (spec 052 FR-178): why the question ended unanswered. */
+  reason?: QuestionSkipReason;
 }
 
 /** A custom agent the user can select for a session (spec 043 FR-001); generic across adapters. */
@@ -519,10 +562,22 @@ export interface PlanEvent extends BaseEvent {
   action?: 'approve' | 'reject' | 'revise';
 }
 
+/**
+ * Spec 087 FR-006..FR-011: the session's OS sandbox changed (`sandbox`: null = nothing to show, Allow all with the app default). With
+ * `notice`, the sandbox could not start: nothing was sent, the message stays as not sent, and the chat shows `text` with the actions
+ * offered (*Continue without the OS sandbox*, *Always continue on this computer*) beside *Change mode…*; `refused` = policy, no action.
+ */
+export interface SandboxEvent extends BaseEvent {
+  type: 'sandbox';
+  sandbox: SandboxState | null;
+  notice?: { text: string; actions: Array<'continue' | 'always'>; refused?: boolean };
+}
+
 /** Spec 066 FR-002: the user's answer to a proposed plan. */
 export type PlanAnswer = { kind: 'approve' } | { kind: 'reject' } | { kind: 'revise'; feedback: string };
 
 export type AgentEvent =
+  | SandboxEvent
   | PlanEvent
   | RemoteEvent
   | AgentScheduleEvent
@@ -580,6 +635,8 @@ export interface AgentAdapter {
   resolvePermission?(sessionId: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean): void;
   /** Forget one "Approve for this session" grant. Optional. */
   revokeGrant?(sessionId: string, key: string): void;
+  /** Spec 003 FR-101: forget every grant that allowed one tool call (its request id). Returns the call's rules still live (0 = all gone) or -1 when the call is unknown. Optional. */
+  revokeCall?(sessionId: string, callId: string): number;
   /** Change (or with `null` remove) the credit cap of a running session. Optional: adapters that cannot enforce a cap omit it (spec 011). */
   setCap?(sessionId: string, credits: number | null): Promise<void>;
   /** Answer a "limit reached" request: add credits, set a new cap, remove the cap or cancel the blocked request. Optional. */
@@ -656,6 +713,11 @@ export interface AgentAdapter {
   /** Spec 051 FR-007: whether this harness is signed in, checked without a prompt (no credits). Only the yes/no leaves the adapter. */
   authStatus?(): Promise<{ signedIn: boolean }>;
   /**
+   * Spec 076 FR-198 (issue #602): this agent app's OWN organization policy on this machine (its documented machine files), read-only,
+   * normalized the way the app reads it; an empty policy when there is none. Copilot asks its runtime first (FR-198).
+   */
+  readOrgPolicy?(): OrgPolicy | Promise<OrgPolicy>;
+  /**
    * Spec 012 FR-156: whether the sign-in really works, asked of the service where the app offers a free call (no prompt, no
    * credits); `unknown` when it cannot tell. `detail` is a short, safe sentence: never a token, email or account name.
    */
@@ -690,6 +752,14 @@ export interface AgentAdapter {
   deleteSession?(sessionId: string): Promise<void>;
   /** The vendor's own id to resume this session later, when it differs from Durbar's session id (spec 006 FR-020; Codex's thread id). */
   resumeIdOf?(sessionId: string): string | undefined;
+  /**
+   * Spec 087 FR-007a: the person chose *Continue without the OS sandbox* for this session (`always`: also *Always continue on this
+   * computer*, FR-007c). Durbar's own checks stay; nothing is sent. Rejects with a plain sentence when the policy requires the sandbox
+   * (FR-007d) or `always` is not offered here. Optional (`capabilities.osSandbox`).
+   */
+  continueWithoutSandbox?(sessionId: string, opts?: { always?: boolean }): Promise<void>;
+  /** Spec 087 FR-012: whether this app's OS sandbox can run on this computer, for Settings > Agent apps. Optional (`capabilities.osSandbox`). */
+  sandboxHost?(): Promise<SandboxHostView>;
   /** Subscribe to normalized events from all sessions of this adapter. */
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe;
 }

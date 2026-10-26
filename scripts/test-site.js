@@ -35,6 +35,20 @@ for (const os of ['macOS', 'Windows', 'Linux']) assert.ok(site.installSteps(read
 
 const out = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-site-'));
 execFileSync(process.execPath, [path.join(__dirname, 'build-site.js')], { env: { ...process.env, SITE_OUT: out, SITE_RELEASE: 'off' }, stdio: 'pipe' });
+// spec 050 FR-013: the wording follows the latest release: a stable release drops "alpha", a pre-release or no release keeps it
+const outStable = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-site-stable-'));
+execFileSync(process.execPath, [path.join(__dirname, 'build-site.js')], { env: { ...process.env, SITE_OUT: outStable, SITE_FAKE_RELEASE: JSON.stringify({ tag: 'v0.1.0', pre: false }) }, stdio: 'pipe' });
+const stableIdx = fs.readFileSync(path.join(outStable, 'index.html'), 'utf8');
+assert.match(stableIdx, />Download</, 'stable: the download button says Download');
+assert.ok(!/>Download alpha</.test(stableIdx) && !/Install the alpha/.test(stableIdx) && !/early alpha\.\"/.test(stableIdx), 'stable: no alpha button, install heading or og description');
+assert.match(stableIdx, /Install Agent Durbar/, 'stable: install heading');
+assert.ok(!/\(pre-release\)/.test(stableIdx), 'stable: the latest release is not labelled pre-release');
+fs.rmSync(outStable, { recursive: true, force: true });
+const outPre = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-site-pre-'));
+execFileSync(process.execPath, [path.join(__dirname, 'build-site.js')], { env: { ...process.env, SITE_OUT: outPre, SITE_FAKE_RELEASE: JSON.stringify({ tag: 'v0.1.0-alpha.19', pre: true }) }, stdio: 'pipe' });
+const preIdx = fs.readFileSync(path.join(outPre, 'index.html'), 'utf8');
+assert.ok(/>Download alpha</.test(preIdx) && /Install the alpha/.test(preIdx) && /\(pre-release\)/.test(preIdx), 'pre-release: alpha wording stays');
+fs.rmSync(outPre, { recursive: true, force: true });
 let attrCount = 0;
 for (const name of ['index.html', 'docs.html']) {
   const html = fs.readFileSync(path.join(out, name), 'utf8');
@@ -63,11 +77,13 @@ for (const name of ['index.html', 'docs.html']) {
 // the landing page: curated, short, honest, no internal numbers
 const index = fs.readFileSync(path.join(out, 'index.html'), 'utf8');
 assert.match(index, /<h1>Run all your AI coding agents\. Answer only the ones that need you\.<\/h1>/, 'hero title');
-assert.match(index, /Free · open source · early alpha/, 'hero eyebrow');
-assert.match(index, />Download alpha</, 'download button');
+// the hero eyebrow and the status line are hand-written in landing.json: the page shows what the file says (not a fixed word, so the stable fold PR only edits landing.json and the README status block)
+assert.ok(index.includes(landing.hero.eyebrow), 'hero eyebrow is landing.json\'s');
+assert.ok(!/alpha/i.test(landing.hero.eyebrow + landing.status), 'v0.1.0 is stable: the hand-written eyebrow and status do not say alpha');
+assert.match(index, />Download alpha</, 'download button (no release found: alpha wording)');
 assert.match(index, /class="btn secondary" href="https:\/\/github\.com\/three-feathers\/agent-durbar">View on GitHub</, 'GitHub button'); assert.match(index, /href="docs\.html"/, 'docs link');
 assert.match(index, /property="og:image" content="https:\/\/three-feathers\.github\.io\/agent-durbar\/screenshots\//, 'og:image is absolute'); assert.match(index, /Simulator demo data/, 'the hero says the data is invented');
-assert.match(index, /Alpha · unsigned · used by hand on Linux and on real Macs/, 'status line in the hero');
+assert.ok(index.includes(landing.status.slice(0, 40)), 'the status line in the hero is landing.json\'s');
 assert.ok(index.indexOf('id="status"') < index.indexOf('id="features"'), 'the status line comes before the features');
 assert.match(index, /src="screenshots\/052-office-1440x900\.png"/, 'current hero screenshot');
 for (const t of landing.themes) assert.ok(index.includes(`screenshots/${t.screenshot}`) && index.includes(`>${t.name.replace(/&/g, '&amp;')}</figcaption>`), `theme ${t.name}`);
@@ -99,15 +115,24 @@ assert.match(index, /<figure class="shot"><a class="zoom" href="screenshots\/051
 assert.ok(index.includes('id="faq"') && landing.faq.length >= 5 && landing.faq.every((f) => index.includes(esc(f.q))), 'FAQ section with every question');
 for (const f of landing.faq) if (f.readmeAnchor) assert.ok(docs.includes(`id="${f.readmeAnchor}"`), `FAQ anchor ${f.readmeAnchor} exists`);
 assert.ok(!/reads inside its folders only/.test(index), 'no overclaim: Durbar cannot force Claude Code and Copilot to stay in their folders');
-assert.match(index, /checked between replies/, 'the spending-limit line says when it is checked');
+assert.match(index, /soft by one call/, 'the spending-limit line says the call already running can go over');
 assert.match(index, /href="https:\/\/github\.com\/three-feathers\/agent-durbar\/blob\/main\/SECURITY\.md">Report a security problem</, 'security report link in the safety section');
 assert.match(index, /<a class="keep" href="#download">Download<\/a>/, 'Download stays in the header on phones');
 assert.match(index, /class="phone-only"> Tap the picture to see it full size\./, 'phones are told the hero opens full size');
 assert.match(docs, /\.docs\{grid-template-columns:minmax\(0,1fr\)/, 'the docs column cannot grow past a phone screen');
 assert.match(docs, /<a class="keep" href="index\.html#download">Download<\/a>/, 'Download stays in the docs header on phones');
 
+// spec 050 FR-012 (issue #759): every picture the site links is a palette PNG (colour type 3), made by `npm run shots:docs` or `npm run shots:compress`;
+// a linked picture the quality guard refused to compress is named in KEPT_ORIGINAL with the reason (none today)
+const KEPT_ORIGINAL = {};
+for (const f of require('./shots-docs.js').linkedImages(ROOT)) {
+  const b = fs.readFileSync(path.join(ROOT, 'docs', 'screenshots', f)).subarray(0, 26);
+  assert.ok(KEPT_ORIGINAL[f] || b[25] === 3, `${f} is not a palette PNG: run \`npm run shots:compress\` (or name it in KEPT_ORIGINAL with the reason the quality guard refused it)`);
+}
+
 const size = (dir) => fs.readdirSync(dir, { withFileTypes: true }).reduce((n, e) => n + (e.isDirectory() ? size(path.join(dir, e.name)) : fs.statSync(path.join(dir, e.name)).size), 0);
 const total = size(out);
-assert.ok(total < 15 * 1024 * 1024, `site under 15 MB (is ${(total / 1048576).toFixed(1)} MB)`);
+// 8 MB since spec 050 FR-012 (2026-10-26): the linked screenshots are palette-compressed (the site was 15.5 MB with plain PNGs; FR-005 had 15 MB, FR-011 16 MB)
+assert.ok(total < 8 * 1024 * 1024, `site under 8 MB (is ${(total / 1048576).toFixed(1)} MB)`);
 fs.rmSync(out, { recursive: true, force: true });
 console.log(`site: ok (${attrCount} links and images on two pages, ${(total / 1048576).toFixed(1)} MB)`);

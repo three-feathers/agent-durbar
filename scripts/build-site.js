@@ -257,6 +257,10 @@ function validateLanding(landing, { readme, shotExists = (f) => fs.existsSync(pa
 
 async function latestRelease() {
   if (process.env.SITE_RELEASE === 'off') return null;
+  // tests only (spec 050 FR-013): a release object given as JSON, no network; the site's wording follows its `pre` flag
+  if (process.env.SITE_FAKE_RELEASE) {
+    try { const f = JSON.parse(process.env.SITE_FAKE_RELEASE); return { tag: String(f.tag), url: String(f.url || ''), pre: f.pre === true, date: String(f.date || ''), assets: (Array.isArray(f.assets) ? f.assets : []).map((a) => ({ name: String(a.name), url: String(a.url) })) }; } catch { return null; }
+  }
   try {
     const headers = { Accept: 'application/vnd.github+json', 'User-Agent': 'agent-durbar-site' };
     if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
@@ -269,6 +273,12 @@ async function latestRelease() {
   } catch {
     return null; // no network: the page links to the Releases page instead
   }
+}
+// Spec 050 FR-013: the wording follows the latest release. A stable release (not flagged pre-release) drops "alpha"; no release found
+// (offline build) or a pre-release keeps it. The landing.json eyebrow and status are hand-written and move with the README status block.
+function releaseWords(rel) {
+  const stable = !!(rel && rel.pre !== true);
+  return { stable, button: stable ? 'Download' : 'Download alpha', install: stable ? 'Install Agent Durbar' : 'Install the alpha', og: stable ? 'Free, MIT, unsigned early release.' : 'Free, MIT, early alpha.' };
 }
 function assetsOf(rel) {
   const pick = (re) => (rel ? rel.assets.find((a) => re.test(a.name)) : null);
@@ -423,7 +433,7 @@ const cropped = (file, alt, box) => {
 };
 
 function landingHtml({ landing, readme, rel, changes }) {
-  const a = assetsOf(rel);
+  const a = assetsOf(rel), words = releaseWords(rel);
   const relUrl = rel ? rel.url : `${GH}/releases`;
   const link = (asset, label) => `<a href="${esc(asset ? asset.url : relUrl)}">${esc(label)}</a>`;
   const steps = installSteps(readme);
@@ -448,7 +458,7 @@ function landingHtml({ landing, readme, rel, changes }) {
 <p class="eyebrow">${esc(h.eyebrow || '')}</p>
 <h1>${esc(h.title)}</h1>
 <p class="lead">${esc(h.tagline)}</p>
-<div class="cta"><a class="btn primary" href="${esc(relUrl)}">Download alpha</a><a class="btn secondary" href="${GH}">View on GitHub</a></div>
+<div class="cta"><a class="btn primary" href="${esc(relUrl)}">${esc(words.button)}</a><a class="btn secondary" href="${GH}">View on GitHub</a></div>
 <p class="os">${osLinks}</p>
 <p class="status" id="status">${esc(landing.status)}</p>
 <div class="frame"><div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>${zoom(h.image, img(h.image, h.alt || h.title, { lazy: false }), 'The office screenshot')}</div>${h.caption ? `<p class="caption">${esc(h.caption)}<span class="phone-only"> Tap the picture to see it full size.</span></p>` : ''}${h.nameNote ? `<p class="name-note">${esc(h.nameNote)}</p>` : ''}
@@ -489,7 +499,7 @@ ${Array.isArray(landing.faq) && landing.faq.length ? `<section class="sec" id="f
 
 <div class="durbar" role="presentation"></div>
 
-<section class="sec flush" id="download"><div class="head"><p class="eyebrow">Download</p><h2>Install the alpha</h2><p>${rel ? `Latest: <a href="${esc(rel.url)}"><b>${esc(rel.tag)}</b></a>${rel.pre ? ' (pre-release)' : ''}${rel.date ? ', ' + esc(rel.date) : ''}. ` : ''}The builds are not code-signed yet, so your system warns you the first time. Only open files from the Releases page.</p></div>
+<section class="sec flush" id="download"><div class="head"><p class="eyebrow">Download</p><h2>${esc(words.install)}</h2><p>${rel ? `Latest: <a href="${esc(rel.url)}"><b>${esc(rel.tag)}</b></a>${rel.pre ? ' (pre-release)' : ''}${rel.date ? ', ' + esc(rel.date) : ''}. ` : ''}The builds are not code-signed yet, so your system warns you the first time. Only open files from the Releases page.</p></div>
 <div class="dl">
 <div class="os-col"><h3>macOS</h3><div class="links">${link(a.macArm, 'Apple Silicon (.dmg)')}${link(a.macIntel, 'Intel (.dmg)')}</div>${step('macOS')}</div>
 <div class="os-col"><h3>Windows 10/11</h3><div class="links">${link(a.win, 'Installer (.exe)')}</div>${step('Windows')}</div>
@@ -510,7 +520,7 @@ ${news ? `<section class="sec" id="new"><div class="head"><p class="eyebrow">Wha
   return page({
     title: 'Agent Durbar: see all your AI agents at once',
     description: h.tagline,
-    og: { url: SITE_URL, title: 'Agent Durbar: every AI coding agent in one office', description: 'See which Copilot, Claude Code and Codex agents need you. Read-only by default. Free, MIT, early alpha.', image: SITE_URL + 'screenshots/' + h.image, imageAlt: h.alt || h.title },
+    og: { url: SITE_URL, title: 'Agent Durbar: every AI coding agent in one office', description: 'See which Copilot, Claude Code and Codex agents need you. Read-only by default. ' + words.og, image: SITE_URL + 'screenshots/' + h.image, imageAlt: h.alt || h.title },
     css: CSS_LANDING,
     nav,
     body,

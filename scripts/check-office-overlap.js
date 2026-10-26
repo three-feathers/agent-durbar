@@ -144,8 +144,41 @@ function pageCheck(expanded, expectPlaces) {
     n.parentNode.appendChild(probe); const need = probe.getBoundingClientRect().width; probe.remove();
     if (n.clientWidth + 0.5 < need) problems.push(`desk name "${full}" shows fewer than three characters (${n.clientWidth}px, needs ${need.toFixed(0)}px)`);
   });
+  /* spec 059 FR-020 item 6, FR-025 (issue 636): the rename pencils are shown on every card (body.ren-show) and none covers the status word, pill,
+     badge, chat number, draft mark or mode icon, or leaves its unit; they are siblings of the card button and take no layout space. */
+  const hadRenShow = document.body.classList.contains('ren-show'); /* put back afterwards: a driver's later screenshot must not show every pencil (PR 631) */
+  document.body.classList.add('ren-show');
+  stage.querySelectorAll('.unit > .ren[data-ren]').forEach((b) => {
+    if (!b.getClientRects().length) return;
+    const B0 = R(b), B = { x: B0.x + 4, y: B0.y + 4, r: B0.r - 4, b: B0.b - 4 }, u = b.parentElement, d = u.querySelector(':scope > .desk[data-id]'), who = b.dataset.ren; /* the box is a 24px target (spec 052), the glyph 16px in it: overlaps are judged on the glyph */
+    if (B0.w < 23.5 || B0.h < 23.5) problems.push(`pencil ${who} is ${B0.w}x${B0.h}px, under the 24px target`);
+    if (!d) { problems.push(`pencil ${who} has no desk sibling`); return; }
+    if (b.closest('.desk')) problems.push(`pencil ${who} is inside the card button`);
+    const U = R(u), D = R(d);
+    if (B.x < U.x - T || B.r > U.r + T || B.y < U.y - T || B.b > U.b + T) problems.push(`pencil ${who} leaves its unit`);
+    if (B.x < D.x - T || B.r > D.r + T || B.y < D.y - T || B.b > D.b + T) problems.push(`pencil ${who} leaves its card`);
+    const nmEl = d.querySelector('.name'); /* #781: with the mode icon wrapped below the name the pencil must not land on the name's first half (it sits after the name, or over its end at most) */
+    if (nmEl && nmEl.getClientRects().length) { const N = R(nmEl); if (N.w > 1 && B.x < N.x + N.w / 2 - T && B.y < N.b - T && B.b > N.y + T) problems.push(`pencil ${who} covers the first half of the name`); }
+    d.querySelectorAll('.stl, .pill, .badge, .chatno, .draft-mark, .modeic, .modebadge').forEach((e) => {
+      if (!e.getClientRects().length || getComputedStyle(e).visibility === 'hidden') return;
+      const r = R(e); if (r.w < 1 || r.h < 1) return;
+      if (B.x < r.r - T && B.r > r.x + T && B.y < r.b - T && B.b > r.y + T) problems.push(`pencil ${who} covers ${name(e)}`);
+    });
+  });
+  if (!hadRenShow) document.body.classList.remove('ren-show');
   /* spec 052 (2026-10-21; real 15-session office at 1280x800): inside a desk card no icon (svg, status dot, warning) and no cost text
      leaves the card or is cut by a clipping ancestor; a cut cost or icon once went unnoticed by every other rule here */
+  /* spec 059 FR-020 item 4: a room header's pencil stays inside the header and covers no door, chip, siren, floor tag, cost or count */
+  stage.querySelectorAll('.room-head > .ren[data-renfolder]').forEach((b) => {
+    if (!b.getClientRects().length) return;
+    const B0 = R(b), B = { x: B0.x + 4, y: B0.y + 4, r: B0.r - 4, b: B0.b - 4 }, hd = b.parentElement, H = R(hd), who = b.dataset.renfolder;
+    if (B0.w < 23.5 || B0.h < 23.5) problems.push(`room pencil ${who} is ${B0.w}x${B0.h}px, under the 24px target`);
+    if (B.x < H.x - T || B.r > H.r + T || B.y < H.y - T || B.b > H.b + T) problems.push(`room pencil ${who} leaves its header`);
+    [...hd.children].filter((e) => e !== b && !e.classList.contains('room-name') && !e.classList.contains('room-path') && e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden').forEach((e) => {
+      const r = R(e); if (r.w < 1 || r.h < 1) return;
+      if (B.x < r.r - T && B.r > r.x + T && B.y < r.b - T && B.b > r.y + T) problems.push(`room pencil ${who} covers ${name(e)}`);
+    });
+  });
   stage.querySelectorAll('.desk.card').forEach((d) => {
     const D = R(d), who = (d.querySelector('.name') || {}).textContent || d.dataset.id || '?';
     d.querySelectorAll('svg, .pill i, .warn, [class*="warn"], .use .aiu, .modeic').forEach((e) => {
@@ -168,7 +201,7 @@ function pageCheck(expanded, expectPlaces) {
   /* spec 001 FR-023 (T030): a room header's parts (door, name, path, dots, +, MCP, AIU, plant, floor tag) never overlap or leave the header */
   stage.querySelectorAll('.room-head').forEach((hd) => {
     const H = R(hd), key = (hd.closest('.room') || {}).dataset?.key || '?';
-    const parts = [...hd.children].filter((e) => e.getClientRects().length && R(e).w > 0 && getComputedStyle(e).visibility !== 'hidden');
+    const parts = [...hd.children].filter((e) => !e.classList.contains('ren') && e.getClientRects().length && R(e).w > 0 && getComputedStyle(e).visibility !== 'hidden'); /* the rename pencil is placed over the name's tail or the path's start on purpose (spec 059): checked against the chips below */
     parts.forEach((e) => { const p = R(e), slack = e.classList.contains('door') ? 5 : 1; /* the door hangs 4px left on purpose */ if (p.x < H.x - slack || p.r > H.r + 1) problems.push(`header part ${name(e)} sticks out of the header of ${key}`); });
     for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
       const p = R(parts[i]), q = R(parts[j]);
@@ -593,6 +626,47 @@ async function driver(ctx) {
     }
     return P;
   };
+  /* spec 083 T024 AC2 / spec 005 FR-175: with the Notes drawer open (Ctrl+Shift+M) the header, the message box and the chat settings still
+     fit and do not overlap, the drawer is exactly the chat log's box, and its text is at least 10.5px */
+  const drawerCheck = () => {
+    const P = [], R = (e) => e.getBoundingClientRect();
+    const d = document.getElementById('notesDrawer'), c = document.getElementById('chat'), cm = document.querySelector('#panel .composer'), hd = document.getElementById('panelHead');
+    if (!d || d.hidden || !d.getClientRects().length) return ['the Notes drawer did not open'];
+    const dr = R(d), cr = R(c), mr = R(cm), hr = R(hd), pr = R(document.getElementById('panel'));
+    if (Math.abs(dr.top - cr.top) > 1.5 || Math.abs(dr.bottom - cr.bottom) > 1.5 || Math.abs(dr.left - cr.left) > 1.5 || Math.abs(dr.right - cr.right) > 1.5) P.push('the drawer is not the chat log\'s box');
+    if (dr.bottom > mr.top + 0.5) P.push('the drawer covers the message box');
+    if (dr.top < hr.bottom - 0.5) P.push('the drawer covers the header');
+    if (dr.left < pr.left - 1 || dr.right > pr.right + 1) P.push('the drawer leaves the panel');
+    const small = [...d.querySelectorAll('*')].filter((e) => e.getClientRects().length && [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) && parseFloat(getComputedStyle(e).fontSize) < 10.5).map((e) => e.className || e.tagName);
+    if (small.length) P.push('text under 10.5px: ' + small.slice(0, 3).join());
+    const inp = document.getElementById('msgInput');
+    if (!inp || R(inp).height <= 0) P.push('the message box is not visible with the drawer open');
+    return P;
+  };
+  /* spec 080 T015 AC4 / FR-090 (and spec 005 FR-058): the chat panel on its Browser tab at both sizes: the tab bar and the browser bar are inside the
+     window, nothing overlaps, every text is 10.5px or more, the page area is not squeezed to nothing, and the native view sits on it */
+  const browserTabCheck = () => {
+    const P = [], R = (e) => e.getBoundingClientRect(), T = 0.5;
+    const de = document.documentElement;
+    if (de.scrollWidth > innerWidth + 1 || de.scrollHeight > innerHeight + 1) P.push(`page overflows (${de.scrollWidth}x${de.scrollHeight} in ${innerWidth}x${innerHeight})`);
+    const tabs = document.getElementById('panelTabs'), pane = document.getElementById('browserPane'), view = document.getElementById('bView');
+    if (!tabs || !pane || pane.hidden || !view) return ['the Browser tab is not showing'];
+    const els = [...document.querySelectorAll('#panelTabs, #panelTabs *, #browserPane .bbar, #browserPane .bbar *, #browserPane .bstat, #browserPane .bstat *')].filter((e) => e.getClientRects().length && R(e).width > 0);
+    for (const e of els) { const r = R(e); if (r.left < -1 || r.right > innerWidth + 1) P.push(`${e.id || e.className} leaves the window`); }
+    for (const g of [...document.querySelectorAll('#panelTabs, #browserPane .bbar, #browserPane .bstat, #browserPane .bacts')]) {
+      const kids = [...g.children].filter((c) => c.getClientRects().length && R(c).width > 0);
+      for (let i = 0; i < kids.length; i++) for (let j = i + 1; j < kids.length; j++) {
+        const a = R(kids[i]), b = R(kids[j]);
+        if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > T && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > T) P.push(`${kids[i].id || kids[i].className} overlaps ${kids[j].id || kids[j].className}`);
+      }
+    }
+    const small = els.filter((e) => [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) && parseFloat(getComputedStyle(e).fontSize) < 10.5).map((e) => e.id || e.className);
+    if (small.length) P.push('text under 10.5px: ' + small.join(', '));
+    const v = R(view);
+    if (v.width < 300 || v.height < 150) P.push(`the page area is too small (${Math.round(v.width)}x${Math.round(v.height)})`);
+    if (v.right > innerWidth + 1 || v.bottom > innerHeight + 1) P.push('the page area leaves the window');
+    return P;
+  };
   /* FR-139: + New opens the new-session dialog; a helper's chat, the demo and an office without a ready app do not offer it */
   const newBtnFlow = async (w, h) => {
     await ctx.js(`(async()=>{const d=document.querySelector('#stage .desk[data-id]');if(d)d.click();await new Promise(r=>setTimeout(r,300));const b=document.getElementById('newSessHdrBtn');if(b)b.click();await new Promise(r=>setTimeout(r,300));return true})()`);
@@ -606,17 +680,47 @@ async function driver(ctx) {
     if (demo) { total++; if (demo.btn) { failed++; console.log(`FAIL new session ${w}x${h}: the demo offers + New`); } }
   };
   for (const [w, h] of SIZES) {
-    for (const q of ['sim=15&simfreeze=1', 'sim=15&simfreeze=1&simkinds=mixed', 'sim=12&simfreeze=1&simtitles=1']) {
+    for (const q of ['sim=15&simfreeze=1', 'sim=15&simfreeze=1&simkinds=mixed', 'sim=12&simfreeze=1&simtitles=1', 'sim=15&simfreeze=1&simnotes=some']) { /* the last one: every folder has notes, so the header count is shown (spec 083 T030) */
       if (!mine()) continue;
       await load(q, w, h);
       const ids = await ctx.js(`[...document.querySelectorAll('#stage .desk')].map((d)=>d.dataset.id)`);
       let bad = 0;
       for (const id of ids) {
         await ctx.js(`(async()=>{const d=document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)});if(d)d.click();await new Promise(r=>setTimeout(r,250));return true})()`);
+        const cnt = q.includes('simnotes=some') ? await ctx.js(`(async()=>{for(let i=0;i<60;i++){const c=document.getElementById('ntCount');if(c&&!c.hidden)return true;await new Promise(r=>setTimeout(r,50));}return false})()`) : true; /* wait for the count, so the header check below sees it */
         const p = await ctx.js(`(${chatCheck.toString()})()`);
         total++;
         if (p.length) { failed++; bad++; if (bad <= 3) console.log(`FAIL chat ${w}x${h} ${q} agent ${id}: ${p.slice(0, 4).join('; ')}`); }
+        if (q.includes('simnotes=some')) { /* spec 083: the header count is shown (it is in the header check above) and the same with the Notes drawer open */
+          if (!cnt) { failed++; bad++; if (bad <= 3) console.log(`FAIL chat ${w}x${h} ${q} agent ${id}: the Notes count is not shown`); }
+          /* the page's mod key: ⌘ on a Mac, Ctrl elsewhere; then wait until the drawer is shown (no fixed pause) */
+          const modKey = process.platform === 'darwin' ? 'metaKey' : 'ctrlKey';
+          await ctx.js(`document.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyM',key:'M',shiftKey:true,bubbles:true,...${jsLiteral({ [modKey]: true })}}));true`);
+          for (let t = 0; t < 40 && !(await ctx.js(`(()=>{const d=document.getElementById('notesDrawer');return !!d&&!d.hidden&&d.getClientRects().length>0&&!!d.querySelector('.nt-row,.nt-empty,.nt-banner')})()`)); t++) await new Promise((r) => setTimeout(r, 50));
+          const pn = [...(await ctx.js(`(${chatCheck.toString()})()`)), ...(await ctx.js(`(${drawerCheck.toString()})()`))];
+          total++;
+          if (pn.length) { failed++; bad++; if (bad <= 3) console.log(`FAIL chat with the Notes drawer ${w}x${h} ${q} agent ${id}: ${pn.slice(0, 4).join('; ')}`); }
+          await ctx.js(`(async()=>{const x=document.getElementById('ntClose');if(x)x.click();await new Promise(r=>setTimeout(r,60));return true})()`);
+        }
         await ctx.js(`(async()=>{const b=document.getElementById('backBtn');if(b)b.click();await new Promise(r=>setTimeout(r,120));return true})()`);
+      }
+      if (q === 'sim=15&simfreeze=1') {
+        /* spec 080 T015 AC4: the chat open on the Browser tab, three agents (first, middle, last); the view sits on the page area and leaves with the panel */
+        let badB = 0;
+        for (const id of [ids[0], ids[Math.floor(ids.length / 2)], ids[ids.length - 1]]) {
+          await ctx.js(`(async()=>{const d=document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)});if(d)d.click();await new Promise(r=>setTimeout(r,250));document.querySelectorAll('#toasts .toast').forEach(x=>x.remove()); /* a start-up toast over the page area is an overlay: it rightly takes the view off */ const t=document.getElementById('tabBrowser');if(t)t.click();await new Promise(r=>setTimeout(r,900));return true})()`);
+          const pb = await ctx.js(`(${browserTabCheck.toString()})()`);
+          const kids = ctx.win.contentView.children.filter((c) => c.webContents && c.webContents !== ctx.win.webContents);
+          const cb = ctx.win.getContentBounds();
+          if (kids.length !== 1) pb.push(`${kids.length} native views are attached (expected 1)`);
+          else { const b = kids[0].getBounds(); if (b.width < 300 || b.height < 150 || b.x < 0 || b.y < 0 || b.x + b.width > cb.width + 2 || b.y + b.height > cb.height + 2) pb.push('the native view is off the window ' + JSON.stringify(b)); }
+          await ctx.js(`(async()=>{const b=document.getElementById('backBtn');if(b)b.click();await new Promise(r=>setTimeout(r,300));return true})()`);
+          const left = ctx.win.contentView.children.filter((c) => c.webContents && c.webContents !== ctx.win.webContents).length;
+          if (left) pb.push(`${left} native view(s) stay on the window after the panel closed`);
+          total++;
+          if (pb.length) { failed++; badB++; console.log(`FAIL browser tab ${w}x${h} agent ${id}: ${pb.slice(0, 4).join('; ')}`); }
+        }
+        rows.push({ label: `browser tab ${w}x${h}`, d: 'chat', h: '-', rooms: '-', plates: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: badB });
       }
       if (q === 'sim=15&simfreeze=1') {
         /* Simple hides the developer details (VS Code, model chips); the header must still fit and keep + New */

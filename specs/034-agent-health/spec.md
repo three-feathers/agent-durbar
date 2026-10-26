@@ -89,7 +89,7 @@ status: **built** 2026-10-17 (issue #20): simulator and unit tests, `scripts/sho
 ## Verification (phase 3, 2026-10-17)
 
 - `test:` `scripts/test-mood.ts` (bands, priority, one ambulance and its hand-over, streak, waiting time from timestamps), `scripts/test-credits.ts` (`seriousMode`). Mutation check: 19 deliberate breaks of `mood.js` and 4 of the settings code, each fails a test.
-- `sim:` `scripts/shots-034.js` at 1440x900 and 1280x800: heavy and monster with their words, exactly one ambulance and its hand-over to a newer error and back, faint at the limit (no waving), impatient only with `simwaitold=1`, dizzy after 3 failed calls and cleared by a successful one, Serious mode on (no drawing, no words) and off, reduced motion (nothing animates), the `mini` density, every scene box the same size. `check:office` 105/105 (before the merge with spec 033).
+- `sim:` `scripts/shots-034.js` (run by hand, not in CI: `NOT_IN_SUITE`, spec 021 FR-057) at 1440x900 and 1280x800: heavy and monster with their words, exactly one ambulance and its hand-over to a newer error and back, faint at the limit (no waving), impatient only with `simwaitold=1`, dizzy after 3 failed calls and cleared by a successful one, Serious mode on (no drawing, no words) and off, reduced motion (nothing animates), the `mini` density, every scene box the same size. `check:office` 105/105 (before the merge with spec 033).
 - Fixed in review: "impatient" now counts only while the figure is in Waiting (a request answered elsewhere without a `permission` event must not leave it tapping); a fainted agent no longer waves; the faint tilt turns around the neck (`.scene *{transform-box:fill-box}` moved the head down to the chest).
 - Merged with spec 033 (floors): the ambulance is chosen among agents whose room is shown (not hidden, floor on); checked in the driver with `simfloors=1&floorsoff=Client A`.
 - `[KNOWN GAP]` An agent away at a place (spec 024) shows an empty chair, so its mood drawing is hidden (the walking figure is not changed, as specified); the card words stay. In the simulator Sven is dizzy but away, so the driver makes another agent dizzy with `window.__durbarSimEmit`. Tested in the driver; follow-up T009.
@@ -145,7 +145,7 @@ status: **built** 2026-10-17 (issue #20): simulator and unit tests, `scripts/sho
 #### Verification (phase 3, 2026-10-17)
 
 - `test:` `roomAlertOf` cases in `scripts/test-mood.ts`. Mutation check: 10 deliberate breaks, 9 fail a test; the 10th removed a redundant type check (numbers and text have no fields), so that check was removed from the code.
-- `sim:` `scripts/shots-034.js` at 1440x900 and 1280x800:
+- `sim:` `scripts/shots-034.js` (run by hand, not in CI: `NOT_IN_SUITE`, spec 021 FR-057) at 1440x900 and 1280x800:
   - every room's tone: `mcp-swiss` alarm, `swisscontract-ai` and `command-center` alarm with siren, `infra-notes` uneasy, `blog` calm;
   - the alert words only with the siren;
   - the siren moves with the ambulance to another room and back;
@@ -232,3 +232,7 @@ status: **built** 2026-10-17 (issue #20): simulator and unit tests, `scripts/sho
 - `[KNOWN GAP]` Not run on a real session of any agent app: no retry was provoked (it needs a failing or rate-limited model API). The shapes are `read:` only (above).
 - `[KNOWN GAP]` Claude Code's `api_retry` carries no sub-agent id, so a helper's retries (if Claude Code reports them) show on its main agent.
 - `[KNOWN GAP]` The Durbar MCP server's agent state (spec 041) does not report *Retrying* (it does not report *Failing* either).
+
+### 2026-10-25: the driver after specs 068 and 001 (issue #748)
+
+- `[KNOWN GAP]` `scripts/shots-034.js` passes again by hand (it had been failing, unrun) but is not in the UI suite (about 124 s, see `NOT_IN_SUITE` in `scripts/ui-suite.js`, spec 021 FR-057). The faint figure at the credit limit and the impatient agent tapping at its desk can no longer be shown in the simulator: Durbar's own limit is a coffee break (spec 068 FR-005) and a waiting agent walks to the Boss (spec 001 FR-034). The driver asserts the break instead, and the tap only for an impatient agent at its desk; `test:mood` still covers `troubleOf` for both.

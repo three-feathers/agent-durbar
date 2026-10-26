@@ -1,7 +1,8 @@
 /*
  * Theme geometry check (spec 008 FR-031, spec 035 FR-010): a theme may change colours, borders, textures and display fonts,
  * never sizes. So the full office layout check runs in Clean Office only, and this check proves every other theme lays out
- * the same: for each theme, at 1440x900 and 1280x800 with 15 and 12 simulated agents (and again with a `+N more` chip
+ * the same: for each theme, at 1440x900 and 1280x800 with 15 and 12 simulated agents and a sparse office with expanded helper cards (spec 001
+ * FR-094; three agents in one room, two helpers each) (and again with a `+N more` chip
  * expanded):
  *   1. geometry: with display text neutralised for the measurement (one font family, weight, case and letter spacing; a theme
  *      may pick its own display font), the box of every element of the office, the lobby and the top bar (SVG art excluded) and
@@ -29,7 +30,9 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const INDEX = path.join(ROOT, 'dist', 'renderer', 'index.html');
 const SIZES = [[1440, 900], [1280, 800]];
-const SIMS = [15, 12];
+/* spec 001 FR-094 (issue #697): 15 and 12 agents, plus a sparse office that draws expanded helper cards (three parents in one room with two helpers each: `hx`) */
+const SIMS = [15, 12, 'hx'];
+const SIM_QUERY = { hx: { sim: '3', simrooms: '1', simhelpers: '2' } };
 /* user packs by name: `user` (check-user.json) and the sample AI-style pack with fonts, corners, shadows and clothes (spec 070) */
 const FIXTURES = { user: 'check-user.json', 'pink-studio': 'pink-studio.json' };
 const ALL_THEMES = 'corporate,retro,durbar-indian,durbar-european,durbar-japanese,cheeky-crew,user,pink-studio';
@@ -45,7 +48,9 @@ function measure() {
   st.textContent = '#stage *, .lobby *, header *{font-family:sans-serif!important;font-weight:400!important;font-style:normal!important;letter-spacing:normal!important;text-transform:none!important;word-spacing:normal!important;font-variant:normal!important;font-feature-settings:normal!important;font-stretch:normal!important}';
   document.head.appendChild(st);
   if (window.DurbarFit) window.DurbarFit(); /* fit the usage lines and room headers in the forced font, as the app does in its own */
-  const els = [...document.querySelectorAll('#stage, #stage *, .lobby, .lobby *, header, header *')].filter((e) => !e.closest('svg') && e.getClientRects().length);
+  const els = [...document.querySelectorAll('#stage, #stage *, .lobby, .lobby *, header, header *')].filter((e) => !e.closest('svg') && e.getClientRects().length
+    /* spec 059: the rename pencil (button.ren) is anchored to the END OF THE NAME'S TEXT (placeRen), like a label: a theme's own font moves it, so its position is text-dependent and not a layout box. Its size and overlaps are checked by check:office. */
+    && !e.closest('.ren'));
   els.forEach((e, i) => {
     const b = e.getBoundingClientRect();
     const key = `${i} ${e.tagName.toLowerCase()}.${String(e.className || '').trim().split(/\s+/).slice(0, 2).join('.')}`.slice(0, 60);
@@ -61,7 +66,7 @@ async function driver(ctx) {
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const packs = Object.fromEntries(Object.entries(FIXTURES).map(([k, f]) => [k, JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'fixtures', 'themes', f), 'utf8'))]));
   const query = (theme, sim) => {
-    const q = { sim: String(sim), simfreeze: '1' };
+    const q = { sim: String(sim), simfreeze: '1', ...(SIM_QUERY[sim] || {}) };
     if (packs[theme]) { q.theme = packs[theme].id; q.usertheme = JSON.stringify(packs[theme]); } else q.theme = theme;
     return q;
   };

@@ -40,7 +40,7 @@ PR-sized step with its own test. No task spends AI credits except Phase 5, which
 - [x] T027 Activity log: `logActivity` writes the alias in `agent` when set; `test:activity` case; no row for a rename [FR-012] (Q4 A)
 - [x] T028 Simulator: `renameSession` in memory, kinds with `'any'`, `'next-turn'` and none, failure hook; `prev-1`/`prev-2` renameable
   [FR-015]
-- [x] T029 `scripts/check-rename.js` (`npm run check:rename`): every FR-001 surface shows the name, no runtime title in tooltips, Esc and
+- [x] T029 `scripts/check-rename.js` (run by hand, not in CI: `NOT_IN_SUITE`, spec 021 FR-057) (`npm run check:rename`): every FR-001 surface shows the name, no runtime title in tooltips, Esc and
   empty reset, both sizes, Simple and Expert; `check:office` with 15 agents carrying 60-character names; screenshots
   `docs/screenshots/059-rename-*.png` [FR-016, SC-001, SC-002, SC-005]
 
@@ -84,9 +84,56 @@ PR-sized step with its own test. No task spends AI credits except Phase 5, which
   elsewhere); `simnames=long` gets a URL-like name; `check:office` asserts no card `.name` overflows at 1440x900 and 1280x800; before/after screenshots
   `docs/screenshots/059-long-url-name-*.png`; CHANGELOG [all]
 
+## Phase 8: Rename in place (issue #636, absorbs #595; spec.md *Changes* 2026-10-23, plan *Rename in place*)
+
+Decisions D1..D9: coordinator, under Ruben's delegation. Renderer only; no IPC, store or adapter change; 0 AI credits.
+
+- [x] T070 [P] `src/renderer/inlinename.js` pure part (`keyAction`, `pasteText`, `outcome`, `blurAction`) and `scripts/test-inlinename.ts`
+  (`test:inlinename` in `npm test`). Done when: composing Enter and keyCode 229 → `null`; LF, CR, CRLF, TAB → one space each, U+2028 kept;
+  `outcome('Ab', '  Ab ')==='same'`, `''` and `'   '` → `'reset'`; window blur → `'keep'`, blur with a rule error → `'revert'`; each of the
+  three plan mutations makes the test fail [FR-021, FR-027]
+- [x] T071 Split `renameSessionUi` and `renameFolder` into submit parts (`submitSessionName`, `submitFolderName`) that the dialogs call;
+  no behaviour change. Done when: `npm run check:rename` and `test:dialog` pass unchanged; `grep` finds one `bridge.renameSession` and one
+  `bridge.renameFolder` call site in `app.js` [FR-022, D5, D6]
+- [x] T072 DOM part of `inlinename.js` (`open`, `follow`, close, error line, busy, one instance) and its CSS (theme tokens, ≥10.5px);
+  wired at the end of `renderAll`, `renderPrev`, `renderFolders`, on resize and floor scroll. Done when: a status tick, a density change and a
+  list rebuild keep the field's value and selection; a removed anchor closes it without a call; Esc/Enter/Tab never reach the global
+  keydown (the chat stays open) [FR-021, FR-023 items 4-6]
+- [x] T073 Chat header: `#panelTitle` with `aria-label` and the inner title button, `repaintName` updates labels but never the field,
+  click / F2 / Enter start the edit, the double-click and 400 ms guard, the decorative pencil cue and tooltip. Done when: acceptance
+  scenarios 1, 2, 3, 11, 17 pass in the driver; focus on open (`focus==='title'`, `remoteBack`) opens no field; a helper chat's title is
+  plain text [FR-020 item 1, FR-023 items 1, 7, D1, D7, D9]
+- [x] T074 Desk cards (every density) and list rows: sibling pencil buttons (`data-ren`, keyed for the morph), list rows wrapped in
+  `.lrow-w`, the delegated click checks `[data-ren]` first, F2 on `[data-id]`, `ICON('rename')`. Done when: a card or row click still opens
+  the chat; scenarios 4, 5, 15, 16 pass; J/K in the list and `shots-034-list` still pass; `check:office` with pencils forced visible has
+  no overlap and still fits 15 agents at both sizes [FR-020 items 2, 5, 6, FR-025, D2, D8]
+- [x] T075 Previous sessions rows (agent rows, hidden rows too; no VS Code rows) and folder names (room header, Folders panel row; no
+  pencil in the list Folder cell; F2 on `[data-door]` and `[data-foldermenu]`). Done when: scenarios 13 and 14 pass; the renamed row keeps search and Resume
+  (FR-009); a folder reset brings back the folder's own name; demo mode shows no pencil [FR-020 items 3, 4, FR-023 item 2]
+- [x] T076 Simulator hooks (`retitle`, `renamedElsewhere`, `renameRoomElsewhere`, `endAgent`, `removeAgent`, `inline()`, call counters on
+  the fake `renameSession` / `renameFolder`) and `scripts/check-rename-inline.js` (`npm run check:rename-inline`, in `ui-suite.js`
+  `DRIVERS`), 1440x900 and 1280x800, Expert and Simple. Done when: every acceptance scenario 1-17 is asserted; it prints "all checks passed";
+  each plan mutation (Esc propagation, input inside `.name`, no `detail` guard, submit on unchanged, `visibility:hidden` pencil) makes it
+  print `DRIVER FAILED` [FR-015, FR-027]
+- [x] T077 Accessibility and fit checks: shortcut sheet row "F2: rename the focused session or folder"; focus return after save and
+  cancel on every surface; `check:ui-text` surface `rename-inline` and rule `inline-edit-fit`; header not a drag region with
+  `data-platform="darwin"`. Done when: `npm run check:ui-text` passes and fails with a 10px field font or a field that moves the header by 1px
+  [FR-024, FR-025]
+- [x] T078 Docs and screenshots: README (feature list line on renaming, the room ⋯ line), `changelog.d/059-rename-in-place.md`, spec
+  `[KNOWN GAP]` → `[IMPLEMENTED]` with `sim:`/`test:` evidence, specs-index status, `docs/screenshots/059-rename-inline-*` at both sizes;
+  `npm run shots:docs -- --only shots-hero,shots-003-011,shots-005-cardmenu,shots-006-prevmarks,shots-052-ux,shots-074-navigator`, look at
+  each, commit those that changed and list the rest in the PR; close #595 as a duplicate of #636 when the PR opens (D9). Done when:
+  `npm run changelog:check`, `npm run specs:check` and `npm test` (`test:uisuite`, `test:site`) pass [FR-026, FR-027]
+- [x] T079 Driver: the focused-pencil step of `scripts/check-rename-inline.js` gives the window real focus, waits for `document.hasFocus()`, and reads
+  the pencil's target opacity with its transition off (issue #715, Windows CI). Done when: `check:rename-inline` passes focused and with
+  `RI_UNFOCUSED=1`, and fails when `.unit:focus-within>.ren` is planted to opacity 0 [FR-021, FR-025]
+- [x] T080 `placeRen` anchors on the mode icon only when it shares the name's line, else on the name; `pageCheck` in `scripts/check-office-overlap.js`
+  fails a pencil over the first half of its name (issue #781). Done when: `check:office` passes on a wide card with the icon wrapped below the name [FR-020, FR-025]
+
 ## Dependencies
 
 - T010, T011 → T012 → T020 → T021 → T022, T024..T029. T023 any time before T024.
 - T030 → T031, T032, T035 → T033 → T034, T036.
 - T040 needs spec 006 T036 merged (PR #373 carries the spec delta).
 - T050 after T034 and the owner's go-ahead. T060 last.
+- T070 → T072; T071 any time before T073. T072 → T073, T074, T075 → T076 → T077 → T078. Phase 8 does not depend on T050.

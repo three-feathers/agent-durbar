@@ -26,6 +26,9 @@ module.exports = async (ctx) => {
   const shot = (name, w, h) => H.shot(path.join(OUT, `021-${name}-${w}x${h}.png`), { delay: 300, tag: '021', what: `${name} ${w} ${h}` });
   const load = (w, h) => H.load({ w, h, query: { simtotals: '1', simunreported: 'infra-notes' }, ready: `!!document.querySelector('.stat-aiu')&&/Saved since/.test(document.querySelector('.stat-aiu').title)` }); // was a fixed 1200 ms; now waits for the page to stop changing (FR-096)
   const read = () => js(`(()=>{const c=document.querySelector('.stat-aiu');const rooms={};document.querySelectorAll('.room').forEach(r=>{rooms[r.querySelector('.room-name').textContent.trim()]=((r.querySelector('.room-aiu')||{}).textContent||'').trim();});return {chip:c?c.innerText.replace(/\\s+/g,' ').trim():'',tip:c?c.title:'',rooms}})()`);
+  /* spec 021 FR-057 (review of #752): an assert waits on the condition it asserts, never on a fixed sleep */
+  const until = async (expr, what) => { assert.ok(await ctx.waitFor(expr, 10000), 'timed out waiting for ' + what); };
+  const plateOf = `[...document.querySelectorAll('.plate')].find(p=>/infra-notes/.test(p.getAttribute('aria-label')))`;
   const aiu = (t) => { const m = /([\d.]+) AIU/.exec(t || ''); return m ? parseFloat(m[1]) : NaN; };
   /* spec 052 FR-028 (#307): the chip and the rooms show money (Copilot credits at USD 0.01); the chip's tooltip keeps the exact AIU */
   const officeAiu = (r) => { const m = /= ([\d.]+) AIU/.exec(r.tip || ''); return m ? parseFloat(m[1]) : NaN; };
@@ -48,35 +51,35 @@ module.exports = async (ctx) => {
     await shot('office', w, h);
 
     // the closed door plate uses the short form
-    await js(`(()=>{const d=[...document.querySelectorAll('.room-head .door')].find(b=>/infra-notes/.test(b.getAttribute('aria-label')));d.click();})()`); await ctx.sleep(900);
+    await js(`(()=>{const d=[...document.querySelectorAll('.room-head .door')].find(b=>/infra-notes/.test(b.getAttribute('aria-label')));d.click();})()`); await until(`!!(${plateOf})`, 'the closed door plate');
     const plate = await js(`(()=>{const p=[...document.querySelectorAll('.plate')].find(p=>/infra-notes/.test(p.getAttribute('aria-label')));return p?{t:(p.querySelector('.plate-aiu')||{}).textContent,l:p.getAttribute('aria-label')}:null})()`);
     assert.ok(plate && plate.t === 'n/r' && /Usage: cost not reported\./.test(plate.l), 'closed plate: n/r and a spoken label: ' + JSON.stringify(plate));
     if (w === 1280) await shot('unreported-plate', w, h);
-    await js(`(()=>{const p=[...document.querySelectorAll('.plate')].find(p=>/infra-notes/.test(p.getAttribute('aria-label')));p.click();})()`); await ctx.sleep(700);
+    await js(`(()=>{const p=[...document.querySelectorAll('.plate')].find(p=>/infra-notes/.test(p.getAttribute('aria-label')));p.click();})()`); await until(`!(${plateOf})`, 'the room to open again');
   }
 
   // Settings: the figure, since when, and the reset (Cancel first, then Reset)
   const [w, h] = SIZES[1];
   await load(w, h);
   const before = officeAiu(await read());
-  await js(`document.getElementById('settingsBtn').click()`); await ctx.sleep(900);
+  await js(`document.getElementById('settingsBtn').click()`); await until(`/AIU in \\d+ calls, counting since/.test((document.getElementById('usageNow')||{}).textContent||'')`, 'the usage figure in Settings');
   const now = await js(`(document.getElementById('usageNow')||{}).textContent||''`);
   assert.ok(/^[\d.]+ AIU in \d+ calls, counting since 2026-10-01\.$/.test(now), 'Settings shows the figure and since when: ' + now);
   await js(`document.getElementById('usageTotalsReset').scrollIntoView({block:'center'})`);
   await shot('settings', w, h);
-  await js(`document.getElementById('usageTotalsReset').click()`); await ctx.sleep(500);
+  await js(`document.getElementById('usageTotalsReset').click()`); await until(`/Reset usage totals\\?/.test((document.getElementById('scrDlg')||{}).innerText||'')`, 'the reset confirmation');
   const dlg = await js(`(document.getElementById('scrDlg')||{}).innerText||''`);
   assert.ok(/Reset usage totals\?/.test(dlg) && /Tool counts in Tools > All time are not changed/.test(dlg), 'the confirmation says what is and is not reset');
   await shot('reset-confirm', w, h);
-  await js(`[...document.querySelectorAll('#scrDlg button')].find(b=>b.textContent.trim()==='Cancel').click()`); await ctx.sleep(500);
-  await js(`document.getElementById('scrClose').click()`); await ctx.sleep(500);
+  await js(`[...document.querySelectorAll('#scrDlg button')].find(b=>b.textContent.trim()==='Cancel').click()`); await until(`!document.getElementById('scrDlg')`, 'the confirmation to close');
+  await js(`document.getElementById('scrClose').click()`); await until(`!document.getElementById('scrClose')`, 'Settings to close');
   assert.strictEqual(officeAiu(await read()), before, 'Cancel changes nothing');
-  await js(`document.getElementById('settingsBtn').click()`); await ctx.sleep(900);
-  await js(`document.getElementById('usageTotalsReset').click()`); await ctx.sleep(500);
-  await js(`[...document.querySelectorAll('#scrDlg button')].find(b=>b.textContent.trim()==='Reset').click()`); await ctx.sleep(900);
+  await js(`document.getElementById('settingsBtn').click()`); await until(`!!document.getElementById('usageTotalsReset')`, 'Settings');
+  await js(`document.getElementById('usageTotalsReset').click()`); await until(`!!document.getElementById('scrDlg')`, 'the reset confirmation');
+  await js(`[...document.querySelectorAll('#scrDlg button')].find(b=>b.textContent.trim()==='Reset').click()`); await until(`/^Nothing recorded yet/.test((document.getElementById('usageNow')||{}).textContent||'')`, 'the totals to reset');
   const after = await js(`(document.getElementById('usageNow')||{}).textContent||''`);
   assert.ok(/^Nothing recorded yet, counting since \d{4}-\d{2}-\d{2}\.$/.test(after), 'after the reset Settings starts from zero: ' + after);
-  await js(`document.getElementById('scrClose').click()`); await ctx.sleep(500);
+  await js(`document.getElementById('scrClose').click()`); await until(`!document.getElementById('scrClose')&&![...document.querySelectorAll('.stat-aiu, .room-aiu')].some(e=>e.textContent.trim())`, 'the header chip and the room totals to clear');
   const z = await read();
   assert.strictEqual(z.chip, '', 'the header chip is gone until new usage arrives');
   assert.ok(Object.values(z.rooms).every((t) => t === ''), 'every folder total starts from zero');

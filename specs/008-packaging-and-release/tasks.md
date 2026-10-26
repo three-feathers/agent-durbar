@@ -111,3 +111,25 @@
 ## 2026-10-23: test builds from branches
 
 - [x] T105 (2026-10-23, owner decision by Vikram, issue #658) Test builds from branches [FR-121..FR-124]. Files: `scripts/release-notes.js` (`TEST_TAG_RE`, `tagKind`, `loadRedact`, `testNotes`, `--title-out`), `.github/workflows/release.yml` (title from `verify`), `scripts/test-changelog.js`, `docs/collaboration.md`, `changelog.d/README.md`, `README.md`, `changelog.d/008-test-builds.md`. Done when the classifier, the off-`main` refusal of a regular tag, the accepted test tag, its masked notes, the cap, the version rule and the previous-release filter are tested, each planted mutation fails the tests, a dry run on a scratch clone with a local test tag (never pushed) gives the notes, and `npm run typecheck && npm run build && npm test` pass. After the merge: the first pushed test tag is the first real check (`[KNOWN GAP]` until then).
+
+## 2026-10-24: check-parallel on macOS (issue #670)
+
+- [x] T106 (2026-10-24) macOS memory from `vm_stat` and a bounded wait [FR-125, FR-126]. Files: `scripts/check-parallel.js` (`parseVmStat`, `darwinAvailable`, `makeAvailable` with a 1 s cache, `waitForMemory`, the `active` count), `scripts/test-check-parallel.js` (new), `package.json` (`test:checkparallel`), `changelog.d/008-parallel-mac.md`. Done when the parse, the fallback and the bound are tested, each planted mutation fails, and `npm run typecheck && npm run build && npm test` pass. Ran on Paco's Mac (`check:themes` 14/14, vm_stat 2848 MB vs freemem 186 MB); the 120 s fallback was not exercised there (`test:` only).
+
+## 2026-10-24: macOS nightly UI regression (#683)
+
+- [x] T107: correct the macOS-only native text-editing assertions in `scripts/shots-074-navigator.js`: synthetic ⌘⌫ and ⌘A must reach the editable field without being prevented or closing the chat; verify normal Backspace edits text, while Windows/Linux continue to assert Ctrl+Backspace deletes a word and Ctrl+A selects all. Add the platform limitation to `docs/agent-notes.md` and a changelog fragment. Done: the navigator driver passes locally on macOS at both sizes, the planted app-interception mutation fails it, and `npm run typecheck && npm run build && npm test` pass. A post-merge nightly UI run on `main` remains required to close issue #683.
+- [x] T109 (2026-10-25, #738) `check-ui-text` split into `check-ui-text light` and `check-ui-text dark` in `scripts/ui-suite.js` (`UITEXT_PART` in `scripts/check-ui-text.js`, `UITEXT_TIMING=1` for per-surface times) [FR-128]. Done: the union of the two parts' `[ui-text]` lines equals the one run's (420 surfaces, 0 violations), two planted text mutants (an early and a late surface) are still caught, and the two parts together take about half the time. Typecheck, build and test pass.
+
+
+## 2026-10-25: fold branch names without dots
+
+- [x] T108: fold branch name `NNN-fold-alpha-N` in `scripts/release-notes.js` (`foldSlug`) and its test in `scripts/test-changelog.js`; docs in `changelog.d/README.md` and `docs/collaboration.md`; notes on the historical plans of 082, 086, 088; `docs/agent-notes.md` entry [FR-127]
+
+## 2026-10-26: stable release tag
+
+- [x] T110: `releaseKind`/`publishCommand`/`STABLE_PREAMBLE` and `--github-output` in `scripts/release-notes.js`, stable heading in `scripts/changelog.js`, `release.yml` reads the kind from `verify`, tests in `scripts/test-changelog.js`, docs in `changelog.d/README.md` [FR-129]
+
+## 2026-10-26: release notes name every agent app
+
+- [x] T111: `AGENTS_CLAUSE` in `scripts/release-notes.js` for both intros (agent apps, four-company non-affiliation) and its asserts in `scripts/test-changelog.js` [FR-130]

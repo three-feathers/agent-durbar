@@ -27,6 +27,8 @@ export class FakeSession {
   removed = true;
   /** Events `send` replays through the handler, in order (a recorded fixture). */
   turnScript: ScriptEvent[] = [];
+  /** Spec 087: `options.update` with a `sandboxConfig` rejects with this message. */
+  updateFail = '';
   /** `send` rejects with this message (spec 040 FR-015 error path). */
   sendFail = '';
   /** `send` never settles (spec 040 FR-015 timeout path). */
@@ -52,7 +54,7 @@ export class FakeSession {
   disconnect = async (): Promise<void> => this.rec('disconnect', undefined);
   rpc = {
     eventLog: { registerInterest: async (a: unknown) => this.rec('registerInterest', undefined, a) },
-    options: { update: async (a: unknown) => this.rec('options.update', undefined, a) },
+    options: { update: async (a: unknown) => { this.calls.push({ name: 'options.update', args: [a] }); if (this.updateFail && (a as { sandboxConfig?: unknown }).sandboxConfig) throw new Error(this.updateFail); } },
     mode: { set: async (a: unknown) => this.rec('mode.set', { mode: (a as { mode?: string }).mode }, a) }, // spec 066 (plan first)
     model: { switchTo: async (a: unknown) => this.rec('switchTo', this.switchAnswer, a) },
     queue: { removeAt: async (a: unknown) => this.rec('removeAt', { removed: this.removed }, a) },
@@ -197,8 +199,13 @@ export class FakeClient {
     if (this.authStatusFail) throw new Error(this.authStatusFail);
     return { isAuthenticated: this.authenticated, authType: 'user', login: 'someone', statusMessage: 'ok' };
   }
+  /** Spec 087: what `rpc.sandbox.getHostSupport()` answers; `sandboxHostFail` rejects (an older runtime); `hostCalls` counts the calls. */
+  sandboxHost: unknown = { supported: true, capabilities: [{ name: 'shell', supported: true }, { name: 'denied_paths', supported: true }, { name: 'network', supported: true }] };
+  sandboxHostFail = '';
+  hostCalls = 0;
   get rpc(): Record<string, unknown> {
     return {
+      sandbox: { getHostSupport: async () => { this.hostCalls++; if (this.sandboxHostFail) throw new Error(this.sandboxHostFail); return this.sandboxHost; } },
       ...(this.noQuota ? {} : { account: { getQuota: async (p: unknown) => { this.authCalls.push('account.getQuota'); void p; if (this.quotaFail) throw new Error(this.quotaFail); return { quotaSnapshots: {} }; } } }),
       ...(this.noRpcModels ? {} : { models: { list: async () => { this.authCalls.push('models.list'); if (this.modelsFail) throw new Error(this.modelsFail); return { models: [] }; } } }),
       ...(this.managed === undefined && !this.managedFail && !this.managedHangs ? {} : { managedSettings: { resolve: async (p: unknown) => {

@@ -1,7 +1,7 @@
 /*
  * Spec 001 FR-034..FR-040 (owner, 2026-10-22): office metaphors in the lobby. The Boss (questions and permissions queue there), the Bank
  * (Durbar's spending cap), the Postbox (the next scheduled runs, a letter flies when one fires), who is at a place and the room header words.
- * Simulator only (no credits): `simsched=1` seeds three schedules (one missed its last run), `simschedfire=N` adds a one-off run for the
+ * Simulator only (no credits): `simsched=1` seeds four schedules (one missed its last run, one failed), `simschedfire=N` adds a one-off run for the
  * first idle agent N s after start, `simbreak=8` puts Tomas and Rosa on provider breaks (coffee corner); Omar hits his Durbar cap at load.
  * Checks at 1440x900 and 1280x800, 15 agents and a sparse office, Clean Office and Retro Pixel (the built-in theme with a dark page):
  * the Boss is the middle tile; the agents with a pending question or permission stand in its queue in the inbox's order, with a badge and
@@ -94,8 +94,8 @@ module.exports = async (ctx) => {
     assert.strictEqual(post.lines.length, 3, `${w}: the next three runs`);
     SEEDED.forEach((p, i) => assert.ok(post.lines[i].includes(p.slice(0, 12)), `${w}: run ${i} soonest first: ${post.lines[i]}`));
     assert.ok(/^\d+ today$/.test(post.today) && Number(post.today.split(' ')[0]) >= 1, `${w}: letters today: ${post.today}`);
-    assert.strictEqual(post.flag, '1 missed', `${w}: the missed run is flagged`);
-    assert.ok(/1 missed/.test(post.label) && /Open Settings > Schedules/.test(post.label), `${w}: the Postbox's label: ${post.label}`);
+    assert.strictEqual(post.flag, '2 missed', `${w}: the missed run is flagged`);
+    assert.ok(/2 missed/.test(post.label) && /Open Settings > Schedules/.test(post.label), `${w}: the Postbox's label: ${post.label}`);
     const words = await js(`[...document.querySelectorAll('#stage .room-head:not(.no-words) .rd')].filter(x=>x.querySelector('.rdw')&&x.querySelector('.rdw').getClientRects().length).map(x=>x.textContent.trim())`);
     assert.ok(words.some((t) => /^\d+ (working|waiting)$/.test(t)), `${w}: a header counts in words: ${words}`);
     let info = await page(`${w} ${theme} 15`);
@@ -158,6 +158,7 @@ module.exports = async (ctx) => {
       const b2 = await tile('boss'), nm = await nameOf(idle);
       assert.ok(b2.label.includes(nm + ' (') && b2.label.indexOf(nm + ' (') > b2.label.indexOf(sb.label.replace(/^[^:]+: /, '').split(' (')[0] + ' (') && b2.pv.some((v) => v.id === idle), `${w}: ${nm} joins the end of the queue (and is drawn): ${b2.label}`);
       await page(`${w} after a new permission`);
+      ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(200); /* the pointer rests off the cards: a hovered card shows its rename pencil */
       await H.shot(path.join(OUT, `001-lobby-boss-walk-${w}x${h}.png`), { prep: 'calm', blur: true });
     }
   }

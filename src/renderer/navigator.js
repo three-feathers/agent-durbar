@@ -161,7 +161,8 @@
     /* the app's own shortcuts */
     ['mod+KeyK','the command palette'],['mod+KeyO','Add folder'],['mod+shift+KeyO','Add VS Code workspace'],
     ['mod+shift+KeyA','the Needs you inbox'],['mod+shift+KeyN','the next agent that needs you'],['mod+shift+KeyH','Previous sessions'],
-    ['mod+shift+KeyS','Schedules'], /* PR #560 (Schedules in the top bar); reserved here before it lands */
+    ['mod+shift+KeyS','Schedules'], /* spec 044 FR-031: the top-bar Schedules button */
+    ['mod+shift+KeyM','the Notes drawer'], /* spec 083 FR-026 (spec 074 FR-085): Ctrl+Shift+M, ⇧⌘M on a Mac */
     ['mod+Backquote','Back to the previous chat','other'],['ctrl+Backquote','Back to the previous chat','mac'],['mod+Comma','Settings','mac'],
     ['alt+KeyA','Allow once in a waiting chat','other'],['alt+KeyS','Allow for this session in a waiting chat','other'],['alt+KeyD','Deny in a waiting chat','other'],['alt+KeyN','the next agent that needs you','other'],
     ['mod+alt+KeyA','Allow once in a waiting chat','mac'],['mod+alt+KeyS','Allow for this session in a waiting chat','mac'],['mod+alt+KeyD','Deny in a waiting chat (and the Dock)','mac'],['mod+alt+KeyN','the next agent that needs you','mac'],
@@ -207,8 +208,11 @@
     let o=null; try{o=typeof json==='string'?JSON.parse(json):json;}catch(e){o=null;}
     if(!o||typeof o!=='object')return Object.assign({},DEFAULT_COMBO);
     const c={mod:o.mod===true,ctrl:o.ctrl===true&&!!mac,alt:o.alt===true,shift:o.shift===true,code:String(o.code||'')};
-    return clashOf(c,mac)?Object.assign({},DEFAULT_COMBO):c;
+    /* spec 083 FR-026 (spec 074 FR-085): Ctrl+Shift+M was free when Go to could record it, so a person's saved one is kept (it was theirs first); the Notes key then does nothing, no shortcut is taken away */
+    if(clashOf(c,mac)&&!SAVED_BEFORE.some(x=>sameCombo(c,x)))return Object.assign({},DEFAULT_COMBO);
+    return c;
   }
+  const SAVED_BEFORE=[{mod:true,ctrl:false,alt:false,shift:true,code:'KeyM'}];
   const sameCombo=(a,b)=>!!a&&!!b&&sig(a)===sig(b);
 
   /* ---------------- Ctrl+A and Ctrl+Backspace outside text (issue 587, spec 074 FR-020, FR-021) ---------------- */

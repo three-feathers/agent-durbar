@@ -1,8 +1,12 @@
 import { copilotHooksJson } from '../shared/foldersetup';
+import { readCopilotOrgPolicy, resolveCopilotManaged } from './copilotOrgPolicy';
+import type { CopilotManagedClient } from './copilotOrgPolicy';
+import type { OrgPolicy } from '../shared/orgpolicy';
 import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import { randomUUID } from 'crypto';
 import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
-import { parseQuestions } from './questions';
+import { MAX_ANSWER, parseQuestions, SkipNotes } from './questions';
+import type { SkipReason } from './questions';
 import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaiter } from './elicitation';
 import type { ElicitAnswer } from '../shared/elicit';
 import type { CopilotSession, MCPServerConfig, ModelInfo, PermissionRequest, PermissionRequestResult, ResumeSessionConfig, SessionConfig, SessionEvent } from '@github/copilot-sdk';
@@ -55,6 +59,11 @@ import { copilotAccount, copilotPlanLabel } from './accounts';
 import type { AccountIdentity, AccountInfoOptions } from '../shared/account';
 import { ACCOUNT_TEMP_PREFIXES } from '../shared/account';
 import { sweepStaleTempDirs } from '../shared/attachments';
+import { COPILOT_NO_REPORT, COPILOT_SANDBOX_NOTE_COMMAND, copilotHostSupport, copilotSandboxConfig, copilotSandboxHost, copilotSandboxState } from './copilotSandbox';
+import type { CopilotHostSupport } from './copilotSandbox';
+import { CREDENTIAL_FOLDER_REFUSAL, leftOutFields, sandboxRoots, splitFolders } from './sandboxRoots';
+import { pathDirs as envPathDirs } from '../shared/pathdirs';
+import type { SandboxHostView, SandboxState } from '../shared/api';
 
 const IMAGE_MIME: Record<string, string> = {
   '.png': 'image/png',
@@ -106,7 +115,23 @@ interface Live {
   usedSinceNano?: number;
   turnOpen?: boolean;
   localLimit?: { requestId: string; held?: AgentMessage };
+  /** Spec 087: the state last emitted (undefined = none yet, null = nothing to show). */
+  sandbox?: SandboxState | null;
+  /** Spec 087 FR-007: why the sandbox is not in force; the first send is held back (or refused: `refuse`) until the person chooses. */
+  sandboxHold?: { reason: string; refuse?: boolean };
+  /** Spec 087: a `sandboxConfig` was accepted in this session (it stays after a switch to Allow all, until a new session). */
+  sandboxFloor?: boolean;
+  /** Spec 087 FR-019: the organization requires the sandbox (from the start options). */
+  requireOsSandbox?: boolean;
+  /** Spec 087 FR-007a: the held send showed its note; Continue is accepted only while it is open (review on PR 733). */
+  sandboxNoteOpen?: boolean;
+  /** Spec 087: an `options.update` for the floor that is still running (a send waits for it). */
+  sandboxApplying?: Promise<void>;
 }
+
+/** Spec 087 FR-007: the note when Copilot's sandbox is not in force (nothing was sent), and the refusal under the policy (FR-019). */
+export const copilotSandboxNotice = (reason: string): string => `Copilot could not start its OS sandbox: ${reason.replace(/[.\s]+$/, '')}. Nothing was sent.`;
+export const copilotSandboxRefusal = (reason: string): string => `Copilot could not start its OS sandbox: ${reason.replace(/[.\s]+$/, '')}. Read-only and Ask first need it on this computer (your organization's policy), so nothing was sent.`;
 
 /** FR-070: credits a live session has used, as far as the runtime reported them. */
 const usedCredits = (live: Live): number => ((live.usedCheckpointNano ?? 0) + (live.usedSinceNano ?? 0)) / 1e9;
@@ -191,6 +216,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   remote: true, // spec 054 FR-002: rpc.remote.enable/disable (@experimental; real 2026-10-20: `started: false` outside a GitHub repository, never seen started)
   renameSession: 'any', // spec 059 FR-007: rpc.name.set (@experimental; real 2026-10-20 on a live session, 0 credits); a stored session through a prompt-free resume: real 2026-10-21 (T050a, 0 credits)
   remoteService: Object.freeze({ name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }), // spec 054 FR-060
+  osSandbox: true, // spec 087: the local sandbox through session.rpc.options.update (@experimental; read: SDK 1.0.22; not run on a real session)
   deleteSession: true, // spec 006 FR-028: CopilotClient.deleteSession (read: SDK 1.0.22 client.d.ts; never run on a real session)
   oneShot: true, // spec 040 FR-015: a throw-away SDK session with no tools and no MCP, deleted after (real 2026-10-20: no tool ran, nothing left on disk)
 });
@@ -320,6 +346,21 @@ export class CopilotAdapter implements AgentAdapter {
   writeGuard?: WriteGuard;
   /** Spec 040 FR-015: the `generateText` time limit; protected so a test can shorten it. */
   protected oneShotTimeoutMs = ONE_SHOT_TIMEOUT_MS;
+  /** Spec 087: the host facts the floor is built with; protected so a test can set another platform, home folder or PATH. */
+  protected sandboxPlatform: string = process.platform;
+  protected sandboxHome: () => string = () => {
+    try {
+      return os.userInfo().homedir; // the OS account record, not HOME/USERPROFILE (spec 076 FR-172)
+    } catch {
+      return os.homedir();
+    }
+  };
+  protected sandboxPathDirs: () => string[] = () => envPathDirs(process.env, process.platform);
+  protected sandboxRealpath: (p: string) => string = (p) => fs.realpathSync.native(p);
+  /** Spec 087 FR-007b: sessions continued without the OS sandbox, in memory for this run only. */
+  private sandboxContinued = new Set<string>();
+  /** Spec 087 FR-006: `getHostSupport()` once per runtime client. */
+  private hostCache?: { client: CopilotClient; host: Promise<CopilotHostSupport | undefined> };
   /** One mapper per session (it remembers tool names, reasoning ids and sub-agent ids of that session). */
   private mappers = new Map<string, EventMapper>();
 
@@ -385,7 +426,7 @@ export class CopilotAdapter implements AgentAdapter {
       busy.set(sid, await this.processing(live));
       live.unsubscribe();
       live.broker.denyPending(); // the old runtime's requests and questions die with it
-      this.cancelQuestions(live);
+      this.cancelQuestions(live, 'reconnect');
       live.limitRequestId = undefined;
       this.emit(sid, { type: 'status', status: 'working', intent: 'Reconnecting Copilot…' });
     }
@@ -415,6 +456,7 @@ export class CopilotAdapter implements AgentAdapter {
         live.session = session;
         live.unsubscribe = session.on(live.onSessionEvent);
         void session.rpc.eventLog.registerInterest({ eventType: 'session_limits_exhausted.requested' }).catch(() => undefined);
+        await this.applySandbox(sid, live, live.broker.getMode(), client); // spec 087: the floor again on the new runtime, before any send
         for (const [name, on] of live.mcpToggles ?? []) {
           await (on ? session.rpc.mcp.enable({ serverName: name }) : session.rpc.mcp.disable({ serverName: name })).catch(() => undefined);
         }
@@ -440,6 +482,17 @@ export class CopilotAdapter implements AgentAdapter {
   async authStatus(): Promise<{ signedIn: boolean }> {
     const s = await (await this.getClient()).getAuthStatus();
     return { signedIn: !!s.isAuthenticated };
+  }
+
+  /** Spec 076 FR-198 (issue #602): the app's own machine policy, read-only. */
+  async readOrgPolicy(): Promise<OrgPolicy> {
+    let client: CopilotManagedClient | undefined;
+    try {
+      client = (await this.getClient()) as unknown as CopilotManagedClient;
+    } catch {
+      client = undefined; // no runtime: the machine file is the fallback
+    }
+    return readCopilotOrgPolicy(client);
   }
 
   /**
@@ -600,10 +653,9 @@ export class CopilotAdapter implements AgentAdapter {
   /** The organization's Auto tier (cached until the next listing). Read through the runtime only; Durbar never opens the policy files. */
   private autoTierPolicy(): Promise<ManagedAutoTier | undefined> {
     this.managedTier ??= (async () => {
-      const client = await this.getClient();
-      const ms = (client as unknown as { rpc?: { managedSettings?: { resolve?: (p: Record<string, never>) => Promise<unknown> } } }).rpc?.managedSettings;
-      if (typeof ms?.resolve !== 'function') return undefined;
-      return managedAutoTierFrom(await this.capped(ms.resolve({}), this.policyTimeoutMs));
+      // spec 076 FR-198 (review on PR 644): the one shared Copilot policy reader, also used for the organization policy greying
+      const r = await resolveCopilotManaged((await this.getClient()) as unknown as CopilotManagedClient, this.policyTimeoutMs);
+      return r === undefined ? undefined : managedAutoTierFrom(r);
     })().catch(() => undefined);
     return this.managedTier;
   }
@@ -681,8 +733,12 @@ export class CopilotAdapter implements AgentAdapter {
       },
     });
 
-    const onPermissionRequest = async (req: PermissionRequest): Promise<PermissionRequestResult> =>
-      broker.request(req as unknown as PermissionLike);
+    // spec 087 FR-021a (K15): a shell command asked for while the sandbox is on gets the card's own line (an approved one was seen
+    // running outside it on Linux); a copy of the request carries it, the runtime's object is not changed
+    const onPermissionRequest = async (req: PermissionRequest): Promise<PermissionRequestResult> => {
+      const note = String((req as { kind?: unknown }).kind) === 'shell' && this.sessions.get(sid)?.sandbox?.state === 'on';
+      return broker.request((note ? { ...req, sandboxNote: COPILOT_SANDBOX_NOTE_COMMAND } : req) as unknown as PermissionLike);
+    };
 
     // spec 066 FR-003: the runtime's plan (plan mode) waits for the user's answer; approve continues interactively (never autopilot)
     const onExitPlanModeRequest = async (req: { summary?: unknown; planContent?: unknown }): Promise<{ approved: boolean; selectedAction?: string; feedback?: string }> => {
@@ -721,7 +777,9 @@ export class CopilotAdapter implements AgentAdapter {
       });
       live.questions.delete(requestId);
       if (answer === null) {
-        this.emit(sid, { type: 'question', phase: 'cancelled', requestId });
+        const reason = this.skips.take(requestId);
+        this.debug?.(`question ${requestId.slice(0, 8)} cancelled: ${reason}`); // spec 052 FR-178: a code, never the question or an answer
+        this.emit(sid, { type: 'question', phase: 'cancelled', requestId, reason });
         return { answer: SKIPPED_ANSWER, wasFreeform: true };
       }
       this.emit(sid, { type: 'question', phase: 'answered', requestId, answers: { [asked[0].question]: answer } });
@@ -816,6 +874,12 @@ export class CopilotAdapter implements AgentAdapter {
         if (live.userTitle !== undefined && (ev.data as { title?: unknown } | undefined)?.title !== live.userTitle) return;
         live.titled = true;
       }
+      // spec 087 FR-008: the one named surface of a lost sandbox (`read:` SDK rpc.d.ts); also used for a missing capability, so the
+      // chip may say less than is true, never more
+      if (live && ev.type === 'session.warning' && !ev.agentId && (ev.data as { warningType?: unknown } | undefined)?.warningType === 'sandbox' && live.sandbox) {
+        const msg = (ev.data as { message?: unknown }).message;
+        this.setSandbox(sid, live, copilotSandboxState({ mode: live.broker.getMode(), platform: this.sandboxPlatform, host: { supported: true, capabilities: [] }, warning: typeof msg === 'string' ? msg : '' }));
+      }
       this.map(sid, ev);
       if (live) this.trackCap(sid, live, ev);
       if (live && ev.type === 'session.idle') {
@@ -826,7 +890,7 @@ export class CopilotAdapter implements AgentAdapter {
     // FR-158: a reconnect resumes with the same handlers but no model fields, so the session keeps the model the runtime stored
     // (it may have been switched since this start).
     const startCap = options.maxAiCredits && options.maxAiCredits > 0 && Number.isFinite(options.maxAiCredits) ? options.maxAiCredits : null;
-    this.sessions.set(sid, { session, unsubscribe, cwd, folders: [cwd, ...folders], broker, resumeConfig: () => ({ ...config }), onSessionEvent, capNow: startCap, ...(hookDir ? { hookDir } : {}) });
+    this.sessions.set(sid, { session, unsubscribe, cwd, folders: [cwd, ...folders], broker, resumeConfig: () => ({ ...config }), onSessionEvent, capNow: startCap, ...(hookDir ? { hookDir } : {}), ...(options.requireOsSandbox ? { requireOsSandbox: true } : {}) });
     // spec 043 FR-002: a resumed session keeps its selected agent (stored by the runtime): show it
     if (resumedExisting)
       void Promise.resolve()
@@ -840,12 +904,25 @@ export class CopilotAdapter implements AgentAdapter {
     // Without a registered consumer the runtime does not ask the user when the cap is reached (SDK docs of `registerInterest`).
     void session.rpc.eventLog.registerInterest({ eventType: 'session_limits_exhausted.requested' }).catch((err: unknown) => this.debug?.(`limit interest not registered: ${err instanceof Error ? err.message : String(err)}`));
     if (!options.quiet) this.emit(sid, { type: 'status', status: 'idle', intent: `Ready in ${cwd}` });
+    // spec 087 FR-004: the floor before the first send of a created or resumed session (a refused update holds the first send back)
+    const live87 = this.sessions.get(sid);
+    if (live87) await this.applySandbox(sid, live87, startModeOf(options), client);
     return sid;
   }
 
   async send(sessionId: string, message: AgentMessage): Promise<void> {
     await this.refreshing?.catch(() => undefined); // FR-158: send on the reconnected session
     const live = this.mustGet(sessionId);
+    await live.sandboxApplying?.catch(() => undefined);
+    // spec 087 FR-007: the sandbox is not in force: nothing is sent until the person chooses (or, under the policy, ever)
+    const hold = live.sandboxHold;
+    if (hold && !(this.sandboxContinued.has(sessionId) && !live.requireOsSandbox)) {
+      if (live.requireOsSandbox || hold.refuse) throw new Error(hold.refuse ? hold.reason : copilotSandboxRefusal(hold.reason));
+      live.sandboxNoteOpen = true;
+      this.emit(sessionId, { type: 'sandbox', sandbox: live.sandbox ?? null, notice: { text: copilotSandboxNotice(hold.reason), actions: ['continue'] } });
+      this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Not sent: the OS sandbox could not start' });
+      return;
+    }
     // spec 011 FR-071: at or over the cap the message is held and the user is asked (the runtime would send it anyway)
     if (overCap(live)) {
       this.raiseLocalLimit(sessionId, live, message);
@@ -892,7 +969,8 @@ export class CopilotAdapter implements AgentAdapter {
     const q = this.sessions.get(sessionId)?.questions?.get(requestId);
     if (!q) return;
     const v = answers ? Object.values(answers).find((x) => typeof x === 'string' && x.trim()) : undefined;
-    q.resolve(v ? v.replace(/\s+/g, ' ').trim().slice(0, 500) : null);
+    if (answers === null) this.skips.note(requestId, 'user');
+    q.resolve(v ? v.replace(/\s+/g, ' ').trim().slice(0, MAX_ANSWER) : null);
   }
 
   /** spec 012 FR-151: the user's answer to an MCP elicitation (main checked it against the fields). */
@@ -906,8 +984,11 @@ export class CopilotAdapter implements AgentAdapter {
     if (w) w(answer);
   }
 
-  private cancelQuestions(live: Live): void {
-    for (const q of [...(live.questions?.values() ?? [])]) q.resolve(null);
+  /** Why each skipped question was skipped (spec 052 FR-178). */
+  private readonly skips = new SkipNotes();
+
+  private cancelQuestions(live: Live, why: SkipReason): void {
+    for (const [id, q] of [...(live.questions ?? [])]) { this.skips.note(id, why); q.resolve(null); }
     for (const p of [...(live.plans?.values() ?? [])]) p({ kind: 'reject' }); // spec 066: Stop / End reject an open plan
     cancelElicitations(live.elicitations);
   }
@@ -965,7 +1046,7 @@ export class CopilotAdapter implements AgentAdapter {
     const live = this.sessions.get(sessionId);
     if (!live) return;
     live.broker.denyPending();
-    this.cancelQuestions(live);
+    this.cancelQuestions(live, 'interrupt');
     await this.cancelLimit(live);
     try {
       await live.session.abort();
@@ -982,7 +1063,7 @@ export class CopilotAdapter implements AgentAdapter {
     if (!live) return;
     await this.cancelLimit(live);
     live.broker.stop(); // pending permissions are denied cleanly (renderer clears Approve/Deny) and grants are dropped
-    this.cancelQuestions(live);
+    this.cancelQuestions(live, 'stop');
     try {
       await live.session.abort();
     } catch {
@@ -1008,6 +1089,12 @@ export class CopilotAdapter implements AgentAdapter {
     const live = this.sessions.get(sessionId);
     if (!live) return { pending: 0 };
     live.broker.setMode(mode);
+    // spec 087 FR-013: the new floor through options.update at the switch (to Allow all nothing is sent: the floor set stays)
+    const applying = this.applySandbox(sessionId, live, mode);
+    live.sandboxApplying = applying;
+    void applying.finally(() => {
+      if (live.sandboxApplying === applying) live.sandboxApplying = undefined;
+    });
     if (opts.clearGrants) live.broker.clearGrants();
     let pending = live.broker.pendingCount();
     if (pending) {
@@ -1022,6 +1109,110 @@ export class CopilotAdapter implements AgentAdapter {
    * The session's name from the runtime (`rpc.name.get`, @experimental; no prompt, no credits), asked at most once per session:
    * after a resume, or when a turn ended without a `session.title_changed`. Failures are ignored and never retried (issue #126).
    */
+  /* ---------------- spec 087: the OS sandbox floor ---------------- */
+
+  /** Spec 087: how long a sandbox call may take before it counts as refused (a hung runtime never blocks a start). */
+  protected sandboxTimeoutMs = 15_000;
+  private timed<T>(p: Promise<T>, what: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    return Promise.race([p, new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error(`${what} did not answer in time`)), this.sandboxTimeoutMs); })]).finally(() => clearTimeout(timer));
+  }
+
+  private hostSupport(client: CopilotClient): Promise<CopilotHostSupport | undefined> {
+    if (this.hostCache?.client === client) return this.hostCache.host;
+    const host = this.timed(Promise.resolve().then(() => (client as unknown as { rpc?: { sandbox?: { getHostSupport?: () => Promise<unknown> } } }).rpc?.sandbox?.getHostSupport?.()), 'Copilot')
+      .then((r) => copilotHostSupport(r), () => {
+        if (this.hostCache?.host === host) this.hostCache = undefined; // a failure is not kept: the next session asks again
+        return undefined; // a missing method (older runtime), an error or no answer: unavailable (FR-006)
+      });
+    this.hostCache = { client, host };
+    return host;
+  }
+
+  private setSandbox(sid: string, live: Live, st: SandboxState | null): void {
+    if (JSON.stringify(st) === JSON.stringify(live.sandbox)) return;
+    live.sandbox = st;
+    this.emit(sid, { type: 'sandbox', sandbox: st });
+  }
+
+  /** FR-004/FR-006/FR-007/FR-013: the floor for `mode` on this session; never throws (a failure holds the next send back). */
+  private async applySandbox(sid: string, live: Live, mode: PermissionMode, client: CopilotClient | undefined = this.client): Promise<void> {
+    const platform = this.sandboxPlatform;
+    if (mode === 'allow') {
+      live.sandboxHold = undefined;
+      live.sandboxNoteOpen = false;
+      return this.setSandbox(sid, live, copilotSandboxState({ mode, platform, keptFloor: live.sandboxFloor })); // nothing sent (edge cases)
+    }
+    if (this.sandboxContinued.has(sid) && !live.requireOsSandbox) {
+      live.sandboxHold = undefined;
+      live.sandboxNoteOpen = false;
+      return this.setSandbox(sid, live, copilotSandboxState({ mode, platform, host: { supported: true, capabilities: [] }, continued: true }));
+    }
+    // the session's own runtime client (never a new start here: a dispose during a start must not bring up another runtime)
+    const c = client ?? (this.sessions.get(sid) === live ? await this.getClient().catch(() => undefined) : undefined);
+    const host = c ? await this.hostSupport(c) : undefined;
+    if (!host || !host.supported) {
+      const st = copilotSandboxState({ mode, platform, host });
+      live.sandboxHold = { reason: st?.reason ?? COPILOT_NO_REPORT };
+      return this.setSandbox(sid, live, st);
+    }
+    const roots = sandboxRoots(live.folders ?? [live.cwd], this.sandboxRealpath);
+    if (!roots.length) {
+      live.sandboxHold = { reason: "Durbar could not limit Copilot's sandbox to this session's folders. Read-only and Ask first need at least one usable folder, so nothing was sent.", refuse: true };
+      return this.setSandbox(sid, live, { state: 'off', covers: ['shell', 'mcp'], writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: 'No usable session folder for the sandbox.' });
+    }
+    const sandboxConfig = copilotSandboxConfig({ mode, roots, pathDirs: this.sandboxPathDirs(), host, home: this.sandboxHome(), platform, realpath: this.sandboxRealpath });
+    // review round 3 on PR 733: the credential filter dropped the session's OWN folder: refuse (FR-015) instead of a floor that fails there
+    const own = sandboxRoots([live.cwd], this.sandboxRealpath)[0];
+    const granted = sandboxConfig ? (mode === 'ask' ? sandboxConfig.userPolicy.filesystem.readwritePaths : sandboxConfig.userPolicy.filesystem.readonlyPaths) : [];
+    if (own === undefined) {
+      live.sandboxHold = { reason: "Durbar could not limit Copilot's sandbox to this session's own folder. Read-only and Ask first need a usable folder, so nothing was sent.", refuse: true };
+      return this.setSandbox(sid, live, { state: 'off', covers: ['shell', 'mcp'], writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: "This session's own folder is not usable for the sandbox." });
+    }
+    if (!sandboxConfig || !granted.includes(own)) {
+      const holds = !host.capabilities.includes('denied_paths');
+      live.sandboxHold = { reason: CREDENTIAL_FOLDER_REFUSAL('Copilot', holds), refuse: true };
+      return this.setSandbox(sid, live, { state: 'off', covers: ['shell', 'mcp'], writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: holds ? 'This folder is a credential folder, sits inside one or holds one, so the OS sandbox keeps its commands out of it.' : 'This folder is a credential folder or sits inside one, so the OS sandbox keeps its commands out of it.' });
+    }
+    // review round 4 on PR 733: the other session folders the floor leaves out are named, never dropped silently
+    const leftOut = splitFolders(live.folders ?? [live.cwd], live.cwd, granted, this.sandboxRealpath).leftOut;
+    try {
+      await this.timed(live.session.rpc.options.update({ sandboxConfig, sandboxConfigSource: 'session_flag' }), 'Copilot');
+      live.sandboxFloor = true;
+      live.sandboxHold = undefined;
+      live.sandboxNoteOpen = false;
+      const st = copilotSandboxState({ mode, platform, host, applied: true });
+      const lo = leftOutFields(leftOut);
+      this.setSandbox(sid, live, st && lo ? { ...st, ...lo } : st);
+    } catch (e) {
+      const st = copilotSandboxState({ mode, platform, host, refused: e instanceof Error ? e.message : String(e) });
+      live.sandboxHold = { reason: st?.reason ?? 'Copilot refused the sandbox settings.' };
+      this.setSandbox(sid, live, st);
+    }
+  }
+
+  /** FR-007a/FR-007c/FR-007d: *Continue without the OS sandbox* for this session; Copilot never offers *Always continue*. */
+  async continueWithoutSandbox(sessionId: string, opts: { always?: boolean } = {}): Promise<void> {
+    const live = this.mustGet(sessionId);
+    if (live.requireOsSandbox) throw new Error('Your organization requires the OS sandbox in Read-only and Ask first, so Durbar cannot continue without it.');
+    if (opts.always) throw new Error('Always continue is not offered for Copilot: its sandbox can be fixed on this computer.');
+    if (live.sandboxHold?.refuse) throw new Error(live.sandboxHold.reason);
+    if (!live.sandboxHold || !live.sandboxNoteOpen) throw new Error('There is no OS sandbox note to answer for this session.'); // never switch off a working floor
+    live.sandboxNoteOpen = false; // one-shot
+    this.sandboxContinued.add(sessionId);
+    live.sandboxHold = undefined;
+    this.setSandbox(sessionId, live, copilotSandboxState({ mode: live.broker.getMode(), platform: this.sandboxPlatform, host: { supported: true, capabilities: [] }, continued: true }));
+  }
+
+  /** FR-012: Settings > Agent apps. */
+  async sandboxHost(): Promise<SandboxHostView> {
+    try {
+      return copilotSandboxHost(await this.hostSupport(await this.getClient()), this.sandboxPlatform);
+    } catch {
+      return copilotSandboxHost(undefined, this.sandboxPlatform);
+    }
+  }
+
   private askTitle(sid: string): void {
     const live = this.sessions.get(sid);
     if (!live || live.titled || live.askedTitle) return;
@@ -1461,6 +1652,10 @@ export class CopilotAdapter implements AgentAdapter {
 
   revokeGrant(sessionId: string, key: string): void {
     this.sessions.get(sessionId)?.broker.revoke(key);
+  }
+
+  revokeCall(sessionId: string, callId: string): number {
+    return this.sessions.get(sessionId)?.broker.revokeCall(callId) ?? -1;
   }
 
   /** Stop all sessions and the shared runtime. */

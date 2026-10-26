@@ -164,6 +164,7 @@ export const CONTRAST_PAIRS: Array<[string, string, number]> = [
   ...['working', 'thinking', 'waiting', 'idle', 'error', 'done'].map((s): [string, string, number] => [`--pc-${s}`, `--pb-${s}`, 4.5]),
   ['--surface', '--sage-ink', 4.5], ['--surface', '--red-ink', 4.5], ['--surface', '--amber-ink', 4.5] /* spec 052 FR-169: the text of a primary, danger or warn button is --surface on these three */,
   ['--drop-ink', '--drop-bg', 4.5], ['--brand-mark', '--brand-bg', 3], ['--idle-stub-ink', '--idle-stub', 3],
+  ['--desk-new', '--card', 3], ['--desk-needs', '--card-waiting', 3] /* spec 001 FR-178: the glow of a New desk and of a desk that needs you shows on its card */,
 ];
 
 const slug = (s: string): string => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);

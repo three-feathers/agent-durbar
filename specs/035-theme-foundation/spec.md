@@ -109,3 +109,16 @@ Owner (Vikram, team chat 2026-10-22 06:17 UTC): run theme layout, geometry and s
 ### 2026-10-23: the kit list gains `crew` (spec 077)
 
 FR-013's fixed kit list is now `office`, `corporate`, `pixel`, `court-indian`, `court-european`, `court-japanese` and `crew` (the Cheeky Crew theme's kit, spec 077); a user theme may name it like any other kit.
+
+### 2026-10-25: three asserts that could not fail (issue #749, found by Paco's agent's test audit)
+
+**Symptom.** `test-theme` compared the default pixel-map cell size with itself; `test-profilefiles` ran "a link is never written" only `if (r.ok)`, so a failed read skipped the security check; `test-markdown` ("hooks added once") could not see a hook added on every render. Each passed whatever the code did (mutation-verified).
+
+- **FR-014** `[IMPLEMENTED]` (tests only, no behaviour change) The tests assert the real value: the default cell size is 3 (`test:theme`); the link read must succeed before the write refusal is checked (`test:profilefiles`); one hook at creation and none per render, one sanitizer call per render, counted through a spy (`test:markdown`). Mutations that now fail: default cell 3 to 4; `readProfileFile` failing on a link; `addHook` inside `render`.
+
+### 2026-10-25: `test:theme` allows a list of properties instead of refusing a list of sizes (issue #747)
+
+**Symptom.** The check for FR-010 was a denylist of size properties and shorthands. It missed `flex` (`flex: 0 0 120px`), `transform` (`scale`, large `translate`), `position` with `top`/`left`/`right`/`bottom`, and lengths inside custom properties. Spec 008 FR-111 lays out only Clean Office and Retro on pull requests and trusts this check for the other styles, so the hole mattered.
+
+**Corrected wording.**
+- **FR-015** `[IMPLEMENTED]` `test:theme` parses every declaration in `themes.css` and accepts only an **allow-list of properties**: colours, backgrounds and background size, border and outline colours, `border-radius`, `box-shadow`, `text-shadow`, `font-family`, `text-transform`, `z-index`; plus properties allowed with one exact value (`letter-spacing` up to `.1em`, since it widens text; today's uses are `.01em`-`.08em`; `position: relative`, `min-width: 0`, `overflow: hidden` (auto or scroll would add scrollbars), `text-overflow: ellipsis` or `clip`, `flex: 0 1 auto`, `transform: translate(Npx,Npx)` with N from -2 to 2 (today's Retro nudges), no scale or rotate; `font-weight` normal, bold or 400-800); plus the custom properties `--ui-display`, `--ui-top-ink`, `--ui-top-ink-2` and `--st-glyph`, whose values may carry no length. Anything else (an unknown property, `width`, `top`, `flex-basis`, a new `--*`) fails, so a new way to size or move something is refused by default. `border-radius` stays allowed because FR-010 allows corner radii. `DURBAR_THEMES_CSS` points the test at a mutant copy for mutation checks. Does not change FR-010 or spec 008 FR-111. **Structure** (review on #751): declarations are accepted only inside a plain rule. A rule nested in a rule (CSS nesting), a declaration directly in an `@`-block, and any top-level statement ending in `;` (`@import`, `@namespace`, `@charset`) are refused, so the per-rule check sees every declaration. `background-size` stays any-value: it sizes a background texture tile, never a box.

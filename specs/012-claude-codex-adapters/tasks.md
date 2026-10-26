@@ -190,3 +190,14 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 ## Changes 2026-10-23 (Codex on macOS: spawn the resolved path, issue #660)
 
 - [x] T131 (2026-10-23) `codexSpawnPath`: the Codex adapter spawns the resolved `codex` (injected `realpath`) for sessions and probes; the shim refusal checks the located and the resolved path; npm `bin/codex.js` spawned as it is on macOS/Linux; on Windows only a resolved `.exe` replaces the located path; `macSandboxHint` split into `execvp` (symlinked install) and `sandbox_apply` (nested sandbox); unit tests with a fake realpath, the shim, npm and Windows cases, both hint texts, mutation checks; README, spec 062 table, agent notes, changelog [FR-162, FR-140]
+- [x] T132 (2026-10-23, issue #551) `TOKEN_SHAPES` mask Slack tokens (`xox[abcdeprs]-`, `xapp-`), the secret path of Slack webhooks (`services`, `workflows`, `triggers`) and Discord webhooks (host kept; port, trailing dot, `//`), Telegram bot tokens (6 to 12 digits, bare and after `/bot` on any host) and Discord bot tokens; the start also accepts `=XX` (quoted-printable) and `%uXXXX`; WRAPS, false-positive, 1 MB adversarial and mutation checks in `test:redact` and `test:foldersetup` [FR-080]
+
+## Changes 2026-10-24 (issue #664, bounded version detection)
+
+- [x] T133 Fix `src/adapters/detect.ts` `parseVersion` per the FR-039 delta using the existing detector path; add malformed/error/first-line/boundary/64 KiB CPU-budget and fake-exec regressions in `scripts/test-detect.ts`, retain Codex mode compatibility, prove the original parser mutation fails, update README/changelog/evidence, and run typecheck, build, full tests and convergence. No real sessions.
+
+- [x] T134 (2026-10-25, issue #684) `scripts/test-redact.ts` sections 9 and 14e (R12): the fixed 1000 ms CPU limits of the adversarial cases become a same-run growth check against a 1/16-size input of the same shape (`assertLinearGrowth`, best of 3, ratio under 40 so growth up to about n log n passes, 100 ms floor, 10 s CPU and 10 s wall backstops); the R12 300 ms check takes the best of 3; mutation-checked (FR-080 delta 2026-10-25).
+
+T133 verification (2026-10-25, review on #698): typecheck, build and the offline suite re-run on Linux after adding the 64-character cap and the markup test; the exact sha is in the PR comment *checks run at <sha>*. The earlier macOS (Node 22.16.0) run covered the first version only. CI on the PR ran ubuntu and windows; no macOS run of this change. Manual Spec Kit analysis found full coverage for this delta. No UI change; no screenshots needed. No real sessions.
+
+- [x] T135 (2026-10-26) Kill steps of `codexRpc.ts` and `claudeTransport.ts` go through `killForEscalation` (Windows: `killChildTree`, `taskkill /t /f`); injected `killChild` option; tests with a fake child and killer, order kept; rewrite the stale FR-079 KNOWN GAP (FR-079 delta 2026-10-26). POSIX unchanged (needs `detached`). Not verified on Windows.

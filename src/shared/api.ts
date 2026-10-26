@@ -10,8 +10,10 @@ import type { McpServerInput, McpServerView, McpTransport, McpTrustInfo } from '
 export type { McpServerInput, McpServerView, McpTransport, McpTrustInfo };
 
 import type { AdapterInfo } from './adapters';
+import type { OrgPolicyAppView } from './orgpolicy';
 import type { ActivityRow } from './activity';
 import type { RemoteState } from './remote';
+import type { NotesView, NotesWrote } from './notes';
 export type { RemoteState };
 export type { AdapterInfo };
 
@@ -80,6 +82,47 @@ export interface AgentInfo {
   defaultAgent?: string;
   /** Which adapter runs this agent (spec 012 FR-058), e.g. `copilot`. */
   adapterId: string;
+  /** Spec 087 FR-011: the agent app's OS sandbox under Durbar's checks, as the adapter last reported it; absent = nothing is shown. Never saved. */
+  sandbox?: SandboxState;
+}
+
+/**
+ * Spec 087 FR-011: the OS sandbox an agent app runs its commands in, normalized (no vendor name or vendor setting key; those stay in
+ * `src/adapters/`). `on` only after the agent app confirmed it; `unknown` while its start has not confirmed it yet. `reason` is masked
+ * and at most 200 characters.
+ */
+export interface SandboxState {
+  state: 'on' | 'off' | 'unknown';
+  /** How it is enforced: the macOS sandbox, bubblewrap, Windows ProcessContainer, or the agent app's own sandbox. */
+  mechanism?: 'seatbelt' | 'bubblewrap' | 'processcontainer' | 'vendor';
+  /** The organization's own policy keeps it on (Allow all). */
+  managed?: boolean;
+  /** Set in an earlier mode of this session and kept until a new session (a switch to Allow all does not clear it). */
+  untilNewSession?: boolean;
+  /** What runs inside it: shell commands, MCP servers, the app's own file tools. */
+  covers: Array<'shell' | 'mcp' | 'files'>;
+  /** An approved request may run outside the sandbox (spec 087 FR-021). */
+  approvedMayLeave?: boolean;
+  /** Read-only (no writes) or Ask first (the session's folders). */
+  writes?: 'none' | 'folders';
+  /** A real session on this app and OS checked it (spec 087 FR-020); false: "Requested; not verified on a real session." */
+  verified: boolean;
+  /** Why it is off or unknown, in plain words (masked, at most 200 characters). */
+  reason?: string;
+  /** Session folders the floor left out, each "<folder> (<why>)" (masked, cut), at most 10; `leftOutMore` counts the rest. */
+  leftOut?: string[];
+  leftOutMore?: number;
+}
+
+/** Spec 087 FR-012: one agent app's OS sandbox on this computer, for Settings > Agent apps. Plain words; `reason` masked and cut. */
+export interface SandboxHostView {
+  available: boolean;
+  mechanism?: SandboxState['mechanism'];
+  /** Why not (masked, at most 200 characters) and what would fix it. */
+  reason?: string;
+  fix?: string;
+  /** Spec 087 FR-007c: *Always continue on this computer* is stored for this app (shown and undone in Settings). */
+  alwaysContinue?: boolean;
 }
 
 /** Choices for a new session. */
@@ -225,7 +268,7 @@ export interface ScheduleInfo {
   /** Why the app paused it (FR-014, FR-015). */
   pausedReason?: 'cap' | 'session-ended';
   done?: boolean;
-  last?: { at: number; outcome: 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' };
+  last?: { at: number; outcome: 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'skipped-door-full' };
   /** FR-014: one session instead of the folder's agent. */
   target?: { session: string; agent: string; name?: string };
   /** FR-015: the schedule's own limit and what its runs spent. */
@@ -237,6 +280,13 @@ export interface ScheduleInfo {
 export interface SinceAwayInfo {
   awayMs: number;
   missed: Array<{ id: string; folderName: string; prompt: string; repeats: boolean }>;
+}
+
+/** Spec 006 FR-040..FR-041 (issue #606): sessions the last run left in the middle of a turn, still resumable. Ids and folder names only. */
+export interface InterruptedInfo {
+  items: Array<{ id: string; adapterId: string; folderName: string }>;
+  /** Busy sessions of the last run that could not be brought back (removed, folder gone): the card says "N of M". */
+  missing: number;
 }
 
 export interface SchedulesInfo {
@@ -259,6 +309,10 @@ export interface ModelChoice {
   contextTiers?: ContextTier[];
   /** Window in tokens of the long-context tier, when reported. */
   longWindow?: number;
+  /** Spec 076 FR-202 (issue #602): the agent app's own organization policy blocks this model; the reason to show. */
+  orgBlocked?: string;
+  /** Spec 076 FR-201: the policy may block it (Durbar could not read all of it); advice, still selectable. */
+  orgDoubt?: string;
   /** Spec 007 FR-012: the Auto routing tiers (Copilot's `auto` only). */
   autoTiers?: AutoTier[];
   /** Spec 007 FR-017: the organization's Auto tier, when set. */
@@ -553,6 +607,10 @@ export interface AgentMcpEntry {
   off: boolean;
   /** Spec 069 FR-011: every list that has this name. */
   sources?: McpSourceTag[];
+  /** Spec 076 FR-202 (issue #602): the agent app's own organization policy blocks this server; the reason to show. */
+  orgBlocked?: string;
+  /** Spec 076 FR-201: the policy may block it (Durbar could not read all of it); advice, still usable. */
+  orgDoubt?: string;
   /** Spec 069 FR-061: tools of this server turned off in this agent's folder. */
   toolsOff?: string[];
   /** Spec 058 FR-020: Restart is offered: the agent app can restart one server, the session runs and knows this server, and it is on. */
@@ -599,7 +657,7 @@ export interface AgentMcpReply {
 /** `agents:mcpTools` (spec 069 FR-032): one server's tools, masked and cut in main. */
 export interface McpToolsResult {
   ok: boolean;
-  tools?: { name: string; description?: string }[];
+  tools?: { name: string; description?: string; orgBlocked?: string; orgDoubt?: string }[];
   /** How many the server listed (more than `tools` when it listed over 500). */
   total?: number;
   /** The session is not running: nothing was asked. */
@@ -640,6 +698,23 @@ export interface McpRestartSessionResult {
 }
 
 /** Bridge exposed by the preload script as `window.agentDurbar`. */
+/** Spec 081: one app's check result as the window sees it (plain data; `src/shared/updatecheck.ts` has the rules). */
+export interface UpdateResultView {
+  app: string;
+  state: 'up-to-date' | 'update-available' | 'could-not-check' | 'outside' | 'checking' | 'not-checked';
+  installed?: string; latest?: string; stable?: string; newerOnLatest?: string; installedNewer?: boolean;
+  source: string; sourceKind: string; hint?: string; reason?: string; checkedAt?: number; asHomebrew?: boolean;
+}
+export interface UpdatesView {
+  results: UpdateResultView[];
+  checking: string[];
+  startCheck: boolean;
+  policy: { checkHidden: boolean; installBlocked: boolean; unreadable: boolean; startAllowed: boolean };
+  runtime?: string;
+  waiting: Record<string, number>;
+  announce?: { app: string; version: string; name: string };
+}
+
 export interface DurbarApi {
   version(): Promise<string>;
   addFolder(permMode: PermMode, opts?: SessionOptions): Promise<AddResult>;
@@ -649,6 +724,8 @@ export interface DurbarApi {
   /** Models the account offers (no credits used). */
   /** Models of an agent kind (spec 012 FR-120); no kind = the default kind. */
   listModels?(kind?: string): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }>;
+  /** Spec 076 FR-207 (issue #602): per agent app, what its own organization policy blocks (modes with reasons, counts; no values). */
+  orgPolicyView?(): Promise<Record<string, OrgPolicyAppView>>;
   /** Adapters and whether each can run (spec 012 FR-033). `refresh` probes again instead of using the cached answer. */
   listAdapters?(refresh?: boolean): Promise<AdapterInfo[]>;
   /** Spec 012 FR-157: main changed the cached list by itself (a session was refused because of the sign-in). */
@@ -659,6 +736,12 @@ export interface DurbarApi {
   openExternal?(url: string): Promise<{ ok: boolean }>;
   /** Change the permission mode of agent `id` now (applies to the next request). `clearGrants`: forget "Approve for this session"; `approvePending`: approve what is waiting. */
   setPermMode?(id: string, mode: PermMode, opts?: { clearGrants?: boolean; approvePending?: boolean }): Promise<{ ok: boolean; error?: string; mode?: PermMode; pending?: number }>;
+  /** Spec 087 FR-007a/FR-007c: *Continue without the OS sandbox* for this session (`always`: on this computer, where offered). Nothing is sent. */
+  sandboxContinue?(id: string, opts?: { always?: boolean }): Promise<{ ok: boolean; error?: string }>;
+  /** Spec 087 FR-012: per ready agent app, whether its OS sandbox can run here (Settings > Agent apps). */
+  sandboxHosts?(): Promise<Record<string, SandboxHostView>>;
+  /** Spec 087 FR-007c: undo *Always continue on this computer* for an app. */
+  sandboxAlwaysOff?(app: string): Promise<{ ok: boolean }>;
   /** Change the model, effort or context tier of agent `id` (spec 030). Validated in main; saved with the folder entry once applied. */
   setModel?(id: string, request: ModelSwitchRequest): Promise<{ ok: boolean; error?: string; result?: ModelSwitchResult }>;
   /** Remove a queued model switch (spec 030). */
@@ -684,7 +767,7 @@ export interface DurbarApi {
   /** Ends one main session and takes it out of the office (spec 006 FR-017); refused for the last main session of a folder and for helpers. */
   removeSession?(id: string): Promise<{ ok: boolean; error?: string }>;
   /** Sets the folder's display name (spec 006 FR-018); empty = the folder's own name. */
-  renameFolder?(id: string, label: string): Promise<{ ok: boolean; label?: string }>;
+  renameFolder?(id: string, label: string): Promise<{ ok: boolean; label?: string; error?: string }>;
   setFolderDefaultAgent?(id: string, profileId: string | null): Promise<{ ok: boolean; defaultAgent?: string }>;
   /** Spec 006 FR-021: start a restored agent now (no prompt). `resumed` says whether its last session came back, with its history. */
   wake?(id: string): Promise<{ ok: boolean; error?: string; resumed?: boolean; history?: { items: HistoryItem[]; total: number; truncated: boolean }; title?: string }>;
@@ -733,8 +816,15 @@ export interface DurbarApi {
   /** Example looks for the AI theme maker (spec 040 FR-021). */
   themeIdeas?(): Promise<string[]>;
   /* Spec 051: harness setup inside the app (install, update, sign in). Fixed commands only; the window never names a command. */
-  harnessPlans?(kind: string, op: 'install' | 'update'): Promise<{ plans: Array<{ manager: string; display: string; note?: string }>; page: string; name: string }>;
-  harnessRun?(kind: string, op: 'install' | 'update' | 'signin', planIndex?: number): Promise<{ ok: boolean; error?: string; cancelled?: boolean }>;
+  harnessPlans?(kind: string, op: 'install' | 'update'): Promise<{ plans: Array<{ manager: string; display: string; note?: string; owner?: boolean; pinned?: string; own?: string; script?: unknown }>; page: string; name: string; blocked?: string }>;
+  /** `gate` (spec 081 FR-013): the answer to the open-sessions dialog ('wait', 'end', or 'cancel' to release the update lock). A reply with `needsGate` asks the window to show that dialog. */
+  harnessRun?(kind: string, op: 'install' | 'update' | 'signin', planIndex?: number, gate?: 'wait' | 'end' | 'cancel'): Promise<{ ok: boolean; error?: string; cancelled?: boolean; busy?: boolean; waiting?: number; needsGate?: { open: number; busy: number; pendingPermissions: number; heldPrompts: number } }>;
+  /** Spec 081 FR-003: the kept update-check results; `'check'` asks the sources anew (all apps, or one). Accepting winget's source terms is main's own native question (FR-004). */
+  harnessUpdates?(what?: 'check', app?: string): Promise<UpdatesView>;
+  onHarnessUpdates?(cb: (v: UpdatesView) => void): () => void;
+  /** Spec 081 FR-016: whether Settings > Agent apps is on screen (then the card is the announcement and no toast is shown). */
+  harnessVisible?(on: boolean): Promise<boolean>;
+  setCheckUpdatesAtStart?(on: boolean): Promise<{ ok: boolean; checkUpdatesAtStart?: boolean }>;
   harnessPaste?(text: string): Promise<{ ok: boolean; error?: string }>;
   harnessCancel?(): Promise<boolean>;
   harnessOpenPage?(kind: string): Promise<{ ok: boolean }>;
@@ -747,9 +837,22 @@ export interface DurbarApi {
   /** spec 012 FR-158: remote control ended because the agent app reconnected after a new sign-in. */
   /** Remote control ended without the user (spec 012 FR-158, spec 054 FR-062): an agent id, or the id with a plain reason. */
   onRemoteOff?(cb: (p: string | { id: string; reason?: string }) => void): () => void;
+  /** Spec 017 FR-015..FR-017: per agent id, a door the user closed and how many runs are held there (only doors that are closed or hold something). */
+  doorsList?(): Promise<Record<string, { closed: boolean; held: number }>>;
+  setDoor?(id: string, closed: boolean): Promise<{ ok: true; closed: boolean; held: number; remoteOff?: boolean } | { ok: false; error: string }>;
+  releaseHeld?(id: string, action: 'send' | 'discard'): Promise<{ ok: true; queued?: number; sent?: number; discarded?: number } | { ok: false; error: string }>;
+  onDoorsChanged?(cb: (doors: Record<string, { closed: boolean; held: number }>) => void): () => void;
+  /** Review on #631: the held prompts of a door (the window masks and cuts them in the Send all dialog). */
+  doorsHeld?(id: string): Promise<{ prompt: string; at: number }[]>;
+  /** Send all stopped; the runs stay held (why: paused-all, paused, cap, ended, failed). */
+  onDoorsStopped?(cb: (p: { id: string; why: string }) => void): () => void;
+  /** A scheduled run could not be kept at a closed door whose queue is full. */
+  onDoorsFull?(cb: (p: { id: string }) => void): () => void;
+  /** Spec 076 FR-203: a session started under advice of its agent app's organization policy; the words to show (no policy values). */
+  onOrgNote?(cb: (p: { id: string; text: string }) => void): () => void;
   /** Spec 054 FR-062: remote control is still on with a new (checked) link after a relaunch. */
   onRemoteUrl?(cb: (p: { id: string; url: string }) => void): () => void;
-  onHarnessDone?(cb: (p: { kind: string; op: string; ok: boolean; exitCode?: number | null; reason?: string; lines: string[] }) => void): () => void;
+  onHarnessDone?(cb: (p: { kind: string; op: string; ok: boolean; exitCode?: number | null; reason?: string; lines: string[]; error?: string; failure?: string; fallback?: 'official'; note?: string }) => void): () => void;
   exportTheme?(id: string): Promise<{ ok: boolean; to?: string; error?: string; cancelled?: boolean }>;
   setCap?(id: string, credits: number | null): Promise<{ ok: boolean; error?: string; maxAiCredits?: number }>;
   /** One-way: the window tells main an agent was paused or resumed (spec 041 T014); Paused exists only in the window. */
@@ -765,6 +868,9 @@ export interface DurbarApi {
   /** Spec 052 FR-089: what happened while the app was closed (more than 30 minutes), or null. */
   sinceAway?(): Promise<SinceAwayInfo | null>;
   dismissSinceAway?(): Promise<{ ok: boolean }>;
+  /** Spec 006 FR-041: the crash card's sessions (null: none, or dismissed). Resuming one is `wake`. */
+  interrupted?(): Promise<InterruptedInfo | null>;
+  dismissInterrupted?(): Promise<{ ok: boolean }>;
   onSchedules?(cb: (doc: SchedulesInfo) => void): () => void;
   onScheduleRan?(cb: (r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void): () => void;
   /** Answer the agent's question (spec 012 FR-128): question text -> answer; null = skip. */
@@ -866,6 +972,20 @@ export interface DurbarApi {
   send(id: string, text: string, attachments: PickedFile[], opts?: { plan?: boolean }): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string }>;
   /** Spec 073 FR-010: the "/" entries of the agent's app in its folder (folder, user, app). */
   slashCommands?(id: string): Promise<{ ok: boolean; error?: string; entries: SlashCommandInfo[] }>;
+  /**
+   * Spec 083 FR-062 (issue 699): the folder's notes, by agent id (the window never passes a path). Everything stored is masked in main
+   * before it is written; a refusal carries a short reason. `notesSetFile` is answered by the simulator only for now (*Demo: no file written*).
+   */
+  notesList?(id: string): Promise<NotesView>;
+  notesSave?(id: string, input: { role: 'user' | 'agent'; ord: number; text: string; from?: 'agent' | 'user' | 'selection' }): Promise<NotesWrote>;
+  notesAdd?(id: string, input: { text: string }): Promise<NotesWrote>;
+  notesUpdate?(id: string, noteId: string, rev: number, patch: { title?: string; text?: string; done?: boolean }): Promise<NotesWrote>;
+  notesDelete?(id: string, noteId: string, rev: number): Promise<NotesWrote>;
+  notesDeleteAll?(id: string): Promise<NotesWrote>;
+  notesStartOver?(id: string): Promise<NotesWrote>;
+  notesSetFile?(id: string, on: boolean): Promise<{ ok: boolean; demo?: boolean; message?: string; error?: string }>;
+  /** A folder's notes changed (another chat, another process): refetch the open folder's notes when the fingerprint is its own. */
+  onNotesChanged?(cb: (v: { fingerprint: string }) => void): () => void;
   /** Spec 066: answer a proposed plan (window only). */
   resolvePlan?(id: string, requestId: string, answer: { kind: 'approve' | 'reject' | 'revise'; feedback?: string }): Promise<{ ok: boolean; error?: string }>;
   /** Interrupt the current turn only; the agent returns to Ready. */
@@ -873,10 +993,12 @@ export interface DurbarApi {
   /** `remember` = "Approve for this session" (ignored when denying); `broad` = the wider "any arguments" scope of a shell request (only if offered). */
   resolvePermission(id: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean): Promise<void>;
   /** Forget one "Approve for this session" grant (key from the `grants` event). */
-  revokeGrant(id: string, key: string): Promise<void>;
+  revokeGrant(id: string, key: string, callId?: string): Promise<number | void>;
   openInVSCode(id: string): Promise<{ ok: boolean; error?: string; edition?: string }>;
   /** Spec 063: the git branch and uncommitted changes of the agent's folder (read-only). Optional: older bridges lack it. */
   gitStatus?(id: string): Promise<FolderGitStatus>;
+  /** Spec 085: what the session did since its first message in this run (time, git files and lines, commits), for the card shown when it ends. Optional: older bridges lack it. */
+  sessionSummary?(id: string): Promise<SessionSummaryInfo>;
   /** Earlier Copilot CLI/SDK sessions in this agent's folder (newest first). Optional: not in the simulator. */
   listPrevious?(id: string): Promise<{ ok: boolean; error?: string; sessions: PreviousSession[]; pinned?: string[]; hidden?: string[]; names?: Record<string, string> }>;
   /** Pin, unpin, hide or unhide one row (spec 006 FR-026). `src` is the agent's adapter id or `vscode`; ids only, never a path. */
@@ -902,6 +1024,35 @@ export interface DurbarApi {
   onFullScreen?(cb: (on: boolean) => void): () => void;
   /** A double-click on a drag area of the top bar, spec 052 FR-085 (Mac only; main zooms, minimizes or ignores it by the system setting). */
   titleDoubleClick?(): void;
+  /**
+   * Spec 080 T014 (FR-003): the session browser. Every call names a top-level session; main looks it up and answers only with `BrowserState`
+   * (URL, title, loading, history, mute and driver state): never the page's DOM, text, cookies or storage.
+   */
+  browserOpen?(id: string, address?: string): Promise<BrowserResult>;
+  browserState?(id: string): Promise<BrowserResult>;
+  browserNavigate?(id: string, address: string): Promise<BrowserResult>;
+  browserBack?(id: string): Promise<BrowserResult>;
+  browserForward?(id: string): Promise<BrowserResult>;
+  browserReload?(id: string): Promise<BrowserResult>;
+  browserStop?(id: string): Promise<BrowserResult>;
+  /** The page area's rectangle in CSS pixels, relative to the window's page; main checks it and sets the native view's bounds. */
+  browserBounds?(id: string, bounds: BrowserBounds): Promise<{ ok: boolean }>;
+  /** Attach (true) or detach (false) the session's view. Only the Browser tab shown asks for true. */
+  browserVisible?(id: string, visible: boolean): Promise<{ ok: boolean }>;
+  /** A Durbar overlay covers the page area (FR-008): main hides the view while it is open. */
+  browserOverlay?(id: string, open: boolean): Promise<{ ok: boolean }>;
+  browserMute?(id: string, muted: boolean): Promise<BrowserResult>;
+  /** Open the view's current http(s) address in the system browser (the existing external-link path). */
+  browserOpenSystem?(id: string): Promise<{ ok: boolean }>;
+  onBrowserState?(cb: (s: BrowserState) => void): () => void;
+  /** The user accepted the one-time note (FR-025d); remembered in settings, never asked again. */
+  browserConsentAccept?(): Promise<{ ok: boolean }>;
+  /** FR-008: a still picture of the page area (an in-memory data URL) while an overlay hides the view. */
+  browserSnapshot?(id: string): Promise<{ ok: boolean; image?: string }>;
+  /** FR-025e: the user's answer to *Leave this page?* (true = Leave). */
+  browserLeaveAnswer?(req: string, leave: boolean): Promise<{ ok: boolean }>;
+  onBrowserDialog?(cb: (d: BrowserDialogEvent) => void): () => void;
+  onBrowserLeave?(cb: (a: BrowserLeaveAsk) => void): () => void;
   /** The OS the app runs on ('darwin', 'win32', 'linux'), spec 052 FR-085: the Mac title bar styles. */
   platform?: string;
 }
@@ -911,9 +1062,42 @@ export type FolderGitStatus =
   | { repo: false }
   | { repo: true; branch: string; detached?: boolean; ahead?: number; behind?: number; files: Array<{ path: string; state: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflict'; added?: number; removed?: number; binary?: boolean }>; more: number };
 
+/** Spec 085: what `sessionSummary` answers (mirrors `SessionSummary` in src/main/sessionsummary.ts; `unreadable`: git could not be read, which is not "not a git folder"). `pullRequests`: only when the adapter reports them (none does yet). */
+export type SessionSummaryInfo =
+  | { ok: false; error: string }
+  | { ok: true; ms: number; pullRequests?: number; git: { repo: false; unreadable?: true } | { repo: true; files: number; added: number; removed: number; binary: number; newFiles: number; commits: number; dirtyAtStart: boolean; noHead?: boolean; newFilesUnknown?: boolean } };
+
 /** Spec 065: the note after a turn whose file-edit tools changed files. */
 export interface CheckpointNote { id: string; turn: number; kind: 'turn' | 'undo'; files: { path: string; change: 'changed' | 'created' | 'deleted' }[]; notCovered: { path: string; why: string }[] }
 export interface CheckpointPreview { ok: true; turn: number; files: { path: string; action: 'restore' | 'remove' | 'create'; diff?: string; binary?: boolean }[]; conflicts: string[]; notCovered: { path: string; why: string }[] }
 export type CheckpointUndo =
   | { ok: true; restored: number; removed: number; created: number; undo: Omit<CheckpointNote, 'id'> }
   | { ok: false; error: string; conflicts?: string[] };
+
+/** Spec 080 T014: what the session browser tells the window. Plain data, no page content. */
+export interface BrowserState {
+  id: string;
+  /** False before the first open and after the session ended (the view is gone). */
+  open: boolean;
+  /** The page's address, userinfo dropped; '' for about:blank. */
+  url: string;
+  title: string;
+  loading: boolean;
+  canBack: boolean;
+  canForward: boolean;
+  muted: boolean;
+  /** Who drives the view (FR-060). Always 'user' in Phase 1. */
+  driver: 'user' | 'agent' | 'none';
+  /** A page dialog (`alert`, `confirm`) is open and waiting for the user: the *Dialog open* marker (FR-025d). */
+  dialogOpen: boolean;
+  /** The note of a dialog main closed for the agent (FR-025d); the bar shows it with an icon. Page text, already masked. */
+  note?: string;
+  /** A Chromium network error name such as ERR_CONNECTION_REFUSED after the last load failed. */
+  error?: string;
+}
+export type BrowserResult = { ok: true; state: BrowserState } | { ok: false; reason: string; state?: BrowserState; needsConsent?: true };
+/** A page dialog opened (FR-025d): the window raises a toast naming the session and, for a hidden view, brings its chat forward. `text` is masked page text. */
+export interface BrowserDialogEvent { id: string; type: string; text: string; shown: boolean }
+/** FR-025e: ask *Leave this page?*; answer with `browserLeaveAnswer(req, leave)`. */
+export interface BrowserLeaveAsk { id: string; req: string; known: boolean; shown: boolean }
+export interface BrowserBounds { x: number; y: number; width: number; height: number }

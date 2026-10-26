@@ -5,10 +5,13 @@ import type { AdapterRouter } from '../../adapters/router';
 import { historyOf } from '../../adapters/router';
 import type { AddResult, AgentInfo, PickedFile, ResumeResult, SessionOptions } from '../../shared/api';
 import { parseAmount, parseCapIn } from '../../shared/credits';
+import { revokeCallFor, revokeGrantFor } from '../../adapters/permissions';
 import { endSessionOp, errText, setCapOp, setModeOp, stopTurnOp, validMode } from '../agentops';
 import type { OpsDeps } from '../agentops';
 import { folderGitStatus } from '../gitstatus';
 import type { GitStatus } from '../gitstatus';
+import { SessionStarts } from '../sessionsummary';
+import type { SessionSummary } from '../sessionsummary';
 import { applySetPaused } from '../mcp/agentstate';
 import { mcpRestartSessionOp } from '../mcpsession';
 import type { AgentStateTracker } from '../mcp/agentstate';
@@ -19,6 +22,8 @@ import { openInVSCode } from '../vscode';
 import type { AddWorkspace, EnsureLive, SendOp } from './types';
 
 export interface AgentsIpcDeps {
+  /** Spec 080 FR-023: the session's browser view and partition are destroyed when it ends or is removed. */
+  browserGone?(id: string): void;
   agents: Map<string, AgentInfo>;
   router: AdapterRouter;
   agentState: AgentStateTracker;
@@ -45,6 +50,8 @@ export interface AgentsIpcDeps {
   maskHistory<H extends { items: { type: string; failed?: boolean; output?: string }[] }>(id: string, h: H): H;
   /** Spec 058: the secret values handed to an agent's session (its folder's MCP extras), masked out of errors. */
   mcpSecrets(id: string): string[];
+  /** Spec 087 FR-007a: an ended or removed session's open sandbox note is forgotten (main's one-shot Continue). */
+  forgetSandboxNote?(id: string): void;
   /** Spec 052 activity log row for Restart session (spec 058 FR-022). */
   logMcp(a: AgentInfo, action: string): void;
 }
@@ -52,6 +59,7 @@ export interface AgentsIpcDeps {
 export function register(deps: AgentsIpcDeps): void {
   const { agents, router, agentState, opsDeps, remoteOps, mcpSecrets, logMcp, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, vsChatRefs, continued, maskHistory } = deps;
   const scheduler = deps.getScheduler;
+  const sessionStarts = new SessionStarts(); // spec 085: when and from which commit each session began in this run (memory only)
   const checkpointStore = deps.getCheckpointStore;
   ipcHandle('agents:list', () => [...agents.values()]);
   const sessionOpts = (o: unknown): SessionOptions & { persist: boolean } => {
@@ -79,6 +87,8 @@ export function register(deps: AgentsIpcDeps): void {
     // spec 066 FR-001/FR-007: plan first only from Durbar's own window and only for an agent app that has a plan mode
     const plan = !!opts && typeof opts === 'object' && (opts as { plan?: unknown }).plan === true;
     if (plan && (!fromApp(e) || !ad.capabilities.planMode)) return { ok: false, error: 'This agent app cannot plan first.' };
+    const ag = agents.get(id);
+    if (ag && ag.cwd) await sessionStarts.noteStart(id, ag.cwd); // spec 085 FR-001: before the turn can change a file; first send only
     agentState.ensure(id, agents.get(id)?.lazy);
     agentState.noteSend(id); // the window shows Thinking from the moment the user sends (app.js sendLive)
     const r = await sendOp(id, text, attachments, ad, plan);
@@ -93,7 +103,10 @@ export function register(deps: AgentsIpcDeps): void {
   ipcHandle('agents:end', async (_e, id: string) => {
     if (!agents.has(id)) return;
     await endSession(id);
+    sessionStarts.forget(id); // spec 085: the next session in this folder starts its own count
     deps.profileFreshness?.forget(id); // spec 043 FR-041
+    deps.forgetSandboxNote?.(id); // spec 087
+    deps.browserGone?.(id); // spec 080 FR-023
   });
   /** Spec 058 FR-022: Restart session with these servers: End session, then the same id through the resume path; no prompt is sent. */
   const restartingSessions = new Set<string>();
@@ -167,7 +180,10 @@ export function register(deps: AgentsIpcDeps): void {
     }
     router.unbind(a.id);
     checkpointStore()?.forget(a.id); // spec 065 FR-006
+    sessionStarts.forget(a.id); // spec 085
     deps.profileFreshness?.forget(a.id); // spec 043 FR-041
+    deps.forgetSandboxNote?.(a.id); // spec 087
+    deps.browserGone?.(a.id); // spec 080 FR-023
     agents.delete(a.id);
     agentState.remove(a.id);
     vsChatRefs.delete(a.id);
@@ -201,14 +217,22 @@ export function register(deps: AgentsIpcDeps): void {
     if (agents.has(id)) router.forAgent(id)?.resolvePermission?.(id, String(requestId), approve === true, approve === true && remember === true, approve === true && remember === true && broad === true);
   });
 
-  ipcHandle('agents:revokeGrant', (_e, id: string, key: string) => {
-    if (agents.has(id)) router.forAgent(id)?.revokeGrant?.(id, String(key));
+  ipcHandle('agents:revokeGrant', (_e, id: unknown, key: unknown, callId?: unknown): number => {
+    // spec 003 FR-101: with a call id, every rule that allowed that call goes (main holds the list; the page cannot name keys); the answer is how many of them are still live, or -1 (unknown call: nothing removed)
+    if (callId !== undefined) return revokeCallFor((x) => agents.has(x), (x, c) => router.forAgent(x)?.revokeCall?.(x, c) ?? -1, id, callId);
+    revokeGrantFor((x) => agents.has(x), (x, k) => router.forAgent(x)?.revokeGrant?.(x, k), id, key);
+    return -1; // spec 003 FR-102: known id, clean key; the broker removes only a rule it holds
   });
 
   // spec 063: the git branch and changed files of an agent's own folder (read-only; the window never passes a path)
   ipcHandle('agents:gitStatus', async (e, id: unknown): Promise<GitStatus> => {
     const a = fromApp(e) && typeof id === 'string' ? agents.get(id) : undefined;
     return a && a.cwd ? folderGitStatus(a.cwd) : { repo: false };
+  });
+  // spec 085 FR-002: what the session did (files, lines, commits, time), read from git; the window passes only the id
+  ipcHandle('agents:sessionSummary', async (e, id: unknown): Promise<SessionSummary> => {
+    const a = fromApp(e) && typeof id === 'string' ? agents.get(id) : undefined;
+    return a && a.cwd ? sessionStarts.summarize(a.id, a.cwd) : { ok: false, error: 'unknown agent' };
   });
   ipcHandle('agents:openInVSCode', (_e, id: string) => {
     const a = agents.get(id);

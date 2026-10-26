@@ -260,7 +260,15 @@ async function main(): Promise<void> {
     const from = app.indexOf('function openPrevMenu(');
     const to = app.indexOf('\nasync function deletePrev(');
     assert.ok(from > 0 && to > from);
-    const outside = app.slice(0, from) + app.slice(to);
+    // spec 083: the Notes drawer's own row menu has a Delete… of its own (a note, not a session). It is excluded by its function (up to the next section marker),
+    // and proven to be that: it never uses the Previous sessions action name, the session delete or its dialog.
+    const nFrom = app.indexOf('function openNoteMenu(');
+    const nTo = app.indexOf('\n/* ---- notes in the "/" list', nFrom);
+    assert.ok(nFrom > 0 && nTo > nFrom && (nTo <= from || nFrom >= to), 'the notes row menu is found, apart from the Previous sessions menu');
+    const notesMenu = app.slice(nFrom, nTo);
+    assert.ok(/data-nmact="\$\{act\}"|data-nmact/.test(notesMenu) && !/data-pact|deletePrev|bridge\.deletePrevious|prevItem/.test(notesMenu), 'the notes Delete… is the notes menu\'s own (data-nmact), not Previous sessions\'');
+    const cuts = [[from, to], [nFrom, nTo]].sort((x, y) => x[0] - y[0]);
+    const outside = app.slice(0, cuts[0][0]) + app.slice(cuts[0][1], cuts[1][0]) + app.slice(cuts[1][1]);
     const inMenu = app.slice(from, to);
     assert.ok(inMenu.includes('Delete…'));
     assert.ok(!/Delete…|data-pact="delete"/.test(outside.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')), 'no other menu or header offers Delete…');

@@ -9,7 +9,7 @@ import { localTime, nextRuleRun, parseRule } from '../shared/schedrules';
 import type { CalendarRule } from '../shared/schedrules';
 import { LOOP_MAX_DELAY, LOOP_MAX_HOURS, LOOP_MAX_PASSES, LOOP_MIN_DELAY, clampPace, cleanReason, oneLine, parsePace } from '../shared/looppace';
 
-export type Outcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended';
+export type Outcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full';
 export type CapUnit = 'aiu' | 'usd';
 /** FR-014: one session instead of the folder's agent. `name` is display only. */
 export interface ScheduleTarget {
@@ -93,7 +93,7 @@ export const MAX_PROMPT = 2000;
 export const MIN_EVERY = 5;
 export const MAX_EVERY = 1440;
 const MIN = 60_000;
-const OUTCOMES: Outcome[] = ['sent', 'skipped-busy', 'skipped-paused', 'skipped-cap', 'skipped-ended', 'missed', 'failed', 'held', 'ended'];
+const OUTCOMES: Outcome[] = ['sent', 'skipped-busy', 'skipped-paused', 'skipped-cap', 'skipped-ended', 'missed', 'failed', 'held', 'ended', 'skipped-door-full'];
 const END_REASONS: LoopEndReason[] = ['user', 'agent', 'session', 'limit', 'passes', 'time', 'no-pace', 'errors', 'app-closed'];
 const LASTASK_SOURCES = ['agent', 'default', 'clamped'];
 const ID_RE = /^[A-Za-z0-9._:-]{1,128}$/;
@@ -335,7 +335,18 @@ export interface SchedulerDeps {
   waitOf?(session: string): LoopWait | undefined;
   /** After any change (for the renderer). */
   changed?(doc: SchedulesDoc): void;
+  /**
+   * Spec 044 FR-110 (owner 2026-10-23): the run's agent has its door closed by the user (Do not disturb). Main queues the run there and
+   * answers true: the run is then held (not sent, not dropped). 'full' (review on #631): the door is closed but its queue is full, so
+   * the run is not kept and its outcome says so (never sent either). False when the door is open (or there is no such agent).
+   */
+  hold?(s: Schedule, now: number): boolean | 'full';
+  /** Spec 081 FR-013: a reason the run cannot go now (its agent app is updating and the run would start or resume a session); the run is held and tried again. */
+  heldBy?(s: Schedule): string | undefined;
 }
+
+/** Spec 081: how long a held run waits before it is looked at again (a release also brings it forward at once). */
+export const HOLD_RETRY_MS = 5000;
 
 export class Scheduler {
   private timer: unknown;
@@ -633,10 +644,31 @@ export class Scheduler {
     this.arm();
   }
 
+  /** Spec 081: schedules held by an update lock, and when each may be tried again. Memory only. */
+  private heldUntil = new Map<string, number>();
+
+  /** Spec 081 FR-013: the number of held runs that `pick` selects (the update gate's "held prompts" count). */
+  heldFor(pick: (s: Schedule) => boolean): number {
+    return this.doc.schedules.filter((s) => this.heldUntil.has(s.id) && pick(s)).length;
+  }
+
+  /** Spec 081 FR-013: an update lock was released: held runs are looked at again now. */
+  releaseHeld(): void {
+    if (!this.heldUntil.size) return;
+    this.heldUntil.clear();
+    this.arm();
+  }
+
+  private dueNow(s: Schedule): number | undefined {
+    const t = dueAt(s);
+    const h = this.heldUntil.get(s.id);
+    return t === undefined || h === undefined ? t : Math.max(t, h);
+  }
+
   private arm(): void {
     if (this.timer !== undefined) this.deps.clearTimer(this.timer);
     this.timer = undefined;
-    const due = this.doc.schedules.map(dueAt).filter((t): t is number => t !== undefined);
+    const due = this.doc.schedules.map((s) => this.dueNow(s)).filter((t): t is number => t !== undefined);
     if (!due.length) return;
     const wait = Math.max(0, Math.min(...due) - this.deps.now());
     this.timer = this.deps.setTimer(Math.min(wait, 2 ** 31 - 1), () => void this.tick());
@@ -649,18 +681,26 @@ export class Scheduler {
     try {
       const now = this.deps.now();
       for (const s of this.doc.schedules) {
-        const t = dueAt(s);
+        const t = this.dueNow(s);
         if (t === undefined || t > now) continue;
         if (s.loop) {
           await this.tickLoop(s, now);
           continue;
         }
         let outcome: Outcome;
+        let held: boolean | 'full' = false;
         if (this.doc.pausedAll) outcome = 'skipped-paused';
         else if (s.target && !this.deps.hasSession(s.target.session)) outcome = 'skipped-ended';
         else if (s.cap && (s.spent ?? 0) >= s.cap.amount) outcome = 'skipped-cap';
+        else if ((held = this.deps.hold?.(s, now) ?? false)) outcome = held === 'full' ? 'skipped-door-full' : 'held'; // FR-110: queued at a door closed by the user, before busy
         else if (this.deps.isBusy(s.folder, s.target?.session)) outcome = 'skipped-busy';
-        else {
+        else if (this.deps.heldBy?.(s)) {
+          // spec 081 FR-013: its app is updating and this run would start or resume a session: held, looked at again soon (or at the release)
+          this.heldUntil.set(s.id, now + HOLD_RETRY_MS);
+          s.last = { at: now, outcome: 'held' };
+          continue;
+        } else {
+          this.heldUntil.delete(s.id);
           const r = await this.deps.send(s.folder, s.prompt, s).catch(() => false);
           outcome = r ? 'sent' : 'failed';
           if (typeof r === 'string' && r) this.attrib.set(r, s.id);
@@ -706,6 +746,34 @@ export class Scheduler {
       this.commit();
     }
     return r ? { ok: true } : { ok: false, error: 'Could not send it.' };
+  }
+
+  /**
+   * Spec 044 FR-111 (review on #631): Send all at an opened door releases each held run through the scheduler, never around it: Pause
+   * all, the schedule's pause, its session, its own limit and a busy agent (coffee breaks count, scheduleBusy) are checked as for a
+   * scheduled run; it goes out through the same `send` (credited to the schedule, `schedule:ran`), and `last` records it.
+   * 'gone': the schedule was deleted, so the run is dropped by the caller (the user deleted the schedule).
+   */
+  async releaseDoorRun(scheduleId: string | undefined, prompt: string): Promise<'sent' | 'busy' | 'paused-all' | 'paused' | 'cap' | 'ended' | 'updating' | 'gone' | 'failed'> {
+    const s = typeof scheduleId === 'string' ? this.doc.schedules.find((x) => x.id === scheduleId) : undefined;
+    if (!s) return 'gone';
+    if (this.doc.pausedAll) return 'paused-all';
+    if (s.paused) return 'paused';
+    if (s.target && !this.deps.hasSession(s.target.session)) return 'ended';
+    if (s.cap && (s.spent ?? 0) >= s.cap.amount) return 'cap';
+    if (this.deps.heldBy?.(s)) return 'updating'; // spec 081 FR-013: its agent app is updating
+    if (this.running || this.deps.isBusy(s.folder, s.target?.session)) return 'busy';
+    this.running = true;
+    let r: boolean | string = false;
+    try {
+      r = await this.deps.send(s.folder, prompt, s).catch(() => false);
+      if (typeof r === 'string' && r) this.attrib.set(r, s.id);
+      s.last = { at: this.deps.now(), outcome: r ? 'sent' : 'failed' };
+    } finally {
+      this.running = false;
+      this.commit();
+    }
+    return r ? 'sent' : 'failed';
   }
 
   /** Adds or replaces a schedule (validated); returns it, or an error. */

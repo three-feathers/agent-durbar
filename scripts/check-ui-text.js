@@ -24,7 +24,11 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 const PAGE = fs.readFileSync(path.join(__dirname, 'ui-text-page.js'), 'utf8');
 const DARK = fs.readFileSync(path.join(__dirname, 'fixtures', 'themes', 'dark-audit.json'), 'utf8');
 const ONLY = process.env.UITEXT_ONLY ? new Set(process.env.UITEXT_ONLY.split(',')) : null;
-const THEMES = (process.env.UITEXT_THEMES || 'light,dark').split(',');
+/* UITEXT_PART (issue #738): the suite runs the check as two drivers at once, 'light' (the light theme at both sizes + the six built-in
+ * themes' contrast) and 'dark' (the dark fixture at both sizes + tones + the dark-control and source CSS checks). Unset: everything in one run. */
+const PART = process.env.UITEXT_PART || '';
+if (PART && PART !== 'light' && PART !== 'dark') throw new Error('UITEXT_PART is light or dark');
+const THEMES = (process.env.UITEXT_THEMES || (PART || 'light,dark')).split(',');
 const SIZES = (process.env.UITEXT_SIZES || '1440x900,1280x800').split(',').map((s) => s.split('x').map(Number));
 const OUT = process.env.OUT || process.env.UITEXT_OUT || '';
 const SHOTS = process.env.UITEXT_SHOTS === '1';
@@ -177,6 +181,8 @@ module.exports = async (ctx) => {
   add('tools-activity-tab', 'screen', ['#screen'], async () => { await closeChat(); await H.click('#toolsBtn'); await until(`!document.getElementById('screen').hidden`, 3000); return js(`(()=>{const b=[...document.querySelectorAll('#screen [role=tab],#screen .ttab-btn,#screen button')].find(x=>/^Activity/.test(x.textContent.trim()));if(!b)return false;b.click();return true})()`); });
   add('tools-cost-tab', 'screen', ['#screen'], async () => { await closeChat(); await H.click('#toolsBtn'); await until(`!document.getElementById('screen').hidden`, 3000); return js(`(()=>{const b=[...document.querySelectorAll('#screen [role=tab],#screen button')].find(x=>/^(Cost|Spend|Usage)/.test(x.textContent.trim()));if(!b)return false;b.click();return true})()`); });
   add('chat-waiting', 'chat', ['#panel'], () => openChat('Jonas'));
+  // spec 080 T015 (FR-006): the Browser tab's tab bar and browser bar (sizes, clipping, offscreen); the page area is a native view, not measured here
+  add('chat-browser', 'chat', ['#panel'], async () => { if (!(await openChat('Jonas'))) return false; await H.click('#tabBrowser'); return until(`!document.getElementById('browserPane').hidden&&!!document.getElementById('bBack')`, 5000); });
   // spec 005 FR-020..FR-026: the edit rows and their diffs (only with simedits=1, the `chat-edits` pass below; without it the chat has none)
   add('chat-edits-base', 'chat', ['#panel'], async () => { if (!(await openChat('Ada'))) return false; if (!(await until(`document.querySelectorAll('#chat .chip.editchip').length>=4`, 8000))) return false; return js(`(document.querySelector('#chat .chip.editchip').scrollIntoView({block:'start'}),true)`); });
   S[S.length - 1].onlyPass = true; // runs under the `chat-edits` pass only
@@ -307,6 +313,12 @@ module.exports = async (ctx) => {
   add('new-session', 'dialog', ['#sessDlg .dlg', '#sessDlg'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#newSessHdrBtn'); return until(`!!document.getElementById('sessDlg')`, 3000); });
   add('handover', 'dialog', ['#sessDlg .dlg', '#sessDlg'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#moreBtn'); if (!(await H.exists('#handoverBtn'))) return false; await H.click('#handoverBtn'); return until(`!!document.getElementById('sessDlg')`, 3000); });
   add('remote-control', 'dialog', ['#modeDlg .dlg', '.dlg-ov .dlg'], async () => { if (!(await openChatWhere(`document.getElementById('remoteBtn')`))) return false; await H.click('#moreBtn'); await H.click('#remoteBtn'); return until(`!!document.querySelector('.dlg-ov .dlg')`, 3000); });
+  // spec 059 FR-025, FR-027 (T077): the rename-in-place field open on a desk card and on the chat header (the 60-character names pass below runs the same with simnames=long)
+  const inlineOpen = (sel, opener) => async () => { await js(`window.__inlBefore={sel:${jsLiteral(sel)},box:(()=>{const e=document.querySelector(${jsLiteral(sel)});const r=e.getBoundingClientRect();return [r.left,r.top,r.width,r.height]})()}`); await js(opener); return until(`!!document.querySelector('.inl-input')`, 3000); };
+  add('rename-inline-card', 'screen', ['.inl-layer'], async () => { await closeChat(); await H.click('#vOffice'); await until(`document.querySelectorAll('#stage .desk[data-id]').length>0&&document.querySelector('#stage .desk[data-id]').getClientRects().length>0`, 3000); return inlineOpen('#stage .desk[data-id="sim-2"]', `document.querySelector('#stage .ren[data-ren="sim-2"]').click()`)(); });
+  S[S.length - 1].inline = true;
+  add('rename-inline-header', 'screen', ['.inl-layer'], async () => { if (!(await openChatWhere('true'))) return false; await ctx.sleep(600); return inlineOpen('#panelHead', `document.getElementById('panelTitleBtn').click()`)(); });
+  S[S.length - 1].inline = true;
   add('rename-session', 'dialog', ['#modeDlg .dlg'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#moreBtn'); if (!(await H.exists('#renameSessBtn'))) return false; await H.click('#renameSessBtn'); return until(`!!document.querySelector('#modeDlg .dlg')`, 3000); });
   add('folder-status', 'dialog', ['#modeDlg .dlg', '.dlg-ov .dlg'], async () => { if (!(await openChatWhere(`document.querySelector('#panelHead .folder[role=button]')`))) return false; await js(`document.querySelector('#panelHead .folder[role=button]').click()`); return until(`!!document.querySelector('.dlg-ov .dlg')`, 3000); });
   add('compact', 'dialog', ['#modeDlg .dlg'], async () => { if (!(await openChatWhere(`(()=>{const c=document.getElementById('ctxChip');if(!c)return false;if(!document.getElementById('ctxMenu'))c.click();const b=document.querySelector('#ctxMenu #compactBtn:not([aria-disabled])');if(!b){const m=document.getElementById('ctxMenu');if(m)m.remove();}return !!b})()`))) return false; await H.click('#compactBtn'); return until(`!!document.querySelector('#modeDlg .dlg')`, 3000); });
@@ -352,13 +364,38 @@ module.exports = async (ctx) => {
     { name: 'tools-agents-long', base: 'tools-agents-tab', query: { simnames: 'long' } }, // T154: Tools > Models and context with 60-character names
     { name: 'inbox-long', base: 'inbox', query: { simnames: 'long' } }, // T154: the Needs you headings
     { name: 'list-view-long', base: 'list-view', query: { simnames: 'long' } },
+    { name: 'rename-inline-card-long', base: 'rename-inline-card', query: { simnames: 'long' } }, // spec 059 FR-025: 60-character names under the field
+    { name: 'rename-inline-header-long', base: 'rename-inline-header', query: { simnames: 'long' } },
     { name: 'palette-long', base: 'palette', query: { simnames: 'long' } },
     { name: 'chat-first-long', base: 'chat-first', query: { simnames: 'long' } },
     { name: 'chat-slash-long', base: 'chat-slash-list', query: { simslash: 'long' } }, // spec 073 (review on #535): long names in a 480px panel
-    { name: 'chat-title-long', base: 'chat-first', query: { simtitles: 'long' } },
+    { name: 'chat-title-long', base: 'chat-first', query: { simtitles: 'long', simquestion: '1' } }, // T184 (FR-177): also the answer bar with a pending question (Ada) and a pending permission (Jonas)
     { name: 'chat-helper-long', base: 'chat-helper-long', query: { simtitles: 'long' } }, // T179
     { name: 'chat-reply-long', base: 'chat-reply', query: { simreply: 'long' } }, // T155: replies and sub-agent prompts that run to the right edge (the Copy button covers no text)
   ];
+  // T184 (FR-177, issue #540): the answer bar with the 120-character title, for a pending question (simquestion=1) and a pending permission (Jonas):
+  // the rule `answer-bar-name` (ui-text-page.js) measures the name span, its title, the verb and the bar. The bar must show and the name must really be cut.
+  const answerBarName = async () => {
+    const TITLE = 'Morning stand-up: summarise every open pull request, flag the ones that touch the billing flows and draft the release notes for the whole week'.slice(0, 120);
+    const HEB = ('\u05e1\u05d9\u05db\u05d5\u05dd \u05d1\u05d5\u05e7\u05e8 \u05e9\u05dc \u05db\u05dc \u05d4\u05d1\u05e7\u05e9\u05d5\u05ea \u05d4\u05e4\u05ea\u05d5\u05d7\u05d5\u05ea ').repeat(6).slice(0, 120).trim(); // a long Hebrew title: the name must show its START (the right end) and be cut at its end
+    for (const [kind, who, title] of [['question', 'question', TITLE], ['permission', 'Jonas', TITLE], ['question-rtl', 'question', HEB]]) {
+      const tag = { surface: 'chat-title-long-' + kind, theme: themeId || theme, size: `${W}x${Hh}` };
+      await closeChat();
+      const opens = kind.startsWith('question') ? (async () => { const o = await H.openSimAgent(`a=>!a.parent&&a.question`, '#chat .note.question .q-opt'); return o.ok; }) : () => openChat(who);
+      if (!(await opens())) { found.push({ ...tag, rule: 'not-opened', el: who, detail: 'the chat could not be opened' }); continue; }
+      await js(`window.__durbarSimRetitle(${jsLiteral(title)},'')`);
+      await ctx.sleep(300);
+      await js(`(()=>{const c=document.getElementById('chat');c.scrollTop=0;c.dispatchEvent(new Event('scroll'))})()`);
+      const shown = await until(`(()=>{const b=document.getElementById('answerBar'),n=b&&b.querySelector('.ab-n');return !!n&&!b.hidden&&n.textContent===${jsLiteral(title)}&&n.scrollWidth>n.clientWidth})()`, 8000);
+      if (!shown) { found.push({ ...tag, rule: 'answer-bar-name', el: '#answerBar', detail: `the answer bar did not show with the long name cut (${kind}): ` + JSON.stringify(await js(`(()=>{const b=document.getElementById('answerBar'),n=b&&b.querySelector('.ab-n');return {hidden:b.hidden,n:n?[n.scrollWidth,n.clientWidth,n.textContent]:null}})()`)) }); continue; }
+      await ctx.sleep(200);
+      const verb = await js(`document.querySelector('#answerBar .ab-q b').lastChild.textContent.trim()`);
+      if (verb !== (kind.startsWith('question') ? 'asks:' : 'needs your OK:')) found.push({ ...tag, rule: 'answer-bar-name', el: '#answerBar', detail: `the verb is "${verb}"` });
+      for (const x of (await js(`window.__uitext.check('chat',['#panel'],{})`)).filter((x) => x.rule === 'answer-bar-name')) found.push({ ...tag, ...x });
+      opened.add('answer-bar-' + kind);
+    }
+    await closeChat();
+  };
   const CONTRAST_SURFACES = ['tools-screen', 'settings-theme', 'settings-places', 'settings-cap', 'place-dialog', 'chat-waiting', 'agent-strip'];
   const BUILTIN = ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese', 'cheeky-crew'];
 
@@ -369,6 +406,7 @@ module.exports = async (ctx) => {
   };
 
   const run = async (s) => {
+    const t0 = Date.now();
     if (!/toast/.test(s.name)) await H.calm();
     let ok = await s.open();
     if (!ok) { await reset(); ok = await s.open(); } // one more try: the first open can lose a race with the render
@@ -389,9 +427,10 @@ module.exports = async (ctx) => {
     if (!s.contrast && /^settings-/.test(s.name) && !/harnesses/.test(s.name)) for (const x of await js(`window.__uitext.measureRule()`)) found.push({ ...tag, ...x });
     if (dark) for (const sel of await js(`window.__uitext.darkControls.filter(s=>[...document.querySelectorAll(s)].some(window.__uitext.vis))`)) opened.add('dark-control ' + sel);
     if (s.kind === 'chat') for (const sel of ['.cp-btn', '.sub-prompt .pt', '.bubble.caret']) if (await js(`document.querySelectorAll(${jsLiteral('#panel ' + sel)}).length>0`)) opened.add('chat ' + sel);
+    if (s.inline) for (const x of await js(`window.__uitext.inlineFit()`)) found.push({ ...tag, ...x });
     if (!s.contrast) for (const x of await js(`window.__uitext.tooltips()`)) found.push({ ...tag, ...x });
     if (SHOTS && OUT) await H.shot(path.join(OUT, `${s.name}-${theme === 'dark' ? 'dark' : 'light'}-${W}x${Hh}.png`), { prep: 'mouse', delay: 250 });
-    console.log(`[ui-text] ${s.name} ${themeId || theme} ${W}x${Hh}: ${v.length} violations`);
+    console.log(`[ui-text] ${s.name} ${themeId || theme} ${W}x${Hh}: ${v.length} violations` + (process.env.UITEXT_TIMING ? ` (${Date.now() - t0} ms)` : ''));
   };
 
   for (const [w, h] of SIZES) {
@@ -411,7 +450,7 @@ module.exports = async (ctx) => {
         if (ONLY && !ONLY.has(ps.name)) continue;
         extraQuery = ps.query; await load();
         const base = S.find((x) => x.name === ps.base);
-        try { await run({ ...base, name: ps.name }); } catch (e) { found.push({ surface: ps.name, theme, size: `${W}x${Hh}`, rule: 'error', el: '', detail: String((e && e.message) || e).slice(0, 200) }); }
+        try { await run({ ...base, name: ps.name }); if (ps.name === 'chat-title-long') await answerBarName(); } catch (e) { found.push({ surface: ps.name, theme, size: `${W}x${Hh}`, rule: 'error', el: '', detail: String((e && e.message) || e).slice(0, 200) }); }
         await reset();
       }
     }
@@ -419,7 +458,7 @@ module.exports = async (ctx) => {
 
   // FR-169: the contrast of the controls that carried a light literal, in EVERY built-in theme (Clean Office, Corporate, Retro Pixel and
   // the three courts), not only the dark fixture. 1280x800 only: a theme does not change a control's size.
-  if (!ONLY || ONLY.has('contrast')) {
+  if (PART !== 'dark' && (!ONLY || ONLY.has('contrast'))) {
     W = 1280; Hh = 800; theme = 'light'; extraQuery = {};
     for (const id of BUILTIN) {
       themeId = id; await load();
@@ -440,7 +479,7 @@ module.exports = async (ctx) => {
   // (relative luminance over 0.6, from src/shared/themegen.ts) in a background fails: use a theme token (the --tone-* set in styles.css :root); there is no allow-list
   // (older debt, listed); T172: a literal light border or outline colour fails the same way; the switch knob is the one intended white. Hex, named colours, rgb()/hsl() with numbers and gradients are read;
   // translucent colours (alpha under 0.6) and var() are not light by themselves.
-  {
+  if (PART !== 'light') {
     const { luminance } = require('../dist/shared/themegen.js'); // one luminance helper; the check runs after the build
     const NAMED = { white: '#ffffff', snow: '#fffafa', ivory: '#fffff0', ghostwhite: '#f8f8ff', whitesmoke: '#f5f5f5', floralwhite: '#fffaf0', linen: '#faf0e6', seashell: '#fff5ee', beige: '#f5f5dc', lightyellow: '#ffffe0', azure: '#f0ffff', mintcream: '#f5fffa', aliceblue: '#f0f8ff', lavenderblush: '#fff0f5', honeydew: '#f0fff0', cornsilk: '#fff8dc', oldlace: '#fdf5e6', lightgray: '#d3d3d3', lightgrey: '#d3d3d3', gainsboro: '#dcdcdc', lavender: '#e6e6fa', mistyrose: '#ffe4e1', papayawhip: '#ffefd5', antiquewhite: '#faebd7', bisque: '#ffe4c4', wheat: '#f5deb3', lemonchiffon: '#fffacd', lightcyan: '#e0ffff', moccasin: '#ffe4b5', silver: '#c0c0c0' };
     const hex2 = (n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');

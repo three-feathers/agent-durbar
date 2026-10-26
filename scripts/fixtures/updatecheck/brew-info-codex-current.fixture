@@ -1,0 +1,2 @@
+# source: read: brew info --cask --json=v2 shape; values are made up
+{"formulae":[],"casks":[{"token":"codex","version":"0.164.0","installed":"0.164.0","outdated":false,"auto_updates":false}]}

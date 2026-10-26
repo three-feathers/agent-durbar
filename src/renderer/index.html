@@ -64,6 +64,8 @@
       </div>
     </div>
   </div>
+  <!-- spec 044 FR-027 (issue 523): Schedules, left of Needs you: a clock and the count of active schedules; opens Settings > Schedules. The mark (!) shows a run that did not happen since you last looked; the pause glyph shows Pause all. -->
+  <button class="btn sched-top" id="schedTopBtn" type="button" data-keys-text title="Schedules (Ctrl+Shift+S)" aria-keyshortcuts="Control+Shift+S" hidden><span class="st-ico" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.6V8l2.4 1.6"/></svg><i class="st-mark"></i><i class="st-pause"></i></span><span class="st-word">Schedules</span> <b>0</b></button>
   <!-- spec 052 FR-027 (#305): the Needs you inbox -->
   <button class="btn inbox-btn" id="inboxBtn" type="button" data-keys-text title="Needs you: every request in one queue (I or Ctrl+Shift+A; Ctrl+A outside text). N or Ctrl+Shift+N opens the next agent." aria-keyshortcuts="Control+Shift+A Control+A I" hidden><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M2 9.5l1.6-5.2A1.4 1.4 0 0 1 5 3.3h6a1.4 1.4 0 0 1 1.4 1l1.6 5.2v2.8a1.4 1.4 0 0 1-1.4 1.4H3.4A1.4 1.4 0 0 1 2 12.3z"/><path d="M2 9.5h3.2l.9 1.6h3.8l.9-1.6H14"/></svg><span class="ib-word">Needs you</span> <b>0</b></button>
   <div class="stats" id="stats" role="group" aria-label="Agent status counts. Select one to filter. Press N for the next agent that needs you." title="Select a count to filter. Press N for the next agent that needs you."></div>
@@ -87,6 +89,8 @@
 <div class="notice-strip" id="restoreStrip" role="alert" hidden></div>
 <!-- spec 052 FR-089: Since you were away (shown once after more than 30 minutes closed; dismissible) -->
 <div class="notice-strip info" id="awayStrip" role="status" hidden></div>
+<!-- spec 006 FR-041: sessions the last run left mid-turn (Resume all / Pick… / Dismiss); only after an unclean exit -->
+<div class="notice-strip info" id="crashStrip" role="status" hidden></div>
 
 <div class="workspace">
   <div id="stage-host">
@@ -108,7 +112,9 @@
 <script src="dialog.js"></script>
 <script src="innerscroll.js"></script>
 <script src="sessionname.js"></script>
+<script src="inlinename.js"></script>
 <script src="gitstatus.js"></script>
+<script src="sessionsummary.js"></script>
 <script src="roomsummary.js"></script>
 <script src="sessionsearch.js"></script>
 <script src="usagetotals.js"></script>
@@ -116,12 +122,16 @@
 <script src="activitytable.js"></script>
 <script src="modelswitch.js"></script>
 <script src="schedtemplates.js"></script>
+<script src="schedtop.js"></script>
 <script src="places.js"></script>
 <script src="cuttext.js"></script>
 <script src="slashsuggest.js"></script>
+<script src="notes.js"></script><!-- spec 083: the Notes helpers (window.DurbarNotes), read at call time by app.js -->
 <script src="probe.js"></script>
 <script src="checkpoints.js"></script>
 <script src="grantlabel.js"></script>
+<script src="whyallowed.js"></script>
+<script src="sandboxtext.js"></script>
 <script src="mcpwords.js"></script>
 <script src="place-icons.js"></script>
 <script src="mood.js"></script>
@@ -134,9 +144,12 @@
 <script src="composersize.js"></script>
 <script src="activity.js"></script>
 <script src="shutters.js"></script>
+<script src="unread.js"></script>
+<script src="helpercard.js"></script>
 <script src="editview.js"></script>
 <script src="toolstats.js"></script>
 <script src="ctxbreakdown.js"></script>
+<script src="browserpane.js"></script>
 <script src="theme.js"></script>
 <script src="scenekits.js"></script>
 <script src="signin.js"></script>
@@ -148,6 +161,7 @@
 <script src="sim.js"></script>
 <script src="exports-shim.js"></script>
 <script src="../shared/redact.js"></script>
+<script src="../shared/answerlimits.js"></script><!-- spec 052 FR-178: MAX_ANSWER, read through window.exports by app.js when a question card is built (the card's boxes) -->
 <script src="safetext.js"></script>
 <script src="liveact.js"></script>
 <script src="app.js"></script>

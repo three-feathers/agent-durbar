@@ -1,0 +1,46 @@
+# Weekly test audit (spec 021 FR-058), audit phase: a template for a SYSTEM unit (/etc/systemd/system/). See README.md, "Weekly test audit".
+# It runs as its own unix user, durbar-audit, because user units cannot sandbox on this kind of host (README: the probe). The user has no
+# token and no gh login, and ProtectHome=yes hides every home folder (the owner's token file, ~/.config/gh, ~/.ssh, ~/.claude, his
+# checkouts and the installed filer).
+[Unit]
+Description=Weekly test audit of agent-durbar main: audit phase (Claude, read-only, no token)
+After=network-online.target
+Wants=network-online.target
+# the filing phase starts only when this phase wrote a valid answer
+OnSuccess=durbar-weekly-audit-file.service
+
+[Service]
+Type=oneshot
+User=durbar-audit
+Group=durbar-audit
+StateDirectory=durbar-weekly-audit
+StateDirectoryMode=0755
+Environment=HOME=/var/lib/durbar-weekly-audit
+Environment=DURBAR_AUDIT_STATE_DIR=/var/lib/durbar-weekly-audit
+Environment=CLAUDE_CONFIG_DIR=/var/lib/durbar-weekly-audit/claude
+Environment=PATH=/var/lib/durbar-weekly-audit/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/var/lib/durbar-weekly-audit/repo/scripts/weekly-test-audit.sh audit
+Nice=10
+TimeoutStartSec=4500
+MemoryMax=3G
+TasksMax=512
+# Sandbox (applied by the system manager; check it with the probe in README.md). Writable: /var/lib/durbar-weekly-audit and a private /tmp.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+# network stays on: Claude needs its API, npm ci the registry, git the repository (README, limits)
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

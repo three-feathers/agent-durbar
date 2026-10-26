@@ -11,6 +11,8 @@
 #   - a reviewer whose latest review is CHANGES_REQUESTED;
 #   - an unresolved, non-outdated review thread;
 #   - a comment by someone else (PR comment, review body or line comment) newer than my own latest comment on the PR: read and answer it first.
+#     Exact status notes (a whole comment that is only `reviewing at <sha>` or `checks run at <sha>: ...` on one line, pattern in
+#     scripts/pr-status-note.re) are not counted as asks; they are printed apart under "status notes, not counted as asks:".
 p=$1; R=$(gh repo view --json nameWithOwner -q .nameWithOwner); OWNER=${R%%/*}; NAME=${R##*/}; ME=$(gh api user -q .login)
 [ -n "$p" ] || { echo "usage: scripts/pr-gate.sh <PR number> [--wait]"; exit 2; }
 pend() { gh pr checks $p 2>/dev/null | awk -F'\t' '$2=="pending"' | grep -q .; }
@@ -30,10 +32,17 @@ if gh pr view $p --json files -q '.files[].path' | grep -q '^src/'; then
 fi
 codeql=$(gh pr checks $p | awk -F'\t' '$1=="CodeQL"{print $2}')
 alerts=$(( $(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/merge&state=open" --jq length) + $(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/head&state=open" --jq length) ))
-changes=$(gh api repos/$R/pulls/$p/reviews --jq "[group_by(.user.login)[]|max_by(.submitted_at)|select(.state==\"CHANGES_REQUESTED\" and .user.login!=\"$ME\")|.user.login]|join(\",\")")
+# --paginate everywhere below: the REST lists return 30 items a page, and a long PR has more (spec 021 FR-055). --jq runs per page,
+# so the latest review per person is picked in the shell, across pages, not with jq's group_by
+changes=$(gh api --paginate repos/$R/pulls/$p/reviews --jq '.[]|select(.state!="COMMENTED" and .state!="PENDING")|"\(.user.login)\t\(.submitted_at)\t\(.state)"' | sort -k1,1 -k2,2 | awk -F'\t' -v me="$ME" '{last[$1]=$3} END{for(u in last) if(last[u]=="CHANGES_REQUESTED" && u!=me) printf "%s%s", (n++?",":""), u}')
 threads=$(gh api graphql -f query="query{repository(owner:\"$OWNER\",name:\"$NAME\"){pullRequest(number:$p){reviewThreads(first:100){nodes{isResolved isOutdated comments(first:1){nodes{author{login}}}}}}}}" --jq '[.data.repository.pullRequest.reviewThreads.nodes[]|select(.isResolved==false and .isOutdated==false and (.comments.nodes[0].author.login|test("\\[bot\\]$")|not))]|length')
-mine=$( { gh api repos/$R/issues/$p/comments --jq ".[]|select(.user.login==\"$ME\")|.created_at"; gh api repos/$R/pulls/$p/reviews --jq ".[]|select(.user.login==\"$ME\")|.submitted_at"; gh api repos/$R/pulls/$p/comments --jq ".[]|select(.user.login==\"$ME\")|.created_at"; } | sort | tail -1)
-newer=$( { gh api repos/$R/issues/$p/comments --jq ".[]|select(.user.login!=\"$ME\" and (.user.login|test(\"\\\\[bot\\\\]\$\")|not))|\"\(.created_at) comment \(.user.login): \(.body[0:160]|gsub(\"\\n\";\" \"))\""; gh api repos/$R/pulls/$p/reviews --jq ".[]|select(.user.login!=\"$ME\" and .body!=\"\")|\"\(.submitted_at) review(\(.state)) \(.user.login): \(.body[0:160]|gsub(\"\\n\";\" \"))\""; gh api repos/$R/pulls/$p/comments --jq ".[]|select(.user.login!=\"$ME\" and (.user.login|test(\"\\\\[bot\\\\]\$\")|not))|\"\(.created_at) line \(.user.login) \(.path): \(.body[0:160]|gsub(\"\\n\";\" \"))\""; } | sort | awk -v m="$mine" '$1>m')
+# status notes (AGENTS.md, Test once): exact "reviewing at <sha>" / "checks run at <sha>: ..." comments are not asks and not answers
+NOTE_RE=$(sed 's/\\/\\\\/g' "$(dirname "$0")/pr-status-note.re")
+NOTE="(.body|test(\"$NOTE_RE\"))"
+mine=$( { gh api --paginate repos/$R/issues/$p/comments --jq ".[]|select(.user.login==\"$ME\" and ($NOTE|not))|.created_at"; gh api --paginate repos/$R/pulls/$p/reviews --jq ".[]|select(.user.login==\"$ME\")|.submitted_at"; gh api --paginate repos/$R/pulls/$p/comments --jq ".[]|select(.user.login==\"$ME\")|.created_at"; } | sort | tail -1)
+newer=$( { gh api --paginate repos/$R/issues/$p/comments --jq ".[]|select(.user.login!=\"$ME\" and (.user.login|test(\"\\\\[bot\\\\]\$\")|not) and ($NOTE|not))|\"\(.created_at) comment \(.user.login): \(.body[0:160]|gsub(\"\\n\";\" \"))\""; gh api --paginate repos/$R/pulls/$p/reviews --jq ".[]|select(.user.login!=\"$ME\" and .body!=\"\")|\"\(.submitted_at) review(\(.state)) \(.user.login): \(.body[0:160]|gsub(\"\\n\";\" \"))\""; gh api --paginate repos/$R/pulls/$p/comments --jq ".[]|select(.user.login!=\"$ME\" and (.user.login|test(\"\\\\[bot\\\\]\$\")|not))|\"\(.created_at) line \(.user.login) \(.path): \(.body[0:160]|gsub(\"\\n\";\" \"))\""; } | sort | awk -v m="$mine" '$1>m')
+notes=$( { gh api --paginate repos/$R/issues/$p/comments --jq ".[]|select($NOTE)|\"\(.created_at) \(.user.login): \(.body|gsub(\"^\\\\s+\";\"\")|split(\"\\n\")[0])\""; } | sort)
+[ -n "$notes" ] && { echo "status notes, not counted as asks:"; echo "$notes"; }
 if [ -n "$bad" ] || [ "$codeql" != "pass" ] || [ "$alerts" != "0" ] || [ -n "$changes" ] || [ "$threads" != "0" ] || [ -n "$newer" ]; then
   echo "#$p not ready: checks=[$bad] codeql=$codeql alerts=$alerts changes_requested=[$changes] open_threads=$threads"
   [ -n "$newer" ] && { echo "unanswered human comments (read, answer or fix, then rerun):"; echo "$newer"; }

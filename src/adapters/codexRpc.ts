@@ -12,6 +12,7 @@
 import { spawn as nodeSpawn } from 'child_process';
 import { StringDecoder } from 'string_decoder';
 import { isObj } from '../shared/guards';
+import { killForEscalation } from './detect';
 
 export const MAX_LINE_BYTES = 8 * 1024 * 1024;
 export const DEFAULT_TIMEOUT_MS = 30_000;
@@ -87,6 +88,8 @@ export interface CodexRpcOptions {
   closeGraceMs?: number;
   /** Wait after SIGTERM before SIGKILL (default 1 s). */
   killGraceMs?: number;
+  /** One kill step (tests hand in a fake); the default ends the whole tree on Windows (FR-079). */
+  killChild?: (child: RpcChild, signal: NodeJS.Signals) => void;
 }
 
 export interface CodexRpc {
@@ -110,6 +113,7 @@ interface Pending {
 
 export function createCodexRpc(o: CodexRpcOptions): CodexRpc {
   const debug = o.debug ?? (() => undefined);
+  const killChild = o.killChild ?? ((c: RpcChild, sig: NodeJS.Signals) => killForEscalation(c, sig));
   const pending = new Map<number, Pending>();
   let nextId = 1;
   let inFlight = 0;
@@ -308,18 +312,18 @@ export function createCodexRpc(o: CodexRpcOptions): CodexRpc {
       }
       if (exited) return;
       // Kill policy: SIGTERM after the grace, SIGKILL if still alive after a second grace; each at most once.
-      // [KNOWN GAP] killing the whole process tree (npm launcher, .cmd shim children) and killing on app quit: T043.
+      // Windows: the whole tree via taskkill /t (FR-079 delta 2026-10-26). [KNOWN GAP] POSIX kills the child only; nothing kills on a Durbar crash.
       killTimer = setTimeout(() => {
         if (exited) return;
         try {
-          child?.kill('SIGTERM');
+          if (child) killChild(child, 'SIGTERM');
         } catch {
           /* gone */
         }
         killTimer2 = setTimeout(() => {
           if (exited) return;
           try {
-            child?.kill('SIGKILL');
+            if (child) killChild(child, 'SIGKILL');
           } catch {
             /* gone */
           }

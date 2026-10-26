@@ -43,7 +43,8 @@ module.exports = async (ctx) => {
     const aa = await js(`(()=>{const b=[...document.querySelectorAll('#stage .desk .modeic.mode-allow')];return {n:b.length,text:[...new Set(b.map(x=>x.textContent))],inside:b.every(x=>{const r=x.getBoundingClientRect(),c=x.closest('.desk').getBoundingClientRect();return r.width>0&&r.left>=c.left-0.5&&r.right<=c.right+0.5&&r.top>=c.top-0.5&&r.bottom<=c.bottom+0.5;}),allow:[...document.querySelectorAll('#stage .desk[aria-label*="Allow all"]')].length}})()`);
     assert.ok(aa.n > 0 && aa.n === aa.allow, 'one Allow all icon per Allow all card: ' + JSON.stringify(aa));
     assert.ok(aa.inside, 'the icon stays inside its card');
-    const sv = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith('Sven'));const p=d&&[...d.querySelectorAll('.pill,.stl')].find(x=>x.getClientRects().length);return p?{text:p.innerText.trim(),cls:p.className,title:d.getAttribute('title')||''}:null})()`);
+    const sv = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith('Sven'));const p=d&&[...d.querySelectorAll('.pill,.stl')].find(x=>x.getClientRects().length);return p?{text:p.innerText.trim(),cls:p.className,title:d.getAttribute('title')||'',tip:p.getAttribute('title')||'',label:d.getAttribute('aria-label')||''}:null})()`);
+    /* spec 017 (review on #631): the door sign keeps the word Failing, in the failing colours, with its own icon */
     assert.ok(sv && /^Failing/.test(sv.text) && /st-failing/.test(sv.cls), 'Sven reads Failing: ' + JSON.stringify(sv));
     assert.ok(/Last activity (just now|\d+ min ago)/.test(sv.title), 'the card says when it last did something: ' + sv.title);
     // FR-006: room counts in words

@@ -14,7 +14,7 @@ DURBAR_SIM=15 npm start   # 15 simulated agents, no sessions, no AI credits
 
 `npm start` and the simulator keep their data in `agent-durbar-dev` under the OS app-data folder, not in the installed app's `agent-durbar` (spec 008 FR-034); `DURBAR_USER_DATA=<folder>` overrides both. To reuse older dev data, run once with `DURBAR_USER_DATA=<old folder>` or copy it by hand.
 
-Node 20.19+ or 22.12+ is required. `npm start` with real sessions needs a GitHub Copilot login (`copilot login`) and spends your AI credits; prefer the simulator (`DURBAR_SIM`) and the tests while developing.
+Node 20.19+ or 22.12+ is required. `npm start` with real sessions needs at least one signed-in agent app (GitHub Copilot, Claude Code or OpenAI Codex) and spends your AI credits; prefer the simulator (`DURBAR_SIM`) and the tests while developing.
 
 ## Guidelines
 
@@ -77,7 +77,7 @@ The gate checks **presence, not quality**: it cannot tell a good spec from a one
 
 ## Releases (maintainer)
 
-Pushing a tag `v*` on a commit of `main` (for example `v0.1.0-alpha.5`; the tag must match `version` in `package.json`, so a version-only PR lands first) runs `.github/workflows/release.yml`, which writes the release notes from that commit's `changelog.d/` fragments, builds unsigned macOS, Windows and Linux packages and attaches them to a **draft** pre-release. The fold into `CHANGELOG.md` is a doc-only PR afterwards (`changelog.d/README.md`). Review the draft, then publish it by hand. Builds are not signed or notarized and there is no auto-update.
+Pushing a tag `v*` on a commit of `main` (for example `v0.1.0-alpha.5`; the tag must match `version` in `package.json`, so a version-only PR lands first) runs `.github/workflows/release.yml`, which writes the release notes from that commit's `changelog.d/` fragments, builds unsigned macOS, Windows and Linux packages and attaches them to a **draft** pre-release. The fold into `CHANGELOG.md` is a doc-only PR afterwards (`changelog.d/README.md`). Review the draft, then publish it by hand. When you cut a release, classify it and record the tag on the incident issues it answers (`gh issue list --label incident --state all`; steps in `changelog.d/README.md`, *At release time*). Builds are not signed or notarized and there is no auto-update.
 
 ## License
 
