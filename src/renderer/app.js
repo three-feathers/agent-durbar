@@ -6818,7 +6818,8 @@ function placeRen(b){
   const sib=folder?wrap:wrap&&wrap.querySelector(':scope>.desk[data-id],:scope>.lrow[data-id]'), nm=sib&&sib.querySelector('.name,.lnm,.room-name');
   if(!nm)return;
   const nr=nm.getBoundingClientRect(), sr=sib.getBoundingClientRect(); if(!nr.width||!sr.width)return;
-  const S=16, nx=nm.nextElementSibling, tail=nx&&nx.matches('.modeic,.modebadge')?nx:nm, tr=tail.getBoundingClientRect();
+  const S=16, nx=nm.nextElementSibling, mr=nx&&nx.matches('.modeic,.modebadge')?nx.getBoundingClientRect():null;
+  const tail=mr&&mr.top<nr.bottom&&mr.bottom>nr.top?nx:nm, tr=tail.getBoundingClientRect(); /* the mode icon only when it is on the name's line: on a wide card it can wrap below the name (issue 781) */
   const protSel=folder?':scope>*:not(.door):not(.room-name):not(.room-path):not(.ren)':'.stl,.pill,.badge,.chatno,.draft-mark,.modeic,.modebadge';
   const prot=[...sib.querySelectorAll(protSel)].filter(p=>p!==tail&&p.getClientRects().length).map(p=>p.getBoundingClientRect());
   const top=nr.top+(nr.height-S)/2, hit=l=>prot.some(q=>l<q.right&&l+S>q.left&&top<q.bottom&&top+S>q.top);
