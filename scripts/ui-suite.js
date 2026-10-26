@@ -83,6 +83,7 @@ const DRIVERS = [
   { name: 'check-activity-table' }, // spec 052 FR-071 delta 2026-10-21 (#474): Tools > Activity renders its rows
   { name: 'check-codex-file-card' }, // spec 052 FR-172: a Codex write card names the files and shows the change
   { name: 'check-theme-art' }, // spec 040 FR-023: a picked theme's characters and gadgets on desks, walkers, places and chips
+  { name: 'check-permission-scope' }, // spec 003 FR-108: the approval card says how far "for this session" reaches
   { name: 'check-ro-ask' }, // spec 003 FR-094..FR-097: a Read-only denial's "Switch to Ask first…" opens the mode menu
   { name: 'check-why-allowed' }, // spec 003 FR-099..FR-105 (#605): the why-allowed tag on tool cards and Undo this rule
   { name: 'check-composer-toolbar' }, // spec 005 FR-037..FR-043: chat settings under the message box, one Send / Stop slot

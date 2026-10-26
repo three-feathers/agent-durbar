@@ -129,3 +129,7 @@
 - [x] T048 `src/renderer/app.js` `openFolderMenu`: a painted two-level menu in the shared `#modeMenu` element (top level adds **Move to floor ▸** only when `floorsLive()` and two or more floors; second level **‹ Back** plus one `menuitemradio` per floor, current ticked and `aria-disabled`, off floors say so); choosing a floor calls the existing `moveRoomToFloor` (bridge `moveFolderToFloor`, FR-005), then `toastAction(..., 'Undo', ...)` (the action toast of spec 030/052) that moves it back; error from the bridge as an error toast. List view: `contextmenu` on `#list .lrow .lfold` opens `openFolderMenu` for the row's room [FR-024]
 - [x] T049 Mutation check: break the move (skip the `moveRoomToFloor` call) and the Undo (skip its call), see `shots-033-move` fail on each, restore [FR-024]
 - [x] T050 Docs: spec 033 Verification line, README floors text, `changelog.d/033-move-to-floor-menu.md`; screenshots of the menu at both sizes; linked room-menu pictures (`remove-folder-menu-*`, spec 006) are taken with one floor, so the menu there is unchanged and they are not retaken [VIII]
+
+## Phase 15: Change 2026-10-26 (SC-003 as a ratio to a same-run yardstick, issue #454)
+
+- [x] T051 `scripts/shots-033.js`: time a fixed DOM + layout workload in the same page (best of 3, floor 2 ms) and assert switch-off own time < 16x it, plus a 2000 ms sanity cap, instead of a fixed 500 ms; logs both and the ratio. Measured unloaded and under 6 niced busy loops (5 runs each); two mutants (per-agent delay, repeated layout search) fail [SC-003]

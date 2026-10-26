@@ -370,6 +370,17 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
 
 ## Changes
 
+### 2026-10-26: the chip stops saying plain "Sandboxed" for Copilot in Ask first (FR-021b, T065; Refs #755, v0.1.0 fix)
+
+K15 showed that in Ask first Copilot's sandbox does not limit an approved command's writes to the session folder, yet the chip said
+only *Sandboxed*, which reads as a promise. The tooltip and the card line already said otherwise, but a chip is what people read.
+**FR-021b** `[IMPLEMENTED]` (test: `scripts/test-sandbox-floor.ts`; sim: `scripts/check-sandbox-floor.js`): a state with
+`approvedMayLeave` that covers MCP servers (Copilot in Ask first, floor on) shows the chip word **Sandboxed (partial)** instead of
+*Sandboxed*; the tooltip is unchanged and starts to be read as the explanation. Claude Code and Codex are unchanged (Codex's state
+covers no MCP; its card line says the same thing in words), as are Read-only (tooltip says "may add one") and the other words
+(*Sandbox: checking*, *Not sandboxed*, *(managed)*, *(until a new session)* keep precedence). No real run was made; this only makes
+the words match what the 2026-10-25 run showed. `[KNOWN GAP]` K15 stays open (issue #755): the extra writable path itself.
+
 ### 2026-10-25: T060 real check on Linux (owner-approved, 4 prompts: 2 for T060, 2 more for K15)
 
 Vikram's OK in the Telegram group, 2026-10-25 09:55 UTC ("Yes" to the two Linux checks after #733; recorded on PR #733). Run on

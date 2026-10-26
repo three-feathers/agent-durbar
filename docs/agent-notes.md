@@ -296,3 +296,7 @@ Each entry has the date it was learned, what happened, and how to apply it, with
   - *What*: the fold example `git switch -c NNN-fold-0.1.0-alpha.N v0.1.0-alpha.N` puts dots in the branch name. The Spec Kit gate only accepts `^[0-9]{3}-[a-z0-9][a-z0-9-]*$`, so the PR fails CI.
   - *Why*: the gate regex allows lowercase letters, digits and hyphens only; the tag keeps its dots, the branch does not need them.
   - *How to apply*: name the fold branch `NNN-fold-alpha-N` (the tag stays `v0.1.0-alpha.N`), as in `changelog.d/README.md`.
+- **macOS adds `__CF_USER_TEXT_ENCODING` to every child process** (2026-10-26, `real:` `main` CI run for #765 failed `test:weeklyaudit` on macOS only).
+  - *What*: a test that asserts the exact set of environment variables a child sees fails on macOS, because the OS injects `__CF_USER_TEXT_ENCODING`.
+  - *Why*: PR CI runs no macOS check (FR-106), so it only showed on `main` and blocked the alpha.19 release build.
+  - *How to apply*: in env-allow-list tests ignore that key (as `scripts/test-weekly-audit.ts` now does); it is not ours and holds no secret.

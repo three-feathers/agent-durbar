@@ -20,5 +20,20 @@
   /* Which agent's Revoke all is still under way for the agent being drawn: its own id, or '' (another agent's, or none).
      The caller stores the result, so a Revoke all of agent A is dropped as soon as agent B is drawn and can never move B's focus. */
   function grantsBusyFor(busyId, agentId){return busyId&&busyId===agentId?busyId:'';}
-  return {shortGrantLabel,grantsBusyFor};
+  /* Spec 003 FR-108 (FR-013): the plain line on a pending approval card that says how far "for this session" reaches, or '' when the card offers
+     nothing wider than the request. p: the normalized request (kind, scopeKey, scopeLabel, broadScopeKey, broadScopeLabel). Text only. */
+  function scopeHint(p){
+    if(!p||typeof p!=='object')return '';
+    const out=[], str=v=>{const t=typeof v==='string'?v.replace(/\s+/g,' ').trim():'',a=Array.from(t);return a.length>120?a.slice(0,119).join('')+'\u2026':t;}; /* a cut is visible (an ellipsis), never a shorter path that looks real */
+    if(p.kind==='write'&&str(p.scopeKey)){
+      const lab=str(p.scopeLabel).replace(/^write in /,''), many=/^write-folders:/.test(p.scopeKey);
+      out.push('Allow for this session covers every file in '+(many?'these folders ('+lab+'), not only these.':lab&&lab!=='write'?lab+', not only this one.':'that folder, not only this one.'));
+    }
+    if(str(p.broadScopeKey)){
+      const name=str(p.broadScopeLabel).replace(/^run /,'').replace(/ \(any arguments\)$/,'');
+      if(name)out.push('Any arguments allows every simple \u201c'+name+'\u201d command, not only this one'+(name.toLowerCase()==='git'?', also \u201cgit push\u201d':'')+'.');
+    }
+    return out.join(' ');
+  }
+  return {shortGrantLabel,grantsBusyFor,scopeHint};
 })());

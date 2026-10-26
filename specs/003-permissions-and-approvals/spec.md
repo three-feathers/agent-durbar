@@ -258,3 +258,21 @@ Under the three modes of this spec, [spec 087](../087-os-sandbox-floor/spec.md) 
 lock in **Read-only** and **Ask first**: Claude Code's bash sandbox and Copilot's local sandbox (writes none or only the session's folders,
 network off), Codex's read-limited profile unchanged; **Allow all** keeps the app's default. Durbar's own checks (FR-001..FR-028) do not
 change and nothing here approves a call they would deny or ask about (spec 087 FR-002). Simulator and fakes only (spec 087 T060-T062 open).
+
+### 2026-10-26: the card says how far "for this session" reaches (FR-013 narrowed again; FR-108, T040; v0.1.0 fix)
+
+FR-013 stays a design limit (a session grant is not configurable), but it was invisible: the buttons said "Allow for this session" and
+nothing on the card said that the grant reaches past this one request. **FR-108** `[IMPLEMENTED]` (test: `scripts/test-permissions.ts`
+for the words, sim: `scripts/check-permission-scope.js` for the card at both sizes): a pending approval card carries a short line of
+plain text (not colour alone, at least 10.5px, never cut) between the summary and the buttons, only when the card offers a grant that
+reaches further than the request: (a) **write**: "Allow for this session covers every file in <folder>/, not only this one." (several
+folders: "in those folders"); (b) **any arguments**: "Any arguments allows every simple <name> command, not only this one" and, for
+`git`, "also git push". The exact-command shell button needs no line (it grants that command text only, FR-022). The README *Safety
+model* says the same. `[KNOWN GAP]` FR-013 itself: the scope is still not narrower or configurable.
+
+### 2026-10-26: the README Safety model says what the checks really cover (release triage, #770)
+
+*Problem* (Vikram's release triage before the first stable release, 2026-10-26): the README *Safety model* overstated four things. It did not say that Copilot trusts an MCP server's own read-only mark (this spec's 2026-10-20 known gap); it said Durbar "never stores … your prompts", although a scheduled prompt is stored as written (spec 044 FR-001, `durbar-schedules.json`, 0600); it did not call masking best effort; and it did not say that on Linux without a desktop keyring the agent apps keep their own sign-ins in plain files (spec 058).
+
+- Docs only; no behaviour changes. The README *Safety model* now says each of these in plain words. The spending-limit sentence of the same PR is owned by spec 052 FR-179.
+

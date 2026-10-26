@@ -16,6 +16,12 @@ import { usageLimitClosing } from './usagelimit';
 import { markAuthError } from './autherrors';
 import { RetryTracker, copilotRetry } from './retry';
 
+/** Spec 002 FR-075 (issue #703): the runtime's host-effect error for a custom agent's subtask, as plain words. Only this error; any other text passes through. */
+export const CUSTOM_AGENT_UNSUPPORTED = 'Custom agents aren\u2019t supported in Durbar yet. Run this agent in Copilot directly.';
+export function plainRuntimeError<T>(text: T): T | string {
+  return typeof text === 'string' && /does not support session effect\b[^\n]{0,8}custom_agent_prompt/.test(text) ? CUSTOM_AGENT_UNSUPPORTED : text;
+}
+
 export type EventBody = AgentEvent extends infer E ? (E extends AgentEvent ? Omit<E, 'sessionId' | 'timestamp'> : never) : never;
 
 /** The few fields of an SDK event the mapper reads (a structural subset of `SessionEvent`). */
@@ -195,7 +201,7 @@ export class EventMapper {
       case 'tool.execution_complete': {
         const meta = this.toolNames.get(d.toolCallId) ?? { tool: '' };
         this.toolNames.delete(d.toolCallId);
-        const output = d.success ? contentOf(d.result) : d.error?.message;
+        const output = d.success ? contentOf(d.result) : plainRuntimeError(d.error?.message);
         // spec 058 FR-060/FR-063 (T094): a failed MCP tool whose text is the server's OAuth challenge says "sign in"; the server shows
         // needs-auth until the runtime's next status for it (status_changed or servers_loaded replaces the row)
         const mcpAuth = !d.success && !!meta.mcpServer && isMcpAuthChallenge(output);
@@ -336,8 +342,8 @@ export class EventMapper {
           subagentId: d.toolCallId,
           name: d.agentDisplayName || d.agentName || SUBAGENT_NAME_FALLBACK,
           phase: 'failed',
-          task: d.error,
-          error: d.error,
+          task: plainRuntimeError(d.error),
+          error: plainRuntimeError(d.error),
           agentName: d.agentName,
           model: d.model,
           durationMs: d.durationMs,
@@ -402,7 +408,7 @@ export class EventMapper {
         // spec 068 FR-002: a used-up quota or a rate limit that stopped the turn is a coffee break, not an error
         const lim = agentId ? null : copilotUsageLimit(d.errorType, d.errorCode);
         // spec 012 FR-157: the runtime's own category decides when it has one; otherwise the message is read (markAuthError)
-        const err: EventBody = { type: 'status', status: 'error', intent: `${d.errorType}: ${d.message}`, agentId, ...copilotErrorKind(d.errorType, d.message) };
+        const err: EventBody = { type: 'status', status: 'error', intent: plainRuntimeError(`${d.errorType}: ${d.message}`), agentId, ...copilotErrorKind(d.errorType, d.message) };
         // spec 034 FR-017: a turn that fails after a retry gave up; not at a usage limit and not at a sign-in failure (the sign-in card says why)
         const auth = (markAuthError(err) as { errorKind?: string }).errorKind === 'auth';
         const gaveUp = !agentId && !lim && !auth ? this.retries.gaveUp() : undefined;
