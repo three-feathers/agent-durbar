@@ -642,12 +642,39 @@ Draft release:   success   16:29
   </div>
 </section>
 
+<section class="slide" id="audit" data-presenter="vikram" data-title="Check it yourself">
+  <div class="inner">
+    <p class="kicker">Check it yourself</p>
+    <h2>Audit log</h2>
+    <div class="auditwrap">
+      <table class="audit">
+        <caption>Every claim in this talk, and where to verify it. All public, at github.com/three-feathers/agent-durbar.</caption>
+        <thead><tr><th scope="col">status</th><th scope="col">claim</th><th scope="col">evidence</th><th scope="col">link</th></tr></thead>
+        <tbody>
+        <tr><td class="ok">OK</td><td>462 pull requests merged in ten days, from three accounts</td><td>the merged pull requests</td><td><a href="https://github.com/three-feathers/agent-durbar/pulls?q=is%3Apr+is%3Amerged">pulls?q=is:pr is:merged</a></td></tr>
+        <tr><td class="ok">OK</td><td>305 issues, one issue = one task</td><td>the issues</td><td><a href="https://github.com/three-feathers/agent-durbar/issues?q=is%3Aissue">issues</a></td></tr>
+        <tr><td class="ok">OK</td><td>Spec first: 86 specs, 206 numbered requirements</td><td>specs/ and the specs index</td><td><a href="https://github.com/three-feathers/agent-durbar/tree/main/specs">specs/</a> · <a href="https://three-feathers.github.io/agent-durbar/docs.html#specs-index">specs index</a></td></tr>
+        <tr><td class="ok">OK</td><td>The rules every agent reads first</td><td>AGENTS.md and the constitution</td><td><a href="https://github.com/three-feathers/agent-durbar/blob/main/.specify/memory/constitution.md">.specify/memory/constitution.md</a> · <a href="https://github.com/three-feathers/agent-durbar/blob/main/AGENTS.md">AGENTS.md</a></td></tr>
+        <tr><td class="ok">OK</td><td>Learning in writing, after every round</td><td>review checklist and agent notes</td><td><a href="https://github.com/three-feathers/agent-durbar/blob/main/docs/agent-notes.md">docs/agent-notes.md</a> · <a href="https://github.com/three-feathers/agent-durbar/blob/main/docs/review-checklist.md">review checklist</a></td></tr>
+        <tr><td class="ok">OK</td><td>Agents review agents; planted bugs, 16 of 16 caught</td><td>pull request #778, all three rounds</td><td><a href="https://github.com/three-feathers/agent-durbar/pull/778">pull/778</a></td></tr>
+        <tr><td class="ok">OK</td><td>CI is the source of truth; release day went red, then green</td><td>every CI run</td><td><a href="https://github.com/three-feathers/agent-durbar/actions">actions</a></td></tr>
+        <tr><td class="ok">OK</td><td>v0.1.0, first stable release, 26 October</td><td>the release page and the changelog</td><td><a href="https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0">releases/tag/v0.1.0</a> · <a href="https://github.com/three-feathers/agent-durbar/blob/main/CHANGELOG.md">CHANGELOG</a></td></tr>
+        <tr><td class="ok">OK</td><td>No ranking of people or agents</td><td>the DORA rule in AGENTS.md</td><td><a href="https://github.com/three-feathers/agent-durbar/blob/main/AGENTS.md">AGENTS.md</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small muted">Numbers as of 26 October 2026, evening. If one is wrong, open an issue: that is how this system learns.</p>
+  </div>
+</section>
+
 <section class="slide close" id="close" data-presenter="vikram" data-title="Close">
   <p class="hint">&#9658; comms: start the word cloud now</p>
   <div class="inner">
-    <p class="big"><span>Agents do.</span><span>Humans decide.</span><span>Everything is written down.</span></p>
+    <pre class="term endlog" aria-label="The summary, as a log"><span class="c">&gt;</span> Agents do.
+<span class="c">&gt;</span> Humans decide.
+<span class="c">&gt;</span> Everything is written down.</pre>
     <p class="pollbar"><span class="pollicon" aria-hidden="true"><i></i><i></i><i></i></span>WORD CLOUD &mdash; LIVE IN TEAMS NOW</p>
-    <p class="cloud">Word cloud: <b>One thing you'll stop doing manually on Monday.</b></p>
+    <p class="cloud">One thing you'll stop doing manually on Monday.</p>
     <ul class="players" aria-label="The three presenters">
       <li><img src="assets/art/player-vikram.svg" alt="" width="200" height="124"><b>P1 · Vikram</b><span>vikramgorla</span></li>
       <li><img src="assets/art/player-paco.svg" alt="" width="200" height="124"><b>P2 · Paco</b><span>fjcabello</span></li>

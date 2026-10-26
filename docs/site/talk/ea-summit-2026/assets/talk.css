@@ -380,3 +380,15 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:15;bac
 .close .big{font-size:clamp(1.4rem,min(3.8vw,6.6vh),4.8rem)}
 .close .players img{width:clamp(100px,min(9vw,14vh),200px)}
 .close .pollbar{margin-top:.6rem}
+/* the close: an audit log, not a pitch */
+.auditwrap{background:#0b1020;border:3px solid var(--line);box-shadow:6px 6px 0 var(--shadow);padding:.4rem .6rem;overflow-x:auto}
+.audit{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:clamp(12px,min(1.1vw,2vh),1.1rem);color:#e8eefc}
+.audit caption{caption-side:top;text-align:left;color:#8fb0d3;padding:.2rem .3rem .5rem;font-size:.9em}
+.audit th{text-align:left;color:#ffd34d;font-weight:400;border-bottom:2px solid #33447a;padding:.25rem .5rem;text-transform:uppercase;font-size:.85em}
+.audit td{padding:.28rem .5rem;border-bottom:1px solid #22325f;vertical-align:top}
+.audit td.ok{color:#5fe08a;font-weight:700}
+.audit a{color:#7cc4ff}
+.endlog{font-size:clamp(1rem,min(2.2vw,4vh),2.4rem);line-height:1.5;margin:0 0 1rem;max-width:fit-content;padding:.6rem 1.2rem}
+.close .cloud{margin-top:.4rem;font-size:1.2rem;font-weight:700}
+.close .players img{width:clamp(80px,min(7vw,11vh),160px)}
+.close .players{margin-top:.6rem}
