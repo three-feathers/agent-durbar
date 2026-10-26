@@ -4843,6 +4843,7 @@ function showPerm(a,p){
   if(p.state==='pending'&&typeof p.sandboxNote==='string'&&p.sandboxNote){const sn=document.createElement('p');sn.className='psbx';sn.textContent=safeMask(p.sandboxNote.slice(0,300));n.appendChild(sn);} /* spec 087 FR-021: its own line, never cut */
   if(pl&&pl.cmd){const d=document.createElement('details');d.className='pcmd';const sm=document.createElement('summary');sm.textContent='Show the command';
     const pre=document.createElement('pre');pre.textContent=pl.cmd;d.append(sm,pre);n.appendChild(d);}
+  if(p.state==='pending'){const sh=typeof DurbarGrantLabel!=='undefined'?DurbarGrantLabel.scopeHint(p):'';if(sh){const sp=document.createElement('p');sp.className='pscope';sp.textContent=safeMask(sh);n.appendChild(sp);}} /* spec 003 FR-108: how far "for this session" reaches, in words */
   const st=n.querySelector('.pstate');
   if(p.state==='denied'){ /* spec 003 FR-094: with the button the text no longer repeats the suggestion */
     st.innerHTML=roAskHint(a,n)?' <i>(denied: this agent is in Read-only)</i>':' <i>(denied: this agent is in Read-only. Switch it to Ask first to be asked instead)</i>';
