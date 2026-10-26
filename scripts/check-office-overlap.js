@@ -678,17 +678,19 @@ async function driver(ctx) {
     if (demo) { total++; if (demo.btn) { failed++; console.log(`FAIL new session ${w}x${h}: the demo offers + New`); } }
   };
   for (const [w, h] of SIZES) {
-    for (const q of ['sim=15&simfreeze=1', 'sim=15&simfreeze=1&simkinds=mixed', 'sim=12&simfreeze=1&simtitles=1']) {
+    for (const q of ['sim=15&simfreeze=1', 'sim=15&simfreeze=1&simkinds=mixed', 'sim=12&simfreeze=1&simtitles=1', 'sim=15&simfreeze=1&simnotes=some']) { /* the last one: every folder has notes, so the header count is shown (spec 083 T030) */
       if (!mine()) continue;
       await load(q, w, h);
       const ids = await ctx.js(`[...document.querySelectorAll('#stage .desk')].map((d)=>d.dataset.id)`);
       let bad = 0;
       for (const id of ids) {
         await ctx.js(`(async()=>{const d=document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)});if(d)d.click();await new Promise(r=>setTimeout(r,250));return true})()`);
+        const cnt = q.includes('simnotes=some') ? await ctx.js(`(async()=>{for(let i=0;i<60;i++){const c=document.getElementById('ntCount');if(c&&!c.hidden)return true;await new Promise(r=>setTimeout(r,50));}return false})()`) : true; /* wait for the count, so the header check below sees it */
         const p = await ctx.js(`(${chatCheck.toString()})()`);
         total++;
         if (p.length) { failed++; bad++; if (bad <= 3) console.log(`FAIL chat ${w}x${h} ${q} agent ${id}: ${p.slice(0, 4).join('; ')}`); }
-        if (q === 'sim=15&simfreeze=1') { /* spec 083: the same with the Notes drawer open */
+        if (q.includes('simnotes=some')) { /* spec 083: the header count is shown (it is in the header check above) and the same with the Notes drawer open */
+          if (!cnt) { failed++; bad++; if (bad <= 3) console.log(`FAIL chat ${w}x${h} ${q} agent ${id}: the Notes count is not shown`); }
           /* the page's mod key: ⌘ on a Mac, Ctrl elsewhere; then wait until the drawer is shown (no fixed pause) */
           const modKey = process.platform === 'darwin' ? 'metaKey' : 'ctrlKey';
           await ctx.js(`document.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyM',key:'M',shiftKey:true,bubbles:true,...${jsLiteral({ [modKey]: true })}}));true`);
