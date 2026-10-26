@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="color-scheme" content="light dark">
+<title>Architect notes</title>
+<meta name="description" content="Suggested talking points for the two architects in the EA Summit talk.">
+<link rel="icon" href="../assets/three-feathers.png">
+<link rel="stylesheet" href="../assets/talk.css">
+</head>
+<body class="host">
+<main class="host-wrap">
+  <h1>Architect notes · EA Summit talk</h1>
+  <p>For the Shy Architect (P4, an Enterprise Architect) and the Chief Architect (P5, a Principal Enterprise Architect). Each question appears on its own slide; Vikram, Paco or Ruben asks it, and you answer in your own words, about a minute each. These are suggestions to pick from, not a script. The thread through all of them: from documents, boards, supplier briefs and gatekeeping, to owning outcomes, building with agents, specs as living knowledge, guardrails as code, and measuring learning rather than people.</p>
+  <p class="how">This page is unlisted and not indexed. It is not linked from the talk.</p>
+
+  <section class="poll">
+    <h2>The Shy Architect · Q1 — What does an architect stop doing when agents do the building?</h2>
+    <p class="cue">Asked by Vikram, after "agentic experiences".</p>
+    <ul>
+      <li>Stop drawing the target picture and handing it over. Start with a spec small enough that an agent can build it this week, and look at what comes back.</li>
+      <li>Stop being the gate a project waits at. Put the rules where the work happens: a spec template, a checklist, a CI check that fails the build.</li>
+      <li>Stop writing documents nobody reads. A spec in the repository is read by every agent, every time, before it writes a line.</li>
+      <li>Keep the judgement: which problem is worth solving, which risk is acceptable. That is the part that does not get automated.</li>
+    </ul>
+  </section>
+
+  <section class="poll">
+    <h2>The Chief Architect · Q1 — How do we keep governance when an agent can ship in an hour?</h2>
+    <p class="cue">Asked by Paco, after "the protocol" (agents reviewing agents).</p>
+    <ul>
+      <li>Governance moves from meetings to guardrails as code: the gate in CI that refuses code without a spec is a policy that runs a thousand times a day.</li>
+      <li>Decide what needs a human, and write it down once: money, releases, settings, access. Everything else flows.</li>
+      <li>Make the trail automatic. Every decision on the issue or pull request, every change reviewed: the audit is a by-product, not a project.</li>
+      <li>Review the system, not each change: are the checks catching the planted bugs? If yes, trust the pipeline.</li>
+    </ul>
+  </section>
+
+  <section class="poll">
+    <h2>The Shy Architect · Q2 — What is the first process you would let an agent own?</h2>
+    <p class="cue">Asked by Ruben, after "rules the agents agreed".</p>
+    <ul>
+      <li>Something repetitive, well documented and reversible: keeping an inventory or a dependency map up to date, checking standards on every change.</li>
+      <li>The architecture compliance check: an agent can read every pull request against the principles and comment, the same day, every time.</li>
+      <li>Turning meeting decisions into tickets and records, so the board stays true.</li>
+      <li>Start where a mistake is cheap and visible; widen the scope as the checks prove themselves.</li>
+    </ul>
+  </section>
+
+  <section class="poll">
+    <h2>The Chief Architect · Q2 — Where should an architect spend the time agents give back?</h2>
+    <p class="cue">Asked by Ruben, after "I trust the system, not each answer".</p>
+    <ul>
+      <li>With the business: understanding the problem well enough to write the first spec yourself.</li>
+      <li>Building: prototypes in an afternoon, so options are argued with working software, not slides.</li>
+      <li>On the guardrails: the shared rules, templates and checks that make every team safer at once.</li>
+      <li>Teaching: pairing with teams so the way of working spreads; measure what they learn, never rank who is faster.</li>
+    </ul>
+  </section>
+
+  <section class="poll">
+    <h2>The Shy Architect · Q3 — What skill would you hire for today?</h2>
+    <p class="cue">Asked by Paco, after "where things live".</p>
+    <ul>
+      <li>Writing clearly: a good spec is the new source code, for people and for agents.</li>
+      <li>Systems thinking with hands on the keyboard: someone who can design it and also get an agent to build a first version.</li>
+      <li>Judging evidence: reading a review, a test result, a log, and knowing what is proven and what is not.</li>
+      <li>Comb-shaped curiosity: deep in one or two areas, comfortable reaching into many.</li>
+    </ul>
+  </section>
+
+  <section class="poll">
+    <h2>The Chief Architect · Q3 — Which architecture document would you replace with a living spec first?</h2>
+    <p class="cue">Asked by Vikram, after the outcome (git log).</p>
+    <ul>
+      <li>The solution design that is approved once and never read again: make it a spec in the repository that changes with the code.</li>
+      <li>Architecture decision records in a slide deck: move them next to the code, dated, linked from the change that made them.</li>
+      <li>Standards and principles: write them so a CI check or an agent can apply them, not only a human reviewer.</li>
+      <li>The integration catalogue: generate it from the code and the specs, so it cannot drift.</li>
+    </ul>
+  </section>
+
+  <section class="poll">
+    <h2>The Shy Architect · Q4 — What would you tell an architect who is afraid of being replaced?</h2>
+    <p class="cue">Asked by Paco, after "check it yourself" (the audit log).</p>
+    <ul>
+      <li>The agents in this story still needed humans for direction, for risk, and for saying no. That is architecture work.</li>
+      <li>What goes away is the waiting and the paperwork, not the thinking.</li>
+      <li>The architects who build with agents will replace the ones who only draw: start small, this month.</li>
+      <li>Your experience becomes rules everyone's agents follow: written once, applied everywhere.</li>
+    </ul>
+  </section>
+
+  <section class="poll">
+    <h2>The Chief Architect · Q4 — What is one thing this room should try on Monday?</h2>
+    <p class="cue">Asked by Vikram, after "it can happen in our organization too", right before the word cloud.</p>
+    <ul>
+      <li>Pick one repeated task you own and have an agent build the script for it, with a test.</li>
+      <li>Write one page of your knowledge as Markdown in the wiki, so people and agents can find it.</li>
+      <li>Turn the next meeting's actions into tickets or agent tasks before you leave the room.</li>
+      <li>Then tell your team what you learned, in writing.</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>

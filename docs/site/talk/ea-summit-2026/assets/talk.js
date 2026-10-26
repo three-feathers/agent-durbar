@@ -7,8 +7,23 @@
   var PLAYERS = {
     vikram: { key: 'vikram', n: 1, name: 'Vikram', handle: 'vikramgorla', img: 'assets/art/player-vikram.svg' },
     paco: { key: 'paco', n: 2, name: 'Paco', handle: 'fjcabello', img: 'assets/art/player-paco.svg' },
-    ruben: { key: 'ruben', n: 3, name: 'Ruben', handle: 'rubenlupi', img: 'assets/art/player-ruben.svg' }
+    ruben: { key: 'ruben', n: 3, name: 'Ruben', handle: 'rubenlupi', img: 'assets/art/player-ruben.svg' },
+    /* the two architects (owner 2026-10-26: no names or handles; `hud` is the short form in the HUD) */
+    ea: { key: 'ea', n: 4, name: 'the Shy Architect', hud: 'Shy Architect', role: 'Enterprise Architect', handle: '', img: 'assets/art/player-ea.svg' },
+    pea: { key: 'pea', n: 5, name: 'the Chief Architect', hud: 'Chief Architect', role: 'Principal Enterprise Architect', handle: '', img: 'assets/art/player-pea.svg' }
   };
+  var el = function (tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
+  /* the line-up on the title and exit screens, from the same table */
+  Array.prototype.forEach.call(document.querySelectorAll('[data-players]'), function (ul) {
+    Object.keys(PLAYERS).forEach(function (k) {
+      var P = PLAYERS[k], li = el('li'), img = el('img');
+      img.src = P.img; img.alt = ''; img.width = 200; img.height = 124;
+      li.appendChild(img);
+      li.appendChild(el('b', '', 'P' + P.n + ' \u00b7 ' + P.name));
+      li.appendChild(el('span', '', P.handle || P.role || ''));
+      ul.appendChild(li);
+    });
+  });
   (function handovers() {
     var all = Array.prototype.slice.call(document.querySelectorAll('.slide')), last = null;
     all.forEach(function (s) {
@@ -21,13 +36,12 @@
         card.setAttribute('data-presenter', P.key);
         card.setAttribute('data-title', 'Player ' + P.n + ' \u00b7 ' + P.name);
         /* built with createElement/textContent: nothing read from the page goes into HTML */
-        var el = function (tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
         var inner = el('div', 'inner'), img = el('img');
         img.src = P.img; img.alt = ''; img.width = 200; img.height = 124;
         inner.appendChild(el('p', 'kicker', 'Player change'));
         inner.appendChild(img);
         inner.appendChild(el('p', 'turn', 'PLAYER ' + P.n + ' \u00b7 ' + P.name.toUpperCase()));
-        inner.appendChild(el('p', 'turn-sub', P.handle + ' \u2014 YOUR TURN \u25BA'));
+        inner.appendChild(el('p', 'turn-sub', (P.handle || P.role || '') + ' \u2014 YOUR TURN \u25BA'));
         card.appendChild(inner);
         s.parentNode.insertBefore(card, s);
       }
@@ -49,7 +63,7 @@
     var s = slides[cur];
     var who = s.getAttribute('data-presenter');
     var P = who && Object.prototype.hasOwnProperty.call(PLAYERS, who) ? PLAYERS[who] : null;
-    if (level) level.textContent = (P ? 'P' + P.n + ' ' + P.name.toUpperCase() + ' \u00b7 ' : '') + 'LEVEL ' + (cur + 1) + '/' + slides.length;
+    if (level) level.textContent = (P ? 'P' + P.n + ' ' + (P.hud || P.name).toUpperCase() + ' \u00b7 ' : '') + 'LEVEL ' + (cur + 1) + '/' + slides.length;
     if (hudTitle) hudTitle.textContent = s.getAttribute('data-title') || '';
     if (bar) { bar.style.width = (100 * (cur + 1) / slides.length) + '%'; bar.parentNode.setAttribute('aria-valuenow', String(cur + 1)); bar.parentNode.setAttribute('aria-valuemax', String(slides.length)); }
   }
@@ -79,7 +93,7 @@
     var open = on === undefined ? btn.getAttribute('aria-expanded') !== 'true' : on;
     sec.classList.toggle('revealed', open);
     btn.setAttribute('aria-expanded', String(open));
-    btn.textContent = open ? 'Hide answer' : 'Reveal answer';
+    btn.textContent = open ? 'Hide' : 'The 2026 way';
     if (why) why.hidden = !open;
   }
   document.querySelectorAll('.quiz').forEach(function (sec) {

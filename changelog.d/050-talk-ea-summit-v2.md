@@ -1,0 +1,1 @@
+- **EA Summit talk, second version** (spec 050 FR-014): the story is told as product development in 2027 and revealed as real; the polls ask what people do today, with no right answer marked; five presenters take turns, two of them architects with an unlisted notes page; the talk ends with "check it yourself" and an exit screen. `test:site` checks the notes page stays unlisted.

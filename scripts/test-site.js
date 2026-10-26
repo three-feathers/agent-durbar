@@ -138,6 +138,9 @@ const talkPages = [];
 const walkTalk = (dir) => { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const p = path.join(dir, e.name); if (e.isDirectory()) walkTalk(p); else if (e.name.endsWith('.html')) talkPages.push(p); } };
 if (fs.existsSync(path.join(out, 'talk'))) walkTalk(path.join(out, 'talk'));
 assert.ok(talkPages.some((p) => /talk[\\/]ea-summit-2026[\\/]index\.html$/.test(p)) && talkPages.some((p) => /talk[\\/]ea-summit-2026[\\/]host-[a-z]{8}[\\/]index\.html$/.test(p)), 'the EA Summit talk and its host page are built');
+// owner 2026-10-26 (21:21 UTC): the architects' suggested answers are on a third unlisted page, never on or linked from the talk
+assert.ok(talkPages.some((p) => /talk[\\/]ea-summit-2026[\\/]notes-[a-z]{8}[\\/]index\.html$/.test(p)), 'the architects\' notes page is built');
+for (const p of talkPages) if (!/notes-[a-z]{8}/.test(p)) assert.ok(!/notes-[a-z]{8}/.test(fs.readFileSync(p, 'utf8')), `${path.relative(out, p)} does not link the architects' notes`);
 for (const p of talkPages) {
   const name = path.relative(out, p);
   const html = fs.readFileSync(p, 'utf8');

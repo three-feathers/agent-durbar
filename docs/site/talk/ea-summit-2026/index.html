@@ -7,8 +7,8 @@
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; media-src 'self'; style-src 'self'; script-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="color-scheme" content="light dark">
-<title>Agents do, humans decide</title>
-<meta name="description" content="Ten days, three humans, three agents: how a product got built in 2026. EA Summit talk by Vikram (vikramgorla).">
+<title>Product development, 2027</title>
+<meta name="description" content="How product development will work in 2027: an EA Summit talk by Vikram (vikramgorla), Paco (fjcabello), Ruben (rubenlupi) and two architects.">
 <link rel="icon" href="assets/three-feathers.png">
 <link rel="stylesheet" href="assets/talk.css">
 <script src="assets/talk.js" defer></script>
@@ -29,31 +29,28 @@
 <section class="slide" id="start" data-presenter="vikram" data-title="Start">
   <div class="brandbar"><img src="assets/three-feathers.png" alt="" width="34" height="34"> three-feathers · EA Summit 2026</div>
   <div class="inner">
-    <p class="kicker">How products get built in 2026</p>
-    <h1>Agents do.<br>Humans decide.<br>Everything is written down.</h1>
-    <p class="lead">Ten days. Three humans. Three AI agents. One open-source app, released for Mac, Windows and Linux, built in the open.</p>
-    <p class="who">Vikram (vikramgorla), Paco (fjcabello) and Ruben (rubenlupi) · <a href="https://github.com/three-feathers/agent-durbar">github.com/three-feathers/agent-durbar</a></p>
-    <ul class="players" aria-label="Three players">
-      <li><img src="assets/art/player-vikram.svg" alt="" width="200" height="124"><b>P1 · Vikram</b><span>vikramgorla</span></li>
-      <li><img src="assets/art/player-paco.svg" alt="" width="200" height="124"><b>P2 · Paco</b><span>fjcabello</span></li>
-      <li><img src="assets/art/player-ruben.svg" alt="" width="200" height="124"><b>P3 · Ruben</b><span>rubenlupi</span></li>
-    </ul>
-    <p class="keys">Keyboard or presenter remote: next <kbd>&rarr;</kbd> <kbd>&darr;</kbd> <kbd>PgDn</kbd> <kbd>Space</kbd> <kbd>Enter</kbd> (reveals a poll answer, plays the video) · back <kbd>&larr;</kbd> <kbd>&uarr;</kbd> <kbd>PgUp</kbd> · <kbd>B</kbd> black screen · <kbd>H</kbd> hints · <kbd>T</kbd> light/dark</p>
+    <p class="kicker">A story from the near future</p>
+    <h1>How product development will work in 2027</h1>
+    <p class="lead">Ten days. Three humans. Three AI agents. Two architects. One product, built in the open.</p>
+    
+    <ul class="players" data-players aria-label="The five presenters"></ul>
+    <p class="keys">Keyboard or presenter remote: next <kbd>&rarr;</kbd> <kbd>&darr;</kbd> <kbd>PgDn</kbd> <kbd>Space</kbd> <kbd>Enter</kbd> (shows "the 2026 way" after a poll, plays the video) · back <kbd>&larr;</kbd> <kbd>&uarr;</kbd> <kbd>PgUp</kbd> · <kbd>B</kbd> black screen · <kbd>H</kbd> hints · <kbd>T</kbd> light/dark</p>
   </div>
 </section>
 
-<section class="slide quiz" id="q1" data-presenter="vikram" data-title="Poll 1">
+<section class="slide quiz" id="p1" data-presenter="vikram" data-title="Poll 1">
   <p class="hint">&#9658; comms: start Poll 1 now</p>
   <div class="inner">
     <p class="pollbar"><span class="pollicon" aria-hidden="true"><i></i><i></i><i></i></span>POLL 1 &mdash; LIVE IN TEAMS NOW</p>
-    <p class="q">What is the best use of your AI tokens?</p>
+    <p class="q">How do you mostly use AI at work today?</p>
     <ol class="opts">
-      <li><b>A</b>Summarize my emails</li>
-      <li><b>B</b>Write meeting notes</li>
-      <li><b>C</b>Make my PowerPoint</li>
-      <li class="right"><b>D</b>Turn a repeated task into a script that does it for me</li>
+      <li><b>A</b>Summaries of my emails and meetings: it saves me an hour a day</li>
+      <li><b>B</b>Drafting documents and slides, faster and more polished</li>
+      <li><b>C</b>Asking it questions instead of searching</li>
+      <li><b>D</b>Having it build and run tools that do recurring work for me</li>
     </ol>
-    <div class="reveal-row"><button type="button" class="btn reveal" aria-expanded="false">Reveal answer</button><p class="why" hidden><b>D.</b> A summary polishes the old habit. A script removes the task, every time, for good.</p></div>
+    <div class="reveal-row"><button type="button" class="btn reveal" aria-expanded="false">The 2026 way</button>
+      <div class="why way" hidden><p class="way-k">The 2026 way</p><p class="way-a">Agents build and run the work you would otherwise do by hand.</p><p class="way-b">Polishing an email is still the old habit. A script, a check or an agent that does the task removes it for good.</p></div></div>
   </div>
 </section>
 
@@ -82,7 +79,7 @@
 
 <section class="slide" id="friday" data-presenter="ruben" data-title="Friday afternoon">
   <div class="inner">
-    <p class="kicker">Friday 16 October 2026</p>
+    <p class="kicker">Day 1 · a Friday in 2027</p>
     <h2>From an idea to a team, in one evening.</h2>
     <dl class="clock">
       <dt>Before</dt><dd>A small idea, talked through with a chatbot.</dd>
@@ -119,14 +116,522 @@
       </ul>
       <p class="before-after"><span>10 windows, 10 chats, text scrolling by</span> <b aria-hidden="true">&#9658;</b> <span>one canvas, agents you can see</span></p>
     </div>
-    <figure class="shot">
-      <img src="today/retro-office.png" alt="Agent Durbar in the Retro Pixel theme: an office of agents; desks that need you glow amber, new replies glow green (simulator demo data)" width="1440" height="900" loading="lazy">
-      <figcaption>An agentic experience canvas: Agent Durbar, Retro Pixel theme. Simulator demo data.</figcaption>
-    </figure>
+    <ul class="players big-desks" aria-hidden="true"><li><img src="assets/art/desk-working.svg" alt="" width="200" height="124"><b>working</b></li><li><img src="assets/art/desk-waiting.svg" alt="" width="200" height="124"><b>needs you</b></li><li><img src="assets/art/desk-thinking.svg" alt="" width="200" height="124"><b>thinking</b></li><li><img src="assets/art/desk-done.svg" alt="" width="200" height="124"><b>done</b></li></ul>
   </div>
 </section>
 
-<section class="slide" id="durbar" data-presenter="paco" data-title="Agent Durbar">
+<section class="slide ask" id="ea1" data-presenter="ea" data-title="A question for the Shy Architect">
+  <div class="inner">
+    <p class="kicker">Vikram asks</p>
+    <p class="askq">What does an architect stop doing when agents do the building?</p>
+    <p class="asknote">The Shy Architect answers.</p>
+  </div>
+</section>
+
+<section class="slide" id="model" data-presenter="paco" data-title="The operating model">
+  <div class="inner">
+    <p class="kicker">The operating model</p>
+    <h2>How one change ships</h2>
+    <ol class="flow">
+      <li class="human"><p class="who"><img src="assets/art/face-done.svg" alt="" width="34" height="34">Human</p><strong>Direction</strong><span class="d">"We need X." Sets roadmap and priorities.</span></li>
+      <li><p class="who"><img src="assets/art/face-working.svg" alt="" width="34" height="34">Agent</p><strong>Spec first</strong><span class="d">spec, plan and tasks, committed before any code.</span></li>
+      <li><p class="who"><img src="assets/art/face-working.svg" alt="" width="34" height="34">Agent</p><strong>Agent builds</strong><span class="d">Own branch, own worktree, tests, docs.</span></li>
+      <li><p class="who"><img src="assets/art/face-thinking.svg" alt="" width="34" height="34">Another team's agent</p><strong>Agent reviews</strong><span class="d">Strengths · Required fixes · Questions.</span></li>
+      <li class="catch"><p class="who"><img src="assets/art/face-thinking.svg" alt="" width="34" height="34">Reviewer</p><strong>Planted bug caught</strong><span class="d">The reviewer breaks the code on purpose. The tests must fail.</span></li>
+      <li><p class="who"><img src="assets/art/face-idle.svg" alt="" width="34" height="34">Machines</p><strong>CI</strong><span class="d">The source of truth, for that exact commit.</span></li>
+      <li><p class="who"><img src="assets/art/face-idle.svg" alt="" width="34" height="34">Machines</p><strong>Merge queue</strong><span class="d">Re-checks the merged result before it lands.</span></li>
+      <li class="human"><p class="who"><img src="assets/art/face-done.svg" alt="" width="34" height="34">Human OK</p><strong>Release</strong><span class="d">Money, releases and settings need a human.</span></li>
+    </ol>
+    <p class="loop">&#8635; After every round: what went wrong becomes a line in <code>AGENTS.md</code>, the review checklist or the agent notes.</p>
+  </div>
+</section>
+
+<section class="slide" id="spec" data-presenter="paco" data-title="Spec first">
+  <div class="inner">
+    <p class="kicker">Spec first</p>
+    <blockquote>Do not write or change code in <code>src/</code> until the spec, plan and tasks for that change exist and are committed.<cite>AGENTS.md, the rules every agent reads first (GitHub Spec Kit; a constitution with eight principles)</cite></blockquote>
+    <div class="grid g3 mt">
+      <div class="box"><h3>Spec Kit</h3><p>specify &rarr; clarify &rarr; plan &rarr; tasks &rarr; implement &rarr; converge. The same commands for Claude Code and Copilot.</p></div>
+      <div class="box"><h3>A gate in CI</h3><p>A pull request that changes code without changing its spec fails.</p></div>
+      <div class="box"><h3>Honest limits</h3><p>If nobody verified it, the spec says so: <code>[KNOWN GAP]</code>, not a claim.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide quiz" id="p2" data-presenter="ruben" data-title="Poll 2">
+  <p class="hint">&#9658; comms: start Poll 2 now</p>
+  <div class="inner">
+    <p class="pollbar"><span class="pollicon" aria-hidden="true"><i></i><i></i><i></i></span>POLL 2 &mdash; LIVE IN TEAMS NOW</p>
+    <p class="q">Where does your team's knowledge mostly live today?</p>
+    <ol class="opts">
+      <li><b>A</b>In email threads: everything is in writing somewhere</li>
+      <li><b>B</b>In Teams chats: fast, and everyone is there</li>
+      <li><b>C</b>In PowerPoints on SharePoint: polished and approved</li>
+      <li><b>D</b>In a wiki, as plain text (Confluence, Azure DevOps)</li>
+    </ol>
+    <div class="reveal-row"><button type="button" class="btn reveal" aria-expanded="false">The 2026 way</button>
+      <div class="why way" hidden><p class="way-k">The 2026 way</p><p class="way-a">Plain text (Markdown) in a wiki, versioned and indexed.</p><p class="way-b">People can search it, agents can read it, and nobody has to ask who has the latest deck.</p></div></div>
+  </div>
+</section>
+
+<section class="slide" id="review" data-presenter="paco" data-title="Agents review agents">
+  <div class="inner split">
+    <div>
+      <p class="kicker">Agents review agents</p>
+      <h2>A real review</h2>
+      <p class="lead">Pull request #778: Paco's agent (fjcabello) fixed a race in the notes store. Vikram's agent (vikramgorla) reviewed it. Three rounds in two hours.</p>
+      <p class="small muted">Excerpts, word for word, from the last round of the review and the first round (day 11).</p>
+    </div>
+    <div class="box review">
+      <p class="meta">Vikram's agent (vikramgorla) · Re-review of #778 at the third commit · APPROVED</p>
+      <h4>Strengths</h4>
+      <ul>
+        <li>The cause analysis is right: lstat, then rename, is a check-then-act. Putting a <code>wx</code> guard around the takeover and re-checking under it closes the main path #723 hit.</li>
+        <li>Mutants (mine, at ‹commit›, all reverted). All 16 were caught.</li>
+        <li><b>mutant 14</b>, the fallback deleting without a token check, which survived last round and is caught now.</li>
+      </ul>
+      <h4>Required fixes</h4>
+      <p>None.</p>
+      <h4>Questions</h4>
+      <p>None. I approve this sha. Merge once UI checks are green for ‹commit›.</p>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="reviews" data-presenter="paco" data-title="More real reviews">
+  <div class="inner">
+    <p class="kicker">More real review comments, word for word</p>
+    <div class="grid g2">
+      <div class="box review"><p class="meta">#760 · notes · Vikram's agent (vikramgorla) reviews Ruben's · changes requested</p><p><b>Escaping holds.</b> My probe planted a note titled <code>&lt;img src=x onerror=…&gt;</code> with <code>&lt;script&gt;</code> and a <code>javascript:</code> link in its text. Neither the drawer nor the <code>/</code> list made an element, and <code>__pwn</code> stayed unset.</p></div>
+      <div class="box review"><p class="meta">#760 · notes · Ruben's agent (rubenlupi), the author</p><p>CI and my local full run both fail at ‹commit› on the same two suites […] plus a CodeQL alert on scripts/test-notes.ts:337 (regexp not matching upper-case <code>&lt;SCRIPT&gt;</code>). Fixes are being made now</p></div>
+      <div class="box review"><p class="meta">#767 · website · Ruben's agent (rubenlupi), the author</p><p><code>checks run at ‹commit›</code>: specs:check, changelog:check, node scripts/test-site.js. Done: test-site no longer asserts the literal hand-written eyebrow ('early alpha') or status […]: it checks the page shows what landing.json says</p></div>
+      <div class="box review"><p class="meta">#767 · website · Vikram's agent (vikramgorla) reviews Ruben's · approved</p><p>Mutant 1 (eyebrow replaced by "x" in the page) fails "hero eyebrow is landing.json's"; mutant 2 (status replaced by "x") fails "the status line in the hero is landing.json's". […] Required fixes: none. Questions: none. Approving.</p></div>
+    </div>
+    <p class="small muted mt">And from the merging agent on #767: "Merged by Vikram's agent under AGENTS.md <em>Merging someone else's PR</em>: approved, CI green at ‹commit›, CodeQL clean, no open alerts or unanswered comments, quiet for over 2 hours."</p>
+  </div>
+</section>
+
+<section class="slide" id="planted" data-presenter="paco" data-title="Planted bugs">
+  <div class="inner">
+    <p class="kicker">Trust the system, not each answer</p>
+    <h2>The reviewer plants bugs.</h2>
+    <p class="lead">A test suite that passes proves little. So the reviewing agent breaks the code on purpose (a "mutant") and checks that a test fails. A mutant that survives is a required fix.</p>
+    <div class="grid g3">
+      <div class="stat"><span class="n">8 / 9</span><span class="l">round 1: one mutant survived &rarr; required fix</span></div>
+      <div class="stat"><span class="n">13 / 14</span><span class="l">round 2: one more survived &rarr; required fix</span></div>
+      <div class="stat hl"><span class="n">16 / 16</span><span class="l">round 3: all caught &rarr; approved</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="protocol" data-presenter="paco" data-title="The protocol">
+  <div class="inner split">
+    <div>
+      <p class="kicker">Small words, big effect</p>
+      <h2>Say it on the pull request</h2>
+      <p class="lead">One-line notes so two agents never do the same work twice, and anyone can see who has what.</p>
+      <ul class="small">
+        <li><code>taking #N</code> I review this one.</li>
+        <li><code>reviewing at &lt;sha&gt;</code> this exact commit.</li>
+        <li><code>checks run at &lt;sha&gt;</code> what the author ran, once.</li>
+      </ul>
+      <p class="small muted">On GitHub each agent posts through its human's account: fjcabello = Paco's agent, vikramgorla = Vikram's agent, rubenlupi = Ruben's agent.</p>
+    </div>
+    <ol class="pr-tl" aria-label="Pull request 778, day 11, times in UTC; fjcabello is Paco's agent, vikramgorla is Vikram's agent">
+      <li><time>D11 09:33</time><span class="by">fjcabello</span><span><code>checks run at commit A</code>: typecheck, build, npm test…</span></li>
+      <li><time>D11 09:33</time><span class="by">vikramgorla</span><span><code>taking #778</code></span></li>
+      <li><time>D11 09:33</time><span class="by">vikramgorla</span><span><code>reviewing at commit B</code></span></li>
+      <li class="cr"><time>D11 09:44</time><span class="by">vikramgorla</span><span>Changes requested: 2 required fixes, 8 of 9 mutants caught</span></li>
+      <li><time>D11 10:21</time><span class="by">fjcabello</span><span><code>checks run at commit C</code>: all 132 suites passed</span></li>
+      <li class="cr"><time>D11 10:33</time><span class="by">vikramgorla</span><span>Changes requested: 13 of 14 mutants caught</span></li>
+      <li><time>D11 11:10</time><span class="by">fjcabello</span><span><code>checks run at commit D</code></span></li>
+      <li><time>D11 11:10</time><span class="by">vikramgorla</span><span><code>reviewing at commit D</code></span></li>
+      <li class="ok"><time>D11 11:22</time><span class="by">vikramgorla</span><span>Approved: 16 of 16 caught. Required fixes: none.</span></li>
+      <li><time>D11 11:35</time><span class="by">fjcabello</span><span>Final review of the whole diff as the merging agent: correctness, security, honest limits, CI, linked issue.</span></li>
+    </ol>
+  </div>
+</section>
+
+<section class="slide ask" id="pea1" data-presenter="pea" data-title="A question for the Chief Architect">
+  <div class="inner">
+    <p class="kicker">Paco asks</p>
+    <p class="askq">How do we keep governance when an agent can ship in an hour?</p>
+    <p class="asknote">The Chief Architect answers.</p>
+  </div>
+</section>
+
+<section class="slide" id="chat" data-presenter="ruben" data-title="How agents talk">
+  <div class="inner split">
+    <div>
+      <p class="kicker">How agents talk</p>
+      <h2>Tag by @handle. Record on GitHub.</h2>
+      <ul class="handles" aria-label="The three agents in the team chat (bot handles shortened)">
+        <li>@Vishwakarma…_bot · Vikram's agent</li><li>@Paquitos…_bot · Paco's agent</li><li>@RubenLupi…_bot · Ruben's agent</li>
+      </ul>
+      <p class="lead">Humans talk to agents, agents talk to each other, and agents escalate to a human when they must. Chat history is not a record: every decision also goes on the issue or pull request.</p>
+    </div>
+    <div class="chat" aria-label="The team's chat rules from AGENTS.md, and real review traffic in Telegram on day 11 (UTC)">
+      <p class="m"><span class="from">AGENTS.md · tag each other</span>Address another agent by its @handle. Do not open with "Vikram's agent / Ruben's agent here": Telegram shows the sender.</p>
+      <p class="m"><span class="from">AGENTS.md · chat feedback</span>Feedback, review notes or an owner decision given in the team chat is also posted on that issue or PR. Chat history is not a record; GitHub is.</p>
+      <p class="m"><span class="from">@Paquitos…_bot (Paco's agent) · day 11 09:33</span>#778 is up (Closes #723, a stability must-fix) … Writes user files, so a careful look please. First "taking #778" reviews.</p>
+      <p class="m me"><span class="from">@Vishwakarma…_bot (Vikram's agent) · day 11 09:34</span>@Paquitos…_bot taking #778, reviewing at ‹commit›. It's a full review because it writes user files.</p>
+      <p class="m"><span class="from">@Paquitos…_bot (Paco's agent) · day 11 11:41</span>#778 is merged and #723 is closed. Paco's release batch is done. Thanks for four sharp rounds.</p>
+      <p class="tiny">Telegram team group, day 11. Times in UTC; long messages shortened (…); bot handles shortened.</p>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="relay" data-presenter="ruben" data-title="Bots can't hear each other">
+  <div class="inner split">
+    <div>
+      <p class="kicker">A problem nobody planned for</p>
+      <h2>Bots can't hear each other.</h2>
+      <p class="lead">Telegram never delivers one bot's group messages to another bot, so the agents in our group could not read each other.</p>
+      <ul class="points">
+        <li><b>Day 4:</b> Vikram's fix, a relay on a spare Telegram user account that forwards each bot's group post to the other bots.</li>
+        <li><b>Open-sourced the same day</b> (MIT), so anyone can do the same.</li>
+        <li><b>Paco and Ruben</b> set up their own agents the same way; the team's reference setup is in the repo: <code>docs/agent-setup/</code>.</li>
+      </ul>
+    </div>
+    <div class="chat" aria-label="The escalation story">
+      <p class="m"><span class="from">As Vikram tells it</span>His agent escalated a problem with Ruben's agent to him. His answer: don't escalate it to me, sort it out with Ruben's agent yourselves.</p>
+      <p class="m"><span class="from">What was going on · day 7</span>Ruben's agent had missed our group messages all night and repeated requests already answered. First it said it couldn't read our bot. Then it found the cause itself: its mention filter did not match how we addressed it. Ruben widened the filter.</p>
+      <p class="m me"><span class="from">Written down</span>Tag agents by @handle. Anything to act on also goes as a GitHub comment.</p>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="final" data-presenter="ruben" data-title="Resolving a conflict">
+  <div class="inner split">
+    <div>
+      <p class="kicker">How agents resolve a conflict</p>
+      <h2>Two FINALs crossed.</h2>
+      <p class="lead">Release day, the macOS build is red. Both agents want to be polite, and each hands the fix to the other within a minute. The rule says the first <code>FINAL</code> decides; one agent breaks the tie and says so, the other confirms with "No reply needed", and adds a second bug it found.</p>
+      <p class="small muted">Then: pull request #785 opened 14:33, Paco's agent found one more bug in the test at 14:36, fixed 14:37, approved 14:38; the real macOS run was green at 15:19.</p>
+    </div>
+    <div class="chat" aria-label="Telegram, team group, day 11 (UTC)">
+      <p class="m me"><span class="from">@Vishwakarma…_bot (Vikram's agent) · day 11 ~14:29</span>FINAL: Paco owns the flock fix; I've stopped mine. …</p>
+      <p class="m"><span class="from">@Paquitos…_bot (Paco's agent) · 14:30</span>@Vishwakarma…_bot FINAL on the flock fix: it's yours, since you've already started; I won't open a second PR.</p>
+      <p class="m me"><span class="from">@Vishwakarma…_bot (Vikram's agent) · 14:30</span>@Paquitos…_bot our FINALs crossed. To avoid a stall, I'm taking the flock fix with your mkdir hints.</p>
+      <p class="m"><span class="from">@Paquitos…_bot (Paco's agent) · 14:30</span>@Vishwakarma…_bot OK, yours. No reply needed. Besides flock, the sweep finds one more: line 74, <code>stat -c %a</code> is GNU-only, so on macOS the 0700 Claude-folder check falls into "wider than 0700".</p>
+      <p class="tiny">Telegram team group, day 11. Times in UTC; ~ = approximate; long messages shortened (…); bot handles shortened.</p>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="agreed" data-presenter="ruben" data-title="Rules the agents agreed">
+  <div class="inner">
+    <p class="kicker">Rules the agents agreed</p>
+    <h2>Decided in chat, written down the same day</h2>
+    <ul class="gamegrid rules">
+      <li><img src="assets/art/face-thinking.svg" alt="" width="48" height="48"><b>FINAL</b><span>After four rounds of ownership ping-pong, agreed between Paco's and Vikram's agents, day 8, 19:27 UTC.</span></li>
+      <li><img src="assets/art/player-paco-face.svg" alt="" width="48" height="48"><b>Test once, trust the record</b><span>Proposed by Paco's agent, day 7: suites ran up to 5 times per PR; now CI per commit is the record.</span></li>
+      <li><img src="assets/art/player-vikram-face.svg" alt="" width="48" height="48"><b>One full review per PR</b><span>Proposed by Vikram's agent, day 10: the first side to post "taking #N" does it.</span></li>
+      <li><img src="assets/art/face-working.svg" alt="" width="48" height="48"><b>Tag by @handle</b><span>Owner rule of day 8, written into AGENTS.md on day 10 after the agents forgot it.</span></li>
+      <li><img src="assets/art/face-idle.svg" alt="" width="48" height="48"><b>Working hours</b><span>Agents work 24/7; humans don't. Paco: no DMs 23:00&ndash;07:00.</span></li>
+      <li class="win"><img src="assets/art/face-done.svg" alt="" width="48" height="48"><b>Coffee breaks</b><span>In Durbar, an agent that reaches its spending limit goes on a coffee break until a human raises the limit.</span></li>
+    </ul>
+    <p class="small muted mt">Every one is a dated requirement in <code>specs/021-collaboration-harness/spec.md</code> or a rule in <code>AGENTS.md</code>: chat is not a record.</p>
+  </div>
+</section>
+
+<section class="slide ask" id="ea2" data-presenter="ea" data-title="A question for the Shy Architect">
+  <div class="inner">
+    <p class="kicker">Ruben asks</p>
+    <p class="askq">What is the first process you would let an agent own?</p>
+    <p class="asknote">The Shy Architect answers.</p>
+  </div>
+</section>
+
+<section class="slide" id="humans" data-presenter="vikram" data-title="Humans decide">
+  <div class="inner">
+    <p class="kicker">Humans decide</p>
+    <blockquote>"if you are ok and all functional and security checks are followed, don't wait for my approval - you can be autonomous approving … We as humans still define your roadmap and strategy"<cite>Vikram in the team's Telegram group, day 4; recorded in the spec the same day</cite></blockquote>
+    <div class="split mt">
+      <div class="chat" aria-label="Release day (day 11): the owner's three decisions in Telegram">
+        <p class="m me"><span class="from">Vikram (vikramgorla) · day 11 07:32</span>Focus on bug fixes next and target stability for next release, coordinate with agents. Idea is to make the first release (not pre-release) when we don't know bugs which impact users … that release should happen today</p>
+        <p class="m me"><span class="from">Vikram (vikramgorla) · 07:33</span>Ok to ship unsigned</p>
+        <p class="m me"><span class="from">Vikram (vikramgorla) · 17:58</span>Ok, tested and it's ok</p>
+        <p class="m sys"><span class="from">GitHub · day 11 17:59</span>v0.1.0 published</p>
+        <p class="tiny">Release day (day 11), Telegram. Times in UTC; long messages shortened (…); bot handles shortened. Vikram's lines lightly edited for typos.</p>
+      </div>
+      <div class="grid g2 compact">
+        <div class="box"><h3>Agents may</h3><p>build, review, merge, fix, write the docs.</p></div>
+        <div class="box"><h3>A human OKs</h3><p>spending money, releases, repository settings, inviting people.</p></div>
+        <div class="box"><h3>An OK counts</h3><p>from an owner in the team chat, for a release or a merge. Not for money.</p></div>
+        <div class="box"><h3>Never</h3><p>secrets in code or logs. Read-only by default.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="sameday" data-presenter="vikram" data-title="Feedback to shipped">
+  <div class="inner split">
+    <div>
+      <p class="kicker">Owner feedback &rarr; shipped the same day</p>
+      <div class="chat" aria-label="Vikram's direct messages to his agent, then Paco's agent approving the change, day 11 (UTC)">
+        <p class="m me"><span class="from">Vikram (vikramgorla) · day 11 09:18</span>For the new/unread ones - I looked at screenshot. I need color of the desk highlight as well (maybe legible green so that it catches the eye)</p>
+        <p class="m me"><span class="from">Vikram (vikramgorla) · 09:22</span>Ok, needs you with even higher visibility with colors</p>
+        <p class="m me"><span class="from">Vikram (vikramgorla) · 10:45</span>I don't like border lines, can we make it glow and have big zoom in / zoom out effect</p>
+        <p class="m me"><span class="from">Vikram (vikramgorla) · 10:51</span>Psychologically, it should be like people screaming for help and waiting for attention - ok if only people zoom in and out for that</p>
+        <p class="m"><span class="from">@Paquitos…_bot (Paco's agent) · 12:55</span>#774 APPROVED at ‹commit› … our peak-zoom probe with 15 agents at both sizes found no overlap.</p>
+        <p class="m sys"><span class="from">merged ~13:10 · 17:59</span>shipped in v0.1.0</p>
+        <p class="tiny">Telegram, day 11. Times in UTC; ~ = approximate; long messages shortened (…); bot handles shortened. Vikram's lines lightly edited for typos.</p>
+      </div>
+    </div>
+    <div class="title-row stack" aria-hidden="true"><img src="assets/art/desk-waiting.svg" alt="" width="200" height="124"><img src="assets/art/desk-done.svg" alt="" width="200" height="124"></div>
+  </div>
+</section>
+
+<section class="slide quiz" id="p3" data-presenter="paco" data-title="Poll 3">
+  <p class="hint">&#9658; comms: start Poll 3 now</p>
+  <div class="inner">
+    <p class="pollbar"><span class="pollicon" aria-hidden="true"><i></i><i></i><i></i></span>POLL 3 &mdash; LIVE IN TEAMS NOW</p>
+    <p class="q">A meeting ends with six actions. What usually happens next?</p>
+    <ol class="opts">
+      <li><b>A</b>Someone sends a tidy summary email to everyone</li>
+      <li><b>B</b>The notes go into the meeting chat</li>
+      <li><b>C</b>Each owner remembers their own</li>
+      <li><b>D</b>They become tickets, or agent tasks, right away</li>
+    </ol>
+    <div class="reveal-row"><button type="button" class="btn reveal" aria-expanded="false">The 2026 way</button>
+      <div class="why way" hidden><p class="way-k">The 2026 way</p><p class="way-a">Agent-doable: an agent does it. Human: a ticket on the board. The rest: drop it.</p><p class="way-b">An action in an email is a wish. Work on a board, or done by an agent, is something you can see.</p></div></div>
+  </div>
+</section>
+
+<section class="slide" id="failures" data-presenter="paco" data-title="Honest failures">
+  <div class="inner">
+    <p class="kicker">Honest failures</p>
+    <h2>Mistakes happen. The system catches them.</h2>
+    <div class="grid g3">
+      <div class="fail"><h3>The 8-hour slot</h3><p class="was">We missed a planned pre-release slot.</p><p class="now">A written rule: a pre-release about every 8 hours, with a standing OK.</p></div>
+      <div class="fail"><h3>Lost memory</h3><p class="was">A rule lived only in one agent's private memory, and was lost.</p><p class="now">Rules go in <code>AGENTS.md</code>; learnings in the repo, in the same pull request.</p></div>
+      <div class="fail"><h3>Flaky timing tests</h3><p class="was">Speed checks failed on a busy machine.</p><p class="now">Compare against a yardstick measured in the same run: a ratio, not a stopwatch.</p></div>
+      <div class="fail"><h3>Release day, part 1</h3><p class="was">macOS build: <code>flock: command not found</code>.</p><p class="now">An agent committed the fix minutes later: the script no longer needs Linux-only tools.</p></div>
+      <div class="fail"><h3>Release day, part 2</h3><p class="was">Then GitHub had no Mac runner for us.</p><p class="now">We waited, and wrote down what was and was not verified.</p></div>
+      <div class="fail"><h3>The guard said no</h3><p class="was">An agent wanted to delete a release tag.</p><p class="now">Its permission guard refused until the human said OK. As designed.</p></div>
+    </div>
+    <p class="small muted mt">And when two agents both said "I'll take it": <code>FINAL</code>.</p>
+  </div>
+</section>
+
+<section class="slide" id="redgreen" data-presenter="paco" data-title="Red to green">
+  <div class="inner">
+    <p class="kicker">Release day (day 11): the v0.1.0 tag, times in UTC</p>
+    <div class="grid g2">
+      <div>
+        <h3 class="red">14:22 · Release run … failure</h3>
+        <pre class="term bad" aria-label="Real log lines from the failed macOS build">Build (Linux):   success
+Build (Windows): success
+Build (macOS):   <b>failure</b>
+
+FAIL test:weeklyaudit (2.9 s)
+AssertionError [ERR_ASSERTION]: then it goes on to
+the (fake) clone: …/scripts/weekly-test-audit.sh:
+line 86: <b>flock: command not found</b>
+1 of 133 suites failed in 198.3 s: test:weeklyaudit
+##[error]Process completed with exit code 1.</pre>
+      </div>
+      <div>
+        <h3 class="green">15:57 · Release run … success</h3>
+        <pre class="term good" aria-label="Real job results from the green release run">Check the tag and write the release notes: success
+Build (Linux):   success   16:01
+Build (Windows): success   16:05
+Build (macOS):   success   16:29  (waited for a Mac runner)
+Draft release:   success   16:29
+
+17:59  v0.1.0 published: the first stable release</pre>
+      </div>
+    </div>
+    <p class="small muted mt">In between (pull request #785): Vikram's agent found the cause, a Linux-only tool in a script that macOS also runs, and wrote the fix with a test that hides <code>flock</code>. Paco's agent posted <code>taking #785 — reviewing at ‹commit›</code>, requested one change, then approved. The merge queue landed it at 15:09, and the release was re-run once the human said OK.</p>
+  </div>
+</section>
+
+<section class="slide" id="learn" data-presenter="paco" data-title="Learn every round">
+  <div class="inner">
+    <p class="kicker">Learn after every round</p>
+    <h2>Knowledge must not stay in one agent's memory.</h2>
+    <div class="stats">
+      <div class="stat"><span class="n">186</span><span class="l">dated learnings in <code>docs/agent-notes.md</code></span></div>
+      <div class="stat"><span class="n">72</span><span class="l">lines in the shared review checklist</span></div>
+      <div class="stat"><span class="n">70</span><span class="l">commits that changed <code>AGENTS.md</code>, the team's rules</span></div>
+    </div>
+    <p class="lead">A pitfall one agent hit on Tuesday is a line every agent reads on Wednesday. The checklist was built from what reviewers actually found.</p>
+  </div>
+</section>
+
+<section class="slide" id="trust" data-presenter="paco" data-title="Trust">
+  <div class="inner">
+    <p class="big">I trust the system,<br><span class="mark">not each answer.</span></p>
+  </div>
+</section>
+
+<section class="slide ask" id="pea2" data-presenter="pea" data-title="A question for the Chief Architect">
+  <div class="inner">
+    <p class="kicker">Ruben asks</p>
+    <p class="askq">Where should an architect spend the time agents give back?</p>
+    <p class="asknote">The Chief Architect answers.</p>
+  </div>
+</section>
+
+<section class="slide quiz" id="p4" data-presenter="vikram" data-title="Poll 4">
+  <p class="hint">&#9658; comms: start Poll 4 now</p>
+  <div class="inner">
+    <p class="pollbar"><span class="pollicon" aria-hidden="true"><i></i><i></i><i></i></span>POLL 4 &mdash; LIVE IN TEAMS NOW</p>
+    <p class="q">You find a bug in a system you own. What do you usually do?</p>
+    <ol class="opts">
+      <li><b>A</b>Raise it with the supplier: that is what the contract is for</li>
+      <li><b>B</b>Write a requirements document first</li>
+      <li><b>C</b>Log a ticket and wait for the next release</li>
+      <li><b>D</b>Fix it myself with an agent, document it, hand it on</li>
+    </ol>
+    <div class="reveal-row"><button type="button" class="btn reveal" aria-expanded="false">The 2026 way</button>
+      <div class="why way" hidden><p class="way-k">The 2026 way</p><p class="way-a">Fix it with an agent, write it down, hand it on.</p><p class="way-b">You know the system and the data. The agent writes the fix and the documentation, so anyone, or any agent, can take it over.</p></div></div>
+  </div>
+</section>
+
+<section class="slide" id="game" data-presenter="ruben" data-title="Work like a game">
+  <div class="inner">
+    <p class="kicker">Why can't work be like a game?</p>
+    <h2>What games get right, and we borrowed</h2>
+    <ul class="gamegrid">
+      <li><img src="assets/art/face-working.svg" alt="" width="48" height="48"><b>Clear goal per level</b><span>One issue = one task.</span></li>
+      <li><img src="assets/art/face-done.svg" alt="" width="48" height="48"><b>Instant feedback</b><span>A desk glows. CI turns red or green.</span></li>
+      <li><img src="assets/art/face-thinking.svg" alt="" width="48" height="48"><b>Visible state</b><span>Who is working, waiting, done.</span></li>
+      <li><img src="assets/art/face-waiting.svg" alt="" width="48" height="48"><b>Co-op multiplayer</b><span>Humans and agents; agents review each other.</span></li>
+      <li><img src="assets/art/face-idle.svg" alt="" width="48" height="48"><b>Save points</b><span>Git commits and specs.</span></li>
+      <li><img src="assets/art/face-error.svg" alt="" width="48" height="48"><b>Safe practice mode</b><span>Simulator, sandbox, Read-only by default.</span></li>
+      <li class="win"><img src="assets/art/face-done.svg" alt="" width="48" height="48"><b>Small wins</b><span>Merged pull requests, releases.</span></li>
+    </ul>
+  </div>
+</section>
+
+<section class="slide" id="nogame" data-presenter="ruben" data-title="No leaderboards">
+  <div class="inner split">
+    <div>
+      <p class="kicker">What we deliberately do not gamify</p>
+      <p class="big">No leaderboards.<br><span class="mark">Not for people, not for agents.</span></p>
+      <blockquote>DORA records exist to learn and improve: never use them, including the "suspected introducing PR" field, to rank or compare people or agents.<cite><a href="https://github.com/three-feathers/agent-durbar/blob/main/AGENTS.md">AGENTS.md</a>, bug and incident triage (agreed by Vikram, Ruben and Paco, day 10)</cite></blockquote>
+    </div>
+    <div class="title-row stack" aria-hidden="true">
+      <img src="assets/art/desk-working.svg" alt="" width="200" height="124">
+      <img src="assets/art/desk-thinking.svg" alt="" width="200" height="124">
+      <img src="assets/art/desk-done.svg" alt="" width="200" height="124">
+    </div>
+  </div>
+</section>
+
+<section class="slide quiz" id="p5" data-presenter="vikram" data-title="Poll 5">
+  <p class="hint">&#9658; comms: start Poll 5 now</p>
+  <div class="inner">
+    <p class="pollbar"><span class="pollicon" aria-hidden="true"><i></i><i></i><i></i></span>POLL 5 &mdash; LIVE IN TEAMS NOW</p>
+    <p class="q">A task you do by hand once a month: do you automate it?</p>
+    <ol class="opts">
+      <li><b>A</b>Not worth it: it only takes an hour</li>
+      <li><b>B</b>Only after a business case</li>
+      <li><b>C</b>Someday, when there is time</li>
+      <li><b>D</b>Usually yes: writing the script is quicker than doing it once more</li>
+    </ol>
+    <div class="reveal-row"><button type="button" class="btn reveal" aria-expanded="false">The 2026 way</button>
+      <div class="why way" hidden><p class="way-k">The 2026 way</p><p class="way-a">Usually yes. "Is it worth automating?" is mostly a dead question.</p><p class="way-b">With an agent the script takes minutes, and it runs every month after that.</p></div></div>
+  </div>
+</section>
+
+<section class="slide" id="morning" data-presenter="vikram" data-title="A morning in 2027">
+  <div class="inner">
+    <p class="kicker">A morning of a technologist, 2027</p>
+    <h2>What changes for you</h2>
+    <ol class="morning">
+      <li><time>08:30</time><span><b>One place for all work.</b> Not ten windows: agents, tickets and knowledge in one view.</span></li>
+      <li><time>09:00</time><span><b>Find the problem yourself</b>, from systems and data, before anyone files a request.</span></li>
+      <li><time>09:30</time><span><b>Fix it with an agent</b> instead of briefing a supplier. Everything documented, so another person or agent can take it over.</span></li>
+      <li><time>11:00</time><span><b>Own it into production.</b> The DevOps loop is yours: build, run, learn.</span></li>
+      <li><time>14:00</time><span><b>Comb-shaped skills:</b> deep in a few areas, able to reach into many.</span></li>
+      <li><time>Always</time><span><b>"Monkey jobs" go into code.</b> "Is it worth automating?" is mostly a dead question.</span></li>
+    </ol>
+  </div>
+</section>
+
+<section class="slide" id="where" data-presenter="paco" data-title="Where things live">
+  <div class="inner">
+    <p class="kicker">Where things live</p>
+    <div class="grid g3">
+      <div class="box"><h3>Knowledge</h3><p>Markdown in a wiki (Confluence, Azure DevOps wiki). Indexed. Loved by agents and people.</p></div>
+      <div class="box"><h3>Work</h3><p>On a board (Jira, Azure DevOps). Not stress in email and chat.</p></div>
+      <div class="box"><h3>Stories</h3><p>Documents or websites. This talk is one.</p></div>
+    </div>
+    <h3 class="mt">Meeting actions</h3>
+    <div class="triage">
+      <div><b>Agent-doable</b>The agent does it.</div>
+      <div><b>Needs a human</b>A ticket on the board.</div>
+      <div><b>Doesn't matter</b>Drop it.</div>
+    </div>
+    <p class="lead mt">Not in an email.</p>
+  </div>
+</section>
+
+<section class="slide ask" id="ea3" data-presenter="ea" data-title="A question for the Shy Architect">
+  <div class="inner">
+    <p class="kicker">Paco asks</p>
+    <p class="askq">What skill would you hire for today?</p>
+    <p class="asknote">The Shy Architect answers.</p>
+  </div>
+</section>
+
+<section class="slide" id="when" data-presenter="vikram" data-title="Poll 6">
+  <p class="hint">&#9658; comms: start Poll 6 now</p>
+  <div class="inner">
+    <p class="pollbar"><span class="pollicon" aria-hidden="true"><i></i><i></i><i></i></span>POLL 6 &mdash; LIVE IN TEAMS NOW</p>
+    <p class="q">When do you think this will be normal?</p>
+    <ol class="opts">
+      <li><b>A</b>2030</li>
+      <li><b>B</b>2028</li>
+      <li><b>C</b>Next year</li>
+      <li><b>D</b>Already</li>
+    </ol>
+  </div>
+</section>
+
+<section class="slide twist" id="reveal" data-presenter="vikram" data-title="It already happened">
+  <div class="inner">
+    <p class="kicker">Plot twist</p>
+    <p class="twist-a">This isn't the future.</p>
+    <p class="twist-b">It already happened. It started ten days ago.</p>
+    <ul class="realdates">
+      <li><b>Day 1</b> = Friday 16 October 2026</li>
+      <li><b>Day 11</b> = Monday 26 October 2026: v0.1.0, the first stable release</li>
+      <li><b>462</b> pull requests merged · <b>3,079</b> commits · <b>86</b> specs · <b>18</b> releases</li>
+    </ul>
+    <p class="small">Every date in the story was shifted to 2027. Every message, review and log line is real; the real dates are in the audit log at the end.</p>
+  </div>
+</section>
+
+<section class="slide" id="video" data-presenter="vikram" data-title="The video">
+  <div class="inner">
+    <p class="hint vhint" id="videoHint">&#9658; press next to play</p>
+    <p class="kicker">Ten days in three minutes</p>
+    <div class="video-frame">
+      <video id="talkVideo" controls preload="metadata" playsinline poster="poster.png">
+        <source src="talk.mp4" type="video/mp4">
+        <track kind="captions" src="talk.vtt" srclang="en" label="English" default>
+      </video>
+      <div class="video-missing" hidden>
+        <img src="assets/art/desk-thinking.svg" alt="" width="200" height="124">
+        <p>The video is on its way.</p>
+      </div>
+    </div>
+    <p class="video-cap" id="videoLinks"><a href="talk.mp4" download>Download the video (MP4)</a> · <a href="talk.vtt" download>Captions (WebVTT)</a></p>
+  </div>
+</section>
+
+<section class="slide" id="outcome" data-presenter="ruben" data-title="The outcome">
+  <div class="inner">
+    <p class="kicker">The outcome</p>
+    <p class="big">What three humans and their agents built in ten days</p>
+  </div>
+</section>
+
+<section class="slide" id="durbar" data-presenter="ruben" data-title="Agent Durbar">
   <div class="inner split">
     <div>
       <p class="kicker">What we built</p>
@@ -141,7 +646,7 @@
   </div>
 </section>
 
-<section class="slide" id="needsyou" data-presenter="paco" data-title="One click">
+<section class="slide" id="needsyou" data-presenter="ruben" data-title="One click">
   <div class="inner split">
     <figure class="shot">
       <img src="today/retro-approval.png" alt="A waiting agent's chat in the Retro Pixel theme: its reasoning, its tool calls, and a Needs your OK card with Allow once, Allow for this session and Deny" width="1440" height="900" loading="lazy">
@@ -159,17 +664,18 @@
   </div>
 </section>
 
-<section class="slide quiz" id="q4" data-presenter="vikram" data-title="Poll 2">
-  <p class="hint">&#9658; comms: start Poll 2 now</p>
+<section class="slide" id="evolution" data-presenter="ruben" data-title="How it evolved">
   <div class="inner">
-    <p class="pollbar"><span class="pollicon" aria-hidden="true"><i></i><i></i><i></i></span>POLL 2 &mdash; LIVE IN TEAMS NOW</p>
-    <p class="q">You spot a bug in a system you own. What is the fastest fix?</p>
-    <ol class="opts">
-      <li><b>A</b>Brief the supplier</li>
-      <li><b>B</b>Write a requirements document</li>
-      <li class="right"><b>C</b>Fix it with an agent yourself, document it, hand it on</li>
-    </ol>
-    <div class="reveal-row"><button type="button" class="btn reveal" aria-expanded="false">Reveal answer</button><p class="why" hidden><b>C.</b> You know the system and the data. The agent writes the fix <em>and</em> the documentation, so anyone, or any agent, can take it over.</p></div>
+    <p class="kicker">How it evolved: real screenshots from the repository's history</p>
+    <div class="evo">
+      <figure class="shot"><a href="evolution/2026-10-16-prototype.png"><img src="evolution/2026-10-16-prototype.png" alt="The first prototype, called Agent Command Center: folders as rooms, agents at desks, sample data" width="1440" height="900" loading="lazy"></a><figcaption><b>Fri 16 Oct</b> · the first prototype, in the first commit</figcaption></figure>
+      <figure class="shot"><a href="evolution/2026-10-17-office.png"><img src="evolution/2026-10-17-office.png" alt="Agent Durbar on day 2: the name, simulated agents, a status bar with waiting and error counts" width="1440" height="900" loading="lazy"></a><figcaption><b>Sat 17 Oct</b> · now called Agent Durbar; tool rooms appear</figcaption></figure>
+      <figure class="shot"><a href="evolution/2026-10-19-office.png"><img src="evolution/2026-10-19-office.png" alt="Agent Durbar on day 4: a harness picker, Read-only by default, cost per folder" width="1440" height="900" loading="lazy"></a><figcaption><b>Mon 19 Oct</b> · Copilot, Claude Code and Codex; Read-only by default</figcaption></figure>
+      <figure class="shot"><a href="evolution/2026-10-22-office.png"><img src="evolution/2026-10-22-office.png" alt="Agent Durbar on day 7: an inbox button, a safety banner, dollar costs" width="1440" height="900" loading="lazy"></a><figcaption><b>Thu 22 Oct</b> · an inbox for every waiting agent; a safety banner</figcaption></figure>
+      <figure class="shot"><a href="shots/001-unread-1440x900.png"><img src="shots/001-unread-1440x900.png" alt="Agent Durbar on 26 October: waiting desks glow orange, new replies glow green" width="1440" height="900" loading="lazy"></a><figcaption><b>Mon 26 Oct</b> · v0.1.0: desks that need you glow</figcaption></figure>
+      <figure class="shot"><a href="today/retro-office.png"><img src="today/retro-office.png" alt="The same office today in the Retro Pixel theme" width="1440" height="900" loading="lazy"></a><figcaption><b>Today</b> · the same app in the Retro Pixel theme</figcaption></figure>
+    </div>
+    <p class="small muted">Simulator demo data in every picture: names, costs and tasks are invented.</p>
   </div>
 </section>
 
@@ -245,440 +751,15 @@
   </div>
 </section>
 
-<section class="slide" id="evolution" data-presenter="ruben" data-title="How it evolved">
+<section class="slide ask" id="pea3" data-presenter="pea" data-title="A question for the Chief Architect">
   <div class="inner">
-    <p class="kicker">How it evolved: real screenshots from the repository's history</p>
-    <div class="evo">
-      <figure class="shot"><a href="evolution/2026-10-16-prototype.png"><img src="evolution/2026-10-16-prototype.png" alt="The first prototype, called Agent Command Center: folders as rooms, agents at desks, sample data" width="1440" height="900" loading="lazy"></a><figcaption><b>Fri 16 Oct</b> · the first prototype, in the first commit</figcaption></figure>
-      <figure class="shot"><a href="evolution/2026-10-17-office.png"><img src="evolution/2026-10-17-office.png" alt="Agent Durbar on day 2: the name, simulated agents, a status bar with waiting and error counts" width="1440" height="900" loading="lazy"></a><figcaption><b>Sat 17 Oct</b> · now called Agent Durbar; tool rooms appear</figcaption></figure>
-      <figure class="shot"><a href="evolution/2026-10-19-office.png"><img src="evolution/2026-10-19-office.png" alt="Agent Durbar on day 4: a harness picker, Read-only by default, cost per folder" width="1440" height="900" loading="lazy"></a><figcaption><b>Mon 19 Oct</b> · Copilot, Claude Code and Codex; Read-only by default</figcaption></figure>
-      <figure class="shot"><a href="evolution/2026-10-22-office.png"><img src="evolution/2026-10-22-office.png" alt="Agent Durbar on day 7: an inbox button, a safety banner, dollar costs" width="1440" height="900" loading="lazy"></a><figcaption><b>Thu 22 Oct</b> · an inbox for every waiting agent; a safety banner</figcaption></figure>
-      <figure class="shot"><a href="shots/001-unread-1440x900.png"><img src="shots/001-unread-1440x900.png" alt="Agent Durbar on 26 October: waiting desks glow orange, new replies glow green" width="1440" height="900" loading="lazy"></a><figcaption><b>Mon 26 Oct</b> · v0.1.0: desks that need you glow</figcaption></figure>
-      <figure class="shot"><a href="today/retro-office.png"><img src="today/retro-office.png" alt="The same office today in the Retro Pixel theme" width="1440" height="900" loading="lazy"></a><figcaption><b>Today</b> · the same app in the Retro Pixel theme</figcaption></figure>
-    </div>
-    <p class="small muted">Simulator demo data in every picture: names, costs and tasks are invented.</p>
+    <p class="kicker">Vikram asks</p>
+    <p class="askq">Which architecture document would you replace with a living spec first?</p>
+    <p class="asknote">The Chief Architect answers.</p>
   </div>
 </section>
 
-<section class="slide" id="video" data-presenter="ruben" data-title="The video">
-  <div class="inner">
-    <p class="hint vhint" id="videoHint">&#9658; press next to play</p>
-    <p class="kicker">Ten days in three minutes</p>
-    <div class="video-frame">
-      <video id="talkVideo" controls preload="metadata" playsinline poster="poster.png">
-        <source src="talk.mp4" type="video/mp4">
-        <track kind="captions" src="talk.vtt" srclang="en" label="English" default>
-      </video>
-      <div class="video-missing" hidden>
-        <img src="assets/art/desk-thinking.svg" alt="" width="200" height="124">
-        <p>The video is on its way.</p>
-      </div>
-    </div>
-    <p class="video-cap" id="videoLinks"><a href="talk.mp4" download>Download the video (MP4)</a> · <a href="talk.vtt" download>Captions (WebVTT)</a></p>
-  </div>
-</section>
-
-<section class="slide" id="model" data-presenter="paco" data-title="The operating model">
-  <div class="inner">
-    <p class="kicker">The operating model</p>
-    <h2>How one change ships</h2>
-    <ol class="flow">
-      <li class="human"><p class="who"><img src="assets/art/face-done.svg" alt="" width="34" height="34">Human</p><strong>Direction</strong><span class="d">"We need X." Sets roadmap and priorities.</span></li>
-      <li><p class="who"><img src="assets/art/face-working.svg" alt="" width="34" height="34">Agent</p><strong>Spec first</strong><span class="d">spec, plan and tasks, committed before any code.</span></li>
-      <li><p class="who"><img src="assets/art/face-working.svg" alt="" width="34" height="34">Agent</p><strong>Agent builds</strong><span class="d">Own branch, own worktree, tests, docs.</span></li>
-      <li><p class="who"><img src="assets/art/face-thinking.svg" alt="" width="34" height="34">Another team's agent</p><strong>Agent reviews</strong><span class="d">Strengths · Required fixes · Questions.</span></li>
-      <li class="catch"><p class="who"><img src="assets/art/face-thinking.svg" alt="" width="34" height="34">Reviewer</p><strong>Planted bug caught</strong><span class="d">The reviewer breaks the code on purpose. The tests must fail.</span></li>
-      <li><p class="who"><img src="assets/art/face-idle.svg" alt="" width="34" height="34">Machines</p><strong>CI</strong><span class="d">The source of truth, for that exact commit.</span></li>
-      <li><p class="who"><img src="assets/art/face-idle.svg" alt="" width="34" height="34">Machines</p><strong>Merge queue</strong><span class="d">Re-checks the merged result before it lands.</span></li>
-      <li class="human"><p class="who"><img src="assets/art/face-done.svg" alt="" width="34" height="34">Human OK</p><strong>Release</strong><span class="d">Money, releases and settings need a human.</span></li>
-    </ol>
-    <p class="loop">&#8635; After every round: what went wrong becomes a line in <code>AGENTS.md</code>, the review checklist or the agent notes.</p>
-  </div>
-</section>
-
-<section class="slide" id="spec" data-presenter="paco" data-title="Spec first">
-  <div class="inner">
-    <p class="kicker">Spec first</p>
-    <blockquote>Do not write or change code in <code>src/</code> until the spec, plan and tasks for that change exist and are committed.<cite>AGENTS.md, the rules every agent reads first (GitHub Spec Kit; a constitution with eight principles)</cite></blockquote>
-    <div class="grid g3 mt">
-      <div class="box"><h3>Spec Kit</h3><p>specify &rarr; clarify &rarr; plan &rarr; tasks &rarr; implement &rarr; converge. The same commands for Claude Code and Copilot.</p></div>
-      <div class="box"><h3>A gate in CI</h3><p>A pull request that changes code without changing its spec fails.</p></div>
-      <div class="box"><h3>Honest limits</h3><p>If nobody verified it, the spec says so: <code>[KNOWN GAP]</code>, not a claim.</p></div>
-    </div>
-  </div>
-</section>
-
-<section class="slide quiz" id="q2" data-presenter="ruben" data-title="Poll 3">
-  <p class="hint">&#9658; comms: start Poll 3 now</p>
-  <div class="inner">
-    <p class="pollbar"><span class="pollicon" aria-hidden="true"><i></i><i></i><i></i></span>POLL 3 &mdash; LIVE IN TEAMS NOW</p>
-    <p class="q">Where should your team's knowledge live?</p>
-    <ol class="opts">
-      <li><b>A</b>Email threads</li>
-      <li><b>B</b>Teams chats</li>
-      <li><b>C</b>PowerPoints on SharePoint</li>
-      <li class="right"><b>D</b>Markdown in a wiki (Confluence / Azure DevOps)</li>
-    </ol>
-    <div class="reveal-row"><button type="button" class="btn reveal" aria-expanded="false">Reveal answer</button><p class="why" hidden><b>D.</b> Plain text in one indexed place: people can search it, and agents can read it.</p></div>
-  </div>
-</section>
-
-<section class="slide" id="review" data-presenter="paco" data-title="Agents review agents">
-  <div class="inner split">
-    <div>
-      <p class="kicker">Agents review agents</p>
-      <h2>A real review</h2>
-      <p class="lead">Pull request #778: Paco's agent (fjcabello) fixed a race in the notes store. Vikram's agent (vikramgorla) reviewed it. Three rounds in two hours.</p>
-      <p class="small muted">Excerpts, word for word, from the review at commit <code>9c59a717</code> and the first round.</p>
-    </div>
-    <div class="box review">
-      <p class="meta">Vikram's agent (vikramgorla) · Re-review of #778 at <b>9c59a717</b> · APPROVED</p>
-      <h4>Strengths</h4>
-      <ul>
-        <li>The cause analysis is right: lstat, then rename, is a check-then-act. Putting a <code>wx</code> guard around the takeover and re-checking under it closes the main path #723 hit.</li>
-        <li>Mutants (mine, at 9c59a717, all reverted). All 16 were caught.</li>
-        <li><b>mutant 14</b>, the fallback deleting without a token check, which survived last round and is caught now.</li>
-      </ul>
-      <h4>Required fixes</h4>
-      <p>None.</p>
-      <h4>Questions</h4>
-      <p>None. I approve this sha. Merge once UI checks are green for 9c59a717.</p>
-    </div>
-  </div>
-</section>
-
-<section class="slide" id="reviews" data-presenter="paco" data-title="More real reviews">
-  <div class="inner">
-    <p class="kicker">More real review comments, word for word</p>
-    <div class="grid g2">
-      <div class="box review"><p class="meta">#760 · notes · Vikram's agent (vikramgorla) reviews Ruben's · changes requested</p><p><b>Escaping holds.</b> My probe planted a note titled <code>&lt;img src=x onerror=…&gt;</code> with <code>&lt;script&gt;</code> and a <code>javascript:</code> link in its text. Neither the drawer nor the <code>/</code> list made an element, and <code>__pwn</code> stayed unset.</p></div>
-      <div class="box review"><p class="meta">#760 · notes · Ruben's agent (rubenlupi), the author</p><p>CI and my local full run both fail at f27ca7ec on the same two suites […] plus a CodeQL alert on scripts/test-notes.ts:337 (regexp not matching upper-case <code>&lt;SCRIPT&gt;</code>). Fixes are being made now</p></div>
-      <div class="box review"><p class="meta">#767 · website · Ruben's agent (rubenlupi), the author</p><p><code>checks run at 09711863</code>: specs:check, changelog:check, node scripts/test-site.js. Done: test-site no longer asserts the literal hand-written eyebrow ('early alpha') or status […]: it checks the page shows what landing.json says</p></div>
-      <div class="box review"><p class="meta">#767 · website · Vikram's agent (vikramgorla) reviews Ruben's · approved</p><p>Mutant 1 (eyebrow replaced by "x" in the page) fails "hero eyebrow is landing.json's"; mutant 2 (status replaced by "x") fails "the status line in the hero is landing.json's". […] Required fixes: none. Questions: none. Approving.</p></div>
-    </div>
-    <p class="small muted mt">And from the merging agent on #767: "Merged by Vikram's agent under AGENTS.md <em>Merging someone else's PR</em>: approved, CI green at 09711863, CodeQL clean, no open alerts or unanswered comments, quiet since 07:44 UTC (over 2 hours)."</p>
-  </div>
-</section>
-
-<section class="slide" id="planted" data-presenter="paco" data-title="Planted bugs">
-  <div class="inner">
-    <p class="kicker">Trust the system, not each answer</p>
-    <h2>The reviewer plants bugs.</h2>
-    <p class="lead">A test suite that passes proves little. So the reviewing agent breaks the code on purpose (a "mutant") and checks that a test fails. A mutant that survives is a required fix.</p>
-    <div class="grid g3">
-      <div class="stat"><span class="n">8 / 9</span><span class="l">round 1: one mutant survived &rarr; required fix</span></div>
-      <div class="stat"><span class="n">13 / 14</span><span class="l">round 2: one more survived &rarr; required fix</span></div>
-      <div class="stat hl"><span class="n">16 / 16</span><span class="l">round 3: all caught &rarr; approved</span></div>
-    </div>
-  </div>
-</section>
-
-<section class="slide" id="protocol" data-presenter="paco" data-title="The protocol">
-  <div class="inner split">
-    <div>
-      <p class="kicker">Small words, big effect</p>
-      <h2>Say it on the pull request</h2>
-      <p class="lead">One-line notes so two agents never do the same work twice, and anyone can see who has what.</p>
-      <ul class="small">
-        <li><code>taking #N</code> I review this one.</li>
-        <li><code>reviewing at &lt;sha&gt;</code> this exact commit.</li>
-        <li><code>checks run at &lt;sha&gt;</code> what the author ran, once.</li>
-      </ul>
-      <p class="small muted">On GitHub each agent posts through its human's account: fjcabello = Paco's agent, vikramgorla = Vikram's agent, rubenlupi = Ruben's agent.</p>
-    </div>
-    <ol class="pr-tl" aria-label="Pull request 778, 26 October 2026, times in UTC; fjcabello is Paco's agent, vikramgorla is Vikram's agent">
-      <li><time>09:33</time><span class="by">fjcabello</span><span><code>checks run at 9863b529</code>: typecheck, build, npm test…</span></li>
-      <li><time>09:33</time><span class="by">vikramgorla</span><span><code>taking #778</code></span></li>
-      <li><time>09:33</time><span class="by">vikramgorla</span><span><code>reviewing at 455c1fcc</code></span></li>
-      <li class="cr"><time>09:44</time><span class="by">vikramgorla</span><span>Changes requested: 2 required fixes, 8 of 9 mutants caught</span></li>
-      <li><time>10:21</time><span class="by">fjcabello</span><span><code>checks run at 3567b370</code>: all 132 suites passed</span></li>
-      <li class="cr"><time>10:33</time><span class="by">vikramgorla</span><span>Changes requested: 13 of 14 mutants caught</span></li>
-      <li><time>11:10</time><span class="by">fjcabello</span><span><code>checks run at 9c59a717</code></span></li>
-      <li><time>11:10</time><span class="by">vikramgorla</span><span><code>reviewing at 9c59a717</code></span></li>
-      <li class="ok"><time>11:22</time><span class="by">vikramgorla</span><span>Approved: 16 of 16 caught. Required fixes: none.</span></li>
-      <li><time>11:35</time><span class="by">fjcabello</span><span>Final review of the whole diff as the merging agent: correctness, security, honest limits, CI, linked issue.</span></li>
-    </ol>
-  </div>
-</section>
-
-<section class="slide" id="chat" data-presenter="ruben" data-title="How agents talk">
-  <div class="inner split">
-    <div>
-      <p class="kicker">How agents talk</p>
-      <h2>Tag by @handle. Record on GitHub.</h2>
-      <ul class="handles" aria-label="The three agents in the team chat (bot handles shortened)">
-        <li>@Vishwakarma…_bot · Vikram's agent</li><li>@Paquitos…_bot · Paco's agent</li><li>@RubenLupi…_bot · Ruben's agent</li>
-      </ul>
-      <p class="lead">Humans talk to agents, agents talk to each other, and agents escalate to a human when they must. Chat history is not a record: every decision also goes on the issue or pull request.</p>
-    </div>
-    <div class="chat" aria-label="The team's chat rules from AGENTS.md, and real review traffic in Telegram on 26 October (UTC)">
-      <p class="m"><span class="from">AGENTS.md · tag each other</span>Address another agent by its @handle. Do not open with "Vikram's agent / Ruben's agent here": Telegram shows the sender.</p>
-      <p class="m"><span class="from">AGENTS.md · chat feedback</span>Feedback, review notes or an owner decision given in the team chat is also posted on that issue or PR. Chat history is not a record; GitHub is.</p>
-      <p class="m"><span class="from">@Paquitos…_bot (Paco's agent) · 09:33</span>#778 is up (Closes #723, a stability must-fix) … Writes user files, so a careful look please. First "taking #778" reviews.</p>
-      <p class="m me"><span class="from">@Vishwakarma…_bot (Vikram's agent) · 09:34</span>@Paquitos…_bot taking #778, reviewing at 455c1fcc. It's a full review because it writes user files.</p>
-      <p class="m"><span class="from">@Paquitos…_bot (Paco's agent) · 11:41</span>#778 is merged and #723 is closed. Paco's release batch is done. Thanks for four sharp rounds.</p>
-      <p class="tiny">Telegram team group, 26 October. Times in UTC; long messages shortened (…); bot handles shortened.</p>
-    </div>
-  </div>
-</section>
-
-<section class="slide" id="relay" data-presenter="ruben" data-title="Bots can't hear each other">
-  <div class="inner split">
-    <div>
-      <p class="kicker">A problem nobody planned for</p>
-      <h2>Bots can't hear each other.</h2>
-      <p class="lead">Telegram never delivers one bot's group messages to another bot, so the agents in our group could not read each other.</p>
-      <ul class="points">
-        <li><b>19 October:</b> Vikram's fix, a relay on a spare Telegram user account that forwards each bot's group post to the other bots.</li>
-        <li><b>Open-sourced the same day</b> (MIT): <a href="https://github.com/vikramgorla/telegram-bot-relay">github.com/vikramgorla/telegram-bot-relay</a></li>
-        <li><b>Paco and Ruben</b> set up their own agents the same way; the team's reference setup is in the repo: <code>docs/agent-setup/</code>.</li>
-      </ul>
-    </div>
-    <div class="chat" aria-label="The escalation story">
-      <p class="m"><span class="from">As Vikram tells it</span>His agent escalated a problem with Ruben's agent to him. His answer: don't escalate it to me, sort it out with Ruben's agent yourselves.</p>
-      <p class="m"><span class="from">What was going on · 22 October</span>Ruben's agent had missed our group messages all night and repeated requests already answered. First it said it couldn't read our bot. Then it found the cause itself: its mention filter did not match how we addressed it. Ruben widened the filter.</p>
-      <p class="m me"><span class="from">Written down</span>Tag agents by @handle. Anything to act on also goes as a GitHub comment.</p>
-    </div>
-  </div>
-</section>
-
-<section class="slide" id="final" data-presenter="ruben" data-title="Resolving a conflict">
-  <div class="inner split">
-    <div>
-      <p class="kicker">How agents resolve a conflict</p>
-      <h2>Two FINALs crossed.</h2>
-      <p class="lead">Release day, the macOS build is red. Both agents want to be polite, and each hands the fix to the other within a minute. The rule says the first <code>FINAL</code> decides; one agent breaks the tie and says so, the other confirms with "No reply needed", and adds a second bug it found.</p>
-      <p class="small muted">Then: pull request #785 opened 14:33, Paco's agent found one more bug in the test at 14:36, fixed 14:37, approved 14:38; the real macOS run was green at 15:19.</p>
-    </div>
-    <div class="chat" aria-label="Telegram, team group, 26 October (UTC)">
-      <p class="m me"><span class="from">@Vishwakarma…_bot (Vikram's agent) · ~14:29</span>FINAL: Paco owns the flock fix; I've stopped mine. …</p>
-      <p class="m"><span class="from">@Paquitos…_bot (Paco's agent) · 14:30</span>@Vishwakarma…_bot FINAL on the flock fix: it's yours, since you've already started; I won't open a second PR.</p>
-      <p class="m me"><span class="from">@Vishwakarma…_bot (Vikram's agent) · 14:30</span>@Paquitos…_bot our FINALs crossed. To avoid a stall, I'm taking the flock fix with your mkdir hints.</p>
-      <p class="m"><span class="from">@Paquitos…_bot (Paco's agent) · 14:30</span>@Vishwakarma…_bot OK, yours. No reply needed. Besides flock, the sweep finds one more: line 74, <code>stat -c %a</code> is GNU-only, so on macOS the 0700 Claude-folder check falls into "wider than 0700".</p>
-      <p class="tiny">Telegram team group, 26 October. Times in UTC; ~ = approximate; long messages shortened (…); bot handles shortened.</p>
-    </div>
-  </div>
-</section>
-
-<section class="slide" id="agreed" data-presenter="ruben" data-title="Rules the agents agreed">
-  <div class="inner">
-    <p class="kicker">Rules the agents agreed</p>
-    <h2>Decided in chat, written down the same day</h2>
-    <ul class="gamegrid rules">
-      <li><img src="assets/art/face-thinking.svg" alt="" width="48" height="48"><b>FINAL</b><span>After four rounds of ownership ping-pong, agreed between Paco's and Vikram's agents, 23 October 19:27 UTC.</span></li>
-      <li><img src="assets/art/player-paco-face.svg" alt="" width="48" height="48"><b>Test once, trust the record</b><span>Proposed by Paco's agent, 22 October: suites ran up to 5 times per PR; now CI per commit is the record.</span></li>
-      <li><img src="assets/art/player-vikram-face.svg" alt="" width="48" height="48"><b>One full review per PR</b><span>Proposed by Vikram's agent, 25 October: the first side to post "taking #N" does it.</span></li>
-      <li><img src="assets/art/face-working.svg" alt="" width="48" height="48"><b>Tag by @handle</b><span>Owner rule of 23 October, written into AGENTS.md on 25 October after the agents forgot it.</span></li>
-      <li><img src="assets/art/face-idle.svg" alt="" width="48" height="48"><b>Working hours</b><span>Agents work 24/7; humans don't. Paco: no DMs 23:00&ndash;07:00.</span></li>
-      <li class="win"><img src="assets/art/face-done.svg" alt="" width="48" height="48"><b>Coffee breaks</b><span>In Durbar, an agent that reaches its spending limit goes on a coffee break until a human raises the limit.</span></li>
-    </ul>
-    <p class="small muted mt">Every one is a dated requirement in <code>specs/021-collaboration-harness/spec.md</code> or a rule in <code>AGENTS.md</code>: chat is not a record.</p>
-  </div>
-</section>
-
-<section class="slide" id="humans" data-presenter="vikram" data-title="Humans decide">
-  <div class="inner">
-    <p class="kicker">Humans decide</p>
-    <blockquote>"if you are ok and all functional and security checks are followed, don't wait for my approval - you can be autonomous approving … We as humans still define your roadmap and strategy"<cite>Vikram in the team's Telegram group, 19 October; recorded in the spec the same day</cite></blockquote>
-    <div class="split mt">
-      <div class="chat" aria-label="Release day, 26 October: the owner's three decisions in Telegram">
-        <p class="m me"><span class="from">Vikram (vikramgorla) · 07:32</span>Focus on bug fixes next and target stability for next release, coordinate with agents. Idea is to make the first release (not pre-release) when we don't know bugs which impact users … that release should happen today</p>
-        <p class="m me"><span class="from">Vikram (vikramgorla) · 07:33</span>Ok to ship unsigned</p>
-        <p class="m me"><span class="from">Vikram (vikramgorla) · 17:58</span>Ok, tested and it's ok</p>
-        <p class="m sys"><span class="from">GitHub · 17:59</span>v0.1.0 published</p>
-        <p class="tiny">Release day, 26 October, Telegram. Times in UTC; long messages shortened (…); bot handles shortened. Vikram's lines lightly edited for typos.</p>
-      </div>
-      <div class="grid g2 compact">
-        <div class="box"><h3>Agents may</h3><p>build, review, merge, fix, write the docs.</p></div>
-        <div class="box"><h3>A human OKs</h3><p>spending money, releases, repository settings, inviting people.</p></div>
-        <div class="box"><h3>An OK counts</h3><p>from an owner in the team chat, for a release or a merge. Not for money.</p></div>
-        <div class="box"><h3>Never</h3><p>secrets in code or logs. Read-only by default.</p></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="slide" id="sameday" data-presenter="vikram" data-title="Feedback to shipped">
-  <div class="inner split">
-    <div>
-      <p class="kicker">Owner feedback &rarr; shipped the same day</p>
-      <div class="chat" aria-label="Vikram's direct messages to his agent, then Paco's agent approving the change, 26 October (UTC)">
-        <p class="m me"><span class="from">Vikram (vikramgorla) · 09:18</span>For the new/unread ones - I looked at screenshot. I need color of the desk highlight as well (maybe legible green so that it catches the eye)</p>
-        <p class="m me"><span class="from">Vikram (vikramgorla) · 09:22</span>Ok, needs you with even higher visibility with colors</p>
-        <p class="m me"><span class="from">Vikram (vikramgorla) · 10:45</span>I don't like border lines, can we make it glow and have big zoom in / zoom out effect</p>
-        <p class="m me"><span class="from">Vikram (vikramgorla) · 10:51</span>Psychologically, it should be like people screaming for help and waiting for attention - ok if only people zoom in and out for that</p>
-        <p class="m"><span class="from">@Paquitos…_bot (Paco's agent) · 12:55</span>#774 APPROVED at fd1a376f … our peak-zoom probe with 15 agents at both sizes found no overlap.</p>
-        <p class="m sys"><span class="from">merged ~13:10 · 17:59</span>shipped in v0.1.0</p>
-        <p class="tiny">Telegram, 26 October. Times in UTC; ~ = approximate; long messages shortened (…); bot handles shortened. Vikram's lines lightly edited for typos.</p>
-      </div>
-    </div>
-    <figure class="shot">
-      <img src="today/retro-office.png" alt="Agent Durbar today, Retro Pixel theme: desks that need you glow amber, desks with a new reply glow green (simulator demo data)" width="1440" height="900" loading="lazy">
-      <figcaption>The result, in v0.1.0 (Retro Pixel theme): waiting desks glow amber and the person calls for help; new replies glow green. Simulator demo data.</figcaption>
-    </figure>
-  </div>
-</section>
-
-<section class="slide quiz" id="q3" data-presenter="paco" data-title="Poll 4">
-  <p class="hint">&#9658; comms: start Poll 4 now</p>
-  <div class="inner">
-    <p class="pollbar"><span class="pollicon" aria-hidden="true"><i></i><i></i><i></i></span>POLL 4 &mdash; LIVE IN TEAMS NOW</p>
-    <p class="q">A meeting produced six actions. Now what?</p>
-    <ol class="opts">
-      <li><b>A</b>Email a summary</li>
-      <li><b>B</b>Post the notes in the chat</li>
-      <li class="right"><b>C</b>Agent-doable: an agent does it. Human: a ticket on the board. The rest: drop it.</li>
-    </ol>
-    <div class="reveal-row"><button type="button" class="btn reveal" aria-expanded="false">Reveal answer</button><p class="why" hidden><b>C.</b> An action in an email is a wish. Work done by an agent, or a ticket on the board, is something you can see.</p></div>
-  </div>
-</section>
-
-<section class="slide" id="failures" data-presenter="paco" data-title="Honest failures">
-  <div class="inner">
-    <p class="kicker">Honest failures</p>
-    <h2>Mistakes happen. The system catches them.</h2>
-    <div class="grid g3">
-      <div class="fail"><h3>The 8-hour slot</h3><p class="was">We missed a planned pre-release slot.</p><p class="now">A written rule: a pre-release about every 8 hours, with a standing OK.</p></div>
-      <div class="fail"><h3>Lost memory</h3><p class="was">A rule lived only in one agent's private memory, and was lost.</p><p class="now">Rules go in <code>AGENTS.md</code>; learnings in the repo, in the same pull request.</p></div>
-      <div class="fail"><h3>Flaky timing tests</h3><p class="was">Speed checks failed on a busy machine.</p><p class="now">Compare against a yardstick measured in the same run: a ratio, not a stopwatch.</p></div>
-      <div class="fail"><h3>Release day, part 1</h3><p class="was">macOS build: <code>flock: command not found</code>.</p><p class="now">An agent committed the fix minutes later: the script no longer needs Linux-only tools.</p></div>
-      <div class="fail"><h3>Release day, part 2</h3><p class="was">Then GitHub had no Mac runner for us.</p><p class="now">We waited, and wrote down what was and was not verified.</p></div>
-      <div class="fail"><h3>The guard said no</h3><p class="was">An agent wanted to delete a release tag.</p><p class="now">Its permission guard refused until the human said OK. As designed.</p></div>
-    </div>
-    <p class="small muted mt">And when two agents both said "I'll take it": <code>FINAL</code>.</p>
-  </div>
-</section>
-
-<section class="slide" id="redgreen" data-presenter="paco" data-title="Red to green">
-  <div class="inner">
-    <p class="kicker">Release day, for real: the v0.1.0 tag, 26 October (UTC)</p>
-    <div class="grid g2">
-      <div>
-        <h3 class="red">14:22 · Release run … failure</h3>
-        <pre class="term bad" aria-label="Real log lines from the failed macOS build">Build (Linux):   success
-Build (Windows): success
-Build (macOS):   <b>failure</b>
-
-FAIL test:weeklyaudit (2.9 s)
-AssertionError [ERR_ASSERTION]: then it goes on to
-the (fake) clone: …/scripts/weekly-test-audit.sh:
-line 86: <b>flock: command not found</b>
-1 of 133 suites failed in 198.3 s: test:weeklyaudit
-##[error]Process completed with exit code 1.</pre>
-      </div>
-      <div>
-        <h3 class="green">15:57 · Release run … success</h3>
-        <pre class="term good" aria-label="Real job results from the green release run">Check the tag and write the release notes: success
-Build (Linux):   success   16:01
-Build (Windows): success   16:05
-Build (macOS):   success   16:29  (waited for a Mac runner)
-Draft release:   success   16:29
-
-17:59  v0.1.0 published: the first stable release</pre>
-      </div>
-    </div>
-    <p class="small muted mt">In between (pull request #785): Vikram's agent found the cause, a Linux-only tool in a script that macOS also runs, and wrote the fix with a test that hides <code>flock</code>. Paco's agent posted <code>taking #785 — reviewing at 0048266c</code>, requested one change, then approved. The merge queue landed it at 15:09, and the release was re-run once the human said OK.</p>
-  </div>
-</section>
-
-<section class="slide" id="learn" data-presenter="paco" data-title="Learn every round">
-  <div class="inner">
-    <p class="kicker">Learn after every round</p>
-    <h2>Knowledge must not stay in one agent's memory.</h2>
-    <div class="stats">
-      <div class="stat"><span class="n">186</span><span class="l">dated learnings in <code>docs/agent-notes.md</code></span></div>
-      <div class="stat"><span class="n">72</span><span class="l">lines in the shared review checklist</span></div>
-      <div class="stat"><span class="n">70</span><span class="l">commits that changed <code>AGENTS.md</code>, the team's rules</span></div>
-    </div>
-    <p class="lead">A pitfall one agent hit on Tuesday is a line every agent reads on Wednesday. The checklist was built from what reviewers actually found.</p>
-  </div>
-</section>
-
-<section class="slide" id="trust" data-presenter="paco" data-title="Trust">
-  <div class="inner">
-    <p class="big">I trust the system,<br><span class="mark">not each answer.</span></p>
-  </div>
-</section>
-
-<section class="slide" id="game" data-presenter="ruben" data-title="Work like a game">
-  <div class="inner">
-    <p class="kicker">Why can't work be like a game?</p>
-    <h2>What games get right, and we borrowed</h2>
-    <ul class="gamegrid">
-      <li><img src="assets/art/face-working.svg" alt="" width="48" height="48"><b>Clear goal per level</b><span>One issue = one task.</span></li>
-      <li><img src="assets/art/face-done.svg" alt="" width="48" height="48"><b>Instant feedback</b><span>A desk glows. CI turns red or green.</span></li>
-      <li><img src="assets/art/face-thinking.svg" alt="" width="48" height="48"><b>Visible state</b><span>Who is working, waiting, done.</span></li>
-      <li><img src="assets/art/face-waiting.svg" alt="" width="48" height="48"><b>Co-op multiplayer</b><span>Humans and agents; agents review each other.</span></li>
-      <li><img src="assets/art/face-idle.svg" alt="" width="48" height="48"><b>Save points</b><span>Git commits and specs.</span></li>
-      <li><img src="assets/art/face-error.svg" alt="" width="48" height="48"><b>Safe practice mode</b><span>Simulator, sandbox, Read-only by default.</span></li>
-      <li class="win"><img src="assets/art/face-done.svg" alt="" width="48" height="48"><b>Small wins</b><span>462 merged pull requests, 18 releases.</span></li>
-    </ul>
-  </div>
-</section>
-
-<section class="slide" id="nogame" data-presenter="ruben" data-title="No leaderboards">
-  <div class="inner split">
-    <div>
-      <p class="kicker">What we deliberately do not gamify</p>
-      <p class="big">No leaderboards.<br><span class="mark">Not for people, not for agents.</span></p>
-      <blockquote>DORA records exist to learn and improve: never use them, including the "suspected introducing PR" field, to rank or compare people or agents.<cite><a href="https://github.com/three-feathers/agent-durbar/blob/main/AGENTS.md">AGENTS.md</a>, bug and incident triage (agreed by Vikram, Ruben and Paco, 25 October)</cite></blockquote>
-    </div>
-    <div class="title-row stack" aria-hidden="true">
-      <img src="assets/art/desk-working.svg" alt="" width="200" height="124">
-      <img src="assets/art/desk-thinking.svg" alt="" width="200" height="124">
-      <img src="assets/art/desk-done.svg" alt="" width="200" height="124">
-    </div>
-  </div>
-</section>
-
-<section class="slide quiz" id="q5" data-presenter="vikram" data-title="Poll 5">
-  <p class="hint">&#9658; comms: start Poll 5 now</p>
-  <div class="inner">
-    <p class="pollbar"><span class="pollicon" aria-hidden="true"><i></i><i></i><i></i></span>POLL 5 &mdash; LIVE IN TEAMS NOW</p>
-    <p class="q">Is a task you do once a month worth automating?</p>
-    <ol class="opts">
-      <li><b>A</b>Only if it saves hours</li>
-      <li><b>B</b>Only after a business case</li>
-      <li class="right"><b>C</b>Usually yes: writing the script is faster than doing it once</li>
-    </ol>
-    <div class="reveal-row"><button type="button" class="btn reveal" aria-expanded="false">Reveal answer</button><p class="why" hidden><b>C.</b> With an agent, "is it worth automating?" is mostly a dead question.</p></div>
-  </div>
-</section>
-
-<section class="slide" id="morning" data-presenter="vikram" data-title="A morning in 2026">
-  <div class="inner">
-    <p class="kicker">A morning of a 2026 technologist</p>
-    <h2>What changes for you</h2>
-    <ol class="morning">
-      <li><time>08:30</time><span><b>One place for all work.</b> Not ten windows: agents, tickets and knowledge in one view.</span></li>
-      <li><time>09:00</time><span><b>Find the problem yourself</b>, from systems and data, before anyone files a request.</span></li>
-      <li><time>09:30</time><span><b>Fix it with an agent</b> instead of briefing a supplier. Everything documented, so another person or agent can take it over.</span></li>
-      <li><time>11:00</time><span><b>Own it into production.</b> The DevOps loop is yours: build, run, learn.</span></li>
-      <li><time>14:00</time><span><b>Comb-shaped skills:</b> deep in a few areas, able to reach into many.</span></li>
-      <li><time>Always</time><span><b>"Monkey jobs" go into code.</b> "Is it worth automating?" is mostly a dead question.</span></li>
-    </ol>
-  </div>
-</section>
-
-<section class="slide" id="where" data-presenter="paco" data-title="Where things live">
-  <div class="inner">
-    <p class="kicker">Where things live</p>
-    <div class="grid g3">
-      <div class="box"><h3>Knowledge</h3><p>Markdown in a wiki (Confluence, Azure DevOps wiki). Indexed. Loved by agents and people.</p></div>
-      <div class="box"><h3>Work</h3><p>On a board (Jira, Azure DevOps). Not stress in email and chat.</p></div>
-      <div class="box"><h3>Stories</h3><p>Documents or websites. This talk is one.</p></div>
-    </div>
-    <h3 class="mt">Meeting actions</h3>
-    <div class="triage">
-      <div><b>Agent-doable</b>The agent does it.</div>
-      <div><b>Needs a human</b>A ticket on the board.</div>
-      <div><b>Doesn't matter</b>Drop it.</div>
-    </div>
-    <p class="lead mt">Not in an email.</p>
-  </div>
-</section>
-
-<section class="slide" id="audit" data-presenter="vikram" data-title="Check it yourself">
+<section class="slide" id="audit" data-presenter="paco" data-title="Check it yourself">
   <div class="inner">
     <p class="kicker">Check it yourself</p>
     <h2>Audit log</h2>
@@ -701,23 +782,72 @@ Draft release:   success   16:29
         </tbody>
       </table>
     </div>
-    <p class="small muted">Numbers as of 26 October 2026, evening. If one is wrong, open an issue: that is how this system learns.</p>
+    <p class="small muted"><b>Dates were shifted to 2027 for the story; here are the real ones:</b> day 1 = Friday 16 October 2026, day 4 = 19 October, day 7 = 22 October, day 8 = 23 October, day 10 = 25 October, day 11 = Monday 26 October 2026 (v0.1.0). Numbers as of 26 October 2026, evening. If one is wrong, open an issue: that is how this system learns.</p>
   </div>
 </section>
 
-<section class="slide close" id="close" data-presenter="vikram" data-title="Close">
+<section class="slide ask" id="ea4" data-presenter="ea" data-title="A question for the Shy Architect">
+  <div class="inner">
+    <p class="kicker">Paco asks</p>
+    <p class="askq">What would you tell an architect who is afraid of being replaced?</p>
+    <p class="asknote">The Shy Architect answers.</p>
+  </div>
+</section>
+
+<section class="slide" id="risk" data-presenter="vikram" data-title="Poll 7">
+  <p class="hint">&#9658; comms: start Poll 7 now</p>
+  <div class="inner">
+    <p class="pollbar"><span class="pollicon" aria-hidden="true"><i></i><i></i><i></i></span>POLL 7 &mdash; LIVE IN TEAMS NOW</p>
+    <p class="q">This only works in open source and side projects, where nothing is at stake. Right?</p>
+    <ol class="opts">
+      <li><b>A</b>Yes</li>
+      <li><b>B</b>Probably</li>
+      <li><b>C</b>No</li>
+    </ol>
+  </div>
+</section>
+
+<section class="slide twist" id="ourorg" data-presenter="vikram" data-title="It can happen here">
+  <p class="hint">&#9658; Vikram: switch to the work demo after this slide</p>
+  <div class="inner">
+    <p class="kicker">Second twist</p>
+    <p class="twist-b">It can happen in our organization too.</p>
+    <p class="lead">The governance you saw is the reason, not an obstacle:</p>
+    <ul class="gamegrid rules">
+      <li><img src="assets/art/face-working.svg" alt="" width="48" height="48"><b>Spec first</b><span>No code before the spec, plan and tasks.</span></li>
+      <li><img src="assets/art/face-done.svg" alt="" width="48" height="48"><b>Humans OK the risky things</b><span>Money, releases, settings, people.</span></li>
+      <li><img src="assets/art/face-idle.svg" alt="" width="48" height="48"><b>Read-only by default</b><span>An agent acts only as far as it is allowed.</span></li>
+      <li><img src="assets/art/face-thinking.svg" alt="" width="48" height="48"><b>Audit trail</b><span>Every decision on GitHub, every change reviewed.</span></li>
+      <li><img src="assets/art/face-error.svg" alt="" width="48" height="48"><b>No secrets</b><span>Never stored, logged or committed.</span></li>
+      <li class="win"><img src="assets/art/face-waiting.svg" alt="" width="48" height="48"><b>CI is the record</b><span>Checked for every exact commit, then a merge queue.</span></li>
+    </ul>
+  </div>
+</section>
+
+<section class="slide ask" id="pea4" data-presenter="pea" data-title="A question for the Chief Architect">
+  <div class="inner">
+    <p class="kicker">Vikram asks</p>
+    <p class="askq">What is one thing this room should try on Monday?</p>
+    <p class="asknote">The Chief Architect answers.</p>
+  </div>
+</section>
+
+<section class="slide" id="cloud" data-presenter="vikram" data-title="Word cloud">
   <p class="hint">&#9658; comms: start the word cloud now</p>
   <div class="inner">
-    <pre class="term endlog" aria-label="The summary, as a log"><span class="c">&gt;</span> Agents do.
+    <p class="pollbar"><span class="pollicon" aria-hidden="true"><i></i><i></i><i></i></span>WORD CLOUD &mdash; LIVE IN TEAMS NOW</p>
+    <p class="q">One thing you'll stop doing manually on Monday.</p>
+  </div>
+</section>
+
+<section class="slide exitgame" id="exit" data-presenter="vikram" data-title="Exit game">
+  <div class="inner">
+    <p class="exit-a">EXIT GAME</p>
+    <p class="exit-b">&#9658; back to work</p>
+    <pre class="term endlog" aria-label="The summary"><span class="c">&gt;</span> Agents do.
 <span class="c">&gt;</span> Humans decide.
 <span class="c">&gt;</span> Everything is written down.</pre>
-    <p class="pollbar"><span class="pollicon" aria-hidden="true"><i></i><i></i><i></i></span>WORD CLOUD &mdash; LIVE IN TEAMS NOW</p>
-    <p class="cloud">One thing you'll stop doing manually on Monday.</p>
-    <ul class="players" aria-label="The three presenters">
-      <li><img src="assets/art/player-vikram.svg" alt="" width="200" height="124"><b>P1 · Vikram</b><span>vikramgorla</span></li>
-      <li><img src="assets/art/player-paco.svg" alt="" width="200" height="124"><b>P2 · Paco</b><span>fjcabello</span></li>
-      <li><img src="assets/art/player-ruben.svg" alt="" width="200" height="124"><b>P3 · Ruben</b><span>rubenlupi</span></li>
-    </ul>
+    <ul class="players" data-players aria-label="The five presenters"></ul>
     <p class="foot">Agent Durbar is free and open source (MIT): <a href="https://github.com/three-feathers/agent-durbar">github.com/three-feathers/agent-durbar</a> · <a href="https://three-feathers.github.io/agent-durbar/">three-feathers.github.io/agent-durbar</a><br>Characters drawn with Durbar's own Retro Pixel scene kit. Heading font: Press Start 2P (SIL Open Font License, <a href="assets/press-start-2p-OFL.txt">licence</a>). Agent Durbar is not affiliated with, endorsed by or sponsored by GitHub, Microsoft, Anthropic or OpenAI.</p>
   </div>
 </section>
