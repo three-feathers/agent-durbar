@@ -1623,10 +1623,25 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
    corner under the chat number (the draft pencil moves up beside the number); inline on a plain desk, list row and strip item. One pulse when it is set, only when motion is allowed. */
 .unread-mark{flex:none;display:inline-flex;align-items:center;gap:4px;margin-right:5px;padding:0 5px;border:1px solid var(--pc-working);border-radius:4px;background:var(--pb-working);color:var(--pc-working);font-size:11px;font-weight:700;line-height:14px;vertical-align:1px;white-space:nowrap}
 .unread-mark i{display:block;width:6px;height:6px;border-radius:50%;background:var(--pc-working)}
-/* FR-178 (owner request 2026-10-26): the desk outline is a clear green, 3px, so a new reply catches the eye. A desk that needs you (waiting, failing,
-   retrying, error) keeps its own highlight: the green outline is not drawn there, the badge stays. */
-.desk.is-waiting{outline:4px solid var(--desk-needs);outline-offset:-4px} /* FR-178: a desk that needs you gets the strongest highlight (4px amber-orange, still, no animation); it wins over New */
-.desk.is-unread:not(.is-waiting):not(.is-failing):not(.is-retrying):not(.is-error){outline:3px solid var(--desk-new);outline-offset:-3px}
+/* FR-178 (owner request 2026-10-26; 10:45 no outline, a glow instead; 10:51 only the person zooms, never the card). A desk that needs you glows amber-orange (--desk-needs),
+   a desk with a New reply glows green (--desk-new); needs you wins (green is not drawn on a waiting, failing, retrying or error desk; the badge stays). The glow is a box-shadow
+   halo on the desk's ::after: the card keeps its own shadows, selection ring, state bar and size. The drawn person (.pp) calls for attention: three entry pulses (class .hl-in, the
+   first 1.9 s), then a continuing smaller pulse, from the seat (transform-origin at the chair, so the figure "jumps up" and stays in its card). Only transform and opacity are
+   animated. prefers-reduced-motion: reduce gives the static glow only (no scale, no breathe). */
+.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)){--hl:var(--desk-new);--hl-e:1.15;--hl-b:1.05;--hl-p:2.4s}
+.desk.is-waiting{--hl:var(--desk-needs);--hl-e:1.25;--hl-b:1.1;--hl-p:1.6s}
+.desk.is-waiting,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)){isolation:isolate} /* the glow layer sits behind the card's content inside the card, above the room */
+.desk.is-waiting::after,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error))::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:-1;box-shadow:0 0 6px 2px color-mix(in srgb,var(--hl) 90%,transparent),0 0 24px 8px color-mix(in srgb,var(--hl) 60%,transparent)}
+.desk.is-waiting .pp,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)) .pp{transform-box:view-box;transform-origin:74px 99px}
+@media (prefers-reduced-motion:no-preference){
+  .desk.is-waiting .pp,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)) .pp{animation:hl-breathe var(--hl-p) ease-in-out infinite}
+  .desk.hl-in.is-waiting .pp,.desk.hl-in.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)) .pp{animation:hl-enter .6s ease-in-out 3,hl-breathe var(--hl-p) ease-in-out 1.8s infinite}
+  .desk.is-waiting::after,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error))::after{animation:hl-glow var(--hl-p) ease-in-out infinite}
+}
+html.hl-still .desk .pp,html.hl-still .desk::after{animation:none!important} /* simulator drivers only (see app.js): the glow stays, the person holds still */
+@keyframes hl-enter{0%,100%{transform:scale(1)}50%{transform:scale(var(--hl-e,1.15))}}
+@keyframes hl-breathe{0%,100%{transform:scale(1)}50%{transform:scale(var(--hl-b,1.05))}}
+@keyframes hl-glow{0%,100%{opacity:.7}50%{opacity:1}}
 .stage .desk.card .unread-mark{position:absolute;left:2px;top:20px;margin:0;z-index:4;box-shadow:0 0 0 1px var(--card)}
 .stage .desk.card.is-unread .draft-mark{left:36px;top:2px} /* both on one desk: the pencil moves up beside the chat number (the name starts further right) */
 .lname .unread-mark{margin-right:6px}

@@ -28,7 +28,7 @@ module.exports = async (ctx) => {
   const turn = (id, text) => js(`(()=>{const E=e=>window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:${jsLiteral(id)}},e));E({type:'status',status:'working',intent:'Working'});E({type:'output',final:true,text:${jsLiteral(text || 'All done.')}});E({type:'status',status:'idle'});})()`);
   const idleAgain = (id) => js(`(()=>{const E=e=>window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:${jsLiteral(id)}},e));E({type:'output',final:false,delta:' more'});E({type:'status',status:'idle'});})()`);
   const marks = () => js(`[...document.querySelectorAll('#stage .unread-mark')].map(m=>m.closest('[data-id]').dataset.id).sort().join(',')`);
-  const info = (id) => js(`(()=>{const d=document.querySelector(${jsLiteral(sel(id))});if(!d)return null;const m=d.querySelector('.unread-mark');return {cls:d.className,state:d.dataset.state,label:d.getAttribute('aria-label')||'',mark:!!m,text:m?m.textContent.trim():'',tip:m?m.title:'',font:m?parseFloat(getComputedStyle(m).fontSize):0,outline:getComputedStyle(d).outlineStyle,oColor:getComputedStyle(d).outlineColor,oWidth:getComputedStyle(d).outlineWidth,aria:m?m.getAttribute('aria-hidden'):''}})()`);
+  const info = (id) => js(`(()=>{const d=document.querySelector(${jsLiteral(sel(id))});if(!d)return null;const m=d.querySelector('.unread-mark');return {cls:d.className,state:d.dataset.state,label:d.getAttribute('aria-label')||'',mark:!!m,text:m?m.textContent.trim():'',tip:m?m.title:'',font:m?parseFloat(getComputedStyle(m).fontSize):0,outline:getComputedStyle(d).outlineStyle,oWidth:getComputedStyle(d).outlineWidth,aOutline:getComputedStyle(d,'::after').outlineStyle,glow:getComputedStyle(d,'::after').boxShadow,anim:(d.querySelector('.pp')?getComputedStyle(d.querySelector('.pp')).animationName:'no-pp'),cardAnim:getComputedStyle(d).animationName,gAnim:getComputedStyle(d,'::after').animationName,aria:m?m.getAttribute('aria-hidden'):''}})()`);
   const done = () => js(`+document.querySelector('#stats .stat[data-k=done] b').textContent`);
   const anns = () => js(`window.__ann.filter(t=>/New reply/.test(t))`);
   const strip = (id) => '.sitem[data-sw="' + id + '"] .unread-mark'; // the chat strip's marker of one session (a selector, put into page code with jsLiteral)
@@ -38,11 +38,13 @@ module.exports = async (ctx) => {
   // the colour --desk-new as the browser computes it (rgb), read through a probe so a theme or a fallback cannot hide a wrong value
   const green = () => js(`(()=>{const p=document.createElement('i');p.style.color='var(--desk-new)';document.body.appendChild(p);const c=getComputedStyle(p).color;p.remove();return c;})()`);
   const needsC = () => js(`(()=>{const p=document.createElement('i');p.style.color='var(--desk-needs)';document.body.appendChild(p);const c=getComputedStyle(p).color;p.remove();return c;})()`);
+  // the glow colour as the browser serialises it (the tight halo of --desk-new / --desk-needs), so the box-shadow can be searched for it
+  const glowOf = (tok) => js(`(()=>{const p=document.createElement('i');p.style.color='color-mix(in srgb,var('+${jsLiteral(tok)}+') 90%,transparent)';document.body.appendChild(p);const c=getComputedStyle(p).color;p.remove();return c;})()`);
   const A = 'sim-7', B = 'sim-13', C = 'sim-15'; // Priya (idle, folder with others at work), Hugo (idle, likewise), Maya (Done, on the couch)
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     const tag = `${w}x${h}`;
-    await H.load({ w, h });
+    await H.load({ w, h, query: { hlmotion: '1' } });
     await H.calm({ blur: true });
     await js(`(()=>{window.__ann=[];new MutationObserver(()=>{const t=document.getElementById('srAnnounce').textContent;if(t)window.__ann.push(t);}).observe(document.getElementById('srAnnounce'),{childList:true,characterData:true,subtree:true});})()`);
     assert.strictEqual(await marks(), '', `${tag}: nothing is unread at start (the simulator's start-up script is history)`);
@@ -52,18 +54,22 @@ module.exports = async (ctx) => {
     // a completion while the office is shown
     await turn(A, 'Priya finished the migration.');
     await ok(`!!document.querySelector(${jsLiteral(sel(A) + ' .unread-mark')})`, `${tag}: Priya's desk is marked`);
+    // three entry pulses at once, a slow breathe after (clock-free: the class and the computed animation, not a timer)
+    await ok(`(()=>{const d=document.querySelector(${jsLiteral(sel(A))});const p=d&&d.querySelector('.pp');return !!p&&d.classList.contains('hl-in')&&getComputedStyle(p).animationName.split(',')[0].trim()==='hl-enter'&&getComputedStyle(p).animationIterationCount.split(',')[0].trim()==='3'&&getComputedStyle(d,'::after').animationName==='hl-glow'})()`, `${tag}: the person of a new reply zooms in three entry pulses, and the glow breathes`);
+    assert.strictEqual((await info(A)).cardAnim, 'none', `${tag}: the desk card itself never zooms`);
     await H.settle();
     let a = await info(A);
     assert.strictEqual(a.text, 'New', `${tag}: the badge has the word New: ${a.text}`);
     assert.ok(a.font >= 10.5, `${tag}: badge text is at least 10.5px: ${a.font}`);
     assert.strictEqual(a.state, 'done', `${tag}: the shown state is still Done`);
     assert.ok(!/\bshut\b/.test(a.cls) && /\bis-unread\b/.test(a.cls), `${tag}: an unread finished desk keeps its desk: ${a.cls}`);
-    assert.notStrictEqual(a.outline, 'none', `${tag}: the desk has an outline`);
+    assert.ok(a.outline === 'none' || a.oWidth === '0px', `${tag}: no outline on the unread desk (a glow instead): ${a.outline} ${a.oWidth}`);
     const G = await green();
     assert.ok(/^rgb\(/.test(G) && G !== 'rgb(0, 0, 0)', `${tag}: --desk-new is a colour: ${G}`);
-    assert.strictEqual(a.oColor, G, `${tag}: the unread desk's outline is the green: ${a.oColor} vs ${G}`);
-    assert.strictEqual(a.oWidth, '3px', `${tag}: and 3px wide: ${a.oWidth}`);
-    const gm = G.match(/\d+/g).map(Number); assert.ok(gm[1] > gm[0] && gm[1] > gm[2], `${tag}: the highlight is green (g above r and b): ${G}`);
+    const gm = G.match(/\d+/g).map(Number); assert.ok(gm[1] > gm[0] && gm[1] > gm[2], `${tag}: the glow colour is green (g above r and b): ${G}`);
+    assert.strictEqual(a.aOutline, 'none', `${tag}: no outline on the glow layer`);
+    const GG = await glowOf('--desk-new');
+    assert.ok(a.glow.includes(GG), `${tag}: the unread desk glows in --desk-new: ${a.glow} vs ${GG}`);
     assert.ok(/, new reply not read yet\b/.test(a.label), `${tag}: the accessible name says it: ${a.label}`);
     assert.strictEqual(a.tip, 'New reply, not read yet', `${tag}: tooltip`);
     assert.strictEqual(a.aria, 'true', `${tag}: the badge is hidden from the reader (the name carries the words)`);
@@ -105,15 +111,22 @@ module.exports = async (ctx) => {
     await ok(`!!document.querySelector(${jsLiteral(sel(A) + '[data-state=\"waiting\"]')})`, `${tag}: Priya asks for permission`);
     const wt = await info(A);
     assert.ok(wt.mark && /\bis-unread\b/.test(wt.cls), `${tag}: still marked New while waiting: ${wt.cls}`);
-    assert.ok(wt.oColor !== G || wt.outline === 'none', `${tag}: the waiting desk does not get the green outline: ${wt.outline} ${wt.oColor}`);
     const NC = await needsC();
     assert.ok(NC !== G && /^rgb\(/.test(NC), `${tag}: the needs-you colour is its own: ${NC} vs ${G}`);
-    assert.strictEqual(wt.oColor, NC, `${tag}: a desk that needs you has the strong amber outline: ${wt.oColor} vs ${NC}`);
-    assert.strictEqual(wt.oWidth, '4px', `${tag}: 4px, wider than New's 3px: ${wt.oWidth}`);
+    const NG = await glowOf('--desk-needs');
+    assert.ok(wt.glow.includes(NG) && !wt.glow.includes(GG), `${tag}: a desk that needs you glows amber and not green: ${wt.glow}`);
+    assert.ok(wt.outline === 'none' || wt.oWidth === '0px', `${tag}: no outline on the waiting desk: ${wt.outline} ${wt.oWidth}`);
+    // a permission wait sends the person to the Boss (the desk then shows an empty chair and no figure): glow only on the desk; a person still at the desk zooms
+    assert.ok(wt.anim === 'no-pp' || /hl-enter|hl-breathe/.test(wt.anim), `${tag}: a person at a waiting desk zooms: ${wt.anim}`);
+    assert.strictEqual(wt.cardAnim, 'none', `${tag}: the waiting desk card itself never zooms`);
     await js(`window.__durbarSimEmit({timestamp:Date.now(),sessionId:${jsLiteral(A)},type:'status',status:'working',intent:'Working'})`);
     await js(`window.__durbarSimEmit({timestamp:Date.now(),sessionId:${jsLiteral(A)},type:'status',status:'idle'})`);
     await ok(`!!document.querySelector(${jsLiteral(sel(A) + '[data-state=\"done\"]')})`, `${tag}: Priya is Done again after the question`);
-    assert.strictEqual((await info(A)).oColor, G, `${tag}: and the green outline is back`);
+    assert.ok((await info(A)).glow.includes(GG), `${tag}: and the green glow is back`);
+    // every Waiting desk glows amber, including Limit reached (and Coffee break when one is on the floor): the amber treatment is one rule on .is-waiting
+    const wd = await js(`[...document.querySelectorAll('#stage .desk[data-id]')].map(d=>({w:(d.querySelector('.pill,.stl')||{}).textContent||'',c:d.className,g:getComputedStyle(d,'::after').boxShadow}))`);
+    assert.ok(wd.some((x) => /Limit reached/.test(x.w)), `${tag}: the simulator has a Limit reached desk`);
+    for (const x of wd.filter((y) => /Limit reached|Coffee break/.test(y.w))) assert.ok(/\bis-waiting\b/.test(x.c) && x.g.includes(NG), `${tag}: "${x.w.trim()}" is a needs-you desk and glows amber: ${x.c} ${x.g}`);
     if (process.env.OUT) await H.shot(path.join(OUT, `001-unread-${tag}.png`), { prep: 'calm', blur: true, settle: true });
 
     // the Browser tab and the Notes drawer are not "shown"
@@ -126,7 +139,7 @@ module.exports = async (ctx) => {
     assert.ok(['done', 'idle'].includes(a.state), `${tag}: and its state is the one it had (the simulator answers an opened chat with Ready): ${a.state}`);
     assert.strictEqual(await marks(), B, `${tag}: only Hugo is unread now`);
     assert.ok(/\brest-recent\b/.test(a.cls), `${tag}: on the couch (finished a moment ago): ${a.cls}`);
-    assert.ok(!/\bis-unread\b/.test(a.cls) && a.oColor !== G, `${tag}: read: no green outline: ${a.cls} ${a.oColor}`);
+    assert.ok(!/\bis-unread\b/.test(a.cls) && !a.glow.includes(GG), `${tag}: read: no green glow: ${a.cls}`);
 
     // Mark as read from the keyboard: Shift+F10 on the focused desk
     await js(`document.querySelector(${jsLiteral(sel(B))}).focus()`);
@@ -218,6 +231,14 @@ module.exports = async (ctx) => {
     // all 15 unread: the page rules hold (no overlap, text at least 10.5px)
     await js(`window.__durbarSimUi.agents().filter(x=>!x.parent).forEach(x=>{const E=e=>window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:x.id},e));E({type:'status',status:'working',intent:'Working'});E({type:'status',status:'idle'});})`);
     await ok(`document.querySelectorAll('#stage .unread-mark').length===15`, `${tag}: all 15 are unread`, 8000);
+    // while 15 desks pulse (entry, then breathe) nothing overflows the page and no desk moves in the layout: sampled in the page for 1.4 s, then the breathe is checked
+    const mot = await js(`new Promise(r=>{let ow=0,oh=0,n=0,t0=performance.now(),scaled=0,cardMoved=0;const f=()=>{const e=document.documentElement;ow=Math.max(ow,e.scrollWidth-innerWidth);oh=Math.max(oh,e.scrollHeight-innerHeight);for(const d of document.querySelectorAll('#stage .desk[data-id]')){const c=getComputedStyle(d).transform;if(c&&c!=='none'&&c!=='matrix(1, 0, 0, 1, 0, 0)'&&!d.matches(':hover'))cardMoved++;const p=d.querySelector('.pp');const m=p?getComputedStyle(p).transform:'none';if(m&&m!=='none'&&m!=='matrix(1, 0, 0, 1, 0, 0)')scaled++;}n++;if(performance.now()-t0<1400)setTimeout(f,60);else r({ow,oh,n,scaled,cardMoved});};f();})`);
+    assert.ok(mot.ow <= 0 && mot.oh <= 0, `${tag}: the pulses scroll the page: ${JSON.stringify(mot)}`);
+    assert.ok(mot.scaled > 0, `${tag}: the people really zoom while sampled: ${JSON.stringify(mot)}`);
+    assert.strictEqual(mot.cardMoved, 0, `${tag}: no desk card is scaled or moved by the pulses: ${JSON.stringify(mot)}`);
+    await ctx.sleep(1200);
+    assert.ok(/hl-breathe/.test((await info(A)).anim), `${tag}: after the entry pulses the desk breathes: ${(await info(A)).anim}`);
+    await js(`document.documentElement.classList.add('hl-still')`); // the page rules below measure boxes: no zoom may be mid-way (FR-178; drivers load frozen)
     await H.settle(); await H.settleWalk(); // the figures that went to a place and back have arrived
     const probs = (await js(`(${pageCheck.toString()})(false, 5)`)).problems;
     assert.ok(await js(`!!document.querySelector(${jsLiteral(sel('sim-3') + ' .draft-mark')})&&!!document.querySelector(${jsLiteral(sel('sim-3') + ' .unread-mark')})`), `${tag}: sim-3 has both the pencil and the badge`);
@@ -236,12 +257,15 @@ module.exports = async (ctx) => {
     if (!dbg.isAttached()) dbg.attach('1.3');
     try {
       await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
-      await H.load({ w: 1440, h: 900 });
+      await H.load({ w: 1440, h: 900, query: { hlmotion: '1' } });
       assert.ok(await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`), 'reduced motion is on');
       await turn(B, 'Hugo, reduced motion.');
       await ok(`!!document.querySelector(${jsLiteral(sel(B) + ' .unread-mark')})`, 'reduced motion: the marker is there');
       const m = await js(`(()=>{const e=document.querySelector(${jsLiteral(sel(B) + ' .unread-mark')});const s=getComputedStyle(e);return {fresh:e.classList.contains('fresh'),anim:s.animationName,text:e.textContent.trim()}})()`);
       assert.deepStrictEqual(m, { fresh: false, anim: 'none', text: 'New' }, 'reduced motion: static badge, same words: ' + JSON.stringify(m));
+      const rd = await info(B); 
+      assert.ok(rd.glow !== 'none' && rd.glow.includes(await glowOf('--desk-new')), 'reduced motion: the glow is still there: ' + rd.glow);
+      assert.ok(rd.anim === 'none' && rd.gAnim === 'none' && (await js(`getComputedStyle(document.querySelector(${jsLiteral(sel(B) + ' .pp')})).transform`)) === 'none', 'reduced motion: no zoom and no breathe: ' + rd.anim + ' / ' + rd.gAnim);
     } finally {
       await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] });
     }
@@ -249,7 +273,7 @@ module.exports = async (ctx) => {
     // reads the badge the moment it is first drawn, so a slow runner cannot let the 1.4 s "fresh" window pass before the check looks.
     try {
       await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
-      await H.load({ w: 1440, h: 900 });
+      await H.load({ w: 1440, h: 900, query: { hlmotion: '1' } });
       assert.ok(await js(`matchMedia('(prefers-reduced-motion: no-preference)').matches`), 'motion is allowed');
       await js(`(()=>{window.__pulse=null;new MutationObserver(()=>{if(window.__pulse)return;const e=document.querySelector('#stage .desk[data-id="sim-13"] .unread-mark');if(e)window.__pulse={fresh:e.classList.contains('fresh'),anim:getComputedStyle(e).animationName};}).observe(document.getElementById('stage'),{childList:true,subtree:true});})()`);
       await turn(B, 'Hugo, motion allowed.');

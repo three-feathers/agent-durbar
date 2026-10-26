@@ -108,9 +108,17 @@ ok((app.match(/unreadHTML\([ax]\)/g) || []).length === 4, "the badge is on the c
 ok(/data-op="read" class="mm-read"/.test(app) && /if\(op==='read'\)\{markRead\(a\);return;\}/.test(app), 'the card menu has Mark as read');
 ok(/e\.key==='F10'&&e\.shiftKey\)\|\|e\.key==='ContextMenu'\)\)return;\s*const d=e\.target&&e\.target\.closest&&e\.target\.closest\('\.desk\[data-id\], \.lrow\[data-id\]'\)/.test(app), 'Shift+F10 on a desk opens the card menu');
 ok(/\.unread-mark\{[^}]*font-size:11px/.test(css), 'the badge text is 11px (never under 10.5px)');
-ok(/\.unread-mark i\{/.test(css) && /\.desk\.is-unread:not\(\.is-waiting\)[^{]*\{outline:3px solid var\(--desk-new\)/.test(css), 'a dot and an outline besides the colour');
+ok(/\.unread-mark i\{/.test(css) && /\.desk\.is-waiting::after[^{]*\{[^}]*box-shadow:[^}]*var\(--hl\)/.test(css) && /--hl:var\(--desk-new\)/.test(css) && /--hl:var\(--desk-needs\)/.test(css) && !/\.desk[^{]*\{outline:\d/.test(css), 'a dot and a glow (no outline) besides the colour');
 ok(/@media \(prefers-reduced-motion:no-preference\)\{\.unread-mark\.fresh\{animation:unread-pulse/.test(css), 'the pulse only when motion is allowed');
 ok(/const unreadFresh=a=>!REDUCED&&!reducedMotion\(\)&&/.test(app), 'and the page does not add the pulse class under reduced motion');
+ok(/@media \(prefers-reduced-motion:no-preference\)\{\s*\.desk\.is-waiting \.pp,[^@]*hl-enter[^@]*hl-glow/.test(css) && !/^\.desk[^{]*\{[^}]*animation:hl-/m.test(css) && /\.pp\{transform-box:view-box;transform-origin/.test(css) && !/\.desk(\.[a-z-]+)*\{[^}]*transform:scale/.test(css), 'the desk zoom and glow breathe only when motion is allowed (FR-178)');
 ok(!/localStorage[^;]*unread|unread[^;]*localStorage/i.test(app), 'the marker is not stored (FR-176: not kept across a restart)');
 
 console.log(`[unread] ${n} checks passed`);
+
+// review on #774 (Paco): the per-id announcement note and the glow's entry time are dropped wherever the agent is dropped (agent, folder, floor)
+{
+  const sites = app.match(/UNREAD\.forget\(agents\[i\]\.id\);/g) || [];
+  const clean = app.match(/UNREAD\.forget\(agents\[i\]\.id\);UNREAD_AT\.delete\(agents\[i\]\.id\);UNREAD_SAID\.delete\(agents\[i\]\.id\);HL_AT\.delete\(agents\[i\]\.id\);/g) || [];
+  ok(sites.length >= 3 && clean.length === sites.length, 'every removal path clears UNREAD_SAID and HL_AT with the marker (' + clean.length + '/' + sites.length + ')');
+}
