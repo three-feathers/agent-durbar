@@ -85,7 +85,7 @@ import { cleanSandboxState } from '../shared/sandbox';
 import { toWindowEvent } from './sandboxops';
 import { UsageStore } from './usagestore';
 import { AgentTrustStore } from './agenttrust';
-import { Scheduler, loadSchedules, saveSchedules, scheduleBusy } from './schedules';
+import { Scheduler, loadSchedules, publicDoc, saveSchedules, scheduleBusy } from './schedules';
 import type { SchedulerDeps } from './schedules';
 import { UsageTotalsStore } from './usagetotalsstore';
 import { ActivityStore } from './activitystore';
@@ -595,7 +595,7 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
   setTimer: (ms, fn) => setTimeout(fn, ms),
   clearTimer: (t) => clearTimeout(t as NodeJS.Timeout),
   save: (doc) => saveSchedules(file, doc),
-  changed: (doc) => toRenderer('schedules:changed', doc),
+  changed: (doc) => toRenderer('schedules:changed', publicDoc(doc)), // spec 044 FR-043: no run logs in the push
 });
 
 // The handler bodies that refuse a setting a live session cannot take live in agentops.ts (spec 012 FR-054); `store` is read when a handler runs.
@@ -1122,6 +1122,7 @@ app.on('before-quit', (ev) => {
     }
     quitConfirmed = true;
   }
+  scheduler?.flush(); // spec 044 FR-037: a fold-only change of the run log is written now
   quitting = true; // only once the quit is confirmed: after a Cancel, closing the window on macOS still only hides it
   if (!quitNoted) {
     quitNoted = true;
