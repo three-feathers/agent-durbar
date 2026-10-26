@@ -34,13 +34,17 @@ const RELEASE_TAG_RE = /^v\d+\.\d+\.\d+(-(alpha|beta|rc)\.\d+)?$/;
 // spec 008 FR-121: a test build is a release version plus `-test.M`; never a release (RELEASE_TAG_RE), and checked before TAG_RE
 const TEST_TAG_RE = /^v(\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?)-test\.(\d+)$/;
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+// spec 008 FR-130: every agent app Durbar supports, and who it is not affiliated with
+const AGENTS_CLAUSE =
+  'Needs at least one agent app signed in: GitHub Copilot, Claude Code or OpenAI Codex (Settings > Agent apps can install it). ' +
+  'Independent project, not affiliated with GitHub, Microsoft, Anthropic or OpenAI.';
 const PREAMBLE =
   'Unsigned alpha build of Agent Durbar. Not code-signed or notarized: see the README for the macOS Gatekeeper and Windows SmartScreen steps. ' +
-  'Requires GitHub Copilot (copilot login). Independent project, not affiliated with GitHub or Microsoft.';
+  AGENTS_CLAUSE;
 // a stable tag (no "-" in the version): honest about the build, no "alpha"
 const STABLE_PREAMBLE =
   'Unsigned build of Agent Durbar. Not code-signed or notarized: see the README for the macOS Gatekeeper and Windows SmartScreen steps. ' +
-  'Requires GitHub Copilot (copilot login). Independent project, not affiliated with GitHub or Microsoft.';
+  AGENTS_CLAUSE;
 const TEST_PREAMBLE =
   '**Test build, not a release.** Built from a branch for testing changes that are not on `main` yet; it is never marked latest, ' +
   'has no CHANGELOG.md section and is not the previous release of the next one. Unsigned and not notarized, like every build: ' +

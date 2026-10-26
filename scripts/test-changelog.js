@@ -334,6 +334,11 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     assert.ok(!/alpha/i.test(r.notes.split('\n## ')[0]), 'no "alpha" in a stable release\'s intro');
     assert.ok(/not code-signed or notarized|Not code-signed or notarized/.test(rn.STABLE_PREAMBLE) && rn.STABLE_PREAMBLE.includes('README'), 'still honest: unsigned, README pointers');
     assert.ok(rn.PREAMBLE.includes('alpha'), 'the alpha intro is unchanged');
+    for (const [name, txt] of [['PREAMBLE', rn.PREAMBLE], ['STABLE_PREAMBLE', rn.STABLE_PREAMBLE]]) {
+      assert.ok(txt.includes('Needs at least one agent app signed in: GitHub Copilot, Claude Code or OpenAI Codex (Settings > Agent apps can install it).'), `${name} names every agent app`);
+      assert.ok(!/copilot login|Requires GitHub Copilot/.test(txt), `${name} no longer says Copilot is required`);
+      assert.ok(txt.includes('not affiliated with GitHub, Microsoft, Anthropic or OpenAI'), `${name} names all four companies`);
+    }
     const sum = rn.summary(r, 'v0.1.0');
     assert.ok(sum.includes('gh release edit v0.1.0 --draft=false --latest'), 'the summary gives the owner the publish command');
     assert.ok(!rn.summary({ kind: 'release', heading: 'h', previous: 'p', source: 'fragments', commits: 0 }, 'v0.1.0-rc.1').includes('gh release edit'), 'no such command for a pre-release');
