@@ -2036,3 +2036,17 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 .slash-list .sl-note .sl-sub .sl-src{margin-left:0}
 .slash-list .sl-note .sl-sub .sl-desc{min-width:0;flex:1 1 0}
 .slash-list .sl-note .sl-name{flex:1 1 auto}
+/* spec 083 T030..T032 (issue 699): the header count, the marker on a saved message, the drawer's search. Tokens only; 10.5px floor */
+.nt-count{display:inline-flex;align-items:center;height:var(--h-chip,28px);padding:0 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;flex:none}
+.nt-count:hover,.nt-count:focus-visible,.nt-count[aria-expanded="true"]{background:var(--surface-2)}
+.nt-count:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.nt-count[hidden]{display:none}
+.nt-mark{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;padding:0;margin-left:6px;border:0;border-radius:6px;background:transparent;color:var(--ink-2);cursor:pointer;vertical-align:middle}
+.nt-mark:hover,.nt-mark:focus-visible{background:var(--surface-2);color:var(--ink)}
+.nt-mark:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.msg.agent .bubble>.nt-mark{position:absolute;bottom:-10px;right:118px;margin:0;width:24px;height:22px;border:1px solid var(--line);background:var(--surface);z-index:1}
+.msg.user .meta .nt-mark{margin-left:4px}
+.nt-find{flex:1 1 140px;min-width:0;height:28px;margin:0 8px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font:inherit;font-size:12px}
+.nt-find:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+
+.nt-row{content-visibility:auto;contain-intrinsic-size:auto 78px} /* spec 083 SC-005: 300 rows, only the ones in view are laid out and painted */

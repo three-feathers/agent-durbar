@@ -103,5 +103,44 @@
     return parts.join('. ');
   }
 
-  return {groups,flat,noticeText,when,fromLabel,rowView,insertInto,replaceWord,digestInput,digestOf,findSaved,slashEntries,SLASH_NOTES_MAX,SCOPE_WORD,showChatTab};
+  /* FR-040: how many notes the header count shows (not done), and the tooltip: "M from this session, N in this folder" */
+  function countOf(notes,session){const g=groups(notes,session);return {total:g.session.length+g.folder.length,session:g.session.length};}
+  function countTip(c){return c.session+' from this session, '+c.total+' in this folder';}
+
+  /* FR-041: the note a message is saved as. Same session, role and digest; when the chat has several messages with that digest, `ord`
+     tells them apart (only the message at the note's own place carries the marker); a digest that is unique in the chat matches whatever the
+     place (a replayed history can number its messages differently). Done notes still mark their message. */
+  function markerFor(notes,session,role,digest,ord,sameCount){
+    if(!session||!digest)return null;
+    const c=(Array.isArray(notes)?notes:[]).filter(n=>n&&n.source&&n.source.session===session&&n.source.role===role&&n.source.digest===digest);
+    if(!c.length)return null;
+    if(sameCount>1)return c.find(n=>n.source.ord===ord)||null;
+    return c[0];
+  }
+
+  /* FR-043: the drawer's search. Both groups are filtered the same way: the notes whose (masked) title ranks for the query, in rank order
+     (`rank` is DurbarNav.rank, as the "/" list uses it), then the others whose masked text holds every word, case-insensitive, in their own
+     order. `mask` is DurbarSafeText.mask (fail closed: a field that cannot be masked never matches). An empty query keeps everything. */
+  function search(g,query,rank,mask){
+    const q=String(query==null?'':query).trim();
+    if(!q)return g;
+    const words=q.toLowerCase().split(/\s+/).filter(Boolean);
+    const m=t=>{if(t==null||t==='')return '';if(typeof mask!=='function')return '';try{const r=mask(String(t));return typeof r==='string'?r:'';}catch(e){return '';}};
+    const one=list=>{
+      const items=list.map(n=>({label:m(n.title),kw:'',n}));
+      const byTitle=typeof rank==='function'?rank(items,q).map(x=>x.n):[];
+      const seen=new Set(byTitle);
+      const byText=list.filter(n=>{if(seen.has(n))return false;const t=m(n.text).toLowerCase();return words.every(w=>t.includes(w));});
+      return byTitle.concat(byText);
+    };
+    return {session:one(g.session),folder:one(g.folder)};
+  }
+  /* the no-match line names the words, masked and cut (the query is typed or pasted, so it can hold a secret) */
+  function noMatch(query,mask){
+    let t='';try{const r=typeof mask==='function'?mask(String(query==null?'':query).trim()):'';t=typeof r==='string'?r:'';}catch(e){t='';}
+    if(t.length>60)t=t.slice(0,60)+'…';
+    return t?'No notes match "'+t+'"':'No notes match';
+  }
+
+  return {groups,flat,countOf,countTip,markerFor,search,noMatch,noticeText,when,fromLabel,rowView,insertInto,replaceWord,digestInput,digestOf,findSaved,slashEntries,SLASH_NOTES_MAX,SCOPE_WORD,showChatTab};
 })());
