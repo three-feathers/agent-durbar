@@ -1,0 +1,1 @@
+- **Unlisted talk pages on the project site** (spec 050 FR-014): the site can carry hand-written talk pages that nothing on the site links to, marked noindex, with a strict same-origin CSP; the first is the EA Summit 2026 talk with its poll host page. `test:site` checks they stay unlisted and self-contained.

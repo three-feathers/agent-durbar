@@ -130,9 +130,49 @@ for (const f of require('./shots-docs.js').linkedImages(ROOT)) {
   assert.ok(KEPT_ORIGINAL[f] || b[25] === 3, `${f} is not a palette PNG: run \`npm run shots:compress\` (or name it in KEPT_ORIGINAL with the reason the quality guard refused it)`);
 }
 
-const size = (dir) => fs.readdirSync(dir, { withFileTypes: true }).reduce((n, e) => n + (e.isDirectory() ? size(path.join(dir, e.name)) : fs.statSync(path.join(dir, e.name)).size), 0);
-const total = size(out);
+// spec 050 FR-014 (delta 2026-10-26): unlisted talk pages under talk/. Hand-written and self-contained: same-origin scripts only,
+// a strict CSP, noindex,nofollow, linked from nowhere else on the site, and no sitemap. The talk's video, captions and poster
+// are dropped in later, so only those three may be missing.
+const TALK_OPTIONAL = new Set(['talk.mp4', 'talk.vtt', 'poster.png']);
+const talkPages = [];
+const walkTalk = (dir) => { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const p = path.join(dir, e.name); if (e.isDirectory()) walkTalk(p); else if (e.name.endsWith('.html')) talkPages.push(p); } };
+if (fs.existsSync(path.join(out, 'talk'))) walkTalk(path.join(out, 'talk'));
+assert.ok(talkPages.some((p) => /talk[\\/]ea-summit-2026[\\/]index\.html$/.test(p)) && talkPages.some((p) => /talk[\\/]ea-summit-2026[\\/]host-[a-z]{8}[\\/]index\.html$/.test(p)), 'the EA Summit talk and its host page are built');
+for (const p of talkPages) {
+  const name = path.relative(out, p);
+  const html = fs.readFileSync(p, 'utf8');
+  assert.match(html, /<meta name="robots" content="noindex,nofollow">/, `${name}: noindex,nofollow`);
+  assert.match(html, /Content-Security-Policy" content="default-src 'none';[^"]*script-src 'self'/, `${name}: strict CSP`);
+  assert.ok(!/unsafe-inline|unsafe-eval/.test(html), `${name}: no unsafe-inline or unsafe-eval`);
+  assert.ok(!/<script(?![^>]*\ssrc=)[^>]*>/i.test(html) && !/\sstyle="/.test(html) && !/\son[a-z]+="/i.test(html), `${name}: no inline script, style or event handler (the CSP would block them)`);
+  for (const m of html.matchAll(/\s(?:src|href|poster)="([^"]+)"/g)) {
+    const u = m[1].replace(/&amp;/g, '&');
+    if (/^(https:|#)/.test(u)) { assert.ok(!/\ssrc=|poster=/.test(m[0]), `${name}: external resource ${u}`); continue; }
+    assert.ok(!/^(http:|\/\/)/.test(u), `${name}: ${u}`);
+    const f = path.join(path.dirname(p), u.split('#')[0]);
+    assert.ok(fs.existsSync(f) || TALK_OPTIONAL.has(u), `${name}: missing local file: ${u}`);
+  }
+  for (const m of html.matchAll(/<img [^>]*>/g)) assert.match(m[0], /\salt="[^"]*"/, `${name}: every image has alt text`);
+  for (const m of html.matchAll(/\shref="#([^"]+)"/g)) assert.ok(html.includes(`id="${m[1]}"`), `${name}: anchor #${m[1]}`);
+}
+for (const f of fs.readdirSync(path.join(out, 'talk'), { recursive: true }).map(String).filter((f) => /\.(js|css)$/.test(f))) {
+  const t = fs.readFileSync(path.join(out, 'talk', f), 'utf8');
+  assert.ok(!/https?:\/\//.test(t.replace(/\/\*[\s\S]*?\*\//g, '')), `talk/${f}: loads nothing from another site`);
+  assert.ok(!/\b(fetch|XMLHttpRequest|sendBeacon|WebSocket)\b/.test(t), `talk/${f}: no network calls`);
+}
+for (const n of ['index.html', 'docs.html']) assert.ok(!/(?:href|src)="[^"]*talk\//.test(fs.readFileSync(path.join(out, n), 'utf8')), `${n} does not link the unlisted talk pages`);
+assert.ok(!fs.existsSync(path.join(out, 'sitemap.xml')), 'no sitemap');
+const talkDir = path.join(out, 'talk', 'ea-summit-2026');
+assert.match(fs.readFileSync(path.join(talkDir, 'index.html'), 'utf8'), /<video id="talkVideo"[^>]*>\s*<source src="talk\.mp4"[\s\S]*?<track kind="captions" src="talk\.vtt"/, 'the talk has a video with a captions track');
+if (fs.existsSync(path.join(talkDir, 'talk.mp4'))) assert.ok(fs.statSync(path.join(talkDir, 'talk.mp4')).size < 40 * 1024 * 1024, 'talk.mp4 is under 40 MB');
+
+const size = (dir, skip) => fs.readdirSync(dir, { withFileTypes: true }).reduce((n, e) => n + (e.isDirectory() ? (skip && path.join(dir, e.name) === skip ? 0 : size(path.join(dir, e.name), skip)) : fs.statSync(path.join(dir, e.name)).size), 0);
+// the talk folder (with its video) has its own budget; the 8 MB of FR-012 is for the site without it
+const talkSize = fs.existsSync(path.join(out, 'talk')) ? size(path.join(out, 'talk')) : 0;
+assert.ok(talkSize < 45 * 1024 * 1024, `talk pages under 45 MB with the video (are ${(talkSize / 1048576).toFixed(1)} MB)`);
+assert.ok(talkSize - (fs.existsSync(path.join(talkDir, 'talk.mp4')) ? fs.statSync(path.join(talkDir, 'talk.mp4')).size : 0) < 2 * 1024 * 1024, 'talk pages under 2 MB without the video');
+const total = size(out, path.join(out, 'talk'));
 // 8 MB since spec 050 FR-012 (2026-10-26): the linked screenshots are palette-compressed (the site was 15.5 MB with plain PNGs; FR-005 had 15 MB, FR-011 16 MB)
 assert.ok(total < 8 * 1024 * 1024, `site under 8 MB (is ${(total / 1048576).toFixed(1)} MB)`);
 fs.rmSync(out, { recursive: true, force: true });
-console.log(`site: ok (${attrCount} links and images on two pages, ${(total / 1048576).toFixed(1)} MB)`);
+console.log(`site: ok (${attrCount} links and images on two pages, ${(total / 1048576).toFixed(1)} MB; ${talkPages.length} unlisted talk pages, ${(talkSize / 1048576).toFixed(1)} MB)`);

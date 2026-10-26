@@ -13,6 +13,8 @@
  *   (docs/site/gallery.json) and the full newest release notes.
  * Raw HTML in Markdown is escaped; relative links go to the file on GitHub; images are copied next to the page. No scripts,
  * external fonts, analytics or cookies.
+ * Delta 2026-10-26 (FR-014): docs/site/talk/ (unlisted talk pages, hand-written, noindex) is copied to _site/talk/ as it is;
+ * those pages may use their own same-origin script under a strict CSP. See copyTalks().
  */
 'use strict';
 const fs = require('fs');
@@ -554,6 +556,40 @@ ${all.map((s) => `<section id="${esc(s.id)}"><h2>${esc(s.title)}</h2>${s.html}</
   return page({ title: 'Agent Durbar docs', description: intro.replace(/\*\*/g, ''), css: CSS_DOCS, nav, body });
 }
 
+/*
+ * Spec 050 delta 2026-10-26 (FR-014): unlisted talk pages. docs/site/talk/ is copied to _site/talk/ as it is (hand-written
+ * static HTML, CSS, JS, fonts and art; the talk's video, captions and poster are dropped into the same folder). A talk
+ * page names a repository screenshot as `shots/<file>.png`; that file is copied from docs/screenshots next to the page,
+ * so no picture is committed twice. Nothing on the site links to these pages and they carry noindex,nofollow
+ * (scripts/test-site.js checks both). Returns the talk pages' paths relative to the output folder.
+ */
+const TALK_SRC = 'docs/site/talk';
+function copyTalks(out) {
+  const src = path.join(ROOT, TALK_SRC);
+  if (!fs.existsSync(src)) return [];
+  const pages = [];
+  const walk = (rel) => {
+    for (const e of fs.readdirSync(path.join(src, rel), { withFileTypes: true })) {
+      const r = path.join(rel, e.name);
+      if (e.isSymbolicLink()) throw new Error(`${TALK_SRC}/${r}: symbolic links are not copied`);
+      if (e.isDirectory()) { walk(r); continue; }
+      const to = path.join(out, 'talk', r);
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      fs.copyFileSync(path.join(src, r), to);
+      if (!e.name.endsWith('.html')) continue;
+      pages.push(path.join('talk', r).split(path.sep).join('/'));
+      for (const m of fs.readFileSync(path.join(src, r), 'utf8').matchAll(/="shots\/([A-Za-z0-9._-]+\.png)"/g)) {
+        const shot = path.join(ROOT, SHOTS, m[1]);
+        if (!fs.existsSync(shot)) throw new Error(`${TALK_SRC}/${r}: missing screenshot ${SHOTS}/${m[1]}`);
+        fs.mkdirSync(path.join(out, 'talk', path.dirname(r), 'shots'), { recursive: true });
+        fs.copyFileSync(shot, path.join(out, 'talk', path.dirname(r), 'shots', m[1]));
+      }
+    }
+  };
+  walk('');
+  return pages.sort();
+}
+
 async function main() {
   const readme = read('README.md');
   const intro = readme.split('\n').find((l) => l.startsWith('Agent Durbar is ')) || '';
@@ -583,10 +619,11 @@ async function main() {
     if (!fs.existsSync(src)) throw new Error(`missing image: ${r}`);
     fs.copyFileSync(src, path.join(OUT, 'screenshots', path.basename(r)));
   }
-  console.log(`site: ${OUT} (index ${index.length} B, docs ${docs.length} B, ${feats.length} features, ${gallery.length} gallery images, ${copied.size} images copied${rel ? ', release ' + rel.tag : ', no release info'})`);
+  const talks = copyTalks(OUT);
+  console.log(`site: ${OUT} (index ${index.length} B, docs ${docs.length} B, ${feats.length} features, ${gallery.length} gallery images, ${copied.size} images copied${rel ? ', release ' + rel.tag : ', no release info'}${talks.length ? `, ${talks.length} unlisted talk page(s)` : ''})`);
 }
 
-module.exports = { validateLanding, headingAnchors, harnessNames, installSteps, features, latestChanges, shortChanges, stripRefs, slugger };
+module.exports = { copyTalks, validateLanding, headingAnchors, harnessNames, installSteps, features, latestChanges, shortChanges, stripRefs, slugger };
 
 if (require.main === module) {
   main().catch((e) => {
