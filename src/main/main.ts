@@ -1142,6 +1142,7 @@ app.on('before-quit', (ev) => {
     .finally(() => app.quit());
 });
 app.on('will-quit', () => {
+  scheduler?.flush(); // spec 044 FR-037: a fold counted during the 3 s dispose window of before-quit
   void destroyAllViews(); // spec 080 FR-023: the session browsers (none exist until the browser pane lands)
   usageStore?.flush();
   usageTotalsStore?.flush();

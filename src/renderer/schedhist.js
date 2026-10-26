@@ -1,5 +1,5 @@
 /* A schedule's run history (spec 044 FR-040..FR-042): the words and icon of every outcome, the reasons as fixed words, the folded text,
-   the empty text, the spoken sentence of one item and the "Schedules here (N)" label. Pure: no DOM, no storage, no clock of its own
+   the empty text, one item's parts and the "Schedules here (N)" label. Pure: no DOM, no storage, no clock of its own
    (the caller passes the time text function and the chat-name lookup), so the unit test does not depend on the locale.
    The row's "last run" line (app.js schedLine) uses the same words table, so the row and the history cannot say different things.
    In the page: window.DurbarSchedHist; in Node (tests): module.exports. */
@@ -59,9 +59,7 @@
     const clock=clockOf||String;
     const time=String(clock(run.at)), words=runWords(run), fold=foldText(run,clock);
     const name=run.session&&nameOf?nameOf(run.session):'';
-    const where=!run.session?'':name?'chat: '+name:'chat closed';
-    const sentence=[time,words,fold,where].filter(Boolean).join('. ')+'.';
-    return {time,words,fold,kind:kindOf(run.outcome),session:run.session||'',chat:name||'',closed:!!run.session&&!name,sentence};
+    return {time,words,fold,kind:kindOf(run.outcome),session:run.session||'',chat:name||'',closed:!!run.session&&!name};
   }
   /* FR-040: nothing recorded. A schedule from before the update has a `last` but no log (FR-038): say so, with that run's words. */
   function emptyText(last,clockOf,since){

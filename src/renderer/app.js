@@ -6426,7 +6426,7 @@ async function histLoad(id){
   histPaint();
 }
 /* a list painted open by a repaint (the dialog opened, Settings built) that was never asked for yet asks now */
-function histEnsure(){for(const id of new Set([...HIST_OPEN].map(k=>k.slice(3))))if(!HIST_RUNS.has(id)&&!HIST_SEQ.has(id))histLoad(id);}
+function histEnsure(){for(const id of new Set([...HIST_OPEN].filter(k=>document.getElementById('sh-'+k.slice(0,2)+'-'+k.slice(3))).map(k=>k.slice(3))))if(!HIST_RUNS.has(id)&&!HIST_SEQ.has(id))histLoad(id);}
 /* after a change: forget what belongs to a deleted schedule, ask again for the open lists, only those */
 function histRefresh(){
   const ids=new Set(SCHED.schedules.map(s=>s.id));
@@ -6434,7 +6434,8 @@ function histRefresh(){
   for(const key of [...HIST_ALL])if(!HIST_OPEN.has(key))HIST_ALL.delete(key);
   for(const id of [...HIST_RUNS.keys()])if(!ids.has(id))HIST_RUNS.delete(id);
   histPaint();
-  for(const id of new Set([...HIST_OPEN].map(k=>k.slice(3))))histLoad(id);
+  /* only a list that is on screen asks (a closed dialog's list is not worth a call on every change) */
+  for(const id of new Set([...HIST_OPEN].filter(k=>document.getElementById('sh-'+k.slice(0,2)+'-'+k.slice(3))).map(k=>k.slice(3))))histLoad(id);
 }
 /* Open chat: the same as a click on its desk; the dialog or Settings closes first */
 function histOpenChat(id){

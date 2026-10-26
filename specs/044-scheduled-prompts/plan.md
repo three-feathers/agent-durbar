@@ -124,6 +124,11 @@ What exists is listed in the spec delta (read on `origin/main` 9a29020b, and #56
 - `OUTCOME_WORD` (`app.js:6368`) already has words for `held` and `skipped-door-full`; they move into `schedhist.js`, and `ended` is added.
 - `ScheduleInfo.last.outcome` (`api.ts`) lacks only `ended` now.
 - `tick()` ends in an unconditional `commit()`: the fold-only path (FR-037) is a flag set by `record` and cleared by any real change in that tick (a new entry, a one-time schedule going done, a pause set by a skip of cap or ended).
+- **Implementer decisions, 2026-10-26, awaiting owner confirmation** (small wording choices made while building #624; each can be reverted in `schedhist.js`):
+  1. The `held` words. Old: "held: the door is closed (Do not disturb)" (spec 044 FR-110, only the door's case). New: "held: not sent yet (closed door, update or break)". Why: `held` is also written for an agent app that is updating (spec 081) and for a loop that waits for a person or a break (spec 072), where "the door is closed" would be untrue; the row and the history share this one table.
+  2. The empty-history text. Old (FR-040): "Runs are kept from <the day of this update> on". New: "Runs are kept from the update that added this list on; the last one before that: <words>, <time>." Why: no date of the update is stored, and inventing one would be untrue.
+  3. "Not sent: the session has ended" (the row's existing word) is the one wording in FR-040 and `schedhist.js`; FR-040 said "had ended".
+  4. An item's accessible text is its visible parts in DOM order (time, words, fold count, where it went); no separate sentence label is built.
 - #560's pieces exist as planned: `DurbarSchedTop` (`schedtop.js`), `openSchedulesView`, `check-sched-top`, `shots-044-everywhere`.
 
 ### Main
@@ -147,7 +152,7 @@ Size: an entry is about 90 bytes as `saveSchedules` writes it (indent 2); 2,500 
 
 ### Renderer
 
-1. Pure `src/renderer/schedhist.js` (`DurbarSchedHist`, UMD like `schedtop.js`; one window global per script, `docs/agent-notes.md`): `OUTCOMES` (words, icon kind) including `held` and `ended`, `reasonWords(code)`, `runText(run, clockOf, nameOf)` (the visible line and the spoken sentence), `emptyText(last, clockOf, since)`, `hereLabel(n)`. No folder predicate: the *Schedules here (N)* count reuses `schedulesOf(r)`/`folderKeyOf(r)` (`app.js:5035-5036`), one implementation; the workspace case is checked by the driver (`simws=1`, step 6). Script tag right after `schedtop.js` in `index.html`. The row's `OUTCOME_WORD` (`app.js:5040`) moves into it so the row and the history use one table (add `held`, `ended`).
+1. Pure `src/renderer/schedhist.js` (`DurbarSchedHist`, UMD like `schedtop.js`; one window global per script, `docs/agent-notes.md`): `OUTCOMES` (words, icon kind) including `held` and `ended`, `reasonWords(code)`, `runText(run, clockOf, nameOf)` (the visible line and the item's parts (time, words, fold, where)), `emptyText(last, clockOf, since)`, `hereLabel(n)`. No folder predicate: the *Schedules here (N)* count reuses `schedulesOf(r)`/`folderKeyOf(r)` (`app.js:5035-5036`), one implementation; the workspace case is checked by the driver (`simws=1`, step 6). Script tag right after `schedtop.js` in `index.html`. The row's `OUTCOME_WORD` (`app.js:5040`) moves into it so the row and the history use one table (add `held`, `ended`).
 2. `app.js`:
    - `schedBtns` (`:5055`): **History** (`data-sc|ss="hist"`, `aria-expanded`, `aria-controls="sh-<id>"`) after Delete; `schedRow` (`:5067`) renders an empty `<ol class="sc-hist" id="sh-<id>" hidden>` that the toggle fills from `bridge.scheduleRuns(id)`. Open state in a `Set` like `SCHED_OPEN` (`:5059`), so a repaint keeps it open; `schedChanged` re-asks the open ones only.
    - Items: `<li>` with an SVG icon (`currentColor`, `aria-hidden`), the time, the words, and **Open chat** (`data-open-chat="<id>"`) when `liveById(session)`, else "chat closed". The click closes `closeSchedDlg()` or Settings (#560's Settings close path; check it returns focus as today) then `openPanel(id)`.

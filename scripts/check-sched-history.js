@@ -185,6 +185,18 @@ module.exports = async (ctx) => {
     check(await js(`window.__durbarSimSched.fail('sched-s1')`), `${tag}: the simulator could not record a run`);
     check(await until(`document.querySelectorAll('#sh-ss-sched-s1 > li.sh-i').length===${jsLiteral(before + 1)}&&/Could not send: no agent in this folder/.test(document.querySelector('#sh-ss-sched-s1 > li.sh-i .sh-w').textContent)`), `${tag}: a new run did not appear at the top of the open list`);
     check(await js(`document.querySelector('#schedSet [data-ss="hist"][data-id="sched-s1"]').getAttribute('aria-expanded')==='true'`), `${tag}: the list closed itself on a change`);
+    /* the agent's display name is the one user text in an item (the Open chat button's name): markup in it shows as text and runs nothing */
+    {
+      const HN = 'x"><img src=x onerror=window.__pwn2=1>';
+      const was = await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id==='sim-1');const n=a.name;a.name=${jsLiteral(HN)};return n})()`);
+      const btn = `document.querySelector('#schedSet [data-ss="hist"][data-id="sched-s1"]')`;
+      await js(`${btn}.click()`); await until(`document.getElementById('sh-ss-sched-s1').hidden`);
+      await js(`${btn}.click()`);
+      check(await until(`!!document.querySelector('#sh-ss-sched-s1 [data-hchat="sim-1"]')`), `${tag}: the list did not reopen`);
+      const hostile = await js(`({label:document.querySelector('#sh-ss-sched-s1 [data-hchat="sim-1"]').getAttribute('aria-label'),img:!!document.querySelector('#schedSet img'),ran:window.__pwn2===1})`);
+      check(hostile.label === 'Open chat: ' + HN && !hostile.img && !hostile.ran, `${tag}: markup in an agent name was not shown as text: ${JSON.stringify(hostile)}`);
+      await js(`(()=>{window.__durbarSimUi.agents().find(x=>x.id==='sim-1').name=${jsLiteral(was)};return true})()`);
+    }
     /* History closes again */
     await js(`document.querySelector('#schedSet [data-ss="hist"][data-id="sched-s1"]').click()`);
     check(await until(`document.getElementById('sh-ss-sched-s1').hidden&&document.querySelector('#schedSet [data-ss="hist"][data-id="sched-s1"]').getAttribute('aria-expanded')==='false'`), `${tag}: History did not close`);
@@ -195,6 +207,17 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#sh-ss-sched-s1 [data-hchat="sim-1"]').click()`);
     check(await until(`document.getElementById('screen').hidden&&document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===window.__durbarSimUi.agents().find(a=>a.id==='sim-1').name`), `${tag}: Open chat did not close Settings and open the chat of sim-1`);
     await H.key('Escape'); await until(`!document.body.classList.contains('panel-open')`);
+    /* FR-043: a list that is not on screen does not ask for its log: Settings and the dialog are closed now, their History keys are still open */
+    {
+      const calls = () => js(`window.__durbarSimSched.probe.runsCalls`);
+      await js(`window.__durbarSimSched.fail('sched-s2')`);
+      await settle();
+      const base = await calls();
+      await js(`window.__durbarSimSched.fail('sched-s2')`);
+      check(await until(`window.__durbarSimSched.probe.runsCalls===${jsLiteral(base)}`), `${tag}: a closed list asked for its log`);
+      await settle();
+      check((await calls()) === base, `${tag}: a closed list asked for its log after a change (${base} -> ${await calls()})`);
+    }
     /* hostile text: a prompt with markup is shown as text (the list's name, the row) and runs nothing */
     {
       const HOSTILE = '<b id="pwn">x</b>"><img src=x onerror="window.__pwn=1"> & more';

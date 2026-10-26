@@ -108,6 +108,8 @@ export const loopSupport = { enabled: false };
 export const MAX_SCHEDULES = 50;
 /** Spec 044 FR-037: runs kept per schedule. */
 export const MAX_RUNS = 50;
+/** The largest fold count (`n`); `cleanRuns` drops a larger one, so `record` never writes it. */
+export const MAX_FOLD = 100_000;
 /** Spec 044 FR-037: a fold-only change is written at the latest after this long (unless a real change or quit writes it first). */
 export const FOLD_FLUSH_MS = 60 * 60_000;
 export const MAX_PROMPT = 2000;
@@ -319,7 +321,7 @@ export function cleanRuns(v: unknown, ids: Iterable<string>): Record<string, Sch
       if (RUN_REASONS.includes(r.reason as RunReason)) run.reason = r.reason as RunReason;
       if (r.manual === true) run.manual = true;
       const n = num(r.n);
-      if (n !== undefined && Number.isInteger(n) && n >= 2 && n <= 100_000) run.n = n;
+      if (n !== undefined && Number.isInteger(n) && n >= 2 && n <= MAX_FOLD) run.n = n;
       const until = num(r.until);
       if (until !== undefined && until >= at) run.until = until;
       runs.push(run);
@@ -470,11 +472,13 @@ export class Scheduler {
     s.last = { at: now, outcome };
     if (!this.doc.schedules.some((q) => q.id === s.id)) return false; // deleted while its send was awaited: no log is made for it
     const runs = (this.doc.runs ??= {});
-    const log = (runs[s.id] ??= []);
+    // own properties only: an id such as `constructor` or `toString` is a valid schedule id and must not pick an inherited function
+    if (!Object.prototype.hasOwnProperty.call(runs, s.id)) runs[s.id] = [];
+    const log = runs[s.id];
     const top = log[log.length - 1];
     const session = x.session !== undefined && ID_RE.test(x.session) ? x.session : undefined;
     if (top && FOLDS.includes(outcome) && top.outcome === outcome && top.session === session && !top.manual) {
-      top.n = (top.n ?? 1) + 1;
+      top.n = Math.min(MAX_FOLD, (top.n ?? 1) + 1); // the same bound cleanRuns reads back
       top.until = now;
       this.folded = true;
       return true;
@@ -632,7 +636,7 @@ export class Scheduler {
   }
 
   /** The end of a loop pass (FR-010..FR-013, FR-018): reads the pace request and sets the next wake or ends the loop. */
-  private passEnded(s: Schedule, end: { finalText?: string; error?: boolean; stopped?: boolean; reason?: RunReason }, now: number): void {
+  private passEnded(s: Schedule, end: { finalText?: string; error?: boolean; stopped?: boolean; unsent?: boolean }, now: number): void {
     const l = s.loop as LoopSpec;
     l.inPass = false;
     this.lastSent.set(s.id, this.mono()); // FR-011: the minimum between two passes runs from the END of this one
@@ -659,7 +663,7 @@ export class Scheduler {
       }
     }
     s.next = now + delay * MIN;
-    this.record(s, end.error ? 'failed' : 'sent', now, { session: s.target?.session, reason: end.error ? end.reason : undefined, update: true });
+    if (!end.unsent) this.record(s, end.error ? 'failed' : 'sent', now, { session: s.target?.session, update: true }); // `unsent`: the caller recorded the failed send itself
     // a wake after the end time would never be sent: end now. Passes and the loop's cap are checked with the same clock.
     if (this.limitReached(s, now) || s.next >= l.endAt) {
       if (!l.ended) this.endLoop(s, 'time', now);
@@ -715,7 +719,9 @@ export class Scheduler {
     }
     // the pass could not be sent: it counts as a failed pass (FR-013)
     if (this.attrib.get(session) === cur.id) this.attrib.delete(session);
-    this.passEnded(cur, { error: true, reason }, after);
+    // no `sent` entry of this pass exists: the failed send is a new entry of its own (never an update of an earlier pass's), then the pass ends (possibly the loop too)
+    this.record(cur, 'failed', now, { session, reason });
+    this.passEnded(cur, { error: true, unsent: true }, after);
   }
 
   /** FR-007: ends a running loop at once. False when there is none with that id. */
@@ -1097,7 +1103,15 @@ export function loadSchedules(file: string, now: number): SchedulesDoc {
 export function saveSchedules(file: string, doc: SchedulesDoc): void {
   try {
     // a loop's `hold` and `inPass` are runtime state and are not kept (spec 072 FR-002, FR-008)
-    fs.writeFileSync(file, JSON.stringify(doc, (k, v: unknown) => (k === 'hold' || k === 'inPass' ? undefined : v), 2), { mode: 0o600 });
+    // written beside the file, then renamed over it: a crash or a full disk mid-write leaves the old file whole (a torn file would load as "no schedules")
+    const tmp = `${file}.tmp`;
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(doc, (k, v: unknown) => (k === 'hold' || k === 'inPass' ? undefined : v), 2), { mode: 0o600 });
+      fs.renameSync(tmp, file);
+    } catch (e) {
+      try { fs.rmSync(tmp, { force: true }); } catch { /* ignore */ }
+      throw e;
+    }
   } catch {
     /* not saved; the next change tries again */
   }

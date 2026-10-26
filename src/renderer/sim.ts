@@ -828,11 +828,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     /* simrecord:begin */
     const simRecord = (sc: ScheduleInfo, runs: Record<string, ScheduleRunInfo[]>, outcome: ScheduleOutcome, now: number, x: { session?: string; reason?: ScheduleRunInfo['reason']; manual?: true; update?: boolean } = {}): boolean => {
       sc.last = { at: now, outcome };
-      const log = (runs[sc.id] = runs[sc.id] ?? []);
+      if (!Object.prototype.hasOwnProperty.call(runs, sc.id)) runs[sc.id] = [];
+      const log = runs[sc.id];
       const top = log[log.length - 1];
       const session = x.session !== undefined && /^[A-Za-z0-9._:-]{1,128}$/.test(x.session) ? x.session : undefined;
       if (top && ['skipped-busy', 'skipped-paused', 'held', 'skipped-door-full'].includes(outcome) && top.outcome === outcome && top.session === session && !top.manual) {
-        top.n = (top.n ?? 1) + 1;
+        top.n = Math.min(100000, (top.n ?? 1) + 1);
         top.until = now;
         return true;
       }
@@ -889,7 +890,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (s) { simSched.list.push({ id: 'sched-fire', folder: s.info.workspaceFile ?? s.info.cwd ?? '', prompt: 'Scheduled check-in: summarise what changed', at: Date.now() + opts.schedFire * 1000, target: { session: s.info.id, agent: s.info.id, name: s.info.title ?? '' } }); simSched.n += 1; }
     }
     /* spec 044 FR-033 (check-sched-top): a driver makes a schedule's run fail now, as if the app had sent it and the send had failed */
+    const simSchedProbe = { runsCalls: 0 }; // a driver counts how often the window asks for a log (spec 044 FR-043: only while a list is shown)
     (window as unknown as { __durbarSimSched?: unknown }).__durbarSimSched = {
+      probe: simSchedProbe,
       fail: (id: string): boolean => {
         const sc = simSched.list.find((x) => x.id === id);
         if (!sc) return false;
@@ -2116,7 +2119,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
       removeSchedule: async (id) => { const n = simSched.list.length; simSched.list = simSched.list.filter((x) => x.id !== id); delete simSched.runs[id]; simSched.changed(); return { ok: simSched.list.length !== n }; },
       /* spec 044 FR-043/FR-044: one schedule's log, newest first; the id is checked like main does */
-      scheduleRuns: async (id) => (typeof id === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(id) && Object.prototype.hasOwnProperty.call(simSched.runs, id) ? { ok: true as const, runs: simSched.runs[id].map((r) => ({ ...r })).reverse() } : typeof id === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(id) ? { ok: true as const, runs: [] } : { ok: false as const }),
+      scheduleRuns: async (id) => (simSchedProbe.runsCalls++, typeof id === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(id) && Object.prototype.hasOwnProperty.call(simSched.runs, id) ? { ok: true as const, runs: simSched.runs[id].map((r) => ({ ...r })).reverse() } : typeof id === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(id) ? { ok: true as const, runs: [] } : { ok: false as const }),
       setSchedulesPaused: async (on) => { simSched.pausedAll = on === true; simSched.changed(); return { ok: true, pausedAll: simSched.pausedAll }; },
       onSchedules: (cb) => { simSched.subs.push(cb); return () => undefined; },
       onScheduleRan: (cb) => { simSched.ran.push(cb); return () => undefined; },

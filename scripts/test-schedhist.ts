@@ -1,10 +1,10 @@
-/** A schedule's run history (spec 044 FR-040..FR-042): the words and icon of every outcome and reason, the folded and empty texts, the spoken sentence, the Schedules here label. `npm run test:schedhist`. No credits spent. */
+/** A schedule's run history (spec 044 FR-040..FR-042): the words and icon of every outcome and reason, the folded and empty texts, an item's parts, the Schedules here label. `npm run test:schedhist`. No credits spent. */
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
 
 type Run = { at: number; outcome: string; session?: string; reason?: string; manual?: true; n?: number; until?: number };
-type Item = { time: string; words: string; fold: string; kind: string; session: string; chat: string; closed: boolean; sentence: string };
+type Item = { time: string; words: string; fold: string; kind: string; session: string; chat: string; closed: boolean };
 const H = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'schedhist.js')) as {
   OUTCOMES: Record<string, { word: string; kind: string }>;
   REASONS: Record<string, string>;
@@ -72,15 +72,10 @@ const names: Record<string, string> = { a1: 'Ada' };
 const nameOf = (s: string): string => names[s] ?? '';
 const live = H.runText({ at: 100, outcome: 'sent', session: 'a1' }, clockOf, nameOf);
 assert.deepStrictEqual([live.time, live.words, live.fold, live.kind, live.session, live.chat, live.closed], ['T100', 'Sent', '', 'sent', 'a1', 'Ada', false]);
-assert.strictEqual(live.sentence, 'T100. Sent. chat: Ada.');
 const gone = H.runText({ at: 100, outcome: 'sent', session: 'zz' }, clockOf, nameOf);
 assert.deepStrictEqual([gone.closed, gone.chat], [true, ''], 'a session that is gone shows "chat closed" (no button)');
-assert.strictEqual(gone.sentence, 'T100. Sent. chat closed.');
 const none = H.runText({ at: 100, outcome: 'missed' }, clockOf, nameOf);
-assert.deepStrictEqual([none.closed, none.session, none.sentence], [false, '', 'T100. Missed: the app was closed.'], 'a run with no session shows nothing there');
 const folded = H.runText({ at: 100, outcome: 'skipped-busy', n: 3, until: 130 }, clockOf, nameOf);
-assert.strictEqual(folded.sentence, 'T100. Skipped: the agent was busy. 3 times, until T130.', 'the sentence reads in the order of the list');
-assert.strictEqual(H.runText({ at: 1, outcome: 'failed', reason: 'send-error' }, clockOf).sentence, 'T1. Could not send: the agent app refused it.');
 
 // the empty state
 assert.strictEqual(H.emptyText(undefined, clockOf), 'No runs yet.');
