@@ -1,1 +1,0 @@
-- The website's wording follows the latest release: a stable release says "Download" and "Install Agent Durbar" instead of "alpha" (a pre-release keeps the alpha wording).

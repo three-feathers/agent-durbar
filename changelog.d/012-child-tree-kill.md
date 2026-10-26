@@ -1,1 +1,0 @@
-- **Stopping a Codex or Claude session ends its helper processes on Windows** (spec 012 FR-079): the close and kill steps use `taskkill /t /f` instead of ending one process. POSIX is unchanged. Checked with a fake child only; not verified on Windows.

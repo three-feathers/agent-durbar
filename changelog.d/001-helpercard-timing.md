@@ -1,1 +1,0 @@
-- **Helper-card repaint check no longer flakes under load** (spec 001, FR-169, #763): `test:helpercard` compares the best of 3 CPU times against a same-run baseline as a ratio (limit 20, timer-tick floor) instead of a fixed millisecond limit. Test only; a repaint that cuts the 1 MB result again still fails it (ratio about 4800).

@@ -1,1 +1,0 @@
-- **Copilot's chip no longer says plain "Sandboxed" in Ask first** (spec 087 FR-021b, K15, #755): it reads *Ask first · Sandboxed (partial)*, because a command you approve can still write outside the session folder (seen on Linux, 2026-10-25). Claude Code, Codex and Read-only are unchanged. Tested with the unit test and the simulator; no real session was run.
