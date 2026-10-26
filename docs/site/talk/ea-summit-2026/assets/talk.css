@@ -8,7 +8,7 @@
   --head:"Press Start 2P",ui-monospace,"Cascadia Mono","DejaVu Sans Mono",Menlo,Consolas,monospace;
   --body:system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,"Noto Sans",Arial,sans-serif;
   --mono:ui-monospace,"Cascadia Mono","DejaVu Sans Mono",Menlo,Consolas,monospace;
-  --fs:clamp(17px,0.8vw + 10px,28px);
+  --fs:clamp(16px,min(1.3vw,2.3vh),40px);--hud:2.3rem;
   color-scheme:light;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
@@ -253,3 +253,130 @@ h3.red{color:var(--accent)}h3.green{color:var(--green)}
 #reviews .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 #reviews .review{font-size:.74em}
 @media (max-width:900px){#needsyou .split,#reviews .grid{grid-template-columns:1fr}}
+
+/* ---------- v2 (owner 2026-10-26): full-bleed slides for a projector and a Teams share, a game HUD, fluid type ----------
+   html's font size is the fluid body size, so every rem below scales with the window (body >= 24px at 1920x1080). */
+html{font-size:var(--fs)}
+body{font-size:1rem}
+.slide{padding:calc(var(--hud) + 2.2vh) 4vw calc(2.6rem + 1.5vh)}
+.inner{max-width:1760px}
+h1{font-size:clamp(1.5rem,min(4.4vw,8vh),6rem)}
+#start h1{font-size:clamp(1.4rem,min(3.6vw,6.4vh),5rem)}
+h2{font-size:clamp(1.25rem,min(3vw,5.4vh),4rem)}
+h3{font-size:clamp(.7rem,min(1.15vw,2vh),1.3rem)}
+.kicker{font-size:max(12px,.7rem)}
+.q{font-size:clamp(1.3rem,min(3vw,5.4vh),3.6rem)}
+.big{font-size:clamp(1.5rem,min(4vw,7.2vh),5rem)}
+.close .big{font-size:clamp(1.6rem,min(4.4vw,8vh),5.6rem)}
+.brandbar{position:static;margin:0 0 1.2rem;font-size:max(12px,.6rem)}
+.brandbar img{width:1.6rem;height:1.6rem}
+.hint{top:calc(var(--hud) + 8px);font-size:max(14px,.66rem)}
+.keys{font-size:max(14px,.66rem)}
+kbd{font-size:.85em}
+.title-row img{width:clamp(120px,min(13vw,22vh),320px)}
+.tl .d{font-size:max(11px,.55rem)}
+.tl .rel{font-size:max(10px,.5rem)}
+.flow .who{font-size:max(11px,.52rem)}
+.flow .who img{width:1.6rem;height:1.6rem}
+.flow strong{font-size:max(12px,.7rem)}
+.review h4{font-size:max(12px,.6rem)}
+.pr-tl .by{font-size:max(11px,.5rem)}
+.chat .from{font-size:max(11px,.52rem)}
+.chat .tiny{font-size:max(12px,.58rem)}
+.fail .was::before,.fail .now::before{font-size:max(11px,.5rem)}
+.bars .b span{font-size:max(12px,.6rem)}
+.axis{font-size:max(13px,.62rem)}
+.bars{height:clamp(130px,24vh,320px)}
+.arc li{font-size:max(12px,.72rem)}
+.stat .n{font-size:clamp(1.1rem,min(2.6vw,4.6vh),3rem)}
+.shot figcaption,.video-cap{font-size:max(13px,.7rem)}
+.small{font-size:.8rem}
+
+/* the HUD: level, title, progress (a game's status bar) */
+.hud{position:fixed;top:0;left:0;right:0;height:var(--hud);z-index:20;display:flex;align-items:center;gap:1rem;padding:0 1rem;
+  background:#111122;color:#ffec27;border-bottom:4px solid #ff004d;font-family:var(--head);font-size:max(11px,.56rem);letter-spacing:.04em}
+.hud .lvl{white-space:nowrap}
+.hud-title{flex:1;min-width:0;color:#fff1e8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-transform:uppercase}
+.pbar{width:clamp(90px,22vw,420px);height:.75rem;border:3px solid #fff1e8;background:repeating-linear-gradient(90deg,#29315c 0 10px,#1d2b53 10px 12px);position:relative;flex:none}
+.pbar i{position:absolute;left:0;top:0;bottom:0;width:0;background:repeating-linear-gradient(90deg,#ffec27 0 10px,#e0a92c 10px 12px);transition:width .3s steps(6)}
+.nav{right:1rem;bottom:1rem;font-size:max(12px,.6rem)}
+.nav button{min-width:2.4rem;min-height:2.2rem}
+.nav .count{display:none}
+.blackout{display:none;position:fixed;inset:0;background:#000;z-index:100;cursor:none}
+body.black .blackout{display:block}
+/* a faint CRT scanline, off under reduced motion, in print and in forced colours */
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:15;background:repeating-linear-gradient(to bottom,transparent 0 2px,rgba(0,0,0,.035) 2px 3px)}
+@media (prefers-reduced-motion:reduce){body::after{display:none}.pbar i{transition:none}}
+@media (forced-colors:active){body::after{display:none}}
+@media print{body::after,.hud,.blackout{display:none}}
+
+/* new slides: agentic experiences, work like a game */
+.points{list-style:none;margin:0 0 1.2rem;padding:0;display:grid;gap:.7rem;font-size:1.15rem}
+.points li{background:var(--surface);border:3px solid var(--line);box-shadow:4px 4px 0 var(--shadow);padding:.5rem .8rem}
+.before-after{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;font-size:.9rem}
+.before-after span{border:3px dashed var(--line);padding:.3rem .6rem;background:var(--surface)}
+.before-after span:last-child{border-style:solid;background:var(--accent-bg);color:var(--accent-ink)}
+.before-after b{color:var(--accent)}
+.gamegrid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,15rem),1fr));gap:clamp(10px,1.2vw,22px)}
+.gamegrid li{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;gap:.15rem .7rem;align-items:center;background:var(--surface);border:3px solid var(--line);box-shadow:5px 5px 0 var(--shadow);padding:.6rem .8rem}
+.gamegrid img{grid-row:1 / span 2;width:2.6rem;height:2.6rem;image-rendering:pixelated;border:2px solid var(--line);background:var(--surface-2)}
+.gamegrid b{font-family:var(--head);font-weight:400;font-size:max(12px,.66rem);line-height:1.5}
+.gamegrid span{font-size:.92rem;color:var(--ink-2)}
+.gamegrid li.win{background:var(--accent-bg)}
+.gamegrid li.win b,.gamegrid li.win span{color:var(--accent-ink)}
+.title-row.stack{flex-direction:column;align-items:center;margin:0}
+.vhint{position:static;display:inline-block;margin:0 0 .6rem}
+.vhint[hidden]{display:none}
+
+/* small windows (a Teams share at 1024x768 or 1280x720): tighter, still no sideways scroll */
+@media (max-height:800px){.slide{padding-top:calc(var(--hud) + 1.4vh);padding-bottom:3rem}.title-row{margin-top:1rem}}
+/* v2 fit fixes (checked at 1920x1080, 1280x720, 1024x768) */
+#start h1{font-size:clamp(1.3rem,min(3.1vw,5.6vh),4.4rem)}
+#start .title-row img{width:clamp(110px,min(11vw,18vh),260px)}
+.split h2{font-size:clamp(1.05rem,min(2.2vw,4.2vh),2.8rem)}
+.split .lead{font-size:1.15rem}
+#failures .grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+#failures h2{font-size:clamp(1.1rem,min(2.4vw,4.4vh),3rem)}
+.fail .was,.fail .now{font-size:.8rem}
+.evo{grid-template-columns:repeat(3,minmax(0,1fr));max-width:calc((100vh - var(--hud) - 15rem) * 2.4 + 3rem)}
+.evo figcaption{font-size:max(12px,.62rem)}
+.stats{grid-template-columns:repeat(4,minmax(0,1fr))}
+.stat{padding:.4rem .7rem}
+.stat .l{font-size:.8rem}
+.bars{height:clamp(100px,18vh,260px)}
+.points{font-size:1rem}
+@media (max-width:900px){#failures .grid,.evo,.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){#failures .grid,.evo,.stats{grid-template-columns:1fr}}
+.fail{gap:6px}#failures .grid{gap:12px 18px}
+/* three presenters, like players */
+.players{list-style:none;margin:1.2rem 0 0;padding:0;display:flex;flex-wrap:wrap;gap:clamp(10px,2vw,40px)}
+.players li{display:grid;justify-items:center;gap:.1rem}
+.players img{width:clamp(110px,min(11vw,17vh),240px);image-rendering:pixelated}
+.players b{font-family:var(--head);font-weight:400;font-size:max(12px,.62rem)}
+.players span{font-family:var(--mono);font-size:max(13px,.62rem);color:var(--muted)}
+.handover{background:#111122;color:#fff1e8;text-align:center;background-image:repeating-linear-gradient(to bottom,rgba(255,255,255,.03) 0 2px,transparent 2px 4px)}
+.handover .inner{display:grid;justify-items:center;gap:1rem}
+.handover .kicker{color:#ff6b8f}
+.handover img{width:clamp(200px,min(26vw,40vh),520px);image-rendering:pixelated}
+.handover .turn{font-family:var(--head);font-size:clamp(1.4rem,min(4.6vw,8vh),5.4rem);color:#ffec27;margin:0;line-height:1.3}
+.handover .turn-sub{font-family:var(--head);font-size:clamp(.8rem,min(1.8vw,3.2vh),2rem);margin:0;color:#fff1e8}
+@media (prefers-reduced-motion:no-preference){.handover .turn-sub{animation:blink 1.2s steps(2) infinite}}
+@keyframes blink{50%{opacity:.35}}
+.runorder{margin:0;padding-left:1.4em;display:grid;gap:.5em}
+.opts{max-width:none}
+.opts li{font-size:1.35rem}
+.why{font-size:1.25rem}
+#pain .grid img{width:100%;image-rendering:pixelated}
+.flip .big,#trust .big{font-size:clamp(1.6rem,min(4.6vw,8.4vh),6rem)}
+/* poll slides: a banner the room can read */
+.pollbar{display:inline-flex;align-items:center;gap:.7rem;margin:0 0 1rem;padding:.45rem .9rem;background:#111122;color:#ffec27;border:3px solid var(--line);box-shadow:5px 5px 0 var(--accent);font-family:var(--head);font-size:clamp(.7rem,min(1.3vw,2.4vh),1.4rem);letter-spacing:.04em}
+.pollicon{display:inline-flex;align-items:flex-end;gap:3px;height:1.1em}
+.pollicon i{display:block;width:.35em;background:#ffec27}
+.pollicon i:nth-child(1){height:45%}.pollicon i:nth-child(2){height:100%}.pollicon i:nth-child(3){height:70%;background:#ff004d}
+@media (prefers-reduced-motion:no-preference){.pollbar{animation:blink 2s steps(2) 3}}
+.close .players{margin-top:1rem}
+#pain .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+#pain .grid img{max-height:26vh;object-fit:contain}
+.close .big{font-size:clamp(1.4rem,min(3.8vw,6.6vh),4.8rem)}
+.close .players img{width:clamp(100px,min(9vw,14vh),200px)}
+.close .pollbar{margin-top:.6rem}
