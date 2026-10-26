@@ -428,6 +428,29 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
     assert.strictEqual(rn.status, 97, `then it goes on to the (fake) clone: ${rn.stderr}`);
     assert.strictEqual(fs.statSync(fresh).mode & 0o777, 0o700, 'a missing Claude folder is created 0700');
     fs.rmSync(called, { force: true });
+    // macOS has no flock and a BSD stat (no -c): a PATH without flock, and a stat that rejects -c and answers -f %Lp
+    const nobin = fs.mkdtempSync(path.join(tmp, 'noflock-'));
+    for (const b of ['git', 'npm', 'node', 'claude', 'gh']) fs.copyFileSync(path.join(fakebin, b), path.join(nobin, b)), fs.chmodSync(path.join(nobin, b), 0o700);
+    for (const b of ['bash', 'sh', 'env', 'dirname', 'mkdir', 'rmdir', 'chmod', 'install', 'date', 'find', 'tee', 'mktemp', 'rm', 'cat', 'sed', 'printf', 'tail', 'cp', 'mv', 'id']) {
+      for (const d of ['/usr/bin', '/bin']) if (fs.existsSync(path.join(d, b))) { fs.symlinkSync(path.join(d, b), path.join(nobin, b)); break; }
+    }
+    fs.writeFileSync(path.join(nobin, 'stat'), '#!/bin/sh\nif [ "$1" = "-c" ]; then echo "stat: illegal option -- c" >&2; exit 1; fi\nif [ "$1" = "-f" ] && [ "$2" = "%Lp" ]; then exec /usr/bin/stat -c %a "$3"; fi\nexit 1\n', { mode: 0o700 });
+    assert.ok(!fs.existsSync(path.join(nobin, 'flock')), 'the fake PATH has no flock');
+    const nf = { ...base, PATH: nobin, DURBAR_AUDIT_STATE_DIR: path.join(home, 'state-nf') };
+    const lockd = path.join(home, 'state-nf', 'lock.d');
+    const rs = spawnSync('bash', [sh, 'audit'], { env: { ...nf, CLAUDE_CONFIG_DIR: wide }, encoding: 'utf8' });
+    assert.ok(rs.status === 2 && /wider than 0700/.test(rs.stderr), `BSD stat -f %Lp branch sees 0755: ${rs.status} ${rs.stderr}`);
+    const ok700 = path.join(home, 'claude-700');
+    fs.mkdirSync(ok700, { mode: 0o700 });
+    fs.mkdirSync(lockd, { recursive: true });
+    const rh = spawnSync('bash', [sh, 'audit'], { env: { ...nf, CLAUDE_CONFIG_DIR: ok700 }, encoding: 'utf8' });
+    assert.ok(rh.status === 0 && /another run holds the lock/.test(rh.stdout), `held mkdir lock: exit 0: ${rh.status} ${rh.stdout}${rh.stderr}`);
+    assert.ok(fs.existsSync(lockd) && !fs.existsSync(called), 'a held lock is left alone and nothing ran');
+    fs.rmdirSync(lockd);
+    const rr = spawnSync('bash', [sh, 'audit'], { env: { ...nf, CLAUDE_CONFIG_DIR: ok700 }, encoding: 'utf8' });
+    assert.strictEqual(rr.status, 97, `no flock: goes on to the (fake) clone: ${rr.stdout}${rr.stderr}`);
+    assert.ok(!fs.existsSync(lockd), 'the mkdir lock is released after the run');
+    fs.rmSync(called, { force: true });
   }
   // ---- the unit templates: the filer is never the audit's copy, the audit user sees no home and holds no token
   {
