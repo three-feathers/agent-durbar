@@ -23,6 +23,7 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 const assert = require('assert');
 const OUT = process.env.SHOTS_033 || '/tmp';
 const SIZES = [[1440, 900], [1280, 800]];
+const MIN_BASE_MS = 2, MAX_RATIO = 16, CAP_MS = 2000; // SC-003 as changed 2026-10-26 (issue #454): ratio to a same-run yardstick, see below
 /* SC-003 (issue #454): time the renderer's main thread spent ready to run but waiting for a CPU, from Linux's per-thread scheduler
    statistics (/proc/<pid>/schedstat: run time, run-queue wait, slices; the file of a process is its main thread). That wait is the
    machine's load, not the app's work. null where the file is missing (macOS, Windows, a kernel without it): the wall time counts. */
@@ -123,18 +124,34 @@ module.exports = async (ctx) => {
       await until(`document.getElementById('floorsBtn').textContent.trim()==='2/3'&&![...document.querySelectorAll('#stage .floor-tag')].some(t=>t.textContent==='Personal')`);
       return { ms, waited, own: ms - waited };
     };
+    /* a same-run yardstick (#454, 2026-10-26): a fixed DOM + layout + string workload in the same page, best of 3, so the machine's speed
+       and load cancel out of the comparison. The switch is judged as a ratio to it (see MAX_RATIO), plus a generous absolute cap. */
+    const calibrate = async () => {
+      let best = Infinity;
+      for (let i = 0; i < 3; i++) {
+        const t = await js(`(()=>{const t0=performance.now();const box=document.createElement('div');box.style.cssText='position:absolute;left:-9999px;top:0;width:900px';
+          for(let i=0;i<1500;i++){const d=document.createElement('div');d.style.cssText='display:inline-block;width:'+(20+i%40)+'px;padding:2px';d.textContent='agent '+i;box.appendChild(d);}
+          document.body.appendChild(box);let h=0;for(let i=0;i<12;i++){box.style.width=(700+i*20)+'px';h+=box.offsetHeight;}box.remove();return performance.now()-t0+h*0;})()`);
+        best = Math.min(best, t);
+      }
+      return Math.max(best, MIN_BASE_MS);
+    };
     const tries = [];
+    let base = await calibrate();
     for (;;) {
       tries.push(await offOnce());
-      if (tries[tries.length - 1].own < 500 || tries.length === 3) break;
+      if (tries[tries.length - 1].own < base * MAX_RATIO || tries.length === 3) break;
       await js(`document.querySelector('[data-fl="on"][data-floor="f-personal"]').click()`); // back on, then measure again in a quiet office
       await until(`document.getElementById('floorsBtn').textContent.trim()==='3/3'`);
       await until(`!document.querySelector('#walkers .walker.walking')`); await settle();
+      base = Math.min(base, await calibrate());
     }
     const best = tries.reduce((a, b) => (b.own < a.own ? b : a));
-    const said = tries.map((t) => `${Math.round(t.own)} ms` + (t.waited >= 1 ? ` (${Math.round(t.ms)} ms on the clock, ${Math.round(t.waited)} ms of it waiting for a CPU on a busy machine)` : '')).join(', ');
-    console.log('[033]', w, 'switch off took', said);
-    assert.ok(best.own < 500, `SC-003: updated in ${Math.round(best.own)} ms (tries: ${said})`);
+    const ratio = best.own / base;
+    const said = tries.map((t) => `${Math.round(t.own)} ms` + (t.waited >= 1 ? ` (${Math.round(t.ms)} ms on the clock, ${Math.round(t.waited)} ms of it waiting for a CPU)` : '')).join(', ');
+    console.log('[033]', w, `switch off took ${said}; yardstick ${base.toFixed(1)} ms; ratio ${ratio.toFixed(2)} (limit ${MAX_RATIO}, cap ${CAP_MS} ms)`);
+    assert.ok(ratio < MAX_RATIO, `SC-003: switch off took ${Math.round(best.own)} ms of its own, ${ratio.toFixed(1)} times the same-run yardstick of ${base.toFixed(1)} ms (limit ${MAX_RATIO}; tries: ${said})`);
+    assert.ok(best.own < CAP_MS, `SC-003: switch off took ${Math.round(best.own)} ms (sanity cap ${CAP_MS} ms; tries: ${said})`);
     await panel(false);
     await calm(); // figures of the off floor leave and the others settle
     s = await state();

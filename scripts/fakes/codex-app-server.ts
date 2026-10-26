@@ -73,6 +73,12 @@ export interface ServerReply {
   error?: unknown;
 }
 
+/**
+ * A pid no process can have: odd and above 2e9 (Windows pids are multiples of 4, Linux caps at 4194304). The default kill step runs a real
+ * `taskkill /pid N /t /f` on win32, so a fake child must never carry a pid that could belong to something else (review of #769).
+ */
+export const fakePid = (index: number): number => 2_000_000_001 + 2 * index;
+
 /** One fake child process. */
 export class FakeChild extends EventEmitter implements RpcChild {
   pid: number | undefined;
@@ -86,7 +92,7 @@ export class FakeChild extends EventEmitter implements RpcChild {
   private inBuf = '';
   constructor(readonly index: number, private readonly server: FakeCodexServer) {
     super();
-    this.pid = 10000 + index;
+    this.pid = fakePid(index);
   }
   stdin = {
     write: (data: string, cb?: (err?: Error | null) => void): boolean => {

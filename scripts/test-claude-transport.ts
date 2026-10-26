@@ -1,12 +1,12 @@
 /** Claude CLI transport (spec 012 FR-110, T090) on a scripted fake child: `npm run test:claudetransport`. No claude, no credits. */
 import * as assert from 'assert';
 import { MAX_LINE_BYTES, createCliTransport } from '../src/adapters/claudeTransport';
-import type { ControlAnswer, IncomingControl, TransportHandlers } from '../src/adapters/claudeTransport';
+import type { ChildLike, ControlAnswer, IncomingControl, TransportHandlers } from '../src/adapters/claudeTransport';
 import { fakeSpawn } from './fakes/claude-cli';
 
 const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-function setup(handlers: Partial<TransportHandlers> = {}, opts: { controlTimeoutMs?: number; closeGraceMs?: number; killGraceMs?: number } = {}) {
+function setup(handlers: Partial<TransportHandlers> = {}, opts: { controlTimeoutMs?: number; closeGraceMs?: number; killGraceMs?: number; killChild?: (c: ChildLike, s: NodeJS.Signals) => void } = {}) {
   const fs = fakeSpawn();
   const msgs: unknown[] = [];
   const exits: Array<{ code: number | null; signal: string | null; stderrTail: string }> = [];
@@ -23,6 +23,7 @@ function setup(handlers: Partial<TransportHandlers> = {}, opts: { controlTimeout
       control: handlers.control ?? (async () => ({ response: {} })),
       exit: (e) => exits.push(e),
     },
+    killChild: (c, sig) => { c.kill(sig); }, // the platform default would run taskkill on win32; these tests count direct signals
     ...opts,
   });
   return { t, child: fs.children[0], calls: fs.calls, msgs, exits };
@@ -151,6 +152,16 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(s2.child.killed, ['SIGTERM', 'SIGKILL'], 'escalates');
     assert.strictEqual(s2.t.alive, false);
     await s2.t.close(); // idempotent
+  }
+  // the kill steps go through the injected tree killer, in order (FR-079 delta 2026-10-26)
+  {
+    const steps: string[] = [];
+    const s3 = setup({}, { closeGraceMs: 10, killGraceMs: 10, killChild: (_c, sig) => { steps.push(sig); } });
+    s3.child.exitOnEnd = false;
+    s3.child.exitOnTerm = false;
+    await s3.t.close();
+    assert.deepStrictEqual(steps, ['SIGTERM', 'SIGKILL']);
+    assert.deepStrictEqual(s3.child.killed, [], 'child.kill is not used when a killer is injected');
   }
 
   console.log('claude transport tests passed');

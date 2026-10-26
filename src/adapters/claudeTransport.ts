@@ -13,6 +13,7 @@
 import { spawn as nodeSpawn } from 'child_process';
 import { StringDecoder } from 'string_decoder';
 import type { ClaudeMessage } from './claudeMap';
+import { killForEscalation } from './detect';
 
 export const MAX_LINE_BYTES = 8 * 1024 * 1024;
 export const CONTROL_TIMEOUT_MS = 30_000;
@@ -57,6 +58,7 @@ export interface ClaudeTransport {
 /* ------------------------------------------------------------------ CLI transport ------------------------------------------------------------------ */
 
 export interface ChildLike {
+  pid?: number;
   stdin: { write(chunk: string): boolean; end(): void; on?(ev: 'error', cb: (e: Error) => void): unknown } | null;
   stdout: { on(ev: 'data', cb: (chunk: Buffer | string) => void): unknown } | null;
   stderr: { on(ev: 'data', cb: (chunk: Buffer | string) => void): unknown } | null;
@@ -79,12 +81,15 @@ export interface CliTransportOptions {
   controlTimeoutMs?: number;
   closeGraceMs?: number;
   killGraceMs?: number;
+  /** One kill step (tests hand in a fake); the default ends the whole tree on Windows (FR-079). */
+  killChild?: (child: ChildLike, signal: NodeJS.Signals) => void;
   /** Request id factory for host → CLI requests (tests pass a counter). */
   nextId?: () => string;
 }
 
 export function createCliTransport(o: CliTransportOptions): ClaudeTransport {
   const spawn = o.spawn ?? realSpawn;
+  const killChild = o.killChild ?? ((c: ChildLike, sig: NodeJS.Signals) => killForEscalation(c, sig));
   const child = spawn(o.file, o.args, { cwd: o.cwd, env: o.env, windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
   let alive = true;
   let seq = 0;
@@ -251,9 +256,9 @@ export function createCliTransport(o: CliTransportOptions): ClaudeTransport {
       }
       const wait = (ms: number) => Promise.race([exited.then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), ms))]);
       if (await wait(o.closeGraceMs ?? CLOSE_GRACE_MS)) return;
-      child.kill('SIGTERM');
+      killChild(child, 'SIGTERM');
       if (await wait(o.killGraceMs ?? KILL_GRACE_MS)) return;
-      child.kill('SIGKILL');
+      killChild(child, 'SIGKILL');
       await wait(o.killGraceMs ?? KILL_GRACE_MS);
       finish(null, 'SIGKILL');
     },

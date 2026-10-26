@@ -99,7 +99,7 @@ assert.match(index, /<figure class="shot"><a class="zoom" href="screenshots\/051
 assert.ok(index.includes('id="faq"') && landing.faq.length >= 5 && landing.faq.every((f) => index.includes(esc(f.q))), 'FAQ section with every question');
 for (const f of landing.faq) if (f.readmeAnchor) assert.ok(docs.includes(`id="${f.readmeAnchor}"`), `FAQ anchor ${f.readmeAnchor} exists`);
 assert.ok(!/reads inside its folders only/.test(index), 'no overclaim: Durbar cannot force Claude Code and Copilot to stay in their folders');
-assert.match(index, /checked between replies/, 'the spending-limit line says when it is checked');
+assert.match(index, /soft by one call/, 'the spending-limit line says the call already running can go over');
 assert.match(index, /href="https:\/\/github\.com\/three-feathers\/agent-durbar\/blob\/main\/SECURITY\.md">Report a security problem</, 'security report link in the safety section');
 assert.match(index, /<a class="keep" href="#download">Download<\/a>/, 'Download stays in the header on phones');
 assert.match(index, /class="phone-only"> Tap the picture to see it full size\./, 'phones are told the hero opens full size');

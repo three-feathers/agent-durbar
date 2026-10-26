@@ -24,6 +24,8 @@
     if(s.state==='off')return 'Not sandboxed';
     if(s.managed)return 'Sandboxed (managed)';
     if(s.untilNewSession)return 'Sandboxed (until a new session)';
+    /* FR-021b (K15, #755): Copilot in Ask first (it covers MCP servers): an approved command was seen writing outside the folder, so no bare 'Sandboxed' */
+    if(s.approvedMayLeave&&s.covers.includes('mcp'))return 'Sandboxed (partial)';
     return 'Sandboxed';
   }
   function mechName(m,app){return m==='seatbelt'?'the macOS sandbox':m==='bubblewrap'?'bubblewrap':m==='processcontainer'?'Windows ProcessContainer':'the '+(app||'app')+' sandbox';}
