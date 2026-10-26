@@ -124,6 +124,9 @@ async function main(): Promise<void> {
     assert.ok(/ipcHandle\('schedules:runs', \(e, id: unknown\) => \(fromApp\(e\) \? runsReply\(/.test(ipcSrc), 'the channel checks the frame, then the argument');
     assert.ok(!/schedules:(clearRuns|setRuns|runs[A-Z])/.test(ipcSrc), 'no channel writes a log');
     assert.ok(/changed: \(doc\) => toRenderer\('schedules:changed', publicDoc\(doc\)\)/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8')), 'the push carries no runs');
+    const mainSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
+    const bq = mainSrc.slice(mainSrc.indexOf("app.on('before-quit'"));
+    assert.ok(/scheduler\?\.flush\(\)/.test(bq.slice(0, bq.indexOf('\n});'))), 'the one before-quit handler writes a pending fold-only change (FR-037)');
     assert.ok(/ipcHandle\('schedules:list', \(\) => \{[^}]*publicDoc\(/.test(ipcSrc.replace(/\s+/g, ' ')), 'schedules:list carries no runs')
     // the document pushed to the window carries no runs; the saved one does
     assert.strictEqual('runs' in publicDoc(h.sch.doc), false, 'publicDoc has no runs');
@@ -247,6 +250,19 @@ async function main(): Promise<void> {
     await h.advance(10 * MIN);
     assert.ok(h.saved > s0 && h.sch.doc.schedules[0].done, 'a one-time schedule going done is a real change');
     void r;
+    // ... also when its run folds into the previous entry of the same skip (edited to run again, busy again): the done flag is not a late write
+    h.busy.add('/w');
+    const one = h.sch.save({ folder: '/w', prompt: 'again', at: h.now + 10 * MIN }, () => true);
+    const oid = one.ok ? one.schedule.id : '';
+    await h.advance(10 * MIN);
+    assert.deepStrictEqual(log(h, oid).map((x) => [x.outcome, x.n]), [['skipped-paused', undefined]], 'paused once');
+    h.sch.setPausedAll(false);
+    assert.ok(h.sch.save({ id: oid, edit: true, folder: '/w', prompt: 'again', at: h.now + 10 * MIN }, () => true).ok, 'edited to run again');
+    h.sch.setPausedAll(true);
+    const s1 = h.saved;
+    await h.advance(10 * MIN);
+    assert.deepStrictEqual(log(h, oid).map((x) => [x.outcome, x.n]), [['skipped-paused', 2]], 'the same skip folded');
+    assert.ok(h.sch.doc.schedules.find((x) => x.id === oid)?.done && h.saved > s1, 'a one-time schedule going done is written at once, even when its run folded');
   }
 
   // ---- FR-037 pass/fail: a full document is cheap to write ----

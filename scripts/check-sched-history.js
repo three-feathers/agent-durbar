@@ -195,6 +195,23 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#sh-ss-sched-s1 [data-hchat="sim-1"]').click()`);
     check(await until(`document.getElementById('screen').hidden&&document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===window.__durbarSimUi.agents().find(a=>a.id==='sim-1').name`), `${tag}: Open chat did not close Settings and open the chat of sim-1`);
     await H.key('Escape'); await until(`!document.body.classList.contains('panel-open')`);
+    /* hostile text: a prompt with markup is shown as text (the list's name, the row) and runs nothing */
+    {
+      const HOSTILE = '<b id="pwn">x</b>"><img src=x onerror="window.__pwn=1"> & more';
+      await js(`document.getElementById('foldersBtn').click()`);
+      await until(`!!document.querySelector(${jsLiteral(`[data-fp="sched"][data-room="${NONE.id}"]`)})`);
+      await js(`document.querySelector(${jsLiteral(`[data-fp="sched"][data-room="${NONE.id}"]`)}).click()`);
+      await until(`!!document.getElementById('scAdd')`);
+      await js(`(()=>{document.getElementById('scPrompt').value=${jsLiteral(HOSTILE)};document.getElementById('scAdd').click();return true})()`);
+      check(await until(`document.querySelectorAll('#sdList .sc-row').length===1`), `${tag}: the hostile schedule was not added`);
+      await js(`document.querySelector('#sdList [data-sc="hist"]').click()`);
+      check(await until(`!!document.querySelector('#sdList .sc-hist li.sh-empty')`), `${tag}: the hostile schedule's History did not open`);
+      const esc = await js(`({pwn:!!document.getElementById('pwn'),img:!!document.querySelector('#schedDlg img'),ran:window.__pwn===1,name:document.querySelector('#sdList .sc-hist').getAttribute('aria-label'),prompt:document.querySelector('#sdList .sc-p').textContent})`);
+      check(!esc.pwn && !esc.img && !esc.ran && esc.name.startsWith('Runs of ' + HOSTILE.slice(0, 24)) && esc.prompt === HOSTILE, `${tag}: markup in a prompt was not shown as text: ${JSON.stringify(esc)}`);
+      await js(`document.querySelector('#sdList [data-sc="del"]').click()`);
+      check(await until(`document.querySelectorAll('#sdList .sc-row').length===0`), `${tag}: the hostile schedule was not deleted`);
+      await closeDlg();
+    }
     console.log(`[sched-history] ${tag} done`);
   }
 
