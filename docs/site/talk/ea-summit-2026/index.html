@@ -766,10 +766,61 @@ Draft release:   success   16:29
   </div>
 </section>
 
-<section class="slide" id="risk" data-presenter="vikram" data-title="Word cloud 7">
+<section class="slide" id="lvl-comb" data-presenter="pea" data-title="Level select: I, T, comb">
+  <div class="inner">
+    <p class="kicker">Level select &middot; choose your next skill</p>
+    <h2>From I to T to comb</h2>
+    <ol class="powerup">
+      <li><svg class="skill" viewBox="0 0 10 60" width="20" height="120" aria-hidden="true"><rect x="0" y="0" width="9" height="9" class="deep"/><rect x="0" y="10" width="9" height="9" class="deep"/><rect x="0" y="20" width="9" height="9" class="deep"/><rect x="0" y="30" width="9" height="9" class="deep"/><rect x="0" y="40" width="9" height="9" class="deep"/><rect x="0" y="50" width="9" height="9" class="deep"/></svg><b>I</b><span>One deep skill: the specialist.</span></li>
+      <li class="arrow" aria-hidden="true">&#9658;</li>
+      <li><svg class="skill" viewBox="0 0 50 60" width="100" height="120" aria-hidden="true"><rect x="0" y="0" width="9" height="9" class="broad"/><rect x="10" y="0" width="9" height="9" class="broad"/><rect x="20" y="0" width="9" height="9" class="broad"/><rect x="30" y="0" width="9" height="9" class="broad"/><rect x="40" y="0" width="9" height="9" class="broad"/><rect x="20" y="10" width="9" height="9" class="deep"/><rect x="20" y="20" width="9" height="9" class="deep"/><rect x="20" y="30" width="9" height="9" class="deep"/><rect x="20" y="40" width="9" height="9" class="deep"/><rect x="20" y="50" width="9" height="9" class="deep"/></svg><b>T</b><span>One deep skill and a broad understanding.</span></li>
+      <li class="arrow" aria-hidden="true">&#9658;</li>
+      <li class="win"><svg class="skill" viewBox="0 0 70 60" width="140" height="120" aria-hidden="true"><rect x="0" y="0" width="9" height="9" class="broad"/><rect x="10" y="0" width="9" height="9" class="broad"/><rect x="20" y="0" width="9" height="9" class="broad"/><rect x="30" y="0" width="9" height="9" class="broad"/><rect x="40" y="0" width="9" height="9" class="broad"/><rect x="50" y="0" width="9" height="9" class="broad"/><rect x="60" y="0" width="9" height="9" class="broad"/><rect x="10" y="10" width="9" height="9" class="deep"/><rect x="10" y="20" width="9" height="9" class="deep"/><rect x="10" y="30" width="9" height="9" class="deep"/><rect x="10" y="40" width="9" height="9" class="deep"/><rect x="10" y="50" width="9" height="9" class="deep"/><rect x="30" y="10" width="9" height="9" class="deep"/><rect x="30" y="20" width="9" height="9" class="deep"/><rect x="30" y="30" width="9" height="9" class="deep"/><rect x="30" y="40" width="9" height="9" class="deep"/><rect x="30" y="50" width="9" height="9" class="deep"/><rect x="50" y="10" width="9" height="9" class="deep"/><rect x="50" y="20" width="9" height="9" class="deep"/><rect x="50" y="30" width="9" height="9" class="deep"/><rect x="50" y="40" width="9" height="9" class="deep"/><rect x="50" y="50" width="9" height="9" class="deep"/></svg><b>Comb</b><span>Several deep skills and a broad understanding: agents do the depth work fast, and you switch modes often.</span></li>
+    </ol>
+  </div>
+</section>
+
+<section class="slide" id="lvl-classes" data-presenter="pea" data-title="Level select: five classes">
+  <div class="inner">
+    <p class="kicker">Level select &middot; five character classes</p>
+    <h2>Roles, not job titles</h2>
+    <p class="small attrib">The five roles Boris Cherny described for Anthropic's Claude Code team (as summarised by Aakash Gupta): <a href="https://x.com/aakashgupta/status/2071692050714501494">x.com/aakashgupta</a> · <a href="https://aakashgupta.medium.com/anthropics-claude-code-team-has-5-roles-and-zero-job-titles-bf4860a389fc">the article</a>. People move between them often.</p>
+    <ul class="classes">
+      <li><img src="assets/art/face-thinking.svg" alt="" width="48" height="48"><b>Prototyper</b><span>Many ideas, fast; most of them fail.</span><span class="needs">Needs: curiosity, speed, comfort with throwaway work.</span><span class="ex">In our eleven days: day 1, a prototype and then a first version in one afternoon.</span></li>
+      <li><img src="assets/art/face-working.svg" alt="" width="48" height="48"><b>Builder</b><span>Turns the prototype that survives into production.</span><span class="needs">Needs: rigor, specs, tests.</span><span class="ex">In our eleven days: spec first, then tests, and reviewers planting bugs.</span></li>
+      <li><img src="assets/art/face-error.svg" alt="" width="48" height="48"><b>Sweeper</b><span>Removes what does not earn its keep.</span><span class="needs">Needs: courage, data, saying no.</span><span class="ex">In our eleven days: the release-freeze rule retired once release notes were built at tag time; 13 orphan test drivers run, 3 repaired, 2 deleted (#748).</span></li>
+      <li><img src="assets/art/face-done.svg" alt="" width="48" height="48"><b>Grower</b><span>Pushes the product to fit its users.</span><span class="needs">Needs: empathy, user insight, experiments.</span><span class="ex">In our eleven days: the website, and the README's known limits in plain words (#768, landed through #783).</span></li>
+      <li><img src="assets/art/face-idle.svg" alt="" width="48" height="48"><b>Maintainer</b><span>Keeps it fast and reliable as it scales.</span><span class="needs">Needs: patience, ownership, writing things down.</span><span class="ex">In our eleven days: flaky timing tests fixed with same-run ratios; release day, red to green.</span></li>
+    </ul>
+    <p class="small muted">What each class needs: our interpretation.</p>
+  </div>
+</section>
+
+<section class="slide" id="lvl-today" data-presenter="pea" data-title="Word cloud 7">
   <p class="hint">&#9658; comms: start word cloud 7 now</p>
   <div class="inner">
+    <p class="kicker">Your character sheet</p>
     <p class="pollbar"><span class="pollicon" aria-hidden="true"><i></i><i></i><i></i></span>WORD CLOUD 7 &mdash; LIVE IN TEAMS NOW</p>
+    <p class="q">Which class are you TODAY?</p>
+    <p class="oneword">One or two words. <span class="nudge">Prototyper, Builder, Sweeper, Grower, Maintainer</span></p>
+  </div>
+</section>
+
+<section class="slide" id="lvl-next" data-presenter="pea" data-title="Word cloud 8">
+  <p class="hint">&#9658; comms: start word cloud 8 now</p>
+  <div class="inner">
+    <p class="kicker">Your character sheet</p>
+    <p class="pollbar"><span class="pollicon" aria-hidden="true"><i></i><i></i><i></i></span>WORD CLOUD 8 &mdash; LIVE IN TEAMS NOW</p>
+    <p class="q">Which class do you need NEXT?</p>
+    <p class="oneword">One or two words. <span class="nudge">Prototyper, Builder, Sweeper, Grower, Maintainer</span></p>
+    <p class="big closing">Nobody needs all five. Everyone will need more than one.</p>
+  </div>
+</section>
+
+<section class="slide" id="risk" data-presenter="vikram" data-title="Word cloud 9">
+  <p class="hint">&#9658; comms: start word cloud 9 now</p>
+  <div class="inner">
+    <p class="pollbar"><span class="pollicon" aria-hidden="true"><i></i><i></i><i></i></span>WORD CLOUD 9 &mdash; LIVE IN TEAMS NOW</p>
     <p class="q">Where could this NOT work?</p>
     <p class="oneword">One or two words. <span class="nudge">e.g. regulated systems, finance, production…</span></p>
   </div>
@@ -800,10 +851,10 @@ Draft release:   success   16:29
   </div>
 </section>
 
-<section class="slide" id="cloud" data-presenter="vikram" data-title="Word cloud 8">
-  <p class="hint">&#9658; comms: start word cloud 8 now</p>
+<section class="slide" id="cloud" data-presenter="vikram" data-title="Word cloud 10">
+  <p class="hint">&#9658; comms: start word cloud 10 now</p>
   <div class="inner">
-    <p class="pollbar"><span class="pollicon" aria-hidden="true"><i></i><i></i><i></i></span>WORD CLOUD 8 &mdash; LIVE IN TEAMS NOW</p>
+    <p class="pollbar"><span class="pollicon" aria-hidden="true"><i></i><i></i><i></i></span>WORD CLOUD 10 &mdash; LIVE IN TEAMS NOW</p>
     <p class="q">One thing you'll stop doing manually on Monday.</p>
     <p class="oneword">One or two words.</p>
   </div>

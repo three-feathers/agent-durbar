@@ -444,3 +444,25 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:15;bac
 .subtitle{font-family:var(--head);font-size:clamp(.8rem,min(1.7vw,3vh),2rem);line-height:1.5;margin:0 0 1rem;color:var(--ink-2)}
 .subtitle span{background:#111122;color:#ffec27;padding:.15em .45em;margin-right:.5em}
 .players{align-items:flex-start}.players li span{font-size:max(12px,.55rem)}
+/* level select (owner 2026-10-27, 23:11 UTC): I -> T -> comb, five classes, the character sheet */
+.powerup{list-style:none;margin:1rem 0 0;padding:0;display:flex;flex-wrap:wrap;align-items:flex-end;gap:clamp(10px,2vw,40px)}
+.powerup li{display:grid;justify-items:center;gap:.4rem;max-width:22rem;text-align:center;background:var(--surface);border:3px solid var(--line);box-shadow:5px 5px 0 var(--shadow);padding:.8rem 1rem}
+.powerup li.arrow{background:none;border:0;box-shadow:none;color:var(--accent);font-size:2rem;align-self:center;padding:0}
+.powerup li.win{background:var(--accent-bg);color:var(--accent-ink)}
+.powerup b{font-family:var(--head);font-weight:400;font-size:clamp(1rem,min(2.4vw,4.2vh),2.6rem)}
+.powerup span{font-size:1rem}
+.skill{width:auto;height:clamp(70px,min(12vw,20vh),200px);shape-rendering:crispEdges}
+.skill .deep{fill:var(--accent)}
+.skill .broad{fill:var(--blue)}
+.powerup li.win .skill .broad{fill:#111122}
+.attrib{color:var(--ink-2);margin:0 0 .8rem}
+.classes{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:clamp(8px,1vw,18px)}
+.classes li{display:grid;gap:.3rem;align-content:start;background:var(--surface);border:3px solid var(--line);box-shadow:4px 4px 0 var(--shadow);padding:.6rem .7rem;font-size:.82rem}
+.classes img{width:2.6rem;height:2.6rem;image-rendering:pixelated;border:2px solid var(--line);background:var(--surface-2)}
+.classes b{font-family:var(--head);font-weight:400;font-size:max(12px,.7rem)}
+.classes .needs{color:var(--ink-2);font-style:italic}
+.classes .ex{border-top:2px dashed color-mix(in srgb,var(--line) 40%,transparent);padding-top:.3rem;color:var(--muted)}
+.closing{margin-top:1rem;font-size:clamp(1.2rem,min(2.8vw,5vh),3.2rem)}
+@media (max-width:1100px){.classes{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:640px){.classes{grid-template-columns:1fr}}
+.host-wrap h3{font-family:var(--head);font-weight:400;font-size:max(12px,.7rem);margin:1rem 0 .4rem}
