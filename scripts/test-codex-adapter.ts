@@ -15,7 +15,7 @@ import { CODEX_INITIALIZE_CAPABILITIES, codexProfileArgs, codexSpawnPath, codexW
 import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
 import type { AgentEvent, PermissionMode } from '../src/adapters/types';
 import { eventProblems } from '../src/adapters/eventguard';
-import { FakeCodexServer } from './fakes/codex-app-server';
+import { FakeCodexServer, fakePid } from './fakes/codex-app-server';
 import type { FakeCodexOptions } from './fakes/codex-app-server';
 
 const BIN = path.join(os.tmpdir(), 'fake-codex-bin');
@@ -1382,6 +1382,11 @@ async function main(): Promise<void> {
 
   for (const d of tmp) fs.rmSync(d, { recursive: true, force: true });
   finished = true;
+  // the fake child's pid can never be a real process: the default kill step would run taskkill on it on win32 (review of #769)
+  for (const i of [0, 1, 7, 500]) {
+    const pid = fakePid(i);
+    assert.ok(pid % 2 === 1 && pid > 2_000_000_000, 'odd and above 2e9: not a Windows or Linux pid');
+  }
   console.log('codex adapter: ok');
 }
 
