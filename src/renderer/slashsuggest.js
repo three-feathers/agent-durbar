@@ -17,7 +17,7 @@
     if(!NAME_CHARS.test(q)||q.length>64)return null;
     return {start:s,query:q};
   }
-  const RANK={folder:0,user:1,app:2};
+  const RANK={folder:0,user:1,app:2,note:3};
   /* the palette's matcher (spec 074, navigator.js), looked up when used: in the page navigator.js loads after this file */
   function nav(){
     const g=typeof globalThis!=='undefined'?globalThis:typeof self!=='undefined'?self:{};
@@ -40,13 +40,32 @@
     const out=v.slice(0,start)+word+sep+rest;
     return {value:out,caret:start+word.length+(sep?1:/^\s/.test(rest)?1:0)};
   }
+  /* Spec 083 FR-030 (spec 073 FR-066/FR-067): the list of a chat = the commands that match, then the notes that match (same ranking),
+     then "All notes…". Nothing typed after "/": at most `max` notes. `notes` are entries with source 'note' and an `insertText`;
+     `all` is the "All notes…" entry (kind 'more'), offered only when nothing is typed. Returns { commands, notes, items }. */
+  function withNotes(commands,notes,query,max,all){
+    const q=String(query||''), cmds=filter(commands,q);
+    const list=(Array.isArray(notes)?notes:[]).filter(e=>e&&e.source==='note');
+    /* this session's notes come first, then the folder's, each group ranked on its own (spec 083 FR-030) */
+    const rk=l=>nav().rank(l.map(e=>({label:e.name,kw:e.description||'',e})),q).map(x=>x.e);
+    const ranked=q?rk(list.filter(e=>e.scope==='session')).concat(rk(list.filter(e=>e.scope!=='session'))):list;
+    const shown=q?ranked:ranked.slice(0,Number(max)>0?Number(max):5);
+    const more=!q&&list.length&&all?[all]:[];
+    return {commands:cmds,notes:shown,items:cmds.concat(shown,more)};
+  }
   const SOURCE_WORD={folder:'folder',user:'user',app:'app'};
   const KIND_WORD={skill:'skill',command:'command',prompt:'prompt',builtin:'built-in'};
   const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   /* One option row of the list (FR-008). Every field comes from a file's front matter or the app, so each is escaped here (the XSS
      guard; test-slashcommands checks it with a hostile entry). `tip` is the row's full text for its title. */
+  const NOTE_SVG='<svg class="sl-ico" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 2.5h9v11h-9zM6 5.5h4M6 8h4M6 10.5h2.5"/></svg>';
+  const SCOPE_WORD={session:'this session',folder:'this folder',file:'project file'};
   function optionHtml(x,i,active,tip){
     const n=Number(i)|0;
+    if(x.source==='note'){ /* spec 083: a note row has an icon and its title, no slash; every field is escaped here too */
+      const more=x.kind==='more';
+      return `<div class="sl-opt sl-note" role="option" id="slashOpt-${n}" data-i="${n}" aria-selected="${!!active}" title="${esc(tip||'')}"><span class="sl-line">${NOTE_SVG}<b class="sl-name">${esc(more?'All notes…':x.name)}</b></span>${more?'':`<span class="sl-sub"><span class="sl-src sl-note-src">note · ${esc(SCOPE_WORD[x.scope]||x.scope||'this folder')}</span>${x.description?`<span class="sl-desc">${esc(x.description)}</span>`:''}</span>`}</div>`; /* the title has the whole first line; the scope word and the excerpt share the second (the excerpt is cut first) */
+    }
     return `<div class="sl-opt" role="option" id="slashOpt-${n}" data-i="${n}" aria-selected="${!!active}" title="${esc(tip||'')}"><span class="sl-line"><b class="sl-name">/${esc(x.name)}</b>${x.argumentHint?`<span class="sl-hint">${esc(x.argumentHint)}</span>`:''}<span class="sl-src sl-${esc(x.source)}">${esc(SOURCE_WORD[x.source]||x.source)} · ${esc(KIND_WORD[x.kind]||x.kind)}</span></span>${x.description?`<span class="sl-desc">${esc(x.description)}</span>`:''}</div>`;
   }
   /* FR-013 (issue #608): what the list SHOWS of an entry, masked. `mask` is the page's DurbarSafeText mask (spec 041 FR-065; app.js
@@ -55,14 +74,16 @@
      text (fail closed). The real entry keeps its name: picking inserts and sends that one. */
   function view(x,mask){
     const m=t=>{if(t==null||t==='')return '';if(typeof mask!=='function')return '';try{const r=mask(String(t));return typeof r==='string'?r:'';}catch(e){return '';}};
-    return {name:m(x.name),description:m(x.description),argumentHint:m(x.argumentHint),where:m(x.where),source:x.source,kind:x.kind};
+    return {name:m(x.name),description:m(x.description),argumentHint:m(x.argumentHint),where:m(x.where),source:x.source,kind:x.kind,scope:x.scope};
   }
   /* The row's tooltip (FR-008): the full name, the description and the place, each MASKED first (view), then joined and cut to 300 by
      `cut` (DurbarCutText.cutText): a cut inside a token would leave a half token that no pattern knows. */
   function tip(x,mask,cut){
-    const v=view(x,mask), place=x.source==='app'?'Built-in command of the agent app':v.where?'Sends the text of '+v.where:'';
+    const v=view(x,mask);
+    if(x.source==='note'){const tt=x.kind==='more'?'All notes of this folder':[v.name,v.description,'Note · '+(SCOPE_WORD[x.scope]||'this folder')].filter(Boolean).join('\n');return typeof cut==='function'?cut(tt,300):tt.slice(0,300);}
+    const place=x.source==='app'?'Built-in command of the agent app':v.where?'Sends the text of '+v.where:'';
     const t=['/'+v.name,v.description,place].filter(Boolean).join('\n');
     return typeof cut==='function'?cut(t,300):t.slice(0,300);
   }
-  return {tokenAt,filter,insert,optionHtml,view,tip,SOURCE_WORD,KIND_WORD};
+  return {tokenAt,filter,withNotes,insert,optionHtml,view,tip,SOURCE_WORD,KIND_WORD};
 })());

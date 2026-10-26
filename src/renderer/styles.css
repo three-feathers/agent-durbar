@@ -1999,3 +1999,40 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 /* the unit scales in when its agent leaves the lounge (shut-out: from .92); the pencil counter-scales (1/.92) so its 24px target stays 24px while it plays (spec 059 FR-025, spec 052) */
 .unit.unrolling>.ren{animation:shut-out-ren .22s ease-out}
 @keyframes shut-out-ren{from{transform:scale(1.0870)}to{transform:none}}
+
+/* ---- spec 083: notes (issue 699). Tokens only; 10.5px floor; the drawer covers the chat log's box and nothing else ---- */
+.nt-btn{position:absolute;bottom:-12px;right:84px;width:28px;height:24px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);cursor:pointer;z-index:1}
+.nt-btn:hover,.nt-btn:focus-visible{background:var(--surface-2);color:var(--ink)}
+.nt-btn:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.msg.user .bubble{position:relative}
+.msg.user .bubble>.nt-btn{right:auto;left:10px}
+.panel-in.ro .nt-btn{display:none}
+.notes-drawer{position:absolute;z-index:6;display:flex;flex-direction:column;min-height:0;background:var(--surface);border-top:1px solid var(--line);border-bottom:1px solid var(--line);box-sizing:border-box}
+.notes-drawer[hidden]{display:none}
+.nt-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 16px 6px}
+.nt-h{margin:0;font-size:14px;font-weight:700;color:var(--ink)}
+.nt-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:0 16px 8px}
+.nt-foot{display:flex;gap:8px;align-items:center;padding:8px 16px 10px;border-top:1px solid var(--line)}
+.nt-grp{margin:6px 0 8px}
+.nt-grp h4{margin:6px 0 4px;font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-2)}
+.nt-row{display:flex;align-items:flex-start;gap:10px;padding:8px 10px;margin:0 0 6px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.nt-row:hover{background:var(--surface-2)}
+.nt-row:focus-visible,.nt-row:focus{outline:2px solid var(--focus);outline-offset:-2px}
+.nt-main{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.nt-title{font-size:13px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nt-meta{font-size:11px;color:var(--ink-2)}
+.nt-ex{margin:0;font-size:12px;line-height:1.4;color:var(--ink-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.nt-acts{display:flex;align-items:center;gap:6px;flex:none}
+.nt-more{width:28px;min-width:28px;padding:0;justify-content:center}
+.nt-empty,.nt-banner{margin:8px 0;padding:8px 10px;font-size:12px;line-height:1.45;color:var(--ink-2)}
+.nt-banner{border:1px solid var(--tone-bad-line);background:var(--bad-bg);color:var(--red-ink);border-radius:9px}
+.nt-notice{margin:0 0 8px;padding:6px 10px;border-radius:9px;background:var(--surface-2);border:1px solid var(--line);color:var(--ink-2);font-size:12px;line-height:1.4}
+.nt-notice[hidden]{display:none}
+.slash-list .sl-grp{padding:6px 10px 2px;font-size:10.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-2)}
+.slash-list .sl-note .sl-name{font-family:inherit;font-size:13px}
+.slash-list .sl-ico{flex:none;align-self:center;color:var(--ink-2)}
+@media (max-width:520px){.nt-row{flex-direction:column}.nt-acts{align-self:flex-end}}
+.slash-list .sl-note .sl-sub{display:flex;align-items:baseline;gap:8px;min-width:0}
+.slash-list .sl-note .sl-sub .sl-src{margin-left:0}
+.slash-list .sl-note .sl-sub .sl-desc{min-width:0;flex:1 1 0}
+.slash-list .sl-note .sl-name{flex:1 1 auto}
