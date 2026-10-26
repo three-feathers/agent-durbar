@@ -52,7 +52,7 @@ module.exports = async (ctx) => {
     const [A, B, C, D] = before.map((r) => r.id);
 
     // FR-022: every Durbar row has Edit..., Pause and Delete, inside the dialog (the owner's report)
-    for (const r of before) assert.deepStrictEqual(r.btns, ['Edit…', 'Pause', 'Delete'], `${tag}: buttons of "${r.p.slice(0, 20)}"`);
+    for (const r of before) assert.deepStrictEqual(r.btns, ['Edit…', 'Pause', 'Delete', 'History'], `${tag}: buttons of "${r.p.slice(0, 20)}"`);
     let g = await js(`(()=>{const d=document.querySelector('#schedDlg .dlg').getBoundingClientRect();return {sw:document.querySelector('#schedDlg .dlg').scrollWidth-document.querySelector('#schedDlg .dlg').clientWidth,out:[...document.querySelectorAll('#sdList .sc-row button:not(.sc-p)')].filter(b=>{const r=b.getBoundingClientRect();return !b.getClientRects().length||r.left<d.left-0.5||r.right>d.right+0.5}).map(b=>b.textContent)}})()`);
     assert.deepStrictEqual(g.out, [], `${tag}: every row button is visible inside the dialog`);
     assert.ok(g.sw <= 1, `${tag}: no horizontal scroll in the dialog (${g.sw})`);
@@ -153,7 +153,7 @@ module.exports = async (ctx) => {
     await js(`(()=>{const x=new Date(Date.now()+2*3600e3),p=n=>String(n).padStart(2,'0');document.getElementById('scAt').value=x.getFullYear()+'-'+p(x.getMonth()+1)+'-'+p(x.getDate())+'T'+p(x.getHours())+':'+p(x.getMinutes());document.getElementById('scAdd').click();return true})()`);
     await until(`document.getElementById('scFormT').hidden&&!document.querySelector('#sdList .sc-row small').textContent.includes('done')`);
     const again = (await rows())[0];
-    assert.deepStrictEqual([again.id, again.off, /done/.test(again.line), again.btns], [O, false, false, ['Edit…', 'Pause', 'Delete']], `${tag}: a future time runs it again`);
+    assert.deepStrictEqual([again.id, again.off, /done/.test(again.line), again.btns], [O, false, false, ['Edit…', 'Pause', 'Delete', 'History']], `${tag}: a future time runs it again`);
     // FR-022: a schedule sent to one session, edited from Settings, shows that session's name in Send to
     await js(`document.getElementById('scClose').click()`); await until(`!document.getElementById('schedDlg')`);
     await js(`document.querySelector('#stage .desk[data-id]').click()`); await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('schedHdrBtn')`); await settle();

@@ -303,6 +303,56 @@ async function main(): Promise<void> {
     loopSupport.enabled = false;
   }
 
+  // ---- FR-044: the simulator keeps the same log with the same rules ----
+  {
+    // cut the simulator's `simRecord` out of sim.ts, compile it and run one sequence through it and through main's `record`
+    const ts = require('typescript') as typeof import('typescript');
+    const simSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'sim.ts'), 'utf8');
+    const block = simSrc.slice(simSrc.indexOf('/* simrecord:begin */'), simSrc.indexOf('/* simrecord:end */'));
+    assert.ok(block.includes('const simRecord'), 'the simulator marks its record helper');
+    const js = ts.transpileModule(block, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    const simRecord = new Function(js + '\nreturn simRecord;')() as (sc: Record<string, unknown>, runs: Record<string, ScheduleRun[]>, outcome: string, now: number, x?: Record<string, unknown>) => boolean;
+    type Step = [string, number, Record<string, unknown>?];
+    const steps: Step[] = [];
+    let at = T0;
+    const push = (o: string, x?: Record<string, unknown>): void => { at += MIN; steps.push([o, at, x]); };
+    for (let i = 0; i < 4; i++) push('skipped-busy');
+    push('skipped-busy', { session: 's1' });
+    push('sent', { session: 's1' });
+    for (let i = 0; i < 3; i++) push('skipped-paused', { session: 's2' });
+    push('failed', { reason: 'no-agent' });
+    push('failed', { reason: 'send-error' });
+    push('sent', { session: 's2', manual: true });
+    for (let i = 0; i < 2; i++) push('held');
+    push('skipped-door-full');
+    push('skipped-door-full');
+    push('missed');
+    push('missed');
+    push('sent', { session: 'bad session!' });
+    for (let i = 0; i < 70; i++) push(i % 3 === 0 ? 'sent' : 'skipped-busy', { session: 's' + (i % 2) });
+    const h = harness({ pausedAll: false, schedules: [mkSched({ id: ID })] });
+    const simSc: Record<string, unknown> = { id: ID };
+    const simRuns: Record<string, ScheduleRun[]> = {};
+    const mainSc = h.sch.doc.schedules[0];
+    for (const [o, when, x] of steps) {
+      const a = simRecord(simSc, simRuns, o, when, x);
+      const b = (h.sch as unknown as { record(s: Schedule, o: string, n: number, x?: unknown): boolean }).record(mainSc, o, when, x);
+      assert.strictEqual(a, b, `folded or not: ${o} at ${when}`);
+      assert.deepStrictEqual(simSc.last, mainSc.last, 'same last');
+    }
+    assert.deepStrictEqual(simRuns[ID], log(h, ID), 'the simulator and main keep the same log for one sequence');
+    assert.strictEqual(log(h, ID).length, MAX_RUNS, 'the sequence goes past the cap');
+    const loopSteps: Step[] = [['sent', T0 + 1_000_000_000, { session: 's1' }]];
+    const h2 = harness({ pausedAll: false, schedules: [mkSched({ id: ID })] });
+    const sr: Record<string, ScheduleRun[]> = {};
+    const sc2: Record<string, unknown> = { id: ID };
+    for (const [o, when, x] of loopSteps) { simRecord(sc2, sr, o, when, x); simRecord(sc2, sr, 'failed', when + 1, { session: 's1', update: true }); (h2.sch as unknown as { record(s: Schedule, o: string, n: number, x?: unknown): boolean }).record(h2.sch.doc.schedules[0], o, when, x); (h2.sch as unknown as { record(s: Schedule, o: string, n: number, x?: unknown): boolean }).record(h2.sch.doc.schedules[0], 'failed', when + 1, { session: 's1', update: true }); }
+    assert.deepStrictEqual(sr[ID], log(h2, ID), 'the same update rule (a pass that ended failed)');
+    // the sim's seed history follows the rules too: newest entry equals last, and nothing in it is text
+    assert.ok(/simRecord\(s1, simSched\.runs, 'skipped-busy'/.test(simSrc) && /sim-gone-7/.test(simSrc), 'the seed history has a folded busy skip and a run to a chat that is gone');
+  }
+
   // ---- Scheduler stays a class that keeps `doc` reachable for main ----
   assert.strictEqual(typeof Scheduler.prototype.flush, 'function');
   console.log('[schedules-runs] all checks passed');
