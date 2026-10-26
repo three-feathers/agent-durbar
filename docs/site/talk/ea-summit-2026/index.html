@@ -422,6 +422,26 @@
   </div>
 </section>
 
+<section class="slide" id="relay" data-presenter="ruben" data-title="Bots can't hear each other">
+  <div class="inner split">
+    <div>
+      <p class="kicker">A problem nobody planned for</p>
+      <h2>Bots can't hear each other.</h2>
+      <p class="lead">Telegram never delivers one bot's group messages to another bot, so the agents in our group could not read each other.</p>
+      <ul class="points">
+        <li><b>19 October:</b> Vikram's fix, a relay on a spare Telegram user account that forwards each bot's group post to the other bots.</li>
+        <li><b>Open-sourced the same day</b> (MIT): <a href="https://github.com/vikramgorla/telegram-bot-relay">github.com/vikramgorla/telegram-bot-relay</a></li>
+        <li><b>Paco and Ruben</b> set up their own agents the same way; the team's reference setup is in the repo: <code>docs/agent-setup/</code>.</li>
+      </ul>
+    </div>
+    <div class="chat" aria-label="The escalation story">
+      <p class="m"><span class="from">As Vikram tells it</span>His agent escalated a problem with Ruben's agent to him. His answer: don't escalate it to me, sort it out with Ruben's agent yourselves.</p>
+      <p class="m"><span class="from">What was going on · 22 October</span>Ruben's agent had missed our group messages all night and repeated requests already answered. First it said it couldn't read our bot. Then it found the cause itself: its mention filter did not match how we addressed it. Ruben widened the filter.</p>
+      <p class="m me"><span class="from">Written down</span>Tag agents by @handle. Anything to act on also goes as a GitHub comment.</p>
+    </div>
+  </div>
+</section>
+
 <section class="slide" id="final" data-presenter="ruben" data-title="Resolving a conflict">
   <div class="inner split">
     <div>
@@ -437,6 +457,22 @@
       <p class="m"><span class="from">@Paquitos…_bot (Paco's agent) · 14:30</span>@Vishwakarma…_bot OK, yours. No reply needed. Besides flock, the sweep finds one more: line 74, <code>stat -c %a</code> is GNU-only, so on macOS the 0700 Claude-folder check falls into "wider than 0700".</p>
       <p class="tiny">Telegram team group, 26 October. Times in UTC; ~ = approximate; long messages shortened (…); bot handles shortened.</p>
     </div>
+  </div>
+</section>
+
+<section class="slide" id="agreed" data-presenter="ruben" data-title="Rules the agents agreed">
+  <div class="inner">
+    <p class="kicker">Rules the agents agreed</p>
+    <h2>Decided in chat, written down the same day</h2>
+    <ul class="gamegrid rules">
+      <li><img src="assets/art/face-thinking.svg" alt="" width="48" height="48"><b>FINAL</b><span>After four rounds of ownership ping-pong, agreed between Paco's and Vikram's agents, 23 October 19:27 UTC.</span></li>
+      <li><img src="assets/art/player-paco-face.svg" alt="" width="48" height="48"><b>Test once, trust the record</b><span>Proposed by Paco's agent, 22 October: suites ran up to 5 times per PR; now CI per commit is the record.</span></li>
+      <li><img src="assets/art/player-vikram-face.svg" alt="" width="48" height="48"><b>One full review per PR</b><span>Proposed by Vikram's agent, 25 October: the first side to post "taking #N" does it.</span></li>
+      <li><img src="assets/art/face-working.svg" alt="" width="48" height="48"><b>Tag by @handle</b><span>Owner rule of 23 October, written into AGENTS.md on 25 October after the agents forgot it.</span></li>
+      <li><img src="assets/art/face-idle.svg" alt="" width="48" height="48"><b>Working hours</b><span>Agents work 24/7; humans don't. Paco: no DMs 23:00&ndash;07:00.</span></li>
+      <li class="win"><img src="assets/art/face-done.svg" alt="" width="48" height="48"><b>Coffee breaks</b><span>In Durbar, an agent that reaches its spending limit goes on a coffee break until a human raises the limit.</span></li>
+    </ul>
+    <p class="small muted mt">Every one is a dated requirement in <code>specs/021-collaboration-harness/spec.md</code> or a rule in <code>AGENTS.md</code>: chat is not a record.</p>
   </div>
 </section>
 
@@ -659,6 +695,8 @@ Draft release:   success   16:29
         <tr><td class="ok">OK</td><td>Agents review agents; planted bugs, 16 of 16 caught</td><td>pull request #778, all three rounds</td><td><a href="https://github.com/three-feathers/agent-durbar/pull/778">pull/778</a></td></tr>
         <tr><td class="ok">OK</td><td>CI is the source of truth; release day went red, then green</td><td>every CI run</td><td><a href="https://github.com/three-feathers/agent-durbar/actions">actions</a></td></tr>
         <tr><td class="ok">OK</td><td>v0.1.0, first stable release, 26 October</td><td>the release page and the changelog</td><td><a href="https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0">releases/tag/v0.1.0</a> · <a href="https://github.com/three-feathers/agent-durbar/blob/main/CHANGELOG.md">CHANGELOG</a></td></tr>
+        <tr><td class="ok">OK</td><td>Decisions from chat are written down the same day</td><td>spec 021, collaboration harness</td><td><a href="https://github.com/three-feathers/agent-durbar/blob/main/specs/021-collaboration-harness/spec.md">specs/021-collaboration-harness</a> · <a href="https://github.com/three-feathers/agent-durbar/tree/main/docs/agent-setup">docs/agent-setup</a></td></tr>
+        <tr><td class="ok">OK</td><td>The bot relay, open-sourced the same day (MIT)</td><td>the relay repository</td><td><a href="https://github.com/vikramgorla/telegram-bot-relay">vikramgorla/telegram-bot-relay</a></td></tr>
         <tr><td class="ok">OK</td><td>No ranking of people or agents</td><td>the DORA rule in AGENTS.md</td><td><a href="https://github.com/three-feathers/agent-durbar/blob/main/AGENTS.md">AGENTS.md</a></td></tr>
         </tbody>
       </table>

@@ -392,3 +392,8 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:15;bac
 .close .cloud{margin-top:.4rem;font-size:1.2rem;font-weight:700}
 .close .players img{width:clamp(80px,min(7vw,11vh),160px)}
 .close .players{margin-top:.6rem}
+#audit h2{font-size:clamp(1rem,min(2.2vw,4vh),2.6rem);margin-bottom:.5rem}
+#audit .audit{font-size:clamp(11px,min(.95vw,1.62vh),1rem)}
+#audit .audit td{padding:.16rem .45rem}
+#audit .audit th{padding:.16rem .45rem}
+#audit .small{margin:.4rem 0 0}
