@@ -93,7 +93,7 @@
     var open = on === undefined ? btn.getAttribute('aria-expanded') !== 'true' : on;
     sec.classList.toggle('revealed', open);
     btn.setAttribute('aria-expanded', String(open));
-    btn.textContent = open ? 'Hide' : 'The 2026 way';
+    btn.textContent = open ? 'Hide' : 'The new way';
     if (why) why.hidden = !open;
   }
   document.querySelectorAll('.quiz').forEach(function (sec) {
