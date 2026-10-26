@@ -307,16 +307,19 @@ export class NotesStore {
   }
 
   /**
-   * Delete `file` only if it still holds our token. Checking and then deleting by path is a race (a takeover in between would lose the
-   * new owner's lock), so it is moved to a name of our own first and the token is read from the moved file: ours is deleted, anything else
-   * is put back without overwriting. Remaining windows: if the move is refused, the fallback checks then deletes by path; and only when the file was NOT ours (we were already replaced), it is missing for a
-   * few system calls, and a newcomer that takes the name then makes the put-back fail and the moved lock is dropped.
+   * Delete `file` only if it still holds our token. Check first (a file that is not ours is never touched, not even moved), then move it to a
+   * name of our own and read the token again in the moved file: ours is deleted, anything else (a takeover between the check and the move)
+   * is put back without overwriting. Remaining windows: between the check and the move; the put-back in that case (the name is free for a
+   * few system calls and a newcomer that takes it makes the put-back fail, so the moved lock is dropped); and when the move is refused, the
+   * delete by path after the check.
    */
   private async release(file: string, token: string): Promise<void> {
+    // not ours (already replaced, or gone): do not touch it at all, a foreign live lock must not even be moved
+    if (!(await this.holds(file, token))) return;
     const aside = `${file}.rel-${this.pid}-${this.rand(36 ** 6).toString(36)}`;
     try { this.fs.renameSync(file, aside); } catch (e) {
       if (errCode(e) === 'ENOENT') return; // gone: nothing to release
-      // the move itself is refused (Windows: EPERM, EBUSY): fall back to check, then delete by path (a takeover in that instant is the old, narrow race); a failed delete goes stale after 5 s
+      // the move itself is refused (Windows: EPERM, EBUSY): check again, then delete by path (a takeover in that instant is the narrow race left)
       if (await this.holds(file, token)) { try { this.fs.unlinkSync(file); } catch { /* the stale rule covers it */ } }
       return;
     }

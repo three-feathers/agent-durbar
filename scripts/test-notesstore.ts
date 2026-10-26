@@ -564,15 +564,38 @@ async function main(): Promise<void> {
       assert.ok(fs.existsSync(youngStale) && fs.existsSync(otherFolder) && fs.existsSync(unrelated), "a young leftover, another folder's file and a file of another shape stay");
       for (const f of [youngStale, otherFolder, unrelated]) fs.rmSync(f, { force: true });
     }
+    // the move-aside of a release is refused (EPERM, EBUSY on Windows): our own lock is still removed, a foreign one that arrived meanwhile stays
+    for (const code of ['EPERM', 'EBUSY']) {
+      for (const foreign of [false, true]) {
+        fs.rmSync(lock, { force: true });
+        const refuse = { ...fs, renameSync: (a: string, b: string) => {
+          if (a === lock && b.includes('.rel-')) {
+            if (foreign) { fs.rmSync(lock, { force: true }); fs.writeFileSync(lock, 'T-TOKEN'); }
+            throw Object.assign(new Error('refused'), { code });
+          }
+          fs.renameSync(a, b);
+        } } as unknown as NotesFs;
+        must(await new NotesStore(dir, { fs: refuse }).add(FOLDER, 'demo', { text: `release refused ${code} ${foreign}` }));
+        if (foreign) assert.strictEqual(fs.readFileSync(lock, 'utf8'), 'T-TOKEN', `${code} on the move: a foreign lock stays`);
+        else assert.ok(!fs.existsSync(lock), `${code} on the move: our own lock is removed`);
+      }
+    }
+    fs.rmSync(lock, { force: true });
     // issue #723: a holder paused over 5 s lost its lock to a takeover; it must not write, and must not delete the new owner's lock
     {
       fs.rmSync(path.join(dir, folderFingerprint(FOLDER) + '.json'), { force: true });
       let taken = false;
+      const onLock: string[] = [];
       // the lock is replaced while the holder reads the document (as if it had been paused for over 5 s)
-      const slowHolder = { ...fs, lstatSync: (f: string, o?: unknown) => { if (!taken && f.endsWith('.json')) { taken = true; fs.rmSync(lock, { force: true }); fs.writeFileSync(lock, 'T-TOKEN'); } return (fs.lstatSync as (f: string, o?: unknown) => unknown)(f, o); } } as unknown as NotesFs;
+      const slowHolder = { ...fs,
+        renameSync: (a: string, b: string) => { if (a === lock) onLock.push('rename'); fs.renameSync(a, b); },
+        linkSync: (a: string, b: string) => { if (b === lock) onLock.push('link'); fs.linkSync(a, b); },
+        unlinkSync: (f: string) => { if (f === lock) onLock.push('unlink'); fs.unlinkSync(f); },
+        lstatSync: (f: string, o?: unknown) => { if (!taken && f.endsWith('.json')) { taken = true; fs.rmSync(lock, { force: true }); fs.writeFileSync(lock, 'T-TOKEN'); } return (fs.lstatSync as (f: string, o?: unknown) => unknown)(f, o); } } as unknown as NotesFs;
       const lost = await new NotesStore(dir, { fs: slowHolder }).add(FOLDER, 'demo', { text: 'written by a holder that lost its lock' });
       assert.ok(!lost.ok && /busy/.test(lost.error), 'a holder that lost its lock does not write');
       assert.strictEqual(fs.readFileSync(lock, 'utf8'), 'T-TOKEN', "and does not delete the new owner's lock");
+      assert.deepStrictEqual(onLock, [], "and does not even move, put back or delete anything on the new owner's lock path");
       assert.ok(!fs.existsSync(path.join(dir, folderFingerprint(FOLDER) + '.json')), 'nothing was written under the lost lock');
       fs.rmSync(lock, { force: true });
     }
