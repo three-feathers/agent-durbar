@@ -35,6 +35,7 @@ no merge freeze is needed:
    git fetch origin --tags && git switch -c NNN-fold-alpha-N v0.1.0-alpha.N
    npm run changelog:build -- --release "v0.1.0-alpha.N ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.N), YYYY-MM-DD)"
    # add the release's intro paragraph and the README status block, commit
+   # the first STABLE release (spec 050 FR-013): also change docs/site/landing.json: hero.eyebrow ("early alpha") and status ("Alpha · unsigned …"), they are hand-written and checked against the README status block (test:site only checks that the page shows what landing.json says)
    git merge origin/main   # fragments that landed after the tag come back for the next release
    ```
 
