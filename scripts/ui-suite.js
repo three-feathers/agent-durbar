@@ -87,6 +87,7 @@ const DRIVERS = [
   { name: 'check-why-allowed' }, // spec 003 FR-099..FR-105 (#605): the why-allowed tag on tool cards and Undo this rule
   { name: 'check-composer-toolbar' }, // spec 005 FR-037..FR-043: chat settings under the message box, one Send / Stop slot
   { name: 'check-slash-suggest' }, // spec 073: the "/" list in the message box (keyboard, ARIA, geometry)
+  { name: 'check-notes' }, // spec 083: save a message, the Notes drawer, Insert and notes in the "/" list (US1 scenarios 1..6, SC-001, SC-002)
   { name: 'check-edits' }, // spec 005 FR-020..FR-026: file edits in the chat
   { name: 'shots-068-coffee' }, // spec 068: coffee break (simbreak=8 in its own query)
   { name: 'shots-001-lobby' }, // spec 001 FR-034..FR-040: Boss queue, Bank, Postbox and its letter, who is at a place (simsched in its own query)

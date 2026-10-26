@@ -116,6 +116,7 @@ for (const f of require('./shots-docs.js').linkedImages(ROOT)) {
 
 const size = (dir) => fs.readdirSync(dir, { withFileTypes: true }).reduce((n, e) => n + (e.isDirectory() ? size(path.join(dir, e.name)) : fs.statSync(path.join(dir, e.name)).size), 0);
 const total = size(out);
-assert.ok(total < 15 * 1024 * 1024, `site under 15 MB (is ${(total / 1048576).toFixed(1)} MB)`);
+// 8 MB since spec 050 FR-012 (2026-10-26): the linked screenshots are palette-compressed (the site was 15.5 MB with plain PNGs; FR-005 had 15 MB, FR-011 16 MB)
+assert.ok(total < 8 * 1024 * 1024, `site under 8 MB (is ${(total / 1048576).toFixed(1)} MB)`);
 fs.rmSync(out, { recursive: true, force: true });
 console.log(`site: ok (${attrCount} links and images on two pages, ${(total / 1048576).toFixed(1)} MB)`);

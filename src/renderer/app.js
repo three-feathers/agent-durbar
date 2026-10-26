@@ -46,6 +46,11 @@ const chatNoWords=a=>{const n=chatNoOf(a);return n?', chat '+n:'';};
 const INBOX_KEY=keyText(['mod','shift','A']), NEXT_KEY=keyText(['mod','shift','N']), PAL_KEY=keyText(['mod','K']);
 /* spec 006 FR-036: show or hide Previous sessions (H for history) */
 const PREV_KEYS=['mod','shift','H'], PREV_KEY=keyText(PREV_KEYS);
+/* spec 083: notes state and the drawer key, declared here because a restored chat opens before the notes block below has run */
+var DN=window.DurbarNotes||null;
+var NOTES_KEYS=['mod','shift','M'];
+var NT={by:new Map(),open:null,ret:null,notice:null,ro:null}; /* by: folder key -> {ok,notes,session,readOnly,error,unreadable}; open: {id} while the drawer shows */
+
 const SCHED_KEY=keyText(['mod','shift','S']); /* spec 044 FR-031: the top-bar Schedules button */
 const ADD_KEY=keyText(['mod','O']), ADDWS_KEY=keyText(['mod','shift','O']); /* spec 052 FR-164: + Folder, + Workspace (the Mac File menu has the same keys) */
 /* spec 052 FR-085: the window's platform from the preload (the Mac title bar styles are gated on html[data-platform="darwin"]) */
@@ -1798,7 +1803,8 @@ function addUserMsg(chat,text,atts,ts){
   const m=document.createElement('div');m.className='msg user';
   const now=ts?new Date(ts):new Date();const hh=(ts&&now.toDateString()!==new Date().toDateString()?now.toLocaleDateString([],{month:'short',day:'numeric'})+' ':'')+String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
   m.innerHTML='<div class="bubble"></div><div class="chips" aria-label="Attachments"></div><div class="meta">You · '+hh+'</div>';
-  m.querySelector('.bubble').textContent=text;
+  const ub=m.querySelector('.bubble');ub.textContent=text;ub._raw=String(text==null?'':text);
+  if(chat.el.dataset.notes)ub.appendChild(msgDotsBtn()); /* spec 083 FR-010: the user's own message has the ⋯ too (not in a chat without notes) */
   const box=m.querySelector('.chips');
   (atts||[]).forEach(x=>{const c=document.createElement('div');c.className='chip att-chip'+(x.img?' img':'');c.title=x.path||x.name;
     c.innerHTML=(x.img?ICON('img'):ICON('file'))+'<span>'+esc(x.name)+'</span>';box.appendChild(c);});
@@ -1933,7 +1939,7 @@ function wireComposerGrip(){const g=$('composerGrip'),t=$('msgInput');if(!g||!t)
   if(window.ResizeObserver){if(cszRO)cszRO.disconnect();else cszRO=new ResizeObserver(()=>{if(!cszRaf)cszRaf=requestAnimationFrame(()=>{cszRaf=0;sizeComposer();});});cszRO.observe($('chat'));}
   sizeComposer();
 }
-function autoGrow(){sizeComposer();setSend();}
+function autoGrow(){sizeComposer();setSend();ntNoticeSync();}
 function setSend(){const b=$('sendBtn'),t=$('msgInput');if(!b||!t)return;const a=byId(ui.selected);const busy=a&&chats[a.id]&&chats[a.id].busy;b.setAttribute('aria-disabled',String(!!busy||(!t.value.trim()&&!attached.length)));syncRunState();}
 
 function updatePanelHeader(){
@@ -2138,16 +2144,18 @@ function openPanel(id,focus){
    <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1" title="${esc(panelTipOf(a))}"${titleRenameable(a)?` aria-label="${esc(a.name)}"`:''}>${panelTitleHTML(a)}</h2><div class="sub" title="${esc(subText)}">${parent?'':chatNoHTML(a)}${!parent&&chatNoOf(a)?'<span class="sr-only">Chat '+chatNoOf(a)+'. </span>':''}${esc(subText)}</div></div>
       <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span><!-- spec 005 FR-039: the header keeps who and what (status, limit, remote, folder); how the next message runs is under the message box (FR-037) -->${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(showPath(room.path))}</span></span></div>      <div class="actions"><!-- spec 052 FR-003: two actions in view (FR-139: a third, + New, by owner decision), the rest under More (ids kept; End and Remove last); spec 006 FR-033 (2026-10-21): Previous sessions moved out of the actions, to their own section above the chat -->${a.live&&!a.parent&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="btn sm" id="newSessHdrBtn" type="button" title="New session in ${esc(room.name)}" aria-label="New session in ${esc(room.name)}">+ New</button>`:''}<button class="btn sm primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
         <button class="btn sm" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
-        <button class="btn sm" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window"><span class="mt">Tools and usage<small>Tools used, models, context window</small></span></button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval"><span class="mt">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}<small>Prompts sent at a set time</small></span></button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder"><span class="mt">+ New session<small>Another agent in this folder</small></span></button>${canHandover(a)?'<button class="more-it" role="menuitem" tabindex="-1" id="handoverBtn" type="button" title="Start a session in another agent app from a summary of this conversation. You review it first."><span class="mt">Continue in another app…<small>Start there from a summary</small></span></button>':''}`:''}${canRemote(a)?`<button class="more-it${a.remote?' on':''}" role="menuitem" tabindex="-1" id="remoteBtn" type="button" title="Follow and steer this session from github.com and GitHub Mobile">${remoteItemInner(a)}</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}${canRenameSession(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="renameSessBtn" type="button" title="Give this session a short name"><span class="mt">Rename…<small>A short name for this session</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it danger" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>A later message resumes it</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The folder's other sessions stay."><span class="mt">Remove from office<small>Ends it; history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Forget ${esc(DurbarCutText.cutText(room.name,30))} in Agent Durbar. Its session ends; nothing on disk is deleted."><span class="mt">Remove folder<small>Forgets the folder; files stay on disk</small></span></button>`:'')}</div></div></div>
+        <button class="btn sm" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window"><span class="mt">Tools and usage<small>Tools used, models, context window</small></span></button>`:''}${notesOn(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="notesHdrBtn" type="button" data-notes-toggle aria-keyshortcuts="${esc(ariaKeys(NOTES_KEYS))}" title="Messages and ideas kept for this folder, to put back into the message box"><span class="mt">Notes…<small>Saved messages and ideas · ${esc(keyText(NOTES_KEYS))}</small></span></button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval"><span class="mt">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}<small>Prompts sent at a set time</small></span></button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder"><span class="mt">+ New session<small>Another agent in this folder</small></span></button>${canHandover(a)?'<button class="more-it" role="menuitem" tabindex="-1" id="handoverBtn" type="button" title="Start a session in another agent app from a summary of this conversation. You review it first."><span class="mt">Continue in another app…<small>Start there from a summary</small></span></button>':''}`:''}${canRemote(a)?`<button class="more-it${a.remote?' on':''}" role="menuitem" tabindex="-1" id="remoteBtn" type="button" title="Follow and steer this session from github.com and GitHub Mobile">${remoteItemInner(a)}</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}${canRenameSession(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="renameSessBtn" type="button" title="Give this session a short name"><span class="mt">Rename…<small>A short name for this session</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it danger" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>A later message resumes it</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The folder's other sessions stay."><span class="mt">Remove from office<small>Ends it; history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Forget ${esc(DurbarCutText.cutText(room.name,30))} in Agent Durbar. Its session ends; nothing on disk is deleted."><span class="mt">Remove folder<small>Forgets the folder; files stay on disk</small></span></button>`:'')}</div></div></div>
     <div class="ph-line"><p class="ptask" data-f="task"></p><p class="pusage" data-f="usage"></p></div>
     <div class="grants" id="grants" aria-label="Permissions allowed for this session" hidden></div></div>
    ${BP.available(a)?BP.tabsHTML():''}<!-- spec 080 T015 FR-002: Chat | Browser -->
    <div class="prev" id="prev" role="region" aria-label="${SIMPLE?'Earlier chats':'Previous sessions'}" hidden>${a.live&&!a.parent?`<div class="prev-bar"><button class="prev-toggle" id="prevBtn" type="button" data-pv="toggle" aria-expanded="false" aria-controls="prevPanel" aria-keyshortcuts="${esc(ariaKeys(PREV_KEYS))}">${ICON('chev')}<span class="prev-l">${SIMPLE?'Earlier chats':'Previous sessions'}</span><span class="prev-c" hidden></span><span class="prev-sub"></span></button></div><div class="prev-panel" id="prevPanel" hidden></div>`:''}</div>
    <div id="chat" role="log" aria-live="off" aria-label="Chat with ${esc(a.name)}" tabindex="0"></div>
+   ${notesOn(a)?notesDrawerHTML():''}<!-- spec 083 FR-020: the Notes drawer covers the chat log only -->
    ${BP.available(a)?BP.paneHTML():''}
    <div class="answer-bar coffee-bar" id="coffeeBar" role="region" aria-label="Coffee break" hidden></div>
    <div class="answer-bar" id="answerBar" role="region" aria-label="Waiting for your answer" hidden></div>
    <div class="composer"><div class="cgrip" id="composerGrip" role="separator" aria-orientation="horizontal" aria-label="Resize message box" aria-controls="msgInput" tabindex="0" title="Drag to resize the message box. Double-click to let it grow with your text again."></div><div class="att-note" id="attNote" role="alert" hidden></div><div class="attached" id="attached" aria-label="Attachments"></div>
+    <p class="nt-notice" id="ntNotice" role="status" hidden></p>
     <div class="inbox">
      <textarea id="msgInput" rows="1" placeholder="Message ${esc(a.name)}…" aria-label="Message ${esc(a.name)}"></textarea>
      ${runSlotHTML(a)}</div>
@@ -2181,6 +2189,8 @@ function openPanel(id,focus){
   if(a.live&&!a.parent)initPrev(a); else {const pv=$('prev');if(pv)pv.hidden=true;}
   if(a.live&&!a.parent&&a.info&&a.info.resumeLast&&bridge.wake)wakeLast(a);
   wireMoreMenu();
+  if($('notesDrawer')){wireNotesDrawer(a);if(notesOn(a))notesFetch(a);} /* spec 083: the drawer starts closed; the folder's notes are fetched for the "/" list */
+  if($('notesHdrBtn'))$('notesHdrBtn').onclick=()=>openNotes(a,{opener:$('moreBtn')});
   wireAnswerBar(a);paintCoffeeBar.key='';paintCoffeeBar(); /* spec 068 FR-022 */
   if(needsMe(a)){const c=pendingCardOf(a);if(c)announce(a.name+(c.classList.contains('question')?' asks: ':' needs your OK: ')+requestText(c));}
   $('pauseBtn').onclick=()=>{a.paused=!a.paused;if(a.live&&bridge.setPaused)bridge.setPaused(a.id,a.paused);toast(esc(a.name)+(a.paused?' paused.':' resumed.'));renderAll();};
@@ -2257,8 +2267,9 @@ async function fetchSlash(a){
   if(slashUi&&liveRoot(slashUi.a)===r)slashUpdate(true);
 }
 function slashSupported(a){return !!(window.DurbarSlash&&a&&!a.parent&&(!a.live||(liveRoot(a).info&&liveRoot(a).info.slash&&bridge.slashCommands)));}
+function slashWired(a){return !!(window.DurbarSlash&&a&&!a.parent);} /* spec 083: also a chat whose agent app lists no commands may show notes (spec 073 FR-067) */
 function initSlash(a,input){
-  if(!slashSupported(a))return;
+  if(!slashWired(a))return;
   input.setAttribute('role','combobox');input.setAttribute('aria-autocomplete','list');input.setAttribute('aria-expanded','false');input.setAttribute('aria-controls','slashList');
   input.addEventListener('keydown',e=>slashKey(e,a,input));
   input.addEventListener('input',()=>{if(!input.dataset.composing)slashUpdate();});
@@ -2276,18 +2287,23 @@ function closeSlash(){
 /* open, refilter or close the list for the word at the caret (FR-008) */
 function slashUpdate(refetched){
   const input=$('msgInput'); const a=byId(ui.selected);
-  if(!input||!a||!slashSupported(a)||input.dataset.composing){closeSlash();return;}
+  const cmdOn=!!a&&slashSupported(a), notes=a?slashNotes(a):[];
+  if(!input||!a||!(cmdOn||notes.length)||input.dataset.composing){closeSlash();return;}
   const tok=SLASH.tokenAt(input.value,input.selectionStart);
   if(!tok||input.selectionStart!==input.selectionEnd){closeSlash();return;}
-  if(a.live)fetchSlash(a);
-  const src=slashOf(a), loading=!src||!src.list;
-  const items=loading?[]:SLASH.filter(src.list,tok.query);
+  if(cmdOn&&a.live)fetchSlash(a);
+  const src=cmdOn?slashOf(a):null, loading=cmdOn&&(!src||!src.list);
+  const res=SLASH.withNotes(loading||!cmdOn?[]:src.list,loading?[]:notes,tok.query,DN?DN.SLASH_NOTES_MAX:5,SLASH_ALL); /* while the commands load, only the placeholder shows (the active row must not start on a note) */
+  const items=res.items, nCmd=res.commands.length, nNote=res.notes.length;
   const opening=!slashUi;
   const keep=slashUi&&slashUi.tok.query===tok.query&&slashUi.items[slashUi.active]?slashUi.items[slashUi.active].name:null; /* a new query starts at the first match */
-  slashUi={a,input,items,tok,loading,active:Math.max(0,keep?items.findIndex(x=>x.name===keep):0)};
+  slashUi={a,input,items,tok,loading,cmdOn,nCmd,nNote,active:Math.max(0,keep?items.findIndex(x=>x.name===keep):0)};
   if(slashUi.active<0)slashUi.active=0;
   drawSlash(src);
-  if(opening||refetched)announce(loading?'Looking for commands…':items.length?items.length+(items.length===1?' command':' commands')+'. Arrow keys to choose, Tab to insert.':(tok.query?'No matching commands':'No commands for this agent app here'));
+  if(opening||refetched){
+    const cw=n=>n+(n===1?' command':' commands'), nw=n=>n+(n===1?' note':' notes'); /* spec 083: commands and notes are counted apart */
+    announce(loading?'Looking for commands…':items.length?[nCmd||cmdOn?cw(nCmd):'',nNote?nw(nNote):''].filter(Boolean).join(', ')+'. Arrow keys to choose, Tab to insert.':(tok.query?(cmdOn?'No matching commands':'No matching notes'):'No commands for this agent app here'));
+  }
 }
 function drawSlash(src){
   const u=slashUi; if(!u)return;
@@ -2297,11 +2313,11 @@ function drawSlash(src){
     el.addEventListener('click',e=>{const o=e.target.closest('[role="option"]');if(!o||!slashUi)return;slashUi.active=+o.dataset.i;slashPick();});
     document.body.appendChild(el);}
   const app=kindWord(liveRoot(u.a)&&liveRoot(u.a).info&&liveRoot(u.a).info.adapterId);
-  el.setAttribute('aria-label',(u.a.live?app:'Demo')+' commands');
+  el.setAttribute('aria-label',(u.nNote?(u.cmdOn?(u.a.live?app:'Demo')+' commands and notes':'Notes'):(u.a.live?app:'Demo')+' commands'));
   const err=src&&src.error?`<p class="sl-empty" role="presentation">Could not list commands: ${esc(safeExcerpt(src.error,120,'unknown error'))}</p>`:''; /* FR-013: masked, then cut */
   el.innerHTML=u.loading?'<p class="sl-empty" role="presentation">Looking for commands…</p>'
-    :u.items.length?u.items.map((x,i)=>SLASH.optionHtml(SLASH.view(x,safeMask),i,i===u.active,slashTip(x))).join('') /* masked (FR-013) and escaped in slashsuggest.js (FR-008) */
-    :err||`<p class="sl-empty" role="presentation">${u.tok.query?'No matching commands':'No commands for this agent app here'}</p>`;
+    :u.items.length?u.items.map((x,i)=>(x.source==='note'&&(i===0||u.items[i-1].source!=='note')?'<div class="sl-grp" role="presentation">Notes</div>':'')+SLASH.optionHtml(SLASH.view(x,safeMask),i,i===u.active,slashTip(x))).join('') /* masked (FR-013) and escaped in slashsuggest.js (FR-008); notes after the commands (spec 083 FR-030) */
+    :err||`<p class="sl-empty" role="presentation">${u.tok.query?(u.cmdOn?'No matching commands':'No matching notes'):'No commands for this agent app here'}</p>`;
   u.input.setAttribute('aria-expanded','true');
   if(u.items.length)u.input.setAttribute('aria-activedescendant','slashOpt-'+u.active);else u.input.removeAttribute('aria-activedescendant');
   placeSlash(el,u.input);
@@ -2331,12 +2347,312 @@ function slashKey(e,a,input){
 }
 function slashPick(){
   const u=slashUi; if(!u||!u.items[u.active])return;
-  const end=u.tok.start+1+u.tok.query.length;
-  const r=SLASH.insert(u.input.value,u.tok.start,end,u.items[u.active].name);
+  const end=u.tok.start+1+u.tok.query.length, x=u.items[u.active];
+  if(x.source==='note'){ /* spec 083 FR-030/FR-031: text entries insert their text in place of the /word, never /name, and send nothing */
+    const a=u.a; closeSlash();
+    if(x.kind==='more'){const r=u.input.value.slice(0,u.tok.start)+u.input.value.slice(end);u.input.value=r;u.input.setSelectionRange(u.tok.start,u.tok.start);autoGrow();openNotes(a,{opener:u.input});return;}
+    const st=notesOf(a),n=st&&st.notes.find(q=>q.id===x.id); if(!n)return;
+    notesInsert(a,n,{replace:{start:u.tok.start,end}});
+    return;
+  }
+  const r=SLASH.insert(u.input.value,u.tok.start,end,x.name);
   u.input.value=r.value; u.input.setSelectionRange(r.caret,r.caret);
   closeSlash(); autoGrow(); u.input.focus({preventScroll:true});
-  announce('Inserted /'+SLASH.view(u.items[u.active],safeMask).name); /* FR-013: the read-out name is masked too */
+  announce('Inserted /'+SLASH.view(x,safeMask).name); /* FR-013: the read-out name is masked too */
 }
+/* ---------------- spec 083: notes (issue 699) ----------------
+   A message's ⋯ saves it to its folder's notes; a drawer over the chat log lists them and puts one into the message box (never sends);
+   the "/" list offers them too. Main stores everything masked (0600); the window masks again for every display (DurbarSafeText, failing
+   closed), escapes every string and never sends a path. The pure helpers are in notes.js (window.DurbarNotes). */
+function notesOn(a){return !!(DN&&bridge&&bridge.notesList&&a&&a.live&&!a.parent&&typeof vsViewing!=='undefined'&&!vsViewing);}
+function notesKey(a){const r=roomOf(a),f=r&&folderOfRoom(r.id);return f?f.key:(r?r.id:a.id);}
+const notesOf=a=>(a&&NT.by.get(notesKey(a)))||null;
+const NOTE_GONE='That note is not there any more.';
+async function notesFetch(a){
+  if(!notesOn(a))return null;
+  const root=liveRoot(a);
+  let r=null;try{r=await bridge.notesList(root.id);}catch(e){r=null;}
+  const st=r&&r.ok?{ok:true,notes:Array.isArray(r.notes)?r.notes:[],session:r.session||'',readOnly:r.readOnly||'',max:r.max||300}
+    :{ok:false,notes:[],session:'',unreadable:!!(r&&r.code==='unreadable'),error:String((r&&r.error)||'Notes are not available.')};
+  NT.by.set(notesKey(a),st);
+  if(NT.open&&NT.open.id===a.id)notesPaint();
+  if(slashUi&&slashUi.a===a)slashUpdate();
+  return st;
+}
+
+/* ---- the ⋯ of a message and its menu (FR-010, FR-011) ---- */
+const NT_DOTS='<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><circle cx="3.5" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12.5" cy="8" r="1.4"/></svg>';
+function msgDotsBtn(){
+  const b=document.createElement('button');b.type='button';b.className='nt-btn';b.setAttribute('aria-label','Actions for this message');b.title='Actions for this message';
+  b.setAttribute('aria-haspopup','menu');b.innerHTML=NT_DOTS;return b;
+}
+function bubbleText(b){
+  if(typeof b._raw==='string')return b._raw;
+  const c=b.cloneNode(true);c.querySelectorAll('.cp-btn,.nt-btn').forEach(x=>x.remove());return c.textContent||'';
+}
+function msgInfo(btn){
+  const bubble=btn&&btn.closest&&btn.closest('.bubble'),msg=bubble&&bubble.closest('.msg'); if(!bubble||!msg)return null;
+  const role=msg.classList.contains('user')?'user':'agent', root=bubble.closest('.chat-inner')||$('chat');
+  const all=[...root.querySelectorAll(role==='user'?'.msg.user .bubble':'.msg.agent .bubble')];
+  return {bubble,role,text:bubbleText(bubble),ord:Math.max(0,all.indexOf(bubble))};
+}
+async function msgDigest(text){try{return await DN.digestOf(text,crypto.subtle);}catch(e){return '';}}
+function openMsgMenu(btn,x,y){
+  const a=byId(ui.selected); if(!notesOn(a))return;
+  const info=msgInfo(btn); if(!info||!info.text.trim())return;
+  closeModeMenu();
+  const it=(act,label,sub)=>`<button type="button" role="menuitem" data-nact="${act}" title="${esc(sub)}"><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
+  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu nt-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Actions for this message');
+  m.innerHTML=it('save','Save to notes','Keep it for later in this folder')+it('copy','Copy','Copy this message');
+  document.body.appendChild(m);
+  const b=m.getBoundingClientRect();m.style.left=Math.max(8,Math.min(x,innerWidth-b.width-8))+'px';m.style.top=Math.max(8,Math.min(y,innerHeight-b.height-8))+'px';
+  const back=()=>{if(btn&&document.contains(btn))focusIn(btn);else{const mi=$('msgInput');if(mi)focusIn(mi);}};
+  m.addEventListener('click',e=>{const t=e.target.closest('[data-nact]');if(!t)return;closeModeMenu();
+    if(t.dataset.nact==='copy'){navigator.clipboard.writeText(info.text).then(()=>toast('Copied.',1500),()=>toast('Could not copy to the clipboard.',3000).classList.add('err'));back();return;}
+    notesSaveMsg(a,info,btn);});
+  m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-nact]')],i=its.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'){e.preventDefault();focusIn(its[(i+1)%its.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(its[(i+its.length-1)%its.length]);}
+    else if(e.key==='Home'){e.preventDefault();focusIn(its[0]);}else if(e.key==='End'){e.preventDefault();focusIn(its[its.length-1]);}
+    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();back();}});
+  focusIn(m.querySelector('button'));
+  /* a message already saved offers "Show in notes" instead (session, role and digest match, FR-011) */
+  (async()=>{
+    let st=notesOf(a); if(!st)st=await notesFetch(a);
+    const d=await msgDigest(info.text), hit=st&&st.ok?DN.findSaved(st.notes,st.session,info.role,d):null;
+    const sv=m.isConnected&&m.querySelector('[data-nact="save"]');
+    if(sv&&hit){sv.querySelector('b').textContent='Show in notes';sv.querySelector('small').textContent='It is saved already';sv.dataset.nact='show';sv.dataset.noteid=hit.id;}
+  })();
+  m.addEventListener('click',e=>{const t=e.target.closest('[data-nact="show"]');if(t){e.stopImmediatePropagation();closeModeMenu();openNotes(a,{focusId:t.dataset.noteid,opener:btn});}},true);
+}
+document.addEventListener('click',e=>{const b=e.target.closest('.nt-btn');if(!b)return;e.stopPropagation();const r=b.getBoundingClientRect();openMsgMenu(b,r.left,r.bottom+4);});
+/* FR-010: right-click, Shift+F10 and the context-menu key on a message open the same menu as its ⋯ */
+document.addEventListener('contextmenu',e=>{
+  const bubble=e.target.closest&&e.target.closest('#chat .msg .bubble'); if(!bubble)return;
+  const btn=bubble.querySelector(':scope > .nt-btn'); if(!btn)return;
+  const a=byId(ui.selected); if(!notesOn(a))return;
+  e.preventDefault();const r=btn.getBoundingClientRect();openMsgMenu(btn,e.clientX||r.left,e.clientY||r.bottom+4);
+});
+async function notesSaveMsg(a,info,btn){
+  const root=liveRoot(a);
+  let r=null;try{r=await bridge.notesSave(root.id,{role:info.role,ord:info.ord,text:info.text,from:info.role});}catch(e){r=null;}
+  if(!r||!r.ok){toast(esc((r&&r.error)||'Could not save the note.'),5000).classList.add('err');return;}
+  await notesFetch(a);
+  const n=r.note;
+  if(r.existing){toastActions('Already in notes',[{label:'Show',onClick:()=>openNotes(a,{focusId:n&&n.id})}]);announce('Already in notes');return;}
+  toastActions('Saved to notes',[{label:'Rename…',onClick:()=>n&&renameNote(a,n,null)},{label:'Show',onClick:()=>openNotes(a,{focusId:n&&n.id})}]);
+  announce('Saved to notes');
+}
+
+/* ---- changing a note: one place for rev, stale and the answer (FR-008, FR-013) ---- */
+async function notesChange(a,note,patch){
+  const root=liveRoot(a);
+  let r=null;try{r=await bridge.notesUpdate(root.id,note.id,note.rev,patch);}catch(e){r=null;}
+  if(r&&!r.ok&&r.code==='stale'&&r.current){
+    const cur=r.current, saved=[safeMask(cur.title)||'',safeExcerpt(cur.text,300,'')||''].filter(Boolean); /* FR-008: the saved version, masked and cut */
+    const k=await askDialog({title:'This note changed',body:'It was changed since you opened it (in another chat or window). Keep your change over it, or use the saved version.',lines:saved.length?['Saved version: '+saved.join(' / ')]:undefined,buttons:[{label:'Use the saved one',value:null},{label:'Keep mine',value:'mine',cls:'primary'}]});
+    if(k&&k.value==='mine'){try{r=await bridge.notesUpdate(root.id,note.id,r.current.rev,patch);}catch(e){r=null;}}
+    else{await notesFetch(a);return null;}
+  }
+  if(!r||!r.ok){toast(esc((r&&r.error)||'Could not change the note.'),5000).classList.add('err');await notesFetch(a);return null;}
+  await notesFetch(a);return r.note||true;
+}
+async function renameNote(a,note,returnFocus){
+  const shown=noteBoxText(note.title); /* the stored title is masked once more before it is shown for editing; not shown at all when that is not possible (fail closed), like Edit… */
+  if(shown==null){toast('Could not check this note for secrets, so it was not opened.',4500).classList.add('err');return;}
+  const res=await askDialog({title:'Rename note',body:'A short title for this note, 1 to 80 characters.',input:{label:'Title',value:shown,max:80,focus:true,select:true,submitOnEnter:true},need:{text:true},returnFocus:returnFocus||undefined,
+    buttons:[{label:'Cancel',value:null},{label:'Save',value:'ok',cls:'primary'}]});
+  if(!res||res.value!=='ok'||!String(res.text||'').trim())return;
+  const r=await notesChange(a,note,{title:String(res.text).trim()});
+  if(r)announce('Renamed.');
+}
+async function editNote(a,note,returnFocus){
+  const shown=noteBoxText(note.text); /* the stored text is masked once more before it is shown for editing, and not shown at all when that is not possible (fail closed) */
+  if(shown==null){toast('Could not check this note for secrets, so it was not opened.',4500).classList.add('err');return;}
+  const res=await askDialog({title:'Edit note',body:'The note is saved with secrets masked. At most 16,000 characters.',size:'m',input:{label:'Note',value:shown,multiline:true,max:16000,focus:true},need:{text:true},returnFocus:returnFocus||undefined,
+    buttons:[{label:'Cancel',value:null},{label:'Save',value:'ok',cls:'primary'}]});
+  if(!res||res.value!=='ok'||!String(res.text||'').trim())return;
+  const r=await notesChange(a,note,{text:String(res.text)});
+  if(r)announce('Note saved.');
+}
+async function addNoteUi(a,returnFocus){
+  const res=await askDialog({title:'New note',body:'Write an idea or paste something to keep. It is saved with secrets masked. At most 16,000 characters.',size:'m',input:{label:'Note',multiline:true,max:16000,focus:true},need:{text:true},returnFocus:returnFocus||undefined,
+    buttons:[{label:'Cancel',value:null},{label:'Save',value:'ok',cls:'primary'}]});
+  if(!res||res.value!=='ok'||!String(res.text||'').trim())return;
+  let r=null;try{r=await bridge.notesAdd(liveRoot(a).id,{text:String(res.text)});}catch(e){r=null;}
+  if(!r||!r.ok){toast(esc((r&&r.error)||'Could not save the note.'),5000).classList.add('err');return;}
+  await notesFetch(a);announce('Note saved.');
+  if(NT.open&&r.note)notesFocusRow(r.note.id);
+}
+async function deleteNote(a,note,after){
+  const title=safeMask(note.title)||'this note';
+  const res=await askDialog({title:'Delete note?',body:'Delete the note "'+title+'"? This cannot be undone.',returnFocus:()=>document.querySelector('#notesDrawer .nt-row[data-id="'+CSS.escape(note.id)+'"]')||$('ntAdd'),
+    buttons:[{label:'Cancel',value:null},{label:'Delete',value:'ok',cls:'primary danger'}]});
+  if(!res||res.value!=='ok')return;
+  let r=null;try{r=await bridge.notesDelete(liveRoot(a).id,note.id,note.rev);}catch(e){r=null;}
+  if(!r||!r.ok){toast(esc((r&&r.error)||'Could not delete the note.'),5000).classList.add('err');await notesFetch(a);return;}
+  await notesFetch(a);announce('Note deleted.');
+  /* FR-014: focus goes to the next row, else the previous, else + Note */
+  const tgt=after&&after.next||after&&after.prev;
+  const el=tgt&&document.querySelector('#notesDrawer .nt-row[data-id="'+CSS.escape(tgt)+'"]');
+  focusIn(el||$('ntAdd'));
+}
+
+/* ---- inserting into the message box (FR-024): never sends ---- */
+function boxUsable(){const i=$('msgInput');return !!i&&!i.disabled&&!i.readOnly&&!i.closest('.ro');}
+const BOX_NO_REASON='This chat has no message box to put it in.';
+/* the stored text is masked already; it is masked once more on its way into the box, and not inserted at all when that is not possible (fail closed) */
+function noteBoxText(text){
+  try{const r=window.DurbarRedact&&window.DurbarRedact.maskNoteText;if(typeof r!=='function')return null;const m=r(String(text==null?'':text));return m&&typeof m.text==='string'?m.text:null;}catch(e){return null;}
+}
+function ntNoticeShow(n){
+  const el=$('ntNotice'); if(!el)return;
+  const t=DN.noticeText(n); NT.notice=t?{text:t}:null;
+  el.textContent=t;el.hidden=!t;
+}
+/* the notice stays until the box is sent or emptied */
+function ntNoticeSync(){const i=$('msgInput'),el=$('ntNotice');if(!el||!NT.notice)return;if(!i||!i.value.trim()){NT.notice=null;el.hidden=true;el.textContent='';}}
+function notesInsert(a,n,opts){
+  const input=$('msgInput'); if(!input||!boxUsable()){toast(esc(BOX_NO_REASON),3500);return false;}
+  const text=noteBoxText(n.text); if(text==null){toast('Could not check this note for secrets, so it was not inserted.',4500).classList.add('err');return false;}
+  const caret=opts&&opts.replace?null:(input.selectionStart==null?input.value.length:input.selectionStart);
+  const r=opts&&opts.replace?DN.replaceWord(input.value,opts.replace.start,opts.replace.end,text):DN.insertInto(input.value,caret,text);
+  input.value=r.value;input.setSelectionRange(r.caret,r.caret);autoGrow();
+  ntNoticeShow(n);
+  closeNotes(false);
+  input.focus({preventScroll:true});
+  announce('Inserted the note "'+(safeMask(n.title)||'note')+'".');
+  return true;
+}
+
+/* ---- the drawer over the chat log (FR-020..FR-024) ---- */
+function placeNotesDrawer(){
+  const d=$('notesDrawer'),c=$('chat'); if(!d||!c)return;
+  d.style.top=c.offsetTop+'px';d.style.left=c.offsetLeft+'px';d.style.width=c.offsetWidth+'px';d.style.height=c.offsetHeight+'px';
+}
+function noteRowHTML(n,a,tab){
+  const v=DN.rowView(n,SAFE,a.name), title=v.title||'Untitled note';
+  const meta=[v.when,v.from].filter(Boolean).join(' · ');
+  return `<div class="nt-row" role="listitem" data-id="${esc(n.id)}" tabindex="${tab?0:-1}" aria-label="${esc(title)}">`
+    +`<div class="nt-main"><b class="nt-title">${esc(title)}</b><span class="nt-meta">${esc(meta)}</span>${v.excerpt?`<p class="nt-ex">${esc(v.excerpt)}</p>`:''}</div>`
+    +`<div class="nt-acts"><button class="btn sm" type="button" data-nt="insert"${boxUsable()?'':` aria-disabled="true" title="${esc(BOX_NO_REASON)}"`}>Insert</button><button class="btn sm" type="button" data-nt="edit">Edit…</button><button class="btn sm nt-more" type="button" data-nt="more" aria-haspopup="menu" aria-label="More actions for this note" title="More actions for this note">${NT_DOTS}</button></div></div>`;
+}
+function notesPaint(){
+  const d=$('notesDrawer'),a=NT.open&&byId(NT.open.id); if(!d||!a||d.hidden)return;
+  const st=notesOf(a)||{ok:true,notes:[],session:''}, list=d.querySelector('#ntBody');
+  const had=document.activeElement&&list.contains(document.activeElement)?document.activeElement.closest('.nt-row'):null, hadId=had&&had.dataset.id;
+  let html='';
+  if(!st.ok){
+    html=`<p class="nt-banner" role="alert">${esc(st.unreadable?'Durbar could not read the notes file of this folder; it is left as it is.':st.error)}</p>${st.unreadable&&bridge.notesStartOver?'<p><button class="btn sm" type="button" data-nt="startover">Start over…</button></p>':''}`;
+  }else{
+    if(st.readOnly)html+=`<p class="nt-banner" role="alert">${esc(st.readOnly)}</p>`;
+    const g=DN.groups(st.notes,st.session), total=g.session.length+g.folder.length;
+    if(!total)html+='<p class="nt-empty">No notes yet. Save a message with its ⋯ menu, or add one.</p>';
+    let first=true;
+    const grp=(label,id,items)=>{if(!items.length)return '';const s=`<section class="nt-grp" aria-labelledby="${id}"><h4 id="${id}">${esc(label)}</h4><div role="list" aria-labelledby="${id}">${items.map(n=>{const h=noteRowHTML(n,a,first);first=false;return h;}).join('')}</div></section>`;return s;};
+    html+=grp('This session','ntGrpS',g.session)+grp('This folder','ntGrpF',g.folder);
+  }
+  list.innerHTML=html;
+  const rows=[...list.querySelectorAll('.nt-row')];
+  if(hadId){const r=rows.find(x=>x.dataset.id===hadId);if(r){rows.forEach(x=>x.tabIndex=-1);r.tabIndex=0;}}
+  const add=$('ntAdd'); if(add)add.disabled=!st.ok||!!st.readOnly;
+}
+function notesFocusRow(id){
+  const d=$('notesDrawer'); if(!d)return;
+  const rows=[...d.querySelectorAll('.nt-row')], r=(id&&rows.find(x=>x.dataset.id===id))||rows[0];
+  if(r){rows.forEach(x=>x.tabIndex=-1);r.tabIndex=0;focusIn(r);}else focusIn($('ntAdd')||$('ntClose'));
+}
+async function openNotes(a,o){
+  a=a||byId(ui.selected); o=o||{};
+  if(!notesOn(a))return false;
+  if(BP)await DN.showChatTab(BP); /* FR-025: from the Browser tab, Chat comes first */
+  const d=$('notesDrawer'); if(!d||ui.selected!==a.id)return false;
+  if(!NT.open){NT.ret=o.opener&&document.contains(o.opener)?o.opener:(document.activeElement&&document.activeElement!==document.body?document.activeElement:$('msgInput'));}
+  NT.open={id:a.id}; d.hidden=false;
+  document.querySelectorAll('[data-notes-toggle]').forEach(b=>b.setAttribute('aria-expanded','true'));
+  placeNotesDrawer();
+  if(window.ResizeObserver&&!NT.ro){NT.ro=new ResizeObserver(placeNotesDrawer);NT.ro.observe($('chat'));NT.ro.observe($('panel'));}
+  if(!notesOf(a))notesPaint();
+  await notesFetch(a); notesPaint();
+  const st=notesOf(a),n=st&&st.ok?DN.flat(st.notes,st.session).length:0;
+  announce('Notes. '+(n?n+(n===1?' note':' notes')+'.':'No notes yet.'));
+  notesFocusRow(o.focusId);
+  return true;
+}
+function closeNotes(restore){
+  const d=$('notesDrawer'); if(!NT.open&&(!d||d.hidden))return false;
+  NT.open=null; if(d)d.hidden=true;
+  if(NT.ro){NT.ro.disconnect();NT.ro=null;}
+  closeModeMenu();
+  document.querySelectorAll('[data-notes-toggle]').forEach(b=>b.setAttribute('aria-expanded','false'));
+  const r=NT.ret; NT.ret=null;
+  if(restore!==false){const t=r&&document.contains(r)?r:$('msgInput');if(t)focusIn(t);}
+  return true;
+}
+const notesIsOpen=()=>!!(NT.open&&$('notesDrawer')&&!$('notesDrawer').hidden);
+function toggleNotes(a,opener){return notesIsOpen()?(closeNotes(true),Promise.resolve(false)):openNotes(a,{opener});}
+/* the drawer is a region of the chat, not a dialog (spec 083 FR-020): it is deliberately NOT a focus trap, the message box and the header stay reachable with Tab while it is open */
+function notesDrawerHTML(){
+  return `<div class="notes-drawer" id="notesDrawer" role="region" aria-label="Notes" hidden><div class="nt-head"><h3 class="nt-h">Notes</h3><button class="btn sm" id="ntClose" type="button" aria-label="Close notes" title="Close (Esc)">Close</button></div><div class="nt-body" id="ntBody"></div><div class="nt-foot"><button class="btn sm primary" id="ntAdd" type="button">+ Note</button></div></div>`;
+}
+function wireNotesDrawer(a){
+  const d=$('notesDrawer'); if(!d)return;
+  NT.open=null; NT.notice=null;
+  if(!NT.sub&&bridge.onNotesChanged)NT.sub=bridge.onNotesChanged(()=>{const c=byId(ui.selected);if(c)notesFetch(c);}); /* another chat of the folder, or another process, changed them */
+  d.addEventListener('click',e=>{
+    const a2=byId(ui.selected); if(!a2)return;
+    if(e.target.closest('#ntClose')){closeNotes(true);return;}
+    if(e.target.closest('#ntAdd')){addNoteUi(a2,$('ntAdd'));return;}
+    const b=e.target.closest('[data-nt]'); if(!b)return;
+    if(b.dataset.nt==='startover'){startOverNotes(a2,b);return;}
+    const row=b.closest('.nt-row'),st=notesOf(a2),n=row&&st&&st.notes.find(x=>x.id===row.dataset.id); if(!n)return;
+    if(b.dataset.nt==='insert'){if(b.getAttribute('aria-disabled')==='true'){announce(BOX_NO_REASON);return;}notesInsert(a2,n);}
+    else if(b.dataset.nt==='edit')editNote(a2,n,b);
+    else if(b.dataset.nt==='more'){const r=b.getBoundingClientRect();openNoteMenu(a2,n,b,r.left,r.bottom+4);}
+  });
+  d.addEventListener('keydown',e=>{
+    const row=e.target.closest&&e.target.closest('.nt-row'); if(!row)return;
+    const rows=[...d.querySelectorAll('.nt-row')],i=rows.indexOf(row);
+    const go=j=>{e.preventDefault();rows.forEach(x=>x.tabIndex=-1);const r=rows[Math.max(0,Math.min(rows.length-1,j))];r.tabIndex=0;focusIn(r);};
+    if(e.key==='ArrowDown')go(i+1);else if(e.key==='ArrowUp')go(i-1);else if(e.key==='Home')go(0);else if(e.key==='End')go(rows.length-1);
+    else if(e.key==='Enter'&&e.target===row){const a2=byId(ui.selected),st=notesOf(a2),n=st&&st.notes.find(x=>x.id===row.dataset.id);if(n){e.preventDefault();notesInsert(a2,n);}}
+  });
+  d.addEventListener('contextmenu',e=>{const row=e.target.closest('.nt-row');if(!row)return;e.preventDefault();const m=row.querySelector('.nt-more');if(m)m.click();});
+}
+async function startOverNotes(a,opener){
+  const res=await askDialog({title:'Start over with this folder\'s notes?',body:'The file Durbar could not read is moved aside, not deleted, and the folder starts with no notes.',returnFocus:opener,buttons:[{label:'Cancel',value:null},{label:'Start over',value:'ok',cls:'primary danger'}]});
+  if(!res||res.value!=='ok')return;
+  let r=null;try{r=await bridge.notesStartOver(liveRoot(a).id);}catch(e){r=null;}
+  if(!r||!r.ok)toast(esc((r&&r.error)||'Could not start over.'),5000).classList.add('err');
+  await notesFetch(a);
+}
+/* a row's ⋯: the shared menu element, the keyboard rules of the Previous sessions row menu */
+function openNoteMenu(a,n,anchor,x,y){
+  closeModeMenu();
+  const it=(act,label,sub,cls)=>`<button type="button" role="menuitem" data-nmact="${act}"${cls?` class="${cls}"`:''} title="${esc(sub)}"><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
+  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu nt-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Actions for the note '+(safeMask(n.title)||''));
+  m.innerHTML=it('rename','Rename…','Change its title')+it('copy','Copy','Copy its text')+it('delete','Delete…','Remove it from the notes','mm-danger');
+  document.body.appendChild(m);
+  const b=m.getBoundingClientRect();m.style.left=Math.max(8,Math.min(x,innerWidth-b.width-8))+'px';m.style.top=Math.max(8,Math.min(y,innerHeight-b.height-8))+'px';
+  const back=()=>{if(anchor&&document.contains(anchor))focusIn(anchor);};
+  m.addEventListener('click',e=>{const t=e.target.closest('[data-nmact]');if(!t)return;closeModeMenu();const act=t.dataset.nmact;
+    if(act==='rename')renameNote(a,n,anchor);
+    else if(act==='copy'){const ct=noteBoxText(n.text);if(ct==null){toast('Could not check this note for secrets, so it was not copied.',4500).classList.add('err');back();return;}navigator.clipboard.writeText(ct).then(()=>toast('Copied.',1500),()=>toast('Could not copy to the clipboard.',3000).classList.add('err'));back();}
+    else if(act==='delete'){
+      const ids=[...document.querySelectorAll('#notesDrawer .nt-row')].map(r=>r.dataset.id),i=ids.indexOf(n.id);
+      deleteNote(a,n,{row:n.id,next:ids[i+1]||'',prev:ids[i-1]||''});}});
+  m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-nmact]')],i=its.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'){e.preventDefault();focusIn(its[(i+1)%its.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(its[(i+its.length-1)%its.length]);}
+    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();back();}});
+  focusIn(m.querySelector('button'));
+}
+
+/* ---- notes in the "/" list (FR-030, spec 073 FR-066/FR-067) ---- */
+function slashNotes(a){
+  const st=notesOf(a); if(!st||!st.ok||!notesOn(a))return [];
+  return DN.slashEntries(st.notes,st.session);
+}
+const SLASH_ALL={name:'All notes…',description:'',source:'note',kind:'more',scope:'folder'};
+
 /* ---------------- spec 005 FR-037..FR-042: the composer toolbar and the one Send / Stop slot ----------------
    The chips that set how the next message runs sit in a row under the message box (VS Code style); the header keeps who and what.
    Same chip builders, ids, menus and handlers as before: only their place changed. */
@@ -2582,6 +2898,8 @@ document.addEventListener('keydown',e=>{
   }
   /* spec 006 FR-036: Ctrl+Shift+H (⇧⌘H) shows or hides Previous sessions in the open chat, also from the message box; not under a dialog */
   if(mod&&e.shiftKey&&!e.altKey&&e.code==='KeyH'&&ui.selected&&$('prevBtn')&&!modalOpen()){e.preventDefault();togglePrevByKey();return;}
+  /* spec 083 FR-026 (spec 074 FR-085): Ctrl+Shift+M (⇧⌘M) opens or closes the Notes drawer in an open main chat, also from the message box; not under a dialog. A saved Go to combination equal to it was handled above and keeps working. */
+  if(mod&&e.shiftKey&&!e.altKey&&e.code==='KeyM'&&ui.selected&&notesOn(byId(ui.selected))&&$('notesDrawer')&&!modalOpen()){e.preventDefault();toggleNotes(byId(ui.selected));return;}
   if(mod&&e.shiftKey&&!e.altKey&&(e.key==='N'||e.key==='n'||e.code==='KeyN')){e.preventDefault();closeInbox();openNextNeedsMe();return;}
   /* spec 044 FR-031: Ctrl+Shift+S (⇧⌘S on a Mac) opens Schedules, from text fields and from a chat; not under a dialog, and only where the button is shown */
   if(mod&&e.shiftKey&&!e.altKey&&(e.key==='S'||e.key==='s'||e.code==='KeyS')&&schedTopShown()&&!document.querySelector('[role="dialog"][aria-modal="true"]')){e.preventDefault();openSchedulesView();return;}
@@ -2615,6 +2933,7 @@ document.addEventListener('keydown',e=>{
     if(document.getElementById('sessDlg')){closeSessDlg();return;}
     if(!$('foldersPop').hidden){toggleFolders(false);return;}
     if(!$('floorsPop').hidden){toggleFloors(false);return;}
+    if(notesIsOpen()){closeNotes(true);return;} /* spec 083 FR-020: the drawer closes first, a second Esc closes the chat */
     if(vsViewing){leaveVsView();return;}
     if(ui.selected){closePanel();return;}
   }
@@ -2905,6 +3224,7 @@ function palActions(){
     {label:'Expand all folders',kw:'doors open expand rooms',run:palClick('openAll'),ok:()=>palUsable('openAll')},
     {label:'Back to the previous chat',kw:'previous last recent chat toggle switch',keys:['Ctrl','`'],run:openPreviousChat,ok:()=>!!previousChat()},
     {label:SIMPLE?'Show or hide earlier chats':'Show or hide previous sessions',kw:'previous earlier sessions chats history resume list collapse expand',keys:keyLabels(PREV_KEYS),run:togglePrevByKey,ok:()=>{const b=$('prevBtn'),x=$('prev');return !!b&&!!x&&!x.hidden&&!vsViewing;}}, /* spec 006 FR-036 */
+    {label:'Notes',hint:'Saved messages and ideas of this folder',kw:'notes saved messages ideas drawer insert keep',keys:keyLabels(NOTES_KEYS),run:()=>toggleNotes(byId(ui.selected)),ok:()=>!!ui.selected&&!!$('notesDrawer')&&notesOn(byId(ui.selected))}, /* spec 083 */
     {label:'Keyboard shortcuts',kw:'keys shortcuts help hotkeys',keys:['?'],run:openKbdHelp},
     {label:'Go to… (navigator)',hint:'Floor, folder, agent or a chat by number',kw:'navigator go jump floor folder chat number spotlight',keys:keyLabels(navKeyParts()),run:()=>openPalette({nav:true}),nav:true}, /* spec 074 FR-015 */
     {label:'Send to several sessions…',hint:'One message to the running sessions you pick',kw:'send several many all broadcast message group sessions',run:()=>sendToSeveral(),ok:()=>!!bridge&&!!bridge.send&&sendTargets().filter(x=>!x.why).length>=2}, /* spec 064 FR-001 */
@@ -3068,6 +3388,7 @@ function openKbdHelp(back){
     ...(IS_MAC?[[keyLabels(['mod',',']),'Settings']]:[]), /* FR-083: the app menu's Settings… item */
     [['Ctrl','`'],'Back to the previous chat (on a Mac too: Control, not Cmd)'],
     [keyLabels(PREV_KEYS),SIMPLE?'Show or hide earlier chats in a chat':'Show or hide previous sessions in a chat'], /* spec 006 FR-036 */
+    [keyLabels(NOTES_KEYS),'Show or hide the Notes drawer in a chat'], /* spec 083 FR-026 */
     [['←','→','↑','↓'],'Move between desks'],
     [['F2'],'Rename the focused session or folder (Fn+F2 on a Mac)'], /* spec 059 FR-024: in place, on a desk, row, door or chat title */
     [['Esc'],'Back, or close'],
@@ -3333,6 +3654,7 @@ function liveChat(a){
   if(chats[a.id])return chats[a.id];
   const el=document.createElement('div');el.className='chat-inner';
   const chat=chats[a.id]={el,busy:false};
+  if(a.live&&!a.parent&&DN&&bridge&&bridge.notesSave)el.dataset.notes='1'; /* spec 083 FR-010/FR-027: only a main, live chat has the message ⋯; a helper's chat, the VS Code view and the canned demo chats have none (it would open nothing) */
   if(a.sub)buildSubTranscript(a,chat);
   return chat;
 }
@@ -3554,6 +3876,10 @@ function addCopyButtons(el){
   const streaming=el.classList.contains('caret'),cp=el.querySelector(':scope > .cp-msg');
   if(streaming&&cp)cp.remove();
   else if(!streaming&&el.closest('.msg.agent')&&!cp)el.appendChild(mk('cp-msg','Copy this reply'));
+  /* spec 083 FR-010: a finished reply bubble (not a thinking block, a tool chip or a request card) gets the ⋯ next to Copy */
+  const nb=el.querySelector(':scope > .nt-btn');
+  if(streaming&&nb)nb.remove();
+  else if(!streaming&&el.classList.contains('bubble')&&el.closest('.msg.agent')&&el.closest('.chat-inner[data-notes]')&&!nb)el.appendChild(msgDotsBtn());
 }
 document.addEventListener('click',async e=>{
   const b=e.target.closest('.cp-btn');if(!b)return;
@@ -5392,12 +5718,14 @@ const busyNow=a=>a.state==='working'||a.state==='thinking'||a.state==='waiting'|
 const UNVERIFIED_WHY='Not verified on a real account yet: if a switch does nothing or fails, start a new session.';
 const NO_SWITCH_WHY='This agent cannot change its model in place yet. Start a new session with the model you want; this one keeps its model until it ends.';
 /* a toast with one action button (Undo); the container is a polite live region, the button is a normal tab stop */
-function toastAction(html,label,onClick,ms){
+function toastAction(html,label,onClick,ms){return toastActions(html,[{label,onClick}],ms);}
+/* the same with several buttons (spec 083: "Saved to notes" with Rename… and Show) */
+function toastActions(html,actions,ms){
   const t=document.createElement('div');t.className='toast with-act';
   const s=document.createElement('span');s.innerHTML=html;t.appendChild(s);
-  const b=document.createElement('button');b.type='button';b.className='toast-act';b.textContent=label;
   let gone=false;const kill=()=>{if(gone)return;gone=true;t.style.transition='opacity .3s';t.style.opacity='0';setTimeout(()=>t.remove(),320);};
-  b.onclick=()=>{kill();onClick();};t.appendChild(b);mountToast(t);holdTimer(t,ms===0?0:(ms||8000),kill);
+  for(const act of actions){const b=document.createElement('button');b.type='button';b.className='toast-act';b.textContent=act.label;b.onclick=()=>{kill();act.onClick();};t.appendChild(b);}
+  mountToast(t);holdTimer(t,ms===0?0:(ms||8000),kill);
   return t;
 }
 /* spec 052 FR-163: the same status line twice in a row is one line with a count ("… (×3)"), so repeated notes never push a request out of view */
@@ -6835,7 +7163,8 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 /* spec 008 FR-113, simulator only: false until the agents are listed, the frozen simulator has replayed every script and the saved usage
    totals are read; then any queued frame is drawn now (a stalled animation frame once left a comparison driver measuring a stale page) */
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
-if(SIM)window.__durbarSimUi={agents:()=>agents,hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,
+if(SIM)window.__durbarSimUi={agents:()=>agents,notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
+  hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,
   /* spec 059 T076 (FR-023): a driver makes the things that change while a field is open happen through the real paths */
   retitle:(id,title)=>{const a=byId(id);if(!a)return false;applyTitle(a,title);return true;},
   renamedElsewhere:(id,alias)=>{onAgentRenamed({id,alias});return true;},

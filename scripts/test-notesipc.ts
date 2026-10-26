@@ -169,8 +169,12 @@ async function main(): Promise<void> {
     assert.ok(!/child_process|\bexec(?:Sync|File)?\(|\bspawn\(/.test(code), `${f} starts no process`);
     if (f !== 'src/main/ipc/notes.ts') assert.ok(!/from 'electron'/.test(code), `${f} has no Electron import`);
   }
+  const l3 = await ops.list('a1');
+  assert.ok(l3.ok && 'session' in l3 && l3.session === 'sess-AAA', 'the list answers the chat\'s own session (main\'s resumeIdFor), so the drawer puts This session first');
+  const l4 = await ops.list('b1');
+  assert.ok(l4.ok && 'session' in l4 && l4.session === '', 'an unusable session id is answered as empty, never passed on');
   const listed = await ops.list('a1');
-  assert.ok(listed.ok && Object.keys(listed).sort().join() === 'fingerprint,folderName,max,notes,ok', `the list answer has no path field: ${Object.keys(listed).join()}`);
+  assert.ok(listed.ok && Object.keys(listed).sort().join() === 'fingerprint,folderName,max,notes,ok,session', `the list answer has no path field: ${Object.keys(listed).join()}`);
   console.log('notes ipc: session and app from main, digest vector, masking values, bad input refused, fromApp on every channel, nothing raw out');
 }
 

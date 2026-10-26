@@ -373,5 +373,5 @@ export function orderForFolder(notes: readonly Note[], session?: string): Note[]
 
 /** What the notes calls answer (spec 083 FR-062): a refusal carries a short reason, and `stale` the note as saved. */
 export type NotesFail = { ok: false; code: 'stale' | 'cap' | 'missing' | 'invalid' | 'unreadable' | 'write'; error: string; current?: Note };
-export type NotesView = { ok: true; fingerprint: string; folderName: string; notes: Note[]; max: number; readOnly?: string } | NotesFail;
+export type NotesView = { ok: true; fingerprint: string; folderName: string; notes: Note[]; max: number; readOnly?: string; session?: string } | NotesFail;
 export type NotesWrote = { ok: true; fingerprint: string; note?: Note; existing?: boolean } | NotesFail;

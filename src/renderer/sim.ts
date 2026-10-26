@@ -105,7 +105,7 @@ function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: strin
   const gone = { ok: false, code: 'invalid', error: 'That chat is not open.' } as const;
   const noMask = { ok: false, code: 'invalid', error: 'Masking is not available.' } as const;
   const tell = (key: string): void => subs.slice().forEach((f) => f({ fingerprint: 'sim-' + key.length }));
-  const titleOf = (text: string): string => (text.split('\n').find((l) => l.trim()) ?? 'Note').replace(/^[#>\-*\s]+/, '').trim().slice(0, 80) || 'Note';
+  const titleOf = (text: string): string => (text.split('\n').find((l) => l.trim()) ?? 'Note').replace(/^[#>\-*\s]+/, '').replace(/(\*+|`+|~~)/g, '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Note';
   const clean = (t: string): string => t.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
   const add = (id: string, text: string, from: SimNote['from'], source?: SimNote['source']): SimNotesWrote => {
     const f = folderOf(id);
@@ -128,16 +128,21 @@ function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: strin
     notesList: async (id): Promise<SimNotesView> => {
       const f = folderOf(id);
       if (!f) return gone;
-      return { ok: true, fingerprint: 'sim-' + f.key.length, folderName: f.name, notes: list(f.key, f.session).map((n) => ({ ...n })), max: MAX };
+      return { ok: true, fingerprint: 'sim-' + f.key.length, folderName: f.name, notes: list(f.key, f.session).map((n) => ({ ...n })), max: MAX, session: f.session };
     },
     notesSave: async (id, input) => {
       const f = folderOf(id);
       if (!f || !input || typeof input.text !== 'string') return gone;
       const text = input.text;
-      let h = 0;
-      for (let i = 0; i < text.length; i++) h = (Math.imul(h, 31) + text.charCodeAt(i)) >>> 0;
       const role = input.role === 'user' ? 'user' : 'agent';
-      return add(id, text, input.from ?? role, { ...src(f.session, input.ord, role), digest: ('0000000000000000' + h.toString(16) + text.length.toString(16)).slice(-16) });
+      // the digest main computes (spec 083 FR-009): the first 16 hex characters of SHA-256 of the text with \r\n turned into \n and the ends trimmed
+      let digest = '';
+      try {
+        const DN = (window as unknown as { DurbarNotes?: { digestOf(t: string, s: SubtleCrypto): Promise<string> } }).DurbarNotes;
+        if (DN) digest = await DN.digestOf(text, crypto.subtle);
+      } catch { digest = ''; }
+      if (!digest) { let h = 0; for (let i = 0; i < text.length; i++) h = (Math.imul(h, 31) + text.charCodeAt(i)) >>> 0; digest = ('0000000000000000' + h.toString(16) + text.length.toString(16)).slice(-16); }
+      return add(id, text, input.from ?? role, { ...src(f.session, input.ord, role), digest });
     },
     notesAdd: async (id, input) => add(id, input && input.text, 'typed'),
     notesUpdate: async (id, noteId, rev, patch) => {
@@ -605,7 +610,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       const helpers = noHelpers ? 0 : simHelpers || helpers0;
       const roomName = opts.solo ? name.toLowerCase() + '-app' : room + (opts.names === 'long' ? '-customer-reconciliation-batch-jobs-2026'.slice(0, 55 - room.length) : ''); // simnames=long: a folder name is long too (60 characters at most, spec 059)
       const cwd = opts.solo ? '~/work/' + roomName : ROOM_DEFS[room] ?? '~/work/' + room;
-      const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], adapterId: mixed ? SIM_KIND_BY_AGENT[i] ?? 'copilot' : 'copilot', permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true }, profiles: true, slash: true, ...(opts.reply === 'secrets' && i === 7 ? { title: SECRETS_TEXT } : {}) } as AgentInfo; // FR-065: one agent starts with a runtime title that holds the planted secrets (it becomes its name)
+      const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], adapterId: mixed ? SIM_KIND_BY_AGENT[i] ?? 'copilot' : 'copilot', permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true }, profiles: true, slash: !(simQs && simQs.get('simslash') === 'none' && mixed && SIM_KIND_BY_AGENT[i] === 'basic'), ...(opts.reply === 'secrets' && i === 7 ? { title: SECRETS_TEXT } : {}) } as AgentInfo; // FR-065: one agent starts with a runtime title that holds the planted secrets (it becomes its name)
       // Spec 052 FR-046: a pending permission card only happens in Ask first, so a waiting agent starts in Ask first (Jonas was Allow all
       // and restored, Lena Read-only); the restored Allow-all folder the restore strip names is then Tomas's (swisscontract-ai).
       if (state === 'waiting' && info.permMode !== 'ask') { info.permMode = 'ask'; info.permRestored = undefined; }
