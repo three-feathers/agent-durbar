@@ -30,7 +30,7 @@
       canForward:open&&!!s.canForward,
       reload:loading?'stop':'reload',
       reloadLabel:loading?'Stop':'Reload',
-      status:loading?{kind:'loading',word:'Loading…'}:s&&typeof s.failed==='string'?{kind:'error',word:s.failed}:err?{kind:'error',word:'Could not load this page ('+err+')'}:!open&&!(s&&s.connecting)?{kind:'closed',word:'The page closed with the session.'}:open&&typeof s.note==='string'&&s.note?{kind:'dialog',word:s.note}:null,
+      status:loading?{kind:'loading',word:'Loading…'}:s&&typeof s.failed==='string'?{kind:'error',word:s.failed}:err?{kind:'error',word:'Could not load this page ('+err+')'}:!open&&!(s&&s.connecting)?{kind:'closed',word:'The page closed with the session.'}:open&&typeof s.note==='string'&&s.note?{kind:'dialog',word:s.note}:open&&s.memory==='reloaded'?{kind:'memory',word:'Reloaded to save memory'}:open&&s.memory==='many'?{kind:'memory',word:'Many pages are open; close some to save memory.'}:null,
       title:open&&!loading&&!err&&typeof s.title==='string'?s.title:'',
       sound:open&&s.muted===false?{on:true,word:'Sound on',hint:'Mute this page'}:{on:false,word:'Sound off',hint:'Turn the sound on'},
       dialogOpen:open&&s.dialogOpen===true,
@@ -56,6 +56,7 @@
     loading:'<svg class="bspin" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M8 2.2a5.8 5.8 0 1 1-5.8 5.8"/></svg>',
     error:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><path d="M8 4.8v3.8M8 11.1v.1"/></svg>',
     dialog:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.2" y="3" width="11.6" height="9" rx="1.8"/><path d="M5 6.2h6M5 8.8h3.6"/></svg>',
+    memory:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="10" height="8" rx="1.5"/><path d="M6 2v2M10 2v2M6 12v2M10 12v2"/></svg>',
     closed:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><path d="M5 8h6"/></svg>'
   };
 

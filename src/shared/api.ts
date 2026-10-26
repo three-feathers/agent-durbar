@@ -1100,6 +1100,8 @@ export interface BrowserState {
   /** The note of a dialog main closed for the agent (FR-025d); the bar shows it with an icon. Page text, already masked. */
   note?: string;
   /** A Chromium network error name such as ERR_CONNECTION_REFUSED after the last load failed. */
+  /** FR-011: the page was dropped to save memory and came back (`reloaded`), or too many pages are open and none could be unloaded (`many`). */
+  memory?: 'reloaded' | 'many';
   error?: string;
 }
 export type BrowserResult = { ok: true; state: BrowserState } | { ok: false; reason: string; state?: BrowserState; needsConsent?: true; link?: 'mailto' | 'refused' };

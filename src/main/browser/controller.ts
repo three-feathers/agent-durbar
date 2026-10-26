@@ -16,9 +16,11 @@ import { classifyLink } from '../../shared/browserurl';
 import { isHttpUrl } from '../../shared/url';
 import type { BrowserResult, BrowserState } from '../../shared/api';
 import type { NavAction } from '../hardening';
+import { MAX_LIVE_VIEWS, pickUnload } from './viewcap';
+import type { CapView } from './viewcap';
 import type { SessionView, ViewEvents } from './views';
 
-export const STATE_KEYS = ['id', 'open', 'url', 'title', 'loading', 'canBack', 'canForward', 'muted', 'driver', 'dialogOpen', 'error', 'note'] as const;
+export const STATE_KEYS = ['id', 'open', 'url', 'title', 'loading', 'canBack', 'canForward', 'muted', 'driver', 'dialogOpen', 'error', 'note', 'memory'] as const;
 const MAX_URL = 2048;
 const MAX_TITLE = 200;
 /** FR-024: what the window says about a link that is not a web address (static text, never page text). */
@@ -79,6 +81,8 @@ export interface BrowserDeps {
   dropAsks?(id?: string): void;
   /** Test hook: the snapshot's time limit (ms). */
   snapshotMs?: number;
+  /** Test hook: the clock for `lastShownAt` (FR-011). */
+  now?: () => number;
   /** Runs `fn` soon, once (setImmediate); the test passes a manual queue. */
   later?(fn: () => void): void;
 }
@@ -134,6 +138,17 @@ interface Tracked {
   error?: string;
   note?: string;
   dialogOpen: boolean;
+  /** FR-011: last time this view was put on the window (ms). */
+  lastShownAt: number;
+  /** The page was unloaded to save memory: its address, kept until it is shown again. */
+  unloadedUrl?: string;
+  /** Any character key input since the page loaded (from the view's `input-event`). */
+  charKey: boolean;
+  /** The page was reached by a form submit (Chromium's transition type). */
+  byForm: boolean;
+  memory?: 'reloaded' | 'many';
+  /** The reload after an unload is in flight: its own navigation start must not clear the note. */
+  memoryHold: boolean;
   last?: string;
   queued: boolean;
 }
@@ -163,6 +178,7 @@ export function makeBrowserController(deps: BrowserDeps) {
     };
     if (t.error && !s.loading) s.error = t.error;
     if (t.note) s.note = t.note;
+    if (t.memory) s.memory = t.memory;
     return s;
   }
   /** Tell the window, once per burst of events, and only if the state changed. */
@@ -181,14 +197,56 @@ export function makeBrowserController(deps: BrowserDeps) {
     });
   }
 
+  /** A page is loaded: the view has a real address and was not unloaded to save memory. */
+  const loadedOf = (t: Tracked): boolean => !t.unloadedUrl && !t.wc.isDestroyed() && displayUrl(t.wc.getURL()) !== '';
+  /**
+   * FR-011: a page just loaded in `newId`. If more than `MAX_LIVE_VIEWS` pages would stay loaded, the least recently shown safe views drop
+   * their page (the address and the partition stay; it reloads when shown again). With no safe view left, the new one stays loaded and says so.
+   */
+  function enforceCap(newId: string): void {
+    const views: CapView[] = [];
+    for (const [i, x] of tracked) {
+      if (i === newId) continue;
+      views.push({ id: i, loaded: loadedOf(x), shown: !!x.visible, lastShownAt: x.lastShownAt, reachedByPost: x.byForm, charKeySinceLoad: x.charKey, callInFlight: false, callInCurrentTurn: false, browserTypeSinceLoad: false });
+    }
+    const { unload, overCap } = pickUnload(views, MAX_LIVE_VIEWS);
+    for (const i of unload) {
+      const x = tracked.get(i);
+      if (!x) continue;
+      x.unloadedUrl = x.wc.getURL();
+      x.memory = undefined;
+      void x.sv.navigate({ url: 'about:blank' }).catch(() => undefined);
+      changed(i);
+    }
+    const t = tracked.get(newId);
+    if (t) {
+      t.memory = overCap ? 'many' : t.memory === 'many' ? undefined : t.memory;
+      changed(newId);
+    }
+  }
+
   function wire(id: string, t: Tracked): void {
     const wc = t.wc;
     const ping = (): void => changed(id);
     for (const ev of ['did-start-loading', 'did-stop-loading', 'did-navigate', 'did-navigate-in-page', 'page-title-updated', 'audio-state-changed']) wc.on(ev, ping as never);
-    wc.on('did-start-navigation', (() => {
+    wc.on('did-start-navigation', ((e?: { isMainFrame?: boolean; isSameDocument?: boolean }) => {
+      if (e && (e.isMainFrame === false || e.isSameDocument === true)) return; // a frame or a hash change is not a new page
       t.error = undefined;
       t.note = undefined;
+      if (t.memoryHold) t.memoryHold = false; // the reload that brings an unloaded page back keeps its note
+      else t.memory = undefined;
       ping();
+    }) as never);
+    wc.on('did-navigate', (() => {
+      t.charKey = false; // a new page: key input counts from here (FR-011)
+      t.byForm = false; // until the history says this page came from a form
+      if (loadedOf(t)) {
+        t.unloadedUrl = undefined;
+        enforceCap(id);
+      }
+    }) as never);
+    wc.on('input-event', ((_e: unknown, ev: { type?: string }) => {
+      if (ev && ev.type === 'char') t.charKey = true; // main never reads the page: it only sees that keys were typed
     }) as never);
     wc.on('did-fail-load', ((_e: unknown, code: number, desc: string, _url: string, isMain: boolean) => {
       if (isMain && code !== -3) t.error = errorName(desc); // -3 is a navigation another one replaced
@@ -253,10 +311,14 @@ export function makeBrowserController(deps: BrowserDeps) {
               changed(id);
             },
             askLeave: (_sid, known) => deps.askLeave(id, known, !!tracked.get(id)?.visible),
+            onNavigationKind: (_sid, kind) => {
+              const x = tracked.get(id);
+              if (x) x.byForm = kind === 'form_submit';
+            },
           };
           const sv = await deps.views.ensureSessionView(id, events, deps.sim);
           const view = sv.view as BrowserViewLike;
-          const t: Tracked = { sv, wc: view.webContents, view, visible: false, overlay: false, queued: false, dialogOpen: false };
+          const t: Tracked = { sv, wc: view.webContents, view, visible: false, overlay: false, queued: false, dialogOpen: false, lastShownAt: 0, charKey: false, byForm: false, memoryHold: false };
           tracked.set(id, t);
           wire(id, t);
           changed(id);
@@ -366,6 +428,17 @@ export function makeBrowserController(deps: BrowserDeps) {
       if (!t) return { ok: false };
       if (visible && !t.bounds) return { ok: false }; // never attach a view that has no place yet
       t.visible = visible;
+      if (visible) {
+        t.lastShownAt = (deps.now ?? Date.now)();
+        if (t.unloadedUrl) {
+          // FR-011: shown again after its page was dropped: reload it, and say so in the bar
+          const u = t.unloadedUrl;
+          t.unloadedUrl = undefined;
+          t.memory = 'reloaded';
+          t.memoryHold = true;
+          go(id, t, { url: u });
+        }
+      }
       applyAttach(id);
       return { ok: true };
     },

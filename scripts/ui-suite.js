@@ -98,6 +98,9 @@ const DRIVERS = [
   { name: 'check-ui-text', label: 'check-ui-text dark', env: { UITEXT_PART: 'dark' } },
   { name: 'shots-006-crash' }, // spec 006 FR-038..FR-046 (#606): the crash card (Resume all, Pick…, Dismiss), per-row resume, the lost-turn note
   { name: 'shots-074-navigator', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 074: Go to (keyboard navigator), chat numbers, the shortcut in Settings
+  { name: 'check-browser-scenarios' }, // spec 080 T018 AC2/AC4: US1 scenarios 1-5 and US2 scenarios 1-3 incl. SC-002 and SC-004; confirm, prompt, sensitive fields, sliding element, redirect, basic-auth pages
+  { name: 'check-browser-cap' }, // spec 080 T013 AC3: six pages, four stay loaded, the two least recent reload with the note
+  { name: 'check-browser-cap', label: 'check-browser-cap typing', env: { BROWSER_CAP_MODE: 'typing' } }, // AC4: typing in a page protects it; the sixth says too many are open
   { name: 'check-browser-links' }, // spec 080 T017/T018: links the agent prints open in that session's Browser tab, Ctrl/Cmd+click and the menu go to the system path, mail and other schemes, Settings > Open chat links in
   { name: 'check-browser-links', label: 'check-browser-links note', env: { DURBAR_SIM_BROWSER_CONSENT: 'ask' } }, // the same click with the one-time note: Not now sends the link to the system browser that time
   { name: 'check-browser-dialogs', env: { DURBAR_SIM_BROWSER_CONSENT: 'ask' } }, // spec 080 T015 AC6: the once-per-app consent, Leave this page?, a hidden session's page dialog (toast, chat forward once, marker)

@@ -50,10 +50,10 @@ function fakeSession(id: string) {
   });
   const view = { webContents: wc, bounds: undefined as unknown, setBounds(b: unknown) { this.bounds = b; } };
   const navs: unknown[] = [];
-  const sv = { id, view, driver: 'user' as const, navs, events: undefined as unknown as import('../src/main/browser/views').ViewEvents, navigate: async (a: unknown) => { navs.push(a); return true; }, destroy: async () => undefined };
+  const sv = { id, view, driver: 'user' as const, navs, events: undefined as unknown as import('../src/main/browser/views').ViewEvents, navigate: async (a: unknown) => { navs.push(a); if (a && typeof a === 'object') { wc.url = (a as { url: string }).url; wc.emit('did-start-navigation'); wc.emit('did-navigate'); } return true; }, destroy: async () => undefined };
   return { wc, view, sv, navs };
 }
-function rig(opts: { sim?: boolean; known?: (id: string) => boolean; win?: ReturnType<typeof fakeWin> | undefined; zoom?: number; consent?: boolean; snapshotMs?: number } = {}) {
+function rig(opts: { sim?: boolean; known?: (id: string) => boolean; win?: ReturnType<typeof fakeWin> | undefined; zoom?: number; consent?: boolean; snapshotMs?: number; now?: () => number } = {}) {
   const win = 'win' in opts ? opts.win : fakeWin(undefined, opts.zoom);
   const sessions = new Map<string, ReturnType<typeof fakeSession>>();
   const ensured: string[] = [];
@@ -67,6 +67,7 @@ function rig(opts: { sim?: boolean; known?: (id: string) => boolean; win?: Retur
   const consent = { on: opts.consent !== false };
   const deps: BrowserDeps = {
     snapshotMs: opts.snapshotMs,
+    now: opts.now,
     consented: () => consent.on,
     pageDialog: (d) => void dialogs.push(d),
     askLeave: async (id, known, shown) => (leaves.push([id, known, shown]), true),
@@ -216,7 +217,7 @@ process.on('exit', () => {
     wc.emit('did-navigate');
     r.flush();
     const s = r.emitted[r.emitted.length - 1];
-    assert.deepStrictEqual(Object.keys(s).sort(), STATE_KEYS.filter((k) => k !== 'error' && k !== 'note').sort(), 'exactly the BrowserState keys');
+    assert.deepStrictEqual(Object.keys(s).sort(), STATE_KEYS.filter((k) => k !== 'error' && k !== 'note' && k !== 'memory').sort(), 'exactly the BrowserState keys');
     for (const [k, v] of Object.entries(s)) assert.ok(['string', 'boolean'].includes(typeof v), `${k} is a primitive (${typeof v})`);
     assert.strictEqual(s.url, 'https://example.com/a?q=1', 'userinfo dropped');
     assert.ok(!/pw/.test(JSON.stringify(s)));
@@ -481,6 +482,84 @@ process.on('exit', () => {
     assert.ok(!(await nosim.ctl.openLink('s1', 'durbar-sim://pages/form')).ok, 'refused outside the simulator');
     assert.deepStrictEqual(nosim.sessions.size, 0);
   }
+  // ---- the soft cap on loaded pages (FR-011, T013 AC3/AC4) ----
+  {
+    let clock = 1000;
+    const mk = () => rig({ now: () => clock++ });
+    const loadIn = async (r: ReturnType<typeof mk>, id: string, url: string, keep = false): Promise<void> => {
+      await r.ctl.open(id);
+      r.ctl.bounds(id, B);
+      r.ctl.visible(id, true);
+      await r.ctl.navigate(id, url);
+      r.flush();
+      if (!keep) r.ctl.visible(id, false);
+    };
+    const urlOf = (r: ReturnType<typeof mk>, id: string): string => (r.ctl.stateOf(id) as BrowserState).url;
+    // six pages with no forms: four stay loaded, the two least recently shown are dropped, and come back with the note
+    {
+      const r = mk();
+      for (let i = 1; i <= 6; i++) await loadIn(r, 's' + i, `https://site${i}.example/`);
+      r.flush();
+      const loaded = ['s1', 's2', 's3', 's4', 's5', 's6'].filter((id) => urlOf(r, id) !== '');
+      assert.deepStrictEqual(loaded, ['s3', 's4', 's5', 's6'], 'four are loaded; the two least recently shown were dropped');
+      assert.strictEqual(r.sessions.get('s1')!.wc.url, 'about:blank');
+      assert.strictEqual((r.ctl.stateOf('s6') as BrowserState).memory, undefined, 'no note while a safe view could be dropped');
+      // shown again: it reloads its own address, says so, and another view makes room
+      r.ctl.bounds('s1', B);
+      r.ctl.visible('s1', true);
+      r.flush();
+      assert.deepStrictEqual(r.sessions.get('s1')!.navs.slice(-1), [{ url: 'https://site1.example/' }], 'reloaded from its kept address');
+      assert.strictEqual((r.ctl.stateOf('s1') as BrowserState).memory, 'reloaded', 'with *Reloaded to save memory*');
+      const loaded2 = ['s1', 's2', 's3', 's4', 's5', 's6'].filter((id) => urlOf(r, id) !== '');
+      assert.strictEqual(loaded2.length, 4, 'still four loaded');
+      assert.ok(urlOf(r, 's1') !== '' && urlOf(r, 's2') === '' && urlOf(r, 's3') === '', 's2 and s3 are the least recently shown now');
+      // the note goes with the next navigation of that view
+      await r.ctl.navigate('s1', 'https://other.example/');
+      r.flush();
+      assert.strictEqual((r.ctl.stateOf('s1') as BrowserState).memory, undefined);
+      // the view on screen is never dropped
+      const shown = mk();
+      await loadIn(shown, 's1', 'https://a.example/', true);
+      for (let i = 2; i <= 6; i++) await loadIn(shown, 's' + i, `https://site${i}.example/`);
+      assert.notStrictEqual(urlOf(shown, 's1'), '', 'the shown view stays loaded');
+    }
+    // typing in a page protects it (AC4): five typed pages are never dropped, the sixth says too many are open
+    {
+      const r = mk();
+      for (let i = 1; i <= 5; i++) {
+        await loadIn(r, 's' + i, `https://site${i}.example/`);
+        r.sessions.get('s' + i)!.wc.emit('input-event', {}, { type: 'char' });
+      }
+      await loadIn(r, 's6', 'https://site6.example/');
+      r.flush();
+      for (let i = 1; i <= 6; i++) assert.notStrictEqual(urlOf(r, 's' + i), '', `s${i} stays loaded`);
+      assert.strictEqual((r.ctl.stateOf('s6') as BrowserState).memory, 'many', 'the newest says *Many pages are open; close some to save memory*');
+      // a key that is not a character does not protect a page; a new page resets the protection
+      const k = mk();
+      for (let i = 1; i <= 5; i++) await loadIn(k, 's' + i, `https://site${i}.example/`);
+      k.sessions.get('s2')!.wc.emit('input-event', {}, { type: 'keyDown' });
+      k.flush();
+      assert.strictEqual(urlOf(k, 's1'), '', 'a plain key down protects nothing: s1 (least recent) was dropped');
+      const n = mk();
+      for (let i = 1; i <= 4; i++) await loadIn(n, 's' + i, `https://site${i}.example/`);
+      n.sessions.get('s1')!.wc.emit('input-event', {}, { type: 'char' });
+      await n.ctl.navigate('s1', 'https://fresh.example/'); // a new page: typing counts from its load
+      await loadIn(n, 's5', 'https://site5.example/');
+      assert.ok(urlOf(n, 's1') === '' || urlOf(n, 's2') === '', 'after a new page the old typing no longer protects it');
+    }
+    // a page reached by a form is never dropped (the history's transition type)
+    {
+      const r = mk();
+      await loadIn(r, 's1', 'https://form.example/');
+      r.sessions.get('s1')!.sv.events.onNavigationKind!('s1', 'form_submit');
+      for (let i = 2; i <= 6; i++) await loadIn(r, 's' + i, `https://site${i}.example/`);
+      r.flush();
+      assert.notStrictEqual(urlOf(r, 's1'), '', 'the form page stays');
+      assert.strictEqual(urlOf(r, 's2'), '', 'the next least recent was dropped instead');
+      const src = fs.readFileSync(path.join(ROOT, 'src/main/browser/views.ts'), 'utf8');
+      assert.ok(/Page\.getNavigationHistory/.test(src) && /onNavigationKind/.test(src), 'views.ts reads the transition type from the debugger it owns');
+    }
+  }
   // ---- the still picture ----
   {
     const r = rig();
@@ -564,6 +643,20 @@ process.on('exit', () => {
     const al = await get('alert?ms=50&n=2');
     assert.ok(/setTimeout\(go,50\)/.test(al.body) && /var n=2/.test(al.body) && /token=gh/.test(al.body), 'the alert page: delay and count from the query');
     assert.ok(!/ghp_/.test(fs.readFileSync(path.join(ROOT, 'src/main/browser/simpages.ts'), 'utf8')), 'no secret-looking literal in the source');
+    // T018 AC2: the sensitive fields, the sliding element, the script redirect, the basic-auth challenge, storage, a second host
+    const fields = (await get('fields')).body;
+    for (const needle of ['type="password"', 'autocomplete="one-time-code"', 'autocomplete="cc-number"']) assert.ok(fields.includes(needle), `fields page: ${needle}`);
+    const slide = (await get('slide')).body;
+    assert.ok(/id="target"/.test(slide) && /id="cover"/.test(slide) && /animation:s 400ms/.test(slide), 'the sliding element page');
+    assert.ok(/location\.replace\("durbar-sim:\/\/other\/landing"\)/.test((await get('redirect')).body), 'the script redirect goes to the other test host');
+    const other = await simPage('durbar-sim://other/landing');
+    assert.ok(other.status === 200 && other.body.includes('other host'));
+    assert.strictEqual((await simPage('durbar-sim://other/form')).status, 404, 'the other host serves its landing page only');
+    const auth = await get('auth');
+    assert.ok(auth.status === 401 && /Basic realm/.test(auth.headers['www-authenticate']), 'a basic-auth challenge');
+    const st = (await get('storage?set=v1')).body;
+    assert.ok(/localStorage\.setItem/.test(st) && /"v1"/.test(st), 'the storage page writes only on ?set=');
+    assert.ok(!(await get('storage?set=' + encodeURIComponent('</script><b>x'))).body.includes('</script><b>'), 'a value cannot close the script tag');
     const dl = await get('download');
     assert.ok(/attachment/.test(dl.headers['content-disposition']), 'the download page sends an attachment');
     const post = await simPage('durbar-sim://pages/form', 'POST', 'name=Ada&note=a+%3Cb%3E');
