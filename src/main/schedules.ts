@@ -407,7 +407,8 @@ export interface SchedulerDeps {
   mono?(): number;
   setTimer(ms: number, fn: () => void): unknown;
   clearTimer(t: unknown): void;
-  save(doc: SchedulesDoc): void;
+  /** Writes the document; false when it could not (the scheduler keeps it dirty and tries again). */
+  save(doc: SchedulesDoc): boolean | void;
   /** Spec 072 FR-015..FR-017: why the session cannot take a loop pass now: a person is needed, a coffee break, or Durbar's spending cap; undefined when nothing waits. */
   waitOf?(session: string): LoopWait | undefined;
   /** After any change (for the renderer). */
@@ -793,7 +794,11 @@ export class Scheduler {
     this.real = false;
     if (this.flushTimer !== undefined) this.deps.clearTimer(this.flushTimer);
     this.flushTimer = undefined;
-    this.deps.save(this.doc);
+    if (this.deps.save(this.doc) === false) {
+      // a failed write is not forgotten: the next real change, the quit flush or the timer writes it again
+      this.dirty = true;
+      this.flushTimer = this.deps.setTimer(FOLD_FLUSH_MS, () => this.flush());
+    }
   }
 
   /** Writes a pending fold-only change (main calls this when the app quits, FR-037). */
@@ -1100,19 +1105,35 @@ export function loadSchedules(file: string, now: number): SchedulesDoc {
   }
 }
 
-export function saveSchedules(file: string, doc: SchedulesDoc): void {
+/** What `saveSchedules` needs from the system; tests inject failures and the platform. */
+export interface SaveIo {
+  fs: Pick<typeof fs, 'writeFileSync' | 'renameSync' | 'rmSync'>;
+  platform: NodeJS.Platform;
+  /** A short blocking pause (win32 retry). */
+  pause(ms: number): void;
+}
+const realIo: SaveIo = { fs, platform: process.platform, pause: (ms) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } };
+
+/** Writes the file; true when it is on disk. A failure is reported, not thrown (the caller keeps the change and retries, FR-037). */
+export function saveSchedules(file: string, doc: SchedulesDoc, io: SaveIo = realIo): boolean {
+  // a loop's `hold` and `inPass` are runtime state and are not kept (spec 072 FR-002, FR-008)
+  // written beside the file, then renamed over it: a crash or a full disk mid-write leaves the old file whole (a torn file would load as "no schedules")
+  const tmp = `${file}.tmp`;
   try {
-    // a loop's `hold` and `inPass` are runtime state and are not kept (spec 072 FR-002, FR-008)
-    // written beside the file, then renamed over it: a crash or a full disk mid-write leaves the old file whole (a torn file would load as "no schedules")
-    const tmp = `${file}.tmp`;
+    io.fs.writeFileSync(tmp, JSON.stringify(doc, (k, v: unknown) => (k === 'hold' || k === 'inPass' ? undefined : v), 2), { mode: 0o600 });
     try {
-      fs.writeFileSync(tmp, JSON.stringify(doc, (k, v: unknown) => (k === 'hold' || k === 'inPass' ? undefined : v), 2), { mode: 0o600 });
-      fs.renameSync(tmp, file);
+      io.fs.renameSync(tmp, file);
     } catch (e) {
-      try { fs.rmSync(tmp, { force: true }); } catch { /* ignore */ }
-      throw e;
+      // Windows: an antivirus or indexer may hold the file for a moment (as notesstore.ts)
+      const code = (e as { code?: string }).code ?? '';
+      if (io.platform === 'win32' && ['EPERM', 'EBUSY', 'EACCES'].includes(code)) {
+        io.pause(200);
+        io.fs.renameSync(tmp, file);
+      } else throw e;
     }
+    return true;
   } catch {
-    /* not saved; the next change tries again */
+    try { io.fs.rmSync(tmp, { force: true }); } catch { /* ignore */ }
+    return false; // not saved
   }
 }

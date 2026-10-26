@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { MAX_FOLD, MAX_RUNS, Scheduler, cleanRuns, runsReply, loadSchedules, parseSchedules, publicDoc, saveSchedules } from '../src/main/schedules';
-import type { Schedule, ScheduleRun, SchedulesDoc } from '../src/main/schedules';
+import type { SaveIo, Schedule, ScheduleRun, SchedulesDoc } from '../src/main/schedules';
 import { harness } from './test-schedules';
 
 const MIN = 60_000;
@@ -127,6 +127,8 @@ async function main(): Promise<void> {
     const mainSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
     const bq = mainSrc.slice(mainSrc.indexOf("app.on('before-quit'"));
     assert.ok(/scheduler\?\.flush\(\)/.test(bq.slice(0, bq.indexOf('\n});'))), 'the one before-quit handler writes a pending fold-only change (FR-037)');
+    const wq = mainSrc.slice(mainSrc.indexOf("app.on('will-quit', () => {"));
+    assert.ok(/scheduler\?\.flush\(\)/.test(wq.slice(0, wq.indexOf('\n});'))), 'will-quit writes it too (folds counted in the dispose window)');
     assert.ok(/ipcHandle\('schedules:list', \(\) => \{[^}]*publicDoc\(/.test(ipcSrc.replace(/\s+/g, ' ')), 'schedules:list carries no runs')
     // the document pushed to the window carries no runs; the saved one does
     assert.strictEqual('runs' in publicDoc(h.sch.doc), false, 'publicDoc has no runs');
@@ -382,6 +384,22 @@ async function main(): Promise<void> {
     }
     assert.deepStrictEqual(simRuns[ID], log(h, ID), 'the simulator and main keep the same log for one sequence');
     assert.strictEqual(log(h, ID).length, MAX_RUNS, 'the sequence goes past the cap');
+    // an id that is also a name on Object.prototype, and a fold count at its cap, go through both the same way
+    const mk2 = harness({ pausedAll: false, schedules: [mkSched({ id: 'constructor' })] });
+    const simSc2: Record<string, unknown> = { id: 'constructor' };
+    const simRuns2: Record<string, ScheduleRun[]> = {};
+    const rec = (o: string, when: number, x?: Record<string, unknown>): void => {
+      simRecord(simSc2, simRuns2, o, when, x);
+      (mk2.sch as unknown as { record(s: Schedule, o: string, n: number, x?: unknown): boolean }).record(mk2.sch.doc.schedules[0], o, when, x);
+    };
+    rec('skipped-busy', T0 + 1);
+    rec('skipped-busy', T0 + 2);
+    const own = (o: Record<string, ScheduleRun[]>): ScheduleRun[] => Object.getOwnPropertyDescriptor(o, 'constructor')?.value as ScheduleRun[];
+    own(simRuns2)[0].n = MAX_FOLD;
+    log(mk2, 'constructor')[0].n = MAX_FOLD;
+    rec('skipped-busy', T0 + 3);
+    assert.strictEqual(own(simRuns2)[0].n, MAX_FOLD, 'the simulator caps the fold count');
+    assert.deepStrictEqual(own(simRuns2), log(mk2, 'constructor'), 'same log for the inherited-name id and a capped count');
     const loopSteps: Step[] = [['sent', T0 + 1_000_000_000, { session: 's1' }]];
     const h2 = harness({ pausedAll: false, schedules: [mkSched({ id: ID })] });
     const sr: Record<string, ScheduleRun[]> = {};
@@ -449,7 +467,41 @@ async function main(): Promise<void> {
     fs.rmSync(file + '.tmp', { recursive: true });
     saveSchedules(file, { pausedAll: true, schedules: [], runs: {} });
     assert.strictEqual(loadSchedules(file, T0).pausedAll, true, 'and the next write goes through');
+    if (process.platform !== 'win32') assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600, 'the file is private (0600)');
+    // a failed rename (a non-empty directory stands at the target) leaves no temp file and reports the failure
+    const blocked = path.join(dir, 'blocked.json');
+    fs.mkdirSync(blocked);
+    fs.writeFileSync(path.join(blocked, 'x'), 'x');
+    assert.strictEqual(saveSchedules(blocked, doc), false, 'a failed rename is reported');
+    assert.ok(!fs.existsSync(blocked + '.tmp'), 'and no temp file is left');
+    assert.strictEqual(saveSchedules(file, doc), true);
+    // win32: a busy file is retried once after a short pause; another platform does not retry; a second failure is a failure
+    for (const [platform, code, want, renames] of [['win32', 'EPERM', true, 2], ['win32', 'EBUSY', true, 2], ['linux', 'EPERM', false, 1], ['win32', 'ENOSPC', false, 1]] as const) {
+      let n = 0, paused = 0;
+      const io: SaveIo = { platform, pause: () => { paused++; }, fs: { writeFileSync: fs.writeFileSync, rmSync: fs.rmSync, renameSync: ((a: string, b: string) => { if (++n === 1) throw Object.assign(new Error('busy'), { code }); fs.renameSync(a, b); }) as typeof fs.renameSync } };
+      assert.strictEqual(saveSchedules(file, doc, io), want, `${platform} ${code}`);
+      assert.strictEqual(n, renames, `${platform} ${code}: renames tried`);
+      assert.strictEqual(paused, want ? 1 : 0);
+      assert.ok(!fs.existsSync(file + '.tmp'), 'no temp file left');
+    }
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  // ---- a failed write is not forgotten (FR-037) ----
+  {
+    let fail = true;
+    let calls = 0;
+    const h = harness({ pausedAll: false, schedules: [mkSched({ id: ID })] }, T0, { save: () => { calls++; return fail ? false : true; } });
+    h.sch.start(); // the write fails
+    assert.strictEqual(calls, 1);
+    h.sch.flush();
+    assert.strictEqual(calls, 2, 'a dirty (failed) state is written again by the quit flush');
+    fail = false;
+    await h.advance(61 * MIN); // the retry timer
+    assert.ok(calls >= 3, 'the timer retries');
+    const c = calls;
+    h.sch.flush();
+    assert.strictEqual(calls, c, 'once written, nothing is dirty');
   }
 
   // ---- the fold count stays within what a load accepts ----
