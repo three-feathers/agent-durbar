@@ -237,3 +237,13 @@ h3.red{color:var(--accent)}h3.green{color:var(--green)}
 #start h1{font-size:clamp(1.4rem,3vw,3.2rem)}
 .fail{grid-template-rows:auto 1fr 1fr}
 .slide:focus{outline:none}
+.chat .m.sys{background:var(--accent-bg);color:var(--accent-ink);justify-self:center;font-weight:700}
+.chat .m.sys .from{color:var(--accent-ink)}
+.chat .tiny{margin:0;font-size:14px;color:var(--muted)}
+.chat code{font-size:.9em}
+.compact .box{padding:10px 14px}.compact .box p{margin:.2em 0 0;font-size:.85em}.compact .box h3{margin:0}
+#sameday .chat,#final .chat,#humans .chat{font-size:.78em}
+.chat p.m{margin:0}
+.chat{gap:8px}
+#sameday .split{grid-template-columns:minmax(0,1fr) minmax(0,1.2fr)}
+#sameday .chat{font-size:.72em}
