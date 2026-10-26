@@ -154,6 +154,8 @@ for (const p of talkPages) {
   }
   for (const m of html.matchAll(/<img [^>]*>/g)) assert.match(m[0], /\salt="[^"]*"/, `${name}: every image has alt text`);
   for (const m of html.matchAll(/\shref="#([^"]+)"/g)) assert.ok(html.includes(`id="${m[1]}"`), `${name}: anchor #${m[1]}`);
+  // owner 2026-10-26: the team's Telegram bot handles are shown shortened (@Vishwakarma…_bot), so they cannot be copied to spam the bots
+  assert.ok(!/@[A-Za-z0-9]+_bot\b/.test(html), `${name}: a full Telegram bot handle is shown: ${(html.match(/@[A-Za-z0-9]+_bot\b/) || [''])[0]}`);
 }
 for (const f of fs.readdirSync(path.join(out, 'talk'), { recursive: true }).map(String).filter((f) => /\.(js|css)$/.test(f))) {
   const t = fs.readFileSync(path.join(out, 'talk', f), 'utf8');

@@ -247,3 +247,9 @@ h3.red{color:var(--accent)}h3.green{color:var(--green)}
 .chat{gap:8px}
 #sameday .split{grid-template-columns:minmax(0,1fr) minmax(0,1.2fr)}
 #sameday .chat{font-size:.72em}
+#needsyou .split{grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)}
+#needsyou .lead{font-size:1.05em}
+#needsyou h2{font-size:clamp(1rem,1.9vw,2rem)}
+#reviews .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+#reviews .review{font-size:.74em}
+@media (max-width:900px){#needsyou .split,#reviews .grid{grid-template-columns:1fr}}
