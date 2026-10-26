@@ -127,6 +127,8 @@ Decisions D1..D9: coordinator, under Ruben's delegation. Renderer only; no IPC, 
 - [x] T079 Driver: the focused-pencil step of `scripts/check-rename-inline.js` gives the window real focus, waits for `document.hasFocus()`, and reads
   the pencil's target opacity with its transition off (issue #715, Windows CI). Done when: `check:rename-inline` passes focused and with
   `RI_UNFOCUSED=1`, and fails when `.unit:focus-within>.ren` is planted to opacity 0 [FR-021, FR-025]
+- [x] T080 `placeRen` anchors on the mode icon only when it shares the name's line, else on the name; `pageCheck` in `scripts/check-office-overlap.js`
+  fails a pencil over the first half of its name (issue #781). Done when: `check:office` passes on a wide card with the icon wrapped below the name [FR-020, FR-025]
 
 ## Dependencies
 

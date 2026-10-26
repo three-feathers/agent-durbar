@@ -157,6 +157,8 @@ function pageCheck(expanded, expectPlaces) {
     const U = R(u), D = R(d);
     if (B.x < U.x - T || B.r > U.r + T || B.y < U.y - T || B.b > U.b + T) problems.push(`pencil ${who} leaves its unit`);
     if (B.x < D.x - T || B.r > D.r + T || B.y < D.y - T || B.b > D.b + T) problems.push(`pencil ${who} leaves its card`);
+    const nmEl = d.querySelector('.name'); /* #781: with the mode icon wrapped below the name the pencil must not land on the name's first half (it sits after the name, or over its end at most) */
+    if (nmEl && nmEl.getClientRects().length) { const N = R(nmEl); if (N.w > 1 && B.x < N.x + N.w / 2 - T && B.y < N.b - T && B.b > N.y + T) problems.push(`pencil ${who} covers the first half of the name`); }
     d.querySelectorAll('.stl, .pill, .badge, .chatno, .draft-mark, .modeic, .modebadge').forEach((e) => {
       if (!e.getClientRects().length || getComputedStyle(e).visibility === 'hidden') return;
       const r = R(e); if (r.w < 1 || r.h < 1) return;

@@ -563,3 +563,12 @@ Decided by the coordinator under Ruben's delegation. Product behaviour is unchan
 cause is the 0.12 s opacity transition not advancing in a CI window, not the rule. The driver now gives the window real focus for that step
 (`show`, `focus`, `webContents.focus`, wait for `document.hasFocus()`) and reads the rule's target opacity with the transition switched off for the
 read; the message says whether the OS gave focus. Task T079. `[KNOWN GAP]` Not re-run on Windows before the merge; Windows CI on the PR is the check.
+
+### 2026-10-26: the pencil of a wide card follows the name, not a wrapped mode icon (issue #781)
+
+On a wide desk card the line of name, mode icon and role wraps: the name fills line 1 and the mode icon (`.modeic`/`.modebadge`) wraps to line 2 beside
+the role. `placeRen` took the mode icon as the end of the name and used its x with the name's y, so the pencil sat about 30px in, over the name
+("Co✎rol Panel"). The pencil is now anchored on the mode icon only when the icon is on the name's line (its box overlaps the name's box vertically);
+otherwise it is anchored on the name itself. The fallback (over the end of the name, never more than its right half) and the protected-element
+checks are unchanged. `check-office-overlap` now also fails a desk pencil that covers the first half of its name. Task T080 [FR-020, FR-025].
+`[KNOWN GAP]` The Electron drivers were not run in the authoring session (owner's machine kept light); CI and `npm run check:office` are the check.
