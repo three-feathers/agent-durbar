@@ -117,6 +117,15 @@ Docs in the build PR: README feature list (`README.md:68`, the Scheduled prompts
 
 What exists is listed in the spec delta (read on `origin/main` 9a29020b, and #560 on `origin/044-topbar-schedules` ee6c000b). **Order:** build after #560 merges, on a branch from `origin/main` then; re-read #560's merged Settings > Schedules rows (`renderSchedSettings`) before adding History to them. Q1 = A (owner, 2026-10-23): no change to `openSchedulesView()`, `schedSectionShown()` or `renderSchedTop()`. Both PRs insert a dated section right under `## Changes` and append to `plan.md` and `tasks.md`: whichever lands second keeps both (2026-10-23 above 2026-10-22 #523) and counts rows per task id afterwards (`docs/agent-notes.md`, *Union-merging … can duplicate rows*).
 
+### Drift found by the analyze (2026-10-26, `origin/main` 9aad254d; #560 is merged)
+
+- Line numbers in this delta moved (`app.js` rows now near `:6368-6560`, `schedules.ts` sites near `:372-771`, `before-quit` at `main.ts:1112`): use the names.
+- Two more outcomes and two more sites set `last` than listed: `skipped-door-full` (spec 017) and `held` from `heldBy`/`hold`, and `releaseDoorRun` (Send all at an opened door) sets `last` at a send. All go through `record`. `skipped-door-full` folds like `held` (same reasoning, FR-037); `releaseDoorRun` gives `sent`/`failed` with a `session`.
+- `OUTCOME_WORD` (`app.js:6368`) already has words for `held` and `skipped-door-full`; they move into `schedhist.js`, and `ended` is added.
+- `ScheduleInfo.last.outcome` (`api.ts`) lacks only `ended` now.
+- `tick()` ends in an unconditional `commit()`: the fold-only path (FR-037) is a flag set by `record` and cleared by any real change in that tick (a new entry, a one-time schedule going done, a pause set by a skip of cap or ended).
+- #560's pieces exist as planned: `DurbarSchedTop` (`schedtop.js`), `openSchedulesView`, `check-sched-top`, `shots-044-everywhere`.
+
 ### Main
 
 1. `src/main/schedules.ts`:
