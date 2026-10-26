@@ -435,3 +435,7 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:15;bac
 .exitgame .players img{width:clamp(70px,min(7vw,11vh),150px)}
 .exitgame .endlog{font-size:clamp(.9rem,min(1.8vw,3.2vh),2rem)}
 .handover .turn{font-size:clamp(1.3rem,min(4vw,7vh),4.8rem)}
+/* word-cloud polls (owner 2026-10-26, 21:50 UTC): an open question, one or two words, gentle nudges in muted text */
+.oneword{font-size:1.15rem;color:var(--ink-2);margin:0 0 1.2rem}
+.oneword .nudge{color:var(--muted);font-style:italic;margin-left:.4em}
+.quiz .q,#when .q,#risk .q,#cloud .q{font-size:clamp(1.4rem,min(3.6vw,6.4vh),4.4rem);max-width:24em}
