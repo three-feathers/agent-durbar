@@ -518,3 +518,11 @@ Nothing here was run on a real session for this delta (0 credits); the `real:` e
 | FR-097 checks and `simhelpers=<1..6>` | `[IMPLEMENTED]` | as above |
 | Real session | `[KNOWN GAP]` | not run (0 credits): Claude's `Agent` result order, Codex child-thread events and the facts a real helper sends are read from the adapters, not seen |
 | macOS and Windows | `[KNOWN GAP]` | not run on a Mac or a Windows machine for this change (PR CI runs Linux and Windows; the macOS check runs on `main` and nightly, FR-106) |
+
+### 2026-10-26: the helper-card repaint timing check no longer flakes under load (issue #763; branch `001-helpercard-timing`)
+
+**What was wrong.** `scripts/test-helpercard.ts` asserted `big <= base * 6 + 15` (CPU ms of 1000 repaints of a helper with a 1 MB result against one with a short result) and failed on a loaded machine, where one of the two single measurements was inflated by other processes. Same cause and same fix as the redact check (spec 012 FR-080, #754).
+
+**What is now required.**
+
+- **FR-169** The repaint-cost check compares the best CPU time of up to 3 tries of each case, measured in the same run, as a ratio with no fixed millisecond limit: `big < max(base, MIN_BASE_MS) * 20`, where `MIN_BASE_MS` is one CPU-timer tick (16 ms on Windows, 2 ms elsewhere). With the memo the ratio is about 3 (10 runs unloaded: 2.5-3.2; 5 runs under 6 niced busy loops on 4 cores: 2.2-3.5; the remaining growth is `String.prototype.trim` on the raw field, about 1 us per MB per repaint, not worth a code change). A repaint that cuts the 1 MB text again each time measured a ratio of about 4800, so the limit of 20 sits far from both. A repaint that masks again is also caught earlier by the mask-call counts. The check prints its ratio. `[IMPLEMENTED]` test: `scripts/test-helpercard.ts`.
