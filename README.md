@@ -301,7 +301,8 @@ npm run typecheck && npm run build && npm test   # unit suites in parallel (~20 
 npm start                 # the app, with the harnesses you have installed and signed in
 DURBAR_SIM=15 npm start   # 15 simulated agents: no sessions, no AI credits (main refuses every call that could reach a real agent app)
 npm run check:office      # layout check at 1440x900 and 1280x800 (Electron; xvfb on Linux), simulator only
-npm run shots:docs        # retake every screenshot the README and the website link (simulator, one Electron at a time; -- --only, --list, --out <dir>)
+npm run shots:docs        # retake every screenshot the README and the website link (simulator, one Electron at a time; -- --only, --list, --out <dir>); every picture it writes is palette-compressed (about 60% smaller, with a quality guard)
+npm run shots:compress    # compress screenshots by hand: the linked ones, or the files you name (-- --check only lists; DURBAR_SHOTS_COMPRESS=off turns it off in shots:docs)
 npm run check:question-options  # question card text, options and descriptions in full; Enter sends a custom answer (simulator, xvfb on Linux)
 npm run check:question-visible  # a waiting question stays visible in the answer bar; compactions in a row fold into one line (simulator, xvfb on Linux)
 npm run check:sim-guard         # under DURBAR_SIM the real preload API is refused by main, no agent app is started and main starts no child process (simulator, xvfb on Linux)

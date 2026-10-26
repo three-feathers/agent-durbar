@@ -14,3 +14,7 @@
 - [x] T023 `scripts/test-site.js` extended for both pages and the validation function [FR-010]
 - [x] T024 `docs/site/gallery.json` leads with the current office screenshot; spec, tasks, specs index and CHANGELOG updated
 - [x] T025 Screenshots of both pages at desktop and phone width, and the phone height target (lead, before merge) [FR-009]
+
+## 2026-10-26: compressed screenshots (issue #759)
+
+- [x] T027 `scripts/compress-shots.js` (palette quantiser with a quality guard), its call in `scripts/shots-docs.js`, `npm run shots:compress`, the one-time pass over the 76 linked pictures (15.6 MB to 5.7 MB), `scripts/test-compress-shots.ts` and the palette check in `scripts/test-site.js` [FR-012]
