@@ -24,7 +24,7 @@
      nothing wider than the request. p: the normalized request (kind, scopeKey, scopeLabel, broadScopeKey, broadScopeLabel). Text only. */
   function scopeHint(p){
     if(!p||typeof p!=='object')return '';
-    const out=[], str=v=>typeof v==='string'?v.replace(/\s+/g,' ').trim().slice(0,120):'';
+    const out=[], str=v=>{const t=typeof v==='string'?v.replace(/\s+/g,' ').trim():'',a=Array.from(t);return a.length>120?a.slice(0,119).join('')+'\u2026':t;}; /* a cut is visible (an ellipsis), never a shorter path that looks real */
     if(p.kind==='write'&&str(p.scopeKey)){
       const lab=str(p.scopeLabel).replace(/^write in /,''), many=/^write-folders:/.test(p.scopeKey);
       out.push('Allow for this session covers every file in '+(many?'these folders ('+lab+'), not only these.':lab&&lab!=='write'?lab+', not only this one.':'that folder, not only this one.'));

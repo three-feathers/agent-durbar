@@ -30,5 +30,10 @@ assert.strictEqual(H({ kind: 'shell', scopeKey: 'shell-exact:git status', scopeL
 assert.strictEqual(H({ kind: 'shell', scopeKey: 'shell-exact:ls', scopeLabel: 'run ls', broadScopeKey: 'shell:ls', broadScopeLabel: 'run ls (any arguments)' }), 'Any arguments allows every simple \u201cls\u201d command, not only this one.');
 assert.strictEqual(H({ kind: 'shell', scopeKey: 'shell-exact:python x.py', scopeLabel: 'run python x.py' }), '', 'an exact-command grant needs no line');
 assert.strictEqual(H({ kind: 'read', scopeKey: 'read:/x', scopeLabel: 'read in x/' }), '', 'other kinds: none');
+{
+  const long = 'd'.repeat(200), t = H({ kind: 'write', scopeKey: 'write:/x', scopeLabel: 'write in ' + long + '/' });
+  assert.ok(t.includes('\u2026') && !t.includes('d'.repeat(120)) && t.includes('d'.repeat(100)), 'a 200-character folder is cut with a visible ellipsis: ' + t);
+  assert.ok(!H({ kind: 'write', scopeKey: 'write:/x', scopeLabel: 'write in ' + 'd'.repeat(100) + '/' }).includes('\u2026'), 'a short folder is not cut');
+}
 assert.strictEqual(H(null), '');
 console.log('[grantlabel] all checks passed');
