@@ -87,7 +87,7 @@ ok(/if\(was\)\{noteCompleted\(a\);setState\(a,'done'/.test(app), 'the marker is 
 ok(!/noteCompleted\(a\);setState\(a,'idle'/.test(app) && (app.match(/noteCompleted\(/g) || []).length === 2, 'noteCompleted is called only there (plus its definition)');
 ok(/function noteCompleted\(a\)\{\s*if\(a\.parent\)return;/.test(app), 'a helper is never marked');
 ok(/UNREAD\.complete\(a\.id,chatShownNow\(a\.id\)\)/.test(app), 'a completion asks whether its chat is shown');
-ok(/if\(roomShown\(rm\)\)announce\(/.test(app) || /rm&&roomShown\(rm\)\)announce\(/.test(app), 'the announcement is only for a folder that is on the shown floors (FR-174)');
+ok(/if\(roomShown\(rm\)\)announce\(/.test(app) || /rm&&roomShown\(rm\)\)\{announce\(/.test(app), 'the announcement is only for a folder that is on the shown floors (FR-174)');
 ok(/else if\(r==='seen'\)UNREAD_AT\.delete/.test(app) && /if\(r==='marked'\)\{UNREAD_AT\.set/.test(app), 'only a new marker starts the pulse and the announcement');
 ok(/function syncSeen\(\)\{const id=ui\.selected;if\(id&&UNREAD\.has\(id\)&&chatShownNow\(id\)\)\{UNREAD\.read\(id\)/.test(app), 'syncSeen reads only the open, shown chat');
 const closeP = app.slice(app.indexOf('function closePanel()'), app.indexOf('/* ---------------- events'));
@@ -108,7 +108,7 @@ ok((app.match(/unreadHTML\([ax]\)/g) || []).length === 4, "the badge is on the c
 ok(/data-op="read" class="mm-read"/.test(app) && /if\(op==='read'\)\{markRead\(a\);return;\}/.test(app), 'the card menu has Mark as read');
 ok(/e\.key==='F10'&&e\.shiftKey\)\|\|e\.key==='ContextMenu'\)\)return;\s*const d=e\.target&&e\.target\.closest&&e\.target\.closest\('\.desk\[data-id\], \.lrow\[data-id\]'\)/.test(app), 'Shift+F10 on a desk opens the card menu');
 ok(/\.unread-mark\{[^}]*font-size:11px/.test(css), 'the badge text is 11px (never under 10.5px)');
-ok(/\.unread-mark i\{/.test(css) && /\.desk\.is-unread\{outline:2px solid/.test(css), 'a dot and an outline besides the colour');
+ok(/\.unread-mark i\{/.test(css) && /\.desk\.is-unread:not\(\.is-waiting\)[^{]*\{outline:3px solid var\(--desk-new\)/.test(css), 'a dot and an outline besides the colour');
 ok(/@media \(prefers-reduced-motion:no-preference\)\{\.unread-mark\.fresh\{animation:unread-pulse/.test(css), 'the pulse only when motion is allowed');
 ok(/const unreadFresh=a=>!REDUCED&&!reducedMotion\(\)&&/.test(app), 'and the page does not add the pulse class under reduced motion');
 ok(!/localStorage[^;]*unread|unread[^;]*localStorage/i.test(app), 'the marker is not stored (FR-176: not kept across a restart)');

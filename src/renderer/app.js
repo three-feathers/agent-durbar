@@ -2112,6 +2112,7 @@ const draftWords=a=>hasDraft(a)?', unsent draft':'';
    The marker (DurbarUnread) sits beside the agent's state and changes none of it: counts, sort, filters, attention and permissions read vis(a) as before.
    It is cleared only when that chat is shown (DurbarUnread.isShown) or by "Mark as read"; it is not kept across a restart (FR-176). */
 const UNREAD=window.DurbarUnread.create(), UNREAD_AT=new Map(); /* id -> when it was set (the one-time pulse) */
+const UNREAD_SAID=new Set(); /* ids whose "<name> finished. New reply." already says the reply finished: the chat's own "Reply finished" stays quiet (one announcement per reply, FR-172) */
 const chatShownNow=id=>window.DurbarUnread.isShown(id,{selected:ui.selected,panelOpen:document.body.classList.contains('panel-open'),visible:document.visibilityState!=='hidden',tab:(()=>{const c=BP&&BP.current&&BP.current();return c&&c.id===id?c.tab:'chat';})(),notesOpen:notesIsOpen()});
 const isUnread=a=>!!a&&!a.parent&&UNREAD.has(a.id);
 const unreadFresh=a=>!REDUCED&&!reducedMotion()&&Date.now()-(UNREAD_AT.get(a.id)||0)<1400;
@@ -2122,7 +2123,7 @@ function noteCompleted(a){
   if(a.parent)return;
   if(SIM&&!window.__durbarSimReplayed)return; /* simulator only: its start-up script (agents that were already Done) is history, not news */
   const r=UNREAD.complete(a.id,chatShownNow(a.id));
-  if(r==='marked'){UNREAD_AT.set(a.id,Date.now());const rm=roomOf(a);if(rm&&roomShown(rm))announce(a.name+' finished. New reply.');} /* FR-174: nothing is announced for a hidden folder or floor */
+  if(r==='marked'){UNREAD_AT.set(a.id,Date.now());const rm=roomOf(a);if(rm&&roomShown(rm)){announce(a.name+' finished. New reply.');UNREAD_SAID.add(a.id);}} /* FR-174: nothing is announced for a hidden folder or floor */
   else if(r==='seen')UNREAD_AT.delete(a.id);
 }
 /* FR-176: the chat of the open panel is shown now (the panel opened, the window came back, the Chat tab or the Notes drawer closed) */
@@ -2798,7 +2799,7 @@ function syncRunState(){
   /* spec 005 T074 (review on PR 498): the spinner is decorative; a screen reader hears the change once through the shared live region.
      Only a change in the same chat speaks: opening a chat (or redrawing it) is not a turn starting or ending */
   const was=RUN_SAID.id===a.id?RUN_SAID.run:null; RUN_SAID.id=a.id; RUN_SAID.run=run;
-  if(was!==null&&was!==run){announce(run?'Working…':RUN_SAID.stopped?'Stopped':'Reply finished');RUN_SAID.stopped=false;} /* a new turn forgets an earlier Stop */
+  if(was!==null&&was!==run){const said=!run&&UNREAD_SAID.delete(a.id);if(run)UNREAD_SAID.delete(a.id);if(!said)announce(run?'Working…':RUN_SAID.stopped?'Stopped':'Reply finished');RUN_SAID.stopped=false;} /* a new turn forgets an earlier Stop */
 }
 /* the mode, model, profile and context menus: below their chip, or above it when the chip sits in the composer toolbar (FR-037); spec 073's "/" list too */
 function placeMenu(m,x,y,anchor){
@@ -7250,7 +7251,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 /* spec 008 FR-113, simulator only: false until the agents are listed, the frozen simulator has replayed every script and the saved usage
    totals are read; then any queued frame is drawn now (a stalled animation frame once left a comparison driver measuring a stale page) */
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
-if(SIM)window.__durbarSimUi={agents:()=>agents,notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
+if(SIM)window.__durbarSimUi={agents:()=>agents,readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,
   /* spec 059 T076 (FR-023): a driver makes the things that change while a field is open happen through the real paths */
   retitle:(id,title)=>{const a=byId(id);if(!a)return false;applyTitle(a,title);return true;},

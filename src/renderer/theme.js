@@ -54,6 +54,8 @@
     '--c-idle':'#a29e94',
     '--c-error':'#bf5a50',
     '--c-done':'#5f9a76',
+    '--desk-needs':'#b45309', // spec 001 FR-178: the outline of a desk that needs you (amber-orange, 4.4:1 or more on every card; not the green of New, not the red of an error)
+    '--desk-new':'#12783a', // spec 001 FR-178: the outline of a desk with a new reply (4.3:1 or more on every card and room tint)
 
     /* mood / status halos */
     '--halo-working':'#6f93b5',
@@ -752,7 +754,7 @@
       '--ink':'#111122','--ink-2':'#2b2b44','--muted':'#46465f','--room-path':'#36364f',
       '--sage':'#5fae76','--sage-ink':'#2c6b40','--blue':'#5f87c8','--blue-ink':'#2c4f82','--amber':'#e0a92c','--amber-ink':'#7c5a06',
       '--red':'#d8564a','--red-ink':'#8e2f26','--green':'#4fa760','--gray':'#9a987e',
-      '--c-working':'#5f87c8','--c-thinking':'#8b8fc9','--c-waiting':'#e0a92c','--c-idle':'#a3a08e','--c-error':'#d8564a','--c-done':'#4fa760',
+      '--c-working':'#5f87c8','--c-thinking':'#8b8fc9','--c-waiting':'#e0a92c','--c-idle':'#a3a08e','--c-error':'#d8564a','--c-done':'#4fa760','--desk-new':'#0a6b32',
       '--halo-working':'#5f87c8','--halo-thinking':'#8b8fc9','--halo-waiting':'#e0a92c','--halo-error':'#d8564a',
       '--chair':'#83769c','--desk':'#ab5236','--desk-front':'#c97d45','--desk-drawer':'#c97d45',
       '--monitor-stand':'#5f574f','--monitor-frame':'#c2c3c7','--laptop':'#5f574f',

@@ -28,13 +28,16 @@ module.exports = async (ctx) => {
   const turn = (id, text) => js(`(()=>{const E=e=>window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:${jsLiteral(id)}},e));E({type:'status',status:'working',intent:'Working'});E({type:'output',final:true,text:${jsLiteral(text || 'All done.')}});E({type:'status',status:'idle'});})()`);
   const idleAgain = (id) => js(`(()=>{const E=e=>window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:${jsLiteral(id)}},e));E({type:'output',final:false,delta:' more'});E({type:'status',status:'idle'});})()`);
   const marks = () => js(`[...document.querySelectorAll('#stage .unread-mark')].map(m=>m.closest('[data-id]').dataset.id).sort().join(',')`);
-  const info = (id) => js(`(()=>{const d=document.querySelector(${jsLiteral(sel(id))});if(!d)return null;const m=d.querySelector('.unread-mark');return {cls:d.className,state:d.dataset.state,label:d.getAttribute('aria-label')||'',mark:!!m,text:m?m.textContent.trim():'',tip:m?m.title:'',font:m?parseFloat(getComputedStyle(m).fontSize):0,outline:getComputedStyle(d).outlineStyle,aria:m?m.getAttribute('aria-hidden'):''}})()`);
+  const info = (id) => js(`(()=>{const d=document.querySelector(${jsLiteral(sel(id))});if(!d)return null;const m=d.querySelector('.unread-mark');return {cls:d.className,state:d.dataset.state,label:d.getAttribute('aria-label')||'',mark:!!m,text:m?m.textContent.trim():'',tip:m?m.title:'',font:m?parseFloat(getComputedStyle(m).fontSize):0,outline:getComputedStyle(d).outlineStyle,oColor:getComputedStyle(d).outlineColor,oWidth:getComputedStyle(d).outlineWidth,aria:m?m.getAttribute('aria-hidden'):''}})()`);
   const done = () => js(`+document.querySelector('#stats .stat[data-k=done] b').textContent`);
   const anns = () => js(`window.__ann.filter(t=>/New reply/.test(t))`);
   const strip = (id) => '.sitem[data-sw="' + id + '"] .unread-mark'; // the chat strip's marker of one session (a selector, put into page code with jsLiteral)
   const stripMark = (id) => js(`!!document.querySelector('.sitem[data-sw="'+CSS.escape(${jsLiteral(id)})+'"] .unread-mark')`);
   const openChat = async (id) => { await js(`document.querySelector(${jsLiteral(sel(id))}).click()`); await ok(`document.body.classList.contains('panel-open')&&document.querySelector('#chat')`, 'the chat of ' + id + ' opens'); };
   const closeChat = async () => { await H.key('Escape'); await ok(`!document.body.classList.contains('panel-open')`, 'the chat closes'); };
+  // the colour --desk-new as the browser computes it (rgb), read through a probe so a theme or a fallback cannot hide a wrong value
+  const green = () => js(`(()=>{const p=document.createElement('i');p.style.color='var(--desk-new)';document.body.appendChild(p);const c=getComputedStyle(p).color;p.remove();return c;})()`);
+  const needsC = () => js(`(()=>{const p=document.createElement('i');p.style.color='var(--desk-needs)';document.body.appendChild(p);const c=getComputedStyle(p).color;p.remove();return c;})()`);
   const A = 'sim-7', B = 'sim-13', C = 'sim-15'; // Priya (idle, folder with others at work), Hugo (idle, likewise), Maya (Done, on the couch)
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
@@ -56,6 +59,11 @@ module.exports = async (ctx) => {
     assert.strictEqual(a.state, 'done', `${tag}: the shown state is still Done`);
     assert.ok(!/\bshut\b/.test(a.cls) && /\bis-unread\b/.test(a.cls), `${tag}: an unread finished desk keeps its desk: ${a.cls}`);
     assert.notStrictEqual(a.outline, 'none', `${tag}: the desk has an outline`);
+    const G = await green();
+    assert.ok(/^rgb\(/.test(G) && G !== 'rgb(0, 0, 0)', `${tag}: --desk-new is a colour: ${G}`);
+    assert.strictEqual(a.oColor, G, `${tag}: the unread desk's outline is the green: ${a.oColor} vs ${G}`);
+    assert.strictEqual(a.oWidth, '3px', `${tag}: and 3px wide: ${a.oWidth}`);
+    const gm = G.match(/\d+/g).map(Number); assert.ok(gm[1] > gm[0] && gm[1] > gm[2], `${tag}: the highlight is green (g above r and b): ${G}`);
     assert.ok(/, new reply not read yet\b/.test(a.label), `${tag}: the accessible name says it: ${a.label}`);
     assert.strictEqual(a.tip, 'New reply, not read yet', `${tag}: tooltip`);
     assert.strictEqual(a.aria, 'true', `${tag}: the badge is hidden from the reader (the name carries the words)`);
@@ -87,7 +95,25 @@ module.exports = async (ctx) => {
     assert.strictEqual(await marks(), [A, B].sort().join(','), `${tag}: two unread desks, Maya not among them: ${await marks()}`);
     for (const id of [A, B]) assert.ok(!/\bshut\b/.test((await info(id)).cls), `${tag}: ${id} stays on its desk`);
     await turn(A, 'Priya finished the migration.'); // a second turn of an unread agent: no second marker, and its state reads Done again for the picture
-    await ok(`!!document.querySelector(${jsLiteral(sel(A) + '[data-state="done"]')})`, `${tag}: Priya is Done again`);
+    await ok(`!!document.querySelector(${jsLiteral(sel(A) + '[data-state=\"done\"]')})`, `${tag}: Priya is Done again`);
+    await H.settle(); await ctx.sleep(300);
+    // the "already unread" path: a real working -> idle turn (noteCompleted runs) while still unread says nothing more and changes nothing (Priya + Hugo = 2)
+    assert.strictEqual((await anns()).length, 2, `${tag}: a second finished turn of an unread agent is not announced again: ${JSON.stringify(await anns())}`);
+    assert.strictEqual(await marks(), [A, B].sort().join(','), `${tag}: and no marker is added or lost`);
+    // needs you wins: the same unread desk asking for permission keeps the amber highlight, the green outline is not drawn (the badge stays)
+    await js(`window.__durbarSimEmit({timestamp:Date.now(),sessionId:${jsLiteral(A)},type:'status',status:'needs-permission',intent:'Waiting for permission: run ls'})`);
+    await ok(`!!document.querySelector(${jsLiteral(sel(A) + '[data-state=\"waiting\"]')})`, `${tag}: Priya asks for permission`);
+    const wt = await info(A);
+    assert.ok(wt.mark && /\bis-unread\b/.test(wt.cls), `${tag}: still marked New while waiting: ${wt.cls}`);
+    assert.ok(wt.oColor !== G || wt.outline === 'none', `${tag}: the waiting desk does not get the green outline: ${wt.outline} ${wt.oColor}`);
+    const NC = await needsC();
+    assert.ok(NC !== G && /^rgb\(/.test(NC), `${tag}: the needs-you colour is its own: ${NC} vs ${G}`);
+    assert.strictEqual(wt.oColor, NC, `${tag}: a desk that needs you has the strong amber outline: ${wt.oColor} vs ${NC}`);
+    assert.strictEqual(wt.oWidth, '4px', `${tag}: 4px, wider than New's 3px: ${wt.oWidth}`);
+    await js(`window.__durbarSimEmit({timestamp:Date.now(),sessionId:${jsLiteral(A)},type:'status',status:'working',intent:'Working'})`);
+    await js(`window.__durbarSimEmit({timestamp:Date.now(),sessionId:${jsLiteral(A)},type:'status',status:'idle'})`);
+    await ok(`!!document.querySelector(${jsLiteral(sel(A) + '[data-state=\"done\"]')})`, `${tag}: Priya is Done again after the question`);
+    assert.strictEqual((await info(A)).oColor, G, `${tag}: and the green outline is back`);
     if (process.env.OUT) await H.shot(path.join(OUT, `001-unread-${tag}.png`), { prep: 'calm', blur: true, settle: true });
 
     // the Browser tab and the Notes drawer are not "shown"
@@ -100,6 +126,7 @@ module.exports = async (ctx) => {
     assert.ok(['done', 'idle'].includes(a.state), `${tag}: and its state is the one it had (the simulator answers an opened chat with Ready): ${a.state}`);
     assert.strictEqual(await marks(), B, `${tag}: only Hugo is unread now`);
     assert.ok(/\brest-recent\b/.test(a.cls), `${tag}: on the couch (finished a moment ago): ${a.cls}`);
+    assert.ok(!/\bis-unread\b/.test(a.cls) && a.oColor !== G, `${tag}: read: no green outline: ${a.cls} ${a.oColor}`);
 
     // Mark as read from the keyboard: Shift+F10 on the focused desk
     await js(`document.querySelector(${jsLiteral(sel(B))}).focus()`);
@@ -123,7 +150,16 @@ module.exports = async (ctx) => {
     if (tabs) {
       await js(`document.getElementById('tabBrowser').click()`);
       await ok(`document.getElementById('tabBrowser').getAttribute('aria-selected')==='true'`, `${tag}: Browser tab in front`);
-      await turn(A, 'Priya, while the Browser tab is in front.');
+      const nAnn = await js(`window.__ann.length`);
+      await js(`window.__durbarSimEmit({timestamp:Date.now(),sessionId:${jsLiteral(A)},type:'status',status:'working',intent:'Working'})`);
+      await ok(`document.getElementById('runSlot').classList.contains('running')`, `${tag}: the run slot shows the turn`);
+      await js(`window.__durbarSimEmit({timestamp:Date.now(),sessionId:${jsLiteral(A)},type:'output',final:true,text:'Priya, while the Browser tab is in front.'})`);
+      await js(`window.__durbarSimEmit({timestamp:Date.now(),sessionId:${jsLiteral(A)},type:'status',status:'idle'})`);
+      await ok(`!document.getElementById('runSlot').classList.contains('running')`, `${tag}: the run slot shows the turn ended`);
+      await H.settle(); await ctx.sleep(400);
+      const said = (await js(`window.__ann.slice(${jsLiteral(nAnn)})`)).filter((t) => /finished/i.test(t));
+      assert.strictEqual(said.length, 1, `${tag}: one announcement for the reply behind the Browser tab: ${JSON.stringify(said)}`);
+      assert.ok(/New reply/.test(said[0]), `${tag}: and it is the New reply one: ${said[0]}`);
       await ok(`!!document.querySelector(${jsLiteral(strip(A))})`, `${tag}: a reply finished behind the Browser tab is unread`);
       // closing the chat with an unread reply (Browser tab in front) does not read it; the office shows the marker
       await closeChat();
@@ -142,6 +178,15 @@ module.exports = async (ctx) => {
       await js(`document.querySelector('[data-notes-toggle]').click()`);
       await ok(`document.getElementById('notesDrawer').hidden&&!document.querySelector(${jsLiteral(strip(A))})`, `${tag}: closing the drawer shows the chat, so it is read`);
     } else console.log(`[unread] ${tag}: no Notes drawer in this build, drawer step skipped`);
+    // a minimised or hidden window does not show the chat: a reply that finishes then is New, and it clears when the window is visible again
+    // (document.visibilityState is overridden where the page reads it, so the page's own visibility rule is what is tested)
+    const vis = (v) => js(`(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>${jsLiteral(v)}});document.dispatchEvent(new Event('visibilitychange'));})()`);
+    await vis('hidden');
+    await turn(A, 'Priya, window hidden.');
+    await ok(`!!document.querySelector(${jsLiteral(strip(A))})`, `${tag}: a reply into the open chat of a hidden window is New`);
+    await vis('visible');
+    await ok(`!document.querySelector(${jsLiteral(strip(A))})`, `${tag}: the window is visible again: the open chat shows it, so it is read`);
+    await js(`delete document.visibilityState`);
     await closeChat();
 
     // a hidden folder keeps the marker and says nothing; shown again, the desk is marked
@@ -200,10 +245,20 @@ module.exports = async (ctx) => {
     } finally {
       await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] });
     }
-    // motion allowed: the badge pulses once when it is set (the class and the animation are there in the same task as the event)
-    await H.load({ w: 1440, h: 900 });
-    const p = await js(`(()=>{const E=e=>window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:'sim-13'},e));E({type:'status',status:'working',intent:'Working'});E({type:'status',status:'idle'});return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const e=document.querySelector('#stage .desk[data-id="sim-13"] .unread-mark');r(e?{fresh:e.classList.contains('fresh'),anim:getComputedStyle(e).animationName}:null);})));})()`);
-    assert.ok(p && p.fresh && p.anim === 'unread-pulse', 'motion allowed: one pulse when it is set: ' + JSON.stringify(p));
+    // motion allowed: the badge pulses once when it is set. Emulated explicitly (a runner may report "reduce"), and clock-free: an observer
+    // reads the badge the moment it is first drawn, so a slow runner cannot let the 1.4 s "fresh" window pass before the check looks.
+    try {
+      await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+      await H.load({ w: 1440, h: 900 });
+      assert.ok(await js(`matchMedia('(prefers-reduced-motion: no-preference)').matches`), 'motion is allowed');
+      await js(`(()=>{window.__pulse=null;new MutationObserver(()=>{if(window.__pulse)return;const e=document.querySelector('#stage .desk[data-id="sim-13"] .unread-mark');if(e)window.__pulse={fresh:e.classList.contains('fresh'),anim:getComputedStyle(e).animationName};}).observe(document.getElementById('stage'),{childList:true,subtree:true});})()`);
+      await turn(B, 'Hugo, motion allowed.');
+      await ok(`!!window.__pulse`, 'motion allowed: the badge was drawn');
+      const p = await js(`window.__pulse`);
+      assert.ok(p.fresh && p.anim === 'unread-pulse', 'motion allowed: one pulse when it is set: ' + JSON.stringify(p));
+    } finally {
+      await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] });
+    }
   }
   console.log('[unread] all checks passed');
 };

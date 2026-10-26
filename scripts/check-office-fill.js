@@ -594,6 +594,7 @@ module.exports = async (ctx) => {
     await emit({ type: 'status', sessionId: id, status: 'working', intent: 'Working' });
     await emit({ type: 'output', sessionId: id, final: true, text });
     await emit({ type: 'status', sessionId: id, status: 'idle' });
+    await js(`window.__durbarSimUi.readAll()`); // #691: an unread agent keeps its desk; these checks are about the lounge, so the replies count as read
   };
   /* the time an agent finished is its last event (FR-052): set it back, then lay out again (simulator-only hook) */
   const ago = (id, min) => js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${q(id)});a.lastEventAt=Date.now()-${q(min)}*60000;window.__durbarSimUi.render();})()`);
@@ -748,6 +749,7 @@ module.exports = async (ctx) => {
       const pre = await js(`({reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,away:!!document.querySelector('#stage .desk.is-away[data-id="sim-3"]'),boss:!!document.querySelector('.walker')})`);
       check(pre.reduced && pre.away, `${tag}: the case did not start with reduced motion and Jonas at the Boss ${JSON.stringify(pre)}`);
       await js(`(()=>{const E=(e)=>window.__durbarSimEmit(Object.assign({timestamp:Date.now()},e));E({type:'status',sessionId:'sim-3',status:'working',intent:'Working'});E({type:'output',sessionId:'sim-3',final:true,text:'Renamed the tool and kept the old name as an alias for one release.'});E({type:'status',sessionId:'sim-3',status:'idle'});return true})()`);
+      await js(`window.__durbarSimUi.readAll(true)`); // #691: no redraw here (the redraw on the figure's return is what this case checks); an unread reply would keep the desk
       const ok = await H.until(`!!document.querySelector('#stage .desk.shut[data-id="sim-3"]')`, 1500);
       const st = await js(`(()=>{const d=document.querySelector('#stage .desk[data-id="sim-3"]');return {cls:d?d.className:'',vis:document.visibilityState,walkers:document.querySelectorAll('.walker').length}})()`);
       check(ok, `${tag}: Jonas, back from the Boss and finished, is not in the lounge within 1.5 s ${JSON.stringify(st)}`);

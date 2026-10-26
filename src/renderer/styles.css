@@ -5,7 +5,7 @@
   --ink:#2c3733; --ink-2:#56605b; --muted:#535a55;
   --sage:#8fb09a; --sage-ink:#3f6a54; --blue:#6f93b5; --blue-ink:#34607f;
   --amber:#d9962b; --amber-ink:#80530a; --red:#bf5a50; --red-ink:#8e3a32; --green:#5f9a76; --gray:#9b978d;
-  --c-working:#6f93b5; --c-thinking:#8a97bd; --c-waiting:#d9962b; --c-idle:#a29e94; --c-error:#bf5a50; --c-done:#5f9a76;
+  --c-working:#6f93b5; --c-thinking:#8a97bd; --c-waiting:#d9962b; --c-idle:#a29e94; --c-error:#bf5a50; --c-done:#5f9a76; --desk-new:#12783a; --desk-needs:#b45309;
   --tint-sage:#eaf0e9; --wall-sage:#d3dfd3; --tint-blue:#e9eef3; --wall-blue:#d1dce6;
   --tint-sand:#f2ede1; --wall-sand:#e0d6c1; --tint-clay:#f3eae4; --wall-clay:#e4d3c9;
   --cwall-sage:#b7cdb9; --cwall-blue:#b5c8d8; --cwall-sand:#d2c4a4; --cwall-clay:#d8c1b3;
@@ -1623,7 +1623,10 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
    corner under the chat number (the draft pencil moves up beside the number); inline on a plain desk, list row and strip item. One pulse when it is set, only when motion is allowed. */
 .unread-mark{flex:none;display:inline-flex;align-items:center;gap:4px;margin-right:5px;padding:0 5px;border:1px solid var(--pc-working);border-radius:4px;background:var(--pb-working);color:var(--pc-working);font-size:11px;font-weight:700;line-height:14px;vertical-align:1px;white-space:nowrap}
 .unread-mark i{display:block;width:6px;height:6px;border-radius:50%;background:var(--pc-working)}
-.desk.is-unread{outline:2px solid var(--pc-working);outline-offset:-2px}
+/* FR-178 (owner request 2026-10-26): the desk outline is a clear green, 3px, so a new reply catches the eye. A desk that needs you (waiting, failing,
+   retrying, error) keeps its own highlight: the green outline is not drawn there, the badge stays. */
+.desk.is-waiting{outline:4px solid var(--desk-needs);outline-offset:-4px} /* FR-178: a desk that needs you gets the strongest highlight (4px amber-orange, still, no animation); it wins over New */
+.desk.is-unread:not(.is-waiting):not(.is-failing):not(.is-retrying):not(.is-error){outline:3px solid var(--desk-new);outline-offset:-3px}
 .stage .desk.card .unread-mark{position:absolute;left:2px;top:20px;margin:0;z-index:4;box-shadow:0 0 0 1px var(--card)}
 .stage .desk.card.is-unread .draft-mark{left:36px;top:2px} /* both on one desk: the pencil moves up beside the chat number (the name starts further right) */
 .lname .unread-mark{margin-right:6px}
