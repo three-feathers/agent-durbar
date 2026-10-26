@@ -42,6 +42,12 @@ module.exports = async (ctx) => {
   const glowOf = (tok) => js(`(()=>{const p=document.createElement('i');p.style.color='color-mix(in srgb,var('+${jsLiteral(tok)}+') 90%,transparent)';document.body.appendChild(p);const c=getComputedStyle(p).color;p.remove();return c;})()`);
   const A = 'sim-7', B = 'sim-13', C = 'sim-15'; // Priya (idle, folder with others at work), Hugo (idle, likewise), Maya (Done, on the couch)
 
+  // motion is emulated as allowed for the main loop (a Windows runner reports "reduce" by itself, which would drop the zoom and the entry class)
+  {
+    const d0 = ctx.win.webContents.debugger;
+    if (!d0.isAttached()) d0.attach('1.3');
+    await d0.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  }
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     const tag = `${w}x${h}`;
     await H.load({ w, h, query: { hlmotion: '1' } });
