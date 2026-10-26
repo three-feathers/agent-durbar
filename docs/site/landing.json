@@ -123,7 +123,7 @@
     },
     {
       "title": "You set the spending limit",
-      "text": "Give a session a spending limit in credits or dollars. Limits are soft by one call: the call already running finishes and can go a little over; then the chat asks you what to do."
+      "text": "Give a session a spending limit in credits or dollars. Limits are soft by one call: the call already running finishes and can go a little over (and the first message after a resume may not be held); then the chat asks you what to do."
     }
   ],
   "featuresExclude": [
