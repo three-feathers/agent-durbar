@@ -103,6 +103,8 @@ the OS sandbox can stop it.
 - ~~T063 Ask first network prompt shape for Claude (K3)~~ dropped: decision Q2 = network off (2026-10-25). K3 stays a `[KNOWN GAP]` for a later per-host ask.
 - [x] T064 Copilot Ask first approval card line and tooltip sentence after K15 (FR-021a): `COPILOT_SANDBOX_NOTE_COMMAND` on a shell request while the state is `on`, `approvedMayLeave` on the Ask first state, the tooltip sentence. [FR-021a, K15]
   - AC1: tests show the line on a shell card with the floor on, none on a file edit or with the floor off, the state flag only in Ask first, and the tooltip sentence with the not-verified ending; each fails when its code is removed (done 2026-10-25, PR #753).
+- [x] T065 Chip word *Sandboxed (partial)* for Copilot in Ask first with the floor on (FR-021b, K15, #755): `chipWord` in `src/renderer/sandboxtext.js`, test and simulator check updated, README. [FR-021b]
+  - AC1: `chipWord` gives the new word only for `approvedMayLeave` with `covers` including `mcp`; Claude, Codex, Read-only and the other words are unchanged (test); the simulator's Copilot Ask first chip reads *Ask first · Sandboxed (partial)*.
 
 ## Dependencies
 
