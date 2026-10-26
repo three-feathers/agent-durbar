@@ -52,6 +52,119 @@
   var level = document.getElementById('level'), hudTitle = document.getElementById('hudTitle'), bar = document.getElementById('progress');
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var cur = 0, lockUntil = 0;
+  /* ---------- original 8-bit sounds, made live with the Web Audio API (no audio files, no network) ----------
+     Nothing here copies or imitates a game's melody: short envelopes on square/triangle/noise, plain triads and sweeps. */
+  var SND = (function () {
+    var AC = null, master = null, loop = null, started = false;
+    var muted = false;
+    try { muted = localStorage.getItem('talk-mute') === '1'; } catch (e) { /* storage blocked */ }
+    if (/nosound/.test(location.hash)) muted = true;
+    var VOL = 0.15;
+    function ctx() {
+      if (AC) return AC;
+      var C = window.AudioContext || window.webkitAudioContext;
+      if (!C) return null;
+      AC = new C(); master = AC.createGain(); master.gain.value = muted ? 0 : VOL; master.connect(AC.destination);
+      return AC;
+    }
+    function hz(semi) { return 440 * Math.pow(2, semi / 12); } /* semitones from A4 */
+    function tone(f, t, dur, type, vol, f2) {
+      var o = AC.createOscillator(), g = AC.createGain();
+      o.type = type || 'square'; o.frequency.setValueAtTime(f, t);
+      if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol || 0.3, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.02);
+    }
+    function noise(t, dur, vol, out) {
+      var n = Math.floor(AC.sampleRate * dur), buf = AC.createBuffer(1, n, AC.sampleRate), d = buf.getChannelData(0);
+      for (var i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+      var src = AC.createBufferSource(), g = AC.createGain();
+      src.buffer = buf; g.gain.setValueAtTime(vol || 0.1, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      src.connect(g); g.connect(out || master); src.start(t);
+    }
+    function ok() { return !muted && ctx() && AC.state !== 'closed'; }
+    function now() { return AC.currentTime + 0.01; }
+    var api = {
+      unlock: function () {
+        if (!ctx()) return false;
+        if (AC.state === 'suspended') AC.resume();
+        var first = !started; started = true; return first;
+      },
+      muted: function () { return muted; },
+      toggle: function () {
+        muted = !muted;
+        try { localStorage.setItem('talk-mute', muted ? '1' : '0'); } catch (e) { /* ignore */ }
+        if (master) master.gain.setTargetAtTime(muted ? 0 : VOL, AC.currentTime, 0.02);
+        if (muted) api.stopLoop();
+        return muted;
+      },
+      blip: function (dir) { if (!ok()) return; var t = now(); tone(dir > 0 ? 990 : 740, t, 0.05, 'square', 0.12); },
+      player: function () { if (!ok()) return; var t = now(); tone(hz(3), t, 0.07, 'square', 0.18); tone(hz(10), t + 0.08, 0.1, 'square', 0.18); },
+      powerOn: function () {
+        if (!ok()) return; var t = now();
+        tone(110, t, 0.35, 'square', 0.18, 880);
+        [0, 4, 7, 12].forEach(function (s, k) { tone(hz(3 + s), t + 0.36 + k * 0.07, 0.12, 'triangle', 0.3); });
+        tone(hz(15), t + 0.66, 0.5, 'triangle', 0.22); tone(hz(10), t + 0.66, 0.5, 'square', 0.06);
+      },
+      newWay: function () { if (!ok()) return; var t = now(); [0, 4, 7, 12, 16].forEach(function (s, k) { tone(hz(15 + s), t + k * 0.05, 0.14, 'square', 0.16); }); },
+      twist: function () {
+        if (!ok()) return; var t = now();
+        tone(520, t, 0.7, 'square', 0.16, 110); noise(t + 0.7, 0.18, 0.08);
+        tone(hz(5), t + 1.05, 0.09, 'square', 0.16); tone(hz(12), t + 1.15, 0.09, 'square', 0.16); tone(hz(17), t + 1.25, 0.3, 'triangle', 0.25);
+      },
+      clear: function () {
+        if (!ok()) return; var t = now();
+        [0, 4, 7, 12, 16, 19, 24].forEach(function (s, k) { tone(hz(-9 + s + 12), t + k * 0.08, 0.16, 'square', 0.14); });
+        [0, 4, 7, 12].forEach(function (s) { tone(hz(3 + s), t + 0.62, 2.2, 'triangle', 0.18); });
+        noise(t + 0.62, 0.25, 0.05);
+      },
+      /* three calm original loops at 100 bpm: 16 eighth notes (2 bars) of bass + soft arpeggio + a quiet hat */
+      startLoop: function (which) {
+        api.stopLoop();
+        if (!ok()) return;
+        var P = [
+          { bass: [-21, null, -21, null, -16, null, -16, null, -19, null, -19, null, -14, null, -16, null], arp: [3, 7, 10, 7, 3, 7, 12, 7, 2, 7, 10, 7, 5, 9, 12, 9] },
+          { bass: [-24, null, null, -24, -17, null, null, -17, -22, null, null, -22, -19, null, -17, null], arp: [0, null, 7, null, 12, null, 7, null, 2, null, 9, null, 14, null, 9, null] },
+          { bass: [-19, null, -19, null, -19, null, -12, null, -21, null, -21, null, -16, null, -14, null], arp: [5, 9, 12, 16, 12, 9, 5, 9, 3, 7, 10, 14, 10, 7, 5, 7] }
+        ][which % 3];
+        var g = AC.createGain(); g.gain.value = 0.0001; g.connect(master); g.gain.exponentialRampToValueAtTime(0.5, AC.currentTime + 0.8);
+        var step = 0.3, next = AC.currentTime + 0.1, i = 0;
+        function note(f, t, dur, type, vol) {
+          var o = AC.createOscillator(), e = AC.createGain();
+          o.type = type; o.frequency.value = f;
+          e.gain.setValueAtTime(0.0001, t); e.gain.exponentialRampToValueAtTime(vol, t + 0.01); e.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+          o.connect(e); e.connect(g); o.start(t); o.stop(t + dur + 0.02);
+        }
+        var timer = setInterval(function () {
+          while (next < AC.currentTime + 0.25) {
+            var k = i % 16;
+            if (P.bass[k] !== null) note(hz(P.bass[k]), next, 0.26, 'triangle', 0.5);
+            if (P.arp[k] !== null) note(hz(P.arp[k]), next, 0.12, 'square', 0.08);
+            if (k % 2 === 1) noise(next, 0.03, 0.03, g);
+            next += step; i++;
+          }
+        }, 60);
+        loop = { g: g, timer: timer };
+      },
+      stopLoop: function () {
+        if (!loop) return;
+        var l = loop; loop = null;
+        try { l.g.gain.cancelScheduledValues(AC.currentTime); l.g.gain.setTargetAtTime(0.0001, AC.currentTime, 0.25); } catch (e) { /* ignore */ }
+        setTimeout(function () { clearInterval(l.timer); try { l.g.disconnect(); } catch (e) { /* ignore */ } }, 1200);
+      }
+    };
+    return api;
+  })();
+  var cloudN = 0;
+  function enterSlide(s, dir) {
+    SND.stopLoop();
+    if (s.classList.contains('handover')) SND.player(); else SND.blip(dir);
+    if (s.id === 'reveal' || s.id === 'ourorg') SND.twist();
+    if (s.id === 'exit') SND.clear();
+    var wc = s.querySelector('.pollbar');
+    if (wc && !s.classList.contains('revealed')) { var m = /(\d+)/.exec(s.getAttribute('data-title') || ''); SND.startLoop(m ? +m[1] : cloudN++); }
+  }
+
 
   function fromScroll() {
     var line = window.innerHeight * 0.35, idx = 0;
@@ -69,7 +182,9 @@
   }
   function go(i) {
     i = Math.max(0, Math.min(slides.length - 1, i));
+    var was = cur;
     cur = i;
+    if (i !== was) enterSlide(slides[i], i > was ? 1 : -1);
     lockUntil = Date.now() + (reduce ? 100 : 1600); /* a smooth scroll in flight must not move `cur` back (released early by scrollend) */
     var top = slides[i].getBoundingClientRect().top + window.scrollY;
     window.scrollTo({ top: top, behavior: reduce ? 'auto' : 'smooth' });
@@ -95,6 +210,7 @@
     btn.setAttribute('aria-expanded', String(open));
     btn.textContent = open ? 'Hide' : 'The new way';
     if (why) why.hidden = !open;
+    if (open) { SND.stopLoop(); SND.newWay(); }
   }
   document.querySelectorAll('.quiz').forEach(function (sec) {
     var btn = sec.querySelector('.reveal');
@@ -132,6 +248,7 @@
   window.addEventListener('keydown', function (e) {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     var k = e.key;
+    if (SND.unlock() && cur === 0 && k !== 'm' && k !== 'M') SND.powerOn(); /* browsers allow sound only after a key press */
     var handled = true;
     if (document.body.classList.contains('black') && k !== 'b' && k !== 'B' && k !== '.' && k !== 'Escape') { black(false); }
     else if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown' || k === 'Enter' || (k === ' ' && !e.shiftKey)) next();
@@ -142,6 +259,7 @@
     else if (k === 'Escape') black(false);
     else if (k === 'F5') { /* clickers send F5 / Shift+F5 for "start slideshow": already presenting */ }
     else if (k === 'h' || k === 'H') document.body.classList.toggle('no-hints');
+    else if (k === 'm' || k === 'M') { var mu = SND.toggle(); var note = document.getElementById('soundNote'); if (note) note.textContent = mu ? '\u266A sound off \u2014 press M for sound' : '\u266A sound on \u2014 press M to mute'; }
     else if (k === 't' || k === 'T') {
       var dark = document.documentElement.getAttribute('data-theme') === 'dark' ||
         (!document.documentElement.getAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -149,13 +267,16 @@
     } else handled = false;
     if (handled) { e.preventDefault(); e.stopPropagation(); }
   }, true);
+  window.addEventListener('pointerdown', function () { SND.unlock(); }, true);
+  var sn = document.getElementById('soundNote');
+  if (sn && SND.muted()) sn.textContent = '\u266A sound off \u2014 press M for sound';
   var pb = document.getElementById('prev'), nb = document.getElementById('next');
   if (pb) pb.addEventListener('click', function () { prev(); pb.blur(); });
   if (nb) nb.addEventListener('click', function () { next(); nb.blur(); });
   window.addEventListener('scroll', function () {
     if (Date.now() < lockUntil) return;
     var i = fromScroll();
-    if (i !== cur) { cur = i; show(); }
+    if (i !== cur) { var was = cur; cur = i; show(); enterSlide(slides[i], i > was ? 1 : -1); }
   }, { passive: true });
   window.addEventListener('scrollend', function () { lockUntil = 0; });
   window.addEventListener('resize', show);
@@ -171,6 +292,7 @@
     if (src) src.addEventListener('error', fail);
     video.addEventListener('error', fail);
     if (video.networkState === 3) fail(); /* NETWORK_NO_SOURCE before this script ran */
+    video.addEventListener('play', function () { SND.stopLoop(); });
     video.addEventListener('play', function () { if (vhint) vhint.textContent = '► next again: on to the next slide'; });
     video.addEventListener('ended', function () { if (vhint) vhint.textContent = '► press next to continue'; });
   }

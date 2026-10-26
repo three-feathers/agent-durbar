@@ -165,6 +165,9 @@ for (const f of fs.readdirSync(path.join(out, 'talk'), { recursive: true }).map(
   assert.ok(!/https?:\/\//.test(t.replace(/\/\*[\s\S]*?\*\//g, '')), `talk/${f}: loads nothing from another site`);
   assert.ok(!/\b(fetch|XMLHttpRequest|sendBeacon|WebSocket)\b/.test(t), `talk/${f}: no network calls`);
 }
+// owner 2026-10-26 (21:53 UTC): the talk's sounds are made live by the Web Audio API in talk.js: no audio files, no <audio> element
+for (const f of fs.readdirSync(path.join(out, 'talk'), { recursive: true }).map(String)) assert.ok(!/\.(mp3|wav|ogg|oga|m4a|aac|flac|opus|mid|midi)$/i.test(f), `talk/${f}: no audio files`);
+for (const p of talkPages) assert.ok(!/<audio\b/i.test(fs.readFileSync(p, 'utf8')), `${path.relative(out, p)}: no <audio> element`);
 for (const n of ['index.html', 'docs.html']) assert.ok(!/(?:href|src)="[^"]*talk\//.test(fs.readFileSync(path.join(out, n), 'utf8')), `${n} does not link the unlisted talk pages`);
 assert.ok(!fs.existsSync(path.join(out, 'sitemap.xml')), 'no sitemap');
 const talkDir = path.join(out, 'talk', 'ea-summit-2026');
