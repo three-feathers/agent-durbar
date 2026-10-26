@@ -343,6 +343,11 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.strictEqual(T.chipWord({ ...on, state: 'off' }), 'Not sandboxed');
   assert.strictEqual(T.chipWord({ ...on, managed: true }), 'Sandboxed (managed)');
   assert.strictEqual(T.chipWord({ ...on, untilNewSession: true }), 'Sandboxed (until a new session)');
+  // FR-021b (K15): Copilot in Ask first (covers MCP, may leave) is not a bare "Sandboxed"; Claude, Codex and Read-only keep their words
+  assert.strictEqual(T.chipWord({ ...on, covers: ['shell', 'mcp'], approvedMayLeave: true }), 'Sandboxed (partial)');
+  assert.strictEqual(T.chipWord({ ...on, covers: ['shell', 'mcp'] }), 'Sandboxed', 'Read-only Copilot: unchanged');
+  assert.strictEqual(T.chipWord({ ...on, covers: ['shell', 'files'], approvedMayLeave: true }), 'Sandboxed', 'Codex: unchanged');
+  assert.strictEqual(T.chipWord({ ...on, covers: ['shell', 'mcp'], approvedMayLeave: true, managed: true }), 'Sandboxed (managed)', 'managed keeps precedence');
   assert.strictEqual(T.chipWord(null), '', 'no state: nothing (the UI degrades, constitution II)');
   assert.strictEqual(T.chipWord({ ...on, mechanism: 'landlock' }), '', 'malformed: nothing');
   const tip = T.tooltip(on, 'Claude Code');
