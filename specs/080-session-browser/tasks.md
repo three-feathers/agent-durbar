@@ -29,7 +29,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
 
 ## Phase 0: Spec deltas and research checks
 
-- [ ] T001 [P] Spec 041 delta. [FR-040, FR-047]
+- [x] T001 [P] Spec 041 delta. [FR-040, FR-047]
   - FR-030 covers 041's control server only; `durbar-browser` is a separate per-session server, like 072's `durbar-loop`.
   - `isDurbarBridge` (041 T040) learns the browser flag.
   - The browser helper does **not** inherit FR-034's refusal of callers carrying `AGENT_DURBAR_RUNTIME`, because an agent app always starts it; it authenticates by token instead.
