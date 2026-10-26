@@ -62,9 +62,9 @@ module.exports = async (ctx) => {
     await expectChip(w, 'sim-6', /Allow all · Sandboxed \(managed\)/, (c) => /Your organization keeps/.test(c.title));
     await expectChip(w, 'sim-15', /Allow all · Sandboxed \(until a new session\)/, (c) => /stays until a new session/.test(c.title) && /Shell commands and MCP servers run in bubblewrap/.test(c.title));
     // ---- FR-021a (K15): Copilot Ask first with the floor on: the tooltip says an approved command may leave it, and stays not verified ----
-    await expectChip(w, 'sim-2', /Ask first · Sandboxed\b/, (c) => /writes: not only this folder/.test(c.title) && /An approved command could write outside the folder \(Copilot, seen on Linux, 2026-10-25\)\./.test(c.title) && c.title.endsWith(NOT_VERIFIED));
+    await expectChip(w, 'sim-2', /Ask first · Sandboxed \(partial\)/, (c) => /writes: not only this folder/.test(c.title) && /An approved command could write outside the folder \(Copilot, seen on Linux, 2026-10-25\)\./.test(c.title) && c.title.endsWith(NOT_VERIFIED));
     // ---- FR-021 (T022 AC3): Codex Ask first: the card's sandbox line, whole; the chip tooltip says it too ----
-    await expectChip(w, 'sim-8', /Ask first · Sandboxed/, (c) => /If you approve a command, Codex may run it outside the sandbox/.test(c.title) && /Commands and file changes run in the Codex sandbox/.test(c.title));
+    await expectChip(w, 'sim-8', /Ask first · Sandboxed(?! \(partial)/, (c) => /If you approve a command, Codex may run it outside the sandbox/.test(c.title) && /Commands and file changes run in the Codex sandbox/.test(c.title));
     assert.ok(await until(`!!document.querySelector('#chat .note.perm.pending .psbx')`, 8000), `${w}: Codex's waiting card has its sandbox line`);
     const psbx = await js(`(()=>{const p=document.querySelector('#chat .note.perm.pending .psbx');p.scrollIntoView({block:'nearest'});const n=p.closest('.note').getBoundingClientRect(),r=p.getBoundingClientRect(),cs=getComputedStyle(p);return {text:p.textContent,whole:p.scrollWidth<=p.clientWidth+0.5&&cs.textOverflow!=='ellipsis',inside:r.right<=n.right+0.5&&r.left>=n.left-0.5,px:parseFloat(cs.fontSize),sum:p.closest('.note').querySelector('.psum').textContent}})()`);
     assert.strictEqual(psbx.text, 'If you approve, Codex may run this outside its sandbox.', `${w}: the exact line`);
@@ -73,7 +73,7 @@ module.exports = async (ctx) => {
     await H.shot(path.join(OUT, `087-codex-card-${w}x${h}.png`), { prep: 'mouse' });
     // ---- FR-021a (K15): Copilot Ask first: Kenji (Copilot without simkinds=mixed) waits on a shell command; the card has its own line ----
     await H.load({ w, h, query: {} });
-    await expectChip(w, 'sim-8', /Ask first · Sandboxed\b/, (c) => /An approved command could write outside the folder/.test(c.title));
+    await expectChip(w, 'sim-8', /Ask first · Sandboxed \(partial\)/, (c) => /An approved command could write outside the folder/.test(c.title));
     assert.ok(await until(`!!document.querySelector('#chat .note.perm.pending .psbx')`, 8000), `${w}: Copilot's waiting shell card has its sandbox line`);
     const cps = await js(`(()=>{const p=document.querySelector('#chat .note.perm.pending .psbx');p.scrollIntoView({block:'nearest'});const n=p.closest('.note').getBoundingClientRect(),r=p.getBoundingClientRect(),cs=getComputedStyle(p);return {text:p.textContent,whole:p.scrollWidth<=p.clientWidth+0.5&&cs.textOverflow!=='ellipsis',inside:r.right<=n.right+0.5&&r.left>=n.left-0.5,px:parseFloat(cs.fontSize)}})()`);
     assert.strictEqual(cps.text, 'If you approve, Copilot’s sandbox may still let this write outside the folder (seen on Linux, 2026-10-25).', `${w}: Copilot's exact line`);
