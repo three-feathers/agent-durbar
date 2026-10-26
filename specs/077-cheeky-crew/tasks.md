@@ -68,3 +68,4 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 - [x] T066 [raster] `check:crew` face-visibility assertions for desk, helper, walker and seat at both sizes; mutation: the face crop set back to the whole picture fails it [FR-060]
 - [x] T067 [raster] `check:office` and `check:geometry` in the crew theme at 1440x900 and 1280x800; screenshots `docs/screenshots/077-crew-office-*.png` re-taken [SC-001]
 - [x] T068 [raster] Merge `main` (the spec 001 late re-layout) so `check:office` in the crew theme passes at both sizes; no crew style was at fault (see the spec's 2026-10-23 delta)
+- [x] T069 [raster] An idle desk, card or helper keeps its portrait at full colour (the furniture and text stay dimmed); `check:crew` asserts the effective opacity at both sizes and that Clean Office still dims [FR-061]

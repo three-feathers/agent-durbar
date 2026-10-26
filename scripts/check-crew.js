@@ -81,6 +81,16 @@ function faces() {
   return out;
 }
 
+/* FR-061, in the page: the opacity a node really shows at is its own times its ancestors' */
+function idleOpacity() {
+  const eff = (e) => { let o = 1; for (; e && e.nodeType === 1; e = e.parentElement) o *= +getComputedStyle(e).opacity; return o; };
+  const q = (s) => [...document.querySelectorAll(s)].filter((e) => e.getClientRects().length);
+  return q('#stage .desk.is-idle svg.scene, #stage .helper.is-idle svg.scene').map((svg) => {
+    const pic = svg.querySelector('image.crew-pic'), rest = [...svg.children].filter((c) => c !== pic && c.tagName !== 'defs');
+    return { pic: pic ? eff(pic) : null, rest: Math.min(...rest.map(eff)), text: eff(svg.closest('.desk, .helper').querySelector('.info, .hinfo') || svg) };
+  });
+}
+
 /* natural sizes of the portraits (in the page: an Image per file) */
 const naturals = (files) => `Promise.all(${jsLiteral(files)}.map(f=>new Promise(r=>{const i=new Image();i.onload=()=>r([f,i.naturalWidth,i.naturalHeight]);i.onerror=()=>r([f,0,0]);i.src=f;})))`;
 const hit = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
@@ -189,6 +199,19 @@ module.exports = async (ctx) => {
     await H.clearToasts();
     await ctx.sleep(200);
     await ctx.shot(path.join(out, `crew-office-${tag}.png`));
+    // FR-061: an idle desk's portrait is full colour; its furniture keeps the dim
+    const idle = await H.js(`(${idleOpacity.toString()})()`);
+    assert.ok(idle.length >= 1, `${tag}: an idle desk or helper is on screen (${idle.length})`);
+    for (const x of idle) {
+      assert.ok(x.pic !== null, `${tag}: an idle scene draws its portrait`);
+      assert.ok(Math.abs(x.pic - 1) < 1e-3, `${tag}: an idle portrait shows at full colour (opacity ${x.pic})`);
+      assert.ok(x.rest < 0.9, `${tag}: the furniture of an idle crew desk stays dimmed (opacity ${x.rest})`);
+    }
+    // the other themes keep the whole scene dimmed
+    await pick('clean-office');
+    const plain = await H.js(`(${idleOpacity.toString()})()`);
+    assert.ok(plain.length >= 1 && plain.every((x) => x.pic === null && x.rest < 0.9), `${tag}: an idle Clean Office scene is still dimmed (${JSON.stringify(plain.slice(0, 2))})`);
+    console.log(`[crew] ${tag} idle`, JSON.stringify({ crew: idle.length, cleanOffice: plain.length }));
   }
 
   // FR-051: the largest shown size (grown desks, a big window) is still at most half the natural size
