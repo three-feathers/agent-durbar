@@ -5,7 +5,7 @@
   --ink:#2c3733; --ink-2:#56605b; --muted:#535a55;
   --sage:#8fb09a; --sage-ink:#3f6a54; --blue:#6f93b5; --blue-ink:#34607f;
   --amber:#d9962b; --amber-ink:#80530a; --red:#bf5a50; --red-ink:#8e3a32; --green:#5f9a76; --gray:#9b978d;
-  --c-working:#6f93b5; --c-thinking:#8a97bd; --c-waiting:#d9962b; --c-idle:#a29e94; --c-error:#bf5a50; --c-done:#5f9a76;
+  --c-working:#6f93b5; --c-thinking:#8a97bd; --c-waiting:#d9962b; --c-idle:#a29e94; --c-error:#bf5a50; --c-done:#5f9a76; --desk-new:#12783a; --desk-needs:#b45309;
   --tint-sage:#eaf0e9; --wall-sage:#d3dfd3; --tint-blue:#e9eef3; --wall-blue:#d1dce6;
   --tint-sand:#f2ede1; --wall-sand:#e0d6c1; --tint-clay:#f3eae4; --wall-clay:#e4d3c9;
   --cwall-sage:#b7cdb9; --cwall-blue:#b5c8d8; --cwall-sand:#d2c4a4; --cwall-clay:#d8c1b3;
@@ -1620,6 +1620,36 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
 .stage .desk.shut .draft-mark{left:auto;right:2px;top:2px} /* a lounge resident's box is short: the top corner the number leaves free */
 .stage .desk.shut.rest-old .draft-mark{right:auto;top:auto;left:2px;bottom:2px} /* on a nap bed the name is on top and the number bottom right */
 .sitem .stx b .draft-mark{margin:0 0 0 4px;width:14px;height:14px}
+/* spec 001 FR-172, FR-175 (issue 691): a finished agent's reply not read yet. A badge with a dot and the word "New" (11px, never colour alone) in the
+   status pair --pb-working/--pc-working (held at 4.5:1 in every theme) and a solid outline on the desk. On a desk card it sits on the scene's
+   corner under the chat number (the draft pencil moves up beside the number); inline on a plain desk, list row and strip item. One pulse when it is set, only when motion is allowed. */
+.unread-mark{flex:none;display:inline-flex;align-items:center;gap:4px;margin-right:5px;padding:0 5px;border:1px solid var(--pc-working);border-radius:4px;background:var(--pb-working);color:var(--pc-working);font-size:11px;font-weight:700;line-height:14px;vertical-align:1px;white-space:nowrap}
+.unread-mark i{display:block;width:6px;height:6px;border-radius:50%;background:var(--pc-working)}
+/* FR-178 (owner request 2026-10-26; 10:45 no outline, a glow instead; 10:51 only the person zooms, never the card). A desk that needs you glows amber-orange (--desk-needs),
+   a desk with a New reply glows green (--desk-new); needs you wins (green is not drawn on a waiting, failing, retrying or error desk; the badge stays). The glow is a box-shadow
+   halo on the desk's ::after: the card keeps its own shadows, selection ring, state bar and size. The drawn person (.pp) calls for attention: three entry pulses (class .hl-in, the
+   first 1.9 s), then a continuing smaller pulse, from the seat (transform-origin at the chair, so the figure "jumps up" and stays in its card). Only transform and opacity are
+   animated. prefers-reduced-motion: reduce gives the static glow only (no scale, no breathe). */
+.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)){--hl:var(--desk-new);--hl-e:1.15;--hl-b:1.05;--hl-p:2.4s}
+.desk.is-waiting{--hl:var(--desk-needs);--hl-e:1.25;--hl-b:1.1;--hl-p:1.6s}
+.desk.is-waiting,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)){isolation:isolate} /* the glow layer sits behind the card's content inside the card, above the room */
+.desk.is-waiting::after,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error))::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:-1;box-shadow:0 0 6px 2px color-mix(in srgb,var(--hl) 90%,transparent),0 0 24px 8px color-mix(in srgb,var(--hl) 60%,transparent)}
+.desk.is-waiting .pp,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)) .pp{transform-box:view-box;transform-origin:74px 99px}
+@media (prefers-reduced-motion:no-preference){
+  .desk.is-waiting .pp,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)) .pp{animation:hl-breathe var(--hl-p) ease-in-out infinite}
+  .desk.hl-in.is-waiting .pp,.desk.hl-in.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)) .pp{animation:hl-enter .6s ease-in-out 3,hl-breathe var(--hl-p) ease-in-out 1.8s infinite}
+  .desk.is-waiting::after,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error))::after{animation:hl-glow var(--hl-p) ease-in-out infinite}
+}
+html.hl-still .desk .pp,html.hl-still .desk::after{animation:none!important} /* simulator drivers only (see app.js): the glow stays, the person holds still */
+@keyframes hl-enter{0%,100%{transform:scale(1)}50%{transform:scale(var(--hl-e,1.15))}}
+@keyframes hl-breathe{0%,100%{transform:scale(1)}50%{transform:scale(var(--hl-b,1.05))}}
+@keyframes hl-glow{0%,100%{opacity:.7}50%{opacity:1}}
+.stage .desk.card .unread-mark{position:absolute;left:2px;top:20px;margin:0;z-index:4;box-shadow:0 0 0 1px var(--card)}
+.stage .desk.card.is-unread .draft-mark{left:36px;top:2px} /* both on one desk: the pencil moves up beside the chat number (the name starts further right) */
+.lname .unread-mark{margin-right:6px}
+.sitem .stx b .unread-mark{margin:0 0 0 4px}
+@media (prefers-reduced-motion:no-preference){.unread-mark.fresh{animation:unread-pulse 1.2s ease-out 1}}
+@keyframes unread-pulse{0%{box-shadow:0 0 0 0 var(--pc-working)}70%{box-shadow:0 0 0 6px transparent}100%{box-shadow:0 0 0 0 transparent}}
 .pal-dlg kbd,.kbd-dlg kbd{display:inline-block;min-width:20px;padding:1px 6px;border:1px solid var(--line-2);border-bottom-width:2px;border-radius:5px;background:var(--surface-2);font-family:inherit;font-size:11px;font-weight:600;line-height:1.5;color:var(--ink-2);text-align:center}
 .dlg.kbd-dlg{width:min(var(--dlg-w-m),calc(100vw - 32px))}
 /* spec 052 (2026-10-21, round 1): two columns where there is room, so the whole sheet fits a 1280x800 window without scrolling */

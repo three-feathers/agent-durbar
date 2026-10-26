@@ -54,6 +54,8 @@
     '--c-idle':'#a29e94',
     '--c-error':'#bf5a50',
     '--c-done':'#5f9a76',
+    '--desk-needs':'#b45309', // spec 001 FR-178: the outline of a desk that needs you (amber-orange, 4.4:1 or more on every card; not the green of New, not the red of an error)
+    '--desk-new':'#12783a', // spec 001 FR-178: the outline of a desk with a new reply (4.3:1 or more on every card and room tint)
 
     /* mood / status halos */
     '--halo-working':'#6f93b5',
@@ -442,7 +444,7 @@
   const CONTRAST_PAIRS=[['--ink','--bg',4.5],['--ink','--surface',4.5],['--ink','--raised',4.5],['--ink','--card',4.5],['--ink','--card-waiting',4.5],['--ink','--card-error',4.5],['--ink-2','--soft',4.5],['--ink-2','--note',4.5],['--ink-2','--surface',4.5],['--muted','--surface',4.5],['--room-path','--bg',3]]
     .concat(['working','thinking','waiting','idle','error','done'].map(s=>['--pc-'+s,'--pb-'+s,4.5]))
     .concat([['--surface','--sage-ink',4.5],['--surface','--red-ink',4.5],['--surface','--amber-ink',4.5]]) /* spec 052 FR-169: primary, danger and warn button text */
-    .concat([['--drop-ink','--drop-bg',4.5],['--brand-mark','--brand-bg',3],['--idle-stub-ink','--idle-stub',3]]);
+    .concat([['--drop-ink','--drop-bg',4.5],['--brand-mark','--brand-bg',3],['--idle-stub-ink','--idle-stub',3],['--desk-new','--card',3],['--desk-needs','--card-waiting',3]]);
   const HEX_ANY=/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
   function lum(hex){
     let h=HEX_ANY.exec(hex)[1]; if(h.length===3)h=h.split('').map(c=>c+c).join(''); h=h.slice(0,6);
@@ -752,7 +754,7 @@
       '--ink':'#111122','--ink-2':'#2b2b44','--muted':'#46465f','--room-path':'#36364f',
       '--sage':'#5fae76','--sage-ink':'#2c6b40','--blue':'#5f87c8','--blue-ink':'#2c4f82','--amber':'#e0a92c','--amber-ink':'#7c5a06',
       '--red':'#d8564a','--red-ink':'#8e2f26','--green':'#4fa760','--gray':'#9a987e',
-      '--c-working':'#5f87c8','--c-thinking':'#8b8fc9','--c-waiting':'#e0a92c','--c-idle':'#a3a08e','--c-error':'#d8564a','--c-done':'#4fa760',
+      '--c-working':'#5f87c8','--c-thinking':'#8b8fc9','--c-waiting':'#e0a92c','--c-idle':'#a3a08e','--c-error':'#d8564a','--c-done':'#4fa760','--desk-new':'#0a6b32',
       '--halo-working':'#5f87c8','--halo-thinking':'#8b8fc9','--halo-waiting':'#e0a92c','--halo-error':'#d8564a',
       '--chair':'#83769c','--desk':'#ab5236','--desk-front':'#c97d45','--desk-drawer':'#c97d45',
       '--monitor-stand':'#5f574f','--monitor-frame':'#c2c3c7','--laptop':'#5f574f',
