@@ -292,6 +292,70 @@ assert.deepStrictEqual(o.map((n) => n.text), ['b', 'c', 'a']);
   assert.strictEqual((ents.find((e) => e.name === 'T8')!.insertText as string).length, 500, 'the whole text is what is inserted');
   assert.ok(!ents.some((e) => e.name === 'T4'), 'a done note is not offered');
 
+  // FR-040: the header count and its tooltip
+  const cl = [mk('1', { source: src('S1') }), mk('2', {}), mk('3', { done: true, source: src('S1') }), mk('4', { source: src('S2') })];
+  const DN2 = DN as unknown as { countOf(n: unknown, s?: string): { total: number; session: number }; countTip(c: { total: number; session: number }): string; markerFor(n: unknown, s: string, r: string, d: string, o: number, c: number): Note | null; search(g: unknown, q: string, rank: unknown, mask: unknown): { session: Note[]; folder: Note[] }; noMatch(q: string, mask: unknown): string };
+  assert.deepStrictEqual(DN2.countOf(cl, 'S1'), { total: 3, session: 1 }, 'not-done notes only');
+  assert.strictEqual(DN2.countTip(DN2.countOf(cl, 'S1')), '1 from this session, 3 in this folder');
+  assert.deepStrictEqual(DN2.countOf([], 'S1'), { total: 0, session: 0 });
+  assert.deepStrictEqual(DN2.countOf([mk('5', { done: true })], 'S1'), { total: 0, session: 0 }, 'only done notes: nothing to count');
+
+  // FR-041: matching by session, role and digest; ord tells equal texts apart; a unique digest matches whatever the place; done notes still mark
+  const dg = 'abcdef0123456789';
+  const mrk = [mk('1', { source: { ...src('S1'), digest: dg, ord: 2 } }), mk('2', { done: true, source: { ...src('S1'), role: 'user', digest: '1111111111111111', ord: 0 } })];
+  assert.strictEqual(DN2.markerFor(mrk, 'S1', 'agent', dg, 2, 2)!.title, 'T1', 'two equal texts: the one at the note\'s own place');
+  assert.strictEqual(DN2.markerFor(mrk, 'S1', 'agent', dg, 5, 2), null, '...the other equal text has no marker');
+  assert.strictEqual(DN2.markerFor(mrk, 'S1', 'agent', dg, 7, 1)!.title, 'T1', 'a unique digest matches whatever its place (replayed history numbers differently)');
+  assert.strictEqual(DN2.markerFor(mrk, 'S1', 'user', dg, 2, 1), null, 'another role');
+  assert.strictEqual(DN2.markerFor(mrk, 'S2', 'agent', dg, 2, 1), null, 'another session');
+  assert.strictEqual(DN2.markerFor(mrk, 'S1', 'agent', '0000000000000000', 2, 1), null, 'another text');
+  assert.strictEqual(DN2.markerFor(mrk, 'S1', 'user', '1111111111111111', 0, 1)!.done, true, 'a done note still marks its message');
+  assert.strictEqual(DN2.markerFor(mrk, '', 'agent', dg, 2, 1), null, 'no session, no marker');
+  assert.strictEqual(DN2.markerFor([], 'S1', 'agent', dg, 2, 1), null, 'no notes');
+  assert.strictEqual(DN2.markerFor([mk('3', { source: { ...src(''), digest: dg, ord: 2 } })], '', 'agent', dg, 2, 1), null, 'a note with no session never marks a message, even when the chat has none either');
+
+  // FR-043: search: titles by rank, then notes whose masked text has every word; case-insensitive; fails closed; both groups
+  {
+    const { rank } = require(path.join(R, 'navigator.js')) as { rank: unknown };
+    const ns = [
+      mk('1', { title: 'Release checklist', text: 'we migrate tables first', source: src('S1') }),
+      mk('2', { title: 'Migrate users', text: 'plain', source: src('S1') }),
+      mk('3', { title: 'Lunch', text: 'Migrate the Cache and the TABLES', source: src('S2') }),
+      mk('4', { title: 'Cache', text: 'nothing', source: src('S2') }),
+      mk('5', { title: 'Old', text: 'migrate', done: true }),
+    ];
+    const g = DN.groups(ns, 'S1');
+    const r = DN2.search(g, 'MIGRATE', rank, SAFE.mask);
+    assert.deepStrictEqual(r.session.map((n) => n.title), ['Migrate users', 'Release checklist'], 'this session: title match first, then the text match');
+    assert.deepStrictEqual(r.folder.map((n) => n.title), ['Lunch'], 'the folder group: a text match (case-insensitive)');
+    assert.deepStrictEqual(DN2.search(g, 'migrate tables', rank, SAFE.mask).folder.map((n) => n.title), ['Lunch'], 'every word must be in the text');
+    assert.deepStrictEqual(DN2.search(g, 'migrate cache', rank, SAFE.mask).session.map((n) => n.title), [], 'a word missing: no match');
+    assert.strictEqual(DN2.search(g, '  ', rank, SAFE.mask), g, 'an empty query keeps everything');
+    assert.ok(!([...r.session, ...r.folder].some((n) => n.title === 'Old')), 'a done note is never found');
+    // masked text: a token the note holds is not searchable, a word around it is; no mask function: nothing matches by text
+    const tk = mk('6', { title: 'Deploy', text: `use ${tok} now`, source: src('S1') });
+    assert.strictEqual(DN2.search({ session: [tk], folder: [] }, 'a1B2c3D4', rank, SAFE.mask).session.length, 0, 'the raw token is not found: the search reads the masked text');
+    assert.strictEqual(DN2.search({ session: [tk], folder: [] }, 'now', rank, SAFE.mask).session.length, 1, 'a word beside it is');
+    assert.strictEqual(DN2.search({ session: [tk], folder: [] }, 'now', rank, undefined).session.length, 0, 'no mask function: no text match (fail closed)');
+    assert.strictEqual(DN2.search({ session: [tk], folder: [] }, 'now', rank, () => { throw new Error('x'); }).session.length, 0, 'a throwing mask: no match');
+    // the title is ranked masked too: a raw token in a title (a note that reached the window raw) cannot be found by typing it
+    const tt = mk('7', { title: `Deploy ${tok}`, text: 'neutral words', source: src('S1') });
+    assert.strictEqual(DN2.search({ session: [tt], folder: [] }, 'a1B2c3D4', rank, SAFE.mask).session.length, 0, 'the raw token in a title is not found (ranking reads the masked title)');
+    assert.strictEqual(DN2.search({ session: [tt], folder: [] }, 'Deploy', rank, SAFE.mask).session.length, 1, 'the words around it are');
+    // a note whose title ranks AND whose text matches is listed once
+    const both = mk('8', { title: 'Migrate', text: 'we migrate everything', source: src('S1') });
+    const other = mk('9', { title: 'Other', text: 'migrate too', source: src('S1') });
+    const later = mk('10', { title: 'Migrate later', text: 'migrate', source: src('S2') });
+    const twice = DN2.search({ session: [both, other], folder: [later] }, 'migrate', rank, SAFE.mask);
+    assert.deepStrictEqual(twice.session.map((n) => n.id), [both.id, other.id], 'a title match that also matches by text is listed once, then the text-only match');
+    assert.deepStrictEqual(twice.folder.map((n) => n.id), [later.id], 'and once in the folder group');
+    // the no-match line names the words, masked and cut
+    assert.strictEqual(DN2.noMatch('migrate me', SAFE.mask), 'No notes match "migrate me"');
+    assert.ok(!DN2.noMatch(tok, SAFE.mask).includes('a1B2c3') && /\[redacted\]/.test(DN2.noMatch(tok, SAFE.mask)), 'a pasted token is masked in the no-match line');
+    assert.strictEqual(DN2.noMatch(tok, undefined), 'No notes match', 'no mask function: no words shown');
+    assert.ok(DN2.noMatch('w'.repeat(200), SAFE.mask).length <= 80, 'long words are cut');
+  }
+
   // the notice above the box (FR-024)
   assert.strictEqual(DN.noticeText({ hidden: true, from: 'agent' }), 'Parts of this note were hidden when it was saved');
   assert.strictEqual(DN.noticeText({ hidden: false, from: 'file' }), 'From the project file');

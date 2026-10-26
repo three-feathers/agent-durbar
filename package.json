@@ -203,6 +203,7 @@
     "check:composer-toolbar": "npm run build && xvfb-run -a sh -c \"L=\\$(mktemp); DURBAR_USER_DATA=\\$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=\\$PWD/scripts/check-composer-toolbar.js electron . --no-sandbox 2>&1 | tee \\$L; grep -q 'composer-toolbar] all checks passed' \\$L\"",
     "check:slash-suggest": "npm run build && xvfb-run -a sh -c \"L=\\$(mktemp); DURBAR_USER_DATA=\\$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=\\$PWD/scripts/check-slash-suggest.js electron . --no-sandbox 2>&1 | tee \\$L; grep -q 'slash-suggest] all checks passed' \\$L\"",
     "check:notes": "npm run build && xvfb-run -a sh -c \"L=\\$(mktemp); DURBAR_USER_DATA=\\$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=\\$PWD/scripts/check-notes.js electron . --no-sandbox 2>&1 | tee \\$L; grep -q 'notes] all checks passed' \\$L\"",
+    "check:notes-count": "npm run build && xvfb-run -a sh -c \"L=\\$(mktemp); DURBAR_USER_DATA=\\$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=\\$PWD/scripts/check-notes-count.js electron . --no-sandbox 2>&1 | tee \\$L; grep -q 'notes-count] all checks passed' \\$L\"",
     "check:themes": "npm run build && node scripts/check-parallel.js --themes",
     "check:mac-titlebar": "npm run build && node scripts/check-mac-titlebar.js",
     "check:ui": "npm run build && node scripts/ui-suite.js",
