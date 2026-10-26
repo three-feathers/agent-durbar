@@ -124,6 +124,6 @@ The site reached 15.5 MB with the pictures of spec 083, against the 15 MB budget
 
 *Corrected:*
 - **FR-013** The landing page's words follow the **latest GitHub release**: a stable release (`prerelease` false) gives the button *Download*, the heading *Install Agent Durbar* and the Open Graph description "Free, MIT, unsigned early release."; a pre-release, or no release found (an offline build), keeps *Download alpha*, *Install the alpha* and "early alpha". The release label "(pre-release)" is only shown for a pre-release. The unsigned-builds warning stays in both.
-- `[KNOWN GAP]` `docs/site/landing.json` (`hero.eyebrow` "early alpha" and `status` "Alpha · unsigned …") is hand-written and checked against the README; it is not derived from the release. The fold PR of the first stable release edits both with the README status block (a step in `changelog.d/README.md`).
+- `[KNOWN GAP]` `docs/site/landing.json` (`hero.eyebrow` "early alpha" and `status` "Alpha · unsigned …") is hand-written and checked against the README; it is not derived from the release. The fold PR of the first stable release edits both with the README status block (a step in `changelog.d/README.md`); `test:site` does not hard-code those words, it checks that the page shows what `landing.json` says.
 - `test:` `scripts/test-site.js` builds the site with a fake stable release and a fake pre-release (`SITE_FAKE_RELEASE`, tests only, no network) and asserts each wording; making `stable` always false, or true for any release, fails it.
 

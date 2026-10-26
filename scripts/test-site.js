@@ -77,11 +77,12 @@ for (const name of ['index.html', 'docs.html']) {
 // the landing page: curated, short, honest, no internal numbers
 const index = fs.readFileSync(path.join(out, 'index.html'), 'utf8');
 assert.match(index, /<h1>Run all your AI coding agents\. Answer only the ones that need you\.<\/h1>/, 'hero title');
-assert.match(index, /Free · open source · early alpha/, 'hero eyebrow');
-assert.match(index, />Download alpha</, 'download button');
+// the hero eyebrow and the status line are hand-written in landing.json: the page shows what the file says (not a fixed word, so the stable fold PR only edits landing.json and the README status block)
+assert.ok(index.includes(landing.hero.eyebrow), 'hero eyebrow is landing.json\'s');
+assert.match(index, />Download alpha</, 'download button (no release found: alpha wording)');
 assert.match(index, /class="btn secondary" href="https:\/\/github\.com\/three-feathers\/agent-durbar">View on GitHub</, 'GitHub button'); assert.match(index, /href="docs\.html"/, 'docs link');
 assert.match(index, /property="og:image" content="https:\/\/three-feathers\.github\.io\/agent-durbar\/screenshots\//, 'og:image is absolute'); assert.match(index, /Simulator demo data/, 'the hero says the data is invented');
-assert.match(index, /Alpha · unsigned · used by hand on Linux and on real Macs/, 'status line in the hero');
+assert.ok(index.includes(landing.status.slice(0, 40)), 'the status line in the hero is landing.json\'s');
 assert.ok(index.indexOf('id="status"') < index.indexOf('id="features"'), 'the status line comes before the features');
 assert.match(index, /src="screenshots\/052-office-1440x900\.png"/, 'current hero screenshot');
 for (const t of landing.themes) assert.ok(index.includes(`screenshots/${t.screenshot}`) && index.includes(`>${t.name.replace(/&/g, '&amp;')}</figcaption>`), `theme ${t.name}`);

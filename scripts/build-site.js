@@ -259,7 +259,7 @@ async function latestRelease() {
   if (process.env.SITE_RELEASE === 'off') return null;
   // tests only (spec 050 FR-013): a release object given as JSON, no network; the site's wording follows its `pre` flag
   if (process.env.SITE_FAKE_RELEASE) {
-    try { const f = JSON.parse(process.env.SITE_FAKE_RELEASE); return { tag: String(f.tag), url: String(f.url || ''), pre: f.pre === true, date: String(f.date || ''), assets: [] }; } catch { return null; }
+    try { const f = JSON.parse(process.env.SITE_FAKE_RELEASE); return { tag: String(f.tag), url: String(f.url || ''), pre: f.pre === true, date: String(f.date || ''), assets: (Array.isArray(f.assets) ? f.assets : []).map((a) => ({ name: String(a.name), url: String(a.url) })) }; } catch { return null; }
   }
   try {
     const headers = { Accept: 'application/vnd.github+json', 'User-Agent': 'agent-durbar-site' };
