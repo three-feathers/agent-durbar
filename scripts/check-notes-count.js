@@ -106,10 +106,12 @@ module.exports = async (ctx) => {
     await js(`${dotsOf}.click()`);
     await until(`!!document.querySelector('#modeMenu [data-nact="save"]')`, 3000);
     await js(`document.querySelector('#modeMenu [data-nact="save"]').click()`);
-    check(await until(`!document.getElementById('ntCount').hidden&&document.getElementById('ntCount').textContent==='Notes 1'&&document.getElementById('ntCount').title==='1 from this session, 1 in this folder'`, 5000), `${tag}: a save shows Notes 1 (${await js(`document.getElementById('ntCount').textContent+' | '+document.getElementById('ntCount').title`)})`);
+    const dbg108 = await js(`document.getElementById('ntCount').textContent+' | '+document.getElementById('ntCount').title`);
+    check(await until(`!document.getElementById('ntCount').hidden&&document.getElementById('ntCount').textContent==='Notes 1'&&document.getElementById('ntCount').title==='1 from this session, 1 in this folder'`, 5000), `${tag}: a save shows Notes 1 (${dbg108})`);
 
     /* ================= T031: the marker ================= */
-    check(await until(`document.querySelectorAll('#chat .nt-mark').length===1`, 5000), `${tag}: exactly one marker after the save (${await js(`document.querySelectorAll('#chat .nt-mark').length`)})`);
+    const dbg112 = await js(`document.querySelectorAll('#chat .nt-mark').length`);
+    check(await until(`document.querySelectorAll('#chat .nt-mark').length===1`, 5000), `${tag}: exactly one marker after the save (${dbg112})`);
     const mk = await js(`(()=>{const m=document.querySelector('#chat .nt-mark');const n=window.__durbarSimUi.notes.all()[0];const R=m.getBoundingClientRect();return JSON.stringify({label:m.getAttribute('aria-label'),title:m.title,id:m.dataset.noteid,nid:n.id,ntitle:n.title,w:R.width,h:R.height,svg:m.querySelector('svg')?m.querySelector('svg').getBoundingClientRect().width:0,inBubble:!!m.closest('.msg.agent .bubble'),text:m.textContent})})()`).then(JSON.parse);
     check(mk.label === 'Saved to notes: ' + mk.ntitle && mk.title === mk.label && mk.id === mk.nid && mk.inBubble && mk.text === '', `${tag}: the marker is named "Saved to notes: <title>" with no emoji or text (${JSON.stringify(mk)})`);
     check(mk.svg >= 12 && mk.w >= 20 && mk.h >= 20, `${tag}: the icon is at least 12px (${mk.svg}) in a target of 20px+ (${mk.w}x${mk.h})`);
@@ -144,7 +146,8 @@ module.exports = async (ctx) => {
     await js(`(()=>{const b=[...document.querySelectorAll('#chat .msg.user .bubble')].filter(b=>b._raw==='same words twice')[1];b.querySelector(':scope > .nt-btn').click();})()`);
     await until(`!!document.querySelector('#modeMenu [data-nact="save"]')`, 3000);
     await js(`document.querySelector('#modeMenu [data-nact="save"]').click()`);
-    check(await until(`[...document.querySelectorAll('#chat .msg.user .bubble')].filter(b=>b._raw==='same words twice').map(b=>!!b.closest('.msg').querySelector('.meta .nt-mark')).join()==='false,true'`, 6000), `${tag}: only the second of two equal messages has the marker (${await js(`[...document.querySelectorAll('#chat .msg.user .bubble')].filter(b=>b._raw==='same words twice').map(b=>!!b.closest('.msg').querySelector('.meta .nt-mark')).join()`)})`);
+    const dbg148 = await js(`[...document.querySelectorAll('#chat .msg.user .bubble')].filter(b=>b._raw==='same words twice').map(b=>!!b.closest('.msg').querySelector('.meta .nt-mark')).join()`);
+    check(await until(`[...document.querySelectorAll('#chat .msg.user .bubble')].filter(b=>b._raw==='same words twice').map(b=>!!b.closest('.msg').querySelector('.meta .nt-mark')).join()==='false,true'`, 6000), `${tag}: only the second of two equal messages has the marker (${dbg148})`);
 
     /* a title that held a token is masked in the name and the tooltip (a note that reached the window raw) */
     await js(`window.__durbarSimUi.notes.plant(${jsLiteral({ id: 'n-' + 'm'.repeat(12), title: 'Raw ' + TOKEN, text: 'x', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), rev: 1, done: false, from: 'agent', fileEdited: false, hidden: false, source: { app: 'copilot', session: 'x', role: 'agent', ord: 0, digest: '0'.repeat(16), at: new Date().toISOString() } })});true`);
@@ -249,7 +252,8 @@ module.exports = async (ctx) => {
     await load(w, h, { simnotes: 'many' });
     await open('Noor');
     await until(`document.getElementById('ntCount')&&!document.getElementById('ntCount').hidden`, 8000);
-    check((await js(`document.getElementById('ntCount').textContent`)) === 'Notes 300', `${tag}: simnotes=many has 300 notes (${await js(`document.getElementById('ntCount').textContent`)})`);
+    const dbg254 = await js(`document.getElementById('ntCount').textContent`);
+    check((await js(`document.getElementById('ntCount').textContent`)) === 'Notes 300', `${tag}: simnotes=many has 300 notes (${dbg254})`);
     const perf = await js(`(async()=>{const U=window.__durbarSimUi.notes,out={open:[],search:[],text:[]};
       const one=async(kind,fn)=>{performance.clearMarks();performance.clearMeasures();performance.mark('a');await fn();performance.mark('b');performance.measure(kind,'a','b');out[kind].push(performance.getEntriesByName(kind)[0].duration);};
       for(let i=0;i<3;i++){U.close();await one('open',()=>U.open());}
