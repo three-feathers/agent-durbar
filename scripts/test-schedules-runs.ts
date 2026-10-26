@@ -204,6 +204,22 @@ async function main(): Promise<void> {
     lastEqualsNewest(h);
   }
 
+  // a schedule deleted while its run is being sent leaves no orphan log behind (FR-039)
+  {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => { release = r; });
+    const h = harness({ pausedAll: false, schedules: [mkSched({ id: ID })] }, T0, { send: async () => { await gate; return 'folder-agent'; } });
+    h.sch.start();
+    const run = h.advance(5 * MIN);
+    await new Promise((r) => setImmediate(r));
+    assert.ok(h.sch.remove(ID), 'deleted while the send is awaited');
+    release();
+    await run;
+    await new Promise((r) => setImmediate(r));
+    assert.strictEqual(h.sch.doc.runs, undefined, 'no orphan log for a deleted schedule');
+    assert.ok(!JSON.stringify(h.sch.doc).includes(ID));
+  }
+
   // ---- FR-037: a fold is not an immediate write ----
   {
     const h = harness({ pausedAll: true, schedules: [mkSched({ id: ID })] });

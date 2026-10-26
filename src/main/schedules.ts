@@ -468,6 +468,7 @@ export class Scheduler {
    */
   private record(s: Schedule, outcome: Outcome, now: number, x: { session?: string; reason?: RunReason; manual?: true; update?: boolean } = {}): boolean {
     s.last = { at: now, outcome };
+    if (!this.doc.schedules.some((q) => q.id === s.id)) return false; // deleted while its send was awaited: no log is made for it
     const runs = (this.doc.runs ??= {});
     const log = (runs[s.id] ??= []);
     const top = log[log.length - 1];

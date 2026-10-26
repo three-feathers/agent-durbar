@@ -3,7 +3,7 @@
  *
  *   npm run check:sched-edit
  *
- * At 1440x900 and 1280x800: every Durbar row in the folder's Schedules dialog shows Edit..., Pause and Delete inside the dialog; Edit
+ * At 1440x900 and 1280x800: every Durbar row in the folder's Schedules dialog shows Edit..., Pause, Delete and History (spec 044 FR-040) inside the dialog; Edit
  * fills the form (title "Edit schedule", Save, Cancel, no template picker); Save changes the row in place (same data-id and order);
  * Cancel and Escape change nothing; a paused schedule stays paused; a done one-time schedule edited to a future time runs again
  * and a past time is refused; the prompt toggle works with a 2,000-character prompt and the dialog does not scroll sideways;
@@ -125,7 +125,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(st.text, 'Schedules for this folder…');
     assert.ok(st.h <= st.lh * 1.5 + 14, `${tag}: the folder button is one line (height ${st.h})`); // padding included; two lines would be well over it
     assert.ok(!st.ov && st.inside, `${tag}: nothing overlaps the folder button`);
-    assert.ok(st.rowBtns.every((x) => x === 'Edit…/Pause/Delete' || x === 'Edit…/Resume/Delete'), `${tag}: Settings rows: ${st.rowBtns}`);
+    assert.ok(st.rowBtns.every((x) => x === 'Edit…/Pause/Delete/History' || x === 'Edit…/Resume/Delete/History'), `${tag}: Settings rows: ${st.rowBtns}`);
     await small(tag);
     await js(`(()=>{const sec=document.getElementById('schH').closest('section');sec.scrollIntoView({block:'start'})})()`); await settle();
     await ctx.shot(path.join(OUT, `044-edit-settings-${tag}.png`));
