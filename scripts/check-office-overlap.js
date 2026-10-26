@@ -689,7 +689,10 @@ async function driver(ctx) {
         total++;
         if (p.length) { failed++; bad++; if (bad <= 3) console.log(`FAIL chat ${w}x${h} ${q} agent ${id}: ${p.slice(0, 4).join('; ')}`); }
         if (q === 'sim=15&simfreeze=1') { /* spec 083: the same with the Notes drawer open */
-          await ctx.js(`(async()=>{document.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyM',key:'M',ctrlKey:true,shiftKey:true,bubbles:true}));await new Promise(r=>setTimeout(r,250));return true})()`);
+          /* the page's mod key: ⌘ on a Mac, Ctrl elsewhere; then wait until the drawer is shown (no fixed pause) */
+          const modKey = process.platform === 'darwin' ? 'metaKey' : 'ctrlKey';
+          await ctx.js(`document.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyM',key:'M',shiftKey:true,bubbles:true,...${jsLiteral({ [modKey]: true })}}));true`);
+          for (let t = 0; t < 40 && !(await ctx.js(`(()=>{const d=document.getElementById('notesDrawer');return !!d&&!d.hidden&&d.getClientRects().length>0&&!!d.querySelector('.nt-row,.nt-empty,.nt-banner')})()`)); t++) await new Promise((r) => setTimeout(r, 50));
           const pn = [...(await ctx.js(`(${chatCheck.toString()})()`)), ...(await ctx.js(`(${drawerCheck.toString()})()`))];
           total++;
           if (pn.length) { failed++; bad++; if (bad <= 3) console.log(`FAIL chat with the Notes drawer ${w}x${h} ${q} agent ${id}: ${pn.slice(0, 4).join('; ')}`); }

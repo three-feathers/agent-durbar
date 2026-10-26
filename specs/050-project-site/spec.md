@@ -103,5 +103,5 @@ Evidence:
 
 *Corrected:*
 - **FR-011** FR-005's budget is **16 MB** (`scripts/test-site.js`). The cap stays a hard check: a site over it fails `npm test`.
-- `[KNOWN GAP]` The screenshots are plain PNGs, not compressed. Compressing them is the real fix and would give the budget back; tracked in an issue (2026-10-26) so each UI pull request does not eat the margin again.
+- `[KNOWN GAP]` The screenshots are plain PNGs, not compressed. Compressing them is the real fix and would give the budget back; tracked in [issue 759](https://github.com/three-feathers/agent-durbar/issues/759) (2026-10-26) so each UI pull request does not eat the margin again.
 

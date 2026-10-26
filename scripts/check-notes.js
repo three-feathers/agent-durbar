@@ -26,7 +26,11 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 
 const OUT = process.env.OUT || process.env.SHOTS_OUT || require('os').tmpdir();
 const SIZES = process.env.NOTES_ONE_SIZE ? [[1440, 900]] : [[1440, 900], [1280, 800]]; /* NOTES_ONE_SIZE=1: one size, for a quick run (the planted-mutation runs) */
-const CTRL = ['control', 'shift'];
+/* the page's mod key: Meta (⌘) on a Mac, Control elsewhere (the pattern of check-sched-top.js); the texts the app shows follow it */
+const MAC = process.platform === 'darwin';
+const MOD = MAC ? 'meta' : 'control';
+const CTRL = [MOD, 'shift'];
+const KEYTXT = MAC ? '⇧⌘M' : 'Ctrl+Shift+M';
 /* fake token, built at run time (push protection) */
 const BODY = 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5';
 const TOKEN = 'gh' + 'p_' + BODY;
@@ -41,14 +45,14 @@ module.exports = async (ctx) => {
   const shot = (name) => H.shot(path.join(OUT, name), { prep: 'calm', tag: 'notes', keepActions: false });
   const load = async (w, h, q) => { await H.load({ w, h, query: { simkinds: 'mixed', ...(q || {}) }, ready: 'fit' }); await inject(); };
   const typeChars = async (t) => { for (const ch of t) { wc().sendInputEvent({ type: 'char', keyCode: ch }); await ctx.sleep(25); } await ctx.sleep(60); };
-  const open = async (name) => {
+  const open = async (name, o = {}) => {
     const id = await H.idOf(name);
     assert.ok(id, `${name} is on the floor`);
     if (await js(`document.body.classList.contains('panel-open')`)) { await js(`document.getElementById('backBtn').click()`); await until(`!document.body.classList.contains('panel-open')`, 4000); }
     await js(`document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)}).click()`);
     await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')&&window.__durbarSimUi.notes.all().length>=0`, 15000);
     await settle();
-    await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0;return v(document.getElementById('sendBtn'))})()`, 15000);
+    if (!o.busy) await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0;return v(document.getElementById('sendBtn'))})()`, 15000); /* a working agent shows Stop, not Send */
     return id;
   };
   const focusBox = (v) => js(`(()=>{const m=document.getElementById('msgInput');m.focus();m.value=${jsLiteral(v || '')};m.setSelectionRange(m.value.length,m.value.length);m.dispatchEvent(new Event('input',{bubbles:true}));})()`);
@@ -72,6 +76,35 @@ module.exports = async (ctx) => {
     const tag = `${w}x${h}`;
     await load(w, h, { simnotes: undefined });
     check((await js(`document.querySelectorAll('#stage .desk[data-id]').length`)) === 15, `${tag}: 15 desks on the floor`);
+    /* ---- where the ⋯ is NOT (FR-010, FR-027): thinking blocks, tool chips, a streaming reply, the VS Code view, a demo chat ---- */
+    await open('Ada', { busy: true });
+    const ada = await js(`JSON.stringify({think:document.querySelectorAll('#chat .think').length,chips:document.querySelectorAll('#chat .chip').length,streaming:document.querySelectorAll('#chat .bubble.caret').length,bad:document.querySelectorAll('#chat .think .nt-btn,#chat .think-body .nt-btn,#chat .chip .nt-btn,#chat .note .nt-btn,#chat .caret .nt-btn,#chat .bubble.caret > .nt-btn').length,own:document.querySelectorAll('#chat .msg.user .nt-btn').length})`).then(JSON.parse);
+    check(ada.think >= 1 && ada.chips >= 1 && ada.streaming >= 1, `${tag}: Ada's chat has thinking blocks, tool chips and a streaming reply, so the next check means something (${JSON.stringify(ada)})`);
+    check(ada.bad === 0 && ada.own >= 1, `${tag}: no ⋯ on a thinking block, a tool chip, a request card or a streaming reply; one on the user's message (${JSON.stringify(ada)})`);
+    /* the ⋯ is as visible as Copy: the same computed opacity (Copy is readable at rest, spec 052) */
+    const ops = await js(`JSON.stringify({nt:getComputedStyle(document.querySelector('#chat .nt-btn')).opacity,cp:[...document.querySelectorAll('#chat .cp-msg')].map(b=>getComputedStyle(b).opacity)})`).then(JSON.parse);
+    check(ops.cp.length === 0 || ops.cp.every((o) => o === ops.nt), `${tag}: the ⋯ has Copy's opacity (${JSON.stringify(ops)})`);
+    /* the read-only VS Code chat view has no ⋯ (it would open nothing) */
+    if (!(await js(`!!document.querySelector('#prev [data-pv="view"]')`))) { await js(`document.getElementById('prevBtn').click()`); }
+    check(await until(`!!document.querySelector('#prev [data-pv="view"]')`, 6000), `${tag}: a VS Code chat can be viewed`);
+    await js(`document.querySelector('#prev [data-pv="view"]').click()`);
+    check(await until(`!!document.querySelector('#chat .vsview .vsbody')&&document.querySelectorAll('#chat .vsview .bubble').length>0`, 8000), `${tag}: the VS Code view shows its messages`);
+    check(await js(`document.querySelectorAll('#chat .nt-btn').length===0`), `${tag}: no ⋯ in the read-only VS Code view`);
+    await js(`document.getElementById('vsBack').click()`);
+    await until(`!document.querySelector('#chat .vsview')`, 4000);
+    /* a canned demo chat (not live) has none either, and no Notes… item */
+    await js(`document.getElementById('backBtn').click()`);
+    await until(`!document.body.classList.contains('panel-open')`, 4000);
+    await js(`(()=>{const t=document.getElementById('demoToggle');t.checked=true;t.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    check(await until(`document.querySelectorAll('#stage .desk[data-id]').length>0&&!!document.getElementById('demoToggle').checked`, 6000), `${tag}: the demo is on`);
+    await js(`document.querySelector('#stage .desk[data-id]').click()`);
+    check(await until(`document.body.classList.contains('panel-open')&&document.querySelectorAll('#chat .msg .bubble').length>0`, 10000), `${tag}: a demo chat is open`);
+    await settle();
+    check(await js(`document.querySelectorAll('#chat .nt-btn').length===0&&!document.getElementById('notesHdrBtn')&&!document.getElementById('notesDrawer')`), `${tag}: no ⋯, no Notes… and no drawer in a demo chat`);
+    await js(`document.getElementById('backBtn').click()`);
+    await until(`!document.body.classList.contains('panel-open')`, 4000);
+    await js(`(()=>{const t=document.getElementById('demoToggle');t.checked=false;t.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    await load(w, h, { simnotes: undefined });
     await open('Noor');
     await js(`document.getElementById('msgInput').focus()`);
 
@@ -163,7 +196,7 @@ module.exports = async (ctx) => {
     /* More > Notes… */
     await js(`document.getElementById('moreBtn').click()`);
     check(await until(`!!document.getElementById('notesHdrBtn')&&!document.getElementById('moreMenu').hidden`, 2000), `${tag}: More has Notes…`);
-    check(/Ctrl\+Shift\+M|Shift\+M|M/.test(await js(`document.getElementById('notesHdrBtn').textContent`)), `${tag}: the More item names the shortcut`);
+    check((await js(`document.getElementById('notesHdrBtn').textContent`)).includes(KEYTXT), `${tag}: the More item names the shortcut ${KEYTXT}`);
     await js(`document.getElementById('notesHdrBtn').click()`);
     check(await until(`!document.getElementById('notesDrawer').hidden`, 4000), `${tag}: More > Notes… opens the drawer`);
     /* FR-025 / T022 AC7: with the Browser tab selected, opening Notes selects Chat first (spec 080's tabs) */
@@ -187,7 +220,7 @@ module.exports = async (ctx) => {
     check(await until(`!document.body.classList.contains('panel-open')`, 3000), `${tag}: a second Esc closes the chat`);
     /* Ctrl+K Notes */
     await open('Noor');
-    await key('K', ['control'], { char: 'never' });
+    await key('K', [MOD], { char: 'never' });
     check(await until(`!!document.getElementById('palDlg')`, 3000), `${tag}: Ctrl+K opens the palette`);
     await typeChars('notes');
     check(await until(`[...document.querySelectorAll('#palDlg [role="option"]')].some(o=>/^Notes/.test(o.textContent.trim()))`, 3000), `${tag}: Ctrl+K lists Notes`);
@@ -232,6 +265,27 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#modeDlg .primary').click()`);
     check(await until(`[...document.querySelectorAll('#notesDrawer .nt-row')].some(r=>/edited body line/.test(r.textContent)&&r.querySelector('.nt-title').textContent==='Renamed idea')`, 4000), `${tag}: the text changed and the title stayed`);
 
+    /* a stale rev (FR-008): the note is changed elsewhere; the window shows the saved version (masked) and both buttons work */
+    const staleRun = async (button, want) => {
+      const cur = JSON.parse(await js(`JSON.stringify(window.__durbarSimUi.notes.all().find(n=>n.title==='Renamed idea'||n.title.startsWith('Saved elsewhere')||n.title==='Mine'))`));
+      const elsewhere = 'Saved elsewhere ' + TOKEN;
+      await js(`(async()=>{const b=window.__durbarSimUi.bridge(),a=window.__durbarSimUi.agents().find(x=>x.name==='Noor');await b.notesUpdate(a.id,${jsLiteral(cur.id)},${jsLiteral(cur.rev)},{title:${jsLiteral(elsewhere)}});return true})()`);
+      await js(`window.__stale=window.__durbarSimUi.notes.change(${jsLiteral(cur)},{title:'Mine'});true`);
+      check(await until(`!!document.querySelector('#modeDlg')&&/This note changed/.test(document.querySelector('#modeDlg').textContent)`, 4000), `${tag}: a stale change asks (${button})`);
+      const dlg = await js(`document.querySelector('#modeDlg')?document.querySelector('#modeDlg').textContent:''`);
+      check(/Saved version: Saved elsewhere/.test(dlg) && !leak(dlg), `${tag}: the dialog shows the saved version, masked (${dlg.slice(0, 120)})`);
+      await js(`[...document.querySelectorAll('#modeDlg .btn')].find(b=>b.textContent===${jsLiteral(button)}).click()`);
+      check(await until(`!document.querySelector('#modeDlg')`, 3000), `${tag}: ${button} closes the dialog`);
+      check(await until(`window.__durbarSimUi.notes.all().some(n=>n.title===${jsLiteral(want)}||(${jsLiteral(want)}==='saved'&&n.title.startsWith('Saved elsewhere')))`, 4000), `${tag}: ${button} leaves the right title (${want})`);
+      const t = JSON.parse(await js(`JSON.stringify(window.__durbarSimUi.notes.all().map(n=>n.title))`));
+      check(!t.some((x) => leak(x)), `${tag}: no token in a title after a stale change`);
+    };
+    await staleRun('Use the saved one', 'saved');
+    check(!(await js(`window.__durbarSimUi.notes.all().some(n=>n.title==='Mine')`)), `${tag}: Use the saved one did not apply my change`);
+    await staleRun('Keep mine', 'Mine');
+    await js(`(async()=>{const n=window.__durbarSimUi.notes.all().find(x=>x.title==='Mine');const b=window.__durbarSimUi.bridge(),a=window.__durbarSimUi.agents().find(x=>x.name==='Noor');await b.notesUpdate(a.id,n.id,n.rev,{title:'Renamed idea'});return true})()`);
+    check(await until(`!!__ntd.row("Renamed idea")`, 4000), `${tag}: the note is back to its title for the next steps`);
+
     /* roving tabindex and arrows */
     const tabs = await js(`[...document.querySelectorAll('#notesDrawer .nt-row')].map(r=>r.tabIndex).join()`);
     check(/^0(,-1)+$/.test(tabs), `${tag}: roving tabindex ${tabs}`);
@@ -251,16 +305,21 @@ module.exports = async (ctx) => {
     check(/Delete the note "Renamed idea"\? This cannot be undone\./.test(await js(`document.querySelector('#modeDlg').textContent`)), `${tag}: the delete text names the note`);
     await key('Escape');
     check(await until(`!document.querySelector('#modeDlg')`, 2000) && (await notes()).length === count0, `${tag}: Esc keeps the note`);
+    /* deleting a MIDDLE row: focus goes to the next row (not the previous) */
+    await js(`(async()=>{const b=window.__durbarSimUi.bridge(),id=window.__durbarSimUi.agents().find(x=>x.name==='Noor').id;await b.notesAdd(id,{text:'Middle A\\n\\nbody'});await b.notesAdd(id,{text:'Middle B\\n\\nbody'});return true})()`);
+    check(await until(`!!__ntd.row("Middle A")&&!!__ntd.row("Middle B")`, 5000), `${tag}: two more notes are listed`);
     const ids = await js(`[...document.querySelectorAll('#notesDrawer .nt-row')].map(r=>r.dataset.id).join()`);
-    const delId = await js(`__ntd.row("Renamed idea").dataset.id`);
+    const delId = await js(`__ntd.row("Middle A").dataset.id`);
     const order = ids.split(',');
-    const wantNext = order[order.indexOf(delId) + 1] || order[order.indexOf(delId) - 1];
-    await js(`__ntd.row("Renamed idea").querySelector('[data-nt="more"]').click()`);
+    check(order.indexOf(delId) > 0 && order.indexOf(delId) < order.length - 1, `${tag}: the row to delete is in the middle (${order.indexOf(delId)} of ${order.length})`);
+    const wantNext = order[order.indexOf(delId) + 1];
+    const count1 = (await notes()).length;
+    await js(`__ntd.row("Middle A").querySelector('[data-nt="more"]').click()`);
     await until(`!!document.querySelector('#modeMenu [data-nmact="delete"]')`, 2000);
     await js(`document.querySelector('#modeMenu [data-nmact="delete"]').click()`);
     await until(`!!document.querySelector('#modeDlg')`, 3000);
     await js(`[...document.querySelectorAll('#modeDlg .btn')].find(b=>b.textContent==='Delete').click()`);
-    check(await until(`!document.querySelector('#modeDlg')&&window.__durbarSimUi.notes.all().length===${jsLiteral(count0 - 1)}`, 4000), `${tag}: the note is deleted`);
+    check(await until(`!document.querySelector('#modeDlg')&&window.__durbarSimUi.notes.all().length===${jsLiteral(count1 - 1)}`, 4000), `${tag}: the note is deleted`);
     const focusOk = await until(`document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.id===${jsLiteral(wantNext)}`, 3000);
     const gotFocus = await active();
     check(focusOk, `${tag}: focus goes to the next row, else the previous (got ${gotFocus}, wanted the row ${wantNext})`);
@@ -360,9 +419,32 @@ module.exports = async (ctx) => {
     check(await until(`document.getElementById('ntNotice').hidden`, 2000), `${tag}: the notice goes when the box is emptied`);
     /* the window masks again for every display: a note that reached it with a raw token (a hand-edited file, an old version) is shown masked */
     await openDrawer();
-    await js(`window.__durbarSimUi.notes.plant(${jsLiteral({ id: 'n-' + 'p'.repeat(12), title: 'Raw ' + TOKEN, text: 'body ' + TOKEN + ' and more', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), rev: 1, done: false, from: 'typed', fileEdited: false, hidden: false })})`);
+    const plantRaw = () => js(`window.__durbarSimUi.notes.plant(${jsLiteral({ id: 'n-' + 'p'.repeat(12), title: 'Raw ' + TOKEN, text: 'body ' + TOKEN + ' and more', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), rev: 1, done: false, from: 'typed', fileEdited: false, hidden: false })})`);
+    await plantRaw();
     check(await until(`[...document.querySelectorAll('#notesDrawer .nt-title')].some(t=>t.textContent.startsWith('Raw '))`, 3000), `${tag}: the planted note is listed`);
     for (const t of await texts('#notesDrawer')) check(!leak(t), `${tag}: a raw token in a note shows in the drawer: ${String(t).slice(0, 100)}`);
+    /* every way a planted raw-token note leaves the drawer is masked: Insert (box and announcement), Edit… (the field), Copy (the clipboard) */
+    await js(`document.getElementById('msgInput').value='';`);
+    await js(`__ntd.row("Raw ").querySelector('[data-nt="insert"]').click()`);
+    check(await until(`document.getElementById('msgInput').value.includes('body')`, 3000), `${tag}: the planted note was inserted from the drawer`);
+    check(!leak(await value()) && /\[redacted\]/.test(await value()), `${tag}: Insert masks the text again (${(await value()).slice(0, 50)})`);
+    check(await until(`/Inserted the note/.test(document.getElementById('srAnnounce').textContent)`, 3000), `${tag}: the insert is announced`);
+    check(!leak(await ann()) && /\[redacted\]/.test(await ann()), `${tag}: the Insert announcement is masked (${await ann()})`);
+    await js(`(()=>{const m=document.getElementById('msgInput');m.value='';m.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await openDrawer();
+    await plantRaw(); /* opening the drawer fetched the store again: the planted note is put back */
+    await js(`__ntd.row("Raw ").querySelector('[data-nt="edit"]').click()`);
+    check(await until(`!!document.querySelector('#modeDlg textarea')`, 3000), `${tag}: Edit… opens on the planted note`);
+    check(!leak(await js(`document.querySelector('#modeDlg textarea').value`)) && /\[redacted\]/.test(await js(`document.querySelector('#modeDlg textarea').value`)), `${tag}: Edit… shows the text masked again`);
+    await key('Escape');
+    await until(`!document.querySelector('#modeDlg')`, 2000);
+    await js(`window.__clip=[];navigator.clipboard.writeText=t=>{window.__clip.push(String(t));return Promise.resolve();};true`);
+    await js(`__ntd.row("Raw ").querySelector('[data-nt="more"]').click()`);
+    await until(`!!document.querySelector('#modeMenu [data-nmact="copy"]')`, 2000);
+    await js(`document.querySelector('#modeMenu [data-nmact="copy"]').click()`);
+    const copied = await until(`window.__clip.length===1`, 2000);
+    const clip0 = copied ? String(await js(`window.__clip[0]`)) : '';
+    check(copied && !leak(clip0) && /\[redacted\]/.test(clip0), `${tag}: Copy writes the masked text (${clip0})`);
     await key('Escape');
     await until(`document.getElementById('notesDrawer').hidden`, 3000);
     /* the "/" list, its tooltips and the announcement */
@@ -371,6 +453,13 @@ module.exports = async (ctx) => {
     for (const t of await texts('#slashList')) check(!leak(t), `${tag}: a token piece shows in the "/" list: ${String(t).slice(0, 100)}`);
     check(await js(`[...document.querySelectorAll('#slashList .sl-note .sl-name')].some(n=>n.textContent.startsWith('Raw '))`), `${tag}: the planted raw note is in the "/" list, masked`);
     check(!leak(await ann()), `${tag}: the "/" announcement has no token piece`);
+    /* the planted raw note, picked from the "/" list: the box and the announcement are masked */
+    await js(`[...document.querySelectorAll('#slashList .sl-note')].find(o=>o.querySelector('.sl-name').textContent.startsWith('Raw ')).click()`);
+    check(await until(`document.getElementById('msgInput').value.includes('body')`, 3000) && !leak(await value()) && /\[redacted\]/.test(await value()), `${tag}: a raw note picked from the "/" list is inserted masked (${(await value()).slice(0, 50)})`);
+    check(await until(`/Inserted the note/.test(document.getElementById('srAnnounce').textContent)`, 3000) && !leak(await ann()), `${tag}: ...and the announcement is masked (${await ann()})`);
+    await js(`(()=>{const m=document.getElementById('msgInput');m.value='';m.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await typeChars('/');
+    await until(`!!document.querySelector('#slashList .sl-note')`, 4000);
     await js(`[...document.querySelectorAll('#slashList .sl-note')].find(o=>/Deploy script token/.test(o.textContent)).click()`);
     check(await until(`document.getElementById('msgInput').value.includes('deploy script')`, 3000), `${tag}: the secret note from the list was inserted`);
     check(!leak(await value()) && !(await js(`document.getElementById('ntNotice').hidden`)), `${tag}: ...masked, with the notice`);

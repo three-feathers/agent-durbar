@@ -326,6 +326,11 @@ assert.deepStrictEqual(o.map((n) => n.text), ['b', 'c', 'a']);
   assert.strictEqual(wn.items.length, 0, 'no commands and no notes: no list');
   wn = SL.withNotes([], many.slice(0, 1), 'zzz', 5, ALL);
   assert.strictEqual(wn.items.length, 0, 'no match');
+  // FR-030: with a query this session's notes still come first, each group ranked on its own (a folder note named "Migrate" must not outrank a session note that only mentions it)
+  const mine = { name: 'Release checklist', description: 'we migrate tables', source: 'note', kind: 'note', scope: 'session', insertText: 'a' };
+  const theirs = { name: 'Migrate', description: '', source: 'note', kind: 'note', scope: 'folder', insertText: 'b' };
+  assert.deepStrictEqual(SL.withNotes([], [theirs, mine], 'migrate', 5, ALL).notes.map((x) => x.name), ['Release checklist', 'Migrate'], 'a query: this session first');
+  assert.deepStrictEqual(SL.withNotes([], [mine, theirs], 'migrate', 5, ALL).notes.map((x) => x.name), ['Release checklist', 'Migrate'], 'in either input order');
   const hostile = { name: '<img src=x onerror=alert(1)>', description: '"><script>x</script>', source: 'note', kind: 'note', scope: 'session' as string };
   const hv = SL.view(hostile, SAFE.mask);
   const html = SL.optionHtml(hv, 0, true, SL.tip(hostile, SAFE.mask, cutText));

@@ -46,7 +46,9 @@
   function withNotes(commands,notes,query,max,all){
     const q=String(query||''), cmds=filter(commands,q);
     const list=(Array.isArray(notes)?notes:[]).filter(e=>e&&e.source==='note');
-    const ranked=q?nav().rank(list.map(e=>({label:e.name,kw:e.description||'',e})),q).map(x=>x.e):list;
+    /* this session's notes come first, then the folder's, each group ranked on its own (spec 083 FR-030) */
+    const rk=l=>nav().rank(l.map(e=>({label:e.name,kw:e.description||'',e})),q).map(x=>x.e);
+    const ranked=q?rk(list.filter(e=>e.scope==='session')).concat(rk(list.filter(e=>e.scope!=='session'))):list;
     const shown=q?ranked:ranked.slice(0,Number(max)>0?Number(max):5);
     const more=!q&&list.length&&all?[all]:[];
     return {commands:cmds,notes:shown,items:cmds.concat(shown,more)};

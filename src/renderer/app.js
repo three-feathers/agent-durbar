@@ -1804,7 +1804,7 @@ function addUserMsg(chat,text,atts,ts){
   const now=ts?new Date(ts):new Date();const hh=(ts&&now.toDateString()!==new Date().toDateString()?now.toLocaleDateString([],{month:'short',day:'numeric'})+' ':'')+String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
   m.innerHTML='<div class="bubble"></div><div class="chips" aria-label="Attachments"></div><div class="meta">You · '+hh+'</div>';
   const ub=m.querySelector('.bubble');ub.textContent=text;ub._raw=String(text==null?'':text);
-  if(bridge&&bridge.notesSave)ub.appendChild(msgDotsBtn()); /* spec 083 FR-010: the user's own message has the ⋯ too */
+  if(chat.el.dataset.notes)ub.appendChild(msgDotsBtn()); /* spec 083 FR-010: the user's own message has the ⋯ too (not in a chat without notes) */
   const box=m.querySelector('.chips');
   (atts||[]).forEach(x=>{const c=document.createElement('div');c.className='chip att-chip'+(x.img?' img':'');c.title=x.path||x.name;
     c.innerHTML=(x.img?ICON('img'):ICON('file'))+'<span>'+esc(x.name)+'</span>';box.appendChild(c);});
@@ -2448,7 +2448,8 @@ async function notesChange(a,note,patch){
   const root=liveRoot(a);
   let r=null;try{r=await bridge.notesUpdate(root.id,note.id,note.rev,patch);}catch(e){r=null;}
   if(r&&!r.ok&&r.code==='stale'&&r.current){
-    const k=await askDialog({title:'This note changed',body:'It was changed since you opened it (in another chat or window). Keep your change over it, or use the saved version.',buttons:[{label:'Use the saved one',value:null},{label:'Keep mine',value:'mine',cls:'primary'}]});
+    const cur=r.current, saved=[safeMask(cur.title)||'',safeExcerpt(cur.text,300,'')||''].filter(Boolean); /* FR-008: the saved version, masked and cut */
+    const k=await askDialog({title:'This note changed',body:'It was changed since you opened it (in another chat or window). Keep your change over it, or use the saved version.',lines:saved.length?['Saved version: '+saved.join(' / ')]:undefined,buttons:[{label:'Use the saved one',value:null},{label:'Keep mine',value:'mine',cls:'primary'}]});
     if(k&&k.value==='mine'){try{r=await bridge.notesUpdate(root.id,note.id,r.current.rev,patch);}catch(e){r=null;}}
     else{await notesFetch(a);return null;}
   }
@@ -2463,7 +2464,9 @@ async function renameNote(a,note,returnFocus){
   if(r)announce('Renamed.');
 }
 async function editNote(a,note,returnFocus){
-  const res=await askDialog({title:'Edit note',body:'The note is saved with secrets masked. At most 16,000 characters.',size:'m',input:{label:'Note',value:note.text,multiline:true,max:16000,focus:true},need:{text:true},returnFocus:returnFocus||undefined,
+  const shown=noteBoxText(note.text); /* the stored text is masked once more before it is shown for editing, and not shown at all when that is not possible (fail closed) */
+  if(shown==null){toast('Could not check this note for secrets, so it was not opened.',4500).classList.add('err');return;}
+  const res=await askDialog({title:'Edit note',body:'The note is saved with secrets masked. At most 16,000 characters.',size:'m',input:{label:'Note',value:shown,multiline:true,max:16000,focus:true},need:{text:true},returnFocus:returnFocus||undefined,
     buttons:[{label:'Cancel',value:null},{label:'Save',value:'ok',cls:'primary'}]});
   if(!res||res.value!=='ok'||!String(res.text||'').trim())return;
   const r=await notesChange(a,note,{text:String(res.text)});
@@ -2630,7 +2633,7 @@ function openNoteMenu(a,n,anchor,x,y){
   const back=()=>{if(anchor&&document.contains(anchor))focusIn(anchor);};
   m.addEventListener('click',e=>{const t=e.target.closest('[data-nmact]');if(!t)return;closeModeMenu();const act=t.dataset.nmact;
     if(act==='rename')renameNote(a,n,anchor);
-    else if(act==='copy'){navigator.clipboard.writeText(n.text).then(()=>toast('Copied.',1500),()=>toast('Could not copy to the clipboard.',3000).classList.add('err'));back();}
+    else if(act==='copy'){const ct=noteBoxText(n.text);if(ct==null){toast('Could not check this note for secrets, so it was not copied.',4500).classList.add('err');back();return;}navigator.clipboard.writeText(ct).then(()=>toast('Copied.',1500),()=>toast('Could not copy to the clipboard.',3000).classList.add('err'));back();}
     else if(act==='delete'){
       const ids=[...document.querySelectorAll('#notesDrawer .nt-row')].map(r=>r.dataset.id),i=ids.indexOf(n.id);
       deleteNote(a,n,{row:n.id,next:ids[i+1]||'',prev:ids[i-1]||''});}});
@@ -3648,6 +3651,7 @@ function liveChat(a){
   if(chats[a.id])return chats[a.id];
   const el=document.createElement('div');el.className='chat-inner';
   const chat=chats[a.id]={el,busy:false};
+  if(a.live&&!a.parent&&DN&&bridge&&bridge.notesSave)el.dataset.notes='1'; /* spec 083 FR-010/FR-027: only a main, live chat has the message ⋯; a helper's chat, the VS Code view and the canned demo chats have none (it would open nothing) */
   if(a.sub)buildSubTranscript(a,chat);
   return chat;
 }
@@ -3872,7 +3876,7 @@ function addCopyButtons(el){
   /* spec 083 FR-010: a finished reply bubble (not a thinking block, a tool chip or a request card) gets the ⋯ next to Copy */
   const nb=el.querySelector(':scope > .nt-btn');
   if(streaming&&nb)nb.remove();
-  else if(!streaming&&el.classList.contains('bubble')&&el.closest('.msg.agent')&&bridge&&bridge.notesSave&&!nb)el.appendChild(msgDotsBtn());
+  else if(!streaming&&el.classList.contains('bubble')&&el.closest('.msg.agent')&&el.closest('.chat-inner[data-notes]')&&!nb)el.appendChild(msgDotsBtn());
 }
 document.addEventListener('click',async e=>{
   const b=e.target.closest('.cp-btn');if(!b)return;
@@ -7156,7 +7160,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 /* spec 008 FR-113, simulator only: false until the agents are listed, the frozen simulator has replayed every script and the saved usage
    totals are read; then any queued frame is drawn now (a stalled animation frame once left a comparison driver measuring a stale page) */
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
-if(SIM)window.__durbarSimUi={agents:()=>agents,notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
+if(SIM)window.__durbarSimUi={agents:()=>agents,notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,
   /* spec 059 T076 (FR-023): a driver makes the things that change while a field is open happen through the real paths */
   retitle:(id,title)=>{const a=byId(id);if(!a)return false;applyTitle(a,title);return true;},
