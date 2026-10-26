@@ -68,6 +68,22 @@ export class SettingsStore {
     this.save();
   }
 
+  /** Spec 080 FR-031: where a chat link opens on a plain click; the session browser unless the user chose the system browser. */
+  get chatLinksIn(): 'session' | 'system' {
+    return this.s.chatLinksIn === 'system' ? 'system' : 'session';
+  }
+
+  /** Only `'session'` or `'system'` change it; the default is not written. Returns the value now in force. */
+  setChatLinksIn(v: unknown): 'session' | 'system' {
+    if (v !== 'session' && v !== 'system') return this.chatLinksIn;
+    const next: AppSettings = { ...this.s };
+    if (v === 'system') next.chatLinksIn = 'system';
+    else delete next.chatLinksIn;
+    this.s = next;
+    this.save();
+    return v;
+  }
+
   /** Serious mode (spec 034): off by default. */
   get seriousMode(): boolean {
     return this.s.seriousMode === true;

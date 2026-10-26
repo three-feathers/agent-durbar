@@ -2824,11 +2824,70 @@ function closePanel(){closeSlash();keepDraft();
 }
 
 /* ---------------- events ---------------- */
+/* ---------------- spec 080 T017: links in the chat (FR-030, FR-031, FR-024) ----------------
+   A plain click on an http(s) link opens it in the session browser of the chat's root session (Settings > Open chat links in; default Session
+   browser). Ctrl (Cmd on a Mac) + click and the menu item go to the system browser through the existing openExternal, unchanged. Whatever the
+   click, the link text is agent text: main classifies it (web / mail / other) and the window only shows the static answer. The page never
+   navigates: preventDefault runs first, and the window's navigation guard stays. */
+let CHAT_LINKS='session'; /* the setting: 'session' or 'system' */
+const REFUSED_LINK='Durbar opens only mail links in other apps.';
+function openLinkExternal(u){
+  if(!/^https?:\/\//i.test(u))return; /* app:openExternal refuses anything else in main too */
+  if(bridge&&bridge.openExternal)bridge.openExternal(u);else toast('Would open <code>'+esc(SHORT(safeMask(u),80))+'</code> in your browser',3200);
+}
+/* the chat of a session shows its Browser tab (the panel switches to the root session of a helper's chat) */
+function showSessionBrowser(id){
+  if(ui.selected===id){BP.select('browser');return;}
+  BP.wantTab(id,'browser');openPanel(id,false);
+}
+async function openChatLink(u,mod){
+  const a=byId(ui.selected),root=a&&liveRoot(a);
+  const web=/^https?:\/\//i.test(u);
+  if(web&&(mod||CHAT_LINKS==='system'))return openLinkExternal(u);
+  if(!root||!BP.available(root)){ /* the demo, or a session that is not live: no browser to open it in */
+    if(web)return openLinkExternal(u);
+    toast(esc(REFUSED_LINK),4200);return;
+  }
+  const r=await BP.openLink(root.id,u);
+  if(r&&r.ok){showSessionBrowser(root.id);return;}
+  if(r&&r.fallback){if(web)openLinkExternal(u);return;} /* Not now on the one-time note: the system browser, this time */
+  if(r&&r.link==='mailto'){toastAction(esc(r.reason),'Open',()=>BP.openMail(u),8000);return;} /* only the click on Open hands it to the system */
+  toast(esc((r&&r.reason)||REFUSED_LINK),4200);
+}
+/* the menu of a link: the shared menu element (#modeMenu), like the other menus */
+function openLinkMenu(u,x,y,anchor){
+  const a=byId(ui.selected),root=a&&liveRoot(a);
+  const web=/^https?:\/\//i.test(u),canTab=!!root&&BP.available(root);
+  if(!web&&!canTab)return false;
+  closeModeMenu();
+  const it=(act,label,sub)=>`<button type="button" role="menuitem" data-lact="${act}"><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
+  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Link');
+  m.innerHTML=(canTab?it('tab','Open in session browser','This session\'s own browser'):'')+(web?it('sys','Open in system browser','Your usual browser'):'');
+  document.body.appendChild(m);
+  const b=m.getBoundingClientRect();m.style.left=Math.max(8,Math.min(x,innerWidth-b.width-8))+'px';m.style.top=Math.max(8,Math.min(y,innerHeight-b.height-8))+'px';
+  const back=()=>{if(anchor&&anchor.focus&&document.contains(anchor))focusIn(anchor);};
+  m.addEventListener('click',e=>{const t=e.target.closest('[data-lact]');if(!t)return;closeModeMenu();back();if(t.dataset.lact==='sys')openLinkExternal(u);else openChatLink(u,false);});
+  m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-lact]')],i=its.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'){e.preventDefault();focusIn(its[(i+1)%its.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(its[(i+its.length-1)%its.length]);}
+    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();back();}});
+  focusIn(m.querySelector('button'));
+  return true;
+}
+document.addEventListener('contextmenu',e=>{
+  const lk=e.target.closest&&e.target.closest('.md a');if(!lk||!ui.selected)return;
+  const u=lk.getAttribute('href')||'';if(!u)return;
+  if(openLinkMenu(u,e.clientX,e.clientY,lk))e.preventDefault();
+});
+document.addEventListener('keydown',e=>{
+  if(!((e.key==='F10'&&e.shiftKey)||e.key==='ContextMenu'))return;
+  const lk=e.target.closest&&e.target.closest('.md a');if(!lk||!ui.selected)return;
+  const u=lk.getAttribute('href')||'';if(!u)return;
+  const r=lk.getBoundingClientRect();if(openLinkMenu(u,r.left,r.bottom+4,lk))e.preventDefault();
+});
 document.addEventListener('click',e=>{
-  /* markdown links: only http(s) leaves the app, through the system browser (main re-checks the URL) */
   const lk=e.target.closest('.md a');
   if(lk){e.preventDefault();const u=lk.getAttribute('href')||'';
-    if(/^https?:\/\//i.test(u)){if(bridge&&bridge.openExternal)bridge.openExternal(u);else toast('Would open <code>'+esc(SHORT(u,80))+'</code> in your browser',3200);}
+    if(u)openChatLink(u,IS_MAC?e.metaKey:e.ctrlKey).catch(()=>{});
     return;}
   const cp=e.target.closest('.codebox .copy');
   if(cp){const code=cp.parentNode.querySelector('code');const txt=code?code.textContent:'';
@@ -3591,6 +3650,7 @@ function bringBrowserForward(id){
   PULLED.add(id); BP.wantTab(id,'browser');
   pulling=true; try{openPanel(id,false);}finally{pulling=false;}
 }
+if(SIM&&window.DurbarMD&&window.DurbarMD.allowSimLinks)window.DurbarMD.allowSimLinks(); /* the simulator's test pages can be printed as links (spec 080 FR-091); never in the app */
 BP.init({ bridge: window.agentDurbar,
   ask:o=>askDialog(o),
   say:d=>{const a=byId(d.id);toast('A page in <b>'+esc(a?a.name:'a session')+'</b> is asking: <span class="pagetext">\u201c'+esc(d.text)+'\u201d</span> <span class="sr-only">(page text)</span>',6500);},
@@ -7092,7 +7152,7 @@ if(bridge){
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
   document.body.classList.toggle('simple',SIMPLE);
-  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},signs:{get:()=>SIGN_PREF,set:setSignsOn,usable:()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign)},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},signs:{get:()=>SIGN_PREF,set:setSignsOn,usable:()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign)},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     previewTheme:(m)=>{swapView(()=>{THEME.setTheme(m);SC_CACHE.clear();renderAll();});}, /* spec 040 FR-014: Try it / Discard, nothing saved */
@@ -7149,7 +7209,7 @@ if(bridge){
       :apply();
     }).catch(()=>apply());}else apply();
   };
-  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();NOTIFY=!!(v&&v.notifyNeedsMe!==false);BREAK_RESUME=v&&v.breakResume==='ask'?'ask':'auto';themeBoot(v);}).catch(()=>{});
+  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();NOTIFY=!!(v&&v.notifyNeedsMe!==false);BREAK_RESUME=v&&v.breakResume==='ask'?'ask':'auto';CHAT_LINKS=v&&v.chatLinksIn==='system'?'system':'session';themeBoot(v);}).catch(()=>{});
   setInterval(()=>{if(VISITS.tick())scheduleRender();},250);
   setInterval(coffeeTick,SIM_BREAK?1000:5000); /* spec 068: resume, ask or remind when a break is due */
   agents=LIVE.agents; ROOMS=LIVE.rooms;

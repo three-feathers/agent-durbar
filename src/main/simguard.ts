@@ -44,6 +44,8 @@ export const SIM_OPEN_CHANNELS: Readonly<Record<string, string>> = Object.freeze
   'browser:consentAccept': 'spec 080 T014: remembers that the one-time note of the session browser was accepted in the settings file of this profile; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
   'browser:snapshot': 'spec 080 T014: returns a still picture of the session browser page area, in memory, while an overlay hides the view; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
   'browser:leaveAnswer': 'spec 080 T014: passes the answer of the Leave this page box to the view; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
+  'browser:openLink': 'spec 080 T017: classifies a link from the chat and opens a web one in the session browser view; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses, and the simulator opens nothing outside the window',
+  'browser:openMail': 'spec 080 T017: checks a mail link after the click; under the simulator nothing is handed to the system; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses, and the simulator opens nothing outside the window',
 });
 
 export function simChannelOpen(channel: string): boolean {

@@ -12,6 +12,7 @@
  * Electron's parts come in as arguments so the test runs it against fakes.
  */
 import { simAddress } from './simpages';
+import { classifyLink } from '../../shared/browserurl';
 import { isHttpUrl } from '../../shared/url';
 import type { BrowserResult, BrowserState } from '../../shared/api';
 import type { NavAction } from '../hardening';
@@ -20,6 +21,9 @@ import type { SessionView, ViewEvents } from './views';
 export const STATE_KEYS = ['id', 'open', 'url', 'title', 'loading', 'canBack', 'canForward', 'muted', 'driver', 'dialogOpen', 'error', 'note'] as const;
 const MAX_URL = 2048;
 const MAX_TITLE = 200;
+/** FR-024: what the window says about a link that is not a web address (static text, never page text). */
+export const MAIL_LINK_TEXT = 'This link wants to open your mail app.';
+export const REFUSED_LINK_TEXT = 'Durbar opens only mail links in other apps.';
 /** How long the still picture may take before the view is hidden without it. */
 export const SNAPSHOT_MS = 300;
 /** A window can hold a page this big and no more; larger numbers are a bug or an attack. */
@@ -287,16 +291,42 @@ export function makeBrowserController(deps: BrowserDeps) {
     return result(id);
   }
 
+  /** Creates the session's view on first use (FR-004); with `address`, also goes there. */
+  async function open(id: unknown, address?: unknown): Promise<BrowserResult> {
+    if (!valid(id)) return refuse('Unknown session.');
+    if (!deps.consented()) return needsConsent();
+    // an address the rules refuse makes no view (a link with a user name in it must not leave an empty browser behind)
+    if (address !== undefined && address !== '') {
+      const a = simAddress(address, deps.sim);
+      if (!a.ok) return { ok: false, reason: a.reason };
+    }
+    const t = await ensure(id);
+    if (!t) return refuse('The browser could not start.');
+    if (address !== undefined && address !== '') return navigate(id, address);
+    return result(id);
+  }
+
   return {
     stateOf,
-    /** Creates the session's view on first use (FR-004); with `address`, also goes there. */
-    async open(id: unknown, address?: unknown): Promise<BrowserResult> {
+    open,
+    /**
+     * FR-030, FR-024: a link from the chat (agent text, so untrusted). Main classifies it, whatever the window did: a web link opens in
+     * that session's browser (the address rules of FR-005 apply, so a user name in it is refused); a mail link waits for the user's click
+     * (`openMail`); anything else is refused with static text and no offer. Nothing here calls the system.
+     */
+    async openLink(id: unknown, url: unknown): Promise<BrowserResult> {
       if (!valid(id)) return refuse('Unknown session.');
-      if (!deps.consented()) return needsConsent();
-      const t = await ensure(id);
-      if (!t) return refuse('The browser could not start.');
-      if (address !== undefined && address !== '') return navigate(id, address);
-      return result(id);
+      if (typeof url !== 'string') return { ok: false, reason: REFUSED_LINK_TEXT, link: 'refused' };
+      const kind = deps.sim && /^durbar-sim:\/\/pages\//i.test(url.trim()) ? 'web' : classifyLink(url);
+      if (kind === 'mailto') return { ok: false, reason: MAIL_LINK_TEXT, link: 'mailto' };
+      if (kind === 'refused') return { ok: false, reason: REFUSED_LINK_TEXT, link: 'refused' };
+      return open(id, url);
+    },
+    /** FR-024: the user pressed *Open* on a mail link. The only path from the browser to another app; a link that is not `mailto:` is refused again here. */
+    async openMail(url: unknown): Promise<{ ok: boolean }> {
+      if (classifyLink(url) !== 'mailto') return { ok: false };
+      await deps.openExternal((url as string).trim());
+      return { ok: true };
     },
     state(id: unknown): BrowserResult {
       if (!valid(id)) return refuse('Unknown session.');

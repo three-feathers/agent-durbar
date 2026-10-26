@@ -200,6 +200,20 @@
     return !!(a&&a.ok);
   }
 
+  /* FR-030: a chat link for this session's browser. Main classifies it (web, mail or refused) and navigates; the one-time note is asked on the first
+     use, and *Not now* gives {fallback:true} (the caller opens the system browser this time). Returns main's answer. */
+  async function openLink(id,url){
+    if(!bridge||!bridge.browserOpenLink)return {ok:false,reason:'The browser is not available.'};
+    let r=await bridge.browserOpenLink(id,url).catch(()=>null);
+    if(r&&r.ok===false&&r.needsConsent){
+      if(!(await askConsent()))return {fallback:true};
+      r=await bridge.browserOpenLink(id,url).catch(()=>null);
+    }
+    return r||{ok:false,reason:'The browser could not start.'};
+  }
+  /* FR-024: the user pressed Open on a mail link; main checks it is mailto: again */
+  function openMail(url){return bridge&&bridge.browserOpenMail?bridge.browserOpenMail(url).catch(()=>null):Promise.resolve(null);}
+
   /* FR-025d (Q3): a page dialog opened. Toast naming the session (page text, masked in main); a hidden view's chat comes forward on its Browser tab */
   function onDialog(d){
     if(!d||typeof d.id!=='string')return;
@@ -316,5 +330,5 @@
   /* The page area while the Browser tab is selected, shown or still attaching (the overlay test must see an overlay that is open during the attach) */
   function paneRect(){const v=$('bView');return cur&&cur.tab==='browser'&&v?v.getBoundingClientRect():null;}
   const covered=()=>!!(cur&&cur.covered);
-  return {tabKey,barModel,boundsOf,init,available,tabsHTML,paneHTML,mount,hide,select,current,overlay,areaRect,wantTab,dialogOpen,covered,paneRect};
+  return {tabKey,barModel,boundsOf,init,available,tabsHTML,paneHTML,mount,hide,select,current,overlay,areaRect,wantTab,dialogOpen,covered,paneRect,openLink,openMail};
 })());

@@ -81,6 +81,21 @@ for (const t of evil) {
 assert.strictEqual(dom('[x](javascript:alert(1))').querySelector('a[href]'), null);
 assert.strictEqual(dom('[x](/relative)').querySelector('a[href]'), null);
 assert.strictEqual(dom('[x](//evil.example/x)').querySelector('a[href]'), null);
+// spec 080 FR-024: a mail link keeps its href (a click is classified in main); every other scheme of the hostile list loses it
+assert.strictEqual(dom('[mail](mailto:a@example.com)').querySelector('a')!.getAttribute('href'), 'mailto:a@example.com');
+for (const bad of ['ms-msdt:/id', 'search-ms:query=x', 'search:query=x', 'ms-officecmd:x', 'ms-settings:x', 'smb://host/share', 'file:///etc/hostname', 'vscode://file/x', 'slack://open', 'tel:+123', 'MS-MSDT:x', 'durbar-sim://pages/form']) {
+  assert.strictEqual(dom(`[x](${bad})`).querySelector('a[href]'), null, `${bad} loses its href`);
+}
+{
+  // the simulator's test pages only after allowSimLinks (never called in the app)
+  const sim = create(marked, (createPurify.default ?? createPurify)(new JSDOM('<!doctype html><html><body></body></html>').window)) as { render(t: string): string; allowSimLinks(): void };
+  const d2 = (t: string): Document => new JSDOM('<body>' + sim.render(t) + '</body>').window.document;
+  assert.strictEqual(d2('[p](durbar-sim://pages/form)').querySelector('a[href]'), null, 'off by default');
+  sim.allowSimLinks();
+  assert.strictEqual(d2('[p](durbar-sim://pages/form)').querySelector('a')!.getAttribute('href'), 'durbar-sim://pages/form');
+  assert.strictEqual(d2('[p](durbar-sim://other/form)').querySelector('a[href]'), null, 'only the pages host');
+  assert.strictEqual(d2('[x](file:///etc/hostname)').querySelector('a[href]'), null);
+}
 assert.match(html('![pic](https://tracker.example/p.png)'), /\[image: pic\]/);
 assert.ok(!/tracker\.example/.test(html('![pic](https://tracker.example/p.png)')), 'remote image url is not even kept');
 // raw HTML is visible as text

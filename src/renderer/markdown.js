@@ -18,14 +18,19 @@
     ALLOWED_TAGS:['p','br','hr','strong','b','em','i','del','s','code','pre','blockquote','ul','ol','li','h1','h2','h3','h4','h5','h6','a','table','thead','tbody','tr','th','td'],
     ALLOWED_ATTR:['href','title','align'],
     ALLOW_DATA_ATTR:false,ALLOW_ARIA_ATTR:false,
-    ALLOWED_URI_REGEXP:/^https?:\/\//i,
+    ALLOWED_URI_REGEXP:/^(?:https?:\/\/|mailto:)/i,
     FORBID_TAGS:['style','script','img','svg','math','iframe','object','embed','form','input','button','video','audio','source','link','meta','base'],
     KEEP_CONTENT:true
   };
+  /* the simulator only (spec 080 FR-091): its test pages, so a simulated agent can print a link to one; never set in the app */
+  let simLinks=false;
+  const OK_HREF=()=>simLinks?/^(?:https?:\/\/|mailto:|durbar-sim:\/\/pages\/)/i:/^(?:https?:\/\/|mailto:)/i;
+  function allowSimLinks(){simLinks=true;CFG.ALLOWED_URI_REGEXP=/^(?:https?:\/\/|mailto:|durbar-sim:\/\/pages\/)/i;}
   purify.addHook('afterSanitizeAttributes',function(node){
     if(node.tagName==='A'){
       const h=node.getAttribute('href')||'';
-      if(!/^https?:\/\//i.test(h))node.removeAttribute('href');
+      /* http(s) and mailto: keep their href (spec 080 FR-024: a click is classified in main; only a mail link may ask to open another app). Any other scheme loses it. */
+      if(!OK_HREF().test(h))node.removeAttribute('href');
       else{node.setAttribute('rel','noopener noreferrer');node.setAttribute('target','_blank');}
     }
   });
@@ -38,5 +43,5 @@
     if(cut)html+='<p><em>(Message cut for display: it is longer than '+(MAX_CHARS/1000)+' kB.)</em></p>';
     return html;
   }
-  return {render,MAX_CHARS};
+  return {render,MAX_CHARS,allowSimLinks};
 });

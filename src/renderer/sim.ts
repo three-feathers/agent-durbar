@@ -1317,6 +1317,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'working', intent: 'Answering: ' + text.slice(0, 60) });
       if (/\bfallback\b/i.test(text)) runtimeSwitch(s, 'fallback'); // demo: the runtime switches models by itself (spec 030 FR-015)
       if (!/\bquick\b/i.test(text)) for (let i = 0; i < 4; i++) { think(s, 1); await wait(650); } // "quick": a turn where the model sends no reasoning
+      if (/\blinks?\b/i.test(text)) {
+        // spec 080 T018 AC3: the agent prints links to the simulator's test pages (and a mail link and a refused one), so a driver clicks them
+        const LINKS = 'Here are the pages:\n\n- [the form page](durbar-sim://pages/form)\n- [the links page](durbar-sim://pages/links)\n- [the slow page](durbar-sim://pages/slow?ms=1500)\n- [mail me](mailto:sim@example.com)\n- [a web page](https://example.com/docs)\n- [a local page](http://127.0.0.1:9/page)\n- [not a web link](ms-msdt:/id)';
+        emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: LINKS, final: true, text: LINKS });
+        emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'idle' });
+        s.state = 'done';
+        return;
+      }
       if (/\b(markdown|md|format)\b/i.test(text)) {
         emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: MD_REPLY, final: true, text: MD_REPLY + '\n\n[unsafe link](javascript:alert(1)) and <script>alert(1)</script> stay inert.' });
         emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'idle' });
@@ -1749,6 +1757,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     let seriousMode = false; /* spec 034 */
     let notifyNeedsMe = false; /* spec 052 FR-059: off in the demo until you turn it on */
     let breakResume: 'auto' | 'ask' = 'auto'; /* spec 068 FR-006 */
+    let chatLinksIn: 'session' | 'system' = 'session'; /* spec 080 FR-031 */
     const PLACE_CHOICES = ['library', 'software', 'terminal', 'web', 'other', 'desk'];
     /* spec 024 FR-018..FR-020: custom places in memory, with the rules of src/shared/places.ts repeated here (the renderer bundle cannot import
        it; scripts/test-places.ts runs both on the same cases and compares them). */
@@ -1851,11 +1860,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0-alpha.18 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0-alpha.18 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
       setBreakResume: async (v) => { if (v === 'auto' || v === 'ask') breakResume = v; return { ok: true, breakResume }; },
+      setChatLinksIn: async (v) => { if (v === 'session' || v === 'system') chatLinksIn = v; return { ok: true, chatLinksIn }; },
       setBadge: async () => ({ ok: true }), /* spec 052 FR-059: no app icon in the demo */
       focusWindow: async () => { window.focus(); return { ok: true }; },
       setTheme: async (id) => { if (typeof id === 'string' && /^[a-z0-9_-]{1,64}$/.test(id)) simTheme = id; return { ok: true, theme: simTheme }; },

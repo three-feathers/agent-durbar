@@ -276,6 +276,10 @@
     const breakSec=X.bridge.setBreakResume&&X.breakResume?`<section class="scr-sec" aria-labelledby="brkH"><h3 id="brkH">Coffee break</h3>
         <p class="scr-note">When an agent's usage limit is used up, it waits in the coffee corner instead of showing an error. When the agent app says when the limit resets, the agent comes back then and sends one message to continue where it stopped, but only when that costs nothing extra (a plan or rate window). It never goes past the spending limit you set, never resumes after a restart, and never checks on its own whether a limit has reset. A limit that may lead to paid usage always asks first.</p>
         <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Resume by itself when the limit resets</b> <small>(off: always ask me)</small>${sw(X.breakResume()==='auto','Resume by itself when the limit resets (off: always ask me)','id="breakSw"')}</span><span class="scr-note small" id="breakMsg" role="status"></span></div></section>`:'';
+    /* spec 080 FR-031: where a plain click on a chat link opens */
+    const linksSec=X.bridge.setChatLinksIn&&X.chatLinksIn?`<section class="scr-sec" aria-labelledby="lnkH"><h3 id="lnkH">Chat links</h3>
+        <p class="scr-note">A link in a chat opens in that session's own Browser tab, or in your usual browser. Ctrl+click (⌘+click on a Mac) and the link's menu always offer your usual browser.</p>
+        <div class="scr-tools"><label class="swrow" style="display:flex;align-items:center;gap:10px"><b>Open chat links in</b><select id="chatLinksSel" aria-label="Open chat links in"><option value="session"${X.chatLinksIn()==='system'?'':' selected'}>Session browser</option><option value="system"${X.chatLinksIn()==='system'?' selected':''}>System browser</option></select></label><span class="scr-note small" id="chatLinksMsg" role="status"></span></div></section>`:'';
     /* spec 052 FR-059: an OS notification when an agent needs you while Durbar is in the background (on for real sessions, off in the demo) */
     const notifySec=X.bridge.setNotifyNeedsMe&&X.isNotify?`<section class="scr-sec" aria-labelledby="ntfH"><h3 id="ntfH">Notifications</h3>
         <p class="scr-note">While Agent Durbar is in the background, one notification tells you when an agent asks for permission, asks a question, reaches its spending limit or hits an error. It shows only the agent's name and a short summary of the request, never file contents. The window title and the app icon show how many need you.</p>
@@ -358,7 +362,7 @@
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${capSec}${moodSec}${breakSec}${notifySec}${schedSec}${floorsSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${schedSec}${floorsSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3><span class="mtag warn" id="advMcpAtt"${live&&live.agg.attention?'':' hidden'}>${esc(attText(live?live.agg.attention:0))}</span></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         ${liveSection()}
@@ -405,7 +409,7 @@
       else{const m=$('usageTotalsMsg');if(m)m.textContent='Could not reset the totals.';}
     };
     r.onclick=onSettingsClick;
-    r.onchange=onPlaceChange;
+    r.onchange=e=>{if(e.target&&e.target.id==='chatLinksSel')return onChatLinksChange(e);return onPlaceChange(e);};
     /* theme picker (spec 037): click applies live through app.js's applyTheme; no restart */
     /* spec 037 FR-014: each swatch shows its own theme's colours (validated colour values set through CSSOM) */
     /* FR-030 (#309): a mini room per card; previewRoom returns only validated colour values, set as custom properties through CSSOM */
@@ -700,6 +704,13 @@
   }
   function wireHead(){const c=$('scrClose');if(c)c.onclick=close;}
 
+  async function onChatLinksChange(e){
+    if(!X.bridge.setChatLinksIn)return;
+    let res=null; try{res=await X.bridge.setChatLinksIn(e.target.value==='system'?'system':'session');}catch(err){res=null;}
+    const m=$('chatLinksMsg');
+    if(res&&res.ok){const v=res.chatLinksIn==='system'?'system':'session';if(X.setChatLinksIn)X.setChatLinksIn(v);e.target.value=v;if(m)m.textContent=v==='system'?'Chat links open in your usual browser.':'Chat links open in the session\'s Browser tab.';}
+    else if(m)m.textContent='Could not save this.';
+  }
   async function onPlaceChange(e){
     const sel=e.target.closest('select[data-place-sel]'); if(!sel||!X.bridge.setPlace)return;
     const li=sel.closest('li.plrow'), name=li&&li.dataset.srv; if(!name)return;

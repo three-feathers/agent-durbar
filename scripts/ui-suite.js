@@ -98,6 +98,8 @@ const DRIVERS = [
   { name: 'check-ui-text', label: 'check-ui-text dark', env: { UITEXT_PART: 'dark' } },
   { name: 'shots-006-crash' }, // spec 006 FR-038..FR-046 (#606): the crash card (Resume all, Pick…, Dismiss), per-row resume, the lost-turn note
   { name: 'shots-074-navigator', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 074: Go to (keyboard navigator), chat numbers, the shortcut in Settings
+  { name: 'check-browser-links' }, // spec 080 T017/T018: links the agent prints open in that session's Browser tab, Ctrl/Cmd+click and the menu go to the system path, mail and other schemes, Settings > Open chat links in
+  { name: 'check-browser-links', label: 'check-browser-links note', env: { DURBAR_SIM_BROWSER_CONSENT: 'ask' } }, // the same click with the one-time note: Not now sends the link to the system browser that time
   { name: 'check-browser-dialogs', env: { DURBAR_SIM_BROWSER_CONSENT: 'ask' } }, // spec 080 T015 AC6: the once-per-app consent, Leave this page?, a hidden session's page dialog (toast, chat forward once, marker)
   { name: 'check-browser-dialogs', label: 'check-browser-dialogs 1280', env: { DURBAR_SIM_BROWSER_CONSENT: 'ask', BROWSER_DIALOGS_SIZE: '1280x800' } }, // the same at 1280x800: the note, Leave this page?, the hidden dialog's toast
   { name: 'check-browser-tab' }, // spec 080 T014/T015/T018: Chat | Browser tabs, the bar, the native view's attach and detach, the simulator's test pages, two sessions' own views

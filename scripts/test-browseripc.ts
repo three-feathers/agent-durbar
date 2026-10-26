@@ -434,6 +434,53 @@ process.on('exit', () => {
     const src = fs.readFileSync(path.join(ROOT, 'src/main/browser/controller.ts'), 'utf8');
     assert.ok(/Promise\.race\(\[t\.wc\.capturePage\(\)/.test(src), 'the capture has a time limit');
   }
+  // ---- chat links (spec 080 T017, FR-030, FR-024): main classifies, whatever the window did ----
+  {
+    const HOSTILE = ['ms-msdt:/id', 'search-ms:query=x', 'search:query=x', 'ms-officecmd:x', 'ms-settings:x', 'smb://host/share', 'file:///etc/hostname', 'vscode://file/x', 'slack://open', 'tel:+123', 'MS-MSDT:x', '  ms-msdt:x', 'javascript:alert(1)', 'data:text/html,hi', 'chrome://gpu', 'view-source:https://a.com', 'durbar-sim://pages/form', '', 'not a url', 'https://user:pw@example.com/', 'https://a.com/\u0001'];
+    const r = rig();
+    for (const u of HOSTILE) {
+      const res = await r.ctl.openLink('s1', u);
+      assert.strictEqual(res.ok, false, `refused or not opened: ${JSON.stringify(u)}`);
+      if (/user:pw/.test(u)) assert.ok(!res.ok && !res.link, 'a web link with a user name is refused by the address rules, not as another scheme');
+      else assert.ok(!res.ok && res.link === 'refused' && res.reason === 'Durbar opens only mail links in other apps.', `static refusal text for ${JSON.stringify(u)}: ${JSON.stringify(res)}`);
+    }
+    for (const bad of [undefined, null, 5, {}]) assert.strictEqual((await r.ctl.openLink('s1', bad)).ok, false);
+    assert.deepStrictEqual(r.opened, [], 'zero shell.openExternal calls for the whole hostile list');
+    assert.deepStrictEqual(r.ensured, [], 'and no view was made for a link that is not a web link');
+    // a mail link: no offer to the system until the user's click
+    const m = await r.ctl.openLink('s1', 'mailto:a@example.com');
+    assert.ok(!m.ok && m.link === 'mailto' && m.reason === 'This link wants to open your mail app.');
+    assert.deepStrictEqual(r.opened, [], 'a mail link opens nothing by itself');
+    for (const u of HOSTILE.concat(['https://example.com/', 'http://localhost:3000/', 'MAILTO:x@y.z.evil'])) {
+      if (u.toLowerCase().startsWith('mailto:')) continue;
+      assert.deepStrictEqual(await r.ctl.openMail(u), { ok: false }, `openMail refuses ${JSON.stringify(u)}`);
+    }
+    assert.deepStrictEqual(r.opened, [], 'openMail never hands anything but mailto: to the system');
+    assert.deepStrictEqual(await r.ctl.openMail('  mailto:a@example.com?subject=hi '), { ok: true });
+    assert.deepStrictEqual(r.opened, ['mailto:a@example.com?subject=hi'], 'only after the click, and only the mail link');
+    assert.deepStrictEqual(await r.ctl.openMail('MAILTO:x@y.z'), { ok: true }, 'the scheme is case-insensitive like the classifier');
+    // a web link opens in that session's own view, never in another (SC-002, FR-030)
+    const a = await r.ctl.openLink('s1', 'https://example.com/docs?x=1');
+    assert.ok(a.ok);
+    const b = await r.ctl.openLink('s2', 'http://localhost:3000/');
+    assert.ok(b.ok);
+    assert.deepStrictEqual(r.sessions.get('s1')!.navs, [{ url: 'https://example.com/docs?x=1' }], "A's link loads in A only");
+    assert.deepStrictEqual(r.sessions.get('s2')!.navs, [{ url: 'http://localhost:3000/' }], "B's link loads in B only");
+    assert.deepStrictEqual(r.opened.length, 2, 'a web link never calls the system either (only the two mail clicks above)');
+    assert.strictEqual((await r.ctl.openLink('nobody', 'https://example.com/')).ok, false, 'the session is looked up in main');
+    assert.strictEqual((await r.ctl.openLink('../s1', 'https://example.com/')).ok, false);
+    // the one-time note comes first
+    const c = rig({ consent: false });
+    const cr = await c.ctl.openLink('s1', 'https://example.com/');
+    assert.ok(!cr.ok && cr.needsConsent === true && c.ensured.length === 0, 'no view before the note is accepted');
+    // the simulator's test pages only under the simulator
+    const sim = rig({ sim: true });
+    assert.ok((await sim.ctl.openLink('s1', 'durbar-sim://pages/form')).ok);
+    assert.ok(!(await sim.ctl.openLink('s1', 'durbar-sim://evil/form')).ok);
+    const nosim = rig();
+    assert.ok(!(await nosim.ctl.openLink('s1', 'durbar-sim://pages/form')).ok, 'refused outside the simulator');
+    assert.deepStrictEqual(nosim.sessions.size, 0);
+  }
   // ---- the still picture ----
   {
     const r = rig();
@@ -456,7 +503,7 @@ process.on('exit', () => {
   }
 
   // ---- 2. the wiring ----
-  const CH = ['open', 'state', 'navigate', 'back', 'forward', 'reload', 'stop', 'bounds', 'visible', 'overlay', 'mute', 'openSystem', 'consentAccept', 'snapshot', 'leaveAnswer'].map((c) => 'browser:' + c);
+  const CH = ['open', 'state', 'navigate', 'back', 'forward', 'reload', 'stop', 'bounds', 'visible', 'overlay', 'mute', 'openSystem', 'consentAccept', 'snapshot', 'leaveAnswer', 'openLink', 'openMail'].map((c) => 'browser:' + c);
   const ipcSrc = read('src/main/ipc/browser.ts');
   const ctlSrc = read('src/main/browser/controller.ts');
   {
