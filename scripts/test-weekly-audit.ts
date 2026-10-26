@@ -434,7 +434,7 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
     for (const b of ['bash', 'sh', 'env', 'dirname', 'mkdir', 'rmdir', 'chmod', 'install', 'date', 'find', 'tee', 'mktemp', 'rm', 'cat', 'sed', 'printf', 'tail', 'cp', 'mv', 'id']) {
       for (const d of ['/usr/bin', '/bin']) if (fs.existsSync(path.join(d, b))) { fs.symlinkSync(path.join(d, b), path.join(nobin, b)); break; }
     }
-    fs.writeFileSync(path.join(nobin, 'stat'), '#!/bin/sh\nif [ "$1" = "-c" ]; then echo "stat: illegal option -- c" >&2; exit 1; fi\nif [ "$1" = "-f" ] && [ "$2" = "%Lp" ]; then exec /usr/bin/stat -c %a "$3"; fi\nexit 1\n', { mode: 0o700 });
+    fs.writeFileSync(path.join(nobin, 'stat'), '#!/bin/sh\nif [ "$1" = "-c" ]; then echo "stat: illegal option -- c" >&2; exit 1; fi\nif [ "$1" = "-f" ] && [ "$2" = "%Lp" ]; then /usr/bin/stat -c %a "$3" 2>/dev/null || exec /usr/bin/stat -f %Lp "$3"; fi\nexit 1\n', { mode: 0o700 });
     assert.ok(!fs.existsSync(path.join(nobin, 'flock')), 'the fake PATH has no flock');
     const nf = { ...base, PATH: nobin, DURBAR_AUDIT_STATE_DIR: path.join(home, 'state-nf') };
     const lockd = path.join(home, 'state-nf', 'lock.d');
