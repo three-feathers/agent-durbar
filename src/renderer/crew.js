@@ -24,18 +24,18 @@
   const FACE_CROP = 235, FACE_W = 110, FACE_H = 140;
   const FACE = {
     punk: { working: [180, 160], waiting: [165, 160], resting: [194, 160] },
-    gamer: { working: [176, 160], waiting: [164, 160], resting: [170, 160] },
-    hacker: { working: [180, 170], waiting: [165, 170], resting: [171, 170] },
+    gamer: { working: [210, 165], waiting: [210, 165], resting: [212, 165] },
+    hacker: { working: [190, 165], waiting: [200, 165], resting: [190, 165] },
     rocker: { working: [188, 155], waiting: [191, 155], resting: [192, 155] },
-    buzzcut: { working: [178, 150], waiting: [174, 150], resting: [164, 150] },
-    bookworm: { working: [177, 155], waiting: [168, 155], resting: [166, 155] },
-    scientist: { working: [166, 150], waiting: [180, 150], resting: [160, 150] },
-    metalhead: { working: [178, 150], waiting: [165, 150], resting: [177, 150] },
+    buzzcut: { working: [182, 150], waiting: [198, 150], resting: [182, 150] },
+    bookworm: { working: [190, 160], waiting: [198, 160], resting: [187, 160] },
+    scientist: { working: [190, 150], waiting: [196, 150], resting: [188, 150] },
+    metalhead: { working: [190, 160], waiting: [186, 160], resting: [187, 160] },
     'bob-glasses': { working: [179, 150], waiting: [168, 150], resting: [179, 150] },
-    skater: { working: [195, 140], waiting: [225, 140], resting: [198, 140] },
-    surfer: { working: [174, 135], waiting: [193, 135], resting: [190, 135] },
-    disco: { working: [172, 150], waiting: [184, 150], resting: [173, 150] },
-    sporty: { working: [172, 155], waiting: [170, 155], resting: [166, 155] },
+    skater: { working: [190, 160], waiting: [172, 160], resting: [180, 160] },
+    surfer: { working: [190, 155], waiting: [193, 155], resting: [190, 155] },
+    disco: { working: [205, 170], waiting: [186, 170], resting: [192, 170] },
+    sporty: { working: [185, 160], waiting: [190, 160], resting: [182, 160] },
   };
   const k = BOX.w / PIC;
   /* a face box or the avatar's crop, in stage units: [x, y, w, h]; null for an unknown picture */

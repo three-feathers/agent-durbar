@@ -69,3 +69,4 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 - [x] T067 [raster] `check:office` and `check:geometry` in the crew theme at 1440x900 and 1280x800; screenshots `docs/screenshots/077-crew-office-*.png` re-taken [SC-001]
 - [x] T068 [raster] Merge `main` (the spec 001 late re-layout) so `check:office` in the crew theme passes at both sizes; no crew style was at fault (see the spec's 2026-10-23 delta)
 - [x] T069 [raster] An idle desk, card or helper keeps its portrait at full colour (the furniture and text stay dimmed); `check:crew` asserts the effective opacity at both sizes and that Clean Office still dims [FR-061]
+- [x] T070 [raster] Replace the art of 10 characters (sporty, disco, skater, hacker, buzzcut, bookworm, metalhead, scientist, gamer, surfer; 30 files) with Paco's new pictures, same conversion; re-read `FACE`; `ASSETS.md` rows and `PROMPTS-surfer-redo.txt`; screenshots re-taken [FR-050, FR-054, FR-059, FR-060]
