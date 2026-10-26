@@ -176,13 +176,15 @@ export class NotesStore {
         if (!r.ok) return r;
         if (!r.doc) return { ok: true, fingerprint: fp, note: r.note, existing: true };
         const doc: NotesDoc = { ...r.doc, folderName: cleanFolderName(folderName) || r.doc.folderName };
+        // a holder paused over 5 s may have lost the lock to a takeover: writing now would be the second writer (issue #723)
+        if (!this.ownsLock(fp, lk.token)) return { ok: false, code: 'write', error: 'The notes are busy (another Durbar is writing them). Try again.' };
         const w = await this.commit(fp, doc);
         if (!w.ok) return w;
         this.remember(fp, doc);
         this.fire(fp);
         return { ok: true, fingerprint: fp, note: r.note };
       } finally {
-        this.unlockFile(fp);
+        this.unlockFile(fp, lk.token);
       }
     });
   }
@@ -192,11 +194,14 @@ export class NotesStore {
    * read the old file and both write. A lock older than 5 s is a crashed process's and is taken over; a busy lock is retried every
    * 20 ms for up to 2 s, then the change is refused with a short reason.
    */
-  private async lock(fp: string): Promise<{ ok: true } | NotesFail> {
+  private async lock(fp: string): Promise<{ ok: true; token: string } | NotesFail> {
     const file = path.join(this.dir, `${fp}.lock`);
+    const guard = path.join(this.dir, `${fp}.takeover`);
     const deadline = Date.now() + 2000;
     try { this.ensureDir(); } catch (e) { return { ok: false, code: 'write', error: `Could not save the notes (${errCode(e)}).` }; }
     const busy = (): NotesFail => ({ ok: false, code: 'write', error: 'The notes are busy (another Durbar is writing them). Try again.' });
+    // the lock holds a token only its owner knows: a holder that was slow and lost its lock to a takeover must not delete or write under the new owner's lock
+    const token = `${this.pid}.${this.rand(36 ** 8).toString(36)}`;
     let quick = 0;
     // a retry "at once" (the lock vanished, a takeover worked) is allowed once in a row; the second pauses 20 ms, so a filesystem that keeps
     // answering EEXIST and then ENOENT can never spin, and the deadline is checked on every pass
@@ -205,8 +210,15 @@ export class NotesStore {
       if (Date.now() > deadline) return busy();
       try {
         const fd = this.fs.openSync(file, 'wx', 0o600);
-        this.fs.closeSync(fd);
-        return { ok: true };
+        try {
+          this.fs.writeSync(fd, Buffer.from(token, 'utf8'), 0, Buffer.byteLength(token));
+          this.fs.closeSync(fd);
+        } catch (e) {
+          try { this.fs.closeSync(fd); } catch { /* gone */ }
+          try { this.fs.unlinkSync(file); } catch { /* the stale rule covers it */ }
+          return { ok: false, code: 'write', error: `Could not save the notes (${errCode(e)}).` };
+        }
+        return { ok: true, token };
       } catch (e) {
         const code = errCode(e);
         if (code === 'EPERM' || code === 'EACCES' || code === 'EBUSY') {
@@ -216,26 +228,45 @@ export class NotesStore {
         }
         if (code !== 'EEXIST') return { ok: false, code: 'write', error: `Could not save the notes (${code}).` };
       }
-      let st: nodeFs.Stats | undefined;
-      try { st = this.fs.lstatSync(file); } catch (e) { if (errCode(e) === 'ENOENT') { await again(); continue; } } // gone: try again (at once, once); any other error waits like a busy lock
-      if (st && Date.now() - st.mtimeMs > 5000) {
-        // stale (its owner is gone): move it to a name of our own first, so only one process can take it over, then check it is the
-        // lock we judged (same inode and time) before deleting it. A failure other than "it vanished" falls through to the wait below.
-        const aside = `${file}.stale-${this.pid}-${this.rand(36 ** 6).toString(36)}`;
-        let moved = false;
-        try { this.fs.renameSync(file, aside); moved = true; } catch (e) { if (errCode(e) === 'ENOENT') { await again(); continue; } }
-        if (moved) {
-          let same = false;
-          try { const got = this.fs.lstatSync(aside); same = got.ino === st.ino && got.mtimeMs === st.mtimeMs; } catch { /* gone */ }
-          if (!same) {
-            // it was not the stale lock but a fresh one taken in between: put it back WITHOUT overwriting (a hard link fails with EEXIST when
-            // a newcomer already holds the lock; then that lock stays and the moved one is dropped, see the known gap in FR-008)
-            try { this.fs.linkSync(aside, file); } catch { /* a newcomer's lock stays, or the link failed: the moved file is dropped */ }
-            try { this.fs.unlinkSync(aside); } catch { /* a leftover .stale file is harmless */ }
-          } else {
-            try { this.fs.unlinkSync(aside); } catch { /* the lock itself is gone; a leftover .stale file is harmless */ }
-            await again();
-            continue;
+      let st: nodeFs.BigIntStats | undefined;
+      try { st = this.fs.lstatSync(file, { bigint: true }); } catch (e) { if (errCode(e) === 'ENOENT') { await again(); continue; } } // gone: try again (at once, once); any other error waits like a busy lock
+      if (st && Date.now() - Number(st.mtimeMs) > 5000) {
+        // Looks stale (its owner is gone). Issue #723: the lstat above and the move below are not one step, so a process that judged the
+        // lock stale could move away a FRESH lock another process had just taken over, and a third one then created its own while it was gone
+        // (two writers, a lost note). Only the holder of the short-lived `<fingerprint>.takeover` file may break a lock, and it looks again under it.
+        let got = false;
+        try { this.fs.closeSync(this.fs.openSync(guard, 'wx', 0o600)); got = true; } catch (e) {
+          if (errCode(e) === 'EEXIST') {
+            // a crashed taker's guard is stale too
+            try { if (Date.now() - Number(this.fs.lstatSync(guard, { bigint: true }).mtimeMs) > 5000) this.fs.unlinkSync(guard); } catch { /* gone, or kept by the OS */ }
+          }
+        }
+        if (got) {
+          try {
+            let cur: nodeFs.BigIntStats | undefined;
+            try { cur = this.fs.lstatSync(file, { bigint: true }); } catch { cur = undefined; }
+            if (!cur) { await again(); continue; } // it vanished (or cannot be looked at): decide again from the top
+            if (Date.now() - Number(cur.mtimeMs) <= 5000) { await this.sleep(20); continue; } // a fresh lock was taken over meanwhile: respect it
+            // stale: move it to a name of our own, then check it is the lock we just saw (same inode and time) before deleting it
+            const aside = `${file}.stale-${this.pid}-${this.rand(36 ** 6).toString(36)}`;
+            let moved = false;
+            try { this.fs.renameSync(file, aside); moved = true; } catch (e) { if (errCode(e) === 'ENOENT') { await again(); continue; } }
+            if (moved) {
+              let same = false;
+              try { const mv = this.fs.lstatSync(aside, { bigint: true }); same = mv.ino === cur.ino && mv.mtimeNs === cur.mtimeNs; } catch { /* gone */ }
+              if (!same) {
+                // not the lock we saw: put it back WITHOUT overwriting (a hard link fails with EEXIST when a newcomer already holds the lock;
+                // then that lock stays and the moved one is dropped, the remaining gap in FR-008)
+                try { this.fs.linkSync(aside, file); } catch { /* a newcomer's lock stays, or the link failed: the moved file is dropped */ }
+                try { this.fs.unlinkSync(aside); } catch { /* a leftover .stale file is harmless */ }
+              } else {
+                try { this.fs.unlinkSync(aside); } catch { /* the lock itself is gone; a leftover .stale file is harmless */ }
+                await again();
+                continue;
+              }
+            }
+          } finally {
+            try { this.fs.unlinkSync(guard); } catch { /* a leftover guard goes stale after 5 s */ }
           }
         }
       }
@@ -243,8 +274,14 @@ export class NotesStore {
     }
   }
 
-  private unlockFile(fp: string): void {
-    // a failed unlink leaves a lock that goes stale after 5 s; the next writer takes it over by the stale rule
+  /** True while the lock file still holds our token (we were not judged stale and replaced). */
+  private ownsLock(fp: string, token: string): boolean {
+    try { return this.fs.readFileSync(path.join(this.dir, `${fp}.lock`), 'utf8') === token; } catch { return false; }
+  }
+
+  private unlockFile(fp: string, token: string): void {
+    // never delete a lock that is not ours any more (a slow holder lost it to a takeover); a failed unlink leaves a lock that goes stale after 5 s
+    if (!this.ownsLock(fp, token)) return;
     try { this.fs.unlinkSync(path.join(this.dir, `${fp}.lock`)); } catch { /* already gone, or kept by the OS: the stale rule covers it */ }
   }
 
@@ -343,8 +380,9 @@ export class NotesStore {
       try {
         const again = this.load(fp); // under the lock: another process may have put a healthy file there since the first look
         if (again.ok && !again.entry.readOnly) return nothing;
+        if (!this.ownsLock(fp, lk.token)) return { ok: false, code: 'write', error: 'The notes are busy (another Durbar is writing them). Try again.' };
         return await this.moveAside(fp);
-      } finally { this.unlockFile(fp); }
+      } finally { this.unlockFile(fp, lk.token); }
     });
   }
 

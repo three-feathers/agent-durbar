@@ -463,6 +463,49 @@ async function main(): Promise<void> {
     const sw = await new NotesStore(dir, { fs: swapped }).add(FOLDER, 'demo', { text: 'fresh lock held by someone' });
     assert.ok(!sw.ok && /busy/.test(sw.error) && fs.existsSync(lock), 'a fresh lock taken in between is put back and respected');
     fs.rmSync(lock, { force: true });
+    // issue #723: B judged the lock stale, but before its move another process took it over and now holds a FRESH lock. B must not touch
+    // that lock at all (moving it away opens a gap where a third process creates its own: two writers, a lost note)
+    {
+      plantOld();
+      const touched: string[] = [];
+      let swappedIn = false;
+      const rival = { ...fs,
+        lstatSync: (f: string, o?: unknown) => { const r = (fs.lstatSync as (f: string, o?: unknown) => unknown)(f, o); if (f === lock && !swappedIn) { swappedIn = true; fs.unlinkSync(lock); fs.writeFileSync(lock, 'A-LIVE'); } return r; },
+        renameSync: (a: string, b: string) => { if (a === lock) touched.push('rename'); fs.renameSync(a, b); },
+        unlinkSync: (f: string) => { if (f === lock) touched.push('unlink'); fs.unlinkSync(f); },
+        linkSync: (a: string, b: string) => { if (b === lock) touched.push('link'); fs.linkSync(a, b); } } as unknown as NotesFs;
+      const r7 = await new NotesStore(dir, { fs: rival }).add(FOLDER, 'demo', { text: 'must wait for A' });
+      assert.ok(!r7.ok && /busy/.test(r7.error), 'a fresh lock taken over in between: busy');
+      assert.deepStrictEqual(touched, [], "the other process's fresh lock was never moved, put back or deleted");
+      assert.strictEqual(fs.readFileSync(lock, 'utf8'), 'A-LIVE', "A's lock is intact");
+      fs.rmSync(lock, { force: true });
+    }
+    // issue #723: somebody else is breaking the stale lock right now (a fresh takeover guard): wait, do not break it too
+    {
+      plantOld();
+      const guard = path.join(dir, folderFingerprint(FOLDER) + '.takeover');
+      fs.writeFileSync(guard, '');
+      const g = await new NotesStore(dir).add(FOLDER, 'demo', { text: 'guard held' });
+      assert.ok(!g.ok && /busy/.test(g.error) && fs.existsSync(lock) && fs.existsSync(guard), "another process's takeover guard is respected: busy, lock and guard untouched");
+      // a crashed taker's guard (older than 5 s) is removed and the takeover goes on
+      const oldG = new Date(Date.now() - 10_000);
+      fs.utimesSync(guard, oldG, oldG);
+      must(await new NotesStore(dir).add(FOLDER, 'demo', { text: 'after a stale guard' }));
+      assert.ok(!fs.existsSync(guard) && !fs.existsSync(lock), 'a stale guard does not block for good');
+    }
+    // issue #723: a holder paused over 5 s lost its lock to a takeover; it must not write, and must not delete the new owner's lock
+    {
+      fs.rmSync(path.join(dir, folderFingerprint(FOLDER) + '.json'), { force: true });
+      let taken = false;
+      // the lock is replaced while the holder reads the document (as if it had been paused for over 5 s)
+      const slowHolder = { ...fs, lstatSync: (f: string, o?: unknown) => { if (!taken && f.endsWith('.json')) { taken = true; fs.rmSync(lock, { force: true }); fs.writeFileSync(lock, 'T-TOKEN'); } return (fs.lstatSync as (f: string, o?: unknown) => unknown)(f, o); } } as unknown as NotesFs;
+      const lost = await new NotesStore(dir, { fs: slowHolder }).add(FOLDER, 'demo', { text: 'written by a holder that lost its lock' });
+      assert.ok(!lost.ok && /busy/.test(lost.error), 'a holder that lost its lock does not write');
+      assert.strictEqual(fs.readFileSync(lock, 'utf8'), 'T-TOKEN', "and does not delete the new owner's lock");
+      assert.ok(!fs.existsSync(path.join(dir, folderFingerprint(FOLDER) + '.json')), 'nothing was written under the lost lock');
+      fs.rmSync(lock, { force: true });
+    }
+    assert.deepStrictEqual(fs.readdirSync(dir).filter((f) => f.endsWith('.takeover') || f.includes('.stale-')), [], 'no takeover guard or aside file is left');
     // four real processes with a stale lock in front: nobody is lost
     const dir4 = fresh();
     fs.mkdirSync(dir4, { recursive: true });

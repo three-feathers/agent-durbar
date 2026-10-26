@@ -1,0 +1,1 @@
+- **Notes: no more lost note when several Durbar processes take over a stale lock** (spec 083 FR-008, issue #723): only one process at a time may break a stale lock, and a writer that lost its lock stops instead of writing; tested with an injected file system and with four real processes. Not run on Windows.
