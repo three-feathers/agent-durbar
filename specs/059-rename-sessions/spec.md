@@ -571,4 +571,4 @@ the role. `placeRen` took the mode icon as the end of the name and used its x wi
 ("Co✎rol Panel"). The pencil is now anchored on the mode icon only when the icon is on the name's line (its box overlaps the name's box vertically);
 otherwise it is anchored on the name itself. The fallback (over the end of the name, never more than its right half) and the protected-element
 checks are unchanged. `check-office-overlap` now also fails a desk pencil that covers the first half of its name. Task T080 [FR-020, FR-025].
-`[KNOWN GAP]` The Electron drivers were not run in the authoring session (owner's machine kept light); CI and `npm run check:office` are the check.
+`[IMPLEMENTED]` `sim:` on Linux (xvfb, DejaVu), 1440x900 and 1280x800: the simulator's own cards already wrap the mode icon (19 and 13 pencils in sim 15 failed the new check with the old `placeRen`, 61 failures in all); with the fix `check:office` passes 460/460, `check:rename-inline` and `check:geometry` pass. Not run on macOS, where the bug was first seen (system fonts are narrower, so the wrap point differs; the check measures the real boxes, so it applies there too).
