@@ -233,7 +233,7 @@ module.exports = async (ctx) => {
     /* Esc clears the search first; the second closes the drawer */
     await js(`document.getElementById('ntSearch').focus()`);
     await key('Escape');
-    check(await until(`document.getElementById('ntSearch').value===''&&__ntd.titles().length===2&&!document.getElementById('notesDrawer').hidden`, 3000), `${tag}: Esc clears the search and keeps the drawer open`);
+    check(await until(`document.getElementById('ntSearch').value===''&&__ntd.titles().length===${jsLiteral(all.length + 1)}&&!document.getElementById('notesDrawer').hidden`, 3000), `${tag}: Esc clears the search (all notes are back, the planted one included) and keeps the drawer open`);
     await key('Escape');
     check(await until(`document.getElementById('notesDrawer').hidden`, 3000), `${tag}: a second Esc closes the drawer`);
     /* ArrowDown from the field goes to the first row */
