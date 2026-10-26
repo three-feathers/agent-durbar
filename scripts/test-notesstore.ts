@@ -490,8 +490,44 @@ async function main(): Promise<void> {
       // a crashed taker's guard (older than 5 s) is removed and the takeover goes on
       const oldG = new Date(Date.now() - 10_000);
       fs.utimesSync(guard, oldG, oldG);
-      must(await new NotesStore(dir).add(FOLDER, 'demo', { text: 'after a stale guard' }));
+      plantOld();
+      const ops: string[] = [];
+      const watch = { ...fs,
+        openSync: (f: string, fl: string, m: number) => { if (f === guard) ops.push('open:' + fl); return fs.openSync(f, fl, m); },
+        renameSync: (a: string, b: string) => { if (a === guard) ops.push('rename:' + (b.includes('.takeover.stale-') ? 'aside' : 'other')); fs.renameSync(a, b); } } as unknown as NotesFs;
+      must(await new NotesStore(dir, { fs: watch }).add(FOLDER, 'demo', { text: 'after a stale guard' }));
+      assert.deepStrictEqual(ops, ['open:wx', 'rename:aside', 'open:wx'], 'a stale guard is moved aside (identity checked) and a new one is created with wx, never taken over in place');
       assert.ok(!fs.existsSync(guard) && !fs.existsSync(lock), 'a stale guard does not block for good');
+    }
+    // issue #723: the stale guard is replaced by another process's FRESH guard between our look and our move: ours must not end up deleting it
+    {
+      fs.rmSync(path.join(dir, folderFingerprint(FOLDER) + '.takeover'), { force: true });
+      const guard = path.join(dir, folderFingerprint(FOLDER) + '.takeover');
+      plantOld();
+      fs.writeFileSync(guard, '');
+      const oldG = new Date(Date.now() - 60_000);
+      fs.utimesSync(guard, oldG, oldG);
+      let staged = false;
+      const created: string[] = [];
+      const y = { ...fs,
+        lstatSync: (f: string, o?: unknown) => { const r = (fs.lstatSync as (f: string, o?: unknown) => unknown)(f, o); if (f === guard && !staged) { staged = true; fs.unlinkSync(guard); fs.writeFileSync(guard, 'Z-HOLDS'); } return r; },
+        openSync: (f: string, fl: string, m: number) => { const fd = fs.openSync(f, fl, m); if (f === guard) created.push('guard'); return fd; } } as unknown as NotesFs;
+      const r8 = await new NotesStore(dir, { fs: y }).add(FOLDER, 'demo', { text: 'y' });
+      assert.ok(!r8.ok && /busy/.test(r8.error), "Z's fresh guard is respected: busy");
+      assert.deepStrictEqual(created, [], 'no second guard was created while Z holds one');
+      assert.strictEqual(fs.readFileSync(guard, 'utf8'), 'Z-HOLDS', "Z's guard is intact");
+      fs.rmSync(guard, { force: true });
+      fs.rmSync(lock, { force: true });
+    }
+    // a guard is released only while it still holds our token
+    {
+      const guard = path.join(dir, folderFingerprint(FOLDER) + '.takeover');
+      plantOld();
+      let swapped = false;
+      const g2 = { ...fs, renameSync: (a: string, b: string) => { fs.renameSync(a, b); if (a === lock && !swapped) { swapped = true; fs.rmSync(guard, { force: true }); fs.writeFileSync(guard, 'OTHER-GUARD'); } } } as unknown as NotesFs;
+      must(await new NotesStore(dir, { fs: g2 }).add(FOLDER, 'demo', { text: 'guard lost while breaking' }));
+      assert.strictEqual(fs.readFileSync(guard, 'utf8'), 'OTHER-GUARD', "another process's guard is not released by us");
+      fs.rmSync(guard, { force: true });
     }
     // issue #723: a holder paused over 5 s lost its lock to a takeover; it must not write, and must not delete the new owner's lock
     {
@@ -531,6 +567,33 @@ async function main(): Promise<void> {
     assert.ok(!r.ok && r.code === 'invalid', `refused: ${JSON.stringify(r)}`);
     assert.strictEqual(read(dir), healthy, 'the healthy file is where it was');
     assert.deepStrictEqual(fs.readdirSync(dir).filter((f) => f.includes('.bad-')), []);
+  }
+
+  // Start over: a lock lost to another process while the file is read again is not written under (no .bad- file, the other lock stays)
+  {
+    const dir = fresh();
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(fileOf(dir), 'not json', { mode: 0o600 });
+    const lk = path.join(dir, folderFingerprint(FOLDER) + '.lock');
+    let looks = 0;
+    const hook = { ...fs, lstatSync: (f: string, o?: unknown) => { const r = (fs.lstatSync as (f: string, o?: unknown) => unknown)(f, o); if (f === fileOf(dir) && ++looks === 2) { fs.rmSync(lk, { force: true }); fs.writeFileSync(lk, 'OTHER'); } return r; } } as unknown as NotesFs;
+    const r = await new NotesStore(dir, { fs: hook }).startOver(FOLDER);
+    assert.ok(!r.ok && /busy/.test(r.error), `refused as busy: ${JSON.stringify(r)}`);
+    assert.deepStrictEqual(fs.readdirSync(dir).filter((f) => f.includes('.bad-')), [], 'the corrupt file was not moved aside');
+    assert.strictEqual(fs.readFileSync(lk, 'utf8'), 'OTHER', "the other process's lock is untouched");
+  }
+
+  // a transient read error on our own lock (Windows: antivirus, EBUSY) does not refuse the write or leave the lock behind; a missing lock does
+  {
+    const dir = fresh();
+    const lk = path.join(dir, folderFingerprint(FOLDER) + '.lock');
+    let fails = 3;
+    const flaky = { ...fs, readFileSync: (f: string, e?: unknown) => { if (String(f).endsWith('.lock') && fails > 0) { fails--; throw Object.assign(new Error('busy'), { code: 'EBUSY' }); } return (fs.readFileSync as (f: string, e?: unknown) => unknown)(f, e); } } as unknown as NotesFs;
+    must(await new NotesStore(dir, { fs: flaky }).add(FOLDER, 'demo', { text: 'despite a flaky read' }));
+    assert.ok(fails === 0 && !fs.existsSync(lk), 'the lock was read again, the note written and the lock released');
+    const vanished = { ...fs, lstatSync: (f: string, o?: unknown) => { if (String(f).endsWith('.json')) fs.rmSync(lk, { force: true }); return (fs.lstatSync as (f: string, o?: unknown) => unknown)(f, o); } } as unknown as NotesFs;
+    const r = await new NotesStore(dir, { fs: vanished }).add(FOLDER, 'demo', { text: 'lock vanished' });
+    assert.ok(!r.ok && /busy/.test(r.error), 'a lock that is gone (ENOENT) is not ours: busy');
   }
 
   console.log('notes store: modes 0700/0600, atomic writes, masked on disk, corrupt files never overwritten, two stores merge, mirror persisted, caps');
