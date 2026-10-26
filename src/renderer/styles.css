@@ -1618,6 +1618,18 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
 .stage .desk.shut .draft-mark{left:auto;right:2px;top:2px} /* a lounge resident's box is short: the top corner the number leaves free */
 .stage .desk.shut.rest-old .draft-mark{right:auto;top:auto;left:2px;bottom:2px} /* on a nap bed the name is on top and the number bottom right */
 .sitem .stx b .draft-mark{margin:0 0 0 4px;width:14px;height:14px}
+/* spec 001 FR-172, FR-175 (issue 691): a finished agent's reply not read yet. A badge with a dot and the word "New" (11px, never colour alone) in the
+   status pair --pb-working/--pc-working (held at 4.5:1 in every theme) and a solid outline on the desk. On a desk card it sits on the scene's
+   corner under the chat number (the draft pencil moves up beside the number); inline on a plain desk, list row and strip item. One pulse when it is set, only when motion is allowed. */
+.unread-mark{flex:none;display:inline-flex;align-items:center;gap:4px;margin-right:5px;padding:0 5px;border:1px solid var(--pc-working);border-radius:4px;background:var(--pb-working);color:var(--pc-working);font-size:11px;font-weight:700;line-height:14px;vertical-align:1px;white-space:nowrap}
+.unread-mark i{display:block;width:6px;height:6px;border-radius:50%;background:var(--pc-working)}
+.desk.is-unread{outline:2px solid var(--pc-working);outline-offset:-2px}
+.stage .desk.card .unread-mark{position:absolute;left:2px;top:20px;margin:0;z-index:4;box-shadow:0 0 0 1px var(--card)}
+.stage .desk.card.is-unread .draft-mark{left:36px;top:2px} /* both on one desk: the pencil moves up beside the chat number (the name starts further right) */
+.lname .unread-mark{margin-right:6px}
+.sitem .stx b .unread-mark{margin:0 0 0 4px}
+@media (prefers-reduced-motion:no-preference){.unread-mark.fresh{animation:unread-pulse 1.2s ease-out 1}}
+@keyframes unread-pulse{0%{box-shadow:0 0 0 0 var(--pc-working)}70%{box-shadow:0 0 0 6px transparent}100%{box-shadow:0 0 0 0 transparent}}
 .pal-dlg kbd,.kbd-dlg kbd{display:inline-block;min-width:20px;padding:1px 6px;border:1px solid var(--line-2);border-bottom-width:2px;border-radius:5px;background:var(--surface-2);font-family:inherit;font-size:11px;font-weight:600;line-height:1.5;color:var(--ink-2);text-align:center}
 .dlg.kbd-dlg{width:min(var(--dlg-w-m),calc(100vw - 32px))}
 /* spec 052 (2026-10-21, round 1): two columns where there is room, so the whole sheet fits a 1280x800 window without scrolling */
