@@ -3,14 +3,14 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Notes (issue #699): save a message, a selection or a typed idea per folder and carry on with it; a Notes drawer in the chat (Ctrl+Shift+M), insert with one click or from the `/` list, a header count and a saved-message icon; stored masked in local data (0600), opt-in mirror to `.durbar/notes.md` per folder
-status: In progress (2026-10-25): foundation (store, masking, IPC, simulator; T010..T014) and the MVP in the window (a message's ⋯ and Save to notes, the Notes drawer, Insert, notes in the `/` list, Ctrl+Shift+M; T020..T024) built and checked on the simulator; the count, marker, search, selection save, per-folder screen and project file (T030..T050) are not built; owner decisions OD1..OD4 (Ruben) and coordinator decisions D1..D11 recorded
+status: In progress (2026-10-26): foundation (T010..T014), the MVP in the window (T020..T024) and the header count, the saved-message marker and the drawer search (T030..T032) built and checked on the simulator; selection save, the per-folder screen and the project file (T033..T050) are not built; owner decisions OD1..OD4 (Ruben) and coordinator decisions D1..D11 recorded
 -->
 
 **Feature Branch**: `083-folder-notes` (touches 005 chat panel and message actions, 073 the `/` list, 074 the shortcut list, 006 the folder menu, 010 simulator)
 
 **Created**: 2026-10-24
 
-**Status**: In progress (2026-10-25): T010..T024 built (store, masking, IPC, simulator, the MVP in the window); T030..T050 not built
+**Status**: In progress (2026-10-26): T010..T032 built (store, masking, IPC, simulator, the MVP in the window, the header count, the marker and the search); T033..T050 not built
 
 **Input**: Owner request (Ruben, 2026-10-24, issue #699): "While working in a session, I sometimes get an idea, a good answer from the agent, a plan or a list of next steps that I want to keep and come back to later, often to carry on in that same session or in a new one." Owner decisions in the issue's decision comment (Ruben, 2026-10-24), quoted below.
 
@@ -336,3 +336,16 @@ In the drawer I choose **Open source** on a note: the chat it came from opens an
 - **Masking on every way out of a note:** Insert (box and announcement), *Edit…* and *Rename…* (the fields), the Delete dialog and the row's *Copy* all go through the same shared mask (`noteBoxText`) and refuse when it is not available (fail closed).
 - **A stale `rev` shows the saved version (FR-008):** the dialog's line holds the saved title and the first 300 characters of its text, masked; both buttons are driven in `check-notes` by changing the note through the bridge.
 - **Drivers follow the platform:** `check-notes` and `check-office-overlap` press ⌘ on a Mac and Ctrl elsewhere and compare the exact shortcut text (⇧⌘M, Ctrl+Shift+M); the office check waits until the drawer is shown instead of a fixed pause.
+
+### 2026-10-26: the header count, the marker and the drawer search (T030..T032; decided by the coordinator under Ruben's delegation, ambiguities resolved by the implementer and recorded here)
+
+*Built:* FR-040, FR-041, FR-043 and SC-005 on the simulator (`npm run check:notes-count`, `check:office` with the count shown and the drawer open). Decisions on points the spec left open:
+
+- **The count** (FR-040) is a pill at the end of the header's meta row, text *Notes N*, name *Notes N. M from this session, N in this folder*; it is built only where notes are on (a main, live chat), so a helper's chat has none, and it is hidden in the read-only VS Code view (FR-027) and back when the view is left. It carries only numbers, so no note text can reach it. At 480px the meta row wraps like its other chips; the driver measures no overlap and nothing leaving the panel.
+- **The marker's place** (FR-041): a user message has it in its meta line (*You · 09:30*); an agent reply has no meta line of its own per bubble (one name line per turn, several bubbles), so the marker sits at the bubble's lower edge beside its `⋯`. Name and tooltip are *Saved to notes: <title>*, the title masked (fail closed), set as attributes, never as HTML.
+- **`ord` rule** (FR-041): a note marks the message with its session, role and digest. When the chat holds several messages with that digest, only the one at the note's own place (`ord`) is marked; when the digest is unique in the chat, the message is marked whatever its place (a replayed history can number its messages differently). A done note still marks its message. Main saves one note per session and digest, so equal texts share it.
+- **Repaint:** the markers are recomputed after every notes fetch, when a reply finishes (live or replayed) and when the VS Code view is left; digests are cached per bubble; deleting the note removes the marker on that repaint.
+- **Search** (FR-043): a field at the top of the drawer filters each group on its own: notes whose masked title ranks for the query (`DurbarNav.rank`, in rank order), then the others whose masked text holds every word (case-insensitive); the text of a note is read through `DurbarSafeText`, so a field that cannot be masked never matches. The no-match line is *No notes match "<words>"* with the words masked and cut at 60 characters; the announcement says only how many notes match. Esc clears the search before it closes the drawer; ArrowDown goes to the first row; closing the drawer clears the search.
+- **SC-005:** with `simnotes=many` (300 notes) the drawer opens in about 30 to 90 ms and a search runs in about 25 to 35 ms (best of 3, `performance.measure`). Masked rows and texts are cached by note id and `rev`, the drawer paints once per open, and rows use `content-visibility:auto` so only the rows in view are laid out.
+- **Replay evidence:** a resumed chat (`simresume=1`) is replayed through the same message builders; the driver saves a replayed message, clears every marker and rebuilds them from the replayed bubbles and the notes. The real runtimes' histories were not run.
+- **Not built here:** selection save (T033), the per-folder screen (T034), the project file (T040..T042) and *Open source* (T050).

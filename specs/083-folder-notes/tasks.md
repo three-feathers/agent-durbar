@@ -111,15 +111,15 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
 
 ## Phase 3: User Stories 2, 3 and 4, seeing and managing (P2)
 
-- [ ] T030 [US2] [P] Header count. [FR-040]
+- [x] T030 [US2] [P] Header count. [FR-040]
   - AC1: *Notes N* shows when the folder has N > 0 notes not done, with the FR-040 tooltip; not shown at 0.
   - AC2: it opens the drawer (`aria-expanded`, `aria-controls`).
   - AC3: the header fits a 480px panel with the count (driver measures no overlap); `check:office` passes with the count shown.
-- [ ] T031 [US2] [P] Saved-message marker. [FR-041]
+- [x] T031 [US2] [P] Saved-message marker. [FR-041]
   - AC1: a saved message (live and replayed history) shows the SVG icon with *Saved to notes: <title>* as name and tooltip, at least 12px, theme-token colours (`test:theme-tokens` passes, no new literal).
   - AC2: matching uses session, role and digest; two equal texts are told apart by `ord` (unit test); deleting the note removes the marker on repaint.
   - AC3: the icon opens the drawer on its note; no marker on the office floor.
-- [ ] T032 [US2] [P] Drawer search. [FR-043, SC-005]
+- [x] T032 [US2] [P] Drawer search. [FR-043, SC-005]
   - AC1: the field filters both groups by title rank then text words, case-insensitive, on masked text; the no-match line names the words (masked).
   - AC2: with `simnotes=many` the open and a search take under 100 ms of renderer time (`performance.measure`, best of 3).
 - [ ] T033 [US3] Selection save. [FR-042]
