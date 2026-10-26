@@ -21,7 +21,7 @@ import type { ChangeResult, Note, NoteChange, NoteSource, NotesDoc, NotesFail, N
 export type { NotesFail, NotesView, NotesWrote } from '../shared/notes';
 import { folderFingerprint } from './usagetotalsstore';
 
-export type NotesFs = Pick<typeof nodeFs, 'mkdirSync' | 'lstatSync' | 'readFileSync' | 'openSync' | 'writeSync' | 'fsyncSync' | 'closeSync' | 'renameSync' | 'unlinkSync' | 'chmodSync' | 'linkSync'>;
+export type NotesFs = Pick<typeof nodeFs, 'mkdirSync' | 'lstatSync' | 'readFileSync' | 'openSync' | 'writeSync' | 'fsyncSync' | 'closeSync' | 'renameSync' | 'unlinkSync' | 'chmodSync' | 'linkSync' | 'readdirSync'>;
 
 export interface NotesStoreOptions {
   fs?: NotesFs;
@@ -240,10 +240,11 @@ export class NotesStore {
             try { cur = this.fs.lstatSync(file, { bigint: true }); } catch { cur = undefined; }
             if (!cur) { await again(); continue; } // it vanished (or cannot be looked at): decide again from the top
             if (Date.now() - Number(cur.mtimeMs) <= 5000) { await this.sleep(20); continue; } // a fresh lock was taken over meanwhile: respect it
+            this.sweepLeftovers(fp);
             if (this.breakStale(file, cur) !== 'kept') { await again(); continue; }
           } finally {
             // release the guard only while it still holds our token (it could have been judged stale and taken by someone else)
-            if (await this.holds(guard, gtoken)) { try { this.fs.unlinkSync(guard); } catch { /* a leftover guard goes stale after 5 s */ } }
+            await this.release(guard, gtoken);
           }
         }
       }
@@ -301,9 +302,38 @@ export class NotesStore {
   }
 
   private async unlockFile(fp: string, token: string): Promise<void> {
-    // never delete a lock that is not ours any more (a slow holder lost it to a takeover); a failed unlink leaves a lock that goes stale after 5 s
-    if (!(await this.ownsLock(fp, token))) return;
-    try { this.fs.unlinkSync(path.join(this.dir, `${fp}.lock`)); } catch { /* already gone, or kept by the OS: the stale rule covers it */ }
+    // a failed release leaves a lock that goes stale after 5 s; the next writer takes it over by the stale rule
+    await this.release(path.join(this.dir, `${fp}.lock`), token);
+  }
+
+  /**
+   * Delete `file` only if it still holds our token. Checking and then deleting by path is a race (a takeover in between would lose the
+   * new owner's lock), so it is moved to a name of our own first and the token is read from the moved file: ours is deleted, anything else
+   * is put back without overwriting. Remaining windows: if the move is refused, the fallback checks then deletes by path; and only when the file was NOT ours (we were already replaced), it is missing for a
+   * few system calls, and a newcomer that takes the name then makes the put-back fail and the moved lock is dropped.
+   */
+  private async release(file: string, token: string): Promise<void> {
+    const aside = `${file}.rel-${this.pid}-${this.rand(36 ** 6).toString(36)}`;
+    try { this.fs.renameSync(file, aside); } catch (e) {
+      if (errCode(e) === 'ENOENT') return; // gone: nothing to release
+      // the move itself is refused (Windows: EPERM, EBUSY): fall back to check, then delete by path (a takeover in that instant is the old, narrow race); a failed delete goes stale after 5 s
+      if (await this.holds(file, token)) { try { this.fs.unlinkSync(file); } catch { /* the stale rule covers it */ } }
+      return;
+    }
+    if (await this.holds(aside, token)) { try { this.fs.unlinkSync(aside); } catch { /* a leftover .rel file is swept later */ } return; }
+    try { this.fs.linkSync(aside, file); } catch { /* a newcomer's file stays, or the link failed: the moved file is dropped */ }
+    try { this.fs.unlinkSync(aside); } catch { /* a leftover .rel file is swept later */ }
+  }
+
+  /** Under the takeover guard: delete this folder's `.stale-*` / `.rel-*` files that a crash left behind (older than 60 s). Other folders' files are never touched. */
+  private sweepLeftovers(fp: string): void {
+    try {
+      for (const name of this.fs.readdirSync(this.dir)) {
+        if (!(name.startsWith(`${fp}.lock.`) || name.startsWith(`${fp}.takeover.`)) || !/\.(stale|rel)-[0-9]+-[0-9a-z]+$/.test(name)) continue;
+        const f = path.join(this.dir, name);
+        try { if (Date.now() - Number(this.fs.lstatSync(f, { bigint: true }).mtimeMs) > 60_000) this.fs.unlinkSync(f); } catch { /* gone or kept: next time */ }
+      }
+    } catch { /* a listing that fails is not worth a refusal */ }
   }
 
   private fire(fp: string): void {
