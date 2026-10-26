@@ -5576,9 +5576,9 @@ function openFolderMenu(r,x,y,anchor){
     m.innerHTML=(bridge.newSession&&anyKindReady()?it('new','New session','Another agent with its own chat here'):'')
       +(bridge.listSchedules?it('sched','Schedules',(()=>{const n=schedulesOf(r).filter(s=>!s.done).length;return n?n+' scheduled, '+(nextRunOf(schedulesOf(r))?'next '+nextRunOf(schedulesOf(r)):'paused'):'Prompts sent here at a time, every day or at an interval';})()):'')
       +(bridge.renameFolder?it('rename','Rename…','A display name for this room'):'')
+      +(canMove?`<button type="button" role="menuitem" data-fact="floor" aria-haspopup="menu" aria-expanded="false"><span class="mt"><b>Move to floor</b><small>${esc(here?'Now on '+here.name+'. Its agents go with it':'Its agents go with it')}</small></span><span class="ck" aria-hidden="true">▸</span></button>`:'')
       +(bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))?it('mcp','MCP extras…','Optional servers for this folder only'):'')
       +(()=>{const u=roomAiu(r);return u?it('cost','Cost',u.long+' in this folder. Click for the cost by folder'):'';})()
-      +(canMove?`<button type="button" role="menuitem" data-fact="floor" aria-haspopup="menu" aria-expanded="false"><span class="mt"><b>Move to floor</b><small>${esc(here?'Now on '+here.name+'. Its agents go with it':'Its agents go with it')}</small></span><span class="ck" aria-hidden="true">▸</span></button>`:'')
       +(bridge.setFolderHidden?it('hide','Hide','Out of the office; its sessions keep running'):'')
       +it('rm','Remove folder','Ends its sessions; nothing on disk is deleted','mm-danger');
     place();
