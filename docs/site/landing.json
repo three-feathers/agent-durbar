@@ -99,7 +99,7 @@
     {
       "name": "GitHub Copilot",
       "verified": "Checked on a real account since the first milestone, with the Copilot runtime from the official SDK and your own login.",
-      "notYet": "On Copilot Pro (2026-10-20, in review): switching between two real models, the long-context tier and compact-and-switch work. Copilot's own runtime does not stop at a spending limit, so Durbar is getting its own stop (in review)."
+      "notYet": "Checked on Copilot Pro (2026-10-20): switching between two real models, the long-context tier and compact-and-switch work. Copilot's own runtime does not stop at a spending limit, so Durbar enforces the limit itself."
     },
     {
       "name": "Claude Code",
@@ -108,7 +108,7 @@
     },
     {
       "name": "OpenAI Codex",
-      "verified": "Checked on a real account: every mode, resume, models, history, questions, MCP tools, sub-agents and summaries; signed in with an API key and answering on Linux, macOS and Windows CI machines (in review).",
+      "verified": "Checked on a real account: every mode, resume, models, history, questions, MCP tools, sub-agents and summaries; signed in with an API key and answering on Linux, macOS and Windows CI machines (end-to-end run, 2026-10-20).",
       "notYet": "Read-only and Ask first need Codex's own sandbox: on Ubuntu 24.04+ that takes an AppArmor profile, and on Windows Codex's elevated sandbox. Not yet used by hand on a Windows PC."
     }
   ],
