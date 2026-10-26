@@ -1,1 +1,0 @@
-- **Rename pencil on wide cards** (spec 059, issue #781): when the mode icon wraps below the session name, the pencil sits after the name instead of over its first letters. `check-office-overlap` also fails a pencil over the first half of a name.

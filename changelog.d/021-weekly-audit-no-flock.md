@@ -1,1 +1,0 @@
-- **The weekly test audit script no longer needs `flock` or GNU `stat`** (spec 021 FR-058): on macOS it uses a `mkdir` lock and BSD `stat`, which fixes `npm test` on the macOS release build. Linux behaviour is unchanged.

@@ -1,1 +1,0 @@
-- **The approval card says how far "for this session" reaches** (spec 003 FR-013, FR-108): a write grant covers every file in the folder, and *Allow for this session: any arguments* covers every simple command of that name (`git` also `git push`); a plain line above the buttons says so. Tested with a unit test and a simulator check; the grant itself is unchanged.
