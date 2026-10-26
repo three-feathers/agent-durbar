@@ -145,6 +145,40 @@ assert.strictEqual(cs.compressPng(Buffer.from('not a png')).status, 'kept');
 const trunc = original.subarray(0, 100);
 assert.strictEqual(cs.compressPng(trunc).status, 'kept');
 
+// 5b. hostile or unsupported input is kept, never half-handled (review on #761)
+{
+  const withChunks = (png: Buffer, extra: Buffer[]) => { // insert chunks right after IHDR
+    const at = 8 + 12 + 13; return Buffer.concat([png.subarray(0, at), ...extra, png.subarray(at)]);
+  };
+  // colour-key transparency on an RGB picture: kept (it used to be compressed and lose the transparency)
+  const keyed = withChunks(original, [ch('tRNS', Buffer.from([0, 0, 0, 0, 0, 0]))]);
+  const rk = cs.compressPng(keyed);
+  assert.strictEqual(rk.status, 'kept'); assert.ok(/colour-key/.test(rk.reason || ''), rk.reason); assert.ok(rk.buffer.equals(keyed));
+  // an unknown critical chunk, 16-bit depth, interlace: kept
+  const crit = withChunks(original, [ch('ZZZZ', Buffer.from([1]))]);
+  assert.ok(/critical chunk/.test(cs.compressPng(crit).reason || ''), 'unknown critical chunk');
+  assert.strictEqual(cs.compressPng(withChunks(original, [ch('zZZZ', Buffer.from([1]))])).status, 'compressed', 'an unknown ancillary chunk is fine (and dropped)');
+  for (const [i, v, what] of [[24, 16, '16-bit'], [28, 1, 'interlaced']] as [number, number, string][]) {
+    const b = Buffer.from(original); b[i] = v; b.writeUInt32BE(crc(b.subarray(12, 29)), 29);
+    const rr = cs.compressPng(b); assert.strictEqual(rr.status, 'kept', what); assert.ok(/unsupported/.test(rr.reason || ''), `${what}: ${rr.reason}`); assert.ok(rr.buffer.equals(b));
+  }
+  // a bad CRC and a chunk that claims more than the file holds
+  const badCrc = Buffer.from(original); badCrc[badCrc.length - 20] ^= 1;
+  assert.strictEqual(cs.compressPng(badCrc).status, 'kept');
+  const longChunk = Buffer.from(original); longChunk.writeUInt32BE(0x7fffffff, 33);
+  assert.strictEqual(cs.compressPng(longChunk).status, 'kept');
+  // a size beyond the cap is refused before anything is allocated
+  const huge = Buffer.from(original); huge.writeUInt32BE(20000, 16); huge.writeUInt32BE(crc(huge.subarray(12, 29)), 29);
+  assert.ok(/unsupported: size/.test(cs.compressPng(huge).reason || ''), 'a huge IHDR is refused');
+  // a decompression bomb: a small IDAT that inflates to 40 MB while the header says 50x50. Refused at once, not inflated.
+  const ih = Buffer.alloc(13); ih.writeUInt32BE(50, 0); ih.writeUInt32BE(50, 4); ih[8] = 8; ih[9] = 2;
+  const bomb = Buffer.concat([original.subarray(0, 8), ch('IHDR', ih), ch('IDAT', zlib.deflateSync(Buffer.alloc(40 * 1024 * 1024), { level: 9 })), ch('IEND', Buffer.alloc(0))]);
+  assert.ok(bomb.length < 100000, `the bomb is small (${bomb.length} B)`);
+  const tb = Date.now(); const rb2 = cs.compressPng(bomb);
+  assert.strictEqual(rb2.status, 'kept'); assert.ok(/larger than its header says/.test(rb2.reason || ''), `bomb: ${rb2.reason}`);
+  assert.ok(Date.now() - tb < 5000, 'refused quickly');
+}
+
 // 6. size and time on a real-sized picture (generous limit, not a benchmark)
 {
   const big = uiPicture(1440, 900);

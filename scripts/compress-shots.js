@@ -16,6 +16,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
+const MAX_FILE = 64 * 1024 * 1024, MAX_SIDE = 8192, MAX_PIXELS = 36e6; // screenshots here are a few thousand pixels wide
 const SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 /** The guard: per-pixel error is the largest channel difference (0..255); `badAbove` is what counts as a visible pixel error. */
@@ -53,16 +54,24 @@ const paeth = (a, b, c) => { const p = a + b - c, pa = Math.abs(p - a), pb = Mat
 
 /** Decode an 8-bit, non-interlaced PNG (gray, RGB, palette, gray+alpha, RGBA) to RGBA. Anything else throws 'unsupported: ...'. */
 function decodePng(buf) {
+  if (buf.length > MAX_FILE) throw new Error('unsupported: file larger than 64 MB');
   const chunks = readChunks(buf);
+  const bad = chunks.find((c) => /^[A-Z]/.test(c.type) && !['IHDR', 'PLTE', 'IDAT', 'IEND'].includes(c.type));
+  if (bad) throw new Error(`unsupported: critical chunk ${bad.type}`);
   const ihdr = chunks.find((c) => c.type === 'IHDR');
   if (!ihdr) throw new Error('no IHDR');
   const width = ihdr.data.readUInt32BE(0), height = ihdr.data.readUInt32BE(4);
   const depth = ihdr.data[8], ct = ihdr.data[9], interlace = ihdr.data[12];
   if (depth !== 8 || interlace !== 0 || ![0, 2, 3, 4, 6].includes(ct)) throw new Error(`unsupported: bit depth ${depth}, colour type ${ct}, interlace ${interlace}`);
-  if (!width || !height || width * height > 40e6) throw new Error('unsupported: size');
+  if (!width || !height || width > MAX_SIDE || height > MAX_SIDE || width * height > MAX_PIXELS) throw new Error(`unsupported: size ${width}x${height}`);
+  // a colour-key tRNS (gray, RGB) is transparency this code does not carry over: keep the original rather than drop it
+  if ((ct === 0 || ct === 2) && chunks.some((c) => c.type === 'tRNS')) throw new Error('unsupported: colour-key transparency (tRNS on a gray or RGB picture)');
   const channels = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 }[ct];
-  const raw = zlib.inflateSync(Buffer.concat(chunks.filter((c) => c.type === 'IDAT').map((c) => c.data)));
   const stride = width * channels;
+  // the inflated size is known from the header: never inflate more (a decompression bomb stops at once)
+  let raw;
+  try { raw = zlib.inflateSync(Buffer.concat(chunks.filter((c) => c.type === 'IDAT').map((c) => c.data)), { maxOutputLength: (stride + 1) * height }); }
+  catch (e) { throw new Error(e instanceof RangeError || e.code === 'ERR_BUFFER_TOO_LARGE' ? 'image data is larger than its header says' : `bad image data: ${e.message}`); }
   if (raw.length !== (stride + 1) * height) throw new Error('bad image data length');
   const px = Buffer.alloc(stride * height);
   for (let y = 0; y < height; y++) {
