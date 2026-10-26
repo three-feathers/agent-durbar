@@ -3,12 +3,12 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Release v0.1.0-alpha.19 (pre-release)
-status: in progress (version PR)
+status: **not released** (tag deleted 2026-10-26; superseded by spec 091, v0.1.0)
 -->
 
 **Feature Branch**: `090-release-alpha19`
 **Created**: 2026-10-26
-**Status**: In progress.
+**Status**: **Not released.** The tag `v0.1.0-alpha.19` was deleted on 2026-10-26, with the owner's OK, after the macOS weekly-audit test failed on `main` (fixed by #766). No draft or release was published. The next release is the first stable one, `v0.1.0` (spec 091); its fold covers the alpha.19 fragments too.
 **Input**: Vikram (owner): the standing OK of 2026-10-23 for a pre-release (not latest) about every 8 hours; alpha.18 was published 2026-10-25 22:53 UTC.
 
 ## Context
