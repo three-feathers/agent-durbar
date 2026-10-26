@@ -20,7 +20,7 @@ class FakeChild extends EventEmitter {
   die(code: number | null = 0, sig: NodeJS.Signals | null = null) { this.emit('exit', code, sig); }
 }
 
-function make(over: { onRequest?: (m: string, p: unknown) => Promise<RequestOutcome>; closeGraceMs?: number; killGraceMs?: number; maxPending?: number; pid?: number | undefined; throwSpawn?: boolean } = {}) {
+function make(over: { onRequest?: (m: string, p: unknown) => Promise<RequestOutcome>; closeGraceMs?: number; killGraceMs?: number; maxPending?: number; killChild?: (c: RpcChild, s: NodeJS.Signals) => void; pid?: number | undefined; throwSpawn?: boolean } = {}) {
   const fc = new FakeChild();
   if ('pid' in over) fc.pid = over.pid;
   const calls: { file: string; args: string[]; opts: SpawnOptions }[] = [];
@@ -37,6 +37,7 @@ function make(over: { onRequest?: (m: string, p: unknown) => Promise<RequestOutc
     closeGraceMs: over.closeGraceMs ?? 20,
     killGraceMs: over.killGraceMs ?? 5000,
     maxPendingServerRequests: over.maxPending,
+    killChild: over.killChild,
   });
   return { fc, rpc, calls, notes, exits, dbg };
 }
@@ -210,6 +211,16 @@ async function main(): Promise<void> {
     fc.die(null, 'SIGTERM');
     await new Promise((r) => setTimeout(r, 60));
     assert.deepStrictEqual(fc.signals, ['SIGTERM'], 'no SIGKILL after the child exited');
+  }
+
+  // the kill steps go through the injected tree killer (FR-079 delta 2026-10-26), in order, with the child; never child.kill directly
+  {
+    const steps: string[] = [];
+    const { fc, rpc } = make({ closeGraceMs: 10, killGraceMs: 10, killChild: (c, sig) => { steps.push(`${(c as unknown as FakeChild).pid}:${sig}`); } });
+    rpc.close();
+    await new Promise((r) => setTimeout(r, 60));
+    assert.deepStrictEqual(steps, ['4242:SIGTERM', '4242:SIGKILL']);
+    assert.strictEqual(fc.killed, 0, 'the direct child.kill is not used when a killer is injected');
   }
 
   // UTF-8 split across chunks (stdout and stderr)

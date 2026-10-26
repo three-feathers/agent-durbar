@@ -1,6 +1,6 @@
 /** Binary detection for Claude and Codex (spec 012 T012, FR-035..FR-041): fake isFile and fake exec only. No process, no credits. */
 import * as assert from 'assert';
-import { CLAUDE_BINARY, CLAUDE_SIGN_IN_HINT, CODEX_BINARY, CODEX_SIGN_IN_HINT, detectCodex, candidates, compareVersions, detectBinary, detectClaude, detectCopilot, detectorFor, parseVersion } from '../src/adapters/detect';
+import { CLAUDE_BINARY, CLAUDE_SIGN_IN_HINT, CODEX_BINARY, CODEX_SIGN_IN_HINT, detectCodex, candidates, compareVersions, detectBinary, detectClaude, detectCopilot, detectorFor, killForEscalation, parseVersion } from '../src/adapters/detect';
 import { MAX_VERSION_LENGTH, parseVersionField } from '../src/shared/versionfield';
 import type { DetectEnv, Exec, ExecResult } from '../src/adapters/detect';
 import { newestFirst, isAppAlias, statIsFile, windowsAppsDir } from '../src/adapters/detect';
@@ -422,6 +422,24 @@ async function main(): Promise<void> {
     assert.strictEqual(statIsFile('/usr/bin/x', 'linux', env, fsx(true)), false);
     assert.strictEqual(lstats, 0, 'lstat is asked only in WindowsApps');
     assert.strictEqual(statIsFile('/usr/bin/x', 'linux', env, { statSync: () => ({ isFile: () => true }), lstatSync: eacces as never }), true, 'stat first');
+  }
+  // killForEscalation (spec 012 FR-079 delta 2026-10-26): Windows ends the tree through the tree killer, POSIX signals the child only
+  {
+    const mk = (pid: number | undefined) => { const sigs: string[] = []; return { sigs, c: { pid, kill: (s?: string | number) => { sigs.push(String(s)); return true; } } as unknown as import('child_process').ChildProcess }; };
+    const trees: number[] = [];
+    const tree = ((c: { pid?: number }) => { trees.push(c.pid as number); }) as unknown as typeof import('../src/adapters/detect').killChildTree;
+    const w = mk(77);
+    killForEscalation(w.c, 'SIGTERM', 'win32', {}, tree);
+    assert.deepStrictEqual(trees, [77]);
+    assert.deepStrictEqual(w.sigs, [], 'Windows: no direct child.kill (TerminateProcess on one pid)');
+    const w2 = mk(undefined);
+    killForEscalation(w2.c, 'SIGKILL', 'win32', {}, tree);
+    assert.deepStrictEqual(w2.sigs, ['SIGKILL'], 'Windows without a pid falls back to the child');
+    const p = mk(88);
+    killForEscalation(p.c, 'SIGKILL', 'linux', {}, tree);
+    assert.deepStrictEqual(p.sigs, ['SIGKILL']);
+    assert.deepStrictEqual(trees, [77], 'POSIX: tree killer not used');
+    killForEscalation({ pid: 1, kill: () => { throw new Error('gone'); } } as unknown as import('child_process').ChildProcess, 'SIGTERM', 'linux', {}, tree); // never throws
   }
   console.log('detect tests passed');
 }

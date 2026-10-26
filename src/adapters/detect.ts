@@ -434,6 +434,20 @@ export function killChildTree(child: Pick<ChildProcess, 'pid' | 'kill'> & { exit
 }
 
 /**
+ * Spec 012 FR-079 delta 2026-10-26: one step of a transport's kill escalation. Windows: `taskkill /t /f` ends the child and what it
+ * started (`child.kill` there is TerminateProcess on one pid). POSIX: the child only, as before (the transports do not spawn
+ * `detached`, so there is no process group to signal and Ctrl-C keeps reaching the child). Never throws.
+ */
+export function killForEscalation(child: Pick<ChildProcess, 'pid' | 'kill'> & { exitCode?: number | null; signalCode?: string | null }, signal: NodeJS.Signals, platform: NodeJS.Platform = process.platform, env: Readonly<Record<string, string | undefined>> = process.env, tree: typeof killChildTree = killChildTree): void {
+  try {
+    if (platform === 'win32' && child.pid) tree(child, platform, env);
+    else child.kill(signal);
+  } catch {
+    /* gone */
+  }
+}
+
+/**
  * The exec: argv array, no shell, hidden window, a time limit that ends the whole tree (an `npm.cmd` run goes through `cmd.exe`, and
  * `execFile`'s own timeout would kill only that), output capped at 64 KiB, an optional environment for that child only. Never logs.
  */
