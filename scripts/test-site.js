@@ -106,9 +106,17 @@ assert.match(index, /class="phone-only"> Tap the picture to see it full size\./,
 assert.match(docs, /\.docs\{grid-template-columns:minmax\(0,1fr\)/, 'the docs column cannot grow past a phone screen');
 assert.match(docs, /<a class="keep" href="index\.html#download">Download<\/a>/, 'Download stays in the docs header on phones');
 
+// spec 050 FR-012 (issue #759): every picture the site links is a palette PNG (colour type 3), made by `npm run shots:docs` or `npm run shots:compress`;
+// a linked picture the quality guard refused to compress is named in KEPT_ORIGINAL with the reason (none today)
+const KEPT_ORIGINAL = {};
+for (const f of require('./shots-docs.js').linkedImages(ROOT)) {
+  const b = fs.readFileSync(path.join(ROOT, 'docs', 'screenshots', f)).subarray(0, 26);
+  assert.ok(KEPT_ORIGINAL[f] || b[25] === 3, `${f} is not a palette PNG: run \`npm run shots:compress\` (or name it in KEPT_ORIGINAL with the reason the quality guard refused it)`);
+}
+
 const size = (dir) => fs.readdirSync(dir, { withFileTypes: true }).reduce((n, e) => n + (e.isDirectory() ? size(path.join(dir, e.name)) : fs.statSync(path.join(dir, e.name)).size), 0);
 const total = size(out);
-// 16 MB since spec 083 (2026-10-26): the Notes pictures and the retaken chat pictures (every bubble now has a ⋯) took the site from 14.7 to 15.5 MB; spec 050 FR-011 records it
-assert.ok(total < 16 * 1024 * 1024, `site under 16 MB (is ${(total / 1048576).toFixed(1)} MB)`);
+// 8 MB since spec 050 FR-012 (2026-10-26): the linked screenshots are palette-compressed (the site was 15.5 MB with plain PNGs; FR-005 had 15 MB, FR-011 16 MB)
+assert.ok(total < 8 * 1024 * 1024, `site under 8 MB (is ${(total / 1048576).toFixed(1)} MB)`);
 fs.rmSync(out, { recursive: true, force: true });
 console.log(`site: ok (${attrCount} links and images on two pages, ${(total / 1048576).toFixed(1)} MB)`);
