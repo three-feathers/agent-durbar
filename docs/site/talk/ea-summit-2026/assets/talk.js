@@ -112,6 +112,7 @@
         tone(520, t, 0.7, 'square', 0.16, 110); noise(t + 0.7, 0.18, 0.08);
         tone(hz(5), t + 1.05, 0.09, 'square', 0.16); tone(hz(12), t + 1.15, 0.09, 'square', 0.16); tone(hz(17), t + 1.25, 0.3, 'triangle', 0.25);
       },
+      warn: function () { if (!ok()) return; var t = now(); for (var k = 0; k < 2; k++) { tone(392, t + k * 0.5, 0.2, 'square', 0.16); tone(330, t + k * 0.5 + 0.22, 0.24, 'square', 0.16); } },
       clear: function () {
         if (!ok()) return; var t = now();
         [0, 4, 7, 12, 16, 19, 24].forEach(function (s, k) { tone(hz(-9 + s + 12), t + k * 0.08, 0.16, 'square', 0.14); });
@@ -161,6 +162,7 @@
     if (s.classList.contains('handover')) SND.player(); else SND.blip(dir);
     if (s.id === 'reveal' || s.id === 'ourorg') SND.twist();
     if (s.id === 'exit') SND.clear();
+    if (s.id === 'warning') SND.warn();
     var wc = s.querySelector('.pollbar');
     if (wc && !s.classList.contains('revealed')) { var m = /(\d+)/.exec(s.getAttribute('data-title') || ''); SND.startLoop(m ? +m[1] : cloudN++); }
   }

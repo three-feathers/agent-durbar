@@ -466,3 +466,20 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:15;bac
 @media (max-width:1100px){.classes{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:640px){.classes{grid-template-columns:1fr}}
 .host-wrap h3{font-family:var(--head);font-weight:400;font-size:max(12px,.7rem);margin:1rem 0 .4rem}
+/* the warning screen before EXIT GAME (owner, 2026-10-27, 23:18 UTC) */
+.warning{background:#111122;color:#fff1e8;justify-content:space-between;padding-left:0;padding-right:0}
+.warning .inner{padding:0 4vw;max-width:1500px}
+.hazard{height:clamp(18px,3.4vh,40px);background:repeating-linear-gradient(-45deg,#ffec27 0 22px,#111122 22px 44px);border-top:3px solid #ffec27;border-bottom:3px solid #ffec27}
+.warn-title{font-family:var(--head);font-size:clamp(1rem,min(2.8vw,5vh),3.4rem);color:#ffec27;margin:0 0 1.2rem;line-height:1.4}
+.warn-sign{display:inline-block;color:#ffec27}
+@media (prefers-reduced-motion:no-preference){.warn-sign{animation:blink 1s steps(2) infinite}}
+.warn-lead{font-size:1.35rem;font-weight:700;margin:0 0 1rem}
+.warn-list{margin:0 0 1.4rem;padding-left:1.2em;display:grid;gap:.6rem;font-size:1.1rem}
+.warn-list li::marker{content:"\25BA  ";color:#ff6b8f}
+.warning a{color:#7cc4ff}
+.warn-press{display:inline-block;font-family:var(--head);font-size:max(12px,.75rem);border:3px solid #fff1e8;box-shadow:4px 4px 0 #ff004d;padding:.6rem 1rem;margin:0}
+.warn-sign{font-family:var(--body);font-size:1.5em;line-height:1;vertical-align:-.12em}.warn-press .tri{font-family:var(--body);font-size:1.3em}
+.warn-sign{width:1.2em;height:1.2em;vertical-align:-.15em;shape-rendering:crispEdges;font-size:1em}
+.warn-sign .wy{fill:#ffec27}.warn-sign .wk{fill:#111122}
+.warn-title{font-size:clamp(.9rem,min(2.3vw,4.2vh),3rem)}
+.nowrap{white-space:nowrap}
