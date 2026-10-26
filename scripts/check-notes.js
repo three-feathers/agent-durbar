@@ -92,6 +92,8 @@ module.exports = async (ctx) => {
     check(await js(`document.querySelectorAll('#chat .nt-btn').length===0`), `${tag}: no ⋯ in the read-only VS Code view`);
     await js(`document.getElementById('vsBack').click()`);
     await until(`!document.querySelector('#chat .vsview')`, 4000);
+    if (await js(`document.getElementById('prevBtn')&&document.getElementById('prevBtn').getAttribute('aria-expanded')==='true'`)) await js(`document.getElementById('prevBtn').click()`); /* Previous sessions stays closed: its state is remembered and would show in the pictures */
+    await until(`document.getElementById('prevBtn').getAttribute('aria-expanded')!=='true'`, 3000);
     /* a canned demo chat (not live) has none either, and no Notes… item */
     await js(`document.getElementById('backBtn').click()`);
     await until(`!document.body.classList.contains('panel-open')`, 4000);
@@ -399,6 +401,13 @@ module.exports = async (ctx) => {
     await until(`!!document.querySelector('#modeMenu [data-nact="save"]')`, 3000);
     await js(`document.querySelector('#modeMenu [data-nact="save"]').click()`);
     check(await until(`/Saved to notes/.test([...document.querySelectorAll('#toasts .toast')].map(t=>t.textContent).join(' '))`, 5000), `${tag}: the user message is saved`);
+    /* the toast's Rename… (entry point 1): the field holds the stored, masked title */
+    await js(`[...document.querySelectorAll('#toasts .toast .toast-act')].find(b=>b.textContent==='Rename…').click()`);
+    check(await until(`!!document.querySelector('#modeDlg input')`, 3000), `${tag}: the toast's Rename… opens the title field`);
+    const tf = await js(`document.querySelector('#modeDlg input').value`);
+    check(tf.length > 0 && !leak(tf), `${tag}: the toast's Rename… field has no token (${tf})`);
+    await key('Escape');
+    await until(`!document.querySelector('#modeDlg')`, 2000);
     const store = JSON.stringify(await notes());
     check(!leak(store) && /\[redacted\]/.test(store), `${tag}: no token in the store, the token is [redacted] (${leak(store)})`);
     await openDrawer();
@@ -445,6 +454,29 @@ module.exports = async (ctx) => {
     const copied = await until(`window.__clip.length===1`, 2000);
     const clip0 = copied ? String(await js(`window.__clip[0]`)) : '';
     check(copied && !leak(clip0) && /\[redacted\]/.test(clip0), `${tag}: Copy writes the masked text (${clip0})`);
+    /* Rename… (the row menu, and the same function the toast calls) and the Delete dialog show a planted raw-token title masked */
+    await js(`__ntd.row("Raw ").querySelector('[data-nt="more"]').click()`);
+    await until(`!!document.querySelector('#modeMenu [data-nmact="rename"]')`, 2000);
+    await js(`document.querySelector('#modeMenu [data-nmact="rename"]').click()`);
+    check(await until(`!!document.querySelector('#modeDlg input')`, 3000), `${tag}: the row's Rename… opens the title field`);
+    const rf = await js(`document.querySelector('#modeDlg input').value`);
+    check(!leak(rf) && /\[redacted\]/.test(rf), `${tag}: the row's Rename… field is masked (${rf})`);
+    await key('Escape');
+    await until(`!document.querySelector('#modeDlg')`, 2000);
+    await js(`window.__durbarSimUi.notes.rename(${jsLiteral({ id: 'n-' + 'p'.repeat(12), title: 'Raw ' + TOKEN, text: 'x', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), rev: 1, done: false, from: 'typed', fileEdited: false, hidden: false })});true`);
+    check(await until(`!!document.querySelector('#modeDlg input')`, 3000), `${tag}: Rename… from the toast's entry opens the title field`);
+    const rf2 = await js(`document.querySelector('#modeDlg input').value`);
+    check(!leak(rf2) && /\[redacted\]/.test(rf2), `${tag}: ...and its field is masked (${rf2})`);
+    await key('Escape');
+    await until(`!document.querySelector('#modeDlg')`, 2000);
+    await js(`__ntd.row("Raw ").querySelector('[data-nt="more"]').click()`);
+    await until(`!!document.querySelector('#modeMenu [data-nmact="delete"]')`, 2000);
+    await js(`document.querySelector('#modeMenu [data-nmact="delete"]').click()`);
+    check(await until(`!!document.querySelector('#modeDlg')`, 3000), `${tag}: Delete… asks about the planted note`);
+    const dd = await js(`document.querySelector('#modeDlg').textContent`);
+    check(!leak(dd) && /\[redacted\]/.test(dd), `${tag}: the Delete dialog names the note masked (${dd.slice(0, 100)})`);
+    await key('Escape');
+    await until(`!document.querySelector('#modeDlg')`, 2000);
     await key('Escape');
     await until(`document.getElementById('notesDrawer').hidden`, 3000);
     /* the "/" list, its tooltips and the announcement */

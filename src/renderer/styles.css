@@ -2032,3 +2032,7 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 .slash-list .sl-note .sl-name{font-family:inherit;font-size:13px}
 .slash-list .sl-ico{flex:none;align-self:center;color:var(--ink-2)}
 @media (max-width:520px){.nt-row{flex-direction:column}.nt-acts{align-self:flex-end}}
+.slash-list .sl-note .sl-sub{display:flex;align-items:baseline;gap:8px;min-width:0}
+.slash-list .sl-note .sl-sub .sl-src{margin-left:0}
+.slash-list .sl-note .sl-sub .sl-desc{min-width:0;flex:1 1 0}
+.slash-list .sl-note .sl-name{flex:1 1 auto}

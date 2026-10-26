@@ -90,7 +90,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
   - AC1: *Notes…* in More, Ctrl+Shift+M / ⌘⇧M, Ctrl+K *Notes* and a toast's *Show* open it over `#chat` only; the composer stays usable; the log keeps updating under it.
   - AC2: Esc closes the drawer and returns focus; a second Esc closes the chat (driver).
   - AC3: rows follow FR-022, arrow keys move (roving `tabindex`), Enter inserts; the empty state shows its words and *+ Note*.
-  - AC4: *+ Note*, *Edit…*, *Rename…*, *Delete…* use `askDialog`; Delete focuses *Cancel*, then focus goes to the next row, else previous, else *+ Note*.
+  - AC4: *+ Note*, *Edit…*, *Rename…*, *Delete…* use `askDialog`; the Edit and Rename fields and the Delete text show the stored text masked again (fail closed, FR-013); Delete focuses *Cancel*, then focus goes to the next row, else previous, else *+ Note*.
   - AC5: *Insert* puts the text in the box per FR-024, sends nothing (the driver checks no `send` call), focuses the box and announces it; it is disabled with a reason in a chat without a usable box.
   - AC6: `TAKEN` has `mod+shift+KeyM`; `test-navigator`'s handler scan passes and fails when the row is removed (mutation); a saved Go to combination equal to it keeps working and the drawer key does nothing (test).
   - AC7: with spec 080's tabs present (or a fake tablist in the driver once they land), opening Notes from Browser selects Chat first. Until then this AC is checked by a unit test on the switch function.

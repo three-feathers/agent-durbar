@@ -2457,7 +2457,9 @@ async function notesChange(a,note,patch){
   await notesFetch(a);return r.note||true;
 }
 async function renameNote(a,note,returnFocus){
-  const res=await askDialog({title:'Rename note',body:'A short title for this note, 1 to 80 characters.',input:{label:'Title',value:note.title,max:80,focus:true,select:true,submitOnEnter:true},need:{text:true},returnFocus:returnFocus||undefined,
+  const shown=noteBoxText(note.title); /* the stored title is masked once more before it is shown for editing; not shown at all when that is not possible (fail closed), like Edit… */
+  if(shown==null){toast('Could not check this note for secrets, so it was not opened.',4500).classList.add('err');return;}
+  const res=await askDialog({title:'Rename note',body:'A short title for this note, 1 to 80 characters.',input:{label:'Title',value:shown,max:80,focus:true,select:true,submitOnEnter:true},need:{text:true},returnFocus:returnFocus||undefined,
     buttons:[{label:'Cancel',value:null},{label:'Save',value:'ok',cls:'primary'}]});
   if(!res||res.value!=='ok'||!String(res.text||'').trim())return;
   const r=await notesChange(a,note,{title:String(res.text).trim()});
@@ -2588,6 +2590,7 @@ function closeNotes(restore){
 }
 const notesIsOpen=()=>!!(NT.open&&$('notesDrawer')&&!$('notesDrawer').hidden);
 function toggleNotes(a,opener){return notesIsOpen()?(closeNotes(true),Promise.resolve(false)):openNotes(a,{opener});}
+/* the drawer is a region of the chat, not a dialog (spec 083 FR-020): it is deliberately NOT a focus trap, the message box and the header stay reachable with Tab while it is open */
 function notesDrawerHTML(){
   return `<div class="notes-drawer" id="notesDrawer" role="region" aria-label="Notes" hidden><div class="nt-head"><h3 class="nt-h">Notes</h3><button class="btn sm" id="ntClose" type="button" aria-label="Close notes" title="Close (Esc)">Close</button></div><div class="nt-body" id="ntBody"></div><div class="nt-foot"><button class="btn sm primary" id="ntAdd" type="button">+ Note</button></div></div>`;
 }
@@ -7160,7 +7163,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 /* spec 008 FR-113, simulator only: false until the agents are listed, the frozen simulator has replayed every script and the saved usage
    totals are read; then any queued frame is drawn now (a stalled animation frame once left a comparison driver measuring a stale page) */
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
-if(SIM)window.__durbarSimUi={agents:()=>agents,notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
+if(SIM)window.__durbarSimUi={agents:()=>agents,notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,
   /* spec 059 T076 (FR-023): a driver makes the things that change while a field is open happen through the real paths */
   retitle:(id,title)=>{const a=byId(id);if(!a)return false;applyTitle(a,title);return true;},

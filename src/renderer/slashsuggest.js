@@ -64,7 +64,7 @@
     const n=Number(i)|0;
     if(x.source==='note'){ /* spec 083: a note row has an icon and its title, no slash; every field is escaped here too */
       const more=x.kind==='more';
-      return `<div class="sl-opt sl-note" role="option" id="slashOpt-${n}" data-i="${n}" aria-selected="${!!active}" title="${esc(tip||'')}"><span class="sl-line">${NOTE_SVG}<b class="sl-name">${esc(more?'All notes…':x.name)}</b>${more?'':`<span class="sl-src sl-note-src">note · ${esc(SCOPE_WORD[x.scope]||x.scope||'this folder')}</span>`}</span>${!more&&x.description?`<span class="sl-desc">${esc(x.description)}</span>`:''}</div>`;
+      return `<div class="sl-opt sl-note" role="option" id="slashOpt-${n}" data-i="${n}" aria-selected="${!!active}" title="${esc(tip||'')}"><span class="sl-line">${NOTE_SVG}<b class="sl-name">${esc(more?'All notes…':x.name)}</b></span>${more?'':`<span class="sl-sub"><span class="sl-src sl-note-src">note · ${esc(SCOPE_WORD[x.scope]||x.scope||'this folder')}</span>${x.description?`<span class="sl-desc">${esc(x.description)}</span>`:''}</span>`}</div>`; /* the title has the whole first line; the scope word and the excerpt share the second (the excerpt is cut first) */
     }
     return `<div class="sl-opt" role="option" id="slashOpt-${n}" data-i="${n}" aria-selected="${!!active}" title="${esc(tip||'')}"><span class="sl-line"><b class="sl-name">/${esc(x.name)}</b>${x.argumentHint?`<span class="sl-hint">${esc(x.argumentHint)}</span>`:''}<span class="sl-src sl-${esc(x.source)}">${esc(SOURCE_WORD[x.source]||x.source)} · ${esc(KIND_WORD[x.kind]||x.kind)}</span></span>${x.description?`<span class="sl-desc">${esc(x.description)}</span>`:''}</div>`;
   }

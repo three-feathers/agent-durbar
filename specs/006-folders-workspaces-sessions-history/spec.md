@@ -311,5 +311,5 @@ Why: when Durbar is killed, crashes or the machine stops while agents are workin
 *Missing:* a folder has no place for its notes, and *Remove folder* says nothing about them. Spec 083 stores notes per folder.
 
 *Corrected:*
-- **FR-172** The folder's `⋯` menu gets **Notes (N)…**, which opens the folder's Notes screen (spec 083 FR-044).
-- **FR-173** **Remove folder** keeps the folder's notes by default and says so; the dialog gets a box **Also delete its notes** (unticked by default). Re-adding the folder shows its notes again (spec 083 FR-048).
+- **FR-172** The folder's `⋯` menu gets **Notes (N)…**, which opens the folder's Notes screen (spec 083 FR-044). `[KNOWN GAP]` not built yet: the folder menu has no *Notes (N)…* item; spec 083 T034 builds it with the per-folder Notes screen.
+- **FR-173** **Remove folder** keeps the folder's notes by default and says so; the dialog gets a box **Also delete its notes** (unticked by default). Re-adding the folder shows its notes again (spec 083 FR-048). `[KNOWN GAP]` not built yet: *Remove folder* has no *Also delete its notes* box and says nothing about notes; the notes themselves are kept (nothing deletes them), and spec 083 T034 (FR-048) builds the box and the text.
