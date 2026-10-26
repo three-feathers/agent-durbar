@@ -312,6 +312,7 @@ assert.deepStrictEqual(o.map((n) => n.text), ['b', 'c', 'a']);
   assert.strictEqual(DN2.markerFor(mrk, 'S1', 'user', '1111111111111111', 0, 1)!.done, true, 'a done note still marks its message');
   assert.strictEqual(DN2.markerFor(mrk, '', 'agent', dg, 2, 1), null, 'no session, no marker');
   assert.strictEqual(DN2.markerFor([], 'S1', 'agent', dg, 2, 1), null, 'no notes');
+  assert.strictEqual(DN2.markerFor([mk('3', { source: { ...src(''), digest: dg, ord: 2 } })], '', 'agent', dg, 2, 1), null, 'a note with no session never marks a message, even when the chat has none either');
 
   // FR-043: search: titles by rank, then notes whose masked text has every word; case-insensitive; fails closed; both groups
   {
@@ -337,6 +338,17 @@ assert.deepStrictEqual(o.map((n) => n.text), ['b', 'c', 'a']);
     assert.strictEqual(DN2.search({ session: [tk], folder: [] }, 'now', rank, SAFE.mask).session.length, 1, 'a word beside it is');
     assert.strictEqual(DN2.search({ session: [tk], folder: [] }, 'now', rank, undefined).session.length, 0, 'no mask function: no text match (fail closed)');
     assert.strictEqual(DN2.search({ session: [tk], folder: [] }, 'now', rank, () => { throw new Error('x'); }).session.length, 0, 'a throwing mask: no match');
+    // the title is ranked masked too: a raw token in a title (a note that reached the window raw) cannot be found by typing it
+    const tt = mk('7', { title: `Deploy ${tok}`, text: 'neutral words', source: src('S1') });
+    assert.strictEqual(DN2.search({ session: [tt], folder: [] }, 'a1B2c3D4', rank, SAFE.mask).session.length, 0, 'the raw token in a title is not found (ranking reads the masked title)');
+    assert.strictEqual(DN2.search({ session: [tt], folder: [] }, 'Deploy', rank, SAFE.mask).session.length, 1, 'the words around it are');
+    // a note whose title ranks AND whose text matches is listed once
+    const both = mk('8', { title: 'Migrate', text: 'we migrate everything', source: src('S1') });
+    const other = mk('9', { title: 'Other', text: 'migrate too', source: src('S1') });
+    const later = mk('10', { title: 'Migrate later', text: 'migrate', source: src('S2') });
+    const twice = DN2.search({ session: [both, other], folder: [later] }, 'migrate', rank, SAFE.mask);
+    assert.deepStrictEqual(twice.session.map((n) => n.id), [both.id, other.id], 'a title match that also matches by text is listed once, then the text-only match');
+    assert.deepStrictEqual(twice.folder.map((n) => n.id), [later.id], 'and once in the folder group');
     // the no-match line names the words, masked and cut
     assert.strictEqual(DN2.noMatch('migrate me', SAFE.mask), 'No notes match "migrate me"');
     assert.ok(!DN2.noMatch(tok, SAFE.mask).includes('a1B2c3') && /\[redacted\]/.test(DN2.noMatch(tok, SAFE.mask)), 'a pasted token is masked in the no-match line');

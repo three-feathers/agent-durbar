@@ -40,7 +40,6 @@ module.exports = async (ctx) => {
   wc().on('console-message', (...a) => { const m = a[0] && a[0].message !== undefined ? a[0] : { level: a[1], message: a[2] }; if (m.level === 'error' || m.level === 3) console.log('PAGE ERROR', String(m.message).slice(0, 300)); });
   const check = (cond, msg) => { if (!cond) { fails.push(msg); console.log('FAIL ' + msg); } };
   const shot = (name) => H.shot(path.join(OUT, name), { prep: 'calm', tag: 'notes-count' });
-  const typeChars = async (t) => { for (const ch of t) { wc().sendInputEvent({ type: 'char', keyCode: ch }); await ctx.sleep(25); } await ctx.sleep(60); };
   const inject = () => js(`window.__ntd={dots:()=>{const b=[...document.querySelectorAll('#chat .msg.agent .bubble')].find(x=>x.querySelector(':scope > .nt-btn'));return b?b.querySelector(':scope > .nt-btn'):null},row:t=>[...document.querySelectorAll('#notesDrawer .nt-row')].find(r=>r.querySelector('.nt-title').textContent.includes(t)),titles:()=>[...document.querySelectorAll('#notesDrawer .nt-title')].map(x=>x.textContent)};true`);
   const load = async (w, h, q) => { await H.load({ w, h, query: { simkinds: 'mixed', ...(q || {}) }, ready: 'fit' }); await inject(); };
   const open = async (name, o = {}) => {
@@ -121,7 +120,6 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#chat .nt-mark').click()`);
     check(await until(`!document.getElementById('notesDrawer').hidden&&document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.id===${jsLiteral(mk.nid)}`, 5000), `${tag}: the marker opens the drawer on its note (focus on its row)`);
     /* deleting the note removes the marker on repaint */
-    await js(`__ntd.row('') && 0;true`);
     await js(`document.querySelector('#notesDrawer .nt-row [data-nt="more"]').click()`);
     await until(`!!document.querySelector('#modeMenu [data-nmact="delete"]')`, 3000);
     await js(`document.querySelector('#modeMenu [data-nmact="delete"]').click()`);
@@ -218,6 +216,15 @@ module.exports = async (ctx) => {
     check(await until(`__ntd.titles().length===0`, 3000), `${tag}: every word must match (no note has both)`);
     check(await until(`/No notes match "migration quota"/.test(document.getElementById('notesDrawer').textContent)`, 3000), `${tag}: the no-match line names the words`);
     check(await until(`/No notes match/.test(document.getElementById('srAnnounce').textContent)`, 3000), `${tag}: the no match is announced (${await ann()})`);
+    /* the window searches the MASKED text: a note that reached it with the token in its title and its text is found by the words beside the token, never by the token */
+    await js(`window.__durbarSimUi.notes.plant(${jsLiteral({ id: 'n-' + 'k'.repeat(12), title: 'Tok ' + TOKEN, text: 'beside ' + TOKEN + ' here', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), rev: 1, done: false, from: 'typed', fileEdited: false, hidden: false })});true`);
+    check(await js(`JSON.stringify(window.__durbarSimUi.notes.all()).includes(${jsLiteral(BODY)})`), `${tag}: the window holds a note with the raw token (the precondition of the next checks)`);
+    await search('beside');
+    check(await until(`__ntd.titles().some(t=>t.startsWith('Tok '))`, 3000), `${tag}: the words beside the token find that note (its text is searched)`);
+    await search(BODY);
+    check(await until(`!__ntd.titles().some(t=>t.startsWith('Tok '))`, 3000) && await js(`!__ntd.titles().some(t=>t.startsWith('Tok '))`), `${tag}: the token itself finds nothing (the masked text is what is searched)`);
+    await search(BODY.slice(0, 12));
+    check(await until(`!__ntd.titles().some(t=>t.startsWith('Tok '))`, 3000), `${tag}: ...nor a piece of it`);
     await search(TOKEN);
     check(await until(`/No notes match/.test(document.getElementById('notesDrawer').textContent)`, 3000), `${tag}: a pasted token matches nothing`);
     const nm = await js(`document.getElementById('notesDrawer').textContent+'|'+document.getElementById('srAnnounce').textContent+'|'+[...document.querySelectorAll('#notesDrawer [title],#notesDrawer [aria-label]')].map(e=>(e.title||'')+(e.getAttribute('aria-label')||'')).join('|')`);
@@ -238,6 +245,20 @@ module.exports = async (ctx) => {
     await key('Escape');
     check(await until(`document.getElementById('notesDrawer').hidden&&document.getElementById('ntSearch').value===''`, 3000), `${tag}: closing the drawer clears the search`);
 
+    /* leaving the chat takes the search with it: the field and the list agree when the drawer is opened again */
+    await key('M', CTRL, { char: 'never' });
+    await until(`!document.getElementById('notesDrawer').hidden&&!!document.querySelector('#notesDrawer .nt-row')`, 5000);
+    await search('quota');
+    check(await until(`__ntd.titles().length===1`, 3000), `${tag}: "quota" leaves one row (the precondition)`);
+    await js(`document.getElementById('backBtn').click()`);
+    await until(`!document.body.classList.contains('panel-open')`, 4000);
+    await open('Noor');
+    await js(`document.getElementById('msgInput').focus()`);
+    await key('M', CTRL, { char: 'never' });
+    check(await until(`!document.getElementById('notesDrawer').hidden&&document.querySelectorAll('#notesDrawer .nt-row').length===2&&document.getElementById('ntSearch').value===''`, 6000), `${tag}: back in the chat the field is empty and both notes are listed (${(await titles()).join('|')})`);
+    await key('Escape');
+    await until(`document.getElementById('notesDrawer').hidden`, 3000);
+
     /* title rank before text words, in both groups (a planted set) */
     await js(`window.__durbarSimUi.notes.open();true`);
     await until(`!document.getElementById('notesDrawer').hidden`, 5000);
@@ -245,7 +266,7 @@ module.exports = async (ctx) => {
     const ses2 = await js(`window.__durbarSimUi.notes.all().find(n=>n.source&&n.source.session)?window.__durbarSimUi.notes.all().find(n=>n.source&&n.source.session).source.session:''`);
     for (const n of [mkN('a', 'Release checklist', 'we migrate tables first', ses2), mkN('b', 'Migrate users', 'plain', ses2), mkN('c', 'Lunch', 'Migrate the Cache', '')]) await js(`window.__durbarSimUi.notes.plant(${jsLiteral(n)});true`);
     await search('migrate');
-    check(await until(`__ntd.titles().join('|')==='Migrate users|Release checklist|Lunch'||__ntd.titles().join('|')==='Migrate users|Release checklist|Plan for the migration|Lunch'||__ntd.titles().join('|').startsWith('Migrate users|Release checklist')`, 3000), `${tag}: title matches come before text matches, in this session's group first (${(await titles()).join('|')})`);
+    check(await until(`__ntd.titles().join('|')==='Migrate users|Release checklist|Lunch'`, 3000), `${tag}: title matches before text matches, this session's group first, then the folder's: exactly the three (${(await titles()).join('|')})`);
     await js(`window.__durbarSimUi.notes.close();true`);
 
     /* SC-005: with 300 notes the drawer opens and a search runs in under 100 ms (best of 3, performance.measure) */

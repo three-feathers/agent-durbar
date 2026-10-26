@@ -49,7 +49,7 @@ const PREV_KEYS=['mod','shift','H'], PREV_KEY=keyText(PREV_KEYS);
 /* spec 083: notes state and the drawer key, declared here because a restored chat opens before the notes block below has run */
 var DN=window.DurbarNotes||null;
 var NOTES_KEYS=['mod','shift','M'];
-var NT={by:new Map(),open:null,ret:null,notice:null,ro:null,q:'',rv:new Map(),mm:new Map(),markT:0}; /* by: folder key -> {ok,notes,session,readOnly,error,unreadable}; open: {id} while the drawer shows */
+var NT={by:new Map(),open:null,ret:null,notice:null,ro:null,rv:new Map(),mm:new Map(),markT:0}; /* by: folder key -> {ok,notes,session,readOnly,error,unreadable}; open: {id} while the drawer shows */
 
 const SCHED_KEY=keyText(['mod','shift','S']); /* spec 044 FR-031: the top-bar Schedules button */
 const ADD_KEY=keyText(['mod','O']), ADDWS_KEY=keyText(['mod','shift','O']); /* spec 052 FR-164: + Folder, + Workspace (the Mac File menu has the same keys) */
@@ -2550,9 +2550,9 @@ function notesPaint(){
   }else{
     if(st.readOnly)html+=`<p class="nt-banner" role="alert">${esc(st.readOnly)}</p>`;
     const g0=DN.groups(st.notes,st.session), total0=g0.session.length+g0.folder.length;
-    const g=NT.q.trim()?DN.search(g0,NT.q,NAV&&NAV.rank,memoMask):g0, total=g.session.length+g.folder.length;
+    const q=ntQuery(), g=q.trim()?DN.search(g0,q,NAV&&NAV.rank,memoMask):g0, total=g.session.length+g.folder.length;
     if(!total0)html+='<p class="nt-empty">No notes yet. Save a message with its ⋯ menu, or add one.</p>';
-    else if(!total)html+=`<p class="nt-empty" role="status">${esc(DN.noMatch(NT.q,safeMask))}</p>`; /* FR-043: names the words, masked */
+    else if(!total)html+=`<p class="nt-empty" role="status">${esc(DN.noMatch(q,safeMask))}</p>`; /* FR-043: names the words, masked */
     let first=true;
     const grp=(label,id,items)=>{if(!items.length)return '';const s=`<section class="nt-grp" aria-labelledby="${id}"><h4 id="${id}">${esc(label)}</h4><div role="list" aria-labelledby="${id}">${items.map(n=>{const h=noteRowHTML(n,a,first);first=false;return h;}).join('')}</div></section>`;return s;};
     html+=grp('This session','ntGrpS',g.session)+grp('This folder','ntGrpF',g.folder);
@@ -2598,6 +2598,8 @@ function setMark(b,role,n){
 }
 document.addEventListener('click',e=>{const m=e.target.closest('.nt-mark');if(!m)return;e.stopPropagation();const a=byId(ui.selected);if(a)openNotes(a,{focusId:m.dataset.noteid,opener:m});}); /* FR-041: the icon opens the drawer on its note */
 
+/* the search text: the field's own value is the only copy (a new drawer is a new, empty field), so the filter and the field cannot disagree */
+function ntQuery(){const f=$('ntSearch');return f?f.value:'';}
 /* the masked text of a note's title or text, once per string (the search reads it for every note on every keystroke; SC-005) */
 function memoMask(t){const k=String(t);let r=NT.mm.get(k);if(r===undefined){r=safeMask(k);NT.mm.set(k,r);}return r;}
 function notesFocusRow(id){
@@ -2625,7 +2627,7 @@ async function openNotes(a,o){
 function closeNotes(restore){
   const d=$('notesDrawer'); if(!NT.open&&(!d||d.hidden))return false;
   NT.open=null; if(d)d.hidden=true;
-  NT.q='';{const f=$('ntSearch');if(f)f.value='';}
+  {const f=$('ntSearch');if(f)f.value='';}
   if(NT.ro){NT.ro.disconnect();NT.ro=null;}
   closeModeMenu();
   document.querySelectorAll('[data-notes-toggle]').forEach(b=>b.setAttribute('aria-expanded','false'));
@@ -2663,7 +2665,7 @@ function wireNotesDrawer(a){
   });
   const find=$('ntSearch');
   if(find){
-    find.addEventListener('input',()=>{NT.q=find.value;notesPaint();const n=d.querySelectorAll('.nt-row').length;announce(NT.q.trim()?(n?n+(n===1?' note matches':' notes match'):'No notes match'):'');}); /* the count is a number: nothing of a note is read out */
+    find.addEventListener('input',()=>{notesPaint();const n=d.querySelectorAll('.nt-row').length;announce(ntQuery().trim()?(n?n+(n===1?' note matches':' notes match'):'No notes match'):'');}); /* the count is a number: nothing of a note is read out */
     find.addEventListener('keydown',e=>{if(e.key==='ArrowDown'){const r=d.querySelector('.nt-row');if(r){e.preventDefault();notesFocusRow(r.dataset.id);}}});
   }
   d.addEventListener('contextmenu',e=>{const row=e.target.closest('.nt-row');if(!row)return;e.preventDefault();const m=row.querySelector('.nt-more');if(m)m.click();});
@@ -2983,7 +2985,7 @@ document.addEventListener('keydown',e=>{
     if(document.getElementById('sessDlg')){closeSessDlg();return;}
     if(!$('foldersPop').hidden){toggleFolders(false);return;}
     if(!$('floorsPop').hidden){toggleFloors(false);return;}
-    if(e.target&&e.target.id==='ntSearch'&&e.target.value){e.target.value='';NT.q='';notesPaint();return;} /* spec 083 FR-043: Esc clears the search first */
+    if(e.target&&e.target.id==='ntSearch'&&e.target.value){e.target.value='';notesPaint();return;} /* spec 083 FR-043: Esc clears the search first */
     if(notesIsOpen()){closeNotes(true);return;} /* spec 083 FR-020: the drawer closes first, a second Esc closes the chat */
     if(vsViewing){leaveVsView();return;}
     if(ui.selected){closePanel();return;}
