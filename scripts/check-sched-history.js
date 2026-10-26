@@ -183,7 +183,7 @@ module.exports = async (ctx) => {
     /* a run while the list is open appears at the top without reopening */
     const before = (await items('sched-s1', 'ss')).length;
     check(await js(`window.__durbarSimSched.fail('sched-s1')`), `${tag}: the simulator could not record a run`);
-    check(await until(`document.querySelectorAll('#sh-ss-sched-s1 > li.sh-i').length===${before + 1}&&/Could not send: no agent in this folder/.test(document.querySelector('#sh-ss-sched-s1 > li.sh-i .sh-w').textContent)`), `${tag}: a new run did not appear at the top of the open list`);
+    check(await until(`document.querySelectorAll('#sh-ss-sched-s1 > li.sh-i').length===${jsLiteral(before + 1)}&&/Could not send: no agent in this folder/.test(document.querySelector('#sh-ss-sched-s1 > li.sh-i .sh-w').textContent)`), `${tag}: a new run did not appear at the top of the open list`);
     check(await js(`document.querySelector('#schedSet [data-ss="hist"][data-id="sched-s1"]').getAttribute('aria-expanded')==='true'`), `${tag}: the list closed itself on a change`);
     /* History closes again */
     await js(`document.querySelector('#schedSet [data-ss="hist"][data-id="sched-s1"]').click()`);
