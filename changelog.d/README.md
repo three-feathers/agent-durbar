@@ -48,6 +48,21 @@ Branch names must match the Spec Kit gate (lowercase letters, digits and hyphens
    (`git rm changelog.d/<file>`): the tag's text is what was released. If the edit added something genuinely new, put that in
    a new fragment for the next release.
 
+## A stable release (spec 008 FR-129)
+
+A tag without a `-` (`v1.2.3`) is handled by the same flow with these differences, all decided by `releaseKind()` in
+`scripts/release-notes.js` and passed to the workflow as `verify`'s outputs:
+
+- The draft is **not** a pre-release. A tag with a `-` (alpha, beta, rc, `-test.M`) stays a draft pre-release, never latest.
+- The notes use the stable intro (unsigned and not notarized, no "alpha") and the heading
+  `v1.2.3 ([release](<url>), YYYY-MM-DD)`; `changelog:build --release` accepts it.
+- The fold branch is `NNN-fold-1-2-3` (no dots).
+- It stays a **draft**: the owners check it, then publish it **and mark it latest** by hand. "Latest" is not set while it is a
+  draft, so run (the job summary prints it too): `gh release edit v1.2.3 --draft=false --latest`. This path has not run on
+  GitHub yet (spec 008 FR-129 `[KNOWN GAP]`); check the published release shows as *Latest*.
+- The fold PR for a stable tag also updates the hand-written alpha wording that tests assert: the landing page eyebrow and
+  status in `docs/site/landing.json` with their asserts in `scripts/test-site.js`, and the README status block.
+
 ## Test builds (spec 008 FR-121..FR-124)
 
 A test-build tag (`vX.Y.Z[-alpha|beta|rc.N]-test.M`, allowed on a branch) does not use the fragments at all: its notes list the

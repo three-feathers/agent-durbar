@@ -3,7 +3,10 @@ name: Release
 # Push a tag like v0.1.0-alpha.1 on a commit of main (it must match "version" in package.json: a version-only PR lands first).
 # The verify job refuses any other tag and writes the release notes from exactly the tagged commit's changelog.d/ fragments
 # (spec 008 FR-117..FR-120: fold at tag time, so no release PR has to fold them and go stale while the queue lands more).
-# Builds UNSIGNED packages on macOS, Windows and Linux and attaches them to a DRAFT pre-release, never marked latest.
+# Builds UNSIGNED packages on macOS, Windows and Linux and attaches them to a DRAFT. A tag with a "-" in the version (alpha, beta,
+# rc, every -test.M) is a pre-release, never latest. A stable tag (v1.2.3) is a draft that is NOT a pre-release; GitHub keeps no
+# "latest" mark on a draft, so the owner publishes it by hand with the command printed in the job summary (a
+# "--draft=false --latest" edit). The choice is made once, by releaseKind() in scripts/release-notes.js (spec 008 FR-129); verify passes it on as outputs.
 # Nothing is published automatically: review the draft and publish it by hand. Nothing here pushes to any branch: the fold
 # into CHANGELOG.md is a normal doc-only PR afterwards (changelog.d/README.md).
 # Test builds (spec 008 FR-121..FR-124): a tag vX.Y.Z[-alpha|beta|rc.N]-test.M may be on any branch; package.json must be the tag
@@ -26,6 +29,9 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    outputs:
+      prerelease: ${{ steps.notes.outputs.prerelease }}
+      latest: ${{ steps.notes.outputs.latest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -36,10 +42,11 @@ jobs:
           node-version: 22
       # Plain Node and git: no dependency install (no package code runs here), no token, no network.
       - name: Tag on main (or a -test.N tag), matching package.json; notes and title from the tagged commit
+        id: notes
         env:
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
-        run: node scripts/release-notes.js --tag "$TAG" --repo "$REPO" --main-ref refs/remotes/origin/main --out release-notes.md --title-out release-title.txt --summary "$GITHUB_STEP_SUMMARY"
+        run: node scripts/release-notes.js --tag "$TAG" --repo "$REPO" --main-ref refs/remotes/origin/main --out release-notes.md --title-out release-title.txt --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-notes
@@ -121,14 +128,18 @@ jobs:
           cd dist-artifacts
           sha256sum * > SHA256SUMS.txt
           ls -la
-      # Always a draft pre-release, never "latest" (owner decision), test builds too; verify writes the title ("(test build)" for a
+      # Always a DRAFT (owner decision). verify decides pre-release or not (releaseKind: a "-" in the version is a pre-release); a
+      # pre-release is created --latest=false, a stable one is left without --latest because the API keeps no "latest" on a draft:
+      # the owner publishes it by hand with the command in the job summary. verify writes the title ("(test build)" for a
       # test tag). An existing release only gets its files replaced, so notes the release manager edited on the draft are kept, and
       # only while it is still a draft: a published release is never touched.
-      - name: Create or update DRAFT pre-release
+      - name: Create or update DRAFT release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+          LATEST: ${{ needs.verify.outputs.latest }}
         run: |
           TITLE="$(cat notes/release-title.txt)" # bash -e: a missing title file stops the job
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -138,6 +149,15 @@ jobs:
             fi
             gh release upload "$TAG" dist-artifacts/* --clobber
           else
-            gh release create "$TAG" dist-artifacts/* --draft --prerelease --latest=false --verify-tag \
+            # only the two values verify writes are accepted; anything else stops the job (bash -e), nothing is guessed
+            if [ "$PRERELEASE" = "true" ] && [ "$LATEST" = "false" ]; then
+              KIND=(--prerelease --latest=false)
+            elif [ "$PRERELEASE" = "false" ] && [ "$LATEST" = "true" ]; then
+              KIND=() # stable: still a draft; "latest" is set when the owner publishes it
+            else
+              echo "verify gave no release kind (prerelease=$PRERELEASE latest=$LATEST)" >&2
+              exit 1
+            fi
+            gh release create "$TAG" dist-artifacts/* --draft "${KIND[@]}" --verify-tag \
               --title "$TITLE" --notes-file notes/release-notes.md
           fi

@@ -306,6 +306,59 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     g(d, 'checkout', '-q', 'v0.1.1-alpha.1');
     assert.throws(() => rn.releaseNotes(d, { ...opts, tag: 'v0.1.1-alpha.1' }), /no section for the previous release v0\.1\.0: merge its fold PR/, 'the unfolded final release is caught');
   }
+  // --- spec 008 FR-129: a stable tag (v1.2.3) is a draft that is not a pre-release and is latest once published ---
+  {
+    for (const t of ['v1.2.3', 'v0.1.0', 'v10.20.30']) assert.deepStrictEqual(rn.releaseKind(t), { prerelease: false, latest: true }, `${t}: stable`);
+    for (const t of ['v0.1.0-alpha.19', 'v1.0.0-beta.2', 'v1.0.0-rc.1', 'v0.1.0-alpha.14-test.1', 'v1.2.3-test.4', 'v1.2.3-mcptest.1', 'v1.2.3-', 'nonsense', '', undefined, 'v1.2.3\nlatest']) {
+      assert.deepStrictEqual(rn.releaseKind(t), { prerelease: true, latest: false }, `${String(t)}: pre-release, never latest`);
+    }
+    assert.strictEqual(rn.publishCommand('v1.2.3'), 'gh release edit v1.2.3 --draft=false --latest');
+    assert.strictEqual(rn.publishCommand('v1.2.3-rc.1'), 'gh release edit v1.2.3-rc.1 --draft=false');
+    // the workflow output file
+    const d = repo('', {});
+    g(d, 'init', '-q', '-b', 'main');
+    pkg(d, '0.1.0-alpha.19');
+    commit(d, 'alpha.19');
+    g(d, 'tag', '-a', '-m', 'a19', 'v0.1.0-alpha.19');
+    // alpha.19's section is folded (verify requires it), then the stable version commit on main
+    const cl0 = fs.readFileSync(path.join(d, 'CHANGELOG.md'), 'utf8');
+    fs.writeFileSync(path.join(d, 'CHANGELOG.md'), `${cl0.trimEnd()}\n\n## v0.1.0-alpha.19 ([pre-release](x), 2026-10-23)\n\n- Old.\n`);
+    fs.writeFileSync(path.join(d, 'changelog.d', 'a.md'), '- Change A.\n');
+    pkg(d, '0.1.0');
+    commit(d, 'stable');
+    g(d, 'tag', '-a', '-m', 'stable', 'v0.1.0');
+    const r = rn.releaseNotes(d, { ...opts, tag: 'v0.1.0' });
+    assert.strictEqual(r.previous, 'v0.1.0-alpha.19');
+    assert.match(r.heading, /^v0\.1\.0 \(\[release\]\(https:\/\/github\.com\/three-feathers\/agent-durbar\/releases\/tag\/v0\.1\.0\), \d{4}-\d{2}-\d{2}\)$/, 'stable heading');
+    assert.ok(r.notes.startsWith(rn.STABLE_PREAMBLE), 'the stable intro');
+    assert.ok(!/alpha/i.test(r.notes.split('\n## ')[0]), 'no "alpha" in a stable release\'s intro');
+    assert.ok(/not code-signed or notarized|Not code-signed or notarized/.test(rn.STABLE_PREAMBLE) && rn.STABLE_PREAMBLE.includes('README'), 'still honest: unsigned, README pointers');
+    assert.ok(rn.PREAMBLE.includes('alpha'), 'the alpha intro is unchanged');
+    const sum = rn.summary(r, 'v0.1.0');
+    assert.ok(sum.includes('gh release edit v0.1.0 --draft=false --latest'), 'the summary gives the owner the publish command');
+    assert.ok(!rn.summary({ kind: 'release', heading: 'h', previous: 'p', source: 'fragments', commits: 0 }, 'v0.1.0-rc.1').includes('gh release edit'), 'no such command for a pre-release');
+    // the CLI writes what the workflow reads
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-out-'));
+    execFileSync(process.execPath, [path.join(__dirname, 'release-notes.js'), '--root', d, '--tag', 'v0.1.0', '--repo', opts.repo, '--main-ref', 'refs/heads/main', '--out', path.join(tmp, 'n.md'), '--github-output', path.join(tmp, 'out')], { env: gitEnv, stdio: 'ignore' });
+    assert.strictEqual(fs.readFileSync(path.join(tmp, 'out'), 'utf8'), 'prerelease=false\nlatest=true\n', 'the stable tag writes prerelease=false, latest=true');
+    // versionsort.suffix=-: the stable tag sorts above its own pre-releases, so the next release's previous is v0.1.0, not alpha.19
+    g(d, 'checkout', '-q', 'main');
+    fs.writeFileSync(path.join(d, 'changelog.d', 'b.md'), '- Change B.\n');
+    pkg(d, '0.1.1');
+    commit(d, 'next');
+    g(d, 'tag', '-a', '-m', 'next', 'v0.1.1');
+    assert.strictEqual(rn.previousRelease(d, g(d, 'rev-parse', 'v0.1.1^{commit}'), 'v0.1.1'), 'v0.1.0', 'v0.1.0 sorts above v0.1.0-alpha.19');
+    // the stable heading is accepted by changelog build/notes, and the Unreleased heading names the stable tag
+    const d2 = repo('', {});
+    fs.writeFileSync(path.join(d2, 'changelog.d', 'z.md'), '- Change Z.\n');
+    const sh = 'v1.2.3 ([release](https://example.invalid/r), 2026-10-26)';
+    const b = cl.build(d2, { release: sh, dryRun: true });
+    assert.ok(b.changed && b.text.includes(`## ${sh}`), 'stable heading accepted');
+    assert.ok(/after the v1\.2\.3 tag/.test(b.text), 'Unreleased heading names the stable tag');
+    const b2 = cl.build(d2, { release: 'v1.2.3-rc.2 ([pre-release](x), 2026-10-26)', dryRun: true });
+    assert.ok(/after the rc\.2 tag/.test(b2.text), 'pre-release form still accepted');
+    assert.throws(() => cl.build(d2, { release: 'release 1.2.3', dryRun: true }), /v0\.1\.0 \(\.\.\.\)/, 'error message shows the stable example');
+  }
   // --- spec 008 FR-121..FR-124 (issue #658): test builds from branches ---
   {
     // the classifier: a release version plus -test.N is a test build; checked before TAG_RE (which also matches v1.2.3-test.4)
@@ -481,16 +534,21 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   assert.deepStrictEqual(Object.keys(jobs), ['verify', 'build', 'draft-release']);
   assert.match(wf, /^on:\n {2}push:\n {4}tags: \['v\*'\]\n\n/m, 'started by a tag push only');
   assert.match(wf, /^permissions:\n {2}contents: read\n/m, 'read-only by default');
-  assert.match(jobs.verify, /^ {4}permissions:\n {6}contents: read\n {4}steps:/m, 'verify: contents read only');
+  assert.match(jobs.verify, /^ {4}permissions:\n {6}contents: read\n {4}outputs:\n[^\n]*\n[^\n]*\n {4}steps:/m, 'verify: contents read only (and its two outputs)');
   assert.match(jobs.verify, /persist-credentials: false/, 'verify keeps no token in the checkout');
   assert.match(jobs.verify, /fetch-depth: 0/, 'verify sees main and every tag');
   assert.ok(!/npm ci|secrets\.|GH_TOKEN|github\.token/.test(jobs.verify), 'verify: no dependency install, no secret, no token');
   assert.match(jobs.verify, /node scripts\/release-notes\.js --tag "\$TAG" --repo "\$REPO" --main-ref refs\/remotes\/origin\/main --out release-notes\.md/, 'verify runs the checks on the tagged commit');
-  for (const j of ['verify', 'draft-release']) for (const l of jobs[j].split('\n').filter((x) => x.includes('${{'))) assert.match(l, /^ {10}(TAG|REPO|GH_TOKEN|GH_REPO): \$\{\{ github\.[a-z_]+ \}\}$/, `${j}: an expression only as an env value, never inside a run script: ${l.trim()}`);
+  for (const j of ['verify', 'draft-release']) for (const l of jobs[j].split('\n').filter((x) => x.includes('${{'))) assert.match(l, /^ {10}(TAG|REPO|GH_TOKEN|GH_REPO): \$\{\{ github\.[a-z_]+ \}\}$|^ {6}(prerelease|latest): \$\{\{ steps\.notes\.outputs\.(prerelease|latest) \}\}$|^ {10}(PRERELEASE|LATEST): \$\{\{ needs\.verify\.outputs\.(prerelease|latest) \}\}$/, `${j}: an expression only as an env value, never inside a run script: ${l.trim()}`);
   assert.ok(!/^ {4}permissions:/m.test(jobs.build) && /^ {4}needs: verify$/m.test(jobs.build), 'build: read-only default, only after verify');
   assert.match(jobs['draft-release'], /^ {4}needs: \[verify, build\]\n {4}permissions:\n {6}contents: write\n {4}steps:/m, 'draft-release alone may write, after both');
   assert.match(jobs['draft-release'], /pattern: agent-durbar-\*/, 'the packages only, not the notes file, become release assets');
-  assert.match(jobs['draft-release'], /gh release create "\$TAG" dist-artifacts\/\* --draft --prerelease --latest=false --verify-tag/, 'always a draft pre-release, never latest');
+  // spec 008 FR-129: always a draft; pre-release or not comes from verify's outputs (releaseKind), not a second rule in YAML
+  assert.match(jobs['draft-release'], /gh release create "\$TAG" dist-artifacts\/\* --draft "\$\{KIND\[@\]\}" --verify-tag/, 'always a draft');
+  assert.match(jobs['draft-release'], /\[ "\$PRERELEASE" = "true" \] && \[ "\$LATEST" = "false" \]; then\n\s+KIND=\(--prerelease --latest=false\)\n\s+elif \[ "\$PRERELEASE" = "false" \] && \[ "\$LATEST" = "true" \]; then\n\s+KIND=\(\) #/, 'a pre-release is never latest; a stable draft carries neither flag (latest is set at publish)');
+  assert.ok(!/\[ "\$TAG"|v\[0-9\]|\$\{TAG[#%/]/.test(jobs['draft-release']), 'no tag pattern in the draft job: verify decides');
+  assert.match(jobs.verify, /--github-output "\$GITHUB_OUTPUT"/, 'verify writes the release kind');
+  assert.match(jobs.verify, /^ {6}prerelease: \$\{\{ steps\.notes\.outputs\.prerelease \}\}\n {6}latest: \$\{\{ steps\.notes\.outputs\.latest \}\}$/m, 'verify exposes both values');
   assert.match(jobs['draft-release'], /--notes-file notes\/release-notes\.md/, 'the notes from verify');
   // spec 008 FR-124: the title comes from verify ("(test build)" for a test tag), through the notes artifact; a missing file stops the job
   assert.match(jobs.verify, /--out release-notes\.md --title-out release-title\.txt /, 'verify writes the title');

@@ -159,17 +159,19 @@ function build(root = ROOT, { release, dryRun = false, previous } = {}) {
   const { parts, frs, bullets } = pending(root);
   requirePrevious(parts, previous);
   if (!bullets.length) return { changed: false, removed: [] };
-  if (!release || !release.trim() || /\n/.test(release)) throw new Error('give the release heading: --release "v0.1.0-alpha.N ([pre-release](<url>), YYYY-MM-DD)"');
+  if (!release || !release.trim() || /\n/.test(release)) throw new Error('give the release heading: --release "v0.1.0-alpha.N ([pre-release](<url>), YYYY-MM-DD)" or, for a stable tag, "v0.1.0 ([release](<url>), YYYY-MM-DD)"');
   const heading = `## ${release.trim().replace(/^##\s*/, '')}`;
   const v = ver(heading);
-  if (!v) throw new Error(`the release heading must start with the version, like "v0.1.0-alpha.12 (...)": got "${release}"`);
+  if (!v) throw new Error(`the release heading must start with the version, like "v0.1.0-alpha.12 (...)" or "v0.1.0 (...)": got "${release}"`);
   const clash = parts.rest.find((l) => ver(l) === v);
   if (clash) throw new Error(`CHANGELOG.md already has a section for ${v}: "${clash}"`);
   const keep = squeeze(bulletBlocks(parts.body).other);
   if (!keep.some((l) => l.includes('](changelog.d/)'))) keep.unshift(INTRO, '');
   if (!keep.some((l) => MARKER_RE.test(l))) keep.push(MARKER);
-  const tag = /\b(alpha|beta|rc)\.\d+\b/.exec(release);
-  const unreleased = tag ? parts.heading.replace(/\bafter the \S+ tag\b/, `after the ${tag[0]} tag`) : parts.heading;
+  // "after the alpha.N tag" for a pre-release; a stable tag (v0.1.0, no "-") is named whole
+  const tagName = /^v\d+\.\d+\.\d+-((?:alpha|beta|rc)\.\d+)$/.exec(v);
+  const tag = tagName ? tagName[1] : /^v\d+\.\d+\.\d+$/.test(v) ? v : '';
+  const unreleased = tag ? parts.heading.replace(/\bafter the \S+ tag\b/, `after the ${tag} tag`) : parts.heading;
   const text = joinParts([...parts.before, unreleased, '', ...keep, '', heading, '', ...bullets.join('\n').split('\n')], parts.rest);
   const removed = frs.map((f) => path.join('changelog.d', f.file));
   if (!dryRun) {
@@ -188,9 +190,9 @@ function build(root = ROOT, { release, dryRun = false, previous } = {}) {
 function notes(root = ROOT, { release, previous } = {}) {
   const { errors } = check(root);
   if (errors.length) throw new Error(`fix these first:\n  ${errors.join('\n  ')}`);
-  if (!release || !release.trim() || /\n/.test(release)) throw new Error('give the release heading: --release "v0.1.0-alpha.N ([pre-release](<url>), YYYY-MM-DD)"');
+  if (!release || !release.trim() || /\n/.test(release)) throw new Error('give the release heading: --release "v0.1.0-alpha.N ([pre-release](<url>), YYYY-MM-DD)" or, for a stable tag, "v0.1.0 ([release](<url>), YYYY-MM-DD)"');
   const v = ver(`## ${release.trim().replace(/^##\s*/, '')}`);
-  if (!v) throw new Error(`the release heading must start with the version, like "v0.1.0-alpha.12 (...)": got "${release}"`);
+  if (!v) throw new Error(`the release heading must start with the version, like "v0.1.0-alpha.12 (...)" or "v0.1.0 (...)": got "${release}"`);
   const { parts } = pending(root);
   requirePrevious(parts, previous);
   const at = parts.rest.findIndex((l) => ver(l) === v);
