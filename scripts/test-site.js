@@ -106,6 +106,14 @@ assert.match(index, /class="phone-only"> Tap the picture to see it full size\./,
 assert.match(docs, /\.docs\{grid-template-columns:minmax\(0,1fr\)/, 'the docs column cannot grow past a phone screen');
 assert.match(docs, /<a class="keep" href="index\.html#download">Download<\/a>/, 'Download stays in the docs header on phones');
 
+// spec 050 FR-012 (issue #759): every picture the site links is a palette PNG (colour type 3), made by `npm run shots:docs` or `npm run shots:compress`;
+// a linked picture the quality guard refused to compress is named in KEPT_ORIGINAL with the reason (none today)
+const KEPT_ORIGINAL = {};
+for (const f of require('./shots-docs.js').linkedImages(ROOT)) {
+  const b = fs.readFileSync(path.join(ROOT, 'docs', 'screenshots', f)).subarray(0, 26);
+  assert.ok(KEPT_ORIGINAL[f] || b[25] === 3, `${f} is not a palette PNG: run \`npm run shots:compress\` (or name it in KEPT_ORIGINAL with the reason the quality guard refused it)`);
+}
+
 const size = (dir) => fs.readdirSync(dir, { withFileTypes: true }).reduce((n, e) => n + (e.isDirectory() ? size(path.join(dir, e.name)) : fs.statSync(path.join(dir, e.name)).size), 0);
 const total = size(out);
 assert.ok(total < 15 * 1024 * 1024, `site under 15 MB (is ${(total / 1048576).toFixed(1)} MB)`);

@@ -15,6 +15,7 @@
  * It adds no driver of its own: the pictures come from the drivers that already take them, started by spec 008's runner
  * (ui-suite.js runOne: a fresh profile each, no shell, xvfb-run on Linux without a display or with UI_SUITE_XVFB=1). Every driver
  * writes into a new temporary folder; only then are the files copied, so a failed run leaves the old pictures in place.
+ * Every written picture is then palette-compressed in place (scripts/compress-shots.js, spec 050 FR-012; DURBAR_SHOTS_COMPRESS=off skips it).
  * Linked = `docs/screenshots/*.png` in README.md, `file` in docs/site/gallery.json, any `*.png` in docs/site/landing.json.
  * docs/feature-history.md and CHANGELOG.md keep their old pictures on purpose (a record, spec 025 FR-006).
  */
@@ -136,6 +137,21 @@ function suiteEnv(d, suite) {
   return { ...((s && s.env) || {}), ...(d.env || {}) };
 }
 
+/**
+ * Spec 050 FR-012 (issue #759): compress one written picture in place (scripts/compress-shots.js: a 256-colour palette, about 60%
+ * smaller, with a quality guard that keeps the original when the picture would look worse). Never fails the run: a refusal or an
+ * error prints one line and leaves the picture as the driver wrote it. DURBAR_SHOTS_COMPRESS=off skips it. Returns the bytes saved.
+ */
+function squeeze(file, env = process.env) {
+  if (/^(off|0|false)$/i.test(String(env.DURBAR_SHOTS_COMPRESS || ''))) return 0;
+  try {
+    const r = require('./compress-shots.js').compressFile(file);
+    if (r.status === 'compressed') return r.before - r.after;
+    console.log(`       kept ${path.basename(file)} as written: ${r.reason}`);
+  } catch (e) { console.log(`       not compressed ${path.basename(file)}: ${e.message}`); }
+  return 0;
+}
+
 /** `run` and `ensure` are for tests; by default the real ui-suite runner and Electron install. */
 async function main({ argv = process.argv.slice(2), run, ensure, clockQuery } = {}) {
   const a = args(argv);
@@ -181,8 +197,12 @@ async function main({ argv = process.argv.slice(2), run, ensure, clockQuery } = 
           const mapped = new Set(names.map(([s]) => s));
           for (const f of fs.readdirSync(tmp)) if (f.endsWith('.png') && !mapped.has(f) && fs.existsSync(path.join(SHOTS, f))) names.push([f, f]);
         }
-        for (const [s, t] of names) { fs.copyFileSync(path.join(tmp, s), path.join(out, t)); copied.push(t); }
-        console.log(`  ok   ${label.padEnd(30)} ${String(r.secs).padStart(4)} s  ${names.length} file(s)`);
+        let saved = 0;
+        for (const [s, t] of names) {
+          fs.copyFileSync(path.join(tmp, s), path.join(out, t)); copied.push(t);
+          saved += squeeze(path.join(out, t)); // spec 050 FR-012: palette-compress the written picture, fail-soft
+        }
+        console.log(`  ok   ${label.padEnd(30)} ${String(r.secs).padStart(4)} s  ${names.length} file(s)${saved ? `, ${Math.round(saved / 1024)} KB smaller` : ''}`);
       }
       fs.rmSync(tmp, { recursive: true, force: true });
     }
@@ -193,5 +213,5 @@ async function main({ argv = process.argv.slice(2), run, ensure, clockQuery } = 
   return { copied, failed };
 }
 
-module.exports = { DOC_SHOTS, NO_DRIVER, CLOCK, linkedImages, coverage, pinnedClock, main };
+module.exports = { DOC_SHOTS, NO_DRIVER, CLOCK, linkedImages, coverage, pinnedClock, squeeze, main };
 if (require.main === module) main().catch((e) => { console.error('shots-docs:', e.message); process.exitCode = 1; });
