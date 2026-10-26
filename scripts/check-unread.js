@@ -31,6 +31,7 @@ module.exports = async (ctx) => {
   const info = (id) => js(`(()=>{const d=document.querySelector(${jsLiteral(sel(id))});if(!d)return null;const m=d.querySelector('.unread-mark');return {cls:d.className,state:d.dataset.state,label:d.getAttribute('aria-label')||'',mark:!!m,text:m?m.textContent.trim():'',tip:m?m.title:'',font:m?parseFloat(getComputedStyle(m).fontSize):0,outline:getComputedStyle(d).outlineStyle,aria:m?m.getAttribute('aria-hidden'):''}})()`);
   const done = () => js(`+document.querySelector('#stats .stat[data-k=done] b').textContent`);
   const anns = () => js(`window.__ann.filter(t=>/New reply/.test(t))`);
+  const strip = (id) => '.sitem[data-sw="' + id + '"] .unread-mark'; // the chat strip's marker of one session (a selector, put into page code with jsLiteral)
   const stripMark = (id) => js(`!!document.querySelector('.sitem[data-sw="'+CSS.escape(${jsLiteral(id)})+'"] .unread-mark')`);
   const openChat = async (id) => { await js(`document.querySelector(${jsLiteral(sel(id))}).click()`); await ok(`document.body.classList.contains('panel-open')&&document.querySelector('#chat')`, 'the chat of ' + id + ' opens'); };
   const closeChat = async () => { await H.key('Escape'); await ok(`!document.body.classList.contains('panel-open')`, 'the chat closes'); };
@@ -70,9 +71,9 @@ module.exports = async (ctx) => {
     // a completion while ANOTHER chat is open: marked; the open chat's strip shows it too
     await openChat(C);
     await turn(B, 'Hugo finished the notes.');
-    await ok(`!!document.querySelector('.sitem[data-sw="${B}"] .unread-mark')`, `${tag}: Hugo is marked on the strip while Maya's chat is open`);
+    await ok(`!!document.querySelector(${jsLiteral(strip(B))})`, `${tag}: Hugo is marked on the strip while Maya's chat is open`);
     assert.ok(await stripMark(A), `${tag}: Priya is still marked on the strip`);
-    assert.ok(/, new reply not read yet/.test(await js(`document.querySelector('.sitem[data-sw="${B}"]').getAttribute('aria-label')`)), `${tag}: the strip item's name says it`);
+    assert.ok(/, new reply not read yet/.test(await js(`document.querySelector(${jsLiteral('.sitem[data-sw="' + B + '"]')}).getAttribute('aria-label')`)), `${tag}: the strip item's name says it`);
     // a completion while ITS OWN chat is open: not unread
     await ok(`window.__ann.some(t=>/Hugo finished/.test(t))`, `${tag}: Hugo's announcement`);
     const annN = (await anns()).length;
@@ -91,7 +92,7 @@ module.exports = async (ctx) => {
 
     // the Browser tab and the Notes drawer are not "shown"
     await openChat(A);
-    await ok(`!document.querySelector('.sitem[data-sw="${A}"] .unread-mark')`, `${tag}: opening Priya's chat reads her reply`); // the office under an open chat is not repainted (the strip is the live surface)
+    await ok(`!document.querySelector(${jsLiteral(strip(A))})`, `${tag}: opening Priya's chat reads her reply`); // the office under an open chat is not repainted (the strip is the live surface)
     assert.ok(await stripMark(B), `${tag}: Hugo is still unread while Priya's chat is open`);
     await closeChat();
     await ok(`!!document.querySelector(${jsLiteral(sel(A) + '.shut')})`, `${tag}: Priya, read, follows the couch rule`);
@@ -117,19 +118,19 @@ module.exports = async (ctx) => {
     await turn(A, 'Priya again.');
     await ok(`!!document.querySelector(${jsLiteral(sel(A) + ' .unread-mark')})`, `${tag}: Priya is unread again`);
     await openChat(A);
-    await ok(`!document.querySelector('.sitem[data-sw="${A}"] .unread-mark')`, `${tag}: read on open`);
+    await ok(`!document.querySelector(${jsLiteral(strip(A))})`, `${tag}: read on open`);
     const tabs = await js(`!!document.getElementById('tabBrowser')`);
     if (tabs) {
       await js(`document.getElementById('tabBrowser').click()`);
       await ok(`document.getElementById('tabBrowser').getAttribute('aria-selected')==='true'`, `${tag}: Browser tab in front`);
       await turn(A, 'Priya, while the Browser tab is in front.');
-      await ok(`!!document.querySelector('.sitem[data-sw="${A}"] .unread-mark')`, `${tag}: a reply finished behind the Browser tab is unread`);
+      await ok(`!!document.querySelector(${jsLiteral(strip(A))})`, `${tag}: a reply finished behind the Browser tab is unread`);
       // closing the chat with an unread reply (Browser tab in front) does not read it; the office shows the marker
       await closeChat();
       await ok(`!!document.querySelector(${jsLiteral(sel(A) + ' .unread-mark')})`, `${tag}: closing the chat does not clear an unread reply`);
       await openChat(A);
       await js(`(()=>{const t=document.getElementById('tabChat');if(t&&t.getAttribute('aria-selected')!=='true')t.click();})()`);
-      await ok(`document.getElementById('tabChat').getAttribute('aria-selected')==='true'&&!document.querySelector('.sitem[data-sw="${A}"] .unread-mark')`, `${tag}: back on the Chat tab it is read`);
+      await ok(`document.getElementById('tabChat').getAttribute('aria-selected')==='true'&&!document.querySelector(${jsLiteral(strip(A))})`, `${tag}: back on the Chat tab it is read`);
     } else console.log(`[unread] ${tag}: no Browser tab in this build, tab step skipped`);
     // the Notes drawer covers the chat log: a reply that finishes under it is not shown
     const nt = await js(`!!document.querySelector('[data-notes-toggle]')`);
@@ -137,9 +138,9 @@ module.exports = async (ctx) => {
       await js(`document.querySelector('[data-notes-toggle]').click()`);
       await ok(`!!document.getElementById('notesDrawer')&&!document.getElementById('notesDrawer').hidden`, `${tag}: the Notes drawer opens`);
       await turn(A, 'Priya, under the Notes drawer.');
-      await ok(`!!document.querySelector('.sitem[data-sw="${A}"] .unread-mark')`, `${tag}: a reply finished under the Notes drawer is unread`);
+      await ok(`!!document.querySelector(${jsLiteral(strip(A))})`, `${tag}: a reply finished under the Notes drawer is unread`);
       await js(`document.querySelector('[data-notes-toggle]').click()`);
-      await ok(`document.getElementById('notesDrawer').hidden&&!document.querySelector('.sitem[data-sw="${A}"] .unread-mark')`, `${tag}: closing the drawer shows the chat, so it is read`);
+      await ok(`document.getElementById('notesDrawer').hidden&&!document.querySelector(${jsLiteral(strip(A))})`, `${tag}: closing the drawer shows the chat, so it is read`);
     } else console.log(`[unread] ${tag}: no Notes drawer in this build, drawer step skipped`);
     await closeChat();
 
@@ -159,7 +160,7 @@ module.exports = async (ctx) => {
 
     // the list view carries the marker and the name
     await H.click('#vList');
-    await ok(`!!document.querySelector('#list .lrow[data-id="${B}"] .unread-mark')&&/new reply not read yet/.test(document.querySelector('#list .lrow[data-id="${B}"]').getAttribute('aria-label'))`, `${tag}: the list row says New`);
+    await ok(`!!document.querySelector(${jsLiteral('#list .lrow[data-id="' + B + '"] .unread-mark')})&&/new reply not read yet/.test(document.querySelector(${jsLiteral('#list .lrow[data-id="' + B + '"]')}).getAttribute('aria-label'))`, `${tag}: the list row says New`);
     await H.click('#vOffice');
     await ok(`document.getElementById('vOffice').getAttribute('aria-pressed')==='true'&&!!document.querySelector(${jsLiteral(sel(B))})`, `${tag}: back in the office`);
 
