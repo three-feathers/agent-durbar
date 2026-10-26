@@ -21,4 +21,14 @@ assert.strictEqual(s(undefined), '');
 assert.strictEqual(B('a1', 'a1'), 'a1', 'a Revoke all under way for this agent stays');
 assert.strictEqual(B('a1', 'b2'), '', 'another agent is drawn: it is dropped');
 assert.strictEqual(B('', 'a1'), '', 'none under way');
+// FR-108 (FR-013): the line that says how far "for this session" reaches
+const H = (G as unknown as { scopeHint: (p: unknown) => string }).scopeHint;
+assert.strictEqual(H({ kind: 'write', scopeKey: 'write:/w/src', scopeLabel: 'write in src/' }), 'Allow for this session covers every file in src/, not only this one.');
+assert.strictEqual(H({ kind: 'write', scopeKey: 'write-folders:a\nb', scopeLabel: 'write in a/, b/' }), 'Allow for this session covers every file in these folders (a/, b/), not only these.');
+assert.strictEqual(H({ kind: 'write', scopeKey: 'write:', scopeLabel: 'write' }), 'Allow for this session covers every file in that folder, not only this one.');
+assert.strictEqual(H({ kind: 'shell', scopeKey: 'shell-exact:git status', scopeLabel: 'run git status', broadScopeKey: 'shell:git', broadScopeLabel: 'run git (any arguments)' }), 'Any arguments allows every simple \u201cgit\u201d command, not only this one, also \u201cgit push\u201d.');
+assert.strictEqual(H({ kind: 'shell', scopeKey: 'shell-exact:ls', scopeLabel: 'run ls', broadScopeKey: 'shell:ls', broadScopeLabel: 'run ls (any arguments)' }), 'Any arguments allows every simple \u201cls\u201d command, not only this one.');
+assert.strictEqual(H({ kind: 'shell', scopeKey: 'shell-exact:python x.py', scopeLabel: 'run python x.py' }), '', 'an exact-command grant needs no line');
+assert.strictEqual(H({ kind: 'read', scopeKey: 'read:/x', scopeLabel: 'read in x/' }), '', 'other kinds: none');
+assert.strictEqual(H(null), '');
 console.log('[grantlabel] all checks passed');

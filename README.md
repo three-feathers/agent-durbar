@@ -218,6 +218,7 @@ Agents run **locally, on your machine, as you**, in the folders you add. Every a
   When Read-only stops an edit or a command, the chat says so and offers **Switch to Ask first…**: it opens the mode menu (Read-only, Ask first, Allow all; Allow all still asks you to confirm). Afterwards, ask the agent again; nothing is resent for you ([screenshot](docs/screenshots/003-ro-ask-menu-1440x900.png)).
   On Codex, Read-only and Ask first rely on Codex's own sandbox: checked on Linux (reads limited to the session's folders, writes blocked; 2026-10-21). On macOS and Windows that sandbox depends on the system; if it cannot start, the session does not start and Durbar says why.
 - **Ask first**: writes, shell commands, URLs and tools wait for *Allow once*, *Allow “…” for this session* or *Deny* (the same words in Simple and Expert).
+  - **How far *for this session* reaches** ([spec 003](specs/003-permissions-and-approvals/spec.md) FR-013, FR-108): for a **write** it covers every file in that folder, not only the one asked about; *Allow for this session: any arguments* covers every simple command of that name (`git` also means `git push`). The approval card says so in a line above its buttons. A shell command's normal session button allows that exact command only.
 - **Allow all**: no prompts. Use it only in folders you trust; it asks once to confirm.
 
 Change the mode any time from the mode chip under the message box or the agent's card menu.
