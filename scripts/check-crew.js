@@ -91,6 +91,35 @@ function idleOpacity() {
   });
 }
 
+/* spec 001 FR-178 with spec 077: the desk glow and the person's zoom (.pp scaled by --hl-e about the chair, 74 99). In the page: each desk with a
+   portrait at the peak of its entry pulse, with what the face must stay clear of. Each desk gets the New class, then the waiting class, for the
+   measurement only (synchronous, so the app never redraws in between). */
+function glowZoom() {
+  const out = [];
+  const r = (e) => { const b = e.getBoundingClientRect(); return [b.x, b.y, b.x + b.width, b.y + b.height]; };
+  for (const d of document.querySelectorAll('#stage .desk[data-id]:not(.shut)')) {
+    if (!d.getClientRects().length || d.classList.contains('is-away')) continue;
+    const svg = d.querySelector('svg.scene'), pp = svg && svg.querySelector('.pp'), im = svg && svg.querySelector('image.crew-pic');
+    if (!pp || !im) continue;
+    if (d.matches('.is-failing,.is-retrying,.is-error')) continue; // no glow on these (FR-178)
+    const had = d.className;
+    for (const needs of [false, true]) { // both glows on every desk: New (zoom 1.15), then needs you (1.25)
+      d.className = had; d.classList.remove('is-waiting', 'is-unread'); d.classList.add(needs ? 'is-waiting' : 'is-unread');
+      const e = parseFloat(getComputedStyle(d).getPropertyValue('--hl-e')) || 1, saved = pp.style.cssText;
+      pp.style.animation = 'none'; pp.style.transform = `scale(${e})`;
+      const covers = [];
+      for (const c of d.querySelectorAll('.chatno')) if (c.getClientRects().length) covers.push(['chat badge', r(c)]);
+      const w = document.createTreeWalker(d, NodeFilter.SHOW_TEXT);
+      for (let n = w.nextNode(); n; n = w.nextNode()) { const p = n.parentElement; if (n.nodeValue.trim() && !p.closest('svg') && !p.closest('.chatno') && p.getClientRects().length) covers.push(['card text', r(p)]); }
+      out.push({ kind: needs ? 'needs you' : 'new', e, href: im.getAttribute('href'), vb: (svg.getAttribute('viewBox') || '').split(/\s+/).map(Number), svg: r(svg), card: r(d), covers,
+        glow: getComputedStyle(d, '::after').boxShadow !== 'none', ink: getComputedStyle(d).getPropertyValue('--hl').trim() });
+      pp.style.cssText = saved;
+    }
+    d.className = had;
+  }
+  return out;
+}
+
 /* natural sizes of the portraits (in the page: an Image per file) */
 const naturals = (files) => `Promise.all(${jsLiteral(files)}.map(f=>new Promise(r=>{const i=new Image();i.onload=()=>r([f,i.naturalWidth,i.naturalHeight]);i.onerror=()=>r([f,0,0]);i.src=f;})))`;
 const hit = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
@@ -169,6 +198,8 @@ module.exports = async (ctx) => {
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     const tag = `${w}x${h}`;
     await H.load({ w, h, ready: 'fit', settle: false });
+    // spec 017: with the cabins on (the default) a busy or waiting desk is a closed door, not a scene; this step measures the scenes, so the cabins are off here (the cabin portrait is checked below)
+    if (await H.js(`localStorage.getItem('durbar.doorsigns')!=='off'`)) { await H.js(`localStorage.setItem('durbar.doorsigns','off')`); await H.load({ w, h, ready: 'fit', settle: false }); }
     await H.office(15);
     await pick(ID);
     const nat = await sizes();
@@ -207,6 +238,24 @@ module.exports = async (ctx) => {
       assert.ok(Math.abs(x.pic - 1) < 1e-3, `${tag}: an idle portrait shows at full colour (opacity ${x.pic})`);
       assert.ok(x.rest < 0.9, `${tag}: the furniture of an idle crew desk stays dimmed (opacity ${x.rest})`);
     }
+    // spec 001 FR-178: the New glow and the needs-you glow, with the person zoomed at the peak of the pulse: the face stays inside its card and clear of the text and the badge
+    const gz = await H.js(`(${glowZoom.toString()})()`);
+    assert.ok(gz.length >= 1, `${tag}: a desk to measure the glow on`);
+    for (const g of gz) {
+      const m = /crew\/art\/([\w-]+)-(working|waiting|resting)\.webp/.exec(g.href), fb = C.faceBox(m[1], m[2]), [vx, vy] = g.vb;
+      const z = (p, o) => o + (p - o) * g.e, X = (u) => z(u, 74), Y = (u) => z(u, 99); // the zoom about the chair, in stage units
+      const [u0, v0, u1, v1] = [X(fb[0]), Y(fb[1]), X(fb[0] + fb[2]), Y(fb[1] + fb[3])];
+      const R = g.svg, sc = Math.min((R[2] - R[0]) / g.vb[2], (R[3] - R[1]) / g.vb[3]), ox = R[0] + ((R[2] - R[0]) - g.vb[2] * sc) / 2, oy = R[1] + ((R[3] - R[1]) - g.vb[3] * sc) / 2;
+      const px = [ox + (u0 - vx) * sc, oy + (v0 - vy) * sc, ox + (u1 - vx) * sc, oy + (v1 - vy) * sc], where = `${tag} ${g.kind} ${m[1]}-${m[2]} (zoom ${g.e})`;
+      assert.ok(g.glow && g.e > 1 && g.ink, `${where}: the glow and a zoom are on`);
+      assert.ok(px[0] >= g.card[0] - 0.5 && px[1] >= g.card[1] - 0.5 && px[2] <= g.card[2] + 0.5 && px[3] <= g.card[3] + 0.5, `${where}: the zoomed face ${px.map(Math.round)} stays inside its card ${g.card.map(Math.round)}`);
+      for (const [name, c] of g.covers) {
+        const dx = Math.min(px[2], c[2]) - Math.max(px[0], c[0]), dy = Math.min(px[3], c[3]) - Math.max(px[1], c[1]);
+        assert.ok(!(dx > 1.5 && dy > 1.5), `${where}: the zoomed face ${px.map(Math.round)} is not under the ${name} ${c.map(Math.round)}`);
+      }
+      // the picture is under the monitor in the drawing order (asserted above), so a zoomed edge goes behind the screen frame, never over it
+    }
+    console.log(`[crew] ${tag} glow`, JSON.stringify({ desks: gz.length, needs: gz.filter((g) => g.kind === 'needs you').length, zoom: [...new Set(gz.map((g) => g.e))] }));
     // the other themes keep the whole scene dimmed
     await pick('clean-office');
     const plain = await H.js(`(${idleOpacity.toString()})()`);

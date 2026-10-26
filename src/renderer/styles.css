@@ -1633,6 +1633,7 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
    animated. prefers-reduced-motion: reduce gives the static glow only (no scale, no breathe). */
 .desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)){--hl:var(--desk-new);--hl-e:1.15;--hl-b:1.05;--hl-p:2.4s}
 .desk.is-waiting{--hl:var(--desk-needs);--hl-e:1.25;--hl-b:1.1;--hl-p:1.6s}
+.desk.is-waiting:has(.crew-pic){--hl-e:1.15;--hl-b:1.07} /* spec 077: a crew portrait is bigger than the drawn figure, so at 1.25 its face reached the chat number at 1280x800; New's 1.15 keeps it clear (check:crew) */
 .desk.is-waiting,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)){isolation:isolate} /* the glow layer sits behind the card's content inside the card, above the room */
 .desk.is-waiting::after,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error))::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:-1;box-shadow:0 0 6px 2px color-mix(in srgb,var(--hl) 90%,transparent),0 0 24px 8px color-mix(in srgb,var(--hl) 60%,transparent)}
 .desk.is-waiting .pp,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)) .pp{transform-box:view-box;transform-origin:74px 99px}
