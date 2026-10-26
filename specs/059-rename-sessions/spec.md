@@ -572,3 +572,12 @@ the role. `placeRen` took the mode icon as the end of the name and used its x wi
 otherwise it is anchored on the name itself. The fallback (over the end of the name, never more than its right half) and the protected-element
 checks are unchanged. `check-office-overlap` now also fails a desk pencil that covers the first half of its name. Task T080 [FR-020, FR-025].
 `[IMPLEMENTED]` `sim:` on Linux (xvfb, DejaVu), 1440x900 and 1280x800: the simulator's own cards already wrap the mode icon (19 and 13 pencils in sim 15 failed the new check with the old `placeRen`, 61 failures in all); with the fix `check:office` passes 460/460, `check:rename-inline` and `check:geometry` pass. Not run on macOS, where the bug was first seen (system fonts are narrower, so the wrap point differs; the check measures the real boxes, so it applies there too).
+
+### 2026-10-26: the folder pencil is never over the folder name (FR-169, issue #788, owner decision)
+
+*Problem*: `placeRen` protected every room-header part except the door, the name and the path, so with the floor tag right after the name the pencil fell back to "over the end of the name" (about 20px over the name in every room, at both sizes, with floors on). Hovering showed "Rename folder ..." instead of the name.
+
+- **FR-169** `[IMPLEMENTED]` `sim:` `check:office` ("the folder pencil is over the name", both sizes, floors cases) A room header's pencil is in the header's flow, right after the name (`ren-in`, as in the Folders panel), not positioned over it, and `placeRen` no longer places folder pencils (the fallback over the end of the name stays for desk cards and rows, FR-025). When the name would be squeezed, the pencil is the first thing to go (`no-ren`, spec 001 FR-179); **Rename…** in the folder's ⋯ menu always remains.
+
+Numbers taken: FR-169 and T081 (checked against `main` and the open PRs on 2026-10-26).
+

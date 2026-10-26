@@ -196,12 +196,33 @@ function pageCheck(expanded, expectPlaces) {
   stage.querySelectorAll('.room-head').forEach((hd) => {
     const n = hd.querySelector('.room-name'), p = hd.querySelector('.room-path');
     if (!n || !p || !n.getClientRects().length || !p.getClientRects().length) return;
-    if (n.scrollWidth > n.clientWidth + 0.5 && p.getBoundingClientRect().width > 12) problems.push(`room "${n.textContent.trim()}": the name is cut while the path still shows (${Math.round(p.getBoundingClientRect().width)}px)`);
+    const cs = getComputedStyle(n), rg = document.createRange(); rg.selectNodeContents(n); /* spec 001 FR-179: cut by a fraction of a pixel counts (it draws an ellipsis; scrollWidth misses it) */
+    const room = n.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth);
+    const cut = n.scrollWidth > n.clientWidth + 0.5 || rg.getBoundingClientRect().width > room + 0.01;
+    if (cut && p.getBoundingClientRect().width > 12) problems.push(`room "${n.textContent.trim()}": the name is cut while the path still shows (${Math.round(p.getBoundingClientRect().width)}px)`);
+  });
+  /* spec 001 FR-179 (issue #788): a room name is always readable: when it is cut it still shows at least 8 characters (8ch of its own font);
+     a shorter name is shown whole. The pencil of a room header is never over the name (it is in the header's flow, or gone to the menu). */
+  stage.querySelectorAll('.room-head').forEach((hd) => {
+    const n = hd.querySelector('.room-name'); if (!n || !n.getClientRects().length) return;
+    const cs = getComputedStyle(n), key = n.textContent.trim();
+    const rg = document.createRange(); rg.selectNodeContents(n);
+    const room = n.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth);
+    if (n.scrollWidth > n.clientWidth + 0.5 || rg.getBoundingClientRect().width > room + 0.01) {
+      const c = document.createElement('canvas').getContext('2d'); c.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      const min = Math.min(8 * c.measureText('0').width, rg.getBoundingClientRect().width), have = room;
+      if (have < min - 0.5) problems.push(`room "${key}": the name is narrower than its minimum (${have.toFixed(1)}px of ${min.toFixed(1)}px)`);
+    }
+    const b = hd.querySelector('.ren[data-renfolder]');
+    if (b && b.getClientRects().length) {
+      const N = R(n), B = R(b);
+      if (B.x < N.r - T && B.r > N.x + T && B.y < N.b - T && B.b > N.y + T) problems.push(`room "${key}": the folder pencil is over the name`);
+    }
   });
   /* spec 001 FR-023 (T030): a room header's parts (door, name, path, dots, +, MCP, AIU, plant, floor tag) never overlap or leave the header */
   stage.querySelectorAll('.room-head').forEach((hd) => {
     const H = R(hd), key = (hd.closest('.room') || {}).dataset?.key || '?';
-    const parts = [...hd.children].filter((e) => !e.classList.contains('ren') && e.getClientRects().length && R(e).w > 0 && getComputedStyle(e).visibility !== 'hidden'); /* the rename pencil is placed over the name's tail or the path's start on purpose (spec 059): checked against the chips below */
+    const parts = [...hd.children].filter((e) => e.getClientRects().length && R(e).w > 0 && getComputedStyle(e).visibility !== 'hidden'); /* spec 001 FR-179: the rename pencil is in the header's flow now, so it is a part like the others */
     parts.forEach((e) => { const p = R(e), slack = e.classList.contains('door') ? 5 : 1; /* the door hangs 4px left on purpose */ if (p.x < H.x - slack || p.r > H.r + 1) problems.push(`header part ${name(e)} sticks out of the header of ${key}`); });
     for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
       const p = R(parts[i]), q = R(parts[j]);
@@ -481,6 +502,10 @@ async function driver(ctx) {
       ['3 floors on, 3 custom places', 'sim=15&simfreeze=1&simfloors=1&simplaces=3', true],
       ['2 floors on, 3 custom places, 1 door closed', 'sim=15&simfreeze=1&simfloors=1&simplaces=3&floorsoff=Personal&closed=mcp-swiss', true],
       ['1 floor on, 3 custom places', 'sim=15&simfreeze=1&simfloors=1&simplaces=3&floorsoff=Personal,Client%20A', false],
+      /* spec 001 FR-179 (issue #788): schedule and MCP chips next to a floor tag, one agent per folder (one-desk rooms): the name keeps its minimum, the pencil is never over it, what gave way is in the ⋯ menu */
+      ['3 floors on, schedules', 'sim=15&simfreeze=1&simfloors=1&simsched=1', true],
+      ['2 floors on, schedules, one desk per room', 'sim=15&simfreeze=1&simfloors=1&simsched=1&simrooms=solo&floorsoff=Personal', true],
+      ['3 floors on, schedules, long names', 'sim=15&simfreeze=1&simfloors=1&simsched=1&simnames=long', true],
     ];
     for (const [label, q, tags, extra] of cases) {
       const tag = `floors ${w}x${h} ${label}`;
@@ -503,6 +528,18 @@ async function driver(ctx) {
       const fp = await ctx.js(`(${floorsCheck.toString()})(${tags})`);
       total++;
       if (fp.length) { failed++; console.log(`FAIL ${tag}: ${fp.slice(0, 6).join('; ')}`); }
+      /* what gave way in a header is in that folder's ⋯ menu (spec 001 FR-179) */
+      const gave = await ctx.js(`(()=>{const out=[];document.querySelectorAll('#stage .room-head').forEach(h=>{const need=[['no-sched','Schedules'],['no-mcp','MCP extras'],['no-floor','Move to floor'],['no-aiu','Cost']].filter(([c])=>h.classList.contains(c)).map(x=>x[1]);const m=h.querySelector('[data-foldermenu]');if(need.length&&m)out.push({id:m.dataset.foldermenu,need});});return out;})()`);
+      for (const g of gave.slice(0, 2)) {
+        await ctx.js(`document.querySelector('#stage [data-foldermenu="'+CSS.escape(${jsLiteral(g.id)})+'"]').click()`);
+        await sleep(150);
+        const have = await ctx.js(`[...document.querySelectorAll('#modeMenu [role=menuitem] b')].map(b=>b.textContent)`);
+        total++;
+        const missing = g.need.filter((x) => !have.some((t) => t.startsWith(x)));
+        if (missing.length) { failed++; console.log(`FAIL ${tag}: the folder menu of ${g.id} lacks ${missing.join(', ')} (it gave way in the header)`); }
+        await ctx.js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));(document.getElementById('modeMenu')||{remove(){}}).remove()`);
+      }
+      if (gave.length) console.log(`check:office: ${tag}: chips gave way in ${gave.length} header(s)`);
       if (/floorsoff=Personal(&|$)/.test(q)) {
         const ap = await ctx.js(`(${offAttentionCheck.toString()})()`);
         total++;

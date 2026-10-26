@@ -940,7 +940,7 @@ function linksSVG(d,rows,extraMore){
    button is invalid), placed by placePencils(); hidden with opacity (never display or visibility: it stays in the Tab order). */
 const INL=()=>window.DurbarInlineName;
 const renBtn=a=>canRenameSession(a)?`<button type="button" class="ren" data-ren="${esc(a.id)}" data-key="ren:${esc(a.id)}" aria-label="Rename ${esc(a.name)}" title="Rename ${esc(a.name)}">${ICON('rename')}</button>`:'';
-/* a folder's pencil (FR-020 item 4): `inflow` in the Folders panel row, else placed over the room header like a card's */
+/* a folder's pencil (FR-020 item 4): `inflow` in the room header (spec 001 FR-179, after the name) and the Folders panel row */
 const canRenameFolder=r=>!!(r&&bridge&&bridge.renameFolder&&!demoOn&&agents.some(x=>!x.parent&&x.room===r.id));
 const renFolderBtn=(r,inflow)=>canRenameFolder(r)?`<button type="button" class="ren${inflow?' ren-in':''}" data-renfolder="${esc(r.id)}" data-key="renf:${esc(r.id)}" aria-label="Rename folder ${esc(r.name)}" title="Rename folder ${esc(r.name)}">${ICON('rename')}</button>`:'';
 function unitHTML(a,d){
@@ -1301,7 +1301,7 @@ function roomHTML({r,mains,all,rolled},d,aw,cap){
   const dots=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?`<span class="rd${k==='waiting'?' attn':(k==='done'||k==='idle')?' calm':''}" title="${n} ${LABELS[k]}"><span class="dot ${k}"></span>${n}<span class="rdw"> ${LABELS[k].toLowerCase()}</span></span>`:''}).join(''); /* spec 001 FR-037: "5 working" when the header has room */
   /* spec 052 FR-006: the counts in words too (screen readers, and a tooltip for colour-blind users) */
   const dotsLabel=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?n+' '+LABELS[k].toLowerCase():'';}).filter(Boolean).join(', ');
-  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="${esc(wordOf('door-close'))} ${esc(r.name)}" title="${esc(wordOf('door-title-prefix'))}: ${esc(r.name)} ${esc(wordOf('door-plate-suffix'))}">${doorSvg(true)}</button><span class="room-name" title="${esc(r.name)}${(()=>{const u=roomAiu(r);return u?' · '+esc(u.long):'';})()}">${esc(r.name)}</span>${renFolderBtn(r,false)}${al.siren&&!SIM_QUIET_HEADS.has('siren')?SIREN():''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(showPath(r.path))}</span>${(()=>{const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);return u?`<button class="room-aiu" type="button" data-costview="${esc(r.id)}" title="${esc(u.tip+'\nClick for the cost by folder.')}">${esc(u.long)}</button>`:'';})()}${dotsLabel?`<span class="room-dots" role="img" aria-label="${esc(dotsLabel)}" title="${esc(dotsLabel)}">${dots}</span>`:`<span class="room-dots" aria-hidden="true">${dots}</span>`}${bridge&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.removeFolder&&!demoOn?`<button class="room-new room-more" type="button" data-foldermenu="${esc(r.id)}" title="Folder actions: new session, schedules, rename, hide, remove" aria-label="Folder actions for ${esc(r.name)}" aria-haspopup="menu">⋯</button>`:''}${roomSchedChip(r)}${bridge&&bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT()}</div>`;
+  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="${esc(wordOf('door-close'))} ${esc(r.name)}" title="${esc(wordOf('door-title-prefix'))}: ${esc(r.name)} ${esc(wordOf('door-plate-suffix'))}">${doorSvg(true)}</button><span class="room-name" title="${esc(r.name)}&#10;${esc(r.path)}${(()=>{const u=roomAiu(r);return u?'&#10;'+esc(u.long):'';})()}">${esc(r.name)}</span>${renFolderBtn(r,true)}${al.siren&&!SIM_QUIET_HEADS.has('siren')?SIREN():''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(showPath(r.path))}</span>${(()=>{const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);return u?`<button class="room-aiu" type="button" data-costview="${esc(r.id)}" title="${esc(u.tip+'\nClick for the cost by folder.')}">${esc(u.long)}</button>`:'';})()}${dotsLabel?`<span class="room-dots" role="img" aria-label="${esc(dotsLabel)}" title="${esc(dotsLabel)}">${dots}</span>`:`<span class="room-dots" aria-hidden="true">${dots}</span>`}${bridge&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.removeFolder&&!demoOn?`<button class="room-new room-more" type="button" data-foldermenu="${esc(r.id)}" title="Folder actions: new session, schedules, rename, hide, remove" aria-label="Folder actions for ${esc(r.name)}" aria-haspopup="menu">⋯</button>`:''}${roomSchedChip(r)}${bridge&&bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT()}</div>`;
   if(d==='full'){
     const gap=6, pad=12;
     const sw=shutW(r,rolled), widths=mains.map(a=>unitWidth(a,d)).concat(sw?[sw]:[]); /* FR-053: the squeezed group sits in the desks' row */
@@ -1401,7 +1401,7 @@ function chooseLayout(sizing,aw,ah){
      fits only by size is kept as the fallback (soft), so a header that cannot fit anywhere never sends the office into scroll mode. */
   const sizeFits=()=>probe.scrollHeight<=ah+1&&probe.scrollWidth<=aw+1;
   const fits=()=>sizeFits()&&headsFit(probe);
-  let soft=null;
+  let soft=null, giving=null; /* giving: the first layout whose headers hold once chips give way (spec 001 FR-179); used only when none holds without */
   const cands=FORCE_DENSITY?CANDIDATES.filter(c=>c[0]===FORCE_DENSITY):CANDIDATES;
   let res=null, lastAny=null;
   for(const [d,hcap,side] of cands){
@@ -1411,6 +1411,7 @@ function chooseLayout(sizing,aw,ah){
       probeSet(probe,stageHTML(sizing,d,aw));
       if(fits()){res={d,hcap,cap:0,fit:true,boost:[],side:!!side,heads:true};break;}
       if(!soft&&sizeFits())soft={d,hcap,cap:0,fit:true,boost:[],side:!!side};
+      if(!giving&&headsFitGiving(probe)&&sizeFits())giving={d,hcap,cap:0,fit:true,boost:[],side:!!side,heads:true}; /* after the chips gave way the width can fit too */
       lastAny={d,hcap,cap:0,fit:false,boost:[],side:!!side};continue;
     }
     const D=DENS[d], over=2*D.rp+4;
@@ -1420,18 +1421,21 @@ function chooseLayout(sizing,aw,ah){
       probeSet(probe,stageHTML(sizing,d,aw,c));
       const h=probe.scrollHeight;
       if(!any||h<any.h-8)any={c,h};
+      let strict=false;
       if(sizeFits()){
         /* among layouts that fit, prefer desks close to a comfortable width (not stretched, not squeezed) */
         let tw=0; const ds=probe.querySelectorAll('.desk.card'); ds.forEach(e=>{tw+=e.getBoundingClientRect().width;});
         const miss=Math.abs(tw/Math.max(1,ds.length)-D.cw*1.3);
         if(!bySize||miss<bySize.miss-6)bySize={c,h,miss};
-        if(headsFit(probe)&&(!best||miss<best.miss-6))best={c,h,miss};
+        if(headsFit(probe)){strict=true;if(!best||miss<best.miss-6)best={c,h,miss};}
       }
+      if(!strict&&!giving&&headsFitGiving(probe)&&sizeFits())giving={d,hcap,cap:c,fit:true,boost:[],heads:true}; /* the chips giving way can also bring the width within the floor */
     }
     if(best){res={d,hcap,cap:best.c,fit:true,boost:[],heads:true};break;}
     if(bySize&&!soft)soft={d,hcap,cap:bySize.c,fit:true,boost:[]};
     lastAny={d,hcap,cap:any.c,fit:false,boost:[]};
   }
+  if(!res&&giving)res=giving;
   if(!res&&soft)res=soft;
   /* spec 001 FR-042: when the search picked `full` or `roomy` (few agents), grown `roomy` desks win if they fit at least one step larger
      than `roomy`. Never after card/mini/micro (15 agents lay out as before) or with a forced density. */
@@ -1589,25 +1593,54 @@ function fitUsage(root){
     for(const st of USE_STEPS){if(fits())break;u.classList.add(st);}
   }
   /* the same for room headers: a name cut (even by a pixel, which shows an ellipsis) while its path still shows hides the path (also in the tooltip) */
-  root.querySelectorAll('.room-head').forEach(fitHead);
+  root.querySelectorAll('.room-head').forEach(hd=>fitHead(hd)); /* not forEach(fitHead): the index would be the `give` argument */
 }
-function fitHead(hd){
-  hd.classList.remove('no-path','no-words');
+const HEAD_GIVE=['no-ren','no-sched','no-mcp','no-floor','no-aiu']; /* spec 001 FR-179: what gives way, in order, when the name would be squeezed (all but the pencil are in the folder's menu) */
+function fitHead(hd,give=true){
+  hd.classList.remove('no-path','no-words',...HEAD_GIVE);
   const n=hd.querySelector('.room-name'),p=hd.querySelector('.room-path');
   /* spec 001 FR-037: the count words go first (the counts stay, the words are in the tooltip and label), then the path */
-  const tight=()=>(n&&n.scrollWidth>n.clientWidth+0.5)||hd.scrollWidth>hd.clientWidth+0.5;
+  const tight=()=>(n&&nameCut(n))||hd.scrollWidth>hd.clientWidth+0.5;
   if(hd.querySelector('.rdw')&&tight())hd.classList.add('no-words');
-  if(n&&p&&p.getClientRects().length&&n.scrollWidth>n.clientWidth+0.5)hd.classList.add('no-path');
+  if(n&&p&&p.getClientRects().length&&nameCut(n))hd.classList.add('no-path');
+  /* spec 001 FR-179 (issue #788): the name stays readable, so the chips give way: the pencil (Rename is in the menu), the schedule chip,
+     the MCP chip, the floor tag, the cost (each in the folder's ⋯ menu), one at a time, until the name holds its minimum. Not while a layout is searched. */
+  if(give)for(const st of HEAD_GIVE){if(headHolds(hd))break;hd.classList.add(st);}
 }
-/* spec 001 FR-023 (change 2026-10-23): after those steps, every part of every room header is inside its header (what check:office asserts) */
+/* spec 001 FR-179: the smallest a room name may be squeezed to: 8 characters (8ch of its font), or all of it when it is shorter */
+const ROOM_NAME_CH=8;
+let NAME_CTX=null;
+/* the name's text is wider than its box, even by a fraction of a pixel (then the browser draws an ellipsis; scrollWidth is a whole number and counts the padding, so it misses it: a name 0.03px short lost two letters in the 1280x800 office) */
+const nameRoom=(n,cs)=>n.getBoundingClientRect().width-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight)-parseFloat(cs.borderLeftWidth)-parseFloat(cs.borderRightWidth); /* the text's room, not rounded (clientWidth is a whole number) */
+function nameCut(n){
+  if(n.scrollWidth>n.clientWidth+0.5)return true;
+  const cs=getComputedStyle(n),r=document.createRange(); r.selectNodeContents(n);
+  return r.getBoundingClientRect().width>nameRoom(n,cs)+0.01;
+}
+function nameSqueezed(hd){
+  const n=hd.querySelector('.room-name'); if(!n||!n.getClientRects().length||!nameCut(n))return false;
+  const cs=getComputedStyle(n);
+  if(!NAME_CTX)NAME_CTX=document.createElement('canvas').getContext('2d');
+  NAME_CTX.font=cs.fontStyle+' '+cs.fontWeight+' '+cs.fontSize+' '+cs.fontFamily;
+  const r=document.createRange(); r.selectNodeContents(n);
+  const min=Math.min(ROOM_NAME_CH*NAME_CTX.measureText('0').width,r.getBoundingClientRect().width), have=nameRoom(n,cs); /* a name shorter than the minimum is only cut by a fraction */
+  return have<min-0.5;
+}
+/* spec 001 FR-179 (change 2026-10-26): every part of every room header is inside its header and its name holds its minimum (what check:office asserts);
+   no part gives way here, so a layout where one must is not the preferred one */
 function headsFit(root){
+  for(const hd of root.querySelectorAll('.room-head')){fitHead(hd,false);if(!headHolds(hd))return false;}
+  return true;
+}
+/* the same, when the parts that give way (fitHead) may do so */
+function headsFitGiving(root){
   for(const hd of root.querySelectorAll('.room-head')){fitHead(hd);if(!headHolds(hd))return false;}
   return true;
 }
 function headHolds(hd){
   const H=hd.getBoundingClientRect();
   for(const e of hd.children){if(!e.getClientRects().length)continue;const r=e.getBoundingClientRect();if(r.width>0&&r.right>H.right+1)return false;}
-  return true;
+  return !nameSqueezed(hd); /* spec 001 FR-179: a name squeezed below its minimum is a header that does not hold */
 }
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{const s=document.getElementById('stage');if(s)fitUsage(s);}).catch(()=>{});
 /* spec 052 FR-164: the top bar is one row. When its parts do not fit (a narrow window, a wide theme or system font, the Mac traffic
@@ -5543,6 +5576,8 @@ function openFolderMenu(r,x,y,anchor){
     m.innerHTML=(bridge.newSession&&anyKindReady()?it('new','New session','Another agent with its own chat here'):'')
       +(bridge.listSchedules?it('sched','Schedules',(()=>{const n=schedulesOf(r).filter(s=>!s.done).length;return n?n+' scheduled, '+(nextRunOf(schedulesOf(r))?'next '+nextRunOf(schedulesOf(r)):'paused'):'Prompts sent here at a time, every day or at an interval';})()):'')
       +(bridge.renameFolder?it('rename','Rename…','A display name for this room'):'')
+      +(bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))?it('mcp','MCP extras…','Optional servers for this folder only'):'')
+      +(()=>{const u=roomAiu(r);return u?it('cost','Cost',u.long+' in this folder. Click for the cost by folder'):'';})()
       +(canMove?`<button type="button" role="menuitem" data-fact="floor" aria-haspopup="menu" aria-expanded="false"><span class="mt"><b>Move to floor</b><small>${esc(here?'Now on '+here.name+'. Its agents go with it':'Its agents go with it')}</small></span><span class="ck" aria-hidden="true">▸</span></button>`:'')
       +(bridge.setFolderHidden?it('hide','Hide','Out of the office; its sessions keep running'):'')
       +it('rm','Remove folder','Ends its sessions; nothing on disk is deleted','mm-danger');
@@ -5565,7 +5600,7 @@ function openFolderMenu(r,x,y,anchor){
     closeModeMenu();
     if(f==='to'){moveFolderByMenu(r,t.dataset.floor,anchor);return;}
     const ag=agents.find(q=>!q.parent&&q.room===r.id);
-    if(f==='new'){if(ag)newSession(ag);}else if(f==='sched')openSchedules(r);else if(f==='rename')renameFolder(r,anchor);else if(f==='hide')hideFolder(r,true);else removeFolder(r);});
+    if(f==='new'){if(ag)newSession(ag);}else if(f==='sched')openSchedules(r);else if(f==='mcp'){const o=folderOfRoom(r.id);if(o)window.DurbarScreens.folderMcp(o.key,o.name);}else if(f==='cost')window.DurbarScreens.openTools(null,'cost');else if(f==='rename')renameFolder(r,anchor);else if(f==='hide')hideFolder(r,true);else removeFolder(r);});
   m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-fact]')],i=its.indexOf(document.activeElement),sub=!!m.querySelector('[data-fact="back"]');
     if(e.key==='ArrowDown'){e.preventDefault();focusIn(its[(i+1)%its.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(its[(i+its.length-1)%its.length]);}
     else if(e.key==='ArrowRight'&&document.activeElement&&document.activeElement.dataset.fact==='floor'){e.preventDefault();paintFloors();}
@@ -6744,17 +6779,17 @@ function startFolderEdit(r,surface,from){
     focusBack:()=>{const sel=from==='pencil'?(surface==='fp'?'#foldersPop':'#stage')+' .ren[data-renfolder="'+CSS.escape(r.id)+'"]':surface==='fp'?'#foldersPop [data-fp="rename"][data-room="'+CSS.escape(r.id)+'"]':'#stage [data-door="'+CSS.escape(r.id)+'"]';return document.querySelector(sel)||document.querySelector('#stage [data-door="'+CSS.escape(r.id)+'"]');}});
   return true;
 }
-/* The pencil of a card, row or room header sits at the end of the name (after the mode icon); when that would cover another part of it
-   (status word, pill, badge, chat number, draft mark, the header's chips) it sits over the tail of the name instead. It takes no
-   layout space (positioned). */
+/* The pencil of a card or row sits at the end of the name (after the mode icon); when that would cover another part of it
+   (status word, pill, badge, chat number, draft mark) it sits over the tail of the name instead. It takes no layout space (positioned).
+   A room header's pencil is in the header's flow (spec 001 FR-179, issue #788), so it is never over the name: it gives way to the menu. */
 function placeRen(b){
-  const wrap=b.parentElement, folder=!!b.dataset.renfolder;
-  const sib=folder?wrap:wrap&&wrap.querySelector(':scope>.desk[data-id],:scope>.lrow[data-id]'), nm=sib&&sib.querySelector('.name,.lnm,.room-name');
+  const wrap=b.parentElement;
+  const sib=wrap&&wrap.querySelector(':scope>.desk[data-id],:scope>.lrow[data-id]'), nm=sib&&sib.querySelector('.name,.lnm,.room-name');
   if(!nm)return;
   const nr=nm.getBoundingClientRect(), sr=sib.getBoundingClientRect(); if(!nr.width||!sr.width)return;
   const S=16, nx=nm.nextElementSibling, mr=nx&&nx.matches('.modeic,.modebadge')?nx.getBoundingClientRect():null;
   const tail=mr&&mr.top<nr.bottom&&mr.bottom>nr.top?nx:nm, tr=tail.getBoundingClientRect(); /* the mode icon only when it is on the name's line: on a wide card it can wrap below the name (issue 781) */
-  const protSel=folder?':scope>*:not(.door):not(.room-name):not(.room-path):not(.ren)':'.stl,.pill,.badge,.chatno,.draft-mark,.modeic,.modebadge';
+  const protSel='.stl,.pill,.badge,.chatno,.draft-mark,.modeic,.modebadge';
   const prot=[...sib.querySelectorAll(protSel)].filter(p=>p!==tail&&p.getClientRects().length).map(p=>p.getBoundingClientRect());
   const top=nr.top+(nr.height-S)/2, hit=l=>prot.some(q=>l<q.right&&l+S>q.left&&top<q.bottom&&top+S>q.top);
   let left=tr.right+3;
@@ -6763,7 +6798,7 @@ function placeRen(b){
   const pad=(b.offsetWidth-S)/2; /* the box is 24px (a 24px target, spec 052), the glyph 16px in its middle */
   b.style.left=Math.round(left-pad-or.left-(op.clientLeft||0))+'px'; b.style.top=Math.round(top-pad-or.top-(op.clientTop||0))+'px';
 }
-function placePencils(){document.querySelectorAll('#stage .ren[data-ren],#list .ren[data-ren],#stage .ren[data-renfolder]:not(.ren-in)').forEach(placeRen);}
+function placePencils(){document.querySelectorAll('#stage .ren[data-ren],#list .ren[data-ren]').forEach(placeRen);}
 /* spec 006 FR-017: one main session out of the office; the last one of a folder stays (Folders > Remove) */
 function siblingsOf(a){const r=liveRoot(a);return agents.filter(x=>!x.parent&&x.room===r.room&&x.id!==r.id);}
 async function removeSessionUi(a){

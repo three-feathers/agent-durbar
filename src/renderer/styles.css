@@ -650,6 +650,8 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .use.short .full{display:none}.use.short .short{display:inline}
 .use.no-cost .aiu{display:none}
 .stage .room-head.no-path .room-path{display:none}
+/* spec 001 FR-179 (issue #788): what gives way when the room name would be squeezed (fitHead): the pencil, then the schedule chip, the MCP chip, the floor tag and the cost; all but the pencil are in the folder's ⋯ menu */
+.stage .room-head.no-ren>.ren,.stage .room-head.no-sched .room-sched,.stage .room-head.no-mcp .room-mcp,.stage .room-head.no-floor .floor-tag,.stage .room-head.no-aiu .room-aiu{display:none}
 
 .stage[data-d="mini"] .desk.card{padding:4px 8px 4px 4px;column-gap:7px}
 .stage[data-d="mini"] .l1 .role,.stage[data-d="micro"] .l1 .role{display:none}
@@ -1850,7 +1852,8 @@ h2,h3,h4{text-wrap:balance}
 
 /* spec 001 FR-037: the room header counts in words when the header has room (fitUsage drops the words first, then the path) */
 .rd .rdw{font-weight:500}
-.room-head.no-words .rdw,#probe .rdw{display:none} /* the words never decide the layout: the search measures without them */
+.room-head.no-words .rdw,#probe .rdw{display:none}
+#probe .room-head>.ren{display:none} /* spec 001 FR-179: the pencil is the first part to give way, so it never decides the layout (the search measures without it) */ /* the words never decide the layout: the search measures without them */
 /* ---- spec 005 FR-037..FR-042: the composer toolbar under the message box, and one Send / Stop slot inside its right edge.
    Tokens only (docs/design-rules.md 1-3, 9); controls 28px like the header's; the office is untouched. ---- */
 .inbox{align-items:flex-end}
