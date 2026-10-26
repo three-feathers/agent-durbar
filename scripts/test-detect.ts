@@ -439,6 +439,16 @@ async function main(): Promise<void> {
     killForEscalation(p.c, 'SIGKILL', 'linux', {}, tree);
     assert.deepStrictEqual(p.sigs, ['SIGKILL']);
     assert.deepStrictEqual(trees, [77], 'POSIX: tree killer not used');
+    const ex = mk(99);
+    (ex.c as unknown as { exitCode: number }).exitCode = 0;
+    killForEscalation(ex.c, 'SIGKILL', 'win32', {}, tree);
+    killForEscalation(ex.c, 'SIGKILL', 'linux', {}, tree);
+    assert.deepStrictEqual(trees, [77], 'an exited child (pid may be reused): no taskkill');
+    assert.deepStrictEqual(ex.sigs, [], 'an exited child: no signal either');
+    const sg = mk(98);
+    (sg.c as unknown as { signalCode: string }).signalCode = 'SIGTERM';
+    killForEscalation(sg.c, 'SIGKILL', 'win32', {}, tree);
+    assert.deepStrictEqual(trees, [77], 'a signalled child: no taskkill');
     killForEscalation({ pid: 1, kill: () => { throw new Error('gone'); } } as unknown as import('child_process').ChildProcess, 'SIGTERM', 'linux', {}, tree); // never throws
   }
   console.log('detect tests passed');

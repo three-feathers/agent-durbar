@@ -439,6 +439,8 @@ export function killChildTree(child: Pick<ChildProcess, 'pid' | 'kill'> & { exit
  * `detached`, so there is no process group to signal and Ctrl-C keeps reaching the child). Never throws.
  */
 export function killForEscalation(child: Pick<ChildProcess, 'pid' | 'kill'> & { exitCode?: number | null; signalCode?: string | null }, signal: NodeJS.Signals, platform: NodeJS.Platform = process.platform, env: Readonly<Record<string, string | undefined>> = process.env, tree: typeof killChildTree = killChildTree): void {
+  // an exited child's pid may already belong to another process, and `taskkill /t` would end that tree (same guard as killChildTree, #721)
+  if (child.exitCode != null || child.signalCode != null) return;
   try {
     if (platform === 'win32' && child.pid) tree(child, platform, env);
     else child.kill(signal);
