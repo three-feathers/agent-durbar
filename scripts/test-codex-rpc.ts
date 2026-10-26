@@ -37,7 +37,7 @@ function make(over: { onRequest?: (m: string, p: unknown) => Promise<RequestOutc
     closeGraceMs: over.closeGraceMs ?? 20,
     killGraceMs: over.killGraceMs ?? 5000,
     maxPendingServerRequests: over.maxPending,
-    killChild: over.killChild,
+    killChild: over.killChild ?? ((c, sig) => { c.kill(sig); }), // the platform default would run taskkill on win32; these tests count direct signals
   });
   return { fc, rpc, calls, notes, exits, dbg };
 }

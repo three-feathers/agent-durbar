@@ -23,6 +23,7 @@ function setup(handlers: Partial<TransportHandlers> = {}, opts: { controlTimeout
       control: handlers.control ?? (async () => ({ response: {} })),
       exit: (e) => exits.push(e),
     },
+    killChild: (c, sig) => { c.kill(sig); }, // the platform default would run taskkill on win32; these tests count direct signals
     ...opts,
   });
   return { t, child: fs.children[0], calls: fs.calls, msgs, exits };
