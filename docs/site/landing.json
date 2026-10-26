@@ -8,7 +8,7 @@
     "caption": "Simulator demo data: names, costs and tasks are invented.",
     "nameNote": "Why “Durbar”? A durbar is a royal court where everyone gets a hearing. Here your agents are the court, and you decide who gets your attention."
   },
-  "status": "Stable v0.1.0 · unsigned · used by hand on Linux and on real Macs; Windows only in CI so far (builds start on all three, and real-account end-to-end runs pass on all three, 9 of 9, in review).",
+  "status": "Stable v0.1.0 · unsigned · used by hand on Linux and on real Macs; on Windows it was tried once by hand on a real PC (2026-10-21) and is checked in CI (builds start on all three, and real-account end-to-end runs passed on all three, 9 of 9, 2026-10-20).",
   "cards": [
     {
       "title": "Never miss a waiting agent",
@@ -104,7 +104,7 @@
     {
       "name": "Claude Code",
       "verified": "Checked on a real account: every mode, stop, resume, models, questions, MCP, sub-agents, the cost limit and summaries.",
-      "notYet": "Installed, signed in and answering on Linux, macOS and Windows CI machines (end-to-end run, in review); not yet used by hand on a Windows PC."
+      "notYet": "Installed, signed in and answering on Linux, macOS and Windows CI machines (end-to-end run, 2026-10-20); used by hand on a real Windows PC only once (2026-10-21), not day to day."
     },
     {
       "name": "OpenAI Codex",
