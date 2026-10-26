@@ -258,3 +258,9 @@ Under the three modes of this spec, [spec 087](../087-os-sandbox-floor/spec.md) 
 lock in **Read-only** and **Ask first**: Claude Code's bash sandbox and Copilot's local sandbox (writes none or only the session's folders,
 network off), Codex's read-limited profile unchanged; **Allow all** keeps the app's default. Durbar's own checks (FR-001..FR-028) do not
 change and nothing here approves a call they would deny or ask about (spec 087 FR-002). Simulator and fakes only (spec 087 T060-T062 open).
+
+### 2026-10-26: the README Safety model says what the checks really cover (release triage, #770)
+
+*Problem* (Vikram's release triage before the first stable release, 2026-10-26): the README *Safety model* overstated four things. It did not say that Copilot trusts an MCP server's own read-only mark (this spec's 2026-10-20 known gap); it said Durbar "never stores … your prompts", although a scheduled prompt is stored as written (spec 044 FR-001, `durbar-schedules.json`, 0600); it did not call masking best effort; and it did not say that on Linux without a desktop keyring the agent apps keep their own sign-ins in plain files (spec 058).
+
+- Docs only; no behaviour changes. The README *Safety model* now says each of these in plain words. The spending-limit sentence of the same PR is owned by spec 052 FR-179.
