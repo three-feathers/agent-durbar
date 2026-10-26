@@ -1,4 +1,4 @@
-/* EA Summit 2026 talk (spec 050 FR-014). Unlisted, static, no external resources. Retro look from Durbar's Retro Pixel theme. */
+/* "LEVEL UP, ARCHITECT" talk, Barcelona (spec 050 FR-014). Unlisted, static, no external resources. Retro look from Durbar's Retro Pixel theme. */
 @font-face{font-family:"Press Start 2P";src:url("press-start-2p.woff2") format("woff2");font-display:swap;font-weight:400;font-style:normal}
 
 :root{
@@ -439,3 +439,8 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:15;bac
 .oneword{font-size:1.15rem;color:var(--ink-2);margin:0 0 1.2rem}
 .oneword .nudge{color:var(--muted);font-style:italic;margin-left:.4em}
 .quiz .q,#when .q,#risk .q,#cloud .q{font-size:clamp(1.4rem,min(3.6vw,6.4vh),4.4rem);max-width:24em}
+/* the game title (owner 2026-10-26, 22:03 UTC: the talk is "LEVEL UP, ARCHITECT") */
+#start h1.gametitle{font-size:clamp(1.8rem,min(6vw,10.5vh),8rem);line-height:1.15;margin:0 0 .5rem;color:var(--ink);text-shadow:.06em .06em 0 var(--accent-bg)}
+.subtitle{font-family:var(--head);font-size:clamp(.8rem,min(1.7vw,3vh),2rem);line-height:1.5;margin:0 0 1rem;color:var(--ink-2)}
+.subtitle span{background:#111122;color:#ffec27;padding:.15em .45em;margin-right:.5em}
+.players{align-items:flex-start}.players li span{font-size:max(12px,.55rem)}

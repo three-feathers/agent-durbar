@@ -1,4 +1,4 @@
-/* EA Summit 2026 talk (spec 050 FR-014): presenter keys (keyboard and clicker), answer reveal, video steps, black screen,
+/* "LEVEL UP, ARCHITECT" talk, Barcelona (spec 050 FR-014): presenter keys (keyboard and clicker), answer reveal, video steps, black screen,
    hints, theme, HUD, video fallback. No network; localStorage only remembers light/dark. */
 (function () {
   'use strict';
@@ -38,7 +38,7 @@
         /* built with createElement/textContent: nothing read from the page goes into HTML */
         var inner = el('div', 'inner'), img = el('img');
         img.src = P.img; img.alt = ''; img.width = 200; img.height = 124;
-        inner.appendChild(el('p', 'kicker', 'Player change'));
+        inner.appendChild(el('p', 'kicker', 'LEVEL UP! \u00b7 player change'));
         inner.appendChild(img);
         inner.appendChild(el('p', 'turn', 'PLAYER ' + P.n + ' \u00b7 ' + P.name.toUpperCase()));
         inner.appendChild(el('p', 'turn-sub', (P.handle || P.role || '') + ' \u2014 YOUR TURN \u25BA'));
