@@ -25,4 +25,4 @@
 ## 2026-10-26: unlisted talk pages (owner request)
 
 - [x] T029 `copyTalks()` in `scripts/build-site.js` (copy `docs/site/talk/`, screenshots named `shots/<file>.png`), the EA Summit talk and host pages under `docs/site/talk/ea-summit-2026/`, and the talk checks in `scripts/test-site.js` (noindex, CSP, unlinked, no sitemap, budgets) [FR-014]
-- [ ] T030 Drop in `talk.mp4`, `talk.vtt` and `poster.png` (produced separately) and check the player at 1920x1080 [FR-014]
+- [x] T030 Drop in `talk.mp4`, `talk.vtt` and `poster.png` (produced separately) and check the player at 1920x1080 [FR-014] (2026-10-26: 3:34, 37.5 MB, 44 captions; test-site checks size and links; the play/next steps were checked by script with a stand-in clip, the final file was checked by ffprobe and frame grabs, not played in a browser here)
