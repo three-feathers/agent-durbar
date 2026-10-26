@@ -334,7 +334,7 @@ assert.deepStrictEqual(o.map((n) => n.text), ['b', 'c', 'a']);
   const hostile = { name: '<img src=x onerror=alert(1)>', description: '"><script>x</script>', source: 'note', kind: 'note', scope: 'session' as string };
   const hv = SL.view(hostile, SAFE.mask);
   const html = SL.optionHtml(hv, 0, true, SL.tip(hostile, SAFE.mask, cutText));
-  assert.ok(!/<img|<script|onerror=alert\(1\)>/.test(html.replace(/&lt;/g, '')) && /&lt;img/.test(html), `a hostile note title is escaped: ${html}`);
+  assert.ok(!/<img|<script|onerror=alert\(1\)>/i.test(html.replace(/&lt;/gi, '')) && /&lt;img/.test(html), `a hostile note title is escaped: ${html}`);
   const sec = { name: tok, description: `x ${tok}`, source: 'note', kind: 'note', scope: 'folder' };
   const sv = SL.view(sec, SAFE.mask), sh = SL.optionHtml(sv, 1, false, SL.tip(sec, SAFE.mask, cutText));
   assert.ok(!sh.includes('a1B2c3') && /\[redacted\]/.test(sh), `a token in a note is masked in the row and its tooltip: ${sh}`);

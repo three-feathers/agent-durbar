@@ -51,7 +51,7 @@
     const c=Math.max(0,Math.min(caret==null?v.length:Number(caret)||0,v.length));
     let before=v.slice(0,c);
     const after=v.slice(c);
-    if(v.trim()!==''&&c>0&&before[c-1]!=='\n'){before=before.replace(/[ \t]+$/,'')+'\n\n';}
+    if(v.trim()!==''&&c>0&&before[c-1]!=='\n'){let e=before.length;while(e>0&&(before[e-1]===' '||before[e-1]==='\t'))e--;before=before.slice(0,e)+'\n\n';} /* a loop, not /[ \t]+$/: that regex retries at every blank of a long run (quadratic) */
     const value2=before+t+after;
     return {value:value2,caret:before.length+t.length};
   }

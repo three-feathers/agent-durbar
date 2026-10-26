@@ -2557,7 +2557,7 @@ function notesPaint(){
 function notesFocusRow(id){
   const d=$('notesDrawer'); if(!d)return;
   const rows=[...d.querySelectorAll('.nt-row')], r=(id&&rows.find(x=>x.dataset.id===id))||rows[0];
-  if(r){rows.forEach(x=>x.tabIndex=-1);r.tabIndex=0;focusIn(r);r.scrollIntoView&&r.scrollIntoView({block:'nearest'});}else focusIn($('ntAdd')||$('ntClose'));
+  if(r){rows.forEach(x=>x.tabIndex=-1);r.tabIndex=0;focusIn(r);}else focusIn($('ntAdd')||$('ntClose'));
 }
 async function openNotes(a,o){
   a=a||byId(ui.selected); o=o||{};
