@@ -173,7 +173,7 @@ module.exports = async (ctx) => {
   assert.strictEqual(await js(`document.querySelectorAll('#chat .msg').length`), msgsBefore, 'US2.1: the chat is as it was');
   // US2.2
   assert.deepStrictEqual(logged, [], 'precondition: nothing went to the system yet');
-  await js(`(()=>{const a=[...document.querySelectorAll('#chat .md a')].find(x=>x.textContent.trim()==='a web page');a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,ctrlKey:${!IS_MAC},metaKey:${IS_MAC}}))})()`);
+  await js(`(()=>{const a=[...document.querySelectorAll('#chat .md a')].find(x=>x.textContent.trim()==='a web page');a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,ctrlKey:${jsLiteral(!IS_MAC)},metaKey:${jsLiteral(IS_MAC)}}))})()`);
   await wait(() => logged.includes('https://example.com/docs'), 'US2.2: the modifier click goes to the system path');
   assert.strictEqual(views().length, 0, 'and loads nothing in the tab');
   console.log('[browser-scenarios] all checks passed');
