@@ -34,4 +34,4 @@
 
 - [x] T031 `onUserInputRequest` in `CopilotAdapter`: `question` event, `answerQuestion`, skip and Stop answers; fake-session test [FR-058]
 - [x] T032 (real-account, owner allowed) One prompt that must use `ask_user`; answer from the card; record as `real:` [FR-058]
-
+- [x] T033 Map the runtime's `custom_agent_prompt` host error to a plain message (FR-075, issue #703): `plainRuntimeError` in `src/adapters/map.ts`, applied to `subagent.failed`, a failed `tool.execution_complete` and `session.error`; test in `scripts/test-events.ts`.
