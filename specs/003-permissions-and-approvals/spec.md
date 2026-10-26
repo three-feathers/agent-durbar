@@ -258,3 +258,15 @@ Under the three modes of this spec, [spec 087](../087-os-sandbox-floor/spec.md) 
 lock in **Read-only** and **Ask first**: Claude Code's bash sandbox and Copilot's local sandbox (writes none or only the session's folders,
 network off), Codex's read-limited profile unchanged; **Allow all** keeps the app's default. Durbar's own checks (FR-001..FR-028) do not
 change and nothing here approves a call they would deny or ask about (spec 087 FR-002). Simulator and fakes only (spec 087 T060-T062 open).
+
+### 2026-10-26: the card says how far "for this session" reaches (FR-013 narrowed again; FR-108, T039; v0.1.0 fix)
+
+FR-013 stays a design limit (a session grant is not configurable), but it was invisible: the buttons said "Allow for this session" and
+nothing on the card said that the grant reaches past this one request. **FR-108** `[IMPLEMENTED]` (test: `scripts/test-permissions.ts`
+for the words, sim: `scripts/check-permission-scope.js` for the card at both sizes): a pending approval card carries a short line of
+plain text (not colour alone, at least 10.5px, never cut) between the summary and the buttons, only when the card offers a grant that
+reaches further than the request: (a) **write**: "Allow for this session covers every file in <folder>/, not only this one." (several
+folders: "in those folders"); (b) **any arguments**: "Any arguments allows every simple <name> command, not only this one" and, for
+`git`, "also git push". The exact-command shell button needs no line (it grants that command text only, FR-022). The README *Safety
+model* says the same. `[KNOWN GAP]` FR-013 itself: the scope is still not narrower or configurable.
+
