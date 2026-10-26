@@ -85,6 +85,9 @@ module.exports = async (ctx) => {
     await ok(`!!document.querySelector(${jsLiteral(sel(B) + ' .unread-mark')})`, `${tag}: Hugo's desk shows the marker back in the office`);
     assert.strictEqual(await marks(), [A, B].sort().join(','), `${tag}: two unread desks, Maya not among them: ${await marks()}`);
     for (const id of [A, B]) assert.ok(!/\bshut\b/.test((await info(id)).cls), `${tag}: ${id} stays on its desk`);
+    await turn(A, 'Priya finished the migration.'); // a second turn of an unread agent: no second marker, and its state reads Done again for the picture
+    await ok(`!!document.querySelector(${jsLiteral(sel(A) + '[data-state="done"]')})`, `${tag}: Priya is Done again`);
+    if (process.env.OUT) await H.shot(path.join(OUT, `001-unread-${tag}.png`), { prep: 'calm', blur: true, settle: true });
 
     // the Browser tab and the Notes drawer are not "shown"
     await openChat(A);
@@ -121,9 +124,23 @@ module.exports = async (ctx) => {
       await ok(`document.getElementById('tabBrowser').getAttribute('aria-selected')==='true'`, `${tag}: Browser tab in front`);
       await turn(A, 'Priya, while the Browser tab is in front.');
       await ok(`!!document.querySelector('.sitem[data-sw="${A}"] .unread-mark')`, `${tag}: a reply finished behind the Browser tab is unread`);
-      await js(`document.getElementById('tabChat').click()`);
-      await ok(`!document.querySelector('.sitem[data-sw="${A}"] .unread-mark')`, `${tag}: back on the Chat tab it is read`);
+      // closing the chat with an unread reply (Browser tab in front) does not read it; the office shows the marker
+      await closeChat();
+      await ok(`!!document.querySelector(${jsLiteral(sel(A) + ' .unread-mark')})`, `${tag}: closing the chat does not clear an unread reply`);
+      await openChat(A);
+      await js(`(()=>{const t=document.getElementById('tabChat');if(t&&t.getAttribute('aria-selected')!=='true')t.click();})()`);
+      await ok(`document.getElementById('tabChat').getAttribute('aria-selected')==='true'&&!document.querySelector('.sitem[data-sw="${A}"] .unread-mark')`, `${tag}: back on the Chat tab it is read`);
     } else console.log(`[unread] ${tag}: no Browser tab in this build, tab step skipped`);
+    // the Notes drawer covers the chat log: a reply that finishes under it is not shown
+    const nt = await js(`!!document.querySelector('[data-notes-toggle]')`);
+    if (nt) {
+      await js(`document.querySelector('[data-notes-toggle]').click()`);
+      await ok(`!!document.getElementById('notesDrawer')&&!document.getElementById('notesDrawer').hidden`, `${tag}: the Notes drawer opens`);
+      await turn(A, 'Priya, under the Notes drawer.');
+      await ok(`!!document.querySelector('.sitem[data-sw="${A}"] .unread-mark')`, `${tag}: a reply finished under the Notes drawer is unread`);
+      await js(`document.querySelector('[data-notes-toggle]').click()`);
+      await ok(`document.getElementById('notesDrawer').hidden&&!document.querySelector('.sitem[data-sw="${A}"] .unread-mark')`, `${tag}: closing the drawer shows the chat, so it is read`);
+    } else console.log(`[unread] ${tag}: no Notes drawer in this build, drawer step skipped`);
     await closeChat();
 
     // a hidden folder keeps the marker and says nothing; shown again, the desk is marked
@@ -164,7 +181,6 @@ module.exports = async (ctx) => {
     const small = await js(`[...document.querySelectorAll('#stage .unread-mark')].filter(m=>parseFloat(getComputedStyle(m).fontSize)<10.5).length`);
     assert.strictEqual(small, 0, `${tag}: no badge text under 10.5px`);
     assert.ok(await js(`document.documentElement.scrollWidth<=innerWidth&&document.documentElement.scrollHeight<=innerHeight`), `${tag}: no page overflow`);
-    if (process.env.OUT) await H.shot(path.join(OUT, `001-unread-${tag}.png`), { prep: 'calm', blur: true, settle: true });
     console.log(`[unread] ${tag} ok`);
   }
 
