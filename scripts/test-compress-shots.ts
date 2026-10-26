@@ -266,6 +266,16 @@ function refDecodeIndices(png: Buffer): { w: number; h: number; idx: Buffer; pal
       const sq = docs.squeeze(path.join(root, 'link.png'), {}, root);
       assert.strictEqual(sq, 0); assert.ok(fs.readFileSync(out).equals(original), 'shots-docs squeeze does not follow it either');
     }
+    // the file is swapped for a different one (new inode) between reading and the rename: refused, the newcomer is untouched, no temp file left
+    {
+      const sw = path.join(root, 'swap.png'), other = Buffer.from(original); other[other.length - 20] ^= 0; // same bytes, different file
+      fs.writeFileSync(sw, original);
+      const res = cs.compressFile(sw, { root, beforeRename: (f: string) => { const n = path.join(base, 'newfile.png'); fs.writeFileSync(n, other); fs.renameSync(n, f); /* a new file takes the name while the old one still exists: a different inode */ } });
+      assert.strictEqual(res.status, 'kept'); assert.ok(/changed while/.test(res.reason || ''), res.reason);
+      assert.ok(fs.readFileSync(sw).equals(other), 'the new file is untouched');
+      assert.deepStrictEqual(fs.readdirSync(root).filter((n) => n.includes('tmp')), [], 'the temp file is removed');
+      fs.rmSync(sw);
+    }
     // a normal file is compressed in place, no temp file left
     assert.strictEqual(cs.compressFile(inRoot, { root }).status, 'compressed');
     assert.ok(fs.statSync(inRoot).size < original.length * 0.7);

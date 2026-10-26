@@ -371,22 +371,26 @@ function confinement(file, { root = ROOT_SHOTS, allowOutside = false } = {}) {
 /**
  * Compress a file in place. Confined (spec 050 FR-012, review on #761): never a symlink, never outside `opts.root` (default docs/screenshots)
  * unless `opts.allowOutside`; written through a new temp file in the same folder, then renamed, after checking the target is still the same file.
- * `write: false` only reports.
+ * `write: false` only reports. `opts.beforeRename(file)` is a test-only hook called just before the rename.
  */
 function compressFile(file, opts = {}) {
   const why = confinement(file, opts);
   if (why) return { file, status: 'kept', before: 0, after: 0, reason: why };
-  const st = fs.lstatSync(file);
+  const st = fs.lstatSync(file, { bigint: true }); // bigint: a file id can exceed 2^53 (Windows)
   const input = fs.readFileSync(file);
   const r = compressPng(input, opts);
   if (r.status === 'compressed' && opts.write !== false) {
     const tmp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${Date.now()}.tmp-compress`);
-    fs.writeFileSync(tmp, r.buffer, { flag: 'wx' }); // fails when something is already there, never follows a planted link
+    let done = false;
     try {
-      const now = fs.lstatSync(file);
+      fs.writeFileSync(tmp, r.buffer, { flag: 'wx' }); // fails when something is already there, never follows a planted link
+      if (opts.beforeRename) opts.beforeRename(file); // test-only hook: runs right before the rename (the window the check below guards)
+      const now = fs.lstatSync(file, { bigint: true });
       if (!now.isFile() || now.ino !== st.ino || now.dev !== st.dev) throw new Error('the file changed while it was compressed');
       fs.renameSync(tmp, file);
-    } catch (e) { fs.rmSync(tmp, { force: true }); return { file, status: 'kept', before: r.before, after: r.before, reason: `refused: ${e.message}` }; }
+      done = true;
+    } catch (e) { return { file, status: 'kept', before: r.before, after: r.before, reason: `refused: ${e.message}` }; }
+    finally { if (!done) fs.rmSync(tmp, { force: true }); }
   }
   return { file, ...r, buffer: undefined };
 }
