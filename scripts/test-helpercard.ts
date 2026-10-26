@@ -270,17 +270,29 @@ eq(HC.HX_TIP, 200, 'the tooltip cut is the desk card\'s number');
   const demo = helper(null, 'running'); demo.holder = {}; const b6 = total(); C2.view(demo, 1); const b7 = total(); C2.view(demo, 1); ok(b7 > b6 && total() === b7, 'no record: memo on the holder');
 }
 {
-  // a CPU-time ratio, not wall clock: 1000 repaints of a helper with a 1 MB result cost about what 1000 repaints of a small one cost (the memo)
+  // a CPU-time ratio, not wall clock (#763): 1000 repaints of a helper with a 1 MB result cost about what 1000 repaints of a small one cost
+  // (the memo). No fixed millisecond limit, because a loaded machine pushes any one past it (like test-redact, #684/#754): both runs are
+  // measured in the same process, the best CPU time of up to 3 tries each is compared, and a baseline under one CPU-timer tick is read as one
+  // tick (16 ms on Windows, 2 ms elsewhere). The memo makes both about equal (ratio 1); a repaint that masks or cuts the 1 MB again costs
+  // hundreds of times more (see the mutants in the PR), so the limit of 20 has a wide gap (worst seen 3.5, also under load; a missing cut 4800) on both sides.
   const cpu = (): number => { const u = process.cpuUsage(); return (u.user + u.system) / 1000; };
   const run = (res: string): number => {
-    const c = card(), h = helper({ task: 'T', result: res, model: 'm', tools: 2, tokens: 900 }, 'done'), t0 = cpu();
+    const c = card(), h = helper({ task: 'T', result: res, model: 'm', tokens: 900, tools: 2 }, 'done');
     c.view(h, 2); const t1 = cpu();
     for (let i = 0; i < 1000; i++) c.view(h, i % 2 ? 1 : 2);
-    return cpu() - t1 + 0 * t0;
+    return cpu() - t1;
   };
+  const MIN_BASE_MS = process.platform === 'win32' ? 16 : 2, MAX_RATIO = 20;
+  const bigText = ('x'.repeat(79) + ' ').repeat(13200);
   run('warm'); run('x');
-  const base = Math.max(run('short result'), 1), big = run(('x'.repeat(79) + ' ').repeat(13200));
-  ok(big <= base * 6 + 15, `1000 repaints of a 1 MB result: ${big.toFixed(1)} ms of CPU against ${base.toFixed(1)} ms for a short one`);
+  let base = Infinity, big = Infinity;
+  for (let i = 0; i < 3; i++) {
+    big = Math.min(big, run(bigText)); base = Math.min(base, run('short result'));
+    if (big < Math.max(base, MIN_BASE_MS) * MAX_RATIO) break;
+  }
+  const ratio = big / Math.max(base, MIN_BASE_MS);
+  console.log(`test-helpercard: repaint ratio ${ratio.toFixed(2)} (big ${big.toFixed(1)} ms, base ${base.toFixed(1)} ms, limit ${MAX_RATIO})`);
+  ok(big < Math.max(base, MIN_BASE_MS) * MAX_RATIO, `1000 repaints of a 1 MB result: ${big.toFixed(1)} ms of CPU against ${base.toFixed(1)} ms for a short one (ratio ${ratio.toFixed(1)}, limit ${MAX_RATIO}; the memo makes it about 1)`);
 }
 
 // ---- facts and names ----
