@@ -22,7 +22,7 @@ module.exports = async (ctx) => {
     const ro = await H.openSimAgent(`a=>!a.parent&&a.info&&a.live&&(a.state==='idle'||a.state==='done')`, '#msgInput');
     assert.ok(ro.ok, `${w}: opened an idle agent's chat ${jsLiteral(ro.seen)}`);
     const id = ro.id;
-    const ask = (requestId, kind, summary, extra) => js(`window.__durbarSimUi.emit({type:'status',sessionId:${jsLiteral(id)},timestamp:Date.now(),status:'needs-permission',intent:'Waiting',permission:Object.assign({requestId:${jsLiteral(requestId)},kind:${jsLiteral(kind)},summary:${jsLiteral(summary)},state:'pending'},${JSON.stringify(extra)})})`);
+    const ask = (requestId, kind, summary, extra) => js(`window.__durbarSimUi.emit({type:'status',sessionId:${jsLiteral(id)},timestamp:Date.now(),status:'needs-permission',intent:'Waiting',permission:Object.assign({requestId:${jsLiteral(requestId)},kind:${jsLiteral(kind)},summary:${jsLiteral(summary)},state:'pending'},${jsLiteral(extra)})})`);
     const card = (rid) => js(`(()=>{const n=[...document.querySelectorAll('#chat .note.perm.pending')].pop();if(!n)return null;const p=n.querySelector('.pscope');n.scrollIntoView({block:'nearest'});
       const r=p&&p.getBoundingClientRect(),R=n.getBoundingClientRect(),cs=p&&getComputedStyle(p);
       return {text:p?p.textContent:'',px:p?parseFloat(cs.fontSize):0,whole:!!p&&p.scrollWidth<=p.clientWidth+0.5&&cs.textOverflow!=='ellipsis',inside:!!p&&r.left>=R.left-0.5&&r.right<=R.right+0.5,
