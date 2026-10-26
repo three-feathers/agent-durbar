@@ -12,13 +12,16 @@ import { execFileSync, spawnSync } from 'child_process';
 const ROOT = path.join(__dirname, '..', '..');
 /* eslint-disable @typescript-eslint/no-require-imports */
 const cs = require(path.join(ROOT, 'scripts', 'compress-shots.js')) as {
+  confinement: (f: string, o?: Record<string, unknown>) => string | null;
+  compressFile: (f: string, o?: Record<string, unknown>) => { status: string; reason?: string; before: number; after: number };
+  encodePalettePng: (w: number, h: number, idx: Buffer, pal: number[][], keep?: unknown[], o?: { filter?: number }) => Buffer;
   GUARD: { mean: number; maxChannel: number; badAbove: number; badFraction: number; minSaving: number };
   decodePng: (b: Buffer) => { width: number; height: number; rgba: Buffer; chunks: { type: string; data: Buffer }[] };
   compressPng: (b: Buffer, o?: Record<string, unknown>) => { status: string; buffer: Buffer; before: number; after: number; reason?: string; stats?: { mean: number; max: number; badFraction: number } };
   guardFailure: (s: { mean: number; max: number; badFraction: number }) => string | null;
   measure: (rgba: Buffer, idx: Buffer, pal: number[][]) => { mean: number; max: number; badFraction: number };
 };
-const docs = require(path.join(ROOT, 'scripts', 'shots-docs.js')) as { squeeze: (f: string, env?: Record<string, string>) => number; main: (o: Record<string, unknown>) => Promise<{ copied: string[] } | undefined> };
+const docs = require(path.join(ROOT, 'scripts', 'shots-docs.js')) as { squeeze: (f: string, env?: Record<string, string>, root?: string) => number; main: (o: Record<string, unknown>) => Promise<{ copied: string[] } | undefined> };
 /* eslint-enable @typescript-eslint/no-require-imports */
 
 // ---- a tiny PNG writer for the fixtures (RGB or RGBA, filter 0) ----
@@ -179,6 +182,97 @@ assert.strictEqual(cs.compressPng(trunc).status, 'kept');
   assert.ok(Date.now() - tb < 5000, 'refused quickly');
 }
 
+// 5c. APNG: an acTL chunk means an animation; flattening it to a still would lose frames, so the original stays
+{
+  const at = 8 + 12 + 13;
+  const apng = Buffer.concat([original.subarray(0, at), ch('acTL', Buffer.alloc(8)), original.subarray(at)]);
+  const ra = cs.compressPng(apng);
+  assert.strictEqual(ra.status, 'kept'); assert.ok(/APNG/.test(ra.reason || ''), ra.reason); assert.ok(ra.buffer.equals(apng));
+}
+
+// 5d. the encoder, every PNG filter forced in turn, read back by a separate reference decoder that shares no code with the module
+// (review on #761: a broken Paeth filter wrote corrupt PNGs and the module's own decoder could not tell)
+function refDecodeIndices(png: Buffer): { w: number; h: number; idx: Buffer; pal: number[][]; endOk: boolean } {
+  let p = 8, w = 0, h = 0, idat: Buffer[] = [], plte: Buffer = Buffer.alloc(0);
+  while (p < png.length) {
+    const n = png.readUInt32BE(p), t = png.toString('latin1', p + 4, p + 8), d = png.subarray(p + 8, p + 8 + n);
+    assert.strictEqual(png.readUInt32BE(p + 8 + n), crc(png.subarray(p + 4, p + 8 + n)), `CRC of ${t}`);
+    if (t === 'IHDR') { w = d.readUInt32BE(0); h = d.readUInt32BE(4); assert.strictEqual(d[9], 3); }
+    if (t === 'PLTE') plte = d;
+    if (t === 'IDAT') idat.push(d);
+    p += 12 + n;
+  }
+  const endOk = png.subarray(png.length - 12).equals(Buffer.from('0000000049454e44ae426082', 'hex'));
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  assert.strictEqual(raw.length, (w + 1) * h);
+  const out = Buffer.alloc(w * h);
+  for (let y = 0; y < h; y++) {
+    const f = raw[y * (w + 1)];
+    for (let x = 0; x < w; x++) {
+      const v = raw[y * (w + 1) + 1 + x];
+      const a = x ? out[y * w + x - 1] : 0, b = y ? out[(y - 1) * w + x] : 0, c = x && y ? out[(y - 1) * w + x - 1] : 0;
+      let pr = 0;
+      if (f === 1) pr = a; else if (f === 2) pr = b; else if (f === 3) pr = (a + b) >> 1;
+      else if (f === 4) { const q = a + b - c, pa = Math.abs(q - a), pb = Math.abs(q - b), pc = Math.abs(q - c); pr = pa <= pb && pa <= pc ? a : pb <= pc ? b : c; }
+      else assert.strictEqual(f, 0);
+      out[y * w + x] = (v + pr) & 255;
+    }
+  }
+  const pal: number[][] = []; for (let i = 0; i < plte.length; i += 3) pal.push([plte[i], plte[i + 1], plte[i + 2]]);
+  return { w, h, idx: out, pal, endOk };
+}
+{
+  const W = 37, H = 29, pal = Array.from({ length: 20 }, (_, i) => [i * 12, 255 - i * 9, (i * 37) % 256]);
+  const idx = Buffer.alloc(W * H);
+  for (let i = 0; i < W * H; i++) idx[i] = ((i % W) * 3 + Math.floor(i / W) * 5 + (i % 7 === 0 ? 4 : 0)) % 20;
+  for (const f of [undefined, 0, 1, 2, 3, 4]) {
+    const png = cs.encodePalettePng(W, H, idx, pal, [], f === undefined ? {} : { filter: f });
+    const d = refDecodeIndices(png);
+    assert.ok(d.endOk, `filter ${f}: the file ends with a correct IEND chunk`);
+    assert.strictEqual(d.w, W); assert.strictEqual(d.h, H);
+    assert.ok(d.idx.equals(idx), `filter ${f}: the reference decoder reads back the same indices`);
+    assert.deepStrictEqual(d.pal, pal);
+    assert.ok(cs.decodePng(png).rgba.length === W * H * 4, `filter ${f}: the module reads it too`);
+  }
+  // and what compressPng writes for a real-looking picture is read back correctly by the reference decoder
+  const dd = refDecodeIndices(r.buffer);
+  assert.ok(dd.endOk && dd.w === w && dd.h === h, 'compressed output: valid end, same size');
+  for (let i = 0; i < w * h; i += 97) { const c = dd.pal[dd.idx[i]], o = get(back.rgba, w, i % w, Math.floor(i / w)); assert.deepStrictEqual(c, o.slice(0, 3)); }
+}
+
+// 5e. confinement: a regular file inside the root is fine; a symlink, a path that escapes with `..` and a file outside the root are refused
+{
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'compress-confine-'));
+  try {
+    const root = path.join(base, 'shots'), outside = path.join(base, 'outside');
+    fs.mkdirSync(root); fs.mkdirSync(outside);
+    const inRoot = path.join(root, 'a.png'), out = path.join(outside, 'b.png');
+    fs.writeFileSync(inRoot, original); fs.writeFileSync(out, original);
+    assert.strictEqual(cs.confinement(inRoot, { root }), null, 'a regular file in the root is allowed');
+    assert.ok(/outside/.test(cs.confinement(out, { root }) || ''), 'a file outside the root is refused');
+    assert.ok(/outside/.test(cs.confinement(path.join(root, '..', 'outside', 'b.png'), { root }) || ''), 'a .. escape is refused');
+    assert.strictEqual(cs.confinement(out, { root, allowOutside: true }), null, '--allow-outside lifts the folder rule');
+    const rr = cs.compressFile(out, { root });
+    assert.strictEqual(rr.status, 'kept'); assert.ok(fs.readFileSync(out).equals(original), 'the outside file is untouched');
+    let linked = true;
+    try { fs.symlinkSync(out, path.join(root, 'link.png')); } catch { linked = false; } // Windows may refuse symlinks
+    if (linked) {
+      assert.ok(/symbolic link/.test(cs.confinement(path.join(root, 'link.png'), { root }) || ''), 'a symlink is refused');
+      assert.ok(/symbolic link/.test(cs.confinement(path.join(root, 'link.png'), { root, allowOutside: true }) || ''), 'a symlink is refused even with --allow-outside');
+      const rl2 = cs.compressFile(path.join(root, 'link.png'), { root });
+      assert.strictEqual(rl2.status, 'kept');
+      assert.ok(fs.readFileSync(out).equals(original), 'the symlink target is untouched');
+      assert.ok(fs.lstatSync(path.join(root, 'link.png')).isSymbolicLink(), 'and the link is still a link');
+      const sq = docs.squeeze(path.join(root, 'link.png'), {}, root);
+      assert.strictEqual(sq, 0); assert.ok(fs.readFileSync(out).equals(original), 'shots-docs squeeze does not follow it either');
+    }
+    // a normal file is compressed in place, no temp file left
+    assert.strictEqual(cs.compressFile(inRoot, { root }).status, 'compressed');
+    assert.ok(fs.statSync(inRoot).size < original.length * 0.7);
+    assert.deepStrictEqual(fs.readdirSync(root).filter((n) => n.includes('tmp')), []);
+  } finally { fs.rmSync(base, { recursive: true, force: true }); }
+}
+
 // 6. size and time on a real-sized picture (generous limit, not a benchmark)
 {
   const big = uiPicture(1440, 900);
@@ -196,12 +290,12 @@ try {
   const f = path.join(tmp, 'a.png');
   fs.writeFileSync(f, original);
   const cli = path.join(ROOT, 'scripts', 'compress-shots.js');
-  const c1 = spawnSync(process.execPath, [cli, '--check', f], { encoding: 'utf8' });
+  const c1 = spawnSync(process.execPath, [cli, '--check', '--allow-outside', f], { encoding: 'utf8' });
   assert.strictEqual(c1.status, 1, 'check fails while the picture can shrink');
   assert.ok(fs.readFileSync(f).equals(original), '--check changes nothing');
-  execFileSync(process.execPath, [cli, f], { stdio: 'pipe' });
+  execFileSync(process.execPath, [cli, '--allow-outside', f], { stdio: 'pipe' });
   assert.ok(fs.statSync(f).size < original.length * 0.7, 'the CLI compressed it in place');
-  assert.strictEqual(spawnSync(process.execPath, [cli, '--check', f], { encoding: 'utf8' }).status, 0, 'check passes after compression');
+  assert.strictEqual(spawnSync(process.execPath, [cli, '--check', '--allow-outside', f], { encoding: 'utf8' }).status, 0, 'check passes after compression');
   assert.ok(!fs.readdirSync(tmp).some((n) => n.includes('.tmp')), 'no temp file left behind');
 
   // 8. shots:docs calls it after each picture it writes (fail-soft), and DURBAR_SHOTS_COMPRESS=off skips it
@@ -213,7 +307,7 @@ try {
   fs.writeFileSync(g, 'garbage');
   assert.strictEqual(docs.squeeze(g, {}), 0, 'a file it cannot read is left as it is, no throw');
   const src = fs.readFileSync(path.join(ROOT, 'scripts', 'shots-docs.js'), 'utf8');
-  assert.ok(/squeeze\(path\.join\(out, t\)\)/.test(src), 'main() squeezes every file it copies');
+  assert.ok(/squeeze\(path\.join\(out, t\), process\.env, out\)/.test(src), 'main() squeezes every file it copies');
   // end to end with a fake driver: the picture a "driver" wrote ends up compressed in --out
   const outDir = path.join(tmp, 'out');
   const fake = async (_d: unknown, dir: string) => { fs.writeFileSync(path.join(dir, '005-card-menu-stop-end-1440x900.png'), original); return { ok: true, secs: 0, log: '', why: '' }; };

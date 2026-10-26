@@ -143,10 +143,10 @@ function suiteEnv(d, suite) {
  * smaller, with a quality guard that keeps the original when the picture would look worse). Never fails the run: a refusal or an
  * error prints one line and leaves the picture as the driver wrote it. DURBAR_SHOTS_COMPRESS=off skips it. Returns the bytes saved.
  */
-function squeeze(file, env = process.env) {
+function squeeze(file, env = process.env, root = path.dirname(file)) {
   if (/^(off|0|false)$/i.test(String(env.DURBAR_SHOTS_COMPRESS || ''))) return 0;
   try {
-    const r = require('./compress-shots.js').compressFile(file);
+    const r = require('./compress-shots.js').compressFile(file, { root });
     if (r.status === 'compressed') return r.before - r.after;
     console.log(`       kept ${path.basename(file)} as written: ${r.reason}`);
   } catch (e) { console.log(`       not compressed ${path.basename(file)}: ${e.message}`); }
@@ -201,7 +201,7 @@ async function main({ argv = process.argv.slice(2), run, ensure, clockQuery } = 
         let saved = 0;
         for (const [s, t] of names) {
           fs.copyFileSync(path.join(tmp, s), path.join(out, t)); copied.push(t);
-          saved += squeeze(path.join(out, t)); // spec 050 FR-012: palette-compress the written picture, fail-soft
+          saved += squeeze(path.join(out, t), process.env, out); // spec 050 FR-012: palette-compress the written picture, fail-soft
         }
         console.log(`  ok   ${label.padEnd(30)} ${String(r.secs).padStart(4)} s  ${names.length} file(s)${saved ? `, ${Math.round(saved / 1024)} KB smaller` : ''}`);
       }

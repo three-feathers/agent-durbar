@@ -5,9 +5,10 @@
  * already well deflated); a 256-colour palette gains about 60%. It is LOSSY, so a quality guard compares the result with the original
  * and KEEPS THE ORIGINAL when the picture would get visibly worse (or when the result is not smaller).
  *
- *   node scripts/compress-shots.js [--check] [--dither] [files...]     default files: the linked pictures (shots-docs.js linkedImages)
+ *   node scripts/compress-shots.js [--check] [--dither] [--allow-outside] [files...]     default files: the linked pictures (shots-docs.js linkedImages)
  *   DURBAR_SHOTS_COMPRESS=off                                          shots:docs writes the drivers' pictures untouched
  *
+ * Files must be regular files (never symlinks) inside docs/screenshots; --allow-outside lifts the folder rule only.
  * --check changes nothing: it lists what it would do and exits 1 when a linked picture could still shrink by 10% or more.
  * Module: compressPng(buffer, opts) -> { status, buffer, before, after, stats, reason }, compressFile(file, opts).
  */
@@ -56,6 +57,7 @@ const paeth = (a, b, c) => { const p = a + b - c, pa = Math.abs(p - a), pb = Mat
 function decodePng(buf) {
   if (buf.length > MAX_FILE) throw new Error('unsupported: file larger than 64 MB');
   const chunks = readChunks(buf);
+  if (chunks.some((c) => c.type === 'acTL')) throw new Error('unsupported: animated PNG (APNG)');
   const bad = chunks.find((c) => /^[A-Z]/.test(c.type) && !['IHDR', 'PLTE', 'IDAT', 'IEND'].includes(c.type));
   if (bad) throw new Error(`unsupported: critical chunk ${bad.type}`);
   const ihdr = chunks.find((c) => c.type === 'IHDR');
@@ -127,7 +129,7 @@ function firstAppearance(indices, palette) {
 }
 
 /** Encode palette indices as an 8-bit palette PNG; `keep` = colour-related ancillary chunks (iCCP, sRGB, ...) copied from the source. */
-function encodePalettePng(width, height, indices, palette, keep = []) {
+function encodePalettePng(width, height, indices, palette, keep = [], { filter } = {}) {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4);
   ihdr[8] = 8; ihdr[9] = 3;
@@ -144,7 +146,7 @@ function encodePalettePng(width, height, indices, palette, keep = []) {
     plain.set(row, y * (width + 1) + 1);
     const prev = y ? indices.subarray((y - 1) * width, y * width) : null;
     let best = 0, bestSum = Infinity;
-    for (let f = 0; f < 5; f++) {
+    for (let f = filter === undefined ? 0 : filter; f < (filter === undefined ? 5 : filter + 1); f++) {
       const o = cand[f]; let sum = 0;
       for (let i = 0; i < width; i++) {
         const a = i ? row[i - 1] : 0, b = prev ? prev[i] : 0, c = i && prev ? prev[i - 1] : 0;
@@ -157,10 +159,10 @@ function encodePalettePng(width, height, indices, palette, keep = []) {
     cand[best].copy(adaptive, y * (width + 1) + 1);
   }
   const def = (b) => zlib.deflateSync(b, { level: 9, memLevel: 9 });
-  const a = def(plain), b = def(adaptive);
+  const a = filter === undefined ? def(plain) : null, b = def(adaptive); // `filter` (0..4) forces one filter on every row, for tests
   const parts = [SIG, chunk('IHDR', ihdr), ...keep.map((k) => chunk(k.type, k.data)), chunk('PLTE', plte)];
   if (hasAlpha) parts.push(chunk('tRNS', alpha));
-  parts.push(chunk('IDAT', a.length <= b.length ? a : b), chunk('IEND', Buffer.alloc(0)));
+  parts.push(chunk('IDAT', a && a.length <= b.length ? a : b), chunk('IEND', Buffer.alloc(0)));
   return Buffer.concat(parts);
 }
 
@@ -349,14 +351,42 @@ function compressPng(input, opts = {}) {
   return { status: 'compressed', buffer: out, before, after: out.length, exact: attempt.exact, stats };
 }
 
-/** Compress a file in place (written through a temp file, so a crash never leaves half a picture). `write: false` only reports. */
+const ROOT_SHOTS = path.join(__dirname, '..', 'docs', 'screenshots');
+const inside = (root, p) => { const r = path.relative(root, p); return r !== '' && !r.startsWith('..') && !path.isAbsolute(r); };
+
+/** Why this file may not be touched, or null: a regular file (not a symlink) whose real path is inside `root` (default docs/screenshots); `allowOutside` lifts the root rule only. */
+function confinement(file, { root = ROOT_SHOTS, allowOutside = false } = {}) {
+  let st;
+  try { st = fs.lstatSync(file); } catch (e) { return `cannot read: ${e.code || e.message}`; }
+  if (st.isSymbolicLink()) return 'refused: it is a symbolic link';
+  if (!st.isFile()) return 'refused: not a regular file';
+  if (!allowOutside) {
+    let real, realRoot;
+    try { real = fs.realpathSync(file); realRoot = fs.realpathSync(root); } catch (e) { return `refused: cannot resolve the path (${e.code || e.message})`; }
+    if (!inside(realRoot, real)) return `refused: outside ${path.basename(path.dirname(realRoot))}/${path.basename(realRoot)} (use --allow-outside to compress a file elsewhere)`;
+  }
+  return null;
+}
+
+/**
+ * Compress a file in place. Confined (spec 050 FR-012, review on #761): never a symlink, never outside `opts.root` (default docs/screenshots)
+ * unless `opts.allowOutside`; written through a new temp file in the same folder, then renamed, after checking the target is still the same file.
+ * `write: false` only reports.
+ */
 function compressFile(file, opts = {}) {
+  const why = confinement(file, opts);
+  if (why) return { file, status: 'kept', before: 0, after: 0, reason: why };
+  const st = fs.lstatSync(file);
   const input = fs.readFileSync(file);
   const r = compressPng(input, opts);
   if (r.status === 'compressed' && opts.write !== false) {
-    const tmp = file + '.tmp-compress';
-    fs.writeFileSync(tmp, r.buffer);
-    fs.renameSync(tmp, file);
+    const tmp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${Date.now()}.tmp-compress`);
+    fs.writeFileSync(tmp, r.buffer, { flag: 'wx' }); // fails when something is already there, never follows a planted link
+    try {
+      const now = fs.lstatSync(file);
+      if (!now.isFile() || now.ino !== st.ino || now.dev !== st.dev) throw new Error('the file changed while it was compressed');
+      fs.renameSync(tmp, file);
+    } catch (e) { fs.rmSync(tmp, { force: true }); return { file, status: 'kept', before: r.before, after: r.before, reason: `refused: ${e.message}` }; }
   }
   return { file, ...r, buffer: undefined };
 }
@@ -364,12 +394,13 @@ function compressFile(file, opts = {}) {
 function main(argv = process.argv.slice(2)) {
   const check = argv.includes('--check');
   const dither = argv.includes('--dither') ? undefined : false;
+  const allowOutside = argv.includes('--allow-outside');
   let files = argv.filter((a) => !a.startsWith('--'));
   const root = path.join(__dirname, '..');
   if (!files.length) files = require('./shots-docs.js').linkedImages(root).map((f) => path.join(root, 'docs', 'screenshots', f));
   let before = 0, after = 0, refused = 0, big = 0;
   for (const f of files) {
-    const r = compressFile(f, { write: !check, dither });
+    const r = compressFile(f, { write: !check, dither, allowOutside });
     before += r.before; after += r.status === 'compressed' ? r.after : r.before;
     if (r.status === 'compressed') {
       if (check && r.after < r.before * 0.9) big++;
@@ -383,5 +414,5 @@ function main(argv = process.argv.slice(2)) {
   if (check && big) { console.error(`compress-shots: ${big} linked picture(s) could still shrink by 10% or more: run node scripts/compress-shots.js`); process.exitCode = 1; }
 }
 
-module.exports = { GUARD, decodePng, encodePalettePng, quantise, medianCut, measure, guardFailure, compressPng, compressFile, histogram };
+module.exports = { confinement, GUARD, decodePng, encodePalettePng, quantise, medianCut, measure, guardFailure, compressPng, compressFile, histogram };
 if (require.main === module) main();
