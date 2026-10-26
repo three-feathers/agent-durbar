@@ -354,7 +354,7 @@
     /* spec 052 FR-066, FR-093: what Durbar does not do, in calm plain words (checked against the README's Safety model and Costs and caps) */
     const notSec=`<section class="scr-sec" aria-labelledby="notH"><h3 id="notH">What Durbar does not do</h3><ul class="scr-not">
         <li>Durbar asks Claude Code and Copilot to stay in their folders. In Read-only and Ask first their shell commands also run in their own OS sandbox where it can start (not yet checked on a real session); their own file tools and Claude Code\u2019s MCP servers are held only by Durbar\u2019s checks. Codex is held there by its sandbox.</li>
-        <li>It does not stop a reply halfway: spending limits are checked between replies.</li>
+        <li>Spending limits are soft by one call: the call already running finishes and can go a little over the limit; then the chat asks you what to do. The first message after you resume a session may not be held, because its earlier spending is known only after that message's first usage report.</li>
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;

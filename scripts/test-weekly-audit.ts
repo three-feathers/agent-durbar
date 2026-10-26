@@ -362,7 +362,9 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
       { out: (x) => { text += x; }, env: leaky });
     assert.strictEqual(code, 0, text + fs.readFileSync(path.join(tmp, 'e.txt'), 'utf8'));
     const seen = JSON.parse(fs.readFileSync(path.join(tmp, 'o.txt'), 'utf8')) as { env: Record<string, string>; argv: string[]; cwd: string; stdin: string };
-    assert.deepStrictEqual(Object.keys(seen.env).sort(), [...CLAUDE_ENV_KEYS].sort(), `only the allow-listed variables reach claude: ${Object.keys(seen.env).join(',')}`);
+    // macOS itself adds __CF_USER_TEXT_ENCODING to every child process; it is not ours and carries no secret
+    const seenKeys = Object.keys(seen.env).filter((k) => k !== '__CF_USER_TEXT_ENCODING').sort();
+    assert.deepStrictEqual(seenKeys, [...CLAUDE_ENV_KEYS].sort(), `only the allow-listed variables reach claude: ${seenKeys.join(',')}`);
     assert.strictEqual(seen.env.CLAUDE_CONFIG_DIR, cfg, 'its own Claude config, never ~/.claude');
     assert.strictEqual(seen.env.DURBAR_AUDIT_WORKTREE, wt);
     assert.strictEqual(seen.env.LANG, 'C.UTF-8');

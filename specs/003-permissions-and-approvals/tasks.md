@@ -34,4 +34,6 @@
 
 - [x] T037 (review of #729) Several-rule reasons and Undo for all of them; `attachment` reason, "folder read" only when checked; wording; "removed" only for a rule this window saw; `revokeGrantFor` tested; the simulator's quiet reads; FR-107 records why there is no "reason unknown" tag. [FR-099..FR-107]
 - [x] T038 (review of #729, round 3) Undo by call id: the broker remembers the rules per call (bounded), `agents:revokeGrant` takes a validated call id, "Rule removed" only on main's confirmation; tests on the real broker (60 folders, hostile ids, eviction) and the driver.
-- [x] T039 Approval card line next to the session buttons: what "for this session" covers for a write (every file in the folder) and for "any arguments" (every simple command of that name, `git` also `git push`) (FR-108, FR-013). `scopeHint` in `src/shared/` (pure, tested), shown by `src/renderer/app.js`; README Safety model; changelog fragment.
+- [x] T039 (2026-10-26, release triage, #770) README Safety model: trusted read-only MCP mark, what is stored (scheduled prompts), best-effort masking, plain-file sign-ins on Linux without a keyring (docs only)
+- [x] T040 Approval card line next to the session buttons: what "for this session" covers for a write (every file in the folder) and for "any arguments" (every simple command of that name, `git` also `git push`) (FR-108, FR-013). `scopeHint` in `src/shared/` (pure, tested), shown by `src/renderer/app.js`; README Safety model; changelog fragment.
+
