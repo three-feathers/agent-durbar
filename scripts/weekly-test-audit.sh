@@ -71,7 +71,8 @@ claude_config="${CLAUDE_CONFIG_DIR:-$state_dir/claude}"
 # the Claude login folder holds a plan credential: created 0700, refused when wider
 if [ -e "$claude_config" ] || [ -L "$claude_config" ]; then
   if [ -L "$claude_config" ] || [ ! -d "$claude_config" ]; then echo "weekly-test-audit: $claude_config is not a folder" >&2; exit 2; fi
-  case "$(stat -c %a "$claude_config")" in
+  # GNU stat (Linux) first, BSD stat (macOS) as the fallback
+  case "$(stat -c %a "$claude_config" 2>/dev/null || stat -f %Lp "$claude_config")" in
     700|500) ;;
     *) echo "weekly-test-audit: $claude_config is wider than 0700; run: chmod 700 $claude_config" >&2; exit 2 ;;
   esac
@@ -82,8 +83,18 @@ remote="${DURBAR_AUDIT_REMOTE:-https://github.com/three-feathers/agent-durbar.gi
 repo_dir="$state_dir/repo"
 
 # one run at a time
-exec 9>"$state_dir/lock"
-if ! flock -n 9; then echo "weekly-test-audit: another run holds the lock; nothing to do"; exit 0; fi
+# flock where it exists (Linux); macOS has none, so there a mkdir lock (atomic) that the EXIT trap removes, only when this run made it.
+own_lock=0
+release_lock() { if [ "$own_lock" = 1 ]; then rmdir "$state_dir/lock.d" 2>/dev/null || true; own_lock=0; fi; }
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$state_dir/lock"
+  if ! flock -n 9; then echo "weekly-test-audit: another run holds the lock; nothing to do"; exit 0; fi
+else
+  if ! mkdir "$state_dir/lock.d" 2>/dev/null; then echo "weekly-test-audit: another run holds the lock; nothing to do"; exit 0; fi
+  own_lock=1
+  trap release_lock EXIT
+  trap 'exit 130' INT TERM
+fi
 
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 log="$state_dir/logs/audit-$stamp.log"
@@ -98,6 +109,7 @@ cleanup() {
   git -C "$repo_dir" worktree remove --force "$wt" >/dev/null 2>&1 || true
   rm -rf "$work"
   git -C "$repo_dir" worktree prune >/dev/null 2>&1 || true
+  release_lock
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
