@@ -1,0 +1,1 @@
+- **`test-redact` no longer flakes under load** (spec 012 FR-080 delta, issue #684): the adversarial 1 MB cases compare their CPU time with a 1/16-size input of the same shape, best of 3 (growth up to about n log n passes), instead of a fixed 1000 ms limit, so a busy machine cannot fail a linear `redact()`; a quadratic rule still fails (checked with mutants). Test only.

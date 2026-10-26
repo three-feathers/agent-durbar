@@ -278,3 +278,61 @@ Proposed 2026-10-24 and reviewed by the owner. **Acceptance (FR-037):** Vikram (
   - The guard: `scripts/test-ui-suite.ts` (`test:uisuite`) fails on an asserting `scripts/check-*.js` or `scripts/shots-*.js` that is in none of `DRIVERS`, shots-docs' `DOC_SHOTS` and `NOT_IN_SUITE`, on a `NOT_IN_SUITE` entry without a reason (40 characters), for a missing file, or one that is in fact run. It also tests the check itself on a temporary folder. Mutation: a new asserting `scripts/check-zz-mutation.js` made the test fail with that message; removing it made it pass.
   - `ui-suite` now points `I7_OUT`, `M9_OUT` and `M10_OUT` at the run's screenshot folder (those three drivers wrote to `/tmp`).
   - `[KNOWN GAP]` the two slow drivers and the two local checks are still not run by CI; making `shots-034` and `shots-024-custom` fast (until() waits in place of the settles) is left for a follow-up. Numbers taken: FR-057 and T033 (free on `main` and in the open PRs on this spec, #746 holds T028).
+
+### 2026-10-25: a weekly test audit on the owner's VPS (FR-058, Paco's request)
+
+- **FR-058** `[IMPLEMENTED]` `test:` (the units are not installed yet: the owner enables them after review) Every **Friday at 06:30 Europe/Madrid** a system timer on Paco's VPS starts an audit of the tests on current `main`. It runs on his Claude Code plan, not a GitHub runner. It is read-only and files GitHub issues for new, verified findings, like the hand audit of 2026-10-23 (issues #747, #748, #749). Linux-only ops tool. The units are templates in `docs/agent-setup/` (`durbar-weekly-audit.service`, `durbar-weekly-audit-file.service`, `durbar-weekly-audit.timer`), installed by the owner with sudo.
+  - **Two phases, two unix users** (security review of PR #756 by Vikram's agent).
+    - The **audit phase** runs Claude and the mutation helper, as `durbar-audit`. It has no token, no `gh` login, `ProtectHome=yes` (no view of any home folder) and `ProtectSystem=strict`. Its working copy is its own clone in `/var/lib/durbar-weekly-audit/repo`, never the owner's checkout. Its Claude login lives in its own `CLAUDE_CONFIG_DIR`, set up once by the owner. That folder holds a plan credential: the script creates it 0700 and refuses to run when it is wider (the README creates it with `install -d -m 700`). It only writes Claude's answer to `/var/lib/durbar-weekly-audit/outbox/out.txt`.
+    - The **filing phase** runs as the owner, started by the audit unit's `OnSuccess=`. It executes no test code and no Claude. It runs a filer copied out of the repository from reviewed `main` (`scripts/weekly-test-audit.sh install-filer` → `~/.local/lib/durbar-weekly-audit/`), which the audit user can't reach. It reads the token from a 0600 file, validates the outbox answer as untrusted input and files the issues.
+  - **Why a separate user:** `real:` 2026-10-25, a `systemd-run --user` probe on the VPS (Ubuntu 24.04, systemd 255, `kernel.apparmor_restrict_unprivileged_userns = 1`). `-p InaccessiblePaths=<dir> cat <dir>/file` still printed the file. `-p ProtectSystem=strict -p ProtectHome=read-only -p ReadWritePaths=<dir>` still wrote to `$HOME`, and `-p PrivateUsers=yes` changed nothing. `unshare -Ur` failed with "write failed /proc/self/uid_map: Operation not permitted". So **user units do not sandbox on this host**: systemd drops the lines silently. The system manager applies them, so both phases are system units. The README gives a free `sudo systemd-run -p User=durbar-audit -p ProtectHome=yes cat <token file>` probe that the owner runs before enabling. `[KNOWN GAP]` that system-unit probe was not run (it needs root).
+  - **One run at a time, on a fresh copy of `main`:** `flock` on the audit state's lock, then `git fetch` in the audit's clone and a detached worktree of `origin/main` in a new temp folder, removed on exit (trap). `npm ci` runs with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` and its own npm cache, then one `tsc -p tsconfig.scripts.json`. No Electron, no `npm test`. At the end the clone checks out `origin/main`, so next week runs today's script. The script refuses to start the audit phase when a token variable is set or the user has a `gh` login.
+  - **Claude is boxed in.** `claude -p` runs in the worktree with:
+    - `--strict-mcp-config --setting-sources ""` (CLAUDE.md) and `--restricted`;
+    - `--tools Read,Grep,Glob,Bash`, and `--allowedTools` for Read, Grep, Glob and only `Bash(node <absolute helper path> *)`;
+    - `--disallowedTools` for the web tools, the edit tools and `gh`/`git`/`curl`/`wget` in Bash;
+    - `--permission-mode dontAsk`, `--permission-prompts none`, `--no-session-persistence`, `--disable-slash-commands`;
+    - a model flag (default `sonnet`), `--max-budget-usd` (default 5, a second cap) and a wall-clock cap (default 45 minutes: TERM, then KILL of its process group).
+
+    Its environment is built from an **allow-list**: `PATH`, `HOME`, `LANG`, `TMPDIR`, `CLAUDE_CONFIG_DIR` and `DURBAR_AUDIT_WORKTREE` only. Nothing else from the caller passes. `scripts/weekly-test-audit.ts` builds the argv and the environment, and launches it (`launch`).
+  - **Mutations through one helper.** Claude cannot edit files. `scripts/weekly-test-audit-mutate.ts` makes one small edit and checks it:
+    - the edit: `--find` 1..200 characters that occur exactly once, `--replace` at most 200 characters of one-line printable ASCII;
+    - the mutant may not add `require`, `import`, `process`, `fs`, `fetch`, `eval`, `Function`, `new`, backticks, `${`, `\x`/`\u` escapes and similar (counted in the whole file before and after);
+    - the target is one file under `src/` or `scripts/`, never the audit's own files and never a link;
+    - it runs one `test:*` suite from `test:serial` (`node <file>` steps only, no shell, a time limit, no token variables), restores the file in a `finally`, and prints `killed`, `survived`, `compile-error` or `timeout` as JSON, one mutation at a time.
+
+    These limits are **defence in depth**: the test code it runs can do anything `durbar-audit` can.
+  - **The prompt** is versioned in `scripts/weekly-test-audit.prompt.md`. It asks for tests that cannot fail, exact duplicates, fixed sleeps before asserts, and wall-clock limits instead of same-run ratios. Asserting drivers that nothing runs are skipped (`test:uisuite` guards them, FR-057). Each finding is mutation-checked where possible, and the answer is **strict JSON**: schema `durbar-weekly-audit/1` with `id`, `kind`, `title`, `file`, `line`, `labels`, `verification`, `evidence` and `body`, and no other key.
+  - **The filer validates before it files.**
+    - It opens the outbox with `O_NOFOLLOW` and `O_NONBLOCK`, checks with `fstat` that it is a regular file of at most 804,096 bytes (the 200,000-character cap in UTF-8 plus a margin), and reads at most that from the open file (last review of PR #756: a link to `/dev/zero` ran it out of memory, and a FIFO would hang it). A link, a FIFO, a missing file or an oversized one rejects the run.
+    - It parses the answer as a whole. Not JSON, a wrong schema id, an extra or missing key, more than 20 findings, or (with `--max-age-hours`) an answer older than that rejects the run, and nothing is filed.
+    - It checks each finding: string caps; a relative `src/`/`scripts/`/`specs/`/`docs/` path; labels from the AGENTS.md taxonomy (exactly one type, at least one `area:*`, at least one `spec:NNN`, nothing else); **no link** in the title or body (a URL scheme, `www.`, an inline or reference link, an autolink or a bare domain; the fenced evidence may keep URLs); no `@`, `<`, `>`, backticks or brackets in the title. A bad finding is dropped with its reason.
+    - `gh` is called with `execFile` (no shell). It gets `GH_TOKEN` from the file named by `DURBAR_AUDIT_GH_TOKEN_FILE`: a regular file, not a link, mode 0600 or stricter. That is a fine-grained token with only Issues read and write on this repo, created by the owner. `GH_CONFIG_DIR` is a runtime folder, not the owner's login. The token is never printed, and it is masked by value in everything written.
+  - **Dedupe and cap.**
+    - Each finding gets a fingerprint (SHA-256 of kind, file and `id`, 16 hex characters), written in the issue body as `<!-- weekly-audit:<fp> -->`. Before filing, the filer lists open **and** closed issues whose body has the footer phrase, and skips a finding whose marker is there (or that repeats within the run).
+    - **Scope: any author's issue counts** (answer to the review's question). Someone pasting a marker can hide a finding, but can never make the audit file one. Not filing is the safe failure, and a human can close and refile. Matching only the filing account's issues would need the token's login (`gh api user`), and a manual refile by a teammate would then be duplicated.
+    - If the search or the label list fails, nothing is filed. At most **5** new issues per run.
+    - Each issue's text is masked, with HTML and `@mentions` escaped and the evidence in a code block. It ends with "Filed by the weekly test audit (spec 021 FR-058)". Its labels are the finding's type, area and spec labels; a `spec:NNN` the repo lacks is dropped, and the summary says so.
+  - **Dry runs.** The audit phase files nothing by itself; it ends with a dry-run check of its own answer, without a token, so a bad answer fails the unit and the filer never starts. Run by hand without `--file`, the filer prints what it would file and files nothing. It still checks duplicates when the token file is there. Summaries go to stdout, the journal and the logs.
+  - **Cost:** one Claude Code session a week on the owner's plan (Sonnet by default), capped by the time limit and by `--max-budget-usd`. `[KNOWN GAP]` it is not checked whether that budget flag applies on a subscription plan.
+  - **What the sandbox does not stop** (`[KNOWN GAP]`, all as `durbar-audit` inside its state folder):
+    - network access: Claude's API, `npm ci`, `git`; test code run by the helper can reach the network too;
+    - reading and using the audit user's own Claude login, which spends the owner's plan;
+    - `npm ci` install scripts;
+    - tampering with the audit's own clone (and so next week's script), within the same sandbox;
+    - writing a crafted answer, which the filer treats as untrusted input.
+
+    Not checked without a real session: whether `Bash(node <helper> *)` under `dontAsk` refuses `node <helper> x; curl …`, `&&`, `|` or `$(…)`. The helper is called by absolute path and the rule is as narrow as the CLI allows; the separate user contains it if it is looser.
+  - `test:` `test:weeklyaudit` (no Claude, no network) covers:
+    - the validator: schema rejects, link and title rejects;
+    - dedupe on open and closed issues, the cap, dry run files nothing, failed search and failed label list file nothing;
+    - the token file checks;
+    - the helper (refused paths, sizes and forbidden words; a real mutation on a scratch folder: killed, survived, restored);
+    - the Claude argv;
+    - `launch` with a fake `claude` that dumps its environment (only the allow-listed names reach it), its argv, cwd and stdin, and the time limit, including a grandchild in its process group that must be gone after it;
+    - the outbox read: a link to `/dev/zero`, a link to a valid answer, a FIFO (in a child with a time limit), an oversized and a missing file, each refused with nothing filed;
+    - the Claude login folder: refused at 0755, created 0700;
+    - the script's refusals with a token variable or a `gh` login;
+    - the unit templates: the audit is its own user with `ProtectHome=yes` and no token; the filer runs the installed copy, never the audit's clone.
+
+    `[KNOWN GAP]` not run against a real Claude session (it would spend the owner's quota): the flags are checked against `claude --help` of 2.1.304 only. The end-to-end runs of the first round used a fake `claude` that called the real helper, plus a fake `gh`. `shellcheck` was not installed on the VPS, so the script had `bash -n` only. Numbers taken: FR-058 and T034 (free on `main`; open PR #746 holds only T028).
