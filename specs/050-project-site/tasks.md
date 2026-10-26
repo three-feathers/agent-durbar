@@ -20,3 +20,4 @@
 ## 2026-10-26: compressed screenshots (issue #759)
 
 - [x] T027 `scripts/compress-shots.js` (palette quantiser with a quality guard), its call in `scripts/shots-docs.js`, `npm run shots:compress`, the one-time pass over the 76 linked pictures (15.6 MB to 5.7 MB), `scripts/test-compress-shots.ts` and the palette check in `scripts/test-site.js` [FR-012]
+- [x] T028 (2026-10-26) `releaseWords` in `scripts/build-site.js`: button, install heading and Open Graph description follow the latest release (stable drops "alpha"); `SITE_FAKE_RELEASE` for tests; `scripts/test-site.js` covers a stable and a pre-release build; `changelog.d/README.md` fold step for `landing.json` [FR-013]

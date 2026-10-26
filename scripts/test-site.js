@@ -35,6 +35,20 @@ for (const os of ['macOS', 'Windows', 'Linux']) assert.ok(site.installSteps(read
 
 const out = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-site-'));
 execFileSync(process.execPath, [path.join(__dirname, 'build-site.js')], { env: { ...process.env, SITE_OUT: out, SITE_RELEASE: 'off' }, stdio: 'pipe' });
+// spec 050 FR-013: the wording follows the latest release: a stable release drops "alpha", a pre-release or no release keeps it
+const outStable = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-site-stable-'));
+execFileSync(process.execPath, [path.join(__dirname, 'build-site.js')], { env: { ...process.env, SITE_OUT: outStable, SITE_FAKE_RELEASE: JSON.stringify({ tag: 'v0.1.0', pre: false }) }, stdio: 'pipe' });
+const stableIdx = fs.readFileSync(path.join(outStable, 'index.html'), 'utf8');
+assert.match(stableIdx, />Download</, 'stable: the download button says Download');
+assert.ok(!/>Download alpha</.test(stableIdx) && !/Install the alpha/.test(stableIdx) && !/early alpha\.\"/.test(stableIdx), 'stable: no alpha button, install heading or og description');
+assert.match(stableIdx, /Install Agent Durbar/, 'stable: install heading');
+assert.ok(!/\(pre-release\)/.test(stableIdx), 'stable: the latest release is not labelled pre-release');
+fs.rmSync(outStable, { recursive: true, force: true });
+const outPre = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-site-pre-'));
+execFileSync(process.execPath, [path.join(__dirname, 'build-site.js')], { env: { ...process.env, SITE_OUT: outPre, SITE_FAKE_RELEASE: JSON.stringify({ tag: 'v0.1.0-alpha.19', pre: true }) }, stdio: 'pipe' });
+const preIdx = fs.readFileSync(path.join(outPre, 'index.html'), 'utf8');
+assert.ok(/>Download alpha</.test(preIdx) && /Install the alpha/.test(preIdx) && /\(pre-release\)/.test(preIdx), 'pre-release: alpha wording stays');
+fs.rmSync(outPre, { recursive: true, force: true });
 let attrCount = 0;
 for (const name of ['index.html', 'docs.html']) {
   const html = fs.readFileSync(path.join(out, name), 'utf8');
