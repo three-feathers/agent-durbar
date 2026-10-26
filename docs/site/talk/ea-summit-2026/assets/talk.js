@@ -5,25 +5,30 @@
   /* The presenters, like players taking turns. Reassigning a part is one data-presenter="..." on its <section>;
      a handover card is made here wherever the presenter changes. */
   var PLAYERS = {
-    vikram: { n: 1, name: 'Vikram', handle: 'vikramgorla' },
-    paco: { n: 2, name: 'Paco', handle: 'fjcabello' },
-    ruben: { n: 3, name: 'Ruben', handle: 'rubenlupi' }
+    vikram: { key: 'vikram', n: 1, name: 'Vikram', handle: 'vikramgorla', img: 'assets/art/player-vikram.svg' },
+    paco: { key: 'paco', n: 2, name: 'Paco', handle: 'fjcabello', img: 'assets/art/player-paco.svg' },
+    ruben: { key: 'ruben', n: 3, name: 'Ruben', handle: 'rubenlupi', img: 'assets/art/player-ruben.svg' }
   };
   (function handovers() {
     var all = Array.prototype.slice.call(document.querySelectorAll('.slide')), last = null;
     all.forEach(function (s) {
       var who = s.getAttribute('data-presenter');
-      if (!who || !PLAYERS[who]) return;
+      if (!who || !Object.prototype.hasOwnProperty.call(PLAYERS, who)) return;
       if (last && who !== last) {
         var P = PLAYERS[who], card = document.createElement('section');
         card.className = 'slide handover';
         card.id = 'turn-' + s.id;
-        card.setAttribute('data-presenter', who);
+        card.setAttribute('data-presenter', P.key);
         card.setAttribute('data-title', 'Player ' + P.n + ' \u00b7 ' + P.name);
-        card.innerHTML = '<div class="inner"><p class="kicker">Player change</p>' +
-          '<img src="assets/art/player-' + who + '.svg" alt="" width="200" height="124">' +
-          '<p class="turn">PLAYER ' + P.n + ' \u00b7 ' + P.name.toUpperCase() + '</p>' +
-          '<p class="turn-sub">' + P.handle + ' \u2014 YOUR TURN \u25BA</p></div>';
+        /* built with createElement/textContent: nothing read from the page goes into HTML */
+        var el = function (tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
+        var inner = el('div', 'inner'), img = el('img');
+        img.src = P.img; img.alt = ''; img.width = 200; img.height = 124;
+        inner.appendChild(el('p', 'kicker', 'Player change'));
+        inner.appendChild(img);
+        inner.appendChild(el('p', 'turn', 'PLAYER ' + P.n + ' \u00b7 ' + P.name.toUpperCase()));
+        inner.appendChild(el('p', 'turn-sub', P.handle + ' \u2014 YOUR TURN \u25BA'));
+        card.appendChild(inner);
         s.parentNode.insertBefore(card, s);
       }
       last = who;
@@ -42,7 +47,8 @@
   }
   function show() {
     var s = slides[cur];
-    var P = PLAYERS[s.getAttribute('data-presenter')];
+    var who = s.getAttribute('data-presenter');
+    var P = who && Object.prototype.hasOwnProperty.call(PLAYERS, who) ? PLAYERS[who] : null;
     if (level) level.textContent = (P ? 'P' + P.n + ' ' + P.name.toUpperCase() + ' \u00b7 ' : '') + 'LEVEL ' + (cur + 1) + '/' + slides.length;
     if (hudTitle) hudTitle.textContent = s.getAttribute('data-title') || '';
     if (bar) { bar.style.width = (100 * (cur + 1) / slides.length) + '%'; bar.parentNode.setAttribute('aria-valuenow', String(cur + 1)); bar.parentNode.setAttribute('aria-valuemax', String(slides.length)); }
