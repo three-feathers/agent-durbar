@@ -31,6 +31,7 @@ const MOD = process.platform === 'darwin' ? 'meta' : 'control'; // the command p
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until, settle, key } = H;
+  const T0 = Date.now(), lap = (what) => console.log(`[092] ${what} at ${Math.round((Date.now() - T0) / 1000)} s`); // where the time goes (the driver has to stay well under the suite's 600 s)
   const shot = (name, w, h) => H.shot(path.join(OUT, `092-floor-${name}-${w}x${h}.png`), { tag: '092', what: `${name} ${w}x${h}` });
 
   /* announcements: every non-empty text that reaches #srAnnounce, in order (installed after each load) */
@@ -49,9 +50,8 @@ module.exports = async (ctx) => {
   const onFloor = (name) => until(`(()=>{const t=[...new Set([...document.querySelectorAll('#stage .room-head .floor-tag')].map(t=>t.textContent.trim()))];return t.length===1&&t[0]===${jsLiteral(name)}})()`);
   const emptyOn = (name) => until(`(document.querySelector('#stage .floor-empty')||{}).textContent&&document.querySelector('#stage .floor-empty').textContent.includes(${jsLiteral(name)})`);
   const reset = async (w, h, query) => {
+    await js(`localStorage.removeItem('durbar.floor')`); // from the page that is open (same origin): the saved floor is read at start
     await H.load({ w, h, query, focus: true });
-    await js(`localStorage.removeItem('durbar.floor')`);
-    await H.load({ w, h, query, focus: true }); // the saved floor is read at start
     await watch(); await H.calm();
   };
   const panel = async (open) => { await js(`(()=>{const p=document.getElementById('floorsPop');if(p.hidden===${open})document.getElementById('floorsBtn').click();})()`); await until(`document.getElementById('floorsPop').hidden===${!open}`); };
@@ -73,6 +73,7 @@ module.exports = async (ctx) => {
     const seen = { 'Ground floor': v };
     await shot('ground', w, h);
 
+    lap(`${tag} one floor at a time done`);
     // ---- FR-011, FR-012: PageDown / PageUp, one announcement per change, nothing at the ends ----
     await pressUntilTag('PageDown', 'Client A'); seen['Client A'] = await view();
     assert.ok(seen['Client A'].lobby && seen['Client A'].pills === 15, `${tag}: lobby and whole-building pills on Client A`);
@@ -91,6 +92,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(all.length, 15, `${tag}: no agent on two floors`);
     for (const a of Object.values(seen)) for (const b of Object.values(seen)) if (a !== b) assert.ok(!a.rooms.some((r) => b.rooms.includes(r)), `${tag}: a room on two floors`);
 
+    lap(`${tag} keys done`);
     // ---- FR-022: the floor survives a reload; a saved floor that is off gives way to the first floor that is on ----
     assert.strictEqual((await view()).pref.length > 0, true, `${tag}: the current floor is saved`);
     await H.load({ w, h, query: { simfloors: '1' }, focus: true }); await watch();
@@ -98,6 +100,7 @@ module.exports = async (ctx) => {
     await H.load({ w, h, query: { simfloors: '1', floorsoff: 'Client A' }, focus: true }); await watch();
     assert.ok(await onFloor('Ground floor'), `${tag}: the saved floor is off: the first floor that is on`);
 
+    lap(`${tag} reload done`);
     // ---- FR-011: the key keeps its meaning where text or a choice is edited ----
     await reset(w, h, { simfloors: '1' });
     const pref0 = (await view()).pref;
@@ -125,6 +128,7 @@ module.exports = async (ctx) => {
     assert.ok(await onFloor('Ground floor'), `${tag}: PageDown in the composer does not change the floor`);
     await annEq([], `${tag}: and nothing was announced on the way back`);
 
+    lap(`${tag} text and dialogs done`);
     // ---- FR-023: floors going off and on ----
     await reset(w, h, { simfloors: '1' });
     await pressUntilTag('PageDown', 'Client A');
@@ -157,12 +161,14 @@ module.exports = async (ctx) => {
     await key('PageDown'); assert.ok(await onFloor('Personal'), `${tag}: PageDown skips a floor that is off`);
     await annEq(['Floor Personal, 2 of 2'], `${tag}: announced as 2 of 2`);
 
+    lap(`${tag} floors off and on done`);
     // ---- one floor on: the office is as before ----
     await reset(w, h, { simfloors: '1', floorsoff: 'Client A,Personal' });
     v = await view();
     assert.strictEqual(v.tags.length, 0, `${tag}: one floor on: no floor tags`);
     assert.ok(v.desks.length > 0 && v.pref, `${tag}: one floor on: desks drawn`);
 
+    lap(`${tag} one floor on done`);
     // ---- an empty floor ----
     await reset(w, h, { simfloors: 'ground' });
     v = await view();
@@ -173,6 +179,7 @@ module.exports = async (ctx) => {
     v = await view();
     assert.ok(v.lobby && v.desks.length === 0 && /Move a folder here/.test(v.empty), `${tag}: the empty floor keeps the lobby: ${JSON.stringify({ lobby: v.lobby, desks: v.desks.length, empty: v.empty })}`);
     await shot('empty', w, h);
+    lap(`${tag} empty floor done`);
   }
 
   // ---- T038, FR-011: a floor screen that scrolls scrolls first and changes floor only from an edge ----

@@ -108,7 +108,8 @@ function helpers(ctx) {
     const query = { sim: '15', simfreeze: '1', ...(clock && /^\d{1,15}$/.test(clock) ? { simclock: clock } : {}), ...(o.query || {}) };
     for (const k of Object.keys(query)) if (query[k] === undefined) delete query[k];
     await ctx.win.loadFile(o.index || INDEX, { query });
-    const ready = o.ready === 'fit' ? `document.getElementById('stage')&&document.getElementById('stage').dataset.fit` : o.ready || `document.querySelectorAll('#stage .desk[data-id]').length>=15`;
+    // spec 092: with `simfloors=1` (the 15 agents spread over three floors on) the office shows one floor, so the default "15 desks" would only be met by its timeout
+    const ready = o.ready === 'fit' ? `document.getElementById('stage')&&document.getElementById('stage').dataset.fit` : o.ready || `document.querySelectorAll('#stage .desk[data-id]').length>=${query.simfloors === '1' ? 1 : 15}`;
     await ctx.waitFor(ready, o.readyMs || 15000);
     if (o.settle !== false) await w.settle();
     if (o.focus) wc().focus();
