@@ -55,7 +55,7 @@ module.exports = async (ctx) => {
     await watch(); await H.calm();
   };
   const panel = async (open) => { await js(`(()=>{const p=document.getElementById('floorsPop');if(p.hidden===${open})document.getElementById('floorsBtn').click();})()`); await until(`document.getElementById('floorsPop').hidden===${!open}`); };
-  const floorSw = async (id, want) => { await panel(true); const on = await js(`document.querySelector(${jsLiteral(`[data-fl="on"][data-floor="${id}"]`)}).getAttribute('aria-pressed')==='true'`); if (on !== want) await js(`document.querySelector(${jsLiteral(`[data-fl="on"][data-floor="${id}"]`)}).click()`); await until(`document.querySelector(${jsLiteral(`[data-fl="on"][data-floor="${id}"]`)}).getAttribute('aria-pressed')===${want ? "'true'" : "'false'"}`); await panel(false); };
+  const floorSw = async (id, want) => { await panel(true); const on = await js(`document.querySelector(${jsLiteral(`[data-fl="on"][data-floor="${id}"]`)}).getAttribute('aria-pressed')==='true'`); if (on !== want) await js(`document.querySelector(${jsLiteral(`[data-fl="on"][data-floor="${id}"]`)}).click()`); await until(`document.querySelector(${jsLiteral(`[data-fl="on"][data-floor="${id}"]`)}).getAttribute('aria-pressed')===${jsLiteral(want ? 'true' : 'false')}`); await panel(false); };
   const only = async (id) => { await panel(true); await js(`document.querySelector(${jsLiteral(`[data-fl="only"][data-floor="${id}"]`)}).click()`); await until(`document.getElementById('floorsBtn').hidden||document.getElementById('floorsBtn').textContent.trim().startsWith('1/')`); await panel(false); };
   const pressUntilTag = async (k, name) => { await key(k); assert.ok(await onFloor(name), `${k} should show ${name}`); await settle(); };
 
@@ -191,7 +191,7 @@ module.exports = async (ctx) => {
       if (v.top >= v.max - 1) break;
       const before = v.top;
       await key('PageDown');
-      assert.ok(await until(`document.getElementById('floor').scrollTop>${before}`), `${tag}: PageDown scrolls the floor screen (at ${before} of ${v.max})`);
+      assert.ok(await until(`document.getElementById('floor').scrollTop>${jsLiteral(before)}`), `${tag}: PageDown scrolls the floor screen (at ${before} of ${v.max})`);
       await settle();
       assert.ok((await view()).tags.includes('Ground floor') || (await view()).rooms.length > 0, `${tag}: still the Ground floor while it scrolls`);
       assert.strictEqual((await view()).pref, v.pref, `${tag}: a press that scrolls does not change the floor`);
@@ -209,7 +209,7 @@ module.exports = async (ctx) => {
     assert.ok(v.top >= v.max - 1, `${tag}: arriving from below lands at the bottom edge (${v.top} of ${v.max})`);
     const top1 = v.top;
     await key('PageUp');
-    assert.ok(await until(`document.getElementById('floor').scrollTop<${top1}`), `${tag}: PageUp scrolls up inside the floor first`);
+    assert.ok(await until(`document.getElementById('floor').scrollTop<${jsLiteral(top1)}`), `${tag}: PageUp scrolls up inside the floor first`);
     assert.ok(!(await view()).empty, `${tag}: PageUp inside a scrolling floor stays on the floor`);
   }
 
