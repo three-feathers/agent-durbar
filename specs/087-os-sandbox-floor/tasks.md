@@ -106,7 +106,87 @@ the OS sandbox can stop it.
 - [x] T065 Chip word *Sandboxed (partial)* for Copilot in Ask first with the floor on (FR-021b, K15, #755): `chipWord` in `src/renderer/sandboxtext.js`, test and simulator check updated, README. [FR-021b]
   - AC1: `chipWord` gives the new word only for `approvedMayLeave` with `covers` including `mcp`; Claude, Codex, Read-only and the other words are unchanged (test); the simulator's Copilot Ask first chip reads *Ask first · Sandboxed (partial)*.
 
+## Phase 7: Copilot Allow all keeps the sandbox (issue #806; delta 2026-10-27, FR-022..FR-022c, K16)
+
+Numbers taken: FR-022, FR-022a..FR-022e, K16, T066..T073 (free in spec 087 on `origin/main` and in every open PR on 2026-10-27).
+Order: T067-T071 (outcome B, ships first) do not wait for T066. T072 and T073 wait for T066's result. Simulator and `npm test` only,
+except T066 (owner-approved 2026-10-27, about 3 prompts, not yet run).
+
+- [ ] T066 **Probe. OWNER-APPROVED by Paco, 2026-10-27 (terminal), budget about 3 Copilot prompts, ask before going over; NOT RUN YET. Cost: about 3 Copilot prompts, 0.08-0.16 AIU each by the
+  2026-10-25 runs, so about 0.25-0.5 AIU).** Extend `scripts/sandbox-floor-real.ts` with a `switch` scenario (dry run first, `--spend`
+  to run; no secret printed; home folder masked; usage recorded) and run it once on Linux with Copilot CLI 1.0.101 / SDK 1.0.22 through
+  Durbar's own adapter, in a throw-away folder. [FR-022c, K16]
+  - Setup: session folder `F` under `/tmp`; a **second** throw-away folder `P` made by the script **under the home folder, not under
+    `/tmp`** (K15: `/tmp` is writable in Ask first, so a `/tmp` target proves nothing); a command `C` = `touch P/probe.txt` then
+    `curl -sS -m 5 -o /dev/null https://example.com` (the exit codes are printed). The model is asked to run `C` exactly; the script
+    approves the Ask first card as a person would (as T060). Record `getEnforcementStatus()` and the bounded fields of the vendor's
+    `sandbox.decision` events at each step.
+  - Step 1 (prompt 1, **control**): Ask first, floor on. Expect `C`: write fails (read-only file system) and network fails. If `C` succeeds
+    here, stop: the probe cannot tell anything (record it, K15-style).
+  - Step 2 (no prompt): switch to Allow all through the adapter (the Allow all dialog's confirmation is the app's; the script calls
+    `setPermMode` as the app does), then call `session.rpc.options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource:
+    'session_disabled' })` directly on that session; record resolve or refusal and the error text (masked).
+  - Step 3 (prompt 2): the same `C` in the same session. **A passes** only if the write and the network command both succeed.
+  - Step 4 (prompt 3, depends on step 3): if A passed, switch back to Ask first (the adapter re-sends the floor) and run `C` again: expect
+    both to fail again (narrowing works). If A did not pass (still sandboxed, or the update was refused), run the **B path**: restart the
+    session through `mcpRestartSessionOp`'s steps (stop, then `start` with `resumeSessionId` in Allow all, as `ensureLive` does) and run
+    `C` in the new session: expect both to succeed (this is also the control for "a new Allow all session has no sandbox"); read the resumed
+    history (`getMessages`, no credit) to see that the conversation (prompt 1) is still there.
+  - **Hygiene (review on PR #809).** (a) The script removes `P` and `F` in a `finally`, also when a step throws or the run is stopped, and prints "removed P, F" (or the error); it
+    removes only the two folders it made (paths it created, checked to be under the home folder and `/tmp` and to hold only `probe.txt`). (b) A **refused or failing update at step 2**
+    (rejection, timeout, a policy-conflict text) is recorded with its masked error and the script **still runs step 3** and the B path of step 4: a refusal counts as outcome B.
+    (c) With the floor possibly cleared and Allow all on, the model runs unattended: the probe session is created with `availableTools` limited to the shell tool(s) (SDK
+    `SessionConfigBase.availableTools` / `excludedTools`, `read:` types; as the rename-resume and the MCP lock already do in `copilot.ts:245, 291-308`; the exact shell tool name is read
+    from the runtime before the run, and **if it cannot be limited the script refuses to run in Allow all and says so**), a fixed prompt that asks only for `C`, no MCP servers, and a
+    turn limit of one prompt per step; a model that wanders can touch nothing beyond `P` by tool choice. (d) macOS and Windows: not run, `[KNOWN GAP]`.
+  - If step 3 shows the update was accepted but `C` still fails, that is outcome B (record "accepted, not honoured"). Do not try other
+    payloads, other slash commands (`SandboxSessionChange`) or `allowBypass` in this run; each is a separate ask to the owner.
+  - AC1: the result is written in spec.md (*Changes*, `real:`) with CLI and SDK versions, OS, the three outcomes, usage, and the verdict A or B;
+    K16 is closed or kept; the README limits line and the tooltip's "Requested; not verified" wording follow it.
+  - AC2: if the run cannot be done on a given OS, say which OS is `[KNOWN GAP]` (macOS and Windows stay unverified).
+- [ ] T067 [P] Pure rule `canRestartWithoutSandbox({ sandbox, mode, caps })` in a renderer-free module next to `src/renderer/sandboxtext.js` (no vendor
+  name; same style as `chipWord`) and its tests. [FR-022, FR-022a]
+  - AC1: true only for Allow all + `untilNewSession` + not `managed` + `caps.resume`; false for every Read-only/Ask first state, `off`, `unknown`,
+    managed, a state without `untilNewSession`, and for the states Claude Code and Codex produce (a test builds each from the adapters' own state functions).
+  - AC2: a malformed state gives false (fail closed, as `clean()`).
+- [ ] T068 Window (chip and mode menu only, not the office card menu: Q3): the mode-menu item and the chip button *Restart without the sandbox*; the click **extends the existing
+  `mcpRestartSessionFlow` / `restartSessionAsk`** (`screens.js:1060, 1104`) with a `reason: 'sandbox'` (dialog, toast and failure words; always asks; the extra lines of FR-022; sign-in card and
+  `needsConfirm` retry kept) and passes `reason` as the optional third argument of `agents:mcpRestartSession` (preload, `ipc/agents.ts:113`, `mcpRestartSessionOp`: log and no-resume words only). The tooltip
+  (at most 300 characters, adapter display name, "Durbar does not…") ends as the state's `verified` says. The Allow all dialog gets FR-022e's sentence. [FR-022, FR-022a, FR-022b, FR-022e]
+  - AC1: Cancel changes nothing and calls nothing; no dialog, no call (mutant: skip the dialog fails a test).
+  - AC2: a source check pins that `ipc/agents.ts` registers no second restart channel and that the renderer calls no `start`/`resume` for this.
+  - AC3: the item also shows in the `modesOnly` menu (spec 003 FR-095) and is keyboard reachable (arrow keys, Escape returns focus to the chip); the chip button is a real
+    `<button>`, text at least 10.5px, never colour alone.
+  - AC4: no MCP wording in the sandbox dialog or toast; `reason` absent behaves exactly as today (existing `test-mcp-session.ts` and `shots-058-mcp-restart` unchanged); a bad reason is `'mcp'`.
+  - AC5: the Allow all dialog has the FR-022e sentence for a Copilot session with a floor and not for Claude, Codex or a session without a floor (driver).
+- [ ] T069 Adapter and main: for B, tests plus the FR-022d fix (`refreshAuth` clears `live.sandboxFloor` before `applySandbox`, `copilot.ts:459`); confirm that a resume in Allow all sends no `sandboxConfig` and reports `null`;
+  confirm `startOptionsFor` carries the current mode into the restart. [FR-022, FR-022b]
+  - AC1: `scripts/test-copilot-sandbox.ts`: Read-only start, switch to Allow all (state `untilNewSession`, one `options.update`), end, resume the same id in Allow all: no
+    further `options.update` with `sandboxConfig`, state `null`, and the first `send` is not held.
+  - AC2: a restart whose resume fails (fake rejecting) leaves the agent ended with the error (`errorKind: 'auth'` for a sign-in error); nothing was sent.
+  - AC3: with pending asks at the restart, the fake broker's asks are denied and none approved (`test-mcp-session.ts` or the Copilot suite).
+  - AC4 [FR-022d]: `refreshAuth` on a session with a kept floor in Allow all gives state `null` and no extra update; in Ask first it re-sends the floor; a Durbar restart (fresh adapter) resuming in Allow all gives `null`.
+- [ ] T070 Simulator: Copilot sim agent #14 (Allow all, kept floor) gets the sim restart (end, then no floor: T070 **adds** the clear to `agentMcpRestartSession`, `sim.ts:2849`, which does not touch `s.info.sandbox` today; and takes the `reason`); driver in `scripts/check-sandbox-floor.js`
+  (both sizes, `until()` for every assert, a generous timeout). [FR-022, FR-022b]
+  - AC1: item and chip button visible for the Copilot sim agent, absent for Claude and Codex sim agents and for a Copilot agent in Ask first or with *Sandboxed (managed)*.
+  - AC2: confirm restarts: the chip loses its word and the action disappears; cancel keeps both; a busy agent's dialog says the turn is stopped.
+  - AC3: `check:office` unchanged at 1440x900 and 1280x800 (the chip keeps its place; the 15 agents fit).
+  - AC4: with a sim session that has grants and remote control on, the dialog lists the grants, remote control, no-credits and next-message lines (FR-022); a Claude/Codex sim agent never shows the item.
+- [ ] T071 Docs: README *Safety model* and *Known limits* (the Copilot floor stays until a new session; the action; a Durbar restart or sign-in refresh resumes Allow all without it, FR-022d; Linux only, macOS and Windows not verified; Claude Code and Codex differ; K16 status),
+  spec 018's chip paragraph, spec status and `specs-index` block, `changelog.d/087-allowall-sandbox.md`, `npm run shots:docs -- --only <drivers>` (the
+  pictures that show the chip or the mode menu; `-- --list`), `docs/agent-notes.md` entry on the probe pitfall (a `/tmp` target proves nothing). [FR-022]
+  - AC1: `npm run changelog:check`, `npm run specs:check`, `test:site` pass; every linked picture that shows the changed chip or menu is retaken and looked at.
+- [ ] T072 **Only if T066 verdict is A (the floor clears).** `applySandbox` sends the proven payload on a switch to Allow all; the state follows the update; the Allow all dialog
+  names the sandbox ("Copilot’s OS sandbox is also turned off for this session.", Q4); FR-022 stays as the fallback after a refusal. [FR-022c]
+  - AC1: tests of FR-022c (exact payload, resolved gives `null`, rejected and hanging keep `untilNewSession`, narrowing re-sends the floor, no `allowBypass` anywhere);
+    mutants (5) and (6) of the delta fail.
+  - AC2: the dialog sentence appears only for a Copilot session that holds a floor (driver).
+- [ ] T073 **Only if T066 verdict is B (it does not clear).** Strike FR-022c from the spec, set K16 to "cannot be cleared in place (real:)", and word the tooltip and README
+  from the result; no code. [FR-022c, K16]
+  - AC1: `npm run specs:check` passes; no FR-022c text remains that reads as planned.
+
 ## Dependencies
 
 T001 → everything. T010-T013 → T014 → T020-T022 → T030-T032 → T040. T050 any time after T001. Phase 6 after Phase 2, with the
 owner's OK.
+Phase 7: T066 is owner-approved (not run yet); T067-T071 do not wait for it; T072/T073 wait for T066.
