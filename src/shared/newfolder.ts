@@ -18,10 +18,16 @@ export const NEW_FOLDER_LIMITS = Object.freeze({
 /**
  * Windows device names (constitution VI): `CON`, `con.txt` or `COM¹` is a device there, so a file or folder with such a name breaks
  * Windows. Refused on every platform, any case, with or without an extension. One constant for profile names (spec 043 FR-011,
- * re-exported by `src/main/profilefiles.ts`) and new folders (spec 093 FR-010). Windows also treats the superscript digits ¹ ² ³
- * after COM and LPT as device names.
+ * re-exported by `src/main/profilefiles.ts`) and new folders (spec 093 FR-010). Microsoft's current list: also CONIN$, CONOUT$,
+ * COM0, LPT0 and the superscript digits \u00b9 \u00b2 \u00b3 after COM and LPT; spaces before the extension do not help (`CON .txt` is CON).
  */
-export const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(\.|$)/i;
+export const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|conin\$|conout\$|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3]) *(\.|$)/i;
+
+/**
+ * Characters HFS+ ignores in a name (git's `is_hfs_dotgit`, CVE-2014-9390): `.g<U+200C>it` is `.git` on a Mac. Removed before the
+ * `.git` comparison only; several of them are refused anyway as hidden characters (`HIDDEN_RE`). For `replace` only (global).
+ */
+const GIT_IGNORED_ALL_RE = /[\u200c-\u200f\u202a-\u202e\u206a-\u206f\ufeff]/g;
 
 /** Characters Windows refuses in a name; refused on every OS so a folder made on Linux also works on Windows (FR-010). */
 const WINDOWS_BAD_CHARS = /[<>:"|?*]/;
@@ -40,10 +46,11 @@ export function checkNewFolderName(v: unknown): NewFolderNameCheck {
   if (v === '.' || v === '..') return bad('Use a name other than . or ..');
   if (CONTROL_RE.test(v) || HIDDEN_RE.test(v)) return bad('Remove control or hidden characters.');
   if (WINDOWS_BAD_CHARS.test(v)) return bad('Remove these characters: < > : " | ? *');
-  if (WINDOWS_RESERVED_NAME.test(v)) return bad('That name is reserved on Windows (CON, PRN, AUX, NUL, COM1-9, LPT1-9). Choose another.');
+  if (WINDOWS_RESERVED_NAME.test(v)) return bad('That name is reserved on Windows (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-9, LPT0-9). Choose another.');
   if (/[. ]$/.test(v)) return bad('Do not end the name with a dot or a space.');
   if (v.startsWith('-')) return bad('Do not start the name with -.');
-  if (v.toLowerCase() === '.git') return bad('Use a name other than .git.');
+  if (v.replace(GIT_IGNORED_ALL_RE, '').toLowerCase() === '.git') return bad('Use a name other than .git.');
+  if (/^git~\d+$/i.test(v)) return bad('Use a name other than .git.'); // the NTFS short name of .git (git's is_ntfs_dotgit)
   if (redact(v) !== v) return bad('That looks like a secret. Use another name.');
   return { ok: true, name: v };
 }

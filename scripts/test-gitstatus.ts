@@ -227,6 +227,21 @@ async function createEntryChecks(): Promise<void> {
   assert.deepStrictEqual(await noPid.done, { code: null, signal: null, stderrTail: '', spawnError: 'ENOENT' });
   noPid.cancel();
   assert.strictEqual(killed.length, 0, 'nothing to kill when git never started');
+  // an error from a child that did start (it has a pid) does not settle the run: the caller removes the folder only after git has
+  // exited, so `done` waits for close (review on 11183593, mutant M11: finishing on every error)
+  {
+    const started = runGitCreate({ kind: 'init' }, '/w', { hooksDir: '/h', spawn: fakeSpawn(5150), kill });
+    const sk = kids[kids.length - 1];
+    let settled = false;
+    void started.done.then(() => { settled = true; });
+    sk.stderr.emit('data', 'fatal: x\n');
+    sk.emit('error', Object.assign(new Error('kill EPERM'), { code: 'EPERM' }));
+    for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+    assert.strictEqual(settled, false, 'an error from a running child does not end the run before it has exited');
+    sk.exitCode = 1;
+    sk.emit('close', 1, null);
+    assert.deepStrictEqual(await started.done, { code: 1, signal: null, stderrTail: 'fatal: x\n', spawnError: 'EPERM' }, 'it ends on close, with the error code kept');
+  }
   // the tail keeps the end of a long output
   const long = runGitCreate({ kind: 'init' }, '/w', { hooksDir: '/h', spawn: fakeSpawn(7), kill });
   const lk = kids[kids.length - 1];

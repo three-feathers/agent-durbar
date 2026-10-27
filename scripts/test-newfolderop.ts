@@ -133,7 +133,7 @@ async function main(): Promise<void> {
   {
     const t = rig();
     assert.deepStrictEqual(t.op.check({ kind: 'init', name: 'ok' }), { ok: true });
-    assert.deepStrictEqual(t.op.check({ kind: 'init', name: 'CON' }), { ok: false, error: 'That name is reserved on Windows (CON, PRN, AUX, NUL, COM1-9, LPT1-9). Choose another.' });
+    assert.deepStrictEqual(t.op.check({ kind: 'init', name: 'CON' }), { ok: false, error: 'That name is reserved on Windows (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-9, LPT0-9). Choose another.' });
     assert.deepStrictEqual(t.op.check({ kind: 'clone', name: 'ok' }), { ok: false, error: 'Choose what to create.' });
     assert.deepStrictEqual(t.op.check('init'), { ok: false, error: 'Choose what to create.' });
     assert.deepStrictEqual(t.op.check(Object.create({ kind: 'init', name: 'ok' })), { ok: false, error: 'Choose what to create.' }, 'own properties only');

@@ -17,7 +17,7 @@ const MSG = {
   dots: 'Use a name other than . or ..',
   hidden: 'Remove control or hidden characters.',
   chars: 'Remove these characters: < > : " | ? *',
-  reserved: 'That name is reserved on Windows (CON, PRN, AUX, NUL, COM1-9, LPT1-9). Choose another.',
+  reserved: 'That name is reserved on Windows (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-9, LPT0-9). Choose another.',
   trail: 'Do not end the name with a dot or a space.',
   dash: 'Do not start the name with -.',
   git: 'Use a name other than .git.',
@@ -31,10 +31,17 @@ const REFUSED: Array<[unknown, keyof typeof MSG]> = [
   ['a\u0007b', 'hidden'], ['a\u0000', 'hidden'], ['a\nb', 'hidden'], ['a\tb', 'hidden'], ['a\u200bb', 'hidden'], ['a\u202eb', 'hidden'], ['a\u0085b', 'hidden'], ['\ufeffa', 'hidden'],
   ['a:b', 'chars'], ['C:x', 'chars'], ['a*b', 'chars'], ['a?b', 'chars'], ['a|b', 'chars'], ['a"b', 'chars'], ['a<b', 'chars'], ['a>b', 'chars'],
   ['CON', 'reserved'], ['con.txt', 'reserved'], ['Nul', 'reserved'], ['AUX', 'reserved'], ['prn.backup.md', 'reserved'], ['COM1', 'reserved'], ['com9', 'reserved'], ['LPT9.x', 'reserved'],
+  ['CON .txt', 'reserved'], ['con .txt', 'reserved'], ['nul .tar.gz', 'reserved'], ['com1 .x', 'reserved'], ['AUX   .md', 'reserved'],
+  ['CONIN$', 'reserved'], ['conout$', 'reserved'], ['CONIN$.txt', 'reserved'], ['COM0', 'reserved'], ['lpt0.x', 'reserved'], ['LPT0', 'reserved'],
   ['COM\u00b9', 'reserved'], ['lpt\u00b3.md', 'reserved'], ['com\u00b2', 'reserved'],
   ['a.', 'trail'], ['a ', 'trail'], ['shop.', 'trail'], ['a. ', 'trail'], ['...', 'trail'],
   ['-a', 'dash'], ['--upload-pack=x', 'dash'], ['-', 'dash'],
   ['.git', 'git'], ['.GIT', 'git'], ['.Git', 'git'],
+  // git's is_hfs_dotgit (CVE-2014-9390): HFS+ ignores these characters, so each of these is .git on a Mac
+  ['.git\u200c', 'git'], ['.g\u200dit', 'git'], ['\u200e.git', 'git'], ['.GI\u200fT', 'git'], ['.g\u206ait', 'git'], ['.git\u206f', 'git'],
+  ['.g\u202ait', 'hidden'], ['.git\ufeff', 'hidden'], // also hidden characters: refused by that rule first
+  // git's is_ntfs_dotgit: the 8.3 short name of .git
+  ['GIT~1', 'git'], ['git~1', 'git'], ['Git~12', 'git'],
   ['ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8', 'secret'], ['sk-ant-api03-' + 'x'.repeat(40), 'secret'],
 ];
 assert.ok(REFUSED.length >= 30, `at least 30 refused names (${REFUSED.length})`);
@@ -46,7 +53,7 @@ assert.strictEqual(new Set(Object.values(MSG)).size, Object.keys(MSG).length, 'e
 for (const rule of Object.keys(MSG)) assert.ok(REFUSED.some(([, r]) => r === rule), `the corpus covers the ${rule} rule`);
 
 // ---- accepted names (kept exactly as given) ----
-const ACCEPTED = ['shop', 'notes-app', 'My Project', 'über', '日本語', 'a.b', '.hidden', '.gitignore', 'git', 'console', 'com10', 'COM0', 'lpt', 'con-x', 'a-', 'a_b', ' lead', 'x'.repeat(100), '\u{1F600}'.repeat(100), 'v1.2.3', 'a%20b', 'a#b', "o'brien", 'a+b', 'a@b'];
+const ACCEPTED = ['shop', 'notes-app', 'My Project', 'über', '日本語', 'a.b', '.hidden', '.gitignore', 'git', 'console', 'com10', 'lpt', 'conin', 'CONOUT', 'COM10.txt', 'con-.txt', 'git~', 'git~x', '.gi t', '..git', '.git2', 'xgit~1',  'con-x', 'a-', 'a_b', ' lead', 'x'.repeat(100), '\u{1F600}'.repeat(100), 'v1.2.3', 'a%20b', 'a#b', "o'brien", 'a+b', 'a@b'];
 for (const n of ACCEPTED) assert.deepStrictEqual(checkNewFolderName(n), { ok: true, name: n }, `${JSON.stringify(n)} is accepted`);
 assert.strictEqual(NEW_FOLDER_LIMITS.name, 100);
 assert.strictEqual(NEW_FOLDER_LIMITS.winPath, 200);
@@ -55,7 +62,7 @@ assert.strictEqual(NEW_FOLDER_LIMITS.winPath, 200);
 assert.strictEqual(PROFILE_RESERVED, WINDOWS_RESERVED_NAME, 'profilefiles.ts re-exports the same constant');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const PEN = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'profileeditor.js'));
-for (const n of ['CON', 'con.md', 'COM1', 'COM\u00b9', 'lpt\u00b2.x', 'LPT\u00b3', 'nul', 'COM0', 'com10', 'console', 'x', 'COM\u2074', 'aux.'])
+for (const n of ['CON', 'con.md', 'CON .txt', 'CONIN$', 'conout$.x', 'LPT0', 'COM1', 'COM\u00b9', 'lpt\u00b2.x', 'LPT\u00b3', 'nul', 'COM0', 'com10', 'console', 'x', 'COM\u2074', 'aux.'])
   assert.strictEqual(PEN.RESERVED_RE.test(n), WINDOWS_RESERVED_NAME.test(n), `profileeditor.js keeps the same rule for ${n}`);
 
 // ---- FR-006: the remembered parent ----

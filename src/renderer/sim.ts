@@ -2525,7 +2525,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (!req || (req.kind !== 'init' && req.kind !== 'empty')) return { ok: false, error: 'Choose what to create.' };
       if (!n) return { ok: false, error: 'Type a name for the new folder.' };
       if (/[\\/]/.test(n)) return { ok: false, error: 'A single folder name, without / or \\.' };
-      if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(n)) return { ok: false, error: 'That name is reserved on Windows (CON, PRN, AUX, NUL, COM1-9, LPT1-9). Choose another.' };
+      if (/^(con|prn|aux|nul|conin\$|conout\$|com[0-9]|lpt[0-9]) *(\.|$)/i.test(n)) return { ok: false, error: 'That name is reserved on Windows (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-9, LPT0-9). Choose another.' };
       if (n === '.' || n === '..') return { ok: false, error: 'Use a name other than . or ..' };
       return { ok: true };
     };

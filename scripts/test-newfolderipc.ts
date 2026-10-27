@@ -57,7 +57,7 @@ async function main(): Promise<void> {
     const pickNow = async (): Promise<string> => { const r = await call('folders:createPickParent', '/etc', { path: '/etc' }); assert.strictEqual(r.ok, true); assert.strictEqual(r.parent, parent, 'the window gets the picked place to show'); return String(r.token); };
 
     // FR-022: createCheck is feedback only
-    assert.deepStrictEqual(await call('folders:createCheck', { kind: 'empty', name: 'CON' }), { ok: false, error: 'That name is reserved on Windows (CON, PRN, AUX, NUL, COM1-9, LPT1-9). Choose another.' });
+    assert.deepStrictEqual(await call('folders:createCheck', { kind: 'empty', name: 'CON' }), { ok: false, error: 'That name is reserved on Windows (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-9, LPT0-9). Choose another.' });
     assert.deepStrictEqual(await call('folders:createCheck', { kind: 'empty', name: 'fine' }), { ok: true });
     assert.deepStrictEqual(list(), [], 'createCheck creates nothing');
 

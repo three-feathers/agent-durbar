@@ -357,7 +357,7 @@ export function templateFor(app: ProfileApp, name: string, kind: TemplateKind = 
 export function createProfileFile(dirs: readonly ProfileDir[], app: unknown, place: unknown, name: unknown, template: unknown = DEFAULT_TEMPLATE, text?: unknown): { ok: true; id: string; info: ProfileFileInfo } | Fail {
   if (app !== 'copilot' && app !== 'claude') return { ok: false, error: 'Choose an agent app.' };
   if (template !== 'success' && template !== 'standard') return { ok: false, error: 'Choose a template.' };
-  if (typeof name === 'string' && PROFILE_NAME.test(name) && WINDOWS_RESERVED_NAME.test(name)) return { ok: false, error: 'That name is reserved on Windows (CON, PRN, AUX, NUL, COM1-9, LPT1-9): choose another.' };
+  if (typeof name === 'string' && PROFILE_NAME.test(name) && WINDOWS_RESERVED_NAME.test(name)) return { ok: false, error: 'That name is reserved on Windows (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-9, LPT0-9): choose another.' };
   if (!isProfileName(name)) return { ok: false, error: 'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.' };
   if (text !== undefined && (typeof text !== 'string' || !text.trim() || Buffer.byteLength(text, 'utf8') > maxBytesFor(app))) return { ok: false, error: 'The text cannot be saved (empty or too large).' };
   const own = dirs.filter((d) => d.app === app);
