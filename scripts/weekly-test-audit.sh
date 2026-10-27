@@ -35,6 +35,7 @@ if [ "$cmd" = install-filer ]; then
   install -d -m 755 "$dest/scripts" "$dest/src/shared"
   install -m 644 dist-scripts/scripts/weekly-test-audit.js "$dest/scripts/weekly-test-audit.js"
   install -m 644 dist-scripts/src/shared/redact.js "$dest/src/shared/redact.js"
+  install -m 644 scripts/trusted-authors.txt "$dest/scripts/trusted-authors.txt"   # spec 021 FR-060: only the audit's own issues count as filed
   echo "installed the filer from main at $(git rev-parse --short HEAD) to $dest"
   exit 0
 fi

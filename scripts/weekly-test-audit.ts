@@ -16,6 +16,7 @@
  */
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+import * as path from 'path';
 import { execFile, spawn } from 'child_process';
 import { redact } from '../src/shared/redact';
 
@@ -194,14 +195,36 @@ export type Gh = (args: string[]) => Promise<GhResult>;
 export type Outcome = { fp: string; title: string; file: string; status: 'filed' | 'would-file' | 'duplicate' | 'capped' | 'failed'; note?: string; url?: string };
 export type Summary = { mode: 'file' | 'dry-run'; dedupe: 'checked' | 'not checked'; outcomes: Outcome[]; error?: string };
 
-/** Search open and closed issues for weekly-audit markers. Throws when the search fails, so nothing is filed blind. */
-export async function existingMarkers(gh: Gh, repo: string): Promise<Map<string, string>> {
-  const r = await gh(['issue', 'list', '--repo', repo, '--state', 'all', '--limit', '1000', '--search', `"${FOOTER}" in:body`, '--json', 'number,state,body']);
+/**
+ * The accounts whose issues count as the audit's own (spec 021 FR-060): `scripts/trusted-authors.txt`, next to this file when installed
+ * by `install-filer`, or in the checkout's `scripts/` when run from `dist-scripts/`. Throws when the list is missing or empty, so a run
+ * never treats an outsider's issue as filed.
+ */
+export function trustedAuthors(dir: string = __dirname): Set<string> {
+  for (const f of [path.join(dir, 'trusted-authors.txt'), path.join(dir, '..', '..', 'scripts', 'trusted-authors.txt')]) {
+    let text: string;
+    try { text = fs.readFileSync(f, 'utf8'); } catch { continue; }
+    const set = new Set(text.split(/\r?\n/).map((l) => l.trim()).filter((l) => /^[A-Za-z0-9-]+(\[bot\])?$/.test(l)).map((l) => l.toLowerCase()));
+    if (set.size) return set;
+  }
+  throw new Error('could not read scripts/trusted-authors.txt');
+}
+
+/**
+ * Search open and closed issues for weekly-audit markers. Throws when the search fails, so nothing is filed blind. Only issues whose
+ * author is a trusted account count: anyone can open an issue that carries the footer and made-up markers, which would otherwise stop
+ * real findings from being filed (spec 021 FR-060, review on #818).
+ */
+export async function existingMarkers(gh: Gh, repo: string, trusted: Set<string> = trustedAuthors()): Promise<Map<string, string>> {
+  const r = await gh(['issue', 'list', '--repo', repo, '--state', 'all', '--limit', '1000', '--search', `"${FOOTER}" in:body`, '--json', 'number,state,body,author']);
   if (r.code !== 0) throw new Error('could not search existing issues');
-  const list = JSON.parse(r.stdout) as { number: number; state: string; body: string }[];
+  const list = JSON.parse(r.stdout) as { number: number; state: string; body: string; author?: { login?: string } | null }[];
   if (!Array.isArray(list)) throw new Error('could not read existing issues');
   const seen = new Map<string, string>();
-  for (const i of list) for (const fp of markersIn(i.body)) if (!seen.has(fp)) seen.set(fp, `#${i.number} (${String(i.state).toLowerCase()})`);
+  for (const i of list) {
+    if (!trusted.has(String((i.author && i.author.login) || '').toLowerCase())) continue;
+    for (const fp of markersIn(i.body)) if (!seen.has(fp)) seen.set(fp, `#${i.number} (${String(i.state).toLowerCase()})`);
+  }
   return seen;
 }
 async function repoLabels(gh: Gh, repo: string): Promise<Set<string>> {
