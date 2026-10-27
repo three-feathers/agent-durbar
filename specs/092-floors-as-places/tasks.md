@@ -44,7 +44,7 @@
 ## Phase 3: The slide (PR 3)
 
 - [ ] T022 Two-floor mount during a slide: current plus target in a clipped container, others unmounted; focus order only for the visible floor [FR-003, FR-009]
-- [ ] T023 Slide with `motion()`: translateY, 300 ms, ease-in-out; retarget on a new request; end at once on resize, relayout, theme change [FR-009]
+- [ ] T023 Slide with `motion()`: translateY, 300 ms, ease-in-out; retarget on a new request; end at once on resize, relayout, theme change [FR-009, FR-030]
 - [ ] T024 Reduced motion read live with `reducedMotion()`: instant change, no fade; also when the setting flips while open [FR-010]
 - [ ] T025 Walker layer and lobby while sliding: no walk is drawn; places placed at the end of the slide [FR-021; edge case walkers]
 - [ ] T026 Timing check like 033 SC-003: ratio to a same-run yardstick, 15 agents, both sizes (`scripts/shots-092.js`) [SC-003]

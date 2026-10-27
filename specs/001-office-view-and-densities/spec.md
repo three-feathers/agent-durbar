@@ -142,7 +142,6 @@ Animations are subtle, CSS-only in compact densities and stop under reduced-moti
 
 ## Changes
 
-- **2026-10-27, floors as places (spec 092, issue #782).** With two or more floors on, the office shows one floor at a time: the density is chosen per floor screen from that floor's agents (the 15-agent rule holds on each floor), and a lift panel at the right edge takes a little width from the office area, which the layout and `check:office` count. With one floor on nothing changes. Not built yet.
 ### 2026-10-16: helper strips overlapped desk cards; closed rooms left the floor half empty (bug, m7b)
 
 **What was wrong.** At SIM=15, 1440x900, with three rooms closed (`?closed=mcp-swiss,blog,infra-notes`), the helper strip under Elif (`Types / Tag / Diff / +3 more`) was drawn over Priya's and Tomas's desk cards, and the strip under Kenji (`Tests`) had a stray background box. Cause: a CSS class collision. The compact helper strip used the class `strip` (`.helpers.strip`), and the full-screen chat's agent bar (feature 005) also defines a global `.strip{height:64px;background:var(--surface-2);border-bottom:1px solid var(--line);align-items:center}`. The helper strip therefore got a fixed 64px height, a filled background, a bottom border and vertically centred content. A strip with one row of helpers (44px) fitted by luck; once the layout search chose 3 helpers shown (`roomy`, helper cap 3, i.e. two rows plus `+N more`) the strip kept 64px, overflowed its unit and the next grid row started underneath it. The probe that measures whether a layout fits used the same CSS, so it measured the same wrong height and reported `fit: ok`. m5/m6 screenshots had no two-row strips at that size, so nothing overlapped.
@@ -566,3 +565,6 @@ Nothing here was run on a real session for this delta (0 credits); the `real:` e
 
 **Tasks:** T136, T137 in `tasks.md`. Numbers taken here: FR-179, T136, T137 (checked against `main` and the open PRs 710 and 621 on 2026-10-26); spec 059 FR-169, T081; spec 033 no new number.
 
+### 2026-10-27: floors as places (spec 092, issue #782; cross-reference, not built yet)
+
+- With two or more floors on, the office shows one floor at a time: the density is chosen per floor screen from that floor's agents (the 15-agent rule holds on each floor), and a lift panel at the right edge takes a little width from the office area, which the layout and `check:office` count. With one floor on nothing changes. Not built yet.
