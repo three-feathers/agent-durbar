@@ -17,6 +17,7 @@ on:
       - 'src/shared/harnesssetup.ts'
       - 'src/main/harnesssetup.ts'
       - 'src/main/officialinstall.ts'
+      - 'src/main/netget.ts'
       - '.github/workflows/install-check.yml'
       - '.github/platforms.json'
 

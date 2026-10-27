@@ -164,7 +164,7 @@ export function makeNodeDownloadGet(get: typeof https.get): HttpGet {
         const status = res.statusCode ?? 0;
         const location = typeof res.headers.location === 'string' ? res.headers.location : undefined;
         const contentType = typeof res.headers['content-type'] === 'string' ? res.headers['content-type'] : undefined;
-        if (status >= 300 && status < 400) { res.resume(); ok({ status, location, contentType, body: Buffer.alloc(0) }); return; }
+        if (status >= 300 && status < 400) { ok({ status, location, contentType, body: Buffer.alloc(0) }); req.destroy(); return; }
         const parts: Buffer[] = [];
         let n = 0;
         res.on('data', (c: Buffer) => {
