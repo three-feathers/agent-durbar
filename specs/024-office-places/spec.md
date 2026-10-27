@@ -111,7 +111,7 @@ Asked for by Ruben. Real Copilot runtime (Copilot CLI 1.0.95, SDK 1.0.22, model 
 
 ## Changes
 
-- **2026-10-27, floors as places (spec 092, issue #782).** The lobby stays one lobby for all floors that are on (FR-020), but it is drawn on every floor screen at the same place. A visitor whose agent is on another floor sits in the tile without a walk and its tile label names the floor ("Terminal: Dana (Client B)"). Not built yet.
+- **2026-10-27, floors as places (spec 092, issue #782).** The lobby stays one lobby for all floors that are on (FR-020), but it is drawn on every floor screen at the same place. A visitor whose agent is on another floor sits in the tile without a walk and its tile label names the floor ("Terminal: Dana (Client B)"). **Built in phase 1** (`092-floor-screens`): the label reads "Dana (room, Client B): doing"; no figure is walked across a floor change.
 - **2026-10-17, spec 033 (floors), cross-reference.** One lobby for all floors that are on; agents of a floor that is off are not listed at a place and have no figure (the same filter as a hidden room in `placeVisitors`). Switching a floor off while one of its agents is at a place removes the figure at once, without a walk back (`check:office` floors cases, `scripts/shots-033.js`).
 
 - **2026-10-18, one GitHub server in Settings > Places (task T012, issue #117).**
