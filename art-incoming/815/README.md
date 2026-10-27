@@ -44,3 +44,4 @@ Review notes (Mac coordinator):
    - punk cat *working* and *resting*: still no *waiting*; the batch held the same *working* twice;
    - sea creature, 3 poses;
    - raccoon, 3 poses: *waiting* still has the purple mohawk while the other poses are grey, so the hair is still inconsistent.
+8. `batch5/rebels-raccoon-waiting.webp` was replaced with the grey-hair version (2026-10-27). With it, the raccoon is consistent in all 3 poses.
