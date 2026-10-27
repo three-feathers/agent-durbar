@@ -39,3 +39,8 @@ Review notes (Mac coordinator):
    - missing pose: the cabin boy's *resting*.
 5. Third batch (2026-10-27): the Royal crew is complete (6 characters, all 3 poses). Edge specks around the waving hand of the knight and the king. The crown's shape varies a little between the king's poses (minor).
 6. Fourth batch (2026-10-27): the Prehistoric crew is complete (6 characters, all 3 poses). Usual specks along the bottom edge (the inventor's *working*, the cavewoman's *resting*).
+7. Fifth batch (2026-10-27), in `batch5/`. It may repeat earlier files, so keep the newest version of each character:
+   - Prehistoric: **braids** (3 poses, with the *working* pose new) and **young beard** (a young cave man with a short beard and a tooth in his hair, 3 poses). Check whether young beard is the batch-1 "caveman".
+   - punk cat *working* and *resting*: still no *waiting*; the batch held the same *working* twice;
+   - sea creature, 3 poses;
+   - raccoon, 3 poses: *waiting* still has the purple mohawk while the other poses are grey, so the hair is still inconsistent.
