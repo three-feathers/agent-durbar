@@ -11,6 +11,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { verifyTarball } = require('./verify-tarball');
 
 const VALID = ['darwin-arm64', 'darwin-x64', 'linux-x64', 'linux-arm64', 'win32-x64', 'win32-arm64'];
 const target = process.argv[2] || `${process.platform}-${process.arch}`;
@@ -35,6 +36,12 @@ if (!fs.existsSync(path.join(pkgDir, 'package.json'))) {
       shell: process.platform === 'win32',
     }).trim().split(/\r?\n/).pop();
     const tgz = path.join(tmp, out);
+    // spec 008 FR-133: refuse a tarball that does not match package-lock.json (before anything is unpacked)
+    const check = verifyTarball(tgz, path.join(__dirname, '..', 'package-lock.json'), `@github/${pkgName}`, version);
+    if (!check.ok) {
+      console.error(`prepare-runtime: refusing @github/${pkgName}@${version}: ${check.reason}`);
+      process.exit(1);
+    }
     fs.mkdirSync(pkgDir, { recursive: true });
     execFileSync('tar', ['-xzf', tgz, '-C', pkgDir, '--strip-components=1'], { stdio: 'inherit' });
   } finally {
