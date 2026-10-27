@@ -19,6 +19,21 @@ The example files are in [always-on-host/](always-on-host/). Replace every `<pla
 
 The `durbar-sim` unit runs Electron with `--no-sandbox` because there is no usable setuid sandbox under Xvfb on a VPS. That is acceptable only because it runs the simulator, with no credentials, on trusted `main`. Never point it at untrusted code or a real session.
 
+## Hardening checklist for the host
+
+Generic; adapt to your provider. Do these before the host runs an agent unattended, and re-check after every provider or OS upgrade. Nothing here belongs in the repo with real names, addresses or keys.
+
+- [ ] **SSH keys only.** `PasswordAuthentication no`, `PermitRootLogin no`, `KbdInteractiveAuthentication no`; a modern key type, one key per person or device; remove keys of devices you no longer use.
+- [ ] **Firewall: default deny inbound.** Allow only SSH (ideally from a private network or with rate limiting); no other listening port is reachable from the internet (check with `ss -ltnp` and from outside).
+- [ ] **Unattended security updates** switched on, with a reboot window, and a reminder to check that they ran.
+- [ ] **A separate unix user for the agents**, not root and not your admin account, with no `sudo`. A second user for anything that must not see the agent's token (see the weekly audit's two-user layout).
+- [ ] **A fine-grained, repository-scoped GitHub token** in its own `GH_CONFIG_DIR` (mode 0700) for the agent user only: the least permissions the job needs, a short expiry, no admin scopes, no access to other repositories or to secrets and settings. Revoke and replace it when in doubt.
+- [ ] **No secrets in shell history, units, scripts or the repo.** Tokens in 0600 files outside any repo; `HISTCONTROL=ignorespace` or history off for the agent user; never put a token on a command line.
+- [ ] **Backups** of what you cannot rebuild (the 0600 secret files' recovery path, your own notes), tested by a restore; the repo itself needs none.
+- [ ] **A log of what the agents ran**: keep the session transcripts and the journal of the units (`journalctl --user`), rotate but do not delete them early, and read them when something looks wrong. Do not paste them into public issues (they can hold private data).
+- [ ] **Tighten the services**: `NoNewPrivileges=yes`, `ProtectSystem=strict` and `PrivateTmp=yes` in the units where they work; nothing runs with a login that has more rights than its job.
+- [ ] **Outside text stays data.** The host reads issues and PRs only through the trusted-author tools (AGENTS.md, *Untrusted content and prompt injection*).
+
 ## Pieces
 
 | File | What it does |
