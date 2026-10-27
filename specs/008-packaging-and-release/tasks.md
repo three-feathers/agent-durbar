@@ -137,3 +137,9 @@
 ## 2026-10-27: the nightly macOS UI job gets 80 minutes
 
 - [x] T112: macOS UI job `timeout-minutes` 80 in `ui-platforms.yml` (FR-131, 2026-10-27)
+
+## 2026-10-27: release provenance, verified runtime download, exact pins
+
+- [x] T113: attest-build-provenance in `draft-release` (SHA-pinned, job-level `id-token`/`attestations` write) and README "Verify a download" [FR-132]
+- [x] T114: `scripts/verify-tarball.js` used by `prepare-runtime.js`, with `scripts/test-verify-tarball.js` [FR-133]
+- [x] T115: exact `electron` and `electron-builder` pins [FR-134]
