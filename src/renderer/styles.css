@@ -275,6 +275,13 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 .more:hover{background:color-mix(in srgb,var(--raised) 60%,transparent)}
 .more .dot{width:7px;height:7px}
 .empty{padding:60px;text-align:center;color:var(--muted);width:100%}
+.filter-note{text-align:center;color:var(--muted);font-size:12px;line-height:20px} /* spec 001 FR-180: the empty-state colour, a calm line instead of the empty-state's padding */
+.filter-note b{color:var(--ink);font-weight:650}
+.filter-note .fn-all{font:inherit;color:inherit;background:none;border:0;padding:0 2px;text-decoration:underline;cursor:pointer;border-radius:4px}
+#filterNote{position:absolute;top:8px;left:16px;right:16px;z-index:2}
+#filterNote[hidden]{display:none}
+#floor.has-fnote{padding-top:40px}
+#list .filter-note{padding:0 0 10px}
 .empty.floor-empty{padding:24px 16px} /* spec 092: a floor screen with nothing on it keeps the shared lobby below the line */
 /* first run (spec 001 FR-026) */
 .welcome{max-width:620px;margin:56px auto 0;padding:26px 30px;background:var(--surface);border:1px solid var(--line);border-radius:18px;color:var(--ink)}
