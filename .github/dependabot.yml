@@ -1,4 +1,4 @@
-# Supply-chain hardening (spec 021 FR-061). Weekly, grouped: one pull request per ecosystem per week, few open at once.
+# Supply-chain hardening (spec 021 FR-062). Weekly, grouped: one pull request per ecosystem per week, few open at once.
 # A Dependabot PR is reviewed by a human before merge: lockfile changes and new transitive packages are never merged on CI alone.
 # The PR body quotes upstream release notes: untrusted text (AGENTS.md, Untrusted content and prompt injection).
 version: 2

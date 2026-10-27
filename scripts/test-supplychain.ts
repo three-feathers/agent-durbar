@@ -1,5 +1,5 @@
 /**
- * Supply-chain guards (spec 021 FR-061, spec 008 delta 2026-10-27). `npm run test:supplychain`. Runs on any OS; no network, no credits.
+ * Supply-chain guards (spec 021 FR-062, spec 008 delta 2026-10-27). `npm run test:supplychain`. Runs on any OS; no network, no credits.
  *  (a) every entry of package-lock.json that is downloaded has a `resolved` URL on https://registry.npmjs.org and an `integrity`;
  *  (b) no executable or archive is tracked in git, by extension or by the first bytes, outside an explicit allow-list;
  *  (c) every `uses:` in .github/workflows is pinned to a 40-character commit sha.

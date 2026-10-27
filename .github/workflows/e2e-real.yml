@@ -37,7 +37,7 @@ jobs:
   e2e:
     name: E2E (${{ matrix.os }})
     needs: platforms
-    # spec 021 FR-061: the secrets can live in this environment, where the owner can require a reviewer before a run starts
+    # spec 021 FR-062: the secrets can live in this environment, where the owner can require a reviewer before a run starts
     environment: copilot
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
