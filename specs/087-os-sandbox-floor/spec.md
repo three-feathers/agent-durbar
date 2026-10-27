@@ -424,13 +424,21 @@ only if the probe shows the floor clears** (T072, conditional): sending `enabled
 may treat as a conflict. So: **build B now; build A only after `real:` evidence; keep B in both cases.** If the probe passes, A becomes the
 default on the switch and B is offered only after an A refusal; if it fails, B is the final design.
 
+#### Clarifications (owner answers, Paco, terminal, 2026-10-27; relayed by the coordinator, to be mirrored on issue #806)
+
+- **Q1** The T066 probe is **approved** by Paco, budget about 3 Copilot prompts (ask again before going over). It has **not run yet**. Order unchanged: B is built first (T067-T071).
+- **Q2** The restart has its **own** `askDialog`, apart from the Allow all dialog (no combined one-click button). FR-022 and FR-022a(2) stand as written.
+- **Q3** The action lives in the **chat header chip and the mode menu only**, not in the office card's menu (the `modesOnly` menu of spec 003 FR-095 is a mode menu, so it is covered).
+- **Q4** Yes: if A ships, the Allow all dialog says "Copilot’s OS sandbox is also turned off for this session." (FR-022c).
+- **Q5** Not asked. No slash-command route (`SandboxSessionChange`) and no other payload without a separate OK from the owner.
+
 #### Requirements (new)
 
 - **FR-022** `[PLANNED]` (outcome B; ships first) **Restart without the sandbox.** For a live session whose normalized `SandboxState` has
   `untilNewSession: true` and `managed` not true (only Copilot sets it, `copilotSandboxState`, so Claude Code and Codex never see the action),
   while the mode is **Allow all** and the adapter has `capabilities.resume`:
   - the mode menu gets an item **Restart without the sandbox** (under the three modes, same menu element, spec 003 FR-095 `modesOnly` menus
-    too) and the chip's segment becomes a button with the same action; both only in that state, never for *Sandboxed*, *Not sandboxed*,
+    too; not the office card's menu, Q3) and the chip's segment becomes a button with the same action; both only in that state, never for *Sandboxed*, *Not sandboxed*,
     *Sandboxed (managed)* or another mode (Read-only/Ask first: switching down re-sends the floor as today).
   - it asks first with the shared `askDialog` (not a toast): "Restart <name> without the OS sandbox? The conversation continues in a new
     session in Allow all. Shell commands will no longer be limited to this folder and can reach the network. Nothing is re-sent; send your
@@ -503,8 +511,7 @@ sandbox", what stays true for Claude Code and Codex, and, if A ships, the change
 spec 003 FR-095 note if the menu item reaches `modesOnly` menus; `changelog.d/087-allowall-sandbox.md`; `npm run shots:docs -- --only <drivers>` for
 the linked pictures that show the chip or the mode menu (`npm run shots:docs -- --list`), looked at before commit.
 
-**Open owner questions** are in the report to the coordinator and on issue #806 (restart confirmation wording; whether the Allow all dialog
-should offer "Allow all and restart without the sandbox" as one click; the probe's OK and cost).
+**Open owner questions:** none left from this delta (Q1-Q5 above). The restart dialog's exact wording is the owner's to adjust in review.
 
 ### 2026-10-26: the chip stops saying plain "Sandboxed" for Copilot in Ask first (FR-021b, T065; Refs #755, v0.1.0 fix)
 

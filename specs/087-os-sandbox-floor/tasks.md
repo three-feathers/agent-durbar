@@ -110,9 +110,9 @@ the OS sandbox can stop it.
 
 Numbers taken: FR-022, FR-022a, FR-022b, FR-022c, K16, T066..T073 (free in spec 087 on `origin/main` and in every open PR on 2026-10-27).
 Order: T067-T071 (outcome B, ships first) do not wait for T066. T072 and T073 wait for T066's result. Simulator and `npm test` only,
-except T066.
+except T066 (owner-approved 2026-10-27, about 3 prompts, not yet run).
 
-- [ ] T066 **Probe, needs owner approval (do not run before the owner's written OK; cost about 3 Copilot prompts, 0.08-0.16 AIU each by the
+- [ ] T066 **Probe. OWNER-APPROVED by Paco, 2026-10-27 (terminal), budget about 3 Copilot prompts, ask before going over; NOT RUN YET. Cost: about 3 Copilot prompts, 0.08-0.16 AIU each by the
   2026-10-25 runs, so about 0.25-0.5 AIU).** Extend `scripts/sandbox-floor-real.ts` with a `switch` scenario (dry run first, `--spend`
   to run; no secret printed; home folder masked; usage recorded) and run it once on Linux with Copilot CLI 1.0.101 / SDK 1.0.22 through
   Durbar's own adapter, in a throw-away folder. [FR-022c, K16]
@@ -142,7 +142,7 @@ except T066.
   - AC1: true only for Allow all + `untilNewSession` + not `managed` + `caps.resume`; false for every Read-only/Ask first state, `off`, `unknown`,
     managed, a state without `untilNewSession`, and for the states Claude Code and Codex produce (a test builds each from the adapters' own state functions).
   - AC2: a malformed state gives false (fail closed, as `clean()`).
-- [ ] T068 Window: the mode-menu item and the chip button *Restart without the sandbox*, the `askDialog`, the tooltip text (at most 300 characters,
+- [ ] T068 Window (chip and mode menu only, not the office card menu: Q3): the mode-menu item and the chip button *Restart without the sandbox*, the `askDialog`, the tooltip text (at most 300 characters,
   ending as the state's `verified` says), busy and pending lists in the dialog; the click calls the existing `bridge.agentMcpRestartSession(id, confirmed)`. [FR-022, FR-022a, FR-022b]
   - AC1: Cancel changes nothing and calls nothing; no dialog, no call (mutant: skip the dialog fails a test).
   - AC2: a source check pins that `ipc/agents.ts` registers no second restart channel and that the renderer calls no `start`/`resume` for this.
@@ -164,7 +164,7 @@ except T066.
   pictures that show the chip or the mode menu; `-- --list`), `docs/agent-notes.md` entry on the probe pitfall (a `/tmp` target proves nothing). [FR-022]
   - AC1: `npm run changelog:check`, `npm run specs:check`, `test:site` pass; every linked picture that shows the changed chip or menu is retaken and looked at.
 - [ ] T072 **Only if T066 verdict is A (the floor clears).** `applySandbox` sends the proven payload on a switch to Allow all; the state follows the update; the Allow all dialog
-  names the sandbox; FR-022 stays as the fallback after a refusal. [FR-022c]
+  names the sandbox ("Copilot’s OS sandbox is also turned off for this session.", Q4); FR-022 stays as the fallback after a refusal. [FR-022c]
   - AC1: tests of FR-022c (exact payload, resolved gives `null`, rejected and hanging keep `untilNewSession`, narrowing re-sends the floor, no `allowBypass` anywhere);
     mutants (5) and (6) of the delta fail.
   - AC2: the dialog sentence appears only for a Copilot session that holds a floor (driver).
@@ -176,4 +176,4 @@ except T066.
 
 T001 → everything. T010-T013 → T014 → T020-T022 → T030-T032 → T040. T050 any time after T001. Phase 6 after Phase 2, with the
 owner's OK.
-Phase 7: T066 needs the owner's OK; T067-T071 do not wait for it; T072/T073 wait for T066.
+Phase 7: T066 is owner-approved (not run yet); T067-T071 do not wait for it; T072/T073 wait for T066.
