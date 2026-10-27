@@ -60,7 +60,7 @@
     if(!s.verified)parts.push(NOT_VERIFIED);
     return parts.join(' ');
   }
-  /* FR-022/FR-022a (issue #806): *Restart without the sandbox* is offered only for a floor kept from an earlier mode (untilNewSession), in Allow all,
+  /* FR-022/FR-022a (issue 806): *Restart without the sandbox* is offered only for a floor kept from an earlier mode (untilNewSession), in Allow all,
      not held by the organization (managed), by an app that can resume. Pure and fail closed: a malformed state or input is false. */
   function canRestartWithoutSandbox(o){
     if(!o||typeof o!=='object')return false;

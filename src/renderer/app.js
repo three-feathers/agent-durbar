@@ -5544,7 +5544,7 @@ function modeChipHTML(a){const m=a.info.permMode, rs=m==='allow'&&a.info.permRes
   /* spec 061 FR-012: Read-only still means something: when the folder's own hooks or allow rules apply, the chip says so */
   const fr=a.info.folderRules?' + folder rules':'';
   /* spec 087 FR-009: the floor in force after the mode, in words (never colour alone); its tooltip says what it covers (FR-010) */
-  /* spec 087 FR-022 (issue #806): a floor kept in Allow all: the segment is its own button, *Restart without the sandbox* (asks first) */
+  /* spec 087 FR-022 (issue 806): a floor kept in Allow all: the segment is its own button, *Restart without the sandbox* (asks first) */
   const sr=canSbxRestart(a), sw=sbxWord(a),sbx=sw&&!sr?`<span class="mode-sbx sbx-${esc(a.info.sandbox.state)}" data-sbx="${esc(a.info.sandbox.state)}" title="${esc(sbxTip(a))}"> · ${esc(sw)}</span>`:'';
   const sbtn=sr?`<button class="mode-sbx mode-sbx-btn sbx-${esc(a.info.sandbox.state)}" id="sbxRestartBtn" type="button" data-act="sbxRestart" data-sbx="${esc(a.info.sandbox.state)}"${a.sbxRestarting?' aria-disabled="true"':''} aria-label="${esc(sw+'. Restart without the sandbox…')}" title="${esc(sbxRestartTip(a))}">${esc(sw)}</button>`:'';
   if(!feat(a,'modes'))return `<span class="modechip${m==='allow'?' modebadge':''}" title="Set when the session starts">${esc(MODE_NAME[m]+fr)}${sbx}</span>${sbtn}`; /* spec 052 FR-065 */
