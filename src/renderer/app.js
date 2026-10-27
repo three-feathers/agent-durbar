@@ -3438,8 +3438,8 @@ function palActions(){
     {label:'Tools',kw:'tools usage mcp',run:palClick('toolsBtn'),ok:()=>palUsable('toolsBtn')},
     {label:'Settings',kw:'settings preferences theme options',...(IS_MAC?{keys:keyLabels(['mod',','])}:{}),run:palClick('settingsBtn'),ok:()=>palUsable('settingsBtn')},
     {label:'Add folder',kw:'add folder workspace project open existing',keys:keyLabels(['mod','O']),run:addExisting,ok:()=>palUsable('addFolder')}, /* spec 093 Q1 = a: the picker directly */
-    {label:'New repository',hint:'Create a folder with git init (on this computer only) and add it',kw:'new create repository repo git init folder project',run:()=>NEWFOLDER.start('init'),ok:()=>palUsable('addFolder')&&!!bridge.createPickParent}, /* spec 093 FR-001a */
-    {label:'New empty folder',hint:'Create an empty folder and add it',kw:'new create empty folder directory project',run:()=>NEWFOLDER.start('empty'),ok:()=>palUsable('addFolder')&&!!bridge.createPickParent}, /* spec 093 FR-001a */
+    {label:'New repository',hint:'Create a folder with git init (on this computer only) and add it',kw:'new create repository repo git init folder project',run:()=>NEWFOLDER.start('init'),ok:()=>palUsable('addFolder')&&!!(bridge&&bridge.createPickParent)}, /* spec 093 FR-001a */
+    {label:'New empty folder',hint:'Create an empty folder and add it',kw:'new create empty folder directory project',run:()=>NEWFOLDER.start('empty'),ok:()=>palUsable('addFolder')&&!!(bridge&&bridge.createPickParent)}, /* spec 093 FR-001a */
     {label:'Add VS Code workspace',kw:'add workspace code-workspace vscode new open',keys:keyLabels(['mod','shift','O']),run:palClick('addWs'),ok:()=>palUsable('addWs')&&!SIMPLE},
     {label:'Defaults for new sessions',kw:'defaults agent app mode permission model new session',run:()=>toggleDefaults(true),ok:()=>palUsable('defaultsBtn')},
     {label:'Detail level: Simple',kw:'simple detail beginner view',run:()=>setDetail('simple')},

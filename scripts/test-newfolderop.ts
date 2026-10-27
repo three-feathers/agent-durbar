@@ -194,6 +194,8 @@ async function main(): Promise<void> {
     assert.strictEqual(t.timers.length, 1);
     t.timers[0].fn();
     assert.deepStrictEqual(t.cancels, [path.join(P, 'slow')], 'the limit ends git');
+    for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+    assert.ok(!t.of('rm').some((c) => c[1] === path.join(P, 'slow')), 'the folder is not removed before git has ended (FR-041/FR-050 order)');
     release({ code: null, signal: 'SIGTERM', stderrTail: '' });
     const r = await p;
     assert.deepStrictEqual(r, { ok: false, agents: [], error: 'git init did not finish in time.' });
