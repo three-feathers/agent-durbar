@@ -46,7 +46,7 @@
 - [ ] T042 Real-git protocol layer test (plan *Testing* 3, R1): global `protocol.file/ext.allow=always` and `insteadOf` rewrites in the test `HOME`; the production call refused (i) as built, (ii) without `GIT_ALLOW_PROTOCOL`, (iii) without the per-transport nevers; `foo::` helper case [FR-032, FR-033; SC-003]
 - [ ] T043 Real-git cleanup-through-links test (POSIX): symlinks to an outside folder and file survive a failed or cancelled clone; `[KNOWN GAP]` Windows junctions [FR-050]
 - [ ] T044 Env pass-through of `GIT_SSL_CAINFO`/`GIT_SSL_CAPATH` (absolute only), the D11 `BatchMode` rule for a user `core.sshCommand`, `transfer.bundleURI=false`, the TLS/proxy hint, the 30 s waiting line; tests [FR-032, FR-033, FR-044, FR-071]
-- [ ] T045 Owner answers Q6 (Allow all wording for a clone); build the answer in the window's confirmation [FR-061; Q6]
+- [ ] T045 Clone + *Allow all*: the confirmation, shown after the URL dialog, adds "This code comes from <host>; agents can run it without asking." (host from `checkCloneUrl`, never the user part); empty folder and new repository unchanged; driver case and an escaping test with a hostile host-like string [FR-061; Q6 = a, owner 2026-10-27]
 - [ ] T040 Plant the mutants of plan *Mutants*; each fails a test; list them in the PR [SC-006]
 - [ ] T041 Docs: README *Safety model* (what clone runs, the user's credentials, hooks note, BatchMode, the dropped `GIT_*` variables and the two that pass, "keep git up to date" and no version floor), `changelog.d/093-p2-clone.md`, spec ticks, screenshots [FR-035, FR-090]
 
