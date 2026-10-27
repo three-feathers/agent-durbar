@@ -66,3 +66,4 @@ Review notes (Mac coordinator):
 25. Added `batch6/`: the **panda** (all 3 poses) and the **owl** (*resting*, *waiting*; *working* missing), both in cartoon style (2026-10-27). The owl's *waiting* is cropped low and wing-heavy (minor).
 26. Added `batch6/rebels-owl-working` (the owl is complete; its glasses are black here and brown in the other poses, minor) and `rebels-fox-resting` (the fox's *working* and *waiting* are missing). 2026-10-27.
 27. Added `batch6/monster-werewolf-*` (2026-10-27): the werewolf is the optional sixth Monster, all 3 poses.
+28. `batch6/pirate-cook-resting.webp` was replaced with the redo (2026-10-27): eyes closed, the bowl in both hands, cartoon style. The cook's *working* (hands on a desk) is still the old one.
