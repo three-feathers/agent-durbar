@@ -8,7 +8,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
+import { spawnSync } from 'child_process';
 
 const root = path.join(__dirname, '..', '..');
 
@@ -132,14 +132,35 @@ for (const f of fs.readdirSync(wfDir).filter((n) => /\.ya?ml$/.test(n))) {
 }
 assert.ok(uses > 5, 'the workflows were actually read');
 
-let tracked: string[] | null = null;
-// Skipped only when there is no .git at all (a source tarball); any git failure (dubious ownership, no git) fails the test.
-if (fs.existsSync(path.join(root, '.git'))) tracked = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 64 << 20 }).split('\0').filter(Boolean);
-if (tracked) {
-  assert.ok(tracked.length > 100, 'git ls-files listed the repository');
-  const read = (f: string) => { const fd = fs.openSync(path.join(root, f), 'r'); try { const b = Buffer.alloc(HEAD); const n = fs.readSync(fd, b, 0, HEAD, 0); return b.subarray(0, n); } finally { fs.closeSync(fd); } };
-  assert.deepStrictEqual(binaryProblems(tracked, read), [], 'no executable or archive is tracked (allow-list: BINARY_ALLOW in scripts/test-supplychain.ts)');
-} else console.log('supplychain: no .git folder, binary check skipped');
+export type GitRun = (args: string[]) => { status: number | null; stdout: string; stderr: string; error?: Error };
+const realGit: GitRun = (args) => { const r = spawnSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 << 20 }); return { status: r.status, stdout: r.stdout || '', stderr: r.stderr || '', error: r.error }; };
+const readHead = (dir: string) => (f: string) => { const fd = fs.openSync(path.join(dir, f), 'r'); try { const b = Buffer.alloc(HEAD); const n = fs.readSync(fd, b, 0, HEAD, 0); return b.subarray(0, n); } finally { fs.closeSync(fd); } };
+/** The binary check of a checkout. Skipped (null) only when there is no .git at all (a source tarball); any git failure (no git, dubious ownership, non-zero exit, an empty listing) is a problem, never a skip. */
+export function trackedBinaryProblems(hasGit: boolean, run: GitRun, read: (f: string) => Buffer, minFiles = 100): string[] | null {
+  if (!hasGit) return null;
+  let r: ReturnType<GitRun>;
+  try { r = run(['ls-files', '-z']); } catch (e) { return [`git ls-files could not run: ${String((e as Error).message).slice(0, 80)}`]; }
+  if (r.error) return [`git ls-files could not run: ${String(r.error.message).slice(0, 80)}`];
+  if (r.status !== 0) return [`git ls-files failed with status ${r.status}${r.stderr ? ': ' + r.stderr.slice(0, 80) : ''}`];
+  if (r.stderr.trim()) return [`git ls-files printed errors: ${r.stderr.trim().slice(0, 80)}`];
+  const files = r.stdout.split('\0').filter(Boolean);
+  if (files.length < minFiles) return [`git ls-files listed only ${files.length} files`];
+  return binaryProblems(files, read);
+}
+const real = trackedBinaryProblems(fs.existsSync(path.join(root, '.git')), realGit, readHead(root));
+if (real === null) console.log('supplychain: no .git folder, binary check skipped');
+else assert.deepStrictEqual(real, [], 'no executable or archive is tracked (allow-list: BINARY_ALLOW in scripts/test-supplychain.ts)');
+// a failing git fails the check; only a missing .git skips it
+const big = Array.from({ length: 120 }, (_, i) => `f${i}.txt`).join('\0') + '\0';
+const nofile = () => Buffer.from('text');
+assert.deepStrictEqual(trackedBinaryProblems(true, () => ({ status: 0, stdout: big, stderr: '' }), nofile), [], 'a good listing passes');
+for (const [what, run] of Object.entries<GitRun>({
+  throws: () => { throw new Error('spawn git ENOENT'); }, 'spawn error': () => ({ status: null, stdout: '', stderr: '', error: new Error('ENOENT') }),
+  'non-zero': () => ({ status: 128, stdout: '', stderr: 'fatal: detected dubious ownership' }), 'non-zero with output': () => ({ status: 1, stdout: big, stderr: '' }),
+  'error output': () => ({ status: 0, stdout: big, stderr: 'fatal: something' }), 'empty listing': () => ({ status: 0, stdout: '', stderr: '' }),
+})) assert.strictEqual((trackedBinaryProblems(true, run, nofile) || []).length, 1, `git ${what} fails the check`);
+assert.strictEqual(trackedBinaryProblems(false, () => { throw new Error('must not run'); }, nofile), null, 'no .git: skipped, git not run');
+assert.strictEqual(trackedBinaryProblems(true, () => ({ status: 0, stdout: big + 'run.exe\0', stderr: '' }), nofile)!.length, 1, 'a planted executable in a good listing is caught');
 
 // mutation checks: each guard must catch a planted bad input -------------------------------------------------------------------------
 const good = { packages: { '': { name: 'x' }, 'node_modules/a': { resolved: 'https://registry.npmjs.org/a/-/a-1.0.0.tgz', integrity: 'sha512-AAAA' } } };
