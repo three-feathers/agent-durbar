@@ -484,10 +484,20 @@ default on the switch and B is offered only after an A refusal; if it fails, B i
   floor its body also says so (FR-022e). (2) *Restart without the sandbox* is a
   second, explicit confirmation of its own (FR-022), because it widens the OS limit, which the Allow all dialog never mentioned: a
   person who confirmed Allow all has not agreed to a restart. (3) Nothing restarts, relaunches or sends by itself: not on the switch, not on
-  the next message, not after a Durbar restart (a resumed session in Allow all simply has no floor, as today). (4) The restart never
+  the next message, not after a Durbar restart (a resumed session in Allow all simply has no floor, as today). **Accepted non-silent path
+  (review on PR 823, option a):** *End session* (on an idle agent it does not ask, `cardOp`) followed by a message
+  resumes the same id in Allow all with no floor, like a Durbar restart: the person ended the session themselves, and the new session starts in
+  the mode they chose. When the session ends, the kept floor ends with it: the Copilot adapter reports the state `null` at the stop (and when a
+  sign-in refresh drops a session), so an ended agent's chip never says *Sandboxed (until a new session)* (test: `scripts/test-copilot-sandbox.ts`;
+  sim: `scripts/check-sandbox-floor.js`). (4) The restart never
   re-sends a prompt, never approves a pending request on its own (End session denies pending asks cleanly, `copilot.ts:1064`
   `broker.stop()`), and never changes the mode. (5) The action cannot be offered, or accepted by main, for a session that is not in
   Allow all with a kept floor: the renderer shows it only then and the existing op is unchanged, so main's check is the mode it resumes with.
+  **Trust boundary (review on PR 823, question 2):** main does not check that the window asked before an idle restart; `confirmed` is required only for
+  a busy agent (the running turn and its pending asks, `mcpRestartSessionOp`). The gates are the window's confirmation and the mode the person already
+  set. A window that skipped the dialog gains nothing it could not get with calls it already has: `agents:setMode` to Allow all has no confirmation
+  in main (only the remote-control and organization-policy refusals, `ipc/agents.ts` `agents:setMode`, `setModeOp`), and `agents:end` followed by a
+  send resumes in that mode without the floor (read: `ipc/agents.ts`, 2026-10-28). `reason` is words only and is **not** a security control.
   (6) `permissions.requireOsSandbox` (FR-019) does not forbid Allow all, so it does not change this action; a managed floor (`managed: true`)
   does: no action (the new session would be sandboxed again).
 - **FR-022b** `[IMPLEMENTED]` (test: `scripts/test-copilot-sandbox.ts` T069 AC1-AC3; sim: `scripts/check-sandbox-floor.js`) **Edge cases of B.**

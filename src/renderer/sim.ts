@@ -2842,6 +2842,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (s.grants.size) { s.grants.clear(); grantsEvent(s); }
         s.state = 'idle'; closeOpen(s); simRemote.delete(id); // spec 054 FR-003
         s.mcpSign = undefined; // spec 058 FR-065: End session forgets an open sign-in
+        if (s.info.sandbox?.untilNewSession) { delete s.info.sandbox; emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: null }); } // spec 087: a kept floor ends with the session
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'stopped' });
       },
       /* spec 058 FR-040: a canned Restart session: asks while busy (as main does), ends, then resumes "Ready"; with simauth=expired

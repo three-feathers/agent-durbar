@@ -474,6 +474,7 @@ export class CopilotAdapter implements AgentAdapter {
     if (!live) return;
     live.broker.stop();
     this.sessions.delete(sid);
+    this.endKeptFloor(sid, live);
     this.mappers.delete(sid);
     this.debug?.(`refreshAuth: ${sid.slice(0, 8)} not resumed: ${e instanceof Error ? e.message : String(e)}`);
     this.emit(sid, { type: 'status', status: 'stopped', intent: 'Could not reconnect after the sign-in. Send a message to resume.' });
@@ -1079,7 +1080,13 @@ export class CopilotAdapter implements AgentAdapter {
     }
     this.sessions.delete(sessionId);
     this.mappers.delete(sessionId);
+    this.endKeptFloor(sessionId, live);
     this.emit(sessionId, { type: 'status', status: 'stopped' });
+  }
+
+  /** Spec 087 (review on PR 823): a floor kept in Allow all ends with its session; the next one starts with the mode's own state (none in Allow all). */
+  private endKeptFloor(sid: string, live: Live): void {
+    if (live.sandbox?.untilNewSession) this.setSandbox(sid, live, null);
   }
 
   /**

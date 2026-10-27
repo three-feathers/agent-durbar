@@ -337,6 +337,26 @@ async function main(): Promise<void> {
     await ad.dispose();
   }
 
+  // ---- review on PR 823 (question 1): End session ends a kept floor too: the state is null, not "until a new session" on an ended agent ----
+  {
+    const { ad, fake, events } = make();
+    const sid = await start(ad, 'read-only');
+    ad.setPermMode!(sid, 'allow');
+    await new Promise((r) => setTimeout(r, 5));
+    assert.strictEqual(last(events, sid)?.untilNewSession, true, 'before: the kept floor');
+    const n = events.length;
+    await ad.stop(sid);
+    const after = events.slice(n).filter((e) => e.sessionId === sid).map((e) => e.type === 'sandbox' ? 'sandbox:' + JSON.stringify(e.sandbox) : e.type === 'status' ? 'status:' + e.status : e.type);
+    assert.deepStrictEqual(after.filter((x) => x.startsWith('sandbox') || x === 'status:stopped'), ['sandbox:null', 'status:stopped'], 'End session: the kept floor is cleared before the stop: ' + JSON.stringify(after));
+    assert.strictEqual(updates(fake, sid).length, 1, 'nothing sent to the runtime for it');
+    // a Read-only session that ends keeps its state as before (no kept floor to clear)
+    const ro = await start(ad, 'read-only');
+    const m = events.length;
+    await ad.stop(ro);
+    assert.ok(!events.slice(m).some((e) => e.type === 'sandbox' && e.sessionId === ro), 'Read-only: no sandbox event at the end');
+    await ad.dispose();
+  }
+
   // ---- T069 AC4 (FR-022d): a sign-in refresh resumes Allow all without the floor; Ask first gets it again ----
   {
     class SbxRestarting extends RestartingFakeCopilot {

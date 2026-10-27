@@ -252,6 +252,16 @@ module.exports = async (ctx) => {
     assert.ok(await until(`!document.getElementById('modeMenu')`, 3000));
     await openAgent('sim-15');
     assert.ok(await until(`!!document.getElementById('sbxRestartBtn')`, 8000), `${w}: the default roster's kept floor (sim-15) has it in the chat`);
+    // review on PR 823 (question 1): End session (the card menu) ends the kept floor too: an ended agent does not claim "until a new session"
+    await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+    assert.ok(await until(`!document.body.classList.contains('panel-open')`, 8000));
+    await js(`(()=>{const d=document.querySelector('#stage .desk[data-id="sim-15"]');const r=d.getBoundingClientRect();d.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+20,clientY:r.top+20}))})()`);
+    assert.ok(await until(`!!document.querySelector('#modeMenu [data-op="end"]')`, 5000), `${w}: the card menu has End session`);
+    await js(`document.querySelector('#modeMenu [data-op="end"]').click()`);
+    if (await until(`!!document.querySelector('#modeDlg [aria-modal="true"]')`, 1500)) await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find(b=>b.textContent==='End session').click()`);
+    assert.ok(await until(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id==='sim-15');return !!a&&!!a.info&&!a.info.sandbox})()`, 8000), `${w}: End session clears the kept floor`);
+    await openAgent('sim-15');
+    assert.ok(await until(`/^Allow all/.test(document.getElementById('modeChip').innerText.trim())&&!/Sandbox/.test(document.getElementById('modeChip').innerText)&&!document.getElementById('sbxRestartBtn')`, 8000), `${w}: after End session: Allow all, no word, no action`);
   }
   console.log('[087-sandbox] PASS');
 };
