@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Floors as places (issue #782): each floor that is on is one whole screen of a vertical building; a lift button panel slides the view to another floor (about 300 ms, instant with reduced motion); attention from other floors shows on the lift buttons; PageUp/PageDown and jump-to-floor from the inbox and notifications
-status: **draft** 2026-10-27: spec, plan and tasks written, no code yet; owner answers Q1-Q7 of issue #782 recorded below; two small design choices open (Q-A, Q-B)
+status: **draft** 2026-10-27: spec, plan and tasks written, no code yet; owner answers Q1-Q7 of issue #782 recorded below; Q-A and Q-B answered by the owner 2026-10-27 (both option a)
 -->
 
 **Feature Branch**: spec on `033-floors-as-places`; the code branches are named `092-...` per phase (amends 033 floors FR-011 and FR-012; uses 024 shared lobby, 001 office layout, 052 inbox and notifications, 074 keyboard navigator)
@@ -46,7 +46,7 @@ Spec 033 says what a floor *is* (a named group of rooms you switch on and off) a
 
 - **D1, the lobby is drawn on every floor screen.** Q4 says one shared lobby. It is one set of places and one set of visitors (all floors that are on); each floor screen draws it at the same place, so the layout rules of specs 001/024 are reused unchanged and the lobby never has to be a fixed overlay while floors slide. Visitors from another floor sit in the tile without a walk (FR-021).
 - **D2, only floors that are on have a screen.** Off floors have no screen and no lift button; their attention stays plain text in the Floors panel and Settings (033 FR-010, unchanged).
-- **D3, the first floor of the list is the top of the building; PageUp goes up.** *(Open: Q-A.)*
+- **D3, the first floor of the list is the top of the building; PageUp goes up.** *(Owner, Paco, 2026-10-27: Q-A = a.)*
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -221,7 +221,7 @@ The slide is short and soft. It never blocks input and never hides a waiting age
 ## Assumptions
 
 - Floor management (create, rename, reorder, delete, on/off, Move to floor, Settings > Floors, saved data, IPC) is spec 033 and unchanged.
-- Q-A and Q-B below have a recommended answer, used by this draft until the owner answers.
+- Q-A and Q-B below were answered by the owner (Paco, 2026-10-27, in the terminal with his agent): both option (a).
 - If even the best density does not fit one floor's agents, the existing scroll behaviour of spec 001 (`#floor.scrolls`) applies to that screen, per floor.
 - #553 (agents ride the lift) and #555 (special floors) are **out of scope** and not blocked: a floor screen is a clean place to hang a per-floor scene, and the lift panel is where a future indicator or ding would go. Nothing here assumes them.
 - Verification is on the simulator and with unit tests, 0 AI credits.

@@ -70,7 +70,7 @@ Order is chosen so the riskiest part (layout per floor and its width budget) lan
 
 ## Risks to check in review
 
-- Width of the lift panel against the 15-agent rule at 1280x800 (FR-008); decide Q-B before Phase 2.
+- Width of the lift panel against the 15-agent rule at 1280x800 (FR-008); Q-B decided (position number only, owner 2026-10-27).
 - Focus handling: PageUp/PageDown must never act inside text fields, selects, dialogs, menus, the palette or the composer.
 - Stale layout cache: `layoutKey` must include the current floor (a cached layout of floor A must not be used for floor B).
 - Walkers and lobby visitors across a floor change (FR-021); the walker layer uses `#floor` coordinates (`app.js:414-417`, `:483-487`).

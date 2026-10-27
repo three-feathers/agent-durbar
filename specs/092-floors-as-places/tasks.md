@@ -10,7 +10,7 @@
 ## Phase 0: Spec (this PR)
 
 - [x] T001 Spec, plan, tasks and specs-index block committed; 033 `## Changes` cross-reference (FR-011, FR-012 refined by 092) (`specs/092-floors-as-places/`)
-- [ ] T001a Owner answers Q-A (top of the building) and Q-B (button labels) on issue #782 before Phase 1 and Phase 2 start (defaults: a and a)
+- [x] T001a (2026-10-27: Paco chose a and a) Owner answers Q-A (top of the building) and Q-B (button labels) on issue #782 before Phase 1 and Phase 2 start (defaults: a and a)
 
 ## Phase 1: Floor screens (PR 1)
 
