@@ -34,6 +34,7 @@ const DRIVERS = [
   { name: 'shots-017-signs' }, // spec 017 FR-003..FR-009: meeting-room door signs on session desks (word, icon, colour, contrast in 6 themes, fit)
   { name: 'shots-018' },
   { name: 'shots-033', env: { DURBAR_SIM_FLOORS: '1' } },
+  { name: 'shots-092', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 092 phase 1: floor screens (one floor at a time), PageUp/PageDown, the scroll rule, floors going off and on, an empty floor
   { name: 'shots-033-move', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 033 FR-024 (#590): Move to floor in the folder menu, with Undo
   { name: 'shots-034-list' },
   { name: 'shots-015-compact' }, // spec 015 FR-014: Compacting on the desk, list, header, strip and ring (simcompact=1 in its own query)

@@ -25,6 +25,9 @@
  *     a 40-character floor name (renamed through the panel) breaking a room header, a plate or the top bar; a floor that is off with agents
  *     waiting for you that does not say so on its row in the Floors panel, or that shows it anywhere else (pills, button) (FR-010, issue #122).
  *
+ *   - floor screens (spec 092, `simfloors=1`, `simfloors=ground`): with two or more floors on, each floor screen (reached with PageDown) is checked like the whole office
+ *     (the same checks, floor tags on every header), with 15 agents spread over the floors and with all 15 on one floor.
+ *
  * Fonts: CI runs on Ubuntu, where `system-ui` is DejaVu Sans, which is wider than the macOS fonts (PR #124: the top bar fitted on a
  * Mac and overflowed in CI). To measure like CI on any machine, point OFFICE_FONT_FILE at DejaVuSans.ttf (and optionally
  * OFFICE_FONT_BOLD at DejaVuSans-Bold.ttf, OFFICE_FONT_MONO at DejaVuSansMono.ttf); every page then uses only those fonts:
@@ -323,7 +326,10 @@ async function driver(ctx) {
      starting at k, so n parallel jobs cover the whole check. Unset: everything, as before. */
   const SHARDS = Math.max(1, Number(process.env.OFFICE_SHARDS) || 1), SHARD = Number(process.env.OFFICE_SHARD) || 0;
   let unit = 0;
-  const mine = () => unit++ % SHARDS === SHARD;
+  const ONLY = process.env.OFFICE_ONLY || ''; // a developer aid: OFFICE_ONLY=screens (spec 092 floor screens) or =floors (spec 033 floors cases) runs that block alone
+  const mine = () => !ONLY && unit++ % SHARDS === SHARD;
+  const mineIn = (name) => ONLY === name || mine();
+  const mineScreens = () => mineIn('screens');
   if (SHARDS > 1) console.log(`check:office: shard ${SHARD + 1} of ${SHARDS}`);
   let expectPlaces = 5; /* spec 024 FR-026: five built-in places plus simplaces=N custom ones, read from the query of the page just loaded */
   const rows = [];
@@ -515,7 +521,7 @@ async function driver(ctx) {
   }
   /* spec 033: floors on/off (3, 2 and 1 floors on), with and without closed doors, both sizes */
   for (const [w, h] of SIZES) {
-    if (!mine()) continue;
+    if (!mineIn('floors')) continue;
     const cases = [
       ['3 floors on', 'sim=15&simfreeze=1&simfloors=1', true],
       ['2 floors on', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Personal', true],
@@ -536,6 +542,7 @@ async function driver(ctx) {
       const tag = `floors ${w}x${h} ${label}`;
       if (extra === 'long') {
         /* rename Client A to the longest allowed name through the panel and its dialog, then check the office again */
+        await ctx.js(`localStorage.removeItem('durbar.floor')`); // start on the first floor
         await load(q, w, h);
         await ctx.js(`(async()=>{const w=ms=>new Promise(r=>setTimeout(r,ms));document.getElementById('floorsBtn').click();await w(100);
           document.querySelector('#floorsPop [data-fl="rename"][data-floor="f-clienta0"]').click();await w(100);
@@ -543,6 +550,10 @@ async function driver(ctx) {
           [...document.querySelectorAll('#modeDlg .btn')].find(b=>b.textContent==='Rename').click();await w(200);
           document.getElementById('floorsBtn').click();await w(300);})()`);
         await sleep(400);
+        /* spec 092: the office shows one floor at a time: go to the floor that was renamed (Client A, the second one) with PageDown, so its long name is on screen */
+        await ctx.js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'PageDown',bubbles:true,cancelable:true}))`);
+        try { await ctx.waitFor(`[...document.querySelectorAll('#stage .floor-tag')].some(t=>t.textContent.length===40)`, 5000); } catch (e) { /* reported below */ }
+        await sleep(300);
         const r1 = await measure(false); total++;
         if (r1.problems.length) { failed++; console.log(`FAIL ${tag}: ${r1.problems.slice(0, 6).join('; ')}`); }
         const named = await ctx.js(`[...document.querySelectorAll('#stage .floor-tag')].some(t=>t.textContent.length===40)`);
@@ -569,6 +580,73 @@ async function driver(ctx) {
         const ap = await ctx.js(`(${offAttentionCheck.toString()})()`);
         total++;
         if (ap.length) { failed++; console.log(`FAIL ${tag} off-floor attention: ${ap.join('; ')}`); }
+      }
+    }
+  }
+  /* spec 092 FR-001, FR-002, SC-001 (phase 1, floor screens): with two or more floors on the office shows one floor at a time, so every floor screen is checked
+     like any other office: 15 agents spread over three floors, and all 15 on one floor (the other floors empty), each floor reached with PageDown, both sizes.
+     The density is chosen per floor screen, so the 15-agent rule has to hold on each of them. The single-floor cases above are unchanged (SC-006). */
+  for (const [w, h] of SIZES) {
+    if (!mineScreens()) continue;
+    const REF_CASES = ['3 floors, 15 agents spread', '3 floors, all 15 agents on the Ground floor', '3 floors, one desk per room']; /* cases whose floors are each compared with the same agents as the whole office */
+    const screens = [
+      ['3 floors, 15 agents spread', 'sim=15&simfreeze=1&simfloors=1'],
+      ['3 floors, all 15 agents on the Ground floor', 'sim=15&simfreeze=1&simfloors=ground'],
+      ['2 floors on, 1 door closed', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Client%20A&closed=mcp-swiss'],
+      ['3 floors, 3 custom places', 'sim=15&simfreeze=1&simfloors=1&simplaces=3'],
+      ['3 floors, schedules, long names', 'sim=15&simfreeze=1&simfloors=1&simsched=1&simnames=long'],
+      ['3 floors, one desk per room', 'sim=15&simfreeze=1&simfloors=1&simrooms=solo'],
+    ];
+    for (const [label, q] of screens) {
+      await ctx.js(`localStorage.removeItem('durbar.floor')`); // start on the first floor that is on
+      await load(q, w, h);
+      const perFloor = []; /* what each floor screen chose, to compare with the same agents as the whole office (below) */
+      const names = await ctx.js(`(()=>{const p=document.getElementById('floorsPop'),was=p.hidden;if(was)document.getElementById('floorsBtn').click();const n=[...p.querySelectorAll('[data-fl="on"]')].filter(b=>b.getAttribute('aria-pressed')==='true').map(b=>b.getAttribute('aria-label').split(': ')[0]);if(was)document.getElementById('floorsBtn').click();return n;})()`);
+      const on = Number((await ctx.js(`document.getElementById('floorsBtn').textContent.trim()`)).split('/')[0]);
+      total++;
+      if (!(on >= 2)) { failed++; console.log(`FAIL floor screens ${w}x${h} ${label}: precondition: two or more floors on, got ${on}`); continue; }
+      for (let i = 0; i < on; i++) {
+        const tag = `floor screen ${i + 1}/${on} ${w}x${h} ${label}`;
+        if (i > 0) {
+          const was = await ctx.js(`localStorage.getItem('durbar.floor')`);
+          await ctx.js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'PageDown',bubbles:true,cancelable:true}))`);
+          try { await ctx.waitFor(`localStorage.getItem('durbar.floor')!==${jsLiteral(was)}`, 5000); } catch (e) { failed++; total++; console.log(`FAIL ${tag}: PageDown did not change the floor`); break; }
+          await sleep(500);
+        }
+        const res = await measure(false);
+        total++;
+        const fp = await ctx.js(`(${floorsCheck.toString()})(true)`);
+        const bad = res.problems.concat(fp);
+        if (bad.length) { failed++; console.log(`FAIL ${tag}: ${bad.slice(0, 6).join('; ')}${bad.length > 6 ? ` (+${bad.length - 6} more)` : ''}`); }
+        const shown = await ctx.js(`({desks:[...document.querySelectorAll('#stage .desk[data-id]')].filter(d=>!d.closest('.helpers')).length,empty:!!document.querySelector('#stage .floor-empty'),fit:document.getElementById('stage').dataset.fit})`);
+        rows.push({ label: tag, ...res.info, problems: bad.length });
+        /* the layout input of this floor screen without the floor tag: the tag is a header part the layout search holds (spec 001 FR-179), and how much width it
+           costs depends on the font (Windows fonts are wider), so the comparison below hides it and lays the screen out again; the tag's own cost is not what is compared */
+        let tagless = null;
+        if (REF_CASES.includes(label) && res.info.desks > 0) {
+          await ctx.js(`(()=>{const st=document.createElement('style');st.id='noFloorTag';st.textContent='.floor-tag{display:none!important}';document.head.append(st);window.__durbarSimUi.render();})()`);
+          let prev = '', now = '';
+          for (let k = 0; k < 40; k++) { await sleep(150); now = await ctx.js(`(()=>{const s=document.getElementById('stage');return s.dataset.d+'/'+s.dataset.h+'/'+s.querySelectorAll('.desk').length+'/'+(document.querySelector('#stage .floor-tag')?document.querySelector('#stage .floor-tag').getClientRects().length:0)})()`); if (now === prev && now.endsWith('/0')) break; prev = now; }
+          const [td, th] = now.split('/'); tagless = { d: td, h: th };
+          await ctx.js(`document.getElementById('noFloorTag').remove();window.__durbarSimUi.render();`);
+        }
+        perFloor.push({ name: await ctx.js(`(document.querySelector('#stage .room-head .floor-tag')||{}).textContent||''`), d: res.info.d, h: res.info.h, desks: res.info.desks, tagless });
+        if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-screen-${w}x${h}-${label.replace(/[^a-z0-9]+/gi, '-')}-${i + 1}.png`));
+        total++;
+        if (!shown.desks && !shown.empty) { failed++; console.log(`FAIL ${tag}: neither desks nor the empty-floor line`); }
+      }
+      /* FR-002: the density is chosen per floor screen, from that floor's agents alone. The same agents as the whole office (every other floor off: the
+         ordinary single-floor office) must get the same density and helper level; a density taken from all floors would show up here as a poorer one. */
+      if (!REF_CASES.includes(label)) continue;
+      for (const f of perFloor.filter((x) => x.desks > 0 && x.name)) {
+        const others = names.filter((n) => n !== f.name);
+        await ctx.js(`localStorage.removeItem('durbar.floor')`);
+        await load(q.replace(/&floorsoff=[^&]*/, '') + '&floorsoff=' + encodeURIComponent(others.join(',')), w, h);
+        const nameList = await ctx.js(`[...new Set([...document.querySelectorAll('#stage .room-head .floor-tag')].map(t=>t.textContent.trim()))]`);
+        const ref = await ctx.js(`({d:document.getElementById('stage').dataset.d,h:document.getElementById('stage').dataset.h,desks:document.querySelectorAll('#stage .desk').length})`);
+        total++;
+        const same = f.tagless && ref.d === f.tagless.d && ref.h === f.tagless.h;
+        if (nameList.length || ref.desks !== f.desks || !same) { failed++; console.log(`FAIL floor screen ${f.name} ${w}x${h} ${label}: density ${f.d}/h${f.h} (${f.tagless && f.tagless.d}/h${f.tagless && f.tagless.h} without the floor tag) with ${f.desks} desks, but the same agents as the whole office get ${ref.d}/h${ref.h} with ${ref.desks} (tags ${nameList.length})`); }
       }
     }
   }

@@ -14,19 +14,19 @@
 
 ## Phase 1: Floor screens (PR 1)
 
-- [ ] T002 [P] Pure module `src/renderer/floornav.js`: `nextOn(floors, cur, dir)`, `nearestOn(floors, cur)`, `keyEligible(event, target, scroll)` (scroll = {scrolls, atTop, atBottom}), `announceText(floor, n, m)`; UMD like `places.js` [FR-011, FR-012, FR-023, FR-025]
-- [ ] T003 [P] `scripts/test-floornav.ts` and `test:floornav` in `package.json` (and the `npm test` list): skip off floors, no wrap, nearest after off/delete, eligibility incl. a scrolling floor screen (scrolls first, floor only from an edge) (text field, textarea, select, contenteditable, dialog, menu, palette, modifier keys), announcement text [FR-011, FR-012, FR-023, FR-025]
-- [ ] T004 Current floor in `app.js` variable, restore from and save to `localStorage`, fallback to the first floor on, always a floor that is on while two or more are on; none with fewer than two [FR-004, FR-022, FR-023]
-- [ ] T005 `officeModel()` keeps only rooms of the current floor when two or more floors are on; add the current floor id to `layoutKey`; floor tags stay [FR-001, FR-002, FR-005]
-- [ ] T006 Empty-floor state: a short line naming the floor and how to move a folder there, plus the lobby; reuse the existing empty-state markup (`renderOffice`, `app.js`) [FR-001; edge case 0 agents]
-- [ ] T007 `afterFloorsChange`: when the current floor goes off, is deleted or reordered, move to the nearest on floor without animation and announce; switching on, creating, moving a folder do not move the user; Only makes the chosen floor current [FR-023, FR-012]
-- [ ] T008 Lobby: visitors of all floors that are on in every floor screen; a visitor of another floor has no walk and its floor in the tile label (`places.js` `placeVisitors` call site, walker code `app.js`) [FR-020, FR-021]
-- [ ] T009 PageUp/PageDown handler in the office view using `floornav.keyEligible`; instant change; one `announce()`; nothing at the ends [FR-011, FR-012]
-- [ ] T038 Driver case for FR-011's scroll rule: a floor screen that scrolls (many agents, small window) scrolls on PageDown and changes floor only from the edge; the key is ignored in the composer [FR-011; US3]
-- [ ] T010 Simulator: `DURBAR_SIM_FLOORS=1` seeds at least three floors on with the 15 agents spread, plus a variant with all 15 on one floor (`src/renderer/sim.ts`, `src/main/main.ts`) [FR-002; SC-001]
-- [ ] T011 `check:office` floor-screen cases: each floor passes at 1440x900 and 1280x800; single-floor results unchanged (`scripts/check-office-overlap.js`) [SC-001, SC-006]
-- [ ] T012 Driver `scripts/shots-092.js` phase-1 cases: one floor drawn, keys change floor, ends do nothing, keys ignored in the composer, current floor survives a reload, off floor fallback; screenshots at both sizes [US1, US3; SC-005]
-- [ ] T013 Spec housekeeping: tick tasks, `[IMPLEMENTED]` tags, 033 `## Changes` stays, `changelog.d/092-p1-floor-screens.md`; check FR-024 (no adapter, permission, IPC or storage change in this PR's diff) [FR-026]
+- [x] T002 [P] Pure module `src/renderer/floornav.js`: `nextOn(floors, cur, dir)`, `nearestOn(floors, cur)`, `keyEligible(event, target, scroll)` (scroll = {scrolls, atTop, atBottom}), `announceText(floor, n, m)`; UMD like `places.js` [FR-011, FR-012, FR-023, FR-025]
+- [x] T003 [P] `scripts/test-floornav.ts` and `test:floornav` in `package.json` (and the `npm test` list): skip off floors, no wrap, nearest after off/delete, eligibility incl. a scrolling floor screen (scrolls first, floor only from an edge) (text field, textarea, select, contenteditable, dialog, menu, palette, modifier keys), announcement text [FR-011, FR-012, FR-023, FR-025]
+- [x] T004 Current floor in `app.js` variable, restore from and save to `localStorage`, fallback to the first floor on, always a floor that is on while two or more are on; none with fewer than two [FR-004, FR-022, FR-023]
+- [x] T005 `officeModel()` keeps only rooms of the current floor when two or more floors are on; add the current floor id to `layoutKey`; floor tags stay [FR-001, FR-002, FR-005]
+- [x] T006 Empty-floor state: a short line naming the floor and how to move a folder there, plus the lobby; reuse the existing empty-state markup (`renderOffice`, `app.js`) [FR-001; edge case 0 agents]
+- [x] T007 `afterFloorsChange`: when the current floor goes off, is deleted or reordered, move to the nearest on floor without animation and announce; switching on, creating, moving a folder do not move the user; Only makes the chosen floor current [FR-023, FR-012]
+- [x] T008 Lobby: visitors of all floors that are on in every floor screen; a visitor of another floor has no walk and its floor in the tile label (`places.js` `placeVisitors` call site, walker code `app.js`) [FR-020, FR-021]
+- [x] T009 PageUp/PageDown handler in the office view using `floornav.keyEligible`; instant change; one `announce()`; nothing at the ends [FR-011, FR-012]
+- [x] T038 Driver case for FR-011's scroll rule: a floor screen that scrolls (many agents, small window) scrolls on PageDown and changes floor only from the edge; the key is ignored in the composer [FR-011; US3]
+- [x] T010 Simulator: `DURBAR_SIM_FLOORS=1` seeds at least three floors on with the 15 agents spread, plus a variant with all 15 on one floor (`src/renderer/sim.ts`, `src/main/main.ts`) [FR-002; SC-001] (built: `simfloors=1` already spread three floors; added `simfloors=ground` / `DURBAR_SIM_FLOORS=ground`: every folder on the Ground floor, the other two floors on and empty)
+- [x] T011 `check:office` floor-screen cases: each floor passes at 1440x900 and 1280x800; single-floor results unchanged (`scripts/check-office-overlap.js`) [SC-001, SC-006]
+- [x] T012 Driver `scripts/shots-092.js` phase-1 cases: one floor drawn, keys change floor, ends do nothing, keys ignored in the composer, current floor survives a reload, off floor fallback; screenshots at both sizes [US1, US3; SC-005]
+- [x] T013 Spec housekeeping: tick tasks, `[IMPLEMENTED]` tags, 033 `## Changes` stays, `changelog.d/092-p1-floor-screens.md`; check FR-024 (no adapter, permission, IPC or storage change in this PR's diff) [FR-026]
 
 ## Phase 2: Lift panel and badges (PR 2)
 

@@ -914,7 +914,7 @@ function createWindow(): void {
     query.sim = String(simulatorCount(dev));
     if (dev.DURBAR_SIM_FREEZE === '1') query.simfreeze = '1';
     if (dev.DURBAR_SIM_ROOMS) query.simrooms = dev.DURBAR_SIM_ROOMS;
-    if (dev.DURBAR_SIM_FLOORS === '1') query.simfloors = '1';
+    if (dev.DURBAR_SIM_FLOORS === '1' || dev.DURBAR_SIM_FLOORS === 'ground') query.simfloors = dev.DURBAR_SIM_FLOORS; // spec 092 T010: 'ground' = the same three floors with every folder on the Ground floor
     if (/^[1-5]$/.test(dev.DURBAR_SIM_CRASH ?? '')) query.simcrash = dev.DURBAR_SIM_CRASH as string; // spec 006 FR-046: a faked crash marker with N interrupted sessions
     if (dev.DURBAR_THEME && /^[a-z0-9_-]{1,64}$/.test(dev.DURBAR_THEME)) query.theme = dev.DURBAR_THEME; // spec 036 FR-005: the simulator's settings carry it
     if (dev.DURBAR_SIM_TITLES === '1') query.simtitles = '1'; // spec 001/002 deltas 2026-10-18: main agents with session titles

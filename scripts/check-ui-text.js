@@ -102,7 +102,7 @@ module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until, settle } = H;
   const key = (k, mods = [], char = 'always') => H.key(k, mods, { char });
-  const q = (theme, extra) => ({ simkinds: 'mixed', simfloors: '1', simgrants: 'many', simquestion: '1', simtotals: '1', ...(extra || {}), ...(theme === 'dark' ? { theme: 'audit-dark', usertheme: DARK } : { theme: themeId || 'clean-office' }) });
+  const q = (theme, extra) => ({ simkinds: 'mixed', simfloors: 'ground', simgrants: 'many', simquestion: '1', simtotals: '1', ...(extra || {}), ...(theme === 'dark' ? { theme: 'audit-dark', usertheme: DARK } : { theme: themeId || 'clean-office' }) });
   let theme = 'light', W = 1440, Hh = 900, extraQuery = {}, themeId = '';
   const found = []; // every violation: { surface, theme, size, rule, el, detail }
   const opened = new Set();
