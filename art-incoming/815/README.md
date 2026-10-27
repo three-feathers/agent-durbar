@@ -48,3 +48,4 @@ Review notes (Mac coordinator):
 9. Added `batch5/rebels-punkcat-waiting.webp` (2026-10-27). With it, the punk cat has all 3 poses and Animal Rebels has 2 complete characters.
 10. `batch6/` holds the new Animal Rebels characters (bulldog, fox, owl, panda), one pose per file as they arrive. The first is `rebels-bulldog-working`. Its rendering is a little more realistic than the rest of the crew (smaller eyes); Paco decides.
 11. `batch6/`, Pirate: **privateer** (*waiting*, *working*; *resting* missing) and **hook pirate** (all 3 poses). Review notes: the privateer has a deep neckline, so ask for a modest one, keeping it office-safe; the hook pirate keeps his eyes open in *resting*, and his *working* shows a hand on a desk. Both may be redone; Paco decides.
+12. `batch6/rebels-bulldog-working.webp` was replaced with the cartoon-style redo (2026-10-27): bigger eyes and flat cel-shading. It is the reference for the bulldog's other poses.
