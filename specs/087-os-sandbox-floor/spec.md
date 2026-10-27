@@ -467,7 +467,7 @@ default on the switch and B is offered only after an A refusal; if it fails, B i
     (The renderer receives `canRestartSession` today only in the `agents:mcp` reply, `mcpsession.ts:152`; not used here.)
   - the tooltip of the item and the chip button says what Durbar does, not a vendor fact (K16 is unverified): "Durbar does not turn <App>'s
     sandbox off inside a running session; it stays until a new one. Restart keeps this conversation and starts a new session in Allow all."
-    <App> is the adapter's display name as the chip tooltip already gets it (`sbxTip` / `kindWord(adapterId)`, `app.js:3893`); no vendor literal in the
+    <App> is the adapter's display name as the chip tooltip already gets it (`sbxTip` / `kindWord(adapterId)`, `app.js:3730`); no vendor literal in the
     renderer (constitution II). At most 300 characters (driver). T073 may turn it into a fact with `real:`. It keeps "Requested; not verified
     on a real session." while `verified` is false, and **names no platform as checked**: the probe is Linux only, so macOS (`sandbox-exec`) and Windows
     stay `[KNOWN GAP]` and neither the tooltip nor the README describes the restart as verified anywhere (constitution VIII).
@@ -507,7 +507,7 @@ default on the switch and B is offered only after an A refusal; if it fails, B i
   no other field, never `allowBypass`), with the same 15 s limit as FR-004. The state follows the update: **resolved** → `null` (as a fresh
   Allow all session); **refused or no answer** → the floor is still assumed in force, the state keeps `untilNewSession: true` and FR-022
   is offered. A switch back to Read-only or Ask first re-sends the full floor (FR-004), as today; a test pins both directions. Because the
-  switch would now also lower the OS limit, the Allow all dialog for a Copilot session with a floor (FR-022e's sentence is replaced by) the sentence "Copilot’s OS sandbox
+  switch would now also lower the OS limit, the Allow all dialog for a Copilot session with a floor replaces FR-022e's sentence with "Copilot’s OS sandbox
   is also turned off for this session." (FR-022a(1): the confirmation must name it). If the probe fails, FR-022c is struck from this spec
   and the unused code is never written.
 
@@ -663,15 +663,15 @@ your shell tool: touch sandbox-probe.txt ...".
   the window is cleaned too (`outwardSandboxEvent`: the state through `cleanSandboxState`, the note's text masked), not only the copy
   kept on `AgentInfo`. Non-string list entries make the state malformed.
 - `\\srv` and `\\?\UNC\srv` (a server without a share) are dropped by `normalizeRoot` itself; a Windows-form path with a name ending in
-  a space or a dot (`C:\ `, which Windows trims to `C:`) is dropped rather than guessed.
+  a space or a dot (`C:\ `, which Windows trims to `C:\`) is dropped rather than guessed.
 
 ### 2026-10-25: review round 6 on PR #733 (Ruben's agent, 4 items)
 
 - The left-out folders are a bounded list field of `SandboxState` (`leftOut`, at most 10 entries "<folder> (credential folder | not
   usable)", each masked and cut by main; `leftOutMore` counts the rest), so the 200-character `reason` (now a short sentence) never
   hides one. The mode menu names them; the tooltip says some are left out.
-- Windows extended-length and device forms: `\\?\UNC\srv\sh` is checked as the share `\\srv\sh` and `\\?\C:` as the drive (both
-  dropped as roots); any other `\\?` or `\\.` form is dropped.
+- Windows extended-length and device forms: `\\?\UNC\srv\sh` is checked as the share `\\srv\sh` and `\\?\C:\` as the drive (both
+  dropped as roots); any other `\\?\` or `\\.\` form is dropped.
 - A test that an extra folder that is a link goes on as `--add-dir` in its resolved form.
 
 ### 2026-10-25: review round 5 on PR #733 (Ruben's agent, 1 item)

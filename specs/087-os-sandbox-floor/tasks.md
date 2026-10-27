@@ -153,26 +153,25 @@ except T066 (owner-approved 2026-10-27, about 3 prompts, not yet run).
   `mcpRestartSessionFlow` / `restartSessionAsk`** (`screens.js:1060, 1104`) with a `reason: 'sandbox'` (dialog, toast and failure words; always asks; the extra lines of FR-022; sign-in card and
   `needsConfirm` retry kept) and passes `reason` as the optional third argument of `agents:mcpRestartSession` (preload, `ipc/agents.ts:113`, `mcpRestartSessionOp`: log and no-resume words only). The tooltip
   (at most 300 characters, adapter display name, "Durbar does not…") ends as the state's `verified` says. The Allow all dialog gets FR-022e's sentence. [FR-022, FR-022a, FR-022b, FR-022e]
-  - AC4: no MCP wording in the sandbox dialog or toast; `reason` absent behaves exactly as today (existing `test-mcp-session.ts` and `shots-058-mcp-restart` unchanged); a bad reason is `'mcp'`.
-  - AC5: the Allow all dialog has the FR-022e sentence for a Copilot session with a floor and not for Claude, Codex or a session without a floor (driver).
-  - (original text follows) [FR-022, FR-022a, FR-022b]
   - AC1: Cancel changes nothing and calls nothing; no dialog, no call (mutant: skip the dialog fails a test).
   - AC2: a source check pins that `ipc/agents.ts` registers no second restart channel and that the renderer calls no `start`/`resume` for this.
   - AC3: the item also shows in the `modesOnly` menu (spec 003 FR-095) and is keyboard reachable (arrow keys, Escape returns focus to the chip); the chip button is a real
     `<button>`, text at least 10.5px, never colour alone.
+  - AC4: no MCP wording in the sandbox dialog or toast; `reason` absent behaves exactly as today (existing `test-mcp-session.ts` and `shots-058-mcp-restart` unchanged); a bad reason is `'mcp'`.
+  - AC5: the Allow all dialog has the FR-022e sentence for a Copilot session with a floor and not for Claude, Codex or a session without a floor (driver).
 - [ ] T069 Adapter and main: for B, tests plus the FR-022d fix (`refreshAuth` clears `live.sandboxFloor` before `applySandbox`, `copilot.ts:459`); confirm that a resume in Allow all sends no `sandboxConfig` and reports `null`;
   confirm `startOptionsFor` carries the current mode into the restart. [FR-022, FR-022b]
   - AC1: `scripts/test-copilot-sandbox.ts`: Read-only start, switch to Allow all (state `untilNewSession`, one `options.update`), end, resume the same id in Allow all: no
     further `options.update` with `sandboxConfig`, state `null`, and the first `send` is not held.
-  - AC4 [FR-022d]: `refreshAuth` on a session with a kept floor in Allow all gives state `null` and no extra update; in Ask first it re-sends the floor; a Durbar restart (fresh adapter) resuming in Allow all gives `null`.
   - AC2: a restart whose resume fails (fake rejecting) leaves the agent ended with the error (`errorKind: 'auth'` for a sign-in error); nothing was sent.
   - AC3: with pending asks at the restart, the fake broker's asks are denied and none approved (`test-mcp-session.ts` or the Copilot suite).
+  - AC4 [FR-022d]: `refreshAuth` on a session with a kept floor in Allow all gives state `null` and no extra update; in Ask first it re-sends the floor; a Durbar restart (fresh adapter) resuming in Allow all gives `null`.
 - [ ] T070 Simulator: Copilot sim agent #14 (Allow all, kept floor) gets the sim restart (end, then no floor: T070 **adds** the clear to `agentMcpRestartSession`, `sim.ts:2849`, which does not touch `s.info.sandbox` today; and takes the `reason`); driver in `scripts/check-sandbox-floor.js`
   (both sizes, `until()` for every assert, a generous timeout). [FR-022, FR-022b]
   - AC1: item and chip button visible for the Copilot sim agent, absent for Claude and Codex sim agents and for a Copilot agent in Ask first or with *Sandboxed (managed)*.
-  - AC4: with a sim session that has grants and remote control on, the dialog lists the grants, remote control, no-credits and next-message lines (FR-022); a Claude/Codex sim agent never shows the item.
   - AC2: confirm restarts: the chip loses its word and the action disappears; cancel keeps both; a busy agent's dialog says the turn is stopped.
   - AC3: `check:office` unchanged at 1440x900 and 1280x800 (the chip keeps its place; the 15 agents fit).
+  - AC4: with a sim session that has grants and remote control on, the dialog lists the grants, remote control, no-credits and next-message lines (FR-022); a Claude/Codex sim agent never shows the item.
 - [ ] T071 Docs: README *Safety model* and *Known limits* (the Copilot floor stays until a new session; the action; a Durbar restart or sign-in refresh resumes Allow all without it, FR-022d; Linux only, macOS and Windows not verified; Claude Code and Codex differ; K16 status),
   spec 018's chip paragraph, spec status and `specs-index` block, `changelog.d/087-allowall-sandbox.md`, `npm run shots:docs -- --only <drivers>` (the
   pictures that show the chip or the mode menu; `-- --list`), `docs/agent-notes.md` entry on the probe pitfall (a `/tmp` target proves nothing). [FR-022]
