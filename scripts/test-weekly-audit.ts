@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
-  AREAS, CLAUDE_ENV_KEYS, DEFAULT_BUDGET_USD, FOOTER, MAX_ANSWER_BYTES, MAX_NEW, SCHEMA_ID, buildClaudeArgv, fingerprint, ghRunner, issueBody, main, markersIn, planAndFile, readTokenFile,
+  AREAS, CLAUDE_ENV_KEYS, DEFAULT_BUDGET_USD, FOOTER, MAX_ANSWER_BYTES, MAX_NEW, SCHEMA_ID, buildClaudeArgv, fingerprint, ghRunner, issueBody, main, markersIn, planAndFile, readTokenFile, trustedAuthors,
   renderPrompt, validateOutput, Finding, Gh,
 } from './weekly-test-audit';
 import { addsForbidden, run as mutateRun, suiteSteps, targetPath } from './weekly-test-audit-mutate';
@@ -130,12 +130,12 @@ const out = (findings: unknown[], extra: Record<string, unknown> = {}): string =
 
 // ---- the filer, with an injected gh
 type Call = string[];
-function fakeGh(opts: { issues?: { number: number; state: string; body: string }[]; labels?: string[]; searchFails?: boolean; labelsFail?: boolean; createFails?: boolean } = {}): { gh: Gh; calls: Call[] } {
+function fakeGh(opts: { issues?: { number: number; state: string; body: string; author?: { login: string } | null }[]; labels?: string[]; searchFails?: boolean; labelsFail?: boolean; createFails?: boolean } = {}): { gh: Gh; calls: Call[] } {
   const calls: Call[] = [];
   let n = 900;
   const gh: Gh = async (args) => {
     calls.push(args);
-    if (args[0] === 'issue' && args[1] === 'list') return opts.searchFails ? { code: 1, stdout: '[]', stderr: 'boom' } : { code: 0, stdout: JSON.stringify(opts.issues || []), stderr: '' };
+    if (args[0] === 'issue' && args[1] === 'list') return opts.searchFails ? { code: 1, stdout: '[]', stderr: 'boom' } : { code: 0, stdout: JSON.stringify((opts.issues || []).map((i) => ('author' in i ? i : { ...i, author: { login: 'fjcabello' } }))), stderr: '' };
     if (args[0] === 'label' && args[1] === 'list') return opts.labelsFail ? { code: 1, stdout: '[{"name":"bug"}]', stderr: 'denied' } : { code: 0, stdout: JSON.stringify((opts.labels || ['bug', 'task', 'area:ci', 'area:ui', 'spec:035', 'spec:021']).map((name) => ({ name }))), stderr: '' };
     if (args[0] === 'issue' && args[1] === 'create') return opts.createFails ? { code: 1, stdout: '', stderr: 'denied' } : { code: 0, stdout: `https://github.com/o/r/issues/${n++}\n`, stderr: '' };
     return { code: 1, stdout: '', stderr: 'unexpected' };
@@ -166,6 +166,22 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
     assert.deepStrictEqual(markersIn(body), [fingerprint(c)]);
     assert.deepStrictEqual(cr[0].filter((_, i) => cr[0][i - 1] === '--label'), ['bug', 'area:ci', 'spec:035'], 'the labels are the finding\'s');
     assert.strictEqual(cr[0][cr[0].indexOf('--repo') + 1], 'o/r');
+  }
+  // an outsider's issue with the footer and a made-up marker does not count as filed (spec 021 FR-060, review on #818)
+  {
+    const a = good({ id: 'cannot-fail-test-spoofed' }), b = good({ id: 'cannot-fail-test-real' });
+    const { gh, calls } = fakeGh({ issues: [
+      { number: 20, state: 'OPEN', body: `${marker2(a)}\n${FOOTER}`, author: { login: 'someone-else' } },
+      { number: 21, state: 'OPEN', body: `${marker2(b)}\n${FOOTER}`, author: null },
+      { number: 22, state: 'CLOSED', body: `${marker2(b)}\n${FOOTER}`, author: { login: 'fjcabello-x' } },
+    ] });
+    const s = await planAndFile({ findings: [a, b], mode: 'file', gh, repo: 'o/r', env: {} });
+    assert.deepStrictEqual(s.outcomes.map((o) => o.status), ['filed', 'filed'], 'outsider, ghost and look-alike issues are not the audit\'s own: ' + JSON.stringify(s.outcomes));
+    assert.strictEqual(creates(calls).length, 2);
+    const search = calls.find((x) => x[1] === 'list' && x[0] === 'issue')!;
+    assert.ok(/\bauthor\b/.test(search[search.indexOf('--json') + 1]), 'the search asks for the author');
+    assert.ok(trustedAuthors().has('fjcabello') && !trustedAuthors().has('fjcabello-x'), 'the trusted list is read from scripts/trusted-authors.txt');
+    assert.throws(() => trustedAuthors('/nonexistent-dir-for-test'), /trusted-authors/, 'no list, no run');
   }
   // the cap of 5
   {
