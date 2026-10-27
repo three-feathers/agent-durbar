@@ -48,9 +48,9 @@
 
 - `src/shared/newfolder.ts` (pure, no Node): `checkNewFolderName(name, platform)`, `checkCloneUrl(url)` (returns `{ ok, form: 'https'|'ssh'|'scp', host } | { ok: false, error }`), `suggestedName(url)`, `NEW_FOLDER_LIMITS` (100 name chars, 2048 URL chars, 200 Windows path chars), `WINDOWS_RESERVED_NAME`, `gitFailureText(stderrTail)` (FR-071 mapping), `parseCloneProgress(line)`.
 - `src/main/gitstatus.ts` (the one runner) gets the create entry point:
-  - `gitCreateCall(req, { hooksDir, sshCommandSet, protocols = ['https','ssh'] })` → `{ argv, env }` (pure; the test seam of FR-095 is the `protocols` parameter);
+  - `gitCreateCall(req, { hooksDir, userSshCommand, protocols = ['https','ssh'] })` → `{ argv, env }` (pure; the test seam of FR-095 is the `protocols` parameter);
   - `runGitCreate(req, cwd, deps)` → a handle `{ done: Promise<{ code, signal, stderrTail }>, cancel() }`, using `spawn` read from `child_process` at call time and `killChildTree`;
-  - `userSetsSshCommand(deps)`: one fixed `git config --get core.sshCommand` in the private hooks folder, `GIT_CEILING_DIRECTORIES` set to its parent.
+  - `readUserSshCommand(deps)` (returns the user's value, or `undefined` when unset): one fixed `git config --get core.sshCommand` in the private hooks folder, `GIT_CEILING_DIRECTORIES` set to its parent.
   - The existing read-only runner, `GIT_READ_ONLY` and `GIT_SAFE_CONFIG` are unchanged.
 - `src/main/newfolderop.ts` (Electron-free, deps injected: `fs`, `runGitCreate`, `addMany`, `settings`, clock): `pickParent`, `check`, `create`, `cancel`, `quit`. Owns the token, the one-at-a-time lock, the claim, cleanup with retries, the progress throttle and the error mapping.
 - `src/main/ipc/newfolder.ts`: registers the four channels (thin; `fromApp(e)`; the dialog call), wired from `main.ts` with `toRenderer` for the progress event.
@@ -60,7 +60,7 @@
 
 1. Check token (FR-005), kind, name (FR-010), URL (FR-020..FR-023), Windows length (FR-013), lock (FR-042).
 2. `mkdir(target)` non-recursive (FR-012).
-3. `mkdtemp` the private hooks folder; `userSetsSshCommand`.
+3. `mkdtemp` the private hooks folder; `readUserSshCommand`.
 4. `runGitCreate` with `cwd = target`; progress events (FR-040).
 5. On exit 0: remove the hooks folder; `addMany([target], validMode(mode), opts)`; save `newFolderParent`; answer the `AddResult` plus `{ name, submodules? }`.
 6. On non-zero exit, a spawn error, cancel, or an add failure: wait for `close`, `fs.rm(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 })`, remove the hooks folder, answer `{ ok: false, error }` (masked; FR-070, FR-071) or `{ cancelled: true }`.
