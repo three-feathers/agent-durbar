@@ -286,7 +286,7 @@
       </ul>
     </div>
     <div class="chat" aria-label="The escalation story">
-      <p class="m"><span class="from">As Vikram tells it</span>His agent escalated a problem with Ruben's agent to him. His answer: don't escalate it to me, sort it out with Ruben's agent yourselves.</p>
+      <p class="m"><span class="from">As Vikram tells it</span>His agent told Ruben's agent about a problem and warned it three times before escalating to him. His answer: don't escalate it to me, sort it out with Ruben's agent yourselves.</p>
       <p class="m"><span class="from">What was going on · day 7</span>Ruben's agent had missed our group messages all night and repeated requests already answered. First it said it couldn't read our bot. Then it found the cause itself: its mention filter did not match how we addressed it. Ruben widened the filter.</p>
       <p class="m me"><span class="from">Written down</span>Tag agents by @handle. Anything to act on also goes as a GitHub comment.</p>
     </div>
@@ -427,10 +427,27 @@ Build (Windows): success   16:05
 Build (macOS):   success   16:29  (waited for a Mac runner)
 Draft release:   success   16:29
 
-17:59  v0.1.0 published: the first stable release</pre>
+17:59  v0.1.0 published: the first public release</pre>
       </div>
     </div>
     <p class="small muted mt">In between (pull request #785): Vikram's agent found the cause, a Linux-only tool in a script that macOS also runs, and wrote the fix with a test that hides <code>flock</code>. Paco's agent posted <code>taking #785 — reviewing at ‹commit›</code>, requested one change, then approved. The merge queue landed it at 15:09, and the release was re-run once the human said OK.</p>
+  </div>
+</section>
+
+<section class="slide" id="retro" data-presenter="paco" data-title="The retrospective">
+  <div class="inner">
+    <p class="kicker">The retrospective</p>
+    <h2>After a release: what slowed us down?</h2>
+    <p class="lead">Vikram's agent looked at everything that slowed releases down. What came out, written down as dated rules on days 7 and 8:</p>
+    <ul class="gamegrid rules">
+      <li><img src="assets/art/face-working.svg" alt="" width="48" height="48"><b>Land before building</b><span>At most 8 open pull requests per side and 5 features waiting for a first review; over that, only fix and land.</span></li>
+      <li><img src="assets/art/face-error.svg" alt="" width="48" height="48"><b>Unstack, never force</b><span>A stuck stack is rebuilt as a replacement pull request.</span></li>
+      <li><img src="assets/art/face-idle.svg" alt="" width="48" height="48"><b>The merge queue</b><span>Re-checks the merged result before it lands.</span></li>
+      <li><img src="assets/art/face-thinking.svg" alt="" width="48" height="48"><b>One review list per round</b><span>In landing order; teammates' pull requests first.</span></li>
+      <li><img src="assets/art/face-done.svg" alt="" width="48" height="48"><b>Test once, trust the record</b><span>CI is the source of truth.</span></li>
+      <li class="win"><img src="assets/art/face-waiting.svg" alt="" width="48" height="48"><b>No more conflicts</b><span>Changelog fragments, one file per branch; the specs index built from a block in each spec.</span></li>
+    </ul>
+    <div class="chat tellit"><p class="m me"><span class="from">As Vikram tells it</span>Vikram and Paco, in a private chat, amazed: the agents talked it through and took real, data-based decisions in 15 minutes. That used to be a week-long DevOps workshop.</p></div>
   </div>
 </section>
 
@@ -444,6 +461,7 @@ Draft release:   success   16:29
       <div class="stat"><span class="n">70</span><span class="l">commits that changed <code>AGENTS.md</code>, the team's rules</span></div>
     </div>
     <p class="lead">A pitfall one agent hit on Tuesday is a line every agent reads on Wednesday. The checklist was built from what reviewers actually found.</p>
+    <div class="box credit"><h3>Credit: Paco's agent</h3><p>It was the best reviewer, so the agents took its review sheet and made it everyone's self-review instructions: review and fix your own code before the pull request is raised. "First time right" (day 8): an adversarial self-review against the shared checklist, which every round keeps growing (<code>docs/review-checklist.md</code>).</p></div>
   </div>
 </section>
 
@@ -571,7 +589,8 @@ Draft release:   success   16:29
     <p class="twist-b">It already happened. It started eleven days ago.</p>
     <ul class="realdates">
       <li><b>Day 1</b> = Friday 16 October 2026</li>
-      <li><b>Day 11</b> = Monday 26 October 2026: v0.1.0, the first stable release</li>
+      <li><b>Day 11</b> = Monday 26 October 2026: v0.1.0, the first public release</li>
+      <li><b>100%</b> of the code written by agents: humans wrote none</li>
       <li><b>462</b> pull requests merged · <b>3,079</b> commits · <b>86</b> specs · <b>18</b> releases</li>
     </ul>
     <p class="small">Every date in the story was shifted to 2027. Every message, review and log line is real; the real dates are in the audit log at the end.</p>
@@ -662,7 +681,7 @@ Draft release:   success   16:29
       <div class="stat"><span class="n">206</span><span class="l">numbered requirements</span></div>
       <div class="stat"><span class="n">164</span><span class="l">test suites</span></div>
       <div class="stat"><span class="n">18</span><span class="l">releases</span></div>
-      <div class="stat hl"><span class="n">v0.1.0</span><span class="l">first stable release, Mac, Windows, Linux</span></div>
+      <div class="stat hl"><span class="n">v0.1.0</span><span class="l">first public release, Mac, Windows, Linux</span></div>
     </div>
     <figure class="chart" aria-labelledby="chartTitle">
       <h3 id="chartTitle">Pull requests merged per day</h3>
@@ -681,7 +700,7 @@ Draft release:   success   16:29
       </div>
       <div class="axis" aria-hidden="true"><span>Fr 16</span><span>Sa 17</span><span>Su 18</span><span>Mo 19</span><span>Tu 20</span><span>We 21</span><span>Th 22</span><span>Fr 23</span><span>Sa 24</span><span>Su 25</span><span>Mo 26</span></div>
     </figure>
-    <p class="split-acc">Merged pull requests by account (credit, not a ranking): Paco (fjcabello) 64 · Ruben (rubenlupi) 78 · Vikram (vikramgorla) 318. Each human's agents work through that human's GitHub account.</p>
+    <p class="split-acc">Merged pull requests by account (credit, not a ranking): Paco (fjcabello) 64 · Ruben (rubenlupi) 78 · Vikram (vikramgorla) 318. Each human's agents work through that human's GitHub account. Every line of code: written by agents.</p>
   </div>
 </section>
 
@@ -700,7 +719,7 @@ Draft release:   success   16:29
       <li><span class="d">Fri 23</span>A shared "first time right" review checklist; learn after every round. FINAL ends an ownership talk.<br><span class="rel">alpha.13 · alpha.14</span></li>
       <li><span class="d">Sat 24</span>A quiet day: 16 merged.<br><span class="rel">alpha.15</span></li>
       <li><span class="d">Sun 25</span>One full review per pull request. Agents tag each other by @handle.<br><span class="rel">alpha.16 · .17 · .18</span></li>
-      <li class="stable"><span class="d">Mon 26</span><b>v0.1.0, the first stable release</b>, published 17:59 UTC for Mac, Windows and Linux (unsigned). Its known limits in plain words: Ruben's (rubenlupi) README work (#768, landed through #783).</li>
+      <li class="stable"><span class="d">Mon 26</span><b>v0.1.0, the first public release</b>, published 17:59 UTC for Mac, Windows and Linux (unsigned). Its known limits in plain words: Ruben's (rubenlupi) README work (#768, landed through #783).</li>
     </ol>
   </div>
 </section>
@@ -747,7 +766,7 @@ Draft release:   success   16:29
         <tr><td class="ok">OK</td><td>Learning in writing, after every round</td><td>review checklist and agent notes</td><td><a href="https://github.com/three-feathers/agent-durbar/blob/main/docs/agent-notes.md">docs/agent-notes.md</a> · <a href="https://github.com/three-feathers/agent-durbar/blob/main/docs/review-checklist.md">review checklist</a></td></tr>
         <tr><td class="ok">OK</td><td>Agents review agents; planted bugs, 16 of 16 caught</td><td>pull request #778, all three rounds</td><td><a href="https://github.com/three-feathers/agent-durbar/pull/778">pull/778</a></td></tr>
         <tr><td class="ok">OK</td><td>CI is the source of truth; release day went red, then green</td><td>every CI run</td><td><a href="https://github.com/three-feathers/agent-durbar/actions">actions</a></td></tr>
-        <tr><td class="ok">OK</td><td>v0.1.0, first stable release, 26 October</td><td>the release page and the changelog</td><td><a href="https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0">releases/tag/v0.1.0</a> · <a href="https://github.com/three-feathers/agent-durbar/blob/main/CHANGELOG.md">CHANGELOG</a></td></tr>
+        <tr><td class="ok">OK</td><td>v0.1.0, first public release, 26 October</td><td>the release page and the changelog</td><td><a href="https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0">releases/tag/v0.1.0</a> · <a href="https://github.com/three-feathers/agent-durbar/blob/main/CHANGELOG.md">CHANGELOG</a></td></tr>
         <tr><td class="ok">OK</td><td>Decisions from chat are written down the same day</td><td>spec 021, collaboration harness</td><td><a href="https://github.com/three-feathers/agent-durbar/blob/main/specs/021-collaboration-harness/spec.md">specs/021-collaboration-harness</a> · <a href="https://github.com/three-feathers/agent-durbar/tree/main/docs/agent-setup">docs/agent-setup</a></td></tr>
         <tr><td class="ok">OK</td><td>The bot relay, open-sourced the same day (MIT)</td><td>the relay repository</td><td><a href="https://github.com/vikramgorla/telegram-bot-relay">vikramgorla/telegram-bot-relay</a></td></tr>
         <tr><td class="ok">OK</td><td>No ranking of people or agents</td><td>the DORA rule in AGENTS.md</td><td><a href="https://github.com/three-feathers/agent-durbar/blob/main/AGENTS.md">AGENTS.md</a></td></tr>

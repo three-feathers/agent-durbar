@@ -483,3 +483,13 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:15;bac
 .warn-sign .wy{fill:#ffec27}.warn-sign .wk{fill:#111122}
 .warn-title{font-size:clamp(.9rem,min(2.3vw,4.2vh),3rem)}
 .nowrap{white-space:nowrap}
+/* owner 2026-10-27 04:56 UTC: credit Paco's agent, the retrospective */
+.box.credit{margin-top:1rem;font-size:1rem;max-width:62rem}
+.box.credit h3{margin:0 0 .4rem}
+.box.credit p{margin:0}
+#retro .gamegrid{grid-template-columns:repeat(3,minmax(0,1fr))}
+#retro .gamegrid li span{font-size:.85rem}
+#retro .lead{font-size:1.05rem;margin-bottom:.8rem}
+.chat.tellit{margin-top:1rem;font-size:.9rem;max-width:62rem}
+@media (max-width:900px){#retro .gamegrid{grid-template-columns:1fr}}
+.chat.tellit{background:none;border:0;box-shadow:none;padding:0}.chat.tellit .m{max-width:100%}
