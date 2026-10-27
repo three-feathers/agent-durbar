@@ -1,1 +1,0 @@
-- **Floor switch-off timing check no longer flakes under load** (spec 033 SC-003, issue #454): `shots-033` compares the switch's own time with a same-run yardstick (ratio limit 16, sanity cap 2000 ms) instead of a fixed 500 ms, so a busy machine cannot fail it; a per-agent delay or a repeated layout search still fails (checked with mutants). Test only.

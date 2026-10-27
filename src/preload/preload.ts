@@ -101,6 +101,7 @@ const api: DurbarApi = {
   removeSchedule: (id) => ipcRenderer.invoke('schedules:remove', id),
   setSchedulesPaused: (on) => ipcRenderer.invoke('schedules:setPausedAll', on),
   runScheduleNow: (id) => ipcRenderer.invoke('schedules:runNow', id),
+  scheduleRuns: (id) => ipcRenderer.invoke('schedules:runs', id),
   sinceAway: () => ipcRenderer.invoke('app:sinceAway'),
   dismissSinceAway: () => ipcRenderer.invoke('app:dismissSinceAway'),
   interrupted: () => ipcRenderer.invoke('app:interrupted'),

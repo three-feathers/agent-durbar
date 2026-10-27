@@ -25,6 +25,8 @@ type FloorsState = import('../shared/api').FloorsState;
 type FloorsResult = import('../shared/api').FloorsResult;
 type ScheduleInfo = import('../shared/api').ScheduleInfo;
 type SchedulesInfo = import('../shared/api').SchedulesInfo;
+type ScheduleRunInfo = import('../shared/api').ScheduleRunInfo;
+type ScheduleOutcome = import('../shared/api').ScheduleOutcome;
 type ModelSwitchRequest = import('../shared/modelswitch').ModelSwitchRequest;
 type ModelSwitchResult = import('../shared/modelswitch').ModelSwitchResult;
 type ContextTier = import('../shared/modelswitch').ContextTier;
@@ -231,6 +233,8 @@ interface SimOptions {
   places?: number;
   /** Spec 044 FR-035 / spec 001 FR-038: start with schedules over two folders, one that missed its last run and one that failed (page address `simsched=1`). */
   sched?: boolean;
+  /** Spec 044 FR-044 (`simws=1`): one simulated multi-root workspace room (its key a `.code-workspace` path) with a schedule, for the *Schedules here (N)* count. */
+  ws?: boolean;
   /** Pending permission requests carry a time 2 minutes in the past, so "impatient" (spec 034) can be seen at once. */
   waitOld?: boolean;
   /** Spec 001 FR-038 (`simschedfire=N`): a one-off schedule for the first idle agent, due N seconds after start (the flying letter). */
@@ -817,7 +821,32 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const pfFolders = (): { id: string; path: string }[] => [...new Set(sims.map((s) => s.info.cwd))].map((p) => ({ id: pfHash('folder\0' + p).slice(0, 32), path: p }));
     const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void)[],
       changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); },
-      attrib: new Map<string, string>() };
+      attrib: new Map<string, string>(), runs: {} as Record<string, ScheduleRunInfo[]> };
+    /* spec 044 FR-044: the run log with main's rules (Scheduler.record in src/main/schedules.ts): `last` and the log are set together, a repeated
+       busy/paused/held skip folds into one entry, 50 at most. Self-contained on purpose: test:schedules cuts this block out, compiles it and runs one
+       sequence through it and through main's, and compares the logs. */
+    /* simrecord:begin */
+    const simRecord = (sc: ScheduleInfo, runs: Record<string, ScheduleRunInfo[]>, outcome: ScheduleOutcome, now: number, x: { session?: string; reason?: ScheduleRunInfo['reason']; manual?: true; update?: boolean } = {}): boolean => {
+      sc.last = { at: now, outcome };
+      if (!Object.prototype.hasOwnProperty.call(runs, sc.id)) runs[sc.id] = [];
+      const log = runs[sc.id];
+      const top = log[log.length - 1];
+      const session = x.session !== undefined && /^[A-Za-z0-9._:-]{1,128}$/.test(x.session) ? x.session : undefined;
+      if (top && ['skipped-busy', 'skipped-paused', 'held', 'skipped-door-full'].includes(outcome) && top.outcome === outcome && top.session === session && !top.manual) {
+        top.n = Math.min(100000, (top.n ?? 1) + 1);
+        top.until = now;
+        return true;
+      }
+      const run: ScheduleRunInfo = { at: now, outcome };
+      if (session) run.session = session;
+      if (x.reason) run.reason = x.reason;
+      if (x.manual) run.manual = true;
+      if (x.update && top && !top.manual && top.n === undefined && (top.outcome === 'sent' || top.outcome === outcome)) log[log.length - 1] = run;
+      else log.push(run);
+      if (log.length > 50) log.splice(0, log.length - 50);
+      return false;
+    };
+    /* simrecord:end */
     if (opts.sched) {
       /* spec 001 FR-038: four future schedules (nothing is due during a driver run); one missed its last run and one failed, a few hours ago (spec 044 FR-035) */
       const t0 = Date.now(), key = (x: SimAgent | undefined): string => (x ? x.info.workspaceFile ?? x.info.cwd ?? '' : '');
@@ -829,6 +858,31 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         { id: 'sched-s4', folder: key(b), prompt: (opts.reply === 'secrets' ? FILL(53) + SECRETS_TEXT + ' ' : '') + 'Nightly dependency check', rule: { kind: 'daily', time: '23:00' }, next: t0 + 30 * 3600000, last: { at: t0 - 6 * 3600000, outcome: 'failed' } },
       ];
       simSched.list.push(...seed.filter((x) => x.folder)); simSched.n = 4;
+      /* spec 044 FR-044: a seeded history, all in the past (nothing runs during a driver): sched-s1 has sent runs to a live agent of its folder and to an id that is
+         not in the office, a folded busy skip and enough runs for Show all; sched-s3 and sched-s4 have their missed and failed run; sched-s2 has no runs at all */
+      const s1 = simSched.list.find((x) => x.id === 'sched-s1');
+      const live = a?.info.id ?? '', gone = 'sim-gone-7';
+      if (s1) {
+        for (let k = 15; k >= 1; k--) {
+          const at = t0 - 35 * 60000 - (k - 1) * 30 * 60000;
+          if (k <= 8 && k >= 5) simRecord(s1, simSched.runs, 'skipped-busy', at, {}); // four busy skips in a row: one folded entry
+          else simRecord(s1, simSched.runs, 'sent', at, { session: k % 4 === 0 ? gone : live });
+        }
+      }
+      const s3 = simSched.list.find((x) => x.id === 'sched-s3'), s4 = simSched.list.find((x) => x.id === 'sched-s4');
+      if (s3?.last) simRecord(s3, simSched.runs, s3.last.outcome, s3.last.at);
+      if (s4?.last) simRecord(s4, simSched.runs, s4.last.outcome, s4.last.at, { reason: 'send-error' });
+    }
+    if (opts.ws) {
+      /* spec 044 FR-044 (`simws=1`): the room of one agent becomes a multi-root workspace room: its key is a .code-workspace path, with a schedule of its own */
+      const used = new Set(simSched.list.map((x) => x.folder));
+      const w = [...sims].reverse().find((x) => !used.has(x.info.workspaceFile ?? x.info.cwd ?? '')) ?? sims[sims.length - 1];
+      if (w) {
+        const wcwd = w.info.cwd ?? '~/work/ws', file = wcwd + '.code-workspace';
+        for (const m of sims) if (m.room === w.room) { m.info.workspaceFile = file; m.info.folders = [wcwd, wcwd + '-docs']; }
+        simSched.list.push({ id: 'sched-ws1', folder: file, prompt: 'Workspace check: summarise what changed in both folders', every: 60, next: Date.now() + 25 * 60000 });
+        simSched.n += 1;
+      }
     }
     if (opts.schedFire && opts.schedFire > 0) {
       /* spec 001 FR-038: a one-off run for the first idle agent (its own session, so a busy folder-mate does not skip it) */
@@ -836,11 +890,13 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (s) { simSched.list.push({ id: 'sched-fire', folder: s.info.workspaceFile ?? s.info.cwd ?? '', prompt: 'Scheduled check-in: summarise what changed', at: Date.now() + opts.schedFire * 1000, target: { session: s.info.id, agent: s.info.id, name: s.info.title ?? '' } }); simSched.n += 1; }
     }
     /* spec 044 FR-033 (check-sched-top): a driver makes a schedule's run fail now, as if the app had sent it and the send had failed */
+    const simSchedProbe = { runsCalls: 0 }; // a driver counts how often the window asks for a log (spec 044 FR-043: only while a list is shown)
     (window as unknown as { __durbarSimSched?: unknown }).__durbarSimSched = {
+      probe: simSchedProbe,
       fail: (id: string): boolean => {
         const sc = simSched.list.find((x) => x.id === id);
         if (!sc) return false;
-        sc.last = { at: Date.now(), outcome: 'failed' };
+        simRecord(sc, simSched.runs, 'failed', Date.now(), { reason: 'no-agent' });
         simSched.changed();
         return true;
       },
@@ -898,7 +954,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         emit({ type: 'user', sessionId: id, timestamp: now, text: r.prompt } as AgentEvent);
         simSched.ran.forEach((f) => f({ agentId: id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
         simSched.attrib.set(id, sc.id);
-        sc.last = { at: now, outcome: 'sent' };
+        simRecord(sc, simSched.runs, 'sent', now, { session: id });
         void api.send(id, r.prompt, []);
         simSched.changed();
         simDoors.changed();
@@ -920,7 +976,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           simSched.attrib.set(s.info.id, sc.id);
           void api.send(s.info.id, sc.prompt, []);
         }
-        sc.last = { at: now, outcome };
+        simRecord(sc, simSched.runs, outcome, now, { session: outcome === 'sent' && s ? s.info.id : sc.target?.session, reason: outcome === 'failed' ? 'no-agent' : undefined });
         if (outcome === 'skipped-cap') { sc.paused = true; sc.pausedReason = 'cap'; } // FR-015
         else if (recurring) sc.next = simNext(sc, now);
         else sc.done = true;
@@ -2061,7 +2117,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         simSched.changed();
         return { ok: true as const, schedule: sc };
       },
-      removeSchedule: async (id) => { const n = simSched.list.length; simSched.list = simSched.list.filter((x) => x.id !== id); simSched.changed(); return { ok: simSched.list.length !== n }; },
+      removeSchedule: async (id) => { const n = simSched.list.length; simSched.list = simSched.list.filter((x) => x.id !== id); delete simSched.runs[id]; simSched.changed(); return { ok: simSched.list.length !== n }; },
+      /* spec 044 FR-043/FR-044: one schedule's log, newest first; the id is checked like main does */
+      scheduleRuns: async (id) => (simSchedProbe.runsCalls++, typeof id === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(id) && Object.prototype.hasOwnProperty.call(simSched.runs, id) ? { ok: true as const, runs: simSched.runs[id].map((r) => ({ ...r })).reverse() } : typeof id === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(id) ? { ok: true as const, runs: [] } : { ok: false as const }),
       setSchedulesPaused: async (on) => { simSched.pausedAll = on === true; simSched.changed(); return { ok: true, pausedAll: simSched.pausedAll }; },
       onSchedules: (cb) => { simSched.subs.push(cb); return () => undefined; },
       onScheduleRan: (cb) => { simSched.ran.push(cb); return () => undefined; },

@@ -129,3 +129,7 @@
 ## 2026-10-26: stable release tag
 
 - [x] T110: `releaseKind`/`publishCommand`/`STABLE_PREAMBLE` and `--github-output` in `scripts/release-notes.js`, stable heading in `scripts/changelog.js`, `release.yml` reads the kind from `verify`, tests in `scripts/test-changelog.js`, docs in `changelog.d/README.md` [FR-129]
+
+## 2026-10-26: release notes name every agent app
+
+- [x] T111: `AGENTS_CLAUSE` in `scripts/release-notes.js` for both intros (agent apps, four-company non-affiliation) and its asserts in `scripts/test-changelog.js` [FR-130]

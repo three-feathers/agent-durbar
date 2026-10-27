@@ -79,6 +79,7 @@ const index = fs.readFileSync(path.join(out, 'index.html'), 'utf8');
 assert.match(index, /<h1>Run all your AI coding agents\. Answer only the ones that need you\.<\/h1>/, 'hero title');
 // the hero eyebrow and the status line are hand-written in landing.json: the page shows what the file says (not a fixed word, so the stable fold PR only edits landing.json and the README status block)
 assert.ok(index.includes(landing.hero.eyebrow), 'hero eyebrow is landing.json\'s');
+assert.ok(!/alpha/i.test(landing.hero.eyebrow + landing.status), 'v0.1.0 is stable: the hand-written eyebrow and status do not say alpha');
 assert.match(index, />Download alpha</, 'download button (no release found: alpha wording)');
 assert.match(index, /class="btn secondary" href="https:\/\/github\.com\/three-feathers\/agent-durbar">View on GitHub</, 'GitHub button'); assert.match(index, /href="docs\.html"/, 'docs link');
 assert.match(index, /property="og:image" content="https:\/\/three-feathers\.github\.io\/agent-durbar\/screenshots\//, 'og:image is absolute'); assert.match(index, /Simulator demo data/, 'the hero says the data is invented');
