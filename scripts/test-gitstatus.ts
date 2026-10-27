@@ -8,8 +8,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFile, execFileSync } from 'child_process';
-import { GIT_MAX_FILES, execFileGitRun, filterDrivers, folderGitStatus, gitEnv, makeGitExec, nodeGitExec, parseNumstatZ, parsePorcelainZ } from '../src/main/gitstatus';
-import type { GitExec } from '../src/main/gitstatus';
+import { EventEmitter } from 'events';
+import { GIT_MAX_FILES, GIT_TRANSPORTS, execFileGitRun, filterDrivers, folderGitStatus, gitCreateCall, gitEnv, makeGitExec, nodeGitExec, parseNumstatZ, parsePorcelainZ, runGitCreate } from '../src/main/gitstatus';
+import type { GitChild, GitCreateRequest, GitExec, GitSpawnOptions } from '../src/main/gitstatus';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const GS = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'gitstatus.js'));
@@ -120,9 +121,27 @@ async function main(): Promise<void> {
   }
   const src = (require('fs').readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'gitstatus.ts'), 'utf8') as string).replace(/\r\n/g, '\n');
   assert.ok(/export const nodeGitExec: GitExec = makeGitExec\(execFileGitRun\(execFile as unknown as ExecFileFn\)\);/.test(src), 'nodeGitExec is makeGitExec over execFileGitRun over Node execFile');
-  assert.deepStrictEqual(src.match(/^import .*child_process.*$/gm), ["import { execFile } from 'child_process';"], 'only execFile is imported from child_process');
+  // spec 093 FR-030, FR-034: execFile for the read-only runner, spawn for the create entry point; nothing else
+  assert.deepStrictEqual(src.match(/^import .*child_process.*$/gm), ["import { execFile, spawn } from 'child_process';", "import type { ChildProcess } from 'child_process';"], 'only execFile and spawn are imported from child_process');
   assert.strictEqual((src.match(/\b(?:execFile|spawn|execSync|execFileSync|spawnSync|fork)\(/g) ?? []).length, 0, 'no other process call in gitstatus.ts');
-  assert.strictEqual((src.match(/ef\('git', argv, gitExecOptions\(env\)/g) ?? []).length, 1, 'the one git process call uses gitExecOptions');
+  assert.strictEqual((src.match(/ef\('git', argv, gitExecOptions\(env\)/g) ?? []).length, 1, 'the one read-only git process call uses gitExecOptions');
+  assert.strictEqual((src.match(/\bsp\('git', argv, gitSpawnOptions\(cwd, env, platform\)\)/g) ?? []).length, 1, 'the one create git process call uses gitCreateCall\'s argv and gitSpawnOptions');
+  assert.strictEqual((src.match(/\bsp\(/g) ?? []).length, 1, 'and nothing else is spawned');
+  assert.ok(/const sp: GitSpawn = deps\.spawn \?\? \(spawn as unknown as GitSpawn\);/.test(src), "the create runner reads child_process's spawn when it runs (the simulator's seal applies)");
+  assert.ok(/const \{ argv, env \} = gitCreateCall\(req, deps\);/.test(src), 'the create runner takes its argv and env from gitCreateCall only');
+  // FR-030: no other file in src/ starts git (a git binary name as the file of a process call)
+  {
+    const walkTs = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walkTs(path.join(dir, e.name)) : /\.(ts|js)$/.test(e.name) ? [path.join(dir, e.name)] : []));
+    const SRC = path.join(__dirname, '..', '..', 'src');
+    const STARTS_GIT = /\b(?:execFile|execFileSync|spawn|spawnSync|exec|execSync|fork|sp|ef)\s*\(\s*['"`](?:[^'"`]*[\\/])?git(?:\.exe)?['"`]/;
+    const files = walkTs(SRC);
+    assert.ok(files.length > 100, 'src/ is scanned');
+    const others = files.filter((f) => path.basename(f) !== 'gitstatus.ts' && STARTS_GIT.test(fs.readFileSync(f, 'utf8')));
+    assert.deepStrictEqual(others.map((f) => path.relative(SRC, f)), [], 'only src/main/gitstatus.ts starts git');
+    for (const sample of ["spawn('git', a)", 'execFile("git", a, cb)', "spawnSync('/usr/bin/git', a)", "execFile('C:\\\\Git\\\\bin\\\\git.exe', a)"]) assert.ok(STARTS_GIT.test(sample), `the scan sees ${sample}`);
+  }
+
+  await createEntryChecks();
 
   // the window's words (text only)
   assert.strictEqual(GS.chipText({ repo: false }), '');
@@ -146,6 +165,79 @@ async function main(): Promise<void> {
  * accepts on Windows too. Hooks are `#!/bin/sh` files (Git for Windows runs those through its `sh` as well).
  * Without the hardening (main before FR-008) this run lists fsmonitor, filter, process and submodule markers.
  */
+/** Spec 093 FR-030..FR-034: the create entry point's exact argv, environment and spawn options (fakes only; the real git runs in test:newfoldergit). */
+async function createEntryChecks(): Promise<void> {
+  assert.deepStrictEqual([...GIT_TRANSPORTS], ['file', 'git', 'ssh', 'http', 'https', 'ext', 'fd', 'ftp', 'ftps'], 'every transport git ships');
+  const base: NodeJS.ProcessEnv = { PATH: '/usr/bin', HOME: '/h', GIT_DIR: '/elsewhere/.git', git_config_global: '/y', GIT_CONFIG_PARAMETERS: "'core.hooksPath'='/evil'", GIT_SSL_NO_VERIFY: '1', GIT_PROXY_COMMAND: 'x', GIT_SSH: 's', GIT_SSH_COMMAND: 'ssh -x', GIT_TEMPLATE_DIR: '/t', SSH_ASKPASS: 'a', HTTPS_PROXY: 'http://proxy.example:3128', SSH_AUTH_SOCK: '/run/agent' };
+  const init = gitCreateCall({ kind: 'init' }, { hooksDir: '/tmp/durbar-hooks-1', env: base });
+  const NEVER = ['file', 'git', 'ssh', 'http', 'https', 'ext', 'fd', 'ftp', 'ftps'].flatMap((p) => ['-c', `protocol.${p}.allow=never`]);
+  assert.deepStrictEqual(init.argv, ['--no-pager', '-c', 'core.hooksPath=/tmp/durbar-hooks-1', '-c', 'core.fsmonitor=false', '-c', 'core.useBuiltinFSMonitor=false', '-c', 'submodule.recurse=false', '-c', 'protocol.allow=never', ...NEVER, 'init', '--quiet'], 'init: exact argv (every -c before the subcommand, no path, every transport off)');
+  assert.ok(!init.argv.some((a) => /^credential\.helper/.test(a)), 'credential.helper is not touched (D7)');
+  assert.deepStrictEqual(Object.keys(init.env).filter((k) => /^git_/i.test(k)).sort(), ['GIT_ALLOW_PROTOCOL', 'GIT_NO_LAZY_FETCH', 'GIT_OPTIONAL_LOCKS', 'GIT_TERMINAL_PROMPT'], "init: none of the user's GIT_* reach git, only the safe ones");
+  assert.deepStrictEqual([init.env.GIT_ALLOW_PROTOCOL, init.env.GIT_TERMINAL_PROMPT], ['', '0'], 'init: no transport at all, never a prompt');
+  assert.deepStrictEqual([init.env.PATH, init.env.HTTPS_PROXY, init.env.SSH_AUTH_SOCK, init.env.SSH_ASKPASS], ['/usr/bin', 'http://proxy.example:3128', '/run/agent', undefined], 'PATH and the non-GIT variables pass; SSH_ASKPASS is dropped');
+  const probeKey = 'DURBAR_093_ENV_PROBE';
+  process.env[probeKey] = '1';
+  try { assert.strictEqual(gitCreateCall({ kind: 'init' }, { hooksDir: '/x', env: base }).env[probeKey], undefined, "the injected environment is the one used (not Durbar's own)"); } finally { delete process.env[probeKey]; }
+  assert.throws(() => gitCreateCall({ kind: 'clone', url: 'https://h/x' } as unknown as GitCreateRequest, { hooksDir: '/x' }), /not allowed/, 'phase 1: no clone yet');
+  assert.throws(() => gitCreateCall({ kind: 'status' } as unknown as GitCreateRequest, { hooksDir: '/x' }), /not allowed/);
+  assert.throws(() => gitCreateCall(null as unknown as GitCreateRequest, { hooksDir: '/x' }), /not allowed/);
+  assert.throws(() => gitCreateCall({ kind: 'init' }, { hooksDir: '' }), /hooks folder/, 'no run without the private hooks folder');
+
+  // runGitCreate over a fake spawn: the file, argv and options of the real call, its output and end, Cancel
+  type Rec = { file: string; args: string[]; opts: GitSpawnOptions };
+  const calls: Rec[] = [];
+  const kids: Array<EventEmitter & { pid?: number; exitCode: number | null; signalCode: string | null; stdout: EventEmitter; stderr: EventEmitter; kill(): boolean }> = [];
+  const fakeSpawn = (pid: number | undefined) => (file: string, args: string[], opts: GitSpawnOptions): GitChild => {
+    calls.push({ file, args, opts });
+    const k = Object.assign(new EventEmitter(), { pid, exitCode: null, signalCode: null, stdout: new EventEmitter(), stderr: new EventEmitter(), kill: () => true });
+    kids.push(k);
+    return k as unknown as GitChild;
+  };
+  const killed: Array<{ pid?: number; platform: string }> = [];
+  const kill = ((c: { pid?: number }, platform: NodeJS.Platform) => { killed.push({ pid: c.pid, platform }); }) as never;
+  for (const platform of ['linux', 'darwin', 'win32'] as NodeJS.Platform[]) {
+    calls.length = 0;
+    const seen: string[] = [];
+    const h = runGitCreate({ kind: 'init' }, '/w/new', { hooksDir: '/tmp/durbar-hooks-2', env: base, platform, spawn: fakeSpawn(4242), kill, onOutput: (t) => seen.push(t) });
+    const want = gitCreateCall({ kind: 'init' }, { hooksDir: '/tmp/durbar-hooks-2', env: base });
+    assert.strictEqual(calls.length, 1);
+    assert.strictEqual(calls[0].file, 'git', 'git from PATH');
+    assert.deepStrictEqual(calls[0].args, want.argv, 'the argv is gitCreateCall\'s');
+    const { env, ...opts } = calls[0].opts;
+    assert.deepStrictEqual(env, want.env, 'the env is gitCreateCall\'s');
+    assert.deepStrictEqual(opts, { cwd: '/w/new', shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached: platform !== 'win32' }, `${platform}: no shell, no window, stdin closed, its own process group on POSIX`);
+    const k = kids[kids.length - 1];
+    k.stderr.emit('data', Buffer.from('hint: Using master\n'));
+    h.cancel();
+    assert.deepStrictEqual(killed.pop(), { pid: 4242, platform }, `${platform}: Cancel ends the tree through killChildTree`);
+    k.exitCode = 0;
+    k.emit('close', 0, null);
+    const r = await h.done;
+    assert.deepStrictEqual(r, { code: 0, signal: null, stderrTail: 'hint: Using master\n' });
+    assert.deepStrictEqual(seen, ['hint: Using master\n'], 'each piece of output is handed on');
+    h.cancel();
+    assert.strictEqual(killed.length, 0, 'no kill after the child exited (its pid may be another process now)');
+  }
+  // git not installed: spawn throws, or emits error without a pid; both end with spawnError ENOENT and nothing to kill
+  const thrown = runGitCreate({ kind: 'init' }, '/w', { hooksDir: '/h', spawn: () => { throw Object.assign(new Error('spawn git ENOENT'), { code: 'ENOENT' }); }, kill });
+  assert.deepStrictEqual(await thrown.done, { code: null, signal: null, stderrTail: '', spawnError: 'ENOENT' });
+  const noPid = runGitCreate({ kind: 'init' }, '/w', { hooksDir: '/h', spawn: fakeSpawn(undefined), kill });
+  kids[kids.length - 1].emit('error', Object.assign(new Error('spawn git ENOENT'), { code: 'ENOENT' }));
+  assert.deepStrictEqual(await noPid.done, { code: null, signal: null, stderrTail: '', spawnError: 'ENOENT' });
+  noPid.cancel();
+  assert.strictEqual(killed.length, 0, 'nothing to kill when git never started');
+  // the tail keeps the end of a long output
+  const long = runGitCreate({ kind: 'init' }, '/w', { hooksDir: '/h', spawn: fakeSpawn(7), kill });
+  const lk = kids[kids.length - 1];
+  lk.stderr.emit('data', 'x'.repeat(20000));
+  lk.stderr.emit('data', 'fatal: the end\n');
+  lk.emit('close', 128, null);
+  const lr = await long.done;
+  assert.ok(lr.stderrTail.endsWith('fatal: the end\n') && lr.stderrTail.length === 8192 && lr.code === 128, 'the last 8 KB of stderr are kept');
+  console.log('gitstatus: create entry point (spec 093): init argv/env, spawn options per platform, cancel, missing git OK');
+}
+
 async function realGitCheck(): Promise<void> {
   try { execFileSync('git', ['--version'], { stdio: 'ignore', windowsHide: true }); } catch {
     // every CI runner has git (the checkout needs it): there a missing git is a failure, so a green run proves the check ran

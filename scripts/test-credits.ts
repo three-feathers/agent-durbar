@@ -54,6 +54,22 @@ try {
   assert.deepStrictEqual(new SettingsStore(file).load(), {}, 'corrupt file');
   new SettingsStore(path.join(file, 'x', 'y.json')).setDefaultMaxAiCredits(50); // unwritable: no throw
 
+  // spec 093 FR-006: the parent of the last created folder (an absolute path; anything else is dropped on read and refused on write)
+  {
+    const f3 = path.join(dir, 'nf', 'durbar-settings.json');
+    const ns = new SettingsStore(f3);
+    ns.load();
+    assert.strictEqual(ns.newFolderParent, undefined);
+    ns.setNewFolderParent('/home/u/code');
+    assert.strictEqual(new SettingsStore(f3).load().newFolderParent, '/home/u/code', 'survives a restart');
+    for (const bad of ['relative', '', '/a\nb', 42, null]) ns.setNewFolderParent(bad);
+    assert.strictEqual(new SettingsStore(f3).load().newFolderParent, '/home/u/code', 'an invalid value is never stored');
+    ns.setNewFolderParent('C:\\Users\\u\\code');
+    assert.strictEqual(new SettingsStore(f3).load().newFolderParent, 'C:\\Users\\u\\code');
+    for (const bad of ['"rel/x"', '"~/x"', '42', '"/' + 'x'.repeat(4096) + '"', '"/a\\u0000b"', '{"a":1}']) assert.strictEqual(parseSettings(`{"newFolderParent":${bad}}`).newFolderParent, undefined, `dropped on read: ${bad.slice(0, 20)}`);
+    assert.deepStrictEqual(parseSettings('{"newFolderParent":"/x/y"}'), { newFolderParent: '/x/y' });
+  }
+
   // spec 024 FR-007: the place mapping lives in the same file and survives cap changes (and the other way round)
   const f2 = path.join(dir, 'places', 'durbar-settings.json');
   const ps = new SettingsStore(f2);

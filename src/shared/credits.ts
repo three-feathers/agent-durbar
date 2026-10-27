@@ -6,6 +6,7 @@
 import { parseCustomPlaces, parsePlaceMap } from './places';
 import type { CustomPlace, PlaceMap } from './places';
 import { parseVersionField } from './versionfield';
+import { parseNewFolderParent } from './newfolder';
 
 /** Upper bound for a cap (AI credits). Anything above is refused as a typo. */
 export const MAX_CAP = 1_000_000;
@@ -90,6 +91,8 @@ export interface AppSettings {
   checkUpdatesAtStart?: false;
   /** Spec 087 FR-007c: apps whose *Always continue without the OS sandbox on this computer* is stored (only offered where the host can never sandbox the app). */
   sandboxAlwaysContinue?: string[];
+  /** Spec 093 FR-006: the parent folder of the last folder created from + Folder (an absolute path, never a token); the picker starts there. */
+  newFolderParent?: string;
 }
 
 /** Spec 087 FR-007c: only known app ids, each once; anything else is dropped. */
@@ -122,7 +125,7 @@ export function parseSettings(text: string): AppSettings {
     const places = parsePlaceMap((obj as { placeMap?: unknown }).placeMap, custom.map((p) => p.id));
     const theme = parseThemeId((obj as { theme?: unknown }).theme);
     const announced = parseAnnounced((obj as { announcedVersions?: unknown }).announcedVersions);
-    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...(custom.length ? { customPlaces: custom } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}), ...(theme === undefined ? {} : { theme }), ...((obj as { notifyNeedsMe?: unknown }).notifyNeedsMe === false ? { notifyNeedsMe: false as const } : {}), ...((obj as { breakResume?: unknown }).breakResume === 'ask' ? { breakResume: 'ask' as const } : {}), ...(Object.keys(announced).length ? { announcedVersions: announced } : {}), ...((obj as { checkUpdatesAtStart?: unknown }).checkUpdatesAtStart === false ? { checkUpdatesAtStart: false as const } : {}), ...((obj as { browserNoteAccepted?: unknown }).browserNoteAccepted === true ? { browserNoteAccepted: true as const } : {}), ...(parseSandboxAlways((obj as { sandboxAlwaysContinue?: unknown }).sandboxAlwaysContinue).length ? { sandboxAlwaysContinue: parseSandboxAlways((obj as { sandboxAlwaysContinue?: unknown }).sandboxAlwaysContinue) } : {}) };
+    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...(custom.length ? { customPlaces: custom } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}), ...(theme === undefined ? {} : { theme }), ...((obj as { notifyNeedsMe?: unknown }).notifyNeedsMe === false ? { notifyNeedsMe: false as const } : {}), ...((obj as { breakResume?: unknown }).breakResume === 'ask' ? { breakResume: 'ask' as const } : {}), ...(Object.keys(announced).length ? { announcedVersions: announced } : {}), ...((obj as { checkUpdatesAtStart?: unknown }).checkUpdatesAtStart === false ? { checkUpdatesAtStart: false as const } : {}), ...((obj as { browserNoteAccepted?: unknown }).browserNoteAccepted === true ? { browserNoteAccepted: true as const } : {}), ...(parseSandboxAlways((obj as { sandboxAlwaysContinue?: unknown }).sandboxAlwaysContinue).length ? { sandboxAlwaysContinue: parseSandboxAlways((obj as { sandboxAlwaysContinue?: unknown }).sandboxAlwaysContinue) } : {}), ...(parseNewFolderParent((obj as { newFolderParent?: unknown }).newFolderParent) ? { newFolderParent: parseNewFolderParent((obj as { newFolderParent?: unknown }).newFolderParent) } : {}) };
   } catch {
     return {};
   }

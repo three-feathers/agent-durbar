@@ -14,7 +14,7 @@
   const APP_LABEL={copilot:'GitHub Copilot',claude:'Claude Code'};
   const NAME_RE=/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
   /* Windows device names (FR-011): CON.md is a device there; refused in any case, with or without an extension. A copy of main's rule (src/main/profilefiles.ts isProfileName; test:profilefiles keeps them equal). */
-  const RESERVED_RE=/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
+  const RESERVED_RE=/^(con|prn|aux|nul|com[1-9\u00b9\u00b2\u00b3]|lpt[1-9\u00b9\u00b2\u00b3])(\.|$)/i; /* src/shared/newfolder.ts WINDOWS_RESERVED_NAME (test:profilefiles keeps them equal) */
   const validName=n=>typeof n==='string'&&NAME_RE.test(n)&&!n.includes('..')&&!RESERVED_RE.test(n);
 
   /* ---------------- pure parts (unit tested: scripts/test-profileeditor.ts) ---------------- */
