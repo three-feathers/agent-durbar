@@ -7,7 +7,7 @@ import { EventEmitter } from 'events';
 import { MAX_REDIRECTS, MAX_SCRIPT_BYTES, allowedScriptUrl, downloadScript, looksLikeScript } from '../src/main/officialinstall';
 import * as http from 'http';
 import type { HttpGet } from '../src/main/officialinstall';
-import { makeDownloadGet } from '../src/main/netget';
+import { makeDownloadGet, makeNodeDownloadGet } from '../src/main/netget';
 import type { NetRequestFactory, NetRequestLike } from '../src/main/netget';
 import { HarnessSetup, confirmText, setupEnv } from '../src/main/harnesssetup';
 import { installPlans, routeOwning } from '../src/shared/harnesssetup';
@@ -202,6 +202,81 @@ async function main(): Promise<void> {
     const got = await downloadScript(claude, '.sh', { get: makeDownloadGet(ok), tmpdir: tmp });
     assert.deepStrictEqual(fs.readFileSync(got.file), body);
     assert.deepStrictEqual(requested, ['https://claude.ai/install.sh', 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh']);
+  }
+  // spec 081 delta 2026-10-27: every non-test source in src/ and scripts/ that builds HarnessSetup hands in the installer download
+  // (it has no default). Tests that pass fakes on purpose are named test-*.ts and skipped. A new construction site is found by the scan.
+  {
+    const root = path.join(__dirname, '..', '..');
+    const walk = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(d, e.name)) : /\.ts$/.test(e.name) && !/^test-/.test(e.name) ? [path.join(d, e.name)] : []);
+    const sites = [...walk(path.join(root, 'src')), ...walk(path.join(root, 'scripts'))].filter((f) => fs.readFileSync(f, 'utf8').includes('new HarnessSetup('));
+    const names = sites.map((f) => path.relative(root, f).split(path.sep).join('/')).sort();
+    assert.deepStrictEqual(names, ['scripts/e2e-real.ts', 'scripts/install-check.ts', 'src/main/ipc/harness.ts'], 'the construction sites (update this list on purpose)');
+    for (const f of sites) {
+      const src = fs.readFileSync(f, 'utf8');
+      // EVERY construction in the file: the argument span runs to the matching close paren
+      let from = src.indexOf('new HarnessSetup(');
+      while (from >= 0) {
+        const open = from + 'new HarnessSetup'.length;
+        let depth = 0, end = open;
+        for (let i = open; i < src.length; i++) { if (src[i] === '(') depth++; else if (src[i] === ')' && --depth === 0) { end = i; break; } }
+        assert.ok(/httpGet:\s*(makeDownloadGet|nodeDownloadGet)\b/.test(src.slice(open, end)), `${f}: a HarnessSetup at offset ${from} passes httpGet`);
+        from = src.indexOf('new HarnessSetup(', end);
+      }
+    }
+  }
+  {
+    // the Node getter against a local server: the real stream code
+    let seenUa = '';
+    const sockets = new Set<import('net').Socket>();
+    let redirBytesSent = 0;
+    let redirClosed = false;
+    const until = async (f: () => boolean, ms: number, what: string): Promise<void> => { const end = Date.now() + ms; while (!f()) { if (Date.now() > end) assert.fail(what); await new Promise((r) => setTimeout(r, 20)); } };
+    const server = http.createServer((req, res) => {
+      seenUa = String(req.headers['user-agent']);
+      if (req.url === '/redir') { res.writeHead(302, { location: 'https://evil.example/x' }); res.write(''); const t = setInterval(() => { redirBytesSent += 65536; res.write(Buffer.alloc(65536)); }, 5); res.on('close', () => clearInterval(t)); req.socket.on('close', () => { redirClosed = true; clearInterval(t); }); }
+      else if (req.url === '/big') { res.writeHead(200); res.end(Buffer.alloc(5000)); }
+      else if (req.url === '/exact') { res.writeHead(200); res.end(Buffer.alloc(1000, 1)); }
+      else if (req.url === '/over') { res.writeHead(200); res.end(Buffer.alloc(1001, 1)); }
+      else if (req.url === '/overstall') { res.writeHead(200); res.write(Buffer.alloc(1001, 1)); } // never ends: only the cap can end this early
+      else if (req.url === '/trickle') { res.writeHead(200); const t = setInterval(() => res.write('x'), 100); req.socket.on('close', () => clearInterval(t)); } // under the cap, never ends: only the TOTAL timer can
+      else if (req.url === '/stall') { res.writeHead(200); res.write(Buffer.from('#!/bin/sh\n')); } // never ends: only the timeout can
+      else { res.writeHead(200, { 'content-type': 'text/x-shellscript' }); res.end(body); }
+    });
+    server.on('connection', (s) => { sockets.add(s); s.on('close', () => sockets.delete(s)); });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    const raw = makeNodeDownloadGet(http.get as never);
+    // a getter that never settles must fail the test, not hang it
+    const get: HttpGet = (u, o) => Promise.race([raw(u, o), new Promise<never>((_r, rej) => setTimeout(() => rej(new Error('getter did not settle')), 6000).unref())]);
+    const okr = await get(`${base}/ok`, { timeoutMs: 2000, maxBytes: 1000 });
+    assert.strictEqual(okr.status, 200);
+    assert.deepStrictEqual(okr.body, body);
+    assert.strictEqual(seenUa, 'AgentDurbar');
+    // a redirect is reported, not followed, and its (endless) body is not read on: the request is destroyed
+    const rd = await get(`${base}/redir`, { timeoutMs: 2000, maxBytes: 1000 });
+    assert.deepStrictEqual([rd.status, rd.location, rd.body.length], [302, 'https://evil.example/x', 0], 'a redirect is reported, not followed');
+    await until(() => redirClosed, 2000, 'the redirect socket is closed');
+    const sent = redirBytesSent;
+    await new Promise((r) => setTimeout(r, 200));
+    assert.ok(redirBytesSent - sent <= 65536 * 2, 'nothing more is sent to a destroyed request');
+    assert.ok(redirBytesSent < 4 * 1024 * 1024, 'the redirect body read is bounded');
+    // the cap: while streaming (a stall after maxBytes+1 fails on the cap, not on the timeout), and the boundary
+    await assert.rejects(get(`${base}/big`, { timeoutMs: 2000, maxBytes: 1000 }), /larger than expected/);
+    assert.strictEqual((await get(`${base}/exact`, { timeoutMs: 2000, maxBytes: 1000 })).body.length, 1000, 'exactly maxBytes is accepted');
+    await assert.rejects(get(`${base}/over`, { timeoutMs: 2000, maxBytes: 1000 }), /larger than expected/, 'maxBytes + 1 is refused');
+    const t0 = Date.now();
+    await assert.rejects(get(`${base}/overstall`, { timeoutMs: 5000, maxBytes: 1000 }), /larger than expected/, 'the cap fires before any timeout');
+    assert.ok(Date.now() - t0 < 2500, 'refused on the cap, not after the timeout');
+    // the timeout: a server that sends headers and a first chunk, then stalls
+    const t1 = Date.now();
+    await assert.rejects(get(`${base}/stall`, { timeoutMs: 300, maxBytes: 100000 }), /took too long/, 'a stalled body hits the timeout');
+    assert.ok(Date.now() - t1 < 3000);
+    // a server that drips one byte at a time keeps the idle timer quiet: only the total limit ends it
+    const t2 = Date.now();
+    await assert.rejects(get(`${base}/trickle`, { timeoutMs: 700, maxBytes: 100000 }), /took too long/, 'a dripping body hits the TOTAL time limit');
+    assert.ok(Date.now() - t2 < 3000);
+    for (const s of sockets) s.destroy();
+    await new Promise<void>((r2) => server.close(() => r2()));
   }
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log('officialinstall: allow-list, redirects, size, private files, runner (bash/powershell argv, cleanup, never root) OK');
