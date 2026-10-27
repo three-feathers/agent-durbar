@@ -26,8 +26,7 @@ module.exports = async (ctx) => {
   const { until, js, key } = H;
   let total = 0, failed = 0;
   const check = (ok, msg) => { total++; if (!ok) { failed++; console.log('FAIL ' + msg); } };
-  const title = `((document.querySelector('#modeDlg #mdT')||{}).textContent||'')`;
-  const open = (t) => until(`${title}===${jsLiteral(t)}&&!!document.querySelector('#modeDlg [aria-modal="true"]')`, 8000);
+  const open = (t) => until(`((document.querySelector('#modeDlg #mdT')||{}).textContent||'')===${jsLiteral(t)}&&!!document.querySelector('#modeDlg [aria-modal="true"]')`, 8000);
   const closed = () => until(`!document.getElementById('modeDlg')`, 8000);
   const buttons = () => js(`[...document.querySelectorAll('#modeDlg .dbtn button')].map(b=>b.textContent)`);
   const press = (label) => js(`(()=>{const b=[...document.querySelectorAll('#modeDlg .dbtn button')].find(x=>x.textContent===${jsLiteral(label)});if(!b)return false;b.click();return true})()`);
@@ -74,14 +73,14 @@ module.exports = async (ctx) => {
       check(await until(`window.__simAddFolderProbe.n===1`, 4000), `${at}: Ctrl+O adds a folder directly`);
     }
     ctx.win.webContents.send('menu:add', 'folder');
-    check(await until(`window.__simAddFolderProbe.n===${MAC ? 1 : 2}`, 4000), `${at}: File > Add Folder… adds a folder directly`);
+    check(await until(`window.__simAddFolderProbe.n===${jsLiteral(MAC ? 1 : 2)}`, 4000), `${at}: File > Add Folder… adds a folder directly`);
     ctx.win.webContents.focus();
     await key('K', [MAC ? 'meta' : 'control'], { char: 'never' });
     await until(`!!document.getElementById('palDlg')`, 4000);
     ctx.win.webContents.insertText('Add folder');
     check(await until(`/^Add folder/.test(((document.querySelector('#palDlg [role="option"][aria-selected="true"]')||document.querySelector('#palDlg [role="option"]')||{}).textContent||''))`, 4000), `${at}: the palette offers Add folder first`);
     await key('Return', [], { char: 'never', pause: 200 });
-    check(await until(`window.__simAddFolderProbe.n===${MAC ? 2 : 3}`, 4000), `${at}: the palette's Add folder adds a folder directly`);
+    check(await until(`window.__simAddFolderProbe.n===${jsLiteral(MAC ? 2 : 3)}`, 4000), `${at}: the palette's Add folder adds a folder directly`);
     check((await js('window.__sawDlg')) === 0, `${at}: none of them showed the choice`);
     await js(`delete window.__simAddFolderProbe;true`);
     // FR-001a: File > New Folder… opens the choice of kind; the palette's entries open their name step
