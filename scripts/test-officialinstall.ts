@@ -213,8 +213,15 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(names, ['scripts/e2e-real.ts', 'scripts/install-check.ts', 'src/main/ipc/harness.ts'], 'the construction sites (update this list on purpose)');
     for (const f of sites) {
       const src = fs.readFileSync(f, 'utf8');
-      const block = src.slice(src.indexOf('new HarnessSetup('));
-      assert.ok(/httpGet:\s*(makeDownloadGet|nodeDownloadGet)\b/.test(block.slice(0, 2500)), `${f} passes httpGet to HarnessSetup`);
+      // EVERY construction in the file: the argument span runs to the matching close paren
+      let from = src.indexOf('new HarnessSetup(');
+      while (from >= 0) {
+        const open = from + 'new HarnessSetup'.length;
+        let depth = 0, end = open;
+        for (let i = open; i < src.length; i++) { if (src[i] === '(') depth++; else if (src[i] === ')' && --depth === 0) { end = i; break; } }
+        assert.ok(/httpGet:\s*(makeDownloadGet|nodeDownloadGet)\b/.test(src.slice(open, end)), `${f}: a HarnessSetup at offset ${from} passes httpGet`);
+        from = src.indexOf('new HarnessSetup(', end);
+      }
     }
   }
   {
@@ -231,6 +238,7 @@ async function main(): Promise<void> {
       else if (req.url === '/exact') { res.writeHead(200); res.end(Buffer.alloc(1000, 1)); }
       else if (req.url === '/over') { res.writeHead(200); res.end(Buffer.alloc(1001, 1)); }
       else if (req.url === '/overstall') { res.writeHead(200); res.write(Buffer.alloc(1001, 1)); } // never ends: only the cap can end this early
+      else if (req.url === '/trickle') { res.writeHead(200); const t = setInterval(() => res.write('x'), 100); req.socket.on('close', () => clearInterval(t)); } // under the cap, never ends: only the TOTAL timer can
       else if (req.url === '/stall') { res.writeHead(200); res.write(Buffer.from('#!/bin/sh\n')); } // never ends: only the timeout can
       else { res.writeHead(200, { 'content-type': 'text/x-shellscript' }); res.end(body); }
     });
@@ -263,6 +271,10 @@ async function main(): Promise<void> {
     const t1 = Date.now();
     await assert.rejects(get(`${base}/stall`, { timeoutMs: 300, maxBytes: 100000 }), /took too long/, 'a stalled body hits the timeout');
     assert.ok(Date.now() - t1 < 3000);
+    // a server that drips one byte at a time keeps the idle timer quiet: only the total limit ends it
+    const t2 = Date.now();
+    await assert.rejects(get(`${base}/trickle`, { timeoutMs: 700, maxBytes: 100000 }), /took too long/, 'a dripping body hits the TOTAL time limit');
+    assert.ok(Date.now() - t2 < 3000);
     for (const s of sockets) s.destroy();
     await new Promise<void>((r2) => server.close(() => r2()));
   }
