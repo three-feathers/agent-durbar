@@ -294,7 +294,7 @@ async function main(): Promise<void> {
     const file = path.join(dir, 'durbar-schedules.json');
     const cpu = (): number => { const u = process.cpuUsage(); return (u.user + u.system) / 1000; };
     // the cost measured is building, serialising and writing the document, not the disk's flush: fsync is a no-op here (the real one is covered by the ordering test below)
-    const cpuIo: SaveIo = { platform: process.platform, pause: () => undefined, fs: { openSync: fs.openSync, writeSync: fs.writeSync, closeSync: fs.closeSync, renameSync: fs.renameSync, rmSync: fs.rmSync, fsyncSync: (() => undefined) as typeof fs.fsyncSync } };
+    const cpuIo: SaveIo = { platform: process.platform, pause: () => undefined, fs: { existsSync: fs.existsSync, openSync: fs.openSync, writeSync: fs.writeSync, closeSync: fs.closeSync, renameSync: fs.renameSync, rmSync: fs.rmSync, fsyncSync: (() => undefined) as typeof fs.fsyncSync } };
     saveSchedules(file, doc, cpuIo); // warm-up
     // CPU time, median of 5; under a loaded machine (a parallel tsc) one round can be slow, so up to 3 rounds, the best counts
     const rounds: number[] = [];
@@ -481,7 +481,7 @@ async function main(): Promise<void> {
     // win32: a busy file is retried once after a short pause; another platform does not retry; a second failure is a failure
     for (const [platform, code, want, renames] of [['win32', 'EPERM', true, 2], ['win32', 'EBUSY', true, 2], ['linux', 'EPERM', false, 1], ['win32', 'ENOSPC', false, 1]] as const) {
       let n = 0, paused = 0;
-      const io: SaveIo = { platform, pause: () => { paused++; }, fs: { openSync: fs.openSync, writeSync: fs.writeSync, fsyncSync: fs.fsyncSync, closeSync: fs.closeSync, rmSync: fs.rmSync, renameSync: ((a: string, b: string) => { if (++n === 1) throw Object.assign(new Error('busy'), { code }); fs.renameSync(a, b); }) as typeof fs.renameSync } };
+      const io: SaveIo = { platform, pause: () => { paused++; }, fs: { existsSync: fs.existsSync, openSync: fs.openSync, writeSync: fs.writeSync, fsyncSync: fs.fsyncSync, closeSync: fs.closeSync, rmSync: fs.rmSync, renameSync: ((a: string, b: string) => { if (++n === 1) throw Object.assign(new Error('busy'), { code }); fs.renameSync(a, b); }) as typeof fs.renameSync } };
       assert.strictEqual(saveSchedules(file, doc, io), want, `${platform} ${code}`);
       assert.strictEqual(n, renames, `${platform} ${code}: renames tried`);
       assert.strictEqual(paused, want ? 1 : 0);
@@ -490,7 +490,7 @@ async function main(): Promise<void> {
     // the temp name carries the process id (two instances never share one), and the data is fsynced before the rename
     const order: string[] = [];
     const seen: string[] = [];
-    const spy: SaveIo = { platform: 'linux', pause: () => undefined, fs: { openSync: ((f: string, ...r: unknown[]) => { seen.push(f); return (fs.openSync as (...a: unknown[]) => number)(f, ...r); }) as typeof fs.openSync, writeSync: fs.writeSync, closeSync: fs.closeSync, rmSync: fs.rmSync,
+    const spy: SaveIo = { platform: 'linux', pause: () => undefined, fs: { existsSync: fs.existsSync, openSync: ((f: string, ...r: unknown[]) => { seen.push(f); return (fs.openSync as (...a: unknown[]) => number)(f, ...r); }) as typeof fs.openSync, writeSync: fs.writeSync, closeSync: fs.closeSync, rmSync: fs.rmSync,
       fsyncSync: ((fd: number) => { order.push('fsync'); fs.fsyncSync(fd); }) as typeof fs.fsyncSync, renameSync: ((a: string, b: string) => { order.push('rename'); fs.renameSync(a, b); }) as typeof fs.renameSync } };
     assert.strictEqual(saveSchedules(file, doc, spy), true);
     assert.deepStrictEqual(order, ['fsync', 'rename'], 'fsync before the rename');
@@ -547,11 +547,12 @@ async function main(): Promise<void> {
     const lio: LoadIo = { fs: { readFileSync: fs.readFileSync, existsSync: fs.existsSync, readdirSync: fs.readdirSync, rmSync: fs.rmSync, renameSync: ebusy as typeof fs.renameSync }, pause: () => undefined, alive: () => true, pid: process.pid };
     assert.deepStrictEqual(loadSchedules(file, T0, lio), { pausedAll: false, schedules: [] }, 'loaded empty');
     assert.strictEqual(fs.readFileSync(file, 'utf8'), 'CORRUPT {', 'the move failed: the file is still there');
-    let renames = 0, opened = 0;
-    const busy: SaveIo = { platform: 'linux', pause: () => undefined, fs: { openSync: ((...r: Parameters<typeof fs.openSync>) => { opened++; return fs.openSync(...r); }) as typeof fs.openSync, writeSync: fs.writeSync, fsyncSync: fs.fsyncSync, closeSync: fs.closeSync, rmSync: fs.rmSync, renameSync: ((): never => { renames++; return ebusy(); }) as typeof fs.renameSync } };
+    let renames = 0, opened = 0, exists = 0;
+    const busy: SaveIo = { platform: 'linux', pause: () => undefined, fs: { existsSync: ((f: string) => { exists++; return fs.existsSync(f); }) as typeof fs.existsSync, openSync: ((...r: Parameters<typeof fs.openSync>) => { opened++; return fs.openSync(...r); }) as typeof fs.openSync, writeSync: fs.writeSync, fsyncSync: fs.fsyncSync, closeSync: fs.closeSync, rmSync: fs.rmSync, renameSync: ((): never => { renames++; return ebusy(); }) as typeof fs.renameSync } };
     assert.strictEqual(saveSchedules(file, doc, busy), false, 'the save is refused while the file cannot be moved');
     assert.ok(renames >= 1, 'it retried the move first');
     assert.strictEqual(opened, 0, 'and wrote nothing, not even a temp file');
+    assert.ok(exists >= 1, 'the retry of the move uses the injected existsSync, not the real fs');
     assert.strictEqual(fs.readFileSync(file, 'utf8'), 'CORRUPT {', 'the corrupt content is still in place');
     assert.deepStrictEqual(fs.readdirSync(dir), ['durbar-schedules.json'], 'no temp file, no write');
     assert.strictEqual(saveSchedules(file, doc), true, 'once the move works, the save goes through');
@@ -571,7 +572,7 @@ async function main(): Promise<void> {
     const names = [`${dead}`, `${live}`, `${mine}`, '0', '999999999999'].map((x) => `durbar-schedules.json.${x}.tmp`)
       .concat(['durbar-schedules.json.tmp', 'durbar-schedules.json.abc.tmp', `durbar-schedules.json.${dead}.tmp.bak`, `other.json.${dead}.tmp`, `x-durbar-schedules.json.${dead}.tmp`, `durbar-schedules.json.${dead}x.tmp`]);
     for (const n of names) fs.writeFileSync(path.join(dir, n), 'PROMPT');
-    const lio: LoadIo = { fs, pause: () => undefined, alive: (p) => p === live, pid: mine };
+    const lio: LoadIo = { fs: { readFileSync: fs.readFileSync, existsSync: fs.existsSync, readdirSync: fs.readdirSync, renameSync: fs.renameSync, rmSync: fs.rmSync }, pause: () => undefined, alive: (p) => p === live, pid: mine };
     loadSchedules(file, T0, lio);
     const left = fs.readdirSync(dir);
     assert.ok(!left.includes(`durbar-schedules.json.${dead}.tmp`), 'a dead process\'s temp file is removed');
@@ -590,7 +591,7 @@ async function main(): Promise<void> {
       fs.writeFileSync(file, good);
       for (const f of fs.readdirSync(dir)) if (f !== 'durbar-schedules.json') fs.rmSync(path.join(dir, f));
       let reads = 0, paused = 0;
-      const lio: LoadIo = { fs: { ...fs, readFileSync: ((f: string, e: BufferEncoding) => { if (++reads <= fails) throw Object.assign(new Error('busy'), { code: 'EBUSY' }); return fs.readFileSync(f, e); }) as typeof fs.readFileSync }, pause: (ms) => { paused += ms; }, alive: () => true, pid: process.pid };
+      const lio: LoadIo = { fs: { existsSync: fs.existsSync, readdirSync: fs.readdirSync, renameSync: fs.renameSync, rmSync: fs.rmSync, readFileSync: ((f: string, e: BufferEncoding) => { if (++reads <= fails) throw Object.assign(new Error('busy'), { code: 'EBUSY' }); return fs.readFileSync(f, e); }) as typeof fs.readFileSync }, pause: (ms) => { paused += ms; }, alive: () => true, pid: process.pid };
       const d = loadSchedules(file, T0, lio);
       assert.strictEqual(paused, 200, 'one short pause');
       assert.strictEqual(d.pausedAll, !moved, moved ? 'two failures: empty' : 'one failure: the good file loaded');
@@ -599,7 +600,7 @@ async function main(): Promise<void> {
     // invalid content is not retried
     fs.writeFileSync(file, '{');
     let p = 0;
-    loadSchedules(file, T0, { fs, pause: () => { p++; }, alive: () => true, pid: process.pid });
+    loadSchedules(file, T0, { fs: { readFileSync: fs.readFileSync, existsSync: fs.existsSync, readdirSync: fs.readdirSync, renameSync: fs.renameSync, rmSync: fs.rmSync }, pause: () => { p++; }, alive: () => true, pid: process.pid });
     assert.strictEqual(p, 0, 'invalid content is set aside at once');
     fs.rmSync(dir, { recursive: true, force: true });
   }

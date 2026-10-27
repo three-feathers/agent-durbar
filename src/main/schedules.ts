@@ -1144,7 +1144,7 @@ export function loadSchedules(file: string, now: number, io: LoadIo = realLoadIo
  * schedules start empty. True when it is out of the way (or gone); false when the move failed: the file is then remembered, and
  * `saveSchedules` retries the move and refuses to write until it works.
  */
-function setAside(file: string, now: number, io: LoadIo): boolean {
+function setAside(file: string, now: number, io: { fs: Pick<typeof fs, 'existsSync' | 'renameSync'> }): boolean {
   try {
     if (!io.fs.existsSync(file)) { pendingAside.delete(file); return true; }
     const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
@@ -1174,7 +1174,7 @@ function removeStaleTemps(file: string, io: LoadIo): void {
 
 /** What `saveSchedules` needs from the system; tests inject failures and the platform. */
 export interface SaveIo {
-  fs: Pick<typeof fs, 'openSync' | 'writeSync' | 'fsyncSync' | 'closeSync' | 'renameSync' | 'rmSync'>;
+  fs: Pick<typeof fs, 'openSync' | 'writeSync' | 'fsyncSync' | 'closeSync' | 'renameSync' | 'rmSync' | 'existsSync'>;
   platform: NodeJS.Platform;
   /** A short blocking pause (win32 retry). */
   pause(ms: number): void;
@@ -1187,7 +1187,7 @@ export function saveSchedules(file: string, doc: SchedulesDoc, io: SaveIo = real
   // written beside the file, then renamed over it: a crash or a full disk mid-write leaves the old file whole (a torn file would load as "no schedules")
   // the process id is in the name: two instances never share a temp file (there is no single-instance lock)
   // a file that could not be set aside is still there: try the move again first, and never write over it
-  if (pendingAside.has(file) && !setAside(file, Date.now(), { ...realLoadIo, fs: { ...fs, renameSync: io.fs.renameSync } })) return false;
+  if (pendingAside.has(file) && !setAside(file, Date.now(), { fs: { existsSync: io.fs.existsSync, renameSync: io.fs.renameSync } })) return false;
   const tmp = `${file}.${process.pid}.tmp`;
   try {
     const buf = Buffer.from(JSON.stringify(doc, (k, v: unknown) => (k === 'hold' || k === 'inPass' ? undefined : v), 2), 'utf8');
