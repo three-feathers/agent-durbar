@@ -11,7 +11,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { verifyTarball } = require('./verify-tarball');
+const { fetchVerified } = require('./verify-tarball');
 
 const VALID = ['darwin-arm64', 'darwin-x64', 'linux-x64', 'linux-arm64', 'win32-x64', 'win32-arm64'];
 const target = process.argv[2] || `${process.platform}-${process.arch}`;
@@ -27,25 +27,29 @@ const pkgDir = path.join(scope, pkgName);
 
 if (!fs.existsSync(path.join(pkgDir, 'package.json'))) {
   console.log(`prepare-runtime: fetching @github/${pkgName}@${version}`);
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-rt-'));
-  try {
-    const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-    // npm.cmd needs a shell on Windows; all arguments here are fixed strings, none from user input.
-    const out = execFileSync(npm, ['pack', `@github/${pkgName}@${version}`, '--pack-destination', tmp, '--silent'], {
-      encoding: 'utf8',
-      shell: process.platform === 'win32',
-    }).trim().split(/\r?\n/).pop();
-    const tgz = path.join(tmp, out);
-    // spec 008 FR-133: refuse a tarball that does not match package-lock.json (before anything is unpacked)
-    const check = verifyTarball(tgz, path.join(__dirname, '..', 'package-lock.json'), `@github/${pkgName}`, version);
-    if (!check.ok) {
-      console.error(`prepare-runtime: refusing @github/${pkgName}@${version}: ${check.reason}`);
-      process.exit(1);
-    }
-    fs.mkdirSync(pkgDir, { recursive: true });
-    execFileSync('tar', ['-xzf', tgz, '-C', pkgDir, '--strip-components=1'], { stdio: 'inherit' });
-  } finally {
-    fs.rmSync(tmp, { recursive: true, force: true });
+  const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  // spec 008 FR-133: fetchVerified downloads, checks the tarball against package-lock.json, and only then unpacks; it always cleans up
+  const res = fetchVerified({
+    tmpRoot: os.tmpdir(),
+    lockPath: path.join(__dirname, '..', 'package-lock.json'),
+    packageName: `@github/${pkgName}`,
+    version,
+    pack: (tmp) => {
+      // npm.cmd needs a shell on Windows; all arguments here are fixed strings, none from user input.
+      const out = execFileSync(npm, ['pack', `@github/${pkgName}@${version}`, '--pack-destination', tmp, '--silent'], {
+        encoding: 'utf8',
+        shell: process.platform === 'win32',
+      }).trim().split(/\r?\n/).pop();
+      return path.join(tmp, out);
+    },
+    extract: (tgz) => {
+      fs.mkdirSync(pkgDir, { recursive: true });
+      execFileSync('tar', ['-xzf', tgz, '-C', pkgDir, '--strip-components=1'], { stdio: 'inherit' });
+    },
+  });
+  if (!res.ok) {
+    console.error(`prepare-runtime: refusing @github/${pkgName}@${version}: ${res.reason}`);
+    process.exit(1);
   }
 }
 for (const name of fs.readdirSync(scope)) {

@@ -2,6 +2,7 @@
 // exact package and version, so a tampered or swapped download is refused instead of unpacked and bundled.
 const crypto = require('crypto');
 const fs = require('fs');
+const path = require('path');
 
 // Returns { ok: true } or { ok: false, reason }. Never throws for a bad input; the caller prints the reason and exits non-zero.
 function verifyTarball(tgzPath, lockPath, packageName, version) {
@@ -27,4 +28,19 @@ function verifyTarball(tgzPath, lockPath, packageName, version) {
   return { ok: true };
 }
 
-module.exports = { verifyTarball };
+// Download, verify, then unpack, in that order; the temp folder (with the tarball) is removed on every path, refusals included.
+// pack(tmp) returns the tarball path; extract(tgz) unpacks it. Both are injected so a test can use fakes. Returns { ok, reason }.
+function fetchVerified({ tmpRoot, pack, extract, lockPath, packageName, version, verify = verifyTarball }) {
+  const tmp = fs.mkdtempSync(path.join(tmpRoot, 'durbar-rt-'));
+  try {
+    const tgz = pack(tmp);
+    const check = verify(tgz, lockPath, packageName, version);
+    if (!check || check.ok !== true) return { ok: false, reason: (check && check.reason) || 'verification failed' };
+    extract(tgz);
+    return { ok: true };
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+module.exports = { verifyTarball, fetchVerified };

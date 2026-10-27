@@ -549,6 +549,8 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   assert.match(jobs['draft-release'], /^ {4}needs: \[verify, build\]\n {4}permissions:\n {6}contents: write\n {6}id-token: write[^\n]*\n {6}attestations: write\n {4}steps:/m, 'draft-release alone may write and attest, after both');
   // spec 008 FR-132: build provenance for every asset, pinned by full SHA, only in the job that holds the files
   assert.match(jobs['draft-release'], /uses: actions\/attest-build-provenance@[0-9a-f]{40} # v[\d.]+\n {8}with:\n {10}subject-path: dist-artifacts\/\*\n/, 'draft-release attests every asset');
+  const dr = jobs['draft-release'];
+  assert.ok(dr.indexOf('attest-build-provenance') > dr.indexOf('sha256sum') && dr.indexOf('attest-build-provenance') < dr.indexOf('gh release upload') && dr.indexOf('attest-build-provenance') < dr.indexOf('gh release create'), 'attest after the checksums and before any upload or release create');
   assert.ok(!/id-token|attestations:/.test(jobs.verify + jobs.build), 'only draft-release gets the attestation permissions');
   assert.match(jobs['draft-release'], /pattern: agent-durbar-\*/, 'the packages only, not the notes file, become release assets');
   // spec 008 FR-129: always a draft; pre-release or not comes from verify's outputs (releaseKind), not a second rule in YAML
