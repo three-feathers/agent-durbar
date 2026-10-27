@@ -14,6 +14,10 @@ const api: DurbarApi = {
   version: () => ipcRenderer.invoke('app:version'),
   addFolder: (permMode, opts) => ipcRenderer.invoke('agents:addFolder', permMode, opts),
   addWorkspaceFile: (permMode, opts) => ipcRenderer.invoke('agents:addWorkspaceFile', permMode, opts),
+  // spec 093 FR-081: create a folder; the window never passes a path (main picks the parent and answers with a token)
+  createPickParent: () => ipcRenderer.invoke('folders:createPickParent'),
+  createCheck: (req) => ipcRenderer.invoke('folders:createCheck', req),
+  createFolder: (req, permMode, opts) => ipcRenderer.invoke('folders:create', req, permMode, opts),
   newSession: (id, opts) => ipcRenderer.invoke('agents:newSession', id, opts),
   listModels: (kind) => ipcRenderer.invoke('models:list', kind),
   orgPolicyView: () => ipcRenderer.invoke('orgpolicy:view'),
@@ -191,8 +195,8 @@ const api: DurbarApi = {
   onAgentRenamed: (cb) => sub('agents:renamed', cb),
   // spec 052 FR-083, FR-085: the Mac app menu's Settings… item, full screen (the top bar's traffic-light room) and the platform
   onMenuSettings: (cb) => sub<null>('menu:settings', () => cb()),
-  // spec 052 FR-164: File > Add Folder… / Add VS Code Workspace…; only the two known words pass
-  onMenuAdd: (cb) => sub<unknown>('menu:add', (k) => { if (k === 'folder' || k === 'workspace') cb(k); }),
+  // spec 052 FR-164: File > Add Folder… / Add VS Code Workspace…; spec 093 FR-001a: File > New Folder… ('new'); only the known words pass
+  onMenuAdd: (cb) => sub<unknown>('menu:add', (k) => { if (k === 'folder' || k === 'workspace' || k === 'new') cb(k); }),
   onFullScreen: (cb) => sub<boolean>('window:fullScreen', (on) => cb(on === true)),
   // spec 052 FR-085: a double-click on a drag area of the top bar (Mac only); main reads the system setting
   titleDoubleClick: () => ipcRenderer.send('window:titleDoubleClick'),

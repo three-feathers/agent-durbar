@@ -1,10 +1,12 @@
 /**
- * App settings kept as one small JSON file in userData (spec 011 FR-012): today only the global default AI-credit cap.
- * Numbers only; no tokens, no content. Tolerant read, atomic write, failures swallowed (like FolderStore).
+ * App settings kept as one small JSON file in userData (spec 011 FR-012): the global default AI-credit cap and the app's own choices.
+ * No tokens, no content. One path: spec 093 FR-006's `newFolderParent` (where the last new folder was created; a path, never a
+ * token). Tolerant read, atomic write, failures swallowed (like FolderStore).
  */
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomInt } from 'crypto';
+import { parseNewFolderParent } from '../shared/newfolder';
 import { ANNOUNCE_APPS, parseAnnounced, parseCap, parseSandboxAlways, parseSettings, parseThemeId } from '../shared/credits';
 import type { AppSettings } from '../shared/credits';
 import { addCustomPlace, removeCustomPlace, setPlaceEntry, updateCustomPlace } from '../shared/places';
@@ -55,6 +57,19 @@ export class SettingsStore {
     this.s = next;
     this.save();
     return cap;
+  }
+
+  /** Spec 093 FR-006: the parent of the last folder created from + Folder, when it is a valid absolute path. */
+  get newFolderParent(): string | undefined {
+    return this.s.newFolderParent;
+  }
+
+  /** Spec 093 FR-006: remembered after a successful create only (the caller's rule); an invalid path is not stored. */
+  setNewFolderParent(v: unknown): void {
+    const p = parseNewFolderParent(v);
+    if (!p || p === this.s.newFolderParent) return;
+    this.s = { ...this.s, newFolderParent: p };
+    this.save();
   }
 
   /** Spec 080 FR-025d (Q2): the session browser's one-time note was accepted. */

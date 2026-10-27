@@ -2518,6 +2518,17 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     };
     let started = false;
     let extra = 0;
+    /* spec 093: the simulator's own parent pick (one at a time) and its canned name refusals (main's rules are tested in test:newfolder) */
+    const simNewFolder = { token: '', n: 0 };
+    const simNewFolderCheck = (req: { kind?: unknown; name?: unknown } | null | undefined): { ok: boolean; error?: string } => {
+      const n = req && typeof req.name === 'string' ? req.name : '';
+      if (!req || (req.kind !== 'init' && req.kind !== 'empty')) return { ok: false, error: 'Choose what to create.' };
+      if (!n) return { ok: false, error: 'Type a name for the new folder.' };
+      if (/[\\/]/.test(n)) return { ok: false, error: 'A single folder name, without / or \\.' };
+      if (/^(con|prn|aux|nul|conin\$|conout\$|com[0-9]|lpt[0-9]) *(\.|$)/i.test(n)) return { ok: false, error: 'That name is reserved on Windows (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-9, LPT0-9). Choose another.' };
+      if (n === '.' || n === '..') return { ok: false, error: 'Use a name other than . or ..' };
+      return { ok: true };
+    };
     type HsCb = (p: never) => void;
     const simHarness: { progress: HsCb[]; done: HsCb[]; running: null | { kind: string; finish: () => void } } = { progress: [], done: [], running: null };
     /*
@@ -2674,6 +2685,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       onHarnessProgress: (cb) => { simHarness.progress.push(cb); return () => { simHarness.progress = simHarness.progress.filter((x) => x !== cb); }; },
       onHarnessDone: (cb) => { simHarness.done.push(cb); return () => { simHarness.done = simHarness.done.filter((x) => x !== cb); }; },
       addFolder: async (_mode, o) => {
+        /* a driver's probe (shots-074): count the call and add nothing, so a shortcut check has no side effect */
+        const probe = typeof window !== 'undefined' ? (window as unknown as { __simAddFolderProbe?: { n: number } }).__simAddFolderProbe : undefined;
+        if (probe) { probe.n++; return { ok: true, agents: [] }; }
         const bad = o && o.adapterId !== undefined ? notReady(o.adapterId) : undefined;
         if (bad) return { ok: false, agents: [], error: bad }; // like main: nothing starts, nothing is written
         extra++;
@@ -2690,6 +2704,37 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true, agents: [], ...(home ? { warnings: [{ name: 'home', kind: 'home' as const }] } : {}) };
       },
       addWorkspaceFile: async () => ({ ok: true, agents: [] }),
+      /* spec 093 FR-081: create a folder, faked in the window: no process, nothing on disk, main's channels stay closed. The parent is
+         the simulator's own (~/work) behind its own token; canned refusals; the new room starts in the mode the window passed (validMode's
+         rule). A driver reads the last request in window.__simNewFolderLast and can cancel the picker with window.__simNewFolderPickCancel. */
+      createPickParent: async () => {
+        if (typeof window !== 'undefined' && (window as unknown as { __simNewFolderPickCancel?: boolean }).__simNewFolderPickCancel) return { ok: false as const, cancelled: true as const };
+        simNewFolder.token = 'sim-pick-' + ++simNewFolder.n;
+        return { ok: true as const, token: simNewFolder.token, parent: '~/work' };
+      },
+      createCheck: async (req) => simNewFolderCheck(req),
+      createFolder: async (req, mode, o) => {
+        if (typeof window !== 'undefined') (window as unknown as { __simNewFolderLast?: unknown }).__simNewFolderLast = { req: { ...req }, mode, opts: { ...(o || {}) } };
+        const no = (error: string, retry?: 'name' | 'place') => ({ ok: false, agents: [] as AgentInfo[], error, ...(retry ? { retry } : {}) });
+        if (!req || (req.kind !== 'init' && req.kind !== 'empty')) return no('Choose what to create.');
+        if (req.token !== simNewFolder.token) return no('Choose the place again.', 'place');
+        const chk = simNewFolderCheck(req);
+        if (!chk.ok) return no(chk.error || '', 'name');
+        const bad = o && o.adapterId !== undefined ? notReady(o.adapterId) : undefined;
+        if (bad) return no(bad);
+        const cwd = '~/work/' + req.name;
+        if (sims.some((x) => x.info.cwd === cwd)) return no(`A folder or file named ${req.name} already exists there.`, 'name');
+        simNewFolder.token = '';
+        const floor = o && typeof o.floor === 'string' && floorsList.some((f) => f.id === o.floor) ? o.floor : 'ground';
+        if (o && o.floor !== undefined) lastFloor = floor;
+        folderFloor.set(cwd, floor);
+        const permMode = mode === 'ask' || mode === 'allow' ? mode : 'read-only';
+        const info = { id: 'sim-nf' + ++simNewFolder.n, name: req.name, cwd, folders: [cwd], permMode, floor, adapterId: mixed && o && o.adapterId ? o.adapterId : 'copilot' } as AgentInfo;
+        info.renameCap = caps(info.adapterId ?? 'copilot').renameSession;
+        sims.push({ info, room: info.name, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: [], grants: new Map() });
+        addedListeners.forEach((l) => l(info));
+        return { ok: true, agents: [], name: req.name };
+      },
       listAgents: async () => {
         if (!started) {
           started = true;

@@ -193,6 +193,7 @@ module.exports = async (ctx) => {
     // adding with basic chosen: a new folder starts Read-only (the simulator creates it with the kind and mode it was given)
     await setSel('kindSel', 'basic');
     await js(`document.getElementById('addFolder').click()`);
+    assert.ok(await until(`(()=>{const b=[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>x.textContent==='Add existing folder…');if(b)b.click();return !!b})()`, 5000), 'spec 093: + Folder asks; Add existing folder… is today\'s path');
     assert.ok(await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=16`, 3000), 'a basic folder was added');
     await setSel('kindSel', 'copilot');
 
