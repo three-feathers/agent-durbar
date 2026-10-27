@@ -63,3 +63,4 @@ Review notes (Mac coordinator):
 22. Added `batch6/monster-mummy-resting` and `-working` (2026-10-27). The mummy's *waiting* is still missing.
 23. Added `batch6/monster-mummy-waiting.webp` (2026-10-27). The mummy now has all 3 poses.
 24. `batch6/pirate-hook-*` were replaced with the cartoon-style redo (2026-10-27): *resting* has closed eyes and the tankard in the hand and hook, *working* shows no hands. The hook pirate is now complete and consistent.
+25. Added `batch6/`: the **panda** (all 3 poses) and the **owl** (*resting*, *waiting*; *working* missing), both in cartoon style (2026-10-27). The owl's *waiting* is cropped low and wing-heavy (minor).
