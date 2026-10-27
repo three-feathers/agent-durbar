@@ -14,7 +14,11 @@ Paco (owner) uploaded these on 2026-10-27, made with ChatGPT. They were converte
 | Pirate | eyepatch pirate (orange bandana) | yes | yes | yes |
 | Pirate | captain (tricorn hat) | yes | yes | yes |
 | Royal | alchemist (glasses, apron) | yes | yes | yes |
-| Royal | queen (blue hair, tiara) | yes | yes | yes |
+| Royal | princess (blue hair, small tiara) | yes | yes | yes |
+| Royal | knight (armour, helmet) | yes | yes | yes |
+| Royal | jester | yes | yes | yes |
+| Royal | queen (purple braids, emerald crown) | yes | yes | yes |
+| Royal | king (red hair and beard, crown) | yes | yes | yes |
 
 Review notes (Mac coordinator):
 1. In *waiting*, the raccoon has a purple mohawk; in the other two poses its head fur is grey. One look must be chosen and the other poses redone.
@@ -25,7 +29,8 @@ Review notes (Mac coordinator):
    Clean them with an alpha threshold or erode, then check at desk size.
 3. Missing poses: cavewoman *waiting* and *resting*; punk cat *waiting*; ghost *working* and *waiting*.
 4. Second batch (2026-10-27, the same evening):
-   - edge specks around the waving hand of the captain, the queen and the alchemist;
+   - edge specks around the waving hand of the captain, the princess and the alchemist;
    - the alchemist's *waiting* also has a red line along its bottom edge;
-   - the queen's tiara differs in each pose (minor);
+   - the princess's tiara differs in each pose (minor);
    - missing pose: the cabin boy's *resting*.
+5. Third batch (2026-10-27): the Royal crew is complete (6 characters, all 3 poses). Edge specks around the waving hand of the knight and the king. The crown's shape varies a little between the king's poses (minor).
