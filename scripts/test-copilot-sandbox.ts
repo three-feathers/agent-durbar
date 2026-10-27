@@ -360,8 +360,8 @@ async function main(): Promise<void> {
   // ---- T069 AC4 (FR-022d): a sign-in refresh resumes Allow all without the floor; Ask first gets it again ----
   {
     class SbxRestarting extends RestartingFakeCopilot {
-      constructor() {
-        super();
+      constructor(prep: (c: FakeClient, n: number) => void = () => undefined) {
+        super(prep);
         this.sandboxPlatform = 'linux';
         this.sandboxHome = () => '/home/me';
         this.sandboxPathDirs = () => ['/usr/bin'];
@@ -392,6 +392,21 @@ async function main(): Promise<void> {
     assert.strictEqual(updates(m.fake, again).length, 0);
     assert.strictEqual(last(m.events, again), null, 'AC4: a fresh adapter resuming Allow all: null');
     await m.ad.dispose();
+    // review on PR 823: a session the refresh cannot resume is dropped, and its kept floor ends with it (dropAfterReconnect)
+    let dropId = '';
+    const ad3 = new SbxRestarting((c, n) => { if (n === 1) c.resumeFail.add(dropId); });
+    const ev3: AgentEvent[] = [];
+    ad3.onEvent((e) => ev3.push(e));
+    dropId = await ad3.start({ workspace: WS, quiet: true, permissionMode: 'read-only' });
+    ad3.setPermMode!(dropId, 'allow');
+    await new Promise((r) => setTimeout(r, 5));
+    assert.strictEqual(last(ev3, dropId)?.untilNewSession, true, 'before: the kept floor');
+    const k = ev3.length;
+    await ad3.refreshAuth();
+    assert.ok(!ad3.isLive(dropId), 'the refresh could not resume it: dropped');
+    const seq = ev3.slice(k).filter((e) => e.sessionId === dropId && (e.type === 'sandbox' || (e.type === 'status' && e.status === 'stopped'))).map((e) => e.type === 'sandbox' ? 'sandbox:' + JSON.stringify(e.sandbox) : 'status:stopped');
+    assert.deepStrictEqual(seq, ['sandbox:null', 'status:stopped'], 'a dropped session: the kept floor is cleared, then it stops: ' + JSON.stringify(seq));
+    await ad3.dispose();
   }
 
   // ---- Windows and macOS: home ancestors compared case-insensitively; mechanism names ----
