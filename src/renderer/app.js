@@ -3658,7 +3658,7 @@ document.addEventListener('scroll',()=>INL().follow(),{capture:true,passive:true
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='long'?'long':qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':qs.get('simreply')==='secrets'?'secrets':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', sched:qs.get('simsched')==='1', schedFire:Math.max(0,Math.min(600,parseInt(qs.get('simschedfire')||'0',10)||0)), seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), edits:qs.get('simedits')==='1', floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='long'?'long':qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':qs.get('simreply')==='secrets'?'secrets':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', sched:qs.get('simsched')==='1',ws:qs.get('simws')==='1', schedFire:Math.max(0,Math.min(600,parseInt(qs.get('simschedfire')||'0',10)||0)), seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), edits:qs.get('simedits')==='1', floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const BP = window.DurbarBrowserPane; /* spec 080 T015: the session browser's tabs and bar; it talks to the real preload API (main refuses it outside the app's own page) */
 /* spec 080 FR-025d (Q3): a hidden session's page dialog brings that session's chat forward on its Browser tab, at most once per session until the user opens that chat themselves */
@@ -5541,7 +5541,7 @@ function openFolderMenu(r,x,y,anchor){
     m.setAttribute('aria-label','Folder '+r.name);
     const here=canMove&&floorById(r.floor);
     m.innerHTML=(bridge.newSession&&anyKindReady()?it('new','New session','Another agent with its own chat here'):'')
-      +(bridge.listSchedules?it('sched','Schedules',(()=>{const n=schedulesOf(r).filter(s=>!s.done).length;return n?n+' scheduled, '+(nextRunOf(schedulesOf(r))?'next '+nextRunOf(schedulesOf(r)):'paused'):'Prompts sent here at a time, every day or at an interval';})()):'')
+      +(bridge.listSchedules?it('sched',SH().hereLabel(schedulesOf(r).filter(s=>!s.done).length),(()=>{const n=schedulesOf(r).filter(s=>!s.done).length;return n?n+' scheduled, '+(nextRunOf(schedulesOf(r))?'next '+nextRunOf(schedulesOf(r)):'paused'):'Prompts sent here at a time, every day or at an interval';})()):'')
       +(bridge.renameFolder?it('rename','Rename…','A display name for this room'):'')
       +(canMove?`<button type="button" role="menuitem" data-fact="floor" aria-haspopup="menu" aria-expanded="false"><span class="mt"><b>Move to floor</b><small>${esc(here?'Now on '+here.name+'. Its agents go with it':'Its agents go with it')}</small></span><span class="ck" aria-hidden="true">▸</span></button>`:'')
       +(bridge.setFolderHidden?it('hide','Hide','Out of the office; its sessions keep running'):'')
@@ -6365,7 +6365,7 @@ const schedulesOf=r=>SCHED.schedules.filter(s=>s.folder===folderKeyOf(r));
 const clock=ms=>{const d=new Date(ms),n=new Date(),t=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});return d.toDateString()===n.toDateString()?t:d.toLocaleDateString([],{month:'short',day:'numeric'})+' '+t;};
 const recurringS=s=>s.every!==undefined||!!s.rule;
 const nextRunOf=ss=>{const t=ss.filter(s=>!s.paused&&!s.done).map(s=>recurringS(s)?s.next:s.at).filter(Boolean).sort((a,b)=>a-b)[0];return t&&!SCHED.pausedAll?clock(t):'';};
-const OUTCOME_WORD={sent:'sent','skipped-busy':'skipped: the agent was busy','skipped-paused':'skipped: paused','skipped-cap':'not sent: reached its limit','skipped-ended':'not sent: the session has ended',missed:'missed: the app was closed',failed:'could not send',held:'held: the door is closed (Do not disturb)','skipped-door-full':'not kept: the closed door already holds as many prompts as it can'};
+const SH=()=>window.DurbarSchedHist; /* spec 044 FR-040: the words of every outcome live in schedhist.js (the row's last-run line and the history share them) */
 const DAY3=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 /* spec 044 FR-012: "every day at 08:30", "weekdays at 09:00", "weekly on Mon, Thu at 17:00" (Monday first) */
 const ruleText=r=>r.kind==='weekdays'?'weekdays at '+r.time:r.kind==='weekly'?'weekly on '+[...(r.days||[])].sort((a,b)=>((a+6)%7)-((b+6)%7)).map(d=>DAY3[d]).join(', ')+' at '+r.time:'every day at '+r.time;
@@ -6377,12 +6377,13 @@ function schedLine(s){
   const st=s.done?' · done':s.paused?(s.pausedReason==='session-ended'?' · Paused: the session has ended':s.pausedReason==='cap'?' · Paused: reached its limit':' · paused'):(recurringS(s)&&s.next&&!SCHED.pausedAll?' · next '+clock(s.next):'');
   return whenOf(s)+(s.target?' · → '+((t=>t?SN().shortName(t.name,40):null)(agents.find(x=>x.id===s.target.session&&x.live))||s.target.name||'one session'):'')+st
     +(s.cap?' · spent '+capAmt(s.spent||0,s.cap.unit)+' of '+capAmt(s.cap.amount,s.cap.unit)+(s.spentUnknown?' (the spend was not fully reported)':''):'')
-    +(s.last?' · last '+clock(s.last.at)+': '+(OUTCOME_WORD[s.last.outcome]||s.last.outcome):'');
+    +(s.last?' · last '+clock(s.last.at)+': '+SH().outcomeWord(s.last.outcome):'');
 }
 /* the row's buttons; `k` is the data attribute (sc in the dialog, ss in Settings). An ended session cannot be resumed, only moved to the folder's agent (FR-014). */
 const schedBtns=(s,k)=>`<button class="btn" type="button" data-${k}="edit" data-id="${esc(s.id)}">Edit…</button>`+(s.done?'':s.paused&&s.pausedReason==='session-ended'?`<button class="btn" type="button" data-${k}="retarget" data-id="${esc(s.id)}" title="Send it to this folder's agent from now on, and resume it">Use the folder's agent</button>`
   :`<button class="btn" type="button" data-${k}="pause" data-id="${esc(s.id)}"${s.pausedReason==='cap'?' title="Resume starts counting its spending again from zero"':''}>${s.paused?'Resume':'Pause'}</button>`)
-  +`<button class="btn danger" type="button" data-${k}="del" data-id="${esc(s.id)}">Delete</button>`;
+  +`<button class="btn danger" type="button" data-${k}="del" data-id="${esc(s.id)}">Delete</button>`
+  +`<button class="btn" type="button" data-${k}="hist" data-id="${esc(s.id)}" aria-expanded="${HIST_OPEN.has(k+':'+s.id)}" aria-controls="sh-${k}-${esc(s.id)}" title="When it ran and what happened">History</button>`;
 /* spec 044 FR-025: the prompt is one line cut to 90 characters; it is a button that shows the whole prompt under the row (aria-expanded) and folds it again; its tooltip is at most 300 characters (spec 052 FR-168) */
 const SCHED_OPEN=new Set();
 const promptToggle=(key,prompt)=>{const open=SCHED_OPEN.has(key);return `<button class="sc-p" type="button" data-pkey="${esc(key)}" aria-expanded="${open}" title="${esc(DurbarCutText.cutText(prompt,300))}">${esc(DurbarCutText.cutText(prompt,90))}</button><p class="sc-full"${open?'':' hidden'}>${esc(prompt)}</p>`;};
@@ -6392,7 +6393,68 @@ document.addEventListener('click',e=>{
   if(open)SCHED_OPEN.add(k);else SCHED_OPEN.delete(k);
   b.setAttribute('aria-expanded',String(open));const f=b.nextElementSibling;if(f)f.hidden=!open;
 });
-const schedRow=(s,k)=>`<div class="sc-row${s.paused||s.done?' off':''}" data-id="${esc(s.id)}"><div class="sc-t">${promptToggle('s:'+s.id,s.prompt)}<small>${esc(schedLine(s))}</small></div>${schedBtns(s,k)}</div>`;
+const schedRow=(s,k)=>`<div class="sc-row${s.paused||s.done?' off':''}" data-id="${esc(s.id)}"><div class="sc-t">${promptToggle('s:'+s.id,s.prompt)}<small>${esc(schedLine(s))}</small></div>${schedBtns(s,k)}<ol class="sc-hist" id="sh-${k}-${esc(s.id)}" aria-label="${esc(SH().listName(DurbarCutText.cutText(s.prompt,40)))}"${HIST_OPEN.has(k+':'+s.id)?'':' hidden'}></ol></div>`; /* the list follows the buttons: Tab goes History, then its Open chat buttons */
+/* spec 044 FR-040/FR-041/FR-043: a schedule's run history, inline under its row (dialog and Settings). Main keeps the log; the window asks
+   for it only while a list is open, and again when a change arrives. */
+const HIST_OPEN=new Set(); /* "<sc|ss>:<schedule id>" of the open lists: a repaint keeps them open */
+const HIST_ALL=new Set(); /* the same keys when all runs show, not the first 10 */
+const HIST_RUNS=new Map(); /* schedule id -> its runs, newest first, as last asked */
+const HIST_SEQ=new Map();
+const HIST_FIRST=10;
+const histName=sid=>{const a=liveById(sid);return a?SN().shortName(a.name||'',40):'';};
+function histItem(run){
+  const x=SH().runText(run,clock,histName);
+  return `<li class="sh-i sh-${esc(x.kind)}" data-at="${Number(run.at)||0}">${SH().iconSvg(x.kind)}<span class="sh-tm">${esc(x.time)}</span><span class="sh-w">${esc(x.words)}${x.fold?' · '+esc(x.fold):''}</span>`
+    +(x.session&&!x.closed?`<button class="btn sh-chat" type="button" data-hchat="${esc(x.session)}" aria-label="Open chat: ${esc(x.chat)}">Open chat</button>`:x.closed?'<span class="sh-closed">chat closed</span>':'')+'</li>';
+}
+function histPaint(){
+  for(const key of HIST_OPEN){
+    const k=key.slice(0,2),id=key.slice(3),host=document.getElementById('sh-'+k+'-'+id);if(!host)continue;
+    const runs=HIST_RUNS.get(id);
+    if(!runs){host.innerHTML='';continue;}
+    if(!runs.length){const s=SCHED.schedules.find(x=>x.id===id);host.innerHTML=`<li class="sh-empty">${esc(SH().emptyText(s&&s.last,clock))}</li>`;continue;}
+    const all=HIST_ALL.has(key)||runs.length<=HIST_FIRST;
+    host.innerHTML=runs.slice(0,all?runs.length:HIST_FIRST).map(histItem).join('')+(all?'':`<li class="sh-more"><button class="btn" type="button" data-hall="${esc(key)}">Show all (${runs.length})</button></li>`);
+  }
+}
+async function histLoad(id){
+  if(!bridge||!bridge.scheduleRuns)return;
+  const n=(HIST_SEQ.get(id)||0)+1;HIST_SEQ.set(id,n);
+  const r=await bridge.scheduleRuns(id).catch(()=>null);
+  if(HIST_SEQ.get(id)!==n)return;
+  if(r&&r.ok&&Array.isArray(r.runs))HIST_RUNS.set(id,r.runs);
+  histPaint();
+}
+/* a list painted open by a repaint (the dialog opened, Settings built) that was never asked for yet asks now */
+function histEnsure(){for(const id of new Set([...HIST_OPEN].filter(k=>document.getElementById('sh-'+k.slice(0,2)+'-'+k.slice(3))).map(k=>k.slice(3))))if(!HIST_RUNS.has(id)&&!HIST_SEQ.has(id))histLoad(id);}
+/* after a change: forget what belongs to a deleted schedule, ask again for the open lists, only those */
+function histRefresh(){
+  const ids=new Set(SCHED.schedules.map(s=>s.id));
+  for(const key of [...HIST_OPEN])if(!ids.has(key.slice(3)))HIST_OPEN.delete(key);
+  for(const key of [...HIST_ALL])if(!HIST_OPEN.has(key))HIST_ALL.delete(key);
+  for(const id of [...HIST_RUNS.keys()])if(!ids.has(id))HIST_RUNS.delete(id);
+  histPaint();
+  /* only a list that is on screen asks (a closed dialog's list is not worth a call on every change) */
+  for(const id of new Set([...HIST_OPEN].filter(k=>document.getElementById('sh-'+k.slice(0,2)+'-'+k.slice(3))).map(k=>k.slice(3))))histLoad(id);
+}
+/* Open chat: the same as a click on its desk; the dialog or Settings closes first */
+function histOpenChat(id){
+  if(!liveById(id))return;
+  closeSchedDlg();
+  if(window.DurbarScreens&&window.DurbarScreens.isOpen())window.DurbarScreens.close();
+  if(vsViewing)leaveVsView();
+  openPanel(id,true);
+}
+document.addEventListener('click',e=>{
+  const t=e.target.closest&&e.target.closest('[data-sc="hist"],[data-ss="hist"],[data-hall],[data-hchat]');if(!t)return;
+  if(t.dataset.hchat){histOpenChat(t.dataset.hchat);return;}
+  if(t.dataset.hall){HIST_ALL.add(t.dataset.hall);histPaint();return;}
+  const key=(t.dataset.sc?'sc:':'ss:')+t.dataset.id, open=!HIST_OPEN.has(key);
+  if(open)HIST_OPEN.add(key);else{HIST_OPEN.delete(key);HIST_ALL.delete(key);}
+  t.setAttribute('aria-expanded',String(open));
+  const host=document.getElementById(t.getAttribute('aria-controls'));if(host)host.hidden=!open;
+  if(open){histPaint();histLoad(t.dataset.id);}
+});
 /* pause/resume/retarget/delete from a row (dialog or Settings) */
 async function schedAct(act,s){
   if(act==='del')await bridge.removeSchedule(s.id);
@@ -6420,6 +6482,7 @@ function renderSchedDlg(){
   const own=agents.filter(x=>x.live&&!x.parent&&x.room===r.id&&x.agentScheds&&x.agentScheds.size).flatMap(x=>[...x.agentScheds.entries()].map(([id,v])=>({x,v,id})));
   const ow=$('sdOwn');if(ow){ow.hidden=!own.length;ow.innerHTML=own.length?'<h4>Scheduled in the agent app (read-only)</h4><p class="sc-tpl-note">Made with the app\'s own commands or by the agent. Agent Durbar shows them but cannot change them; ask the agent, or use the app\'s own schedule manager.</p>'
     +own.map(({x,v,id})=>`<div class="sc-row off"><div class="sc-t">${v.prompt?promptToggle('o:'+x.id+':'+id,v.prompt):'<b>(no prompt text)</b>'}<small>${esc(ownWhen(v)+' · '+(x.name)+(v.origin==='model'?' · made by the agent':v.origin==='user'?' · made by you':''))}</small></div></div>`).join(''):'';}
+  histPaint();histEnsure();
 }
 function closeSchedDlg(){const d=$('schedDlg');if(d)d.remove();}
 /* `from`: the chat it was opened from (FR-014: then it can send to that session instead of the folder's agent) */
@@ -6526,6 +6589,7 @@ function openSchedules(r,from,opts){
       if(was)stopEdit();else{$('scPrompt').value='';if($('scCap'))$('scCap').value='';}await refreshSchedules();toast((was?'Schedule saved: ':'Schedule added: ')+esc(whenOf(res.schedule))+'.',3000);return;
     }
     const s=SCHED.schedules.find(x=>x.id===b.dataset.id);if(!s||!b.dataset.sc)return;
+    if(b.dataset.sc==='hist')return; /* the history toggle is handled by its own listener */
     if(b.dataset.sc==='edit'){startEdit(s);return;}
     await schedAct(b.dataset.sc,s);
   });
@@ -6551,7 +6615,7 @@ function openSchedules(r,from,opts){
 }
 async function refreshSchedules(){if(!bridge.listSchedules)return;SCHED=await bridge.listSchedules();schedChanged();}
 /* everything that shows schedules: the Folders panel, the open dialog, room chips (office render), Settings (spec 044 FR-009..FR-011) */
-function schedChanged(){renderSchedTop(true);renderFolders();renderSchedDlg();renderSchedSettings();scheduleRender();if(ui.selected&&$('schedHdrBtn'))updatePanelHeader();}
+function schedChanged(){renderSchedTop(true);renderFolders();renderSchedDlg();renderSchedSettings();histRefresh();scheduleRender();if(ui.selected&&$('schedHdrBtn'))updatePanelHeader();}
 document.addEventListener('change',async e=>{if(e.target&&e.target.id==='schedPauseAll'){const r=await bridge.setSchedulesPaused(e.target.checked);SCHED.pausedAll=r.pausedAll;schedChanged();}});
 if(bridge&&bridge.onSchedules){bridge.onSchedules(doc=>{SCHED=doc;schedChanged();});}
 /* spec 044 FR-011: Settings > Schedules, every folder's schedules in one list; pause, resume, delete, add (opens that folder's dialog), Pause all */
@@ -6565,11 +6629,13 @@ function renderSchedSettings(){
       +ss.map(s=>schedRow(s,'ss')).join('')+'</div>').join('')
       :'<p class="scr-note small">No schedules yet.</p>')
     +(without.length?`<div class="scr-tools"><label class="ss-add">Add a schedule to<select id="ssRoom">${without.map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label><button class="btn" type="button" data-ss="add">Add…</button></div>`:'');
+  histPaint();histEnsure();
   renderSchedTop(); /* spec 044 FR-029: the section may be on screen as soon as it is painted */
 }
 document.addEventListener('click',async e=>{
   const b=e.target.closest('#schedSet [data-ss]');if(!b)return;
   const act=b.dataset.ss;
+  if(act==='hist')return; /* the history toggle is handled by its own listener */
   if(act==='open'){const r=ROOMS.find(x=>x.id===b.dataset.room);if(r)openSchedules(r);return;}
   if(act==='add'){const r=ROOMS.find(x=>x.id===$('ssRoom').value);if(r)openSchedules(r);return;}
   const s=SCHED.schedules.find(x=>x.id===b.dataset.id);if(!s)return;
@@ -6633,7 +6699,7 @@ function renderFolders(){
   pop.innerHTML='<div class="fp-h">Folders <small>remembered across restarts</small>'+sched+'</div>'+ROOMS.map(r=>{
     const n=agents.filter(x=>!x.parent&&x.room===r.id).length, ss=schedulesOf(r).filter(s=>!s.done), nx=nextRunOf(ss);
     return `<div class="fp-row${r.hidden?' hid':''}"><div class="fp-t"><b class="fpn" title="${esc(r.name)}">${esc(r.name)}${r.hidden?' <span class="tag">hidden</span>':''}</b><small title="${esc(r.path)}">${esc(r.path)} · ${n} agent${n===1?'':'s'}${nx?' · ⏰ next '+esc(nx):''}</small></div>${renFolderBtn(r,true)}
-     ${bridge.listSchedules?`<button class="btn" type="button" data-fp="sched" data-room="${esc(r.id)}" title="Prompts sent to ${esc(r.name)} at a time or an interval, while the app is open">Schedules${ss.length?' ('+ss.length+')':''}</button>`:''}<button class="btn" type="button" data-fp="new" data-room="${esc(r.id)}">New session</button><button class="btn" type="button" data-fp="rename" data-room="${esc(r.id)}" title="Give ${esc(r.name)} a display name">Rename</button><button class="btn" type="button" data-fp="hide" data-room="${esc(r.id)}">${r.hidden?'Show':'Hide'}</button><button class="btn danger" type="button" data-fp="rm" data-room="${esc(r.id)}">Remove</button></div>`;}).join('');
+     ${bridge.listSchedules?`<button class="btn" type="button" data-fp="sched" data-room="${esc(r.id)}" title="Prompts sent to ${esc(r.name)} at a time or an interval, while the app is open">${esc(SH().hereLabel(ss.length))}</button>`:''}<button class="btn" type="button" data-fp="new" data-room="${esc(r.id)}">New session</button><button class="btn" type="button" data-fp="rename" data-room="${esc(r.id)}" title="Give ${esc(r.name)} a display name">Rename</button><button class="btn" type="button" data-fp="hide" data-room="${esc(r.id)}">${r.hidden?'Show':'Hide'}</button><button class="btn danger" type="button" data-fp="rm" data-room="${esc(r.id)}">Remove</button></div>`;}).join('');
   INL().follow(); /* spec 059 FR-023 item 5 */
 }
 async function hideFolder(r,hidden){

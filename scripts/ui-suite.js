@@ -73,6 +73,7 @@ const DRIVERS = [
   { name: 'check-sched-sendto' },
   { name: 'check-sched-edit' },
   { name: 'check-sched-top' }, // spec 044 FR-027..FR-035: the top-bar Schedules button
+  { name: 'check-sched-history' }, // spec 044 FR-040..FR-044: a schedule's run history and Schedules here (N)
   { name: 'check-question-options' },
   { name: 'check-question-visible' },
   { name: 'check-chat-no-scroll' },

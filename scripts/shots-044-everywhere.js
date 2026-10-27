@@ -5,7 +5,7 @@
  *   OUT=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 \
  *     DURBAR_DRIVER=$PWD/scripts/shots-044-everywhere.js xvfb-run -a npx electron . --no-sandbox
  *
- * At both sizes: the room's ⋯ menu has "Schedules"; after adding "Start my day" there, the room header shows a clock chip
+ * At both sizes: the room's ⋯ menu has "Schedules here"; after adding "Start my day" there, the room header shows a clock chip
  * ("1 · 08:30") that opens the same dialog; the folder's chat header has "Schedules (1)" (and its dialog a "Send to" choice,
  * Phase 2); Settings > Schedules lists it with
  * Pause and Delete. Writes 044-room-chip-<w>x<h>.png and 044-settings-<w>x<h>.png.
@@ -26,7 +26,7 @@ module.exports = async (ctx) => {
     // 1) the ⋯ menu has Schedules
     await js(`document.querySelector(${jsLiteral(`#stage [data-foldermenu="${room}"]`)}).click()`); await until(`!!document.querySelector('#modeMenu [data-fact="sched"]')`);
     const items = await js(`[...document.querySelectorAll('#modeMenu [data-fact] b')].map(b=>b.textContent)`);
-    assert.ok(items.includes('Schedules'), 'menu: ' + items.join(', '));
+    assert.ok(items.includes('Schedules here'), 'menu: ' + items.join(', '));
     await js(`document.querySelector('#modeMenu [data-fact="sched"]').click()`); await until(`!!document.getElementById('schedDlg')`);
     assert.ok(await js(`!!document.getElementById('schedDlg')`), 'the menu item opens the dialog');
     await js(`(()=>{const s=document.getElementById('scTpl');s.value='start-my-day';s.dispatchEvent(new Event('change'));return true})()`);

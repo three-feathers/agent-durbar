@@ -1003,7 +1003,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 /* scheduled prompts (spec 044) */
 .fp-h .fp-pause{margin:6px 0 2px;font-size:12px;font-weight:400;color:var(--ink-2);display:flex;gap:6px;align-items:center;cursor:pointer}
 .sched-dlg .sc-list{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;margin:6px 0 12px;max-height:240px;overflow-y:auto}
-.sched-dlg .sc-row,.sched-set .sc-row{display:flex;gap:6px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+.sched-dlg .sc-row,.sched-set .sc-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 0;border-top:1px solid var(--line)} /* wrap: the history list is a full-width line under the buttons (spec 044 FR-040) */
 .sched-dlg .sc-row.off .sc-t,.sched-set .sc-row.off .sc-t{opacity:.6}
 .sched-dlg .sc-t,.sched-set .sc-t{flex:1;min-width:0;display:flex;flex-direction:column}
 .sched-dlg .sc-t b,.sched-set .sc-t b{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1015,6 +1015,17 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .sched-dlg .sc-form h4[hidden]{display:none}
 .sched-dlg .sc-t small,.sched-set .sc-t small{font-size:11px;color:var(--muted)}
 .sched-dlg .sc-row .btn,.sched-set .sc-row .btn{height:var(--h-ctl);padding:0 10px;font-size:12px}
+/* spec 044 FR-040/FR-041: a schedule's run history under its row. Words carry the meaning; the icon is only a cue (currentColor). 12px text, wraps, never scrolls sideways. */
+.sched-dlg .sc-hist,.sched-set .sc-hist{flex:0 0 100%;list-style:none;margin:2px 0 2px;padding:0;font-size:12px;line-height:1.4;min-width:0}
+.sched-dlg .sc-hist[hidden],.sched-set .sc-hist[hidden]{display:none}
+.sched-dlg .sc-hist li,.sched-set .sc-hist li{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;padding:3px 0;border-top:1px dotted var(--line);min-width:0}
+.sched-dlg .sc-hist li:first-child,.sched-set .sc-hist li:first-child{border-top:0}
+.sched-dlg .sc-hist .sh-ic,.sched-set .sc-hist .sh-ic{flex:none;color:var(--muted)}
+.sched-dlg .sc-hist .sh-fail .sh-ic,.sched-set .sc-hist .sh-fail .sh-ic,.sched-dlg .sc-hist .sh-miss .sh-ic,.sched-set .sc-hist .sh-miss .sh-ic{color:var(--red-ink)}
+.sched-dlg .sc-hist .sh-tm,.sched-set .sc-hist .sh-tm{flex:none;color:var(--muted);font-variant-numeric:tabular-nums}
+.sched-dlg .sc-hist .sh-w,.sched-set .sc-hist .sh-w{flex:1 1 12ch;min-width:0;overflow-wrap:anywhere}
+.sched-dlg .sc-hist .sh-closed,.sched-set .sc-hist .sh-closed,.sched-dlg .sc-hist .sh-empty,.sched-set .sc-hist .sh-empty{color:var(--muted)}
+.sched-dlg .sc-hist .btn,.sched-set .sc-hist .btn{height:26px;min-height:0;padding:0 8px;font-size:12px} /* a run line stays one line tall, with or without its button */
 .sched-dlg .sc-empty,.sched-dlg .sc-paused{font-size:12px;color:var(--muted);margin:6px 0}
 .sched-dlg .sc-paused{color:var(--amber-ink,#8a5a00)}
 .sched-dlg textarea{width:100%;box-sizing:border-box;font:inherit;font-size:13px;border:1px solid var(--line-ctl);border-radius:10px;padding:8px;background:var(--surface);color:var(--ink);resize:vertical}

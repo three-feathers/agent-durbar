@@ -254,6 +254,20 @@ export interface ProfileInfo {
   mcpServers?: string[];
 }
 
+/** What a scheduled run came to (spec 044; main's `Outcome`). */
+export type ScheduleOutcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full';
+/** Spec 044 FR-036: one entry of a schedule's run log, as `scheduleRuns` returns it (newest first). Reason codes only, never text. */
+export interface ScheduleRunInfo {
+  at: number;
+  outcome: ScheduleOutcome;
+  /** The agent id the prompt went to, or would have gone to. */
+  session?: string;
+  reason?: 'no-agent' | 'send-error' | 'user' | 'agent' | 'session' | 'limit' | 'passes' | 'time' | 'no-pace' | 'errors' | 'app-closed';
+  manual?: true;
+  /** A skip repeated n times, the last at `until` (FR-037). */
+  n?: number;
+  until?: number;
+}
 /** A scheduled prompt (spec 044); the same shape as the main process's. */
 export interface ScheduleInfo {
   id: string;
@@ -268,7 +282,7 @@ export interface ScheduleInfo {
   /** Why the app paused it (FR-014, FR-015). */
   pausedReason?: 'cap' | 'session-ended';
   done?: boolean;
-  last?: { at: number; outcome: 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'skipped-door-full' };
+  last?: { at: number; outcome: ScheduleOutcome };
   /** FR-014: one session instead of the folder's agent. */
   target?: { session: string; agent: string; name?: string };
   /** FR-015: the schedule's own limit and what its runs spent. */
@@ -865,6 +879,8 @@ export interface DurbarApi {
   setSchedulesPaused?(on: boolean): Promise<{ ok: boolean; pausedAll: boolean }>;
   /** Spec 052 FR-089: one run of a schedule now ("Run missed now"), through the same path as a scheduled run. */
   runScheduleNow?(id: string): Promise<{ ok: boolean; error?: string }>;
+  /** Spec 044 FR-043: one schedule's run log, newest first; read-only. */
+  scheduleRuns?(id: string): Promise<{ ok: true; runs: ScheduleRunInfo[] } | { ok: false }>;
   /** Spec 052 FR-089: what happened while the app was closed (more than 30 minutes), or null. */
   sinceAway?(): Promise<SinceAwayInfo | null>;
   dismissSinceAway?(): Promise<{ ok: boolean }>;
