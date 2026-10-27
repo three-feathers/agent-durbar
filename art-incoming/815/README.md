@@ -5,7 +5,11 @@ Paco (owner) uploaded these on 2026-10-27, made with ChatGPT. They were converte
 | Crew | Character | working | waiting | resting |
 |---|---|---|---|---|
 | Prehistoric | caveman | yes | yes | yes |
-| Prehistoric | cavewoman | yes | - | - |
+| Prehistoric | cavewoman (braids) | yes | yes | yes |
+| Prehistoric | big beard (red hair, tooth necklace) | yes | yes | yes |
+| Prehistoric | ponytail (bone in hair) | yes | yes | yes |
+| Prehistoric | inventor (glasses) | yes | yes | yes |
+| Prehistoric | shaman (feathers, dreadlocks) | yes | yes | yes |
 | Animal Rebels | raccoon (hoodie) | yes | yes, see note 1 | yes |
 | Animal Rebels | punk cat | yes | - | yes |
 | Monster | sea creature (fins) | yes | yes | yes |
@@ -27,10 +31,11 @@ Review notes (Mac coordinator):
    - the bottom edge of the sea creature's *waiting* (a yellow line) and *working* (coloured specks);
    - the bottom edge of the raccoon's *resting*.
    Clean them with an alpha threshold or erode, then check at desk size.
-3. Missing poses: cavewoman *waiting* and *resting*; punk cat *waiting*; ghost *working* and *waiting*.
+3. Missing poses (cavewoman done in batch 4): punk cat *waiting*; ghost *working* and *waiting*.
 4. Second batch (2026-10-27, the same evening):
    - edge specks around the waving hand of the captain, the princess and the alchemist;
    - the alchemist's *waiting* also has a red line along its bottom edge;
    - the princess's tiara differs in each pose (minor);
    - missing pose: the cabin boy's *resting*.
 5. Third batch (2026-10-27): the Royal crew is complete (6 characters, all 3 poses). Edge specks around the waving hand of the knight and the king. The crown's shape varies a little between the king's poses (minor).
+6. Fourth batch (2026-10-27): the Prehistoric crew is complete (6 characters, all 3 poses). Usual specks along the bottom edge (the inventor's *working*, the cavewoman's *resting*).
