@@ -22,6 +22,7 @@ const MSG = {
   dash: 'Do not start the name with -.',
   git: 'Use a name other than .git.',
   secret: 'That looks like a secret. Use another name.',
+  surrogate: 'The name has a broken character. Type it again.',
 };
 const REFUSED: Array<[unknown, keyof typeof MSG]> = [
   ['', 'empty'], [undefined, 'empty'], [null, 'empty'], [42, 'empty'], [{}, 'empty'], [['a'], 'empty'],
@@ -29,6 +30,7 @@ const REFUSED: Array<[unknown, keyof typeof MSG]> = [
   ['a/b', 'sep'], ['a\\b', 'sep'], ['/abs', 'sep'], ['../x', 'sep'], ['C:\\x', 'sep'], ['\\\\srv\\share', 'sep'], ['x/', 'sep'],
   ['.', 'dots'], ['..', 'dots'],
   ['a\u0007b', 'hidden'], ['a\u0000', 'hidden'], ['a\nb', 'hidden'], ['a\tb', 'hidden'], ['a\u200bb', 'hidden'], ['a\u202eb', 'hidden'], ['a\u0085b', 'hidden'], ['\ufeffa', 'hidden'],
+  ['x\ud800y', 'surrogate'], ['x\udc00', 'surrogate'], ['\udbffz', 'surrogate'], ['\ude00\ud83d', 'surrogate'], ['\ud83d\ude00\ud800', 'surrogate'],
   ['a:b', 'chars'], ['C:x', 'chars'], ['a*b', 'chars'], ['a?b', 'chars'], ['a|b', 'chars'], ['a"b', 'chars'], ['a<b', 'chars'], ['a>b', 'chars'],
   ['CON', 'reserved'], ['con.txt', 'reserved'], ['Nul', 'reserved'], ['AUX', 'reserved'], ['prn.backup.md', 'reserved'], ['COM1', 'reserved'], ['com9', 'reserved'], ['LPT9.x', 'reserved'],
   ['CON .txt', 'reserved'], ['con .txt', 'reserved'], ['nul .tar.gz', 'reserved'], ['com1 .x', 'reserved'], ['AUX   .md', 'reserved'],
@@ -53,7 +55,7 @@ assert.strictEqual(new Set(Object.values(MSG)).size, Object.keys(MSG).length, 'e
 for (const rule of Object.keys(MSG)) assert.ok(REFUSED.some(([, r]) => r === rule), `the corpus covers the ${rule} rule`);
 
 // ---- accepted names (kept exactly as given) ----
-const ACCEPTED = ['shop', 'notes-app', 'My Project', 'über', '日本語', 'a.b', '.hidden', '.gitignore', 'git', 'console', 'com10', 'lpt', 'conin', 'CONOUT', 'COM10.txt', 'con-.txt', 'git~', 'git~x', '.gi t', '..git', '.git2', 'xgit~1',  'con-x', 'a-', 'a_b', ' lead', 'x'.repeat(100), '\u{1F600}'.repeat(100), 'v1.2.3', 'a%20b', 'a#b', "o'brien", 'a+b', 'a@b'];
+const ACCEPTED = ['shop', 'notes-app', 'My Project', 'über', '日本語', 'a.b', '.hidden', '.gitignore', 'git', 'console', 'com10', 'lpt', 'conin', 'CONOUT', 'COM10.txt', 'con-.txt', 'git~', 'git~x', '.gi t', '..git', '.git2', 'xgit~1',  'con-x', 'a-', 'a_b', ' lead', 'x'.repeat(100), '\u{1F600}'.repeat(100), 'a\ud83d\ude00b', '\u{10FFFD}x', 'v1.2.3', 'a%20b', 'a#b', "o'brien", 'a+b', 'a@b'];
 for (const n of ACCEPTED) assert.deepStrictEqual(checkNewFolderName(n), { ok: true, name: n }, `${JSON.stringify(n)} is accepted`);
 assert.strictEqual(NEW_FOLDER_LIMITS.name, 100);
 assert.strictEqual(NEW_FOLDER_LIMITS.winPath, 200);

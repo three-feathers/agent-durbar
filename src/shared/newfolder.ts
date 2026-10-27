@@ -45,6 +45,9 @@ export function checkNewFolderName(v: unknown): NewFolderNameCheck {
   if (v.includes('/') || v.includes('\\')) return bad('A single folder name, without / or \\.');
   if (v === '.' || v === '..') return bad('Use a name other than . or ..');
   if (CONTROL_RE.test(v) || HIDDEN_RE.test(v)) return bad('Remove control or hidden characters.');
+  // a UTF-16 surrogate without its pair is not a character: how each file system and Git for Windows store it is unknown, so refuse it
+  // (in `u` mode the range matches only unpaired surrogates; an emoji is one code point and passes)
+  if (/[\ud800-\udfff]/u.test(v)) return bad('The name has a broken character. Type it again.');
   if (WINDOWS_BAD_CHARS.test(v)) return bad('Remove these characters: < > : " | ? *');
   if (WINDOWS_RESERVED_NAME.test(v)) return bad('That name is reserved on Windows (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-9, LPT0-9). Choose another.');
   if (/[. ]$/.test(v)) return bad('Do not end the name with a dot or a space.');
