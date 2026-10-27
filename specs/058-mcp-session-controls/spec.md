@@ -1436,9 +1436,13 @@ only *Open log folder*, no log lines in the app) and #349's "Show logs"; *Open l
   - `policy`: an Entra Conditional Access code `AADSTS53xxxx` (six digits after `AADSTS`, for example `AADSTS530003`), "Conditional Access",
     and the "device (is) (required) to be managed", "managed device", "compliant device", "device is not compliant / enrolled" shapes.
     Tested first: such a refusal also says "AADSTS" or "sign in", and it is not fixed by signing in.
-  - `auth`: the adapter's own `mcpAuth` flag on the failed call (FR-063), or an HTTP 401, "unauthorized", an expired or invalid token,
-    the usual Entra sign-in codes (`AADSTS50xxx`, `AADSTS70xxx`, `AADSTS65001`), `invalid_grant`, "sign-in required", or Copilot's
-    "MCP OAuth challenge required". This is the same `auth` class as FR-011 and FR-080/FR-081, now also for a call that fails on a server
+  - `auth`: the adapter's own `mcpAuth` flag on the failed call (FR-063), or "401 Unauthorized", a 401 next to an HTTP / status / code /
+    error / response word (a bare 401 such as "line 401 of input.csv" or "Page 401 of 900" is not one), "unauthorized", an expired or
+    invalid token, `invalid_grant`, "sign-in required", Copilot's "MCP OAuth challenge required", or one of the **listed** Entra codes
+    that signing in again fixes: `AADSTS50058`, `50072`, `50074`, `50076`, `50078`, `50079`, `50132`, `50133`, `50173`, `70008`,
+    `70043`, `70044`, `700082` and `65001` (each with its meaning in the comment of `src/shared/mcpcall.ts`; the meanings are from
+    Microsoft's published list, written from memory, not re-checked online). Any other `AADSTS50xxx` / `70xxx` code (for example
+    `50105`, `50020`, `50144`) gets no class, because a new sign-in does not fix it (review on #800). This is the same `auth` class as FR-011 and FR-080/FR-081, now also for a call that fails on a server
     the runtime still calls `connected`.
   - A 403 or "forbidden" alone is not claimed (it is not always a sign-in); nothing is guessed. `src/renderer/sim.ts` keeps a marked copy of
     the two patterns (`mcpcall:begin`..`mcpcall:end`); `test:mcpcall` cuts it out and checks it answers like the shared one.
@@ -1447,7 +1451,11 @@ only *Open log folder*, no log lines in the app) and #349's "Show logs"; *Open l
   (`src/main/mcpcall.ts`, fed by `router.onEvent`) looks at each `toolCall` of an MCP server: a `failed` call sets the class (or clears
   it when the failure is of another kind: the newest outcome wins), a `complete` call clears it, a call that has only started changes
   nothing, a stopped session drops everything, at most 200 servers per session. Only the class is stored: the text of the call is
-  classified and forgotten. `agents:mcp` entries get `lastCall: 'auth' | 'policy'` only when the session runs, the server is on and its
+  classified and forgotten. **A class also goes when the server comes back** (review on #800): in an `mcp` report, a server that was not
+  `connected` in the session's previous report (needs sign-in, failed, starting) and is `connected` now drops it, so "needs sign-in"
+  does not outlive the sign-in. A server that was `connected` in both reports keeps it (the runtime keeps saying `connected` while an
+  organization policy refuses every call, and each repeated report says so again, so clearing on every `connected` would hide a policy
+  refusal at once); the same rule is in `sim.ts`. `agents:mcp` entries get `lastCall: 'auth' | 'policy'` only when the session runs, the server is on and its
   state is `connected` (a failed or needs-sign-in row has its own reason, FR-090). The window has no other way to learn it.
   [IMPLEMENTED] `test:` `test-mcpcall.ts` (tracker and reply); `sim:` `shots-058-mcp-refresh.js`.
 - **FR-189** **The row says it in words, masked, in both places.** The chat's MCP dialog row and the chat's row under *Settings > MCP
@@ -1470,16 +1478,21 @@ only *Open log folder*, no log lines in the app) and #349's "Show logs"; *Open l
   and FR-176 are unchanged.
   **Owner decision (Paco, 2026-10-27, terminal): the open-time read happens at most once a minute.** Opening the dialog reads only when
   the last read of that agent (by an open or by Refresh) is 60 s old or older; **Refresh always reads** (still one at a time, FR-191).
+  **Copilot's open-time read starts nothing** (review on #800, owner's yes): `mcpRefreshOp` passes `{ startNothing: true }` for an open,
+  and the Copilot adapter then asks `isServerRunning` for every server of its last report that is not switched off, and reads the
+  whole list only if all are running (no report yet, or no such check: it reads nothing); the button passes nothing and always reads.
   Main keeps the rule (`mcpRefreshOp`, a per-agent time stamp, an injectable clock), so every window obeys it; `agents:mcpRefresh(id, manual)`
   gets `manual: true` only from the button, and an open inside the minute answers `{ ok: true, supported: true, skipped: true }`. A clock
   that moved back does not block reads.
   `[KNOWN GAP]` (as T105) for Copilot: `rpc.mcp.list` is `@experimental` ("cache misses may start and wait for MCP servers", read: SDK
-  1.0.22), and the whole-list read has no `isServerRunning` guard (that guard needs a name), so a read can still start servers or
-  prompt the macOS keychain (issue #623), now at most once a minute on open. A real Copilot run is not done: it needs the owner's OK.
+  1.0.22), and the whole-list read has no `isServerRunning` guard (that guard needs a name), so a **manual Refresh** can still start
+  servers or prompt the macOS keychain (issue #623); the open-time read cannot (it checks first, and runs at most once a minute).
+  A real Copilot run is not done: it needs the owner's OK.
   [IMPLEMENTED] `test:` `test-mcpcall.ts` (`mcpRefreshOp`, the reply flag; open twice within 60 s = one read, after 60 s = another, Refresh within 60 s reads), `test-ipcchannels.ts` (owner-only check); `sim:` `shots-058-mcp-refresh.js`
   (open = one read, Refresh = one more, the new state shows, a second open within the minute reads nothing, Codex has the note and no read).
 - **FR-191** **One read at a time, with a time limit, and no vendor text.** `mcpRefreshOp` shares the read already running for an agent
-  (a second press, or a dialog opened meanwhile, adds none), gives up after 15 s, and answers only `{ ok, supported, error? }`:
+  (a second press, or a dialog opened meanwhile, adds none). The adapter's own call is the key: it stays until that call settles, so a
+  hung adapter gets one `list` however often Refresh is pressed (review on #800); the request stops waiting after 15 s, and answers only `{ ok, supported, error? }`:
   `supported: false` for an app without the call, "This session is not running..." for a stopped one, and
   "<app> did not answer. The list shows its last report." for a failed or late read (the adapter's text is dropped).
   [IMPLEMENTED] `test:` `test-mcpcall.ts` (shared read, failure, never-ending read, stopped, unsupported).

@@ -204,36 +204,37 @@ export const REFRESH_TIMEOUT_MS = 15_000;
  * (`inflight`: a second press or a dialog opened meanwhile shares the first). No vendor text comes back, only whether it worked.
  */
 export const REFRESH_OPEN_MIN_MS = 60_000;
-export async function mcpRefreshOp(d: { agents: Map<string, AgentInfo>; router: Pick<AdapterRouter, 'forAgent'>; timeoutMs?: number; lastRead?: Map<string, number>; now?: () => number }, inflight: Map<string, Promise<McpRefreshResult>>, id: unknown, manual?: unknown): Promise<McpRefreshResult> {
+export async function mcpRefreshOp(d: { agents: Map<string, AgentInfo>; router: Pick<AdapterRouter, 'forAgent'>; timeoutMs?: number; lastRead?: Map<string, number>; now?: () => number }, inflight: Map<string, Promise<void>>, id: unknown, manual?: unknown): Promise<McpRefreshResult> {
   const a = typeof id === 'string' ? d.agents.get(id) : undefined;
   const ad = a ? d.router.forAgent(a.id) : undefined;
   if (!a || !ad) return { ok: false, supported: false, error: 'Unknown agent.' };
   if (typeof ad.refreshMcpStatus !== 'function') return { ok: false, supported: false };
   if (!ad.isLive(a.id)) return { ok: false, supported: true, error: NOT_RUNNING };
-  const held = inflight.get(a.id);
-  if (held) return held;
-  // FR-190 (owner, 2026-10-27): opening the dialog reads at most once a minute per agent (open or Refresh); the Refresh button always reads
-  const t = (d.now ?? Date.now)();
-  const last = d.lastRead?.get(a.id);
-  if (manual !== true && last !== undefined && t - last >= 0 && t - last < REFRESH_OPEN_MIN_MS) return { ok: true, supported: true, skipped: true };
-  d.lastRead?.set(a.id, t);
-  const run = (async (): Promise<McpRefreshResult> => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await Promise.race([
-        Promise.resolve().then(() => ad.refreshMcpStatus?.(a.id)),
-        new Promise<never>((_, no) => { timer = setTimeout(() => no(new Error('timeout')), d.timeoutMs ?? REFRESH_TIMEOUT_MS); }),
-      ]);
-      return { ok: true, supported: true };
-    } catch {
-      return { ok: false, supported: true, error: `${ad.displayName} did not answer. The list shows its last report.` };
-    } finally {
-      if (timer) clearTimeout(timer);
-      inflight.delete(a.id);
-    }
-  })();
-  inflight.set(a.id, run);
-  return run;
+  // FR-191 (review on #800): the adapter's own call is the single-flight key. It stays until that call settles, so a hung adapter gets
+  // one read however often Refresh is pressed; the time limit only stops this request from waiting.
+  let call = inflight.get(a.id);
+  if (!call) {
+    // FR-190 (owner, 2026-10-27): opening the dialog reads at most once a minute per agent (open or Refresh); the Refresh button always reads
+    const t = (d.now ?? Date.now)();
+    const last = d.lastRead?.get(a.id);
+    if (manual !== true && last !== undefined && t - last >= 0 && t - last < REFRESH_OPEN_MIN_MS) return { ok: true, supported: true, skipped: true };
+    d.lastRead?.set(a.id, t);
+    // the open-time read (not the button) must not start a server: the adapter checks that first (Copilot, FR-190)
+    const c: Promise<void> = Promise.resolve().then(() => ad.refreshMcpStatus?.(a.id, undefined, manual === true ? undefined : { startNothing: true }));
+    call = c;
+    inflight.set(a.id, c);
+    const clear = (): void => { if (inflight.get(a.id) === c) inflight.delete(a.id); };
+    c.then(clear, clear);
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([call, new Promise<never>((_, no) => { timer = setTimeout(() => no(new Error('timeout')), d.timeoutMs ?? REFRESH_TIMEOUT_MS); })]);
+    return { ok: true, supported: true };
+  } catch {
+    return { ok: false, supported: true, error: `${ad.displayName} did not answer. The list shows its last report.` };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export interface RestartSessionDeps {

@@ -3,7 +3,7 @@ import type { OrgMcpServer, OrgVerdict } from '../shared/orgpolicy';
 import { safeStorage } from 'electron';
 import { fromAppFrame as fromApp, ipcHandle } from './ipcguard';
 import * as path from 'path';
-import type { AgentInfo, AgentMcpReply, GlobalApp, McpFolderState, McpRefreshResult, McpState } from '../shared/api';
+import type { AgentInfo, AgentMcpReply, GlobalApp, McpFolderState, McpState } from '../shared/api';
 import type { McpServerStatus } from '../adapters/types';
 import { setMcpOp } from './agentops';
 import type { AdapterRouter } from '../adapters/router';
@@ -128,6 +128,7 @@ export function registerMcpIpc(deps: {
     calls.onEvent(e);
     if (e.type === 'mcp') {
       live.set(e.sessionId, e.servers);
+      calls.onServers(e.sessionId, e.servers); // FR-188: a server that came back to connected drops its call class
       health.set(e.sessionId, mcpHealthUpdate(health.get(e.sessionId), e.servers, Date.now()));
       signIns.onServers(e.sessionId, e.servers); // connected: the sign-in is finished
     } else if (e.type === 'status' && e.status === 'stopped') {
@@ -246,7 +247,7 @@ export function registerMcpIpc(deps: {
     });
   });
   /** Spec 058 FR-190: read the agent app's whole server list again (the dialog opening, Refresh); one read at a time per agent. */
-  const refreshing = new Map<string, Promise<McpRefreshResult>>();
+  const refreshing = new Map<string, Promise<void>>();
   const lastRead = new Map<string, number>();
   ipcHandle('agents:mcpRefresh', (e, id: unknown, manual?: unknown) => (fromApp(e) ? mcpRefreshOp({ agents, router, lastRead, now: deps.now }, refreshing, id, manual) : { ok: false, supported: false, error: 'invalid request' }));
   /** Spec 058 FR-021: restart one server of this agent's running session; one at a time per server. */

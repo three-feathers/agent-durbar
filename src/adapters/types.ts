@@ -685,7 +685,9 @@ export interface AgentAdapter {
    * servers from the agent app again and emit the usual `mcp` event. Optional, only with `startMcpSignIn`. Main calls it every 5 s while a
    * sign-in page is open and when the window regains focus; it must be safe to call often and never start a server by itself.
    */
-  refreshMcpStatus?(sessionId: string, name?: string): Promise<void>;
+  refreshMcpStatus?(sessionId: string, name?: string, opts?: { startNothing?: boolean }): Promise<void>;
+  // `opts.startNothing` (spec 058 FR-190): the dialog's open-time read, which must not be able to start a server; an adapter whose read could
+  // (Copilot's whole-list `list`) first checks that every server of its last report is running and otherwise reads nothing.
   /** Spec 058 FR-064: stop a sign-in started by `startMcpSignIn` where the runtime can. Optional, only with `startMcpSignIn`. */
   cancelMcpSignIn?(sessionId: string, name: string): Promise<void>;
   /** Change the model, effort or context tier of a live session; applies from the next message (spec 030). Optional: adapters that cannot omit it and the UI offers a new session instead. */

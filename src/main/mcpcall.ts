@@ -8,11 +8,33 @@ import { classifyMcpCall, type McpCallClass } from '../shared/mcpcall';
 
 export class McpCallTracker {
   private readonly bySession = new Map<string, Map<string, McpCallClass>>();
+  /** The state each server had in the session's last report, to see a server come back to `connected` (FR-188). */
+  private readonly states = new Map<string, Map<string, string>>();
+
+  /**
+   * An `mcp` report (FR-188, review on #800): a server that was not `connected` in the last report and is now (a sign-in done again, a
+   * restart) drops its class, so "needs sign-in" does not outlive the sign-in. A server that was `connected` all along keeps it: the
+   * runtime keeps saying `connected` while an organization policy refuses every call, and every repeated report says so again.
+   */
+  onServers(sessionId: string, servers: ReadonlyArray<{ name: string; status?: string }>): void {
+    const prev = this.states.get(sessionId);
+    const next = new Map<string, string>();
+    const m = this.bySession.get(sessionId);
+    for (const s of servers) {
+      if (typeof s.name !== 'string') continue;
+      next.set(s.name, s.status ?? '');
+      const was = prev?.get(s.name);
+      if (m && s.status === 'connected' && was !== undefined && was !== 'connected') m.delete(s.name);
+    }
+    if (m && !m.size) this.bySession.delete(sessionId);
+    this.states.set(sessionId, next);
+  }
 
   /** Feed every adapter event; non-MCP and in-flight calls change nothing. */
   onEvent(e: AgentEvent): void {
     if (e.type === 'status' && e.status === 'stopped') {
       this.bySession.delete(e.sessionId);
+      this.states.delete(e.sessionId);
       return;
     }
     if (e.type !== 'toolCall' || !e.mcpServer) return;

@@ -1612,7 +1612,7 @@ export class CopilotAdapter implements AgentAdapter {
    * servers", read: SDK 1.0.22) and hand it to the mapper's `reread`, which keeps a needs-auth mark that the tool failures set while the list still says `connected` (a re-read is not a new status from the runtime; issue #364), so the usual `mcp` event follows.
    * Real 2026-10-23: after a browser sign-in the runtime sent no status event for a long while. A missing method or a failure changes nothing. `[KNOWN GAP]` (T105) whether `list` can still start other servers on a real runtime.
    */
-  async refreshMcpStatus(sessionId: string, name?: string): Promise<void> {
+  async refreshMcpStatus(sessionId: string, name?: string, opts?: { startNothing?: boolean }): Promise<void> {
     const live = this.sessions.get(sessionId);
     if (!live) return;
     const mcp = live.session.rpc.mcp as unknown as { list?: () => Promise<{ servers?: unknown }>; isServerRunning?: (p: { serverName: string }) => Promise<{ running?: unknown }> };
@@ -1622,6 +1622,17 @@ export class CopilotAdapter implements AgentAdapter {
     if (name !== undefined && typeof mcp.isServerRunning === 'function') {
       const q = await mcp.isServerRunning({ serverName: name });
       if (q?.running !== true) return;
+    }
+    // FR-190 (owner, 2026-10-27; review on #800): the dialog's open-time read must not start a server (`list` "may start" them, and each start can
+    // read the macOS keychain, #623): it reads only when `isServerRunning` says yes for every server of the last report that is not off
+    // (no report yet, or no such check: nothing is read). Refresh (no `opts`) always reads.
+    if (name === undefined && opts?.startNothing === true) {
+      const names = this.mappers.get(sessionId)?.mcpNamesOn() ?? [];
+      if (!names.length || typeof mcp.isServerRunning !== 'function') return;
+      for (const n of names) {
+        const q = await mcp.isServerRunning({ serverName: n });
+        if (q?.running !== true) return;
+      }
     }
     const r = await mcp.list();
     if (this.sessions.get(sessionId) === live && Array.isArray(r?.servers)) this.mapperFor(sessionId).reread(r.servers);

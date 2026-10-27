@@ -128,6 +128,19 @@ module.exports = async (ctx) => {
     assert.ok(await until(`window.__durbarSimMcpRefresh.count===3`), `${w}: a third read`);
     assert.ok(await until(`(()=>{const li=document.querySelector('#agMcp li.srv[data-n="agent365-teams"]');return !!li&&!li.querySelector('.mst-call');})()`), `${w}: a successful call cleared the words`);
     assert.strictEqual((await row('agent365-teams')).hint, '', 'and its hint');
+    // FR-188 (review on #800): a sign-in call class goes when the server comes back to connected; a policy one stays across connected reports
+    const all = (tidy) => [...RUNNING.slice(0, 2).map((x) => ({ ...x })), { name: 'tidy', status: tidy, transport: 'stdio', source: 'user' }, { name: 'late-one', status: 'connected', transport: 'stdio', source: 'user' }];
+    await report(id, all('connected'));
+    await failedCall(id, 'tidy', 'HTTP 401', 'c4');
+    await failedCall(id, 'agent365-teams', POLICY, 'c5');
+    await report(id, all('connected'));
+    assert.ok(await until(`(()=>{const li=document.querySelector('#agMcp li.srv[data-n="tidy"] .mst-call');return !!li&&li.textContent===${jsLiteral(AUTH_WORDS)};})()`), `${w}: tidy says the last call needs sign-in`);
+    assert.strictEqual((await row('agent365-teams')).call, POLICY_WORDS, `${w}: a policy stays across a repeated connected report`);
+    await report(id, all('needs-auth'));
+    assert.ok(await until(`(document.querySelector('#agMcp li.srv[data-n="tidy"] .mst-w')||{}).textContent==='Needs sign-in'`), `${w}: tidy reads Needs sign-in`);
+    await report(id, all('connected'));
+    assert.ok(await until(`(()=>{const li=document.querySelector('#agMcp li.srv[data-n="tidy"]');return !!li&&li.querySelector('.mst-w').textContent==='Running'&&!li.querySelector('.mst-call');})()`), `${w}: signed in again, the words go`);
+    assert.strictEqual((await row('agent365-teams')).call, POLICY_WORDS, `${w}: and the policy words stay`);
     assert.ok(await fits() && (await minFont()).min >= 10.5, `${w}: still fits`);
     await closeDlg();
     // FR-190 (owner, 2026-10-27): opening again within the minute reads nothing (Refresh above always read)

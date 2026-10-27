@@ -701,14 +701,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const simCallClass = (text: unknown, mcpAuth?: boolean): 'auth' | 'policy' | undefined => {
       const t = typeof text === 'string' ? text.slice(0, 4000) : '';
       if (/AADSTS53\d{4}|conditional access|device (?:is )?(?:required )?(?:to be )?managed|managed device|compliant device|device (?:is )?not (?:compliant|enrolled)/i.test(t)) return 'policy';
-      if (mcpAuth === true || /\b401\b|unauthori[sz]ed|AADSTS(?:50\d{3}|70\d{3}|65001)\b|invalid_grant|token (?:is |has )?(?:expired|invalid)|sign[- ]?in (?:is )?required|MCP OAuth challenge required/i.test(t)) return 'auth';
+      if (mcpAuth === true || /\b401\s+unauthori[sz]ed|\b(?:http(?:\/\d(?:\.\d)?)?|status(?: code)?|code|error|response)[\s:=(-]{0,4}401\b|unauthori[sz]ed|AADSTS(?:50058|50072|50074|50076|50078|50079|50132|50133|50173|70008|70043|70044|700082|65001)\b|invalid_grant|token (?:is |has )?(?:expired|invalid)|sign[- ]?in (?:is )?required|MCP OAuth challenge required/i.test(t)) return 'auth';
       return undefined;
     };
     /* mcpcall:end */
     const emit = (e: AgentEvent): void => {
       /* like main, which keeps the runtime's list before the window hears of it: the reply a listener asks for at once sees this event (spec 058 FR-094) */
       if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpHealth = undefined; }
-      if (e.type === 'mcp') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) { q.mcpLive = e.servers; q.mcpHealth = simHealth(q.mcpHealth, e.servers); if (!selfMcp) { q.mcpReported = e.servers; q.mcpAppOff = new Set(e.servers.filter((m) => m.status === 'disabled' && !q.mcpOff?.has(m.name)).map((m) => m.name)); } } }
+      if (e.type === 'mcp') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) { for (const m of e.servers) if (m.status === 'connected' && q.mcpLive?.some((o) => o.name === m.name && o.status !== 'connected')) q.mcpCalls?.delete(m.name); /* main's McpCallTracker.onServers: back to connected drops the class */ q.mcpLive = e.servers; q.mcpHealth = simHealth(q.mcpHealth, e.servers); if (!selfMcp) { q.mcpReported = e.servers; q.mcpAppOff = new Set(e.servers.filter((m) => m.status === 'disabled' && !q.mcpOff?.has(m.name)).map((m) => m.name)); } } }
       /* like main's McpCallTracker: a failed MCP call sets the class, a successful one clears it, a stopped session drops it */
       if (e.type === 'toolCall' && e.mcpServer) {
         const q = sims.find((x) => x.info.id === e.sessionId);

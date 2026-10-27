@@ -9,7 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { FakeAdapter } from '../src/adapters/fake';
 import type { AgentEvent } from '../src/adapters/types';
-import type { AgentInfo, AgentMcpEntry, McpRefreshResult } from '../src/shared/api';
+import type { AgentInfo, AgentMcpEntry } from '../src/shared/api';
 import { McpCallTracker } from '../src/main/mcpcall';
 import { agentMcpReply, mcpRefreshOp } from '../src/main/mcpsession';
 import { classifyMcpCall } from '../src/shared/mcpcall';
@@ -41,13 +41,47 @@ async function main(): Promise<void> {
     ['The device is required to be managed', 'policy'],
     ['device is not compliant', 'policy'],
     ['The server answered 401 Unauthorized', 'auth'],
-    ['AADSTS50076: strong authentication is required', 'auth'],
-    ['AADSTS70043: the refresh token has expired', 'auth'],
+    ['AADSTS50076: failed', 'auth'],
+    ['AADSTS70043: failed', 'auth'],
     ['token expired', 'auth'],
     ['MCP OAuth challenge required (HTTP 401)', 'auth'],
     ['spawn x ENOENT', undefined],
     ['rate limit exceeded', undefined],
     ['file 4010 not found', undefined],
+    // review on #800: a bare 401 is not a sign-in
+    ['issue 401 not found', undefined],
+    ['line 401 of input.csv', undefined],
+    ['Page 401 of 900', undefined],
+    ['error on line 401', undefined],
+    ['record 401', undefined],
+    ['HTTP 401', 'auth'],
+    ['HTTP/1.1 401', 'auth'],
+    ['status: 401', 'auth'],
+    ['status code 401', 'auth'],
+    ['error 401', 'auth'],
+    ['code=401', 'auth'],
+    ['response (401)', 'auth'],
+    ['401 Unauthorized', 'auth'],
+    // review on #800 Q1: only the Entra codes that a new sign-in fixes
+    ['AADSTS50058: failed', 'auth'],
+    ['AADSTS50072: failed', 'auth'],
+    ['AADSTS50074: failed', 'auth'],
+    ['AADSTS50078: failed', 'auth'],
+    ['AADSTS50079: failed', 'auth'],
+    ['AADSTS50132: failed', 'auth'],
+    ['AADSTS50133: failed', 'auth'],
+    ['AADSTS50173: failed', 'auth'],
+    ['AADSTS70008: failed', 'auth'],
+    ['AADSTS70044: failed', 'auth'],
+    ['AADSTS700082: failed', 'auth'],
+    ['AADSTS65001: failed', 'auth'],
+    ['AADSTS50105: the user is not assigned to a role for the application', undefined],
+    ['AADSTS50020: the user is from another tenant', undefined],
+    ['AADSTS50144: the password expired', undefined],
+    ['AADSTS50034: the user does not exist', undefined],
+    ['AADSTS70001: application not found', undefined],
+    ['AADSTS500760: not a listed code', undefined],
+    ['AADSTS5007: short', undefined],
     ['', undefined],
   ];
   for (const [text, want] of cases) assert.strictEqual(classifyMcpCall(text), want, JSON.stringify(text));
@@ -86,6 +120,32 @@ async function main(): Promise<void> {
     assert.strictEqual(t.get('s1', 'teams'), 'auth', 'the adapter\'s mcpAuth flag counts');
     t.onEvent(call('teams', 'failed', 'rate limit exceeded'));
     assert.strictEqual(t.get('s1', 'teams'), undefined, 'a failure of another kind is the newest outcome');
+    // FR-188 (review on #800): a server coming back to `connected` drops its class; one that never left keeps it
+    {
+      const u = new McpCallTracker();
+      const ev = (server: string, output: string): AgentEvent => ({ type: 'toolCall', sessionId: 's9', timestamp: 1, callId: 'c', tool: 'x', phase: 'failed', mcpServer: server, output }) as AgentEvent;
+      u.onServers('s9', [{ name: 'a', status: 'connected' }, { name: 'p', status: 'connected' }]);
+      u.onEvent(ev('a', 'The server answered 401 Unauthorized'));
+      u.onEvent(ev('p', POLICY_TEXT));
+      u.onServers('s9', [{ name: 'a', status: 'connected' }, { name: 'p', status: 'connected' }]);
+      assert.deepStrictEqual([u.get('s9', 'a'), u.get('s9', 'p')], ['auth', 'policy'], 'a repeated connected report changes nothing (a policy keeps saying connected)');
+      u.onServers('s9', [{ name: 'a', status: 'needs-auth' }, { name: 'p', status: 'connected' }]);
+      assert.strictEqual(u.get('s9', 'a'), 'auth', 'needs-auth keeps the class');
+      u.onServers('s9', [{ name: 'a', status: 'connected' }, { name: 'p', status: 'connected' }]);
+      assert.strictEqual(u.get('s9', 'a'), undefined, 'needs-auth then connected: signed in again, the words go');
+      assert.strictEqual(u.get('s9', 'p'), 'policy', 'the policy stays: that server never left connected');
+      u.onEvent(ev('a', 'HTTP 401'));
+      u.onServers('s9', [{ name: 'p', status: 'connected' }]);
+      u.onServers('s9', [{ name: 'a', status: 'connected' }, { name: 'p', status: 'connected' }]);
+      assert.strictEqual(u.get('s9', 'a'), 'auth', 'a server missing from a report and then back is not a fix (no earlier state to compare)');
+      u.onServers('s9', [{ name: 'a', status: 'pending' }]);
+      u.onServers('s9', [{ name: 'a', status: 'connected' }]);
+      assert.strictEqual(u.get('s9', 'a'), undefined, 'a restart (pending then connected) drops it');
+      u.onEvent({ type: 'status', sessionId: 's9', timestamp: 2, status: 'stopped' } as AgentEvent);
+      u.onEvent(ev('a', 'HTTP 401'));
+      u.onServers('s9', [{ name: 'a', status: 'connected' }]);
+      assert.strictEqual(u.get('s9', 'a'), 'auth', 'a stopped session forgot the states too');
+    }
     t.onEvent(call('teams', 'failed', POLICY_TEXT));
     t.onEvent({ type: 'status', sessionId: 's1', timestamp: 2, status: 'stopped' } as AgentEvent);
     assert.strictEqual(t.get('s1', 'teams'), undefined, 'a stopped session is forgotten');
@@ -130,7 +190,7 @@ async function main(): Promise<void> {
     const sid = await ad.start({ workspace: '/w', quiet: true });
     const agents = new Map([[sid, info(sid)]]);
     const router = { forAgent: () => ad };
-    const inflight = new Map<string, Promise<McpRefreshResult>>();
+    let inflight = new Map<string, Promise<void>>();
     const run = (id: unknown = sid) => mcpRefreshOp({ agents, router, timeoutMs: 80 }, inflight, id, true); // the button: no throttle
     assert.deepStrictEqual(await run(), { ok: true, supported: true });
     assert.strictEqual(ad.refreshCalls, 1, 'one re-read of the whole list');
@@ -156,8 +216,14 @@ async function main(): Promise<void> {
     ad.refreshDelay = Infinity;
     const slow = await run();
     assert.strictEqual(slow.ok, false, 'a read that never answers fails after the limit');
-    assert.strictEqual(inflight.size, 0);
+    // review on #800: the adapter's call is the single-flight key until it settles, so presses on a hung adapter add no read
+    const before = ad.refreshCalls;
+    for (let i = 0; i < 3; i++) assert.strictEqual((await run()).ok, false);
+    assert.strictEqual(ad.refreshCalls, before, 'three more presses on a hung adapter: no new read');
+    assert.strictEqual(inflight.size, 1, 'the hung call is still the marker');
+    // a late answer clears the marker and the next press reads again
     ad.refreshDelay = 0;
+    inflight = new Map();
     assert.strictEqual((await run()).ok, true, 'and the next read works');
     // FR-190 (owner, 2026-10-27): opening the dialog reads at most once a minute per agent; Refresh always reads
     {
@@ -186,6 +252,23 @@ async function main(): Promise<void> {
       assert.strictEqual(ad2.refreshCalls, 4, 'a clock that moved back does not block reads');
       await mcpRefreshOp({ ...dd, lastRead: new Map() }, new Map(), s2, undefined);
       assert.strictEqual(ad2.refreshCalls, 5, 'no memory of a read: reads');
+    }
+    // a call that settles late clears its own marker
+    {
+      const ad3 = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true } });
+      const s3 = await ad3.start({ workspace: '/w', quiet: true });
+      const infl = new Map<string, Promise<void>>();
+      ad3.refreshDelay = 60;
+      const dd3 = { agents: new Map([[s3, info(s3)]]), router: { forAgent: () => ad3 }, timeoutMs: 10 };
+      assert.strictEqual((await mcpRefreshOp(dd3, infl, s3, true)).ok, false, 'the time limit (10 ms) passes first');
+      assert.strictEqual(infl.size, 1);
+      await new Promise((r) => setTimeout(r, 120));
+      assert.strictEqual(infl.size, 0, 'the late call settled and cleared the marker');
+      // the open-time read says it must start nothing; the button does not say so
+      ad3.refreshDelay = 0;
+      await mcpRefreshOp({ ...dd3, timeoutMs: 80 }, infl, s3, false);
+      await mcpRefreshOp({ ...dd3, timeoutMs: 80 }, infl, s3, true);
+      assert.deepStrictEqual(ad3.refreshOpts.slice(-2), [{ startNothing: true }, undefined], 'open: startNothing; Refresh: plain');
     }
     // unsupported: says so, reads nothing
     const bare = new FakeAdapter({ displayName: 'Codex', capabilities: { mcpSignIn: true }, omit: ['refreshMcpStatus'] });
