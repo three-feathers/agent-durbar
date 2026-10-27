@@ -14,9 +14,8 @@ const root = path.join(__dirname, '..', '..');
 
 // (a) lockfile ------------------------------------------------------------------------------------------------------------------
 const REG = 'https://registry.npmjs.org/';
-/** The package name a lockfile key stands for: the last `node_modules/<name>` segment, or the entry's own `name` for an alias. */
-function nameOf(key: string, e: any): string {
-  if (typeof e.name === 'string') return e.name;
+/** The package name a lockfile key stands for: its last `node_modules/<name>` segment. An entry's own `name` field must agree with it (no aliases). */
+function nameOf(key: string): string {
   const i = key.lastIndexOf('node_modules/');
   return i < 0 ? key : key.slice(i + 'node_modules/'.length);
 }
@@ -24,7 +23,8 @@ function parentOf(key: string): string | null {
   const i = key.lastIndexOf('/node_modules/');
   return i < 0 ? null : key.slice(0, i);
 }
-export function lockProblems(lock: any): string[] {
+/** `linkName(path)` reads the package.json name of a link's target inside the repository; without it every link fails (the project has no workspaces). */
+export function lockProblems(lock: any, linkName?: (target: string) => string | null): string[] {
   const out: string[] = [];
   const pk = lock && lock.packages;
   if (!pk || typeof pk !== 'object') return ['package-lock.json has no "packages" map (lockfileVersion 2 or 3 expected)'];
@@ -35,20 +35,23 @@ export function lockProblems(lock: any): string[] {
     if (e.link) { // a symlink to a folder: only a relative path that stays inside the repository (the project has no workspaces)
       const r = e.resolved;
       if (typeof r !== 'string' || r === '' || /^([A-Za-z]:|[\\/]|~)/.test(r) || r.split(/[\\/]/).includes('..') || /^[a-z][a-z0-9+.-]*:/i.test(r)) fail(key, `link points outside the repository (${typeof r === 'string' ? r.slice(0, 60) : 'missing'})`);
+      else if (!linkName || linkName(r) !== nameOf(key)) fail(key, `link target is not the package ${nameOf(key)}`);
       continue;
     }
-    const name = nameOf(key, e);
+    const name = nameOf(key);
+    if (typeof e.name === 'string' && e.name !== name) fail(key, `name field ${String(e.name).slice(0, 40)} disagrees with the key`);
     const r = e.resolved;
     if (typeof r !== 'string') { if (!e.inBundle) fail(key, 'resolved is missing'); }
     else if (!r.startsWith(REG)) fail(key, `resolved is not on ${REG} (${r.slice(0, 60)})`);
     else {
+      if (typeof e.version !== 'string' || e.version === '') fail(key, 'version is missing');
       const rest = r.slice(REG.length);
       const cut = rest.indexOf('/-/');
       const tail = cut < 0 ? '' : rest.slice(cut + 3);
       const unscoped = name.replace(/^@[^/]+\//, '');
       if (cut < 0 || rest.slice(0, cut) !== name) fail(key, `resolved path does not name the package ${name}`);
       else if (!tail.startsWith(unscoped + '-') || !/\.tgz$/.test(tail) || tail.includes('/')) fail(key, `resolved file does not belong to ${name}`);
-      else if (typeof e.version === 'string' && tail !== `${unscoped}-${e.version}.tgz`) fail(key, `resolved file does not match version ${e.version}`);
+      else if (typeof e.version === 'string' && e.version !== '' && tail !== `${unscoped}-${e.version}.tgz`) fail(key, `resolved file does not match version ${e.version}`);
     }
     if (typeof e.integrity !== 'string' ? !e.inBundle : !/^sha(256|384|512)-[A-Za-z0-9+/]+={0,2}$/.test(e.integrity)) fail(key, 'integrity missing or malformed');
   }
@@ -75,7 +78,7 @@ const MAGIC: Array<[string, number[]]> = [
   ['ELF', [0x7f, 0x45, 0x4c, 0x46]], ['PE/MZ', [0x4d, 0x5a]], ['Mach-O', [0xfe, 0xed, 0xfa, 0xce]], ['Mach-O', [0xfe, 0xed, 0xfa, 0xcf]],
   ['Mach-O', [0xce, 0xfa, 0xed, 0xfe]], ['Mach-O', [0xcf, 0xfa, 0xed, 0xfe]], ['fat Mach-O/Java class', [0xca, 0xfe, 0xba, 0xbe]],
   ['wasm', [0x00, 0x61, 0x73, 0x6d]], ['zip/jar', [0x50, 0x4b, 0x03, 0x04]], ['gzip', [0x1f, 0x8b]], ['7z', [0x37, 0x7a, 0xbc, 0xaf]], ['rar', [0x52, 0x61, 0x72, 0x21]],
-  ['bzip2', [0x42, 0x5a, 0x68]], ['xz', [0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00]], ['zstd', [0x28, 0xb5, 0x2f, 0xfd]], ['MSI/OLE', [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]],
+  ['bzip2', [0x42, 0x5a, 0x68]], ['cab', [0x4d, 0x53, 0x43, 0x46]], ['xz', [0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00]], ['zstd', [0x28, 0xb5, 0x2f, 0xfd]], ['MSI/OLE', [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]],
 ];
 const HEAD = 262; // bytes read per file: enough for the tar signature at offset 257
 /** Tracked paths that may be media in a non-executable format. Executables and archives have no allow-list entry: add a path here ONLY with an owner decision written in the spec. */
@@ -105,6 +108,9 @@ export function pinProblems(file: string, text: string): string[] {
   const KEY = /(^|[\s{,[])(?:"uses"|'uses'|uses)\s*:/g;
   text.split(/\r?\n/).forEach((line, i) => {
     if (/^\s*#/.test(line)) return; // a comment line
+    // spellings this scan cannot read safely are refused: an explicit `? key`, and a quoted key with an escape (\x75, \u0075 ...)
+    if (/^\s*(?:-\s+)?\?(\s|$)/.test(line)) out.push(`${file}:${i + 1}: an explicit "?" key cannot be checked safely`);
+    if (/(^|[\s{,[])(?:"(?:[^"\\]|\\.)*\\(?:[^"\\]|\\.)*"|'(?:[^']|'')*\\(?:[^']|'')*')\s*:/.test(line)) out.push(`${file}:${i + 1}: a quoted key with a backslash cannot be checked safely`);
     KEY.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = KEY.exec(line))) {
@@ -120,7 +126,8 @@ export function pinProblems(file: string, text: string): string[] {
 
 // the real repository ------------------------------------------------------------------------------------------------------------
 const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
-assert.deepStrictEqual(lockProblems(lock), [], 'package-lock.json: every entry resolves on registry.npmjs.org with an integrity');
+const realLinkName = (t: string) => { try { return JSON.parse(fs.readFileSync(path.join(root, t, 'package.json'), 'utf8')).name || null; } catch { return null; } };
+assert.deepStrictEqual(lockProblems(lock, realLinkName), [], 'package-lock.json: every entry resolves on registry.npmjs.org with an integrity');
 assert.ok(Object.keys(lock.packages).length > 50, 'the lockfile was actually read');
 
 const wfDir = path.join(root, '.github', 'workflows');
@@ -163,7 +170,7 @@ assert.strictEqual(trackedBinaryProblems(false, () => { throw new Error('must no
 assert.strictEqual(trackedBinaryProblems(true, () => ({ status: 0, stdout: big + 'run.exe\0', stderr: '' }), nofile)!.length, 1, 'a planted executable in a good listing is caught');
 
 // mutation checks: each guard must catch a planted bad input -------------------------------------------------------------------------
-const good = { packages: { '': { name: 'x' }, 'node_modules/a': { resolved: 'https://registry.npmjs.org/a/-/a-1.0.0.tgz', integrity: 'sha512-AAAA' } } };
+const good = { packages: { '': { name: 'x' }, 'node_modules/a': { version: '1.0.0', resolved: 'https://registry.npmjs.org/a/-/a-1.0.0.tgz', integrity: 'sha512-AAAA' } } };
 assert.deepStrictEqual(lockProblems(good), []);
 const mut = (f: (e: any) => void) => { const c = JSON.parse(JSON.stringify(good)); f(c.packages['node_modules/a']); return lockProblems(c); };
 assert.strictEqual(mut((e) => { e.resolved = 'https://evil.example/a-1.0.0.tgz'; }).length, 1, 'a foreign host is caught');
@@ -184,8 +191,13 @@ assert.strictEqual(withKey('node_modules/lodash', ok('evil-lodash')).length, 1, 
 assert.strictEqual(withKey('node_modules/@scope/pkg', ok('pkg')).length, 1, 'a scope dropped from the URL is caught');
 assert.strictEqual(withKey('node_modules/lodash', { ...ok('lodash'), resolved: 'https://registry.npmjs.org/lodash/-/evil-1.0.0.tgz' }).length, 1, 'another file name under the right package is caught');
 assert.strictEqual(withKey('node_modules/lodash', { ...ok('lodash'), version: '2.0.0' }).length, 1, 'a file of another version is caught');
-assert.deepStrictEqual(withKey('node_modules/alias', { ...ok('real'), name: 'real' }), [], 'an alias is checked against its real name');
-assert.strictEqual(withKey('node_modules/alias', ok('real')).length, 1, 'an alias without a name field is caught');
+assert.ok(withKey('node_modules/alias', { ...ok('real'), name: 'real' }).length > 0, 'an alias (name field differs from the key) is refused');
+assert.strictEqual(withKey('node_modules/alias', ok('real')).length, 1, 'a URL of another package is caught');
+assert.ok(withKey('node_modules/lodash', { ...ok('@evil/x'), name: '@evil/x' }).length > 0, 'a name field that turns an entry into another package is caught');
+assert.strictEqual(withKey('node_modules/lodash', { ...ok('lodash'), name: '@evil/x' }).length, 1, 'a name field that disagrees with the key and an honest URL is caught');
+assert.deepStrictEqual(withKey('node_modules/lodash', { ...ok('lodash'), name: 'lodash' }), [], 'a name field that agrees passes');
+assert.strictEqual(withKey('node_modules/lodash', { ...ok('lodash'), version: undefined }).length, 1, 'a registry entry without a version is caught');
+assert.strictEqual(withKey('node_modules/lodash', { ...ok('lodash'), version: '' }).length, 1, 'an empty version is caught');
 // optional and dev entries are checked like the rest (the copilot-sdk platform runtimes are optional)
 for (const flag of ['optional', 'dev', 'peer', 'devOptional']) {
   assert.strictEqual(withKey('node_modules/p', { ...ok('p'), [flag]: true, resolved: 'https://evil.example/p-1.0.0.tgz' }).length, 1, `${flag} entries are not exempt`);
@@ -193,13 +205,21 @@ for (const flag of ['optional', 'dev', 'peer', 'devOptional']) {
 }
 // links: only a relative path inside the repository
 for (const r of ['file:../../evil', '../../evil', '/etc', 'C:\\evil', '~/x', 'a/../../x', '', undefined]) assert.strictEqual(withKey('node_modules/l', { link: true, resolved: r }).length, 1, `link ${String(r)} is caught`);
-assert.deepStrictEqual(withKey('node_modules/l', { link: true, resolved: 'packages/l' }), [], 'a link inside the repository passes');
+const names: Record<string, string> = { 'packages/l': 'l', 'packages/other': 'other' };
+const lockL = (key: string, r: string) => lockProblems({ packages: { '': {}, [key]: { link: true, resolved: r } } }, (t) => names[t] ?? null);
+assert.deepStrictEqual(lockL('node_modules/l', 'packages/l'), [], 'a link to the package of the same name passes');
+assert.strictEqual(lockL('node_modules/l', 'packages/other').length, 1, 'a link that points at another package is caught');
+assert.strictEqual(lockL('node_modules/l', 'packages/none').length, 1, 'a link to an unreadable target is caught');
+assert.strictEqual(withKey('node_modules/l', { link: true, resolved: 'packages/l' }).length, 1, 'without a reader every link fails');
 // bundled entries: must have a parent that passed
 const bundle = (parent: any, child: any) => lockProblems({ packages: { '': {}, 'node_modules/p': parent, 'node_modules/p/node_modules/c': child } });
 assert.deepStrictEqual(bundle(ok('p'), { version: '1.0.0', inBundle: true }), [], 'a bundled child of a good parent passes');
 assert.strictEqual(bundle({ ...ok('p'), resolved: 'git+ssh://x' }, { version: '1.0.0', inBundle: true }).length, 2, 'a bundled child of a failing parent fails with it');
 assert.strictEqual(lockProblems({ packages: { '': {}, 'node_modules/orphan': { inBundle: true, resolved: 'git+ssh://x' } } }).length > 0, true, 'a bundled entry with no parent is caught');
 assert.strictEqual(lockProblems({ packages: { '': {}, 'node_modules/p/node_modules/c': { inBundle: true, version: '1.0.0' } } }).length, 1, 'a bundled entry whose parent is missing is caught');
+const cleanChild = ok('c');
+assert.strictEqual(lockProblems({ packages: { '': {}, 'node_modules/p/node_modules/c': { ...cleanChild, inBundle: true } } }).length, 1, 'a clean bundled entry whose parent is missing is caught');
+assert.strictEqual(lockProblems({ packages: { '': {}, 'node_modules/c': { ...cleanChild, inBundle: true } } }).length, 1, 'a clean bundled top-level entry (no parent at all) is caught');
 assert.strictEqual(bundle(ok('p'), { version: '1.0.0', inBundle: true, resolved: 'git+ssh://x' }).length, 1, 'a bundled entry still may not resolve off the registry');
 
 const tar = Buffer.alloc(262); tar.write('ustar', 257, 'latin1');
@@ -207,11 +227,11 @@ const files: Record<string, Buffer> = {
   'a.png': Buffer.from([0x89, 0x50, 0x4e, 0x47]), 'b.png': Buffer.from([0x7f, 0x45, 0x4c, 0x46]), 'c.txt': Buffer.from([0x4d, 0x5a, 0x90]), 'd.ts': Buffer.from('co'),
   'e.dat': Buffer.from([0x50, 0x4b, 0x03, 0x04]), 'f.md': Buffer.from([0x00, 0x61, 0x73, 0x6d]), 'g.webp': Buffer.from('RIFF'),
   'bz.png': Buffer.from('BZh9'), 'xz.png': Buffer.from([0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00]), 'zst.png': Buffer.from([0x28, 0xb5, 0x2f, 0xfd]),
-  'msi.png': Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]), 'tar.png': tar, 'short.png': Buffer.from('ustar'),
+  'msi.png': Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]), 'cab.png': Buffer.from('MSCF\0\0\0\0'), 'tar.png': tar, 'short.png': Buffer.from('ustar'),
 };
 const rd = (f: string) => files[f] || Buffer.alloc(0);
 const found = binaryProblems([...Object.keys(files), 'run.exe', 'x/y.node', 'lib.DLL', 'z.wasm', 'p.jar'], rd);
-assert.deepStrictEqual(found.map((s) => s.split(':')[0]).sort(), ['b.png', 'bz.png', 'c.txt', 'e.dat', 'f.md', 'lib.DLL', 'msi.png', 'p.jar', 'run.exe', 'tar.png', 'x/y.node', 'xz.png', 'z.wasm', 'zst.png'], 'executables and archives are caught by extension and by magic, media is not');
+assert.deepStrictEqual(found.map((s) => s.split(':')[0]).sort(), ['b.png', 'bz.png', 'c.txt', 'cab.png', 'e.dat', 'f.md', 'lib.DLL', 'msi.png', 'p.jar', 'run.exe', 'tar.png', 'x/y.node', 'xz.png', 'z.wasm', 'zst.png'], 'executables and archives are caught by extension and by magic, media is not');
 assert.deepStrictEqual(binaryProblems(['run.exe'], rd, ['run.exe']), [], 'the allow-list is exact');
 assert.strictEqual(binaryProblems(['run.exe'], rd, ['other.exe']).length, 1, 'the allow-list does not match by prefix or name');
 
@@ -225,7 +245,7 @@ for (const bad of ['actions/checkout@v4', 'actions/checkout@main', `actions/chec
 // other valid YAML spellings of the same key
 const forms = ['- {uses: actions/checkout@v4}', '- {name: x, uses: actions/checkout@v4, with: {a: b}}', '- "uses": actions/checkout@v4', "- 'uses': actions/checkout@v4", '- uses : actions/checkout@v4',
   '- uses:   actions/checkout@v4', '- uses: "actions/checkout@v4"', "- uses: 'actions/checkout@v4'", 'uses: actions/checkout@v4', '    uses: actions/checkout@v4', '- {"uses": "actions/checkout@v4"}', '- [x, {uses: actions/checkout@v4}]',
-  '- uses: |', '- uses: >', '- uses:', '- uses: docker://alpine@sha256:abc'];
+  '- ? uses\n  : actions/checkout@v4', '- ? {uses: actions/checkout@v4}', '- "u\\x73es": actions/checkout@v4', '- "\\u0075ses": actions/checkout@v4', "- 'u\\x73es': actions/checkout@v4", '- uses: |', '- uses: >', '- uses:', '- uses: docker://alpine@sha256:abc'];
 for (const f of forms) assert.ok(pinProblems('w.yml', `steps:\n  ${f}\n`).length >= 1, `${f} is caught`);
 const pinned = ['- {uses: actions/checkout@' + sha + '}', '- "uses": actions/checkout@' + sha, '- uses : actions/checkout@' + sha + ' # v7', '- uses: "actions/checkout@' + sha + '"', '- uses: ./local', '- uses: docker://alpine@sha256:' + 'a'.repeat(64), '# uses: actions/checkout@v4', '- {uses: owner/repo/path/x.yml@' + sha + '}'];
 for (const f of pinned) assert.deepStrictEqual(pinProblems('w.yml', `steps:\n  ${f}\n`), [], `${f} passes`);
