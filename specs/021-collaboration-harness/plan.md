@@ -40,3 +40,9 @@ Principle I: spec, plan and tasks are updated before guidance. Principle III: no
 ### Constitution check
 
 I: spec, plan and task first, in the same PR. III: no secret in the repo, logs or the audit user's reach; the token file is the owner's, 0600, visible only to the filing unit. IV: no credits spent to build or test it (fakes only); the weekly run is one session on the owner's plan, approved by the owner. VI: a Linux-only VPS tool, said so; the unit test runs on every OS and skips only its POSIX parts on Windows. VIII: limits in the spec (`[KNOWN GAP]`), including the probe result.
+
+## Delta: untrusted content (FR-060)
+
+- **Pieces:** the rule in `AGENTS.md` (canonical) with pointers in the other agent and contributor docs; one trusted list (`scripts/trusted-authors.txt`) and one set of jq helpers (`scripts/trusted-lib.sh`) used by `scripts/pr-gate.sh` and the new `scripts/gh-trusted.sh`, so the filter exists once.
+- **Choice:** hide by default and show only the trusted, rather than block-list known outsiders: an unknown account is outside. Hidden items still count as asks in `pr-gate.sh`, so a PR with an outside comment waits for a human.
+- **Tests:** `scripts/test-trusted-content.ts` runs the real scripts with a fake `gh` that applies each `--jq` program with jq; planted payloads must not appear.
