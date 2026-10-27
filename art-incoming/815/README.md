@@ -61,3 +61,4 @@ Review notes (Mac coordinator):
 20. Added `batch6/monster-vampire-resting.webp` (2026-10-27). The vampire now has all 3 poses (*resting* holds a teacup in one hand, minor).
 21. Added `batch6/monster-ghost-waiting.webp` (2026-10-27). The ghost now has all 3 poses (its *resting* is in the batch-1 folder).
 22. Added `batch6/monster-mummy-resting` and `-working` (2026-10-27). The mummy's *waiting* is still missing.
+23. Added `batch6/monster-mummy-waiting.webp` (2026-10-27). The mummy now has all 3 poses.
