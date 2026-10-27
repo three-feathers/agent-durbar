@@ -160,6 +160,7 @@ const api: DurbarApi = {
   mcpGlobalSetOff: (app, name, off) => ipcRenderer.invoke('mcp:globalSetOff', app, name, off),
   agentMcp: (id, focus) => ipcRenderer.invoke('agents:mcp', id, focus),
   setAgentMcp: (id, name, enabled) => ipcRenderer.invoke('agents:setMcp', id, name, enabled),
+  agentMcpRefresh: (id) => ipcRenderer.invoke('agents:mcpRefresh', id),
   agentMcpRestart: (id, name) => ipcRenderer.invoke('agents:mcpRestart', id, name),
   agentMcpSignIn: (id, name, again) => ipcRenderer.invoke('agents:mcpSignIn', id, name, again === true),
   agentMcpOpenSignIn: (id, name, host) => ipcRenderer.invoke('agents:mcpOpenSignIn', id, name, host),
