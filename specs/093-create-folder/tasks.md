@@ -10,7 +10,7 @@
 
 - [x] T001 Spec, plan, tasks and specs-index block (`specs/093-create-folder/`); cross-reference lines under `## Changes` in specs 006 (FR-001) and 063 (FR-008)
 - [x] T002 Owner answers recorded under *Clarifications* (Paco, 2026-10-27, in the terminal): Q1 = a, Q2 = b (top bar's mode), Q3 = a, Q4 = a; Q5 not asked, agent default (a), owner may change
-- [ ] T003 Post the owner's answers on issue #805 as a comment, saying they were given in the terminal (AGENTS.md: feedback given outside GitHub goes on the issue too)
+- [x] T003 Post the owner's answers on issue #805 as a comment, saying they were given in the terminal (AGENTS.md: feedback given outside GitHub goes on the issue too)
 
 ## Phase 1: Empty folder and new repository (PR 1)
 
@@ -43,8 +43,12 @@
 - [ ] T037 Real-git tests of plan *Testing* 3 for clone: seam clone, hooks, parent config, submodule, production call refuses `file://` and `ext::`, closed port, cancel against a silent local listener, ssh stub (POSIX), all leaving no folder [US1, US2, US4; SC-003..SC-005]
 - [ ] T038 Window: URL dialog with early check, progress dialog (`.hs-log`, live region, elapsed time, Cancel/Escape), result toast; simulator fakes for progress and cancel [FR-003, FR-040, FR-041, FR-082]
 - [ ] T039 Driver `shots-093.js` phase 2 cases: refused URL message, progress, Cancel, cloned room; screenshots at both sizes [US1, US2, US4]
+- [ ] T042 Real-git protocol layer test (plan *Testing* 3, R1): global `protocol.file/ext.allow=always` and `insteadOf` rewrites in the test `HOME`; the production call refused (i) as built, (ii) without `GIT_ALLOW_PROTOCOL`, (iii) without the per-transport nevers; `foo::` helper case [FR-032, FR-033; SC-003]
+- [ ] T043 Real-git cleanup-through-links test (POSIX): symlinks to an outside folder and file survive a failed or cancelled clone; `[KNOWN GAP]` Windows junctions [FR-050]
+- [ ] T044 Env pass-through of `GIT_SSL_CAINFO`/`GIT_SSL_CAPATH` (absolute only), the D11 `BatchMode` rule for a user `core.sshCommand`, `transfer.bundleURI=false`, the TLS/proxy hint, the 30 s waiting line; tests [FR-032, FR-033, FR-044, FR-071]
+- [ ] T045 Owner answers Q6 (Allow all wording for a clone); build the answer in the window's confirmation [FR-061; Q6]
 - [ ] T040 Plant the mutants of plan *Mutants*; each fails a test; list them in the PR [SC-006]
-- [ ] T041 Docs: README *Safety model* (what clone runs, the user's credentials, hooks note, BatchMode, `GIT_SSH_COMMAND` note), `changelog.d/093-p2-clone.md`, spec ticks, screenshots [FR-035, FR-090]
+- [ ] T041 Docs: README *Safety model* (what clone runs, the user's credentials, hooks note, BatchMode, the dropped `GIT_*` variables and the two that pass, "keep git up to date" and no version floor), `changelog.d/093-p2-clone.md`, spec ticks, screenshots [FR-035, FR-090]
 
 ## Phase 3: Real check and converge (PR 3)
 
