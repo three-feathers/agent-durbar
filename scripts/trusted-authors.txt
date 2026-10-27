@@ -1,0 +1,9 @@
+# Accounts whose GitHub text an agent may read (AGENTS.md, "Untrusted content and prompt injection"; spec 021 FR-060).
+# One login per line; a GitHub App is written with its "[bot]" suffix. Everyone else's text is hidden by scripts/pr-gate.sh and
+# scripts/gh-trusted.sh: they print the author and the link, for a human. Changing this list is an owner decision (CODEOWNERS).
+# dependabot[bot] is deliberately NOT here: its PR metadata is ours, but its body quotes upstream release notes (untrusted text).
+vikramgorla
+fjcabello
+rubenlupi
+github-actions[bot]
+github-advanced-security[bot]
