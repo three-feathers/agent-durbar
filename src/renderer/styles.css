@@ -813,10 +813,12 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 /* spec 052 FR-095 (round 10): the chat header on one row: avatar, name, status, "active …", the chips; the actions pinned right.
    Chips that do not fit wrap to a second row inside their own group, under the first chips; the actions never move down. */
 .ph{--h-chip:28px} /* one control height in the header: chips and .btn.sm buttons are both 28px */
-.ph-top{flex-wrap:wrap;gap:8px 12px;align-items:flex-start}
-.ph-id{min-width:0;flex:0 0 auto;max-width:40%;min-height:28px;display:flex;align-items:center;gap:8px} /* name, then the role in T5 on the same line */
+.ph-top{flex-wrap:wrap;gap:8px 12px;align-items:flex-start;container-type:inline-size}
+.ph-id{min-width:0;flex:4 1 0;min-height:28px;display:flex;align-items:center;gap:8px} /* name, then the role in T5 on the same line; spec 052 FR-180 (#789): it takes the room up to the buttons (no 40% cap) and is cut only when the row is full; flex-basis 0, so a title wider than the row never decides the line break (it pushed the buttons down, review on PR 796) */
 .ph-id h2{flex:0 4 auto;min-width:3.5em;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} /* round 10 check: the name never shrinks before the chips do (.ph-id has its own max-width); the name is cut, the role is not (spec 052 FR-174 review: the h2 has its title) */
 .ph-id .sub{flex:0 1 auto;min-width:0} /* the name shrinks four times as fast as the role (a shrink factor under 1 would only take part of the overflow back); both are cut with an ellipsis and carry a title (spec 052 FR-174) */
+/* spec 052 FR-180: in a wide header the title has a floor (24em, at most 40% of the row) so the chips row (basis 760px) wraps under it instead of squeezing it to a few letters; in a narrow one it has none, so the buttons stay on its row */
+@container (min-width:820px){.ph-id{min-width:min(24em,40%)}}
 .ph-meta{margin-top:0;flex:1 1 760px;row-gap:4px;min-height:28px}
 /* spec 052 FR-141: the chips stay beside the name when 760px are left for them; otherwise they take a full row under the name and the
    actions (before, they were squeezed into the leftover width, one chip per row: 5 to 8 rows). The actions never move down. */
