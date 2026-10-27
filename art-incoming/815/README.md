@@ -55,3 +55,4 @@ Review notes (Mac coordinator):
 16. `batch6/`, Pirate: the **ship's cook** (3 poses) and the privateer's *resting*. Review notes, all of them redo candidates:
     - the cook keeps his eyes open in *resting*, and his *working* shows his hands on a desk;
     - the privateer keeps her eyes open in *resting* and holds the mug with one hand, and her neckline is still deep.
+17. `batch6/pirate-privateer-*` were replaced with the cartoon-style redo (2026-10-27): a modest neckline, a bigger head and bright colours. *resting* still has open eyes and a one-hand mug (minor).
