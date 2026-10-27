@@ -11,6 +11,8 @@ module.exports = async (ctx) => {
   /* the simulator's "restored" toast arrives a few seconds after start: let it come, then clear it */
   await ctx.waitFor(`[...document.querySelectorAll('#toasts .toast')].some((t)=>/restored/.test(t.textContent))`, 10000).catch(() => undefined);
   await ctx.js(`(()=>{document.querySelectorAll('#toasts > *').forEach((t)=>t.remove());document.getElementById('addFolder').click();return true})()`);
+  /* spec 093: + Folder asks first; Add existing folder… is the path this picture shows */
+  await ctx.waitFor(`(()=>{const b=[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>x.textContent==='Add existing folder…');if(b)b.click();return !!b})()`, 5000);
   await ctx.waitFor(`[...document.querySelectorAll('#toasts .toast')].some((t)=>/SSH keys/.test(t.textContent))`, 5000);
   await ctx.js(`(()=>{document.querySelectorAll('#toasts .toast').forEach((t)=>{if(!/SSH keys/.test(t.textContent))t.remove();});return true})()`);
   await ctx.sleep(900);

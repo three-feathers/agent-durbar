@@ -117,6 +117,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(vis('modelSel')), false, 'a kind other than the default hides the model select');
     assert.strictEqual(await js(vis('effortSel')), false, 'and the effort select');
     await js(`document.getElementById('addFolder').click()`);
+    assert.ok(await until(`(()=>{const b=[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>x.textContent==='Add existing folder…');if(b)b.click();return !!b})()`, 5000), 'spec 093: + Folder asks; Add existing folder… is today\'s path');
     await until(`/not ready|isn't ready/.test([...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' | '))`);
     const t = await js(`[...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' | ')`);
     assert.match(t, /not ready|isn't ready/, `${w}: starting a not-ready kind is blocked: ${t}`);
