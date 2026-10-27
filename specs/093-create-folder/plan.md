@@ -4,7 +4,7 @@
 
 ## Summary
 
-**+ Folder** gets a choice: add an existing folder (unchanged), or create one by cloning a repository, running `git init`, or making an empty folder. Main picks the parent with the system dialog (remembering the last one in `settings.json`), checks the name and URL, claims the folder with a non-recursive `mkdir`, runs git through a new narrow entry point of the one git runner (`src/main/gitstatus.ts`), streams masked progress, supports Cancel, removes the folder on any failure, and adds the result through `addMany` at Read-only.
+**+ Folder** gets a choice: add an existing folder (unchanged), or create one by cloning a repository, running `git init`, or making an empty folder. Main picks the parent with the system dialog (remembering the last one in `settings.json`), checks the name and URL, claims the folder with a non-recursive `mkdir`, runs git through a new narrow entry point of the one git runner (`src/main/gitstatus.ts`), streams masked progress, supports Cancel, removes the folder on any failure, and adds the result through `addMany` in the top bar's mode, like *Add existing* (Read-only by default).
 
 ## Technical Context
 
@@ -19,7 +19,7 @@
 
 - **I (spec first)**: this spec, plan and tasks are committed before any `src/` change; each phase PR changes `specs/093-create-folder/`.
 - **II (adapters)**: nothing agent-specific; the folder is added through `addMany`, which picks the adapter as today.
-- **III (safe, no secrets)**: argv only, `--` before URL and target, an allow-list of URL forms, protocols limited twice (`-c protocol.*` and `GIT_ALLOW_PROTOCOL`), no prompts, credentials never seen or stored (the user's helper answers git directly), URL passwords refused, output masked, inputs validated in main, the window never passes a path (token), Read-only start. The one new write to the user's disk is the folder the user named, in the place they picked.
+- **III (safe, no secrets)**: argv only, `--` before URL and target, an allow-list of URL forms, protocols limited twice (`-c protocol.*` and `GIT_ALLOW_PROTOCOL`), no prompts, credentials never seen or stored (the user's helper answers git directly), URL passwords refused, output masked, inputs validated in main, the window never passes a path (token); the mode follows the top bar like *Add existing* (owner Q2 = b), default Read-only, with the same *Allow all* confirmation. The one new write to the user's disk is the folder the user named, in the place they picked.
 - **IV (no credits)**: no agent session; tests use local sources only.
 - **V (calm UI)**: `askDialog` and the existing dialog classes; a live region for progress.
 - **VI (platforms)**: Windows device names and the 200-character limit refused everywhere they matter; `killChildTree` handles Windows and POSIX; removal retries for Windows locks; real-git tests run on Windows CI.
@@ -62,7 +62,7 @@
 2. `mkdir(target)` non-recursive (FR-012).
 3. `mkdtemp` the private hooks folder; `userSetsSshCommand`.
 4. `runGitCreate` with `cwd = target`; progress events (FR-040).
-5. On exit 0: remove the hooks folder; `addMany([target], 'read-only', opts)`; save `newFolderParent`; answer the `AddResult` plus `{ name, submodules? }`.
+5. On exit 0: remove the hooks folder; `addMany([target], validMode(mode), opts)`; save `newFolderParent`; answer the `AddResult` plus `{ name, submodules? }`.
 6. On non-zero exit, a spawn error, cancel, or an add failure: wait for `close`, `fs.rm(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 })`, remove the hooks folder, answer `{ ok: false, error }` (masked; FR-070, FR-071) or `{ cancelled: true }`.
 
 ### Why not a temporary sibling and a rename
@@ -90,10 +90,10 @@ All without network or credits. Real-git tests follow `test:gitstatus`: skipped 
    - cancel: a local TCP listener that accepts and never answers, `https://127.0.0.1:<port>/r.git` → `cancel()` → the child has exited, the folder is gone (`until()`, 10 s);
    - ssh (POSIX only, `[KNOWN GAP]` on Windows): a stub `ssh` first on `PATH` records its argv and exits 255: `BatchMode=yes` present, no folder left; with `core.sshCommand` set in the test `HOME`, the stub is not called through `GIT_SSH_COMMAND`;
    - git missing: `PATH` without git → the FR-062 message, no folder.
-4. **Op** (`scripts/test-newfolderop.ts`): with fakes: token one-use and expiry, one at a time, `mkdir` error mapping (`EEXIST`, `EACCES`, `EPERM`, `EROFS`, `ENOENT`, `ENOSPC`), Windows 200-character rule with `path.win32`, removal retries then the "remove it by hand" message, the hooks folder always removed, `addMany` called with `'read-only'` and never on failure, `newFolderParent` saved only on success, progress throttle and masking (`https://u:secret@h` never in an event), quit during a clone.
+4. **Op** (`scripts/test-newfolderop.ts`): with fakes: token one-use and expiry, one at a time, `mkdir` error mapping (`EEXIST`, `EACCES`, `EPERM`, `EROFS`, `ENOENT`, `ENOSPC`), Windows 200-character rule with `path.win32`, removal retries then the "remove it by hand" message, the hooks folder always removed, `addMany` called with the window's mode through `validMode` (an unknown value becomes Read-only) and never on failure, `newFolderParent` saved only on success, progress throttle and masking (`https://u:secret@h` never in an event), quit during a clone.
 5. **IPC wiring** (stand-in `electron`, like `test-orgwiring.ts`): each channel refuses a call that is not `fromApp`; a refused URL or name never reaches `mkdir` or `spawn`; the handler's call has protocols `https`,`ssh` only; `test-ipcchannels.ts` owner-only list updated.
 6. **Settings**: `parseSettings` keeps a valid `newFolderParent` and drops relative paths, control characters, over 4096 characters, non-strings.
-7. **Simulator driver** `scripts/shots-093.js` (waits with `until()`): the chooser (buttons, focus on *Add existing*), a refused URL with its message, the name dialog, fake progress with Cancel, the new room in Read-only; screenshots at 1440x900 and 1280x800; text at least 10.5 px; Escape closes each step; under `DURBAR_SIM` main refuses the four channels (`simRefusedChannels` stays empty in a plain run because the window uses the fake).
+7. **Simulator driver** `scripts/shots-093.js` (waits with `until()`): the chooser (buttons, focus on *Add existing*), a refused URL with its message, the name dialog, fake progress with Cancel, the new room in the top bar's mode (also Allow all after its confirmation); Ctrl+O still opens the picker fake directly; File > New Folder… and the palette entries open the flow; screenshots at 1440x900 and 1280x800; text at least 10.5 px; Escape closes each step; under `DURBAR_SIM` main refuses the four channels (`simRefusedChannels` stays empty in a plain run because the window uses the fake).
 
 ### Mutants to plant (each must fail a test)
 
@@ -101,14 +101,15 @@ All without network or credits. Real-git tests follow `test:gitstatus`: skipped 
 - `checkNewFolderName` drops the separator, `..`, reserved-name, trailing-dot or `.git` rule.
 - `gitCreateCall`: `--` removed; `-c` list moved after the subcommand; `core.hooksPath` dropped; default protocols include `file`; `GIT_ALLOW_PROTOCOL` set to empty or dropped; `GIT_TERMINAL_PROMPT` dropped; `GIT_SSH_COMMAND` set even when `core.sshCommand` exists; `credential.helper=` added.
 - Spawn: `shell: true`; `detached` dropped on POSIX.
-- Op: `mkdir` with `recursive: true`; no removal on failure; removal before `close`; `addMany` with the window's mode; `newFolderParent` saved on failure; the lock removed; progress lines not masked; token reusable.
+- Entry points: Ctrl+O, File > Add Folder… or the palette's *Add folder* open the choice instead of the picker (Q1 = a); the *Allow all* confirmation skipped for the create flow.
+- Op: `mkdir` with `recursive: true`; no removal on failure; removal before `close`; `addMany` with a fixed mode instead of the window's (`'read-only'` or `'allow'`), or without `validMode`; `newFolderParent` saved on failure; the lock removed; progress lines not masked; token reusable.
 - IPC: `fromApp` check removed; the handler passes the window's path or protocols through.
 
 ## Phases (each one PR; each leaves the app working)
 
 0. **Spec** (this PR): spec, plan, tasks, index block, cross-references in specs 006 and 063.
-1. **Phase 1, empty folder and new repository** (US3, FR-001..FR-013, FR-030..FR-035 for init, FR-050..FR-052, FR-060..FR-062, FR-070, FR-080..FR-082, FR-090 for this part). Needs Q1 and Q2. Validators for names, the runner's `init` entry, the op, IPC, the choice and name dialogs, the parent picker and remembered parent, the simulator fakes, tests, README, changelog fragment, screenshots.
-2. **Phase 2, clone** (US1, US2, US4; FR-020..FR-023, FR-031..FR-037 for clone, FR-040..FR-043, FR-071, FR-095). Needs Q3-Q5. URL validator, clone argv/env, progress, cancel, quit, real-git tests incl. the seam, the URL and progress dialogs, README *Safety model*, changelog, screenshots.
+1. **Phase 1, empty folder and new repository** (US3, FR-001..FR-013 incl. FR-001a, FR-030..FR-035 for init, FR-050..FR-052, FR-060..FR-062, FR-070, FR-080..FR-082, FR-090 for this part). Q1 and Q2 answered 2026-10-27. Validators for names, the runner's `init` entry, the op, IPC, the choice and name dialogs, the parent picker and remembered parent, the simulator fakes, tests, README, changelog fragment, screenshots.
+2. **Phase 2, clone** (US1, US2, US4; FR-020..FR-023, FR-031..FR-037 for clone, FR-040..FR-043, FR-071, FR-095). Q3 and Q4 answered 2026-10-27; Q5 is the agent default (filters on). URL validator, clone argv/env, progress, cancel, quit, real-git tests incl. the seam, the URL and progress dialogs, README *Safety model*, changelog, screenshots.
 3. **Phase 3, real check and converge**: one hand check per OS that is available (https with the user's credential helper, ssh with an agent, a cancel), recorded as `real:`, no AI credits; `/speckit-converge`; known gaps carried to the README.
 
 ## Risks to check in review

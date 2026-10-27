@@ -2,15 +2,15 @@
 
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
-title: Create a folder from + Folder (issue #805): clone a repository (https or ssh), a new local repository (git init) or an empty folder, in a parent chosen with the system picker; enters at Read-only
-status: Draft 2026-10-27: spec, plan and tasks written; owner decisions of issue #805 recorded; questions Q1-Q5 open; nothing built
+title: Create a folder from + Folder (issue #805): clone a repository (https or ssh), a new local repository (git init) or an empty folder, in a parent chosen with the system picker; starts in the top bar's mode like Add existing (default Read-only)
+status: Draft 2026-10-27: spec, plan and tasks written; owner decisions of issue #805 and answers Q1-Q4 recorded (Q5 agent default); nothing built
 -->
 
 **Feature Branch**: `093-create-folder` (spec); code branches `093-pN-slug`, one per phase
 
 **Created**: 2026-10-27
 
-**Status**: Draft. Nothing is built. Questions Q1-Q5 (end of this file) are open for the owner.
+**Status**: Draft. Nothing is built. The owner answered Q1-Q4 on 2026-10-27; Q5 is the agent's default, which the owner may change (*Clarifications*).
 
 **Input**: Issue #805 (Paco, 2026-10-27): "+ Folder can also create a new folder: clone a repo (https/ssh), new local git repo (git init), or an empty folder". The issue's *Owner decisions*, *Existing capability to reuse* and *Security* sections are binding and are recorded under *Clarifications*.
 
@@ -39,8 +39,16 @@ status: Draft 2026-10-27: spec, plan and tasks written; owner decisions of issue
 - **Location**: the parent folder is chosen **each time with the system picker**. The app **remembers the last parent** and offers it next time.
 - **Clone**: any `https://` or ssh URL (`git@host:path` or `ssh://`). The app uses the user's own git and credentials and **never stores a token**.
 - **Reuse** (binding): `+ Folder` and `agents:addFolder` (`src/main/ipc/agents.ts:72`); the spec 063 git runner (#719 hardening), **no second way to spawn git**; the renderer's `askDialog` for the choice and the name and URL fields.
-- **Security** (binding): no shell, an argument array, `--` before the URL and target; only `https://`, `ssh://` and scp-style `user@host:path`; refuse `file://`, `ext::`, `fd::`, local paths and a leading `-`; pass `-c protocol.allow=never -c protocol.https.allow=always -c protocol.ssh.allow=always`; never run hooks from the cloned repository during the clone (`core.hooksPath` set to an empty dir, no `--recurse-submodules`); `GIT_TERMINAL_PROMPT=0`; show git's error without credentials, using the existing masking; the folder name is a single segment, no `..`, no separators, not existing; the new folder enters at Read-only.
+- **Security** (binding): no shell, an argument array, `--` before the URL and target; only `https://`, `ssh://` and scp-style `user@host:path`; refuse `file://`, `ext::`, `fd::`, local paths and a leading `-`; pass `-c protocol.allow=never -c protocol.https.allow=always -c protocol.ssh.allow=always`; never run hooks from the cloned repository during the clone (`core.hooksPath` set to an empty dir, no `--recurse-submodules`); `GIT_TERMINAL_PROMPT=0`; show git's error without credentials, using the existing masking; the folder name is a single segment, no `..`, no separators, not existing; the new folder enters at the default permission mode (Read-only) like any added folder (refined by Q2 below: it follows the top bar's mode, whose default is Read-only).
 - **Acceptance** (binding): CI covers clone, init and empty on the three OSes with a local bare repository as the clone source, so tests use no network; refused input creates nothing; a failed clone leaves no half folder; a long clone shows progress and can be cancelled.
+
+### Owner answers, 2026-10-27 (Paco, in the terminal, relayed by his coordinator)
+
+- **Q1 (entry points) -> (a)**: only the **+ Folder** button and the welcome screen's add button show the choice. **Ctrl+O**, **File > Add Folder…** and the palette's *Add folder* keep opening the system picker directly. A new **File > New Folder…** menu item and new palette entries (*Clone a repository*, *New repository*, *New empty folder*) open the create flow.
+- **Q2 (mode) -> (b)**: a created folder **follows the top bar's mode, like Add existing** (with the same *Allow all* confirmation before the flow starts). It does **not** always start in Read-only. The default mode stays Read-only (constitution III), and spec 061's listing of the folder's own agent setup applies as for any added folder.
+- **Q3 (password in the URL) -> (a)**: a URL with a password is **refused** (git would save it in `.git/config`).
+- **Q4 (unknown ssh host key) -> (a)**: the clone **fails** with a message that says to connect once with ssh in a terminal; the user's own ssh trust rules are not changed (no `accept-new`).
+- **Q5 (Git LFS and other filter drivers during the clone)**: not asked. **Agent default 2026-10-27, owner may change**: (a) the user's own filter drivers stay **on**, as in a terminal clone (LFS files download). The new repository's `.git/config` is written by git, not by the remote, so spec 063's reason for switching every driver off does not apply; only fsmonitor and hooks are switched off (FR-032). The other option was (b): switch them all off and set `GIT_LFS_SKIP_SMUDGE=1`, so LFS files arrive as pointer files.
 
 ### Design choices that follow (analyst, 2026-10-27; no new product decision)
 
@@ -59,7 +67,7 @@ status: Draft 2026-10-27: spec, plan and tasks written; owner decisions of issue
 
 ### User Story 1 - Clone a repository into a new folder (Priority: P1)
 
-Lena wants to work on a project she has on GitHub. She presses **+ Folder**, picks **Clone a repository…**, pastes `git@github.com:lena/shop.git`, picks `~/code` in the system picker (it opened there because she used it last time), keeps the suggested name `shop` and presses **Clone**. A progress dialog shows "Receiving objects 45%". When it ends, the room *shop* appears in the office in Read-only.
+Lena wants to work on a project she has on GitHub. She presses **+ Folder**, picks **Clone a repository…**, pastes `git@github.com:lena/shop.git`, picks `~/code` in the system picker (it opened there because she used it last time), keeps the suggested name `shop` and presses **Clone**. A progress dialog shows "Receiving objects 45%". When it ends, the room *shop* appears in the office in the mode the top bar shows (Read-only unless she changed it).
 
 **Why this priority**: it is the main ask of the issue and the one with all the risk (network, credentials, a writing git command).
 
@@ -69,7 +77,7 @@ Lena wants to work on a project she has on GitHub. She presses **+ Folder**, pic
 
 1. **Given** I press **+ Folder**, **Then** a dialog offers *Add existing folder…*, *Clone a repository…*, *New repository…* and *Empty folder…* (and Cancel).
 2. **Given** I choose *Clone a repository…* and enter an accepted URL, **When** I confirm, **Then** the system picker opens at the last parent I used (or the system default the first time), and after I pick a folder a name dialog shows the parent, the masked URL and a name derived from the URL (`shop` from `.../shop.git`).
-3. **Given** I confirm the name, **Then** a progress dialog shows git's progress (phase and percent), the elapsed time and a **Cancel** button; on success it closes, the folder is added like *Add existing* (same floor, kind, model choice; spec 061's listing of the folder's own agent setup when it has one) in **Read-only**, and a toast says "Cloned into <name>".
+3. **Given** I confirm the name, **Then** a progress dialog shows git's progress (phase and percent), the elapsed time and a **Cancel** button; on success it closes, the folder is added like *Add existing* (same floor, kind, model choice and the top bar's mode; spec 061's listing of the folder's own agent setup when it has one), and a toast says "Cloned into <name>".
 4. **Given** git needs a password and no credential helper or agent can give it, **Then** the clone fails within seconds with a plain message ("Sign-in failed: Durbar uses your own git credentials and cannot ask for a password. Set up a credential helper or an ssh agent, then try again."), and no folder is left.
 5. **Given** the next time I create a folder, **Then** the picker opens at the parent I used last.
 
@@ -84,13 +92,13 @@ Lena pastes `file:///etc`, `ext::sh -c touch x`, `-uhelp`, `C:\repos\x` or `http
 **Acceptance Scenarios**:
 
 1. **Given** a URL that is not `https://…`, `ssh://…` or `user@host:path` (FR-020), **Then** the dialog shows "Use an https:// or ssh address (for example git@github.com:owner/repo.git)." and no process starts.
-2. **Given** a URL with a password in it, **Then** it is refused with "Remove the password from the address. Durbar uses your own git credentials." (Q3).
+2. **Given** a URL with a password in it, **Then** it is refused with "Remove the password from the address. Durbar uses your own git credentials." (Q3 = a, owner 2026-10-27).
 3. **Given** a refused name (FR-010), **Then** the reason names the rule ("A single folder name, without / or \\", "That name is reserved on Windows", "A folder or file named shop already exists there"), the typed text is kept, and nothing is created.
 4. **Given** the parent became read-only or was removed after I picked it, **Then** I get "You cannot create a folder there: <reason>. Choose another place." and the name dialog offers *Change place…*.
 
 ### User Story 3 - New local repository or empty folder (Priority: P1)
 
-Omar starts a new project. **+ Folder** → **New repository…** → picks `~/code` → types `notes-app` → **Create**. The folder exists with an empty git repository (`git init`, nothing on any server), and its room appears in Read-only. **Empty folder…** does the same without git.
+Omar starts a new project. **+ Folder** → **New repository…** → picks `~/code` → types `notes-app` → **Create**. The folder exists with an empty git repository (`git init`, nothing on any server), and its room appears in the top bar's mode (Read-only by default). **Empty folder…** does the same without git.
 
 **Why this priority**: simple, no network, and the first usable phase.
 
@@ -126,11 +134,11 @@ A clone of a large repository runs for minutes. Lena presses **Cancel**. The git
 - **Network drive / UNC share** (`\\server\share`, an SMB or NFS mount): allowed. The clone may be slow. Git may then refuse to read the repository ("dubious ownership", `safe.directory`) when the share reports another owner, so spec 063's folder status may show nothing for it (`[KNOWN GAP]`, not tested).
 - **Very long path on Windows**: refused above 200 characters (D10); a repository whose own files are too deep fails with git's "Filename too long", and the folder is removed.
 - **A repository with submodules**: cloned without them (FR-032); the toast says "Submodules were not cloned" when `.gitmodules` exists.
-- **A repository with Git LFS files**: see Q5.
+- **A repository with Git LFS files**: the user's own LFS filter runs and downloads the files, as in a terminal clone (Q5, agent default; FR-036).
 - **An empty remote repository**: git warns "You appear to have cloned an empty repository"; that is a success.
 - **The URL redirects** (https 301 to another host): git follows it under its own rules; a redirect to a protocol not allowed fails (`GIT_ALLOW_PROTOCOL` also limits redirects; `read:` git docs, not tested).
 - **The user's git config rewrites the URL** (`url.<base>.insteadOf`): the rewritten URL is still limited to https/ssh by the protocol settings (the user's own config; not tested).
-- **Unknown ssh host** (first contact): fails with "The ssh host key of <host> is not known yet. Connect once with ssh in a terminal, then try again." (Q4).
+- **Unknown ssh host** (first contact): fails with "The ssh host key of <host> is not known yet. Connect once with ssh in a terminal, then try again." (Q4 = a, owner 2026-10-27; no `StrictHostKeyChecking` change).
 - **Old git** without `transfer.credentialsInUrl` (before 2.37): the setting is ignored; FR-023 still refuses passwords.
 - **Windows Git Credential Manager** shows its own sign-in window: that is the user's helper and is allowed (D7); the clone waits for it, and Cancel still works. Not verified by a person.
 - **Simulator** (`DURBAR_SIM`): the new channels are not open (refused by `ipcguard`); the simulator's bridge fakes the flow in the window and starts no process.
@@ -141,9 +149,10 @@ A clone of a large repository runs for minutes. Lena presses **Cancel**. The git
 
 **Choice and flow**
 
-- **FR-001**: **+ Folder** MUST open a choice dialog (`askDialog`) titled "Add a folder" with the buttons *Add existing folder…* (primary, focused first, so Enter keeps today's behaviour), *Clone a repository…*, *New repository…*, *Empty folder…* and *Cancel*, and one short line per create option ("Clone: copy a repository from GitHub or another git server", "New repository: an empty folder with git, on this computer only", "Empty folder: no git"). Which other entry points (Ctrl+O, File > Add Folder…, the palette, the welcome screen) show it is Q1.
+- **FR-001**: **+ Folder** MUST open a choice dialog (`askDialog`) titled "Add a folder" with the buttons *Add existing folder…* (primary, focused first, so Enter keeps today's behaviour), *Clone a repository…*, *New repository…*, *Empty folder…* and *Cancel*, and one short line per create option ("Clone: copy a repository from GitHub or another git server", "New repository: an empty folder with git, on this computer only", "Empty folder: no git"). The welcome screen's add button shows the same choice. **Ctrl+O, File > Add Folder… and the palette's *Add folder* MUST keep opening the system picker directly** (they call the *Add existing* path, not the button) (Q1 = a).
+- **FR-001a**: A **File > New Folder…** menu item and the palette entries *Clone a repository*, *New repository* and *New empty folder* MUST open the create flow (the first one at the choice of kind, the others at their own first step) (Q1 = a). The menu item reaches the window the way File > Add Folder… does today (spec 052 FR-164) and gets an entry in the keyboard and menu docs.
 - **FR-002**: *Add existing folder…* MUST be exactly today's path (`agents:addFolder`, `addVia`), unchanged.
-- **FR-003**: The create flow MUST be, in order: (clone only) the URL dialog → the system picker for the parent → the name dialog → the create. Cancel or Escape at any step ends the flow with nothing created. The name dialog shows the parent's path, the masked URL (clone), "It starts in Read-only." and the buttons *Cancel*, *Change place…* (back to the picker) and the primary *Clone* / *Create*.
+- **FR-003**: The create flow MUST be, in order: (clone only) the URL dialog → the system picker for the parent → the name dialog → the create. Cancel or Escape at any step ends the flow with nothing created. The name dialog shows the parent's path, the masked URL (clone), the mode it will start in ("It starts in <mode>.", the top bar's mode, FR-061) and the buttons *Cancel*, *Change place…* (back to the picker) and the primary *Clone* / *Create*.
 - **FR-004**: The parent MUST be picked with main's system dialog (`dialog.showOpenDialog`, `openDirectory`, `createDirectory` on macOS) **every time**, starting at the remembered parent when it still is a folder (FR-006).
 - **FR-005**: The window MUST NOT pass a path. `folders:createPickParent` returns a one-use **token** and the parent's text for display; main keeps `{token, path, time}`, one at a time, valid 10 minutes; `folders:create` refuses an unknown, used or expired token ("Choose the place again.").
 - **FR-006**: After a **successful** create, main MUST save the parent in `settings.json` (`newFolderParent`: an absolute path, at most 4096 characters, no control characters; anything else is dropped on read). It is a path, never a token (constitution III); `SettingsStore`'s header comment is updated to say so.
@@ -164,7 +173,7 @@ A clone of a large repository runs for minutes. Lena presses **Cancel**. The git
   where the scheme is matched case-insensitively; `host` is a DNS name (labels of letters, digits and `-`, not starting or ending with `-`), an IPv4 address or a bracketed IPv6 address; `user` is letters, digits, `.`, `_`, `-`, `~`, `%`, `+` and does not start with `-`; the port is 1-65535; the path is not empty, does not start with `-`, and uses only RFC 3986 path characters (no `\`, `?` or `#`).
 - **FR-021**: Everything else MUST be refused, explicitly including: `file:`, `git://`, `http://`, `ftp(s)://`, any `<transport>::<address>` (`ext::`, `fd::`), any `::` outside brackets, absolute and relative local paths (`/x`, `./x`, `~/x`, `C:\x`, `C:/x`, `\\server\share`), a leading `-` anywhere it could become an option (whole URL, user, host, path), and non-ASCII (an internationalised host must be written in its `xn--` form).
 - **FR-022**: The URL MUST be checked in main by `folders:createCheck` (early feedback in the URL dialog) **and** again in `folders:create` (authoritative); the window keeps no copy of the rules.
-- **FR-023**: A URL with a password (`user:pass@`, in any of the forms) MUST be refused (Q3, recommended), so git never writes it into the new repository's `.git/config`. A user name alone is accepted.
+- **FR-023**: A URL with a password (`user:pass@`, in any of the forms) MUST be refused (Q3 = a, owner 2026-10-27), so git never writes it into the new repository's `.git/config`. A user name alone is accepted.
 
 **Running git** (one runner, spec 063 FR-008 extended)
 
@@ -174,7 +183,7 @@ A clone of a large repository runs for minutes. Lena presses **Cancel**. The git
 - **FR-033**: The environment MUST be `gitEnv(process.env)` (every `GIT_*` and `SSH_ASKPASS` of Durbar dropped) plus `GIT_TERMINAL_PROMPT=0` and `GIT_ALLOW_PROTOCOL=https:ssh` for a clone (empty for init); plus `GIT_SSH_COMMAND=ssh -o BatchMode=yes` for a clone unless the user's own git config sets `core.sshCommand` (D6; one fixed `git config --get core.sshCommand` read built by the same module, run in the private empty folder of FR-032 with `GIT_CEILING_DIRECTORIES` set to its parent, so only the system and global config are read). `credential.helper` is **not** blanked (D7). A user who relies on `GIT_SSH_COMMAND` in their environment must put it in `core.sshCommand` (README).
 - **FR-034**: The child MUST be started with `spawn` (read from `child_process` at call time, so the simulator's seal applies), `shell: false`, `windowsHide: true`, `stdio: ['ignore', 'pipe', 'pipe']`, `detached` on POSIX (own process group and session: no terminal to prompt in, and the group is what Cancel ends), `git` found on `PATH` as the status runner does.
 - **FR-035**: The spec, README and code comments MUST say what is real about hooks (D5): a remote cannot deliver hooks; the empty `core.hooksPath` stops the user's own global or template hooks during the clone; after the clone the user's hooks apply as usual.
-- **FR-036**: The user's own filter drivers (Git LFS, git-crypt) during the clone: Q5 (recommended: left on, like a terminal clone).
+- **FR-036**: The user's own filter drivers (Git LFS, git-crypt) MUST stay on during the clone, as in a terminal clone; Durbar adds no `filter.*` override and no `GIT_LFS_SKIP_SMUDGE` (Q5: agent default 2026-10-27, owner may change). The README says so.
 - **FR-037**: The clone has **no overall time limit** (large repositories); the user cancels (FR-041). A refusal or sign-in failure ends by itself because nothing can prompt (FR-033, FR-034).
 
 **Progress and cancel**
@@ -192,8 +201,8 @@ A clone of a large repository runs for minutes. Lena presses **Cancel**. The git
 
 **Adding the folder**
 
-- **FR-060**: On success main MUST add the folder through `addMany([target], 'read-only', opts)` (`src/main/main.ts:436`), the same path as *Add existing*, with the window's floor, agent kind, model and effort (the same `sessionOpts` parsing as `agents:addFolder`); so spec 061's listing, the folder store and the broad-folder warning apply unchanged.
-- **FR-061**: The folder MUST start in **Read-only**, whatever the top bar's mode (Q2, recommended); main does not take a mode from the window for this channel.
+- **FR-060**: On success main MUST add the folder through `addMany([target], validMode(mode), opts)` (`src/main/main.ts:436`), the same path as *Add existing*, with the window's mode, floor, agent kind, model and effort (the same `validMode` and `sessionOpts` parsing as `agents:addFolder`); so spec 061's listing, the folder store and the broad-folder warning apply unchanged.
+- **FR-061**: The folder MUST start in the **top bar's mode, like Add existing** (Q2 = b, owner 2026-10-27): the window passes it as `agents:addFolder` does, main reads it with `validMode` (anything unknown is Read-only, the default), and the window asks the same *Allow all* confirmation (`confirmAllow`, `addVia`) before the flow starts. The default mode stays Read-only (constitution III).
 - **FR-062**: When `git` is not found (`ENOENT` on spawn), the message MUST be "Git was not found. Install Git and try again; Empty folder works without it." and the folder is removed. *Empty folder…* never starts a process.
 
 **Errors**
@@ -203,7 +212,7 @@ A clone of a large repository runs for minutes. Lena presses **Cancel**. The git
 
 **IPC and the window**
 
-- **FR-080**: New channels, registered with `ipcHandle` in `src/main/ipc/newfolder.ts` and each also checking `fromApp(e)` (added to `test-ipcchannels.ts`'s owner-only list): `folders:createPickParent()`, `folders:createCheck(req)`, `folders:create(req, opts)`, `folders:createCancel()`; event `folders:createProgress`. Every argument is checked in main: `kind` one of `clone`/`init`/`empty`, strings by type and length, unknown keys ignored, `opts` through the same parsing as `agents:addFolder`.
+- **FR-080**: New channels, registered with `ipcHandle` in `src/main/ipc/newfolder.ts` and each also checking `fromApp(e)` (added to `test-ipcchannels.ts`'s owner-only list): `folders:createPickParent()`, `folders:createCheck(req)`, `folders:create(req, mode, opts)`, `folders:createCancel()`; event `folders:createProgress`. Every argument is checked in main: `kind` one of `clone`/`init`/`empty`, strings by type and length, unknown keys ignored, `mode` through `validMode` and `opts` through the same parsing as `agents:addFolder`.
 - **FR-081**: The preload and `DurbarApi` (`src/shared/api.ts`) get `createPickParent`, `createCheck`, `createFolder`, `createCancel`, `onCreateProgress`. None of the channels is on `SIM_OPEN_CHANNELS`; the simulator's bridge (`src/renderer/sim.ts`) fakes them in the window with canned refusals, fake progress and a fake new room, and starts nothing.
 - **FR-082**: The dialogs MUST meet constitution V: text at least 10.5 px; keyboard only (Tab, Enter, Escape); the progress has a live region and the result is announced; state is never colour only.
 
@@ -217,7 +226,7 @@ A clone of a large repository runs for minutes. Lena presses **Cancel**. The git
 
 ### Key Entities
 
-- **Create request** (window → main): `{ kind: 'clone' | 'init' | 'empty', token, name, url? }` and the session options of `agents:addFolder` (no mode).
+- **Create request** (window → main): `{ kind: 'clone' | 'init' | 'empty', token, name, url? }` and the mode and session options of `agents:addFolder`.
 - **Parent pick** (main only): `{ token, path, at }`, one at a time, one use, 10 minutes.
 - **Create progress** (main → window): `{ phase, percent?, lines, elapsedMs }`, masked.
 - **Last parent** (`settings.json`): `newFolderParent`, an absolute path.
@@ -238,17 +247,3 @@ A clone of a large repository runs for minutes. Lena presses **Cancel**. The git
 - Durbar never creates anything on a server and never uses an account (owner decision).
 - `[KNOWN GAP]`: no real clone over the network runs in CI or was run by the analyst; https sign-in through each OS's credential helper and ssh with an agent are to be checked by hand once (a task records it, `real:`), at no AI-credit cost.
 - `[KNOWN GAP]`: not verified on macOS before merge (PR CI runs the spec 008 FR-106 stub); checked on `main` and nightly.
-
-## Open questions for the owner
-
-Listed with a recommended answer; nothing in phase 2 that depends on Q3-Q5 is built before they are answered. Q1 and Q2 block phase 1.
-
-- **Q1 (entry points)**: which ways of adding a folder show the new choice?
-  - (a) **Recommended**: the **+ Folder** button and the welcome screen's add button show the choice; **Ctrl+O**, **File > Add Folder…** and the palette's *Add folder* keep opening the system picker at once (no extra step for the common case); new palette entries *Clone a repository*, *New repository*, *New empty folder* and a **File > New Folder…** menu item open the create flow.
-  - (b) Every entry point shows the choice (one more Enter for *Add existing*).
-- **Q2 (mode)**: the issue says "enters at the default permission mode (read-only), like any added folder", but an added folder takes the top bar's mode today.
-  - (a) **Recommended**: always Read-only, whatever the top bar says (the folder holds code fetched from elsewhere).
-  - (b) The top bar's mode, like *Add existing* (with the *Allow all* confirmation).
-- **Q3 (password in the URL)**: (a) **Recommended**: refuse it (git would save it in `.git/config`, which breaks "never stores a token"); (b) accept it and only mask it in messages.
-- **Q4 (unknown ssh host key)**: (a) **Recommended**: fail with a message that says to connect once with ssh in a terminal (the user's own ssh trust rules stay as they are); (b) accept a new host key on first use (`StrictHostKeyChecking=accept-new`), easier but trusts whatever answers the first time.
-- **Q5 (Git LFS and other filter drivers during the clone)**: (a) **Recommended**: leave the user's own filter drivers on, as a terminal clone does (LFS files download; the new repository's `.git/config` is written by git, not by the remote, so spec 063's reason for switching them off does not apply; only fsmonitor and hooks are switched off); (b) switch them all off and set `GIT_LFS_SKIP_SMUDGE=1` (LFS files arrive as small pointer files and the user runs `git lfs pull` later).
