@@ -12,7 +12,7 @@ Everything here was read on 2026-10-27 from the npm registry metadata and from t
 | Unread logic aware of the tab | `src/renderer/app.js:2228` `chatShownNow` (reads `BP.current().tab`), `:2245` `syncSeen` | Must read the shared tab state, so Terminal counts as "chat not shown" |
 | "Show the Chat tab first" before Notes | `src/renderer/notes.js:92` `showChatTab(bp)`, called at `app.js:2751` | Must also leave Terminal |
 | Keep a view per key across panel rebuilds | `src/renderer/app.js:1926` `getChat(a)` (`chats[a.id]`) | Same pattern: one xterm instance per folder key |
-| Global keys (Esc closes chat, Ctrl+K, Ctrl+F, Ctrl+O, Ctrl+Backquote, Alt keys, F2) | `src/renderer/app.js:3060` handler; Esc branch `:3119` | Must skip keys whose target is inside the terminal (FR-051) |
+| Global keys (Esc closes chat, Ctrl+K, Ctrl+F, Ctrl+O, Ctrl+Backquote, Alt keys, F2) | `src/renderer/app.js:3060` handler; Esc branch `:3119`; the other `document`/`window` keydown listeners: `app.js:477` (capture), `:3940` (spec 092 PageUp/PageDown), `:5762`, `:7341`, `:7411`, `dialog.js:76`, `screens.js:559`, `:780` (capture, while their UI is open) | None may act on a key meant for the shell (FR-051, FR-056) |
 | Shared dialog | `src/renderer/dialog.js:25` `askDialog` | Close-terminal question |
 | Folder removal | `src/main/ipc/folders.ts:46` `folders:remove` (calls `deps.browserGone`), renderer `src/renderer/app.js:6872` `removeFolder()` (confirm text) | Add `terminalGone(folderKey)` and the running-command words |
 | Quit question | `src/main/main.ts:847` `workingCount`, `:859` `confirmQuit`, `:1112` `before-quit`, `:1144` `will-quit` (calls `destroyAllViews()`), `src/main/daily.ts:106` `quitMessage(n)` | Count busy terminals; end all terminals in `will-quit` |
@@ -26,7 +26,7 @@ Everything here was read on 2026-10-27 from the npm registry metadata and from t
 | Windows `cmd.exe` | `src/shared/wincmd.ts:14` `windowsCmd` | Last Windows fallback |
 | PATH folders lookup | `src/shared/pathdirs.ts:8` `pathDirs` | Find `pwsh.exe` |
 | Env for a child | `src/adapters/codex.ts:132` `codexChildEnv` (drops credentials), `src/main/harnesssetup.ts:100` `setupEnv`; login PATH `src/main/main.ts:628`; sim clock `TZ` `src/main/main.ts:172` | Model for the terminal's env builder; snapshot taken before line 172 and before adapters load |
-| Kill a process tree | `src/adapters/detect.ts:423` `killChildTree` (`taskkill /T /F` on Windows) | Windows end of a terminal |
+| Kill a process tree | `src/adapters/detect.ts:423` `killChildTree` (`taskkill /T /F` on Windows; skips its `SIGKILL` once the child exited, #721) | Windows end of a terminal (FR-037), with the terminal wrapper's `exited` flag |
 | Dev hooks | `src/main/devhooks.ts` (`DURBAR_*` only through `devEnv`) | Env builder drops `DURBAR_*` |
 | Vendored renderer libraries | `scripts/copy-assets.js` (copies `marked`, `dompurify` from `node_modules` into `dist/renderer/vendor/`) | Same for xterm |
 | Packaged native module | `package.json` `build.asarUnpack` (`node_modules/koffi/**`), `npmRebuild: false`, `nodeGypRebuild: false`; fuses `onlyLoadAppFromAsar`, asar integrity | Same for node-pty |
@@ -54,8 +54,17 @@ Per-target files that ship (beta.18, without `.pdb`):
 
 - macOS arm64: `pty.node` 86,904 + `spawn-helper` 50,480; macOS x64: 58,656 + 9,248.
 - Linux x64: `pty.node` 71,784.
-- Windows x64: `pty.node`/`conpty.node` 293,376, `conpty_console_list.node` 134,656, `conpty/conpty.dll` 110,152, `conpty/OpenConsole.exe` 1,062,472. The last two are only used with `useConptyDll: true`; with the default (the OS's ConPTY) they could be left out. *[unverified: that `false` works on every Windows 10/11 build Durbar supports.]*
+- Windows x64: `pty.node`/`conpty.node` 293,376, `conpty_console_list.node` 134,656, `conpty/conpty.dll` 110,152, `conpty/OpenConsole.exe` 1,062,472. The last two are only used with `useConptyDll: true`; with the default (the OS's ConPTY) they could be left out, but that default's `kill()` forks (below), so spec Q9 (a) keeps them and sets `useConptyDll: true`. *[unverified: that either setting works on every Windows 10/11 build Durbar supports.]*
 - plus `lib/*.js` (tens of KB).
+
+**Ending a terminal, read from 1.2.0-beta.18 `lib/` (2026-10-27, `read:`, from `npm pack` into a scratch folder; nothing installed or run; review on #811):**
+
+- POSIX: `UnixTerminal.destroy()` closes the master socket, then sends `SIGHUP` to the shell pid (`lib/unixTerminal.js:217-226`); `kill(sig)` is `process.kill(pid, sig)` on the shell only (`:228-233`). Neither signals the jobs' own process groups (spec FR-033).
+- Windows, default `useConptyDll: false`: `WindowsPtyAgent.kill()` calls `_getConsoleProcessList()`, which runs `child_process.fork(path.join(__dirname, 'conpty_console_list_agent'), [innerPid])`, waits up to 5 s for the list, then `process.kill`s each pid (`lib/windowsPtyAgent.js:193-240`). `WindowsTerminal.destroy()` calls `kill()` (`lib/windowsTerminal.js:156-170`). In Durbar's packaged main `fork` runs the Electron binary; with the `runAsNode` fuse off it cannot act as Node, and Durbar has no single-instance lock, so it may start a second app instance. *[unverified: what the fork does in the packaged app; the packaged check of spec T016 must show it.]*
+- Windows, `useConptyDll: true`: `kill()` destroys the input socket and calls the native kill, with no fork (`lib/windowsPtyAgent.js:214-221`). This needs `conpty/conpty.dll` and `conpty/OpenConsole.exe` in the package (spec Q9 a).
+- Windows natural exit with `useConptyDll: false`: `_$onProcessExit` then `_cleanUpProcess` close the sockets only; the native kill is not called on that path (`lib/windowsPtyAgent.js:255-280`). *[unverified: whether the pseudoconsole and its console host then stay until the app quits (spec Q9 b).]*
+- `lib/windowsConoutConnection.js:66` uses a `worker_threads` `Worker`, not a process, so it does not depend on `runAsNode`. *[unverified until phase 1.]*
+- `IPty` exposes `onExit` but no `exitCode`/`signalCode`; Durbar's wrapper keeps its own `exited` flag (spec FR-033).
 
 Estimated installer growth: about 0.2 MB (macOS, Linux) and 0.6-1.7 MB (Windows) for the PTY, plus about 0.5 MB for xterm (R3). The `.pdb` files (about 26 MB per Windows arch in 1.1.0), `src/`, `deps/`, `third_party/`, `binding.gyp`, `typings/` and `node-addon-api` must be excluded from the package.
 
@@ -67,6 +76,13 @@ Estimated installer growth: about 0.2 MB (macOS, Linux) and 0.6-1.7 MB (Windows)
 - `lib/xterm.js` contains no `eval(` or `new Function(` and no `Worker` or `WebAssembly`; it creates `<style>` elements (4 places). The page's CSP (`default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:`) allows exactly this: scripts and styles from the app, inline styles. **No CSP change.** No `font-src` is needed (system monospace fonts). *[unverified until phase 3: no CSP report in the simulator.]*
 - `screenReaderMode` is an option of 6.0.0 (found in `lib/xterm.js`).
 - **Vendored from npm, not copied into the repo**: `devDependencies` would not ship it; it goes in `dependencies` (exact pin), and `scripts/copy-assets.js` copies `xterm.js`, `xterm.css` and `addon-fit.js` to `dist/renderer/vendor/`, like `marked` and `dompurify`. The renderer stays plain scripts; no bundler. `test:globals` learns the UMD globals (`Terminal`, `FitAddon`) or the copy step wraps them. *[unverified: the exact global names of the 6.0.0 UMD builds.]*
+- **Escape sequences and paste, read from 6.0.0 `src/` (2026-10-27, `read:`; review on #811)**, for spec FR-060:
+  - OSC 8 hyperlinks: with the default `linkHandler: null`, activating a link calls `defaultActivate`, which runs `confirm("Do you want to navigate to <uri>?...")` and then `window.open()` (`src/browser/OscLinkProvider.ts:89`, `:114-120`); non-http(s) links are dropped unless `allowNonHttpProtocols` (`:72-75`). An inert `linkHandler` replaces both.
+  - OSC handlers in the core: 0, 1, 2 (title, icon name), 4, 10, 11, 12 (colours, also reports), 8 (links), 104, 110-112 (`src/common/InputHandler.ts:292-331`). **No OSC 52**: clipboard writes need the clipboard addon, which Durbar does not load.
+  - Titles reach the embedder only through `onTitleChange` (`InputHandler.ts:157-158`), and CSI 22/23 t push and pop titles (`:2859-2884`); not subscribing is enough.
+  - CSI t window reports run only when the matching `windowOptions` entry is true (`InputHandler.ts:2840-2843`); the default is `{}` (`src/common/services/OptionsService.ts:51`). There is no title report (CSI 21 t).
+  - Paste: `paste()` does `prepareTextForTerminal` (newlines to CR) then `bracketTextForPaste`, which wraps the text in `ESC[200~`...`ESC[201~` **without removing markers inside it** (`src/browser/Clipboard.ts`). Durbar cleans the text itself (spec FR-060).
+  - `screenReaderMode` defaults to `false` (`OptionsService.ts:38`); Durbar sets it.
 - The default DOM renderer is enough (no WebGL addon: fewer GPU paths, and the office's "no blur in compact scenes" rule is not involved).
 
 ## R4 Packaging and signing
@@ -94,4 +110,4 @@ Estimated installer growth: about 0.2 MB (macOS, Linux) and 0.6-1.7 MB (Windows)
 
 ## R7 What only a real machine can show
 
-Real shells (zsh, bash, fish, PowerShell 7, Windows PowerShell, cmd), `-l` start-up files, IME and dead keys, copy and paste per OS, VoiceOver, NVDA and Orca with `screenReaderMode`, the Finder-launched environment, ConPTY on Windows 10 and 11, the AppImage on an older glibc, `spawn-helper` in a quarantined ad-hoc signed app, the busy detection per OS (spec FR-031).
+What survives Close terminal and quit per shell (spec FR-033), the Windows end path and a main crash on Windows (FR-036, FR-037), real shells (zsh, bash, fish, PowerShell 7, Windows PowerShell, cmd), `-l` start-up files, IME and dead keys, copy and paste per OS, VoiceOver, NVDA and Orca with `screenReaderMode`, the Finder-launched environment, ConPTY on Windows 10 and 11, the AppImage on an older glibc, `spawn-helper` in a quarantined ad-hoc signed app, the busy detection per OS (spec FR-031).
