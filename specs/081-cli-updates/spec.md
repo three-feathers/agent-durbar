@@ -528,3 +528,10 @@ When the start check finds a new version, the Settings entry and the card get a 
 - **winget terms:** an explicit *Check* offers a terms note; only its OK adds `--accept-source-agreements` to that one run.
 - **Simulator knobs** (`sim:`): `simupd=avail|mixed|off|unreadable`, `simupdstart=1`, `simupdrun=ok|uptodate|admin|inuse|managed|network|other|fallback|slow`, `simsessions=N`, `simupdchk=1`.
 - **Mutations** planted and caught (`npm run test:updatecheck`, `test:harnesssetup`, `test:officialinstall`): see the PR.
+
+### 2026-10-27: the E2E and install-check scripts had no installer download (nightly "E2E real accounts" failed since 2026-10-25)
+
+- **Cause (`read:` run 40488981772, schedule, all three OSes; `test:`):** the 081 build (d408ea78) removed the built-in Node `https` default from `downloadScript` and made `HarnessSetup` take the download as `deps.httpGet` (the app passes `makeDownloadGet(electronRequestFactory())`, `src/main/ipc/harness.ts`). `scripts/e2e-real.ts` and `scripts/install-check.ts` build `HarnessSetup` without Electron and were not updated, so `withScript` answered "No network layer is set up for the installer download." for every official-installer install (copilot, claude, codex).
+- **The installed app is not affected:** `src/main/ipc/harness.ts` has passed `httpGet` since d408ea78. Only the two scripts (CI/nightly) failed.
+- **FR-043:** every place that builds `HarnessSetup` passes `httpGet`. Node scripts use `nodeDownloadGet` (`makeNodeDownloadGet(https.get)` in `src/main/netget.ts`): same contract as `makeDownloadGet` (one GET, redirect reported and not followed, so `downloadScript` still checks every hop against the vendor's hosts; size cap while reading; total time limit; fixed headers) and the same checksum rules downstream. The app never uses it.
+- **Test:** `npm run test:officialinstall` reads the three construction sites (a new one without `httpGet` fails) and runs the Node getter against a local server. Mutations: removing `httpGet` from `e2e-real.ts`, and following a 3xx, are each caught.

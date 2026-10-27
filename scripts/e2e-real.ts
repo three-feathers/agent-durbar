@@ -18,6 +18,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawn, execFile } from 'child_process';
 import { HarnessSetup } from '../src/main/harnesssetup';
+import { nodeDownloadGet } from '../src/main/netget';
 import type { SetupDone } from '../src/main/harnesssetup';
 import { detectClaude, detectCodex, detectCopilot, nodeDetectEnv, nodeExec } from '../src/adapters/detect';
 import type { SetupKind } from '../src/shared/harnesssetup';
@@ -67,6 +68,7 @@ function killTree(child: { pid?: number }): void {
 async function install(kind: SetupKind): Promise<{ ok: boolean; route?: string; detail?: string }> {
   let done: ((d: SetupDone) => void) | undefined;
   const hs = new HarnessSetup({
+    httpGet: nodeDownloadGet, // spec 081 delta 2026-10-27: no Electron here, so the Node getter (HarnessSetup has no default)
     detectEnv: nodeDetectEnv(),
     spawn: (file, args, opts) => spawn(file, args, { ...opts, shell: false }) as never,
     killTree: killTree as never,

@@ -7,7 +7,7 @@ import { EventEmitter } from 'events';
 import { MAX_REDIRECTS, MAX_SCRIPT_BYTES, allowedScriptUrl, downloadScript, looksLikeScript } from '../src/main/officialinstall';
 import * as http from 'http';
 import type { HttpGet } from '../src/main/officialinstall';
-import { makeDownloadGet } from '../src/main/netget';
+import { makeDownloadGet, makeNodeDownloadGet } from '../src/main/netget';
 import type { NetRequestFactory, NetRequestLike } from '../src/main/netget';
 import { HarnessSetup, confirmText, setupEnv } from '../src/main/harnesssetup';
 import { installPlans, routeOwning } from '../src/shared/harnesssetup';
@@ -202,6 +202,35 @@ async function main(): Promise<void> {
     const got = await downloadScript(claude, '.sh', { get: makeDownloadGet(ok), tmpdir: tmp });
     assert.deepStrictEqual(fs.readFileSync(got.file), body);
     assert.deepStrictEqual(requested, ['https://claude.ai/install.sh', 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh']);
+  }
+  // spec 081 delta 2026-10-27: every place that builds HarnessSetup hands in the installer download (it has no default); the
+  // Node scripts have no Electron, so they use the Node getter. Reading the sources keeps a new script from forgetting it.
+  for (const f of ['src/main/ipc/harness.ts', 'scripts/e2e-real.ts', 'scripts/install-check.ts']) {
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', f), 'utf8');
+    const block = src.slice(src.indexOf('new HarnessSetup('));
+    assert.ok(src.includes('new HarnessSetup('), `${f} builds a HarnessSetup`);
+    assert.ok(/httpGet:\s*(makeDownloadGet|nodeDownloadGet)\b/.test(block.slice(0, 2500)), `${f} passes httpGet to HarnessSetup`);
+  }
+  {
+    // the Node getter against a local server: the real stream code, no redirect followed, size cap, headers
+    let seenUa = '';
+    const server = http.createServer((req, res) => {
+      seenUa = String(req.headers['user-agent']);
+      if (req.url === '/redir') { res.writeHead(302, { location: 'https://evil.example/x' }); res.end(); }
+      else if (req.url === '/big') { res.writeHead(200); res.end(Buffer.alloc(5000)); }
+      else { res.writeHead(200, { 'content-type': 'text/x-shellscript' }); res.end(body); }
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    const get = makeNodeDownloadGet(http.get as never);
+    const okr = await get(`${base}/ok`, { timeoutMs: 2000, maxBytes: 1000 });
+    assert.strictEqual(okr.status, 200);
+    assert.deepStrictEqual(okr.body, body);
+    assert.strictEqual(seenUa, 'AgentDurbar');
+    const rd = await get(`${base}/redir`, { timeoutMs: 2000, maxBytes: 1000 });
+    assert.deepStrictEqual([rd.status, rd.location, rd.body.length], [302, 'https://evil.example/x', 0], 'a redirect is reported, not followed');
+    await assert.rejects(get(`${base}/big`, { timeoutMs: 2000, maxBytes: 1000 }), /larger than expected/);
+    await new Promise<void>((r2) => server.close(() => r2()));
   }
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log('officialinstall: allow-list, redirects, size, private files, runner (bash/powershell argv, cleanup, never root) OK');
