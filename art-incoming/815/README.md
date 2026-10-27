@@ -70,3 +70,4 @@ Review notes (Mac coordinator):
 29. Added `batch6/monster-frankenstein-*` (2026-10-27), all 3 poses. **Monster is complete: 6 characters** (sea creature, vampire, ghost, mummy, werewolf, Frankenstein).
 30. Added `batch6/rebels-fox-working` and `-waiting` (2026-10-27). The fox now has all 3 poses.
 31. Added `batch6/rebels-bulldog-resting.webp` (2026-10-27). **Animal Rebels is complete: 6 characters** (raccoon, punk cat, bulldog, fox, owl, panda).
+32. `batch6/pirate-cook-waiting` and `-working` were replaced with the cartoon-style redo (2026-10-27); *working* now shows no hands. **Pirate is complete: 6 characters.** All five collections are complete, 30 characters in all.
