@@ -47,16 +47,21 @@ module.exports = async (ctx) => {
     await ok(`!!document.querySelector('#stage .lounge')`, `${tag}: the lounge is drawn`);
     assert.ok(await inLounge(noor) && await inLounge(maya), `${tag}: Noor and Maya rest in the lounge`);
     assert.strictEqual(await js(`window.__durbarSimUi.sizingLounges()`), 2, `${tag}: the layout is sized for two lounges without a filter`);
+    const mains0 = await js(`window.__durbarSimUi.sizingMains()`);
 
     // Idle pill: the notice, no lounge, no reserved lounge width
     const hiddenIdle = (await count('working')) + (await count('waiting')) + (await count('error')) + (await count('done'));
+    const needIdle = (await count('waiting')) + (await count('error')); // hidden agents that need you (the inbox's predicate: waiting, error, limit; the simulator has no limit)
+    assert.ok(needIdle >= 1, `${tag}: the simulator has an agent that needs you`);
+    const needWord = `${needIdle} ${needIdle === 1 ? 'needs' : 'need'} you`;
     await clickPill('idle');
     await ok(`document.getElementById('filterNote')&&!document.getElementById('filterNote').hidden`, `${tag}: the notice shows`);
-    assert.strictEqual(await note(), `Showing only idle · ${hiddenIdle} hidden · Show all`, `${tag}: notice text: ${await note()}`);
+    assert.strictEqual(await note(), `Showing only idle · ${hiddenIdle} hidden (${needWord}) · Show all`, `${tag}: notice text: ${await note()}`);
     await H.settle(); await H.settleWalk();
     assert.strictEqual(await js(`document.querySelectorAll('#stage .lounge, #stage .desk.shut, #stage .units.has-shut').length`), 0, `${tag}: no lounge and no empty lounge band under the Idle pill`);
     assert.ok(!(await inLounge(noor)) && !(await inLounge(maya)), `${tag}: Noor and Maya are hidden by the filter`);
     assert.strictEqual(await js(`window.__durbarSimUi.sizingLounges()`), 0, `${tag}: the layout reserves no lounge width for hidden rolled agents`);
+    assert.strictEqual(await js(`window.__durbarSimUi.sizingMains()`), mains0, `${tag}: the cards are still sized for every desk, so a pill does not reshape them`);
     const g = await js(`(()=>{const n=document.getElementById('filterNote'),r=n.getBoundingClientRect(),f=document.getElementById('floor').getBoundingClientRect(),first=document.querySelector('#stage > *'),q=first.getBoundingClientRect();return {font:parseFloat(getComputedStyle(n).fontSize),top:r.top,bottom:r.bottom,left:r.left,right:r.right,fl:f.left,fr:f.right,ft:f.top,qtop:q.top,over:document.documentElement.scrollHeight-innerHeight,btn:!!n.querySelector('button.fn-all')}})()`);
     assert.ok(g.font >= 10.5, `${tag}: notice text is at least 10.5px: ${g.font}`);
     assert.ok(g.top >= g.ft && g.left >= g.fl && g.right <= g.fr, `${tag}: the notice is inside the floor: ${JSON.stringify(g)}`);
@@ -64,7 +69,7 @@ module.exports = async (ctx) => {
     assert.ok(g.btn && g.over <= 0, `${tag}: Show all is a button and the page does not scroll: ${JSON.stringify(g)}`);
     const probs = (await js(`(${pageCheck.toString()})(false, 5)`)).problems;
     assert.deepStrictEqual(probs, [], `${tag}: page rules under the Idle pill: ${probs.join('; ')}`);
-    await ok(`window.__ann.some(t=>t.startsWith('Showing only idle.')&&t.includes(' '+${jsLiteral(String(hiddenIdle))}+' hidden'))`, tag + ': a screen reader is told');
+    await ok(`window.__ann.some(t=>t.startsWith('Showing only idle.')&&t.includes(' '+${jsLiteral(String(hiddenIdle))}+' hidden, '+${jsLiteral(needWord)}))`, tag + ': a screen reader is told');
     assert.strictEqual(await js(`window.__ann.filter(t=>/Showing only/.test(t)).length`), 1, `${tag}: told once`);
     if (w === 1440) await H.shot(path.join(OUT, `001-status-filter-${tag}.png`), { prep: 'calm', settle: true, blur: true, tag: 'statusfilter' });
 
@@ -83,11 +88,21 @@ module.exports = async (ctx) => {
     const hiddenDone = (await count('working')) + (await count('waiting')) + (await count('error')) + (await count('idle'));
     await clickPill('done');
     await ok(`document.getElementById('filterNote')&&!document.getElementById('filterNote').hidden`, `${tag}: the notice shows for Done`);
-    assert.strictEqual(await note(), `Showing only done · ${hiddenDone} hidden · Show all`, `${tag}: Done notice: ${await note()}`);
+    const needDone = (await count('waiting')) + (await count('error'));
+    assert.strictEqual(await note(), `Showing only done · ${hiddenDone} hidden (${needDone} ${needDone === 1 ? 'needs' : 'need'} you) · Show all`, `${tag}: Done notice: ${await note()}`);
     await ok(`!!document.querySelector('#stage .lounge .desk.shut')`, `${tag}: Done shows the lounge`);
     assert.strictEqual(await js(`window.__durbarSimUi.sizingLounges()`), 2, `${tag}: Done keeps the lounge width`);
     await clickPill('done');
     await ok(`document.getElementById('filterNote').hidden`, `${tag}: the Done notice goes with its pill`);
+
+    // the Error pill hides only waiting agents that need you: singular wording, the count of the Waiting pill
+    const waitN = await count('waiting');
+    const allMains = (await count('working')) + waitN + (await count('idle')) + (await count('error')) + (await count('done'));
+    await clickPill('error');
+    await ok(`document.getElementById('filterNote')&&!document.getElementById('filterNote').hidden`, `${tag}: the notice shows for Error`);
+    assert.strictEqual(await note(), `Showing only error · ${allMains - (await count('error'))} hidden (${waitN} ${waitN === 1 ? 'needs' : 'need'} you) · Show all`, `${tag}: Error notice: ${await note()}`);
+    await clickPill('error');
+    await ok(`document.getElementById('filterNote').hidden`, `${tag}: the Error notice goes with its pill`);
 
     // List
     await js(`document.getElementById('vList').click()`);
@@ -96,7 +111,7 @@ module.exports = async (ctx) => {
     assert.ok(await inList(noor) && await inList(maya), `${tag}: List shows Noor and Maya`);
     await clickPill('idle');
     await ok(`!!document.querySelector('#list .filter-note')`, `${tag}: the notice shows in the list`);
-    assert.strictEqual(await listNote(), `Showing only idle · ${hiddenIdle} hidden · Show all`, `${tag}: List notice: ${await listNote()}`);
+    assert.strictEqual(await listNote(), `Showing only idle · ${hiddenIdle} hidden (${needWord}) · Show all`, `${tag}: List notice: ${await listNote()}`);
     assert.ok(!(await inList(noor)) && !(await inList(maya)), `${tag}: List leaves out Noor and Maya under the Idle pill`);
     assert.strictEqual(await js(`document.querySelectorAll('#list .lrow[data-id]').length`), 15 - hiddenIdle, `${tag}: List rows are the idle ones`);
     await js(`document.querySelector('#list .fn-all').click()`);
@@ -105,6 +120,24 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('vOffice').click()`);
     await ok(`!document.body.classList.contains('list-mode')`, `${tag}: back to the office`);
     console.log(`[statusfilter] ${tag} ok`);
+  }
+
+  // Contrast of the note's three texts against their real background, Clean Office (the default) and Retro (its own rule): 12px text needs 4.5:1
+  const contrast = (sel) => js(`(()=>{const rgb=c=>c.match(/[\\d.]+/g).map(Number);const lum=c=>{const [r,g,b]=c.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return 0.2126*r+0.7152*g+0.0722*b;};
+    const e=document.querySelector(${jsLiteral(sel)});let bg=null;for(let n=e;n&&!bg;n=n.parentElement){const c=getComputedStyle(n).backgroundColor;const m=rgb(c);if(m.length<4||m[3]>0.99)bg=m.slice(0,3);}
+    const fg=rgb(getComputedStyle(e).color).slice(0,3),a=lum(fg),b=lum(bg),r=(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);return {fg:fg.join(','),bg:bg.join(','),ratio:Math.round(r*100)/100};})()`);
+  for (const theme of ['clean-office', 'retro']) {
+    await H.load({ w: 1440, h: 900 });
+    await js(`window.THEME.setTheme(${jsLiteral(theme)})`);
+    await ok(`window.THEME.current().id===${jsLiteral(theme)}`, theme + ' applied');
+    await clickPill('idle');
+    await ok(`document.getElementById('filterNote')&&!document.getElementById('filterNote').hidden`, theme + ': the notice shows');
+    await H.settle();
+    for (const sel of ['#filterNote', '#filterNote b', '#filterNote .fn-all']) {
+      const c = await contrast(sel);
+      console.log(`[statusfilter] ${theme} contrast ${sel}: ${c.fg} on ${c.bg} = ${c.ratio}:1`);
+      assert.ok(c.ratio >= 4.5, `${theme}: ${sel} contrast ${c.ratio}:1 is below 4.5:1`);
+    }
   }
   console.log('[statusfilter] all checks passed');
 };

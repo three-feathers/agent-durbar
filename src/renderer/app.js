@@ -830,8 +830,9 @@ const matchStatus = a => !ui.status || ((ui.status==='working')?['working','thin
    (Show all is the pill's own toggle) so a finished session the filter hides never looks lost. N counts the main sessions the office or the list
    would show without the pill (same folder, workspace and floor rules), not helpers. */
 const filterNote=()=>{if(!ui.status)return null;
-  const n=visibleAgents().filter(a=>!a.parent&&!matchStatus(a)&&(ui.view!=='office'||onScreen(roomOf(a)))).length;
-  return {word:ui.status,n,html:`Showing only <b>${esc(ui.status)}</b> · ${n} hidden · <button type="button" class="fn-all" data-fn-all>Show all</button>`};};
+  const hid=visibleAgents().filter(a=>!a.parent&&!matchStatus(a)&&(ui.view!=='office'||onScreen(roomOf(a)))), n=hid.length;
+  const k=hid.filter(needsMe).length, needs=k?`${k} ${k===1?'needs':'need'} you`:''; /* the inbox's own predicate: waiting, error, limit */
+  return {word:ui.status,n,needs,html:`Showing only <b>${esc(ui.status)}</b> · ${n} hidden${needs?` (${needs})`:''} · <button type="button" class="fn-all" data-fn-all>Show all</button>`};};
 let noteStatus=null;
 function renderFilterNote(){ /* the office's note: a line in the floor's top padding, so the layout measures the room below it */
   const el=$('filterNote'),fl=$('floor'),i=ui.view==='office'?filterNote():null;
@@ -845,10 +846,11 @@ function announceFilterNote(){ /* once per change of the pill, not on every coun
   if((ui.status||null)===noteStatus)return;
   noteStatus=ui.status||null;
   const i=filterNote();
-  announce(i?`Showing only ${i.word}. ${i.n} hidden. Show all is the button in the notice.`:'Showing all agents.');
+  announce(i?`Showing only ${i.word}. ${i.n} hidden${i.needs?`, ${i.needs}`:''}. Show all is the button in the notice.`:'Showing all agents.');
 }
 /* the layout is sized from every main session, so a status pill does not reshape the cards; but the lounge of finished agents the pill hides
    is not drawn (roomHTML reads the filtered model), so it reserves no width either */
+let lastSizing=[];
 const sizingModel=model=>ui.status?officeModel(true).map(m=>({...m,rolled:(m.rolled||[]).filter(x=>matchStatus(x.a))})):model;
 
 /* ---------------- office view ---------------- */
@@ -1623,7 +1625,7 @@ function renderOffice(){
     floor.classList.remove('scrolls'); return;
   }
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
-  const sizing=sizingModel(model);
+  const sizing=lastSizing=sizingModel(model); /* what chooseLayout is given (the hook below reads it) */
   const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),THEME.themeIdForCache(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),curFloorId(),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]]),(m.rolled||[]).map(x=>[x.a.id,x.k]),!!ui.expanded['shut:'+m.r.id]])]);
   if(key!==layoutKey||!layout){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
   HCAP=layout.hcap; HBOOST=new Map(layout.boost); LIVE_SIDE=!!layout.side; GROW=layout.grow?1:0; HX=layout.hx||0; /* a cached layout skips chooseLayout: restore the helper level too */
@@ -7513,7 +7515,7 @@ const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueu
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
 if(SIM)window.__durbarSimUi={agents:()=>agents,crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded=false;crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
-  sizingLounges:()=>sizingModel(officeModel()).reduce((n,m)=>n+(m.rolled||[]).length,0), /* spec 001 FR-180: the finished agents the office is sized for */
+  sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,
   /* spec 059 T076 (FR-023): a driver makes the things that change while a field is open happen through the real paths */
   retitle:(id,title)=>{const a=byId(id);if(!a)return false;applyTitle(a,title);return true;},

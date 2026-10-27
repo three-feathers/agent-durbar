@@ -212,4 +212,4 @@ Numbers checked against `main` (00d340eb) and every open PR on 2026-10-25: none 
 - [x] T139 Issue #790 (FR-181): `sizingModel` leaves out the rolled agents the pill hides; `sizingLounges` simulator hook
 - [x] T140 Issue #790: Electron driver `scripts/check-status-filter.js` (`npm run check:statusfilter`, registered in `scripts/ui-suite.js`): notice text and count, no lounge or band under Idle, Show all brings Noor and Maya back in the lounge and in List, both sizes; mutants (notice missing, wrong count, lounge width still reserved, List notice missing, Show all no-op) each caught, listed in the PR
 - [x] T141 Issue #790: docs (README, `changelog.d/001-status-filter-notice.md`); no linked picture shows a filtered office or List, so none retaken
-
+- [x] T142 Review on PR 816 (FR-180, FR-181): the note and the announcement name the hidden agents that need you (`needsMe`), `sizingLounges` reads `lastSizing`, contrast of the note in Clean Office and Retro (computed in `check-status-filter`); mutants: needs part dropped in the note and in the announcement, `sizingModel` returning its input, each caught
