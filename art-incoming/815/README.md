@@ -62,3 +62,4 @@ Review notes (Mac coordinator):
 21. Added `batch6/monster-ghost-waiting.webp` (2026-10-27). The ghost now has all 3 poses (its *resting* is in the batch-1 folder).
 22. Added `batch6/monster-mummy-resting` and `-working` (2026-10-27). The mummy's *waiting* is still missing.
 23. Added `batch6/monster-mummy-waiting.webp` (2026-10-27). The mummy now has all 3 poses.
+24. `batch6/pirate-hook-*` were replaced with the cartoon-style redo (2026-10-27): *resting* has closed eyes and the tankard in the hand and hook, *working* shows no hands. The hook pirate is now complete and consistent.
