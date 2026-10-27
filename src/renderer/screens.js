@@ -1399,7 +1399,7 @@
     const refresh=async manual=>{
       if(refreshBusy||!X.bridge.agentMcpRefresh)return;
       refreshBusy=true;if(manual){refreshNote='';await repaint();}
-      const r=await call(X.bridge.agentMcpRefresh,a.id);
+      const r=await call(X.bridge.agentMcpRefresh,a.id,manual===true); /* FR-190: main skips an open-time read under a minute after the last one */
       refreshBusy=false;
       if(!dlg||!dlg.isConnected)return;
       if(r&&r.ok){refreshNote=manual?'Updated just now.':'';}

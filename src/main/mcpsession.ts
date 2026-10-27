@@ -203,7 +203,8 @@ export const REFRESH_TIMEOUT_MS = 15_000;
  * uses (`refreshMcpStatus` with no name). The new states reach the window as the usual `mcp` event. One read at a time per agent
  * (`inflight`: a second press or a dialog opened meanwhile shares the first). No vendor text comes back, only whether it worked.
  */
-export async function mcpRefreshOp(d: { agents: Map<string, AgentInfo>; router: Pick<AdapterRouter, 'forAgent'>; timeoutMs?: number }, inflight: Map<string, Promise<McpRefreshResult>>, id: unknown): Promise<McpRefreshResult> {
+export const REFRESH_OPEN_MIN_MS = 60_000;
+export async function mcpRefreshOp(d: { agents: Map<string, AgentInfo>; router: Pick<AdapterRouter, 'forAgent'>; timeoutMs?: number; lastRead?: Map<string, number>; now?: () => number }, inflight: Map<string, Promise<McpRefreshResult>>, id: unknown, manual?: unknown): Promise<McpRefreshResult> {
   const a = typeof id === 'string' ? d.agents.get(id) : undefined;
   const ad = a ? d.router.forAgent(a.id) : undefined;
   if (!a || !ad) return { ok: false, supported: false, error: 'Unknown agent.' };
@@ -211,6 +212,11 @@ export async function mcpRefreshOp(d: { agents: Map<string, AgentInfo>; router: 
   if (!ad.isLive(a.id)) return { ok: false, supported: true, error: NOT_RUNNING };
   const held = inflight.get(a.id);
   if (held) return held;
+  // FR-190 (owner, 2026-10-27): opening the dialog reads at most once a minute per agent (open or Refresh); the Refresh button always reads
+  const t = (d.now ?? Date.now)();
+  const last = d.lastRead?.get(a.id);
+  if (manual !== true && last !== undefined && t - last >= 0 && t - last < REFRESH_OPEN_MIN_MS) return { ok: true, supported: true, skipped: true };
+  d.lastRead?.set(a.id, t);
   const run = (async (): Promise<McpRefreshResult> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {

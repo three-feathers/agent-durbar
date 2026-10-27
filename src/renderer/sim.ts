@@ -1764,11 +1764,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true, total: list.length, tools: list.map(([n, d]) => { const ob = simOrgTool(s.info.adapterId, name, n); return { name: n, ...(d ? { description: d } : {}), ...(ob ? { orgBlocked: ob } : {}) }; }) };
       },
       /* spec 058 FR-190: the agent app reads its server list again. A driver counts the reads in `__durbarSimMcpRefresh.count` and sets what the app will say next in `__durbarSimMcpRefresh.app[id]` (a server list, sent as the usual `mcp` event) */
-      agentMcpRefresh: async (id) => {
+      agentMcpRefresh: async (id, manual) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, supported: false, error: 'Unknown agent.' };
         if (!simSignApp(s)) return { ok: false, supported: false };
         if (s.state === 'idle' && !s.ctx) return { ok: false, supported: true, error: 'This session is not running. Send a message to start it.' };
+        const lastAt = (s as { mcpReadAt?: number }).mcpReadAt; /* main's rule: an open-time read waits a minute after the last read; Refresh always reads */
+        if (manual !== true && lastAt !== undefined && Date.now() - lastAt >= 0 && Date.now() - lastAt < 60_000) return { ok: true, supported: true, skipped: true };
+        (s as { mcpReadAt?: number }).mcpReadAt = Date.now();
         const hook = ((window as unknown as { __durbarSimMcpRefresh?: { count: number; ids: string[]; app: Record<string, McpServerStatus[]> } }).__durbarSimMcpRefresh ??= { count: 0, ids: [], app: {} });
         hook.count++;
         hook.ids.push(id);

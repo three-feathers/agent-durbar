@@ -14,7 +14,7 @@
  *   policy" and one with a 401 reads "Running · last call needs sign-in"; a Running server with no failed call says nothing; a hint
  *   says what to do; no piece of the raw text reaches the page (FR-187..FR-189);
  * - a later successful call clears it on the next read (FR-188);
- * - opening the dialog reads the list once; the button Refresh reads it again (one count each) and the new state shows (FR-190);
+ * - opening the dialog reads the list once, and an open within the minute of the last read reads nothing; the button Refresh reads it again (one count each) and the new state shows (FR-190);
  * - Refresh is a button in the tab order, keeps its focus, says "Refreshing…" while it runs and announces the result (FR-192);
  * - a Codex row (no re-read) shows no button and says it cannot report the list again (FR-190);
  * - text >= 10.5px, the dialog fits the window and the page does not overflow.
@@ -129,6 +129,11 @@ module.exports = async (ctx) => {
     assert.ok(await until(`(()=>{const li=document.querySelector('#agMcp li.srv[data-n="agent365-teams"]');return !!li&&!li.querySelector('.mst-call');})()`), `${w}: a successful call cleared the words`);
     assert.strictEqual((await row('agent365-teams')).hint, '', 'and its hint');
     assert.ok(await fits() && (await minFont()).min >= 10.5, `${w}: still fits`);
+    await closeDlg();
+    // FR-190 (owner, 2026-10-27): opening again within the minute reads nothing (Refresh above always read)
+    await openDlg();
+    await settle();
+    assert.strictEqual(await count(), 3, `${w}: a second open within the minute stays at 3 reads`);
     await closeDlg();
 
     // ---- a Codex row cannot be read again: no button, and the dialog says so ----

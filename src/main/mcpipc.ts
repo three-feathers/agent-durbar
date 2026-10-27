@@ -247,7 +247,8 @@ export function registerMcpIpc(deps: {
   });
   /** Spec 058 FR-190: read the agent app's whole server list again (the dialog opening, Refresh); one read at a time per agent. */
   const refreshing = new Map<string, Promise<McpRefreshResult>>();
-  ipcHandle('agents:mcpRefresh', (e, id: unknown) => (fromApp(e) ? mcpRefreshOp({ agents, router }, refreshing, id) : { ok: false, supported: false, error: 'invalid request' }));
+  const lastRead = new Map<string, number>();
+  ipcHandle('agents:mcpRefresh', (e, id: unknown, manual?: unknown) => (fromApp(e) ? mcpRefreshOp({ agents, router, lastRead, now: deps.now }, refreshing, id, manual) : { ok: false, supported: false, error: 'invalid request' }));
   /** Spec 058 FR-021: restart one server of this agent's running session; one at a time per server. */
   const restarting = new Set<string>();
   ipcHandle('agents:mcpRestart', (_e, id: unknown, name: unknown) =>

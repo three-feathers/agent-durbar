@@ -1468,11 +1468,16 @@ only *Open log folder*, no log lines in the app) and #349's "Show logs"; *Open l
   **Where the agent app cannot report it** (Codex: it re-reads only on its own events), the dialog has no button and says
   "<app> cannot report its server list again, so these states are its last report." The window-focus and sign-in paths of FR-064
   and FR-176 are unchanged.
+  **Owner decision (Paco, 2026-10-27, terminal): the open-time read happens at most once a minute.** Opening the dialog reads only when
+  the last read of that agent (by an open or by Refresh) is 60 s old or older; **Refresh always reads** (still one at a time, FR-191).
+  Main keeps the rule (`mcpRefreshOp`, a per-agent time stamp, an injectable clock), so every window obeys it; `agents:mcpRefresh(id, manual)`
+  gets `manual: true` only from the button, and an open inside the minute answers `{ ok: true, supported: true, skipped: true }`. A clock
+  that moved back does not block reads.
   `[KNOWN GAP]` (as T105) for Copilot: `rpc.mcp.list` is `@experimental` ("cache misses may start and wait for MCP servers", read: SDK
-  1.0.22), and the whole-list read has no `isServerRunning` guard (that guard needs a name). A real Copilot run (macOS keychain
-  prompts, issue #623) is not done: it needs the owner's OK. Until then every dialog open asks once.
-  [IMPLEMENTED] `test:` `test-mcpcall.ts` (`mcpRefreshOp`, the reply flag), `test-ipcchannels.ts` (owner-only check); `sim:` `shots-058-mcp-refresh.js`
-  (open = one read, Refresh = one more, the new state shows, Codex has the note and no read).
+  1.0.22), and the whole-list read has no `isServerRunning` guard (that guard needs a name), so a read can still start servers or
+  prompt the macOS keychain (issue #623), now at most once a minute on open. A real Copilot run is not done: it needs the owner's OK.
+  [IMPLEMENTED] `test:` `test-mcpcall.ts` (`mcpRefreshOp`, the reply flag; open twice within 60 s = one read, after 60 s = another, Refresh within 60 s reads), `test-ipcchannels.ts` (owner-only check); `sim:` `shots-058-mcp-refresh.js`
+  (open = one read, Refresh = one more, the new state shows, a second open within the minute reads nothing, Codex has the note and no read).
 - **FR-191** **One read at a time, with a time limit, and no vendor text.** `mcpRefreshOp` shares the read already running for an agent
   (a second press, or a dialog opened meanwhile, adds none), gives up after 15 s, and answers only `{ ok, supported, error? }`:
   `supported: false` for an app without the call, "This session is not running..." for a stopped one, and

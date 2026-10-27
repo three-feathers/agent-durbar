@@ -701,6 +701,8 @@ export interface McpOpenSignInResult {
 export interface McpRefreshResult {
   ok: boolean;
   supported: boolean;
+  /** Spec 058 FR-190: the open-time read was skipped, the last read of this agent is under a minute old. */
+  skipped?: true;
   error?: string;
 }
 
@@ -972,7 +974,7 @@ export interface DurbarApi {
   /** `focus: true` = the window regained focus: main reads the agent app's MCP list again when a sign-in page is open (spec 058 FR-064). */
   agentMcp?(id: string, focus?: boolean): Promise<AgentMcpReply>;
   /** Spec 058 FR-190 (issue #779 B): ask the agent app for its server list again (the dialog opening, or Refresh); the new states arrive as the usual `mcp` event. */
-  agentMcpRefresh?(id: string): Promise<McpRefreshResult>;
+  agentMcpRefresh?(id: string, manual?: boolean): Promise<McpRefreshResult>;
   /** Spec 058 FR-021: restart one MCP server of this agent's running session. */
   agentMcpRestart?(id: string, name: string): Promise<McpRestartResult>;
   /** Spec 058 FR-065: start the agent app's own sign-in for one MCP server. Main keeps the address; the reply has the host only. */

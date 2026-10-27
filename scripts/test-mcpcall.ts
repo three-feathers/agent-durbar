@@ -131,7 +131,7 @@ async function main(): Promise<void> {
     const agents = new Map([[sid, info(sid)]]);
     const router = { forAgent: () => ad };
     const inflight = new Map<string, Promise<McpRefreshResult>>();
-    const run = (id: unknown = sid) => mcpRefreshOp({ agents, router, timeoutMs: 80 }, inflight, id);
+    const run = (id: unknown = sid) => mcpRefreshOp({ agents, router, timeoutMs: 80 }, inflight, id, true); // the button: no throttle
     assert.deepStrictEqual(await run(), { ok: true, supported: true });
     assert.strictEqual(ad.refreshCalls, 1, 'one re-read of the whole list');
     assert.deepStrictEqual(ad.refreshNames, [undefined], 'with no server name: every server');
@@ -159,6 +159,34 @@ async function main(): Promise<void> {
     assert.strictEqual(inflight.size, 0);
     ad.refreshDelay = 0;
     assert.strictEqual((await run()).ok, true, 'and the next read works');
+    // FR-190 (owner, 2026-10-27): opening the dialog reads at most once a minute per agent; Refresh always reads
+    {
+      const ad2 = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true } });
+      const s2 = await ad2.start({ workspace: '/w', quiet: true });
+      const ag2 = new Map([[s2, info(s2)]]);
+      let clock = 1_000_000;
+      const dd = { agents: ag2, router: { forAgent: () => ad2 }, lastRead: new Map<string, number>(), now: () => clock };
+      const open = () => mcpRefreshOp(dd, new Map(), s2, false);
+      const press = () => mcpRefreshOp(dd, new Map(), s2, true);
+      assert.deepStrictEqual(await open(), { ok: true, supported: true });
+      assert.strictEqual(ad2.refreshCalls, 1, 'the first open reads');
+      clock += 59_999;
+      assert.deepStrictEqual(await open(), { ok: true, supported: true, skipped: true });
+      assert.strictEqual(ad2.refreshCalls, 1, 'a second open within 60 s reads nothing');
+      assert.strictEqual((await press()).skipped, undefined);
+      assert.strictEqual(ad2.refreshCalls, 2, 'Refresh within 60 s reads');
+      clock += 59_999;
+      await open();
+      assert.strictEqual(ad2.refreshCalls, 2, 'the minute counts from the last read, Refresh included');
+      clock += 2;
+      await open();
+      assert.strictEqual(ad2.refreshCalls, 3, 'an open after 60 s reads');
+      clock -= 500_000; // a clock that went back: reads rather than waits for ever
+      await open();
+      assert.strictEqual(ad2.refreshCalls, 4, 'a clock that moved back does not block reads');
+      await mcpRefreshOp({ ...dd, lastRead: new Map() }, new Map(), s2, undefined);
+      assert.strictEqual(ad2.refreshCalls, 5, 'no memory of a read: reads');
+    }
     // unsupported: says so, reads nothing
     const bare = new FakeAdapter({ displayName: 'Codex', capabilities: { mcpSignIn: true }, omit: ['refreshMcpStatus'] });
     const bsid = await bare.start({ workspace: '/w', quiet: true });
