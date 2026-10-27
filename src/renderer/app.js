@@ -826,7 +826,7 @@ function renderFilter(){
   fitTopbar(); /* the narrow value is reapplied to the new options */
 }
 const matchStatus = a => !ui.status || ((ui.status==='working')?['working','thinking'].includes(vis(a)):vis(a)===ui.status);
-/* spec 001 FR-180 (issue #790): while a status pill filters, say so. The office and List show "Showing only <state> · N hidden · Show all"
+/* spec 001 FR-180 (issue 790): while a status pill filters, say so. The office and List show "Showing only <state> · N hidden · Show all"
    (Show all is the pill's own toggle) so a finished session the filter hides never looks lost. N counts the main sessions the office or the list
    would show without the pill (same folder, workspace and floor rules), not helpers. */
 const filterNote=()=>{if(!ui.status)return null;

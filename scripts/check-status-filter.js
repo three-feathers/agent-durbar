@@ -64,7 +64,7 @@ module.exports = async (ctx) => {
     assert.ok(g.btn && g.over <= 0, `${tag}: Show all is a button and the page does not scroll: ${JSON.stringify(g)}`);
     const probs = (await js(`(${pageCheck.toString()})(false, 5)`)).problems;
     assert.deepStrictEqual(probs, [], `${tag}: page rules under the Idle pill: ${probs.join('; ')}`);
-    await ok(`window.__ann.some(t=>/Showing only idle\\..*${hiddenIdle} hidden/.test(t))`, `${tag}: a screen reader is told: ${await js('window.__ann.join(" | ")')}`);
+    await ok(`window.__ann.some(t=>t.startsWith('Showing only idle.')&&t.includes(' '+${jsLiteral(String(hiddenIdle))}+' hidden'))`, tag + ': a screen reader is told');
     assert.strictEqual(await js(`window.__ann.filter(t=>/Showing only/.test(t)).length`), 1, `${tag}: told once`);
     if (w === 1440) await H.shot(path.join(OUT, `001-status-filter-${tag}.png`), { prep: 'calm', settle: true, blur: true, tag: 'statusfilter' });
 
