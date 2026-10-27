@@ -45,36 +45,44 @@ const chatNoHTML=a=>{const n=chatNoOf(a);return n?`<span class="chatno" data-n="
 /* spec 077 (Cheeky Crew): which character a session wears. Random among the ones the office uses least, kept per session id in this window's
    localStorage like the chat numbers (ids and character names only), outside the simulator and the demo; there the pick is seeded by the id. Helpers
    get a character by the same rule and are not stored. Only the crew scene kit asks (crewOf), so other themes cost nothing. */
-const CREW_KEY='durbar.crew', CREW=window.DurbarCrew;
-let CREW_MAP={}, CREW_FOR=null, CREW_HELP={};
+const CREW_KEY='durbar.crew', CREW=window.DurbarCrew||null; /* null: crew.js did not load, every crew call below answers "no character" and the kit draws the plain figure (FR-017, T028) */
+let CREW_MAP={}, CREW_FOR=null, CREW_IDS=null, CREW_HELP={}; /* CREW_FOR: the agents array the map was loaded for; CREW_IDS: the main-session ids it was last synced to (a removal keeps the array's identity, so the ids decide) */
 /* FR-055: every portrait is loaded and decoded once the crew kit is first used; a character with a picture that is missing or cannot be
    decoded is marked bad and its desks draw the plain office-style figure (the mark is in the signature and the cache keys, so they redraw) */
 const CREW_BAD=new Set(); let crewLoaded=false;
 function crewPreload(){
-  if(crewLoaded)return; crewLoaded=true;
+  if(crewLoaded||!CREW)return; crewLoaded=true;
   for(const id of CREW.IDS)for(const pose of CREW.POSES){
     const f=CREW.file(id,pose), im=new Image();
-    const bad=()=>{if(CREW_BAD.has(id))return;CREW_BAD.add(id);console.warn('[crew] picture '+f+' is missing or cannot be decoded: '+id+' is drawn as the plain figure');scheduleRender();};
+    const bad=()=>{if(CREW_BAD.has(id))return;CREW_BAD.add(id);console.warn('[crew] picture '+f+' is missing or cannot be decoded: '+id+' is drawn as the plain figure');crewRefreshAvatars();scheduleRender();};
     im.onerror=bad; im.src=f; if(im.decode)im.decode().catch(bad);
   }
 }
-const crewRand=()=>rememberOn()?undefined:CREW.seededRand;
+/* the open chat's header avatar and the inbox rows are drawn once, not by renderAll: when a character falls back, redraw just those avatars (no rebuild, so focus stays) */
+function crewRefreshAvatars(){
+  const sel=typeof ui!=='undefined'&&byId(ui.selected), ph=document.querySelector('#panelHead .avatar'); if(sel&&ph)ph.innerHTML=avatar(sel);
+  document.querySelectorAll('.inbox-row[data-id] .ib-av').forEach(av=>{const a=byId(av.closest('.inbox-row').dataset.id);if(a)av.innerHTML=avatar(a);});
+}
+const crewRand=()=>CREW&&!rememberOn()?CREW.seededRand:undefined;
+const crewMainIds=()=>agents.filter(a=>!a.parent).map(a=>a.id);
 function syncCrew(){
+  if(!CREW)return;
   if(CREW_FOR!==agents){CREW_FOR=agents;CREW_MAP={};CREW_HELP={};if(!demoOn&&rememberOn()){try{CREW_MAP=CREW.loadCrew(localStorage.getItem(CREW_KEY));}catch(e){CREW_MAP={};}}}
-  const ids=agents.filter(a=>!a.parent).map(a=>a.id);
+  const ids=crewMainIds(); CREW_IDS=ids.join('\n');
+  for(const h of Object.keys(CREW_HELP))if(!agents.some(a=>a.id===h))delete CREW_HELP[h]; /* a removed helper frees its character */
   /* a session that is gone frees its character once the office has loaded (before that, restored sessions keep theirs) */
   const next=CREW.assignCrew(agentsListed||demoOn?CREW.pruneCrew(CREW_MAP,ids):CREW_MAP,ids,CREW.IDS,crewRand());
   if(JSON.stringify(next)!==JSON.stringify(CREW_MAP)){CREW_MAP=next;if(!demoOn&&rememberOn()){try{localStorage.setItem(CREW_KEY,JSON.stringify(CREW_MAP));}catch(e){}}}
 }
 const crewOf=a=>{
-  if(!a)return '';
+  if(!a||!CREW)return '';
   crewPreload();
   if(a.parent){
-    if(CREW_FOR!==agents)syncCrew();
+    if(CREW_FOR!==agents||crewMainIds().join('\n')!==CREW_IDS)syncCrew();
     if(!CREW_HELP[a.id])CREW_HELP[a.id]=CREW.pickCharacter(a.id,CREW.IDS,Object.values(CREW_MAP).concat(Object.values(CREW_HELP)),crewRand());
     return CREW_HELP[a.id];
   }
-  if(CREW_FOR!==agents||!(a.id in CREW_MAP))syncCrew();
+  if(CREW_FOR!==agents||!(a.id in CREW_MAP)||crewMainIds().join('\n')!==CREW_IDS)syncCrew();
   return CREW_MAP[a.id]||'';
 };
 /* the character in a cache key or a walker's key: nothing outside the crew kit, so the other themes' keys do not change */
@@ -1710,6 +1718,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('#list [data-lsor
 
 function renderAll(){
   syncChatNos(); /* spec 074 FR-011 */
+  if(CREW_FOR)syncCrew(); /* spec 077: a closed session frees its character even when no desk is drawn (the last one) */
   AMB_ID=pickAmbulanceId();
   syncDesks(); /* spec 001 FR-034: who walks to the Boss and who comes back */
   prepareWalkers();
@@ -7295,7 +7304,8 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={agents:()=>agents,readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
+if(SIM)window.__durbarSimUi={agents:()=>agents,crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded=false;crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
+  readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,
   /* spec 059 T076 (FR-023): a driver makes the things that change while a field is open happen through the real paths */
   retitle:(id,title)=>{const a=byId(id);if(!a)return false;applyTitle(a,title);return true;},

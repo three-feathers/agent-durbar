@@ -32,6 +32,9 @@ assert.strictEqual(C.pickCharacter('n', ids, ['a', 'b', 'c'], () => 0), 'd', 'th
 assert.strictEqual(C.pickCharacter('n', ids, ['a', 'a', 'b', 'c', 'd'], () => 0.5), ['b', 'c', 'd'][1], 'the least used: a is taken twice, the rest once');
 assert.strictEqual(C.pickCharacter('n', ids, ['a', 'b', 'c', 'd'], () => 0), 'a', 'all taken once: twins only now');
 assert.strictEqual(C.pickCharacter('n', ids, ['zzz', 'a'], () => 0), 'b', 'unknown ids in use are ignored');
+// PR 621 review (FR-020, FR-023): app.js hands pickCharacter the main sessions' characters AND the live helpers' ones; with a main on a and its helper on b, a new main must not take b while c and d are unused
+assert.strictEqual(C.pickCharacter('n', ids, ['a'].concat(['b']), () => 0), 'c', 'a helper counts as in use: the next main takes an unused character, not the helper\'s');
+assert.strictEqual(C.pickCharacter('n', ids, ['a'], () => 0), 'b', 'without the helper in the list b would be a candidate (the mutant this guards: only the main map counted)');
 assert.ok(ids.includes(C.pickCharacter('n', ids, [], () => NaN)), 'a bad random value still picks a character');
 assert.ok(ids.includes(C.pickCharacter('n', ids, [], () => 7)) && ids.includes(C.pickCharacter('n', ids, [], () => -3)), 'out-of-range random values are clamped');
 assert.ok(C.IDS.includes(C.pickCharacter('n', [], [], () => 0)), 'no list given: the built-in characters');

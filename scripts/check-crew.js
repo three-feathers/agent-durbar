@@ -8,6 +8,7 @@
  *   - several characters are in use (the simulator's seeded least-used pick), and no desk shows a broken picture or a console error;
  *   - the walking figures, chat strip chips and the lounge draw the portrait too.
  * At 1920x1080 with 2 agents (grown desks, spec 001 FR-041) the largest shown size of a portrait is still at most half its natural size.
+ * Then the review fixes of PR 621: sessions removed (the map, the helpers), a character falling back after the header and the inbox are open, and crew.js itself missing.
  * Then FR-055: a copy of dist/ with one picture removed. The desks of that character draw the plain figure (no <image>), the others
  * keep their pictures, and nothing is broken.
  *
@@ -301,6 +302,86 @@ module.exports = async (ctx) => {
       await H.clearToasts();
       await ctx.shot(path.join(out, 'crew-fallback-1440x900.png'));
       console.log(`[crew] fallback: ${lostScenes.length} desk(s) of ${lost} drawn as the plain figure`);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+  // PR 621 review: the characters of a closed session are freed (the main-session ids decide, the array keeps its identity), the last one too
+  // the helpers' characters go with their parent; no stale id stays in the map (nor in durbar.crew where it is stored)
+  {
+    await H.load({ w: 1440, h: 900, ready: 'fit', settle: false });
+    await H.office(15);
+    await pick(ID);
+    const r = await H.js(`(()=>{ try {
+      const U = window.__durbarSimUi, agents = U.agents(), st = () => U.crew.state(), before = Object.keys(st().map).length, helpers0 = Object.keys(st().help).length;
+      const parent = agents.find((a) => !a.parent && agents.some((h) => h.parent === a.id)) || agents.find((a) => !a.parent);
+      const kids = agents.filter((h) => h.parent === parent.id).map((h) => h.id);
+      for (let i = agents.length - 1; i >= 0; i--) if (agents[i].id === parent.id || agents[i].parent === parent.id) agents.splice(i, 1);
+      try { U.crew.renderAll(); } catch (e) { return { err: 'one: ' + e.stack }; }
+      const one = { gone: parent.id, kids, inMap: parent.id in st().map, staleHelpers: Object.keys(st().help).filter((k) => !agents.some((a) => a.id === k)), size: Object.keys(st().map).length };
+      agents.splice(0, agents.length);
+      try { U.crew.renderAll(); } catch (e) { return { err: 'last: ' + e.stack }; }
+      return { before, helpers0, one, last: { map: Object.keys(st().map).length, helpers: Object.keys(st().help).length } };
+    } catch (e) { return { err: 'setup: ' + e.stack }; } })()`);
+    assert.ok(!r.err, `removal: renderAll threw ${r.err}`);
+    assert.ok(r.before >= 12, `removal: the map held the sessions first (${r.before})`);
+    assert.ok(!r.one.inMap && r.one.size === r.before - 1, `removal: a closed session leaves the character map (${JSON.stringify(r.one)})`);
+    assert.deepStrictEqual(r.one.staleHelpers, [], 'removal: no helper of a closed session keeps a character');
+    assert.deepStrictEqual(r.last, { map: 0, helpers: 0 }, `removal: the last session leaves nothing behind (${JSON.stringify(r.last)})`);
+    console.log('[crew] removal', JSON.stringify(r));
+  }
+
+  // PR 621 review: a character that falls back after the chat header or the inbox is open: those avatars are redrawn as the plain figure, not left on a broken <image>
+  {
+    await H.load({ w: 1440, h: 900, ready: 'fit', settle: false });
+    await H.office(15);
+    await pick(ID);
+    const fall = (c) => `window.__durbarSimUi.crew.fall(${jsLiteral(c)})`;
+    const st = `window.__durbarSimUi.crew.state()`;
+    const pics = (sel) => `[...document.querySelectorAll(${jsLiteral(sel)})].map((e)=>e.querySelectorAll('image').length)`;
+    // the inbox: the first row's agent
+    await H.js(`window.__durbarSimUi.crew.openInbox()`);
+    assert.ok(await H.until(`!!document.querySelector('#inboxBody .inbox-row .ib-av image')`, 6000), 'inbox: a row draws its crew portrait');
+    const row = await H.js(`(()=>{const r=document.querySelector('#inboxBody .inbox-row');const id=r.dataset.id,s=window.__durbarSimUi.crew.state();return {id, c: s.map[id]||s.help[id]};})()`);
+    await H.js(fall(row.c));
+    assert.ok(await H.until(`${st}.bad.includes(${jsLiteral(row.c)})`, 6000), `inbox: ${row.c} is marked as fallen back`);
+    assert.ok(await H.until(`!document.querySelector('#inboxBody .inbox-row[data-id=${jsLiteral(row.id)}] .ib-av image')`, 3000), `inbox: the row of ${row.id} is redrawn as the plain figure (no broken <image>)`);
+    assert.ok(await H.js(`!!document.querySelector('#inboxBody .inbox-row[data-id=${jsLiteral(row.id)}] .ib-av svg')`), 'inbox: the row still has an avatar');
+    await H.js(`window.__durbarSimUi.crew.closeInbox()`);
+    // the chat header: another character, an agent at its desk
+    const pick2 = await H.js(`(()=>{const U=window.__durbarSimUi,s=U.crew.state(),a=U.agents().find((x)=>!x.parent&&!s.bad.includes(s.map[x.id])&&document.querySelector('#stage .desk[data-id="'+x.id+'"]'));return {id:a.id,c:s.map[a.id]};})()`);
+    await H.js(`window.__durbarSimUi.crew.openPanel(${jsLiteral(pick2.id)})`);
+    assert.ok(await H.until(`!!document.querySelector('#panelHead .avatar image')`, 6000), 'header: the chat header draws the crew portrait');
+    await H.js(fall(pick2.c));
+    assert.ok(await H.until(`${st}.bad.includes(${jsLiteral(pick2.c)})`, 6000), `header: ${pick2.c} is marked as fallen back`);
+    assert.ok(await H.until(`!document.querySelector('#panelHead .avatar image')&&!!document.querySelector('#panelHead .avatar svg')`, 3000), 'header: the avatar is redrawn as the plain figure, not left on a broken <image>');
+    console.log('[crew] fallback after mount: inbox row of', row.id, row.c, 'and header of', pick2.id, pick2.c, 'redrawn');
+  }
+
+  // PR 621 review (FR-017, T028): the module itself missing (not only one picture): crew.js removed from a copy of dist/. Picking the theme and restoring it at start throw nothing, every desk draws the plain figure
+  {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-nomod-'));
+    try {
+      fs.cpSync(path.join(__dirname, '..', 'dist'), path.join(tmp, 'dist'), { recursive: true });
+      const index = path.join(tmp, 'dist', 'renderer', 'index.html');
+      fs.rmSync(path.join(tmp, 'dist', 'renderer', 'crew.js'));
+      assert.ok(fs.readFileSync(index, 'utf8').includes('<script src="crew.js"></script>'), 'the page loads crew.js (the copy has the file removed, the tag stays and fails to load)');
+      await H.load({ w: 1440, h: 900, index, query: { theme: ID }, ready: 'fit', settle: false });
+      await H.office(15);
+      assert.strictEqual(await H.js(`typeof window.DurbarCrew`), 'undefined', 'the module is not there');
+      assert.ok(await H.until(`window.THEME.current().id===${jsLiteral(ID)}`, 4000), 'the theme restores at start with no module');
+      await pick('clean-office');
+      await pick(ID); // selecting it again, by hand
+      const probe = await H.js(`window.__durbarSimUi.crew.probe()`);
+      assert.deepStrictEqual(probe, { ok: true, of: 0 }, `no module: preload, sync and every crewOf answer without throwing and name no character (${JSON.stringify(probe)})`);
+      const s = await H.js(`(${survey.toString()})()`);
+      const desks = s.scenes.filter((x) => x.st);
+      assert.ok(desks.length >= 12, `no module: the desks are drawn (${desks.length})`);
+      for (const sc of desks) assert.ok(sc.images.length === 0 && sc.plain, `no module: the plain figure on every desk (${sc.sig})`);
+      assert.ok(s.walkers.every((w) => w.length === 0), 'no module: figures draw no portrait');
+      assert.strictEqual(await H.js(`(()=>{const s=window.__durbarSimUi.crew.state();return Object.keys(s.map).length+Object.keys(s.help).length+(s.hasModule?1:0);})()`), 0, 'no module: no character is assigned');
+      await H.clearToasts();
+      console.log(`[crew] no module: ${desks.length} desks drawn as the plain figure`);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
