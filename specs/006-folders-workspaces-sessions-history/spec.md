@@ -313,3 +313,6 @@ Why: when Durbar is killed, crashes or the machine stops while agents are workin
 *Corrected:*
 - **FR-172** The folder's `⋯` menu gets **Notes (N)…**, which opens the folder's Notes screen (spec 083 FR-044). `[KNOWN GAP]` not built yet: the folder menu has no *Notes (N)…* item; spec 083 T034 builds it with the per-folder Notes screen.
 - **FR-173** **Remove folder** keeps the folder's notes by default and says so; the dialog gets a box **Also delete its notes** (unticked by default). Re-adding the folder shows its notes again (spec 083 FR-048). `[KNOWN GAP]` not built yet: *Remove folder* has no *Also delete its notes* box and says nothing about notes; the notes themselves are kept (nothing deletes them), and spec 083 T034 (FR-048) builds the box and the text.
+
+### 2026-10-27: + Folder can also create a folder (cross-reference; owned by spec 093, issue #805)
+Spec 093 adds a choice to **+ Folder** (FR-001 here): add an existing folder (unchanged), or create one (clone a repository, a new local repository with `git init`, or an empty folder). The created folder is added through the same `addMany` path, in the top bar's mode like Add existing (default Read-only; owner answer Q2 = b, 2026-10-27). Requirements, security model and tasks are in `specs/093-create-folder/`; nothing in this spec changes until it is built.
