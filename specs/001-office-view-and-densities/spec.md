@@ -565,3 +565,6 @@ Nothing here was run on a real session for this delta (0 credits); the `real:` e
 
 **Tasks:** T136, T137 in `tasks.md`. Numbers taken here: FR-179, T136, T137 (checked against `main` and the open PRs 710 and 621 on 2026-10-26); spec 059 FR-169, T081; spec 033 no new number.
 
+### 2026-10-27: floors as places (spec 092, issue #782; cross-reference, not built yet)
+
+- With two or more floors on, the office shows one floor at a time: the density is chosen per floor screen from that floor's agents (the 15-agent rule holds on each floor), and a lift panel at the right edge takes a little width from the office area, which the layout and `check:office` count. With one floor on nothing changes. Not built yet.
