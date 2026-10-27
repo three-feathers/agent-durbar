@@ -1062,8 +1062,13 @@
   function restartSessionAsk(a,reason,start){
     const busy=a.state==='working'||a.state==='thinking'||a.state==='waiting', grants=Array.isArray(a.grants)&&a.grants.length>0, remote=!!a.remote;
     const sbx=reason==='sandbox', pend=sbx&&a.pend&&typeof a.pend.size==='number'?a.pend.size:0;
-    if(!sbx&&!busy&&!grants&&!remote)return null;
+    /* spec 087 FR-022a: a Restart session with these servers also lifts an OS sandbox floor kept in Allow all, so it asks and says so
+       (never silently); without the pure rule, any kept floor in Allow all counts (fail closed: ask) */
+    const T=window.DurbarSandboxText, info=a.info||{};
+    const kept=!sbx&&(T&&T.canRestartWithoutSandbox?T.canRestartWithoutSandbox({sandbox:info.sandbox,mode:info.permMode,caps:{resume:true}}):!!(info.permMode==='allow'&&info.sandbox&&info.sandbox.untilNewSession));
+    if(!sbx&&!busy&&!grants&&!remote&&!kept)return null;
     return ['The conversation is kept and resuming spends no AI credits.',busy?'The running turn stops.':'','"Approve for this session" grants are cleared.',remote?'Remote control turns off.':'',
+      kept?'The OS sandbox kept from an earlier mode is lifted (Allow all).':'',
       sbx&&start==='next-message'?'Its MCP servers start again with your next message.':'',pend?pend+' request'+(pend===1?'':'s')+' waiting will be denied.':''].filter(Boolean);
   }
   let mcpDlgHook=null; /* set while a per-agent MCP dialog is open: called with an agent id on each `mcp` event */

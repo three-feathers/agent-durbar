@@ -329,6 +329,7 @@ async function main(): Promise<void> {
       const vm = await import('vm');
       const win: Record<string, unknown> = { DurbarStats: {} };
       const box = vm.createContext({ window: win, self: win, document: { getElementById: () => null }, navigator: {}, console, setTimeout, clearTimeout, Promise });
+      vm.runInContext(src('src/renderer/sandboxtext.js'), box);
       vm.runInContext(src('src/renderer/screens.js'), box);
       const asks: Array<{ title: string; body: string; lines: string[]; buttons: Array<{ label: string }> }> = [];
       let answer: unknown = 'ok';
@@ -377,6 +378,28 @@ async function main(): Promise<void> {
         assert.deepStrictEqual([asks.length, bridgeCalls], [0, [['a1', false]]], `reason ${String(r)}: today's call`);
         assert.deepStrictEqual(toasts, ['Mia: session restarted with the current MCP servers. Its servers start with your next message.']);
       }
+      // FR-022a: Restart session with these servers on an idle Allow all session with a kept floor (no grants, no remote) still asks and says the floor goes
+      const KEPT = { state: 'on', mechanism: 'bubblewrap', untilNewSession: true, covers: ['shell', 'mcp'], verified: false };
+      const LIFT = 'The OS sandbox kept from an earlier mode is lifted (Allow all).';
+      for (const r of [undefined, 'mcp']) {
+        reset();
+        answer = null;
+        assert.strictEqual(await S.restartSession(agent({ info: { permMode: 'allow', sandbox: KEPT } }), 'session', h(r)), null, `reason ${String(r)} + kept floor: asked, Cancel`);
+        assert.strictEqual(asks.length, 1, `reason ${String(r)} + kept floor + idle: it asks`);
+        assert.ok(asks[0].lines.includes(LIFT), 'and says the floor is lifted: ' + JSON.stringify(asks[0].lines));
+        assert.deepStrictEqual(bridgeCalls, [], 'Cancel: nothing called');
+      }
+      reset();
+      await S.restartSession(agent({ info: { permMode: 'allow', sandbox: KEPT } }), 'session', h());
+      assert.deepStrictEqual(bridgeCalls, [['a1', true]], 'confirmed: the same MCP call, confirmed');
+      for (const info of [{ permMode: 'ask', sandbox: KEPT }, { permMode: 'allow', sandbox: { ...KEPT, managed: true } }, { permMode: 'allow' }]) {
+        reset();
+        await S.restartSession(agent({ info }), 'session', h());
+        assert.strictEqual(asks.length, 0, `no kept floor to lift (${JSON.stringify(info)}): not asked, as before`);
+      }
+      reset();
+      await S.restartSession(agent({ info: { permMode: 'allow', sandbox: KEPT } }), 'session', h('sandbox'));
+      assert.ok(!asks[0].lines.includes(LIFT), 'the sandbox dialog says it in its body, not as this line');
       reset();
       await S.restartSession(agent({ remote: true }), 'session', h());
       assert.strictEqual(asks[0].title, "Restart Mia's session?");

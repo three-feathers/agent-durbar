@@ -473,7 +473,10 @@ default on the switch and B is offered only after an A refusal; if it fails, B i
     stay `[KNOWN GAP]` and neither the tooltip nor the README describes the restart as verified anywhere (constitution VIII).
 - **FR-022a** `[IMPLEMENTED]` (test and sim: as FR-022) **The semantics, in one place, and no silent widening.** *Allow all* means "Durbar requests no OS floor; the app's default".
   A floor kept from an earlier mode is a **leftover that Durbar never removes on its own**; lifting it is always a separate, confirmed action
-  (FR-022). Nothing remembers "without the sandbox": it is only the mode, so Read-only and Ask first stay sandboxed by default, and every new or
+  (FR-022). This also holds for spec 058's *Restart session with these servers* (reason `'mcp'`, from the MCP dialog and Settings > MCP servers):
+  it resumes in the current mode too, so on an Allow all session with a kept floor it always asks (even idle, with no grants or remote
+  control) and its dialog adds "The OS sandbox kept from an earlier mode is lifted (Allow all)." (`restartSessionAsk`; test: `scripts/test-mcp-session.ts`;
+  review on 32220198). Nothing remembers "without the sandbox": it is only the mode, so Read-only and Ask first stay sandboxed by default, and every new or
   resumed session in those modes gets the floor again (FR-004, FR-013). A Durbar restart, or the runtime refresh after a sign-in
   (`copilot.ts:459`, `refreshAuth`), resumes an Allow all session with the app default, i.e. **without** the floor; that path is visible, not silent
   (FR-022d). **No silent widening; the confirmations stay.** (1) The switch to Allow all keeps the existing `askDialog`
@@ -524,6 +527,9 @@ default on the switch and B is offered only after an A refusal; if it fails, B i
   use Restart without the sandbox to lift it." (<App> from the adapter's display name.) Claude Code and Codex sessions, and a session with no floor,
   get today's text unchanged (driver asserts the sentence for the Copilot sim agent and its absence for Claude and Codex sim agents). If outcome A
   ships, FR-022c replaces this sentence with Q4's ("Copilot’s OS sandbox is also turned off for this session.").
+  `[KNOWN GAP]` (review on 32220198) The sentence shows only for a state `on`. After a refused narrowing (state `off`) or a switch while an update is still
+  in flight (state `unknown`), Copilot's `live.sandboxFloor` can still be true from an earlier update, so the floor is kept but this dialog does not say so
+  (read: `copilot.ts` `applySandbox`; after the switch the state is built from `keptFloor`, so the chip and Restart without the sandbox still show it). No new field was added for this.
 
 **As built (2026-10-27, T067-T071; simulator and fakes only).** The pure rule `canRestartWithoutSandbox`, the tooltip `restartTip` and the
 Allow all sentence `allowAllNote` are in `src/renderer/sandboxtext.js` (no vendor name). FR-022e's "a floor this switch keeps" is read from
