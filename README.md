@@ -192,6 +192,8 @@ Codex also ships its own `bwrap` inside its npm package (`…/@openai/codex-linu
 | Windows 10/11, x64 | `Agent-Durbar-Setup-<version>.exe` or `Agent-Durbar-<version>-portable.exe` |
 | Linux, x64 | `Agent-Durbar-<version>-x86_64.AppImage` |
 
+**Verify a download.** From the next release on, every file on the Releases page (and `SHA256SUMS.txt`) carries a build provenance attestation made by this repository's release workflow. With the GitHub CLI (`gh`): `gh attestation verify <file> --repo three-feathers/agent-durbar`. It succeeds only for a file built by that workflow in this repository. Then compare the file's SHA-256 with its line in `SHA256SUMS.txt` (`sha256sum -c --ignore-missing SHA256SUMS.txt` on Linux, `shasum -a 256 -c --ignore-missing SHA256SUMS.txt` on macOS, `Get-FileHash` on Windows). Releases before that have only the checksums. This proves where a file was built, not that the app is free of bugs; the builds are still unsigned (below).
+
 **The builds are not code-signed** (certificates cost money), so your OS warns you the first time. Only open files from this repository's Releases page.
 - **macOS:** right-click the app and choose **Open**, or allow it in System Settings > Privacy & Security. If macOS says it is damaged, run `xattr -dr com.apple.quarantine "/Applications/Agent Durbar.app"`.
 - **Windows:**
