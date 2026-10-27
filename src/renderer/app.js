@@ -1605,7 +1605,18 @@ function fitHead(hd,give=true){
   if(n&&p&&p.getClientRects().length&&nameCut(n))hd.classList.add('no-path');
   /* spec 001 FR-179 (issue 788): the name stays readable, so the chips give way: the pencil (Rename is in the menu), the schedule chip,
      the MCP chip, the floor tag, the cost (each in the folder's ⋯ menu), one at a time, until the name holds its minimum. Not while a layout is searched. */
-  if(give)for(const st of HEAD_GIVE){if(headHolds(hd))break;hd.classList.add(st);}
+  if(give)for(const st of HEAD_GIVE){if(headHolds(hd))break;if(headMenuHolds(hd,st))hd.classList.add(st);}
+}
+/* spec 001 FR-179: a part gives way only when the folder's ⋯ menu (openFolderMenu) would still hold it: the header must have the ⋯ button
+   (not in the demo, nor without removeFolder) and the menu must have the matching item. The cost stays in the name's tooltip, so it may always go.
+   Without a menu the other parts stay, and the name keeps its old squeeze (KNOWN GAP in spec 001). */
+function headMenuHolds(hd,st){
+  if(st==='no-aiu')return true;
+  if(!hd.querySelector('.room-more'))return false;
+  if(st==='no-ren')return !!(bridge&&bridge.renameFolder);
+  if(st==='no-sched')return !!(bridge&&bridge.listSchedules);
+  if(st==='no-floor')return floorsLive()&&FLOORS.floors.length>1&&!!(bridge&&bridge.moveFolderToFloor);
+  return true; /* no-mcp: the chip and the menu item have the same condition */
 }
 /* spec 001 FR-179: the smallest a room name may be squeezed to: 8 characters (8ch of its font), or all of it when it is shorter */
 const ROOM_NAME_CH=8;

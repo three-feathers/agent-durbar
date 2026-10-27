@@ -488,6 +488,23 @@ async function driver(ctx) {
       if (!shown) { failed++; console.log(`FAIL titles sim${sim}-${w}x${h}: no session title on any card`); }
     }
   }
+  /* spec 001 FR-179 (review on PR 797): in the demo the room headers have no ⋯ menu, so no part may give way (nothing would hold it); the cost may (it is in the
+     name's tooltip). pageCheck still runs: the name minimum and the pencil rules (the demo has no pencil either) hold where the layout allows it. */
+  for (const [w, h] of SIZES) {
+    if (!mine()) continue;
+    await load('sim=15&simfreeze=1&simfloors=1&simsched=1', w, h);
+    await ctx.js(`(async()=>{const t=document.getElementById('demoToggle');t.checked=true;t.dispatchEvent(new Event('change'));await new Promise(r=>setTimeout(r,500));})()`);
+    await ctx.waitFor(`document.querySelectorAll('#stage .room-head').length>0`, 5000);
+    await sleep(600);
+    const res = await measure(false); total++;
+    res.problems = res.problems.filter((p) => !/lobby/i.test(p)); /* the demo office has no lobby */
+    const tag = `demo ${w}x${h}`;
+    const lost = await ctx.js(`[...document.querySelectorAll('#stage .room-head')].filter(h=>!h.querySelector('.room-more')&&/\\bno-(ren|sched|mcp|floor)\\b/.test(h.className)).map(h=>h.querySelector('.room-name').textContent+': '+h.className)`);
+    const heads = await ctx.js(`document.querySelectorAll('#stage .room-head').length`);
+    if (res.problems.length || lost.length || !heads) { failed++; console.log(`FAIL ${tag}: ${(heads ? res.problems.concat(lost.map((x) => 'a part gave way without a ⋯ menu: ' + x)) : ['no room header in the demo']).slice(0, 6).join('; ')}`); }
+    rows.push({ label: tag, ...res.info, problems: res.problems.length });
+    await ctx.js(`(async()=>{const t=document.getElementById('demoToggle');t.checked=false;t.dispatchEvent(new Event('change'));await new Promise(r=>setTimeout(r,300));})()`);
+  }
   /* spec 033: floors on/off (3, 2 and 1 floors on), with and without closed doors, both sizes */
   for (const [w, h] of SIZES) {
     if (!mine()) continue;
