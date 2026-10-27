@@ -439,7 +439,7 @@ function openPlaceMenu(pid,anchor){
   closeModeMenu();
   const ids=placeVisitors(pid); if(!ids.length)return;
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','At '+placeLabelFull(pid));
-  m.innerHTML=ids.map(id=>{const a=byId(id),v=VISITS.at(id),r=roomOf(a),of=otherFloor(a);return `<button type="button" role="menuitem" data-pvopen="${esc(id)}"><span class="mt"><b>${esc(a.name)}</b><small>${esc((r?r.name+(of?' ('+of.name+')':'')+' · ':'')+(v?visitDoing(a,v):''))}</small></span></button>`;}).join('');
+  m.innerHTML=ids.map(id=>{const a=byId(id),v=VISITS.at(id),r=roomOf(a),of=otherFloor(a);return `<button type="button" role="menuitem" data-pvopen="${esc(id)}"><span class="mt"><b>${esc(a.name)}</b><small>${esc((r?r.name+(of?' ('+DurbarCutText.cutText(of.name,16)+')':'')+' · ':'')+(v?visitDoing(a,v):''))}</small></span></button>`;}).join('');
   document.body.appendChild(m);
   const ab=anchor.getBoundingClientRect(),b=m.getBoundingClientRect();
   m.style.left=Math.max(8,Math.min(ab.left,innerWidth-b.width-8))+'px';

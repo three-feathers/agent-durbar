@@ -118,6 +118,7 @@ ok(/const onScreen=r=>\{const c=curFloorId\(\);if\(c==null\)return true;/.test(a
 ok(/lobbyOn\(\),floorTagsOn\(\)&&floorsOnList\(\)\.map\(f=>f\.id\+':'\+f\.name\),curFloorId\(\),/.test(app), 'the layout cache is keyed by the current floor');
 ok(/DurbarFloorNav\.keyAction\(e,e\.target,scroll,open\)/.test(app) && /\[role="dialog"\]/.test(app) && /modalOpen\(\)/.test(app), 'the key handler asks floornav and tells it about dialogs and menus');
 ok(/function syncCurFloor\(before,was\)/.test(app) && /syncCurFloor\(before,was\);\s*\n\s*afterFloorsChange\(\)/.test(app), 'a floors change moves the current floor before the office is drawn (FR-023)');
+ok(/\(of\?' \('\+DurbarCutText\.cutText\(of\.name,16\)\+'\)'/.test(app) && !/of\?' \('\+of\.name\+'\)'/.test(app), 'the lobby visitor menu cuts a floor name to 16 characters like the tile label (a 40-character name stays short)');
 ok(!/bridge\.[a-zA-Z]*[Ff]loor/.test(fs.readFileSync(path.join(R, 'floornav.js'), 'utf8')), 'floornav.js has no bridge call');
 // the series adds no IPC channel, preload or main-process floors code (FR-024)
 const shared = fs.readFileSync(path.join(ROOT, 'src', 'shared', 'floors.ts'), 'utf8');
