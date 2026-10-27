@@ -46,13 +46,13 @@
 
 ### Modules
 
-- `src/shared/newfolder.ts` (pure, no Node): `checkNewFolderName(name, platform)`, `checkCloneUrl(url)` (returns `{ ok, form: 'https'|'ssh'|'scp', host } | { ok: false, error }`), `suggestedName(url)`, `NEW_FOLDER_LIMITS` (100 name chars, 2048 URL chars, 200 Windows path chars), `WINDOWS_RESERVED_NAME`, `gitFailureText(stderrTail)` (FR-071 mapping), `parseCloneProgress(line)`.
+- `src/shared/newfolder.ts` (pure, no Node): `checkNewFolderName(name)` (the same rules on every OS; phase 1 dropped the platform parameter, spec *Changes*), `parseNewFolderParent(value)`, `checkCloneUrl(url)` (returns `{ ok, form: 'https'|'ssh'|'scp', host } | { ok: false, error }`), `suggestedName(url)`, `NEW_FOLDER_LIMITS` (100 name chars, 2048 URL chars, 200 Windows path chars), `WINDOWS_RESERVED_NAME`, `gitFailureText(stderrTail)` (FR-071 mapping), `parseCloneProgress(line)`.
 - `src/main/gitstatus.ts` (the one runner) gets the create entry point:
   - `gitCreateCall(req, { hooksDir, userSshCommand, protocols = ['https','ssh'] })` → `{ argv, env }` (pure; the test seam of FR-095 is the `protocols` parameter);
   - `runGitCreate(req, cwd, deps)` → a handle `{ done: Promise<{ code, signal, stderrTail }>, cancel() }`, using `spawn` read from `child_process` at call time and `killChildTree`;
   - `readUserSshCommand(deps)` (returns the user's value, or `undefined` when unset): one fixed `git config --get core.sshCommand` in the private hooks folder, `GIT_CEILING_DIRECTORIES` set to its parent.
   - The existing read-only runner, `GIT_READ_ONLY` and `GIT_SAFE_CONFIG` are unchanged.
-- `src/main/newfolderop.ts` (Electron-free, deps injected: `fs`, `runGitCreate`, `addMany`, `settings`, clock): `pickParent`, `check`, `create`, `cancel`, `quit`. Owns the token, the one-at-a-time lock, the claim, cleanup with retries, the progress throttle and the error mapping.
+- `src/main/newfolderop.ts` (Electron-free, deps injected: `fs`, `runGitCreate`, `addMany`, `settings`, clock; `nodeNewFolderDeps` builds the real ones for the app and the real-git test): `pickParent`, `check`, `create` (phase 1); `cancel`, `quit` (phase 2). Owns the token, the one-at-a-time lock, the claim, cleanup with retries, the progress throttle and the error mapping.
 - `src/main/ipc/newfolder.ts`: registers the four channels (thin; `fromApp(e)`; the dialog call), wired from `main.ts` with `toRenderer` for the progress event.
 - `src/renderer/newfolder.js` (UMD like `places.js`): the flow (choice → URL → picker → name → create/progress), using `askDialog` and a small progress dialog built with the existing `.dlg-ov`/`.dlg`/`.hs-log` classes.
 
