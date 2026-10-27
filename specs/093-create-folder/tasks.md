@@ -35,7 +35,7 @@
 
 - [ ] T030 [P] `newfolder.ts`: `checkCloneUrl`, `suggestedName`, `gitFailureText`, `parseCloneProgress` [FR-011, FR-020..FR-023, FR-040, FR-071]
 - [ ] T031 [P] `test-newfolder.ts`: the URL corpus (at least 40 refused, the accepted list), suggested names, failure texts, progress parsing [FR-020..FR-023; SC-002]
-- [ ] T032 `gitCreateCall({kind:'clone'})`: argv (`--progress --no-recurse-submodules -- <url> .`), the `-c` list, env (`GIT_ALLOW_PROTOCOL=https:ssh`, `GIT_TERMINAL_PROMPT=0`, conditional `GIT_SSH_COMMAND`), `protocols` parameter defaulting to https/ssh (the seam); `userSetsSshCommand` [FR-031..FR-033, FR-095]
+- [ ] T032 `gitCreateCall({kind:'clone'})`: argv (`--progress --no-recurse-submodules -- <url> .`), the `-c` list, env (`GIT_ALLOW_PROTOCOL=https:ssh`, `GIT_TERMINAL_PROMPT=0`, conditional `GIT_SSH_COMMAND`), `protocols` parameter defaulting to https/ssh (the seam); `readUserSshCommand` [FR-031..FR-033, FR-095]
 - [ ] T033 `test-gitstatus.ts`: clone argv/env pinned, both `core.sshCommand` cases, default protocols [FR-031..FR-033, FR-095]
 - [ ] T034 Op: clone path, progress throttle (250 ms, last 6 lines, masked with `maskSecretUrl` + `maskHomePaths`, 300 chars), cancel after `close`, quit during a clone, submodule note, the user's filter drivers left on (Q5 agent default) [FR-036, FR-037, FR-040..FR-043, FR-070, FR-071]
 - [ ] T035 `test-newfolderop.ts`: clone cases incl. masking (`https://u:secret@h` never in an event or error), cancel order, quit [FR-040..FR-043, FR-070]
