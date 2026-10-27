@@ -6,7 +6,7 @@ import { historyOf } from '../../adapters/router';
 import type { AddResult, AgentInfo, PickedFile, ResumeResult, SessionOptions } from '../../shared/api';
 import { parseAmount, parseCapIn } from '../../shared/credits';
 import { revokeCallFor, revokeGrantFor } from '../../adapters/permissions';
-import { endSessionOp, errText, setCapOp, setModeOp, stopTurnOp, validMode } from '../agentops';
+import { endSessionOp, errText, sessionOptsOf, setCapOp, setModeOp, stopTurnOp, validMode } from '../agentops';
 import type { OpsDeps } from '../agentops';
 import { folderGitStatus } from '../gitstatus';
 import type { GitStatus } from '../gitstatus';
@@ -62,11 +62,7 @@ export function register(deps: AgentsIpcDeps): void {
   const sessionStarts = new SessionStarts(); // spec 085: when and from which commit each session began in this run (memory only)
   const checkpointStore = deps.getCheckpointStore;
   ipcHandle('agents:list', () => [...agents.values()]);
-  const sessionOpts = (o: unknown): SessionOptions & { persist: boolean } => {
-    const x = (o && typeof o === 'object' ? o : {}) as Record<string, unknown>;
-    const cap = x.maxAiCredits === null ? null : parseAmount(x.maxAiCredits); // checked in the adapter's unit by addWorkspace
-    return { model: typeof x.model === 'string' ? x.model.slice(0, 100) : undefined, effort: asEffort(x.effort), maxAiCredits: cap, floor: typeof x.floor === 'string' ? x.floor.slice(0, 20) : undefined, adapterId: typeof x.adapterId === 'string' ? x.adapterId.slice(0, 40) : undefined, persist: true };
-  };
+  const sessionOpts = (o: unknown): SessionOptions & { persist: boolean } => sessionOptsOf(o, asEffort); // shared with folders:create (spec 093 FR-060)
 
   ipcHandle('agents:addFolder', async (_e, mode: unknown, opts: unknown) => {
     const r = await dialog.showOpenDialog({ title: 'Add folder', properties: ['openDirectory', 'multiSelections'] });

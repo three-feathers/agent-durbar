@@ -5,7 +5,7 @@
  *
  *   npm run check:sim-guard          (also in scripts/ui-suite.js, so CI runs it on Linux, macOS and Windows)
  *
- * Asserts: the one-shot prompts (theme maker, folder-setup explainer), new folders and sessions, send, resume, deleting a previous session,
+ * Asserts: the one-shot prompts (theme maker, folder-setup explainer), new folders and sessions, creating a folder (spec 093), send, resume, deleting a previous session,
  * listing the agent apps and their models, installs and the CLI sign-in are all refused with the simulator message; `harnessPlans`
  * (an open channel, like `app:version`) still answers; main has created no real adapter (`ctx.createdAdapters()`); the simulator itself still works.
  * FR-030 (review on #514): a driver's `ctx.addMany(..., { adapterId: 'claude' })`, which reaches detection without IPC, starts no
@@ -28,6 +28,10 @@ const CALLS = {
   'models:list': "window.agentDurbar.listModels('claude')",
   'harness:run': "window.agentDurbar.harnessRun('claude','signin',0)",
   'settings:get': 'window.agentDurbar.getSettings()',
+  // spec 093 FR-081: creating a folder (the system picker, a write to the disk, git) is never open under the simulator
+  'folders:createPickParent': 'window.agentDurbar.createPickParent()',
+  'folders:createCheck': "window.agentDurbar.createCheck({kind:'empty',name:'x'})",
+  'folders:create': "window.agentDurbar.createFolder({kind:'empty',token:'x',name:'x'},'read-only',{})",
 };
 
 module.exports = async (ctx) => {

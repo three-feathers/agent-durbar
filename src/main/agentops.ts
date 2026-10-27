@@ -5,9 +5,9 @@
 import type { AdapterRouter } from '../adapters/router';
 import type { AgentAdapter, AgentMessage, StartOptions } from '../adapters/types';
 import { interruptOf, refusesLive, setCapOf, setMcpEnabledOf, setPermModeOf } from '../adapters/router';
-import { parseCapIn } from '../shared/credits';
+import { parseAmount, parseCapIn } from '../shared/credits';
 import { answerTooLong, MAX_ANSWER, readAnswerPayload } from '../adapters/questions';
-import type { AgentInfo, PermMode } from '../shared/api';
+import type { AgentInfo, PermMode, SessionOptions } from '../shared/api';
 import { adapterOf, modeForSession } from './folders';
 import type { FolderStore, SavedFolder } from './folders';
 
@@ -32,6 +32,15 @@ const NO_INTERRUPT = 'This agent cannot stop a running turn. End the session ins
 const NO_LIVE_SETTING = 'This agent cannot change that setting while its session is running. Start a new session with it.';
 export const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 export const validMode = (m: unknown): PermMode => (m === 'ask' || m === 'allow' ? m : 'read-only');
+/**
+ * The window's options for a folder it adds (floor, agent app, model, effort, cap), read the same way for Add existing
+ * (`agents:addFolder`, `agents:addWorkspaceFile`) and a created folder (spec 093 FR-060, `folders:create`). Unknown keys are ignored.
+ */
+export function sessionOptsOf(o: unknown, asEffort: (v: unknown) => string | undefined): SessionOptions & { persist: boolean } {
+  const x = (o && typeof o === 'object' ? o : {}) as Record<string, unknown>;
+  const cap = x.maxAiCredits === null ? null : parseAmount(x.maxAiCredits); // checked in the adapter's unit by addWorkspace
+  return { model: typeof x.model === 'string' ? x.model.slice(0, 100) : undefined, effort: asEffort(x.effort), maxAiCredits: cap, floor: typeof x.floor === 'string' ? x.floor.slice(0, 20) : undefined, adapterId: typeof x.adapterId === 'string' ? x.adapterId.slice(0, 40) : undefined, persist: true };
+}
 const trunc = (v: unknown, n: number): string => String(v ?? '').slice(0, n);
 
 /** `agents:setMode`. */

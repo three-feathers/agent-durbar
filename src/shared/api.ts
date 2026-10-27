@@ -352,6 +352,12 @@ export interface AddResult {
   warnings?: { name: string; kind: BroadKind }[];
 }
 
+/** Spec 093: what the window sends to create a folder: never a path, only the token of main's own pick (phase 2 adds `clone` and `url`). */
+export interface NewFolderRequest { kind: 'init' | 'empty'; token: string; name: string }
+export type NewFolderPick = { ok: true; token: string; parent: string } | { ok: false; cancelled?: true; error?: string };
+/** `retry` says which step the window offers again: the name, or the place (*Change place…*). */
+export type NewFolderResult = AddResult & { name?: string; retry?: 'name' | 'place' };
+
 export interface ResumeResult {
   ok: boolean;
   error?: string;
@@ -746,6 +752,12 @@ export interface DurbarApi {
   version(): Promise<string>;
   addFolder(permMode: PermMode, opts?: SessionOptions): Promise<AddResult>;
   addWorkspaceFile(permMode: PermMode, opts?: SessionOptions): Promise<AddResult>;
+  /** Spec 093 FR-004, FR-005: main's system picker for the parent of a new folder; a one-use token and the parent's text (display only). */
+  createPickParent?(): Promise<NewFolderPick>;
+  /** Spec 093 FR-022: early feedback on a create request (kind and name); nothing is created. */
+  createCheck?(req: NewFolderRequest): Promise<{ ok: boolean; error?: string }>;
+  /** Spec 093 FR-060: create the folder in the picked place and add it like Add existing (same mode and options). */
+  createFolder?(req: NewFolderRequest, permMode: PermMode, opts?: SessionOptions): Promise<NewFolderResult>;
   /** Another agent (own chat) in the same folder as agent `id`. */
   newSession?(id: string, opts: SessionOptions): Promise<{ ok: boolean; error?: string; agent?: AgentInfo }>;
   /** Models the account offers (no credits used). */
@@ -1049,8 +1061,8 @@ export interface DurbarApi {
   onAgentAdded(cb: (a: AgentInfo) => void): () => void;
   /** The Settings… item of the macOS app menu (⌘,), spec 052 FR-083. */
   onMenuSettings?(cb: () => void): () => void;
-  /** File > Add Folder… / Add VS Code Workspace… of the macOS menu (⌘O, ⇧⌘O), spec 052 FR-164. */
-  onMenuAdd?(cb: (kind: 'folder' | 'workspace') => void): () => void;
+  /** File > Add Folder… / Add VS Code Workspace… of the macOS menu (⌘O, ⇧⌘O), spec 052 FR-164; File > New Folder… (`new`), spec 093 FR-001a. */
+  onMenuAdd?(cb: (kind: 'folder' | 'workspace' | 'new') => void): () => void;
   /** The window entered (true) or left (false) full screen, spec 052 FR-085. */
   onFullScreen?(cb: (on: boolean) => void): () => void;
   /** A double-click on a drag area of the top bar, spec 052 FR-085 (Mac only; main zooms, minimizes or ignores it by the system setting). */
