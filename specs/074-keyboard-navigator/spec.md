@@ -185,6 +185,7 @@ The issue asked to settle each conflict in the spec. Where a choice may need an 
 
 ## Changes
 
+- **2026-10-27, floors as places (spec 092, issue #782).** A floor row still steps down to the floor's folders with the palette open; when the palette closes after a floor was entered, the office slides to that floor. Choosing a folder or chat goes to its floor first. Not built yet.
 ### 2026-10-24: macOS synthetic text-editing key in the navigator driver (#683)
 
 `real:` The nightly run `40076601038` failed in `shots-074-navigator` on macOS. Local reproduction showed that the

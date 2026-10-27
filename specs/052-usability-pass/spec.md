@@ -107,6 +107,7 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
 
 ## Changes
 
+- **2026-10-27, floors as places (spec 092, issue #782).** The shortcut sheet gets PageUp / PageDown (previous / next floor, with the Fn note for Mac laptops). The inbox *Open* / *Answer in chat* (and a notification, which opens the inbox) set the office's current floor to the agent's floor before the chat shows, and a floor change behind a chat is announced on *Back to the office*. `swapView()` (FR-070) is not used for the floor slide (092 FR-030). Not built yet.
 ### 2026-10-19: round 2, new personas on the round-1 build
 
 **The panel:**

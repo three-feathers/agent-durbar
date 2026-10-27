@@ -9,23 +9,24 @@
 
 ## Phase 0: Spec (this PR)
 
-- [x] T001 Spec, plan, tasks and specs-index block committed; 033 `## Changes` cross-reference (FR-011, FR-012 refined by 092) (`specs/092-floors-as-places/`)
+- [x] T001 Spec, plan, tasks and specs-index block committed; 033 `## Changes` cross-reference (FR-011, FR-012 refined by 092) (`specs/092-floors-as-places/`); the dated `## Changes` lines in specs 001, 024, 052 and 074 are in the same commit (FR-029)
 - [x] T001a (2026-10-27: Paco chose a and a) Owner answers Q-A (top of the building) and Q-B (button labels) on issue #782 before Phase 1 and Phase 2 start (defaults: a and a)
 
 ## Phase 1: Floor screens (PR 1)
 
-- [ ] T002 [P] Pure module `src/renderer/floornav.js`: `nextOn(floors, cur, dir)`, `nearestOn(floors, cur)`, `keyEligible(event, target)`, `announceText(floor, n, m)`; UMD like `places.js` [FR-011, FR-012, FR-023, FR-025]
-- [ ] T003 [P] `scripts/test-floornav.ts` and `test:floornav` in `package.json` (and the `npm test` list): skip off floors, no wrap, nearest after off/delete, eligibility (text field, textarea, select, contenteditable, dialog, menu, palette, modifier keys), announcement text [FR-011, FR-012, FR-023, FR-025]
-- [ ] T004 Current floor in `app.js`: variable, restore from and save to `localStorage`, fallback to the first floor on, always a floor that is on while two or more are on; none with fewer than two [FR-004, FR-022, FR-023]
+- [ ] T002 [P] Pure module `src/renderer/floornav.js`: `nextOn(floors, cur, dir)`, `nearestOn(floors, cur)`, `keyEligible(event, target, scroll)` (scroll = {scrolls, atTop, atBottom}), `announceText(floor, n, m)`; UMD like `places.js` [FR-011, FR-012, FR-023, FR-025]
+- [ ] T003 [P] `scripts/test-floornav.ts` and `test:floornav` in `package.json` (and the `npm test` list): skip off floors, no wrap, nearest after off/delete, eligibility incl. a scrolling floor screen (scrolls first, floor only from an edge) (text field, textarea, select, contenteditable, dialog, menu, palette, modifier keys), announcement text [FR-011, FR-012, FR-023, FR-025]
+- [ ] T004 Current floor in `app.js` variable, restore from and save to `localStorage`, fallback to the first floor on, always a floor that is on while two or more are on; none with fewer than two [FR-004, FR-022, FR-023]
 - [ ] T005 `officeModel()` keeps only rooms of the current floor when two or more floors are on; add the current floor id to `layoutKey`; floor tags stay [FR-001, FR-002, FR-005]
-- [ ] T006 Empty-floor state: a short line naming the floor and how to move a folder there, plus the lobby; reuse the existing empty-state markup (`renderOffice`, `app.js:1573-1575`) [FR-001; edge case 0 agents]
+- [ ] T006 Empty-floor state: a short line naming the floor and how to move a folder there, plus the lobby; reuse the existing empty-state markup (`renderOffice`, `app.js`) [FR-001; edge case 0 agents]
 - [ ] T007 `afterFloorsChange`: when the current floor goes off, is deleted or reordered, move to the nearest on floor without animation and announce; switching on, creating, moving a folder do not move the user; Only makes the chosen floor current [FR-023, FR-012]
-- [ ] T008 Lobby: visitors of all floors that are on in every floor screen; a visitor of another floor has no walk and its floor in the tile label (`places.js` `placeVisitors` call site, walker code `app.js:414-487`) [FR-020, FR-021]
+- [ ] T008 Lobby: visitors of all floors that are on in every floor screen; a visitor of another floor has no walk and its floor in the tile label (`places.js` `placeVisitors` call site, walker code `app.js`) [FR-020, FR-021]
 - [ ] T009 PageUp/PageDown handler in the office view using `floornav.keyEligible`; instant change; one `announce()`; nothing at the ends [FR-011, FR-012]
+- [ ] T038 Driver case for FR-011's scroll rule: a floor screen that scrolls (many agents, small window) scrolls on PageDown and changes floor only from the edge; the key is ignored in the composer [FR-011; US3]
 - [ ] T010 Simulator: `DURBAR_SIM_FLOORS=1` seeds at least three floors on with the 15 agents spread, plus a variant with all 15 on one floor (`src/renderer/sim.ts`, `src/main/main.ts`) [FR-002; SC-001]
 - [ ] T011 `check:office` floor-screen cases: each floor passes at 1440x900 and 1280x800; single-floor results unchanged (`scripts/check-office-overlap.js`) [SC-001, SC-006]
 - [ ] T012 Driver `scripts/shots-092.js` phase-1 cases: one floor drawn, keys change floor, ends do nothing, keys ignored in the composer, current floor survives a reload, off floor fallback; screenshots at both sizes [US1, US3; SC-005]
-- [ ] T013 Spec housekeeping: tick tasks, `[IMPLEMENTED]` tags, 033 `## Changes` stays, `changelog.d/092-p1.md` [FR-026]
+- [ ] T013 Spec housekeeping: tick tasks, `[IMPLEMENTED]` tags, 033 `## Changes` stays, `changelog.d/092-p1-floor-screens.md`; check FR-024 (no adapter, permission, IPC or storage change in this PR's diff) [FR-026]
 
 ## Phase 2: Lift panel and badges (PR 2)
 
@@ -34,9 +35,11 @@
 - [ ] T016 Styles in `styles.css`: panel, button (at least 28 px, 10.5 px text), current-floor shape cue, badge with count; tokens only (`test:theme`, `test:uisuite`) [FR-006, FR-007, FR-015]
 - [ ] T017 Reserve the panel width in the office area only while shown and count it in `renderOffice` width (`aw`) and `layoutKey` [FR-008]
 - [ ] T018 Badges: compute from `needsMeOrder()`, unread and coffee-break state per floor of the agent; none on the current floor; none for off floors; repaint on state change; no sound/toast/notification [FR-014, FR-015, FR-016]
+- [ ] T039 [P] Lift edge summary: pinned "▲ n waiting" / "▼ n waiting" rows when badged buttons are scrolled out; activating one scrolls and focuses the nearest badged button; unit rule in `floornav.js` (`edgeSummary`) with a test, driver case with many floors [FR-028; SC-004]
 - [ ] T019 Pills, inbox count, window title and usage total checked unchanged: test that the whole-building counts do not depend on the current floor [FR-017; US2]
+- [ ] T040 Check, on the simulator, whether the Waiting pill counts agents of hidden folders; make the badge rule (FR-014) the same as the inbox and restate the spec line with the measured fact, removing the `[unverified]` [FR-014, FR-017]
 - [ ] T020 `check:office` with the panel at both sizes; record the density cost at 1280x800 in the spec (turns the FR-008 gap into a result, or opens the owner question with the numbers) [FR-008; SC-001]
-- [ ] T021 Driver cases: badge appears and clears, accessible names, roving focus, many floors scroll inside the panel; screenshots; `changelog.d/092-p2.md`; tick tasks [US2; SC-004]
+- [ ] T021 Driver cases: badge appears and clears (New reply clears exactly when the inbox's New does), edge rows for badges scrolled out of the panel (FR-028), accessible names, roving focus, many floors scroll inside the panel; screenshots; `changelog.d/092-p2-lift-panel.md`; check FR-024; tick tasks [US2; SC-004]
 
 ## Phase 3: The slide (PR 3)
 
@@ -45,20 +48,22 @@
 - [ ] T024 Reduced motion read live with `reducedMotion()`: instant change, no fade; also when the setting flips while open [FR-010]
 - [ ] T025 Walker layer and lobby while sliding: no walk is drawn; places placed at the end of the slide [FR-021; edge case walkers]
 - [ ] T026 Timing check like 033 SC-003: ratio to a same-run yardstick, 15 agents, both sizes (`scripts/shots-092.js`) [SC-003]
-- [ ] T027 Driver cases: slide runs about 300 ms, retarget, reduced-motion emulation instant; `changelog.d/092-p3.md`; tick tasks [US5]
+- [ ] T027 Driver cases: slide runs about 300 ms, retarget, reduced-motion emulation instant; `changelog.d/092-p3-slide.md`; check FR-024; tick tasks [US5]
 
 ## Phase 4: Jumps (PR 4)
 
-- [ ] T028 `goToFloor(id, {animate})` in `app.js`: one entry point used by the lift, keys and the rest; no-op when the floor is current or off [FR-018]
+- [ ] T028 `goToFloor(id, {animate})` in `app.js` one entry point used by the lift, keys and the rest; no-op when the floor is current or off [FR-018]
 - [ ] T029 `openPanel()` calls `goToFloor(agentFloor, {animate:false})` before the chat shows; covers inbox Open / Answer in chat, notification click (via inbox), list view, chat strip [FR-018; US4]
+- [ ] T042 Announce a jump made under a chat once, on *Back to the office*, not when it happens; navigator: the office moves when the palette closes, not behind it; driver cases for both [FR-012, FR-019]
 - [ ] T030 Folder filter and status-pill filter: choosing a room on another floor slides to it; a filter never changes the current floor by itself [FR-018; edge case filters]
+- [ ] T041 Status-pill click: go to the floor of the first match when all matches are on other floors; the line and *Next floor with <status>* button on a floor with no match; driver case with a Waiting agent on another floor, then switching floors with the filter on [FR-027; US2]
 - [ ] T031 Navigator: a floor row activates `goToFloor` and still narrows the folder list; folder and chat rows go to their floor first (`src/renderer/navigator.js`, `app.js` navigator actions); extend `test-navigator.ts` [FR-019]
-- [ ] T032 Keyboard help rows for PageUp/PageDown (with the Mac Fn note) next to `app.js:3550` rows; update `test` that lists them if any [FR-011]
-- [ ] T033 Driver cases: open from the inbox then Back shows that floor; navigator floor row slides; agent on an off floor does nothing; `changelog.d/092-p4.md`; tick tasks [US4; SC-007]
+- [ ] T032 Keyboard help rows for PageUp/PageDown (with the Mac Fn note) next to `app.js` rows; update `test` that lists them if any [FR-011]
+- [ ] T033 Driver cases: open from the inbox then Back shows that floor; navigator floor row slides; agent on an off floor does nothing; `changelog.d/092-p4-jumps.md`; check FR-024; tick tasks [US4; SC-007]
 
 ## Phase 5: Docs, screenshots, converge (PR 5)
 
 - [ ] T034 README floors text and *Keyboard* list; `docs/` pages that describe floors or the office; feature history note [FR-026]
 - [ ] T035 `npm run shots:docs` for every linked picture that shows the office (look at each); add a lift-panel picture to `docs/site/gallery.json` and `DOC_SHOTS` in `scripts/shots-docs.js` [FR-026]
-- [ ] T036 033 `## Changes`: dated line saying FR-011 and FR-012 are refined by spec 092; `npm run specs:index` status of 092 [FR-026]
-- [ ] T037 `/speckit-converge`: spec, plan, tasks match what was built; known gaps updated with what was measured; `npm run specs:check`, `npm run changelog:check` [FR-026]
+- [ ] T036 Update the 033, 024, 001, 052 and 074 `## Changes` lines (written in T001) to say they are built; `npm run specs:index` status of 092 [FR-026, FR-029]
+- [ ] T037 `/speckit-converge`: spec, plan, tasks match what was built; known gaps updated with what was measured; `npm run specs:check`, `npm run changelog:check`; final FR-024 check over the whole series [FR-024, FR-026]

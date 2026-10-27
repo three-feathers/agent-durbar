@@ -30,15 +30,16 @@ Make every floor that is on one whole screen of a vertical building. A lift pane
 
 | Need | Existing code (file:line, 2026-10-27 on main) |
 |---|---|
-| Floors state, on/off, order | `FLOORS`, `floorById`, `floorOn`, `floorsOnList`, `roomsInOrder`, `roomShown` (`src/renderer/app.js:141-150`); `applyFloors`/`afterFloorsChange` (`:3881-3893`) |
-| One floor's agents for the office | `officeModel()` (called at `:1569`, filtered by `roomShown`); add a "current floor" filter there |
-| Density per set of agents | `chooseLayout(sizing, aw, ah)` (`:1419`), `layoutKey` (`:1579` includes the floor list; add the current floor id) |
-| Floor name in a header | `floorTag` (`:151`) kept (FR-005) |
-| Lobby and visitors | `lobbyOn` (`:289`), `lobbyPlaces` (`:288`), `placeVisitors` in `src/renderer/places.js` (filter by `roomShown`; no filter by current floor) |
-| Attention sources | `needsMeOrder()` (used by `openInbox`, `:3286`), `UNREAD_AT` (`:2219`), `offFloorAttention` (`:3930`) as the model for text, status of the coffee-break state (spec 068) |
-| Open an agent | `openPanel(id,focus)` (`:2247`); inbox buttons (`:3362-3363`); notification `onclick` (`:3207`); navigator actions in `src/renderer/navigator.js` |
-| Announce, motion | `announce()` (`:3285`), `reducedMotion()` (`:785`), `motion(el, frames, opts)` |
-| Keyboard help table | the `kbdHelp` rows near `app.js:3550` |
+| Floors state, on/off, order | `FLOORS`, `floorById`, `floorOn`, `floorsOnList`, `roomsInOrder`, `roomShown` (`src/renderer/app.js`); `applyFloors`/`afterFloorsChange` |
+| One floor's agents for the office | `officeModel()` (called at filtered by `roomShown`); add a "current floor" filter there |
+| Density per set of agents | `chooseLayout(sizing, aw, ah)`, `layoutKey` (includes the floor list; add the current floor id) |
+| Floor name in a header | `floorTag` kept (FR-005) |
+| Lobby and visitors | `lobbyOn`, `lobbyPlaces`, `placeVisitors` in `src/renderer/places.js` (filter by `roomShown`; no filter by current floor) |
+| Attention sources | `needsMe()` and `needsMeOrder()` (used by `openInbox`; the order reads `#stage` desks and appends the other agents, so with one floor mounted the badge counts must come from `agents`, not from the DOM), `UNREAD_AT`, `offFloorAttention` as the model for text, status of the coffee-break state (spec 068) |
+| Open an agent | `openPanel(id,focus)`; inbox buttons; notification `onclick`; navigator actions in `src/renderer/navigator.js` |
+| View transition (ruled out) | `swapView(fn, instant)` (spec 052 FR-070, theme cross-fade): not used for the slide, reasons in spec FR-030 (whole-page snapshot, no retarget, all-or-nothing swap); its reduced-motion fallback idea is reused through `reducedMotion()` |
+| Announce, motion | `announce()`, `reducedMotion()`, `motion(el, frames, opts)` |
+| Keyboard help table | the `kbdHelp` rows near `app.js` |
 | Menus/tooltips/tokens | shared tokens in `src/renderer/themes.css`; `test:theme` bans literal sizes |
 
 Not found (so new): a notion of a current floor, a lift panel, any per-floor layout, and a floor-change keyboard handler.
@@ -73,8 +74,8 @@ Order is chosen so the riskiest part (layout per floor and its width budget) lan
 - Width of the lift panel against the 15-agent rule at 1280x800 (FR-008); Q-B decided (position number only, owner 2026-10-27).
 - Focus handling: PageUp/PageDown must never act inside text fields, selects, dialogs, menus, the palette or the composer.
 - Stale layout cache: `layoutKey` must include the current floor (a cached layout of floor A must not be used for floor B).
-- Walkers and lobby visitors across a floor change (FR-021); the walker layer uses `#floor` coordinates (`app.js:414-417`, `:483-487`).
-- `REDUCED` is read once at `app.js:5`; the slide must use `reducedMotion()` (live).
+- Walkers and lobby visitors across a floor change (FR-021); the walker layer uses `#floor` coordinates (`app.js`).
+- `REDUCED` is read once at `app.js`; the slide must use `reducedMotion()` (live).
 - Notification and inbox paths must not gain a new sound or toast (FR-015).
 
 ## Complexity Tracking
