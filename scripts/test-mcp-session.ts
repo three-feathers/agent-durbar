@@ -306,7 +306,7 @@ async function main(): Promise<void> {
 
       // one channel: main registers agents:mcpRestartSession once and no other restart channel; the preload passes `reason` on it
       const ROOT = path.join(__dirname, '..', '..');
-      const src = (f: string) => fs.readFileSync(path.join(ROOT, f), 'utf8');
+      const src = (f: string) => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/\r\n/g, '\n'); // Windows checks out CRLF (agent notes, "Static source checks and CRLF")
       const ipcAll = fs.readdirSync(path.join(ROOT, 'src/main/ipc')).filter((f) => f.endsWith('.ts')).map((f) => src('src/main/ipc/' + f)).join('\n') + src('src/main/main.ts');
       const handles = [...ipcAll.matchAll(/ipcHandle\('([^']+)'/g)].map((m) => m[1]);
       assert.strictEqual(handles.filter((c) => c === 'agents:mcpRestartSession').length, 1, 'one registered restart-session channel');

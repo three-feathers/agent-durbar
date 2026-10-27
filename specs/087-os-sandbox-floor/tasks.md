@@ -172,10 +172,11 @@ except T066 (owner-approved 2026-10-27, about 3 prompts, not yet run).
   - AC2: confirm restarts: the chip loses its word and the action disappears; cancel keeps both; a busy agent's dialog says the turn is stopped.
   - AC3: `check:office` unchanged at 1440x900 and 1280x800 (the chip keeps its place; the 15 agents fit).
   - AC4: with a sim session that has grants and remote control on, the dialog lists the grants, remote control, no-credits and next-message lines (FR-022); a Claude/Codex sim agent never shows the item.
-- [ ] T071 Docs: README *Safety model* and *Known limits* (the Copilot floor stays until a new session; the action; a Durbar restart or sign-in refresh resumes Allow all without it, FR-022d; Linux only, macOS and Windows not verified; Claude Code and Codex differ; K16 status),
+- [x] T071 Docs: README *Safety model* and *Known limits* (the Copilot floor stays until a new session; the action; a Durbar restart or sign-in refresh resumes Allow all without it, FR-022d; Linux only, macOS and Windows not verified; Claude Code and Codex differ; K16 status),
   spec 018's chip paragraph, spec status and `specs-index` block, `changelog.d/087-restart-without-sandbox.md` (the branch name; the 2026-10-27 plan said `087-allowall-sandbox.md`), `npm run shots:docs -- --only <drivers>` (the
   pictures that show the chip or the mode menu; `-- --list`), `docs/agent-notes.md` entry on the probe pitfall (a `/tmp` target proves nothing). [FR-022]
   - AC1: `npm run changelog:check`, `npm run specs:check`, `test:site` pass; every linked picture that shows the changed chip or menu is retaken and looked at.
+  - Done 2026-10-27: no linked picture shows the kept floor in Allow all (`npm run shots:docs -- --list`: the chat and mode-menu pictures show Ada in Read-only and Jonas in Ask first); `shots-003-011` and `shots-hero` were retaken and looked at, unchanged, so not committed. The new state's pictures come from `check-sandbox-floor.js` (`087-restart-nosbx-*`, not linked).
 - [ ] T072 **Only if T066 verdict is A (the floor clears).** `applySandbox` sends the proven payload on a switch to Allow all; the state follows the update; the Allow all dialog
   names the sandbox ("Copilot’s OS sandbox is also turned off for this session.", Q4); FR-022 stays as the fallback after a refusal. [FR-022c]
   - AC1: tests of FR-022c (exact payload, resolved gives `null`, rejected and hanging keep `untilNewSession`, narrowing re-sends the floor, no `allowBypass` anywhere);
