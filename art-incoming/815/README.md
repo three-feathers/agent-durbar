@@ -46,3 +46,4 @@ Review notes (Mac coordinator):
    - raccoon, 3 poses: *waiting* still has the purple mohawk while the other poses are grey, so the hair is still inconsistent.
 8. `batch5/rebels-raccoon-waiting.webp` was replaced with the grey-hair version (2026-10-27). With it, the raccoon is consistent in all 3 poses.
 9. Added `batch5/rebels-punkcat-waiting.webp` (2026-10-27). With it, the punk cat has all 3 poses and Animal Rebels has 2 complete characters.
+10. `batch6/` holds the new Animal Rebels characters (bulldog, fox, owl, panda), one pose per file as they arrive. The first is `rebels-bulldog-working`. Its rendering is a little more realistic than the rest of the crew (smaller eyes); Paco decides.
