@@ -9,9 +9,9 @@
 ## Phase 0: Spec (this PR)
 
 - [x] T001 Spec, plan, research, tasks and the specs-index block committed (`specs/094-terminal-tab/`; PR #811)
-- [ ] T002 Owner answers Q1-Q8 on issue #807 recorded under *Clarifications* (all (a), Paco in his terminal session, 2026-10-27); spec, plan and tasks updated where an answer differs. Ticked when the answers are posted on #807 and that comment's link is added to the *Clarifications* lines (review on #811, item 2)
-- [ ] T004 Owner answers Q9-Q12 (review on #811) recorded under *Clarifications*, on #807 too; spec, plan and tasks updated where an answer differs from the recommended (a)
-- [ ] T003 `/speckit-analyze` pass: every FR has a task, every task an FR; fix drift before Phase 1. Coverage re-checked on 2026-10-27 after the review on #811: every FR in the spec is named by at least one task; run again after T004
+- [x] T002 Owner answers Q1-Q8 on issue #807 recorded under *Clarifications* (all (a), Paco in his terminal session, 2026-10-27); spec, plan and tasks updated where an answer differs. Recorded on #807: https://github.com/three-feathers/agent-durbar/issues/807#issuecomment-6449867443
+- [x] T004 Owner answers Q9-Q12 (review on #811) recorded under *Clarifications*, on #807 too (https://github.com/three-feathers/agent-durbar/issues/807#issuecomment-6449867443): Q9 (c) prove first (T016 gates it), Q11 (a), Q12 (a); Q10 (a) the agent's default, changeable by the owner; spec, plan and tasks updated
+- [x] T003 `/speckit-analyze` pass: every FR has a task, every task an FR; fix drift before Phase 1. Checked 2026-10-27 after T004: all 43 FRs (FR-001..FR-060) are named by at least one task; every task names an FR, a plan section, an SC or the known gaps, except the process tasks T001, T003, T062, T063
 
 ## Phase 1: Dependency and packaging spike (PR 1, no UI)
 
@@ -21,7 +21,7 @@
 - [ ] T013 `after-pack.js`: fail on a missing target `pty.node`, a stray prebuild dir, or (macOS) a missing or non-executable `spawn-helper` (`scripts/after-pack.js`) [plan 2]
 - [ ] T014 Packaged check: load node-pty in the packaged main and run one fixed command that exits 0 (POSIX `-c 'exit 0'`, PowerShell `-NoProfile -Command 'exit 0'`) within 10 s (`scripts/pack-esm-check.js`); run `packaged-check.yml` by hand on the branch for Windows, macOS, Linux [FR-042, SC-006]
 - [ ] T015 Record measured installer sizes per target and the loaded module version in spec *Changes*; revise the spec if any target fails [plan 2]
-- [ ] T016 Packaged check, end path: through the real `kill.ts`, end a terminal running a child (POSIX `-c 'sleep 30'`; Windows `cmd.exe /d /c ping -n 30 127.0.0.1`) and assert the shell exits within 10 s, the child's pid is gone and (Windows) no second app process started; with spec Q9's choice (`useConptyDll`) set; record the result in research R2 and drop its `[unverified]` only when it passed on that OS (`scripts/pack-esm-check.js`; `packaged-check.yml` by hand on the branch) [FR-037, FR-042, SC-006]
+- [ ] T016 **Gating task for the Windows end path (Q9 (c))**. Packaged check, end path: through the real `kill.ts`, end a terminal running a child (POSIX `-c 'sleep 30'`; Windows `cmd.exe /d /c ping -n 30 127.0.0.1`) and assert the shell exits within 10 s, the child's pid is gone and (Windows) no second app process started; run on Windows once with `useConptyDll: true` (conpty.dll) and once with `false` plus `taskkill` only; a path that passes every assert with no forking node-pty call is the one T024 uses (if both pass, prefer `taskkill` only when no console host is left behind); record the result and the choice in research R2 and spec *Changes* and drop its `[unverified]` only when it passed on that OS (`scripts/pack-esm-check.js`; `packaged-check.yml` by hand on the branch) [FR-037, FR-042, SC-006]
 
 ## Phase 2: Main process (PR 2)
 
@@ -29,7 +29,7 @@
 - [ ] T021 [P] `src/main/terminal/env.ts` `terminalEnv()` pure + `scripts/test-terminal-env.ts` (`test:terminalenv`) [FR-013]
 - [ ] T022 `src/main/envsnapshot.ts` (imports nothing; `export const ENV_SNAPSHOT = Object.freeze({ ...process.env })`) as the **first** `import` of `src/main/main.ts`, passed to the controller; `scripts/test-envsnapshot.ts` (`test:envsnapshot`): first import line of `main.ts`, first `require(` of `dist/main/main.js` when built, no import in `envsnapshot.ts`, frozen; plant the mutant "import on line 2" and show it fails [FR-013]
 - [ ] T023 [P] `src/main/terminal/busy.ts` `isBusy()` pure + tests (Windows always busy while open) [FR-031]
-- [ ] T024 [P] `src/main/terminal/kill.ts` `endTree()`, `endAll()`, `killRemaining()` with injected kill, timer and platform: POSIX `destroy()` (hang-up), `SIGKILL` to `-pid` after 2 s unless the wrapper's `exited` flag is set (#721); Windows `killChildTree` on the wrapper, then the Q9 close, never a forking node-pty call; `scripts/test-terminal-kill.ts` (`test:terminalkill`) with fakes, including exit at 1.9 s (no `SIGKILL`) and a Windows fake whose `kill()`/`destroy()` throws [FR-033, FR-037]
+- [ ] T024 [P] `src/main/terminal/kill.ts` `endTree()`, `endAll()`, `killRemaining()` with injected kill, timer and platform: POSIX `destroy()` (hang-up), `SIGKILL` to `-pid` after 2 s unless the wrapper's `exited` flag is set (#721); Windows `killChildTree` on the wrapper, then the close path T016 chose, never a forking node-pty call; `scripts/test-terminal-kill.ts` (`test:terminalkill`) with fakes, including exit at 1.9 s (no `SIGKILL`) and a Windows fake whose `kill()`/`destroy()` throws [FR-033, FR-037]
 - [ ] T025 `src/main/terminal/controller.ts` `makeTerminalController()`: one per folder key, lazy `require('node-pty')`, spawn argv + cwd, tid, state, input/resize validation, batching, flow control, replay buffer, close, folderGone, busyCount, windowGone (reload), endAll, killRemaining [FR-007..FR-009, FR-020..FR-025]
 - [ ] T026 `scripts/test-terminal-controller.ts` (`test:terminal`) with a fake PTY: every rule of T025, plus ack clamped to the outstanding bytes, reload while paused (reset and resumed), no data while not attached, replay cut after a line break, a state with no folder field, events only through the injected `send`, "never logs data" (spy on an injected logger and `console`) and "never requires node-pty under the simulator flag" [FR-014, FR-021, FR-024, FR-025, FR-026, FR-041]
 - [ ] T027 `src/main/terminal/simpty.ts` fake shell (prompt, echo, `ls`, `git status`, `sleep 30`, `escapes` (prints the FR-060 sequences), bracketed paste on, an input log the driver can read, `exit`); used when `SIMULATOR` [FR-040, FR-060]
@@ -69,6 +69,6 @@
 ## Dependencies
 
 - Phase 1 before Phase 2 (the module must load on every target before main code depends on it); Phase 2 before Phase 3 (the window needs the IPC); Phase 4 last.
-- Inside Phase 1: T016 after T014 and after Q9 is answered (T004).
+- Inside Phase 1: T016 after T014. T024's Windows close step and the Windows `conpty/` lines of T012 and T013 wait for T016's result.
 - Inside Phase 2: T020, T021, T022, T023, T024, T033 in parallel; T025 needs them; T026 with T025; T028 needs T025; T029-T032 and T034 after T028.
 - Inside Phase 3: T040 and T041 first; T042-T048, T052 and T053 after; T049-T051 last.

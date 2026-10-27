@@ -54,15 +54,15 @@ Per-target files that ship (beta.18, without `.pdb`):
 
 - macOS arm64: `pty.node` 86,904 + `spawn-helper` 50,480; macOS x64: 58,656 + 9,248.
 - Linux x64: `pty.node` 71,784.
-- Windows x64: `pty.node`/`conpty.node` 293,376, `conpty_console_list.node` 134,656, `conpty/conpty.dll` 110,152, `conpty/OpenConsole.exe` 1,062,472. The last two are only used with `useConptyDll: true`; with the default (the OS's ConPTY) they could be left out, but that default's `kill()` forks (below), so spec Q9 (a) keeps them and sets `useConptyDll: true`. *[unverified: that either setting works on every Windows 10/11 build Durbar supports.]*
+- Windows x64: `pty.node`/`conpty.node` 293,376, `conpty_console_list.node` 134,656, `conpty/conpty.dll` 110,152, `conpty/OpenConsole.exe` 1,062,472. The last two are only used with `useConptyDll: true`; with the default (the OS's ConPTY) they could be left out, but that default's `kill()` forks (below), so spec Q9 (c) has the packaged Windows check (T016) decide between keeping them (`useConptyDll: true`) and `taskkill` only. *[unverified: that either setting works on every Windows 10/11 build Durbar supports.]*
 - plus `lib/*.js` (tens of KB).
 
 **Ending a terminal, read from 1.2.0-beta.18 `lib/` (2026-10-27, `read:`, from `npm pack` into a scratch folder; nothing installed or run; review on #811):**
 
 - POSIX: `UnixTerminal.destroy()` closes the master socket, then sends `SIGHUP` to the shell pid (`lib/unixTerminal.js:217-226`); `kill(sig)` is `process.kill(pid, sig)` on the shell only (`:228-233`). Neither signals the jobs' own process groups (spec FR-033).
 - Windows, default `useConptyDll: false`: `WindowsPtyAgent.kill()` calls `_getConsoleProcessList()`, which runs `child_process.fork(path.join(__dirname, 'conpty_console_list_agent'), [innerPid])`, waits up to 5 s for the list, then `process.kill`s each pid (`lib/windowsPtyAgent.js:193-240`). `WindowsTerminal.destroy()` calls `kill()` (`lib/windowsTerminal.js:156-170`). In Durbar's packaged main `fork` runs the Electron binary; with the `runAsNode` fuse off it cannot act as Node, and Durbar has no single-instance lock, so it may start a second app instance. *[unverified: what the fork does in the packaged app; the packaged check of spec T016 must show it.]*
-- Windows, `useConptyDll: true`: `kill()` destroys the input socket and calls the native kill, with no fork (`lib/windowsPtyAgent.js:214-221`). This needs `conpty/conpty.dll` and `conpty/OpenConsole.exe` in the package (spec Q9 a).
-- Windows natural exit with `useConptyDll: false`: `_$onProcessExit` then `_cleanUpProcess` close the sockets only; the native kill is not called on that path (`lib/windowsPtyAgent.js:255-280`). *[unverified: whether the pseudoconsole and its console host then stay until the app quits (spec Q9 b).]*
+- Windows, `useConptyDll: true`: `kill()` destroys the input socket and calls the native kill, with no fork (`lib/windowsPtyAgent.js:214-221`). This needs `conpty/conpty.dll` and `conpty/OpenConsole.exe` in the package (one of the two paths T016 tries, spec Q9 (c)).
+- Windows natural exit with `useConptyDll: false`: `_$onProcessExit` then `_cleanUpProcess` close the sockets only; the native kill is not called on that path (`lib/windowsPtyAgent.js:255-280`). *[unverified: whether the pseudoconsole and its console host then stay until the app quits (the other path T016 tries).]*
 - `lib/windowsConoutConnection.js:66` uses a `worker_threads` `Worker`, not a process, so it does not depend on `runAsNode`. *[unverified until phase 1.]*
 - `IPty` exposes `onExit` but no `exitCode`/`signalCode`; Durbar's wrapper keeps its own `exited` flag (spec FR-033).
 

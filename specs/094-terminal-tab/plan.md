@@ -67,8 +67,8 @@ Facts in [research.md R2, R4, R5](research.md#r2-the-pty-package). What changes 
 | `package.json` `build.asarUnpack` | add `node_modules/node-pty/**` |
 | `package.json` `build.files` | add `!node_modules/node-pty/{src,deps,third_party,scripts,typings}/**`, `!node_modules/node-pty/binding.gyp`, `!**/*.pdb`, `!node_modules/node-addon-api/**`, `!node_modules/@xterm/**` (the page loads the copies in `dist/renderer/vendor/`) |
 | `package.json` `build` | `npmRebuild: false` and `nodeGypRebuild: false` **stay** (N-API: no Electron ABI rebuild) |
-| `scripts/prepare-runtime.js` | after the Copilot step: keep only `node_modules/node-pty/prebuilds/<target>/`; when the target's dir is missing (a previous target's run removed it), restore it from `npm pack node-pty@<pinned>` like the Copilot package; Windows: keep `conpty/` with spec Q9 (a) (`useConptyDll: true`), drop it with (b) (R2) |
-| `scripts/after-pack.js` | fail when `app.asar.unpacked/node_modules/node-pty/prebuilds/<target>/pty.node` is missing, another prebuild dir is present, (macOS) `spawn-helper` is missing or not executable, or (Windows, Q9 a) `conpty/conpty.dll` or `conpty/OpenConsole.exe` is missing |
+| `scripts/prepare-runtime.js` | after the Copilot step: keep only `node_modules/node-pty/prebuilds/<target>/`; when the target's dir is missing (a previous target's run removed it), restore it from `npm pack node-pty@<pinned>` like the Copilot package; Windows: keep or drop `conpty/` by the result of T016 (spec Q9 (c): kept only if `useConptyDll: true` is chosen) (R2) |
+| `scripts/after-pack.js` | fail when `app.asar.unpacked/node_modules/node-pty/prebuilds/<target>/pty.node` is missing, another prebuild dir is present, (macOS) `spawn-helper` is missing or not executable, or (Windows, when T016 chose `useConptyDll: true`) `conpty/conpty.dll` or `conpty/OpenConsole.exe` is missing |
 | `scripts/pack-esm-check.js` | inside the packaged main: `require('node-pty')`, spawn the platform shell from `shell.ts` with a fixed argv that exits at once (`['-c', 'exit 0']` POSIX, `['-NoLogo', '-NoProfile', '-Command', 'exit 0']` PowerShell), assert exit code 0 within 10 s. Then **end a terminal running a child** through the real `kill.ts` path (spec FR-037, T016): POSIX `['-c', 'sleep 30']`, Windows `cmd.exe` `['/d', '/c', 'ping', '-n', '30', '127.0.0.1']`; assert the shell exits within 10 s, the child's pid is gone, and (Windows) the number of app processes did not grow (no second instance from a fork) |
 | `scripts/copy-assets.js` | copy `@xterm/xterm/lib/xterm.js`, `@xterm/xterm/css/xterm.css`, `@xterm/addon-fit/lib/addon-fit.js` to `dist/renderer/vendor/`; add `termpane.js`, `paneltabs.js` to the renderer list (agent note: a new renderer script needs this line) |
 | `src/renderer/index.html` | `<link rel="stylesheet" href="vendor/xterm.css">`, `<script src="vendor/xterm.js">`, `<script src="vendor/addon-fit.js">`, `<script src="paneltabs.js">`, `<script src="termpane.js">`; **CSP line unchanged** |
@@ -119,7 +119,7 @@ src/main/terminal/shell.ts       pure: chooseShell({platform, env, isFile, isExe
 src/main/terminal/env.ts         pure: terminalEnv(snapshot, {platform, loginPath, appVersion, simTz}) -> env
 src/main/terminal/busy.ts        pure: isBusy({platform, shellName, processName}) -> boolean
 src/main/envsnapshot.ts          NEW, imports nothing: export const ENV_SNAPSHOT = Object.freeze({ ...process.env }); the FIRST import of main.ts (spec FR-013)
-src/main/terminal/kill.ts        endTree(term, platform, deps): POSIX destroy() (hang-up), SIGKILL to -pid after 2 s unless exited; Windows killChildTree on the wrapper, then the Q9 close (never a forking node-pty call); endAll() for the quit (2 s cap) and killRemaining() (synchronous) for will-quit (spec FR-033, FR-035, FR-037)
+src/main/terminal/kill.ts        endTree(term, platform, deps): POSIX destroy() (hang-up), SIGKILL to -pid after 2 s unless exited; Windows killChildTree on the wrapper, then the close path T016 proves (spec Q9 (c); never a forking node-pty call); endAll() for the quit (2 s cap) and killRemaining() (synchronous) for will-quit (spec FR-033, FR-035, FR-037)
 src/main/terminal/controller.ts  makeTerminalController({spawnPty, now, setTimer, endTree, send, folderOf}) : open, input, resize, ack, close, state, folderGone, busyCount, windowGone, endAll, killRemaining
 src/main/terminal/simpty.ts      fake PTY for DURBAR_SIM (prompt, echo, ls, git status, sleep 30, exit)
 src/main/ipc/terminal.ts         register(deps) -> controller; channels of section 4
@@ -185,7 +185,7 @@ Pictures: `docs/screenshots/094-terminal-tab-1440x900.png`, `094-terminal-tab-12
 
 - Esc and Tab must never leave the terminal by accident, and no global listener may act on a key meant for the shell: all nine `document`/`window` keydown listeners (spec FR-056), not only `app.js:3060`.
 - A program's output must not reach the app: OSC 8, OSC 52, titles, CSI t, bracketed-paste breakout (spec FR-060).
-- Windows: no node-pty call that forks from the packaged main (spec FR-037, Q9); the packaged check is the proof.
+- Windows: no node-pty call that forks from the packaged main (spec FR-037, Q9 (c)); the packaged check T016 is the proof and picks the path.
 - The env snapshot must stay the first import of `main.ts` (spec FR-013, `test:envsnapshot`).
 - `browserpane.js` refactor must not change spec 080 behaviour (`check:browser-tab`, `check:browser-dialogs`, `test:browserpane`).
 - A PTY crash in main: lazy load and try/catch around spawn; a native crash would still take main down (no pty host process).
