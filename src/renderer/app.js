@@ -149,6 +149,16 @@ const floorRank=r=>{const f=floorById(r.floor);return f?FLOORS.floors.indexOf(f)
 /* rooms in floor order; inside a floor, the order they were added (stable) */
 const roomsInOrder=()=>ROOMS.map((r,i)=>[r,i]).sort((x,y)=>floorRank(x[0])-floorRank(y[0])||x[1]-y[1]).map(p=>p[0]);
 const floorTag=r=>{if(!floorTagsOn())return '';const f=floorById(r.floor);return f?`<span class="floor-tag" title="Floor: ${esc(f.name)}">${esc(f.name)}</span>`:'';};
+/* spec 092 (floors as places, phase 1): with two or more floors on, the office shows one floor at a time. The current floor is a display
+   preference of this window (FR-022: its id in localStorage, like the detail level); the rules live in floornav.js (pure). */
+const FLOOR_PREF='durbar.floor';
+let curFloor=null; try{curFloor=localStorage.getItem(FLOOR_PREF)||null;}catch(e){}
+let floorsSeen=false, NO_WALK_ONCE=false;
+const floorScreens=()=>floorsLive()&&window.DurbarFloorNav.screens(FLOORS.floors); /* FR-001, FR-004: false with one floor on, none, or no floors support */
+const curFloorId=()=>floorScreens()?window.DurbarFloorNav.nearestOn(FLOORS.floors,curFloor):null; /* always a floor that is on while two or more are */
+const onScreen=r=>{const c=curFloorId();if(c==null)return true;const f=floorById(r.floor);return !!f&&f.id===c;}; /* FR-001: is this room on the floor screen shown */
+const otherFloor=a=>{const c=curFloorId(),r=c!=null&&a&&roomOf(a),f=r&&floorById(r.floor);return !!f&&f.id!==c?f:null;}; /* the floor of an agent that is not on the screen shown (FR-021) */
+const saveCurFloor=()=>{try{if(curFloor)localStorage.setItem(FLOOR_PREF,curFloor);}catch(e){}};
 /* the dollar estimates of the agents whose kind reports them (Claude Code), in a room or the whole office */
 /* spec 052 FR-044 (#315): the Tools > Cost rows, one per folder. period 'run' = since the app opened (or the last reset), 'since' = the
    saved totals plus this run. Claude's dollar estimate and the tokens come from the sessions open now (this run only). */
@@ -331,7 +341,8 @@ const visitorWords=(a,v,cut)=>{const C=cut?DurbarCutText.cutText:(t=>String(t)),
   if(v&&(v.place===window.DurbarPlaces.COFFEE||v.place===window.DurbarPlaces.BANK)){const u=coffeeUntilWords(a),l=coffeeLeftWords(a); /* delta 2026-10-23 FR-019: and the time left */
     const nm=cut?C(a.name,24):n; /* name 24 + until 24 + time left 20 + the hint stays within 120 (spec 052 FR-168) */
     return nm+(u||l?' ('+(u?C(u,cut?24:40):'')+(u&&l?' · ':'')+l+')':'');}
-  const r=roomOf(a);return n+(r?' ('+C(r.name,22)+')':'')+(v?': '+C(visitDoing(a,v),40):'');};
+  const r=roomOf(a),of=otherFloor(a); /* spec 092 FR-021: a visitor from a floor that is not on screen names its floor (the activity is cut shorter so the title stays within 120 characters) */
+  return n+(r?' ('+C(r.name,22)+(of?', '+C(of.name,16):'')+')':'')+(v?': '+C(visitDoing(a,v),of?26:40):'');};
 /* A place tile's title: at most 4 names (each cut), then "and N more", then the longest wait at the Boss; one line, well under 300 characters */
 const placeTip=(pid,ids,wait)=>{const C=DurbarCutText.cutText,nm=ids.slice(0,4).map(id=>C(byId(id).name,30)),more=ids.length-nm.length;
   return `${placeLabelFull(pid)}: ${nm.length?nm.join(', ')+(more?` and ${more} more`:''):'nobody'}${wait?'. Longest wait '+wait:''}`;};
@@ -428,7 +439,7 @@ function openPlaceMenu(pid,anchor){
   closeModeMenu();
   const ids=placeVisitors(pid); if(!ids.length)return;
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','At '+placeLabelFull(pid));
-  m.innerHTML=ids.map(id=>{const a=byId(id),v=VISITS.at(id),r=roomOf(a);return `<button type="button" role="menuitem" data-pvopen="${esc(id)}"><span class="mt"><b>${esc(a.name)}</b><small>${esc((r?r.name+' · ':'')+(v?visitDoing(a,v):''))}</small></span></button>`;}).join('');
+  m.innerHTML=ids.map(id=>{const a=byId(id),v=VISITS.at(id),r=roomOf(a),of=otherFloor(a);return `<button type="button" role="menuitem" data-pvopen="${esc(id)}"><span class="mt"><b>${esc(a.name)}</b><small>${esc((r?r.name+(of?' ('+of.name+')':'')+' · ':'')+(v?visitDoing(a,v):''))}</small></span></button>`;}).join('');
   document.body.appendChild(m);
   const ab=anchor.getBoundingClientRect(),b=m.getBoundingClientRect();
   m.style.left=Math.max(8,Math.min(ab.left,innerWidth-b.width-8))+'px';
@@ -481,6 +492,7 @@ function prepareWalkers(){
    opened/closed rooms never leave one in the wrong place) and start the walks. */
 function syncWalkers(){
   const layer=$('walkers'), floor=$('floor'); if(!layer||!floor)return;
+  const noWalk=NO_WALK_ONCE; NO_WALK_ONCE=false; /* spec 092 FR-021: right after a floor change figures are placed, not walked */
   if(ui.view!=='office'||!lobbyOn()){[...walkers.keys()].forEach(dropBack);return;}
   const fr=floor.getBoundingClientRect();
   if(!fr.width||!fr.height)return; /* office hidden (full-screen chat open): leave the figures as they are until it is shown again */
@@ -514,7 +526,7 @@ function syncWalkers(){
       const el=document.createElement('span'); el.className='walker'; el.dataset.agent=a.id; el.setAttribute('aria-hidden','true'); el.innerHTML='<span class="wk">'+avatar(a)+'</span>'; layer.appendChild(el);
       w={el,back:false,walking:false,shown:false,timer:0,to:'',tk:THEME.themeIdForCache()+crewKey(a)}; walkers.set(id,w);
       /* a visit that began a while ago and is only now drawn (its tile got wider, the queue shorter) is already there: no walk from the desk */
-      const v=VISITS.at(id), long=!!v&&Date.now()-v.since>WALK_MS+500;
+      const v=VISITS.at(id), long=(!!v&&Date.now()-v.since>WALK_MS+500)||noWalk||!!otherFloor(a); /* spec 092 FR-021: no walk from a desk that is on another floor, nor right after a floor change */
       const from=long?pos:(deskPos(id)||pos); el.style.transition='none'; el.style.transform=`translate(${from.x}px,${from.y}px)`; void el.offsetWidth; w.shown=true;
       move(w,pos,null,long); return;
     }
@@ -1093,7 +1105,7 @@ document.addEventListener('pointerover',shutAim);document.addEventListener('focu
 function officeModel(ignoreStatus){
   const rooms=[];
   roomsInOrder().forEach(r=>{
-    if(!roomShown(r)||(ui.ws!=='all'&&ui.ws!==r.id))return;
+    if(!roomShown(r)||!onScreen(r)||(ui.ws!=='all'&&ui.ws!==r.id))return;
     const plan=shutPlan(r); /* spec 001 FR-051: from the whole room, not the status filter */
     const shown=agents.filter(a=>!a.parent&&a.room===r.id&&(ignoreStatus||matchStatus(a)));
     if(!shown.length)return;
@@ -1318,7 +1330,7 @@ function setRoomClosed(r,closed,quiet){
 let doorAnim=null;
 function renderDoorBar(){
   const b=$('doorBar'); if(!b)return;
-  const vis_=ROOMS.filter(r=>roomShown(r)&&(ui.ws==='all'||ui.ws===r.id)&&agents.some(a=>!a.parent&&a.room===r.id));
+  const vis_=ROOMS.filter(r=>roomShown(r)&&onScreen(r)&&(ui.ws==='all'||ui.ws===r.id)&&agents.some(a=>!a.parent&&a.room===r.id));
   const open=vis_.filter(r=>!r.closed).length, shut=vis_.length-open;
   b.hidden=vis_.length<2||ui.view!=='office';
   $('closeAll').disabled=!open; $('openAll').disabled=!shut;
@@ -1567,6 +1579,16 @@ function renderOffice(){
   const ah=floor.clientHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom);
   if(aw<=0||ah<=0)return;
   const model=officeModel();
+  /* spec 092 FR-001, edge case "a floor with 0 agents": a floor screen with nothing to show says so and keeps the shared lobby (never a bare empty screen).
+     Only while some floor that is on has agents; otherwise the messages below (nothing added yet, all hidden) still apply. */
+  if(!model.length&&floorScreens()&&agents.some(a=>!a.parent&&roomShown(roomOf(a)))){
+    const f=floorById(curFloorId()), nm=f?f.name:'this floor', filt=!!ui.status||ui.ws!=='all';
+    stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey=''; GROW=0; setGrow(stage,0); spreadOffice(stage,false);
+    stagePrev=null;
+    stage.innerHTML='<div class="empty floor-empty" data-floor-empty="'+esc(f?f.id:'')+'">'+EMPTY_DESK+(filt?'Nothing on '+esc(nm)+' matches the current filter.':'Nothing on '+esc(nm)+' yet. Move a folder here from its ⋯ menu (Move to floor).')+'</div>'+lobbyHTML(aw);
+    stage.dataset.fit='ok'; floor.classList.remove('scrolls');
+    return;
+  }
   if(!model.length){
     stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey=''; GROW=0; setGrow(stage,0); spreadOffice(stage,false);
     stagePrev=null;
@@ -1576,7 +1598,7 @@ function renderOffice(){
   }
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
   const sizing=ui.status?officeModel(true):model;
-  const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),THEME.themeIdForCache(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]]),(m.rolled||[]).map(x=>[x.a.id,x.k]),!!ui.expanded['shut:'+m.r.id]])]);
+  const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),THEME.themeIdForCache(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),curFloorId(),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]]),(m.rolled||[]).map(x=>[x.a.id,x.k]),!!ui.expanded['shut:'+m.r.id]])]);
   if(key!==layoutKey||!layout){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
   HCAP=layout.hcap; HBOOST=new Map(layout.boost); LIVE_SIDE=!!layout.side; GROW=layout.grow?1:0; HX=layout.hx||0; /* a cached layout skips chooseLayout: restore the helper level too */
   const parts=stageParts(model,layout.d,aw,layout.cap);
@@ -3010,7 +3032,7 @@ document.addEventListener('click',e=>{
   const dset=e.target.closest('[data-doorset]'); if(dset){toggleDoor(dset.dataset.doorset,dset);return;} /* spec 017 FR-015: before the desk's own click */
   const dr=e.target.closest('[data-door]'); if(dr){const r=ROOMS.find(x=>x.id===dr.dataset.door);if(r)setRoomClosed(r,!r.closed);return;}
   if(e.target.closest('#closeAll,#openAll')){const shut=!!e.target.closest('#closeAll');
-    ROOMS.filter(r=>roomShown(r)&&(ui.ws==='all'||ui.ws===r.id)&&agents.some(a=>!a.parent&&a.room===r.id)).forEach(r=>setRoomClosed(r,shut,true));
+    ROOMS.filter(r=>roomShown(r)&&onScreen(r)&&(ui.ws==='all'||ui.ws===r.id)&&agents.some(a=>!a.parent&&a.room===r.id)).forEach(r=>setRoomClosed(r,shut,true));
     layoutKey='';renderAll();return;}
   const st=e.target.closest('.stat[data-k]'); if(st){const k=st.dataset.k;ui.status=ui.status===k?null:k;renderAll();const n=document.querySelector(`.stat[data-k="${k}"]`);if(n)focusIn(n);return;}
   const rn=e.target.closest('[data-ren]'); if(rn){const a=byId(rn.dataset.ren);if(a)startSessionEdit(a,rn.closest('#list')?'list':'desk','pencil');return;} /* spec 059 FR-020 item 2: before [data-id] */
@@ -3748,7 +3770,7 @@ document.addEventListener('scroll',()=>INL().follow(),{capture:true,passive:true
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='long'?'long':qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':qs.get('simreply')==='secrets'?'secrets':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', sched:qs.get('simsched')==='1',ws:qs.get('simws')==='1', schedFire:Math.max(0,Math.min(600,parseInt(qs.get('simschedfire')||'0',10)||0)), seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), edits:qs.get('simedits')==='1', floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='long'?'long':qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':qs.get('simreply')==='secrets'?'secrets':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', sched:qs.get('simsched')==='1',ws:qs.get('simws')==='1', schedFire:Math.max(0,Math.min(600,parseInt(qs.get('simschedfire')||'0',10)||0)), seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), edits:qs.get('simedits')==='1', floors:qs.get('simfloors')==='1'||qs.get('simfloors')==='ground', floorsGround:qs.get('simfloors')==='ground', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const BP = window.DurbarBrowserPane; /* spec 080 T015: the session browser's tabs and bar; it talks to the real preload API (main refuses it outside the app's own page) */
 /* spec 080 FR-025d (Q3): a hidden session's page dialog brings that session's chat forward on its Browser tab, at most once per session until the user opens that chat themselves */
@@ -3880,10 +3902,55 @@ function endFloorSwitchTiming(){floorSwitchTimed=false;performance.clearMeasures
 /* Floors state from the bridge (spec 033): rooms take their floor from it, then everything that depends on visibility re-renders. */
 function applyFloors(state){
   if(!state||!Array.isArray(state.floors)||!state.floors.length)return;
+  const before=FLOORS?FLOORS.floors.map(f=>f.id):null, was=curFloorId(); /* spec 092 FR-023: the old order places a floor that was deleted */
   FLOORS=state;
   LIVE.rooms.forEach(r=>{const ag=LIVE.agents.find(a=>!a.parent&&a.room===r.id&&state.byAgent&&state.byAgent[a.id]);if(ag)r.floor=state.byAgent[ag.id];});
+  syncCurFloor(before,was);
   afterFloorsChange();
 }
+/* spec 092 FR-022, FR-023: after the floors changed (switched on or off, deleted, reordered, Only): the current floor stays when it is still on; the
+   first start restores the saved one, else the first floor that is on; a floor that went off or was deleted moves the view at once to the nearest
+   floor that is on (the next, else the previous) and says so. Switching a floor on, creating one, reordering or moving a folder never move the user. */
+function syncCurFloor(before,was){
+  if(!floorsLive())return;
+  const FN=window.DurbarFloorNav, first=!floorsSeen; floorsSeen=true;
+  if(first&&!floorsOnList().some(f=>f.id===curFloor))curFloor=null; /* a saved floor that is not on any more: the first floor that is on */
+  const nid=FN.nearestOn(FLOORS.floors,curFloor,before);
+  if(nid==null)return; /* all floors off: keep the saved one */
+  curFloor=nid; saveCurFloor();
+  if(!first&&was!=null&&floorScreens()&&nid!==was){noWalkNow();announceFloor(nid);}
+}
+/* spec 092 FR-012: "Floor Client B, 2 of 3", once per change */
+function announceFloor(id){const p=window.DurbarFloorNav.place(FLOORS.floors,id),f=floorById(id);if(p&&f)announce(window.DurbarFloorNav.announceText(f,p.n,p.m));}
+/* spec 092 FR-021: figures are placed where they belong after a floor change, never walked across it */
+function noWalkNow(){NO_WALK_ONCE=true;[...walkers.keys()].forEach(dropWalker);}
+/* spec 092 FR-009 (phase 1: instant), FR-012: show another floor that is on. edge: where a screen that scrolls starts ('bottom' when moving up the building). */
+function goToFloor(id,o){
+  o=o||{};
+  const f=floorScreens()&&floorsOnList().find(x=>x.id===id);
+  if(!f||f.id===curFloorId())return false;
+  curFloor=f.id; saveCurFloor(); noWalkNow();
+  renderAll();
+  const fl=$('floor'); if(fl)fl.scrollTop=o.edge==='bottom'?fl.scrollHeight:0;
+  if(o.announce!==false)announceFloor(f.id);
+  return true;
+}
+/* spec 092 FR-011: PageDown goes to the next floor that is on, PageUp to the previous one, in the office view, outside text fields and under no dialog or menu.
+   A floor screen that scrolls scrolls first and changes floor only from an edge (floornav.keyAction). */
+document.addEventListener('keydown',e=>{
+  if(e.key!=='PageDown'&&e.key!=='PageUp')return;
+  if(!floorScreens())return;
+  const fl=$('floor'), live=el=>!el.hidden&&el.getClientRects().length>0;
+  const scroll={scrolls:fl.classList.contains('scrolls'),atTop:fl.scrollTop<=1,atBottom:fl.scrollTop+fl.clientHeight>=fl.scrollHeight-1};
+  const open={office:ui.view==='office'&&!ui.selected&&!vsViewing&&!document.body.classList.contains('panel-open')&&!document.body.classList.contains('screen-open'),
+    dialog:modalOpen()||[...document.querySelectorAll('[role="dialog"]')].some(live),
+    menu:[...document.querySelectorAll('[role="menu"], #floorsPop, #foldersPop')].some(live)};
+  const act=window.DurbarFloorNav.keyAction(e,e.target,scroll,open); if(!act)return;
+  /* the office area is not the page's scroller, so the browser's PageDown does not scroll it from the body: the page does it by the same page step */
+  if(act.scroll){e.preventDefault();fl.scrollBy({top:act.scroll*Math.round(fl.clientHeight*0.875),behavior:'auto'});return;}
+  const to=window.DurbarFloorNav.nextOn(FLOORS.floors,curFloorId(),act.go); if(!to)return; /* the first or last floor: nothing happens */
+  e.preventDefault(); goToFloor(to,{edge:act.go==='next'?'top':'bottom'});
+});
 function afterFloorsChange(){
   renderFloorsBtn(); renderIntoFloor();
   if(demoOn)return;
