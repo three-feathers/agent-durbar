@@ -1,0 +1,82 @@
+# Implementation Plan: Floors as places
+
+**Branch**: spec on `033-floors-as-places`; code on `092-pN-slug` branches, one per phase | **Date**: 2026-10-27 | **Spec**: [spec.md](spec.md)
+
+## Summary
+
+Make every floor that is on one whole screen of a vertical building. A lift panel (one button per floor on, attention badges) and PageUp/PageDown move between floors with a calm 300 ms slide (instant with reduced motion); opening an agent from the inbox, a notification or the navigator moves the office to its floor. Renderer-only: floors, their saved data and IPC (spec 033) are reused as they are; the current floor is a display preference in `localStorage`.
+
+## Technical Context
+
+**Language/Version**: TypeScript (main, shared) and plain-script JavaScript (renderer, no modules; pure helpers use the `places.js` UMD pattern so Node tests can `require` them). No new dependency.
+**Storage**: `localStorage` only (current floor id). No change to `folders.json`, `src/shared/floors.ts`, IPC or preload.
+**Testing**: `scripts/test-floornav.ts` (pure rules, new), simulator driver `scripts/shots-092.js` (new, theme-neutral, waits with `until()`), `check:office` extended (`scripts/check-office-overlap.js`), existing `test-floors.ts` / `test-navigator.ts` stay green. 0 AI credits; simulator `DURBAR_SIM=15 DURBAR_SIM_FLOORS=1`.
+**Target Platform**: Electron on Windows, macOS, Linux (renderer-only, no path or shell code).
+**Performance Goals**: a floor change within 033 SC-003's budget plus the slide (spec SC-003); rendering only the current floor (and the target during a slide) keeps the layout cost of N floors at the cost of one.
+**Constraints**: constitution V (10.5 px text, 15 agents per floor at 1440x900 and 1280x800, no overlap, no office scroll), I and III untouched, VII.3 pure logic tested, VIII honest limits.
+
+## Constitution Check
+
+- I (spec first): this spec, plan and tasks are committed before any `src/` change; each phase PR changes `specs/092-*`.
+- II (adapters): nothing agent-specific; attention comes from the normalized status the pills and inbox already use.
+- III (safe, no secrets): no new IPC, file, process or stored data beyond one floor id in `localStorage`.
+- IV (no credits): simulator and unit tests only.
+- V (calm UI): 300 ms slide, `transform`/`opacity` only, reduced motion honoured live, lift text at least 10.5 px; the width cost is measured before merge (FR-008).
+- VI (platforms): PageUp/PageDown exist everywhere; Mac laptop keys noted in the help.
+- VII (gates): pure rules in `floornav.js` with a Node test; `check:office` per floor.
+- VIII (honest limits): the spec's known gaps are carried into the README.
+
+## Code paths reused (do not add parallel versions)
+
+| Need | Existing code (file:line, 2026-10-27 on main) |
+|---|---|
+| Floors state, on/off, order | `FLOORS`, `floorById`, `floorOn`, `floorsOnList`, `roomsInOrder`, `roomShown` (`src/renderer/app.js:141-150`); `applyFloors`/`afterFloorsChange` (`:3881-3893`) |
+| One floor's agents for the office | `officeModel()` (called at `:1569`, filtered by `roomShown`); add a "current floor" filter there |
+| Density per set of agents | `chooseLayout(sizing, aw, ah)` (`:1419`), `layoutKey` (`:1579` includes the floor list; add the current floor id) |
+| Floor name in a header | `floorTag` (`:151`) kept (FR-005) |
+| Lobby and visitors | `lobbyOn` (`:289`), `lobbyPlaces` (`:288`), `placeVisitors` in `src/renderer/places.js` (filter by `roomShown`; no filter by current floor) |
+| Attention sources | `needsMeOrder()` (used by `openInbox`, `:3286`), `UNREAD_AT` (`:2219`), `offFloorAttention` (`:3930`) as the model for text, status of the coffee-break state (spec 068) |
+| Open an agent | `openPanel(id,focus)` (`:2247`); inbox buttons (`:3362-3363`); notification `onclick` (`:3207`); navigator actions in `src/renderer/navigator.js` |
+| Announce, motion | `announce()` (`:3285`), `reducedMotion()` (`:785`), `motion(el, frames, opts)` |
+| Keyboard help table | the `kbdHelp` rows near `app.js:3550` |
+| Menus/tooltips/tokens | shared tokens in `src/renderer/themes.css`; `test:theme` bans literal sizes |
+
+Not found (so new): a notion of a current floor, a lift panel, any per-floor layout, and a floor-change keyboard handler.
+
+## Project Structure
+
+```text
+specs/092-floors-as-places/   spec.md, plan.md, tasks.md
+src/renderer/floornav.js      NEW, pure: current-floor rules, badges, key eligibility, announcement text
+src/renderer/app.js           current floor state, officeModel filter, layoutKey, lift panel render, keys, goToFloor, slide
+src/renderer/styles.css       .lift panel, badge, slide container (tokens only); themes.css untouched unless a token is needed
+src/renderer/navigator.js     floor row activates goToFloor (FR-019)
+src/renderer/index.html       script tag for floornav.js; lift host element
+scripts/test-floornav.ts      NEW
+scripts/shots-092.js          NEW driver
+scripts/check-office-overlap.js  floor-screen cases
+docs/ README.md changelog.d/  see FR-026
+```
+
+## Phases (each one PR; each leaves the app working and the single-floor user unchanged)
+
+Order is chosen so the riskiest part (layout per floor and its width budget) lands first and every later phase is small.
+
+1. **Phase 1, floor screens (FR-001..FR-005, FR-020..FR-023, FR-025 partly).** Pure `floornav.js` + test; current floor state with persistence; `officeModel()` and `layoutKey` use the current floor; lobby visitors of all floors with the no-walk rule; PageUp/PageDown (instant, announced) as the first way to change floor; fallbacks when the current floor goes off. `check:office` per floor. No lift panel yet, so the feature is usable by keyboard only and invisible with one floor on.
+2. **Phase 2, the lift panel and badges (FR-006..FR-008, FR-013..FR-017).** Panel markup and styles, roving focus, accessible names, attention badges from the existing sources, whole-building pills unchanged, width counted in the layout, `check:office` with the panel at both sizes. Instant switching still.
+3. **Phase 3, the slide (FR-009, FR-010).** Two-floor mount during the slide, `motion()` at 300 ms, retarget, end-on-resize, reduced motion read live, SC-003 timing as a ratio.
+4. **Phase 4, jumps (FR-018, FR-019, FR-011 help text).** `goToFloor()` called by `openPanel`, the navigator, the folder filter and the list; Back to the office shows the right floor; navigator floor row; keyboard help rows.
+5. **Phase 5, docs and screenshots (FR-026).** README, docs, `npm run shots:docs`, changelog fragment, 033 cross-reference, converge.
+
+## Risks to check in review
+
+- Width of the lift panel against the 15-agent rule at 1280x800 (FR-008); decide Q-B before Phase 2.
+- Focus handling: PageUp/PageDown must never act inside text fields, selects, dialogs, menus, the palette or the composer.
+- Stale layout cache: `layoutKey` must include the current floor (a cached layout of floor A must not be used for floor B).
+- Walkers and lobby visitors across a floor change (FR-021); the walker layer uses `#floor` coordinates (`app.js:414-417`, `:483-487`).
+- `REDUCED` is read once at `app.js:5`; the slide must use `reducedMotion()` (live).
+- Notification and inbox paths must not gain a new sound or toast (FR-015).
+
+## Complexity Tracking
+
+None beyond the new file `floornav.js`; no new IPC or storage.
