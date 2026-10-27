@@ -60,3 +60,4 @@ Review notes (Mac coordinator):
 19. Added `batch6/rebels-bulldog-waiting.webp` (2026-10-27). The bulldog's *resting* is still missing.
 20. Added `batch6/monster-vampire-resting.webp` (2026-10-27). The vampire now has all 3 poses (*resting* holds a teacup in one hand, minor).
 21. Added `batch6/monster-ghost-waiting.webp` (2026-10-27). The ghost now has all 3 poses (its *resting* is in the batch-1 folder).
+22. Added `batch6/monster-mummy-resting` and `-working` (2026-10-27). The mummy's *waiting* is still missing.
