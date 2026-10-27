@@ -293,14 +293,16 @@ async function main(): Promise<void> {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-runs-'));
     const file = path.join(dir, 'durbar-schedules.json');
     const cpu = (): number => { const u = process.cpuUsage(); return (u.user + u.system) / 1000; };
-    saveSchedules(file, doc); // warm-up
+    // the cost measured is building, serialising and writing the document, not the disk's flush: fsync is a no-op here (the real one is covered by the ordering test below)
+    const cpuIo: SaveIo = { platform: process.platform, pause: () => undefined, fs: { openSync: fs.openSync, writeSync: fs.writeSync, closeSync: fs.closeSync, renameSync: fs.renameSync, rmSync: fs.rmSync, fsyncSync: (() => undefined) as typeof fs.fsyncSync } };
+    saveSchedules(file, doc, cpuIo); // warm-up
     // CPU time, median of 5; under a loaded machine (a parallel tsc) one round can be slow, so up to 3 rounds, the best counts
     const rounds: number[] = [];
     for (let k = 0; k < 3; k++) {
       const times: number[] = [];
       for (let i = 0; i < 5; i++) {
         const a = cpu();
-        saveSchedules(file, doc);
+        saveSchedules(file, doc, cpuIo);
         times.push(cpu() - a);
       }
       times.sort((x, y) => x - y);
