@@ -132,9 +132,11 @@
   function liveChatHTML(r,c){
     const W=window.DurbarMcpWords, x=c.entry, rp=live.replies.get(c.id)||{}, m=X.mcpSession?X.mcpSession(c.id):null;
     const k=liveKey(r.name,c.id), who=c.name+(c.folder?' in '+c.folder:'');
-    const stat=`<span class="mst ${esc(c.state.cls)}"${c.state.key.startsWith('unknown')?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(c.state.icon)}<span class="mst-w">${esc(c.state.word)}</span></span>`;
+    /* FR-187/FR-189 (issue 779 A): a Running server whose last call was refused (sign-in or organization policy): the class words only */
+    const cw=x.status==='connected'?W.callWord(x.lastCall):'';
+    const stat=`<span class="mst ${esc(c.state.cls)}"${c.state.key.startsWith('unknown')?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(c.state.icon)}<span class="mst-w">${esc(c.state.word)}</span>${cw?`<span class="mst-call">\u00b7 ${esc(cw)}</span>`:''}</span>`;
     /* FR-082: the chat dialog's own hint (FR-006) with the agent app's name; Details shows the masked text main sent (FR-007, FR-086) */
-    const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app:rp.app||(m&&m.o.appName)});
+    const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app:rp.app||(m&&m.o.appName)})||(cw?W.callHint(x.lastCall,rp.app||(m&&m.o.appName)):'');
     const detOpen=!!x.error&&liveDet.has(k);
     const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-lvdet="1" aria-expanded="${detOpen}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+r.name+' for '+c.name)}">Details</button>`:'';
     const detBox=detOpen?`<div class="srv-det"><pre class="srv-err" tabindex="0" data-lverr="1" aria-label="${esc('Error text of '+r.name+' for '+c.name)}">${esc(x.error)}</pre><button class="btn sm" type="button" data-lvcopy="1" aria-label="${esc('Copy the error text of '+r.name+' for '+c.name)}">Copy</button></div>`:'';
@@ -1161,6 +1163,14 @@
       const honest=(x.canSignIn||x.signIn)&&x.signInNote?`<span class="srv-sgl mut">${esc(x.signInNote)}</span>`:'';
       return `<div class="srv-sign">${line}${honest}${acts?`<div class="srv-sgact">${acts}</div>`:''}${steps}</div>`;
     };
+    /* spec 058 FR-190..FR-192 (issue 779 B): Refresh asks the agent app for its server list again (main's `agents:mcpRefresh`); an app that cannot report it says so */
+    let refreshBusy=false, refreshNote='';
+    const refreshRow=s=>{
+      if(!s.live||!X.bridge.agentMcpRefresh)return '';
+      const app=s.app||o&&o.appName||'The agent app';
+      if(!s.canRefresh)return `<div class="mcp-refresh"><span class="dsub small" id="mcpRefreshNote">${esc(app)} cannot report its server list again, so these states are its last report.</span></div>`;
+      return `<div class="mcp-refresh"><button class="btn sm" type="button" id="mcpRefresh" data-refresh="1"${refreshBusy?' aria-disabled="true"':''} aria-label="Refresh the state of every server">${refreshBusy?'Refreshing…':'Refresh'}</button><span class="dsub small" id="mcpRefreshNote" role="status">${esc(refreshNote||'Asks '+app+' for the state of every server again.')}</span></div>`;
+    };
     const body=s=>{
       const rows=s.servers.map(x=>{
         const W=window.DurbarMcpWords, app=s.app||o&&o.appName;
@@ -1174,8 +1184,9 @@
         const orgMay=!org&&typeof x.orgDoubt==='string'?x.orgDoubt:'';
         const eff=x.defaultOn&&!x.off&&!appOff&&!org;
         const sv=W.stateOf(x.status,octx);
-        const stat=`<span class="mst ${esc(sv.cls)}"${x.status&&sv.cls==='unknown'?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(sv.icon)}<span class="mst-w">${esc(sv.word)}</span></span>`;
-        const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app,by});
+        const cw=x.status==='connected'?W.callWord(x.lastCall):''; /* FR-187/FR-188 (issue 779 A) */
+        const stat=`<span class="mst ${esc(sv.cls)}"${x.status&&sv.cls==='unknown'?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(sv.icon)}<span class="mst-w">${esc(sv.word)}</span>${cw?`<span class="mst-call">\u00b7 ${esc(cw)}</span>`:''}</span>`;
+        const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app,by})||(cw?W.callHint(x.lastCall,app):'');
         const detOpen=x.error&&openDet.has(x.name);
         /* FR-007: the masked text (main masked it; never the runtime's raw text) behind Details, and Copy copies exactly that */
         const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-det="${esc(x.name)}" aria-expanded="${detOpen?'true':'false'}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+x.name)}">Details</button>`:'';
@@ -1203,7 +1214,7 @@
       /* spec 058 FR-164 (owner 2026-10-23): sign in again to every server Copilot can redo, so the signed runtime writes each sign-in anew */
       const againN=(s.servers||[]).filter(x=>x.canSignInAgain&&!x.signIn).length;
       const againAll=againN>1&&X.bridge.agentMcpSignIn?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpSignAgainAll"${againBusy?' disabled':''}>${againBusy?'Starting sign-ins…':'Sign in again to all ('+againN+')…'}</button><span class="dsub small">For keychain prompts that come back on every launch (sign-ins saved by an older Agent Durbar): ${esc(s.app||'the agent app')} forgets each saved sign-in and you sign in again in your browser, one page per server.</span></div>`:'';
-      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${rsess}${againAll}<p class="dsub small">A switch stays for this agent, also in its next sessions, until the app is closed.</p>`;
+      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}${refreshRow(s)}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${rsess}${againAll}<p class="dsub small">A switch stays for this agent, also in its next sessions, until the app is closed.</p>`;
     };
     let dlg=null;
     /* spec 069 FR-032/FR-033: expanded rows and their tools, loaded once per open dialog (again after a Restart) */
@@ -1384,13 +1395,27 @@
       if(r&&r.ok&&expanded.has(name))void (async()=>{let t;try{t=await X.bridge.agentMcpTools(a.id,name);}catch(e){t={ok:false,error:String(e&&e.message||e)};}toolsOf.set(name,t);if(dlg&&dlg.isConnected)void repaint();})();
       await repaint();
     };
+    /* FR-190/FR-191: one read at a time (a second press while it runs does nothing); `manual` = the button (a note and a polite announcement), else the dialog opening (silent unless it fails) */
+    const refresh=async manual=>{
+      if(refreshBusy||!X.bridge.agentMcpRefresh)return;
+      refreshBusy=true;if(manual){refreshNote='';await repaint();}
+      const r=await call(X.bridge.agentMcpRefresh,a.id,manual===true); /* FR-190: main skips an open-time read under a minute after the last one */
+      refreshBusy=false;
+      if(!dlg||!dlg.isConnected)return;
+      if(r&&r.ok){refreshNote=manual?'Updated just now.':'';}
+      else if(r&&r.supported===false){refreshNote='';}
+      else refreshNote=(r&&r.error)||'Could not read the state again.';
+      if(manual)wantFocus=['refresh','1'];
+      const ch=await repaint();
+      if(manual||(r&&!r.ok))X.announce((r&&r.ok?'Refreshed. ':'')+(r&&!r.ok&&refreshNote?refreshNote+' ':'')+(ch.length?ch.slice(0,3).join('. '):'')); 
+    };
     const restartSession=async()=>{
       if(sessBusy)return;
       await mcpRestartSessionFlow(a,st.start,{returnFocus:()=>dlg&&dlg.querySelector('#mcpRestartSess'),busy:async v=>{sessBusy=v;await repaint();},onAuth:()=>{if(dlg&&dlg._ov)dlg._ov._close();}});
       await repaint();
     };
     const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
-      onOpen:d=>{dlg=d.querySelector('.dlg');dlg._ov=d;d.addEventListener('click',async e=>{
+      onOpen:d=>{dlg=d.querySelector('.dlg');dlg._ov=d;if(st.canRefresh)setTimeout(()=>{void refresh(false);},0); /* FR-190: every open reads the states again */d.addEventListener('click',async e=>{
         const tg=e.target.closest('button[data-tools]');if(tg){void toggleTools(tg.dataset.tools);return;}
         const ad=e.target.closest('[data-tall][aria-disabled="true"],input[data-tool][aria-disabled="true"]');if(ad){e.preventDefault();return;} /* FR-064: focusable, never changed */
         const ta=e.target.closest('button[data-tall]');if(ta&&!ta.disabled){const n=ta.dataset.tall,r=toolsOf.get(n);if(r&&r.ok){void saveOff(n,ta.getAttribute('aria-checked')==='true'?r.tools.filter(t=>!t.orgBlocked).map(t=>t.name).filter(t=>/^[A-Za-z0-9_.-]{1,128}$/.test(t)):[]);}return;}
@@ -1409,6 +1434,7 @@
         if(cb){const sv=st.servers.find(x=>x.name===cb.dataset.copy);void copyText(sv&&sv.error||'','Copied the error text.');return;}
         const dg=e.target.closest('button[data-diag]');
         if(dg){const sv=st.servers.find(x=>x.name===dg.dataset.diag);if(sv)void copyDiagnostics(sv.name,sv,st.app||o&&o.appName,o&&o.appVersion);return;}
+        const rf=e.target.closest('#mcpRefresh');if(rf){if(rf.getAttribute('aria-disabled')!=='true')void refresh(true);return;}
         if(e.target.closest('#mcpRestartSess')){void restartSession();return;}
         const ag=e.target.closest('button[data-signagain]');if(ag&&!ag.disabled){void signAgain([ag.dataset.signagain],ag);return;}
         const aa=e.target.closest('#mcpSignAgainAll');if(aa&&!aa.disabled){void signAgain((st.servers||[]).filter(x=>x.canSignInAgain&&!x.signIn).map(x=>x.name),aa);return;}

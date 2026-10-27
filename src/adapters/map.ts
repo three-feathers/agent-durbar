@@ -111,6 +111,11 @@ export class EventMapper {
    * Spec 058 FR-163: the last status of one MCP server of this session as Durbar knows it (`needs-auth` while tool failures marked it),
    * undefined when the runtime has not reported the server. Read by the adapter to avoid asking the runtime about a failed server.
    */
+  /** Spec 058 FR-190: the servers of the last report that are not switched off (the ones a whole-list read could start). */
+  mcpNamesOn(): string[] {
+    return [...this.mcp.values()].filter((x) => x.status !== 'disabled').map((x) => x.name);
+  }
+
   mcpStatusOf(name: string): string | undefined {
     if (this.derivedAuth.has(name)) return 'needs-auth';
     return this.mcp.get(name)?.status;

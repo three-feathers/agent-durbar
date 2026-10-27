@@ -279,6 +279,7 @@ interface SimAgent {
   /** Spec 058 (simulator): servers under a canned Restart, and failed servers a Restart brought back. */
   mcpRestarting?: Set<string>;
   mcpFixed?: Set<string>;
+  mcpCalls?: Map<string, 'auth' | 'policy'>; /* spec 058 FR-187: the class of each server's last failed tool call (a word only) */
   /** Spec 058 FR-071 (simmcpauth): servers with a sign-in open (Sign in pressed); `opened` after Open sign-in page. Dropped by End session and Restart session. */
   mcpSign?: Map<string, { opened: boolean; at: number; again?: boolean }>;
   /** The last `mcp` event emitted for this session, like main's `live` list: the dialog's reply reads it (a driver can emit its own). */
@@ -695,10 +696,26 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const simRemoteOffSubs: ((p: { id: string; reason?: string }) => void)[] = []; // spec 054 FR-040: the door's remote-off event, as main sends it
     let simDoorsRef: { map: Map<string, { closed: boolean; held: { prompt: string; at: number; scheduleId?: string }[]; releasing?: boolean }>; subs: ((d: Record<string, { closed: boolean; held: number }>) => void)[]; list(): Record<string, { closed: boolean; held: number }>; changed(): void } | undefined; // spec 017 FR-015 (set below, with the schedules)
     let selfMcp = false; /* the simulator's own `mcp` event, as opposed to one a driver reports */
+    /* spec 058 FR-187 (issue #779 A): src/shared/mcpcall.ts `classifyMcpCall`, copied (this file cannot import); test:mcpcall cuts this block out and compares the two */
+    /* mcpcall:begin */
+    const simCallClass = (text: unknown, mcpAuth?: boolean): 'auth' | 'policy' | undefined => {
+      const t = typeof text === 'string' ? text.slice(0, 4000) : '';
+      if (/AADSTS53\d{4}|conditional access|device (?:is )?(?:required )?(?:to be )?managed|managed device|compliant device|device (?:is )?not (?:compliant|enrolled)/i.test(t)) return 'policy';
+      if (mcpAuth === true || /\b401\s+unauthori[sz]ed|\b(?:http(?:\/\d(?:\.\d)?)?|status(?: code)?|code|error|response)[\s:=(-]{0,4}401\b|unauthori[sz]ed|AADSTS(?:50058|50072|50074|50076|50078|50079|50132|50133|50173|70008|70043|70044|700082|65001)\b|invalid_grant|token (?:is |has )?(?:expired|invalid)|sign[- ]?in (?:is )?required|MCP OAuth challenge required/i.test(t)) return 'auth';
+      return undefined;
+    };
+    /* mcpcall:end */
     const emit = (e: AgentEvent): void => {
       /* like main, which keeps the runtime's list before the window hears of it: the reply a listener asks for at once sees this event (spec 058 FR-094) */
       if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpHealth = undefined; }
-      if (e.type === 'mcp') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) { q.mcpLive = e.servers; q.mcpHealth = simHealth(q.mcpHealth, e.servers); if (!selfMcp) { q.mcpReported = e.servers; q.mcpAppOff = new Set(e.servers.filter((m) => m.status === 'disabled' && !q.mcpOff?.has(m.name)).map((m) => m.name)); } } }
+      if (e.type === 'mcp') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) { for (const m of e.servers) if (m.status === 'connected' && q.mcpLive?.some((o) => o.name === m.name && o.status !== 'connected')) q.mcpCalls?.delete(m.name); /* main's McpCallTracker.onServers: back to connected drops the class */ q.mcpLive = e.servers; q.mcpHealth = simHealth(q.mcpHealth, e.servers); if (!selfMcp) { q.mcpReported = e.servers; q.mcpAppOff = new Set(e.servers.filter((m) => m.status === 'disabled' && !q.mcpOff?.has(m.name)).map((m) => m.name)); } } }
+      /* like main's McpCallTracker: a failed MCP call sets the class, a successful one clears it, a stopped session drops it */
+      if (e.type === 'toolCall' && e.mcpServer) {
+        const q = sims.find((x) => x.info.id === e.sessionId);
+        if (q && e.phase === 'complete') q.mcpCalls?.delete(e.mcpServer);
+        else if (q && e.phase === 'failed') { const c = simCallClass(e.output, e.mcpAuth === true); if (c) (q.mcpCalls ??= new Map()).set(e.mcpServer, c); else q.mcpCalls?.delete(e.mcpServer); }
+      }
+      if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpCalls = undefined; }
       listeners.forEach((l) => l(e));
       simSchedHook?.(e);
       if (e.type === 'status' && e.status === 'idle') {
@@ -1713,7 +1730,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name), ...toolsOffOf(m.name), ...signOf(m.name, 'runtime'), ...(restartable(m.name, true) && m.status !== 'disabled' ? { canRestart: true } : {}) })) : []),
         ];
         for (const x of servers) { const ob = simOrgServer(s.info.adapterId, x.name); if (ob) Object.assign(x, { orgBlocked: ob }); } // spec 076 FR-205
-        return { ok: true, servers, live, app: SIM_APP_NAME[s.info.adapterId ?? 'copilot'] ?? 'GitHub Copilot', ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume, canListTools: true, toolFilter: true };
+        /* spec 058 FR-188: a Running (connected), switched-on server in a running session says how its last call failed (the class only) */
+        for (const x of servers) { const c = s.mcpCalls?.get(x.name); if (live && c && !s.mcpOff?.has(x.name) && (x as { status?: string }).status === 'connected') Object.assign(x, { lastCall: c }); }
+        return { ok: true, servers, live, app: SIM_APP_NAME[s.info.adapterId ?? 'copilot'] ?? 'GitHub Copilot', ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume, canListTools: true, toolFilter: true, ...(live && simSignApp(s) ? { canRefresh: true } : {}) };
       },
       /* spec 058 FR-040: a canned Restart: Starting for a moment, then Running */
       /* spec 069 FR-031/FR-032: canned tools per server; a session that is not running, a failed server and an empty one show their states */
@@ -1743,6 +1762,22 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (st.status && st.status !== 'connected') return { ok: false, error: name + ' is not connected' + (st.error ? ': ' + st.error : ' (' + st.status + ')') };
         const list = canned[name] ?? [['search', 'Search the notes'], ['read_note', 'Read one note by its title']];
         return { ok: true, total: list.length, tools: list.map(([n, d]) => { const ob = simOrgTool(s.info.adapterId, name, n); return { name: n, ...(d ? { description: d } : {}), ...(ob ? { orgBlocked: ob } : {}) }; }) };
+      },
+      /* spec 058 FR-190: the agent app reads its server list again. A driver counts the reads in `__durbarSimMcpRefresh.count` and sets what the app will say next in `__durbarSimMcpRefresh.app[id]` (a server list, sent as the usual `mcp` event) */
+      agentMcpRefresh: async (id, manual) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, supported: false, error: 'Unknown agent.' };
+        if (!simSignApp(s)) return { ok: false, supported: false };
+        if (s.state === 'idle' && !s.ctx) return { ok: false, supported: true, error: 'This session is not running. Send a message to start it.' };
+        const lastAt = (s as { mcpReadAt?: number }).mcpReadAt; /* main's rule: an open-time read waits a minute after the last read; Refresh always reads */
+        if (manual !== true && lastAt !== undefined && Date.now() - lastAt >= 0 && Date.now() - lastAt < 60_000) return { ok: true, supported: true, skipped: true };
+        (s as { mcpReadAt?: number }).mcpReadAt = Date.now();
+        const hook = ((window as unknown as { __durbarSimMcpRefresh?: { count: number; ids: string[]; app: Record<string, McpServerStatus[]> } }).__durbarSimMcpRefresh ??= { count: 0, ids: [], app: {} });
+        hook.count++;
+        hook.ids.push(id);
+        const next = hook.app[id];
+        if (next) emit({ type: 'mcp', sessionId: id, timestamp: Date.now(), servers: next });
+        return { ok: true, supported: true };
       },
       agentMcpRestart: async (id, name) => {
         const s = sims.find((x) => x.info.id === id);

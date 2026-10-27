@@ -609,6 +609,8 @@ export interface AgentMcpEntry {
   error?: string;
   /** Spec 058 FR-011/FR-020: what kind of failure the adapter said it was (only when the vendor said so). */
   errorClass?: McpServerStatus['errorClass'];
+  /** Spec 058 FR-187 (issue #779 A): a Running server whose last tool call failed with a refused sign-in (`auth`) or an organization access policy (`policy`). The class only, never the text. */
+  lastCall?: 'auth' | 'policy';
   /** Spec 058 FR-092: when Agent Durbar first saw this state (epoch ms); only for a reported state. */
   since?: number;
   /** Spec 058 FR-092: a failed or needs-sign-in state that came after the server was Running in this session. */
@@ -662,6 +664,8 @@ export interface AgentMcpReply {
   toggleApplies?: 'live' | 'next-message';
   /** Spec 058 FR-022: *Restart session with these servers* is offered (the app can resume and the session runs). */
   canRestartSession?: boolean;
+  /** Spec 058 FR-190 (issue #779 B): the agent app can report its server list again (`agents:mcpRefresh`); missing = it cannot, and the dialog says so. */
+  canRefresh?: boolean;
   /** Spec 069 FR-031: this agent app can list a server's tools (`agents:mcpTools`). */
   canListTools?: boolean;
   /** Spec 069 FR-064: this agent app can turn single tools off (`agents:setMcpToolsOff`); missing = the checkboxes are disabled. */
@@ -691,6 +695,15 @@ export interface McpOpenSignInResult {
   error?: string;
   gone?: boolean;
   manual?: boolean;
+}
+
+/** `agents:mcpRefresh` (spec 058 FR-190). `supported: false` = this agent app cannot report its list again (the dialog says so); `ok: false` = it could not be read now. No vendor text. */
+export interface McpRefreshResult {
+  ok: boolean;
+  supported: boolean;
+  /** Spec 058 FR-190: the open-time read was skipped, the last read of this agent is under a minute old. */
+  skipped?: true;
+  error?: string;
 }
 
 /** `agents:mcpRestart` (spec 058 FR-021): the error is short and masked. */
@@ -960,6 +973,8 @@ export interface DurbarApi {
   mcpGlobalSetOff?(app: GlobalApp, name: string, off: boolean): Promise<{ ok: boolean }>;
   /** `focus: true` = the window regained focus: main reads the agent app's MCP list again when a sign-in page is open (spec 058 FR-064). */
   agentMcp?(id: string, focus?: boolean): Promise<AgentMcpReply>;
+  /** Spec 058 FR-190 (issue #779 B): ask the agent app for its server list again (the dialog opening, or Refresh); the new states arrive as the usual `mcp` event. */
+  agentMcpRefresh?(id: string, manual?: boolean): Promise<McpRefreshResult>;
   /** Spec 058 FR-021: restart one MCP server of this agent's running session. */
   agentMcpRestart?(id: string, name: string): Promise<McpRestartResult>;
   /** Spec 058 FR-065: start the agent app's own sign-in for one MCP server. Main keeps the address; the reply has the host only. */

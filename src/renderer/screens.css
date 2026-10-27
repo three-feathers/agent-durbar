@@ -48,6 +48,7 @@ body.screen-open .workspace{display:none}
 .mst-ic{flex:none}
 .mst.connected .mst-ic{color:var(--c-done)} .mst.failed .mst-ic,.mst.needs-auth .mst-ic{color:var(--c-error)} .mst.pending .mst-ic{color:var(--c-thinking)} .mst.disabled .mst-ic,.mst.stopped .mst-ic{color:var(--muted)} .mst.unknown{color:var(--muted)}
 .mst-w{font-weight:500}
+.mst-call{font-weight:400;overflow-wrap:anywhere}
 .srv-hint{display:block;font-size:11px;color:var(--ink-2);overflow-wrap:anywhere}
 .srv-hint.srv-org,.mcp-tlist .srv-org{color:var(--tone-warn-ink)} /* spec 076 FR-202: blocked by the agent app's organization policy */
 .mcp-org code{color:var(--muted)}
@@ -316,6 +317,8 @@ body.has-bridge #topBtns{display:flex}
 .scr-row-l{font-size:var(--t4-size);font-weight:600;color:var(--ink-2)}
 .mcp-rsess{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;margin:10px 0 2px}
 .mcp-rsess .dsub{margin:0;flex:1 1 260px}
+.mcp-refresh{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;margin:10px 0 6px}
+.mcp-refresh .dsub{margin:0;flex:1 1 260px}
 /* spec 061: "This folder brings its own agent setup" (the import list's look; each item in full) */
 .dlg.fs .fs-app{margin:12px 0 4px}
 .dlg.fs .fs-app h4{margin:0 0 6px;font-size:14px}

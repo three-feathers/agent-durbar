@@ -188,6 +188,32 @@ async function main(): Promise<void> {
       s.calls.length = 0;
       for (let i = 0; i < 3; i++) await ad.refreshMcpStatus(sid, 'later');
       assert.deepStrictEqual(s.calls.map((c) => c.name), ['mcp.isServerRunning', 'mcp.isServerRunning', 'mcp.isServerRunning'], 'refresh on a failed server: no list, no connect');
+      // spec 058 FR-190 (review on #800): the dialog's open-time read (`startNothing`) reads the whole list only when every server of the last
+      // report that is not off is running; the button (no opts) always reads. No report yet: nothing is read.
+      {
+        s.listAnswer = [{ name: 'ok', status: 'connected' }];
+        const listed = (): number => s.calls.filter((c) => c.name === 'mcp.list').length;
+        s.running = false;
+        s.calls.length = 0;
+        await ad.refreshMcpStatus(sid, undefined, { startNothing: true });
+        assert.strictEqual(listed(), 0, 'open-time read, a server not running: no list (it could start it)');
+        assert.strictEqual(s.calls.filter((c) => c.name === 'mcp.isServerRunning').length, 1, 'one cheap check, then it stops');
+        s.running = true;
+        s.calls.length = 0;
+        await ad.refreshMcpStatus(sid, undefined, { startNothing: true });
+        assert.strictEqual(listed(), 1, 'open-time read, every server running: one list');
+        assert.ok(s.calls.filter((c) => c.name === 'mcp.isServerRunning').length >= 2, 'each server of the report was checked');
+        s.running = false;
+        s.calls.length = 0;
+        await ad.refreshMcpStatus(sid);
+        assert.strictEqual(listed(), 1, 'Refresh (no opts) reads whatever is running');
+        const fresh = await ad.start({ workspace: dirs[0], quiet: true });
+        const s2 = ad.clients[0].sessions.get(fresh)!;
+        s2.calls.length = 0;
+        await ad.refreshMcpStatus(fresh, undefined, { startNothing: true });
+        assert.strictEqual(s2.calls.length, 0, 'no report yet: the open-time read asks nothing');
+        s.running = false;
+      }
       // tool failures that mark a "connected" server needs-auth also stop the tools list
       s.handler!({ type: 'tool.execution_start', data: { toolCallId: 't1', toolName: 'ok-x', mcpServerName: 'ok', mcpToolName: 'x', arguments: {} } });
       s.handler!({ type: 'tool.execution_complete', data: { toolCallId: 't1', success: false, error: { message: 'MCP tool catalog changed before tool "x" could be invoked: Failed to verify cached MCP tools: MCP OAuth challenge required (HTTP 401)' } } });
