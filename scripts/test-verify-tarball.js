@@ -86,6 +86,7 @@ const prep = fs.readFileSync(path.join(__dirname, 'prepare-runtime.js'), 'utf8')
 assert.match(prep, /fetchVerified\(\{/, 'prepare-runtime uses fetchVerified');
 assert.match(prep, /if \(!res\.ok\) \{[\s\S]{0,200}process\.exit\(1\)/, 'prepare-runtime exits non-zero on a refusal');
 assert.ok(!/execFileSync\('tar'/.test(prep.replace(/extract: \(tgz\) => \{[\s\S]*?\n    \},/, '')), 'tar runs only inside the extract callback');
+assert.ok(!/\bverify\s*[:,(]|verifyTarball/.test(prep.replace(/\/\/.*$/gm, '')), 'prepare-runtime passes no verify function: only the real verifier inside fetchVerified is used');
 assert.ok(!/try \{[\s\S]*process\.exit/.test(prep), 'no process.exit inside a try (it would skip cleanup)');
 
 // the real lockfile records sha512 for every runtime package prepare-runtime can fetch
