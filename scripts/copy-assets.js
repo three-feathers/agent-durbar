@@ -6,9 +6,14 @@ const root = path.resolve(__dirname, '..');
 const srcDir = path.join(root, 'src', 'renderer');
 const outDir = path.join(root, 'dist', 'renderer');
 fs.mkdirSync(outDir, { recursive: true });
-for (const f of ['index.html', 'styles.css', 'app.js', 'harnesses.js', 'signin.js', 'demo.js', 'markdown.js', 'dialog.js', 'innerscroll.js', 'sessionname.js', 'inlinename.js', 'roomsummary.js', 'sessionsearch.js', 'usagetotals.js', 'costtable.js', 'modelswitch.js', 'schedtemplates.js', 'places.js', 'cuttext.js', 'slashsuggest.js', 'notes.js', 'probe.js', 'grantlabel.js', 'whyallowed.js', 'sandboxtext.js', 'mcpwords.js', 'editview.js', 'place-icons.js', 'mood.js', 'retry.js', 'attention.js', 'unread.js', 'keys.js', 'activity.js', 'toolstats.js', 'theme.js', 'themes.css', 'scenekits.js', 'screens.js', 'screens.css', 'activitytable.js', 'gitstatus.js', 'sessionsummary.js', 'checkpoints.js', 'exports-shim.js', 'liveact.js', 'safetext.js', 'helpercard.js', 'foldersetup.js', 'navigator.js', 'composersize.js', 'ctxbreakdown.js', 'shutters.js', 'coffeebreak.js', 'profileeditor.js', 'simclock.js', 'schedtop.js', 'schedhist.js', 'browserpane.js']) {
+for (const f of ['index.html', 'styles.css', 'app.js', 'harnesses.js', 'signin.js', 'demo.js', 'markdown.js', 'dialog.js', 'innerscroll.js', 'sessionname.js', 'inlinename.js', 'roomsummary.js', 'sessionsearch.js', 'usagetotals.js', 'costtable.js', 'modelswitch.js', 'schedtemplates.js', 'places.js', 'cuttext.js', 'slashsuggest.js', 'notes.js', 'probe.js', 'grantlabel.js', 'whyallowed.js', 'sandboxtext.js', 'mcpwords.js', 'editview.js', 'place-icons.js', 'mood.js', 'retry.js', 'attention.js', 'unread.js', 'keys.js', 'activity.js', 'toolstats.js', 'theme.js', 'themes.css', 'scenekits.js', 'screens.js', 'screens.css', 'activitytable.js', 'gitstatus.js', 'sessionsummary.js', 'checkpoints.js', 'exports-shim.js', 'liveact.js', 'safetext.js', 'helpercard.js', 'foldersetup.js', 'navigator.js', 'crew.js', 'composersize.js', 'ctxbreakdown.js', 'shutters.js', 'coffeebreak.js', 'profileeditor.js', 'simclock.js', 'schedtop.js', 'schedhist.js', 'browserpane.js']) {
   fs.copyFileSync(path.join(srcDir, f), path.join(outDir, f));
 }
+// spec 077: the Cheeky Crew portraits (bundled pictures only; the page's CSP allows img-src 'self'). electron-builder packs dist/**/*, so they ship.
+fs.rmSync(path.join(outDir, 'crew'), { recursive: true, force: true }); // no stale picture from an older build
+const crewOut = path.join(outDir, 'crew', 'art');
+fs.mkdirSync(crewOut, { recursive: true });
+for (const f of fs.readdirSync(path.join(srcDir, 'crew', 'art'))) if (f.endsWith('.webp')) fs.copyFileSync(path.join(srcDir, 'crew', 'art', f), path.join(crewOut, f)); // only the pictures: ASSETS.md and the prompt files stay in the repo
 // Markdown parser and sanitiser, bundled from node_modules (no CDN); exact versions are pinned in package.json.
 const vendor = path.join(outDir, 'vendor');
 fs.mkdirSync(vendor, { recursive: true });

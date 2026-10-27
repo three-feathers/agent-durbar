@@ -1,0 +1,27 @@
+Cheeky Crew — SURFER redo (3 images)
+
+Redraw the SURFER character in 3 separate PNG images, one image per request, in this order:
+1. surfer-working.png  2. surfer-waiting.png  3. surfer-resting.png
+
+What must change compared with the previous surfer:
+* FRAMING: the head must be much bigger in the frame. Match the framing of the attached reference character exactly: head-and-shoulders bust, the head (hair included) fills about 55–60% of the image height, the top of the hair almost touches the top edge (about 3–5% margin), the chin sits slightly below the middle of the image, the bust is cropped at mid-chest at the bottom edge. Do NOT leave empty space above the head. The shoulder-length hair may be trimmed by the sides of the frame.
+* COLOURS: vivid and saturated, as bright as the reference character. Deep warm tan skin, golden sun-bleached blond hair (not grey or ash), strong teal and orange hibiscus flowers on the shirt, bright white tank top. No washed-out, pastel, faded or desaturated look; no haze; strong contrast with the bold black outlines.
+
+Keep the same character (use the attached surfer image for identity only, not for framing or colours):
+* Young adult male, deep tan skin, sun-bleached wavy shoulder-length blond hair with slightly darker roots, light facial stubble.
+* Open Hawaiian shirt with large teal and orange hibiscus flowers, plain white tank top underneath, simple shell necklace.
+* Relaxed, laid-back smile. Friendly young adult, expressive large eyes, slightly cheeky.
+
+Style (same as the rest of the crew):
+* High-quality cartoon character portrait for a modern app avatar; bold clean black outlines; warm cel-shaded comic/sticker look; polished, readable silhouette.
+* Square, 1254 × 1254 pixels, PNG with a TRUE transparent background. No checkerboard, floor, shadow, vignette, border or frame.
+* No text, letters, numbers, logos, brands, watermarks or symbols anywhere. Office-safe, no rude gestures. Must not resemble a real person or celebrity.
+
+Poses:
+* WORKING: looking toward the right side as if at an off-screen computer; calm, confident half-smile; hands NOT visible; no prop.
+* WAITING: facing the viewer; warm smile; one raised hand in a friendly wave, fully open, palm to the viewer, exactly five natural fingers; the other hand not visible; no prop. The hand stays inside the frame.
+* RESTING: eyes gently closed, relaxed content smile; holding with BOTH hands in front of the chest a fresh coconut drink with a striped straw and a tiny colourful paper cocktail umbrella; absolutely NO steam.
+
+Consistency: identical face, skin tone, hair, clothing, accessories, colours, framing and head size across all three poses. For WAITING and RESTING, use the new surfer-working.png as the reference.
+
+Before accepting each image, check: one character only, head as big as in the framing reference, vivid colours, correct pose, natural hands, no text or logos, transparent background, 1254 × 1254.
