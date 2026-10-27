@@ -45,3 +45,4 @@ Review notes (Mac coordinator):
    - sea creature, 3 poses;
    - raccoon, 3 poses: *waiting* still has the purple mohawk while the other poses are grey, so the hair is still inconsistent.
 8. `batch5/rebels-raccoon-waiting.webp` was replaced with the grey-hair version (2026-10-27). With it, the raccoon is consistent in all 3 poses.
+9. Added `batch5/rebels-punkcat-waiting.webp` (2026-10-27). With it, the punk cat has all 3 poses and Animal Rebels has 2 complete characters.
