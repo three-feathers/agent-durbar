@@ -21,6 +21,14 @@ import { GIT_MISSING, createNewFolderOp, nodeNewFolderDeps } from '../src/main/n
 import { runGitCreate } from '../src/main/gitstatus';
 import type { AddResult, PermMode } from '../src/shared/api';
 
+/**
+ * Two paths name the same folder: both resolved by the OS (`realpathSync.native`), so a Windows 8.3 short name (`C:\\Users\\RUNNER~1`,
+ * what os.tmpdir() returns on the CI runner) equals the long one git prints (`C:\\Users\\runneradmin`). Node's JS `realpathSync`
+ * does not expand short names. For comparisons in this test only: the app never compares a path git reports with its target, and its
+ * cleanup removes the path it created as given, never a resolved one (FR-050).
+ */
+const samePath = (a: string, b: string): boolean => fs.realpathSync.native(a) === fs.realpathSync.native(b);
+
 async function main(): Promise<void> {
   try { execFileSync('git', ['--version'], { stdio: 'ignore', windowsHide: true }); } catch {
     if (process.env.CI && !/^(0|false)$/i.test(process.env.CI)) throw new Error('git is not on PATH under CI: the real-git check must run');
@@ -31,6 +39,24 @@ async function main(): Promise<void> {
   const saved: Record<string, string | undefined> = {};
   const setEnv = (k: string, v: string | undefined): void => { if (!(k in saved)) saved[k] = process.env[k]; if (v === undefined) delete process.env[k]; else process.env[k] = v; };
   try {
+    // samePath: another spelling of the same folder compares equal, a different folder does not. Windows: the 8.3 short name of
+    // the temp folder when it has one (the CI runner's RUNNER~1); POSIX: a symlink to it (the portable stand-in for an alias)
+    {
+      const other = fs.mkdtempSync(path.join(root, 'other-'));
+      assert.ok(samePath(root, root + path.sep) && !samePath(root, other), 'samePath: same folder yes, another folder no');
+      if (process.platform === 'win32') {
+        const t = os.tmpdir();
+        if (/~\d/.test(t)) assert.ok(samePath(t, fs.realpathSync.native(t)) && fs.realpathSync.native(t) !== t, `samePath expands the short name ${t}`);
+        else console.log(`newfoldergit: no 8.3 short name in ${t} on this machine; samePath checked on spelling only`);
+        assert.ok(samePath(root, root.toUpperCase()), 'samePath: case on Windows');
+      } else {
+        const alias = path.join(root, 'alias');
+        fs.symlinkSync(root, alias);
+        assert.ok(samePath(alias, root), 'samePath: an alias of the same folder');
+        fs.unlinkSync(alias);
+      }
+      fs.rmdirSync(other);
+    }
     const slash = (p: string): string => p.split(path.sep).join('/');
     const marks = path.join(root, 'marks');
     const tmp = path.join(root, 'tmp');
@@ -64,7 +90,7 @@ async function main(): Promise<void> {
     for (const k of ['HOME', 'USERPROFILE']) setEnv(k, home);
     setEnv('XDG_CONFIG_HOME', path.join(home, '.config'));
     for (const k of ['TMPDIR', 'TEMP', 'TMP']) setEnv(k, tmp);
-    assert.strictEqual(fs.realpathSync(os.tmpdir()), tmp, 'the private hooks folders go to the test temp folder');
+    assert.ok(samePath(os.tmpdir(), tmp), `the private hooks folders go to the test temp folder (${os.tmpdir()} vs ${tmp})`);
 
     const adds: Array<[string[], PermMode]> = [];
     let remembered: string | undefined;
@@ -79,7 +105,9 @@ async function main(): Promise<void> {
     assert.ok(r.ok, 'init: ' + JSON.stringify(r));
     const repo = path.join(parent, 'notes-app');
     assert.ok(fs.statSync(path.join(repo, '.git')).isDirectory() && fs.existsSync(path.join(repo, '.git', 'HEAD')), 'a .git made by git init');
-    assert.strictEqual(fs.realpathSync(g(repo, 'rev-parse', '--show-toplevel').trim()), fs.realpathSync(repo), 'its own repository, not the parent\'s');
+    const top = g(repo, 'rev-parse', '--show-toplevel').trim();
+    assert.ok(samePath(top, repo), `its own repository, not the parent's (git: ${top}, ours: ${repo})`);
+    assert.ok(!samePath(top, parent), 'not the parent repository');
     assert.strictEqual(g(repo, 'remote').trim(), '', 'no remote');
     assert.match(fs.readFileSync(path.join(repo, '.git', 'HEAD'), 'utf8'), /refs\/heads\/trunk/, "the user's own default branch (init.defaultBranch)");
     const localCfg = fs.readFileSync(path.join(repo, '.git', 'config'), 'utf8');
