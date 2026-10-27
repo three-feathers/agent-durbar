@@ -322,6 +322,11 @@ Each entry has the date it was learned, what happened, and how to apply it, with
   - *Why*: Chromium scrolls the focused element's scroller, else the root one; here neither is `#floor`. And the office draws one floor at a time (spec 092 FR-001).
   - *How to apply*: in a driver visit the floors with `H.eachFloor(fn)` / `H.goToFloor(id)` (real PageUp/PageDown, `driver-helpers.js`); for a driver that only needs three floors and all agents on screen use `simfloors=ground` (every folder on the Ground floor, other floors on and empty). Count floor announcements with a `MutationObserver` on `#srAnnounce` and filter on "Floor ": the palette and other parts announce there too.
 
+- **Sign every commit with an SSH key and leave out the AI co-author trailer** (2026-10-27, owner decision of Vikram, spec 021 FR-061; `read:` GitHub docs on SSH commit signature verification, not yet checked on all three sides).
+  - *What*: commits and PRs carry only the human owner's identity; each commit is SSH-signed so GitHub shows Verified.
+  - *Why*: a co-author trailer adds an identity that is not the owner's, and unsigned commits show no Verified badge, which blocks a later "Require signed commits" rule.
+  - *How to apply*: the setup is in AGENTS.md, *Commit identity and signed commits*. Check locally with `git log --show-signature -1` (expect `Good "git" signature`; it needs `gpg.ssh.allowedSignersFile` set, else git says it cannot verify locally even though GitHub shows Verified). If a signing key is missing in a worktree or sandbox, commit fails: fix the key path, do not pass `--no-gpg-sign`. Never amend or force-push published commits to add a signature.
+
 ## Team chat (Telegram)
 
 - **Bots in the team group must be set up to hear each other** (2026-10-27, Paco's agent, at Paco's request; `real:` Ruben's bot missed every message from other bots for days until 2026-10-24). *What:* Telegram does not deliver other bots' messages to your bot by default, so review asks sent in the group can be lost without any error. *How to apply* (Claude Code with the official Telegram channel plugin):
