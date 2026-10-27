@@ -132,7 +132,7 @@
   function liveChatHTML(r,c){
     const W=window.DurbarMcpWords, x=c.entry, rp=live.replies.get(c.id)||{}, m=X.mcpSession?X.mcpSession(c.id):null;
     const k=liveKey(r.name,c.id), who=c.name+(c.folder?' in '+c.folder:'');
-    /* FR-187/FR-189 (issue #779 A): a Running server whose last call was refused (sign-in or organization policy): the class words only */
+    /* FR-187/FR-189 (issue 779 A): a Running server whose last call was refused (sign-in or organization policy): the class words only */
     const cw=x.status==='connected'?W.callWord(x.lastCall):'';
     const stat=`<span class="mst ${esc(c.state.cls)}"${c.state.key.startsWith('unknown')?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(c.state.icon)}<span class="mst-w">${esc(c.state.word)}</span>${cw?`<span class="mst-call">\u00b7 ${esc(cw)}</span>`:''}</span>`;
     /* FR-082: the chat dialog's own hint (FR-006) with the agent app's name; Details shows the masked text main sent (FR-007, FR-086) */
@@ -1163,7 +1163,7 @@
       const honest=(x.canSignIn||x.signIn)&&x.signInNote?`<span class="srv-sgl mut">${esc(x.signInNote)}</span>`:'';
       return `<div class="srv-sign">${line}${honest}${acts?`<div class="srv-sgact">${acts}</div>`:''}${steps}</div>`;
     };
-    /* spec 058 FR-190..FR-192 (issue #779 B): Refresh asks the agent app for its server list again (main's `agents:mcpRefresh`); an app that cannot report it says so */
+    /* spec 058 FR-190..FR-192 (issue 779 B): Refresh asks the agent app for its server list again (main's `agents:mcpRefresh`); an app that cannot report it says so */
     let refreshBusy=false, refreshNote='';
     const refreshRow=s=>{
       if(!s.live||!X.bridge.agentMcpRefresh)return '';
@@ -1184,7 +1184,7 @@
         const orgMay=!org&&typeof x.orgDoubt==='string'?x.orgDoubt:'';
         const eff=x.defaultOn&&!x.off&&!appOff&&!org;
         const sv=W.stateOf(x.status,octx);
-        const cw=x.status==='connected'?W.callWord(x.lastCall):''; /* FR-187/FR-188 (issue #779 A) */
+        const cw=x.status==='connected'?W.callWord(x.lastCall):''; /* FR-187/FR-188 (issue 779 A) */
         const stat=`<span class="mst ${esc(sv.cls)}"${x.status&&sv.cls==='unknown'?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(sv.icon)}<span class="mst-w">${esc(sv.word)}</span>${cw?`<span class="mst-call">\u00b7 ${esc(cw)}</span>`:''}</span>`;
         const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app,by})||(cw?W.callHint(x.lastCall,app):'');
         const detOpen=x.error&&openDet.has(x.name);
