@@ -57,3 +57,4 @@ Review notes (Mac coordinator):
     - the privateer keeps her eyes open in *resting* and holds the mug with one hand, and her neckline is still deep.
 17. `batch6/pirate-privateer-*` were replaced with the cartoon-style redo (2026-10-27): a modest neckline, a bigger head and bright colours. *resting* still has open eyes and a one-hand mug (minor).
 18. Added `batch6/monster-vampire-waiting.webp` (2026-10-27). The vampire's *resting* is still missing.
+19. Added `batch6/rebels-bulldog-waiting.webp` (2026-10-27). The bulldog's *resting* is still missing.
