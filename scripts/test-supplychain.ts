@@ -23,8 +23,7 @@ function parentOf(key: string): string | null {
   const i = key.lastIndexOf('/node_modules/');
   return i < 0 ? null : key.slice(0, i);
 }
-/** `linkName(path)` reads the package.json name of a link's target inside the repository; without it every link fails (the project has no workspaces). */
-export function lockProblems(lock: any, linkName?: (target: string) => string | null): string[] {
+export function lockProblems(lock: any): string[] {
   const out: string[] = [];
   const pk = lock && lock.packages;
   if (!pk || typeof pk !== 'object') return ['package-lock.json has no "packages" map (lockfileVersion 2 or 3 expected)'];
@@ -32,10 +31,8 @@ export function lockProblems(lock: any, linkName?: (target: string) => string | 
   const fail = (k: string, m: string) => { out.push(`${k}: ${m}`); bad.add(k); };
   for (const [key, e] of Object.entries<any>(pk)) {
     if (key === '') continue; // the root project
-    if (e.link) { // a symlink to a folder: only a relative path that stays inside the repository (the project has no workspaces)
-      const r = e.resolved;
-      if (typeof r !== 'string' || r === '' || /^([A-Za-z]:|[\\/]|~)/.test(r) || r.split(/[\\/]/).includes('..') || /^[a-z][a-z0-9+.-]*:/i.test(r)) fail(key, `link points outside the repository (${typeof r === 'string' ? r.slice(0, 60) : 'missing'})`);
-      else if (!linkName || linkName(r) !== nameOf(key)) fail(key, `link target is not the package ${nameOf(key)}`);
+    if (e.link) { // refused: a link's target is read after `npm ci`, from files the lockfile does not vouch for (spec 021 FR-062); allowed again only when the repository has workspaces and this check learns them
+      fail(key, 'link entries are refused until the repository has workspaces (spec 021 FR-062); a link is not covered by any integrity hash');
       continue;
     }
     const name = nameOf(key);
@@ -108,8 +105,10 @@ export function pinProblems(file: string, text: string): string[] {
   const KEY = /(^|[\s{,[])(?:"uses"|'uses'|uses)\s*:/g;
   text.split(/\r?\n/).forEach((line, i) => {
     if (/^\s*#/.test(line)) return; // a comment line
-    // spellings this scan cannot read safely are refused: an explicit `? key`, and a quoted key with an escape (\x75, \u0075 ...)
-    if (/^\s*(?:-\s+)?\?(\s|$)/.test(line)) out.push(`${file}:${i + 1}: an explicit "?" key cannot be checked safely`);
+    // spellings this scan cannot read safely are refused: a `?` key indicator anywhere outside a quoted scalar (block or flow, any indent),
+    // and a quoted key with an escape (\x75, \u0075 ...)
+    const bare = line.replace(/"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'/g, '""').replace(/(^|\s)#.*$/, '');
+    if (/(^|[\s{,[])\?(\s|$)/.test(bare)) out.push(`${file}:${i + 1}: a "?" key indicator cannot be checked safely`);
     if (/(^|[\s{,[])(?:"(?:[^"\\]|\\.)*\\(?:[^"\\]|\\.)*"|'(?:[^']|'')*\\(?:[^']|'')*')\s*:/.test(line)) out.push(`${file}:${i + 1}: a quoted key with a backslash cannot be checked safely`);
     KEY.lastIndex = 0;
     let m: RegExpExecArray | null;
@@ -126,8 +125,7 @@ export function pinProblems(file: string, text: string): string[] {
 
 // the real repository ------------------------------------------------------------------------------------------------------------
 const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
-const realLinkName = (t: string) => { try { return JSON.parse(fs.readFileSync(path.join(root, t, 'package.json'), 'utf8')).name || null; } catch { return null; } };
-assert.deepStrictEqual(lockProblems(lock, realLinkName), [], 'package-lock.json: every entry resolves on registry.npmjs.org with an integrity');
+assert.deepStrictEqual(lockProblems(lock), [], 'package-lock.json: every entry resolves on registry.npmjs.org with an integrity');
 assert.ok(Object.keys(lock.packages).length > 50, 'the lockfile was actually read');
 
 const wfDir = path.join(root, '.github', 'workflows');
@@ -203,14 +201,13 @@ for (const flag of ['optional', 'dev', 'peer', 'devOptional']) {
   assert.strictEqual(withKey('node_modules/p', { ...ok('p'), [flag]: true, resolved: 'https://evil.example/p-1.0.0.tgz' }).length, 1, `${flag} entries are not exempt`);
   assert.strictEqual(withKey('node_modules/p', { ...ok('p'), [flag]: true, integrity: undefined }).length, 1, `${flag} entries need an integrity`);
 }
-// links: only a relative path inside the repository
-for (const r of ['file:../../evil', '../../evil', '/etc', 'C:\\evil', '~/x', 'a/../../x', '', undefined]) assert.strictEqual(withKey('node_modules/l', { link: true, resolved: r }).length, 1, `link ${String(r)} is caught`);
-const names: Record<string, string> = { 'packages/l': 'l', 'packages/other': 'other' };
-const lockL = (key: string, r: string) => lockProblems({ packages: { '': {}, [key]: { link: true, resolved: r } } }, (t) => names[t] ?? null);
-assert.deepStrictEqual(lockL('node_modules/l', 'packages/l'), [], 'a link to the package of the same name passes');
-assert.strictEqual(lockL('node_modules/l', 'packages/other').length, 1, 'a link that points at another package is caught');
-assert.strictEqual(lockL('node_modules/l', 'packages/none').length, 1, 'a link to an unreadable target is caught');
-assert.strictEqual(withKey('node_modules/l', { link: true, resolved: 'packages/l' }).length, 1, 'without a reader every link fails');
+// links: every link entry is refused (the project has no workspaces), whatever it points at
+for (const r of ['file:../../evil', '../../evil', '/etc', 'C:\\evil', '~/x', 'a/../../x', '', undefined, 'packages/l', '.', 'node_modules/l', 'node_modules/lodash']) {
+  const o = withKey('node_modules/l', { link: true, resolved: r });
+  assert.strictEqual(o.length, 1, `link ${String(r)} is refused`);
+  assert.ok(/spec 021 FR-062/.test(o[0]), 'the message points at the spec');
+}
+assert.strictEqual(withKey('node_modules/lodash', { link: true, resolved: 'node_modules/lodash' }).length, 1, 'a link to itself is refused');
 // bundled entries: must have a parent that passed
 const bundle = (parent: any, child: any) => lockProblems({ packages: { '': {}, 'node_modules/p': parent, 'node_modules/p/node_modules/c': child } });
 assert.deepStrictEqual(bundle(ok('p'), { version: '1.0.0', inBundle: true }), [], 'a bundled child of a good parent passes');
@@ -245,8 +242,8 @@ for (const bad of ['actions/checkout@v4', 'actions/checkout@main', `actions/chec
 // other valid YAML spellings of the same key
 const forms = ['- {uses: actions/checkout@v4}', '- {name: x, uses: actions/checkout@v4, with: {a: b}}', '- "uses": actions/checkout@v4', "- 'uses': actions/checkout@v4", '- uses : actions/checkout@v4',
   '- uses:   actions/checkout@v4', '- uses: "actions/checkout@v4"', "- uses: 'actions/checkout@v4'", 'uses: actions/checkout@v4', '    uses: actions/checkout@v4', '- {"uses": "actions/checkout@v4"}', '- [x, {uses: actions/checkout@v4}]',
-  '- ? uses\n  : actions/checkout@v4', '- ? {uses: actions/checkout@v4}', '- "u\\x73es": actions/checkout@v4', '- "\\u0075ses": actions/checkout@v4', "- 'u\\x73es': actions/checkout@v4", '- uses: |', '- uses: >', '- uses:', '- uses: docker://alpine@sha256:abc'];
+  '- ? uses\n  : actions/checkout@v4', '- { ? uses\n  : actions/checkout@v4 }', '- [ ? uses\n  : actions/checkout@v4 ]', '    ? uses', '- {a: b, ? uses: x}', '- ? {uses: actions/checkout@v4}', '- "u\\x73es": actions/checkout@v4', '- "\\u0075ses": actions/checkout@v4', "- 'u\\x73es': actions/checkout@v4", '- uses: |', '- uses: >', '- uses:', '- uses: docker://alpine@sha256:abc'];
 for (const f of forms) assert.ok(pinProblems('w.yml', `steps:\n  ${f}\n`).length >= 1, `${f} is caught`);
-const pinned = ['- {uses: actions/checkout@' + sha + '}', '- "uses": actions/checkout@' + sha, '- uses : actions/checkout@' + sha + ' # v7', '- uses: "actions/checkout@' + sha + '"', '- uses: ./local', '- uses: docker://alpine@sha256:' + 'a'.repeat(64), '# uses: actions/checkout@v4', '- {uses: owner/repo/path/x.yml@' + sha + '}'];
+const pinned = ['- run: echo "why ? not"', '- run: curl https://x.example/a?b=c', '- {uses: actions/checkout@' + sha + '}', '- "uses": actions/checkout@' + sha, '- uses : actions/checkout@' + sha + ' # v7', '- uses: "actions/checkout@' + sha + '"', '- uses: ./local', '- uses: docker://alpine@sha256:' + 'a'.repeat(64), '# uses: actions/checkout@v4', '- {uses: owner/repo/path/x.yml@' + sha + '}'];
 for (const f of pinned) assert.deepStrictEqual(pinProblems('w.yml', `steps:\n  ${f}\n`), [], `${f} passes`);
 console.log('supplychain: ok');
