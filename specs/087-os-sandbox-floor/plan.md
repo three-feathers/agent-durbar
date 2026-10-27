@@ -127,7 +127,7 @@ scripts/                      test-sandbox-floor.ts (new), driver check for the 
 **Approach.** Plan both outcomes, ship B first.
 
 - **B (default, no probe needed):** a *Restart without the sandbox* action (mode menu item + chip button) shown only when the state has `untilNewSession` in Allow all, not
-  managed, with `resume`. It confirms with `askDialog`, then calls the **existing** `agents:mcpRestartSession` (`src/main/ipc/agents.ts:113`; `mcpRestartSessionOp`,
+  managed, with `resume`. It confirms through the **existing renderer flow** `mcpRestartSessionFlow`/`restartSessionAsk` (`screens.js:1060, 1104`; extended with a `reason`, always asks, same lines as Restart session), which calls the **existing** `agents:mcpRestartSession` (optional third argument `reason`: `'mcp'` default or `'sandbox'`, words only) (`src/main/ipc/agents.ts:113`; `mcpRestartSessionOp`,
   `src/main/mcpsession.ts:258`): End session, then the same id through `ensureLive` with `startOptionsFor(a)` (`src/main/main.ts:361`, mode from `a.permMode`,
   `src/main/startopts.ts:24`). The Copilot adapter's resume in Allow all sends no `sandboxConfig` (`copilot.ts` `applySandbox`, mode `allow`), so the new session has the app
   default. No new adapter code, no new IPC, no second relaunch path, nothing re-sent. Spec 087 FR-007a's *Continue* is a different thing for Copilot (it keeps the session and
@@ -137,6 +137,8 @@ scripts/                      test-sandbox-floor.ts (new), driver check for the 
 - **Why B first, and why not only A:** see the decision paragraph in spec.md (*Changes* 2026-10-27). In short: B depends on nothing unproven, only narrows what a wrong guess can cost,
   and is the fallback A needs anyway; A is an `@experimental` lowering that the typings say a managed policy may treat as a conflict.
 - **Building both:** worth it only if T066 passes; then A is the default and B the fallback (cost: B is already built). If it fails, B is final and T073 removes A from the spec.
+
+**Also in the code (FR-022d, FR-022e):** `refreshAuth` clears `live.sandboxFloor` before `applySandbox` (`copilot.ts:459`); the Allow all dialog (`changeModeInner`) gets one sentence for a Copilot session that holds a floor. No new `AgentInfo` field: the action is gated by the state, and main's op refuses an adapter without `resume`.
 
 **Where the code goes (implementation time, not now).** Pure rule next to `src/renderer/sandboxtext.js` (no vendor name, constitution II); menu item and chip button in
 `src/renderer/app.js` (`openModeMenu`, `modeChipHTML`); dialog = the shared `askDialog`; sim restart in `src/renderer/sim.ts` (the branch at line 2962); (A) `src/adapters/copilot.ts`

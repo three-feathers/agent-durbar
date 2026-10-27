@@ -430,6 +430,7 @@ default on the switch and B is offered only after an A refusal; if it fails, B i
 - **Q2** The restart has its **own** `askDialog`, apart from the Allow all dialog (no combined one-click button). FR-022 and FR-022a(2) stand as written.
 - **Q3** The action lives in the **chat header chip and the mode menu only**, not in the office card's menu (the `modesOnly` menu of spec 003 FR-095 is a mode menu, so it is covered).
 - **Q4** Yes: if A ships, the Allow all dialog says "Copilot’s OS sandbox is also turned off for this session." (FR-022c).
+- **Review round 1 on PR #809** (items 1-6 and three questions) is answered in FR-022, FR-022a, FR-022d, FR-022e, T066-T071 and *Review questions answered*; new number taken: **FR-022d, FR-022e** (free on main and in open PRs #809, #810, #710).
 - **Q5** Not asked. No slash-command route (`SandboxSessionChange`) and no other payload without a separate OK from the owner.
 
 #### Requirements (new)
@@ -440,21 +441,44 @@ default on the switch and B is offered only after an A refusal; if it fails, B i
   - the mode menu gets an item **Restart without the sandbox** (under the three modes, same menu element, spec 003 FR-095 `modesOnly` menus
     too; not the office card's menu, Q3) and the chip's segment becomes a button with the same action; both only in that state, never for *Sandboxed*, *Not sandboxed*,
     *Sandboxed (managed)* or another mode (Read-only/Ask first: switching down re-sends the floor as today).
-  - it asks first with the shared `askDialog` (not a toast): "Restart <name> without the OS sandbox? The conversation continues in a new
-    session in Allow all. Shell commands will no longer be limited to this folder and can reach the network. Nothing is re-sent; send your
-    next message when it is ready." Buttons *Cancel* and *Restart without the sandbox* (`primary warn`, like the Allow all dialog). A busy
-    session adds "The current turn is stopped" and passes `confirmed: true` (spec 058 FR-022's own rule); pending asks are listed, as the
-    Allow all dialog lists them.
-  - the action calls **the existing `agents:mcpRestartSession(id, confirmed)`** (`src/main/ipc/agents.ts:113`, `mcpRestartSessionOp`,
-    `src/main/mcpsession.ts:258`); **no second relaunch path and no new IPC channel**. Main re-reads the agent's current mode at the time it
-    resumes, so a switch back to Ask first between the click and the resume simply starts a session with the floor (the safe direction).
-    The new session is created by the adapter's own resume (`resumeSession`), which sends no `sandboxConfig` in Allow all (FR-004), so it
-    starts with the app default, and `applySandbox` reports `null` (no word after *Allow all*, FR-009).
-  - the tooltip of the item and of the chip button says why: "Copilot cannot turn its sandbox off inside a running session (it stays on
-    until a new one). Restart keeps this conversation and starts a new session in Allow all." (at most 300 characters; checked in the
-    driver), plus the existing "Requested; not verified on a real session." ending while `verified` is false.
-- **FR-022a** `[PLANNED]` **No silent widening; the confirmations stay.** (1) The switch to Allow all keeps the existing `askDialog`
-  confirmation (`changeModeInner`, `src/renderer/app.js`); nothing in this delta removes or skips it. (2) *Restart without the sandbox* is a
+  - it asks first with the shared `askDialog`, through the **existing renderer flow** `mcpRestartSessionFlow` / `restartSessionAsk`
+    (`src/renderer/screens.js:1060, 1104`), extended and not copied: it keeps the `needsConfirm` retry, the busy state, the sign-in card on
+    `errorKind: 'auth'` (spec 058 FR-027) and the toast. The dialog (separate from the Allow all dialog, Q2) reads: title "Restart <name>
+    without the OS sandbox?", body "The conversation continues in a new session in Allow all. Shell commands will no longer be limited to
+    this folder and can reach the network. Nothing is re-sent; send your next message when it is ready." and **the same lines the existing
+    Restart session dialog gives**: "The conversation is kept and resuming spends no AI credits."; "The running turn stops." when busy;
+    "\"Approve for this session\" grants are cleared."; "Remote control turns off." when it is on (`endSession` turns it off first, spec 054
+    FR-011); and, for an app whose MCP servers start with the next message (`start === 'next-message'`), "Its MCP servers start again with your next
+    message."; plus the pending asks listed ("N requests waiting will be denied"). Buttons *Cancel* and *Restart without the sandbox*
+    (`primary warn`). Unlike the existing flow, this dialog is **always** asked (the existing one returns `null` for an idle session with no grants
+    and no remote; here the sandbox consequence needs a click every time).
+  - **Neutral wording, no new channel (reason argument).** `agents:mcpRestartSession(id, confirmed, reason?)` gets an optional third argument,
+    a closed value `'mcp'` (default, today's behaviour) or `'sandbox'`; main validates it (anything else is `'mcp'`) and the op uses it only for
+    **words**: main's `log` line ("Session restarted with the current MCP servers" or "Session restarted without the OS sandbox"), the
+    no-resume error ("... cannot be restarted with the current servers" or "<App> cannot resume a session, so it cannot be restarted without the
+    OS sandbox."). The flow takes the same reason in its handlers `h` and picks the renderer words: dialog title/body/button as above, the toast
+    "<name>: session restarted without the OS sandbox." (+ the next-message line when `start === 'next-message'`) and the failure toast. The mode,
+    the resume and the end are the same code for both reasons; a test pins that `reason` changes no behaviour (same calls, same result).
+    A source-check test pins: one registered channel, the renderer calls `agentMcpRestartSession` only from `mcpRestartSessionFlow`, and no
+    "MCP" word reaches the dialog or toast when the reason is `'sandbox'`.
+  - **Visibility without a new `AgentInfo` field.** The action is gated by the normalized state (`untilNewSession`, Allow all, not managed). Only
+    Copilot sets `untilNewSession`, and its adapter has `capabilities.resume: true` (`copilot.ts:191`), so no renderer-side `resume` input is
+    needed; the op itself still refuses an adapter without `resume` (`mcpsession.ts:262`, neutral text above) and the renderer shows that error.
+    (The renderer receives `canRestartSession` today only in the `agents:mcp` reply, `mcpsession.ts:152`; not used here.)
+  - the tooltip of the item and the chip button says what Durbar does, not a vendor fact (K16 is unverified): "Durbar does not turn <App>'s
+    sandbox off inside a running session; it stays until a new one. Restart keeps this conversation and starts a new session in Allow all."
+    <App> is the adapter's display name as the chip tooltip already gets it (`sbxTip` / `kindWord(adapterId)`, `app.js:3893`); no vendor literal in the
+    renderer (constitution II). At most 300 characters (driver). T073 may turn it into a fact with `real:`. It keeps "Requested; not verified
+    on a real session." while `verified` is false, and **names no platform as checked**: the probe is Linux only, so macOS (`sandbox-exec`) and Windows
+    stay `[KNOWN GAP]` and neither the tooltip nor the README describes the restart as verified anywhere (constitution VIII).
+- **FR-022a** `[PLANNED]` **The semantics, in one place, and no silent widening.** *Allow all* means "Durbar requests no OS floor; the app's default".
+  A floor kept from an earlier mode is a **leftover that Durbar never removes on its own**; lifting it is always a separate, confirmed action
+  (FR-022). Nothing remembers "without the sandbox": it is only the mode, so Read-only and Ask first stay sandboxed by default, and every new or
+  resumed session in those modes gets the floor again (FR-004, FR-013). A Durbar restart, or the runtime refresh after a sign-in
+  (`copilot.ts:459`, `refreshAuth`), resumes an Allow all session with the app default, i.e. **without** the floor; that path is visible, not silent
+  (FR-022d). **No silent widening; the confirmations stay.** (1) The switch to Allow all keeps the existing `askDialog`
+  confirmation (`changeModeInner`, `src/renderer/app.js`); nothing in this delta removes or skips it, and for a Copilot session that holds a
+  floor its body also says so (FR-022e). (2) *Restart without the sandbox* is a
   second, explicit confirmation of its own (FR-022), because it widens the OS limit, which the Allow all dialog never mentioned: a
   person who confirmed Allow all has not agreed to a restart. (3) Nothing restarts, relaunches or sends by itself: not on the switch, not on
   the next message, not after a Durbar restart (a resumed session in Allow all simply has no floor, as today). (4) The restart never
@@ -483,9 +507,23 @@ default on the switch and B is offered only after an A refusal; if it fails, B i
   no other field, never `allowBypass`), with the same 15 s limit as FR-004. The state follows the update: **resolved** → `null` (as a fresh
   Allow all session); **refused or no answer** → the floor is still assumed in force, the state keeps `untilNewSession: true` and FR-022
   is offered. A switch back to Read-only or Ask first re-sends the full floor (FR-004), as today; a test pins both directions. Because the
-  switch would now also lower the OS limit, the Allow all dialog for a Copilot session with a floor adds the sentence "Copilot’s OS sandbox
+  switch would now also lower the OS limit, the Allow all dialog for a Copilot session with a floor (FR-022e's sentence is replaced by) the sentence "Copilot’s OS sandbox
   is also turned off for this session." (FR-022a(1): the confirmation must name it). If the probe fails, FR-022c is struck from this spec
   and the unused code is never written.
+
+- **FR-022d** `[PLANNED]` (test: `scripts/test-copilot-sandbox.ts`) **A runtime refresh must not keep claiming a floor the resumed session does not have.**
+  Read in code (`copilot.ts:452-461`, not run): `refreshAuth` resumes each live session with `resumeConfig()` (no `sandboxConfig`) and then calls
+  `applySandbox(sid, live, live.broker.getMode(), client)`. For `allow` that returns `copilotSandboxState({ keptFloor: live.sandboxFloor })`, and
+  `live.sandboxFloor` is still `true` from before the refresh, so the chip would keep saying *Allow all · Sandboxed (until a new session)* for a session the
+  new runtime started without the floor. Fix at implement time: the refresh clears `live.sandboxFloor` before `applySandbox` (Read-only and Ask first
+  re-send the floor as now). Result: after a refresh (and after a Durbar restart, where the live object is new and the flag is unset) an Allow all session
+  shows no word and no restart action. The README line says that a Durbar restart or a sign-in refresh resumes Allow all without the sandbox.
+- **FR-022e** `[PLANNED]` **The Allow all dialog tells the truth under B.** `changeModeInner` says "Edits, shell commands, web requests and tools will run
+  without asking": true for asking, not for a kept floor, and exactly the confusion in #806. For a session whose state is `on` with a floor (Copilot,
+  Read-only or Ask first, about to go to Allow all) the body adds, for that case only: "<App>'s OS sandbox stays on for shell commands until a new session;
+  use Restart without the sandbox to lift it." (<App> from the adapter's display name.) Claude Code and Codex sessions, and a session with no floor,
+  get today's text unchanged (driver asserts the sentence for the Copilot sim agent and its absence for Claude and Codex sim agents). If outcome A
+  ships, FR-022c replaces this sentence with Q4's ("Copilot’s OS sandbox is also turned off for this session.").
 
 **Tests planned** (all with fakes; zero credits):
 
@@ -496,20 +534,30 @@ default on the switch and B is offered only after an A refusal; if it fails, B i
 - `scripts/test-sandbox-ops.ts` or a new small suite for the pure rule `canRestartWithoutSandbox(state, mode, caps)` (renderer-free, in
   `src/shared` or the renderer's pure module, adapter-neutral): true only for Allow all + `untilNewSession` + not managed + resume; false for every
   Claude/Codex state, every Read-only/Ask first state, `off`, `unknown`.
-- `scripts/test-mcp-session.ts`: the op is unchanged (a pin that no new channel exists: `ipc/agents.ts` registers no second restart handler, source check).
+- `scripts/test-mcp-session.ts`: the op is unchanged for `reason` absent or `'mcp'`; with `'sandbox'` only the words differ (log, no-resume error), a bad `reason` is `'mcp'`; one channel only (source check on `ipc/agents.ts` and `preload.ts`).
+- `scripts/test-copilot-sandbox.ts` (FR-022d): a `refreshAuth` on a session that holds a floor and is in Allow all ends with state `null` and no extra `options.update`; in Ask first it re-sends the floor.
 - `scripts/check-sandbox-floor.js` (simulator driver, both sizes, `until()` for every assert): the Copilot sim agent #14 (Allow all, kept floor)
-  shows the chip button and the menu item with the tooltip text; clicking opens the dialog (Cancel changes nothing); confirming calls the
-  sim restart, and the chip loses its word; Claude and Codex sim agents show neither; a busy agent's dialog says the turn is stopped.
+  shows the chip button and the menu item with the tooltip text; clicking opens the dialog (Cancel changes nothing) that lists, for a sim session with grants and remote control on, the grants, remote control, no-credits and next-message lines and no "MCP servers" restart wording in the title or toast; confirming calls the
+  sim restart (which also clears the sim agent's kept floor, see the sim answer below), and the chip loses its word; Claude and Codex sim agents show neither; a busy agent's dialog says the turn is stopped; the Allow all dialog of the Copilot sim agent with a floor has the FR-022e sentence, those of Claude and Codex sim agents do not.
   The sim's `s.info.sandbox` after restart is `undefined` for Allow all (`src/renderer/sim.ts:2962` branch).
 - **Mutants:** (1) offer the action with `managed: true` or in Ask first; (2) skip the `askDialog` (call the op on click); (3) call
   `ensureLive` or `adapter.start` directly instead of `mcpRestartSession` (a second path; the source-check test fails); (4) let the restart
-  send a prompt or `approvePending`; (5) (A) send `allowBypass: true`, or `enabled: false` on a switch to Ask first, or drop the re-send of the
-  floor when narrowing; (6) make a refused update clear the state. Each must fail a named test.
+  send a prompt or `approvePending`; (5) the refresh keeps `sandboxFloor` (FR-022d); the Allow all text omits its sentence for Copilot or adds it for Claude/Codex; the tooltip names a vendor literal; (6) (A) send `allowBypass: true`, or `enabled: false` on a switch to Ask first, or drop the re-send of the
+  floor when narrowing; (7) make a refused update clear the state. Each must fail a named test.
 
 **Docs planned** (written at implement time, T071): README *Safety model* / *Known limits* line (the Copilot floor, the chip words, "Restart without the
 sandbox", what stays true for Claude Code and Codex, and, if A ships, the changed sentence); spec 018's mode-chip paragraph (cross reference to FR-022);
 spec 003 FR-095 note if the menu item reaches `modesOnly` menus; `changelog.d/087-allowall-sandbox.md`; `npm run shots:docs -- --only <drivers>` for
 the linked pictures that show the chip or the mode menu (`npm run shots:docs -- --list`), looked at before commit.
+
+**Review questions answered (PR #809, Vikram's agent, at 5939ad3c).**
+- *Is `capabilities.resume` exposed to the renderer?* Not on `AgentInfo`; the renderer gets `canRestartSession` only in the `agents:mcp` reply (`mcpsession.ts:152`). No new field: the
+  action is gated by the state (only Copilot sets `untilNewSession`, and it has `resume: true`, `copilot.ts:191`), and main's op refuses an adapter without `resume` with a neutral error (FR-022).
+- *Does `sim.ts` already clear `untilNewSession` on a resume in Allow all?* **No.** The sim's `agentMcpRestartSession` (`sim.ts:2849-2862`) clears grants, remote control and the MCP flags,
+  not `s.info.sandbox`, and the branch at `sim.ts:2962` runs only on a mode switch (read, not run). T070 adds the clear (sets the Allow all state with no floor) and a sim flag so the driver can
+  also make the sim restart fail (`simauth=expired` already does, FR-027).
+- *Is "not verified off Linux" in the tooltip/README plan?* Yes (FR-022): macOS (`sandbox-exec`) and Windows are `[KNOWN GAP]` for the probe; the tooltip keeps "Requested; not verified on a real session." and
+  names no platform as checked; the README line (T071) says the same.
 
 **Open owner questions:** none left from this delta (Q1-Q5 above). The restart dialog's exact wording is the owner's to adjust in review.
 
@@ -615,15 +663,15 @@ your shell tool: touch sandbox-probe.txt ...".
   the window is cleaned too (`outwardSandboxEvent`: the state through `cleanSandboxState`, the note's text masked), not only the copy
   kept on `AgentInfo`. Non-string list entries make the state malformed.
 - `\\srv` and `\\?\UNC\srv` (a server without a share) are dropped by `normalizeRoot` itself; a Windows-form path with a name ending in
-  a space or a dot (`C:\ `, which Windows trims to `C:\`) is dropped rather than guessed.
+  a space or a dot (`C:\ `, which Windows trims to `C:`) is dropped rather than guessed.
 
 ### 2026-10-25: review round 6 on PR #733 (Ruben's agent, 4 items)
 
 - The left-out folders are a bounded list field of `SandboxState` (`leftOut`, at most 10 entries "<folder> (credential folder | not
   usable)", each masked and cut by main; `leftOutMore` counts the rest), so the 200-character `reason` (now a short sentence) never
   hides one. The mode menu names them; the tooltip says some are left out.
-- Windows extended-length and device forms: `\\?\UNC\srv\sh` is checked as the share `\\srv\sh` and `\\?\C:\` as the drive (both
-  dropped as roots); any other `\\?\` or `\\.\` form is dropped.
+- Windows extended-length and device forms: `\\?\UNC\srv\sh` is checked as the share `\\srv\sh` and `\\?\C:` as the drive (both
+  dropped as roots); any other `\\?` or `\\.` form is dropped.
 - A test that an extra folder that is a link goes on as `--add-dir` in its resolved form.
 
 ### 2026-10-25: review round 5 on PR #733 (Ruben's agent, 1 item)
