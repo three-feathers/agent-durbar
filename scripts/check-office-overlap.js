@@ -326,9 +326,10 @@ async function driver(ctx) {
      starting at k, so n parallel jobs cover the whole check. Unset: everything, as before. */
   const SHARDS = Math.max(1, Number(process.env.OFFICE_SHARDS) || 1), SHARD = Number(process.env.OFFICE_SHARD) || 0;
   let unit = 0;
-  const ONLY = process.env.OFFICE_ONLY || ''; // a developer aid: OFFICE_ONLY=screens runs the floor-screen block alone (the other blocks are skipped)
+  const ONLY = process.env.OFFICE_ONLY || ''; // a developer aid: OFFICE_ONLY=screens (spec 092 floor screens) or =floors (spec 033 floors cases) runs that block alone
   const mine = () => !ONLY && unit++ % SHARDS === SHARD;
-  const mineScreens = () => ONLY === 'screens' || mine();
+  const mineIn = (name) => ONLY === name || mine();
+  const mineScreens = () => mineIn('screens');
   if (SHARDS > 1) console.log(`check:office: shard ${SHARD + 1} of ${SHARDS}`);
   let expectPlaces = 5; /* spec 024 FR-026: five built-in places plus simplaces=N custom ones, read from the query of the page just loaded */
   const rows = [];
@@ -520,7 +521,7 @@ async function driver(ctx) {
   }
   /* spec 033: floors on/off (3, 2 and 1 floors on), with and without closed doors, both sizes */
   for (const [w, h] of SIZES) {
-    if (!mine()) continue;
+    if (!mineIn('floors')) continue;
     const cases = [
       ['3 floors on', 'sim=15&simfreeze=1&simfloors=1', true],
       ['2 floors on', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Personal', true],
@@ -541,6 +542,7 @@ async function driver(ctx) {
       const tag = `floors ${w}x${h} ${label}`;
       if (extra === 'long') {
         /* rename Client A to the longest allowed name through the panel and its dialog, then check the office again */
+        await ctx.js(`localStorage.removeItem('durbar.floor')`); // start on the first floor
         await load(q, w, h);
         await ctx.js(`(async()=>{const w=ms=>new Promise(r=>setTimeout(r,ms));document.getElementById('floorsBtn').click();await w(100);
           document.querySelector('#floorsPop [data-fl="rename"][data-floor="f-clienta0"]').click();await w(100);
@@ -548,6 +550,10 @@ async function driver(ctx) {
           [...document.querySelectorAll('#modeDlg .btn')].find(b=>b.textContent==='Rename').click();await w(200);
           document.getElementById('floorsBtn').click();await w(300);})()`);
         await sleep(400);
+        /* spec 092: the office shows one floor at a time: go to the floor that was renamed (Client A, the second one) with PageDown, so its long name is on screen */
+        await ctx.js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'PageDown',bubbles:true,cancelable:true}))`);
+        try { await ctx.waitFor(`[...document.querySelectorAll('#stage .floor-tag')].some(t=>t.textContent.length===40)`, 5000); } catch (e) { /* reported below */ }
+        await sleep(300);
         const r1 = await measure(false); total++;
         if (r1.problems.length) { failed++; console.log(`FAIL ${tag}: ${r1.problems.slice(0, 6).join('; ')}`); }
         const named = await ctx.js(`[...document.querySelectorAll('#stage .floor-tag')].some(t=>t.textContent.length===40)`);
