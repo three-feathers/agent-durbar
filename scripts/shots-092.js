@@ -237,10 +237,13 @@ module.exports = async (ctx) => {
       const labels = await js(`[...document.querySelectorAll('.lobby .place')].map(p=>p.getAttribute('aria-label')||'').join(' | ')`);
       assert.ok(/\((?:[^()]*, )(?:Ground floor|Client A|Personal)\)/.test(labels), `${tag}: a visitor of another floor has its floor in the label: ${labels.slice(0, 300)}`);
       assert.strictEqual(i0.walking, 0, `${tag}: no walk is drawn for them`);
-      await key('PageDown'); assert.ok(await onFloor('Client A')); await settle();
-      const i1 = await info();
-      assert.strictEqual(i1.walking, 0, `${tag}: no figure walks across a floor change`);
-      assert.strictEqual(i1.vs.length, i0.vs.length, `${tag}: the lobby keeps the same visitors on every floor`);
+      // the simulator's visitors come and go over time, so the same visitors on both floors is read in one page call: the set, a PageDown (the floor change renders at once), the set again
+      const same = await js(`(()=>{const ids=()=>[...document.querySelectorAll('.lobby .pv[data-visitor]')].map(e=>e.dataset.visitor).sort().join();const a=ids();
+        document.dispatchEvent(new KeyboardEvent('keydown',{key:'PageDown',bubbles:true,cancelable:true}));return {a,b:ids(),walking:document.querySelectorAll('#walkers .walker.walking').length};})()`);
+      assert.ok(await onFloor('Client A'), `${tag}: PageDown went to Client A`); await settle();
+      assert.ok(same.a, `${tag}: precondition: visitors at the moment of the change`);
+      assert.strictEqual(same.b, same.a, `${tag}: the lobby keeps the same visitors on every floor`);
+      assert.strictEqual(same.walking, 0, `${tag}: no figure walks across a floor change`);
     }
   }
   console.log('shots-092: ok');

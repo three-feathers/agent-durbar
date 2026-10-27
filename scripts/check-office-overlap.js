@@ -620,7 +620,17 @@ async function driver(ctx) {
         if (bad.length) { failed++; console.log(`FAIL ${tag}: ${bad.slice(0, 6).join('; ')}${bad.length > 6 ? ` (+${bad.length - 6} more)` : ''}`); }
         const shown = await ctx.js(`({desks:[...document.querySelectorAll('#stage .desk[data-id]')].filter(d=>!d.closest('.helpers')).length,empty:!!document.querySelector('#stage .floor-empty'),fit:document.getElementById('stage').dataset.fit})`);
         rows.push({ label: tag, ...res.info, problems: bad.length });
-        perFloor.push({ name: await ctx.js(`(document.querySelector('#stage .room-head .floor-tag')||{}).textContent||''`), d: res.info.d, h: res.info.h, desks: res.info.desks });
+        /* the layout input of this floor screen without the floor tag: the tag is a header part the layout search holds (spec 001 FR-179), and how much width it
+           costs depends on the font (Windows fonts are wider), so the comparison below hides it and lays the screen out again; the tag's own cost is not what is compared */
+        let tagless = null;
+        if (REF_CASES.includes(label) && res.info.desks > 0) {
+          await ctx.js(`(()=>{const st=document.createElement('style');st.id='noFloorTag';st.textContent='.floor-tag{display:none!important}';document.head.append(st);window.__durbarSimUi.render();})()`);
+          let prev = '', now = '';
+          for (let k = 0; k < 40; k++) { await sleep(150); now = await ctx.js(`(()=>{const s=document.getElementById('stage');return s.dataset.d+'/'+s.dataset.h+'/'+s.querySelectorAll('.desk').length+'/'+(document.querySelector('#stage .floor-tag')?document.querySelector('#stage .floor-tag').getClientRects().length:0)})()`); if (now === prev && now.endsWith('/0')) break; prev = now; }
+          const [td, th] = now.split('/'); tagless = { d: td, h: th };
+          await ctx.js(`document.getElementById('noFloorTag').remove();window.__durbarSimUi.render();`);
+        }
+        perFloor.push({ name: await ctx.js(`(document.querySelector('#stage .room-head .floor-tag')||{}).textContent||''`), d: res.info.d, h: res.info.h, desks: res.info.desks, tagless });
         if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-screen-${w}x${h}-${label.replace(/[^a-z0-9]+/gi, '-')}-${i + 1}.png`));
         total++;
         if (!shown.desks && !shown.empty) { failed++; console.log(`FAIL ${tag}: neither desks nor the empty-floor line`); }
@@ -635,11 +645,8 @@ async function driver(ctx) {
         const nameList = await ctx.js(`[...new Set([...document.querySelectorAll('#stage .room-head .floor-tag')].map(t=>t.textContent.trim()))]`);
         const ref = await ctx.js(`({d:document.getElementById('stage').dataset.d,h:document.getElementById('stage').dataset.h,desks:document.querySelectorAll('#stage .desk').length})`);
         total++;
-        /* the floor tag is a header part the layout search holds (spec 001 FR-179, spec 033 FR-012), so 15 agents on one floor may take one density step less
-           than the same agents with no tag at 1280x800 (micro against mini): allowed for that case only, and no more than one step */
-        const RANK = ['micro', 'mini', 'card', 'roomy', 'full'], step = RANK.indexOf(ref.d) - RANK.indexOf(f.d);
-        const same = ref.d === f.d && ref.h === f.h;
-        if (nameList.length || ref.desks !== f.desks || !(same || (label.includes('all 15') && step === 1))) { failed++; console.log(`FAIL floor screen ${f.name} ${w}x${h} ${label}: density ${f.d}/h${f.h} with ${f.desks} desks, but the same agents as the whole office get ${ref.d}/h${ref.h} with ${ref.desks} (tags ${nameList.length})`); }
+        const same = f.tagless && ref.d === f.tagless.d && ref.h === f.tagless.h;
+        if (nameList.length || ref.desks !== f.desks || !same) { failed++; console.log(`FAIL floor screen ${f.name} ${w}x${h} ${label}: density ${f.d}/h${f.h} (${f.tagless && f.tagless.d}/h${f.tagless && f.tagless.h} without the floor tag) with ${f.desks} desks, but the same agents as the whole office get ${ref.d}/h${ref.h} with ${ref.desks} (tags ${nameList.length})`); }
       }
     }
   }
