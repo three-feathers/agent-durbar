@@ -52,3 +52,6 @@ Review notes (Mac coordinator):
 13. Added `batch6/pirate-cabinboy-resting.webp` (2026-10-27). With it, the cabin boy has all 3 poses.
 14. Added `batch6/monster-ghost-working.webp` (2026-10-27). The ghost now has *working* and *resting*; *waiting* is still missing.
 15. Added `batch6/monster-vampire-working.webp` (2026-10-27). Monster: the vain vampire.
+16. `batch6/`, Pirate: the **ship's cook** (3 poses) and the privateer's *resting*. Review notes, all of them redo candidates:
+    - the cook keeps his eyes open in *resting*, and his *working* shows his hands on a desk;
+    - the privateer keeps her eyes open in *resting* and holds the mug with one hand, and her neckline is still deep.
