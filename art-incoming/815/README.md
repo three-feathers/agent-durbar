@@ -51,3 +51,4 @@ Review notes (Mac coordinator):
 12. `batch6/rebels-bulldog-working.webp` was replaced with the cartoon-style redo (2026-10-27): bigger eyes and flat cel-shading. It is the reference for the bulldog's other poses.
 13. Added `batch6/pirate-cabinboy-resting.webp` (2026-10-27). With it, the cabin boy has all 3 poses.
 14. Added `batch6/monster-ghost-working.webp` (2026-10-27). The ghost now has *working* and *resting*; *waiting* is still missing.
+15. Added `batch6/monster-vampire-working.webp` (2026-10-27). Monster: the vain vampire.
