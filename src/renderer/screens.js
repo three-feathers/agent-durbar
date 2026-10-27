@@ -1056,11 +1056,15 @@
   /* spec 069 FR-011: one chip per list that has the server (sources), or the single origin of older replies */
   const srcChips=x=>Array.isArray(x.sources)&&x.sources.length?x.sources.map(t=>`<span class="mtag${t==='folder'?' extra':' src'}">${esc(SRCN[t]||t)}</span>`).join('')
     :`<span class="mtag${x.origin==='folder'?' extra':' src'}">${x.origin==='cli'?'Copilot CLI list':x.origin==='folder'?'this folder only':'runtime'}</span>`;
-  /* spec 058 FR-023: what Restart session costs, said before it runs; null when there is nothing to ask (idle, no grants, no remote control) */
-  function restartSessionAsk(a){
+  /* spec 058 FR-023: what Restart session costs, said before it runs; null when there is nothing to ask (idle, no grants, no remote control).
+     Spec 087 FR-022 (reason 'sandbox', *Restart without the sandbox*): always asked, with the same lines plus the MCP servers' next-message
+     start and the requests that will be denied. `start` = the app's MCP start ('next-message' or 'session'). */
+  function restartSessionAsk(a,reason,start){
     const busy=a.state==='working'||a.state==='thinking'||a.state==='waiting', grants=Array.isArray(a.grants)&&a.grants.length>0, remote=!!a.remote;
-    if(!busy&&!grants&&!remote)return null;
-    return ['The conversation is kept and resuming spends no AI credits.',busy?'The running turn stops.':'','"Approve for this session" grants are cleared.',remote?'Remote control turns off.':''].filter(Boolean);
+    const sbx=reason==='sandbox', pend=sbx&&a.pend&&typeof a.pend.size==='number'?a.pend.size:0;
+    if(!sbx&&!busy&&!grants&&!remote)return null;
+    return ['The conversation is kept and resuming spends no AI credits.',busy?'The running turn stops.':'','"Approve for this session" grants are cleared.',remote?'Remote control turns off.':'',
+      sbx&&start==='next-message'?'Its MCP servers start again with your next message.':'',pend?pend+' request'+(pend===1?'':'s')+' waiting will be denied.':''].filter(Boolean);
   }
   let mcpDlgHook=null; /* set while a per-agent MCP dialog is open: called with an agent id on each `mcp` event */
   async function copyText(text,okMsg,ms){
@@ -1100,21 +1104,29 @@
     X.toast(r&&r.ok?'Restarted '+esc(name)+'.':'Could not restart '+esc(name)+': '+esc((r&&r.error)||'unknown error'),r&&r.ok?3200:6000);
     return r;
   }
-  /* h = {returnFocus(), busy(on) (async; shows "Restarting session…"), onAuth() (closes the caller's view before the sign-in card)} */
+  /* h = {returnFocus(), busy(on) (async; shows "Restarting session…"), onAuth() (closes the caller's view before the sign-in card),
+     reason ('mcp', the default, or 'sandbox': spec 087 FR-022 *Restart without the sandbox*; it changes words only, and always asks)} */
+  const RESTART_WORDS={
+    mcp:{title:n=>'Restart '+n+"'s session?",body:n=>'Restart '+n+"'s session with the current MCP servers?",button:'Restart session',
+      done:(n,start)=>n+': session restarted with the current MCP servers.'+(start==='next-message'?' Its servers start with your next message.':''),fail:'Could not restart the session: '},
+    sandbox:{title:n=>'Restart '+n+' without the OS sandbox?',body:()=>'The conversation continues in a new session in Allow all. Shell commands will no longer be limited to this folder and can reach the network. Nothing is re-sent; send your next message when it is ready.',button:'Restart without the sandbox',
+      done:(n,start)=>n+': session restarted without the OS sandbox.'+(start==='next-message'?' Its servers start with your next message.':''),fail:'Could not restart without the OS sandbox: '}};
   async function mcpRestartSessionFlow(a,start,h){
+    const reason=h&&h.reason==='sandbox'?'sandbox':'mcp', W=RESTART_WORDS[reason];
     const ask=window.DurbarDialog&&window.DurbarDialog(document);
-    const confirm=async()=>{const lines=restartSessionAsk(a)||['The conversation is kept and resuming spends no AI credits.','The running turn stops.','"Approve for this session" grants are cleared.'];
-      if(!ask)return window.confirm('Restart '+a.name+"'s session with the current MCP servers?");
-      const v=await ask({title:'Restart '+a.name+"'s session?",body:'Restart '+a.name+"'s session with the current MCP servers?",lines,returnFocus:h.returnFocus,buttons:[{label:'Cancel',value:null},{label:'Restart session',value:'ok',cls:'primary warn'}]});
+    const confirm=async()=>{const lines=restartSessionAsk(a,reason,start)||['The conversation is kept and resuming spends no AI credits.','The running turn stops.','"Approve for this session" grants are cleared.'];
+      if(!ask)return window.confirm(W.body(a.name));
+      const v=await ask({title:W.title(a.name),body:W.body(a.name),lines,returnFocus:h.returnFocus,buttons:[{label:'Cancel',value:null},{label:W.button,value:'ok',cls:'primary warn'}]});
       return !!v;};
     let confirmed=false;
-    if(restartSessionAsk(a)){if(!await confirm())return null;confirmed=true;}
+    if(restartSessionAsk(a,reason,start)){if(!await confirm())return null;confirmed=true;}
     await h.busy(true);
-    let r;try{r=await X.bridge.agentMcpRestartSession(a.id,confirmed);}catch(e){r={ok:false,error:String(e&&e.message||e)};}
-    if(r&&!r.ok&&r.needsConfirm&&!confirmed){await h.busy(false);if(!await confirm())return null;await h.busy(true);try{r=await X.bridge.agentMcpRestartSession(a.id,true);}catch(e){r={ok:false,error:String(e&&e.message||e)};}}
+    const call=c=>reason==='sandbox'?X.bridge.agentMcpRestartSession(a.id,c,reason):X.bridge.agentMcpRestartSession(a.id,c);
+    let r;try{r=await call(confirmed);}catch(e){r={ok:false,error:String(e&&e.message||e)};}
+    if(r&&!r.ok&&r.needsConfirm&&!confirmed){await h.busy(false);if(!await confirm())return null;await h.busy(true);try{r=await call(true);}catch(e){r={ok:false,error:String(e&&e.message||e)};}}
     await h.busy(false);
     if(r&&r.errorKind==='auth'&&X.signInAgain){if(h.onAuth)h.onAuth();X.signInAgain(a,r.error||'');return r;} /* FR-027: the chat's sign-in card, not a toast */
-    X.toast(r&&r.ok?esc(a.name)+': session restarted with the current MCP servers.'+(start==='next-message'?' Its servers start with your next message.':''):'Could not restart the session: '+esc((r&&r.error)||'unknown error')+(r&&r.ended?' The session has ended; send a message to resume it.':''),r&&r.ok?4200:7000);
+    X.toast(r&&r.ok?esc(W.done(a.name,start)):W.fail+esc((r&&r.error)||'unknown error')+(r&&r.ended?' The session has ended; send a message to resume it.':''),r&&r.ok?4200:7000);
     return r;
   }
   async function agentMcp(a,o){
@@ -1657,6 +1669,7 @@
     openSettings:(section)=>{mcp=null;X._acctRefresh=X._acctRefresh==='check'?'check':true;open('settings',section==='mcp'||section==='harnesses'||section==='schedules'?{section}:null);},
     openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},
     agentMcp,
+    restartSession:mcpRestartSessionFlow, /* spec 087 FR-022: *Restart without the sandbox* (h.reason 'sandbox') reuses this flow and its one channel */
     mcpEvent:id=>{if(mcpDlgHook)mcpDlgHook(id);liveEvent(id);},
     liveEvent, /* spec 058 FR-083: a chat stopped or is ready again */
     placeDialog,

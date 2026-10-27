@@ -2846,7 +2846,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
       /* spec 058 FR-040: a canned Restart session: asks while busy (as main does), ends, then resumes "Ready"; with simauth=expired
          the resume fails with the sign-in text (FR-027) and the session stays ended */
-      agentMcpRestartSession: async (id, confirmed) => {
+      // spec 087 FR-022: `reason` 'sandbox' (Restart without the sandbox) is the same restart; only main's words differ (no log here).
+      // A new session has no floor kept from an earlier mode: the sim drops `untilNewSession` (the Allow all app default, as the real resume).
+      agentMcpRestartSession: async (id, confirmed, _reason) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'Unknown agent.' };
         if (s.state !== 'idle' && confirmed !== true) return { ok: false, needsConfirm: true };
@@ -2857,6 +2859,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'stopped' });
         await new Promise((r) => setTimeout(r, 500));
         if (simExpired.has(kind)) return { ok: false, ended: true, errorKind: 'auth', error: SIM_AUTH_ERROR };
+        if (s.info.sandbox?.untilNewSession) {
+          const next = simSandboxFor(0, kind, s.info.permMode);
+          if (next) s.info.sandbox = next;
+          else delete s.info.sandbox;
+          emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: next ?? null });
+        }
         s.ctx ??= { tokens: 0, limit: 128000 }; // agentMcp reads "live" from it
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Ready in ' + s.info.cwd });
         return { ok: true };
