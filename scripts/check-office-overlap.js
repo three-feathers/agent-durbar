@@ -496,14 +496,22 @@ async function driver(ctx) {
     await ctx.js(`(async()=>{const t=document.getElementById('demoToggle');t.checked=true;t.dispatchEvent(new Event('change'));await new Promise(r=>setTimeout(r,500));})()`);
     await ctx.waitFor(`document.querySelectorAll('#stage .room-head').length>0`, 5000);
     await sleep(600);
-    const res = await measure(false); total++;
-    res.problems = res.problems.filter((p) => !/lobby/i.test(p)); /* the demo office has no lobby */
+    const res0 = await measure(false);
     const tag = `demo ${w}x${h}`;
+    /* the case would be vacuous with roomy headers (nothing has to give way): narrow every header, refit, and require that some header really had to give way */
+    await ctx.js(`(()=>{const st=document.createElement('style');st.id='demoNarrow';st.textContent='#stage .room-head{max-width:190px}';document.head.append(st);window.DurbarFit();})()`);
+    await sleep(500);
+    /* headers that had to give way: the cost is the only part allowed to (it is in the name's tooltip); none gave way means the narrowing proved nothing */
+    const squeezed = await ctx.js(`[...document.querySelectorAll('#stage .room-head')].filter(hd=>!hd.querySelector('.room-more')&&hd.classList.contains('no-aiu')).length`);
+    total++;
+    if (!squeezed) { failed++; console.log(`FAIL ${tag}: narrowing the headers made none give way (not even the cost), so the case proves nothing`); }
+    const res = res0; total++;
+    res.problems = res.problems.filter((p) => !/lobby/i.test(p)); /* the demo office has no lobby */
     const lost = await ctx.js(`[...document.querySelectorAll('#stage .room-head')].filter(h=>!h.querySelector('.room-more')&&/\\bno-(ren|sched|mcp|floor)\\b/.test(h.className)).map(h=>h.querySelector('.room-name').textContent+': '+h.className)`);
     const heads = await ctx.js(`document.querySelectorAll('#stage .room-head').length`);
     if (res.problems.length || lost.length || !heads) { failed++; console.log(`FAIL ${tag}: ${(heads ? res.problems.concat(lost.map((x) => 'a part gave way without a ⋯ menu: ' + x)) : ['no room header in the demo']).slice(0, 6).join('; ')}`); }
     rows.push({ label: tag, ...res.info, problems: res.problems.length });
-    await ctx.js(`(async()=>{const t=document.getElementById('demoToggle');t.checked=false;t.dispatchEvent(new Event('change'));await new Promise(r=>setTimeout(r,300));})()`);
+    await ctx.js(`(async()=>{const n=document.getElementById('demoNarrow');if(n)n.remove();const t=document.getElementById('demoToggle');t.checked=false;t.dispatchEvent(new Event('change'));await new Promise(r=>setTimeout(r,300));})()`);
   }
   /* spec 033: floors on/off (3, 2 and 1 floors on), with and without closed doors, both sizes */
   for (const [w, h] of SIZES) {
