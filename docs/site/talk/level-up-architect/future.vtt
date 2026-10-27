@@ -1,0 +1,66 @@
+WEBVTT
+
+1
+00:00:01.500 --> 00:00:06.367
+Hey, it's me. I keep losing track of who
+promised what in our meetings.
+
+2
+00:00:06.367 --> 00:00:07.601
+Could we fix that?
+
+3
+00:00:07.951 --> 00:00:08.233
+Sure.
+
+4
+00:00:08.233 --> 00:00:12.794
+Tell me how a meeting ends for you, and
+I'll build a first version while we talk.
+
+5
+00:00:13.144 --> 00:00:17.837
+Everyone leaves with tasks. By Friday,
+nobody remembers them.
+
+6
+00:00:23.137 --> 00:00:24.538
+Here's a first version.
+
+7
+00:00:24.538 --> 00:00:27.463
+It reads the meeting notes, finds every
+promise,
+
+8
+00:00:27.463 --> 00:00:30.327
+and puts it on a board, with a name and a
+date.
+
+9
+00:00:30.677 --> 00:00:33.791
+That's already useful. Can my team try it?
+
+10
+00:00:34.591 --> 00:00:37.791
+Ana, Sam, have a look. And bring your
+agents.
+
+11
+00:00:41.091 --> 00:00:42.518
+We'll split the work.
+
+12
+00:00:42.518 --> 00:00:45.916
+I take the board, Ana's agent takes the
+reminders,
+
+13
+00:00:45.916 --> 00:00:49.518
+and Sam's agent reviews every change
+before it ships.
+
+14
+00:00:59.318 --> 00:01:03.862
+Three people. Three agents. We just became
+a software agency.
