@@ -133,3 +133,7 @@
 ## 2026-10-26: release notes name every agent app
 
 - [x] T111: `AGENTS_CLAUSE` in `scripts/release-notes.js` for both intros (agent apps, four-company non-affiliation) and its asserts in `scripts/test-changelog.js` [FR-130]
+
+## 2026-10-27: the nightly macOS UI job gets 80 minutes
+
+- [x] T112: macOS UI job `timeout-minutes` 80 in `ui-platforms.yml` (FR-131, 2026-10-27)

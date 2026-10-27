@@ -101,6 +101,10 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
 
 ## Changes
 
+### 2026-10-27: the nightly macOS UI job gets 80 minutes (#773)
+
+- **FR-131** `[IMPLEMENTED]` (T112) The macOS job of `ui-platforms.yml` runs every driver one at a time (`UI_SUITE_JOBS=1`, FR-108), and the suite outgrew the job's 45-minute limit: 43 min on 2026-10-25, then the nightlies of 2026-10-26 and 2026-10-27 were cancelled at 45 min while every driver that had finished passed (runs 40295008813 and 40476964910). The macOS job's `timeout-minutes` is now 80; Linux and Windows keep 45. This buys time, it does not make the suite faster: running macOS drivers in parallel again stays open until the drivers stop sleeping (FR-108 comment). `[KNOWN GAP]` Checked only by the next nightly or a by-hand run (`gh workflow run ui-platforms.yml --ref main`).
+
 ### 2026-10-26: the release notes intro names every agent app, not only Copilot
 
 - **FR-130** `[IMPLEMENTED]` `test:` The intro of every release's notes (`PREAMBLE` for pre-releases, `STABLE_PREAMBLE` for stable tags, both built on `AGENTS_CLAUSE` in `scripts/release-notes.js`) said "Requires GitHub Copilot (copilot login)", which has been wrong since Claude Code and OpenAI Codex became supported. It now says "Needs at least one agent app signed in: GitHub Copilot, Claude Code or OpenAI Codex (Settings > Agent apps can install it)." and "Independent project, not affiliated with GitHub, Microsoft, Anthropic or OpenAI." `scripts/test-changelog.js` asserts both sentences in both intros and that "copilot login" / "Requires GitHub Copilot" are gone (mutation-checked). `[KNOWN GAP]` Already published notes (v0.1.0) are not rewritten by code; the owner edits a published release by hand.
