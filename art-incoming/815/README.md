@@ -68,3 +68,4 @@ Review notes (Mac coordinator):
 27. Added `batch6/monster-werewolf-*` (2026-10-27): the werewolf is the optional sixth Monster, all 3 poses.
 28. `batch6/pirate-cook-resting.webp` was replaced with the redo (2026-10-27): eyes closed, the bowl in both hands, cartoon style. The cook's *working* (hands on a desk) is still the old one.
 29. Added `batch6/monster-frankenstein-*` (2026-10-27), all 3 poses. **Monster is complete: 6 characters** (sea creature, vampire, ghost, mummy, werewolf, Frankenstein).
+30. Added `batch6/rebels-fox-working` and `-waiting` (2026-10-27). The fox now has all 3 poses.
