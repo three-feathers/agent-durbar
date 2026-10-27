@@ -106,7 +106,74 @@ the OS sandbox can stop it.
 - [x] T065 Chip word *Sandboxed (partial)* for Copilot in Ask first with the floor on (FR-021b, K15, #755): `chipWord` in `src/renderer/sandboxtext.js`, test and simulator check updated, README. [FR-021b]
   - AC1: `chipWord` gives the new word only for `approvedMayLeave` with `covers` including `mcp`; Claude, Codex, Read-only and the other words are unchanged (test); the simulator's Copilot Ask first chip reads *Ask first · Sandboxed (partial)*.
 
+## Phase 7: Copilot Allow all keeps the sandbox (issue #806; delta 2026-10-27, FR-022..FR-022c, K16)
+
+Numbers taken: FR-022, FR-022a, FR-022b, FR-022c, K16, T066..T073 (free in spec 087 on `origin/main` and in every open PR on 2026-10-27).
+Order: T067-T071 (outcome B, ships first) do not wait for T066. T072 and T073 wait for T066's result. Simulator and `npm test` only,
+except T066.
+
+- [ ] T066 **Probe, needs owner approval (do not run before the owner's written OK; cost about 3 Copilot prompts, 0.08-0.16 AIU each by the
+  2026-10-25 runs, so about 0.25-0.5 AIU).** Extend `scripts/sandbox-floor-real.ts` with a `switch` scenario (dry run first, `--spend`
+  to run; no secret printed; home folder masked; usage recorded) and run it once on Linux with Copilot CLI 1.0.101 / SDK 1.0.22 through
+  Durbar's own adapter, in a throw-away folder. [FR-022c, K16]
+  - Setup: session folder `F` under `/tmp`; a **second** throw-away folder `P` made by the script **under the home folder, not under
+    `/tmp`** (K15: `/tmp` is writable in Ask first, so a `/tmp` target proves nothing); a command `C` = `touch P/probe.txt` then
+    `curl -sS -m 5 -o /dev/null https://example.com` (the exit codes are printed). The model is asked to run `C` exactly; the script
+    approves the Ask first card as a person would (as T060). Record `getEnforcementStatus()` and the bounded fields of the vendor's
+    `sandbox.decision` events at each step.
+  - Step 1 (prompt 1, **control**): Ask first, floor on. Expect `C`: write fails (read-only file system) and network fails. If `C` succeeds
+    here, stop: the probe cannot tell anything (record it, K15-style).
+  - Step 2 (no prompt): switch to Allow all through the adapter (the Allow all dialog's confirmation is the app's; the script calls
+    `setPermMode` as the app does), then call `session.rpc.options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource:
+    'session_disabled' })` directly on that session; record resolve or refusal and the error text (masked).
+  - Step 3 (prompt 2): the same `C` in the same session. **A passes** only if the write and the network command both succeed.
+  - Step 4 (prompt 3, depends on step 3): if A passed, switch back to Ask first (the adapter re-sends the floor) and run `C` again: expect
+    both to fail again (narrowing works). If A did not pass (still sandboxed, or the update was refused), run the **B path**: restart the
+    session through `mcpRestartSessionOp`'s steps (stop, then `start` with `resumeSessionId` in Allow all, as `ensureLive` does) and run
+    `C` in the new session: expect both to succeed (this is also the control for "a new Allow all session has no sandbox"); read the resumed
+    history (`getMessages`, no credit) to see that the conversation (prompt 1) is still there.
+  - If step 3 shows the update was accepted but `C` still fails, that is outcome B (record "accepted, not honoured"). Do not try other
+    payloads, other slash commands (`SandboxSessionChange`) or `allowBypass` in this run; each is a separate ask to the owner.
+  - AC1: the result is written in spec.md (*Changes*, `real:`) with CLI and SDK versions, OS, the three outcomes, usage, and the verdict A or B;
+    K16 is closed or kept; the README limits line and the tooltip's "Requested; not verified" wording follow it.
+  - AC2: if the run cannot be done on a given OS, say which OS is `[KNOWN GAP]` (macOS and Windows stay unverified).
+- [ ] T067 [P] Pure rule `canRestartWithoutSandbox({ sandbox, mode, caps })` in a renderer-free module next to `src/renderer/sandboxtext.js` (no vendor
+  name; same style as `chipWord`) and its tests. [FR-022, FR-022a]
+  - AC1: true only for Allow all + `untilNewSession` + not `managed` + `caps.resume`; false for every Read-only/Ask first state, `off`, `unknown`,
+    managed, a state without `untilNewSession`, and for the states Claude Code and Codex produce (a test builds each from the adapters' own state functions).
+  - AC2: a malformed state gives false (fail closed, as `clean()`).
+- [ ] T068 Window: the mode-menu item and the chip button *Restart without the sandbox*, the `askDialog`, the tooltip text (at most 300 characters,
+  ending as the state's `verified` says), busy and pending lists in the dialog; the click calls the existing `bridge.agentMcpRestartSession(id, confirmed)`. [FR-022, FR-022a, FR-022b]
+  - AC1: Cancel changes nothing and calls nothing; no dialog, no call (mutant: skip the dialog fails a test).
+  - AC2: a source check pins that `ipc/agents.ts` registers no second restart channel and that the renderer calls no `start`/`resume` for this.
+  - AC3: the item also shows in the `modesOnly` menu (spec 003 FR-095) and is keyboard reachable (arrow keys, Escape returns focus to the chip); the chip button is a real
+    `<button>`, text at least 10.5px, never colour alone.
+- [ ] T069 Adapter and main: nothing new in the adapter for B beyond tests; confirm that a resume in Allow all sends no `sandboxConfig` and reports `null`;
+  confirm `startOptionsFor` carries the current mode into the restart. [FR-022, FR-022b]
+  - AC1: `scripts/test-copilot-sandbox.ts`: Read-only start, switch to Allow all (state `untilNewSession`, one `options.update`), end, resume the same id in Allow all: no
+    further `options.update` with `sandboxConfig`, state `null`, and the first `send` is not held.
+  - AC2: a restart whose resume fails (fake rejecting) leaves the agent ended with the error (`errorKind: 'auth'` for a sign-in error); nothing was sent.
+  - AC3: with pending asks at the restart, the fake broker's asks are denied and none approved (`test-mcp-session.ts` or the Copilot suite).
+- [ ] T070 Simulator: Copilot sim agent #14 (Allow all, kept floor) gets the sim restart (end, then no floor); driver in `scripts/check-sandbox-floor.js`
+  (both sizes, `until()` for every assert, a generous timeout). [FR-022, FR-022b]
+  - AC1: item and chip button visible for the Copilot sim agent, absent for Claude and Codex sim agents and for a Copilot agent in Ask first or with *Sandboxed (managed)*.
+  - AC2: confirm restarts: the chip loses its word and the action disappears; cancel keeps both; a busy agent's dialog says the turn is stopped.
+  - AC3: `check:office` unchanged at 1440x900 and 1280x800 (the chip keeps its place; the 15 agents fit).
+- [ ] T071 Docs: README *Safety model* and *Known limits* (the Copilot floor stays until a new session; the action; Claude Code and Codex differ; K16 status),
+  spec 018's chip paragraph, spec status and `specs-index` block, `changelog.d/087-allowall-sandbox.md`, `npm run shots:docs -- --only <drivers>` (the
+  pictures that show the chip or the mode menu; `-- --list`), `docs/agent-notes.md` entry on the probe pitfall (a `/tmp` target proves nothing). [FR-022]
+  - AC1: `npm run changelog:check`, `npm run specs:check`, `test:site` pass; every linked picture that shows the changed chip or menu is retaken and looked at.
+- [ ] T072 **Only if T066 verdict is A (the floor clears).** `applySandbox` sends the proven payload on a switch to Allow all; the state follows the update; the Allow all dialog
+  names the sandbox; FR-022 stays as the fallback after a refusal. [FR-022c]
+  - AC1: tests of FR-022c (exact payload, resolved gives `null`, rejected and hanging keep `untilNewSession`, narrowing re-sends the floor, no `allowBypass` anywhere);
+    mutants (5) and (6) of the delta fail.
+  - AC2: the dialog sentence appears only for a Copilot session that holds a floor (driver).
+- [ ] T073 **Only if T066 verdict is B (it does not clear).** Strike FR-022c from the spec, set K16 to "cannot be cleared in place (real:)", and word the tooltip and README
+  from the result; no code. [FR-022c, K16]
+  - AC1: `npm run specs:check` passes; no FR-022c text remains that reads as planned.
+
 ## Dependencies
 
 T001 → everything. T010-T013 → T014 → T020-T022 → T030-T032 → T040. T050 any time after T001. Phase 6 after Phase 2, with the
 owner's OK.
+Phase 7: T066 needs the owner's OK; T067-T071 do not wait for it; T072/T073 wait for T066.

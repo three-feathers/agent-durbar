@@ -109,6 +109,12 @@ the user's full rights today), and any bug in Durbar's own checks. In Ask first 
   recorded). A second run with `sandbox.decision`'s bounded fields (`real:` 2026-10-25, spec *Changes*) **settles K8 on Linux with Copilot CLI 1.0.101 / SDK 1.0.22** (not run on macOS or Windows, or another version):
   `policy_resolved` from `user_policy` with Durbar's flags (`allowBypass: false`, network off) and `enforcement_state: engaged`, so
   the update applies to a created session; the write went through one read-write rule Durbar did not send (K15, narrowed; #755).
+- **Clearing a running floor (K16, issue #806, `read:` SDK 1.0.22 `rpc.d.ts`, 2026-10-27; typings only, not run).** `options.update` "patches the genuinely-mutable subset";
+  `sandboxConfig.enabled` is required, so `{ enabled: false }` is type-valid; no `null` form; `sandboxConfigSource` has `session_disabled` ("The user disabled the sandbox for the
+  current session") and warns that "explicit below-floor changes remain policy conflicts unless a session opt-out is authorized"; `SandboxSessionChange` `disabled`/`restored` come
+  from a slash-command result; `sandbox.disableForSession` needs a pending bypass request (`allowBypass`, never sent). No getter of the effective state (`getEnforcementStatus`
+  gives managed `required`/`blocked` only). `[KNOWN GAP]` K16: whether the running floor is cleared by `enabled: false` / `session_disabled` and restored by `enabled: true`;
+  T066 (needs the owner's OK) settles it.
 - **Unavailable:** docs: the app "fails the shell with an unsupported-platform or unsupported-policy message. It does not run
   unsandboxed"; on Windows, denied paths that cannot be enforced make the command "fail with an explanation". Managed
   `sandbox.failIfUnavailable` keeps a server force-on so "the session fails loudly instead of quietly running unsandboxed"
