@@ -219,22 +219,24 @@
     if (btn) btn.addEventListener('click', function () { reveal(sec); });
   });
 
-  var video = document.getElementById('talkVideo'), videoOk = !!video, playRefused = false;
-  function videoSlide() { return video && slides[cur].contains(video); }
+  /* every slide may hold one video (the future film at the start, the talk's own video near the end) */
+  function slideVideo() { var v = slides[cur].querySelector('video'); return v && !v.hidden && !v.dataset.failed ? v : null; }
 
   /* one "next" from a keyboard or a presenter remote: reveal, play, scroll within, or advance */
   function next() {
     var s = slides[cur];
     if (s.classList.contains('quiz') && !s.classList.contains('revealed')) { reveal(s, true); return; }
-    if (videoSlide() && videoOk) {
-      if (video.paused && !video.ended && !playRefused) { var p = video.play(); if (p && p.catch) p.catch(function () { playRefused = true; /* refused: the next press moves on; the presenter can click play */ }); return; }
+    var video = slideVideo();
+    if (video) {
+      if (video.paused && !video.ended && !video.dataset.refused) { var p = video.play(); if (p && p.catch) p.catch(function () { video.dataset.refused = '1'; /* refused: the next press moves on; the presenter can click play */ }); return; }
       if (!video.paused) video.pause();
     }
     if (scrollWithin(1)) return;
     go(cur + 1);
   }
   function prev() {
-    if (videoSlide() && videoOk && !video.paused) video.pause();
+    var video = slideVideo();
+    if (video && !video.paused) video.pause();
     if (scrollWithin(-1)) return;
     go(cur - 1);
   }
@@ -286,16 +288,15 @@
   cur = start >= 0 ? start : fromScroll();
   show();
 
-  /* the video, captions and poster are dropped in later: until then show a placeholder, not a broken player */
-  if (video) {
-    var missing = document.querySelector('.video-missing'), links = document.getElementById('videoLinks'), vhint = document.getElementById('videoHint');
-    var fail = function () { videoOk = false; video.hidden = true; if (missing) missing.hidden = false; if (links) links.hidden = true; if (vhint) vhint.hidden = true; };
+  /* the videos, captions and posters are dropped in separately: until then each shows a placeholder, not a broken player */
+  Array.prototype.forEach.call(document.querySelectorAll('.slide video'), function (video) {
+    var box = video.closest('.slide'), missing = box.querySelector('.video-missing'), links = box.querySelector('.video-cap'), vhint = box.querySelector('.vhint');
+    var fail = function () { video.dataset.failed = '1'; video.hidden = true; if (missing) missing.hidden = false; if (links) links.hidden = true; if (vhint) vhint.hidden = true; };
     var src = video.querySelector('source');
     if (src) src.addEventListener('error', fail);
     video.addEventListener('error', fail);
     if (video.networkState === 3) fail(); /* NETWORK_NO_SOURCE before this script ran */
-    video.addEventListener('play', function () { SND.stopLoop(); });
-    video.addEventListener('play', function () { if (vhint) vhint.textContent = '► next again: on to the next slide'; });
-    video.addEventListener('ended', function () { if (vhint) vhint.textContent = '► press next to continue'; });
-  }
+    video.addEventListener('play', function () { SND.stopLoop(); if (vhint) vhint.textContent = '\u25BA next again: on to the next slide'; });
+    video.addEventListener('ended', function () { if (vhint) vhint.textContent = '\u25BA press next to continue'; });
+  });
 })();

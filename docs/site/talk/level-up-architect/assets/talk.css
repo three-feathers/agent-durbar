@@ -493,3 +493,16 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:15;bac
 .chat.tellit{margin-top:1rem;font-size:.9rem;max-width:62rem}
 @media (max-width:900px){#retro .gamegrid{grid-template-columns:1fr}}
 .chat.tellit{background:none;border:0;box-shadow:none;padding:0}.chat.tellit .m{max-width:100%}
+/* owner 2026-10-27 05:18 UTC: the future film opens the talk, then "It's now" */
+.future{background:#111122;color:#fff1e8;text-align:center}
+.future .inner{display:grid;justify-items:center}
+.futurebig{font-family:var(--head);font-size:clamp(1.6rem,min(5.4vw,9.6vh),7rem);line-height:1.25;color:#ffec27;margin:0;max-width:16ch;text-shadow:.06em .06em 0 #ff004d}
+#futurepoll .opts{max-width:40rem}
+#now .twist-b{font-size:clamp(1.6rem,min(5vw,9vh),6rem)}
+.video-frame{max-height:62vh;width:min(100%,calc(62vh * 16 / 9))}
+#start h1.gametitle{font-size:clamp(1.6rem,min(5.4vw,9vh),7rem)}
+#start .lead{font-size:1.05rem}
+.classes li{font-size:.78rem}
+#start .players{gap:clamp(6px,1.2vw,28px);margin-top:.6rem}
+#start .players img{width:clamp(80px,min(8.5vw,12vh),200px)}
+#start .keys{font-size:max(12px,.55rem);margin-top:.8rem}
