@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { MAX_FOLD, MAX_RUNS, Scheduler, cleanRuns, runsReply, loadSchedules, parseSchedules, publicDoc, saveSchedules } from '../src/main/schedules';
-import type { SaveIo, Schedule, ScheduleRun, SchedulesDoc } from '../src/main/schedules';
+import type { LoadIo, SaveIo, Schedule, ScheduleRun, SchedulesDoc } from '../src/main/schedules';
 import { harness } from './test-schedules';
 
 const MIN = 60_000;
@@ -536,6 +536,73 @@ async function main(): Promise<void> {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 
+
+  // ---- a file that could not be set aside is never written over (FR-038) ----
+  {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-pend-'));
+    const file = path.join(dir, 'durbar-schedules.json');
+    const doc: SchedulesDoc = { pausedAll: false, schedules: [mkSched({ id: ID })] };
+    const ebusy = (): never => { throw Object.assign(new Error('busy'), { code: 'EBUSY' }); };
+    fs.writeFileSync(file, 'CORRUPT {');
+    const lio: LoadIo = { fs: { readFileSync: fs.readFileSync, existsSync: fs.existsSync, readdirSync: fs.readdirSync, rmSync: fs.rmSync, renameSync: ebusy as typeof fs.renameSync }, pause: () => undefined, alive: () => true, pid: process.pid };
+    assert.deepStrictEqual(loadSchedules(file, T0, lio), { pausedAll: false, schedules: [] }, 'loaded empty');
+    assert.strictEqual(fs.readFileSync(file, 'utf8'), 'CORRUPT {', 'the move failed: the file is still there');
+    let renames = 0, opened = 0;
+    const busy: SaveIo = { platform: 'linux', pause: () => undefined, fs: { openSync: ((...r: Parameters<typeof fs.openSync>) => { opened++; return fs.openSync(...r); }) as typeof fs.openSync, writeSync: fs.writeSync, fsyncSync: fs.fsyncSync, closeSync: fs.closeSync, rmSync: fs.rmSync, renameSync: ((): never => { renames++; return ebusy(); }) as typeof fs.renameSync } };
+    assert.strictEqual(saveSchedules(file, doc, busy), false, 'the save is refused while the file cannot be moved');
+    assert.ok(renames >= 1, 'it retried the move first');
+    assert.strictEqual(opened, 0, 'and wrote nothing, not even a temp file');
+    assert.strictEqual(fs.readFileSync(file, 'utf8'), 'CORRUPT {', 'the corrupt content is still in place');
+    assert.deepStrictEqual(fs.readdirSync(dir), ['durbar-schedules.json'], 'no temp file, no write');
+    assert.strictEqual(saveSchedules(file, doc), true, 'once the move works, the save goes through');
+    const bad = fs.readdirSync(dir).filter((f) => f.includes('.bad-'));
+    assert.ok(bad.length === 1 && fs.readFileSync(path.join(dir, bad[0]), 'utf8') === 'CORRUPT {', 'the corrupt content is in the .bad file');
+    assert.strictEqual(loadSchedules(file, T0).schedules.length, 1, 'and the new file is the fresh one');
+    assert.strictEqual(saveSchedules(file, doc), true, 'nothing is pending any more');
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  // ---- stale temp files of a dead process are removed at load (they may hold prompt text) ----
+  {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-stale-'));
+    const file = path.join(dir, 'durbar-schedules.json');
+    fs.writeFileSync(file, JSON.stringify({ pausedAll: false, schedules: [] }));
+    const mine = process.pid, live = 111, dead = 222;
+    const names = [`${dead}`, `${live}`, `${mine}`, '0', '999999999999'].map((x) => `durbar-schedules.json.${x}.tmp`)
+      .concat(['durbar-schedules.json.tmp', 'durbar-schedules.json.abc.tmp', `durbar-schedules.json.${dead}.tmp.bak`, `other.json.${dead}.tmp`, `x-durbar-schedules.json.${dead}.tmp`, `durbar-schedules.json.${dead}x.tmp`]);
+    for (const n of names) fs.writeFileSync(path.join(dir, n), 'PROMPT');
+    const lio: LoadIo = { fs, pause: () => undefined, alive: (p) => p === live, pid: mine };
+    loadSchedules(file, T0, lio);
+    const left = fs.readdirSync(dir);
+    assert.ok(!left.includes(`durbar-schedules.json.${dead}.tmp`), 'a dead process\'s temp file is removed');
+    for (const keep of [`${live}`, `${mine}`].map((x) => `durbar-schedules.json.${x}.tmp`).concat(names.slice(5))) assert.ok(left.includes(keep), `kept: ${keep}`);
+    assert.ok(left.includes('durbar-schedules.json.0.tmp') && left.includes('durbar-schedules.json.999999999999.tmp'), 'ids that are not a process id are left alone');
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  // ---- a read error on a good file is retried once before the file is set aside ----
+  {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-retry-'));
+    const file = path.join(dir, 'durbar-schedules.json');
+    const good = JSON.stringify({ pausedAll: true, schedules: [] });
+    fs.writeFileSync(file, good);
+    for (const [fails, moved] of [[1, false], [2, true]] as const) {
+      fs.writeFileSync(file, good);
+      for (const f of fs.readdirSync(dir)) if (f !== 'durbar-schedules.json') fs.rmSync(path.join(dir, f));
+      let reads = 0, paused = 0;
+      const lio: LoadIo = { fs: { ...fs, readFileSync: ((f: string, e: BufferEncoding) => { if (++reads <= fails) throw Object.assign(new Error('busy'), { code: 'EBUSY' }); return fs.readFileSync(f, e); }) as typeof fs.readFileSync }, pause: (ms) => { paused += ms; }, alive: () => true, pid: process.pid };
+      const d = loadSchedules(file, T0, lio);
+      assert.strictEqual(paused, 200, 'one short pause');
+      assert.strictEqual(d.pausedAll, !moved, moved ? 'two failures: empty' : 'one failure: the good file loaded');
+      assert.strictEqual(fs.existsSync(file), !moved, moved ? 'two failures: set aside' : 'one failure: not moved');
+    }
+    // invalid content is not retried
+    fs.writeFileSync(file, '{');
+    let p = 0;
+    loadSchedules(file, T0, { fs, pause: () => { p++; }, alive: () => true, pid: process.pid });
+    assert.strictEqual(p, 0, 'invalid content is set aside at once');
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 
   // ---- a failed write is not forgotten (FR-037) ----
   {

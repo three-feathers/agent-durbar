@@ -5,6 +5,8 @@
  */
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
+import * as path from 'path';
+import { pidAlive } from './crashmarker';
 import { localTime, nextRuleRun, parseRule } from '../shared/schedrules';
 import type { CalendarRule } from '../shared/schedrules';
 import { LOOP_MAX_DELAY, LOOP_MAX_HOURS, LOOP_MAX_PASSES, LOOP_MIN_DELAY, clampPace, cleanReason, oneLine, parsePace } from '../shared/looppace';
@@ -1097,12 +1099,32 @@ export class Scheduler {
   }
 }
 
-export function loadSchedules(file: string, now: number): SchedulesDoc {
-  let text: string;
-  try {
-    text = fs.readFileSync(file, 'utf8');
-  } catch (e) {
-    if ((e as { code?: string }).code !== 'ENOENT') setAside(file, now); // unreadable: keep it, do not let the next save overwrite it
+/** What `loadSchedules` needs from the system; tests inject failures. */
+export interface LoadIo {
+  fs: Pick<typeof fs, 'readFileSync' | 'renameSync' | 'existsSync' | 'readdirSync' | 'rmSync'>;
+  pause(ms: number): void;
+  alive(pid: number): boolean;
+  pid: number;
+}
+const pauseSync = (ms: number): void => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };
+const realLoadIo: LoadIo = { fs, pause: pauseSync, alive: pidAlive, pid: process.pid };
+/** Files whose move to `.bad-<time>` failed: `saveSchedules` retries the move first and never writes over them (FR-038). */
+const pendingAside = new Set<string>();
+
+export function loadSchedules(file: string, now: number, io: LoadIo = realLoadIo): SchedulesDoc {
+  removeStaleTemps(file, io);
+  let text: string | undefined;
+  for (let attempt = 0; attempt < 2 && text === undefined; attempt++) {
+    try {
+      text = io.fs.readFileSync(file, 'utf8');
+    } catch (e) {
+      if ((e as { code?: string }).code === 'ENOENT') return { pausedAll: false, schedules: [] };
+      // a read can fail for a moment on a good file (an antivirus holding it, Windows): once more after a short pause; only a second failure sets it aside
+      if (attempt === 0) io.pause(200);
+    }
+  }
+  if (text === undefined) {
+    setAside(file, now, io);
     return { pausedAll: false, schedules: [] };
   }
   let ok = false;
@@ -1111,20 +1133,43 @@ export function loadSchedules(file: string, now: number): SchedulesDoc {
     ok = !!v && typeof v === 'object' && !Array.isArray(v);
   } catch { /* corrupt */ }
   if (!ok) {
-    setAside(file, now);
+    setAside(file, now, io);
     return { pausedAll: false, schedules: [] };
   }
   return parseSchedules(text, now);
 }
 
-/** A schedules file that cannot be read is renamed to `<file>.bad-<UTC time>` (as the notes store does), so the next save cannot destroy it; the schedules start empty. Best effort. */
-function setAside(file: string, now: number): void {
+/**
+ * A schedules file that cannot be read is renamed to `<file>.bad-<UTC time>` (as the notes store does), so a save cannot destroy it; the
+ * schedules start empty. True when it is out of the way (or gone); false when the move failed: the file is then remembered, and
+ * `saveSchedules` retries the move and refuses to write until it works.
+ */
+function setAside(file: string, now: number, io: LoadIo): boolean {
   try {
+    if (!io.fs.existsSync(file)) { pendingAside.delete(file); return true; }
     const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
     let dest = `${file}.bad-${stamp}`;
-    for (let i = 1; fs.existsSync(dest) && i < 100; i++) dest = `${file}.bad-${stamp}-${i}`;
-    fs.renameSync(file, dest);
-  } catch { /* not there, or cannot be moved */ }
+    for (let i = 1; io.fs.existsSync(dest) && i < 100; i++) dest = `${file}.bad-${stamp}-${i}`;
+    io.fs.renameSync(file, dest);
+    pendingAside.delete(file);
+    return true;
+  } catch {
+    pendingAside.add(file);
+    return false;
+  }
+}
+
+/** Temp files of a process that died mid-save may hold prompt text: removed at load. Exact name `<file>.<pid>.tmp`, never our own pid, never a running process. */
+function removeStaleTemps(file: string, io: LoadIo): void {
+  try {
+    const dir = path.dirname(file), base = path.basename(file);
+    for (const name of io.fs.readdirSync(dir)) {
+      const m = name.startsWith(base + '.') && name.endsWith('.tmp') ? /^(\d{1,10})$/.exec(name.slice(base.length + 1, -4)) : null;
+      const pid = m ? Number(m[1]) : 0;
+      if (!m || pid <= 0 || pid === io.pid || io.alive(pid)) continue;
+      try { io.fs.rmSync(path.join(dir, name), { force: true }); } catch { /* next start */ }
+    }
+  } catch { /* no folder yet */ }
 }
 
 /** What `saveSchedules` needs from the system; tests inject failures and the platform. */
@@ -1141,6 +1186,8 @@ export function saveSchedules(file: string, doc: SchedulesDoc, io: SaveIo = real
   // a loop's `hold` and `inPass` are runtime state and are not kept (spec 072 FR-002, FR-008)
   // written beside the file, then renamed over it: a crash or a full disk mid-write leaves the old file whole (a torn file would load as "no schedules")
   // the process id is in the name: two instances never share a temp file (there is no single-instance lock)
+  // a file that could not be set aside is still there: try the move again first, and never write over it
+  if (pendingAside.has(file) && !setAside(file, Date.now(), { ...realLoadIo, fs: { ...fs, renameSync: io.fs.renameSync } })) return false;
   const tmp = `${file}.${process.pid}.tmp`;
   try {
     const buf = Buffer.from(JSON.stringify(doc, (k, v: unknown) => (k === 'hold' || k === 'inPass' ? undefined : v), 2), 'utf8');
