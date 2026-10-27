@@ -109,3 +109,4 @@ IDs start after T083.
 - [x] T095 (done 2026-10-26) `DurbarUnread.isShown` (panel open on the agent, window visible, Chat tab, Notes drawer closed) used by `openPanel`, `visibilitychange`, the Chat tab and the Notes drawer; closing the chat or going to the office does not clear [FR-176]
 - [x] T096 (done 2026-10-26) Card menu item **Mark as read** (`data-op="read"`) for an unread main agent, announced, focus back to the anchor [FR-177]
 - [x] T097 (done 2026-10-26) Driver steps (in `scripts/check-unread.js`): open chat clears, closing does not, the Browser tab and the Notes drawer do not count as shown, Mark as read by keyboard [FR-176, FR-177]
+- [x] T098 (done 2026-10-26, issue #789, requirement in spec 052 FR-180 / T192) Chat header: `.ph-id` takes the free room up to the buttons, cut only when the row is full; `scripts/check-chat-title.js` at 1440x900 and 1280x800

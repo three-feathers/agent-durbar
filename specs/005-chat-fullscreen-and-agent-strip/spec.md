@@ -352,3 +352,8 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 **Tasks:** T095..T097 in `tasks.md`. Numbers taken: FR-176, FR-177 and T095..T097 (checked against `main` and the open PRs on 2026-10-26).
 
 **Status:** `[IMPLEMENTED]` `sim:` `scripts/test-unread.ts` (67 checks) and `scripts/check-unread.js` (both sizes, Shift+F10, reduced motion). `[KNOWN GAP]` not run on a real agent session; no real screen reader (the accessible names and the announcement are checked as text); the marker is not kept across a restart by design (spec 001 FR-176).
+
+### 2026-10-26: the chat header's title uses the free room up to the buttons (issue #789, owned by spec 052 FR-180)
+
+*Problem*: the session title and the model line in the chat header (`#panelHead .ph-top`) were cut with an ellipsis at 40% of the row while a wide gap was left before the buttons. The fix is a CSS rule in `styles.css` (`.ph-id` without `max-width:40%`). The requirement, the driver (`scripts/check-chat-title.js`) and the status live in **spec 052 FR-180** (the usability pass owns the header layout, FR-095); no new FR here. Task T098 below. Numbers taken: T098, no FR (checked against `main` and the open PRs and remote branches on 2026-10-26).
+
