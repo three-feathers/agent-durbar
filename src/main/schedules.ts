@@ -1098,16 +1098,38 @@ export class Scheduler {
 }
 
 export function loadSchedules(file: string, now: number): SchedulesDoc {
+  let text: string;
   try {
-    return parseSchedules(fs.readFileSync(file, 'utf8'), now);
-  } catch {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    if ((e as { code?: string }).code !== 'ENOENT') setAside(file, now); // unreadable: keep it, do not let the next save overwrite it
     return { pausedAll: false, schedules: [] };
   }
+  let ok = false;
+  try {
+    const v: unknown = JSON.parse(text);
+    ok = !!v && typeof v === 'object' && !Array.isArray(v);
+  } catch { /* corrupt */ }
+  if (!ok) {
+    setAside(file, now);
+    return { pausedAll: false, schedules: [] };
+  }
+  return parseSchedules(text, now);
+}
+
+/** A schedules file that cannot be read is renamed to `<file>.bad-<UTC time>` (as the notes store does), so the next save cannot destroy it; the schedules start empty. Best effort. */
+function setAside(file: string, now: number): void {
+  try {
+    const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
+    let dest = `${file}.bad-${stamp}`;
+    for (let i = 1; fs.existsSync(dest) && i < 100; i++) dest = `${file}.bad-${stamp}-${i}`;
+    fs.renameSync(file, dest);
+  } catch { /* not there, or cannot be moved */ }
 }
 
 /** What `saveSchedules` needs from the system; tests inject failures and the platform. */
 export interface SaveIo {
-  fs: Pick<typeof fs, 'writeFileSync' | 'renameSync' | 'rmSync'>;
+  fs: Pick<typeof fs, 'openSync' | 'writeSync' | 'fsyncSync' | 'closeSync' | 'renameSync' | 'rmSync'>;
   platform: NodeJS.Platform;
   /** A short blocking pause (win32 retry). */
   pause(ms: number): void;
@@ -1118,9 +1140,18 @@ const realIo: SaveIo = { fs, platform: process.platform, pause: (ms) => { Atomic
 export function saveSchedules(file: string, doc: SchedulesDoc, io: SaveIo = realIo): boolean {
   // a loop's `hold` and `inPass` are runtime state and are not kept (spec 072 FR-002, FR-008)
   // written beside the file, then renamed over it: a crash or a full disk mid-write leaves the old file whole (a torn file would load as "no schedules")
-  const tmp = `${file}.tmp`;
+  // the process id is in the name: two instances never share a temp file (there is no single-instance lock)
+  const tmp = `${file}.${process.pid}.tmp`;
   try {
-    io.fs.writeFileSync(tmp, JSON.stringify(doc, (k, v: unknown) => (k === 'hold' || k === 'inPass' ? undefined : v), 2), { mode: 0o600 });
+    const buf = Buffer.from(JSON.stringify(doc, (k, v: unknown) => (k === 'hold' || k === 'inPass' ? undefined : v), 2), 'utf8');
+    const fd = io.fs.openSync(tmp, 'w', 0o600);
+    try {
+      let off = 0;
+      while (off < buf.length) off += io.fs.writeSync(fd, buf, off, buf.length - off);
+      try { io.fs.fsyncSync(fd); } catch { /* best effort */ }
+    } finally {
+      io.fs.closeSync(fd);
+    }
     try {
       io.fs.renameSync(tmp, file);
     } catch (e) {

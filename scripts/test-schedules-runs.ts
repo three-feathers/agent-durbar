@@ -18,6 +18,7 @@ const lastEqualsNewest = (h: ReturnType<typeof harness>): void => {
     if (s.last) assert.ok(top && (top.until ?? top.at) === s.last.at && top.outcome === s.last.outcome, `the newest entry equals last (${s.id}): ${JSON.stringify([top, s.last])}`);
   }
 };
+const TMP = (f: string): string => `${f}.${process.pid}.tmp`;
 const mkSched = (o: Partial<Schedule> = {}): Schedule => ({ id: ID, folder: '/w', prompt: 'PROMPT-TEXT', every: 5, next: T0 + 5 * MIN, ...o });
 
 async function main(): Promise<void> {
@@ -458,13 +459,13 @@ async function main(): Promise<void> {
     const file = path.join(dir, 'durbar-schedules.json');
     const doc: SchedulesDoc = { pausedAll: false, schedules: [mkSched({ id: ID })], runs: { [ID]: [{ at: T0, outcome: 'sent' }] } };
     saveSchedules(file, doc);
-    assert.ok(!fs.existsSync(file + '.tmp'), 'no temp file is left');
+    assert.ok(!fs.existsSync(TMP(file)), 'no temp file is left');
     assert.strictEqual(loadSchedules(file, T0).schedules.length, 1);
     // the temp path cannot be written (a directory stands there): the write fails, the old file stays whole
-    fs.mkdirSync(file + '.tmp');
+    fs.mkdirSync(TMP(file));
     saveSchedules(file, { pausedAll: true, schedules: [], runs: {} });
     assert.strictEqual(loadSchedules(file, T0).schedules.length, 1, 'a failed write leaves the previous file whole');
-    fs.rmSync(file + '.tmp', { recursive: true });
+    fs.rmSync(TMP(file), { recursive: true });
     saveSchedules(file, { pausedAll: true, schedules: [], runs: {} });
     assert.strictEqual(loadSchedules(file, T0).pausedAll, true, 'and the next write goes through');
     if (process.platform !== 'win32') assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600, 'the file is private (0600)');
@@ -473,19 +474,66 @@ async function main(): Promise<void> {
     fs.mkdirSync(blocked);
     fs.writeFileSync(path.join(blocked, 'x'), 'x');
     assert.strictEqual(saveSchedules(blocked, doc), false, 'a failed rename is reported');
-    assert.ok(!fs.existsSync(blocked + '.tmp'), 'and no temp file is left');
+    assert.ok(!fs.existsSync(TMP(blocked)), 'and no temp file is left');
     assert.strictEqual(saveSchedules(file, doc), true);
     // win32: a busy file is retried once after a short pause; another platform does not retry; a second failure is a failure
     for (const [platform, code, want, renames] of [['win32', 'EPERM', true, 2], ['win32', 'EBUSY', true, 2], ['linux', 'EPERM', false, 1], ['win32', 'ENOSPC', false, 1]] as const) {
       let n = 0, paused = 0;
-      const io: SaveIo = { platform, pause: () => { paused++; }, fs: { writeFileSync: fs.writeFileSync, rmSync: fs.rmSync, renameSync: ((a: string, b: string) => { if (++n === 1) throw Object.assign(new Error('busy'), { code }); fs.renameSync(a, b); }) as typeof fs.renameSync } };
+      const io: SaveIo = { platform, pause: () => { paused++; }, fs: { openSync: fs.openSync, writeSync: fs.writeSync, fsyncSync: fs.fsyncSync, closeSync: fs.closeSync, rmSync: fs.rmSync, renameSync: ((a: string, b: string) => { if (++n === 1) throw Object.assign(new Error('busy'), { code }); fs.renameSync(a, b); }) as typeof fs.renameSync } };
       assert.strictEqual(saveSchedules(file, doc, io), want, `${platform} ${code}`);
       assert.strictEqual(n, renames, `${platform} ${code}: renames tried`);
       assert.strictEqual(paused, want ? 1 : 0);
-      assert.ok(!fs.existsSync(file + '.tmp'), 'no temp file left');
+      assert.ok(!fs.existsSync(TMP(file)), 'no temp file left');
     }
+    // the temp name carries the process id (two instances never share one), and the data is fsynced before the rename
+    const order: string[] = [];
+    const seen: string[] = [];
+    const spy: SaveIo = { platform: 'linux', pause: () => undefined, fs: { openSync: ((f: string, ...r: unknown[]) => { seen.push(f); return (fs.openSync as (...a: unknown[]) => number)(f, ...r); }) as typeof fs.openSync, writeSync: fs.writeSync, closeSync: fs.closeSync, rmSync: fs.rmSync,
+      fsyncSync: ((fd: number) => { order.push('fsync'); fs.fsyncSync(fd); }) as typeof fs.fsyncSync, renameSync: ((a: string, b: string) => { order.push('rename'); fs.renameSync(a, b); }) as typeof fs.renameSync } };
+    assert.strictEqual(saveSchedules(file, doc, spy), true);
+    assert.deepStrictEqual(order, ['fsync', 'rename'], 'fsync before the rename');
+    assert.deepStrictEqual(seen, [TMP(file)], 'the temp file is named with the process id');
+    assert.ok(TMP(file).includes(`.${process.pid}.`));
+    // an fsync that fails is only best effort
+    const noSync: SaveIo = { ...spy, fs: { ...spy.fs, fsyncSync: (() => { throw new Error('EINVAL'); }) as typeof fs.fsyncSync } };
+    assert.strictEqual(saveSchedules(file, doc, noSync), true, 'a failing fsync does not fail the save');
     fs.rmSync(dir, { recursive: true, force: true });
   }
+
+  // ---- a file that cannot be read is set aside, never overwritten (FR-038) ----
+  {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-bad-'));
+    const file = path.join(dir, 'durbar-schedules.json');
+    assert.deepStrictEqual(loadSchedules(file, T0), { pausedAll: false, schedules: [] }, 'no file: empty, nothing set aside');
+    assert.deepStrictEqual(fs.readdirSync(dir), []);
+    for (const [i, content] of ['{"schedules":[{"id":"aaaaaaaa-1","folder":"/w","prompt":"precious","every":30}', '', '[1,2]', 'null'].entries()) {
+      fs.writeFileSync(file, content);
+      const d = loadSchedules(file, T0 + i);
+      assert.deepStrictEqual(d, { pausedAll: false, schedules: [] }, 'a corrupt file loads as no schedules');
+      assert.ok(!fs.existsSync(file), 'and is moved away');
+      assert.ok(saveSchedules(file, d), 'the next save writes a fresh file');
+      const bad = fs.readdirSync(dir).filter((f) => f.includes('.bad-'));
+      assert.ok(bad.some((f) => fs.readFileSync(path.join(dir, f), 'utf8') === content), `the corrupt content is kept in a .bad file (${content.slice(0, 20)})`);
+      for (const f of fs.readdirSync(dir)) if (f !== path.basename(file)) fs.rmSync(path.join(dir, f));
+      fs.rmSync(file);
+    }
+    // two corrupt files at the same time do not overwrite each other's .bad
+    fs.writeFileSync(file, 'x1'); loadSchedules(file, T0);
+    fs.writeFileSync(file, 'x2'); loadSchedules(file, T0);
+    assert.deepStrictEqual(fs.readdirSync(dir).map((f) => fs.readFileSync(path.join(dir, f), 'utf8')).sort(), ['x1', 'x2']);
+    // unreadable (not merely missing): a directory stands where the file should be; it is set aside too, not read over
+    for (const f of fs.readdirSync(dir)) fs.rmSync(path.join(dir, f), { recursive: true });
+    fs.mkdirSync(file);
+    assert.deepStrictEqual(loadSchedules(file, T0), { pausedAll: false, schedules: [] });
+    assert.ok(!fs.existsSync(file) && fs.readdirSync(dir).some((f) => f.includes('.bad-')), 'an unreadable file is moved to a .bad file');
+    for (const f of fs.readdirSync(dir)) fs.rmSync(path.join(dir, f), { recursive: true });
+    // a good file is left alone
+    fs.writeFileSync(file, JSON.stringify({ pausedAll: false, schedules: [mkSched({ id: ID })] }));
+    assert.strictEqual(loadSchedules(file, T0).schedules.length, 1);
+    assert.ok(fs.existsSync(file));
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
 
   // ---- a failed write is not forgotten (FR-037) ----
   {
