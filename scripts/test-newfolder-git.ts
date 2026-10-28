@@ -417,7 +417,10 @@ async function main(): Promise<void> {
         assert.ok(await until(() => result !== undefined, 10000), 'the clone ended within 10 s of Cancel');
         assert.deepStrictEqual([result!.ok, result!.cancelled, result!.error], [false, true, CANCELLED]);
         assert.ok(!fs.existsSync(path.join(parent, 'hang')), 'the folder is gone');
-        assert.ok(await until(() => closedByGit === sockets.length, 10000), "git's https helper (a child of git) ended too: its connection closed");
+        const helperEnded = await until(() => closedByGit === sockets.length, 10000);
+        // spec 093 FR-107: on failure, say which git processes are left and in which process group (POSIX), so a CI log shows why
+        if (!helperEnded && POSIX) { try { console.error(execFileSync('ps', ['-axo', 'pid,ppid,pgid,stat,command'], { encoding: 'utf8' }).split('\n').filter((l, i) => i === 0 || /git/.test(l)).join('\n')); } catch { /* no ps */ } }
+        assert.ok(helperEnded, "git's https helper (a child of git) ended too: its connection closed");
         assert.ok(bystander.exitCode === null && bystander.signalCode === null, 'a process Durbar did not start is untouched');
         assert.deepStrictEqual(fs.readdirSync(tmp), [], 'no hooks folder left');
       } finally {

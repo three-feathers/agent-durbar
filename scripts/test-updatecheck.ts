@@ -997,18 +997,32 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     const t = await mkExec('linux', 'on-kill')('npm', ['view'], { timeoutMs: 10 });
     assert.deepStrictEqual([killed.length, t.timedOut], [1, true], 'the timeout calls the tree kill');
     // the tree kill itself: POSIX signals the group; Windows runs taskkill /T /F from System32
-    const sig: Array<[number, string]> = [];
+    const sig: Array<[number, string | number]> = [];
     const later: Array<() => void> = [];
     const alive = { pid: 77, kill: () => true, exitCode: null, signalCode: null };
     killChildTree(alive as never, 'linux', {}, (() => undefined) as never, (pid, s) => { sig.push([pid, s]); }, (fn, ms) => { assert.strictEqual(ms, 3000); later.push(fn); });
     assert.deepStrictEqual(sig, [[-77, 'SIGTERM']], 'the process group (a negative pid), not the child alone');
     later.splice(0).forEach((f) => f());
     assert.deepStrictEqual(sig, [[-77, 'SIGTERM'], [-77, 'SIGKILL']], 'still running after 3 s: SIGKILL to the group');
+    // spec 093 FR-107: the child exited on SIGTERM; its group is probed (signal 0) before any SIGKILL
     const gone = { pid: 80, kill: () => true, exitCode: 0, signalCode: null };
-    const sig2: Array<[number, string]> = [];
-    killChildTree(gone as never, 'linux', {}, (() => undefined) as never, (pid, s) => { sig2.push([pid, s]); }, (fn) => later.push(fn));
+    const sig2: Array<[number, string | number]> = [];
+    const esrch = (pid: number, s: NodeJS.Signals | 0): void => { sig2.push([pid, s]); if (s === 0) throw Object.assign(new Error('kill ESRCH'), { code: 'ESRCH' }); };
+    killChildTree(gone as never, 'linux', {}, (() => undefined) as never, esrch, (fn) => later.push(fn));
     later.splice(0).forEach((f) => f());
-    assert.deepStrictEqual(sig2, [[-80, 'SIGTERM']], 'exited: no SIGKILL (its group id may belong to something else now)');
+    assert.deepStrictEqual(sig2, [[-80, 'SIGTERM'], [-80, 0]], 'exited and its group is empty: no SIGKILL (its group id may belong to something else later)');
+    // exited, but a descendant ignored SIGTERM (macOS: git ended, git-remote-https kept its connection): the group still has
+    // members, so its id cannot have been reused, and the SIGKILL ends them
+    const leftover = { pid: 81, kill: () => true, exitCode: null as number | null, signalCode: 'SIGTERM' };
+    const sig3: Array<[number, string | number]> = [];
+    killChildTree(leftover as never, 'darwin', {}, (() => undefined) as never, (pid, s) => { sig3.push([pid, s]); }, (fn) => later.push(fn));
+    later.splice(0).forEach((f) => f());
+    assert.deepStrictEqual(sig3, [[-81, 'SIGTERM'], [-81, 0], [-81, 'SIGKILL']], 'exited with a descendant left in its group: SIGKILL to the group');
+    // a group the probe may not signal (EPERM): nothing more is sent
+    const sig4: Array<[number, string | number]> = [];
+    killChildTree({ ...gone, pid: 82 } as never, 'linux', {}, (() => undefined) as never, (pid, s) => { sig4.push([pid, s]); if (s === 0) throw Object.assign(new Error('kill EPERM'), { code: 'EPERM' }); }, (fn) => later.push(fn));
+    later.splice(0).forEach((f) => f());
+    assert.deepStrictEqual(sig4, [[-82, 'SIGTERM'], [-82, 0]], 'a probe that fails: no SIGKILL');
     const ran: Array<[string, string[]]> = [];
     killChildTree({ pid: 78 } as never, 'win32', { SystemRoot: 'C:\\Windows' }, ((f: string, a: string[]) => { ran.push([f, a]); }) as never);
     assert.deepStrictEqual(ran, [['C:\\Windows\\System32\\taskkill.exe', ['/pid', '78', '/t', '/f']]]);
