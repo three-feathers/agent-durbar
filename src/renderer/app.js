@@ -6616,8 +6616,8 @@ function schedLine(s){
     +(s.cap?' · spent '+capAmt(s.spent||0,s.cap.unit)+' of '+capAmt(s.cap.amount,s.cap.unit)+(s.spentUnknown?' (the spend was not fully reported)':''):'')
     +(s.last?' · last '+clock(s.last.at)+': '+SH().outcomeWord(s.last.outcome):'');
 }
-/* the row's buttons; `k` is the data attribute (sc in the dialog, ss in Settings). An ended session cannot be resumed, only moved to the folder's agent (FR-014). */
-const schedBtns=(s,k)=>`<button class="btn" type="button" data-${k}="edit" data-id="${esc(s.id)}">Edit…</button>`+(s.done?'':s.paused&&s.pausedReason==='session-ended'?`<button class="btn" type="button" data-${k}="retarget" data-id="${esc(s.id)}" title="Send it to this folder's agent from now on, and resume it">Use the folder's agent</button>`
+/* the row's buttons; `k` is the data attribute (sc in the dialog, ss in Settings). An ended session cannot be resumed, only moved to the folder's agent (FR-014); a once schedule paused for review has no Resume (its time has passed, it can only be fixed with Edit…, FR-124). */
+const schedBtns=(s,k)=>`<button class="btn" type="button" data-${k}="edit" data-id="${esc(s.id)}">Edit…</button>`+(s.done||(s.paused&&s.pausedReason==='review')?'':s.paused&&s.pausedReason==='session-ended'?`<button class="btn" type="button" data-${k}="retarget" data-id="${esc(s.id)}" title="Send it to this folder's agent from now on, and resume it">Use the folder's agent</button>`
   :`<button class="btn" type="button" data-${k}="pause" data-id="${esc(s.id)}"${s.pausedReason==='cap'?' title="Resume starts counting its spending again from zero"':''}>${s.paused?'Resume':'Pause'}</button>`)
   +`<button class="btn danger" type="button" data-${k}="del" data-id="${esc(s.id)}">Delete</button>`
   +`<button class="btn" type="button" data-${k}="hist" data-id="${esc(s.id)}" aria-expanded="${HIST_OPEN.has(k+':'+s.id)}" aria-controls="sh-${k}-${esc(s.id)}" title="When it ran and what happened">History</button>`;

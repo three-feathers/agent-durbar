@@ -1039,6 +1039,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .sched-dlg .sc-t .sc-p:hover,.sched-set .sc-t .sc-p:hover{text-decoration:underline}
 .sched-dlg .sc-full,.sched-set .sc-full{margin:4px 0;font-size:12px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere}
 .sched-dlg .sc-full[hidden],.sched-set .sc-full[hidden]{display:none}
+.sched-dlg .sc-t:has(.sc-p[aria-expanded="true"]),.sched-set .sc-t:has(.sc-p[aria-expanded="true"]){flex:0 0 100%} /* review of #845: an opened prompt takes the whole row (as .sc-hist does), the buttons wrap under it, so a long text does not wrap at about 240px beside them */
 .sched-dlg .sc-form h4{margin:0;font-size:13px}
 .sched-dlg .sc-form h4[hidden]{display:none}
 .sched-dlg .sc-t small,.sched-set .sc-t small{font-size:11px;color:var(--muted)}

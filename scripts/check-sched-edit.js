@@ -239,6 +239,10 @@ module.exports = async (ctx) => {
       await js(`document.getElementById('scAdd').click()`); await until(`document.querySelectorAll('#sdList .sc-row').length===${jsLiteral(nRows + 1)}`);
       const top = await js(`(()=>{const r=[...document.querySelectorAll('#sdList .sc-row')].pop(),b=r.querySelector('.sc-p'),d=document.querySelector('#schedDlg .dlg');b.click();return {len:r.querySelector('.sc-full').textContent.length,title:b.title.length,sw:d.scrollWidth-d.clientWidth,count:document.getElementById('scPrompt').value.length}})()`);
       assert.deepStrictEqual([top.len, top.sw <= 1, top.title <= 300, top.count], [LIMIT, true, true, 0], `${tag}: the 10,000-character prompt was saved whole and shows without sideways scroll`);
+      const wide = await js(`(()=>{const r=[...document.querySelectorAll('#sdList .sc-row')].pop(),f=r.querySelector('.sc-full').getBoundingClientRect(),w=r.getBoundingClientRect();return {f:f.width,w:w.width}})()`);
+      assert.ok(wide.f >= wide.w - 2, `${tag}: an opened long prompt takes the whole row width, not a column beside the buttons (${JSON.stringify(wide)})`);
+      await js(`[...document.querySelectorAll('#sdList .sc-row')].pop().querySelector('.sc-p').click()`); // fold it again, so it does not push the next rows out of view
+      await until(`[...document.querySelectorAll('#sdList .sc-row')].pop().querySelector('.sc-full').hidden`);
       await small(tag);
       // a stored prompt over the limit (as a hand-edited file would hold it) needs review: the row says why and offers Edit...
       const raw = await js(`window.__durbarSimSched.addRaw(${jsLiteral(text(12345))})`);
@@ -252,7 +256,12 @@ module.exports = async (ctx) => {
       await edit(raw);
       c = await count();
       assert.deepStrictEqual([c.len, c.inv, c.dis, c.text], [12345, 'true', true, '12,345 of 10,000 characters: shorten it to save'], `${tag}: Edit… shows the whole prompt and the error, Save disabled`);
-      await js(`document.getElementById('scFormT').scrollIntoView({block:'start'})`); await settle();
+      // the picture shows the row that says "Needs review" (review of #845): it is scrolled into the list's viewport and checked
+      const rawSmall = `document.querySelector(${jsLiteral(`#sdList [data-id="${raw}"] small`)})`;
+      await js(`${rawSmall}.scrollIntoView({block:'center'})`);
+      await until(`(()=>{const e=${rawSmall},l=document.getElementById('sdList').getBoundingClientRect(),r=e.getBoundingClientRect(),w=document.documentElement.clientHeight;return /Needs review/.test(e.textContent)&&r.height>0&&r.top>=l.top&&r.bottom<=l.bottom&&r.top>=0&&r.bottom<=w})()`, 5000);
+      await settle();
+      await until(`(()=>{const e=${rawSmall},l=document.getElementById('sdList').getBoundingClientRect(),r=e.getBoundingClientRect();return r.top>=l.top&&r.bottom<=l.bottom})()`, 5000); // still inside after the scroll settled
       await ctx.shot(path.join(OUT, `044-length-review-${tag}.png`));
       await type(text(500)); c = await count();
       assert.deepStrictEqual([c.inv, c.dis], ['false', false], `${tag}: shortened, Save is on`);
@@ -265,6 +274,8 @@ module.exports = async (ctx) => {
       await until(`/Needs review/.test(document.querySelector(${jsLiteral(`#sdList [data-id="${onceRaw}"] small`)}).textContent)&&document.querySelector(${jsLiteral(`#sdList [data-id="${onceRaw}"]`)}).classList.contains('off')`);
       const or = (await rows()).find((r) => r.id === onceRaw);
       assert.ok(!/done/.test(or.line) && /paused/i.test(or.line) && or.btns[0] === 'Edit…', `${tag}: a once schedule over the limit is paused for review, not done (${or.line})`);
+      assert.deepStrictEqual(or.btns.filter((x) => /^(Resume|Pause)$/.test(x)), [], `${tag}: a once schedule paused for review has no Resume (it could only fail), only Edit… and Delete (${or.btns})`);
+      assert.ok(or.btns.includes('Delete'), `${tag}: and Delete`);
     }
     console.log('[sched-edit]', tag, 'ok');
   }
