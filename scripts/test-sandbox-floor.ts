@@ -361,6 +361,46 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
     assert.strictEqual(V.step4Expected('A'), 'both-blocked', 'A: narrowing must block again');
     assert.strictEqual(V.step4Expected('B'), 'both-ok', 'B: the resumed Allow all session is free');
     assert.strictEqual(V.step4Expected('cannot-tell'), 'both-ok');
+    // review on PR #827: the spend gate before every send
+    assert.strictEqual(V.SWITCH_MAX_PROMPTS, 3, 'the owner approved about 3 prompts');
+    assert.strictEqual(V.SWITCH_MAX_AIU, 1, 'the script stops at 1 AIU');
+    const fresh = { prompts: 0, aiu: 0, usageKnown: true, timedOut: false, strayCall: false };
+    assert.strictEqual(V.mayPrompt(fresh).ok, true, 'the first prompt');
+    assert.strictEqual(V.mayPrompt({ ...fresh, prompts: 2, aiu: 0.3 }).ok, true, 'the third prompt within the budget');
+    assert.strictEqual(V.mayPrompt({ ...fresh, prompts: 3, aiu: 0.3 }).ok, false, 'no 4th prompt');
+    assert.strictEqual(V.mayPrompt({ ...fresh, prompts: 1, aiu: 1 }).ok, false, 'no prompt at 1 AIU');
+    assert.strictEqual(V.mayPrompt({ ...fresh, prompts: 1, aiu: 1.5 }).ok, false, 'no prompt over 1 AIU');
+    assert.strictEqual(V.mayPrompt({ ...fresh, prompts: 1, aiu: 0.999 }).ok, true, 'just under the stop');
+    assert.strictEqual(V.mayPrompt({ ...fresh, prompts: 1, aiu: Number.NaN }).ok, false, 'an unreadable sum');
+    assert.strictEqual(V.mayPrompt({ ...fresh, prompts: 1, usageKnown: false }).ok, false, 'unknown usage is never 0');
+    assert.strictEqual(V.mayPrompt({ ...fresh, prompts: 1, timedOut: true }).ok, false, 'after a turn that did not end');
+    assert.strictEqual(V.mayPrompt({ ...fresh, prompts: 1, strayCall: true }).ok, false, 'after a command that is not C');
+    assert.strictEqual(V.mayPrompt({ ...fresh, prompts: -1 }).ok, false, 'a bad count');
+    // only the exact call counts; any other start is stray
+    const C = 'touch /h/p/probe.txt; echo "touch=$?"; curl -sS -m 5 -o /dev/null https://example.com; echo "curl=$?"';
+    const exactOnly = V.probeCalls([{ callId: 'a', phase: 'start', args: { command: C } }, { callId: 'a', phase: 'complete', output: 'touch=1\ncurl=7' }], C);
+    assert.deepStrictEqual(exactOnly, { stray: false, exactRan: true, output: 'touch=1\ncurl=7' });
+    const strayLater = V.probeCalls([{ callId: 'a', phase: 'start', args: { command: C } }, { callId: 'a', phase: 'complete', output: 'touch=1\ncurl=7' }, { callId: 'b', phase: 'start', args: { command: 'echo curl=0' } }, { callId: 'b', phase: 'complete', output: 'curl=0' }], C);
+    assert.strictEqual(strayLater.stray, true, 'another command is stray');
+    assert.strictEqual(strayLater.output, 'touch=1\ncurl=7', 'the result comes from the exact call, not the last one');
+    const onlyStray = V.probeCalls([{ callId: 'b', phase: 'start', args: { command: C + ' ' } }, { callId: 'b', phase: 'complete', output: 'touch=0\ncurl=0' }], C);
+    assert.deepStrictEqual(onlyStray, { stray: true, exactRan: false }, 'near-miss commands never count');
+    assert.strictEqual(V.probeCalls([{ callId: 'c', phase: 'start', args: {} }], C).stray, true, 'a call with no command is stray');
+    assert.strictEqual(V.stepOutcome({ ran: onlyStray.exactRan, ...V.parseExitCodes(onlyStray.output ?? ''), fileExists: true }), 'not-run');
+    // source checks: one send, gated right before it; exactly 3 steps; the limits come from the tested module; Windows refused
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'sandbox-floor-real.ts'), 'utf8');
+    const sw = src.slice(src.indexOf('async function runSwitchSteps'), src.indexOf('async function main()'));
+    assert.ok(sw.length > 1000, 'the switch steps are found');
+    assert.strictEqual((sw.match(/\ba\.send\(/g) ?? []).length, 1, 'one send in the switch probe');
+    assert.match(sw, /const gate = mayPrompt\(\{ prompts, aiu: usageOf\(0\)\.aiu, usageKnown, timedOut: anyTimedOut, strayCall: anyStray \|\| strayAsks > 0 \}\);\n\s*if \(!gate\.ok\) throw new Error\([^\n]*\);\n\s*prompts\+\+;\n[^\n]*\n\s*await a\.send\(/, 'mayPrompt gates the send, right before it');
+    assert.strictEqual((sw.match(/await runStep\(/g) ?? []).length, 3, 'at most three prompts');
+    assert.ok(!/SWITCH_MAX_(AIU|PROMPTS)\s*=/.test(src), 'the limits are the tested module constants');
+    assert.match(sw, /if \(stray \|\| timed \|\| !usageKnown\) throw new Error\(/, 'a stray call, a timeout or unknown usage stops after the step');
+    assert.match(sw, /if \(usageOf\(from\)\.priced === 0\) usageKnown = false;/, 'no usage with a number means unknown');
+    assert.match(sw, /if \(v\.verdict === 'cannot-tell'\) \{[\s\S]{0,300}?return;/, 'a cannot-tell after step 3 stops there');
+    assert.match(src, /if \(switchProbe && process\.platform === 'win32'\) throw new Error\('switch: Linux\/macOS only/, 'Windows refused up front');
+    assert.match(sw, /if \(curlExit !== 0 \|\| !writeOk\) throw new Error\('refused: the baseline failed/, 'the baseline gates the spend');
+    assert.match(sw, /r\.fullCommandText !== C/, 'the permission gate compares the exact command');
   }
   // FR-021a (K15): the Copilot state says it only in Ask first with the floor on; the card line is the agreed sentence
   const host = { supported: true, capabilities: [] };

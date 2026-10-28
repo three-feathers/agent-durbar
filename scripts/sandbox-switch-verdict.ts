@@ -45,7 +45,52 @@ export function switchVerdict(s: { control: StepOutcome; update: UpdateResult; a
   return { verdict: 'B', why: `the update was ${s.update}; step 3 was ${s.after}` };
 }
 
-/** Step 4: after A, Ask first again must block both (narrowing works); after B (or cannot-tell), the resumed Allow all session must free both. */
+/** Step 4 (only after A or B; a cannot-tell after step 3 stops there): A narrows back to Ask first, which must block both; B resumes in Allow all, which must free both. */
 export function step4Expected(v: Verdict): StepOutcome {
   return v === 'A' ? 'both-blocked' : 'both-ok';
+}
+
+/** The owner's budget for T066 (about 3 Copilot prompts) and the script's own stop; the 30-credit session cap is the runtime's minimum, not the budget. */
+export const SWITCH_MAX_PROMPTS = 3;
+export const SWITCH_MAX_AIU = 1;
+
+/**
+ * Called right before every send (review on PR #827). No prompt once `SWITCH_MAX_PROMPTS` were sent, once the run used
+ * `SWITCH_MAX_AIU` or more, while the usage of an earlier step is unknown (no usage event with a number came: unknown is never 0),
+ * after a turn that did not end, or after the model ran a command that is not exactly the probe command.
+ */
+export function mayPrompt(s: { prompts: number; aiu: number; usageKnown: boolean; timedOut: boolean; strayCall: boolean }): { ok: boolean; why: string } {
+  if (!Number.isInteger(s.prompts) || s.prompts < 0 || s.prompts >= SWITCH_MAX_PROMPTS) return { ok: false, why: `${s.prompts} prompts sent; the budget is ${SWITCH_MAX_PROMPTS}` };
+  if (s.usageKnown !== true) return { ok: false, why: 'usage unreadable' };
+  if (typeof s.aiu !== 'number' || !Number.isFinite(s.aiu) || s.aiu < 0 || s.aiu >= SWITCH_MAX_AIU) return { ok: false, why: `${s.aiu} AIU used; the stop is ${SWITCH_MAX_AIU} AIU` };
+  if (s.timedOut !== false) return { ok: false, why: 'a turn did not end' };
+  if (s.strayCall !== false) return { ok: false, why: 'the model ran a command that is not the probe command' };
+  return { ok: true, why: 'within the budget' };
+}
+
+/** The shell command of a tool call's arguments (`{ command }`), or undefined. */
+export function commandOf(args: unknown): string | undefined {
+  const c = args && typeof args === 'object' ? (args as { command?: unknown }).command : undefined;
+  return typeof c === 'string' ? c : undefined;
+}
+
+/**
+ * Review on PR #827: the result is read ONLY from a call whose command is exactly `C` (the first one that finished); any other started
+ * call (another command, or none given) is `stray`, and the script interrupts the turn at once. A model's `echo curl=0` never counts.
+ */
+export function probeCalls(events: ReadonlyArray<{ callId?: unknown; phase?: unknown; args?: unknown; output?: unknown }>, C: string): { stray: boolean; exactRan: boolean; output?: string } {
+  const exact = new Set<unknown>();
+  let stray = false;
+  let output: string | undefined;
+  let exactRan = false;
+  for (const e of events) {
+    if (e.phase === 'start') {
+      if (commandOf(e.args) === C && e.callId !== undefined) exact.add(e.callId);
+      else stray = true;
+    } else if ((e.phase === 'complete' || e.phase === 'failed') && exact.has(e.callId) && !exactRan) {
+      exactRan = true;
+      output = typeof e.output === 'string' ? e.output : '';
+    }
+  }
+  return { stray, exactRan, ...(output !== undefined ? { output } : {}) };
 }

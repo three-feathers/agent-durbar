@@ -25,13 +25,21 @@
  * `options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' })` on that session (resolved or refused,
  * the error masked). Step 3 (prompt 2): C again; verdict A only if the write AND the network succeed (`sandbox-switch-verdict.ts`).
  * Step 4 (prompt 3): after A, back to Ask first (the adapter re-sends the floor), C must fail; otherwise (B) stop and resume the same
- * session in Allow all (as `mcpRestartSessionOp`), read its history (no credit) and C must succeed. At most 3 prompts (session cap 30
- * credits, the runtime's minimum).
+ * session in Allow all (as `mcpRestartSessionOp`), read its history (no credit) and C must succeed. A cannot-tell after step 3 stops
+ * there (prompt 3 is not spent). Linux and macOS only (C is POSIX shell); it refuses on Windows. Spend guards (review on PR #827):
+ * `mayPrompt` (`sandbox-switch-verdict.ts`) runs right before every send and refuses a 4th prompt, any prompt once the run used 1 AIU,
+ * after a step whose usage could not be read (it waits up to 30 s for a usage event with a number; unknown is never 0), after a turn
+ * that did not end, and after any command that is not exactly C. The runtime's permission handler rejects every request that is not
+ * exactly C before it runs (also in Allow all, where no card asks), the turn is interrupted at the first other tool call, and the exit
+ * codes are read only from the exact C call. Before the first prompt a baseline from the script itself, with no shell (`execFile`):
+ * curl reaches example.com and a plain write to P works; if not, it refuses (a blocked step would prove nothing). The session cap is
+ * 30 credits, the runtime's minimum, so it is not the budget.
  * The session's tools are limited to the runtime's shell tool (`availableTools`/`excludedTools`, no MCP server); the list is read back
  * from the session before any prompt and the run refuses when anything else is there. Its dry run spends nothing but does start
  * the runtime: it checks the sign-in (a yes/no and the auth kind, never the login or a token), the versions and the shell tool, and
- * creates one session with no prompt (to read its tools and floor), which it deletes. F and P are removed in a `finally` (and on
- * SIGINT/SIGTERM) only when they hold nothing but the probe files.
+ * creates one session with no prompt (to read its tools and floor), which it deletes, and runs the baseline. F and P are removed in a
+ * `finally` (and on SIGINT/SIGTERM) only when they hold nothing but the probe files; a failed stop, session delete or folder removal is
+ * printed and makes the run exit 1.
  *
  * Output: sandbox events, permission requests, tool calls, the answer, usage, Copilot event types (and `sandbox.decision`'s bounded
  * enum fields), whether the probe file exists. Every text goes through Durbar's `redact` and has the home folder masked; no session
@@ -49,7 +57,7 @@ import type { AgentAdapter, AgentEvent } from '../src/adapters/types';
 import { pathDirs } from '../src/shared/pathdirs';
 import { redact } from '../src/shared/redact';
 import { maskArgv, maskIds } from './sandbox-real-mask';
-import { parseExitCodes, step4Expected, stepOutcome, switchVerdict } from './sandbox-switch-verdict';
+import { mayPrompt, parseExitCodes, probeCalls, step4Expected, stepOutcome, switchVerdict, SWITCH_MAX_AIU, SWITCH_MAX_PROMPTS } from './sandbox-switch-verdict';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const cp = require('child_process') as typeof import('child_process'); // the real module object (an import star is a read-only copy)
 
@@ -61,6 +69,7 @@ const switchProbe = third === 'switch';
 if (!['claude', 'copilot'].includes(app) || !outFile || (third !== undefined && third !== 'ask' && third !== 'switch')) throw new Error('usage: sandbox-floor-real.js <claude|copilot> <out.json> [ask|switch] [--spend]');
 if ((askOutside || switchProbe) && app !== 'copilot') throw new Error(`${third}: Copilot only`);
 if (spend && process.env.CI) throw new Error('refused: --spend never runs under CI');
+if (switchProbe && process.platform === 'win32') throw new Error('switch: Linux/macOS only (its command is POSIX shell; review on PR #827)');
 const HOME = os.homedir();
 const HOME_REAL = ((): string => { try { return fs.realpathSync(HOME); } catch { return HOME; } })(); // switch makes P under the real path
 const clean = (s: unknown, max = 400): string => maskIds(redact(String(s ?? '')).split(HOME_REAL).join('~').split(HOME).join('~')).slice(0, max); // never a session id (review on PR 753)
@@ -115,8 +124,8 @@ mapProto.map = function (this: unknown, x: unknown): void {
 
 const SWITCH_PREFIX = 'durbar-t066-';
 const SWITCH_CAP = 30; // AI credits per session: the runtime refuses less ("Minimum session limit is 30 AI credits", real: 2026-10-28); the budget is the 3 prompts
-const SWITCH_MAX_AIU = 1; // the script's own stop: no further prompt once the run has used this much (the 30-credit cap is far above the budget)
-const SWITCH_MAX_CALLS = 4; // tool calls in one step before the turn is interrupted (a model that wanders)
+const SWITCH_MAX_CALLS = 4; // tool calls in one step before the turn is interrupted (a model that wanders); the prompt and AIU stops are mayPrompt's
+const USAGE_WAIT_MS = 30_000; // after a turn: how long to wait for a usage event with a number before the run stops (unknown is never 0)
 const SHELL_TOOL = 'bash'; // checked against the runtime's own tool list before anything is spent
 const bounded = (v: unknown): string | undefined => (typeof v === 'string' && /^[A-Za-z][A-Za-z0-9_.-]{0,40}$/.test(v) ? v : undefined);
 const version = (v: unknown): string | undefined => (typeof v === 'string' && /^[0-9][0-9A-Za-z.+-]{0,30}$/.test(v) ? v : undefined);
@@ -160,7 +169,14 @@ type RpcClient = {
   resumeSession(id: string, cfg: Record<string, unknown>): Promise<unknown>;
 };
 
+/** The exit code is set here (1 on an error or a failed cleanup) and read after the `finally`, so a return in the `try` cannot hide it. */
 async function runSwitch(): Promise<number> {
+  const st = { code: 0 };
+  await runSwitchSteps(st);
+  return st.code;
+}
+
+async function runSwitchSteps(st: { code: number }): Promise<void> {
   if (spend && process.env.TMPDIR) throw new Error('refused: unset TMPDIR (the session folder must be under the system temp folder)');
   const tmpRoot = fs.realpathSync(os.tmpdir());
   const homeReal = HOME_REAL;
@@ -177,6 +193,7 @@ async function runSwitch(): Promise<number> {
   const perms: Array<Record<string, unknown>> = [];
   const steps: Array<Record<string, unknown>> = [];
   let curMode: 'ask' | 'allow' = 'ask';
+  let strayAsks = 0; // permission requests the gate rejected (not exactly C)
   const out: Record<string, unknown> = { app, scenario: 'switch', dry: !spend, date: new Date().toISOString(), os: `${process.platform} ${os.release()}`, node: process.version };
   try {
     F = fs.realpathSync(fs.mkdtempSync(path.join(tmpRoot, `${SWITCH_PREFIX}session-`)));
@@ -217,8 +234,25 @@ async function runSwitch(): Promise<number> {
     const lock = { availableTools: [`builtin:${SHELL_TOOL}`], excludedTools: ['mcp:*', 'custom:*'], mcpServers: {} };
     const origCreate = client.createSession.bind(client);
     const origResume = client.resumeSession.bind(client);
-    client.createSession = (cfg) => origCreate({ ...cfg, ...lock });
-    client.resumeSession = (id, cfg) => origResume(id, { ...cfg, ...lock });
+    // review on PR #827: in Allow all no card asks, so the runtime's permission handler itself rejects every request that is not
+    // exactly the probe command, BEFORE it runs (the turn is also interrupted at the first other call, below)
+    const gated = (cfg: Record<string, unknown>): Record<string, unknown> => {
+      const inner2 = cfg.onPermissionRequest as ((req: unknown, inv: unknown) => Promise<unknown>) | undefined;
+      return {
+        ...cfg,
+        ...lock,
+        onPermissionRequest: async (req: unknown, inv: unknown): Promise<unknown> => {
+          const r = req as { kind?: unknown; fullCommandText?: unknown };
+          if (String(r?.kind) !== 'shell' || r.fullCommandText !== C || !inner2) {
+            strayAsks++;
+            return { kind: 'reject', feedback: 'Agent Durbar probe: only the exact probe command may run.' };
+          }
+          return inner2(req, inv);
+        },
+      };
+    };
+    client.createSession = (cfg) => origCreate(gated(cfg));
+    client.resumeSession = (id, cfg) => origResume(id, gated(cfg));
 
     const live = () => inner.sessions.get(sid);
     const toolsOf = async (): Promise<string[] | null> => {
@@ -270,49 +304,78 @@ async function runSwitch(): Promise<number> {
     Object.assign(out, { sessionTools: tools0, start: { chip: chip(), enforcement: await enforcement() } });
     const started = chip() as { state?: string } | null | string;
     console.log(`session: tools=[${tools0.join(',')}] chip=${JSON.stringify(started)}`);
+    // review on PR #827: a baseline from the script itself, no shell and no prompt: curl must exist and reach example.com, and a plain
+    // write to P must work outside the sandbox, or a blocked step would only mean "no network" or "no folder" (a false B)
+    const curlExit = await new Promise<number | string>((resolve) => {
+      cp.execFile('curl', ['-sS', '-m', '5', '-o', '/dev/null', 'https://example.com'], { timeout: 15_000, shell: false }, (err) => {
+        const code = err ? (err as { code?: unknown }).code : 0;
+        resolve(typeof code === 'number' ? code : err ? clean(String(code ?? err.message), 80) : 0);
+      });
+    });
+    let writeOk = false;
+    try { fs.writeFileSync(probe, 'baseline\n'); writeOk = fs.existsSync(probe); } catch { writeOk = false; } finally { fs.rmSync(probe, { force: true }); }
+    out.baseline = { curlExit, writeToP: writeOk };
+    console.log(`baseline (no sandbox, no prompt): curl exit=${curlExit} write to P=${writeOk}`);
     if (!spend) {
       fs.writeFileSync(outFile, JSON.stringify(out, null, 2));
       console.log(`dry: no prompt sent; the probe session is deleted now -> ${outFile}`);
-      return 0;
+      return;
     }
+    if (curlExit !== 0 || !writeOk) throw new Error('refused: the baseline failed (curl to example.com or a write to P, outside the sandbox), so a blocked step would prove nothing (nothing was spent)');
     if (typeof started !== 'object' || started?.state !== 'on') throw new Error('refused: the floor is not on in Ask first, so the control cannot run (nothing was spent)');
 
     const usageOf = (from: number) => {
       const u = evs.slice(from).filter((e) => e.type === 'usage' && e.sessionId === sid) as Array<{ model?: string; nanoAiu?: number; inputTokens?: number; outputTokens?: number; cacheReadTokens?: number }>;
-      return { models: [...new Set(u.map((x) => x.model).filter(Boolean))], calls: u.length, aiu: u.reduce((s, x) => s + (x.nanoAiu ?? 0), 0) / 1e9, in: u.reduce((s, x) => s + (x.inputTokens ?? 0), 0), out: u.reduce((s, x) => s + (x.outputTokens ?? 0), 0), cacheRead: u.reduce((s, x) => s + (x.cacheReadTokens ?? 0), 0) };
+      const priced = u.filter((x) => typeof x.nanoAiu === 'number' && Number.isFinite(x.nanoAiu));
+      return { models: [...new Set(u.map((x) => x.model).filter(Boolean))], calls: u.length, priced: priced.length, aiu: priced.reduce((s, x) => s + (x.nanoAiu as number), 0) / 1e9, in: u.reduce((s, x) => s + (x.inputTokens ?? 0), 0), out: u.reduce((s, x) => s + (x.outputTokens ?? 0), 0), cacheRead: u.reduce((s, x) => s + (x.cacheReadTokens ?? 0), 0) };
     };
     let prompts = 0;
+    let usageKnown = true; // nothing sent yet
+    let anyTimedOut = false;
+    let anyStray = false;
     const runStep = async (n: number, label: string): Promise<ReturnType<typeof stepOutcome>> => {
       if (!spend) throw new Error('refused: no prompt without --spend');
       probeStep = n;
       fs.rmSync(probe, { force: true });
       const from = evs.length;
+      const gate = mayPrompt({ prompts, aiu: usageOf(0).aiu, usageKnown, timedOut: anyTimedOut, strayCall: anyStray || strayAsks > 0 });
+      if (!gate.ok) throw new Error(`no further prompt before step ${n}: ${gate.why}`);
       prompts++;
-      console.log(`step ${n} (prompt ${prompts} of at most 3): ${label}`);
+      console.log(`step ${n} (prompt ${prompts} of at most ${SWITCH_MAX_PROMPTS}): ${label}`);
       await a.send(sid, { text: prompt });
       const deadline = Date.now() + 180_000;
       const ended = (): boolean => evs.slice(from).some((e) => e.type === 'status' && (e.status === 'idle' || e.status === 'error') && e.sessionId === sid);
-      const starts = (): number => evs.slice(from).filter((e) => e.type === 'toolCall' && e.sessionId === sid && (e as { phase?: string }).phase === 'start').length;
-      while (Date.now() < deadline && !ended() && starts() <= SWITCH_MAX_CALLS) await sleep(250);
-      const timed = !ended();
-      if (timed) await a.interrupt?.(sid).catch(() => undefined); // no answer in 3 minutes, or too many tool calls
-      await sleep(1500);
-      const calls = evs.slice(from).filter((e) => e.type === 'toolCall' && e.sessionId === sid && ((e as { phase?: string }).phase === 'complete' || (e as { phase?: string }).phase === 'failed')) as Array<AgentEvent & { tool?: string; phase?: string; output?: string }>;
-      const last = calls[calls.length - 1];
-      const codes = parseExitCodes(String(last?.output ?? ''));
+      const callEvs = () => evs.slice(from).filter((e) => e.type === 'toolCall' && e.sessionId === sid) as Array<AgentEvent & { callId?: string; tool?: string; phase?: string; args?: unknown; output?: string }>;
+      const starts = (): number => callEvs().filter((e) => e.phase === 'start').length;
+      // the first call that is not exactly C interrupts the turn at once (review on PR #827)
+      while (Date.now() < deadline && !ended() && starts() <= SWITCH_MAX_CALLS && !probeCalls(callEvs(), C).stray && strayAsks === 0) await sleep(100);
+      const pc0 = probeCalls(callEvs(), C);
+      const stray = pc0.stray || strayAsks > 0;
+      const timed = !ended() && !stray;
+      if (!ended()) await a.interrupt?.(sid).catch(() => undefined); // a stray call, no answer in 3 minutes, or too many tool calls
+      anyTimedOut ||= timed;
+      anyStray ||= stray;
+      // usage: wait (bounded) for a usage event with a number; none means unknown, and unknown stops the run (never counted as 0)
+      const usageWait = Date.now() + USAGE_WAIT_MS;
+      while (Date.now() < usageWait && usageOf(from).priced === 0) await sleep(250);
+      await sleep(1500); // late usage events of the same turn
+      if (usageOf(from).priced === 0) usageKnown = false;
+      const calls = callEvs();
+      const pc = probeCalls(calls, C);
+      const codes = parseExitCodes(pc.output ?? '');
       const fileExists = fs.existsSync(probe);
-      const outcome = stepOutcome({ ran: !!last, ...codes, fileExists });
+      const outcome = stepOutcome({ ran: pc.exactRan, ...codes, fileExists });
       steps.push({
-        step: n, label, mode: curMode, outcome, ...codes, fileExists, timedOut: timed,
-        toolCalls: calls.map((c) => ({ tool: clean(c.tool, 40), phase: c.phase, output: clean(c.output, 400) })),
+        step: n, label, mode: curMode, outcome, ...codes, fileExists, timedOut: timed, strayCall: stray, strayAsksRejected: strayAsks, usageKnown,
+        toolCalls: calls.filter((c) => c.phase !== 'update').map((c) => ({ tool: clean(c.tool, 40), phase: c.phase, exact: c.phase === 'start' ? (c.args as { command?: unknown } | undefined)?.command === C : undefined, ...(c.output !== undefined ? { output: clean(c.output, 400) } : {}) })),
         perms: perms.filter((p) => p.step === n), chip: chip(), enforcement: await enforcement(),
         decisions: decisions.filter((d) => d.step === n),
         answer: clean(evs.slice(from).filter((e) => e.type === 'output' && (e as { final?: boolean }).final && e.sessionId === sid).map((e) => String((e as { text?: string }).text ?? '')).join(' '), 300),
         usage: usageOf(from),
       });
       fs.rmSync(probe, { force: true });
-      console.log(`  -> ${outcome} (touch=${codes.touch ?? '?'} file=${fileExists} curl=${codes.curl ?? '?'}; ${usageOf(0).aiu} AIU so far)`);
-      if (usageOf(0).aiu > SWITCH_MAX_AIU || timed) throw new Error(`stopped after step ${n}: ${timed ? 'the turn did not end (time or tool calls)' : `${usageOf(0).aiu} AIU is over the ${SWITCH_MAX_AIU} AIU stop`}; no further prompt`);
+      console.log(`  -> ${outcome} (touch=${codes.touch ?? '?'} file=${fileExists} curl=${codes.curl ?? '?'}; ${usageKnown ? `${usageOf(0).aiu} AIU so far` : 'usage unreadable'}${stray ? '; a stray call was stopped' : ''})`);
+      if (stray || timed || !usageKnown) throw new Error(`stopped after step ${n}: ${stray ? 'the model ran a command that is not the probe command' : timed ? 'the turn did not end (time or tool calls)' : 'usage unreadable'}; no further prompt`);
       return outcome;
     };
 
@@ -320,7 +383,7 @@ async function runSwitch(): Promise<number> {
     const control = await runStep(1, 'control: Ask first, floor on');
     if (control !== 'both-blocked') {
       Object.assign(out, { verdict: 'cannot-tell', why: `control was ${control}: the probe cannot tell (K15-style); stopped after 1 prompt`, steps, prompts });
-      return 0;
+      return;
     }
     // Step 2: the switch, then the in-place clear (no prompt)
     probeStep = 2;
@@ -346,6 +409,11 @@ async function runSwitch(): Promise<number> {
     await mustBeShellOnly('before step 3');
     const after = await runStep(3, 'C in Allow all after the update');
     const v = switchVerdict({ control, update, after });
+    if (v.verdict === 'cannot-tell') {
+      // review on PR #827: a cannot-tell after step 3 does not spend prompt 3
+      Object.assign(out, { update, ...(updateError ? { updateError } : {}), verdict: v.verdict, why: `${v.why}; stopped after 2 prompts`, steps, prompts });
+      return;
+    }
     // Step 4: narrow back (A) or the B path (stop, resume in Allow all)
     let history: Record<string, unknown> | undefined;
     if (v.verdict === 'A') {
@@ -360,32 +428,47 @@ async function runSwitch(): Promise<number> {
       curMode = 'allow';
       await sleep(1000);
       await mustBeShellOnly('after the resume');
-      const evts = await timedOut(live()!.session.getEvents(), 30_000, 'getEvents').catch(() => [] as Array<{ type?: string }>);
+      const s4 = live()?.session;
+      if (!s4) throw new Error('no live session after the resume');
+      const evts = await timedOut(s4.getEvents(), 30_000, 'getEvents').catch(() => [] as Array<{ type?: string }>);
       history = { events: evts.length, userMessages: evts.filter((x) => x?.type === 'user.message').length, chipAfterResume: chip() };
     }
     const expect4 = step4Expected(v.verdict);
     const got4 = await runStep(4, v.verdict === 'A' ? 'A: back to Ask first, C must fail' : 'B path: resumed in Allow all, C must succeed');
     Object.assign(out, { update, ...(updateError ? { updateError } : {}), verdict: v.verdict, why: v.why, step4: { path: v.verdict === 'A' ? 'narrow' : 'B', expected: expect4, outcome: got4, holds: got4 === expect4, ...(history ? { history } : {}) }, steps, prompts });
-    return 0;
+    return;
   } catch (e) {
     out.error = clean(e instanceof Error ? e.message : e, 400);
     console.error('FAILED', out.error);
-    return 1;
+    st.code = 1;
   } finally {
     out.steps ??= steps;
     out.usage = (() => {
       const u = evs.filter((e) => e.type === 'usage') as Array<{ nanoAiu?: number }>;
-      return { calls: u.length, aiu: u.reduce((s, x) => s + (x.nanoAiu ?? 0), 0) / 1e9 };
+      const priced = u.filter((x) => typeof x.nanoAiu === 'number' && Number.isFinite(x.nanoAiu));
+      return { calls: u.length, priced: priced.length, aiu: priced.reduce((s, x) => s + (x.nanoAiu as number), 0) / 1e9 };
     })();
     out.rawTypes = [...new Set(rawTypes)];
+    // review on PR #827: a failed stop or delete is reported and makes the run exit 1 (the session would stay on disk)
+    const failures: string[] = [];
+    const msg = (e: unknown): string => clean(e instanceof Error ? e.message : e, 200);
     if (ad && sid) {
-      await ad.stop(sid).catch(() => undefined);
-      await (ad as unknown as { deleteSession?: (s: string) => Promise<void> }).deleteSession?.call(ad, sid).catch(() => undefined);
+      await ad.stop(sid).catch((e: unknown) => failures.push(`stop: ${msg(e)}`));
+      const del = (ad as unknown as { deleteSession?: (s: string) => Promise<void> }).deleteSession;
+      if (!del) failures.push('deleteSession: not available, the session stays on disk');
+      else await del.call(ad, sid).catch((e: unknown) => failures.push(`deleteSession: ${msg(e)} (the session stays on disk)`));
     }
-    await ad?.dispose().catch(() => undefined);
-    out.cleanup = cleanup();
-    console.log(`cleanup: ${(out.cleanup as string[]).join('; ')}`);
-    try { fs.writeFileSync(outFile, JSON.stringify(out, null, 2)); } catch { /* reported below */ }
+    await ad?.dispose().catch((e: unknown) => failures.push(`dispose: ${msg(e)}`));
+    const folders = cleanup();
+    for (const f of folders) if (!f.startsWith('removed ') && !f.startsWith('already gone') && f !== 'nothing to remove') failures.push(f);
+    out.cleanup = folders;
+    if (failures.length) {
+      out.cleanupFailures = failures;
+      console.error(`CLEANUP FAILED: ${failures.join('; ')}`);
+      st.code = 1;
+    }
+    console.log(`cleanup: ${folders.join('; ')}`);
+    try { fs.writeFileSync(outFile, JSON.stringify(out, null, 2)); } catch (e) { console.error(`could not write ${outFile}: ${msg(e)}`); st.code = 1; }
     console.log(`verdict=${String(out.verdict ?? 'none')} prompts=${String(out.prompts ?? 0)} aiu=${(out.usage as { aiu: number }).aiu} -> ${outFile}`);
   }
 }

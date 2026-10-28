@@ -147,7 +147,9 @@ except T066 (owner-approved 2026-10-27, about 3 prompts, not yet run).
   - 2026-10-28: the `switch` scenario is built (`scripts/sandbox-floor-real.ts`, verdict in `scripts/sandbox-switch-verdict.ts`, test in
     `scripts/test-sandbox-floor.ts`) and its dry run passed (signed in, tools read back as `[bash]` only), but **not run with `--spend`:
     0 prompts.** The owner's VPS has no bubblewrap (`getHostSupport()`: not supported), so the floor never comes on and the control cannot
-    run (spec *Changes* 2026-10-28). Still open: a run on a Linux host with bubblewrap, within the approved 3 prompts.
+    run (spec *Changes* 2026-10-28). Still open: a run on a Linux host with bubblewrap, within the approved 3 prompts. Review on PR #827:
+    `mayPrompt` before every send, a usage that cannot be read stops the run, only the exact command may run and count, a curl/write
+    baseline before spending, Linux/macOS only, visible cleanup failures (spec *Changes* 2026-10-28).
 - [x] T067 [P] Pure rule `canRestartWithoutSandbox({ sandbox, mode, caps })` in a renderer-free module next to `src/renderer/sandboxtext.js` (no vendor
   name; same style as `chipWord`) and its tests. [FR-022, FR-022a]
   - AC1: true only for Allow all + `untilNewSession` + not `managed` + `caps.resume`; false for every Read-only/Ask first state, `off`, `unknown`,
