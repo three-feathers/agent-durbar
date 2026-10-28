@@ -94,7 +94,7 @@ module.exports = async (ctx) => {
         await H.clearToasts();
         await ctx.sleep(400);
         assert.ok(await H.until(inView, 3000), `${where}: still in view before the picture`);
-        await ctx.shot(path.join(out, `077-characters-settings-${tag}.png`));
+        await H.shot(path.join(out, `077-characters-settings-${tag}.png`), { prep: 'mouse' });
       }
       await close();
       let d = await desks();
@@ -106,7 +106,7 @@ module.exports = async (ctx) => {
       assert.strictEqual(await H.js(`window.THEME.current().id`), theme, `${where}: the theme stays ${theme}`);
       assert.strictEqual(await H.js(`window.THEME.themeKit()`), kit, `${where}: the theme's own kit is unchanged`);
       await H.clearToasts();
-      await ctx.shot(path.join(out, `077-characters-cheeky-${theme}-${tag}.png`));
+      await H.shot(path.join(out, `077-characters-cheeky-${theme}-${tag}.png`), { prep: 'calm' }); // the pointer off the desks (no hover pencil), no toast
       // Minimalist on top of the theme
       await pickChars('minimalist');
       await close();

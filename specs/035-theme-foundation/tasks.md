@@ -26,4 +26,4 @@
 
 ## Changes 2026-10-28 (spec 077, issue #814)
 
-- [ ] T018 A theme's `scene` is its own characters; Settings > Characters replaces it on any theme (built and tested under spec 077 T077..T082) [FR-016]
+- [x] T018 A theme's `scene` is its own characters; Settings > Characters replaces it on any theme (built and tested under spec 077 T077..T082) [FR-016]

@@ -174,7 +174,7 @@
     '--pb-done':'#e0eee6',
     '--pc-done':'#2f6a47',
 
-    /* the Cheeky Crew kit's own accents (spec 077): trim and outline colours of its furniture and, later, its characters */
+    /* the crew kit's own accents (spec 077, Characters = Cheeky): trim and outline colours of its furniture and, later, its characters */
     '--crew-ink':'#3a3331',
     '--crew-accent':'#d9577a',
     '--crew-accent-2':'#2f9c95',
