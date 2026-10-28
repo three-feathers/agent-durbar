@@ -155,7 +155,15 @@ const FLOOR_PREF='durbar.floor';
 let curFloor=null; try{curFloor=localStorage.getItem(FLOOR_PREF)||null;}catch(e){}
 let floorsSeen=false, NO_WALK_ONCE=false;
 const floorScreens=()=>floorsLive()&&window.DurbarFloorNav.screens(FLOORS.floors); /* FR-001, FR-004: false with one floor on, none, or no floors support */
-const curFloorId=()=>floorScreens()?window.DurbarFloorNav.nearestOn(FLOORS.floors,curFloor):null; /* always a floor that is on while two or more are */
+/* spec 092 FR-031..FR-037 (owner 2026-10-28): the All floors view shows every floor that is on in one screen, as before phase 1. It is a display
+   preference like the current floor (durbar.floorView; read and written through floornav, so a storage that throws gives the one-floor default).
+   floorScreens() = the lift is shown (two or more floors on); oneFloorView() = one floor is shown; allFloorsView() = the whole building is shown.
+   In the All view curFloorId() is null, so onScreen, otherFloor, officeModel and the layout take the pre-092 path unchanged (no second renderer). */
+const VIEW_STORE=()=>localStorage;
+let floorView=window.DurbarFloorNav.readView(VIEW_STORE);
+const allFloorsView=()=>floorScreens()&&floorView==='all';
+const oneFloorView=()=>floorScreens()&&floorView!=='all';
+const curFloorId=()=>oneFloorView()?window.DurbarFloorNav.nearestOn(FLOORS.floors,curFloor):null; /* always a floor that is on while one floor of two or more is shown */
 const onScreen=r=>{const c=curFloorId();if(c==null)return true;const f=floorById(r.floor);return !!f&&f.id===c;}; /* FR-001: is this room on the floor screen shown */
 const otherFloor=a=>{const c=curFloorId(),r=c!=null&&a&&roomOf(a),f=r&&floorById(r.floor);return !!f&&f.id!==c?f:null;}; /* the floor of an agent that is not on the screen shown (FR-021) */
 const saveCurFloor=()=>{try{if(curFloor)localStorage.setItem(FLOOR_PREF,curFloor);}catch(e){}};
@@ -1626,9 +1634,10 @@ function renderOffice(){
   const ah=floor.clientHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom);
   if(aw<=0||ah<=0)return;
   const model=officeModel();
+  if(!model.length)$('probe').style.width=aw+'px'; /* spec 092 FR-008: the layout probe is only resized by a layout search; an empty screen has none, so a probe left at a wider width (the lift panel came or went) would overflow the floor */
   /* spec 092 FR-001, edge case "a floor with 0 agents": a floor screen with nothing to show says so and keeps the shared lobby (never a bare empty screen).
      Only while some floor that is on has agents; otherwise the messages below (nothing added yet, all hidden) still apply. */
-  if(!model.length&&floorScreens()&&agents.some(a=>!a.parent&&roomShown(roomOf(a)))){
+  if(!model.length&&oneFloorView()&&agents.some(a=>!a.parent&&roomShown(roomOf(a)))){
     const f=floorById(curFloorId()), nm=f?f.name:'this floor', filt=!!ui.status||ui.ws!=='all';
     stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey=''; GROW=0; setGrow(stage,0); spreadOffice(stage,false);
     stagePrev=null;
@@ -1645,7 +1654,7 @@ function renderOffice(){
   }
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
   const sizing=lastSizing=sizingModel(model); /* what chooseLayout is given (the hook below reads it) */
-  const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),THEME.themeIdForCache(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),curFloorId(),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]]),(m.rolled||[]).map(x=>[x.a.id,x.k]),!!ui.expanded['shut:'+m.r.id]])]);
+  const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),THEME.themeIdForCache(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),curFloorId(),allFloorsView(),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]]),(m.rolled||[]).map(x=>[x.a.id,x.k]),!!ui.expanded['shut:'+m.r.id]])]);
   if(key!==layoutKey||!layout){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
   HCAP=layout.hcap; HBOOST=new Map(layout.boost); LIVE_SIDE=!!layout.side; GROW=layout.grow?1:0; HX=layout.hx||0; /* a cached layout skips chooseLayout: restore the helper level too */
   const parts=stageParts(model,layout.d,aw,layout.cap);
@@ -1841,6 +1850,7 @@ function renderAll(){
   const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.more?'data-more':ae.dataset.door?'data-door':ae.dataset.lsort?'data-lsort':ae.dataset.ren?'data-ren':''); /* spec 052 FR-064: a sort header keeps focus too */
   renderStats();
   updateFloorAttention();
+  renderLift(); /* spec 092 FR-006, FR-008: before the office measures its width */
   announceFilterNote();
   if(ui.view==='office')renderOffice(); else{renderFilterNote();renderList();}
   renderDoorBar();
@@ -3973,7 +3983,7 @@ function syncCurFloor(before,was){
   const nid=FN.nearestOn(FLOORS.floors,curFloor,before);
   if(nid==null)return; /* all floors off: keep the saved one */
   curFloor=nid; saveCurFloor();
-  if(!first&&was!=null&&floorScreens()&&nid!==was){noWalkNow();announceFloor(nid);}
+  if(!first&&was!=null&&oneFloorView()&&nid!==was){noWalkNow();announceFloor(nid);} /* FR-035: in the All floors view nothing visible moves, nothing is said */
 }
 /* spec 092 FR-012: "Floor Client B, 2 of 3", once per change */
 function announceFloor(id){const p=window.DurbarFloorNav.place(FLOORS.floors,id),f=floorById(id);if(p&&f)announce(window.DurbarFloorNav.announceText(f,p.n,p.m));}
@@ -3982,7 +3992,7 @@ function noWalkNow(){NO_WALK_ONCE=true;[...walkers.keys()].forEach(dropWalker);}
 /* spec 092 FR-009 (phase 1: instant), FR-012: show another floor that is on. edge: where a screen that scrolls starts ('bottom' when moving up the building). */
 function goToFloor(id,o){
   o=o||{};
-  const f=floorScreens()&&floorsOnList().find(x=>x.id===id);
+  const f=oneFloorView()&&floorsOnList().find(x=>x.id===id);
   if(!f||f.id===curFloorId())return false;
   curFloor=f.id; saveCurFloor(); noWalkNow();
   renderAll();
@@ -3999,12 +4009,113 @@ document.addEventListener('keydown',e=>{
   const scroll={scrolls:fl.classList.contains('scrolls'),atTop:fl.scrollTop<=1,atBottom:fl.scrollTop+fl.clientHeight>=fl.scrollHeight-1};
   const open={office:ui.view==='office'&&!ui.selected&&!vsViewing&&!document.body.classList.contains('panel-open')&&!document.body.classList.contains('screen-open'),
     dialog:modalOpen()||[...document.querySelectorAll('[role="dialog"]')].some(live),
-    menu:[...document.querySelectorAll('[role="menu"], #floorsPop, #foldersPop')].some(live)};
+    menu:[...document.querySelectorAll('[role="menu"], #floorsPop, #foldersPop')].some(live), all:allFloorsView()}; /* FR-034: the All view only scrolls */
   const act=window.DurbarFloorNav.keyAction(e,e.target,scroll,open); if(!act)return;
   /* the office area is not the page's scroller, so the browser's PageDown does not scroll it from the body: the page does it by the same page step */
   if(act.scroll){e.preventDefault();fl.scrollBy({top:act.scroll*Math.round(fl.clientHeight*0.875),behavior:'auto'});return;}
   const to=window.DurbarFloorNav.nextOn(FLOORS.floors,curFloorId(),act.go); if(!to)return; /* the first or last floor: nothing happens */
   e.preventDefault(); goToFloor(to,{edge:act.go==='next'?'top':'bottom'});
+});
+/* spec 092 FR-031..FR-037: switch between the one-floor view (on floor `id`, or the current one) and the All floors view. Instant in every phase (FR-036);
+   one announcement; nothing when the view and floor shown do not change. */
+function setFloorView(v,id){
+  const FN=window.DurbarFloorNav; v=FN.viewOf(v);
+  if(!floorScreens())return false;
+  const before=allFloorsView()?'*all':curFloorId();
+  if(v==='one'&&id&&floorsOnList().some(x=>x.id===id))curFloor=id;
+  floorView=v; FN.writeView(VIEW_STORE,v); saveCurFloor();
+  const after=allFloorsView()?'*all':curFloorId();
+  if(after===before)return false;
+  noWalkNow(); renderAll();
+  const fl=$('floor'); if(fl)fl.scrollTop=0;
+  if(after==='*all')announce(FN.announceAll(floorsOnList().length)); else announceFloor(after);
+  return true;
+}
+/* ---- spec 092 phase 2: the lift panel (FR-006..FR-008, FR-013..FR-016, FR-028) and its All button (FR-032) ---- */
+/* what an agent shows on its floor's lift button (FR-014): the inbox's predicate (needsMe) plus the unread New reply; each agent one kind */
+const liftKind=a=>{if(!a||a.parent)return null;if(needsMe(a))return a.limit||a.coffee?'limit':vis(a)==='error'?'error':'waiting';return isUnread(a)?'reply':null;};
+function liftCounts(){
+  const items=[];
+  for(const a of agents){const k=liftKind(a);if(!k)continue;const r=roomOf(a),f=r&&floorById(r.floor);if(f)items.push({id:a.id,floor:f.id,kind:k,hidden:!!r.hidden});}
+  return window.DurbarFloorNav.badgeCounts(FLOORS.floors,items,curFloorId(),allFloorsView());
+}
+let LIFT_COUNTS={};
+function renderLift(){
+  const el=$('lift'); if(!el)return;
+  const show=floorScreens();
+  if(el.hidden===show)el.hidden=!show;
+  if(!show){LIFT_COUNTS={};return;}
+  const FN=window.DurbarFloorNav, on=floorsOnList(), m=on.length, all=allFloorsView(), cur=curFloorId();
+  const sig=on.map(f=>f.id).join('\n');
+  if(el.dataset.sig!==sig){
+    el.dataset.sig=sig;
+    el.innerHTML='<button type="button" class="lift-edge" data-lift-edge="up" tabindex="-1" hidden></button><div class="lift-shaft">'
+      +'<button type="button" class="lift-b lift-all" data-lift="*all" tabindex="-1">All</button>'
+      +on.map((f,i)=>`<button type="button" class="lift-b" data-lift="${esc(f.id)}" tabindex="-1"><span class="lift-n">${i+1}</span><span class="lift-badge" aria-hidden="true" hidden></span></button>`).join('')
+      +'</div><button type="button" class="lift-edge" data-lift-edge="down" tabindex="-1" hidden></button>';
+    el.querySelector('.lift-shaft').addEventListener('scroll',updateLiftEdges,{passive:true});
+  }
+  const counts=LIFT_COUNTS=liftCounts();
+  const ab=el.querySelector('[data-lift="*all"]');
+  ab.setAttribute('aria-label','All floors, '+m+' floor'+(m===1?'':'s')); ab.title='Show all floors on one screen';
+  if(all)ab.setAttribute('aria-current','true'); else ab.removeAttribute('aria-current');
+  on.forEach((f,i)=>{
+    const b=el.querySelector(`[data-lift="${CSS.escape(f.id)}"]`); if(!b)return;
+    const c=counts[f.id], words=FN.badgeText(c), hid=c&&c.hidden===c.n?' (in a hidden folder)':'';
+    const label=f.name+', floor '+(i+1)+' of '+m+(words?': '+words+hid:'');
+    if(b.getAttribute('aria-label')!==label)b.setAttribute('aria-label',label);
+    const tip=f.name+(words?'\n'+words+hid:''); if(b.title!==tip)b.title=tip;
+    if(!all&&f.id===cur)b.setAttribute('aria-current','true'); else b.removeAttribute('aria-current');
+    const bd=b.querySelector('.lift-badge'), num=c?FN.badgeNum(c.n):'';
+    if(bd.textContent!==num)bd.textContent=num; bd.hidden=!c;
+    b.classList.toggle('badged',!!c);
+  });
+  /* FR-013: one tab stop: the button that has the focus, else the one of the view shown */
+  const ae=document.activeElement, focused=ae&&el.contains(ae)&&ae.matches('.lift-b')?ae:null;
+  const stop=focused||el.querySelector('.lift-b[aria-current="true"]')||ab;
+  el.querySelectorAll('.lift-b').forEach(b=>{const t=b===stop?'0':'-1';if(b.getAttribute('tabindex')!==t)b.setAttribute('tabindex',t);});
+  /* FR-028: the button of the view shown is kept in view (once per change) */
+  const shown=all?'*all':cur;
+  if(el.dataset.shown!==shown){el.dataset.shown=shown;const cb=el.querySelector('.lift-b[aria-current="true"]');if(cb&&!focused)SCROLL.reveal(cb,{block:'nearest'});}
+  updateLiftEdges();
+}
+/* FR-028: badged buttons scrolled out of the lift are summed at its top or bottom edge ("▲ 2", the words in its name and tooltip) */
+function updateLiftEdges(){
+  const el=$('lift'); if(!el||el.hidden)return;
+  const FN=window.DurbarFloorNav, sh=el.querySelector('.lift-shaft'); if(!sh)return;
+  const scrolls=sh.scrollHeight>sh.clientHeight+1, box=sh.getBoundingClientRect();
+  const items=scrolls?[...sh.querySelectorAll('.lift-b.badged')].map(b=>{const r=b.getBoundingClientRect();return {pos:r.bottom<=box.top+4?'above':r.top>=box.bottom-4?'below':'in',counts:LIFT_COUNTS[b.dataset.lift]};}):[];
+  const e=FN.edgeSummary(items);
+  [['up',e.up,'▲','above'],['down',e.down,'▼','below']].forEach(([k,c,arrow,where])=>{
+    const b=el.querySelector(`[data-lift-edge="${k}"]`); if(!b)return;
+    b.hidden=!c; if(!c)return;
+    const t=arrow+' '+FN.badgeNum(c.n), words=FN.badgeText(c)+' '+where;
+    if(b.textContent!==t)b.textContent=t; b.title=words; b.setAttribute('aria-label',words+'. Show it.');
+  });
+}
+/* FR-006, FR-013, FR-032: a lift button goes to its floor (or the All floors view); focus stays on it */
+document.addEventListener('click',e=>{
+  const t=e.target&&e.target.closest&&e.target.closest('#lift [data-lift], #lift [data-lift-edge]'); if(!t)return;
+  if(t.dataset.liftEdge){ /* FR-028: scroll to the nearest badged button on that side and focus it */
+    const sh=$('lift').querySelector('.lift-shaft'), box=sh.getBoundingClientRect(), bs=[...sh.querySelectorAll('.lift-b.badged')];
+    const b=t.dataset.liftEdge==='up'?bs.filter(x=>x.getBoundingClientRect().bottom<=box.top+4).pop():bs.find(x=>x.getBoundingClientRect().top>=box.bottom-4);
+    if(b)liftFocus(b);
+    return;
+  }
+  const id=t.dataset.lift;
+  if(id==='*all')setFloorView('all');
+  else if(allFloorsView())setFloorView('one',id);
+  else goToFloor(id);
+  const again=$('lift').querySelector(`[data-lift="${CSS.escape(id)}"]`); if(again&&document.activeElement!==again&&e.detail===0)liftFocus(again);
+});
+function liftFocus(b){const el=$('lift');el.querySelectorAll('.lift-b').forEach(x=>x.setAttribute('tabindex',x===b?'0':'-1'));focusIn(b,{block:'nearest'});} /* scrolls only the lift's own shaft (innerscroll, spec 052 FR-055) */
+document.addEventListener('keydown',e=>{
+  const t=e.target; if(!t||!t.closest||!t.closest('#lift .lift-b'))return;
+  if(e.ctrlKey||e.altKey||e.metaKey)return;
+  const bs=[...$('lift').querySelectorAll('.lift-b')], i=bs.indexOf(t);
+  const j=e.key==='ArrowDown'?Math.min(bs.length-1,i+1):e.key==='ArrowUp'?Math.max(0,i-1):e.key==='Home'?0:e.key==='End'?bs.length-1:-1;
+  if(j<0)return;
+  e.preventDefault(); if(bs[j]!==t)liftFocus(bs[j]);
 });
 function afterFloorsChange(){
   renderFloorsBtn(); renderIntoFloor();
