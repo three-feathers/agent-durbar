@@ -48,7 +48,7 @@ import * as path from 'path';
 import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
 import { offeredDescriptors } from '../adapters/experimental';
 import { createRegistry, detectAll } from '../adapters/registry';
-import { detectorFor, setLoginPath } from '../adapters/detect';
+import { configureDevClaudeBin, detectorFor, setLoginPath } from '../adapters/detect';
 import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { renameOp, titleSyncOf } from './sessionnames';
 import { adapterForAdd, createRouter, previousSessionsOf } from '../adapters/router';
@@ -125,6 +125,7 @@ if (aumid) app.setAppUserModelId(aumid);
 const dev = devEnv(process.env, app.isPackaged);
 const devNote = devWarning(process.env, app.isPackaged);
 if (devNote) console.error(devNote);
+configureDevClaudeBin(dev); // spec 012 FR-163: DURBAR_CLAUDE_BIN, dev/test only (`dev` is empty in a packaged build)
 // Spec 008 FR-103: a test run's window is never treated as hidden when another window covers it (the Windows CI desktop and a shared
 // X display run several drivers at once). Chromium then stops animation frames and throttles timers, so the page stopped drawing mid-check.
 if (dev.DURBAR_DRIVER || dev.DURBAR_SHOT) app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');

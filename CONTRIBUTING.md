@@ -76,6 +76,8 @@ The gate checks **presence, not quality**: it cannot tell a good spec from a one
 
 `DURBAR_*` environment variables (`DURBAR_SIM`, `DURBAR_DRIVER`, `DURBAR_LOG`, `DURBAR_OPEN`, `DURBAR_PERM`, `DURBAR_PICK`, `DURBAR_USER_DATA`, `DURBAR_SHOT*`, ...) are developer/test hooks (spec 010). They work with `npm start` / `electron .`. A **packaged** build ignores all of them unless `DURBAR_DEV=1` is set (it then prints a warning on stderr), so a release does not carry a back door. Read hooks in the main process only through `devEnv()` in `src/main/devhooks.ts`; `npm run test:devhooks` fails otherwise.
 
+`DURBAR_CLAUDE_BIN=<absolute path of a claude file>` (spec 012 FR-163) makes detection try that Claude Code CLI first, so you can run Durbar against an old and a new CLI side by side; a relative path or a missing file is refused with a warning. `npm run test:claudecli` (opt-in, never in CI) compares the flags `claudeArgs` can emit with each installed CLI's `--help`.
+
 ## Releases (maintainer)
 
 Pushing a tag `v*` on a commit of `main` (for example `v0.1.0-alpha.5`; the tag must match `version` in `package.json`, so a version-only PR lands first) runs `.github/workflows/release.yml`, which writes the release notes from that commit's `changelog.d/` fragments, builds unsigned macOS, Windows and Linux packages and attaches them to a **draft** pre-release. The fold into `CHANGELOG.md` is a doc-only PR afterwards (`changelog.d/README.md`). Review the draft, then publish it by hand. When you cut a release, classify it and record the tag on the incident issues it answers (`gh issue list --label incident --state all`; steps in `changelog.d/README.md`, *At release time*). Builds are not signed or notarized and there is no auto-update.

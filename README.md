@@ -314,6 +314,8 @@ npm ci
 npm run typecheck && npm run build && npm test   # unit suites in parallel (~20 s); `npm test -- folders` filters; `npm test -- --bail` (or `TEST_BAIL=1`) stops at the first failing suite, for iterating, and the final run still runs everything
 npm start                 # the app, with the harnesses you have installed and signed in
 DURBAR_SIM=15 npm start   # 15 simulated agents: no sessions, no AI credits (main refuses every call that could reach a real agent app)
+npm run test:claudecli    # opt-in, not in `npm test`: the flags Durbar's Claude adapter can send against every installed Claude Code CLI's `--help` (~/.local/share/claude/versions/*, `claude` on PATH, or DURBAR_CLAUDE_BINS=path:path); only `--version` and `--help`, no session, no credits
+DURBAR_CLAUDE_BIN=/abs/path/claude npm start   # dev/test only: use that Claude Code file first (absolute path to an existing file; ignored in a packaged build; prints a warning)
 npm run check:office      # layout check at 1440x900 and 1280x800 (Electron; xvfb on Linux), simulator only
 npm run shots:docs        # retake every screenshot the README and the website link (simulator, one Electron at a time; -- --only, --list, --out <dir>); every picture it writes is palette-compressed (about 60% smaller, with a quality guard)
 npm run shots:compress    # compress screenshots by hand: the linked ones, or the files you name (-- --check only lists; DURBAR_SHOTS_COMPRESS=off turns it off in shots:docs)

@@ -520,9 +520,9 @@ export interface ClaudeAdapterDeps {
 
 /** Spec 087 FR-006: the real host facts: no shell; `claude --version` through detection, `bwrap`/`socat` located like spec 012's detection. */
 export async function nodeClaudeSandboxFacts(): Promise<ClaudeSandboxFacts> {
-  const { detectBinary, candidates, CLAUDE_BINARY, nodeExec, nodeDetectEnv } = await import('./detect');
+  const { detectBinary, candidates, CLAUDE_BINARY, nodeExec, nodeDetectEnv, claudeConfiguredPath } = await import('./detect');
   const env = nodeDetectEnv();
-  const r = await detectBinary(CLAUDE_BINARY, env, nodeExec).catch(() => undefined);
+  const r = await detectBinary(CLAUDE_BINARY, env, nodeExec, claudeConfiguredPath()).catch(() => undefined);
   const have = (name: string): boolean => candidates({ name, versionArgs: [], installHint: '' }, env).some((c) => env.isFile(c));
   const linux = process.platform === 'linux';
   return { platform: process.platform, version: r?.version, haveBwrap: linux && have('bwrap'), haveSocat: linux && have('socat') };
@@ -1727,8 +1727,8 @@ export const CLAUDE_DESCRIPTOR: AdapterDescriptor = claudeDescriptor();
 let cachedPath: string | undefined;
 export async function claudeBinaryPath(): Promise<string | undefined> {
   if (cachedPath) return cachedPath;
-  const { detectBinary, CLAUDE_BINARY, nodeExec, nodeDetectEnv } = await import('./detect');
-  const r = await detectBinary(CLAUDE_BINARY, nodeDetectEnv(), nodeExec);
+  const { detectBinary, CLAUDE_BINARY, nodeExec, nodeDetectEnv, claudeConfiguredPath } = await import('./detect');
+  const r = await detectBinary(CLAUDE_BINARY, nodeDetectEnv(), nodeExec, claudeConfiguredPath());
   if (r.state === 'ready' && r.path) cachedPath = r.path;
   return cachedPath;
 }
