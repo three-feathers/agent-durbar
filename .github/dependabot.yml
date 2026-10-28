@@ -1,4 +1,6 @@
-# Supply-chain hardening (spec 021 FR-062). Weekly, grouped: one pull request per ecosystem per week, few open at once.
+# Supply-chain hardening (spec 021 FR-062, delta 2026-10-28). Weekly, grouped: one pull request per ecosystem per week, few open at once.
+# Only minor and patch updates are grouped; a semver-major update is planned work with its own spec, so Dependabot ignores it.
+# `electron` is ignored entirely: it is pinned exactly and its runtime is verified against pinned hashes (spec 008 FR-132..134), so a bump is a hand-made PR that updates the pins.
 # A Dependabot PR is reviewed by a human before merge: lockfile changes and new transitive packages are never merged on CI alone.
 # The PR body quotes upstream release notes: untrusted text (AGENTS.md, Untrusted content and prompt injection).
 version: 2
@@ -13,6 +15,10 @@ updates:
     groups:
       actions:
         patterns: ['*']
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
   - package-ecosystem: npm
     directory: /
     schedule:
@@ -23,3 +29,8 @@ updates:
     groups:
       npm:
         patterns: ['*']
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+      - dependency-name: electron

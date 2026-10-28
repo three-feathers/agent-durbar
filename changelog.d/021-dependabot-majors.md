@@ -1,0 +1,1 @@
+- **Dependabot limited to minor and patch updates** (spec 021 FR-062): semver-major updates and Electron are ignored (a major is planned work with its own spec, an Electron bump updates the pinned hashes by hand); `test:supplychain` checks the config.

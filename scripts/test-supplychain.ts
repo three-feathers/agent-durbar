@@ -246,4 +246,25 @@ const forms = ['- {uses: actions/checkout@v4}', '- {name: x, uses: actions/check
 for (const f of forms) assert.ok(pinProblems('w.yml', `steps:\n  ${f}\n`).length >= 1, `${f} is caught`);
 const pinned = ['- run: echo "why ? not"', '- run: curl https://x.example/a?b=c', '- {uses: actions/checkout@' + sha + '}', '- "uses": actions/checkout@' + sha, '- uses : actions/checkout@' + sha + ' # v7', '- uses: "actions/checkout@' + sha + '"', '- uses: ./local', '- uses: docker://alpine@sha256:' + 'a'.repeat(64), '# uses: actions/checkout@v4', '- {uses: owner/repo/path/x.yml@' + sha + '}'];
 for (const f of pinned) assert.deepStrictEqual(pinProblems('w.yml', `steps:\n  ${f}\n`), [], `${f} passes`);
+
+// (d) Dependabot config (spec 021 FR-062, delta 2026-10-28): minor/patch groups only, majors ignored, electron ignored.
+function dependabotProblems(text: string): string[] {
+  const out: string[] = [];
+  const blocks = text.split(/^  - package-ecosystem:/m).slice(1);
+  if (blocks.length < 2) out.push('expected the github-actions and npm ecosystems');
+  for (const b of blocks) {
+    const eco = b.split('\n')[0].trim();
+    const groups = b.split(/^    groups:/m)[1]?.split(/^    ignore:/m)[0] || '';
+    if (!/update-types:\s*\[\s*minor\s*,\s*patch\s*\]/.test(groups) || /major/.test(groups)) out.push(`${eco}: the group must take update-types [minor, patch] only`);
+    const ignore = b.split(/^    ignore:/m)[1] || '';
+    if (!/dependency-name:\s*'\*'\s*\n\s*update-types:\s*\['version-update:semver-major'\]/.test(ignore)) out.push(`${eco}: semver-major updates must be ignored`);
+    if (eco === 'npm' && !/^\s+- dependency-name: electron\s*$/m.test(ignore)) out.push('npm: electron must be ignored (pinned, hash-verified runtime)');
+  }
+  return out;
+}
+const depText = fs.readFileSync(path.join(root, '.github', 'dependabot.yml'), 'utf8');
+assert.deepStrictEqual(dependabotProblems(depText), [], 'dependabot.yml: minor/patch groups, major ignore, electron ignored');
+assert.ok(dependabotProblems(depText.replace(/\n      - dependency-name: '\*'\n        update-types: \['version-update:semver-major'\]/g, '')).length >= 2, 'a missing major ignore is caught');
+assert.ok(dependabotProblems(depText.replace(/\n      - dependency-name: electron/, '')).length === 1, 'a missing electron ignore is caught');
+assert.ok(dependabotProblems(depText.replace(/update-types: \[minor, patch\]/g, "patterns2: ['*']")).length >= 2, 'a group without update-types is caught');
 console.log('supplychain: ok');
