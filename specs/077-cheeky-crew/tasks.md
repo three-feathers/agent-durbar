@@ -66,7 +66,7 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 - [x] T064 [raster] Round avatars crop the face from a per-picture face table in `crew.js`; a seat shows the bust from the top edge, moved clear of the chat badge; `test:crew` (face table, crops inside the pictures, chins above the desk), `test:scenekits` (the crops per use) [FR-060]
 - [x] T065 [raster] The desk portrait box is doubled to 88x88 at x 24, y 22 (ends at the monitor frame; the sub-agent cards use the same box in the same slot); `PX_PER_UNIT` 4; the placement and its reason written in the FR-060 delta [FR-060]
 - [x] T066 [raster] `check:crew` face-visibility assertions for desk, helper, walker and seat at both sizes; mutation: the face crop set back to the whole picture fails it [FR-060]
-- [x] T067 [raster] `check:office` and `check:geometry` in the crew theme at 1440x900 and 1280x800; screenshots `docs/screenshots/077-crew-office-*.png` re-taken [SC-001]
+- [x] T067 [raster] `check:office` and `check:geometry` in the crew theme at 1440x900 and 1280x800; screenshots `docs/screenshots/077-crew-office-*.png` re-taken [SC-001] (historical since 2026-10-28, #814: they show the retired Cheeky Crew theme; the current look is `077-characters-cheeky-retro-*.png`)
 - [x] T068 [raster] Merge `main` (the spec 001 late re-layout) so `check:office` in the crew theme passes at both sizes; no crew style was at fault (see the spec's 2026-10-23 delta)
 - [x] T069 [raster] An idle desk, card or helper keeps its portrait at full colour (the furniture and text stay dimmed); `check:crew` asserts the effective opacity at both sizes and that Clean Office still dims [FR-061]
 - [x] T070 [raster] Replace the art of 10 characters (sporty, disco, skater, hacker, buzzcut, bookworm, metalhead, scientist, gamer, surfer; 30 files) with Paco's new pictures, same conversion; re-read `FACE`; `ASSETS.md` rows and `PROMPTS-surfer-redo.txt`; screenshots re-taken [FR-050, FR-054, FR-059, FR-060]
@@ -75,3 +75,14 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 - [x] T073 [raster] The map follows the main-session ids (a removal, a helper, the last session); `check:crew` removes sessions through `__durbarSimUi.crew`; `test:crew` has the interleaved main/helper allocation [FR-063, FR-020, FR-023]
 - [x] T074 [raster] A fallback after mount redraws the chat header and inbox avatars; `check:crew` makes a character fail after both are open [FR-063]
 - [x] T075 `test:theme-tokens` asserts the authored Cheeky Crew and Clean Office tokens meet `CONTRAST_PAIRS` with no run-time repair (dark `--bg` mutant) [FR-063]
+
+## Characters, separate from themes (delta 2026-10-28, issue #814; FR-064..FR-070)
+
+- [x] T076 Spec delta: FR-064..FR-070, Q9, the spec 035 cross-reference (FR-016, T018) [spec]
+- [x] T077 `src/shared/characters.ts`: the list, `parseCharacters`, `kitFor` and the migration rule; `characters` in `AppSettings` and `parseSettings`; `SettingsStore.load` migrates once, `setCharacters`, `setTheme` with the old id; `settings:setCharacters` and `settings:get`; preload and `api.ts` [FR-064, FR-067]
+- [x] T078 `theme.js`: Cheeky Crew leaves the built-in list; `setCharacters`, `characters`, `themeKit`, `kitFor`, `sceneKit` resolves the choice; `themeIdForCache` changes with it; `cheeky-crew` kept reserved in main [FR-065, FR-066]
+- [x] T079 `app.js` and `screens.js`: boot applies the saved choice and the legacy id; the Characters section with previews; apply, save, toast; the simulator bridge keeps the choice in memory and reads `characters=` [FR-067, FR-068]
+- [x] T080 Tests: `test:characters` (migration, round trip through the IPC handler, kit resolution on every theme, list equality); the old theme removed from `test:theme`, `test:theme-tokens`, `test:userthemes` and the theme lists of the drivers [FR-070]
+- [x] T081 `check:crew` picks Characters = Cheeky on `CREW_THEME`; run on Retro Pixel and Corporate at both sizes; `check:office` with `OFFICE_CHARACTERS=cheeky` on the same two themes at both sizes [FR-070, FR-069]
+- [x] T082 Driver `check-characters` (Cheeky, Minimalist and *The theme's own* on Retro Pixel and Corporate, a theme switch with Cheeky on; screenshots of the Settings section at both sizes), in `ui-suite.js` [FR-068, FR-070]
+- [x] T083 Docs: README *Themes* (Theme and Characters), changelog fragment, agent notes if something new was learned; linked screenshots that show the theme picker retaken (`npm run shots:docs -- --list`) [FR-068]

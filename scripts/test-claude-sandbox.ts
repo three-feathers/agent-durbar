@@ -28,7 +28,7 @@ async function until<T>(what: string, f: () => T | undefined | false, ms = 3000)
 }
 const WS = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-claude-sbx-'));
 const REAL_WS = fs.realpathSync.native(WS);
-const LINUX: ClaudeSandboxFacts = { platform: 'linux', version: '2.1.300', haveBwrap: true, haveSocat: true };
+const LINUX: ClaudeSandboxFacts = { platform: 'linux', version: '2.1.312', haveBwrap: true, haveSocat: true };
 const SANDBOX_ERR = 'Error: sandbox is not available on this system (bubblewrap: setting up uid map: Permission denied); failIfUnavailable is set\n';
 
 type Behave = 'ok' | 'sandbox-exit-init' | 'sandbox-exit-turn' | 'crash-before-init';
@@ -254,11 +254,11 @@ async function main(): Promise<void> {
   // ---- pre-checks (nothing spawned): too old, Linux without bwrap/socat, win32; AC5/AC6/AC7 for Always continue ----
   {
     const cases: Array<[ClaudeSandboxFacts, RegExp, string[]]> = [
-      [{ platform: 'linux', version: '2.1.218', haveBwrap: true, haveSocat: true }, /too old/, ['continue']],
+      [{ platform: 'linux', version: '2.1.308', haveBwrap: true, haveSocat: true }, /too old/, ['continue']],
       [{ platform: 'linux', version: 'not a version', haveBwrap: true, haveSocat: true }, /too old/, ['continue']],
-      [{ platform: 'linux', version: '2.1.300', haveBwrap: false, haveSocat: true }, /bubblewrap/, ['continue']],
-      [{ platform: 'linux', version: '2.1.300', haveBwrap: true, haveSocat: false }, /socat/, ['continue']],
-      [{ platform: 'win32', version: '2.1.300' }, /no OS sandbox on Windows; Durbar's own checks still apply/, ['continue', 'always']],
+      [{ platform: 'linux', version: '2.1.312', haveBwrap: false, haveSocat: true }, /bubblewrap/, ['continue']],
+      [{ platform: 'linux', version: '2.1.312', haveBwrap: true, haveSocat: false }, /socat/, ['continue']],
+      [{ platform: 'win32', version: '2.1.312' }, /no OS sandbox on Windows; Durbar's own checks still apply/, ['continue', 'always']],
     ];
     for (const [facts, re, actions] of cases) {
       const m = make({ facts: () => facts });
@@ -272,13 +272,13 @@ async function main(): Promise<void> {
       await m.ad.dispose();
     }
     // policy + pre-check: the send itself is refused with the MODE_REFUSAL text (the existing refusal path), nothing spawned
-    const m = make({ facts: () => ({ platform: 'win32', version: '2.1.300' }) });
+    const m = make({ facts: () => ({ platform: 'win32', version: '2.1.312' }) });
     const sid = await start(m.ad, 'ask', { requireOsSandbox: true, sandboxAlwaysContinue: true });
     await assert.rejects(m.ad.send(sid, { text: 'x' }), /Read-only and Ask first need/, 'AC7: a stored Always is ignored under the policy');
     assert.strictEqual(m.sp.calls.length, 0);
     await m.ad.dispose();
     // AC5: win32 with Always stored: no note, state off (Not sandboxed), the pre-check still ran at this session start
-    const w = make({ facts: () => ({ platform: 'win32', version: '2.1.300' }) });
+    const w = make({ facts: () => ({ platform: 'win32', version: '2.1.312' }) });
     const before = w.factCalls();
     const ws = await start(w.ad, 'read-only', { sandboxAlwaysContinue: true });
     await w.ad.send(ws, { text: 'x' });
@@ -471,7 +471,7 @@ async function main(): Promise<void> {
 
   // ---- review on PR 733 (6): a stored Always on a FIXABLE cause (Linux without bubblewrap) still shows the note; nothing is spawned ----
   {
-    const m = make({ facts: () => ({ platform: 'linux', version: '2.1.300', haveBwrap: false, haveSocat: true }) });
+    const m = make({ facts: () => ({ platform: 'linux', version: '2.1.312', haveBwrap: false, haveSocat: true }) });
     const sid = await start(m.ad, 'read-only', { sandboxAlwaysContinue: true });
     await m.ad.send(sid, { text: 'x' });
     await until('note', () => sbx(m.events, sid).find((e) => e.notice));
@@ -482,7 +482,7 @@ async function main(): Promise<void> {
   // ---- FR-012: the Settings line ----
   {
     assert.deepStrictEqual(await make().ad.sandboxHost!(), { available: true, mechanism: 'bubblewrap' });
-    const w = await make({ facts: () => ({ platform: 'win32', version: '2.1.300' }) }).ad.sandboxHost!();
+    const w = await make({ facts: () => ({ platform: 'win32', version: '2.1.312' }) }).ad.sandboxHost!();
     assert.strictEqual(w.available, false);
     assert.match(String(w.reason), /Windows/);
   }

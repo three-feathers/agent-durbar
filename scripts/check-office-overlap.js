@@ -352,7 +352,11 @@ async function driver(ctx) {
      screen must be the one asked for, or the run fails (it once measured Clean Office for every theme). */
   const userTheme = process.env.OFFICE_USER_THEME ? JSON.parse(fs.readFileSync(process.env.OFFICE_USER_THEME, 'utf8')) : null;
   const wantTheme = userTheme ? userTheme.id : (process.env.OFFICE_THEME || '');
-  const themeQuery = (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '');
+  /* spec 077 FR-070: OFFICE_CHARACTERS=<value> (theme, minimalist, cheeky) puts who sits at the desks in the address too; checked like the theme */
+  const wantChars = /^(theme|minimalist|cheeky)$/.test(process.env.OFFICE_CHARACTERS || '') ? process.env.OFFICE_CHARACTERS : '';
+  if (process.env.OFFICE_CHARACTERS && !wantChars) throw new Error('OFFICE_CHARACTERS must be theme, minimalist or cheeky');
+  const themeQuery = (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '') + (wantChars ? '&characters=' + wantChars : '');
+  if (wantChars) console.log('check:office: characters ' + wantChars);
   let motionShown = false;
   if (wantTheme) console.log('check:office: theme ' + wantTheme + (userTheme ? ' (user theme from ' + path.basename(process.env.OFFICE_USER_THEME) + ')' : ''));
   const load = async (query, w, h) => {
@@ -364,6 +368,17 @@ async function driver(ctx) {
       try { await ctx.waitFor(`window.THEME&&window.THEME.current().id===${jsLiteral(wantTheme)}`, 5000); } catch (e) { /* reported below */ }
       const on = await ctx.js(`({id:window.THEME.current().id,ui:document.documentElement.dataset.ui||'clean',want:(window.THEME.current().manifest||{}).ui||'clean'})`);
       if (on.id !== wantTheme || on.ui !== on.want) throw new Error(`theme ${wantTheme} was not applied (on screen: ${on.id}, data-ui ${on.ui})`);
+    }
+    if (wantChars) {
+      try { await ctx.waitFor(`window.THEME.characters()===${jsLiteral(wantChars)}`, 5000); } catch (e) { /* reported below */ }
+      const ch = await ctx.js(`window.THEME.characters()`);
+      if (ch !== wantChars) throw new Error(`characters ${wantChars} were not applied (on screen: ${ch})`);
+      /* Cheeky: the kit drawn must be the crew, and the desk scenes on screen (none when every room is closed) must show it, or the run would measure the theme's own figures */
+      if (wantChars === 'cheeky') {
+        const crewOn = `window.THEME.sceneKit()==='crew'&&(()=>{const sc=[...document.querySelectorAll('#stage svg.scene')].filter(s=>s.getClientRects().length);return !sc.length||sc.some(s=>/\\|crew(\\||$)/.test(s.dataset.sig||''));})()`;
+        try { await ctx.waitFor(crewOn, 8000); } catch (e) { /* reported below */ }
+        if (!(await ctx.js(crewOn))) throw new Error('characters cheeky: the desks on screen do not draw the crew kit');
+      }
     }
     if (!motionShown) { motionShown = true; console.log('check:office: motion ' + ((await ctx.js(`matchMedia('(prefers-reduced-motion: reduce)').matches`)) ? 'reduced' : 'on')); }
     await forceFonts(w, h);
@@ -423,7 +438,7 @@ async function driver(ctx) {
       total++;
       if (!(await ctx.js(`document.getElementById('floorsBtn').hidden`))) { failed++; console.log(`FAIL sim${sim}-${w}x${h}: Floors button shown with one floor`); }
       const names = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].map(e=>e.textContent.trim())`);
-      const themeTag = process.env.OFFICE_THEME ? process.env.OFFICE_THEME + ' ' : '';
+      const themeTag = (process.env.OFFICE_THEME ? process.env.OFFICE_THEME + ' ' : '') + (wantChars ? wantChars + ' ' : '');
       const tag = `${themeTag}sim${sim}-${w}x${h}`;
       const combos = [{ n: 0, closed: [] }];
       for (let k = 1; k < names.length; k++) {

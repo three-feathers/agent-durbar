@@ -59,6 +59,7 @@ import { cleanAnswers, parseQuestionsWithOriginals, SkipNotes } from './question
 import type { SkipReason } from './questions';
 import { claudeSlashPlaces, cleanBuiltins, mergeSlash, SlashCache, vscodeUserPromptDirs } from './slashcommands';
 import type { SlashPlace } from './slashcommands';
+import { compareVersions } from './detect';
 import { agentsArg, listClaudeAgents } from './claudeAgents';
 import type { ClaudeAgentDef } from './claudeAgents';
 import type { AgentProfile, AskedQuestion, ElicitAnswer, SlashCommand, SlashExpansion } from './types';
@@ -231,6 +232,14 @@ export interface ClaudeLaunch {
   name?: string;
   /** Spec 069 FR-062: single MCP tools turned off in Durbar, as `mcp__<server>__<tool>`, added to the mode's `--disallowedTools`. */
   disallowedMcpTools?: string[];
+  /** Spec 015 FR-016: pass `--forward-subagent-text` (set only when the installed Claude Code is known to have it; see `claudeForwardsSubagentText`). */
+  forwardSubagentText?: boolean;
+}
+
+/** Spec 015 FR-016: the first Claude Code with `--forward-subagent-text` (its CHANGELOG, `read:` 2.1.211). An older or unreadable version never gets the flag (an unknown flag would stop the CLI). */
+export const CLAUDE_FORWARD_SUBAGENT_MIN_VERSION = '2.1.211';
+export function claudeForwardsSubagentText(version: string | undefined): boolean {
+  return typeof version === 'string' && /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version) && compareVersions(version, CLAUDE_FORWARD_SUBAGENT_MIN_VERSION) >= 0;
 }
 
 export const CLAUDE_EFFORTS: ReadonlySet<string> = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
@@ -282,6 +291,7 @@ export function claudeDisallowedMcp(off: Readonly<Record<string, readonly string
 export function claudeArgs(i: ClaudeLaunch): string[] {
   const o = claudeOptionsFor(i.mode, i.folderAllow);
   const a = ['-p', '--output-format', 'stream-json', '--verbose', '--input-format', 'stream-json', '--permission-prompt-tool', 'stdio', '--include-partial-messages'];
+  if (i.forwardSubagentText) a.push('--forward-subagent-text');
   a.push('--permission-mode', o.permissionMode);
   if (o.allowDangerouslySkipPermissions) a.push('--allow-dangerously-skip-permissions');
   if (o.allowedTools?.length) a.push('--allowedTools', o.allowedTools.join(','));
@@ -1153,6 +1163,7 @@ export class ClaudeAdapter implements AgentAdapter {
       ...(s.sandboxBlock ? (s.sandboxAddDirs?.length ? { addDirs: [...s.sandboxAddDirs] } : {}) : s.roots.length > 1 ? { addDirs: s.roots.filter((r) => r !== s.cwd) } : {}),
       ...(s.capUsd !== undefined ? { maxBudgetUsd: s.capUsd - s.spentUsd } : {}),
       ...(claudeNameOk(s.pendingName) ? { name: s.pendingName } : {}),
+      ...(claudeForwardsSubagentText((await this.sandboxFactsNow()).version) ? { forwardSubagentText: true } : {}), // spec 015 FR-016
     };
     const handlers: TransportHandlers = {
       message: (m) => this.onMessage(s, m),
