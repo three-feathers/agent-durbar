@@ -151,10 +151,32 @@ async function main(): Promise<void> {
     assert.strictEqual(all().filter((s) => names(s).includes('remote.enable')).length, 1, 'only the explicit setRemote(id, true) enables, on that session');
     await ad.dispose();
     // static: the only caller that can pass on=true is remoteops.ts (behind the confirmation); everything else passes the literal false
+    let root = __dirname; // compiled to dist-scripts/scripts: walk up to the repo root
+    while (!fs.existsSync(path.join(root, 'package.json'))) root = path.dirname(root);
+    const srcDir = path.join(root, 'src');
     const walk = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : /\.ts$/.test(e.name) ? [path.join(d, e.name)] : []));
-    const callers = walk(path.join(__dirname, '..', 'src')).flatMap((f) => fs.readFileSync(f, 'utf8').split('\n').filter((l) => /\.setRemote\(/.test(l) && !/^\s*(\/\/|\*)/.test(l)).map((l) => path.basename(f) + ': ' + l.trim()));
+    const callers = walk(srcDir).flatMap((f) => fs.readFileSync(f, 'utf8').split('\n').filter((l) => /\.setRemote\(/.test(l) && !/^\s*(\/\/|\*)/.test(l)).map((l) => path.basename(f) + ': ' + l.trim()));
+    assert.ok(callers.length >= 4, 'the scan found the setRemote callers: ' + callers.length);
     for (const l of callers) assert.ok(/^(remoteops|doorops|doors|remote)\.ts/.test(l), 'unexpected setRemote caller: ' + l);
     assert.ok(!callers.some((l) => /setRemote\([^)]*true\)/.test(l)), 'no source calls setRemote(..., true) directly: ' + callers.join(' | '));
+    // SDK 1.0.26: `remote.enable(` is the sole control. Exactly one call in src/ (comments ignored), inside CopilotAdapter.setRemote;
+    // `enableRemoteSessions` is never set to anything but false. Mutants: a stray enable in the resume path, `enableRemoteSessions: true`.
+    const code = (f: string): string[] => fs.readFileSync(f, 'utf8').split('\n').map((l) => l.replace(/^\s*(\/\/|\*|\/\*).*$/, '').replace(/\s\/\/ .*$/, ''));
+    const enables: string[] = [];
+    const sessionFlags: string[] = [];
+    for (const f of walk(srcDir)) {
+      const lines = code(f);
+      let method = '';
+      lines.forEach((l, i) => {
+        const m = /^ {2}(?:private |public |protected |static )*(?:async )?(\w+)\s*[(<]/.exec(l);
+        if (m) method = m[1];
+        if (/\bremote\??\.enable!?\s*\(/.test(l)) enables.push(path.basename(f) + ':' + method + ':' + (i + 1));
+        if (/enableRemoteSessions/.test(l) && !/enableRemoteSessions\s*:\s*false\b/.test(l)) sessionFlags.push(path.basename(f) + ':' + (i + 1));
+      });
+    }
+    assert.strictEqual(enables.length, 1, 'exactly one remote.enable( call in src/: ' + enables.join(' | '));
+    assert.ok(/^copilot\.ts:setRemote:/.test(enables[0]), 'remote.enable( only inside CopilotAdapter.setRemote: ' + enables[0]);
+    assert.deepStrictEqual(sessionFlags, [], 'enableRemoteSessions is never set (true) in src/: ' + sessionFlags.join(' | '));
   }
 
   // ---- T004 / FR-003..FR-005: the main-side logic
