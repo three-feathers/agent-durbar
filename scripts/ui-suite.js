@@ -53,7 +53,7 @@ const DRIVERS = [
   { name: 'shots-051-setup', label: 'shots-051-setup win32', env: { DURBAR_SIM_MANAGERS: 'powershell,winget,npm', DURBAR_SIM_PLATFORM: 'win32' } }, // spec 060 FR-011/FR-012: Windows' routes (PowerShell installer, winget, npm) and Run beside each command, on every OS
   { name: 'shots-052-ux', env: { DURBAR_SIM_KINDS: 'mixed' } },
   { name: 'shots-052-addleft' }, // FR-164: + Folder / + Workspace leftmost, one row in every theme, the File menu and Ctrl+O
-  { name: 'shots-093' }, // spec 093 phase 1: + Folder's choice, New repository and Empty folder (simulated), Ctrl+O / File menu / palette entry points
+  { name: 'shots-093' }, // spec 093: + Folder's choice, Clone (URL, progress, Cancel, Allow all host), New repository and Empty folder (simulated), Ctrl+O / File menu / palette entry points
   { name: 'shots-054-remote' },
   { name: 'shots-006-prevmarks' },
   { name: 'shots-003-mode-back' },

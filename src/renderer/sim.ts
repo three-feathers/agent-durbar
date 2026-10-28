@@ -2541,7 +2541,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (req.kind === 'clone') {
         const u = simCloneUrl(req.url);
         if (!u.ok) return u;
-        extra = { host: u.host, suggested: u.suggested, shown: u.shown };
+        /* window.__simCloneHost: a driver plants a hostile host-like string to check the Allow all sentence is text, never HTML */
+        const planted = typeof window !== 'undefined' ? (window as unknown as { __simCloneHost?: unknown }).__simCloneHost : undefined;
+        extra = { host: typeof planted === 'string' ? planted : u.host, suggested: u.suggested, shown: u.shown };
         if (req.name === undefined) return { ok: true, ...extra };
       }
       if (!n) return { ok: false, error: 'Type a name for the new folder.' };
