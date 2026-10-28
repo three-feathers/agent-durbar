@@ -56,7 +56,7 @@ for (const os of OSES) {
     {
       const cell = `claude/${os}/${mode}`;
       const block = claudeSandboxSettings(mode, ROOTS[os]);
-      const pre = claudeSandboxPrecheck({ platform: os, version: '2.1.300', haveBwrap: true, haveSocat: true });
+      const pre = claudeSandboxPrecheck({ platform: os, version: '2.1.312', haveBwrap: true, haveSocat: true });
       if (mode === 'allow') assert.strictEqual(block, undefined, `${cell}: the app default`);
       else {
         assert.ok(block, `${cell}: a block`);
@@ -104,22 +104,30 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
 // ---- SC-002: unavailable cells give a visible off with a reason; no on before the app confirmed it ----
 {
   const facts = [
-    { platform: 'win32', version: '2.1.300' },
-    { platform: 'linux', version: '2.1.300', haveBwrap: false, haveSocat: true },
-    { platform: 'linux', version: '2.1.300', haveBwrap: true, haveSocat: false },
-    { platform: 'darwin', version: '2.1.218' },
+    { platform: 'win32', version: '2.1.312' },
+    { platform: 'linux', version: '2.1.312', haveBwrap: false, haveSocat: true },
+    { platform: 'linux', version: '2.1.312', haveBwrap: true, haveSocat: false },
+    { platform: 'darwin', version: '2.1.308' },
     { platform: 'darwin' },
-    { platform: 'freebsd', version: '2.1.300' },
+    { platform: 'freebsd', version: '2.1.312' },
   ];
   for (const f of facts) for (const mode of ['read-only', 'ask'] as const) {
     const st = claudeSandboxState({ mode, facts: f, started: true });
     assert.strictEqual(st?.state, 'off', `claude ${JSON.stringify(f)}: off even if init came`);
     assert.ok(st?.reason && st.reason.length <= 200, 'with a reason');
   }
-  assert.deepStrictEqual(claudeSandboxPrecheck({ platform: 'win32', version: '2.1.300' }), { try: false, reason: "Claude Code has no OS sandbox on Windows; Durbar's own checks still apply (only WSL2 has one).", permanent: true });
+  assert.deepStrictEqual(claudeSandboxPrecheck({ platform: 'win32', version: '2.1.312' }), { try: false, reason: "Claude Code has no OS sandbox on Windows; Durbar's own checks still apply (only WSL2 has one).", permanent: true });
   assert.strictEqual((claudeSandboxPrecheck({ platform: 'linux', version: CLAUDE_SANDBOX_MIN_VERSION, haveBwrap: true, haveSocat: true }) as { try: boolean }).try, true, 'the minimum version itself is enough');
-  assert.strictEqual((claudeSandboxPrecheck({ platform: 'linux', version: '2.1.219-beta.1', haveBwrap: true, haveSocat: true }) as { try: boolean }).try, false, 'a pre-release of the minimum is older');
-  const lin = { platform: 'linux', version: '2.1.300', haveBwrap: true, haveSocat: true };
+  assert.strictEqual((claudeSandboxPrecheck({ platform: 'linux', version: '2.1.309-beta.1', haveBwrap: true, haveSocat: true }) as { try: boolean }).try, false, 'a pre-release of the minimum is older');
+  const atMin = (version: string) => (claudeSandboxPrecheck({ platform: 'linux', version, haveBwrap: true, haveSocat: true }) as { try: boolean }).try;
+  assert.strictEqual(CLAUDE_SANDBOX_MIN_VERSION, '2.1.309', 'FR-003a: the minimum is 2.1.309');
+  assert.strictEqual(atMin('2.1.308'), false, '2.1.308 is below');
+  assert.strictEqual(atMin('2.1.309'), true, '2.1.309 is at');
+  assert.strictEqual(atMin('2.1.312'), true, '2.1.312 is above');
+  assert.strictEqual(atMin('2.1.309 (Claude Code)'), true, 'the CLI banner form parses');
+  assert.strictEqual(atMin('2.1.309-beta.1'), false, 'a pre-release is below');
+  assert.strictEqual(atMin('2.1.219'), false, 'the old minimum is now below');
+  const lin = { platform: 'linux', version: '2.1.312', haveBwrap: true, haveSocat: true };
   assert.strictEqual(claudeSandboxState({ mode: 'read-only', facts: lin })?.state, 'unknown', 'no init yet: unknown (checking)');
   assert.strictEqual(claudeSandboxState({ mode: 'read-only', facts: lin, started: true })?.state, 'on');
   assert.strictEqual(claudeSandboxState({ mode: 'read-only', facts: lin, started: true, startExit: 'x' })?.state, 'off', 'a sandbox exit wins');
@@ -565,7 +573,7 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
     assert.strictEqual(can(copilotSandboxState({ mode, platform: 'linux', host, applied: true }), 'allow'), false, `Copilot ${mode} state read as Allow all: no action (no untilNewSession)`);
   }
   // Claude Code and Codex never produce it (their own state functions, every mode and platform)
-  const lin = { platform: 'linux', version: '2.1.300', haveBwrap: true, haveSocat: true };
+  const lin = { platform: 'linux', version: '2.1.312', haveBwrap: true, haveSocat: true };
   for (const mode of MODES) for (const m2 of MODES) {
     for (const extra of [{ started: true }, {}, { continued: true }, { startExit: 'x' }]) assert.strictEqual(can(claudeSandboxState({ mode, facts: lin, ...extra }), m2), false, `Claude ${mode}/${m2}: never`);
     for (const os2 of OSES) assert.strictEqual(can(codexSandboxState(mode, os2), m2), false, `Codex ${mode}/${m2} ${os2}: never`);
