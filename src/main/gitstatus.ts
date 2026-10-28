@@ -3,8 +3,14 @@
  * `--no-optional-locks` (no lock files, no index refresh written), 4 s and 512 KB per command, at most 200 files listed;
  * no command from the folder's own git config runs (FR-008, `makeGitExec`).
  * Any failure (no git, not a repository, a timeout) is `{ repo: false }`: the window then shows nothing extra.
+ *
+ * Spec 093 (FR-030): the one other entry point, `runGitCreate`, runs the writing commands that create a folder (`git init` now,
+ * `git clone` in phase 2). It is separate from the read-only runner on purpose: it spawns (streaming output, no 4 s limit,
+ * Cancel ends the process tree) and takes a typed request, never argv. The read-only runner below is unchanged.
  */
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
+import type { ChildProcess } from 'child_process';
+import { killChildTree } from '../adapters/detect';
 
 export type FileState = 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflict';
 export interface GitFile { path: string; state: FileState; added?: number; removed?: number; binary?: boolean }
@@ -217,4 +223,116 @@ export async function folderGitStatus(dir: string, exec: GitExec = nodeGitExec):
   } catch {
     return { repo: false };
   }
+}
+
+/* ---- Spec 093: creating a folder (FR-030..FR-034). `git init` in phase 1; phase 2 adds `{ kind: 'clone', url }` ---- */
+
+/**
+ * Every transport git ships (FR-032). A call gets `protocol.<x>.allow=never` for each one it does not need, so a user's global
+ * `protocol.<x>.allow=always` cannot bring it back (the more specific key beats `protocol.allow`, spec R1). `init` needs none.
+ */
+export const GIT_TRANSPORTS = ['file', 'git', 'ssh', 'http', 'https', 'ext', 'fd', 'ftp', 'ftps'] as const;
+
+/** What a caller may ask for: a typed request, never argv (FR-030). Phase 2 adds `{ kind: 'clone'; url: string }`. */
+export type GitCreateRequest = { kind: 'init' };
+
+export interface GitCreateCallOptions {
+  /**
+   * A private, empty folder made for this run and removed after it (FR-032, FR-051): `core.hooksPath` points there, so none of the
+   * user's own hooks (a global `core.hooksPath`) run during the command. A remote cannot bring hooks (D5); after the command the
+   * user's hooks apply again as usual, because a `-c` before the subcommand is not written into the new repository.
+   */
+  hooksDir: string;
+  /** Durbar's environment (tests pass their own); every `GIT_*` in it is dropped by `gitEnv` (FR-033). */
+  env?: NodeJS.ProcessEnv;
+}
+
+/**
+ * The exact argv and environment of a create call (FR-031..FR-033). Pure. git runs with the new folder as its working folder
+ * and no path in the argv (D4), so a name can never be read as an option.
+ * - init: `git --no-pager <-c settings> init --quiet`; every transport off (`protocol.allow=never` and each one by name), and
+ *   `GIT_ALLOW_PROTOCOL` empty from `gitEnv`, which replaces every `protocol.*` setting and also covers remote helpers.
+ */
+export function gitCreateCall(req: GitCreateRequest, o: GitCreateCallOptions): { argv: string[]; env: NodeJS.ProcessEnv } {
+  if (typeof o.hooksDir !== 'string' || !o.hooksDir) throw new Error('git: a private hooks folder is required');
+  const base = [`core.hooksPath=${o.hooksDir}`, 'core.fsmonitor=false', 'core.useBuiltinFSMonitor=false', 'submodule.recurse=false'];
+  const env = gitEnv(o.env ?? process.env); // GIT_ALLOW_PROTOCOL='' and GIT_TERMINAL_PROMPT=0 (GIT_SAFE_ENV)
+  if (req && req.kind === 'init') {
+    const cfg = [...base, 'protocol.allow=never', ...GIT_TRANSPORTS.map((p) => `protocol.${p}.allow=never`)];
+    return { argv: ['--no-pager', ...cfg.flatMap((c) => ['-c', c]), 'init', '--quiet'], env };
+  }
+  throw new Error('git: create request not allowed');
+}
+
+export interface GitSpawnOptions { cwd: string; env: NodeJS.ProcessEnv; shell: false; windowsHide: true; stdio: ['ignore', 'pipe', 'pipe']; detached: boolean }
+/**
+ * FR-034: no shell (argv only), no window, stdin closed, and on POSIX `detached` (its own process group and session: no terminal
+ * to prompt in, and the group is what Cancel ends with `killChildTree`). Windows ends the tree with `taskkill /t` instead.
+ */
+export const gitSpawnOptions = (cwd: string, env: NodeJS.ProcessEnv, platform: NodeJS.Platform): GitSpawnOptions =>
+  ({ cwd, env, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached: platform !== 'win32' });
+
+export type GitChild = Pick<ChildProcess, 'pid' | 'kill' | 'on' | 'exitCode' | 'signalCode'> & { stdout: NodeJS.ReadableStream | null; stderr: NodeJS.ReadableStream | null };
+export type GitSpawn = (file: string, args: string[], options: GitSpawnOptions) => GitChild;
+
+/** How a create command ended. `spawnError` is the error code when git could not start (`ENOENT`: git is not installed). */
+export interface GitCreateDone { code: number | null; signal: NodeJS.Signals | null; stderrTail: string; spawnError?: string }
+export interface GitCreateHandle { done: Promise<GitCreateDone>; cancel(): void }
+export interface GitCreateDeps extends GitCreateCallOptions {
+  /** Tests pass a fake; the default is Node's `spawn`, read from `child_process` when the call runs (the simulator's seal applies). */
+  spawn?: GitSpawn;
+  platform?: NodeJS.Platform;
+  kill?: typeof killChildTree;
+  /** Each piece of git's stderr as it arrives (raw: the caller masks it before showing it, FR-070). */
+  onOutput?(text: string): void;
+}
+/** The most of git's stderr kept for the error message (the tail). */
+export const GIT_CREATE_TAIL = 8192;
+
+/**
+ * Runs one create command in `cwd` (the new folder). Only `gitCreateCall`'s argv and environment; `git` from PATH, as the
+ * read-only runner. No time limit here (FR-037); the caller ends it with `cancel()`, which ends the child and its own
+ * descendants only (`killChildTree`), and only while it has not exited.
+ */
+export function runGitCreate(req: GitCreateRequest, cwd: string, deps: GitCreateDeps): GitCreateHandle {
+  const { argv, env } = gitCreateCall(req, deps);
+  const platform = deps.platform ?? process.platform;
+  const sp: GitSpawn = deps.spawn ?? (spawn as unknown as GitSpawn);
+  let child: GitChild | undefined;
+  let tail = '';
+  const done = new Promise<GitCreateDone>((resolve) => {
+    let settled = false;
+    let spawnError: string | undefined;
+    const finish = (code: number | null, signal: NodeJS.Signals | null): void => {
+      if (settled) return;
+      settled = true;
+      resolve({ code, signal, stderrTail: tail, ...(spawnError ? { spawnError } : {}) });
+    };
+    const codeOf = (e: unknown): string => (e && typeof (e as { code?: unknown }).code === 'string' ? (e as { code: string }).code : 'EFAIL');
+    try {
+      child = sp('git', argv, gitSpawnOptions(cwd, env, platform));
+    } catch (e) {
+      spawnError = codeOf(e);
+      finish(null, null);
+      return;
+    }
+    const c = child;
+    c.stdout?.on('data', () => undefined); // drained, so git never blocks on a full pipe
+    c.stderr?.on('data', (d: unknown) => {
+      const s = String(d);
+      tail = (tail + s).slice(-GIT_CREATE_TAIL);
+      deps.onOutput?.(s);
+    });
+    // a spawn failure (no git) has no pid and may never close; a later error waits for close
+    c.on('error', (e: unknown) => { spawnError = codeOf(e); if (c.pid === undefined) finish(null, null); });
+    c.on('close', (code: number | null, signal: NodeJS.Signals | null) => finish(code, signal));
+  });
+  return {
+    done,
+    cancel: () => {
+      const c = child;
+      if (!c || !c.pid || c.exitCode != null || c.signalCode != null) return; // never started, or exited: its pid may belong to another process now
+      (deps.kill ?? killChildTree)(c, platform, deps.env ?? process.env);
+    },
+  };
 }

@@ -17,6 +17,7 @@ import { register as registerAttachmentsIpc } from './ipc/attachments';
 import { register as registerCheckpointsIpc } from './ipc/checkpoints';
 import { register as registerFloorsIpc } from './ipc/floors';
 import { register as registerFoldersIpc } from './ipc/folders';
+import { register as registerNewFolderIpc } from './ipc/newfolder';
 import { register as registerFolderSetupIpc } from './ipc/foldersetupipc';
 import { startHeldBy } from './updategate';
 import { register as registerHarnessIpc } from './ipc/harness';
@@ -753,6 +754,7 @@ registerPreviousIpc({ browserGone, renameSessionOpFor, dev, agents, router, regi
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });
 registerSchedulesIpc({ getScheduler: () => scheduler, getFolderStore: () => folderStore });
 registerUsageIpc({ agents, getUsageStore: () => usageStore, getUsageTotalsStore: () => usageTotalsStore, usageLabel });
+registerNewFolderIpc({ addMany, getSettingsStore: () => settingsStore, asEffort }); // spec 093: create a folder from + Folder (empty folder, new repository)
 registerSettingsIpc({ getSettingsStore: () => settingsStore, getRunTheme: () => runTheme, clearRunTheme: () => { runTheme = undefined; } });
 registerThemesIpc({ dev, registry, router });
 const harnessIpc = registerHarnessIpc({

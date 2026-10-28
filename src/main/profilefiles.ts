@@ -15,6 +15,7 @@ import type { ProfileFileInfo, ProfileFolderInfo } from '../shared/api';
 import type { AgentProfile } from '../adapters/types';
 import { DEFAULT_TEMPLATE, MAX_PROFILE_BYTES, profileTemplate } from '../shared/profiletemplates';
 import type { TemplateKind } from '../shared/profiletemplates';
+import { WINDOWS_RESERVED_NAME } from '../shared/newfolder';
 
 export type { ProfileFileInfo, ProfileFolderInfo };
 
@@ -34,8 +35,9 @@ const HEAD_BYTES = 8 * 1024;
 /** A new profile's name (FR-011): a letter or digit first, no separators, no `..` possible as a whole name. */
 export const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 /** Windows device names (constitution VI): `CON.md` or `con.backup.md` is a device there, so a repository profile with such a name
- * would break Windows checkouts. Refused on every platform, any case, with or without an extension (FR-011). */
-export const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
+ * would break Windows checkouts. Refused on every platform, any case, with or without an extension (FR-011). One constant, shared
+ * with spec 093's new-folder names (`src/shared/newfolder.ts`). */
+export { WINDOWS_RESERVED_NAME };
 /** A new profile's name is acceptable (FR-011): the pattern, no `..`, not a Windows device name. profileeditor.js keeps a copy (test:profilefiles keeps them equal). */
 export const isProfileName = (name: unknown): name is string => typeof name === 'string' && PROFILE_NAME.test(name) && !name.includes('..') && !WINDOWS_RESERVED_NAME.test(name);
 export const PROFILE_FILE_ID = /^[0-9a-f]{32}$/;
@@ -355,7 +357,7 @@ export function templateFor(app: ProfileApp, name: string, kind: TemplateKind = 
 export function createProfileFile(dirs: readonly ProfileDir[], app: unknown, place: unknown, name: unknown, template: unknown = DEFAULT_TEMPLATE, text?: unknown): { ok: true; id: string; info: ProfileFileInfo } | Fail {
   if (app !== 'copilot' && app !== 'claude') return { ok: false, error: 'Choose an agent app.' };
   if (template !== 'success' && template !== 'standard') return { ok: false, error: 'Choose a template.' };
-  if (typeof name === 'string' && PROFILE_NAME.test(name) && WINDOWS_RESERVED_NAME.test(name)) return { ok: false, error: 'That name is reserved on Windows (CON, PRN, AUX, NUL, COM1-9, LPT1-9): choose another.' };
+  if (typeof name === 'string' && PROFILE_NAME.test(name) && WINDOWS_RESERVED_NAME.test(name)) return { ok: false, error: 'That name is reserved on Windows (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-9, LPT0-9): choose another.' };
   if (!isProfileName(name)) return { ok: false, error: 'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.' };
   if (text !== undefined && (typeof text !== 'string' || !text.trim() || Buffer.byteLength(text, 'utf8') > maxBytesFor(app))) return { ok: false, error: 'The text cannot be saved (empty or too large).' };
   const own = dirs.filter((d) => d.app === app);
