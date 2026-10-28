@@ -1930,6 +1930,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
        renderer like an imported one. */
     const simQuery = typeof window !== 'undefined' && window.location ? new URLSearchParams(window.location.search) : new URLSearchParams();
     let simTheme = /^[a-z0-9_-]{1,64}$/.test(simQuery.get('theme') ?? '') ? (simQuery.get('theme') as string) : undefined;
+    /* characters=<value> (spec 077 FR-064, FR-070): who sits at the desks in this run, in memory, like the theme; only a listed value */
+    const CHARS = ['theme', 'minimalist', 'cheeky'] as const;
+    type SimChars = (typeof CHARS)[number];
+    const isChars = (v: unknown): v is SimChars => typeof v === 'string' && (CHARS as readonly string[]).includes(v);
+    let simCharacters: SimChars = isChars(simQuery.get('characters')) ? (simQuery.get('characters') as SimChars) : 'theme';
     let simUserTheme: Record<string, unknown> | null = null;
     const simUserThemes: Record<string, unknown>[] = []; // spec 040 FR-014: AI themes saved in this simulated run
     let simThemeN = 0;
@@ -1944,7 +1949,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.0 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
@@ -1952,6 +1957,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       setBadge: async () => ({ ok: true }), /* spec 052 FR-059: no app icon in the demo */
       focusWindow: async () => { window.focus(); return { ok: true }; },
       setTheme: async (id) => { if (typeof id === 'string' && /^[a-z0-9_-]{1,64}$/.test(id)) simTheme = id; return { ok: true, theme: simTheme }; },
+      setCharacters: async (v) => { if (!isChars(v)) return { ok: false, characters: simCharacters }; simCharacters = v; return { ok: true, characters: v }; }, // spec 077 FR-064: refused like main
       listUserThemes: async () => [...(simUserTheme ? [simUserTheme] : []), ...simUserThemes].map((t) => ({ id: t.id as string, name: String(t.name ?? t.id), ok: true })),
       getUserTheme: async (id) => (simUserTheme && id === simUserTheme.id ? simUserTheme : simUserThemes.find((t) => t.id === id) ?? null),
       setPlace: async (server, place) => {

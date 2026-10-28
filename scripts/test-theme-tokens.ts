@@ -143,8 +143,8 @@ for (const f of FILES) {
     return CONTRAST_PAIRS.filter(([fg, bg, min]) => /^#/.test(T.token(fg)) && /^#/.test(T.token(bg)) && ratio(T.token(fg), T.token(bg)) < min).map(([fg, bg]) => `${fg} on ${bg}`);
   };
   // spec 077 (review on PR 621): a built-in is NOT repaired at run time (applyTokens skips contrastFix for built-ins), so its authored tokens must meet every pair themselves:
-  // Cheeky Crew (and Clean Office, which it extends) on every pair, including --desk-new on --card and --desk-needs on --card-waiting (spec 001 FR-178)
-  for (const id of ['clean-office', 'cheeky-crew']) assert.deepStrictEqual(pairsPass(id), [], `built-in ${id}: its authored tokens meet every contrast pair, with no run-time repair`);
+  // Clean Office on every pair, including --desk-new on --card and --desk-needs on --card-waiting (spec 001 FR-178); Cheeky is a Characters choice on top of it since spec 077 FR-066
+  for (const id of ['clean-office']) assert.deepStrictEqual(pairsPass(id), [], `built-in ${id}: its authored tokens meet every contrast pair, with no run-time repair`);
   const pack = { id: 'lowc', tokens: { '--ink': '#cccccc', '--bg': '#ffffff', '--surface': '#ffffff', '--chair': '#c2185b' } };
   T.registerUserThemes({ lowc: pack });
   T.setTheme('lowc');

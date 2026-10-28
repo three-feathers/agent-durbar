@@ -91,7 +91,9 @@ const DRIVERS = [
   { name: 'check-activity-table' }, // spec 052 FR-071 delta 2026-10-21 (#474): Tools > Activity renders its rows
   { name: 'check-codex-file-card' }, // spec 052 FR-172: a Codex write card names the files and shows the change
   { name: 'check-theme-art' }, // spec 040 FR-023: a picked theme's characters and gadgets on desks, walkers, places and chips
-  { name: 'check-crew' }, // spec 077: Cheeky Crew portraits: box vs protected zones, pose, sharpness, the fallback with a picture removed
+  { name: 'check-crew' }, // spec 077: Cheeky portraits (Characters = Cheeky on Clean Office): box vs protected zones, pose, sharpness, the fallback with a picture removed
+  { name: 'check-crew', label: 'check-crew retro', env: { CREW_THEME: 'retro' } }, // spec 077 FR-070: the same with Characters = Cheeky on Retro Pixel
+  { name: 'check-characters' }, // spec 077 FR-064..FR-069: Settings > Characters on Retro Pixel and Corporate (Cheeky, Minimalist, the theme's own)
   { name: 'check-permission-scope' }, // spec 003 FR-108: the approval card says how far "for this session" reaches
   { name: 'check-ro-ask' }, // spec 003 FR-094..FR-097: a Read-only denial's "Switch to Ask first…" opens the mode menu
   { name: 'check-why-allowed' }, // spec 003 FR-099..FR-105 (#605): the why-allowed tag on tool cards and Undo this rule

@@ -1,7 +1,8 @@
 /*
  * Cheeky Crew (spec 077 FR-014, FR-051, FR-055, FR-058). Simulator only (DURBAR_SIM=15 DURBAR_SIM_FREEZE=1), no AI credits.
  *
- * At 1440x900 and 1280x800, with Cheeky Crew picked in Settings (the real path):
+ * At 1440x900 and 1280x800, with Characters = Cheeky picked in Settings on top of the theme CREW_THEME (default Clean Office; spec 077 FR-070
+ * runs it on Retro Pixel and Corporate too), both through Settings (the real path):
  *   - every desk scene draws exactly one portrait, in its fixed box, and that box keeps clear of the protected zones of FR-014 (the
  *     monitor and halo, the thought bubble and chat badge corner, the cup zone); the picture is the pose of the desk's status;
  *   - every picture loads (natural size known) and is drawn at no more than half its natural size (sharp, FR-051);
@@ -13,6 +14,7 @@
  * keep their pictures, and nothing is broken.
  *
  *   npm run check:crew            (builds first; in check:ui too)
+ *   CREW_THEME=<theme id>         the theme under the crew (default clean-office)
  *   SHOTS_OUT=<folder>            screenshots (default: crew-shots in the OS temp folder)
  */
 const fs = require('fs');
@@ -21,7 +23,9 @@ const path = require('path');
 const assert = require('assert');
 const { helpers, jsLiteral } = require('./driver-helpers');
 
-const ID = 'cheeky-crew';
+/* spec 077 FR-064..FR-066: Cheeky is a Characters choice, picked on top of a theme */
+const THEME_ID = process.env.CREW_THEME || 'clean-office';
+const CHARS = 'cheeky';
 /* FR-014 zones in stage units: [x0, y0, x1, y1] */
 const ZONES = { 'monitor and halo': [101, 22, 187, 88], 'bubble and badge corner': [16, 3, 61, 34], 'cup zone': [96, 66, 114, 87] };
 /* FR-060: the screen's frame starts here; the portrait box ends here, so the status colour is never under it */
@@ -130,17 +134,29 @@ module.exports = async (ctx) => {
   const out = process.env.SHOTS_OUT || path.join(os.tmpdir(), 'crew-shots');
   fs.mkdirSync(out, { recursive: true });
   const C = require('../src/renderer/crew.js');
-  const pick = async (id) => {
+  /* one Settings pick: a theme (kind 'theme', #thList) or a Characters value (kind 'characters', #chList) */
+  const pickIn = async (kind, id) => {
+    const list = kind === 'theme' ? '#thList' : '#chList', sel = `${list} [data-${kind}="${id}"]`;
     await H.js(`document.getElementById('settingsBtn').click()`);
-    assert.ok(await H.until(`!!document.querySelector(${jsLiteral(`#thList [data-theme="${id}"]`)})`, 6000), `${id} is listed in Settings`);
-    await H.js(`document.querySelector(${jsLiteral(`#thList [data-theme="${id}"]`)}).click()`);
-    assert.ok(await H.until(`window.THEME.current().id===${jsLiteral(id)}`, 4000), `${id} applied`);
+    assert.ok(await H.until(`!!document.querySelector(${jsLiteral(sel)})`, 6000), `${kind} ${id} is listed in Settings`);
+    await H.js(`document.querySelector(${jsLiteral(sel)}).click()`);
+    const on = kind === 'theme' ? `window.THEME.current().id===${jsLiteral(id)}` : `window.THEME.characters()===${jsLiteral(id)}`;
+    assert.ok(await H.until(on, 4000), `${kind} ${id} applied`);
     await H.js(`window.DurbarScreens.close()`);
     await H.until(`!document.querySelector('.scene-out')`, 3000);
     await H.settle();
     await H.js(`new Promise((r)=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`);
     await ctx.sleep(250);
   };
+  const pick = (id) => pickIn('theme', id);
+  const pickChars = (v) => pickIn('characters', v);
+  /* the crew on the theme under test: the theme first, then Characters = Cheeky */
+  const useCrew = async () => {
+    if (await H.js(`window.THEME.current().id`) !== THEME_ID) await pick(THEME_ID);
+    await pickChars(CHARS);
+    assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'crew', `${THEME_ID}: Characters = Cheeky draws the crew kit`);
+  };
+  console.log(`[crew] theme ${THEME_ID}, characters ${CHARS}`);
 
   /* FR-060: for each use at this size, the drawn face box is inside what is visible, and the things that must stay readable are not on it */
   const faceChecks = async (tag) => {
@@ -202,10 +218,10 @@ module.exports = async (ctx) => {
     // spec 017: with the cabins on (the default) a busy or waiting desk is a closed door, not a scene; this step measures the scenes, so the cabins are off here (the cabin portrait is checked below)
     if (await H.js(`localStorage.getItem('durbar.doorsigns')!=='off'`)) { await H.js(`localStorage.setItem('durbar.doorsigns','off')`); await H.load({ w, h, ready: 'fit', settle: false }); }
     await H.office(15);
-    await pick(ID);
+    await useCrew();
     const nat = await sizes();
     const s = await H.js(`(${survey.toString()})()`);
-    assert.strictEqual(s.theme, ID);
+    assert.strictEqual(s.theme, THEME_ID, 'the theme stays the one under test');
     const mains = s.scenes.filter((x) => /\|crew\|/.test(x.sig));
     assert.ok(mains.length >= 15, `${tag}: crew scenes on screen (${mains.length})`);
     const seen = new Set();
@@ -230,7 +246,7 @@ module.exports = async (ctx) => {
     console.log(`[crew] ${tag}`, JSON.stringify({ scenes: mains.length, characters: [...seen], walkers: s.walkers.length, chips: s.chips.length, lounge: s.lounge.length }));
     await H.clearToasts();
     await ctx.sleep(200);
-    await ctx.shot(path.join(out, `crew-office-${tag}.png`));
+    await ctx.shot(path.join(out, `crew-office-${THEME_ID}-${tag}.png`));
     // FR-061: an idle desk's portrait is full colour; its furniture keeps the dim
     const idle = await H.js(`(${idleOpacity.toString()})()`);
     assert.ok(idle.length >= 1, `${tag}: an idle desk or helper is on screen (${idle.length})`);
@@ -257,17 +273,18 @@ module.exports = async (ctx) => {
       // the picture is under the monitor in the drawing order (asserted above), so a zoomed edge goes behind the screen frame, never over it
     }
     console.log(`[crew] ${tag} glow`, JSON.stringify({ desks: gz.length, needs: gz.filter((g) => g.kind === 'needs you').length, zoom: [...new Set(gz.map((g) => g.e))] }));
-    // the other themes keep the whole scene dimmed
-    await pick('clean-office');
+    // the theme's own characters keep the whole scene dimmed
+    await pickChars('theme');
+    assert.notStrictEqual(await H.js(`window.THEME.sceneKit()`), 'crew', `${THEME_ID}: The theme's own is not the crew`);
     const plain = await H.js(`(${idleOpacity.toString()})()`);
-    assert.ok(plain.length >= 1 && plain.every((x) => x.pic === null && x.rest < 0.9), `${tag}: an idle Clean Office scene is still dimmed (${JSON.stringify(plain.slice(0, 2))})`);
-    console.log(`[crew] ${tag} idle`, JSON.stringify({ crew: idle.length, cleanOffice: plain.length }));
+    assert.ok(plain.length >= 1 && plain.every((x) => x.pic === null && x.rest < 0.9), `${tag}: an idle scene of ${THEME_ID}'s own characters is still dimmed (${JSON.stringify(plain.slice(0, 2))})`);
+    console.log(`[crew] ${tag} idle`, JSON.stringify({ crew: idle.length, themeOwn: plain.length }));
   }
 
   // FR-051: the largest shown size (grown desks, a big window) is still at most half the natural size
   {
     await H.load({ w: 1920, h: 1080, query: { sim: '2', simrooms: '1', simhelpers: '0' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=2&&document.getElementById('stage').dataset.fit` });
-    await pick(ID);
+    await useCrew();
     const nat = await sizes();
     const s = await H.js(`(${survey.toString()})()`);
     const imgs = s.scenes.flatMap((x) => x.images);
@@ -287,9 +304,9 @@ module.exports = async (ctx) => {
       const index = path.join(tmp, 'dist', 'renderer', 'index.html');
       const lost = 'punk';
       fs.rmSync(path.join(tmp, 'dist', 'renderer', 'crew', 'art', `${lost}-waiting.webp`));
-      await H.load({ w: 1440, h: 900, index, query: { theme: ID }, ready: 'fit', settle: false });
+      await H.load({ w: 1440, h: 900, index, query: { theme: THEME_ID, characters: CHARS }, ready: 'fit', settle: false });
       await H.office(15);
-      assert.ok(await H.until(`window.THEME.current().id===${jsLiteral(ID)}`, 4000), 'the theme is on');
+      assert.ok(await H.until(`window.THEME.current().id===${jsLiteral(THEME_ID)}&&window.THEME.sceneKit()==='crew'`, 4000), 'the theme and the crew are on');
       assert.ok(await H.until(`[...document.querySelectorAll('#stage svg.scene')].some(s=>(s.dataset.sig||'').includes(${jsLiteral('|crew|' + lost + '|fb')}))`, 8000), `the desks of ${lost} are redrawn once its picture fails`);
       await H.settle();
       const s = await H.js(`(${survey.toString()})()`);
@@ -311,7 +328,7 @@ module.exports = async (ctx) => {
   {
     await H.load({ w: 1440, h: 900, ready: 'fit', settle: false });
     await H.office(15);
-    await pick(ID);
+    await useCrew();
     const r = await H.js(`(()=>{ try {
       const U = window.__durbarSimUi, agents = U.agents(), st = () => U.crew.state(), before = Object.keys(st().map).length, helpers0 = Object.keys(st().help).length;
       const parent = agents.find((a) => !a.parent && agents.some((h) => h.parent === a.id)) || agents.find((a) => !a.parent);
@@ -335,7 +352,7 @@ module.exports = async (ctx) => {
   {
     await H.load({ w: 1440, h: 900, ready: 'fit', settle: false });
     await H.office(15);
-    await pick(ID);
+    await useCrew();
     const fall = (c) => `window.__durbarSimUi.crew.fall(${jsLiteral(c)})`;
     const st = `window.__durbarSimUi.crew.state()`;
     const pics = (sel) => `[...document.querySelectorAll(${jsLiteral(sel)})].map((e)=>e.querySelectorAll('image').length)`;
@@ -366,12 +383,12 @@ module.exports = async (ctx) => {
       const index = path.join(tmp, 'dist', 'renderer', 'index.html');
       fs.rmSync(path.join(tmp, 'dist', 'renderer', 'crew.js'));
       assert.ok(fs.readFileSync(index, 'utf8').includes('<script src="crew.js"></script>'), 'the page loads crew.js (the copy has the file removed, the tag stays and fails to load)');
-      await H.load({ w: 1440, h: 900, index, query: { theme: ID }, ready: 'fit', settle: false });
+      await H.load({ w: 1440, h: 900, index, query: { theme: THEME_ID, characters: CHARS }, ready: 'fit', settle: false });
       await H.office(15);
       assert.strictEqual(await H.js(`typeof window.DurbarCrew`), 'undefined', 'the module is not there');
-      assert.ok(await H.until(`window.THEME.current().id===${jsLiteral(ID)}`, 4000), 'the theme restores at start with no module');
-      await pick('clean-office');
-      await pick(ID); // selecting it again, by hand
+      assert.ok(await H.until(`window.THEME.current().id===${jsLiteral(THEME_ID)}&&window.THEME.sceneKit()==='crew'`, 4000), 'the crew restores at start with no module');
+      await pickChars('theme');
+      await pickChars(CHARS); // selecting it again, by hand
       const probe = await H.js(`window.__durbarSimUi.crew.probe()`);
       assert.deepStrictEqual(probe, { ok: true, of: 0 }, `no module: preload, sync and every crewOf answer without throwing and name no character (${JSON.stringify(probe)})`);
       const s = await H.js(`(${survey.toString()})()`);

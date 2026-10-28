@@ -65,6 +65,7 @@ const api: DurbarApi = {
   setBadge: (count) => ipcRenderer.invoke('app:setBadge', count),
   focusWindow: () => ipcRenderer.invoke('app:focusWindow'),
   setTheme: (id) => ipcRenderer.invoke('settings:setTheme', id),
+  setCharacters: (v) => ipcRenderer.invoke('settings:setCharacters', v), // spec 077 FR-064
   listUserThemes: () => ipcRenderer.invoke('theme:listUser'),
   getUserTheme: (id) => ipcRenderer.invoke('theme:getUser', id),
   importTheme: () => ipcRenderer.invoke('theme:import'),

@@ -397,7 +397,7 @@ module.exports = async (ctx) => {
     await closeChat();
   };
   const CONTRAST_SURFACES = ['tools-screen', 'settings-theme', 'settings-places', 'settings-cap', 'place-dialog', 'chat-waiting', 'agent-strip'];
-  const BUILTIN = ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese', 'cheeky-crew'];
+  const BUILTIN = ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese']; // spec 077 FR-066: Cheeky Crew is a Characters choice now, not a theme
 
   const tones = async (id) => { // T152 round 2: the contrast of the rules that moved to the --tone-* tokens, in this theme
     const list = toneList();

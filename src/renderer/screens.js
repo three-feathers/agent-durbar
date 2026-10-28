@@ -325,6 +325,17 @@
         ${themeFallbackNote(themes)}
         ${badThemes.length?`<p class="scr-note warn" role="status">${badThemes.length} theme folder${badThemes.length>1?'s were':' was'} ignored: ${esc(badThemes.map((b)=>b.id+': '+(b.error||'invalid')).join('; '))}</p>`:''}
         <div class="scr-tools">${X.bridge.generateTheme?'<button class="btn" type="button" id="thAi">Make a theme with AI…</button>':''}<button class="btn" type="button" id="thImport">Import a theme…</button><button class="btn" type="button" id="thExport" title="Copy the active theme's folder (one of your own themes) to a folder you pick">Export the active theme…</button></div></section>`;
+    /* Characters (spec 077 FR-064, FR-068): who sits at the desks, on top of any theme; the theme picker's pattern, one figure per choice */
+    const KIT_NAMES={office:'Minimalist',corporate:'Corporate',pixel:'Pixel','court-indian':'Indian court','court-european':'European court','court-japanese':'Japanese court',crew:'Cheeky'};
+    /* the items are painted again after a theme pick: the theme's own figures and every preview follow the theme */
+    const charItems=()=>{
+      const cur=window.THEME.characters(), own=window.THEME.themeKit(), crewN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.IDS)?window.DurbarCrew.IDS.length:0;
+      const list=[{id:'theme',name:'The theme\u2019s own',sub:(KIT_NAMES[own]||own)+' figures'},{id:'minimalist',name:'Minimalist',sub:'The calm office figure'},{id:'cheeky',name:'Cheeky',sub:crewN?crewN+' cheeky characters':'Cheeky characters'}];
+      return list.map((c)=>`<li class="throw"><button class="thpick" type="button" data-characters="${esc(c.id)}" aria-pressed="${c.id===cur}" aria-label="Characters ${esc(c.name)}: ${esc(c.sub)}"><span class="chsw" aria-hidden="true">${X.charPreview?X.charPreview(c.id):''}</span><span class="thtx"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc(c.sub)}</small></span></button></li>`).join('');
+    };
+    const charSec=window.THEME&&window.THEME.setCharacters&&X.applyCharacters?`<section class="scr-sec" aria-labelledby="chH"><h3 id="chH">Characters</h3>
+        <p class="scr-note">Who sits at the desks, on top of any theme; the choice applies at once and is kept on this computer.</p>
+        <ul class="thlist" id="chList">${charItems()}</ul></section>`:'';
     const ab=app.about;
     const aboutSec=ab?`<section class="scr-sec" aria-labelledby="aboutH"><h3 id="aboutH">About</h3>
         <p class="scr-note"><b>${esc(ab.name)}</b> ${esc(ab.version)} · by <b>${esc(ab.owner)}</b></p>
@@ -360,7 +371,7 @@
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${capSec}${moodSec}${breakSec}${notifySec}${schedSec}${floorsSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${capSec}${moodSec}${breakSec}${notifySec}${schedSec}${floorsSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3><span class="mtag warn" id="advMcpAtt"${live&&live.agg.attention?'':' hidden'}>${esc(attText(live?live.agg.attention:0))}</span></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         ${liveSection()}
@@ -417,9 +428,16 @@
     });
     if($('thList'))$('thList').addEventListener('click',(e)=>{
       const b=e.target.closest&&e.target.closest('[data-theme]');if(!b||!X.applyTheme)return;
-      X.applyTheme(b.dataset.theme);
+      const done=X.applyTheme(b.dataset.theme);
+      if($('chList'))Promise.resolve(done).then(()=>{const l=$('chList');if(l)l.innerHTML=charItems();}); /* spec 077 FR-068: the theme's own figures follow */
       /* spec 040 FR-019: the list shows the new choice at once (it was only repainted when Settings reopened) */
       $('thList').querySelectorAll('[data-theme]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
+    });
+    /* spec 077 FR-068: a Characters pick applies live through app.js's applyCharacters and shows the new choice at once */
+    if($('chList'))$('chList').addEventListener('click',(e)=>{
+      const b=e.target.closest&&e.target.closest('[data-characters]');if(!b||!X.applyCharacters)return;
+      X.applyCharacters(b.dataset.characters);
+      $('chList').querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
     });
     if($('thImport'))$('thImport').onclick=async()=>{
       if(!X.bridge.importTheme)return;
