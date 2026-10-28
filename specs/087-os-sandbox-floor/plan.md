@@ -71,7 +71,7 @@ IV (no credits), V (layout unchanged), VI (per-OS logic in pure functions), VIII
 
 ### Adapters
 
-- **Claude** (`claude.ts`): at launch, the pre-checks (version ≥ 2.1.219, platform, `bwrap`/`socat`) decide whether to try; when
+- **Claude** (`claude.ts`): at launch, the pre-checks (version ≥ 2.1.309, platform, `bwrap`/`socat`) decide whether to try; when
   trying, `--settings` carries the block with `failIfUnavailable: true` and the state is `unknown`. Surviving the start sets `on`.
   `on` is set at the `system`/`init` message (`initSeen`). An exit before `init` that the pure classifier recognises as the
   sandbox's is mapped to a plain reason (K4); others go to the existing `onExit` crash path. Then policy required → refusal
