@@ -9,7 +9,7 @@ Make every floor that is on one whole screen of a vertical building. A lift pane
 ## Technical Context
 
 **Language/Version**: TypeScript (main, shared) and plain-script JavaScript (renderer, no modules; pure helpers use the `places.js` UMD pattern so Node tests can `require` them). No new dependency.
-**Storage**: `localStorage` only (current floor id). No change to `folders.json`, `src/shared/floors.ts`, IPC or preload.
+**Storage**: `localStorage` only (current floor id `durbar.floor`; the view `durbar.floorView`, FR-037). No change to `folders.json`, `src/shared/floors.ts`, IPC or preload.
 **Testing**: `scripts/test-floornav.ts` (pure rules, new), simulator driver `scripts/shots-092.js` (new, theme-neutral, waits with `until()`), `check:office` extended (`scripts/check-office-overlap.js`), existing `test-floors.ts` / `test-navigator.ts` stay green. 0 AI credits; simulator `DURBAR_SIM=15 DURBAR_SIM_FLOORS=1`.
 **Target Platform**: Electron on Windows, macOS, Linux (renderer-only, no path or shell code).
 **Performance Goals**: a floor change within 033 SC-003's budget plus the slide (spec SC-003); rendering only the current floor (and the target during a slide) keeps the layout cost of N floors at the cost of one.
@@ -64,12 +64,15 @@ docs/ README.md changelog.d/  see FR-026
 Order is chosen so the riskiest part (layout per floor and its width budget) lands first and every later phase is small.
 
 1. **Phase 1, floor screens (FR-001..FR-005, FR-020..FR-023, FR-025 partly).** Pure `floornav.js` + test; current floor state with persistence; `officeModel()` and `layoutKey` use the current floor; lobby visitors of all floors with the no-walk rule; PageUp/PageDown (instant, announced) as the first way to change floor; fallbacks when the current floor goes off. `check:office` per floor. No lift panel yet, so the feature is usable by keyboard only and invisible with one floor on.
-2. **Phase 2, the lift panel and badges (FR-006..FR-008, FR-013..FR-017).** Panel markup and styles, roving focus, accessible names, attention badges from the existing sources, whole-building pills unchanged, width counted in the layout, `check:office` with the panel at both sizes. Instant switching still.
+2. **Phase 2, the lift panel, badges and the All floors view (FR-006..FR-008, FR-013..FR-017, FR-028, FR-031..FR-037; owner 2026-10-28).** Panel markup and styles, roving focus, accessible names, attention badges from the existing sources, whole-building pills unchanged, width counted in the layout, `check:office` with the panel at both sizes. Instant switching still (meets FR-010; the slide stays phase 3). The *All* button and the All floors view: a view preference `durbar.floorView` next to `durbar.floor`; in the All view `curFloorId()` returns `null`, so `onScreen`, `otherFloor`, `officeModel()`, `chooseLayout()` and the floor tags take the **pre-092 path unchanged** (no second render path); `floorScreens()` keeps meaning "two or more floors on" for the lift, and a new `oneFloorView()` (= `floorScreens()` and not All) gates the per-floor behaviour (FR-001 filter, empty-floor line, PageUp/PageDown floor change, badges, FR-021 labels). `check:office` gains All-floors cases (FR-033).
 3. **Phase 3, the slide (FR-009, FR-010).** Two-floor mount during the slide, `motion()` at 300 ms, retarget, end-on-resize, reduced motion read live, SC-003 timing as a ratio.
 4. **Phase 4, jumps (FR-018, FR-019, FR-011 help text).** `goToFloor()` called by `openPanel`, the navigator, the folder filter and the list; Back to the office shows the right floor; navigator floor row; keyboard help rows.
 5. **Phase 5, docs and screenshots (FR-026).** README, docs, `npm run shots:docs`, changelog fragment, 033 cross-reference, converge.
 
 ## Risks to check in review
+
+- All floors view (FR-031..FR-037): every phase-1 call site of `floorScreens()` must be checked for whether it means "the lift is shown" (two or more floors on) or "one floor is shown" (`oneFloorView()`); a missed one gives a floor-only behaviour in the whole-building view (for example the "Nothing on <floor>" line, a visitor label naming a floor, a badge). `grep -n floorScreens src/renderer/app.js` and a driver case per behaviour (T047).
+- The All floors density at 1280x800 with the panel (FR-033): if `check:office` fails, phase 2 does not merge; the numbers go to the owner.
 
 - Width of the lift panel against the 15-agent rule at 1280x800 (FR-008); Q-B decided (position number only, owner 2026-10-27).
 - Focus handling: PageUp/PageDown must never act inside text fields, selects, dialogs, menus, the palette or the composer.

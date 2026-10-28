@@ -1,0 +1,1 @@
+- Process: commits and PRs carry only the owner's identity (no AI co-author trailer or "generated with" line) and every commit is SSH-signed so GitHub shows Verified; setup in `AGENTS.md`, `docs/collaboration.md` and `docs/agent-setup/` (spec 021 FR-061).
