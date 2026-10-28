@@ -15,6 +15,8 @@ type McpServerStatus = import('../adapters/types').McpServerStatus;
 type AgentInfo = import('../shared/api').AgentInfo;
 type DurbarApi = import('../shared/api').DurbarApi;
 type UpdatesView = import('../shared/api').UpdatesView;
+type NewFolderProgress = import('../shared/api').NewFolderProgress;
+type NewFolderCheck = import('../shared/api').NewFolderCheck;
 type FolderSetupItem = import('../shared/foldersetup').FolderSetupItem;
 type PickedFile = import('../shared/api').PickedFile;
 type ModelChoice = import('../shared/api').ModelChoice;
@@ -2518,17 +2520,62 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     };
     let started = false;
     let extra = 0;
-    /* spec 093: the simulator's own parent pick (one at a time) and its canned name refusals (main's rules are tested in test:newfolder) */
-    const simNewFolder = { token: '', n: 0 };
-    const simNewFolderCheck = (req: { kind?: unknown; name?: unknown } | null | undefined): { ok: boolean; error?: string } => {
+    /* spec 093: the simulator's own parent pick (one at a time), its canned URL and name refusals (main's rules are tested in
+       test:newfolder) and a fake clone: progress events on a timer, Cancel, no process, no network */
+    const simNewFolder: { token: string; n: number; progress: Array<(p: NewFolderProgress) => void>; clone: null | { cancel: () => void } } = { token: '', n: 0, progress: [], clone: null };
+    const simCloneUrl = (u: unknown): { ok: true; host: string; suggested: string; shown: string } | { ok: false; error: string; retry: 'url' } => {
+      const no = (error: string) => ({ ok: false as const, error, retry: 'url' as const });
+      if (typeof u !== 'string' || !u) return no('Paste the address of the repository.');
+      if (/[\s]/.test(u)) return no('Remove spaces, tabs and line breaks from the address.');
+      if (/^-/.test(u)) return no('No part of the address may start with -.');
+      if (/^(?:https|ssh):\/\/[^/@]*:[^/@]*@/i.test(u) || /^[^@/:]+:[^@/]*@[^/]*:/.test(u)) return no('Remove the password from the address. Durbar uses your own git credentials.');
+      const m = /^(?:https|ssh):\/\/(?:[A-Za-z0-9._~+-]+@)?([A-Za-z0-9.-]+)(?::\d+)?\/[^?#\\]+$/i.exec(u) || /^[A-Za-z0-9._~+-]+@([A-Za-z0-9.-]+):[^-][^?#\\]*$/.exec(u);
+      if (!m || u.includes('::')) return no('Use an https:// or ssh address (for example git@github.com:owner/repo.git).');
+      const seg = (u.replace(/\/+$/, '').split(/[/:]/).pop() || '').replace(/\.git$/i, '');
+      return { ok: true, host: m[1], suggested: /^[A-Za-z0-9._-]+$/.test(seg) ? seg : '', shown: u };
+    };
+    const simNewFolderCheck = (req: { kind?: unknown; name?: unknown; url?: unknown } | null | undefined): NewFolderCheck => {
       const n = req && typeof req.name === 'string' ? req.name : '';
-      if (!req || (req.kind !== 'init' && req.kind !== 'empty')) return { ok: false, error: 'Choose what to create.' };
+      if (!req || (req.kind !== 'init' && req.kind !== 'empty' && req.kind !== 'clone')) return { ok: false, error: 'Choose what to create.' };
+      let extra = {};
+      if (req.kind === 'clone') {
+        const u = simCloneUrl(req.url);
+        if (!u.ok) return u;
+        /* window.__simCloneHost: a driver plants a hostile host-like string to check the Allow all sentence is text, never HTML */
+        const planted = typeof window !== 'undefined' ? (window as unknown as { __simCloneHost?: unknown }).__simCloneHost : undefined;
+        extra = { host: typeof planted === 'string' ? planted : u.host, suggested: u.suggested, shown: u.shown };
+        if (req.name === undefined) return { ok: true, ...extra };
+      }
       if (!n) return { ok: false, error: 'Type a name for the new folder.' };
       if (/[\\/]/.test(n)) return { ok: false, error: 'A single folder name, without / or \\.' };
       if (/^(con|prn|aux|nul|conin\$|conout\$|com[0-9]|lpt[0-9]) *(\.|$)/i.test(n)) return { ok: false, error: 'That name is reserved on Windows (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-9, LPT0-9). Choose another.' };
       if (n === '.' || n === '..') return { ok: false, error: 'Use a name other than . or ..' };
-      return { ok: true };
+      return { ok: true, ...extra };
     };
+    /* the fake clone's progress, as git writes it; window.__simCloneHold stops it at "Receiving objects: 45%" (and
+       window.__simCloneWaiting before any output, with FR-044's waiting line) until the flag is cleared or Cancel is pressed */
+    const simCloneRun = (): Promise<'done' | 'cancelled'> => new Promise((resolve) => {
+      const w = (typeof window !== 'undefined' ? window : {}) as { __simCloneHold?: boolean; __simCloneWaiting?: boolean };
+      const t0 = Date.now();
+      const steps: Array<[string, number | undefined, string]> = [['Counting objects', 100, 'remote: Counting objects: 100% (1200/1200), done.'], ...[10, 25, 45, 70, 90, 100].map((p): [string, number, string] => ['Receiving objects', p, `Receiving objects: ${String(p).padStart(3)}% (${p * 12}/1200), ${(p / 20).toFixed(1)} MiB | 3.1 MiB/s`]), ['Resolving deltas', 100, 'Resolving deltas: 100% (640/640), done.'], ['Updating files', 100, 'Updating files: 100% (310/310), done.']];
+      const lines = ["Cloning into '.'...", 'remote: Enumerating objects: 1200, done.'];
+      let i = 0;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const emit = (p: NewFolderProgress): void => simNewFolder.progress.forEach((cb) => cb(p));
+      const tick = (): void => {
+        if (w.__simCloneWaiting) { emit({ lines: [], elapsedMs: Date.now() - t0, waiting: true }); timer = setTimeout(tick, 300); return; }
+        const held = w.__simCloneHold && i > 0 && steps[i - 1][1] === 45;
+        if (!held) {
+          if (i >= steps.length) { simNewFolder.clone = null; resolve('done'); return; }
+          const [phase, percent, line] = steps[i++];
+          if (lines.length && lines[lines.length - 1].startsWith(phase.slice(0, 9))) lines[lines.length - 1] = line; else lines.push(line);
+          emit({ phase, percent, lines: lines.slice(-6), elapsedMs: Date.now() - t0 });
+        }
+        timer = setTimeout(tick, 250);
+      };
+      simNewFolder.clone = { cancel: () => { if (timer) clearTimeout(timer); simNewFolder.clone = null; resolve('cancelled'); } };
+      timer = setTimeout(tick, 250);
+    });
     type HsCb = (p: never) => void;
     const simHarness: { progress: HsCb[]; done: HsCb[]; running: null | { kind: string; finish: () => void } } = { progress: [], done: [], running: null };
     /*
@@ -2715,15 +2762,17 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       createCheck: async (req) => simNewFolderCheck(req),
       createFolder: async (req, mode, o) => {
         if (typeof window !== 'undefined') (window as unknown as { __simNewFolderLast?: unknown }).__simNewFolderLast = { req: { ...req }, mode, opts: { ...(o || {}) } };
-        const no = (error: string, retry?: 'name' | 'place') => ({ ok: false, agents: [] as AgentInfo[], error, ...(retry ? { retry } : {}) });
-        if (!req || (req.kind !== 'init' && req.kind !== 'empty')) return no('Choose what to create.');
+        const no = (error: string, retry?: 'url' | 'name' | 'place') => ({ ok: false, agents: [] as AgentInfo[], error, ...(retry ? { retry } : {}) });
+        if (!req || (req.kind !== 'init' && req.kind !== 'empty' && req.kind !== 'clone')) return no('Choose what to create.');
+        if (simNewFolder.clone) return no('A folder is still being created.');
         if (req.token !== simNewFolder.token) return no('Choose the place again.', 'place');
-        const chk = simNewFolderCheck(req);
-        if (!chk.ok) return no(chk.error || '', 'name');
+        const chk = simNewFolderCheck({ ...req, name: req.name ?? '' });
+        if (!chk.ok) return no(chk.error || '', chk.retry === 'url' ? 'url' : 'name');
         const bad = o && o.adapterId !== undefined ? notReady(o.adapterId) : undefined;
         if (bad) return no(bad);
         const cwd = '~/work/' + req.name;
         if (sims.some((x) => x.info.cwd === cwd)) return no(`A folder or file named ${req.name} already exists there.`, 'name');
+        if (req.kind === 'clone' && (await simCloneRun()) === 'cancelled') return { ok: false, agents: [] as AgentInfo[], cancelled: true as const, error: 'Cancelled. Nothing was kept.' };
         simNewFolder.token = '';
         const floor = o && typeof o.floor === 'string' && floorsList.some((f) => f.id === o.floor) ? o.floor : 'ground';
         if (o && o.floor !== undefined) lastFloor = floor;
@@ -2735,6 +2784,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         addedListeners.forEach((l) => l(info));
         return { ok: true, agents: [], name: req.name };
       },
+      createCancel: async () => { if (!simNewFolder.clone) return { ok: false }; simNewFolder.clone.cancel(); return { ok: true }; },
+      onCreateProgress: (cb) => { simNewFolder.progress.push(cb); return () => { simNewFolder.progress = simNewFolder.progress.filter((x) => x !== cb); }; },
       listAgents: async () => {
         if (!started) {
           started = true;

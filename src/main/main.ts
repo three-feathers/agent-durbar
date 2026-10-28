@@ -754,7 +754,7 @@ registerPreviousIpc({ browserGone, renameSessionOpFor, dev, agents, router, regi
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });
 registerSchedulesIpc({ getScheduler: () => scheduler, getFolderStore: () => folderStore });
 registerUsageIpc({ agents, getUsageStore: () => usageStore, getUsageTotalsStore: () => usageTotalsStore, usageLabel });
-registerNewFolderIpc({ addMany, getSettingsStore: () => settingsStore, asEffort }); // spec 093: create a folder from + Folder (empty folder, new repository)
+const newFolderIpc = registerNewFolderIpc({ addMany, getSettingsStore: () => settingsStore, asEffort, toRenderer }); // spec 093: create a folder from + Folder (clone, new repository, empty folder)
 registerSettingsIpc({ getSettingsStore: () => settingsStore, getRunTheme: () => runTheme, clearRunTheme: () => { runTheme = undefined; } });
 registerThemesIpc({ dev, registry, router });
 const harnessIpc = registerHarnessIpc({
@@ -1111,6 +1111,8 @@ app.whenReady().then(() => {
 let remoteReleased = false;
 let quitNoted = false;
 let disposedOnQuit = false;
+/** Spec 093 FR-043: a running clone is ended and its folder removed (at most 5 s) before the app quits; asked once. */
+let newFolderEnded = false;
 app.on('before-quit', (ev) => {
   if (!quitConfirmed) {
     if (workingCount() > 0 && !dev.DURBAR_SHOT && !dev.DURBAR_DRIVER) {
@@ -1130,6 +1132,12 @@ app.on('before-quit', (ev) => {
     quitNoted = true;
     if (win && !win.isDestroyed()) saveWindowState(win);
     appState?.setQuitAt(Date.now());
+  }
+  if (!newFolderEnded && newFolderIpc.busy()) {
+    newFolderEnded = true;
+    ev.preventDefault();
+    void newFolderIpc.quit().catch(() => undefined).finally(() => app.quit());
+    return;
   }
   const release = !remoteReleased && remoteOps.ids().length > 0;
   const dispose = !disposedOnQuit && disposeOnQuit(process.platform);

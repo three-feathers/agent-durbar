@@ -352,11 +352,15 @@ export interface AddResult {
   warnings?: { name: string; kind: BroadKind }[];
 }
 
-/** Spec 093: what the window sends to create a folder: never a path, only the token of main's own pick (phase 2 adds `clone` and `url`). */
-export interface NewFolderRequest { kind: 'init' | 'empty'; token: string; name: string }
+/** Spec 093: what the window sends to create a folder: never a path, only the token of main's own pick; a clone adds its URL. */
+export interface NewFolderRequest { kind: 'clone' | 'init' | 'empty'; token: string; name: string; url?: string }
+/** Spec 093 FR-022: the answer of an early check; for a clone URL also its host (FR-061), the suggested name and the URL masked. */
+export type NewFolderCheck = { ok: true; host?: string; suggested?: string; shown?: string } | { ok: false; error: string; retry?: 'url' | 'name' };
+/** Spec 093 FR-040, FR-044: one clone progress event (masked in main). */
+export interface NewFolderProgress { phase?: string; percent?: number; lines: string[]; elapsedMs: number; waiting?: true }
 export type NewFolderPick = { ok: true; token: string; parent: string } | { ok: false; cancelled?: true; error?: string };
-/** `retry` says which step the window offers again: the name, or the place (*Change place…*). */
-export type NewFolderResult = AddResult & { name?: string; retry?: 'name' | 'place' };
+/** `retry` says which step the window offers again: the URL, the name, or the place (*Change place…*). */
+export type NewFolderResult = AddResult & { name?: string; retry?: 'url' | 'name' | 'place'; cancelled?: true; submodules?: true };
 
 export interface ResumeResult {
   ok: boolean;
@@ -757,10 +761,14 @@ export interface DurbarApi {
   addWorkspaceFile(permMode: PermMode, opts?: SessionOptions): Promise<AddResult>;
   /** Spec 093 FR-004, FR-005: main's system picker for the parent of a new folder; a one-use token and the parent's text (display only). */
   createPickParent?(): Promise<NewFolderPick>;
-  /** Spec 093 FR-022: early feedback on a create request (kind and name); nothing is created. */
-  createCheck?(req: NewFolderRequest): Promise<{ ok: boolean; error?: string }>;
+  /** Spec 093 FR-022: early feedback on a create request (kind, the clone URL, the name); nothing is created or run. */
+  createCheck?(req: Partial<NewFolderRequest>): Promise<NewFolderCheck>;
   /** Spec 093 FR-060: create the folder in the picked place and add it like Add existing (same mode and options). */
   createFolder?(req: NewFolderRequest, permMode: PermMode, opts?: SessionOptions): Promise<NewFolderResult>;
+  /** Spec 093 FR-041: end the running clone (only the git Durbar started); its folder is removed after git has exited. */
+  createCancel?(): Promise<{ ok: boolean }>;
+  /** Spec 093 FR-040: the running clone's progress (masked in main). */
+  onCreateProgress?(cb: (p: NewFolderProgress) => void): () => void;
   /** Another agent (own chat) in the same folder as agent `id`. */
   newSession?(id: string, opts: SessionOptions): Promise<{ ok: boolean; error?: string; agent?: AgentInfo }>;
   /** Models the account offers (no credits used). */
