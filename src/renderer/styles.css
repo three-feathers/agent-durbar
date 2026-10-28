@@ -318,9 +318,26 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 
 /* ---------- list view ---------- */
 #list{flex:1;min-width:0;overflow:auto;padding:16px 24px 20px;display:none}
-.list-wrap{background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+/* spec 001 FR-182 (issue #812): (the first and last tracks hold the row's 16px padding, so their numbers are 16 more than the cell's) the columns are decided once, by the wrap (rows and the head are subgrids of it), so they line up and follow their content: Agent app, Active, Usage and Status fit their cells up to a cap; Agent and Folder have a larger floor; Current task takes what is left and is the cell that is cut. No resize handles. */
+.list-wrap{display:grid;grid-template-columns:minmax(186px,1.3fr) fit-content(150px) minmax(130px,1fr) minmax(130px,.9fr) minmax(120px,2.4fr) fit-content(84px) fit-content(110px) fit-content(146px);column-gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.list-wrap>.filter-note,.list-wrap>.empty{grid-column:1/-1}
+.lrow-w{display:grid;grid-template-columns:subgrid;grid-column:1/-1}
+/* floors of the short columns (the fit-content tracks would otherwise shrink to nothing in a narrow window) */
+.lrow>:nth-child(2){min-width:56px}.lrow>:nth-child(6){min-width:40px}.lrow>:nth-child(7){min-width:44px}.lrow>:nth-child(8){min-width:76px}
+/* a narrow window (the app's minimum is 640px) gives up whole columns before it scrolls sideways: Role first, then Folder, but never the column the list is sorted by (data-sort on the wrap; the row's accessible name keeps all of them) */
+#list{container-type:inline-size;container-name:lst}
+@container lst (max-width:899px){
+  .list-wrap{grid-template-columns:minmax(166px,1.3fr) fit-content(150px) minmax(130px,1fr) minmax(110px,2fr) fit-content(84px) fit-content(110px) fit-content(146px)}
+  .list-wrap:not([data-sort="role"]) .lrow>:nth-child(3),.list-wrap[data-sort="role"] .lrow>:nth-child(4){display:none}
+}
+@container lst (max-width:759px){
+  .list-wrap{grid-template-columns:minmax(136px,1.3fr) fit-content(150px) minmax(90px,2fr) fit-content(84px) fit-content(110px) fit-content(146px)}
+  .list-wrap:not([data-sort="role"]):not([data-sort="folder"]) .lrow>:nth-child(4){display:none}
+  .list-wrap:is([data-sort="role"],[data-sort="folder"]){grid-template-columns:minmax(136px,1.3fr) minmax(90px,1fr) minmax(90px,2fr) fit-content(84px) fit-content(110px) fit-content(146px)}
+  .list-wrap:is([data-sort="role"],[data-sort="folder"]) .lrow>:nth-child(2){display:none}
+}
 /* spec 052 FR-064: 34px rows; Agent, Agent app, Role, Folder, Current task, Last activity, Cost, Status ; FR-092: the Agent app column grows ("Basic agent (simulated)" fits) */
-.lrow{display:grid;grid-template-columns:minmax(120px,1fr) minmax(100px,1.05fr) minmax(90px,.7fr) minmax(100px,.75fr) minmax(160px,2.4fr) 78px 88px 120px;gap:12px;align-items:center;width:100%;padding:0 16px;height:34px;border:0;border-bottom:1px solid var(--line-soft);background:transparent;text-align:left;cursor:pointer;font-size:13px}
+.lrow{display:grid;grid-template-columns:subgrid;grid-column:1/-1;gap:12px;align-items:center;width:100%;padding:0 16px;height:34px;border:0;border-bottom:1px solid var(--line-soft);background:transparent;text-align:left;cursor:pointer;font-size:13px}
 .lrow:last-child,.lrow-w:last-child>.lrow{border-bottom:0}
 button.lrow:hover{background:var(--surface-2)}
 button.lrow[aria-pressed="true"]{background:var(--tone-info-soft);box-shadow:inset 3px 0 0 var(--focus)} /* spec 052 FR-052: not colour only */
@@ -584,7 +601,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .stage:not([data-d="full"]) .room[data-tint="blue"]{--wall:var(--cwall-blue,#b5c8d8)}
 .stage:not([data-d="full"]) .room[data-tint="sand"]{--wall:var(--cwall-sand,#d2c4a4)}
 .stage:not([data-d="full"]) .room[data-tint="clay"]{--wall:var(--cwall-clay,#d8c1b3)}
-.stage:not([data-d="full"]) .room::after{content:"";position:absolute;left:28px;bottom:-2px;width:30px;height:2px;background:var(--bg)}
+/* spec 001 FR-183 (issue #813): no doorway notch in the bottom wall; the room's door is the icon in its header */
 .stage:not([data-d="full"]) .room-head{min-height:calc(var(--rp) + 14px);gap:8px;padding-right:4px} /* spec 052 (#311): the plant is decoration for the full layout only; denser rooms give its room to the 24px controls */
 .stage:not([data-d="full"]) .room-name{font-size:12.5px;line-height:18px;padding:0 9px;border-radius:6px;background:color-mix(in srgb,var(--raised) 72%,transparent);border:1px solid var(--wall)}
 .stage:not([data-d="full"]) .room-head{container-type:inline-size}
@@ -2057,6 +2074,9 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 @media (hover:none){.ren,.ttl-pen{opacity:1}}
 /* the room header's pencil is placed like a card's (against the room: the header is not positioned, the plant is placed against the room); the Folders panel and Previous sessions rows have theirs in the flow, hidden with opacity until hover or focus */
 .ren.ren-in{position:static;flex:none}
+/* spec 001 FR-184 (issue #813): in the room header the pencil is only the icon; a tile appears on hover or keyboard focus, like the header's other buttons (24px target and focus ring unchanged) */
+.room-head>.ren.ren-in{background-color:transparent}
+.room-head>.ren.ren-in:hover,.room-head>.ren.ren-in:focus-visible{background-color:var(--raised);background-clip:border-box}
 .room-head:hover>.ren,.room-head:focus-within>.ren,.fp-row:hover .ren-in,.fp-row:focus-within .ren-in,.prev-row:hover .ren-in,.prev-row:focus-within .ren-in{opacity:1}
 /* the unit scales in when its agent leaves the lounge (shut-out: from .92); the pencil counter-scales (1/.92) so its 24px target stays 24px while it plays (spec 059 FR-025, spec 052) */
 .unit.unrolling>.ren{animation:shut-out-ren .22s ease-out}
