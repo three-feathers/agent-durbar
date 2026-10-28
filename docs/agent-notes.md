@@ -330,6 +330,11 @@ Each entry has the date it was learned, what happened, and how to apply it, with
   - *Why*: Chromium scrolls the focused element's scroller, else the root one; here neither is `#floor`. And the office draws one floor at a time (spec 092 FR-001).
   - *How to apply*: in a driver visit the floors with `H.eachFloor(fn)` / `H.goToFloor(id)` (real PageUp/PageDown, `driver-helpers.js`); for a driver that only needs three floors and all agents on screen use `simfloors=ground` (every folder on the Ground floor, other floors on and empty). Count floor announcements with a `MutationObserver` on `#srAnnounce` and filter on "Floor ": the palette and other parts announce there too.
 
+- **MCP sign-in on an Entra-managed Mac: use Safari or Edge, or Conditional Access refuses the tool (AADSTS530003)** (2026-10-28, Paco's agent; `real:` owner's managed Mac, a Microsoft 365 mail MCP server through Copilot in Durbar).
+  - *What*: the server row said *Running*, but every tool call failed with `AADSTS530003: Your device is required to be managed` and a `claims` challenge (`capolids`). The same server worked in VS Code on the same Mac. After **Sign in again…** with **Safari** as the default browser, it worked in Durbar.
+  - *Why*: Durbar asks the Copilot runtime to do the MCP sign-in in the default browser; it does not use Microsoft's broker. Device compliance reaches Entra only through a browser that talks to Company Portal: Safari and Edge do it natively, Chrome only with the *Microsoft Single Sign On* extension. VS Code uses its own brokered Microsoft sign-in, which is why it worked there.
+  - *How to apply*: on a managed Mac, sign in to Microsoft-hosted MCP servers from Safari or Edge (More > MCP servers > *Sign in again…*). Read an AADSTS530003 tool error as a sign-in problem, not a Durbar or server bug. Follow-up for a UI hint: #841.
+
 ## Team chat (Telegram)
 
 - **Bots in the team group must be set up to hear each other** (2026-10-27, Paco's agent, at Paco's request; `real:` Ruben's bot missed every message from other bots for days until 2026-10-24). *What:* Telegram does not deliver other bots' messages to your bot by default, so review asks sent in the group can be lost without any error. *How to apply* (Claude Code with the official Telegram channel plugin):
