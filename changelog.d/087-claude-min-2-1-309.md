@@ -1,1 +1,0 @@
-- **Claude Code older than 2.1.309 runs without the OS sandbox floor** (spec 087 FR-003a): that release closed two sandbox escapes (shell startup files outside the sandbox; the `--mcp-config` file writable from sandboxed commands). Below it the session still starts, the chat chip says the Claude Code is too old and to update it, and Durbar's own checks still apply.

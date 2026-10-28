@@ -1,1 +1,0 @@
-- **Release notes name every agent app** (spec 008 FR-130): the intro of the release notes no longer says "Requires GitHub Copilot (copilot login)". It says at least one of GitHub Copilot, Claude Code or OpenAI Codex must be signed in, and that the project is not affiliated with GitHub, Microsoft, Anthropic or OpenAI.
