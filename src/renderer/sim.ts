@@ -3007,13 +3007,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (org) return { ok: false, error: org + ': pick another permission mode.' };
         const MW: Record<string, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
         simLog(s, 'mode-change', `${MW[s.info.permMode] ?? s.info.permMode} to ${MW[mode] ?? mode}`, mode);
-        const kept = mode === 'allow' && s.info.sandbox?.state === 'on' && (s.info.adapterId ?? 'copilot') === 'copilot'; // spec 087: Copilot keeps its floor until a new session
         s.info.permMode = mode;
         s.info.permRestored = undefined;
         s.info.permFrom = undefined;
         { // spec 087 FR-013: the floor in force after the switch (the simulator applies it at once)
           const kind = s.info.adapterId ?? 'copilot';
-          const next: SandboxState | undefined = kept ? { state: 'on', mechanism: s.info.sandbox?.mechanism, untilNewSession: true, covers: simCovers(kind), verified: false } : s.sbxContinued && mode !== 'allow' ? { state: 'off', covers: simCovers(kind), writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: 'You chose to continue without the OS sandbox for this session.' } : simSandboxFor(0, kind, mode);
+          // spec 087 FR-022c: a Copilot floor is lowered at the switch to Allow all and the sim's lowering always resolves, so no word is kept
+          // (the kept floor of a refused lowering, FR-022, is sim agent #14's own Allow all state)
+          const next: SandboxState | undefined = s.sbxContinued && mode !== 'allow' ? { state: 'off', covers: simCovers(kind), writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: 'You chose to continue without the OS sandbox for this session.' } : simSandboxFor(0, kind, mode);
           if (next) s.info.sandbox = next;
           else delete s.info.sandbox;
           emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: next ?? null });

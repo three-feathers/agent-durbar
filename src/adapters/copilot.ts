@@ -119,8 +119,10 @@ interface Live {
   sandbox?: SandboxState | null;
   /** Spec 087 FR-007: why the sandbox is not in force; the first send is held back (or refused: `refuse`) until the person chooses. */
   sandboxHold?: { reason: string; refuse?: boolean };
-  /** Spec 087: a `sandboxConfig` was accepted in this session (it stays after a switch to Allow all, until a new session). */
+  /** Spec 087: a `sandboxConfig` was accepted in this session (it stays after a switch to Allow all until the lowering of FR-022c resolves, or a new session). */
   sandboxFloor?: boolean;
+  /** Spec 087 FR-022c: counts `applySandbox` calls, so a lowering that resolves after a later switch does not overwrite that switch's state. */
+  sandboxSeq?: number;
   /** Spec 087 FR-019: the organization requires the sandbox (from the start options). */
   requireOsSandbox?: boolean;
   /** Spec 087 FR-007a: the held send showed its note; Continue is accepted only while it is open (review on PR 733). */
@@ -1097,8 +1099,10 @@ export class CopilotAdapter implements AgentAdapter {
     const live = this.sessions.get(sessionId);
     if (!live) return { pending: 0 };
     live.broker.setMode(mode);
-    // spec 087 FR-013: the new floor through options.update at the switch (to Allow all nothing is sent: the floor set stays)
-    const applying = this.applySandbox(sessionId, live, mode);
+    // spec 087 FR-013: the new floor through options.update at the switch (to Allow all a floor in force is lowered, FR-022c)
+    // FR-022c: one sandbox change at a time per session, in order (a narrowing after a lowering is sent after the lowering settled)
+    const prev = live.sandboxApplying;
+    const applying = prev ? prev.catch(() => undefined).then(() => (this.sessions.get(sessionId) === live ? this.applySandbox(sessionId, live, mode) : undefined)) : this.applySandbox(sessionId, live, mode);
     live.sandboxApplying = applying;
     void applying.finally(() => {
       if (live.sandboxApplying === applying) live.sandboxApplying = undefined;
@@ -1146,10 +1150,23 @@ export class CopilotAdapter implements AgentAdapter {
   /** FR-004/FR-006/FR-007/FR-013: the floor for `mode` on this session; never throws (a failure holds the next send back). */
   private async applySandbox(sid: string, live: Live, mode: PermissionMode, client: CopilotClient | undefined = this.client): Promise<void> {
     const platform = this.sandboxPlatform;
+    const seq = (live.sandboxSeq = (live.sandboxSeq ?? 0) + 1);
     if (mode === 'allow') {
       live.sandboxHold = undefined;
       live.sandboxNoteOpen = false;
-      return this.setSandbox(sid, live, copilotSandboxState({ mode, platform, keptFloor: live.sandboxFloor })); // nothing sent (edge cases)
+      if (live.sandbox?.managed) return; // a managed floor is never lowered (a policy conflict): the state stays as it is
+      const kept = copilotSandboxState({ mode, platform, keptFloor: live.sandboxFloor });
+      this.setSandbox(sid, live, kept); // a fresh Allow all session: null, nothing sent; a floor in force: kept until the lowering resolves
+      if (!kept || this.sessions.get(sid) !== live) return;
+      // FR-022c (T066 verdict A, real: 2026-10-28, Linux, CLI 1.0.98 / SDK 1.0.22): clear the floor in place with exactly the proven payload
+      try {
+        await this.timed(live.session.rpc.options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' }), 'Copilot');
+      } catch {
+        return; // refused or no answer: the floor is assumed in force; untilNewSession stays and Restart without the sandbox is offered (FR-022)
+      }
+      if (live.sandboxSeq !== seq || this.sessions.get(sid) !== live) return; // a later switch or the end of the session decides
+      live.sandboxFloor = undefined;
+      return this.setSandbox(sid, live, null);
     }
     if (this.sandboxContinued.has(sid) && !live.requireOsSandbox) {
       live.sandboxHold = undefined;

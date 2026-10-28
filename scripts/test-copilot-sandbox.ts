@@ -260,24 +260,107 @@ async function main(): Promise<void> {
     fs.rmSync(H, { recursive: true, force: true });
   }
 
-  // ---- AC2: a switch to Allow all sends nothing and keeps the floor until a new session; back to Ask first sends the new floor ----
+  // ---- AC2 + T072 (FR-022c; T066 verdict A, real: 2026-10-28): a switch to Allow all lowers the floor in place with exactly the proven payload;
+  // resolved: no floor (null); back to Ask first re-sends the full floor (FR-004) ----
   {
+    const LOWER = { sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' };
     const { ad, fake, events } = make();
     const sid = await start(ad, 'read-only');
     ad.setPermMode!(sid, 'allow');
     await new Promise((r) => setTimeout(r, 5));
-    assert.strictEqual(updates(fake, sid).length, 1, 'no second update for Allow all');
-    assert.deepStrictEqual(last(events, sid), { state: 'on', mechanism: 'bubblewrap', covers: ['shell', 'mcp'], untilNewSession: true, verified: false });
+    assert.strictEqual(updates(fake, sid).length, 2, 'AC1: one lowering at the switch');
+    assert.deepStrictEqual(updates(fake, sid)[1], LOWER, 'AC1: exactly the T066 payload, no other field');
+    assert.strictEqual(last(events, sid), null, 'AC1: resolved: no floor, no word, no action (as a fresh Allow all session)');
     ad.setPermMode!(sid, 'ask');
     await new Promise((r) => setTimeout(r, 5));
-    assert.strictEqual(updates(fake, sid).length, 2, 'Ask first again: the new floor at the switch');
-    assert.deepStrictEqual((updates(fake, sid)[1].sandboxConfig as { userPolicy: { filesystem: Record<string, string[]> } }).userPolicy.filesystem.readwritePaths, [WS]);
+    assert.strictEqual(updates(fake, sid).length, 3, 'Ask first again: the new floor at the switch');
+    const back = updates(fake, sid)[2] as { sandboxConfig: { enabled: boolean; userPolicy: { filesystem: Record<string, string[]> } }; sandboxConfigSource: string };
+    assert.deepStrictEqual([back.sandboxConfig.enabled, back.sandboxConfigSource], [true, 'session_flag'], 'AC1: narrowing re-sends the full floor');
+    assert.deepStrictEqual(back.sandboxConfig.userPolicy.filesystem.readwritePaths, [WS]);
+    assert.strictEqual(last(events, sid)?.state, 'on');
+    // the sends wait for the switch: a send right after it goes out after the lowering settled
+    ad.setPermMode!(sid, 'allow');
+    await ad.send(sid, { text: 'after the switch' });
+    const names = fake.sessions.get(sid)!.calls.map((x) => (x.name === 'options.update' && (x.args[0] as { sandboxConfigSource?: string }).sandboxConfigSource === 'session_disabled' ? 'lower' : x.name));
+    assert.ok(names.lastIndexOf('lower') >= 0 && names.lastIndexOf('lower') < names.lastIndexOf('send'), 'the send goes after the lowering: ' + names.join(','));
+    assert.strictEqual(last(events, sid), null, 'lowered again');
+    // a fresh Allow all session holds no floor: a switch to Allow all and back is as before (nothing lowered)
+    const fresh = await start(ad, 'allow');
+    ad.setPermMode!(fresh, 'allow');
+    await new Promise((r) => setTimeout(r, 5));
+    assert.strictEqual(updates(fake, fresh).length, 0, 'no floor: nothing to lower');
     // FR-008: a sandbox warning turns it off at once; the session goes on
+    ad.setPermMode!(sid, 'ask');
+    await new Promise((r) => setTimeout(r, 5));
     fake.sessions.get(sid)!.fire('session.warning', { warningType: 'sandbox', message: 'sandbox lost: helper exited' });
     assert.strictEqual(last(events, sid)?.state, 'off');
     assert.match(String(last(events, sid)?.reason), /sandbox lost/);
     assert.ok(ad.isLive(sid));
     await ad.dispose();
+  }
+
+  // ---- T072 AC1 (FR-022c): a refused or a hanging lowering keeps the floor assumed in force: untilNewSession, and Restart without the sandbox
+  // stays offered (FR-022, the fallback); narrowing afterwards still re-sends the floor ----
+  {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const T = require('../../src/renderer/sandboxtext.js') as { canRestartWithoutSandbox(o: unknown): boolean };
+    for (const how of ['refused', 'hangs'] as const) {
+      const { ad, fake, events } = make();
+      const sid = await start(ad, 'ask');
+      const fs0 = fake.sessions.get(sid)!;
+      if (how === 'refused') fs0.updateFail = 'policy conflict: below-floor change';
+      else fs0.updateHangs = true;
+      ad.setPermMode!(sid, 'allow');
+      await new Promise((r) => setTimeout(r, how === 'hangs' ? 120 : 5)); // the 50 ms limit of the test adapter (15 s in the app)
+      assert.deepStrictEqual(updates(fake, sid)[1], { sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' }, `${how}: the lowering was tried`);
+      assert.deepStrictEqual(last(events, sid), { state: 'on', mechanism: 'bubblewrap', covers: ['shell', 'mcp'], untilNewSession: true, verified: false }, `${how}: the floor is kept until a new session`);
+      assert.strictEqual(T.canRestartWithoutSandbox({ sandbox: last(events, sid), mode: 'allow', caps: { resume: true } }), true, `${how}: Restart without the sandbox is offered`);
+      fs0.updateFail = '';
+      fs0.updateHangs = false;
+      ad.setPermMode!(sid, 'ask');
+      await new Promise((r) => setTimeout(r, 5));
+      const back = updates(fake, sid)[2] as { sandboxConfig: { enabled: boolean }; sandboxConfigSource: string };
+      assert.deepStrictEqual([back?.sandboxConfig.enabled, back?.sandboxConfigSource], [true, 'session_flag'], `${how}: narrowing re-sends the floor`);
+      assert.strictEqual(last(events, sid)?.state, 'on');
+      await ad.dispose();
+    }
+  }
+
+  // ---- T072 (FR-022c): a managed floor is never lowered (a policy conflict); its state stays ----
+  {
+    const { ad, fake, events } = make();
+    const sid = await start(ad, 'ask');
+    const live = (ad as unknown as { sessions: Map<string, { sandbox?: Record<string, unknown> }> }).sessions.get(sid)!;
+    live.sandbox = { ...live.sandbox, managed: true }; // the adapter has no managed source today; the guard is what is pinned
+    const before = JSON.stringify(live.sandbox);
+    const n = sbx(events, sid).length;
+    ad.setPermMode!(sid, 'allow');
+    await new Promise((r) => setTimeout(r, 5));
+    assert.strictEqual(updates(fake, sid).length, 1, 'managed: no lowering sent');
+    assert.strictEqual(JSON.stringify(live.sandbox), before, 'managed: the state is kept');
+    assert.strictEqual(sbx(events, sid).length, n, 'managed: no new state event');
+    await ad.dispose();
+  }
+
+  // ---- T072 AC1: allowBypass is never sent, and never named in src/ outside a comment; no other vendor opt-out route ----
+  {
+    const srcRoot = path.join(__dirname, '..', '..', 'src');
+    const walk = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : /\.(ts|js)$/.test(e.name) ? [path.join(d, e.name)] : []));
+    const files = walk(srcRoot);
+    assert.ok(files.length > 50, 'the source files are found');
+    for (const f of files) {
+      fs.readFileSync(f, 'utf8').replace(/\r/g, '').split('\n').forEach((line, i) => {
+        const at = line.indexOf('allowBypass');
+        if (at < 0) return;
+        const before = line.slice(0, at);
+        assert.ok(/^\s*(\*|\/\/|\/\*)/.test(line) || before.includes('//'), `${path.relative(srcRoot, f)}:${i + 1}: allowBypass outside a comment`);
+      });
+      const code = fs.readFileSync(f, 'utf8');
+      assert.ok(!/disableForSession\s*\(/.test(code), `${path.relative(srcRoot, f)}: no sandbox.disableForSession call`);
+    }
+    const cop = fs.readFileSync(path.join(srcRoot, 'adapters', 'copilot.ts'), 'utf8');
+    assert.strictEqual((cop.match(/session_disabled/g) ?? []).length, 1, 'one lowering call site');
+    assert.match(cop, /options\.update\(\{ sandboxConfig: \{ enabled: false \}, sandboxConfigSource: 'session_disabled' \}\)/, 'the proven payload, literally');
   }
 
   // ---- T069 (FR-022, FR-022b; issue #806): Restart without the sandbox through the existing Restart session op ----
@@ -286,9 +369,10 @@ async function main(): Promise<void> {
     const { startOptionsOf } = await import('../src/main/startopts');
     const { ad, fake, events } = make();
     const sid = await start(ad, 'read-only');
+    fake.sessions.get(sid)!.updateFail = 'refused'; // FR-022c's lowering refused: the B fallback
     ad.setPermMode!(sid, 'allow');
     await new Promise((r) => setTimeout(r, 5));
-    assert.strictEqual(updates(fake, sid).length, 1, 'AC1: one update (the Read-only floor), none for the switch');
+    assert.strictEqual(updates(fake, sid).length, 2, 'AC1: the Read-only floor, then the refused lowering');
     assert.strictEqual(last(events, sid)?.untilNewSession, true, 'AC1: the floor is kept until a new session');
     const info = { id: sid, name: 'Ana', cwd: WS, permMode: 'allow', model: 'auto' } as import('../src/shared/api').AgentInfo;
     // the op's resume is main's ensureLive with startOptionsFor: the agent's CURRENT mode goes as permissionMode
@@ -341,6 +425,7 @@ async function main(): Promise<void> {
   {
     const { ad, fake, events } = make();
     const sid = await start(ad, 'read-only');
+    fake.sessions.get(sid)!.updateFail = 'refused'; // FR-022c's lowering refused: the floor is kept
     ad.setPermMode!(sid, 'allow');
     await new Promise((r) => setTimeout(r, 5));
     assert.strictEqual(last(events, sid)?.untilNewSession, true, 'before: the kept floor');
@@ -348,7 +433,7 @@ async function main(): Promise<void> {
     await ad.stop(sid);
     const after = events.slice(n).filter((e) => e.sessionId === sid).map((e) => e.type === 'sandbox' ? 'sandbox:' + JSON.stringify(e.sandbox) : e.type === 'status' ? 'status:' + e.status : e.type);
     assert.deepStrictEqual(after.filter((x) => x.startsWith('sandbox') || x === 'status:stopped'), ['sandbox:null', 'status:stopped'], 'End session: the kept floor is cleared before the stop: ' + JSON.stringify(after));
-    assert.strictEqual(updates(fake, sid).length, 1, 'nothing sent to the runtime for it');
+    assert.strictEqual(updates(fake, sid).length, 2, 'nothing sent to the runtime for it (the floor and the refused lowering only)');
     // a Read-only session that ends keeps its state as before (no kept floor to clear)
     const ro = await start(ad, 'read-only');
     const m = events.length;
@@ -374,6 +459,7 @@ async function main(): Promise<void> {
     ad.onEvent((e) => events.push(e));
     const allow = await ad.start({ workspace: WS, quiet: true, permissionMode: 'read-only' });
     const ask = await ad.start({ workspace: WS, quiet: true, permissionMode: 'ask' });
+    ad.clients[0].sessions.get(allow)!.updateFail = 'refused'; // FR-022c's lowering refused: the floor is kept
     ad.setPermMode!(allow, 'allow');
     await new Promise((r) => setTimeout(r, 5));
     assert.strictEqual(last(events, allow)?.untilNewSession, true, 'before: the kept floor');
@@ -398,6 +484,7 @@ async function main(): Promise<void> {
     const ev3: AgentEvent[] = [];
     ad3.onEvent((e) => ev3.push(e));
     dropId = await ad3.start({ workspace: WS, quiet: true, permissionMode: 'read-only' });
+    ad3.clients[0].sessions.get(dropId)!.updateFail = 'refused';
     ad3.setPermMode!(dropId, 'allow');
     await new Promise((r) => setTimeout(r, 5));
     assert.strictEqual(last(ev3, dropId)?.untilNewSession, true, 'before: the kept floor');

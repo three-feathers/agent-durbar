@@ -67,17 +67,19 @@
     const s=clean(o.sandbox); if(!s)return false;
     return o.mode==='allow'&&s.state==='on'&&s.untilNewSession&&!s.managed&&!!(o.caps&&typeof o.caps==='object'&&o.caps.resume===true);
   }
-  /* FR-022: the tooltip of the action (what Durbar does, not a vendor fact: K16 is open); at most 300 characters */
+  /* FR-022: the tooltip of the action. Since FR-022c (K16 cleared in place on Linux, 2026-10-28) the action is the fallback when the app did not
+     confirm the lowering, so it says that, not a vendor fact; at most 300 characters */
   function restartTip(s0,app){
     const s=clean(s0), a=app||'the app';
-    const t='Durbar does not turn '+a+'’s sandbox off inside a running session; it stays until a new one. Restart keeps this conversation and starts a new session in Allow all.'+(s&&s.verified?'':' '+NOT_VERIFIED);
+    const t=a+' did not confirm turning its sandbox off in this running session, so it stays until a new one. Restart keeps this conversation and starts a new session in Allow all.'+(s&&s.verified?'':' '+NOT_VERIFIED);
     return t.length>300?t.slice(0,299).replace(/\s+\S*$/,'')+'\u2026':t;
   }
-  /* FR-022e: the Allow all dialog's extra sentence, for a floor that a switch to Allow all keeps until a new session. The app whose sandbox
-     also covers MCP servers is the one that keeps it (FR-013, the same neutral test as FR-021b's chip word); '' for every other state. */
+  /* FR-022c (replaces FR-022e's sentence, decision Q4): the Allow all dialog's extra sentence, for a floor that the switch to Allow all turns off in the
+     running session. The app whose sandbox also covers MCP servers is the one whose floor is lowered at the switch (FR-013, the same neutral test as
+     FR-021b's chip word); '' for every other state. */
   function allowAllNote(s0,app){
     const s=clean(s0); if(!s||s.state!=='on'||s.managed||s.untilNewSession||!s.covers.includes('mcp'))return '';
-    return (app||'The app')+'’s OS sandbox stays on for shell commands until a new session; use Restart without the sandbox to lift it.';
+    return (app||'The app')+'’s OS sandbox is also turned off for this session.';
   }
   /* FR-012: the Settings > Agent apps line (text) */
   function hostLine(v){

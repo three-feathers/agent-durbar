@@ -16,7 +16,8 @@
  * wait is an until(). T070 (FR-022, FR-022e, issue #806): the kept floor in Allow all (Copilot sim-15) has the chip button and the mode menu item
  * Restart without the sandbox (tooltip, keyboard, Escape back to the chip); its own dialog (busy, grants, remote control, next-message lines;
  * no MCP wording) where Cancel calls nothing and confirming calls the existing restart with reason 'sandbox', after which the word and the action
- * go; Copilot's Allow all dialog says the floor stays, Claude Code's and Codex's do not and never show the action; managed and the office card's
+ * go; Copilot's Allow all dialog says its OS sandbox is also turned off (FR-022c, T072) and the switch leaves no word, Claude Code's and Codex's do
+ * not say it and never show the action; managed and the office card's
  * menu never have it. Prints "[087-sandbox] PASS".
  */
 const assert = require('assert');
@@ -152,7 +153,7 @@ module.exports = async (ctx) => {
     // ---- T070 (FR-022, FR-022b, FR-022e; issue #806): Restart without the sandbox, on the chat chip and in the mode menu only ----
     await H.load({ w, h, query: { simkinds: 'mixed' } });
     await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__sbxCalls=[];if(!b.__sbxWrapped){b.__sbxWrapped=true;const s=b.agentMcpRestartSession;b.agentMcpRestartSession=(...x)=>{window.__sbxCalls.push(x);return s(...x);};}})()`);
-    const RESTART_TIP = 'Durbar does not turn Copilot’s sandbox off inside a running session; it stays until a new one. Restart keeps this conversation and starts a new session in Allow all. ' + NOT_VERIFIED;
+    const RESTART_TIP = 'Copilot did not confirm turning its sandbox off in this running session, so it stays until a new one. Restart keeps this conversation and starts a new session in Allow all. ' + NOT_VERIFIED;
     const sbxBtn = () => js(`(()=>{const b=document.getElementById('sbxRestartBtn'),c=document.getElementById('modeChip');if(!b)return null;const r=b.getBoundingClientRect(),cs=getComputedStyle(b);return {tag:b.tagName,type:b.type,text:b.textContent,title:b.title,label:b.getAttribute('aria-label'),px:parseFloat(cs.fontSize),shown:r.width>0&&r.height>0&&r.right<=innerWidth+0.5,next:c&&c.nextElementSibling===b,chip:c?c.innerText.replace(/\\s+/g,' ').trim():''}})()`);
     await openAgent('sim-15');
     assert.ok(await until(`!!document.getElementById('sbxRestartBtn')`, 8000), `${w}: the kept floor in Allow all has the chip button`);
@@ -210,7 +211,8 @@ module.exports = async (ctx) => {
     // AC1: never on the office card's menu
     await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
     assert.ok(await until(`!document.body.classList.contains('panel-open')`, 8000));
-    // FR-022e + AC1: Copilot Ask first with the floor (sim-2): no action yet; the Allow all dialog says the floor stays; after it, the action
+    // FR-022c (T072 AC2, replaces FR-022e's sentence): Copilot Ask first with the floor (sim-2): no action; the Allow all dialog says the sandbox is
+    // also turned off; after the switch (the sim's lowering resolves) Allow all with no word and no action
     await openAgent('sim-2');
     assert.ok(!(await js(`!!document.getElementById('sbxRestartBtn')`)), `${w}: Copilot in Ask first: no action`);
     const allowDlg = async (id) => {
@@ -221,15 +223,16 @@ module.exports = async (ctx) => {
       assert.ok(await until(`!!document.querySelector('#modeDlg [aria-modal="true"]')`, 5000), `${w}: ${id}: the Allow all dialog`);
       return js(`document.querySelector('#modeDlg #mdB').textContent`);
     };
-    const KEEP = 'Copilot’s OS sandbox stays on for shell commands until a new session; use Restart without the sandbox to lift it.';
+    const OFF = 'Copilot’s OS sandbox is also turned off for this session.';
     const cpBody = await allowDlg('sim-2');
-    assert.ok(cpBody.endsWith(' ' + KEEP), `${w}: Copilot's Allow all dialog says the floor stays: ${cpBody}`);
+    assert.ok(cpBody.endsWith(' ' + OFF), `${w}: Copilot's Allow all dialog says the sandbox is also turned off: ${cpBody}`);
+    assert.ok(!/stays on for shell commands/.test(cpBody), `${w}: FR-022e's sentence is gone: ${cpBody}`);
     await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find(b=>b.textContent==='Allow all').click()`);
-    assert.ok(await until(`!!document.getElementById('sbxRestartBtn')`, 8000), `${w}: after the switch the kept floor offers the action`);
+    assert.ok(await until(`/^Allow all\\b/.test(((document.getElementById('modeChip')||{}).innerText||'').trim())&&!/Sandbox/.test(document.getElementById('modeChip').innerText)&&!document.getElementById('sbxRestartBtn')`, 8000), `${w}: after the switch the floor is off: Allow all with no word and no action`);
     for (const [id, app] of [['sim-1', 'Claude'], ['sim-10', 'Codex']]) {
       await openAgent(id);
       const body = await allowDlg(id);
-      assert.ok(!/OS sandbox stays on/.test(body), `${w}: ${app}: today's Allow all text: ${body}`);
+      assert.ok(!/OS sandbox (stays on|is also turned off)/.test(body), `${w}: ${app}: today's Allow all text: ${body}`);
       await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find(b=>b.textContent==='Allow all').click()`);
       assert.ok(await until(`/^Allow all/.test((document.getElementById('modeChip')||{}).innerText||'')`, 8000), `${w}: ${app} is in Allow all`);
       await ctx.sleep(200); // the sandbox event follows the switch in the simulator; give a wrong button time to show
