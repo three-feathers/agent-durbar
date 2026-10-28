@@ -50,6 +50,8 @@
 - [x] T040 Plant the mutants of plan *Mutants*; each fails a test; list them in the PR [SC-006]
 - [x] T041 Docs: README *Safety model* (what clone runs, the user's credentials, hooks note, BatchMode, the dropped `GIT_*` variables and the two that pass, "keep git up to date" and no version floor), `changelog.d/093-create-folder-p2.md` (named after the branch, as `changelog.d/README.md` asks), spec ticks, screenshots [FR-035, FR-090]
 
+- [x] T052 The real-git Cancel check reads what git sends (a resumed listener socket), so it sees the helper's connection close on macOS; failure diagnostics (git processes and their process group); macOS checked with test builds `v0.1.1-test.1` and `-test.2` [FR-041]
+
 ## Phase 3: Real check and converge (PR 3)
 
 - [ ] T050 Hand check on each OS available (no AI credits; owner's OK for the accounts used): https clone through the OS credential helper, ssh clone with an agent, a cancel; record as `real:` with git version and OS [Assumptions]
