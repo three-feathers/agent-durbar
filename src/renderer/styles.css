@@ -324,15 +324,17 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 .lrow-w{display:grid;grid-template-columns:subgrid;grid-column:1/-1}
 /* floors of the short columns (the fit-content tracks would otherwise shrink to nothing in a narrow window) */
 .lrow>:nth-child(2){min-width:56px}.lrow>:nth-child(6){min-width:40px}.lrow>:nth-child(7){min-width:44px}.lrow>:nth-child(8){min-width:76px}
-/* a narrow window (the app's minimum is 640px) gives up whole columns before it scrolls sideways: Role first, then Folder (the accessible name of the row keeps both) */
+/* a narrow window (the app's minimum is 640px) gives up whole columns before it scrolls sideways: Role first, then Folder, but never the column the list is sorted by (data-sort on the wrap; the row's accessible name keeps all of them) */
 #list{container-type:inline-size;container-name:lst}
 @container lst (max-width:899px){
   .list-wrap{grid-template-columns:minmax(166px,1.3fr) fit-content(150px) minmax(130px,1fr) minmax(110px,2fr) fit-content(84px) fit-content(110px) fit-content(146px)}
-  .lrow>:nth-child(3){display:none}
+  .list-wrap:not([data-sort="role"]) .lrow>:nth-child(3),.list-wrap[data-sort="role"] .lrow>:nth-child(4){display:none}
 }
 @container lst (max-width:759px){
   .list-wrap{grid-template-columns:minmax(136px,1.3fr) fit-content(150px) minmax(90px,2fr) fit-content(84px) fit-content(110px) fit-content(146px)}
-  .lrow>:nth-child(4){display:none}
+  .list-wrap:not([data-sort="role"]):not([data-sort="folder"]) .lrow>:nth-child(4){display:none}
+  .list-wrap:is([data-sort="role"],[data-sort="folder"]){grid-template-columns:minmax(136px,1.3fr) minmax(90px,1fr) minmax(90px,2fr) fit-content(84px) fit-content(110px) fit-content(146px)}
+  .list-wrap:is([data-sort="role"],[data-sort="folder"]) .lrow>:nth-child(2){display:none}
 }
 /* spec 052 FR-064: 34px rows; Agent, Agent app, Role, Folder, Current task, Last activity, Cost, Status ; FR-092: the Agent app column grows ("Basic agent (simulated)" fits) */
 .lrow{display:grid;grid-template-columns:subgrid;grid-column:1/-1;gap:12px;align-items:center;width:100%;padding:0 16px;height:34px;border:0;border-bottom:1px solid var(--line-soft);background:transparent;text-align:left;cursor:pointer;font-size:13px}

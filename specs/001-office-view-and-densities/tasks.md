@@ -217,5 +217,5 @@ Numbers checked against `main` (00d340eb) and every open PR on 2026-10-25: none 
 - [x] T144 Issue #812 (FR-182): `listRole` (Role without the agent app, sorting by the shown text), a tooltip on every cell (Usage always), the row's accessible name unchanged
 - [x] T145 Issue #813 (FR-183, FR-184): the `.room::after` notch removed; the header pencil without a fill, a tile on hover and `:focus-visible`
 - [x] T146 Drivers and gates: `npm run check:listcols`, registered in `scripts/ui-suite.js`; mutants (pencil fill, notch, Role repeating the app, the old proportions, no task tooltip, the narrow give-way) each caught, listed in the PR
-- [x] T147 Docs: README List line, `changelog.d/001-list-widths-room-polish.md`, every linked picture that shows the List or a room header retaken (`npm run shots:docs`)
-
+- [x] T147 Docs: README List line, `changelog.d/001-list-widths-room-polish.md`, `npm run shots:docs` run in full; the linked pictures were compared with the committed ones and are pixel-identical, so none was replaced (see FR-184, Pictures)
+- [x] T148 Review on PR 826 (FR-182, FR-184): the sorted column never gives way (`data-sort`, driver cases at 900x700 and 640x480 sorted by Role and Folder); the pencil's keyboard focus is reached with a real Tab from the previous control (Windows); room checks in every built-in theme that is dark

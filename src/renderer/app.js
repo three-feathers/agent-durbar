@@ -1806,7 +1806,7 @@ function renderList(){
   const row=([a,sub])=>{const b=row0([a,sub]),r=sub?'':renBtn(a);return r?`<div class="lrow-w">${b}${r}</div>`:b;};
   const head=LCOLS.map(([k,t])=>{const on=LSORT&&LSORT.key===k,dir=on?(LSORT.dir==='asc'?'ascending':'descending'):'none';
     return `<span role="columnheader" aria-sort="${dir}"${k==='folder'?' class="lfold"':k==='ago'||k==='cost'?' class="num"':''}><button type="button" class="lsort" data-lsort="${k}" title="Sort by ${esc(t.toLowerCase())}">${esc(t)}<span class="sarr" aria-hidden="true">${on?(LSORT.dir==='asc'?'▲':'▼'):'↕'}</span></button></span>`;}).join('');
-  $('list').innerHTML=`<div class="list-wrap" role="group" aria-label="Agents"><div class="lrow lhead" role="row">${head}</div>${(i=>i?`<div class="filter-note">${i.html}</div>`:'')(filterNote())}${rows.map(row).join('')||'<div class="empty">No agents match these filters.</div>'}</div>`;
+  $('list').innerHTML=`<div class="list-wrap" role="group" aria-label="Agents" data-sort="${LSORT?LSORT.key:''}"><div class="lrow lhead" role="row">${head}</div>${(i=>i?`<div class="filter-note">${i.html}</div>`:'')(filterNote())}${rows.map(row).join('')||'<div class="empty">No agents match these filters.</div>'}</div>`;
   placePencils();
 }
 document.addEventListener('click',e=>{const b=e.target.closest('#list [data-lsort]');if(!b)return;

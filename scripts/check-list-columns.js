@@ -105,11 +105,32 @@ module.exports = async (ctx) => {
     console.log(`[listcols] ${tag} ok`, JSON.stringify(main.c.map((c) => c.hidden ? 0 : c.w)));
   }
 
+  // A column the list is sorted by never gives way (the order would stay while its header and arrow vanished): sort wide, then narrow
+  for (const [w, h] of [[900, 700], [640, 480]]) for (const key of ['role', 'folder']) {
+    const tag = `${w}x${h} sorted by ${key}`;
+    await H.load({ w: 1440, h: 900 });
+    await toList();
+    await js(`document.querySelector('#list [data-lsort=${jsLiteral(key)}]').click()`);
+    await ok(`document.querySelector('#list [aria-sort="ascending"] [data-lsort=${jsLiteral(key)}]')`, `${tag}: sorted`);
+    ctx.win.setContentSize(w, h);
+    const idx = { role: 2, folder: 3 }[key];
+    await ok(`document.getElementById('list').clientWidth<${jsLiteral(w >= 900 ? 900 + 48 : 800)}`, `${tag}: the window narrowed`);
+    await ok(`getComputedStyle(document.querySelectorAll('#list .lhead>span')[${jsLiteral(idx)}]).display!=='none'`, `${tag}: the sorted column's header stays`);
+    const m = await js(`(()=>{const l=document.getElementById('list');const h=document.querySelectorAll('#list .lhead>span')[${jsLiteral(idx)}];const r=document.querySelector('#list button.lrow');return {sw:l.scrollWidth,cw:l.clientWidth,arrow:h.querySelector('.sarr').textContent,cell:getComputedStyle(r.children[${jsLiteral(idx)}]).display,cellW:Math.round(r.children[${jsLiteral(idx)}].getBoundingClientRect().width),shown:[...document.querySelectorAll('#list .lhead>span')].filter(x=>getComputedStyle(x).display!=='none').length}})()`);
+    assert.ok(m.sw <= m.cw, `${tag}: no horizontal scroll (${m.sw} > ${m.cw})`);
+    assert.ok(m.arrow === '▲' && m.cell !== 'none' && m.cellW > 0, `${tag}: the arrow and the cells of the sorted column show ${JSON.stringify(m)}`);
+    assert.ok(m.shown >= 6 && m.shown <= 7, `${tag}: the other columns still give way (${m.shown} shown)`);
+    console.log(`[listcols] ${tag} ok`, JSON.stringify(m));
+  }
+
   // The room: whole bottom wall, a header pencil that is only an icon until hover or focus
   const rect = (sel) => js(`(()=>{const b=document.querySelector(${jsLiteral(sel)}).getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/2,w:b.width,h:b.height}})()`);
   const bg = (sel) => js(`getComputedStyle(document.querySelector(${jsLiteral(sel)})).backgroundColor`);
   const SEL = '#stage .room-head>.ren.ren-in';
-  for (const theme of ['clean-office', 'retro']) for (const [w, h] of [[1440, 900], [1280, 800]]) {
+  await H.load({ w: 1440, h: 900 });
+  const themes = await js(`window.THEME.list().map(t=>t.id)`);
+  assert.ok(themes.length >= 6, 'the built-in themes are listed');
+  for (const theme of themes) for (const [w, h] of [[1440, 900], [1280, 800]]) {
     const tag = `${theme} ${w}x${h}`;
     await H.load({ w, h });
     await js(`window.THEME.setTheme(${jsLiteral(theme)})`);
@@ -132,8 +153,11 @@ module.exports = async (ctx) => {
     await ok(`document.querySelector(${jsLiteral(SEL)}).matches(':hover')&&getComputedStyle(document.querySelector(${jsLiteral(SEL)})).opacity==='1'&&!/, 0\\)$/.test(getComputedStyle(document.querySelector(${jsLiteral(SEL)})).backgroundColor)`, `${tag}: hover shows the icon on a tile`);
     ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
     await ok(`!document.querySelector(${jsLiteral(SEL)}).matches(':hover')`, `${tag}: the pointer left`);
-    await js(`document.querySelector(${jsLiteral(SEL)}).focus()`);
-    await H.key('Shift', ['shift'], { char: 'never' }); // a key press makes the focus a keyboard focus (:focus-visible)
+    // a real Tab from the control before the pencil (a programmatic focus() plus a key press gives no :focus-visible on Windows)
+    await js(`(()=>{const T='button,a[href],input,select,textarea,[tabindex]:not([tabindex="-1"])',vis=e=>!e.disabled&&e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden',all=[...document.querySelectorAll(T)].filter(vis),p=document.querySelector(${jsLiteral(SEL)});window.__prevTab=all[all.indexOf(p)-1];window.__prevTab.focus();})()`);
+    await ok(`document.activeElement===window.__prevTab`, `${tag}: the control before the pencil has focus`);
+    await H.key('Tab', [], { pause: 100 });
+    await ok(`document.activeElement===document.querySelector(${jsLiteral(SEL)})`, `${tag}: Tab reaches the pencil`);
     await ok(`(()=>{const e=document.querySelector(${jsLiteral(SEL)});return e.matches(':focus-visible')&&getComputedStyle(e).opacity==='1'})()`, `${tag}: keyboard focus makes the pencil fully shown`);
     const f = await js(`(()=>{const e=document.querySelector(${jsLiteral(SEL)}),s=getComputedStyle(e);return {fv:e.matches(':focus-visible'),bg:s.backgroundColor,op:s.opacity,ow:parseFloat(s.outlineWidth),os:s.outlineStyle}})()`);
     assert.ok(f.fv && f.op === '1' && !clear(f.bg) && f.ow >= 2 && f.os !== 'none', `${tag}: keyboard focus shows a tile, a focus ring and the icon ${JSON.stringify(f)}`);
