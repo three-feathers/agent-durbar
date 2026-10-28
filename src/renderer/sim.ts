@@ -842,6 +842,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       ...simPF.filter((f) => f.made && f.app === 'copilot').map((f) => { const h = pfHead(f.text); return { id: f.fileName.replace(/\.agent\.md$/, ''), name: h.name || f.fileName, description: h.description ?? '', source: (f.scope === 'user' ? 'user' : 'repo') as 'user' | 'repo', path: f.path }; }),
     ];
     const pfFolders = (): { id: string; path: string }[] => [...new Set(sims.map((s) => s.info.cwd))].map((p) => ({ id: pfHash('folder\0' + p).slice(0, 32), path: p }));
+    const SIM_PROMPT_MAX = 10_000; // spec 044 FR-120: main's MAX_PROMPT (test:schedules compares the copy in schedtemplates.js with it)
     const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void)[],
       changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); },
       attrib: new Map<string, string>(), runs: {} as Record<string, ScheduleRunInfo[]> };
@@ -855,7 +856,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       const log = runs[sc.id];
       const top = log[log.length - 1];
       const session = x.session !== undefined && /^[A-Za-z0-9._:-]{1,128}$/.test(x.session) ? x.session : undefined;
-      if (top && ['skipped-busy', 'skipped-paused', 'held', 'skipped-door-full'].includes(outcome) && top.outcome === outcome && top.session === session && !top.manual) {
+      if (top && ['skipped-busy', 'skipped-paused', 'held', 'skipped-door-full', 'skipped-review'].includes(outcome) && top.outcome === outcome && top.session === session && !top.manual) {
         top.n = Math.min(100000, (top.n ?? 1) + 1);
         top.until = now;
         return true;
@@ -922,6 +923,13 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         simRecord(sc, simSched.runs, 'failed', Date.now(), { reason: 'no-agent' });
         simSched.changed();
         return true;
+      },
+      /* spec 044 FR-124 (check-sched-edit): a stored prompt over the limit, as a hand-edited file would hold it (`save` refuses a new one) */
+      addRaw: (prompt: string): string => { // in the folder of the newest schedule (the one a driver just added through the form)
+        const id = 'sched-raw' + ++simSched.n;
+        simSched.list.push({ id, folder: simSched.list[simSched.list.length - 1]?.folder ?? '', prompt, every: 60, next: Date.now() + 40 * 60000 });
+        simSched.changed();
+        return id;
       },
     };
     /* spec 044 FR-012: the rule copy in schedtemplates.js (main uses src/shared/schedrules.ts; test:schedules keeps them equal) */
@@ -991,7 +999,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = simAgentOf(sc);
         const busy = !!s && (s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.perm || (!!s.breakUntil && Date.now() < s.breakUntil)); // spec 068 FR-008: a coffee break counts as busy
         const door = s ? simDoors.map.get(s.info.id) : undefined;
-        const outcome = simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : !s ? 'failed' : door?.closed ? 'held' : busy ? 'skipped-busy' : 'sent';
+        const outcome = sc.prompt.length > SIM_PROMPT_MAX ? 'skipped-review' : simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : !s ? 'failed' : door?.closed ? 'held' : busy ? 'skipped-busy' : 'sent';
         if (outcome === 'held' && door) { door.held.push({ prompt: sc.prompt, at: now, scheduleId: sc.id }); simDoors.changed(); } // spec 044 FR-110
         if (outcome === 'sent' && s) {
           emit({ type: 'user', sessionId: s.info.id, timestamp: now, text: sc.prompt } as AgentEvent);
@@ -2140,6 +2148,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!edit && old) input.folder = old.folder;
         if (!rule && every === undefined && edit && prev && Number(input.at) <= now && (prev.done || Number(input.at) !== prev.at)) return { ok: false as const, error: prev.done ? 'Pick a time in the future to run it again.' : 'That time has already passed.' };
         if (!rule && every === undefined && edit && prev && (prev.every !== undefined || prev.rule) && Number(input.at) <= now) return { ok: false as const, error: 'That time has already passed.' };
+        const promptLen = String(input.prompt ?? '').trim().length; // spec 044 FR-123: the same refusal as main, never a cut
+        if (promptLen > SIM_PROMPT_MAX && String(input.prompt).trim() !== prev?.prompt) return { ok: false as const, error: `The prompt is ${promptLen.toLocaleString('en-US')} of ${SIM_PROMPT_MAX.toLocaleString('en-US')} characters: shorten it to save.` };
         if (!input.folder || !String(input.prompt ?? '').trim() || (!rule && every === undefined && !(Number(input.at) > now) && !(edit && prev && !prev.done && Number(input.at) === prev.at) && !(!edit && old && input.paused)) || (!rule && every !== undefined && !(every >= 5 && every <= 1440))) return { ok: false as const, error: 'A schedule needs a prompt and either a future time, 5 to 1440 minutes or a calendar rule.' };
         const target = input.target && typeof input.target === 'object' ? input.target : undefined;
         if (target && !input.paused && !sims.some((x) => x.info.id === target.session)) return { ok: false as const, error: "That session has ended. Send it to the folder's agent instead." };
@@ -2156,7 +2166,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         }
         const when: Partial<ScheduleInfo> = rule ? { rule, next: !edit && old?.rule && old.paused && input.paused ? old.next : simRules()?.nextRuleRun(rule, now) } : every !== undefined ? { every, ...(Number(input.at) > 0 ? { at: Number(input.at) } : {}), next: (edit ? undefined : old?.next) ?? (Number(input.at) > now ? Number(input.at) : now + every * 60000) } : { at: Number(input.at) };
         const resumedCap = !!old && old.pausedReason === 'cap' && !input.paused; // FR-015: Resume after the limit counts from zero
-        const sc: ScheduleInfo = { id: old?.id ?? 'sched-' + ++simSched.n, folder: input.folder, prompt: String(input.prompt).trim().slice(0, 2000), ...when, ...(input.paused ? { paused: true } : {}), ...(input.paused && old?.paused && old.pausedReason && !(edit && old.pausedReason === 'session-ended' && targetChanged) && !(edit && old.pausedReason === 'cap' && (!cap || cap.amount > (old.cap?.unit === cap.unit ? old.spent ?? 0 : 0))) ? { pausedReason: old.pausedReason } : {}), ...(old?.last ? { last: old.last } : {}), ...(!edit && old?.done ? { done: true } : {}),
+        const sc: ScheduleInfo = { id: old?.id ?? 'sched-' + ++simSched.n, folder: input.folder, prompt: String(input.prompt).trim(), ...when, ...(input.paused ? { paused: true } : {}), ...(input.paused && old?.paused && old.pausedReason && !(edit && old.pausedReason === 'session-ended' && targetChanged) && !(edit && old.pausedReason === 'cap' && (!cap || cap.amount > (old.cap?.unit === cap.unit ? old.spent ?? 0 : 0))) ? { pausedReason: old.pausedReason } : {}), ...(old?.last ? { last: old.last } : {}), ...(!edit && old?.done ? { done: true } : {}),
           ...(target ? { target: { session: String(target.session), agent: String(target.agent), ...(target.name ? { name: String(target.name).slice(0, 80) } : {}) } } : {}),
           ...(cap ? { cap, ...(!resumedCap && old?.cap?.unit === cap.unit && old?.spent ? { spent: old.spent } : {}), ...(!resumedCap && old?.cap?.unit === cap.unit && old?.spentUnknown ? { spentUnknown: true } : {}) } : {}) };
         if (sc.next === undefined && (sc.rule || sc.every !== undefined)) return { ok: false as const, error: 'That calendar rule never runs.' };

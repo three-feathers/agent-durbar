@@ -6607,9 +6607,12 @@ const ruleText=r=>r.kind==='weekdays'?'weekdays at '+r.time:r.kind==='weekly'?'w
 const schedCapUnit=a=>{const c=a&&a.info?capsFor(a):null;if(!c||!c.usage)return '';const u=c.capUnit==='usd'?'usd':'aiu';return (u==='usd'?c.usage.costUsd:c.usage.nanoAiu)?u:'';};
 const capAmt=(n,u)=>u==='usd'?'$'+(Number(n)||0).toFixed(2):(Math.round((Number(n)||0)*100)/100)+' AIU';
 /* one schedule's line under its prompt: when, target, state, spend, next and last run (escaped by the caller) */
+const schedMax=()=>window.DurbarSchedTemplates?DurbarSchedTemplates.PROMPT_MAX:10000;
+const schedReview=s=>String(s.prompt).length>schedMax();
 function schedLine(s){
   const st=s.done?' · done':s.paused?(s.pausedReason==='session-ended'?' · Paused: the session has ended':s.pausedReason==='cap'?' · Paused: reached its limit':' · paused'):(recurringS(s)&&s.next&&!SCHED.pausedAll?' · next '+clock(s.next):'');
-  return whenOf(s)+(s.target?' · → '+((t=>t?SN().shortName(t.name,40):null)(agents.find(x=>x.id===s.target.session&&x.live))||s.target.name||'one session'):'')+st
+  const rv=!s.done&&schedReview(s)?' · Needs review: the prompt is over '+schedMax().toLocaleString('en-US')+' characters, shorten it with Edit…':''; /* spec 044 FR-124: computed from the prompt, so it shows before the first run */
+  return whenOf(s)+(s.target?' · → '+((t=>t?SN().shortName(t.name,40):null)(agents.find(x=>x.id===s.target.session&&x.live))||s.target.name||'one session'):'')+st+rv
     +(s.cap?' · spent '+capAmt(s.spent||0,s.cap.unit)+' of '+capAmt(s.cap.amount,s.cap.unit)+(s.spentUnknown?' (the spend was not fully reported)':''):'')
     +(s.last?' · last '+clock(s.last.at)+': '+SH().outcomeWord(s.last.outcome):'');
 }
@@ -6734,7 +6737,7 @@ function openSchedules(r,from,opts){
    <p class="sc-paused" id="sdPausedNote" hidden>All schedules are paused (Folders panel).</p>
    <div class="sc-list" id="sdList"></div>
    <div class="sc-own" id="sdOwn" hidden></div>
-   <div class="sc-form"><h4 id="scFormT" hidden>Edit schedule</h4>${window.DurbarSchedTemplates?`<label id="scTplL">Start from a template<select id="scTpl"><option value="">Blank prompt</option>${DurbarSchedTemplates.TEMPLATES.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('')}</select></label><p class="sc-tpl-note" id="scTplNote" hidden></p>`:''}<label>Prompt<textarea id="scPrompt" rows="3" maxlength="2000" placeholder="For example: Summarise the open pull requests in three bullet points."></textarea></label>
+   <div class="sc-form"><h4 id="scFormT" hidden>Edit schedule</h4>${window.DurbarSchedTemplates?`<label id="scTplL">Start from a template<select id="scTpl"><option value="">Blank prompt</option>${DurbarSchedTemplates.TEMPLATES.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('')}</select></label><p class="sc-tpl-note" id="scTplNote" hidden></p>`:''}<label>Prompt<textarea id="scPrompt" rows="3" aria-describedby="scCount" placeholder="For example: Summarise the open pull requests in three bullet points."></textarea></label><p class="sc-count" id="scCount" aria-live="polite" hidden></p>
     <div class="sc-when"><label class="chk"><input type="radio" name="scKind" value="every" checked> Every <input type="number" id="scEvery" min="5" max="1440" step="5" value="60" aria-label="Minutes between runs"> minutes</label>
     <label class="chk"><input type="radio" name="scKind" value="daily"> <select id="scCal" aria-label="Which days"><option value="daily">Every day</option><option value="weekdays">Weekdays (Mon–Fri)</option><option value="weekly">Weekly on</option></select> at <input type="time" id="scDaily" value="08:30" aria-label="Time of day"></label>
     <label class="chk"><input type="radio" name="scKind" value="once"> Once at <input type="datetime-local" id="scAt" value="${local}" aria-label="Date and time"></label></div>
@@ -6759,9 +6762,15 @@ function openSchedules(r,from,opts){
     keep.textContent=same?'The limit this schedule has is kept: this agent app does not report what a run costs, so it cannot be changed here.':'This agent app does not report what a run costs, so the limit will be removed.';};
   const setKind=k=>{d.querySelector(`input[name="scKind"][value="${k}"]`).checked=true;};
   const showDays=()=>{$('scDays').hidden=$('scCal').value!=='weekly';};
+  /* spec 044 FR-121/FR-122 (issue 843): the box never cuts a paste; from 80% of the limit it counts, over it says so in words and Save is disabled until it fits */
+  const syncPrompt=()=>{
+    const c=window.DurbarSchedTemplates&&DurbarSchedTemplates.promptCheck?DurbarSchedTemplates.promptCheck($('scPrompt').value):{over:false,text:''},el=$('scCount');
+    el.textContent=c.text;el.hidden=!c.text;el.classList.toggle('over',!!c.over);
+    $('scPrompt').setAttribute('aria-invalid',String(!!c.over));$('scAdd').disabled=!!c.over;
+  };
   /* the form back to a blank new schedule */
   const blankForm=()=>{
-    $('scPrompt').value='';setKind('every');$('scEvery').value='60';$('scCal').value='daily';$('scDaily').value='08:30';$('scAt').value=local;
+    $('scPrompt').value='';syncPrompt();setKind('every');$('scEvery').value='60';$('scCal').value='daily';$('scDaily').value='08:30';$('scAt').value=local;
     d.querySelectorAll('#scDays input').forEach(x=>{x.checked=Number(x.value)===today;});showDays();
     tgt=ag?{id:ag.id,agent:ag.info.adapterId||'copilot',name:ag.name,live:ag}:null;applyTgt();$('scTarget').value='';$('scToHint').hidden=true;
     if($('scCap'))$('scCap').value='';if($('scTpl')){$('scTpl').value='';$('scTplNote').hidden=true;}syncCap();
@@ -6774,7 +6783,7 @@ function openSchedules(r,from,opts){
   /* FR-022: Edit… fills the form from the schedule */
   const startEdit=s=>{
     editing=s;blankForm();setMode(true);
-    $('scPrompt').value=s.prompt;
+    $('scPrompt').value=s.prompt;syncPrompt();
     if(s.rule){setKind('daily');$('scCal').value=s.rule.kind;$('scDaily').value=s.rule.time;d.querySelectorAll('#scDays input').forEach(x=>{x.checked=(s.rule.days||[]).includes(Number(x.value));});showDays();}
     else if(s.every!==undefined){setKind('every');$('scEvery').value=String(s.every);}
     else{setKind('once');$('scAt').value=toLocal(s.at);}
@@ -6786,6 +6795,7 @@ function openSchedules(r,from,opts){
   /* one builder for Add and Save (FR-023: main checks it again); null after telling the user what is missing */
   const buildInput=()=>{
     const prompt=$('scPrompt').value.trim();if(!prompt){focusIn($('scPrompt'));toast('Write the prompt first.',3000);return null;}
+    if(window.DurbarSchedTemplates&&DurbarSchedTemplates.promptCheck($('scPrompt').value).over){focusIn($('scPrompt'));return null;} /* Save is disabled; Enter or a script cannot save a cut text either */
     const kind=d.querySelector('input[name="scKind"]:checked').value;
     const input={folder:editing?editing.folder:folderKeyOf(r),prompt};
     if(editing){input.id=editing.id;input.edit=true;}
@@ -6820,7 +6830,7 @@ function openSchedules(r,from,opts){
       const was=editing;
       const res=await bridge.saveSchedule(input);
       if(!res.ok){toast(esc(res.error||(was?'Could not save the schedule.':'Could not add the schedule.')),5000);if(was&&res.error==='That schedule is gone.'){stopEdit();await refreshSchedules();}return;}
-      if(was)stopEdit();else{$('scPrompt').value='';if($('scCap'))$('scCap').value='';}await refreshSchedules();toast((was?'Schedule saved: ':'Schedule added: ')+esc(whenOf(res.schedule))+'.',3000);return;
+      if(was)stopEdit();else{$('scPrompt').value='';syncPrompt();if($('scCap'))$('scCap').value='';}await refreshSchedules();toast((was?'Schedule saved: ':'Schedule added: ')+esc(whenOf(res.schedule))+'.',3000);return;
     }
     const s=SCHED.schedules.find(x=>x.id===b.dataset.id);if(!s||!b.dataset.sc)return;
     if(b.dataset.sc==='hist')return; /* the history toggle is handled by its own listener */
@@ -6829,6 +6839,7 @@ function openSchedules(r,from,opts){
   });
   /* the calendar choice: weekly shows the days; touching any of it picks "On a calendar" */
   const calKind=()=>{setKind('daily');};
+  $('scPrompt').addEventListener('input',syncPrompt);
   $('scCal').addEventListener('change',()=>{calKind();showDays();});
   $('scDaily').addEventListener('input',calKind);
   $('scDays').addEventListener('change',calKind);
@@ -6840,7 +6851,7 @@ function openSchedules(r,from,opts){
   const tpl=$('scTpl');if(tpl)tpl.addEventListener('change',()=>{
     const t=DurbarSchedTemplates.byId(tpl.value),note=$('scTplNote');
     if(!t){note.hidden=true;return;}
-    $('scPrompt').value=t.prompt;
+    $('scPrompt').value=t.prompt;syncPrompt();
     if(t.daily){d.querySelector('input[name="scKind"][value="daily"]').checked=true;$('scCal').value='daily';showDays();$('scDaily').value=t.daily;}
     else if(t.every){d.querySelector('input[name="scKind"][value="every"]').checked=true;$('scEvery').value=String(t.every);}
     note.textContent=t.needs+(t.decides?' At the end it asks you what to do next: the agent shows as Waiting, with a question card in its chat.':'')+' You can edit the prompt and the time before adding it.';note.hidden=false;

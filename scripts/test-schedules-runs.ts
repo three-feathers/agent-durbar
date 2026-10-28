@@ -371,6 +371,8 @@ async function main(): Promise<void> {
     for (let i = 0; i < 2; i++) push('held');
     push('skipped-door-full');
     push('skipped-door-full');
+    push('skipped-review');
+    push('skipped-review');
     push('missed');
     push('missed');
     push('sent', { session: 'bad session!' });

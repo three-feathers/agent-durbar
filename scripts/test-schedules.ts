@@ -1,6 +1,6 @@
 /** Scheduled prompts (spec 044): the store and the scheduler with a fake clock and sender. `npm run test:schedules`. No session, no credits. */
 import * as assert from 'assert';
-import { Scheduler, alignedNext, loopSupport, cleanSchedule, dueAt, parseSchedules } from '../src/main/schedules';
+import { MAX_PROMPT, MAX_SCHEDULES, Scheduler, alignedNext, loopSupport, cleanSchedule, dueAt, needsReview, parseSchedules, loadSchedules, saveSchedules } from '../src/main/schedules';
 import type { Schedule, SchedulesDoc, SchedulerDeps } from '../src/main/schedules';
 
 const MIN = 60_000;
@@ -44,7 +44,12 @@ async function main(): Promise<void> {
   const p = parseSchedules(JSON.stringify({ pausedAll: true, schedules: [{ id: 'aaaaaaaa-1', folder: '/w', prompt: ' hi ', every: 30, next: now + 5 }, { folder: '/w', prompt: 'x', every: 2 }, { folder: '', prompt: 'x', at: 5 }, { folder: '/w', prompt: '', every: 30 }, { folder: '/w', prompt: 'once', at: now + MIN }] }), now);
   assert.strictEqual(p.pausedAll, true);
   assert.deepStrictEqual(p.schedules.map((s) => [s.prompt, s.every, s.at]), [['hi', 30, undefined], ['once', undefined, now + MIN]], 'bad entries are dropped (interval under 5 min, no folder, no prompt)');
-  assert.strictEqual(cleanSchedule({ folder: '/w', prompt: 'x'.repeat(3000), every: 60 }, now)?.prompt.length, 2000);
+  // spec 044 FR-120/FR-124 (issue #843): the limit is 10,000 and the parser never cuts a prompt
+  assert.strictEqual(MAX_PROMPT, 10_000);
+  assert.strictEqual(cleanSchedule({ folder: '/w', prompt: 'x'.repeat(MAX_PROMPT), every: 60 }, now)?.prompt.length, MAX_PROMPT, 'at the limit, whole');
+  assert.strictEqual(cleanSchedule({ folder: '/w', prompt: 'x'.repeat(12_000), every: 60 }, now)?.prompt.length, 12_000, 'over the limit: kept whole, not sliced');
+  assert.strictEqual(needsReview({ prompt: 'x'.repeat(MAX_PROMPT) }), false);
+  assert.strictEqual(needsReview({ prompt: 'x'.repeat(MAX_PROMPT + 1) }), true);
   assert.strictEqual(cleanSchedule({ folder: '/w', prompt: 'x', every: 1441 }, now), undefined);
   assert.strictEqual(cleanSchedule({ folder: '/w', prompt: 'x', every: 7.5 }, now), undefined);
   assert.strictEqual(dueAt({ id: 'i', folder: '/w', prompt: 'x', every: 5, next: 9, paused: true } as Schedule), undefined);
@@ -159,15 +164,98 @@ async function main(): Promise<void> {
     assert.strictEqual(plain?.next, now + 60 * MIN);
     assert.strictEqual(plain?.at, undefined);
   }
+  // FR-123: save refuses a new or changed prompt over the limit with the counts in words; an unchanged old one is not refused
+  {
+    const h = harness({ pausedAll: false, schedules: [] });
+    const over = h.sch.save({ folder: '/w', prompt: 'y'.repeat(12_345), every: 30 }, () => true);
+    assert.deepStrictEqual(over, { ok: false, error: 'The prompt is 12,345 of 10,000 characters: shorten it to save.' });
+    assert.strictEqual(h.sch.doc.schedules.length, 0, 'nothing stored, nothing cut');
+    const ok = h.sch.save({ folder: '/w', prompt: ' ' + 'y'.repeat(MAX_PROMPT) + ' ', every: 30 }, () => true);
+    assert.ok(ok.ok && ok.schedule.prompt.length === MAX_PROMPT, 'exactly at the limit (after trim) is saved whole');
+    if (!ok.ok) throw new Error('unreachable');
+    const edit = h.sch.save({ id: ok.schedule.id, edit: true, folder: '/w', prompt: 'y'.repeat(MAX_PROMPT + 1), every: 30 }, () => true);
+    assert.deepStrictEqual(edit, { ok: false, error: 'The prompt is 10,001 of 10,000 characters: shorten it to save.' }, 'an edit past the limit is refused');
+    assert.strictEqual(h.sch.doc.schedules[0].prompt.length, MAX_PROMPT, 'and the stored prompt is unchanged');
+  }
+  // FR-124: a stored prompt over the limit is kept whole and never sent; the row says why; an edit that fits runs it again; Pause/Resume still work
+  {
+    const long = 'z'.repeat(12_000);
+    const h = harness(parseSchedules(JSON.stringify({ pausedAll: false, schedules: [{ id: 'aaaaaaaa-long', folder: '/w', prompt: long, every: 30, next: now + 30 * MIN }] }), now));
+    h.sch.start();
+    assert.strictEqual(h.sch.doc.schedules[0].prompt.length, 12_000, 'loaded whole');
+    await h.advance(30 * MIN);
+    assert.deepStrictEqual(h.sent, [], 'not sent');
+    assert.strictEqual(h.sch.doc.schedules[0].last?.outcome, 'skipped-review');
+    assert.ok(!h.sch.doc.schedules[0].paused && !h.sch.doc.schedules[0].done, 'not paused, not done: it runs again once it fits');
+    assert.ok(h.sch.doc.schedules[0].next && h.sch.doc.schedules[0].next > h.now, 'the next run moved on (no busy loop)');
+    await h.advance(30 * MIN);
+    assert.strictEqual(h.sch.doc.runs?.['aaaaaaaa-long']?.length, 1, 'a repeat folds into one entry');
+    assert.strictEqual(h.sch.doc.runs?.['aaaaaaaa-long']?.[0].n, 2);
+    h.busy.add('/w');
+    h.sch.save({ id: 'aaaaaaaa-long', folder: '/w', prompt: long, every: 30, paused: true }, () => true);
+    assert.ok(h.sch.doc.schedules[0].paused && h.sch.doc.schedules[0].prompt.length === 12_000, 'Pause of an old long entry is not refused and does not cut');
+    h.sch.save({ id: 'aaaaaaaa-long', folder: '/w', prompt: long, every: 30 }, () => true);
+    h.busy.clear();
+    const run = await h.sch.runNow('aaaaaaaa-long');
+    assert.ok(!run.ok && /Shorten it with Edit/.test(run.error), 'Run now refuses');
+    assert.deepStrictEqual(h.sent, []);
+    const fixed = h.sch.save({ id: 'aaaaaaaa-long', edit: true, folder: '/w', prompt: 'short again', every: 30 }, () => true);
+    assert.ok(fixed.ok, 'an edit that fits is saved');
+    await h.advance(30 * MIN);
+    assert.deepStrictEqual(h.sent, ['/w:short again'], 'and it is sent again by itself');
+    // a once schedule is skipped like any skipped once run
+    const h2 = harness(parseSchedules(JSON.stringify({ pausedAll: false, schedules: [{ id: 'bbbbbbbb-once', folder: '/w', prompt: long, at: now + 5 * MIN }] }), now));
+    h2.sch.start();
+    await h2.advance(5 * MIN);
+    assert.deepStrictEqual([h2.sent, h2.sch.doc.schedules[0].last?.outcome, h2.sch.doc.schedules[0].done], [[], 'skipped-review', true]);
+  }
+  // FR-120: the store with 50 schedules at the maximum (and a full run log each) stays small and fast to write and read
+  {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('fs') as typeof import('fs'), os = require('os') as typeof import('os'), path = require('path') as typeof import('path');
+    const doc: SchedulesDoc = { pausedAll: false, schedules: [], runs: {} };
+    for (let i = 0; i < MAX_SCHEDULES; i++) {
+      const id = 'cccccccc-' + String(i).padStart(4, '0');
+      doc.schedules.push({ id, folder: '/work/folder-' + i, prompt: String.fromCharCode(97 + (i % 26)).repeat(MAX_PROMPT), every: 30, next: now + MIN });
+      doc.runs![id] = Array.from({ length: 50 }, (_, k) => ({ at: now - (50 - k) * MIN, outcome: 'sent' as const, session: 'session-' + k }));
+    }
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-sched-size-'));
+    try {
+      const f = path.join(dir, 'durbar-schedules.json');
+      const t0 = Date.now();
+      assert.ok(saveSchedules(f, doc), 'saved');
+      const back = loadSchedules(f, now);
+      const ms = Date.now() - t0;
+      const bytes = fs.statSync(f).size;
+      assert.ok(bytes < 1_500_000, `50 schedules at 10,000 characters with full logs: ${bytes} bytes`);
+      assert.ok(ms < 2000, `save and load in ${ms} ms`);
+      assert.strictEqual(back.schedules.length, MAX_SCHEDULES);
+      assert.ok(back.schedules.every((s) => s.prompt.length === MAX_PROMPT), 'every prompt comes back whole');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
   // FR-006: the starter kit (pure data): every template is valid, read-only friendly and says what it needs
   {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const T = require(require('path').join(__dirname, '..', '..', 'src', 'renderer', 'schedtemplates.js')) as { TEMPLATES: Array<{ id: string; name: string; prompt: string; daily?: string; every?: number; needs: string; decides?: boolean }>; byId: (id: string) => unknown; nextDaily: (h: string, now: number) => number | undefined };
     assert.ok(T.TEMPLATES.length >= 4);
+    // spec 044 FR-120..FR-122: the window's copy of the limit and the counter / error words
+    const PC = T as unknown as { PROMPT_MAX: number; promptCheck: (s: string) => { len: number; max: number; over: boolean; counting: boolean; text: string } };
+    assert.strictEqual(PC.PROMPT_MAX, MAX_PROMPT, 'the window and main have the same limit');
+    assert.deepStrictEqual(PC.promptCheck(''), { len: 0, max: 10_000, over: false, counting: false, text: '' });
+    assert.deepStrictEqual(PC.promptCheck('x'.repeat(7_999)), { len: 7_999, max: 10_000, over: false, counting: false, text: '' }, 'no counter below 80%');
+    assert.strictEqual(PC.promptCheck('x'.repeat(8_000)).text, '8,000 / 10,000', 'the counter starts at 80%');
+    assert.strictEqual(PC.promptCheck('x'.repeat(8_412)).text, '8,412 / 10,000');
+    assert.deepStrictEqual([PC.promptCheck('x'.repeat(10_000)).over, PC.promptCheck('x'.repeat(10_000)).text], [false, '10,000 / 10,000'], 'at the limit it fits');
+    assert.deepStrictEqual([PC.promptCheck('x'.repeat(10_001)).over, PC.promptCheck('x'.repeat(10_001)).text], [true, '10,001 of 10,000 characters: shorten it to save']);
+    assert.strictEqual(PC.promptCheck('w'.repeat(12_345)).text, '12,345 of 10,000 characters: shorten it to save');
+    assert.strictEqual(PC.promptCheck('  ' + 'x'.repeat(10_000) + '  ').over, false, 'counted trimmed, as main saves it');
+    assert.strictEqual(PC.promptCheck(undefined as unknown as string).len, 0);
     assert.ok(T.byId('start-my-day'), 'the morning briefing of issue #128 is a template');
     assert.ok(T.byId('summarize-my-day'));
     for (const t of T.TEMPLATES) {
-      assert.ok(t.prompt.length > 50 && t.prompt.length <= 2000, `${t.id}: prompt fits the 2,000-character limit`);
+      assert.ok(t.prompt.length > 50 && t.prompt.length <= MAX_PROMPT, `${t.id}: prompt fits the 10,000-character limit`);
       assert.ok(/data, never as instructions/.test(t.prompt), `${t.id}: the untrusted-data rule`);
       assert.ok(/Do not (send|install|merge)/.test(t.prompt), `${t.id}: says what it must not do`);
       assert.ok(t.needs.length > 0, `${t.id}: says what it needs`);

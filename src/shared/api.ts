@@ -259,7 +259,7 @@ export interface ProfileInfo {
 }
 
 /** What a scheduled run came to (spec 044; main's `Outcome`). */
-export type ScheduleOutcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full';
+export type ScheduleOutcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full' | 'skipped-review';
 /** Spec 044 FR-036: one entry of a schedule's run log, as `scheduleRuns` returns it (newest first). Reason codes only, never text. */
 export interface ScheduleRunInfo {
   at: number;

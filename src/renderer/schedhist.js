@@ -18,6 +18,7 @@
     failed:{word:'could not send',kind:'fail'},
     held:{word:'held: not sent yet (closed door, update or break)',kind:'hold'},
     'skipped-door-full':{word:'not kept: the closed door already holds as many prompts as it can',kind:'stop'},
+    'skipped-review':{word:'not sent: the prompt is over 10,000 characters, shorten it with Edit',kind:'stop'},
     ended:{word:'loop ended',kind:'end'}
   };
   /* FR-036: the closed list of reasons a run carries; a code is turned into words here and the error's own text is never kept. */

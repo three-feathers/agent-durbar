@@ -60,6 +60,8 @@ assert.strictEqual(H.runWords(undefined as unknown as Run), '');
 // the row's line uses the same table
 assert.strictEqual(H.outcomeWord('held'), 'held: not sent yet (closed door, update or break)');
 assert.strictEqual(H.outcomeWord('skipped-door-full'), 'not kept: the closed door already holds as many prompts as it can');
+assert.strictEqual(H.outcomeWord('skipped-review'), 'not sent: the prompt is over 10,000 characters, shorten it with Edit'); // spec 044 FR-124
+assert.strictEqual(H.kindOf('skipped-review'), 'stop');
 
 // folded repeats
 assert.strictEqual(H.foldText({ at: 1, outcome: 'skipped-busy', n: 4, until: 9 }, clockOf), '4 times, until T9');
