@@ -13,7 +13,9 @@ const R = path.join(ROOT, 'src', 'renderer');
 type Floor = { id: string; name?: string; on: boolean };
 type Ev = { key: string; ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean; metaKey?: boolean; isComposing?: boolean; repeat?: boolean; defaultPrevented?: boolean };
 type Scroll = { scrolls?: boolean; atTop?: boolean; atBottom?: boolean };
-type Open = { office?: boolean; dialog?: boolean; menu?: boolean };
+type Open = { office?: boolean; dialog?: boolean; menu?: boolean; all?: boolean };
+type Counts = { n: number; waiting: number; error: number; limit: number; reply: number; hidden: number };
+type Store = { getItem(k: string): string | null; setItem(k: string, v: string): void; removeItem(k: string): void };
 type Action = { go?: 'next' | 'prev'; scroll?: 1 | -1 } | null;
 const N = require(path.join(R, 'floornav.js')) as {
   screens(f: unknown): boolean;
@@ -23,6 +25,15 @@ const N = require(path.join(R, 'floornav.js')) as {
   keyEligible(e: Ev, t: unknown, s?: Scroll, o?: Open): 'next' | 'prev' | null;
   announceText(f: unknown, n: unknown, m: unknown): string;
   place(f: unknown, id: string): { n: number; m: number } | null;
+  viewOf(v: unknown): 'all' | 'one';
+  readView(store: () => Store | null): 'all' | 'one';
+  writeView(store: () => Store | null, v: unknown): boolean;
+  VIEW_KEY: string;
+  announceAll(m: number): string;
+  badgeCounts(f: unknown, items: unknown, cur: unknown, all?: boolean): Record<string, Counts>;
+  badgeText(c: Counts | undefined | null): string;
+  badgeNum(n: number): string;
+  edgeSummary(items: unknown): { up: Counts | null; down: Counts | null };
 };
 let n = 0;
 const eq = (a: unknown, b: unknown, m: string): void => { assert.deepStrictEqual(a, b, m); n++; };
@@ -106,6 +117,58 @@ eq(N.keyEligible(up, body, { scrolls: true, atTop: false, atBottom: true }), nul
 eq(N.keyAction(down, inside('input'), { scrolls: true, atTop: true, atBottom: false }), null, 'in a text field the scroll rule is not ours either');
 eq(N.keyAction(down, body, { scrolls: true, atTop: true, atBottom: false }, { dialog: true }), null, 'under a dialog the screen does not scroll by our hand');
 
+// ---- phase 2: the All floors view (FR-031..FR-037) ----
+eq(N.viewOf('all'), 'all', 'the stored value all is the All floors view');
+for (const v of [null, undefined, '', 'one', 'ALL', ' all', 'true', 1, {}]) eq(N.viewOf(v), 'one', `a stored ${JSON.stringify(v)} is the one-floor default`);
+eq(N.announceAll(3), 'All floors, 3 floors', 'the All floors announcement (FR-036)');
+// FR-037, Paco's review of #849: the view's storage may throw (blocked site data, private mode): the default, never an error
+const mem = (): Store & { d: Record<string, string> } => { const d: Record<string, string> = {}; return { d, getItem: (k) => (k in d ? d[k] : null), setItem: (k, v) => { d[k] = String(v); }, removeItem: (k) => { delete d[k]; } }; };
+const m1 = mem();
+eq(N.readView(() => m1), 'one', 'nothing stored: the one-floor default');
+ok(N.writeView(() => m1, 'all') && m1.d[N.VIEW_KEY] === 'all' && N.VIEW_KEY === 'durbar.floorView', 'All is stored under durbar.floorView');
+eq(N.readView(() => m1), 'all', 'and read back');
+ok(N.writeView(() => m1, 'one') && !(N.VIEW_KEY in m1.d), 'the default removes the key (only an explicit all is ever stored)');
+m1.d[N.VIEW_KEY] = 'sideways';
+eq(N.readView(() => m1), 'one', 'a bad stored value: the default');
+const boom = (): Store => ({ getItem: () => { throw new Error('SecurityError'); }, setItem: () => { throw new Error('QuotaExceeded'); }, removeItem: () => { throw new Error('SecurityError'); } });
+eq(N.readView(boom), 'one', 'a read that throws: the default');
+eq(N.writeView(boom, 'all'), false, 'a write that throws is lost, not thrown');
+eq(N.writeView(boom, 'one'), false, 'a remove that throws is lost, not thrown');
+eq(N.readView(() => { throw new Error('localStorage is not available'); }), 'one', 'reaching the storage throws: the default');
+eq(N.writeView(() => { throw new Error('localStorage is not available'); }, 'all'), false, 'reaching the storage throws on write: lost');
+eq(N.readView(() => null), 'one', 'no storage: the default');
+// FR-034: in the All floors view PageUp/PageDown never change floor or view; they only scroll a screen that scrolls
+const ALL: Open = { all: true };
+eq(N.keyAction(down, body, { scrolls: false }, ALL), null, 'All view, nothing to scroll: PageDown does nothing');
+eq(N.keyAction(up, body, { scrolls: false }, ALL), null, 'All view, nothing to scroll: PageUp does nothing');
+eq(N.keyAction(down, body, { scrolls: true, atTop: true, atBottom: false }, ALL), { scroll: 1 }, 'All view, a screen that scrolls: PageDown scrolls');
+eq(N.keyAction(up, body, { scrolls: true, atTop: false, atBottom: true }, ALL), { scroll: -1 }, 'All view: PageUp scrolls');
+eq(N.keyAction(down, body, { scrolls: true, atTop: false, atBottom: true }, ALL), null, 'All view, at the bottom edge: no floor change');
+eq(N.keyAction({ ...down, repeat: true }, body, { scrolls: true, atTop: true, atBottom: false }, ALL), null, 'All view, a held key: not ours');
+eq(N.keyAction(down, inside('input'), { scrolls: true, atTop: true }, ALL), null, 'All view, in a text field: the key keeps its meaning');
+
+// ---- phase 2: lift badges (FR-014, FR-015, FR-016) and the edge rows (FR-028) ----
+const f3 = fl('a b !c');
+const it = (id: string, floor: string, kind: string, hidden = false) => ({ id, floor, kind, hidden });
+const items = [it('1', 'a', 'waiting'), it('2', 'b', 'waiting'), it('3', 'b', 'error'), it('4', 'b', 'reply'), it('5', 'c', 'error'), it('6', 'b', 'limit', true), it('2', 'b', 'error')];
+const bc = N.badgeCounts(f3, items, 'a');
+eq(Object.keys(bc), ['b'], 'no badge on the current floor nor on a floor that is off (FR-016)');
+eq(bc.b, { n: 4, waiting: 1, error: 1, limit: 1, reply: 1, hidden: 1 }, 'each agent once, by kind (FR-015)');
+eq(N.badgeCounts(f3, items, 'a', true), {}, 'the All floors view: no badge on any floor (FR-035)');
+eq(Object.keys(N.badgeCounts(f3, items, null)).sort(), ['a', 'b'], 'with no current floor every floor that is on has its badge');
+eq(N.badgeCounts(f3, [it('9', 'b', 'sleepy'), null, 7, { floor: 'b' }], 'a'), {}, 'unknown kinds and bad items count nothing');
+eq(N.badgeCounts(null, items, 'a'), {}, 'no floors: nothing');
+eq(N.badgeText(bc.b), '1 waiting, 1 error, 1 limit reached, 1 new reply', 'the words of a badge');
+eq(N.badgeText({ n: 3, waiting: 2, error: 0, limit: 0, reply: 0, hidden: 0 } as Counts), '2 waiting', 'one kind');
+eq(N.badgeText({ n: 2, waiting: 0, error: 2, limit: 0, reply: 0, hidden: 0 } as Counts), '2 errors', 'errors in the plural');
+eq(N.badgeText(undefined), '', 'nothing: no words');
+eq([N.badgeNum(1), N.badgeNum(9), N.badgeNum(10), N.badgeNum(42)], ['1', '9', '9+', '9+'], '9+ past nine');
+const c1 = { n: 1, waiting: 1, error: 0, limit: 0, reply: 0, hidden: 0 }, c2 = { n: 2, waiting: 0, error: 2, limit: 0, reply: 0, hidden: 0 };
+eq(N.edgeSummary([{ pos: 'above', counts: c1 }, { pos: 'in', counts: c2 }, { pos: 'below', counts: c2 }, { pos: 'below', counts: c1 }]),
+  { up: { n: 1, waiting: 1, error: 0, limit: 0, reply: 0, hidden: 0 }, down: { n: 3, waiting: 1, error: 2, limit: 0, reply: 0, hidden: 0 } }, 'out-of-view badges are summed per edge');
+eq(N.edgeSummary([{ pos: 'in', counts: c1 }]), { up: null, down: null }, 'every badge in view: no edge row');
+eq(N.edgeSummary(null), { up: null, down: null }, 'nothing: no edge row');
+
 // ---- the page is wired to the rules (source checks) ----
 const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
 const html = fs.readFileSync(path.join(R, 'index.html'), 'utf8');
@@ -121,6 +184,11 @@ ok(/function syncCurFloor\(before,was\)/.test(app) && /syncCurFloor\(before,was\
 ok(/\(of\?' \('\+DurbarCutText\.cutText\(of\.name,16\)\+'\)'/.test(app) && !/of\?' \('\+of\.name\+'\)'/.test(app), 'the lobby visitor menu cuts a floor name to 16 characters like the tile label (a 40-character name stays short)');
 ok(!/bridge\.[a-zA-Z]*[Ff]loor/.test(fs.readFileSync(path.join(R, 'floornav.js'), 'utf8')), 'floornav.js has no bridge call');
 // the series adds no IPC channel, preload or main-process floors code (FR-024)
+ok(/let floorView=window\.DurbarFloorNav\.readView\(VIEW_STORE\)/.test(app) && /FN\.writeView\(VIEW_STORE,v\)/.test(app) && !/localStorage\.(get|set|remove)Item\(['"]durbar\.floorView/.test(app), 'the view is read and written only through floornav (a storage that throws is the default, FR-037)');
+ok(/const curFloorId=\(\)=>oneFloorView\(\)\?/.test(app), 'in the All floors view there is no current floor shown: the pre-092 path (FR-031)');
+ok(/all:allFloorsView\(\)\}/.test(app), 'the key handler tells floornav about the All floors view (FR-034)');
+ok(/if\(!model\.length&&oneFloorView\(\)&&/.test(app), 'the empty-floor line is for the one-floor view only (FR-035)');
+ok(/role="toolbar" aria-label="Floors" aria-orientation="vertical"/.test(html), 'the lift is a vertical toolbar named Floors (FR-006)');
 const shared = fs.readFileSync(path.join(ROOT, 'src', 'shared', 'floors.ts'), 'utf8');
 ok(!/floornav|curFloor|durbar\.floor\b/i.test(shared), 'src/shared/floors.ts is unchanged by the floor screens');
 

@@ -113,6 +113,8 @@ jobs:
     needs: [verify, build]
     permissions:
       contents: write
+      id-token: write # spec 008 FR-132: build provenance attestations (this job only)
+      attestations: write
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -128,6 +130,11 @@ jobs:
           cd dist-artifacts
           sha256sum * > SHA256SUMS.txt
           ls -la
+      # Spec 008 FR-132: a signed build provenance statement for every release asset and SHA256SUMS.txt, made before anything is uploaded.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist-artifacts/*
       # Always a DRAFT (owner decision). verify decides pre-release or not (releaseKind: a "-" in the version is a pre-release); a
       # pre-release is created --latest=false, a stable one is left without --latest because the API keeps no "latest" on a draft:
       # the owner publishes it by hand with the command in the job summary. verify writes the title ("(test build)" for a

@@ -1,1 +1,0 @@
-- CI: the nightly macOS UI job has 80 minutes instead of 45, so the whole driver suite can finish (it was cancelled two nights running).

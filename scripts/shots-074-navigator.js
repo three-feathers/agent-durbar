@@ -392,13 +392,13 @@ module.exports = async (ctx) => {
     // ---- review on #597 (fjcabello): Ctrl+A and Ctrl+Backspace do nothing of ours while a dialog (askDialog) is open; spec 052 FR-175:
     // nor do the other global shortcuts (Ctrl+O, Ctrl+`, Ctrl+Shift+H, Alt+N / ⌥⌘N, I, ?, N) ----
     await openDesk(dA);
-    /* a probe on + Folder (Ctrl+O): counts the clicks and stops them, so the check has no side effect */
-    await js(`(()=>{window.__addProbe=0;if(!window.__addProbeOn){window.__addProbeOn=1;document.addEventListener('click',e=>{if(e.target&&e.target.closest&&e.target.closest('#addFolder')&&window.__addProbeArm){window.__addProbe++;e.preventDefault();e.stopImmediatePropagation();}},true);}window.__addProbeArm=1;})()`);
+    /* a probe on Ctrl+O's add (spec 093: Add existing directly, the simulator's addFolder): counts the calls and adds nothing, so the check has no side effect */
+    await js(`(()=>{window.__simAddFolderProbe={n:0};return true})()`);
     const ctrlO = process.platform !== 'darwin' && (await js(`document.body.classList.contains('has-bridge')&&!!document.getElementById('addFolder')&&!document.getElementById('addFolder').disabled`));
     if (ctrlO) {
       await key('O', ['control'], { char: 'never' });
-      assert.ok(await until(`window.__addProbe===1`, 2000), `${w}: control: without a dialog Ctrl+O reaches + Folder (the probe works)`);
-      await js(`window.__addProbe=0`);
+      assert.ok(await until(`window.__simAddFolderProbe.n===1&&!document.getElementById('modeDlg')`, 2000), `${w}: control: without a dialog Ctrl+O adds a folder directly (the probe works)`);
+      await js(`window.__simAddFolderProbe.n=0`);
     }
     const before = await js(`({title:document.getElementById('panelTitle').textContent,prev:(document.getElementById('prevBtn')||{getAttribute:()=>''}).getAttribute('aria-expanded')})`);
     await key('K', [MOD], { char: 'never' });
@@ -416,9 +416,9 @@ module.exports = async (ctx) => {
     await key('N', process.platform === 'darwin' ? ['alt', 'meta'] : ['alt'], { char: 'never' });
     for (const k of ['i', '?', 'n']) await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:${jsLiteral(k)},shiftKey:${jsLiteral(k === '?')},bubbles:true,cancelable:true}))`);
     await ctx.sleep(150); // nothing may happen: give a wrong handler its chance
-    const after = await js(`({title:(document.getElementById('panelTitle')||{}).textContent,prev:(document.getElementById('prevBtn')||{getAttribute:()=>''}).getAttribute('aria-expanded'),kbd:!!document.getElementById('kbdDlg'),add:window.__addProbe})`);
+    const after = await js(`({title:(document.getElementById('panelTitle')||{}).textContent,prev:(document.getElementById('prevBtn')||{getAttribute:()=>''}).getAttribute('aria-expanded'),kbd:!!document.getElementById('kbdDlg'),add:window.__simAddFolderProbe.n})`);
     assert.ok(after.title === before.title && after.prev === before.prev && !after.kbd && !after.add, `${w}: under the dialog, Ctrl+O, Ctrl+\`, Ctrl+Shift+H, Alt+N, I, ? and N do nothing (spec 052 FR-175): ${JSON.stringify({ before, after, ctrlO })}`);
-    await js(`window.__addProbeArm=0`);
+    await js(`delete window.__simAddFolderProbe`);
     c = await box();
     assert.ok(c.open && !c.inbox && !c.pal && (await js(`!!document.querySelector('.dlg-ov [aria-modal="true"]')`)), `${w}: with a dialog open, Ctrl/⌘+A opens no Needs you and Ctrl/⌘+Backspace closes no chat and Ctrl/⌘+F opens no Go to: ${JSON.stringify(c)}`);
     await key('Escape', [], { char: 'never' });

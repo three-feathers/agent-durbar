@@ -182,6 +182,22 @@ body.has-bridge #liveBar{display:flex}
 .workspace{flex:1;display:flex;min-height:0;min-width:0}
 #floor{flex:1;min-width:0;position:relative;overflow:hidden;padding:12px 16px 12px}
 #floor.scrolls{overflow-y:auto}
+/* spec 092 FR-006..FR-008, FR-015, FR-028, FR-032 (40 px wide: at 47 px the lobby's Bank tile lost its visitor's words at 1440x900): the lift panel at the right edge of the office area (a flex item of .workspace, so its width comes out
+   of #floor and the layout counts it); shown only with two or more floors on. Semantic tokens only; text at least 10.5px; buttons at least 28x28. */
+#lift{flex:none;display:flex;flex-direction:column;align-items:stretch;min-height:0;padding:10px 0 8px 2px;border-left:1px solid var(--line);background:var(--surface)}
+#lift[hidden]{display:none}
+.lift-shaft{display:flex;flex-direction:column;align-items:flex-start;gap:9px;min-height:0;overflow-y:auto;overflow-x:hidden;padding:6px 4px 4px 3px;scrollbar-width:none}
+.lift-shaft::-webkit-scrollbar{display:none}
+.lift-b{position:relative;flex:none;width:30px;height:30px;min-height:28px;padding:0;border:1px solid var(--line);border-radius:var(--r-md);background:var(--raised);color:var(--ink-2);font:inherit;font-size:11px;font-weight:600;line-height:1;cursor:pointer;display:grid;place-items:center}
+.lift-b:hover{border-color:var(--line-2);color:var(--ink)}
+.lift-b.lift-all{font-size:10.5px;letter-spacing:.01em;margin-bottom:4px}
+/* FR-007: the view shown is marked by shape and weight, not colour only: a thick border, bold text and a bar on the left */
+.lift-b[aria-current="true"]{border:2px solid var(--ink);color:var(--ink);font-weight:800;background:var(--surface-2)}
+.lift-b[aria-current="true"]::before{content:"";position:absolute;left:-4px;top:7px;bottom:7px;width:2px;border-radius:2px;background:var(--ink)}
+.lift-badge{position:absolute;top:-6px;right:-4px;min-width:16px;height:16px;padding:0 3px;box-sizing:border-box;border-radius:999px;border:1px solid currentColor;background:var(--warn-bg);color:var(--amber-ink);font-size:10.5px;font-weight:700;line-height:14px;text-align:center}
+.lift-badge[hidden]{display:none}
+.lift-edge{flex:none;margin:0 1px;min-height:22px;padding:0 2px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--warn-bg);color:var(--amber-ink);font:inherit;font-size:10.5px;font-weight:700;cursor:pointer;white-space:nowrap}
+.lift-edge[hidden]{display:none}
 .stage{display:flex;flex-wrap:wrap;gap:12px;align-content:flex-start;align-items:stretch}
 /* spec 001 FR-086, FR-087: spare height (spreadOffice sets --rx, padding-top and row-gap): a room row's extra height goes half under the header,
    half under the desks, so the header stays at the top and the desks keep their size */
@@ -318,9 +334,26 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 
 /* ---------- list view ---------- */
 #list{flex:1;min-width:0;overflow:auto;padding:16px 24px 20px;display:none}
-.list-wrap{background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+/* spec 001 FR-182 (issue #812): (the first and last tracks hold the row's 16px padding, so their numbers are 16 more than the cell's) the columns are decided once, by the wrap (rows and the head are subgrids of it), so they line up and follow their content: Agent app, Active, Usage and Status fit their cells up to a cap; Agent and Folder have a larger floor; Current task takes what is left and is the cell that is cut. No resize handles. */
+.list-wrap{display:grid;grid-template-columns:minmax(186px,1.3fr) fit-content(150px) minmax(130px,1fr) minmax(130px,.9fr) minmax(120px,2.4fr) fit-content(84px) fit-content(110px) fit-content(146px);column-gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.list-wrap>.filter-note,.list-wrap>.empty{grid-column:1/-1}
+.lrow-w{display:grid;grid-template-columns:subgrid;grid-column:1/-1}
+/* floors of the short columns (the fit-content tracks would otherwise shrink to nothing in a narrow window) */
+.lrow>:nth-child(2){min-width:56px}.lrow>:nth-child(6){min-width:40px}.lrow>:nth-child(7){min-width:44px}.lrow>:nth-child(8){min-width:76px}
+/* a narrow window (the app's minimum is 640px) gives up whole columns before it scrolls sideways: Role first, then Folder, but never the column the list is sorted by (data-sort on the wrap; the row's accessible name keeps all of them) */
+#list{container-type:inline-size;container-name:lst}
+@container lst (max-width:899px){
+  .list-wrap{grid-template-columns:minmax(166px,1.3fr) fit-content(150px) minmax(130px,1fr) minmax(110px,2fr) fit-content(84px) fit-content(110px) fit-content(146px)}
+  .list-wrap:not([data-sort="role"]) .lrow>:nth-child(3),.list-wrap[data-sort="role"] .lrow>:nth-child(4){display:none}
+}
+@container lst (max-width:759px){
+  .list-wrap{grid-template-columns:minmax(136px,1.3fr) fit-content(150px) minmax(90px,2fr) fit-content(84px) fit-content(110px) fit-content(146px)}
+  .list-wrap:not([data-sort="role"]):not([data-sort="folder"]) .lrow>:nth-child(4){display:none}
+  .list-wrap:is([data-sort="role"],[data-sort="folder"]){grid-template-columns:minmax(136px,1.3fr) minmax(90px,1fr) minmax(90px,2fr) fit-content(84px) fit-content(110px) fit-content(146px)}
+  .list-wrap:is([data-sort="role"],[data-sort="folder"]) .lrow>:nth-child(2){display:none}
+}
 /* spec 052 FR-064: 34px rows; Agent, Agent app, Role, Folder, Current task, Last activity, Cost, Status ; FR-092: the Agent app column grows ("Basic agent (simulated)" fits) */
-.lrow{display:grid;grid-template-columns:minmax(120px,1fr) minmax(100px,1.05fr) minmax(90px,.7fr) minmax(100px,.75fr) minmax(160px,2.4fr) 78px 88px 120px;gap:12px;align-items:center;width:100%;padding:0 16px;height:34px;border:0;border-bottom:1px solid var(--line-soft);background:transparent;text-align:left;cursor:pointer;font-size:13px}
+.lrow{display:grid;grid-template-columns:subgrid;grid-column:1/-1;gap:12px;align-items:center;width:100%;padding:0 16px;height:34px;border:0;border-bottom:1px solid var(--line-soft);background:transparent;text-align:left;cursor:pointer;font-size:13px}
 .lrow:last-child,.lrow-w:last-child>.lrow{border-bottom:0}
 button.lrow:hover{background:var(--surface-2)}
 button.lrow[aria-pressed="true"]{background:var(--tone-info-soft);box-shadow:inset 3px 0 0 var(--focus)} /* spec 052 FR-052: not colour only */
@@ -584,7 +617,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .stage:not([data-d="full"]) .room[data-tint="blue"]{--wall:var(--cwall-blue,#b5c8d8)}
 .stage:not([data-d="full"]) .room[data-tint="sand"]{--wall:var(--cwall-sand,#d2c4a4)}
 .stage:not([data-d="full"]) .room[data-tint="clay"]{--wall:var(--cwall-clay,#d8c1b3)}
-.stage:not([data-d="full"]) .room::after{content:"";position:absolute;left:28px;bottom:-2px;width:30px;height:2px;background:var(--bg)}
+/* spec 001 FR-183 (issue #813): no doorway notch in the bottom wall; the room's door is the icon in its header */
 .stage:not([data-d="full"]) .room-head{min-height:calc(var(--rp) + 14px);gap:8px;padding-right:4px} /* spec 052 (#311): the plant is decoration for the full layout only; denser rooms give its room to the 24px controls */
 .stage:not([data-d="full"]) .room-name{font-size:12.5px;line-height:18px;padding:0 9px;border-radius:6px;background:color-mix(in srgb,var(--raised) 72%,transparent);border:1px solid var(--wall)}
 .stage:not([data-d="full"]) .room-head{container-type:inline-size}
@@ -1333,6 +1366,10 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 /* spec 087 FR-009/FR-010/FR-021: the OS sandbox words (text, never colour alone); the card's sandbox line and the not-sent mark are never cut */
 .mode-chip .mode-sbx,.modechip .mode-sbx{font-weight:600;white-space:nowrap}
 .mode-chip .mode-sbx.sbx-off{color:var(--amber-ink)}
+/* spec 087 FR-022: a floor kept in Allow all: the chip's sandbox segment is its own button (Restart without the sandbox, asks first) */
+.mode-sbx-btn{display:inline-flex;align-items:center;height:var(--h-chip);margin-left:4px;padding:0 8px;border-radius:999px;border:1px solid var(--tone-bad-line);background:var(--raised);font-size:12px;font-weight:600;color:var(--red-ink);cursor:pointer;white-space:nowrap}
+.mode-sbx-btn:hover{background:var(--surface-2)}
+.mode-sbx-btn[aria-disabled="true"]{cursor:progress;opacity:.75}
 .mm-sbx{max-width:340px;white-space:normal;line-height:1.35}
 .note.perm .pscope{margin:4px 0 0;font-size:11.5px;color:var(--ink);white-space:normal;overflow:visible;text-overflow:clip}
 .note.perm:not(.pending) .pscope{display:none} /* a settled card no longer offers the grant */ /* spec 003 FR-108 */
@@ -1899,7 +1936,7 @@ h2,h3,h4{text-wrap:balance}
 .ctoolbar .ib.ct-ib svg{width:16px;height:16px}
 .ctoolbar #ctMoreBtn{font-size:var(--t3-size);font-weight:700;color:var(--ink-2)}
 .ctoolbar #ctMoreBtn[hidden]{display:none}
-.ctoolbar .mchip,.ctoolbar .mode-chip,.ctoolbar .ctxchip{height:28px;font-size:var(--t4-size)}
+.ctoolbar .mchip,.ctoolbar .mode-chip,.ctoolbar .ctxchip,.ctoolbar .mode-sbx-btn{height:28px;font-size:var(--t4-size)}
 .ctoolbar .mchip-btn span{max-width:220px}
 .ctoolbar .cti{width:14px;height:14px;flex:none}
 .ctoolbar .mchip{gap:var(--s-1)}
@@ -1941,6 +1978,7 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 /* FR-167: dialog sizes S (default), M and L; `.wide` and `.imp` are older names for M and L */
 .dlg.m{width:min(var(--dlg-w-m),calc(100vw - 32px))}
 .dlg.l{width:min(var(--dlg-w-l),calc(100vw - 32px))}
+.dlg.l .dbtn{flex-wrap:wrap} /* spec 093: the + Folder choice has five buttons; at 1440 and 1280 they wrap to a second row instead of pushing the first one out on the left */
 .sched-dlg .sc-form{display:flex;flex-direction:column;gap:var(--dlg-gap)} /* FR-167: groups of fields are one gap apart (the Prompt label touched the select above it) */
 
 /* spec 001 FR-051..FR-055: finished agents rest in a lounge corner at the end of the desk row, at the row's height: a couch (recent) and
@@ -2053,6 +2091,9 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 @media (hover:none){.ren,.ttl-pen{opacity:1}}
 /* the room header's pencil is placed like a card's (against the room: the header is not positioned, the plant is placed against the room); the Folders panel and Previous sessions rows have theirs in the flow, hidden with opacity until hover or focus */
 .ren.ren-in{position:static;flex:none}
+/* spec 001 FR-184 (issue #813): in the room header the pencil is only the icon; a tile appears on hover or keyboard focus, like the header's other buttons (24px target and focus ring unchanged) */
+.room-head>.ren.ren-in{background-color:transparent}
+.room-head>.ren.ren-in:hover,.room-head>.ren.ren-in:focus-visible{background-color:var(--raised);background-clip:border-box}
 .room-head:hover>.ren,.room-head:focus-within>.ren,.fp-row:hover .ren-in,.fp-row:focus-within .ren-in,.prev-row:hover .ren-in,.prev-row:focus-within .ren-in{opacity:1}
 /* the unit scales in when its agent leaves the lounge (shut-out: from .92); the pencil counter-scales (1/.92) so its 24px target stays 24px while it plays (spec 059 FR-025, spec 052) */
 .unit.unrolling>.ren{animation:shut-out-ren .22s ease-out}

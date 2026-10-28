@@ -15,6 +15,8 @@ type McpServerStatus = import('../adapters/types').McpServerStatus;
 type AgentInfo = import('../shared/api').AgentInfo;
 type DurbarApi = import('../shared/api').DurbarApi;
 type UpdatesView = import('../shared/api').UpdatesView;
+type NewFolderProgress = import('../shared/api').NewFolderProgress;
+type NewFolderCheck = import('../shared/api').NewFolderCheck;
 type FolderSetupItem = import('../shared/foldersetup').FolderSetupItem;
 type PickedFile = import('../shared/api').PickedFile;
 type ModelChoice = import('../shared/api').ModelChoice;
@@ -57,7 +59,7 @@ function simSandboxFor(i: number, kind: string, mode: string): SandboxState | un
   if (kind === 'codex') return { state: 'on', mechanism: 'vendor', covers, writes: 'none', ...(mode === 'ask' ? { approvedMayLeave: true } : {}), verified: false };
   if (i === 3 || i === 10) return { state: 'off', covers, writes, verified: false, reason: kind === 'claude' ? SIM_SBX_WIN : SIM_SBX_COPILOT }; // · Not sandboxed
   if (i === 12) return { state: 'unknown', mechanism: 'bubblewrap', covers, writes, verified: false, reason: 'Waiting for the app to confirm its sandbox at the start.' }; // · Sandbox: checking
-  return { state: 'on', mechanism: i === 13 ? 'processcontainer' : i % 2 ? 'seatbelt' : 'bubblewrap', covers, writes, ...(kind === 'copilot' && mode === 'ask' ? { approvedMayLeave: true } : {}), verified: false }; // FR-021a (K15)
+  return { state: 'on', mechanism: i === 13 ? 'processcontainer' : i % 2 ? 'seatbelt' : 'bubblewrap', covers, writes, ...(kind === 'copilot' && mode === 'ask' ? { approvedMayLeave: true } : {}), ...(kind === 'copilot' ? { heldFloor: true } : {}), verified: false }; // FR-021a (K15); FR-022c: Copilot's floor is lowered at a switch to Allow all
 }
 type SimNote = import('../shared/notes').Note;
 type SimNotesWrote = import('../shared/notes').NotesWrote;
@@ -389,6 +391,8 @@ const SIM_MODELS: ModelChoice[] = [
  * Copilot blocks the `my-notes` MCP server; Codex's policy could not be read for Allow all (advice only, still selectable).
  */
 const SIM_ORG = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simorgpolicy') === '1';
+/** Spec 087 FR-022c (review on PR #833): `?simsbxlower=refuse`: the app refuses to lower a Copilot floor at the switch to Allow all (the floor is kept, the window toasts). */
+const SIM_LOWER_REFUSE = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsbxlower') === 'refuse';
 const simOrgText = (app: string): string => `Blocked by your organization's ${app} policy`;
 const simOrgDoubtText = (app: string): string => `Your organization's ${app} policy may block this (Agent Durbar could not read all of it)`;
 const SIM_ORG_APP: Record<string, string> = { copilot: 'Copilot', claude: 'Claude Code' };
@@ -1930,6 +1934,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
        renderer like an imported one. */
     const simQuery = typeof window !== 'undefined' && window.location ? new URLSearchParams(window.location.search) : new URLSearchParams();
     let simTheme = /^[a-z0-9_-]{1,64}$/.test(simQuery.get('theme') ?? '') ? (simQuery.get('theme') as string) : undefined;
+    /* characters=<value> (spec 077 FR-064, FR-070): who sits at the desks in this run, in memory, like the theme; only a listed value */
+    const CHARS = ['theme', 'minimalist', 'cheeky'] as const;
+    type SimChars = (typeof CHARS)[number];
+    const isChars = (v: unknown): v is SimChars => typeof v === 'string' && (CHARS as readonly string[]).includes(v);
+    let simCharacters: SimChars = isChars(simQuery.get('characters')) ? (simQuery.get('characters') as SimChars) : 'theme';
     let simUserTheme: Record<string, unknown> | null = null;
     const simUserThemes: Record<string, unknown>[] = []; // spec 040 FR-014: AI themes saved in this simulated run
     let simThemeN = 0;
@@ -1944,7 +1953,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.1 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
@@ -1952,6 +1961,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       setBadge: async () => ({ ok: true }), /* spec 052 FR-059: no app icon in the demo */
       focusWindow: async () => { window.focus(); return { ok: true }; },
       setTheme: async (id) => { if (typeof id === 'string' && /^[a-z0-9_-]{1,64}$/.test(id)) simTheme = id; return { ok: true, theme: simTheme }; },
+      setCharacters: async (v) => { if (!isChars(v)) return { ok: false, characters: simCharacters }; simCharacters = v; return { ok: true, characters: v }; }, // spec 077 FR-064: refused like main
       listUserThemes: async () => [...(simUserTheme ? [simUserTheme] : []), ...simUserThemes].map((t) => ({ id: t.id as string, name: String(t.name ?? t.id), ok: true })),
       getUserTheme: async (id) => (simUserTheme && id === simUserTheme.id ? simUserTheme : simUserThemes.find((t) => t.id === id) ?? null),
       setPlace: async (server, place) => {
@@ -2518,6 +2528,62 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     };
     let started = false;
     let extra = 0;
+    /* spec 093: the simulator's own parent pick (one at a time), its canned URL and name refusals (main's rules are tested in
+       test:newfolder) and a fake clone: progress events on a timer, Cancel, no process, no network */
+    const simNewFolder: { token: string; n: number; progress: Array<(p: NewFolderProgress) => void>; clone: null | { cancel: () => void } } = { token: '', n: 0, progress: [], clone: null };
+    const simCloneUrl = (u: unknown): { ok: true; host: string; suggested: string; shown: string } | { ok: false; error: string; retry: 'url' } => {
+      const no = (error: string) => ({ ok: false as const, error, retry: 'url' as const });
+      if (typeof u !== 'string' || !u) return no('Paste the address of the repository.');
+      if (/[\s]/.test(u)) return no('Remove spaces, tabs and line breaks from the address.');
+      if (/^-/.test(u)) return no('No part of the address may start with -.');
+      if (/^(?:https|ssh):\/\/[^/@]*:[^/@]*@/i.test(u) || /^[^@/:]+:[^@/]*@[^/]*:/.test(u)) return no('Remove the password from the address. Durbar uses your own git credentials.');
+      const m = /^(?:https|ssh):\/\/(?:[A-Za-z0-9._~+-]+@)?([A-Za-z0-9.-]+)(?::\d+)?\/[^?#\\]+$/i.exec(u) || /^[A-Za-z0-9._~+-]+@([A-Za-z0-9.-]+):[^-][^?#\\]*$/.exec(u);
+      if (!m || u.includes('::')) return no('Use an https:// or ssh address (for example git@github.com:owner/repo.git).');
+      const seg = (u.replace(/\/+$/, '').split(/[/:]/).pop() || '').replace(/\.git$/i, '');
+      return { ok: true, host: m[1], suggested: /^[A-Za-z0-9._-]+$/.test(seg) ? seg : '', shown: u };
+    };
+    const simNewFolderCheck = (req: { kind?: unknown; name?: unknown; url?: unknown } | null | undefined): NewFolderCheck => {
+      const n = req && typeof req.name === 'string' ? req.name : '';
+      if (!req || (req.kind !== 'init' && req.kind !== 'empty' && req.kind !== 'clone')) return { ok: false, error: 'Choose what to create.' };
+      let extra = {};
+      if (req.kind === 'clone') {
+        const u = simCloneUrl(req.url);
+        if (!u.ok) return u;
+        /* window.__simCloneHost: a driver plants a hostile host-like string to check the Allow all sentence is text, never HTML */
+        const planted = typeof window !== 'undefined' ? (window as unknown as { __simCloneHost?: unknown }).__simCloneHost : undefined;
+        extra = { host: typeof planted === 'string' ? planted : u.host, suggested: u.suggested, shown: u.shown };
+        if (req.name === undefined) return { ok: true, ...extra };
+      }
+      if (!n) return { ok: false, error: 'Type a name for the new folder.' };
+      if (/[\\/]/.test(n)) return { ok: false, error: 'A single folder name, without / or \\.' };
+      if (/^(con|prn|aux|nul|conin\$|conout\$|com[0-9]|lpt[0-9]) *(\.|$)/i.test(n)) return { ok: false, error: 'That name is reserved on Windows (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-9, LPT0-9). Choose another.' };
+      if (n === '.' || n === '..') return { ok: false, error: 'Use a name other than . or ..' };
+      return { ok: true, ...extra };
+    };
+    /* the fake clone's progress, as git writes it; window.__simCloneHold stops it at "Receiving objects: 45%" (and
+       window.__simCloneWaiting before any output, with FR-044's waiting line) until the flag is cleared or Cancel is pressed */
+    const simCloneRun = (): Promise<'done' | 'cancelled'> => new Promise((resolve) => {
+      const w = (typeof window !== 'undefined' ? window : {}) as { __simCloneHold?: boolean; __simCloneWaiting?: boolean };
+      const t0 = Date.now();
+      const steps: Array<[string, number | undefined, string]> = [['Counting objects', 100, 'remote: Counting objects: 100% (1200/1200), done.'], ...[10, 25, 45, 70, 90, 100].map((p): [string, number, string] => ['Receiving objects', p, `Receiving objects: ${String(p).padStart(3)}% (${p * 12}/1200), ${(p / 20).toFixed(1)} MiB | 3.1 MiB/s`]), ['Resolving deltas', 100, 'Resolving deltas: 100% (640/640), done.'], ['Updating files', 100, 'Updating files: 100% (310/310), done.']];
+      const lines = ["Cloning into '.'...", 'remote: Enumerating objects: 1200, done.'];
+      let i = 0;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const emit = (p: NewFolderProgress): void => simNewFolder.progress.forEach((cb) => cb(p));
+      const tick = (): void => {
+        if (w.__simCloneWaiting) { emit({ lines: [], elapsedMs: Date.now() - t0, waiting: true }); timer = setTimeout(tick, 300); return; }
+        const held = w.__simCloneHold && i > 0 && steps[i - 1][1] === 45;
+        if (!held) {
+          if (i >= steps.length) { simNewFolder.clone = null; resolve('done'); return; }
+          const [phase, percent, line] = steps[i++];
+          if (lines.length && lines[lines.length - 1].startsWith(phase.slice(0, 9))) lines[lines.length - 1] = line; else lines.push(line);
+          emit({ phase, percent, lines: lines.slice(-6), elapsedMs: Date.now() - t0 });
+        }
+        timer = setTimeout(tick, 250);
+      };
+      simNewFolder.clone = { cancel: () => { if (timer) clearTimeout(timer); simNewFolder.clone = null; resolve('cancelled'); } };
+      timer = setTimeout(tick, 250);
+    });
     type HsCb = (p: never) => void;
     const simHarness: { progress: HsCb[]; done: HsCb[]; running: null | { kind: string; finish: () => void } } = { progress: [], done: [], running: null };
     /*
@@ -2674,6 +2740,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       onHarnessProgress: (cb) => { simHarness.progress.push(cb); return () => { simHarness.progress = simHarness.progress.filter((x) => x !== cb); }; },
       onHarnessDone: (cb) => { simHarness.done.push(cb); return () => { simHarness.done = simHarness.done.filter((x) => x !== cb); }; },
       addFolder: async (_mode, o) => {
+        /* a driver's probe (shots-074): count the call and add nothing, so a shortcut check has no side effect */
+        const probe = typeof window !== 'undefined' ? (window as unknown as { __simAddFolderProbe?: { n: number } }).__simAddFolderProbe : undefined;
+        if (probe) { probe.n++; return { ok: true, agents: [] }; }
         const bad = o && o.adapterId !== undefined ? notReady(o.adapterId) : undefined;
         if (bad) return { ok: false, agents: [], error: bad }; // like main: nothing starts, nothing is written
         extra++;
@@ -2690,6 +2759,41 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true, agents: [], ...(home ? { warnings: [{ name: 'home', kind: 'home' as const }] } : {}) };
       },
       addWorkspaceFile: async () => ({ ok: true, agents: [] }),
+      /* spec 093 FR-081: create a folder, faked in the window: no process, nothing on disk, main's channels stay closed. The parent is
+         the simulator's own (~/work) behind its own token; canned refusals; the new room starts in the mode the window passed (validMode's
+         rule). A driver reads the last request in window.__simNewFolderLast and can cancel the picker with window.__simNewFolderPickCancel. */
+      createPickParent: async () => {
+        if (typeof window !== 'undefined' && (window as unknown as { __simNewFolderPickCancel?: boolean }).__simNewFolderPickCancel) return { ok: false as const, cancelled: true as const };
+        simNewFolder.token = 'sim-pick-' + ++simNewFolder.n;
+        return { ok: true as const, token: simNewFolder.token, parent: '~/work' };
+      },
+      createCheck: async (req) => simNewFolderCheck(req),
+      createFolder: async (req, mode, o) => {
+        if (typeof window !== 'undefined') (window as unknown as { __simNewFolderLast?: unknown }).__simNewFolderLast = { req: { ...req }, mode, opts: { ...(o || {}) } };
+        const no = (error: string, retry?: 'url' | 'name' | 'place') => ({ ok: false, agents: [] as AgentInfo[], error, ...(retry ? { retry } : {}) });
+        if (!req || (req.kind !== 'init' && req.kind !== 'empty' && req.kind !== 'clone')) return no('Choose what to create.');
+        if (simNewFolder.clone) return no('A folder is still being created.');
+        if (req.token !== simNewFolder.token) return no('Choose the place again.', 'place');
+        const chk = simNewFolderCheck({ ...req, name: req.name ?? '' });
+        if (!chk.ok) return no(chk.error || '', chk.retry === 'url' ? 'url' : 'name');
+        const bad = o && o.adapterId !== undefined ? notReady(o.adapterId) : undefined;
+        if (bad) return no(bad);
+        const cwd = '~/work/' + req.name;
+        if (sims.some((x) => x.info.cwd === cwd)) return no(`A folder or file named ${req.name} already exists there.`, 'name');
+        if (req.kind === 'clone' && (await simCloneRun()) === 'cancelled') return { ok: false, agents: [] as AgentInfo[], cancelled: true as const, error: 'Cancelled. Nothing was kept.' };
+        simNewFolder.token = '';
+        const floor = o && typeof o.floor === 'string' && floorsList.some((f) => f.id === o.floor) ? o.floor : 'ground';
+        if (o && o.floor !== undefined) lastFloor = floor;
+        folderFloor.set(cwd, floor);
+        const permMode = mode === 'ask' || mode === 'allow' ? mode : 'read-only';
+        const info = { id: 'sim-nf' + ++simNewFolder.n, name: req.name, cwd, folders: [cwd], permMode, floor, adapterId: mixed && o && o.adapterId ? o.adapterId : 'copilot' } as AgentInfo;
+        info.renameCap = caps(info.adapterId ?? 'copilot').renameSession;
+        sims.push({ info, room: info.name, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: [], grants: new Map() });
+        addedListeners.forEach((l) => l(info));
+        return { ok: true, agents: [], name: req.name };
+      },
+      createCancel: async () => { if (!simNewFolder.clone) return { ok: false }; simNewFolder.clone.cancel(); return { ok: true }; },
+      onCreateProgress: (cb) => { simNewFolder.progress.push(cb); return () => { simNewFolder.progress = simNewFolder.progress.filter((x) => x !== cb); }; },
       listAgents: async () => {
         if (!started) {
           started = true;
@@ -2842,11 +2946,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (s.grants.size) { s.grants.clear(); grantsEvent(s); }
         s.state = 'idle'; closeOpen(s); simRemote.delete(id); // spec 054 FR-003
         s.mcpSign = undefined; // spec 058 FR-065: End session forgets an open sign-in
+        if (s.info.sandbox?.untilNewSession) { delete s.info.sandbox; emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: null }); } // spec 087: a kept floor ends with the session
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'stopped' });
       },
       /* spec 058 FR-040: a canned Restart session: asks while busy (as main does), ends, then resumes "Ready"; with simauth=expired
          the resume fails with the sign-in text (FR-027) and the session stays ended */
-      agentMcpRestartSession: async (id, confirmed) => {
+      // spec 087 FR-022: `reason` 'sandbox' (Restart without the sandbox) is the same restart; only main's words differ (no log here).
+      // A new session has no floor kept from an earlier mode: the sim drops `untilNewSession` (the Allow all app default, as the real resume).
+      agentMcpRestartSession: async (id, confirmed, _reason) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'Unknown agent.' };
         if (s.state !== 'idle' && confirmed !== true) return { ok: false, needsConfirm: true };
@@ -2857,6 +2964,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'stopped' });
         await new Promise((r) => setTimeout(r, 500));
         if (simExpired.has(kind)) return { ok: false, ended: true, errorKind: 'auth', error: SIM_AUTH_ERROR };
+        if (s.info.sandbox?.untilNewSession) {
+          const next = simSandboxFor(0, kind, s.info.permMode);
+          if (next) s.info.sandbox = next;
+          else delete s.info.sandbox;
+          emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: next ?? null });
+        }
         s.ctx ??= { tokens: 0, limit: 128000 }; // agentMcp reads "live" from it
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Ready in ' + s.info.cwd });
         return { ok: true };
@@ -2953,16 +3066,18 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (org) return { ok: false, error: org + ': pick another permission mode.' };
         const MW: Record<string, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
         simLog(s, 'mode-change', `${MW[s.info.permMode] ?? s.info.permMode} to ${MW[mode] ?? mode}`, mode);
-        const kept = mode === 'allow' && s.info.sandbox?.state === 'on' && (s.info.adapterId ?? 'copilot') === 'copilot'; // spec 087: Copilot keeps its floor until a new session
         s.info.permMode = mode;
         s.info.permRestored = undefined;
         s.info.permFrom = undefined;
         { // spec 087 FR-013: the floor in force after the switch (the simulator applies it at once)
           const kind = s.info.adapterId ?? 'copilot';
-          const next: SandboxState | undefined = kept ? { state: 'on', mechanism: s.info.sandbox?.mechanism, untilNewSession: true, covers: simCovers(kind), verified: false } : s.sbxContinued && mode !== 'allow' ? { state: 'off', covers: simCovers(kind), writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: 'You chose to continue without the OS sandbox for this session.' } : simSandboxFor(0, kind, mode);
+          // spec 087 FR-022c: a Copilot floor is lowered at the switch to Allow all and the sim's lowering resolves, so no word is kept; with
+          // simsbxlower=refuse it is refused: the floor is kept until a new session and the event says so (the window toasts)
+          const refused = SIM_LOWER_REFUSE && mode === 'allow' && kind === 'copilot' && s.info.sandbox?.heldFloor === true && !s.info.sandbox.managed;
+          const next: SandboxState | undefined = refused ? { state: 'on', mechanism: s.info.sandbox?.mechanism, untilNewSession: true, covers: simCovers(kind), verified: false } : s.sbxContinued && mode !== 'allow' ? { state: 'off', covers: simCovers(kind), writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: 'You chose to continue without the OS sandbox for this session.' } : simSandboxFor(0, kind, mode);
           if (next) s.info.sandbox = next;
           else delete s.info.sandbox;
-          emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: next ?? null });
+          emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: next ?? null, ...(refused ? { notLowered: true } : {}) });
         }
         if (o?.clearGrants && s.grants.size) { s.grants.clear(); grantsEvent(s); }
         let pending = s.perm ? 1 : 0;

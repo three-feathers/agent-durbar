@@ -155,7 +155,15 @@ const FLOOR_PREF='durbar.floor';
 let curFloor=null; try{curFloor=localStorage.getItem(FLOOR_PREF)||null;}catch(e){}
 let floorsSeen=false, NO_WALK_ONCE=false;
 const floorScreens=()=>floorsLive()&&window.DurbarFloorNav.screens(FLOORS.floors); /* FR-001, FR-004: false with one floor on, none, or no floors support */
-const curFloorId=()=>floorScreens()?window.DurbarFloorNav.nearestOn(FLOORS.floors,curFloor):null; /* always a floor that is on while two or more are */
+/* spec 092 FR-031..FR-037 (owner 2026-10-28): the All floors view shows every floor that is on in one screen, as before phase 1. It is a display
+   preference like the current floor (durbar.floorView; read and written through floornav, so a storage that throws gives the one-floor default).
+   floorScreens() = the lift is shown (two or more floors on); oneFloorView() = one floor is shown; allFloorsView() = the whole building is shown.
+   In the All view curFloorId() is null, so onScreen, otherFloor, officeModel and the layout take the pre-092 path unchanged (no second renderer). */
+const VIEW_STORE=()=>localStorage;
+let floorView=window.DurbarFloorNav.readView(VIEW_STORE);
+const allFloorsView=()=>floorScreens()&&floorView==='all';
+const oneFloorView=()=>floorScreens()&&floorView!=='all';
+const curFloorId=()=>oneFloorView()?window.DurbarFloorNav.nearestOn(FLOORS.floors,curFloor):null; /* always a floor that is on while one floor of two or more is shown */
 const onScreen=r=>{const c=curFloorId();if(c==null)return true;const f=floorById(r.floor);return !!f&&f.id===c;}; /* FR-001: is this room on the floor screen shown */
 const otherFloor=a=>{const c=curFloorId(),r=c!=null&&a&&roomOf(a),f=r&&floorById(r.floor);return !!f&&f.id!==c?f:null;}; /* the floor of an agent that is not on the screen shown (FR-021) */
 const saveCurFloor=()=>{try{if(curFloor)localStorage.setItem(FLOOR_PREF,curFloor);}catch(e){}};
@@ -250,6 +258,24 @@ async function applyTheme(idOrManifest,instant){
   }
   if(applied==='clean-office'&&typeof idOrManifest==='string'&&idOrManifest!=='clean-office')toast('Unknown theme <b>'+esc(idOrManifest)+'</b> — back to Clean Office.',4200);
   else toast('Theme: <b>'+esc(THEME.list().find(t=>t.id===applied)?.name||applied)+'</b>.',2600);
+}
+/* Characters (spec 077 FR-064, FR-068): who sits at the desks, on top of any theme; the same cross-fade, cache clear and save as a theme */
+async function applyCharacters(v){
+  let applied=null;
+  await swapView(()=>{applied=THEME.setCharacters(v);SC_CACHE.clear();renderAll();});
+  if(applied==null){applied=THEME.setCharacters(v);SC_CACHE.clear();renderAll();}
+  let saved=false; /* saved only when main (or the simulator) says so: a missing or refused call is announced, never assumed */
+  if(bridge&&bridge.setCharacters){const r=await bridge.setCharacters(applied).catch(()=>null);saved=!!(r&&r.ok&&r.characters===applied);}
+  if(!saved)toast('The characters could not be saved.',4000);
+  else toast('Characters: <b>'+esc(CHARACTER_NAMES[applied]||applied)+'</b>.',2600);
+  return applied;
+}
+const CHARACTER_NAMES={theme:'The theme\u2019s own',minimalist:'Minimalist',cheeky:'Cheeky'};
+/* FR-068: one figure per choice for its pick button: the kit that choice draws on the current theme, one Cheeky portrait for the crew */
+function charPreview(choice){
+  const kit=THEME.kitFor(THEME.themeKit(),choice), a={id:'characters-preview',look:lookFor('characters-preview')};
+  if(kit==='crew')crewPreload();
+  return avatar(a,undefined,{kit,crew:kit==='crew'&&CREW?CREW.IDS[0]:''});
 }
 const SIREN=()=>'<span class="siren" aria-hidden="true"><svg viewBox="0 0 14 14" focusable="false"><rect class="siren-light" x="3" y="2" width="8" height="6.5" rx="3.2"/><rect x="1.5" y="8.5" width="11" height="3" rx="1" fill="'+T_('--siren-base')+'"/></svg></span>';
 /* "impatient" starts after 60 s without any event, so look every few seconds and redraw only when somebody's mood changed */
@@ -768,10 +794,11 @@ function scene(a,mini,c){
 }
 /* spec 052 FR-069: Serious mode draws full scenes without the SMIL wave; a mark in the signature redraws them when it is switched */
 function stillSig(svg){return SERIOUS?svg.replace(' data-sig="',' data-sig="still|'):svg;}
-function avatar(a,view){
+/* ov (spec 077 FR-068, the Characters previews): {kit, crew} draw another kit or a given character than the office's own */
+function avatar(a,view,ov){
   const k=themedLook(a.look);
-  const kit=THEME.sceneKit();
-  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.avatar(kit,a,{k,T:T_,shade,reduced:REDUCED,art:kitArt(),crew:kit==='crew'?crewOf(a):'',crewFb:kit==='crew'&&CREW_BAD.has(crewOf(a)),view});if(v)return v;}
+  const kit=(ov&&ov.kit)||THEME.sceneKit(), cr=kit==='crew'?(ov&&ov.crew!==undefined?ov.crew:crewOf(a)):'';
+  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.avatar(kit,a,{k,T:T_,shade,reduced:REDUCED,art:kitArt(),crew:cr,crewFb:kit==='crew'&&CREW_BAD.has(cr),view});if(v)return v;}
   return `<svg viewBox="50 20 48 48" width="100%" height="100%" aria-hidden="true" focusable="false">${k.style==='long'?`<path d="M59.5 44a14.5 14.5 0 0 1 29 0v19q0 4-4 4h-21q-4 0-4-4z" fill="${k.hair}"/>`:''}<path d="M55 99V77q0-14 14-14h10q14 0 14 14v22z" fill="${k.shirt}"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${shade(k.skin,-.08)}"/>${charArt('body')}<circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>${hairFront(k.style,k.hair)}${charArt('head')}<circle cx="71.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><circle cx="79.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><path d="M71 51.6q3 2 6 0" fill="none" stroke="${T_('--mouth')}" stroke-width="1.3" stroke-linecap="round"/></svg>`;
 }
 const PLANT=()=>'<svg class="room-plant" width="26" height="30" viewBox="0 0 26 30" aria-hidden="true" focusable="false">'+THEME.slot('plant')+'</svg>';
@@ -1607,9 +1634,10 @@ function renderOffice(){
   const ah=floor.clientHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom);
   if(aw<=0||ah<=0)return;
   const model=officeModel();
+  if(!model.length)$('probe').style.width=aw+'px'; /* spec 092 FR-008: the layout probe is only resized by a layout search; an empty screen has none, so a probe left at a wider width (the lift panel came or went) would overflow the floor */
   /* spec 092 FR-001, edge case "a floor with 0 agents": a floor screen with nothing to show says so and keeps the shared lobby (never a bare empty screen).
      Only while some floor that is on has agents; otherwise the messages below (nothing added yet, all hidden) still apply. */
-  if(!model.length&&floorScreens()&&agents.some(a=>!a.parent&&roomShown(roomOf(a)))){
+  if(!model.length&&oneFloorView()&&agents.some(a=>!a.parent&&roomShown(roomOf(a)))){
     const f=floorById(curFloorId()), nm=f?f.name:'this floor', filt=!!ui.status||ui.ws!=='all';
     stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey=''; GROW=0; setGrow(stage,0); spreadOffice(stage,false);
     stagePrev=null;
@@ -1626,7 +1654,7 @@ function renderOffice(){
   }
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
   const sizing=lastSizing=sizingModel(model); /* what chooseLayout is given (the hook below reads it) */
-  const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),THEME.themeIdForCache(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),curFloorId(),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]]),(m.rolled||[]).map(x=>[x.a.id,x.k]),!!ui.expanded['shut:'+m.r.id]])]);
+  const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),THEME.themeIdForCache(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),curFloorId(),allFloorsView(),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]]),(m.rolled||[]).map(x=>[x.a.id,x.k]),!!ui.expanded['shut:'+m.r.id]])]);
   if(key!==layoutKey||!layout){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
   HCAP=layout.hcap; HBOOST=new Map(layout.boost); LIVE_SIDE=!!layout.side; GROW=layout.grow?1:0; HX=layout.hx||0; /* a cached layout skips chooseLayout: restore the helper level too */
   const parts=stageParts(model,layout.d,aw,layout.cap);
@@ -1788,7 +1816,9 @@ const appOf=a=>{const r=a&&a.parent?byId(a.parent):a;return r&&r.live&&r.info?ki
 /* the card's money words without the tokens: AIU as ≈ $, Claude's $ estimate; a kind with no price shows its tokens */
 const costVal=a=>{const u=a.usage;if(!u||!u.calls)return null;const k=usageCaps(a);return k.nanoAiu?u.nano/1e9*AIU_USD:k.costUsd?(u.usd||0):null;};
 const costText=a=>{const u=a.usage;if(!u||!u.calls)return '';const k=usageCaps(a);return k.nanoAiu?approx(u.nano/1e9*AIU_USD):k.costUsd?fmtUsd(u.usd||0):SIMPLE?'':fmtTok(u.inT+u.outT)+' tok';}; /* spec 052 FR-081: no token counts in Simple */
-const LVAL={name:a=>a.name,app:appOf,role:a=>a.role,folder:a=>roomOf(a).name,task:a=>taskText(a),ago:sinceLast,cost:costVal,status:a=>ST_ORDER[pillSt(a)]};
+/* spec 001 FR-182: the Role cell leaves out the agent app (its own column says it): "Copilot (no prompts) · gpt-5" is "no prompts · gpt-5"; the accessible name and the cell's tooltip keep the whole role */
+const listRole=a=>{const app=appOf(a),r=String(a.role||'');if(!app||!r.startsWith(app))return r;return r.slice(app.length).trim().replace(/^\(([^)]*)\)/,'$1').replace(/^\s*·\s*/,'');};
+const LVAL={name:a=>a.name,app:appOf,role:listRole,folder:a=>roomOf(a).name,task:a=>taskText(a),ago:sinceLast,cost:costVal,status:a=>ST_ORDER[pillSt(a)]};
 function renderList(){
   const groups=[];
   roomsInOrder().forEach(r=>{ if(!roomShown(r)||(ui.ws!=='all'&&ui.ws!==r.id))return;
@@ -1799,12 +1829,12 @@ function renderList(){
   const rows=[];sorted.forEach(a=>{rows.push([a,false]);(LSORT?ACT.sortBy(helpersOf(a),LVAL[LSORT.key],LSORT.dir):helpersOf(a)).forEach(h=>rows.push([h,true]));});
   /* spec 034 FR-014: no figures here, so the mood words (cards: drawing + label) are written at the start of the task cell */
   const row0=([a,sub])=>{const st=pillSt(a),mw=moodFor(a).words,ago=ACT.agoShort(sinceLast(a)),agoL=ACT.agoLong(sinceLast(a)),cost=costText(a),app=appOf(a);return `<button class="lrow" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}${unreadWords(a)}, ${esc(a.role)}${app?', '+esc(app):''}, ${esc(roomOf(a).name)}, ${esc(stWord(a))}: ${esc(taskText(a))}${moodWords(a)}${agoL?'. Last activity '+agoL:''}${cost?'. Cost '+esc(cost):''}">
-    <span class="lname"><span class="dot ${st}"></span>${sub?'':chatNoHTML(a)+draftHTML(a)+unreadHTML(a)}<span class="lnm${sub?' sub':''}" title="${esc(a.name)}">${esc(a.name)}</span>${modeIcon(a,true)}</span><span class="lcell" title="${esc(app)}">${esc(app)}</span><span class="lcell" title="${esc(a.role)}">${esc(a.role)}</span><span class="lcell mono lfold" title="${esc(roomOf(a).name)}">${esc(roomOf(a).name)}</span><span class="lcell" title="${esc(DurbarCutText.cutText((mw?mw+'. ':'')+taskText(a),300))}">${mw?`<span class="lmood">${esc(mw)}</span> · `:''}${esc(taskText(a))}</span><span class="lcell num"${agoL?` title="Last activity ${esc(agoL)}"`:''}>${esc(ago)}</span><span class="lcell num"${cost&&cost.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${esc(cost)}</span><span><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}</span></span></button>`};
+    <span class="lname"><span class="dot ${st}"></span>${sub?'':chatNoHTML(a)+draftHTML(a)+unreadHTML(a)}<span class="lnm${sub?' sub':''}" title="${esc(a.name)}">${esc(a.name)}</span>${modeIcon(a,true)}</span><span class="lcell" title="${esc(app)}">${esc(app)}</span><span class="lcell lrole" title="${esc(a.role)}">${esc(listRole(a))}</span><span class="lcell mono lfold" title="${esc(roomOf(a).name)}">${esc(roomOf(a).name)}</span><span class="lcell" title="${esc(DurbarCutText.cutText((mw?mw+'. ':'')+taskText(a),300))}">${mw?`<span class="lmood">${esc(mw)}</span> · `:''}${esc(taskText(a))}</span><span class="lcell num"${agoL?` title="Last activity ${esc(agoL)}"`:''}>${esc(ago)}</span><span class="lcell num"${cost?` title="${esc(cost.endsWith(' est.')?cost+'. '+USD_TIP:cost)}"`:''}>${esc(cost)}</span><span><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}</span></span></button>`};
   /* spec 059 FR-020 item 2: a main session's row sits in a wrapper with its pencil beside it (a sibling, never inside the row button) */
   const row=([a,sub])=>{const b=row0([a,sub]),r=sub?'':renBtn(a);return r?`<div class="lrow-w">${b}${r}</div>`:b;};
   const head=LCOLS.map(([k,t])=>{const on=LSORT&&LSORT.key===k,dir=on?(LSORT.dir==='asc'?'ascending':'descending'):'none';
     return `<span role="columnheader" aria-sort="${dir}"${k==='folder'?' class="lfold"':k==='ago'||k==='cost'?' class="num"':''}><button type="button" class="lsort" data-lsort="${k}" title="Sort by ${esc(t.toLowerCase())}">${esc(t)}<span class="sarr" aria-hidden="true">${on?(LSORT.dir==='asc'?'▲':'▼'):'↕'}</span></button></span>`;}).join('');
-  $('list').innerHTML=`<div class="list-wrap" role="group" aria-label="Agents"><div class="lrow lhead" role="row">${head}</div>${(i=>i?`<div class="filter-note">${i.html}</div>`:'')(filterNote())}${rows.map(row).join('')||'<div class="empty">No agents match these filters.</div>'}</div>`;
+  $('list').innerHTML=`<div class="list-wrap" role="group" aria-label="Agents" data-sort="${LSORT?LSORT.key:''}"><div class="lrow lhead" role="row">${head}</div>${(i=>i?`<div class="filter-note">${i.html}</div>`:'')(filterNote())}${rows.map(row).join('')||'<div class="empty">No agents match these filters.</div>'}</div>`;
   placePencils();
 }
 document.addEventListener('click',e=>{const b=e.target.closest('#list [data-lsort]');if(!b)return;
@@ -1820,6 +1850,7 @@ function renderAll(){
   const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.more?'data-more':ae.dataset.door?'data-door':ae.dataset.lsort?'data-lsort':ae.dataset.ren?'data-ren':''); /* spec 052 FR-064: a sort header keeps focus too */
   renderStats();
   updateFloorAttention();
+  renderLift(); /* spec 092 FR-006, FR-008: before the office measures its width */
   announceFilterNote();
   if(ui.view==='office')renderOffice(); else{renderFilterNote();renderList();}
   renderDoorBar();
@@ -3099,10 +3130,11 @@ document.addEventListener('keydown',e=>{
     return;
   }
   if(mod&&!e.shiftKey&&!e.altKey&&(e.key==='k'||e.key==='K'||e.code==='KeyK')){e.preventDefault();closeKbdHelp();openPalette();return;}
-  /* spec 052 FR-164: Ctrl+O adds a folder, Ctrl+Shift+O a VS Code workspace (the same buttons, so the same code path). On a Mac the
+  /* spec 052 FR-164: Ctrl+O adds a folder, Ctrl+Shift+O a VS Code workspace (the same code path as the buttons; spec 093 Q1 = a: Ctrl+O
+     is Add existing directly, while + Folder first asks whether to add or create). On a Mac the
      File menu owns ⌘O / ⇧⌘O, so this handler stays out of the way there. Not under a dialog, and only with the app's bridge (the
      page without it has no add buttons). Like the Mac menu it also works from an open chat and in Simple. */
-  if(!IS_MAC&&mod&&!e.altKey&&(e.key==='o'||e.key==='O'||e.code==='KeyO')&&document.body.classList.contains('has-bridge')&&!modalOpen()){const b=$(e.shiftKey?'addWs':'addFolder');if(b&&!b.disabled){e.preventDefault();b.click();}return;}
+  if(!IS_MAC&&mod&&!e.altKey&&(e.key==='o'||e.key==='O'||e.code==='KeyO')&&document.body.classList.contains('has-bridge')&&!modalOpen()){const b=$(e.shiftKey?'addWs':'addFolder');if(b&&!b.disabled){e.preventDefault();if(e.shiftKey)b.click();else addExisting();}return;}
   /* spec 052 FR-091: Ctrl+` goes back to the previous chat (and again, back). Control also on a Mac: Cmd+` switches windows there. Not under a dialog. */
   if(e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey&&e.code==='Backquote'&&!modalOpen()){e.preventDefault();openPreviousChat();return;}
   if(mod&&e.shiftKey&&!e.altKey&&(e.key==='A'||e.key==='a'||e.code==='KeyA')){e.preventDefault();openInbox();return;}
@@ -3436,7 +3468,10 @@ function palActions(){
     {label:'List view',kw:'view list table rows',run:palClick('vList'),ok:()=>palUsable('vList')},
     {label:'Tools',kw:'tools usage mcp',run:palClick('toolsBtn'),ok:()=>palUsable('toolsBtn')},
     {label:'Settings',kw:'settings preferences theme options',...(IS_MAC?{keys:keyLabels(['mod',','])}:{}),run:palClick('settingsBtn'),ok:()=>palUsable('settingsBtn')},
-    {label:'Add folder',kw:'add folder workspace project new open',keys:keyLabels(['mod','O']),run:palClick('addFolder'),ok:()=>palUsable('addFolder')},
+    {label:'Add folder',kw:'add folder workspace project open existing',keys:keyLabels(['mod','O']),run:addExisting,ok:()=>palUsable('addFolder')}, /* spec 093 Q1 = a: the picker directly */
+    {label:'Clone a repository',hint:'Copy a git repository (https or ssh) into a new folder and add it',kw:'clone git repository repo github gitlab download copy new folder project',run:()=>NEWFOLDER.start('clone'),ok:()=>palUsable('addFolder')&&!!(bridge&&bridge.createPickParent)}, /* spec 093 FR-001a */
+    {label:'New repository',hint:'Create a folder with git init (on this computer only) and add it',kw:'new create repository repo git init folder project',run:()=>NEWFOLDER.start('init'),ok:()=>palUsable('addFolder')&&!!(bridge&&bridge.createPickParent)}, /* spec 093 FR-001a */
+    {label:'New empty folder',hint:'Create an empty folder and add it',kw:'new create empty folder directory project',run:()=>NEWFOLDER.start('empty'),ok:()=>palUsable('addFolder')&&!!(bridge&&bridge.createPickParent)}, /* spec 093 FR-001a */
     {label:'Add VS Code workspace',kw:'add workspace code-workspace vscode new open',keys:keyLabels(['mod','shift','O']),run:palClick('addWs'),ok:()=>palUsable('addWs')&&!SIMPLE},
     {label:'Defaults for new sessions',kw:'defaults agent app mode permission model new session',run:()=>toggleDefaults(true),ok:()=>palUsable('defaultsBtn')},
     {label:'Detail level: Simple',kw:'simple detail beginner view',run:()=>setDetail('simple')},
@@ -3600,7 +3635,7 @@ function openKbdHelp(back){
   const rows=[
     [keyLabels(['mod','K']),'Command palette: agents, folders and actions'],
     [keyLabels(navKeyParts()),'Go to: floor, folder, agent or a chat by number (change it in Settings)'], /* spec 074 FR-015 */
-    [keyLabels(['mod','O']),'Add a folder'], /* spec 052 FR-164 */
+    [keyLabels(['mod','O']),'Add an existing folder'], /* spec 052 FR-164; spec 093: + Folder also offers to create one */
     ...(SIMPLE?[]:[[keyLabels(['mod','shift','O']),'Add a VS Code workspace']]),
     [['I'],'Needs you inbox',keyLabels(['mod','shift','A'])],
     [keyLabels(['mod','A']),'Needs you inbox, outside text (in a text box it selects all)'], /* spec 074 FR-021 */
@@ -3948,7 +3983,7 @@ function syncCurFloor(before,was){
   const nid=FN.nearestOn(FLOORS.floors,curFloor,before);
   if(nid==null)return; /* all floors off: keep the saved one */
   curFloor=nid; saveCurFloor();
-  if(!first&&was!=null&&floorScreens()&&nid!==was){noWalkNow();announceFloor(nid);}
+  if(!first&&was!=null&&oneFloorView()&&nid!==was){noWalkNow();announceFloor(nid);} /* FR-035: in the All floors view nothing visible moves, nothing is said */
 }
 /* spec 092 FR-012: "Floor Client B, 2 of 3", once per change */
 function announceFloor(id){const p=window.DurbarFloorNav.place(FLOORS.floors,id),f=floorById(id);if(p&&f)announce(window.DurbarFloorNav.announceText(f,p.n,p.m));}
@@ -3957,7 +3992,7 @@ function noWalkNow(){NO_WALK_ONCE=true;[...walkers.keys()].forEach(dropWalker);}
 /* spec 092 FR-009 (phase 1: instant), FR-012: show another floor that is on. edge: where a screen that scrolls starts ('bottom' when moving up the building). */
 function goToFloor(id,o){
   o=o||{};
-  const f=floorScreens()&&floorsOnList().find(x=>x.id===id);
+  const f=oneFloorView()&&floorsOnList().find(x=>x.id===id);
   if(!f||f.id===curFloorId())return false;
   curFloor=f.id; saveCurFloor(); noWalkNow();
   renderAll();
@@ -3974,12 +4009,113 @@ document.addEventListener('keydown',e=>{
   const scroll={scrolls:fl.classList.contains('scrolls'),atTop:fl.scrollTop<=1,atBottom:fl.scrollTop+fl.clientHeight>=fl.scrollHeight-1};
   const open={office:ui.view==='office'&&!ui.selected&&!vsViewing&&!document.body.classList.contains('panel-open')&&!document.body.classList.contains('screen-open'),
     dialog:modalOpen()||[...document.querySelectorAll('[role="dialog"]')].some(live),
-    menu:[...document.querySelectorAll('[role="menu"], #floorsPop, #foldersPop')].some(live)};
+    menu:[...document.querySelectorAll('[role="menu"], #floorsPop, #foldersPop')].some(live), all:allFloorsView()}; /* FR-034: the All view only scrolls */
   const act=window.DurbarFloorNav.keyAction(e,e.target,scroll,open); if(!act)return;
   /* the office area is not the page's scroller, so the browser's PageDown does not scroll it from the body: the page does it by the same page step */
   if(act.scroll){e.preventDefault();fl.scrollBy({top:act.scroll*Math.round(fl.clientHeight*0.875),behavior:'auto'});return;}
   const to=window.DurbarFloorNav.nextOn(FLOORS.floors,curFloorId(),act.go); if(!to)return; /* the first or last floor: nothing happens */
   e.preventDefault(); goToFloor(to,{edge:act.go==='next'?'top':'bottom'});
+});
+/* spec 092 FR-031..FR-037: switch between the one-floor view (on floor `id`, or the current one) and the All floors view. Instant in every phase (FR-036);
+   one announcement; nothing when the view and floor shown do not change. */
+function setFloorView(v,id){
+  const FN=window.DurbarFloorNav; v=FN.viewOf(v);
+  if(!floorScreens())return false;
+  const before=allFloorsView()?'*all':curFloorId();
+  if(v==='one'&&id&&floorsOnList().some(x=>x.id===id))curFloor=id;
+  floorView=v; FN.writeView(VIEW_STORE,v); saveCurFloor();
+  const after=allFloorsView()?'*all':curFloorId();
+  if(after===before)return false;
+  noWalkNow(); renderAll();
+  const fl=$('floor'); if(fl)fl.scrollTop=0;
+  if(after==='*all')announce(FN.announceAll(floorsOnList().length)); else announceFloor(after);
+  return true;
+}
+/* ---- spec 092 phase 2: the lift panel (FR-006..FR-008, FR-013..FR-016, FR-028) and its All button (FR-032) ---- */
+/* what an agent shows on its floor's lift button (FR-014): the inbox's predicate (needsMe) plus the unread New reply; each agent one kind */
+const liftKind=a=>{if(!a||a.parent)return null;if(needsMe(a))return a.limit||a.coffee?'limit':vis(a)==='error'?'error':'waiting';return isUnread(a)?'reply':null;};
+function liftCounts(){
+  const items=[];
+  for(const a of agents){const k=liftKind(a);if(!k)continue;const r=roomOf(a),f=r&&floorById(r.floor);if(f)items.push({id:a.id,floor:f.id,kind:k,hidden:!!r.hidden});}
+  return window.DurbarFloorNav.badgeCounts(FLOORS.floors,items,curFloorId(),allFloorsView());
+}
+let LIFT_COUNTS={};
+function renderLift(){
+  const el=$('lift'); if(!el)return;
+  const show=floorScreens();
+  if(el.hidden===show)el.hidden=!show;
+  if(!show){LIFT_COUNTS={};return;}
+  const FN=window.DurbarFloorNav, on=floorsOnList(), m=on.length, all=allFloorsView(), cur=curFloorId();
+  const sig=on.map(f=>f.id).join('\n');
+  if(el.dataset.sig!==sig){
+    el.dataset.sig=sig;
+    el.innerHTML='<button type="button" class="lift-edge" data-lift-edge="up" tabindex="-1" hidden></button><div class="lift-shaft">'
+      +'<button type="button" class="lift-b lift-all" data-lift="*all" tabindex="-1">All</button>'
+      +on.map((f,i)=>`<button type="button" class="lift-b" data-lift="${esc(f.id)}" tabindex="-1"><span class="lift-n">${i+1}</span><span class="lift-badge" aria-hidden="true" hidden></span></button>`).join('')
+      +'</div><button type="button" class="lift-edge" data-lift-edge="down" tabindex="-1" hidden></button>';
+    el.querySelector('.lift-shaft').addEventListener('scroll',updateLiftEdges,{passive:true});
+  }
+  const counts=LIFT_COUNTS=liftCounts();
+  const ab=el.querySelector('[data-lift="*all"]');
+  ab.setAttribute('aria-label','All floors, '+m+' floor'+(m===1?'':'s')); ab.title='Show all floors on one screen';
+  if(all)ab.setAttribute('aria-current','true'); else ab.removeAttribute('aria-current');
+  on.forEach((f,i)=>{
+    const b=el.querySelector(`[data-lift="${CSS.escape(f.id)}"]`); if(!b)return;
+    const c=counts[f.id], words=FN.badgeText(c), hid=c&&c.hidden===c.n?' (in a hidden folder)':'';
+    const label=f.name+', floor '+(i+1)+' of '+m+(words?': '+words+hid:'');
+    if(b.getAttribute('aria-label')!==label)b.setAttribute('aria-label',label);
+    const tip=f.name+(words?'\n'+words+hid:''); if(b.title!==tip)b.title=tip;
+    if(!all&&f.id===cur)b.setAttribute('aria-current','true'); else b.removeAttribute('aria-current');
+    const bd=b.querySelector('.lift-badge'), num=c?FN.badgeNum(c.n):'';
+    if(bd.textContent!==num)bd.textContent=num; bd.hidden=!c;
+    b.classList.toggle('badged',!!c);
+  });
+  /* FR-013: one tab stop: the button that has the focus, else the one of the view shown */
+  const ae=document.activeElement, focused=ae&&el.contains(ae)&&ae.matches('.lift-b')?ae:null;
+  const stop=focused||el.querySelector('.lift-b[aria-current="true"]')||ab;
+  el.querySelectorAll('.lift-b').forEach(b=>{const t=b===stop?'0':'-1';if(b.getAttribute('tabindex')!==t)b.setAttribute('tabindex',t);});
+  /* FR-028: the button of the view shown is kept in view (once per change) */
+  const shown=all?'*all':cur;
+  if(el.dataset.shown!==shown){el.dataset.shown=shown;const cb=el.querySelector('.lift-b[aria-current="true"]');if(cb&&!focused)SCROLL.reveal(cb,{block:'nearest'});}
+  updateLiftEdges();
+}
+/* FR-028: badged buttons scrolled out of the lift are summed at its top or bottom edge ("▲ 2", the words in its name and tooltip) */
+function updateLiftEdges(){
+  const el=$('lift'); if(!el||el.hidden)return;
+  const FN=window.DurbarFloorNav, sh=el.querySelector('.lift-shaft'); if(!sh)return;
+  const scrolls=sh.scrollHeight>sh.clientHeight+1, box=sh.getBoundingClientRect();
+  const items=scrolls?[...sh.querySelectorAll('.lift-b.badged')].map(b=>{const r=b.getBoundingClientRect();return {pos:r.bottom<=box.top+4?'above':r.top>=box.bottom-4?'below':'in',counts:LIFT_COUNTS[b.dataset.lift]};}):[];
+  const e=FN.edgeSummary(items);
+  [['up',e.up,'▲','above'],['down',e.down,'▼','below']].forEach(([k,c,arrow,where])=>{
+    const b=el.querySelector(`[data-lift-edge="${k}"]`); if(!b)return;
+    b.hidden=!c; if(!c)return;
+    const t=arrow+' '+FN.badgeNum(c.n), words=FN.badgeText(c)+' '+where;
+    if(b.textContent!==t)b.textContent=t; b.title=words; b.setAttribute('aria-label',words+'. Show it.');
+  });
+}
+/* FR-006, FR-013, FR-032: a lift button goes to its floor (or the All floors view); focus stays on it */
+document.addEventListener('click',e=>{
+  const t=e.target&&e.target.closest&&e.target.closest('#lift [data-lift], #lift [data-lift-edge]'); if(!t)return;
+  if(t.dataset.liftEdge){ /* FR-028: scroll to the nearest badged button on that side and focus it */
+    const sh=$('lift').querySelector('.lift-shaft'), box=sh.getBoundingClientRect(), bs=[...sh.querySelectorAll('.lift-b.badged')];
+    const b=t.dataset.liftEdge==='up'?bs.filter(x=>x.getBoundingClientRect().bottom<=box.top+4).pop():bs.find(x=>x.getBoundingClientRect().top>=box.bottom-4);
+    if(b)liftFocus(b);
+    return;
+  }
+  const id=t.dataset.lift;
+  if(id==='*all')setFloorView('all');
+  else if(allFloorsView())setFloorView('one',id);
+  else goToFloor(id);
+  const again=$('lift').querySelector(`[data-lift="${CSS.escape(id)}"]`); if(again&&document.activeElement!==again&&e.detail===0)liftFocus(again);
+});
+function liftFocus(b){const el=$('lift');el.querySelectorAll('.lift-b').forEach(x=>x.setAttribute('tabindex',x===b?'0':'-1'));focusIn(b,{block:'nearest'});} /* scrolls only the lift's own shaft (innerscroll, spec 052 FR-055) */
+document.addEventListener('keydown',e=>{
+  const t=e.target; if(!t||!t.closest||!t.closest('#lift .lift-b'))return;
+  if(e.ctrlKey||e.altKey||e.metaKey)return;
+  const bs=[...$('lift').querySelectorAll('.lift-b')], i=bs.indexOf(t);
+  const j=e.key==='ArrowDown'?Math.min(bs.length-1,i+1):e.key==='ArrowUp'?Math.max(0,i-1):e.key==='Home'?0:e.key==='End'?bs.length-1:-1;
+  if(j<0)return;
+  e.preventDefault(); if(bs[j]!==t)liftFocus(bs[j]);
 });
 function afterFloorsChange(){
   renderFloorsBtn(); renderIntoFloor();
@@ -4009,7 +4145,7 @@ let INTO=null;
 const intoFloor=()=>{if(!floorsLive()||FLOORS.floors.length<2)return undefined;const f=(INTO&&FLOORS.floors.find(x=>x.id===INTO))||FLOORS.floors.find(x=>x.id===FLOORS.lastFloor)||FLOORS.floors[0];return f.id;};
 function renderIntoFloor(){
   const n=intoFloor()&&floorById(intoFloor()).name;
-  $('addFolder').title=(n?'Add a folder to the floor "'+n+'" (change it in Floors)':'Add a folder')+' ('+ADD_KEY+')';
+  $('addFolder').title=(n?'Add or create a folder on the floor "'+n+'" (change it in Floors)':'Add or create a folder')+' ('+ADD_KEY+' adds an existing one)'; /* spec 093 */
   $('addWs').title=(n?'Add a VS Code workspace (.code-workspace file) to the floor "'+n+'" (change it in Floors)':'Add a VS Code workspace (.code-workspace file)')+' ('+ADDWS_KEY+')';
 }
 let floorsErr='';
@@ -5435,9 +5571,10 @@ function changeModeButton(a,row){
 /* ---------------- spec 087: the agent app's OS sandbox (FR-007, FR-009) ---------------- */
 function onSandbox(a,e){
   if(a.info){if(SBX&&SBX.clean(e.sandbox))a.info.sandbox=e.sandbox;else delete a.info.sandbox;}
-  if(ui.selected&&liveRoot(byId(ui.selected)||a)===a){const c=$('modeChip');if(c)c.outerHTML=modeChipHTML(a);}
+  if(ui.selected&&liveRoot(byId(ui.selected)||a)===a){const c=$('modeChip');if(c)setModeChip(c,a);}
   scheduleRender();
   if(e.notice&&typeof e.notice.text==='string')showSandboxNotice(a,e.notice);
+  if(e.notLowered===true&&SBX&&SBX.notLoweredToast)toast(esc(SBX.notLoweredToast(kindWord(a.info&&a.info.adapterId))),7000); /* FR-022c: the dialog said it is turned off */
 }
 /* FR-007: the sandbox could not start: nothing was sent. The message stays as not sent; the person chooses (or, under the policy, only
    Change mode…). The buttons are not a permission card (class note err, not perm): the answer bar and Needs you leave them alone. */
@@ -5574,9 +5711,24 @@ function modeChipHTML(a){const m=a.info.permMode, rs=m==='allow'&&a.info.permRes
   /* spec 061 FR-012: Read-only still means something: when the folder's own hooks or allow rules apply, the chip says so */
   const fr=a.info.folderRules?' + folder rules':'';
   /* spec 087 FR-009: the floor in force after the mode, in words (never colour alone); its tooltip says what it covers (FR-010) */
-  const sw=sbxWord(a),sbx=sw?`<span class="mode-sbx sbx-${esc(a.info.sandbox.state)}" data-sbx="${esc(a.info.sandbox.state)}" title="${esc(sbxTip(a))}"> · ${esc(sw)}</span>`:'';
-  if(!feat(a,'modes'))return `<span class="modechip${m==='allow'?' modebadge':''}" title="Set when the session starts">${esc(MODE_NAME[m]+fr)}${sbx}</span>`; /* spec 052 FR-065 */
-  return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}${rs?(a.info.permFrom==='session'?' (restored: the mode you last chose for this session)':' (restored from your last run)'):''}. Click to change."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m]+fr)}${sbx}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>`;}
+  /* spec 087 FR-022 (issue 806): a floor kept in Allow all: the segment is its own button, *Restart without the sandbox* (asks first) */
+  const sr=canSbxRestart(a), sw=sbxWord(a),sbx=sw&&!sr?`<span class="mode-sbx sbx-${esc(a.info.sandbox.state)}" data-sbx="${esc(a.info.sandbox.state)}" title="${esc(sbxTip(a))}"> · ${esc(sw)}</span>`:'';
+  const sbtn=sr?`<button class="mode-sbx mode-sbx-btn sbx-${esc(a.info.sandbox.state)}" id="sbxRestartBtn" type="button" data-act="sbxRestart" data-sbx="${esc(a.info.sandbox.state)}"${a.sbxRestarting?' aria-disabled="true"':''} aria-label="${esc(sw+'. Restart without the sandbox…')}" title="${esc(sbxRestartTip(a))}">${esc(sw)}</button>`:'';
+  if(!feat(a,'modes'))return `<span class="modechip${m==='allow'?' modebadge':''}" title="Set when the session starts">${esc(MODE_NAME[m]+fr)}${sbx}</span>${sbtn}`; /* spec 052 FR-065 */
+  return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}${rs?(a.info.permFrom==='session'?' (restored: the mode you last chose for this session)':' (restored from your last run)'):''}. Click to change."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m]+fr)}${sbx}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>${sbtn}`;}
+/* the chip and its sandbox button are repainted together (the button is the chip's next sibling) */
+function setModeChip(c,a){const o=$('sbxRestartBtn');if(o)o.remove();c.outerHTML=modeChipHTML(a);}
+/* spec 087 FR-022/FR-022a: the pure rule (sandboxtext.js) on this agent's state, mode and app capabilities; the existing Restart session flow and channel */
+const canSbxRestart=a=>!!(SBX&&SBX.canRestartWithoutSandbox&&a&&a.live&&!a.parent&&a.info&&bridge.agentMcpRestartSession&&window.DurbarScreens&&window.DurbarScreens.restartSession)&&SBX.canRestartWithoutSandbox({sandbox:a.info.sandbox,mode:a.info.permMode,caps:capsFor(a)});
+const sbxRestartTip=a=>SBX&&a&&a.info?SBX.restartTip(a.info.sandbox,kindWord(a.info.adapterId)):'';
+async function restartWithoutSandbox(a0,anchor){
+  const a=liveRoot(a0); if(!a||a.sbxRestarting||!canSbxRestart(a))return;
+  const back=()=>$('sbxRestartBtn')||$('modeChip')||(anchor&&document.contains(anchor)?anchor:null);
+  const paint=()=>{if(ui.selected&&liveRoot(byId(ui.selected)||a)===a){const c=$('modeChip');if(c)setModeChip(c,a);}};
+  try{await window.DurbarScreens.restartSession(a,capsFor(a).mcpStart,{reason:'sandbox',returnFocus:back,busy:async v=>{a.sbxRestarting=!!v;paint();}});}
+  catch(err){toast('Could not restart without the OS sandbox: '+esc(String(err&&err.message||err)),6000).classList.add('err');}
+  finally{a.sbxRestarting=false;paint();}
+}
 function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');document.querySelectorAll('[data-act="ro-ask"][aria-expanded="true"]').forEach(b=>b.setAttribute('aria-expanded','false'));}}
 function openModeMenu(a0,x,y,anchor,o){ /* o.modesOnly (spec 003 FR-095): the three modes and the note, without Model, Plan first, folder setup or card actions */
   const a=liveRoot(a0); if(!a||!a.live)return false;
@@ -5585,15 +5737,16 @@ function openModeMenu(a0,x,y,anchor,o){ /* o.modesOnly (spec 003 FR-095): the th
   const ops=!only&&anchor&&anchor.dataset&&anchor.dataset.id&&!a0.parent&&bridge.stop?DMK().cardMenuActions(a,capsFor(a)):{stop:null,end:null};
   const canRen=!only&&!!(anchor&&anchor.dataset&&anchor.dataset.id&&!a0.parent&&canRenameSession(a)); /* spec 059 FR-006: Rename… in the card menu */
   const canRead=!only&&!!(anchor&&anchor.dataset&&anchor.dataset.id&&!a0.parent&&isUnread(a)); /* spec 005 FR-177: Mark as read */
+  const onCard=!!(anchor&&anchor.dataset&&anchor.dataset.id); /* spec 087 Q3: Restart without the sandbox is in the chat's chip and mode menu, not the office card's menu */
   const hasMode=!!bridge.setPermMode&&feat(a,'modes'), hasOps=!!(ops.stop||(ops.end&&bridge.end)||canRen||canRead);
   if(!hasMode&&!hasOps)return false;
   closeModeMenu();
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',(hasOps?'Actions for ':'Permission mode for ')+a.name);
   m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>{const o=orgMode(a.info.adapterId,k),w=o?o.why:''; /* spec 076 FR-202: blocked: disabled, the reason as its text; advice (FR-201): the words, still selectable */
-    return `<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}${w?(o.refuse?' mm-org':' mm-orgdoubt'):''}"${o&&o.refuse?' aria-disabled="true"':''} title="${esc(w||MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(w||MODE_SHORT[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`;}).join('')+(!only&&bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(!only&&capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(!only&&bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`+(sbxWord(a)?`<p class="mm-note mm-sbx"><b>${esc(sbxWord(a))}.</b> ${esc(sbxDetails(a))}</p>`:''):'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRead?`<button type="button" role="menuitem" data-op="read" class="mm-read"><span class="mt"><b>Mark as read</b><small>Clears \u201cNew\u201d without opening the chat</small></span></button>`:'')+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
+    return `<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}${w?(o.refuse?' mm-org':' mm-orgdoubt'):''}"${o&&o.refuse?' aria-disabled="true"':''} title="${esc(w||MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(w||MODE_SHORT[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`;}).join('')+(canSbxRestart(a)&&!onCard?`<button type="button" role="menuitem" data-act="sbxRestart" class="mm-sbxrestart"${a.sbxRestarting?' aria-disabled="true"':''} title="${esc(sbxRestartTip(a))}"><span class="mt"><b>Restart without the sandbox</b><small>Keeps this conversation; a new session in Allow all</small></span></button>`:'')+(!only&&bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(!only&&capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(!only&&bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`+(sbxWord(a)?`<p class="mm-note mm-sbx"><b>${esc(sbxWord(a))}.</b> ${esc(sbxDetails(a))}</p>`:''):'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRead?`<button type="button" role="menuitem" data-op="read" class="mm-read"><span class="mt"><b>Mark as read</b><small>Clears \u201cNew\u201d without opening the chat</small></span></button>`:'')+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
   document.body.appendChild(m);
   const {px,py}=placeMenu(m,x,y,anchor); /* spec 005 FR-037: above a toolbar chip */
-  m.addEventListener('click',e=>{const pn=e.target.closest('[data-act="planNext"]');if(pn){a.planNext=!a.planNext;closeModeMenu();renderAttached();announce(a.planNext?'The next message asks for a plan first.':'Plan first is off.');const mi=$('msgInput');if(mi)focusIn(mi);return;}const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}if(e.target.closest('[data-act="foldersetup"]')){closeModeMenu();window.DurbarFolderSetup.openFor(a.info);return;}const o=e.target.closest('[data-op]');if(o){if(o.getAttribute('aria-disabled')==='true')return;closeModeMenu();cardOp(a,o.dataset.op,anchor);return;}const b=e.target.closest('[data-mode]');if(!b||b.getAttribute('aria-disabled')==='true')return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
+  m.addEventListener('click',e=>{const pn=e.target.closest('[data-act="planNext"]');if(pn){a.planNext=!a.planNext;closeModeMenu();renderAttached();announce(a.planNext?'The next message asks for a plan first.':'Plan first is off.');const mi=$('msgInput');if(mi)focusIn(mi);return;}const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}if(e.target.closest('[data-act="foldersetup"]')){closeModeMenu();window.DurbarFolderSetup.openFor(a.info);return;}const sr=e.target.closest('[data-act="sbxRestart"]');if(sr){if(sr.getAttribute('aria-disabled')==='true')return;closeModeMenu();restartWithoutSandbox(a,anchor);return;}const o=e.target.closest('[data-op]');if(o){if(o.getAttribute('aria-disabled')==='true')return;closeModeMenu();cardOp(a,o.dataset.op,anchor);return;}const b=e.target.closest('[data-mode]');if(!b||b.getAttribute('aria-disabled')==='true')return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
   m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('[data-mode],[data-act],[data-op]')],i=it.indexOf(document.activeElement);
     if(e.key==='ArrowDown'){e.preventDefault();focusIn(it[(i+1)%it.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(it[(i+it.length-1)%it.length]);}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&anchor.focus&&document.contains(anchor))focusIn(anchor);}});
@@ -5678,7 +5831,8 @@ async function changeModeInner(a,mode,anchor){
   const pend=a.pend?a.pend.size:0, grants=(a.grants||[]).length;
   const opts={};
   if(mode==='allow'){
-    const r=await askDialog({title:'Allow all for '+a.name+'?',body:'Edits, shell commands, web requests and tools will run without asking, in '+roomOf(a).path+'. Nothing is undone automatically; you can switch back at any time.',
+    const keep=SBX&&SBX.allowAllNote?SBX.allowAllNote(a.info.sandbox,kindWord(a.info.adapterId)):''; /* spec 087 FR-022c (Q4): a floor this switch turns off, said here */
+    const r=await askDialog({title:'Allow all for '+a.name+'?',body:'Edits, shell commands, web requests and tools will run without asking, in '+roomOf(a).path+'. Nothing is undone automatically; you can switch back at any time.'+(keep?' '+keep:''),
       check:pend?{label:'Also approve the '+pend+' request'+(pend>1?'s':'')+' waiting now (listed above)',checked:false}:null,lines:pend?[...a.pend.values()].map(e=>{const t=e.n&&e.n.querySelector('.psum');return 'Waiting: '+(t?t.textContent:'a request');}):undefined,returnFocus:anchor,
       buttons:[{label:'Cancel',value:null},{label:'Allow all',value:'ok',cls:'primary warn'}]});
     if(!r)return; opts.approvePending=!!r.checked;
@@ -5693,7 +5847,7 @@ async function changeModeInner(a,mode,anchor){
   if(opts.clearGrants)setGrants(a,[]);
   renderRestoreStrip();
   toast(esc(a.name)+': <b>'+esc(MODE_NAME[mode])+(capsFor(a).permModeSwitch==='next-message'?'</b>. Applies from the next message.':'</b> from the next request.')+(mode==='allow'?' Everything runs without asking.':''),4200);
-  if(ui.selected&&liveRoot(byId(ui.selected)||a)===a){const c=$('modeChip');if(c){c.outerHTML=modeChipHTML(a);}const h=document.querySelector('#panel .hint');if(h)h.textContent=composerHint(byId(ui.selected)||a);updatePanelHeader();}
+  if(ui.selected&&liveRoot(byId(ui.selected)||a)===a){const c=$('modeChip');if(c){setModeChip(c,a);}const h=document.querySelector('#panel .hint');if(h)h.textContent=composerHint(byId(ui.selected)||a);updatePanelHeader();}
   scheduleRender();
 }
 document.addEventListener('click',e=>{
@@ -5710,6 +5864,8 @@ document.addEventListener('click',e=>{
   if(!e.target.closest('#modelMenu'))closeModelMenu();
   const cb=e.target.closest('#compactBtn');
   if(cb&&!cb.closest('#ctxMenu')){e.stopPropagation();const a=byId(ui.selected);if(a)compactDialog(liveRoot(a),cb);return;}
+  const sbr=e.target.closest('#sbxRestartBtn'); /* spec 087 FR-022: the chip's sandbox button */
+  if(sbr){e.stopPropagation();closeModeMenu();if(sbr.getAttribute('aria-disabled')==='true')return;const a=byId(ui.selected);if(a)restartWithoutSandbox(a,sbr);return;}
   const chip=e.target.closest('#modeChip');
   if(chip){e.stopPropagation();if(document.getElementById('modeMenu')){closeModeMenu();return;}const r=chip.getBoundingClientRect(),a=byId(ui.selected);if(a)openModeMenu(a,r.left,r.bottom+6,chip);return;}
   if(!e.target.closest('#modeMenu,[data-act="ro-ask"]'))closeModeMenu(); /* spec 003 FR-095: the Read-only denial's button toggles the menu itself */
@@ -7399,28 +7555,45 @@ async function announcePrevious(a){
   toast('Found '+(n?n+' earlier '+esc(kindWord(a.info&&a.info.adapterId))+' session'+(n===1?'':'s'):'')+(n&&v?' and ':'')+(v?v+' VS Code chat'+(v===1?'':'s'):'')+' for <b>'+esc(roomOf(a).name)+'</b>. Opening them.',4200);
   if(!ui.selected){st.open=true;openPanel(a.id,false);}
 }
-async function confirmAllow(what){
-  const r=await askDialog({title:'Allow all for '+what+'?',body:'Edits, shell commands, web requests and tools will run without asking. Nothing is undone automatically. The choice is saved for this folder and comes back after a restart, marked restored.',buttons:[{label:'Cancel',value:null},{label:'Allow all',value:'ok',cls:'primary warn'}]});
+/* extra: one more plain sentence (spec 093 FR-061: a clone's host); text only, askDialog sets it with textContent */
+async function confirmAllow(what,extra){
+  const r=await askDialog({title:'Allow all for '+what+'?',body:(extra?extra+' ':'')+'Edits, shell commands, web requests and tools will run without asking. Nothing is undone automatically. The choice is saved for this folder and comes back after a restart, marked restored.',buttons:[{label:'Cancel',value:null},{label:'Allow all',value:'ok',cls:'primary warn'}]});
   return !!r;
 }
-async function addVia(fn){
-  if($('permMode').value==='allow'&&!(await confirmAllow('the folder you add next')))return;
+/* The options of a folder the window adds (floor, model, effort, agent app): one place for Add existing (addVia) and a created folder
+   (spec 093 FR-060). null when the chosen agent app is not ready (it says so). */
+function addOptions(){
   const ef=$('effortSel'),o={floor:intoFloor()};
   if(!$('modelSel').hidden)o.model=$('modelSel').value;
   if(!ef.hidden)o.effort=ef.value||undefined;
   if(!$('kindSel').hidden){
     const ch=DMK().kindChoices(KINDS).find(k=>k.id===$('kindSel').value);
-    if(!ch||ch.disabled){notReadyToast(ch);return;}
+    if(!ch||ch.disabled){notReadyToast(ch);return null;}
     o.adapterId=ch.id;
   }else if(KINDS&&$('kindSel').value&&$('kindSel').value!==defaultKind())o.adapterId=$('kindSel').value; /* FR-136: the only ready harness */
-  const r=await fn($('permMode').value,o);
+  return o;
+}
+async function addVia(fn){
+  if($('permMode').value==='allow'&&!(await confirmAllow('the folder you add next')))return;
+  const o=addOptions();
+  if(!o)return;
+  applyAddResult(await fn($('permMode').value,o));
+}
+/* What happens after main added folders (Add existing, or spec 093's created folder with its own success line). */
+function applyAddResult(r,okText){
   if(r.error)toast('Could not add: '+esc(r.error),6000);
+  if(okText&&r.ok){toast(esc(okText),4200);announce(okText);} /* spec 093 FR-082: the result is announced */
   /* spec 006 FR-016 (issue #170): adding is allowed, but say once what such a folder exposes */
   (r.warnings||[]).forEach(w=>toast('<b>'+esc(w.name)+'</b>: agents in this folder can read everything '+(w.kind==='root'?'on this drive':'under your home folder')+', including SSH keys and saved credentials.',9000));
   r.agents.forEach(addLiveAgent);
   r.agents.forEach(x=>{const ag=liveById(x.id);if(ag)announcePrevious(ag);});
   INTO=null; if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});
 }
+/* spec 093 FR-001, Q1 = a: Ctrl+O, File > Add Folder… and the palette's Add folder keep opening the system picker (Add existing) */
+function addExisting(){if(!$('addFolder').disabled&&bridge)addVia(bridge.addFolder);}
+const NEWFOLDER=window.DurbarNewFolder.create({bridge,askDialog:o=>askDialog(o),toast,esc,announce,doc:document,
+  mode:()=>{const s=$('permMode'),op=s.options[s.selectedIndex];return {value:s.value,label:op?op.textContent:'Read-only'};},
+  confirmAllow,addOptions,addExisting,applyResult:(r,text)=>applyAddResult(r,text)});
 let pendingOpen=qs.get('open');
 if(bridge){
   document.body.classList.add('has-bridge');
@@ -7431,7 +7604,8 @@ if(bridge){
   $('endAllBtn').hidden=$('endAllSep').hidden=!bridge.end; /* spec 052 FR-090 */
   if($('sendSeveralBtn'))$('sendSeveralBtn').hidden=!bridge.send; /* spec 064 FR-001 */
   $('inboxBtn').onclick=openInbox;
-  $('addFolder').onclick=()=>addVia(bridge.addFolder);
+  /* spec 093 FR-001: + Folder (and the welcome screen's add button, which presses it) asks: add an existing folder, or create one */
+  $('addFolder').onclick=()=>NEWFOLDER.choose(false);
   $('addWs').onclick=()=>addVia(bridge.addWorkspaceFile);
   $('foldersBtn').onclick=()=>toggleFolders();
   $('floorsBtn').onclick=()=>toggleFloors();
@@ -7443,6 +7617,7 @@ if(bridge){
   window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},signs:{get:()=>SIGN_PREF,set:setSignsOn,usable:()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign)},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
+    applyCharacters,charPreview, /* spec 077 FR-068 */
     previewTheme:(m)=>{swapView(()=>{THEME.setTheme(m);SC_CACHE.clear();renderAll();});}, /* spec 040 FR-014: Try it / Discard, nothing saved */
     agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,adapterId:x.info&&x.info.adapterId,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),
     staticLimit:a=>{const m=modelsFor(a.info&&a.info.adapterId).find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},
@@ -7466,8 +7641,9 @@ if(bridge){
   $('schedTopBtn').onclick=openSchedulesView; /* spec 044 FR-030 */
   /* spec 052 FR-083: Settings… (⌘,) in the macOS app menu. The real window's preload carries it, also under the simulator. */
   {const real=window.agentDurbar;if(real&&real.onMenuSettings)real.onMenuSettings(()=>window.DurbarScreens.openSettings());
-    /* spec 052 FR-164: File > Add Folder… / Add VS Code Workspace… press the same top-bar buttons (one code path) */
-    if(real&&real.onMenuAdd)real.onMenuAdd(k=>{const b=$(k==='workspace'?'addWs':'addFolder');if(b&&!b.disabled)b.click();});
+    /* spec 052 FR-164: File > Add Folder… / Add VS Code Workspace… take the same code paths as the top-bar buttons; spec 093: Add Folder… is
+       Add existing directly (Q1 = a) and File > New Folder… opens the choice of kind (FR-001a) */
+    if(real&&real.onMenuAdd)real.onMenuAdd(k=>{const b=$(k==='workspace'?'addWs':'addFolder');if(!b||b.disabled)return;if(k==='workspace')b.click();else if(k==='new')NEWFOLDER.choose(true);else addExisting();});
    /* FR-085: in full screen the top bar no longer keeps room for the traffic lights */
    if(real&&real.onFullScreen)real.onFullScreen(on=>{if(on)document.documentElement.dataset.fullscreen='';else delete document.documentElement.dataset.fullscreen;});}
   $('modelSel').onchange=syncKindModel;
@@ -7477,7 +7653,7 @@ if(bridge){
   bridge.onAgentAdded(addLiveAgent);
   if(bridge.onAgentRenamed)bridge.onAgentRenamed(onAgentRenamed);
   /* spec 061: a folder's own agent setup is shown when its agent joins the office (once per folder in this run) */
-  if(window.DurbarFolderSetup){window.DurbarFolderSetup.init({bridge,esc,toast:(t,ms)=>toast(esc(t),ms),onRules:map=>{for(const id of Object.keys(map)){const a=liveById(id);if(!a||!a.info)continue;a.info.folderRules=map[id]||undefined;const c=$('modeChip'),sel=ui.selected&&liveRoot(byId(ui.selected)||a);if(c&&sel&&sel.id===a.id)c.outerHTML=modeChipHTML(a);}}});}
+  if(window.DurbarFolderSetup){window.DurbarFolderSetup.init({bridge,esc,toast:(t,ms)=>toast(esc(t),ms),onRules:map=>{for(const id of Object.keys(map)){const a=liveById(id);if(!a||!a.info)continue;a.info.folderRules=map[id]||undefined;const c=$('modeChip'),sel=ui.selected&&liveRoot(byId(ui.selected)||a);if(c&&sel&&sel.id===a.id)setModeChip(c,a);}}});}
   bridge.listAgents().then(l=>{l.forEach(addLiveAgent);agentsListed=true;renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});renderRestoreStrip();
     restoreUi();renderAwayStrip(); /* spec 052 FR-087 / FR-089 */
     renderCrashStrip(); /* spec 006 FR-041 */
@@ -7488,7 +7664,10 @@ if(bridge){
   /* User themes (spec 040): register imported packs, then apply the saved theme id */
   THEME.setTheme.resolveUser=bridge.getUserTheme?(id)=>bridge.getUserTheme(id):null;
   const themeBoot=(v)=>{
-    const tid=(v&&v.theme)||'clean-office';
+    THEME.setCharacters(v&&v.characters); /* spec 077 FR-064: the saved choice (an unknown value is the default) */
+    let tid=(v&&v.theme)||'clean-office';
+    /* FR-067: the old Cheeky Crew id from a run theme or the simulator's query: Clean Office with Cheeky, for this run (nothing saved) */
+    if(tid===THEME.LEGACY_CREW_THEME){if(THEME.characters()==='theme')THEME.setCharacters('cheeky');tid='clean-office';}
     const apply=()=>{if(THEME.current().id!==tid)applyTheme(tid,true);else scheduleRender();};
     if(bridge.listUserThemes){bridge.listUserThemes().then(list=>{
       const good={};(list||[]).filter(t=>t.ok&&t.manifest!==false).forEach(t=>{});

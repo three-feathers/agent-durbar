@@ -18,7 +18,7 @@ const ROOT = path.join(__dirname, '..');
 const INDEX = path.join(ROOT, 'dist', 'renderer', 'index.html');
 const SIZES = [[1440, 900], [1280, 800]];
 // spec 008 FR-111: Clean Office and Retro on pull requests; every built-in theme with CHECK_ALL_THEMES=1 (nightly CI)
-const THEMES = process.env.CHECK_ALL_THEMES === '1' ? ['clean', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese', 'cheeky-crew'] : ['clean', 'retro'];
+const THEMES = process.env.CHECK_ALL_THEMES === '1' ? ['clean', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese'] : ['clean', 'retro'];
 
 /* runs in the page */
 function topCheck(simple) {
@@ -99,7 +99,7 @@ module.exports = async (ctx) => {
     total++;
     if (!file) { fail('no File menu'); return; }
     const items = file.submenu.items.map((m) => (m.type === 'separator' ? '-' : m.role === 'close' ? 'close' : `${m.label} ${m.accelerator}`));
-    if (items.join('|') !== 'Add Folder… CommandOrControl+O|Add VS Code Workspace… CommandOrControl+Shift+O|-|close') fail('File menu: ' + items.join(' | '));
+    if (items.join('|') !== 'Add Folder… CommandOrControl+O|Add VS Code Workspace… CommandOrControl+Shift+O|New Folder… null|-|close') fail('File menu: ' + items.join(' | ')); // spec 093 FR-001a: New Folder…, no key
     const rooms = () => ctx.js(`document.querySelectorAll('#stage .room-name, #stage .plate-tx b').length`);
     await ctx.js(`window.__wsClicks=0;document.getElementById('addWs').addEventListener('click',()=>{window.__wsClicks++});true`);
     const r0 = await rooms();

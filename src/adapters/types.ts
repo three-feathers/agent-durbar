@@ -571,6 +571,8 @@ export interface SandboxEvent extends BaseEvent {
   type: 'sandbox';
   sandbox: SandboxState | null;
   notice?: { text: string; actions: Array<'continue' | 'always'>; refused?: boolean };
+  /** Spec 087 FR-022c (review on PR #833): the switch to Allow all asked the app to turn its sandbox off and it refused or did not answer in time. */
+  notLowered?: boolean;
 }
 
 /** Spec 066 FR-002: the user's answer to a proposed plan. */

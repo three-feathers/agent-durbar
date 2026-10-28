@@ -9,8 +9,8 @@ import type { PermissionMode } from './capabilities';
 import { compareVersions, parseVersion } from './detect';
 import { HOME_SECRETS, homeSecretPaths, secretRelation } from './sandboxRoots';
 
-/** FR-003: the newest key the block relies on (`network.strictAllowlist`, v2.1.219+, `read:` research R2); older or unreadable = unavailable. */
-export const CLAUDE_SANDBOX_MIN_VERSION = '2.1.219';
+/** FR-003, FR-003a: the CLI that closed two sandbox escapes (2.1.309: shell startup files ran outside the sandbox; the --mcp-config file was writable from sandboxed commands, read: Claude Code CHANGELOG 2026-10-28); older or unreadable = unavailable. */
+export const CLAUDE_SANDBOX_MIN_VERSION = '2.1.309';
 /**
  * FR-010/FR-020: the platforms where a real session recorded that a sandboxed command could not write outside the folder or reach the
  * network (T060-T062), per platform AND mode (constitution VIII: a run in one mode proves nothing about the other). A platform or

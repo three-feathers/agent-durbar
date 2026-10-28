@@ -14,6 +14,12 @@ const api: DurbarApi = {
   version: () => ipcRenderer.invoke('app:version'),
   addFolder: (permMode, opts) => ipcRenderer.invoke('agents:addFolder', permMode, opts),
   addWorkspaceFile: (permMode, opts) => ipcRenderer.invoke('agents:addWorkspaceFile', permMode, opts),
+  // spec 093 FR-081: create a folder; the window never passes a path (main picks the parent and answers with a token)
+  createPickParent: () => ipcRenderer.invoke('folders:createPickParent'),
+  createCheck: (req) => ipcRenderer.invoke('folders:createCheck', req),
+  createFolder: (req, permMode, opts) => ipcRenderer.invoke('folders:create', req, permMode, opts),
+  createCancel: () => ipcRenderer.invoke('folders:createCancel'),
+  onCreateProgress: (cb) => sub('folders:createProgress', cb),
   newSession: (id, opts) => ipcRenderer.invoke('agents:newSession', id, opts),
   listModels: (kind) => ipcRenderer.invoke('models:list', kind),
   orgPolicyView: () => ipcRenderer.invoke('orgpolicy:view'),
@@ -61,6 +67,7 @@ const api: DurbarApi = {
   setBadge: (count) => ipcRenderer.invoke('app:setBadge', count),
   focusWindow: () => ipcRenderer.invoke('app:focusWindow'),
   setTheme: (id) => ipcRenderer.invoke('settings:setTheme', id),
+  setCharacters: (v) => ipcRenderer.invoke('settings:setCharacters', v), // spec 077 FR-064
   listUserThemes: () => ipcRenderer.invoke('theme:listUser'),
   getUserTheme: (id) => ipcRenderer.invoke('theme:getUser', id),
   importTheme: () => ipcRenderer.invoke('theme:import'),
@@ -167,7 +174,7 @@ const api: DurbarApi = {
   agentMcpCancelSignIn: (id, name) => ipcRenderer.invoke('agents:mcpCancelSignIn', id, name),
   agentMcpTools: (id, name) => ipcRenderer.invoke('agents:mcpTools', id, name),
   setAgentMcpToolsOff: (id, name, off) => ipcRenderer.invoke('agents:setMcpToolsOff', id, name, off),
-  agentMcpRestartSession: (id, confirmed) => ipcRenderer.invoke('agents:mcpRestartSession', id, confirmed),
+  agentMcpRestartSession: (id, confirmed, reason) => ipcRenderer.invoke('agents:mcpRestartSession', id, confirmed, reason),
   listAgents: () => ipcRenderer.invoke('agents:list'),
   pickAttachments: (want) => ipcRenderer.invoke('agents:pickAttachments', want),
   stageAttachment: (name, mime, data) => ipcRenderer.invoke('agents:stageAttachment', name, mime, data),
@@ -191,8 +198,8 @@ const api: DurbarApi = {
   onAgentRenamed: (cb) => sub('agents:renamed', cb),
   // spec 052 FR-083, FR-085: the Mac app menu's Settings… item, full screen (the top bar's traffic-light room) and the platform
   onMenuSettings: (cb) => sub<null>('menu:settings', () => cb()),
-  // spec 052 FR-164: File > Add Folder… / Add VS Code Workspace…; only the two known words pass
-  onMenuAdd: (cb) => sub<unknown>('menu:add', (k) => { if (k === 'folder' || k === 'workspace') cb(k); }),
+  // spec 052 FR-164: File > Add Folder… / Add VS Code Workspace…; spec 093 FR-001a: File > New Folder… ('new'); only the known words pass
+  onMenuAdd: (cb) => sub<unknown>('menu:add', (k) => { if (k === 'folder' || k === 'workspace' || k === 'new') cb(k); }),
   onFullScreen: (cb) => sub<boolean>('window:fullScreen', (on) => cb(on === true)),
   // spec 052 FR-085: a double-click on a drag area of the top bar (Mac only); main reads the system setting
   titleDoubleClick: () => ipcRenderer.send('window:titleDoubleClick'),

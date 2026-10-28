@@ -35,7 +35,7 @@ const SIMS = [15, 12, 'hx'];
 const SIM_QUERY = { hx: { sim: '3', simrooms: '1', simhelpers: '2' } };
 /* user packs by name: `user` (check-user.json) and the sample AI-style pack with fonts, corners, shadows and clothes (spec 070) */
 const FIXTURES = { user: 'check-user.json', 'pink-studio': 'pink-studio.json' };
-const ALL_THEMES = 'corporate,retro,durbar-indian,durbar-european,durbar-japanese,cheeky-crew,user,pink-studio';
+const ALL_THEMES = 'corporate,retro,durbar-indian,durbar-european,durbar-japanese,user,pink-studio';
 /* spec 070: the Pink Studio pack (fonts, radii, shadows, clothes) runs with every theme (nightly, or GEOMETRY_THEMES=pink-studio) */
 const THEMES = (process.env.GEOMETRY_THEMES || (process.env.CHECK_ALL_THEMES === '1' ? ALL_THEMES : 'retro')).split(',').map((s) => s.trim()).filter(Boolean);
 

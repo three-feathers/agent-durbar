@@ -6,7 +6,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CLAUDE_ENTRYPOINT, ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, handoffArgs, oneShotArgs, parseHandoffOutput, claudeMdPrompt, claudeModelFlag, claudeModelOptions, cliLaunchArgs, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
+import { CLAUDE_ENTRYPOINT, ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, claudeForwardsSubagentText, CLAUDE_FORWARD_SUBAGENT_MIN_VERSION, handoffArgs, oneShotArgs, parseHandoffOutput, claudeMdPrompt, claudeModelFlag, claudeModelOptions, cliLaunchArgs, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import type { AgentEvent } from '../src/adapters/types';
 import { FakeClaudeChild, fakeSpawn, SANDBOX_HOST_OK } from './fakes/claude-cli';
@@ -68,6 +68,19 @@ function make(opts: { turn?: (c: FakeClaudeChild, text: string) => void | Promis
 const statuses = (ev: AgentEvent[], sid: string): string[] => ev.filter((e) => e.sessionId === sid && e.type === 'status').map((e) => (e as { status: string }).status);
 
 async function main(): Promise<void> {
+  // ---- spec 015 FR-016: the flag follows the version the host reports (old and unreadable: never passed) ----
+  for (const [version, want] of [['2.1.210', false], [undefined, false], ['2.1.211', true]] as Array<[string | undefined, boolean]>) {
+    const sp = fakeSpawn();
+    sp.next = scripted(okTurn);
+    const ad = new ClaudeAdapter({ sandboxFacts: async () => ({ platform: 'linux', version, haveBwrap: true, haveSocat: true }), claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const ev: AgentEvent[] = [];
+    ad.onEvent((e) => ev.push(e));
+    const sid = await ad.start({ workspace: WS, permissionMode: 'allow' }); // Allow all: no sandbox floor, so an old CLI still launches
+    await ad.send(sid, { text: 'hi' });
+    await until('spawn', () => sp.calls[0]);
+    assert.strictEqual(sp.calls[0].args.includes('--forward-subagent-text'), want, `version ${String(version)}`);
+    await until('idle', () => statuses(ev, sid).slice(-1)[0] === 'idle' && statuses(ev, sid).length >= 3);
+  }
   // ---- pure helpers ----
   {
     const ro = claudeArgs({ mode: 'read-only', sessionId: 'abc-123', resume: false });
@@ -97,6 +110,12 @@ async function main(): Promise<void> {
     for (const m of ['auto', 'default', 'gpt-5.1', 'o3', 'gemini-3', 'sim-fast', '-rf', 'a b', 'x;y', 'x'.repeat(81), '']) assert.ok(!claudeModelFlag(m), m);
     assert.strictEqual(at(claudeArgs({ mode: 'ask', sessionId: 's', resume: false, model: 'opus', effort: 'xhigh' }), '--effort'), 'xhigh');
     assert.ok(!claudeArgs({ mode: 'ask', sessionId: 's', resume: false, effort: 'extreme' }).includes('--effort'));
+    // spec 015 FR-016: --forward-subagent-text only when the launch asks for it, and the launch asks only for a CLI that has it (2.1.211+, read: CHANGELOG)
+    assert.ok(claudeArgs({ mode: 'ask', sessionId: 's', resume: false, forwardSubagentText: true }).includes('--forward-subagent-text'));
+    assert.ok(!claudeArgs({ mode: 'ask', sessionId: 's', resume: false }).includes('--forward-subagent-text'), 'off unless asked');
+    assert.strictEqual(CLAUDE_FORWARD_SUBAGENT_MIN_VERSION, '2.1.211');
+    for (const [v, want] of [['2.1.211', true], ['2.1.309', true], ['2.2.0', true], ['3.0.0', true], ['2.1.210', false], ['2.1.9', false], ['2.0.999', false], ['1.9.9', false], ['2.1.211-rc.1', false], ['', false], ['garbage', false], ['2.1', false], [undefined, false]] as Array<[string | undefined, boolean]>)
+      assert.strictEqual(claudeForwardsSubagentText(v), want, `version ${String(v)}`);
     // FR-118: the initialize reply's models in the picker's shape
     assert.deepStrictEqual(claudeModelOptions([
       { value: 'default', displayName: 'Default (recommended)', supportedEffortLevels: ['low', 'high', 'bogus'] },
@@ -193,6 +212,7 @@ async function main(): Promise<void> {
     assert.strictEqual(call.cwd, fs.realpathSync(WS) === WS ? WS : call.cwd);
     assert.strictEqual(call.args[call.args.indexOf('--session-id') + 1], sid, 'a new session under the adapter id');
     assert.strictEqual(call.args[call.args.indexOf('--append-system-prompt') + 1], 'MD');
+    assert.ok(call.args.includes('--forward-subagent-text'), 'the host reports 2.1.300: the flag is passed (spec 015 FR-016)');
     const objs = sp.children[0].objects();
     assert.strictEqual(objs[0].type, 'control_request');
     assert.deepStrictEqual((objs[0].request as Record<string, unknown>), { subtype: 'initialize', hooks: { PreToolUse: [{ matcher: '*', hookCallbackIds: [PRE_TOOL_USE_HOOK] }] } });

@@ -2,7 +2,7 @@
  * Spec 076 FR-198/FR-200/FR-201 (issue 602): Copilot's own organization policy, normalized to `OrgPolicy`.
  *
  * One source for every Copilot policy reader in Durbar (review on PR 644, item 3): `resolveCopilotManaged` asks the Copilot runtime
- * (`rpc.managedSettings.resolve`, SDK 1.0.22 `dist/generated/rpc.d.ts`), which merges every channel the way Copilot enforces it: MDM,
+ * (`rpc.managedSettings.resolve`, SDK 1.0.22-1.0.26 `dist/generated/rpc.d.ts`), which merges every channel the way Copilot enforces it: MDM,
  * the registry, the machine file, the enterprise's server-managed settings and team overrides. `copilotOrgPolicyFromResolve` maps its
  * answer. Only when the runtime cannot answer, the machine file is read as a fallback (`readCopilotFileOrgPolicy`), and what it cannot
  * know (a team override of an `overridable` value, a bad value) is `doubt`, never a refusal. `read:` GitHub's *Enterprise managed

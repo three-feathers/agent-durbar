@@ -17,6 +17,7 @@ import { register as registerAttachmentsIpc } from './ipc/attachments';
 import { register as registerCheckpointsIpc } from './ipc/checkpoints';
 import { register as registerFloorsIpc } from './ipc/floors';
 import { register as registerFoldersIpc } from './ipc/folders';
+import { register as registerNewFolderIpc } from './ipc/newfolder';
 import { register as registerFolderSetupIpc } from './ipc/foldersetupipc';
 import { startHeldBy } from './updategate';
 import { register as registerHarnessIpc } from './ipc/harness';
@@ -47,7 +48,7 @@ import * as path from 'path';
 import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
 import { offeredDescriptors } from '../adapters/experimental';
 import { createRegistry, detectAll } from '../adapters/registry';
-import { detectorFor, setLoginPath } from '../adapters/detect';
+import { configureDevClaudeBin, detectorFor, setLoginPath } from '../adapters/detect';
 import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { renameOp, titleSyncOf } from './sessionnames';
 import { adapterForAdd, createRouter, previousSessionsOf } from '../adapters/router';
@@ -124,6 +125,7 @@ if (aumid) app.setAppUserModelId(aumid);
 const dev = devEnv(process.env, app.isPackaged);
 const devNote = devWarning(process.env, app.isPackaged);
 if (devNote) console.error(devNote);
+configureDevClaudeBin(dev); // spec 012 FR-163: DURBAR_CLAUDE_BIN, dev/test only (`dev` is empty in a packaged build)
 // Spec 008 FR-103: a test run's window is never treated as hidden when another window covers it (the Windows CI desktop and a shared
 // X display run several drivers at once). Chromium then stops animation frames and throttles timers, so the page stopped drawing mid-check.
 if (dev.DURBAR_DRIVER || dev.DURBAR_SHOT) app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
@@ -753,6 +755,7 @@ registerPreviousIpc({ browserGone, renameSessionOpFor, dev, agents, router, regi
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });
 registerSchedulesIpc({ getScheduler: () => scheduler, getFolderStore: () => folderStore });
 registerUsageIpc({ agents, getUsageStore: () => usageStore, getUsageTotalsStore: () => usageTotalsStore, usageLabel });
+const newFolderIpc = registerNewFolderIpc({ addMany, getSettingsStore: () => settingsStore, asEffort, toRenderer }); // spec 093: create a folder from + Folder (clone, new repository, empty folder)
 registerSettingsIpc({ getSettingsStore: () => settingsStore, getRunTheme: () => runTheme, clearRunTheme: () => { runTheme = undefined; } });
 registerThemesIpc({ dev, registry, router });
 const harnessIpc = registerHarnessIpc({
@@ -1109,6 +1112,8 @@ app.whenReady().then(() => {
 let remoteReleased = false;
 let quitNoted = false;
 let disposedOnQuit = false;
+/** Spec 093 FR-043: a running clone is ended and its folder removed (at most 5 s) before the app quits; asked once. */
+let newFolderEnded = false;
 app.on('before-quit', (ev) => {
   if (!quitConfirmed) {
     if (workingCount() > 0 && !dev.DURBAR_SHOT && !dev.DURBAR_DRIVER) {
@@ -1128,6 +1133,12 @@ app.on('before-quit', (ev) => {
     quitNoted = true;
     if (win && !win.isDestroyed()) saveWindowState(win);
     appState?.setQuitAt(Date.now());
+  }
+  if (!newFolderEnded && newFolderIpc.busy()) {
+    newFolderEnded = true;
+    ev.preventDefault();
+    void newFolderIpc.quit().catch(() => undefined).finally(() => app.quit());
+    return;
   }
   const release = !remoteReleased && remoteOps.ids().length > 0;
   const dispose = !disposedOnQuit && disposeOnQuit(process.platform);

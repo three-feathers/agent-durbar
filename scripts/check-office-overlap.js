@@ -26,7 +26,9 @@
  *     waiting for you that does not say so on its row in the Floors panel, or that shows it anywhere else (pills, button) (FR-010, issue #122).
  *
  *   - floor screens (spec 092, `simfloors=1`, `simfloors=ground`): with two or more floors on, each floor screen (reached with PageDown) is checked like the whole office
- *     (the same checks, floor tags on every header), with 15 agents spread over the floors and with all 15 on one floor.
+ *     (the same checks, floor tags on every header), with 15 agents spread over the floors and with all 15 on one floor; the lift panel (phase 2) is on
+ *     screen and its width is counted; the per-floor density is compared with the same agents alone with the panel and tag hidden (FR-002, FR-008).
+ *   - the All floors view (spec 092 FR-033): every floor that is on in one screen with the lift panel shown, 15 agents spread and 15 on one floor.
  *
  * Fonts: CI runs on Ubuntu, where `system-ui` is DejaVu Sans, which is wider than the macOS fonts (PR #124: the top bar fitted on a
  * Mac and overflowed in CI). To measure like CI on any machine, point OFFICE_FONT_FILE at DejaVuSans.ttf (and optionally
@@ -326,7 +328,7 @@ async function driver(ctx) {
      starting at k, so n parallel jobs cover the whole check. Unset: everything, as before. */
   const SHARDS = Math.max(1, Number(process.env.OFFICE_SHARDS) || 1), SHARD = Number(process.env.OFFICE_SHARD) || 0;
   let unit = 0;
-  const ONLY = process.env.OFFICE_ONLY || ''; // a developer aid: OFFICE_ONLY=screens (spec 092 floor screens) or =floors (spec 033 floors cases) runs that block alone
+  const ONLY = process.env.OFFICE_ONLY || ''; // a developer aid: OFFICE_ONLY=screens (spec 092 floor screens), =allfloors (spec 092 FR-033, the All floors view) or =floors (spec 033 floors cases) runs that block alone
   const mine = () => !ONLY && unit++ % SHARDS === SHARD;
   const mineIn = (name) => ONLY === name || mine();
   const mineScreens = () => mineIn('screens');
@@ -352,7 +354,11 @@ async function driver(ctx) {
      screen must be the one asked for, or the run fails (it once measured Clean Office for every theme). */
   const userTheme = process.env.OFFICE_USER_THEME ? JSON.parse(fs.readFileSync(process.env.OFFICE_USER_THEME, 'utf8')) : null;
   const wantTheme = userTheme ? userTheme.id : (process.env.OFFICE_THEME || '');
-  const themeQuery = (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '');
+  /* spec 077 FR-070: OFFICE_CHARACTERS=<value> (theme, minimalist, cheeky) puts who sits at the desks in the address too; checked like the theme */
+  const wantChars = /^(theme|minimalist|cheeky)$/.test(process.env.OFFICE_CHARACTERS || '') ? process.env.OFFICE_CHARACTERS : '';
+  if (process.env.OFFICE_CHARACTERS && !wantChars) throw new Error('OFFICE_CHARACTERS must be theme, minimalist or cheeky');
+  const themeQuery = (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '') + (wantChars ? '&characters=' + wantChars : '');
+  if (wantChars) console.log('check:office: characters ' + wantChars);
   let motionShown = false;
   if (wantTheme) console.log('check:office: theme ' + wantTheme + (userTheme ? ' (user theme from ' + path.basename(process.env.OFFICE_USER_THEME) + ')' : ''));
   const load = async (query, w, h) => {
@@ -364,6 +370,17 @@ async function driver(ctx) {
       try { await ctx.waitFor(`window.THEME&&window.THEME.current().id===${jsLiteral(wantTheme)}`, 5000); } catch (e) { /* reported below */ }
       const on = await ctx.js(`({id:window.THEME.current().id,ui:document.documentElement.dataset.ui||'clean',want:(window.THEME.current().manifest||{}).ui||'clean'})`);
       if (on.id !== wantTheme || on.ui !== on.want) throw new Error(`theme ${wantTheme} was not applied (on screen: ${on.id}, data-ui ${on.ui})`);
+    }
+    if (wantChars) {
+      try { await ctx.waitFor(`window.THEME.characters()===${jsLiteral(wantChars)}`, 5000); } catch (e) { /* reported below */ }
+      const ch = await ctx.js(`window.THEME.characters()`);
+      if (ch !== wantChars) throw new Error(`characters ${wantChars} were not applied (on screen: ${ch})`);
+      /* Cheeky: the kit drawn must be the crew, and the desk scenes on screen (none when every room is closed) must show it, or the run would measure the theme's own figures */
+      if (wantChars === 'cheeky') {
+        const crewOn = `window.THEME.sceneKit()==='crew'&&(()=>{const sc=[...document.querySelectorAll('#stage svg.scene')].filter(s=>s.getClientRects().length);return !sc.length||sc.some(s=>/\\|crew(\\||$)/.test(s.dataset.sig||''));})()`;
+        try { await ctx.waitFor(crewOn, 8000); } catch (e) { /* reported below */ }
+        if (!(await ctx.js(crewOn))) throw new Error('characters cheeky: the desks on screen do not draw the crew kit');
+      }
     }
     if (!motionShown) { motionShown = true; console.log('check:office: motion ' + ((await ctx.js(`matchMedia('(prefers-reduced-motion: reduce)').matches`)) ? 'reduced' : 'on')); }
     await forceFonts(w, h);
@@ -423,7 +440,7 @@ async function driver(ctx) {
       total++;
       if (!(await ctx.js(`document.getElementById('floorsBtn').hidden`))) { failed++; console.log(`FAIL sim${sim}-${w}x${h}: Floors button shown with one floor`); }
       const names = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].map(e=>e.textContent.trim())`);
-      const themeTag = process.env.OFFICE_THEME ? process.env.OFFICE_THEME + ' ' : '';
+      const themeTag = (process.env.OFFICE_THEME ? process.env.OFFICE_THEME + ' ' : '') + (wantChars ? wantChars + ' ' : '');
       const tag = `${themeTag}sim${sim}-${w}x${h}`;
       const combos = [{ n: 0, closed: [] }];
       for (let k = 1; k < names.length; k++) {
@@ -624,7 +641,7 @@ async function driver(ctx) {
            costs depends on the font (Windows fonts are wider), so the comparison below hides it and lays the screen out again; the tag's own cost is not what is compared */
         let tagless = null;
         if (REF_CASES.includes(label) && res.info.desks > 0) {
-          await ctx.js(`(()=>{const st=document.createElement('style');st.id='noFloorTag';st.textContent='.floor-tag{display:none!important}';document.head.append(st);window.__durbarSimUi.render();})()`);
+          await ctx.js(`(()=>{const st=document.createElement('style');st.id='noFloorTag';st.textContent='.floor-tag{display:none!important}#lift{display:none!important}';document.head.append(st);window.__durbarSimUi.render();})()`);
           let prev = '', now = '';
           for (let k = 0; k < 40; k++) { await sleep(150); now = await ctx.js(`(()=>{const s=document.getElementById('stage');return s.dataset.d+'/'+s.dataset.h+'/'+s.querySelectorAll('.desk').length+'/'+(document.querySelector('#stage .floor-tag')?document.querySelector('#stage .floor-tag').getClientRects().length:0)})()`); if (now === prev && now.endsWith('/0')) break; prev = now; }
           const [td, th] = now.split('/'); tagless = { d: td, h: th };
@@ -646,8 +663,41 @@ async function driver(ctx) {
         const ref = await ctx.js(`({d:document.getElementById('stage').dataset.d,h:document.getElementById('stage').dataset.h,desks:document.querySelectorAll('#stage .desk').length})`);
         total++;
         const same = f.tagless && ref.d === f.tagless.d && ref.h === f.tagless.h;
+        console.log(`check:office: FR-008 floor screen ${f.name} ${w}x${h} ${label}: ${f.d}/h${f.h} with the lift panel, ${ref.d}/h${ref.h} for the same agents alone (no lift, no tag)`);
         if (nameList.length || ref.desks !== f.desks || !same) { failed++; console.log(`FAIL floor screen ${f.name} ${w}x${h} ${label}: density ${f.d}/h${f.h} (${f.tagless && f.tagless.d}/h${f.tagless && f.tagless.h} without the floor tag) with ${f.desks} desks, but the same agents as the whole office get ${ref.d}/h${ref.h} with ${ref.desks} (tags ${nameList.length})`); }
       }
+    }
+  }
+  /* spec 092 FR-033, SC-008 (T046): the All floors view (the lift's All button) shows every floor that is on in one screen with one density, as before
+     phase 1, and the 15-agent rule must hold there for all floors together with the lift panel's width taken out of the office area: 15 agents over
+     three floors and all 15 on one of three floors, both sizes, the same checks as every office (pageCheck, floor tags on every header). The density
+     without the panel (the pre-092 measure) is laid out again with the panel hidden and printed beside it, so the panel's cost is a number. */
+  for (const [w, h] of SIZES) {
+    if (!mineIn('allfloors')) continue;
+    for (const [label, q] of [['3 floors, 15 agents spread', 'sim=15&simfreeze=1&simfloors=1'], ['3 floors, all 15 agents on the Ground floor', 'sim=15&simfreeze=1&simfloors=ground']]) {
+      const tag = `all floors ${w}x${h} ${label}`;
+      await ctx.js(`localStorage.removeItem('durbar.floor');localStorage.setItem('durbar.floorView','all')`); // the view is read at start (FR-037)
+      await load(q, w, h);
+      const pre = await ctx.js(`(()=>{const l=document.getElementById('lift'),a=l&&l.querySelector('[data-lift="*all"]');return {lift:l&&!l.hidden?l.offsetWidth:0,all:a?a.getAttribute('aria-current'):null,
+        desks:[...document.querySelectorAll('#stage .desk[data-id]')].filter(d=>!d.closest('.helpers')).length,tags:[...new Set([...document.querySelectorAll('#stage .room-head .floor-tag')].map(t=>t.textContent.trim()))].length};})()`);
+      const res = await measure(false);
+      total++;
+      const fp = await ctx.js(`(${floorsCheck.toString()})(true)`);
+      const bad = res.problems.concat(fp);
+      if (!pre.lift) bad.push('the lift panel is not shown');
+      if (pre.all !== 'true') bad.push('All is not the view shown (aria-current)');
+      if (pre.desks !== 15) bad.push(`${pre.desks} desks drawn, not the whole building's 15`);
+      if (q.includes('simfloors=1') && pre.tags < 3) bad.push(`floor tags of ${pre.tags} floor(s), not all three`);
+      await ctx.js(`(()=>{const st=document.createElement('style');st.id='noLift';st.textContent='#lift{display:none!important}';document.head.append(st);window.__durbarSimUi.render();})()`);
+      let prev = '', now = '';
+      for (let k = 0; k < 40; k++) { await sleep(150); now = await ctx.js(`(()=>{const s=document.getElementById('stage');return s.dataset.d+'/'+s.dataset.h+'/'+s.dataset.fit+'/'+document.getElementById('lift').offsetWidth})()`); if (now === prev && now.endsWith('/0')) break; prev = now; }
+      const [nd, nh, nfit] = now.split('/');
+      await ctx.js(`document.getElementById('noLift').remove();window.__durbarSimUi.render();`);
+      rows.push({ label: tag, ...res.info, problems: bad.length });
+      console.log(`check:office: FR-033 ${tag}: ${res.info.d}/h${res.info.h} fit=${res.info.fit} with the lift panel (${pre.lift}px), ${nd}/h${nh} fit=${nfit} without it`);
+      if (bad.length) { failed++; console.log(`FAIL ${tag}: ${bad.slice(0, 6).join('; ')}${bad.length > 6 ? ` (+${bad.length - 6} more)` : ''}`); }
+      if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-allfloors-${w}x${h}-${label.replace(/[^a-z0-9]+/gi, '-')}.png`));
+      await ctx.js(`localStorage.removeItem('durbar.floorView')`); // the cases after this one start in the default view
     }
   }
   /* spec 033 FR-013 (issue #133, T042): the all-off message names only a control that is on screen, both sizes */

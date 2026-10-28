@@ -39,7 +39,7 @@ async function copilot(): Promise<void> {
   assert.ok(copilotNameError(' padded'));
   assert.ok(copilotNameError('a\u0007b'));
   assert.ok(copilotNameError(''));
-  // the prompt-free resume config: nothing can run, remote stays off
+  // the prompt-free resume config: nothing can run, remote stays off (`remoteSession` is only a hint for SDK 1.0.22; 1.0.26 ignores it)
   const cfg = renameResumeConfig('/work/proj');
   assert.strictEqual(cfg.workingDirectory, '/work/proj', 'the session\'s own folder');
   assert.strictEqual(cfg.suppressResumeEvent, true);

@@ -32,7 +32,7 @@ description: "Tasks for spec 087: each agent app's OS sandbox as the floor under
   - AC1: filesystem roots, UNC share roots, `..`, control characters and quotes are dropped; an empty result refuses; Windows-form paths compare case-insensitively; existing `test-codex-modes` still passes.
 - [x] T011 [P] [US1] [US2] [US3] `src/adapters/claudeSandbox.ts`: `claudeSandboxSettings` and `claudeSandboxState`. [FR-001..FR-003, FR-006, FR-007]
   - AC1: Read-only and Ask first give `enabled: true`, `failIfUnavailable: true`, `allowUnsandboxedCommands: false`, `autoAllowBashIfSandboxed: false`, `excludedCommands: []`, the read rules (decision Q4) and network rules (decision Q2); Read-only adds `denyWrite` = roots; Allow all gives `undefined`.
-  - AC2: pre-checks: version below 2.1.219 or unreadable → `off` (too old); `win32` → `off` with the Windows reason; `linux` without `bwrap` or `socat` → `off` naming the missing package; otherwise `unknown` (never `on`).
+  - AC2: pre-checks: version below 2.1.309 or unreadable → `off` (too old); `win32` → `off` with the Windows reason; `linux` without `bwrap` or `socat` → `off` naming the missing package; otherwise `unknown` (never `on`).
   - AC3: `startExit` = a sandbox exit → `off` with the masked reason; a start that survives → `on`; no input gives `on` without a surviving start.
 - [x] T012 [P] [US1] [US2] `src/adapters/copilotSandbox.ts`: `copilotSandboxConfig` and `copilotSandboxState` (structural types, no SDK import). [FR-001, FR-002, FR-004, FR-006, FR-014]
   - AC1: Read-only: roots in `readonlyPaths`, `addCurrentWorkingDirectory: false`, network off; Ask first: roots in `readwritePaths`, protected paths in `deniedPaths` only with the `denied_paths` capability; both: `allowDevToolAccess: false`, never `allowBypass`, `auth` off.
@@ -96,6 +96,7 @@ the OS sandbox can stop it.
 - [x] T060 Linux: one tiny Read-only prompt each for Claude Code and Copilot that asks to `touch` a file in the folder; record that the OS refuses it (or the gap); record usage. [FR-020, SC-004, K1, K2, K4, K8]
   - AC1: the result and usage are written in spec.md (`real:`), and the verified list gets the Linux entry only for an app whose write was refused.
   - Done 2026-10-25 (spec *Changes*, T060): Claude Code's OS refused the write (`CLAUDE_SANDBOX_VERIFIED = { linux: ['read-only'] }`, per mode after review on PR #753); Copilot's floor was on but Durbar refused the Read-only command first, and two extra owner-approved Ask first runs let an approved write outside the folder through, the second showing why (K15, #755), so Copilot gets no entry (K8 settled for Linux with Copilot CLI 1.0.101 / SDK 1.0.22). 4 prompts.
+  - 2026-10-28 (T066 run, side finding b): `getHostSupport()` reported the `network` capability unsupported (no unprivileged user+net namespaces, Ubuntu 24.04+ AppArmor), yet curl was blocked under the floor (exit 6). Do not rely on the reported `network` capability to say whether the network is blocked.
 - [ ] T061 macOS: the same for both apps. [FR-020, SC-004]
   - AC1: as T060 AC1, macOS entry.
 - [ ] T062 Windows: Copilot on a Windows 11 build with ProcessContainer (one prompt), and Claude's *Not sandboxed* note recorded with no prompt. [FR-020, SC-004, K9]
@@ -110,9 +111,9 @@ the OS sandbox can stop it.
 
 Numbers taken: FR-022, FR-022a..FR-022e, K16, T066..T073 (free in spec 087 on `origin/main` and in every open PR on 2026-10-27).
 Order: T067-T071 (outcome B, ships first) do not wait for T066. T072 and T073 wait for T066's result. Simulator and `npm test` only,
-except T066 (owner-approved 2026-10-27, about 3 prompts, not yet run).
+except T066 (owner-approved 2026-10-27, about 3 prompts; run 2026-10-28, verdict A).
 
-- [ ] T066 **Probe. OWNER-APPROVED by Paco, 2026-10-27 (terminal), budget about 3 Copilot prompts, ask before going over; NOT RUN YET. Cost: about 3 Copilot prompts, 0.08-0.16 AIU each by the
+- [x] T066 **Probe. OWNER-APPROVED by Paco, 2026-10-27 (terminal), budget about 3 Copilot prompts, ask before going over; RUN 2026-10-28 (verdict A, 3 prompts, 0.162 AIU). Cost: about 3 Copilot prompts, 0.08-0.16 AIU each by the
   2026-10-25 runs, so about 0.25-0.5 AIU).** Extend `scripts/sandbox-floor-real.ts` with a `switch` scenario (dry run first, `--spend`
   to run; no secret printed; home folder masked; usage recorded) and run it once on Linux with Copilot CLI 1.0.101 / SDK 1.0.22 through
   Durbar's own adapter, in a throw-away folder. [FR-022c, K16]
@@ -144,12 +145,23 @@ except T066 (owner-approved 2026-10-27, about 3 prompts, not yet run).
   - AC1: the result is written in spec.md (*Changes*, `real:`) with CLI and SDK versions, OS, the three outcomes, usage, and the verdict A or B;
     K16 is closed or kept; the README limits line and the tooltip's "Requested; not verified" wording follow it.
   - AC2: if the run cannot be done on a given OS, say which OS is `[KNOWN GAP]` (macOS and Windows stay unverified).
-- [ ] T067 [P] Pure rule `canRestartWithoutSandbox({ sandbox, mode, caps })` in a renderer-free module next to `src/renderer/sandboxtext.js` (no vendor
+  - 2026-10-28: the `switch` scenario is built (`scripts/sandbox-floor-real.ts`, verdict in `scripts/sandbox-switch-verdict.ts`, test in
+    `scripts/test-sandbox-floor.ts`) and its dry run passed (signed in, tools read back as `[bash]` only), but **not run with `--spend`:
+    0 prompts.** The owner's VPS has no bubblewrap (`getHostSupport()`: not supported), so the floor never comes on and the control cannot
+    run (spec *Changes* 2026-10-28). Still open: a run on a Linux host with bubblewrap, within the approved 3 prompts. Review on PR #827:
+    `mayPrompt` before every send, a usage that cannot be read stops the run, only the exact command may run and count, a curl/write
+    baseline before spending, Linux/macOS only, visible cleanup failures (spec *Changes* 2026-10-28).
+  - **Done 2026-10-28** (`real:`, Vikram's agent with Vikram's OK, [record on #806](https://github.com/three-feathers/agent-durbar/issues/806#issuecomment-6461550562)): Linux 7.0, bubblewrap 0.9.0,
+    CLI 1.0.98, SDK 1.0.22; 3 prompts, 0.162 AIU. Step 1 both blocked; step 2 the update resolved; step 3 both OK (write and network); step 4 back to Ask first,
+    both blocked again. **Verdict A**: K16 resolved for Linux (AC1). AC2: macOS and Windows not run, `[KNOWN GAP]`; no runtime newer than 1.0.98. Side findings
+    (spec *Changes* 2026-10-28): the floor's `.git/{hooks,config}` placeholders in F (the probe's cleanup now removes exactly those, `scripts/sandbox-probe-cleanup.ts`,
+    tested), and the reported `network` capability was "unsupported" while the network was blocked (T060 note).
+- [x] T067 [P] Pure rule `canRestartWithoutSandbox({ sandbox, mode, caps })` in a renderer-free module next to `src/renderer/sandboxtext.js` (no vendor
   name; same style as `chipWord`) and its tests. [FR-022, FR-022a]
   - AC1: true only for Allow all + `untilNewSession` + not `managed` + `caps.resume`; false for every Read-only/Ask first state, `off`, `unknown`,
     managed, a state without `untilNewSession`, and for the states Claude Code and Codex produce (a test builds each from the adapters' own state functions).
   - AC2: a malformed state gives false (fail closed, as `clean()`).
-- [ ] T068 Window (chip and mode menu only, not the office card menu: Q3): the mode-menu item and the chip button *Restart without the sandbox*; the click **extends the existing
+- [x] T068 Window (chip and mode menu only, not the office card menu: Q3): the mode-menu item and the chip button *Restart without the sandbox*; the click **extends the existing
   `mcpRestartSessionFlow` / `restartSessionAsk`** (`screens.js:1060, 1104`) with a `reason: 'sandbox'` (dialog, toast and failure words; always asks; the extra lines of FR-022; sign-in card and
   `needsConfirm` retry kept) and passes `reason` as the optional third argument of `agents:mcpRestartSession` (preload, `ipc/agents.ts:113`, `mcpRestartSessionOp`: log and no-resume words only). The tooltip
   (at most 300 characters, adapter display name, "Durbar does not…") ends as the state's `verified` says. The Allow all dialog gets FR-022e's sentence. [FR-022, FR-022a, FR-022b, FR-022e]
@@ -159,34 +171,47 @@ except T066 (owner-approved 2026-10-27, about 3 prompts, not yet run).
     `<button>`, text at least 10.5px, never colour alone.
   - AC4: no MCP wording in the sandbox dialog or toast; `reason` absent behaves exactly as today (existing `test-mcp-session.ts` and `shots-058-mcp-restart` unchanged); a bad reason is `'mcp'`.
   - AC5: the Allow all dialog has the FR-022e sentence for a Copilot session with a floor and not for Claude, Codex or a session without a floor (driver).
-- [ ] T069 Adapter and main: for B, tests plus the FR-022d fix (`refreshAuth` clears `live.sandboxFloor` before `applySandbox`, `copilot.ts:459`); confirm that a resume in Allow all sends no `sandboxConfig` and reports `null`;
+- [x] T069 Adapter and main: for B, tests plus the FR-022d fix (`refreshAuth` clears `live.sandboxFloor` before `applySandbox`, `copilot.ts:459`); confirm that a resume in Allow all sends no `sandboxConfig` and reports `null`;
   confirm `startOptionsFor` carries the current mode into the restart. [FR-022, FR-022b]
   - AC1: `scripts/test-copilot-sandbox.ts`: Read-only start, switch to Allow all (state `untilNewSession`, one `options.update`), end, resume the same id in Allow all: no
     further `options.update` with `sandboxConfig`, state `null`, and the first `send` is not held.
   - AC2: a restart whose resume fails (fake rejecting) leaves the agent ended with the error (`errorKind: 'auth'` for a sign-in error); nothing was sent.
   - AC3: with pending asks at the restart, the fake broker's asks are denied and none approved (`test-mcp-session.ts` or the Copilot suite).
   - AC4 [FR-022d]: `refreshAuth` on a session with a kept floor in Allow all gives state `null` and no extra update; in Ask first it re-sends the floor; a Durbar restart (fresh adapter) resuming in Allow all gives `null`.
-- [ ] T070 Simulator: Copilot sim agent #14 (Allow all, kept floor) gets the sim restart (end, then no floor: T070 **adds** the clear to `agentMcpRestartSession`, `sim.ts:2849`, which does not touch `s.info.sandbox` today; and takes the `reason`); driver in `scripts/check-sandbox-floor.js`
+- [x] T070 Simulator: Copilot sim agent #14 (Allow all, kept floor) gets the sim restart (end, then no floor: T070 **adds** the clear to `agentMcpRestartSession`, `sim.ts:2849`, which does not touch `s.info.sandbox` today; and takes the `reason`); driver in `scripts/check-sandbox-floor.js`
   (both sizes, `until()` for every assert, a generous timeout). [FR-022, FR-022b]
   - AC1: item and chip button visible for the Copilot sim agent, absent for Claude and Codex sim agents and for a Copilot agent in Ask first or with *Sandboxed (managed)*.
   - AC2: confirm restarts: the chip loses its word and the action disappears; cancel keeps both; a busy agent's dialog says the turn is stopped.
   - AC3: `check:office` unchanged at 1440x900 and 1280x800 (the chip keeps its place; the 15 agents fit).
   - AC4: with a sim session that has grants and remote control on, the dialog lists the grants, remote control, no-credits and next-message lines (FR-022); a Claude/Codex sim agent never shows the item.
-- [ ] T071 Docs: README *Safety model* and *Known limits* (the Copilot floor stays until a new session; the action; a Durbar restart or sign-in refresh resumes Allow all without it, FR-022d; Linux only, macOS and Windows not verified; Claude Code and Codex differ; K16 status),
-  spec 018's chip paragraph, spec status and `specs-index` block, `changelog.d/087-allowall-sandbox.md`, `npm run shots:docs -- --only <drivers>` (the
+- [x] T071 Docs: README *Safety model* and *Known limits* (the Copilot floor stays until a new session; the action; a Durbar restart or sign-in refresh resumes Allow all without it, FR-022d; Linux only, macOS and Windows not verified; Claude Code and Codex differ; K16 status),
+  spec 018's chip paragraph, spec status and `specs-index` block, `changelog.d/087-restart-without-sandbox.md` (the branch name; the 2026-10-27 plan said `087-allowall-sandbox.md`), `npm run shots:docs -- --only <drivers>` (the
   pictures that show the chip or the mode menu; `-- --list`), `docs/agent-notes.md` entry on the probe pitfall (a `/tmp` target proves nothing). [FR-022]
   - AC1: `npm run changelog:check`, `npm run specs:check`, `test:site` pass; every linked picture that shows the changed chip or menu is retaken and looked at.
-- [ ] T072 **Only if T066 verdict is A (the floor clears).** `applySandbox` sends the proven payload on a switch to Allow all; the state follows the update; the Allow all dialog
+  - Done 2026-10-27: no linked picture shows the kept floor in Allow all (`npm run shots:docs -- --list`: the chat and mode-menu pictures show Ada in Read-only and Jonas in Ask first); `shots-003-011` and `shots-hero` were retaken and looked at, unchanged, so not committed. The new state's pictures come from `check-sandbox-floor.js` (`087-restart-nosbx-*`, not linked).
+- [x] T072 **Only if T066 verdict is A (the floor clears).** `applySandbox` sends the proven payload on a switch to Allow all; the state follows the update; the Allow all dialog
   names the sandbox ("Copilot’s OS sandbox is also turned off for this session.", Q4); FR-022 stays as the fallback after a refusal. [FR-022c]
   - AC1: tests of FR-022c (exact payload, resolved gives `null`, rejected and hanging keep `untilNewSession`, narrowing re-sends the floor, no `allowBypass` anywhere);
     mutants (5) and (6) of the delta fail.
   - AC2: the dialog sentence appears only for a Copilot session that holds a floor (driver).
-- [ ] T073 **Only if T066 verdict is B (it does not clear).** Strike FR-022c from the spec, set K16 to "cannot be cleared in place (real:)", and word the tooltip and README
+  - Done 2026-10-28 (fakes and simulator; spec *Changes* 2026-10-28): `applySandbox` lowers a held floor at the switch, the state follows the update (resolved:
+    `null`; refused or hung: `untilNewSession` and the restart action), managed is never lowered, the sandbox changes of a session run in order, the Allow all
+    sentence is Q4's and the restart tooltip says it is the fallback. Tests: `scripts/test-copilot-sandbox.ts`, `scripts/test-sandbox-floor.ts`; driver:
+    `scripts/check-sandbox-floor.js` (both sizes). Not run through the app on a real session.
+  - Review on PR #833 (fixed in the PR): a lowering answering after the limit re-runs the current mode (late success: `null` in Allow all, the floor re-sent
+    after it in a narrower mode); a narrowing while it is outstanding is `unknown` with the FR-007 hold; the order and `sandboxSeq` are tested (reviewer mutants M1
+    and M5 caught); the neutral `heldFloor` makes the Allow all sentence follow every lowering (FR-022e's gap closed); `notLowered` gives the toast "<App> did not
+    turn its sandbox off; use Restart without the sandbox." (sim `simsbxlower=refuse`, driver both sizes).
+  - Review round 2 on PR #833: `refreshAuth` clears `lowerOutstanding`; late answers count only for the handle they were sent to; the unbounded wait is accepted in
+    FR-022c and the held note says "End the session (or restart it) to start again with the sandbox."; End + resume re-applies the floor (tests, two mutants caught).
+- ~~T073 **Only if T066 verdict is B (it does not clear).** Strike FR-022c from the spec, set K16 to "cannot be cleared in place (real:)", and word the tooltip and README
   from the result; no code. [FR-022c, K16]
-  - AC1: `npm run specs:check` passes; no FR-022c text remains that reads as planned.
+  - AC1: `npm run specs:check` passes; no FR-022c text remains that reads as planned.~~ Not needed: T066's verdict is A (2026-10-28), so T072 was built instead.
 
 ## Dependencies
 
 T001 → everything. T010-T013 → T014 → T020-T022 → T030-T032 → T040. T050 any time after T001. Phase 6 after Phase 2, with the
 owner's OK.
-Phase 7: T066 is owner-approved (not run yet); T067-T071 do not wait for it; T072/T073 wait for T066.
+Phase 7: T066 is owner-approved and ran 2026-10-28 (verdict A); T067-T071 did not wait for it; T072 is built after it; T073 is not needed.
+
+- [x] T074 Raise `CLAUDE_SANDBOX_MIN_VERSION` to 2.1.309 (FR-003a): constant, README, spec, plan; boundary test 2.1.308 below, 2.1.309 at, 2.1.312 above, `2.1.309 (Claude Code)` parsed, pre-release below.

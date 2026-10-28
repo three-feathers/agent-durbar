@@ -325,6 +325,17 @@
         ${themeFallbackNote(themes)}
         ${badThemes.length?`<p class="scr-note warn" role="status">${badThemes.length} theme folder${badThemes.length>1?'s were':' was'} ignored: ${esc(badThemes.map((b)=>b.id+': '+(b.error||'invalid')).join('; '))}</p>`:''}
         <div class="scr-tools">${X.bridge.generateTheme?'<button class="btn" type="button" id="thAi">Make a theme with AI…</button>':''}<button class="btn" type="button" id="thImport">Import a theme…</button><button class="btn" type="button" id="thExport" title="Copy the active theme's folder (one of your own themes) to a folder you pick">Export the active theme…</button></div></section>`;
+    /* Characters (spec 077 FR-064, FR-068): who sits at the desks, on top of any theme; the theme picker's pattern, one figure per choice */
+    const KIT_NAMES={office:'Minimalist',corporate:'Corporate',pixel:'Pixel','court-indian':'Indian court','court-european':'European court','court-japanese':'Japanese court',crew:'Cheeky'};
+    /* the items are painted again after a theme pick: the theme's own figures and every preview follow the theme */
+    const charItems=()=>{
+      const cur=window.THEME.characters(), own=window.THEME.themeKit(), crewN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.IDS)?window.DurbarCrew.IDS.length:0;
+      const list=[{id:'theme',name:'The theme\u2019s own',sub:(KIT_NAMES[own]||own)+' figures'},{id:'minimalist',name:'Minimalist',sub:'The calm office figure'},{id:'cheeky',name:'Cheeky',sub:crewN?crewN+' cheeky characters':'Cheeky characters'}];
+      return list.map((c)=>`<li class="throw"><button class="thpick" type="button" data-characters="${esc(c.id)}" aria-pressed="${c.id===cur}" aria-label="Characters ${esc(c.name)}: ${esc(c.sub)}"><span class="chsw" aria-hidden="true">${X.charPreview?X.charPreview(c.id):''}</span><span class="thtx"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc(c.sub)}</small></span></button></li>`).join('');
+    };
+    const charSec=window.THEME&&window.THEME.setCharacters&&X.applyCharacters?`<section class="scr-sec" aria-labelledby="chH"><h3 id="chH">Characters</h3>
+        <p class="scr-note">Who sits at the desks, on top of any theme; the choice applies at once and is kept on this computer.</p>
+        <ul class="thlist" id="chList">${charItems()}</ul></section>`:'';
     const ab=app.about;
     const aboutSec=ab?`<section class="scr-sec" aria-labelledby="aboutH"><h3 id="aboutH">About</h3>
         <p class="scr-note"><b>${esc(ab.name)}</b> ${esc(ab.version)} · by <b>${esc(ab.owner)}</b></p>
@@ -360,7 +371,7 @@
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${capSec}${moodSec}${breakSec}${notifySec}${schedSec}${floorsSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${capSec}${moodSec}${breakSec}${notifySec}${schedSec}${floorsSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3><span class="mtag warn" id="advMcpAtt"${live&&live.agg.attention?'':' hidden'}>${esc(attText(live?live.agg.attention:0))}</span></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         ${liveSection()}
@@ -417,9 +428,16 @@
     });
     if($('thList'))$('thList').addEventListener('click',(e)=>{
       const b=e.target.closest&&e.target.closest('[data-theme]');if(!b||!X.applyTheme)return;
-      X.applyTheme(b.dataset.theme);
+      const done=X.applyTheme(b.dataset.theme);
+      if($('chList'))Promise.resolve(done).then(()=>{const l=$('chList');if(l)l.innerHTML=charItems();}); /* spec 077 FR-068: the theme's own figures follow */
       /* spec 040 FR-019: the list shows the new choice at once (it was only repainted when Settings reopened) */
       $('thList').querySelectorAll('[data-theme]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
+    });
+    /* spec 077 FR-068: a Characters pick applies live through app.js's applyCharacters and shows the new choice at once */
+    if($('chList'))$('chList').addEventListener('click',(e)=>{
+      const b=e.target.closest&&e.target.closest('[data-characters]');if(!b||!X.applyCharacters)return;
+      X.applyCharacters(b.dataset.characters);
+      $('chList').querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
     });
     if($('thImport'))$('thImport').onclick=async()=>{
       if(!X.bridge.importTheme)return;
@@ -1056,11 +1074,20 @@
   /* spec 069 FR-011: one chip per list that has the server (sources), or the single origin of older replies */
   const srcChips=x=>Array.isArray(x.sources)&&x.sources.length?x.sources.map(t=>`<span class="mtag${t==='folder'?' extra':' src'}">${esc(SRCN[t]||t)}</span>`).join('')
     :`<span class="mtag${x.origin==='folder'?' extra':' src'}">${x.origin==='cli'?'Copilot CLI list':x.origin==='folder'?'this folder only':'runtime'}</span>`;
-  /* spec 058 FR-023: what Restart session costs, said before it runs; null when there is nothing to ask (idle, no grants, no remote control) */
-  function restartSessionAsk(a){
+  /* spec 058 FR-023: what Restart session costs, said before it runs; null when there is nothing to ask (idle, no grants, no remote control).
+     Spec 087 FR-022 (reason 'sandbox', *Restart without the sandbox*): always asked, with the same lines plus the MCP servers' next-message
+     start and the requests that will be denied. `start` = the app's MCP start ('next-message' or 'session'). */
+  function restartSessionAsk(a,reason,start){
     const busy=a.state==='working'||a.state==='thinking'||a.state==='waiting', grants=Array.isArray(a.grants)&&a.grants.length>0, remote=!!a.remote;
-    if(!busy&&!grants&&!remote)return null;
-    return ['The conversation is kept and resuming spends no AI credits.',busy?'The running turn stops.':'','"Approve for this session" grants are cleared.',remote?'Remote control turns off.':''].filter(Boolean);
+    const sbx=reason==='sandbox', pend=sbx&&a.pend&&typeof a.pend.size==='number'?a.pend.size:0;
+    /* spec 087 FR-022a: a Restart session with these servers also lifts an OS sandbox floor kept in Allow all, so it asks and says so
+       (never silently); without the pure rule, any kept floor in Allow all counts (fail closed: ask) */
+    const T=window.DurbarSandboxText, info=a.info||{};
+    const kept=!sbx&&(T&&T.canRestartWithoutSandbox?T.canRestartWithoutSandbox({sandbox:info.sandbox,mode:info.permMode,caps:{resume:true}}):!!(info.permMode==='allow'&&info.sandbox&&info.sandbox.untilNewSession));
+    if(!sbx&&!busy&&!grants&&!remote&&!kept)return null;
+    return ['The conversation is kept and resuming spends no AI credits.',busy?'The running turn stops.':'','"Approve for this session" grants are cleared.',remote?'Remote control turns off.':'',
+      kept?'The OS sandbox kept from an earlier mode is lifted (Allow all).':'',
+      sbx&&start==='next-message'?'Its MCP servers start again with your next message.':'',pend?pend+' request'+(pend===1?'':'s')+' waiting will be denied.':''].filter(Boolean);
   }
   let mcpDlgHook=null; /* set while a per-agent MCP dialog is open: called with an agent id on each `mcp` event */
   async function copyText(text,okMsg,ms){
@@ -1100,21 +1127,29 @@
     X.toast(r&&r.ok?'Restarted '+esc(name)+'.':'Could not restart '+esc(name)+': '+esc((r&&r.error)||'unknown error'),r&&r.ok?3200:6000);
     return r;
   }
-  /* h = {returnFocus(), busy(on) (async; shows "Restarting session…"), onAuth() (closes the caller's view before the sign-in card)} */
+  /* h = {returnFocus(), busy(on) (async; shows "Restarting session…"), onAuth() (closes the caller's view before the sign-in card),
+     reason ('mcp', the default, or 'sandbox': spec 087 FR-022 *Restart without the sandbox*; it changes words only, and always asks)} */
+  const RESTART_WORDS={
+    mcp:{title:n=>'Restart '+n+"'s session?",body:n=>'Restart '+n+"'s session with the current MCP servers?",button:'Restart session',
+      done:(n,start)=>n+': session restarted with the current MCP servers.'+(start==='next-message'?' Its servers start with your next message.':''),fail:'Could not restart the session: '},
+    sandbox:{title:n=>'Restart '+n+' without the OS sandbox?',body:()=>'The conversation continues in a new session in Allow all. Shell commands will no longer be limited to this folder and can reach the network. Nothing is re-sent; send your next message when it is ready.',button:'Restart without the sandbox',
+      done:(n,start)=>n+': session restarted without the OS sandbox.'+(start==='next-message'?' Its servers start with your next message.':''),fail:'Could not restart without the OS sandbox: '}};
   async function mcpRestartSessionFlow(a,start,h){
+    const reason=h&&h.reason==='sandbox'?'sandbox':'mcp', W=RESTART_WORDS[reason];
     const ask=window.DurbarDialog&&window.DurbarDialog(document);
-    const confirm=async()=>{const lines=restartSessionAsk(a)||['The conversation is kept and resuming spends no AI credits.','The running turn stops.','"Approve for this session" grants are cleared.'];
-      if(!ask)return window.confirm('Restart '+a.name+"'s session with the current MCP servers?");
-      const v=await ask({title:'Restart '+a.name+"'s session?",body:'Restart '+a.name+"'s session with the current MCP servers?",lines,returnFocus:h.returnFocus,buttons:[{label:'Cancel',value:null},{label:'Restart session',value:'ok',cls:'primary warn'}]});
+    const confirm=async()=>{const lines=restartSessionAsk(a,reason,start)||['The conversation is kept and resuming spends no AI credits.','The running turn stops.','"Approve for this session" grants are cleared.'];
+      if(!ask)return window.confirm(W.body(a.name));
+      const v=await ask({title:W.title(a.name),body:W.body(a.name),lines,returnFocus:h.returnFocus,buttons:[{label:'Cancel',value:null},{label:W.button,value:'ok',cls:'primary warn'}]});
       return !!v;};
     let confirmed=false;
-    if(restartSessionAsk(a)){if(!await confirm())return null;confirmed=true;}
+    if(restartSessionAsk(a,reason,start)){if(!await confirm())return null;confirmed=true;}
     await h.busy(true);
-    let r;try{r=await X.bridge.agentMcpRestartSession(a.id,confirmed);}catch(e){r={ok:false,error:String(e&&e.message||e)};}
-    if(r&&!r.ok&&r.needsConfirm&&!confirmed){await h.busy(false);if(!await confirm())return null;await h.busy(true);try{r=await X.bridge.agentMcpRestartSession(a.id,true);}catch(e){r={ok:false,error:String(e&&e.message||e)};}}
+    const call=c=>reason==='sandbox'?X.bridge.agentMcpRestartSession(a.id,c,reason):X.bridge.agentMcpRestartSession(a.id,c);
+    let r;try{r=await call(confirmed);}catch(e){r={ok:false,error:String(e&&e.message||e)};}
+    if(r&&!r.ok&&r.needsConfirm&&!confirmed){await h.busy(false);if(!await confirm())return null;await h.busy(true);try{r=await call(true);}catch(e){r={ok:false,error:String(e&&e.message||e)};}}
     await h.busy(false);
     if(r&&r.errorKind==='auth'&&X.signInAgain){if(h.onAuth)h.onAuth();X.signInAgain(a,r.error||'');return r;} /* FR-027: the chat's sign-in card, not a toast */
-    X.toast(r&&r.ok?esc(a.name)+': session restarted with the current MCP servers.'+(start==='next-message'?' Its servers start with your next message.':''):'Could not restart the session: '+esc((r&&r.error)||'unknown error')+(r&&r.ended?' The session has ended; send a message to resume it.':''),r&&r.ok?4200:7000);
+    X.toast(r&&r.ok?esc(W.done(a.name,start)):W.fail+esc((r&&r.error)||'unknown error')+(r&&r.ended?' The session has ended; send a message to resume it.':''),r&&r.ok?4200:7000);
     return r;
   }
   async function agentMcp(a,o){
@@ -1657,6 +1692,7 @@
     openSettings:(section)=>{mcp=null;X._acctRefresh=X._acctRefresh==='check'?'check':true;open('settings',section==='mcp'||section==='harnesses'||section==='schedules'?{section}:null);},
     openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},
     agentMcp,
+    restartSession:mcpRestartSessionFlow, /* spec 087 FR-022: *Restart without the sandbox* (h.reason 'sandbox') reuses this flow and its one channel */
     mcpEvent:id=>{if(mcpDlgHook)mcpDlgHook(id);liveEvent(id);},
     liveEvent, /* spec 058 FR-083: a chat stopped or is ready again */
     placeDialog,

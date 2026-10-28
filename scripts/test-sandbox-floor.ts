@@ -56,7 +56,7 @@ for (const os of OSES) {
     {
       const cell = `claude/${os}/${mode}`;
       const block = claudeSandboxSettings(mode, ROOTS[os]);
-      const pre = claudeSandboxPrecheck({ platform: os, version: '2.1.300', haveBwrap: true, haveSocat: true });
+      const pre = claudeSandboxPrecheck({ platform: os, version: '2.1.312', haveBwrap: true, haveSocat: true });
       if (mode === 'allow') assert.strictEqual(block, undefined, `${cell}: the app default`);
       else {
         assert.ok(block, `${cell}: a block`);
@@ -104,22 +104,30 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
 // ---- SC-002: unavailable cells give a visible off with a reason; no on before the app confirmed it ----
 {
   const facts = [
-    { platform: 'win32', version: '2.1.300' },
-    { platform: 'linux', version: '2.1.300', haveBwrap: false, haveSocat: true },
-    { platform: 'linux', version: '2.1.300', haveBwrap: true, haveSocat: false },
-    { platform: 'darwin', version: '2.1.218' },
+    { platform: 'win32', version: '2.1.312' },
+    { platform: 'linux', version: '2.1.312', haveBwrap: false, haveSocat: true },
+    { platform: 'linux', version: '2.1.312', haveBwrap: true, haveSocat: false },
+    { platform: 'darwin', version: '2.1.308' },
     { platform: 'darwin' },
-    { platform: 'freebsd', version: '2.1.300' },
+    { platform: 'freebsd', version: '2.1.312' },
   ];
   for (const f of facts) for (const mode of ['read-only', 'ask'] as const) {
     const st = claudeSandboxState({ mode, facts: f, started: true });
     assert.strictEqual(st?.state, 'off', `claude ${JSON.stringify(f)}: off even if init came`);
     assert.ok(st?.reason && st.reason.length <= 200, 'with a reason');
   }
-  assert.deepStrictEqual(claudeSandboxPrecheck({ platform: 'win32', version: '2.1.300' }), { try: false, reason: "Claude Code has no OS sandbox on Windows; Durbar's own checks still apply (only WSL2 has one).", permanent: true });
+  assert.deepStrictEqual(claudeSandboxPrecheck({ platform: 'win32', version: '2.1.312' }), { try: false, reason: "Claude Code has no OS sandbox on Windows; Durbar's own checks still apply (only WSL2 has one).", permanent: true });
   assert.strictEqual((claudeSandboxPrecheck({ platform: 'linux', version: CLAUDE_SANDBOX_MIN_VERSION, haveBwrap: true, haveSocat: true }) as { try: boolean }).try, true, 'the minimum version itself is enough');
-  assert.strictEqual((claudeSandboxPrecheck({ platform: 'linux', version: '2.1.219-beta.1', haveBwrap: true, haveSocat: true }) as { try: boolean }).try, false, 'a pre-release of the minimum is older');
-  const lin = { platform: 'linux', version: '2.1.300', haveBwrap: true, haveSocat: true };
+  assert.strictEqual((claudeSandboxPrecheck({ platform: 'linux', version: '2.1.309-beta.1', haveBwrap: true, haveSocat: true }) as { try: boolean }).try, false, 'a pre-release of the minimum is older');
+  const atMin = (version: string) => (claudeSandboxPrecheck({ platform: 'linux', version, haveBwrap: true, haveSocat: true }) as { try: boolean }).try;
+  assert.strictEqual(CLAUDE_SANDBOX_MIN_VERSION, '2.1.309', 'FR-003a: the minimum is 2.1.309');
+  assert.strictEqual(atMin('2.1.308'), false, '2.1.308 is below');
+  assert.strictEqual(atMin('2.1.309'), true, '2.1.309 is at');
+  assert.strictEqual(atMin('2.1.312'), true, '2.1.312 is above');
+  assert.strictEqual(atMin('2.1.309 (Claude Code)'), true, 'the CLI banner form parses');
+  assert.strictEqual(atMin('2.1.309-beta.1'), false, 'a pre-release is below');
+  assert.strictEqual(atMin('2.1.219'), false, 'the old minimum is now below');
+  const lin = { platform: 'linux', version: '2.1.312', haveBwrap: true, haveSocat: true };
   assert.strictEqual(claudeSandboxState({ mode: 'read-only', facts: lin })?.state, 'unknown', 'no init yet: unknown (checking)');
   assert.strictEqual(claudeSandboxState({ mode: 'read-only', facts: lin, started: true })?.state, 'on');
   assert.strictEqual(claudeSandboxState({ mode: 'read-only', facts: lin, started: true, startExit: 'x' })?.state, 'off', 'a sandbox exit wins');
@@ -330,6 +338,171 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
     assert.strictEqual(maskIds(`session ${id} done`), `session ${ID_MASK} done`);
     assert.deepStrictEqual(maskArgv(['--model', 'haiku']), ['--model', 'haiku'], 'other args unchanged');
   }
+  // T066 (K16): the switch probe's verdict comes from the printed exit codes AND the file on disk, never from the model's words
+  {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const V = require('./sandbox-switch-verdict') as typeof import('./sandbox-switch-verdict');
+    assert.deepStrictEqual(V.parseExitCodes('touch: cannot touch \'x\': Read-only file system\ntouch=1\ncurl: (6) Could not resolve host\ncurl=6\n'), { touch: 1, curl: 6 });
+    assert.deepStrictEqual(V.parseExitCodes('touch=0\ncurl=0'), { touch: 0, curl: 0 });
+    assert.deepStrictEqual(V.parseExitCodes('touch=1\ntouch=0\ncurl=7'), { touch: 0, curl: 7 }, 'the last line wins');
+    assert.deepStrictEqual(V.parseExitCodes('echo "touch=$?" said touch=0 inline'), {}, 'only a line of its own counts');
+    assert.deepStrictEqual(V.parseExitCodes(''), {});
+    const ok = { ran: true, touch: 0, curl: 0, fileExists: true };
+    const blocked = { ran: true, touch: 1, curl: 7, fileExists: false };
+    assert.strictEqual(V.stepOutcome(ok), 'both-ok');
+    assert.strictEqual(V.stepOutcome(blocked), 'both-blocked');
+    assert.strictEqual(V.stepOutcome({ ...ok, fileExists: false }), 'mixed', 'exit 0 without the file is not a write');
+    assert.strictEqual(V.stepOutcome({ ...blocked, fileExists: true }), 'mixed', 'a file that exists is not a blocked write');
+    assert.strictEqual(V.stepOutcome({ ...ok, curl: 6 }), 'mixed', 'write ok, network blocked');
+    assert.strictEqual(V.stepOutcome({ ...blocked, curl: 0 }), 'mixed', 'write blocked, network ok');
+    assert.strictEqual(V.stepOutcome({ ...ok, ran: false }), 'not-run');
+    assert.strictEqual(V.stepOutcome({ ran: true, touch: 0, fileExists: true }), 'not-run', 'a missing code');
+    assert.strictEqual(V.switchVerdict({ control: 'both-blocked', update: 'resolved', after: 'both-ok' }).verdict, 'A');
+    for (const control of ['both-ok', 'mixed', 'not-run'] as const) assert.strictEqual(V.switchVerdict({ control, update: 'resolved', after: 'both-ok' }).verdict, 'cannot-tell', `control ${control}: cannot tell`);
+    for (const after of ['both-blocked', 'mixed'] as const) {
+      assert.strictEqual(V.switchVerdict({ control: 'both-blocked', update: 'resolved', after }).verdict, 'B', `accepted, not honoured (${after})`);
+      assert.strictEqual(V.switchVerdict({ control: 'both-blocked', update: 'refused', after }).verdict, 'B', `refused (${after})`);
+    }
+    assert.ok(V.switchVerdict({ control: 'both-blocked', update: 'resolved', after: 'both-blocked' }).why.startsWith('accepted, not honoured'));
+    assert.strictEqual(V.switchVerdict({ control: 'both-blocked', update: 'refused', after: 'both-ok' }).verdict, 'cannot-tell', 'free although refused: not A');
+    assert.strictEqual(V.switchVerdict({ control: 'both-blocked', update: 'resolved', after: 'not-run' }).verdict, 'cannot-tell');
+    assert.strictEqual(V.step4Expected('A'), 'both-blocked', 'A: narrowing must block again');
+    assert.strictEqual(V.step4Expected('B'), 'both-ok', 'B: the resumed Allow all session is free');
+    assert.strictEqual(V.step4Expected('cannot-tell'), 'both-ok');
+    // review on PR #827: the spend gate before every send
+    assert.strictEqual(V.SWITCH_MAX_PROMPTS, 3, 'the owner approved about 3 prompts');
+    assert.strictEqual(V.SWITCH_MAX_AIU, 1, 'the script stops at 1 AIU');
+    const fresh = { prompts: 0, aiu: 0, usageKnown: true, timedOut: false, strayCall: false };
+    assert.strictEqual(V.mayPrompt(fresh).ok, true, 'the first prompt');
+    assert.strictEqual(V.mayPrompt({ ...fresh, prompts: 2, aiu: 0.3 }).ok, true, 'the third prompt within the budget');
+    assert.strictEqual(V.mayPrompt({ ...fresh, prompts: 3, aiu: 0.3 }).ok, false, 'no 4th prompt');
+    assert.strictEqual(V.mayPrompt({ ...fresh, prompts: 1, aiu: 1 }).ok, false, 'no prompt at 1 AIU');
+    assert.strictEqual(V.mayPrompt({ ...fresh, prompts: 1, aiu: 1.5 }).ok, false, 'no prompt over 1 AIU');
+    assert.strictEqual(V.mayPrompt({ ...fresh, prompts: 1, aiu: 0.999 }).ok, true, 'just under the stop');
+    assert.strictEqual(V.mayPrompt({ ...fresh, prompts: 1, aiu: Number.NaN }).ok, false, 'an unreadable sum');
+    assert.strictEqual(V.mayPrompt({ ...fresh, prompts: 1, usageKnown: false }).ok, false, 'unknown usage is never 0');
+    assert.strictEqual(V.mayPrompt({ ...fresh, prompts: 1, timedOut: true }).ok, false, 'after a turn that did not end');
+    assert.strictEqual(V.mayPrompt({ ...fresh, prompts: 1, strayCall: true }).ok, false, 'after a command that is not C');
+    assert.strictEqual(V.mayPrompt({ ...fresh, prompts: -1 }).ok, false, 'a bad count');
+    // only the exact call counts; any other start is stray
+    const C = 'touch /h/p/probe.txt; echo "touch=$?"; curl -sS -m 5 -o /dev/null https://example.com; echo "curl=$?"';
+    const exactOnly = V.probeCalls([{ callId: 'a', phase: 'start', args: { command: C } }, { callId: 'a', phase: 'complete', output: 'touch=1\ncurl=7' }], C);
+    assert.deepStrictEqual(exactOnly, { stray: false, exactRan: true, output: 'touch=1\ncurl=7' });
+    const strayLater = V.probeCalls([{ callId: 'a', phase: 'start', args: { command: C } }, { callId: 'a', phase: 'complete', output: 'touch=1\ncurl=7' }, { callId: 'b', phase: 'start', args: { command: 'echo curl=0' } }, { callId: 'b', phase: 'complete', output: 'curl=0' }], C);
+    assert.strictEqual(strayLater.stray, true, 'another command is stray');
+    assert.strictEqual(strayLater.output, 'touch=1\ncurl=7', 'the result comes from the exact call, not the last one');
+    const onlyStray = V.probeCalls([{ callId: 'b', phase: 'start', args: { command: C + ' ' } }, { callId: 'b', phase: 'complete', output: 'touch=0\ncurl=0' }], C);
+    assert.deepStrictEqual(onlyStray, { stray: true, exactRan: false }, 'near-miss commands never count');
+    assert.strictEqual(V.probeCalls([{ callId: 'c', phase: 'start', args: {} }], C).stray, true, 'a call with no command is stray');
+    assert.strictEqual(V.probeCalls([{ callId: 'c', phase: 'start' }], C).stray, true, 'a call with no arguments is stray');
+    const twice = V.probeCalls([{ callId: 'a', phase: 'start', args: { command: C } }, { callId: 'a', phase: 'complete', output: 'touch=1\ncurl=7' }, { callId: 'b', phase: 'start', args: { command: C } }, { callId: 'b', phase: 'complete', output: 'touch=0\ncurl=0' }], C);
+    assert.strictEqual(twice.stray, true, 'a second exact run is stray');
+    assert.strictEqual(twice.output, 'touch=1\ncurl=7', 'only the first exact run is read');
+    const twiceLateFirst = V.probeCalls([{ callId: 'a', phase: 'start', args: { command: C } }, { callId: 'b', phase: 'start', args: { command: C } }, { callId: 'b', phase: 'complete', output: 'touch=0\ncurl=0' }, { callId: 'a', phase: 'complete', output: 'touch=1\ncurl=7' }], C);
+    assert.strictEqual(twiceLateFirst.output, 'touch=1\ncurl=7', 'the first exact call, even when the second ends first');
+    const dupEnd = V.probeCalls([{ callId: 'a', phase: 'start', args: { command: C } }, { callId: 'a', phase: 'failed', output: 'touch=1\ncurl=7' }, { callId: 'a', phase: 'complete', output: 'touch=0\ncurl=0' }], C);
+    assert.strictEqual(dupEnd.output, 'touch=1\ncurl=7', 'a call that reports its end twice: the first end is read');
+    assert.strictEqual(V.probeCalls([{ callId: 'r', phase: 'start', args: { intent: 'x' } }, { callId: 'a', phase: 'start', args: { command: C } }], C).stray, true, 'another tool (report_intent-like) is stray, not ignored');
+    // the permission gate: only exactly C, as a shell request
+    assert.strictEqual(V.probeGateAllows({ kind: 'shell', fullCommandText: C }, C), true, 'exact C');
+    for (const [req, why] of [
+      [{ kind: 'shell', fullCommandText: C + '; curl evil' }, 'C; curl evil'],
+      [{ kind: 'shell', fullCommandText: C + ' ' }, 'a trailing space'],
+      [{ kind: 'shell', fullCommandText: ' ' + C }, 'a leading space'],
+      [{ kind: 'write', fullCommandText: C }, 'not a shell request'],
+      [{ kind: 'shell' }, 'no command text'],
+      [{ kind: 'shell', fullCommandText: 42 }, 'not a string'],
+      [null, 'no request'],
+      [undefined, 'undefined'],
+      ['shell', 'not an object'],
+    ] as Array<[unknown, string]>) assert.strictEqual(V.probeGateAllows(req, C), false, `refused: ${why}`);
+    assert.strictEqual(V.probeGateAllows({ kind: 'shell', fullCommandText: '' }, ''), false, 'an empty C allows nothing');
+    assert.strictEqual(V.stepOutcome({ ran: onlyStray.exactRan, ...V.parseExitCodes(onlyStray.output ?? ''), fileExists: true }), 'not-run');
+    // source checks: one send, gated right before it; exactly 3 steps; the limits come from the tested module; Windows refused
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'sandbox-floor-real.ts'), 'utf8').replace(/\r/g, ''); // a Windows checkout has CRLF (as #825)
+    const sw = src.slice(src.indexOf('async function runSwitchSteps'), src.indexOf('async function main()'));
+    assert.ok(sw.length > 1000, 'the switch steps are found');
+    assert.strictEqual((sw.match(/\ba\.send\(/g) ?? []).length, 1, 'one send in the switch probe');
+    assert.match(sw, /const gate = mayPrompt\(\{ prompts, aiu: usageOf\(0\)\.aiu, usageKnown, timedOut: anyTimedOut, strayCall: anyStray \|\| strayAsks > 0 \}\);\n\s*if \(!gate\.ok\) throw new Error\([^\n]*\);\n\s*prompts\+\+;\n[^\n]*\n\s*await a\.send\(/, 'mayPrompt gates the send, right before it');
+    assert.strictEqual((sw.match(/await runStep\(/g) ?? []).length, 3, 'at most three prompts');
+    assert.ok(!/SWITCH_MAX_(AIU|PROMPTS)\s*=/.test(src), 'the limits are the tested module constants');
+    assert.match(sw, /if \(stray \|\| timed \|\| !usageKnown\) throw new Error\(/, 'a stray call, a timeout or unknown usage stops after the step');
+    assert.match(sw, /if \(usageOf\(from\)\.priced === 0\) usageKnown = false;/, 'no usage with a number means unknown');
+    assert.match(sw, /if \(v\.verdict === 'cannot-tell'\) \{[\s\S]{0,300}?return;/, 'a cannot-tell after step 3 stops there');
+    assert.match(src, /if \(switchProbe && process\.platform === 'win32'\) throw new Error\('switch: Linux\/macOS only/, 'Windows refused up front');
+    assert.match(sw, /if \(curlExit !== 0 \|\| !writeOk\) throw new Error\('refused: the baseline failed/, 'the baseline gates the spend');
+    assert.match(sw, /if \(!probeGateAllows\(req, C\) \|\| !inner2\) \{/, 'the permission handler uses the tested gate');
+    assert.match(sw, /\n\s*if \(!shellToolParams\.properties\.includes\('command'\)\) throw new Error\('refused|\n\s*if \(!shellToolParams\.properties\.includes\('command'\)\) throw new Error\(`refused/, 'the spend run refuses a bash tool with no command argument');
+    assert.match(sw, /removeOwn\(F, tmpRoot, \['README\.txt', 'probe\.txt'\], \{ prefix: SWITCH_PREFIX, show: clean, gitPlaceholders: true \}\)/, 'F is cleaned with the .git placeholders allowed');
+    assert.match(sw, /removeOwn\(P, homeReal, \['probe\.txt'\], \{ prefix: SWITCH_PREFIX, show: clean \}\)/, 'P never: only probe.txt');
+  }
+  // T066 side finding (a), real: 2026-10-28: the floor leaves .git/{hooks,config} placeholders in F; the cleanup removes exactly those, and only
+  // when nothing else is there; never recursively
+  {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const C = require('./sandbox-probe-cleanup') as typeof import('./sandbox-probe-cleanup');
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-cleanup-test-')));
+    const show = (v: unknown): string => String(v);
+    let n = 0;
+    const mkF = (o: { readme?: boolean; git?: boolean; hooks?: 'empty' | 'file' | 'full' | 'none' | 'link'; config?: 'empty' | 'full' | 'dir' | 'none' | 'link'; extraGit?: string; extraTop?: string; gitLink?: boolean } = {}): string => {
+      const F = path.join(root, `durbar-t066-session-${n++}`);
+      fs.mkdirSync(F);
+      if (o.readme !== false) fs.writeFileSync(path.join(F, 'README.txt'), 'probe\n');
+      if (o.git === false) return F;
+      const g = path.join(F, '.git');
+      if (o.gitLink) { const real = path.join(root, `elsewhere-${n}`); fs.mkdirSync(path.join(real, 'hooks'), { recursive: true }); fs.writeFileSync(path.join(real, 'config'), ''); fs.symlinkSync(real, g, 'dir'); return F; }
+      fs.mkdirSync(g);
+      const hooks = o.hooks ?? 'empty';
+      if (hooks === 'empty' || hooks === 'full') fs.mkdirSync(path.join(g, 'hooks'));
+      if (hooks === 'full') fs.writeFileSync(path.join(g, 'hooks', 'pre-commit'), '#!/bin/sh\n');
+      if (hooks === 'file') fs.writeFileSync(path.join(g, 'hooks'), '');
+      if (hooks === 'link') { fs.mkdirSync(path.join(root, `hooks-${n}`)); fs.symlinkSync(path.join(root, `hooks-${n}`), path.join(g, 'hooks'), 'dir'); }
+      const config = o.config ?? 'empty';
+      if (config === 'empty') fs.writeFileSync(path.join(g, 'config'), '');
+      if (config === 'full') fs.writeFileSync(path.join(g, 'config'), '[core]\n');
+      if (config === 'dir') fs.mkdirSync(path.join(g, 'config'));
+      if (config === 'link') { fs.writeFileSync(path.join(root, `config-${n}`), ''); fs.symlinkSync(path.join(root, `config-${n}`), path.join(g, 'config')); }
+      if (o.extraGit) fs.writeFileSync(path.join(g, o.extraGit), 'ref: x\n');
+      if (o.extraTop) fs.writeFileSync(path.join(F, o.extraTop), 'x');
+      return F;
+    };
+    const rm = (F: string, git = true) => C.removeOwn(F, root, ['README.txt', 'probe.txt'], { prefix: 'durbar-t066-', show, gitPlaceholders: git });
+    const ph = mkF();
+    assert.strictEqual(C.gitPlaceholders(path.join(ph, '.git')), true, 'an empty hooks/ and an empty config: the placeholders');
+    assert.match(rm(ph), /^removed .*placeholders/, 'F with the placeholders is removed');
+    assert.ok(!fs.existsSync(ph), 'F is gone');
+    const bare = mkF({ git: false });
+    assert.match(rm(bare), /^removed /, 'F with no .git is removed as before');
+    for (const [o, why] of [
+      [{ hooks: 'full' }, 'a hook inside hooks/'],
+      [{ hooks: 'file' }, 'hooks is a file'],
+      [{ hooks: 'none' }, 'no hooks/'],
+      [{ hooks: 'link' }, 'hooks is a link'],
+      [{ config: 'full' }, 'a config with content'],
+      [{ config: 'dir' }, 'config is a folder'],
+      [{ config: 'none' }, 'no config'],
+      [{ config: 'link' }, 'config is a link'],
+      [{ extraGit: 'HEAD' }, 'anything else inside .git'],
+      [{ gitLink: true }, '.git is a link'],
+    ] as Array<[Parameters<typeof mkF>[0], string]>) {
+      const F = mkF(o);
+      assert.strictEqual(C.gitPlaceholders(path.join(F, '.git')), false, `not the placeholders: ${why}`);
+      assert.match(rm(F), /^left .*1 other entry/, `left: ${why}`);
+      assert.ok(fs.existsSync(path.join(F, '.git')) && fs.existsSync(path.join(F, 'README.txt')), `nothing removed: ${why}`);
+    }
+    const extra = mkF({ extraTop: 'notes.txt' });
+    assert.match(rm(extra), /^left .*1 other entry/, 'something else at the top: left');
+    assert.ok(fs.existsSync(path.join(extra, '.git', 'hooks')) && fs.existsSync(path.join(extra, '.git', 'config')), 'and the placeholders are not removed either');
+    const off = mkF();
+    assert.match(rm(off, false), /^left .*1 other entry/, 'without gitPlaceholders (P): a .git is never removed');
+    assert.ok(fs.existsSync(path.join(off, '.git', 'config')));
+    assert.strictEqual(C.gitPlaceholders(path.join(root, 'missing', '.git')), false, 'a missing .git: false, no throw');
+    const other = path.join(root, 'not-ours');
+    fs.mkdirSync(other);
+    assert.match(C.removeOwn(other, root, [], { prefix: 'durbar-t066-', show, gitPlaceholders: true }), /not a folder this script made/, 'the prefix still decides');
+    fs.rmSync(root, { recursive: true, force: true });
+
+  }
   // FR-021a (K15): the Copilot state says it only in Ask first with the floor on; the card line is the agreed sentence
   const host = { supported: true, capabilities: [] };
   assert.strictEqual(copilotSandboxState({ mode: 'ask', platform: 'linux', host, applied: true })?.approvedMayLeave, true, 'Ask first, on: may leave');
@@ -439,8 +612,82 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.strictEqual((outwardSandboxEvent({ type: 'sandbox', sandbox: { state: 'on', covers: [42], verified: false } }) as { sandbox: unknown }).sandbox, null, 'a malformed state: null');
   const other = { type: 'output', delta: TOKEN };
   assert.strictEqual(outwardSandboxEvent(other), other, 'other events pass unchanged (outward() handles them)');
+  // FR-022c (review on PR #833): notLowered reaches the window only as exactly true; heldFloor is kept only as true
+  assert.strictEqual((outwardSandboxEvent({ type: 'sandbox', sandbox: null, notLowered: true }) as { notLowered?: unknown }).notLowered, true);
+  assert.ok(!('notLowered' in (outwardSandboxEvent({ type: 'sandbox', sandbox: null, notLowered: 'yes' }) as object)), 'notLowered not true: dropped');
+  assert.strictEqual(cleanSandboxState({ state: 'on', covers: ['shell'], verified: false, heldFloor: true })?.heldFloor, true);
+  assert.strictEqual(cleanSandboxState({ state: 'on', covers: ['shell'], verified: false, heldFloor: 'true' }), undefined, 'heldFloor must be a boolean');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { eventProblems } = require('../src/adapters/eventguard') as typeof import('../src/adapters/eventguard');
+  assert.deepStrictEqual(eventProblems({ type: 'sandbox', sessionId: 's', timestamp: 1, sandbox: null, notLowered: true }), []);
+  assert.ok(eventProblems({ type: 'sandbox', sessionId: 's', timestamp: 1, sandbox: null, notLowered: 1 } as never).length > 0, 'eventguard: notLowered only true');
   assert.ok(!(T as unknown as { details(s: unknown, a: string, m: (t: string) => string): string }).details({ ...on, leftOut: ['/h/ghp_abcdefghijklmnopqrstuvwxyz0123456789 (not usable)'] }, 'C', () => '').includes('ghp_'), 'each entry only through the mask');
   ok('FR-009/FR-010: the chip words and the tooltip per app; the reason only through the mask');
+}
+// ---- T067 (FR-022, FR-022a, FR-022e; issue #806): Restart without the sandbox, the pure rule and its words (src/renderer/sandboxtext.js) ----
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const T = require('../../src/renderer/sandboxtext.js') as { canRestartWithoutSandbox(o: unknown): boolean; restartTip(s: unknown, app: string): string; allowAllNote(s: unknown, app: string): string; notLoweredToast(app: string): string; NOT_VERIFIED: string };
+  const can = (sandbox: unknown, mode: string, caps: unknown = { resume: true }) => T.canRestartWithoutSandbox({ sandbox, mode, caps });
+  const host = { supported: true, capabilities: [] };
+  // the Copilot states, from the adapter's own state function
+  const kept = copilotSandboxState({ mode: 'allow', platform: 'linux', keptFloor: true });
+  assert.ok(kept?.untilNewSession === true, 'Copilot: a floor kept in Allow all says untilNewSession');
+  assert.strictEqual(can(kept, 'allow'), true, 'AC1: Allow all + untilNewSession + not managed + resume');
+  assert.strictEqual(can(kept, 'allow', { resume: false }), false, 'no resume: no action');
+  assert.strictEqual(can(kept, 'allow', {}), false, 'resume missing: no action');
+  assert.strictEqual(can(kept, 'allow', { resume: 'yes' }), false, 'only resume === true');
+  assert.strictEqual(can(kept, 'allow', null), false, 'no caps: no action');
+  for (const mode of ['read-only', 'ask', 'plan', '', undefined]) assert.strictEqual(can(kept, mode as string), false, `mode ${String(mode)}: no action`);
+  assert.strictEqual(can({ ...kept, managed: true }, 'allow'), false, 'managed: no action (the new session would be sandboxed again)');
+  assert.strictEqual(can({ ...kept, state: 'off' }, 'allow'), false, 'off: no action');
+  assert.strictEqual(can({ ...kept, state: 'unknown' }, 'allow'), false, 'unknown: no action');
+  const { untilNewSession: _u, ...noKeep } = kept!;
+  void _u;
+  assert.strictEqual(can(noKeep, 'allow'), false, 'a state without untilNewSession: no action');
+  assert.strictEqual(can(copilotSandboxState({ mode: 'allow', platform: 'linux' }), 'allow'), false, 'a fresh Allow all session (no floor): no action');
+  for (const mode of ['read-only', 'ask'] as const) {
+    assert.strictEqual(can(copilotSandboxState({ mode, platform: 'linux', host, applied: true }), mode), false, `Copilot ${mode}, floor on: no action`);
+    assert.strictEqual(can(copilotSandboxState({ mode, platform: 'linux', host, applied: true }), 'allow'), false, `Copilot ${mode} state read as Allow all: no action (no untilNewSession)`);
+  }
+  // Claude Code and Codex never produce it (their own state functions, every mode and platform)
+  const lin = { platform: 'linux', version: '2.1.312', haveBwrap: true, haveSocat: true };
+  for (const mode of MODES) for (const m2 of MODES) {
+    for (const extra of [{ started: true }, {}, { continued: true }, { startExit: 'x' }]) assert.strictEqual(can(claudeSandboxState({ mode, facts: lin, ...extra }), m2), false, `Claude ${mode}/${m2}: never`);
+    for (const os2 of OSES) assert.strictEqual(can(codexSandboxState(mode, os2), m2), false, `Codex ${mode}/${m2} ${os2}: never`);
+  }
+  // AC2: malformed input fails closed (as clean())
+  for (const bad of [null, undefined, 'x', 42, [], { mode: 'allow' }, { sandbox: kept }, { sandbox: { ...kept, mechanism: 'landlock' }, mode: 'allow', caps: { resume: true } }, { sandbox: { ...kept, covers: 'shell' }, mode: 'allow', caps: { resume: true } }, { sandbox: { ...kept, untilNewSession: 'true' }, mode: 'allow', caps: { resume: true } }, { sandbox: [kept], mode: 'allow', caps: { resume: true } }])
+    assert.strictEqual(T.canRestartWithoutSandbox(bad), false, `malformed ${JSON.stringify(bad)}: false`);
+  assert.strictEqual(can(Object.assign(Object.create({ untilNewSession: true }), noKeep), 'allow'), false, 'own properties only (an inherited untilNewSession does not count)');
+  // FR-022: the tooltip says what Durbar does (no vendor fact), names the app given, keeps "not verified", at most 300
+  const tip = T.restartTip(kept, 'Copilot');
+  assert.strictEqual(tip, 'Copilot did not confirm turning its sandbox off in this running session, so it stays until a new one. Restart keeps this conversation and starts a new session in Allow all. ' + T.NOT_VERIFIED, 'FR-022c: the action is the fallback after an unconfirmed lowering');
+  assert.ok(T.restartTip(kept, 'X'.repeat(200)).length <= 300, 'a long app name: at most 300');
+  assert.ok(!T.restartTip({ ...kept, verified: true }, 'Copilot').includes('not verified'), 'a verified state drops the sentence');
+  assert.ok(T.restartTip(kept, 'Some App').startsWith('Some App did not confirm'), 'the app name is the one given (the adapter display name)');
+  // FR-022c (T072 AC2, Q4; replaces FR-022e's sentence): the Allow all dialog's sentence only for a floor the switch turns off (Copilot Read-only / Ask first, on)
+  // review on PR #833 (item 3): the sentence follows the neutral heldFloor (the adapter sets it when it will ask to lower), whatever the state word
+  const NOTE = 'Copilot’s OS sandbox is also turned off for this session.';
+  const held = (st: unknown) => ({ ...(st as object), heldFloor: true });
+  assert.strictEqual(T.allowAllNote(held(copilotSandboxState({ mode: 'ask', platform: 'linux', host, applied: true })), 'Some App'), 'Some App’s OS sandbox is also turned off for this session.', 'the app name comes from the caller (the adapter display name)');
+  for (const mode of ['read-only', 'ask'] as const) assert.strictEqual(T.allowAllNote(held(copilotSandboxState({ mode, platform: 'linux', host, applied: true })), 'Copilot'), NOTE, `Copilot ${mode}: the sentence`);
+  assert.strictEqual(T.allowAllNote(held(copilotSandboxState({ mode: 'ask', platform: 'linux', host, refused: 'no' })), 'Copilot'), NOTE, 'off after a refused narrowing, a floor still held: the sentence (it will be lowered)');
+  assert.strictEqual(T.allowAllNote(held(copilotSandboxState({ mode: 'ask', platform: 'linux', host })), 'Copilot'), NOTE, 'unknown with a floor held: the sentence');
+  assert.strictEqual(T.allowAllNote(copilotSandboxState({ mode: 'ask', platform: 'linux', host, applied: true }), 'Copilot'), '', 'no heldFloor: no sentence');
+  assert.strictEqual(T.allowAllNote(copilotSandboxState({ mode: 'ask', platform: 'linux', host, refused: 'no' }), 'Copilot'), '', 'Copilot off (refused), no floor: no sentence');
+  assert.strictEqual(T.allowAllNote(copilotSandboxState({ mode: 'ask', platform: 'linux', host, continued: true }), 'Copilot'), '', 'Copilot continued without it: no sentence');
+  assert.strictEqual(T.allowAllNote({ ...held(copilotSandboxState({ mode: 'ask', platform: 'linux', host, applied: true })), managed: true }, 'Copilot'), '', 'managed: never lowered, no sentence');
+  assert.strictEqual(T.allowAllNote({ ...held(copilotSandboxState({ mode: 'ask', platform: 'linux', host, applied: true })), heldFloor: 'true' }, 'Copilot'), '', 'only heldFloor === true');
+  assert.strictEqual(T.notLoweredToast('Copilot'), 'Copilot did not turn its sandbox off; use Restart without the sandbox.', 'FR-022c: the toast after a refused or unanswered lowering');
+  assert.strictEqual(T.notLoweredToast('Some App'), 'Some App did not turn its sandbox off; use Restart without the sandbox.', 'the toast names the app given');
+  assert.strictEqual(T.allowAllNote(kept, 'Copilot'), '', 'already kept in Allow all: no sentence');
+  assert.strictEqual(T.allowAllNote(null, 'Copilot'), '', 'no state: no sentence');
+  for (const mode of ['read-only', 'ask'] as const) {
+    assert.strictEqual(T.allowAllNote(claudeSandboxState({ mode, facts: lin, started: true }), 'Claude Code'), '', `Claude ${mode}: no sentence`);
+    assert.strictEqual(T.allowAllNote(codexSandboxState(mode, 'linux'), 'Codex'), '', `Codex ${mode}: no sentence`);
+  }
+  ok('T067: Restart without the sandbox only for a kept floor in Allow all (not managed, resume); never for Claude Code or Codex; fails closed; its tooltip and the Allow all sentence (FR-022c)');
 }
 console.log('sandbox floor (spec 087): all checks passed');
 FLOOR_DONE = true;

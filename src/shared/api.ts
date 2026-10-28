@@ -99,6 +99,8 @@ export interface SandboxState {
   managed?: boolean;
   /** Set in an earlier mode of this session and kept until a new session (a switch to Allow all does not clear it). */
   untilNewSession?: boolean;
+  /** Spec 087 FR-022c: a floor this session set is (assumed) in force, and a switch to Allow all asks the app to turn it off in this session. */
+  heldFloor?: boolean;
   /** What runs inside it: shell commands, MCP servers, the app's own file tools. */
   covers: Array<'shell' | 'mcp' | 'files'>;
   /** An approved request may run outside the sandbox (spec 087 FR-021). */
@@ -204,6 +206,8 @@ export interface AppSettingsView {
   seriousMode?: boolean;
   /** Active theme id (specs 035-040). Omitted = Clean Office. */
   theme?: string;
+  /** Spec 077 FR-064: who sits at the desks (`theme`: the theme's own). */
+  characters?: 'theme' | 'minimalist' | 'cheeky';
   /** OS notifications when an agent needs you while the window is in the background (spec 052 FR-059). On unless turned off. */
   notifyNeedsMe?: boolean;
   /** Spec 068 FR-006: after a coffee break, `auto` resumes by itself when it costs nothing extra; `ask` always asks. */
@@ -351,6 +355,16 @@ export interface AddResult {
   /** Folders broader than a project (spec 006 FR-016): the renderer shows one calm line each. */
   warnings?: { name: string; kind: BroadKind }[];
 }
+
+/** Spec 093: what the window sends to create a folder: never a path, only the token of main's own pick; a clone adds its URL. */
+export interface NewFolderRequest { kind: 'clone' | 'init' | 'empty'; token: string; name: string; url?: string }
+/** Spec 093 FR-022: the answer of an early check; for a clone URL also its host (FR-061), the suggested name and the URL masked. */
+export type NewFolderCheck = { ok: true; host?: string; suggested?: string; shown?: string } | { ok: false; error: string; retry?: 'url' | 'name' };
+/** Spec 093 FR-040, FR-044: one clone progress event (masked in main). */
+export interface NewFolderProgress { phase?: string; percent?: number; lines: string[]; elapsedMs: number; waiting?: true }
+export type NewFolderPick = { ok: true; token: string; parent: string } | { ok: false; cancelled?: true; error?: string };
+/** `retry` says which step the window offers again: the URL, the name, or the place (*Change place…*). */
+export type NewFolderResult = AddResult & { name?: string; retry?: 'url' | 'name' | 'place'; cancelled?: true; submodules?: true };
 
 export interface ResumeResult {
   ok: boolean;
@@ -712,6 +726,9 @@ export interface McpRestartResult {
   error?: string;
 }
 
+/** Spec 087 FR-022: why `agents:mcpRestartSession` runs: 'mcp' (Restart session with these servers) or 'sandbox' (*Restart without the sandbox*). Words only. */
+export type McpRestartReason = 'mcp' | 'sandbox';
+
 /** `agents:mcpRestartSession` (spec 058 FR-022, FR-027). */
 export interface McpRestartSessionResult {
   ok: boolean;
@@ -746,6 +763,16 @@ export interface DurbarApi {
   version(): Promise<string>;
   addFolder(permMode: PermMode, opts?: SessionOptions): Promise<AddResult>;
   addWorkspaceFile(permMode: PermMode, opts?: SessionOptions): Promise<AddResult>;
+  /** Spec 093 FR-004, FR-005: main's system picker for the parent of a new folder; a one-use token and the parent's text (display only). */
+  createPickParent?(): Promise<NewFolderPick>;
+  /** Spec 093 FR-022: early feedback on a create request (kind, the clone URL, the name); nothing is created or run. */
+  createCheck?(req: Partial<NewFolderRequest>): Promise<NewFolderCheck>;
+  /** Spec 093 FR-060: create the folder in the picked place and add it like Add existing (same mode and options). */
+  createFolder?(req: NewFolderRequest, permMode: PermMode, opts?: SessionOptions): Promise<NewFolderResult>;
+  /** Spec 093 FR-041: end the running clone (only the git Durbar started); its folder is removed after git has exited. */
+  createCancel?(): Promise<{ ok: boolean }>;
+  /** Spec 093 FR-040: the running clone's progress (masked in main). */
+  onCreateProgress?(cb: (p: NewFolderProgress) => void): () => void;
   /** Another agent (own chat) in the same folder as agent `id`. */
   newSession?(id: string, opts: SessionOptions): Promise<{ ok: boolean; error?: string; agent?: AgentInfo }>;
   /** Models the account offers (no credits used). */
@@ -832,7 +859,9 @@ export interface DurbarApi {
   /** Bring the window to the front (a click on a "needs you" notification, spec 052 FR-059). */
   focusWindow?(): Promise<{ ok: boolean }>;
   /** Set the theme (specs 037-040): a built-in id or an imported user theme id. */
-  setTheme?(id: string): Promise<{ ok: boolean; theme?: string }>;
+  setTheme?(id: string): Promise<{ ok: boolean; theme?: string; characters?: 'theme' | 'minimalist' | 'cheeky' }>;
+  /** Spec 077 FR-064: set who sits at the desks; main refuses anything not on the list (`ok: false`, the value in force). */
+  setCharacters?(v: string): Promise<{ ok: boolean; characters: 'theme' | 'minimalist' | 'cheeky' }>;
   /** User themes (spec 040): scan userData/themes; each valid pack listed, each invalid one given back with a reason. */
   listUserThemes?(): Promise<Array<{ id: string; name?: string; ok: boolean; error?: string }>>;
   getUserTheme?(id: string): Promise<Record<string, unknown> | null>;
@@ -987,8 +1016,9 @@ export interface DurbarApi {
   agentMcpTools?(id: string, name: string): Promise<McpToolsResult>;
   /** Spec 069 FR-061: the tools of one server turned off in this agent's folder (applies to new sessions and after Restart session). */
   setAgentMcpToolsOff?(id: string, name: string, off: string[]): Promise<{ ok: boolean; error?: string }>;
-  /** Spec 058 FR-022: end and resume this agent's session with the current MCP servers; `confirmed` after the window asked. */
-  agentMcpRestartSession?(id: string, confirmed: boolean): Promise<McpRestartSessionResult>;
+  /** Spec 058 FR-022: end and resume this agent's session with the current MCP servers; `confirmed` after the window asked.
+   *  Spec 087 FR-022: `reason` 'sandbox' is *Restart without the sandbox* (the same op; it changes main's words only; anything else is 'mcp'). */
+  agentMcpRestartSession?(id: string, confirmed: boolean, reason?: McpRestartReason): Promise<McpRestartSessionResult>;
   /** Per-agent override: `enabled=false` turns the server off for this agent (now when the session runs, else at its next start). */
   setAgentMcp?(id: string, name: string, enabled: boolean): Promise<{ ok: boolean; error?: string }>;
 
@@ -1049,8 +1079,8 @@ export interface DurbarApi {
   onAgentAdded(cb: (a: AgentInfo) => void): () => void;
   /** The Settings… item of the macOS app menu (⌘,), spec 052 FR-083. */
   onMenuSettings?(cb: () => void): () => void;
-  /** File > Add Folder… / Add VS Code Workspace… of the macOS menu (⌘O, ⇧⌘O), spec 052 FR-164. */
-  onMenuAdd?(cb: (kind: 'folder' | 'workspace') => void): () => void;
+  /** File > Add Folder… / Add VS Code Workspace… of the macOS menu (⌘O, ⇧⌘O), spec 052 FR-164; File > New Folder… (`new`), spec 093 FR-001a. */
+  onMenuAdd?(cb: (kind: 'folder' | 'workspace' | 'new') => void): () => void;
   /** The window entered (true) or left (false) full screen, spec 052 FR-085. */
   onFullScreen?(cb: (on: boolean) => void): () => void;
   /** A double-click on a drag area of the top bar, spec 052 FR-085 (Mac only; main zooms, minimizes or ignores it by the system setting). */
