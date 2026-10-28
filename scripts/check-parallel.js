@@ -90,7 +90,9 @@ async function waitForMemory(avail, min, maxMs, { now = Date.now, wait = sleep, 
 }
 
 const variants = themes
-  ? ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese', 'cheeky-crew'].map((t) => ({ name: t, env: { DURBAR_THEME: t, OFFICE_THEME: t } }))
+  ? ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese'].map((t) => ({ name: t, env: { DURBAR_THEME: t, OFFICE_THEME: t } }))
+      // spec 077 FR-070: Cheeky is a Characters choice, not a theme: measured on top of Retro Pixel and Corporate
+      .concat(['retro', 'corporate'].map((t) => ({ name: t + ' + cheeky', env: { DURBAR_THEME: t, OFFICE_THEME: t, OFFICE_CHARACTERS: 'cheeky' } })))
       .concat([{ name: 'user theme', env: { OFFICE_USER_THEME: 'scripts/fixtures/themes/check-user.json' } }])
   : [{ name: 'default', env: {} }];
 const jobs = [];

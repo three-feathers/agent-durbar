@@ -3,6 +3,8 @@
  * carries a tiny copy of `fmtAiu`; main re-validates every number it receives with `parseCap`.
  * Numbers only: nothing here touches content, tokens or secrets.
  */
+import { parseCharacters } from './characters';
+import type { CharacterChoice } from './characters';
 import { parseCustomPlaces, parsePlaceMap } from './places';
 import type { CustomPlace, PlaceMap } from './places';
 import { parseVersionField } from './versionfield';
@@ -79,6 +81,8 @@ export interface AppSettings {
   seriousMode?: boolean;
   /** Active theme id (specs 035-040). Omitted = Clean Office. */
   theme?: string;
+  /** Spec 077 FR-064: who sits at the desks. Omitted = the theme's own (the default is not written). */
+  characters?: Exclude<CharacterChoice, 'theme'>;
   /** OS notifications when an agent needs you (spec 052 FR-059). On by default: only `false` is kept. */
   notifyNeedsMe?: false;
   /** Spec 068 FR-006: after a coffee break, always ask before going on. The default (resume by itself when it costs nothing extra) is not written. */
@@ -124,8 +128,9 @@ export function parseSettings(text: string): AppSettings {
     const custom = parseCustomPlaces((obj as { customPlaces?: unknown }).customPlaces);
     const places = parsePlaceMap((obj as { placeMap?: unknown }).placeMap, custom.map((p) => p.id));
     const theme = parseThemeId((obj as { theme?: unknown }).theme);
+    const chars = parseCharacters((obj as { characters?: unknown }).characters); // spec 077 FR-064: anything not on the list is dropped
     const announced = parseAnnounced((obj as { announcedVersions?: unknown }).announcedVersions);
-    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...(custom.length ? { customPlaces: custom } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}), ...(theme === undefined ? {} : { theme }), ...((obj as { notifyNeedsMe?: unknown }).notifyNeedsMe === false ? { notifyNeedsMe: false as const } : {}), ...((obj as { breakResume?: unknown }).breakResume === 'ask' ? { breakResume: 'ask' as const } : {}), ...(Object.keys(announced).length ? { announcedVersions: announced } : {}), ...((obj as { checkUpdatesAtStart?: unknown }).checkUpdatesAtStart === false ? { checkUpdatesAtStart: false as const } : {}), ...((obj as { browserNoteAccepted?: unknown }).browserNoteAccepted === true ? { browserNoteAccepted: true as const } : {}), ...(parseSandboxAlways((obj as { sandboxAlwaysContinue?: unknown }).sandboxAlwaysContinue).length ? { sandboxAlwaysContinue: parseSandboxAlways((obj as { sandboxAlwaysContinue?: unknown }).sandboxAlwaysContinue) } : {}), ...(parseNewFolderParent((obj as { newFolderParent?: unknown }).newFolderParent) ? { newFolderParent: parseNewFolderParent((obj as { newFolderParent?: unknown }).newFolderParent) } : {}) };
+    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...(custom.length ? { customPlaces: custom } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}), ...(theme === undefined ? {} : { theme }), ...(chars === undefined || chars === 'theme' ? {} : { characters: chars }), ...((obj as { notifyNeedsMe?: unknown }).notifyNeedsMe === false ? { notifyNeedsMe: false as const } : {}), ...((obj as { breakResume?: unknown }).breakResume === 'ask' ? { breakResume: 'ask' as const } : {}), ...(Object.keys(announced).length ? { announcedVersions: announced } : {}), ...((obj as { checkUpdatesAtStart?: unknown }).checkUpdatesAtStart === false ? { checkUpdatesAtStart: false as const } : {}), ...((obj as { browserNoteAccepted?: unknown }).browserNoteAccepted === true ? { browserNoteAccepted: true as const } : {}), ...(parseSandboxAlways((obj as { sandboxAlwaysContinue?: unknown }).sandboxAlwaysContinue).length ? { sandboxAlwaysContinue: parseSandboxAlways((obj as { sandboxAlwaysContinue?: unknown }).sandboxAlwaysContinue) } : {}), ...(parseNewFolderParent((obj as { newFolderParent?: unknown }).newFolderParent) ? { newFolderParent: parseNewFolderParent((obj as { newFolderParent?: unknown }).newFolderParent) } : {}) };
   } catch {
     return {};
   }

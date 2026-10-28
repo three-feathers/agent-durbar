@@ -63,7 +63,7 @@ const DOC_SHOTS = [
   { name: 'shots-081-updates', files: ['081-updates-avail-1440x900.png'] },
   { name: 'shots-052-ux', files: ['052-office-1440x900.png'] },
   { name: 'shots-063-folder-status', files: ['063-folder-changes-1440x900.png'] },
-  { name: 'shots-093', files: ['093-choice-1440x900.png', '093-name-refused-1440x900.png'] }, // spec 093 phase 1: + Folder's choice and a refused name
+  { name: 'shots-093', files: ['093-choice-1440x900.png', '093-name-refused-1440x900.png', '093-clone-url-refused-1440x900.png', '093-clone-progress-1440x900.png', '093-clone-allow-1440x900.png'] }, // spec 093: + Folder's choice, a refused name; phase 2: a refused clone URL, the clone's progress, the Allow all host sentence
   { name: 'shots-064-send-several', files: ['064-send-several-1440x900.png'] },
   { name: 'shots-068-coffee', files: ['068-coffee-office-15-1440x900.png', '068-coffee-bar-1440x900.png'] },
   { name: 'check-slash-suggest', files: ['073-slash-1440x900.png'] },

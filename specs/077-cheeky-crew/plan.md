@@ -64,3 +64,14 @@ Replaces steps 1-3 (and the compiler parts of 7-8); spec FR-050..FR-058.
 - Q4 (b): helpers take `crewOf(parent)`. Q4 (c): the kit draws the office figure for helpers.
 - Q5 (b): a separate `BUILTIN_ONLY_KITS` list that user manifests may not name (main and renderer validators).
 - Q6 (b): `crewOf` returns null under Serious mode and the kit draws the plain figure.
+
+## Characters, separate from themes (delta 2026-10-28, issue #814; FR-064..FR-070)
+
+No new mechanism: the Characters choice only decides which existing scene kit `THEME.sceneKit()` answers, so every caller in `app.js` (scenes, avatars, walkers, the crew map, the cache keys) follows without change.
+
+1. **Shared rule** `src/shared/characters.ts` (pure): `CHARACTER_CHOICES`, `parseCharacters`, `kitFor(themeKit, choice)` and `migrateLegacyTheme(settings)`. `theme.js` cannot import TS, so it keeps the same list and `kitFor` and `test:characters` checks both answer alike (agent notes, *two copies, one corpus*).
+2. **Main**: `characters` in `AppSettings` / `parseSettings` (`credits.ts`); `SettingsStore.load()` runs the migration and writes once; `setCharacters`; `setTheme` routes the old id through the same rule; IPC `settings:setCharacters` and the value in `settings:get` (`ipc/settings.ts`); preload and `api.ts`. `cheeky-crew` stays in `BUILT_IN_THEME_IDS` (reserved).
+3. **Renderer**: `theme.js` drops the Cheeky Crew pack, adds `setCharacters` / `characters` / `themeKit` / `kitFor` and bumps `themeRev` on a change; `app.js` boot applies the saved choice (and maps the legacy id for a run), `applyCharacters` mirrors `applyTheme` (cross-fade, cache clear, save, toast); `screens.js` paints the Characters section after Theme with previews from `charPreview(choice)` in `app.js`; `sim.ts` keeps the choice in memory and reads `characters=`.
+4. **Checks**: `scripts/test-characters.ts` (in `npm test`); `check-crew.js` picks the characters on `CREW_THEME`; `check-office-overlap.js` reads `OFFICE_CHARACTERS`; new driver `check-characters.js` in `ui-suite.js`; the theme lists in the drivers and tests lose `cheeky-crew`.
+
+Constitution: no secrets (a three-value setting), the new IPC is validated in main, simulator and unit tests only (0 credits), layout unchanged, pure JS paths (no OS difference).

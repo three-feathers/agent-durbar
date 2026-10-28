@@ -33,22 +33,22 @@
 
 ## Phase 2: Clone (PR 2)
 
-- [ ] T030 [P] `newfolder.ts`: `checkCloneUrl`, `suggestedName`, `gitFailureText`, `parseCloneProgress` [FR-011, FR-020..FR-023, FR-040, FR-071]
-- [ ] T031 [P] `test-newfolder.ts`: the URL corpus (at least 40 refused, the accepted list), suggested names, failure texts, progress parsing [FR-020..FR-023; SC-002]
-- [ ] T032 `gitCreateCall({kind:'clone'})`: argv (`--progress --no-recurse-submodules -- <url> .`), the `-c` list, env (`GIT_ALLOW_PROTOCOL=https:ssh`, `GIT_TERMINAL_PROMPT=0`, conditional `GIT_SSH_COMMAND`), `protocols` parameter defaulting to https/ssh (the seam); `readUserSshCommand` [FR-031..FR-033, FR-095]
-- [ ] T033 `test-gitstatus.ts`: clone argv/env pinned, both `core.sshCommand` cases, default protocols [FR-031..FR-033, FR-095]
-- [ ] T034 Op: clone path, progress throttle (250 ms, last 6 lines, masked with `maskSecretUrl` + `maskHomePaths`, 300 chars), cancel after `close`, quit during a clone, submodule note, the user's filter drivers left on (Q5 agent default) [FR-036, FR-037, FR-040..FR-043, FR-070, FR-071]
-- [ ] T035 `test-newfolderop.ts`: clone cases incl. masking (`https://u:secret@h` never in an event or error), cancel order, quit [FR-040..FR-043, FR-070]
-- [ ] T036 IPC: `folders:createCancel` and the `folders:createProgress` event; wiring test: a refused URL never reaches `mkdir` or `spawn`; the handler's call uses https/ssh only [FR-080, FR-095]
-- [ ] T037 Real-git tests of plan *Testing* 3 for clone: seam clone, hooks, parent config, submodule, production call refuses `file://` and `ext::`, closed port, cancel against a silent local listener, ssh stub (POSIX), all leaving no folder [US1, US2, US4; SC-003..SC-005]
-- [ ] T038 Window: URL dialog with early check, progress dialog (`.hs-log`, live region, elapsed time, Cancel/Escape), result toast; simulator fakes for progress and cancel [FR-003, FR-040, FR-041, FR-082]
-- [ ] T039 Driver `shots-093.js` phase 2 cases: refused URL message, progress, Cancel, cloned room; screenshots at both sizes [US1, US2, US4]
-- [ ] T042 Real-git protocol layer test (plan *Testing* 3, R1): global `protocol.file/ext.allow=always` and `insteadOf` rewrites in the test `HOME`; the production call refused (i) as built, (ii) without `GIT_ALLOW_PROTOCOL`, (iii) without the per-transport nevers; `foo::` helper case [FR-032, FR-033; SC-003]
-- [ ] T043 Real-git cleanup-through-links test (POSIX): symlinks to an outside folder and file survive a failed or cancelled clone; `[KNOWN GAP]` Windows junctions [FR-050]
-- [ ] T044 Env pass-through of `GIT_SSL_CAINFO`/`GIT_SSL_CAPATH` (absolute only), the D11 `BatchMode` rule for a user `core.sshCommand`, `transfer.bundleURI=false`, the TLS/proxy hint, the 30 s waiting line; tests [FR-032, FR-033, FR-044, FR-071]
-- [ ] T045 Clone + *Allow all*: the confirmation, shown after the URL dialog, adds "This code comes from <host>; agents can run it without asking." (host from `checkCloneUrl`, never the user part); empty folder and new repository unchanged; driver case and an escaping test with a hostile host-like string [FR-061; Q6 = a, owner 2026-10-27]
-- [ ] T040 Plant the mutants of plan *Mutants*; each fails a test; list them in the PR [SC-006]
-- [ ] T041 Docs: README *Safety model* (what clone runs, the user's credentials, hooks note, BatchMode, the dropped `GIT_*` variables and the two that pass, "keep git up to date" and no version floor), `changelog.d/093-p2-clone.md`, spec ticks, screenshots [FR-035, FR-090]
+- [x] T030 [P] `newfolder.ts`: `checkCloneUrl`, `suggestedName`, `gitFailureText`, `parseCloneProgress` [FR-011, FR-020..FR-023, FR-040, FR-071]
+- [x] T031 [P] `test-newfolder.ts`: the URL corpus (at least 40 refused, the accepted list), suggested names, failure texts, progress parsing [FR-020..FR-023; SC-002]
+- [x] T032 `gitCreateCall({kind:'clone'})`: argv (`--progress --no-recurse-submodules -- <url> .`), the `-c` list, env (`GIT_ALLOW_PROTOCOL=https:ssh`, `GIT_TERMINAL_PROMPT=0`, conditional `GIT_SSH_COMMAND`), `protocols` parameter defaulting to https/ssh (the seam); `readUserSshCommand` [FR-031..FR-033, FR-095]
+- [x] T033 `test-gitstatus.ts`: clone argv/env pinned, both `core.sshCommand` cases, default protocols [FR-031..FR-033, FR-095]
+- [x] T034 Op: clone path, progress throttle (250 ms, last 6 lines, masked with `maskSecretUrl` + `maskHomePaths`, 300 chars), cancel after `close`, quit during a clone, submodule note, the user's filter drivers left on (Q5 agent default) [FR-036, FR-037, FR-040..FR-043, FR-070, FR-071]
+- [x] T035 `test-newfolderop.ts`: clone cases incl. masking (`https://u:secret@h` never in an event or error), cancel order, quit [FR-040..FR-043, FR-070]
+- [x] T036 IPC: `folders:createCancel` and the `folders:createProgress` event; wiring test: a refused URL never reaches `mkdir` or `spawn`; the handler's call uses https/ssh only [FR-080, FR-095]
+- [x] T037 Real-git tests of plan *Testing* 3 for clone: seam clone, hooks, parent config, submodule, production call refuses `file://` and `ext::`, closed port, cancel against a silent local listener, ssh stub (POSIX), all leaving no folder [US1, US2, US4; SC-003..SC-005]
+- [x] T038 Window: URL dialog with early check, progress dialog (`.hs-log`, live region, elapsed time, Cancel/Escape), result toast; simulator fakes for progress and cancel [FR-003, FR-040, FR-041, FR-082]
+- [x] T039 Driver `shots-093.js` phase 2 cases: refused URL message, progress, Cancel, cloned room; screenshots at both sizes [US1, US2, US4]
+- [x] T042 Real-git protocol layer test (plan *Testing* 3, R1): global `protocol.file/ext.allow=always` and `insteadOf` rewrites in the test `HOME`; the production call refused (i) as built, (ii) without `GIT_ALLOW_PROTOCOL`, (iii) without the per-transport nevers; `foo::` helper case [FR-032, FR-033; SC-003]
+- [x] T043 Real-git cleanup-through-links test (POSIX): symlinks to an outside folder and file survive a failed or cancelled clone; `[KNOWN GAP]` Windows junctions [FR-050]
+- [x] T044 Env pass-through of `GIT_SSL_CAINFO`/`GIT_SSL_CAPATH` (absolute only), the D11 `BatchMode` rule for a user `core.sshCommand`, `transfer.bundleURI=false`, the TLS/proxy hint, the 30 s waiting line; tests [FR-032, FR-033, FR-044, FR-071]
+- [x] T045 Clone + *Allow all*: the confirmation, shown after the URL dialog, adds "This code comes from <host>; agents can run it without asking." (host from `checkCloneUrl`, never the user part); empty folder and new repository unchanged; driver case and an escaping test with a hostile host-like string [FR-061; Q6 = a, owner 2026-10-27]
+- [x] T040 Plant the mutants of plan *Mutants*; each fails a test; list them in the PR [SC-006]
+- [x] T041 Docs: README *Safety model* (what clone runs, the user's credentials, hooks note, BatchMode, the dropped `GIT_*` variables and the two that pass, "keep git up to date" and no version floor), `changelog.d/093-create-folder-p2.md` (named after the branch, as `changelog.d/README.md` asks), spec ticks, screenshots [FR-035, FR-090]
 
 ## Phase 3: Real check and converge (PR 3)
 

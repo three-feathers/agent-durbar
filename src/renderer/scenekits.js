@@ -297,7 +297,7 @@
     hand: (o, x, y) => roundHand(o, x, y),
   };
 
-  /* ---------- Crew (spec 077): a playful desk for the Cheeky Crew theme; colours from tokens only, no literals ---------- */
+  /* ---------- Crew (spec 077): a playful desk for Characters = Cheeky (on any theme, FR-065); colours from tokens only, no literals ---------- */
   /* Furniture and a plain figure for now: the characters (clothes, hair, eyewear, mug, desk prop) come with the art format.
      `o.crew` is the character id app.js hands over; it is part of the signature so a scene is never reused for another character. */
   /* The character is a portrait (spec 077 FR-050..FR-055): `<image>` in a fixed box, one picture per pose, chosen by the status. Everything

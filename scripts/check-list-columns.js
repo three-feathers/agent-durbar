@@ -154,9 +154,14 @@ module.exports = async (ctx) => {
     ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
     await ok(`!document.querySelector(${jsLiteral(SEL)}).matches(':hover')`, `${tag}: the pointer left`);
     // a real Tab from the control before the pencil (a programmatic focus() plus a key press gives no :focus-visible on Windows)
+    // the window must own the OS focus first: on a busy Windows runner it can lose it, and then the Tab never reaches the page (main run 40634878862)
+    const ownFocus = async () => { for (let i = 0; i < 3; i++) { ctx.win.show(); ctx.win.focus(); ctx.win.webContents.focus(); if (await until('document.hasFocus()', 3000)) return true; } return false; };
+    assert.ok(await ownFocus(), `${tag}: the window owns the focus before the Tab`);
     await js(`(()=>{const T='button,a[href],input,select,textarea,[tabindex]:not([tabindex="-1"])',vis=e=>!e.disabled&&e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden',all=[...document.querySelectorAll(T)].filter(vis),p=document.querySelector(${jsLiteral(SEL)});window.__prevTab=all[all.indexOf(p)-1];window.__prevTab.focus();})()`);
     await ok(`document.activeElement===window.__prevTab`, `${tag}: the control before the pencil has focus`);
     await H.key('Tab', [], { pause: 100 });
+    // if the focus was lost between the check and the key, take it back and press Tab once more from the same control
+    if (!(await js(`document.hasFocus()&&document.activeElement===document.querySelector(${jsLiteral(SEL)})`))) { await ownFocus(); await js(`window.__prevTab.focus()`); await H.key('Tab', [], { pause: 100 }); }
     await ok(`document.activeElement===document.querySelector(${jsLiteral(SEL)})`, `${tag}: Tab reaches the pencil`);
     const st = () => js(`(()=>{const e=document.querySelector(${jsLiteral(SEL)}),s=getComputedStyle(e);return JSON.stringify({pageFocus:document.hasFocus(),active:document.activeElement===e,focus:e.matches(':focus'),fv:e.matches(':focus-visible'),opacity:s.opacity,transition:s.transitionProperty+' '+s.transitionDuration})})()`);
     assert.ok(await until(`document.querySelector(${jsLiteral(SEL)}).matches(':focus-visible')`), `${tag}: Tab gives the pencil :focus-visible ${await st()}`);

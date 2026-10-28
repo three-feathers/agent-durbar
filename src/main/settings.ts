@@ -11,6 +11,8 @@ import { ANNOUNCE_APPS, parseAnnounced, parseCap, parseSandboxAlways, parseSetti
 import type { AppSettings } from '../shared/credits';
 import { addCustomPlace, removeCustomPlace, setPlaceEntry, updateCustomPlace } from '../shared/places';
 import type { CustomPlace, PlaceError, PlaceMap } from '../shared/places';
+import { migrateLegacyTheme, parseCharacters } from '../shared/characters';
+import type { CharacterChoice } from '../shared/characters';
 
 /** Result of a custom-place call (spec 024 FR-020): the list and the map as they are now, whether the call worked or not. */
 export interface PlaceCallResult {
@@ -40,6 +42,12 @@ export class SettingsStore {
       this.s = parseSettings(fs.readFileSync(this.file, 'utf8'));
     } catch {
       this.s = {};
+    }
+    // spec 077 FR-067: the old Cheeky Crew theme becomes Clean Office with Characters = Cheeky, written at once, so it runs once
+    const m = migrateLegacyTheme(this.s);
+    if (m.changed) {
+      this.s = m.settings;
+      this.save();
     }
     return { ...this.s };
   }
@@ -188,8 +196,17 @@ export class SettingsStore {
   }
 
   /** Only a valid id string changes it (or clears with null/undefined/'clean-office' handled by the caller). Returns {ok, theme}. */
-  setTheme(v: unknown): { ok: boolean; theme?: string } {
+  setTheme(v: unknown): { ok: boolean; theme?: string; characters?: CharacterChoice } {
     const id = parseThemeId(v);
+    if (id !== undefined) {
+      // spec 077 FR-067: the old Cheeky Crew id is never stored: the same rule as at load (Clean Office plus Cheeky)
+      const m = migrateLegacyTheme({ ...this.s, theme: id });
+      if (m.changed) {
+        this.s = m.settings;
+        this.save();
+        return { ok: true, theme: 'clean-office', characters: this.characters };
+      }
+    }
     if (v === null || v === undefined) {
       const next: AppSettings = { ...this.s };
       delete next.theme;
@@ -204,6 +221,27 @@ export class SettingsStore {
     this.s = next;
     this.save();
     return { ok: true, theme: this.s.theme ?? 'clean-office' };
+  }
+
+  /** Spec 077 FR-064: who sits at the desks; `theme` (the theme's own) when nothing is stored. */
+  get characters(): CharacterChoice {
+    return this.s.characters ?? 'theme';
+  }
+
+  /** Spec 077 FR-064: only a value from the list changes it (`theme` clears it); anything else is refused and the stored value kept. */
+  setCharacters(v: unknown): { ok: boolean; characters: CharacterChoice } {
+    const c = parseCharacters(v);
+    if (c === undefined) return { ok: false, characters: this.characters };
+    const before = this.s;
+    const next: AppSettings = { ...this.s };
+    if (c === 'theme') delete next.characters;
+    else next.characters = c;
+    this.s = next;
+    if (!this.save()) {
+      this.s = before;
+      return { ok: false, characters: this.characters };
+    }
+    return { ok: true, characters: c };
   }
 
   /** Place mapping (spec 024): MCP server name -> place id or `desk`. A copy, never the stored object. */

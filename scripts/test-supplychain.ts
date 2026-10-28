@@ -258,6 +258,8 @@ function dependabotProblems(text: string): string[] {
     if (!/update-types:\s*\[\s*minor\s*,\s*patch\s*\]/.test(groups) || /major/.test(groups)) out.push(`${eco}: the group must take update-types [minor, patch] only`);
     const ignore = b.split(/^    ignore:/m)[1] || '';
     if (!/dependency-name:\s*'\*'\s*\n\s*update-types:\s*\['version-update:semver-major'\]/.test(ignore)) out.push(`${eco}: semver-major updates must be ignored`);
+    const cd = /^    cooldown:\n      default-days:\s*(\d+)\s*$/m.exec(b);
+    if (!cd || Number(cd[1]) < 7) out.push(`${eco}: cooldown default-days must be at least 7`);
     if (eco === 'npm' && !/^\s+- dependency-name: electron\s*$/m.test(ignore)) out.push('npm: electron must be ignored (pinned, hash-verified runtime)');
   }
   return out;
@@ -267,4 +269,6 @@ assert.deepStrictEqual(dependabotProblems(depText), [], 'dependabot.yml: minor/p
 assert.ok(dependabotProblems(depText.replace(/\n      - dependency-name: '\*'\n        update-types: \['version-update:semver-major'\]/g, '')).length >= 2, 'a missing major ignore is caught');
 assert.ok(dependabotProblems(depText.replace(/\n      - dependency-name: electron/, '')).length === 1, 'a missing electron ignore is caught');
 assert.ok(dependabotProblems(depText.replace(/update-types: \[minor, patch\]/g, "patterns2: ['*']")).length >= 2, 'a group without update-types is caught');
+assert.strictEqual(dependabotProblems(depText.replace(/\n    cooldown:\n      default-days: 7/g, '')).length, 2, 'a missing cooldown is caught in both ecosystems');
+assert.strictEqual(dependabotProblems(depText.replace(/default-days: 7/g, 'default-days: 3')).length, 2, 'a 3-day cooldown is caught in both ecosystems');
 console.log('supplychain: ok');

@@ -1962,6 +1962,7 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 /* FR-167: dialog sizes S (default), M and L; `.wide` and `.imp` are older names for M and L */
 .dlg.m{width:min(var(--dlg-w-m),calc(100vw - 32px))}
 .dlg.l{width:min(var(--dlg-w-l),calc(100vw - 32px))}
+.dlg.l .dbtn{flex-wrap:wrap} /* spec 093: the + Folder choice has five buttons; at 1440 and 1280 they wrap to a second row instead of pushing the first one out on the left */
 .sched-dlg .sc-form{display:flex;flex-direction:column;gap:var(--dlg-gap)} /* FR-167: groups of fields are one gap apart (the Prompt label touched the select above it) */
 
 /* spec 001 FR-051..FR-055: finished agents rest in a lounge corner at the end of the desk row, at the row's height: a couch (recent) and

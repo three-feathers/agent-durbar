@@ -32,7 +32,7 @@ description: "Tasks for spec 087: each agent app's OS sandbox as the floor under
   - AC1: filesystem roots, UNC share roots, `..`, control characters and quotes are dropped; an empty result refuses; Windows-form paths compare case-insensitively; existing `test-codex-modes` still passes.
 - [x] T011 [P] [US1] [US2] [US3] `src/adapters/claudeSandbox.ts`: `claudeSandboxSettings` and `claudeSandboxState`. [FR-001..FR-003, FR-006, FR-007]
   - AC1: Read-only and Ask first give `enabled: true`, `failIfUnavailable: true`, `allowUnsandboxedCommands: false`, `autoAllowBashIfSandboxed: false`, `excludedCommands: []`, the read rules (decision Q4) and network rules (decision Q2); Read-only adds `denyWrite` = roots; Allow all gives `undefined`.
-  - AC2: pre-checks: version below 2.1.219 or unreadable → `off` (too old); `win32` → `off` with the Windows reason; `linux` without `bwrap` or `socat` → `off` naming the missing package; otherwise `unknown` (never `on`).
+  - AC2: pre-checks: version below 2.1.309 or unreadable → `off` (too old); `win32` → `off` with the Windows reason; `linux` without `bwrap` or `socat` → `off` naming the missing package; otherwise `unknown` (never `on`).
   - AC3: `startExit` = a sandbox exit → `off` with the masked reason; a start that survives → `on`; no input gives `on` without a surviving start.
 - [x] T012 [P] [US1] [US2] `src/adapters/copilotSandbox.ts`: `copilotSandboxConfig` and `copilotSandboxState` (structural types, no SDK import). [FR-001, FR-002, FR-004, FR-006, FR-014]
   - AC1: Read-only: roots in `readonlyPaths`, `addCurrentWorkingDirectory: false`, network off; Ask first: roots in `readwritePaths`, protected paths in `deniedPaths` only with the `denied_paths` capability; both: `allowDevToolAccess: false`, never `allowBypass`, `auth` off.
@@ -213,3 +213,5 @@ except T066 (owner-approved 2026-10-27, about 3 prompts; run 2026-10-28, verdict
 T001 → everything. T010-T013 → T014 → T020-T022 → T030-T032 → T040. T050 any time after T001. Phase 6 after Phase 2, with the
 owner's OK.
 Phase 7: T066 is owner-approved and ran 2026-10-28 (verdict A); T067-T071 did not wait for it; T072 is built after it; T073 is not needed.
+
+- [x] T074 Raise `CLAUDE_SANDBOX_MIN_VERSION` to 2.1.309 (FR-003a): constant, README, spec, plan; boundary test 2.1.308 below, 2.1.309 at, 2.1.312 above, `2.1.309 (Claude Code)` parsed, pre-release below.

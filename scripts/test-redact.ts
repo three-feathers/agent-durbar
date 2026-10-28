@@ -107,6 +107,7 @@ const planted: Record<string, string> = {
   ghp: 'ghp_' + 'x'.repeat(36),
   gho: 'gho_' + 'Y'.repeat(30),
   github_pat: 'github_pat_' + '11ABCDEFG0abcdefghij_' + 'z'.repeat(30),
+  glpat: 'glpat-' + 'a1B2c3D4e5_f6G7-h8I9j0K', // GitLab personal access token (spec 093 phase 2)
   sk: 'sk-' + 'a1B2'.repeat(10),
   skant: 'sk-ant-api03-' + 'Q9w8'.repeat(10),
   bearer: 'Bearer abcdef1234567890.token-value',

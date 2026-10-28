@@ -104,6 +104,8 @@ async function main(): Promise<void> {
     assert.strictEqual(o.resume, undefined);
     assert.strictEqual(o.model, undefined, 'a Copilot model id is not passed');
     assert.ok(!('allowDangerouslySkipPermissions' in o));
+    assert.ok(!('forwardSubagentText' in o), 'spec 015 FR-016: off unless the launch asks');
+    assert.strictEqual(sdkOptionsOf({ ...base, launch: { ...base.launch, forwardSubagentText: true } }, 0, 0).forwardSubagentText, true);
     const all = sdkOptionsOf({ ...base, launch: { ...base.launch, mode: 'allow', resume: true, model: 'claude-haiku-5-5' } }, 0, 0);
     assert.strictEqual(all.permissionMode, 'bypassPermissions');
     assert.strictEqual(all.allowDangerouslySkipPermissions, true);

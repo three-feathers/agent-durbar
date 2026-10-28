@@ -171,7 +171,7 @@ Allow all keeps the app's default. When the vendor's managed policy forces a san
   `autoAllowBashIfSandboxed: false`, `excludedCommands: []`; `filesystem.denyRead: ["~/"]` and `filesystem.allowRead` = the roots
   (decision Q4); Read-only also `filesystem.denyWrite` = the roots (K2); `network.allowedDomains: []`, `network.strictAllowlist: true` (decision Q2).
   The `sandbox` key of the final `--settings` JSON is exactly this block (spec 061's folder setup carries no `sandbox` key today;
-  if it ever does, Durbar's block replaces it). Minimum Claude Code version: **2.1.219** (the newest key this block relies on,
+  if it ever does, Durbar's block replaces it). Minimum Claude Code version: **2.1.309** (FR-003a; was 2.1.219) (the newest key this block relies on,
   `strictAllowlist`, `read:` research R2); an older or unreadable version gets no block and counts as unavailable (FR-007).
   `[KNOWN GAP]` K1, K2, K4.
 - **FR-004** `[IMPLEMENTED]` (test: `scripts/test-copilot-sandbox.ts`, `scripts/test-sandbox-floor.ts`) **Copilot** (SDK 1.0.22): before the first send of a created or resumed session, Durbar calls
@@ -201,7 +201,7 @@ Allow all keeps the app's default. When the vendor's managed policy forces a san
   `SandboxState` (FR-011), from a pure function with injected facts (constitution VI):
   - Copilot: `client.rpc.sandbox.getHostSupport()` (`supported`, `reason`, `capabilities`); a missing method (older runtime) or an
     error counts as unavailable with reason "this Copilot cannot report its sandbox".
-  - Claude Code: a version below 2.1.219 or unreadable → unavailable ("this Claude Code is too old for Durbar's sandbox
+  - Claude Code: a version below 2.1.309 or unreadable → unavailable ("this Claude Code is too old for Durbar's sandbox
     settings"); `win32` → unavailable ("no OS sandbox on Windows; WSL2 only"); `linux` → `bwrap` and `socat` found on `PATH`
     (located like spec 012's detection, no shell) else unavailable with the package names; `darwin` → candidate. These checks only
     decide whether to try; they never set `on`. The state becomes `on` only when the CLI, started with `failIfUnavailable: true`,
@@ -452,6 +452,11 @@ timed out) → sign-in refresh → Ask first the floor reaches the new runtime a
 new lowering is outstanding. (2) The unbounded wait is accepted and written into FR-022c; the held note's reason (`COPILOT_LOWER_WAIT`) names the way
 back, and End session plus a resume gives the floor again (the ended session's late answer is ignored). Test: `scripts/test-copilot-sandbox.ts`
 (both sequences, the note text pinned); mutants: not clearing in `refreshAuth`, and accepting an older handle's answer, both caught.
+
+### 2026-10-28: minimum Claude Code 2.1.309 (FR-003a, T074)
+
+- **FR-003a** (amends FR-003): the minimum Claude Code version is **2.1.309** (was 2.1.219). `read:` Claude Code CHANGELOG, entry 2.1.309, read 2026-10-28: "Fixed sandboxed Bash commands on macOS and Linux running the shell's startup files outside the sandbox before each command" and "Fixed sandboxed commands and auto-accepted edits being able to modify the MCP config file passed with `--mcp-config`". Durbar passes an `--mcp-config` file, so below 2.1.309 the floor would be claimed over two known escapes. Behaviour below the minimum is unchanged (FR-006, FR-007): no sandbox block is sent, the state is *off* with the reason "This Claude Code is too old for Durbar's sandbox settings." and the fix "Update Claude Code to 2.1.309 or later (Settings > Agent apps)."; the session still starts and Durbar's own checks still apply. An unreadable or pre-release version (`2.1.309-beta.1`) is below.
+- Numbers taken: FR-003a, T074 (free on `main` and in PR #833, which uses FR-022/FR-022a..e, K16, T066..T073).
 
 ### 2026-10-28: T066 probe built, real run not possible on this host (K16 stays open; Refs #806)
 
