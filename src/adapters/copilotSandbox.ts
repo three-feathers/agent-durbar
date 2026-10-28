@@ -1,6 +1,6 @@
 /**
  * Spec 087 (T012): Copilot's local sandbox as the floor under Durbar's Read-only and Ask first. Pure: structural types only (no SDK
- * import), every platform fact injected. The shapes follow `@github/copilot-sdk` 1.0.22 `rpc.d.ts` (`SandboxConfig`,
+ * import), every platform fact injected. The shapes follow `@github/copilot-sdk` 1.0.22-1.0.26 `rpc.d.ts` (`SandboxConfig`,
  * `SandboxHostSupport`, all `@experimental`; `read:` research R4). Nothing here was run on a real session (K8, K9, K10).
  */
 import * as path from 'path';
