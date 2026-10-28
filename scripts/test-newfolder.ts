@@ -92,6 +92,9 @@ const URL_REFUSED: Array<[unknown, keyof typeof U]> = [
   ['-uhelp', 'dash'], ['--upload-pack=x', 'dash'], ['https://-h/x', 'dash'], ['ssh://-oProxyCommand=x/y', 'dash'], ['git@-oProxyCommand=x:y', 'dash'], ['-x@h:y', 'dash'], ['u@h:-x', 'dash'], ['https://-u@h/x', 'dash'], ['u@-h:x', 'dash'],
   // a password (Q3 = a), also hidden in percent-encoded userinfo (R3)
   ['https://u:p@h/x', 'password'], ['ssh://u:p@h/x', 'password'], ['u:p@h:x', 'password'], ['https://u:@h/x', 'password'], ['https://:p@h/x', 'password'], ['https://u:p@[::1]/x', 'password'],
+  // a token as the user name is a credential git would store in .git/config (FR-023): what the shared redact() masks
+  ...['ghp_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8', 'github_pat_11ABCDEFG0abcdefghij_' + 'z'.repeat(30), 'gho_' + 'Y'.repeat(30), 'glpat-a1B2c3D4e5_f6G7-h8I9j0K']
+    .flatMap((tk): Array<[string, 'token']> => [[`https://${tk}@github.com/o/r.git`, 'token'], [`ssh://${tk}@h/o/r`, 'token'], [`${tk}@h:o/r`, 'token']]),
   ['https://u%3Ap@h/x', 'encodedUser'], ['ssh://u%3Ap@h/x', 'encodedUser'], ['u%3Ap@h:x', 'encodedUser'], ['https://u%40x@h/x', 'encodedUser'], ['https://%75@h/x', 'encodedUser'], ['https://u%3ap@h/x', 'encodedUser'],
   // host, port and path shapes
   ['https://h', 'form'], ['https://h/', 'form'], ['https://h:0/x', 'form'], ['https://h:70000/x', 'form'], ['https://h:/x', 'form'], ['https://h:123456/x', 'form'], ['https://h/x#f', 'form'], ['https://h/x?q', 'form'], ['https://h\\x', 'form'],
@@ -112,6 +115,8 @@ const URL_ACCEPTED: Array<[string, string, string]> = [
   ['u@[2001:db8::1]:r.git', 'scp', '[2001:db8::1]'], ['https://[2001:db8::1]:443/r.git', 'https', '[2001:db8::1]'], ['https://192.0.2.1/r.git', 'https', '192.0.2.1'], ['https://h/a%20b.git', 'https', 'h'],
   ['https://gitlab.example.co.uk/group/sub/r.git/', 'https', 'gitlab.example.co.uk'], ['first.last+x@h-1.example:a@b.git', 'scp', 'h-1.example'], ['https://xn--exmple-cua.com/x', 'https', 'xn--exmple-cua.com'],
   ['https://h/' + 'x'.repeat(2048 - 'https://h/'.length), 'https', 'h'],
+  // a plain user name is not a token (FR-023)
+  ['https://oauth2@h/x.git', 'https', 'h'], ['deploy@h:o/r.git', 'scp', 'h'], ['ssh://x-access-token@h/o/r', 'ssh', 'h'], ['ghp@h:o/r', 'scp', 'h'],
 ];
 // the URL comes back with its scheme lower-cased (git 2.43 refuses "transport 'HTTPS'"); scp addresses are unchanged
 const norm = (u: string): string => u.replace(/^[A-Za-z]+:\/\//, (m) => m.toLowerCase());

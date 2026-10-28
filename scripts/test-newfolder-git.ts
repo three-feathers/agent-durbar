@@ -277,7 +277,11 @@ async function main(): Promise<void> {
       const r = await op2.create({ kind: 'clone', token: await pick(op2), name: 'shop', url: URL_F }, 'ask', { persist: true });
       assert.ok(r.ok, 'seam clone: ' + JSON.stringify(r));
       const shop = path.join(parent, 'shop');
-      assert.ok(fs.existsSync(path.join(shop, '.git', 'HEAD')) && fs.readFileSync(path.join(shop, 'README.md'), 'utf8') === '# shop\n' && fs.existsSync(path.join(shop, 'dir', 'a.txt')), 'the files and a .git');
+      // compared without line ends: the user's own core.autocrlf (true on the Windows runner) is respected, never overridden
+      const lf = (p: string): string => fs.readFileSync(p, 'utf8').replace(/\r\n/g, '\n');
+      assert.ok(fs.existsSync(path.join(shop, '.git', 'HEAD')), 'a .git');
+      assert.strictEqual(lf(path.join(shop, 'README.md')), '# shop\n', 'the README');
+      assert.strictEqual(lf(path.join(shop, 'dir', 'a.txt')), 'a\n', 'a file in a folder');
       assert.strictEqual(g(shop, 'config', '--get', 'remote.origin.url').trim(), URL_F, 'origin is the URL the user gave');
       const cfg = fs.readFileSync(path.join(shop, '.git', 'config'), 'utf8');
       assert.ok(!/hooksPath|fsmonitor|protocol|bundleURI|credentialsInUrl|submodule\.recurse/i.test(cfg), 'none of the -c settings is written into the clone: ' + cfg);
@@ -444,6 +448,17 @@ async function main(): Promise<void> {
           assert.ok(!fs.existsSync(path.join(parent, 'over-ssh')), 'no folder left');
           clear();
         }
+        // a per-remote core.sshCommand through includeIf "hasconfig:remote.*.url:…" is found: the read passes the clone's URL
+        unsetSsh();
+        const inc = path.join(root, 'work-ssh.inc');
+        fs.writeFileSync(inc, `[core]\n\tsshCommand = ${slash(path.join(sshStubs, 'plink'))}\n`);
+        g(root, 'config', '--file', gcfg, 'includeIf.hasconfig:remote.*.url:git@example.invalid:work/**.path', slash(inc));
+        const w = await tryClone(makeOp(), 'over-ssh', 'git@example.invalid:work/r.git');
+        assert.ok(fs.existsSync(path.join(marks, 'plink-args')) && !fs.existsSync(path.join(marks, 'ssh-args')), "hasconfig: the user's per-remote program ran, not Durbar's BatchMode ssh");
+        assert.ok(!fs.readFileSync(path.join(marks, 'plink-args'), 'utf8').split('\n').includes('BatchMode=yes'), 'and it is used as it is (D11)');
+        assert.strictEqual(w.ok, false);
+        clear();
+        g(root, 'config', '--file', gcfg, '--unset', 'includeIf.hasconfig:remote.*.url:git@example.invalid:work/**.path');
       } finally { process.env.PATH = savedPath; }
       unsetSsh();
     } else {

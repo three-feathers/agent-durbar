@@ -84,6 +84,7 @@ export const CLONE_URL_MSG = Object.freeze({
   form: 'Use an https:// or ssh address (for example git@github.com:owner/repo.git).',
   password: 'Remove the password from the address. Durbar uses your own git credentials.',
   encodedUser: 'Write the user name without % codes (an encoded : or @ could hide a password).',
+  token: 'Remove the token from the address. Durbar uses your own git credentials.',
   dash: 'No part of the address may start with -.',
 });
 
@@ -99,10 +100,15 @@ function pathOk(p: string): boolean {
   if (!/^(?:[A-Za-z0-9\-._~!$&'()*+,;=:@/]|%[0-9A-Fa-f]{2})+$/.test(p)) return false;
   return !/%(?:[01][0-9A-Fa-f]|7[Ff])/.test(p);
 }
-/** The user part (FR-020, FR-023): `:` is a password, `%` could hide one (R3), then the allowed characters, never a leading `-`. */
+/**
+ * The user part (FR-020, FR-023): `:` is a password, `%` could hide one (R3), a token-shaped user name (what the shared `redact()`
+ * would mask: `ghp_…`, `github_pat_…`, `glpat-…`) is a credential git would store in `.git/config`; then the allowed characters,
+ * never a leading `-`. A plain user name (`git`, `deploy`) is fine.
+ */
 function userError(u: string): string | undefined {
   if (u.includes(':')) return CLONE_URL_MSG.password;
   if (u.includes('%')) return CLONE_URL_MSG.encodedUser;
+  if (redact(u) !== u) return CLONE_URL_MSG.token;
   if (u.startsWith('-')) return CLONE_URL_MSG.dash;
   return /^[A-Za-z0-9._~+-]+$/.test(u) ? undefined : CLONE_URL_MSG.form;
 }

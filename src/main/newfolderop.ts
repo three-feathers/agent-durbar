@@ -80,7 +80,7 @@ export interface NewFolderDeps {
   /** Ends a git run that went over `INIT_LIMIT_MS` (setTimeout in the app; tests drive it). Returns a function that clears it. */
   timer(ms: number, fn: () => void): () => void;
   /** The user's own `core.sshCommand` for a clone (`readUserSshCommand`, run in the private hooks folder). */
-  readSshCommand(hooksDir: string): Promise<string | undefined>;
+  readSshCommand(hooksDir: string, url: string): Promise<string | undefined>;
   /** Sends `folders:createProgress` to the window (already masked here). */
   progress(p: CreateProgress): void;
 }
@@ -265,7 +265,7 @@ export function createNewFolderOp(d: NewFolderDeps) {
     };
     try {
       if (cur.cancelled) return { ok: false, error: CANCELLED, cancelled: true };
-      const userSshCommand = await d.readSshCommand(hooksDir).catch(() => undefined);
+      const userSshCommand = await d.readSshCommand(hooksDir, url).catch(() => undefined);
       if (cur.cancelled) return { ok: false, error: CANCELLED, cancelled: true };
       armWait();
       let h: GitCreateHandle;
@@ -412,7 +412,7 @@ export function nodeNewFolderDeps(o: { addMany: NewFolderDeps['addMany']; settin
     platform: process.platform,
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     timer: (ms, fn) => { const t = setTimeout(fn, ms); return () => clearTimeout(t); },
-    readSshCommand: o.readSshCommand ?? ((hooksDir) => readUserSshCommand({ hooksDir })),
+    readSshCommand: o.readSshCommand ?? ((hooksDir, url) => readUserSshCommand({ hooksDir, url })),
     progress: o.progress ?? (() => undefined),
   };
 }

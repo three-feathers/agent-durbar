@@ -44,7 +44,7 @@ function rig(o: { mkdir?: (p: string) => void; rm?: (p: string, n: number) => vo
       gitDeps.push(deps);
       return { done: Promise.resolve(o.git ? o.git(deps) : { code: 0, signal: null, stderrTail: '' }), cancel: () => { calls.push(['cancel', cwd]); cancels.push(cwd); } };
     },
-    readSshCommand: async (h) => { calls.push(['readSsh', h]); return o.ssh ? o.ssh() : undefined; },
+    readSshCommand: async (h, url) => { calls.push(['readSsh', h, url]); return o.ssh ? o.ssh() : undefined; },
     progress: (p) => { events.push(p); },
     addMany: async (paths, mode, opts) => { calls.push(['addMany', paths, mode, opts]); return o.add ? o.add(paths, mode) : { ok: true, agents: [{ id: 'a1', cwd: paths[0] } as never] }; },
     settings: () => (o.noSettings ? undefined : { get newFolderParent() { return saved; }, setNewFolderParent: (p: string) => { calls.push(['save', p]); saved = p; } }),
@@ -323,7 +323,7 @@ async function cloneCases(): Promise<void> {
     const target = path.join(P, 'shop');
     const hooks = path.join('/tmp', 'durbar-hooks-') + 'abc';
     assert.deepStrictEqual(r, { ok: true, agents: [{ id: 'a1', cwd: target }], name: 'shop', submodules: true }, 'the submodule note when .gitmodules exists');
-    assert.deepStrictEqual(t.calls.filter((c) => c[0] !== 'isDir'), [['mkdir', target], ['mkdtemp', path.join('/tmp', 'durbar-hooks-')], ['readSsh', hooks], ['git', 'clone', target, hooks, URL1, 'ssh -i ~/.ssh/work'], ['rm', hooks], ['exists', path.join(target, '.gitmodules')], ['addMany', [target], 'ask', OPTS], ['save', P]]);
+    assert.deepStrictEqual(t.calls.filter((c) => c[0] !== 'isDir'), [['mkdir', target], ['mkdtemp', path.join('/tmp', 'durbar-hooks-')], ['readSsh', hooks, URL1], ['git', 'clone', target, hooks, URL1, 'ssh -i ~/.ssh/work'], ['rm', hooks], ['exists', path.join(target, '.gitmodules')], ['addMany', [target], 'ask', OPTS], ['save', P]]);
     assert.ok(!('protocols' in t.gitDeps[0]), 'the op never passes the protocols seam');
     assert.deepStrictEqual(t.live(), [], 'no timer left running after the clone');
     const n = rig();

@@ -138,7 +138,7 @@ async function main(): Promise<void> {
       assert.strictEqual(sp.opts.env.GIT_ALLOW_PROTOCOL, 'https:ssh', 'FR-095: https and ssh only');
       assert.ok(sp.args.includes('protocol.file.allow=never') && sp.args.includes('protocol.ext.allow=never') && !sp.args.includes('protocol.file.allow=always'), 'every other transport off by name');
       assert.strictEqual(sp.opts.env.GIT_SSH_COMMAND, 'ssh -o BatchMode=yes', 'no core.sshCommand (the read said unset): BatchMode ssh');
-      assert.deepStrictEqual(reads, [['--no-pager', '-c', 'core.fsmonitor=false', 'config', '--get', 'core.sshCommand']], 'the one config read');
+      assert.deepStrictEqual(reads, [['--no-pager', '-c', 'core.fsmonitor=false', '-c', 'remote.origin.url=https://github.com/lena/shop.git', 'config', '--get', 'core.sshCommand']], 'the one config read, with the clone URL (hasconfig includes)');
       // FR-040: progress reaches the window masked, on folders:createProgress
       child!.stderr.emit('data', 'Receiving objects:  45% (9/20) https://u:secret@h/x\r');
       for (let i = 0; i < 50 && !sent.length; i++) await new Promise((r) => setTimeout(r, 10));

@@ -333,19 +333,29 @@ export function gitCreateCall(req: GitCreateRequest, o: GitCreateCallOptions, pr
 
 /** The one fixed config read of a clone (FR-033): the user's own `core.sshCommand`, from their system and global config. */
 export const SSH_COMMAND_READ: readonly string[] = ['--no-pager', '-c', 'core.fsmonitor=false', 'config', '--get', 'core.sshCommand'];
+/**
+ * The read's argv. With the clone's URL (checked again) as `-c remote.origin.url=<url>`, an `includeIf "hasconfig:remote.*.url:…"`
+ * in the user's config is evaluated as it will be in the new repository (`real:` git 2.43: a per-remote `core.sshCommand` is found).
+ * `includeIf "gitdir:…"` cannot match: the read runs in no repository (`[KNOWN GAP]`, spec 093 FR-033).
+ */
+export function sshCommandReadArgv(url?: string): string[] {
+  const u = url === undefined ? undefined : checkCloneUrl(url);
+  const remote = u && u.ok ? ['-c', `remote.origin.url=${u.url}`] : [];
+  return [...SSH_COMMAND_READ.slice(0, 3), ...remote, ...SSH_COMMAND_READ.slice(3)];
+}
 type ConfigReadFn = (file: string, args: string[], options: ReturnType<typeof gitExecOptions> & { cwd: string }, cb: (err: Error | null, stdout: string) => void) => unknown;
 /**
  * D11, FR-033: reads the user's `core.sshCommand` (`undefined` when unset, or when the read fails: then `gitSshCommandFor` gives the
  * BatchMode default, the safe side). Runs in the private empty hooks folder with `GIT_CEILING_DIRECTORIES` set to its parent, so no
  * repository's own config is read, only the system and global one; the read-only runner's limits and environment; nothing runs.
  */
-export function readUserSshCommand(o: { hooksDir: string; env?: NodeJS.ProcessEnv; execFile?: ConfigReadFn }): Promise<string | undefined> {
+export function readUserSshCommand(o: { hooksDir: string; url?: string; env?: NodeJS.ProcessEnv; execFile?: ConfigReadFn }): Promise<string | undefined> {
   if (typeof o.hooksDir !== 'string' || !path.isAbsolute(o.hooksDir)) return Promise.resolve(undefined);
   const env = { ...gitEnv(o.env ?? process.env), GIT_CEILING_DIRECTORIES: path.dirname(o.hooksDir) };
   const ef: ConfigReadFn = o.execFile ?? (execFile as unknown as ConfigReadFn);
   return new Promise((resolve) => {
     try {
-      ef('git', [...SSH_COMMAND_READ], { ...gitExecOptions(env), cwd: o.hooksDir }, (err, out) => {
+      ef('git', sshCommandReadArgv(o.url), { ...gitExecOptions(env), cwd: o.hooksDir }, (err, out) => {
         const v = err ? '' : String(out ?? '').replace(/\r?\n$/, '');
         resolve(v && v.length <= 4096 ? v : undefined);
       });

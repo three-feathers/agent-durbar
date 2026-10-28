@@ -9,7 +9,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { execFile, execFileSync } from 'child_process';
 import { EventEmitter } from 'events';
-import { GIT_CLONE_PROTOCOLS, GIT_MAX_FILES, GIT_TRANSPORTS, SSH_COMMAND_READ, execFileGitRun, filterDrivers, folderGitStatus, gitCreateCall, gitEnv, gitSshCommandFor, makeGitExec, nodeGitExec, parseNumstatZ, parsePorcelainZ, readUserSshCommand, runGitCreate } from '../src/main/gitstatus';
+import { GIT_CLONE_PROTOCOLS, GIT_MAX_FILES, GIT_TRANSPORTS, SSH_COMMAND_READ, execFileGitRun, sshCommandReadArgv, filterDrivers, folderGitStatus, gitCreateCall, gitEnv, gitSshCommandFor, makeGitExec, nodeGitExec, parseNumstatZ, parsePorcelainZ, readUserSshCommand, runGitCreate } from '../src/main/gitstatus';
 import type { GitChild, GitCreateRequest, GitExec, GitSpawnOptions } from '../src/main/gitstatus';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -130,7 +130,7 @@ async function main(): Promise<void> {
   assert.ok(/const sp: GitSpawn = deps\.spawn \?\? \(spawn as unknown as GitSpawn\);/.test(src), "the create runner reads child_process's spawn when it runs (the simulator's seal applies)");
   assert.ok(src.includes("const { argv, env } = gitCreateCall(req, { hooksDir: deps.hooksDir, env: deps.env, userSshCommand: deps.userSshCommand, platform: deps.platform }); // never the protocols seam (FR-095)"), 'the create runner takes its argv and env from gitCreateCall only, with the default protocols (no seam)');
   // spec 093 FR-033: the clone's one config read is a fixed argv in the private hooks folder, with the read-only runner's options
-  assert.strictEqual((src.match(/\bef\('git', \[\.\.\.SSH_COMMAND_READ\], \{ \.\.\.gitExecOptions\(env\), cwd: o\.hooksDir \}/g) ?? []).length, 1, 'the core.sshCommand read: fixed argv, gitExecOptions, in the hooks folder');
+  assert.strictEqual((src.match(/\bef\('git', sshCommandReadArgv\(o\.url\), \{ \.\.\.gitExecOptions\(env\), cwd: o\.hooksDir \}/g) ?? []).length, 1, 'the core.sshCommand read: fixed argv, gitExecOptions, in the hooks folder');
   assert.strictEqual((src.match(/\bef\(/g) ?? []).length, 2, 'and no other execFile call in gitstatus.ts');
   // FR-095: nothing in src/ passes the protocols seam (a third argument to gitCreateCall) or names `file` as an allowed protocol
   {
@@ -317,10 +317,16 @@ async function cloneCallChecks(base: NodeJS.ProcessEnv): Promise<void> {
   const hooks = path.resolve('tmp', 'durbar-hooks-x');
   assert.strictEqual(await readUserSshCommand({ hooksDir: hooks, env: base, execFile: ef('ssh -i k\n') }), 'ssh -i k');
   assert.deepStrictEqual(SSH_COMMAND_READ, ['--no-pager', '-c', 'core.fsmonitor=false', 'config', '--get', 'core.sshCommand']);
+  assert.deepStrictEqual(sshCommandReadArgv(), [...SSH_COMMAND_READ], 'without a URL: the fixed read');
   const r0 = reads[0];
   assert.deepStrictEqual([r0.file, r0.args, r0.opts.cwd, r0.opts.shell, r0.opts.timeout], ['git', [...SSH_COMMAND_READ], hooks, false, 4000], 'git from PATH, the fixed argv, in the hooks folder, no shell, 4 s');
   const renv = r0.opts.env as NodeJS.ProcessEnv;
   assert.deepStrictEqual([renv.GIT_CEILING_DIRECTORIES, renv.GIT_DIR, renv.GIT_CONFIG_PARAMETERS, renv.HOME], [path.dirname(hooks), undefined, undefined, '/h'], 'GIT_CEILING_DIRECTORIES is the hooks folder\'s parent; the user\'s GIT_* are dropped; HOME passes (the global config)');
+  // with the clone's URL: -c remote.origin.url=<url> before the subcommand, so includeIf "hasconfig:remote.*.url:…" is evaluated
+  await readUserSshCommand({ hooksDir: hooks, url: 'HTTPS://github.com/o/r.git', env: base, execFile: ef('ssh') });
+  assert.deepStrictEqual(reads[reads.length - 1].args, ['--no-pager', '-c', 'core.fsmonitor=false', '-c', 'remote.origin.url=https://github.com/o/r.git', 'config', '--get', 'core.sshCommand'], 'the URL as git will get it');
+  await readUserSshCommand({ hooksDir: hooks, url: 'ext::sh -c x', env: base, execFile: ef('ssh') });
+  assert.deepStrictEqual(reads[reads.length - 1].args, [...SSH_COMMAND_READ], 'a refused URL is never put in the argv');
   assert.strictEqual(await readUserSshCommand({ hooksDir: hooks, env: base, execFile: ef(null, 1) }), undefined, 'unset (exit 1)');
   assert.strictEqual(await readUserSshCommand({ hooksDir: hooks, env: base, execFile: ef(null, 128) }), undefined, 'a failed read: unset (then BatchMode ssh, the safe side)');
   assert.strictEqual(await readUserSshCommand({ hooksDir: hooks, env: base, execFile: ef('x'.repeat(5000)) }), undefined, 'an oversized value is not used');
