@@ -235,6 +235,12 @@ async function main(): Promise<void> {
     assert.deepStrictEqual([o4.last?.outcome, o4.paused, o4.pausedReason, o4.done], ['skipped-review', true, 'review', undefined], 'start: a once long prompt is paused for review');
     assert.deepStrictEqual([r4.last?.outcome, r4.paused, (r4.next ?? 0) > now], ['skipped-review', undefined, true], 'start: a recurring long prompt moves on');
     assert.strictEqual(k4.last?.outcome, 'missed', 'start: a short one is still missed');
+    // the pause survives a write and a read (the reason is on the load whitelist), and a fixing edit with a future time unpauses it
+    const back = parseSchedules(JSON.stringify(h4.sch.doc), now);
+    assert.deepStrictEqual([back.schedules[0].paused, back.schedules[0].pausedReason, back.schedules[0].done], [true, 'review', undefined], 'paused for review is kept by a round trip');
+    const h5 = harness(back, now);
+    const fixed5 = h5.sch.save({ id: 'dddddddd-once', edit: true, folder: '/w', prompt: 'short now', at: h5.now + 5 * MIN }, () => true);
+    assert.ok(fixed5.ok && !fixed5.schedule.paused && !fixed5.schedule.pausedReason, 'a fixing edit with a future time unpauses the reloaded schedule');
   }
   // FR-120: the store with 50 schedules at the maximum (and a full run log each) stays small and fast to write and read
   {
