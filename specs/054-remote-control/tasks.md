@@ -46,3 +46,6 @@ Not done and not planned here: the owner moved Claude channels to idea #485 ("Fo
 
 ## 2026-10-23 delta (owner, spec 017 doors)
 - [x] T054 Door closed by you: remote control off and refused, and the window offers to open the door (FR-040; built in spec 017 T013, T019) (renumbered from T040 in review: main's T040 is the Codex check, owned by PR 710)
+
+## 2026-10-28 delta (SDK 1.0.26 drops `remoteSession`)
+- [x] T055 `remoteSession: 'off'` kept as a 1.0.22-only hint with a comment; tests stop presenting it as a control; `test:remote` pins that `remote.enable` is reached only by `setRemote(id, true)` from `remoteops.ts`; "SDK 1.0.22" comments refreshed; real 1.0.103 check stays a KNOWN GAP [FR-070, FR-071]

@@ -204,10 +204,10 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpStart: 'next-message', // spec 058 FR-010 (real 2026-10-21, runtime 1.0.22: the servers start with the first message, not at create or resume)
   mcpToggleApplies: 'live', // spec 019 (real: mcp.enable/disable)
   mcpToolFilter: true, // spec 069 FR-062: session excludedTools (read: SDK types; not run on a real account)
-  mcpTools: true, // spec 069 FR-031: rpc.mcp.listTools (@experimental; read: SDK 1.0.22 rpc.d.ts; not run on a real account)
+  mcpTools: true, // spec 069 FR-031: rpc.mcp.listTools (@experimental; read: SDK 1.0.22-1.0.26 rpc.d.ts; not run on a real account)
   mcpRestart: true, // spec 058 FR-012: rpc.mcp.restartServer (@experimental; real 2026-10-21, runtime 1.0.22), else disable then enable (fallback read: only)
-  mcpSignInAgain: true, // spec 058 FR-164: oauth.login forceReauth ("clears any cached OAuth token for the server and runs a full new authorization", read: SDK 1.0.22 rpc.d.ts; not run on a real account)
-  mcpSignIn: true, // spec 058 FR-064: rpc.mcp.oauth.login (@experimental; read: SDK 1.0.22 rpc.d.ts; real: worked once, macOS 2026-10-23, one server; the rest in T105)
+  mcpSignInAgain: true, // spec 058 FR-164: oauth.login forceReauth ("clears any cached OAuth token for the server and runs a full new authorization", read: SDK 1.0.22-1.0.26 rpc.d.ts; not run on a real account)
+  mcpSignIn: true, // spec 058 FR-064: rpc.mcp.oauth.login (@experimental; read: SDK 1.0.22-1.0.26 rpc.d.ts; real: worked once, macOS 2026-10-23, one server; the rest in T105)
   mcpSignInSteps: 'If Sign in is not available, sign in from the Copilot CLI: run `copilot`, type `/mcp auth {name}` and finish in your browser. Then use Restart session with these servers. This may not carry over to this session (seen on 2026-10-23).', // FR-068
   mcpSignInNote: 'Checked once on a real account; other servers and systems not yet.', // FR-074/FR-180: the row's honest note
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
@@ -216,8 +216,8 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   remote: true, // spec 054 FR-002: rpc.remote.enable/disable (@experimental; real 2026-10-20: `started: false` outside a GitHub repository, never seen started)
   renameSession: 'any', // spec 059 FR-007: rpc.name.set (@experimental; real 2026-10-20 on a live session, 0 credits); a stored session through a prompt-free resume: real 2026-10-21 (T050a, 0 credits)
   remoteService: Object.freeze({ name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }), // spec 054 FR-060
-  osSandbox: true, // spec 087: the local sandbox through session.rpc.options.update (@experimental; read: SDK 1.0.22; not run on a real session)
-  deleteSession: true, // spec 006 FR-028: CopilotClient.deleteSession (read: SDK 1.0.22 client.d.ts; never run on a real session)
+  osSandbox: true, // spec 087: the local sandbox through session.rpc.options.update (@experimental; read: SDK 1.0.22-1.0.26; not run on a real session)
+  deleteSession: true, // spec 006 FR-028: CopilotClient.deleteSession (read: SDK 1.0.22-1.0.26 client.d.ts; never run on a real session)
   oneShot: true, // spec 040 FR-015: a throw-away SDK session with no tools and no MCP, deleted after (real 2026-10-20: no tool ran, nothing left on disk)
 });
 
@@ -249,6 +249,8 @@ export function renameResumeConfig(workingDirectory: string): Record<string, unk
     skipCustomInstructions: true,
     enableFileHooks: false,
     enableHostGitOperations: false,
+    // SDK 1.0.22 honours this; SDK 1.0.26 removed `remoteSession` and ignores it. Do not rely on it as a control (spec 054 delta 2026-10-28):
+    // remote control then hinges only on `rpc.remote.enable`, which Durbar calls only in `CopilotAdapter.setRemote(id, true)` (user action).
     remoteSession: 'off',
     onPermissionRequest: async (): Promise<PermissionRequestResult> => ({ kind: 'reject', feedback: 'Agent Durbar allows no tools here.' }) as PermissionRequestResult,
   };
@@ -319,6 +321,8 @@ export function oneShotConfig(dir: string, disabledMcpServers: readonly string[]
     memory: { enabled: false },
     infiniteSessions: { enabled: false },
     embeddingCacheStorage: 'in-memory',
+    // SDK 1.0.22 honours this; SDK 1.0.26 removed `remoteSession` and ignores it. Do not rely on it as a control (spec 054 delta 2026-10-28):
+    // remote control then hinges only on `rpc.remote.enable`, which Durbar calls only in `CopilotAdapter.setRemote(id, true)` (user action).
     remoteSession: 'off',
   };
 }
@@ -369,7 +373,7 @@ export class CopilotAdapter implements AgentAdapter {
    * Spec 058 FR-161: ONE runtime per app run for every session, one-shot and check (each runtime process reads Copilot's keychain items
    * again, so a runtime per session would ask again per session on a Mac). A start that failed is not kept: the next call starts again
    * instead of failing for the rest of the run. A runtime that exits later is restarted by the SDK itself on the next create or resume
-   * (`read:` SDK 1.0.22 `client.js` `createSession`/`resumeSessionInternal`: `if (!this.connection) await this.start()`).
+   * (`read:` SDK 1.0.22-1.0.26 `client.js` `createSession`/`resumeSessionInternal`: `if (!this.connection) await this.start()`).
    */
   protected async getClient(): Promise<CopilotClient> {
     if (this.client) return this.client;
@@ -817,10 +821,10 @@ export class CopilotAdapter implements AgentAdapter {
       // `disabledMcpServers` switches those off by name. Values (env, headers) are secrets: never logged, only names.
       ...(options.mcpServers && Object.keys(options.mcpServers).length ? { mcpServers: options.mcpServers as unknown as Record<string, MCPServerConfig> } : {}),
       ...(options.disabledMcpServers?.length ? { disabledMcpServers: options.disabledMcpServers } : {}),
-      // spec 069 FR-062: single MCP tools turned off in Durbar; `excludedTools` "always takes precedence" (read: SDK 1.0.22 types.d.ts), MCP
+      // spec 069 FR-062: single MCP tools turned off in Durbar; `excludedTools` "always takes precedence" (read: SDK 1.0.22-1.0.26 types.d.ts), MCP
       // tools by the runtime's wire name `<server>-<tool>` (read: toolSet.d.ts addMcp("github-list_issues")); not run on a real account
       ...(copilotExcludedTools(options.disabledMcpTools).length ? { excludedTools: copilotExcludedTools(options.disabledMcpTools) } : {}),
-      // AI-credit cap (spec 011): the SDK calls it "AI Credits"; the app treats 1 AIU = 1 credit. `sessionLimits` is @experimental in SDK 1.0.22.
+      // AI-credit cap (spec 011): the SDK calls it "AI Credits"; the app treats 1 AIU = 1 credit. `sessionLimits` is @experimental in SDK 1.0.22-1.0.26.
       ...(options.maxAiCredits && options.maxAiCredits > 0 && Number.isFinite(options.maxAiCredits) ? { sessionLimits: { maxAiCredits: options.maxAiCredits } } : {}),
       onPermissionRequest,
       onUserInputRequest,
@@ -1238,7 +1242,7 @@ export class CopilotAdapter implements AgentAdapter {
 
   /**
    * Switch the model of a live session (spec 030 FR-003..FR-009, SDK `rpc.model.switchTo`, @experimental).
-   * Built from the SDK 1.0.22 types and docs only, never run on a real account (T041..T046 are Phase 3, they cost credits).
+   * Built from the SDK 1.0.22-1.0.26 types and docs only, never run on a real account (T041..T046 are Phase 3, they cost credits).
    * Sent: model, effort, tier, `requireAvailable`, `deferIfModelChangeQueued`, `source: 'model_picker'`, `runCompactionPreflight`.
    * NEVER sent: `repoScope`, `modelChangeScope`, `pickerPersistence` (they write Copilot's own settings) and `compactionDecision`
    * (its values are unknown). To "compact and switch" the context is compacted first with `history.compact` (trigger `model_switch`),
@@ -1414,8 +1418,9 @@ export class CopilotAdapter implements AgentAdapter {
 
   /**
    * Spec 054 FR-002: remote control from github.com and GitHub Mobile (`rpc.remote.enable({ mode: 'on' })` / `disable()`, @experimental).
-   * Feature-detected: an SDK without `rpc.remote` answers `ok: false`. Never called by Durbar on its own; `remoteSession` and the client's
-   * `enableRemoteSessions` are never set (spec 054 Q1). Only an allowed github.com URL leaves the adapter; nothing is logged.
+   * Feature-detected: an SDK without `rpc.remote` answers `ok: false`. Never called by Durbar on its own: the only caller with `on: true` is
+   * `remoteops.ts` (IPC `agents:setRemote`, after the user's confirmation). The main session never sets `remoteSession` or the client's
+   * `enableRemoteSessions` (spec 054 Q1); SDK 1.0.26 dropped both, so this call is the one real control (delta 2026-10-28). Only an allowed github.com URL leaves the adapter; nothing is logged.
    */
   async setRemote(sessionId: string, on: boolean): Promise<RemoteState> {
     const live = this.sessions.get(sessionId);
@@ -1577,7 +1582,7 @@ export class CopilotAdapter implements AgentAdapter {
         await mcp.restartServer({ serverName: name });
         return;
       } catch (err) {
-        // SDK 1.0.22 always has the generated method (`dist/generated/rpc.js`): an older runtime answers that it does not know it
+        // SDK 1.0.22-1.0.26 always has the generated method (`dist/generated/rpc.js`): an older runtime answers that it does not know it
         // (JSON-RPC -32601, as the SDK's own `connect` check reads it). Only then fall back; any other error is the restart's own.
         // real 2026-10-21: a failed restart reads "Request session.mcp.restartServer failed with message: <the server's reason>"
         if (!isMethodNotFound(err)) throw new Error(sdkErrorText(err));
@@ -1589,7 +1594,7 @@ export class CopilotAdapter implements AgentAdapter {
 
   /**
    * Spec 058 FR-064 (T098): the runtime's own OAuth sign-in for one remote MCP server of this session. `rpc.mcp.oauth.login`
-   * (`@experimental`, read: SDK 1.0.22 `McpOauthLoginRequest`) with only the server name and two display texts: the runtime keeps its
+   * (`@experimental`, read: SDK 1.0.22-1.0.26 `McpOauthLoginRequest`) with only the server name and two display texts: the runtime keeps its
    * default loopback flow (discovery, PKCE, its own callback listener, token exchange, storage and reconnect), so no token and no
    * callback ever pass through Durbar. Never `handlePendingRequest`, `complete`, `prepareLogin`, `cancelLogin` or `onMcpAuthRequest`,
    * and never `clientId`, `clientSecret`, `redirectUri` or `grantType`. `forceReauth` only for the user's **Sign in again** (FR-164, owner

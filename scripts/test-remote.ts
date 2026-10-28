@@ -135,6 +135,28 @@ async function main(): Promise<void> {
     await ad.dispose();
   }
 
+  {
+    // delta 2026-10-28: SDK 1.0.26 ignores `remoteSession`, so the real control is that `remote.enable` is reached only by setRemote(id, true)
+    const fake = new FakeClient();
+    const ad = new FakeCopilot(fake);
+    fake.onDisk.add('old-2');
+    const sid = await ad.start({ workspace: dir, quiet: true });
+    const sid2 = await ad.start({ workspace: dir, resumeSessionId: 'old-2', quiet: true });
+    const all = (): FakeSession[] => [...fake.sessions.values()];
+    assert.ok(all().length >= 2);
+    for (const s of all()) assert.ok(!names(s).some((n) => n.startsWith('remote.')), 'start and resume never call remote.*');
+    await ad.setRemote(sid, false);
+    assert.ok(!all().some((s) => names(s).includes('remote.enable')), 'turning it off never enables');
+    await ad.setRemote(sid2, true);
+    assert.strictEqual(all().filter((s) => names(s).includes('remote.enable')).length, 1, 'only the explicit setRemote(id, true) enables, on that session');
+    await ad.dispose();
+    // static: the only caller that can pass on=true is remoteops.ts (behind the confirmation); everything else passes the literal false
+    const walk = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : /\.ts$/.test(e.name) ? [path.join(d, e.name)] : []));
+    const callers = walk(path.join(__dirname, '..', 'src')).flatMap((f) => fs.readFileSync(f, 'utf8').split('\n').filter((l) => /\.setRemote\(/.test(l) && !/^\s*(\/\/|\*)/.test(l)).map((l) => path.basename(f) + ': ' + l.trim()));
+    for (const l of callers) assert.ok(/^(remoteops|doorops|doors|remote)\.ts/.test(l), 'unexpected setRemote caller: ' + l);
+    assert.ok(!callers.some((l) => /setRemote\([^)]*true\)/.test(l)), 'no source calls setRemote(..., true) directly: ' + callers.join(' | '));
+  }
+
   // ---- T004 / FR-003..FR-005: the main-side logic
   {
     const opened: string[] = [];
