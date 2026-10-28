@@ -357,6 +357,15 @@ Proposed 2026-10-24 and reviewed by the owner. **Acceptance (FR-037):** Vikram (
   - `read:` checked 2026-10-27: no workflow uses `pull_request_target`; the jobs with secrets (`e2e-real.yml`, `mcp-oauth-real.yml`) run only on `schedule` / `workflow_dispatch`; `spec-kit.yml` passes `PR_BODY` and `HEAD_REF` through `env:`; Discussions and the wiki are off; fork runs need approval for first-time contributors only.
   - `[KNOWN GAP]` `pr-gate.sh` and `gh-trusted.sh` check the latest editor of the last 100 comments, reviews and threads only; `test:trustedcontent` runs its fake-`gh` part only where bash and jq exist (Linux CI; Windows runs the static checks; not run on macOS, whose bash 3.2 and BSD tools are expected to work but are unverified). Tightening fork-run approval to all outside contributors is a repo-settings change for the owners. Numbers taken: FR-060 and T036 (free on `main` and in the open PRs, none of which touches this spec).
 
+### 2026-10-27: commit identity and signed commits (FR-061, owner decision)
+
+- **FR-061** `[IMPLEMENTED]` (rule and docs; that agents follow it is not machine-checked) Owner decision of Vikram, 2026-10-27 22:11 UTC, in his DM to his agent, announced in the team chat: "use only our identity to commit to GitHub to be sure that commits are verified; tell other agents to do the same." Recorded in `AGENTS.md`, *Commit identity and signed commits*, with pointers in `.github/copilot-instructions.md`, `docs/collaboration.md` (first day), `docs/agent-setup/README.md` and `docs/agent-notes.md`:
+  - (a) Commits and PRs carry only the human owner's identity: no AI co-author trailer, no "Generated with" line. The PR template's *Agent used* field stays.
+  - (b) Every commit is signed with a dedicated SSH key on the agent's host (`gpg.format ssh`, `user.signingkey`, `commit.gpgsign`, `tag.gpgsign`); the human adds the public key to GitHub as a Signing key.
+  - (c) Published history is never rewritten or force-pushed to change old commits.
+  - (d) Once all three sides sign, the owners may enable "Require signed commits" on the `main` ruleset (an owner setting).
+  - `[KNOWN GAP]` Not machine-checked, and no script or template in the repo inserted a co-author trailer (searched `scripts/`, `.github/`, `docs/`). Signing on Paco's and Ruben's hosts is unverified. Numbers taken: FR-061 and T037 (free on `main` and in the open PRs, none of which touches this spec).
+
 ### 2026-10-27: supply-chain guards and a hardened host (FR-062, owner decision "Go")
 
 - **FR-062** `[IMPLEMENTED]` `test:` Owner decision of Vikram, 2026-10-27. Hardening against a poisoned dependency, binary or workflow change, in one pull request:
