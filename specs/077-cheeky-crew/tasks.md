@@ -75,3 +75,14 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 - [x] T073 [raster] The map follows the main-session ids (a removal, a helper, the last session); `check:crew` removes sessions through `__durbarSimUi.crew`; `test:crew` has the interleaved main/helper allocation [FR-063, FR-020, FR-023]
 - [x] T074 [raster] A fallback after mount redraws the chat header and inbox avatars; `check:crew` makes a character fail after both are open [FR-063]
 - [x] T075 `test:theme-tokens` asserts the authored Cheeky Crew and Clean Office tokens meet `CONTRAST_PAIRS` with no run-time repair (dark `--bg` mutant) [FR-063]
+
+## Characters, separate from themes (delta 2026-10-28, issue #814; FR-064..FR-070)
+
+- [ ] T076 Spec delta: FR-064..FR-070, Q9, the spec 035 cross-reference (FR-016, T018) [spec]
+- [ ] T077 `src/shared/characters.ts`: the list, `parseCharacters`, `kitFor` and the migration rule; `characters` in `AppSettings` and `parseSettings`; `SettingsStore.load` migrates once, `setCharacters`, `setTheme` with the old id; `settings:setCharacters` and `settings:get`; preload and `api.ts` [FR-064, FR-067]
+- [ ] T078 `theme.js`: Cheeky Crew leaves the built-in list; `setCharacters`, `characters`, `themeKit`, `kitFor`, `sceneKit` resolves the choice; `themeIdForCache` changes with it; `cheeky-crew` kept reserved in main [FR-065, FR-066]
+- [ ] T079 `app.js` and `screens.js`: boot applies the saved choice and the legacy id; the Characters section with previews; apply, save, toast; the simulator bridge keeps the choice in memory and reads `characters=` [FR-067, FR-068]
+- [ ] T080 Tests: `test:characters` (migration, round trip through the IPC handler, kit resolution on every theme, list equality); the old theme removed from `test:theme`, `test:theme-tokens`, `test:userthemes` and the theme lists of the drivers [FR-070]
+- [ ] T081 `check:crew` picks Characters = Cheeky on `CREW_THEME`; run on Retro Pixel and Corporate at both sizes; `check:office` with `OFFICE_CHARACTERS=cheeky` on the same two themes at both sizes [FR-070, FR-069]
+- [ ] T082 Driver `check-characters` (Cheeky on Retro Pixel and Corporate, then *The theme's own*, a reload keeps it; screenshots of the Settings section at both sizes), in `ui-suite.js` [FR-068, FR-070]
+- [ ] T083 Docs: README *Themes* (Theme and Characters), changelog fragment, agent notes if something new was learned; linked screenshots that show the theme picker retaken (`npm run shots:docs -- --list`) [FR-068]
