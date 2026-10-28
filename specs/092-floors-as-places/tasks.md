@@ -28,7 +28,7 @@
 - [x] T012 Driver `scripts/shots-092.js` phase-1 cases: one floor drawn, keys change floor, ends do nothing, keys ignored in the composer, current floor survives a reload, off floor fallback; screenshots at both sizes [US1, US3; SC-005]
 - [x] T013 Spec housekeeping: tick tasks, `[IMPLEMENTED]` tags, 033 `## Changes` stays, `changelog.d/092-p1-floor-screens.md`; check FR-024 (no adapter, permission, IPC or storage change in this PR's diff) [FR-026]
 
-## Phase 2: Lift panel and badges (PR 2)
+## Phase 2: Lift panel, badges and the All floors view (PR 2)
 
 - [ ] T014 [P] `floornav.js`: `badgeCounts(agents, floorOf, needs)` (each agent once, kinds waiting/error/limit/new reply) and `badgeText(counts)` ('2 waiting, 1 error'), `9+` rule; extend `test-floornav.ts` [FR-014, FR-015]
 - [ ] T015 Lift host in `index.html` and render in `app.js` (`renderLift`): toolbar, one button per floor on, number label, accessible name, tooltip, `aria-current`, roving tabindex, Up/Down/Home/End/Enter/Space; shown only with two or more floors on and in the office view [FR-006, FR-007, FR-013]
@@ -39,7 +39,15 @@
 - [ ] T019 Pills, inbox count, window title and usage total checked unchanged: test that the whole-building counts do not depend on the current floor [FR-017; US2]
 - [ ] T040 Check, on the simulator, whether the Waiting pill counts agents of hidden folders; make the badge rule (FR-014) the same as the inbox and restate the spec line with the measured fact, removing the `[unverified]` [FR-014, FR-017]
 - [ ] T020 `check:office` with the panel at both sizes; record the density cost at 1280x800 in the spec (turns the FR-008 gap into a result, or opens the owner question with the numbers) [FR-008; SC-001]
-- [ ] T021 Driver cases: badge appears and clears (New reply clears exactly when the inbox's New does), edge rows for badges scrolled out of the panel (FR-028), accessible names, roving focus, many floors scroll inside the panel; screenshots; `changelog.d/092-p2-lift-panel.md`; check FR-024; tick tasks [US2; SC-004]
+### All floors view (owner 2026-10-28, FR-031..FR-037; ships with phase 2)
+
+- [ ] T043 [P] `floornav.js`: `viewOf(stored)` (`'all'` or `'one'`, default `'one'`), `keyAction` in the All view returns `{scroll}` or nothing (never `{go}`), `announceAll(m)` text; extend `test-floornav.ts` (default, bad stored values, keys in All view at and away from the edges, held key) [FR-034, FR-036, FR-037]
+- [ ] T044 `app.js`: view state restored from and saved to `localStorage` `durbar.floorView` (try/catch); `curFloorId()` returns `null` in the All view so `renderOffice()` takes the pre-092 path; `oneFloorView()` gates the per-floor behaviour; every `floorScreens()` call site reviewed and switched where it means "one floor shown"; `layoutKey` carries the view; current floor still kept valid in the background by `afterFloorsChange` [FR-031, FR-035, FR-037]
+- [ ] T045 Lift panel *All* button (in T015's toolbar, before the floor buttons): label, accessible name, tooltip, `aria-current`, shape cue, roving focus (Home = All), click and Enter/Space switch views instantly with one announcement; no badges in the All view; tokens only (`styles.css`) [FR-032, FR-035, FR-036]
+- [ ] T046 `check:office` All-floors cases: `simfloors=1` and `simfloors=ground`, the All view chosen, lift panel shown, 1440x900 and 1280x800; record `data-d` with and without the panel and write the numbers into FR-033 (removes its `[KNOWN GAP]`, or stops the merge and goes to the owner) [FR-033; SC-008]
+- [ ] T047 Driver cases in `shots-092.js`: All and back by mouse and keyboard, choice survives a reload, PageUp/PageDown in the All view (scroll only, never a floor change), Show only and switching a floor back on keep the view, the current floor switched off in the All view moves nothing and announces nothing, pill and folder filter in the All view, every visitor walks and no tile label names a floor, no "Nothing on <floor>" line, no badge; screenshots at both sizes [FR-031..FR-037; SC-009]
+
+- [ ] T021 Driver cases: badge appears and clears (New reply clears exactly when the inbox's New does), edge rows for badges scrolled out of the panel (FR-028), accessible names, roving focus, many floors scroll inside the panel; screenshots; `changelog.d/092-lift-all-floors.md`; check FR-024; tick tasks [US2; SC-004]
 
 ## Phase 3: The slide (PR 3)
 
@@ -57,6 +65,7 @@
 - [ ] T042 Announce a jump made under a chat once, on *Back to the office*, not when it happens; navigator: the office moves when the palette closes, not behind it; driver cases for both [FR-012, FR-019]
 - [ ] T030 Folder filter and status-pill filter: choosing a room on another floor slides to it; a filter never changes the current floor by itself [FR-018; edge case filters]
 - [ ] T041 Status-pill click: go to the floor of the first match when all matches are on other floors; the line and *Next floor with <status>* button on a floor with no match; driver case with a Waiting agent on another floor, then switching floors with the filter on [FR-027; US2]
+- [ ] T048 `goToFloor()` and `openPanel()` in the All floors view: opening an agent by any route keeps the All view and *Back to the office* shows it; a navigator floor row switches to the one-floor view on that floor when the palette closes; folder and chat rows keep the All view; driver cases [FR-035, FR-018, FR-019]
 - [ ] T031 Navigator: a floor row activates `goToFloor` and still narrows the folder list; folder and chat rows go to their floor first (`src/renderer/navigator.js`, `app.js` navigator actions); extend `test-navigator.ts` [FR-019]
 - [ ] T032 Keyboard help rows for PageUp/PageDown (with the Mac Fn note) next to `app.js` rows; update `test` that lists them if any [FR-011]
 - [ ] T033 Driver cases: open from the inbox then Back shows that floor; navigator floor row slides; agent on an off floor does nothing; `changelog.d/092-p4-jumps.md`; check FR-024; tick tasks [US4; SC-007]
