@@ -144,3 +144,4 @@ The same habits on all three sides; the rules behind them are in [AGENTS.md](../
 - **Re-approval after a push:** compare the PR's own code with the commit you approved by `git patch-id --stable`; same id, re-approve and say so; different, review the difference.
 - **Adversarial self-review** before you ask anyone: run this checklist on your own diff, as a reviewer who assumes it is wrong. A reviewer sub-agent (see [agent-setup](agent-setup/README.md)) helps for medium and large changes.
 - **Add what you found:** a reviewer who finds a new kind of mistake adds a line to this file.
+- **A source-scan test must not pass vacuously** (spec 054 T055, PR #832): a test compiled to `dist-scripts/` resolves `__dirname/../src` to `dist-scripts/src`, finds nothing and passes. Resolve the repo root (walk up to `package.json`), assert a minimum match count, and check a planted mutant through the npm script (`npm run test:<x>`), not the TS source.
