@@ -13,7 +13,7 @@
     const own=k=>Object.prototype.hasOwnProperty.call(s,k)?s[k]:undefined;
     if(!STATES.includes(own('state'))||!Array.isArray(own('covers'))||own('covers').some(c=>!COVERS.includes(c)))return null;
     if(own('mechanism')!==undefined&&!MECHS.includes(own('mechanism')))return null;
-    return {state:own('state'),mechanism:own('mechanism'),managed:own('managed')===true,untilNewSession:own('untilNewSession')===true,covers:own('covers').slice(0,3),
+    return {state:own('state'),mechanism:own('mechanism'),managed:own('managed')===true,untilNewSession:own('untilNewSession')===true,heldFloor:own('heldFloor')===true,covers:own('covers').slice(0,3),
       approvedMayLeave:own('approvedMayLeave')===true,writes:own('writes')==='folders'?'folders':'none',verified:own('verified')===true,reason:typeof own('reason')==='string'?own('reason').slice(0,200):'',
       leftOut:Array.isArray(own('leftOut'))?own('leftOut').filter(x=>typeof x==='string').slice(0,10).map(x=>x.slice(0,200)):[],leftOutMore:Number.isInteger(own('leftOutMore'))&&own('leftOutMore')>0?own('leftOutMore'):0};
   }
@@ -74,18 +74,20 @@
     const t=a+' did not confirm turning its sandbox off in this running session, so it stays until a new one. Restart keeps this conversation and starts a new session in Allow all.'+(s&&s.verified?'':' '+NOT_VERIFIED);
     return t.length>300?t.slice(0,299).replace(/\s+\S*$/,'')+'\u2026':t;
   }
-  /* FR-022c (replaces FR-022e's sentence, decision Q4): the Allow all dialog's extra sentence, for a floor that the switch to Allow all turns off in the
-     running session. The app whose sandbox also covers MCP servers is the one whose floor is lowered at the switch (FR-013, the same neutral test as
-     FR-021b's chip word); '' for every other state. */
+  /* FR-022c (replaces FR-022e's sentence, decision Q4): the Allow all dialog's extra sentence, whenever the switch to Allow all will ask the app to
+     turn off a floor this session holds (the neutral `heldFloor`, whatever the state word: on, off after a refused narrowing, or unknown; review on
+     PR #833); never for a managed floor (not lowered) or one already kept in Allow all; '' for every other state. */
   function allowAllNote(s0,app){
-    const s=clean(s0); if(!s||s.state!=='on'||s.managed||s.untilNewSession||!s.covers.includes('mcp'))return '';
+    const s=clean(s0); if(!s||!s.heldFloor||s.managed||s.untilNewSession)return '';
     return (app||'The app')+'’s OS sandbox is also turned off for this session.';
   }
+  /* FR-022c (review on PR #833): the toast when the switch to Allow all asked the app to turn its sandbox off and it did not (refused or no answer) */
+  function notLoweredToast(app){return (app||'The app')+' did not turn its sandbox off; use Restart without the sandbox.';}
   /* FR-012: the Settings > Agent apps line (text) */
   function hostLine(v){
     if(!v||typeof v!=='object')return '';
     if(v.available===true)return 'OS sandbox: available'+(MECHS.includes(v.mechanism)&&v.mechanism!=='vendor'?' ('+mechName(v.mechanism).replace(/^the /,'')+')':'');
     return 'OS sandbox: not available'+(typeof v.reason==='string'&&v.reason?': '+v.reason.slice(0,200):'');
   }
-  return {clean,chipWord,tooltip,details,hostLine,canRestartWithoutSandbox,restartTip,allowAllNote,NOT_VERIFIED};
+  return {clean,chipWord,tooltip,details,hostLine,canRestartWithoutSandbox,restartTip,allowAllNote,notLoweredToast,NOT_VERIFIED};
 })());

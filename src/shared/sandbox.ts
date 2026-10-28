@@ -35,7 +35,7 @@ export function sandboxReason(text: unknown): string | undefined {
  */
 export function outwardSandboxEvent<E extends { type: string }>(e: E): E {
   if (e.type !== 'sandbox') return e;
-  const x = e as unknown as { sandbox?: unknown; notice?: { text?: unknown; actions?: unknown; refused?: unknown } };
+  const x = e as unknown as { sandbox?: unknown; notice?: { text?: unknown; actions?: unknown; refused?: unknown }; notLowered?: unknown };
   const st = x.sandbox === null || x.sandbox === undefined ? null : cleanSandboxState(x.sandbox) ?? null;
   let notice: { text: string; actions: Array<'continue' | 'always'>; refused?: boolean } | undefined;
   if (x.notice && typeof x.notice === 'object') {
@@ -45,7 +45,9 @@ export function outwardSandboxEvent<E extends { type: string }>(e: E): E {
     const actions = Array.isArray(x.notice.actions) ? x.notice.actions.filter((a): a is 'continue' | 'always' => a === 'continue' || a === 'always') : [];
     notice = { text: text || 'The OS sandbox could not start. Nothing was sent.', actions: x.notice.refused === true ? [] : actions, ...(x.notice.refused === true ? { refused: true } : {}) };
   }
-  return { ...e, sandbox: st, ...(notice ? { notice } : {}) } as E;
+  const { notLowered: _nl, ...rest } = e as unknown as Record<string, unknown>;
+  void _nl;
+  return { ...rest, sandbox: st, ...(notice ? { notice } : {}), ...(x.notLowered === true ? { notLowered: true } : {}) } as unknown as E; // FR-022c: true or absent
 }
 
 /** The state as main keeps it and the window shows it: own known fields only, anything malformed dropped (all-or-nothing). */
@@ -61,7 +63,7 @@ export function cleanSandboxState(x: unknown): SandboxState | undefined {
   if (mech !== undefined && (typeof mech !== 'string' || !(MECHANISMS as readonly string[]).includes(mech))) return undefined;
   const writes = own('writes');
   if (writes !== undefined && writes !== 'none' && writes !== 'folders') return undefined;
-  for (const k of ['managed', 'untilNewSession', 'approvedMayLeave']) if (own(k) !== undefined && typeof own(k) !== 'boolean') return undefined;
+  for (const k of ['managed', 'untilNewSession', 'approvedMayLeave', 'heldFloor']) if (own(k) !== undefined && typeof own(k) !== 'boolean') return undefined;
   if (typeof own('verified') !== 'boolean') return undefined;
   const reason = own('reason');
   if (reason !== undefined && typeof reason !== 'string') return undefined;
@@ -76,6 +78,7 @@ export function cleanSandboxState(x: unknown): SandboxState | undefined {
     ...(mech ? { mechanism: mech as SandboxState['mechanism'] } : {}),
     ...(own('managed') === true ? { managed: true } : {}),
     ...(own('untilNewSession') === true ? { untilNewSession: true } : {}),
+    ...(own('heldFloor') === true ? { heldFloor: true } : {}),
     covers: [...new Set(covers as SandboxState['covers'])],
     ...(own('approvedMayLeave') === true ? { approvedMayLeave: true } : {}),
     ...(writes ? { writes: writes as SandboxState['writes'] } : {}),

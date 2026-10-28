@@ -271,6 +271,7 @@ async function main(): Promise<void> {
     assert.strictEqual(updates(fake, sid).length, 2, 'AC1: one lowering at the switch');
     assert.deepStrictEqual(updates(fake, sid)[1], LOWER, 'AC1: exactly the T066 payload, no other field');
     assert.strictEqual(last(events, sid), null, 'AC1: resolved: no floor, no word, no action (as a fresh Allow all session)');
+    assert.strictEqual(sbx(events, sid).filter((e) => e.notLowered).length, 0, 'resolved: no notLowered event (no toast)');
     ad.setPermMode!(sid, 'ask');
     await new Promise((r) => setTimeout(r, 5));
     assert.strictEqual(updates(fake, sid).length, 3, 'Ask first again: the new floor at the switch');
@@ -278,6 +279,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual([back.sandboxConfig.enabled, back.sandboxConfigSource], [true, 'session_flag'], 'AC1: narrowing re-sends the full floor');
     assert.deepStrictEqual(back.sandboxConfig.userPolicy.filesystem.readwritePaths, [WS]);
     assert.strictEqual(last(events, sid)?.state, 'on');
+    assert.strictEqual(last(events, sid)?.heldFloor, true, 'review on PR #833: a floor in force says heldFloor (the Allow all dialog names the lowering)');
     // the sends wait for the switch: a send right after it goes out after the lowering settled
     ad.setPermMode!(sid, 'allow');
     await ad.send(sid, { text: 'after the switch' });
@@ -299,8 +301,9 @@ async function main(): Promise<void> {
     await ad.dispose();
   }
 
-  // ---- T072 AC1 (FR-022c): a refused or a hanging lowering keeps the floor assumed in force: untilNewSession, and Restart without the sandbox
-  // stays offered (FR-022, the fallback); narrowing afterwards still re-sends the floor ----
+  // ---- T072 AC1 (FR-022c): a refused or a hanging lowering keeps the floor assumed in force: untilNewSession, Restart without the sandbox
+  // stays offered (FR-022), and the window is told (notLowered: the toast). Refused: narrowing re-sends the floor. Hanging: the lowering may
+  // still land, so a narrowing claims nothing and holds the sends (FR-007) until it answers (review on PR #833) ----
   {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const T = require('../../src/renderer/sandboxtext.js') as { canRestartWithoutSandbox(o: unknown): boolean };
@@ -315,15 +318,132 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(updates(fake, sid)[1], { sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' }, `${how}: the lowering was tried`);
       assert.deepStrictEqual(last(events, sid), { state: 'on', mechanism: 'bubblewrap', covers: ['shell', 'mcp'], untilNewSession: true, verified: false }, `${how}: the floor is kept until a new session`);
       assert.strictEqual(T.canRestartWithoutSandbox({ sandbox: last(events, sid), mode: 'allow', caps: { resume: true } }), true, `${how}: Restart without the sandbox is offered`);
+      assert.strictEqual(sbx(events, sid).filter((e) => e.notLowered === true).length, 1, `${how}: one notLowered event for the toast`);
       fs0.updateFail = '';
       fs0.updateHangs = false;
       ad.setPermMode!(sid, 'ask');
       await new Promise((r) => setTimeout(r, 5));
-      const back = updates(fake, sid)[2] as { sandboxConfig: { enabled: boolean }; sandboxConfigSource: string };
-      assert.deepStrictEqual([back?.sandboxConfig.enabled, back?.sandboxConfigSource], [true, 'session_flag'], `${how}: narrowing re-sends the floor`);
-      assert.strictEqual(last(events, sid)?.state, 'on');
+      if (how === 'refused') {
+        assert.strictEqual(last(events, sid)?.heldFloor, true, 'after a refused lowering: the narrowed state holds the floor');
+        const back = updates(fake, sid)[2] as { sandboxConfig: { enabled: boolean }; sandboxConfigSource: string };
+        assert.deepStrictEqual([back?.sandboxConfig.enabled, back?.sandboxConfigSource], [true, 'session_flag'], 'refused: narrowing re-sends the floor');
+        assert.strictEqual(last(events, sid)?.state, 'on');
+      } else {
+        assert.strictEqual(updates(fake, sid).length, 2, 'hangs: no floor is sent while the lowering may still land');
+        assert.strictEqual(last(events, sid)?.state, 'unknown', 'hangs: fail closed, nothing is claimed');
+        await ad.send(sid, { text: 'x' });
+        assert.strictEqual(sends(fake, sid), 0, 'hangs: the send is held (FR-007)');
+        assert.ok(sbx(events, sid).some((e) => e.notice && /earlier request to turn its sandbox off/.test(e.notice.text)), 'hangs: the note says why');
+      }
       await ad.dispose();
     }
+  }
+
+  // ---- review on PR #833, item 1: a lowering that answers AFTER the limit is not ignored ----
+  for (const late of ['resolve', 'reject'] as const) {
+    // (a) still in Allow all: a late success ends the floor (state null); a late refusal keeps it
+    {
+      const { ad, fake, events } = make();
+      const sid = await start(ad, 'read-only');
+      const fs0 = fake.sessions.get(sid)!;
+      fs0.lowerDeferred = true;
+      ad.setPermMode!(sid, 'allow');
+      await new Promise((r) => setTimeout(r, 120)); // past the 50 ms limit
+      assert.strictEqual(last(events, sid)?.untilNewSession, true, `(a) ${late}: before the late answer, the floor is assumed on`);
+      if (late === 'resolve') fs0.deferred.shift()!.resolve(); else fs0.deferred.shift()!.reject(new Error('late refusal'));
+      await new Promise((r) => setTimeout(r, 10));
+      if (late === 'resolve') assert.strictEqual(last(events, sid), null, '(a) resolve: the floor is off, and the state says so');
+      else assert.strictEqual(last(events, sid)?.untilNewSession, true, '(a) reject: the floor stays');
+      assert.strictEqual(updates(fake, sid).length, 2, `(a) ${late}: no new update`);
+      await ad.dispose();
+    }
+    // (b) back to Ask first after the limit: no floor is claimed until the late answer; then the floor goes out after it, and only then is it on
+    {
+      const { ad, fake, events } = make();
+      const sid = await start(ad, 'ask');
+      const fs0 = fake.sessions.get(sid)!;
+      fs0.lowerDeferred = true;
+      ad.setPermMode!(sid, 'allow');
+      await new Promise((r) => setTimeout(r, 120));
+      ad.setPermMode!(sid, 'ask');
+      await new Promise((r) => setTimeout(r, 5));
+      assert.strictEqual(last(events, sid)?.state, 'unknown', `(b) ${late}: Ask first while the lowering is out: unknown, never a confirmed on`);
+      assert.strictEqual(updates(fake, sid).length, 2, `(b) ${late}: the floor waits for the lowering's answer`);
+      const sending = ad.send(sid, { text: 'x' });
+      await sending;
+      assert.strictEqual(sends(fake, sid), 0, `(b) ${late}: the send is held`);
+      if (late === 'resolve') fs0.deferred.shift()!.resolve(); else fs0.deferred.shift()!.reject(new Error('late refusal'));
+      await new Promise((r) => setTimeout(r, 10));
+      const u = updates(fake, sid);
+      assert.strictEqual(u.length, 3, `(b) ${late}: the floor is sent again after the late answer`);
+      assert.deepStrictEqual([(u[2].sandboxConfig as { enabled: boolean }).enabled, u[2].sandboxConfigSource], [true, 'session_flag']);
+      assert.strictEqual(last(events, sid)?.state, 'on', `(b) ${late}: on only after the floor went out last`);
+      await ad.send(sid, { text: 'y' });
+      assert.strictEqual(sends(fake, sid), 1, `(b) ${late}: sends go out again`);
+      await ad.dispose();
+    }
+  }
+
+  // ---- review on PR #833, item 2: the order. Allow all, then Ask first at once, with a slow lowering inside the limit: lower, then the floor;
+  // a send waits for both; on at the end ----
+  {
+    const { ad, fake, events } = make();
+    const sid = await start(ad, 'ask');
+    const fs0 = fake.sessions.get(sid)!;
+    fs0.lowerDeferred = true;
+    ad.setPermMode!(sid, 'allow');
+    ad.setPermMode!(sid, 'ask');
+    const sending = ad.send(sid, { text: 'x' });
+    await new Promise((r) => setTimeout(r, 10));
+    assert.strictEqual(updates(fake, sid).length, 2, 'the floor waits for the lowering');
+    assert.strictEqual(sends(fake, sid), 0, 'the send waits too');
+    fs0.deferred.shift()!.resolve(); // within the 50 ms limit
+    await sending;
+    const seq = fs0.calls.filter((c) => c.name === 'send' || (c.name === 'options.update' && (c.args[0] as { sandboxConfig?: unknown }).sandboxConfig)).map((c) => (c.name === 'send' ? 'send' : (c.args[0] as { sandboxConfig: { enabled: boolean } }).sandboxConfig.enabled ? 'floor' : 'lower'));
+    assert.deepStrictEqual(seq, ['floor', 'lower', 'floor', 'send'], 'start floor, lower, the floor again, then the send');
+    assert.strictEqual(last(events, sid)?.state, 'on');
+    await ad.dispose();
+  }
+
+  // ---- review on PR #833, item 2: sandboxSeq. A lowering that resolves after a later change (here the direct re-apply a sign-in refresh does)
+  // does not overwrite that change's state: the floor is off now, so the current mode runs again ----
+  {
+    const { ad, fake, events } = make();
+    const sid = await start(ad, 'ask');
+    const fs0 = fake.sessions.get(sid)!;
+    fs0.lowerDeferred = true;
+    ad.setPermMode!(sid, 'allow');
+    await new Promise((r) => setTimeout(r, 5));
+    const live = (ad as unknown as { sessions: Map<string, { broker: { setMode(m: string): void } }> }).sessions.get(sid)!;
+    live.broker.setMode('ask');
+    await (ad as unknown as { applySandbox(s: string, l: unknown, m: string): Promise<void> }).applySandbox(sid, live, 'ask');
+    assert.strictEqual(last(events, sid)?.state, 'on', 'the later change: on');
+    fs0.deferred.shift()!.resolve();
+    await new Promise((r) => setTimeout(r, 10));
+    assert.strictEqual(last(events, sid)?.state, 'on', 'the stale lowering did not overwrite it with null');
+    assert.strictEqual(updates(fake, sid).length, 4, 'and the floor was sent again after it');
+    await ad.dispose();
+  }
+
+  // ---- review on PR #833, item 3: a refused narrowing (state off) of a session that still holds an earlier floor says heldFloor, and the
+  // switch to Allow all lowers it; a session that never had a floor says nothing ----
+  {
+    const { ad, fake, events } = make();
+    const sid = await start(ad, 'read-only');
+    fake.sessions.get(sid)!.updateFail = 'no';
+    ad.setPermMode!(sid, 'ask');
+    await new Promise((r) => setTimeout(r, 5));
+    assert.deepStrictEqual([last(events, sid)?.state, last(events, sid)?.heldFloor], ['off', true], 'off, floor held from Read-only');
+    fake.sessions.get(sid)!.updateFail = '';
+    ad.setPermMode!(sid, 'allow');
+    await new Promise((r) => setTimeout(r, 5));
+    assert.strictEqual(updates(fake, sid)[2]?.sandboxConfigSource, 'session_disabled', 'and the switch lowers it');
+    assert.strictEqual(last(events, sid), null);
+    const off = make({ prep: (c) => { c.sandboxHost = { supported: false, reason: 'no bwrap', capabilities: [] }; } });
+    const s2 = await start(off.ad, 'ask');
+    assert.strictEqual(last(off.events, s2)?.heldFloor, undefined, 'no floor ever: no heldFloor');
+    await ad.dispose();
+    await off.ad.dispose();
   }
 
   // ---- T072 (FR-022c): a managed floor is never lowered (a policy conflict); its state stays ----

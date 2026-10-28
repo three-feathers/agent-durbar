@@ -604,13 +604,22 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.strictEqual((outwardSandboxEvent({ type: 'sandbox', sandbox: { state: 'on', covers: [42], verified: false } }) as { sandbox: unknown }).sandbox, null, 'a malformed state: null');
   const other = { type: 'output', delta: TOKEN };
   assert.strictEqual(outwardSandboxEvent(other), other, 'other events pass unchanged (outward() handles them)');
+  // FR-022c (review on PR #833): notLowered reaches the window only as exactly true; heldFloor is kept only as true
+  assert.strictEqual((outwardSandboxEvent({ type: 'sandbox', sandbox: null, notLowered: true }) as { notLowered?: unknown }).notLowered, true);
+  assert.ok(!('notLowered' in (outwardSandboxEvent({ type: 'sandbox', sandbox: null, notLowered: 'yes' }) as object)), 'notLowered not true: dropped');
+  assert.strictEqual(cleanSandboxState({ state: 'on', covers: ['shell'], verified: false, heldFloor: true })?.heldFloor, true);
+  assert.strictEqual(cleanSandboxState({ state: 'on', covers: ['shell'], verified: false, heldFloor: 'true' }), undefined, 'heldFloor must be a boolean');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { eventProblems } = require('../src/adapters/eventguard') as typeof import('../src/adapters/eventguard');
+  assert.deepStrictEqual(eventProblems({ type: 'sandbox', sessionId: 's', timestamp: 1, sandbox: null, notLowered: true }), []);
+  assert.ok(eventProblems({ type: 'sandbox', sessionId: 's', timestamp: 1, sandbox: null, notLowered: 1 } as never).length > 0, 'eventguard: notLowered only true');
   assert.ok(!(T as unknown as { details(s: unknown, a: string, m: (t: string) => string): string }).details({ ...on, leftOut: ['/h/ghp_abcdefghijklmnopqrstuvwxyz0123456789 (not usable)'] }, 'C', () => '').includes('ghp_'), 'each entry only through the mask');
   ok('FR-009/FR-010: the chip words and the tooltip per app; the reason only through the mask');
 }
 // ---- T067 (FR-022, FR-022a, FR-022e; issue #806): Restart without the sandbox, the pure rule and its words (src/renderer/sandboxtext.js) ----
 {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const T = require('../../src/renderer/sandboxtext.js') as { canRestartWithoutSandbox(o: unknown): boolean; restartTip(s: unknown, app: string): string; allowAllNote(s: unknown, app: string): string; NOT_VERIFIED: string };
+  const T = require('../../src/renderer/sandboxtext.js') as { canRestartWithoutSandbox(o: unknown): boolean; restartTip(s: unknown, app: string): string; allowAllNote(s: unknown, app: string): string; notLoweredToast(app: string): string; NOT_VERIFIED: string };
   const can = (sandbox: unknown, mode: string, caps: unknown = { resume: true }) => T.canRestartWithoutSandbox({ sandbox, mode, caps });
   const host = { supported: true, capabilities: [] };
   // the Copilot states, from the adapter's own state function
@@ -650,11 +659,20 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.ok(!T.restartTip({ ...kept, verified: true }, 'Copilot').includes('not verified'), 'a verified state drops the sentence');
   assert.ok(T.restartTip(kept, 'Some App').startsWith('Some App did not confirm'), 'the app name is the one given (the adapter display name)');
   // FR-022c (T072 AC2, Q4; replaces FR-022e's sentence): the Allow all dialog's sentence only for a floor the switch turns off (Copilot Read-only / Ask first, on)
+  // review on PR #833 (item 3): the sentence follows the neutral heldFloor (the adapter sets it when it will ask to lower), whatever the state word
   const NOTE = 'Copilot’s OS sandbox is also turned off for this session.';
-  assert.strictEqual(T.allowAllNote(copilotSandboxState({ mode: 'ask', platform: 'linux', host, applied: true }), 'Some App'), 'Some App’s OS sandbox is also turned off for this session.', 'the app name comes from the caller (the adapter display name)');
-  for (const mode of ['read-only', 'ask'] as const) assert.strictEqual(T.allowAllNote(copilotSandboxState({ mode, platform: 'linux', host, applied: true }), 'Copilot'), NOTE, `Copilot ${mode}: the sentence`);
-  assert.strictEqual(T.allowAllNote(copilotSandboxState({ mode: 'ask', platform: 'linux', host, refused: 'no' }), 'Copilot'), '', 'Copilot off (refused): no floor, no sentence');
+  const held = (st: unknown) => ({ ...(st as object), heldFloor: true });
+  assert.strictEqual(T.allowAllNote(held(copilotSandboxState({ mode: 'ask', platform: 'linux', host, applied: true })), 'Some App'), 'Some App’s OS sandbox is also turned off for this session.', 'the app name comes from the caller (the adapter display name)');
+  for (const mode of ['read-only', 'ask'] as const) assert.strictEqual(T.allowAllNote(held(copilotSandboxState({ mode, platform: 'linux', host, applied: true })), 'Copilot'), NOTE, `Copilot ${mode}: the sentence`);
+  assert.strictEqual(T.allowAllNote(held(copilotSandboxState({ mode: 'ask', platform: 'linux', host, refused: 'no' })), 'Copilot'), NOTE, 'off after a refused narrowing, a floor still held: the sentence (it will be lowered)');
+  assert.strictEqual(T.allowAllNote(held(copilotSandboxState({ mode: 'ask', platform: 'linux', host })), 'Copilot'), NOTE, 'unknown with a floor held: the sentence');
+  assert.strictEqual(T.allowAllNote(copilotSandboxState({ mode: 'ask', platform: 'linux', host, applied: true }), 'Copilot'), '', 'no heldFloor: no sentence');
+  assert.strictEqual(T.allowAllNote(copilotSandboxState({ mode: 'ask', platform: 'linux', host, refused: 'no' }), 'Copilot'), '', 'Copilot off (refused), no floor: no sentence');
   assert.strictEqual(T.allowAllNote(copilotSandboxState({ mode: 'ask', platform: 'linux', host, continued: true }), 'Copilot'), '', 'Copilot continued without it: no sentence');
+  assert.strictEqual(T.allowAllNote({ ...held(copilotSandboxState({ mode: 'ask', platform: 'linux', host, applied: true })), managed: true }, 'Copilot'), '', 'managed: never lowered, no sentence');
+  assert.strictEqual(T.allowAllNote({ ...held(copilotSandboxState({ mode: 'ask', platform: 'linux', host, applied: true })), heldFloor: 'true' }, 'Copilot'), '', 'only heldFloor === true');
+  assert.strictEqual(T.notLoweredToast('Copilot'), 'Copilot did not turn its sandbox off; use Restart without the sandbox.', 'FR-022c: the toast after a refused or unanswered lowering');
+  assert.strictEqual(T.notLoweredToast('Some App'), 'Some App did not turn its sandbox off; use Restart without the sandbox.', 'the toast names the app given');
   assert.strictEqual(T.allowAllNote(kept, 'Copilot'), '', 'already kept in Allow all: no sentence');
   assert.strictEqual(T.allowAllNote(null, 'Copilot'), '', 'no state: no sentence');
   for (const mode of ['read-only', 'ask'] as const) {

@@ -423,6 +423,29 @@ session, so it stays until a new one. Restart keeps this conversation and starts
 real session." while `verified` is false). The simulator lowers a Copilot floor at the switch (always resolved); sim agent #14 keeps its kept
 floor in Allow all to show the fallback. Claude Code and Codex are unchanged. **T073 is not needed** (its fact is this entry and the tooltip).
 
+**Review on PR #833** (Vikram's agent, changes requested at f90faaf0; fixed in the same PR, fakes and simulator only):
+
+1. **A lowering that answers after the 15 s limit is no longer ignored.** The adapter keeps the raw update; on a timeout it marks the lowering
+   outstanding (`lowerOutstanding`). Its late answer re-runs the session's *current* mode through the same per-session chain: a late success in
+   Allow all gives `null`; in Read-only or Ask first the full floor is sent again, after the lowering, and only then is the state `on`. A late refusal in
+   Allow all keeps the kept floor. While the lowering is outstanding, a narrowing **fails closed**: the state is `unknown` ("Waiting for Copilot to
+   answer the earlier request to turn its sandbox off.") and the sends are held as in FR-007 (the note says why), no floor is sent, and a switch to
+   Allow all sends no second lowering. A lowering that resolves after a later change of the same session (`sandboxSeq`; only a direct re-apply such as a
+   sign-in refresh can overlap, the switches are chained) re-runs the current mode instead of reporting `null`. Test: `scripts/test-copilot-sandbox.ts`
+   with a deferred fake (`lowerDeferred`): (a) late success and late refusal in Allow all, (b) back to Ask first after the limit, both outcomes.
+2. **The order is tested:** Allow all then Ask first at once with a slow lowering inside the limit gives exactly start floor, lower, floor, then the
+   send (the send waits for both), state `on`; and the `sandboxSeq` case above. The reviewer's mutants M1 (the chained narrowing skips its apply) and
+   M5 (no `sandboxSeq` guard) are now caught.
+3. **FR-022e's `[KNOWN GAP]` is closed by showing the sentence:** the normalized state gets a neutral `heldFloor: true` (no vendor key; `src/shared/api.ts`,
+   cleaned in `cleanSandboxState` and `sandboxtext.js`) whenever a floor this session set is (assumed) in force and not managed, set by the Copilot adapter
+   in `setSandbox` from `live.sandboxFloor`, whatever the state word (`on`, `off` after a refused narrowing, `unknown`). `allowAllNote` shows Q4's
+   sentence exactly when `heldFloor` is true and the state is not managed or already kept, i.e. whenever the switch will send the lowering. Claude Code and
+   Codex never set it.
+4. **A calm toast after a refused or unanswered lowering** (the coordinator's decision on the reviewer's question): the adapter's sandbox event carries
+   `notLowered: true` (a closed flag; `eventguard`, and main's `outwardSandboxEvent` passes only `true`), and the window shows the existing toast
+   "<App> did not turn its sandbox off; use Restart without the sandbox." (`notLoweredToast`, app name from the adapter). Sim: `?simsbxlower=refuse`
+   makes the sim refuse the lowering; the driver checks the toast, the kept floor and its action at both sizes, and that a Claude switch adds no toast.
+
 ### 2026-10-28: T066 probe built, real run not possible on this host (K16 stays open; Refs #806)
 
 `scripts/sandbox-floor-real.ts` has the `switch` scenario of T066 (steps 1-4, hygiene items (a)-(c) of the review on PR #809), and its
@@ -627,7 +650,7 @@ default on the switch and B is offered only after an A refusal; if it fails, B i
   adapter sends `options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' })` (the exact payload T066 proved;
   no other field, never `allowBypass`), with the same 15 s limit as FR-004. The state follows the update: **resolved** → `null` (as a fresh
   Allow all session); **refused or no answer** → the floor is still assumed in force, the state keeps `untilNewSession: true` and FR-022
-  is offered. A switch back to Read-only or Ask first re-sends the full floor (FR-004), as today; a test pins both directions. Because the
+  is offered, with a toast (review on PR #833); an answer after the limit re-runs the current mode, and a narrowing fails closed until it comes. A switch back to Read-only or Ask first re-sends the full floor (FR-004), as today; a test pins both directions. Because the
   switch would now also lower the OS limit, the Allow all dialog for a Copilot session with a floor replaces FR-022e's sentence with "Copilot’s OS sandbox
   is also turned off for this session." (FR-022a(1): the confirmation must name it). If the probe fails, FR-022c is struck from this spec
   and the unused code is never written.
@@ -646,7 +669,8 @@ default on the switch and B is offered only after an A refusal; if it fails, B i
   get today's text unchanged (driver asserts the sentence for the Copilot sim agent and its absence for Claude and Codex sim agents). If outcome A
   ships, FR-022c replaces this sentence with Q4's ("Copilot’s OS sandbox is also turned off for this session."). **Replaced 2026-10-28** (FR-022c built):
   the dialog now says Q4's sentence; FR-022e's is gone.
-  `[KNOWN GAP]` (review on 32220198) The sentence shows only for a state `on`. After a refused narrowing (state `off`) or a switch while an update is still
+  (Closed 2026-10-28, review on PR #833: under FR-022c the sentence follows the neutral `heldFloor`, so it shows for `off` and `unknown` states that still
+  hold a floor too; the old text follows.) `[KNOWN GAP, closed]` (review on 32220198) The sentence shows only for a state `on`. After a refused narrowing (state `off`) or a switch while an update is still
   in flight (state `unknown`), Copilot's `live.sandboxFloor` can still be true from an earlier update, so the floor is kept but this dialog does not say so
   (read: `copilot.ts` `applySandbox`; after the switch the state is built from `keptFloor`, so the chip and Restart without the sandbox still show it). No new field was added for this.
 

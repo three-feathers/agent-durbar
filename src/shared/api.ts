@@ -99,6 +99,8 @@ export interface SandboxState {
   managed?: boolean;
   /** Set in an earlier mode of this session and kept until a new session (a switch to Allow all does not clear it). */
   untilNewSession?: boolean;
+  /** Spec 087 FR-022c: a floor this session set is (assumed) in force, and a switch to Allow all asks the app to turn it off in this session. */
+  heldFloor?: boolean;
   /** What runs inside it: shell commands, MCP servers, the app's own file tools. */
   covers: Array<'shell' | 'mcp' | 'files'>;
   /** An approved request may run outside the sandbox (spec 087 FR-021). */

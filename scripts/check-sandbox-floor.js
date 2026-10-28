@@ -17,7 +17,7 @@
  * Restart without the sandbox (tooltip, keyboard, Escape back to the chip); its own dialog (busy, grants, remote control, next-message lines;
  * no MCP wording) where Cancel calls nothing and confirming calls the existing restart with reason 'sandbox', after which the word and the action
  * go; Copilot's Allow all dialog says its OS sandbox is also turned off (FR-022c, T072) and the switch leaves no word, Claude Code's and Codex's do
- * not say it and never show the action; managed and the office card's
+ * not say it and never show the action; with simsbxlower=refuse a refused lowering keeps the floor and its action and toasts once (review on PR #833); managed and the office card's
  * menu never have it. Prints "[087-sandbox] PASS".
  */
 const assert = require('assert');
@@ -237,6 +237,23 @@ module.exports = async (ctx) => {
       assert.ok(await until(`/^Allow all/.test((document.getElementById('modeChip')||{}).innerText||'')`, 8000), `${w}: ${app} is in Allow all`);
       await ctx.sleep(200); // the sandbox event follows the switch in the simulator; give a wrong button time to show
       assert.ok(!(await js(`!!document.getElementById('sbxRestartBtn')`)), `${w}: ${app} never shows the action`);
+    }
+    // review on PR #833 (item 4): simsbxlower=refuse: Copilot refuses the lowering: the floor is kept with its action, and a calm toast says so
+    await H.load({ w, h, query: { simkinds: 'mixed', simsbxlower: 'refuse' } });
+    await openAgent('sim-2');
+    const rBody = await allowDlg('sim-2');
+    assert.ok(rBody.endsWith(' ' + OFF), `${w}: refused case: the dialog said it is turned off: ${rBody}`);
+    await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find(b=>b.textContent==='Allow all').click()`);
+    const NOT_LOWERED = 'Copilot did not turn its sandbox off; use Restart without the sandbox.';
+    assert.ok(await until(`[...document.querySelectorAll('#toasts .toast')].some(t=>t.textContent===${jsLiteral(NOT_LOWERED)})`, 8000), `${w}: the toast after a refused lowering`);
+    assert.ok(await until(`!!document.getElementById('sbxRestartBtn')&&/Sandboxed \\(until a new session\\)/.test(document.getElementById('modeChip').innerText+document.getElementById('sbxRestartBtn').textContent)`, 8000), `${w}: refused: the kept floor and its action`);
+    for (const [id, app] of [['sim-1', 'Claude']]) {
+      await openAgent(id);
+      await allowDlg(id);
+      await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find(b=>b.textContent==='Allow all').click()`);
+      assert.ok(await until(`/^Allow all/.test((document.getElementById('modeChip')||{}).innerText||'')`, 8000), `${w}: ${app} is in Allow all`);
+      await ctx.sleep(200);
+      assert.strictEqual(await js(`[...document.querySelectorAll('#toasts .toast')].filter(t=>t.textContent===${jsLiteral(NOT_LOWERED)}).length`), 1, `${w}: ${app}: no second toast`);
     }
     // managed (sim-6, Claude Code here; Copilot in the default roster below): no action
     await openAgent('sim-6');

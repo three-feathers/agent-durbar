@@ -123,6 +123,8 @@ interface Live {
   sandboxFloor?: boolean;
   /** Spec 087 FR-022c: counts `applySandbox` calls, so a lowering that resolves after a later switch does not overwrite that switch's state. */
   sandboxSeq?: number;
+  /** Spec 087 FR-022c (review on PR #833): a lowering that passed the time limit and has not answered yet; its late answer re-runs the mode. */
+  lowerOutstanding?: boolean;
   /** Spec 087 FR-019: the organization requires the sandbox (from the start options). */
   requireOsSandbox?: boolean;
   /** Spec 087 FR-007a: the held send showed its note; Continue is accepted only while it is open (review on PR 733). */
@@ -1100,13 +1102,7 @@ export class CopilotAdapter implements AgentAdapter {
     if (!live) return { pending: 0 };
     live.broker.setMode(mode);
     // spec 087 FR-013: the new floor through options.update at the switch (to Allow all a floor in force is lowered, FR-022c)
-    // FR-022c: one sandbox change at a time per session, in order (a narrowing after a lowering is sent after the lowering settled)
-    const prev = live.sandboxApplying;
-    const applying = prev ? prev.catch(() => undefined).then(() => (this.sessions.get(sessionId) === live ? this.applySandbox(sessionId, live, mode) : undefined)) : this.applySandbox(sessionId, live, mode);
-    live.sandboxApplying = applying;
-    void applying.finally(() => {
-      if (live.sandboxApplying === applying) live.sandboxApplying = undefined;
-    });
+    this.chainSandbox(sessionId, live, mode);
     if (opts.clearGrants) live.broker.clearGrants();
     let pending = live.broker.pendingCount();
     if (pending) {
@@ -1141,10 +1137,36 @@ export class CopilotAdapter implements AgentAdapter {
     return host;
   }
 
-  private setSandbox(sid: string, live: Live, st: SandboxState | null): void {
+  private setSandbox(sid: string, live: Live, st0: SandboxState | null): void {
+    // FR-022c (review on PR #833): a floor this session set is (assumed) in force and a switch to Allow all will ask to lower it: said in the
+    // normalized state, so the Allow all dialog can name it whatever the state word is
+    const st = st0 && live.sandboxFloor && !st0.untilNewSession && !st0.managed ? { ...st0, heldFloor: true } : st0;
     if (JSON.stringify(st) === JSON.stringify(live.sandbox)) return;
     live.sandbox = st;
     this.emit(sid, { type: 'sandbox', sandbox: st });
+  }
+
+  /**
+   * FR-022c: one sandbox change at a time per session, in order (a narrowing after a lowering is sent after the lowering settled); sends wait
+   * for it. Without `mode` the session's mode when the change runs (the re-run after a late or overtaken lowering).
+   */
+  private chainSandbox(sid: string, live: Live, mode?: PermissionMode): void {
+    const prev = live.sandboxApplying;
+    const run = (): Promise<void> | undefined => (this.sessions.get(sid) === live ? this.applySandbox(sid, live, mode ?? live.broker.getMode()) : undefined);
+    const applying: Promise<void> = prev ? prev.catch(() => undefined).then(run) : Promise.resolve(run());
+    live.sandboxApplying = applying;
+    void applying.finally(() => {
+      if (live.sandboxApplying === applying) live.sandboxApplying = undefined;
+    });
+  }
+
+  /** FR-022c (review on PR #833): the late answer of a lowering that passed the time limit. A floor that went off is reported or put back. */
+  private lateLowering(sid: string, live: Live, lowered: boolean): void {
+    if (this.sessions.get(sid) !== live || !live.lowerOutstanding) return;
+    live.lowerOutstanding = undefined;
+    if (lowered) live.sandboxFloor = undefined;
+    else if (live.broker.getMode() === 'allow') return; // refused late: the floor stays, and the state already says so
+    this.chainSandbox(sid, live); // Allow all: no floor (null); Read-only / Ask first: the floor is sent again, after the lowering
   }
 
   /** FR-004/FR-006/FR-007/FR-013: the floor for `mode` on this session; never throws (a failure holds the next send back). */
@@ -1157,21 +1179,40 @@ export class CopilotAdapter implements AgentAdapter {
       if (live.sandbox?.managed) return; // a managed floor is never lowered (a policy conflict): the state stays as it is
       const kept = copilotSandboxState({ mode, platform, keptFloor: live.sandboxFloor });
       this.setSandbox(sid, live, kept); // a fresh Allow all session: null, nothing sent; a floor in force: kept until the lowering resolves
-      if (!kept || this.sessions.get(sid) !== live) return;
+      if (!kept || this.sessions.get(sid) !== live || live.lowerOutstanding) return; // an outstanding lowering: its late answer re-runs the mode
       // FR-022c (T066 verdict A, real: 2026-10-28, Linux, CLI 1.0.98 / SDK 1.0.22): clear the floor in place with exactly the proven payload
+      const raw = Promise.resolve().then(() => live.session.rpc.options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' }));
+      let settled = false;
+      raw.then(() => { settled = true; }, () => { settled = true; }); // registered before the race in timed(), so it runs first
       try {
-        await this.timed(live.session.rpc.options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' }), 'Copilot');
+        await this.timed(raw, 'Copilot');
       } catch {
-        return; // refused or no answer: the floor is assumed in force; untilNewSession stays and Restart without the sandbox is offered (FR-022)
+        // refused or no answer: the floor is assumed in force; untilNewSession stays and Restart without the sandbox is offered (FR-022).
+        // The person was told it is turned off, so the window says it was not (a toast). An answer after the limit is not ignored.
+        if (!settled && this.sessions.get(sid) === live) {
+          live.lowerOutstanding = true;
+          raw.then(() => this.lateLowering(sid, live, true), () => this.lateLowering(sid, live, false));
+        }
+        if (this.sessions.get(sid) === live) this.emit(sid, { type: 'sandbox', sandbox: live.sandbox ?? null, notLowered: true });
+        return;
       }
-      if (live.sandboxSeq !== seq || this.sessions.get(sid) !== live) return; // a later switch or the end of the session decides
+      if (this.sessions.get(sid) !== live) return; // the session ended: its kept floor ended with it
       live.sandboxFloor = undefined;
+      // a later change ran while this lowering was out (sandboxSeq): the floor is off now, so that change's mode is applied again
+      if (live.sandboxSeq !== seq) return this.chainSandbox(sid, live);
       return this.setSandbox(sid, live, null);
     }
     if (this.sandboxContinued.has(sid) && !live.requireOsSandbox) {
       live.sandboxHold = undefined;
       live.sandboxNoteOpen = false;
       return this.setSandbox(sid, live, copilotSandboxState({ mode, platform, host: { supported: true, capabilities: [] }, continued: true }));
+    }
+    if (live.lowerOutstanding) {
+      // review on PR #833: a lowering that passed the limit may still land after a floor sent now, so nothing is claimed and nothing is sent
+      // (FR-007 hold) until it answers; then the mode runs again (lateLowering)
+      live.sandboxHold = { reason: 'it has not answered the earlier request to turn its sandbox off yet' };
+      const waiting = copilotSandboxState({ mode, platform, host: { supported: true, capabilities: [] } }); // state unknown
+      return this.setSandbox(sid, live, waiting && { ...waiting, reason: 'Waiting for Copilot to answer the earlier request to turn its sandbox off.' });
     }
     // the session's own runtime client (never a new start here: a dispose during a start must not bring up another runtime)
     const c = client ?? (this.sessions.get(sid) === live ? await this.getClient().catch(() => undefined) : undefined);
