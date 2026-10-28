@@ -182,19 +182,19 @@ body.has-bridge #liveBar{display:flex}
 .workspace{flex:1;display:flex;min-height:0;min-width:0}
 #floor{flex:1;min-width:0;position:relative;overflow:hidden;padding:12px 16px 12px}
 #floor.scrolls{overflow-y:auto}
-/* spec 092 FR-006..FR-008, FR-015, FR-028, FR-032: the lift panel at the right edge of the office area (a flex item of .workspace, so its width comes out
+/* spec 092 FR-006..FR-008, FR-015, FR-028, FR-032 (40 px wide: at 47 px the lobby's Bank tile lost its visitor's words at 1440x900): the lift panel at the right edge of the office area (a flex item of .workspace, so its width comes out
    of #floor and the layout counts it); shown only with two or more floors on. Semantic tokens only; text at least 10.5px; buttons at least 28x28. */
-#lift{flex:none;display:flex;flex-direction:column;align-items:stretch;min-height:0;padding:10px 2px 8px 3px;border-left:1px solid var(--line);background:var(--surface)}
+#lift{flex:none;display:flex;flex-direction:column;align-items:stretch;min-height:0;padding:10px 0 8px 2px;border-left:1px solid var(--line);background:var(--surface)}
 #lift[hidden]{display:none}
-.lift-shaft{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-height:0;overflow-y:auto;overflow-x:hidden;padding:7px 8px 4px 3px;scrollbar-width:none}
+.lift-shaft{display:flex;flex-direction:column;align-items:flex-start;gap:9px;min-height:0;overflow-y:auto;overflow-x:hidden;padding:6px 4px 4px 3px;scrollbar-width:none}
 .lift-shaft::-webkit-scrollbar{display:none}
 .lift-b{position:relative;flex:none;width:30px;height:30px;min-height:28px;padding:0;border:1px solid var(--line);border-radius:var(--r-md);background:var(--raised);color:var(--ink-2);font:inherit;font-size:11px;font-weight:600;line-height:1;cursor:pointer;display:grid;place-items:center}
 .lift-b:hover{border-color:var(--line-2);color:var(--ink)}
 .lift-b.lift-all{font-size:10.5px;letter-spacing:.01em;margin-bottom:4px}
 /* FR-007: the view shown is marked by shape and weight, not colour only: a thick border, bold text and a bar on the left */
 .lift-b[aria-current="true"]{border:2px solid var(--ink);color:var(--ink);font-weight:800;background:var(--surface-2)}
-.lift-b[aria-current="true"]::before{content:"";position:absolute;left:-5px;top:7px;bottom:7px;width:3px;border-radius:2px;background:var(--ink)}
-.lift-badge{position:absolute;top:-7px;right:-8px;min-width:16px;height:16px;padding:0 3px;box-sizing:border-box;border-radius:999px;border:1px solid currentColor;background:var(--warn-bg);color:var(--amber-ink);font-size:10.5px;font-weight:700;line-height:14px;text-align:center}
+.lift-b[aria-current="true"]::before{content:"";position:absolute;left:-4px;top:7px;bottom:7px;width:2px;border-radius:2px;background:var(--ink)}
+.lift-badge{position:absolute;top:-6px;right:-4px;min-width:16px;height:16px;padding:0 3px;box-sizing:border-box;border-radius:999px;border:1px solid currentColor;background:var(--warn-bg);color:var(--amber-ink);font-size:10.5px;font-weight:700;line-height:14px;text-align:center}
 .lift-badge[hidden]{display:none}
 .lift-edge{flex:none;margin:0 1px;min-height:22px;padding:0 2px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--warn-bg);color:var(--amber-ink);font:inherit;font-size:10.5px;font-weight:700;cursor:pointer;white-space:nowrap}
 .lift-edge[hidden]{display:none}
