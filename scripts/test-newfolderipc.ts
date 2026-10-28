@@ -1,5 +1,7 @@
 /**
- * Spec 093 phase 1 (T018): the IPC wiring of `folders:createPickParent`, `folders:createCheck` and `folders:create`, by behaviour.
+ * Spec 093 (T018, T036): the IPC wiring of `folders:createPickParent`, `folders:createCheck`, `folders:create` and
+ * `folders:createCancel`, and the `folders:createProgress` event, by behaviour. Phase 2: a refused URL never reaches mkdir or a
+ * process; the clone the handler starts allows https and ssh only (FR-095), on a stand-in `child_process` (no git, no network).
  * The channels are registered on a stand-in for the electron module (its dialog returns a scratch folder) and called as the window
  * would call them, with the real op, the real file system and a real SettingsStore in a scratch folder. main.ts cannot run here:
  * the line that hands the dependencies over is pinned by its text. No git is started (empty folders only), no network, no credits.
@@ -11,6 +13,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import type { AddResult, PermMode, SessionOptions } from '../src/shared/api';
+import { EventEmitter } from 'events';
 
 async function main(): Promise<void> {
   const electronPath = require.resolve('electron');
@@ -32,8 +35,9 @@ async function main(): Promise<void> {
     store.load();
     const adds: Array<{ paths: string[]; mode: PermMode; opts: unknown }> = [];
     const addMany = async (paths: string[], mode: PermMode, opts?: SessionOptions & { persist?: boolean }): Promise<AddResult> => { adds.push({ paths, mode, opts }); return { ok: true, agents: [{ id: 'a' + adds.length, cwd: paths[0] } as never] }; };
-    register({ addMany, getSettingsStore: () => store, asEffort: (v) => (v === 'high' ? 'high' : undefined) });
-    assert.deepStrictEqual([...handlers.keys()].sort(), ['folders:create', 'folders:createCheck', 'folders:createPickParent'], 'the three phase 1 channels');
+    const sent: Array<[string, unknown]> = [];
+    const quitter = register({ addMany, getSettingsStore: () => store, asEffort: (v) => (v === 'high' ? 'high' : undefined), toRenderer: (ch, p) => { sent.push([ch, p]); } });
+    assert.deepStrictEqual([...handlers.keys()].sort(), ['folders:create', 'folders:createCancel', 'folders:createCheck', 'folders:createPickParent'], 'the four channels');
 
     const indexUrl = pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href;
     const frame = { url: indexUrl };
@@ -57,7 +61,7 @@ async function main(): Promise<void> {
     const pickNow = async (): Promise<string> => { const r = await call('folders:createPickParent', '/etc', { path: '/etc' }); assert.strictEqual(r.ok, true); assert.strictEqual(r.parent, parent, 'the window gets the picked place to show'); return String(r.token); };
 
     // FR-022: createCheck is feedback only
-    assert.deepStrictEqual(await call('folders:createCheck', { kind: 'empty', name: 'CON' }), { ok: false, error: 'That name is reserved on Windows (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-9, LPT0-9). Choose another.' });
+    assert.deepStrictEqual(await call('folders:createCheck', { kind: 'empty', name: 'CON' }), { ok: false, error: 'That name is reserved on Windows (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-9, LPT0-9). Choose another.', retry: 'name' });
     assert.deepStrictEqual(await call('folders:createCheck', { kind: 'empty', name: 'fine' }), { ok: true });
     assert.deepStrictEqual(list(), [], 'createCheck creates nothing');
 
@@ -67,7 +71,7 @@ async function main(): Promise<void> {
       const r = await call('folders:create', { kind: 'empty', token: tok, name: bad }, 'allow', {});
       assert.strictEqual(r.ok, false, `refused: ${bad}`);
     }
-    for (const k of ['clone', 'Init', undefined]) assert.strictEqual((await call('folders:create', { kind: k, token: tok, name: 'k' }, 'allow', {})).ok, false, `kind ${String(k)}`);
+    for (const k of ['status', 'Init', 'Clone', undefined]) assert.strictEqual((await call('folders:create', { kind: k, token: tok, name: 'k' }, 'allow', {})).ok, false, `kind ${String(k)}`);
     assert.deepStrictEqual([list(), adds.length], [[], 0], 'nothing created, nothing added');
     assert.ok(!fs.existsSync(path.join(root, 'escape')), 'nothing outside the parent either');
 
@@ -98,10 +102,67 @@ async function main(): Promise<void> {
     await call('folders:createPickParent');
     assert.strictEqual(dialogs[dialogs.length - 1].defaultPath, undefined, 'a parent that is gone: the system default');
 
-    // main.ts hands the real addMany, the settings store and the effort parser over (main.ts cannot run here)
+    // ---- phase 2: clone, on a stand-in child_process (the runner reads spawn and execFile from it when it runs) ----
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const cp = require('child_process') as Record<string, unknown>;
+    const realSpawn = cp.spawn, realExecFile = cp.execFile;
+    const spawns: Array<{ file: string; args: string[]; opts: { cwd: string; env: NodeJS.ProcessEnv; shell: boolean } }> = [];
+    const reads: string[][] = [];
+    let child: (EventEmitter & { stdout: EventEmitter; stderr: EventEmitter }) | undefined;
+    // pid undefined: Cancel never signals a real process from this test (killChildTree needs a pid)
+    cp.spawn = (file: string, args: string[], opts: { cwd: string; env: NodeJS.ProcessEnv; shell: boolean }) => { spawns.push({ file, args, opts }); child = Object.assign(new EventEmitter(), { pid: undefined, exitCode: null, signalCode: null, stdout: new EventEmitter(), stderr: new EventEmitter(), kill: () => true }); return child; };
+    cp.execFile = (_f: string, args: string[], _o: unknown, cb: (e: Error | null, out: string) => void) => { reads.push(args); cb(Object.assign(new Error('unset'), { code: 1 }), ''); };
+    try {
+      fs.mkdirSync(parent);
+      adds.length = 0;
+      // a refused URL (checked by createCheck and again by create) never reaches mkdir, the config read or a process
+      for (const bad of ['file:///etc', 'ext::sh -c touch /tmp/x', '-uhelp', 'C:\\repos\\x', 'https://lena:hunter2@host/x.git', 'https://u%3Ap@h/x', 'git://h/x', '']) {
+        const c = await call('folders:createCheck', { kind: 'clone', url: bad });
+        assert.deepStrictEqual([c.ok, c.retry], [false, 'url'], `createCheck refuses ${bad}`);
+        tok = await pickNow();
+        const r = await call('folders:create', { kind: 'clone', token: tok, name: 'x', url: bad }, 'allow', {});
+        assert.deepStrictEqual([r.ok, r.retry], [false, 'url'], `create refuses ${bad}`);
+      }
+      assert.deepStrictEqual([list(), spawns.length, reads.length], [[], 0, 0], 'nothing created, read or started');
+      assert.deepStrictEqual(await call('folders:createCheck', { kind: 'clone', url: 'git@github.com:lena/shop.git' }), { ok: true, host: 'github.com', suggested: 'shop', shown: 'git@github.com:lena/shop.git' });
+      // the clone the handler starts: https and ssh only (the window cannot pass protocols), in the new folder, no shell
+      tok = await pickNow();
+      const run = call('folders:create', { kind: 'clone', token: tok, name: 'shop', url: 'https://github.com/lena/shop.git', protocols: ['file'] }, 'ask', {});
+      for (let i = 0; i < 50 && !spawns.length; i++) await new Promise((r) => setTimeout(r, 10));
+      assert.strictEqual(spawns.length, 1, 'git started once');
+      const sp = spawns[0];
+      assert.deepStrictEqual([sp.file, sp.opts.cwd, sp.opts.shell], ['git', path.join(parent, 'shop'), false], 'git in the new folder, no shell');
+      assert.deepStrictEqual(sp.args.slice(-5), ['--progress', '--no-recurse-submodules', '--', 'https://github.com/lena/shop.git', '.']);
+      assert.strictEqual(sp.opts.env.GIT_ALLOW_PROTOCOL, 'https:ssh', 'FR-095: https and ssh only');
+      assert.ok(sp.args.includes('protocol.file.allow=never') && sp.args.includes('protocol.ext.allow=never') && !sp.args.includes('protocol.file.allow=always'), 'every other transport off by name');
+      assert.strictEqual(sp.opts.env.GIT_SSH_COMMAND, 'ssh -o BatchMode=yes', 'no core.sshCommand (the read said unset): BatchMode ssh');
+      assert.deepStrictEqual(reads, [['--no-pager', '-c', 'core.fsmonitor=false', 'config', '--get', 'core.sshCommand']], 'the one config read');
+      // FR-040: progress reaches the window masked, on folders:createProgress
+      child!.stderr.emit('data', 'Receiving objects:  45% (9/20) https://u:secret@h/x\r');
+      for (let i = 0; i < 50 && !sent.length; i++) await new Promise((r) => setTimeout(r, 10));
+      assert.strictEqual(sent[0][0], 'folders:createProgress');
+      assert.ok(!JSON.stringify(sent).includes('secret') && (sent[0][1] as { percent?: number }).percent === 45, 'masked progress: ' + JSON.stringify(sent[0][1]));
+      // FR-041: Cancel from the window (and only from it); the folder goes after git's close
+      await assert.rejects(Promise.resolve().then(() => handlers.get('folders:createCancel')!(foreign)), /did not come from its own window/);
+      assert.strictEqual(quitter.busy(), true);
+      assert.deepStrictEqual(await call('folders:createCancel'), { ok: true });
+      assert.ok(fs.existsSync(path.join(parent, 'shop')), 'not removed before git has exited');
+      child!.emit('close', null, 'SIGTERM');
+      const r = await run;
+      assert.deepStrictEqual([r.ok, r.cancelled, r.error], [false, true, 'Cancelled. Nothing was kept.']);
+      assert.deepStrictEqual([list(), adds.length, quitter.busy()], [[], 0, false], 'nothing left, nothing added');
+      assert.deepStrictEqual(await call('folders:createCancel'), { ok: false }, 'nothing to cancel');
+      assert.strictEqual(await quitter.quit(), true, 'quit with nothing running');
+    } finally {
+      cp.spawn = realSpawn;
+      cp.execFile = realExecFile;
+    }
+
+    // main.ts hands the real addMany, the settings store, the effort parser and toRenderer over, and ends a clone on quit
     const mainSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
-    assert.ok(mainSrc.includes('registerNewFolderIpc({ addMany, getSettingsStore: () => settingsStore, asEffort });'), 'main.ts wires folders:* with addMany, the settings store and asEffort');
-    console.log('newfolderipc: owner-only channels, picker and remembered parent, refused names never created, no path from the window, mode through validMode OK');
+    assert.ok(mainSrc.includes('const newFolderIpc = registerNewFolderIpc({ addMany, getSettingsStore: () => settingsStore, asEffort, toRenderer });'), 'main.ts wires folders:* with addMany, the settings store, asEffort and toRenderer');
+    assert.ok(/if \(!newFolderEnded && newFolderIpc\.busy\(\)\) \{\n\s+newFolderEnded = true;\n\s+ev\.preventDefault\(\);\n\s+void newFolderIpc\.quit\(\)\.catch\(\(\) => undefined\)\.finally\(\(\) => app\.quit\(\)\);/.test(mainSrc.replace(/\r\n/g, '\n')), "main.ts's before-quit ends a running clone first (FR-043)");
+    console.log('newfolderipc: owner-only channels, picker and remembered parent, refused names and URLs never created or started, no path from the window, mode through validMode, the clone https/ssh only, masked progress, Cancel, quit wiring OK');
   } finally {
     if (savedElectron) require.cache[electronPath] = savedElectron; else delete require.cache[electronPath];
     fs.rmSync(root, { recursive: true, force: true });
