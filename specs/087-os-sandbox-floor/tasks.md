@@ -202,6 +202,8 @@ except T066 (owner-approved 2026-10-27, about 3 prompts; run 2026-10-28, verdict
     after it in a narrower mode); a narrowing while it is outstanding is `unknown` with the FR-007 hold; the order and `sandboxSeq` are tested (reviewer mutants M1
     and M5 caught); the neutral `heldFloor` makes the Allow all sentence follow every lowering (FR-022e's gap closed); `notLowered` gives the toast "<App> did not
     turn its sandbox off; use Restart without the sandbox." (sim `simsbxlower=refuse`, driver both sizes).
+  - Review round 2 on PR #833: `refreshAuth` clears `lowerOutstanding`; late answers count only for the handle they were sent to; the unbounded wait is accepted in
+    FR-022c and the held note says "End the session (or restart it) to start again with the sandbox."; End + resume re-applies the floor (tests, two mutants caught).
 - ~~T073 **Only if T066 verdict is B (it does not clear).** Strike FR-022c from the spec, set K16 to "cannot be cleared in place (real:)", and word the tooltip and README
   from the result; no code. [FR-022c, K16]
   - AC1: `npm run specs:check` passes; no FR-022c text remains that reads as planned.~~ Not needed: T066's verdict is A (2026-10-28), so T072 was built instead.

@@ -616,6 +616,77 @@ async function main(): Promise<void> {
     await ad3.dispose();
   }
 
+  // ---- review on PR #833, round 2: a lowering that never answers. (1) A sign-in refresh forgets it: Ask first, Allow all (the lowering times out),
+  // refreshAuth, Ask first: the floor goes to the new runtime and the state is on; the old runtime's late answer is ignored. (2) Without a refresh,
+  // the held note says the way back, and End session plus a resume gives a session with the floor again ----
+  {
+    class SbxRestarting2 extends RestartingFakeCopilot {
+      constructor() {
+        super();
+        this.sandboxPlatform = 'linux';
+        this.sandboxHome = () => '/home/me';
+        this.sandboxPathDirs = () => ['/usr/bin'];
+        this.sandboxRealpath = (p) => p;
+        this.sandboxTimeoutMs = 50;
+      }
+    }
+    const ad = new SbxRestarting2();
+    const events: AgentEvent[] = [];
+    ad.onEvent((e) => events.push(e));
+    const sid = await ad.start({ workspace: WS, quiet: true, permissionMode: 'ask' });
+    const old = ad.clients[0].sessions.get(sid)!;
+    old.lowerDeferred = true;
+    ad.setPermMode!(sid, 'allow');
+    await new Promise((r) => setTimeout(r, 120)); // past the limit: outstanding
+    await ad.refreshAuth();
+    const c2 = ad.clients[1];
+    ad.setPermMode!(sid, 'ask');
+    await new Promise((r) => setTimeout(r, 10));
+    assert.strictEqual(updates(c2, sid).length, 1, 'refresh: the floor goes to the new runtime');
+    assert.strictEqual((updates(c2, sid)[0].sandboxConfig as { enabled: boolean }).enabled, true);
+    assert.strictEqual(last(events, sid)?.state, 'on', 'refresh: on, not unknown forever');
+    await ad.send(sid, { text: 'x' });
+    assert.strictEqual(c2.sessions.get(sid)!.calls.filter((c) => c.name === 'send').length, 1, 'sends go out');
+    // a new lowering on the new runtime times out too; the OLD runtime's late answer must not count for it
+    const s2 = c2.sessions.get(sid)!;
+    s2.lowerDeferred = true;
+    ad.setPermMode!(sid, 'allow');
+    await new Promise((r) => setTimeout(r, 120));
+    old.deferred.shift()!.resolve(); // the old runtime answers late
+    await new Promise((r) => setTimeout(r, 10));
+    assert.strictEqual(last(events, sid)?.untilNewSession, true, 'the old handle\'s late answer is ignored: the new floor is still assumed on');
+    s2.deferred.shift()!.resolve(); // the new runtime's own answer counts
+    await new Promise((r) => setTimeout(r, 10));
+    assert.strictEqual(last(events, sid), null, 'the new runtime\'s late success: no floor');
+    await ad.dispose();
+  }
+  {
+    const { ad, fake, events } = make();
+    const sid = await start(ad, 'ask');
+    const s0 = fake.sessions.get(sid)!;
+    s0.lowerDeferred = true;
+    ad.setPermMode!(sid, 'allow');
+    await new Promise((r) => setTimeout(r, 120));
+    ad.setPermMode!(sid, 'ask');
+    await new Promise((r) => setTimeout(r, 5));
+    await ad.send(sid, { text: 'x' });
+    const note = sbx(events, sid).filter((e) => e.notice).pop()!.notice!.text;
+    assert.strictEqual(note, 'Copilot could not start its OS sandbox: it has not answered the earlier request to turn its sandbox off yet. End the session (or restart it) to start again with the sandbox. Nothing was sent.', 'the held note names the way back');
+    await ad.stop(sid);
+    fake.onDisk.add(sid);
+    await ad.start({ workspace: WS, quiet: true, permissionMode: 'ask', resumeSessionId: sid });
+    const s1 = fake.sessions.get(sid)!;
+    assert.notStrictEqual(s1, s0, 'a new session handle');
+    assert.strictEqual(updates(fake, sid).length, 1, 'End + resume: the floor is sent to the resumed session');
+    assert.strictEqual(last(events, sid)?.state, 'on', 'End + resume: on');
+    s0.deferred.shift()!.resolve();
+    await new Promise((r) => setTimeout(r, 10));
+    assert.strictEqual(last(events, sid)?.state, 'on', 'the ended session\'s late answer is ignored');
+    await ad.send(sid, { text: 'y' });
+    assert.strictEqual(sends(fake, sid), 1, 'sends go out again');
+    await ad.dispose();
+  }
+
   // ---- Windows and macOS: home ancestors compared case-insensitively; mechanism names ----
   {
     const { ad, fake, events } = make({ platform: 'win32', home: 'C:\\Users\\Me', path: ['c:\\users', 'C:\\USERS\\me', 'C:\\Users\\Other', 'C:\\Users\\Me\\AppData\\Local\\bin', 'C:\\Windows\\System32', 'relative\\bin'] });

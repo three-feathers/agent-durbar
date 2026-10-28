@@ -446,6 +446,13 @@ floor in Allow all to show the fallback. Claude Code and Codex are unchanged. **
    "<App> did not turn its sandbox off; use Restart without the sandbox." (`notLoweredToast`, app name from the adapter). Sim: `?simsbxlower=refuse`
    makes the sim refuse the lowering; the driver checks the toast, the kept floor and its action at both sizes, and that a Claude switch adds no toast.
 
+**Review on PR #833, round 2** (Vikram's agent at e5d7bf3d): (1) `refreshAuth` now clears `lowerOutstanding` with `sandboxFloor`, and a late answer is
+read only for the session handle it was sent to (`lateLowering` compares `live.session`; the in-time path too), so after Ask first → Allow all (lowering
+timed out) → sign-in refresh → Ask first the floor reaches the new runtime and the state is `on`, and the old runtime's answer is ignored, also while a
+new lowering is outstanding. (2) The unbounded wait is accepted and written into FR-022c; the held note's reason (`COPILOT_LOWER_WAIT`) names the way
+back, and End session plus a resume gives the floor again (the ended session's late answer is ignored). Test: `scripts/test-copilot-sandbox.ts`
+(both sequences, the note text pinned); mutants: not clearing in `refreshAuth`, and accepting an older handle's answer, both caught.
+
 ### 2026-10-28: T066 probe built, real run not possible on this host (K16 stays open; Refs #806)
 
 `scripts/sandbox-floor-real.ts` has the `switch` scenario of T066 (steps 1-4, hygiene items (a)-(c) of the review on PR #809), and its
@@ -650,7 +657,9 @@ default on the switch and B is offered only after an A refusal; if it fails, B i
   adapter sends `options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' })` (the exact payload T066 proved;
   no other field, never `allowBypass`), with the same 15 s limit as FR-004. The state follows the update: **resolved** → `null` (as a fresh
   Allow all session); **refused or no answer** → the floor is still assumed in force, the state keeps `untilNewSession: true` and FR-022
-  is offered, with a toast (review on PR #833); an answer after the limit re-runs the current mode, and a narrowing fails closed until it comes. A switch back to Read-only or Ask first re-sends the full floor (FR-004), as today; a test pins both directions. Because the
+  is offered, with a toast (review on PR #833); an answer after the limit re-runs the current mode, and a narrowing fails closed until it comes. **Accepted (review on PR #833, round 2): that wait has no
+  bound.** A lowering that never answers keeps Read-only and Ask first sends held; the held note says "End the session (or restart it) to start again with the
+  sandbox.", and End session, Restart session or a sign-in refresh start a new session handle that gets the floor again and ignores the old answer. A switch back to Read-only or Ask first re-sends the full floor (FR-004), as today; a test pins both directions. Because the
   switch would now also lower the OS limit, the Allow all dialog for a Copilot session with a floor replaces FR-022e's sentence with "Copilot’s OS sandbox
   is also turned off for this session." (FR-022a(1): the confirmation must name it). If the probe fails, FR-022c is struck from this spec
   and the unused code is never written.
