@@ -132,7 +132,7 @@ module.exports = async (ctx) => {
   assert.ok(themes.length >= 6, 'the built-in themes are listed');
   for (const theme of themes) for (const [w, h] of [[1440, 900], [1280, 800]]) {
     const tag = `${theme} ${w}x${h}`;
-    await H.load({ w, h });
+    await H.load({ w, h, focus: true }); // the page has to own the focus, or :focus and :focus-visible never match
     await js(`window.THEME.setTheme(${jsLiteral(theme)})`);
     await ok(`window.THEME.current().id===${jsLiteral(theme)}`, `${tag}: theme applied`);
     await H.settle();
@@ -158,7 +158,9 @@ module.exports = async (ctx) => {
     await ok(`document.activeElement===window.__prevTab`, `${tag}: the control before the pencil has focus`);
     await H.key('Tab', [], { pause: 100 });
     await ok(`document.activeElement===document.querySelector(${jsLiteral(SEL)})`, `${tag}: Tab reaches the pencil`);
-    await ok(`(()=>{const e=document.querySelector(${jsLiteral(SEL)});return e.matches(':focus-visible')&&getComputedStyle(e).opacity==='1'})()`, `${tag}: keyboard focus makes the pencil fully shown`);
+    const st = () => js(`(()=>{const e=document.querySelector(${jsLiteral(SEL)}),s=getComputedStyle(e);return JSON.stringify({pageFocus:document.hasFocus(),active:document.activeElement===e,focus:e.matches(':focus'),fv:e.matches(':focus-visible'),opacity:s.opacity,transition:s.transitionProperty+' '+s.transitionDuration})})()`);
+    assert.ok(await until(`document.querySelector(${jsLiteral(SEL)}).matches(':focus-visible')`), `${tag}: Tab gives the pencil :focus-visible ${await st()}`);
+    assert.ok(await until(`parseFloat(getComputedStyle(document.querySelector(${jsLiteral(SEL)})).opacity)>=0.99`), `${tag}: the focused pencil is fully shown ${await st()}`);
     const f = await js(`(()=>{const e=document.querySelector(${jsLiteral(SEL)}),s=getComputedStyle(e);return {fv:e.matches(':focus-visible'),bg:s.backgroundColor,op:s.opacity,ow:parseFloat(s.outlineWidth),os:s.outlineStyle}})()`);
     assert.ok(f.fv && f.op === '1' && !clear(f.bg) && f.ow >= 2 && f.os !== 'none', `${tag}: keyboard focus shows a tile, a focus ring and the icon ${JSON.stringify(f)}`);
     console.log(`[listcols] ${tag} room ok`);
