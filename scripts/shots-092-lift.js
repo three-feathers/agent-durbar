@@ -45,7 +45,7 @@ module.exports = async (ctx) => {
   const btn = (id) => `#lift [data-lift="${id}"]`;
   /* announce() keeps only the last text given within 60 ms, and laying out the whole building can take a few hundred ms under xvfb: after a change, wait
      for its announcement before the next one, so each change is heard on its own (a no-op change, quiet=true, only settles) */
-  const heard = async (n0, quiet) => { if (quiet) { await settle(); return; } await until(`window.__ann.filter(t=>/^(Floor |All floors)/.test(t)).length>${n0}`, 5000); };
+  const heard = async (n0, quiet) => { if (quiet) { await settle(); return; } await until(`window.__ann.filter(t=>/^(Floor |All floors)/.test(t)).length>${jsLiteral(n0)}`, 5000); };
   const nAnn = async () => (await anns()).length;
   const press = async (k, mods, o, quiet) => { const n0 = await nAnn(); await key(k, mods, o); await heard(n0, quiet); };
   const clickBtn = async (id, quiet) => { // a real mouse click in the middle of the button
@@ -63,7 +63,7 @@ module.exports = async (ctx) => {
       room.querySelectorAll('.desk[data-id]').forEach(d=>{if(d.closest('.helpers'))return;const a=ag.get(d.dataset.id);if(!a||a.parent)return;
         const need=d.dataset.state==='waiting'||d.dataset.state==='error'||!!a.limit||!!a.coffee||d.classList.contains('is-unread');if(need&&f)out[f.trim()]=(out[f.trim()]||0)+1;});});return out;})()`);
   const reset = async (w, h, query, all) => {
-    await js(`localStorage.removeItem('durbar.floor');${all ? `localStorage.setItem('durbar.floorView','all')` : `localStorage.removeItem('durbar.floorView')`}`);
+    await js(`localStorage.removeItem('durbar.floor');if(${jsLiteral(!!all)})localStorage.setItem('durbar.floorView','all');else localStorage.removeItem('durbar.floorView');`);
     await H.load({ w, h, query, focus: true });
     await watch(); await H.calm();
   };
@@ -123,13 +123,13 @@ module.exports = async (ctx) => {
     await clickBtn('ground'); assert.ok(await onFloor('Ground floor'));
     const before = (await lift()).b[3].badge;
     await js(`(()=>{const E=e=>window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:${jsLiteral(quiet)}},e));E({type:'status',status:'working',intent:'Working'});E({type:'output',final:true,text:'Done.'});E({type:'status',status:'idle'});})()`);
-    assert.ok(await until(`(document.querySelector('${btn('f-personal')} .lift-badge')||{}).textContent===${jsLiteral(String((+before || 0) + 1))}`), `${tag}: a New reply on Personal adds to its badge (${before} before)`);
+    assert.ok(await until(`(document.querySelector(${jsLiteral(btn('f-personal') + ' .lift-badge')})||{}).textContent===${jsLiteral(String((+before || 0) + 1))}`), `${tag}: a New reply on Personal adds to its badge (${before} before)`);
     assert.ok(/new reply/.test((await lift()).b[3].name), `${tag}: the name says new reply`);
     await js(`window.__durbarSimUi.crew.openPanel(${jsLiteral(quiet)})`);
     assert.ok(await until(`document.body.classList.contains('panel-open')`), `${tag}: the chat opens`);
     await js(`document.getElementById('backBtn').click()`);
     assert.ok(await until(`!document.body.classList.contains('panel-open')`));
-    assert.ok(await until(`(document.querySelector('${btn('f-personal')} .lift-badge:not([hidden])')||{textContent:''}).textContent===${jsLiteral(before)}`), `${tag}: shown, the New reply leaves the badge`);
+    assert.ok(await until(`(document.querySelector(${jsLiteral(btn('f-personal') + ' .lift-badge:not([hidden])')})||{textContent:''}).textContent===${jsLiteral(before)}`), `${tag}: shown, the New reply leaves the badge`);
 
     // ---- FR-013: keyboard ----
     await reset(w, h, { simfloors: '1' });

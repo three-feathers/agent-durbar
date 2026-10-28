@@ -4076,7 +4076,7 @@ function renderLift(){
   el.querySelectorAll('.lift-b').forEach(b=>{const t=b===stop?'0':'-1';if(b.getAttribute('tabindex')!==t)b.setAttribute('tabindex',t);});
   /* FR-028: the button of the view shown is kept in view (once per change) */
   const shown=all?'*all':cur;
-  if(el.dataset.shown!==shown){el.dataset.shown=shown;const cb=el.querySelector('.lift-b[aria-current="true"]');if(cb&&!focused)cb.scrollIntoView({block:'nearest'});}
+  if(el.dataset.shown!==shown){el.dataset.shown=shown;const cb=el.querySelector('.lift-b[aria-current="true"]');if(cb&&!focused)SCROLL.reveal(cb,{block:'nearest'});}
   updateLiftEdges();
 }
 /* FR-028: badged buttons scrolled out of the lift are summed at its top or bottom edge ("▲ 2", the words in its name and tooltip) */
@@ -4099,7 +4099,7 @@ document.addEventListener('click',e=>{
   if(t.dataset.liftEdge){ /* FR-028: scroll to the nearest badged button on that side and focus it */
     const sh=$('lift').querySelector('.lift-shaft'), box=sh.getBoundingClientRect(), bs=[...sh.querySelectorAll('.lift-b.badged')];
     const b=t.dataset.liftEdge==='up'?bs.filter(x=>x.getBoundingClientRect().bottom<=box.top+4).pop():bs.find(x=>x.getBoundingClientRect().top>=box.bottom-4);
-    if(b){b.scrollIntoView({block:'nearest'});liftFocus(b);}
+    if(b)liftFocus(b);
     return;
   }
   const id=t.dataset.lift;
@@ -4108,7 +4108,7 @@ document.addEventListener('click',e=>{
   else goToFloor(id);
   const again=$('lift').querySelector(`[data-lift="${CSS.escape(id)}"]`); if(again&&document.activeElement!==again&&e.detail===0)liftFocus(again);
 });
-function liftFocus(b){const el=$('lift');el.querySelectorAll('.lift-b').forEach(x=>x.setAttribute('tabindex',x===b?'0':'-1'));b.focus({preventScroll:false});}
+function liftFocus(b){const el=$('lift');el.querySelectorAll('.lift-b').forEach(x=>x.setAttribute('tabindex',x===b?'0':'-1'));focusIn(b,{block:'nearest'});} /* scrolls only the lift's own shaft (innerscroll, spec 052 FR-055) */
 document.addEventListener('keydown',e=>{
   const t=e.target; if(!t||!t.closest||!t.closest('#lift .lift-b'))return;
   if(e.ctrlKey||e.altKey||e.metaKey)return;
