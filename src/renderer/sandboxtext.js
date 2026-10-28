@@ -60,11 +60,30 @@
     if(!s.verified)parts.push(NOT_VERIFIED);
     return parts.join(' ');
   }
+  /* FR-022/FR-022a (issue 806): *Restart without the sandbox* is offered only for a floor kept from an earlier mode (untilNewSession), in Allow all,
+     not held by the organization (managed), by an app that can resume. Pure and fail closed: a malformed state or input is false. */
+  function canRestartWithoutSandbox(o){
+    if(!o||typeof o!=='object')return false;
+    const s=clean(o.sandbox); if(!s)return false;
+    return o.mode==='allow'&&s.state==='on'&&s.untilNewSession&&!s.managed&&!!(o.caps&&typeof o.caps==='object'&&o.caps.resume===true);
+  }
+  /* FR-022: the tooltip of the action (what Durbar does, not a vendor fact: K16 is open); at most 300 characters */
+  function restartTip(s0,app){
+    const s=clean(s0), a=app||'the app';
+    const t='Durbar does not turn '+a+'’s sandbox off inside a running session; it stays until a new one. Restart keeps this conversation and starts a new session in Allow all.'+(s&&s.verified?'':' '+NOT_VERIFIED);
+    return t.length>300?t.slice(0,299).replace(/\s+\S*$/,'')+'\u2026':t;
+  }
+  /* FR-022e: the Allow all dialog's extra sentence, for a floor that a switch to Allow all keeps until a new session. The app whose sandbox
+     also covers MCP servers is the one that keeps it (FR-013, the same neutral test as FR-021b's chip word); '' for every other state. */
+  function allowAllNote(s0,app){
+    const s=clean(s0); if(!s||s.state!=='on'||s.managed||s.untilNewSession||!s.covers.includes('mcp'))return '';
+    return (app||'The app')+'’s OS sandbox stays on for shell commands until a new session; use Restart without the sandbox to lift it.';
+  }
   /* FR-012: the Settings > Agent apps line (text) */
   function hostLine(v){
     if(!v||typeof v!=='object')return '';
     if(v.available===true)return 'OS sandbox: available'+(MECHS.includes(v.mechanism)&&v.mechanism!=='vendor'?' ('+mechName(v.mechanism).replace(/^the /,'')+')':'');
     return 'OS sandbox: not available'+(typeof v.reason==='string'&&v.reason?': '+v.reason.slice(0,200):'');
   }
-  return {clean,chipWord,tooltip,details,hostLine,NOT_VERIFIED};
+  return {clean,chipWord,tooltip,details,hostLine,canRestartWithoutSandbox,restartTip,allowAllNote,NOT_VERIFIED};
 })());

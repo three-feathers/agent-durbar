@@ -10,7 +10,7 @@ import { isAuthError } from '../adapters/autherrors';
 import { validSignInEnd } from '../adapters/eventguard';
 import type { AdapterRouter } from '../adapters/router';
 import type { AgentAdapter, McpServerStatus } from '../adapters/types';
-import type { AgentInfo, AgentMcpEntry, AgentMcpReply, GlobalApp, McpRefreshResult, McpRestartResult, McpRestartSessionResult } from '../shared/api';
+import type { AgentInfo, AgentMcpEntry, AgentMcpReply, GlobalApp, McpRefreshResult, McpRestartReason, McpRestartResult, McpRestartSessionResult } from '../shared/api';
 import { maskMcpError } from './mcpmask';
 import { sourcesFor } from './mcpglobal';
 import { BUILTIN_SERVERS } from './mcpfiles';
@@ -250,16 +250,24 @@ export interface RestartSessionDeps {
   log?(a: AgentInfo, action: string): void;
 }
 
+/** Spec 087 FR-022: the closed `reason` of `agents:mcpRestartSession`; anything that is not exactly 'sandbox' is 'mcp' (today's words). */
+export function restartReason(r: unknown): McpRestartReason {
+  return r === 'sandbox' ? 'sandbox' : 'mcp';
+}
+
 /**
- * `agents:mcpRestartSession(id, confirmed)` (FR-022): the same session id, ended and resumed, so Settings, the folder's extras and this
+ * `agents:mcpRestartSession(id, confirmed, reason?)` (FR-022): the same session id, ended and resumed, so Settings, the folder's extras and this
  * agent's switches all apply. No prompt is sent (a resume spends no AI credits). A busy agent needs `confirmed === true`. A resume that
  * fails leaves the agent ended, as *End session* does; a sign-in failure says so with `errorKind: 'auth'` (FR-027).
+ * Spec 087 FR-022: `reason` 'sandbox' (*Restart without the sandbox*) changes only the log line and the no-resume error; the resume reads
+ * the agent's current mode (`startOptionsFor`), so an Allow all session comes back without the floor it kept.
  */
-export async function mcpRestartSessionOp(d: RestartSessionDeps, running: Set<string>, id: unknown, confirmed: unknown): Promise<McpRestartSessionResult> {
+export async function mcpRestartSessionOp(d: RestartSessionDeps, running: Set<string>, id: unknown, confirmed: unknown, reason?: unknown): Promise<McpRestartSessionResult> {
+  const why = restartReason(reason);
   const a = typeof id === 'string' ? d.agents.get(id) : undefined;
   const ad = a ? d.router.forAgent(a.id) : undefined;
   if (!a || !ad) return { ok: false, error: 'Unknown agent.' };
-  if (!ad.capabilities.resume) return { ok: false, error: `${ad.displayName} cannot resume a session, so it cannot be restarted with the current servers.` };
+  if (!ad.capabilities.resume) return { ok: false, error: why === 'sandbox' ? `${ad.displayName} cannot resume a session, so it cannot be restarted without the OS sandbox.` : `${ad.displayName} cannot resume a session, so it cannot be restarted with the current servers.` };
   if (!ad.isLive(a.id)) return { ok: false, error: NOT_RUNNING };
   if (d.busy(a.id) && confirmed !== true) return { ok: false, needsConfirm: true };
   if (running.has(a.id)) return { ok: false, error: 'This session is already restarting.' };
@@ -276,7 +284,7 @@ export async function mcpRestartSessionOp(d: RestartSessionDeps, running: Set<st
       const auth = isAuthError(err); // the window shows spec 012 FR-157's sign-in card and marks the app signed out
       return { ok: false, ended: true, error: maskMcpError(errText(err), d.secrets(a.id)) ?? 'Could not resume the session.', ...(auth ? { errorKind: 'auth' as const } : {}) };
     }
-    d.log?.(a, 'Session restarted with the current MCP servers');
+    d.log?.(a, why === 'sandbox' ? 'Session restarted without the OS sandbox' : 'Session restarted with the current MCP servers');
     return { ok: true };
   } finally {
     running.delete(a.id);

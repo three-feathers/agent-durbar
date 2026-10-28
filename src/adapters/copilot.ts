@@ -456,6 +456,7 @@ export class CopilotAdapter implements AgentAdapter {
         live.session = session;
         live.unsubscribe = session.on(live.onSessionEvent);
         void session.rpc.eventLog.registerInterest({ eventType: 'session_limits_exhausted.requested' }).catch(() => undefined);
+        live.sandboxFloor = undefined; // spec 087 FR-022d: the resumed session has no floor until applySandbox sends one (Allow all sends none)
         await this.applySandbox(sid, live, live.broker.getMode(), client); // spec 087: the floor again on the new runtime, before any send
         for (const [name, on] of live.mcpToggles ?? []) {
           await (on ? session.rpc.mcp.enable({ serverName: name }) : session.rpc.mcp.disable({ serverName: name })).catch(() => undefined);
@@ -473,6 +474,7 @@ export class CopilotAdapter implements AgentAdapter {
     if (!live) return;
     live.broker.stop();
     this.sessions.delete(sid);
+    this.endKeptFloor(sid, live);
     this.mappers.delete(sid);
     this.debug?.(`refreshAuth: ${sid.slice(0, 8)} not resumed: ${e instanceof Error ? e.message : String(e)}`);
     this.emit(sid, { type: 'status', status: 'stopped', intent: 'Could not reconnect after the sign-in. Send a message to resume.' });
@@ -1078,7 +1080,13 @@ export class CopilotAdapter implements AgentAdapter {
     }
     this.sessions.delete(sessionId);
     this.mappers.delete(sessionId);
+    this.endKeptFloor(sessionId, live);
     this.emit(sessionId, { type: 'status', status: 'stopped' });
+  }
+
+  /** Spec 087 (review on PR 823): a floor kept in Allow all ends with its session; the next one starts with the mode's own state (none in Allow all). */
+  private endKeptFloor(sid: string, live: Live): void {
+    if (live.sandbox?.untilNewSession) this.setSandbox(sid, live, null);
   }
 
   /**

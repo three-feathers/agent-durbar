@@ -718,6 +718,9 @@ export interface McpRestartResult {
   error?: string;
 }
 
+/** Spec 087 FR-022: why `agents:mcpRestartSession` runs: 'mcp' (Restart session with these servers) or 'sandbox' (*Restart without the sandbox*). Words only. */
+export type McpRestartReason = 'mcp' | 'sandbox';
+
 /** `agents:mcpRestartSession` (spec 058 FR-022, FR-027). */
 export interface McpRestartSessionResult {
   ok: boolean;
@@ -999,8 +1002,9 @@ export interface DurbarApi {
   agentMcpTools?(id: string, name: string): Promise<McpToolsResult>;
   /** Spec 069 FR-061: the tools of one server turned off in this agent's folder (applies to new sessions and after Restart session). */
   setAgentMcpToolsOff?(id: string, name: string, off: string[]): Promise<{ ok: boolean; error?: string }>;
-  /** Spec 058 FR-022: end and resume this agent's session with the current MCP servers; `confirmed` after the window asked. */
-  agentMcpRestartSession?(id: string, confirmed: boolean): Promise<McpRestartSessionResult>;
+  /** Spec 058 FR-022: end and resume this agent's session with the current MCP servers; `confirmed` after the window asked.
+   *  Spec 087 FR-022: `reason` 'sandbox' is *Restart without the sandbox* (the same op; it changes main's words only; anything else is 'mcp'). */
+  agentMcpRestartSession?(id: string, confirmed: boolean, reason?: McpRestartReason): Promise<McpRestartSessionResult>;
   /** Per-agent override: `enabled=false` turns the server off for this agent (now when the session runs, else at its next start). */
   setAgentMcp?(id: string, name: string, enabled: boolean): Promise<{ ok: boolean; error?: string }>;
 

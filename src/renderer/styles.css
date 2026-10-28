@@ -1333,6 +1333,10 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 /* spec 087 FR-009/FR-010/FR-021: the OS sandbox words (text, never colour alone); the card's sandbox line and the not-sent mark are never cut */
 .mode-chip .mode-sbx,.modechip .mode-sbx{font-weight:600;white-space:nowrap}
 .mode-chip .mode-sbx.sbx-off{color:var(--amber-ink)}
+/* spec 087 FR-022: a floor kept in Allow all: the chip's sandbox segment is its own button (Restart without the sandbox, asks first) */
+.mode-sbx-btn{display:inline-flex;align-items:center;height:var(--h-chip);margin-left:4px;padding:0 8px;border-radius:999px;border:1px solid var(--tone-bad-line);background:var(--raised);font-size:12px;font-weight:600;color:var(--red-ink);cursor:pointer;white-space:nowrap}
+.mode-sbx-btn:hover{background:var(--surface-2)}
+.mode-sbx-btn[aria-disabled="true"]{cursor:progress;opacity:.75}
 .mm-sbx{max-width:340px;white-space:normal;line-height:1.35}
 .note.perm .pscope{margin:4px 0 0;font-size:11.5px;color:var(--ink);white-space:normal;overflow:visible;text-overflow:clip}
 .note.perm:not(.pending) .pscope{display:none} /* a settled card no longer offers the grant */ /* spec 003 FR-108 */
@@ -1899,7 +1903,7 @@ h2,h3,h4{text-wrap:balance}
 .ctoolbar .ib.ct-ib svg{width:16px;height:16px}
 .ctoolbar #ctMoreBtn{font-size:var(--t3-size);font-weight:700;color:var(--ink-2)}
 .ctoolbar #ctMoreBtn[hidden]{display:none}
-.ctoolbar .mchip,.ctoolbar .mode-chip,.ctoolbar .ctxchip{height:28px;font-size:var(--t4-size)}
+.ctoolbar .mchip,.ctoolbar .mode-chip,.ctoolbar .ctxchip,.ctoolbar .mode-sbx-btn{height:28px;font-size:var(--t4-size)}
 .ctoolbar .mchip-btn span{max-width:220px}
 .ctoolbar .cti{width:14px;height:14px;flex:none}
 .ctoolbar .mchip{gap:var(--s-1)}

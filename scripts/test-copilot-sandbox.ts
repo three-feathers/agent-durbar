@@ -8,7 +8,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { eventProblems } from '../src/adapters/eventguard';
 import type { AgentEvent, StartOptions } from '../src/adapters/types';
-import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
+import { FakeClient, FakeCopilot, RestartingFakeCopilot } from './fakes/copilot-sdk';
 import { HOME_SECRETS } from '../src/adapters/sandboxRoots';
 
 const WS = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-copilot-sbx-')));
@@ -278,6 +278,135 @@ async function main(): Promise<void> {
     assert.match(String(last(events, sid)?.reason), /sandbox lost/);
     assert.ok(ad.isLive(sid));
     await ad.dispose();
+  }
+
+  // ---- T069 (FR-022, FR-022b; issue #806): Restart without the sandbox through the existing Restart session op ----
+  {
+    const { mcpRestartSessionOp } = await import('../src/main/mcpsession');
+    const { startOptionsOf } = await import('../src/main/startopts');
+    const { ad, fake, events } = make();
+    const sid = await start(ad, 'read-only');
+    ad.setPermMode!(sid, 'allow');
+    await new Promise((r) => setTimeout(r, 5));
+    assert.strictEqual(updates(fake, sid).length, 1, 'AC1: one update (the Read-only floor), none for the switch');
+    assert.strictEqual(last(events, sid)?.untilNewSession, true, 'AC1: the floor is kept until a new session');
+    const info = { id: sid, name: 'Ana', cwd: WS, permMode: 'allow', model: 'auto' } as import('../src/shared/api').AgentInfo;
+    // the op's resume is main's ensureLive with startOptionsFor: the agent's CURRENT mode goes as permissionMode
+    const so = startOptionsOf(info, WS, 'auto', undefined);
+    assert.strictEqual(so.permissionMode, 'allow', 'startOptionsFor carries the current mode into the restart');
+    const calls: string[] = [];
+    let resumeErr: Error | undefined;
+    const d = {
+      agents: new Map([[sid, info]]), router: { forAgent: () => ad }, busy: () => false,
+      endSession: async (id: string) => { calls.push('end'); await ad.stop(id); },
+      resume: async (a: typeof info) => { calls.push('resume'); if (resumeErr) throw resumeErr; await ad.start({ ...startOptionsOf(a, WS, 'auto', undefined), quiet: false, resumeSessionId: a.id }); },
+      secrets: () => [],
+    };
+    const r = await mcpRestartSessionOp(d as never, new Set(), sid, true, 'sandbox');
+    assert.deepStrictEqual(r, { ok: true });
+    assert.deepStrictEqual(calls, ['end', 'resume'], 'End session, then the same id through the resume path');
+    assert.ok(ad.isLive(sid), 'the same session id is live again');
+    assert.strictEqual(updates(fake, sid).length, 0, 'AC1: the resumed session got no sandboxConfig update (the Allow all app default)');
+    assert.strictEqual(last(events, sid), null, 'AC1: the state is null (no word, no action)');
+    assert.strictEqual(sends(fake, sid), 0, 'nothing was sent by the restart');
+    await ad.send(sid, { text: 'next' });
+    assert.strictEqual(sends(fake, sid), 1, 'AC1: the first send is not held');
+    // AC2: a resume that fails leaves the agent ended with the error; a sign-in error is marked; nothing was sent
+    for (const [err, kind] of [[new Error('Failed to authenticate. API Error: 401 OAuth access token is invalid.'), 'auth'], [new Error('cannot resume'), undefined]] as const) {
+      ad.setPermMode!(sid, 'allow');
+      resumeErr = err;
+      calls.length = 0;
+      const x = await mcpRestartSessionOp(d as never, new Set(), sid, true, 'sandbox');
+      assert.deepStrictEqual([x.ok, x.ended, x.errorKind], [false, true, kind], `AC2: ${err.message}`);
+      assert.ok(!ad.isLive(sid), 'AC2: the agent stays ended');
+      resumeErr = undefined;
+      fake.onDisk.add(sid);
+      await ad.start({ workspace: WS, quiet: true, permissionMode: 'allow', resumeSessionId: sid });
+      assert.strictEqual(sends(fake, sid), 0, 'AC2: nothing was sent');
+    }
+    // AC3: waiting requests at the restart are denied, none approved (End session stops the broker)
+    const ask = await start(ad, 'ask');
+    const info2 = { ...info, id: ask, permMode: 'ask' } as typeof info;
+    const decide = fake.sessions.get(ask)!.config.onPermissionRequest as (r: unknown) => Promise<{ kind: string; feedback?: string }>;
+    const p1 = decide({ kind: 'shell', fullCommandText: 'npm install', toolCallId: 'w1' });
+    const p2 = decide({ kind: 'url', url: 'https://example.com', toolCallId: 'w2' });
+    await new Promise((res) => setTimeout(res, 20));
+    const d2 = { ...d, agents: new Map([[ask, info2]]), endSession: async (id: string) => { await ad.stop(id); }, resume: async (a: typeof info) => { await ad.start({ ...startOptionsOf(a, WS, 'auto', undefined), resumeSessionId: a.id }); } };
+    assert.deepStrictEqual(await mcpRestartSessionOp(d2 as never, new Set(), ask, true, 'sandbox'), { ok: true });
+    for (const res of await Promise.all([p1, p2])) assert.strictEqual(res.kind, 'reject', `AC3: denied, not approved: ${JSON.stringify(res)}`);
+    await ad.dispose();
+  }
+
+  // ---- review on PR 823 (question 1): End session ends a kept floor too: the state is null, not "until a new session" on an ended agent ----
+  {
+    const { ad, fake, events } = make();
+    const sid = await start(ad, 'read-only');
+    ad.setPermMode!(sid, 'allow');
+    await new Promise((r) => setTimeout(r, 5));
+    assert.strictEqual(last(events, sid)?.untilNewSession, true, 'before: the kept floor');
+    const n = events.length;
+    await ad.stop(sid);
+    const after = events.slice(n).filter((e) => e.sessionId === sid).map((e) => e.type === 'sandbox' ? 'sandbox:' + JSON.stringify(e.sandbox) : e.type === 'status' ? 'status:' + e.status : e.type);
+    assert.deepStrictEqual(after.filter((x) => x.startsWith('sandbox') || x === 'status:stopped'), ['sandbox:null', 'status:stopped'], 'End session: the kept floor is cleared before the stop: ' + JSON.stringify(after));
+    assert.strictEqual(updates(fake, sid).length, 1, 'nothing sent to the runtime for it');
+    // a Read-only session that ends keeps its state as before (no kept floor to clear)
+    const ro = await start(ad, 'read-only');
+    const m = events.length;
+    await ad.stop(ro);
+    assert.ok(!events.slice(m).some((e) => e.type === 'sandbox' && e.sessionId === ro), 'Read-only: no sandbox event at the end');
+    await ad.dispose();
+  }
+
+  // ---- T069 AC4 (FR-022d): a sign-in refresh resumes Allow all without the floor; Ask first gets it again ----
+  {
+    class SbxRestarting extends RestartingFakeCopilot {
+      constructor(prep: (c: FakeClient, n: number) => void = () => undefined) {
+        super(prep);
+        this.sandboxPlatform = 'linux';
+        this.sandboxHome = () => '/home/me';
+        this.sandboxPathDirs = () => ['/usr/bin'];
+        this.sandboxRealpath = (p) => p;
+        this.sandboxTimeoutMs = 50;
+      }
+    }
+    const ad = new SbxRestarting();
+    const events: AgentEvent[] = [];
+    ad.onEvent((e) => events.push(e));
+    const allow = await ad.start({ workspace: WS, quiet: true, permissionMode: 'read-only' });
+    const ask = await ad.start({ workspace: WS, quiet: true, permissionMode: 'ask' });
+    ad.setPermMode!(allow, 'allow');
+    await new Promise((r) => setTimeout(r, 5));
+    assert.strictEqual(last(events, allow)?.untilNewSession, true, 'before: the kept floor');
+    await ad.refreshAuth();
+    assert.strictEqual(ad.clients.length, 2, 'a new runtime');
+    const c2 = ad.clients[1];
+    assert.strictEqual(updates(c2, allow).length, 0, 'AC4: Allow all after the refresh: no update (the resumed session has the app default)');
+    assert.strictEqual(last(events, allow), null, 'AC4: and the state says so (no word, no action)');
+    assert.strictEqual(updates(c2, ask).length, 1, 'AC4: Ask first after the refresh: the floor is sent again');
+    assert.strictEqual(last(events, ask)?.state, 'on');
+    await ad.dispose();
+    // a Durbar restart: a fresh adapter resuming the same id in Allow all reports null and sends nothing
+    const m = make();
+    m.fake.onDisk.add(allow);
+    const again = await m.ad.start({ workspace: WS, quiet: true, permissionMode: 'allow', resumeSessionId: allow });
+    assert.strictEqual(updates(m.fake, again).length, 0);
+    assert.strictEqual(last(m.events, again), null, 'AC4: a fresh adapter resuming Allow all: null');
+    await m.ad.dispose();
+    // review on PR 823: a session the refresh cannot resume is dropped, and its kept floor ends with it (dropAfterReconnect)
+    let dropId = '';
+    const ad3 = new SbxRestarting((c, n) => { if (n === 1) c.resumeFail.add(dropId); });
+    const ev3: AgentEvent[] = [];
+    ad3.onEvent((e) => ev3.push(e));
+    dropId = await ad3.start({ workspace: WS, quiet: true, permissionMode: 'read-only' });
+    ad3.setPermMode!(dropId, 'allow');
+    await new Promise((r) => setTimeout(r, 5));
+    assert.strictEqual(last(ev3, dropId)?.untilNewSession, true, 'before: the kept floor');
+    const k = ev3.length;
+    await ad3.refreshAuth();
+    assert.ok(!ad3.isLive(dropId), 'the refresh could not resume it: dropped');
+    const seq = ev3.slice(k).filter((e) => e.sessionId === dropId && (e.type === 'sandbox' || (e.type === 'status' && e.status === 'stopped'))).map((e) => e.type === 'sandbox' ? 'sandbox:' + JSON.stringify(e.sandbox) : 'status:stopped');
+    assert.deepStrictEqual(seq, ['sandbox:null', 'status:stopped'], 'a dropped session: the kept floor is cleared, then it stops: ' + JSON.stringify(seq));
+    await ad3.dispose();
   }
 
   // ---- Windows and macOS: home ancestors compared case-insensitively; mechanism names ----
