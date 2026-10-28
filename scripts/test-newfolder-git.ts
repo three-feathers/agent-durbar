@@ -401,7 +401,9 @@ async function main(): Promise<void> {
     {
       const sockets: net.Socket[] = [];
       let closedByGit = 0;
-      const server = net.createServer((s) => { sockets.push(s); s.on('close', () => { closedByGit++; }); s.on('error', () => undefined); });
+      // resume(): read and drop what git sends (its TLS hello). Node emits 'end' and 'close' for a socket only once its buffered data is
+      // read, so without it the peer's close is never seen (macOS failed every run; Linux passed only when Cancel beat the hello, FR-041)
+      const server = net.createServer((s) => { sockets.push(s); s.resume(); s.on('close', () => { closedByGit++; }); s.on('error', () => undefined); });
       await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
       const port = (server.address() as net.AddressInfo).port;
       // a process this test started next to Durbar: Cancel must not end it
@@ -418,7 +420,7 @@ async function main(): Promise<void> {
         assert.deepStrictEqual([result!.ok, result!.cancelled, result!.error], [false, true, CANCELLED]);
         assert.ok(!fs.existsSync(path.join(parent, 'hang')), 'the folder is gone');
         const helperEnded = await until(() => closedByGit === sockets.length, 10000);
-        // spec 093 FR-107: on failure, say which git processes are left and in which process group (POSIX), so a CI log shows why
+        // spec 093 T052: on failure, say which git processes are left and in which process group (POSIX), so a CI log shows why
         if (!helperEnded && POSIX) { try { console.error(execFileSync('ps', ['-axo', 'pid,ppid,pgid,stat,command'], { encoding: 'utf8' }).split('\n').filter((l, i) => i === 0 || /git/.test(l)).join('\n')); } catch { /* no ps */ } }
         assert.ok(helperEnded, "git's https helper (a child of git) ended too: its connection closed");
         assert.ok(bystander.exitCode === null && bystander.signalCode === null, 'a process Durbar did not start is untouched');

@@ -1,1 +1,0 @@
-- **Cancel during a clone now ends all of git** (spec 093 FR-107): when git ended on Cancel but a helper it started (such as the https helper holding the connection) did not, that helper was left running; now it is ended 3 s later. Only processes in git's own process group are ended, never others. Seen on macOS; checked there with a test build.

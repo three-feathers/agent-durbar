@@ -445,7 +445,7 @@ export interface ExecDeps {
 }
 
 /** Spec 081 T009: the real tree kill. The group exists because POSIX children are started `detached`. */
-export function killChildTree(child: Pick<ChildProcess, 'pid' | 'kill'> & { exitCode?: number | null; signalCode?: string | null }, platform: NodeJS.Platform, env: Readonly<Record<string, string | undefined>>, exec: typeof execFile = execFile, kill: (pid: number, sig: NodeJS.Signals | 0) => void = (pid, sig) => process.kill(pid, sig), later: (fn: () => void, ms: number) => void = (fn, ms) => { setTimeout(fn, ms).unref(); }): void {
+export function killChildTree(child: Pick<ChildProcess, 'pid' | 'kill'> & { exitCode?: number | null; signalCode?: string | null }, platform: NodeJS.Platform, env: Readonly<Record<string, string | undefined>>, exec: typeof execFile = execFile, kill: (pid: number, sig: NodeJS.Signals) => void = (pid, sig) => process.kill(pid, sig), later: (fn: () => void, ms: number) => void = (fn, ms) => { setTimeout(fn, ms).unref(); }): void {
   const pid = child.pid;
   if (!pid) return;
   if (platform === 'win32') {
@@ -454,18 +454,8 @@ export function killChildTree(child: Pick<ChildProcess, 'pid' | 'kill'> & { exit
     return;
   }
   try { kill(-pid, 'SIGTERM'); } catch { try { child.kill('SIGTERM'); } catch { /* gone */ } }
-  // then SIGKILL to the group after 3 s (one tree kill for the checks and the runner, review on #721). The child itself may have
-  // exited on SIGTERM while a descendant did not (macOS: git ends, its https helper keeps its connection, spec 093 FR-107).
-  // Sound against pid reuse: a process group id is never handed out again while any member of the group is alive (POSIX; Linux
-  // pins the pid number, XNU's fork skips ids in use as a group or session), so when the child has exited the group is signalled
-  // only if `kill(-pid, 0)` finds it still has members: the child's own descendants. An empty group: nothing is sent. Residual: our
-  // group empties and its id is reused by a new group leader within those 3 s, which needs the pid space to wrap ([KNOWN GAP]).
-  later(() => {
-    if (child.exitCode != null || child.signalCode != null) {
-      try { kill(-pid, 0); } catch { return; } // ESRCH (or EPERM): no member of ours is left
-    }
-    try { kill(-pid, 'SIGKILL'); } catch { /* gone */ }
-  }, 3000);
+  // then SIGKILL after 3 s, unless it has exited: its group id could already belong to something else (one tree kill for the checks and the runner, review on #721)
+  later(() => { if (child.exitCode != null || child.signalCode != null) return; try { kill(-pid, 'SIGKILL'); } catch { /* gone */ } }, 3000);
 }
 
 /**

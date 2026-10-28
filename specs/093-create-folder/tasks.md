@@ -50,7 +50,7 @@
 - [x] T040 Plant the mutants of plan *Mutants*; each fails a test; list them in the PR [SC-006]
 - [x] T041 Docs: README *Safety model* (what clone runs, the user's credentials, hooks note, BatchMode, the dropped `GIT_*` variables and the two that pass, "keep git up to date" and no version floor), `changelog.d/093-create-folder-p2.md` (named after the branch, as `changelog.d/README.md` asks), spec ticks, screenshots [FR-035, FR-090]
 
-- [ ] T052 Cancel ends what git leaves: `killChildTree` SIGKILLs the child's group after 3 s when the child has exited but the group still has members (probe with signal 0 first); unit test with fakes; failure diagnostics in test:newfoldergit; macOS checked with a test build [FR-107, FR-041]
+- [x] T052 The real-git Cancel check reads what git sends (a resumed listener socket), so it sees the helper's connection close on macOS; failure diagnostics (git processes and their process group); macOS checked with test builds `v0.1.1-test.1` and `-test.2` [FR-041]
 
 ## Phase 3: Real check and converge (PR 3)
 
