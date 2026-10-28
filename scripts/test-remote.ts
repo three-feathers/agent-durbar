@@ -155,13 +155,13 @@ async function main(): Promise<void> {
     while (!fs.existsSync(path.join(root, 'package.json'))) root = path.dirname(root);
     const srcDir = path.join(root, 'src');
     const walk = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : /\.ts$/.test(e.name) ? [path.join(d, e.name)] : []));
-    const callers = walk(srcDir).flatMap((f) => fs.readFileSync(f, 'utf8').split('\n').filter((l) => /\.setRemote\(/.test(l) && !/^\s*(\/\/|\*)/.test(l)).map((l) => path.basename(f) + ': ' + l.trim()));
+    const callers = walk(srcDir).flatMap((f) => fs.readFileSync(f, 'utf8').split(/\r?\n/).filter((l) => /\.setRemote\(/.test(l) && !/^\s*(\/\/|\*)/.test(l)).map((l) => path.basename(f) + ': ' + l.trim()));
     assert.ok(callers.length >= 4, 'the scan found the setRemote callers: ' + callers.length);
     for (const l of callers) assert.ok(/^(remoteops|doorops|doors|remote)\.ts/.test(l), 'unexpected setRemote caller: ' + l);
     assert.ok(!callers.some((l) => /setRemote\([^)]*true\)/.test(l)), 'no source calls setRemote(..., true) directly: ' + callers.join(' | '));
     // SDK 1.0.26: `remote.enable(` is the sole control. Exactly one call in src/ (comments ignored), inside CopilotAdapter.setRemote;
     // `enableRemoteSessions` is never set to anything but false. Mutants: a stray enable in the resume path, `enableRemoteSessions: true`.
-    const code = (f: string): string[] => fs.readFileSync(f, 'utf8').split('\n').map((l) => l.replace(/^\s*(\/\/|\*|\/\*).*$/, '').replace(/\s\/\/ .*$/, ''));
+    const code = (f: string): string[] => fs.readFileSync(f, 'utf8').split(/\r?\n/).map((l) => l.replace(/^\s*(\/\/|\*|\/\*).*$/, '').replace(/\s\/\/ .*$/, ''));
     const enables: string[] = [];
     const sessionFlags: string[] = [];
     for (const f of walk(srcDir)) {
