@@ -259,7 +259,7 @@ export interface ProfileInfo {
 }
 
 /** What a scheduled run came to (spec 044; main's `Outcome`). */
-export type ScheduleOutcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full';
+export type ScheduleOutcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full' | 'skipped-review';
 /** Spec 044 FR-036: one entry of a schedule's run log, as `scheduleRuns` returns it (newest first). Reason codes only, never text. */
 export interface ScheduleRunInfo {
   at: number;
@@ -284,7 +284,7 @@ export interface ScheduleInfo {
   next?: number;
   paused?: boolean;
   /** Why the app paused it (FR-014, FR-015). */
-  pausedReason?: 'cap' | 'session-ended';
+  pausedReason?: 'cap' | 'session-ended' | 'review';
   done?: boolean;
   last?: { at: number; outcome: ScheduleOutcome };
   /** FR-014: one session instead of the folder's agent. */

@@ -11,7 +11,7 @@ import { localTime, nextRuleRun, parseRule } from '../shared/schedrules';
 import type { CalendarRule } from '../shared/schedrules';
 import { LOOP_MAX_DELAY, LOOP_MAX_HOURS, LOOP_MAX_PASSES, LOOP_MIN_DELAY, clampPace, cleanReason, oneLine, parsePace } from '../shared/looppace';
 
-export type Outcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full';
+export type Outcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full' | 'skipped-review';
 export type CapUnit = 'aiu' | 'usd';
 /** FR-014: one session instead of the folder's agent. `name` is display only. */
 export interface ScheduleTarget {
@@ -68,7 +68,7 @@ export interface Schedule {
   next?: number;
   paused?: boolean;
   /** Why main paused it (FR-014, FR-015); only with `paused`. Never taken from the renderer. */
-  pausedReason?: 'cap' | 'session-ended';
+  pausedReason?: 'cap' | 'session-ended' | 'review';
   done?: boolean;
   last?: { at: number; outcome: Outcome };
   target?: ScheduleTarget;
@@ -114,15 +114,18 @@ export const MAX_RUNS = 50;
 export const MAX_FOLD = 100_000;
 /** Spec 044 FR-037: a fold-only change is written at the latest after this long (unless a real change or quit writes it first). */
 export const FOLD_FLUSH_MS = 60 * 60_000;
-export const MAX_PROMPT = 2000;
+/** Spec 044 FR-120 (issue #843): the longest prompt, in characters (`String.length` of the trimmed text). A longer one is refused by `save` and never cut. */
+export const MAX_PROMPT = 10_000;
+/** FR-124: a stored prompt over the limit (a hand-edited file) is kept whole and not sent: the schedule needs review. */
+export const needsReview = (s: Pick<Schedule, 'prompt'>): boolean => s.prompt.length > MAX_PROMPT;
 export const MIN_EVERY = 5;
 export const MAX_EVERY = 1440;
 const MIN = 60_000;
-const OUTCOMES: Outcome[] = ['sent', 'skipped-busy', 'skipped-paused', 'skipped-cap', 'skipped-ended', 'missed', 'failed', 'held', 'ended', 'skipped-door-full'];
+const OUTCOMES: Outcome[] = ['sent', 'skipped-busy', 'skipped-paused', 'skipped-cap', 'skipped-ended', 'missed', 'failed', 'held', 'ended', 'skipped-door-full', 'skipped-review'];
 const END_REASONS: LoopEndReason[] = ['user', 'agent', 'session', 'limit', 'passes', 'time', 'no-pace', 'errors', 'app-closed'];
 const RUN_REASONS: RunReason[] = ['no-agent', 'send-error', ...END_REASONS];
 /** Spec 044 FR-037: a skip that repeats with the same outcome and session is one entry with a count. */
-const FOLDS: Outcome[] = ['skipped-busy', 'skipped-paused', 'held', 'skipped-door-full'];
+const FOLDS: Outcome[] = ['skipped-busy', 'skipped-paused', 'held', 'skipped-door-full', 'skipped-review'];
 const LASTASK_SOURCES = ['agent', 'default', 'clamped'];
 const ID_RE = /^[A-Za-z0-9._:-]{1,128}$/;
 const AGENT_RE = /^[A-Za-z0-9._-]{1,32}$/;
@@ -219,7 +222,7 @@ export function cleanSchedule(o: unknown, now: number, keepId = true): Schedule 
   if (!o || typeof o !== 'object') return undefined;
   const r = o as Record<string, unknown>;
   const folder = typeof r.folder === 'string' && r.folder && r.folder.length <= 4096 ? r.folder : undefined;
-  const prompt = typeof r.prompt === 'string' ? r.prompt.trim().slice(0, MAX_PROMPT) : '';
+  const prompt = typeof r.prompt === 'string' ? r.prompt.trim() : ''; // FR-120/FR-124: never cut here; `save` refuses a longer new prompt, a stored one needs review
   if (!folder || !prompt) return undefined;
   const every = num(r.every);
   const at = num(r.at);
@@ -252,7 +255,7 @@ export function cleanSchedule(o: unknown, now: number, keepId = true): Schedule 
   } else if (at !== undefined && at > 0) s.at = at;
   else return undefined;
   if (r.paused === true) s.paused = true;
-  if (s.paused && (r.pausedReason === 'cap' || r.pausedReason === 'session-ended')) s.pausedReason = r.pausedReason;
+  if (s.paused && (r.pausedReason === 'cap' || r.pausedReason === 'session-ended' || r.pausedReason === 'review')) s.pausedReason = r.pausedReason;
   if (r.done === true) s.done = true;
   const last = r.last as Record<string, unknown> | undefined;
   if (last && typeof last === 'object' && num(last.at) !== undefined && OUTCOMES.includes(last.outcome as Outcome)) s.last = { at: last.at as number, outcome: last.outcome as Outcome };
@@ -453,12 +456,16 @@ export class Scheduler {
         continue;
       }
       if (s.done || s.paused) continue;
+      const why: Outcome = needsReview(s) ? 'skipped-review' : 'missed'; // FR-124: a prompt over the limit says so, whatever else is true
       if (s.at !== undefined && s.every === undefined && s.at < now - 30_000) {
-        s.done = true;
-        this.record(s, 'missed', now);
+        if (why === 'skipped-review') {
+          s.paused = true;
+          s.pausedReason = 'review';
+        } else s.done = true;
+        this.record(s, why, now);
       } else if (recurring(s) && (s.next ?? 0) < now - 30_000) {
         s.next = nextAfter(s, now);
-        this.record(s, 'missed', now);
+        this.record(s, why, now);
       }
     }
     this.pauseEnded();
@@ -681,6 +688,13 @@ export class Scheduler {
     const session = (s.target as ScheduleTarget).session;
     if (!this.deps.hasSession(session)) return this.endLoop(s, 'session', now);
     if (this.limitReached(s, now)) return; // also while held or paused by Pause all: a loop past its end time ends, it does not stay "running"
+    if (needsReview(s)) {
+      // FR-124: a prompt over the limit is never sent; the loop waits a pass length and the row says why.
+      // After the limits: a past end time must end the loop, or dueAt (min of next and endAt) stays in the past and the timer re-arms at 0 ms forever.
+      this.record(s, 'skipped-review', now, { session });
+      s.next = now + this.lastDelay(l) * MIN;
+      return;
+    }
     if (this.doc.pausedAll) {
       l.hold = 'pause-all';
       this.record(s, 'skipped-paused', now, { session });
@@ -855,7 +869,8 @@ export class Scheduler {
         let held: boolean | 'full' = false;
         let r: boolean | string = false;
         let reason: RunReason | undefined;
-        if (this.doc.pausedAll) outcome = 'skipped-paused';
+        if (needsReview(s)) outcome = 'skipped-review'; // FR-124: first, so the row always says this reason
+        else if (this.doc.pausedAll) outcome = 'skipped-paused';
         else if (s.target && !this.deps.hasSession(s.target.session)) outcome = 'skipped-ended';
         else if (s.cap && (s.spent ?? 0) >= s.cap.amount) outcome = 'skipped-cap';
         else if ((held = this.deps.hold?.(s, now) ?? false)) outcome = held === 'full' ? 'skipped-door-full' : 'held'; // FR-110: queued at a door closed by the user, before busy
@@ -874,10 +889,10 @@ export class Scheduler {
           if (typeof r === 'string' && r) this.attrib.set(r, s.id);
         }
         this.record(s, outcome, now, { session: typeof r === 'string' && r ? r : s.target?.session, reason });
-        if (outcome === 'skipped-ended' || outcome === 'skipped-cap') {
-          // FR-014 / FR-015: paused with a clear reason; the run is not sent, and a once-schedule stays to be resumed or deleted
+        if (outcome === 'skipped-ended' || outcome === 'skipped-cap' || (outcome === 'skipped-review' && !recurring(s))) {
+          // FR-014 / FR-015 / FR-124: paused with a clear reason; the run is not sent, and a once-schedule stays to be resumed, fixed or deleted
           s.paused = true;
-          s.pausedReason = outcome === 'skipped-cap' ? 'cap' : 'session-ended';
+          s.pausedReason = outcome === 'skipped-cap' ? 'cap' : outcome === 'skipped-review' ? 'review' : 'session-ended';
           this.real = true;
         } else if (recurring(s)) s.next = nextAfter(s, now);
         else {
@@ -907,6 +922,7 @@ export class Scheduler {
     if (this.doc.pausedAll) return { ok: false, error: 'Schedules are paused (Pause all). Resume them first.' };
     if (s.paused) return { ok: false, error: 'This schedule is paused. Resume it first.' };
     if (s.loop) return { ok: false, error: 'A loop sends its own passes.' };
+    if (needsReview(s)) return { ok: false, error: `This prompt is over ${MAX_PROMPT.toLocaleString('en-US')} characters. Shorten it with Edit… first.` };
     if (s.target && !this.deps.hasSession(s.target.session)) return { ok: false, error: 'That session has ended.' };
     if (s.cap && (s.spent ?? 0) >= s.cap.amount) return { ok: false, error: 'This schedule has reached its limit.' };
     if (this.deps.isBusy(s.folder, s.target?.session)) return { ok: false, error: 'The agent is busy. Try again when it is free.' };
@@ -966,6 +982,8 @@ export class Scheduler {
     // FR-017: what main keeps itself is never taken from the renderer
     const s = cleanSchedule(edit && prev ? editCandidate(input as Record<string, unknown>, prev) : { ...(input as object), next: undefined, spent: undefined, spentUnknown: undefined, pausedReason: undefined, loop: limitsOf((input as { loop?: unknown }).loop) }, now);
     if (!s) return { ok: false, error: 'A schedule needs a prompt and either a time, an interval of 5 to 1440 minutes or a calendar rule. A limit must be a positive amount.' };
+    // FR-123: a prompt over the limit is refused, never cut; one that did not change (Pause, Resume, Delete-side saves of an old entry) stays
+    if (needsReview(s) && s.prompt !== prev?.prompt) return { ok: false, error: `The prompt is ${s.prompt.length.toLocaleString('en-US')} of ${MAX_PROMPT.toLocaleString('en-US')} characters: shorten it to save.` };
     // a save of an existing schedule that is not an edit (Pause, Resume, "Use the folder's agent") never moves it to another folder or revives a done one
     if (!edit && prev) {
       s.folder = prev.folder;
@@ -989,7 +1007,8 @@ export class Scheduler {
     }
     if (edit && prev) {
       // FR-023: an edit may change the time of a paused schedule only to the future, and a done one only to run again
-      if (s.at !== undefined && !recurring(s) && s.at < now && (prev.done || recurring(prev) || s.at !== prev.at)) return { ok: false, error: prev.done ? 'Pick a time in the future to run it again.' : 'That time has already passed.' };
+      const again = prev.done || prev.pausedReason === 'review'; // FR-124: a once schedule paused for review has passed its time, like a done one
+      if (s.at !== undefined && !recurring(s) && s.at < now && (again || recurring(prev) || s.at !== prev.at)) return { ok: false, error: again ? 'Pick a time in the future to run it again.' : 'That time has already passed.' };
     } else if (s.at !== undefined && !recurring(s) && s.at < now && !s.paused) return { ok: false, error: 'That time has already passed.' };
     const i = this.doc.schedules.findIndex((x) => x.id === s.id);
     const old = i >= 0 ? this.doc.schedules[i] : undefined;
@@ -1042,7 +1061,12 @@ export class Scheduler {
       const retargeted = edit && old.pausedReason === 'session-ended' && targetChanged;
       // an edit that removes the limit, or raises it above what was spent, clears the reason "reached its limit"; it stays paused, so the row offers Resume
       const capFreed = edit && old.pausedReason === 'cap' && (!s.cap || s.cap.amount > (old.cap && old.cap.unit === s.cap.unit ? old.spent ?? 0 : 0));
-      if (s.paused && old.paused && old.pausedReason && !retargeted && !capFreed) s.pausedReason = old.pausedReason;
+      // FR-124: an edit that makes the prompt fit runs a schedule that was paused for review again
+      const reviewed = old.pausedReason === 'review' && !needsReview(s) && edit;
+      if (reviewed) {
+        delete s.paused;
+        delete s.pausedReason;
+      } else if (s.paused && old.paused && old.pausedReason && !retargeted && !capFreed) s.pausedReason = old.pausedReason;
       else if (retargeted || capFreed) delete s.pausedReason;
       if (!s.paused && old.pausedReason === 'cap' && !s.loop) {
         delete s.spent; // FR-015: Resume after the limit starts counting again from zero

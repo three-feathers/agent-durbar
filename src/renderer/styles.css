@@ -1055,6 +1055,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .sched-dlg .sc-t .sc-p:hover,.sched-set .sc-t .sc-p:hover{text-decoration:underline}
 .sched-dlg .sc-full,.sched-set .sc-full{margin:4px 0;font-size:12px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere}
 .sched-dlg .sc-full[hidden],.sched-set .sc-full[hidden]{display:none}
+.sched-dlg .sc-t:has(.sc-p[aria-expanded="true"]),.sched-set .sc-t:has(.sc-p[aria-expanded="true"]){flex:0 0 100%} /* review of #845: an opened prompt takes the whole row (as .sc-hist does), the buttons wrap under it, so a long text does not wrap at about 240px beside them */
 .sched-dlg .sc-form h4{margin:0;font-size:13px}
 .sched-dlg .sc-form h4[hidden]{display:none}
 .sched-dlg .sc-t small,.sched-set .sc-t small{font-size:11px;color:var(--muted)}
@@ -1085,6 +1086,10 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .sched-dlg .sc-opts .sc-lbl{flex:none;white-space:nowrap}
 .sched-dlg .sc-opts .sc-to{flex:1 1 260px;min-width:0}
 .sched-dlg .sc-opts .sc-to select{flex:1;min-width:0}
+.sched-dlg .sc-count{margin:-4px 0 0;font-size:12px;color:var(--muted);line-height:1.4;overflow-wrap:break-word} /* spec 044 FR-122: the counter from 80% of the limit */
+.sched-dlg .sc-count:empty{display:none}
+.sched-dlg .sc-count.over{color:var(--red-ink);font-weight:600} /* FR-121: the error in words (bold and text, not colour alone) */
+.sched-dlg textarea[aria-invalid="true"]{border-color:var(--red-ink)}
 .sched-dlg .sc-hint{margin:4px 0 0;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sched-dlg .sc-hint[hidden]{display:none}
 .sched-dlg .sc-opts:focus-within + .sc-hint{white-space:normal;overflow-wrap:break-word} /* spec 044 FR-021: while the select has focus the full name wraps, so it does not depend on the title tooltip */

@@ -347,6 +347,49 @@ async function main(): Promise<void> {
     loopSupport.enabled = false;
   }
 
+  // ---- spec 044 FR-124 (issue #843): a loop whose stored prompt is over the limit sends nothing and waits one pass ----
+  {
+    const { loopSupport } = await import('../src/main/schedules');
+    loopSupport.enabled = true;
+    const h = harness({ pausedAll: false, schedules: [] }, T0);
+    h.sch.start();
+    const r = h.sch.save({ folder: '/w', prompt: 'p', target: { session: 's1', agent: 'copilot' }, cap: { amount: 100, unit: 'aiu' }, loop: { minDelay: 5, maxDelay: 60, defaultDelay: 10, maxPasses: 5, endAt: T0 + 3 * 3_600_000 } }, () => true);
+    assert.ok(r.ok);
+    const id = r.ok ? r.schedule.id : '';
+    h.sch.doc.schedules[0].prompt = 'z'.repeat(12_000); // as a hand-edited file would hold it
+    await h.advance(0);
+    assert.deepStrictEqual(h.sent, [], 'no pass is sent');
+    assert.deepStrictEqual(log(h, id).map((x) => [x.outcome, x.session]), [['skipped-review', 's1']], 'the skip is recorded');
+    assert.strictEqual(h.sch.doc.schedules[0].next, h.now + 10 * MIN, 'the next wake is one pass away');
+    assert.ok(!h.sch.doc.schedules[0].loop?.inPass && !h.sch.doc.schedules[0].loop?.passes, 'and no pass started');
+    await h.advance(10 * MIN);
+    assert.deepStrictEqual(h.sent, [], 'still nothing sent');
+    assert.strictEqual(log(h, id).length, 1, 'a repeat folds');
+    assert.strictEqual(log(h, id)[0].n, 2);
+    loopSupport.enabled = false;
+  }
+
+  // ---- spec 044 FR-124 review (2026-10-28): a loop that needs review still ends at its end time (no 0 ms timer forever) ----
+  for (const held of [false, true]) {
+    const { loopSupport } = await import('../src/main/schedules');
+    loopSupport.enabled = true;
+    const h = harness({ pausedAll: false, schedules: [] }, T0);
+    h.sch.start();
+    const r = h.sch.save({ folder: '/w', prompt: 'p', target: { session: 's1', agent: 'copilot' }, cap: { amount: 100, unit: 'aiu' }, loop: { minDelay: 5, maxDelay: 60, defaultDelay: 10, maxPasses: 5, endAt: T0 + 60 * MIN } }, () => true);
+    assert.ok(r.ok);
+    const sc = h.sch.doc.schedules[0];
+    sc.prompt = 'z'.repeat(12_000);
+    if (held && sc.loop) sc.loop.hold = 'pause-all';
+    const guard = new Promise<string>((res) => { const t = setTimeout(() => res('hung'), 3000); t.unref(); });
+    const done = h.advance(61 * MIN).then(() => 'done');
+    const outcome = await Promise.race([done, guard]);
+    if (outcome === 'hung') { console.error(`FAIL: a loop needing review past its end time never settles (hold: ${held})`); process.exit(1); }
+    assert.strictEqual(sc.loop?.ended?.reason, 'time', `the loop ended at its end time (hold: ${held})`);
+    assert.strictEqual(h.timers.length, 0, 'nothing is armed for an ended loop');
+    assert.deepStrictEqual(h.sent, []);
+    loopSupport.enabled = false;
+  }
+
   // ---- FR-044: the simulator keeps the same log with the same rules ----
   {
     // cut the simulator's `simRecord` out of sim.ts, compile it and run one sequence through it and through main's `record`
@@ -371,6 +414,8 @@ async function main(): Promise<void> {
     for (let i = 0; i < 2; i++) push('held');
     push('skipped-door-full');
     push('skipped-door-full');
+    push('skipped-review');
+    push('skipped-review');
     push('missed');
     push('missed');
     push('sent', { session: 'bad session!' });
