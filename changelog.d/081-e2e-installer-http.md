@@ -1,1 +1,0 @@
-- **Fix: nightly "E2E real accounts" install step** (spec 081, 2026-10-27): the E2E and install-check scripts now pass the installer download to the harness setup, so the official-installer installs no longer stop with "No network layer is set up". CI scripts only: the app already passed it. Checked with a unit test on a local server.

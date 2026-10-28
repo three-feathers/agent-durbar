@@ -1,1 +1,0 @@
-- **Release hardening** (spec 008 FR-132..FR-134): release files will carry build provenance attestations you can check with `gh attestation verify` (README, *Verify a download*; first effective on the next release), the Copilot runtime downloaded at build time is checked against `package-lock.json`, and Electron and electron-builder are pinned to exact versions.

@@ -1,1 +1,0 @@
-- **Dependabot waits 7 days** (spec 021 FR-062): version updates for npm and GitHub Actions are proposed only once a release is 7 days old; security updates are not delayed. `test:supplychain` requires the cooldown; mutation-checked.
