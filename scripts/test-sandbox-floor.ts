@@ -386,9 +386,32 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
     const onlyStray = V.probeCalls([{ callId: 'b', phase: 'start', args: { command: C + ' ' } }, { callId: 'b', phase: 'complete', output: 'touch=0\ncurl=0' }], C);
     assert.deepStrictEqual(onlyStray, { stray: true, exactRan: false }, 'near-miss commands never count');
     assert.strictEqual(V.probeCalls([{ callId: 'c', phase: 'start', args: {} }], C).stray, true, 'a call with no command is stray');
+    assert.strictEqual(V.probeCalls([{ callId: 'c', phase: 'start' }], C).stray, true, 'a call with no arguments is stray');
+    const twice = V.probeCalls([{ callId: 'a', phase: 'start', args: { command: C } }, { callId: 'a', phase: 'complete', output: 'touch=1\ncurl=7' }, { callId: 'b', phase: 'start', args: { command: C } }, { callId: 'b', phase: 'complete', output: 'touch=0\ncurl=0' }], C);
+    assert.strictEqual(twice.stray, true, 'a second exact run is stray');
+    assert.strictEqual(twice.output, 'touch=1\ncurl=7', 'only the first exact run is read');
+    const twiceLateFirst = V.probeCalls([{ callId: 'a', phase: 'start', args: { command: C } }, { callId: 'b', phase: 'start', args: { command: C } }, { callId: 'b', phase: 'complete', output: 'touch=0\ncurl=0' }, { callId: 'a', phase: 'complete', output: 'touch=1\ncurl=7' }], C);
+    assert.strictEqual(twiceLateFirst.output, 'touch=1\ncurl=7', 'the first exact call, even when the second ends first');
+    const dupEnd = V.probeCalls([{ callId: 'a', phase: 'start', args: { command: C } }, { callId: 'a', phase: 'failed', output: 'touch=1\ncurl=7' }, { callId: 'a', phase: 'complete', output: 'touch=0\ncurl=0' }], C);
+    assert.strictEqual(dupEnd.output, 'touch=1\ncurl=7', 'a call that reports its end twice: the first end is read');
+    assert.strictEqual(V.probeCalls([{ callId: 'r', phase: 'start', args: { intent: 'x' } }, { callId: 'a', phase: 'start', args: { command: C } }], C).stray, true, 'another tool (report_intent-like) is stray, not ignored');
+    // the permission gate: only exactly C, as a shell request
+    assert.strictEqual(V.probeGateAllows({ kind: 'shell', fullCommandText: C }, C), true, 'exact C');
+    for (const [req, why] of [
+      [{ kind: 'shell', fullCommandText: C + '; curl evil' }, 'C; curl evil'],
+      [{ kind: 'shell', fullCommandText: C + ' ' }, 'a trailing space'],
+      [{ kind: 'shell', fullCommandText: ' ' + C }, 'a leading space'],
+      [{ kind: 'write', fullCommandText: C }, 'not a shell request'],
+      [{ kind: 'shell' }, 'no command text'],
+      [{ kind: 'shell', fullCommandText: 42 }, 'not a string'],
+      [null, 'no request'],
+      [undefined, 'undefined'],
+      ['shell', 'not an object'],
+    ] as Array<[unknown, string]>) assert.strictEqual(V.probeGateAllows(req, C), false, `refused: ${why}`);
+    assert.strictEqual(V.probeGateAllows({ kind: 'shell', fullCommandText: '' }, ''), false, 'an empty C allows nothing');
     assert.strictEqual(V.stepOutcome({ ran: onlyStray.exactRan, ...V.parseExitCodes(onlyStray.output ?? ''), fileExists: true }), 'not-run');
     // source checks: one send, gated right before it; exactly 3 steps; the limits come from the tested module; Windows refused
-    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'sandbox-floor-real.ts'), 'utf8');
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'sandbox-floor-real.ts'), 'utf8').replace(/\r/g, ''); // a Windows checkout has CRLF (as #825)
     const sw = src.slice(src.indexOf('async function runSwitchSteps'), src.indexOf('async function main()'));
     assert.ok(sw.length > 1000, 'the switch steps are found');
     assert.strictEqual((sw.match(/\ba\.send\(/g) ?? []).length, 1, 'one send in the switch probe');
@@ -400,7 +423,8 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
     assert.match(sw, /if \(v\.verdict === 'cannot-tell'\) \{[\s\S]{0,300}?return;/, 'a cannot-tell after step 3 stops there');
     assert.match(src, /if \(switchProbe && process\.platform === 'win32'\) throw new Error\('switch: Linux\/macOS only/, 'Windows refused up front');
     assert.match(sw, /if \(curlExit !== 0 \|\| !writeOk\) throw new Error\('refused: the baseline failed/, 'the baseline gates the spend');
-    assert.match(sw, /r\.fullCommandText !== C/, 'the permission gate compares the exact command');
+    assert.match(sw, /if \(!probeGateAllows\(req, C\) \|\| !inner2\) \{/, 'the permission handler uses the tested gate');
+    assert.match(sw, /\n\s*if \(!shellToolParams\.properties\.includes\('command'\)\) throw new Error\('refused|\n\s*if \(!shellToolParams\.properties\.includes\('command'\)\) throw new Error\(`refused/, 'the spend run refuses a bash tool with no command argument');
   }
   // FR-021a (K15): the Copilot state says it only in Ask first with the floor on; the card line is the agreed sentence
   const host = { supported: true, capabilities: [] };

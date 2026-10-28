@@ -57,7 +57,7 @@ import type { AgentAdapter, AgentEvent } from '../src/adapters/types';
 import { pathDirs } from '../src/shared/pathdirs';
 import { redact } from '../src/shared/redact';
 import { maskArgv, maskIds } from './sandbox-real-mask';
-import { mayPrompt, parseExitCodes, probeCalls, step4Expected, stepOutcome, switchVerdict, SWITCH_MAX_AIU, SWITCH_MAX_PROMPTS } from './sandbox-switch-verdict';
+import { mayPrompt, parseExitCodes, probeCalls, probeGateAllows, step4Expected, stepOutcome, switchVerdict, SWITCH_MAX_AIU, SWITCH_MAX_PROMPTS } from './sandbox-switch-verdict';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const cp = require('child_process') as typeof import('child_process'); // the real module object (an import star is a read-only copy)
 
@@ -220,16 +220,20 @@ async function runSwitchSteps(st: { code: number }): Promise<void> {
     try { sdkVersion = String((JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'node_modules', '@github', 'copilot-sdk', 'package.json'), 'utf8')) as { version?: unknown }).version ?? 'unknown'); } catch { /* not found */ }
     const builtin = await timedOut(Promise.resolve().then(() => client.rpc.tools?.list?.({})), 30_000, 'tools.list').catch(() => undefined);
     const builtinNames = (builtin?.tools ?? []).map((t) => bounded(t.name)).filter((n): n is string => !!n);
+    // the bash tool's argument names from its own schema (names only): the evidence for `commandOf` reading `command`
+    const shellDef = (builtin?.tools ?? []).find((t) => t.name === SHELL_TOOL) as { parameters?: { properties?: Record<string, unknown>; required?: unknown } } | undefined;
+    const shellToolParams = { properties: Object.keys(shellDef?.parameters?.properties ?? {}).map((k) => bounded(k) ?? '?').slice(0, 30), required: Array.isArray(shellDef?.parameters?.required) ? (shellDef.parameters.required as unknown[]).map((k) => bounded(k) ?? '?').slice(0, 30) : [] };
     const host = await timedOut(Promise.resolve().then(() => client.rpc.sandbox?.getHostSupport?.()), 30_000, 'getHostSupport').catch((e: unknown) => ({ error: clean(e instanceof Error ? e.message : e, 200) }));
     Object.assign(out, {
       signedIn: auth?.isAuthenticated === true, authType: bounded(auth?.authType) ?? 'unknown',
       cliVersion: version(status?.version) ?? 'unknown', protocolVersion: typeof status?.protocolVersion === 'number' ? status.protocolVersion : 'unknown', sdkVersion,
-      shellTool: builtinNames.includes(SHELL_TOOL) ? SHELL_TOOL : null, builtinTools: builtinNames.slice(0, 80),
+      shellTool: builtinNames.includes(SHELL_TOOL) ? SHELL_TOOL : null, shellToolParams, builtinTools: builtinNames.slice(0, 80),
       hostSupport: clean(JSON.stringify(host ?? null), 400),
     });
     console.log(`pre-flight: signedIn=${out.signedIn} authType=${out.authType} cli=${out.cliVersion} sdk=${sdkVersion} shellTool=${out.shellTool ?? 'MISSING'}`);
     if (auth?.isAuthenticated !== true) throw new Error('refused: no signed-in Copilot client on this computer (nothing was spent)');
     if (!builtinNames.includes(SHELL_TOOL)) throw new Error(`refused: the runtime lists no "${SHELL_TOOL}" tool, so the session cannot be limited to the shell`);
+    if (!shellToolParams.properties.includes('command')) throw new Error(`refused: the "${SHELL_TOOL}" tool has no "command" argument, so its calls cannot be matched to the probe command`);
     // FR-022 review item 6: the shell tool only, no MCP server; on create AND resume (the B path resumes)
     const lock = { availableTools: [`builtin:${SHELL_TOOL}`], excludedTools: ['mcp:*', 'custom:*'], mcpServers: {} };
     const origCreate = client.createSession.bind(client);
@@ -242,8 +246,7 @@ async function runSwitchSteps(st: { code: number }): Promise<void> {
         ...cfg,
         ...lock,
         onPermissionRequest: async (req: unknown, inv: unknown): Promise<unknown> => {
-          const r = req as { kind?: unknown; fullCommandText?: unknown };
-          if (String(r?.kind) !== 'shell' || r.fullCommandText !== C || !inner2) {
+          if (!probeGateAllows(req, C) || !inner2) {
             strayAsks++;
             return { kind: 'reject', feedback: 'Agent Durbar probe: only the exact probe command may run.' };
           }

@@ -68,7 +68,23 @@ export function mayPrompt(s: { prompts: number; aiu: number; usageKnown: boolean
   return { ok: true, why: 'within the budget' };
 }
 
-/** The shell command of a tool call's arguments (`{ command }`), or undefined. */
+/**
+ * The permission gate of the probe session (review on PR #827): only a shell request whose full command text is exactly `C` may go
+ * on to Durbar's broker; anything else (another command, extra or missing spaces, another kind, no text, no request) is rejected
+ * before it runs. `read:` SDK 1.0.22 `session-events.d.ts`: a shell permission request has `fullCommandText: string`.
+ */
+export function probeGateAllows(req: unknown, C: string): boolean {
+  if (!req || typeof req !== 'object' || typeof C !== 'string' || !C) return false;
+  const r = req as { kind?: unknown; fullCommandText?: unknown };
+  return r.kind === 'shell' && typeof r.fullCommandText === 'string' && r.fullCommandText === C;
+}
+
+/**
+ * The shell command of a tool call's arguments, or undefined. `read:` the SDK 1.0.22 typings give a tool start only `arguments?: JsonValue`
+ * (`session-events.d.ts` `ToolExecutionStartData`), so the field name comes from the runtime's own bash tool schema (`tools.list`,
+ * recorded by the dry run as `shellToolParams`; the spend run refuses when it has no `command`). Fail safe: a start with no string
+ * `command` is stray (the turn is interrupted, and it never counts as the probe).
+ */
 export function commandOf(args: unknown): string | undefined {
   const c = args && typeof args === 'object' ? (args as { command?: unknown }).command : undefined;
   return typeof c === 'string' ? c : undefined;
@@ -84,8 +100,11 @@ export function probeCalls(events: ReadonlyArray<{ callId?: unknown; phase?: unk
   let output: string | undefined;
   let exactRan = false;
   for (const e of events) {
+    // No other tool can start: the probe session's tools are limited to bash and read back as exactly [bash] before any prompt, so a
+    // `report_intent` or other start is not expected; if one comes anyway it is stray (fail safe), never ignored.
     if (e.phase === 'start') {
-      if (commandOf(e.args) === C && e.callId !== undefined) exact.add(e.callId);
+      // only the FIRST exact call counts; a second exact run is stray too (review on PR #827), so the first result is never replaced
+      if (commandOf(e.args) === C && e.callId !== undefined && exact.size === 0) exact.add(e.callId);
       else stray = true;
     } else if ((e.phase === 'complete' || e.phase === 'failed') && exact.has(e.callId) && !exactRan) {
       exactRan = true;

@@ -403,6 +403,15 @@ runtime reports it, SDK 1.0.22) showed:
 - Before the first prompt, a baseline from the script itself with no shell (`execFile` with an argv): `curl` reaches example.com and a
   plain write to P works. If either fails the run refuses, since a blocked step would then mean "no network" or "no folder" (a false B).
 - `switch` runs on Linux and macOS only (C is POSIX shell): it refuses on Windows up front. macOS is not run.
+- Round 2 (at c3afd6f6): the permission gate is the pure `probeGateAllows(req, C)` (a shell request whose `fullCommandText` is exactly C;
+  `read:` SDK 1.0.22 `session-events.d.ts` types it `fullCommandText: string`); a second exact run of C is stray too, so only the first
+  result is read. **Which field holds the command:** the SDK typings give a tool start only `arguments?: JsonValue`, so it was read from
+  the runtime: `tools.list` gives the `bash` tool the arguments `command` (required), `description`, `shellId`, `mode`, `detach` and
+  `initial_wait` (`real:` 2026-10-28 dry run, CLI 1.0.98, no prompt; recorded as `shellToolParams`). The spend run refuses when `command`
+  is missing, and a start with no string `command` is stray (fail safe). **Other tools such as `report_intent`:** they cannot start,
+  because the session's tools are limited to `bash` and read back as exactly `[bash]` before any prompt; any other start that came anyway
+  would be stray (the turn is interrupted, no further prompt), never ignored. The source checks strip `\r`, so a Windows (CRLF) checkout
+  passes, as #825.
 - A failed `stop`, session delete or folder removal is printed and makes the run exit 1 (it was a silent `.catch`). Checked 2026-10-28
   (`real:`): the two dry runs left no session folder in `~/.copilot/session-state`; they left two runtime log files (`~/.copilot/logs`,
   1.4 kB and 1.9 kB, not read) and one session operation lock file, the runtime's own.
