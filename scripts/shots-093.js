@@ -175,11 +175,15 @@ module.exports = async (ctx) => {
 
     // ==== phase 2: clone ====
     const pmode = (v) => js(`(()=>{const s=document.getElementById('permMode');s.value=${jsLiteral(v)};s.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
-    const errIs = (re) => until(`(()=>{const e=document.getElementById('mdErr');return !!e&&!e.hidden&&${re}.test(e.textContent)})()`, 6000);
+    /* the exact reason under the field (text compared as text: no regex built from page strings) */
+    const errIs = (text) => until(`(()=>{const e=document.getElementById('mdErr');return !!e&&!e.hidden&&e.textContent===${jsLiteral(text)}})()`, 6000);
+    const WAITING = 'Still waiting for the server. If your ssh or sign-in helper opened a window, answer it there; or press Cancel.';
     const prog = () => js(`(()=>{const d=document.getElementById('nfProg');if(!d)return null;const q=s=>(d.querySelector(s)||{}).textContent||'';const w=d.querySelector('#nfPW');return {title:q('#nfPT'),phase:q('#nfPS'),pct:q('#nfPP'),log:q('#nfPL'),time:q('#nfPE'),waiting:w&&!w.hidden?w.textContent:'',role:d.querySelector('.dlg').getAttribute('role'),modal:d.querySelector('.dlg').getAttribute('aria-modal'),live:d.querySelector('#nfPS').getAttribute('aria-live'),focus:(document.activeElement||{}).id||''}})()`);
     const progSmall = () => js(`[...document.querySelectorAll('#nfProg .dlg *')].filter(e=>e.childNodes.length&&[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())&&e.getClientRects().length).filter(e=>parseFloat(getComputedStyle(e).fontSize)<10.5).map(e=>e.tagName+':'+e.textContent.slice(0,20))`);
     const toastHas = (t) => until(`[...document.querySelectorAll('#toasts .toast')].some(x=>x.textContent.includes(${jsLiteral(t)}))`, 6000);
-    const startClone = async () => { await js(`document.getElementById('addFolder').click()`); await open('Add a folder'); await press('Clone a repository…'); return open('Clone a repository'); };
+    /* a dialog that was just opened again fades in (160 ms): picture it once its animations have finished */
+    const still = (sel) => until(`(()=>{const d=document.querySelector(${jsLiteral(sel)});return !!d&&d.getAnimations({subtree:true}).every(a=>a.playState==='finished'||a.playState==='idle')})()`, 4000);
+    const startClone = async () => { await js(`(()=>{const b=document.getElementById('addFolder');b.focus();b.click();return true})()`); /* a mouse click focuses the button too */ await open('Add a folder'); await press('Clone a repository…'); return open('Clone a repository'); };
     const typeUrl = async (u) => { await typeName(u); await press('Next'); };
 
     // ---- a refused URL keeps the text and the reason; nothing else is asked ----
@@ -187,12 +191,13 @@ module.exports = async (ctx) => {
     check(await startClone(), `${at}: Clone a repository… opens the URL step`);
     check(JSON.stringify(await buttons()) === JSON.stringify(['Cancel', 'Next']), `${at}: the URL step's buttons: ${JSON.stringify(await buttons())}`);
     await typeUrl('file:///etc');
-    check(await errIs('/Use an https:\/\/ or ssh address \(for example git@github\.com:owner\/repo\.git\)\./'), `${at}: file:// is refused with the reason`);
+    check(await errIs('Use an https:// or ssh address (for example git@github.com:owner/repo.git).'), `${at}: file:// is refused with the reason`);
     check((await js(`document.getElementById('mdIn').value`)) === 'file:///etc' && (await H.text('#modeDlg #mdT')) === 'Clone a repository', `${at}: the URL is kept, still the URL step`);
     check((await fits()).length === 0 && (await smallText()).length === 0, `${at}: URL step: buttons fit, text at least 10.5px`);
+    check(await still('#modeDlg .dlg'), `${at}: the URL step has finished fading in`);
     await H.shot(path.join(OUT, `093-clone-url-refused-${at}.png`), { tag: 'shots-093' });
     await typeUrl('https://lena:hunter2@github.com/lena/shop.git');
-    check(await errIs('/Remove the password from the address\. Durbar uses your own git credentials\./'), `${at}: a password is refused`);
+    check(await errIs('Remove the password from the address. Durbar uses your own git credentials.'), `${at}: a password is refused`);
     check((await js(`window.__simNewFolderLast`)) === null, `${at}: nothing was sent to create`);
     await esc();
     check(await closed(), `${at}: Escape at the URL step`);
@@ -212,6 +217,7 @@ module.exports = async (ctx) => {
     check(pv && pv.role === 'dialog' && pv.modal === 'true' && pv.live === 'polite' && pv.focus === 'nfPC', `${at}: a modal dialog, the phase in a live region, focus on Cancel: ${JSON.stringify(pv)}`);
     const ps = await progSmall();
     check(ps.length === 0, `${at}: progress text at least 10.5px: ${JSON.stringify(ps)}`);
+    check(await still('#nfProg .dlg'), `${at}: the progress dialog has finished fading in`);
     await H.shot(path.join(OUT, `093-clone-progress-${at}.png`), { tag: 'shots-093' });
     await esc();
     check(await until(`!document.getElementById('nfProg')`, 8000), `${at}: Escape cancels the clone and closes the dialog`);
@@ -226,7 +232,7 @@ module.exports = async (ctx) => {
     await typeUrl('git@github.com:lena/shop.git');
     await until(`((document.querySelector('#modeDlg .dbtn .primary')||{}).textContent||'')==='Clone'`, 6000);
     await press('Clone');
-    check(await until(`(()=>{const w=document.querySelector('#nfProg #nfPW');return !!w&&!w.hidden&&/^Still waiting for the server\. If your ssh or sign-in helper opened a window, answer it there; or press Cancel\.$/.test(w.textContent)})()`, 8000), `${at}: the still-waiting line`);
+    check(await until(`(()=>{const w=document.querySelector('#nfProg #nfPW');return !!w&&!w.hidden&&w.textContent===${jsLiteral(WAITING)}})()`, 8000), `${at}: the still-waiting line`);
     await js(`document.getElementById('nfPC').click()`);
     check(await until(`!document.getElementById('nfProg')`, 8000) && await toastHas('Cancelled. Nothing was kept.'), `${at}: Cancel ends a waiting clone`);
     await js(`window.__simCloneWaiting=false;true`);
@@ -248,6 +254,7 @@ module.exports = async (ctx) => {
     check(await open('Allow all for the repository you clone next?'), `${at}: Allow all asks after the URL`);
     const body = await H.text('#modeDlg #mdB');
     check(/^This code comes from github\.com; agents can run it without asking\. Edits, shell commands/.test(body) && !/lena/.test(body), `${at}: the host sentence, host only: ${body}`);
+    check(await still('#modeDlg .dlg'), `${at}: the confirmation has finished fading in`);
     await H.shot(path.join(OUT, `093-clone-allow-${at}.png`), { tag: 'shots-093' });
     await press('Allow all');
     check(await until(`((document.querySelector('#modeDlg .dbtn .primary')||{}).textContent||'')==='Clone'`, 6000) && /It starts in Allow all\./.test(await H.text('#modeDlg #mdB')), `${at}: the name step says Allow all`);
