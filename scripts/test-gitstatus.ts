@@ -128,7 +128,7 @@ async function main(): Promise<void> {
   assert.strictEqual((src.match(/\bsp\('git', argv, gitSpawnOptions\(cwd, env, platform\)\)/g) ?? []).length, 1, 'the one create git process call uses gitCreateCall\'s argv and gitSpawnOptions');
   assert.strictEqual((src.match(/\bsp\(/g) ?? []).length, 1, 'and nothing else is spawned');
   assert.ok(/const sp: GitSpawn = deps\.spawn \?\? \(spawn as unknown as GitSpawn\);/.test(src), "the create runner reads child_process's spawn when it runs (the simulator's seal applies)");
-  assert.ok(src.includes("const { argv, env } = gitCreateCall(req, { hooksDir: deps.hooksDir, env: deps.env, userSshCommand: deps.userSshCommand }); // never the protocols seam (FR-095)"), 'the create runner takes its argv and env from gitCreateCall only, with the default protocols (no seam)');
+  assert.ok(src.includes("const { argv, env } = gitCreateCall(req, { hooksDir: deps.hooksDir, env: deps.env, userSshCommand: deps.userSshCommand, platform: deps.platform }); // never the protocols seam (FR-095)"), 'the create runner takes its argv and env from gitCreateCall only, with the default protocols (no seam)');
   // spec 093 FR-033: the clone's one config read is a fixed argv in the private hooks folder, with the read-only runner's options
   assert.strictEqual((src.match(/\bef\('git', \[\.\.\.SSH_COMMAND_READ\], \{ \.\.\.gitExecOptions\(env\), cwd: o\.hooksDir \}/g) ?? []).length, 1, 'the core.sshCommand read: fixed argv, gitExecOptions, in the hooks folder');
   assert.strictEqual((src.match(/\bef\(/g) ?? []).length, 2, 'and no other execFile call in gitstatus.ts');
@@ -271,7 +271,7 @@ async function cloneCallChecks(base: NodeJS.ProcessEnv): Promise<void> {
   const c = gitCreateCall({ kind: 'clone', url: URL }, { hooksDir: '/tmp/durbar-hooks-9', env: base });
   const CLONE_CFG = ['core.hooksPath=/tmp/durbar-hooks-9', 'core.fsmonitor=false', 'core.useBuiltinFSMonitor=false', 'submodule.recurse=false', 'protocol.allow=never',
     'protocol.file.allow=never', 'protocol.git.allow=never', 'protocol.ssh.allow=always', 'protocol.http.allow=never', 'protocol.https.allow=always', 'protocol.ext.allow=never', 'protocol.fd.allow=never', 'protocol.ftp.allow=never', 'protocol.ftps.allow=never',
-    'transfer.credentialsInUrl=die', 'transfer.bundleURI=false'];
+    'transfer.credentialsInUrl=die', 'transfer.bundleURI=false', 'core.protectNTFS=true', 'core.protectHFS=true'];
   assert.deepStrictEqual(c.argv, ['--no-pager', ...CLONE_CFG.flatMap((x) => ['-c', x]), 'clone', '--progress', '--no-recurse-submodules', '--', URL, '.'], 'clone: exact argv (every -c before the subcommand, -- before the URL, . last)');
   assert.ok(!c.argv.some((a) => /^(credential\.helper|filter\.|core\.sshCommand)/.test(a)), "the user's credential helper and filter drivers are kept (D7, Q5); no sshCommand override in argv");
   assert.deepStrictEqual([...GIT_CLONE_PROTOCOLS], ['https', 'ssh'], 'the default protocols');
@@ -280,8 +280,11 @@ async function cloneCallChecks(base: NodeJS.ProcessEnv): Promise<void> {
   assert.deepStrictEqual([c.env.HTTPS_PROXY, c.env.SSH_AUTH_SOCK, c.env.SSH_ASKPASS, c.env.PATH], ['http://proxy.example:3128', '/run/agent', undefined, '/usr/bin'], 'the proxy and the ssh agent pass; SSH_ASKPASS does not');
   // R4: GIT_SSL_CAINFO / GIT_SSL_CAPATH pass only as absolute paths (any case of the name); nothing else of GIT_SSL_*
   const abs = path.resolve('ca', 'corp.pem');
-  const ca = gitCreateCall({ kind: 'clone', url: URL }, { hooksDir: '/h', env: { ...base, GIT_SSL_CAINFO: abs, git_ssl_capath: path.resolve('certs'), GIT_SSL_CERT: abs, GIT_SSL_NO_VERIFY: 'true' } }).env;
-  assert.deepStrictEqual([ca.GIT_SSL_CAINFO, ca.GIT_SSL_CAPATH, ca.GIT_SSL_CERT, ca.GIT_SSL_NO_VERIFY, ca.git_ssl_capath], [abs, path.resolve('certs'), undefined, undefined, undefined], 'the two CA paths pass, absolute, under their upper-case name');
+  const caEnv = { ...base, GIT_SSL_CAINFO: abs, git_ssl_capath: path.resolve('certs'), GIT_SSL_CERT: abs, GIT_SSL_NO_VERIFY: 'true' };
+  const ca = gitCreateCall({ kind: 'clone', url: URL }, { hooksDir: '/h', env: caEnv, platform: 'win32' }).env;
+  assert.deepStrictEqual([ca.GIT_SSL_CAINFO, ca.GIT_SSL_CAPATH, ca.GIT_SSL_CERT, ca.GIT_SSL_NO_VERIFY, ca.git_ssl_capath], [abs, path.resolve('certs'), undefined, undefined, undefined], 'Windows: the two CA paths pass, absolute, under their upper-case name (names ignore case there)');
+  const caPosix = gitCreateCall({ kind: 'clone', url: URL }, { hooksDir: '/h', env: caEnv, platform: 'linux' }).env;
+  assert.deepStrictEqual([caPosix.GIT_SSL_CAINFO, caPosix.GIT_SSL_CAPATH, caPosix.git_ssl_capath], [abs, undefined, undefined], 'POSIX: names are case-sensitive, a lower-case git_ssl_capath is another variable and is dropped');
   for (const rel of ['ca.pem', './ca.pem', '../ca.pem', '', '~/ca.pem']) assert.strictEqual(gitCreateCall({ kind: 'clone', url: URL }, { hooksDir: '/h', env: { ...base, GIT_SSL_CAINFO: rel, GIT_SSL_CAPATH: rel } }).env.GIT_SSL_CAINFO, undefined, `a relative CA path is dropped: ${JSON.stringify(rel)}`);
   // init gets no CA variable and no ssh command (no transport at all)
   const ini = gitCreateCall({ kind: 'init' }, { hooksDir: '/h', env: { ...base, GIT_SSL_CAINFO: abs } }).env;

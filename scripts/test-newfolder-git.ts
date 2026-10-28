@@ -21,6 +21,8 @@
  *     ssh gets BatchMode=yes (also with a plain-ssh core.sshCommand) but not when core.sshCommand is another program (D11).
  * Needs `git` on PATH: skipped with a note when it is absent, a failure under CI (like test:gitstatus). `npm run test:newfoldergit`.
  */
+// an async test whose promise never settles lets Node exit 0 without the OK line: fail unless the success path is reached
+process.exitCode = 1;
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -68,6 +70,7 @@ const callOf = (req: GitCreateRequest, deps: GitCreateDeps, protocols?: string[]
 async function main(): Promise<void> {
   try { execFileSync('git', ['--version'], { stdio: 'ignore', windowsHide: true }); } catch {
     if (process.env.CI && !/^(0|false)$/i.test(process.env.CI)) throw new Error('git is not on PATH under CI: the real-git check must run');
+    process.exitCode = 0;
     console.log('newfoldergit: SKIPPED (no git on PATH)');
     return;
   }
@@ -284,6 +287,10 @@ async function main(): Promise<void> {
       assert.ok(progress.length >= 1, 'progress reached the window side');
       assert.deepStrictEqual(adds.map(([p]) => p[0]), [shop]);
       assert.deepStrictEqual(fs.readdirSync(tmp), [], 'the private hooks folder is gone');
+      // an upper-case scheme reaches git lower-cased (git refuses "transport 'HTTPS'"): the same rewrite applies and the clone works
+      const up = await op2.create({ kind: 'clone', token: await pick(op2), name: 'shop-upper', url: 'HTTPS://example.invalid/r.git' }, 'ask', { persist: true });
+      assert.ok(up.ok, 'HTTPS:// clones: ' + JSON.stringify(up));
+      assert.strictEqual(g(path.join(parent, 'shop-upper'), 'config', '--get', 'remote.origin.url').trim(), URL_F, 'git got https:// (lower-cased)');
       // control: the user's own hooks run again on a later commit in the clone (so the planted hooks are real)
       fs.writeFileSync(path.join(shop, 'b.txt'), 'b\n');
       g(shop, '-c', 'core.fsmonitor=false', 'add', 'b.txt');
@@ -444,6 +451,7 @@ async function main(): Promise<void> {
     }
     assert.deepStrictEqual(fs.readdirSync(marks), [], 'no planted command ran during the clone checks: ' + fs.readdirSync(marks).join(', '));
     assert.deepStrictEqual(fs.readdirSync(tmp), [], 'no private hooks folder left');
+    process.exitCode = 0;
     console.log(`newfoldergit: real git (${execFileSync('git', ['--version'], { encoding: 'utf8', windowsHide: true }).trim()}): init in its own folder, no hook, fsmonitor or parent config ran, empty folder, git missing, cleanup${POSIX ? ' without following links' : ''}; clone: seam clone, no hook ran, submodule not cloned, each protocol layer alone refuses file and ext (and only GIT_ALLOW_PROTOCOL refuses foo::), closed port, Cancel against a silent listener${POSIX ? ', the ssh stub with and without BatchMode' : ''} OK`);
   } finally {
     for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }

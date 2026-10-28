@@ -113,7 +113,8 @@ function userError(u: string): string | undefined {
  * required, so `C:\x` or `host:path` is never read as one). Everything else is refused: other schemes (`file:`, `git://`, `http://`,
  * `ftp://`), `<transport>::<address>` and any `::` outside brackets, local paths, a leading `-` in any part, a password (Q3 = a), a
  * `%` in the user part (R3). Main checks it in `folders:createCheck` and again in `folders:create`; the git runner checks it a third
- * time. `host` is the host part only (for the Allow all sentence, FR-061): never the user part, port or path. Never throws.
+ * time. `url` is the address to use, with the scheme lower-cased (git 2.43 refuses "transport 'HTTPS'"); `host` is the host part only
+ * (for the Allow all sentence, FR-061): never the user part, port or path. Never throws.
  */
 export function checkCloneUrl(v: unknown): CloneUrlCheck {
   const bad = (error: string): CloneUrlCheck => ({ ok: false, error });
@@ -148,7 +149,7 @@ export function checkCloneUrl(v: unknown): CloneUrlCheck {
     if (!(host.startsWith('[') ? ipv6Ok(host) : hostOk(host))) return bad(CLONE_URL_MSG.form);
     if (m[2] !== undefined && !(Number(m[2]) >= 1 && Number(m[2]) <= 65535)) return bad(CLONE_URL_MSG.form);
     if (p.length < 2 || !pathOk(p.slice(1))) return bad(CLONE_URL_MSG.form);
-    return { ok: true, url: v, form: s, host };
+    return { ok: true, url: `${s}://${rest}`, form: s, host }; // the scheme lower-cased: git refuses `HTTPS` as a transport name
   }
   // scp style: user@host:path (git reads it so only when no `/` comes before the first `:`)
   const at = v.indexOf('@');
@@ -191,7 +192,7 @@ export function gitFailureText(stderrTail: unknown, host: string): string {
   const t = typeof stderrTail === 'string' ? stderrTail : '';
   if (/uses plaintext credentials/i.test(t)) return CLONE_URL_MSG.password;
   if (/SSL certificate problem|unable to get local issuer certificate|server certificate verification failed|certificate verify failed|SSL_ERROR|schannel|Proxy CONNECT aborted|Failed to connect to proxy|Could not resolve proxy|proxy.*(?:refused|denied)/i.test(t)) {
-    return 'The secure connection failed. If you set a certificate or proxy for git in your environment (GIT_SSL_*, GIT_PROXY_COMMAND), put it in your git config instead (http.sslCAInfo, http.proxy): Durbar does not pass those variables to git.';
+    return 'The secure connection failed. Durbar does not pass GIT_SSL_NO_VERIFY, GIT_SSL_CERT, GIT_SSL_KEY, GIT_PROXY_COMMAND or your other GIT_* variables to git (only GIT_SSL_CAINFO and GIT_SSL_CAPATH, as absolute paths): if you set one of them, put the setting in your git config instead (http.sslCAInfo, http.proxy).';
   }
   if (/Host key verification failed|No [A-Za-z0-9-]+ host key is known|REMOTE HOST IDENTIFICATION HAS CHANGED/i.test(t)) return `The ssh host key of ${host} is not known yet. Connect once with ssh in a terminal, then try again.`;
   if (/Authentication failed|could not read (?:Username|Password)|Permission denied \(publickey|terminal prompts disabled|Invalid username or password|HTTP Basic: Access denied/i.test(t)) {

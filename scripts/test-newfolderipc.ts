@@ -7,6 +7,8 @@
  * the line that hands the dependencies over is pinned by its text. No git is started (empty folders only), no network, no credits.
  * `npm run test:newfolderipc`.
  */
+// an async test whose promise never settles lets Node exit 0 without the OK line: fail unless the success path is reached
+process.exitCode = 1;
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -162,6 +164,7 @@ async function main(): Promise<void> {
     const mainSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
     assert.ok(mainSrc.includes('const newFolderIpc = registerNewFolderIpc({ addMany, getSettingsStore: () => settingsStore, asEffort, toRenderer });'), 'main.ts wires folders:* with addMany, the settings store, asEffort and toRenderer');
     assert.ok(/if \(!newFolderEnded && newFolderIpc\.busy\(\)\) \{\n\s+newFolderEnded = true;\n\s+ev\.preventDefault\(\);\n\s+void newFolderIpc\.quit\(\)\.catch\(\(\) => undefined\)\.finally\(\(\) => app\.quit\(\)\);/.test(mainSrc.replace(/\r\n/g, '\n')), "main.ts's before-quit ends a running clone first (FR-043)");
+    process.exitCode = 0;
     console.log('newfolderipc: owner-only channels, picker and remembered parent, refused names and URLs never created or started, no path from the window, mode through validMode, the clone https/ssh only, masked progress, Cancel, quit wiring OK');
   } finally {
     if (savedElectron) require.cache[electronPath] = savedElectron; else delete require.cache[electronPath];

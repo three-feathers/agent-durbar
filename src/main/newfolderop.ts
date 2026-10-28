@@ -18,6 +18,7 @@ import { performance } from 'perf_hooks';
 import type { AddResult, PermMode, SessionOptions } from '../shared/api';
 import { NEW_FOLDER_LIMITS, checkCloneUrl, checkNewFolderName, gitFailureText, parseCloneProgress, parseNewFolderParent, suggestedName } from '../shared/newfolder';
 import { maskHomePaths, maskSecretUrl } from '../shared/redact';
+import { CONTROL_RE, HIDDEN_RE } from '../shared/names';
 import { validMode } from './agentops';
 import { readUserSshCommand, runGitCreate } from './gitstatus';
 import type { GitCreateDeps, GitCreateHandle, GitCreateRequest } from './gitstatus';
@@ -86,8 +87,12 @@ export interface NewFolderDeps {
 
 const errCode = (e: unknown): string => (e && typeof (e as { code?: unknown }).code === 'string' ? (e as { code: string }).code : '');
 
-/** Control, bidi and zero-width characters: removed from git's text before it is shown (a server's `remote:` lines are untrusted). */
-const UNSHOWN_RE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g;
+/**
+ * Removed from git's text before it is shown (a server's `remote:` lines are untrusted): the shared control and invisible lists
+ * (`CONTROL_RE`, `HIDDEN_RE`, src/shared/names.ts), plus ZWNJ, ZWJ, LRM, RLM and the Arabic letter mark, which names allow but a
+ * line of git's output does not need. Built from the shared lists, so it never falls behind them.
+ */
+const UNSHOWN_RE = new RegExp(`${CONTROL_RE.source}|${HIDDEN_RE.source}|[\\u200c-\\u200f\\u061c]`, 'g');
 /** FR-070: one line of git's text for the window or the log: masked (credentials, secret values, home paths), then cut. */
 export function maskGitLine(line: string): string {
   return maskHomePaths(maskSecretUrl(String(line || '').replace(UNSHOWN_RE, ' ').trim())).slice(0, LINE_MAX);

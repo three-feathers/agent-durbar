@@ -8,6 +8,8 @@
  * the window's mode through `validMode`, and the remembered parent (saved on success only, checked before the picker uses it).
  * No Electron, no git, no disk. `npm run test:newfolderop`.
  */
+// an async test whose promise never settles lets Node exit 0 without the OK line: fail unless the success path is reached
+process.exitCode = 1;
 import * as assert from 'assert';
 import * as path from 'path';
 import { CANCELLED, GIT_MISSING, INIT_LIMIT_MS, PARENT_TOKEN_MS, PROGRESS_MS, QUIT_WAIT_MS, REMOVE_TRIES, WAITING_MS, createNewFolderOp, gitLineForWindow } from '../src/main/newfolderop';
@@ -266,11 +268,14 @@ async function main(): Promise<void> {
   // ---- FR-070: git's line for the window: masked, then cut ----
   assert.strictEqual(gitLineForWindow(''), '');
   assert.strictEqual(gitLineForWindow('a\r\nb\rlast line \n\n'), 'last line');
+  // the shared invisible lists (src/shared/names.ts) plus ZWNJ/ZWJ/LRM/RLM and the Arabic letter mark are removed from git's text
+  assert.strictEqual(gitLineForWindow('remote: a\u2028b\u061cc\u00add\u034fe\u3164f\ufff9g\u200ch\u200fi\u202ej'), 'remote: a b c d e f g h i j');
   assert.strictEqual(gitLineForWindow('Host key verification failed.\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\n'), 'fatal: Could not read from remote repository.', "git's fatal line, not its closing paragraph");
   const tokenLine = 'fatal: ' + 'x'.repeat(280) + ' ghp_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8';
   const shown = gitLineForWindow(tokenLine);
   assert.ok(shown.length <= 300 && !/ghp_a1B2/.test(shown), 'masked before it is cut (no token head survives): ' + shown.slice(-40));
   await cloneCases();
+  process.exitCode = 0;
   console.log('newfolderop: token, lock, claim errors, init, empty and clone, URL refusals, progress throttle and masking, waiting line, Cancel order, quit, hooks folder, cleanup retries, git missing, mode, remembered parent OK');
 }
 

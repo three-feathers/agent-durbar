@@ -273,6 +273,8 @@ export interface GitCreateCallOptions {
   env?: NodeJS.ProcessEnv;
   /** Clone: the user's own `core.sshCommand` as `readUserSshCommand` read it (`undefined` when unset), for `gitSshCommandFor`. */
   userSshCommand?: string;
+  /** Where the names of the CA variables are compared without case (Windows only; default: this OS). */
+  platform?: NodeJS.Platform;
 }
 
 /** R4: the only `GIT_*` variables of the user's environment that reach a clone, and only as absolute paths (which CA to trust). */
@@ -312,11 +314,14 @@ export function gitCreateCall(req: GitCreateRequest, o: GitCreateCallOptions, pr
       ...GIT_TRANSPORTS.map((p) => `protocol.${p}.allow=${allowed.has(p) ? 'always' : 'never'}`),
       'transfer.credentialsInUrl=die',
       'transfer.bundleURI=false',
+      'core.protectNTFS=true', // git's checkout refuses .git aliases (git~1, NTFS streams, HFS ignorables) even if the user set them false
+      'core.protectHFS=true',
     ];
     env.GIT_ALLOW_PROTOCOL = [...allowed].join(':');
     env.GIT_TERMINAL_PROMPT = '0';
+    const win = (o.platform ?? process.platform) === 'win32'; // environment names ignore case on Windows only
     for (const [k, v] of Object.entries(from)) {
-      const name = k.toUpperCase();
+      const name = win ? k.toUpperCase() : k;
       if ((GIT_CA_VARS as readonly string[]).includes(name) && typeof v === 'string' && v && path.isAbsolute(v)) env[name] = v;
     }
     const ssh = gitSshCommandFor(o.userSshCommand);
@@ -381,7 +386,7 @@ export const GIT_CREATE_TAIL = 8192;
  * descendants only (`killChildTree`), and only while it has not exited.
  */
 export function runGitCreate(req: GitCreateRequest, cwd: string, deps: GitCreateDeps): GitCreateHandle {
-  const { argv, env } = gitCreateCall(req, { hooksDir: deps.hooksDir, env: deps.env, userSshCommand: deps.userSshCommand }); // never the protocols seam (FR-095)
+  const { argv, env } = gitCreateCall(req, { hooksDir: deps.hooksDir, env: deps.env, userSshCommand: deps.userSshCommand, platform: deps.platform }); // never the protocols seam (FR-095)
   const platform = deps.platform ?? process.platform;
   const sp: GitSpawn = deps.spawn ?? (spawn as unknown as GitSpawn);
   let child: GitChild | undefined;

@@ -6,6 +6,8 @@
  * progress and Cancel, no path ever sent.
  * Pure: no Electron, no git, no network, no credits. `npm run test:newfolder`.
  */
+// an async test whose promise never settles lets Node exit 0 without the OK line: fail unless the success path is reached
+process.exitCode = 1;
 import * as assert from 'assert';
 import * as path from 'path';
 import { CLONE_URL_MSG, NEW_FOLDER_LIMITS, WINDOWS_RESERVED_NAME, checkCloneUrl, checkNewFolderName, gitFailureText, parseCloneProgress, parseNewFolderParent, suggestedName } from '../src/shared/newfolder';
@@ -111,7 +113,13 @@ const URL_ACCEPTED: Array<[string, string, string]> = [
   ['https://gitlab.example.co.uk/group/sub/r.git/', 'https', 'gitlab.example.co.uk'], ['first.last+x@h-1.example:a@b.git', 'scp', 'h-1.example'], ['https://xn--exmple-cua.com/x', 'https', 'xn--exmple-cua.com'],
   ['https://h/' + 'x'.repeat(2048 - 'https://h/'.length), 'https', 'h'],
 ];
-for (const [u, form, host] of URL_ACCEPTED) assert.deepStrictEqual(checkCloneUrl(u), { ok: true, url: u, form, host }, `${u} is accepted`);
+// the URL comes back with its scheme lower-cased (git 2.43 refuses "transport 'HTTPS'"); scp addresses are unchanged
+const norm = (u: string): string => u.replace(/^[A-Za-z]+:\/\//, (m) => m.toLowerCase());
+for (const [u, form, host] of URL_ACCEPTED) assert.deepStrictEqual(checkCloneUrl(u), { ok: true, url: norm(u), form, host }, `${u} is accepted`);
+for (const [u, want] of [['HTTPS://github.com/o/r', 'https://github.com/o/r'], ['SSH://h/~u/r', 'ssh://h/~u/r'], ['Https://H/A.git', 'https://H/A.git'], ['sSh://git@h:22/x', 'ssh://git@h:22/x']]) {
+  const c = checkCloneUrl(u);
+  assert.strictEqual(c.ok && c.url, want, `${u}: only the scheme is lower-cased`);
+}
 assert.strictEqual(NEW_FOLDER_LIMITS.url, 2048);
 // ---- FR-011: the suggested name ----
 for (const [u, n] of [['https://github.com/lena/shop.git', 'shop'], ['git@github.com:lena/shop.git', 'shop'], ['git@h:shop', 'shop'], ['u@[2001:db8::1]:r.git', 'r'], ['https://h/o/r/', 'r'], ['https://h/o/r.GIT', 'r'], ['ssh://h:22/a%20b.git', 'a b'], ['https://h/o/CON.git', ''], ['https://h/o/.git', ''], ['https://h/o/-x', ''], ['https://h/o/a.', ''], ['https://h/o/%2e%2e', ''], ['https://h/o/a%2fb', ''], ['https://h/o/%E0%A4%A', ''], ['file:///x/y.git', ''], [42, '']] as Array<[unknown, string]>) {
@@ -130,10 +138,12 @@ for (const [tail, want] of [
   ['fatal: write error: No space left on device', /^The disk is full/],
   ['error: unable to create file a/b: Filename too long', /^A file in this repository has a path too long/],
   ["fatal: transport 'file' not allowed", /^Git refused that kind of address/],
-  ["fatal: unable to access 'https://h/': SSL certificate problem: unable to get local issuer certificate", /^The secure connection failed\. If you set a certificate or proxy for git in your environment \(GIT_SSL_\*, GIT_PROXY_COMMAND\), put it in your git config instead/],
+  ["fatal: unable to access 'https://h/': SSL certificate problem: unable to get local issuer certificate", /^The secure connection failed\. Durbar does not pass GIT_SSL_NO_VERIFY, GIT_SSL_CERT, GIT_SSL_KEY, GIT_PROXY_COMMAND or your other GIT_\* variables to git \(only GIT_SSL_CAINFO and GIT_SSL_CAPATH, as absolute paths\): if you set one of them, put the setting in your git config instead \(http\.sslCAInfo, http\.proxy\)\.$/],
   ['fatal: unable to access: Proxy CONNECT aborted', /^The secure connection failed/],
   ["fatal: URL 'https://u:<redacted>@h/x' uses plaintext credentials", /^Remove the password from the address/],
 ] as Array<[string, RegExp]>) assert.match(gitFailureText(tail, 'h.example'), want, tail);
+ // the exact sign-in text (FR-071, US1 scenario 4)
+assert.strictEqual(gitFailureText('git@github.com: Permission denied (publickey).\r\nfatal: Could not read from remote repository.', 'github.com'), 'Sign-in failed: Durbar uses your own git credentials and cannot ask for a password. Set up a credential helper or an ssh agent, then try again.');
 assert.strictEqual(gitFailureText('fatal: something else', 'h'), '', 'no match: the caller says "The clone failed." and git\'s line');
 assert.strictEqual(gitFailureText(undefined, 'h'), '');
 // ---- FR-040: progress lines ----
@@ -360,5 +370,6 @@ async function flows(): Promise<void> {
 }
 
 flows().then(() => {
+  process.exitCode = 0;
   console.log(`newfolder: ${REFUSED.length} refused and ${ACCEPTED.length} accepted names, ${URL_REFUSED.length} refused and ${URL_ACCEPTED.length} accepted clone URLs, suggested names, failure texts, progress lines, one device-name rule, the remembered parent, the window's flow (clone included) OK`);
 }).catch((e) => { console.error(e); process.exit(1); });
