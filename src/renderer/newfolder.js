@@ -20,6 +20,8 @@
   const CANCELLED='Cancelled. Nothing was kept.';
   /* FR-061, Q6 = a: the Allow all sentence of a clone names the host only (main's checkCloneUrl host: never the user part or path) */
   const hostSentence=host=>'This code comes from '+host+'; agents can run it without asking.';
+  /* spec 052 FR-176: focus never scrolls the page (innerscroll.js's helper when the page has it) */
+  const focusIn=el=>{if(!el)return;if(typeof window!=='undefined'&&window.DurbarScroll)window.DurbarScroll.focus(el);else if(typeof el.focus==='function')el.focus({preventScroll:true});};
 
   /* FR-040, FR-041, FR-082: the clone's progress: phase and percent, the last lines in the .hs-log box, the elapsed time and Cancel
      (Escape too). role=dialog with aria-modal; the phase is a polite live region (the percent and lines are not announced, so a
@@ -34,10 +36,10 @@
     const btn=$('nfPC');let closed=false;
     const cancel=()=>{if(closed||btn.disabled)return;btn.disabled=true;btn.textContent='Cancelling…';$('nfPS').textContent='Cancelling…';onCancel();};
     btn.onclick=cancel;
-    const onKey=e=>{if(closed)return;if(e.key==='Escape'){e.preventDefault();e.stopPropagation();cancel();return;}if(e.key==='Tab'){e.preventDefault();btn.focus();}};
-    const onFocusIn=e=>{if(!closed&&!ov.contains(e.target))btn.focus();};
+    const onKey=e=>{if(closed)return;if(e.key==='Escape'){e.preventDefault();e.stopPropagation();cancel();return;}if(e.key==='Tab'){e.preventDefault();focusIn(btn);}};
+    const onFocusIn=e=>{if(!closed&&!ov.contains(e.target))focusIn(btn);};
     doc.addEventListener('keydown',onKey,true);doc.addEventListener('focusin',onFocusIn,true);
-    doc.body.appendChild(ov);btn.focus();
+    doc.body.appendChild(ov);focusIn(btn);
     const t0=Date.now();
     const tick=()=>{if(!closed)$('nfPE').textContent=Math.round((Date.now()-t0)/1000)+' s';};
     tick();const iv=setInterval(tick,1000);
@@ -53,7 +55,7 @@
       close(){
         if(closed)return;closed=true;clearInterval(iv);
         doc.removeEventListener('keydown',onKey,true);doc.removeEventListener('focusin',onFocusIn,true);ov.remove();
-        if(opener&&typeof opener.focus==='function'&&doc.contains(opener))opener.focus();
+        if(opener&&doc.contains(opener))focusIn(opener);
       }
     };
   }
