@@ -687,13 +687,14 @@ export class Scheduler {
     const l = s.loop as LoopSpec;
     const session = (s.target as ScheduleTarget).session;
     if (!this.deps.hasSession(session)) return this.endLoop(s, 'session', now);
+    if (this.limitReached(s, now)) return; // also while held or paused by Pause all: a loop past its end time ends, it does not stay "running"
     if (needsReview(s)) {
-      // FR-124: a prompt over the limit is never sent; the loop waits a pass length and the row says why
+      // FR-124: a prompt over the limit is never sent; the loop waits a pass length and the row says why.
+      // After the limits: a past end time must end the loop, or dueAt (min of next and endAt) stays in the past and the timer re-arms at 0 ms forever.
       this.record(s, 'skipped-review', now, { session });
       s.next = now + this.lastDelay(l) * MIN;
       return;
     }
-    if (this.limitReached(s, now)) return; // also while held or paused by Pause all: a loop past its end time ends, it does not stay "running"
     if (this.doc.pausedAll) {
       l.hold = 'pause-all';
       this.record(s, 'skipped-paused', now, { session });
