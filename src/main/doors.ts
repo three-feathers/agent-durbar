@@ -35,10 +35,18 @@ export const MAX_HELD = 200;
 /** Review on #631: all doors together, and the file (read only below this size; a larger file is not parsed, it is kept aside). */
 export const MAX_TOTAL_HELD = 1000;
 export const MAX_FILE = 4 * 1024 * 1024;
-/** Spec 044 FR-126: held runs are refused ('full') when the file would pass this, so `loadDoors` never meets a file over MAX_FILE (a held prompt may be 10,000 characters). The rest is room for door keys. */
-export const HELD_FILE_CAP = MAX_FILE - 512 * 1024;
+/** The longest door key `okKey` accepts. */
+export const MAX_KEY = 300;
+/**
+ * Spec 044 FR-126: held runs are refused ('full') when the file would pass this, so `loadDoors` never meets a file over MAX_FILE (a held prompt may be 10,000 characters).
+ * The rest of MAX_FILE is room for door keys, which `setClosed` adds without measuring: at most MAX_DOORS of them, each a key of MAX_KEY characters that JSON
+ * writes as 6 bytes apiece (`\u00XX`), plus what an empty entry costs in the 2-space format of `doorsText`:
+ * `    "<key>": {` (key + 10 with the newline), `      "closed": false,` (23), `      "held": []` (17), `    },` (7) = 57, rounded up to 64.
+ */
+const DOOR_ENTRY_OVERHEAD = 64;
+export const HELD_FILE_CAP = MAX_FILE - MAX_DOORS * (MAX_KEY * 6 + DOOR_ENTRY_OVERHEAD);
 
-const okKey = (k: unknown): k is string => typeof k === 'string' && k.length > 0 && k.length <= 300 && k !== '__proto__' && k !== 'constructor' && k !== 'prototype';
+const okKey = (k: unknown): k is string => typeof k === 'string' && k.length > 0 && k.length <= MAX_KEY && k !== '__proto__' && k !== 'constructor' && k !== 'prototype';
 
 function cleanRun(v: unknown): HeldRun | undefined {
   if (!v || typeof v !== 'object') return undefined;

@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { Doors, HELD_FILE_CAP, loadDoors, parseDoors, saveDoors, MAX_HELD, MAX_FILE, MAX_PROMPT, MAX_TOTAL_HELD } from '../src/main/doors';
+import { Doors, HELD_FILE_CAP, loadDoors, parseDoors, saveDoors, MAX_HELD, MAX_KEY, MAX_DOORS, MAX_FILE, MAX_PROMPT, MAX_TOTAL_HELD } from '../src/main/doors';
 import { MAX_PROMPT as SCHED_MAX_PROMPT } from '../src/main/schedules';
 import { createDoorOps, REMOTE_OFF_REASON } from '../src/main/doorops';
 import type { ReleaseResult } from '../src/main/doorops';
@@ -97,6 +97,35 @@ async function main(): Promise<void> {
     const back = loadDoors(f);
     assert.strictEqual(Object.values(back.doors).reduce((n, x) => n + x.held.length, 0), kept, `${label}: every kept run loads back (the file is not set aside)`);
     assert.ok(!fs.existsSync(f + '.bad'), `${label}: no .bad file`);
+  }
+  // review of #845 (2026-10-28): door keys are added without measuring; the room kept for them holds the worst case (MAX_DOORS keys of MAX_KEY characters, each written as 6 bytes)
+  {
+    let nid = 0;
+    const dd = new Doors({ doors: {} }, () => undefined, () => `w${nid++}`);
+    const ctl = '\u0001'.repeat(MAX_PROMPT); // 6 bytes a character in JSON
+    let kept = 0, sawFull = false;
+    const keys: string[] = [];
+    for (let k = 0; k < 6 && !sawFull; k++) {
+      dd.setClosed('fill' + k, true);
+      keys.push('fill' + k);
+      for (let i = 0; i < MAX_HELD; i++) { if (dd.hold('fill' + k, { at: i, prompt: ctl }) === 'held') kept++; else { sawFull = true; break; } }
+    }
+    assert.ok(sawFull && kept > 0, 'the holds fill up to the file cap');
+    for (let n = keys.length; n < MAX_DOORS; n++) {
+      const key = String.fromCharCode(1 + (n % 31), 1 + (Math.floor(n / 31) % 31)) + '\u0001'.repeat(MAX_KEY - 2);
+      assert.strictEqual(key.length, MAX_KEY);
+      assert.ok(dd.setClosed(key, true), `door ${n} closes`);
+      keys.push(key);
+    }
+    assert.strictEqual(keys.length, MAX_DOORS);
+    const f = path.join(dir, 'worst.json');
+    saveDoors(f, { doors: Object.fromEntries(keys.map((k) => [k, { closed: true, held: dd.held(k) }])) });
+    const size = fs.statSync(f).size;
+    assert.ok(size <= MAX_FILE, `worst case: ${size} bytes, at most ${MAX_FILE}`);
+    const back = loadDoors(f);
+    assert.ok(!fs.existsSync(f + '.bad'), 'the file is not set aside');
+    assert.strictEqual(Object.values(back.doors).reduce((n, x) => n + x.held.length, 0), kept, 'every held run loads back');
+    assert.strictEqual(Object.keys(back.doors).length, MAX_DOORS, 'and every door');
   }
   const left = fs.readdirSync(dir).filter((f) => f.endsWith('.tmp'));
   assert.deepStrictEqual(left, [], 'saves leave no temp file (written to a temp file, then renamed)');
