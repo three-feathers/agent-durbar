@@ -371,6 +371,59 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
 
 ## Changes
 
+### 2026-10-28: T066 probe built, real run not possible on this host (K16 stays open; Refs #806)
+
+`scripts/sandbox-floor-real.ts` has the `switch` scenario of T066 (steps 1-4, hygiene items (a)-(c) of the review on PR #809), and its
+verdict is a pure function, `scripts/sandbox-switch-verdict.ts` (test: `scripts/test-sandbox-floor.ts`, three planted mutants caught: a
+write counted without the file on disk, A without a resolved update, step 4 expecting the wrong outcome). **The real run did not happen:
+0 prompts spent, 0 AIU.** The dry run (no `--spend`; it starts the runtime and creates one session with no prompt, then deletes it) on
+the owner's VPS (`real:` 2026-10-28 ~02:00 UTC, Ubuntu 24.04.5, kernel 6.8.0, Node 22.23, Copilot CLI 1.0.98 as the SDK's bundled
+runtime reports it, SDK 1.0.22) showed:
+
+- a signed-in Copilot client (`getAuthStatus`: signed in, auth kind `gh-cli`; the login and any token were not read out or printed);
+- the tool limit works without a prompt: a session created with `availableTools: ['builtin:bash']`, `excludedTools: ['mcp:*',
+  'custom:*']` and `mcpServers: {}` reads back exactly `[bash]` (`session.rpc.tools.initializeAndValidate()` then `getCurrentMetadata()`);
+  the script refuses to send anything when the list holds any other tool;
+- the runtime refuses a session cap under 30 AI credits ("Minimum session limit is 30 AI credits"), so the probe keeps 30 and stops on
+  its own (see the review fixes below: before every send, at 1 AIU, unknown usage, a stray command or a turn that did not end);
+- **`getHostSupport()` answers `supported: false`: "Bubblewrap (bwrap) is unavailable ... not installed or not on PATH"** (neither
+  `bubblewrap` nor `socat` is installed on this VPS). So Ask first gets no floor (chip *Not sandboxed*, state `off`), the control step
+  cannot show a blocked command, and the spend run refuses before its first prompt. The T060 runs of 2026-10-25 (kernel 7.0, bubblewrap
+  0.9.0, socat 1.8.0.0, Node 24.22, CLI 1.0.101) were therefore on another Linux host.
+
+**Review on PR #827** (Vikram's agent, changes requested at 4f81c360; fixed in the same PR, before any spend):
+
+- `mayPrompt` (pure, `sandbox-switch-verdict.ts`) runs right before the one `send` and refuses a 4th prompt, any prompt once the run
+  used 1 AIU, after a step whose usage could not be read (the script waits up to 30 s for a usage event with a number; a step with none
+  is "usage unreadable", never 0), after a turn that did not end, and after any command that is not exactly C. A cannot-tell after step 3
+  stops there: prompt 3 is not spent.
+- In Allow all no card asks, so the runtime's permission handler of the probe session rejects every request that is not exactly C before
+  it runs, the turn is interrupted at the first tool call whose command is not exactly C, and the exit codes are read only from the exact
+  C call (`probeCalls`); a model's `echo curl=0` never counts.
+- Before the first prompt, a baseline from the script itself with no shell (`execFile` with an argv): `curl` reaches example.com and a
+  plain write to P works. If either fails the run refuses, since a blocked step would then mean "no network" or "no folder" (a false B).
+- `switch` runs on Linux and macOS only (C is POSIX shell): it refuses on Windows up front. macOS is not run.
+- Round 2 (at c3afd6f6): the permission gate is the pure `probeGateAllows(req, C)` (a shell request whose `fullCommandText` is exactly C;
+  `read:` SDK 1.0.22 `session-events.d.ts` types it `fullCommandText: string`); a second exact run of C is stray too, so only the first
+  result is read. **Which field holds the command:** the SDK typings give a tool start only `arguments?: JsonValue`, so it was read from
+  the runtime: `tools.list` gives the `bash` tool the arguments `command` (required), `description`, `shellId`, `mode`, `detach` and
+  `initial_wait` (`real:` 2026-10-28 dry run, CLI 1.0.98, no prompt; recorded as `shellToolParams`). The spend run refuses when `command`
+  is missing, and a start with no string `command` is stray (fail safe). **Other tools such as `report_intent`:** they cannot start,
+  because the session's tools are limited to `bash` and read back as exactly `[bash]` before any prompt; any other start that came anyway
+  would be stray (the turn is interrupted, no further prompt), never ignored. The source checks strip `\r`, so a Windows (CRLF) checkout
+  passes, as #825.
+- A failed `stop`, session delete or folder removal is printed and makes the run exit 1 (it was a silent `.catch`). Checked 2026-10-28
+  (`real:`): the two dry runs left no session folder in `~/.copilot/session-state`; they left two runtime log files (`~/.copilot/logs`,
+  1.4 kB and 1.9 kB, not read) and one session operation lock file, the runtime's own.
+- test: `scripts/test-sandbox-floor.ts` (the gate's branches, the exact-call selection, and source checks that the send is gated right
+  before it, that there are 3 steps, that the limits come from the module and that Windows is refused); mutants in the PR.
+
+`[KNOWN GAP]` K16 unchanged; T066 stays open. To run it: a Linux host where `getHostSupport()` says supported (bubblewrap 0.5.0 or newer
+on `PATH`, and the host must let it make its namespaces: this VPS also has `kernel.apparmor_restrict_unprivileged_userns=1`), a
+signed-in Copilot, then `node dist-scripts/scripts/sandbox-floor-real.js copilot <out.json> switch` (dry) and, with the owner's OK,
+the same with `--spend` (at most 3 prompts). Installing bubblewrap on this VPS needs sudo and changes the host, so it is the owner's
+call. T072 and T073 still wait for the verdict.
+
 ### 2026-10-27: Copilot, a switch to Allow all keeps the sandbox: what we do about it (FR-022..FR-022c, T066..T073, K16; Refs #806)
 
 **Problem** (owner's real session, 2026-10-27, issue #806). A Copilot session that started in Read-only or Ask first holds the floor
@@ -410,7 +463,8 @@ the runtime does; nothing was run):
 
 **New gap K16** `[KNOWN GAP]`: whether `options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' })` (or any
 other documented value) clears a floor that is already running in a Copilot session, with CLI 1.0.101 / SDK 1.0.22, and whether a later
-`enabled: true` update puts it back. Unverified; T066 settles it.
+`enabled: true` update puts it back. Unverified; T066 settles it. (2026-10-28: the probe is built but could not run, the owner's VPS has no bubblewrap, so Copilot reports no sandbox
+support there; *Changes* 2026-10-28.)
 
 **Decision: which outcome ships until the probe runs.** **(B) ships first and by itself.** Reasons: (1) it uses only things that already
 work: the mode switch stays as it is, and the new action goes through the existing Restart session path (`mcpRestartSessionOp`,
