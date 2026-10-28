@@ -1070,7 +1070,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .sched-dlg .sc-opts .sc-to{flex:1 1 260px;min-width:0}
 .sched-dlg .sc-opts .sc-to select{flex:1;min-width:0}
 .sched-dlg .sc-count{margin:-4px 0 0;font-size:12px;color:var(--muted);line-height:1.4;overflow-wrap:break-word} /* spec 044 FR-122: the counter from 80% of the limit */
-.sched-dlg .sc-count[hidden]{display:none}
+.sched-dlg .sc-count:empty{display:none}
 .sched-dlg .sc-count.over{color:var(--red-ink);font-weight:600} /* FR-121: the error in words (bold and text, not colour alone) */
 .sched-dlg textarea[aria-invalid="true"]{border-color:var(--red-ink)}
 .sched-dlg .sc-hint{margin:4px 0 0;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

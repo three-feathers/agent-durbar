@@ -2,6 +2,7 @@
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
+import { MAX_PROMPT } from '../src/main/schedules';
 
 type Run = { at: number; outcome: string; session?: string; reason?: string; manual?: true; n?: number; until?: number };
 type Item = { time: string; words: string; fold: string; kind: string; session: string; chat: string; closed: boolean };
@@ -62,6 +63,7 @@ assert.strictEqual(H.outcomeWord('held'), 'held: not sent yet (closed door, upda
 assert.strictEqual(H.outcomeWord('skipped-door-full'), 'not kept: the closed door already holds as many prompts as it can');
 assert.strictEqual(H.outcomeWord('skipped-review'), 'not sent: the prompt is over 10,000 characters, shorten it with Edit'); // spec 044 FR-124
 assert.strictEqual(H.kindOf('skipped-review'), 'stop');
+assert.ok(H.outcomeWord('skipped-review').includes(MAX_PROMPT.toLocaleString('en-US')), 'the word names main\'s limit (the one figure written in words)');
 
 // folded repeats
 assert.strictEqual(H.foldText({ at: 1, outcome: 'skipped-busy', n: 4, until: 9 }, clockOf), '4 times, until T9');

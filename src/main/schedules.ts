@@ -68,7 +68,7 @@ export interface Schedule {
   next?: number;
   paused?: boolean;
   /** Why main paused it (FR-014, FR-015); only with `paused`. Never taken from the renderer. */
-  pausedReason?: 'cap' | 'session-ended';
+  pausedReason?: 'cap' | 'session-ended' | 'review';
   done?: boolean;
   last?: { at: number; outcome: Outcome };
   target?: ScheduleTarget;
@@ -255,7 +255,7 @@ export function cleanSchedule(o: unknown, now: number, keepId = true): Schedule 
   } else if (at !== undefined && at > 0) s.at = at;
   else return undefined;
   if (r.paused === true) s.paused = true;
-  if (s.paused && (r.pausedReason === 'cap' || r.pausedReason === 'session-ended')) s.pausedReason = r.pausedReason;
+  if (s.paused && (r.pausedReason === 'cap' || r.pausedReason === 'session-ended' || r.pausedReason === 'review')) s.pausedReason = r.pausedReason;
   if (r.done === true) s.done = true;
   const last = r.last as Record<string, unknown> | undefined;
   if (last && typeof last === 'object' && num(last.at) !== undefined && OUTCOMES.includes(last.outcome as Outcome)) s.last = { at: last.at as number, outcome: last.outcome as Outcome };
@@ -456,12 +456,16 @@ export class Scheduler {
         continue;
       }
       if (s.done || s.paused) continue;
+      const why: Outcome = needsReview(s) ? 'skipped-review' : 'missed'; // FR-124: a prompt over the limit says so, whatever else is true
       if (s.at !== undefined && s.every === undefined && s.at < now - 30_000) {
-        s.done = true;
-        this.record(s, 'missed', now);
+        if (why === 'skipped-review') {
+          s.paused = true;
+          s.pausedReason = 'review';
+        } else s.done = true;
+        this.record(s, why, now);
       } else if (recurring(s) && (s.next ?? 0) < now - 30_000) {
         s.next = nextAfter(s, now);
-        this.record(s, 'missed', now);
+        this.record(s, why, now);
       }
     }
     this.pauseEnded();
@@ -884,10 +888,10 @@ export class Scheduler {
           if (typeof r === 'string' && r) this.attrib.set(r, s.id);
         }
         this.record(s, outcome, now, { session: typeof r === 'string' && r ? r : s.target?.session, reason });
-        if (outcome === 'skipped-ended' || outcome === 'skipped-cap') {
-          // FR-014 / FR-015: paused with a clear reason; the run is not sent, and a once-schedule stays to be resumed or deleted
+        if (outcome === 'skipped-ended' || outcome === 'skipped-cap' || (outcome === 'skipped-review' && !recurring(s))) {
+          // FR-014 / FR-015 / FR-124: paused with a clear reason; the run is not sent, and a once-schedule stays to be resumed, fixed or deleted
           s.paused = true;
-          s.pausedReason = outcome === 'skipped-cap' ? 'cap' : 'session-ended';
+          s.pausedReason = outcome === 'skipped-cap' ? 'cap' : outcome === 'skipped-review' ? 'review' : 'session-ended';
           this.real = true;
         } else if (recurring(s)) s.next = nextAfter(s, now);
         else {
@@ -1002,7 +1006,8 @@ export class Scheduler {
     }
     if (edit && prev) {
       // FR-023: an edit may change the time of a paused schedule only to the future, and a done one only to run again
-      if (s.at !== undefined && !recurring(s) && s.at < now && (prev.done || recurring(prev) || s.at !== prev.at)) return { ok: false, error: prev.done ? 'Pick a time in the future to run it again.' : 'That time has already passed.' };
+      const again = prev.done || prev.pausedReason === 'review'; // FR-124: a once schedule paused for review has passed its time, like a done one
+      if (s.at !== undefined && !recurring(s) && s.at < now && (again || recurring(prev) || s.at !== prev.at)) return { ok: false, error: again ? 'Pick a time in the future to run it again.' : 'That time has already passed.' };
     } else if (s.at !== undefined && !recurring(s) && s.at < now && !s.paused) return { ok: false, error: 'That time has already passed.' };
     const i = this.doc.schedules.findIndex((x) => x.id === s.id);
     const old = i >= 0 ? this.doc.schedules[i] : undefined;
@@ -1055,7 +1060,12 @@ export class Scheduler {
       const retargeted = edit && old.pausedReason === 'session-ended' && targetChanged;
       // an edit that removes the limit, or raises it above what was spent, clears the reason "reached its limit"; it stays paused, so the row offers Resume
       const capFreed = edit && old.pausedReason === 'cap' && (!s.cap || s.cap.amount > (old.cap && old.cap.unit === s.cap.unit ? old.spent ?? 0 : 0));
-      if (s.paused && old.paused && old.pausedReason && !retargeted && !capFreed) s.pausedReason = old.pausedReason;
+      // FR-124: an edit that makes the prompt fit runs a schedule that was paused for review again
+      const reviewed = old.pausedReason === 'review' && !needsReview(s) && edit;
+      if (reviewed) {
+        delete s.paused;
+        delete s.pausedReason;
+      } else if (s.paused && old.paused && old.pausedReason && !retargeted && !capFreed) s.pausedReason = old.pausedReason;
       else if (retargeted || capFreed) delete s.pausedReason;
       if (!s.paused && old.pausedReason === 'cap' && !s.loop) {
         delete s.spent; // FR-015: Resume after the limit starts counting again from zero

@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { Doors, loadDoors, parseDoors, saveDoors, MAX_HELD, MAX_FILE, MAX_PROMPT, MAX_TOTAL_HELD } from '../src/main/doors';
+import { Doors, HELD_FILE_CAP, loadDoors, parseDoors, saveDoors, MAX_HELD, MAX_FILE, MAX_PROMPT, MAX_TOTAL_HELD } from '../src/main/doors';
 import { MAX_PROMPT as SCHED_MAX_PROMPT } from '../src/main/schedules';
 import { createDoorOps, REMOTE_OFF_REASON } from '../src/main/doorops';
 import type { ReleaseResult } from '../src/main/doorops';
@@ -79,6 +79,25 @@ async function main(): Promise<void> {
   for (let k = 0; k * MAX_HELD < MAX_TOTAL_HELD; k++) { many.setClosed('k' + k, true); for (let i = 0; i < MAX_HELD; i++) many.hold('k' + k, { at: i, prompt: 'p' }); }
   many.setClosed('extra', true);
   assert.strictEqual(many.hold('extra', { at: 0, prompt: 'p' }), 'full', 'all doors together have a limit');
+  // spec 044 FR-126: held prompts of 10,000 characters never take the file past what a load accepts (multi-byte text, many doors, escapes)
+  for (const [label, ch, doors] of [['one door of CJK text', '\u6f22', 1], ['5 doors of ASCII', 'a', 5], ['control characters (6 bytes each in JSON)', '\u0001', 2], ['astral text', '\u{1F600}', 1]] as const) {
+    let nid = 0;
+    const dd = new Doors({ doors: {} }, () => undefined, () => `z${nid++}`);
+    let kept = 0, refused = 0;
+    for (let k = 0; k < doors; k++) {
+      dd.setClosed('big' + k, true);
+      for (let i = 0; i < MAX_HELD; i++) { if (dd.hold('big' + k, { at: i, prompt: ch.repeat(k === 0 && label.startsWith('astral') ? MAX_PROMPT / 2 : MAX_PROMPT) }) === 'held') kept++; else refused++; }
+    }
+    const f = path.join(dir, `big-${doors}-${ch.codePointAt(0)}.json`);
+    const snap = { doors: Object.fromEntries(Array.from({ length: doors }, (_, k) => ['big' + k, { closed: true, held: dd.held('big' + k) }])) };
+    saveDoors(f, snap);
+    const size = fs.statSync(f).size;
+    assert.ok(size <= HELD_FILE_CAP && size <= MAX_FILE, `${label}: the file is ${size} bytes, under the cap`);
+    assert.ok(refused > 0 && kept > 0, `${label}: some runs are kept, the rest are refused as full (${kept} kept, ${refused} refused)`);
+    const back = loadDoors(f);
+    assert.strictEqual(Object.values(back.doors).reduce((n, x) => n + x.held.length, 0), kept, `${label}: every kept run loads back (the file is not set aside)`);
+    assert.ok(!fs.existsSync(f + '.bad'), `${label}: no .bad file`);
+  }
   const left = fs.readdirSync(dir).filter((f) => f.endsWith('.tmp'));
   assert.deepStrictEqual(left, [], 'saves leave no temp file (written to a temp file, then renamed)');
   const bad = path.join(dir, 'bad.json');

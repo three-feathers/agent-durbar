@@ -202,12 +202,13 @@ module.exports = async (ctx) => {
     // spec 044 FR-121/FR-122 (issue #843): the box never cuts a paste; the counter from 80%; over the limit the error in words and Save disabled
     {
       const q = (e) => js(e);
-      const count = () => q(`(()=>{const c=document.getElementById('scCount'),p=document.getElementById('scPrompt'),a=document.getElementById('scAdd');return {len:p.value.length,max:p.hasAttribute('maxlength'),desc:p.getAttribute('aria-describedby'),inv:p.getAttribute('aria-invalid'),dis:a.disabled,text:c.textContent,hidden:c.hidden,own:c.id}})()`);
+      const count = () => q(`(()=>{const c=document.getElementById('scCount'),p=document.getElementById('scPrompt'),a=document.getElementById('scAdd');return {len:p.value.length,max:p.hasAttribute('maxlength'),desc:p.getAttribute('aria-describedby'),inv:p.getAttribute('aria-invalid'),dis:a.disabled,text:c.textContent,hidden:c.textContent==='',shown:!!c.getClientRects().length,live:document.getElementById('scLive').textContent,liveRole:document.getElementById('scLive').getAttribute('role')}})()`);
       const type = async (s) => { await js(`(()=>{const p=document.getElementById('scPrompt');p.value='';p.dispatchEvent(new Event('input',{bubbles:true}));p.focus();return true})()`); ctx.win.webContents.insertText(s); await until(`document.getElementById('scPrompt').value.length===${jsLiteral(s.length)}`); };
       const nRows = await js(`document.querySelectorAll('#sdList .sc-row').length`);
       await type(text(12000));
       let c = await count();
       assert.deepStrictEqual([c.len, c.max, c.desc, c.inv, c.dis, c.text, c.hidden], [12000, false, 'scCount', 'true', true, '12,000 of 10,000 characters: shorten it to save', false], `${tag}: 12,000 typed characters stay whole, with the error and Save disabled`);
+      assert.deepStrictEqual([c.liveRole, c.live, c.shown], ['status', '12,000 of 10,000 characters: shorten it to save', true], `${tag}: the always present status region announces the error`);
       assert.strictEqual(await js(`document.getElementById('scPrompt').value`), text(12000), `${tag}: the whole text is kept, nothing cut`);
       await js(`document.getElementById('scAdd').click()`); await settle();
       assert.strictEqual(await js(`document.querySelectorAll('#sdList .sc-row').length`), nRows, `${tag}: a disabled Save adds nothing`);
@@ -218,8 +219,11 @@ module.exports = async (ctx) => {
       await ctx.shot(path.join(OUT, `044-length-error-${tag}.png`));
       await type(text(7999)); c = await count();
       assert.deepStrictEqual([c.hidden, c.text, c.inv, c.dis], [true, '', 'false', false], `${tag}: no counter below 80%`);
+      assert.deepStrictEqual([c.shown, c.live], [false, ''], `${tag}: an empty counter takes no room and the announcement is cleared`);
       await type(text(8412)); c = await count();
       assert.deepStrictEqual([c.hidden, c.text, c.inv, c.dis], [false, '8,412 / 10,000', 'false', false], `${tag}: the counter from 80%`);
+      assert.strictEqual(c.live, '8,412 / 10,000 characters', `${tag}: the counter's start is announced`);
+      await js(`document.getElementById('scPrompt').focus()`); ctx.win.webContents.insertText('y'); await until(`document.getElementById('scPrompt').value.length===8413`); assert.strictEqual((await count()).live, '8,412 / 10,000 characters', `${tag}: a further key does not announce again`); assert.strictEqual((await count()).text, '8,413 / 10,000', `${tag}: but the visible counter updates`); await type(text(8412));
       await js(`document.getElementById('scCount').scrollIntoView({block:'center'})`); await settle();
       await ctx.shot(path.join(OUT, `044-length-counter-${tag}.png`));
       await type(text(10001)); c = await count();
@@ -254,6 +258,13 @@ module.exports = async (ctx) => {
       assert.deepStrictEqual([c.inv, c.dis], ['false', false], `${tag}: shortened, Save is on`);
       await js(`document.getElementById('scAdd').click()`); await until(`document.getElementById('scFormT').hidden`);
       assert.doesNotMatch((await rows()).find((r) => r.id === raw).line, /Needs review/, `${tag}: saved short, no longer needs review`);
+      // a once schedule whose stored prompt is over the limit is paused for review, not done: it stays visible with Edit…
+      const onceRaw = await js(`window.__durbarSimSched.addRaw(${jsLiteral(text(12000))}, 'once')`);
+      await until(`!!document.querySelector(${jsLiteral(`#sdList [data-id="${onceRaw}"]`)})`);
+      await js(`window.__durbarSimSched.dueNow(${jsLiteral(onceRaw)})`);
+      await until(`/Needs review/.test(document.querySelector(${jsLiteral(`#sdList [data-id="${onceRaw}"] small`)}).textContent)&&document.querySelector(${jsLiteral(`#sdList [data-id="${onceRaw}"]`)}).classList.contains('off')`);
+      const or = (await rows()).find((r) => r.id === onceRaw);
+      assert.ok(!/done/.test(or.line) && /paused/i.test(or.line) && or.btns[0] === 'Edit…', `${tag}: a once schedule over the limit is paused for review, not done (${or.line})`);
     }
     console.log('[sched-edit]', tag, 'ok');
   }

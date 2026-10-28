@@ -284,7 +284,7 @@ export interface ScheduleInfo {
   next?: number;
   paused?: boolean;
   /** Why the app paused it (FR-014, FR-015). */
-  pausedReason?: 'cap' | 'session-ended';
+  pausedReason?: 'cap' | 'session-ended' | 'review';
   done?: boolean;
   last?: { at: number; outcome: ScheduleOutcome };
   /** FR-014: one session instead of the folder's agent. */

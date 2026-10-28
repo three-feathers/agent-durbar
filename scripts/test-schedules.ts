@@ -203,11 +203,38 @@ async function main(): Promise<void> {
     assert.ok(fixed.ok, 'an edit that fits is saved');
     await h.advance(30 * MIN);
     assert.deepStrictEqual(h.sent, ['/w:short again'], 'and it is sent again by itself');
-    // a once schedule is skipped like any skipped once run
+    // a once schedule is paused for review (never done), so it stays visible; an edit that fits needs a future time and runs it again
     const h2 = harness(parseSchedules(JSON.stringify({ pausedAll: false, schedules: [{ id: 'bbbbbbbb-once', folder: '/w', prompt: long, at: now + 5 * MIN }] }), now));
     h2.sch.start();
     await h2.advance(5 * MIN);
-    assert.deepStrictEqual([h2.sent, h2.sch.doc.schedules[0].last?.outcome, h2.sch.doc.schedules[0].done], [[], 'skipped-review', true]);
+    const o = h2.sch.doc.schedules[0];
+    assert.deepStrictEqual([h2.sent, o.last?.outcome, o.done, o.paused, o.pausedReason], [[], 'skipped-review', undefined, true, 'review'], 'a once schedule is paused with its own reason, not done');
+    assert.strictEqual(o.prompt.length, 12_000, 'and kept whole');
+    await h2.advance(MIN);
+    const stale = h2.sch.save({ id: 'bbbbbbbb-once', edit: true, folder: '/w', prompt: 'now short', at: o.at }, () => true);
+    assert.deepStrictEqual(stale, { ok: false, error: 'Pick a time in the future to run it again.' }, 'a fix needs a future time, like a done schedule');
+    const fix = h2.sch.save({ id: 'bbbbbbbb-once', edit: true, folder: '/w', prompt: 'now short', at: h2.now + 5 * MIN }, () => true);
+    assert.ok(fix.ok && !fix.schedule.paused && !fix.schedule.pausedReason && !fix.schedule.done, 'the fixing edit unpauses it');
+    await h2.advance(5 * MIN);
+    assert.deepStrictEqual(h2.sent, ['/w:now short'], 'and it is sent at the new time');
+    // an edit that still does not fit is refused and the schedule stays paused for review
+    const h3 = harness(parseSchedules(JSON.stringify({ pausedAll: false, schedules: [{ id: 'cccccccc-once', folder: '/w', prompt: long, at: now + 5 * MIN }] }), now));
+    h3.sch.start();
+    await h3.advance(5 * MIN);
+    await h3.advance(MIN);
+    assert.ok(!h3.sch.save({ id: 'cccccccc-once', edit: true, folder: '/w', prompt: long + 'x', at: h3.now + MIN }, () => true).ok);
+    assert.strictEqual(h3.sch.doc.schedules[0].pausedReason, 'review');
+    // FR-124: the catch-up at start records skipped-review, not missed, for a long prompt (a once and a recurring one)
+    const h4 = harness(parseSchedules(JSON.stringify({ pausedAll: false, schedules: [
+      { id: 'dddddddd-once', folder: '/w', prompt: long, at: now - 5 * MIN },
+      { id: 'eeeeeeee-rec', folder: '/w', prompt: long, every: 30, next: now - 5 * MIN },
+      { id: 'ffffffff-ok', folder: '/w', prompt: 'short', every: 30, next: now - 5 * MIN },
+    ] }), now));
+    h4.sch.start();
+    const [o4, r4, k4] = h4.sch.doc.schedules;
+    assert.deepStrictEqual([o4.last?.outcome, o4.paused, o4.pausedReason, o4.done], ['skipped-review', true, 'review', undefined], 'start: a once long prompt is paused for review');
+    assert.deepStrictEqual([r4.last?.outcome, r4.paused, (r4.next ?? 0) > now], ['skipped-review', undefined, true], 'start: a recurring long prompt moves on');
+    assert.strictEqual(k4.last?.outcome, 'missed', 'start: a short one is still missed');
   }
   // FR-120: the store with 50 schedules at the maximum (and a full run log each) stays small and fast to write and read
   {
