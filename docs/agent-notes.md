@@ -331,6 +331,13 @@ Each entry has the date it was learned, what happened, and how to apply it, with
   - *What*: with the focus on the body, a real PageDown (`sendInputEvent`) did not move `#floor.scrollTop` (the office area is not the page's scroller); the key handler scrolls it itself (`fl.scrollBy`) and changes floor only from an edge. Also, since phase 1 a driver that loads `simfloors=1` sees only the first floor's desks: a check such as "15 desks" or "find the agent by name" fails with no error in the app.
   - *Why*: Chromium scrolls the focused element's scroller, else the root one; here neither is `#floor`. And the office draws one floor at a time (spec 092 FR-001).
   - *How to apply*: in a driver visit the floors with `H.eachFloor(fn)` / `H.goToFloor(id)` (real PageUp/PageDown, `driver-helpers.js`); for a driver that only needs three floors and all agents on screen use `simfloors=ground` (every folder on the Ground floor, other floors on and empty). Count floor announcements with a `MutationObserver` on `#srAnnounce` and filter on "Floor ": the palette and other parts announce there too.
+- **`announce()` keeps only the last text given within 60 ms, and a whole-building render can take 400 ms under xvfb** (2026-10-28, spec 092 phase 2, `sim:` `scripts/shots-092-lift.js`, no real session).
+  - *What*: two lift clicks 400 ms apart lost the first announcement ("All floors, 3 floors"): the click handler renders the whole building first (about 400 ms on this machine under xvfb), then calls `announce()`, whose text appears 60 ms later; the second click came inside that window and replaced it.
+  - *Why*: `announce()` (`app.js`) clears and re-sets `#srAnnounce` after 60 ms, so the last call wins. That is right for users; a fixed sleep in a driver is not.
+  - *How to apply*: in a driver that counts announcements, wait for the change's announcement (`until` on the recorded list) before the next change, as `shots-092-lift.js` does (`heard`, `press`, `clickBtn`); never a fixed sleep.
+- **A layout probe is resized only by a layout search** (2026-10-28, spec 092 phase 2, `sim:` `check:office` floor screens).
+  - *What*: `#probe` (the hidden stage the layout search measures in) kept the width of the last search; an empty floor screen does no search, so after the lift panel came or went it was wider than `#floor` and `check:office` reported "floor overflows".
+  - *How to apply*: any `renderOffice` branch that skips `chooseLayout` must still size `#probe` (it now does for an empty screen); a driver that hides a part of the page to measure (`.floor-tag`, `#lift`) must lay the office out again before it moves on.
 
 ## Team chat (Telegram)
 
