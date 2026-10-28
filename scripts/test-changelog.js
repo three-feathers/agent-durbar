@@ -595,7 +595,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     '        required: true', '        default: windows-and-ubuntu', '        options:',
     '          - windows-and-ubuntu', '          - windows-latest', '          - ubuntu-latest', '          - macos-latest',
     'permissions:', '  contents: read', 'concurrency:', '  group: mcp-oauth-real', '  cancel-in-progress: false',
-    'jobs:', '  check:', FIXED(4, ''), '    runs-on: ${{ matrix.os }}', '    timeout-minutes: 20',
+    'jobs:', '  check:', FIXED(4, ''), '    environment: copilot', '    runs-on: ${{ matrix.os }}', '    timeout-minutes: 20',
     '    strategy:', '      fail-fast: false', '      matrix:', MATRIX_OS, '    steps:',
     SHA('checkout'), '        with:', '          persist-credentials: false',
     SHA('setup-node'), '        with:', '          node-version: 22', '          cache: npm',

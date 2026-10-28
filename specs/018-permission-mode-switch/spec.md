@@ -46,3 +46,7 @@ The mode chip gets one text segment after the mode name: *· Sandboxed*, *· San
 *· Sandboxed (until a new session)*, with a tooltip that says what is covered ([spec 087](../087-os-sandbox-floor/spec.md) FR-009, FR-010).
 It shows the floor in force, not the one asked for (FR-013): Claude Code applies a new floor at its next launch (FR-116), Copilot at the
 switch through `options.update` (a switch to Allow all sends nothing and keeps the floor until a new session), Codex as FR-144.
+Since 2026-10-27 ([spec 087](../087-os-sandbox-floor/spec.md) FR-022, FR-022e, issue #806; sim: `scripts/check-sandbox-floor.js`) a floor kept in
+Allow all (*Allow all · Sandboxed (until a new session)*, only Copilot sets it) makes that segment its own button next to the chip, and the mode menu
+gets *Restart without the sandbox* under the three modes: both ask first and restart the same conversation in a new Allow all session through
+spec 058's Restart session (same channel, `reason: 'sandbox'`). The Allow all confirmation of a Copilot session that holds a floor says the floor stays.

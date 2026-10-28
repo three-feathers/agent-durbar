@@ -106,7 +106,8 @@ export function register(deps: AgentsIpcDeps): void {
   });
   /** Spec 058 FR-022: Restart session with these servers: End session, then the same id through the resume path; no prompt is sent. */
   const restartingSessions = new Set<string>();
-  ipcHandle('agents:mcpRestartSession', (_e, id: unknown, confirmed: unknown) =>
+  // spec 087 FR-022: an optional `reason` ('sandbox' = *Restart without the sandbox*), validated in the op; words only, no second channel
+  ipcHandle('agents:mcpRestartSession', (_e, id: unknown, confirmed: unknown, reason: unknown) =>
     mcpRestartSessionOp({
       agents,
       router,
@@ -115,7 +116,7 @@ export function register(deps: AgentsIpcDeps): void {
       resume: (a) => ensureLive(a, { quiet: false }),
       secrets: mcpSecrets,
       log: logMcp,
-    }, restartingSessions, id, confirmed));
+    }, restartingSessions, id, confirmed, reason));
 
   ipcHandle('agents:newSession', async (_e, id: unknown, opts: unknown) => {
     const a = typeof id === 'string' ? agents.get(id) : undefined;

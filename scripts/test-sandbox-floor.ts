@@ -442,5 +442,60 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.ok(!(T as unknown as { details(s: unknown, a: string, m: (t: string) => string): string }).details({ ...on, leftOut: ['/h/ghp_abcdefghijklmnopqrstuvwxyz0123456789 (not usable)'] }, 'C', () => '').includes('ghp_'), 'each entry only through the mask');
   ok('FR-009/FR-010: the chip words and the tooltip per app; the reason only through the mask');
 }
+// ---- T067 (FR-022, FR-022a, FR-022e; issue #806): Restart without the sandbox, the pure rule and its words (src/renderer/sandboxtext.js) ----
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const T = require('../../src/renderer/sandboxtext.js') as { canRestartWithoutSandbox(o: unknown): boolean; restartTip(s: unknown, app: string): string; allowAllNote(s: unknown, app: string): string; NOT_VERIFIED: string };
+  const can = (sandbox: unknown, mode: string, caps: unknown = { resume: true }) => T.canRestartWithoutSandbox({ sandbox, mode, caps });
+  const host = { supported: true, capabilities: [] };
+  // the Copilot states, from the adapter's own state function
+  const kept = copilotSandboxState({ mode: 'allow', platform: 'linux', keptFloor: true });
+  assert.ok(kept?.untilNewSession === true, 'Copilot: a floor kept in Allow all says untilNewSession');
+  assert.strictEqual(can(kept, 'allow'), true, 'AC1: Allow all + untilNewSession + not managed + resume');
+  assert.strictEqual(can(kept, 'allow', { resume: false }), false, 'no resume: no action');
+  assert.strictEqual(can(kept, 'allow', {}), false, 'resume missing: no action');
+  assert.strictEqual(can(kept, 'allow', { resume: 'yes' }), false, 'only resume === true');
+  assert.strictEqual(can(kept, 'allow', null), false, 'no caps: no action');
+  for (const mode of ['read-only', 'ask', 'plan', '', undefined]) assert.strictEqual(can(kept, mode as string), false, `mode ${String(mode)}: no action`);
+  assert.strictEqual(can({ ...kept, managed: true }, 'allow'), false, 'managed: no action (the new session would be sandboxed again)');
+  assert.strictEqual(can({ ...kept, state: 'off' }, 'allow'), false, 'off: no action');
+  assert.strictEqual(can({ ...kept, state: 'unknown' }, 'allow'), false, 'unknown: no action');
+  const { untilNewSession: _u, ...noKeep } = kept!;
+  void _u;
+  assert.strictEqual(can(noKeep, 'allow'), false, 'a state without untilNewSession: no action');
+  assert.strictEqual(can(copilotSandboxState({ mode: 'allow', platform: 'linux' }), 'allow'), false, 'a fresh Allow all session (no floor): no action');
+  for (const mode of ['read-only', 'ask'] as const) {
+    assert.strictEqual(can(copilotSandboxState({ mode, platform: 'linux', host, applied: true }), mode), false, `Copilot ${mode}, floor on: no action`);
+    assert.strictEqual(can(copilotSandboxState({ mode, platform: 'linux', host, applied: true }), 'allow'), false, `Copilot ${mode} state read as Allow all: no action (no untilNewSession)`);
+  }
+  // Claude Code and Codex never produce it (their own state functions, every mode and platform)
+  const lin = { platform: 'linux', version: '2.1.300', haveBwrap: true, haveSocat: true };
+  for (const mode of MODES) for (const m2 of MODES) {
+    for (const extra of [{ started: true }, {}, { continued: true }, { startExit: 'x' }]) assert.strictEqual(can(claudeSandboxState({ mode, facts: lin, ...extra }), m2), false, `Claude ${mode}/${m2}: never`);
+    for (const os2 of OSES) assert.strictEqual(can(codexSandboxState(mode, os2), m2), false, `Codex ${mode}/${m2} ${os2}: never`);
+  }
+  // AC2: malformed input fails closed (as clean())
+  for (const bad of [null, undefined, 'x', 42, [], { mode: 'allow' }, { sandbox: kept }, { sandbox: { ...kept, mechanism: 'landlock' }, mode: 'allow', caps: { resume: true } }, { sandbox: { ...kept, covers: 'shell' }, mode: 'allow', caps: { resume: true } }, { sandbox: { ...kept, untilNewSession: 'true' }, mode: 'allow', caps: { resume: true } }, { sandbox: [kept], mode: 'allow', caps: { resume: true } }])
+    assert.strictEqual(T.canRestartWithoutSandbox(bad), false, `malformed ${JSON.stringify(bad)}: false`);
+  assert.strictEqual(can(Object.assign(Object.create({ untilNewSession: true }), noKeep), 'allow'), false, 'own properties only (an inherited untilNewSession does not count)');
+  // FR-022: the tooltip says what Durbar does (no vendor fact), names the app given, keeps "not verified", at most 300
+  const tip = T.restartTip(kept, 'Copilot');
+  assert.strictEqual(tip, 'Durbar does not turn Copilot’s sandbox off inside a running session; it stays until a new one. Restart keeps this conversation and starts a new session in Allow all. ' + T.NOT_VERIFIED);
+  assert.ok(T.restartTip(kept, 'X'.repeat(200)).length <= 300, 'a long app name: at most 300');
+  assert.ok(!T.restartTip({ ...kept, verified: true }, 'Copilot').includes('not verified'), 'a verified state drops the sentence');
+  assert.ok(T.restartTip(kept, 'Some App').includes('Some App’s sandbox'), 'the app name is the one given (the adapter display name)');
+  // FR-022e: the Allow all dialog's sentence only for a floor the switch keeps (Copilot Read-only / Ask first, on)
+  const NOTE = 'Copilot’s OS sandbox stays on for shell commands until a new session; use Restart without the sandbox to lift it.';
+  for (const mode of ['read-only', 'ask'] as const) assert.strictEqual(T.allowAllNote(copilotSandboxState({ mode, platform: 'linux', host, applied: true }), 'Copilot'), NOTE, `Copilot ${mode}: the sentence`);
+  assert.strictEqual(T.allowAllNote(copilotSandboxState({ mode: 'ask', platform: 'linux', host, refused: 'no' }), 'Copilot'), '', 'Copilot off (refused): no floor, no sentence');
+  assert.strictEqual(T.allowAllNote(copilotSandboxState({ mode: 'ask', platform: 'linux', host, continued: true }), 'Copilot'), '', 'Copilot continued without it: no sentence');
+  assert.strictEqual(T.allowAllNote(kept, 'Copilot'), '', 'already kept in Allow all: no sentence');
+  assert.strictEqual(T.allowAllNote(null, 'Copilot'), '', 'no state: no sentence');
+  for (const mode of ['read-only', 'ask'] as const) {
+    assert.strictEqual(T.allowAllNote(claudeSandboxState({ mode, facts: lin, started: true }), 'Claude Code'), '', `Claude ${mode}: no sentence`);
+    assert.strictEqual(T.allowAllNote(codexSandboxState(mode, 'linux'), 'Codex'), '', `Codex ${mode}: no sentence`);
+  }
+  ok('T067: Restart without the sandbox only for a kept floor in Allow all (not managed, resume); never for Claude Code or Codex; fails closed; its tooltip and the Allow all sentence');
+}
 console.log('sandbox floor (spec 087): all checks passed');
 FLOOR_DONE = true;
