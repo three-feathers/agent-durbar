@@ -330,6 +330,38 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
     assert.strictEqual(maskIds(`session ${id} done`), `session ${ID_MASK} done`);
     assert.deepStrictEqual(maskArgv(['--model', 'haiku']), ['--model', 'haiku'], 'other args unchanged');
   }
+  // T066 (K16): the switch probe's verdict comes from the printed exit codes AND the file on disk, never from the model's words
+  {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const V = require('./sandbox-switch-verdict') as typeof import('./sandbox-switch-verdict');
+    assert.deepStrictEqual(V.parseExitCodes('touch: cannot touch \'x\': Read-only file system\ntouch=1\ncurl: (6) Could not resolve host\ncurl=6\n'), { touch: 1, curl: 6 });
+    assert.deepStrictEqual(V.parseExitCodes('touch=0\ncurl=0'), { touch: 0, curl: 0 });
+    assert.deepStrictEqual(V.parseExitCodes('touch=1\ntouch=0\ncurl=7'), { touch: 0, curl: 7 }, 'the last line wins');
+    assert.deepStrictEqual(V.parseExitCodes('echo "touch=$?" said touch=0 inline'), {}, 'only a line of its own counts');
+    assert.deepStrictEqual(V.parseExitCodes(''), {});
+    const ok = { ran: true, touch: 0, curl: 0, fileExists: true };
+    const blocked = { ran: true, touch: 1, curl: 7, fileExists: false };
+    assert.strictEqual(V.stepOutcome(ok), 'both-ok');
+    assert.strictEqual(V.stepOutcome(blocked), 'both-blocked');
+    assert.strictEqual(V.stepOutcome({ ...ok, fileExists: false }), 'mixed', 'exit 0 without the file is not a write');
+    assert.strictEqual(V.stepOutcome({ ...blocked, fileExists: true }), 'mixed', 'a file that exists is not a blocked write');
+    assert.strictEqual(V.stepOutcome({ ...ok, curl: 6 }), 'mixed', 'write ok, network blocked');
+    assert.strictEqual(V.stepOutcome({ ...blocked, curl: 0 }), 'mixed', 'write blocked, network ok');
+    assert.strictEqual(V.stepOutcome({ ...ok, ran: false }), 'not-run');
+    assert.strictEqual(V.stepOutcome({ ran: true, touch: 0, fileExists: true }), 'not-run', 'a missing code');
+    assert.strictEqual(V.switchVerdict({ control: 'both-blocked', update: 'resolved', after: 'both-ok' }).verdict, 'A');
+    for (const control of ['both-ok', 'mixed', 'not-run'] as const) assert.strictEqual(V.switchVerdict({ control, update: 'resolved', after: 'both-ok' }).verdict, 'cannot-tell', `control ${control}: cannot tell`);
+    for (const after of ['both-blocked', 'mixed'] as const) {
+      assert.strictEqual(V.switchVerdict({ control: 'both-blocked', update: 'resolved', after }).verdict, 'B', `accepted, not honoured (${after})`);
+      assert.strictEqual(V.switchVerdict({ control: 'both-blocked', update: 'refused', after }).verdict, 'B', `refused (${after})`);
+    }
+    assert.ok(V.switchVerdict({ control: 'both-blocked', update: 'resolved', after: 'both-blocked' }).why.startsWith('accepted, not honoured'));
+    assert.strictEqual(V.switchVerdict({ control: 'both-blocked', update: 'refused', after: 'both-ok' }).verdict, 'cannot-tell', 'free although refused: not A');
+    assert.strictEqual(V.switchVerdict({ control: 'both-blocked', update: 'resolved', after: 'not-run' }).verdict, 'cannot-tell');
+    assert.strictEqual(V.step4Expected('A'), 'both-blocked', 'A: narrowing must block again');
+    assert.strictEqual(V.step4Expected('B'), 'both-ok', 'B: the resumed Allow all session is free');
+    assert.strictEqual(V.step4Expected('cannot-tell'), 'both-ok');
+  }
   // FR-021a (K15): the Copilot state says it only in Ask first with the floor on; the card line is the agreed sentence
   const host = { supported: true, capabilities: [] };
   assert.strictEqual(copilotSandboxState({ mode: 'ask', platform: 'linux', host, applied: true })?.approvedMayLeave, true, 'Ask first, on: may leave');
