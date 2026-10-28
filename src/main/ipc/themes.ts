@@ -20,6 +20,7 @@ export function register(deps: ThemesIpcDeps): void {
   const { dev, registry, router } = deps;
   /* User themes (spec 040): `userData/themes/<id>/manifest.json`, import/export by folder pick. Dev hook DURBAR_PICK answers the dialog in checks. */
   const userThemes = new UserThemeStore(path.join(app.getPath('userData'), 'themes'));
+  // spec 077 FR-066: 'cheeky-crew' is no longer a theme but stays reserved, so no imported or AI pack can take the old id (FR-067 migrates it)
   const BUILT_IN_THEME_IDS = ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese', 'cheeky-crew'];
   const pickFolder = async (title: string, create = false): Promise<string | null> => {
     if (dev.DURBAR_PICK) { const first = dev.DURBAR_PICK.split(path.delimiter)[0]; return first || null; } // path.delimiter keeps C:\ paths whole (spec 040 FR-008)

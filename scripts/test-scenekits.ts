@@ -98,7 +98,7 @@ for (const kit of K.KITS.slice(1)) {
   for (const id of ['punk', 'gamer', 'hacker', 'rocker', 'buzzcut', 'bookworm', 'scientist', 'metalhead', 'bob-glasses', 'skater', 'surfer', 'disco', 'sporty']) for (const st of STATUS) assert.ok(K.draw('crew', { id: 'x' }, { ...base, st, crew: id }).includes(`crew/art/${id}-`), id + '/' + st);
 }
 // every built-in pack names its kit; Clean Office stays on the office kit
-for (const [id, kit] of [['clean-office', 'office'], ['corporate', 'corporate'], ['retro', 'pixel'], ['durbar-indian', 'court-indian'], ['durbar-european', 'court-european'], ['durbar-japanese', 'court-japanese'], ['cheeky-crew', 'crew']]) {
+for (const [id, kit] of [['clean-office', 'office'], ['corporate', 'corporate'], ['retro', 'pixel'], ['durbar-indian', 'court-indian'], ['durbar-european', 'court-european'], ['durbar-japanese', 'court-japanese']]) {
   THEME.setTheme(id);
   assert.strictEqual(THEME.sceneKit(), kit, id + ' draws with the ' + kit + ' kit');
 }
