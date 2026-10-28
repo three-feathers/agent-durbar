@@ -1,0 +1,1 @@
+- **Desk pencil no longer covers the details column** (spec 001 FR-185, issue #850): on a wide desk card the rename pencil sat over the first letter of "Last tool" or "Last activity"; it now stays in the name's column. `check:office` tests the pencil against the card's details text, role and task line.

@@ -162,7 +162,8 @@ function pageCheck(expanded, expectPlaces) {
     if (B.x < D.x - T || B.r > D.r + T || B.y < D.y - T || B.b > D.b + T) problems.push(`pencil ${who} leaves its card`);
     const nmEl = d.querySelector('.name'); /* #781: with the mode icon wrapped below the name the pencil must not land on the name's first half (it sits after the name, or over its end at most) */
     if (nmEl && nmEl.getClientRects().length) { const N = R(nmEl); if (N.w > 1 && B.x < N.x + N.w / 2 - T && B.y < N.b - T && B.b > N.y + T) problems.push(`pencil ${who} covers the first half of the name`); }
-    d.querySelectorAll('.stl, .pill, .badge, .chatno, .draft-mark, .modeic, .modebadge').forEach((e) => {
+    /* spec 001 FR-185 (issue #850): nor any text of the details column (.gx: Last tool, Usage, Cost, ...), the role or the task line */
+    d.querySelectorAll('.stl, .pill, .badge, .chatno, .draft-mark, .modeic, .modebadge, .gx-h, .gx-t, .gx-l, .role, .intent').forEach((e) => {
       if (!e.getClientRects().length || getComputedStyle(e).visibility === 'hidden') return;
       const r = R(e); if (r.w < 1 || r.h < 1) return;
       if (B.x < r.r - T && B.r > r.x + T && B.y < r.b - T && B.b > r.y + T) problems.push(`pencil ${who} covers ${name(e)}`);
