@@ -257,11 +257,11 @@ module.exports = async (ctx) => {
       c = await count();
       assert.deepStrictEqual([c.len, c.inv, c.dis, c.text], [12345, 'true', true, '12,345 of 10,000 characters: shorten it to save'], `${tag}: Edit… shows the whole prompt and the error, Save disabled`);
       // the picture shows the row that says "Needs review" (review of #845): it is scrolled into the list's viewport and checked
-      const rawSmall = `document.querySelector(${jsLiteral(`#sdList [data-id="${raw}"] small`)})`;
-      await js(`${rawSmall}.scrollIntoView({block:'center'})`);
-      await until(`(()=>{const e=${rawSmall},l=document.getElementById('sdList').getBoundingClientRect(),r=e.getBoundingClientRect(),w=document.documentElement.clientHeight;return /Needs review/.test(e.textContent)&&r.height>0&&r.top>=l.top&&r.bottom<=l.bottom&&r.top>=0&&r.bottom<=w})()`, 5000);
+      const rawSel = `#sdList [data-id="${raw}"] small`;
+      await js(`document.querySelector(${jsLiteral(rawSel)}).scrollIntoView({block:'center'})`);
+      await until(`(()=>{const e=document.querySelector(${jsLiteral(rawSel)}),l=document.getElementById('sdList').getBoundingClientRect(),r=e.getBoundingClientRect(),w=document.documentElement.clientHeight;return /Needs review/.test(e.textContent)&&r.height>0&&r.top>=l.top&&r.bottom<=l.bottom&&r.top>=0&&r.bottom<=w})()`, 5000);
       await settle();
-      await until(`(()=>{const e=${rawSmall},l=document.getElementById('sdList').getBoundingClientRect(),r=e.getBoundingClientRect();return r.top>=l.top&&r.bottom<=l.bottom})()`, 5000); // still inside after the scroll settled
+      await until(`(()=>{const e=document.querySelector(${jsLiteral(rawSel)}),l=document.getElementById('sdList').getBoundingClientRect(),r=e.getBoundingClientRect();return r.top>=l.top&&r.bottom<=l.bottom})()`, 5000); // still inside after the scroll settled
       await ctx.shot(path.join(OUT, `044-length-review-${tag}.png`));
       await type(text(500)); c = await count();
       assert.deepStrictEqual([c.inv, c.dis], ['false', false], `${tag}: shortened, Save is on`);
