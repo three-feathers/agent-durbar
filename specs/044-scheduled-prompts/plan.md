@@ -202,3 +202,11 @@ All eight answered on 2026-10-23: Q1 after screenshots of both options, Q2..Q8 b
 6. **The reason of a failed run:** (A) a code from a closed list shown as fixed words ("no agent in this folder", "the agent app refused it"); (B) the error's own text, masked with `redact` and cut to 120 characters. **Answered: A (owner, 2026-10-23).** Why: nothing untrusted is stored; B can carry paths or account names that masking does not catch.
 7. **Where History shows:** (A) inline under the row, opened by a History button (like the prompt toggle); (B) its own dialog. **Answered: A (owner, 2026-10-23).** Why: works the same in the folder's dialog and in Settings, no dialog over a dialog.
 8. **Open chat when the chat is gone:** (A) "chat closed", no button; (B) a link to Previous sessions at that session. **Answered: A (owner, 2026-10-23).** Why: B needs a way to open Previous sessions at one id and depends on spec 006 T021 (unverified whether ids survive a restart).
+
+## 2026-10-28: prompt limit 10,000 and never cut silently (issue #843)
+
+- One constant in main (`MAX_PROMPT`), one copy in the window (`DurbarSchedTemplates.PROMPT_MAX`, compared in `test:schedules`, like the calendar rules), one pure helper `promptCheck(text)` for the counter and error words, used by the form (and by the simulator's rows). No new dialog: the Edit form in the schedule dialog is the only form (Settings' Edit… opens it).
+- Main: `cleanSchedule` stops slicing; `save` refuses a changed over-limit prompt; a stored over-limit prompt is kept and skipped with the new outcome `skipped-review`, in the same `record` path as the other `skipped-*` outcomes (not paused, not done, not folded). `schedhist.js` words it; the row's state line shows "Needs review" from the prompt itself.
+- Renderer: textarea without `maxlength`; a `<p>` live region (`role="status"`) under it with the counter or the error, linked by `aria-describedby`; `aria-invalid`; the Save button `disabled` while over. Text is at least 10.5 px.
+- Check: unit tests (parser, `save`, runs, `promptCheck`, templates), `check:sched-edit` extended (12,000-character paste, 10,000-character row and form at both sizes, needs-review row), screenshots retaken with `shots:docs`.
+

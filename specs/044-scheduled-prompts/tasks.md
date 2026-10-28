@@ -80,3 +80,11 @@
 
 ## 2026-10-23 delta (owner, spec 017 doors)
 - [x] T110 Held runs at a door closed by you (FR-110..FR-112; built in spec 017 T012)
+
+## 2026-10-28 delta (owner, issue #843: 10,000 characters, never cut silently)
+- [ ] T120 `schedules.ts`: `MAX_PROMPT` 10,000; `cleanSchedule` no longer slices; `save` refuses an over-limit prompt that changed (FR-120, FR-123); outcome `skipped-review` (type, `OUTCOMES`, `api.ts`, `schedhist.js` word and icon) used by `tick`, `tickLoop`, `runNow`, `releaseDoorRun` (FR-124); unit tests in `test-schedules` / `test-schedules-runs`: parser keeps a 12,000-character prompt whole, nothing sent, outcome logged, edit fixes it; store size with 50 schedules at the maximum
+- [ ] T121 `schedtemplates.js`: `PROMPT_MAX` and the pure `promptCheck(text)` (count, counter from 80%, error text, `over`); `test-schedtemplates` for the states and for every template under the limit
+- [ ] T122 Renderer `app.js`: no `maxlength`; counter and error text with `aria-describedby`/`aria-invalid`; Save disabled; templates and Edit… refresh it; the row's "Needs review" line (FR-121, FR-122, FR-124, FR-125); CSS at 10.5 px or more; simulator `save` and rows follow the same rule
+- [ ] T123 Driver `scripts/check-sched-edit.js`: paste 12,000 characters (error, disabled Save, whole text kept, no sideways scroll at both sizes), a 10,000 prompt row and form layout, a needs-review row with Edit…; retake the affected docs screenshots (`npm run shots:docs -- --only ...`)
+- [ ] T124 Docs: README *Scheduled prompts* line, `changelog.d/044-sched-prompt-length.md`, spec status tags, the maxlength audit list in the PR
+
