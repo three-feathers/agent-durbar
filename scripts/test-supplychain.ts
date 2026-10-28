@@ -262,7 +262,7 @@ function dependabotProblems(text: string): string[] {
   }
   return out;
 }
-const depText = fs.readFileSync(path.join(root, '.github', 'dependabot.yml'), 'utf8');
+const depText = fs.readFileSync(path.join(root, '.github', 'dependabot.yml'), 'utf8').replace(/\r\n/g, '\n'); // a Windows checkout has CRLF; the planted cases below edit LF text
 assert.deepStrictEqual(dependabotProblems(depText), [], 'dependabot.yml: minor/patch groups, major ignore, electron ignored');
 assert.ok(dependabotProblems(depText.replace(/\n      - dependency-name: '\*'\n        update-types: \['version-update:semver-major'\]/g, '')).length >= 2, 'a missing major ignore is caught');
 assert.ok(dependabotProblems(depText.replace(/\n      - dependency-name: electron/, '')).length === 1, 'a missing electron ignore is caught');
