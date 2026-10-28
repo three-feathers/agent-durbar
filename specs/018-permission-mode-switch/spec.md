@@ -50,3 +50,6 @@ Since 2026-10-27 ([spec 087](../087-os-sandbox-floor/spec.md) FR-022, FR-022e, i
 Allow all (*Allow all · Sandboxed (until a new session)*, only Copilot sets it) makes that segment its own button next to the chip, and the mode menu
 gets *Restart without the sandbox* under the three modes: both ask first and restart the same conversation in a new Allow all session through
 spec 058's Restart session (same channel, `reason: 'sandbox'`). The Allow all confirmation of a Copilot session that holds a floor says the floor stays.
+Since 2026-10-28 ([spec 087](../087-os-sandbox-floor/spec.md) FR-022c, K16 cleared in place on Linux, `real:` T066) the switch to Allow all lowers
+Copilot's floor in that session and its confirmation says "Copilot’s OS sandbox is also turned off for this session." instead; the chip then shows
+*Allow all* with no segment. The kept floor, its button and the menu item remain only when Copilot refuses or does not answer the lowering.

@@ -38,7 +38,8 @@
  * from the session before any prompt and the run refuses when anything else is there. Its dry run spends nothing but does start
  * the runtime: it checks the sign-in (a yes/no and the auth kind, never the login or a token), the versions and the shell tool, and
  * creates one session with no prompt (to read its tools and floor), which it deletes, and runs the baseline. F and P are removed in a
- * `finally` (and on SIGINT/SIGTERM) only when they hold nothing but the probe files; a failed stop, session delete or folder removal is
+ * `finally` (and on SIGINT/SIGTERM) only when they hold nothing but the probe files (F: also the floor's empty `.git/hooks` and
+ * `.git/config` placeholders, `sandbox-probe-cleanup.ts`); a failed stop, session delete or folder removal is
  * printed and makes the run exit 1.
  *
  * Output: sandbox events, permission requests, tool calls, the answer, usage, Copilot event types (and `sandbox.decision`'s bounded
@@ -57,6 +58,7 @@ import type { AgentAdapter, AgentEvent } from '../src/adapters/types';
 import { pathDirs } from '../src/shared/pathdirs';
 import { redact } from '../src/shared/redact';
 import { maskArgv, maskIds } from './sandbox-real-mask';
+import { removeOwn } from './sandbox-probe-cleanup';
 import { mayPrompt, parseExitCodes, probeCalls, probeGateAllows, step4Expected, stepOutcome, switchVerdict, SWITCH_MAX_AIU, SWITCH_MAX_PROMPTS } from './sandbox-switch-verdict';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const cp = require('child_process') as typeof import('child_process'); // the real module object (an import star is a read-only copy)
@@ -133,25 +135,6 @@ function timedOut<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   return Promise.race([p, new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error(`${what} did not answer in ${ms} ms`)), ms); })]).finally(() => clearTimeout(timer));
 }
-/** Remove a folder this script made, only when it is directly under `parent`, has our prefix and holds nothing but `allowed` files. */
-function removeOwn(dir: string, parent: string, allowed: readonly string[]): string {
-  try {
-    if (!dir) return 'nothing to remove';
-    if (path.dirname(dir) !== parent || !path.basename(dir).startsWith(SWITCH_PREFIX)) return `left ${clean(dir)}: not a folder this script made`;
-    if (!fs.existsSync(dir)) return `already gone: ${clean(dir)}`;
-    const st = fs.lstatSync(dir);
-    if (!st.isDirectory() || st.isSymbolicLink()) return `left ${clean(dir)}: not a plain folder`;
-    const names = fs.readdirSync(dir);
-    const other = names.filter((n) => !allowed.includes(n) || !fs.lstatSync(path.join(dir, n)).isFile());
-    if (other.length) return `left ${clean(dir)}: it holds ${other.length} other entr${other.length === 1 ? 'y' : 'ies'}`;
-    for (const n of names) fs.unlinkSync(path.join(dir, n));
-    fs.rmdirSync(dir);
-    return `removed ${clean(dir)}`;
-  } catch (e) {
-    return `could not remove ${clean(dir)}: ${clean(e instanceof Error ? e.message : e, 200)}`;
-  }
-}
-
 type RpcSession = {
   rpc: {
     options: { update(p: unknown): Promise<unknown> };
@@ -185,7 +168,8 @@ async function runSwitchSteps(st: { code: number }): Promise<void> {
   let P = '';
   let ad: AgentAdapter | undefined;
   let sid = '';
-  const cleanup = (): string[] => [removeOwn(P, homeReal, ['probe.txt']), removeOwn(F, tmpRoot, ['README.txt', 'probe.txt'])];
+  // F may also hold the floor's .git/hooks and .git/config placeholders (real: 2026-10-28, sandbox-probe-cleanup.ts); P never does
+  const cleanup = (): string[] => [removeOwn(P, homeReal, ['probe.txt'], { prefix: SWITCH_PREFIX, show: clean }), removeOwn(F, tmpRoot, ['README.txt', 'probe.txt'], { prefix: SWITCH_PREFIX, show: clean, gitPlaceholders: true })];
   const onSignal = (sig: string) => (): void => { console.log(`${sig}: ${cleanup().join('; ')} (the Copilot session, if any, is left on disk)`); process.exit(130); };
   process.once('SIGINT', onSignal('SIGINT'));
   process.once('SIGTERM', onSignal('SIGTERM'));

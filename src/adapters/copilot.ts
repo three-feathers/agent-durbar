@@ -119,8 +119,12 @@ interface Live {
   sandbox?: SandboxState | null;
   /** Spec 087 FR-007: why the sandbox is not in force; the first send is held back (or refused: `refuse`) until the person chooses. */
   sandboxHold?: { reason: string; refuse?: boolean };
-  /** Spec 087: a `sandboxConfig` was accepted in this session (it stays after a switch to Allow all, until a new session). */
+  /** Spec 087: a `sandboxConfig` was accepted in this session (it stays after a switch to Allow all until the lowering of FR-022c resolves, or a new session). */
   sandboxFloor?: boolean;
+  /** Spec 087 FR-022c: counts `applySandbox` calls, so a lowering that resolves after a later switch does not overwrite that switch's state. */
+  sandboxSeq?: number;
+  /** Spec 087 FR-022c (review on PR #833): a lowering that passed the time limit and has not answered yet; its late answer re-runs the mode. */
+  lowerOutstanding?: boolean;
   /** Spec 087 FR-019: the organization requires the sandbox (from the start options). */
   requireOsSandbox?: boolean;
   /** Spec 087 FR-007a: the held send showed its note; Continue is accepted only while it is open (review on PR 733). */
@@ -129,6 +133,8 @@ interface Live {
   sandboxApplying?: Promise<void>;
 }
 
+/** Spec 087 FR-022c (review on PR #833): why sends are held while a lowering that passed the time limit has not answered; the way back is a new session. */
+export const COPILOT_LOWER_WAIT = 'it has not answered the earlier request to turn its sandbox off yet. End the session (or restart it) to start again with the sandbox';
 /** Spec 087 FR-007: the note when Copilot's sandbox is not in force (nothing was sent), and the refusal under the policy (FR-019). */
 export const copilotSandboxNotice = (reason: string): string => `Copilot could not start its OS sandbox: ${reason.replace(/[.\s]+$/, '')}. Nothing was sent.`;
 export const copilotSandboxRefusal = (reason: string): string => `Copilot could not start its OS sandbox: ${reason.replace(/[.\s]+$/, '')}. Read-only and Ask first need it on this computer (your organization's policy), so nothing was sent.`;
@@ -461,6 +467,7 @@ export class CopilotAdapter implements AgentAdapter {
         live.unsubscribe = session.on(live.onSessionEvent);
         void session.rpc.eventLog.registerInterest({ eventType: 'session_limits_exhausted.requested' }).catch(() => undefined);
         live.sandboxFloor = undefined; // spec 087 FR-022d: the resumed session has no floor until applySandbox sends one (Allow all sends none)
+        live.lowerOutstanding = undefined; // spec 087 FR-022c (review on PR #833): a lowering sent to the old runtime is not waited for; its answer is ignored
         await this.applySandbox(sid, live, live.broker.getMode(), client); // spec 087: the floor again on the new runtime, before any send
         for (const [name, on] of live.mcpToggles ?? []) {
           await (on ? session.rpc.mcp.enable({ serverName: name }) : session.rpc.mcp.disable({ serverName: name })).catch(() => undefined);
@@ -1101,12 +1108,8 @@ export class CopilotAdapter implements AgentAdapter {
     const live = this.sessions.get(sessionId);
     if (!live) return { pending: 0 };
     live.broker.setMode(mode);
-    // spec 087 FR-013: the new floor through options.update at the switch (to Allow all nothing is sent: the floor set stays)
-    const applying = this.applySandbox(sessionId, live, mode);
-    live.sandboxApplying = applying;
-    void applying.finally(() => {
-      if (live.sandboxApplying === applying) live.sandboxApplying = undefined;
-    });
+    // spec 087 FR-013: the new floor through options.update at the switch (to Allow all a floor in force is lowered, FR-022c)
+    this.chainSandbox(sessionId, live, mode);
     if (opts.clearGrants) live.broker.clearGrants();
     let pending = live.broker.pendingCount();
     if (pending) {
@@ -1141,24 +1144,85 @@ export class CopilotAdapter implements AgentAdapter {
     return host;
   }
 
-  private setSandbox(sid: string, live: Live, st: SandboxState | null): void {
+  private setSandbox(sid: string, live: Live, st0: SandboxState | null): void {
+    // FR-022c (review on PR #833): a floor this session set is (assumed) in force and a switch to Allow all will ask to lower it: said in the
+    // normalized state, so the Allow all dialog can name it whatever the state word is
+    const st = st0 && live.sandboxFloor && !st0.untilNewSession && !st0.managed ? { ...st0, heldFloor: true } : st0;
     if (JSON.stringify(st) === JSON.stringify(live.sandbox)) return;
     live.sandbox = st;
     this.emit(sid, { type: 'sandbox', sandbox: st });
   }
 
+  /**
+   * FR-022c: one sandbox change at a time per session, in order (a narrowing after a lowering is sent after the lowering settled); sends wait
+   * for it. Without `mode` the session's mode when the change runs (the re-run after a late or overtaken lowering).
+   */
+  private chainSandbox(sid: string, live: Live, mode?: PermissionMode): void {
+    const prev = live.sandboxApplying;
+    const run = (): Promise<void> | undefined => (this.sessions.get(sid) === live ? this.applySandbox(sid, live, mode ?? live.broker.getMode()) : undefined);
+    const applying: Promise<void> = prev ? prev.catch(() => undefined).then(run) : Promise.resolve(run());
+    live.sandboxApplying = applying;
+    void applying.finally(() => {
+      if (live.sandboxApplying === applying) live.sandboxApplying = undefined;
+    });
+  }
+
+  /** FR-022c (review on PR #833): the late answer of a lowering that passed the time limit. A floor that went off is reported or put back. */
+  private lateLowering(sid: string, live: Live, handle: Live['session'], lowered: boolean): void {
+    // an answer from an older session handle (a sign-in refresh resumed the session on a new runtime) or for an ended session is ignored
+    if (this.sessions.get(sid) !== live || live.session !== handle || !live.lowerOutstanding) return;
+    live.lowerOutstanding = undefined;
+    if (lowered) live.sandboxFloor = undefined;
+    else if (live.broker.getMode() === 'allow') return; // refused late: the floor stays, and the state already says so
+    this.chainSandbox(sid, live); // Allow all: no floor (null); Read-only / Ask first: the floor is sent again, after the lowering
+  }
+
   /** FR-004/FR-006/FR-007/FR-013: the floor for `mode` on this session; never throws (a failure holds the next send back). */
   private async applySandbox(sid: string, live: Live, mode: PermissionMode, client: CopilotClient | undefined = this.client): Promise<void> {
     const platform = this.sandboxPlatform;
+    const seq = (live.sandboxSeq = (live.sandboxSeq ?? 0) + 1);
     if (mode === 'allow') {
       live.sandboxHold = undefined;
       live.sandboxNoteOpen = false;
-      return this.setSandbox(sid, live, copilotSandboxState({ mode, platform, keptFloor: live.sandboxFloor })); // nothing sent (edge cases)
+      if (live.sandbox?.managed) return; // a managed floor is never lowered (a policy conflict): the state stays as it is
+      const kept = copilotSandboxState({ mode, platform, keptFloor: live.sandboxFloor });
+      this.setSandbox(sid, live, kept); // a fresh Allow all session: null, nothing sent; a floor in force: kept until the lowering resolves
+      if (!kept || this.sessions.get(sid) !== live || live.lowerOutstanding) return; // an outstanding lowering: its late answer re-runs the mode
+      // FR-022c (T066 verdict A, real: 2026-10-28, Linux, CLI 1.0.98 / SDK 1.0.22): clear the floor in place with exactly the proven payload
+      const handle = live.session;
+      const raw = Promise.resolve().then(() => handle.rpc.options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' }));
+      let settled = false;
+      raw.then(() => { settled = true; }, () => { settled = true; }); // registered before the race in timed(), so it runs first
+      try {
+        await this.timed(raw, 'Copilot');
+      } catch {
+        // refused or no answer: the floor is assumed in force; untilNewSession stays and Restart without the sandbox is offered (FR-022).
+        // The person was told it is turned off, so the window says it was not (a toast). An answer after the limit is not ignored.
+        if (!settled && this.sessions.get(sid) === live) {
+          live.lowerOutstanding = true;
+          raw.then(() => this.lateLowering(sid, live, handle, true), () => this.lateLowering(sid, live, handle, false));
+        }
+        if (this.sessions.get(sid) === live) this.emit(sid, { type: 'sandbox', sandbox: live.sandbox ?? null, notLowered: true });
+        return;
+      }
+      if (this.sessions.get(sid) !== live || live.session !== handle) return; // the session ended (its kept floor with it) or was resumed on a new runtime
+      live.sandboxFloor = undefined;
+      // a later change ran while this lowering was out (sandboxSeq): the floor is off now, so that change's mode is applied again
+      if (live.sandboxSeq !== seq) return this.chainSandbox(sid, live);
+      return this.setSandbox(sid, live, null);
     }
     if (this.sandboxContinued.has(sid) && !live.requireOsSandbox) {
       live.sandboxHold = undefined;
       live.sandboxNoteOpen = false;
       return this.setSandbox(sid, live, copilotSandboxState({ mode, platform, host: { supported: true, capabilities: [] }, continued: true }));
+    }
+    if (live.lowerOutstanding) {
+      // review on PR #833: a lowering that passed the limit may still land after a floor sent now, so nothing is claimed and nothing is sent
+      // (FR-007 hold) until it answers; then the mode runs again (lateLowering)
+      // the wait has no bound (accepted, FR-022c): End session or Restart session starts a new session that gets the floor again
+      live.sandboxHold = { reason: COPILOT_LOWER_WAIT };
+      const waiting = copilotSandboxState({ mode, platform, host: { supported: true, capabilities: [] } }); // state unknown
+      return this.setSandbox(sid, live, waiting && { ...waiting, reason: 'Waiting for Copilot to answer the earlier request to turn its sandbox off.' });
     }
     // the session's own runtime client (never a new start here: a dispose during a start must not bring up another runtime)
     const c = client ?? (this.sessions.get(sid) === live ? await this.getClient().catch(() => undefined) : undefined);

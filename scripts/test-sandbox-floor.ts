@@ -433,6 +433,75 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
     assert.match(sw, /if \(curlExit !== 0 \|\| !writeOk\) throw new Error\('refused: the baseline failed/, 'the baseline gates the spend');
     assert.match(sw, /if \(!probeGateAllows\(req, C\) \|\| !inner2\) \{/, 'the permission handler uses the tested gate');
     assert.match(sw, /\n\s*if \(!shellToolParams\.properties\.includes\('command'\)\) throw new Error\('refused|\n\s*if \(!shellToolParams\.properties\.includes\('command'\)\) throw new Error\(`refused/, 'the spend run refuses a bash tool with no command argument');
+    assert.match(sw, /removeOwn\(F, tmpRoot, \['README\.txt', 'probe\.txt'\], \{ prefix: SWITCH_PREFIX, show: clean, gitPlaceholders: true \}\)/, 'F is cleaned with the .git placeholders allowed');
+    assert.match(sw, /removeOwn\(P, homeReal, \['probe\.txt'\], \{ prefix: SWITCH_PREFIX, show: clean \}\)/, 'P never: only probe.txt');
+  }
+  // T066 side finding (a), real: 2026-10-28: the floor leaves .git/{hooks,config} placeholders in F; the cleanup removes exactly those, and only
+  // when nothing else is there; never recursively
+  {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const C = require('./sandbox-probe-cleanup') as typeof import('./sandbox-probe-cleanup');
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-cleanup-test-')));
+    const show = (v: unknown): string => String(v);
+    let n = 0;
+    const mkF = (o: { readme?: boolean; git?: boolean; hooks?: 'empty' | 'file' | 'full' | 'none' | 'link'; config?: 'empty' | 'full' | 'dir' | 'none' | 'link'; extraGit?: string; extraTop?: string; gitLink?: boolean } = {}): string => {
+      const F = path.join(root, `durbar-t066-session-${n++}`);
+      fs.mkdirSync(F);
+      if (o.readme !== false) fs.writeFileSync(path.join(F, 'README.txt'), 'probe\n');
+      if (o.git === false) return F;
+      const g = path.join(F, '.git');
+      if (o.gitLink) { const real = path.join(root, `elsewhere-${n}`); fs.mkdirSync(path.join(real, 'hooks'), { recursive: true }); fs.writeFileSync(path.join(real, 'config'), ''); fs.symlinkSync(real, g, 'dir'); return F; }
+      fs.mkdirSync(g);
+      const hooks = o.hooks ?? 'empty';
+      if (hooks === 'empty' || hooks === 'full') fs.mkdirSync(path.join(g, 'hooks'));
+      if (hooks === 'full') fs.writeFileSync(path.join(g, 'hooks', 'pre-commit'), '#!/bin/sh\n');
+      if (hooks === 'file') fs.writeFileSync(path.join(g, 'hooks'), '');
+      if (hooks === 'link') { fs.mkdirSync(path.join(root, `hooks-${n}`)); fs.symlinkSync(path.join(root, `hooks-${n}`), path.join(g, 'hooks'), 'dir'); }
+      const config = o.config ?? 'empty';
+      if (config === 'empty') fs.writeFileSync(path.join(g, 'config'), '');
+      if (config === 'full') fs.writeFileSync(path.join(g, 'config'), '[core]\n');
+      if (config === 'dir') fs.mkdirSync(path.join(g, 'config'));
+      if (config === 'link') { fs.writeFileSync(path.join(root, `config-${n}`), ''); fs.symlinkSync(path.join(root, `config-${n}`), path.join(g, 'config')); }
+      if (o.extraGit) fs.writeFileSync(path.join(g, o.extraGit), 'ref: x\n');
+      if (o.extraTop) fs.writeFileSync(path.join(F, o.extraTop), 'x');
+      return F;
+    };
+    const rm = (F: string, git = true) => C.removeOwn(F, root, ['README.txt', 'probe.txt'], { prefix: 'durbar-t066-', show, gitPlaceholders: git });
+    const ph = mkF();
+    assert.strictEqual(C.gitPlaceholders(path.join(ph, '.git')), true, 'an empty hooks/ and an empty config: the placeholders');
+    assert.match(rm(ph), /^removed .*placeholders/, 'F with the placeholders is removed');
+    assert.ok(!fs.existsSync(ph), 'F is gone');
+    const bare = mkF({ git: false });
+    assert.match(rm(bare), /^removed /, 'F with no .git is removed as before');
+    for (const [o, why] of [
+      [{ hooks: 'full' }, 'a hook inside hooks/'],
+      [{ hooks: 'file' }, 'hooks is a file'],
+      [{ hooks: 'none' }, 'no hooks/'],
+      [{ hooks: 'link' }, 'hooks is a link'],
+      [{ config: 'full' }, 'a config with content'],
+      [{ config: 'dir' }, 'config is a folder'],
+      [{ config: 'none' }, 'no config'],
+      [{ config: 'link' }, 'config is a link'],
+      [{ extraGit: 'HEAD' }, 'anything else inside .git'],
+      [{ gitLink: true }, '.git is a link'],
+    ] as Array<[Parameters<typeof mkF>[0], string]>) {
+      const F = mkF(o);
+      assert.strictEqual(C.gitPlaceholders(path.join(F, '.git')), false, `not the placeholders: ${why}`);
+      assert.match(rm(F), /^left .*1 other entry/, `left: ${why}`);
+      assert.ok(fs.existsSync(path.join(F, '.git')) && fs.existsSync(path.join(F, 'README.txt')), `nothing removed: ${why}`);
+    }
+    const extra = mkF({ extraTop: 'notes.txt' });
+    assert.match(rm(extra), /^left .*1 other entry/, 'something else at the top: left');
+    assert.ok(fs.existsSync(path.join(extra, '.git', 'hooks')) && fs.existsSync(path.join(extra, '.git', 'config')), 'and the placeholders are not removed either');
+    const off = mkF();
+    assert.match(rm(off, false), /^left .*1 other entry/, 'without gitPlaceholders (P): a .git is never removed');
+    assert.ok(fs.existsSync(path.join(off, '.git', 'config')));
+    assert.strictEqual(C.gitPlaceholders(path.join(root, 'missing', '.git')), false, 'a missing .git: false, no throw');
+    const other = path.join(root, 'not-ours');
+    fs.mkdirSync(other);
+    assert.match(C.removeOwn(other, root, [], { prefix: 'durbar-t066-', show, gitPlaceholders: true }), /not a folder this script made/, 'the prefix still decides');
+    fs.rmSync(root, { recursive: true, force: true });
+
   }
   // FR-021a (K15): the Copilot state says it only in Ask first with the floor on; the card line is the agreed sentence
   const host = { supported: true, capabilities: [] };
@@ -543,13 +612,22 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.strictEqual((outwardSandboxEvent({ type: 'sandbox', sandbox: { state: 'on', covers: [42], verified: false } }) as { sandbox: unknown }).sandbox, null, 'a malformed state: null');
   const other = { type: 'output', delta: TOKEN };
   assert.strictEqual(outwardSandboxEvent(other), other, 'other events pass unchanged (outward() handles them)');
+  // FR-022c (review on PR #833): notLowered reaches the window only as exactly true; heldFloor is kept only as true
+  assert.strictEqual((outwardSandboxEvent({ type: 'sandbox', sandbox: null, notLowered: true }) as { notLowered?: unknown }).notLowered, true);
+  assert.ok(!('notLowered' in (outwardSandboxEvent({ type: 'sandbox', sandbox: null, notLowered: 'yes' }) as object)), 'notLowered not true: dropped');
+  assert.strictEqual(cleanSandboxState({ state: 'on', covers: ['shell'], verified: false, heldFloor: true })?.heldFloor, true);
+  assert.strictEqual(cleanSandboxState({ state: 'on', covers: ['shell'], verified: false, heldFloor: 'true' }), undefined, 'heldFloor must be a boolean');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { eventProblems } = require('../src/adapters/eventguard') as typeof import('../src/adapters/eventguard');
+  assert.deepStrictEqual(eventProblems({ type: 'sandbox', sessionId: 's', timestamp: 1, sandbox: null, notLowered: true }), []);
+  assert.ok(eventProblems({ type: 'sandbox', sessionId: 's', timestamp: 1, sandbox: null, notLowered: 1 } as never).length > 0, 'eventguard: notLowered only true');
   assert.ok(!(T as unknown as { details(s: unknown, a: string, m: (t: string) => string): string }).details({ ...on, leftOut: ['/h/ghp_abcdefghijklmnopqrstuvwxyz0123456789 (not usable)'] }, 'C', () => '').includes('ghp_'), 'each entry only through the mask');
   ok('FR-009/FR-010: the chip words and the tooltip per app; the reason only through the mask');
 }
 // ---- T067 (FR-022, FR-022a, FR-022e; issue #806): Restart without the sandbox, the pure rule and its words (src/renderer/sandboxtext.js) ----
 {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const T = require('../../src/renderer/sandboxtext.js') as { canRestartWithoutSandbox(o: unknown): boolean; restartTip(s: unknown, app: string): string; allowAllNote(s: unknown, app: string): string; NOT_VERIFIED: string };
+  const T = require('../../src/renderer/sandboxtext.js') as { canRestartWithoutSandbox(o: unknown): boolean; restartTip(s: unknown, app: string): string; allowAllNote(s: unknown, app: string): string; notLoweredToast(app: string): string; NOT_VERIFIED: string };
   const can = (sandbox: unknown, mode: string, caps: unknown = { resume: true }) => T.canRestartWithoutSandbox({ sandbox, mode, caps });
   const host = { supported: true, capabilities: [] };
   // the Copilot states, from the adapter's own state function
@@ -584,22 +662,32 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.strictEqual(can(Object.assign(Object.create({ untilNewSession: true }), noKeep), 'allow'), false, 'own properties only (an inherited untilNewSession does not count)');
   // FR-022: the tooltip says what Durbar does (no vendor fact), names the app given, keeps "not verified", at most 300
   const tip = T.restartTip(kept, 'Copilot');
-  assert.strictEqual(tip, 'Durbar does not turn Copilot’s sandbox off inside a running session; it stays until a new one. Restart keeps this conversation and starts a new session in Allow all. ' + T.NOT_VERIFIED);
+  assert.strictEqual(tip, 'Copilot did not confirm turning its sandbox off in this running session, so it stays until a new one. Restart keeps this conversation and starts a new session in Allow all. ' + T.NOT_VERIFIED, 'FR-022c: the action is the fallback after an unconfirmed lowering');
   assert.ok(T.restartTip(kept, 'X'.repeat(200)).length <= 300, 'a long app name: at most 300');
   assert.ok(!T.restartTip({ ...kept, verified: true }, 'Copilot').includes('not verified'), 'a verified state drops the sentence');
-  assert.ok(T.restartTip(kept, 'Some App').includes('Some App’s sandbox'), 'the app name is the one given (the adapter display name)');
-  // FR-022e: the Allow all dialog's sentence only for a floor the switch keeps (Copilot Read-only / Ask first, on)
-  const NOTE = 'Copilot’s OS sandbox stays on for shell commands until a new session; use Restart without the sandbox to lift it.';
-  for (const mode of ['read-only', 'ask'] as const) assert.strictEqual(T.allowAllNote(copilotSandboxState({ mode, platform: 'linux', host, applied: true }), 'Copilot'), NOTE, `Copilot ${mode}: the sentence`);
-  assert.strictEqual(T.allowAllNote(copilotSandboxState({ mode: 'ask', platform: 'linux', host, refused: 'no' }), 'Copilot'), '', 'Copilot off (refused): no floor, no sentence');
+  assert.ok(T.restartTip(kept, 'Some App').startsWith('Some App did not confirm'), 'the app name is the one given (the adapter display name)');
+  // FR-022c (T072 AC2, Q4; replaces FR-022e's sentence): the Allow all dialog's sentence only for a floor the switch turns off (Copilot Read-only / Ask first, on)
+  // review on PR #833 (item 3): the sentence follows the neutral heldFloor (the adapter sets it when it will ask to lower), whatever the state word
+  const NOTE = 'Copilot’s OS sandbox is also turned off for this session.';
+  const held = (st: unknown) => ({ ...(st as object), heldFloor: true });
+  assert.strictEqual(T.allowAllNote(held(copilotSandboxState({ mode: 'ask', platform: 'linux', host, applied: true })), 'Some App'), 'Some App’s OS sandbox is also turned off for this session.', 'the app name comes from the caller (the adapter display name)');
+  for (const mode of ['read-only', 'ask'] as const) assert.strictEqual(T.allowAllNote(held(copilotSandboxState({ mode, platform: 'linux', host, applied: true })), 'Copilot'), NOTE, `Copilot ${mode}: the sentence`);
+  assert.strictEqual(T.allowAllNote(held(copilotSandboxState({ mode: 'ask', platform: 'linux', host, refused: 'no' })), 'Copilot'), NOTE, 'off after a refused narrowing, a floor still held: the sentence (it will be lowered)');
+  assert.strictEqual(T.allowAllNote(held(copilotSandboxState({ mode: 'ask', platform: 'linux', host })), 'Copilot'), NOTE, 'unknown with a floor held: the sentence');
+  assert.strictEqual(T.allowAllNote(copilotSandboxState({ mode: 'ask', platform: 'linux', host, applied: true }), 'Copilot'), '', 'no heldFloor: no sentence');
+  assert.strictEqual(T.allowAllNote(copilotSandboxState({ mode: 'ask', platform: 'linux', host, refused: 'no' }), 'Copilot'), '', 'Copilot off (refused), no floor: no sentence');
   assert.strictEqual(T.allowAllNote(copilotSandboxState({ mode: 'ask', platform: 'linux', host, continued: true }), 'Copilot'), '', 'Copilot continued without it: no sentence');
+  assert.strictEqual(T.allowAllNote({ ...held(copilotSandboxState({ mode: 'ask', platform: 'linux', host, applied: true })), managed: true }, 'Copilot'), '', 'managed: never lowered, no sentence');
+  assert.strictEqual(T.allowAllNote({ ...held(copilotSandboxState({ mode: 'ask', platform: 'linux', host, applied: true })), heldFloor: 'true' }, 'Copilot'), '', 'only heldFloor === true');
+  assert.strictEqual(T.notLoweredToast('Copilot'), 'Copilot did not turn its sandbox off; use Restart without the sandbox.', 'FR-022c: the toast after a refused or unanswered lowering');
+  assert.strictEqual(T.notLoweredToast('Some App'), 'Some App did not turn its sandbox off; use Restart without the sandbox.', 'the toast names the app given');
   assert.strictEqual(T.allowAllNote(kept, 'Copilot'), '', 'already kept in Allow all: no sentence');
   assert.strictEqual(T.allowAllNote(null, 'Copilot'), '', 'no state: no sentence');
   for (const mode of ['read-only', 'ask'] as const) {
     assert.strictEqual(T.allowAllNote(claudeSandboxState({ mode, facts: lin, started: true }), 'Claude Code'), '', `Claude ${mode}: no sentence`);
     assert.strictEqual(T.allowAllNote(codexSandboxState(mode, 'linux'), 'Codex'), '', `Codex ${mode}: no sentence`);
   }
-  ok('T067: Restart without the sandbox only for a kept floor in Allow all (not managed, resume); never for Claude Code or Codex; fails closed; its tooltip and the Allow all sentence');
+  ok('T067: Restart without the sandbox only for a kept floor in Allow all (not managed, resume); never for Claude Code or Codex; fails closed; its tooltip and the Allow all sentence (FR-022c)');
 }
 console.log('sandbox floor (spec 087): all checks passed');
 FLOOR_DONE = true;

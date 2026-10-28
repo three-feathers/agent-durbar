@@ -59,7 +59,7 @@ function simSandboxFor(i: number, kind: string, mode: string): SandboxState | un
   if (kind === 'codex') return { state: 'on', mechanism: 'vendor', covers, writes: 'none', ...(mode === 'ask' ? { approvedMayLeave: true } : {}), verified: false };
   if (i === 3 || i === 10) return { state: 'off', covers, writes, verified: false, reason: kind === 'claude' ? SIM_SBX_WIN : SIM_SBX_COPILOT }; // · Not sandboxed
   if (i === 12) return { state: 'unknown', mechanism: 'bubblewrap', covers, writes, verified: false, reason: 'Waiting for the app to confirm its sandbox at the start.' }; // · Sandbox: checking
-  return { state: 'on', mechanism: i === 13 ? 'processcontainer' : i % 2 ? 'seatbelt' : 'bubblewrap', covers, writes, ...(kind === 'copilot' && mode === 'ask' ? { approvedMayLeave: true } : {}), verified: false }; // FR-021a (K15)
+  return { state: 'on', mechanism: i === 13 ? 'processcontainer' : i % 2 ? 'seatbelt' : 'bubblewrap', covers, writes, ...(kind === 'copilot' && mode === 'ask' ? { approvedMayLeave: true } : {}), ...(kind === 'copilot' ? { heldFloor: true } : {}), verified: false }; // FR-021a (K15); FR-022c: Copilot's floor is lowered at a switch to Allow all
 }
 type SimNote = import('../shared/notes').Note;
 type SimNotesWrote = import('../shared/notes').NotesWrote;
@@ -391,6 +391,8 @@ const SIM_MODELS: ModelChoice[] = [
  * Copilot blocks the `my-notes` MCP server; Codex's policy could not be read for Allow all (advice only, still selectable).
  */
 const SIM_ORG = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simorgpolicy') === '1';
+/** Spec 087 FR-022c (review on PR #833): `?simsbxlower=refuse`: the app refuses to lower a Copilot floor at the switch to Allow all (the floor is kept, the window toasts). */
+const SIM_LOWER_REFUSE = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsbxlower') === 'refuse';
 const simOrgText = (app: string): string => `Blocked by your organization's ${app} policy`;
 const simOrgDoubtText = (app: string): string => `Your organization's ${app} policy may block this (Agent Durbar could not read all of it)`;
 const SIM_ORG_APP: Record<string, string> = { copilot: 'Copilot', claude: 'Claude Code' };
@@ -3064,16 +3066,18 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (org) return { ok: false, error: org + ': pick another permission mode.' };
         const MW: Record<string, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
         simLog(s, 'mode-change', `${MW[s.info.permMode] ?? s.info.permMode} to ${MW[mode] ?? mode}`, mode);
-        const kept = mode === 'allow' && s.info.sandbox?.state === 'on' && (s.info.adapterId ?? 'copilot') === 'copilot'; // spec 087: Copilot keeps its floor until a new session
         s.info.permMode = mode;
         s.info.permRestored = undefined;
         s.info.permFrom = undefined;
         { // spec 087 FR-013: the floor in force after the switch (the simulator applies it at once)
           const kind = s.info.adapterId ?? 'copilot';
-          const next: SandboxState | undefined = kept ? { state: 'on', mechanism: s.info.sandbox?.mechanism, untilNewSession: true, covers: simCovers(kind), verified: false } : s.sbxContinued && mode !== 'allow' ? { state: 'off', covers: simCovers(kind), writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: 'You chose to continue without the OS sandbox for this session.' } : simSandboxFor(0, kind, mode);
+          // spec 087 FR-022c: a Copilot floor is lowered at the switch to Allow all and the sim's lowering resolves, so no word is kept; with
+          // simsbxlower=refuse it is refused: the floor is kept until a new session and the event says so (the window toasts)
+          const refused = SIM_LOWER_REFUSE && mode === 'allow' && kind === 'copilot' && s.info.sandbox?.heldFloor === true && !s.info.sandbox.managed;
+          const next: SandboxState | undefined = refused ? { state: 'on', mechanism: s.info.sandbox?.mechanism, untilNewSession: true, covers: simCovers(kind), verified: false } : s.sbxContinued && mode !== 'allow' ? { state: 'off', covers: simCovers(kind), writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: 'You chose to continue without the OS sandbox for this session.' } : simSandboxFor(0, kind, mode);
           if (next) s.info.sandbox = next;
           else delete s.info.sandbox;
-          emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: next ?? null });
+          emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: next ?? null, ...(refused ? { notLowered: true } : {}) });
         }
         if (o?.clearGrants && s.grants.size) { s.grants.clear(); grantsEvent(s); }
         let pending = s.perm ? 1 : 0;

@@ -3,14 +3,14 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: OS sandbox floor (issue #611): under Read-only and Ask first Durbar also turns on each agent app's own OS sandbox (Claude Code's bash sandbox, Copilot's local sandbox; Codex's read-limited profile already does it), so a command that slips past Durbar's checks still cannot write outside the folder or reach the network; Allow all keeps the app default; the chat header says Sandboxed or Not sandboxed, and why
-status: Built 2026-10-25 (simulator and fakes only): Claude Code and Copilot floors, Codex state and card line, the chip, tooltips, the sandbox note with Continue / Always / Change mode…, Settings > Agent apps line, the policy rule; real check on Linux 2026-10-25 (T060): Claude Code's sandbox refused a Read-only write (verified for Linux Read-only only); Copilot's floor was on, Durbar refused the Read-only command first, and in Ask first an approved write outside the folder was not refused (K15, cause unknown); macOS and Windows not verified (T061, T062 open); the policy key is not reachable until spec 076 has a reader. 2026-10-27 delta (issue #806): Copilot Allow all keeps the sandbox until a new session; Restart without the sandbox built 2026-10-27 (FR-022, simulator and fakes only, not on a real session), clearing it in place only if a real probe shows it can (K16, T066 not run)
+status: Built 2026-10-25 (simulator and fakes only): Claude Code and Copilot floors, Codex state and card line, the chip, tooltips, the sandbox note with Continue / Always / Change mode…, Settings > Agent apps line, the policy rule; real check on Linux 2026-10-25 (T060): Claude Code's sandbox refused a Read-only write (verified for Linux Read-only only); Copilot's floor was on, Durbar refused the Read-only command first, and in Ask first an approved write outside the folder was not refused (K15, cause unknown); macOS and Windows not verified (T061, T062 open); the policy key is not reachable until spec 076 has a reader. 2026-10-27 delta (issue #806): Restart without the sandbox built 2026-10-27 (FR-022, simulator and fakes only, not on a real session); 2026-10-28 T066 real run on Linux (CLI 1.0.98): verdict A, a running Copilot floor can be cleared in place (K16 resolved for Linux), so FR-022c is built (fakes and simulator): a switch to Allow all lowers the floor and Restart without the sandbox stays only as the fallback after a refused or unanswered lowering; macOS and Windows not verified
 -->
 
 **Feature Branch**: `087-os-sandbox-floor` (touches 003 permission modes, 012 Claude and Codex adapters, 002 Copilot adapter, 018 mode switch, 076 organization policy, 081 Settings > Agent apps, 010 simulator)
 
 **Created**: 2026-10-25
 
-**Status**: Built (2026-10-25) on the simulator and with fakes; Linux checked on a real session 2026-10-25 (T060: Claude Code verified in Read-only; Copilot Ask first let an approved write outside the folder through, K15); macOS and Windows not verified (T061, T062 open). See *Changes*.
+**Status**: Built (2026-10-25) on the simulator and with fakes; Linux checked on a real session 2026-10-25 (T060: Claude Code verified in Read-only; Copilot Ask first let an approved write outside the folder through, K15) and 2026-10-28 (T066: a Copilot floor cleared in place and put back, K16); macOS and Windows not verified (T061, T062 open). See *Changes*.
 
 **Input**: Issue #611, owner decision (Vikram, 2026-10-23, *go*): "Today Read-only / Ask first are enforced by Durbar's permission
 checks. Turn on each agent app's real OS sandbox underneath, so writes outside the folder or network calls are blocked by the OS
@@ -133,7 +133,9 @@ Allow all keeps the app's default. When the vendor's managed policy forces a san
   `sandboxConfig`, so the floor already set stays for the rest of that session (the safer direction; whether a later update could
   clear it is unverified, K16) and the chip reads *Allow all · Sandboxed (until a new session)*; a new session in Allow all starts
   with the app default. Since 2026-10-27 (*Changes*, FR-022..FR-022c, issue #806) the person can restart the same conversation without
-  the sandbox, with their own confirmation; nothing restarts or widens by itself.
+  the sandbox, with their own confirmation; nothing restarts or widens by itself. **Since 2026-10-28 (FR-022c, K16 resolved on Linux)**
+  the switch to Allow all, which the person confirms in a dialog that now says so, lowers Copilot's floor in place; the kept floor and the
+  restart remain only when the app refuses or does not answer the lowering.
 - **Workspace with several folders**: every folder of the `.code-workspace` is a root (as `--add-dir` and `runtimeWorkspaceRoots`).
 - **A root that is a filesystem root, a UNC share root or holds `..`**: dropped, as `codexWorkspaceRoots` does; an empty root list
   refuses Read-only and Ask first (same rule as spec 012 FR-091).
@@ -371,6 +373,86 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
 
 ## Changes
 
+### 2026-10-28: T066 run on a real session: verdict A, K16 cleared in place on Linux; FR-022c built (T072; Refs #806)
+
+**The run** (`real:` 2026-10-28 05:35 UTC, by Vikram's agent with Vikram's OK on his Copilot account; the record is
+[his comment on issue #806](https://github.com/three-feathers/agent-durbar/issues/806#issuecomment-6461550562)). Host: Linux 7.0.0-38-generic,
+bubblewrap 0.9.0, Node 24.22. Runtime: Copilot CLI 1.0.98, SDK 1.0.22. Script: `scripts/sandbox-floor-real.js copilot out.json switch --spend`
+from `main` (#827), after a dry run (0 prompts) that passed: signed in, tools `[bash]`, the floor `on` (bubblewrap), baseline curl exit 0 and a write to P.
+**Cost: 3 prompts, 0.162 AIU** (6 priced calls), within the approved budget (Q1).
+
+| Step | What | Result |
+|---|---|---|
+| 1 (prompt 1, control) | Ask first, floor on, the card approved only for exactly C | **both blocked**: `touch=1`, no file, `curl=6` |
+| 2 (no prompt) | `setPermMode(allow)`, then `options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' })` | **resolved** |
+| 3 (prompt 2) | C again, Allow all, same session | **both OK**: `touch=0`, the file written, `curl=0`; `sandbox.decision` `enforcement_state` `inactive` |
+| 4 (prompt 3) | back to Ask first (the adapter re-sends the floor), C again | **both blocked** again (`touch=1`, `curl=6`) |
+
+**K16 is resolved for Linux** `[IMPLEMENTED]` (`real:` above): on CLI 1.0.98 / SDK 1.0.22 that payload clears a running floor in place and a later
+floor update puts it back, with no restart. `[KNOWN GAP]` macOS (`sandbox-exec`) and Windows were not run (the probe refuses Windows by design), and no
+runtime newer than 1.0.98 was run (#828 brings 1.0.103).
+
+**Two side findings of the run:**
+
+- (a) **Cleanup.** The cleanup left the session folder F, as designed, because it held one entry the probe did not make: a `.git/` with an empty
+  `hooks/` and a `config`. Ask first's floor denies `<root>/.git/hooks` and `<root>/.git/config` (FR-004), so the runtime or bubblewrap left a
+  placeholder for each (read from the listing, not checked further). Fixed: `scripts/sandbox-probe-cleanup.ts` (`gitPlaceholders`, `removeOwn`,
+  moved out of `sandbox-floor-real.ts`) recognises exactly a plain `.git` folder at F's top level that holds exactly a plain, empty `hooks/` folder
+  and a plain, empty `config` file (the run did not record the size of its `config`; a non-empty one still leaves F, visibly), and removes them
+  (non-recursively) only when nothing else in F is unknown; P never gets this allowance
+  (test: `scripts/test-sandbox-floor.ts`: a hook inside, a non-empty config, a folder or link in either place, a third entry in `.git`, `.git` as a
+  link, another file at F's top: each leaves F and its `.git` untouched).
+- (b) **hostSupport.** `getHostSupport()` reported the `network` capability as **unsupported** on that host ("sandbox networking requires
+  unprivileged user and network namespaces", the Ubuntu 24.04+ AppArmor restriction), yet curl was still blocked under the floor (exit 6, DNS
+  failure): the floor cut the network some other way. So **do not rely on the reported `network` capability** to say whether the network is
+  blocked (also noted under T060). Durbar does not read that capability today (it reads `denied_paths` only, FR-004).
+
+**FR-022c built (T072, fakes and simulator only; not run on a real session through the app).** In `applySandbox` (`src/adapters/copilot.ts`),
+a switch to Allow all of a Copilot session that holds a floor (`live.sandboxFloor`) sets the kept state (`untilNewSession`) first, then sends
+exactly `{ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' }` with the 15 s limit of FR-004. **Resolved:** the floor
+is gone, the state is `null` (no chip word, no action). **Refused or no answer:** the state keeps `untilNewSession` and *Restart without the
+sandbox* stays offered (FR-022, the fallback). A **managed** state (`managed: true`) is never lowered (a policy conflict) and keeps its state; the
+Copilot adapter has no managed source today, so this is a guard (test with a set state). The next send waits for the lowering to settle (as for
+FR-004), and **the sandbox changes of one session now run one at a time, in order** (`setPermMode` chains them), so a narrowing right after a
+lowering is sent after it and its floor is the one left; a lowering that resolves after a later switch does not overwrite that switch's state.
+Narrowing to Read-only or Ask first re-sends the full floor (FR-004), as before. `allowBypass` is never sent and appears in `src/` only in
+comments; `sandbox.disableForSession` is not called (source scan in `scripts/test-copilot-sandbox.ts`). The Allow all dialog's sentence for a
+Copilot session with a floor is now Q4's, "<App>’s OS sandbox is also turned off for this session." (`allowAllNote`, app name from the adapter;
+it replaces FR-022e's). The action's tooltip (`restartTip`) now says the fallback: "<App> did not confirm turning its sandbox off in this running
+session, so it stays until a new one. Restart keeps this conversation and starts a new session in Allow all." (+ "Requested; not verified on a
+real session." while `verified` is false). The simulator lowers a Copilot floor at the switch (always resolved); sim agent #14 keeps its kept
+floor in Allow all to show the fallback. Claude Code and Codex are unchanged. **T073 is not needed** (its fact is this entry and the tooltip).
+
+**Review on PR #833** (Vikram's agent, changes requested at f90faaf0; fixed in the same PR, fakes and simulator only):
+
+1. **A lowering that answers after the 15 s limit is no longer ignored.** The adapter keeps the raw update; on a timeout it marks the lowering
+   outstanding (`lowerOutstanding`). Its late answer re-runs the session's *current* mode through the same per-session chain: a late success in
+   Allow all gives `null`; in Read-only or Ask first the full floor is sent again, after the lowering, and only then is the state `on`. A late refusal in
+   Allow all keeps the kept floor. While the lowering is outstanding, a narrowing **fails closed**: the state is `unknown` ("Waiting for Copilot to
+   answer the earlier request to turn its sandbox off.") and the sends are held as in FR-007 (the note says why), no floor is sent, and a switch to
+   Allow all sends no second lowering. A lowering that resolves after a later change of the same session (`sandboxSeq`; only a direct re-apply such as a
+   sign-in refresh can overlap, the switches are chained) re-runs the current mode instead of reporting `null`. Test: `scripts/test-copilot-sandbox.ts`
+   with a deferred fake (`lowerDeferred`): (a) late success and late refusal in Allow all, (b) back to Ask first after the limit, both outcomes.
+2. **The order is tested:** Allow all then Ask first at once with a slow lowering inside the limit gives exactly start floor, lower, floor, then the
+   send (the send waits for both), state `on`; and the `sandboxSeq` case above. The reviewer's mutants M1 (the chained narrowing skips its apply) and
+   M5 (no `sandboxSeq` guard) are now caught.
+3. **FR-022e's `[KNOWN GAP]` is closed by showing the sentence:** the normalized state gets a neutral `heldFloor: true` (no vendor key; `src/shared/api.ts`,
+   cleaned in `cleanSandboxState` and `sandboxtext.js`) whenever a floor this session set is (assumed) in force and not managed, set by the Copilot adapter
+   in `setSandbox` from `live.sandboxFloor`, whatever the state word (`on`, `off` after a refused narrowing, `unknown`). `allowAllNote` shows Q4's
+   sentence exactly when `heldFloor` is true and the state is not managed or already kept, i.e. whenever the switch will send the lowering. Claude Code and
+   Codex never set it.
+4. **A calm toast after a refused or unanswered lowering** (the coordinator's decision on the reviewer's question): the adapter's sandbox event carries
+   `notLowered: true` (a closed flag; `eventguard`, and main's `outwardSandboxEvent` passes only `true`), and the window shows the existing toast
+   "<App> did not turn its sandbox off; use Restart without the sandbox." (`notLoweredToast`, app name from the adapter). Sim: `?simsbxlower=refuse`
+   makes the sim refuse the lowering; the driver checks the toast, the kept floor and its action at both sizes, and that a Claude switch adds no toast.
+
+**Review on PR #833, round 2** (Vikram's agent at e5d7bf3d): (1) `refreshAuth` now clears `lowerOutstanding` with `sandboxFloor`, and a late answer is
+read only for the session handle it was sent to (`lateLowering` compares `live.session`; the in-time path too), so after Ask first → Allow all (lowering
+timed out) → sign-in refresh → Ask first the floor reaches the new runtime and the state is `on`, and the old runtime's answer is ignored, also while a
+new lowering is outstanding. (2) The unbounded wait is accepted and written into FR-022c; the held note's reason (`COPILOT_LOWER_WAIT`) names the way
+back, and End session plus a resume gives the floor again (the ended session's late answer is ignored). Test: `scripts/test-copilot-sandbox.ts`
+(both sequences, the note text pinned); mutants: not clearing in `refreshAuth`, and accepting an older handle's answer, both caught.
+
 ### 2026-10-28: minimum Claude Code 2.1.309 (FR-003a, T074)
 
 - **FR-003a** (amends FR-003): the minimum Claude Code version is **2.1.309** (was 2.1.219). `read:` Claude Code CHANGELOG, entry 2.1.309, read 2026-10-28: "Fixed sandboxed Bash commands on macOS and Linux running the shell's startup files outside the sandbox before each command" and "Fixed sandboxed commands and auto-accepted edits being able to modify the MCP config file passed with `--mcp-config`". Durbar passes an `--mcp-config` file, so below 2.1.309 the floor would be claimed over two known escapes. Behaviour below the minimum is unchanged (FR-006, FR-007): no sandbox block is sent, the state is *off* with the reason "This Claude Code is too old for Durbar's sandbox settings." and the fix "Update Claude Code to 2.1.309 or later (Settings > Agent apps)."; the session still starts and Durbar's own checks still apply. An unreadable or pre-release version (`2.1.309-beta.1`) is below.
@@ -427,7 +509,7 @@ runtime reports it, SDK 1.0.22) showed:
 on `PATH`, and the host must let it make its namespaces: this VPS also has `kernel.apparmor_restrict_unprivileged_userns=1`), a
 signed-in Copilot, then `node dist-scripts/scripts/sandbox-floor-real.js copilot <out.json> switch` (dry) and, with the owner's OK,
 the same with `--spend` (at most 3 prompts). Installing bubblewrap on this VPS needs sudo and changes the host, so it is the owner's
-call. T072 and T073 still wait for the verdict.
+call. T072 and T073 still wait for the verdict. (Superseded the same day: T066 ran on another Linux host, verdict A; see the entry above.)
 
 ### 2026-10-27: Copilot, a switch to Allow all keeps the sandbox: what we do about it (FR-022..FR-022c, T066..T073, K16; Refs #806)
 
@@ -466,7 +548,7 @@ the runtime does; nothing was run):
 - `read:` the default of the local sandbox when nothing is sent is not stated in the typings (the "Default: true" lines are for the
   sub-flags). The owner's own report is that a **new** Allow all session has no sandbox; T066 records it as a control.
 
-**New gap K16** `[KNOWN GAP]`: whether `options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' })` (or any
+**New gap K16** (resolved for Linux 2026-10-28, `real:` T066, verdict A: cleared in place on CLI 1.0.98 / SDK 1.0.22; see *Changes* 2026-10-28; macOS and Windows `[KNOWN GAP]`): whether `options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' })` (or any
 other documented value) clears a floor that is already running in a Copilot session, with CLI 1.0.101 / SDK 1.0.22, and whether a later
 `enabled: true` update puts it back. Unverified; T066 settles it. (2026-10-28: the probe is built but could not run, the owner's VPS has no bubblewrap, so Copilot reports no sandbox
 support there; *Changes* 2026-10-28.)
@@ -526,6 +608,8 @@ default on the switch and B is offered only after an A refusal; if it fails, B i
     (The renderer receives `canRestartSession` today only in the `agents:mcp` reply, `mcpsession.ts:152`; not used here.)
   - the tooltip of the item and the chip button says what Durbar does, not a vendor fact (K16 is unverified): "Durbar does not turn <App>'s
     sandbox off inside a running session; it stays until a new one. Restart keeps this conversation and starts a new session in Allow all."
+    (Since FR-022c, 2026-10-28, the action is the fallback after a refused or unanswered lowering, and the tooltip says so: "<App> did not confirm
+    turning its sandbox off in this running session, so it stays until a new one. Restart keeps this conversation and starts a new session in Allow all.")
     <App> is the adapter's display name as the chip tooltip already gets it (`sbxTip` / `kindWord(adapterId)`, `app.js:3730`); no vendor literal in the
     renderer (constitution II). At most 300 characters (driver). T073 may turn it into a fact with `real:`. It keeps "Requested; not verified
     on a real session." while `verified` is false, and **names no platform as checked**: the probe is Linux only, so macOS (`sandbox-exec`) and Windows
@@ -574,11 +658,13 @@ default on the switch and B is offered only after an A refusal; if it fails, B i
   - *Claude Code and Codex unaffected, and why:* Claude's floor lives in argv and is rebuilt at the next launch, which a mode change already
     forces (spec 012 FR-116); Codex applies its profile per message (FR-144). Neither ever sets `untilNewSession`, so neither sees the
     action; a test pins that no Claude or Codex state produces it.
-- **FR-022c** `[PLANNED, conditional on K16 = clears]` (outcome A) **Clear the floor on the switch.** On a switch to Allow all the Copilot
+- **FR-022c** `[IMPLEMENTED]` (outcome A; K16 cleared, `real:` T066 2026-10-28, Linux, CLI 1.0.98; test: `scripts/test-copilot-sandbox.ts` T072, `scripts/test-sandbox-floor.ts`; sim: `scripts/check-sandbox-floor.js`; the app's own switch not run on a real session; macOS and Windows not verified) **Clear the floor on the switch.** On a switch to Allow all the Copilot
   adapter sends `options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' })` (the exact payload T066 proved;
   no other field, never `allowBypass`), with the same 15 s limit as FR-004. The state follows the update: **resolved** → `null` (as a fresh
   Allow all session); **refused or no answer** → the floor is still assumed in force, the state keeps `untilNewSession: true` and FR-022
-  is offered. A switch back to Read-only or Ask first re-sends the full floor (FR-004), as today; a test pins both directions. Because the
+  is offered, with a toast (review on PR #833); an answer after the limit re-runs the current mode, and a narrowing fails closed until it comes. **Accepted (review on PR #833, round 2): that wait has no
+  bound.** A lowering that never answers keeps Read-only and Ask first sends held; the held note says "End the session (or restart it) to start again with the
+  sandbox.", and End session, Restart session or a sign-in refresh start a new session handle that gets the floor again and ignores the old answer. A switch back to Read-only or Ask first re-sends the full floor (FR-004), as today; a test pins both directions. Because the
   switch would now also lower the OS limit, the Allow all dialog for a Copilot session with a floor replaces FR-022e's sentence with "Copilot’s OS sandbox
   is also turned off for this session." (FR-022a(1): the confirmation must name it). If the probe fails, FR-022c is struck from this spec
   and the unused code is never written.
@@ -595,8 +681,10 @@ default on the switch and B is offered only after an A refusal; if it fails, B i
   Read-only or Ask first, about to go to Allow all) the body adds, for that case only: "<App>'s OS sandbox stays on for shell commands until a new session;
   use Restart without the sandbox to lift it." (<App> from the adapter's display name.) Claude Code and Codex sessions, and a session with no floor,
   get today's text unchanged (driver asserts the sentence for the Copilot sim agent and its absence for Claude and Codex sim agents). If outcome A
-  ships, FR-022c replaces this sentence with Q4's ("Copilot’s OS sandbox is also turned off for this session.").
-  `[KNOWN GAP]` (review on 32220198) The sentence shows only for a state `on`. After a refused narrowing (state `off`) or a switch while an update is still
+  ships, FR-022c replaces this sentence with Q4's ("Copilot’s OS sandbox is also turned off for this session."). **Replaced 2026-10-28** (FR-022c built):
+  the dialog now says Q4's sentence; FR-022e's is gone.
+  (Closed 2026-10-28, review on PR #833: under FR-022c the sentence follows the neutral `heldFloor`, so it shows for `off` and `unknown` states that still
+  hold a floor too; the old text follows.) `[KNOWN GAP, closed]` (review on 32220198) The sentence shows only for a state `on`. After a refused narrowing (state `off`) or a switch while an update is still
   in flight (state `unknown`), Copilot's `live.sandboxFloor` can still be true from an earlier update, so the floor is kept but this dialog does not say so
   (read: `copilot.ts` `applySandbox`; after the switch the state is built from `keptFloor`, so the chip and Restart without the sandbox still show it). No new field was added for this.
 

@@ -5463,6 +5463,7 @@ function onSandbox(a,e){
   if(ui.selected&&liveRoot(byId(ui.selected)||a)===a){const c=$('modeChip');if(c)setModeChip(c,a);}
   scheduleRender();
   if(e.notice&&typeof e.notice.text==='string')showSandboxNotice(a,e.notice);
+  if(e.notLowered===true&&SBX&&SBX.notLoweredToast)toast(esc(SBX.notLoweredToast(kindWord(a.info&&a.info.adapterId))),7000); /* FR-022c: the dialog said it is turned off */
 }
 /* FR-007: the sandbox could not start: nothing was sent. The message stays as not sent; the person chooses (or, under the policy, only
    Change mode…). The buttons are not a permission card (class note err, not perm): the answer bar and Needs you leave them alone. */
@@ -5719,7 +5720,7 @@ async function changeModeInner(a,mode,anchor){
   const pend=a.pend?a.pend.size:0, grants=(a.grants||[]).length;
   const opts={};
   if(mode==='allow'){
-    const keep=SBX&&SBX.allowAllNote?SBX.allowAllNote(a.info.sandbox,kindWord(a.info.adapterId)):''; /* spec 087 FR-022e: a floor this switch keeps, said here */
+    const keep=SBX&&SBX.allowAllNote?SBX.allowAllNote(a.info.sandbox,kindWord(a.info.adapterId)):''; /* spec 087 FR-022c (Q4): a floor this switch turns off, said here */
     const r=await askDialog({title:'Allow all for '+a.name+'?',body:'Edits, shell commands, web requests and tools will run without asking, in '+roomOf(a).path+'. Nothing is undone automatically; you can switch back at any time.'+(keep?' '+keep:''),
       check:pend?{label:'Also approve the '+pend+' request'+(pend>1?'s':'')+' waiting now (listed above)',checked:false}:null,lines:pend?[...a.pend.values()].map(e=>{const t=e.n&&e.n.querySelector('.psum');return 'Waiting: '+(t?t.textContent:'a request');}):undefined,returnFocus:anchor,
       buttons:[{label:'Cancel',value:null},{label:'Allow all',value:'ok',cls:'primary warn'}]});
