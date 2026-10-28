@@ -445,6 +445,26 @@ async function cloneCases(): Promise<void> {
     assert.strictEqual(r.cancelled, true, 'cancelled between the end of git and the add');
     assert.deepStrictEqual(t2.of('addMany'), [], 'not added');
   }
+  {
+    // a Cancel that arrives after the clone, while the op still looks for .gitmodules: honoured, the folder goes, nothing added
+    let opRef: ReturnType<typeof rig>['op'] | undefined;
+    const t = rig({ exists: () => { opRef?.cancel(); return false; } });
+    opRef = t.op;
+    const pk = await t.op.pickParent(pickAt(P));
+    const r = await t.op.create({ kind: 'clone', token: pk.ok ? pk.token : '', name: 'shop', url: URL1 }, 'ask', OPTS);
+    assert.deepStrictEqual([r.ok, r.cancelled, r.error], [false, true, CANCELLED], 'cancelled after git, before the add');
+    assert.deepStrictEqual([t.of('addMany').length, t.saved()], [0, undefined]);
+    assert.ok(t.of('rm').some((c) => c[1] === path.join(P, 'shop')), 'the folder is removed');
+  }
+  // the runner refuses the call (it throws): nothing ran, the folder and the hooks folder go, the lock is free
+  for (const kind of ['clone', 'init'] as const) {
+    const t = rig({ git: () => { throw new Error('git: clone URL not allowed'); } });
+    const pk = await t.op.pickParent(pickAt(P));
+    const r = await t.op.create({ kind, token: pk.ok ? pk.token : '', name: 'shop', url: URL1 }, 'ask', OPTS);
+    assert.deepStrictEqual([r.ok, r.error], [false, 'Could not start git.'], kind);
+    assert.deepStrictEqual(t.of('rm').map((c) => path.basename(String(c[1]))), ['durbar-hooks-abc', 'shop'], `${kind}: hooks folder and folder removed`);
+    assert.strictEqual(t.op.busy(), false);
+  }
   // ---- FR-043: quit ends a running clone and waits for its cleanup, at most 5 s ----
   {
     const g = held();

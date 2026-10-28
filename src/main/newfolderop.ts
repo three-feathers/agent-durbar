@@ -190,7 +190,12 @@ export function createNewFolderOp(d: NewFolderDeps) {
       return { ok: false, error: 'Could not prepare git (no temporary folder).' };
     }
     try {
-      const h = d.runGitCreate({ kind: 'init' }, target, { hooksDir });
+      let h: GitCreateHandle;
+      try {
+        h = d.runGitCreate({ kind: 'init' }, target, { hooksDir });
+      } catch {
+        return { ok: false, error: 'Could not start git.' }; // the runner refused the call: nothing ran, the folder goes
+      }
       cur.git = h; // Cancel and quit end it too
       let late = false;
       const clear = d.timer(INIT_LIMIT_MS, () => { late = true; h.cancel(); });
@@ -258,7 +263,12 @@ export function createNewFolderOp(d: NewFolderDeps) {
       const userSshCommand = await d.readSshCommand(hooksDir).catch(() => undefined);
       if (cur.cancelled) return { ok: false, error: CANCELLED, cancelled: true };
       armWait();
-      const h = d.runGitCreate({ kind: 'clone', url }, target, { hooksDir, userSshCommand, onOutput });
+      let h: GitCreateHandle;
+      try {
+        h = d.runGitCreate({ kind: 'clone', url }, target, { hooksDir, userSshCommand, onOutput });
+      } catch {
+        return { ok: false, error: 'Could not start git.' }; // the runner refused the call (its own URL check): nothing ran, the folder goes
+      }
       cur.git = h;
       const r = await h.done; // settles on close: git and what it started have exited
       cur.git = undefined;
