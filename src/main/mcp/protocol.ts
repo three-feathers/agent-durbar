@@ -9,7 +9,6 @@ import {
   ERR_INVALID_REQUEST,
   ERR_METHOD_NOT_FOUND,
   ERR_INTERNAL,
-  JsonRpcErrorResponse,
   JsonRpcResponse,
   errorResponse,
   parseMessage,
@@ -130,8 +129,4 @@ export class McpSession {
       serverInfo: { name: this.opts.serverInfo.name, version: this.opts.serverInfo.version },
     });
   }
-}
-
-export function isErrorResponse(r: JsonRpcResponse): r is JsonRpcErrorResponse {
-  return 'error' in r;
 }
