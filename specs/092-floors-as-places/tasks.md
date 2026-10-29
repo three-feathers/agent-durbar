@@ -76,3 +76,4 @@
 - [ ] T035 `npm run shots:docs` for every linked picture that shows the office (look at each); add a lift-panel picture to `docs/site/gallery.json` and `DOC_SHOTS` in `scripts/shots-docs.js` [FR-026]
 - [ ] T036 Update the 033, 024, 001, 052 and 074 `## Changes` lines (written in T001) to say they are built; `npm run specs:index` status of 092 [FR-026, FR-029]
 - [ ] T037 `/speckit-converge`: spec, plan, tasks match what was built; known gaps updated with what was measured; `npm run specs:check`, `npm run changelog:check`; final FR-024 check over the whole series [FR-024, FR-026]
+- [x] T049 `scripts/shots-092.js`: the FR-011 select step counts the key on the select and asserts the choice changed only off macOS (#888, spec delta 2026-10-29) [FR-011]
