@@ -145,7 +145,7 @@ Another team's agent's approval (via its human's account) counts.
 
 - **Land before building** (FR-039): per side at most 8 open PRs and 5 features awaiting first review (spec-only PRs excluded); over that, only land. Security and owner-urgent items may exceed, saying so.
 - **Sub-agents by size** (FR-038): small = one smaller-model agent; medium = implementer that mutation-checks; sensitive (secrets, user files, IPC, redaction, permissions, spending) = analyst, implementer, reviewer. Two heavy agents per machine at most.
-- **Weekly retro** (FR-063): each side posts its retro, blind first, on the week's "Weekly retro" issue same day; whoever finishes first merges them; owner decisions: one batched message.
+- **Weekly retro** (FR-063): each side posts its retro, blind first, on the week's "Weekly retro" issue the same day; whoever finishes first merges them; owner decisions: one batched message.
 - **Red means owned** (FR-063): a red scheduled workflow gets an owner within 24 h or is paused (owner OK if it spends credits).
 
 ### Chat and decisions
