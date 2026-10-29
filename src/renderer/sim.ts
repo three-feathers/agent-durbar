@@ -354,7 +354,7 @@ const SIM_SLASH_LONG: SimSlash[] = [
 
 /* Spec 073 FR-013/FR-014 (issue #608), page address simslash=secret: a folder skill and a command whose name, argument hint, description
    and place hold fake token shapes, also split by Markdown, escaped, and one that straddles the tooltip's 300-character cut. Built at
-   run time: the file holds no secret-looking literal. check:slash-suggest asserts none of them reaches the list, its tooltips, ARIA or
+   run time: the file holds no secret-looking literal. check-slash-suggest asserts none of them reaches the list, its tooltips, ARIA or
    the "Sent the text of" note. */
 const SIM_TOK = { ghp: 'gh' + 'p_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8', pat: 'github' + '_pat_' + '11ABCDEFG0aBcDeFgHiJkL_mNoPqRsTuVwXyZ0123456789abcdefghij', sk: 's' + 'k-' + 'proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789' };
 const simSlashSecret = (): SimSlash[] => {
@@ -2038,7 +2038,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent', entries: [] };
         // page address simslash=long (spec 073 FR-008, review on #535): a 64-character name, a long hint and a 200-character description
-        // come first, for check:ui-text's long-text pass; simslash=secret: fake token shapes (FR-014, issue #608)
+        // come first, for check-ui-text's long-text pass; simslash=secret: fake token shapes (FR-014, issue #608)
         return { ok: true, entries: simSlashFor(s.info.adapterId ?? 'copilot', simQuery).map((e) => { const c = { ...e }; delete c.note; return c; }) }; // the note is the send's, not the list's
       },
       ...simNotesBridge, // spec 083 FR-060

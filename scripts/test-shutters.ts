@@ -114,7 +114,7 @@ eq(S.spoken('3 h ago'), '3 hours ago', 'hours');
 eq(S.spoken('1 d ago'), '1 day ago', 'one day');
 eq(S.spoken(''), '', 'unknown');
 
-// ---- the page uses it (source checks; the layout itself is checked in the browser by check:office and check:office-fill) ----
+// ---- the page uses it (source checks; the layout itself is checked in the browser by check:office and check-office-fill) ----
 const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
 const css = fs.readFileSync(path.join(R, 'styles.css'), 'utf8');
 const ok = (c: boolean, m: string): void => { assert.ok(c, m); n++; };

@@ -34,7 +34,7 @@
  * the gaps between rows are even within 1 px, the top and bottom gaps equal within 1 px and the rooms of a row equally tall; plus a "spare
  * height" case with 4 one-agent folders, 2 agents in 2 folders and 1 agent at 1280x600, 1280x800, 1440x900 and 1920x1080.
  *
- *   npm run check:office-fill            (builds first; Linux runs it under xvfb)
+ *   npm run check:ui -- --only check-office-fill            (builds first; Linux runs it under xvfb)
  */
 const assert = require('assert');
 const path = require('path');
@@ -67,7 +67,7 @@ function SCENES() {
     if (!s || !s.getClientRects().length) return null;
     const c = d.getBoundingClientRect(), r = s.getBoundingClientRect(), flat = new Set();
     s.querySelectorAll('[fill^="#"]').forEach((e) => { const v = e.getAttribute('fill').toLowerCase(); if (v.length === 7 && !e.closest('[opacity],.halo,.glow')) flat.add(v); });
-    /* spec 077 FR-058: a portrait (<image>) is not made of flat colours: its box is left out of the share (its own sharpness is check:crew's) */
+    /* spec 077 FR-058: a portrait (<image>) is not made of flat colours: its box is left out of the share (its own sharpness is check-crew's) */
     const holes = [...s.querySelectorAll('image')].map((i) => { const b = i.getBoundingClientRect(); return [b.left, b.top, b.right, b.bottom]; });
     return { holes, id: d.dataset.id, grown: !!document.getElementById('stage').dataset.grow, card: [c.width, c.height].map((x) => Math.round(x * 100) / 100), rel: [r.left - c.left, r.top - c.top, r.width, r.height].map((x) => Math.round(x * 100) / 100), box: [r.left, r.top, r.width, r.height].map(Math.round), flat: [...flat] };
   }).filter(Boolean);

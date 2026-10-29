@@ -3,7 +3,7 @@
  * even when a page script calls the REAL preload API (`window.agentDurbar`) instead of the simulator's bridge. Simulator only; spends nothing:
  * every call below is refused by main before its handler runs, and the check fails if one is not.
  *
- *   npm run check:sim-guard          (also in scripts/ui-suite.js, so CI runs it on Linux, macOS and Windows)
+ *   npm run check:ui -- --only check-sim-guard          (also in scripts/ui-suite.js, so CI runs it on Linux, macOS and Windows)
  *
  * Asserts: the one-shot prompts (theme maker, folder-setup explainer), new folders and sessions, creating a folder (spec 093), send, resume, deleting a previous session,
  * listing the agent apps and their models, installs and the CLI sign-in are all refused with the simulator message; `harnessPlans`

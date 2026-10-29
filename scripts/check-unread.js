@@ -2,7 +2,7 @@
  * Spec 001 FR-170..FR-177 and spec 005 FR-176, FR-177 (issue #691): a finished agent's reply stays marked "New" until its chat is shown.
  * Simulator only (no AI credits, no agent app).
  *
- *   npm run check:unread
+ *   npm run check:ui -- --only check-unread
  *   OUT=docs/screenshots  (optional) also saves 001-unread-{1440x900,1280x800}.png
  *
  * At 1440x900 and 1280x800 it checks: a completion while the office is shown marks the desk (badge with the word New, outline, accessible
