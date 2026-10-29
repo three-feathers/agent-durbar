@@ -8,6 +8,7 @@
  * place the caller has not checked. (`net.fetch` with `redirect: 'manual'` rejects with "Redirect was cancelled" in Electron 44,
  * `real:` 2026-10-25.) The request layer is injected, so tests model it as an event emitter.
  */
+import * as https from 'https';
 import type { HttpGet, HttpResponse } from './officialinstall';
 import { lookupAllowed } from '../shared/updatecheck';
 import type { LookupGet } from '../shared/updatecheck';
@@ -145,3 +146,40 @@ export function makeDownloadGet(factory: NetRequestFactory): HttpGet {
       req.end();
     });
 }
+
+/**
+ * Spec 081 delta 2026-10-27: the installer download for the Node scripts that run `HarnessSetup` without Electron
+ * (`scripts/e2e-real.ts`, `scripts/install-check.ts`), where `net.request` does not exist. Same contract as `makeDownloadGet`:
+ * one GET, no redirect followed (the caller checks the next URL against the vendor's hosts), a size cap while reading, a total
+ * time limit. `get` is `https.get`; a test hands in `http.get` with a local server. The app itself never uses this: it passes
+ * `makeDownloadGet(electronRequestFactory())` (`src/main/ipc/harness.ts`).
+ */
+export function makeNodeDownloadGet(get: typeof https.get): HttpGet {
+  return (url, { timeoutMs, maxBytes }) =>
+    new Promise<HttpResponse>((resolve, reject) => {
+      let settled = false;
+      const fail = (e: Error): void => { if (!settled) { settled = true; clearTimeout(total); reject(e); } };
+      const ok = (r: HttpResponse): void => { if (!settled) { settled = true; clearTimeout(total); resolve(r); } };
+      const req = get(url, { headers: { ...FIXED_HEADERS } }, (res) => {
+        const status = res.statusCode ?? 0;
+        const location = typeof res.headers.location === 'string' ? res.headers.location : undefined;
+        const contentType = typeof res.headers['content-type'] === 'string' ? res.headers['content-type'] : undefined;
+        if (status >= 300 && status < 400) { ok({ status, location, contentType, body: Buffer.alloc(0) }); req.destroy(); return; }
+        const parts: Buffer[] = [];
+        let n = 0;
+        res.on('data', (c: Buffer) => {
+          n += c.length;
+          if (n > maxBytes) { fail(new Error('The installer is larger than expected; not downloaded.')); req.destroy(); return; }
+          parts.push(c);
+        });
+        res.on('end', () => ok({ status, contentType, body: Buffer.concat(parts) }));
+        res.on('error', fail);
+      });
+      const tooLong = (): void => { fail(new Error('The download took too long.')); req.destroy(); };
+      const total = setTimeout(tooLong, timeoutMs);
+      req.setTimeout(timeoutMs, tooLong);
+      req.on('error', fail);
+    });
+}
+/** The Node scripts' installer download (see `makeNodeDownloadGet`). */
+export const nodeDownloadGet: HttpGet = makeNodeDownloadGet(https.get);

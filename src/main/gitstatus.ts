@@ -3,8 +3,16 @@
  * `--no-optional-locks` (no lock files, no index refresh written), 4 s and 512 KB per command, at most 200 files listed;
  * no command from the folder's own git config runs (FR-008, `makeGitExec`).
  * Any failure (no git, not a repository, a timeout) is `{ repo: false }`: the window then shows nothing extra.
+ *
+ * Spec 093 (FR-030): the one other entry point, `runGitCreate`, runs the writing commands that create a folder (`git init` and
+ * `git clone`), plus the one fixed config read the clone needs (`readUserSshCommand`). It is separate from the read-only runner on purpose: it spawns (streaming output, no 4 s limit,
+ * Cancel ends the process tree) and takes a typed request, never argv. The read-only runner below is unchanged.
  */
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
+import type { ChildProcess } from 'child_process';
+import * as path from 'path';
+import { killChildTree } from '../adapters/detect';
+import { checkCloneUrl } from '../shared/newfolder';
 
 export type FileState = 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflict';
 export interface GitFile { path: string; state: FileState; added?: number; removed?: number; binary?: boolean }
@@ -217,4 +225,215 @@ export async function folderGitStatus(dir: string, exec: GitExec = nodeGitExec):
   } catch {
     return { repo: false };
   }
+}
+
+/* ---- Spec 093: creating a folder (FR-030..FR-034): `git init` (phase 1) and `git clone` (phase 2) ---- */
+
+/**
+ * Every transport git ships (FR-032). A call gets `protocol.<x>.allow=never` for each one it does not need, so a user's global
+ * `protocol.<x>.allow=always` cannot bring it back (the more specific key beats `protocol.allow`, spec R1). `init` needs none.
+ */
+export const GIT_TRANSPORTS = ['file', 'git', 'ssh', 'http', 'https', 'ext', 'fd', 'ftp', 'ftps'] as const;
+
+/** What a caller may ask for: a typed request, never argv (FR-030). The URL is checked again here (`checkCloneUrl`). */
+export type GitCreateRequest = { kind: 'init' } | { kind: 'clone'; url: string };
+
+/**
+ * The transports a clone may use (FR-032, FR-033, FR-095): https and ssh. The only other value `gitCreateCall` accepts is `file`,
+ * and only as its third parameter, which only tests pass (to clone a local bare repository); `runGitCreate` never passes it, and no
+ * setting, variable or IPC field reaches it.
+ */
+export const GIT_CLONE_PROTOCOLS: readonly string[] = ['https', 'ssh'];
+const SEAM_PROTOCOLS: readonly string[] = ['https', 'ssh', 'file'];
+
+/**
+ * D6, D11: `GIT_SSH_COMMAND` for a clone, from the user's own `core.sshCommand` (`undefined` when unset). Unset (or empty): plain
+ * OpenSSH with `-o BatchMode=yes` (never waits for a typed answer). Set to plain OpenSSH (the program's file name, quoted or not, is
+ * `ssh` or `ssh.exe`): the user's own value plus ` -o BatchMode=yes` (ssh keeps the first value of an option, so a user's own
+ * `-o BatchMode=no` still wins). Any other program (plink, a wrapper), or a value whose program cannot be read: `undefined`, so git
+ * uses the user's `core.sshCommand` unchanged.
+ */
+export function gitSshCommandFor(user: string | undefined): string | undefined {
+  if (user === undefined || user.trim() === '') return 'ssh -o BatchMode=yes';
+  const v = user.trim();
+  const quoted = /^(["'])([^"']*)\1(?:\s|$)/.exec(v);
+  const prog = quoted ? quoted[2] : /^[^\s"']+(?=\s|$)/.exec(v)?.[0];
+  if (!prog) return undefined;
+  return /^ssh(?:\.exe)?$/i.test(path.win32.basename(prog)) ? `${user} -o BatchMode=yes` : undefined;
+}
+
+export interface GitCreateCallOptions {
+  /**
+   * A private, empty folder made for this run and removed after it (FR-032, FR-051): `core.hooksPath` points there, so none of the
+   * user's own hooks (a global `core.hooksPath`) run during the command. A remote cannot bring hooks (D5); after the command the
+   * user's hooks apply again as usual, because a `-c` before the subcommand is not written into the new repository.
+   */
+  hooksDir: string;
+  /** Durbar's environment (tests pass their own); every `GIT_*` in it is dropped by `gitEnv` (FR-033), except two CA paths (R4). */
+  env?: NodeJS.ProcessEnv;
+  /** Clone: the user's own `core.sshCommand` as `readUserSshCommand` read it (`undefined` when unset), for `gitSshCommandFor`. */
+  userSshCommand?: string;
+  /** Where the names of the CA variables are compared without case (Windows only; default: this OS). */
+  platform?: NodeJS.Platform;
+}
+
+/** R4: the only `GIT_*` variables of the user's environment that reach a clone, and only as absolute paths (which CA to trust). */
+export const GIT_CA_VARS = ['GIT_SSL_CAINFO', 'GIT_SSL_CAPATH'] as const;
+
+/**
+ * The exact argv and environment of a create call (FR-031..FR-033). Pure. git runs with the new folder as its working folder
+ * and no path in the argv (D4), so a name can never be read as an option.
+ * - init: `git --no-pager <-c settings> init --quiet`; every transport off (`protocol.allow=never` and each one by name), and
+ *   `GIT_ALLOW_PROTOCOL` empty from `gitEnv`, which replaces every `protocol.*` setting and also covers remote helpers.
+ * - clone: `git --no-pager <-c settings> clone --progress --no-recurse-submodules -- <url> .`. Two layers limit the transports, each
+ *   enough on its own for the ones git ships (spec R1): `protocol.allow=never`, `protocol.<x>.allow=always` for https and ssh and
+ *   `protocol.<x>.allow=never` for every other transport by name (the command line beats a user's global `protocol.file.allow=always`);
+ *   and `GIT_ALLOW_PROTOCOL=https:ssh`, which replaces every `protocol.*` setting and is the only layer for a remote helper of any
+ *   other name (`foo::`, through a user's `url.<x>.insteadOf`). `transfer.credentialsInUrl=die` (D8), `transfer.bundleURI=false`
+ *   (R5). The user's credential helper is kept (D7) and so are their filter drivers (Git LFS, Q5): the new repository's config is
+ *   written by git, not by the remote. `GIT_TERMINAL_PROMPT=0`, `GIT_SSH_COMMAND` as `gitSshCommandFor` says (D11).
+ * `protocols` is the test seam (FR-095, D9): only tests pass it (`['file']`, a local bare repository); `runGitCreate` never does.
+ */
+export function gitCreateCall(req: GitCreateRequest, o: GitCreateCallOptions, protocols: readonly string[] = GIT_CLONE_PROTOCOLS): { argv: string[]; env: NodeJS.ProcessEnv } {
+  if (typeof o.hooksDir !== 'string' || !o.hooksDir) throw new Error('git: a private hooks folder is required');
+  const base = [`core.hooksPath=${o.hooksDir}`, 'core.fsmonitor=false', 'core.useBuiltinFSMonitor=false', 'submodule.recurse=false'];
+  const from = o.env ?? process.env;
+  const env = gitEnv(from); // GIT_ALLOW_PROTOCOL='' and GIT_TERMINAL_PROMPT=0 (GIT_SAFE_ENV)
+  if (req && req.kind === 'init') {
+    const cfg = [...base, 'protocol.allow=never', ...GIT_TRANSPORTS.map((p) => `protocol.${p}.allow=never`)];
+    return { argv: ['--no-pager', ...cfg.flatMap((c) => ['-c', c]), 'init', '--quiet'], env };
+  }
+  if (req && req.kind === 'clone') {
+    const u = checkCloneUrl(req.url);
+    if (!u.ok) throw new Error('git: clone URL not allowed');
+    if (!Array.isArray(protocols) || !protocols.length || protocols.some((p) => !SEAM_PROTOCOLS.includes(p))) throw new Error('git: protocols not allowed');
+    const allowed = new Set(protocols);
+    const cfg = [
+      ...base,
+      'protocol.allow=never',
+      ...GIT_TRANSPORTS.map((p) => `protocol.${p}.allow=${allowed.has(p) ? 'always' : 'never'}`),
+      'transfer.credentialsInUrl=die',
+      'transfer.bundleURI=false',
+      'core.protectNTFS=true', // git's checkout refuses .git aliases (git~1, NTFS streams, HFS ignorables) even if the user set them false
+      'core.protectHFS=true',
+    ];
+    env.GIT_ALLOW_PROTOCOL = [...allowed].join(':');
+    env.GIT_TERMINAL_PROMPT = '0';
+    const win = (o.platform ?? process.platform) === 'win32'; // environment names ignore case on Windows only
+    for (const [k, v] of Object.entries(from)) {
+      const name = win ? k.toUpperCase() : k;
+      if ((GIT_CA_VARS as readonly string[]).includes(name) && typeof v === 'string' && v && path.isAbsolute(v)) env[name] = v;
+    }
+    const ssh = gitSshCommandFor(o.userSshCommand);
+    if (ssh) env.GIT_SSH_COMMAND = ssh;
+    return { argv: ['--no-pager', ...cfg.flatMap((c) => ['-c', c]), 'clone', '--progress', '--no-recurse-submodules', '--', u.url, '.'], env };
+  }
+  throw new Error('git: create request not allowed');
+}
+
+/** The one fixed config read of a clone (FR-033): the user's own `core.sshCommand`, from their system and global config. */
+export const SSH_COMMAND_READ: readonly string[] = ['--no-pager', '-c', 'core.fsmonitor=false', 'config', '--get', 'core.sshCommand'];
+/**
+ * The read's argv. With the clone's URL (checked again) as `-c remote.origin.url=<url>`, an `includeIf "hasconfig:remote.*.url:…"`
+ * in the user's config is evaluated as it will be in the new repository (`real:` git 2.43: a per-remote `core.sshCommand` is found).
+ * `includeIf "gitdir:…"` cannot match: the read runs in no repository (`[KNOWN GAP]`, spec 093 FR-033).
+ */
+export function sshCommandReadArgv(url?: string): string[] {
+  const u = url === undefined ? undefined : checkCloneUrl(url);
+  const remote = u && u.ok ? ['-c', `remote.origin.url=${u.url}`] : [];
+  return [...SSH_COMMAND_READ.slice(0, 3), ...remote, ...SSH_COMMAND_READ.slice(3)];
+}
+type ConfigReadFn = (file: string, args: string[], options: ReturnType<typeof gitExecOptions> & { cwd: string }, cb: (err: Error | null, stdout: string) => void) => unknown;
+/**
+ * D11, FR-033: reads the user's `core.sshCommand` (`undefined` when unset, or when the read fails: then `gitSshCommandFor` gives the
+ * BatchMode default, the safe side). Runs in the private empty hooks folder with `GIT_CEILING_DIRECTORIES` set to its parent, so no
+ * repository's own config is read, only the system and global one; the read-only runner's limits and environment; nothing runs.
+ */
+export function readUserSshCommand(o: { hooksDir: string; url?: string; env?: NodeJS.ProcessEnv; execFile?: ConfigReadFn }): Promise<string | undefined> {
+  if (typeof o.hooksDir !== 'string' || !path.isAbsolute(o.hooksDir)) return Promise.resolve(undefined);
+  const env = { ...gitEnv(o.env ?? process.env), GIT_CEILING_DIRECTORIES: path.dirname(o.hooksDir) };
+  const ef: ConfigReadFn = o.execFile ?? (execFile as unknown as ConfigReadFn);
+  return new Promise((resolve) => {
+    try {
+      ef('git', sshCommandReadArgv(o.url), { ...gitExecOptions(env), cwd: o.hooksDir }, (err, out) => {
+        const v = err ? '' : String(out ?? '').replace(/\r?\n$/, '');
+        resolve(v && v.length <= 4096 ? v : undefined);
+      });
+    } catch {
+      resolve(undefined);
+    }
+  });
+}
+
+export interface GitSpawnOptions { cwd: string; env: NodeJS.ProcessEnv; shell: false; windowsHide: true; stdio: ['ignore', 'pipe', 'pipe']; detached: boolean }
+/**
+ * FR-034: no shell (argv only), no window, stdin closed, and on POSIX `detached` (its own process group and session: no terminal
+ * to prompt in, and the group is what Cancel ends with `killChildTree`). Windows ends the tree with `taskkill /t` instead.
+ */
+export const gitSpawnOptions = (cwd: string, env: NodeJS.ProcessEnv, platform: NodeJS.Platform): GitSpawnOptions =>
+  ({ cwd, env, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached: platform !== 'win32' });
+
+export type GitChild = Pick<ChildProcess, 'pid' | 'kill' | 'on' | 'exitCode' | 'signalCode'> & { stdout: NodeJS.ReadableStream | null; stderr: NodeJS.ReadableStream | null };
+export type GitSpawn = (file: string, args: string[], options: GitSpawnOptions) => GitChild;
+
+/** How a create command ended. `spawnError` is the error code when git could not start (`ENOENT`: git is not installed). */
+export interface GitCreateDone { code: number | null; signal: NodeJS.Signals | null; stderrTail: string; spawnError?: string }
+export interface GitCreateHandle { done: Promise<GitCreateDone>; cancel(): void }
+export interface GitCreateDeps extends GitCreateCallOptions {
+  /** Tests pass a fake; the default is Node's `spawn`, read from `child_process` when the call runs (the simulator's seal applies). */
+  spawn?: GitSpawn;
+  platform?: NodeJS.Platform;
+  kill?: typeof killChildTree;
+  /** Each piece of git's stderr as it arrives (raw: the caller masks it before showing it, FR-070). */
+  onOutput?(text: string): void;
+}
+/** The most of git's stderr kept for the error message (the tail). */
+export const GIT_CREATE_TAIL = 8192;
+
+/**
+ * Runs one create command in `cwd` (the new folder). Only `gitCreateCall`'s argv and environment; `git` from PATH, as the
+ * read-only runner. No time limit here (FR-037); the caller ends it with `cancel()`, which ends the child and its own
+ * descendants only (`killChildTree`), and only while it has not exited.
+ */
+export function runGitCreate(req: GitCreateRequest, cwd: string, deps: GitCreateDeps): GitCreateHandle {
+  const { argv, env } = gitCreateCall(req, { hooksDir: deps.hooksDir, env: deps.env, userSshCommand: deps.userSshCommand, platform: deps.platform }); // never the protocols seam (FR-095)
+  const platform = deps.platform ?? process.platform;
+  const sp: GitSpawn = deps.spawn ?? (spawn as unknown as GitSpawn);
+  let child: GitChild | undefined;
+  let tail = '';
+  const done = new Promise<GitCreateDone>((resolve) => {
+    let settled = false;
+    let spawnError: string | undefined;
+    const finish = (code: number | null, signal: NodeJS.Signals | null): void => {
+      if (settled) return;
+      settled = true;
+      resolve({ code, signal, stderrTail: tail, ...(spawnError ? { spawnError } : {}) });
+    };
+    const codeOf = (e: unknown): string => (e && typeof (e as { code?: unknown }).code === 'string' ? (e as { code: string }).code : 'EFAIL');
+    try {
+      child = sp('git', argv, gitSpawnOptions(cwd, env, platform));
+    } catch (e) {
+      spawnError = codeOf(e);
+      finish(null, null);
+      return;
+    }
+    const c = child;
+    c.stdout?.on('data', () => undefined); // drained, so git never blocks on a full pipe
+    c.stderr?.on('data', (d: unknown) => {
+      const s = String(d);
+      tail = (tail + s).slice(-GIT_CREATE_TAIL);
+      deps.onOutput?.(s);
+    });
+    // a spawn failure (no git) has no pid and may never close; a later error waits for close
+    c.on('error', (e: unknown) => { spawnError = codeOf(e); if (c.pid === undefined) finish(null, null); });
+    c.on('close', (code: number | null, signal: NodeJS.Signals | null) => finish(code, signal));
+  });
+  return {
+    done,
+    cancel: () => {
+      const c = child;
+      if (!c || !c.pid || c.exitCode != null || c.signalCode != null) return; // never started, or exited: its pid may belong to another process now
+      (deps.kill ?? killChildTree)(c, platform, deps.env ?? process.env);
+    },
+  };
 }

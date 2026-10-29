@@ -26,6 +26,16 @@
      needs:'Needs Ask first or Allow all if the agent must run a command such as `npm audit`.',
      prompt:'Check this project for outdated dependencies and known security advisories (for example with `npm audit` or the package manager in use). Report only: the advisories by severity with the affected package and the suggested fix. Do not install, upgrade or change files. '+UNTRUSTED},
   ];
+  /* spec 044 FR-120..FR-122 (issue #843): the longest prompt (a copy of MAX_PROMPT in src/main/schedules.ts; test:schedules keeps them equal),
+     where the counter starts, and what the form says about a text. The text is counted as main counts it: trimmed, String.length.
+     Never cuts anything: the form keeps what was pasted and only disables Save while it is over. */
+  const PROMPT_MAX=10000, PROMPT_WARN=0.8;
+  const fmt=n=>String(n).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+  function promptCheck(text){
+    const len=String(text==null?'':text).trim().length, over=len>PROMPT_MAX, counting=!over&&len>=PROMPT_MAX*PROMPT_WARN;
+    return {len,max:PROMPT_MAX,over,counting,
+      text:over?fmt(len)+' of '+fmt(PROMPT_MAX)+' characters: shorten it to save':counting?fmt(len)+' / '+fmt(PROMPT_MAX):''};
+  }
   const byId=id=>TEMPLATES.find(t=>t.id===id);
   /* The next time "HH:MM" happens after `now` (local time), as epoch ms; a bad value gives undefined. */
   function nextDaily(hhmm,now){
@@ -55,5 +65,5 @@
     }
     return undefined;
   }
-  return {TEMPLATES,byId,nextDaily,parseRule,nextRuleRun};
+  return {TEMPLATES,byId,PROMPT_MAX,PROMPT_WARN,promptCheck,nextDaily,parseRule,nextRuleRun};
 })());

@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 020
 title: Tools "This session / All time", Copilot CLI MCP list first, MCP extras per folder, per-folder import from VS Code `mcp.json` (delta 2026-10-17, issue #7)
-status: milestone 10 (implemented, simulator + unit tests); import delta implemented (simulator + unit tests)
+status: built
 -->
 
 **Feature Branch**: `020-tools-all-time-and-mcp-cli-primary` (milestone 10)

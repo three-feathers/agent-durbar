@@ -1,0 +1,167 @@
+Batch 3 prompt, exactly as Paco sent it to ChatGPT (2026-10-23). It replaces the earlier draft from Paco's Mac agent.
+
+Cheeky Crew — Avatar Generation Prompt
+Objective
+Generate 12 separate PNG images representing 4 original cartoon characters, each in 3 different poses.
+Generate ONE image per request, following the exact order specified below. Never combine multiple characters or poses into a single image, sprite sheet, collage, or grid.
+Global Visual Style
+Apply these requirements consistently to ALL 12 images:
+
+* Art style: High-quality cartoon character portrait for a modern app avatar.
+* Illustration: Bold, clean black outlines, warm cel-shaded comic/sticker aesthetic.
+* Characters: Friendly young adults, expressive large eyes, slightly cheeky personalities.
+* Composition: Head-and-shoulders bust, centred, cropped at mid-chest.
+* Resolution: Square, 1254 × 1254 pixels.
+* Format: PNG with a TRUE transparent alpha background.
+* Background: Completely transparent. No checkerboard, floor, cast shadow, vignette, border, or frame.
+* Rendering: Polished professional illustration, vibrant yet harmonious colours, readable silhouette.
+* Restrictions: No text, letters, numbers, logos, brands, watermarks, or symbols anywhere, including clothing, accessories, and mugs.
+* Safety: Office-safe, friendly, and playful. No rude gestures.
+* Originality: Characters must not resemble real people or celebrities.
+
+CRITICAL CONSISTENCY RULE: Every character must retain exactly the same facial features, skin tone, hairstyle, clothing, accessories, colours, and illustration style across all three poses.
+Poses
+WORKING
+
+* Looking toward the right side, as though concentrating on an off-screen computer.
+* Focused expression with a confident half-smile.
+* Hands must NOT be visible.
+* No resting prop.
+
+WAITING
+
+* Facing the viewer directly.
+* Warm, friendly smile.
+* One raised hand making a friendly wave.
+* Hand must be fully OPEN, palm facing the viewer.
+* Exactly five clearly visible, anatomically natural fingers.
+* Other hand not visible.
+* No resting prop.
+
+RESTING
+
+* Eyes gently closed.
+* Relaxed, content smile.
+* Holding the character-specific prop with BOTH hands directly in front of the chest.
+* Hands and prop clearly visible.
+* Relaxed, peaceful expression.
+
+Characters
+1. SKATER
+Appearance:
+
+* Young adult male.
+* Light-medium skin.
+* Messy dark-blond hair.
+* Plain black baseball cap worn backwards.
+* Dark wayfarer-style sunglasses.
+* Oversized charcoal hoodie with plain drawstrings.
+* Small, unmarked adhesive plaster on one cheek.
+* Playful, cheeky grin.
+
+Pose-specific requirements:
+
+* WORKING: Sunglasses covering the eyes; focused side-facing expression.
+* WAITING: Sunglasses covering the eyes; friendly open-palm wave.
+* RESTING: Sunglasses pushed UP onto the baseball cap, revealing closed eyes.
+
+RESTING PROP: Large plain orange ceramic mug with visible steam.
+2. SURFER
+Appearance:
+
+* Young adult male.
+* Deep tan skin.
+* Sun-bleached, wavy, shoulder-length blond hair with slightly darker roots.
+* Light facial stubble.
+* Open Hawaiian shirt featuring large teal and orange hibiscus flowers.
+* Plain white tank top underneath.
+* Simple shell necklace.
+* Relaxed, laid-back smile.
+
+Pose-specific requirements:
+
+* WORKING: Looking to the side with a calm, confident half-smile.
+* WAITING: Facing the viewer with a welcoming five-finger open-palm wave.
+* RESTING: Eyes closed, holding the prop with both hands.
+
+RESTING PROP: Fresh coconut drink with a striped straw and a tiny colourful paper cocktail umbrella. Absolutely NO steam.
+3. 70s DISCO
+Appearance:
+
+* Young adult woman.
+* Dark brown skin.
+* Very large, naturally rounded afro hairstyle.
+* Round sunglasses with pink-tinted lenses and thin gold rims.
+* Mustard-yellow shirt with an exaggerated wide-pointed 1970s collar.
+* Brown suede waistcoat.
+* Small gold hoop earrings.
+* Groovy, confident smile.
+
+Pose-specific requirements:
+
+* WORKING: Pink-lensed sunglasses covering the eyes; confident side-facing expression.
+* WAITING: Sunglasses covering the eyes; warm open-palm wave.
+* RESTING: Sunglasses pushed UP into the afro, revealing gently closed eyes.
+
+RESTING PROP: Vintage ceramic mug with a decorative abstract retro pattern in orange, mustard, and teal. Visible steam. No lettering or symbols on the mug.
+4. SPORTY
+Appearance:
+
+* Young adult athletic woman.
+* Medium-brown skin.
+* Dark curly hair gathered into a high puff.
+* Red-and-white sports sweatband across the forehead.
+* Plain white basketball jersey with red trim.
+* Absolutely NO jersey number, lettering, logo, or emblem.
+* Red athletic wristbands.
+* Energetic, friendly grin.
+
+Pose-specific requirements:
+
+* WORKING: Looking to the side with a focused, confident expression; hands invisible.
+* WAITING: Facing the viewer with an energetic smile, one open-palm five-finger wave; red wristband visible.
+* RESTING: Eyes gently closed; holding her prop with both hands.
+
+RESTING PROP: Large, plain plastic shaker bottle containing a visible green smoothie. No text or logo. Absolutely NO steam.
+Required Generation Order
+
+1. `skater-working.png`
+2. `skater-waiting.png`
+3. `skater-resting.png`
+4. `surfer-working.png`
+5. `surfer-waiting.png`
+6. `surfer-resting.png`
+7. `disco-working.png`
+8. `disco-waiting.png`
+9. `disco-resting.png`
+10. `sporty-working.png`
+11. `sporty-waiting.png`
+12. `sporty-resting.png`
+
+Generation Instructions
+For each image:
+
+1. Generate exactly ONE standalone illustration.
+2. Apply the global visual style and character specifications.
+3. Apply only the requested pose.
+4. Preserve character identity and outfit across all three poses.
+5. For WAITING and RESTING variants, use the previously generated images of the SAME character as visual references whenever supported.
+6. Do not introduce new accessories, clothing changes, facial changes, or background elements.
+7. Preserve the true PNG transparency.
+8. Name the resulting image exactly as specified.
+
+Important: When generating a new character's WORKING pose, do not use the previous character as an identity reference. Use only the global art direction. For subsequent poses, use that character's own preceding images as references.
+Quality Validation
+Before accepting each image, verify:
+
+* Exactly one character.
+* Correct pose and accessories.
+* Correct clothing and hairstyle.
+* Strong visual consistency with the character's other poses.
+* No text, logos, numbers, or unwanted symbols.
+* Natural hand anatomy.
+* True transparent alpha background.
+* Correct 1254 × 1254 pixel dimensions.
+* Complete, non-corrupted PNG file.
+
+Deliverable: 12 independent PNG files, individually named and suitable for use as app avatars.

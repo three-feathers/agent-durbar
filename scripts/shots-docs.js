@@ -36,6 +36,8 @@ const DOC_SHOTS = [
   { name: 'check-office-fill', files: ['001-helpers-2-1440x900.png', '001-helpers-2-1280x800.png', '001-helpers-3-1440x900.png', '001-helpers-3-1280x800.png', '001-fill-1-1440x900.png', '001-fill-1-1920x1080.png', '001-fill-4-1440x900.png', '001-fill-6-1440x900.png', '001-shutters-1440x900.png'] },
   { name: 'shots-001-live-activity', freeze: false, files: ['001-live-activity-dense-1440x900.png', '001-live-activity-side-1440x900.png'] },
   { name: 'shots-001-lobby', files: ['001-lobby-15-1280x800.png', '001-lobby-15-1440x900.png', '001-lobby-15-1440x900-retro.png', '001-lobby-3-1440x900.png'] },
+  { name: 'check-unread', files: ['001-unread-1440x900.png'] }, // spec 001 FR-172 (issue #691): two unread replies on their desks
+  { name: 'check-status-tooltip', files: ['001-status-tooltip-1440x900.png'] }, // spec 001 FR-187 (issue #875): the tooltip on the Idle count (hover)
   { name: 'shots-005-cardmenu', files: ['005-card-menu-stop-end-1440x900.png'] },
   { name: 'check-ro-ask', files: ['003-ro-ask-menu-1440x900.png'] },
   { name: 'check-why-allowed', files: ['003-why-allowed-1440x900.png'] },
@@ -62,6 +64,7 @@ const DOC_SHOTS = [
   { name: 'shots-081-updates', files: ['081-updates-avail-1440x900.png'] },
   { name: 'shots-052-ux', files: ['052-office-1440x900.png'] },
   { name: 'shots-063-folder-status', files: ['063-folder-changes-1440x900.png'] },
+  { name: 'shots-093', files: ['093-choice-1440x900.png', '093-name-refused-1440x900.png', '093-clone-url-refused-1440x900.png', '093-clone-progress-1440x900.png', '093-clone-allow-1440x900.png'] }, // spec 093: + Folder's choice, a refused name; phase 2: a refused clone URL, the clone's progress, the Allow all host sentence
   { name: 'shots-064-send-several', files: ['064-send-several-1440x900.png'] },
   { name: 'shots-068-coffee', files: ['068-coffee-office-15-1440x900.png', '068-coffee-bar-1440x900.png'] },
   { name: 'check-slash-suggest', files: ['073-slash-1440x900.png'] },

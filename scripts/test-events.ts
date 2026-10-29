@@ -2,7 +2,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { EventMapper, copilotErrorClass } from '../src/adapters/map';
+import { EventMapper, copilotErrorClass, plainRuntimeError, CUSTOM_AGENT_UNSUPPORTED } from '../src/adapters/map';
 import { eventProblems } from '../src/adapters/eventguard';
 import type { EventBody, RawEvent } from '../src/adapters/map';
 
@@ -352,5 +352,31 @@ const run = (events: RawEvent[]): EventBody[] => {
   assert.deepStrictEqual(s[4], { type: 'agentSchedule', phase: 'cancelled', scheduleId: '1' });
   for (const e of s) assert.deepStrictEqual(eventProblems({ ...e, sessionId: 's', timestamp: 1 }), [], 'passes the event guard');
   assert.ok(eventProblems({ type: 'agentSchedule', sessionId: 's', timestamp: 1, phase: 'made', scheduleId: '' }).length >= 2);
+}
+// FR-075 (issue #703): the runtime's host error for a custom agent's subtask is shown as plain words, everywhere it can arrive; nothing else is changed.
+{
+  const RAW = "host interaction call failed: Standalone server does not support session effect 'custom_agent_prompt'";
+  const out: EventBody[] = [];
+  const m = new EventMapper((b) => out.push(b));
+  const ev = (type: string, data: Record<string, unknown>): void => m.map({ type, data } as unknown as RawEvent);
+  ev('subagent.started', { toolCallId: 'c1', agentName: 'speckit.analyze', agentDisplayName: 'Analyze spec consistency' });
+  ev('subagent.failed', { toolCallId: 'c1', agentName: 'speckit.analyze', agentDisplayName: 'Analyze spec consistency', error: RAW, durationMs: 3 });
+  ev('tool.execution_start', { toolCallId: 't1', toolName: 'task', arguments: {} });
+  ev('tool.execution_complete', { toolCallId: 't1', success: false, error: { message: RAW } });
+  ev('session.error', { errorType: 'query', message: RAW });
+  ev('subagent.failed', { toolCallId: 'c2', agentName: 'x', error: 'boom' });
+  const bad = JSON.stringify(out);
+  assert.ok(!/custom_agent_prompt|Standalone server|host interaction/.test(bad), 'no raw host text reaches the app: ' + bad);
+  const sub = out.filter((e): e is Extract<EventBody, { type: 'subagent' }> => e.type === 'subagent' && e.phase === 'failed');
+  assert.strictEqual(sub[0].error, CUSTOM_AGENT_UNSUPPORTED);
+  assert.strictEqual(sub[0].task, CUSTOM_AGENT_UNSUPPORTED);
+  assert.strictEqual(sub[1].error, 'boom', 'other errors are passed through');
+  const tc = out.find((e) => e.type === 'toolCall' && (e as { phase?: string }).phase === 'failed') as { output?: string } | undefined;
+  assert.strictEqual(tc?.output, CUSTOM_AGENT_UNSUPPORTED);
+  const st = out.filter((e) => e.type === 'status') as { intent?: string; status?: string }[];
+  assert.ok(st.some((e) => e.status === 'error' && e.intent === CUSTOM_AGENT_UNSUPPORTED), 'session.error shows the plain text');
+  assert.match(CUSTOM_AGENT_UNSUPPORTED, /Custom agents aren.t supported in Durbar yet\. Run this agent in Copilot directly\./);
+  assert.strictEqual(plainRuntimeError('Standalone server does not support session effect \'other\''), 'Standalone server does not support session effect \'other\'', 'another effect is not rewritten');
+  assert.strictEqual(plainRuntimeError(undefined), undefined);
 }
 console.log('event mapping tests passed');

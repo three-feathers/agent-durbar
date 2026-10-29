@@ -29,6 +29,17 @@ import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
 import { FakeCodexServer } from './fakes/codex-app-server';
 import type { FakeCodexOptions } from './fakes/codex-app-server';
 
+/** Waits on a real condition (polls every 5 ms) and fails with `what` on a generous timeout; never a fixed sleep. */
+async function until(cond: () => boolean | Promise<boolean>, what: string, timeoutMs = 10_000): Promise<void> {
+  const end = Date.now() + timeoutMs;
+  while (!(await cond())) {
+    if (Date.now() > end) assert.fail(`timed out waiting for: ${what}`);
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+/** One turn of the event loop, so every already-queued promise reaction has run (no time involved). */
+const turn = (): Promise<void> => new Promise((r) => setImmediate(r));
+
 const ROOT = path.join(__dirname, '..', '..');
 const MARK = 'marker.person@example.invalid';
 const info = (id: string, state: AdapterInfo['state']): AdapterInfo => ({ id, displayName: id, state, capabilities: {} } as unknown as AdapterInfo);
@@ -224,7 +235,8 @@ void (async () => {
       const ad2 = new FakeCopilot(c2);
       (ad2 as unknown as { planTimeoutMs: number }).planTimeoutMs = 30;
       assert.deepStrictEqual(await ad2.accountInfo(), { status: 'signed-in', name: 'octocat', service: 'GitHub', method: 'gh-cli', provider: 'GitHub', via: 'GitHub CLI' }, `no plan when ${label}`);
-      await new Promise((r) => setTimeout(r, 100)); // the answer comes at the overall cap; the cleanup finishes right after it
+      // the answer comes at the overall cap; the cleanup finishes right after it
+      await until(() => (c2 as unknown as { deleted: string[] }).deleted.length >= 1, `the session is deleted when ${label}`);
       assert.ok((c2 as unknown as { deleted: string[] }).deleted.length === 1, `the session is deleted when ${label}`);
     }
     {
@@ -357,7 +369,8 @@ void (async () => {
       let release: (a: AccountIdentity) => void = () => undefined;
       const c = createAccountCache({ list: async () => [info('codex', 'ready')], check: () => () => { calls++; return new Promise<AccountIdentity>((r) => { release = r; }); } });
       const ps = Array.from({ length: 10 }, () => c.get(true));
-      await new Promise((r) => setTimeout(r, 5));
+      await until(() => calls >= 1, 'the first ask starts');
+      await turn(); await turn(); // any extra ask would start in these turns
       assert.strictEqual(calls, 1, 'ten concurrent refreshes make one ask');
       release({ status: 'signed-in', name: 'one' });
       const all = await Promise.all(ps);
@@ -375,9 +388,9 @@ void (async () => {
       assert.strictEqual((await c.get(true)).codex.status, 'unknown');
       assert.strictEqual(calls, 1, 'the slow call is joined, not repeated');
       release({ status: 'signed-in', name: 'late' });
-      await new Promise((r) => setTimeout(r, 5));
+      await turn(); // the settled call frees the slot in a promise reaction
       const again = c.get(true);
-      await new Promise((r) => setTimeout(r, 2));
+      await until(() => calls >= 2, 'a refresh after it settled asks again');
       assert.strictEqual(calls, 2, 'once it settled, a refresh asks again');
       release({ status: 'signed-in', name: 'second' });
       assert.strictEqual((await again).codex.name, 'second');
@@ -387,7 +400,7 @@ void (async () => {
       let calls = 0;
       const c = createAccountCache({ list: async () => [info('codex', 'ready')], check: () => async () => { calls++; throw new Error('x'); } });
       await c.get(true);
-      await new Promise((r) => setTimeout(r, 5));
+      await turn();
       await c.get(true);
       assert.strictEqual(calls, 2, 'a refresh after a failed ask asks again');
     }
@@ -570,7 +583,7 @@ void (async () => {
       c2.createSession = async (cfg: Record<string, unknown>) => { await new Promise((r) => setTimeout(r, 120)); const sx = await orig2(cfg); lateId = sx.sessionId; return sx; };
       const ad2 = tune(new FakeCopilot(c2));
       assert.deepStrictEqual(await ad2.accountInfo(), base, 'a slow createSession: the account without a plan');
-      await new Promise((r) => setTimeout(r, 300));
+      await until(() => !!lateId && deleted(c2).includes(lateId), 'the late session is deleted');
       assert.ok(lateId && deleted(c2).includes(lateId), 'the late session is deleted');
       assert.ok(!fs.existsSync(created(c2)[0].workingDirectory as string), 'and its folder removed');
       // cleanup calls that hang are capped too
@@ -582,7 +595,7 @@ void (async () => {
       const t3 = Date.now();
       assert.deepStrictEqual(await ad3.accountInfo(), { ...base, plan: 'Copilot Individual' });
       assert.ok(Date.now() - t3 < 1000, 'hung cleanup calls do not hold the answer');
-      await new Promise((r) => setTimeout(r, 100));
+      await until(() => !fs.existsSync(created(c3)[0].workingDirectory as string), 'the folder is still removed');
       assert.ok(!fs.existsSync(created(c3)[0].workingDirectory as string), 'the folder is still removed');
     }
 
@@ -598,12 +611,11 @@ void (async () => {
       await cache.get(true);
       assert.deepStrictEqual(seen, [false, false, true, true, false], 'open = keep, Check again = recheck, after a sign-in = recheck once');
       let asks = 0;
-      const hung = createAccountCache({ list: async () => [info('copilot', 'ready')], timeoutMs: 10, maxRunMs: 30, check: () => () => { asks++; return new Promise<AccountIdentity>(() => undefined); } });
+      const hung = createAccountCache({ list: async () => [info('copilot', 'ready')], timeoutMs: 10, maxRunMs: 1500, check: () => () => { asks++; return new Promise<AccountIdentity>(() => undefined); } });
       await hung.get(true);
       await hung.get(true);
-      assert.strictEqual(asks, 1, 'joined while young');
-      await new Promise((r) => setTimeout(r, 40));
-      await hung.get(true);
+      assert.strictEqual(asks, 1, 'joined while young'); // the ceiling is far above the two 10 ms waits, so a slow runner cannot age the ask
+      await until(async () => { await hung.get(true); return asks >= 2; }, 'past the ceiling a refresh asks again');
       assert.strictEqual(asks, 2, 'past the ceiling a refresh asks again');
     }
 

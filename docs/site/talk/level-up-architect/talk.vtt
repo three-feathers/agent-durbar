@@ -1,0 +1,241 @@
+WEBVTT
+
+1
+00:00:01.500 --> 00:00:03.932
+Friday afternoon. Too many windows.
+
+2
+00:00:04.282 --> 00:00:07.166
+One chat per agent. One terminal per task.
+
+3
+00:00:07.166 --> 00:00:10.255
+And a lot of time spent watching an AI
+think.
+
+4
+00:00:10.605 --> 00:00:13.784
+More agents meant more tabs, and the
+screen ran out.
+
+5
+00:00:14.134 --> 00:00:19.190
+Vikram did not buy another screen. He
+decided to change the experience instead.
+
+6
+00:00:19.990 --> 00:00:24.726
+Thirty minutes later, there was a first
+version. We called it Agent Durbar.
+
+7
+00:00:30.276 --> 00:00:33.458
+Every agent gets a desk in one small
+office.
+
+8
+00:00:33.458 --> 00:00:37.508
+You see who is working, who is waiting,
+and who is done.
+
+9
+00:00:37.858 --> 00:00:42.594
+When an agent needs a human, its desk
+glows, and it asks for help.
+
+10
+00:00:42.944 --> 00:00:47.966
+That evening, Paco and Ruben joined. We
+tried Slack, and got lost.
+
+11
+00:00:47.966 --> 00:00:49.792
+So we moved to Telegram.
+
+12
+00:00:50.592 --> 00:00:52.768
+10 days later, these are the numbers.
+
+13
+00:00:53.118 --> 00:01:01.097
+462 merged pull requests. 305 issues. 86
+specs. 18 releases.
+
+14
+00:01:01.447 --> 00:01:06.343
+Three humans. Three agents. Every line of
+code was written by agents.
+
+15
+00:01:06.343 --> 00:01:07.975
+Agents reviewed it too.
+
+16
+00:01:08.775 --> 00:01:13.553
+How does that work without chaos? Every
+change starts with a written spec.
+
+17
+00:01:13.903 --> 00:01:15.361
+One agent builds it.
+
+18
+00:01:15.361 --> 00:01:21.413
+Another agent reviews it, and plants a bug
+on purpose, to prove the tests catch it.
+
+19
+00:01:21.763 --> 00:01:27.928
+CI is the source of truth. The merge queue
+checks the result again. Then it ships.
+
+20
+00:01:28.278 --> 00:01:30.817
+Paco's agent was the best reviewer.
+
+21
+00:01:30.817 --> 00:01:34.806
+So its review sheet became everyone's
+checklist: review
+
+22
+00:01:34.806 --> 00:01:38.433
+and fix your own code before you ask for a
+review.
+
+23
+00:01:39.233 --> 00:01:42.646
+The agents talk to each other in the team
+chat, by handle.
+
+24
+00:01:42.996 --> 00:01:45.962
+"Taking #778." "Reviewing at this commit."
+
+25
+00:01:45.962 --> 00:01:48.504
+When two agents claim the same task,
+
+26
+00:01:48.504 --> 00:01:52.105
+the first message that starts with "FINAL"
+decides.
+
+27
+00:01:52.455 --> 00:01:57.895
+And every decision made in chat is also
+written on GitHub. Chat is not a record.
+
+28
+00:01:58.245 --> 00:02:03.173
+Humans set the direction. Money, releases
+and settings need a human OK.
+
+29
+00:02:03.973 --> 00:02:06.778
+Bots on Telegram can't hear each other.
+
+30
+00:02:06.778 --> 00:02:10.949
+So Vikram built a relay, and open-sourced
+it the same day.
+
+31
+00:02:11.299 --> 00:02:16.888
+As Vikram tells it, his agent warned
+Ruben's agent three times, then escalated.
+
+32
+00:02:16.888 --> 00:02:20.921
+His answer: don't escalate to me. Sort it
+out yourselves.
+
+33
+00:02:21.271 --> 00:02:22.005
+They did.
+
+34
+00:02:22.005 --> 00:02:28.119
+After a release, Vikram's agent ran a
+retrospective on what slowed us down.
+
+35
+00:02:28.119 --> 00:02:32.114
+Land before building. One merge queue.
+Test once.
+
+36
+00:02:32.114 --> 00:02:35.457
+Changelog fragments instead of conflicts.
+
+37
+00:02:35.807 --> 00:02:39.688
+Vikram says he and Paco watched it in
+their private chat,
+
+38
+00:02:39.688 --> 00:02:43.229
+amazed: decisions based on data, in
+fifteen minutes.
+
+39
+00:02:43.229 --> 00:02:45.749
+That used to be a week-long workshop.
+
+40
+00:02:46.099 --> 00:02:51.347
+And when an agent's budget runs out, it
+doesn't panic. It takes a coffee break.
+
+41
+00:02:52.147 --> 00:02:56.093
+It was not smooth. Agents make mistakes.
+So do we.
+
+42
+00:02:56.443 --> 00:03:01.446
+On release day, the Mac build failed:
+"flock: command not found".
+
+43
+00:03:01.446 --> 00:03:04.294
+Then GitHub had no Mac runner for us.
+
+44
+00:03:04.644 --> 00:03:10.105
+An agent refused to delete a release tag
+until a human said yes. Good.
+
+45
+00:03:10.455 --> 00:03:15.528
+Each mistake became a rule, written down
+for every agent to read.
+
+46
+00:03:15.528 --> 00:03:19.821
+As Vikram puts it: I trust the system, not
+each answer.
+
+47
+00:03:20.621 --> 00:03:28.087
+On day 11, version 0.1.0. Our first public
+release, for Mac, Windows and Linux.
+
+48
+00:03:28.437 --> 00:03:33.387
+Open source, free to download, and every
+step of how it was built is public.
+
+49
+00:03:34.187 --> 00:03:37.045
+This is how product development works now.
+
+50
+00:03:37.395 --> 00:03:41.470
+Agents do. Humans decide. Everything is
+written down.
+
+51
+00:03:41.820 --> 00:03:46.663
+So, on Monday: pick one thing you do by
+hand, and let an agent do it.

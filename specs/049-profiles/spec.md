@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Profiles: separate offices per profile (Phase 1), then separate sign-ins through each harness's own home folder (`COPILOT_HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`), never a token in Durbar (issue #131)
-status: **draft for the owner's review**; Phase 2 needs research R1
+status: draft
+note: for the owner's review; phase 2 needs research R1
 -->
 
 **Feature Branch**: `049-profiles`

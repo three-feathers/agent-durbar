@@ -13,7 +13,7 @@
     const own=k=>Object.prototype.hasOwnProperty.call(s,k)?s[k]:undefined;
     if(!STATES.includes(own('state'))||!Array.isArray(own('covers'))||own('covers').some(c=>!COVERS.includes(c)))return null;
     if(own('mechanism')!==undefined&&!MECHS.includes(own('mechanism')))return null;
-    return {state:own('state'),mechanism:own('mechanism'),managed:own('managed')===true,untilNewSession:own('untilNewSession')===true,covers:own('covers').slice(0,3),
+    return {state:own('state'),mechanism:own('mechanism'),managed:own('managed')===true,untilNewSession:own('untilNewSession')===true,heldFloor:own('heldFloor')===true,covers:own('covers').slice(0,3),
       approvedMayLeave:own('approvedMayLeave')===true,writes:own('writes')==='folders'?'folders':'none',verified:own('verified')===true,reason:typeof own('reason')==='string'?own('reason').slice(0,200):'',
       leftOut:Array.isArray(own('leftOut'))?own('leftOut').filter(x=>typeof x==='string').slice(0,10).map(x=>x.slice(0,200)):[],leftOutMore:Number.isInteger(own('leftOutMore'))&&own('leftOutMore')>0?own('leftOutMore'):0};
   }
@@ -24,6 +24,8 @@
     if(s.state==='off')return 'Not sandboxed';
     if(s.managed)return 'Sandboxed (managed)';
     if(s.untilNewSession)return 'Sandboxed (until a new session)';
+    /* FR-021b (K15, #755): Copilot in Ask first (it covers MCP servers): an approved command was seen writing outside the folder, so no bare 'Sandboxed' */
+    if(s.approvedMayLeave&&s.covers.includes('mcp'))return 'Sandboxed (partial)';
     return 'Sandboxed';
   }
   function mechName(m,app){return m==='seatbelt'?'the macOS sandbox':m==='bubblewrap'?'bubblewrap':m==='processcontainer'?'Windows ProcessContainer':'the '+(app||'app')+' sandbox';}
@@ -58,11 +60,34 @@
     if(!s.verified)parts.push(NOT_VERIFIED);
     return parts.join(' ');
   }
+  /* FR-022/FR-022a (issue 806): *Restart without the sandbox* is offered only for a floor kept from an earlier mode (untilNewSession), in Allow all,
+     not held by the organization (managed), by an app that can resume. Pure and fail closed: a malformed state or input is false. */
+  function canRestartWithoutSandbox(o){
+    if(!o||typeof o!=='object')return false;
+    const s=clean(o.sandbox); if(!s)return false;
+    return o.mode==='allow'&&s.state==='on'&&s.untilNewSession&&!s.managed&&!!(o.caps&&typeof o.caps==='object'&&o.caps.resume===true);
+  }
+  /* FR-022: the tooltip of the action. Since FR-022c (K16 cleared in place on Linux, 2026-10-28) the action is the fallback when the app did not
+     confirm the lowering, so it says that, not a vendor fact; at most 300 characters */
+  function restartTip(s0,app){
+    const s=clean(s0), a=app||'the app';
+    const t=a+' did not confirm turning its sandbox off in this running session, so it stays until a new one. Restart keeps this conversation and starts a new session in Allow all.'+(s&&s.verified?'':' '+NOT_VERIFIED);
+    return t.length>300?t.slice(0,299).replace(/\s+\S*$/,'')+'\u2026':t;
+  }
+  /* FR-022c (replaces FR-022e's sentence, decision Q4): the Allow all dialog's extra sentence, whenever the switch to Allow all will ask the app to
+     turn off a floor this session holds (the neutral `heldFloor`, whatever the state word: on, off after a refused narrowing, or unknown; review on
+     PR #833); never for a managed floor (not lowered) or one already kept in Allow all; '' for every other state. */
+  function allowAllNote(s0,app){
+    const s=clean(s0); if(!s||!s.heldFloor||s.managed||s.untilNewSession)return '';
+    return (app||'The app')+'’s OS sandbox is also turned off for this session.';
+  }
+  /* FR-022c (review on PR #833): the toast when the switch to Allow all asked the app to turn its sandbox off and it did not (refused or no answer) */
+  function notLoweredToast(app){return (app||'The app')+' did not turn its sandbox off; use Restart without the sandbox.';}
   /* FR-012: the Settings > Agent apps line (text) */
   function hostLine(v){
     if(!v||typeof v!=='object')return '';
     if(v.available===true)return 'OS sandbox: available'+(MECHS.includes(v.mechanism)&&v.mechanism!=='vendor'?' ('+mechName(v.mechanism).replace(/^the /,'')+')':'');
     return 'OS sandbox: not available'+(typeof v.reason==='string'&&v.reason?': '+v.reason.slice(0,200):'');
   }
-  return {clean,chipWord,tooltip,details,hostLine,NOT_VERIFIED};
+  return {clean,chipWord,tooltip,details,hostLine,canRestartWithoutSandbox,restartTip,allowAllNote,notLoweredToast,NOT_VERIFIED};
 })());

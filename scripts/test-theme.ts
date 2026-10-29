@@ -199,7 +199,7 @@ assert.ok(pixPack.art['hair-acc']&&pixPack.art['hair-acc'].includes('<rect'),'pi
 
 // --- Every built-in pack (specs 036-039) ---
 const packs=T.list().map((t:any)=>t.id);
-assert.deepStrictEqual(packs,['clean-office','corporate','retro','durbar-indian','durbar-european','durbar-japanese'],'all six built-in packs registered');
+assert.deepStrictEqual(packs,['clean-office','corporate','retro','durbar-indian','durbar-european','durbar-japanese'],'all six built-in packs registered (spec 077 FR-066: Cheeky Crew is a Characters choice, not a theme)');
 for(const id of packs){
   T.setTheme(id);
   assert.strictEqual(T.current().id,id);
@@ -213,7 +213,7 @@ for(const id of packs){
 const OVERLAY_SLOTS=['char-body','char-robe','char-headwear','char-collar','desk-back','desk-art','monitor-art','hair-acc'];
 const ROOM_SLOTS=['room-back-wall','room-back-window','room-floor'];
 const ICON_SLOTS=['place-library','place-software','place-terminal','place-web','place-other'];
-const THEMED_PACKS=['corporate','retro','durbar-indian','durbar-european','durbar-japanese'];
+const THEMED_PACKS=['corporate','retro','durbar-indian','durbar-european','durbar-japanese']; 
 assert.deepStrictEqual([...T.ART_SLOTS].sort(),['plant',...ROOM_SLOTS,'lobby-art','door-art',...ICON_SLOTS,...OVERLAY_SLOTS,'gadget-cup','gadget-laptop'].sort(),'the whitelist is exactly what the renderer draws');
 
 /* Clean Office omits every slot but the plant: THEME.slot() returns null (the renderer draws the default). */

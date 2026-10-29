@@ -25,6 +25,11 @@
  *     a 40-character floor name (renamed through the panel) breaking a room header, a plate or the top bar; a floor that is off with agents
  *     waiting for you that does not say so on its row in the Floors panel, or that shows it anywhere else (pills, button) (FR-010, issue #122).
  *
+ *   - floor screens (spec 092, `simfloors=1`, `simfloors=ground`): with two or more floors on, each floor screen (reached with PageDown) is checked like the whole office
+ *     (the same checks, floor tags on every header), with 15 agents spread over the floors and with all 15 on one floor; the lift panel (phase 2) is on
+ *     screen and its width is counted; the per-floor density is compared with the same agents alone with the panel and tag hidden (FR-002, FR-008).
+ *   - the All floors view (spec 092 FR-033): every floor that is on in one screen with the lift panel shown, 15 agents spread and 15 on one floor.
+ *
  * Fonts: CI runs on Ubuntu, where `system-ui` is DejaVu Sans, which is wider than the macOS fonts (PR #124: the top bar fitted on a
  * Mac and overflowed in CI). To measure like CI on any machine, point OFFICE_FONT_FILE at DejaVuSans.ttf (and optionally
  * OFFICE_FONT_BOLD at DejaVuSans-Bold.ttf, OFFICE_FONT_MONO at DejaVuSansMono.ttf); every page then uses only those fonts:
@@ -157,7 +162,10 @@ function pageCheck(expanded, expectPlaces) {
     const U = R(u), D = R(d);
     if (B.x < U.x - T || B.r > U.r + T || B.y < U.y - T || B.b > U.b + T) problems.push(`pencil ${who} leaves its unit`);
     if (B.x < D.x - T || B.r > D.r + T || B.y < D.y - T || B.b > D.b + T) problems.push(`pencil ${who} leaves its card`);
-    d.querySelectorAll('.stl, .pill, .badge, .chatno, .draft-mark, .modeic, .modebadge').forEach((e) => {
+    const nmEl = d.querySelector('.name'); /* #781: with the mode icon wrapped below the name the pencil must not land on the name's first half (it sits after the name, or over its end at most) */
+    if (nmEl && nmEl.getClientRects().length) { const N = R(nmEl); if (N.w > 1 && B.x < N.x + N.w / 2 - T && B.y < N.b - T && B.b > N.y + T) problems.push(`pencil ${who} covers the first half of the name`); }
+    /* spec 001 FR-185 (issue #850): nor any text of the details column (.gx: Last tool, Usage, Cost, ...), the role or the task line */
+    d.querySelectorAll('.stl, .pill, .badge, .chatno, .draft-mark, .modeic, .modebadge, .gx-h, .gx-t, .gx-l, .role, .intent').forEach((e) => {
       if (!e.getClientRects().length || getComputedStyle(e).visibility === 'hidden') return;
       const r = R(e); if (r.w < 1 || r.h < 1) return;
       if (B.x < r.r - T && B.r > r.x + T && B.y < r.b - T && B.b > r.y + T) problems.push(`pencil ${who} covers ${name(e)}`);
@@ -194,12 +202,33 @@ function pageCheck(expanded, expectPlaces) {
   stage.querySelectorAll('.room-head').forEach((hd) => {
     const n = hd.querySelector('.room-name'), p = hd.querySelector('.room-path');
     if (!n || !p || !n.getClientRects().length || !p.getClientRects().length) return;
-    if (n.scrollWidth > n.clientWidth + 0.5 && p.getBoundingClientRect().width > 12) problems.push(`room "${n.textContent.trim()}": the name is cut while the path still shows (${Math.round(p.getBoundingClientRect().width)}px)`);
+    const cs = getComputedStyle(n), rg = document.createRange(); rg.selectNodeContents(n); /* spec 001 FR-179: cut by a fraction of a pixel counts (it draws an ellipsis; scrollWidth misses it) */
+    const room = n.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth);
+    const cut = n.scrollWidth > n.clientWidth + 0.5 || rg.getBoundingClientRect().width > room + 0.01;
+    if (cut && p.getBoundingClientRect().width > 12) problems.push(`room "${n.textContent.trim()}": the name is cut while the path still shows (${Math.round(p.getBoundingClientRect().width)}px)`);
+  });
+  /* spec 001 FR-179 (issue #788): a room name is always readable: when it is cut it still shows at least 8 characters (8ch of its own font);
+     a shorter name is shown whole. The pencil of a room header is never over the name (it is in the header's flow, or gone to the menu). */
+  stage.querySelectorAll('.room-head').forEach((hd) => {
+    const n = hd.querySelector('.room-name'); if (!n || !n.getClientRects().length) return;
+    const cs = getComputedStyle(n), key = n.textContent.trim();
+    const rg = document.createRange(); rg.selectNodeContents(n);
+    const room = n.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth);
+    if (n.scrollWidth > n.clientWidth + 0.5 || rg.getBoundingClientRect().width > room + 0.01) {
+      const c = document.createElement('canvas').getContext('2d'); c.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      const min = Math.min(8 * c.measureText('0').width, rg.getBoundingClientRect().width), have = room;
+      if (have < min - 0.5) problems.push(`room "${key}": the name is narrower than its minimum (${have.toFixed(1)}px of ${min.toFixed(1)}px)`);
+    }
+    const b = hd.querySelector('.ren[data-renfolder]');
+    if (b && b.getClientRects().length) {
+      const N = R(n), B = R(b);
+      if (B.x < N.r - T && B.r > N.x + T && B.y < N.b - T && B.b > N.y + T) problems.push(`room "${key}": the folder pencil is over the name`);
+    }
   });
   /* spec 001 FR-023 (T030): a room header's parts (door, name, path, dots, +, MCP, AIU, plant, floor tag) never overlap or leave the header */
   stage.querySelectorAll('.room-head').forEach((hd) => {
     const H = R(hd), key = (hd.closest('.room') || {}).dataset?.key || '?';
-    const parts = [...hd.children].filter((e) => !e.classList.contains('ren') && e.getClientRects().length && R(e).w > 0 && getComputedStyle(e).visibility !== 'hidden'); /* the rename pencil is placed over the name's tail or the path's start on purpose (spec 059): checked against the chips below */
+    const parts = [...hd.children].filter((e) => e.getClientRects().length && R(e).w > 0 && getComputedStyle(e).visibility !== 'hidden'); /* spec 001 FR-179: the rename pencil is in the header's flow now, so it is a part like the others */
     parts.forEach((e) => { const p = R(e), slack = e.classList.contains('door') ? 5 : 1; /* the door hangs 4px left on purpose */ if (p.x < H.x - slack || p.r > H.r + 1) problems.push(`header part ${name(e)} sticks out of the header of ${key}`); });
     for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
       const p = R(parts[i]), q = R(parts[j]);
@@ -295,12 +324,39 @@ async function driver(ctx) {
   const prefix = process.env.OFFICE_SHOT_PREFIX || 'office';
   if (shotsDir) fs.mkdirSync(shotsDir, { recursive: true });
   const sleep = ctx.sleep;
+  /* spec 001 FR-186 (issue #854 A5): no fixed pauses. `must` waits (H.until, polled every 50 ms) for a page condition and fails the run with a clear message;
+     `stable` waits until the laid-out office has stopped moving (two reads in a row, each after two animation frames, give the same rects). */
+  const must = async (expr, what, ms = 15000) => { if (!(await H.until(expr, ms))) throw new Error(`timed out after ${ms} ms waiting for ${what}`); };
+  const LAYOUT_SIG = `(async()=>{await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const s=document.getElementById('stage');
+    return innerWidth+'x'+innerHeight+'|'+(s?s.dataset.d+'/'+s.dataset.h+'/'+s.dataset.fit:'')+'|'+[...document.querySelectorAll('#stage .room,#stage .desk,#stage .plate,#stage .more,#stage .room-head,#lift')].map(e=>{const r=e.getBoundingClientRect();return Math.round(r.x)+','+Math.round(r.y)+','+Math.round(r.width)+','+Math.round(r.height)}).join(';')})()`;
+  const stable = async (what, ms = 15000) => {
+    const end = Date.now() + ms;
+    let prev = null;
+    for (;;) {
+      const now = await ctx.js(LAYOUT_SIG);
+      if (now === prev) return;
+      if (Date.now() > end) throw new Error(`timed out after ${ms} ms waiting for the layout to settle (${what})`);
+      prev = now;
+      await sleep(50);
+    }
+  };
+  /* act, then wait until the layout differs from before (the action must change it), then until it has settled */
+  const changed = async (act, what, ms = 15000) => {
+    const before = await ctx.js(LAYOUT_SIG);
+    await act();
+    const end = Date.now() + ms;
+    while ((await ctx.js(LAYOUT_SIG)) === before) { if (Date.now() > end) throw new Error(`timed out after ${ms} ms waiting for the layout to change (${what})`); await sleep(50); }
+    await stable(what, ms);
+  };
   let total = 0, failed = 0;
   /* CI shards (spec 008 delta 2026-10-19): OFFICE_SHARDS=n OFFICE_SHARD=k runs every n-th unit (one window size of one block)
      starting at k, so n parallel jobs cover the whole check. Unset: everything, as before. */
   const SHARDS = Math.max(1, Number(process.env.OFFICE_SHARDS) || 1), SHARD = Number(process.env.OFFICE_SHARD) || 0;
   let unit = 0;
-  const mine = () => unit++ % SHARDS === SHARD;
+  const ONLY = process.env.OFFICE_ONLY || ''; // a developer aid: OFFICE_ONLY=screens (spec 092 floor screens), =allfloors (spec 092 FR-033, the All floors view) or =floors (spec 033 floors cases) runs that block alone
+  const mine = () => !ONLY && unit++ % SHARDS === SHARD;
+  const mineIn = (name) => ONLY === name || mine();
+  const mineScreens = () => mineIn('screens');
   if (SHARDS > 1) console.log(`check:office: shard ${SHARD + 1} of ${SHARDS}`);
   let expectPlaces = 5; /* spec 024 FR-026: five built-in places plus simplaces=N custom ones, read from the query of the page just loaded */
   const rows = [];
@@ -317,13 +373,18 @@ async function driver(ctx) {
       await add(${jsLiteral(FONTS.mono || FONTS.regular)},'CheckMono',{});
       const st=document.createElement('style');st.textContent='*{font-family:CheckSans!important}.room-path,.mono,.lcell.mono,.folder,code,pre,kbd{font-family:CheckMono!important}';document.head.appendChild(st);})()`);
     /* the layout is cached by size: nudge the window so the office is laid out again with the new font */
-    ctx.win.setContentSize(w - 1, h); await sleep(150); ctx.win.setContentSize(w, h); await sleep(300);
+    ctx.win.setContentSize(w - 1, h); await must(`innerWidth===${w - 1}`, `the window to be ${w - 1}px wide`);
+    ctx.win.setContentSize(w, h); await must(`innerWidth===${w}&&innerHeight===${h}`, `the window to be ${w}x${h}`); await stable(`fonts at ${w}x${h}`);
   };
   /* spec 036 FR-005: the theme under test travels in the page address (theme=, usertheme=); after every load the theme on
      screen must be the one asked for, or the run fails (it once measured Clean Office for every theme). */
   const userTheme = process.env.OFFICE_USER_THEME ? JSON.parse(fs.readFileSync(process.env.OFFICE_USER_THEME, 'utf8')) : null;
   const wantTheme = userTheme ? userTheme.id : (process.env.OFFICE_THEME || '');
-  const themeQuery = (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '');
+  /* spec 077 FR-070: OFFICE_CHARACTERS=<value> (theme, minimalist, cheeky, prehistoric) puts who sits at the desks in the address too; checked like the theme */
+  const wantChars = /^(theme|minimalist|cheeky|prehistoric)$/.test(process.env.OFFICE_CHARACTERS || '') ? process.env.OFFICE_CHARACTERS : '';
+  if (process.env.OFFICE_CHARACTERS && !wantChars) throw new Error('OFFICE_CHARACTERS must be theme, minimalist, cheeky or prehistoric');
+  const themeQuery = (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '') + (wantChars ? '&characters=' + wantChars : '');
+  if (wantChars) console.log('check:office: characters ' + wantChars);
   let motionShown = false;
   if (wantTheme) console.log('check:office: theme ' + wantTheme + (userTheme ? ' (user theme from ' + path.basename(process.env.OFFICE_USER_THEME) + ')' : ''));
   const load = async (query, w, h) => {
@@ -336,11 +397,22 @@ async function driver(ctx) {
       const on = await ctx.js(`({id:window.THEME.current().id,ui:document.documentElement.dataset.ui||'clean',want:(window.THEME.current().manifest||{}).ui||'clean'})`);
       if (on.id !== wantTheme || on.ui !== on.want) throw new Error(`theme ${wantTheme} was not applied (on screen: ${on.id}, data-ui ${on.ui})`);
     }
+    if (wantChars) {
+      try { await ctx.waitFor(`window.THEME.characters()===${jsLiteral(wantChars)}`, 5000); } catch (e) { /* reported below */ }
+      const ch = await ctx.js(`window.THEME.characters()`);
+      if (ch !== wantChars) throw new Error(`characters ${wantChars} were not applied (on screen: ${ch})`);
+      /* Cheeky: the kit drawn must be the crew, and the desk scenes on screen (none when every room is closed) must show it, or the run would measure the theme's own figures */
+      if (wantChars === 'cheeky') {
+        const crewOn = `window.THEME.sceneKit()==='crew'&&(()=>{const sc=[...document.querySelectorAll('#stage svg.scene')].filter(s=>s.getClientRects().length);return !sc.length||sc.some(s=>/\\|crew(\\||$)/.test(s.dataset.sig||''));})()`;
+        try { await ctx.waitFor(crewOn, 8000); } catch (e) { /* reported below */ }
+        if (!(await ctx.js(crewOn))) throw new Error('characters cheeky: the desks on screen do not draw the crew kit');
+      }
+    }
     if (!motionShown) { motionShown = true; console.log('check:office: motion ' + ((await ctx.js(`matchMedia('(prefers-reduced-motion: reduce)').matches`)) ? 'reduced' : 'on')); }
     await forceFonts(w, h);
-    await sleep(500);
+    await stable('after load');
     /* spec 024: agents go to the lobby after 600 ms and the walk takes about 1 s: wait until somebody is there and nobody is walking */
-    try { await ctx.waitFor(`!!document.querySelector('.place.busy:not([data-place="coffee"]):not([data-place="boss"]):not([data-place="bank"])')`, 4000); await ctx.waitFor(`!document.querySelector('.walker.walking')`, 4000); await sleep(150); } catch (e) { /* nobody visits in this layout: the checks below still run */ }
+    try { await ctx.waitFor(`!!document.querySelector('.place.busy:not([data-place="coffee"]):not([data-place="boss"]):not([data-place="bank"])')`, 4000); await ctx.waitFor(`!document.querySelector('.walker.walking')`, 4000); await stable('after the walks'); } catch (e) { /* nobody visits in this layout: the checks below still run */ }
   };
   /* spec 024 T027 (#406): a figure that is still walking (the renderer marks it `.walking`; under load that mark can end while the CSS transition is still running, so a running transition on the figure counts as walking too) is not on a slot yet, and under load
      the walk can still be going when the case is measured. Re-measure while a figure is walking, in small steps for up to SETTLE_MS; a figure
@@ -365,7 +437,7 @@ async function driver(ctx) {
         res.problems = res.problems.map((p) => (p.startsWith(NOT_ON_SLOT) ? `a walking figure did not reach a slot within ${SETTLE_MS} ms${p.slice(NOT_ON_SLOT.length)}` : p));
         return res;
       }
-      await sleep(100);
+      await sleep(100); /* poll interval of this bounded retry loop (SETTLE_MS), not a wait for a state */
     }
   };
   const run = async (label, query, w, h, shot) => {
@@ -379,7 +451,8 @@ async function driver(ctx) {
     /* expand the first "+N more" in place and check again (overlap must still be 0) */
     const more = await ctx.js(`(()=>{const m=document.querySelector('#stage .more[aria-expanded="false"]');if(!m)return false;m.click();return true})()`);
     if (more) {
-      await sleep(400);
+      await must(`!document.querySelector('#stage .more[aria-expanded="false"]')||!!document.querySelector('#stage .more[aria-expanded="true"]')`, 'the "+N more" chip to expand');
+      await stable('after expanding +N more');
       const r2 = await measure(true);
       total++;
       if (r2.problems.length) { failed++; console.log(`FAIL ${label} +expanded: ${r2.problems.slice(0, 6).join('; ')}`); }
@@ -394,7 +467,7 @@ async function driver(ctx) {
       total++;
       if (!(await ctx.js(`document.getElementById('floorsBtn').hidden`))) { failed++; console.log(`FAIL sim${sim}-${w}x${h}: Floors button shown with one floor`); }
       const names = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].map(e=>e.textContent.trim())`);
-      const themeTag = process.env.OFFICE_THEME ? process.env.OFFICE_THEME + ' ' : '';
+      const themeTag = (process.env.OFFICE_THEME ? process.env.OFFICE_THEME + ' ' : '') + (wantChars ? wantChars + ' ' : '');
       const tag = `${themeTag}sim${sim}-${w}x${h}`;
       const combos = [{ n: 0, closed: [] }];
       for (let k = 1; k < names.length; k++) {
@@ -414,10 +487,10 @@ async function driver(ctx) {
       }
       /* interactive: Close all / Open all, and a single door */
       await load(base, w, h);
-      await ctx.js(`document.getElementById('closeAll').click()`); await sleep(500);
+      await changed(() => ctx.js(`document.getElementById('closeAll').click()`), `${tag} Close all`);
       let r = await measure(false); total++;
       if (r.problems.length) { failed++; console.log(`FAIL ${tag} Close all click: ${r.problems.join('; ')}`); }
-      await ctx.js(`document.getElementById('openAll').click()`); await sleep(500);
+      await changed(() => ctx.js(`document.getElementById('openAll').click()`), `${tag} Open all`);
       r = await measure(false); total++;
       if (r.problems.length) { failed++; console.log(`FAIL ${tag} Open all click: ${r.problems.join('; ')}`); }
     }
@@ -499,9 +572,35 @@ async function driver(ctx) {
       if (bad.length) { failed++; console.log(`FAIL ${tag}: ${bad.join('; ')}`); }
     }
   }
-  /* spec 033: floors on/off (3, 2 and 1 floors on), with and without closed doors, both sizes */
+  /* spec 001 FR-179 (review on PR 797): in the demo the room headers have no ⋯ menu, so no part may give way (nothing would hold it); the cost may (it is in the
+     name's tooltip). pageCheck still runs: the name minimum and the pencil rules (the demo has no pencil either) hold where the layout allows it. */
   for (const [w, h] of SIZES) {
     if (!mine()) continue;
+    await load('sim=15&simfreeze=1&simfloors=1&simsched=1', w, h);
+    await ctx.js(`(()=>{const t=document.getElementById('demoToggle');t.checked=true;t.dispatchEvent(new Event('change'));})()`);
+    await must(`document.querySelectorAll('#stage .room-head').length>0`, 'the demo office to show room headers');
+    await stable('demo office');
+    const res0 = await measure(false);
+    const tag = `demo ${w}x${h}`;
+    /* the case would be vacuous with roomy headers (nothing has to give way): narrow every header, refit, and require that some header really had to give way */
+    await ctx.js(`(()=>{const st=document.createElement('style');st.id='demoNarrow';st.textContent='#stage .room-head{max-width:190px}';document.head.append(st);window.DurbarFit();})()`);
+    await must(`getComputedStyle(document.querySelector('#stage .room-head')).maxWidth==='190px'`, 'the narrowed headers to apply');
+    await stable('narrowed headers');
+    /* headers that had to give way: the cost is the only part allowed to (it is in the name's tooltip); none gave way means the narrowing proved nothing */
+    const squeezed = await ctx.js(`[...document.querySelectorAll('#stage .room-head')].filter(hd=>!hd.querySelector('.room-more')&&hd.classList.contains('no-aiu')).length`);
+    total++;
+    if (!squeezed) { failed++; console.log(`FAIL ${tag}: narrowing the headers made none give way (not even the cost), so the case proves nothing`); }
+    const res = res0; total++;
+    res.problems = res.problems.filter((p) => !/lobby/i.test(p)); /* the demo office has no lobby */
+    const lost = await ctx.js(`[...document.querySelectorAll('#stage .room-head')].filter(h=>!h.querySelector('.room-more')&&/\\bno-(ren|sched|mcp|floor)\\b/.test(h.className)).map(h=>h.querySelector('.room-name').textContent+': '+h.className)`);
+    const heads = await ctx.js(`document.querySelectorAll('#stage .room-head').length`);
+    if (res.problems.length || lost.length || !heads) { failed++; console.log(`FAIL ${tag}: ${(heads ? res.problems.concat(lost.map((x) => 'a part gave way without a ⋯ menu: ' + x)) : ['no room header in the demo']).slice(0, 6).join('; ')}`); }
+    rows.push({ label: tag, ...res.info, problems: res.problems.length });
+    await ctx.js(`(async()=>{const n=document.getElementById('demoNarrow');if(n)n.remove();const t=document.getElementById('demoToggle');t.checked=false;t.dispatchEvent(new Event('change'));await new Promise(r=>setTimeout(r,300));})()`);
+  }
+  /* spec 033: floors on/off (3, 2 and 1 floors on), with and without closed doors, both sizes */
+  for (const [w, h] of SIZES) {
+    if (!mineIn('floors')) continue;
     const cases = [
       ['3 floors on', 'sim=15&simfreeze=1&simfloors=1', true],
       ['2 floors on', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Personal', true],
@@ -513,18 +612,30 @@ async function driver(ctx) {
       ['3 floors on, 3 custom places', 'sim=15&simfreeze=1&simfloors=1&simplaces=3', true],
       ['2 floors on, 3 custom places, 1 door closed', 'sim=15&simfreeze=1&simfloors=1&simplaces=3&floorsoff=Personal&closed=mcp-swiss', true],
       ['1 floor on, 3 custom places', 'sim=15&simfreeze=1&simfloors=1&simplaces=3&floorsoff=Personal,Client%20A', false],
+      /* spec 001 FR-179 (issue #788): schedule and MCP chips next to a floor tag, one agent per folder (one-desk rooms): the name keeps its minimum, the pencil is never over it, what gave way is in the ⋯ menu */
+      ['3 floors on, schedules', 'sim=15&simfreeze=1&simfloors=1&simsched=1', true],
+      ['2 floors on, schedules, one desk per room', 'sim=15&simfreeze=1&simfloors=1&simsched=1&simrooms=solo&floorsoff=Personal', true],
+      ['3 floors on, schedules, long names', 'sim=15&simfreeze=1&simfloors=1&simsched=1&simnames=long', true],
     ];
     for (const [label, q, tags, extra] of cases) {
       const tag = `floors ${w}x${h} ${label}`;
       if (extra === 'long') {
         /* rename Client A to the longest allowed name through the panel and its dialog, then check the office again */
+        await ctx.js(`localStorage.removeItem('durbar.floor')`); // start on the first floor
         await load(q, w, h);
-        await ctx.js(`(async()=>{const w=ms=>new Promise(r=>setTimeout(r,ms));document.getElementById('floorsBtn').click();await w(100);
-          document.querySelector('#floorsPop [data-fl="rename"][data-floor="f-clienta0"]').click();await w(100);
-          document.getElementById('mdIn').value='Client A with a very long floor name 40!';
-          [...document.querySelectorAll('#modeDlg .btn')].find(b=>b.textContent==='Rename').click();await w(200);
-          document.getElementById('floorsBtn').click();await w(300);})()`);
-        await sleep(400);
+        await ctx.js(`document.getElementById('floorsBtn').click()`);
+        await must(`!document.getElementById('floorsPop').hidden`, 'the Floors panel to open');
+        await ctx.js(`document.querySelector('#floorsPop [data-fl="rename"][data-floor="f-clienta0"]').click()`);
+        await must(`!!document.getElementById('mdIn')`, 'the rename dialog to open');
+        await ctx.js(`(()=>{document.getElementById('mdIn').value='Client A with a very long floor name 40!';[...document.querySelectorAll('#modeDlg .btn')].find(b=>b.textContent==='Rename').click();})()`);
+        await must(`!document.getElementById('modeDlg')`, 'the rename dialog to close');
+        if (await ctx.js(`!document.getElementById('floorsPop').hidden`)) await ctx.js(`document.getElementById('floorsBtn').click()`);
+        await must(`document.getElementById('floorsPop').hidden`, 'the Floors panel to close');
+        await stable('after renaming the floor');
+        /* spec 092: the office shows one floor at a time: go to the floor that was renamed (Client A, the second one) with PageDown, so its long name is on screen */
+        await ctx.js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'PageDown',bubbles:true,cancelable:true}))`);
+        try { await ctx.waitFor(`[...document.querySelectorAll('#stage .floor-tag')].some(t=>t.textContent.length===40)`, 5000); } catch (e) { /* reported below */ }
+        await stable('on the renamed floor');
         const r1 = await measure(false); total++;
         if (r1.problems.length) { failed++; console.log(`FAIL ${tag}: ${r1.problems.slice(0, 6).join('; ')}`); }
         const named = await ctx.js(`[...document.querySelectorAll('#stage .floor-tag')].some(t=>t.textContent.length===40)`);
@@ -535,11 +646,125 @@ async function driver(ctx) {
       const fp = await ctx.js(`(${floorsCheck.toString()})(${tags})`);
       total++;
       if (fp.length) { failed++; console.log(`FAIL ${tag}: ${fp.slice(0, 6).join('; ')}`); }
+      /* what gave way in a header is in that folder's ⋯ menu (spec 001 FR-179) */
+      const gave = await ctx.js(`(()=>{const out=[];document.querySelectorAll('#stage .room-head').forEach(h=>{const need=[['no-sched','Schedules'],['no-mcp','MCP extras'],['no-floor','Move to floor'],['no-aiu','Cost']].filter(([c])=>h.classList.contains(c)).map(x=>x[1]);const m=h.querySelector('[data-foldermenu]');if(need.length&&m)out.push({id:m.dataset.foldermenu,need});});return out;})()`);
+      for (const g of gave.slice(0, 2)) {
+        await ctx.js(`document.querySelector('#stage [data-foldermenu="'+CSS.escape(${jsLiteral(g.id)})+'"]').click()`);
+        await must(`!!document.querySelector('#modeMenu [role=menuitem] b')`, `the folder menu of ${g.id} to open`);
+        const have = await ctx.js(`[...document.querySelectorAll('#modeMenu [role=menuitem] b')].map(b=>b.textContent)`);
+        total++;
+        const missing = g.need.filter((x) => !have.some((t) => t.startsWith(x)));
+        if (missing.length) { failed++; console.log(`FAIL ${tag}: the folder menu of ${g.id} lacks ${missing.join(', ')} (it gave way in the header)`); }
+        await ctx.js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));(document.getElementById('modeMenu')||{remove(){}}).remove()`);
+      }
+      if (gave.length) console.log(`check:office: ${tag}: chips gave way in ${gave.length} header(s)`);
       if (/floorsoff=Personal(&|$)/.test(q)) {
         const ap = await ctx.js(`(${offAttentionCheck.toString()})()`);
         total++;
         if (ap.length) { failed++; console.log(`FAIL ${tag} off-floor attention: ${ap.join('; ')}`); }
       }
+    }
+  }
+  /* spec 092 FR-001, FR-002, SC-001 (phase 1, floor screens): with two or more floors on the office shows one floor at a time, so every floor screen is checked
+     like any other office: 15 agents spread over three floors, and all 15 on one floor (the other floors empty), each floor reached with PageDown, both sizes.
+     The density is chosen per floor screen, so the 15-agent rule has to hold on each of them. The single-floor cases above are unchanged (SC-006). */
+  for (const [w, h] of SIZES) {
+    if (!mineScreens()) continue;
+    const REF_CASES = ['3 floors, 15 agents spread', '3 floors, all 15 agents on the Ground floor', '3 floors, one desk per room']; /* cases whose floors are each compared with the same agents as the whole office */
+    const screens = [
+      ['3 floors, 15 agents spread', 'sim=15&simfreeze=1&simfloors=1'],
+      ['3 floors, all 15 agents on the Ground floor', 'sim=15&simfreeze=1&simfloors=ground'],
+      ['2 floors on, 1 door closed', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Client%20A&closed=mcp-swiss'],
+      ['3 floors, 3 custom places', 'sim=15&simfreeze=1&simfloors=1&simplaces=3'],
+      ['3 floors, schedules, long names', 'sim=15&simfreeze=1&simfloors=1&simsched=1&simnames=long'],
+      ['3 floors, one desk per room', 'sim=15&simfreeze=1&simfloors=1&simrooms=solo'],
+    ];
+    for (const [label, q] of screens) {
+      await ctx.js(`localStorage.removeItem('durbar.floor')`); // start on the first floor that is on
+      await load(q, w, h);
+      const perFloor = []; /* what each floor screen chose, to compare with the same agents as the whole office (below) */
+      const names = await ctx.js(`(()=>{const p=document.getElementById('floorsPop'),was=p.hidden;if(was)document.getElementById('floorsBtn').click();const n=[...p.querySelectorAll('[data-fl="on"]')].filter(b=>b.getAttribute('aria-pressed')==='true').map(b=>b.getAttribute('aria-label').split(': ')[0]);if(was)document.getElementById('floorsBtn').click();return n;})()`);
+      const on = Number((await ctx.js(`document.getElementById('floorsBtn').textContent.trim()`)).split('/')[0]);
+      total++;
+      if (!(on >= 2)) { failed++; console.log(`FAIL floor screens ${w}x${h} ${label}: precondition: two or more floors on, got ${on}`); continue; }
+      for (let i = 0; i < on; i++) {
+        const tag = `floor screen ${i + 1}/${on} ${w}x${h} ${label}`;
+        if (i > 0) {
+          const was = await ctx.js(`localStorage.getItem('durbar.floor')`);
+          await ctx.js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'PageDown',bubbles:true,cancelable:true}))`);
+          try { await ctx.waitFor(`localStorage.getItem('durbar.floor')!==${jsLiteral(was)}`, 5000); } catch (e) { failed++; total++; console.log(`FAIL ${tag}: PageDown did not change the floor`); break; }
+          await stable(`${tag} after PageDown`);
+        }
+        const res = await measure(false);
+        total++;
+        const fp = await ctx.js(`(${floorsCheck.toString()})(true)`);
+        const bad = res.problems.concat(fp);
+        if (bad.length) { failed++; console.log(`FAIL ${tag}: ${bad.slice(0, 6).join('; ')}${bad.length > 6 ? ` (+${bad.length - 6} more)` : ''}`); }
+        const shown = await ctx.js(`({desks:[...document.querySelectorAll('#stage .desk[data-id]')].filter(d=>!d.closest('.helpers')).length,empty:!!document.querySelector('#stage .floor-empty'),fit:document.getElementById('stage').dataset.fit})`);
+        rows.push({ label: tag, ...res.info, problems: bad.length });
+        /* the layout input of this floor screen without the floor tag: the tag is a header part the layout search holds (spec 001 FR-179), and how much width it
+           costs depends on the font (Windows fonts are wider), so the comparison below hides it and lays the screen out again; the tag's own cost is not what is compared */
+        let tagless = null;
+        if (REF_CASES.includes(label) && res.info.desks > 0) {
+          await ctx.js(`(()=>{const st=document.createElement('style');st.id='noFloorTag';st.textContent='.floor-tag{display:none!important}#lift{display:none!important}';document.head.append(st);window.__durbarSimUi.render();})()`);
+          let prev = '', now = '';
+          /* a bounded poll for the same value twice (not a fixed pause) */
+          for (let k = 0; k < 40; k++) { await sleep(150); now = await ctx.js(`(()=>{const s=document.getElementById('stage');return s.dataset.d+'/'+s.dataset.h+'/'+s.querySelectorAll('.desk').length+'/'+(document.querySelector('#stage .floor-tag')?document.querySelector('#stage .floor-tag').getClientRects().length:0)})()`); if (now === prev && now.endsWith('/0')) break; prev = now; }
+          const [td, th] = now.split('/'); tagless = { d: td, h: th };
+          await ctx.js(`document.getElementById('noFloorTag').remove();window.__durbarSimUi.render();`);
+        }
+        perFloor.push({ name: await ctx.js(`(document.querySelector('#stage .room-head .floor-tag')||{}).textContent||''`), d: res.info.d, h: res.info.h, desks: res.info.desks, tagless });
+        if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-screen-${w}x${h}-${label.replace(/[^a-z0-9]+/gi, '-')}-${i + 1}.png`));
+        total++;
+        if (!shown.desks && !shown.empty) { failed++; console.log(`FAIL ${tag}: neither desks nor the empty-floor line`); }
+      }
+      /* FR-002: the density is chosen per floor screen, from that floor's agents alone. The same agents as the whole office (every other floor off: the
+         ordinary single-floor office) must get the same density and helper level; a density taken from all floors would show up here as a poorer one. */
+      if (!REF_CASES.includes(label)) continue;
+      for (const f of perFloor.filter((x) => x.desks > 0 && x.name)) {
+        const others = names.filter((n) => n !== f.name);
+        await ctx.js(`localStorage.removeItem('durbar.floor')`);
+        await load(q.replace(/&floorsoff=[^&]*/, '') + '&floorsoff=' + encodeURIComponent(others.join(',')), w, h);
+        const nameList = await ctx.js(`[...new Set([...document.querySelectorAll('#stage .room-head .floor-tag')].map(t=>t.textContent.trim()))]`);
+        const ref = await ctx.js(`({d:document.getElementById('stage').dataset.d,h:document.getElementById('stage').dataset.h,desks:document.querySelectorAll('#stage .desk').length})`);
+        total++;
+        const same = f.tagless && ref.d === f.tagless.d && ref.h === f.tagless.h;
+        console.log(`check:office: FR-008 floor screen ${f.name} ${w}x${h} ${label}: ${f.d}/h${f.h} with the lift panel, ${ref.d}/h${ref.h} for the same agents alone (no lift, no tag)`);
+        if (nameList.length || ref.desks !== f.desks || !same) { failed++; console.log(`FAIL floor screen ${f.name} ${w}x${h} ${label}: density ${f.d}/h${f.h} (${f.tagless && f.tagless.d}/h${f.tagless && f.tagless.h} without the floor tag) with ${f.desks} desks, but the same agents as the whole office get ${ref.d}/h${ref.h} with ${ref.desks} (tags ${nameList.length})`); }
+      }
+    }
+  }
+  /* spec 092 FR-033, SC-008 (T046): the All floors view (the lift's All button) shows every floor that is on in one screen with one density, as before
+     phase 1, and the 15-agent rule must hold there for all floors together with the lift panel's width taken out of the office area: 15 agents over
+     three floors and all 15 on one of three floors, both sizes, the same checks as every office (pageCheck, floor tags on every header). The density
+     without the panel (the pre-092 measure) is laid out again with the panel hidden and printed beside it, so the panel's cost is a number. */
+  for (const [w, h] of SIZES) {
+    if (!mineIn('allfloors')) continue;
+    for (const [label, q] of [['3 floors, 15 agents spread', 'sim=15&simfreeze=1&simfloors=1'], ['3 floors, all 15 agents on the Ground floor', 'sim=15&simfreeze=1&simfloors=ground']]) {
+      const tag = `all floors ${w}x${h} ${label}`;
+      await ctx.js(`localStorage.removeItem('durbar.floor');localStorage.setItem('durbar.floorView','all')`); // the view is read at start (FR-037)
+      await load(q, w, h);
+      const pre = await ctx.js(`(()=>{const l=document.getElementById('lift'),a=l&&l.querySelector('[data-lift="*all"]');return {lift:l&&!l.hidden?l.offsetWidth:0,all:a?a.getAttribute('aria-current'):null,
+        desks:[...document.querySelectorAll('#stage .desk[data-id]')].filter(d=>!d.closest('.helpers')).length,tags:[...new Set([...document.querySelectorAll('#stage .room-head .floor-tag')].map(t=>t.textContent.trim()))].length};})()`);
+      const res = await measure(false);
+      total++;
+      const fp = await ctx.js(`(${floorsCheck.toString()})(true)`);
+      const bad = res.problems.concat(fp);
+      if (!pre.lift) bad.push('the lift panel is not shown');
+      if (pre.all !== 'true') bad.push('All is not the view shown (aria-current)');
+      if (pre.desks !== 15) bad.push(`${pre.desks} desks drawn, not the whole building's 15`);
+      if (q.includes('simfloors=1') && pre.tags < 3) bad.push(`floor tags of ${pre.tags} floor(s), not all three`);
+      await ctx.js(`(()=>{const st=document.createElement('style');st.id='noLift';st.textContent='#lift{display:none!important}';document.head.append(st);window.__durbarSimUi.render();})()`);
+      let prev = '', now = '';
+      /* a bounded poll for the same value twice (not a fixed pause) */
+      for (let k = 0; k < 40; k++) { await sleep(150); now = await ctx.js(`(()=>{const s=document.getElementById('stage');return s.dataset.d+'/'+s.dataset.h+'/'+s.dataset.fit+'/'+document.getElementById('lift').offsetWidth})()`); if (now === prev && now.endsWith('/0')) break; prev = now; }
+      const [nd, nh, nfit] = now.split('/');
+      await ctx.js(`document.getElementById('noLift').remove();window.__durbarSimUi.render();`);
+      rows.push({ label: tag, ...res.info, problems: bad.length });
+      console.log(`check:office: FR-033 ${tag}: ${res.info.d}/h${res.info.h} fit=${res.info.fit} with the lift panel (${pre.lift}px), ${nd}/h${nh} fit=${nfit} without it`);
+      if (bad.length) { failed++; console.log(`FAIL ${tag}: ${bad.slice(0, 6).join('; ')}${bad.length > 6 ? ` (+${bad.length - 6} more)` : ''}`); }
+      if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-allfloors-${w}x${h}-${label.replace(/[^a-z0-9]+/gi, '-')}.png`));
+      await ctx.js(`localStorage.removeItem('durbar.floorView')`); // the cases after this one start in the default view
     }
   }
   /* spec 033 FR-013 (issue #133, T042): the all-off message names only a control that is on screen, both sizes */
@@ -778,11 +1003,12 @@ async function driver(ctx) {
     if (!mine()) continue;
     await load('sim=15&simfreeze=1', w, h);
     await ctx.js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith('Ada'));if(d)d.click();return true})()`);
-    await ctx.sleep(900);
+    await must(`document.body.classList.contains('panel-open')&&!!document.getElementById('prevBtn')`, 'the chat of Ada to open');
     await ctx.js(`(()=>{if(!document.querySelector('#prev [data-pv="view"]')){const t=document.getElementById('prevBtn');if(t)t.click();}return true})()`);
-    await ctx.sleep(500);
+    await must(`!!document.querySelector('#prev [data-pv="view"]')`, 'the previous-sessions list to show a View button');
     await ctx.js(`(()=>{const v=document.querySelector('#prev [data-pv="view"]');if(v)v.click();return true})()`);
-    await ctx.sleep(1000);
+    await must(`!!(document.getElementById('chat')&&document.getElementById('chat').querySelector('.vsbody')&&document.getElementById('chat').querySelector('.vsbody').lastElementChild)`, 'the VS Code chat view to open');
+    await stable('VS Code chat view');
     const vs = await ctx.js(`(()=>{const c=document.getElementById('chat'),b=c&&c.querySelector('.vsbody');if(!b||!b.lastElementChild)return null;const l=b.lastElementChild.getBoundingClientRect(),cr=c.getBoundingClientRect();return {st:c.scrollTop,ch:c.clientHeight,sh:c.scrollHeight,lastIn:l.bottom<=cr.bottom+1&&l.top>=cr.top,cont:!!document.getElementById('vsCont')}})()`);
     total++;
     if (!vs) { failed++; console.log(`FAIL vschat ${w}x${h}: the VS Code chat view did not open`); }
@@ -844,7 +1070,8 @@ async function driver(ctx) {
       if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-prevsearch-${w}x${h}.png`));
       await ctx.js(`document.getElementById('prevQ').focus()`);
       H.key('Escape', [], { pause: 0 });
-      await sleep(250);
+      await must(`(document.getElementById('prevQ')||{value:'x'}).value===''`, 'Escape to clear the search box');
+      await stable('after Escape');
       const cleared = await ctx.js(`({v:document.getElementById('prevQ')&&document.getElementById('prevQ').value,rows:document.querySelectorAll('#prevLists .prev-row').length})`);
       if (cleared.v !== '' || cleared.rows < 3) P.push(`Escape did not clear the query: ${JSON.stringify(cleared)}`);
       const box = !(await ctx.js(`!!document.getElementById('prev')&&!!document.getElementById('prevQ')`)) ? null : await ctx.js(`(()=>{const r=document.getElementById('prev').getBoundingClientRect(),q=document.getElementById('prevQ').getBoundingClientRect(),de=document.documentElement;return {right:r.right,qr:q.right,ql:q.left,qh:q.height,w:innerWidth,sw:de.scrollWidth,fs:parseFloat(getComputedStyle(document.getElementById('prevQ')).fontSize)}})()`);

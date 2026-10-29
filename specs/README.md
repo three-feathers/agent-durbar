@@ -22,7 +22,7 @@ what exists today, not what was originally intended. Each requirement carries a 
 
 ## Index
 
-The index tables are **generated and not committed** (spec 025, delta 2026-10-22), so two pull requests never edit the same lines here. Each spec keeps its own row in a `specs-index` comment block under the title of its `spec.md` (`group`, `title`, `status`). Read the full index on the [website](https://three-feathers.github.io/agent-durbar/docs.html#specs-index), or run `npm run specs:index` for `specs/INDEX.md` (git-ignored). A new spec gets its block with `npm run specs:index -- --add specs/NNN-name`; `npm run specs:check` (in `npm test`) checks every block. Each `<!-- specs-index group=ID -->` line below marks where a table goes; a new section adds its own.
+The index tables are **generated and not committed** (spec 025, delta 2026-10-22), so two pull requests never edit the same lines here. Each spec keeps its own row in a `specs-index` comment block under the title of its `spec.md` (`group`, `title`, `status`). Read the full index on the [website](https://three-feathers.github.io/agent-durbar/docs.html#specs-index), or run `npm run specs:index` for `specs/INDEX.md` (git-ignored). A new spec gets its block with `npm run specs:index -- --add specs/NNN-name`; `npm run specs:check` (in `npm test`) checks every block. The `status:` is one word: `draft` (outline), `specified` (spec, plan and tasks agreed), `building` (work in progress or planned build tasks open), `built` (done; open tasks are only deferred follow-ups, `[KNOWN GAP]`s or checks needing a real account or an owner), `released` or `superseded`, with an optional `note:` of at most 160 characters; `specs:check` refuses anything else and the detail goes into the spec's `## Changes`. Release tags have no spec folder: they are rows of the [release table](008-packaging-and-release/spec.md#release-table). Each `<!-- specs-index group=ID -->` line below marks where a table goes; a new section adds its own.
 
 <!-- specs-index group=index -->
 
@@ -50,10 +50,6 @@ The index tables are **generated and not committed** (spec 025, delta 2026-10-22
 
 New features take the next number (`/speckit.specify` picks it automatically from this folder).
 
-## Feature 023: release v0.1.0-alpha.2
-
-<!-- specs-index group=023 -->
-
 ## Feature 024: places in the office
 
 <!-- specs-index group=024 -->
@@ -62,17 +58,9 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 
 <!-- specs-index group=025 -->
 
-## Feature 026: release v0.1.0-alpha.3
-
-<!-- specs-index group=026 -->
-
-## Feature 042: release v0.1.0-alpha.5
+## Features 043-044: custom agents and scheduled prompts
 
 <!-- specs-index group=042 -->
-
-## Feature 031: release v0.1.0-alpha.4
-
-<!-- specs-index group=031 -->
 
 ## Feature 030: change model and context window inside a session
 

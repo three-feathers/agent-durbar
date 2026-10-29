@@ -114,7 +114,7 @@ eq(S.spoken('3 h ago'), '3 hours ago', 'hours');
 eq(S.spoken('1 d ago'), '1 day ago', 'one day');
 eq(S.spoken(''), '', 'unknown');
 
-// ---- the page uses it (source checks; the layout itself is checked in the browser by check:office and check:office-fill) ----
+// ---- the page uses it (source checks; the layout itself is checked in the browser by check:office and check-office-fill) ----
 const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
 const css = fs.readFileSync(path.join(R, 'styles.css'), 'utf8');
 const ok = (c: boolean, m: string): void => { assert.ok(c, m); n++; };
@@ -126,12 +126,12 @@ ok(/const w=SHUT\.width\(recent\.length,shown\.length,more\)/.test(app), 'the co
 ok(/\.stage \.desk\.shut\{[^}]*width:64px/.test(css) && /\.lg-bunk\{flex:0 0 72px;width:72px/.test(css) && /\.lg-beds>\.shut-more\{width:52px/.test(css) && /\.lg-in\{[^}]*gap:6px/.test(css) && /\.lounge\{[^}]*padding:3px 8px 4px/.test(css), 'the CSS sizes match SEAT_W, BUNK_W, MORE_W, GAP and PAD');
 ok(/@container lounge \(min-height:100px\)\{[^}]*\}\.lg-t\{[^}]*-webkit-line-clamp:2/.test(css) && /@container lounge \(min-height:150px\)\{[^}]*\}\.lg-t\{-webkit-line-clamp:3/.test(css), 'bubbles: 1 line in a short row, 2 from 100px, 3 from 150px');
 ok(/<span class="name lg-name">\$\{esc\(a\.name\)\}<\/span>/.test(app) && /\.desk\.shut \.lg-name\{[^}]*font-size:10\.5px/.test(css), 'each character shows its name (10.5px)');
-ok(/<span class="lg-av">\$\{avatar\(a\)\}<\/span>/.test(app) && /<span class="lg-av lying">\$\{avatar\(a\)\}<\/span>/.test(app), 'each resting agent is drawn as its own character (avatar, the theme scene kit)');
+ok(/<span class="lg-av"\$\{THEME\.sceneKit\(\)==='crew'\?' style="border-radius:0 0 30% 30%"':''\}>\$\{avatar\(a,'seat'\)\}<\/span>/.test(app) && /<span class="lg-av lying">\$\{avatar\(a\)\}<\/span>/.test(app), 'each resting agent is drawn as its own character (avatar, the theme scene kit)');
 ok(/const on=SHUT\.turn\(LOUNGE_TURN,list\.length\)/.test(app) && /k=SHUT\.turn\(LOUNGE_TURN,ts\.length\)/.test(app), 'the render and the timer pick the same bubble (FR-055)');
 ok(/\.lg-t\{[^}]*font-size:10\.5px/.test(css) && /\.lg-t\{[^}]*transition:opacity \.6s/.test(css), 'bubble text 10.5px, a gentle fade (off with reduced motion, the global rule)');
 ok(/\(m\.rolled\|\|\[\]\)\.map\(x=>\[x\.a\.id,x\.k\]\)/.test(app), 'the layout key follows who rests and where');
 ok(/function shutReply\(a,n\)\{[^}]*safeExcerpt\(a\.lastOutput,n,fb\)/.test(app), 'the reply line is masked then cut through the one helper (FR-043, spec 041 FR-065), fail closed');
-ok(/<button class="desk shut is-\$\{st\} rest-\$\{k\}\$\{roll\}" type="button" data-id="\$\{esc\(a\.id\)\}" data-state="\$\{st\}" data-rest="\$\{k\}" aria-pressed/.test(app), 'resting agents are desk buttons with data-id (click, Enter, arrow keys); the state is data-state and the first is-* class, the resting kind is not an is-* class (review of #554: shots-033 reads the first is-*)');
+ok(/<button class="desk shut is-\$\{st\} rest-\$\{k\}\$\{crewBed\?' crew-bed':''\}\$\{roll\}" type="button" data-id="\$\{esc\(a\.id\)\}" data-state="\$\{st\}" data-rest="\$\{k\}" aria-pressed/.test(app), 'resting agents are desk buttons with data-id (click, Enter, arrow keys); the state is data-state and the first is-* class, the resting kind is not an is-* class (review of #554: shots-033 reads the first is-*)');
 ok(/<button class="desk card is-\$\{st\}[^"]*" data-id="\$\{esc\(a\.id\)\}" data-state="\$\{st\}"/.test(app) && /desk=`<button class="desk is-\$\{st\}[^"]*" data-id="\$\{esc\(a\.id\)\}" data-state="\$\{st\}"/.test(app), 'every desk button (card and full desk) carries its state as data-state');
 ok(!/is-recent|is-old/.test(app + css), 'no is-recent / is-old class left (it read as a state)');
 /* FR-051 in the page (review of #554): the room rule's input. `away` and `helpersBusy` must come from the agent, not a constant */

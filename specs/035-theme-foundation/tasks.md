@@ -23,3 +23,7 @@
 ## Changes 2026-10-25 (issue #747)
 
 - [x] T017 `test:theme` checks `themes.css` against a property allow-list (flex, transform, position/top/left, custom properties were not caught) and has mutation cases [FR-015]
+
+## Changes 2026-10-28 (spec 077, issue #814)
+
+- [x] T018 A theme's `scene` is its own characters; Settings > Characters replaces it on any theme (built and tested under spec 077 T077..T082) [FR-016]

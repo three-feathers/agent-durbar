@@ -17,6 +17,7 @@ import { register as registerAttachmentsIpc } from './ipc/attachments';
 import { register as registerCheckpointsIpc } from './ipc/checkpoints';
 import { register as registerFloorsIpc } from './ipc/floors';
 import { register as registerFoldersIpc } from './ipc/folders';
+import { register as registerNewFolderIpc } from './ipc/newfolder';
 import { register as registerFolderSetupIpc } from './ipc/foldersetupipc';
 import { startHeldBy } from './updategate';
 import { register as registerHarnessIpc } from './ipc/harness';
@@ -47,7 +48,7 @@ import * as path from 'path';
 import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
 import { offeredDescriptors } from '../adapters/experimental';
 import { createRegistry, detectAll } from '../adapters/registry';
-import { detectorFor, setLoginPath } from '../adapters/detect';
+import { configureDevClaudeBin, detectorFor, setLoginPath } from '../adapters/detect';
 import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { renameOp, titleSyncOf } from './sessionnames';
 import { adapterForAdd, createRouter, previousSessionsOf } from '../adapters/router';
@@ -85,7 +86,7 @@ import { cleanSandboxState } from '../shared/sandbox';
 import { toWindowEvent } from './sandboxops';
 import { UsageStore } from './usagestore';
 import { AgentTrustStore } from './agenttrust';
-import { Scheduler, loadSchedules, saveSchedules, scheduleBusy } from './schedules';
+import { Scheduler, loadSchedules, publicDoc, saveSchedules, scheduleBusy } from './schedules';
 import type { SchedulerDeps } from './schedules';
 import { UsageTotalsStore } from './usagetotalsstore';
 import { ActivityStore } from './activitystore';
@@ -124,6 +125,7 @@ if (aumid) app.setAppUserModelId(aumid);
 const dev = devEnv(process.env, app.isPackaged);
 const devNote = devWarning(process.env, app.isPackaged);
 if (devNote) console.error(devNote);
+configureDevClaudeBin(dev); // spec 012 FR-163: DURBAR_CLAUDE_BIN, dev/test only (`dev` is empty in a packaged build)
 // Spec 008 FR-103: a test run's window is never treated as hidden when another window covers it (the Windows CI desktop and a shared
 // X display run several drivers at once). Chromium then stops animation frames and throttles timers, so the page stopped drawing mid-check.
 if (dev.DURBAR_DRIVER || dev.DURBAR_SHOT) app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
@@ -595,7 +597,7 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
   setTimer: (ms, fn) => setTimeout(fn, ms),
   clearTimer: (t) => clearTimeout(t as NodeJS.Timeout),
   save: (doc) => saveSchedules(file, doc),
-  changed: (doc) => toRenderer('schedules:changed', doc),
+  changed: (doc) => toRenderer('schedules:changed', publicDoc(doc)), // spec 044 FR-043: no run logs in the push
 });
 
 // The handler bodies that refuse a setting a live session cannot take live in agentops.ts (spec 012 FR-054); `store` is read when a handler runs.
@@ -753,6 +755,7 @@ registerPreviousIpc({ browserGone, renameSessionOpFor, dev, agents, router, regi
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });
 registerSchedulesIpc({ getScheduler: () => scheduler, getFolderStore: () => folderStore });
 registerUsageIpc({ agents, getUsageStore: () => usageStore, getUsageTotalsStore: () => usageTotalsStore, usageLabel });
+const newFolderIpc = registerNewFolderIpc({ addMany, getSettingsStore: () => settingsStore, asEffort, toRenderer }); // spec 093: create a folder from + Folder (clone, new repository, empty folder)
 registerSettingsIpc({ getSettingsStore: () => settingsStore, getRunTheme: () => runTheme, clearRunTheme: () => { runTheme = undefined; } });
 registerThemesIpc({ dev, registry, router });
 const harnessIpc = registerHarnessIpc({
@@ -914,7 +917,7 @@ function createWindow(): void {
     query.sim = String(simulatorCount(dev));
     if (dev.DURBAR_SIM_FREEZE === '1') query.simfreeze = '1';
     if (dev.DURBAR_SIM_ROOMS) query.simrooms = dev.DURBAR_SIM_ROOMS;
-    if (dev.DURBAR_SIM_FLOORS === '1') query.simfloors = '1';
+    if (dev.DURBAR_SIM_FLOORS === '1' || dev.DURBAR_SIM_FLOORS === 'ground') query.simfloors = dev.DURBAR_SIM_FLOORS; // spec 092 T010: 'ground' = the same three floors with every folder on the Ground floor
     if (/^[1-5]$/.test(dev.DURBAR_SIM_CRASH ?? '')) query.simcrash = dev.DURBAR_SIM_CRASH as string; // spec 006 FR-046: a faked crash marker with N interrupted sessions
     if (dev.DURBAR_THEME && /^[a-z0-9_-]{1,64}$/.test(dev.DURBAR_THEME)) query.theme = dev.DURBAR_THEME; // spec 036 FR-005: the simulator's settings carry it
     if (dev.DURBAR_SIM_TITLES === '1') query.simtitles = '1'; // spec 001/002 deltas 2026-10-18: main agents with session titles
@@ -1109,6 +1112,8 @@ app.whenReady().then(() => {
 let remoteReleased = false;
 let quitNoted = false;
 let disposedOnQuit = false;
+/** Spec 093 FR-043: a running clone is ended and its folder removed (at most 5 s) before the app quits; asked once. */
+let newFolderEnded = false;
 app.on('before-quit', (ev) => {
   if (!quitConfirmed) {
     if (workingCount() > 0 && !dev.DURBAR_SHOT && !dev.DURBAR_DRIVER) {
@@ -1122,11 +1127,18 @@ app.on('before-quit', (ev) => {
     }
     quitConfirmed = true;
   }
+  scheduler?.flush(); // spec 044 FR-037: a fold-only change of the run log is written now
   quitting = true; // only once the quit is confirmed: after a Cancel, closing the window on macOS still only hides it
   if (!quitNoted) {
     quitNoted = true;
     if (win && !win.isDestroyed()) saveWindowState(win);
     appState?.setQuitAt(Date.now());
+  }
+  if (!newFolderEnded && newFolderIpc.busy()) {
+    newFolderEnded = true;
+    ev.preventDefault();
+    void newFolderIpc.quit().catch(() => undefined).finally(() => app.quit());
+    return;
   }
   const release = !remoteReleased && remoteOps.ids().length > 0;
   const dispose = !disposedOnQuit && disposeOnQuit(process.platform);
@@ -1141,6 +1153,7 @@ app.on('before-quit', (ev) => {
     .finally(() => app.quit());
 });
 app.on('will-quit', () => {
+  scheduler?.flush(); // spec 044 FR-037: a fold counted during the 3 s dispose window of before-quit
   void destroyAllViews(); // spec 080 FR-023: the session browsers (none exist until the browser pane lands)
   usageStore?.flush();
   usageTotalsStore?.flush();

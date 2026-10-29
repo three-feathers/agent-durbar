@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 015-018
 title: Thinking that shows up, sub-agent activity
-status: milestone 7; delta 2026-10-25 (issue #601) built on the simulator: Compacting on the desk, Claude, Codex and truncation mapping, `[KNOWN GAP]` not seen on a real session
+status: built
+note: Claude helper text has no real-session check ([KNOWN GAP])
 -->
 
 **Feature Branch**: `015-thinking-and-subagent-activity` (milestone 7; amends 002 FR-007, FR-010, FR-013)
@@ -48,6 +49,22 @@ status: milestone 7; delta 2026-10-25 (issue #601) built on the simulator: Compa
 - **KNOWN LIMIT** Reasoning of `auto` arrives in one ~1 s burst after a few seconds of waiting, so "streaming" is short; no explicit reasoning model could be tested on this plan; nested sub-agents are shown flat under the top-level agent.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> milestone 7; delta 2026-10-28 Claude helper text (`--forward-subagent-text`, `[KNOWN GAP]` no real session); delta 2026-10-25 (issue #601) built on the simulator: Compacting on the desk, Claude, Codex and truncation mapping, `[KNOWN GAP]` not seen on a real session
+
+
+### 2026-10-28: Claude Code only sends a helper's text and thinking when asked (`--forward-subagent-text`)
+
+**Input**: Vikram's agent, found by reading code (owner OK of 2026-10-28 for stability fixes). `claudeMap.ts` has mapped helper events by `parent_tool_use_id` since spec 012, and its header says it needs `forwardSubagentText: true`, but neither the CLI argv (`claudeArgs`) nor the SDK options (`sdkOptionsOf`) ever passed it. Without it Claude Code leaves a helper's text and thinking out of the stream (`claude --help` 2.1.309: "Forward subagent text and thinking blocks as assistant/user messages with parent_tool_use_id set"; `read:` CHANGELOG, added in 2.1.211), so a Claude helper card showed its tool chips and result but no text or thinking.
+
+- **FR-016** Claude launches pass `--forward-subagent-text` (SDK transport: `forwardSubagentText: true`) only when the installed Claude Code is known to be 2.1.211 or later (`CLAUDE_FORWARD_SUBAGENT_MIN_VERSION`, `claudeForwardsSubagentText`). The version is the one the host facts already read (`claude --version`, the sandbox pre-check's source); an older, unreadable or odd version (prerelease of the minimum included) never gets the flag, because an unknown flag would stop the CLI. The mapping is unchanged: forwarded text and thinking are the helper's (`agentId` = the spawning tool call), never the main chat, and usage of a repeated message id counts once.
+- **FR-017** Tests, no credits: argv with and without the flag; the version gate over a table (at, above, below, prerelease, empty, garbage, unknown) and through the adapter's real launch (old and unreadable version: no flag); the SDK option; a mapping case for whole forwarded assistant/user messages. Each is mutation-checked (always pass, never pass, gate off by one, drop the SDK option, ignore `parent_tool_use_id`).
+
+`[KNOWN GAP]` Not seen on a real session (owner's budget; constitution VIII): the exact shape of forwarded messages is taken from the CLI help text and the CHANGELOG, and the SDK option name from spec 012's research (`read:`), not from a recording. The sandbox pre-check's `claude --version` is assumed to be the binary that launches. Re-check with one real helper run when the owner allows it.
 
 ### 2026-10-25: "Compacting…" on the desk, compaction for every agent app, a context gauge that follows it (issue #601)
 

@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: End-to-end checks with real CI accounts on every supported OS: install, sign in, models, one turn through Durbar's adapters; one platform list for OS workflows
-status: **built**; real run 2026-10-20: 9/9 (Copilot Free, Claude, Codex on Linux, macOS, Windows); found and fixed the Codex API-key sign-in and the Windows Codex install folder
+status: building
+note: T009: red runs (#856) not fixed, E2E paused
 -->
 
 **Feature Branch**: `062-ci-real-e2e`
@@ -50,6 +51,20 @@ The list of supported CI platforms lives in one file, `.github/platforms.json`. 
 - IV (credits): about 9 one-line prompts per run (3 apps × 3 OSes), well under a cent each on API keys. Owner-approved on 2026-10-20 (the account and secrets were made for this).
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **built**; real run 2026-10-20: 9/9 (Copilot Free, Claude, Codex on Linux, macOS, Windows); found and fixed the Codex API-key sign-in and the Windows Codex install folder
+
+
+### 2026-10-29: schedule paused until the red runs are fixed (owner, Vikram; retro #854 B7; tracking issue #856)
+
+**Why:** the scheduled run failed on 4 days in a row (2026-10-25..2026-10-28) at the step "Install, sign in, list models, one turn", on all 3 OSes until 10-27 and on Linux on 10-28, and each run spends real credits. Owner: "pause it until someone fixes it".
+
+- **FR-009** `.github/workflows/e2e-real.yml` has **no `schedule` trigger** (the block is kept as a comment, with a pointer here and to #856). `workflow_dispatch` (with `full_turn`) stays, so it can be run by hand. Supersedes the "daily" part of FR-001 and FR-006 until T009 is done. Not disabled in the repo settings. `scripts/test-platforms.ts` checks that no live `schedule` key exists and that the manual trigger does.
+- `[KNOWN GAP]` real-account E2E does not run on a schedule until the cause is found and fixed (#856): install, sign-in, model list and turn of the three apps are not checked daily on any OS. Last two failures seen in the logs (one line each, not analysed further): Linux 10-28 Copilot and Claude "no ok in the answer: (empty)"; Windows 10-27 Claude and Codex "No network layer is set up for the installer download".
 
 ### 2026-10-22: cheaper runs (owner, Vikram, 21:42 UTC)
 

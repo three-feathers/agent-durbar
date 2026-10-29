@@ -29,6 +29,11 @@ export class FakeSession {
   turnScript: ScriptEvent[] = [];
   /** Spec 087: `options.update` with a `sandboxConfig` rejects with this message. */
   updateFail = '';
+  /** Spec 087 FR-022c: `options.update` with a `sandboxConfig` never settles. */
+  updateHangs = false;
+  /** Spec 087 FR-022c (review on PR #833): `options.update` with `enabled: false` waits until the test settles it from `deferred` (in order). */
+  lowerDeferred = false;
+  deferred: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
   /** `send` rejects with this message (spec 040 FR-015 error path). */
   sendFail = '';
   /** `send` never settles (spec 040 FR-015 timeout path). */
@@ -54,7 +59,7 @@ export class FakeSession {
   disconnect = async (): Promise<void> => this.rec('disconnect', undefined);
   rpc = {
     eventLog: { registerInterest: async (a: unknown) => this.rec('registerInterest', undefined, a) },
-    options: { update: async (a: unknown) => { this.calls.push({ name: 'options.update', args: [a] }); if (this.updateFail && (a as { sandboxConfig?: unknown }).sandboxConfig) throw new Error(this.updateFail); } },
+    options: { update: async (a: unknown) => { this.calls.push({ name: 'options.update', args: [a] }); if (this.updateFail && (a as { sandboxConfig?: unknown }).sandboxConfig) throw new Error(this.updateFail); if (this.updateHangs && (a as { sandboxConfig?: unknown }).sandboxConfig) return new Promise<void>(() => undefined); if (this.lowerDeferred && (a as { sandboxConfig?: { enabled?: unknown } }).sandboxConfig?.enabled === false) return new Promise<void>((resolve, reject) => { this.deferred.push({ resolve, reject }); }); } },
     mode: { set: async (a: unknown) => this.rec('mode.set', { mode: (a as { mode?: string }).mode }, a) }, // spec 066 (plan first)
     model: { switchTo: async (a: unknown) => this.rec('switchTo', this.switchAnswer, a) },
     queue: { removeAt: async (a: unknown) => this.rec('removeAt', { removed: this.removed }, a) },

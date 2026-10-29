@@ -2,7 +2,7 @@
  * Keyboard check for the "Allow all" confirmation (spec 003 FR-033, issue #25). Simulator only (no AI credits, no Copilot login).
  * Uses real key events (webContents.sendInputEvent), so focus handling is the browser's own. Linux with xvfb-run:
  *
- *   npm run check:dialog-focus
+ *   npm run check:ui -- --only check-dialog-focus
  *
  * Checks: while the dialog is open focus is inside it; Tab / Shift+Tab stay inside; Escape cancels (mode unchanged) and focus
  * returns to the mode chip; Allow all still needs an explicit confirm (Escape, a backdrop click and Cancel never apply it) and

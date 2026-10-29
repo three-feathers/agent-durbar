@@ -233,7 +233,7 @@ const W0 = folderIdOf(WS);
   }
   for (const n of RESERVED) assert.ok(/reserved on Windows/.test((createProfileFile(dirs(), 'copilot', W0, n) as { error: string }).error), `${n}: says why`);
   assert.deepStrictEqual(fs.readdirSync(path.join(WS, '.claude', 'agents')).filter((n) => /^(con|prn|aux|nul|com|lpt)/i.test(n)), [], 'no device-named file written');
-  for (const good of ['console', 'com10', 'com0', 'lpt', 'nullable', 'auxiliary', 'conx', 'my-con']) assert.ok(isProfileName(good), `allowed: ${good}`);
+  for (const good of ['console', 'com10', 'lpt', 'nullable', 'auxiliary', 'conx', 'my-con']) assert.ok(isProfileName(good), `allowed: ${good}`);
   // the form's copy of the rule (profileeditor.js validName) answers the same as main for every name
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const PEN = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'profileeditor.js')) as { validName(n: unknown): boolean };

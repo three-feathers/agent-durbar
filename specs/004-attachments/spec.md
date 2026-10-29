@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: index
 title: Attachments (pick, drop, paste) and caps
-status: implemented; delta 2026-10-19: FR-009/010/012/013/015 closed
+status: built
+note: open: byte cap per message (clarify first), hand-check drag and drop on macOS and Windows
 -->
 
 **Feature Branch**: `004-attachments` (reverse-engineered; milestones 3 and 5)

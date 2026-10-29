@@ -18,9 +18,9 @@
 - [ ] T021 Install and run the built packages on macOS and Windows; record results in the README. [FR-010] 2026-10-21: `installed-app.yml` installs and starts them on CI runners, passed on all 3 (run 39498528735, see spec `## Changes`); a person's own machine (Gatekeeper, SmartScreen) stays open.
 - [x] T022 Add `engines` (Node >= 20.19) to `package.json` and align CONTRIBUTING/CI. [FR-013] (2026-10-19: `engines.node` is `^20.19.0 || >=22.12.0` in `package.json`, as CONTRIBUTING says; CI uses Node 22)
 - [ ] T023 Decide on arm64 Windows/Linux and other package formats (clarify demand first). [FR-011]
-- [ ] T024 Build attestations (`actions/attest-build-provenance`), pinned by SHA. [FR-012]
+- [x] T024 Build attestations (`actions/attest-build-provenance`), pinned by SHA. [FR-012] (done: FR-132, `release.yml` `draft-release`, ticked 2026-10-29)
 - [x] T025 Pack-smoke on macOS and Windows runners. [FR-015] Done by spec 012 T044 (`packaged-check.yml`, 3 OSes, passing); gap closed 2026-10-21.
-- [ ] T026 Dependabot for npm and Actions (SHA-pinned). [FR-016]
+- [x] T026 Dependabot for npm and Actions (SHA-pinned). [FR-016] (done: `.github/dependabot.yml` (npm and github-actions), ticked 2026-10-29)
 - [x] T027 CI job `office-check`: `npm run check:office` under xvfb on Ubuntu (timeout 10 min, ~70 s measured). [FR-017]
 - [x] T028 Owner/credits in one place (`src/shared/about.ts`), About panel + Settings > About, package.json author/contributors, copyright, LICENSE, README, `test:about` [FR-018]
 - [x] T029 appId `io.github.three-feathers.agentdurbar` in package.json, spec, test, README note [FR-019]
@@ -125,3 +125,25 @@
 ## 2026-10-25: fold branch names without dots
 
 - [x] T108: fold branch name `NNN-fold-alpha-N` in `scripts/release-notes.js` (`foldSlug`) and its test in `scripts/test-changelog.js`; docs in `changelog.d/README.md` and `docs/collaboration.md`; notes on the historical plans of 082, 086, 088; `docs/agent-notes.md` entry [FR-127]
+
+## 2026-10-26: stable release tag
+
+- [x] T110: `releaseKind`/`publishCommand`/`STABLE_PREAMBLE` and `--github-output` in `scripts/release-notes.js`, stable heading in `scripts/changelog.js`, `release.yml` reads the kind from `verify`, tests in `scripts/test-changelog.js`, docs in `changelog.d/README.md` [FR-129]
+
+## 2026-10-26: release notes name every agent app
+
+- [x] T111: `AGENTS_CLAUSE` in `scripts/release-notes.js` for both intros (agent apps, four-company non-affiliation) and its asserts in `scripts/test-changelog.js` [FR-130]
+
+## 2026-10-27: the nightly macOS UI job gets 80 minutes
+
+- [x] T112: macOS UI job `timeout-minutes` 80 in `ui-platforms.yml` (FR-131, 2026-10-27)
+
+## 2026-10-27: release provenance, verified runtime download, exact pins
+
+- [x] T113: attest-build-provenance in `draft-release` (SHA-pinned, job-level `id-token`/`attestations` write) and README "Verify a download" [FR-132]
+- [x] T114: `scripts/verify-tarball.js` used by `prepare-runtime.js`, with `scripts/test-verify-tarball.js` [FR-133]
+- [x] T115: exact `electron` and `electron-builder` pins [FR-134]
+
+## 2026-10-29: real macOS on pull requests, path-filtered (#854 B8)
+
+- [x] T116: `.github/workflows/macos-pr.yml` (real macOS build and test, `paths:` filter, not required), `test-ui-suite.ts` guards, README/AGENTS wording [FR-135]

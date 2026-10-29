@@ -91,6 +91,7 @@ export function sdkOptionsOf(o: TransportInput, canUseTool: unknown, hook: unkno
   if (claudeModelFlag(o.launch.model)) opts.model = o.launch.model;
   if (o.launch.effort && CLAUDE_EFFORTS.has(o.launch.effort)) opts.effort = o.launch.effort;
   if (o.launch.appendSystemPrompt) opts.systemPrompt = { type: 'preset', preset: 'claude_code', append: o.launch.appendSystemPrompt };
+  if (o.launch.forwardSubagentText) opts.forwardSubagentText = true; // spec 015 FR-016 (the SDK option of the same name, `read:` spec 012 research; not run on a real SDK, KNOWN GAP)
   if (o.launch.addDirs?.length) opts.additionalDirectories = o.launch.addDirs;
   if (o.launch.resume) opts.resume = o.launch.sessionId;
   else opts.sessionId = o.launch.sessionId;

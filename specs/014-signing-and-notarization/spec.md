@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 011-014
 title: Code signing and notarization
-status: draft, **needs approval (purchase)**
+status: draft
+note: needs approval (a purchase)
 -->
 
 **Feature Branch**: `014-signing-and-notarization`

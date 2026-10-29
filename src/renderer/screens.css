@@ -48,6 +48,7 @@ body.screen-open .workspace{display:none}
 .mst-ic{flex:none}
 .mst.connected .mst-ic{color:var(--c-done)} .mst.failed .mst-ic,.mst.needs-auth .mst-ic{color:var(--c-error)} .mst.pending .mst-ic{color:var(--c-thinking)} .mst.disabled .mst-ic,.mst.stopped .mst-ic{color:var(--muted)} .mst.unknown{color:var(--muted)}
 .mst-w{font-weight:500}
+.mst-call{font-weight:400;overflow-wrap:anywhere}
 .srv-hint{display:block;font-size:11px;color:var(--ink-2);overflow-wrap:anywhere}
 .srv-hint.srv-org,.mcp-tlist .srv-org{color:var(--tone-warn-ink)} /* spec 076 FR-202: blocked by the agent app's organization policy */
 .mcp-org code{color:var(--muted)}
@@ -218,6 +219,8 @@ body.has-bridge #topBtns{display:flex}
 .thsw-desk{left:24%;width:52%;bottom:16%;height:20%;border-radius:3px;background:var(--sw-desk,var(--desk))}
 .thsw-chair{left:44%;width:12%;bottom:38%;height:16%;border-radius:4px 4px 0 0;background:var(--sw-chair,var(--chair))}
 .thsw-ag{left:46%;width:8%;aspect-ratio:1;bottom:58%;border-radius:50%;background:var(--sw-agent,var(--sage));box-shadow:0 0 0 1.5px var(--sw-ink,var(--ink))}
+.chsw{display:block;height:58px;border-radius:8px;border:1px solid var(--line-2);overflow:hidden;background:var(--bg)} /* spec 077 FR-068: one figure per Characters choice */
+.chsw svg{display:block;width:58px;height:58px;margin:0 auto}
 .thtx{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px;min-width:0;padding:0 2px}
 .thtx b{flex:0 1 auto;font-size:12px;font-weight:600;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} /* spec 052 FR-053: one line */
 .thover{flex-basis:100%;font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--muted);line-height:1.2}
@@ -316,6 +319,8 @@ body.has-bridge #topBtns{display:flex}
 .scr-row-l{font-size:var(--t4-size);font-weight:600;color:var(--ink-2)}
 .mcp-rsess{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;margin:10px 0 2px}
 .mcp-rsess .dsub{margin:0;flex:1 1 260px}
+.mcp-refresh{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;margin:10px 0 6px}
+.mcp-refresh .dsub{margin:0;flex:1 1 260px}
 /* spec 061: "This folder brings its own agent setup" (the import list's look; each item in full) */
 .dlg.fs .fs-app{margin:12px 0 4px}
 .dlg.fs .fs-app h4{margin:0 0 6px;font-size:14px}

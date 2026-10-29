@@ -3,12 +3,13 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Remote control and chat channels: Copilot remote steering from github.com and GitHub Mobile (Phase 1); Claude Code Remote Control from claude.ai and the Claude app (Phase 2); Claude Code channels wizard out of scope, moved to idea #485 (owner 2026-10-21)
-status: **Phases 1-2 built** (unit, simulator driver); Copilot real check 2026-10-20: not started on a free plan, also in a private GitHub repository, started on Pro; owner used a real Copilot remote session 2026-10-21 ("works perfectly"); Claude `remote_control` real over `claude -p`, Durbar window sim only; Codex explain-only; Phase 3 planned; delta 2026-10-23 (owner): a door closed by you turns remote control off and refuses it (FR-040; queuing remote messages is a known gap, FR-041)
+status: built
+note: Phases 1-2; the Codex connected-host flow is unverified ([KNOWN GAP])
 -->
 
 **Feature Branch**: `054-remote-control`
 **Created**: 2026-10-20
-**Status**: Phase 1 built (Copilot remote steering per session: simulator and unit tests; real checks 2026-10-20: never started on Copilot Free, started in any folder on Copilot Pro). **Phase 2 built** (FR-060..FR-064, Claude Code Remote Control per session: unit tests and simulator driver; the `remote_control` request was checked on a real account over `claude -p`; through Durbar's window `[KNOWN GAP]`). Copilot remote session used for real by the owner 2026-10-21 (Changes). Codex: explain only (FR-064). Claude channels wizard: **out of scope** (owner 2026-10-21), moved to idea issue #485.
+**Status**: Phase 1 built (Copilot remote steering per session: simulator and unit tests; real checks 2026-10-20: never started on Copilot Free, started in any folder on Copilot Pro). **Phase 2 built** (FR-060..FR-064, Claude Code Remote Control per session: unit tests and simulator driver; the `remote_control` request was checked on a real account over `claude -p`; through Durbar's window `[KNOWN GAP]`). Copilot remote session used for real by the owner 2026-10-21 (Changes). Codex mobile access is documented for connected desktop/SSH hosts using a managed app-server; Durbar's separate per-session stdio process did not appear in one live test, and the active connected-host workflow remains `[KNOWN GAP]` (FR-030/FR-031). Claude channels wizard: **out of scope** (owner 2026-10-21), moved to idea issue #485.
 **Input**: Issue #298. Owner (Telegram, 2026-10-19; Ruben raised it the day before): "support remote controls and channels". The issue's first open question ("which first: the Copilot `--remote` link or the Claude channels wizard?") is answered by doing the Copilot link first: it is generally available, needs no plugin or extra runtime, and the SDK Durbar already uses exposes it per session.
 
 ## Summary
@@ -19,7 +20,7 @@ Someone running agents in Durbar on their computer wants to follow and steer a s
 |---|---|---|
 | **Copilot** | Remote control: a session exported to GitHub and steerable from github.com and GitHub Mobile. | **Phase 1, built** (sim, unit). Real run not done. |
 | **Claude Code** | Remote Control (claude.ai / Claude app) and Channels (Telegram, Discord, iMessage plugins; research preview). | Remote Control: **built** (Phase 2, FR-060..FR-064). Channels: **out of scope** (owner 2026-10-21, idea #485). |
-| **Codex** | Codex in the ChatGPT mobile app (preview). | **Phase 3, planned.** Unknown whether it covers `codex app-server`. |
+| **Codex** | Codex in the ChatGPT mobile app. | ChatGPT documents connected desktop/SSH hosts backed by a managed app-server. A one-prompt Durbar adapter test did not appear in the owner's already-paired mobile app; the desktop UI was not running and daemon remote-control state was not changed or verified. See the dated result below. |
 
 Phase 1 adds one item to a live Copilot chat's **More** menu and to the command palette: **Control from GitHub (web and mobile)…**. Durbar explains what it does, asks, turns remote control on for that one session, and shows the GitHub link with *Copy* and *Open on GitHub*. A small **Remote** marker shows on the desk card and in the chat header while it is on. **Stop remote control** turns it off.
 
@@ -98,14 +99,10 @@ Owner decision (Vikram, team chat 2026-10-21): "For Claude, no need to support T
 - **FR-025** *(planned)* **A channel-connected session** keeps the folder's permission mode (Read-only by default); the desk shows "connected to Telegram"; a warning says that anyone in an allowed chat can drive the session.
 - **FR-026** *(planned)* Open questions: does `--channels` need an interactive TTY? Does the "Channels are not currently available" server flag show in stream-json output, so Durbar can say so? Can the plugin's configure and access commands run without a session (so the token never enters a model's context)? Does one bot serve several sessions?
 
-### Phase 3: Codex in the ChatGPT mobile app (planned, research only)
+### Phase 3: Codex in the ChatGPT mobile app (host integration research; implementation deferred)
 
-- **FR-030** *(planned)* Research questions:
-  - does Codex in the ChatGPT app reach sessions run by `codex app-server`, or only the Codex desktop app and the interactive CLI?
-  - is there an app-server method or flag to turn it on per thread, and does it show a link or pairing code?
-  - does it need a ChatGPT sign-in (not an API key), and which plans have it?
-  - what can the phone do: approve commands, send messages, change models?
-- **FR-031** *(planned)* If the app-server supports it, Codex gets the same `remote` capability (FR-001) and the same UI; nothing Codex-specific reaches the renderer.
+- **FR-030** Research (T040; `read:` [Remote connections](https://learn.chatgpt.com/docs/remote-connections), [app-server-daemon README](https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/app-server-daemon/README.md)): OpenAI documents ChatGPT mobile access to Codex chats on a connected desktop host, and remote projects on SSH hosts through the desktop app's SSH connection. The host is paired from the desktop app using a QR code; the docs require Codex access in the same ChatGPT account/workspace but do not specify plan tiers. Mobile can send follow-up messages, approve actions, and review outputs. The app-server daemon has host-level remote-control lifecycle commands; no documented per-thread `setRemote` call or documented way to attach an arbitrary running app-server process. `real:` One read-only Durbar adapter session returned its expected response, but the owner could not see that conversation in the already-paired mobile app. The managed daemon was running; the desktop UI was closed and remote-control state was not changed or verified. This negative result is specific to that setup and does not prove the documented connected-host workflow fails generally.
+- **FR-031** No same-capability `setRemote` is planned for the current adapter. The documented path is host-level: ChatGPT connects to a desktop or SSH host, which uses a managed app-server with remote control enabled. Durbar instead starts one app-server child per session over stdio (`src/adapters/codex.ts`, `src/adapters/codexRpc.ts`), so adopting mobile access would require a separate design to share or hand off sessions to that managed host service. `[KNOWN GAP]` The live test did not establish whether a Durbar thread can be attached when the documented desktop-host workflow is active.
 
 ## Success criteria
 
@@ -156,7 +153,7 @@ Owner answers on #298: Q1 test Copilot remote in a private repository; **Q2 "thi
 - **FR-061** `ClaudeAdapter.setRemote(id, on)` sends `remote_control` over the running CLI (`capabilities.remote: true`); the answer's `session_url` is the link when it is on claude.ai. Off sends `enabled: false`. The existing rules hold: only while the session runs, never in Allow all, and only after main's own confirmation (FR-011).
 - **FR-062** A Claude relaunch (a new mode, model or MCP set, which restarts the CLI process) turns Remote Control **back on** right after the new process starts, so a switch does not silently drop it. If that fails, the adapter emits the new normalized event `{type: "remote", on: false, reason}`; main forgets the state and tells the window, and the window shows the reason as a note (the same path as spec 012 FR-158).
 - **FR-063** Copilot's "not started" message no longer blames the folder: "Copilot did not start remote control and gave no reason. On a Copilot Free account it never started in our checks, in any folder; it may need a paid plan."
-- **FR-064** Codex (Q3): the README says Codex's own mobile access works through ChatGPT and cannot attach to a session Durbar runs, so Durbar offers none.
+- **FR-064** Codex (Q3): the README says Codex's own mobile access works through ChatGPT on a connected desktop or SSH host, and that Durbar's own per-session app-server did not show up there in one test (2026-10-24, see the dated result below), so Durbar offers none.
 
 
 ### 2026-10-20: Copilot remote control on Copilot Pro
@@ -172,7 +169,16 @@ Owner answers on #298: Q1 test Copilot remote in a private repository; **Q2 "thi
 
 - `real:` 2026-10-21, owner (Vikram): "I did a real remote Copilot session today, it works perfectly" (Copilot Pro; on Copilot Free remote does not start, as recorded 2026-10-20). The owner did not say whether github.com or GitHub Mobile was used, or what happened to the GitHub task after End session. This closes T020 by the owner's use; the Pro run of 2026-10-20 already answered Q1-Q4. `[KNOWN GAP]` kept: FR-003 (whether the GitHub task stays after End session) and the `remote_steerable_changed` event while steering from github.com were not recorded separately.
 - Claude Code channels (Telegram, Discord, iMessage) and the wizard (FR-020..FR-026, T030-T035) are **out of scope**: owner decision 2026-10-21, "For Claude, no need to support Telegram — rethink non-native channels later; keep it as a future idea". Moved to idea issue #485. Claude Remote Control (Phase 2, FR-060..FR-064) stays built.
-- Codex in the ChatGPT mobile app (Phase 3, T040/T041) stays planned research in this spec, tracked by issue #490.
+- Codex in the ChatGPT mobile app (T040/T041) is documented for connected desktop/SSH hosts, but Durbar's per-session app-server is not integrated; the research disposition and live-test gap are recorded below.
+
+### 2026-10-24: Codex mobile host integration research (#490)
+
+- `read:` OpenAI's [Remote connections documentation](https://learn.chatgpt.com/docs/remote-connections) says ChatGPT mobile can continue Codex chats on a connected Mac/Windows desktop; SSH-host projects are started and managed through the desktop app's remote-host connection. The mobile device is paired from that app with a QR code; the account/workspace needs Codex access. Mobile can send follow-ups, approve actions and review outputs. The docs do not list supported plan tiers.
+- `read:` OpenAI Codex [`app-server-daemon` README](https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/app-server-daemon/README.md) describes `codex app-server daemon bootstrap --remote-control`, `enable-remote-control`, and `codex remote-control start` for a managed daemon. These configure host/daemon remote access, not a `setRemote(threadId)` method for a separately launched stdio child.
+- `read:` OpenAI Codex issue [#31991](https://github.com/openai/codex/issues/31991) reports a working same-daemon desktop/mobile SSH-proxy topology, but also describes reliance on an undocumented desktop environment variable; treat it as an individual report, not a supported Durbar integration.
+- `read:` Durbar's Codex adapter launches an app-server child per session over stdio (`src/adapters/codex.ts:346`). **Recommendation:** do not add Codex to the existing per-session `remote` capability based on these daemon-level controls. A future integration needs a separate design for the managed host/app-server lifecycle, session ownership and permission boundary.
+- `real:` 2026-10-24, Codex CLI 0.164.0: one read-only prompt was sent through `CodexAdapter`'s per-session stdio app-server in an empty temporary folder; it returned `DURBAR-MOBILE-CHECK`. The owner confirmed ChatGPT mobile was already paired but could not see the conversation. The local managed daemon was running at 0.164.0, while the ChatGPT/Codex desktop UI was not running; remote-control settings were not changed or verified. One prompt used; usage was not measured. No second prompt was sent. Approval of this paid prompt: issue #490 (opened 2026-10-21) says T040 "needs the owner's go-ahead for a real run"; the issue is assigned to the owner (vikramgorla), who took part in the check (he confirmed the mobile app state). No written OK for this prompt is recorded in the issue, the PR or the repo. This shows the tested Durbar session was not surfaced in that setup, but it does not test an active desktop-UI host connection. T040's research and this bounded check are complete; T041's disposition remains to defer integration pending a separately scoped design/owner decision.
+- [KNOWN GAP] (2026-10-29, owner retro #854) This is a research record, not a verified feature: nothing was tested on a real phone with an active connected desktop/SSH host (desktop UI running, remote control enabled), and the `read:` claims come from vendor docs and one issue report. Re-test with that setup is optional follow-up and does not block this record; #490 stays referenced (`Refs`), not closed by it.
 
 ### 2026-10-23: a door closed by you and remote messages (owner decision, spec 017 FR-018, issue #616)
 
@@ -181,3 +187,19 @@ Owner (Vikram, DM 14:45 UTC): while the user has closed an agent's cabin door, r
 - **FR-040** [IMPLEMENTED] `test: test-remote` Closing the door turns remote control **off** for that session (the same path as the menu's Stop remote control), so nothing from github.com or claude.ai can reach the agent while the door is closed; turning remote control on is refused while the door is closed ("The door is closed (Do not disturb). Open it first."). Opening the door does not turn it on again by itself: turning it on keeps its own confirmation (FR-011).
 - **FR-041** [KNOWN GAP] Remote messages are typed into the agent app's own session (Copilot on github.com, Claude Code on claude.ai); they never pass through Durbar, so Durbar cannot queue them. With remote control off, what the vendor does with a message typed meanwhile (refused, or kept on its side) is not checked (`read:` only; no real account used). Chat-channel messages (Telegram) are not part of the app (FR-020..FR-026 are out of scope since 2026-10-21), so there is nothing of theirs to hold.
 - **FR-042** [IMPLEMENTED] `test: test-doors` `sim: shots-017-signs` (review on #631) Closing the door turns remote control off before the door closes; if that fails the door stays open and the user is told. When it worked, main sends `agents:remoteOff` (reason: the door is closed), so the window drops the Remote chip and the card's "· Remote"; reopening the door says that remote control stays off.
+
+## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **Phases 1-2 built** (unit, simulator driver); Copilot real check 2026-10-20: not started on a free plan, also in a private GitHub repository, started on Pro; owner used a real Copilot remote session 2026-10-21 ("works perfectly"); Claude `remote_control` real over `claude -p`, Durbar window sim only; Codex mobile is documented for connected desktop/SSH hosts using managed app-server, but Durbar's per-session stdio process did not appear in one live test; active connected-host workflow remains unverified ([KNOWN GAP], not verified on a real phone; research record only, #490); delta 2026-10-23 (owner): a door closed by you turns remote control off and refuses it (FR-040; queuing remote messages is a known gap, FR-041)
+
+
+### 2026-10-28 delta: SDK 1.0.26 no longer has `remoteSession` (supply-chain follow-up to Dependabot #828, task T055)
+- Read in the published packages (`npm pack`, typings and code only, nothing run): `@github/copilot-sdk` 1.0.22 has `SessionConfig.remoteSession` and the client option `enableRemoteSessions`; **1.0.26 has neither** (`client.js` no longer forwards them). Remote control is then reached only through `rpc.remote.enable`.
+- FR-070: `rpc.remote.enable` is called only by `CopilotAdapter.setRemote(id, true)`, whose only caller with `on: true` is `remoteops.ts` (IPC `agents:setRemote`, after the user's confirmation, refused in Allow all and behind a closed door). Start, resume, rename and the one-shot never call it; every other `setRemote` call passes `false`.
+- FR-071: the one-shot and rename-resume configs keep sending `remoteSession: 'off'`: meaningful on 1.0.22, ignored on 1.0.26. It is a hint, never the control, and tests no longer present it as one. `test:remote` pins the real control (a fake session sees no `remote.*` call on start or resume, `setRemote(id, false)` never enables, a source scan allows no `setRemote(..., true)` outside `remoteops.ts`). Mutants planted and caught: an enable in the off branch, and `doorops.ts` passing `true`.
+- The "SDK 1.0.22" comments in `copilot*.ts` that state a typing or code fact now say 1.0.22-1.0.26 where that was re-read in 1.0.26; real-run facts keep "runtime 1.0.22". The SDK itself is not bumped here (#828).
+- [KNOWN GAP] Not verified on a real 1.0.103 runtime (or any real session) with SDK 1.0.26: only the published typings and code were read, and the fake-session tests run.

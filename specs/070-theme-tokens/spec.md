@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Full theme tokens: typed tokens for fonts (system allow-list, no downloads), title weight, radii and shadows; the people's clothes and hair; cup and laptop slots; per-value fallback with a note, pair-wise contrast fallback, hostile values refuse the pack; AI maker extended; a ratchet on the renderer's colour literals
-status: **Phase 1 built** (`test:theme-tokens`, `check:theme-art`, `check:geometry` with *Pink Studio*); Phase 2 (remaining literals onto tokens) open; the new AI prompt checked on a real model (Claude haiku, 2026-10-22, 1 prompt; FR-031 fix)
+status: building
+note: phase 1 built; T020 remaining colour literals onto tokens open
 -->
 
 **Feature Branch**: `070-theme-tokens`
@@ -87,6 +88,13 @@ A pack with a script in an SVG, a font that is not on the allow-list, a 2px font
 
 ## Changes
 
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **Phase 1 built** (`test:theme-tokens`, `check:theme-art`, `check:geometry` with *Pink Studio*); Phase 2 (remaining literals onto tokens) open; the new AI prompt checked on a real model (Claude haiku, 2026-10-22, 1 prompt; FR-031 fix)
+
+
 - **2026-10-22 (review on #500 by Paco's agent)**
   - FR-020: the allow-lists are looked up by own property (`FONT_INDEX` is a `Map` in `themetokens.ts` and a null-prototype object in `theme.js`; `typedValue`, `token()` and the built-in id checks in `theme.js` use an own-property check), so `"--font":"constructor"` (or `__proto__`, `toString`, `hasOwnProperty`) is an unusable font: an imported pack drops it and the AI maker drops it with a warning instead of refusing the whole theme. FR-020 also says that main keeps unknown `--names` on disk while the renderer counts them.
   - Story 1 says `--shadow-pop` covers menus and popovers (dialogs keep their literal shadow, the AI prompt says the same: moving `.dlg` onto the token would change the look, since its shadow is `0 18px 50px rgba(40,35,25,.25)` and Clean Office's is three layers, more than the shadow grammar's two), Story 3 no longer lists a remote font URL among the values that fall back (a `url(` is hostile and refuses the pack), and SC-002 says "unusable values".
@@ -107,3 +115,8 @@ A pack with a script in an SVG, a font that is not on the allow-list, a 2px font
 - `sim:` `check:theme-art` with *Pink Studio* now also sets fonts, the title weight, radii, shadows, clothes and hair, a cup and a laptop: at 1440x900 and 1280x800 every desk dresses its person in the pack's clothes and draws its laptop, every idle desk its cup, every walker and chip wears the clothes, the body font, `--r-md` on controls, the card shadow and the display font on the Settings title are the pack's, and back in Clean Office all computed styles equal the ones before. `check:geometry` includes the pack (`pink-studio`), so the layout with its body font is the same as Clean Office's.
 - `real:` 2026-10-22 (owner's go-ahead, Telegram 2026-10-22), app 0.1.0-alpha.10 (this branch), Claude Code 2.1.304, **haiku** through the app's own one-shot path (`ClaudeAdapter.generateText`, the `theme:generate` pass loop), description "a calm pink design studio with stylish people and plants"; tool `scripts/themegen-real.ts`. **1 prompt** (cost not recorded: the run's summary line was cut from the output; spec 040's haiku runs cost about $0.01). Pass 1 parsed as a theme with **0 contrast issues**, so no fix pass ran. All 147 colour keys came back; all 11 typed tokens were sent and all were valid and kept: `--font` "Avenir Next, Helvetica Neue, sans-serif", `--ui-display` "Palatino Linotype, Palatino, serif", `--font-mono` "SF Mono, Menlo, monospace" (every name on the allow-list), `--t1-weight` 600, radii 8/12/16/22px and `--radius` 14px, `--shadow-card` and `--shadow-pop` one layer each. `figures`: 8 shirts and 6 hairs, all kept. Art: 16 slots sent and 16 kept, including `gadget-cup` (227 characters) and `gadget-laptop` (136); both came back unchanged from the sanitizer and are stable when sanitized again. `checkUserManifest`: ok, nothing dropped; the Settings/AI fallback count (`THEME.fallbacks`) was **0** (0 dropped, 0 contrast pairs set back). **Gap found:** the parser left out 2 colours with a warning: `--focus-halo` "transparent" and `--drop-bg` "rgb(251 236 240 / .93)", the forms of their own defaults in the prompt; fixed by FR-031 (`test:themegen`), and the same reply now parses with no warning.
 - Not verified: macOS and Windows font fallback with the allow-listed names (the Linux runner has none of Avenir Next or Didot, so the generic fallback was what rendered); the extended prompt on Copilot or Codex (only Claude haiku was run); the generated theme rendered in the app (the parse, sanitizer and fallback checks ran in Node, not in a window).
+
+### 2026-10-23: the Cheeky Crew portraits (spec 077, Q1 = raster; owners' decision, to be agreed with Vikram as owner of this spec)
+
+- **D3 delta.** In the `crew` scene kit only, a character's skin tone comes from its portrait and its cast entry (`CAST` in `crew.js`), not from the agent's hash: skin tones stay varied across the cast (spec 077 Q1.2). Every other kit and the plain fallback figure keep D3.
+- **FR-040 delta.** The ratchet counts code, not bitmaps: the portraits under `src/renderer/crew/` are fixed-colour pictures governed by spec 077 FR-050..FR-056 (`test:crew-assets`) instead. `crew.js` holds the cast's hand and sleeve colours and is outside the scanned files; `scenekits.js` gains no colour literal.

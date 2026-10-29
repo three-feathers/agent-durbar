@@ -1,7 +1,7 @@
 /*
  * Check for spec 052 FR-140 (issue #365): the options of an agent's question card are never cut off. Simulator only (no AI credits).
  *
- *   npm run check:question-options
+ *   npm run check:ui -- --only check-question-options
  *   OUT=docs/screenshots  (optional) also saves the screenshots
  *
  * `simquestion=long` asks a long question with long options. At 1440x900 and 1280x800, in Expert and in Simple, every option button

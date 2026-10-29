@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Agent-app updates (owner request, issue #662): Settings > Agent apps shows "installed X, latest Y" per app, checked in the background at every Durbar start and on "Check for updates" (owner decision Q1 = C; organization policy can turn it off); a new version gets a badge and one toast; Update runs the updater of the source that installed the copy Durbar uses (no shell, argv, native confirmation, masked output); open sessions are warned about, ended or waited for; failures (admin rights, managed machines, locked files on Windows) say what to do
-status: Built on the simulator and with fake tools (2026-10-25): check, update, gate and failures; T008 is in PR #698 (detection uses the shared limit); real-machine checks T040-T042 not run; Q1-Q7 answered by Vikram
+status: building
+note: built on the simulator; T037 final run and real-machine checks T040-T043 open
 -->
 
 **Feature Branch**: `081-cli-updates` (extends 051 harness setup, 060 platform parity and 012 detection; reads 076 managed config)
@@ -499,6 +500,13 @@ When the start check finds a new version, the Settings entry and the card get a 
 
 ## Changes
 
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> Built on the simulator and with fake tools (2026-10-25): check, update, gate and failures; T008 is in PR #698 (detection uses the shared limit); real-machine checks T040-T042 not run; Q1-Q7 answered by Vikram
+
+
 ### 2026-10-25: "Could not check: exit 127" on a Mac (owner's report, v0.1.0-alpha.16; refs #662)
 
 - **Cause (`read:`, not yet seen on a real Mac):** an app opened from the Dock has PATH `/usr/bin:/bin:/usr/sbin:/sbin`. Durbar finds `npm` outside it (a version manager's folder, Homebrew) and ran it with that PATH; npm starts with `#!/usr/bin/env node`, `env` found no `node`, and the shell said 127. The login-shell PATH merge (spec 060) only helps when the login shell (non-interactive) puts node on PATH; nvm and fnm often set it only in `~/.zshrc`.
@@ -528,3 +536,10 @@ When the start check finds a new version, the Settings entry and the card get a 
 - **winget terms:** an explicit *Check* offers a terms note; only its OK adds `--accept-source-agreements` to that one run.
 - **Simulator knobs** (`sim:`): `simupd=avail|mixed|off|unreadable`, `simupdstart=1`, `simupdrun=ok|uptodate|admin|inuse|managed|network|other|fallback|slow`, `simsessions=N`, `simupdchk=1`.
 - **Mutations** planted and caught (`npm run test:updatecheck`, `test:harnesssetup`, `test:officialinstall`): see the PR.
+
+### 2026-10-27: the E2E and install-check scripts had no installer download (nightly "E2E real accounts" failed since 2026-10-25)
+
+- **Cause (`read:` run 40488981772, schedule, all three OSes; `test:`):** the 081 build (d408ea78) removed the built-in Node `https` default from `downloadScript` and made `HarnessSetup` take the download as `deps.httpGet` (the app passes `makeDownloadGet(electronRequestFactory())`, `src/main/ipc/harness.ts`). `scripts/e2e-real.ts` and `scripts/install-check.ts` build `HarnessSetup` without Electron and were not updated, so `withScript` answered "No network layer is set up for the installer download." for every official-installer install (copilot, claude, codex).
+- **The installed app is not affected:** `src/main/ipc/harness.ts` has passed `httpGet` since d408ea78. Only the two scripts (CI/nightly) failed.
+- **FR-043:** every place that builds `HarnessSetup` passes `httpGet`. Node scripts use `nodeDownloadGet` (`makeNodeDownloadGet(https.get)` in `src/main/netget.ts`): same contract as `makeDownloadGet` (one GET, redirect reported and not followed and its body not read on: the request is destroyed, so `downloadScript` still checks every hop against the vendor's hosts; size cap while reading; total time limit; fixed headers) and the same checksum rules downstream. The app never uses it.
+- **Test:** `npm run test:officialinstall` scans `src/` and the non-test `scripts/*.ts` for `new HarnessSetup(` (a new site must be added to its list on purpose and must pass `httpGet`; `test-*.ts` pass fakes on purpose and are skipped) and runs the Node getter against a local server: ok, a 302 with an endless body (request destroyed, socket closed, bytes bounded), exactly `maxBytes` ok and `maxBytes + 1` refused, the cap firing on a stalled body before any timeout, a stalled body hitting the idle timeout, a dripping body hitting the total limit, and every `new HarnessSetup(` in a file checked (not only the first). Mutations caught: `httpGet` removed from `e2e-real.ts`, 3xx followed, `res.resume()` instead of destroy, cap dropped, cap x5, cap checked only after buffering, both timers removed, total timer removed, a second site without `httpGet`.

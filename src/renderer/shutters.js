@@ -1,6 +1,6 @@
 /* Finished agents rest in the lounge (spec 001 FR-051..FR-053): which main agents of a room rest, on the couch or in a bed. Pure: no DOM, no clock of its own
    (the time since the agent finished is passed in). In the page: window.DurbarShutters; in Node: module.exports.
-   An agent is a plain object: {id, state, paused, limit, away, replied, helpersBusy, since} where `state` is the shown state (vis),
+   An agent is a plain object: {id, state, paused, limit, away, replied, helpersBusy, since} where `state` is the shown state (vis), `unread` that its last reply is not seen yet (spec 001 FR-173),
    `replied` says it has a last reply in this session, `helpersBusy` that a helper is not Done or Idle, and `since` the milliseconds since
    its last event (null when unknown). */
 (function(root, api){
@@ -10,9 +10,9 @@
   /* owner defaults (FR-052): on the couch for 10 minutes after finishing, then on a nap bed; 3 seats a couch; beds are bunks (2 to a
      column); up to 4 beds, else 3 and "+N asleep"; the corner is at least 150px wide so a bubble has room for its lines. Sizes in px (styles.css uses the same): the layout counts the corner so the open desks get the rest of the row (FR-053). */
   const RECENT_MS=10*60000, OLD_CAP=4, COUCH_SEATS=3, SEAT_W=64, COUCH_PAD=8, BUNK_W=72, MORE_W=52, GAP=6, PAD=8, MIN_W=150;
-  /* FR-051: Done, or Idle after a finished turn; never paused (coffee break), at a limit, away at a place, or with a busy helper */
+  /* FR-051: Done, or Idle after a finished turn; never unread (FR-173), paused (coffee break), at a limit, away at a place, or with a busy helper */
   function finished(x){
-    if(!x||x.paused||x.limit||x.away||x.helpersBusy)return false;
+    if(!x||x.paused||x.limit||x.away||x.helpersBusy||x.unread)return false; /* FR-173: a reply not seen yet keeps its desk */
     return x.state==='done'||(x.state==='idle'&&!!x.replied);
   }
   /* 'recent' (on the couch), 'old' (asleep in a bunk bed) or null (keeps its desk), for one finished agent; unknown time counts as old */

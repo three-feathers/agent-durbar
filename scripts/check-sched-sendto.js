@@ -3,7 +3,7 @@
  * covered by the control next to them, and every option of "Send to" fits the select (a native select cuts text hard, no ellipsis), and the chosen session's full name shows on a hint line under it.
  * Simulator only (no AI credits). Linux with xvfb-run:
  *
- *   npm run check:sched-sendto
+ *   npm run check:ui -- --only check-sched-sendto
  *
  * At 1440x900, 1280x800 and 900x700, in Simple and Expert, at the dialog's usual width and at a narrow one (340 px), with a session
  * whose name is a long sentence. A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless

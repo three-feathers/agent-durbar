@@ -44,7 +44,7 @@ async function main(): Promise<void> {
   assert.deepStrictEqual(c.memory, { enabled: false });
   assert.deepStrictEqual(c.infiniteSessions, { enabled: false }, 'no persistent workspace');
   assert.strictEqual(c.embeddingCacheStorage, 'in-memory');
-  assert.strictEqual(c.remoteSession, 'off');
+  assert.strictEqual(c.remoteSession, 'off', 'kept for SDK 1.0.22; SDK 1.0.26 ignores it (not a control: test-remote pins remote.enable)');
   assert.strictEqual(c.model, 'auto');
   assert.deepStrictEqual(c.capi, { autoTier: 'efficiency' }, 'the cheapest auto routing, as a new auto session');
   assert.ok(!('name' in c) && !('sessionId' in c) && !('agentDirectories' in c) && !('skillDirectories' in c), 'no name (it would persist the session) and no agent or skill folders');

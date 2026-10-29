@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Rename sessions (issue #372): a short name of the user's own for any main session, shown on every surface (card, list, chat header, strip, inbox, notifications, Schedules, Previous sessions, activity log) instead of the runtime title; also saved in the agent app (Copilot `name.set`, also for a session that is not open through a prompt-free resume; Codex `thread/name/set`; Claude Code `--name` at the next message); **Rename…** in the chat header More menu and the card menu, and the Previous sessions row menu (spec 006, #379)
-status: **Built, simulator and fakes** (name rule, store, IPC, three adapters, dialog, surfaces, `check:rename`); `real:` app calls by Vikram's agent (Copilot, Codex, Claude CLI lists); open: VS Code visibility, macOS/Windows, T050; delta 2026-10-23: rename in place (#636, #595: click the chat title, a pencil by each name, F2; FR-020..FR-027, T070..T078) built on the simulator 2026-10-24, not run on a real Mac or Windows
+status: built
+note: T050 real checks wait for the owner's go-ahead
 -->
 
 **Feature Branch**: `059-rename-sessions`
@@ -334,6 +335,13 @@ All answered with option A (see *Clarifications*); kept here for the record of t
 
 ## Changes
 
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **Built, simulator and fakes** (name rule, store, IPC, three adapters, dialog, surfaces, `check:rename`); `real:` app calls by Vikram's agent (Copilot, Codex, Claude CLI lists); open: VS Code visibility, macOS/Windows, T050; delta 2026-10-23: rename in place (#636, #595: click the chat title, a pencil by each name, F2; FR-020..FR-027, T070..T078) built on the simulator 2026-10-24, not run on a real Mac or Windows
+
+
 ### 2026-10-20: owner changes Q2; Vikram's requirements (issue #372)
 
 Owner (Paco, 2026-10-20, about 14:35 CEST): accept Vikram's requirements on issue #372 and **change Q2** to B.
@@ -563,3 +571,21 @@ Decided by the coordinator under Ruben's delegation. Product behaviour is unchan
 cause is the 0.12 s opacity transition not advancing in a CI window, not the rule. The driver now gives the window real focus for that step
 (`show`, `focus`, `webContents.focus`, wait for `document.hasFocus()`) and reads the rule's target opacity with the transition switched off for the
 read; the message says whether the OS gave focus. Task T079. `[KNOWN GAP]` Not re-run on Windows before the merge; Windows CI on the PR is the check.
+
+### 2026-10-26: the pencil of a wide card follows the name, not a wrapped mode icon (issue #781)
+
+On a wide desk card the line of name, mode icon and role wraps: the name fills line 1 and the mode icon (`.modeic`/`.modebadge`) wraps to line 2 beside
+the role. `placeRen` took the mode icon as the end of the name and used its x with the name's y, so the pencil sat about 30px in, over the name
+("Co✎rol Panel"). The pencil is now anchored on the mode icon only when the icon is on the name's line (its box overlaps the name's box vertically);
+otherwise it is anchored on the name itself. The fallback (over the end of the name, never more than its right half) and the protected-element
+checks are unchanged. `check-office-overlap` now also fails a desk pencil that covers the first half of its name. Task T080 [FR-020, FR-025].
+`[IMPLEMENTED]` `sim:` on Linux (xvfb, DejaVu), 1440x900 and 1280x800: the simulator's own cards already wrap the mode icon (19 and 13 pencils in sim 15 failed the new check with the old `placeRen`, 61 failures in all); with the fix `check:office` passes 460/460, `check:rename-inline` and `check:geometry` pass. Not run on macOS, where the bug was first seen (system fonts are narrower, so the wrap point differs; the check measures the real boxes, so it applies there too).
+
+### 2026-10-26: the folder pencil is never over the folder name (FR-169, issue #788, owner decision)
+
+*Problem*: `placeRen` protected every room-header part except the door, the name and the path, so with the floor tag right after the name the pencil fell back to "over the end of the name" (about 20px over the name in every room, at both sizes, with floors on). Hovering showed "Rename folder ..." instead of the name.
+
+- **FR-169** `[IMPLEMENTED]` `sim:` `check:office` ("the folder pencil is over the name", both sizes, floors cases) A room header's pencil is in the header's flow, right after the name (`ren-in`, as in the Folders panel), not positioned over it, and `placeRen` no longer places folder pencils (the fallback over the end of the name stays for desk cards and rows, FR-025). When the name would be squeezed, the pencil is the first thing to go (`no-ren`, spec 001 FR-179); **Rename…** in the folder's ⋯ menu always remains.
+
+Numbers taken: FR-169 and T081 (checked against `main` and the open PRs on 2026-10-26).
+

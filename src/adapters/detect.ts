@@ -377,6 +377,31 @@ export function statIsFile(
   }
 }
 
+/**
+ * Spec 012 FR-163 (dev/test only): `DURBAR_CLAUDE_BIN=<absolute path of a claude file>` makes detection try that file first, through the
+ * `candidates()` configured path, so one old or new Claude Code CLI can be tried side by side. The value is read only from main's `dev`
+ * object (empty in a packaged build unless DURBAR_DEV=1, spec 010 FR-017). A relative path, a missing file or a folder is refused with a
+ * warning and detection goes on as usual. The file is only ever run through `execFile` (no shell), like any other detected binary.
+ */
+export function devClaudeBin(dev: Readonly<Record<string, string | undefined>>, env: Pick<DetectEnv, 'platform' | 'isFile'>): { path?: string; warning?: string } {
+  const v = dev.DURBAR_CLAUDE_BIN;
+  if (typeof v !== 'string' || v === '') return {};
+  // eslint-disable-next-line no-control-regex
+  if (!pathFor(env.platform).isAbsolute(v) || v.length > 1024 || /[\u0000-\u001f]/.test(v)) return { warning: 'DURBAR_CLAUDE_BIN ignored: it must be the absolute path of a file.' };
+  if (!env.isFile(v)) return { warning: 'DURBAR_CLAUDE_BIN ignored: no such file.' };
+  return { path: v, warning: 'DURBAR_CLAUDE_BIN is set (developer/test only): this claude file is used first.' };
+}
+
+let devClaudePath: string | undefined;
+/** Main calls this once with its `dev` hooks. Warns on stderr when the override is set or refused. */
+export function configureDevClaudeBin(dev: Readonly<Record<string, string | undefined>>, env: Pick<DetectEnv, 'platform' | 'isFile'> = nodeDetectEnv()): void {
+  const r = devClaudeBin(dev, env);
+  devClaudePath = r.path;
+  if (r.warning) console.warn(`Agent Durbar: ${r.warning}`);
+}
+/** The configured path every Claude detection passes to `candidates()` (undefined: none). */
+export const claudeConfiguredPath = (): string | undefined => devClaudePath;
+
 /** The real environment for `detectBinary` (process env, home folder, file check, folder listing, the login shell's PATH when read). */
 export function nodeDetectEnv(): DetectEnv {
   return {
@@ -405,7 +430,7 @@ export const withWhere = (r: DetectResult & { path?: string }, env: DetectEnv): 
 
 export function detectorFor(id: string): ((d: AdapterDescriptor) => Promise<DetectResult>) | undefined {
   if (id === 'copilot') return () => detectCopilot();
-  if (id === 'claude') return () => { const env = nodeDetectEnv(); return detectClaude(env, nodeExec).then((r) => withWhere(r, env)); }; // `--version`, then `auth status` (FR-132); never a prompt (FR-010)
+  if (id === 'claude') return () => { const env = nodeDetectEnv(); return detectClaude(env, nodeExec, claudeConfiguredPath()).then((r) => withWhere(r, env)); }; // `--version`, then `auth status` (FR-132); never a prompt (FR-010)
   if (id === 'codex') return () => { const env = nodeDetectEnv(); return detectCodex(env, nodeExec).then((r) => withWhere(r, env)); }; // `--version`, then `login status` (FR-137)
   return undefined;
 }
@@ -431,6 +456,22 @@ export function killChildTree(child: Pick<ChildProcess, 'pid' | 'kill'> & { exit
   try { kill(-pid, 'SIGTERM'); } catch { try { child.kill('SIGTERM'); } catch { /* gone */ } }
   // then SIGKILL after 3 s, unless it has exited: its group id could already belong to something else (one tree kill for the checks and the runner, review on #721)
   later(() => { if (child.exitCode != null || child.signalCode != null) return; try { kill(-pid, 'SIGKILL'); } catch { /* gone */ } }, 3000);
+}
+
+/**
+ * Spec 012 FR-079 delta 2026-10-26: one step of a transport's kill escalation. Windows: `taskkill /t /f` ends the child and what it
+ * started (`child.kill` there is TerminateProcess on one pid). POSIX: the child only, as before (the transports do not spawn
+ * `detached`, so there is no process group to signal and Ctrl-C keeps reaching the child). Never throws.
+ */
+export function killForEscalation(child: Pick<ChildProcess, 'pid' | 'kill'> & { exitCode?: number | null; signalCode?: string | null }, signal: NodeJS.Signals, platform: NodeJS.Platform = process.platform, env: Readonly<Record<string, string | undefined>> = process.env, tree: typeof killChildTree = killChildTree): void {
+  // an exited child's pid may already belong to another process, and `taskkill /t` would end that tree (same guard as killChildTree, #721)
+  if (child.exitCode != null || child.signalCode != null) return;
+  try {
+    if (platform === 'win32' && child.pid) tree(child, platform, env);
+    else child.kill(signal);
+  } catch {
+    /* gone */
+  }
 }
 
 /**

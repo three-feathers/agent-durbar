@@ -461,4 +461,28 @@ shared parts; PR B = Codex (Q23 A).
   `javascript:`: no `oauth` at all); a non-object `oauth` and a stdio entry copy nothing; the `--mcp-config` JSON
   never holds `clientSecret`; the debug sink holds no field value. Mutation: copying the whole object fails the test; dropping the
   all-or-nothing check fails it; **dropping everything when an extra key is present** (instead of dropping only that key) fails it [FR-186]
+- [x] T161 (issue #779 A) FR-187: `src/shared/mcpcall.ts` `classifyMcpCall` (`policy`, `auth`, nothing; cut first, linear); tests in
+  `scripts/test-mcpcall.ts` (`test:mcpcall` in `test:serial`): AADSTS530003 and the other `AADSTS53xxxx`, "Conditional Access", the
+  managed-device shapes, 401 / expired token / Entra sign-in codes / the adapter flag, not-claimed texts, a 4 MB hostile text in under
+  500 ms, text past the cut not read, and the answer is only ever one of two words. Mutations: dropping `AADSTS53`, testing `auth` before
+  `policy`, and removing the cut each fail the test [FR-187] [IMPLEMENTED] 2026-10-27
+- [x] T162 (issue #779 A) FR-188: `McpCallTracker` (`src/main/mcpcall.ts`) fed by `router.onEvent` in `mcpipc.ts`; `AgentMcpEntry.lastCall`
+  set by `agentMcpReply` only on a Running, switched-on row of a running session; tests: failed sets, success clears, another failure
+  kind replaces, start changes nothing, other session and other server untouched, a stopped session drops it, 200-server cap, no piece of
+  the text kept, the reply holds no raw text. Mutations: success not clearing and showing it on any status fail the test [FR-188] [IMPLEMENTED] 2026-10-27
+- [x] T163 (issue #779 A) FR-189: `callWord`/`callHint` in `src/renderer/mcpwords.js`; the dialog row and the Settings live row show
+  "Running · last call ..." in `.mst-call` plus one hint; `.mst-call` in `screens.css`; unit tests for the words (unknown, `__proto__`,
+  `constructor` give nothing) [FR-189] [IMPLEMENTED] 2026-10-27
+- [x] T164 (issue #779 B) FR-190, FR-191: `AgentMcpReply.canRefresh`, `McpRefreshResult`, `mcpRefreshOp` in `src/main/mcpsession.ts`
+  (shared in-flight read, 15 s limit, no vendor text), `agents:mcpRefresh` (owner-only; listed in `test-ipcchannels.ts`), preload
+  `agentMcpRefresh`; tests with `FakeAdapter` (`refreshCalls`, `refreshNames` = `[undefined]`, delay, failure, never-ending, stopped,
+  unsupported). Mutations: no read and no single-flight fail the test [FR-190, FR-191] [IMPLEMENTED] 2026-10-27
+- [x] T165 (issue #779 B) FR-190, FR-192: Refresh row in the session MCP dialog (button, `aria-disabled` while it runs, focus kept, note,
+  announcement), one read on every open, the "cannot report its server list again" note for an app without the call [FR-190, FR-192] [IMPLEMENTED] 2026-10-27
+- [x] T166 (issue #779 A, B) Simulator and driver: `toolCall` classes and `agentMcpRefresh` in `src/renderer/sim.ts` (marked classifier
+  copy checked by `test:mcpcall`; `__durbarSimMcpRefresh` counts the reads and sends what the app says next);
+  `scripts/shots-058-mcp-refresh.js` in `ui-suite.js` at 1440x900 and 1280x800 (policy and sign-in words, no raw text, open = one read,
+  Refresh by keyboard = one more and the new state, a successful call clears, Codex note, 10.5px, fits); README *MCP servers* line and
+  `changelog.d/058-mcp-dialog-refresh.md`. Mutations: no read on open, Refresh doing nothing and no words each fail the driver [FR-187..FR-192] [IMPLEMENTED] 2026-10-27
+- Part C of #779 (per-server logs in the app) is not a task: it waits for an owner decision (it reverses Q5 / FR-025).
 - [ ] T156 `/speckit-converge` for this delta after PR B; tick T099, T100 and Phase 11; FR-184 gaps updated from T106/T107

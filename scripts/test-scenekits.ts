@@ -7,6 +7,8 @@ const { JSDOM } = require('jsdom') as { JSDOM: new (html: string) => { window: a
 const K = require('../../src/renderer/scenekits.js');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const THEME = require('../../src/renderer/theme.js');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+require('../../src/renderer/crew.js');
 
 const parser = new (new JSDOM('').window.DOMParser)();
 const shade = (hex: string, p: number) => {
@@ -43,6 +45,57 @@ for (const kit of K.KITS.slice(1)) {
   // a user theme colour that is not #rrggbb is used as is, never NaN
   const odd: string = K.draw(kit, { id: 'o' }, { st: 'working', mood: { body: 'normal' }, k: { shirt: '#369', skin: 'peru', hair: 'rgb(1 2 3)', style: 'short' }, mini: false, c: false, T, shade, reduced: false });
   assert.ok(!/NaN/.test(odd), kit + ': short or named colours do not break shading');
+}
+// spec 077: the crew kit draws a portrait per pose with the shared cues over it, falls back to the plain figure, and keeps its id in the signature
+{
+  const base = { st: 'working', mood: { body: 'normal' }, k: { shirt: '#336699', skin: '#e0b090', hair: '#222222', style: 'short', glasses: true }, mini: false, c: false, T, shade, reduced: false };
+  const plain: string = K.draw('crew', { id: 'c1' }, base);
+  assert.ok(/\|crew\|"/.test(plain) && !plain.includes('<image'), 'no character: the plain figure, no picture, an empty id at the end of the signature');
+  assert.ok(/stroke-width="1\.1"><circle/.test(plain), 'the fallback figure keeps the agent\'s own glasses (FR-017: the office figure with the agent\'s look)');
+  for (const [st, pose] of [['working', 'working'], ['thinking', 'working'], ['waiting', 'waiting'], ['error', 'waiting'], ['idle', 'resting'], ['done', 'resting']]) {
+    const svg: string = K.draw('crew', { id: 'c1' }, { ...base, st, crew: 'punk' });
+    assert.ok(svg.includes(`<image class="crew-pic" href="crew/art/punk-${pose}.webp" x="24" y="22" width="88" height="88"`), `${st}: the ${pose} picture in its box`);
+    assert.strictEqual((svg.match(/<image/g) || []).length, 1, st + ': one picture');
+    assert.ok(/\|crew\|punk"/.test(svg), st + ': the character id ends the signature');
+    assert.ok(CUE[st].test(svg) && svg.includes('class="pp"'), st + ': the status cue is still drawn over, and the person can be hidden (.pp)');
+    assert.ok(!svg.includes('M67.5 45.6q2') && !svg.includes('r="1.35"'), st + ': the shared face is not drawn over the portrait');
+    assert.ok(svg.indexOf('<image') < svg.indexOf('x="116" y="36"') && svg.indexOf('<image') < svg.indexOf('<rect x="58" y="82"'), st + ': the desk, screen and keyboard are drawn after (over) the picture');
+    assert.ok(!/NaN|undefined/.test(svg), st + ': no NaN');
+    assert.strictEqual(parser.parseFromString(svg, 'image/svg+xml').getElementsByTagName('parsererror').length, 0, st + ': valid SVG');
+  }
+  // the moods are overlays over the portrait; the art has its own hands (FR-059)
+  for (const [mood, re] of [[{ body: 'heavy' }, /class="sweat"/], [{ body: 'monster' }, /M64\.5 35\.5l-4\.2-9\.5/], [{ body: 'normal', trouble: 'dizzy' }, /class="dizzy"/], [{ body: 'normal', trouble: 'ambulance' }, /class="amb"/]] as [object, RegExp][])
+    assert.ok(re.test(K.draw('crew', { id: 'c1' }, { ...base, mood, crew: 'punk' })), JSON.stringify(mood) + ': drawn over the portrait');
+  const typing: string = K.draw('crew', { id: 'c1' }, { ...base, crew: 'punk' });
+  const ARM = /<line [^>]*stroke-width="8"/;
+  assert.ok(!ARM.test(typing) && !ARM.test(K.draw('crew', { id: 'c1' }, { ...base, st: 'waiting', crew: 'gamer' })), 'no code arm or hand over a portrait: the picture carries them (FR-059)');
+  assert.ok(ARM.test(K.draw('crew', { id: 'c1' }, { ...base, crew: 'punk', crewFb: true })), 'the plain figure keeps its arms');
+  // FR-017/FR-055: an unknown id, or a character whose pictures did not load, draws the plain figure on the same furniture, never an empty chair
+  for (const [label, extra] of [['unknown id', { crew: 'nope' }], ['failed pictures', { crew: 'punk', crewFb: true }]] as [string, object][]) {
+    const fb: string = K.draw('crew', { id: 'c1' }, { ...base, ...extra });
+    assert.ok(!fb.includes('<image') && fb.includes('<circle cx="74" cy="44" r="12.5"') && fb.includes('r="1.35"'), label + ': the plain figure with its own face, no picture');
+    assert.ok(parser.parseFromString(fb, 'image/svg+xml').getElementsByTagName('parsererror').length === 0 && CUE.working.test(fb), label + ': valid, cues kept');
+  }
+  const bad: string = K.draw('crew', { id: 'c1' }, { ...base, crew: 'punk', crewFb: true }), ok: string = K.draw('crew', { id: 'c1' }, { ...base, crew: 'punk' });
+  assert.ok(/\|crew\|punk\|fb"/.test(bad) && bad !== ok, 'the fallback has its own signature, so the desk is redrawn when a picture fails');
+  const a: string = K.draw('crew', { id: 'c1' }, { ...base, crew: 'punk' }), b: string = K.draw('crew', { id: 'c1' }, { ...base, crew: 'gamer' });
+  assert.ok(/\|crew\|punk"/.test(a) && /\|crew\|gamer"/.test(b) && a !== b, 'another character is another signature');
+  // the walking figure: the same portrait, cropped by its view box, with no face drawn over it; the fallback has the face
+  const av: string = K.avatar('crew', { id: 'c1' }, { k: base.k, T, shade, crew: 'punk' });
+  assert.ok(av.includes('crew/art/punk-working.webp') && !av.includes('r="1.35"'), 'the walking figure wears the portrait');
+  // FR-060: the round avatar crops the face of the picture, a seat shows the whole bust, the fallback keeps the old crop
+  const vbOf = (svg: string) => (/viewBox="([^"]+)"/.exec(svg) || [])[1];
+  const seat: string = K.avatar('crew', { id: 'c1' }, { k: base.k, T, shade, crew: 'punk', view: 'seat' });
+  assert.ok(/^[\d.]+ 22 66 66$/.test(vbOf(seat)), 'a seat shows the top three quarters of the bust, from the top edge');
+  assert.notStrictEqual(vbOf(av), vbOf(seat), 'a chip crops the face, a seat shows more of the bust');
+  assert.ok(vbOf(av).split(' ').map(Number).every((n) => Number.isFinite(n)), 'a numeric view box');
+  assert.notStrictEqual(vbOf(K.avatar('crew', { id: 'c1' }, { k: base.k, T, shade, crew: 'gamer' })), vbOf(av), 'each character has its own face crop');
+  assert.strictEqual(vbOf(K.avatar('crew', { id: 'c1' }, { k: base.k, T, shade, crew: 'punk', crewFb: true })), '50 20 48 48', 'the plain figure keeps the old crop');
+  const avFb: string = K.avatar('crew', { id: 'c1' }, { k: base.k, T, shade, crew: 'punk', crewFb: true });
+  assert.ok(!avFb.includes('<image') && avFb.includes('r="1.35"'), 'and the plain face when the pictures failed');
+  assert.ok(T('--crew-accent') && T('--crew-ink') && T('--crew-accent-2'), 'the crew tokens exist');
+  // every character, every pose, from the real pictures' names
+  for (const id of ['punk', 'gamer', 'hacker', 'rocker', 'buzzcut', 'bookworm', 'scientist', 'metalhead', 'bob-glasses', 'skater', 'surfer', 'disco', 'sporty']) for (const st of STATUS) assert.ok(K.draw('crew', { id: 'x' }, { ...base, st, crew: id }).includes(`crew/art/${id}-`), id + '/' + st);
 }
 // every built-in pack names its kit; Clean Office stays on the office kit
 for (const [id, kit] of [['clean-office', 'office'], ['corporate', 'corporate'], ['retro', 'pixel'], ['durbar-indian', 'court-indian'], ['durbar-european', 'court-european'], ['durbar-japanese', 'court-japanese']]) {

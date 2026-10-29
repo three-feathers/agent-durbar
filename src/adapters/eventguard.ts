@@ -171,6 +171,7 @@ export function eventProblems(e: unknown): string[] {
       if (e.sandbox !== null && !cleanSandboxState(e.sandbox)) out.push('sandbox.sandbox malformed');
       if (e.notice !== undefined && (!isObj(e.notice) || !str(e.notice.text) || !e.notice.text || !Array.isArray(e.notice.actions) || e.notice.actions.some((a) => a !== 'continue' && a !== 'always') || (e.notice.refused !== undefined && typeof e.notice.refused !== 'boolean'))) out.push('sandbox.notice malformed');
       if (isObj(e.notice) && e.notice.refused === true && Array.isArray(e.notice.actions) && e.notice.actions.length) out.push('sandbox.notice refused with actions');
+      if (e.notLowered !== undefined && e.notLowered !== true) out.push('sandbox.notLowered is not true');
       break;
     case 'agentSchedule':
       if (!oneOf(e.phase, ['created', 'cancelled', 'rearmed'])) out.push(`agentSchedule.phase ${String(e.phase)}`);

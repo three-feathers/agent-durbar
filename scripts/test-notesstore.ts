@@ -74,7 +74,7 @@ async function main(): Promise<void> {
     // Windows: a rename another program blocks is tried once more after 200 ms
     let calls = 0;
     const slept: number[] = [];
-    const flaky = { ...fs, renameSync: (a: string, b: string) => { if (++calls === 1) throw Object.assign(new Error('busy'), { code: 'EBUSY' }); fs.renameSync(a, b); } } as unknown as NotesFs;
+    const flaky = { ...fs, renameSync: (a: string, b: string) => { if (b.endsWith('.json') && ++calls === 1) throw Object.assign(new Error('busy'), { code: 'EBUSY' }); fs.renameSync(a, b); } } as unknown as NotesFs;
     must(await new NotesStore(dir, { fs: flaky, platform: 'win32', sleep: async (ms) => { slept.push(ms); } }).add(FOLDER, 'demo', { text: 'fourth' }));
     assert.deepStrictEqual([calls, slept], [2, [200]], 'one retry after 200 ms');
     const stuck = { ...fs, renameSync: () => { throw Object.assign(new Error('busy'), { code: 'EBUSY' }); } } as unknown as NotesFs;
@@ -463,6 +463,143 @@ async function main(): Promise<void> {
     const sw = await new NotesStore(dir, { fs: swapped }).add(FOLDER, 'demo', { text: 'fresh lock held by someone' });
     assert.ok(!sw.ok && /busy/.test(sw.error) && fs.existsSync(lock), 'a fresh lock taken in between is put back and respected');
     fs.rmSync(lock, { force: true });
+    // issue #723: B judged the lock stale, but before its move another process took it over and now holds a FRESH lock. B must not touch
+    // that lock at all (moving it away opens a gap where a third process creates its own: two writers, a lost note)
+    {
+      plantOld();
+      const touched: string[] = [];
+      let swappedIn = false;
+      const rival = { ...fs,
+        lstatSync: (f: string, o?: unknown) => { const r = (fs.lstatSync as (f: string, o?: unknown) => unknown)(f, o); if (f === lock && !swappedIn) { swappedIn = true; fs.unlinkSync(lock); fs.writeFileSync(lock, 'A-LIVE'); } return r; },
+        renameSync: (a: string, b: string) => { if (a === lock) touched.push('rename'); fs.renameSync(a, b); },
+        unlinkSync: (f: string) => { if (f === lock) touched.push('unlink'); fs.unlinkSync(f); },
+        linkSync: (a: string, b: string) => { if (b === lock) touched.push('link'); fs.linkSync(a, b); } } as unknown as NotesFs;
+      const r7 = await new NotesStore(dir, { fs: rival }).add(FOLDER, 'demo', { text: 'must wait for A' });
+      assert.ok(!r7.ok && /busy/.test(r7.error), 'a fresh lock taken over in between: busy');
+      assert.deepStrictEqual(touched, [], "the other process's fresh lock was never moved, put back or deleted");
+      assert.strictEqual(fs.readFileSync(lock, 'utf8'), 'A-LIVE', "A's lock is intact");
+      fs.rmSync(lock, { force: true });
+    }
+    // issue #723: somebody else is breaking the stale lock right now (a fresh takeover guard): wait, do not break it too
+    {
+      plantOld();
+      const guard = path.join(dir, folderFingerprint(FOLDER) + '.takeover');
+      fs.writeFileSync(guard, '');
+      const g = await new NotesStore(dir).add(FOLDER, 'demo', { text: 'guard held' });
+      assert.ok(!g.ok && /busy/.test(g.error) && fs.existsSync(lock) && fs.existsSync(guard), "another process's takeover guard is respected: busy, lock and guard untouched");
+      // a crashed taker's guard (older than 5 s) is removed and the takeover goes on
+      const oldG = new Date(Date.now() - 10_000);
+      fs.utimesSync(guard, oldG, oldG);
+      plantOld();
+      const ops: string[] = [];
+      const watch = { ...fs,
+        openSync: (f: string, fl: string, m: number) => { if (f === guard) ops.push('open:' + fl); return fs.openSync(f, fl, m); },
+        renameSync: (a: string, b: string) => { if (a === guard) ops.push('rename:' + (b.includes('.takeover.stale-') ? 'aside' : b.includes('.takeover.rel-') ? 'release' : 'other')); fs.renameSync(a, b); } } as unknown as NotesFs;
+      must(await new NotesStore(dir, { fs: watch }).add(FOLDER, 'demo', { text: 'after a stale guard' }));
+      assert.deepStrictEqual(ops, ['open:wx', 'rename:aside', 'open:wx', 'rename:release'], 'a stale guard is moved aside (identity checked) and a new one is created with wx, never taken over in place; our own is released by a move');
+      assert.ok(!fs.existsSync(guard) && !fs.existsSync(lock), 'a stale guard does not block for good');
+    }
+    // issue #723: the stale guard is replaced by another process's FRESH guard between our look and our move: ours must not end up deleting it
+    {
+      fs.rmSync(path.join(dir, folderFingerprint(FOLDER) + '.takeover'), { force: true });
+      const guard = path.join(dir, folderFingerprint(FOLDER) + '.takeover');
+      plantOld();
+      fs.writeFileSync(guard, '');
+      const oldG = new Date(Date.now() - 60_000);
+      fs.utimesSync(guard, oldG, oldG);
+      let staged = false;
+      const created: string[] = [];
+      const y = { ...fs,
+        lstatSync: (f: string, o?: unknown) => { const r = (fs.lstatSync as (f: string, o?: unknown) => unknown)(f, o); if (f === guard && !staged) { staged = true; fs.unlinkSync(guard); fs.writeFileSync(guard, 'Z-HOLDS'); } return r; },
+        openSync: (f: string, fl: string, m: number) => { const fd = fs.openSync(f, fl, m); if (f === guard) created.push('guard'); return fd; } } as unknown as NotesFs;
+      const r8 = await new NotesStore(dir, { fs: y }).add(FOLDER, 'demo', { text: 'y' });
+      assert.ok(!r8.ok && /busy/.test(r8.error), "Z's fresh guard is respected: busy");
+      assert.deepStrictEqual(created, [], 'no second guard was created while Z holds one');
+      assert.strictEqual(fs.readFileSync(guard, 'utf8'), 'Z-HOLDS', "Z's guard is intact");
+      fs.rmSync(guard, { force: true });
+      fs.rmSync(lock, { force: true });
+    }
+    // a guard is released only while it still holds our token
+    {
+      const guard = path.join(dir, folderFingerprint(FOLDER) + '.takeover');
+      plantOld();
+      let swapped = false;
+      const g2 = { ...fs, renameSync: (a: string, b: string) => { fs.renameSync(a, b); if (a === lock && !swapped) { swapped = true; fs.rmSync(guard, { force: true }); fs.writeFileSync(guard, 'OTHER-GUARD'); } } } as unknown as NotesFs;
+      must(await new NotesStore(dir, { fs: g2 }).add(FOLDER, 'demo', { text: 'guard lost while breaking' }));
+      assert.strictEqual(fs.readFileSync(guard, 'utf8'), 'OTHER-GUARD', "another process's guard is not released by us");
+      fs.rmSync(guard, { force: true });
+    }
+    // releasing: a takeover between "is it still mine?" and the delete must not cost the new owner its lock
+    {
+      fs.rmSync(lock, { force: true });
+      let committed = false;
+      let swappedLock = false;
+      const swap = (): void => { if (committed && !swappedLock) { swappedLock = true; fs.rmSync(lock, { force: true }); fs.writeFileSync(lock, 'T-TOKEN'); } };
+      const rel = { ...fs,
+        renameSync: (a: string, b: string) => { if (b.endsWith('.json')) committed = true; if (a === lock) swap(); fs.renameSync(a, b); },
+        readFileSync: (f: string, e?: unknown) => { const r = (fs.readFileSync as (f: string, e?: unknown) => unknown)(f, e); if (f === lock) swap(); return r; } } as unknown as NotesFs;
+      must(await new NotesStore(dir, { fs: rel }).add(FOLDER, 'demo', { text: 'saved, then lost the lock at release' }));
+      assert.ok(swappedLock, 'the takeover was staged');
+      assert.strictEqual(fs.readFileSync(lock, 'utf8'), 'T-TOKEN', "the new owner's lock survived our release");
+      fs.rmSync(lock, { force: true });
+    }
+    // breaking: the identity check compares the time as well as the inode (same inode, newer time = a different lock: put back, busy)
+    {
+      plantOld();
+      const same = { ...fs, lstatSync: (f: string, o?: unknown) => { const r = (fs.lstatSync as (f: string, o?: unknown) => { mtimeNs?: bigint })(f, o); return f.includes('.lock.stale-') ? { ...r, mtimeNs: (r.mtimeNs ?? 0n) + 1n } : r; } } as unknown as NotesFs;
+      const rr = await new NotesStore(dir, { fs: same }).add(FOLDER, 'demo', { text: 'same inode, newer time' });
+      assert.ok(!rr.ok && /busy/.test(rr.error) && fs.existsSync(lock), 'same inode but another time: not the lock we judged, it is put back and respected');
+      fs.rmSync(lock, { force: true });
+    }
+    // leftovers of a crash (.stale-* / .rel-*) older than 60 s are swept for this folder only
+    {
+      plantOld();
+      const fpn = folderFingerprint(FOLDER);
+      const mk = (name: string, ageMs: number): string => { const f = path.join(dir, name); fs.writeFileSync(f, 'x'); const t = new Date(Date.now() - ageMs); fs.utimesSync(f, t, t); return f; };
+      const oldStale = mk(`${fpn}.lock.stale-12-abc`, 120_000), oldRel = mk(`${fpn}.takeover.rel-12-abc`, 120_000);
+      const youngStale = mk(`${fpn}.lock.stale-13-abc`, 10_000), otherFolder = mk('ffffffffffffffffffffffffffffffff.lock.stale-12-abc', 120_000);
+      const unrelated = mk(`${fpn}.lock.stale-notes`, 120_000);
+      must(await new NotesStore(dir).add(FOLDER, 'demo', { text: 'sweeps leftovers' }));
+      assert.ok(!fs.existsSync(oldStale) && !fs.existsSync(oldRel), 'old leftovers of this folder are gone');
+      assert.ok(fs.existsSync(youngStale) && fs.existsSync(otherFolder) && fs.existsSync(unrelated), "a young leftover, another folder's file and a file of another shape stay");
+      for (const f of [youngStale, otherFolder, unrelated]) fs.rmSync(f, { force: true });
+    }
+    // the move-aside of a release is refused (EPERM, EBUSY on Windows): our own lock is still removed, a foreign one that arrived meanwhile stays
+    for (const code of ['EPERM', 'EBUSY']) {
+      for (const foreign of [false, true]) {
+        fs.rmSync(lock, { force: true });
+        const refuse = { ...fs, renameSync: (a: string, b: string) => {
+          if (a === lock && b.includes('.rel-')) {
+            if (foreign) { fs.rmSync(lock, { force: true }); fs.writeFileSync(lock, 'T-TOKEN'); }
+            throw Object.assign(new Error('refused'), { code });
+          }
+          fs.renameSync(a, b);
+        } } as unknown as NotesFs;
+        must(await new NotesStore(dir, { fs: refuse }).add(FOLDER, 'demo', { text: `release refused ${code} ${foreign}` }));
+        if (foreign) assert.strictEqual(fs.readFileSync(lock, 'utf8'), 'T-TOKEN', `${code} on the move: a foreign lock stays`);
+        else assert.ok(!fs.existsSync(lock), `${code} on the move: our own lock is removed`);
+      }
+    }
+    fs.rmSync(lock, { force: true });
+    // issue #723: a holder paused over 5 s lost its lock to a takeover; it must not write, and must not delete the new owner's lock
+    {
+      fs.rmSync(path.join(dir, folderFingerprint(FOLDER) + '.json'), { force: true });
+      let taken = false;
+      const onLock: string[] = [];
+      // the lock is replaced while the holder reads the document (as if it had been paused for over 5 s)
+      const slowHolder = { ...fs,
+        renameSync: (a: string, b: string) => { if (a === lock) onLock.push('rename'); fs.renameSync(a, b); },
+        linkSync: (a: string, b: string) => { if (b === lock) onLock.push('link'); fs.linkSync(a, b); },
+        unlinkSync: (f: string) => { if (f === lock) onLock.push('unlink'); fs.unlinkSync(f); },
+        lstatSync: (f: string, o?: unknown) => { if (!taken && f.endsWith('.json')) { taken = true; fs.rmSync(lock, { force: true }); fs.writeFileSync(lock, 'T-TOKEN'); } return (fs.lstatSync as (f: string, o?: unknown) => unknown)(f, o); } } as unknown as NotesFs;
+      const lost = await new NotesStore(dir, { fs: slowHolder }).add(FOLDER, 'demo', { text: 'written by a holder that lost its lock' });
+      assert.ok(!lost.ok && /busy/.test(lost.error), 'a holder that lost its lock does not write');
+      assert.strictEqual(fs.readFileSync(lock, 'utf8'), 'T-TOKEN', "and does not delete the new owner's lock");
+      assert.deepStrictEqual(onLock, [], "and does not even move, put back or delete anything on the new owner's lock path");
+      assert.ok(!fs.existsSync(path.join(dir, folderFingerprint(FOLDER) + '.json')), 'nothing was written under the lost lock');
+      fs.rmSync(lock, { force: true });
+    }
+    assert.deepStrictEqual(fs.readdirSync(dir).filter((f) => f.endsWith('.takeover') || f.includes('.stale-')), [], 'no takeover guard or aside file is left');
     // four real processes with a stale lock in front: nobody is lost
     const dir4 = fresh();
     fs.mkdirSync(dir4, { recursive: true });
@@ -488,6 +625,33 @@ async function main(): Promise<void> {
     assert.ok(!r.ok && r.code === 'invalid', `refused: ${JSON.stringify(r)}`);
     assert.strictEqual(read(dir), healthy, 'the healthy file is where it was');
     assert.deepStrictEqual(fs.readdirSync(dir).filter((f) => f.includes('.bad-')), []);
+  }
+
+  // Start over: a lock lost to another process while the file is read again is not written under (no .bad- file, the other lock stays)
+  {
+    const dir = fresh();
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(fileOf(dir), 'not json', { mode: 0o600 });
+    const lk = path.join(dir, folderFingerprint(FOLDER) + '.lock');
+    let looks = 0;
+    const hook = { ...fs, lstatSync: (f: string, o?: unknown) => { const r = (fs.lstatSync as (f: string, o?: unknown) => unknown)(f, o); if (f === fileOf(dir) && ++looks === 2) { fs.rmSync(lk, { force: true }); fs.writeFileSync(lk, 'OTHER'); } return r; } } as unknown as NotesFs;
+    const r = await new NotesStore(dir, { fs: hook }).startOver(FOLDER);
+    assert.ok(!r.ok && /busy/.test(r.error), `refused as busy: ${JSON.stringify(r)}`);
+    assert.deepStrictEqual(fs.readdirSync(dir).filter((f) => f.includes('.bad-')), [], 'the corrupt file was not moved aside');
+    assert.strictEqual(fs.readFileSync(lk, 'utf8'), 'OTHER', "the other process's lock is untouched");
+  }
+
+  // a transient read error on our own lock (Windows: antivirus, EBUSY) does not refuse the write or leave the lock behind; a missing lock does
+  {
+    const dir = fresh();
+    const lk = path.join(dir, folderFingerprint(FOLDER) + '.lock');
+    let fails = 3;
+    const flaky = { ...fs, readFileSync: (f: string, e?: unknown) => { if (String(f).endsWith('.lock') && fails > 0) { fails--; throw Object.assign(new Error('busy'), { code: 'EBUSY' }); } return (fs.readFileSync as (f: string, e?: unknown) => unknown)(f, e); } } as unknown as NotesFs;
+    must(await new NotesStore(dir, { fs: flaky }).add(FOLDER, 'demo', { text: 'despite a flaky read' }));
+    assert.ok(fails === 0 && !fs.existsSync(lk), 'the lock was read again, the note written and the lock released');
+    const vanished = { ...fs, lstatSync: (f: string, o?: unknown) => { if (String(f).endsWith('.json')) fs.rmSync(lk, { force: true }); return (fs.lstatSync as (f: string, o?: unknown) => unknown)(f, o); } } as unknown as NotesFs;
+    const r = await new NotesStore(dir, { fs: vanished }).add(FOLDER, 'demo', { text: 'lock vanished' });
+    assert.ok(!r.ok && /busy/.test(r.error), 'a lock that is gone (ENOENT) is not ours: busy');
   }
 
   console.log('notes store: modes 0700/0600, atomic writes, masked on disk, corrupt files never overwritten, two stores merge, mirror persisted, caps');
