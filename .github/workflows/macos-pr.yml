@@ -1,0 +1,49 @@
+name: macOS on pull requests
+
+# Spec 008 FR-135 (owner decision 2026-10-29, retro #854 B8, spec 021 FR-063/T048). Pull request CI runs only a Linux stub for the
+# required check "Build and test (macos-latest)" (FR-106), and 31 of the 36 failed runs on main since 2026-10-26 were the macOS
+# `npm test`. This workflow runs the real macOS build and test on a pull request, but only when the PR touches files whose
+# behaviour differs between operating systems (processes, paths, sockets, shell scripts, dependencies, packaging). GitHub's own
+# `paths:` filter decides, so no job waits for another and a PR that does not match starts nothing (no macOS minutes).
+# It is not a required check (the ruleset is unchanged): when it runs, read it in `gh pr checks` like any other.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'src/main/**'
+      - 'src/adapters/**'
+      - 'src/shared/**'
+      - 'src/preload/**'
+      - 'scripts/fakes/**'
+      - 'scripts/run-tests.js'
+      - 'scripts/test-*'
+      - 'scripts/*.sh'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig*.json'
+      - 'build/**'
+      - '.github/workflows/macos-pr.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  macos-test:
+    name: macOS build and test (path-filtered)
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
