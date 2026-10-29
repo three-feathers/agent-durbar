@@ -89,4 +89,4 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 
 ## A sleeping crew character in the bed slot (delta 2026-10-29, issue #871; FR-071)
 
-- [ ] T084 Spec delta FR-071; `app.js` (`restHTML`: the seat crop and a crew blanket for a crew sleeper; `lg-bunk solo` for a one-bed column) and `styles.css` (the crew bed slot: figure, name under it, chip top-left; a solo bunk without posts and at full height); `check:crew` lounge step at both sizes; changelog fragment; linked lounge screenshots retaken [FR-071]
+- [x] T084 Spec delta FR-071; `app.js` (`restHTML`: the seat crop and a crew blanket for a crew sleeper; `lg-bunk solo` for a one-bed column) and `styles.css` (the crew bed slot: figure, name under it, chip top-left; a solo bunk without posts and at full height); `check:crew` lounge step at both sizes; changelog fragment; linked lounge screenshots retaken [FR-071]
