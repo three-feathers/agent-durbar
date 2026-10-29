@@ -9,17 +9,6 @@
  *  5. personal data stays out of the debug log, `adapters:list` (withSignIn) and the log and export paths (FR-015).
  */
 import * as assert from 'assert';
-
-/** Waits on a real condition (polls every 5 ms) and fails with `what` on a generous timeout; never a fixed sleep. */
-async function until(cond: () => boolean | Promise<boolean>, what: string, timeoutMs = 10_000): Promise<void> {
-  const end = Date.now() + timeoutMs;
-  while (!(await cond())) {
-    if (Date.now() > end) assert.fail(`timed out waiting for: ${what}`);
-    await new Promise((r) => setTimeout(r, 5));
-  }
-}
-/** One turn of the event loop, so every already-queued promise reaction has run (no time involved). */
-const turn = (): Promise<void> => new Promise((r) => setImmediate(r));
 import { SANDBOX_HOST_OK } from './fakes/claude-cli';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -39,6 +28,17 @@ import type { AdapterInfo } from '../src/shared/adapters';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
 import { FakeCodexServer } from './fakes/codex-app-server';
 import type { FakeCodexOptions } from './fakes/codex-app-server';
+
+/** Waits on a real condition (polls every 5 ms) and fails with `what` on a generous timeout; never a fixed sleep. */
+async function until(cond: () => boolean | Promise<boolean>, what: string, timeoutMs = 10_000): Promise<void> {
+  const end = Date.now() + timeoutMs;
+  while (!(await cond())) {
+    if (Date.now() > end) assert.fail(`timed out waiting for: ${what}`);
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+/** One turn of the event loop, so every already-queued promise reaction has run (no time involved). */
+const turn = (): Promise<void> => new Promise((r) => setImmediate(r));
 
 const ROOT = path.join(__dirname, '..', '..');
 const MARK = 'marker.person@example.invalid';
