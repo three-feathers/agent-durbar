@@ -173,6 +173,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
 ## Phase 6: Converge
 
 - [ ] T060 `/speckit.converge`: spec statuses and `[IMPLEMENTED]` / `[KNOWN GAP]` tags match what was built; every linked screenshot that shows a changed screen is retaken (`npm run shots:docs -- --only …`); a `docs/agent-notes.md` entry for anything learned the hard way.
+- [x] T061 Stale-lock takeover race (issue #723): a takeover guard file and a lock token in `NotesStore.lock()` / `unlockFile()`; tests with an injected fs for a fresh lock taken over between the stale judgement and the move, and for a holder that lost its lock. [FR-008]
 
 ## Later (not in this spec's PRs)
 

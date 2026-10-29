@@ -14,7 +14,7 @@
   const APP_LABEL={copilot:'GitHub Copilot',claude:'Claude Code'};
   const NAME_RE=/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
   /* Windows device names (FR-011): CON.md is a device there; refused in any case, with or without an extension. A copy of main's rule (src/main/profilefiles.ts isProfileName; test:profilefiles keeps them equal). */
-  const RESERVED_RE=/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
+  const RESERVED_RE=/^(con|prn|aux|nul|conin\$|conout\$|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3]) *(\.|$)/i; /* src/shared/newfolder.ts WINDOWS_RESERVED_NAME (test:profilefiles keeps them equal) */
   const validName=n=>typeof n==='string'&&NAME_RE.test(n)&&!n.includes('..')&&!RESERVED_RE.test(n);
 
   /* ---------------- pure parts (unit tested: scripts/test-profileeditor.ts) ---------------- */
@@ -343,7 +343,7 @@
       const done=v=>{ov.remove();if(opener&&opener.focus&&doc.contains(opener)&&!v)focusIn(opener);resolve(v);};
       const go=async()=>{
         const name=$('peNName').value.trim(),er=$('peNErr');
-        if(!validName(name)){er.hidden=false;setText(er,NAME_RE.test(name)&&RESERVED_RE.test(name)?'That name is reserved on Windows (CON, PRN, AUX, NUL, COM1-9, LPT1-9): choose another.':'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.');focusIn($('peNName'));return;}
+        if(!validName(name)){er.hidden=false;setText(er,NAME_RE.test(name)&&RESERVED_RE.test(name)?'That name is reserved on Windows (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-9, LPT0-9): choose another.':'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.');focusIn($('peNName'));return;}
         const pl=$('peNPlace').value;
         const tp=(ov.querySelector('input[name="peNTpl"]:checked')||{}).value||DEF;
         /* FR-042: Create writes nothing; the template opens as a draft and the first Save creates the file (main checks again) */

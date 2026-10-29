@@ -42,7 +42,9 @@ jobs:
     name: UI checks (${{ matrix.os }})
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    # FR-131: macOS runs every driver one at a time (UI_SUITE_JOBS=1) and grew past 45 minutes (43 min on 2026-10-25, then two
+    # nightlies cancelled at 45 with every finished driver passing); Linux and Windows keep 45
+    timeout-minutes: ${{ matrix.os == 'macos-latest' && 80 || 45 }}
     strategy:
       fail-fast: false
       matrix:

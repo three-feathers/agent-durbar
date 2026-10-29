@@ -99,6 +99,8 @@ export interface SandboxState {
   managed?: boolean;
   /** Set in an earlier mode of this session and kept until a new session (a switch to Allow all does not clear it). */
   untilNewSession?: boolean;
+  /** Spec 087 FR-022c: a floor this session set is (assumed) in force, and a switch to Allow all asks the app to turn it off in this session. */
+  heldFloor?: boolean;
   /** What runs inside it: shell commands, MCP servers, the app's own file tools. */
   covers: Array<'shell' | 'mcp' | 'files'>;
   /** An approved request may run outside the sandbox (spec 087 FR-021). */
@@ -204,6 +206,8 @@ export interface AppSettingsView {
   seriousMode?: boolean;
   /** Active theme id (specs 035-040). Omitted = Clean Office. */
   theme?: string;
+  /** Spec 077 FR-064: who sits at the desks (`theme`: the theme's own). */
+  characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric';
   /** OS notifications when an agent needs you while the window is in the background (spec 052 FR-059). On unless turned off. */
   notifyNeedsMe?: boolean;
   /** Spec 068 FR-006: after a coffee break, `auto` resumes by itself when it costs nothing extra; `ask` always asks. */
@@ -256,6 +260,20 @@ export interface ProfileInfo {
   mcpServers?: string[];
 }
 
+/** What a scheduled run came to (spec 044; main's `Outcome`). */
+export type ScheduleOutcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full' | 'skipped-review';
+/** Spec 044 FR-036: one entry of a schedule's run log, as `scheduleRuns` returns it (newest first). Reason codes only, never text. */
+export interface ScheduleRunInfo {
+  at: number;
+  outcome: ScheduleOutcome;
+  /** The agent id the prompt went to, or would have gone to. */
+  session?: string;
+  reason?: 'no-agent' | 'send-error' | 'user' | 'agent' | 'session' | 'limit' | 'passes' | 'time' | 'no-pace' | 'errors' | 'app-closed';
+  manual?: true;
+  /** A skip repeated n times, the last at `until` (FR-037). */
+  n?: number;
+  until?: number;
+}
 /** A scheduled prompt (spec 044); the same shape as the main process's. */
 export interface ScheduleInfo {
   id: string;
@@ -268,9 +286,9 @@ export interface ScheduleInfo {
   next?: number;
   paused?: boolean;
   /** Why the app paused it (FR-014, FR-015). */
-  pausedReason?: 'cap' | 'session-ended';
+  pausedReason?: 'cap' | 'session-ended' | 'review';
   done?: boolean;
-  last?: { at: number; outcome: 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'skipped-door-full' };
+  last?: { at: number; outcome: ScheduleOutcome };
   /** FR-014: one session instead of the folder's agent. */
   target?: { session: string; agent: string; name?: string };
   /** FR-015: the schedule's own limit and what its runs spent. */
@@ -339,6 +357,16 @@ export interface AddResult {
   /** Folders broader than a project (spec 006 FR-016): the renderer shows one calm line each. */
   warnings?: { name: string; kind: BroadKind }[];
 }
+
+/** Spec 093: what the window sends to create a folder: never a path, only the token of main's own pick; a clone adds its URL. */
+export interface NewFolderRequest { kind: 'clone' | 'init' | 'empty'; token: string; name: string; url?: string }
+/** Spec 093 FR-022: the answer of an early check; for a clone URL also its host (FR-061), the suggested name and the URL masked. */
+export type NewFolderCheck = { ok: true; host?: string; suggested?: string; shown?: string } | { ok: false; error: string; retry?: 'url' | 'name' };
+/** Spec 093 FR-040, FR-044: one clone progress event (masked in main). */
+export interface NewFolderProgress { phase?: string; percent?: number; lines: string[]; elapsedMs: number; waiting?: true }
+export type NewFolderPick = { ok: true; token: string; parent: string } | { ok: false; cancelled?: true; error?: string };
+/** `retry` says which step the window offers again: the URL, the name, or the place (*Change place…*). */
+export type NewFolderResult = AddResult & { name?: string; retry?: 'url' | 'name' | 'place'; cancelled?: true; submodules?: true };
 
 export interface ResumeResult {
   ok: boolean;
@@ -597,6 +625,8 @@ export interface AgentMcpEntry {
   error?: string;
   /** Spec 058 FR-011/FR-020: what kind of failure the adapter said it was (only when the vendor said so). */
   errorClass?: McpServerStatus['errorClass'];
+  /** Spec 058 FR-187 (issue #779 A): a Running server whose last tool call failed with a refused sign-in (`auth`) or an organization access policy (`policy`). The class only, never the text. */
+  lastCall?: 'auth' | 'policy';
   /** Spec 058 FR-092: when Agent Durbar first saw this state (epoch ms); only for a reported state. */
   since?: number;
   /** Spec 058 FR-092: a failed or needs-sign-in state that came after the server was Running in this session. */
@@ -650,6 +680,8 @@ export interface AgentMcpReply {
   toggleApplies?: 'live' | 'next-message';
   /** Spec 058 FR-022: *Restart session with these servers* is offered (the app can resume and the session runs). */
   canRestartSession?: boolean;
+  /** Spec 058 FR-190 (issue #779 B): the agent app can report its server list again (`agents:mcpRefresh`); missing = it cannot, and the dialog says so. */
+  canRefresh?: boolean;
   /** Spec 069 FR-031: this agent app can list a server's tools (`agents:mcpTools`). */
   canListTools?: boolean;
   /** Spec 069 FR-064: this agent app can turn single tools off (`agents:setMcpToolsOff`); missing = the checkboxes are disabled. */
@@ -681,11 +713,23 @@ export interface McpOpenSignInResult {
   manual?: boolean;
 }
 
+/** `agents:mcpRefresh` (spec 058 FR-190). `supported: false` = this agent app cannot report its list again (the dialog says so); `ok: false` = it could not be read now. No vendor text. */
+export interface McpRefreshResult {
+  ok: boolean;
+  supported: boolean;
+  /** Spec 058 FR-190: the open-time read was skipped, the last read of this agent is under a minute old. */
+  skipped?: true;
+  error?: string;
+}
+
 /** `agents:mcpRestart` (spec 058 FR-021): the error is short and masked. */
 export interface McpRestartResult {
   ok: boolean;
   error?: string;
 }
+
+/** Spec 087 FR-022: why `agents:mcpRestartSession` runs: 'mcp' (Restart session with these servers) or 'sandbox' (*Restart without the sandbox*). Words only. */
+export type McpRestartReason = 'mcp' | 'sandbox';
 
 /** `agents:mcpRestartSession` (spec 058 FR-022, FR-027). */
 export interface McpRestartSessionResult {
@@ -721,6 +765,16 @@ export interface DurbarApi {
   version(): Promise<string>;
   addFolder(permMode: PermMode, opts?: SessionOptions): Promise<AddResult>;
   addWorkspaceFile(permMode: PermMode, opts?: SessionOptions): Promise<AddResult>;
+  /** Spec 093 FR-004, FR-005: main's system picker for the parent of a new folder; a one-use token and the parent's text (display only). */
+  createPickParent?(): Promise<NewFolderPick>;
+  /** Spec 093 FR-022: early feedback on a create request (kind, the clone URL, the name); nothing is created or run. */
+  createCheck?(req: Partial<NewFolderRequest>): Promise<NewFolderCheck>;
+  /** Spec 093 FR-060: create the folder in the picked place and add it like Add existing (same mode and options). */
+  createFolder?(req: NewFolderRequest, permMode: PermMode, opts?: SessionOptions): Promise<NewFolderResult>;
+  /** Spec 093 FR-041: end the running clone (only the git Durbar started); its folder is removed after git has exited. */
+  createCancel?(): Promise<{ ok: boolean }>;
+  /** Spec 093 FR-040: the running clone's progress (masked in main). */
+  onCreateProgress?(cb: (p: NewFolderProgress) => void): () => void;
   /** Another agent (own chat) in the same folder as agent `id`. */
   newSession?(id: string, opts: SessionOptions): Promise<{ ok: boolean; error?: string; agent?: AgentInfo }>;
   /** Models the account offers (no credits used). */
@@ -808,7 +862,9 @@ export interface DurbarApi {
   /** Bring the window to the front (a click on a "needs you" notification, spec 052 FR-059). */
   focusWindow?(): Promise<{ ok: boolean }>;
   /** Set the theme (specs 037-040): a built-in id or an imported user theme id. */
-  setTheme?(id: string): Promise<{ ok: boolean; theme?: string }>;
+  setTheme?(id: string): Promise<{ ok: boolean; theme?: string; characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' }>;
+  /** Spec 077 FR-064: set who sits at the desks; main refuses anything not on the list (`ok: false`, the value in force). */
+  setCharacters?(v: string): Promise<{ ok: boolean; characters: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' }>;
   /** User themes (spec 040): scan userData/themes; each valid pack listed, each invalid one given back with a reason. */
   listUserThemes?(): Promise<Array<{ id: string; name?: string; ok: boolean; error?: string }>>;
   getUserTheme?(id: string): Promise<Record<string, unknown> | null>;
@@ -868,6 +924,8 @@ export interface DurbarApi {
   setSchedulesPaused?(on: boolean): Promise<{ ok: boolean; pausedAll: boolean }>;
   /** Spec 052 FR-089: one run of a schedule now ("Run missed now"), through the same path as a scheduled run. */
   runScheduleNow?(id: string): Promise<{ ok: boolean; error?: string }>;
+  /** Spec 044 FR-043: one schedule's run log, newest first; read-only. */
+  scheduleRuns?(id: string): Promise<{ ok: true; runs: ScheduleRunInfo[] } | { ok: false }>;
   /** Spec 052 FR-089: what happened while the app was closed (more than 30 minutes), or null. */
   sinceAway?(): Promise<SinceAwayInfo | null>;
   dismissSinceAway?(): Promise<{ ok: boolean }>;
@@ -947,6 +1005,8 @@ export interface DurbarApi {
   mcpGlobalSetOff?(app: GlobalApp, name: string, off: boolean): Promise<{ ok: boolean }>;
   /** `focus: true` = the window regained focus: main reads the agent app's MCP list again when a sign-in page is open (spec 058 FR-064). */
   agentMcp?(id: string, focus?: boolean): Promise<AgentMcpReply>;
+  /** Spec 058 FR-190 (issue #779 B): ask the agent app for its server list again (the dialog opening, or Refresh); the new states arrive as the usual `mcp` event. */
+  agentMcpRefresh?(id: string, manual?: boolean): Promise<McpRefreshResult>;
   /** Spec 058 FR-021: restart one MCP server of this agent's running session. */
   agentMcpRestart?(id: string, name: string): Promise<McpRestartResult>;
   /** Spec 058 FR-065: start the agent app's own sign-in for one MCP server. Main keeps the address; the reply has the host only. */
@@ -959,8 +1019,9 @@ export interface DurbarApi {
   agentMcpTools?(id: string, name: string): Promise<McpToolsResult>;
   /** Spec 069 FR-061: the tools of one server turned off in this agent's folder (applies to new sessions and after Restart session). */
   setAgentMcpToolsOff?(id: string, name: string, off: string[]): Promise<{ ok: boolean; error?: string }>;
-  /** Spec 058 FR-022: end and resume this agent's session with the current MCP servers; `confirmed` after the window asked. */
-  agentMcpRestartSession?(id: string, confirmed: boolean): Promise<McpRestartSessionResult>;
+  /** Spec 058 FR-022: end and resume this agent's session with the current MCP servers; `confirmed` after the window asked.
+   *  Spec 087 FR-022: `reason` 'sandbox' is *Restart without the sandbox* (the same op; it changes main's words only; anything else is 'mcp'). */
+  agentMcpRestartSession?(id: string, confirmed: boolean, reason?: McpRestartReason): Promise<McpRestartSessionResult>;
   /** Per-agent override: `enabled=false` turns the server off for this agent (now when the session runs, else at its next start). */
   setAgentMcp?(id: string, name: string, enabled: boolean): Promise<{ ok: boolean; error?: string }>;
 
@@ -1021,8 +1082,8 @@ export interface DurbarApi {
   onAgentAdded(cb: (a: AgentInfo) => void): () => void;
   /** The Settings… item of the macOS app menu (⌘,), spec 052 FR-083. */
   onMenuSettings?(cb: () => void): () => void;
-  /** File > Add Folder… / Add VS Code Workspace… of the macOS menu (⌘O, ⇧⌘O), spec 052 FR-164. */
-  onMenuAdd?(cb: (kind: 'folder' | 'workspace') => void): () => void;
+  /** File > Add Folder… / Add VS Code Workspace… of the macOS menu (⌘O, ⇧⌘O), spec 052 FR-164; File > New Folder… (`new`), spec 093 FR-001a. */
+  onMenuAdd?(cb: (kind: 'folder' | 'workspace' | 'new') => void): () => void;
   /** The window entered (true) or left (false) full screen, spec 052 FR-085. */
   onFullScreen?(cb: (on: boolean) => void): () => void;
   /** A double-click on a drag area of the top bar, spec 052 FR-085 (Mac only; main zooms, minimizes or ignores it by the system setting). */

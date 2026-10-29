@@ -1,0 +1,1 @@
+- **Unreferenced screenshots removed** (spec 021 FR-063, T044, #854): 79 pictures in `docs/screenshots/` that no document, page or driver refers to were deleted (about 15 MB less in a working tree; the git history is unchanged). Checked by `npm test` (`test:site`, `test:uisuite`).

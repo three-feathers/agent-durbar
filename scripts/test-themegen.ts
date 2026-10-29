@@ -133,7 +133,7 @@ assert.deepStrictEqual(firstJsonObject('{bad} then {"ok":true}'), { ok: true });
   }
   const full: Record<string, string> = {};
   for (const k of Object.keys(clean)) full[k] = '#20242a';
-  Object.assign(full, { '--bg': '#121417', '--surface': '#1b1e23', '--ink': '#eef1f5', '--ink-2': '#c9ced6', '--muted': '#9aa2ad', '--room-path': '#9aa2ad', '--drop-ink': '#eef1f5', '--brand-mark': '#eef1f5', '--idle-stub-ink': '#eef1f5', '--sage-ink': '#8abaa1', '--red-ink': '#bc7a74', '--amber-ink': '#cbb693' }); // spec 052 FR-169: a dark theme needs light button inks (they sit under --surface text)
+  Object.assign(full, { '--bg': '#121417', '--surface': '#1b1e23', '--ink': '#eef1f5', '--ink-2': '#c9ced6', '--muted': '#9aa2ad', '--room-path': '#9aa2ad', '--drop-ink': '#eef1f5', '--brand-mark': '#eef1f5', '--idle-stub-ink': '#eef1f5', '--desk-new': '#5fd08a', '--desk-needs': '#f0a060', '--sage-ink': '#8abaa1', '--red-ink': '#bc7a74', '--amber-ink': '#cbb693' }); // spec 052 FR-169: a dark theme needs light button inks (they sit under --surface text)
   for (const s of ['working', 'thinking', 'waiting', 'idle', 'error', 'done']) { full['--pb-' + s] = '#20242a'; full['--pc-' + s] = '#e8ecf2'; }
   const r2 = parseGeneratedTheme(JSON.stringify({ name: 'Full night', tokens: full }), 'x', ctx);
   assert.ok(r2.ok && r2.issues.length === 0, JSON.stringify(r2.ok ? r2.issues : r2));
@@ -147,7 +147,7 @@ assert.deepStrictEqual(firstJsonObject('{bad} then {"ok":true}'), { ok: true });
   assert.ok(iss.some((i) => /^--pc-error .* on --pb-error/.test(i)));
   assert.ok(iss.filter(isBlocking).length >= 1);
   assert.ok(!isBlocking('--pc-error (#1) on --pb-error (#2) has contrast 1:1, needs 4.5:1'));
-  assert.strictEqual(CONTRAST_PAIRS.length, 23);
+  assert.strictEqual(CONTRAST_PAIRS.length, 25);
   // spec 052 FR-169: --surface is the text of a primary (--sage-ink), danger (--red-ink) and warn (--amber-ink) button, so each is a pair
   for (const ink of ['--sage-ink', '--red-ink', '--amber-ink']) {
     assert.ok(CONTRAST_PAIRS.some(([a, b, m]) => a === '--surface' && b === ink && m === 4.5), ink);

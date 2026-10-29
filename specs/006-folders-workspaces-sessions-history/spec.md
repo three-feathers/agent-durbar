@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: index
 title: Folders, workspaces, sessions, history
-status: implemented; delta 2026-10-18: warning for a home folder or a root (issue #170); delta 2026-10-18: remove one session, rename a folder (FR-017/FR-018); delta 2026-10-19: a workspace's other folders given to the session (FR-019, T020); delta 2026-10-19: a folder continues its last session after a restart (FR-020/FR-021, T021, owner decision); delta 2026-10-19: Remove folder from a room's ⋯ menu and a single-session chat header (FR-022); delta 2026-10-19: search box in Previous sessions (FR-023, T031, issue #252) built; delta 2026-10-20: Pin, Hide and Delete in Previous sessions (FR-024..FR-032, T032..T044, issue #368) built on the simulator, the fake adapter and fake Copilot/Codex backends (T032..T044); no real delete run (`[KNOWN GAP]`); delta 2026-10-21: Previous sessions as a collapsible section above the chat with Ctrl+Shift+H and a remembered choice (FR-033..FR-037, T048..T056, owner request) built on the simulator; not checked on macOS or Windows (`[KNOWN GAP]`); delta 2026-10-23: a folder name renamed in place (spec 059 FR-020..FR-025, #636), specified, not built; delta 2026-10-25: sessions interrupted by a crash are offered back (FR-038..FR-046, #606), built on the simulator; no real crash run (`[KNOWN GAP]`)
+status: building
+note: T022 testable add/restore module open; T025 subfolder sessions needs clarify
 -->
 
 **Feature Branch**: `006-folders-workspaces-sessions-history` (reverse-engineered; milestones 1 and 6)
@@ -124,6 +125,13 @@ For a folder that has not been used yet in this run, a "Previous sessions" panel
 - `getSessionMetadata(id)` rejects or returns nothing for an id with no history.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> implemented; delta 2026-10-18: warning for a home folder or a root (issue #170); delta 2026-10-18: remove one session, rename a folder (FR-017/FR-018); delta 2026-10-19: a workspace's other folders given to the session (FR-019, T020); delta 2026-10-19: a folder continues its last session after a restart (FR-020/FR-021, T021, owner decision); delta 2026-10-19: Remove folder from a room's ⋯ menu and a single-session chat header (FR-022); delta 2026-10-19: search box in Previous sessions (FR-023, T031, issue #252) built; delta 2026-10-20: Pin, Hide and Delete in Previous sessions (FR-024..FR-032, T032..T044, issue #368) built on the simulator, the fake adapter and fake Copilot/Codex backends (T032..T044); no real delete run (`[KNOWN GAP]`); delta 2026-10-21: Previous sessions as a collapsible section above the chat with Ctrl+Shift+H and a remembered choice (FR-033..FR-037, T048..T056, owner request) built on the simulator; not checked on macOS or Windows (`[KNOWN GAP]`); delta 2026-10-23: a folder name renamed in place (spec 059 FR-020..FR-025, #636), specified, not built; delta 2026-10-25: sessions interrupted by a crash are offered back (FR-038..FR-046, #606), built on the simulator; no real crash run (`[KNOWN GAP]`)
+
 
 ### 2026-10-19: search box in Previous sessions (issue #252, task T031)
 
@@ -313,3 +321,6 @@ Why: when Durbar is killed, crashes or the machine stops while agents are workin
 *Corrected:*
 - **FR-172** The folder's `⋯` menu gets **Notes (N)…**, which opens the folder's Notes screen (spec 083 FR-044). `[KNOWN GAP]` not built yet: the folder menu has no *Notes (N)…* item; spec 083 T034 builds it with the per-folder Notes screen.
 - **FR-173** **Remove folder** keeps the folder's notes by default and says so; the dialog gets a box **Also delete its notes** (unticked by default). Re-adding the folder shows its notes again (spec 083 FR-048). `[KNOWN GAP]` not built yet: *Remove folder* has no *Also delete its notes* box and says nothing about notes; the notes themselves are kept (nothing deletes them), and spec 083 T034 (FR-048) builds the box and the text.
+
+### 2026-10-27: + Folder can also create a folder (cross-reference; owned by spec 093, issue #805)
+Spec 093 adds a choice to **+ Folder** (FR-001 here): add an existing folder (unchanged), or create one (clone a repository, a new local repository with `git init`, or an empty folder). The created folder is added through the same `addMany` path, in the top bar's mode like Add existing (default Read-only; owner answer Q2 = b, 2026-10-27). Requirements, security model and tasks are in `specs/093-create-folder/`; nothing in this spec changes until it is built.

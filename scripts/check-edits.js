@@ -1,7 +1,7 @@
 /*
  * Check for spec 005 FR-020..FR-026: file edits stream into the chat. Simulator only (`simedits=1`), no agent app, no AI credits.
  *
- *   npm run check:edits
+ *   npm run check:ui -- --only check-edits
  *   OUT=docs/screenshots  (optional) also saves the screenshots 005-edit-{expert,simple}-{1440x900,1280x800}.png
  *
  * The first agent (sim-1) applies a two-file patch, creates a file that holds a token-shaped value (the page must mask it), then starts an Edit whose

@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Contacts (issue #701): a local contacts book (0600) with favourites; send the message box to a person from any chat via an `@` chip or a Contacts drawer, always through a preview with a secret block; opens Teams, email, Slack or Telegram with the text (C) or sends through the user's own MCP server with a single-use broker ticket, held in every mode (A); opt-in Teams import; agent drafting
-status: Draft (2026-10-24, revised after Paco's review of PR #707): spec, plan, research and tasks; owner decisions OD1..OD3 and fixed rules FX1..FX5 (Ruben), coordinator decisions D1..D18; owner questions Q1..Q5 with defaults; nothing built
+status: draft
+note: spec, plan and tasks drafted; nothing built
 -->
 
 **Feature Branch**: `084-contacts` (touches 005 chat panel and composer, 003/018 permission broker, 073 the picker list pattern, 058/069 MCP lists, 040 one-shot text, 080 (FR-024 is not loosened), 083 the chat drawer, 010 simulator)
@@ -325,6 +326,13 @@ Paco's notes say "short, in English, no greetings". I type "tell paco 669 is rea
 - **Q5** FR-084: the rate limit, 5 sends per minute and 30 per hour (default). Other numbers? **Owner answer (Ruben, 2026-10-24, DM to his coordinator: "Ok" to the defaults): the default stands.**
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> Draft (2026-10-24, revised after Paco's review of PR #707): spec, plan, research and tasks; owner decisions OD1..OD3 and fixed rules FX1..FX5 (Ruben), coordinator decisions D1..D18; owner questions Q1..Q5 with defaults; nothing built
+
 
 ### 2026-10-24: review fixes (Paco's review of PR #707, request changes; decided by the coordinator under Ruben's delegation)
 

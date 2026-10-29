@@ -8,8 +8,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFile, execFileSync } from 'child_process';
-import { GIT_MAX_FILES, execFileGitRun, filterDrivers, folderGitStatus, gitEnv, makeGitExec, nodeGitExec, parseNumstatZ, parsePorcelainZ } from '../src/main/gitstatus';
-import type { GitExec } from '../src/main/gitstatus';
+import { EventEmitter } from 'events';
+import { GIT_CLONE_PROTOCOLS, GIT_MAX_FILES, GIT_TRANSPORTS, SSH_COMMAND_READ, execFileGitRun, sshCommandReadArgv, filterDrivers, folderGitStatus, gitCreateCall, gitEnv, gitSshCommandFor, makeGitExec, nodeGitExec, parseNumstatZ, parsePorcelainZ, readUserSshCommand, runGitCreate } from '../src/main/gitstatus';
+import type { GitChild, GitCreateRequest, GitExec, GitSpawnOptions } from '../src/main/gitstatus';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const GS = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'gitstatus.js'));
@@ -120,9 +121,38 @@ async function main(): Promise<void> {
   }
   const src = (require('fs').readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'gitstatus.ts'), 'utf8') as string).replace(/\r\n/g, '\n');
   assert.ok(/export const nodeGitExec: GitExec = makeGitExec\(execFileGitRun\(execFile as unknown as ExecFileFn\)\);/.test(src), 'nodeGitExec is makeGitExec over execFileGitRun over Node execFile');
-  assert.deepStrictEqual(src.match(/^import .*child_process.*$/gm), ["import { execFile } from 'child_process';"], 'only execFile is imported from child_process');
+  // spec 093 FR-030, FR-034: execFile for the read-only runner, spawn for the create entry point; nothing else
+  assert.deepStrictEqual(src.match(/^import .*child_process.*$/gm), ["import { execFile, spawn } from 'child_process';", "import type { ChildProcess } from 'child_process';"], 'only execFile and spawn are imported from child_process');
   assert.strictEqual((src.match(/\b(?:execFile|spawn|execSync|execFileSync|spawnSync|fork)\(/g) ?? []).length, 0, 'no other process call in gitstatus.ts');
-  assert.strictEqual((src.match(/ef\('git', argv, gitExecOptions\(env\)/g) ?? []).length, 1, 'the one git process call uses gitExecOptions');
+  assert.strictEqual((src.match(/ef\('git', argv, gitExecOptions\(env\)/g) ?? []).length, 1, 'the one read-only git process call uses gitExecOptions');
+  assert.strictEqual((src.match(/\bsp\('git', argv, gitSpawnOptions\(cwd, env, platform\)\)/g) ?? []).length, 1, 'the one create git process call uses gitCreateCall\'s argv and gitSpawnOptions');
+  assert.strictEqual((src.match(/\bsp\(/g) ?? []).length, 1, 'and nothing else is spawned');
+  assert.ok(/const sp: GitSpawn = deps\.spawn \?\? \(spawn as unknown as GitSpawn\);/.test(src), "the create runner reads child_process's spawn when it runs (the simulator's seal applies)");
+  assert.ok(src.includes("const { argv, env } = gitCreateCall(req, { hooksDir: deps.hooksDir, env: deps.env, userSshCommand: deps.userSshCommand, platform: deps.platform }); // never the protocols seam (FR-095)"), 'the create runner takes its argv and env from gitCreateCall only, with the default protocols (no seam)');
+  // spec 093 FR-033: the clone's one config read is a fixed argv in the private hooks folder, with the read-only runner's options
+  assert.strictEqual((src.match(/\bef\('git', sshCommandReadArgv\(o\.url\), \{ \.\.\.gitExecOptions\(env\), cwd: o\.hooksDir \}/g) ?? []).length, 1, 'the core.sshCommand read: fixed argv, gitExecOptions, in the hooks folder');
+  assert.strictEqual((src.match(/\bef\(/g) ?? []).length, 2, 'and no other execFile call in gitstatus.ts');
+  // FR-095: nothing in src/ passes the protocols seam (a third argument to gitCreateCall) or names `file` as an allowed protocol
+  {
+    const walk = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : /\.(ts|js)$/.test(e.name) ? [path.join(dir, e.name)] : []));
+    const SRC = path.join(__dirname, '..', '..', 'src');
+    const calls = walk(SRC).flatMap((f) => (fs.readFileSync(f, 'utf8').match(/\bgitCreateCall\([^;]*/g) ?? []).map((c) => [path.relative(SRC, f), c] as const));
+    assert.ok(calls.length >= 1 && calls.every(([f]) => f === path.join('main', 'gitstatus.ts')), 'only gitstatus.ts calls gitCreateCall: ' + JSON.stringify(calls));
+    assert.ok(!walk(SRC).some((f) => /\bprotocols:\s*\[\s*['"]file/.test(fs.readFileSync(f, 'utf8'))), 'no protocols: [\'file\'] anywhere in src/');
+  }
+  // FR-030: no other file in src/ starts git (a git binary name as the file of a process call)
+  {
+    const walkTs = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walkTs(path.join(dir, e.name)) : /\.(ts|js)$/.test(e.name) ? [path.join(dir, e.name)] : []));
+    const SRC = path.join(__dirname, '..', '..', 'src');
+    const STARTS_GIT = /\b(?:execFile|execFileSync|spawn|spawnSync|exec|execSync|fork|sp|ef)\s*\(\s*['"`](?:[^'"`]*[\\/])?git(?:\.exe)?['"`]/;
+    const files = walkTs(SRC);
+    assert.ok(files.length > 100, 'src/ is scanned');
+    const others = files.filter((f) => path.basename(f) !== 'gitstatus.ts' && STARTS_GIT.test(fs.readFileSync(f, 'utf8')));
+    assert.deepStrictEqual(others.map((f) => path.relative(SRC, f)), [], 'only src/main/gitstatus.ts starts git');
+    for (const sample of ["spawn('git', a)", 'execFile("git", a, cb)', "spawnSync('/usr/bin/git', a)", "execFile('C:\\\\Git\\\\bin\\\\git.exe', a)"]) assert.ok(STARTS_GIT.test(sample), `the scan sees ${sample}`);
+  }
+
+  await createEntryChecks();
 
   // the window's words (text only)
   assert.strictEqual(GS.chipText({ repo: false }), '');
@@ -146,6 +176,165 @@ async function main(): Promise<void> {
  * accepts on Windows too. Hooks are `#!/bin/sh` files (Git for Windows runs those through its `sh` as well).
  * Without the hardening (main before FR-008) this run lists fsmonitor, filter, process and submodule markers.
  */
+/** Spec 093 FR-030..FR-034: the create entry point's exact argv, environment and spawn options (fakes only; the real git runs in test:newfoldergit). */
+async function createEntryChecks(): Promise<void> {
+  assert.deepStrictEqual([...GIT_TRANSPORTS], ['file', 'git', 'ssh', 'http', 'https', 'ext', 'fd', 'ftp', 'ftps'], 'every transport git ships');
+  const base: NodeJS.ProcessEnv = { PATH: '/usr/bin', HOME: '/h', GIT_DIR: '/elsewhere/.git', git_config_global: '/y', GIT_CONFIG_PARAMETERS: "'core.hooksPath'='/evil'", GIT_SSL_NO_VERIFY: '1', GIT_PROXY_COMMAND: 'x', GIT_SSH: 's', GIT_SSH_COMMAND: 'ssh -x', GIT_TEMPLATE_DIR: '/t', SSH_ASKPASS: 'a', HTTPS_PROXY: 'http://proxy.example:3128', SSH_AUTH_SOCK: '/run/agent' };
+  const init = gitCreateCall({ kind: 'init' }, { hooksDir: '/tmp/durbar-hooks-1', env: base });
+  const NEVER = ['file', 'git', 'ssh', 'http', 'https', 'ext', 'fd', 'ftp', 'ftps'].flatMap((p) => ['-c', `protocol.${p}.allow=never`]);
+  assert.deepStrictEqual(init.argv, ['--no-pager', '-c', 'core.hooksPath=/tmp/durbar-hooks-1', '-c', 'core.fsmonitor=false', '-c', 'core.useBuiltinFSMonitor=false', '-c', 'submodule.recurse=false', '-c', 'protocol.allow=never', ...NEVER, 'init', '--quiet'], 'init: exact argv (every -c before the subcommand, no path, every transport off)');
+  assert.ok(!init.argv.some((a) => /^credential\.helper/.test(a)), 'credential.helper is not touched (D7)');
+  assert.deepStrictEqual(Object.keys(init.env).filter((k) => /^git_/i.test(k)).sort(), ['GIT_ALLOW_PROTOCOL', 'GIT_NO_LAZY_FETCH', 'GIT_OPTIONAL_LOCKS', 'GIT_TERMINAL_PROMPT'], "init: none of the user's GIT_* reach git, only the safe ones");
+  assert.deepStrictEqual([init.env.GIT_ALLOW_PROTOCOL, init.env.GIT_TERMINAL_PROMPT], ['', '0'], 'init: no transport at all, never a prompt');
+  assert.deepStrictEqual([init.env.PATH, init.env.HTTPS_PROXY, init.env.SSH_AUTH_SOCK, init.env.SSH_ASKPASS], ['/usr/bin', 'http://proxy.example:3128', '/run/agent', undefined], 'PATH and the non-GIT variables pass; SSH_ASKPASS is dropped');
+  const probeKey = 'DURBAR_093_ENV_PROBE';
+  process.env[probeKey] = '1';
+  try { assert.strictEqual(gitCreateCall({ kind: 'init' }, { hooksDir: '/x', env: base }).env[probeKey], undefined, "the injected environment is the one used (not Durbar's own)"); } finally { delete process.env[probeKey]; }
+  assert.throws(() => gitCreateCall({ kind: 'status' } as unknown as GitCreateRequest, { hooksDir: '/x' }), /not allowed/);
+  assert.throws(() => gitCreateCall(null as unknown as GitCreateRequest, { hooksDir: '/x' }), /not allowed/);
+  assert.throws(() => gitCreateCall({ kind: 'init' }, { hooksDir: '' }), /hooks folder/, 'no run without the private hooks folder');
+
+  await cloneCallChecks(base);
+
+  // runGitCreate over a fake spawn: the file, argv and options of the real call, its output and end, Cancel
+  type Rec = { file: string; args: string[]; opts: GitSpawnOptions };
+  const calls: Rec[] = [];
+  const kids: Array<EventEmitter & { pid?: number; exitCode: number | null; signalCode: string | null; stdout: EventEmitter; stderr: EventEmitter; kill(): boolean }> = [];
+  const fakeSpawn = (pid: number | undefined) => (file: string, args: string[], opts: GitSpawnOptions): GitChild => {
+    calls.push({ file, args, opts });
+    const k = Object.assign(new EventEmitter(), { pid, exitCode: null, signalCode: null, stdout: new EventEmitter(), stderr: new EventEmitter(), kill: () => true });
+    kids.push(k);
+    return k as unknown as GitChild;
+  };
+  const killed: Array<{ pid?: number; platform: string }> = [];
+  const kill = ((c: { pid?: number }, platform: NodeJS.Platform) => { killed.push({ pid: c.pid, platform }); }) as never;
+  for (const platform of ['linux', 'darwin', 'win32'] as NodeJS.Platform[]) {
+    calls.length = 0;
+    const seen: string[] = [];
+    const h = runGitCreate({ kind: 'init' }, '/w/new', { hooksDir: '/tmp/durbar-hooks-2', env: base, platform, spawn: fakeSpawn(4242), kill, onOutput: (t) => seen.push(t) });
+    const want = gitCreateCall({ kind: 'init' }, { hooksDir: '/tmp/durbar-hooks-2', env: base });
+    assert.strictEqual(calls.length, 1);
+    assert.strictEqual(calls[0].file, 'git', 'git from PATH');
+    assert.deepStrictEqual(calls[0].args, want.argv, 'the argv is gitCreateCall\'s');
+    const { env, ...opts } = calls[0].opts;
+    assert.deepStrictEqual(env, want.env, 'the env is gitCreateCall\'s');
+    assert.deepStrictEqual(opts, { cwd: '/w/new', shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached: platform !== 'win32' }, `${platform}: no shell, no window, stdin closed, its own process group on POSIX`);
+    const k = kids[kids.length - 1];
+    k.stderr.emit('data', Buffer.from('hint: Using master\n'));
+    h.cancel();
+    assert.deepStrictEqual(killed.pop(), { pid: 4242, platform }, `${platform}: Cancel ends the tree through killChildTree`);
+    k.exitCode = 0;
+    k.emit('close', 0, null);
+    const r = await h.done;
+    assert.deepStrictEqual(r, { code: 0, signal: null, stderrTail: 'hint: Using master\n' });
+    assert.deepStrictEqual(seen, ['hint: Using master\n'], 'each piece of output is handed on');
+    h.cancel();
+    assert.strictEqual(killed.length, 0, 'no kill after the child exited (its pid may be another process now)');
+  }
+  // git not installed: spawn throws, or emits error without a pid; both end with spawnError ENOENT and nothing to kill
+  const thrown = runGitCreate({ kind: 'init' }, '/w', { hooksDir: '/h', spawn: () => { throw Object.assign(new Error('spawn git ENOENT'), { code: 'ENOENT' }); }, kill });
+  assert.deepStrictEqual(await thrown.done, { code: null, signal: null, stderrTail: '', spawnError: 'ENOENT' });
+  const noPid = runGitCreate({ kind: 'init' }, '/w', { hooksDir: '/h', spawn: fakeSpawn(undefined), kill });
+  kids[kids.length - 1].emit('error', Object.assign(new Error('spawn git ENOENT'), { code: 'ENOENT' }));
+  assert.deepStrictEqual(await noPid.done, { code: null, signal: null, stderrTail: '', spawnError: 'ENOENT' });
+  noPid.cancel();
+  assert.strictEqual(killed.length, 0, 'nothing to kill when git never started');
+  // an error from a child that did start (it has a pid) does not settle the run: the caller removes the folder only after git has
+  // exited, so `done` waits for close (review on 11183593, mutant M11: finishing on every error)
+  {
+    const started = runGitCreate({ kind: 'init' }, '/w', { hooksDir: '/h', spawn: fakeSpawn(5150), kill });
+    const sk = kids[kids.length - 1];
+    let settled = false;
+    void started.done.then(() => { settled = true; });
+    sk.stderr.emit('data', 'fatal: x\n');
+    sk.emit('error', Object.assign(new Error('kill EPERM'), { code: 'EPERM' }));
+    for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+    assert.strictEqual(settled, false, 'an error from a running child does not end the run before it has exited');
+    sk.exitCode = 1;
+    sk.emit('close', 1, null);
+    assert.deepStrictEqual(await started.done, { code: 1, signal: null, stderrTail: 'fatal: x\n', spawnError: 'EPERM' }, 'it ends on close, with the error code kept');
+  }
+  // the tail keeps the end of a long output
+  const long = runGitCreate({ kind: 'init' }, '/w', { hooksDir: '/h', spawn: fakeSpawn(7), kill });
+  const lk = kids[kids.length - 1];
+  lk.stderr.emit('data', 'x'.repeat(20000));
+  lk.stderr.emit('data', 'fatal: the end\n');
+  lk.emit('close', 128, null);
+  const lr = await long.done;
+  assert.ok(lr.stderrTail.endsWith('fatal: the end\n') && lr.stderrTail.length === 8192 && lr.code === 128, 'the last 8 KB of stderr are kept');
+  console.log('gitstatus: create entry point (spec 093): init argv/env, spawn options per platform, cancel, missing git OK');
+}
+
+/** Spec 093 phase 2 (T032, T033, T044): the clone's exact argv and environment, the D11 ssh rule, the CA pass-through, the seam. */
+async function cloneCallChecks(base: NodeJS.ProcessEnv): Promise<void> {
+  const URL = 'git@github.com:o/r.git';
+  const c = gitCreateCall({ kind: 'clone', url: URL }, { hooksDir: '/tmp/durbar-hooks-9', env: base });
+  const CLONE_CFG = ['core.hooksPath=/tmp/durbar-hooks-9', 'core.fsmonitor=false', 'core.useBuiltinFSMonitor=false', 'submodule.recurse=false', 'protocol.allow=never',
+    'protocol.file.allow=never', 'protocol.git.allow=never', 'protocol.ssh.allow=always', 'protocol.http.allow=never', 'protocol.https.allow=always', 'protocol.ext.allow=never', 'protocol.fd.allow=never', 'protocol.ftp.allow=never', 'protocol.ftps.allow=never',
+    'transfer.credentialsInUrl=die', 'transfer.bundleURI=false', 'core.protectNTFS=true', 'core.protectHFS=true'];
+  assert.deepStrictEqual(c.argv, ['--no-pager', ...CLONE_CFG.flatMap((x) => ['-c', x]), 'clone', '--progress', '--no-recurse-submodules', '--', URL, '.'], 'clone: exact argv (every -c before the subcommand, -- before the URL, . last)');
+  assert.ok(!c.argv.some((a) => /^(credential\.helper|filter\.|core\.sshCommand)/.test(a)), "the user's credential helper and filter drivers are kept (D7, Q5); no sshCommand override in argv");
+  assert.deepStrictEqual([...GIT_CLONE_PROTOCOLS], ['https', 'ssh'], 'the default protocols');
+  assert.deepStrictEqual(Object.keys(c.env).filter((k) => /^git_/i.test(k)).sort(), ['GIT_ALLOW_PROTOCOL', 'GIT_NO_LAZY_FETCH', 'GIT_OPTIONAL_LOCKS', 'GIT_SSH_COMMAND', 'GIT_TERMINAL_PROMPT'], "clone: none of the user's GIT_* (GIT_SSL_NO_VERIFY, GIT_PROXY_COMMAND, GIT_SSH, GIT_CONFIG_*, GIT_DIR...) reach git");
+  assert.deepStrictEqual([c.env.GIT_ALLOW_PROTOCOL, c.env.GIT_TERMINAL_PROMPT, c.env.GIT_SSH_COMMAND], ['https:ssh', '0', 'ssh -o BatchMode=yes'], 'https and ssh only, never a prompt, ssh in BatchMode');
+  assert.deepStrictEqual([c.env.HTTPS_PROXY, c.env.SSH_AUTH_SOCK, c.env.SSH_ASKPASS, c.env.PATH], ['http://proxy.example:3128', '/run/agent', undefined, '/usr/bin'], 'the proxy and the ssh agent pass; SSH_ASKPASS does not');
+  // R4: GIT_SSL_CAINFO / GIT_SSL_CAPATH pass only as absolute paths (any case of the name); nothing else of GIT_SSL_*
+  const abs = path.resolve('ca', 'corp.pem');
+  const caEnv = { ...base, GIT_SSL_CAINFO: abs, git_ssl_capath: path.resolve('certs'), GIT_SSL_CERT: abs, GIT_SSL_NO_VERIFY: 'true' };
+  const ca = gitCreateCall({ kind: 'clone', url: URL }, { hooksDir: '/h', env: caEnv, platform: 'win32' }).env;
+  assert.deepStrictEqual([ca.GIT_SSL_CAINFO, ca.GIT_SSL_CAPATH, ca.GIT_SSL_CERT, ca.GIT_SSL_NO_VERIFY, ca.git_ssl_capath], [abs, path.resolve('certs'), undefined, undefined, undefined], 'Windows: the two CA paths pass, absolute, under their upper-case name (names ignore case there)');
+  const caPosix = gitCreateCall({ kind: 'clone', url: URL }, { hooksDir: '/h', env: caEnv, platform: 'linux' }).env;
+  assert.deepStrictEqual([caPosix.GIT_SSL_CAINFO, caPosix.GIT_SSL_CAPATH, caPosix.git_ssl_capath], [abs, undefined, undefined], 'POSIX: names are case-sensitive, a lower-case git_ssl_capath is another variable and is dropped');
+  for (const rel of ['ca.pem', './ca.pem', '../ca.pem', '', '~/ca.pem']) assert.strictEqual(gitCreateCall({ kind: 'clone', url: URL }, { hooksDir: '/h', env: { ...base, GIT_SSL_CAINFO: rel, GIT_SSL_CAPATH: rel } }).env.GIT_SSL_CAINFO, undefined, `a relative CA path is dropped: ${JSON.stringify(rel)}`);
+  // init gets no CA variable and no ssh command (no transport at all)
+  const ini = gitCreateCall({ kind: 'init' }, { hooksDir: '/h', env: { ...base, GIT_SSL_CAINFO: abs } }).env;
+  assert.deepStrictEqual([ini.GIT_SSL_CAINFO, ini.GIT_SSH_COMMAND, ini.GIT_ALLOW_PROTOCOL], [undefined, undefined, '']);
+  // D11: the user's own core.sshCommand
+  const sshFor = (u: string | undefined): string | undefined => gitCreateCall({ kind: 'clone', url: URL }, { hooksDir: '/h', env: base, userSshCommand: u }).env.GIT_SSH_COMMAND;
+  for (const [u, want] of [
+    [undefined, 'ssh -o BatchMode=yes'], ['', 'ssh -o BatchMode=yes'], ['   ', 'ssh -o BatchMode=yes'],
+    ['ssh', 'ssh -o BatchMode=yes'], ['ssh -i ~/.ssh/work', 'ssh -i ~/.ssh/work -o BatchMode=yes'], ['/usr/bin/ssh -v', '/usr/bin/ssh -v -o BatchMode=yes'],
+    ['"C:\\Program Files\\OpenSSH\\ssh.exe"', '"C:\\Program Files\\OpenSSH\\ssh.exe" -o BatchMode=yes'], ["'/opt/my ssh/ssh' -F cfg", "'/opt/my ssh/ssh' -F cfg -o BatchMode=yes"], ['C:/Windows/System32/OpenSSH/SSH.EXE', 'C:/Windows/System32/OpenSSH/SSH.EXE -o BatchMode=yes'], ['ssh -o BatchMode=no', 'ssh -o BatchMode=no -o BatchMode=yes'],
+    ['plink', undefined], ['"C:\\Program Files\\PuTTY\\plink.exe" -batch', undefined], ['/usr/local/bin/my-ssh-wrapper', undefined], ['sshpass -p x ssh', undefined], ['env A=1 ssh', undefined], ['"unclosed ssh', undefined], ['ssh.sh', undefined], ['xssh', undefined],
+  ] as Array<[string | undefined, string | undefined]>) assert.strictEqual(sshFor(u), want, `core.sshCommand ${JSON.stringify(u)} -> ${String(want)}`);
+  assert.strictEqual(gitSshCommandFor(undefined), 'ssh -o BatchMode=yes');
+  // the URL is checked again here, and the seam takes only known protocols
+  for (const bad of ['file:///x', 'ext::sh -c x', '-u', 'https://u:p@h/x', 'https://h/x y', '', 42]) assert.throws(() => gitCreateCall({ kind: 'clone', url: bad } as GitCreateRequest, { hooksDir: '/h' }), /clone URL not allowed/, `refused again by the runner: ${String(bad)}`);
+  const seam = gitCreateCall({ kind: 'clone', url: 'https://h/x.git' }, { hooksDir: '/h', env: base }, ['file']);
+  assert.deepStrictEqual(seam.argv.filter((a) => /^protocol\./.test(a)), ['protocol.allow=never', 'protocol.file.allow=always', 'protocol.git.allow=never', 'protocol.ssh.allow=never', 'protocol.http.allow=never', 'protocol.https.allow=never', 'protocol.ext.allow=never', 'protocol.fd.allow=never', 'protocol.ftp.allow=never', 'protocol.ftps.allow=never'], "the seam's file: only file allowed, every other transport by name off");
+  assert.strictEqual(seam.env.GIT_ALLOW_PROTOCOL, 'file');
+  for (const p of [['ext'], ['fd'], ['https', 'ext'], [], ['foo'], 'file' as unknown as string[]]) assert.throws(() => gitCreateCall({ kind: 'clone', url: 'https://h/x.git' }, { hooksDir: '/h' }, p), /protocols not allowed/, `seam refuses ${JSON.stringify(p)}`);
+  // runGitCreate never passes the seam: a request through it (fake spawn) has https:ssh only
+  const seen: string[][] = [];
+  const envs: NodeJS.ProcessEnv[] = [];
+  const k = runGitCreate({ kind: 'clone', url: 'https://h/x.git' }, '/w', { hooksDir: '/h', env: base, userSshCommand: 'plink', spawn: (_f: string, a: string[], o: GitSpawnOptions) => { seen.push(a); envs.push(o.env); const e = Object.assign(new EventEmitter(), { pid: 1, exitCode: 0, signalCode: null, stdout: null, stderr: null, kill: () => true }); setImmediate(() => e.emit('close', 0, null)); return e as unknown as GitChild; }, protocols: ['file'] } as never);
+  await k.done;
+  assert.ok(seen[0].includes('protocol.https.allow=always') && seen[0].includes('protocol.file.allow=never') && envs[0].GIT_ALLOW_PROTOCOL === 'https:ssh', 'runGitCreate ignores a protocols field: https and ssh only');
+  assert.strictEqual(envs[0].GIT_SSH_COMMAND, undefined, "plink in core.sshCommand: Durbar's GIT_SSH_COMMAND is not set, git uses the user's own");
+  // readUserSshCommand: one fixed read in the hooks folder, GIT_CEILING_DIRECTORIES its parent, the user's GIT_* dropped
+  const reads: Array<{ file: string; args: string[]; opts: Record<string, unknown> }> = [];
+  const ef = (out: string | null, code?: number) => ((file: string, args: string[], opts: unknown, cb: (e: Error | null, o: string) => void) => { reads.push({ file, args, opts: opts as Record<string, unknown> }); if (out === null) cb(Object.assign(new Error('x'), { code }), ''); else cb(null, out); }) as never;
+  const hooks = path.resolve('tmp', 'durbar-hooks-x');
+  assert.strictEqual(await readUserSshCommand({ hooksDir: hooks, env: base, execFile: ef('ssh -i k\n') }), 'ssh -i k');
+  assert.deepStrictEqual(SSH_COMMAND_READ, ['--no-pager', '-c', 'core.fsmonitor=false', 'config', '--get', 'core.sshCommand']);
+  assert.deepStrictEqual(sshCommandReadArgv(), [...SSH_COMMAND_READ], 'without a URL: the fixed read');
+  const r0 = reads[0];
+  assert.deepStrictEqual([r0.file, r0.args, r0.opts.cwd, r0.opts.shell, r0.opts.timeout], ['git', [...SSH_COMMAND_READ], hooks, false, 4000], 'git from PATH, the fixed argv, in the hooks folder, no shell, 4 s');
+  const renv = r0.opts.env as NodeJS.ProcessEnv;
+  assert.deepStrictEqual([renv.GIT_CEILING_DIRECTORIES, renv.GIT_DIR, renv.GIT_CONFIG_PARAMETERS, renv.HOME], [path.dirname(hooks), undefined, undefined, '/h'], 'GIT_CEILING_DIRECTORIES is the hooks folder\'s parent; the user\'s GIT_* are dropped; HOME passes (the global config)');
+  // with the clone's URL: -c remote.origin.url=<url> before the subcommand, so includeIf "hasconfig:remote.*.url:…" is evaluated
+  await readUserSshCommand({ hooksDir: hooks, url: 'HTTPS://github.com/o/r.git', env: base, execFile: ef('ssh') });
+  assert.deepStrictEqual(reads[reads.length - 1].args, ['--no-pager', '-c', 'core.fsmonitor=false', '-c', 'remote.origin.url=https://github.com/o/r.git', 'config', '--get', 'core.sshCommand'], 'the URL as git will get it');
+  await readUserSshCommand({ hooksDir: hooks, url: 'ext::sh -c x', env: base, execFile: ef('ssh') });
+  assert.deepStrictEqual(reads[reads.length - 1].args, [...SSH_COMMAND_READ], 'a refused URL is never put in the argv');
+  assert.strictEqual(await readUserSshCommand({ hooksDir: hooks, env: base, execFile: ef(null, 1) }), undefined, 'unset (exit 1)');
+  assert.strictEqual(await readUserSshCommand({ hooksDir: hooks, env: base, execFile: ef(null, 128) }), undefined, 'a failed read: unset (then BatchMode ssh, the safe side)');
+  assert.strictEqual(await readUserSshCommand({ hooksDir: hooks, env: base, execFile: ef('x'.repeat(5000)) }), undefined, 'an oversized value is not used');
+  assert.strictEqual(await readUserSshCommand({ hooksDir: hooks, env: base, execFile: (() => { throw new Error('spawn'); }) as never }), undefined);
+  assert.strictEqual(await readUserSshCommand({ hooksDir: 'relative', env: base, execFile: ef('ssh') }), undefined, 'only in an absolute hooks folder');
+  console.log('gitstatus: clone argv/env (spec 093 phase 2), D11 ssh rule, CA pass-through, URL re-check, seam, core.sshCommand read OK');
+}
+
 async function realGitCheck(): Promise<void> {
   try { execFileSync('git', ['--version'], { stdio: 'ignore', windowsHide: true }); } catch {
     // every CI runner has git (the checkout needs it): there a missing git is a failure, so a green run proves the check ran

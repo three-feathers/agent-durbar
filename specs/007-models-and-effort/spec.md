@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: index
 title: Model, reasoning-effort and Copilot Auto routing pickers
-status: implemented
+status: built
+note: T033 real model-switch check needs owner approval
 -->
 
 **Feature Branch**: `007-models-and-effort` (reverse-engineered; milestone 6)

@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: index
 title: Permission modes, approvals, session grants
-status: implemented; delta 2026-10-19: Windows grant keys, request ids (FR-088, FR-089); delta 2026-10-21: each session comes back in its own last mode, visibly (FR-090..FR-093); delta 2026-10-23: a Read-only refusal opens the mode menu (FR-094..FR-098); delta 2026-10-25: a "why was this allowed?" tag on tool cards, with undo of Durbar's own rule (FR-099..FR-107)
+status: built
 -->
 
 **Feature Branch**: `003-permissions-and-approvals` (reverse-engineered; milestones 1, 3, 5)
@@ -122,6 +122,13 @@ For folders I trust I can pick the mode that approves everything without prompts
 
 ## Changes
 
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> implemented; delta 2026-10-19: Windows grant keys, request ids (FR-088, FR-089); delta 2026-10-21: each session comes back in its own last mode, visibly (FR-090..FR-093); delta 2026-10-23: a Read-only refusal opens the mode menu (FR-094..FR-098); delta 2026-10-25: a "why was this allowed?" tag on tool cards, with undo of Durbar's own rule (FR-099..FR-107)
+
+
 ### 2026-10-16: permission gaps from the Spec Kit audit (closes FR-011, FR-012, FR-013; T021, T022, T023)
 
 **Decisions (the maintainer's brief; conservative defaults, documented).**
@@ -228,7 +235,7 @@ The mode names stay **Read-only / Ask first / Allow all** (internal `read-only` 
 | Remote control / Telegram (spec 054, spec 041) | no | unchanged, text only; the agent itself is told "Agent Durbar is in read-only mode: this action was denied. Do not retry it." (`permissions.ts`) |
 
 - **FR-094** `[IMPLEMENTED]` (sim: `check-ro-ask`) **The suggestion is a button.** When the agent can switch modes (`setPermMode`, the `modes` feature), a Read-only denial reads "(denied: this agent is in Read-only)" and offers one button **Switch to Ask first…** (`data-act="ro-ask"`, `aria-haspopup="menu"`, `aria-expanded`, the theme's `.btn`, 10.5px floor) under it. There is one such button per agent, on its newest denial: a newer denial moves it there (no pile of buttons when an agent tries five writes). An agent that cannot switch modes keeps the plain-text suggestion.
-- **FR-095** `[IMPLEMENTED]` (sim: `check-ro-ask`) **It opens the usual mode menu.** The button opens `openModeMenu` (the composer mode chip's menu, also opened by spec 012's **Change mode…**) anchored to the button, with the modes only: Read-only, Ask first and Allow all (as the agent kind offers them), each with its help line, the current one ticked (`aria-checked`), focus on it. Choosing a mode goes through `changeMode`, so Allow all keeps its confirmation (FR-014) and the grants question stays. The switch is for that agent only (`setPermMode(a.id)`); the menu's `aria-label` names it ("Permission mode for <name>"). Enter or Space opens it; arrows move; Escape or Tab closes it and focus returns to the button. A click on the button while the menu is open closes it.
+- **FR-095** `[IMPLEMENTED]` (sim: `check-ro-ask`) **It opens the usual mode menu.** The button opens `openModeMenu` (the composer mode chip's menu, also opened by spec 012's **Change mode…**) anchored to the button, with the modes only: Read-only, Ask first and Allow all (as the agent kind offers them), each with its help line, the current one ticked (`aria-checked`), focus on it. Choosing a mode goes through `changeMode`, so Allow all keeps its confirmation (FR-014) and the grants question stays. The switch is for that agent only (`setPermMode(a.id)`); the menu's `aria-label` names it ("Permission mode for <name>"). Enter or Space opens it; arrows move; Escape or Tab closes it and focus returns to the button. A click on the button while the menu is open closes it. Spec 087 FR-022 (2026-10-27): when the agent keeps an OS sandbox floor in Allow all, this menu also has *Restart without the sandbox* under the modes (it asks first; not in the office card's menu).
 - **FR-096** `[IMPLEMENTED]` (sim: `check-ro-ask`) **After a switch: say what to do, never resend.** The usual toast ("<name>: **Ask first** from the next request.") appears; the button is replaced by one line: "Now in Ask first. Ask <name> to try again: it will wait for your OK." (Allow all: "…: it will run without asking."), and focus moves to the message box; the line also goes to the polite live region (`announce`), so a screen reader hears it. No **Retry**: a denied tool call has no safe retry path (the agent was told not to retry it, and resending the prompt could repeat what already ran), so nothing is resent automatically. A mode changed another way (the chip) removes the button without that line. Choosing Read-only again, or cancelling the Allow all confirmation, changes nothing and keeps the button.
 - **FR-097** `[IMPLEMENTED]` (sim: `check-ro-ask` step 6, a synthetic `needs-permission` denial) **Needs you.** When the denial is the agent's pending card (a real adapter's `needs-permission` status puts it in *waiting*), its row offers **Switch to Ask first…** too (`aria-haspopup="menu"`); it closes the inbox, opens the chat and opens the same menu on the chat's button, so focus returns there.
 - **FR-098** (hook only) **A managed policy can lock the mode** (spec 076, not built). `roAskHint` carries a comment where such a lock would show the plain text instead of the button; nothing else is done now.
@@ -258,3 +265,21 @@ Under the three modes of this spec, [spec 087](../087-os-sandbox-floor/spec.md) 
 lock in **Read-only** and **Ask first**: Claude Code's bash sandbox and Copilot's local sandbox (writes none or only the session's folders,
 network off), Codex's read-limited profile unchanged; **Allow all** keeps the app's default. Durbar's own checks (FR-001..FR-028) do not
 change and nothing here approves a call they would deny or ask about (spec 087 FR-002). Simulator and fakes only (spec 087 T060-T062 open).
+
+### 2026-10-26: the card says how far "for this session" reaches (FR-013 narrowed again; FR-108, T040; v0.1.0 fix)
+
+FR-013 stays a design limit (a session grant is not configurable), but it was invisible: the buttons said "Allow for this session" and
+nothing on the card said that the grant reaches past this one request. **FR-108** `[IMPLEMENTED]` (test: `scripts/test-permissions.ts`
+for the words, sim: `scripts/check-permission-scope.js` for the card at both sizes): a pending approval card carries a short line of
+plain text (not colour alone, at least 10.5px, never cut) between the summary and the buttons, only when the card offers a grant that
+reaches further than the request: (a) **write**: "Allow for this session covers every file in <folder>/, not only this one." (several
+folders: "in those folders"); (b) **any arguments**: "Any arguments allows every simple <name> command, not only this one" and, for
+`git`, "also git push". The exact-command shell button needs no line (it grants that command text only, FR-022). The README *Safety
+model* says the same. `[KNOWN GAP]` FR-013 itself: the scope is still not narrower or configurable.
+
+### 2026-10-26: the README Safety model says what the checks really cover (release triage, #770)
+
+*Problem* (Vikram's release triage before the first stable release, 2026-10-26): the README *Safety model* overstated four things. It did not say that Copilot trusts an MCP server's own read-only mark (this spec's 2026-10-20 known gap); it said Durbar "never stores … your prompts", although a scheduled prompt is stored as written (spec 044 FR-001, `durbar-schedules.json`, 0600); it did not call masking best effort; and it did not say that on Linux without a desktop keyring the agent apps keep their own sign-ins in plain files (spec 058).
+
+- Docs only; no behaviour changes. The README *Safety model* now says each of these in plain words. The spending-limit sentence of the same PR is owned by spec 052 FR-179.
+

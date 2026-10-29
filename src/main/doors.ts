@@ -35,8 +35,18 @@ export const MAX_HELD = 200;
 /** Review on #631: all doors together, and the file (read only below this size; a larger file is not parsed, it is kept aside). */
 export const MAX_TOTAL_HELD = 1000;
 export const MAX_FILE = 4 * 1024 * 1024;
+/** The longest door key `okKey` accepts. */
+export const MAX_KEY = 300;
+/**
+ * Spec 044 FR-126: held runs are refused ('full') when the file would pass this, so `loadDoors` never meets a file over MAX_FILE (a held prompt may be 10,000 characters).
+ * The rest of MAX_FILE is room for door keys, which `setClosed` adds without measuring: at most MAX_DOORS of them, each a key of MAX_KEY characters that JSON
+ * writes as 6 bytes apiece (`\u00XX`), plus what an empty entry costs in the 2-space format of `doorsText`:
+ * `    "<key>": {` (key + 10 with the newline), `      "closed": false,` (23), `      "held": []` (17), `    },` (7) = 57, rounded up to 64.
+ */
+const DOOR_ENTRY_OVERHEAD = 64;
+export const HELD_FILE_CAP = MAX_FILE - MAX_DOORS * (MAX_KEY * 6 + DOOR_ENTRY_OVERHEAD);
 
-const okKey = (k: unknown): k is string => typeof k === 'string' && k.length > 0 && k.length <= 300 && k !== '__proto__' && k !== 'constructor' && k !== 'prototype';
+const okKey = (k: unknown): k is string => typeof k === 'string' && k.length > 0 && k.length <= MAX_KEY && k !== '__proto__' && k !== 'constructor' && k !== 'prototype';
 
 function cleanRun(v: unknown): HeldRun | undefined {
   if (!v || typeof v !== 'object') return undefined;
@@ -103,11 +113,15 @@ function keepAside(file: string): void {
 }
 
 /** Atomic (a temp file, then a rename), so a crash mid-write never leaves a broken file; mode 0600 (POSIX) is set when it is created. */
-export function saveDoors(file: string, doc: DoorsDoc): void {
+/** The text `saveDoors` writes (also used to measure it, FR-126). */
+export function doorsText(doc: DoorsDoc): string {
   const out: Record<string, { closed: boolean; held: HeldRun[] }> = {};
   for (const [k, d] of Object.entries(doc.doors)) if (d.closed || d.held.length) out[k] = { closed: d.closed, held: d.held };
+  return JSON.stringify({ doors: out }, null, 2);
+}
+export function saveDoors(file: string, doc: DoorsDoc): void {
   const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify({ doors: out }, null, 2), { mode: 0o600 });
+  fs.writeFileSync(tmp, doorsText(doc), { mode: 0o600 });
   fs.renameSync(tmp, file);
 }
 
@@ -150,8 +164,8 @@ export class Doors {
     return this.view(key);
   }
   /**
-   * FR-016: queues a run at a closed door, in order: 'held'. 'full' when the door's queue (MAX_HELD) or all doors together
-   * (MAX_TOTAL_HELD) are full, or the prompt is not one a schedule can have: nothing is queued and the caller must say so.
+   * FR-016: queues a run at a closed door, in order: 'held'. 'full' when the door's queue (MAX_HELD), all doors together
+   * (MAX_TOTAL_HELD) or the file's size (HELD_FILE_CAP, FR-126) are full, or the prompt is not one a schedule can have: nothing is queued and the caller must say so.
    * False when the door is open.
    */
   hold(key: string, run: { at: number; prompt: string; scheduleId?: string }): 'held' | 'full' | false {
@@ -162,6 +176,10 @@ export class Doors {
     const r = cleanRun({ ...run, id: this.newId() });
     if (!r) return 'full';
     d.held.push(r);
+    if (Buffer.byteLength(doorsText(this.doc), 'utf8') > HELD_FILE_CAP) { // FR-126: bytes as written (multi-byte text and escapes count), never past what a load accepts
+      d.held.pop();
+      return 'full';
+    }
     this.persist(this.doc);
     return 'held';
   }

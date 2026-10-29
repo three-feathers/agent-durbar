@@ -1,7 +1,7 @@
 /*
  * Check for spec 052 FR-141 (issue #367): grouped grant chips and a chat header whose chips flow. Simulator only (no AI credits).
  *
- *   npm run check:grant-chips
+ *   npm run check:ui -- --only check-grant-chips
  *   OUT=docs/screenshots  (optional) also saves the screenshots
  *
  * `simgrants=many` gives the first agent eight session grants with long names. At 1440x900 and 1280x800, in Expert and in Simple:

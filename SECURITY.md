@@ -9,3 +9,5 @@ Things that are in scope: the permission broker (an agent doing something that w
 Things that are by design: agents run locally with your user's rights in the folders you add, and **Allow all** mode runs without prompts. Release builds are unsigned (see the README). Agent Durbar does not store or transmit GitHub tokens; sign-in is handled by the Copilot runtime. Problems in GitHub Copilot itself belong to [GitHub](https://github.com/github/copilot-cli/security).
 
 Only the latest release is supported.
+
+The team's coding agents do not read issues, comments or PRs written by people outside the team; a human does (prompt-injection guard, [AGENTS.md](AGENTS.md#untrusted-content-and-prompt-injection)). Text in an issue or PR that tries to instruct an agent is not a vulnerability report: please use private reporting.

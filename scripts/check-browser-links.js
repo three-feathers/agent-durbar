@@ -64,8 +64,8 @@ module.exports = async (ctx) => {
   const byText = Object.fromEntries(links);
   assert.strictEqual(byText['the form page'], 'durbar-sim://pages/form');
   assert.strictEqual(byText['the links page'], 'durbar-sim://pages/links');
-  assert.strictEqual(byText['mail me'], 'mailto:sim@example.com');
-  assert.strictEqual(byText['a web page'], 'https://example.com/docs');
+  assert.strictEqual(byText['mail me'], 'mailto:sim@example.invalid');
+  assert.strictEqual(byText['a web page'], 'https://example.invalid/docs');
   assert.strictEqual(byText['a local page'], 'http://127.0.0.1:9/page');
   assert.strictEqual(byText['not a web link'], null, 'a scheme the sanitiser drops has no href');
 
@@ -119,7 +119,7 @@ module.exports = async (ctx) => {
 
   // 4. Ctrl/Cmd+click and the menu's system item: the system path, nothing loads
   assert.ok(await clickLink('a web page', { mod: true }));
-  await wait(() => logged.includes('https://example.com/docs'), 'Ctrl/Cmd+click goes to the system browser path');
+  await wait(() => logged.includes('https://example.invalid/docs'), 'Ctrl/Cmd+click goes to the system browser path');
   assert.strictEqual(urlOf(viewB), 'durbar-sim://pages/links', 'and loads nothing in the tab');
   await js(`(()=>{const a=[...document.querySelectorAll('#chat .md a')].find(x=>x.textContent.trim()==='a web page');const r=a.getBoundingClientRect();a.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+4,clientY:r.top+4}))})()`);
   await wait(() => js(`!!document.querySelector('#modeMenu [data-lact="sys"]')&&!!document.querySelector('#modeMenu [data-lact="tab"]')`), 'the link menu offers both');
@@ -127,7 +127,7 @@ module.exports = async (ctx) => {
   assert.ok(await js(`document.querySelector('#modeMenu').classList.contains('mode-menu')&&document.querySelector('#modeMenu').getAttribute('role')==='menu'`), 'the shared menu element');
   const before = logged.length;
   await js(`document.querySelector('#modeMenu [data-lact="sys"]').click()`);
-  await wait(() => logged.length === before + 1 && logged[logged.length - 1] === 'https://example.com/docs', 'the menu item goes to the system path');
+  await wait(() => logged.length === before + 1 && logged[logged.length - 1] === 'https://example.invalid/docs', 'the menu item goes to the system path');
   assert.ok(await js(`!document.getElementById('modeMenu')`), 'the menu closes');
   assert.strictEqual(urlOf(viewB), 'durbar-sim://pages/links');
 

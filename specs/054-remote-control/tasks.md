@@ -31,10 +31,10 @@ Not done and not planned here: the owner moved Claude channels to idea #485 ("Fo
 - [x] ~~T034 Bun detection and the plugin install command on Linux, macOS and Windows (no prompts)~~ (moved to #485, not run)
 - [x] ~~T035 Only after T030..T034: spec the wizard in detail (FR-020..FR-026), then plan and tasks~~ (moved to #485, not run)
 
-## Phase 3: Codex mobile (planned; research only)
+## Phase 3: Codex mobile (host integration research)
 
-- [ ] T040 Check whether Codex in the ChatGPT mobile app sees a session run by `codex app-server`, and whether the app-server has a method or flag for it (costs about 1 prompt) [FR-030]
-- [ ] T041 If yes: plan Codex `setRemote` on the same capability (FR-031)
+- [x] T040 Research whether ChatGPT mobile reaches `codex app-server` sessions and whether there is a method or flag [FR-030]. `read:` OpenAI documents mobile access through a connected desktop/SSH host using a managed app-server; its daemon controls are not a per-thread method for Durbar's separate stdio child. `real:` 2026-10-24, Codex CLI 0.164.0: one read-only prompt through `CodexAdapter` returned its expected response, but the owner could not see the thread in the already-paired mobile app. The managed daemon was running; desktop UI was closed and remote-control state was not verified. One prompt used; usage not measured. See spec Changes for scope and limitation. [KNOWN GAP] not verified on a real phone with an active connected host.
+- [x] T041 Disposition: do not add `CodexAdapter.setRemote` to the existing per-session capability. Mobile access requires managed host/app-server integration, a distinct architecture and permission-boundary design; defer until separately scoped and approved. No implementation planned in this task [FR-031].
 - [x] T011 FR-011 security review: native consent in main, refused in Allow all (and Allow all refused while on), off on GitHub before End/Remove/quit, activity log rows, fromApp on remote/mode/schedule handlers; notification body without the command
 
 ## Phase 2: Claude Remote Control (2026-10-20)
@@ -46,3 +46,6 @@ Not done and not planned here: the owner moved Claude channels to idea #485 ("Fo
 
 ## 2026-10-23 delta (owner, spec 017 doors)
 - [x] T054 Door closed by you: remote control off and refused, and the window offers to open the door (FR-040; built in spec 017 T013, T019) (renumbered from T040 in review: main's T040 is the Codex check, owned by PR 710)
+
+## 2026-10-28 delta (SDK 1.0.26 drops `remoteSession`)
+- [x] T055 `remoteSession: 'off'` kept as a 1.0.22-only hint with a comment; tests stop presenting it as a control; `test:remote` pins that `remote.enable` is reached only by `setRemote(id, true)` from `remoteops.ts`; "SDK 1.0.22" comments refreshed; real 1.0.103 check stays a KNOWN GAP [FR-070, FR-071]

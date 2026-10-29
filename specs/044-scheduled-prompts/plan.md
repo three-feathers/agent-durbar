@@ -117,6 +117,20 @@ Docs in the build PR: README feature list (`README.md:68`, the Scheduled prompts
 
 What exists is listed in the spec delta (read on `origin/main` 9a29020b, and #560 on `origin/044-topbar-schedules` ee6c000b). **Order:** build after #560 merges, on a branch from `origin/main` then; re-read #560's merged Settings > Schedules rows (`renderSchedSettings`) before adding History to them. Q1 = A (owner, 2026-10-23): no change to `openSchedulesView()`, `schedSectionShown()` or `renderSchedTop()`. Both PRs insert a dated section right under `## Changes` and append to `plan.md` and `tasks.md`: whichever lands second keeps both (2026-10-23 above 2026-10-22 #523) and counts rows per task id afterwards (`docs/agent-notes.md`, *Union-merging … can duplicate rows*).
 
+### Drift found by the analyze (2026-10-26, `origin/main` 9aad254d; #560 is merged)
+
+- Line numbers in this delta moved (`app.js` rows now near `:6368-6560`, `schedules.ts` sites near `:372-771`, `before-quit` at `main.ts:1112`): use the names.
+- Two more outcomes and two more sites set `last` than listed: `skipped-door-full` (spec 017) and `held` from `heldBy`/`hold`, and `releaseDoorRun` (Send all at an opened door) sets `last` at a send. All go through `record`. `skipped-door-full` folds like `held` (same reasoning, FR-037); `releaseDoorRun` gives `sent`/`failed` with a `session`.
+- `OUTCOME_WORD` (`app.js:6368`) already has words for `held` and `skipped-door-full`; they move into `schedhist.js`, and `ended` is added.
+- `ScheduleInfo.last.outcome` (`api.ts`) lacks only `ended` now.
+- `tick()` ends in an unconditional `commit()`: the fold-only path (FR-037) is a flag set by `record` and cleared by any real change in that tick (a new entry, a one-time schedule going done, a pause set by a skip of cap or ended).
+- **Implementer decisions, 2026-10-26, awaiting owner confirmation** (small wording choices made while building #624; each can be reverted in `schedhist.js`):
+  1. The `held` words. Old: "held: the door is closed (Do not disturb)" (spec 044 FR-110, only the door's case). New: "held: not sent yet (closed door, update or break)". Why: `held` is also written for an agent app that is updating (spec 081) and for a loop that waits for a person or a break (spec 072), where "the door is closed" would be untrue; the row and the history share this one table.
+  2. The empty-history text. Old (FR-040): "Runs are kept from <the day of this update> on". New: "Runs are kept from the update that added this list on; the last one before that: <words>, <time>." Why: no date of the update is stored, and inventing one would be untrue.
+  3. "Not sent: the session has ended" (the row's existing word) is the one wording in FR-040 and `schedhist.js`; FR-040 said "had ended".
+  4. An item's accessible text is its visible parts in DOM order (time, words, fold count, where it went); no separate sentence label is built.
+- #560's pieces exist as planned: `DurbarSchedTop` (`schedtop.js`), `openSchedulesView`, `check-sched-top`, `shots-044-everywhere`.
+
 ### Main
 
 1. `src/main/schedules.ts`:
@@ -138,7 +152,7 @@ Size: an entry is about 90 bytes as `saveSchedules` writes it (indent 2); 2,500 
 
 ### Renderer
 
-1. Pure `src/renderer/schedhist.js` (`DurbarSchedHist`, UMD like `schedtop.js`; one window global per script, `docs/agent-notes.md`): `OUTCOMES` (words, icon kind) including `held` and `ended`, `reasonWords(code)`, `runText(run, clockOf, nameOf)` (the visible line and the spoken sentence), `emptyText(last, clockOf, since)`, `hereLabel(n)`. No folder predicate: the *Schedules here (N)* count reuses `schedulesOf(r)`/`folderKeyOf(r)` (`app.js:5035-5036`), one implementation; the workspace case is checked by the driver (`simws=1`, step 6). Script tag right after `schedtop.js` in `index.html`. The row's `OUTCOME_WORD` (`app.js:5040`) moves into it so the row and the history use one table (add `held`, `ended`).
+1. Pure `src/renderer/schedhist.js` (`DurbarSchedHist`, UMD like `schedtop.js`; one window global per script, `docs/agent-notes.md`): `OUTCOMES` (words, icon kind) including `held` and `ended`, `reasonWords(code)`, `runText(run, clockOf, nameOf)` (the visible line and the item's parts (time, words, fold, where)), `emptyText(last, clockOf, since)`, `hereLabel(n)`. No folder predicate: the *Schedules here (N)* count reuses `schedulesOf(r)`/`folderKeyOf(r)` (`app.js:5035-5036`), one implementation; the workspace case is checked by the driver (`simws=1`, step 6). Script tag right after `schedtop.js` in `index.html`. The row's `OUTCOME_WORD` (`app.js:5040`) moves into it so the row and the history use one table (add `held`, `ended`).
 2. `app.js`:
    - `schedBtns` (`:5055`): **History** (`data-sc|ss="hist"`, `aria-expanded`, `aria-controls="sh-<id>"`) after Delete; `schedRow` (`:5067`) renders an empty `<ol class="sc-hist" id="sh-<id>" hidden>` that the toggle fills from `bridge.scheduleRuns(id)`. Open state in a `Set` like `SCHED_OPEN` (`:5059`), so a repaint keeps it open; `schedChanged` re-asks the open ones only.
    - Items: `<li>` with an SVG icon (`currentColor`, `aria-hidden`), the time, the words, and **Open chat** (`data-open-chat="<id>"`) when `liveById(session)`, else "chat closed". The click closes `closeSchedDlg()` or Settings (#560's Settings close path; check it returns focus as today) then `openPanel(id)`.
@@ -188,3 +202,11 @@ All eight answered on 2026-10-23: Q1 after screenshots of both options, Q2..Q8 b
 6. **The reason of a failed run:** (A) a code from a closed list shown as fixed words ("no agent in this folder", "the agent app refused it"); (B) the error's own text, masked with `redact` and cut to 120 characters. **Answered: A (owner, 2026-10-23).** Why: nothing untrusted is stored; B can carry paths or account names that masking does not catch.
 7. **Where History shows:** (A) inline under the row, opened by a History button (like the prompt toggle); (B) its own dialog. **Answered: A (owner, 2026-10-23).** Why: works the same in the folder's dialog and in Settings, no dialog over a dialog.
 8. **Open chat when the chat is gone:** (A) "chat closed", no button; (B) a link to Previous sessions at that session. **Answered: A (owner, 2026-10-23).** Why: B needs a way to open Previous sessions at one id and depends on spec 006 T021 (unverified whether ids survive a restart).
+
+## 2026-10-28: prompt limit 10,000 and never cut silently (issue #843)
+
+- One constant in main (`MAX_PROMPT`), one copy in the window (`DurbarSchedTemplates.PROMPT_MAX`, compared in `test:schedules`, like the calendar rules; the simulator and the row read it, and the one number written in words in `schedhist.js` is checked by `test:schedhist`), one pure helper `promptCheck(text)` for the counter and error words, used by the form (and by the simulator's rows). No new dialog: the Edit form in the schedule dialog is the only form (Settings' Edit… opens it).
+- Main: `cleanSchedule` stops slicing; `save` refuses a changed over-limit prompt; a stored over-limit prompt is kept and skipped with the new outcome `skipped-review`, in the same `record` path as the other `skipped-*` outcomes (a once schedule is paused with `pausedReason: review` so it stays visible; repeats fold). `schedhist.js` words it; the row's state line shows "Needs review" from the prompt itself.
+- Renderer: textarea without `maxlength`; a `<p id="scCount">` under it with the counter or the error, linked by `aria-describedby`, and an always present `role="status"` region that announces only changes of state; `aria-invalid`; the Save button `disabled` while over. Text is at least 10.5 px.
+- Check: unit tests (parser, `save`, runs, `promptCheck`, templates), `check:sched-edit` extended (12,000-character paste, 10,000-character row and form at both sizes, needs-review row), screenshots `044-length-*` written by `check-sched-edit` with `OUT=docs/screenshots` (not in `DOC_SHOTS`).
+- Doors (FR-126): `Doors.hold` measures the file it would write and refuses a run past `HELD_FILE_CAP` (below `MAX_FILE`), so `loadDoors` never sees a file it refuses.

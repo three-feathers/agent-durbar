@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: index
 title: Full-screen chat and agent strip
-status: implemented; delta 2026-10-19: copy buttons (FR-015), FR-011 closed by 016; delta 2026-10-19: Stop and End session in the card menu (FR-017, T026); delta 2026-10-21: file edits stream into the chat (FR-018..FR-027, T027..T037; real: Claude Code and Copilot streams, Codex sends the patch at once); delta 2026-10-21: JSON tool results formatted, every tool output masked in main, and outputs saved to a file explained (issue #361, FR-028..FR-036, T038..T048) **specified, not built**; delta 2026-10-21: the chat's settings (profile, mode, model with its window, context %, MCP) under the message box and one Send / Stop button with a spinner (issue #486, FR-037..FR-043, T049..T059, review fixes T070..T075) **built**, simulator only; delta 2026-10-23: the message box grows to 40% of the panel, a resize handle on its top edge, size remembered (issue #592, FR-044..FR-049, T076..T082) **built**, simulator only; delta 2026-10-23: compact composer toolbar: model name only, context ring with a token summary, MCP on/total (issue #627, FR-050..FR-056, T084..T093) **built**, simulator only
+status: building
+note: tool-JSON decoder, saved output and masking (T038-T048) not built
 -->
 
 **Feature Branch**: `005-chat-fullscreen-and-agent-strip` (reverse-engineered; milestone 6, built on the chat panel of milestones 1-5)
@@ -105,6 +106,13 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 - Chat content is not persisted by Agent Durbar; the Copilot runtime keeps the session history on disk.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> implemented; delta 2026-10-19: copy buttons (FR-015), FR-011 closed by 016; delta 2026-10-19: Stop and End session in the card menu (FR-017, T026); delta 2026-10-21: file edits stream into the chat (FR-018..FR-027, T027..T037; real: Claude Code and Copilot streams, Codex sends the patch at once); delta 2026-10-21: JSON tool results formatted, every tool output masked in main, and outputs saved to a file explained (issue #361, FR-028..FR-036, T038..T048) **specified, not built**; delta 2026-10-21: the chat's settings (profile, mode, model with its window, context %, MCP) under the message box and one Send / Stop button with a spinner (issue #486, FR-037..FR-043, T049..T059, review fixes T070..T075) **built**, simulator only; delta 2026-10-23: the message box grows to 40% of the panel, a resize handle on its top edge, size remembered (issue #592, FR-044..FR-049, T076..T082) **built**, simulator only; delta 2026-10-23: compact composer toolbar: model name only, context ring with a token summary, MCP on/total (issue #627, FR-050..FR-056, T084..T093) **built**, simulator only; delta 2026-10-26 (owner, issue #691): a reply counts as seen only when the chat shows it; Mark as read in the card menu (FR-176, FR-177, simulator-checked)
+
 
 - **2026-10-24, test only (branch 021-flaky-timing)**: the FR-024 linear-time checks and the `maskEditInfo` cost check in `scripts/test-edits.ts` measure CPU time (with a wall backstop) and compare with a baseline from the same run, instead of bare wall-clock bounds that failed under a parallel `npm test`. No behaviour change.
 
@@ -337,3 +345,23 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 - **FR-173** Every finished message (an agent reply's bubble and the user's own message; not a tool chip, a thinking block or a request card) gets a **`⋯`** (*Actions for this message*) next to *Copy*, dimmed but visible at rest, brighter on hover and focus, exactly like *Copy* (spec 052 FR-010; decided by the coordinator under Ruben's delegation, 2026-10-26). It opens the shared menu element with the Previous sessions row menu's keyboard rules and holds *Save to notes* (spec 083 FR-010, FR-011). `[IMPLEMENTED]` sim: spec 083 T020, `npm run check:notes` (2026-10-26).
 - **FR-174** A **Notes drawer** covers the chat log (`#chat`) only: the header, the answer bar and the message box stay visible and usable. It opens from *Notes…* in the chat's More menu, from the header **count** (the number of this folder's notes, spec 083 FR-040) and from the keys of spec 074 FR-085; Esc closes it before it closes the chat (spec 083 FR-020, FR-026). `[IMPLEMENTED]` sim: the drawer, *Notes…* in More, Ctrl+Shift+M and Esc (spec 083 T022, `check:notes`, `check:office` with the drawer open). `[IMPLEMENTED]` sim: the header **count** (*Notes N*, only with notes, tooltip *M from this session, N in this folder*, `aria-expanded` / `aria-controls`, hidden in the read-only VS Code view; spec 083 T030, `npm run check:notes-count` at 1440x900, 1280x800 and a 480px panel, and `check:office` with the count shown, 2026-10-26).
 - **FR-175** FR-040's 480px rule applies with the drawer open: the header and the message box fit without overlap, the text is never under 10.5px, and the office still fits 15 agents at 1440x900 and 1280x800 (`check:office` and screenshots, spec 083 T024).
+
+### 2026-10-26: a reply counts as seen only when the chat shows it (owner, issue #691)
+
+*Owner request (issue #691; the office side is spec 001 FR-170..FR-177):* a finished agent stays marked **New** on its desk until the person has actually been shown its reply in the chat, and the chat is the one place that clears it.
+
+*Existing capability (reused):* `openPanel`, `closePanel`, `ui.selected`, the Chat | Browser tabs (spec 080), the Notes drawer (`notesIsOpen`, FR-174), `visibilitychange`, the card menu (FR-017).
+
+*Corrected:*
+
+- **FR-176** **Seen means shown.** The chat of an agent is *shown* when the panel is open on that agent, the window is visible (`document.visibilityState`), the **Chat** tab is the one in front (not Browser, so a panel pulled forward to the browser, #686, does not count) and the Notes drawer is closed. A turn that ends while its chat is shown is never unread. Opening the chat of an unread agent clears the marker; so does anything that makes the chat shown (the window becoming visible, switching back to the Chat tab, closing the Notes drawer) while that agent's panel is open. Closing the chat, going back to the office, hovering, focusing or clicking elsewhere does **not** clear it, and an agent opened on another chat is unaffected.
+- **FR-177** **Mark as read.** The card menu (right-click, or Shift+F10 / the Menu key on a focused desk or list row, which is new here and opens the same menu) has **Mark as read** for an unread main agent. It clears the marker without opening the chat, announces "<name>: marked as read", and returns focus to the desk.
+
+**Tasks:** T095..T097 in `tasks.md`. Numbers taken: FR-176, FR-177 and T095..T097 (checked against `main` and the open PRs on 2026-10-26).
+
+**Status:** `[IMPLEMENTED]` `sim:` `scripts/test-unread.ts` (67 checks) and `scripts/check-unread.js` (both sizes, Shift+F10, reduced motion). `[KNOWN GAP]` not run on a real agent session; no real screen reader (the accessible names and the announcement are checked as text); the marker is not kept across a restart by design (spec 001 FR-176).
+
+### 2026-10-26: the chat header's title uses the free room up to the buttons (issue #789, owned by spec 052 FR-180)
+
+*Problem*: the session title and the model line in the chat header (`#panelHead .ph-top`) were cut with an ellipsis at 40% of the row while a wide gap was left before the buttons. The fix is a CSS rule in `styles.css` (`.ph-id` without `max-width:40%`). The requirement, the driver (`scripts/check-chat-title.js`) and the status live in **spec 052 FR-180** (the usability pass owns the header layout, FR-095); no new FR here. Task T098 below. Numbers taken: T098, no FR (checked against `main` and the open PRs and remote branches on 2026-10-26).
+

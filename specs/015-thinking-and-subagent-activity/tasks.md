@@ -15,3 +15,8 @@
 - [x] T011 `scripts/test-compaction.ts` in `npm test`, mutation checks [FR-013, FR-015]
 - [x] T012 Driver `scripts/shots-015-compact.js` in the UI suite and `shots:docs`; screenshots at both sizes; `check:office` [FR-014]
 - [x] T013 README, changelog fragment, specs-index block, agent notes, `[KNOWN GAP]` kept honest [all]
+
+## 2026-10-28 delta: forward sub-agent text (Claude)
+
+- [x] T014 `--forward-subagent-text` / SDK `forwardSubagentText`, gated on Claude Code 2.1.211+ [FR-016]
+- [x] T015 Tests (argv, version gate, adapter launch, SDK option, forwarded-message mapping) with mutation checks; changelog fragment; `[KNOWN GAP]` kept (no real session) [FR-017]

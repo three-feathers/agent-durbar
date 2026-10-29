@@ -18,7 +18,7 @@ import { FakeAdapter } from '../src/adapters/fake';
 import type { AgentAdapter, McpServerStatus } from '../src/adapters/types';
 import type { AgentInfo } from '../src/shared/api';
 import { endSessionOp } from '../src/main/agentops';
-import { agentMcpReply, mcpRestartOp, mcpRestartSessionOp, validServerName } from '../src/main/mcpsession';
+import { agentMcpReply, mcpRestartOp, mcpRestartSessionOp, restartReason, validServerName } from '../src/main/mcpsession';
 import { mcpHealthUpdate } from '../src/shared/mcphealth';
 import type { McpReplyInput, RestartDeps, RestartSessionDeps } from '../src/main/mcpsession';
 import { isMethodNotFound, sdkErrorText } from '../src/adapters/copilot';
@@ -264,6 +264,147 @@ async function main(): Promise<void> {
       assert.strictEqual(ends, 1, 'exactly one End session ran');
       assert.deepStrictEqual(calls, [`resume ${sid}`], 'and exactly one resume');
       assert.strictEqual(running.size, 0, 'the lock is released');
+    }
+
+    // ---- spec 087 FR-022 (T068, issue #806): `reason` changes words only; one channel; the renderer flow always asks for 'sandbox' ----
+    {
+      const ad = new FakeAdapter();
+      const sid = await ad.start({ workspace: ws, quiet: true });
+      const agents = new Map([[sid, info(sid)]]);
+      const run = async (reason: unknown, busyNow = false, confirmed: unknown = false) => {
+        const calls: string[] = [];
+        const logged: string[] = [];
+        const d: RestartSessionDeps = {
+          agents, router: routerOf(ad), busy: () => busyNow,
+          endSession: async (id) => { calls.push(`end ${id}`); await ad.stop(id); },
+          resume: async (x) => { calls.push(`resume ${x.id} ${x.permMode}`); await ad.start({ workspace: ws, sessionId: x.id, quiet: true }); },
+          secrets: () => [], log: (_a, t) => logged.push(t),
+        };
+        const r = await mcpRestartSessionOp(d, new Set(), sid, confirmed, reason);
+        return { r, calls, logged };
+      };
+      const MCP_LOG = ['Session restarted with the current MCP servers'];
+      const base = await run(undefined);
+      assert.deepStrictEqual(base, { r: { ok: true }, calls: [`end ${sid}`, `resume ${sid} ask`], logged: MCP_LOG }, 'reason absent: today\'s behaviour');
+      for (const bad of ['mcp', 'Sandbox', 'sandbox ', 'other', 1, null, {}, ['sandbox'], true]) {
+        const x = await run(bad);
+        assert.deepStrictEqual(x, base, `reason ${JSON.stringify(bad)} counts as 'mcp'`);
+      }
+      const sbx = await run('sandbox');
+      assert.deepStrictEqual([sbx.r, sbx.calls], [base.r, base.calls], "'sandbox': the same calls and result (words only)");
+      assert.deepStrictEqual(sbx.logged, ['Session restarted without the OS sandbox'], "'sandbox': its own log line");
+      assert.deepStrictEqual((await run('sandbox', true)).r, { ok: false, needsConfirm: true }, "'sandbox' while busy: still needs the confirmation");
+      assert.deepStrictEqual((await run('sandbox', true, true)).calls, base.calls, 'confirmed: the same end and resume');
+      assert.strictEqual(restartReason('sandbox'), 'sandbox');
+      for (const bad of [undefined, 'SANDBOX', 'mcp', 0, {}]) assert.strictEqual(restartReason(bad), 'mcp');
+      const noResume = new FakeAdapter({ displayName: 'Basic', capabilities: { resume: false } });
+      const sid2 = await noResume.start({ workspace: ws, quiet: true });
+      const nrd: RestartSessionDeps = { agents: new Map([[sid2, info(sid2)]]), router: routerOf(noResume), busy: () => false, endSession: async () => undefined, resume: async () => undefined, secrets: () => [] };
+      assert.deepStrictEqual(await mcpRestartSessionOp(nrd, new Set(), sid2, true, 'sandbox'), { ok: false, error: 'Basic cannot resume a session, so it cannot be restarted without the OS sandbox.' });
+      assert.deepStrictEqual(await mcpRestartSessionOp(nrd, new Set(), sid2, true, 'evil'), { ok: false, error: 'Basic cannot resume a session, so it cannot be restarted with the current servers.' });
+      await ad.stop(sid);
+
+      // one channel: main registers agents:mcpRestartSession once and no other restart channel; the preload passes `reason` on it
+      const ROOT = path.join(__dirname, '..', '..');
+      const src = (f: string) => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/\r\n/g, '\n'); // Windows checks out CRLF (agent notes, "Static source checks and CRLF")
+      const ipcAll = fs.readdirSync(path.join(ROOT, 'src/main/ipc')).filter((f) => f.endsWith('.ts')).map((f) => src('src/main/ipc/' + f)).join('\n') + src('src/main/main.ts');
+      const handles = [...ipcAll.matchAll(/ipcHandle\('([^']+)'/g)].map((m) => m[1]);
+      assert.strictEqual(handles.filter((c) => c === 'agents:mcpRestartSession').length, 1, 'one registered restart-session channel');
+      assert.deepStrictEqual(handles.filter((c) => /sandbox/i.test(c) && /restart|resume|relaunch/i.test(c)), [], 'no second channel for the sandbox restart');
+      const pre = src('src/preload/preload.ts');
+      assert.ok(pre.includes("agentMcpRestartSession: (id, confirmed, reason) => ipcRenderer.invoke('agents:mcpRestartSession', id, confirmed, reason),"), 'the preload passes reason on the same channel');
+      assert.strictEqual((pre.match(/'agents:mcpRestartSession'/g) ?? []).length, 1);
+      assert.ok(/ipcHandle\('agents:mcpRestartSession', \(_e, id: unknown, confirmed: unknown, reason: unknown\) =>[\s\S]{0,400}?\}, restartingSessions, id, confirmed, reason\)\);/.test(src('src/main/ipc/agents.ts')), 'main hands reason to the op');
+      // the renderer calls the channel only from mcpRestartSessionFlow; the sandbox action goes through that flow and starts nothing itself
+      const scr = src('src/renderer/screens.js'), app = src('src/renderer/app.js');
+      const flowAt = scr.indexOf('async function mcpRestartSessionFlow('), flowEnd = scr.indexOf('\n  }\n', flowAt);
+      const calls = [...scr.matchAll(/agentMcpRestartSession\(/g)].map((m) => m.index!);
+      assert.ok(calls.length >= 1 && calls.every((i) => i > flowAt && i < flowEnd), 'screens.js calls agentMcpRestartSession only inside mcpRestartSessionFlow');
+      assert.ok(!/agentMcpRestartSession\(/.test(app), 'app.js never calls the channel itself');
+      const rw = app.slice(app.indexOf('async function restartWithoutSandbox('), app.indexOf('\n}\n', app.indexOf('async function restartWithoutSandbox(')));
+      assert.ok(rw.length > 50 && /window\.DurbarScreens\.restartSession\(a,capsFor\(a\)\.mcpStart,\{reason:'sandbox'/.test(rw), 'the action is the existing flow with reason sandbox');
+      assert.ok(!/bridge\.|\.start\(|ensureLive|wake|resumeSession|approvePending|\.send\(/.test(rw), 'and no second path: no bridge call, start, resume, send or approval of its own');
+
+      // the renderer flow itself (screens.js in a bare page stand-in): always asks for 'sandbox', the words, the third argument
+      const vm = await import('vm');
+      const win: Record<string, unknown> = { DurbarStats: {} };
+      const box = vm.createContext({ window: win, self: win, document: { getElementById: () => null }, navigator: {}, console, setTimeout, clearTimeout, Promise });
+      vm.runInContext(src('src/renderer/sandboxtext.js'), box);
+      vm.runInContext(src('src/renderer/screens.js'), box);
+      const asks: Array<{ title: string; body: string; lines: string[]; buttons: Array<{ label: string }> }> = [];
+      let answer: unknown = 'ok';
+      win.DurbarDialog = () => async (o: { title: string; body: string; lines: string[]; buttons: Array<{ label: string }> }) => { asks.push(JSON.parse(JSON.stringify(o))); return answer; }; // a plain copy (the page stand-in is another realm)
+      const bridgeCalls: unknown[][] = [];
+      let reply: unknown = { ok: true };
+      const toasts: string[] = [];
+      const signIns: string[] = [];
+      const S = win.DurbarScreens as { init(c: unknown): void; restartSession(a: unknown, start: unknown, h: unknown): Promise<unknown> };
+      S.init({ bridge: { agentMcpRestartSession: async (...args: unknown[]) => { bridgeCalls.push(args); return reply; } }, esc: (t: string) => String(t), toast: (t: string) => { toasts.push(t); return { classList: { add: () => undefined } }; }, signInAgain: (_a: unknown, d: string) => signIns.push(d) });
+      const h = (reason?: string) => ({ reason, returnFocus: () => null, busy: async () => undefined, onAuth: () => undefined });
+      const agent = (o: Record<string, unknown> = {}) => ({ id: 'a1', name: 'Mia', state: 'idle', grants: [], remote: false, pend: new Map(), ...o });
+      const reset = () => { asks.length = 0; bridgeCalls.length = 0; toasts.length = 0; signIns.length = 0; answer = 'ok'; reply = { ok: true }; };
+      // AC1: Cancel changes nothing and calls nothing (an idle agent with no grants is still asked)
+      answer = null;
+      assert.strictEqual(await S.restartSession(agent(), 'next-message', h('sandbox')), null);
+      assert.strictEqual(asks.length, 1, "'sandbox' always asks, even idle with no grants");
+      assert.deepStrictEqual([bridgeCalls, toasts], [[], []], 'Cancel: no call, no toast');
+      reset();
+      await S.restartSession(agent(), 'next-message', h('sandbox'));
+      assert.strictEqual(asks[0].title, 'Restart Mia without the OS sandbox?');
+      assert.strictEqual(asks[0].body, 'The conversation continues in a new session in Allow all. Shell commands will no longer be limited to this folder and can reach the network. Nothing is re-sent; send your next message when it is ready.');
+      assert.deepStrictEqual(asks[0].lines, ['The conversation is kept and resuming spends no AI credits.', '"Approve for this session" grants are cleared.', 'Its MCP servers start again with your next message.']);
+      assert.deepStrictEqual(asks[0].buttons.map((b) => b.label), ['Cancel', 'Restart without the sandbox']);
+      assert.deepStrictEqual(bridgeCalls, [['a1', true, 'sandbox']], 'confirmed, with reason sandbox as the third argument');
+      assert.deepStrictEqual(toasts, ['Mia: session restarted without the OS sandbox. Its servers start with your next message.']);
+      assert.ok(!/MCP/.test(asks[0].title + asks[0].body + asks[0].buttons.map((b) => b.label).join(' ') + toasts.join(' ')), 'no MCP wording in the title, body, buttons or toast');
+      reset();
+      await S.restartSession(agent({ state: 'working', grants: [{}], remote: true, pend: new Map([['r1', {}], ['r2', {}]]) }), 'session', h('sandbox'));
+      assert.deepStrictEqual(asks[0].lines, ['The conversation is kept and resuming spends no AI credits.', 'The running turn stops.', '"Approve for this session" grants are cleared.', 'Remote control turns off.', '2 requests waiting will be denied.'], 'busy, remote control, two waiting requests; no next-message line for an app whose servers start with the session');
+      reset();
+      await S.restartSession(agent({ pend: new Map([['r1', {}]]) }), 'next-message', h('sandbox'));
+      assert.ok(asks[0].lines.includes('1 request waiting will be denied.'));
+      reset();
+      reply = { ok: false, ended: true, error: 'boom' };
+      await S.restartSession(agent(), 'session', h('sandbox'));
+      assert.deepStrictEqual(toasts, ['Could not restart without the OS sandbox: boom The session has ended; send a message to resume it.'], 'the failure toast');
+      reset();
+      reply = { ok: false, ended: true, errorKind: 'auth', error: 'sign in again' };
+      await S.restartSession(agent(), 'session', h('sandbox'));
+      assert.deepStrictEqual([signIns, toasts], [['sign in again'], []], 'a sign-in failure: the sign-in card, not a toast (FR-027)');
+      // AC4: reason absent behaves exactly as today: idle with nothing to lose is not asked, two arguments, the MCP words
+      for (const r of [undefined, 'mcp', 'evil']) {
+        reset();
+        await S.restartSession(agent(), 'next-message', h(r));
+        assert.deepStrictEqual([asks.length, bridgeCalls], [0, [['a1', false]]], `reason ${String(r)}: today's call`);
+        assert.deepStrictEqual(toasts, ['Mia: session restarted with the current MCP servers. Its servers start with your next message.']);
+      }
+      // FR-022a: Restart session with these servers on an idle Allow all session with a kept floor (no grants, no remote) still asks and says the floor goes
+      const KEPT = { state: 'on', mechanism: 'bubblewrap', untilNewSession: true, covers: ['shell', 'mcp'], verified: false };
+      const LIFT = 'The OS sandbox kept from an earlier mode is lifted (Allow all).';
+      for (const r of [undefined, 'mcp']) {
+        reset();
+        answer = null;
+        assert.strictEqual(await S.restartSession(agent({ info: { permMode: 'allow', sandbox: KEPT } }), 'session', h(r)), null, `reason ${String(r)} + kept floor: asked, Cancel`);
+        assert.strictEqual(asks.length, 1, `reason ${String(r)} + kept floor + idle: it asks`);
+        assert.ok(asks[0].lines.includes(LIFT), 'and says the floor is lifted: ' + JSON.stringify(asks[0].lines));
+        assert.deepStrictEqual(bridgeCalls, [], 'Cancel: nothing called');
+      }
+      reset();
+      await S.restartSession(agent({ info: { permMode: 'allow', sandbox: KEPT } }), 'session', h());
+      assert.deepStrictEqual(bridgeCalls, [['a1', true]], 'confirmed: the same MCP call, confirmed');
+      for (const info of [{ permMode: 'ask', sandbox: KEPT }, { permMode: 'allow', sandbox: { ...KEPT, managed: true } }, { permMode: 'allow' }]) {
+        reset();
+        await S.restartSession(agent({ info }), 'session', h());
+        assert.strictEqual(asks.length, 0, `no kept floor to lift (${JSON.stringify(info)}): not asked, as before`);
+      }
+      reset();
+      await S.restartSession(agent({ info: { permMode: 'allow', sandbox: KEPT } }), 'session', h('sandbox'));
+      assert.ok(!asks[0].lines.includes(LIFT), 'the sandbox dialog says it in its body, not as this line');
+      reset();
+      await S.restartSession(agent({ remote: true }), 'session', h());
+      assert.strictEqual(asks[0].title, "Restart Mia's session?");
+      assert.deepStrictEqual(asks[0].lines, ['The conversation is kept and resuming spends no AI credits.', '"Approve for this session" grants are cleared.', 'Remote control turns off.'], "today's lines");
+      assert.deepStrictEqual(bridgeCalls, [['a1', true]]);
     }
 
     // ---- endSessionOp: End session and Restart session's first step (FR-022, FR-023 "Remote control turns off") ----

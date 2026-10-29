@@ -48,6 +48,7 @@ const HOSTX = String.raw`\.?(?:${COLON}[0-9]{1,5})?`;
 const TOKEN_SHAPES: Array<RegExp | Guarded> = [
   shape(String.raw`gh[pousr]_[A-Za-z0-9]{20,}`),
   shape(String.raw`github_pat_[A-Za-z0-9_]{20,}`),
+  shape(String.raw`glpat-[A-Za-z0-9_-]{20,}`), // GitLab personal access token (spec 093: a clone URL's user part must not be one)
   shape(String.raw`sk-(?:ant-)?[A-Za-z0-9_-]{20,}`),
   // any case: `bearer xyz` in a lowercased log line is the same secret (review on PR #630)
   shape(String.raw`[Bb][Ee][Aa][Rr][Ee][Rr]\s{1,8}[A-Za-z0-9._~+/=-]{8,}`),

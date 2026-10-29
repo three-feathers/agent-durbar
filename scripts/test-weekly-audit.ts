@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
-  AREAS, CLAUDE_ENV_KEYS, DEFAULT_BUDGET_USD, FOOTER, MAX_ANSWER_BYTES, MAX_NEW, SCHEMA_ID, buildClaudeArgv, fingerprint, ghRunner, issueBody, main, markersIn, planAndFile, readTokenFile,
+  AREAS, CLAUDE_ENV_KEYS, DEFAULT_BUDGET_USD, FOOTER, MAX_ANSWER_BYTES, MAX_NEW, SCHEMA_ID, buildClaudeArgv, fingerprint, ghRunner, issueBody, main, markersIn, planAndFile, readTokenFile, trustedAuthors,
   renderPrompt, validateOutput, Finding, Gh,
 } from './weekly-test-audit';
 import { addsForbidden, run as mutateRun, suiteSteps, targetPath } from './weekly-test-audit-mutate';
@@ -130,12 +130,12 @@ const out = (findings: unknown[], extra: Record<string, unknown> = {}): string =
 
 // ---- the filer, with an injected gh
 type Call = string[];
-function fakeGh(opts: { issues?: { number: number; state: string; body: string }[]; labels?: string[]; searchFails?: boolean; labelsFail?: boolean; createFails?: boolean } = {}): { gh: Gh; calls: Call[] } {
+function fakeGh(opts: { issues?: { number: number; state: string; body: string; author?: { login: string } | null }[]; labels?: string[]; searchFails?: boolean; labelsFail?: boolean; createFails?: boolean } = {}): { gh: Gh; calls: Call[] } {
   const calls: Call[] = [];
   let n = 900;
   const gh: Gh = async (args) => {
     calls.push(args);
-    if (args[0] === 'issue' && args[1] === 'list') return opts.searchFails ? { code: 1, stdout: '[]', stderr: 'boom' } : { code: 0, stdout: JSON.stringify(opts.issues || []), stderr: '' };
+    if (args[0] === 'issue' && args[1] === 'list') return opts.searchFails ? { code: 1, stdout: '[]', stderr: 'boom' } : { code: 0, stdout: JSON.stringify((opts.issues || []).map((i) => ('author' in i ? i : { ...i, author: { login: 'fjcabello' } }))), stderr: '' };
     if (args[0] === 'label' && args[1] === 'list') return opts.labelsFail ? { code: 1, stdout: '[{"name":"bug"}]', stderr: 'denied' } : { code: 0, stdout: JSON.stringify((opts.labels || ['bug', 'task', 'area:ci', 'area:ui', 'spec:035', 'spec:021']).map((name) => ({ name }))), stderr: '' };
     if (args[0] === 'issue' && args[1] === 'create') return opts.createFails ? { code: 1, stdout: '', stderr: 'denied' } : { code: 0, stdout: `https://github.com/o/r/issues/${n++}\n`, stderr: '' };
     return { code: 1, stdout: '', stderr: 'unexpected' };
@@ -166,6 +166,22 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
     assert.deepStrictEqual(markersIn(body), [fingerprint(c)]);
     assert.deepStrictEqual(cr[0].filter((_, i) => cr[0][i - 1] === '--label'), ['bug', 'area:ci', 'spec:035'], 'the labels are the finding\'s');
     assert.strictEqual(cr[0][cr[0].indexOf('--repo') + 1], 'o/r');
+  }
+  // an outsider's issue with the footer and a made-up marker does not count as filed (spec 021 FR-060, review on #818)
+  {
+    const a = good({ id: 'cannot-fail-test-spoofed' }), b = good({ id: 'cannot-fail-test-real' });
+    const { gh, calls } = fakeGh({ issues: [
+      { number: 20, state: 'OPEN', body: `${marker2(a)}\n${FOOTER}`, author: { login: 'someone-else' } },
+      { number: 21, state: 'OPEN', body: `${marker2(b)}\n${FOOTER}`, author: null },
+      { number: 22, state: 'CLOSED', body: `${marker2(b)}\n${FOOTER}`, author: { login: 'fjcabello-x' } },
+    ] });
+    const s = await planAndFile({ findings: [a, b], mode: 'file', gh, repo: 'o/r', env: {} });
+    assert.deepStrictEqual(s.outcomes.map((o) => o.status), ['filed', 'filed'], 'outsider, ghost and look-alike issues are not the audit\'s own: ' + JSON.stringify(s.outcomes));
+    assert.strictEqual(creates(calls).length, 2);
+    const search = calls.find((x) => x[1] === 'list' && x[0] === 'issue')!;
+    assert.ok(/\bauthor\b/.test(search[search.indexOf('--json') + 1]), 'the search asks for the author');
+    assert.ok(trustedAuthors().has('fjcabello') && !trustedAuthors().has('fjcabello-x'), 'the trusted list is read from scripts/trusted-authors.txt');
+    assert.throws(() => trustedAuthors('/nonexistent-dir-for-test'), /trusted-authors/, 'no list, no run');
   }
   // the cap of 5
   {
@@ -362,7 +378,9 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
       { out: (x) => { text += x; }, env: leaky });
     assert.strictEqual(code, 0, text + fs.readFileSync(path.join(tmp, 'e.txt'), 'utf8'));
     const seen = JSON.parse(fs.readFileSync(path.join(tmp, 'o.txt'), 'utf8')) as { env: Record<string, string>; argv: string[]; cwd: string; stdin: string };
-    assert.deepStrictEqual(Object.keys(seen.env).sort(), [...CLAUDE_ENV_KEYS].sort(), `only the allow-listed variables reach claude: ${Object.keys(seen.env).join(',')}`);
+    // macOS itself adds __CF_USER_TEXT_ENCODING to every child process; it is not ours and carries no secret
+    const seenKeys = Object.keys(seen.env).filter((k) => k !== '__CF_USER_TEXT_ENCODING').sort();
+    assert.deepStrictEqual(seenKeys, [...CLAUDE_ENV_KEYS].sort(), `only the allow-listed variables reach claude: ${seenKeys.join(',')}`);
     assert.strictEqual(seen.env.CLAUDE_CONFIG_DIR, cfg, 'its own Claude config, never ~/.claude');
     assert.strictEqual(seen.env.DURBAR_AUDIT_WORKTREE, wt);
     assert.strictEqual(seen.env.LANG, 'C.UTF-8');
@@ -425,6 +443,29 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
     const rn = spawnSync('bash', [sh, 'audit'], { env: { ...base, CLAUDE_CONFIG_DIR: fresh }, encoding: 'utf8' });
     assert.strictEqual(rn.status, 97, `then it goes on to the (fake) clone: ${rn.stderr}`);
     assert.strictEqual(fs.statSync(fresh).mode & 0o777, 0o700, 'a missing Claude folder is created 0700');
+    fs.rmSync(called, { force: true });
+    // macOS has no flock and a BSD stat (no -c): a PATH without flock, and a stat that rejects -c and answers -f %Lp
+    const nobin = fs.mkdtempSync(path.join(tmp, 'noflock-'));
+    for (const b of ['git', 'npm', 'node', 'claude', 'gh']) fs.copyFileSync(path.join(fakebin, b), path.join(nobin, b)), fs.chmodSync(path.join(nobin, b), 0o700);
+    for (const b of ['bash', 'sh', 'env', 'dirname', 'mkdir', 'rmdir', 'chmod', 'install', 'date', 'find', 'tee', 'mktemp', 'rm', 'cat', 'sed', 'printf', 'tail', 'cp', 'mv', 'id']) {
+      for (const d of ['/usr/bin', '/bin']) if (fs.existsSync(path.join(d, b))) { fs.symlinkSync(path.join(d, b), path.join(nobin, b)); break; }
+    }
+    fs.writeFileSync(path.join(nobin, 'stat'), '#!/bin/sh\nif [ "$1" = "-c" ]; then echo "stat: illegal option -- c" >&2; exit 1; fi\nif [ "$1" = "-f" ] && [ "$2" = "%Lp" ]; then /usr/bin/stat -c %a "$3" 2>/dev/null || exec /usr/bin/stat -f %Lp "$3"; fi\nexit 1\n', { mode: 0o700 });
+    assert.ok(!fs.existsSync(path.join(nobin, 'flock')), 'the fake PATH has no flock');
+    const nf = { ...base, PATH: nobin, DURBAR_AUDIT_STATE_DIR: path.join(home, 'state-nf') };
+    const lockd = path.join(home, 'state-nf', 'lock.d');
+    const rs = spawnSync('bash', [sh, 'audit'], { env: { ...nf, CLAUDE_CONFIG_DIR: wide }, encoding: 'utf8' });
+    assert.ok(rs.status === 2 && /wider than 0700/.test(rs.stderr), `BSD stat -f %Lp branch sees 0755: ${rs.status} ${rs.stderr}`);
+    const ok700 = path.join(home, 'claude-700');
+    fs.mkdirSync(ok700, { mode: 0o700 });
+    fs.mkdirSync(lockd, { recursive: true });
+    const rh = spawnSync('bash', [sh, 'audit'], { env: { ...nf, CLAUDE_CONFIG_DIR: ok700 }, encoding: 'utf8' });
+    assert.ok(rh.status === 0 && /another run holds the lock/.test(rh.stdout), `held mkdir lock: exit 0: ${rh.status} ${rh.stdout}${rh.stderr}`);
+    assert.ok(fs.existsSync(lockd) && !fs.existsSync(called), 'a held lock is left alone and nothing ran');
+    fs.rmdirSync(lockd);
+    const rr = spawnSync('bash', [sh, 'audit'], { env: { ...nf, CLAUDE_CONFIG_DIR: ok700 }, encoding: 'utf8' });
+    assert.strictEqual(rr.status, 97, `no flock: goes on to the (fake) clone: ${rr.stdout}${rr.stderr}`);
+    assert.ok(!fs.existsSync(lockd), 'the mkdir lock is released after the run');
     fs.rmSync(called, { force: true });
   }
   // ---- the unit templates: the filer is never the audit's copy, the audit user sees no home and holds no token

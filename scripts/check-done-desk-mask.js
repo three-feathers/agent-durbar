@@ -1,7 +1,7 @@
 /*
  * Check for spec 041 FR-065 (issue #541): text an agent wrote never reaches the office floor unmasked. Simulator only (no AI credits).
  *
- *   npm run check:done-desk-mask
+ *   npm run check:ui -- --only check-done-desk-mask
  *
  * `simreply=secrets` plants three tokens (`ghp_`, `github_pat_`, `sk-`; built at run time here and in sim.ts) in: every done reply, every
  * sub-agent's task, result and error, a helper's tool starts (`bash --api-key K`, a fetch URL with `?key=K`), an error intent and the titles of
@@ -188,8 +188,8 @@ module.exports = async (ctx) => {
       assert.ok(/\[redacted\]/.test(titles), `${tag}: a previous session title shows masked: ${titles}`);
       await scan(tag, 'previous-sessions list');
       await js(`document.querySelector('#prevLists [data-pv="resume"]').click()`);
-      await until(`window.__durbarSimUi.agents().some(a=>/^Resumed: /.test(a.task||''))`);
-      assert.ok(await js(`(window.__taskLog||[]).some(t=>/^Resumed: /.test(t))`), `${tag}: a resumed line was stored`);
+      await until(`window.__durbarSimUi.agents().some(a=>/^Resumed/.test(a.task||''))`);
+      assert.ok(await js(`(window.__taskLog||[]).some(t=>/^Resumed/.test(t))`), `${tag}: a resumed line was stored`);
       await back();
       await scan(tag, 'resumed session');
     }
@@ -227,6 +227,7 @@ module.exports = async (ctx) => {
     await emit({ type: 'output', sessionId: id, timestamp: Date.now(), delta: '', final: true, text: replies[i] });
     await emit({ type: 'status', sessionId: id, timestamp: Date.now(), status: 'idle' });
   }
+  await js(`window.__durbarSimUi.readAll()`); // #691: an unread agent keeps its desk; this step is about the lounge, so the replies count as read
   for (let i = 0; i < 6; i++) await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral('sim-' + (i + 1))});a.lastEventAt=Date.now()-${jsLiteral(mins[i])}*60000;})()`);
   // wait for the split (3 on the couch, 3 on the beds), drawing again while we wait: a slow runner has not laid the lounge out yet
   const split = `(()=>{window.__durbarSimUi.render();return document.querySelectorAll('#stage .desk.shut.rest-recent').length===3&&document.querySelectorAll('#stage .desk.shut.rest-old').length===3})()`;
@@ -243,8 +244,8 @@ module.exports = async (ctx) => {
   const r = await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.info&&x.info.resumeLast);return a?a.id:''})()`);
   assert.ok(r, 'an agent with a session to continue');
   await js(`document.querySelector('#stage .desk[data-id='+JSON.stringify(${jsLiteral(r)})+']').click()`);
-  await until(`window.__durbarSimUi.agents().some(a=>/^Continued: /.test(a.task||''))`);
-  assert.ok(await js(`(window.__taskLog||[]).some(t=>/^Continued: /.test(t))`), 'a continued line was stored');
+  await until(`window.__durbarSimUi.agents().some(a=>/^Continued/.test(a.task||''))`);
+  assert.ok(await js(`(window.__taskLog||[]).some(t=>/^Continued/.test(t))`), 'a continued line was stored');
   await back();
   await scan('continued', 'continued session');
   }

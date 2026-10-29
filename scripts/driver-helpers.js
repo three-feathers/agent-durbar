@@ -108,7 +108,8 @@ function helpers(ctx) {
     const query = { sim: '15', simfreeze: '1', ...(clock && /^\d{1,15}$/.test(clock) ? { simclock: clock } : {}), ...(o.query || {}) };
     for (const k of Object.keys(query)) if (query[k] === undefined) delete query[k];
     await ctx.win.loadFile(o.index || INDEX, { query });
-    const ready = o.ready === 'fit' ? `document.getElementById('stage')&&document.getElementById('stage').dataset.fit` : o.ready || `document.querySelectorAll('#stage .desk[data-id]').length>=15`;
+    // spec 092: with `simfloors=1` (the 15 agents spread over three floors on) the office shows one floor, so the default "15 desks" would only be met by its timeout
+    const ready = o.ready === 'fit' ? `document.getElementById('stage')&&document.getElementById('stage').dataset.fit` : o.ready || `document.querySelectorAll('#stage .desk[data-id]').length>=${query.simfloors === '1' ? 1 : 15}`;
     await ctx.waitFor(ready, o.readyMs || 15000);
     if (o.settle !== false) await w.settle();
     if (o.focus) wc().focus();
@@ -152,7 +153,38 @@ function helpers(ctx) {
         title:(document.getElementById('panelTitle')||{}).textContent||'',card:!!document.querySelector(${jsLiteral(card)}),visibility:document.visibilityState,errors:window.__osaErr||[]}})()`);
     return { id, ok: !!id && seen.panel && seen.card, seen };
   };
-  return { ...w, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, load, shot, openSimAgent, INDEX };
+  /**
+   * Spec 092 (floor screens): with two or more floors on, the office shows one floor at a time. `floors()` lists the floors that are on, in floor order
+   * ({id, name}, read from the Floors panel); `shownFloor()` is the id of the floor screen shown (the saved current floor); `goToFloor(id)` presses
+   * PageDown / PageUp, as a user does, until that floor is shown (each press waits for the change); `eachFloor(fn)` goes to the first floor and runs
+   * `fn(floor, index)` on every floor screen in turn, ending on the last one. Office view only. With one floor on, `eachFloor` runs `fn` once.
+   */
+  const floors = async () => {
+    const open = await js(`!document.getElementById('floorsPop').hidden`);
+    if (!open) { await js(`document.getElementById('floorsBtn').click()`); await w.until(`!document.getElementById('floorsPop').hidden`); }
+    const rows = await js(`[...document.querySelectorAll('#floorsPop [data-fl="on"]')].map(b=>({id:b.dataset.floor,name:b.getAttribute('aria-label').split(': ')[0],on:b.getAttribute('aria-pressed')==='true'}))`);
+    if (!open) { await js(`document.getElementById('floorsBtn').click()`); await w.until(`document.getElementById('floorsPop').hidden`); }
+    return rows.filter((r) => r.on).map(({ id, name }) => ({ id, name }));
+  };
+  const shownFloor = () => js(`localStorage.getItem('durbar.floor')`);
+  const goToFloor = async (id) => {
+    const list = await floors();
+    for (let guard = 0; guard < 2 * list.length + 2; guard++) {
+      const here = await shownFloor(), cur = list.findIndex((f) => f.id === here), want = list.findIndex((f) => f.id === id);
+      if (want < 0 || cur === want) return cur === want;
+      const was = list[cur] ? list[cur].id : null;
+      await key(want > cur ? 'PageDown' : 'PageUp', [], { pause: 30 });
+      await w.until(`localStorage.getItem('durbar.floor')!==${jsLiteral(was)}`);
+    }
+    return false;
+  };
+  const eachFloor = async (fn) => {
+    const list = await floors();
+    if (list.length < 2) { await fn(list[0] || null, 0); return; }
+    await goToFloor(list[0].id);
+    for (let i = 0; i < list.length; i++) { await goToFloor(list[i].id); await w.settle(); await fn(list[i], i); }
+  };
+  return { ...w, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
 }
 
 module.exports = { waits, helpers, jsLiteral, LIMIT, INDEX };

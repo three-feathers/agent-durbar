@@ -82,7 +82,7 @@ assert.strictEqual(dom('[x](javascript:alert(1))').querySelector('a[href]'), nul
 assert.strictEqual(dom('[x](/relative)').querySelector('a[href]'), null);
 assert.strictEqual(dom('[x](//evil.example/x)').querySelector('a[href]'), null);
 // spec 080 FR-024: a mail link keeps its href (a click is classified in main); every other scheme of the hostile list loses it
-assert.strictEqual(dom('[mail](mailto:a@example.com)').querySelector('a')!.getAttribute('href'), 'mailto:a@example.com');
+assert.strictEqual(dom('[mail](mailto:a@example.invalid)').querySelector('a')!.getAttribute('href'), 'mailto:a@example.invalid');
 for (const bad of ['ms-msdt:/id', 'search-ms:query=x', 'search:query=x', 'ms-officecmd:x', 'ms-settings:x', 'smb://host/share', 'file:///etc/hostname', 'vscode://file/x', 'slack://open', 'tel:+123', 'MS-MSDT:x', 'durbar-sim://pages/form']) {
   assert.strictEqual(dom(`[x](${bad})`).querySelector('a[href]'), null, `${bad} loses its href`);
 }

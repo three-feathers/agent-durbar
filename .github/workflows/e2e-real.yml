@@ -13,8 +13,11 @@ on:
         description: 'Run the one-line turn on macOS and Windows too (Linux always runs it)'
         type: boolean
         default: false
-  schedule:
-    - cron: '17 5 * * *' # daily, 05:17 UTC; Monday's run is the full one on every OS
+  # PAUSED 2026-10-29 (owner, Vikram; spec 062 delta 2026-10-29, FR-009; tracking issue #856): red on every scheduled day since
+  # 2026-10-25, spending credits. Run it by hand (workflow_dispatch) while the cause is found. To re-enable: restore the block
+  # below and the cron check in scripts/test-platforms.ts (task T009).
+  # schedule:
+  #   - cron: '17 5 * * *' # daily, 05:17 UTC; Monday's run is the full one on every OS
 
 permissions:
   contents: read
@@ -37,6 +40,8 @@ jobs:
   e2e:
     name: E2E (${{ matrix.os }})
     needs: platforms
+    # spec 021 FR-062: the secrets can live in this environment, where the owner can require a reviewer before a run starts
+    environment: copilot
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:

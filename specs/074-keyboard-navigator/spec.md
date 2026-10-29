@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Keyboard navigator (issue #548): one configurable shortcut (default Ctrl+F, ⌘F on a Mac; Ctrl+J until 2026-10-23) opens the command palette in "Go to" mode; floor, F folder, agent, or C and a number for a numbered chat; the chat opens with the cursor in the message box; follow-up #587: opening any chat puts the cursor in its message box, Ctrl+A (⌘A) opens Needs you and Ctrl+Backspace (⌘⌫) goes back to the office, both only outside text
-status: **built** 2026-10-22: unit tests, simulator driver and screenshots at both sizes; defaults D1-D7 chosen by Vikram's agent, for the owners to confirm; not tried on a real Mac or Windows machine; follow-up #587 (Ctrl+F, cursor in the message box, Ctrl+A, Ctrl+Backspace, unsent text kept) built 2026-10-23: unit tests and simulator driver, mutation-checked; the macOS simulator does not model native ⌘⌫ editing or ⌘A selection, so the driver checks non-interception and ordinary Backspace editing instead
+status: building
+note: T026 mutation check and final run not ticked
 -->
 
 **Feature Branch**: `074-keyboard-navigator`
@@ -185,6 +186,14 @@ The issue asked to settle each conflict in the spec. Where a choice may need an 
 
 ## Changes
 
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **built** 2026-10-22: unit tests, simulator driver and screenshots at both sizes; defaults D1-D7 chosen by Vikram's agent, for the owners to confirm; not tried on a real Mac or Windows machine; follow-up #587 (Ctrl+F, cursor in the message box, Ctrl+A, Ctrl+Backspace, unsent text kept) built 2026-10-23: unit tests and simulator driver, mutation-checked; the macOS simulator does not model native ⌘⌫ editing or ⌘A selection, so the driver checks non-interception and ordinary Backspace editing instead
+
+
+- **2026-10-27, floors as places (spec 092, issue #782).** A floor row still steps down to the floor's folders with the palette open; when the palette closes after a floor was entered, the office slides to that floor. Choosing a folder or chat goes to its floor first. Not built yet.
 ### 2026-10-24: macOS synthetic text-editing key in the navigator driver (#683)
 
 `real:` The nightly run `40076601038` failed in `shots-074-navigator` on macOS. Local reproduction showed that the

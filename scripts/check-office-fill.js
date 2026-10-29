@@ -34,7 +34,7 @@
  * the gaps between rows are even within 1 px, the top and bottom gaps equal within 1 px and the rooms of a row equally tall; plus a "spare
  * height" case with 4 one-agent folders, 2 agents in 2 folders and 1 agent at 1280x600, 1280x800, 1440x900 and 1920x1080.
  *
- *   npm run check:office-fill            (builds first; Linux runs it under xvfb)
+ *   npm run check:ui -- --only check-office-fill            (builds first; Linux runs it under xvfb)
  */
 const assert = require('assert');
 const path = require('path');
@@ -67,7 +67,9 @@ function SCENES() {
     if (!s || !s.getClientRects().length) return null;
     const c = d.getBoundingClientRect(), r = s.getBoundingClientRect(), flat = new Set();
     s.querySelectorAll('[fill^="#"]').forEach((e) => { const v = e.getAttribute('fill').toLowerCase(); if (v.length === 7 && !e.closest('[opacity],.halo,.glow')) flat.add(v); });
-    return { id: d.dataset.id, grown: !!document.getElementById('stage').dataset.grow, card: [c.width, c.height].map((x) => Math.round(x * 100) / 100), rel: [r.left - c.left, r.top - c.top, r.width, r.height].map((x) => Math.round(x * 100) / 100), box: [r.left, r.top, r.width, r.height].map(Math.round), flat: [...flat] };
+    /* spec 077 FR-058: a portrait (<image>) is not made of flat colours: its box is left out of the share (its own sharpness is check-crew's) */
+    const holes = [...s.querySelectorAll('image')].map((i) => { const b = i.getBoundingClientRect(); return [b.left, b.top, b.right, b.bottom]; });
+    return { holes, id: d.dataset.id, grown: !!document.getElementById('stage').dataset.grow, card: [c.width, c.height].map((x) => Math.round(x * 100) / 100), rel: [r.left - c.left, r.top - c.top, r.width, r.height].map((x) => Math.round(x * 100) / 100), box: [r.left, r.top, r.width, r.height].map(Math.round), flat: [...flat] };
   }).filter(Boolean);
 }
 /* issue 576: in the lounge, a resting agent's chat badge must not sit on its name. The name's text box is the range of its text clipped to
@@ -114,7 +116,7 @@ module.exports = async (ctx) => {
   const js = (c) => H.js(c);
   const emit = (e) => js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${q(e)}))`);
   const load = async (n, w, h, query) => {
-    await H.load({ w, h, query: { sim: String(n), ...(query || {}) }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=${q(n)}&&document.getElementById('stage').dataset.fit` });
+    await H.load({ w, h, query: { sim: String(n), ...(process.env.FILL_THEME ? { theme: process.env.FILL_THEME } : {}), ...(query || {}) }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=${q(n)}&&document.getElementById('stage').dataset.fit` });
     /* lobby visits walk for about a second: measure where the figures stand, as check:office does (a visit may start a moment
        after the load, so wait for one briefly first; none is fine) */
     await H.until(`!!document.querySelector('.place.busy')`, 800);
@@ -150,9 +152,10 @@ module.exports = async (ctx) => {
       if (i) await js(`new Promise((r)=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`);
       const img = await ctx.win.webContents.capturePage({ x: sc.box[0], y: sc.box[1], width: Math.max(1, sc.box[2]), height: Math.max(1, sc.box[3]) });
       const buf = img.toBitmap();
-      let n = 0;
-      for (let k = 0; k < buf.length; k += 4) if (cs.some((c) => Math.abs(c[0] - buf[k + 2]) <= 2 && Math.abs(c[1] - buf[k + 1]) <= 2 && Math.abs(c[2] - buf[k]) <= 2)) n++;
-      best = Math.max(best, Math.round((1000 * n) / (buf.length / 4)) / 10);
+      let n = 0, skipped = 0;
+      const holes = sc.holes || [], iw = img.getSize().width, inHole = (k) => { const i = k / 4, x = sc.box[0] + (i % iw), y = sc.box[1] + Math.floor(i / iw); return holes.some((b) => x >= b[0] && x < b[2] && y >= b[1] && y < b[3]); };
+      for (let k = 0; k < buf.length; k += 4) if (holes.length && inHole(k)) skipped++; else if (cs.some((c) => Math.abs(c[0] - buf[k + 2]) <= 2 && Math.abs(c[1] - buf[k + 1]) <= 2 && Math.abs(c[2] - buf[k]) <= 2)) n++;
+      best = Math.max(best, Math.round((1000 * n) / Math.max(1, buf.length / 4 - skipped)) / 10);
     }
     return best;
   };
@@ -594,6 +597,7 @@ module.exports = async (ctx) => {
     await emit({ type: 'status', sessionId: id, status: 'working', intent: 'Working' });
     await emit({ type: 'output', sessionId: id, final: true, text });
     await emit({ type: 'status', sessionId: id, status: 'idle' });
+    await js(`window.__durbarSimUi.readAll()`); // #691: an unread agent keeps its desk; these checks are about the lounge, so the replies count as read
   };
   /* the time an agent finished is its last event (FR-052): set it back, then lay out again (simulator-only hook) */
   const ago = (id, min) => js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${q(id)});a.lastEventAt=Date.now()-${q(min)}*60000;window.__durbarSimUi.render();})()`);
@@ -748,6 +752,7 @@ module.exports = async (ctx) => {
       const pre = await js(`({reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,away:!!document.querySelector('#stage .desk.is-away[data-id="sim-3"]'),boss:!!document.querySelector('.walker')})`);
       check(pre.reduced && pre.away, `${tag}: the case did not start with reduced motion and Jonas at the Boss ${JSON.stringify(pre)}`);
       await js(`(()=>{const E=(e)=>window.__durbarSimEmit(Object.assign({timestamp:Date.now()},e));E({type:'status',sessionId:'sim-3',status:'working',intent:'Working'});E({type:'output',sessionId:'sim-3',final:true,text:'Renamed the tool and kept the old name as an alias for one release.'});E({type:'status',sessionId:'sim-3',status:'idle'});return true})()`);
+      await js(`window.__durbarSimUi.readAll(true)`); // #691: no redraw here (the redraw on the figure's return is what this case checks); an unread reply would keep the desk
       const ok = await H.until(`!!document.querySelector('#stage .desk.shut[data-id="sim-3"]')`, 1500);
       const st = await js(`(()=>{const d=document.querySelector('#stage .desk[data-id="sim-3"]');return {cls:d?d.className:'',vis:document.visibilityState,walkers:document.querySelectorAll('.walker').length}})()`);
       check(ok, `${tag}: Jonas, back from the Boss and finished, is not in the lounge within 1.5 s ${JSON.stringify(st)}`);

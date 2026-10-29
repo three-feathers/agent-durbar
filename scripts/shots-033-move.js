@@ -43,9 +43,13 @@ module.exports = async (ctx) => {
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await H.load({ w, h, query: { simfloors: '1' }, focus: true });
     await H.clearToasts();
+    // spec 092: the office shows one floor at a time; this driver works on the first floor's screen and visits the others with PageDown
+    const floorList = await H.floors();
+    const floorsInOrder = floorList.map((f) => f.name);
+    assert.ok(floorsInOrder.length >= 2, `simfloors has two or more floors on: ${floorsInOrder}`);
+    assert.ok(await H.goToFloor(floorList[0].id), 'the first floor is shown');
+    await settle();
     let rs = await rooms();
-    const floorsInOrder = await js(`[...new Set([...document.querySelectorAll('#stage .floor-tag')].map(t=>t.textContent))]`);
-    assert.ok(floorsInOrder.length >= 2, `simfloors shows two or more floors: ${floorsInOrder}`);
     // a room on the first floor with at least two agents, so "the agents follow" means something
     const room = rs.find((r) => r.floor === floorsInOrder[0] && r.agents.length >= 2) || rs.find((r) => r.floor === floorsInOrder[0]);
     assert.ok(room, 'a room on the first floor');
@@ -93,19 +97,28 @@ module.exports = async (ctx) => {
     const targetName = fl.find((i) => i.floor === target).b;
     await key('Return', [], { pause: 50 });
     await until(`!document.getElementById('modeMenu')`, 3000);
-    await until(`(()=>{const d=document.querySelector(${jsLiteral(`#stage .room [data-door="${room.id}"]`)});const t=d&&d.closest('.room').querySelector('.floor-tag');return !!t&&t.textContent===${jsLiteral(targetName)}})()`, 5000);
+    // spec 092 (FR-001, edge case "an agent's folder moves to another floor"): the room leaves the screen of the floor it was on; the user is not moved
+    await until(`!document.querySelector(${jsLiteral(`#stage .room [data-door="${room.id}"]`)})`, 5000);
+    await settle();
+    assert.strictEqual(await H.shownFloor(), floorList[0].id, 'the user stays on the floor they were on');
+    assert.ok(!(await rooms()).some((r) => r.id === room.id), 'the room left this floor screen');
+    const toast = await js(`(()=>{const t=[...document.querySelectorAll('#toasts .toast.with-act')].pop();return t?{text:t.textContent,act:(t.querySelector('.toast-act')||{}).textContent}:null})()`);
+    console.log('[033-move]', w, 'toast', JSON.stringify(toast));
+    assert.ok(toast && toast.text.includes(room.name) && toast.text.includes('moved to') && toast.text.includes(targetName) && toast.act === 'Undo', 'the note names the folder and the floor, with Undo');
+    await shot('move-toast', w, h);
+    // the room is on the floor it was moved to (its agents followed), one PageDown away
+    assert.ok(await H.goToFloor(target), 'the target floor is shown');
+    await until(`!!document.querySelector(${jsLiteral(`#stage .room [data-door="${room.id}"]`)})`, 5000);
     await settle();
     rs = await rooms();
     const moved = rs.find((r) => r.id === room.id);
     assert.strictEqual(moved.floor, targetName, `the room is now on ${targetName}`);
     assert.deepStrictEqual(moved.agents, room.agents, 'its agents followed (same desks in the moved room)');
-    const toast = await js(`(()=>{const t=[...document.querySelectorAll('#toasts .toast.with-act')].pop();return t?{text:t.textContent,act:(t.querySelector('.toast-act')||{}).textContent}:null})()`);
-    console.log('[033-move]', w, 'toast', JSON.stringify(toast));
-    assert.ok(toast && toast.text.includes(room.name) && toast.text.includes('moved to') && toast.text.includes(targetName) && toast.act === 'Undo', 'the note names the folder and the floor, with Undo');
-    await shot('move-toast', w, h);
-    // Undo: back to where it was, agents too
+    // Undo: back to where it was, agents too (the room leaves this screen again, the user is not moved)
     await js(`[...document.querySelectorAll('#toasts .toast.with-act .toast-act')].pop().click()`);
-    await until(`(()=>{const d=document.querySelector(${jsLiteral(`#stage .room [data-door="${room.id}"]`)});const t=d&&d.closest('.room').querySelector('.floor-tag');return !!t&&t.textContent===${jsLiteral(from)}})()`, 5000);
+    await until(`!document.querySelector(${jsLiteral(`#stage .room [data-door="${room.id}"]`)})`, 5000);
+    assert.ok(await H.goToFloor(floorList[0].id), 'the first floor is shown again');
+    await until(`!!document.querySelector(${jsLiteral(`#stage .room [data-door="${room.id}"]`)})`, 5000);
     await settle();
     rs = await rooms();
     const back = rs.find((r) => r.id === room.id);

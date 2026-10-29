@@ -117,7 +117,7 @@ module.exports = async (ctx) => {
   await wait(() => views().length === 1, 'the view is back');
 
   // US1.5
-  for (const [text, why] of [['file:///etc/hostname', /Only http and https/], ['chrome://settings', /Only http and https/], ['javascript:alert(1)', /Only http and https/], ['view-source:https://example.com', /Only http and https/], ['data:text/html,hi', /Only http and https/]]) {
+  for (const [text, why] of [['file:///etc/hostname', /Only http and https/], ['chrome://settings', /Only http and https/], ['javascript:alert(1)', /Only http and https/], ['view-source:https://example.invalid', /Only http and https/], ['data:text/html,hi', /Only http and https/]]) {
     const before = view().webContents.getURL();
     await typeAddress(text);
     await wait(async () => why.test(await note()), `US1.5: "${text}" says why`);
@@ -174,7 +174,7 @@ module.exports = async (ctx) => {
   // US2.2
   assert.deepStrictEqual(logged, [], 'precondition: nothing went to the system yet');
   await js(`(()=>{const a=[...document.querySelectorAll('#chat .md a')].find(x=>x.textContent.trim()==='a web page');a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,ctrlKey:${jsLiteral(!IS_MAC)},metaKey:${jsLiteral(IS_MAC)}}))})()`);
-  await wait(() => logged.includes('https://example.com/docs'), 'US2.2: the modifier click goes to the system path');
+  await wait(() => logged.includes('https://example.invalid/docs'), 'US2.2: the modifier click goes to the system path');
   assert.strictEqual(views().length, 0, 'and loads nothing in the tab');
   console.log('[browser-scenarios] all checks passed');
 };

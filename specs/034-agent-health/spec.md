@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 034
 title: The figure follows the context window (heavy 70-90%, grumpy monster above 90%), trouble signals (ambulance, faint, dizzy, impatient), Serious mode
-status: **built** 2026-10-17 (issue #20): simulator and unit tests, `scripts/shots-034.js`; not checked on a real session; T009 built 2026-10-19: List view mood words and the walking figure's mood (FR-014/FR-015, `scripts/shots-034-list.js`); delta 2026-10-17 *rooms darken with their worst agent, sirens* (issue #135) **built** (simulator, `scripts/shots-034.js`; T015 room path contrast done too); delta 2026-10-23 *Retrying while the agent app retries the model API* (issue #600) **built** (simulator `simretry=1`, `scripts/shots-034-retry.js`, `test:retry`; vendor shapes read only, no real retry seen)
+status: built
+note: not checked on a real session
 -->
 
 **Feature Branch**: `034-agent-health` (amends 001 office view; reads 011 caps, 019 context, 003 permissions)
@@ -98,6 +99,13 @@ status: **built** 2026-10-17 (issue #20): simulator and unit tests, `scripts/sho
 
 ## Changes
 
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **built** 2026-10-17 (issue #20): simulator and unit tests, `scripts/shots-034.js`; not checked on a real session; T009 built 2026-10-19: List view mood words and the walking figure's mood (FR-014/FR-015, `scripts/shots-034-list.js`); delta 2026-10-17 *rooms darken with their worst agent, sirens* (issue #135) **built** (simulator, `scripts/shots-034.js`; T015 room path contrast done too); delta 2026-10-23 *Retrying while the agent app retries the model API* (issue #600) **built** (simulator `simretry=1`, `scripts/shots-034-retry.js`, `test:retry`; vendor shapes read only, no real retry seen)
+
+
 ### 2026-10-17: rooms darken with their worst agent, sirens (issue #135)
 
 **Input**: Ruben, after PR #134: "la habitación también vaya cambiando de color a más oscuro para que sea más evidente, y con sirenas cuando ya sea súper evidente". Trouble should be visible from across the office, not only at the desk.
@@ -174,6 +182,8 @@ status: **built** 2026-10-17 (issue #20): simulator and unit tests, `scripts/sho
   It follows the agent's mood on every render while the figure is away. The figure stays `aria-hidden`; the words are on the card and in the List view. Serious mode shows none of it. This closes the other half of T009. `sim:` `scripts/shots-034-list.js` in the office view at both sizes: in the simulator's lobby a dizzy walker shows its dot, a monster and a heavy one show their rings, and no figure without a trouble has a dot. Screenshots `docs/screenshots/mood-walker-*.png`.
 
 - **2026-10-21, spec 068 (coffee break), supersedes the faint look.** An agent at its credit limit, or at a usage limit of its agent app, is on a coffee break: no trouble drawing (`troubleOf` returns null for `coffee`), a calm room without a siren, and the words "On a coffee break". User Story 2 scenario 2 (fainted at *Limit reached*) no longer happens in the app; the faint drawing stays in the code for any caller that passes `limit` without `coffee`. `test:` mood.
+
+- **2026-10-23, spec 077 (Cheeky Crew).** In the `crew` kit the character is a portrait (one of three poses by status), so the moods that need a different body are drawn only as overlays: the sweat drop (heavy), the horns (monster), the dizzy stars, the ambulance and the typing and waving arms. Not drawn there: the wider body, the monster skin and frown, closed eyes (unless the resting pose shows them) and the faint tilt. The accessible label and the List view words still carry every mood. Every other kit is unchanged.
 
 ### 2026-10-23: "Retrying" while the agent app retries the model API (issue #600)
 

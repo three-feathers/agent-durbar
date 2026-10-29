@@ -1,0 +1,1 @@
+- **Retro decisions recorded** (spec 021, FR-063): the owner-approved plan from the 2026-10-29 retro (#854) and the new operating rules are in the spec; no behaviour change.

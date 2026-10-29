@@ -15,6 +15,8 @@ type McpServerStatus = import('../adapters/types').McpServerStatus;
 type AgentInfo = import('../shared/api').AgentInfo;
 type DurbarApi = import('../shared/api').DurbarApi;
 type UpdatesView = import('../shared/api').UpdatesView;
+type NewFolderProgress = import('../shared/api').NewFolderProgress;
+type NewFolderCheck = import('../shared/api').NewFolderCheck;
 type FolderSetupItem = import('../shared/foldersetup').FolderSetupItem;
 type PickedFile = import('../shared/api').PickedFile;
 type ModelChoice = import('../shared/api').ModelChoice;
@@ -25,6 +27,8 @@ type FloorsState = import('../shared/api').FloorsState;
 type FloorsResult = import('../shared/api').FloorsResult;
 type ScheduleInfo = import('../shared/api').ScheduleInfo;
 type SchedulesInfo = import('../shared/api').SchedulesInfo;
+type ScheduleRunInfo = import('../shared/api').ScheduleRunInfo;
+type ScheduleOutcome = import('../shared/api').ScheduleOutcome;
 type ModelSwitchRequest = import('../shared/modelswitch').ModelSwitchRequest;
 type ModelSwitchResult = import('../shared/modelswitch').ModelSwitchResult;
 type ContextTier = import('../shared/modelswitch').ContextTier;
@@ -55,7 +59,7 @@ function simSandboxFor(i: number, kind: string, mode: string): SandboxState | un
   if (kind === 'codex') return { state: 'on', mechanism: 'vendor', covers, writes: 'none', ...(mode === 'ask' ? { approvedMayLeave: true } : {}), verified: false };
   if (i === 3 || i === 10) return { state: 'off', covers, writes, verified: false, reason: kind === 'claude' ? SIM_SBX_WIN : SIM_SBX_COPILOT }; // · Not sandboxed
   if (i === 12) return { state: 'unknown', mechanism: 'bubblewrap', covers, writes, verified: false, reason: 'Waiting for the app to confirm its sandbox at the start.' }; // · Sandbox: checking
-  return { state: 'on', mechanism: i === 13 ? 'processcontainer' : i % 2 ? 'seatbelt' : 'bubblewrap', covers, writes, ...(kind === 'copilot' && mode === 'ask' ? { approvedMayLeave: true } : {}), verified: false }; // FR-021a (K15)
+  return { state: 'on', mechanism: i === 13 ? 'processcontainer' : i % 2 ? 'seatbelt' : 'bubblewrap', covers, writes, ...(kind === 'copilot' && mode === 'ask' ? { approvedMayLeave: true } : {}), ...(kind === 'copilot' ? { heldFloor: true } : {}), verified: false }; // FR-021a (K15); FR-022c: Copilot's floor is lowered at a switch to Allow all
 }
 type SimNote = import('../shared/notes').Note;
 type SimNotesWrote = import('../shared/notes').NotesWrote;
@@ -209,6 +213,8 @@ interface SimOptions {
   seed?: number;
   /** Spec 033: three floors (Ground floor, Client A, Personal) with the rooms spread over them. */
   floors?: boolean;
+  /** Spec 092 T010: with `floors`, every folder stays on the Ground floor (page address `simfloors=ground`): the other floors are on and empty. */
+  floorsGround?: boolean;
   /** Issue #126: some main agents receive a session title, as the runtime sends after the first prompt (page address `simtitles=1`; `simtitles=long`: the first one is 120 characters, the longest a session title can be, spec 052 FR-174). */
   titles?: boolean | 'long';
   /** Spec 059 FR-016: every main agent carries a 60-character user name, and (spec 052 FR-170) every folder a long name (page address `simnames=long`), to check that the office still fits; agent 3 has no alias and a long first-prompt title with one unbroken URL-like token (FR-019). */
@@ -231,6 +237,8 @@ interface SimOptions {
   places?: number;
   /** Spec 044 FR-035 / spec 001 FR-038: start with schedules over two folders, one that missed its last run and one that failed (page address `simsched=1`). */
   sched?: boolean;
+  /** Spec 044 FR-044 (`simws=1`): one simulated multi-root workspace room (its key a `.code-workspace` path) with a schedule, for the *Schedules here (N)* count. */
+  ws?: boolean;
   /** Pending permission requests carry a time 2 minutes in the past, so "impatient" (spec 034) can be seen at once. */
   waitOld?: boolean;
   /** Spec 001 FR-038 (`simschedfire=N`): a one-off schedule for the first idle agent, due N seconds after start (the flying letter). */
@@ -275,6 +283,7 @@ interface SimAgent {
   /** Spec 058 (simulator): servers under a canned Restart, and failed servers a Restart brought back. */
   mcpRestarting?: Set<string>;
   mcpFixed?: Set<string>;
+  mcpCalls?: Map<string, 'auth' | 'policy'>; /* spec 058 FR-187: the class of each server's last failed tool call (a word only) */
   /** Spec 058 FR-071 (simmcpauth): servers with a sign-in open (Sign in pressed); `opened` after Open sign-in page. Dropped by End session and Restart session. */
   mcpSign?: Map<string, { opened: boolean; at: number; again?: boolean }>;
   /** The last `mcp` event emitted for this session, like main's `live` list: the dialog's reply reads it (a driver can emit its own). */
@@ -345,7 +354,7 @@ const SIM_SLASH_LONG: SimSlash[] = [
 
 /* Spec 073 FR-013/FR-014 (issue #608), page address simslash=secret: a folder skill and a command whose name, argument hint, description
    and place hold fake token shapes, also split by Markdown, escaped, and one that straddles the tooltip's 300-character cut. Built at
-   run time: the file holds no secret-looking literal. check:slash-suggest asserts none of them reaches the list, its tooltips, ARIA or
+   run time: the file holds no secret-looking literal. check-slash-suggest asserts none of them reaches the list, its tooltips, ARIA or
    the "Sent the text of" note. */
 const SIM_TOK = { ghp: 'gh' + 'p_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8', pat: 'github' + '_pat_' + '11ABCDEFG0aBcDeFgHiJkL_mNoPqRsTuVwXyZ0123456789abcdefghij', sk: 's' + 'k-' + 'proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789' };
 const simSlashSecret = (): SimSlash[] => {
@@ -382,6 +391,8 @@ const SIM_MODELS: ModelChoice[] = [
  * Copilot blocks the `my-notes` MCP server; Codex's policy could not be read for Allow all (advice only, still selectable).
  */
 const SIM_ORG = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simorgpolicy') === '1';
+/** Spec 087 FR-022c (review on PR #833): `?simsbxlower=refuse`: the app refuses to lower a Copilot floor at the switch to Allow all (the floor is kept, the window toasts). */
+const SIM_LOWER_REFUSE = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsbxlower') === 'refuse';
 const simOrgText = (app: string): string => `Blocked by your organization's ${app} policy`;
 const simOrgDoubtText = (app: string): string => `Your organization's ${app} policy may block this (Agent Durbar could not read all of it)`;
 const SIM_ORG_APP: Record<string, string> = { copilot: 'Copilot', claude: 'Claude Code' };
@@ -414,6 +425,8 @@ const SECRET_KEY = 'Kd93' + 'LmP27xQvB' + 'w5Zt';
 const FILL = (n: number): string => 'Checking the registry module and its tests. '.repeat(6).slice(0, n - 14) + ' ';
 const LONG_TEXT = 'Every paragraph here is long on purpose so that its lines run to the right edge of the chat, where a Copy button must never cover a word. '.repeat(6).trim() + '\n\n```\nconst aLineThatRunsPastTheRightEdgeOfTheChat = "' + 'x'.repeat(300) + '";\n```'; // ends in a code block whose last line runs to the right edge (clipped by its own scroll), so the reply's Copy button always sits over text when it is misplaced
 /* spec 059 FR-019 (issue #536): the first prompt of a session with no name of its own is its title and has no 60-character cap; this one holds one unbroken token, like a URL (not a real address) */
+/** #451: the title of a resumed session: spaces, then a URL-like token in brackets that cannot wrap (macOS report) */
+const SIM_LONG_RESUMED_TITLE = 'Why is the lookup slow? (https://example.invalid/teams/consumer-sites/SitePages/Consumer-Onboarding-Checklist-Overview.aspx)? Please check every call site too';
 const SIM_LONG_URL_TITLE = 'as we have https://example.invalid/teams/consumer-sites/SitePages/Consumer-Onboarding-Checklist-Overview.aspx';
 const SIM_LONG_NAMES = ['Billing refactor: split invoice and credit-note flows', 'Canton lookup duplicates: reproduce and fix the join', 'Release notes for the next minor version and changelog', 'Tidy the registry modules and update every import path'];
 const SIM_USD_CAPS: Record<string, number> = { Ada: 0.01 };
@@ -691,10 +704,26 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const simRemoteOffSubs: ((p: { id: string; reason?: string }) => void)[] = []; // spec 054 FR-040: the door's remote-off event, as main sends it
     let simDoorsRef: { map: Map<string, { closed: boolean; held: { prompt: string; at: number; scheduleId?: string }[]; releasing?: boolean }>; subs: ((d: Record<string, { closed: boolean; held: number }>) => void)[]; list(): Record<string, { closed: boolean; held: number }>; changed(): void } | undefined; // spec 017 FR-015 (set below, with the schedules)
     let selfMcp = false; /* the simulator's own `mcp` event, as opposed to one a driver reports */
+    /* spec 058 FR-187 (issue #779 A): src/shared/mcpcall.ts `classifyMcpCall`, copied (this file cannot import); test:mcpcall cuts this block out and compares the two */
+    /* mcpcall:begin */
+    const simCallClass = (text: unknown, mcpAuth?: boolean): 'auth' | 'policy' | undefined => {
+      const t = typeof text === 'string' ? text.slice(0, 4000) : '';
+      if (/AADSTS53\d{4}|conditional access|device (?:is )?(?:required )?(?:to be )?managed|managed device|compliant device|device (?:is )?not (?:compliant|enrolled)/i.test(t)) return 'policy';
+      if (mcpAuth === true || /\b401\s+unauthori[sz]ed|\b(?:http(?:\/\d(?:\.\d)?)?|status(?: code)?|code|error|response)[\s:=(-]{0,4}401\b|unauthori[sz]ed|AADSTS(?:50058|50072|50074|50076|50078|50079|50132|50133|50173|70008|70043|70044|700082|65001)\b|invalid_grant|token (?:is |has )?(?:expired|invalid)|sign[- ]?in (?:is )?required|MCP OAuth challenge required/i.test(t)) return 'auth';
+      return undefined;
+    };
+    /* mcpcall:end */
     const emit = (e: AgentEvent): void => {
       /* like main, which keeps the runtime's list before the window hears of it: the reply a listener asks for at once sees this event (spec 058 FR-094) */
       if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpHealth = undefined; }
-      if (e.type === 'mcp') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) { q.mcpLive = e.servers; q.mcpHealth = simHealth(q.mcpHealth, e.servers); if (!selfMcp) { q.mcpReported = e.servers; q.mcpAppOff = new Set(e.servers.filter((m) => m.status === 'disabled' && !q.mcpOff?.has(m.name)).map((m) => m.name)); } } }
+      if (e.type === 'mcp') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) { for (const m of e.servers) if (m.status === 'connected' && q.mcpLive?.some((o) => o.name === m.name && o.status !== 'connected')) q.mcpCalls?.delete(m.name); /* main's McpCallTracker.onServers: back to connected drops the class */ q.mcpLive = e.servers; q.mcpHealth = simHealth(q.mcpHealth, e.servers); if (!selfMcp) { q.mcpReported = e.servers; q.mcpAppOff = new Set(e.servers.filter((m) => m.status === 'disabled' && !q.mcpOff?.has(m.name)).map((m) => m.name)); } } }
+      /* like main's McpCallTracker: a failed MCP call sets the class, a successful one clears it, a stopped session drops it */
+      if (e.type === 'toolCall' && e.mcpServer) {
+        const q = sims.find((x) => x.info.id === e.sessionId);
+        if (q && e.phase === 'complete') q.mcpCalls?.delete(e.mcpServer);
+        else if (q && e.phase === 'failed') { const c = simCallClass(e.output, e.mcpAuth === true); if (c) (q.mcpCalls ??= new Map()).set(e.mcpServer, c); else q.mcpCalls?.delete(e.mcpServer); }
+      }
+      if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpCalls = undefined; }
       listeners.forEach((l) => l(e));
       simSchedHook?.(e);
       if (e.type === 'status' && e.status === 'idle') {
@@ -714,6 +743,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         sims.filter((s, i) => i % 3 === 0).slice(0, SIM_TITLES.length).forEach((s, i) => emit({ type: 'title', sessionId: sid(s), timestamp: now(), title: SIM_TITLES[i] }));
       }, 200);
     }
+    /* simnames=long also gives a session resumed from Previous sessions a long title with a bracketed URL (issue #451, resumeSession below) */
     /* simnames=long, FR-019 (issue #536): the third agent (it waits for you, so it is also in the inbox) has no alias; its title holds a URL-like token */
     if (opts.names === 'long') window.setTimeout(() => { const s = sims[2]; if (s) emit({ type: 'title', sessionId: sid(s), timestamp: now(), title: SIM_LONG_URL_TITLE }); }, 200);
     /* simgrants=many (spec 052 FR-141): the first agent has eight grants, some with a tool name that repeats the server name */
@@ -817,7 +847,32 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const pfFolders = (): { id: string; path: string }[] => [...new Set(sims.map((s) => s.info.cwd))].map((p) => ({ id: pfHash('folder\0' + p).slice(0, 32), path: p }));
     const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void)[],
       changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); },
-      attrib: new Map<string, string>() };
+      attrib: new Map<string, string>(), runs: {} as Record<string, ScheduleRunInfo[]> };
+    /* spec 044 FR-044: the run log with main's rules (Scheduler.record in src/main/schedules.ts): `last` and the log are set together, a repeated
+       busy/paused/held skip folds into one entry, 50 at most. Self-contained on purpose: test:schedules cuts this block out, compiles it and runs one
+       sequence through it and through main's, and compares the logs. */
+    /* simrecord:begin */
+    const simRecord = (sc: ScheduleInfo, runs: Record<string, ScheduleRunInfo[]>, outcome: ScheduleOutcome, now: number, x: { session?: string; reason?: ScheduleRunInfo['reason']; manual?: true; update?: boolean } = {}): boolean => {
+      sc.last = { at: now, outcome };
+      if (!Object.prototype.hasOwnProperty.call(runs, sc.id)) runs[sc.id] = [];
+      const log = runs[sc.id];
+      const top = log[log.length - 1];
+      const session = x.session !== undefined && /^[A-Za-z0-9._:-]{1,128}$/.test(x.session) ? x.session : undefined;
+      if (top && ['skipped-busy', 'skipped-paused', 'held', 'skipped-door-full', 'skipped-review'].includes(outcome) && top.outcome === outcome && top.session === session && !top.manual) {
+        top.n = Math.min(100000, (top.n ?? 1) + 1);
+        top.until = now;
+        return true;
+      }
+      const run: ScheduleRunInfo = { at: now, outcome };
+      if (session) run.session = session;
+      if (x.reason) run.reason = x.reason;
+      if (x.manual) run.manual = true;
+      if (x.update && top && !top.manual && top.n === undefined && (top.outcome === 'sent' || top.outcome === outcome)) log[log.length - 1] = run;
+      else log.push(run);
+      if (log.length > 50) log.splice(0, log.length - 50);
+      return false;
+    };
+    /* simrecord:end */
     if (opts.sched) {
       /* spec 001 FR-038: four future schedules (nothing is due during a driver run); one missed its last run and one failed, a few hours ago (spec 044 FR-035) */
       const t0 = Date.now(), key = (x: SimAgent | undefined): string => (x ? x.info.workspaceFile ?? x.info.cwd ?? '' : '');
@@ -829,6 +884,31 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         { id: 'sched-s4', folder: key(b), prompt: (opts.reply === 'secrets' ? FILL(53) + SECRETS_TEXT + ' ' : '') + 'Nightly dependency check', rule: { kind: 'daily', time: '23:00' }, next: t0 + 30 * 3600000, last: { at: t0 - 6 * 3600000, outcome: 'failed' } },
       ];
       simSched.list.push(...seed.filter((x) => x.folder)); simSched.n = 4;
+      /* spec 044 FR-044: a seeded history, all in the past (nothing runs during a driver): sched-s1 has sent runs to a live agent of its folder and to an id that is
+         not in the office, a folded busy skip and enough runs for Show all; sched-s3 and sched-s4 have their missed and failed run; sched-s2 has no runs at all */
+      const s1 = simSched.list.find((x) => x.id === 'sched-s1');
+      const live = a?.info.id ?? '', gone = 'sim-gone-7';
+      if (s1) {
+        for (let k = 15; k >= 1; k--) {
+          const at = t0 - 35 * 60000 - (k - 1) * 30 * 60000;
+          if (k <= 8 && k >= 5) simRecord(s1, simSched.runs, 'skipped-busy', at, {}); // four busy skips in a row: one folded entry
+          else simRecord(s1, simSched.runs, 'sent', at, { session: k % 4 === 0 ? gone : live });
+        }
+      }
+      const s3 = simSched.list.find((x) => x.id === 'sched-s3'), s4 = simSched.list.find((x) => x.id === 'sched-s4');
+      if (s3?.last) simRecord(s3, simSched.runs, s3.last.outcome, s3.last.at);
+      if (s4?.last) simRecord(s4, simSched.runs, s4.last.outcome, s4.last.at, { reason: 'send-error' });
+    }
+    if (opts.ws) {
+      /* spec 044 FR-044 (`simws=1`): the room of one agent becomes a multi-root workspace room: its key is a .code-workspace path, with a schedule of its own */
+      const used = new Set(simSched.list.map((x) => x.folder));
+      const w = [...sims].reverse().find((x) => !used.has(x.info.workspaceFile ?? x.info.cwd ?? '')) ?? sims[sims.length - 1];
+      if (w) {
+        const wcwd = w.info.cwd ?? '~/work/ws', file = wcwd + '.code-workspace';
+        for (const m of sims) if (m.room === w.room) { m.info.workspaceFile = file; m.info.folders = [wcwd, wcwd + '-docs']; }
+        simSched.list.push({ id: 'sched-ws1', folder: file, prompt: 'Workspace check: summarise what changed in both folders', every: 60, next: Date.now() + 25 * 60000 });
+        simSched.n += 1;
+      }
     }
     if (opts.schedFire && opts.schedFire > 0) {
       /* spec 001 FR-038: a one-off run for the first idle agent (its own session, so a busy folder-mate does not skip it) */
@@ -836,18 +916,36 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (s) { simSched.list.push({ id: 'sched-fire', folder: s.info.workspaceFile ?? s.info.cwd ?? '', prompt: 'Scheduled check-in: summarise what changed', at: Date.now() + opts.schedFire * 1000, target: { session: s.info.id, agent: s.info.id, name: s.info.title ?? '' } }); simSched.n += 1; }
     }
     /* spec 044 FR-033 (check-sched-top): a driver makes a schedule's run fail now, as if the app had sent it and the send had failed */
+    const simSchedProbe = { runsCalls: 0 }; // a driver counts how often the window asks for a log (spec 044 FR-043: only while a list is shown)
     (window as unknown as { __durbarSimSched?: unknown }).__durbarSimSched = {
+      probe: simSchedProbe,
       fail: (id: string): boolean => {
         const sc = simSched.list.find((x) => x.id === id);
         if (!sc) return false;
-        sc.last = { at: Date.now(), outcome: 'failed' };
+        simRecord(sc, simSched.runs, 'failed', Date.now(), { reason: 'no-agent' });
         simSched.changed();
+        return true;
+      },
+      /* spec 044 FR-124 (check-sched-edit): a stored prompt over the limit, as a hand-edited file would hold it (`save` refuses a new one) */
+      addRaw: (prompt: string, kind?: 'once'): string => { // in the folder of the newest schedule (the one a driver just added through the form)
+        const id = 'sched-raw' + ++simSched.n;
+        simSched.list.push({ id, folder: simSched.list[simSched.list.length - 1]?.folder ?? '', prompt, ...(kind === 'once' ? { at: Date.now() + 3600_000 } : { every: 60, next: Date.now() + 40 * 60000 }) });
+        simSched.changed();
+        return id;
+      },
+      /* makes a schedule due now (its tick runs within a second), so a driver need not wait an hour */
+      dueNow: (id: string): boolean => {
+        const sc = simSched.list.find((x) => x.id === id);
+        if (!sc) return false;
+        if (sc.every !== undefined || sc.rule) sc.next = Date.now() - 1000;
+        else sc.at = Date.now() - 1000;
         return true;
       },
     };
     /* spec 044 FR-012: the rule copy in schedtemplates.js (main uses src/shared/schedrules.ts; test:schedules keeps them equal) */
-    type SimRules = { parseRule(v: unknown): ScheduleInfo['rule']; nextRuleRun(r: NonNullable<ScheduleInfo['rule']>, after: number): number | undefined };
+    type SimRules = { PROMPT_MAX: number; parseRule(v: unknown): ScheduleInfo['rule']; nextRuleRun(r: NonNullable<ScheduleInfo['rule']>, after: number): number | undefined };
     const simRules = (): SimRules | undefined => (window as unknown as { DurbarSchedTemplates?: SimRules }).DurbarSchedTemplates;
+    const simPromptMax = (): number => simRules()?.PROMPT_MAX ?? Infinity; // spec 044 FR-120: the window's copy of main's MAX_PROMPT (test:schedules keeps them equal)
     const simNext = (sc: ScheduleInfo, now: number): number =>
       sc.rule ? simRules()?.nextRuleRun(sc.rule, now) ?? now + 1440 * 60000
         : sc.at !== undefined ? sc.at + (Math.floor((now - sc.at) / ((sc.every as number) * 60000)) + 1) * (sc.every as number) * 60000 : now + (sc.every as number) * 60000; // FR-007: anchored runs keep their time of day
@@ -898,7 +996,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         emit({ type: 'user', sessionId: id, timestamp: now, text: r.prompt } as AgentEvent);
         simSched.ran.forEach((f) => f({ agentId: id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
         simSched.attrib.set(id, sc.id);
-        sc.last = { at: now, outcome: 'sent' };
+        simRecord(sc, simSched.runs, 'sent', now, { session: id });
         void api.send(id, r.prompt, []);
         simSched.changed();
         simDoors.changed();
@@ -912,7 +1010,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = simAgentOf(sc);
         const busy = !!s && (s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.perm || (!!s.breakUntil && Date.now() < s.breakUntil)); // spec 068 FR-008: a coffee break counts as busy
         const door = s ? simDoors.map.get(s.info.id) : undefined;
-        const outcome = simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : !s ? 'failed' : door?.closed ? 'held' : busy ? 'skipped-busy' : 'sent';
+        const outcome = sc.prompt.length > simPromptMax() ? 'skipped-review' : simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : !s ? 'failed' : door?.closed ? 'held' : busy ? 'skipped-busy' : 'sent';
         if (outcome === 'held' && door) { door.held.push({ prompt: sc.prompt, at: now, scheduleId: sc.id }); simDoors.changed(); } // spec 044 FR-110
         if (outcome === 'sent' && s) {
           emit({ type: 'user', sessionId: s.info.id, timestamp: now, text: sc.prompt } as AgentEvent);
@@ -920,8 +1018,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           simSched.attrib.set(s.info.id, sc.id);
           void api.send(s.info.id, sc.prompt, []);
         }
-        sc.last = { at: now, outcome };
+        simRecord(sc, simSched.runs, outcome, now, { session: outcome === 'sent' && s ? s.info.id : sc.target?.session, reason: outcome === 'failed' ? 'no-agent' : undefined });
         if (outcome === 'skipped-cap') { sc.paused = true; sc.pausedReason = 'cap'; } // FR-015
+        else if (outcome === 'skipped-review' && !recurring) { sc.paused = true; sc.pausedReason = 'review'; } // FR-124: a once schedule stays, paused, so it can be fixed
         else if (recurring) sc.next = simNext(sc, now);
         else sc.done = true;
       }
@@ -1102,7 +1201,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         { t: t(42), agent: 'Ana', folder: 'web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Edit src/cart.ts', decision: 'allowed-once' },
         { t: t(37), agent: 'Ana', folder: 'web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Run npm test', decision: 'allowed-session' },
         { t: t(31), agent: 'Ana', folder: 'web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Run npm test', decision: 'auto-session-grant' },
-        { t: t(25), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'ask', action: 'Fetch https://example.com/docs', decision: 'denied' },
+        { t: t(25), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'ask', action: 'Fetch https://example.invalid/docs', decision: 'denied' },
         { t: t(18), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'allow', action: 'Ask first to Allow all', decision: 'mode-change' },
         { t: t(12), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'allow', action: 'Edit server/routes.ts', decision: 'auto-allow-all' },
         { t: t(6), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'allow', action: 'Spending limit set to 300 AI credits', decision: 'limit-change' },
@@ -1319,7 +1418,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (!/\bquick\b/i.test(text)) for (let i = 0; i < 4; i++) { think(s, 1); await wait(650); } // "quick": a turn where the model sends no reasoning
       if (/\blinks?\b/i.test(text)) {
         // spec 080 T018 AC3: the agent prints links to the simulator's test pages (and a mail link and a refused one), so a driver clicks them
-        const LINKS = 'Here are the pages:\n\n- [the form page](durbar-sim://pages/form)\n- [the links page](durbar-sim://pages/links)\n- [the slow page](durbar-sim://pages/slow?ms=1500)\n- [mail me](mailto:sim@example.com)\n- [a web page](https://example.com/docs)\n- [a local page](http://127.0.0.1:9/page)\n- [not a web link](ms-msdt:/id)';
+        const LINKS = 'Here are the pages:\n\n- [the form page](durbar-sim://pages/form)\n- [the links page](durbar-sim://pages/links)\n- [the slow page](durbar-sim://pages/slow?ms=1500)\n- [mail me](mailto:sim@example.invalid)\n- [a web page](https://example.invalid/docs)\n- [a local page](http://127.0.0.1:9/page)\n- [not a web link](ms-msdt:/id)';
         emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: LINKS, final: true, text: LINKS });
         emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'idle' });
         s.state = 'done';
@@ -1665,7 +1764,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name), ...toolsOffOf(m.name), ...signOf(m.name, 'runtime'), ...(restartable(m.name, true) && m.status !== 'disabled' ? { canRestart: true } : {}) })) : []),
         ];
         for (const x of servers) { const ob = simOrgServer(s.info.adapterId, x.name); if (ob) Object.assign(x, { orgBlocked: ob }); } // spec 076 FR-205
-        return { ok: true, servers, live, app: SIM_APP_NAME[s.info.adapterId ?? 'copilot'] ?? 'GitHub Copilot', ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume, canListTools: true, toolFilter: true };
+        /* spec 058 FR-188: a Running (connected), switched-on server in a running session says how its last call failed (the class only) */
+        for (const x of servers) { const c = s.mcpCalls?.get(x.name); if (live && c && !s.mcpOff?.has(x.name) && (x as { status?: string }).status === 'connected') Object.assign(x, { lastCall: c }); }
+        return { ok: true, servers, live, app: SIM_APP_NAME[s.info.adapterId ?? 'copilot'] ?? 'GitHub Copilot', ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume, canListTools: true, toolFilter: true, ...(live && simSignApp(s) ? { canRefresh: true } : {}) };
       },
       /* spec 058 FR-040: a canned Restart: Starting for a moment, then Running */
       /* spec 069 FR-031/FR-032: canned tools per server; a session that is not running, a failed server and an empty one show their states */
@@ -1695,6 +1796,22 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (st.status && st.status !== 'connected') return { ok: false, error: name + ' is not connected' + (st.error ? ': ' + st.error : ' (' + st.status + ')') };
         const list = canned[name] ?? [['search', 'Search the notes'], ['read_note', 'Read one note by its title']];
         return { ok: true, total: list.length, tools: list.map(([n, d]) => { const ob = simOrgTool(s.info.adapterId, name, n); return { name: n, ...(d ? { description: d } : {}), ...(ob ? { orgBlocked: ob } : {}) }; }) };
+      },
+      /* spec 058 FR-190: the agent app reads its server list again. A driver counts the reads in `__durbarSimMcpRefresh.count` and sets what the app will say next in `__durbarSimMcpRefresh.app[id]` (a server list, sent as the usual `mcp` event) */
+      agentMcpRefresh: async (id, manual) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, supported: false, error: 'Unknown agent.' };
+        if (!simSignApp(s)) return { ok: false, supported: false };
+        if (s.state === 'idle' && !s.ctx) return { ok: false, supported: true, error: 'This session is not running. Send a message to start it.' };
+        const lastAt = (s as { mcpReadAt?: number }).mcpReadAt; /* main's rule: an open-time read waits a minute after the last read; Refresh always reads */
+        if (manual !== true && lastAt !== undefined && Date.now() - lastAt >= 0 && Date.now() - lastAt < 60_000) return { ok: true, supported: true, skipped: true };
+        (s as { mcpReadAt?: number }).mcpReadAt = Date.now();
+        const hook = ((window as unknown as { __durbarSimMcpRefresh?: { count: number; ids: string[]; app: Record<string, McpServerStatus[]> } }).__durbarSimMcpRefresh ??= { count: 0, ids: [], app: {} });
+        hook.count++;
+        hook.ids.push(id);
+        const next = hook.app[id];
+        if (next) emit({ type: 'mcp', sessionId: id, timestamp: Date.now(), servers: next });
+        return { ok: true, supported: true };
       },
       agentMcpRestart: async (id, name) => {
         const s = sims.find((x) => x.info.id === id);
@@ -1846,6 +1963,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
        renderer like an imported one. */
     const simQuery = typeof window !== 'undefined' && window.location ? new URLSearchParams(window.location.search) : new URLSearchParams();
     let simTheme = /^[a-z0-9_-]{1,64}$/.test(simQuery.get('theme') ?? '') ? (simQuery.get('theme') as string) : undefined;
+    /* characters=<value> (spec 077 FR-064, FR-070): who sits at the desks in this run, in memory, like the theme; only a listed value */
+    const CHARS = ['theme', 'minimalist', 'cheeky', 'prehistoric'] as const;
+    type SimChars = (typeof CHARS)[number];
+    const isChars = (v: unknown): v is SimChars => typeof v === 'string' && (CHARS as readonly string[]).includes(v);
+    let simCharacters: SimChars = isChars(simQuery.get('characters')) ? (simQuery.get('characters') as SimChars) : 'theme';
     let simUserTheme: Record<string, unknown> | null = null;
     const simUserThemes: Record<string, unknown>[] = []; // spec 040 FR-014: AI themes saved in this simulated run
     let simThemeN = 0;
@@ -1860,7 +1982,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0-alpha.18 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.2 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
@@ -1869,6 +1991,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       setBadge: async () => ({ ok: true }), /* spec 052 FR-059: no app icon in the demo */
       focusWindow: async () => { window.focus(); return { ok: true }; },
       setTheme: async (id) => { if (typeof id === 'string' && /^[a-z0-9_-]{1,64}$/.test(id)) simTheme = id; return { ok: true, theme: simTheme }; },
+      setCharacters: async (v) => { if (!isChars(v)) return { ok: false, characters: simCharacters }; simCharacters = v; return { ok: true, characters: v }; }, // spec 077 FR-064: refused like main
       listUserThemes: async () => [...(simUserTheme ? [simUserTheme] : []), ...simUserThemes].map((t) => ({ id: t.id as string, name: String(t.name ?? t.id), ok: true })),
       getUserTheme: async (id) => (simUserTheme && id === simUserTheme.id ? simUserTheme : simUserThemes.find((t) => t.id === id) ?? null),
       setPlace: async (server, place) => {
@@ -1928,7 +2051,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent', entries: [] };
         // page address simslash=long (spec 073 FR-008, review on #535): a 64-character name, a long hint and a 200-character description
-        // come first, for check:ui-text's long-text pass; simslash=secret: fake token shapes (FR-014, issue #608)
+        // come first, for check-ui-text's long-text pass; simslash=secret: fake token shapes (FR-014, issue #608)
         return { ok: true, entries: simSlashFor(s.info.adapterId ?? 'copilot', simQuery).map((e) => { const c = { ...e }; delete c.note; return c; }) }; // the note is the send's, not the list's
       },
       ...simNotesBridge, // spec 083 FR-060
@@ -2045,8 +2168,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const old = simSched.list.find((x) => x.id === input.id);
         // a save that is not an edit never moves a schedule to another folder or revives a done one (as main)
         if (!edit && old) input.folder = old.folder;
-        if (!rule && every === undefined && edit && prev && Number(input.at) <= now && (prev.done || Number(input.at) !== prev.at)) return { ok: false as const, error: prev.done ? 'Pick a time in the future to run it again.' : 'That time has already passed.' };
+        if (!rule && every === undefined && edit && prev && Number(input.at) <= now && (prev.done || prev.pausedReason === 'review' || Number(input.at) !== prev.at)) return { ok: false as const, error: prev.done || prev.pausedReason === 'review' ? 'Pick a time in the future to run it again.' : 'That time has already passed.' };
         if (!rule && every === undefined && edit && prev && (prev.every !== undefined || prev.rule) && Number(input.at) <= now) return { ok: false as const, error: 'That time has already passed.' };
+        const promptLen = String(input.prompt ?? '').trim().length; // spec 044 FR-123: the same refusal as main, never a cut
+        if (promptLen > simPromptMax() && String(input.prompt).trim() !== prev?.prompt) return { ok: false as const, error: `The prompt is ${promptLen.toLocaleString('en-US')} of ${simPromptMax().toLocaleString('en-US')} characters: shorten it to save.` };
         if (!input.folder || !String(input.prompt ?? '').trim() || (!rule && every === undefined && !(Number(input.at) > now) && !(edit && prev && !prev.done && Number(input.at) === prev.at) && !(!edit && old && input.paused)) || (!rule && every !== undefined && !(every >= 5 && every <= 1440))) return { ok: false as const, error: 'A schedule needs a prompt and either a future time, 5 to 1440 minutes or a calendar rule.' };
         const target = input.target && typeof input.target === 'object' ? input.target : undefined;
         if (target && !input.paused && !sims.some((x) => x.info.id === target.session)) return { ok: false as const, error: "That session has ended. Send it to the folder's agent instead." };
@@ -2063,15 +2188,18 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         }
         const when: Partial<ScheduleInfo> = rule ? { rule, next: !edit && old?.rule && old.paused && input.paused ? old.next : simRules()?.nextRuleRun(rule, now) } : every !== undefined ? { every, ...(Number(input.at) > 0 ? { at: Number(input.at) } : {}), next: (edit ? undefined : old?.next) ?? (Number(input.at) > now ? Number(input.at) : now + every * 60000) } : { at: Number(input.at) };
         const resumedCap = !!old && old.pausedReason === 'cap' && !input.paused; // FR-015: Resume after the limit counts from zero
-        const sc: ScheduleInfo = { id: old?.id ?? 'sched-' + ++simSched.n, folder: input.folder, prompt: String(input.prompt).trim().slice(0, 2000), ...when, ...(input.paused ? { paused: true } : {}), ...(input.paused && old?.paused && old.pausedReason && !(edit && old.pausedReason === 'session-ended' && targetChanged) && !(edit && old.pausedReason === 'cap' && (!cap || cap.amount > (old.cap?.unit === cap.unit ? old.spent ?? 0 : 0))) ? { pausedReason: old.pausedReason } : {}), ...(old?.last ? { last: old.last } : {}), ...(!edit && old?.done ? { done: true } : {}),
+        const sc: ScheduleInfo = { id: old?.id ?? 'sched-' + ++simSched.n, folder: input.folder, prompt: String(input.prompt).trim(), ...when, ...(input.paused ? { paused: true } : {}), ...(input.paused && old?.paused && old.pausedReason && !(edit && old.pausedReason === 'session-ended' && targetChanged) && !(edit && old.pausedReason === 'cap' && (!cap || cap.amount > (old.cap?.unit === cap.unit ? old.spent ?? 0 : 0))) ? { pausedReason: old.pausedReason } : {}), ...(old?.last ? { last: old.last } : {}), ...(!edit && old?.done ? { done: true } : {}),
           ...(target ? { target: { session: String(target.session), agent: String(target.agent), ...(target.name ? { name: String(target.name).slice(0, 80) } : {}) } } : {}),
           ...(cap ? { cap, ...(!resumedCap && old?.cap?.unit === cap.unit && old?.spent ? { spent: old.spent } : {}), ...(!resumedCap && old?.cap?.unit === cap.unit && old?.spentUnknown ? { spentUnknown: true } : {}) } : {}) };
+        if (edit && old?.pausedReason === 'review' && sc.prompt.length <= simPromptMax()) { delete sc.paused; delete sc.pausedReason; } // FR-124: a fixing edit runs it again
         if (sc.next === undefined && (sc.rule || sc.every !== undefined)) return { ok: false as const, error: 'That calendar rule never runs.' };
         simSched.list = old ? simSched.list.map((x) => (x.id === sc.id ? sc : x)) : [...simSched.list, sc];
         simSched.changed();
         return { ok: true as const, schedule: sc };
       },
-      removeSchedule: async (id) => { const n = simSched.list.length; simSched.list = simSched.list.filter((x) => x.id !== id); simSched.changed(); return { ok: simSched.list.length !== n }; },
+      removeSchedule: async (id) => { const n = simSched.list.length; simSched.list = simSched.list.filter((x) => x.id !== id); delete simSched.runs[id]; simSched.changed(); return { ok: simSched.list.length !== n }; },
+      /* spec 044 FR-043/FR-044: one schedule's log, newest first; the id is checked like main does */
+      scheduleRuns: async (id) => (simSchedProbe.runsCalls++, typeof id === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(id) && Object.prototype.hasOwnProperty.call(simSched.runs, id) ? { ok: true as const, runs: simSched.runs[id].map((r) => ({ ...r })).reverse() } : typeof id === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(id) ? { ok: true as const, runs: [] } : { ok: false as const }),
       setSchedulesPaused: async (on) => { simSched.pausedAll = on === true; simSched.changed(); return { ok: true, pausedAll: simSched.pausedAll }; },
       onSchedules: (cb) => { simSched.subs.push(cb); return () => undefined; },
       onScheduleRan: (cb) => { simSched.ran.push(cb); return () => undefined; },
@@ -2318,7 +2446,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const folderFloor = new Map<string, string>(); // folder (cwd) -> floor id
     if (opts.floors) {
       floorsList.push({ id: 'f-clienta0', name: 'Client A', on: true }, { id: 'f-personal', name: 'Personal', on: true });
-      [...new Set(sims.map((x) => x.info.cwd))].forEach((c, i) => folderFloor.set(c, floorsList[i % floorsList.length].id));
+      if (!opts.floorsGround) [...new Set(sims.map((x) => x.info.cwd))].forEach((c, i) => folderFloor.set(c, floorsList[i % floorsList.length].id));
     }
     for (const f of floorsList) if (opts.floorsOff?.some((n) => n.toLowerCase() === f.name.toLowerCase())) f.on = false;
     const floorOfCwd = (cwd: string): string => (floorsList.some((f) => f.id === folderFloor.get(cwd)) ? (folderFloor.get(cwd) as string) : 'ground');
@@ -2433,6 +2561,62 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     };
     let started = false;
     let extra = 0;
+    /* spec 093: the simulator's own parent pick (one at a time), its canned URL and name refusals (main's rules are tested in
+       test:newfolder) and a fake clone: progress events on a timer, Cancel, no process, no network */
+    const simNewFolder: { token: string; n: number; progress: Array<(p: NewFolderProgress) => void>; clone: null | { cancel: () => void } } = { token: '', n: 0, progress: [], clone: null };
+    const simCloneUrl = (u: unknown): { ok: true; host: string; suggested: string; shown: string } | { ok: false; error: string; retry: 'url' } => {
+      const no = (error: string) => ({ ok: false as const, error, retry: 'url' as const });
+      if (typeof u !== 'string' || !u) return no('Paste the address of the repository.');
+      if (/[\s]/.test(u)) return no('Remove spaces, tabs and line breaks from the address.');
+      if (/^-/.test(u)) return no('No part of the address may start with -.');
+      if (/^(?:https|ssh):\/\/[^/@]*:[^/@]*@/i.test(u) || /^[^@/:]+:[^@/]*@[^/]*:/.test(u)) return no('Remove the password from the address. Durbar uses your own git credentials.');
+      const m = /^(?:https|ssh):\/\/(?:[A-Za-z0-9._~+-]+@)?([A-Za-z0-9.-]+)(?::\d+)?\/[^?#\\]+$/i.exec(u) || /^[A-Za-z0-9._~+-]+@([A-Za-z0-9.-]+):[^-][^?#\\]*$/.exec(u);
+      if (!m || u.includes('::')) return no('Use an https:// or ssh address (for example git@github.com:owner/repo.git).');
+      const seg = (u.replace(/\/+$/, '').split(/[/:]/).pop() || '').replace(/\.git$/i, '');
+      return { ok: true, host: m[1], suggested: /^[A-Za-z0-9._-]+$/.test(seg) ? seg : '', shown: u };
+    };
+    const simNewFolderCheck = (req: { kind?: unknown; name?: unknown; url?: unknown } | null | undefined): NewFolderCheck => {
+      const n = req && typeof req.name === 'string' ? req.name : '';
+      if (!req || (req.kind !== 'init' && req.kind !== 'empty' && req.kind !== 'clone')) return { ok: false, error: 'Choose what to create.' };
+      let extra = {};
+      if (req.kind === 'clone') {
+        const u = simCloneUrl(req.url);
+        if (!u.ok) return u;
+        /* window.__simCloneHost: a driver plants a hostile host-like string to check the Allow all sentence is text, never HTML */
+        const planted = typeof window !== 'undefined' ? (window as unknown as { __simCloneHost?: unknown }).__simCloneHost : undefined;
+        extra = { host: typeof planted === 'string' ? planted : u.host, suggested: u.suggested, shown: u.shown };
+        if (req.name === undefined) return { ok: true, ...extra };
+      }
+      if (!n) return { ok: false, error: 'Type a name for the new folder.' };
+      if (/[\\/]/.test(n)) return { ok: false, error: 'A single folder name, without / or \\.' };
+      if (/^(con|prn|aux|nul|conin\$|conout\$|com[0-9]|lpt[0-9]) *(\.|$)/i.test(n)) return { ok: false, error: 'That name is reserved on Windows (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-9, LPT0-9). Choose another.' };
+      if (n === '.' || n === '..') return { ok: false, error: 'Use a name other than . or ..' };
+      return { ok: true, ...extra };
+    };
+    /* the fake clone's progress, as git writes it; window.__simCloneHold stops it at "Receiving objects: 45%" (and
+       window.__simCloneWaiting before any output, with FR-044's waiting line) until the flag is cleared or Cancel is pressed */
+    const simCloneRun = (): Promise<'done' | 'cancelled'> => new Promise((resolve) => {
+      const w = (typeof window !== 'undefined' ? window : {}) as { __simCloneHold?: boolean; __simCloneWaiting?: boolean };
+      const t0 = Date.now();
+      const steps: Array<[string, number | undefined, string]> = [['Counting objects', 100, 'remote: Counting objects: 100% (1200/1200), done.'], ...[10, 25, 45, 70, 90, 100].map((p): [string, number, string] => ['Receiving objects', p, `Receiving objects: ${String(p).padStart(3)}% (${p * 12}/1200), ${(p / 20).toFixed(1)} MiB | 3.1 MiB/s`]), ['Resolving deltas', 100, 'Resolving deltas: 100% (640/640), done.'], ['Updating files', 100, 'Updating files: 100% (310/310), done.']];
+      const lines = ["Cloning into '.'...", 'remote: Enumerating objects: 1200, done.'];
+      let i = 0;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const emit = (p: NewFolderProgress): void => simNewFolder.progress.forEach((cb) => cb(p));
+      const tick = (): void => {
+        if (w.__simCloneWaiting) { emit({ lines: [], elapsedMs: Date.now() - t0, waiting: true }); timer = setTimeout(tick, 300); return; }
+        const held = w.__simCloneHold && i > 0 && steps[i - 1][1] === 45;
+        if (!held) {
+          if (i >= steps.length) { simNewFolder.clone = null; resolve('done'); return; }
+          const [phase, percent, line] = steps[i++];
+          if (lines.length && lines[lines.length - 1].startsWith(phase.slice(0, 9))) lines[lines.length - 1] = line; else lines.push(line);
+          emit({ phase, percent, lines: lines.slice(-6), elapsedMs: Date.now() - t0 });
+        }
+        timer = setTimeout(tick, 250);
+      };
+      simNewFolder.clone = { cancel: () => { if (timer) clearTimeout(timer); simNewFolder.clone = null; resolve('cancelled'); } };
+      timer = setTimeout(tick, 250);
+    });
     type HsCb = (p: never) => void;
     const simHarness: { progress: HsCb[]; done: HsCb[]; running: null | { kind: string; finish: () => void } } = { progress: [], done: [], running: null };
     /*
@@ -2589,6 +2773,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       onHarnessProgress: (cb) => { simHarness.progress.push(cb); return () => { simHarness.progress = simHarness.progress.filter((x) => x !== cb); }; },
       onHarnessDone: (cb) => { simHarness.done.push(cb); return () => { simHarness.done = simHarness.done.filter((x) => x !== cb); }; },
       addFolder: async (_mode, o) => {
+        /* a driver's probe (shots-074): count the call and add nothing, so a shortcut check has no side effect */
+        const probe = typeof window !== 'undefined' ? (window as unknown as { __simAddFolderProbe?: { n: number } }).__simAddFolderProbe : undefined;
+        if (probe) { probe.n++; return { ok: true, agents: [] }; }
         const bad = o && o.adapterId !== undefined ? notReady(o.adapterId) : undefined;
         if (bad) return { ok: false, agents: [], error: bad }; // like main: nothing starts, nothing is written
         extra++;
@@ -2605,6 +2792,41 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true, agents: [], ...(home ? { warnings: [{ name: 'home', kind: 'home' as const }] } : {}) };
       },
       addWorkspaceFile: async () => ({ ok: true, agents: [] }),
+      /* spec 093 FR-081: create a folder, faked in the window: no process, nothing on disk, main's channels stay closed. The parent is
+         the simulator's own (~/work) behind its own token; canned refusals; the new room starts in the mode the window passed (validMode's
+         rule). A driver reads the last request in window.__simNewFolderLast and can cancel the picker with window.__simNewFolderPickCancel. */
+      createPickParent: async () => {
+        if (typeof window !== 'undefined' && (window as unknown as { __simNewFolderPickCancel?: boolean }).__simNewFolderPickCancel) return { ok: false as const, cancelled: true as const };
+        simNewFolder.token = 'sim-pick-' + ++simNewFolder.n;
+        return { ok: true as const, token: simNewFolder.token, parent: '~/work' };
+      },
+      createCheck: async (req) => simNewFolderCheck(req),
+      createFolder: async (req, mode, o) => {
+        if (typeof window !== 'undefined') (window as unknown as { __simNewFolderLast?: unknown }).__simNewFolderLast = { req: { ...req }, mode, opts: { ...(o || {}) } };
+        const no = (error: string, retry?: 'url' | 'name' | 'place') => ({ ok: false, agents: [] as AgentInfo[], error, ...(retry ? { retry } : {}) });
+        if (!req || (req.kind !== 'init' && req.kind !== 'empty' && req.kind !== 'clone')) return no('Choose what to create.');
+        if (simNewFolder.clone) return no('A folder is still being created.');
+        if (req.token !== simNewFolder.token) return no('Choose the place again.', 'place');
+        const chk = simNewFolderCheck({ ...req, name: req.name ?? '' });
+        if (!chk.ok) return no(chk.error || '', chk.retry === 'url' ? 'url' : 'name');
+        const bad = o && o.adapterId !== undefined ? notReady(o.adapterId) : undefined;
+        if (bad) return no(bad);
+        const cwd = '~/work/' + req.name;
+        if (sims.some((x) => x.info.cwd === cwd)) return no(`A folder or file named ${req.name} already exists there.`, 'name');
+        if (req.kind === 'clone' && (await simCloneRun()) === 'cancelled') return { ok: false, agents: [] as AgentInfo[], cancelled: true as const, error: 'Cancelled. Nothing was kept.' };
+        simNewFolder.token = '';
+        const floor = o && typeof o.floor === 'string' && floorsList.some((f) => f.id === o.floor) ? o.floor : 'ground';
+        if (o && o.floor !== undefined) lastFloor = floor;
+        folderFloor.set(cwd, floor);
+        const permMode = mode === 'ask' || mode === 'allow' ? mode : 'read-only';
+        const info = { id: 'sim-nf' + ++simNewFolder.n, name: req.name, cwd, folders: [cwd], permMode, floor, adapterId: mixed && o && o.adapterId ? o.adapterId : 'copilot' } as AgentInfo;
+        info.renameCap = caps(info.adapterId ?? 'copilot').renameSession;
+        sims.push({ info, room: info.name, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: [], grants: new Map() });
+        addedListeners.forEach((l) => l(info));
+        return { ok: true, agents: [], name: req.name };
+      },
+      createCancel: async () => { if (!simNewFolder.clone) return { ok: false }; simNewFolder.clone.cancel(); return { ok: true }; },
+      onCreateProgress: (cb) => { simNewFolder.progress.push(cb); return () => { simNewFolder.progress = simNewFolder.progress.filter((x) => x !== cb); }; },
       listAgents: async () => {
         if (!started) {
           started = true;
@@ -2757,11 +2979,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (s.grants.size) { s.grants.clear(); grantsEvent(s); }
         s.state = 'idle'; closeOpen(s); simRemote.delete(id); // spec 054 FR-003
         s.mcpSign = undefined; // spec 058 FR-065: End session forgets an open sign-in
+        if (s.info.sandbox?.untilNewSession) { delete s.info.sandbox; emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: null }); } // spec 087: a kept floor ends with the session
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'stopped' });
       },
       /* spec 058 FR-040: a canned Restart session: asks while busy (as main does), ends, then resumes "Ready"; with simauth=expired
          the resume fails with the sign-in text (FR-027) and the session stays ended */
-      agentMcpRestartSession: async (id, confirmed) => {
+      // spec 087 FR-022: `reason` 'sandbox' (Restart without the sandbox) is the same restart; only main's words differ (no log here).
+      // A new session has no floor kept from an earlier mode: the sim drops `untilNewSession` (the Allow all app default, as the real resume).
+      agentMcpRestartSession: async (id, confirmed, _reason) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'Unknown agent.' };
         if (s.state !== 'idle' && confirmed !== true) return { ok: false, needsConfirm: true };
@@ -2772,6 +2997,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'stopped' });
         await new Promise((r) => setTimeout(r, 500));
         if (simExpired.has(kind)) return { ok: false, ended: true, errorKind: 'auth', error: SIM_AUTH_ERROR };
+        if (s.info.sandbox?.untilNewSession) {
+          const next = simSandboxFor(0, kind, s.info.permMode);
+          if (next) s.info.sandbox = next;
+          else delete s.info.sandbox;
+          emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: next ?? null });
+        }
         s.ctx ??= { tokens: 0, limit: 128000 }; // agentMcp reads "live" from it
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Ready in ' + s.info.cwd });
         return { ok: true };
@@ -2868,16 +3099,18 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (org) return { ok: false, error: org + ': pick another permission mode.' };
         const MW: Record<string, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
         simLog(s, 'mode-change', `${MW[s.info.permMode] ?? s.info.permMode} to ${MW[mode] ?? mode}`, mode);
-        const kept = mode === 'allow' && s.info.sandbox?.state === 'on' && (s.info.adapterId ?? 'copilot') === 'copilot'; // spec 087: Copilot keeps its floor until a new session
         s.info.permMode = mode;
         s.info.permRestored = undefined;
         s.info.permFrom = undefined;
         { // spec 087 FR-013: the floor in force after the switch (the simulator applies it at once)
           const kind = s.info.adapterId ?? 'copilot';
-          const next: SandboxState | undefined = kept ? { state: 'on', mechanism: s.info.sandbox?.mechanism, untilNewSession: true, covers: simCovers(kind), verified: false } : s.sbxContinued && mode !== 'allow' ? { state: 'off', covers: simCovers(kind), writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: 'You chose to continue without the OS sandbox for this session.' } : simSandboxFor(0, kind, mode);
+          // spec 087 FR-022c: a Copilot floor is lowered at the switch to Allow all and the sim's lowering resolves, so no word is kept; with
+          // simsbxlower=refuse it is refused: the floor is kept until a new session and the event says so (the window toasts)
+          const refused = SIM_LOWER_REFUSE && mode === 'allow' && kind === 'copilot' && s.info.sandbox?.heldFloor === true && !s.info.sandbox.managed;
+          const next: SandboxState | undefined = refused ? { state: 'on', mechanism: s.info.sandbox?.mechanism, untilNewSession: true, covers: simCovers(kind), verified: false } : s.sbxContinued && mode !== 'allow' ? { state: 'off', covers: simCovers(kind), writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: 'You chose to continue without the OS sandbox for this session.' } : simSandboxFor(0, kind, mode);
           if (next) s.info.sandbox = next;
           else delete s.info.sandbox;
-          emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: next ?? null });
+          emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: next ?? null, ...(refused ? { notLowered: true } : {}) });
         }
         if (o?.clearGrants && s.grants.size) { s.grants.clear(); grantsEvent(s); }
         let pending = s.perm ? 1 : 0;
@@ -2992,7 +3225,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         sims.push({ info, room: src.room, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: src.files, grants: new Map() });
         const t = Date.now() - 2 * 3600e3;
         if (modeWas) { const MW: Record<string, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' }; simLog(sims[sims.length - 1], 'mode-change', `Resumed in ${MW[mode]}, the mode last chosen for this session (opened from a session in ${MW[modeWas]})`, mode); }
-        return { ok: true, ...(modeWas ? { modeWas } : {}), agent: info, title: (opts.reply === 'secrets' ? FILL(83) + SECRETS_TEXT + ' ' : '') + (sessionId === 'prev-1' ? 'Rename the filings handler and update its tests' : 'Why does the canton lookup return duplicates?'),
+        const resumedTitle = opts.names === 'long' ? SIM_LONG_RESUMED_TITLE : undefined; // #451: the runtime sends the title of a resumed session (as askTitle does), so the desk's name is that title
+        if (resumedTitle) window.setTimeout(() => emit({ type: 'title', sessionId: info.id, timestamp: now(), title: resumedTitle }), 300);
+        return { ok: true, ...(modeWas ? { modeWas } : {}), agent: info, title: resumedTitle ?? (opts.reply === 'secrets' ? FILL(83) + SECRETS_TEXT + ' ' : '') + (sessionId === 'prev-1' ? 'Rename the filings handler and update its tests' : 'Why does the canton lookup return duplicates?'),
           history: { total: 4, truncated: false, items: [
             { type: 'user', text: 'Rename the filings handler to filingsSearch and update its tests.', ts: t },
             { type: 'tool', callId: 'c1', tool: 'grep', label: 'grep filingsHandler', output: '6 matches in 3 files' },

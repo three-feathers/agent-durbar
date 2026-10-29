@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 035-040
 title: Theme foundation: data-only theme packs, manifest, token map, art slot registry, UI styles (2026-10-18), Clean Office fallback
-status: **built** on branch `035-theme-foundation` (PR #137): loader, sanitizer, fallback, `test:theme`
+status: built
+note: T013 owner review of the five looks
 -->
 
 **Feature Branch**: `035-theme-foundation` (touches `src/renderer/app.js`, `src/renderer/styles.css`, `src/renderer/index.html`; reads `003` settings, `011` settings store, `017` room doors, `024` places, `033` floors)
@@ -106,6 +107,9 @@ status: **built** on branch `035-theme-foundation` (PR #137): loader, sanitizer,
 
 Owner (Vikram, team chat 2026-10-22 06:17 UTC): run theme layout, geometry and screenshot checks on pull requests only for Clean Office and Retro (dark, its own display font and art); the other styles change only what FR-010 allows, which `test:theme` checks statically on every PR. Nothing in FR-009..FR-013 changes; only where the FR-010 layout proof runs (spec 008 FR-111).
 
+### 2026-10-23: the kit list gains `crew` (spec 077)
+
+FR-013's fixed kit list is now `office`, `corporate`, `pixel`, `court-indian`, `court-european`, `court-japanese` and `crew` (the Cheeky Crew theme's kit, spec 077); a user theme may name it like any other kit.
 
 ### 2026-10-25: three asserts that could not fail (issue #749, found by Paco's agent's test audit)
 
@@ -119,3 +123,7 @@ Owner (Vikram, team chat 2026-10-22 06:17 UTC): run theme layout, geometry and s
 
 **Corrected wording.**
 - **FR-015** `[IMPLEMENTED]` `test:theme` parses every declaration in `themes.css` and accepts only an **allow-list of properties**: colours, backgrounds and background size, border and outline colours, `border-radius`, `box-shadow`, `text-shadow`, `font-family`, `text-transform`, `z-index`; plus properties allowed with one exact value (`letter-spacing` up to `.1em`, since it widens text; today's uses are `.01em`-`.08em`; `position: relative`, `min-width: 0`, `overflow: hidden` (auto or scroll would add scrollbars), `text-overflow: ellipsis` or `clip`, `flex: 0 1 auto`, `transform: translate(Npx,Npx)` with N from -2 to 2 (today's Retro nudges), no scale or rotate; `font-weight` normal, bold or 400-800); plus the custom properties `--ui-display`, `--ui-top-ink`, `--ui-top-ink-2` and `--st-glyph`, whose values may carry no length. Anything else (an unknown property, `width`, `top`, `flex-basis`, a new `--*`) fails, so a new way to size or move something is refused by default. `border-radius` stays allowed because FR-010 allows corner radii. `DURBAR_THEMES_CSS` points the test at a mutant copy for mutation checks. Does not change FR-010 or spec 008 FR-111. **Structure** (review on #751): declarations are accepted only inside a plain rule. A rule nested in a rule (CSS nesting), a declaration directly in an `@`-block, and any top-level statement ending in `;` (`@import`, `@namespace`, `@charset`) are refused, so the per-rule check sees every declaration. `background-size` stays any-value: it sizes a background texture tile, never a box.
+
+### 2026-10-28: Characters, separate from themes (spec 077, issue #814)
+
+- **FR-016** `[IMPLEMENTED]` A theme's `scene` (FR-013) is now **the theme's own** characters and furniture: it is drawn while Settings > **Characters** is *The theme's own* (the default). A Characters choice (*Minimalist*: the `office` kit; *Cheeky*: the `crew` kit) replaces it on any theme, built-in or user. Everything else in FR-009..FR-015 is unchanged: the tokens still colour the kit, the art slots are still drawn over it, the layout is the same. Cheeky Crew is no longer a built-in theme (the kit list keeps `crew`). Details, the migration of the old theme and the checks: spec 077 FR-064..FR-070.

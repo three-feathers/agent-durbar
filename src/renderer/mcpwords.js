@@ -96,6 +96,16 @@
     if(c==='auth')return signInHint(app);
     return c?CLASS_HINT[c]:'';
   }
+  /* Spec 058 FR-187/FR-188 (issue #779 A): a Running server whose last tool call failed with a refused sign-in or an organization access
+     policy. `cls` is main's class word (`auth` | `policy`); anything else says nothing. The words are fixed here: no vendor text, claims, IDs or
+     e-mail address can reach them. */
+  const CALL_WORDS={'policy':'last call blocked by your organization\u2019s access policy','auth':'last call needs sign-in'};
+  const callWord=cls=>typeof cls==='string'&&own(CALL_WORDS,cls)?CALL_WORDS[cls]:'';
+  function callHint(cls,app){
+    if(cls==='policy')return 'Your organization\u2019s access policy refused the server\u2019s last call (for example, the device must be managed). Agent Durbar cannot change that; ask your administrator.';
+    if(cls==='auth')return 'The server refused its last call for a missing sign-in. '+(app?plain(app,40):'Your agent app')+' keeps the sign-in; sign in again to use its tools.';
+    return '';
+  }
   /* Spec 058 FR-090 (issue 603): one plain reason for a failed or needs-sign-in server, else null. Order: sign-in; the adapter's class
      (FR-091); the masked text (the hint's rules); "Disconnected later" when it was seen Running first (FR-092); otherwise "reason unknown".
      `x` = an `agents:mcp` entry: {status, errorClass, error (masked), afterRunning}. */
@@ -189,5 +199,5 @@
     for(const r of servers)if(r.attention)attention++;
     return {servers,attention,chats};
   }
-  return {stateOf,offBy,iconSvg,hintFor,signInHint,plain,aggregate,reasonOf,whenText,diagnostics,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
+  return {stateOf,offBy,iconSvg,hintFor,callWord,callHint,signInHint,plain,aggregate,reasonOf,whenText,diagnostics,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
 })());

@@ -22,8 +22,9 @@ Everything here is a template. It holds no secrets, no chat or account IDs, no e
 1. Copy the three agent files to `~/.claude/agents/`.
 2. Copy the two templates (drop the `.template` suffix), fill every `<placeholder>`, and read them once.
 3. Keep personal files local. `CLAUDE.local.md` is git-ignored here; `~/.claude/` is outside the repo. Never commit your filled copies, and never commit tokens, chat IDs, emails or host names.
-4. Optional: set up [loops.md](loops.md) and [always-on-host.md](always-on-host.md).
-5. Back up your own setup in a **private** repo only (see the backup section of the host page).
+4. Set up commit signing on the host where the agent runs (owner, 2026-10-27; spec 021 FR-061): a dedicated key from `ssh-keygen -t ed25519`, `git config gpg.format ssh`, `user.signingkey <key>.pub`, `commit.gpgsign true`, `tag.gpgsign true`, and your human adds the public key to GitHub as a *Signing key*. In `CLAUDE.local.md` or your agent's settings turn off any co-author trailer and "generated with" line (Claude Code: `includeCoAuthoredBy: false` and an empty `attribution`). Check with `git log --show-signature -1`.
+5. Optional: set up [loops.md](loops.md) and [always-on-host.md](always-on-host.md).
+6. Back up your own setup in a **private** repo only (see the backup section of the host page).
 
 ## Sub-agents by size
 
@@ -131,4 +132,4 @@ Not checked without a real session: whether `Bash(node <helper> *)` refuses `&&`
 
 **Stop it:** `sudo systemctl disable --now durbar-weekly-audit.timer`; a run in progress: `sudo systemctl stop durbar-weekly-audit.service`. Delete the token on GitHub if you won't run it again.
 
-Every issue it files has the labels Claude chose from the taxonomy (one type, an `area:*`, a `spec:NNN`), a hidden `<!-- weekly-audit:<fingerprint> -->` marker for the duplicate check, no links, and ends with "Filed by the weekly test audit (spec 021 FR-058)". Close a wrong one with a reason; it won't be filed again under the same fingerprint.
+Every issue it files has the labels Claude chose from the taxonomy (one type, an `area:*`, a `spec:NNN`), a hidden `<!-- weekly-audit:<fingerprint> -->` marker for the duplicate check, no links, and ends with "Filed by the weekly test audit (spec 021 FR-058)". Close a wrong one with a reason; it won't be filed again under the same fingerprint. The filer counts an issue as already filed only when a trusted account opened it (`scripts/trusted-authors.txt`, installed next to the filer by `install-filer`), so an outsider's issue with the footer and made-up markers cannot stop a real finding from being filed (spec 021 FR-060).

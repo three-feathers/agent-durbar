@@ -13,7 +13,12 @@
  * sandbox line whole (not clipped); simsendfail=sandbox-choice: a Claude Code send shows the note (nothing sent, the message marked Not
  * sent) with Continue without the OS sandbox, Always continue on this computer and the existing Change mode…; Always goes through the
  * shared askDialog; Settings > Agent apps shows the OS sandbox line per app (reason at most 200 characters) and undoes Always. Every
- * wait is an until(); prints "[087-sandbox] PASS".
+ * wait is an until(). T070 (FR-022, FR-022e, issue #806): the kept floor in Allow all (Copilot sim-15) has the chip button and the mode menu item
+ * Restart without the sandbox (tooltip, keyboard, Escape back to the chip); its own dialog (busy, grants, remote control, next-message lines;
+ * no MCP wording) where Cancel calls nothing and confirming calls the existing restart with reason 'sandbox', after which the word and the action
+ * go; Copilot's Allow all dialog says its OS sandbox is also turned off (FR-022c, T072) and the switch leaves no word, Claude Code's and Codex's do
+ * not say it and never show the action; with simsbxlower=refuse a refused lowering keeps the floor and its action and toasts once (review on PR #833); managed and the office card's
+ * menu never have it. Prints "[087-sandbox] PASS".
  */
 const assert = require('assert');
 const path = require('path');
@@ -60,11 +65,19 @@ module.exports = async (ctx) => {
     await expectChip(w, 'sim-13', /Read-only · Sandbox: checking/, (c) => /^Checked when Copilot starts\./.test(c.title));
     await expectChip(w, 'sim-11', /Ask first · Not sandboxed/, (c) => /^Copilot says this computer cannot run its sandbox/.test(c.title) && /Durbar.s own checks still apply/.test(c.title));
     await expectChip(w, 'sim-6', /Allow all · Sandboxed \(managed\)/, (c) => /Your organization keeps/.test(c.title));
-    await expectChip(w, 'sim-15', /Allow all · Sandboxed \(until a new session\)/, (c) => /stays until a new session/.test(c.title) && /Shell commands and MCP servers run in bubblewrap/.test(c.title));
+    // the kept floor in Allow all: its segment is the Restart without the sandbox button (T070 below); the state's own tooltip is in the mode menu
+    await openAgent('sim-15');
+    assert.ok(await until(`/^Allow all/.test(document.getElementById('modeChip').innerText.trim())&&(document.getElementById('sbxRestartBtn')||{}).textContent==='Sandboxed (until a new session)'`, 8000), `${w}: sim-15: Allow all + the kept-floor button`);
+    await js(`document.getElementById('modeChip').click()`);
+    assert.ok(await until(`!!document.querySelector('#modeMenu .mm-sbx')`, 5000));
+    const keptNote = await js(`document.querySelector('#modeMenu .mm-sbx').innerText`);
+    assert.ok(/stays until a new session/.test(keptNote) && /Shell commands and MCP servers run in bubblewrap/.test(keptNote), `${w}: the kept floor's note: ${keptNote}`);
+    await js(`document.querySelector('#modeMenu').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+    assert.ok(await until(`!document.getElementById('modeMenu')`, 3000));
     // ---- FR-021a (K15): Copilot Ask first with the floor on: the tooltip says an approved command may leave it, and stays not verified ----
-    await expectChip(w, 'sim-2', /Ask first · Sandboxed\b/, (c) => /writes: not only this folder/.test(c.title) && /An approved command could write outside the folder \(Copilot, seen on Linux, 2026-10-25\)\./.test(c.title) && c.title.endsWith(NOT_VERIFIED));
+    await expectChip(w, 'sim-2', /Ask first · Sandboxed \(partial\)/, (c) => /writes: not only this folder/.test(c.title) && /An approved command could write outside the folder \(Copilot, seen on Linux, 2026-10-25\)\./.test(c.title) && c.title.endsWith(NOT_VERIFIED));
     // ---- FR-021 (T022 AC3): Codex Ask first: the card's sandbox line, whole; the chip tooltip says it too ----
-    await expectChip(w, 'sim-8', /Ask first · Sandboxed/, (c) => /If you approve a command, Codex may run it outside the sandbox/.test(c.title) && /Commands and file changes run in the Codex sandbox/.test(c.title));
+    await expectChip(w, 'sim-8', /Ask first · Sandboxed(?! \(partial)/, (c) => /If you approve a command, Codex may run it outside the sandbox/.test(c.title) && /Commands and file changes run in the Codex sandbox/.test(c.title));
     assert.ok(await until(`!!document.querySelector('#chat .note.perm.pending .psbx')`, 8000), `${w}: Codex's waiting card has its sandbox line`);
     const psbx = await js(`(()=>{const p=document.querySelector('#chat .note.perm.pending .psbx');p.scrollIntoView({block:'nearest'});const n=p.closest('.note').getBoundingClientRect(),r=p.getBoundingClientRect(),cs=getComputedStyle(p);return {text:p.textContent,whole:p.scrollWidth<=p.clientWidth+0.5&&cs.textOverflow!=='ellipsis',inside:r.right<=n.right+0.5&&r.left>=n.left-0.5,px:parseFloat(cs.fontSize),sum:p.closest('.note').querySelector('.psum').textContent}})()`);
     assert.strictEqual(psbx.text, 'If you approve, Codex may run this outside its sandbox.', `${w}: the exact line`);
@@ -73,7 +86,7 @@ module.exports = async (ctx) => {
     await H.shot(path.join(OUT, `087-codex-card-${w}x${h}.png`), { prep: 'mouse' });
     // ---- FR-021a (K15): Copilot Ask first: Kenji (Copilot without simkinds=mixed) waits on a shell command; the card has its own line ----
     await H.load({ w, h, query: {} });
-    await expectChip(w, 'sim-8', /Ask first · Sandboxed\b/, (c) => /An approved command could write outside the folder/.test(c.title));
+    await expectChip(w, 'sim-8', /Ask first · Sandboxed \(partial\)/, (c) => /An approved command could write outside the folder/.test(c.title));
     assert.ok(await until(`!!document.querySelector('#chat .note.perm.pending .psbx')`, 8000), `${w}: Copilot's waiting shell card has its sandbox line`);
     const cps = await js(`(()=>{const p=document.querySelector('#chat .note.perm.pending .psbx');p.scrollIntoView({block:'nearest'});const n=p.closest('.note').getBoundingClientRect(),r=p.getBoundingClientRect(),cs=getComputedStyle(p);return {text:p.textContent,whole:p.scrollWidth<=p.clientWidth+0.5&&cs.textOverflow!=='ellipsis',inside:r.right<=n.right+0.5&&r.left>=n.left-0.5,px:parseFloat(cs.fontSize)}})()`);
     assert.strictEqual(cps.text, 'If you approve, Copilot’s sandbox may still let this write outside the folder (seen on Linux, 2026-10-25).', `${w}: Copilot's exact line`);
@@ -137,6 +150,138 @@ module.exports = async (ctx) => {
     await H.shot(path.join(OUT, `087-settings-sandbox-${w}x${h}.png`), { prep: 'mouse' });
     await js(`document.querySelector('.hs-card[data-kind="claude"] [data-hs="sbxundo"]').click()`);
     assert.ok(await until(`!document.querySelector('.hs-card[data-kind="claude"] [data-hs="sbxundo"]')&&!!document.querySelector('.hs-card[data-kind="claude"] .hs-sbx-line')`, 5000), `${w}: Undo removes the stored choice`);
+    // ---- T070 (FR-022, FR-022b, FR-022e; issue #806): Restart without the sandbox, on the chat chip and in the mode menu only ----
+    await H.load({ w, h, query: { simkinds: 'mixed' } });
+    await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__sbxCalls=[];if(!b.__sbxWrapped){b.__sbxWrapped=true;const s=b.agentMcpRestartSession;b.agentMcpRestartSession=(...x)=>{window.__sbxCalls.push(x);return s(...x);};}})()`);
+    const RESTART_TIP = 'Copilot did not confirm turning its sandbox off in this running session, so it stays until a new one. Restart keeps this conversation and starts a new session in Allow all. ' + NOT_VERIFIED;
+    const sbxBtn = () => js(`(()=>{const b=document.getElementById('sbxRestartBtn'),c=document.getElementById('modeChip');if(!b)return null;const r=b.getBoundingClientRect(),cs=getComputedStyle(b);return {tag:b.tagName,type:b.type,text:b.textContent,title:b.title,label:b.getAttribute('aria-label'),px:parseFloat(cs.fontSize),shown:r.width>0&&r.height>0&&r.right<=innerWidth+0.5,next:c&&c.nextElementSibling===b,chip:c?c.innerText.replace(/\\s+/g,' ').trim():''}})()`);
+    await openAgent('sim-15');
+    assert.ok(await until(`!!document.getElementById('sbxRestartBtn')`, 8000), `${w}: the kept floor in Allow all has the chip button`);
+    const sb = await sbxBtn();
+    assert.ok(sb.tag === 'BUTTON' && sb.type === 'button' && sb.next && sb.shown, `${w}: a real button right after the mode chip: ${JSON.stringify(sb)}`);
+    assert.strictEqual(sb.text, 'Sandboxed (until a new session)', `${w}: the chip word, unchanged`);
+    assert.ok(/^Allow all\b/.test(sb.chip) && !/Sandboxed/.test(sb.chip), `${w}: the mode chip keeps the mode: ${sb.chip}`);
+    assert.strictEqual(sb.title, RESTART_TIP, `${w}: the tooltip says what Durbar does`);
+    assert.ok(sb.title.length <= 300 && sb.px >= 10.5 && /Restart without the sandbox/.test(sb.label), `${w}: legible, named, tooltip within 300: ${JSON.stringify(sb)}`);
+    await H.shot(path.join(OUT, `087-restart-nosbx-chip-${w}x${h}.png`), { prep: 'mouse' });
+    // the mode menu item, under the three modes; keyboard reachable; Escape returns focus to the chip
+    await js(`document.getElementById('modeChip').click()`);
+    assert.ok(await until(`!!document.querySelector('#modeMenu [data-act="sbxRestart"]')`, 5000), `${w}: the mode menu has Restart without the sandbox`);
+    const mi = await js(`(()=>{const m=document.getElementById('modeMenu'),b=m.querySelector('[data-act="sbxRestart"]'),it=[...m.querySelectorAll('[data-mode],[data-act],[data-op]')];return {title:b.title,role:b.getAttribute('role'),text:b.innerText.replace(/\\s+/g,' '),after:it.indexOf(b)===it.findIndex(x=>x.dataset.mode==='allow')+1,px:Math.min(...[...b.querySelectorAll('b,small')].map(x=>parseFloat(getComputedStyle(x).fontSize)))}})()`);
+    assert.ok(mi.title === RESTART_TIP && mi.role === 'menuitem' && /^Restart without the sandbox/.test(mi.text) && mi.after && mi.px >= 10.5, `${w}: the menu item: ${JSON.stringify(mi)}`);
+    await js(`document.getElementById('modeMenu').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}))`);
+    assert.ok(await until(`(document.activeElement||{}).dataset&&document.activeElement.dataset.act==='sbxRestart'`, 3000), `${w}: ArrowDown from Allow all reaches the item`);
+    await H.shot(path.join(OUT, `087-restart-nosbx-menu-${w}x${h}.png`), { prep: 'mouse' });
+    await js(`document.getElementById('modeMenu').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+    assert.ok(await until(`!document.getElementById('modeMenu')&&document.activeElement===document.getElementById('modeChip')`, 3000), `${w}: Escape closes the menu, focus back on the chip`);
+    // AC4 + AC2: busy, grants and remote control on: the dialog's lines; Cancel changes nothing and calls nothing
+    await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id==='sim-15');a.remote={url:'',steerable:true,visibility:''};a.grants=[{kind:'shell',label:'npm',key:'shell:npm'}];})()`);
+    await js(`window.__durbarSimEmit({type:'status',sessionId:'sim-15',timestamp:Date.now(),status:'working',intent:'Running the tests'})`);
+    assert.ok(await until(`(window.__durbarSimUi.agents().find(x=>x.id==='sim-15')||{}).state==='working'`, 5000), `${w}: sim-15 is busy`);
+    await js(`document.getElementById('sbxRestartBtn').click()`);
+    assert.ok(await until(`!!document.querySelector('#modeDlg [aria-modal="true"]')`, 5000), `${w}: the shared dialog asks first`);
+    const dl = await js(`(()=>{const d=document.getElementById('modeDlg');return {title:d.querySelector('h3').textContent,body:d.querySelector('#mdB').textContent,lines:[...d.querySelectorAll('#mdL li')].map(l=>l.textContent),btns:[...d.querySelectorAll('.dbtn button')].map(b=>b.textContent)}})()`);
+    assert.strictEqual(dl.title, 'Restart ' + (await js(`window.__durbarSimUi.agents().find(x=>x.id==='sim-15').name`)) + ' without the OS sandbox?', `${w}: the title`);
+    assert.ok(/^The conversation continues in a new session in Allow all\. Shell commands will no longer be limited to this folder and can reach the network\. Nothing is re-sent;/.test(dl.body), `${w}: the body: ${dl.body}`);
+    for (const l of ['The conversation is kept and resuming spends no AI credits.', 'The running turn stops.', '"Approve for this session" grants are cleared.', 'Remote control turns off.', 'Its MCP servers start again with your next message.'])
+      assert.ok(dl.lines.includes(l), `${w}: the line "${l}": ${JSON.stringify(dl.lines)}`);
+    assert.deepStrictEqual(dl.btns, ['Cancel', 'Restart without the sandbox'], `${w}: the buttons`);
+    assert.ok(!/MCP/.test(dl.title + dl.body + dl.btns.join(' ')), `${w}: no MCP restart wording in the title, body or buttons`);
+    await H.shot(path.join(OUT, `087-restart-nosbx-dialog-${w}x${h}.png`), { prep: 'mouse' });
+    await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find(b=>b.textContent==='Cancel').click()`);
+    assert.ok(await until(`!document.getElementById('modeDlg')`, 3000), `${w}: Cancel closes it`);
+    await ctx.sleep(300); // nothing is expected to happen: give a wrong call time to show
+    assert.deepStrictEqual(await js(`window.__sbxCalls.length`), 0, `${w}: Cancel calls nothing`);
+    assert.ok((await sbxBtn()) && /Sandboxed \(until a new session\)/.test((await sbxBtn()).text), `${w}: Cancel keeps the chip and its button`);
+    // confirm: the existing restart, reason 'sandbox'; the chip loses its word and the action goes
+    await js(`window.__durbarSimEmit({type:'status',sessionId:'sim-15',timestamp:Date.now(),status:'idle',intent:'Ready'})`);
+    await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`);
+    await js(`document.getElementById('sbxRestartBtn').click()`);
+    assert.ok(await until(`!!document.querySelector('#modeDlg [aria-modal="true"]')`, 5000), `${w}: an idle agent is asked too (always)`);
+    await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find(b=>b.textContent==='Restart without the sandbox').click()`);
+    assert.ok(await until(`/session restarted without the OS sandbox\\./.test([...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' '))`, 8000), `${w}: the toast says it`);
+    assert.deepStrictEqual(await js(`window.__sbxCalls.map(c=>[c[0],c[1],c[2]])`), [['sim-15', true, 'sandbox']], `${w}: one call on the existing channel, confirmed, reason sandbox`);
+    assert.ok(!/MCP/.test(await js(`[...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' ')`)), `${w}: no MCP wording in the toast`);
+    assert.ok(await until(`!document.getElementById('sbxRestartBtn')&&/^Allow all\\b/.test(document.getElementById('modeChip').innerText.trim())&&!/Sandbox/.test(document.getElementById('modeChip').innerText)`, 8000), `${w}: after the restart: Allow all with no word and no action`);
+    await js(`document.getElementById('modeChip').click()`);
+    assert.ok(await until(`!!document.getElementById('modeMenu')`, 3000));
+    assert.ok(!(await js(`!!document.querySelector('#modeMenu [data-act="sbxRestart"]')`)), `${w}: and no menu item`);
+    await js(`document.getElementById('modeMenu').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+    assert.ok(await until(`!document.getElementById('modeMenu')`, 3000));
+    // AC1: never on the office card's menu
+    await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+    assert.ok(await until(`!document.body.classList.contains('panel-open')`, 8000));
+    // FR-022c (T072 AC2, replaces FR-022e's sentence): Copilot Ask first with the floor (sim-2): no action; the Allow all dialog says the sandbox is
+    // also turned off; after the switch (the sim's lowering resolves) Allow all with no word and no action
+    await openAgent('sim-2');
+    assert.ok(!(await js(`!!document.getElementById('sbxRestartBtn')`)), `${w}: Copilot in Ask first: no action`);
+    const allowDlg = async (id) => {
+      await js(`document.getElementById('modeChip').click()`);
+      assert.ok(await until(`!!document.querySelector('#modeMenu [data-mode="allow"]')`, 5000), `${w}: ${id} mode menu`);
+      assert.ok(!(await js(`!!document.querySelector('#modeMenu [data-act="sbxRestart"]')`)), `${w}: ${id}: no Restart without the sandbox before Allow all`);
+      await js(`document.querySelector('#modeMenu [data-mode="allow"]').click()`);
+      assert.ok(await until(`!!document.querySelector('#modeDlg [aria-modal="true"]')`, 5000), `${w}: ${id}: the Allow all dialog`);
+      return js(`document.querySelector('#modeDlg #mdB').textContent`);
+    };
+    const OFF = 'Copilot’s OS sandbox is also turned off for this session.';
+    const cpBody = await allowDlg('sim-2');
+    assert.ok(cpBody.endsWith(' ' + OFF), `${w}: Copilot's Allow all dialog says the sandbox is also turned off: ${cpBody}`);
+    assert.ok(!/stays on for shell commands/.test(cpBody), `${w}: FR-022e's sentence is gone: ${cpBody}`);
+    await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find(b=>b.textContent==='Allow all').click()`);
+    assert.ok(await until(`/^Allow all\\b/.test(((document.getElementById('modeChip')||{}).innerText||'').trim())&&!/Sandbox/.test(document.getElementById('modeChip').innerText)&&!document.getElementById('sbxRestartBtn')`, 8000), `${w}: after the switch the floor is off: Allow all with no word and no action`);
+    for (const [id, app] of [['sim-1', 'Claude'], ['sim-10', 'Codex']]) {
+      await openAgent(id);
+      const body = await allowDlg(id);
+      assert.ok(!/OS sandbox (stays on|is also turned off)/.test(body), `${w}: ${app}: today's Allow all text: ${body}`);
+      await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find(b=>b.textContent==='Allow all').click()`);
+      assert.ok(await until(`/^Allow all/.test((document.getElementById('modeChip')||{}).innerText||'')`, 8000), `${w}: ${app} is in Allow all`);
+      await ctx.sleep(200); // the sandbox event follows the switch in the simulator; give a wrong button time to show
+      assert.ok(!(await js(`!!document.getElementById('sbxRestartBtn')`)), `${w}: ${app} never shows the action`);
+    }
+    // review on PR #833 (item 4): simsbxlower=refuse: Copilot refuses the lowering: the floor is kept with its action, and a calm toast says so
+    await H.load({ w, h, query: { simkinds: 'mixed', simsbxlower: 'refuse' } });
+    await openAgent('sim-2');
+    const rBody = await allowDlg('sim-2');
+    assert.ok(rBody.endsWith(' ' + OFF), `${w}: refused case: the dialog said it is turned off: ${rBody}`);
+    await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find(b=>b.textContent==='Allow all').click()`);
+    const NOT_LOWERED = 'Copilot did not turn its sandbox off; use Restart without the sandbox.';
+    assert.ok(await until(`[...document.querySelectorAll('#toasts .toast')].some(t=>t.textContent===${jsLiteral(NOT_LOWERED)})`, 8000), `${w}: the toast after a refused lowering`);
+    assert.ok(await until(`!!document.getElementById('sbxRestartBtn')&&/Sandboxed \\(until a new session\\)/.test(document.getElementById('modeChip').innerText+document.getElementById('sbxRestartBtn').textContent)`, 8000), `${w}: refused: the kept floor and its action`);
+    for (const [id, app] of [['sim-1', 'Claude']]) {
+      await openAgent(id);
+      await allowDlg(id);
+      await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find(b=>b.textContent==='Allow all').click()`);
+      assert.ok(await until(`/^Allow all/.test((document.getElementById('modeChip')||{}).innerText||'')`, 8000), `${w}: ${app} is in Allow all`);
+      await ctx.sleep(200);
+      assert.strictEqual(await js(`[...document.querySelectorAll('#toasts .toast')].filter(t=>t.textContent===${jsLiteral(NOT_LOWERED)}).length`), 1, `${w}: ${app}: no second toast`);
+    }
+    // managed (sim-6, Claude Code here; Copilot in the default roster below): no action
+    await openAgent('sim-6');
+    assert.ok(await until(`/Sandboxed \\(managed\\)/.test(document.getElementById('modeChip').innerText)`, 5000) && !(await js(`!!document.getElementById('sbxRestartBtn')`)), `${w}: managed: no action`);
+    // the default roster: every agent is Copilot; sim-6 is Allow all · Sandboxed (managed): no action; the office card's menu never has it
+    await H.load({ w, h, query: {} });
+    await openAgent('sim-6');
+    assert.ok(await until(`/Allow all · Sandboxed \\(managed\\)/.test(document.getElementById('modeChip').innerText.replace(/\\s+/g,' '))`, 5000), `${w}: Copilot managed`);
+    assert.ok(!(await js(`!!document.getElementById('sbxRestartBtn')`)), `${w}: Copilot managed: no action`);
+    await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+    assert.ok(await until(`!document.body.classList.contains('panel-open')`, 8000));
+    await js(`(()=>{const d=document.querySelector('#stage .desk[data-id="sim-15"]');const r=d.getBoundingClientRect();d.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+20,clientY:r.top+20}))})()`);
+    assert.ok(await until(`!!document.getElementById('modeMenu')`, 5000), `${w}: the office card's menu opens`);
+    assert.ok(!(await js(`!!document.querySelector('#modeMenu [data-act="sbxRestart"]')`)), `${w}: the office card's menu has no Restart without the sandbox (Q3)`);
+    await js(`document.getElementById('modeMenu').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+    assert.ok(await until(`!document.getElementById('modeMenu')`, 3000));
+    await openAgent('sim-15');
+    assert.ok(await until(`!!document.getElementById('sbxRestartBtn')`, 8000), `${w}: the default roster's kept floor (sim-15) has it in the chat`);
+    // review on PR 823 (question 1): End session (the card menu) ends the kept floor too: an ended agent does not claim "until a new session"
+    await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+    assert.ok(await until(`!document.body.classList.contains('panel-open')`, 8000));
+    await js(`(()=>{const d=document.querySelector('#stage .desk[data-id="sim-15"]');const r=d.getBoundingClientRect();d.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+20,clientY:r.top+20}))})()`);
+    assert.ok(await until(`!!document.querySelector('#modeMenu [data-op="end"]')`, 5000), `${w}: the card menu has End session`);
+    await js(`document.querySelector('#modeMenu [data-op="end"]').click()`);
+    if (await until(`!!document.querySelector('#modeDlg [aria-modal="true"]')`, 1500)) await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find(b=>b.textContent==='End session').click()`);
+    assert.ok(await until(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id==='sim-15');return !!a&&!!a.info&&!a.info.sandbox})()`, 8000), `${w}: End session clears the kept floor`);
+    await openAgent('sim-15');
+    assert.ok(await until(`/^Allow all/.test(document.getElementById('modeChip').innerText.trim())&&!/Sandbox/.test(document.getElementById('modeChip').innerText)&&!document.getElementById('sbxRestartBtn')`, 8000), `${w}: after End session: Allow all, no word, no action`);
   }
   console.log('[087-sandbox] PASS');
 };

@@ -10,11 +10,12 @@ import { isAuthError } from '../adapters/autherrors';
 import { validSignInEnd } from '../adapters/eventguard';
 import type { AdapterRouter } from '../adapters/router';
 import type { AgentAdapter, McpServerStatus } from '../adapters/types';
-import type { AgentInfo, AgentMcpEntry, AgentMcpReply, GlobalApp, McpRestartResult, McpRestartSessionResult } from '../shared/api';
+import type { AgentInfo, AgentMcpEntry, AgentMcpReply, GlobalApp, McpRefreshResult, McpRestartReason, McpRestartResult, McpRestartSessionResult } from '../shared/api';
 import { maskMcpError } from './mcpmask';
 import { sourcesFor } from './mcpglobal';
 import { BUILTIN_SERVERS } from './mcpfiles';
 import type { McpHealthMark } from '../shared/mcphealth';
+import type { McpCallClass } from '../shared/mcpcall';
 
 const NOT_RUNNING = 'This session is not running. Send a message to start it.';
 const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -57,6 +58,8 @@ export interface McpReplyInput {
   serverUrl?(name: string): string | undefined;
   /** Spec 076 FR-202 (issue #602): why the agent app's own organization policy blocks this server, or undefined. */
   orgBlocked?(name: string): OrgVerdict | undefined;
+  /** Spec 058 FR-187 (issue #779 A): the class of this server's last failed tool call (`auth` / `policy`), a word only. */
+  lastCall?(name: string): McpCallClass | undefined;
 }
 
 /** Spec 058 FR-065: the one rule for "this row needs a sign-in" (the window uses the same): the runtime's `needs-auth`, or a failed server whose failure is an auth one. */
@@ -114,7 +117,9 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     const note = (canSignIn || open) && ad?.capabilities.mcpSignInNote ? ad.capabilities.mcpSignInNote : undefined;
     // FR-176/FR-181: Restart ends a sign-in made outside Durbar (Claude Code), so a needs-sign-in row keeps it where the app says so
     const signRestart = needs && canRestart && !!ad?.capabilities.mcpSignInRestart && !!steps;
-    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), ...(mark ? { since: mark.since } : {}), ...(mark?.afterRunning ? { afterRunning: true } : {}), ...(st?.transport ? { transport: st.transport } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...(canSignInAgain ? { canSignInAgain: true } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}), ...(end ? { signInEnd: end } : {}), ...(note ? { signInNote: note } : {}), ...(signRestart ? { signInRestart: true } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
+    // FR-188: only a Running (connected) row, on, in a running session says its last call failed; a word only, never the text
+    const lastCall = isLive && on && st?.status === 'connected' ? i.lastCall?.(name) : undefined;
+    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), ...(lastCall ? { lastCall } : {}), ...(mark ? { since: mark.since } : {}), ...(mark?.afterRunning ? { afterRunning: true } : {}), ...(st?.transport ? { transport: st.transport } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...(canSignInAgain ? { canSignInAgain: true } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}), ...(end ? { signInEnd: end } : {}), ...(note ? { signInNote: note } : {}), ...(signRestart ? { signInRestart: true } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
   };
   const cli = i.app === 'claude' || i.app === 'codex' ? [] : i.cli;
   const own = i.app === 'claude' ? (i.claudeList ?? []) : [];
@@ -146,6 +151,8 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     // FR-022: an adapter that can resume, and a running session to restart
     canRestartSession: !!caps?.resume && isLive,
     ...(typeof ad?.listMcpTools === 'function' ? { canListTools: true } : {}),
+    // FR-190: the agent app can report its server list again (Refresh, and the re-read when the dialog opens)
+    ...(isLive && typeof ad?.refreshMcpStatus === 'function' ? { canRefresh: true } : {}),
     ...(caps?.mcpToolFilter ? { toolFilter: true } : {}),
   };
 }
@@ -188,6 +195,48 @@ export async function mcpRestartOp(d: RestartDeps, running: Set<string>, id: unk
   }
 }
 
+/** How long a re-read of the agent app's server list may take before the dialog is told it could not be read (FR-191). */
+export const REFRESH_TIMEOUT_MS = 15_000;
+
+/**
+ * `agents:mcpRefresh(id)` (spec 058 FR-190, issue #779 B): ask the agent app for its whole server list again, the call the sign-in poll
+ * uses (`refreshMcpStatus` with no name). The new states reach the window as the usual `mcp` event. One read at a time per agent
+ * (`inflight`: a second press or a dialog opened meanwhile shares the first). No vendor text comes back, only whether it worked.
+ */
+export const REFRESH_OPEN_MIN_MS = 60_000;
+export async function mcpRefreshOp(d: { agents: Map<string, AgentInfo>; router: Pick<AdapterRouter, 'forAgent'>; timeoutMs?: number; lastRead?: Map<string, number>; now?: () => number }, inflight: Map<string, Promise<void>>, id: unknown, manual?: unknown): Promise<McpRefreshResult> {
+  const a = typeof id === 'string' ? d.agents.get(id) : undefined;
+  const ad = a ? d.router.forAgent(a.id) : undefined;
+  if (!a || !ad) return { ok: false, supported: false, error: 'Unknown agent.' };
+  if (typeof ad.refreshMcpStatus !== 'function') return { ok: false, supported: false };
+  if (!ad.isLive(a.id)) return { ok: false, supported: true, error: NOT_RUNNING };
+  // FR-191 (review on #800): the adapter's own call is the single-flight key. It stays until that call settles, so a hung adapter gets
+  // one read however often Refresh is pressed; the time limit only stops this request from waiting.
+  let call = inflight.get(a.id);
+  if (!call) {
+    // FR-190 (owner, 2026-10-27): opening the dialog reads at most once a minute per agent (open or Refresh); the Refresh button always reads
+    const t = (d.now ?? Date.now)();
+    const last = d.lastRead?.get(a.id);
+    if (manual !== true && last !== undefined && t - last >= 0 && t - last < REFRESH_OPEN_MIN_MS) return { ok: true, supported: true, skipped: true };
+    d.lastRead?.set(a.id, t);
+    // the open-time read (not the button) must not start a server: the adapter checks that first (Copilot, FR-190)
+    const c: Promise<void> = Promise.resolve().then(() => ad.refreshMcpStatus?.(a.id, undefined, manual === true ? undefined : { startNothing: true }));
+    call = c;
+    inflight.set(a.id, c);
+    const clear = (): void => { if (inflight.get(a.id) === c) inflight.delete(a.id); };
+    c.then(clear, clear);
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([call, new Promise<never>((_, no) => { timer = setTimeout(() => no(new Error('timeout')), d.timeoutMs ?? REFRESH_TIMEOUT_MS); })]);
+    return { ok: true, supported: true };
+  } catch {
+    return { ok: false, supported: true, error: `${ad.displayName} did not answer. The list shows its last report.` };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export interface RestartSessionDeps {
   agents: Map<string, AgentInfo>;
   router: Pick<AdapterRouter, 'forAgent'>;
@@ -201,16 +250,24 @@ export interface RestartSessionDeps {
   log?(a: AgentInfo, action: string): void;
 }
 
+/** Spec 087 FR-022: the closed `reason` of `agents:mcpRestartSession`; anything that is not exactly 'sandbox' is 'mcp' (today's words). */
+export function restartReason(r: unknown): McpRestartReason {
+  return r === 'sandbox' ? 'sandbox' : 'mcp';
+}
+
 /**
- * `agents:mcpRestartSession(id, confirmed)` (FR-022): the same session id, ended and resumed, so Settings, the folder's extras and this
+ * `agents:mcpRestartSession(id, confirmed, reason?)` (FR-022): the same session id, ended and resumed, so Settings, the folder's extras and this
  * agent's switches all apply. No prompt is sent (a resume spends no AI credits). A busy agent needs `confirmed === true`. A resume that
  * fails leaves the agent ended, as *End session* does; a sign-in failure says so with `errorKind: 'auth'` (FR-027).
+ * Spec 087 FR-022: `reason` 'sandbox' (*Restart without the sandbox*) changes only the log line and the no-resume error; the resume reads
+ * the agent's current mode (`startOptionsFor`), so an Allow all session comes back without the floor it kept.
  */
-export async function mcpRestartSessionOp(d: RestartSessionDeps, running: Set<string>, id: unknown, confirmed: unknown): Promise<McpRestartSessionResult> {
+export async function mcpRestartSessionOp(d: RestartSessionDeps, running: Set<string>, id: unknown, confirmed: unknown, reason?: unknown): Promise<McpRestartSessionResult> {
+  const why = restartReason(reason);
   const a = typeof id === 'string' ? d.agents.get(id) : undefined;
   const ad = a ? d.router.forAgent(a.id) : undefined;
   if (!a || !ad) return { ok: false, error: 'Unknown agent.' };
-  if (!ad.capabilities.resume) return { ok: false, error: `${ad.displayName} cannot resume a session, so it cannot be restarted with the current servers.` };
+  if (!ad.capabilities.resume) return { ok: false, error: why === 'sandbox' ? `${ad.displayName} cannot resume a session, so it cannot be restarted without the OS sandbox.` : `${ad.displayName} cannot resume a session, so it cannot be restarted with the current servers.` };
   if (!ad.isLive(a.id)) return { ok: false, error: NOT_RUNNING };
   if (d.busy(a.id) && confirmed !== true) return { ok: false, needsConfirm: true };
   if (running.has(a.id)) return { ok: false, error: 'This session is already restarting.' };
@@ -227,7 +284,7 @@ export async function mcpRestartSessionOp(d: RestartSessionDeps, running: Set<st
       const auth = isAuthError(err); // the window shows spec 012 FR-157's sign-in card and marks the app signed out
       return { ok: false, ended: true, error: maskMcpError(errText(err), d.secrets(a.id)) ?? 'Could not resume the session.', ...(auth ? { errorKind: 'auth' as const } : {}) };
     }
-    d.log?.(a, 'Session restarted with the current MCP servers');
+    d.log?.(a, why === 'sandbox' ? 'Session restarted without the OS sandbox' : 'Session restarted with the current MCP servers');
     return { ok: true };
   } finally {
     running.delete(a.id);

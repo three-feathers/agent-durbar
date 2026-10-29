@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: index
 title: Simulator and dev/test hooks
-status: implemented; delta 2026-10-19: one event shape check for the simulator and adapters (FR-021); delta 2026-10-22: the simulator never reaches a real agent app (FR-022..FR-032: main refuses every IPC channel but two (install routes, app version), creates no real adapter, runs no detection probe and starts no child process under `DURBAR_SIM`; incident on PR #505)
+status: built
 -->
 
 **Feature Branch**: `010-simulator` (reverse-engineered; milestones 2-6)
@@ -85,6 +85,13 @@ Developers capture screenshots at fixed sizes and drive the real window with scr
 - Developers have `xvfb-run` on Linux for headless runs; macOS/Windows developers use a visible window.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> implemented; delta 2026-10-19: one event shape check for the simulator and adapters (FR-021); delta 2026-10-22: the simulator never reaches a real agent app (FR-022..FR-032: main refuses every IPC channel but two (install routes, app version), creates no real adapter, runs no detection probe and starts no child process under `DURBAR_SIM`; incident on PR #505)
+
 
 - **2026-10-17, spec 033 (floors), cross-reference.** `DURBAR_SIM_FLOORS=1` (`?simfloors=1`) seeds three floors and spreads the rooms over them; `DURBAR_SIM_FLOORS_OFF=<names>` (`?floorsoff=`) starts them off. The simulator's `+ Folder` now registers the new folder as a simulated (idle) agent so it has a floor and can be moved; it still sends no events until you write to it.
 - **2026-10-25, spec 080 (session browser), delta to FR-023** (*decided by the coordinator under Ruben's delegation*). FR-023's open list is no longer only `harness:plans`, `app:version` and `window:titleDoubleClick`: the fifteen `browser:*` channels (`open`, `state`, `navigate`, `back`, `forward`, `reload`, `stop`, `bounds`, `visible`, `overlay`, `mute`, `openSystem`, `consentAccept`, `snapshot`, `leaveAnswer`) are on `SIM_OPEN_CHANNELS` in `src/main/simguard.ts`, each with its reason. Why: the simulator's window talks to its own stand-in API, but the session browser is a native view that only main can create, so the Browser tab calls the real preload API. They reach no adapter, router, scheduler or agent app: a view loads the simulator's own `durbar-sim:` test pages or an http(s) address typed in the window, and `browser:openSystem` opens nothing under the simulator. Under `DURBAR_SIM` main also accepts `sim-<n>` as a session id (the simulated agents exist only in the window; helpers are not top-level); outside it only the ids of `agents` count. `test:simguard` keeps its scan (an open handler may not name an adapter, router, scheduler or spawn) and limits the open list to three channels outside the `browser:` family.

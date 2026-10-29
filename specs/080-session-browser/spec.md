@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Session browser (issue #556): a Browser tab per session with its own in-memory profile, wiped at session end; chat links open there; later the agent drives it through a per-session durbar-browser server (no debugging port), gated per mode; per-folder login opt-in last
-status: Draft (2026-10-23, revised after Vikram's and Paco's reviews of PR #647 and Vikram's owner input): spec, plan, research and tasks; decisions recorded in Clarifications; Read-only read exception needs a constitution amendment (T006); 2026-10-24: simulator probe T010 run (R1a; five assumptions changed by the 2026-10-24 delta), address rules T011 and the view module T012/T013 built; the Browser tab (IPC, tabs, bar, simulator test pages: T014, T015, T016, T018) is built and checked on the simulator; 2026-10-26 slice: chat links (T017 AC1-AC6; AC7 waits for Phase 2), the soft view cap (T013 AC3-AC4; memory not measured: AC5-AC6 open) and T001 (the spec 041 delta); overlays (T016), the consent, Leave and hidden-dialog UI (T015 AC6) and the README text (T019) are built on the simulator
+status: building
+note: Browser tab and chat links built on the simulator; 27 tasks open
 -->
 
 **Feature Branch**: `080-session-browser` (touches 005 chat panel, 008 fuses (Phase 3), 045 window hardening, 003/018 permission broker, 041 Durbar MCP, 072 per-session server pattern, 058/069 MCP lists, 001 office desks, 010 simulator)
@@ -554,6 +555,13 @@ T010 ran (research R1a, `sim:`, Electron 44.8.0, Linux, Xvfb, one run per case).
 - **Not run (AC10, AC14).** Codex sandbox stays with T060 AC3; Local Network Access with T043 AC7. Both `[KNOWN GAP]`.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> Draft (2026-10-23, revised after Vikram's and Paco's reviews of PR #647 and Vikram's owner input): spec, plan, research and tasks; decisions recorded in Clarifications; Read-only read exception needs a constitution amendment (T006); 2026-10-24: simulator probe T010 run (R1a; five assumptions changed by the 2026-10-24 delta), address rules T011 and the view module T012/T013 built; the Browser tab (IPC, tabs, bar, simulator test pages: T014, T015, T016, T018 AC1-AC2) is built and checked on the simulator; chat links (T017) and the rest of T018 are not; overlays (T016), the consent, Leave and hidden-dialog UI (T015 AC6) and the README text (T019) are built on the simulator
+
 
 - **2026-10-23, review of PR #647 (Vikram's agent, changes requested; 17 fixes, 4 questions).** Before any code. Added:
   - FR-012 (muted), FR-025a..FR-025e (client certificates, device choosers, HTTP auth, JS dialogs, `beforeunload`), FR-055 (main enforces the mode), FR-056 (host re-check when a call runs), FR-065 (page content is untrusted), FR-085 (cookie-encryption fuse).

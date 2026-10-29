@@ -11,7 +11,7 @@
  *   caret-after-copy and toast-over-composer (the chat), popover-width (T169: the S/M token and --pop-pad), and tone-contrast (every rule that moved from a literal light colour to the
  *   --tone-* tokens reads at 4.5:1 in the 6 built-in themes and the dark fixture; the CSS is parsed here, the colours are resolved in the page).
  *
- *   npm run check:ui-text
+ *   npm run check:ui -- --only check-ui-text
  *
  * Simulator only: no real agent, no AI credits. Linux with xvfb-run (the npm script). All violations are listed, then the driver
  * fails (DRIVER FAILED, Electron itself exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
@@ -102,7 +102,7 @@ module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until, settle } = H;
   const key = (k, mods = [], char = 'always') => H.key(k, mods, { char });
-  const q = (theme, extra) => ({ simkinds: 'mixed', simfloors: '1', simgrants: 'many', simquestion: '1', simtotals: '1', ...(extra || {}), ...(theme === 'dark' ? { theme: 'audit-dark', usertheme: DARK } : { theme: themeId || 'clean-office' }) });
+  const q = (theme, extra) => ({ simkinds: 'mixed', simfloors: 'ground', simgrants: 'many', simquestion: '1', simtotals: '1', ...(extra || {}), ...(theme === 'dark' ? { theme: 'audit-dark', usertheme: DARK } : { theme: themeId || 'clean-office' }) });
   let theme = 'light', W = 1440, Hh = 900, extraQuery = {}, themeId = '';
   const found = []; // every violation: { surface, theme, size, rule, el, detail }
   const opened = new Set();
@@ -397,7 +397,7 @@ module.exports = async (ctx) => {
     await closeChat();
   };
   const CONTRAST_SURFACES = ['tools-screen', 'settings-theme', 'settings-places', 'settings-cap', 'place-dialog', 'chat-waiting', 'agent-strip'];
-  const BUILTIN = ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese'];
+  const BUILTIN = ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese']; // spec 077 FR-066: Cheeky Crew is a Characters choice now, not a theme
 
   const tones = async (id) => { // T152 round 2: the contrast of the rules that moved to the --tone-* tokens, in this theme
     const list = toneList();

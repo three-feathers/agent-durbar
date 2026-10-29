@@ -5,11 +5,13 @@
  */
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
+import * as path from 'path';
+import { pidAlive } from './crashmarker';
 import { localTime, nextRuleRun, parseRule } from '../shared/schedrules';
 import type { CalendarRule } from '../shared/schedrules';
 import { LOOP_MAX_DELAY, LOOP_MAX_HOURS, LOOP_MAX_PASSES, LOOP_MIN_DELAY, clampPace, cleanReason, oneLine, parsePace } from '../shared/looppace';
 
-export type Outcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full';
+export type Outcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full' | 'skipped-review';
 export type CapUnit = 'aiu' | 'usd';
 /** FR-014: one session instead of the folder's agent. `name` is display only. */
 export interface ScheduleTarget {
@@ -66,7 +68,7 @@ export interface Schedule {
   next?: number;
   paused?: boolean;
   /** Why main paused it (FR-014, FR-015); only with `paused`. Never taken from the renderer. */
-  pausedReason?: 'cap' | 'session-ended';
+  pausedReason?: 'cap' | 'session-ended' | 'review';
   done?: boolean;
   last?: { at: number; outcome: Outcome };
   target?: ScheduleTarget;
@@ -78,9 +80,26 @@ export interface Schedule {
   /** Spec 072: a self-paced loop on `target`'s session. No `every`, `at` or `rule`; `next` is set by main at the end of each pass. */
   loop?: LoopSpec;
 }
+/** Spec 044 FR-036: why a run did not go (a closed list, never free text) or why a loop ended. */
+export type RunReason = 'no-agent' | 'send-error' | LoopEndReason;
+/** Spec 044 FR-036: one entry of a schedule's run log. No prompt text, error text, path or token is ever stored here. */
+export interface ScheduleRun {
+  at: number;
+  outcome: Outcome;
+  /** The session (agent) id the prompt went to, or would have gone to. */
+  session?: string;
+  reason?: RunReason;
+  /** Run missed now (spec 052 FR-089). */
+  manual?: true;
+  /** Repeats of the same skip folded into this entry (FR-037), counted from 2, and the time of the last one. */
+  n?: number;
+  until?: number;
+}
 export interface SchedulesDoc {
   pausedAll: boolean;
   schedules: Schedule[];
+  /** Spec 044 FR-036: schedule id -> its last runs, oldest first. Not sent to the window (`publicDoc`); `runsOf` serves it. */
+  runs?: Record<string, ScheduleRun[]>;
 }
 
 /**
@@ -89,12 +108,24 @@ export interface SchedulesDoc {
  */
 export const loopSupport = { enabled: false };
 export const MAX_SCHEDULES = 50;
-export const MAX_PROMPT = 2000;
+/** Spec 044 FR-037: runs kept per schedule. */
+export const MAX_RUNS = 50;
+/** The largest fold count (`n`); `cleanRuns` drops a larger one, so `record` never writes it. */
+export const MAX_FOLD = 100_000;
+/** Spec 044 FR-037: a fold-only change is written at the latest after this long (unless a real change or quit writes it first). */
+export const FOLD_FLUSH_MS = 60 * 60_000;
+/** Spec 044 FR-120 (issue #843): the longest prompt, in characters (`String.length` of the trimmed text). A longer one is refused by `save` and never cut. */
+export const MAX_PROMPT = 10_000;
+/** FR-124: a stored prompt over the limit (a hand-edited file) is kept whole and not sent: the schedule needs review. */
+export const needsReview = (s: Pick<Schedule, 'prompt'>): boolean => s.prompt.length > MAX_PROMPT;
 export const MIN_EVERY = 5;
 export const MAX_EVERY = 1440;
 const MIN = 60_000;
-const OUTCOMES: Outcome[] = ['sent', 'skipped-busy', 'skipped-paused', 'skipped-cap', 'skipped-ended', 'missed', 'failed', 'held', 'ended', 'skipped-door-full'];
+const OUTCOMES: Outcome[] = ['sent', 'skipped-busy', 'skipped-paused', 'skipped-cap', 'skipped-ended', 'missed', 'failed', 'held', 'ended', 'skipped-door-full', 'skipped-review'];
 const END_REASONS: LoopEndReason[] = ['user', 'agent', 'session', 'limit', 'passes', 'time', 'no-pace', 'errors', 'app-closed'];
+const RUN_REASONS: RunReason[] = ['no-agent', 'send-error', ...END_REASONS];
+/** Spec 044 FR-037: a skip that repeats with the same outcome and session is one entry with a count. */
+const FOLDS: Outcome[] = ['skipped-busy', 'skipped-paused', 'held', 'skipped-door-full', 'skipped-review'];
 const LASTASK_SOURCES = ['agent', 'default', 'clamped'];
 const ID_RE = /^[A-Za-z0-9._:-]{1,128}$/;
 const AGENT_RE = /^[A-Za-z0-9._-]{1,32}$/;
@@ -191,7 +222,7 @@ export function cleanSchedule(o: unknown, now: number, keepId = true): Schedule 
   if (!o || typeof o !== 'object') return undefined;
   const r = o as Record<string, unknown>;
   const folder = typeof r.folder === 'string' && r.folder && r.folder.length <= 4096 ? r.folder : undefined;
-  const prompt = typeof r.prompt === 'string' ? r.prompt.trim().slice(0, MAX_PROMPT) : '';
+  const prompt = typeof r.prompt === 'string' ? r.prompt.trim() : ''; // FR-120/FR-124: never cut here; `save` refuses a longer new prompt, a stored one needs review
   if (!folder || !prompt) return undefined;
   const every = num(r.every);
   const at = num(r.at);
@@ -224,7 +255,7 @@ export function cleanSchedule(o: unknown, now: number, keepId = true): Schedule 
   } else if (at !== undefined && at > 0) s.at = at;
   else return undefined;
   if (r.paused === true) s.paused = true;
-  if (s.paused && (r.pausedReason === 'cap' || r.pausedReason === 'session-ended')) s.pausedReason = r.pausedReason;
+  if (s.paused && (r.pausedReason === 'cap' || r.pausedReason === 'session-ended' || r.pausedReason === 'review')) s.pausedReason = r.pausedReason;
   if (r.done === true) s.done = true;
   const last = r.last as Record<string, unknown> | undefined;
   if (last && typeof last === 'object' && num(last.at) !== undefined && OUTCOMES.includes(last.outcome as Outcome)) s.last = { at: last.at as number, outcome: last.outcome as Outcome };
@@ -271,6 +302,56 @@ function editCandidate(input: Record<string, unknown>, prev: Schedule): Record<s
   };
 }
 
+/**
+ * Spec 044 FR-038: the run logs from untrusted input (the file). A key that is not a loaded schedule's id, a value that is not an array,
+ * an entry with a bad required field and unknown fields are dropped; a bad optional field is dropped alone; entries are sorted by `at`
+ * and cut to the newest MAX_RUNS. Never throws.
+ */
+export function cleanRuns(v: unknown, ids: Iterable<string>): Record<string, ScheduleRun[]> {
+  const out: Record<string, ScheduleRun[]> = {};
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return out;
+  const raw = v as Record<string, unknown>;
+  for (const id of new Set(ids)) {
+    if (!Object.prototype.hasOwnProperty.call(raw, id)) continue;
+    const list = raw[id];
+    if (!Array.isArray(list)) continue;
+    const runs: ScheduleRun[] = [];
+    for (const e of list.slice(0, 10_000)) {
+      if (!e || typeof e !== 'object') continue;
+      const r = e as Record<string, unknown>;
+      const at = num(r.at);
+      if (at === undefined || at <= 0 || !OUTCOMES.includes(r.outcome as Outcome)) continue;
+      const run: ScheduleRun = { at, outcome: r.outcome as Outcome };
+      if (typeof r.session === 'string' && ID_RE.test(r.session)) run.session = r.session;
+      if (RUN_REASONS.includes(r.reason as RunReason)) run.reason = r.reason as RunReason;
+      if (r.manual === true) run.manual = true;
+      const n = num(r.n);
+      if (n !== undefined && Number.isInteger(n) && n >= 2 && n <= MAX_FOLD) run.n = n;
+      const until = num(r.until);
+      if (until !== undefined && until >= at) run.until = until;
+      runs.push(run);
+    }
+    if (!runs.length) continue;
+    runs.sort((a, b) => a.at - b.at);
+    out[id] = runs.slice(-MAX_RUNS);
+  }
+  return out;
+}
+
+/**
+ * Spec 044 FR-043: the answer to `schedules:runs` once the frame is checked: a string id of 1..64 letters, digits and hyphens (a
+ * schedule's id pattern, widened to the simulator's short ids), else `{ ok: false }`; an unknown id gives an empty list. Read-only.
+ */
+export function runsReply(sch: Pick<Scheduler, 'runsOf'> | undefined, id: unknown): { ok: true; runs: ScheduleRun[] } | { ok: false } {
+  if (typeof id !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(id)) return { ok: false };
+  return { ok: true, runs: sch?.runsOf(id) ?? [] };
+}
+
+/** The document as the window sees it: no run logs (FR-043; they are asked for one schedule at a time). */
+export function publicDoc(doc: SchedulesDoc): SchedulesDoc {
+  return { pausedAll: doc.pausedAll, schedules: doc.schedules };
+}
+
 export function parseSchedules(text: string, now: number): SchedulesDoc {
   let doc: unknown;
   try {
@@ -286,7 +367,8 @@ export function parseSchedules(text: string, now: number): SchedulesDoc {
     if (s && !schedules.some((x) => x.id === s.id)) schedules.push(s);
     if (schedules.length >= MAX_SCHEDULES) break;
   }
-  return { pausedAll: d.pausedAll === true, schedules };
+  const runs = cleanRuns(d.runs, schedules.map((s) => s.id));
+  return Object.keys(runs).length ? { pausedAll: d.pausedAll === true, schedules, runs } : { pausedAll: d.pausedAll === true, schedules };
 }
 
 /** When a schedule runs next, or undefined when it never will (done, or paused). */
@@ -330,7 +412,8 @@ export interface SchedulerDeps {
   mono?(): number;
   setTimer(ms: number, fn: () => void): unknown;
   clearTimer(t: unknown): void;
-  save(doc: SchedulesDoc): void;
+  /** Writes the document; false when it could not (the scheduler keeps it dirty and tries again). */
+  save(doc: SchedulesDoc): boolean | void;
   /** Spec 072 FR-015..FR-017: why the session cannot take a loop pass now: a person is needed, a coffee break, or Durbar's spending cap; undefined when nothing waits. */
   waitOf?(session: string): LoopWait | undefined;
   /** After any change (for the renderer). */
@@ -355,6 +438,12 @@ export class Scheduler {
   private attrib = new Map<string, string>();
   /** Spec 072: loop id -> monotonic stamp of its last pass sent. Memory only (loops end when the app restarts). */
   private lastSent = new Map<string, number>();
+  /** Spec 044 FR-037: what the current tick did to the run logs: a fold happened / something that must be written at once happened. */
+  private folded = false;
+  private real = false;
+  /** A fold-only change is waiting to be written; its timer; the last time the file was written. */
+  private dirty = false;
+  private flushTimer: unknown;
   constructor(public doc: SchedulesDoc, private readonly deps: SchedulerDeps) {}
 
   /** At start: once-schedules that are past are `missed`; intervals continue from now, anchored ones at their next time of day (missed runs are not caught up). */
@@ -367,16 +456,68 @@ export class Scheduler {
         continue;
       }
       if (s.done || s.paused) continue;
+      const why: Outcome = needsReview(s) ? 'skipped-review' : 'missed'; // FR-124: a prompt over the limit says so, whatever else is true
       if (s.at !== undefined && s.every === undefined && s.at < now - 30_000) {
-        s.done = true;
-        s.last = { at: now, outcome: 'missed' };
+        if (why === 'skipped-review') {
+          s.paused = true;
+          s.pausedReason = 'review';
+        } else s.done = true;
+        this.record(s, why, now);
       } else if (recurring(s) && (s.next ?? 0) < now - 30_000) {
         s.next = nextAfter(s, now);
-        s.last = { at: now, outcome: 'missed' };
+        this.record(s, why, now);
       }
     }
     this.pauseEnded();
     this.commit();
+  }
+
+  /**
+   * Spec 044 FR-036/FR-037: the one place that sets `last` and appends to the run log, so the two never disagree.
+   * A skip equal to the newest entry (same outcome and session, see FOLDS) raises its count instead of adding an entry; `update` (a
+   * loop pass that went out and now ended) rewrites the newest `sent` or same-outcome entry, so a pass stays one entry. Returns true
+   * when only a fold happened (the caller may then write late, FR-037).
+   */
+  private record(s: Schedule, outcome: Outcome, now: number, x: { session?: string; reason?: RunReason; manual?: true; update?: boolean } = {}): boolean {
+    s.last = { at: now, outcome };
+    if (!this.doc.schedules.some((q) => q.id === s.id)) return false; // deleted while its send was awaited: no log is made for it
+    const runs = (this.doc.runs ??= {});
+    // own properties only: an id such as `constructor` or `toString` is a valid schedule id and must not pick an inherited function
+    if (!Object.prototype.hasOwnProperty.call(runs, s.id)) runs[s.id] = [];
+    const log = runs[s.id];
+    const top = log[log.length - 1];
+    const session = x.session !== undefined && ID_RE.test(x.session) ? x.session : undefined;
+    if (top && FOLDS.includes(outcome) && top.outcome === outcome && top.session === session && !top.manual) {
+      top.n = Math.min(MAX_FOLD, (top.n ?? 1) + 1); // the same bound cleanRuns reads back
+      top.until = now;
+      this.folded = true;
+      return true;
+    }
+    const run: ScheduleRun = { at: now, outcome };
+    if (session) run.session = session;
+    if (x.reason) run.reason = x.reason;
+    if (x.manual) run.manual = true;
+    if (x.update && top && !top.manual && top.n === undefined && (top.outcome === 'sent' || top.outcome === outcome)) log[log.length - 1] = run;
+    else log.push(run);
+    if (log.length > MAX_RUNS) log.splice(0, log.length - MAX_RUNS);
+    this.real = true;
+    return false;
+  }
+
+  /** What a send gave: its result, and whether it threw (`send-error`) or said it could not (`no-agent`, FR-036). */
+  private async sendRun(s: Schedule, prompt: string): Promise<{ r: boolean | string; reason?: RunReason }> {
+    try {
+      const r = await this.deps.send(s.folder, prompt, s);
+      return r ? { r } : { r, reason: 'no-agent' };
+    } catch {
+      return { r: false, reason: 'send-error' };
+    }
+  }
+
+  /** The run logs of one schedule, newest first (a copy); empty for an unknown id. */
+  runsOf(id: string): ScheduleRun[] {
+    const log = this.doc.runs && Object.prototype.hasOwnProperty.call(this.doc.runs, id) ? this.doc.runs[id] : undefined;
+    return Array.isArray(log) ? log.map((r) => ({ ...r })).reverse() : [];
   }
 
   /** FR-014: a schedule whose session is gone pauses (never sent elsewhere); true when one changed. */
@@ -456,7 +597,7 @@ export class Scheduler {
     l.inPass = false;
     delete l.hold;
     delete s.next;
-    s.last = { at: now, outcome: 'ended' };
+    this.record(s, 'ended', now, { session: s.target?.session, reason });
     if (s.target && this.attrib.get(s.target.session) === s.id) this.attrib.delete(s.target.session);
   }
 
@@ -482,6 +623,7 @@ export class Scheduler {
       s.paused = true;
       s.pausedReason = 'cap';
       delete l.hold;
+      this.real = true;
       return true;
     }
     if (want) {
@@ -504,7 +646,7 @@ export class Scheduler {
   }
 
   /** The end of a loop pass (FR-010..FR-013, FR-018): reads the pace request and sets the next wake or ends the loop. */
-  private passEnded(s: Schedule, end: { finalText?: string; error?: boolean; stopped?: boolean }, now: number): void {
+  private passEnded(s: Schedule, end: { finalText?: string; error?: boolean; stopped?: boolean; unsent?: boolean }, now: number): void {
     const l = s.loop as LoopSpec;
     l.inPass = false;
     this.lastSent.set(s.id, this.mono()); // FR-011: the minimum between two passes runs from the END of this one
@@ -531,7 +673,7 @@ export class Scheduler {
       }
     }
     s.next = now + delay * MIN;
-    s.last = { at: now, outcome: end.error ? 'failed' : 'sent' };
+    if (!end.unsent) this.record(s, end.error ? 'failed' : 'sent', now, { session: s.target?.session, update: true }); // `unsent`: the caller recorded the failed send itself
     // a wake after the end time would never be sent: end now. Passes and the loop's cap are checked with the same clock.
     if (this.limitReached(s, now) || s.next >= l.endAt) {
       if (!l.ended) this.endLoop(s, 'time', now);
@@ -546,17 +688,24 @@ export class Scheduler {
     const session = (s.target as ScheduleTarget).session;
     if (!this.deps.hasSession(session)) return this.endLoop(s, 'session', now);
     if (this.limitReached(s, now)) return; // also while held or paused by Pause all: a loop past its end time ends, it does not stay "running"
+    if (needsReview(s)) {
+      // FR-124: a prompt over the limit is never sent; the loop waits a pass length and the row says why.
+      // After the limits: a past end time must end the loop, or dueAt (min of next and endAt) stays in the past and the timer re-arms at 0 ms forever.
+      this.record(s, 'skipped-review', now, { session });
+      s.next = now + this.lastDelay(l) * MIN;
+      return;
+    }
     if (this.doc.pausedAll) {
       l.hold = 'pause-all';
-      s.last = { at: now, outcome: 'skipped-paused' };
+      this.record(s, 'skipped-paused', now, { session });
       return;
     }
     if (this.settle(s, now)) {
-      s.last = { at: now, outcome: 'held' };
+      this.record(s, 'held', now, { session });
       return;
     }
     if (this.deps.isBusy(s.folder, session)) {
-      s.last = { at: now, outcome: 'skipped-busy' };
+      this.record(s, 'skipped-busy', now, { session });
       s.next = now + this.lastDelay(l) * MIN; // FR-014: not a pass, not queued
       return;
     }
@@ -574,7 +723,7 @@ export class Scheduler {
     this.attrib.set(session, s.id);
     const pass = l.passes;
     const started = l.startedAt; // restartLoop edits this object in place, so keep the value from before the await
-    const r = await this.deps.send(s.folder, s.prompt, s).catch(() => false);
+    const { r, reason } = await this.sendRun(s, s.prompt);
     const after = this.deps.now();
     // `save` (Pause, Resume, an edit) may have replaced the object while send was awaited: act on the current one, and only if it is
     // still this loop in this pass (not stopped, removed, or its turn already ended)
@@ -582,13 +731,14 @@ export class Scheduler {
     const cl = cur?.loop;
     if (!cur || !cl || cl.ended || !cl.inPass || cl.passes !== pass || cl.startedAt !== started) return;
     if (r) {
-      cur.last = { at: now, outcome: 'sent' };
+      this.record(cur, 'sent', now, { session: typeof r === 'string' ? r : session });
       return;
     }
     // the pass could not be sent: it counts as a failed pass (FR-013)
     if (this.attrib.get(session) === cur.id) this.attrib.delete(session);
-    this.passEnded(cur, { error: true }, after);
-    cur.last = { at: now, outcome: cl.ended ? 'ended' : 'failed' };
+    // no `sent` entry of this pass exists: the failed send is a new entry of its own (never an update of an earlier pass's), then the pass ends (possibly the loop too)
+    this.record(cur, 'failed', now, { session, reason });
+    this.passEnded(cur, { error: true, unsent: true }, after);
   }
 
   /** FR-007: ends a running loop at once. False when there is none with that id. */
@@ -638,10 +788,38 @@ export class Scheduler {
     return { ok: true };
   }
 
-  private commit(): void {
-    this.deps.save(this.doc);
+  /**
+   * Saves and tells the window. `foldOnly` (spec 044 FR-037): the change was only a fold of a repeated skip (and the next time of a
+   * recurring schedule), so the file is marked dirty and written with the next real change, at quit (`flush`), or within FOLD_FLUSH_MS:
+   * a 5-minute interval under Pause all must not rewrite the file every 5 minutes.
+   */
+  private commit(foldOnly = false): void {
+    if (foldOnly) {
+      this.dirty = true;
+      if (this.flushTimer === undefined) this.flushTimer = this.deps.setTimer(FOLD_FLUSH_MS, () => this.flush());
+    } else {
+      this.writeNow();
+    }
     this.deps.changed?.(this.doc);
     this.arm();
+  }
+
+  private writeNow(): void {
+    this.dirty = false;
+    this.folded = false;
+    this.real = false;
+    if (this.flushTimer !== undefined) this.deps.clearTimer(this.flushTimer);
+    this.flushTimer = undefined;
+    if (this.deps.save(this.doc) === false) {
+      // a failed write is not forgotten: the next real change, the quit flush or the timer writes it again
+      this.dirty = true;
+      this.flushTimer = this.deps.setTimer(FOLD_FLUSH_MS, () => this.flush());
+    }
+  }
+
+  /** Writes a pending fold-only change (main calls this when the app quits, FR-037). */
+  flush(): void {
+    if (this.dirty) this.writeNow();
   }
 
   /** Spec 081: schedules held by an update lock, and when each may be tried again. Memory only. */
@@ -689,7 +867,10 @@ export class Scheduler {
         }
         let outcome: Outcome;
         let held: boolean | 'full' = false;
-        if (this.doc.pausedAll) outcome = 'skipped-paused';
+        let r: boolean | string = false;
+        let reason: RunReason | undefined;
+        if (needsReview(s)) outcome = 'skipped-review'; // FR-124: first, so the row always says this reason
+        else if (this.doc.pausedAll) outcome = 'skipped-paused';
         else if (s.target && !this.deps.hasSession(s.target.session)) outcome = 'skipped-ended';
         else if (s.cap && (s.spent ?? 0) >= s.cap.amount) outcome = 'skipped-cap';
         else if ((held = this.deps.hold?.(s, now) ?? false)) outcome = held === 'full' ? 'skipped-door-full' : 'held'; // FR-110: queued at a door closed by the user, before busy
@@ -697,25 +878,34 @@ export class Scheduler {
         else if (this.deps.heldBy?.(s)) {
           // spec 081 FR-013: its app is updating and this run would start or resume a session: held, looked at again soon (or at the release)
           this.heldUntil.set(s.id, now + HOLD_RETRY_MS);
-          s.last = { at: now, outcome: 'held' };
+          this.record(s, 'held', now, { session: s.target?.session });
           continue;
         } else {
           this.heldUntil.delete(s.id);
-          const r = await this.deps.send(s.folder, s.prompt, s).catch(() => false);
+          const sr = await this.sendRun(s, s.prompt);
+          r = sr.r;
+          reason = sr.reason;
           outcome = r ? 'sent' : 'failed';
           if (typeof r === 'string' && r) this.attrib.set(r, s.id);
         }
-        s.last = { at: now, outcome };
-        if (outcome === 'skipped-ended' || outcome === 'skipped-cap') {
-          // FR-014 / FR-015: paused with a clear reason; the run is not sent, and a once-schedule stays to be resumed or deleted
+        this.record(s, outcome, now, { session: typeof r === 'string' && r ? r : s.target?.session, reason });
+        if (outcome === 'skipped-ended' || outcome === 'skipped-cap' || (outcome === 'skipped-review' && !recurring(s))) {
+          // FR-014 / FR-015 / FR-124: paused with a clear reason; the run is not sent, and a once-schedule stays to be resumed, fixed or deleted
           s.paused = true;
-          s.pausedReason = outcome === 'skipped-cap' ? 'cap' : 'session-ended';
+          s.pausedReason = outcome === 'skipped-cap' ? 'cap' : outcome === 'skipped-review' ? 'review' : 'session-ended';
+          this.real = true;
         } else if (recurring(s)) s.next = nextAfter(s, now);
-        else s.done = true;
+        else {
+          s.done = true;
+          this.real = true;
+        }
       }
     } finally {
       this.running = false;
-      this.commit();
+      const foldOnly = this.folded && !this.real;
+      this.folded = false;
+      this.real = false;
+      this.commit(foldOnly);
     }
   }
 
@@ -732,15 +922,17 @@ export class Scheduler {
     if (this.doc.pausedAll) return { ok: false, error: 'Schedules are paused (Pause all). Resume them first.' };
     if (s.paused) return { ok: false, error: 'This schedule is paused. Resume it first.' };
     if (s.loop) return { ok: false, error: 'A loop sends its own passes.' };
+    if (needsReview(s)) return { ok: false, error: `This prompt is over ${MAX_PROMPT.toLocaleString('en-US')} characters. Shorten it with Edit… first.` };
     if (s.target && !this.deps.hasSession(s.target.session)) return { ok: false, error: 'That session has ended.' };
     if (s.cap && (s.spent ?? 0) >= s.cap.amount) return { ok: false, error: 'This schedule has reached its limit.' };
     if (this.deps.isBusy(s.folder, s.target?.session)) return { ok: false, error: 'The agent is busy. Try again when it is free.' };
     this.running = true;
     let r: boolean | string = false;
     try {
-      r = await this.deps.send(s.folder, s.prompt, s).catch(() => false);
+      const sr = await this.sendRun(s, s.prompt);
+      r = sr.r;
       if (typeof r === 'string' && r) this.attrib.set(r, s.id);
-      s.last = { at: this.deps.now(), outcome: r ? 'sent' : 'failed' };
+      this.record(s, r ? 'sent' : 'failed', this.deps.now(), { session: typeof r === 'string' && r ? r : s.target?.session, reason: sr.reason, manual: true });
     } finally {
       this.running = false;
       this.commit();
@@ -766,9 +958,10 @@ export class Scheduler {
     this.running = true;
     let r: boolean | string = false;
     try {
-      r = await this.deps.send(s.folder, prompt, s).catch(() => false);
+      const sr = await this.sendRun(s, prompt);
+      r = sr.r;
       if (typeof r === 'string' && r) this.attrib.set(r, s.id);
-      s.last = { at: this.deps.now(), outcome: r ? 'sent' : 'failed' };
+      this.record(s, r ? 'sent' : 'failed', this.deps.now(), { session: typeof r === 'string' && r ? r : s.target?.session, reason: sr.reason });
     } finally {
       this.running = false;
       this.commit();
@@ -789,6 +982,8 @@ export class Scheduler {
     // FR-017: what main keeps itself is never taken from the renderer
     const s = cleanSchedule(edit && prev ? editCandidate(input as Record<string, unknown>, prev) : { ...(input as object), next: undefined, spent: undefined, spentUnknown: undefined, pausedReason: undefined, loop: limitsOf((input as { loop?: unknown }).loop) }, now);
     if (!s) return { ok: false, error: 'A schedule needs a prompt and either a time, an interval of 5 to 1440 minutes or a calendar rule. A limit must be a positive amount.' };
+    // FR-123: a prompt over the limit is refused, never cut; one that did not change (Pause, Resume, Delete-side saves of an old entry) stays
+    if (needsReview(s) && s.prompt !== prev?.prompt) return { ok: false, error: `The prompt is ${s.prompt.length.toLocaleString('en-US')} of ${MAX_PROMPT.toLocaleString('en-US')} characters: shorten it to save.` };
     // a save of an existing schedule that is not an edit (Pause, Resume, "Use the folder's agent") never moves it to another folder or revives a done one
     if (!edit && prev) {
       s.folder = prev.folder;
@@ -812,7 +1007,8 @@ export class Scheduler {
     }
     if (edit && prev) {
       // FR-023: an edit may change the time of a paused schedule only to the future, and a done one only to run again
-      if (s.at !== undefined && !recurring(s) && s.at < now && (prev.done || recurring(prev) || s.at !== prev.at)) return { ok: false, error: prev.done ? 'Pick a time in the future to run it again.' : 'That time has already passed.' };
+      const again = prev.done || prev.pausedReason === 'review'; // FR-124: a once schedule paused for review has passed its time, like a done one
+      if (s.at !== undefined && !recurring(s) && s.at < now && (again || recurring(prev) || s.at !== prev.at)) return { ok: false, error: again ? 'Pick a time in the future to run it again.' : 'That time has already passed.' };
     } else if (s.at !== undefined && !recurring(s) && s.at < now && !s.paused) return { ok: false, error: 'That time has already passed.' };
     const i = this.doc.schedules.findIndex((x) => x.id === s.id);
     const old = i >= 0 ? this.doc.schedules[i] : undefined;
@@ -865,7 +1061,12 @@ export class Scheduler {
       const retargeted = edit && old.pausedReason === 'session-ended' && targetChanged;
       // an edit that removes the limit, or raises it above what was spent, clears the reason "reached its limit"; it stays paused, so the row offers Resume
       const capFreed = edit && old.pausedReason === 'cap' && (!s.cap || s.cap.amount > (old.cap && old.cap.unit === s.cap.unit ? old.spent ?? 0 : 0));
-      if (s.paused && old.paused && old.pausedReason && !retargeted && !capFreed) s.pausedReason = old.pausedReason;
+      // FR-124: an edit that makes the prompt fit runs a schedule that was paused for review again
+      const reviewed = old.pausedReason === 'review' && !needsReview(s) && edit;
+      if (reviewed) {
+        delete s.paused;
+        delete s.pausedReason;
+      } else if (s.paused && old.paused && old.pausedReason && !retargeted && !capFreed) s.pausedReason = old.pausedReason;
       else if (retargeted || capFreed) delete s.pausedReason;
       if (!s.paused && old.pausedReason === 'cap' && !s.loop) {
         delete s.spent; // FR-015: Resume after the limit starts counting again from zero
@@ -882,14 +1083,23 @@ export class Scheduler {
     const n = this.doc.schedules.length;
     this.doc.schedules = this.doc.schedules.filter((s) => s.id !== id);
     if (this.doc.schedules.length === n) return false;
+    this.dropRuns([id]); // FR-039: the history goes with the schedule, in the same write
     this.commit();
     return true;
   }
 
   removeFolder(folder: string): void {
     const n = this.doc.schedules.length;
+    const gone = this.doc.schedules.filter((s) => s.folder === folder).map((s) => s.id);
     this.doc.schedules = this.doc.schedules.filter((s) => s.folder !== folder);
+    this.dropRuns(gone);
     if (this.doc.schedules.length !== n) this.commit();
+  }
+
+  private dropRuns(ids: string[]): void {
+    if (!this.doc.runs) return;
+    for (const id of ids) delete this.doc.runs[id];
+    if (!Object.keys(this.doc.runs).length) delete this.doc.runs;
   }
 
   setPausedAll(on: boolean): void {
@@ -908,22 +1118,124 @@ export class Scheduler {
   stop(): void {
     if (this.timer !== undefined) this.deps.clearTimer(this.timer);
     this.timer = undefined;
+    if (this.flushTimer !== undefined) this.deps.clearTimer(this.flushTimer);
+    this.flushTimer = undefined;
   }
 }
 
-export function loadSchedules(file: string, now: number): SchedulesDoc {
-  try {
-    return parseSchedules(fs.readFileSync(file, 'utf8'), now);
-  } catch {
+/** What `loadSchedules` needs from the system; tests inject failures. */
+export interface LoadIo {
+  fs: Pick<typeof fs, 'readFileSync' | 'renameSync' | 'existsSync' | 'readdirSync' | 'rmSync'>;
+  pause(ms: number): void;
+  alive(pid: number): boolean;
+  pid: number;
+}
+const pauseSync = (ms: number): void => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };
+const realLoadIo: LoadIo = { fs, pause: pauseSync, alive: pidAlive, pid: process.pid };
+/** Files whose move to `.bad-<time>` failed: `saveSchedules` retries the move first and never writes over them (FR-038). */
+const pendingAside = new Set<string>();
+
+export function loadSchedules(file: string, now: number, io: LoadIo = realLoadIo): SchedulesDoc {
+  removeStaleTemps(file, io);
+  let text: string | undefined;
+  for (let attempt = 0; attempt < 2 && text === undefined; attempt++) {
+    try {
+      text = io.fs.readFileSync(file, 'utf8');
+    } catch (e) {
+      if ((e as { code?: string }).code === 'ENOENT') return { pausedAll: false, schedules: [] };
+      // a read can fail for a moment on a good file (an antivirus holding it, Windows): once more after a short pause; only a second failure sets it aside
+      if (attempt === 0) io.pause(200);
+    }
+  }
+  if (text === undefined) {
+    setAside(file, now, io);
     return { pausedAll: false, schedules: [] };
   }
+  let ok = false;
+  try {
+    const v: unknown = JSON.parse(text);
+    ok = !!v && typeof v === 'object' && !Array.isArray(v);
+  } catch { /* corrupt */ }
+  if (!ok) {
+    setAside(file, now, io);
+    return { pausedAll: false, schedules: [] };
+  }
+  return parseSchedules(text, now);
 }
 
-export function saveSchedules(file: string, doc: SchedulesDoc): void {
+/**
+ * A schedules file that cannot be read is renamed to `<file>.bad-<UTC time>` (as the notes store does), so a save cannot destroy it; the
+ * schedules start empty. True when it is out of the way (or gone); false when the move failed: the file is then remembered, and
+ * `saveSchedules` retries the move and refuses to write until it works.
+ */
+function setAside(file: string, now: number, io: { fs: Pick<typeof fs, 'existsSync' | 'renameSync'> }): boolean {
   try {
-    // a loop's `hold` and `inPass` are runtime state and are not kept (spec 072 FR-002, FR-008)
-    fs.writeFileSync(file, JSON.stringify(doc, (k, v: unknown) => (k === 'hold' || k === 'inPass' ? undefined : v), 2), { mode: 0o600 });
+    if (!io.fs.existsSync(file)) { pendingAside.delete(file); return true; }
+    const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
+    let dest = `${file}.bad-${stamp}`;
+    for (let i = 1; io.fs.existsSync(dest) && i < 100; i++) dest = `${file}.bad-${stamp}-${i}`;
+    io.fs.renameSync(file, dest);
+    pendingAside.delete(file);
+    return true;
   } catch {
-    /* not saved; the next change tries again */
+    pendingAside.add(file);
+    return false;
+  }
+}
+
+/** Temp files of a process that died mid-save may hold prompt text: removed at load. Exact name `<file>.<pid>.tmp`, never our own pid, never a running process. */
+function removeStaleTemps(file: string, io: LoadIo): void {
+  try {
+    const dir = path.dirname(file), base = path.basename(file);
+    for (const name of io.fs.readdirSync(dir)) {
+      const m = name.startsWith(base + '.') && name.endsWith('.tmp') ? /^(\d{1,10})$/.exec(name.slice(base.length + 1, -4)) : null;
+      const pid = m ? Number(m[1]) : 0;
+      if (!m || pid <= 0 || pid === io.pid || io.alive(pid)) continue;
+      try { io.fs.rmSync(path.join(dir, name), { force: true }); } catch { /* next start */ }
+    }
+  } catch { /* no folder yet */ }
+}
+
+/** What `saveSchedules` needs from the system; tests inject failures and the platform. */
+export interface SaveIo {
+  fs: Pick<typeof fs, 'openSync' | 'writeSync' | 'fsyncSync' | 'closeSync' | 'renameSync' | 'rmSync' | 'existsSync'>;
+  platform: NodeJS.Platform;
+  /** A short blocking pause (win32 retry). */
+  pause(ms: number): void;
+}
+const realIo: SaveIo = { fs, platform: process.platform, pause: (ms) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } };
+
+/** Writes the file; true when it is on disk. A failure is reported, not thrown (the caller keeps the change and retries, FR-037). */
+export function saveSchedules(file: string, doc: SchedulesDoc, io: SaveIo = realIo): boolean {
+  // a loop's `hold` and `inPass` are runtime state and are not kept (spec 072 FR-002, FR-008)
+  // written beside the file, then renamed over it: a crash or a full disk mid-write leaves the old file whole (a torn file would load as "no schedules")
+  // the process id is in the name: two instances never share a temp file (there is no single-instance lock)
+  // a file that could not be set aside is still there: try the move again first, and never write over it
+  if (pendingAside.has(file) && !setAside(file, Date.now(), { fs: { existsSync: io.fs.existsSync, renameSync: io.fs.renameSync } })) return false;
+  const tmp = `${file}.${process.pid}.tmp`;
+  try {
+    const buf = Buffer.from(JSON.stringify(doc, (k, v: unknown) => (k === 'hold' || k === 'inPass' ? undefined : v), 2), 'utf8');
+    const fd = io.fs.openSync(tmp, 'w', 0o600);
+    try {
+      let off = 0;
+      while (off < buf.length) off += io.fs.writeSync(fd, buf, off, buf.length - off);
+      try { io.fs.fsyncSync(fd); } catch { /* best effort */ }
+    } finally {
+      io.fs.closeSync(fd);
+    }
+    try {
+      io.fs.renameSync(tmp, file);
+    } catch (e) {
+      // Windows: an antivirus or indexer may hold the file for a moment (as notesstore.ts)
+      const code = (e as { code?: string }).code ?? '';
+      if (io.platform === 'win32' && ['EPERM', 'EBUSY', 'EACCES'].includes(code)) {
+        io.pause(200);
+        io.fs.renameSync(tmp, file);
+      } else throw e;
+    }
+    return true;
+  } catch {
+    try { io.fs.rmSync(tmp, { force: true }); } catch { /* ignore */ }
+    return false; // not saved
   }
 }
