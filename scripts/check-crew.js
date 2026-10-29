@@ -332,7 +332,9 @@ async function runCrew(ctx, full) {
     await H.settle();
     // the lounge is laid out again for a moment after the sleepers appear (a fit pass; seen as a flake on Retro Pixel on main too): measure when two reads 300 ms apart agree
     let list = await H.js(`(${sleepers.toString()})()`);
-    for (let i = 0; i < 20; i++) { await ctx.sleep(300); const next = await H.js(`(${sleepers.toString()})()`); const same = JSON.stringify(next) === JSON.stringify(list); list = next; if (same) break; }
+    let settled = false;
+    for (let i = 0; i < 20 && !settled; i++) { await ctx.sleep(300); const next = await H.js(`(${sleepers.toString()})()`); settled = JSON.stringify(next) === JSON.stringify(list); list = next; } // a poll interval, not a fixed wait: it stops on two equal reads
+    assert.ok(settled, `${tag}: the lounge settles (two reads 300 ms apart agree within 6 s)`);
     const lone = list.filter((x) => x.solo);
     assert.ok(lone.length >= 1, `${tag}: a lone sleeper (a bunk with one bed) is on screen (${list.length} sleepers)`);
     for (const x of lone) {

@@ -394,7 +394,7 @@ Agent Durbar is spec-driven with [GitHub Spec Kit](https://github.com/github/spe
 
 Agent Durbar is by **Three Feathers**. Key contributors: [vikramgorla](https://github.com/vikramgorla), [fjcabello](https://github.com/fjcabello) and [rubenlupi](https://github.com/rubenlupi) (GitHub handles are used as the names). The names live in [`src/shared/about.ts`](src/shared/about.ts) and are shown in the OS About panel and in Settings > About.
 
-The Cheeky and Prehistoric Crew pictures (`src/renderer/crew/art/`) were made with ChatGPT image generation from prompts written by Paco's agent, prompted by Paco, who also did the final pass; the tool, date and prompt of each are in [`ASSETS.md`](src/renderer/crew/art/ASSETS.md) (spec 077).
+The Cheeky and Prehistoric Crew pictures (`src/renderer/crew/art/`) were made by Paco with ChatGPT image generation (most Cheeky prompts were written by Paco's agent; some prompts were not recorded), and Paco did the final pass; the tool, date and prompt (where known) of each are in [`ASSETS.md`](src/renderer/crew/art/ASSETS.md) (spec 077).
 
 The app id is `io.github.three-feathers.agentdurbar` since 2026-10-16. A build from before then is a separate app to the OS; uninstall it by hand. Saved data is kept.
 
