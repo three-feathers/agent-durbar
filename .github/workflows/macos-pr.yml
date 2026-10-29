@@ -12,6 +12,10 @@ on:
     paths:
       - 'src/main/**'
       - 'src/adapters/**'
+      - 'src/shared/**'
+      - 'src/preload/**'
+      - 'scripts/fakes/**'
+      - 'scripts/run-tests.js'
       - 'scripts/test-*'
       - 'scripts/*.sh'
       - 'package.json'

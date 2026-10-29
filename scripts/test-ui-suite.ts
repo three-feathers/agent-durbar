@@ -129,7 +129,7 @@ for (const f of ['ci.yml', 'ui-platforms.yml', 'spec-kit.yml', 'install-check.ym
 // as a required check (the ruleset keeps the FR-106 stub), and uses no secrets and no pull_request_target
 const mp = fs.readFileSync(path.join(WF, 'macos-pr.yml'), 'utf8');
 const mpPaths = (mp.match(/^ {4}paths:\r?\n((?: {6}- '[^']+'\r?\n)+)/m)?.[1] ?? '').split(/\r?\n/).map((l) => l.replace(/^ {6}- '|'$/g, '')).filter(Boolean);
-for (const p of ['src/main/**', 'src/adapters/**', 'scripts/test-*', 'scripts/*.sh', 'package.json', 'package-lock.json']) assert.ok(mpPaths.includes(p), `macos-pr.yml filters on ${p}`);
+for (const p of ['src/main/**', 'src/adapters/**', 'src/shared/**', 'src/preload/**', 'scripts/fakes/**', 'scripts/run-tests.js', 'scripts/test-*', 'scripts/*.sh', 'package.json', 'package-lock.json']) assert.ok(mpPaths.includes(p), `macos-pr.yml filters on ${p}`);
 assert.ok(!mpPaths.some((p) => p.startsWith('src/renderer') || p.startsWith('docs') || p.startsWith('specs')), 'macos-pr.yml: UI, docs and specs do not start macOS');
 assert.ok(/runs-on: macos-latest/.test(mp) && mp.includes('npm test') && !/pull_request_target|secrets\./.test(mp) && !/^ {2}push:|schedule:/m.test(mp), 'macos-pr.yml: real macOS npm test on pull requests only, no secrets');
 assert.ok(!/name: Build and test/.test(mp), 'macos-pr.yml does not reuse a required check name');
