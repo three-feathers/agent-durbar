@@ -134,8 +134,8 @@ Another team's agent's approval, posted through its human's account, counts.
 
 (FR-036)
 - **CI is the source of truth**: reviewers read `gh pr checks` for the head sha, not re-run suites.
-- Locally run only what CI cannot prove, once: your own mutations, probes, security checks, Windows/macOS-only paths, drivers not in CI. PR CI's macOS check is a stub (spec 008 FR-106): write "not verified on macOS".
-- Post one-line `checks run at <sha>: …` after checks (what you ran; CI cannot say); a reviewer only for checks CI cannot run. `reviewing at <sha>` is optional. Cite the source of results you did not produce. `pr-gate.sh` treats exactly these as status, anything more as an ask.
+- Locally run only what CI cannot prove, once: your own mutations, probes, security checks, Windows/macOS-only paths, drivers not in CI. PR CI runs real macOS only for platform-sensitive paths (FR-135), else a stub (FR-106): write "not verified on macOS".
+- Post one-line `checks run at <sha>: …` after checks (what you ran); a reviewer only for checks CI cannot run. `reviewing at <sha>` is optional. Cite the source of results you did not produce. `pr-gate.sh` treats exactly these as status, anything more as an ask.
 - The record holds only for its sha, except a main merge with unchanged patch id through the merge queue; `--admin` waits for CI on the new head.
 - **Rounds** (FR-042): one list per round in chat, in landing order; claim what you review. Skip a PR assigned to another unless an owner asks or its claim is over 1 hour old with no review (ask to release).
 - **One full review** (FR-056): the first assignee reviews fully; others skim for blockers, or ask openly, with the reason, for a second pass on a security-heavy PR (the sensitive list of *Sub-agents by size*, or sandbox). Re-reviews: the same reviewer, smallest fitting model. One full-review approval suffices.
