@@ -243,3 +243,11 @@ probe cleared; HX = 0
 | VI Parity | renderer CSS and JS only; fonts differ per OS, the fit is measured in the page. macOS and Windows not run by hand |
 | VII Gates | `npm run typecheck && npm run build && npm test`, the drivers above, screenshots through `npm run shots:docs`. OK |
 | VIII Honest limits | per-app table with `real:` / `read:`; Codex result and Claude result order as `[KNOWN GAP]`. OK |
+
+## Delta 2026-10-29: instant tooltip on the status counts (FR-187, issue #875)
+
+- **Reuse (checked, `read:`):** no in-app tooltip exists (all native `title`); the closest parts are the shared popup styles (`.more-menu`, `--shadow-pop`, theme tokens) and `DurbarScroll`/`announce`, none of which fits a hover label. So one small new module, `src/renderer/tooltip.js` (`window.DurbarTip`, a UMD file like `unread.js`: pure `statusText` and `place` testable in Node, DOM part used by the page).
+- **Design:** one `div#appTip[role=tooltip]` on `body`; document-level delegated listeners (pointerover/out, focusin/out, click, window blur/resize, scroll in capture, Escape in capture) added once by the first `bind`. Delegation is why `morphHTML` in `renderStats` needs no re-binding; `renderStats` ends with `DurbarTip.refresh()` (new text or position, or hide when the pill is gone). The text comes from a callback reading the counts `renderStats` just computed and `ui.status`.
+- **Not moved now:** the schedules, Needs you and usage chips keep their native `title` (smaller PR); `bind` takes any selector so they can move later.
+- **Failure modes:** a tooltip that sticks (every hide path above plus the disconnected-anchor check in `refresh`), a double tooltip (pill `title=""` beats the group's inherited `title`), a tooltip over the pill or outside the window (`place`, unit-tested and asserted at both sizes), a theme with poor contrast (inverted `--ink`/`--surface`; the driver computes the ratio in every built-in theme and Serious mode).
+- **Constitution:** I (this delta, tasks first), V (12px text, calm, no motion), VI (drawn by the app, same on all three OSes), VIII (limits listed in FR-187).
