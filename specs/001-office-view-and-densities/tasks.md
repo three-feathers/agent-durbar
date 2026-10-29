@@ -226,3 +226,8 @@ Numbers checked against `main` (00d340eb) and every open PR on 2026-10-25: none 
 - [x] T153 Issue #875 (FR-187): `renderStats` binds the pills (no native `title`, `title=""` against the group's, an accessible name that names the state) and calls `refresh()`
 - [x] T154 Issue #875 (FR-187): driver cases: hover and keyboard focus show it at once, the wording with the filter on and off, Escape, click, scroll, blur, re-render while shown, inside the window and not over the pill at both sizes, no native `title`, every built-in theme and Serious mode, reduced motion; mutants recorded in the PR
 - [x] T155 Issue #875 (FR-187): docs (README top-bar line, `changelog.d/001-status-tooltips.md`, `docs/agent-notes.md` entry), `npm run shots:docs -- --list` checked for linked pictures that show the top bar, one picture `001-status-tooltip-{1440x900,1280x800}.png`
+- [x] T157 Issue #737 (FR-189): tests first: `scripts/test-places.ts` (`lobbyFit` down to 640 px: tiles 28 px, the row still fills the lobby, hard minimums, 900 and 1000 px unchanged, `tileNamed`) and `scripts/check-office-fill.js` case (6) (the office page rules at 900x480, 800x480, 640x480, 1000x480; removes the skip and the `[KNOWN GAP]` of FR-096)
+- [x] T158 Issue #737 (FR-189): `places.js` `lobbyFit` (hard minimums, `tileNamed`, the Bank's name from 96 px), `app.js` (`compact` tiles: no name, no count), `styles.css` (`.place.compact`)
+- [x] T159 Issue #737 (FR-189): `check-office-overlap.js` `pageCheck`: a compact tile has no count when its "+N" holds everyone
+- [x] T160 Issue #737 (FR-189): docs: spec delta, README Known limits bullet removed, `changelog.d/001-lobby-seat-narrow.md`, pictures checked (`shots:docs -- --list`: none shows the lobby under 1000 px wide)
+
