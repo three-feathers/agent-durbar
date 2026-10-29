@@ -19,7 +19,7 @@ const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
 const fs = require('fs');
 const OUT = process.env.OUT || require('os').tmpdir();
-/* the dark fixture theme of check:ui-text (spec 052 FR-170), passed as an in-memory user theme */
+/* the dark fixture theme of check-ui-text (spec 052 FR-170), passed as an in-memory user theme */
 const DARK = fs.readFileSync(path.join(__dirname, 'fixtures', 'themes', 'dark-audit.json'), 'utf8');
 
 module.exports = async (ctx) => {

@@ -2,7 +2,7 @@
  * Check for spec 052 FR-176 (issue #638): opening a chat, showing its waiting question, answering or skipping it never scrolls the
  * page or the chat's frame, so the chat header stays in view. Simulator only (no AI credits).
  *
- *   npm run check:chat-no-scroll
+ *   npm run check:ui -- --only check-chat-no-scroll
  *
  * At 1440x900, 1280x800 and 1280x520 (too short for the whole panel), with `simquestion=compact` (one short question):
  *   1. open the asking agent from its desk;  2. scroll the chat up and press Show question in the answer bar;

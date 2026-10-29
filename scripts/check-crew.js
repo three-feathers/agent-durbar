@@ -13,7 +13,7 @@
  * Then FR-055: a copy of dist/ with one picture removed. The desks of that character draw the plain figure (no <image>), the others
  * keep their pictures, and nothing is broken.
  *
- *   npm run check:crew            (builds first; in check:ui too)
+ *   npm run check:ui -- --only check-crew            (builds first)
  *   CREW_THEME=<theme id>         the theme under the crew (default clean-office)
  *   SHOTS_OUT=<folder>            screenshots (default: crew-shots in the OS temp folder)
  */

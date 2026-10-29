@@ -1,5 +1,5 @@
 /** Confirmation dialog keyboard contract (jsdom, no credits): `npm run test:dialog`. See specs/003 FR-033 (issue #25).
- *  The real-browser version (real key events in the simulator) is `npm run check:dialog-focus`. */
+ *  The real-browser version (real key events in the simulator) is `npm run check:ui -- --only check-dialog-focus`. */
 import * as assert from 'assert';
 import * as path from 'path';
 // eslint-disable-next-line @typescript-eslint/no-var-requires

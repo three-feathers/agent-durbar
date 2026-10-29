@@ -2,7 +2,7 @@
  * Check for spec 005 FR-037..FR-043 (owner request, 2026-10-21): the chat's settings sit in a toolbar under the message box, and one
  * Send / Stop slot sits inside the box's right edge. Simulator only (no AI credits).
  *
- *   npm run check:composer-toolbar
+ *   npm run check:ui -- --only check-composer-toolbar
  *   OUT=docs/screenshots  (optional) where the screenshots go (default: a temp folder)
  *
  * At 1440x900 and 1280x800, in Clean Office:

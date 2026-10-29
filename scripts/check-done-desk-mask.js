@@ -1,7 +1,7 @@
 /*
  * Check for spec 041 FR-065 (issue #541): text an agent wrote never reaches the office floor unmasked. Simulator only (no AI credits).
  *
- *   npm run check:done-desk-mask
+ *   npm run check:ui -- --only check-done-desk-mask
  *
  * `simreply=secrets` plants three tokens (`ghp_`, `github_pat_`, `sk-`; built at run time here and in sim.ts) in: every done reply, every
  * sub-agent's task, result and error, a helper's tool starts (`bash --api-key K`, a fetch URL with `?key=K`), an error intent and the titles of
