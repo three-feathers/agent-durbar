@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Office assistant: ask the whole office (who waits, what finished, usage by folder and harness) through a free local query layer, plus an optional model layer with no tools (issue #130)
-status: **draft for the owner's review** (spec, plan, tasks; no code); research 2026-10-20 (*Changes*): most asks are covered by 052 (inbox, Cost, Activity log), 041 (MCP read tools) and 054 (remote); slim slice proposed: a status timeline, a Today tab and one 041 read tool; the panel with its own model parked (Q6)
+status: draft
+note: for the owner's review; most asks covered by spec 052
 -->
 
 **Feature Branch**: `048-office-assistant`
@@ -113,6 +114,13 @@ I type a question the chips don't cover ("Summarize what the api folder did toda
 - It is independent of spec 041 (the Durbar MCP server). The two could share the query layer later.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **draft for the owner's review** (spec, plan, tasks; no code); research 2026-10-20 (*Changes*): most asks are covered by 052 (inbox, Cost, Activity log), 041 (MCP read tools) and 054 (remote); slim slice proposed: a status timeline, a Today tab and one 041 read tool; the panel with its own model parked (Q6)
+
 
 ### 2026-10-20: research for issue #130: what is already covered, and a slimmer first slice
 

@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 019
 title: Global MCP servers, tool usage per agent, models and context window
-status: milestone 8; delta 2026-10-21: Keychain at most once per run (FR-023, T015; unit tests, no real Mac)
+status: built
 -->
 
 **Feature Branch**: `019-mcp-tools-and-context` (milestone 8)

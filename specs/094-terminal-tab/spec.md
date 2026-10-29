@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Terminal tab (issue #807): a Terminal tab next to Chat and Browser in a chat; one terminal per folder, shared by the folder's chats, started in the folder with the user's login shell; it keeps running until its close button, folder removal or app quit (a quit with a running command warns); user-only, agents never see it; no output logged or saved
-status: Draft (2026-10-27): spec, plan, research and tasks; owner decisions of 2026-10-27 recorded; Q1-Q8, Q9, Q11, Q12 answered by the owner and recorded on #807; Q10 the agent's default (a), changeable by the owner; review on #811 applied; nothing built
+status: draft
+note: spec, plan, research and tasks drafted; nothing built
 -->
 
 **Feature Branch**: `094-terminal-tab` (spec); code branches `094-pN-slug`, one per phase
@@ -321,5 +322,12 @@ Q1-Q8 are answered (all (a), *Clarifications*). From the review on #811 (answers
 12. **Q12 A user-set navigator shortcut without ⌘ or Ctrl+Shift** (spec 074, FR-051): (a) **the shell wins inside the terminal** (like the default Ctrl+F on Windows and Linux); the keyboard sheet and Settings > Keyboard say so (recommended); (b) the navigator shortcut always wins, also inside the terminal (that key then never reaches the shell). -> A: (a), Paco, 2026-10-27, [#807 comment](https://github.com/three-feathers/agent-durbar/issues/807#issuecomment-6449867443).
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> Draft (2026-10-27): spec, plan, research and tasks; owner decisions of 2026-10-27 recorded; Q1-Q8, Q9, Q11, Q12 answered by the owner and recorded on #807; Q10 the agent's default (a), changeable by the owner; review on #811 applied; nothing built
+
 
 (none yet)

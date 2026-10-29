@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 034
 title: The figure follows the context window (heavy 70-90%, grumpy monster above 90%), trouble signals (ambulance, faint, dizzy, impatient), Serious mode
-status: **built** 2026-10-17 (issue #20): simulator and unit tests, `scripts/shots-034.js`; not checked on a real session; T009 built 2026-10-19: List view mood words and the walking figure's mood (FR-014/FR-015, `scripts/shots-034-list.js`); delta 2026-10-17 *rooms darken with their worst agent, sirens* (issue #135) **built** (simulator, `scripts/shots-034.js`; T015 room path contrast done too); delta 2026-10-23 *Retrying while the agent app retries the model API* (issue #600) **built** (simulator `simretry=1`, `scripts/shots-034-retry.js`, `test:retry`; vendor shapes read only, no real retry seen)
+status: built
+note: not checked on a real session
 -->
 
 **Feature Branch**: `034-agent-health` (amends 001 office view; reads 011 caps, 019 context, 003 permissions)
@@ -97,6 +98,13 @@ status: **built** 2026-10-17 (issue #20): simulator and unit tests, `scripts/sho
 - `[KNOWN GAP]` Not run on a real Copilot session: the events it reads (`status`, `toolCall`, `permission`, context, limit) are the ones the adapter already sends (specs 003, 011, 019).
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **built** 2026-10-17 (issue #20): simulator and unit tests, `scripts/shots-034.js`; not checked on a real session; T009 built 2026-10-19: List view mood words and the walking figure's mood (FR-014/FR-015, `scripts/shots-034-list.js`); delta 2026-10-17 *rooms darken with their worst agent, sirens* (issue #135) **built** (simulator, `scripts/shots-034.js`; T015 room path contrast done too); delta 2026-10-23 *Retrying while the agent app retries the model API* (issue #600) **built** (simulator `simretry=1`, `scripts/shots-034-retry.js`, `test:retry`; vendor shapes read only, no real retry seen)
+
 
 ### 2026-10-17: rooms darken with their worst agent, sirens (issue #135)
 

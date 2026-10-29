@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: OS sandbox floor (issue #611): under Read-only and Ask first Durbar also turns on each agent app's own OS sandbox (Claude Code's bash sandbox, Copilot's local sandbox; Codex's read-limited profile already does it), so a command that slips past Durbar's checks still cannot write outside the folder or reach the network; Allow all keeps the app default; the chat header says Sandboxed or Not sandboxed, and why
-status: Built 2026-10-25 (simulator and fakes only): Claude Code and Copilot floors, Codex state and card line, the chip, tooltips, the sandbox note with Continue / Always / Change mode…, Settings > Agent apps line, the policy rule; real check on Linux 2026-10-25 (T060): Claude Code's sandbox refused a Read-only write (verified for Linux Read-only only); Copilot's floor was on, Durbar refused the Read-only command first, and in Ask first an approved write outside the folder was not refused (K15, cause unknown); macOS and Windows not verified (T061, T062 open); the policy key is not reachable until spec 076 has a reader. 2026-10-27 delta (issue #806): Restart without the sandbox built 2026-10-27 (FR-022, simulator and fakes only, not on a real session); 2026-10-28 T066 real run on Linux (CLI 1.0.98): verdict A, a running Copilot floor can be cleared in place (K16 resolved for Linux), so FR-022c is built (fakes and simulator): a switch to Allow all lowers the floor and Restart without the sandbox stays only as the fallback after a refused or unanswered lowering; macOS and Windows not verified
+status: built
+note: simulator and fakes; real checks on macOS and Windows open (T061, T062)
 -->
 
 **Feature Branch**: `087-os-sandbox-floor` (touches 003 permission modes, 012 Claude and Codex adapters, 002 Copilot adapter, 018 mode switch, 076 organization policy, 081 Settings > Agent apps, 010 simulator)
@@ -372,6 +373,13 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
   word on the office card (keeps the 15-agent layout).
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> Built 2026-10-25 (simulator and fakes only): Claude Code and Copilot floors, Codex state and card line, the chip, tooltips, the sandbox note with Continue / Always / Change mode…, Settings > Agent apps line, the policy rule; real check on Linux 2026-10-25 (T060): Claude Code's sandbox refused a Read-only write (verified for Linux Read-only only); Copilot's floor was on, Durbar refused the Read-only command first, and in Ask first an approved write outside the folder was not refused (K15, cause unknown); macOS and Windows not verified (T061, T062 open); the policy key is not reachable until spec 076 has a reader. 2026-10-27 delta (issue #806): Restart without the sandbox built 2026-10-27 (FR-022, simulator and fakes only, not on a real session); 2026-10-28 T066 real run on Linux (CLI 1.0.98): verdict A, a running Copilot floor can be cleared in place (K16 resolved for Linux), so FR-022c is built (fakes and simulator): a switch to Allow all lowers the floor and Restart without the sandbox stays only as the fallback after a refused or unanswered lowering; macOS and Windows not verified
+
 
 ### 2026-10-28: T066 run on a real session: verdict A, K16 cleared in place on Linux; FR-022c built (T072; Refs #806)
 

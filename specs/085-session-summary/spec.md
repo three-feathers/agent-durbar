@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: End-of-session summary card in the chat: files changed, +/- lines, commits, duration, cost from Durbar's own measurements (issue #604)
-status: **built** 2026-10-25 for the chat card (unit tests, simulator driver); lounge bubble, briefing and vendor numbers are known gaps
+status: built
+note: chat card only; lounge bubble, briefing and vendor numbers are known gaps
 -->
 
 **Feature Branch**: `085-session-summary`
@@ -39,6 +40,13 @@ The card appears **in the chat when the user ends a session** (End session from 
 Lounge bubble and daily briefing placement; vendor-reported numbers (Copilot `session.shutdown`, Claude Code status line/OTel, Codex `notify`); a card when the agent finishes but the session stays open; PRs from adapters; line counts of untracked files.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **built** 2026-10-25 for the chat card (unit tests, simulator driver); lounge bubble, briefing and vendor numbers are known gaps
+
 
 ### 2026-10-25: built (T001-T005)
 

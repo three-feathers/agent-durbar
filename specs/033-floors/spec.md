@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 033
 title: Floors: group rooms (folders) and switch a whole floor off so it leaves the office, the lobby and the status counts
-status: built 2026-10-17 on branch `033-floors`; Move to floor in the folder menu 2026-10-23 (issue #590); follow-ups of issue #133 (empty-state wording, retaken screenshots) 2026-10-19; SC-003 timed in the app (issue #454) 2026-10-21 ([plan](033-floors/plan.md), [research](033-floors/research.md), [tasks](033-floors/tasks.md)); simulator and unit tests, 0 AI credits
+status: built
 -->
 
 **Feature Branch**: `033-floors` (amends 001 office view and filters, 006 folders, 017 room doors; touches 011 usage totals)
@@ -189,6 +189,13 @@ When more than one floor is on, I can tell at a glance which floor each room bel
 - Verification is on the simulator and with unit tests only; no real Copilot session is needed or planned for this feature.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> built 2026-10-17 on branch `033-floors`; Move to floor in the folder menu 2026-10-23 (issue #590); follow-ups of issue #133 (empty-state wording, retaken screenshots) 2026-10-19; SC-003 timed in the app (issue #454) 2026-10-21 ([plan](033-floors/plan.md), [research](033-floors/research.md), [tasks](033-floors/tasks.md)); simulator and unit tests, 0 AI credits
+
 
 - **2026-10-27, floors as places (issue #782, new spec 092).** With two or more floors on, the office will show one floor at a time with a lift panel (spec 092). This refines **FR-011** (the density is chosen per floor screen from that floor's agents, not from all floors on) and **FR-012** (rooms are ordered by floor inside one building; the floor tag stays). FR-008, FR-010, FR-016 and FR-020 are unchanged: the pills and the usage total count the whole building, an off floor has no screen and no lift button, and the lobby is shared. Phase 1 of spec 092 (floor screens, `092-floor-screens`) is built: with two or more floors on the office shows one floor's rooms and the density is chosen per floor screen; the lift panel, the slide and the jumps come in later phases. With one floor on FR-011 and FR-012 apply as written.
 - **2026-10-28, All floors view (spec 092 FR-031..FR-037, owner Vikram, issue #782).** The lift panel of spec 092 gets an *All* button that shows every floor that is on in one screen, as before 092 phase 1. In that view **FR-011 and FR-012 apply as written**: one density for all floors on, the 15-agent rule for all floors on together at 1440x900 and 1280x800 (now with the lift panel's width taken out, 092 FR-033), rooms in floor order with floor tags. **Only** (FR-022) does not change the chosen view (092 FR-035). Built on `092-lift-all-floors` (2026-10-28): `check:office` passes the All floors view at both sizes with the panel, with no density step lost (092 FR-033).

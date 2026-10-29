@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 035-040
 title: Durbar court styles: Indian, European, Japanese (head accessory slots, court words)
-status: **built**; word lists await owner review in PR #137
+status: built
+note: word lists await owner review
 -->
 
 **Feature Branch**: `035-theme-foundation` (issue #129)

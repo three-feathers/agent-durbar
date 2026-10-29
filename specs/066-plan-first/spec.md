@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Plan first: for one message, the agent proposes a plan in its app's own plan mode and you Approve, Revise or Reject; the approved plan still runs in the folder's mode (issue #429)
-status: **built**; real 2026-10-21 on Copilot, Claude Code and Codex (reject: nothing changed; Copilot approve in Read-only: the change was refused)
+status: built
 -->
 
 **Feature Branch**: `066-plan-mode`
@@ -61,6 +61,13 @@ In a chat, the user opens the mode menu and picks **Plan first (next message)**;
 - I/II: the capability sits behind `AgentAdapter`. No vendor types in the renderer.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **built**; real 2026-10-21 on Copilot, Claude Code and Codex (reject: nothing changed; Copilot approve in Read-only: the change was refused)
+
 
 ### 2026-10-21: built and checked on real accounts
 
