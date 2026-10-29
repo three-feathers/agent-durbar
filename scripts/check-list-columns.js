@@ -168,7 +168,10 @@ module.exports = async (ctx) => {
     assert.ok(await until(`parseFloat(getComputedStyle(document.querySelector(${jsLiteral(SEL)})).opacity)>=0.99`), `${tag}: the focused pencil is fully shown ${await st()}`);
     // the state is read until it holds (the opacity transition and the focus ring are painted frames, not instants), and the message carries what was last seen
     const shown = `(()=>{const e=document.querySelector(${jsLiteral(SEL)}),s=getComputedStyle(e),c=s.backgroundColor;return e.matches(':focus-visible')&&s.opacity==='1'&&!(/^rgba\\(\\d+, \\d+, \\d+, 0\\)$/.test(c)||c==='transparent')&&parseFloat(s.outlineWidth)>=2&&s.outlineStyle!=='none'})()`;
-    assert.ok(await until(shown), `${tag}: keyboard focus shows a tile, a focus ring and the icon ${await st()} ${await js(`(()=>{const s=getComputedStyle(document.querySelector(${jsLiteral(SEL)}));return JSON.stringify({bg:s.backgroundColor,ow:s.outlineWidth,os:s.outlineStyle})})()`)}`);
+    const ring = `(()=>{const s=getComputedStyle(document.querySelector(${jsLiteral(SEL)}));return JSON.stringify({bg:s.backgroundColor,ow:s.outlineWidth,os:s.outlineStyle})})()`;
+    const isShown = await until(shown);
+    const seen = isShown ? '' : `${await st()} ${await js(ring)}`;
+    assert.ok(isShown, `${tag}: keyboard focus shows a tile, a focus ring and the icon ${seen}`);
     console.log(`[listcols] ${tag} room ok`);
   }
   console.log('[listcols] all checks passed');
