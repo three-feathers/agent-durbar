@@ -437,6 +437,13 @@ module.exports = async (ctx) => {
         check(await H.until(`document.querySelectorAll('.lobby .place.compact').length===${q(compact)}&&!document.querySelector('.lobby .place.compact .pc')`, 8000), `${tag}, ${w}x480: expected ${compact} compact lobby tiles without a count`);
         await H.settle();
         const lob = await js(`JSON.stringify([...document.querySelectorAll('.lobby .place')].map((p)=>Math.round(p.getBoundingClientRect().width)))`);
+        /* a visitor at a compact tile: its "+N" is there, N is everyone seated (the names in its label), no count, and the place name is in the label and the tooltip */
+        if (compact) {
+          check(await H.until(`!!document.querySelector('.lobby .place.compact.busy .pv-more .slot.more')`, 8000), `${tag}, ${w}x480: no visitor with a "+N" at a compact tile`);
+          const seats = JSON.parse(await js(`JSON.stringify([...document.querySelectorAll('.lobby .place.compact.busy')].map((p)=>{const m=p.querySelector('.pv-more'),n=m?parseInt((m.querySelector('.slot.more')||{}).textContent.replace(/[^0-9]/g,''),10):0,al=m?m.getAttribute('aria-label'):'';
+            return {pc:!!p.querySelector('.pc'),n,names:al.includes(': ')?al.split(': ').slice(1).join(': ').split(', ').length:0,label:p.getAttribute('aria-label'),title:p.title,pn:!!p.querySelector('.pn'),id:p.dataset.place}}))`));
+          check(seats.length > 0 && seats.every((x) => !x.pc && !x.pn && x.n >= 1 && x.n === x.names && x.label.indexOf(': ') > 0 && x.title.indexOf(': ') > 0 && x.label.slice(0, x.label.indexOf(': ')) === x.title.slice(0, x.title.indexOf(': '))), `${tag}, ${w}x480: compact tile with a visitor: ${JSON.stringify(seats)}`);
+        }
         const pr = await page(); check(!pr.length, `${tag}, ${w}x480 (lobby tiles ${lob}): ${pr.slice(0, 4).join('; ')}`);
       }
       rows.push(`${tag}: ${st.d} f=${st.gf}, compact tiles, boxes equal to the layout without the step (measured on main too: 14 boxes, 0 differences, at 1120x480, 1000x480 and 800x480; on Linux 1160x480 still takes level 1 and 1120x480 does not, on the Windows runner level 1 still fits at 1120x480, so the driver uses 900x480, far from the edge)`);

@@ -129,7 +129,7 @@ function pageCheck(expanded, expectPlaces) {
       const shown = pl.querySelectorAll('.pv:not(.pv-more)').length, more = pl.querySelector('.pv-more'), n = more ? shown + parseInt(more.textContent.replace(/[^0-9]/g, ''), 10) : shown;
       const count = pl.querySelector('.pc');
       /* issue #737 (spec 001 FR-189): a compact tile (a place under 56 px) draws no count; its "+N" circle holds everyone there (no figure beside it) */
-      if (pl.classList.contains('compact')) { if (count || (n && !(more && shown === 0))) problems.push(`place ${pl.dataset.place}: a compact tile with a count, or with a figure beside its "+N"`); return; }
+      if (pl.classList.contains('compact')) { if (count || (pl.classList.contains('busy') && !(more && shown === 0)) || (n && !(more && shown === 0))) problems.push(`place ${pl.dataset.place}: a compact tile with a count, or with a figure beside its "+N"`); return; }
       if ((count ? parseInt(count.textContent, 10) : 0) !== n) problems.push(`place ${pl.dataset.place}: count ${count ? count.textContent : 'none'} but ${n} visitors`);
     });
     const slots = [...lobby.querySelectorAll('.slot.on')].map(R);
