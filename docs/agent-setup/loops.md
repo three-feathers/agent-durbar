@@ -11,7 +11,7 @@ These are the team's shared words, so two agents do not review the same thing.
 - **`taking #N`**: answer the round's review list in the team chat (`taking #N, #M`) before you start reviewing. If someone already said it, pick another.
 - **`reviewing at <sha>`**: say which head commit you are reading. A push makes it stale; look again at the new sha.
 - **`checks run at <sha>: …`**: the author's or reviewer's one-line result for that sha: what ran, the counts, what did not run. For the full suites, CI is the source of truth (AGENTS.md, *Test once*); do not rerun them locally.
-- **Caps (spec 021, FR-039):** at most 8 open PRs of your own, and at most 3 features waiting for review. Over the cap, review first and do not start new work.
+- **Caps (spec 021, FR-039):** the numbers (open PRs, features waiting for a first review) are in AGENTS.md, *Land before building*; do not restate them here. Over the cap, review first and do not start new work.
 - **Quick check first, an agent only when something is new.** The sweep reads PR lists and states with `gh`. It starts a sub-agent only when a PR is new, has a new head sha, or has a new review or comment. Otherwise it stops with one line.
 - **Teammates' PRs first.** Their approvals unblock ours.
 - **No direct messages in quiet hours** (<your-quiet-hours>, <your-timezone>). Keep working, and send the question when the hours end. Group posts: the claim line and the round's review list (below) are a standing, pre-approved post and the **only exception**; anything else only when your human asked or an approval is needed.
