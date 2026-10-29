@@ -416,18 +416,10 @@ assert.strictEqual(redact('https://API.TELEGRAM.ORG/BOT123456789:' + TG35 + '/x'
   const jwt = 'ey' + 'JhbGciOiJIUzI1NiJ9.' + 'ey' + 'JzdWIiOiIxMjM0NTY3ODkwIn0.' + 'M' + 'T' + 'a'.repeat(30);
   assert.strictEqual(redact('a ' + jwt + ' b ' + DBOT, {}), 'a [redacted] b [redacted]', 'JWT and Discord bot token side by side');
 }
-// same-run growth for the new shapes (review of PR #679): the same call on an input 4 times longer must cost about 4 times more, not 16
+// same-run growth for the new shapes (review of PR #679): the same call on an input 16 times longer must cost about 16 times more, not 256.
+// It goes through `assertLinearGrowth` (CPU time, best of 3, floor, per-OS timer step; retro #854 A2: the old ad hoc wall-like ratio of two
+// tiny timings failed twice on Windows CI). A prefix of the repeated unit has the same shape; a `Dot` case adds its tail inside `run`.
 {
-  const cpuOf = (text: string): number => {
-    let best = Infinity;
-    for (let i = 0; i < 3; i++) {
-      const c0 = process.cpuUsage();
-      redact(text, {});
-      const d = process.cpuUsage(c0);
-      best = Math.min(best, (d.user + d.system) / 1000);
-    }
-    return best;
-  };
   const units: Record<string, string> = {
     slackSession: 'xo' + 'xd-%2B-',
     slackHook: 'hooks.slack.com/workflows/a/b/',
@@ -444,12 +436,14 @@ assert.strictEqual(redact('https://API.TELEGRAM.ORG/BOT123456789:' + TG35 + '/x'
   };
   for (const [k, unit] of Object.entries(units)) {
     const tail = k.endsWith('Dot') ? '.abcdef.' : '';
-    const small = unit.repeat(Math.ceil(10_000 / unit.length)) + tail;
-    const big = unit.repeat(Math.ceil(40_000 / unit.length)) + tail;
-    redact(small, {}); // warm up
-    const a = Math.max(cpuOf(small), 2);
-    const b = cpuOf(big);
-    assert.ok(b / a < 10, `growth ${k}: ${a.toFixed(1)} ms for ${small.length} chars, ${b.toFixed(1)} ms for ${big.length} chars (ratio ${(b / a).toFixed(1)}, limit 10 for 4x input: linear is about 4, quadratic about 16)`);
+    const input = unit.repeat(Math.ceil(64_000 / unit.length));
+    const run = (text: string): { cpu: number; wall: number } => {
+      let wall = 0;
+      const cpu = cpuMs(() => { const w = process.hrtime.bigint(); redact(text + tail, {}); wall = Number(process.hrtime.bigint() - w) / 1e6; }, 1000);
+      return { cpu, wall };
+    };
+    run(input.slice(0, 4000)); // warm up
+    assertLinearGrowth(`growth ${k}`, run, input);
   }
 }
 // the guard never changes the result (T132 review): every kind x encoding x prefix, then random strings of markers and separators
