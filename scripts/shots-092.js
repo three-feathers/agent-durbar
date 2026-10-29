@@ -110,14 +110,21 @@ module.exports = async (ctx) => {
     // the window owns the focus first, the select's value is waited for (not read once after a fixed pause), and one more press if the first was lost
     const ownFocus = async () => { for (let i = 0; i < 3; i++) { ctx.win.show(); ctx.win.focus(); ctx.win.webContents.focus(); if (await until('document.hasFocus()', 3000)) return true; } return false; };
     assert.ok(await ownFocus(), `${tag}: the window owns the focus before the key`);
+    // Whether a closed native select changes its choice on PageDown is the platform's (spec 092 delta 2026-10-29, #888): Windows and Linux do, macOS does
+    // not. FR-011 is that the floor stays and nothing is announced, so the key is counted on the select (a keydown listener: the press reached it) on every
+    // platform, and "the select used the key" is asserted only where the platform does that.
     const used = `document.getElementById('wsFilter').value!=='all'`;
-    for (let tries = 0; tries < 2 && !(await js(used)); tries++) {
+    const reached = `(window.__pdSel||0)>0`;
+    await js(`(()=>{window.__pdSel=0;document.getElementById('wsFilter').addEventListener('keydown',(e)=>{if(e.key==='PageDown')window.__pdSel++;});})()`);
+    const done = process.platform === 'darwin' ? reached : used;
+    for (let tries = 0; tries < 2 && !(await js(done)); tries++) {
       await js(`document.getElementById('wsFilter').focus()`);
       await key('PageDown');
-      await until(used, 4000);
-      if (!(await js(used))) await ownFocus();
+      await until(done, 4000);
+      if (!(await js(done))) await ownFocus();
     }
-    assert.ok(await until(used), `${tag}: the select used the key`);
+    assert.ok(await until(reached), `${tag}: the key reached the folder select`);
+    if (process.platform !== 'darwin') assert.ok(await until(used), `${tag}: the select used the key`);
     await settle();
     assert.strictEqual((await view()).pref, pref0, `${tag}: PageDown in the folder select does not change the floor`);
     await annEq([], `${tag}: and nothing was announced`);
