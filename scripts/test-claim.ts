@@ -31,7 +31,7 @@ const add = (login, t) => { if (!st.assignees.includes(login)) st.assignees.push
 let out = '';
 if (st.fail && call.includes(st.fail)) { save(); console.error('HTTP 403: API rate limit exceeded'); process.exit(1); }
 if (call === 'api user --jq .login') out = st.me;
-else if (/^api repos\\/\\{owner\\}\\/\\{repo\\}\\/issues\\/\\d+ --jq/.test(call)) out = (st.kind) + '\\n' + st.assignees.join(' ');
+else if (/^api repos\\/\\{owner\\}\\/\\{repo\\}\\/issues\\/\\d+ --jq/.test(call)) out = (st.kind) + '\\n' + st.assignees.join(' ') + '\\n' + (st.author || 'someoneelse');
 else if (/\\/timeline --jq/.test(call)) out = st.events.map((e) => e.t + ' ' + e.id + ' ' + e.login).join('\\n');
 else if (/^api -X POST .*\\/assignees /.test(call)) {
   const mine = ts(st.tick);
@@ -49,7 +49,7 @@ if (out) console.log(out);
 fs.writeFileSync(path.join(tmp, 'fake-gh.js'), FAKE);
 fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/bash\nexec node "${path.join(tmp, 'fake-gh.js')}" "$@"\n`, { mode: 0o755 });
 
-interface State { me: string; kind: string; assignees: string[]; labels: string[]; events: { t: string; id: number; login: string }[]; comments: string[]; log: string[]; id: number; tick: number; race?: { login: string; when: string }; fail?: string }
+interface State { me: string; kind: string; author?: string; assignees: string[]; labels: string[]; events: { t: string; id: number; login: string }[]; comments: string[]; log: string[]; id: number; tick: number; race?: { login: string; when: string }; fail?: string }
 let k = 0;
 function run(over: Partial<State>, ...argv: string[]): { r: ReturnType<typeof spawnSync>; st: State } {
   const f = path.join(tmp, `state${k++}.json`);
@@ -106,6 +106,22 @@ const deletes = (st: State): string[] => st.log.filter((l) => l.includes('DELETE
   assert.deepStrictEqual(deletes(st), [], 'the winner removes nothing');
   assert.deepStrictEqual(st.labels, ['status:claimed']);
 }
+// PR whose author assigned themselves: a reviewer's claim succeeds and the author's assignment is left alone
+{
+  const { r, st } = run({ kind: 'pr', author: 'fjcabello', assignees: ['fjcabello'] }, '7');
+  assert.strictEqual(r.status, 0, String(r.stderr));
+  assert.deepStrictEqual(st.assignees, ['fjcabello', 'vikramgorla']);
+  assert.deepStrictEqual(deletes(st), []);
+}
+// the author claiming the review of their own PR: refused with a clear message, nothing written
+{
+  const { r, st } = run({ kind: 'pr', author: 'vikramgorla' }, '7');
+  assert.strictEqual(r.status, 1);
+  assert.match(String(r.stderr), /you authored #7/);
+  assert.ok(!st.log.some((l) => l.includes('POST')));
+}
+// an issue author's self-assignment IS a claim (the author rule is for PRs only)
+assert.strictEqual(run({ author: 'fjcabello', assignees: ['fjcabello'] }, '7').r.status, 1);
 // not a number: usage, no gh call at all
 for (const bad of ['abc', '7; rm -rf x', '', '-1', '7x', '--release']) {
   const { r, st } = run({}, ...(bad === '' ? [] : [bad]));

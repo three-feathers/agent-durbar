@@ -68,7 +68,7 @@ Tool command names: `CLAUDE.md`, `.github/copilot-instructions.md`; other tools 
 
 ### Claim, label, branch
 
-- **Claim** with `scripts/claim.sh <N>` (FR-063): the first assignee owns the issue or reviews the PR; an assigned item is refused, of two racing claims the later backs off. `--release <N> [why]` gives up. No `taking #N` or `FINAL`.
+- **Claim** with `scripts/claim.sh <N>` (FR-063): the first assignee owns the issue or reviews the PR; an assigned item is refused, of two racing claims the later backs off. `--release <N> [why]` gives up; a PR's author never holds the review claim. No `taking #N` or `FINAL`.
 - **Labels** (FR-045): one type (`bug`, `enhancement`, `task`, `documentation` = user docs, `question`; spec-only PR = `task`), at least one `area:*` from `.github/labels.tsv`, `spec:NNN` per spec. Flags only when true (`status:*`, `needs-owner-approval`, `spec-exempt`, `docs-n/a`, `accessibility`, `incident`); no other families; GitHub's defaults are for closing. `npm run labels:backfill` (dry run, add-only) fills gaps.
 - **One issue = one task** (`Tnnn` in `tasks.md`); unrelated work gets a new issue (review findings on the PR's own change are not unrelated).
 - **Branch `NNN-slug`** in its own worktree; **never check out a PR or branch in your main checkout** (FR-050). **Never push to `main`.**
@@ -77,7 +77,7 @@ Tool command names: `CLAUDE.md`, `.github/copilot-instructions.md`; other tools 
 
 ### Commit identity and signed commits
 
-(FR-061) Only the human owner's identity: no AI co-author trailer and no "Generated with" line in commit messages or PR bodies (*Agent used* stays). Every commit SSH-signed, **Verified** on GitHub ([setup](docs/collaboration.md)). Never rewrite published history. *Require signed commits* on `main` is an owner setting.
+(FR-061) Only the human owner's identity: no AI co-author trailer and no "Generated with" line in commit messages or PR bodies (*Agent used* stays). Every commit SSH-signed, **Verified** on GitHub ([setup](docs/collaboration.md)). Never rewrite published history or force-push old commits. *Require signed commits* on `main` is an owner setting.
 
 ### Bug and deployment incident triage
 
@@ -143,14 +143,14 @@ Another team's agent's approval, posted through its human's account, counts.
 
 ### Pace and load
 
-- **Land before building** (FR-039): per side at most 8 open PRs and 5 features awaiting first review (spec-only PRs excluded); over that, only land. Security and owner-urgent items may exceed, saying so. Checked weekly.
+- **Land before building** (FR-039): per side at most 8 open PRs and 5 features awaiting first review (spec-only PRs excluded); over that, only land. Security and owner-urgent items may exceed, saying so.
 - **Sub-agents by size** (FR-038): small = one smaller-model agent; medium = implementer that mutation-checks; sensitive (secrets, user files, IPC, redaction, permissions, spending) = analyst, implementer, reviewer. Two heavy agents per machine at most.
 - **Red means owned** (FR-063): a red scheduled workflow gets an owner within 24 h or is paused (owner OK if it spends credits).
 
 ### Chat and decisions
 
 - **An OK in the team chat counts** (FR-033): from Vikram, Paco or Ruben, direct or relayed by their bots, for pre-releases and repo actions (merge, tag, release, closing issues); sender checked; no re-asking in a terminal. Never for money, invitations, settings or chat access.
-- **Chat feedback goes on the issue or PR too.**
+- **Chat feedback goes on the issue or PR too**, saying so.
 - **Tag each other by bot handle** (FR-054): `@PaquitosAgent_bot`, `@RubenLupiAgent_bot`, `@VishwakarmaDurbarClaude_bot`; no "X's agent here"; humans only when they must act; your filter matches your handle.
 - **Working hours** ([collaboration.md](docs/collaboration.md#team-norms)) apply to reviews and DMs.
 - **Decisions** (FR-037): a dated FR in spec 021 the same day; a line here if agents' work changes.

@@ -5,7 +5,7 @@
 # The assignee is the claim: no `taking #N` and no `FINAL` comment. For a PR the first assignee is the reviewer ("first assignee reviews").
 # Claim: read the assignees; anyone else assigned: refuse (exit 1). Else assign yourself (and `status:claimed` on an issue), read the
 # assignees again, and if someone else appeared meanwhile, the assignment event that is later (timeline `assigned`, then event id) backs
-# off: it unassigns only itself. Another person's assignment or label is never removed. Exit 0 claimed (or already yours), 1 refused or
+# off. On a PR the author's own assignment is ignored (the author is never the reviewer claim). It unassigns only itself. Another person's assignment or label is never removed. Exit 0 claimed (or already yours), 1 refused or
 # lost, 2 usage or a `gh` failure (rate limit, no access): then check `gh issue view N` and run --release if you hold a claim you do not want.
 # Uses `gh api` with `--jq` (no jq needed), no shell on user text, bash (Git Bash on Windows). Reads and writes only issue N.
 usage() { echo "usage: scripts/claim.sh <issue or PR number> | scripts/claim.sh --release <N> [reason]" >&2; exit 2; }
@@ -24,9 +24,11 @@ case $me in *[!A-Za-z0-9-]*) die "unexpected login";; esac
 # kind on line 1 (pr or issue), then the assignees on line 2
 read_item() {
   local out
-  out=$(gh api "$API" --jq '(if .pull_request then "pr" else "issue" end), (.assignees | map(.login) | join(" "))') || return 1
-  kind=$(printf '%s\n' "$out" | sed -n 1p); assignees=$(printf '%s\n' "$out" | sed -n 2p)
-  [ -n "$kind" ]
+  out=$(gh api "$API" --jq '(if .pull_request then "pr" else "issue" end), (.assignees | map(.login) | join(" ")), (.user.login)') || return 1
+  kind=$(printf '%s\n' "$out" | sed -n 1p); assignees=$(printf '%s\n' "$out" | sed -n 2p); author=$(printf '%s\n' "$out" | sed -n 3p)
+  [ -n "$kind" ] || return 1
+  # on a PR the author is never the reviewer claim: an author who assigned themselves does not block a reviewer
+  if [ "$kind" = pr ]; then local a keep=""; for a in $assignees; do [ "$a" != "$author" ] && keep="$keep $a"; done; assignees=${keep# }; fi
 }
 others() { local a o=""; for a in $assignees; do [ "$a" != "$me" ] && o="$o $a"; done; echo "${o# }"; }
 unassign_me() { gh api -X DELETE "$API/assignees" -f "assignees[]=$me" >/dev/null; }
@@ -44,6 +46,7 @@ if [ "$release" = 1 ]; then
   echo "released #$n"; exit 0
 fi
 
+if [ "$kind" = pr ] && [ "$author" = "$me" ]; then echo "claim.sh: you authored #$n; the author never claims its review." >&2; exit 1; fi
 o=$(others)
 if [ -n "$o" ]; then echo "claim.sh: #$n is already claimed by $o." >&2; exit 1; fi
 case " $assignees " in *" $me "*) echo "#$n is already yours."; exit 0;; esac
