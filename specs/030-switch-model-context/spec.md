@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 030
 title: Switch model, effort and context tier of a live session (chat header and office card menu), see window and % full, compact, start-fresh hint, per-folder default; simulator first, adapter-neutral
-status: **Phases 1-4 built**; Phase 3 run on Copilot Pro 2026-10-20 (switch between real models, effort, long tier, `confirmation_required`, compact and switch; Copilot `modelSwitch.verified`); open: long-tier price above the default window, `compactionDecision` values; 2026-10-21: continue a conversation in another agent app (#409, FR-042..FR-045, real Copilot → Claude → Codex)
+status: built
+note: open: long-tier price above the default window, compactionDecision values
 -->
 
 **Feature Branch**: `030-switch-model-context` (spec, research, plan and tasks only; code comes in later `030-<slug>` branches per task)
@@ -211,6 +212,13 @@ No answers from the owner were available while this was written, so these are **
 - `[KNOWN GAP]` Everything marked unverified in [research.md](research.md) until phase 3 runs.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **Phases 1-4 built**; Phase 3 run on Copilot Pro 2026-10-20 (switch between real models, effort, long tier, `confirmation_required`, compact and switch; Copilot `modelSwitch.verified`); open: long-tier price above the default window, `compactionDecision` values; 2026-10-21: continue a conversation in another agent app (#409, FR-042..FR-045, real Copilot → Claude → Codex)
+
 
 - **Phase 1, logic, types, mapper, folder store, main IPC, simulator (sim only, no real session):**
   - `src/shared/modelswitch.ts` holds the adapter-neutral types and the IPC validation. The UI logic is `src/renderer/modelswitch.js` (a plain script, because the renderer cannot import modules). Deviation from plan.md, which named only `src/shared/modelswitch.ts`.

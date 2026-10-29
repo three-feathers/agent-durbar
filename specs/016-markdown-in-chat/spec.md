@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 015-018
 title: Safe Markdown in the chat
-status: milestone 7
+status: built
 -->
 
 **Feature Branch**: `016-markdown-in-chat` (milestone 7)

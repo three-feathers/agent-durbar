@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Global MCP servers written to the agent apps' own lists (Copilot CLI, Claude Code, Codex) after a per-file confirmation with backups, harmonize the lists, source chips, switch/Restart/Sign in/Remove on every server row, a server's tools on expand (owner 2026-10-21)
-status: parts 1-4 **built** 2026-10-21 (add/remove for all folders, harmonize, tools on expand and Remove in the agent dialog on top of spec 058's state words and Details, single tools on and off per folder; unit tests on fakes, simulator drivers; real check T060 2026-10-22: Copilot CLI, Claude Code and Codex list the written entries, 0 credits; Codex `disabled_tools` seen hiding a tool; parts 3-4 otherwise not run on a real account); owner questions Q1-Q6 answered 2026-10-22 (defaults kept)
+status: built
+note: parts 3-4 only partly run on a real account
 -->
 
 **Feature Branch**: `069-mcp-global-controls`
@@ -370,6 +371,13 @@ VS Code UI supports, as some people may want to give access to read email but no
 4. PR 4 (stacked on PR 3): FR-060..FR-064.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> parts 1-4 **built** 2026-10-21 (add/remove for all folders, harmonize, tools on expand and Remove in the agent dialog on top of spec 058's state words and Details, single tools on and off per folder; unit tests on fakes, simulator drivers; real check T060 2026-10-22: Copilot CLI, Claude Code and Codex list the written entries, 0 credits; Codex `disabled_tools` seen hiding a tool; parts 3-4 otherwise not run on a real account); owner questions Q1-Q6 answered 2026-10-22 (defaults kept)
+
 
 - **2026-10-22 (T060, real check):** a Codex `config.toml` that does not parse must be refused like a JSON file that does not parse
   (acceptance 2 of story 1). The line reader skipped lines it did not understand, so a file with an unclosed table header

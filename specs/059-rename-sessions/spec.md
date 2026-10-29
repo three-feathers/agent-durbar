@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Rename sessions (issue #372): a short name of the user's own for any main session, shown on every surface (card, list, chat header, strip, inbox, notifications, Schedules, Previous sessions, activity log) instead of the runtime title; also saved in the agent app (Copilot `name.set`, also for a session that is not open through a prompt-free resume; Codex `thread/name/set`; Claude Code `--name` at the next message); **Rename…** in the chat header More menu and the card menu, and the Previous sessions row menu (spec 006, #379)
-status: **Built, simulator and fakes** (name rule, store, IPC, three adapters, dialog, surfaces, `check:rename`); `real:` app calls by Vikram's agent (Copilot, Codex, Claude CLI lists); open: VS Code visibility, macOS/Windows, T050; delta 2026-10-23: rename in place (#636, #595: click the chat title, a pencil by each name, F2; FR-020..FR-027, T070..T078) built on the simulator 2026-10-24, not run on a real Mac or Windows
+status: built
+note: T050 real checks wait for the owner's go-ahead
 -->
 
 **Feature Branch**: `059-rename-sessions`
@@ -333,6 +334,13 @@ All answered with option A (see *Clarifications*); kept here for the record of t
   real check now; keep the `[KNOWN GAP]` lines.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **Built, simulator and fakes** (name rule, store, IPC, three adapters, dialog, surfaces, `check:rename`); `real:` app calls by Vikram's agent (Copilot, Codex, Claude CLI lists); open: VS Code visibility, macOS/Windows, T050; delta 2026-10-23: rename in place (#636, #595: click the chat title, a pencil by each name, F2; FR-020..FR-027, T070..T078) built on the simulator 2026-10-24, not run on a real Mac or Windows
+
 
 ### 2026-10-20: owner changes Q2; Vikram's requirements (issue #372)
 

@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: index
 title: Full-screen chat and agent strip
-status: implemented; delta 2026-10-19: copy buttons (FR-015), FR-011 closed by 016; delta 2026-10-19: Stop and End session in the card menu (FR-017, T026); delta 2026-10-21: file edits stream into the chat (FR-018..FR-027, T027..T037; real: Claude Code and Copilot streams, Codex sends the patch at once); delta 2026-10-21: JSON tool results formatted, every tool output masked in main, and outputs saved to a file explained (issue #361, FR-028..FR-036, T038..T048) **specified, not built**; delta 2026-10-21: the chat's settings (profile, mode, model with its window, context %, MCP) under the message box and one Send / Stop button with a spinner (issue #486, FR-037..FR-043, T049..T059, review fixes T070..T075) **built**, simulator only; delta 2026-10-23: the message box grows to 40% of the panel, a resize handle on its top edge, size remembered (issue #592, FR-044..FR-049, T076..T082) **built**, simulator only; delta 2026-10-23: compact composer toolbar: model name only, context ring with a token summary, MCP on/total (issue #627, FR-050..FR-056, T084..T093) **built**, simulator only; delta 2026-10-26 (owner, issue #691): a reply counts as seen only when the chat shows it; Mark as read in the card menu (FR-176, FR-177, simulator-checked)
+status: building
+note: tool-JSON decoder, saved output and masking (T038-T048) not built
 -->
 
 **Feature Branch**: `005-chat-fullscreen-and-agent-strip` (reverse-engineered; milestone 6, built on the chat panel of milestones 1-5)
@@ -105,6 +106,13 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 - Chat content is not persisted by Agent Durbar; the Copilot runtime keeps the session history on disk.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> implemented; delta 2026-10-19: copy buttons (FR-015), FR-011 closed by 016; delta 2026-10-19: Stop and End session in the card menu (FR-017, T026); delta 2026-10-21: file edits stream into the chat (FR-018..FR-027, T027..T037; real: Claude Code and Copilot streams, Codex sends the patch at once); delta 2026-10-21: JSON tool results formatted, every tool output masked in main, and outputs saved to a file explained (issue #361, FR-028..FR-036, T038..T048) **specified, not built**; delta 2026-10-21: the chat's settings (profile, mode, model with its window, context %, MCP) under the message box and one Send / Stop button with a spinner (issue #486, FR-037..FR-043, T049..T059, review fixes T070..T075) **built**, simulator only; delta 2026-10-23: the message box grows to 40% of the panel, a resize handle on its top edge, size remembered (issue #592, FR-044..FR-049, T076..T082) **built**, simulator only; delta 2026-10-23: compact composer toolbar: model name only, context ring with a token summary, MCP on/total (issue #627, FR-050..FR-056, T084..T093) **built**, simulator only; delta 2026-10-26 (owner, issue #691): a reply counts as seen only when the chat shows it; Mark as read in the card menu (FR-176, FR-177, simulator-checked)
+
 
 - **2026-10-24, test only (branch 021-flaky-timing)**: the FR-024 linear-time checks and the `maskEditInfo` cost check in `scripts/test-edits.ts` measure CPU time (with a wall backstop) and compare with a baseline from the same run, instead of bare wall-clock bounds that failed under a parallel `npm test`. No behaviour change.
 

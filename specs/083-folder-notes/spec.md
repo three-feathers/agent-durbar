@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Notes (issue #699): save a message, a selection or a typed idea per folder and carry on with it; a Notes drawer in the chat (Ctrl+Shift+M), insert with one click or from the `/` list, a header count and a saved-message icon; stored masked in local data (0600), opt-in mirror to `.durbar/notes.md` per folder
-status: In progress (2026-10-26): foundation (T010..T014), the MVP in the window (T020..T024) and the header count, the saved-message marker and the drawer search (T030..T032) built and checked on the simulator; selection save, the per-folder screen and the project file (T033..T050) are not built; owner decisions OD1..OD4 (Ruben) and coordinator decisions D1..D11 recorded
+status: building
+note: MVP built; selection save, per-folder screen, project file not built
 -->
 
 **Feature Branch**: `083-folder-notes` (touches 005 chat panel and message actions, 073 the `/` list, 074 the shortcut list, 006 the folder menu, 010 simulator)
@@ -291,6 +292,13 @@ In the drawer I choose **Open source** on a note: the chat it came from opens an
 - `read:` only for the code facts above; nothing here was run against a real agent app (none is needed: notes never call one).
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> In progress (2026-10-26): foundation (T010..T014), the MVP in the window (T020..T024) and the header count, the saved-message marker and the drawer search (T030..T032) built and checked on the simulator; selection save, the per-folder screen and the project file (T033..T050) are not built; owner decisions OD1..OD4 (Ruben) and coordinator decisions D1..D11 recorded
+
 
 ### 2026-10-24: review fixes (Paco's review of PR #702, request changes; defaults under Ruben's delegation)
 

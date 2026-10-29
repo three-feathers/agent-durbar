@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Managed configuration for organizations: one admin-only config folder (policy.json, MCP list, icon, theme pack) sets the display name and icon, allowed agent apps, MCP lists and endpoints, an agent/profile/skill registry, OpenTelemetry, theme and custom LLMs with admin token pricing, plus the accepted additions (mode lock, proxy and CA, feature switches, installers, signing, spend caps, folder rules, updates, registry/MDM sources, signed config, audit log, retention, rebrand build, legal notice, version pins, endpoint auth, sign-in, vendor settings view); everything set there is locked; a narrow-only user layer; bad config fails closed and visibly
-status: **draft** 2026-10-23 (spec only): samples, JSON schemas and hostile test fixtures included; Q1-Q12 answered by Vikram (Q10: admin token pricing); A1-A19 accepted by Vikram as requirements FR-150..FR-197 (signing certificate purchase still needs his OK); Paco's security review (17 items) and re-review (10 items) folded in; R1-R8 answered by Vikram with the recommended defaults; R9-R11 answered by Vikram (copilotAllContent, Claude foundry and Codex amazon-bedrock, Claude identity stated in the notice); P27 (issue #602, FR-198..FR-207): vendor policies greyed out before a start, built (fixture tests, simulator; no real managed machine)
+status: draft
+note: spec only; decisions recorded, signing purchase needs the owner's OK
 -->
 
 **Feature Branch**: `076-managed-config`
@@ -1156,6 +1157,13 @@ All three answered on PR #575 (09:03-09:06 UTC) with option a, the recommended o
 - **SC-005** All policy tests run with zero AI credits on Windows, macOS and Linux CI.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **draft** 2026-10-23 (spec only): samples, JSON schemas and hostile test fixtures included; Q1-Q12 answered by Vikram (Q10: admin token pricing); A1-A19 accepted by Vikram as requirements FR-150..FR-197 (signing certificate purchase still needs his OK); Paco's security review (17 items) and re-review (10 items) folded in; R1-R8 answered by Vikram with the recommended defaults; R9-R11 answered by Vikram (copilotAllContent, Claude foundry and Codex amazon-bedrock, Claude identity stated in the notice); P27 (issue #602, FR-198..FR-207): vendor policies greyed out before a start, built (fixture tests, simulator; no real managed machine)
+
 
 - **2026-10-23** OTel and custom-LLM facts confirmed in the vendors' documentation after Vikram's comment on PR #575 (Copilot CLI
   OTel page, Claude Code monitoring page, Codex advanced config and their neighbouring pages): research rows for Claude Code OTel and

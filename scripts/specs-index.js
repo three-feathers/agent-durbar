@@ -7,17 +7,23 @@
  *   <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
  *   group: 046
  *   title: Short feature name
- *   status: **built** 2026-10-21: what was checked and how
+ *   status: built
+ *   note: open follow-ups, in one short line (optional, at most 160 characters)
  *   -->
  *
- * `group` names a table of specs/README.md (a `<!-- specs-index group=ID -->` line marks where it goes); `title` and `status` are the
- * row's two cells, one line each, Markdown allowed, no "|", no "-->" or "--!>". specs/README.md holds only the hand-written text and
- * the markers; the tables are built from the blocks by the website (spec 050) and by this script.
+ * `group` names a table of specs/README.md (a `<!-- specs-index group=ID -->` line marks where it goes); `title` is the row's
+ * feature cell. `status` is ONE word from a fixed list (spec 021 FR-063, delta 2026-10-29): draft (outline, not agreed), specified
+ * (spec, plan and tasks agreed, nothing or little built), building (work in progress, or planned build tasks still open), built
+ * (done; open tasks are only deferred follow-ups, [KNOWN GAP]s or checks that need a real account or an owner), released (built
+ * and shipped in a published release), superseded (replaced by another spec; say which in the note). The detail belongs in the
+ * spec's `## Changes`, not here. `note` is optional and shown after the status. One line each, Markdown allowed, no "|", no
+ * "-->" or "--!>". specs/README.md holds only the hand-written text and the markers; the tables are built from the blocks by the
+ * website (spec 050) and by this script.
  *
  *   node scripts/specs-index.js             write the full index to specs/INDEX.md (git-ignored) to read it locally
  *   node scripts/specs-index.js --print     print it
  *   node scripts/specs-index.js --check     every spec has a valid block, every group a marker, no committed rows in specs/README.md
- *   node scripts/specs-index.js --add specs/NNN-name   give a new spec a block (group of the newest spec, its title, status Draft)
+ *   node scripts/specs-index.js --add specs/NNN-name   give a new spec a block (group of the newest spec, its title, status draft)
  *   node scripts/specs-index.js --import    migration: read the hand tables of specs/README.md into the blocks, then remove the rows
  *
  * Transition: problems only warn until specs/README.md has the line `<!-- specs-index: strict -->` (a small PR adds it after the
@@ -34,7 +40,10 @@ const HEADER = ['| # | Feature | Status |', '| --- | --- | --- |'];
 const BLOCK_RE = /<!--\s*specs-index\b[^\n]*\n([\s\S]*?)^--!?>[ \t]*(?:\n|$)/m; // the block ends at a line that is only "-->" (or "--!>", which also ends an HTML comment)
 const MARK_RE = /^<!--\s*specs-index group=([A-Za-z0-9._-]+)\s*-->$/;
 const ROW_RE = /^\| \[(\d{3})\]\((\d{3}-[a-z0-9-]+)\/spec\.md\) \| (.*?) \| (.*) \|$/;
-const KEYS = ['group', 'title', 'status'];
+const KEYS = ['group', 'title', 'status', 'note'];
+const REQUIRED = ['group', 'title', 'status'];
+const STATUSES = ['draft', 'specified', 'building', 'built', 'released', 'superseded'];
+const NOTE_MAX = 160;
 const BLOCK_HEAD = '<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)';
 const COMMENT_END = /--!?>/;
 
@@ -55,7 +64,7 @@ function parseBlock(text) {
     if (kv[1] in meta) errors.push(`"${kv[1]}" given twice`);
     meta[kv[1]] = kv[2].trim();
   }
-  for (const k of KEYS) if (!meta[k]) errors.push(`"${k}:" is missing or empty`);
+  for (const k of REQUIRED) if (!meta[k]) errors.push(`"${k}:" is missing or empty`);
   errors.push(...valueErrors(meta));
   return { meta, errors };
 }
@@ -63,7 +72,9 @@ function parseBlock(text) {
 /* What a title or status may not contain: an unescaped "|" (splits the cell), "-->" or "--!>" (ends the comment early). */
 function valueErrors(meta) {
   const errors = [];
-  for (const k of ['title', 'status']) {
+  if (meta.status && !STATUSES.includes(meta.status)) errors.push(`"status" must be one of ${STATUSES.join(', ')} (got "${String(meta.status).slice(0, 40)}"); put the detail in "note:" (at most ${NOTE_MAX} characters) or in the spec's Changes`);
+  if (meta.note && meta.note.length > NOTE_MAX) errors.push(`"note" is ${meta.note.length} characters (at most ${NOTE_MAX}); move the detail into the spec's Changes`);
+  for (const k of ['title', 'status', 'note']) {
     if (!meta[k]) continue;
     if (/(^|[^\\])\|/.test(meta[k])) errors.push(`"${k}" contains "|", which would split the table cell`);
     if (COMMENT_END.test(meta[k])) errors.push(`"${k}" contains "-->" or "--!>", which would end the comment block`);
@@ -76,7 +87,7 @@ function setBlock(text, meta) {
   const bad = valueErrors(meta);
   if (bad.length) throw new Error(bad.join('; '));
   const t = norm(text);
-  const block = `${BLOCK_HEAD}\n${KEYS.map((k) => `${k}: ${meta[k]}`).join('\n')}\n-->\n`;
+  const block = `${BLOCK_HEAD}\n${KEYS.filter((k) => meta[k]).map((k) => `${k}: ${meta[k]}`).join('\n')}\n-->\n`;
   if (BLOCK_RE.test(t)) return t.replace(BLOCK_RE, () => block); // a function: a "$&" or "$1" in a status stays literal
   const lines = t.split('\n');
   if (/^# /.test(lines[0])) {
@@ -97,7 +108,7 @@ function readSpecs(root = ROOT) {
     .map((dir) => ({ dir, num: dir.slice(0, 3), ...parseBlock(read(path.join(specs, dir, 'spec.md'))) }));
 }
 
-const row = (s) => `| [${s.num}](${s.dir}/spec.md) | ${s.meta.title} | ${s.meta.status} |`;
+const row = (s) => `| [${s.num}](${s.dir}/spec.md) | ${s.meta.title} | ${s.meta.status}${s.meta.note ? `: ${s.meta.note}` : ''} |`;
 
 /* The full index: specs/README.md's hand-written text with each marked table built from the blocks. { text, errors, committedRows }. */
 function generate(root = ROOT) {
@@ -139,7 +150,7 @@ function check(root = ROOT, { strict = false } = {}) {
   return { problems, strict: strict || STRICT_RE.test(readme) };
 }
 
-/* --add: a Draft block for a new spec (group of the newest spec that has one, title from the "# " line). */
+/* --add: a draft block for a new spec (group of the newest spec that has one, title from the "# " line). */
 function addBlock(root, dir) {
   const name = path.basename(path.resolve(root, dir));
   const spec = path.join(root, 'specs', name, 'spec.md');
@@ -148,7 +159,7 @@ function addBlock(root, dir) {
   if (parseBlock(text).meta) throw new Error(`specs/${name}/spec.md already has a block`);
   const newest = readSpecs(root).filter((s) => s.meta && s.meta.group && s.dir !== name).pop();
   const title = ((/^# (.*)$/m.exec(text) || [])[1] || name).replace(/^Feature Specification:\s*/i, '').trim();
-  const meta = { group: newest ? newest.meta.group : 'index', title, status: 'Draft' };
+  const meta = { group: newest ? newest.meta.group : 'index', title, status: 'draft' };
   fs.writeFileSync(spec, setBlock(text, meta));
   return meta;
 }
@@ -212,7 +223,7 @@ function importIndex(root = ROOT, { write = true } = {}) {
   return { readme: out.join('\n'), specs: rows.size, errors };
 }
 
-module.exports = { parseBlock, setBlock, valueErrors, readSpecs, generate, check, addBlock, groupId, importIndex };
+module.exports = { STATUSES, NOTE_MAX, parseBlock, setBlock, valueErrors, readSpecs, generate, check, addBlock, groupId, importIndex };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

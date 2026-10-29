@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: index
 title: Packaging, CI, draft releases
-status: implemented (unsigned); 2026-10-20 delta: app name and profile folder (#353, T037) built (unit tests, Linux simulator, a dev run on a real Mac by Paco; a packaged Mac build and Windows not run); 2026-10-21 delta: packaged display names (#384, T039) built on Linux (unit tests, `dist:linux`); Windows and macOS asserted only in CI; T094 (2026-10-21, #414): the simulator drivers share `scripts/driver-helpers.js` (FR-097); T095/T097 (2026-10-22): merge-queue-ready CI (FR-098..FR-102); owner decision: no gate job, one office job, UI one job per OS, macOS on `main`/nightly with an issue on failure, drafts skipped, no label triggers, timeouts everywhere (FR-104..FR-110); T096 (2026-10-22): a test run keeps drawing when another window covers it (FR-103; Linux shared-display run, Windows runner pending); T098: theme layout checks on PRs in Clean Office and Retro only, every theme on `main`/nightly (FR-111); T099: ui-suite fails at once on a driver syntax error (FR-112), in review; T100 (2026-10-22, flake on #535): `check:geometry` captures wait for a steady simulator (FR-113), Linux simulator only; T104 (2026-10-23): release notes folded at tag time from the tagged commit, tags only on `main`, fold into CHANGELOG.md by a doc-only PR (FR-117..FR-120), tests and a local dry run only, not yet run on GitHub; T105 (2026-10-23, #658): test builds from branches (`v0.1.0-alpha.N-test.M`, off `main` allowed, notes from the unmerged commits, masked; FR-121..FR-124), tests and a local dry run only
+status: built
+note: unsigned; open: signing (spec 014), arm64 and other formats, hand checks on macOS and Windows
 -->
 
 **Feature Branch**: `008-packaging-and-release` (reverse-engineered; packaging milestone)
@@ -131,6 +132,13 @@ One row per tag (spec 021 FR-063, delta 2026-10-29). A release no longer gets it
 | `v0.1.2` | 2026-10-29 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.2) | Desk pencil fix (issue #850) and the commit-identity process change; planned. | No |
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> implemented (unsigned); 2026-10-20 delta: app name and profile folder (#353, T037) built (unit tests, Linux simulator, a dev run on a real Mac by Paco; a packaged Mac build and Windows not run); 2026-10-21 delta: packaged display names (#384, T039) built on Linux (unit tests, `dist:linux`); Windows and macOS asserted only in CI; T094 (2026-10-21, #414): the simulator drivers share `scripts/driver-helpers.js` (FR-097); T095/T097 (2026-10-22): merge-queue-ready CI (FR-098..FR-102); owner decision: no gate job, one office job, UI one job per OS, macOS on `main`/nightly with an issue on failure, drafts skipped, no label triggers, timeouts everywhere (FR-104..FR-110); T096 (2026-10-22): a test run keeps drawing when another window covers it (FR-103; Linux shared-display run, Windows runner pending); T098: theme layout checks on PRs in Clean Office and Retro only, every theme on `main`/nightly (FR-111); T099: ui-suite fails at once on a driver syntax error (FR-112), in review; T100 (2026-10-22, flake on #535): `check:geometry` captures wait for a steady simulator (FR-113), Linux simulator only; T104 (2026-10-23): release notes folded at tag time from the tagged commit, tags only on `main`, fold into CHANGELOG.md by a doc-only PR (FR-117..FR-120), tests and a local dry run only, not yet run on GitHub; T105 (2026-10-23, #658): test builds from branches (`v0.1.0-alpha.N-test.M`, off `main` allowed, notes from the unmerged commits, masked; FR-121..FR-124), tests and a local dry run only
+
 
 ### 2026-10-29: one release table instead of a spec folder per release (spec 021 FR-063)
 

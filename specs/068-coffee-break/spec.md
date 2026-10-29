@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Coffee break when a usage limit is reached: the agent waits in a coffee corner with the reset time ("resumes at 14:30", or "until you raise the limit" for Durbar's own cap) and comes back, resuming its turn by itself or after asking, never past a Durbar limit and never probing
-status: **built** 2026-10-21 (owner accepted Q1-Q4): unit tests, simulator driver and screenshots (`scripts/shots-068-coffee.js`, `simbreak=N`), `check:office`; not run against a real usage limit; delta 2026-10-22 (owner): Durbar's own cap waits at spec 001's Bank, not the coffee corner; delta 2026-10-23 (owner, #634): the coffee-corner entry is a button (open the chat, Retry now) and the chat shows a coffee-break bar
+status: building
+note: T023 review fixes of #640 open
 -->
 
 **Feature Branch**: `068-coffee-break` (amends 011/012 limit display, 024 places, 034 agent health, 052 wording and notifications)
@@ -201,6 +202,13 @@ As the user who set a spending limit, I see the agent on a coffee break "until y
 - FR-018 `[IMPLEMENTED]` `scripts/test-coffeebreak.ts` (`npm run test:coffeebreak`), `test-places`, `test-mood`, `test-mcp-agentstate`, `scripts/shots-068-coffee.js`, `check:office`.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **built** 2026-10-21 (owner accepted Q1-Q4): unit tests, simulator driver and screenshots (`scripts/shots-068-coffee.js`, `simbreak=N`), `check:office`; not run against a real usage limit; delta 2026-10-22 (owner): Durbar's own cap waits at spec 001's Bank, not the coffee corner; delta 2026-10-23 (owner, #634): the coffee-corner entry is a button (open the chat, Retry now) and the chat shows a coffee-break bar
+
 
 - **2026-10-24, bug fix: a Retry that meets the limit again goes back on the break, never Error** (issue #671, owner report from a real Claude Code session in Ask first).
   - **FR-025** Claude Code answers a Retry made while the limit is still active with the limit as **words only**: a synthetic assistant message (`error: 'rate_limit'`) and an error result "You've hit your weekly limit · resets 2am (Europe/Zurich)", with no `rate_limit_event`. Only the event was read, so the second hit ended as an `error` status. `ClaudeMapper` now reads that sentence (`claudeLimitText`, fixed labels only, never the text) and emits the same `usageLimit` once per turn, then the quiet closing status. The reset it names is turned into a time (`nextClockTime`): "2am (Europe/Zurich)" is the next such time; more than a day ahead Claude Code writes "Oct 27, 9am (Europe/Zurich)" (month, day, optional year, minutes such as "9:30am", never a weekday; `read:` the CLI's `toLocaleString('en-US', {month:'short', day:'numeric', hour:'numeric'})` formatter, Ruben's review on #681); with none, the last reset a `rate_limit_event` named in this session; with none, the break has no time and asks.

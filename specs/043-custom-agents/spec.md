@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 042
 title: Custom agent per session (issue #127)
-status: Phase 1 built: Agent chip and menu, repository-agent confirmation, Copilot `rpc.agent.*` (simulator, unit tests, real check 2026-10-19); Phase 2: the agent in the New session dialog built (FR-007); Claude agents built (FR-008); per-folder default built (FR-009); profile file editor built (FR-010..FR-017, simulator and unit tests); Create with AI (FR-026..FR-030) checked once on Claude haiku 2026-10-22; delta 2026-10-22 (review on #505): tools only from the Extra tools line, stricter reply check (FR-031..FR-037); delta 2026-10-22 (re-review on #505): one name for a quoted key, one paid request through Cancel (FR-038, FR-039); delta 2026-10-23 (issue #570): Delete, lists refresh at once, nothing written before Save, a better structured profile (FR-040..FR-043; Copilot `rpc.agent.reload` checked on a real session, 0 prompts); Codex not started
+status: built
+note: T011 Claude and Codex mapping is tracked in spec 012
 -->
 
 **Feature Branch**: `043-custom-agents`
@@ -76,6 +77,13 @@ The runtime has no queue for an agent switch. A choice made while the agent work
 - Phase 2 (not in this spec's Phase 1): the agent in the New session dialog, a per-folder default, Claude/Codex mapping.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> Phase 1 built: Agent chip and menu, repository-agent confirmation, Copilot `rpc.agent.*` (simulator, unit tests, real check 2026-10-19); Phase 2: the agent in the New session dialog built (FR-007); Claude agents built (FR-008); per-folder default built (FR-009); profile file editor built (FR-010..FR-017, simulator and unit tests); Create with AI (FR-026..FR-030) checked once on Claude haiku 2026-10-22; delta 2026-10-22 (review on #505): tools only from the Extra tools line, stricter reply check (FR-031..FR-037); delta 2026-10-22 (re-review on #505): one name for a quoted key, one paid request through Cancel (FR-038, FR-039); delta 2026-10-23 (issue #570): Delete, lists refresh at once, nothing written before Save, a better structured profile (FR-040..FR-043; Copilot `rpc.agent.reload` checked on a real session, 0 prompts); Codex not started
+
 
 ### 2026-10-19: Phase 1 built and checked
 

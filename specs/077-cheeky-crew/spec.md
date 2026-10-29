@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Cheeky crew (issue #558; a Characters choice since issue #814): a built-in scene kit with 13 AI-generated, person-reviewed portrait characters (3 poses each), picked at random per session and kept across restarts; status cues and spec 034 moods unchanged
-status: built 2026-10-23 (experimental, no priority); since 2026-10-28 (issue #814) Cheeky is a Characters option in Settings on any theme, no longer a theme (FR-064..FR-070, Q9 answered (a)): raster path (Q1 = (d)), 13 characters x 3 poses (FR-059), face crops and the doubled desk portrait (FR-060); open: check:crew over every mood and density and a reload (T023), a rendered every-status sheet (T025); known gaps: 1280x800 couch seat 20 px under its chat badge, no capture-against-canvas sharpness check, Windows not run by a person
+status: built
+note: experimental; a Characters option in Settings since 2026-10-28
 -->
 
 **Feature Branch**: `077-cheeky-crew`
@@ -221,6 +222,13 @@ FR-011..FR-016 describe the drawn SVG option (b′). If Q1 picks raster, FR-050.
 - Persona slots for user and AI themes (one costume per agent from a theme) are out of scope (OD1, later).
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> built 2026-10-23 (experimental, no priority); since 2026-10-28 (issue #814) Cheeky is a Characters option in Settings on any theme, no longer a theme (FR-064..FR-070, Q9 answered (a)): raster path (Q1 = (d)), 13 characters x 3 poses (FR-059), face crops and the doubled desk portrait (FR-060); open: check:crew over every mood and density and a reload (T023), a rendered every-status sheet (T025); known gaps: 1280x800 couch seat 20 px under its chat badge, no capture-against-canvas sharpness check, Windows not run by a person
+
 
 - 2026-10-23 (review of PR #577 by Vikram): Q1 reopened (it was recorded as answered); options (b′), (d) AI raster and (e) openly licensed raster with their costs; raster-only requirements FR-050..FR-058; run-time fallback FR-017 for every option; tasks marked by Q1 option; SC-004 and `check:office-fill` under raster.
 - 2026-10-23 (owner decision, Paco: wire the real art now): **FR-059** the real art replaces the placeholders. `crew.js` lists the 13 characters in this order: punk, gamer, hacker, rocker, buzzcut, bookworm, scientist, metalhead, bob-glasses, skater, surfer, disco, sporty (a stored id that is not in the list is dropped by `loadCrew` and the session gets a new character; FR-021 unchanged). The kit loads `crew/art/<id>-<pose>.webp` with the same status-to-pose map as the placeholders (working and thinking: working; waiting and error: waiting; the rest: resting). The art is **352x352 and square**, so the box is square (88x88 at x 24, y 22 since FR-060, bottom behind the desk) at 4 pixels per unit, and `test:crew-assets` requires exactly 352x352; this supersedes the 176x200 and 44x50 box of the placeholder build. The art carries the hands (a wave, a mug), so **the code draws no arms or hands over a portrait** (this supersedes "the typing hands and the waving arm stay code" in FR-053 and the `CAST` colours; the plain-figure fallback keeps its arms). `copy-assets` ships only `src/renderer/crew/art/*.webp` (not `ASSETS.md`, `PROMPTS*`); the placeholders and `scripts/crew-placeholders.py` are removed (nothing else used them). Caps unchanged (FR-050: 40 KB per picture, 1.5 MB total; the 39 files are 1.2 MB): `surfer-waiting` and `surfer-resting` were 42.4 and 41.6 KB at q82 and were re-encoded at q80 (40.3 and 39.6 KB), the cap was not raised. `[KNOWN GAP]` macOS and Windows were not run by a person.

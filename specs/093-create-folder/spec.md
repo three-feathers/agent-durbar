@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Create a folder from + Folder (issue #805): clone a repository (https or ssh), a new local repository (git init) or an empty folder, in a parent chosen with the system picker; starts in the top bar's mode like Add existing (default Read-only)
-status: Phases 1 and 2 built (empty folder and new repository 2026-10-27, branch 093-create-folder-p1; clone 2026-10-28, branch 093-create-folder-p2); phase 3 (real network check, converge) to do. Owner answers Q1-Q4 and Q6 recorded, Q5 agent default; review on #810 folded in (R1-R7)
+status: building
+note: phases 1-2 built; phase 3 (network check, converge) open
 -->
 
 **Feature Branch**: `093-create-folder` (spec); code branches `093-pN-slug`, one per phase
@@ -270,6 +271,13 @@ A clone of a large repository runs for minutes. Lena presses **Cancel**. The git
 - `[KNOWN GAP]`: Windows junctions in the cleanup are not tested (R2).
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> Phases 1 and 2 built (empty folder and new repository 2026-10-27, branch 093-create-folder-p1; clone 2026-10-28, branch 093-create-folder-p2); phase 3 (real network check, converge) to do. Owner answers Q1-Q4 and Q6 recorded, Q5 agent default; review on #810 folded in (R1-R7)
+
 
 ### 2026-10-27, phase 1 built (branch `093-create-folder-p1`, T010-T024)
 

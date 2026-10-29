@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: index
 title: Permission modes, approvals, session grants
-status: implemented; delta 2026-10-19: Windows grant keys, request ids (FR-088, FR-089); delta 2026-10-21: each session comes back in its own last mode, visibly (FR-090..FR-093); delta 2026-10-23: a Read-only refusal opens the mode menu (FR-094..FR-098); delta 2026-10-25: a "why was this allowed?" tag on tool cards, with undo of Durbar's own rule (FR-099..FR-107)
+status: built
 -->
 
 **Feature Branch**: `003-permissions-and-approvals` (reverse-engineered; milestones 1, 3, 5)
@@ -121,6 +121,13 @@ For folders I trust I can pick the mode that approves everything without prompts
 - The user reads a command before approving it (the summary shows the full command text).
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> implemented; delta 2026-10-19: Windows grant keys, request ids (FR-088, FR-089); delta 2026-10-21: each session comes back in its own last mode, visibly (FR-090..FR-093); delta 2026-10-23: a Read-only refusal opens the mode menu (FR-094..FR-098); delta 2026-10-25: a "why was this allowed?" tag on tool cards, with undo of Durbar's own rule (FR-099..FR-107)
+
 
 ### 2026-10-16: permission gaps from the Spec Kit audit (closes FR-011, FR-012, FR-013; T021, T022, T023)
 
