@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 035-040
 title: Theme foundation: data-only theme packs, manifest, token map, art slot registry, UI styles (2026-10-18), Clean Office fallback
-status: **built** on branch `035-theme-foundation` (PR #137): loader, sanitizer, fallback, `test:theme`
+status: built
+note: T013 owner review of the five looks
 -->
 
 **Feature Branch**: `035-theme-foundation` (touches `src/renderer/app.js`, `src/renderer/styles.css`, `src/renderer/index.html`; reads `003` settings, `011` settings store, `017` room doors, `024` places, `033` floors)

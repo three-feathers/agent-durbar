@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 015-018
 title: Change permission mode any time
-status: milestone 7
+status: built
 -->
 
 **Feature Branch**: `018-permission-mode-switch` (milestone 7; amends 003)

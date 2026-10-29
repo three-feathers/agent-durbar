@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 021
 title: Collaboration harness: Claude + Copilot Spec Kit, labels/issues/board, CODEOWNERS, stricter spec gate, ruleset
-status: built (tooling only): harness, board, ruleset in place; open: T010 (board workflows, web UI), T013 (gate review)
+status: building
+note: retro tasks T041-T049 open; T010 needs a web-UI click, T013 a gate review
 -->
 
 **Feature Branch**: `021-collab-harness`
@@ -424,6 +425,8 @@ Proposed 2026-10-24 and reviewed by the owner. **Acceptance (FR-037):** Vikram (
   - On a PR the author's own assignment is ignored (authors often assign themselves): a reviewer's claim succeeds next to it, and the author running `claim.sh` on their own PR is refused ("you authored #N"). Review of #869 by Paco's agent.
   - `AGENTS.md` went from 2,988 to 2,999 words (budget 3,000) after restoring "force-push old commits" and "saying so" and adding the author rule.
   - `[KNOWN GAP]` The race is "atomic enough", not atomic: GitHub has no compare-and-set on assignees, so two claims within the same second tie on time and the lower event id wins. Run against the fake `gh` of `test:claim` only, never against real GitHub (`read:` the REST endpoints used: issue, issue assignees, labels, comments, timeline). No review check or label replaces `reviewing at` beyond the assignee yet.
+
+  - Delta 2026-10-29 (T045, #854 B5) `[IMPLEMENTED]` `test:` Two clean-ups of the specs. (a) The 18 one-release spec folders (`023-release-alpha2` to `091-release-v010`) became one *Release table* in [spec 008](../008-packaging-and-release/spec.md#release-table): tag, date, release link, one-line notes, corrective (Yes/No/Unknown per the DORA rule; 0 incidents, so published releases are No); a release now adds a row, not a folder (`changelog.d/README.md`). (b) The `status:` of a `specs-index` block is one word of `draft`, `specified`, `building`, `built`, `released`, `superseded`, plus an optional `note:` of at most 160 characters; `npm run specs:check` refuses anything else (`scripts/test-specs-index.js` plants bad values and was mutation-checked). All 71 remaining blocks were migrated conservatively: a spec with open build tasks is `building`; `built` only when every open task is a deferred follow-up, a `[KNOWN GAP]`, or a check that needs a real account, platform or owner. The old long status text was moved unchanged into each spec's `## Changes` (52 specs). `released` is allowed but no block uses it yet: no spec records which published release shipped it.
 
 ### 2026-10-29: unreferenced screenshots deleted (FR-063 / T044, retro issue #854 item B4; no new FR)
 

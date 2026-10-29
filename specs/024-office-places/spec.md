@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 024
 title: Places in a shared lobby (Library, Software library, Terminal, Web, Other tools); main agents walk to the place of the tool they use; place per MCP server in Settings
-status: built 2026-10-17 (issue #18); simulator and unit tests, plus one short real check (3 prompts, 0.84 AIU: Terminal and Software library walks only); delta 2026-10-18 *one GitHub server in Settings > Places* (issue #117, T012) built (T012-T015); delta 2026-10-18 *per-folder extras listed before use* (issue #116, T011) built (T016-T018); delta 2026-10-18 *custom places* (issue #115) built (T019-T026); both unit tests and simulator, not checked on a real session; delta 2026-10-21 *the layout check waits for walking figures to arrive* (issue #406, T027): `check:office` re-measures a figure that is still walking for up to 3 s, and the walk ends on `transitionend` (simulator: 4 full runs on the final code, 5 on the check-only version)
+status: built
 -->
 
 **Feature Branch**: `024-office-places` (amends 001 office view, 017 room doors; uses 019/020 MCP data)
@@ -110,6 +110,13 @@ Asked for by Ruben. Real Copilot runtime (Copilot CLI 1.0.95, SDK 1.0.22, model 
 - Resolved 2026-10-18 (task T012, issue #117): the server list names the built-in GitHub server `github`, but its tool events carry `mcpServer: 'github-mcp-server'`, so a mapping on the `github` row did not apply to those calls. The two names now count as one server; see `## Changes` 2026-10-18, FR-012..FR-014.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> built 2026-10-17 (issue #18); simulator and unit tests, plus one short real check (3 prompts, 0.84 AIU: Terminal and Software library walks only); delta 2026-10-18 *one GitHub server in Settings > Places* (issue #117, T012) built (T012-T015); delta 2026-10-18 *per-folder extras listed before use* (issue #116, T011) built (T016-T018); delta 2026-10-18 *custom places* (issue #115) built (T019-T026); both unit tests and simulator, not checked on a real session; delta 2026-10-21 *the layout check waits for walking figures to arrive* (issue #406, T027): `check:office` re-measures a figure that is still walking for up to 3 s, and the walk ends on `transitionend` (simulator: 4 full runs on the final code, 5 on the check-only version)
+
 
 - **2026-10-27, floors as places (spec 092, issue #782).** The lobby stays one lobby for all floors that are on (FR-020), but it is drawn on every floor screen at the same place. A visitor whose agent is on another floor sits in the tile without a walk and its tile label names the floor ("Terminal: Dana (Client B)"). **Built in phase 1** (`092-floor-screens`): the label reads "Dana (room, Client B): doing"; no figure is walked across a floor change.
 - **2026-10-17, spec 033 (floors), cross-reference.** One lobby for all floors that are on; agents of a floor that is off are not listed at a place and have no figure (the same filter as a hidden room in `placeVisitors`). Switching a floor off while one of its agents is at a place removes the figure at once, without a walk back (`check:office` floors cases, `scripts/shots-033.js`).

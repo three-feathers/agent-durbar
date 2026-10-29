@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 015-018
 title: Room doors (collapse/expand)
-status: milestone 7; delta 2026-10-23 (owner): sessions as office cabins, closed door with photo and meeting-room sign while busy, open with a Done tag when done, a door you close holds scheduled prompts (FR-003..FR-028, simulator-checked); Settings > Office layout: Office with cabins (default) or Open office (owner 2026-10-24)
+status: built
 -->
 
 **Feature Branch**: `017-room-doors` (milestone 7; amends 001, 006)
@@ -25,6 +25,13 @@ status: milestone 7; delta 2026-10-23 (owner): sessions as office cabins, closed
 - **LIMIT** Filtering by status pill hides door plates of rooms without matches like open rooms; the list view ignores doors.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> milestone 7; delta 2026-10-23 (owner): sessions as office cabins, closed door with photo and meeting-room sign while busy, open with a Done tag when done, a door you close holds scheduled prompts (FR-003..FR-028, simulator-checked); Settings > Office layout: Office with cabins (default) or Open office (owner 2026-10-24)
+
 
 - **2026-10-17, spec 033 (floors), cross-reference.** With two or more floors on, door plates (and open room headers) show a small floor tag; Close all / Open all act only on rooms that are shown (not hidden, floor on). A room on a floor that is off has no plate. Door state stays per folder.
 

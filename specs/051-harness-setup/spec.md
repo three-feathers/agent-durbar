@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Harness setup inside the app: Settings > Harnesses with install, update and sign-in (issue #299)
-status: **built** (unit, simulator; real sign-in flows started and cancelled); the signed-in account per app (delta 2026-10-23: unit, simulator, real no-prompt check per app on Linux); D1 superseded by spec 060 FR-001 (the official installer comes first, downloaded and checked, never piped)
+status: built
 -->
 
 **Feature Branch**: `051-harness-setup`
@@ -134,6 +134,13 @@ Each sign-in was started **without a terminal** (stdin closed, output to a file)
   - macOS and Windows are untested.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **built** (unit, simulator; real sign-in flows started and cancelled); the signed-in account per app (delta 2026-10-23: unit, simulator, real no-prompt check per app on Linux); D1 superseded by spec 060 FR-001 (the official installer comes first, downloaded and checked, never piped)
+
 
 - **2026-10-20 (spec 052 FR-072, FR-073):** Windows detection also searches `%LOCALAPPDATA%\Microsoft\WinGet\Links`, where winget puts its command shims (`test: test-detect`). After an install that worked, a re-check that still says Not installed shows "Installed? If Durbar still says Not installed, close and reopen Durbar, then choose Check again." [KNOWN GAP] PATH is not re-read from the registry after an install. The Copilot card on Windows hints at PowerShell 7 when `pwsh.exe` is not found (`HarnessSetup.pwshMissing`, text only). Not run on Windows.
 - **2026-10-20 (spec 052 FR-056):** the cards add a muted "· for ChatGPT / Claude / GitHub" subtitle; the install dialog leads each way with "Durbar installs <App> for you with Homebrew (recommended)" and moves the exact commands into "Show the exact command" (closed in Simple, open in Expert). The native main-side confirmation (FR-004b) still shows the real program and arguments before anything runs. Not run in the simulator in this change (`read:`).

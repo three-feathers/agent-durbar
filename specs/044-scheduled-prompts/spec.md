@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 042
 title: Scheduled prompts while the app is open (issue #125)
-status: Phase 1 built: per-folder schedules, once or every N minutes, busy and missed runs skipped, pause all (unit tests, simulator, real check 2026-10-19). Phase 2 built 2026-10-20 (#291): calendar rules without DST drift, per-session schedules (pause when the session ends), a per-schedule limit, Copilot's own schedules read-only (unit tests, simulator; no real check; not available from Claude Code or Codex) Delta 2026-10-20 (#371): the Send to and Limit labels stay on one line and the "This session" option is capped at 40 characters (simulator check `check:sched-sendto`; not seen on a Mac). Delta 2026-10-22 (#522): **Edit…** on every schedule row (dialog and Settings), Save/Cancel, the Settings button reads *Schedules for this folder…*, the whole prompt can be read; a long prompt no longer pushes Pause and Delete out of the dialog (unit tests; simulator check `check:sched-edit`; not seen on a Mac). Delta 2026-10-23 built 2026-10-26: run history per schedule (last 50, repeats folded, no prompt or error text) and *Schedules here (N)* on the folder menu and Folders panel (FR-036..FR-045, issue #624; unit tests, simulator at 1440x900 and 1280x800; not seen on a Mac or Windows). Delta 2026-10-22 (#523): Schedules button in the top bar (unit tests, simulator; not on a real Mac or Windows); delta 2026-10-23 (owner): a door closed by you holds scheduled runs (FR-110..FR-113); delta 2026-10-28 built (#843): prompt limit 10,000 characters, never cut silently, a stored over-limit prompt needs review (unit tests, simulator; not tried with a real agent app)
+status: built
+note: Copilot's own schedules read-only; Claude Code and Codex have none
 -->
 
 **Feature Branch**: `044-scheduled-prompts`
@@ -59,6 +60,13 @@ In **Folders**, each folder has **Schedules**. The dialog lists the folder's sch
 - Phase 2 (issue #291, built 2026-10-20, see *Changes*): a schedule per session, calendar rules, a per-schedule credit or cost cap, the agent's own schedules (shown read-only).
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> Phase 1 built: per-folder schedules, once or every N minutes, busy and missed runs skipped, pause all (unit tests, simulator, real check 2026-10-19). Phase 2 built 2026-10-20 (#291): calendar rules without DST drift, per-session schedules (pause when the session ends), a per-schedule limit, Copilot's own schedules read-only (unit tests, simulator; no real check; not available from Claude Code or Codex) Delta 2026-10-20 (#371): the Send to and Limit labels stay on one line and the "This session" option is capped at 40 characters (simulator check `check:sched-sendto`; not seen on a Mac). Delta 2026-10-22 (#522): **Edit…** on every schedule row (dialog and Settings), Save/Cancel, the Settings button reads *Schedules for this folder…*, the whole prompt can be read; a long prompt no longer pushes Pause and Delete out of the dialog (unit tests; simulator check `check:sched-edit`; not seen on a Mac). Delta 2026-10-23 built 2026-10-26: run history per schedule (last 50, repeats folded, no prompt or error text) and *Schedules here (N)* on the folder menu and Folders panel (FR-036..FR-045, issue #624; unit tests, simulator at 1440x900 and 1280x800; not seen on a Mac or Windows). Delta 2026-10-22 (#523): Schedules button in the top bar (unit tests, simulator; not on a real Mac or Windows); delta 2026-10-23 (owner): a door closed by you holds scheduled runs (FR-110..FR-113); delta 2026-10-28 built (#843): prompt limit 10,000 characters, never cut silently, a stored over-limit prompt needs review (unit tests, simulator; not tried with a real agent app)
+
 
 ### 2026-10-22: Schedules in the top bar (issue #523)
 

@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Platform parity: install, find and run the agent apps on macOS, Windows and Linux (official installers without Homebrew or Node, version-manager paths, Windows prerequisites, Linux AppImage needs, folder identity)
-status: **in progress**: owner answered Q1-Q6 (2026-10-20); T010 simulator truth (#392), T020 official installers least-privilege first with a checked download, real install check as standard and admin user on 3 OSes (#393), T030 detection folders (#398), T063 Windows install options (winget found as an App Execution Alias, vendor commands to copy: PowerShell / PowerShell (winget) / npm), T064 Run beside each command Durbar can run (PowerShell installer downloaded and run as a file, winget, npm; not run on a real Windows PC); open: T040 Windows prerequisites, T050 folder identity, T061 `.deb`/arm64
+status: building
+note: T040, T050, T060, T061 open
 -->
 
 **Status:** clarified 2026-10-20 (owner answered Q1-Q6, see *Clarifications*); being built in the order of Q6.
@@ -59,6 +60,13 @@ status: **in progress**: owner answered Q1-Q6 (2026-10-20); T010 simulator truth
 - **Q6** Order of work. *Recommended:* FR-002 (simulator truth) and FR-006 (libfuse2 docs) first (small); then FR-001 and FR-003 (the real gap); then FR-004, FR-007 and FR-008.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **in progress**: owner answered Q1-Q6 (2026-10-20); T010 simulator truth (#392), T020 official installers least-privilege first with a checked download, real install check as standard and admin user on 3 OSes (#393), T030 detection folders (#398), T063 Windows install options (winget found as an App Execution Alias, vendor commands to copy: PowerShell / PowerShell (winget) / npm), T064 Run beside each command Durbar can run (PowerShell installer downloaded and run as a file, winget, npm; not run on a real Windows PC); open: T040 Windows prerequisites, T050 folder identity, T061 `.deb`/arm64
+
 
 ### 2026-10-20: T030 built (FR-003, owner Q2: yes)
 

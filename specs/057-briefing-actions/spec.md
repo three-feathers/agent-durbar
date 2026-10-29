@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Briefing follow-through (issue #128): safe mail and calendar reads for *Start my day* (the template says Read-only, but Read-only denies MCP), proposed actions in the Needs you inbox (Approve, Edit, Reject, Later, Hand to…) and their progress
-status: **Draft: awaiting the owner's pick** (outline spec only; no plan, tasks or code)
+status: draft
+note: outline only, awaiting the owner's pick
 -->
 
 **Feature Branch**: `057-briefing-actions`

@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: index
 title: Open in VS Code, VS Code chat history (read-only)
-status: implemented; delta 2026-10-19: FR-016..017 (opens at latest message, question kinds, Continue in VS Code) built
+status: built
+note: open: real launch and VS Code store checks on macOS and Windows (T022-T025)
 -->
 
 **Feature Branch**: `009-vscode-integration` (reverse-engineered; milestones 1, 6 and packaging)

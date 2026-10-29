@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Self-paced loops (issue #526): a prompt looped on one session; the agent says when its next pass runs or stops it, within Durbar's limits (min/max delay, passes, end time, credit cap); a kind of scheduled prompt (044), shown in Schedules, on the desk and in the Postbox
-status: **Phase 1 foundation built** (T001-T005: pace parser, `Schedule.loop`, scheduler core, holds, restart; unit tests only, loops refused by `save` until T006 wires them; no UI yet); owner answered Q1-Q9 2026-10-22 (Q6 (b): no broker exception); Phase 1 needs no spec 041
+status: building
+note: phase 1 foundation only (T001-T005); loops refused by save
 -->
 
 **Feature Branch**: `072-self-paced-loops` (touches 044 scheduled prompts, 001 lobby Postbox, 011 caps, 041 Durbar MCP, 052 activity log, 068 coffee break)
@@ -304,3 +305,11 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
 - **Q7 How a live session gets the loop server (Phase 2):** (a) only looping sessions get it; starting a loop on a live session restarts it with the server (as spec 058's *Restart session with these servers*), refused while busy.
 - **Q8 May the agent propose a loop:** (b) no, loops start only from the user's menu. US5, FR-034 and T038 are out of scope.
 - **Q9 Where "Loop this…" lives, and quiet hours:** (a) the session's card/mode menu (beside *Plan first*) and the chat's Schedules dialog, one shared form; quiet hours later.
+
+## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **Phase 1 foundation built** (T001-T005: pace parser, `Schedule.loop`, scheduler core, holds, restart; unit tests only, loops refused by `save` until T006 wires them; no UI yet); owner answered Q1-Q9 2026-10-22 (Q6 (b): no broker exception); Phase 1 needs no spec 041
