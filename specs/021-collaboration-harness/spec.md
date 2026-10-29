@@ -386,7 +386,7 @@ Proposed 2026-10-24 and reviewed by the owner. **Acceptance (FR-037):** Vikram (
 
 ### 2026-10-29: retro decisions and how we work from now on (FR-063, owner decision)
 
-- **FR-063** `[IMPLEMENTED]` `read:` Owner decision of Vikram, 2026-10-29 07:07 UTC, in his DM to his agent, relayed in the team chat and on issue #854 (retro of both sides): he agrees with every B recommendation and the C list. Paco and Ruben may still object on #854. Operating rules (C), one line each; AGENTS.md is rewritten to carry them in B2:
+- **FR-063** `[IMPLEMENTED]` `read:` Owner decision of Vikram, 2026-10-29 07:07 UTC, in his DM to his agent, relayed in the team chat and on issue #854 (retro of both sides): he agrees with every B recommendation and the C list. Paco agreed the same morning (relayed by his agent on #854); Ruben may still object there. B4 is limited to deleting unreferenced screenshots: a history rewrite or a move to artifacts or Pages needs each owner's explicit OK. Operating rules (C), one line each; AGENTS.md is rewritten to carry them in B2:
   - One rule in, one rule out: a PR that adds a rule names what it replaces; rule files have a word budget.
   - A check over a sentence: a rule that can be checked gets a script.
   - Waits use `until()`; no wall-clock ratio asserts on shared runners.

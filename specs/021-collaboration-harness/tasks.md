@@ -44,7 +44,7 @@
 - [ ] T041 (2026-10-29, #854 B1, Vikram's agent) Split `test:runtime` and `test:notes` into parallel suites; update docs that cite the names [FR-063]
 - [ ] T042 (#854 B2, Vikram's agent) Rule slimming: AGENTS.md about 2.5k words, CLAUDE.md and copilot-instructions as pointers, spec 021 as a decision log, agent-notes under 8k words, word-budget check [FR-063]
 - [ ] T043 (#854 B3, Vikram's agent) Protocol comments to GitHub mechanics: claim script and assignee, review check or label, CI instead of `checks run at` [FR-063]
-- [ ] T044 (#854 B4, Vikram's agent) Screenshots out of git history: delete unreferenced files, then move retakes to artifacts or a Pages branch [FR-063]
+- [ ] T044 (#854 B4, Vikram's agent) Screenshots: delete unreferenced files (names built in code checked first); a history rewrite or moving retakes to artifacts or Pages waits for each owner's explicit OK [FR-063]
 - [ ] T045 (#854 B5, Vikram's agent) Release spec folders to one table in spec 008; spec status vocabulary checked by `specs:check` [FR-063]
 - [ ] T046 (#854 B6, Paco's agent) Delete the standalone `check:*` scripts that `ui-suite.js` already runs [FR-063]
 - [ ] T047 (#854 B7, Vikram's agent) Pause E2E real accounts until fixed [FR-063]
