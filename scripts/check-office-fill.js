@@ -434,7 +434,7 @@ module.exports = async (ctx) => {
       for (const [w, compact] of [[900, 5], [800, 5], [640, 5], [1000, 0]]) {
         if (w === 800 || w === 1000) check(await hxLoad(2, 3, w, 480), `${tag}: the helpers are not drawn at ${w}x480`);
         if (w === 640) await load(2, w, 480, { simrooms: '1', simhelpers: '3' }); /* the helpers fold into "+N" cards here (density card); the lobby is what this checks */
-        check(await H.until(`document.querySelectorAll('.lobby .place.compact').length===${compact}&&!document.querySelector('.lobby .place.compact .pc')`, 8000), `${tag}, ${w}x480: expected ${compact} compact lobby tiles without a count`);
+        check(await H.until(`document.querySelectorAll('.lobby .place.compact').length===${q(compact)}&&!document.querySelector('.lobby .place.compact .pc')`, 8000), `${tag}, ${w}x480: expected ${compact} compact lobby tiles without a count`);
         await H.settle();
         const lob = await js(`JSON.stringify([...document.querySelectorAll('.lobby .place')].map((p)=>Math.round(p.getBoundingClientRect().width)))`);
         const pr = await page(); check(!pr.length, `${tag}, ${w}x480 (lobby tiles ${lob}): ${pr.slice(0, 4).join('; ')}`);
