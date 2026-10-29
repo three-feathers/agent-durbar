@@ -179,6 +179,14 @@ const SPECS = { '001-one': bare('One'), '002-two': bare('Two'), '010-ten': bare(
   fs.writeFileSync(p10, good10.replace('status: built', `status: built\nnote: ${'n'.repeat(161)}`));
   assert.ok(si.check(d).problems.some((e) => /010-ten\/spec\.md: "note" is 161 characters/.test(e)), 'an over-long note is a problem');
   fs.writeFileSync(p10, good10);
+  // spec 021 FR-063: a retired number (an old release folder) cannot come back, in --check or --add
+  assert.strictEqual(si.RETIRED.length, 18);
+  fs.mkdirSync(path.join(d, 'specs', '023-something'));
+  fs.writeFileSync(path.join(d, 'specs', '023-something', 'spec.md'), bare('Reused'));
+  assert.ok(si.check(d).problems.some((e) => /023-something: number 023 is retired/.test(e)), 'a folder named 023-something fails the check');
+  assert.strictEqual(cli('--check', '--strict', '--root', d).status, 1, 'and the CLI exits 1');
+  assert.throws(() => si.addBlock(d, 'specs/023-something'), /number 023 is retired/, '--add refuses it too');
+  fs.rmSync(path.join(d, 'specs', '023-something'), { recursive: true });
   // a group marked twice, a group without a marker, a bad block
   fs.writeFileSync(path.join(d, 'specs', 'README.md'), `${before}\n<!-- specs-index group=010 -->\n`);
   assert.ok(si.check(d).problems.some((e) => /group 010 is marked twice/.test(e)), 'a group marked twice');

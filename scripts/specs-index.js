@@ -44,6 +44,9 @@ const KEYS = ['group', 'title', 'status', 'note'];
 const REQUIRED = ['group', 'title', 'status'];
 const STATUSES = ['draft', 'specified', 'building', 'built', 'released', 'superseded'];
 const NOTE_MAX = 160;
+/* Numbers of the one-release spec folders folded into spec 008's release table (spec 021 FR-063): never reused for a new spec. */
+const RETIRED = ['023', '026', '031', '042', '046', '047', '053', '055', '067', '071', '078', '079', '082', '086', '088', '089', '090', '091'];
+const retiredMsg = (n) => `number ${n} is retired (its release folder became a row of spec 008's release table): take the next free number`;
 const BLOCK_HEAD = '<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)';
 const COMMENT_END = /--!?>/;
 
@@ -146,6 +149,10 @@ function check(root = ROOT, { strict = false } = {}) {
   const readme = read(path.join(root, 'specs', 'README.md'));
   const { errors, committedRows } = generate(root);
   const problems = [...errors];
+  for (const d of fs.readdirSync(path.join(root, 'specs'))) {
+    const n = /^(\d{3})-/.exec(d);
+    if (n && RETIRED.includes(n[1])) problems.push(`specs/${d}: ${retiredMsg(n[1])}`);
+  }
   if (committedRows) problems.push(`specs/README.md has ${committedRows} table line(s) under its specs-index markers: the rows are generated, not committed. Move a hand-edited row into its spec with npm run specs:index -- --import`);
   return { problems, strict: strict || STRICT_RE.test(readme) };
 }
@@ -155,6 +162,7 @@ function addBlock(root, dir) {
   const name = path.basename(path.resolve(root, dir));
   const spec = path.join(root, 'specs', name, 'spec.md');
   if (!/^\d{3}-/.test(name) || !fs.existsSync(spec)) throw new Error(`${dir}: not a specs/NNN-name folder with a spec.md`);
+  if (RETIRED.includes(name.slice(0, 3))) throw new Error(`${dir}: ${retiredMsg(name.slice(0, 3))}`);
   const text = read(spec);
   if (parseBlock(text).meta) throw new Error(`specs/${name}/spec.md already has a block`);
   const newest = readSpecs(root).filter((s) => s.meta && s.meta.group && s.dir !== name).pop();
@@ -223,7 +231,7 @@ function importIndex(root = ROOT, { write = true } = {}) {
   return { readme: out.join('\n'), specs: rows.size, errors };
 }
 
-module.exports = { STATUSES, NOTE_MAX, parseBlock, setBlock, valueErrors, readSpecs, generate, check, addBlock, groupId, importIndex };
+module.exports = { RETIRED, STATUSES, NOTE_MAX, parseBlock, setBlock, valueErrors, readSpecs, generate, check, addBlock, groupId, importIndex };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

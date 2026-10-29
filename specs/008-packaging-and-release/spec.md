@@ -104,6 +104,8 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
 
 One row per tag (spec 021 FR-063, delta 2026-10-29). A release no longer gets its own spec folder: the 18 one-release folders (`023-release-alpha2` to `091-release-v010`) were folded into this table and removed; their text stays in git history. A release adds **one row here** (see `changelog.d/README.md`), not a folder. The notes of each release are in [CHANGELOG.md](../../CHANGELOG.md); the release link is the GitHub release page.
 
+Retired spec numbers, never to be reused for a new spec (`specs:check` and `--add` refuse them, `RETIRED` in `scripts/specs-index.js`): 023, 026, 031, 042, 046, 047, 053, 055, 067, 071, 078, 079, 082, 086, 088, 089, 090, 091.
+
 *Corrective* is the DORA classification of AGENTS.md (*Bug and deployment incident triage*): `Yes` only for a release intentionally cut as an unplanned response to an `incident` issue. There are 0 `incident` issues so far, so every published release is `No`. A release that was never published, and a test build (`-test.M` or `-mcptest.N`), is not a deployment: `n/a`. Published pre-releases were not marked latest; `v0.1.0` and later are stable. Every build is unsigned and not notarized. The owner's standing OK of 2026-10-23 allows a pre-release about every 8 hours.
 
 | Tag | Date | Release | Notes | Corrective |
