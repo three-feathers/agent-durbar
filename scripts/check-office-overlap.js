@@ -324,6 +324,30 @@ async function driver(ctx) {
   const prefix = process.env.OFFICE_SHOT_PREFIX || 'office';
   if (shotsDir) fs.mkdirSync(shotsDir, { recursive: true });
   const sleep = ctx.sleep;
+  /* spec 001 FR-186 (issue #854 A5): no fixed pauses. `must` waits (H.until, polled every 50 ms) for a page condition and fails the run with a clear message;
+     `stable` waits until the laid-out office has stopped moving (two reads in a row, each after two animation frames, give the same rects). */
+  const must = async (expr, what, ms = 15000) => { if (!(await H.until(expr, ms))) throw new Error(`timed out after ${ms} ms waiting for ${what}`); };
+  const LAYOUT_SIG = `(async()=>{await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const s=document.getElementById('stage');
+    return innerWidth+'x'+innerHeight+'|'+(s?s.dataset.d+'/'+s.dataset.h+'/'+s.dataset.fit:'')+'|'+[...document.querySelectorAll('#stage .room,#stage .desk,#stage .plate,#stage .more,#stage .room-head,#lift')].map(e=>{const r=e.getBoundingClientRect();return Math.round(r.x)+','+Math.round(r.y)+','+Math.round(r.width)+','+Math.round(r.height)}).join(';')})()`;
+  const stable = async (what, ms = 15000) => {
+    const end = Date.now() + ms;
+    let prev = null;
+    for (;;) {
+      const now = await ctx.js(LAYOUT_SIG);
+      if (now === prev) return;
+      if (Date.now() > end) throw new Error(`timed out after ${ms} ms waiting for the layout to settle (${what})`);
+      prev = now;
+      await sleep(50);
+    }
+  };
+  /* act, then wait until the layout differs from before (the action must change it), then until it has settled */
+  const changed = async (act, what, ms = 15000) => {
+    const before = await ctx.js(LAYOUT_SIG);
+    await act();
+    const end = Date.now() + ms;
+    while ((await ctx.js(LAYOUT_SIG)) === before) { if (Date.now() > end) throw new Error(`timed out after ${ms} ms waiting for the layout to change (${what})`); await sleep(50); }
+    await stable(what, ms);
+  };
   let total = 0, failed = 0;
   /* CI shards (spec 008 delta 2026-10-19): OFFICE_SHARDS=n OFFICE_SHARD=k runs every n-th unit (one window size of one block)
      starting at k, so n parallel jobs cover the whole check. Unset: everything, as before. */
@@ -349,7 +373,8 @@ async function driver(ctx) {
       await add(${jsLiteral(FONTS.mono || FONTS.regular)},'CheckMono',{});
       const st=document.createElement('style');st.textContent='*{font-family:CheckSans!important}.room-path,.mono,.lcell.mono,.folder,code,pre,kbd{font-family:CheckMono!important}';document.head.appendChild(st);})()`);
     /* the layout is cached by size: nudge the window so the office is laid out again with the new font */
-    ctx.win.setContentSize(w - 1, h); await sleep(150); ctx.win.setContentSize(w, h); await sleep(300);
+    ctx.win.setContentSize(w - 1, h); await must(`innerWidth===${w - 1}`, `the window to be ${w - 1}px wide`);
+    ctx.win.setContentSize(w, h); await must(`innerWidth===${w}&&innerHeight===${h}`, `the window to be ${w}x${h}`); await stable(`fonts at ${w}x${h}`);
   };
   /* spec 036 FR-005: the theme under test travels in the page address (theme=, usertheme=); after every load the theme on
      screen must be the one asked for, or the run fails (it once measured Clean Office for every theme). */
@@ -385,9 +410,9 @@ async function driver(ctx) {
     }
     if (!motionShown) { motionShown = true; console.log('check:office: motion ' + ((await ctx.js(`matchMedia('(prefers-reduced-motion: reduce)').matches`)) ? 'reduced' : 'on')); }
     await forceFonts(w, h);
-    await sleep(500);
+    await stable('after load');
     /* spec 024: agents go to the lobby after 600 ms and the walk takes about 1 s: wait until somebody is there and nobody is walking */
-    try { await ctx.waitFor(`!!document.querySelector('.place.busy:not([data-place="coffee"]):not([data-place="boss"]):not([data-place="bank"])')`, 4000); await ctx.waitFor(`!document.querySelector('.walker.walking')`, 4000); await sleep(150); } catch (e) { /* nobody visits in this layout: the checks below still run */ }
+    try { await ctx.waitFor(`!!document.querySelector('.place.busy:not([data-place="coffee"]):not([data-place="boss"]):not([data-place="bank"])')`, 4000); await ctx.waitFor(`!document.querySelector('.walker.walking')`, 4000); await stable('after the walks'); } catch (e) { /* nobody visits in this layout: the checks below still run */ }
   };
   /* spec 024 T027 (#406): a figure that is still walking (the renderer marks it `.walking`; under load that mark can end while the CSS transition is still running, so a running transition on the figure counts as walking too) is not on a slot yet, and under load
      the walk can still be going when the case is measured. Re-measure while a figure is walking, in small steps for up to SETTLE_MS; a figure
@@ -412,7 +437,7 @@ async function driver(ctx) {
         res.problems = res.problems.map((p) => (p.startsWith(NOT_ON_SLOT) ? `a walking figure did not reach a slot within ${SETTLE_MS} ms${p.slice(NOT_ON_SLOT.length)}` : p));
         return res;
       }
-      await sleep(100);
+      await sleep(100); /* poll interval of this bounded retry loop (SETTLE_MS), not a wait for a state */
     }
   };
   const run = async (label, query, w, h, shot) => {
@@ -426,7 +451,8 @@ async function driver(ctx) {
     /* expand the first "+N more" in place and check again (overlap must still be 0) */
     const more = await ctx.js(`(()=>{const m=document.querySelector('#stage .more[aria-expanded="false"]');if(!m)return false;m.click();return true})()`);
     if (more) {
-      await sleep(400);
+      await must(`!document.querySelector('#stage .more[aria-expanded="false"]')||!!document.querySelector('#stage .more[aria-expanded="true"]')`, 'the "+N more" chip to expand');
+      await stable('after expanding +N more');
       const r2 = await measure(true);
       total++;
       if (r2.problems.length) { failed++; console.log(`FAIL ${label} +expanded: ${r2.problems.slice(0, 6).join('; ')}`); }
@@ -461,10 +487,10 @@ async function driver(ctx) {
       }
       /* interactive: Close all / Open all, and a single door */
       await load(base, w, h);
-      await ctx.js(`document.getElementById('closeAll').click()`); await sleep(500);
+      await changed(() => ctx.js(`document.getElementById('closeAll').click()`), `${tag} Close all`);
       let r = await measure(false); total++;
       if (r.problems.length) { failed++; console.log(`FAIL ${tag} Close all click: ${r.problems.join('; ')}`); }
-      await ctx.js(`document.getElementById('openAll').click()`); await sleep(500);
+      await changed(() => ctx.js(`document.getElementById('openAll').click()`), `${tag} Open all`);
       r = await measure(false); total++;
       if (r.problems.length) { failed++; console.log(`FAIL ${tag} Open all click: ${r.problems.join('; ')}`); }
     }
@@ -517,14 +543,15 @@ async function driver(ctx) {
   for (const [w, h] of SIZES) {
     if (!mine()) continue;
     await load('sim=15&simfreeze=1&simfloors=1&simsched=1', w, h);
-    await ctx.js(`(async()=>{const t=document.getElementById('demoToggle');t.checked=true;t.dispatchEvent(new Event('change'));await new Promise(r=>setTimeout(r,500));})()`);
-    await ctx.waitFor(`document.querySelectorAll('#stage .room-head').length>0`, 5000);
-    await sleep(600);
+    await ctx.js(`(()=>{const t=document.getElementById('demoToggle');t.checked=true;t.dispatchEvent(new Event('change'));})()`);
+    await must(`document.querySelectorAll('#stage .room-head').length>0`, 'the demo office to show room headers');
+    await stable('demo office');
     const res0 = await measure(false);
     const tag = `demo ${w}x${h}`;
     /* the case would be vacuous with roomy headers (nothing has to give way): narrow every header, refit, and require that some header really had to give way */
     await ctx.js(`(()=>{const st=document.createElement('style');st.id='demoNarrow';st.textContent='#stage .room-head{max-width:190px}';document.head.append(st);window.DurbarFit();})()`);
-    await sleep(500);
+    await must(`getComputedStyle(document.querySelector('#stage .room-head')).maxWidth==='190px'`, 'the narrowed headers to apply');
+    await stable('narrowed headers');
     /* headers that had to give way: the cost is the only part allowed to (it is in the name's tooltip); none gave way means the narrowing proved nothing */
     const squeezed = await ctx.js(`[...document.querySelectorAll('#stage .room-head')].filter(hd=>!hd.querySelector('.room-more')&&hd.classList.contains('no-aiu')).length`);
     total++;
@@ -562,16 +589,19 @@ async function driver(ctx) {
         /* rename Client A to the longest allowed name through the panel and its dialog, then check the office again */
         await ctx.js(`localStorage.removeItem('durbar.floor')`); // start on the first floor
         await load(q, w, h);
-        await ctx.js(`(async()=>{const w=ms=>new Promise(r=>setTimeout(r,ms));document.getElementById('floorsBtn').click();await w(100);
-          document.querySelector('#floorsPop [data-fl="rename"][data-floor="f-clienta0"]').click();await w(100);
-          document.getElementById('mdIn').value='Client A with a very long floor name 40!';
-          [...document.querySelectorAll('#modeDlg .btn')].find(b=>b.textContent==='Rename').click();await w(200);
-          document.getElementById('floorsBtn').click();await w(300);})()`);
-        await sleep(400);
+        await ctx.js(`document.getElementById('floorsBtn').click()`);
+        await must(`!document.getElementById('floorsPop').hidden`, 'the Floors panel to open');
+        await ctx.js(`document.querySelector('#floorsPop [data-fl="rename"][data-floor="f-clienta0"]').click()`);
+        await must(`!!document.getElementById('mdIn')`, 'the rename dialog to open');
+        await ctx.js(`(()=>{document.getElementById('mdIn').value='Client A with a very long floor name 40!';[...document.querySelectorAll('#modeDlg .btn')].find(b=>b.textContent==='Rename').click();})()`);
+        await must(`!document.getElementById('modeDlg')`, 'the rename dialog to close');
+        if (await ctx.js(`!document.getElementById('floorsPop').hidden`)) await ctx.js(`document.getElementById('floorsBtn').click()`);
+        await must(`document.getElementById('floorsPop').hidden`, 'the Floors panel to close');
+        await stable('after renaming the floor');
         /* spec 092: the office shows one floor at a time: go to the floor that was renamed (Client A, the second one) with PageDown, so its long name is on screen */
         await ctx.js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'PageDown',bubbles:true,cancelable:true}))`);
         try { await ctx.waitFor(`[...document.querySelectorAll('#stage .floor-tag')].some(t=>t.textContent.length===40)`, 5000); } catch (e) { /* reported below */ }
-        await sleep(300);
+        await stable('on the renamed floor');
         const r1 = await measure(false); total++;
         if (r1.problems.length) { failed++; console.log(`FAIL ${tag}: ${r1.problems.slice(0, 6).join('; ')}`); }
         const named = await ctx.js(`[...document.querySelectorAll('#stage .floor-tag')].some(t=>t.textContent.length===40)`);
@@ -586,7 +616,7 @@ async function driver(ctx) {
       const gave = await ctx.js(`(()=>{const out=[];document.querySelectorAll('#stage .room-head').forEach(h=>{const need=[['no-sched','Schedules'],['no-mcp','MCP extras'],['no-floor','Move to floor'],['no-aiu','Cost']].filter(([c])=>h.classList.contains(c)).map(x=>x[1]);const m=h.querySelector('[data-foldermenu]');if(need.length&&m)out.push({id:m.dataset.foldermenu,need});});return out;})()`);
       for (const g of gave.slice(0, 2)) {
         await ctx.js(`document.querySelector('#stage [data-foldermenu="'+CSS.escape(${jsLiteral(g.id)})+'"]').click()`);
-        await sleep(150);
+        await must(`!!document.querySelector('#modeMenu [role=menuitem] b')`, `the folder menu of ${g.id} to open`);
         const have = await ctx.js(`[...document.querySelectorAll('#modeMenu [role=menuitem] b')].map(b=>b.textContent)`);
         total++;
         const missing = g.need.filter((x) => !have.some((t) => t.startsWith(x)));
@@ -629,7 +659,7 @@ async function driver(ctx) {
           const was = await ctx.js(`localStorage.getItem('durbar.floor')`);
           await ctx.js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'PageDown',bubbles:true,cancelable:true}))`);
           try { await ctx.waitFor(`localStorage.getItem('durbar.floor')!==${jsLiteral(was)}`, 5000); } catch (e) { failed++; total++; console.log(`FAIL ${tag}: PageDown did not change the floor`); break; }
-          await sleep(500);
+          await stable(`${tag} after PageDown`);
         }
         const res = await measure(false);
         total++;
@@ -644,6 +674,7 @@ async function driver(ctx) {
         if (REF_CASES.includes(label) && res.info.desks > 0) {
           await ctx.js(`(()=>{const st=document.createElement('style');st.id='noFloorTag';st.textContent='.floor-tag{display:none!important}#lift{display:none!important}';document.head.append(st);window.__durbarSimUi.render();})()`);
           let prev = '', now = '';
+          /* a bounded poll for the same value twice (not a fixed pause) */
           for (let k = 0; k < 40; k++) { await sleep(150); now = await ctx.js(`(()=>{const s=document.getElementById('stage');return s.dataset.d+'/'+s.dataset.h+'/'+s.querySelectorAll('.desk').length+'/'+(document.querySelector('#stage .floor-tag')?document.querySelector('#stage .floor-tag').getClientRects().length:0)})()`); if (now === prev && now.endsWith('/0')) break; prev = now; }
           const [td, th] = now.split('/'); tagless = { d: td, h: th };
           await ctx.js(`document.getElementById('noFloorTag').remove();window.__durbarSimUi.render();`);
@@ -691,6 +722,7 @@ async function driver(ctx) {
       if (q.includes('simfloors=1') && pre.tags < 3) bad.push(`floor tags of ${pre.tags} floor(s), not all three`);
       await ctx.js(`(()=>{const st=document.createElement('style');st.id='noLift';st.textContent='#lift{display:none!important}';document.head.append(st);window.__durbarSimUi.render();})()`);
       let prev = '', now = '';
+      /* a bounded poll for the same value twice (not a fixed pause) */
       for (let k = 0; k < 40; k++) { await sleep(150); now = await ctx.js(`(()=>{const s=document.getElementById('stage');return s.dataset.d+'/'+s.dataset.h+'/'+s.dataset.fit+'/'+document.getElementById('lift').offsetWidth})()`); if (now === prev && now.endsWith('/0')) break; prev = now; }
       const [nd, nh, nfit] = now.split('/');
       await ctx.js(`document.getElementById('noLift').remove();window.__durbarSimUi.render();`);
@@ -937,11 +969,12 @@ async function driver(ctx) {
     if (!mine()) continue;
     await load('sim=15&simfreeze=1', w, h);
     await ctx.js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith('Ada'));if(d)d.click();return true})()`);
-    await ctx.sleep(900);
+    await must(`document.body.classList.contains('panel-open')&&!!document.getElementById('prevBtn')`, 'the chat of Ada to open');
     await ctx.js(`(()=>{if(!document.querySelector('#prev [data-pv="view"]')){const t=document.getElementById('prevBtn');if(t)t.click();}return true})()`);
-    await ctx.sleep(500);
+    await must(`!!document.querySelector('#prev [data-pv="view"]')`, 'the previous-sessions list to show a View button');
     await ctx.js(`(()=>{const v=document.querySelector('#prev [data-pv="view"]');if(v)v.click();return true})()`);
-    await ctx.sleep(1000);
+    await must(`!!(document.getElementById('chat')&&document.getElementById('chat').querySelector('.vsbody')&&document.getElementById('chat').querySelector('.vsbody').lastElementChild)`, 'the VS Code chat view to open');
+    await stable('VS Code chat view');
     const vs = await ctx.js(`(()=>{const c=document.getElementById('chat'),b=c&&c.querySelector('.vsbody');if(!b||!b.lastElementChild)return null;const l=b.lastElementChild.getBoundingClientRect(),cr=c.getBoundingClientRect();return {st:c.scrollTop,ch:c.clientHeight,sh:c.scrollHeight,lastIn:l.bottom<=cr.bottom+1&&l.top>=cr.top,cont:!!document.getElementById('vsCont')}})()`);
     total++;
     if (!vs) { failed++; console.log(`FAIL vschat ${w}x${h}: the VS Code chat view did not open`); }
@@ -1003,7 +1036,8 @@ async function driver(ctx) {
       if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-prevsearch-${w}x${h}.png`));
       await ctx.js(`document.getElementById('prevQ').focus()`);
       H.key('Escape', [], { pause: 0 });
-      await sleep(250);
+      await must(`(document.getElementById('prevQ')||{value:'x'}).value===''`, 'Escape to clear the search box');
+      await stable('after Escape');
       const cleared = await ctx.js(`({v:document.getElementById('prevQ')&&document.getElementById('prevQ').value,rows:document.querySelectorAll('#prevLists .prev-row').length})`);
       if (cleared.v !== '' || cleared.rows < 3) P.push(`Escape did not clear the query: ${JSON.stringify(cleared)}`);
       const box = !(await ctx.js(`!!document.getElementById('prev')&&!!document.getElementById('prevQ')`)) ? null : await ctx.js(`(()=>{const r=document.getElementById('prev').getBoundingClientRect(),q=document.getElementById('prevQ').getBoundingClientRect(),de=document.documentElement;return {right:r.right,qr:q.right,ql:q.left,qh:q.height,w:innerWidth,sw:de.scrollWidth,fs:parseFloat(getComputedStyle(document.getElementById('prevQ')).fontSize)}})()`);
