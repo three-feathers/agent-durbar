@@ -29,7 +29,7 @@ const P = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'places.js
   allPlaces: (custom?: unknown) => { id: string; name: string; icon?: string }[];
   isChoice: (v: unknown, customIds?: unknown) => boolean;
   chipsIn: (tileW: unknown) => { named: number; initials: number };
-  lobbyFit: (aw: unknown, places: unknown, addButton: unknown, post?: unknown) => Record<'boss' | 'coffee' | 'bank' | 'post', { width: number; named: boolean; chips: { named: number; initials: number } } | null> & { tile: number; caps: { named: number; initials: number } };
+  lobbyFit: (aw: unknown, places: unknown, addButton: unknown, post?: unknown) => Record<'boss' | 'coffee' | 'bank' | 'post', { width: number; named: boolean; wait?: boolean; chips: { named: number; initials: number } } | null> & { tile: number; tileNamed: boolean; caps: { named: number; initials: number } };
   lobbyOrder: (ids: unknown, post?: unknown) => string[];
   initialSpots: (tileW: unknown, count: unknown) => { shown: number; more: number };
   postNext: (s: unknown, pausedAll: unknown) => { s: { id: string }; t: number }[];
@@ -584,6 +584,38 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
   assert.deepStrictEqual(P.initialSpots(190, 6), { shown: 2, more: 4 });
   assert.deepStrictEqual(P.initialSpots(30, 3), { shown: 0, more: 3 }, 'nothing fits: only +N');
   assert.deepStrictEqual(P.initialSpots(200, 0), { shown: 0, more: 0 });
+}
+// spec 001 FR-189 (issue #737): below the minimums of FR-039 the four special tiles shrink on, only until a place is 28 px wide; a wide window is untouched
+{
+  const W = (f: ReturnType<typeof P.lobbyFit>) => (['boss', 'coffee', 'bank', 'post'] as const).map((k) => f[k]!.width);
+  const sum = (f: ReturnType<typeof P.lobbyFit>, n: number, add: boolean) => W(f).reduce((t, x) => t + x + 8, 0) + n * f.tile + 8 * (n - 1) + (add ? 34 : 0);
+  // 900x480 and 1000x480 (the lobby is the window less 32 px padding less 16): as before, box for box
+  const f640wait = () => P.lobbyFit(592, 5, true).boss!.wait;
+  const f900 = P.lobbyFit(868, 5, true), f1000 = P.lobbyFit(968, 5, true);
+  assert.deepStrictEqual(W(f900), [190, 96, 96, 180], '900 px: the minimums, as before');
+  assert.ok(Math.abs(f900.tile - 41.6) < 0.1 && Math.abs(f1000.tile - 61.6) < 0.1, `900 and 1000 px: the places are as wide as before (${f900.tile}, ${f1000.tile})`);
+  assert.ok(!f900.tileNamed && f1000.tileNamed, 'a 42 px place shows its icon only; a 62 px one keeps its (cut) name');
+  assert.ok(f900.boss!.wait && !f640wait(), 'the Boss shows its wait while it is 150 px or more; narrower, the wait is only in the label');
+  assert.ok(f900.bank!.named && f900.bank!.chips.initials >= 1, 'the Bank keeps its name from 96 px');
+  // the whole supported range, 640 px (aw 592) up: five places and the Add button fit, every tile at least 28 px, the row still fills the lobby exactly
+  let prev: number[] | null = null;
+  for (let aw = 1100; aw >= 592; aw -= 4) {
+    const f = P.lobbyFit(aw, 5, true);
+    assert.ok(Math.abs(sum(f, 5, true) - aw) < 1, `the row fills the lobby (${aw}): ${sum(f, 5, true)}`);
+    assert.ok(aw >= 868 ? f.tile >= 41.5 : f.tile >= 28 - 1e-6, `a place is at least 28 px wide down to the window minimum (${aw}): ${f.tile}`);
+    const w = W(f);
+    assert.ok(w[0] >= 96 && w[1] >= 60 && w[2] >= 60 && w[3] >= 132, `never under the hard minimums (${aw}): ${w}`);
+    if (aw >= 868) assert.ok(w[0] >= 190 && w[1] >= 96 && w[2] >= 96 && w[3] >= 180, `the FR-039 minimums hold while the window allows (${aw}): ${w}`);
+    if (prev) assert.ok(w.every((x, i) => x <= prev![i]), `a narrower window never widens a special tile (${aw})`);
+    prev = w;
+  }
+  const f640 = P.lobbyFit(592, 5, true);
+  assert.ok(W(f640).every((x, i) => x >= [96, 60, 60, 132][i] && x <= [96, 60, 60, 132][i] + 5), `640 px: about the hard minimums (${W(f640)})`);
+  assert.ok(!f640.tileNamed && !f640.bank!.named && !f640.coffee!.named && !f640.post!.named && f640.boss!.named, '640 px: places, Bank, corner and Postbox icon only; the Boss keeps its name');
+  assert.ok(f640.tile >= 28 && f640.caps.initials === 1 && f640.caps.named === 0, '640 px: one "+N" circle per place');
+  // more places than the window holds: the tiles go under 28 px (a [KNOWN GAP] in the spec), never negative, the four stay at their hard minimums
+  const f8 = P.lobbyFit(592, 8, false);
+  assert.ok(f8.tile > 0 && f8.tile < 28 && W(f8).join() === '96,60,60,132', 'eight places at 640 px: smaller than the floor, honestly');
 }
 // spec 001 FR-038: the Postbox's next runs, letters today and the missed flag
 {
