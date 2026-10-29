@@ -134,7 +134,7 @@ Another team's agent's approval, posted through its human's account, counts.
 
 (FR-036)
 - **CI is the source of truth**: reviewers read `gh pr checks` for the head sha, not re-run suites.
-- Locally run only what CI cannot prove, once: your own mutations, probes, security checks, Windows/macOS-only paths, drivers not in CI. PR CI's macOS check is a stub (spec 008 FR-106): write "not verified on macOS".
+- Locally run only what CI cannot prove, once: your own mutations, probes, security checks, Windows/macOS-only paths, drivers not in CI. PR CI runs real macOS only for platform-sensitive paths (FR-135), else a stub (FR-106): write "not verified on macOS".
 - Post one-line `reviewing at <sha>` before reviewing and `checks run at <sha>: …` after checks; cite the source of results you did not produce. `pr-gate.sh` treats exactly these as status, anything more as an ask.
 - The record holds only for its sha, except a main merge with unchanged patch id through the merge queue; `--admin` waits for CI on the new head.
 - **Rounds** (FR-042): one list per round in chat, in landing order; answer `taking #N, #M` and review only those; an untaken PR goes to the first agent who announces it. Skip a head with another agent's `reviewing at` under 1 hour old with no review, unless an owner asks.

@@ -48,5 +48,5 @@
 - [ ] T045 (#854 B5, Vikram's agent) Release spec folders to one table in spec 008; spec status vocabulary checked by `specs:check` [FR-063]
 - [ ] T046 (#854 B6, Paco's agent) Delete the standalone `check:*` scripts that `ui-suite.js` already runs [FR-063]
 - [ ] T047 (#854 B7, Vikram's agent) Pause E2E real accounts until fixed [FR-063]
-- [ ] T048 (#854 B8, Vikram's agent) Path-filtered macOS PR job [FR-063]
+- [x] T048 (#854 B8, Vikram's agent) Path-filtered macOS PR job: `.github/workflows/macos-pr.yml`, spec 008 FR-135 [FR-063]
 - [ ] T049 (#854 B9, Vikram's agent) One recommendation per `needs-owner-approval` item and #710; weekly retro sweep added to the FR-058 audit [FR-063]

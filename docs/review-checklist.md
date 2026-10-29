@@ -104,7 +104,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 ## Platforms
 
 - [ ] **No POSIX-only defaults** (output folders, separators); paths compared case-sensitively except on Windows and macOS. [#496](https://github.com/three-feathers/agent-durbar/pull/496)
-- [ ] **macOS is not run on PRs** (spec 008 FR-106): say "not verified on macOS" for a macOS-only path. [#561](https://github.com/three-feathers/agent-durbar/pull/561)
+- [ ] **macOS runs on PRs only for platform-sensitive paths** (spec 008 FR-106, FR-135): say "not verified on macOS" for a macOS-only path. [#561](https://github.com/three-feathers/agent-durbar/pull/561)
 - [ ] **Synthetic native text keys are not native editing**: macOS `sendInputEvent` ⌘⌫ / ⌘A reach the renderer but do not edit; assert the app does not intercept them, claim nothing about a real Mac. Issue #683
 
 ## Reuse and docs
