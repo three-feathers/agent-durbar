@@ -86,6 +86,17 @@ function faces() {
   return out;
 }
 
+/* issue 871 (FR-071), in the page: every sleeper in a nap bed with the boxes its parts must keep */
+function sleepers() {
+  const r = (e) => { if (!e) return null; const b = e.getBoundingClientRect(); return [b.x, b.y, b.x + b.width, b.y + b.height]; };
+  return [...document.querySelectorAll('#stage .lounge .desk.rest-old')].filter((d) => d.getClientRects().length).map((d) => {
+    const av = d.querySelector('.lg-av'), svg = av && av.querySelector('svg'), im = svg && svg.querySelector('image');
+    return { id: d.dataset.id, crew: d.classList.contains('crew-bed'), lying: !!(av && av.classList.contains('lying')), href: im ? im.getAttribute('href') : '', vb: svg ? (svg.getAttribute('viewBox') || '').split(/\s+/).map(Number) : [],
+      svg: r(svg), av: r(av), slot: r(d), bed: r(d.querySelector('.lg-bed')), name: r(d.querySelector('.lg-name')), chat: r(d.querySelector('.chatno')), lounge: r(d.closest('.lounge')), solo: !!d.closest('.lg-bunk.solo'),
+      ztop: +getComputedStyle(d.querySelector('.lg-blanket')).zIndex, zav: +getComputedStyle(av).zIndex || 0 };
+  });
+}
+
 /* FR-061, in the page: the opacity a node really shows at is its own times its ancestors' */
 function idleOpacity() {
   const eff = (e) => { let o = 1; for (; e && e.nodeType === 1; e = e.parentElement) o *= +getComputedStyle(e).opacity; return o; };
@@ -293,6 +304,51 @@ module.exports = async (ctx) => {
     console.log('[crew] 1920x1080 grown desks: largest shown width', Math.round(biggest), 'px, natural', C.BOX.w * C.PX_PER_UNIT);
     for (const im of imgs) sharpOk('1920x1080 grown', im, nat[im.href]);
     await ctx.shot(path.join(out, 'crew-office-1920x1080-grown.png'));
+  }
+
+  // issue 871 (FR-071): a sleeping crew character in the bed slot reads like the couch seat, at both sizes. One agent on the couch and a lone sleeper.
+  for (const [w, h] of [[1440, 900], [1280, 800]]) {
+    const tag = `${w}x${h} bed`;
+    await H.load({ w, h, query: { sim: '14', simrooms: '2', simhelpers: '0' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=14&&document.getElementById('stage').dataset.fit` });
+    await useCrew();
+    for (const id of ['sim-2', 'sim-3']) {
+      const ev = (e) => H.js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${jsLiteral(Object.assign({ sessionId: id }, e))}))`);
+      await ev({ type: 'status', status: 'working', intent: 'Working' });
+      await ev({ type: 'output', final: true, text: 'Done. The edge cases are listed.' });
+      await ev({ type: 'status', status: 'idle' });
+    }
+    await H.js(`window.__durbarSimUi.readAll()`);
+    // sim-2 finished a moment ago (the couch), sim-3 half an hour ago (a bed)
+    await H.js(`(()=>{for(const [id,min] of [['sim-2',2],['sim-3',30]]){window.__durbarSimUi.agents().find(x=>x.id===id).lastEventAt=Date.now()-min*60000;}window.__durbarSimUi.render();})()`);
+    assert.ok(await H.until(`!!document.querySelector('#stage .lounge .desk.rest-old.crew-bed')&&!!document.querySelector('#stage .lounge .lg-av svg image')`, 6000), `${tag}: a crew sleeper is in a nap bed`);
+    await H.settle();
+    const list = await H.js(`(${sleepers.toString()})()`);
+    const lone = list.filter((x) => x.solo);
+    assert.ok(lone.length >= 1, `${tag}: a lone sleeper (a bunk with one bed) is on screen (${list.length} sleepers)`);
+    for (const x of lone) {
+      const where = `${tag} ${x.id}`, eps = 0.75, inside = (a, b) => a[0] >= b[0] - eps && a[1] >= b[1] - eps && a[2] <= b[2] + eps && a[3] <= b[3] + eps;
+      assert.ok(x.crew && !x.lying && x.href, `${where}: drawn with the crew picture, upright (${JSON.stringify({ crew: x.crew, lying: x.lying, href: x.href })})`);
+      assert.ok(inside(x.av, x.slot) && inside(x.slot, x.lounge), `${where}: the figure ${x.av.map(Math.round)} is inside its bed slot ${x.slot.map(Math.round)} and the lounge ${x.lounge.map(Math.round)}`);
+      // the face is not cut: the face box of the picture, mapped to the screen, is inside the visible figure
+      const m = /crew\/art\/([\w-]+)-(working|waiting|resting)\.webp/.exec(x.href), fb = C.faceBox(m[1], m[2]), [vx, vy, vw, vh] = x.vb, R = x.svg;
+      const sc = Math.min((R[2] - R[0]) / vw, (R[3] - R[1]) / vh), ox = R[0] + ((R[2] - R[0]) - vw * sc) / 2, oy = R[1] + ((R[3] - R[1]) - vh * sc) / 2;
+      const face = [ox + (fb[0] - vx) * sc, oy + (fb[1] - vy) * sc, ox + (fb[0] + fb[2] - vx) * sc, oy + (fb[1] + fb[3] - vy) * sc];
+      assert.ok(inside(face, x.av), `${where}: the face box ${face.map(Math.round)} is inside the visible figure ${x.av.map(Math.round)} (not cut)`);
+      // the name sits under the figure's face (the middle of the figure, like the couch's label), not on top of an empty column
+      assert.ok(x.name[1] >= face[3] - 1.5, `${where}: the name ${x.name.map(Math.round)} is under the face ${face.map(Math.round)}`);
+      assert.ok(x.name[1] >= x.slot[3] - 20 && x.name[3] <= x.slot[3] + eps, `${where}: the name is on the bed's foot line, not in the middle of the column (${x.name.map(Math.round)} in ${x.slot.map(Math.round)})`);
+      // the chat number does not cover the face (a seat of 30 px or less is smaller than the badge itself, as for the couch)
+      if (x.av[2] - x.av[0] >= 30) assert.ok(!hit(face, x.chat), `${where}: the chat number ${x.chat.map(Math.round)} does not cover the face ${face.map(Math.round)}`);
+      assert.ok(x.chat[0] <= x.slot[0] + 6 && x.chat[1] <= x.slot[1] + 6, `${where}: the chat number is on the top-left corner like the couch's (${x.chat.map(Math.round)})`);
+      // the bed is drawn at a sensible size and under the figure
+      assert.ok(x.bed[2] - x.bed[0] >= 60 && x.bed[3] - x.bed[1] >= 26, `${where}: the bed is ${Math.round(x.bed[2] - x.bed[0])}x${Math.round(x.bed[3] - x.bed[1])} px (at least 60x26)`);
+      assert.ok(inside(x.bed, x.slot), `${where}: the bed ${x.bed.map((n) => +n.toFixed(1))} is inside its slot ${x.slot.map((n) => +n.toFixed(1))}`);
+      assert.ok(x.av[3] > x.bed[1] && x.av[1] < x.bed[1], `${where}: the figure rests on the bed (figure ${x.av.map(Math.round)}, bed ${x.bed.map(Math.round)})`);
+      assert.ok(x.ztop > x.zav, `${where}: the blanket is drawn over the figure's lower edge`);
+      console.log(`[crew] ${tag}`, JSON.stringify({ figure: x.av.map(Math.round), bed: x.bed.map(Math.round), name: x.name.map(Math.round) }));
+    }
+    await H.clearToasts();
+    await ctx.shot(path.join(out, `crew-bed-${THEME_ID}-${w}x${h}.png`));
   }
 
   // FR-055: one picture removed from a copy of dist/: its character is drawn as the plain figure, the others keep their pictures

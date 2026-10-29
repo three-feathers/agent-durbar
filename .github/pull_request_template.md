@@ -11,7 +11,7 @@ Closes #<!-- issue number: one issue = one Spec Kit task -->
 - **Spec**: `specs/NNN-name/` (the NNN of your branch name) — link:
 - **Task(s)**: `Tnnn` in that `tasks.md`:
 - **Agent used** (which agent wrote this, and who is its human owner): <!-- e.g. Claude Code (fjcabello), Copilot CLI (vikramgorla), none -->
-- [ ] I claimed the issue (assigned + `status:claimed`) before starting
+- [ ] I claimed the issue (`scripts/claim.sh N`) before starting
 - [ ] Every point of the linked issue is done (`Closes #N`), or what is left is written on the issue and it stays open (`Refs #N`)
 - [ ] Before asking for review, the agent ran [docs/review-checklist.md](../docs/review-checklist.md) on its own diff as an adversarial self-review (new FR/task numbers checked against `main` and open PRs, and named here), reconciled with current `origin/main`, confirmed mergeable (`scripts/pr-gate.sh <N>`), agreed the acceptance cases and cited CI for the exact head sha
 - [ ] The agent did a final review of the whole diff as a reviewer (not only CI) and says below what it checked; another team's agent or a human may review too

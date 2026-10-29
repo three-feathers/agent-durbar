@@ -1,0 +1,1 @@
+- **`check:office` waits on conditions, not fixed pauses** (spec 001 FR-186, issue #854): the layout check no longer sleeps a fixed time after a resize, a click or a panel; it waits for the window size, the page state and a settled layout, with a clear message on a timeout. Test-only, no app change.
