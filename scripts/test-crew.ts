@@ -1,5 +1,6 @@
 /** Cheeky crew (spec 077): the pure pick and storage rules of src/renderer/crew.js. `npm run test:crew`. No DOM, no credits. */
 import * as assert from 'assert';
+import * as fs from 'fs';
 import * as path from 'path';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -160,5 +161,50 @@ assert.deepStrictEqual(Object.keys(C.FACE).sort(), [...C.ALL_IDS].sort(), 'a fac
   const ss = Array.from({ length: 13 }, (_, i) => 's' + i);
   const m = C.assignCrew({}, ss, C.IDS, (id) => C.seededRand(id));
   assert.strictEqual(new Set(Object.values(m)).size, 13, 'thirteen sessions wear thirteen different characters');
+}
+
+// ---- spec 077 FR-073 (issue #879): the simulator gives each demo name a fitting character; real sessions are untouched ----
+{
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const S = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'simcrew.js')) as {
+    NAMES: Record<string, string[]>; CREW_KEYS: string[]; keyFor: (c: unknown) => string;
+    characterFor: (c: unknown, name: unknown, ids?: string[]) => string; seed: (c: unknown, agents: unknown[], ids?: string[]) => Record<string, string>;
+  };
+  const root = path.join(__dirname, '..', '..');
+  const simTs = fs.readFileSync(path.join(root, 'src', 'renderer', 'sim.ts'), 'utf8');
+  const roster = simTs.slice(simTs.indexOf('const ROSTER: Row[] = ['), simTs.indexOf('// Spec 052 FR-046: each waiting agent'));
+  const demoNames = [...roster.matchAll(/^\s*\['([A-Z][a-z]+)', '/gm)].map((m) => m[1]);
+  assert.ok(demoNames.length >= 15 && demoNames.includes('Ada') && demoNames.includes('Hugo'), 'found the simulator roster: ' + demoNames.join(','));
+  assert.deepStrictEqual(S.CREW_KEYS, Object.keys(C.CREWS), 'one column per crew, in the crews\' order');
+  for (const choice of Object.keys(C.CREWS)) {
+    const ids = C.idsFor(choice), used = new Set<string>();
+    for (const n of demoNames) {
+      const c = S.characterFor(choice, n, ids);
+      assert.ok(ids.includes(c), n + ' has a character of the ' + choice + ' crew, got "' + c + '"');
+      used.add(c);
+    }
+    assert.strictEqual(used.size, ids.length, 'every ' + choice + ' character is worn by some demo name');
+  }
+  assert.deepStrictEqual([S.NAMES.Ada, S.NAMES.Hugo], [['gamer', 'braids'], ['bookworm', 'inventor']], 'the anchors the driver checks: Ada a woman\'s character, Hugo a man\'s');
+  assert.deepStrictEqual(Object.keys(S.NAMES).sort(), [...demoNames].sort(), 'the table has a row for every demo name and no other');
+  // the table never uses a character from another crew, and the theme\'s own / an unknown value draw the Cheeky crew like crew.js
+  assert.strictEqual(S.keyFor('theme'), 'cheeky'); assert.strictEqual(S.keyFor('prehistoric'), 'prehistoric');
+  assert.strictEqual(S.characterFor('cheeky', 'Ada', C.PREHISTORIC_IDS), '', 'an id that is not in the crew is refused');
+  assert.strictEqual(S.characterFor('cheeky', 'Task: fix the build'), '', 'a name without a row (a real session) gets nothing');
+  assert.strictEqual(S.characterFor('cheeky', '__proto__'), '', 'only own rows count');
+  // seed: main agents only, by the agent\'s own name
+  const agents = [{ id: 'sim-1', baseName: 'Ada', name: 'a very long alias' }, { id: 'sim-2', name: 'Hugo' }, { id: 'h1', parent: 'sim-1', name: 'Ada' }, { id: 'r1', name: 'Fix the build' }];
+  assert.deepStrictEqual(S.seed('cheeky', agents, C.IDS), { 'sim-1': S.NAMES.Ada[0], 'sim-2': S.NAMES.Hugo[0] }, 'helpers and unknown names are not seeded');
+  assert.deepStrictEqual(S.seed('prehistoric', agents, C.PREHISTORIC_IDS), { 'sim-1': S.NAMES.Ada[1], 'sim-2': S.NAMES.Hugo[1] });
+  assert.deepStrictEqual(S.seed('cheeky', [], C.IDS), {});
+  // and the seeded map goes through the same assignCrew as before: the unseeded sessions get a random character, the seeded keep theirs
+  const m = C.assignCrew(S.seed('cheeky', agents, C.IDS), ['sim-1', 'sim-2', 'r1'], C.IDS, (id) => C.seededRand(id));
+  assert.strictEqual(m['sim-1'], S.NAMES.Ada[0]); assert.ok(C.IDS.includes(m.r1));
+  // the real-session path is untouched: the table is read only in app.js's syncCrew, only under SIM, and crew.js does not know it
+  const app = fs.readFileSync(path.join(root, 'src', 'renderer', 'app.js'), 'utf8');
+  const uses = app.split('\n').filter((l) => l.includes('DurbarSimCrew'));
+  assert.strictEqual(uses.length, 1, 'app.js reads the table in one place');
+  assert.ok(/SIM&&window\.DurbarSimCrew\?window\.DurbarSimCrew\.seed\(/.test(uses[0]), 'and only when SIM is on');
+  assert.ok(!/simcrew|DurbarSimCrew/i.test(fs.readFileSync(path.join(root, 'src', 'renderer', 'crew.js'), 'utf8')), 'crew.js does not know the table');
 }
 console.log('crew tests passed');
