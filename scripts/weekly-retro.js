@@ -52,8 +52,25 @@ function countBy(arr, key) {
   return m;
 }
 
+/** A name that may be printed: letters, digits and a few plain marks only (no markdown, links, quotes or newlines), at most 80 characters. */
+function clean(x) {
+  return String(x).replace(/[^A-Za-z0-9 ()._+\/-]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80);
+}
+/** The `name:` of each workflow file in root/.github/workflows (our own files on main): the only workflow names a report may print. */
+function workflowNames(root) {
+  const dir = path.join(root, '.github', 'workflows');
+  const out = new Set();
+  let files = [];
+  try { files = fs.readdirSync(dir).filter((f) => /\.ya?ml$/.test(f)); } catch (e) { /* none */ }
+  for (const f of files) {
+    const m = /^name:\s*(.+?)\s*$/m.exec(fs.readFileSync(path.join(dir, f), 'utf8'));
+    if (m) out.add(m[1].replace(/^['"]|['"]$/g, ''));
+  }
+  return out;
+}
+
 /** Facts from raw gh data. Pure; `now` is a Date. */
-function buildFacts(d, now, root) {
+function buildFacts(d, now, root, repo) {
   const since = now.getTime() - 7 * DAY;
   const inWin = (s) => ts(s) >= since;
   const prs = d.prs || [];
@@ -64,7 +81,10 @@ function buildFacts(d, now, root) {
   const changeReqs = (p) => (p.reviews || []).filter((r) => r.state === 'CHANGES_REQUESTED').length;
   const crTotal = prs.filter((p) => inWin(p.mergedAt) || inWin(p.closedAt)).reduce((n, p) => n + changeReqs(p), 0);
 
-  const runs = (d.runs || []).filter((r) => r.conclusion === 'success' || r.conclusion === 'failure');
+  // Only runs of this repository, of a workflow our own files on main define: a fork's run carries the fork's workflow and job names (outside text).
+  const names = workflowNames(root);
+  const ours = (r) => r.headRepository === repo && names.has(r.workflowName);
+  const runs = (d.runs || []).filter((r) => ours(r) && (r.conclusion === 'success' || r.conclusion === 'failure'));
   const byWf = new Map();
   for (const r of runs) {
     const o = byWf.get(r.workflowName) || { runs: 0, failed: 0 };
@@ -75,12 +95,12 @@ function buildFacts(d, now, root) {
   const workflows = [...byWf.entries()]
     .map(([name, o]) => ({ name, runs: o.runs, failed: o.failed, pct: Math.round((100 * o.failed) / o.runs) }))
     .sort((a, b) => b.failed - a.failed || a.name.localeCompare(b.name));
-  const jobCounts = countBy(runs.filter((r) => r.conclusion === 'failure').flatMap((r) => r.failedJobs || []), (j) => j);
+  const jobCounts = countBy(runs.filter((r) => r.conclusion === 'failure').flatMap((r) => (r.failedJobs || []).map(clean).filter(Boolean)), (j) => j);
   const topJobs = [...jobCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 5).map(([name, n]) => ({ name, n }));
 
   // red scheduled workflows: the newest finished scheduled run of each workflow is a failure
   const latest = new Map();
-  for (const r of (d.scheduled || []).filter((x) => x.conclusion === 'success' || x.conclusion === 'failure')) {
+  for (const r of (d.scheduled || []).filter((x) => ours(x) && x.conclusion === 'success' || x.conclusion === 'failure')) {
     const cur = latest.get(r.workflowName);
     if (!cur || ts(r.createdAt) > ts(cur.createdAt)) latest.set(r.workflowName, r);
   }
@@ -151,15 +171,25 @@ function gh(args, input) {
 }
 const ghJson = (args) => JSON.parse(gh(args) || '[]');
 
-function gather(now) {
+function gather(now, repo) {
   const since = new Date(now.getTime() - 7 * DAY).toISOString().slice(0, 10);
   const prs = ghJson(['pr', 'list', '--state', 'all', '--limit', '500', '--search', `updated:>=${since}`, '--json', 'number,state,createdAt,mergedAt,closedAt,reviews']);
-  const runs = ghJson(['run', 'list', '--limit', '1000', '--created', `>=${since}`, '--json', 'databaseId,workflowName,conclusion,event,createdAt']);
-  const scheduled = ghJson(['run', 'list', '--event', 'schedule', '--limit', '200', '--json', 'workflowName,conclusion,createdAt']);
+  const rest = (extra, pages) => {
+    const out = [];
+    for (let p = 1; p <= pages; p++) {
+      const j = JSON.parse(gh(['api', `repos/${repo}/actions/runs?per_page=100&page=${p}&${extra}`]) || '{}');
+      const rs = j.workflow_runs || [];
+      for (const r of rs) out.push({ databaseId: r.id, workflowName: r.name, conclusion: r.conclusion, event: r.event, createdAt: r.created_at, headRepository: r.head_repository && r.head_repository.full_name });
+      if (rs.length < 100) break;
+    }
+    return out;
+  };
+  const runs = rest(`created=%3E%3D${since}`, 10);
+  const scheduled = rest('event=schedule', 2);
   // failed job names for at most 60 failed runs (cheap: one call each)
   let n = 0;
   for (const r of runs) {
-    if (r.conclusion !== 'failure' || n >= 60) continue;
+    if (r.conclusion !== 'failure' || n >= 60 || r.headRepository !== repo) continue;
     n++;
     try {
       const j = ghJson(['run', 'view', String(r.databaseId), '--json', 'jobs']);
@@ -167,8 +197,7 @@ function gather(now) {
     } catch (e) { r.failedJobs = []; }
   }
   const labelled = (l) => ghJson(['issue', 'list', '--state', 'open', '--label', l, '--limit', '200', '--json', 'number,createdAt,updatedAt']);
-  const repo = process.env.GITHUB_REPOSITORY || gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']).trim();
-  const issues = JSON.parse(gh(['api', '--paginate', '--slurp', `repos/${repo}/issues?state=all&per_page=100&labels=${LABELS.join(',').replace(/:/g, '%3A')}`]) || '[]').flat();
+  const issues = JSON.parse(gh(['api', '--paginate', '--slurp', `repos/${repo}/issues?state=all&per_page=100&creator=${encodeURIComponent(BOT)}`]) || '[]').flat();
   return { prs, runs, scheduled, claimed: labelled('status:claimed'), approval: labelled('needs-owner-approval'), retroIssues: issues };
 }
 
@@ -187,10 +216,11 @@ function main(argv) {
   const now = arg('--now') ? new Date(arg('--now')) : new Date();
   if (Number.isNaN(now.getTime())) { console.error('weekly-retro: bad --now'); return 2; }
   const root = fixture && fs.existsSync(path.join(path.resolve(fixture), 'AGENTS.md')) ? path.resolve(fixture) : path.join(__dirname, '..');
+  const repo = fixture ? 'three-feathers/agent-durbar' : process.env.GITHUB_REPOSITORY || gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']).trim();
   const title = titleFor(now);
-  const data = fixture ? readFixture(path.resolve(fixture)) : gather(now);
+  const data = fixture ? readFixture(path.resolve(fixture)) : gather(now, repo);
   if (exists(data.retroIssues, title)) { console.log(`weekly-retro: "${title}" already exists; nothing to do`); return 0; }
-  const body = renderBody(buildFacts(data, now, root));
+  const body = renderBody(buildFacts(data, now, root, repo));
   if (dry) { console.log(`TITLE: ${title}\nLABELS: ${LABELS.join(',')}\n\n${body}`); return 0; }
   const args = ['issue', 'create', '--title', title, '--body-file', '-'];
   for (const l of LABELS) args.push('--label', l);
