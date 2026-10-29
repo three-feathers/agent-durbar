@@ -107,7 +107,7 @@ try {
 }
 
 // the workflow
-const wf = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'weekly-retro.yml'), 'utf8');
+const wf = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'weekly-retro.yml'), 'utf8').replace(/\r\n/g, '\n'); // a Windows checkout has CRLF line ends
 assert.ok(/cron: '17 6 \* \* 1'/.test(wf) && /workflow_dispatch:/.test(wf));
 assert.ok(!/pull_request/.test(wf.replace(/^#.*$/gm, '')), 'no pull_request trigger');
 assert.ok(/permissions:\n  issues: write\n  contents: read\n  actions: read\n  pull-requests: read\n\n/.test(wf), 'minimal permissions');
