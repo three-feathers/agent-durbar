@@ -3,7 +3,7 @@
  *
  * At 1440x900 and 1280x800, on Retro Pixel and on Corporate (no built-in theme has a dark surface; Retro's floor is dark, so it stands in
  * for "one dark"), everything through Settings (the real path):
- *   - the Characters section is right after Theme, lists The theme's own, Minimalist and Cheeky, each with a preview figure, and names the
+ *   - the Characters section is right after Theme, lists The theme's own, Minimalist, Cheeky and Prehistoric, each with a preview figure, and names the
  *     theme's own figures; it fits the window (no page overflow);
  *   - Cheeky: every desk scene draws the crew kit with a portrait, the theme stays the one picked, the choice is announced;
  *   - a theme switch with Cheeky keeps the crew on the new theme;
@@ -72,18 +72,19 @@ module.exports = async (ctx) => {
     for (const [theme, kit, own] of THEMES) {
       const where = `${tag} ${theme}`;
       await pickTheme(theme);
-      // the section: after Theme, three choices with a preview each, the theme's own named
+      // the section: after Theme, four choices with a preview each, the theme's own named
       assert.ok(await H.until(`(document.querySelector('#chList [data-characters="theme"]')||{}).textContent&&document.querySelector('#chList [data-characters="theme"]').textContent.includes(${jsLiteral(own)})`, 4000), `${where}: The theme's own follows the theme (${own})`);
       const sc = await section();
       assert.ok(sc.afterTheme, `${where}: Characters comes right after Theme`);
-      assert.deepStrictEqual(sc.items.map((i) => i.id), ['theme', 'minimalist', 'cheeky'], `${where}: the three choices in order`);
-      assert.deepStrictEqual(sc.items.map((i) => i.pressed), ['true', 'false', 'false'], `${where}: the default is pressed`);
+      assert.deepStrictEqual(sc.items.map((i) => i.id), ['theme', 'minimalist', 'cheeky', 'prehistoric'], `${where}: the four choices in order`);
+      assert.deepStrictEqual(sc.items.map((i) => i.pressed), ['true', 'false', 'false', 'false'], `${where}: the default is pressed`);
       for (const i of sc.items) {
         assert.ok(i.svg, `${where}: ${i.id} has a preview figure`);
         assert.ok(i.minFont >= 10.5, `${where}: ${i.id}: text is at least 10.5px (${i.minFont})`);
         assert.ok(/^Characters /.test(i.label), `${where}: ${i.id} has a name (${i.label})`);
       }
       assert.ok(sc.items.find((i) => i.id === 'cheeky').pic, `${where}: the Cheeky preview is a portrait`);
+      assert.ok(sc.items.find((i) => i.id === 'prehistoric').pic, `${where}: the Prehistoric preview is a portrait (spec 077 FR-072)`);
       assert.ok(!sc.items.find((i) => i.id === 'minimalist').pic && !sc.items.find((i) => i.id === 'theme').pic, `${where}: the other previews are drawn figures`);
       if (kit === 'pixel') assert.strictEqual(sc.items.find((i) => i.id === 'theme').kit, 'crispEdges', `${where}: The theme's own preview is a pixel figure`);
       assert.ok(sc.pageX && sc.pageY, `${where}: Settings does not overflow the page`);
@@ -107,6 +108,12 @@ module.exports = async (ctx) => {
       assert.strictEqual(await H.js(`window.THEME.themeKit()`), kit, `${where}: the theme's own kit is unchanged`);
       await H.clearToasts();
       await H.shot(path.join(out, `077-characters-cheeky-${theme}-${tag}.png`), { prep: 'calm' }); // the pointer off the desks (no hover pencil), no toast
+      // Prehistoric on top of the theme (FR-072): the crew kit with a Prehistoric picture on every desk
+      await pickChars('prehistoric');
+      await close();
+      assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector('image[href*="crew/art/prehistoric-"]'));})()`, 10000), `${where}: Prehistoric: every desk draws the crew kit with a Prehistoric portrait`);
+      assert.strictEqual(await H.js(`window.THEME.current().id`), theme, `${where}: the theme stays ${theme} under Prehistoric`);
+      assert.strictEqual(await H.js(`document.querySelectorAll('#stage image[href^="crew/art/"]:not([href*="prehistoric-"])').length`), 0, `${where}: no Cheeky picture under Prehistoric`);
       // Minimalist on top of the theme
       await pickChars('minimalist');
       await close();

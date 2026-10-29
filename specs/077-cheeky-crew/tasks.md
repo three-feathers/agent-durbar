@@ -90,3 +90,11 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 ## A sleeping crew character in the bed slot (delta 2026-10-29, issue #871; FR-071)
 
 - [x] T084 Spec delta FR-071; `app.js` (`restHTML`: the seat crop and a crew blanket for a crew sleeper; `lg-bunk solo` for a one-bed column) and `styles.css` (the crew bed slot: figure, name under it, chip top-left; a solo bunk without posts and at full height); `check:crew` lounge step at both sizes; changelog fragment; linked lounge screenshots retaken [FR-071]
+
+## The Prehistoric Crew (delta 2026-10-29, issue #815, crew 1 of 5; FR-072)
+
+- [x] T085 Spec delta FR-072 [spec]
+- [x] T086 `crew.js` generalised (`PREHISTORIC_IDS`, `idsFor`, `storeKey`, per-crew file prefix, `FACE` points); `characters.ts`, `theme.js`, `api.ts`, `sim.ts`, `screens.js` and `app.js` (per-crew ids, preload and saved map) with the `prehistoric` value [FR-072]
+- [x] T087 18 pictures `crew/art/prehistoric-*.webp` (speck-cleaned) and their `ASSETS.md` rows; the size cap raised [FR-072, FR-050, FR-054]
+- [x] T088 Tests: `test:crew`, `test:characters`, `test:crew-assets` for the new value, Cheeky unchanged; `check-crew` runs both crews at both sizes (`CREW_CHARS`), `check-characters` picks Prehistoric [FR-072]
+- [x] T089 Docs: README, changelog fragment, the linked Settings screenshots retaken [FR-072]

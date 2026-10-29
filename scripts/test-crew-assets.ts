@@ -8,9 +8,9 @@ import * as path from 'path';
 const ROOT = path.join(__dirname, '..', '..');
 const DIR = path.join(ROOT, 'src', 'renderer', 'crew', 'art');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as { IDS: string[]; POSES: string[]; BOX: { w: number; h: number }; PX_PER_UNIT: number; files: (ids?: string[]) => string[] };
+const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as { IDS: string[]; PREHISTORIC_IDS: string[]; POSES: string[]; BOX: { w: number; h: number }; PX_PER_UNIT: number; files: (ids?: string[]) => string[] };
 
-const MAX_FILE = 40 * 1024, MAX_TOTAL = 1.5 * 1024 * 1024; // FR-050 (3 poses per character; 13 characters are 1.2 MB)
+const MAX_FILE = 40 * 1024, MAX_TOTAL = 2.5 * 1024 * 1024; // FR-050, FR-072 (3 poses per character; 13 Cheeky characters are 1.2 MB, 6 Prehistoric ones 0.6 MB)
 const COLUMNS = ['file', 'character', 'tool', 'date', 'prompt', 'made by', 'edited by', 'licence', 'generator terms read'];
 
 /** The RIFF chunks of a WebP: [fourcc, size] in order, and the picture's size from its VP8, VP8L or VP8X header. */
@@ -76,7 +76,8 @@ const md = fs.readFileSync(path.join(DIR, 'ASSETS.md'), 'utf8');
 const real = problems(files, md);
 assert.deepStrictEqual(real, [], 'the shipped pictures pass: ' + real.join('; '));
 for (const id of C.IDS) for (const pose of C.POSES) assert.ok(files.has(`${id}-${pose}.webp`), `${id}-${pose}.webp exists (every character, every pose)`);
-assert.deepStrictEqual([...files.keys()].sort(), C.files().map((f) => f.replace(/^crew\/art\//, '')).sort(), 'the folder holds exactly the pictures crew.js names');
+for (const id of C.PREHISTORIC_IDS) for (const pose of C.POSES) assert.ok(files.has(`prehistoric-${id}-${pose}.webp`), `prehistoric-${id}-${pose}.webp exists (FR-072)`);
+assert.deepStrictEqual([...files.keys()].sort(), C.files(C.IDS.concat(C.PREHISTORIC_IDS)).map((f) => f.replace(/^crew\/art\//, '')).sort(), 'the folder holds exactly the pictures crew.js names');
 
 // ---- the check itself: each rule fails when its case is broken (so a rule removed from the check shows here) ----
 {

@@ -128,6 +128,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **A shortcut clash check needs more than the app's keys**: macOS Control letters edit text, IBus owns Ctrl+Shift+U/E, and handlers match `e.key` or `e.code` (Dvorak). Refuse a recorded shortcut whose position or typed letter is taken (`clashOf` in `navigator.js`); `test-navigator.ts` scans `app.js` (#552).
 - **CSS subgrid rows count the row's padding inside the first and last tracks**: add it to those track sizes and measure the cell (#812, spec 001 FR-182).
 - **Scene pictures**: an `<image href>` with a relative path works under `img-src 'self'`; detect a broken one with `new Image()` + `decode()` and key it in `data-sig` (`check-crew.js`). Pillow `save(..., 'WEBP', exif=b'')` writes clean chunks (`test:crew-assets`) (spec 077).
+- **A new crew's `FACE` points do not move a couch seat's face**: the seat crop is anchored on the face point (62% across), so only the picture's own pixels decide whether the chat badge covers the face; if `check-crew` fails on a seat, look at the picture, not the point. Read new points with a 50 px grid and a red 110x140 box over the picture next to a Cheeky one (#815). The bed step of `check-crew` on Retro Pixel flaked on `main` (3 of 5 runs) until it measured when two reads 300 ms apart agree.
 
 ## Team chat
 

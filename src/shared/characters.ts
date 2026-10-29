@@ -5,11 +5,11 @@
  */
 
 /** The Characters values, in the order Settings lists them. `theme` = the theme's own kit (the default, never written). */
-export const CHARACTER_CHOICES = ['theme', 'minimalist', 'cheeky'] as const;
+export const CHARACTER_CHOICES = ['theme', 'minimalist', 'cheeky', 'prehistoric'] as const;
 export type CharacterChoice = (typeof CHARACTER_CHOICES)[number];
 
 /** The scene kit (spec 035 FR-013) each explicit choice draws. */
-export const CHARACTER_KITS: Readonly<Record<Exclude<CharacterChoice, 'theme'>, string>> = { minimalist: 'office', cheeky: 'crew' };
+export const CHARACTER_KITS: Readonly<Record<Exclude<CharacterChoice, 'theme'>, string>> = { minimalist: 'office', cheeky: 'crew', prehistoric: 'crew' };
 
 /** The theme id that was Cheeky Crew before FR-066; kept reserved, migrated by FR-067. */
 export const LEGACY_CREW_THEME = 'cheeky-crew';
