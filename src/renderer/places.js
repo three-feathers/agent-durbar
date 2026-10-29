@@ -210,6 +210,10 @@
      proportionally, toward their minimums until every other tile is at least TILE_MIN (two initials entries) wide. Returns
      {boss, coffee, bank, post: {width, named, chips} | null, tile, caps} (caps = the other tiles' entry capacity). */
   const SPECIAL_W={boss:[230,190],coffee:[160,96],bank:[130,96],post:[280,180]}, TILE_MIN=118, COFFEE_NAMED=148, POST_NAMED=240;
+  /* issue #737 (spec 001 FR-189): below the minimums above (a window under about 1000 px wide) the four shrink further, toward SPECIAL_HARD, only until
+     the other places are TILE_FLOOR wide (icon and a 22 px "+N" circle between 2 px of padding and the border). A place under PLACE_NAMED shows its icon
+     only (its name stays in the tooltip and the label); the Bank does under BANK_NAMED, and the Boss drops the wait from its header under BOSS_WAIT (the wait stays in its tooltip and label). Wide enough windows never reach this: the widths above are unchanged. */
+  const SPECIAL_HARD={boss:96,coffee:60,bank:60,post:132}, TILE_FLOOR=28, PLACE_NAMED=56, BANK_NAMED=96, BOSS_WAIT=150;
   function lobbyFit(aw,places,addButton,post){
     const n=Math.max(1,Math.floor(Number(places)||0)), width=Number(aw)>0?Number(aw):800, withPost=post!==false;
     const keys=Object.keys(SPECIAL_W).filter(k=>withPost||k!=='post');
@@ -217,9 +221,14 @@
     const pref=keys.reduce((t,k)=>t+SPECIAL_W[k][0],0), slack=keys.reduce((t,k)=>t+SPECIAL_W[k][0]-SPECIAL_W[k][1],0);
     const need=Math.max(0,TILE_MIN*n-(avail-pref)), f=slack>0?Math.min(1,need/slack):0;
     const w={}; keys.forEach(k=>{w[k]=Math.floor(SPECIAL_W[k][0]-f*(SPECIAL_W[k][0]-SPECIAL_W[k][1]));});
-    const tile=Math.max(0,(avail-keys.reduce((t,k)=>t+w[k],0))/n);
+    let tile=Math.max(0,(avail-keys.reduce((t,k)=>t+w[k],0))/n);
+    if(tile<TILE_FLOOR){ /* issue #737: below about 1000 px the minimums leave the places a sliver; the four shrink on, toward SPECIAL_HARD, until a place holds its icon and one "+N" circle */
+      const mins=keys.reduce((t,k)=>t+SPECIAL_W[k][1],0), hard=keys.reduce((t,k)=>t+SPECIAL_HARD[k],0), g=mins>hard?Math.min(1,Math.max(0,TILE_FLOOR*n-(avail-mins))/(mins-hard)):0;
+      keys.forEach(k=>{w[k]=Math.floor(SPECIAL_W[k][1]-g*(SPECIAL_W[k][1]-SPECIAL_HARD[k]));});
+      tile=Math.max(0,(avail-keys.reduce((t,k)=>t+w[k],0))/n);
+    }
     const box=(k,named)=>w[k]===undefined?null:{width:w[k],named,chips:chipsIn(w[k])};
-    return {boss:box('boss',true),coffee:box('coffee',w.coffee>=COFFEE_NAMED),bank:box('bank',true),post:box('post',w.post>=POST_NAMED),tile,caps:chipsIn(tile)};
+    return {boss:w.boss===undefined?null:{...box('boss',true),wait:w.boss>=BOSS_WAIT},coffee:box('coffee',w.coffee>=COFFEE_NAMED),bank:box('bank',w.bank>=BANK_NAMED),post:box('post',w.post>=POST_NAMED),tile,tileNamed:tile>=PLACE_NAMED,caps:chipsIn(tile)};
   }
   /* Spec 001 FR-039: the lobby's tile order: the places, the Boss inserted at the middle of the whole row, then the coffee corner, the Bank
      and the Postbox (when shown). `ids` = the places' ids in their order. */
