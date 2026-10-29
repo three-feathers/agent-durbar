@@ -7389,7 +7389,7 @@ async function wakeLast(a,crash){
   a.waking=false;
   if(!r||!r.ok){setState(a,'idle','Not started','Your last session here. It continues when you open it.');toast('Could not continue the last session: '+esc((r&&r.error)||'unknown error'),7000);return false;}
   if(a.info){a.info.resumeLast=false;a.info.lazy=false;}
-  if(r.resumed){a.resumed=true;replayHistory(a,r.history,r.title,crash?'Resumed after a crash':'Continued after restart');setState(a,'idle',null,crash?'Resumed after a crash. New messages continue it.':'Continued after restart. New messages continue it.'); /* spec 001 delta 2026-10-26 (#451): the desk's name is the session title; the line does not repeat it (the chat note has it) */
+  if(r.resumed){a.resumed=true;replayHistory(a,r.history,r.title,crash?'Resumed after a crash':'Continued after restart');setState(a,'idle',null,crash?'Resumed after a crash. New messages continue it.':'Continued after restart. New messages continue it.'); /* spec 001 delta 2026-10-29 (issue 451): the desk's name is the session title; the line does not repeat it (the chat note has it) */
     /* spec 006 FR-045: honest about the lost turn; nothing is sent again */
     if(crash)addNote(liveChat(a),'Durbar stopped while this session was working, so the reply it was writing is lost. Nothing was sent again; say “continue” to go on.');}
   else{if(r.resumed===false)addNote(liveChat(a),'The last session is no longer available; this is a new session.');setState(a,'idle',null,'Ready. Send a message to start.');}
@@ -7418,7 +7418,7 @@ async function resumePrev(a,sid,btn){
   const na=liveById(r.agent.id); if(!na)return;
   na.resumed=true; na.sent=false; replayHistory(na,r.history,r.title);
   modeBackNote(na,r.modeWas);
-  setState(na,'idle',null,'Resumed. New messages continue this session.'); /* spec 001 delta 2026-10-26 (#451): no title here, it is the desk's name */
+  setState(na,'idle',null,'Resumed. New messages continue this session.'); /* spec 001 delta 2026-10-29 (issue 451): no title here, it is the desk's name */
   openPanel(na.id,false);
 }
 function leaveVsView(){
