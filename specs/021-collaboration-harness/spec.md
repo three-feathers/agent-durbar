@@ -402,7 +402,7 @@ Proposed 2026-10-24 and reviewed by the owner. **Acceptance (FR-037):** Vikram (
 ### 2026-10-29: rule slimming and word budgets (FR-063, retro #854 item B2, task T042)
 
 - **FR-063 (B2)** `[IMPLEMENTED]` `test:` The rule text every agent reads had grown to about 273 KB, and the same rule sat in 7 to 9 files. Now:
-  - `AGENTS.md` is the only rule text: every rule kept, one or two short lines each, the history replaced by its FR or dated decision in this spec (6,602 to about 2,960 words; the old-to-new map is in the PR description).
+  - `AGENTS.md` is the only rule text: every rule kept, one or two short lines each, the history replaced by its FR or dated decision in this spec (6,602 to about 2,950 words; the old-to-new map is in the PR description).
   - `CLAUDE.md` and `.github/copilot-instructions.md` are pointers plus tool-specific notes; `docs/collaboration.md` keeps the first-day steps, the step-by-step commands and the working hours (release and test-build steps moved to `changelog.d/README.md`).
   - `docs/agent-notes.md` keeps short pitfalls (24,128 to about 4,140 words): entries now enforced by a script or test, or already in `AGENTS.md` or the checklist, were deleted; duplicates were merged.
   - Facts about the agent apps and `git` moved unchanged to the new `docs/agent-apps.md` (no adapter docs folder existed to reuse).
