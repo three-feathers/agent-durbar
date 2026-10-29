@@ -36,7 +36,7 @@ Review sweep for <owner>/<repo>. Use GH_TOKEN=$(gh auth token -u <your-github-us
    - Write "reviewing at <sha>" and "checks run at <sha>: …" in the review, with what I checked and what I did not.
 3. Findings that can be fixed go back to the author as requirements, not nits.
 4. My own PRs, right before any merge: run scripts/pr-gate.sh N, read every review, thread and comment (a required change in a plain comment counts as request changes), and check the linked issue against what the PR did (Closes or Refs, as AGENTS.md says). Then, if CI is green, the review is written, the security results are clean and the approval exists, merge with --match-head-commit <sha> (or --auto for the merge queue). Otherwise list what blocks.
-5. Never merge others' PRs unless the "forgotten PR" rule in AGENTS.md applies. Never push to main. No paid or real-account runs.
+5. Never merge others' PRs unless AGENTS.md's *Merging someone else's PR* rule applies. Never push to main. No paid or real-account runs.
 6. Reply with a short list: PR, sha, verdict, what is left. Post only the claim line and the round's review list in the group. Do not send direct messages between <your-quiet-hours>; ask me <your-dm-id-or-channel> only for a decision I must make.
 ```
 

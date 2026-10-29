@@ -36,7 +36,10 @@ const MAX_RATIO = 40;
 // CPU timers tick in about 15.6 ms on Windows (as in test-browserurl), so a fast 1/16 baseline can read 0: never divide by less than one tick there
 const MIN_BASE_MS = process.platform === 'win32' ? 16 : 2;
 let worstGrowth = { ratio: 0, label: '' }; // the highest full/baseline ratio seen, printed at the end
-const assertLinearGrowth = (label: string, run: (input: string) => { cpu: number; wall: number }, input: string, floorMs = 100): void => {
+// `reps` (default 1, so the other callers are unchanged): the baseline is timed as `run(small, reps)`, and `run` must then repeat the work `reps`
+// times inside one timing and give the mean per run, so a baseline of a few ms is read well above the Windows timer tick (a tick-sized baseline
+// caps the ratio near 15 and hides a quadratic rule that stays under the floor).
+const assertLinearGrowth = (label: string, run: (input: string, reps?: number) => { cpu: number; wall: number }, input: string, floorMs = 100, reps = 1): void => {
   const small = input.slice(0, Math.ceil(input.length / FACTOR));
   let full = Infinity;
   let base = Infinity;
@@ -45,7 +48,7 @@ const assertLinearGrowth = (label: string, run: (input: string) => { cpu: number
     const f = run(input);
     wall = Math.max(wall, f.wall);
     full = Math.min(full, f.cpu);
-    base = Math.min(base, run(small).cpu);
+    base = Math.min(base, run(small, reps).cpu);
     if (full < Math.max(floorMs, Math.max(base, MIN_BASE_MS) * MAX_RATIO)) break;
   }
   if (full / Math.max(base, MIN_BASE_MS) > worstGrowth.ratio && full >= floorMs) worstGrowth = { ratio: full / Math.max(base, MIN_BASE_MS), label };
@@ -416,18 +419,10 @@ assert.strictEqual(redact('https://API.TELEGRAM.ORG/BOT123456789:' + TG35 + '/x'
   const jwt = 'ey' + 'JhbGciOiJIUzI1NiJ9.' + 'ey' + 'JzdWIiOiIxMjM0NTY3ODkwIn0.' + 'M' + 'T' + 'a'.repeat(30);
   assert.strictEqual(redact('a ' + jwt + ' b ' + DBOT, {}), 'a [redacted] b [redacted]', 'JWT and Discord bot token side by side');
 }
-// same-run growth for the new shapes (review of PR #679): the same call on an input 4 times longer must cost about 4 times more, not 16
+// same-run growth for the new shapes (review of PR #679): the same call on an input 16 times longer must cost about 16 times more, not 256.
+// It goes through `assertLinearGrowth` (CPU time, best of 3, floor, per-OS timer step; retro #854 A2: the old ad hoc wall-like ratio of two
+// tiny timings failed twice on Windows CI). A prefix of the repeated unit has the same shape; a `Dot` case adds its tail inside `run`.
 {
-  const cpuOf = (text: string): number => {
-    let best = Infinity;
-    for (let i = 0; i < 3; i++) {
-      const c0 = process.cpuUsage();
-      redact(text, {});
-      const d = process.cpuUsage(c0);
-      best = Math.min(best, (d.user + d.system) / 1000);
-    }
-    return best;
-  };
   const units: Record<string, string> = {
     slackSession: 'xo' + 'xd-%2B-',
     slackHook: 'hooks.slack.com/workflows/a/b/',
@@ -444,12 +439,14 @@ assert.strictEqual(redact('https://API.TELEGRAM.ORG/BOT123456789:' + TG35 + '/x'
   };
   for (const [k, unit] of Object.entries(units)) {
     const tail = k.endsWith('Dot') ? '.abcdef.' : '';
-    const small = unit.repeat(Math.ceil(10_000 / unit.length)) + tail;
-    const big = unit.repeat(Math.ceil(40_000 / unit.length)) + tail;
-    redact(small, {}); // warm up
-    const a = Math.max(cpuOf(small), 2);
-    const b = cpuOf(big);
-    assert.ok(b / a < 10, `growth ${k}: ${a.toFixed(1)} ms for ${small.length} chars, ${b.toFixed(1)} ms for ${big.length} chars (ratio ${(b / a).toFixed(1)}, limit 10 for 4x input: linear is about 4, quadratic about 16)`);
+    const input = unit.repeat(Math.ceil(256_000 / unit.length));
+    const run = (text: string, reps = 1): { cpu: number; wall: number } => {
+      let wall = 0;
+      const cpu = cpuMs(() => { const w = process.hrtime.bigint(); for (let i = 0; i < reps; i++) redact(text + tail, {}); wall = Number(process.hrtime.bigint() - w) / 1e6; }, 1000 * reps);
+      return { cpu: cpu / reps, wall };
+    };
+    run(input.slice(0, 16_000)); // warm up
+    assertLinearGrowth(`growth ${k}`, run, input, 100, 16); // 256k vs 16k x 16 runs
   }
 }
 // the guard never changes the result (T132 review): every kind x encoding x prefix, then random strings of markers and separators
