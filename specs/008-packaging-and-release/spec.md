@@ -99,7 +99,42 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
 - GitHub-hosted runners and `npm pack` can fetch `@github/copilot-sdk-<target>` for a non-native architecture.
 - Users accept first-run OS warnings for an unsigned alpha.
 
+## Release table
+
+One row per tag (spec 021 FR-063, delta 2026-10-29). A release no longer gets its own spec folder: the 18 one-release folders (`023-release-alpha2` to `091-release-v010`) were folded into this table and removed; their text stays in git history. A release adds **one row here** (see `changelog.d/README.md`), not a folder. The notes of each release are in [CHANGELOG.md](../../CHANGELOG.md); the release link is the GitHub release page.
+
+*Corrective* is the DORA classification of AGENTS.md (*Bug and deployment incident triage*): `Yes` only for a release intentionally cut as an unplanned response to an `incident` issue. There are 0 `incident` issues so far, so every published release is `No`. A release that was never published is not a deployment: `n/a`. Published pre-releases were not marked latest; `v0.1.0` and later are stable. Every build is unsigned and not notarized. The owner's standing OK of 2026-10-23 allows a pre-release about every 8 hours.
+
+| Tag | Date | Release | Notes | Corrective |
+| --- | --- | --- | --- | --- |
+| `v0.1.0-alpha.1` | 2026-10-16 | draft, never published | First packaged build (milestone 5). The draft stays in the Releases list. | n/a |
+| `v0.1.0-alpha.2` | 2026-10-16 | never published | Draft deleted by the owner on 2026-10-17 in favour of alpha.3; the git tag remains (was spec 023). | n/a |
+| `v0.1.0-alpha.3` | 2026-10-17 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.3) | First published release; the owner published it himself after approving the draft (was spec 026). | No |
+| `v0.1.0-alpha.4` | 2026-10-17 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4) | Cut after the places-in-the-office PR (#109); PR #118, tag on `c1115ca` (was spec 031). | No |
+| `v0.1.0-alpha.5` | 2026-10-18 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.5) | Themes; release PR #164, tag on `995947d` (was spec 042). | No |
+| `v0.1.0-alpha.6` | 2026-10-19 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.6) | New app icon (#246), security and quality fixes; release PR #244, tag on `b0e0565` (was spec 046). | No |
+| `v0.1.0-alpha.7` | 2026-10-19 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.7) | Codex offered, the Claude dollar cap, new session with a summary, Schedules starter kit; PR #283, tag on `05b2783` (was spec 047). | No |
+| `v0.1.0-alpha.8` | 2026-10-20 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.8) | Agent app setup inside the app, five usability rounds, AI themes; PR #323, tag on `dd9de65` (was spec 053). | No |
+| `v0.1.0-alpha.9` | 2026-10-20 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.9) | Remote control, scheduled prompts phase 2, MCP forms, new website; PR #343, tag on `df06619`; publish waited for the owner's go-ahead in his session (was spec 055). | No |
+| `v0.1.0-alpha.10` | 2026-10-21 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.10) | PR #442, tag on `176d888`; CI, packaged and installed-app checks green on all three OSes; AppImage checked against `SHA256SUMS.txt` (was spec 067). | No |
+| `v0.1.0-alpha.11` | 2026-10-22 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.11) | PR #517, tag on `b76b79a`; every package matched `SHA256SUMS.txt`; the Windows UI job passed on a rerun after a known flake (was spec 071). | No |
+| `v0.1.0-alpha.12` | 2026-10-22 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.12) | Cut from the feature branch `043-profile-ai` (PR #505), **not from `main`**, carrying approved stack work not yet merged. Never had a spec folder. | No |
+| `v0.1.0-alpha.13` | 2026-10-23 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.13) | First cut from `main` since alpha.11 and the first built from `changelog.d/` fragments; PR #580, annotated tag on `1336a79` (was spec 078). | No |
+| `v0.1.0-alpha.14` | 2026-10-23 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.14) | The MCP release (Sign in, MCP health, fewer keychain prompts); PR #637, tag on `9eb68f81`; no Mac run by the agent (was spec 079). | No |
+| `v0.1.0-alpha.15` | 2026-10-24 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.15) | First with fold-at-tag (FR-117..FR-120); version PR #672, tag on `f61ca8f4` (was spec 082). | No |
+| `v0.1.0-alpha.16` | 2026-10-25 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.16) | Version PR #725, tag on `56faaa2b` (was spec 086). | No |
+| `v0.1.0-alpha.17` | 2026-10-25 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.17) | Version PR #739, tag on `c5efccc6` (was spec 088). | No |
+| `v0.1.0-alpha.18` | 2026-10-25 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.18) | Version PR #757, tag on `442b3e6e` (was spec 089). | No |
+| `v0.1.0-alpha.19` | 2026-10-26 | not released | The tag was deleted on 2026-10-26, with the owner's OK, after the macOS weekly-audit test failed on `main` (fixed by #766). No draft or release was published; the v0.1.0 fold covers its fragments (was spec 090). | n/a |
+| `v0.1.0` | 2026-10-26 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0) | First stable release, shown as Latest; tag on `b70d3d82`, published 17:59 UTC; fold PR `091-fold-0-1-0`; feature freeze (FR-129, spec 021 FR-059; was spec 091). | No |
+| `v0.1.1` | 2026-10-28 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.1) | First update after the stable release; planned, not a response to an incident. | No |
+| `v0.1.2` | 2026-10-29 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.2) | Desk pencil fix (issue #850) and the commit-identity process change; planned. | No |
+
 ## Changes
+
+### 2026-10-29: one release table instead of a spec folder per release (spec 021 FR-063)
+
+The release spec folders are replaced by the [Release table](#release-table) above; no behavior change. `changelog.d/README.md` now says a release adds a row there.
 
 ### 2026-10-27: release provenance, a verified runtime download, exact Electron pins (hardening)
 

@@ -50,10 +50,6 @@ The index tables are **generated and not committed** (spec 025, delta 2026-10-22
 
 New features take the next number (`/speckit.specify` picks it automatically from this folder).
 
-## Feature 023: release v0.1.0-alpha.2
-
-<!-- specs-index group=023 -->
-
 ## Feature 024: places in the office
 
 <!-- specs-index group=024 -->
@@ -62,17 +58,9 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 
 <!-- specs-index group=025 -->
 
-## Feature 026: release v0.1.0-alpha.3
-
-<!-- specs-index group=026 -->
-
-## Feature 042: release v0.1.0-alpha.5
+## Features 043-044: custom agents and scheduled prompts
 
 <!-- specs-index group=042 -->
-
-## Feature 031: release v0.1.0-alpha.4
-
-<!-- specs-index group=031 -->
 
 ## Feature 030: change model and context window inside a session
 
