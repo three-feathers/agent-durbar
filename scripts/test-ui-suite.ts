@@ -118,13 +118,21 @@ for (const [f, y] of [['ci.yml', ci], ['spec-kit.yml', sk]]) assert.ok(/^ {2}mer
 // FR-109: the Spec Kit gate re-runs on description edits (Spec-Exempt line), not on label changes
 assert.ok(/types: \[opened, synchronize, reopened, edited, ready_for_review\]/.test(sk) && !/types: \[[^\]]*labeled/.test(sk), 'spec-kit.yml: edited yes, labeled/unlabeled no');
 // FR-107: pull request workflows skip drafts, run again when marked ready, and cancel superseded runs, never runs on main
-for (const f of ['ci.yml', 'ui-platforms.yml', 'spec-kit.yml', 'install-check.yml', 'installed-app.yml', 'packaged-check.yml', 'pages.yml']) {
+for (const f of ['ci.yml', 'ui-platforms.yml', 'spec-kit.yml', 'install-check.yml', 'installed-app.yml', 'packaged-check.yml', 'pages.yml', 'macos-pr.yml']) {
   const y = fs.readFileSync(path.join(WF, f), 'utf8');
   assert.ok(/^ {2}pull_request:\r?\n {4}types: \[[^\]]*ready_for_review\]/m.test(y), `${f}: runs again when a draft is marked ready`);
   const jobs = jobsOf(y);
   for (const [id, body] of Object.entries(jobs)) if (!/^ {4}needs:/m.test(body)) assert.ok(/^ {4}if: (.*!github\.event\.pull_request\.draft|github\.event_name == 'workflow_dispatch' && )/m.test(body), `${f} ${id}: skipped on a draft (or never on a PR)`);
   assert.ok(/group: \$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.number \|\| github\.(run_id|ref) \}\}/.test(y) && /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/.test(y), `${f}: one concurrency group per PR, cancelling only PR runs`);
 }
+// FR-135: the real macOS build and test runs on a pull request only for platform-sensitive paths (GitHub's `paths:` filter), never
+// as a required check (the ruleset keeps the FR-106 stub), and uses no secrets and no pull_request_target
+const mp = fs.readFileSync(path.join(WF, 'macos-pr.yml'), 'utf8');
+const mpPaths = (mp.match(/^ {4}paths:\r?\n((?: {6}- '[^']+'\r?\n)+)/m)?.[1] ?? '').split(/\r?\n/).map((l) => l.replace(/^ {6}- '|'$/g, '')).filter(Boolean);
+for (const p of ['src/main/**', 'src/adapters/**', 'scripts/test-*', 'scripts/*.sh', 'package.json', 'package-lock.json']) assert.ok(mpPaths.includes(p), `macos-pr.yml filters on ${p}`);
+assert.ok(!mpPaths.some((p) => p.startsWith('src/renderer') || p.startsWith('docs') || p.startsWith('specs')), 'macos-pr.yml: UI, docs and specs do not start macOS');
+assert.ok(/runs-on: macos-latest/.test(mp) && mp.includes('npm test') && !/pull_request_target|secrets\./.test(mp) && !/^ {2}push:|schedule:/m.test(mp), 'macos-pr.yml: real macOS npm test on pull requests only, no secrets');
+assert.ok(!/name: Build and test/.test(mp), 'macos-pr.yml does not reuse a required check name');
 // FR-106: macOS runs on pull requests nowhere (installed app, packaged check and install check too) and nightly failures are reported
 for (const f of ['installed-app.yml', 'packaged-check.yml']) {
   const y = fs.readFileSync(path.join(WF, f), 'utf8');
