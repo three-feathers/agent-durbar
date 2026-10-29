@@ -446,7 +446,7 @@ assert.strictEqual(redact('https://API.TELEGRAM.ORG/BOT123456789:' + TG35 + '/x'
       return { cpu: cpu / reps, wall };
     };
     run(input.slice(0, 16_000)); // warm up
-    assertLinearGrowth(`growth ${k}`, run, input, 100, 8); // 256k vs 16k x 8 runs
+    assertLinearGrowth(`growth ${k}`, run, input, 100, 16); // 256k vs 16k x 16 runs
   }
 }
 // the guard never changes the result (T132 review): every kind x encoding x prefix, then random strings of markers and separators
