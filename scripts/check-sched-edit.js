@@ -1,7 +1,7 @@
 /*
  * Spec 044 FR-022..FR-026 (issue #522): edit a schedule. Simulator only (no AI credits). Linux with xvfb-run:
  *
- *   npm run check:sched-edit
+ *   npm run check:ui -- --only check-sched-edit
  *
  * At 1440x900 and 1280x800: every Durbar row in the folder's Schedules dialog shows Edit..., Pause, Delete and History (spec 044 FR-040) inside the dialog; Edit
  * fills the form (title "Edit schedule", Save, Cancel, no template picker); Save changes the row in place (same data-id and order);

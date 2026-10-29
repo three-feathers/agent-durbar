@@ -17,7 +17,7 @@
  * In the office kit it also checks the drawing order: the headwear comes after the head circle and the hair (over them, not under).
  * Then, at 1440x900, the same pack with `scene: "court-indian"`: the other scene kits get the art too (desks and walkers).
  *
- *   npm run check:theme-art            (builds first; in check:ui too)
+ *   npm run check:ui -- --only check-theme-art            (builds first)
  *   SHOTS_OUT=<folder>                 screenshots (default: theme-art-shots in the OS temp folder)
  */
 const fs = require('fs');

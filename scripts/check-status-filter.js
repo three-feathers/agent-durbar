@@ -2,7 +2,7 @@
  * Spec 001 FR-180 (issue #790): while a status pill filters, the office and the List say so and offer Show all. Simulator only
  * (no AI credits, no agent app). Linux with xvfb-run:
  *
- *   npm run check:statusfilter
+ *   npm run check:ui -- --only check-status-filter
  *
  * At 1440x900 and 1280x800 (SIM=15): with no pill on there is no notice and Noor and Maya (done, on the lounge couch) are shown; the Idle
  * pill shows "Showing only idle · N hidden · Show all" (N is the other four pills' counts added up, an independent source), the notice

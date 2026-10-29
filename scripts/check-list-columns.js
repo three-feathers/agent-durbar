@@ -2,7 +2,7 @@
  * Spec 001 FR-182..FR-184 (issues #812, #813): List columns follow their content; the room's bottom wall is whole; the room header's
  * pencil is only an icon. Simulator only (no AI credits). Linux with xvfb-run:
  *
- *   npm run check:listcols
+ *   npm run check:ui -- --only check-list-columns
  *
  * List, at 1440x900, 1280x800, 1024x700 and the window's minimum (640x480), 15 agents: the page has no horizontal scroll and no row
  * sticks out of the list; text is at least 10.5px; Agent app, Active, Usage and Status stay within their caps and the Agent app column

@@ -2,7 +2,7 @@
  * Check for spec 052 FR-162/FR-163 (owner, 2026-10-21): a waiting question is always visible without scrolling, and compactions in a row
  * are one line. Simulator only (no AI credits).
  *
- *   npm run check:question-visible
+ *   npm run check:ui -- --only check-question-visible
  *   OUT=docs/screenshots  (optional) also saves the screenshots
  *
  * `simquestion=compact` asks one short question, then the runtime compacts six times in a row while it waits. At 1440x900 and 1280x800:

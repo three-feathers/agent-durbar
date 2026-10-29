@@ -398,6 +398,7 @@ Proposed 2026-10-24 and reviewed by the owner. **Acceptance (FR-037):** Vikram (
   - Every red scheduled workflow has an owner within 24 h, or is paused.
   - A weekly retro sweep joins the FR-058 weekly audit (claims, statuses, red signals, rule-file size) and ends in one batched owner-decision message with recommendations.
   - `[KNOWN GAP]` The sweep does not exist yet (T049). The word budgets exist since 2026-10-29 (`npm run rules:check`, T042, delta below); the rest is the planned work below (T041..T049).
+  - 2026-10-29 (B6, T046): the standalone `check:<name>` scripts that were plain aliases for a driver `scripts/ui-suite.js` runs are gone; `npm run check:ui -- --only <driver>` replaces them (`check:statusfilter` is `check-status-filter`, `check:listcols` is `check-list-columns`, `check:model` is `shots-model`, the others are `check-<name>`). Older specs, plans and tasks keep the old names as history (`sim:` evidence); read them with this rule. `scripts/test-docs-scripts.js` (`test:docsscripts`, in `test:serial`) fails on an `npm run <name>` in README, CONTRIBUTING, AGENTS, `docs/**/*.md` or `specs/*/quickstart.md` that `package.json` lacks; other spec files are history and not read.
 
 ### 2026-10-29: rule slimming and word budgets (FR-063, retro #854 item B2, task T042)
 

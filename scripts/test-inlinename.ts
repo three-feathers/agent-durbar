@@ -1,5 +1,5 @@
 /** Rename in place, the pure part and the field's logic (spec 059 FR-021, FR-022, FR-027): `npm run test:inlinename`.
- *  The real-browser behaviour (layout, focus, the chat staying open) is `npm run check:rename-inline`. */
+ *  The real-browser behaviour (layout, focus, the chat staying open) is `npm run check:ui -- --only check-rename-inline`. */
 import * as assert from 'assert';
 import * as path from 'path';
 // eslint-disable-next-line @typescript-eslint/no-var-requires

@@ -1,7 +1,7 @@
 /*
  * Spec 044 FR-040..FR-044 (issue #624): a schedule's run history and "Schedules here (N)". Simulator only (no AI credits). Linux with xvfb-run:
  *
- *   npm run check:sched-history
+ *   npm run check:ui -- --only check-sched-history
  *
  * At 1440x900 and 1280x800 with `simsched=1&simws=1` (four seeded schedules over two folders, each with a seeded past history, and one
  * multi-root workspace room with a schedule of its own):
