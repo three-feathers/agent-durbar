@@ -147,8 +147,9 @@ module.exports = async (ctx) => {
     }
     await away(); await hover('done');
     await ok(shown, `${tag}: shown before the pill goes away`, 1500);
-    await js(`document.querySelector(${jsLiteral(pill('done'))}).remove();window.DurbarTip.refresh()`);
-    await ok(hidden, `${tag}: a pill that is gone takes its tooltip with it`);
+    // read in the same page task as the removal: the simulator redraws the counts on its own clock, and the pill that comes back under a
+    // still pointer may rightly show its tooltip again, so a later poll would race that redraw (flaked 4 of 6 runs on Linux)
+    assert.ok(await js(`(()=>{document.querySelector(${jsLiteral(pill('done'))}).remove();window.DurbarTip.refresh();const t=document.getElementById('appTip');return !t||t.hidden})()`), `${tag}: a pill that is gone takes its tooltip with it`);
 
     // the picture
     await H.load({ w, h });
