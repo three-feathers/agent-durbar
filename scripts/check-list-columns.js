@@ -166,8 +166,9 @@ module.exports = async (ctx) => {
     const st = () => js(`(()=>{const e=document.querySelector(${jsLiteral(SEL)}),s=getComputedStyle(e);return JSON.stringify({pageFocus:document.hasFocus(),active:document.activeElement===e,focus:e.matches(':focus'),fv:e.matches(':focus-visible'),opacity:s.opacity,transition:s.transitionProperty+' '+s.transitionDuration})})()`);
     assert.ok(await until(`document.querySelector(${jsLiteral(SEL)}).matches(':focus-visible')`), `${tag}: Tab gives the pencil :focus-visible ${await st()}`);
     assert.ok(await until(`parseFloat(getComputedStyle(document.querySelector(${jsLiteral(SEL)})).opacity)>=0.99`), `${tag}: the focused pencil is fully shown ${await st()}`);
-    const f = await js(`(()=>{const e=document.querySelector(${jsLiteral(SEL)}),s=getComputedStyle(e);return {fv:e.matches(':focus-visible'),bg:s.backgroundColor,op:s.opacity,ow:parseFloat(s.outlineWidth),os:s.outlineStyle}})()`);
-    assert.ok(f.fv && f.op === '1' && !clear(f.bg) && f.ow >= 2 && f.os !== 'none', `${tag}: keyboard focus shows a tile, a focus ring and the icon ${JSON.stringify(f)}`);
+    // the state is read until it holds (the opacity transition and the focus ring are painted frames, not instants), and the message carries what was last seen
+    const shown = `(()=>{const e=document.querySelector(${jsLiteral(SEL)}),s=getComputedStyle(e),c=s.backgroundColor;return e.matches(':focus-visible')&&s.opacity==='1'&&!(/^rgba\\(\\d+, \\d+, \\d+, 0\\)$/.test(c)||c==='transparent')&&parseFloat(s.outlineWidth)>=2&&s.outlineStyle!=='none'})()`;
+    assert.ok(await until(shown), `${tag}: keyboard focus shows a tile, a focus ring and the icon ${await st()} ${await js(`(()=>{const s=getComputedStyle(document.querySelector(${jsLiteral(SEL)}));return JSON.stringify({bg:s.backgroundColor,ow:s.outlineWidth,os:s.outlineStyle})})()`)}`);
     console.log(`[listcols] ${tag} room ok`);
   }
   console.log('[listcols] all checks passed');
