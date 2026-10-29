@@ -42,7 +42,7 @@
 - [x] T039 (2026-10-28, PR #824 failed CI) Dependabot groups minor/patch only, ignores semver-major and `electron`; `test:supplychain` checks the shape and was mutation-checked [FR-062]
 - [x] T040 (2026-10-28, Vikram's OK, PR #828) Dependabot `cooldown: default-days: 7` in both ecosystems; `test:supplychain` requires it (missing and 3-day cases planted, mutant caught) [FR-062]
 - [ ] T041 (2026-10-29, #854 B1, Vikram's agent) Split `test:runtime` and `test:notes` into parallel suites; update docs that cite the names [FR-063]
-- [ ] T042 (#854 B2, Vikram's agent) Rule slimming: AGENTS.md about 2.5k words, CLAUDE.md and copilot-instructions as pointers, spec 021 as a decision log, agent-notes under 8k words, word-budget check [FR-063]
+- [x] T042 (#854 B2, Vikram's agent) Rule slimming: AGENTS.md about 2.5k words, CLAUDE.md and copilot-instructions as pointers, agent-notes under 8k words (vendor facts in `docs/agent-apps.md`), checklist deduped, word-budget check `npm run rules:check` [FR-063]. Spec 021 as a decision log is left for its own PR (not restructured here).
 - [ ] T043 (#854 B3, Vikram's agent) Protocol comments to GitHub mechanics: claim script and assignee, review check or label, CI instead of `checks run at` [FR-063]
 - [ ] T044 (#854 B4, Vikram's agent) Screenshots: delete unreferenced files (names built in code checked first); a history rewrite or moving retakes to artifacts or Pages waits for each owner's explicit OK [FR-063]
 - [ ] T045 (#854 B5, Vikram's agent) Release spec folders to one table in spec 008; spec status vocabulary checked by `specs:check` [FR-063]
