@@ -244,6 +244,10 @@ The slide is short and soft. It never blocks input and never hides a waiting age
 
 ## Changes
 
+### 2026-10-29: the FR-011 select check does not assume macOS select behaviour (issue #888)
+
+No behaviour change; the app was right and the driver `scripts/shots-092.js` was wrong on macOS. The scheduled *UI on three OSes* run failed only there at "the select used the key": a closed native select changes its choice on PageDown on Windows and Linux but not on macOS, and the app (`floornav.js`: a key inside a select keeps its meaning, platform-independent) never changed the floor. The step now counts PageDown with a keydown listener on `#wsFilter` on every platform (the press reached the select, so the step is not vacuous), asserts the choice changed only off macOS, and on all three asserts the floor is unchanged and nothing is announced (FR-011). `scripts/shots-092-lift.js` does not press keys in a select. Not verified on macOS locally; the scheduled run shows it.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
