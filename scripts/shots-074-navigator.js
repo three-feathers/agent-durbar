@@ -53,13 +53,15 @@ module.exports = async (ctx) => {
     await H.calm();
 
     // ---- FR-012: the badges in the office ----
-    const badges = await js(`(()=>{const ds=[...document.querySelectorAll('#stage .desk[data-id]')];return {n:ds.length,
+    const badgeProbe = () => js(`(()=>{const ds=[...document.querySelectorAll('#stage .desk[data-id]')];return {n:ds.length,
       with:ds.filter(d=>d.querySelector('.chatno')).length,
       font:Math.min(...[...document.querySelectorAll('#stage .chatno')].map(e=>parseFloat(getComputedStyle(e).fontSize))),
       inside:ds.every(d=>{const b=d.querySelector('.chatno');if(!b)return true;const r=b.getBoundingClientRect(),q=d.getBoundingClientRect();return r.width>0&&r.left>=q.left-0.5&&r.right<=q.right+0.5&&r.top>=q.top-0.5&&r.bottom<=q.bottom+0.5;}),
       /* 2026-10-23 (Windows UI failure at 1280): on a desk card the badge sits on the scene, never in the name row */
       onScene:ds.filter(d=>{const b=d.querySelector('.chatno'),n=d.querySelector('.name'),sc=d.querySelector('.sc');if(!b||!n||!sc||!d.classList.contains('card'))return false;
         const r=b.getBoundingClientRect(),q=n.getBoundingClientRect(),c=sc.getBoundingClientRect(),hit=(x,y)=>x.left<y.right&&y.left<x.right&&x.top<y.bottom&&y.top<x.bottom;
+        /* spec 092: a floor screen with few agents gets grown desks (spec 001 FR-041..): the scene sits lower there, so the badge only has to stay clear of the name */
+        if(document.getElementById('stage').dataset.grow)return hit(r,q);
         return !(hit(r,c)&&!hit(r,q));}).map(d=>d.innerText.trim().slice(0,20)),
       /* a name is squeezed when its text is wider than its box. (Not "the box is at least 20px": Elif is 19.3px wide in Windows fonts, 20px
          on Linux, with no badge near it; the width of a short name is its text, so a fixed floor tests the font, not the badge.) */
@@ -69,15 +71,24 @@ module.exports = async (ctx) => {
       aria:ds.filter(d=>/, chat \\d+,/.test(d.getAttribute('aria-label')||'')).length,
       uniq:new Set([...document.querySelectorAll('#stage .chatno')].map(b=>b.dataset.n)).size,
       overflow:document.documentElement.scrollWidth>innerWidth||document.documentElement.scrollHeight>innerHeight}})()`);
-    assert.ok(badges.n >= 15 && badges.with === badges.n, `${w}: every main desk has a chat number (${badges.with}/${badges.n})`);
-    assert.ok(badges.font >= 10.5, `${w}: badge text ${badges.font}px`);
-    assert.ok(badges.inside, `${w}: every badge stays inside its desk`);
-    assert.deepStrictEqual(badges.onScene, [], `${w}: every desk card's badge sits on its scene, clear of the name`);
-    assert.deepStrictEqual(badges.squeezed, [], `${w}: no desk name is squeezed or cut by the badge`);
-    assert.deepStrictEqual(badges.first, [], `${w}: a desk's text still starts with its name (drivers and the office check find desks that way)`);
-    assert.strictEqual(badges.aria, badges.n, `${w}: screen readers hear "chat N"`);
-    assert.strictEqual(badges.uniq, badges.with, `${w}: chat numbers are unique`);
-    assert.ok(!badges.overflow, `${w}: no page overflow`);
+    // spec 092: the office shows one floor at a time; every floor screen is checked, and together they hold the 15 main desks
+    let mains = 0;
+    await H.eachFloor(async (f) => {
+      const badges = await badgeProbe();
+      mains += badges.n;
+      assert.ok(badges.n >= 1, `${w}: ${f && f.name}: the floor screen has desks`);
+      assert.ok(badges.with === badges.n, `${w}: every main desk has a chat number (${badges.with}/${badges.n})`);
+      assert.ok(badges.font >= 10.5, `${w}: badge text ${badges.font}px`);
+      assert.ok(badges.inside, `${w}: every badge stays inside its desk`);
+      assert.deepStrictEqual(badges.onScene, [], `${w}: every desk card's badge sits on its scene, clear of the name`);
+      assert.deepStrictEqual(badges.squeezed, [], `${w}: no desk name is squeezed or cut by the badge`);
+      assert.deepStrictEqual(badges.first, [], `${w}: a desk's text still starts with its name (drivers and the office check find desks that way)`);
+      assert.strictEqual(badges.aria, badges.n, `${w}: screen readers hear "chat N"`);
+      assert.strictEqual(badges.uniq, badges.with, `${w}: chat numbers are unique`);
+      assert.ok(!badges.overflow, `${w}: no page overflow`);
+    });
+    assert.ok(mains >= 15, `${w}: the floors together hold the main desks (${mains})`);
+    await H.goToFloor((await H.floors())[0].id); await H.calm();
     await shot('office', w, h);
 
     // ---- US2: floor -> folder -> agent -> type -> Enter sends ----
@@ -147,9 +158,13 @@ module.exports = async (ctx) => {
     p = await panel();
     await focusOn('msgInput');
     assert.ok(p.no === 'C3' && p.focus === 'msgInput', `${w}: c 3 opened chat 3 with the cursor in the message box: ${JSON.stringify(p)}`);
-    const selId = await js(`document.querySelector('#stage .desk[aria-pressed="true"], #stage .desk.sel')?.dataset.id||''`);
-    const c3 = await js(`(()=>{const b=[...document.querySelectorAll('#stage .desk[data-id] .chatno')].find(x=>x.dataset.n==='C3');return b?b.closest('.desk').dataset.id:''})()`);
-    assert.ok(c3 && (!selId || selId === c3), `${w}: the desk labelled C3 is the open chat`);
+    await key('Escape', [], { char: 'never' });
+    await H.office(); // spec 092: the desk labelled C3 may be on another floor: look at each floor screen
+    let c3 = '';
+    await H.eachFloor(async () => { c3 = c3 || await js(`(()=>{const b=[...document.querySelectorAll('#stage .desk[data-id] .chatno')].find(x=>x.dataset.n==='C3');return b?b.closest('.desk').querySelector('.name').textContent.trim():''})()`); });
+    assert.ok(c3 && c3 === p.title, `${w}: the desk labelled C3 (${c3}) is the open chat (${p.title})`);
+    await H.goToFloor((await H.floors())[0].id); await H.calm();
+    await js(`document.querySelector('#stage .desk[data-id]').click()`); await until(`document.body.classList.contains('panel-open')`, 3000); // back into a chat for the header check below
     assert.ok(await js(`parseFloat(getComputedStyle(document.querySelector('#panelHead .sub .chatno')).fontSize)>=10.5`), `${w}: header badge legible`);
     await shot('chat', w, h);
     await key('Escape', [], { char: 'never' });
@@ -377,13 +392,13 @@ module.exports = async (ctx) => {
     // ---- review on #597 (fjcabello): Ctrl+A and Ctrl+Backspace do nothing of ours while a dialog (askDialog) is open; spec 052 FR-175:
     // nor do the other global shortcuts (Ctrl+O, Ctrl+`, Ctrl+Shift+H, Alt+N / ⌥⌘N, I, ?, N) ----
     await openDesk(dA);
-    /* a probe on + Folder (Ctrl+O): counts the clicks and stops them, so the check has no side effect */
-    await js(`(()=>{window.__addProbe=0;if(!window.__addProbeOn){window.__addProbeOn=1;document.addEventListener('click',e=>{if(e.target&&e.target.closest&&e.target.closest('#addFolder')&&window.__addProbeArm){window.__addProbe++;e.preventDefault();e.stopImmediatePropagation();}},true);}window.__addProbeArm=1;})()`);
+    /* a probe on Ctrl+O's add (spec 093: Add existing directly, the simulator's addFolder): counts the calls and adds nothing, so the check has no side effect */
+    await js(`(()=>{window.__simAddFolderProbe={n:0};return true})()`);
     const ctrlO = process.platform !== 'darwin' && (await js(`document.body.classList.contains('has-bridge')&&!!document.getElementById('addFolder')&&!document.getElementById('addFolder').disabled`));
     if (ctrlO) {
       await key('O', ['control'], { char: 'never' });
-      assert.ok(await until(`window.__addProbe===1`, 2000), `${w}: control: without a dialog Ctrl+O reaches + Folder (the probe works)`);
-      await js(`window.__addProbe=0`);
+      assert.ok(await until(`window.__simAddFolderProbe.n===1&&!document.getElementById('modeDlg')`, 2000), `${w}: control: without a dialog Ctrl+O adds a folder directly (the probe works)`);
+      await js(`window.__simAddFolderProbe.n=0`);
     }
     const before = await js(`({title:document.getElementById('panelTitle').textContent,prev:(document.getElementById('prevBtn')||{getAttribute:()=>''}).getAttribute('aria-expanded')})`);
     await key('K', [MOD], { char: 'never' });
@@ -401,9 +416,9 @@ module.exports = async (ctx) => {
     await key('N', process.platform === 'darwin' ? ['alt', 'meta'] : ['alt'], { char: 'never' });
     for (const k of ['i', '?', 'n']) await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:${jsLiteral(k)},shiftKey:${jsLiteral(k === '?')},bubbles:true,cancelable:true}))`);
     await ctx.sleep(150); // nothing may happen: give a wrong handler its chance
-    const after = await js(`({title:(document.getElementById('panelTitle')||{}).textContent,prev:(document.getElementById('prevBtn')||{getAttribute:()=>''}).getAttribute('aria-expanded'),kbd:!!document.getElementById('kbdDlg'),add:window.__addProbe})`);
+    const after = await js(`({title:(document.getElementById('panelTitle')||{}).textContent,prev:(document.getElementById('prevBtn')||{getAttribute:()=>''}).getAttribute('aria-expanded'),kbd:!!document.getElementById('kbdDlg'),add:window.__simAddFolderProbe.n})`);
     assert.ok(after.title === before.title && after.prev === before.prev && !after.kbd && !after.add, `${w}: under the dialog, Ctrl+O, Ctrl+\`, Ctrl+Shift+H, Alt+N, I, ? and N do nothing (spec 052 FR-175): ${JSON.stringify({ before, after, ctrlO })}`);
-    await js(`window.__addProbeArm=0`);
+    await js(`delete window.__simAddFolderProbe`);
     c = await box();
     assert.ok(c.open && !c.inbox && !c.pal && (await js(`!!document.querySelector('.dlg-ov [aria-modal="true"]')`)), `${w}: with a dialog open, Ctrl/⌘+A opens no Needs you and Ctrl/⌘+Backspace closes no chat and Ctrl/⌘+F opens no Go to: ${JSON.stringify(c)}`);
     await key('Escape', [], { char: 'never' });

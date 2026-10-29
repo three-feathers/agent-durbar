@@ -24,7 +24,11 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 const PAGE = fs.readFileSync(path.join(__dirname, 'ui-text-page.js'), 'utf8');
 const DARK = fs.readFileSync(path.join(__dirname, 'fixtures', 'themes', 'dark-audit.json'), 'utf8');
 const ONLY = process.env.UITEXT_ONLY ? new Set(process.env.UITEXT_ONLY.split(',')) : null;
-const THEMES = (process.env.UITEXT_THEMES || 'light,dark').split(',');
+/* UITEXT_PART (issue #738): the suite runs the check as two drivers at once, 'light' (the light theme at both sizes + the six built-in
+ * themes' contrast) and 'dark' (the dark fixture at both sizes + tones + the dark-control and source CSS checks). Unset: everything in one run. */
+const PART = process.env.UITEXT_PART || '';
+if (PART && PART !== 'light' && PART !== 'dark') throw new Error('UITEXT_PART is light or dark');
+const THEMES = (process.env.UITEXT_THEMES || (PART || 'light,dark')).split(',');
 const SIZES = (process.env.UITEXT_SIZES || '1440x900,1280x800').split(',').map((s) => s.split('x').map(Number));
 const OUT = process.env.OUT || process.env.UITEXT_OUT || '';
 const SHOTS = process.env.UITEXT_SHOTS === '1';
@@ -98,7 +102,7 @@ module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until, settle } = H;
   const key = (k, mods = [], char = 'always') => H.key(k, mods, { char });
-  const q = (theme, extra) => ({ simkinds: 'mixed', simfloors: '1', simgrants: 'many', simquestion: '1', simtotals: '1', ...(extra || {}), ...(theme === 'dark' ? { theme: 'audit-dark', usertheme: DARK } : { theme: themeId || 'clean-office' }) });
+  const q = (theme, extra) => ({ simkinds: 'mixed', simfloors: 'ground', simgrants: 'many', simquestion: '1', simtotals: '1', ...(extra || {}), ...(theme === 'dark' ? { theme: 'audit-dark', usertheme: DARK } : { theme: themeId || 'clean-office' }) });
   let theme = 'light', W = 1440, Hh = 900, extraQuery = {}, themeId = '';
   const found = []; // every violation: { surface, theme, size, rule, el, detail }
   const opened = new Set();
@@ -393,7 +397,7 @@ module.exports = async (ctx) => {
     await closeChat();
   };
   const CONTRAST_SURFACES = ['tools-screen', 'settings-theme', 'settings-places', 'settings-cap', 'place-dialog', 'chat-waiting', 'agent-strip'];
-  const BUILTIN = ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese'];
+  const BUILTIN = ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese']; // spec 077 FR-066: Cheeky Crew is a Characters choice now, not a theme
 
   const tones = async (id) => { // T152 round 2: the contrast of the rules that moved to the --tone-* tokens, in this theme
     const list = toneList();
@@ -402,6 +406,7 @@ module.exports = async (ctx) => {
   };
 
   const run = async (s) => {
+    const t0 = Date.now();
     if (!/toast/.test(s.name)) await H.calm();
     let ok = await s.open();
     if (!ok) { await reset(); ok = await s.open(); } // one more try: the first open can lose a race with the render
@@ -425,7 +430,7 @@ module.exports = async (ctx) => {
     if (s.inline) for (const x of await js(`window.__uitext.inlineFit()`)) found.push({ ...tag, ...x });
     if (!s.contrast) for (const x of await js(`window.__uitext.tooltips()`)) found.push({ ...tag, ...x });
     if (SHOTS && OUT) await H.shot(path.join(OUT, `${s.name}-${theme === 'dark' ? 'dark' : 'light'}-${W}x${Hh}.png`), { prep: 'mouse', delay: 250 });
-    console.log(`[ui-text] ${s.name} ${themeId || theme} ${W}x${Hh}: ${v.length} violations`);
+    console.log(`[ui-text] ${s.name} ${themeId || theme} ${W}x${Hh}: ${v.length} violations` + (process.env.UITEXT_TIMING ? ` (${Date.now() - t0} ms)` : ''));
   };
 
   for (const [w, h] of SIZES) {
@@ -453,7 +458,7 @@ module.exports = async (ctx) => {
 
   // FR-169: the contrast of the controls that carried a light literal, in EVERY built-in theme (Clean Office, Corporate, Retro Pixel and
   // the three courts), not only the dark fixture. 1280x800 only: a theme does not change a control's size.
-  if (!ONLY || ONLY.has('contrast')) {
+  if (PART !== 'dark' && (!ONLY || ONLY.has('contrast'))) {
     W = 1280; Hh = 800; theme = 'light'; extraQuery = {};
     for (const id of BUILTIN) {
       themeId = id; await load();
@@ -474,7 +479,7 @@ module.exports = async (ctx) => {
   // (relative luminance over 0.6, from src/shared/themegen.ts) in a background fails: use a theme token (the --tone-* set in styles.css :root); there is no allow-list
   // (older debt, listed); T172: a literal light border or outline colour fails the same way; the switch knob is the one intended white. Hex, named colours, rgb()/hsl() with numbers and gradients are read;
   // translucent colours (alpha under 0.6) and var() are not light by themselves.
-  {
+  if (PART !== 'light') {
     const { luminance } = require('../dist/shared/themegen.js'); // one luminance helper; the check runs after the build
     const NAMED = { white: '#ffffff', snow: '#fffafa', ivory: '#fffff0', ghostwhite: '#f8f8ff', whitesmoke: '#f5f5f5', floralwhite: '#fffaf0', linen: '#faf0e6', seashell: '#fff5ee', beige: '#f5f5dc', lightyellow: '#ffffe0', azure: '#f0ffff', mintcream: '#f5fffa', aliceblue: '#f0f8ff', lavenderblush: '#fff0f5', honeydew: '#f0fff0', cornsilk: '#fff8dc', oldlace: '#fdf5e6', lightgray: '#d3d3d3', lightgrey: '#d3d3d3', gainsboro: '#dcdcdc', lavender: '#e6e6fa', mistyrose: '#ffe4e1', papayawhip: '#ffefd5', antiquewhite: '#faebd7', bisque: '#ffe4c4', wheat: '#f5deb3', lemonchiffon: '#fffacd', lightcyan: '#e0ffff', moccasin: '#ffe4b5', silver: '#c0c0c0' };
     const hex2 = (n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');

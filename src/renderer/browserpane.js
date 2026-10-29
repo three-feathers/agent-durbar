@@ -165,6 +165,7 @@
       unwatchSize();
       clearCover(cur);
       if(cur.shown){cur.shown=false;bridge.browserVisible(id,false);}
+      if(host&&host.chatShown)host.chatShown(id); /* spec 005 FR-176: the Chat tab is in front again */
       return;
     }
     let r=await bridge.browserOpen(id).catch(()=>null);

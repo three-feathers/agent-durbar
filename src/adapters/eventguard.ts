@@ -1,4 +1,6 @@
+import { ALLOWED_BY_KEYS_MAX } from './types';
 import { isObj } from '../shared/guards';
+import { cleanSandboxState } from '../shared/sandbox';
 /**
  * A runtime check of normalized events (spec 010 FR-010, T023): what every producer (the real adapters, the simulator) must send
  * so the renderer can rely on it. Pure; returns the problems found (none = valid). Shared by the simulator contract test and the
@@ -9,13 +11,28 @@ const optStr = (v: unknown): boolean => v === undefined || typeof v === 'string'
 const optNum = (v: unknown): boolean => v === undefined || (typeof v === 'number' && Number.isFinite(v) && v >= 0);
 const oneOf = (v: unknown, xs: readonly string[]): boolean => typeof v === 'string' && xs.includes(v);
 
-export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'usageLimit', 'retry', 'title', 'agentSchedule', 'remote', 'plan'] as const;
+export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'usageLimit', 'retry', 'title', 'agentSchedule', 'remote', 'plan', 'sandbox'] as const;
 const RETRY_REASONS = ['rate-limit', 'overloaded', 'server', 'network', 'timeout', 'auth', 'other'] as const;
 const STATUSES = ['idle', 'working', 'needs-permission', 'error', 'stopped'] as const;
 /** Spec 058 FR-180: the values of `McpServerStatus.signInEnd`. */
 export const SIGN_IN_ENDS = ['next-message', 'failed'] as const;
 /** Spec 058 FR-180: a `signInEnd` main accepts (anything else is ignored, as if missing). */
 export const validSignInEnd = (v: unknown): v is (typeof SIGN_IN_ENDS)[number] => oneOf(v, SIGN_IN_ENDS);
+
+/** Spec 003 FR-102: the optional `allowedBy` of a permission (display only): a known kind and string fields, else the event is refused. */
+function allowedByProblems(a: unknown, where: string): string[] {
+  if (!isObj(a)) return [`${where}: not an object`];
+  if (a.kind === 'session-grant') {
+    if (!(str(a.key) && a.key && str(a.label))) return [`${where}: session-grant needs a key and a label`];
+    if (a.keys !== undefined && (!Array.isArray(a.keys) || a.keys.length < 1 || a.keys.length > ALLOWED_BY_KEYS_MAX || a.keys.some((k) => !str(k) || !k))) return [`${where}: session-grant keys malformed`];
+    if (a.more !== undefined && !(typeof a.more === 'number' && Number.isInteger(a.more) && a.more >= 1 && a.more <= 100000)) return [`${where}: session-grant more malformed`];
+    if (a.noUndo !== undefined && a.noUndo !== true) return [`${where}: session-grant noUndo malformed`];
+    return [];
+  }
+  if (a.kind === 'allow-all' || a.kind === 'in-folder' || a.kind === 'attachment') return [];
+  if (a.kind === 'app') return oneOf(a.source, ['config', 'hook', 'classifier']) ? [] : [`${where}: app source ${String(a.source)}`];
+  return [`${where}.kind is ${String(a.kind)}`];
+}
 
 function permissionProblems(p: unknown, where: string): string[] {
   if (!isObj(p)) return [`${where}: not an object`];
@@ -24,6 +41,7 @@ function permissionProblems(p: unknown, where: string): string[] {
   if (!str(p.kind)) out.push(`${where}.kind missing`);
   if (!str(p.summary)) out.push(`${where}.summary missing`);
   if (!oneOf(p.state, ['pending', 'approved', 'denied'])) out.push(`${where}.state is ${String(p.state)}`);
+  if (p.allowedBy !== undefined) out.push(...allowedByProblems(p.allowedBy, `${where}.allowedBy`));
   return out;
 }
 
@@ -148,6 +166,12 @@ export function eventProblems(e: unknown): string[] {
       if (typeof e.on !== 'boolean') out.push('remote.on is not a boolean');
       if (!optStr(e.reason)) out.push('remote.reason is not a string');
       if (!optStr(e.url)) out.push('remote.url is not a string');
+      break;
+    case 'sandbox': // spec 087 FR-011
+      if (e.sandbox !== null && !cleanSandboxState(e.sandbox)) out.push('sandbox.sandbox malformed');
+      if (e.notice !== undefined && (!isObj(e.notice) || !str(e.notice.text) || !e.notice.text || !Array.isArray(e.notice.actions) || e.notice.actions.some((a) => a !== 'continue' && a !== 'always') || (e.notice.refused !== undefined && typeof e.notice.refused !== 'boolean'))) out.push('sandbox.notice malformed');
+      if (isObj(e.notice) && e.notice.refused === true && Array.isArray(e.notice.actions) && e.notice.actions.length) out.push('sandbox.notice refused with actions');
+      if (e.notLowered !== undefined && e.notLowered !== true) out.push('sandbox.notLowered is not true');
       break;
     case 'agentSchedule':
       if (!oneOf(e.phase, ['created', 'cancelled', 'rearmed'])) out.push(`agentSchedule.phase ${String(e.phase)}`);

@@ -15,7 +15,7 @@ import type { AgentAdapter, AgentEvent, AgentMessage, CompactResult, LimitAction
 import type { HistoryResult, PreviousSession } from './history';
 
 export type OptionalMember =
-  | 'interrupt' | 'resolvePermission' | 'revokeGrant' | 'setCap' | 'resolveLimit' | 'setMcpEnabled' | 'setModel'
+  | 'interrupt' | 'resolvePermission' | 'revokeGrant' | 'revokeCall' | 'setCap' | 'resolveLimit' | 'setMcpEnabled' | 'setModel'
   | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText' | 'renameSession' | 'deleteSession' | 'restartMcpServer' | 'listMcpTools'
   | 'startMcpSignIn' | 'cancelMcpSignIn' | 'refreshMcpStatus';
 
@@ -78,6 +78,7 @@ export class FakeAdapter implements AgentAdapter {
   declare interrupt?: (sessionId: string) => Promise<void>;
   declare resolvePermission?: (sessionId: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean) => void;
   declare revokeGrant?: (sessionId: string, key: string) => void;
+  declare revokeCall?: (sessionId: string, callId: string) => number;
   declare setCap?: (sessionId: string, credits: number | null) => Promise<void>;
   declare resolveLimit?: (sessionId: string, requestId: string, action: LimitAction) => Promise<void>;
   declare setMcpEnabled?: (sessionId: string, name: string, enabled: boolean) => Promise<void>;
@@ -101,7 +102,7 @@ export class FakeAdapter implements AgentAdapter {
   declare renameSession?: (sessionId: string, name: string) => Promise<void>;
   declare startMcpSignIn?: (sessionId: string, name: string, opts?: { again?: boolean }) => Promise<McpSignInResult>;
   declare cancelMcpSignIn?: (sessionId: string, name: string) => Promise<void>;
-  declare refreshMcpStatus?: (sessionId: string, name?: string) => Promise<void>;
+  declare refreshMcpStatus?: (sessionId: string, name?: string, opts?: { startNothing?: boolean }) => Promise<void>;
   /** Spec 058: how many `refreshMcpStatus` calls were made, and when (call number N) the named server is reported connected (a test of the poll). */
   refreshCalls = 0;
   connectOnRefresh?: { name: string; at: number };
@@ -109,6 +110,8 @@ export class FakeAdapter implements AgentAdapter {
   endOnRefresh?: { name: string; at: number; end: 'next-message' | 'failed'; error?: string };
   /** Every name `refreshMcpStatus` was called with (undefined = no name). */
   readonly refreshNames: Array<string | undefined> = [];
+  /** The `opts` of every `refreshMcpStatus` call. */
+  readonly refreshOpts: Array<{ startNothing?: boolean } | undefined> = [];
   /** Test hook: a refresh that takes this long (ms) or never settles (`Infinity`), to see that calls never overlap. */
   refreshDelay?: number;
   refreshFail?: string;
@@ -166,6 +169,7 @@ export class FakeAdapter implements AgentAdapter {
     if (caps.interrupt && has('interrupt')) this.interrupt = (sid) => this.doInterrupt(sid);
     if (has('resolvePermission')) this.resolvePermission = (sid, rid, approve, remember = false, broad = false) => void this.sessions.get(sid)?.broker.resolve(rid, approve, remember, broad);
     if (has('revokeGrant')) this.revokeGrant = (sid, key) => void this.sessions.get(sid)?.broker.revoke(key);
+    if (has('revokeCall')) this.revokeCall = (sid, cid) => this.sessions.get(sid)?.broker.revokeCall(cid) ?? -1;
     if (caps.caps) {
       this.setCap = async (sid, credits) => {
         this.mustGet(sid);
@@ -203,10 +207,11 @@ export class FakeAdapter implements AgentAdapter {
         };
       }
       if (has('refreshMcpStatus')) {
-        this.refreshMcpStatus = async (sid, name?: string) => {
+        this.refreshMcpStatus = async (sid, name?: string, opts?: { startNothing?: boolean }) => {
           this.mustGet(sid);
           this.refreshCalls++;
           this.refreshNames.push(name);
+          this.refreshOpts.push(opts);
           if (this.refreshDelay === Infinity) return new Promise<void>(() => undefined);
           if (this.refreshDelay) await new Promise((r) => setTimeout(r, this.refreshDelay));
           if (this.refreshFail) throw new Error(this.refreshFail);

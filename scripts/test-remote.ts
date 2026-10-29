@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { allowedRemoteUrl, cleanRemoteError } from '../src/shared/remote';
-import { createRemoteOps, NO_REMOTE, NOT_IN_ALLOW_ALL, NOT_RUNNING } from '../src/main/remoteops';
+import { createRemoteOps, DOOR_CLOSED, NO_REMOTE, NOT_IN_ALLOW_ALL, NOT_RUNNING } from '../src/main/remoteops';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
 import type { FakeSession } from './fakes/copilot-sdk';
 import type { AgentAdapter } from '../src/adapters/types';
@@ -135,6 +135,50 @@ async function main(): Promise<void> {
     await ad.dispose();
   }
 
+  {
+    // delta 2026-10-28: SDK 1.0.26 ignores `remoteSession`, so the real control is that `remote.enable` is reached only by setRemote(id, true)
+    const fake = new FakeClient();
+    const ad = new FakeCopilot(fake);
+    fake.onDisk.add('old-2');
+    const sid = await ad.start({ workspace: dir, quiet: true });
+    const sid2 = await ad.start({ workspace: dir, resumeSessionId: 'old-2', quiet: true });
+    const all = (): FakeSession[] => [...fake.sessions.values()];
+    assert.ok(all().length >= 2);
+    for (const s of all()) assert.ok(!names(s).some((n) => n.startsWith('remote.')), 'start and resume never call remote.*');
+    await ad.setRemote(sid, false);
+    assert.ok(!all().some((s) => names(s).includes('remote.enable')), 'turning it off never enables');
+    await ad.setRemote(sid2, true);
+    assert.strictEqual(all().filter((s) => names(s).includes('remote.enable')).length, 1, 'only the explicit setRemote(id, true) enables, on that session');
+    await ad.dispose();
+    // static: the only caller that can pass on=true is remoteops.ts (behind the confirmation); everything else passes the literal false
+    let root = __dirname; // compiled to dist-scripts/scripts: walk up to the repo root
+    while (!fs.existsSync(path.join(root, 'package.json'))) root = path.dirname(root);
+    const srcDir = path.join(root, 'src');
+    const walk = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : /\.ts$/.test(e.name) ? [path.join(d, e.name)] : []));
+    const callers = walk(srcDir).flatMap((f) => fs.readFileSync(f, 'utf8').split(/\r?\n/).filter((l) => /\.setRemote\(/.test(l) && !/^\s*(\/\/|\*)/.test(l)).map((l) => path.basename(f) + ': ' + l.trim()));
+    assert.ok(callers.length >= 4, 'the scan found the setRemote callers: ' + callers.length);
+    for (const l of callers) assert.ok(/^(remoteops|doorops|doors|remote)\.ts/.test(l), 'unexpected setRemote caller: ' + l);
+    assert.ok(!callers.some((l) => /setRemote\([^)]*true\)/.test(l)), 'no source calls setRemote(..., true) directly: ' + callers.join(' | '));
+    // SDK 1.0.26: `remote.enable(` is the sole control. Exactly one call in src/ (comments ignored), inside CopilotAdapter.setRemote;
+    // `enableRemoteSessions` is never set to anything but false. Mutants: a stray enable in the resume path, `enableRemoteSessions: true`.
+    const code = (f: string): string[] => fs.readFileSync(f, 'utf8').split(/\r?\n/).map((l) => l.replace(/^\s*(\/\/|\*|\/\*).*$/, '').replace(/\s\/\/ .*$/, ''));
+    const enables: string[] = [];
+    const sessionFlags: string[] = [];
+    for (const f of walk(srcDir)) {
+      const lines = code(f);
+      let method = '';
+      lines.forEach((l, i) => {
+        const m = /^ {2}(?:private |public |protected |static )*(?:async )?(\w+)\s*[(<]/.exec(l);
+        if (m) method = m[1];
+        if (/\bremote\??\.enable!?\s*\(/.test(l)) enables.push(path.basename(f) + ':' + method + ':' + (i + 1));
+        if (/enableRemoteSessions/.test(l) && !/enableRemoteSessions\s*:\s*false\b/.test(l)) sessionFlags.push(path.basename(f) + ':' + (i + 1));
+      });
+    }
+    assert.strictEqual(enables.length, 1, 'exactly one remote.enable( call in src/: ' + enables.join(' | '));
+    assert.ok(/^copilot\.ts:setRemote:/.test(enables[0]), 'remote.enable( only inside CopilotAdapter.setRemote: ' + enables[0]);
+    assert.deepStrictEqual(sessionFlags, [], 'enableRemoteSessions is never set (true) in src/: ' + sessionFlags.join(' | '));
+  }
+
   // ---- T004 / FR-003..FR-005: the main-side logic
   {
     const opened: string[] = [];
@@ -211,6 +255,19 @@ async function main(): Promise<void> {
     await ops.release('a');
     assert.deepStrictEqual(calls, [true, false], 'a second release does nothing');
     assert.ok((await ops.setRemote('a', false)).ok, 'turning off needs no confirmation');
+  }
+  // ---- spec 054 FR-040 (spec 017 FR-018, owner 2026-10-23): a door the user closed refuses remote control; turning it off still works
+  {
+    const calls: boolean[] = [];
+    let closed = true, asked = 0;
+    const ad = { capabilities: { remote: true }, isLive: () => true, setRemote: async (_id: string, on: boolean) => { calls.push(on); return { ok: true, on }; } } as unknown as AgentAdapter;
+    const ops = createRemoteOps({ known: () => true, adapterOf: () => ad, open: async () => undefined, modeOf: () => 'ask', confirm: async () => (asked++, true), doorClosed: () => closed });
+    assert.deepStrictEqual(await ops.setRemote('a', true), { ok: false, error: DOOR_CLOSED }, 'refused while the door is closed');
+    assert.deepStrictEqual([calls, asked], [[], 0], 'refused before the confirmation and before the adapter');
+    assert.ok((await ops.setRemote('a', false)).ok, 'turning it off is allowed while closed');
+    closed = false;
+    assert.ok((await ops.setRemote('a', true)).ok, 'an open door allows it again (with its confirmation)');
+    assert.strictEqual(asked, 1);
   }
 
   fs.rmSync(dir, { recursive: true, force: true });

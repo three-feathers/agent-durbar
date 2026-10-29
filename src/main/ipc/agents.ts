@@ -5,7 +5,8 @@ import type { AdapterRouter } from '../../adapters/router';
 import { historyOf } from '../../adapters/router';
 import type { AddResult, AgentInfo, PickedFile, ResumeResult, SessionOptions } from '../../shared/api';
 import { parseAmount, parseCapIn } from '../../shared/credits';
-import { endSessionOp, errText, setCapOp, setModeOp, stopTurnOp, validMode } from '../agentops';
+import { revokeCallFor, revokeGrantFor } from '../../adapters/permissions';
+import { endSessionOp, errText, sessionOptsOf, setCapOp, setModeOp, stopTurnOp, validMode } from '../agentops';
 import type { OpsDeps } from '../agentops';
 import { folderGitStatus } from '../gitstatus';
 import type { GitStatus } from '../gitstatus';
@@ -49,6 +50,8 @@ export interface AgentsIpcDeps {
   maskHistory<H extends { items: { type: string; failed?: boolean; output?: string }[] }>(id: string, h: H): H;
   /** Spec 058: the secret values handed to an agent's session (its folder's MCP extras), masked out of errors. */
   mcpSecrets(id: string): string[];
+  /** Spec 087 FR-007a: an ended or removed session's open sandbox note is forgotten (main's one-shot Continue). */
+  forgetSandboxNote?(id: string): void;
   /** Spec 052 activity log row for Restart session (spec 058 FR-022). */
   logMcp(a: AgentInfo, action: string): void;
 }
@@ -59,11 +62,7 @@ export function register(deps: AgentsIpcDeps): void {
   const sessionStarts = new SessionStarts(); // spec 085: when and from which commit each session began in this run (memory only)
   const checkpointStore = deps.getCheckpointStore;
   ipcHandle('agents:list', () => [...agents.values()]);
-  const sessionOpts = (o: unknown): SessionOptions & { persist: boolean } => {
-    const x = (o && typeof o === 'object' ? o : {}) as Record<string, unknown>;
-    const cap = x.maxAiCredits === null ? null : parseAmount(x.maxAiCredits); // checked in the adapter's unit by addWorkspace
-    return { model: typeof x.model === 'string' ? x.model.slice(0, 100) : undefined, effort: asEffort(x.effort), maxAiCredits: cap, floor: typeof x.floor === 'string' ? x.floor.slice(0, 20) : undefined, adapterId: typeof x.adapterId === 'string' ? x.adapterId.slice(0, 40) : undefined, persist: true };
-  };
+  const sessionOpts = (o: unknown): SessionOptions & { persist: boolean } => sessionOptsOf(o, asEffort); // shared with folders:create (spec 093 FR-060)
 
   ipcHandle('agents:addFolder', async (_e, mode: unknown, opts: unknown) => {
     const r = await dialog.showOpenDialog({ title: 'Add folder', properties: ['openDirectory', 'multiSelections'] });
@@ -102,11 +101,13 @@ export function register(deps: AgentsIpcDeps): void {
     await endSession(id);
     sessionStarts.forget(id); // spec 085: the next session in this folder starts its own count
     deps.profileFreshness?.forget(id); // spec 043 FR-041
+    deps.forgetSandboxNote?.(id); // spec 087
     deps.browserGone?.(id); // spec 080 FR-023
   });
   /** Spec 058 FR-022: Restart session with these servers: End session, then the same id through the resume path; no prompt is sent. */
   const restartingSessions = new Set<string>();
-  ipcHandle('agents:mcpRestartSession', (_e, id: unknown, confirmed: unknown) =>
+  // spec 087 FR-022: an optional `reason` ('sandbox' = *Restart without the sandbox*), validated in the op; words only, no second channel
+  ipcHandle('agents:mcpRestartSession', (_e, id: unknown, confirmed: unknown, reason: unknown) =>
     mcpRestartSessionOp({
       agents,
       router,
@@ -115,7 +116,7 @@ export function register(deps: AgentsIpcDeps): void {
       resume: (a) => ensureLive(a, { quiet: false }),
       secrets: mcpSecrets,
       log: logMcp,
-    }, restartingSessions, id, confirmed));
+    }, restartingSessions, id, confirmed, reason));
 
   ipcHandle('agents:newSession', async (_e, id: unknown, opts: unknown) => {
     const a = typeof id === 'string' ? agents.get(id) : undefined;
@@ -178,6 +179,7 @@ export function register(deps: AgentsIpcDeps): void {
     checkpointStore()?.forget(a.id); // spec 065 FR-006
     sessionStarts.forget(a.id); // spec 085
     deps.profileFreshness?.forget(a.id); // spec 043 FR-041
+    deps.forgetSandboxNote?.(a.id); // spec 087
     deps.browserGone?.(a.id); // spec 080 FR-023
     agents.delete(a.id);
     agentState.remove(a.id);
@@ -212,8 +214,11 @@ export function register(deps: AgentsIpcDeps): void {
     if (agents.has(id)) router.forAgent(id)?.resolvePermission?.(id, String(requestId), approve === true, approve === true && remember === true, approve === true && remember === true && broad === true);
   });
 
-  ipcHandle('agents:revokeGrant', (_e, id: string, key: string) => {
-    if (agents.has(id)) router.forAgent(id)?.revokeGrant?.(id, String(key));
+  ipcHandle('agents:revokeGrant', (_e, id: unknown, key: unknown, callId?: unknown): number => {
+    // spec 003 FR-101: with a call id, every rule that allowed that call goes (main holds the list; the page cannot name keys); the answer is how many of them are still live, or -1 (unknown call: nothing removed)
+    if (callId !== undefined) return revokeCallFor((x) => agents.has(x), (x, c) => router.forAgent(x)?.revokeCall?.(x, c) ?? -1, id, callId);
+    revokeGrantFor((x) => agents.has(x), (x, k) => router.forAgent(x)?.revokeGrant?.(x, k), id, key);
+    return -1; // spec 003 FR-102: known id, clean key; the broker removes only a rule it holds
   });
 
   // spec 063: the git branch and changed files of an agent's own folder (read-only; the window never passes a path)

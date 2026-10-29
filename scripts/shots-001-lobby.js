@@ -31,8 +31,12 @@ module.exports = async (ctx) => {
   const js = (c) => H.js(c);
   const emit = (e) => js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${q(e)}))`);
   const page = async (label) => { const r = await js(`(${pageCheck.toString()})(false, 5)`); assert.deepStrictEqual(r.problems, [], `${label}: office page rules`); return r.info; };
+  /* a pinned clock at local noon (spec 001 FR-084): the seeded schedules run 12 minutes after the start, so near midnight "letters today" was
+     "none today" (CI at 23:54 UTC, PR 621); with the clock pinned the count never depends on when the job runs. The page's clock runs on from noon. */
+  const NOON = new Date(); NOON.setHours(12, 0, 0, 0);
+  const hload = async (o) => { o = { ...o, query: { simclock: String(NOON.getTime()), ...o.query } }; await hload0(o); };
   /* a page load that the start-up page interrupts (ERR_FAILED -2, seen under heavy machine load) is tried once more */
-  const hload = async (o) => { try { await H.load(o); } catch (e) { if (!/ERR_FAILED|ERR_ABORTED/.test(String(e && e.message))) throw e; await ctx.sleep(500); await H.load(o); } };
+  const hload0 = async (o) => { try { await H.load(o); } catch (e) { if (!/ERR_FAILED|ERR_ABORTED/.test(String(e && e.message))) throw e; await ctx.sleep(500); await H.load(o); } };
   const { settleWalk } = H; // shared with calm and every shot (driver-helpers, spec 001 FR-085)
   const load = async (n, w, h, extra = {}) => {
     await hload({ w, h, query: { sim: String(n), simsched: '1', ...extra }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=${q(n)}&&!!document.querySelector('#stage .place.boss')` });
@@ -158,6 +162,7 @@ module.exports = async (ctx) => {
       const b2 = await tile('boss'), nm = await nameOf(idle);
       assert.ok(b2.label.includes(nm + ' (') && b2.label.indexOf(nm + ' (') > b2.label.indexOf(sb.label.replace(/^[^:]+: /, '').split(' (')[0] + ' (') && b2.pv.some((v) => v.id === idle), `${w}: ${nm} joins the end of the queue (and is drawn): ${b2.label}`);
       await page(`${w} after a new permission`);
+      ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(200); /* the pointer rests off the cards: a hovered card shows its rename pencil */
       await H.shot(path.join(OUT, `001-lobby-boss-walk-${w}x${h}.png`), { prep: 'calm', blur: true });
     }
   }

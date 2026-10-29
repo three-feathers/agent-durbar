@@ -119,7 +119,27 @@
 ## 2026-10-24: macOS nightly UI regression (#683)
 
 - [x] T107: correct the macOS-only native text-editing assertions in `scripts/shots-074-navigator.js`: synthetic ⌘⌫ and ⌘A must reach the editable field without being prevented or closing the chat; verify normal Backspace edits text, while Windows/Linux continue to assert Ctrl+Backspace deletes a word and Ctrl+A selects all. Add the platform limitation to `docs/agent-notes.md` and a changelog fragment. Done: the navigator driver passes locally on macOS at both sizes, the planted app-interception mutation fails it, and `npm run typecheck && npm run build && npm test` pass. A post-merge nightly UI run on `main` remains required to close issue #683.
+- [x] T109 (2026-10-25, #738) `check-ui-text` split into `check-ui-text light` and `check-ui-text dark` in `scripts/ui-suite.js` (`UITEXT_PART` in `scripts/check-ui-text.js`, `UITEXT_TIMING=1` for per-surface times) [FR-128]. Done: the union of the two parts' `[ui-text]` lines equals the one run's (420 surfaces, 0 violations), two planted text mutants (an early and a late surface) are still caught, and the two parts together take about half the time. Typecheck, build and test pass.
+
 
 ## 2026-10-25: fold branch names without dots
 
 - [x] T108: fold branch name `NNN-fold-alpha-N` in `scripts/release-notes.js` (`foldSlug`) and its test in `scripts/test-changelog.js`; docs in `changelog.d/README.md` and `docs/collaboration.md`; notes on the historical plans of 082, 086, 088; `docs/agent-notes.md` entry [FR-127]
+
+## 2026-10-26: stable release tag
+
+- [x] T110: `releaseKind`/`publishCommand`/`STABLE_PREAMBLE` and `--github-output` in `scripts/release-notes.js`, stable heading in `scripts/changelog.js`, `release.yml` reads the kind from `verify`, tests in `scripts/test-changelog.js`, docs in `changelog.d/README.md` [FR-129]
+
+## 2026-10-26: release notes name every agent app
+
+- [x] T111: `AGENTS_CLAUSE` in `scripts/release-notes.js` for both intros (agent apps, four-company non-affiliation) and its asserts in `scripts/test-changelog.js` [FR-130]
+
+## 2026-10-27: the nightly macOS UI job gets 80 minutes
+
+- [x] T112: macOS UI job `timeout-minutes` 80 in `ui-platforms.yml` (FR-131, 2026-10-27)
+
+## 2026-10-27: release provenance, verified runtime download, exact pins
+
+- [x] T113: attest-build-provenance in `draft-release` (SHA-pinned, job-level `id-token`/`attestations` write) and README "Verify a download" [FR-132]
+- [x] T114: `scripts/verify-tarball.js` used by `prepare-runtime.js`, with `scripts/test-verify-tarball.js` [FR-133]
+- [x] T115: exact `electron` and `electron-builder` pins [FR-134]

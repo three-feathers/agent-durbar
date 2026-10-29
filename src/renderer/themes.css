@@ -97,7 +97,7 @@ html[data-ui="retro"] .lobby .place .pn{text-transform:uppercase;letter-spacing:
 html[data-ui="retro"] .slot,html[data-ui="retro"] .walker .wk{border-radius:0}
 html[data-ui="retro"] .walker .wk{border-color:var(--line);box-shadow:2px 2px 0 #000}
 html[data-ui="retro"] .plate{border-color:var(--line);box-shadow:0 0 0 1px var(--line),4px 4px 0 1px #000}
-html[data-ui="retro"] .empty{color:var(--surface)}
+html[data-ui="retro"] .empty,html[data-ui="retro"] .filter-note,html[data-ui="retro"] .filter-note b{color:var(--surface)}
 
 /* ---------- Durbar · Indian court: a maroon bar with a gold rule, ivory hall, arched rooms in a double gold frame ---------- */
 html[data-ui="court-indian"]{--ui-display:"Palatino Linotype",Palatino,"Book Antiqua","URW Palladio L",P052,Georgia,"DejaVu Serif",serif;--ui-top-ink:#f6d58a;--ui-top-ink-2:#fbe9c6}

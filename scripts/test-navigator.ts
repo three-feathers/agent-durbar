@@ -266,6 +266,29 @@ function scanHandler(raw: string): number {
   assert.ok(!planted("mod&&!e.shiftKey&&!e.altKey&&e.key==='k'"), 'a shortcut that is already taken (Ctrl+K) passes');
 }
 
+// ---- spec 083 FR-026 / spec 074 FR-085: Ctrl+Shift+M (⇧⌘M) is the Notes drawer: taken, scanned, and a saved Go to combination equal to it keeps working ----
+{
+  for (const mac of [false, true]) assert.ok(/Notes drawer/.test(N.clashOf({ mod: true, shift: true, code: 'KeyM' }, mac)), `${mac ? 'Mac' : 'Windows/Linux'}: Go to cannot record Ctrl+Shift+M (the Notes drawer)`);
+  const navSrc = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'navigator.js'), 'utf8');
+  const appSrc2 = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8').replace(/\r\n/g, '\n');
+  assert.ok(/\['mod\+shift\+KeyM','the Notes drawer'\]/.test(navSrc), 'TAKEN has the Notes row');
+  const line = appSrc2.split('\n').find((l) => /e\.code==='KeyM'/.test(l) && /toggleNotes/.test(l)) || '';
+  assert.ok(/^\s*if\(mod&&e\.shiftKey&&!e\.altKey&&e\.code==='KeyM'&&ui\.selected&&notesOn\(/.test(line), `the handler has the Notes line: ${line.slice(0, 80)}`);
+  // mutation: without the TAKEN row the combination is free, so the handler scan above (which reads that line) would fail
+  const tmp = path.join(require('os').tmpdir(), 'durbar-nav-mut-' + process.pid + '.js');
+  fs.writeFileSync(tmp, navSrc.replace(/\n\s*\['mod\+shift\+KeyM','the Notes drawer'\],[^\n]*/, ''));
+  const N2 = require(tmp) as typeof N;
+  fs.unlinkSync(tmp);
+  assert.strictEqual(N2.clashOf({ mod: true, shift: true, code: 'KeyM' }, false), '', 'mutation: with the row removed, Ctrl+Shift+M is free (the scan would fail)');
+  // the Go to key is checked before the Notes key in the handler: a saved Ctrl+Shift+M keeps working and the drawer key does nothing
+  assert.ok(appSrc2.indexOf('NAV.comboMatches(e,NAV_KEY,IS_MAC)') > 0 && appSrc2.indexOf('NAV.comboMatches(e,NAV_KEY,IS_MAC)') < appSrc2.indexOf(line), 'Go to is matched before the Notes key');
+  const saved = { mod: true, shift: true, code: 'KeyM' };
+  assert.deepStrictEqual(N.loadCombo(JSON.stringify(saved), false), { mod: true, ctrl: false, alt: false, shift: true, code: 'KeyM' }, 'a saved Ctrl+Shift+M is kept');
+  assert.deepStrictEqual(N.loadCombo(JSON.stringify(saved), true), { mod: true, ctrl: false, alt: false, shift: true, code: 'KeyM' }, 'and ⇧⌘M on a Mac');
+  assert.ok(N.comboMatches({ code: 'KeyM', key: 'M', ctrlKey: true, shiftKey: true }, N.loadCombo(JSON.stringify(saved), false), false), 'it matches the press, so Go to answers it');
+  assert.deepStrictEqual(N.loadCombo(JSON.stringify({ mod: true, shift: true, code: 'KeyN' }), false), D, 'another taken combination still falls back');
+}
+
 // ---- saved shortcut ----
 assert.deepStrictEqual(N.loadCombo(null, false), D);
 assert.deepStrictEqual(N.loadCombo('{bad', true), D);

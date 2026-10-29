@@ -35,15 +35,19 @@ else console.log('pr-gate notes: jq not installed, JS check only');
 // pr-gate.sh reads the pattern from that file, and uses it both for others' comments and for the author's own last answer
 const gate = fs.readFileSync(path.join(ROOT, 'scripts', 'pr-gate.sh'), 'utf8');
 assert.ok(gate.includes('pr-status-note.re'), 'pr-gate.sh reads the shared pattern');
-assert.strictEqual((gate.match(/\(\$NOTE\|not\)/g) || []).length, 2, 'notes are skipped in both places (others\' comments and the author\'s own answers)');
+assert.strictEqual((gate.match(/\(\$NOTE\|not\)/g) || []).length, 1, 'the author\'s own notes are not answers');
+// others' notes are skipped only when a trusted author wrote them (spec 021 FR-060: an outsider's note-shaped comment still goes to a human)
+assert.strictEqual((gate.match(/\(\(\(\.user\.login\|trusted\) and \$NOTE\)\|not\)/g) || []).length, 1, 'a trusted author\'s notes are skipped in others\' comments');
 // skipped notes are still printed, in their own section, so a one-line ask hidden in one stays visible
 assert.ok(gate.includes('status notes, not counted as asks:'), 'pr-gate.sh prints the skipped notes in their own section');
 const line = gate.split('\n').find((l) => l.startsWith('notes=$('));
 assert.ok(line, 'pr-gate.sh builds the notes section');
 const prog = /--jq "(.*)"; \}/.exec(line as string)![1].replace(/\\(["\\$])/g, '$1').replace('$NOTE', `(.body|test("${re.replace(/\\/g, '\\\\')}"))`);
+// the trust defs come from scripts/trusted-lib.sh (needs bash; Windows and machines without jq skip the run below)
+const defs = process.platform === 'win32' ? null : spawnSync('bash', ['-c', `. "${path.join(ROOT, 'scripts', 'trusted-lib.sh')}" && printf %s "$JQ_TRUST"`], { encoding: 'utf8' });
 const comments = [...notes, ...asks].map((body, i) => ({ created_at: `2026-10-22T10:0${i % 10}:00Z`, user: { login: 'rubenlupi' }, body }));
-if (jq.status === 0) {
-  const out = spawnSync('jq', ['-r', `.[]|${prog.replace(/^\.\[\]\|/, '')}`], { input: JSON.stringify(comments), encoding: 'utf8', shell: false });
+if (jq.status === 0 && defs && defs.status === 0) {
+  const out = spawnSync('jq', ['-r', prog.replace('$JQ_TRUST ', defs.stdout)], { input: JSON.stringify(comments), encoding: 'utf8', shell: false });
   assert.strictEqual(out.status, 0, out.stderr);
   const lines = out.stdout.trim().split('\n');
   assert.strictEqual(lines.length, notes.length, 'exactly the notes are printed');

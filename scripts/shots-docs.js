@@ -15,6 +15,7 @@
  * It adds no driver of its own: the pictures come from the drivers that already take them, started by spec 008's runner
  * (ui-suite.js runOne: a fresh profile each, no shell, xvfb-run on Linux without a display or with UI_SUITE_XVFB=1). Every driver
  * writes into a new temporary folder; only then are the files copied, so a failed run leaves the old pictures in place.
+ * Every written picture is then palette-compressed in place (scripts/compress-shots.js, spec 050 FR-012; DURBAR_SHOTS_COMPRESS=off skips it).
  * Linked = `docs/screenshots/*.png` in README.md, `file` in docs/site/gallery.json, any `*.png` in docs/site/landing.json.
  * docs/feature-history.md and CHANGELOG.md keep their old pictures on purpose (a record, spec 025 FR-006).
  */
@@ -31,11 +32,15 @@ const THEMES = [['clean-office', 'clean'], ['corporate'], ['durbar-european'], [
 const DOC_SHOTS = [
   { name: 'shots-hero', files: ['m5-sim15-1440x900-closed.png', 'm6-fullchat-sim15-1280x800.png'] },
   { name: 'shots-003-011', files: ['m6-fullchat-sim15-1440x900.png', '003-allow-all-menu-1440x900.png'] },
-  { name: 'check-office-fill', files: ['001-fill-1-1440x900.png', '001-fill-1-1920x1080.png', '001-fill-4-1440x900.png', '001-fill-6-1440x900.png', '001-shutters-1440x900.png'] },
+  { name: 'shots-017-signs', files: ['017-signs-1440x900.png', '017-held-dialog-1440x900.png', '017-open-office-1440x900.png', '017-open-office-1280x800.png', '017-office-layout-1440x900.png'] }, // spec 017 FR-004: meeting-room door signs on the desks
+  { name: 'check-office-fill', files: ['001-helpers-2-1440x900.png', '001-helpers-2-1280x800.png', '001-helpers-3-1440x900.png', '001-helpers-3-1280x800.png', '001-fill-1-1440x900.png', '001-fill-1-1920x1080.png', '001-fill-4-1440x900.png', '001-fill-6-1440x900.png', '001-shutters-1440x900.png'] },
   { name: 'shots-001-live-activity', freeze: false, files: ['001-live-activity-dense-1440x900.png', '001-live-activity-side-1440x900.png'] },
   { name: 'shots-001-lobby', files: ['001-lobby-15-1280x800.png', '001-lobby-15-1440x900.png', '001-lobby-15-1440x900-retro.png', '001-lobby-3-1440x900.png'] },
+  { name: 'check-unread', files: ['001-unread-1440x900.png'] }, // spec 001 FR-172 (issue #691): two unread replies on their desks
   { name: 'shots-005-cardmenu', files: ['005-card-menu-stop-end-1440x900.png'] },
   { name: 'check-ro-ask', files: ['003-ro-ask-menu-1440x900.png'] },
+  { name: 'check-why-allowed', files: ['003-why-allowed-1440x900.png'] },
+  { name: 'check-sandbox-floor', files: ['087-sandbox-note-1440x900.png'] }, // spec 087: the OS sandbox note and the chip
   { name: 'check-composer-toolbar', files: ['005-composer-expert-light-1440x900.png', '005-composer-ctxsummary-1440x900.png', '005-composer-ctxsummary-1280x800.png'] },
   { name: 'check-edits', files: ['005-edit-expert-1440x900.png'] },
   { name: 'shots-006-crash', files: ['006-crash-card-1440x900.png'] },
@@ -58,9 +63,12 @@ const DOC_SHOTS = [
   { name: 'shots-081-updates', files: ['081-updates-avail-1440x900.png'] },
   { name: 'shots-052-ux', files: ['052-office-1440x900.png'] },
   { name: 'shots-063-folder-status', files: ['063-folder-changes-1440x900.png'] },
+  { name: 'shots-093', files: ['093-choice-1440x900.png', '093-name-refused-1440x900.png', '093-clone-url-refused-1440x900.png', '093-clone-progress-1440x900.png', '093-clone-allow-1440x900.png'] }, // spec 093: + Folder's choice, a refused name; phase 2: a refused clone URL, the clone's progress, the Allow all host sentence
   { name: 'shots-064-send-several', files: ['064-send-several-1440x900.png'] },
   { name: 'shots-068-coffee', files: ['068-coffee-office-15-1440x900.png', '068-coffee-bar-1440x900.png'] },
   { name: 'check-slash-suggest', files: ['073-slash-1440x900.png'] },
+  { name: 'check-notes', files: ['083-notes-drawer-1440x900.png', '083-notes-drawer-1280x800.png', '083-notes-slash-1440x900.png', '083-notes-slash-1280x800.png'] }, // spec 083: the Notes drawer and the notes in the "/" list
+  { name: 'check-notes-count', files: ['083-notes-count-1440x900.png', '083-notes-count-1280x800.png', '083-notes-marker-1440x900.png', '083-notes-marker-1280x800.png'] }, // spec 083 T030, T031: the header count and the marker
   { name: 'shots-074-navigator', files: ['074-navigator-start-1440x900.png'] },
   { name: 'shots-058-mcp-settings', files: ['058-mcp-settings-1440x900.png'] },
   { name: 'shots-076-orgpolicy', files: ['076-orgpolicy-mode-1440x900.png', '076-orgpolicy-server-1440x900.png'] },
@@ -133,6 +141,21 @@ function suiteEnv(d, suite) {
   return { ...((s && s.env) || {}), ...(d.env || {}) };
 }
 
+/**
+ * Spec 050 FR-012 (issue #759): compress one written picture in place (scripts/compress-shots.js: a 256-colour palette, about 60%
+ * smaller, with a quality guard that keeps the original when the picture would look worse). Never fails the run: a refusal or an
+ * error prints one line and leaves the picture as the driver wrote it. DURBAR_SHOTS_COMPRESS=off skips it. Returns the bytes saved.
+ */
+function squeeze(file, env = process.env, root = path.dirname(file)) {
+  if (/^(off|0|false)$/i.test(String(env.DURBAR_SHOTS_COMPRESS || ''))) return 0;
+  try {
+    const r = require('./compress-shots.js').compressFile(file, { root });
+    if (r.status === 'compressed') return r.before - r.after;
+    console.log(`       kept ${path.basename(file)} as written: ${r.reason}`);
+  } catch (e) { console.log(`       not compressed ${path.basename(file)}: ${e.message}`); }
+  return 0;
+}
+
 /** `run` and `ensure` are for tests; by default the real ui-suite runner and Electron install. */
 async function main({ argv = process.argv.slice(2), run, ensure, clockQuery } = {}) {
   const a = args(argv);
@@ -178,8 +201,12 @@ async function main({ argv = process.argv.slice(2), run, ensure, clockQuery } = 
           const mapped = new Set(names.map(([s]) => s));
           for (const f of fs.readdirSync(tmp)) if (f.endsWith('.png') && !mapped.has(f) && fs.existsSync(path.join(SHOTS, f))) names.push([f, f]);
         }
-        for (const [s, t] of names) { fs.copyFileSync(path.join(tmp, s), path.join(out, t)); copied.push(t); }
-        console.log(`  ok   ${label.padEnd(30)} ${String(r.secs).padStart(4)} s  ${names.length} file(s)`);
+        let saved = 0;
+        for (const [s, t] of names) {
+          fs.copyFileSync(path.join(tmp, s), path.join(out, t)); copied.push(t);
+          saved += squeeze(path.join(out, t), process.env, out); // spec 050 FR-012: palette-compress the written picture, fail-soft
+        }
+        console.log(`  ok   ${label.padEnd(30)} ${String(r.secs).padStart(4)} s  ${names.length} file(s)${saved ? `, ${Math.round(saved / 1024)} KB smaller` : ''}`);
       }
       fs.rmSync(tmp, { recursive: true, force: true });
     }
@@ -190,5 +217,5 @@ async function main({ argv = process.argv.slice(2), run, ensure, clockQuery } = 
   return { copied, failed };
 }
 
-module.exports = { DOC_SHOTS, NO_DRIVER, CLOCK, linkedImages, coverage, pinnedClock, main };
+module.exports = { DOC_SHOTS, NO_DRIVER, CLOCK, linkedImages, coverage, pinnedClock, squeeze, main };
 if (require.main === module) main().catch((e) => { console.error('shots-docs:', e.message); process.exitCode = 1; });

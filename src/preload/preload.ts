@@ -14,6 +14,12 @@ const api: DurbarApi = {
   version: () => ipcRenderer.invoke('app:version'),
   addFolder: (permMode, opts) => ipcRenderer.invoke('agents:addFolder', permMode, opts),
   addWorkspaceFile: (permMode, opts) => ipcRenderer.invoke('agents:addWorkspaceFile', permMode, opts),
+  // spec 093 FR-081: create a folder; the window never passes a path (main picks the parent and answers with a token)
+  createPickParent: () => ipcRenderer.invoke('folders:createPickParent'),
+  createCheck: (req) => ipcRenderer.invoke('folders:createCheck', req),
+  createFolder: (req, permMode, opts) => ipcRenderer.invoke('folders:create', req, permMode, opts),
+  createCancel: () => ipcRenderer.invoke('folders:createCancel'),
+  onCreateProgress: (cb) => sub('folders:createProgress', cb),
   newSession: (id, opts) => ipcRenderer.invoke('agents:newSession', id, opts),
   listModels: (kind) => ipcRenderer.invoke('models:list', kind),
   orgPolicyView: () => ipcRenderer.invoke('orgpolicy:view'),
@@ -22,6 +28,9 @@ const api: DurbarApi = {
   end: (id) => ipcRenderer.invoke('agents:end', id),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
   setPermMode: (id, mode, opts) => ipcRenderer.invoke('agents:setMode', id, mode, opts),
+  sandboxContinue: (id, opts) => ipcRenderer.invoke('agents:sandboxContinue', id, opts), // spec 087 FR-007a/FR-007c
+  sandboxHosts: () => ipcRenderer.invoke('adapters:sandboxHosts'), // spec 087 FR-012
+  sandboxAlwaysOff: (app) => ipcRenderer.invoke('adapters:sandboxAlwaysOff', app), // spec 087 FR-007c undo
   setModel: (id, request) => ipcRenderer.invoke('agents:setModel', id, request),
   cancelQueuedModel: (id, queueId) => ipcRenderer.invoke('agents:cancelQueuedModel', id, queueId),
   compact: (id, focus) => ipcRenderer.invoke('agents:compact', id, focus),
@@ -58,6 +67,7 @@ const api: DurbarApi = {
   setBadge: (count) => ipcRenderer.invoke('app:setBadge', count),
   focusWindow: () => ipcRenderer.invoke('app:focusWindow'),
   setTheme: (id) => ipcRenderer.invoke('settings:setTheme', id),
+  setCharacters: (v) => ipcRenderer.invoke('settings:setCharacters', v), // spec 077 FR-064
   listUserThemes: () => ipcRenderer.invoke('theme:listUser'),
   getUserTheme: (id) => ipcRenderer.invoke('theme:getUser', id),
   importTheme: () => ipcRenderer.invoke('theme:import'),
@@ -79,6 +89,14 @@ const api: DurbarApi = {
   onHarnessProgress: (cb) => sub('harness:progress', cb),
   onHarnessDone: (cb) => sub('harness:done', cb),
   onRemoteOff: (cb) => sub('agents:remoteOff', cb),
+  // spec 017 FR-015..FR-017: doors the user closes and the runs held there
+  doorsList: () => ipcRenderer.invoke('doors:list'),
+  setDoor: (id, closed) => ipcRenderer.invoke('doors:set', id, closed),
+  releaseHeld: (id, action) => ipcRenderer.invoke('doors:release', id, action),
+  doorsHeld: (id) => ipcRenderer.invoke('doors:held', id),
+  onDoorsStopped: (cb) => sub('doors:stopped', cb),
+  onDoorsFull: (cb) => sub('doors:full', cb),
+  onDoorsChanged: (cb) => sub('doors:changed', cb),
   onOrgNote: (cb) => sub('agents:orgNote', cb),
   onRemoteUrl: (cb) => sub('agents:remoteUrl', cb),
   exportTheme: (id) => ipcRenderer.invoke('theme:export', id),
@@ -90,6 +108,7 @@ const api: DurbarApi = {
   removeSchedule: (id) => ipcRenderer.invoke('schedules:remove', id),
   setSchedulesPaused: (on) => ipcRenderer.invoke('schedules:setPausedAll', on),
   runScheduleNow: (id) => ipcRenderer.invoke('schedules:runNow', id),
+  scheduleRuns: (id) => ipcRenderer.invoke('schedules:runs', id),
   sinceAway: () => ipcRenderer.invoke('app:sinceAway'),
   dismissSinceAway: () => ipcRenderer.invoke('app:dismissSinceAway'),
   interrupted: () => ipcRenderer.invoke('app:interrupted'),
@@ -148,13 +167,14 @@ const api: DurbarApi = {
   mcpGlobalSetOff: (app, name, off) => ipcRenderer.invoke('mcp:globalSetOff', app, name, off),
   agentMcp: (id, focus) => ipcRenderer.invoke('agents:mcp', id, focus),
   setAgentMcp: (id, name, enabled) => ipcRenderer.invoke('agents:setMcp', id, name, enabled),
+  agentMcpRefresh: (id, manual) => ipcRenderer.invoke('agents:mcpRefresh', id, manual === true),
   agentMcpRestart: (id, name) => ipcRenderer.invoke('agents:mcpRestart', id, name),
   agentMcpSignIn: (id, name, again) => ipcRenderer.invoke('agents:mcpSignIn', id, name, again === true),
   agentMcpOpenSignIn: (id, name, host) => ipcRenderer.invoke('agents:mcpOpenSignIn', id, name, host),
   agentMcpCancelSignIn: (id, name) => ipcRenderer.invoke('agents:mcpCancelSignIn', id, name),
   agentMcpTools: (id, name) => ipcRenderer.invoke('agents:mcpTools', id, name),
   setAgentMcpToolsOff: (id, name, off) => ipcRenderer.invoke('agents:setMcpToolsOff', id, name, off),
-  agentMcpRestartSession: (id, confirmed) => ipcRenderer.invoke('agents:mcpRestartSession', id, confirmed),
+  agentMcpRestartSession: (id, confirmed, reason) => ipcRenderer.invoke('agents:mcpRestartSession', id, confirmed, reason),
   listAgents: () => ipcRenderer.invoke('agents:list'),
   pickAttachments: (want) => ipcRenderer.invoke('agents:pickAttachments', want),
   stageAttachment: (name, mime, data) => ipcRenderer.invoke('agents:stageAttachment', name, mime, data),
@@ -162,7 +182,7 @@ const api: DurbarApi = {
   resolvePlan: (id, requestId, answer) => ipcRenderer.invoke('agents:resolvePlan', id, requestId, answer),
   stop: (id) => ipcRenderer.invoke('agents:stop', id),
   resolvePermission: (id, requestId, approve, remember, broad) => ipcRenderer.invoke('agents:resolvePermission', id, requestId, approve, remember, broad),
-  revokeGrant: (id, key) => ipcRenderer.invoke('agents:revokeGrant', id, key),
+  revokeGrant: (id, key, callId) => ipcRenderer.invoke('agents:revokeGrant', id, key, callId),
   listPrevious: (id) => ipcRenderer.invoke('sessions:listPrevious', id),
   renameSession: (id, sessionId, name) => ipcRenderer.invoke('sessions:rename', id, sessionId, name),
   markPrevious: (id, src, sessionId, mark) => ipcRenderer.invoke('sessions:mark', id, src, sessionId, mark),
@@ -178,8 +198,8 @@ const api: DurbarApi = {
   onAgentRenamed: (cb) => sub('agents:renamed', cb),
   // spec 052 FR-083, FR-085: the Mac app menu's Settings… item, full screen (the top bar's traffic-light room) and the platform
   onMenuSettings: (cb) => sub<null>('menu:settings', () => cb()),
-  // spec 052 FR-164: File > Add Folder… / Add VS Code Workspace…; only the two known words pass
-  onMenuAdd: (cb) => sub<unknown>('menu:add', (k) => { if (k === 'folder' || k === 'workspace') cb(k); }),
+  // spec 052 FR-164: File > Add Folder… / Add VS Code Workspace…; spec 093 FR-001a: File > New Folder… ('new'); only the known words pass
+  onMenuAdd: (cb) => sub<unknown>('menu:add', (k) => { if (k === 'folder' || k === 'workspace' || k === 'new') cb(k); }),
   onFullScreen: (cb) => sub<boolean>('window:fullScreen', (on) => cb(on === true)),
   // spec 052 FR-085: a double-click on a drag area of the top bar (Mac only); main reads the system setting
   titleDoubleClick: () => ipcRenderer.send('window:titleDoubleClick'),

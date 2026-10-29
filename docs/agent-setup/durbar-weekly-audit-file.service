@@ -1,0 +1,38 @@
+# Weekly test audit (spec 021 FR-058), filing phase: a template for a SYSTEM unit (/etc/systemd/system/). Replace <owner> (the unix user
+# that owns the token file). No Claude and no test code run here: it validates the audit's answer and files at most 5 issues with gh.
+# It runs the filer copied out of the repository by `scripts/weekly-test-audit.sh install-filer` (README.md), never the audit's copy.
+[Unit]
+Description=Weekly test audit of agent-durbar: filing phase (validates the answer, files at most 5 new issues)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=<owner>
+RuntimeDirectory=durbar-weekly-audit-file
+RuntimeDirectoryMode=0700
+LogsDirectory=durbar-weekly-audit-file
+LogsDirectoryMode=0700
+Environment=HOME=/run/durbar-weekly-audit-file
+# gh keeps its own state here, not in the owner's ~/.config/gh login
+Environment=GH_CONFIG_DIR=/run/durbar-weekly-audit-file/gh
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=DURBAR_AUDIT_GH_TOKEN_FILE=/home/<owner>/.config/durbar-weekly-audit/gh-token
+ExecStart=/usr/bin/node /home/<owner>/.local/lib/durbar-weekly-audit/scripts/weekly-test-audit.js run --input /var/lib/durbar-weekly-audit/outbox/out.txt --file --max-age-hours 6 --log /var/log/durbar-weekly-audit-file/file.log
+TimeoutStartSec=600
+# Sandbox: of the owner's home only the token file and the installed filer are visible, read-only.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=tmpfs
+BindReadOnlyPaths=/home/<owner>/.config/durbar-weekly-audit/gh-token /home/<owner>/.local/lib/durbar-weekly-audit
+ReadOnlyPaths=/var/lib/durbar-weekly-audit/outbox
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

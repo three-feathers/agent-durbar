@@ -59,7 +59,7 @@ export const ART_SLOTS = ['plant', 'room-back-wall', 'room-back-window', 'room-f
   'place-library', 'place-software', 'place-terminal', 'place-web', 'place-other',
   'char-body', 'char-robe', 'char-headwear', 'char-collar', 'desk-back', 'desk-art', 'monitor-art', 'hair-acc', 'gadget-cup', 'gadget-laptop'];
 /** Scene kits a manifest may name (spec 035 FR-013); the same list as `SCENE_KITS` in theme.js. */
-export const SCENE_KITS = ['office', 'corporate', 'pixel', 'court-indian', 'court-european', 'court-japanese'];
+export const SCENE_KITS = ['office', 'corporate', 'pixel', 'court-indian', 'court-european', 'court-japanese', 'crew'];
 export const UI_STYLES = ['clean', 'corporate', 'retro', 'court-indian', 'court-european', 'court-japanese'];
 
 /** Validate one manifest.json text. Never throws. */

@@ -285,3 +285,11 @@ full in the "/" list row and its tooltip, while every other surface masks token 
   from the shared `claudeConfigDir()`.
 - **Question answered.** Enter on an exact, complete match still inserts `/name ` (a second Enter sends): most entries take arguments,
   and the key does the same thing for every row.
+
+### 2026-10-25: the list can offer text, and opens in a chat that has notes (spec 083 T001, issue #699)
+
+*Missing:* every entry of the `/` list inserts `/name`, and the list only opens for an agent app that lists commands. Spec 083 (folder notes) adds notes that are text to insert, and spec 081's issue #581 (a prompt library) wants the same kind of entry.
+
+*Corrected:*
+- **FR-066** An entry may carry a `source: 'note'` and an **`insertText`**: choosing it puts that text (per spec 083 FR-024's blank-line rule) in the message box in place of the `/word`, sends nothing, and the live region says what was inserted. Entries without `insertText` behave as before (spec 083 FR-030, FR-031).
+- **FR-067** The list opens in a chat whose agent app lists no commands when the folder has notes, and still does not open without commands or notes (FR-008's rules otherwise unchanged); its announcements count commands and notes apart. Note rows are masked and escaped like command rows (spec 083 FR-030).

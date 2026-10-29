@@ -14,7 +14,7 @@ DURBAR_SIM=15 npm start   # 15 simulated agents, no sessions, no AI credits
 
 `npm start` and the simulator keep their data in `agent-durbar-dev` under the OS app-data folder, not in the installed app's `agent-durbar` (spec 008 FR-034); `DURBAR_USER_DATA=<folder>` overrides both. To reuse older dev data, run once with `DURBAR_USER_DATA=<old folder>` or copy it by hand.
 
-Node 20.19+ or 22.12+ is required. `npm start` with real sessions needs a GitHub Copilot login (`copilot login`) and spends your AI credits; prefer the simulator (`DURBAR_SIM`) and the tests while developing.
+Node 20.19+ or 22.12+ is required. `npm start` with real sessions needs at least one signed-in agent app (GitHub Copilot, Claude Code or OpenAI Codex) and spends your AI credits; prefer the simulator (`DURBAR_SIM`) and the tests while developing.
 
 ## Guidelines
 
@@ -24,6 +24,7 @@ Node 20.19+ or 22.12+ is required. `npm start` with real sessions needs a GitHub
 - Add or update a test in `scripts/` when you change the permission broker, attachments or launcher logic.
 - Run `npm run typecheck && npm run build && npm test` before opening a PR; CI runs the same. For UI changes attach screenshots at 1440x900 and 1280x800 with 15 simulated agents (`DURBAR_SIM=15`).
 - **Design and UI:** follow the ten house rules in [docs/design-rules.md](docs/design-rules.md) (control heights, radius and colour tokens, one primary button, the "…" rule, one word per status, dialog layout, states, chevrons) and keep text at 10.5px or more.
+- **Outside contributors:** thank you! Comments, issues and PRs from accounts outside the team are read by the humans, not by the team's coding agents (a guard against prompt injection, [AGENTS.md](AGENTS.md#untrusted-content-and-prompt-injection)), so a reply may take a little longer. A PR from a fork is checked and run by a human before any CI with secrets or any merge.
 - Use the pull request template and tick the checklist honestly; state what you did *not* verify.
 - **Keep the docs in sync, in the same PR.** If you change something a user can see, a script, a permission, a setting, MCP or tool behavior, the release status or the contributors, update `README.md`, the relevant `docs/` page, the spec's `tasks.md` and the screenshots it shows, and add your changelog line as a new file `changelog.d/<your-branch>.md` (do not edit `CHANGELOG.md`; see [changelog.d/README.md](changelog.d/README.md)). The specs index is generated from each spec's `specs-index` block and its rows are not committed: change your spec's block (a new spec: `npm run specs:index -- --add specs/NNN-name`), never a row in `specs/README.md`. The exact list is in [AGENTS.md](AGENTS.md#keep-docs-in-sync). No docs impact? Write `Docs: n/a <reason>` in the PR description. A CI check only *warns* about it; it never blocks.
 
@@ -75,9 +76,11 @@ The gate checks **presence, not quality**: it cannot tell a good spec from a one
 
 `DURBAR_*` environment variables (`DURBAR_SIM`, `DURBAR_DRIVER`, `DURBAR_LOG`, `DURBAR_OPEN`, `DURBAR_PERM`, `DURBAR_PICK`, `DURBAR_USER_DATA`, `DURBAR_SHOT*`, ...) are developer/test hooks (spec 010). They work with `npm start` / `electron .`. A **packaged** build ignores all of them unless `DURBAR_DEV=1` is set (it then prints a warning on stderr), so a release does not carry a back door. Read hooks in the main process only through `devEnv()` in `src/main/devhooks.ts`; `npm run test:devhooks` fails otherwise.
 
+`DURBAR_CLAUDE_BIN=<absolute path of a claude file>` (spec 012 FR-163) makes detection try that Claude Code CLI first, so you can run Durbar against an old and a new CLI side by side; a relative path or a missing file is refused with a warning. `npm run test:claudecli` (opt-in, never in CI) compares the flags `claudeArgs` can emit with each installed CLI's `--help`.
+
 ## Releases (maintainer)
 
-Pushing a tag `v*` on a commit of `main` (for example `v0.1.0-alpha.5`; the tag must match `version` in `package.json`, so a version-only PR lands first) runs `.github/workflows/release.yml`, which writes the release notes from that commit's `changelog.d/` fragments, builds unsigned macOS, Windows and Linux packages and attaches them to a **draft** pre-release. The fold into `CHANGELOG.md` is a doc-only PR afterwards (`changelog.d/README.md`). Review the draft, then publish it by hand. Builds are not signed or notarized and there is no auto-update.
+Pushing a tag `v*` on a commit of `main` (for example `v0.1.0-alpha.5`; the tag must match `version` in `package.json`, so a version-only PR lands first) runs `.github/workflows/release.yml`, which writes the release notes from that commit's `changelog.d/` fragments, builds unsigned macOS, Windows and Linux packages and attaches them to a **draft** pre-release. The fold into `CHANGELOG.md` is a doc-only PR afterwards (`changelog.d/README.md`). Review the draft, then publish it by hand. When you cut a release, classify it and record the tag on the incident issues it answers (`gh issue list --label incident --state all`; steps in `changelog.d/README.md`, *At release time*). Builds are not signed or notarized and there is no auto-update.
 
 ## License
 

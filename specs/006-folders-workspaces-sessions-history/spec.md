@@ -305,3 +305,14 @@ Why: when Durbar is killed, crashes or the machine stops while agents are workin
 
 - **Out of scope / decisions:** a per-session "last prompt" is not stored (Principle III: no content). Resuming a **helper** (sub-agent) is not offered: helpers belong to a turn that is gone. A kill of one agent app's process while Durbar stays up is spec 013's stop/restart, not this card. A restart of the machine during a clean Quit does not matter (the marker is gone by then).
 - **Evidence:** `test:` `scripts/test-crashmarker.ts` (marker file: atomic, 0600, content allow-list, hostile files, cleared on exit, busy coalescing, interrupted selection); `sim:` `scripts/shots-006-crash.js` (1440x900 and 1280x800; card, Pick, per-row and all resume, note, Dismiss, no card without a crash; fit and font size).
+
+### 2026-10-25: Notes in a folder's menu, and Remove folder keeps them (spec 083 T001, issue #699)
+
+*Missing:* a folder has no place for its notes, and *Remove folder* says nothing about them. Spec 083 stores notes per folder.
+
+*Corrected:*
+- **FR-172** The folder's `⋯` menu gets **Notes (N)…**, which opens the folder's Notes screen (spec 083 FR-044). `[KNOWN GAP]` not built yet: the folder menu has no *Notes (N)…* item; spec 083 T034 builds it with the per-folder Notes screen.
+- **FR-173** **Remove folder** keeps the folder's notes by default and says so; the dialog gets a box **Also delete its notes** (unticked by default). Re-adding the folder shows its notes again (spec 083 FR-048). `[KNOWN GAP]` not built yet: *Remove folder* has no *Also delete its notes* box and says nothing about notes; the notes themselves are kept (nothing deletes them), and spec 083 T034 (FR-048) builds the box and the text.
+
+### 2026-10-27: + Folder can also create a folder (cross-reference; owned by spec 093, issue #805)
+Spec 093 adds a choice to **+ Folder** (FR-001 here): add an existing folder (unchanged), or create one (clone a repository, a new local repository with `git init`, or an empty folder). The created folder is added through the same `addMany` path, in the top bar's mode like Add existing (default Read-only; owner answer Q2 = b, 2026-10-27). Requirements, security model and tasks are in `specs/093-create-folder/`; nothing in this spec changes until it is built.

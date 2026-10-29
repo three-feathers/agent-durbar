@@ -233,7 +233,7 @@ const W0 = folderIdOf(WS);
   }
   for (const n of RESERVED) assert.ok(/reserved on Windows/.test((createProfileFile(dirs(), 'copilot', W0, n) as { error: string }).error), `${n}: says why`);
   assert.deepStrictEqual(fs.readdirSync(path.join(WS, '.claude', 'agents')).filter((n) => /^(con|prn|aux|nul|com|lpt)/i.test(n)), [], 'no device-named file written');
-  for (const good of ['console', 'com10', 'com0', 'lpt', 'nullable', 'auxiliary', 'conx', 'my-con']) assert.ok(isProfileName(good), `allowed: ${good}`);
+  for (const good of ['console', 'com10', 'lpt', 'nullable', 'auxiliary', 'conx', 'my-con']) assert.ok(isProfileName(good), `allowed: ${good}`);
   // the form's copy of the rule (profileeditor.js validName) answers the same as main for every name
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const PEN = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'profileeditor.js')) as { validName(n: unknown): boolean };
@@ -498,6 +498,7 @@ if (canLink) {
   const alias = list.find((f) => f.fileName === 'alias.agent.md')!;
   assert.ok(alias && !alias.writable && /link/i.test(alias.note || ''), 'a link inside: read-only');
   const r = readProfileFile(dirs(), alias.id);
+  assert.ok(r.ok, 'a link inside opens (so the write refusal below is really checked)');
   if (r.ok) assert.ok(!saveProfileFile(dirs(), alias.id, 'x', r.sha256, true).ok, 'a link is never written');
   // FR-040: a link is never deleted (neither the link nor what it points to); the id of a link out is not in the list
   assert.ok(!deleteProfileFile(dirs(), alias.id).ok && fs.existsSync(path.join(WS, '.github', 'agents', 'alias.agent.md')) && fs.existsSync(REV), 'a link inside is not deleted, nor its target');

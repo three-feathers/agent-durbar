@@ -1,0 +1,259 @@
+Batch 2 prompt, exactly as Paco sent it to ChatGPT (2026-10-23), recovered and pasted by Paco.
+
+Cheeky Crew — Second Character Pack
+
+Objective
+
+Generate 18 separate PNG images representing 6 original cartoon characters, each with 3 distinct poses.
+
+Generate ONE image per request. Never combine multiple characters or poses into a sheet, grid, collage, or multi-panel composition.
+
+Global Visual Style
+
+All 18 illustrations must share exactly the same visual style:
+
+* Modern cartoon character portraits designed as app avatars.
+* Bold, clean black outlines.
+* Warm cel-shaded comic/sticker aesthetic.
+* Friendly young adults with expressive, slightly exaggerated eyes.
+* Fun, unconventional, slightly rebellious personalities.
+* Polished professional digital illustration.
+* Head-and-shoulders bust, centred, cropped at mid-chest.
+* Square 1254 × 1254 PNG.
+* TRUE transparent alpha background.
+* No checkerboard, floor, shadow, vignette, frame, or border.
+* No text, letters, numbers, logos, brands, or symbols on clothing or accessories.
+* No rude gestures.
+* Office-safe, playful and a little cheeky.
+* Original characters, not based on celebrities or real people.
+
+CRITICAL CONSISTENCY RULE: Preserve the exact same face, hairstyle, skin colour, clothing, accessories, proportions, and overall personality across all three poses of each character.
+
+Three Poses
+
+WORKING
+
+* Looking toward the right side, as though working at an off-screen computer.
+* Focused, confident half-smile.
+* Both hands outside the image.
+* No resting prop.
+
+WAITING
+
+* Facing the viewer directly.
+* Warm and friendly smile.
+* One raised OPEN hand waving.
+* Palm facing the viewer, with five natural, clearly visible fingers.
+* No resting prop.
+
+RESTING
+
+* Eyes gently closed.
+* Relaxed, content smile.
+* Holding the character-specific prop with BOTH hands in front of the chest.
+* Entire prop and both hands visible.
+
+⸻
+
+Character 1 — ROCKER
+
+Personality: Confident, charismatic, playful, with a classic rock-and-roll attitude.
+
+Appearance:
+
+* Young adult male.
+* Light-medium skin.
+* Large, perfectly styled BLACK pompadour / rockabilly quiff.
+* Short, neat sideburns.
+* Expressive eyebrows and a mischievous grin.
+* Black leather biker jacket with simple silver zips.
+* Plain shirt underneath.
+* Rockabilly inspiration without resembling Elvis Presley or any other celebrity.
+* No band names or logos.
+
+RESTING PROP: Plain red ceramic coffee mug with steam.
+
+The pompadour must retain exactly the same distinctive shape across all three poses.
+
+Character 2 — BUZZCUT / ALTERNATIVE
+
+Personality: Urban, minimalist, confident, slightly rebellious but approachable.
+
+Appearance:
+
+* Young adult male.
+* Medium skin tone.
+* Very short buzzcut / almost shaved head.
+* Distinctive facial structure and strong eyebrows.
+* Small simple nose ring.
+* Green bomber jacket over a plain dark shirt.
+* Clean modern streetwear look.
+* Subtle cheeky smile.
+* No tattoos containing symbols, lettering, or logos.
+
+RESTING PROP: Plain dark charcoal travel mug with steam.
+
+Keep the hairstyle extremely short in all three poses. Do not introduce longer hair.
+
+Character 3 — NERD / THE STUDENT
+
+Personality: Clever, curious, slightly awkward, lovable and enthusiastic.
+
+Appearance:
+
+* Young adult male.
+* Light skin.
+* Neatly styled short brown hair.
+* Small ROUND eyeglasses with thin frames.
+* Light freckles across the cheeks.
+* Expressive eyes visible through the glasses.
+* Mustard-yellow cardigan.
+* Simple shirt underneath.
+* Friendly, intelligent smile.
+* A slightly bookish, modern university-student aesthetic.
+
+RESTING PROP: Plain ceramic coffee mug with steam.
+
+The small round glasses and freckles must remain consistent across all three poses.
+
+Character 4 — MODERN SCIENTIST
+
+Personality: Young, inventive, curious, enthusiastic about experiments and technology.
+
+Appearance:
+
+* Young adult male.
+* Medium-brown skin.
+* SHORT black curly hair with subtle electric-blue tips.
+* Clean-shaven face.
+* Contemporary youthful facial features.
+* Amber protective laboratory goggles resting on top of his head.
+* Turquoise laboratory coat.
+* Plain orange shirt underneath.
+* Bright, intelligent eyes.
+* Playful, confident smile.
+
+RESTING PROP: Plain ceramic mug with steam, held safely with both hands.
+
+CRITICAL: MUST NOT RESEMBLE EINSTEIN.
+
+Avoid:
+
+* White or grey wild hair.
+* Large bushy moustache.
+* Elderly appearance.
+* Historical scientist clothing.
+* Einstein-like facial features or hairstyle.
+* Stereotypical old professor appearance.
+
+The character must look like a modern, young research scientist working in a contemporary technology laboratory.
+
+Character 5 — HEAVY METAL
+
+Personality: Friendly metalhead, confident, rebellious, with a surprisingly warm smile.
+
+Appearance:
+
+* Young adult male.
+* Light-medium skin.
+* Very LONG dark-brown hair flowing past the shoulders.
+* Hair slightly wavy, thick and natural.
+* Light facial stubble.
+* Strong but friendly facial features.
+* Sleeveless blue denim vest over a plain dark T-shirt.
+* Subtle metallic clothing details without logos or symbols.
+* Rock/metal-inspired style.
+* No band merchandise, skull logos, or offensive gestures.
+
+RESTING PROP: Large plain black ceramic mug with steam.
+
+The long flowing hair must stay recognisably consistent across all three poses.
+
+Character 6 — NERD GIRL / LONG HAIR AND GLASSES
+
+Personality: Bright, charming, geeky, quirky, confident and fun.
+
+Appearance:
+
+* Young adult woman.
+* Light-medium skin.
+* Auburn / copper-brown hair with a soft bob or medium-length shape.
+* Thin, ROUND turquoise eyeglasses.
+* Expressive large eyes clearly visible behind the lenses.
+* Friendly intelligent smile.
+* Mint-green knitted vest over a plain peach-coloured shirt.
+* Warm, youthful, slightly unconventional academic look.
+* Subtle freckles if consistent across all poses.
+
+RESTING PROP: Plain pastel-coloured ceramic mug with steam.
+
+She must look clearly different from the male nerd character while sharing a playful, clever personality.
+
+⸻
+
+Required Generation Order
+
+ROCKER
+
+1. rocker-working.png
+2. rocker-waiting.png
+3. rocker-resting.png
+
+BUZZCUT
+
+4. buzzcut-working.png
+5. buzzcut-waiting.png
+6. buzzcut-resting.png
+
+NERD
+
+7. nerd-working.png
+8. nerd-waiting.png
+9. nerd-resting.png
+
+SCIENTIST
+
+10. scientist-working.png
+11. scientist-waiting.png
+12. scientist-resting.png
+
+HEAVY METAL
+
+13. metal-working.png
+14. metal-waiting.png
+15. metal-resting.png
+
+NERD GIRL
+
+16. nerd-girl-working.png
+17. nerd-girl-waiting.png
+18. nerd-girl-resting.png
+
+Generation Procedure
+
+For each character:
+
+1. Generate the WORKING portrait first.
+2. Use the WORKING portrait as the identity and style reference when generating WAITING.
+3. Use the preceding images of the same character as references for RESTING.
+4. Preserve facial structure, hairstyle, accessories, skin tone, and outfit exactly.
+5. Change only the pose, facial expression, visibility of hands, and specified prop.
+6. Never use a different character's portrait as an identity reference.
+7. Maintain the same global illustration style throughout all 18 images.
+
+Quality Checklist
+
+Verify every image before delivery:
+
+* Exactly one character and one pose.
+* Consistent identity across all three poses.
+* Correct hair, glasses, clothing, and accessories.
+* Clearly visible open palm with five fingers in WAITING.
+* Closed eyes and both hands holding the specified prop in RESTING.
+* No text, numbers, logos, or unwanted symbols.
+* Proper head-and-shoulders composition.
+* Complete, non-corrupted PNG.
+* 1254 × 1254 resolution.
+* Real transparent alpha background.
+
+Final deliverable: 18 individually named, independent transparent PNG images suitable for a modern app avatar system.

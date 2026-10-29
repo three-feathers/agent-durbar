@@ -121,6 +121,26 @@ for (const f of files) {
   assert.ok(out.filter((e) => e.agentId === undefined).length === 4, 'the rest belongs to the main agent');
 }
 
+// 4a. Spec 015 FR-016: what `--forward-subagent-text` adds. Shape: `claude --help` ("Forward subagent text and thinking blocks as assistant/user
+// messages with parent_tool_use_id set", read: 2.1.309) and the CHANGELOG (2.1.211). Text and thinking arrive as whole assistant messages
+// (no stream_event), so they map to a final output and a thinking event of the helper, never of the main agent, and are counted once.
+{
+  const msgs = [
+    { type: 'assistant', message: { id: 'p1', content: [{ type: 'tool_use', id: 'toolu_f1', name: 'Agent', input: { prompt: 'look', subagent_type: 'explore' } }] } },
+    { type: 'assistant', parent_tool_use_id: 'toolu_f1', message: { id: 'c1', content: [{ type: 'thinking', thinking: 'hm' }, { type: 'text', text: 'found it' }], usage: { input_tokens: 5, output_tokens: 2 } } },
+    { type: 'user', parent_tool_use_id: 'toolu_f1', message: { role: 'user', content: [{ type: 'text', text: 'look' }] } },
+    { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_f1', content: 'done' }] } },
+  ] as ClaudeMessage[];
+  const out = run(msgs);
+  const text = out.filter((e) => e.type === 'output');
+  assert.deepStrictEqual(text.map((e) => e.type === 'output' && [e.final, e.text, e.agentId]), [[true, 'found it', 'toolu_f1']], 'sub-agent text is the helper\'s, not the parent\'s chat');
+  const th = out.filter((e) => e.type === 'thinking');
+  assert.deepStrictEqual(th.map((e) => e.type === 'thinking' && [e.delta, e.agentId]), [['hm', 'toolu_f1']]);
+  assert.ok(out.every((e) => e.type !== 'output' || e.agentId === 'toolu_f1'), 'nothing leaks to the main agent');
+  const repeated = run([...msgs.slice(0, 2), msgs[1]]);
+  assert.strictEqual(repeated.filter((e) => e.type === 'usage').length, 1, 'a repeated message id counts its usage once');
+}
+
 // 4b. Exactly one closing event per sub-agent: by the tool_result alone, or by task_notification first (no double close).
 {
   const closes = (f: string): string[] => run(load(f).messages).filter((e) => e.type === 'subagent' && e.phase !== 'started').map((e) => (e.type === 'subagent' ? `${e.subagentId}:${e.phase}` : ''));

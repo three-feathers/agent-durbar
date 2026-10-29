@@ -17,6 +17,7 @@ import { register as registerAttachmentsIpc } from './ipc/attachments';
 import { register as registerCheckpointsIpc } from './ipc/checkpoints';
 import { register as registerFloorsIpc } from './ipc/floors';
 import { register as registerFoldersIpc } from './ipc/folders';
+import { register as registerNewFolderIpc } from './ipc/newfolder';
 import { register as registerFolderSetupIpc } from './ipc/foldersetupipc';
 import { startHeldBy } from './updategate';
 import { register as registerHarnessIpc } from './ipc/harness';
@@ -33,6 +34,9 @@ import { NotesOps } from './notesops';
 import { NotesStore } from './notesstore';
 import { register as registerQuestionsIpc } from './ipc/questions';
 import { register as registerRemoteIpc } from './ipc/remote';
+import { register as registerDoorsIpc } from './ipc/doors';
+import { Doors, loadDoors, saveDoors } from './doors';
+import type { HeldRun } from './doors';
 import { register as registerSchedulesIpc } from './ipc/schedules';
 import { register as registerSettingsIpc } from './ipc/settings';
 import { register as registerThemesIpc } from './ipc/themes';
@@ -44,7 +48,7 @@ import * as path from 'path';
 import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
 import { offeredDescriptors } from '../adapters/experimental';
 import { createRegistry, detectAll } from '../adapters/registry';
-import { detectorFor, setLoginPath } from '../adapters/detect';
+import { configureDevClaudeBin, detectorFor, setLoginPath } from '../adapters/detect';
 import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { renameOp, titleSyncOf } from './sessionnames';
 import { adapterForAdd, createRouter, previousSessionsOf } from '../adapters/router';
@@ -76,9 +80,13 @@ import { appServerUrls } from './mcpsignin';
 import { globalFiles } from './mcpglobal';
 import { GlobalLists, sessionGlobalFor } from './mcpglobalio';
 import { register as registerMcpGlobalIpc } from './ipc/mcpglobal';
+import { register as registerSandboxIpc } from './ipc/sandbox';
+import { requireOsSandbox } from './sandboxpolicy';
+import { cleanSandboxState } from '../shared/sandbox';
+import { toWindowEvent } from './sandboxops';
 import { UsageStore } from './usagestore';
 import { AgentTrustStore } from './agenttrust';
-import { Scheduler, loadSchedules, saveSchedules, scheduleBusy } from './schedules';
+import { Scheduler, loadSchedules, publicDoc, saveSchedules, scheduleBusy } from './schedules';
 import type { SchedulerDeps } from './schedules';
 import { UsageTotalsStore } from './usagetotalsstore';
 import { ActivityStore } from './activitystore';
@@ -117,6 +125,7 @@ if (aumid) app.setAppUserModelId(aumid);
 const dev = devEnv(process.env, app.isPackaged);
 const devNote = devWarning(process.env, app.isPackaged);
 if (devNote) console.error(devNote);
+configureDevClaudeBin(dev); // spec 012 FR-163: DURBAR_CLAUDE_BIN, dev/test only (`dev` is empty in a packaged build)
 // Spec 008 FR-103: a test run's window is never treated as hidden when another window covers it (the Windows CI desktop and a shared
 // X display run several drivers at once). Chromium then stops animation frames and throttles timers, so the page stopped drawing mid-check.
 if (dev.DURBAR_DRIVER || dev.DURBAR_SHOT) app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
@@ -214,7 +223,17 @@ const toRenderer = (channel: string, payload: unknown): void => {
 /** An MCP status event carries server error text: masked here, once, before the window sees it (spec 019 FR-021). */
 /** Spec 019 FR-022: the masked copy of an `mcp` event, built once per event; every path out of main (window, debug sink) uses it. */
 const outward = (e: AgentEvent): AgentEvent => maskMcpEvent(e, e.type === 'mcp' || (e.type === 'toolCall' && ((e.phase !== 'start' && e.mcpServer) || e.edit)) ? mcp.secretValuesFor(e.sessionId) : []); // spec 005 FR-024: edits too
-router.onEvent((e) => toRenderer('agent:event', outward(e)));
+router.onEvent((e) => toRenderer('agent:event', toWindowEvent(e, outward))); // spec 087 (review rounds 7-8): the sandbox event cleaned too
+// Spec 087 FR-011: the OS sandbox state is kept on the agent's info (cleaned: own known fields, reason masked and cut), so a reloaded
+// window gets it from agents:list; never saved
+router.onEvent((e) => {
+  if (e.type !== 'sandbox' || e.agentId) return;
+  const a = agents.get(e.sessionId);
+  if (!a) return;
+  const st = e.sandbox === null ? undefined : cleanSandboxState(e.sandbox);
+  if (st) a.sandbox = st;
+  else delete a.sandbox;
+});
 const maskHistory = <H extends { items: { type: string; failed?: boolean; output?: string }[] }>(id: string, h: H): H => maskMcpHistory(h, mcp.secretValuesFor(id)); // FR-067: resume replies skip outward()
 /** Open MCP elicitations (spec 012 FR-151): main checks each answer against the fields it was asked with. */
 const elicitTracker = createElicitTracker();
@@ -343,8 +362,11 @@ function folderSetupStart(key: string, dirs: readonly string[], appId: string, t
 
 const startOptionsFor = (a: AgentInfo) => {
   const base = { ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort)), ...mcp.optionsFor(a.id) };
-  const fs61 = folderSetupStart(wsKey(a), a.folders ?? [a.cwd], router.adapterIdOf(a.id) ?? a.adapterId ?? registry.defaultId, new Set(Object.keys(base.mcpServers)));
-  return { ...base, mcpServers: { ...base.mcpServers, ...fs61.mcpServers }, ...(fs61.folderSetup ? { folderSetup: fs61.folderSetup } : {}) };
+  const appId = router.adapterIdOf(a.id) ?? a.adapterId ?? registry.defaultId;
+  const fs61 = folderSetupStart(wsKey(a), a.folders ?? [a.cwd], appId, new Set(Object.keys(base.mcpServers)));
+  // spec 087 FR-019 (the organization policy, read in main) and FR-007c (the stored choice); the adapter decides what they mean
+  const sbx = { ...(requireOsSandbox() ? { requireOsSandbox: true } : {}), ...(settingsStore?.sandboxAlwaysContinue(appId) ? { sandboxAlwaysContinue: true } : {}) };
+  return { ...base, mcpServers: { ...base.mcpServers, ...fs61.mcpServers }, ...(fs61.folderSetup ? { folderSetup: fs61.folderSetup } : {}), ...sbx };
 };
 
 async function addWorkspace(
@@ -515,6 +537,9 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
 
 // ---- scheduled prompts (spec 044): per folder, while the app runs; the run goes through the user's own send path ----
 let scheduler: Scheduler | undefined;
+/* spec 017 FR-015..FR-017, spec 044 FR-110: doors the user closed (Do not disturb) and the runs held there; keyed by the session's resume id */
+let doors: Doors | undefined;
+const doorKey = (a: AgentInfo): string => resumeIdFor(a.id);
 const folderAgent = (folder: string): AgentInfo | undefined => [...agents.values()].find((x) => wsKey(x) === folder);
 /** The session a schedule runs in: its target (FR-014), only while that session is in this folder, else the folder's agent. */
 const scheduleAgent = (s: { folder: string; target?: { session: string } }): AgentInfo | undefined => {
@@ -548,6 +573,9 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
     const unit = caps.capUnit === 'usd' ? 'usd' : 'aiu';
     return (unit === 'usd' ? caps.usage.costUsd : caps.usage.nanoAiu) ? unit : undefined; // FR-015: a limit needs the spend in that unit
   },
+  /* spec 044 FR-110: a run for an agent behind a door the user closed is queued there (held): never sent, never dropped. A full queue
+     (spec 017 FR-016, 200 runs) still answers true, so nothing goes out while the door is closed. */
+  hold: (s, now) => doorsIpc.hold(scheduleAgent(s)?.id, { at: now, prompt: s.prompt, scheduleId: s.id }), // the rule: doorops.ts (tested)
   send: async (folder, prompt, s) => {
     const a = scheduleAgent(s);
     const ad = a ? router.forAgent(a.id) : undefined;
@@ -569,7 +597,7 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
   setTimer: (ms, fn) => setTimeout(fn, ms),
   clearTimer: (t) => clearTimeout(t as NodeJS.Timeout),
   save: (doc) => saveSchedules(file, doc),
-  changed: (doc) => toRenderer('schedules:changed', doc),
+  changed: (doc) => toRenderer('schedules:changed', publicDoc(doc)), // spec 044 FR-043: no run logs in the push
 });
 
 // The handler bodies that refuse a setting a live session cannot take live in agentops.ts (spec 012 FR-054); `store` is read when a handler runs.
@@ -700,7 +728,10 @@ const renameSessionOpFor = (openIds: () => ReadonlySet<string>) => renameOp({
 
 // ---- IPC (spec 045 FR-060): every handler lives in src/main/ipc/<area>.ts, registered here through ipcHandle / ipcOn (ipcguard.ts). ----
 // Stores created in whenReady, and state that changes, are passed as getters so a handler reads them when it runs.
-const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity });
+const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity, doorClosed: (id) => { const a = agents.get(id); return !!a && !!doors?.isClosed(doorKey(a)); } });
+/* spec 017 FR-017: a held run goes out through the same path as a scheduled one (the window shows it as the user's message) */
+/* spec 044 FR-111 (review on #631): Send all goes through the scheduler (Pause all, the schedule, its limit, busy incl. coffee breaks, credited) */
+const doorsIpc = registerDoorsIpc({ agents, router, doors: () => doors, keyOf: doorKey, remoteOps, toRenderer, release: (run: HeldRun) => (scheduler ? scheduler.releaseDoorRun(run.scheduleId, run.prompt) : Promise.resolve('failed' as const)) });
 registerAppIpc({
   getSinceAway: () => sinceAway,
   clearSinceAway: () => { sinceAway = null; },
@@ -718,12 +749,13 @@ const browser = registerBrowserIpc({ agents, getWin: () => win, toRenderer, simu
 const browserGone = (id: string): void => void browser.destroy(id).catch(() => undefined);
 /** Spec 043 FR-041: which profile file changes each session has seen (shared by ipc/agents.ts and ipc/profiles.ts). */
 const profileFreshness = createProfileFreshness();
-registerAgentsIpc({ browserGone, agents, router, agentState, opsDeps, remoteOps, mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory });
+registerAgentsIpc({ browserGone, agents, router, agentState, opsDeps, remoteOps, mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id) }); // spec 087: sandboxOps is set below, before any IPC call
 registerAttachmentsIpc({ dev, pickedFiles, getStageDir, sizeOf });
 registerPreviousIpc({ browserGone, renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });
 registerSchedulesIpc({ getScheduler: () => scheduler, getFolderStore: () => folderStore });
 registerUsageIpc({ agents, getUsageStore: () => usageStore, getUsageTotalsStore: () => usageTotalsStore, usageLabel });
+const newFolderIpc = registerNewFolderIpc({ addMany, getSettingsStore: () => settingsStore, asEffort, toRenderer }); // spec 093: create a folder from + Folder (clone, new repository, empty folder)
 registerSettingsIpc({ getSettingsStore: () => settingsStore, getRunTheme: () => runTheme, clearRunTheme: () => { runTheme = undefined; } });
 registerThemesIpc({ dev, registry, router });
 const harnessIpc = registerHarnessIpc({
@@ -771,7 +803,9 @@ registerNotesIpc({ getOps: () => notesOps }); // spec 083
 registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey, orgModel: (adapterId, model) => orgPolicies.model(adapterId, model) });
 registerOrgPolicyIpc({ view: () => orgPolicies.view() });
 registerAdaptersIpc({ adaptersList });
-registerFoldersIpc({ browserGone, agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey });
+const sandboxOps = registerSandboxIpc({ agents, router, getSettingsStore: () => settingsStore, readyAdapterIds }); // spec 087
+router.onEvent((e) => sandboxOps.onEvent(e)); // spec 087 FR-007a: Continue only answers a note main forwarded
+registerFoldersIpc({ browserGone, agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey, forgetSandboxNote: (id) => sandboxOps.forget(id) });
 registerFloorsIpc({ agents, getFolderStore: () => folderStore, wsKey });
 /* Spec 061: a folder's own agent setup (scan, decide, explain), window-only (FR-013); the pure handler bodies are unit-tested. */
 registerFolderSetupIpc({
@@ -883,7 +917,7 @@ function createWindow(): void {
     query.sim = String(simulatorCount(dev));
     if (dev.DURBAR_SIM_FREEZE === '1') query.simfreeze = '1';
     if (dev.DURBAR_SIM_ROOMS) query.simrooms = dev.DURBAR_SIM_ROOMS;
-    if (dev.DURBAR_SIM_FLOORS === '1') query.simfloors = '1';
+    if (dev.DURBAR_SIM_FLOORS === '1' || dev.DURBAR_SIM_FLOORS === 'ground') query.simfloors = dev.DURBAR_SIM_FLOORS; // spec 092 T010: 'ground' = the same three floors with every folder on the Ground floor
     if (/^[1-5]$/.test(dev.DURBAR_SIM_CRASH ?? '')) query.simcrash = dev.DURBAR_SIM_CRASH as string; // spec 006 FR-046: a faked crash marker with N interrupted sessions
     if (dev.DURBAR_THEME && /^[a-z0-9_-]{1,64}$/.test(dev.DURBAR_THEME)) query.theme = dev.DURBAR_THEME; // spec 036 FR-005: the simulator's settings carry it
     if (dev.DURBAR_SIM_TITLES === '1') query.simtitles = '1'; // spec 001/002 deltas 2026-10-18: main agents with session titles
@@ -1013,6 +1047,10 @@ app.whenReady().then(() => {
     interrupted = found.items.length ? found : null;
   }
   {
+    const dfile = path.join(app.getPath('userData'), 'durbar-doors.json');
+    doors = new Doors(loadDoors(dfile), (doc) => { try { saveDoors(dfile, doc); } catch (err) { console.warn('[doors] could not save', err instanceof Error ? err.message : err); } });
+  }
+  {
     const file = path.join(app.getPath('userData'), 'durbar-schedules.json');
     scheduler = new Scheduler(loadSchedules(file, Date.now()), scheduleDeps(file));
     // spec 010 FR-025: the profile's saved schedules would send real prompts; under the simulator they are read, never run
@@ -1074,6 +1112,8 @@ app.whenReady().then(() => {
 let remoteReleased = false;
 let quitNoted = false;
 let disposedOnQuit = false;
+/** Spec 093 FR-043: a running clone is ended and its folder removed (at most 5 s) before the app quits; asked once. */
+let newFolderEnded = false;
 app.on('before-quit', (ev) => {
   if (!quitConfirmed) {
     if (workingCount() > 0 && !dev.DURBAR_SHOT && !dev.DURBAR_DRIVER) {
@@ -1087,11 +1127,18 @@ app.on('before-quit', (ev) => {
     }
     quitConfirmed = true;
   }
+  scheduler?.flush(); // spec 044 FR-037: a fold-only change of the run log is written now
   quitting = true; // only once the quit is confirmed: after a Cancel, closing the window on macOS still only hides it
   if (!quitNoted) {
     quitNoted = true;
     if (win && !win.isDestroyed()) saveWindowState(win);
     appState?.setQuitAt(Date.now());
+  }
+  if (!newFolderEnded && newFolderIpc.busy()) {
+    newFolderEnded = true;
+    ev.preventDefault();
+    void newFolderIpc.quit().catch(() => undefined).finally(() => app.quit());
+    return;
   }
   const release = !remoteReleased && remoteOps.ids().length > 0;
   const dispose = !disposedOnQuit && disposeOnQuit(process.platform);
@@ -1106,6 +1153,7 @@ app.on('before-quit', (ev) => {
     .finally(() => app.quit());
 });
 app.on('will-quit', () => {
+  scheduler?.flush(); // spec 044 FR-037: a fold counted during the 3 s dispose window of before-quit
   void destroyAllViews(); // spec 080 FR-023: the session browsers (none exist until the browser pane lands)
   usageStore?.flush();
   usageTotalsStore?.flush();

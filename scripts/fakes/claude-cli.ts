@@ -88,3 +88,6 @@ export function fakeSpawn(): { spawn: SpawnFn; calls: Array<{ file: string; args
   };
   return rec;
 }
+
+/** Spec 087: host facts where Claude Code's sandbox can be tried (Linux, bubblewrap and socat found, a new enough CLI). No probe runs. */
+export const SANDBOX_HOST_OK = async (): Promise<{ platform: string; version: string; haveBwrap: boolean; haveSocat: boolean }> => ({ platform: 'linux', version: '2.1.312', haveBwrap: true, haveSocat: true });

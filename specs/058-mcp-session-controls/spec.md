@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: MCP servers in a session (issue #349): plain state words and how servers start per agent app, the masked failure reason with a hint, per-server Restart where the agent app has one (Copilot, Claude Code), Restart session with these servers, Open log folder (reveal only)
-status: **Specified and clarified** (spec, research, plan, tasks); the owner answered Q1-Q11 on 2026-10-20 (all option A). Built so far: MCP error and event masking (`maskMcpError`, `maskMcpEvent`; #362, #382); per-server Restart (Copilot, Claude Code) and Restart session with these servers (T030-T034, T040-T044, #349; simulator and fakes, not on a real account); state words and icons, hints, *Details* with *Copy* and live refresh of the open dialog (T113-T115, #364 step 4; simulator and tests; the start line, toggle timing and logs are not built yet); delta 2026-10-20 (issue #364): MCP OAuth sign-in (needs-auth from a 401, start the agent app's own sign-in or show terminal steps, switch off for this session), specified and clarified (owner answered Q12-Q19 on 2026-10-20); built so far (PR 1): the classifier `isMcpAuthChallenge`, `isAuthError` ignoring it, and masking of failed MCP tool cards (T091, T092, T097); PR 2: the types, event guard and fake for sign-in (`errorClass`, `mcpSignIn`, `mcpSignInSteps`, `startMcpSignIn?`, `mcpAuth`; T112, T093); no adapter sets them yet, no sign-in yet; delta 2026-10-23 (issue #596, owner): live state and actions of every server in Settings > MCP servers over the running chats (FR-080..FR-087) built, simulator and unit tests only; delta 2026-10-23 (issue #603): MCP health, a plain failure reason per server (never guessed), when it was seen, Copy diagnostics (masked) and a dot on the MCP chip (FR-090..FR-097; simulator and unit tests, not on a real account); delta 2026-10-23 (T099, T100): Sign in for Claude Code and Codex specified (FR-175..FR-186; Q20, Q21, Q23, Q24: A; Q22: B (owner, 2026-10-23)); PR A built Claude Code's Sign in with the shared parts, the per-app "different site" lookup and the allow-listed `oauth` copy (T099, T151, T152, T157, T158; simulator and fakes, not on a real account); Codex (T100, PR B) not yet; T160 closes #509 with fixed GitHub-hosted runner choices for the manual OAuth check (`windows-and-ubuntu` plus the individual Windows, Ubuntu, and macOS runners); validated locally, not dispatched; macos-latest has never run it (first dispatch needs the owner's OK)
+status: **Specified and clarified** (spec, research, plan, tasks); the owner answered Q1-Q11 on 2026-10-20 (all option A). Built so far: MCP error and event masking (`maskMcpError`, `maskMcpEvent`; #362, #382); per-server Restart (Copilot, Claude Code) and Restart session with these servers (T030-T034, T040-T044, #349; simulator and fakes, not on a real account); state words and icons, hints, *Details* with *Copy* and live refresh of the open dialog (T113-T115, #364 step 4; simulator and tests; the start line, toggle timing and logs are not built yet); delta 2026-10-20 (issue #364): MCP OAuth sign-in (needs-auth from a 401, start the agent app's own sign-in or show terminal steps, switch off for this session), specified and clarified (owner answered Q12-Q19 on 2026-10-20); built so far (PR 1): the classifier `isMcpAuthChallenge`, `isAuthError` ignoring it, and masking of failed MCP tool cards (T091, T092, T097); PR 2: the types, event guard and fake for sign-in (`errorClass`, `mcpSignIn`, `mcpSignInSteps`, `startMcpSignIn?`, `mcpAuth`; T112, T093); no adapter sets them yet, no sign-in yet; delta 2026-10-23 (issue #596, owner): live state and actions of every server in Settings > MCP servers over the running chats (FR-080..FR-087) built, simulator and unit tests only; delta 2026-10-23 (issue #603): MCP health, a plain failure reason per server (never guessed), when it was seen, Copy diagnostics (masked) and a dot on the MCP chip (FR-090..FR-097; simulator and unit tests, not on a real account); delta 2026-10-23 (T099, T100): Sign in for Claude Code and Codex specified (FR-175..FR-186; Q20, Q21, Q23, Q24: A; Q22: B (owner, 2026-10-23)); PR A built Claude Code's Sign in with the shared parts, the per-app "different site" lookup and the allow-listed `oauth` copy (T099, T151, T152, T157, T158; simulator and fakes, not on a real account); Codex (T100, PR B) not yet; T160 closes #509 with fixed GitHub-hosted runner choices for the manual OAuth check (`windows-and-ubuntu` plus the individual Windows, Ubuntu, and macOS runners); validated locally, not dispatched; macos-latest has never run it (first dispatch needs the owner's OK); 2026-10-27 delta (issue #779 A and B, FR-187..FR-192, T161..T166): a Running server's last-call outcome (sign-in or organization policy) in words, and a re-read of the agent app's list on every dialog open plus Refresh (simulator and fakes; not on a real app); per-server logs (#779 C) wait for an owner decision
 -->
 
 **Feature Branch**: `058-mcp-session-controls`
@@ -1411,3 +1411,97 @@ approval for a real Copilot runtime check.
 (`test-changelog.js`) pins the workflow's safety properties statically (`type: choice` with exactly the four options, a matrix of
 fixed GitHub-hosted labels, no `${{ inputs.* }}` in any `run:`, no `fromJSON` of a bare input, `contents: read`), with mutations
 that must fail.
+
+### 2026-10-27: a Running server whose calls fail, and a state that is read again (issue #779, parts A and B)
+
+**Numbers taken** (checked on `origin/main`, the remote branches and the open PRs, 2026-10-27; none of them touches spec 058's
+`spec.md` or `tasks.md` apart from the 025 changelog branch): **FR-187..FR-192** and **T161..T166**.
+
+**Status**: built (T161..T166), simulator, fakes and unit tests only. `[KNOWN GAP]` not seen on a real agent app: the policy text
+shapes come from the owner's report (a real Copilot session on macOS, 2026-10-26), and a real runtime's `mcp.list` was not run for a
+whole-list read (see FR-190).
+
+**Problem** (owner report, issue #779): (1) `agent365-teams` read **Running** while every `SendMessageToUser` call failed with an Entra
+ID Conditional Access refusal (`AADSTS530003`, "Your device is required to be managed..."); the user learned it only by opening a
+failed tool card. (2) After signing in again the dialog did not show the right state: it re-reads the list only while a sign-in page
+is open (every 5 s, at most 10 minutes) or for 5 minutes after an attempt (FR-064, FR-176), otherwise it shows the last `mcp` report.
+
+**Out of scope, waiting for an owner decision**: part C of #779 (a per-server log viewer in the app). It reverses Q5 and FR-025 (2026-10-20:
+only *Open log folder*, no log lines in the app) and #349's "Show logs"; *Open log folder* stays. Nothing here shows a log line.
+
+#### Requirements (delta)
+
+- **FR-187** **The last call's class, derived once, as a word.** `classifyMcpCall(text, mcpAuth)` (`src/shared/mcpcall.ts`, pure,
+  linear, the text cut at 4000 characters first) answers `policy`, `auth` or nothing, and never returns any of the text.
+  - `policy`: an Entra Conditional Access code `AADSTS53xxxx` (six digits after `AADSTS`, for example `AADSTS530003`), "Conditional Access",
+    and the "device (is) (required) to be managed", "managed device", "compliant device", "device is not compliant / enrolled" shapes.
+    Tested first: such a refusal also says "AADSTS" or "sign in", and it is not fixed by signing in.
+  - `auth`: the adapter's own `mcpAuth` flag on the failed call (FR-063), or "401 Unauthorized", a 401 next to an HTTP / status / code /
+    error / response word (a bare 401 such as "line 401 of input.csv" or "Page 401 of 900" is not one), "unauthorized", an expired or
+    invalid token, `invalid_grant`, "sign-in required", Copilot's "MCP OAuth challenge required", or one of the **listed** Entra codes
+    that signing in again fixes: `AADSTS50058`, `50072`, `50074`, `50076`, `50078`, `50079`, `50132`, `50133`, `50173`, `70008`,
+    `70043`, `70044`, `700082` and `65001` (each with its meaning in the comment of `src/shared/mcpcall.ts`; the meanings are from
+    Microsoft's published list, written from memory, not re-checked online). Any other `AADSTS50xxx` / `70xxx` code (for example
+    `50105`, `50020`, `50144`) gets no class, because a new sign-in does not fix it (review on #800). This is the same `auth` class as FR-011 and FR-080/FR-081, now also for a call that fails on a server
+    the runtime still calls `connected`.
+  - A 403 or "forbidden" alone is not claimed (it is not always a sign-in); nothing is guessed. `src/renderer/sim.ts` keeps a marked copy of
+    the two patterns (`mcpcall:begin`..`mcpcall:end`); `test:mcpcall` cuts it out and checks it answers like the shared one.
+  [IMPLEMENTED] `test:` `scripts/test-mcpcall.ts`.
+- **FR-188** **Main keeps the word per session and server, and the reply carries it only on a Running row.** `McpCallTracker`
+  (`src/main/mcpcall.ts`, fed by `router.onEvent`) looks at each `toolCall` of an MCP server: a `failed` call sets the class (or clears
+  it when the failure is of another kind: the newest outcome wins), a `complete` call clears it, a call that has only started changes
+  nothing, a stopped session drops everything, at most 200 servers per session. Only the class is stored: the text of the call is
+  classified and forgotten. **A class also goes when the server comes back** (review on #800): in an `mcp` report, a server that was not
+  `connected` in the session's previous report (needs sign-in, failed, starting) and is `connected` now drops it, so "needs sign-in"
+  does not outlive the sign-in. A server that was `connected` in both reports keeps it (the runtime keeps saying `connected` while an
+  organization policy refuses every call, and each repeated report says so again, so clearing on every `connected` would hide a policy
+  refusal at once); the same rule is in `sim.ts`. `agents:mcp` entries get `lastCall: 'auth' | 'policy'` only when the session runs, the server is on and its
+  state is `connected` (a failed or needs-sign-in row has its own reason, FR-090). The window has no other way to learn it.
+  [IMPLEMENTED] `test:` `test-mcpcall.ts` (tracker and reply); `sim:` `shots-058-mcp-refresh.js`.
+- **FR-189** **The row says it in words, masked, in both places.** The chat's MCP dialog row and the chat's row under *Settings > MCP
+  servers > Live in your chats* (they share `mcpwords.js`) read "Running · last call blocked by your organization's access policy" or
+  "Running · last call needs sign-in" (the second part is a separate `.mst-call` element, so the state word still reads *Running*), with
+  one hint line: for `policy` "Your organization's access policy refused the server's last call (for example, the device must be
+  managed). Agent Durbar cannot change that; ask your administrator."; for `auth` that the agent app keeps the sign-in and to sign in
+  again (the row's *Sign in again* is there where the agent app offers it). The words and hints are fixed text in `mcpwords.js`
+  (`callWord`, `callHint`): no raw error, claims blob, trace or correlation ID, or e-mail address can reach the page, so none can be
+  in a screenshot, a fixture or a test. The Settings summary line (counts per state) is unchanged. A later successful call clears the
+  words on the next read of the list (the dialog repaints on an `mcp` event, on Refresh and when it opens).
+  [IMPLEMENTED] `test:` `test-mcpcall.ts` (words, masking); `sim:` `shots-058-mcp-refresh.js` (1440x900 and 1280x800).
+- **FR-190** **The dialog reads the agent app's list again when it opens, and has Refresh.** A new channel `agents:mcpRefresh(id)`
+  (owner-only, `fromApp`) calls the adapter's `refreshMcpStatus(sessionId)` with **no server name**, the same call the sign-in poll
+  uses (FR-064), so the new states arrive as the usual `mcp` event and the existing repaint path shows them. The dialog calls it once
+  on every open (silent unless it fails) and its **Refresh** button calls it again, with "Refreshing..." while it runs, "Updated just
+  now." after, and a polite announcement. `agents:mcp` says `canRefresh: true` when the session runs and the adapter has the call.
+  **Where the agent app cannot report it** (Codex: it re-reads only on its own events), the dialog has no button and says
+  "<app> cannot report its server list again, so these states are its last report." The window-focus and sign-in paths of FR-064
+  and FR-176 are unchanged.
+  **Owner decision (Paco, 2026-10-27, terminal): the open-time read happens at most once a minute.** Opening the dialog reads only when
+  the last read of that agent (by an open or by Refresh) is 60 s old or older; **Refresh always reads** (still one at a time, FR-191).
+  **Copilot's open-time read starts nothing** (review on #800, owner's yes): `mcpRefreshOp` passes `{ startNothing: true }` for an open,
+  and the Copilot adapter then asks `isServerRunning` for every server of its last report that is not switched off, and reads the
+  whole list only if all are running (no report yet, or no such check: it reads nothing); the button passes nothing and always reads.
+  Main keeps the rule (`mcpRefreshOp`, a per-agent time stamp, an injectable clock), so every window obeys it; `agents:mcpRefresh(id, manual)`
+  gets `manual: true` only from the button, and an open inside the minute answers `{ ok: true, supported: true, skipped: true }`. A clock
+  that moved back does not block reads.
+  `[KNOWN GAP]` (as T105) for Copilot: `rpc.mcp.list` is `@experimental` ("cache misses may start and wait for MCP servers", read: SDK
+  1.0.22), and the whole-list read has no `isServerRunning` guard (that guard needs a name), so a **manual Refresh** can still start
+  servers or prompt the macOS keychain (issue #623); the open-time read cannot (it checks first, and runs at most once a minute).
+  A real Copilot run is not done: it needs the owner's OK.
+  [IMPLEMENTED] `test:` `test-mcpcall.ts` (`mcpRefreshOp`, the reply flag; open twice within 60 s = one read, after 60 s = another, Refresh within 60 s reads), `test-ipcchannels.ts` (owner-only check); `sim:` `shots-058-mcp-refresh.js`
+  (open = one read, Refresh = one more, the new state shows, a second open within the minute reads nothing, Codex has the note and no read).
+- **FR-191** **One read at a time, with a time limit, and no vendor text.** `mcpRefreshOp` shares the read already running for an agent
+  (a second press, or a dialog opened meanwhile, adds none). The adapter's own call is the key: it stays until that call settles, so a
+  hung adapter gets one `list` however often Refresh is pressed (review on #800); the request stops waiting after 15 s, and answers only `{ ok, supported, error? }`:
+  `supported: false` for an app without the call, "This session is not running..." for a stopped one, and
+  "<app> did not answer. The list shows its last report." for a failed or late read (the adapter's text is dropped).
+  [IMPLEMENTED] `test:` `test-mcpcall.ts` (shared read, failure, never-ending read, stopped, unsupported).
+- **FR-192** **Keyboard and layout.** **Refresh** is a `<button>` in the tab order, takes `aria-disabled` (not `disabled`) while it runs so
+  the focus stays on it, and gets the focus back after the repaint; the result is announced through the polite live region. The row
+  adds one short span and one hint line that wrap (`overflow-wrap:anywhere`); text stays at least 10.5px; the dialog still fits at
+  1440x900 and 1280x800 and the page does not overflow.
+  [IMPLEMENTED] `sim:` `shots-058-mcp-refresh.js`.
+
+**Honest limits**: not seen on a real agent app (see Status); the classifier knows the shapes listed in FR-187 and nothing else, so an
+unlisted wording stays plain *Running* (the tool card still has the text); Claude Code's `mcp_status` and Codex's list do not report a
+tool call's outcome, so for them the words come from the failed tool calls Agent Durbar saw in this session only.

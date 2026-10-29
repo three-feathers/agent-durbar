@@ -284,7 +284,7 @@ FR-023) use the new name; Resume opens an agent with that name.
 ## Success Criteria *(mandatory)*
 
 - **SC-001** Every surface in FR-001 shows the user's name within one render after Rename, in the simulator, at both sizes, Simple and
-  Expert (`scripts/check-rename.js`).
+  Expert (`scripts/check-rename.js` (run by hand, not in CI: `NOT_IN_SUITE`, spec 021 FR-057)).
 - **SC-002** No surface shows the runtime title of a renamed session outside the Rename dialog and the chat history (same check).
 - **SC-003** The name rule refuses every case in its test table (controls, hidden characters, 61 characters, tokens) and accepts
   scripts and emoji up to 60 code points.
@@ -563,3 +563,21 @@ Decided by the coordinator under Ruben's delegation. Product behaviour is unchan
 cause is the 0.12 s opacity transition not advancing in a CI window, not the rule. The driver now gives the window real focus for that step
 (`show`, `focus`, `webContents.focus`, wait for `document.hasFocus()`) and reads the rule's target opacity with the transition switched off for the
 read; the message says whether the OS gave focus. Task T079. `[KNOWN GAP]` Not re-run on Windows before the merge; Windows CI on the PR is the check.
+
+### 2026-10-26: the pencil of a wide card follows the name, not a wrapped mode icon (issue #781)
+
+On a wide desk card the line of name, mode icon and role wraps: the name fills line 1 and the mode icon (`.modeic`/`.modebadge`) wraps to line 2 beside
+the role. `placeRen` took the mode icon as the end of the name and used its x with the name's y, so the pencil sat about 30px in, over the name
+("Co✎rol Panel"). The pencil is now anchored on the mode icon only when the icon is on the name's line (its box overlaps the name's box vertically);
+otherwise it is anchored on the name itself. The fallback (over the end of the name, never more than its right half) and the protected-element
+checks are unchanged. `check-office-overlap` now also fails a desk pencil that covers the first half of its name. Task T080 [FR-020, FR-025].
+`[IMPLEMENTED]` `sim:` on Linux (xvfb, DejaVu), 1440x900 and 1280x800: the simulator's own cards already wrap the mode icon (19 and 13 pencils in sim 15 failed the new check with the old `placeRen`, 61 failures in all); with the fix `check:office` passes 460/460, `check:rename-inline` and `check:geometry` pass. Not run on macOS, where the bug was first seen (system fonts are narrower, so the wrap point differs; the check measures the real boxes, so it applies there too).
+
+### 2026-10-26: the folder pencil is never over the folder name (FR-169, issue #788, owner decision)
+
+*Problem*: `placeRen` protected every room-header part except the door, the name and the path, so with the floor tag right after the name the pencil fell back to "over the end of the name" (about 20px over the name in every room, at both sizes, with floors on). Hovering showed "Rename folder ..." instead of the name.
+
+- **FR-169** `[IMPLEMENTED]` `sim:` `check:office` ("the folder pencil is over the name", both sizes, floors cases) A room header's pencil is in the header's flow, right after the name (`ren-in`, as in the Folders panel), not positioned over it, and `placeRen` no longer places folder pencils (the fallback over the end of the name stays for desk cards and rows, FR-025). When the name would be squeezed, the pencil is the first thing to go (`no-ren`, spec 001 FR-179); **Rename…** in the folder's ⋯ menu always remains.
+
+Numbers taken: FR-169 and T081 (checked against `main` and the open PRs on 2026-10-26).
+

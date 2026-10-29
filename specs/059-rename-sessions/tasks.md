@@ -40,7 +40,7 @@ PR-sized step with its own test. No task spends AI credits except Phase 5, which
 - [x] T027 Activity log: `logActivity` writes the alias in `agent` when set; `test:activity` case; no row for a rename [FR-012] (Q4 A)
 - [x] T028 Simulator: `renameSession` in memory, kinds with `'any'`, `'next-turn'` and none, failure hook; `prev-1`/`prev-2` renameable
   [FR-015]
-- [x] T029 `scripts/check-rename.js` (`npm run check:rename`): every FR-001 surface shows the name, no runtime title in tooltips, Esc and
+- [x] T029 `scripts/check-rename.js` (run by hand, not in CI: `NOT_IN_SUITE`, spec 021 FR-057) (`npm run check:rename`): every FR-001 surface shows the name, no runtime title in tooltips, Esc and
   empty reset, both sizes, Simple and Expert; `check:office` with 15 agents carrying 60-character names; screenshots
   `docs/screenshots/059-rename-*.png` [FR-016, SC-001, SC-002, SC-005]
 
@@ -127,6 +127,8 @@ Decisions D1..D9: coordinator, under Ruben's delegation. Renderer only; no IPC, 
 - [x] T079 Driver: the focused-pencil step of `scripts/check-rename-inline.js` gives the window real focus, waits for `document.hasFocus()`, and reads
   the pencil's target opacity with its transition off (issue #715, Windows CI). Done when: `check:rename-inline` passes focused and with
   `RI_UNFOCUSED=1`, and fails when `.unit:focus-within>.ren` is planted to opacity 0 [FR-021, FR-025]
+- [x] T080 `placeRen` anchors on the mode icon only when it shares the name's line, else on the name; `pageCheck` in `scripts/check-office-overlap.js`
+  fails a pencil over the first half of its name (issue #781). Done when: `check:office` passes on a wide card with the icon wrapped below the name [FR-020, FR-025]
 
 ## Dependencies
 
@@ -135,3 +137,5 @@ Decisions D1..D9: coordinator, under Ruben's delegation. Renderer only; no IPC, 
 - T040 needs spec 006 T036 merged (PR #373 carries the spec delta).
 - T050 after T034 and the owner's go-ahead. T060 last.
 - T070 → T072; T071 any time before T073. T072 → T073, T074, T075 → T076 → T077 → T078. Phase 8 does not depend on T050.
+- [x] T081 Issue #788 (FR-169): the room header's pencil in flow after the name; `placeRen` and `placePencils` no longer handle folder pencils; `check:office` fails a folder pencil over the name
+

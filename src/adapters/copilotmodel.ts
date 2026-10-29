@@ -3,7 +3,7 @@
  * the session config for create/resume, and the mapping of the SDK's switch and compaction results. No SDK import at run time,
  * so all of it is unit-tested on plain objects (no session, no credits).
  *
- * EVERYTHING here is built from the SDK 1.0.22 type definitions and docs. Nothing was run against a real account (spec 030 T040..T046):
+ * EVERYTHING here is built from the SDK 1.0.22-1.0.26 type definitions and docs. Nothing was run against a real account (spec 030 T040..T046):
  * the unit of the token prices, the long-tier window, the `status` strings of a switch and the compaction decision values are unverified,
  * and the code degrades (price absent, `rejected` with the runtime's message) instead of guessing.
  */

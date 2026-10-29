@@ -54,6 +54,8 @@
     '--c-idle':'#a29e94',
     '--c-error':'#bf5a50',
     '--c-done':'#5f9a76',
+    '--desk-needs':'#b45309', // spec 001 FR-178: the outline of a desk that needs you (amber-orange, 4.4:1 or more on every card; not the green of New, not the red of an error)
+    '--desk-new':'#12783a', // spec 001 FR-178: the outline of a desk with a new reply (4.3:1 or more on every card and room tint)
 
     /* mood / status halos */
     '--halo-working':'#6f93b5',
@@ -171,6 +173,11 @@
     '--pc-error':'#8e3a32',
     '--pb-done':'#e0eee6',
     '--pc-done':'#2f6a47',
+
+    /* the crew kit's own accents (spec 077, Characters = Cheeky): trim and outline colours of its furniture and, later, its characters */
+    '--crew-ink':'#3a3331',
+    '--crew-accent':'#d9577a',
+    '--crew-accent-2':'#2f9c95',
   };
 
   /* ---------- Art slots: Clean Office defaults ----------
@@ -344,7 +351,14 @@
     'gadget-cup','gadget-laptop']; /* spec 070 FR-011: replace the idle cup and the laptop */
   const UI_STYLES=['clean','corporate','retro','court-indian','court-european','court-japanese'];
   /* Scene kits (spec 035 FR-013): how people and desks are drawn; the drawing code is the app's (scenekits.js). */
-  const SCENE_KITS=['office','corporate','pixel','court-indian','court-european','court-japanese'];
+  const SCENE_KITS=['office','corporate','pixel','court-indian','court-european','court-japanese','crew'];
+  /* Characters, separate from themes (spec 077 FR-064, FR-065): who sits at the desks. 'theme' is the theme's own kit (the default);
+     the others name a kit that is drawn on top of any theme. The same list and rule as src/shared/characters.ts (test:characters). */
+  const CHARACTERS=['theme','minimalist','cheeky'];
+  const CHARACTER_KITS={minimalist:'office',cheeky:'crew'};
+  const LEGACY_CREW_THEME='cheeky-crew'; /* FR-066: no longer a theme; FR-067 maps it to Clean Office with Characters = Cheeky */
+  function parseCharacters(v){return typeof v==='string'&&CHARACTERS.includes(v)?v:undefined;}
+  function kitFor(themeKit,choice){const c=parseCharacters(choice);if(c&&c!=='theme')return CHARACTER_KITS[c];return themeKit||'office';}
 
   function validateManifest(m){
     if(!m || typeof m!=='object') return null;
@@ -442,7 +456,7 @@
   const CONTRAST_PAIRS=[['--ink','--bg',4.5],['--ink','--surface',4.5],['--ink','--raised',4.5],['--ink','--card',4.5],['--ink','--card-waiting',4.5],['--ink','--card-error',4.5],['--ink-2','--soft',4.5],['--ink-2','--note',4.5],['--ink-2','--surface',4.5],['--muted','--surface',4.5],['--room-path','--bg',3]]
     .concat(['working','thinking','waiting','idle','error','done'].map(s=>['--pc-'+s,'--pb-'+s,4.5]))
     .concat([['--surface','--sage-ink',4.5],['--surface','--red-ink',4.5],['--surface','--amber-ink',4.5]]) /* spec 052 FR-169: primary, danger and warn button text */
-    .concat([['--drop-ink','--drop-bg',4.5],['--brand-mark','--brand-bg',3],['--idle-stub-ink','--idle-stub',3]]);
+    .concat([['--drop-ink','--drop-bg',4.5],['--brand-mark','--brand-bg',3],['--idle-stub-ink','--idle-stub',3],['--desk-new','--card',3],['--desk-needs','--card-waiting',3]]);
   const HEX_ANY=/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
   function lum(hex){
     let h=HEX_ANY.exec(hex)[1]; if(h.length===3)h=h.split('').map(c=>c+c).join(''); h=h.slice(0,6);
@@ -490,6 +504,7 @@
   let currentId=CLEAN_ID;
   let currentManifest=null;
   let currentResolved=null; /* the applied token map (spec 070 FR-021) */
+  let currentCharacters='theme'; /* spec 077 FR-064 */
   let themeRev=0; /* +1 on every applied theme: drawings made with another theme's tokens and art are stale (spec 040 FR-023) */
   let listeners=[];
 
@@ -585,6 +600,8 @@
     return 0.2126*ch[0]+0.7152*ch[1]+0.0722*ch[2]<0.35;
   }
   function setTheme(idOrManifest){
+    /* spec 077 FR-067: the old Cheeky Crew id is Clean Office with Characters = Cheeky (unless another choice is in force), no warning */
+    if(idOrManifest===LEGACY_CREW_THEME){if(currentCharacters==='theme')setCharacters('cheeky');idOrManifest=CLEAN_ID;}
     let manifest=loadManifest(idOrManifest);
     if(!manifest){
       if(typeof setTheme.resolveUser==='function'&&typeof idOrManifest==='string'&&/^[a-z0-9_-]+$/i.test(idOrManifest)){
@@ -685,7 +702,16 @@
   /* spec 040 FR-023: the key of everything drawn with the active theme's tokens and art (scene cache, scene signature, walkers).
      The revision changes on every applied theme, so a regenerated pack with the same id never reuses an old drawing. */
   function themeIdForCache(){ return currentId+'.'+themeRev; }
-  function sceneKit(){ return (currentManifest&&currentManifest.scene)||'office'; }
+  /* spec 077 FR-065: the theme's own kit, and the kit drawn (the Characters choice on top of the theme) */
+  function themeKit(){ return (currentManifest&&currentManifest.scene)||'office'; }
+  function sceneKit(){ return kitFor(themeKit(),currentCharacters); }
+  function characters(){ return currentCharacters; }
+  /* an unknown value is the default; a change bumps the revision so every scene, walker and avatar keyed on themeIdForCache redraws */
+  function setCharacters(v){
+    const c=parseCharacters(v)||'theme';
+    if(c!==currentCharacters){currentCharacters=c;themeRev++;}
+    return c;
+  }
 
   /* ================================= built-in packs (specs 037-039) =================================
      Data-only: tokens (only Clean Office keys are meaningful), sanitized art slots, scene words,
@@ -752,7 +778,7 @@
       '--ink':'#111122','--ink-2':'#2b2b44','--muted':'#46465f','--room-path':'#36364f',
       '--sage':'#5fae76','--sage-ink':'#2c6b40','--blue':'#5f87c8','--blue-ink':'#2c4f82','--amber':'#e0a92c','--amber-ink':'#7c5a06',
       '--red':'#d8564a','--red-ink':'#8e2f26','--green':'#4fa760','--gray':'#9a987e',
-      '--c-working':'#5f87c8','--c-thinking':'#8b8fc9','--c-waiting':'#e0a92c','--c-idle':'#a3a08e','--c-error':'#d8564a','--c-done':'#4fa760',
+      '--c-working':'#5f87c8','--c-thinking':'#8b8fc9','--c-waiting':'#e0a92c','--c-idle':'#a3a08e','--c-error':'#d8564a','--c-done':'#4fa760','--desk-new':'#0a6b32',
       '--halo-working':'#5f87c8','--halo-thinking':'#8b8fc9','--halo-waiting':'#e0a92c','--halo-error':'#d8564a',
       '--chair':'#83769c','--desk':'#ab5236','--desk-front':'#c97d45','--desk-drawer':'#c97d45',
       '--monitor-stand':'#5f574f','--monitor-frame':'#c2c3c7','--laptop':'#5f574f',
@@ -983,6 +1009,8 @@
     motion:{preset:'court'},
   });
 
+  /* spec 077 FR-066: Cheeky Crew is no longer a theme: its characters are Settings > Characters > Cheeky (the crew kit) on any theme */
+
   /* boot: apply Clean Office immediately so the page never has un-tokenized colours */
   if(typeof document!=='undefined' && document.documentElement){
     applyTokens(CLEAN_TOKENS);
@@ -1020,6 +1048,14 @@
     SCENE_KITS:SCENE_KITS.slice(),
     ART_SLOTS:ART_SLOTS.slice(),
     sceneKit,
+    themeKit,
+    characters,
+    setCharacters,
+    kitFor,
+    parseCharacters,
+    CHARACTERS:CHARACTERS.slice(),
+    CHARACTER_KITS:Object.assign({},CHARACTER_KITS),
+    LEGACY_CREW_THEME,
     _validateManifest:validateManifest,
     _compilePixelMap:compilePixelMap,
     _tokens(){return resolveTokens(currentManifest);},

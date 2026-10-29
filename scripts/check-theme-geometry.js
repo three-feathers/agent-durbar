@@ -1,7 +1,8 @@
 /*
  * Theme geometry check (spec 008 FR-031, spec 035 FR-010): a theme may change colours, borders, textures and display fonts,
  * never sizes. So the full office layout check runs in Clean Office only, and this check proves every other theme lays out
- * the same: for each theme, at 1440x900 and 1280x800 with 15 and 12 simulated agents (and again with a `+N more` chip
+ * the same: for each theme, at 1440x900 and 1280x800 with 15 and 12 simulated agents and a sparse office with expanded helper cards (spec 001
+ * FR-094; three agents in one room, two helpers each) (and again with a `+N more` chip
  * expanded):
  *   1. geometry: with display text neutralised for the measurement (one font family, weight, case and letter spacing; a theme
  *      may pick its own display font), the box of every element of the office, the lobby and the top bar (SVG art excluded) and
@@ -29,7 +30,9 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const INDEX = path.join(ROOT, 'dist', 'renderer', 'index.html');
 const SIZES = [[1440, 900], [1280, 800]];
-const SIMS = [15, 12];
+/* spec 001 FR-094 (issue #697): 15 and 12 agents, plus a sparse office that draws expanded helper cards (three parents in one room with two helpers each: `hx`) */
+const SIMS = [15, 12, 'hx'];
+const SIM_QUERY = { hx: { sim: '3', simrooms: '1', simhelpers: '2' } };
 /* user packs by name: `user` (check-user.json) and the sample AI-style pack with fonts, corners, shadows and clothes (spec 070) */
 const FIXTURES = { user: 'check-user.json', 'pink-studio': 'pink-studio.json' };
 const ALL_THEMES = 'corporate,retro,durbar-indian,durbar-european,durbar-japanese,user,pink-studio';
@@ -63,7 +66,7 @@ async function driver(ctx) {
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const packs = Object.fromEntries(Object.entries(FIXTURES).map(([k, f]) => [k, JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'fixtures', 'themes', f), 'utf8'))]));
   const query = (theme, sim) => {
-    const q = { sim: String(sim), simfreeze: '1' };
+    const q = { sim: String(sim), simfreeze: '1', ...(SIM_QUERY[sim] || {}) };
     if (packs[theme]) { q.theme = packs[theme].id; q.usertheme = JSON.stringify(packs[theme]); } else q.theme = theme;
     return q;
   };

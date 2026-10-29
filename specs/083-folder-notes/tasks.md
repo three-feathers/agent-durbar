@@ -24,7 +24,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
 
 ## Phase 0: Spec deltas
 
-- [ ] T001 [P] Spec deltas in the owning specs, each a dated `## Changes` entry pointing to 083. [FR-010, FR-020, FR-026, FR-030, FR-031, FR-044, FR-048]
+- [x] T001 [P] Spec deltas in the owning specs, each a dated `## Changes` entry pointing to 083. [FR-010, FR-020, FR-026, FR-030, FR-031, FR-044, FR-048]
   - AC1: spec 005: the per-message `⋯` (next to *Copy*), the Notes drawer over `#chat` in the Chat view, *Notes…* in the More menu, the header count.
   - AC2: spec 073: the `note` source and `insertText` entries; the list opens in a chat with notes even without adapter commands.
   - AC3: spec 074: `mod+shift+KeyM` in `TAKEN` (*the Notes drawer*).
@@ -75,51 +75,51 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
 
 ## Phase 2: User Story 1, save and insert (P1) MVP
 
-- [ ] T020 [US1] The message `⋯` and *Save to notes*. [FR-010, FR-011]
+- [x] T020 [US1] The message `⋯` and *Save to notes*. [FR-010, FR-011]
   - AC1: every finished agent bubble and user message has a `⋯` (*Actions for this message*) next to *Copy*; none while streaming, none on tool chips, thinking blocks or request cards.
   - AC2: it opens `#modeMenu` with the `openPrevMenu` keyboard rules; right-click, Shift+F10 and the context-menu key open the same menu; Esc and Tab return focus to the `⋯`.
   - AC3: *Save to notes* saves without a dialog; the toast has *Rename…* and *Show*; a second save of the same message gives *Already in notes*, and the item reads *Show in notes*.
   - AC4: works in demo chats through the simulator store.
-- [ ] T021 [US1] [P] Window helpers `src/renderer/notes.js` (`window.DurbarNotes`). [FR-021, FR-022, FR-024, FR-030, FR-041]
+- [x] T021 [US1] [P] Window helpers `src/renderer/notes.js` (`window.DurbarNotes`). [FR-021, FR-022, FR-024, FR-030, FR-041]
   - AC1: grouping and order of FR-021 (session first, newest first, done left out); `test:globals` passes (a new global name).
   - AC2: the row view masks title and excerpt with `DurbarSafeText`, failing closed (no mask function gives an empty field).
   - AC3: `insertInto(value, caret, text)` adds a blank line only when the box has text and the caret is not at a line start, and returns the new caret.
   - AC4: `digestInput` equals main's `rawDigestInput` on the shared vector (T013 AC3).
   - AC5: unit tests in `scripts/test-notes.ts` (jsdom-free, pure).
-- [ ] T022 [US1] The drawer. [FR-012, FR-013, FR-014, FR-020..FR-027]
+- [x] T022 [US1] The drawer. [FR-012, FR-013, FR-014, FR-020..FR-027]
   - AC1: *Notes…* in More, Ctrl+Shift+M / ⌘⇧M, Ctrl+K *Notes* and a toast's *Show* open it over `#chat` only; the composer stays usable; the log keeps updating under it.
   - AC2: Esc closes the drawer and returns focus; a second Esc closes the chat (driver).
   - AC3: rows follow FR-022, arrow keys move (roving `tabindex`), Enter inserts; the empty state shows its words and *+ Note*.
-  - AC4: *+ Note*, *Edit…*, *Rename…*, *Delete…* use `askDialog`; Delete focuses *Cancel*, then focus goes to the next row, else previous, else *+ Note*.
+  - AC4: *+ Note*, *Edit…*, *Rename…*, *Delete…* use `askDialog`; the Edit and Rename fields and the Delete text show the stored text masked again (fail closed, FR-013); Delete focuses *Cancel*, then focus goes to the next row, else previous, else *+ Note*.
   - AC5: *Insert* puts the text in the box per FR-024, sends nothing (the driver checks no `send` call), focuses the box and announces it; it is disabled with a reason in a chat without a usable box.
   - AC6: `TAKEN` has `mod+shift+KeyM`; `test-navigator`'s handler scan passes and fails when the row is removed (mutation); a saved Go to combination equal to it keeps working and the drawer key does nothing (test).
   - AC7: with spec 080's tabs present (or a fake tablist in the driver once they land), opening Notes from Browser selects Chat first. Until then this AC is checked by a unit test on the switch function.
   - AC8: inserting a note with `hidden` shows *Parts of this note were hidden when it was saved* above the box until it is sent or emptied; a `from: file` note shows *From the project file*; the same from the `/` list.
-- [ ] T023 [US1] Notes in the `/` list. [FR-030, FR-031]
+- [x] T023 [US1] Notes in the `/` list. [FR-030, FR-031]
   - AC1: in a chat with notes, `/` lists a *Notes* group after the commands, at most 5 with nothing typed, plus *All notes…*; done notes are not listed.
   - AC2: picking a note replaces the `/word` with the note text (FR-024's blank-line rule), not `/name`, and sends nothing.
   - AC3: the list opens in a chat whose app lists no commands when the folder has notes, and still does not open without notes there (spec 073 unchanged otherwise; `test:slashcommands` and `check:slash-suggest` pass).
   - AC4: note rows are escaped (`optionHtml` with a hostile title) and masked (`simnotes=secret`: no token in the list, its tooltip or the announcement).
   - AC5: announcements count commands and notes apart.
-- [ ] T024 [US1] Driver, office fit and docs for the MVP. [FR-061, SC-001, SC-002, SC-006]
+- [x] T024 [US1] Driver, office fit and docs for the MVP. [FR-061, SC-001, SC-002, SC-006]
   - AC1: `scripts/check-notes.js` (asserting, exits 1 on failure, added to `ui-suite.js`) runs US1's scenarios 1..6 with `assert.ok(await until(...))`, including the 4-action loop (SC-001) and `simnotes=secret` (SC-002, in the store dump, the drawer and the message box).
   - AC2: `check:office` passes at 1440x900 and 1280x800 with 15 agents and the drawer open.
   - AC3: screenshots of the drawer and the `/` list at both sizes under `docs/screenshots/`, linked from this spec.
-  - AC4: README feature list and *Safety model* get one line each on notes (local, masked, 0600; project file opt-in comes in Phase 4); `changelog.d/083-folder-notes.md`; the spec's index block status updated.
+  - AC4: README feature list and *Safety model* get one line each on notes (local, masked, 0600; project file opt-in comes in Phase 4); `changelog.d/083-notes-ui.md` (the fragment is named after its branch); the spec's index block status updated.
 
 **Checkpoint**: MVP: save from a message, drawer, insert (button and `/`), local storage.
 
 ## Phase 3: User Stories 2, 3 and 4, seeing and managing (P2)
 
-- [ ] T030 [US2] [P] Header count. [FR-040]
+- [x] T030 [US2] [P] Header count. [FR-040]
   - AC1: *Notes N* shows when the folder has N > 0 notes not done, with the FR-040 tooltip; not shown at 0.
   - AC2: it opens the drawer (`aria-expanded`, `aria-controls`).
   - AC3: the header fits a 480px panel with the count (driver measures no overlap); `check:office` passes with the count shown.
-- [ ] T031 [US2] [P] Saved-message marker. [FR-041]
+- [x] T031 [US2] [P] Saved-message marker. [FR-041]
   - AC1: a saved message (live and replayed history) shows the SVG icon with *Saved to notes: <title>* as name and tooltip, at least 12px, theme-token colours (`test:theme-tokens` passes, no new literal).
   - AC2: matching uses session, role and digest; two equal texts are told apart by `ord` (unit test); deleting the note removes the marker on repaint.
   - AC3: the icon opens the drawer on its note; no marker on the office floor.
-- [ ] T032 [US2] [P] Drawer search. [FR-043, SC-005]
+- [x] T032 [US2] [P] Drawer search. [FR-043, SC-005]
   - AC1: the field filters both groups by title rank then text words, case-insensitive, on masked text; the no-match line names the words (masked).
   - AC2: with `simnotes=many` the open and a search take under 100 ms of renderer time (`performance.measure`, best of 3).
 - [ ] T033 [US3] Selection save. [FR-042]
@@ -173,6 +173,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
 ## Phase 6: Converge
 
 - [ ] T060 `/speckit.converge`: spec statuses and `[IMPLEMENTED]` / `[KNOWN GAP]` tags match what was built; every linked screenshot that shows a changed screen is retaken (`npm run shots:docs -- --only …`); a `docs/agent-notes.md` entry for anything learned the hard way.
+- [x] T061 Stale-lock takeover race (issue #723): a takeover guard file and a lock token in `NotesStore.lock()` / `unlockFile()`; tests with an injected fs for a fresh lock taken over between the stale judgement and the move, and for a holder that lost its lock. [FR-008]
 
 ## Later (not in this spec's PRs)
 

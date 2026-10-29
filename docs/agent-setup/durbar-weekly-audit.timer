@@ -1,0 +1,11 @@
+# Weekly test audit (spec 021 FR-058): a template for a SYSTEM timer (/etc/systemd/system/). It starts the audit phase; the audit
+# unit's OnSuccess= starts the filing phase.
+[Unit]
+Description=Weekly test audit of agent-durbar, Fridays early morning (Madrid time)
+
+[Timer]
+OnCalendar=Fri *-*-* 06:30 Europe/Madrid
+Persistent=true
+
+[Install]
+WantedBy=timers.target

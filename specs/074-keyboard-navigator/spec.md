@@ -185,6 +185,7 @@ The issue asked to settle each conflict in the spec. Where a choice may need an 
 
 ## Changes
 
+- **2026-10-27, floors as places (spec 092, issue #782).** A floor row still steps down to the floor's folders with the palette open; when the palette closes after a floor was entered, the office slides to that floor. Choosing a folder or chat goes to its floor first. Not built yet.
 ### 2026-10-24: macOS synthetic text-editing key in the navigator driver (#683)
 
 `real:` The nightly run `40076601038` failed in `shots-074-navigator` on macOS. Local reproduction showed that the
@@ -255,3 +256,10 @@ Paco's agent requested changes at 9f577dd7. Each point is a requirement here:
 - `test:` `test-navigator`: the 14 Mac Control text keys with and without Shift (and ⌃G, ⌃J, ⌃⌘E allowed), Ctrl+Shift+U / E, Ctrl/⌘+Shift+S, a Dvorak press (position I typing "c": recorded with its letter, refused as Copy, and not matched at use), Mac Dvorak ⌘ at J typing H left to Hide, and a scan of `app.js`'s global keydown handler: every Ctrl/⌘ shortcut it handles is refused.
 - Mutation check: each of these edits fails a check, and the files were restored: dropping `mod+shift+KeyS`, the Mac text-key rule, either IBus entry, the typed-letter clash, the typed-letter guard at use, recording the typed letter, `mod+shift+KeyH` or `mod+KeyO` (`test:navigator`); putting the badge back in the name row in card density, dropping `esc()` on the palette label, and announcing only "0 results" (`shots-074-navigator`).
 - `[KNOWN GAP]` Windows fonts were not run here (Linux, DejaVu); the badge no longer shares the name row in any card density, so the name has the same room it had before spec 074. Windows CI (`shots-074-navigator`, `check:office`) is the check. A Mac Dvorak user cannot use ⌘J as Go to (macOS reads it as ⌘H, Hide) and picks another key in Settings.
+
+### 2026-10-25: Ctrl+Shift+M opens the Notes drawer and is taken (spec 083 T001, issue #699)
+
+*Missing:* spec 083's Notes drawer needs one shortcut.
+
+*Corrected:*
+- **FR-085** `mod+shift+KeyM` (Ctrl+Shift+M, ⌘⇧M on a Mac) is added to `TAKEN` with the label *the Notes drawer*, so Go to cannot record it and the keyboard help (`?`) lists it. A person's saved Go to combination that is already equal to it keeps working, and the drawer key then does nothing (spec 083 FR-026). `test-navigator`'s handler scan fails when the row is removed.

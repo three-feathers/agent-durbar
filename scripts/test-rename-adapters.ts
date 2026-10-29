@@ -14,7 +14,7 @@ import type { AgentEvent } from '../src/adapters/types';
 import { offeredDescriptors } from '../src/adapters/experimental';
 import { FakeClient, TestAdapter } from './fakes/copilot-sdk';
 import { FakeCodexServer } from './fakes/codex-app-server';
-import { FakeClaudeChild, fakeSpawn } from './fakes/claude-cli';
+import { FakeClaudeChild, fakeSpawn, SANDBOX_HOST_OK } from './fakes/claude-cli';
 
 const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-rename-'));
 const names = (calls: Array<{ name: string }>): string[] => calls.map((c) => c.name);
@@ -39,7 +39,7 @@ async function copilot(): Promise<void> {
   assert.ok(copilotNameError(' padded'));
   assert.ok(copilotNameError('a\u0007b'));
   assert.ok(copilotNameError(''));
-  // the prompt-free resume config: nothing can run, remote stays off
+  // the prompt-free resume config: nothing can run, remote stays off (`remoteSession` is only a hint for SDK 1.0.22; 1.0.26 ignores it)
   const cfg = renameResumeConfig('/work/proj');
   assert.strictEqual(cfg.workingDirectory, '/work/proj', 'the session\'s own folder');
   assert.strictEqual(cfg.suppressResumeEvent, true);
@@ -225,7 +225,7 @@ async function claude(): Promise<void> {
         else if (o.type === 'user') setTimeout(() => okTurn(c), 0);
       };
     };
-    const ad = new ClaudeAdapter({
+    const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK,
       claudePath: async () => '/usr/local/bin/claude',
       makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }),
       sessionExists: () => true,
@@ -293,7 +293,7 @@ async function claude(): Promise<void> {
         } else if (o.type === 'user') setTimeout(() => okTurn(c), 0);
       };
     };
-    const ad = new ClaudeAdapter({
+    const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK,
       claudePath: async () => '/usr/local/bin/claude',
       makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }),
       sessionExists: () => true,
@@ -316,7 +316,7 @@ async function claude(): Promise<void> {
   }
   // the SDK transport (dev opt-in) does not apply --name: no capability, no member, and the descriptor says the same
   {
-    const sdk = new ClaudeAdapter({ claudePath: async () => '/c', sdkTransport: true });
+    const sdk = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/c', sdkTransport: true });
     assert.strictEqual(sdk.capabilities.renameSession, undefined);
     assert.ok(typeof sdk.renameSession !== 'function', 'no member on the SDK transport');
     const sdkDesc = offeredDescriptors({ DURBAR_CLAUDE_TRANSPORT: 'sdk' }).find((d) => d.id === 'claude')!;

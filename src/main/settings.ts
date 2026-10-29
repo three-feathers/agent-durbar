@@ -1,14 +1,18 @@
 /**
- * App settings kept as one small JSON file in userData (spec 011 FR-012): today only the global default AI-credit cap.
- * Numbers only; no tokens, no content. Tolerant read, atomic write, failures swallowed (like FolderStore).
+ * App settings kept as one small JSON file in userData (spec 011 FR-012): the global default AI-credit cap and the app's own choices.
+ * No tokens, no content. One path: spec 093 FR-006's `newFolderParent` (where the last new folder was created; a path, never a
+ * token). Tolerant read, atomic write, failures swallowed (like FolderStore).
  */
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomInt } from 'crypto';
-import { ANNOUNCE_APPS, parseAnnounced, parseCap, parseSettings, parseThemeId } from '../shared/credits';
+import { parseNewFolderParent } from '../shared/newfolder';
+import { ANNOUNCE_APPS, parseAnnounced, parseCap, parseSandboxAlways, parseSettings, parseThemeId } from '../shared/credits';
 import type { AppSettings } from '../shared/credits';
 import { addCustomPlace, removeCustomPlace, setPlaceEntry, updateCustomPlace } from '../shared/places';
 import type { CustomPlace, PlaceError, PlaceMap } from '../shared/places';
+import { migrateLegacyTheme, parseCharacters } from '../shared/characters';
+import type { CharacterChoice } from '../shared/characters';
 
 /** Result of a custom-place call (spec 024 FR-020): the list and the map as they are now, whether the call worked or not. */
 export interface PlaceCallResult {
@@ -39,6 +43,12 @@ export class SettingsStore {
     } catch {
       this.s = {};
     }
+    // spec 077 FR-067: the old Cheeky Crew theme becomes Clean Office with Characters = Cheeky, written at once, so it runs once
+    const m = migrateLegacyTheme(this.s);
+    if (m.changed) {
+      this.s = m.settings;
+      this.save();
+    }
     return { ...this.s };
   }
 
@@ -55,6 +65,19 @@ export class SettingsStore {
     this.s = next;
     this.save();
     return cap;
+  }
+
+  /** Spec 093 FR-006: the parent of the last folder created from + Folder, when it is a valid absolute path. */
+  get newFolderParent(): string | undefined {
+    return this.s.newFolderParent;
+  }
+
+  /** Spec 093 FR-006: remembered after a successful create only (the caller's rule); an invalid path is not stored. */
+  setNewFolderParent(v: unknown): void {
+    const p = parseNewFolderParent(v);
+    if (!p || p === this.s.newFolderParent) return;
+    this.s = { ...this.s, newFolderParent: p };
+    this.save();
   }
 
   /** Spec 080 FR-025d (Q2): the session browser's one-time note was accepted. */
@@ -82,6 +105,26 @@ export class SettingsStore {
     this.s = next;
     this.save();
     return v;
+  }
+
+  /** Spec 087 FR-007c: the apps with *Always continue on this computer* stored. */
+  sandboxAlwaysContinue(app: string): boolean {
+    return (this.s.sandboxAlwaysContinue ?? []).includes(app);
+  }
+
+  /** Spec 087 FR-007c: store or undo the choice for a known app id; anything else changes nothing. Returns the value now in force. */
+  setSandboxAlwaysContinue(app: unknown, on: unknown): boolean {
+    if (typeof app !== 'string' || !parseSandboxAlways([app]).length || typeof on !== 'boolean') return typeof app === 'string' && this.sandboxAlwaysContinue(app);
+    const set = new Set(this.s.sandboxAlwaysContinue ?? []);
+    if (on) set.add(app);
+    else set.delete(app);
+    const next: AppSettings = { ...this.s };
+    const list = parseSandboxAlways([...set]);
+    if (list.length) next.sandboxAlwaysContinue = list;
+    else delete next.sandboxAlwaysContinue;
+    this.s = next;
+    this.save();
+    return on;
   }
 
   /** OS notifications when an agent needs you (spec 052 FR-059): on by default; only `false` is written. */
@@ -153,8 +196,17 @@ export class SettingsStore {
   }
 
   /** Only a valid id string changes it (or clears with null/undefined/'clean-office' handled by the caller). Returns {ok, theme}. */
-  setTheme(v: unknown): { ok: boolean; theme?: string } {
+  setTheme(v: unknown): { ok: boolean; theme?: string; characters?: CharacterChoice } {
     const id = parseThemeId(v);
+    if (id !== undefined) {
+      // spec 077 FR-067: the old Cheeky Crew id is never stored: the same rule as at load (Clean Office plus Cheeky)
+      const m = migrateLegacyTheme({ ...this.s, theme: id });
+      if (m.changed) {
+        this.s = m.settings;
+        this.save();
+        return { ok: true, theme: 'clean-office', characters: this.characters };
+      }
+    }
     if (v === null || v === undefined) {
       const next: AppSettings = { ...this.s };
       delete next.theme;
@@ -169,6 +221,27 @@ export class SettingsStore {
     this.s = next;
     this.save();
     return { ok: true, theme: this.s.theme ?? 'clean-office' };
+  }
+
+  /** Spec 077 FR-064: who sits at the desks; `theme` (the theme's own) when nothing is stored. */
+  get characters(): CharacterChoice {
+    return this.s.characters ?? 'theme';
+  }
+
+  /** Spec 077 FR-064: only a value from the list changes it (`theme` clears it); anything else is refused and the stored value kept. */
+  setCharacters(v: unknown): { ok: boolean; characters: CharacterChoice } {
+    const c = parseCharacters(v);
+    if (c === undefined) return { ok: false, characters: this.characters };
+    const before = this.s;
+    const next: AppSettings = { ...this.s };
+    if (c === 'theme') delete next.characters;
+    else next.characters = c;
+    this.s = next;
+    if (!this.save()) {
+      this.s = before;
+      return { ok: false, characters: this.characters };
+    }
+    return { ok: true, characters: c };
   }
 
   /** Place mapping (spec 024): MCP server name -> place id or `desk`. A copy, never the stored object. */

@@ -13,7 +13,8 @@ import { BUILTIN_SERVERS, cliServers, copilotDir } from './mcpfiles';
 import { applyFolderImport, MAX_IMPORT_FOLDERS, previewFolderImport } from './mcpimport';
 import { mcpSecretValues } from './mcpmask';
 import { claudeOffKey, mergeSessionServers, offOf } from './mcpglobal';
-import { agentMcpReply, mcpRestartOp } from './mcpsession';
+import { agentMcpReply, mcpRefreshOp, mcpRestartOp } from './mcpsession';
+import { McpCallTracker } from './mcpcall';
 import { mcpToolsOp } from './mcptoolsop';
 import { McpSignInStore, SignInPoller, mcpCancelSignInOp, mcpOpenSignInOp, mcpSignInOp, serverUrlFor } from './mcpsignin';
 import { McpStore } from './mcpstore';
@@ -121,9 +122,13 @@ export function registerMcpIpc(deps: {
       .catch(() => undefined)
       .finally(() => rechecking.delete(id));
   };
+  /** Spec 058 FR-187: the class of each server's last failed tool call (a word only; the text is classified and dropped here). */
+  const calls = new McpCallTracker();
   router.onEvent((e) => {
+    calls.onEvent(e);
     if (e.type === 'mcp') {
       live.set(e.sessionId, e.servers);
+      calls.onServers(e.sessionId, e.servers); // FR-188: a server that came back to connected drops its call class
       health.set(e.sessionId, mcpHealthUpdate(health.get(e.sessionId), e.servers, Date.now()));
       signIns.onServers(e.sessionId, e.servers); // connected: the sign-in is finished
     } else if (e.type === 'status' && e.status === 'stopped') {
@@ -233,6 +238,7 @@ export function registerMcpIpc(deps: {
       claudeList: (gn.claude ?? []).map((n) => ({ name: n, enabled: !dis.has(claudeOffKey(n)) })),
       toolsOff: s.toolsOffFor(keyOf(a)),
       health: health.get(a.id),
+      lastCall: (n) => calls.get(a.id, n),
       signIn: (n) => signIns.view(a.id, n),
       serverUrl: (n) => serverUrlOf(a.id, n),
       orgBlocked: deps.orgMcpNow ? (n) => deps.orgMcpNow?.(a.id, serverDefOf(a.id, n)) : undefined,
@@ -240,6 +246,10 @@ export function registerMcpIpc(deps: {
       builtin: new Set(all.filter((x) => x.origin === 'builtin').map((x) => x.name)),
     });
   });
+  /** Spec 058 FR-190: read the agent app's whole server list again (the dialog opening, Refresh); one read at a time per agent. */
+  const refreshing = new Map<string, Promise<void>>();
+  const lastRead = new Map<string, number>();
+  ipcHandle('agents:mcpRefresh', (e, id: unknown, manual?: unknown) => (fromApp(e) ? mcpRefreshOp({ agents, router, lastRead, now: deps.now }, refreshing, id, manual) : { ok: false, supported: false, error: 'invalid request' }));
   /** Spec 058 FR-021: restart one server of this agent's running session; one at a time per server. */
   const restarting = new Set<string>();
   ipcHandle('agents:mcpRestart', (_e, id: unknown, name: unknown) =>

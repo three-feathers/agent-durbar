@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { HarnessSetup } from '../src/main/harnesssetup';
+import { nodeDownloadGet } from '../src/main/netget';
 import type { SetupDone } from '../src/main/harnesssetup';
 import { detectBinary, nodeDetectEnv, nodeExec } from '../src/adapters/detect';
 import type { SetupKind } from '../src/shared/harnesssetup';
@@ -47,6 +48,7 @@ async function main(): Promise<void> {
   const env = nodeDetectEnv();
   let done: ((d: SetupDone) => void) | undefined;
   const hs = new HarnessSetup({
+    httpGet: nodeDownloadGet, // spec 081 delta 2026-10-27: no Electron here, so the Node getter (HarnessSetup has no default)
     detectEnv: env,
     spawn: (file, args, opts) => spawn(file, args, { ...opts, shell: false }) as never,
     killTree: killTree as never,

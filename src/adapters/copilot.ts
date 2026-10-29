@@ -59,6 +59,11 @@ import { copilotAccount, copilotPlanLabel } from './accounts';
 import type { AccountIdentity, AccountInfoOptions } from '../shared/account';
 import { ACCOUNT_TEMP_PREFIXES } from '../shared/account';
 import { sweepStaleTempDirs } from '../shared/attachments';
+import { COPILOT_NO_REPORT, COPILOT_SANDBOX_NOTE_COMMAND, copilotHostSupport, copilotSandboxConfig, copilotSandboxHost, copilotSandboxState } from './copilotSandbox';
+import type { CopilotHostSupport } from './copilotSandbox';
+import { CREDENTIAL_FOLDER_REFUSAL, leftOutFields, sandboxRoots, splitFolders } from './sandboxRoots';
+import { pathDirs as envPathDirs } from '../shared/pathdirs';
+import type { SandboxHostView, SandboxState } from '../shared/api';
 
 const IMAGE_MIME: Record<string, string> = {
   '.png': 'image/png',
@@ -110,7 +115,29 @@ interface Live {
   usedSinceNano?: number;
   turnOpen?: boolean;
   localLimit?: { requestId: string; held?: AgentMessage };
+  /** Spec 087: the state last emitted (undefined = none yet, null = nothing to show). */
+  sandbox?: SandboxState | null;
+  /** Spec 087 FR-007: why the sandbox is not in force; the first send is held back (or refused: `refuse`) until the person chooses. */
+  sandboxHold?: { reason: string; refuse?: boolean };
+  /** Spec 087: a `sandboxConfig` was accepted in this session (it stays after a switch to Allow all until the lowering of FR-022c resolves, or a new session). */
+  sandboxFloor?: boolean;
+  /** Spec 087 FR-022c: counts `applySandbox` calls, so a lowering that resolves after a later switch does not overwrite that switch's state. */
+  sandboxSeq?: number;
+  /** Spec 087 FR-022c (review on PR #833): a lowering that passed the time limit and has not answered yet; its late answer re-runs the mode. */
+  lowerOutstanding?: boolean;
+  /** Spec 087 FR-019: the organization requires the sandbox (from the start options). */
+  requireOsSandbox?: boolean;
+  /** Spec 087 FR-007a: the held send showed its note; Continue is accepted only while it is open (review on PR 733). */
+  sandboxNoteOpen?: boolean;
+  /** Spec 087: an `options.update` for the floor that is still running (a send waits for it). */
+  sandboxApplying?: Promise<void>;
 }
+
+/** Spec 087 FR-022c (review on PR #833): why sends are held while a lowering that passed the time limit has not answered; the way back is a new session. */
+export const COPILOT_LOWER_WAIT = 'it has not answered the earlier request to turn its sandbox off yet. End the session (or restart it) to start again with the sandbox';
+/** Spec 087 FR-007: the note when Copilot's sandbox is not in force (nothing was sent), and the refusal under the policy (FR-019). */
+export const copilotSandboxNotice = (reason: string): string => `Copilot could not start its OS sandbox: ${reason.replace(/[.\s]+$/, '')}. Nothing was sent.`;
+export const copilotSandboxRefusal = (reason: string): string => `Copilot could not start its OS sandbox: ${reason.replace(/[.\s]+$/, '')}. Read-only and Ask first need it on this computer (your organization's policy), so nothing was sent.`;
 
 /** FR-070: credits a live session has used, as far as the runtime reported them. */
 const usedCredits = (live: Live): number => ((live.usedCheckpointNano ?? 0) + (live.usedSinceNano ?? 0)) / 1e9;
@@ -183,10 +210,10 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpStart: 'next-message', // spec 058 FR-010 (real 2026-10-21, runtime 1.0.22: the servers start with the first message, not at create or resume)
   mcpToggleApplies: 'live', // spec 019 (real: mcp.enable/disable)
   mcpToolFilter: true, // spec 069 FR-062: session excludedTools (read: SDK types; not run on a real account)
-  mcpTools: true, // spec 069 FR-031: rpc.mcp.listTools (@experimental; read: SDK 1.0.22 rpc.d.ts; not run on a real account)
+  mcpTools: true, // spec 069 FR-031: rpc.mcp.listTools (@experimental; read: SDK 1.0.22-1.0.26 rpc.d.ts; not run on a real account)
   mcpRestart: true, // spec 058 FR-012: rpc.mcp.restartServer (@experimental; real 2026-10-21, runtime 1.0.22), else disable then enable (fallback read: only)
-  mcpSignInAgain: true, // spec 058 FR-164: oauth.login forceReauth ("clears any cached OAuth token for the server and runs a full new authorization", read: SDK 1.0.22 rpc.d.ts; not run on a real account)
-  mcpSignIn: true, // spec 058 FR-064: rpc.mcp.oauth.login (@experimental; read: SDK 1.0.22 rpc.d.ts; real: worked once, macOS 2026-10-23, one server; the rest in T105)
+  mcpSignInAgain: true, // spec 058 FR-164: oauth.login forceReauth ("clears any cached OAuth token for the server and runs a full new authorization", read: SDK 1.0.22-1.0.26 rpc.d.ts; not run on a real account)
+  mcpSignIn: true, // spec 058 FR-064: rpc.mcp.oauth.login (@experimental; read: SDK 1.0.22-1.0.26 rpc.d.ts; real: worked once, macOS 2026-10-23, one server; the rest in T105)
   mcpSignInSteps: 'If Sign in is not available, sign in from the Copilot CLI: run `copilot`, type `/mcp auth {name}` and finish in your browser. Then use Restart session with these servers. This may not carry over to this session (seen on 2026-10-23).', // FR-068
   mcpSignInNote: 'Checked once on a real account; other servers and systems not yet.', // FR-074/FR-180: the row's honest note
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
@@ -195,7 +222,8 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   remote: true, // spec 054 FR-002: rpc.remote.enable/disable (@experimental; real 2026-10-20: `started: false` outside a GitHub repository, never seen started)
   renameSession: 'any', // spec 059 FR-007: rpc.name.set (@experimental; real 2026-10-20 on a live session, 0 credits); a stored session through a prompt-free resume: real 2026-10-21 (T050a, 0 credits)
   remoteService: Object.freeze({ name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }), // spec 054 FR-060
-  deleteSession: true, // spec 006 FR-028: CopilotClient.deleteSession (read: SDK 1.0.22 client.d.ts; never run on a real session)
+  osSandbox: true, // spec 087: the local sandbox through session.rpc.options.update (@experimental; read: SDK 1.0.22-1.0.26; not run on a real session)
+  deleteSession: true, // spec 006 FR-028: CopilotClient.deleteSession (read: SDK 1.0.22-1.0.26 client.d.ts; never run on a real session)
   oneShot: true, // spec 040 FR-015: a throw-away SDK session with no tools and no MCP, deleted after (real 2026-10-20: no tool ran, nothing left on disk)
 });
 
@@ -227,6 +255,8 @@ export function renameResumeConfig(workingDirectory: string): Record<string, unk
     skipCustomInstructions: true,
     enableFileHooks: false,
     enableHostGitOperations: false,
+    // SDK 1.0.22 honours this; SDK 1.0.26 removed `remoteSession` and ignores it. Do not rely on it as a control (spec 054 delta 2026-10-28):
+    // remote control then hinges only on `rpc.remote.enable`, which Durbar calls only in `CopilotAdapter.setRemote(id, true)` (user action).
     remoteSession: 'off',
     onPermissionRequest: async (): Promise<PermissionRequestResult> => ({ kind: 'reject', feedback: 'Agent Durbar allows no tools here.' }) as PermissionRequestResult,
   };
@@ -297,6 +327,8 @@ export function oneShotConfig(dir: string, disabledMcpServers: readonly string[]
     memory: { enabled: false },
     infiniteSessions: { enabled: false },
     embeddingCacheStorage: 'in-memory',
+    // SDK 1.0.22 honours this; SDK 1.0.26 removed `remoteSession` and ignores it. Do not rely on it as a control (spec 054 delta 2026-10-28):
+    // remote control then hinges only on `rpc.remote.enable`, which Durbar calls only in `CopilotAdapter.setRemote(id, true)` (user action).
     remoteSession: 'off',
   };
 }
@@ -324,6 +356,21 @@ export class CopilotAdapter implements AgentAdapter {
   writeGuard?: WriteGuard;
   /** Spec 040 FR-015: the `generateText` time limit; protected so a test can shorten it. */
   protected oneShotTimeoutMs = ONE_SHOT_TIMEOUT_MS;
+  /** Spec 087: the host facts the floor is built with; protected so a test can set another platform, home folder or PATH. */
+  protected sandboxPlatform: string = process.platform;
+  protected sandboxHome: () => string = () => {
+    try {
+      return os.userInfo().homedir; // the OS account record, not HOME/USERPROFILE (spec 076 FR-172)
+    } catch {
+      return os.homedir();
+    }
+  };
+  protected sandboxPathDirs: () => string[] = () => envPathDirs(process.env, process.platform);
+  protected sandboxRealpath: (p: string) => string = (p) => fs.realpathSync.native(p);
+  /** Spec 087 FR-007b: sessions continued without the OS sandbox, in memory for this run only. */
+  private sandboxContinued = new Set<string>();
+  /** Spec 087 FR-006: `getHostSupport()` once per runtime client. */
+  private hostCache?: { client: CopilotClient; host: Promise<CopilotHostSupport | undefined> };
   /** One mapper per session (it remembers tool names, reasoning ids and sub-agent ids of that session). */
   private mappers = new Map<string, EventMapper>();
 
@@ -332,7 +379,7 @@ export class CopilotAdapter implements AgentAdapter {
    * Spec 058 FR-161: ONE runtime per app run for every session, one-shot and check (each runtime process reads Copilot's keychain items
    * again, so a runtime per session would ask again per session on a Mac). A start that failed is not kept: the next call starts again
    * instead of failing for the rest of the run. A runtime that exits later is restarted by the SDK itself on the next create or resume
-   * (`read:` SDK 1.0.22 `client.js` `createSession`/`resumeSessionInternal`: `if (!this.connection) await this.start()`).
+   * (`read:` SDK 1.0.22-1.0.26 `client.js` `createSession`/`resumeSessionInternal`: `if (!this.connection) await this.start()`).
    */
   protected async getClient(): Promise<CopilotClient> {
     if (this.client) return this.client;
@@ -419,6 +466,9 @@ export class CopilotAdapter implements AgentAdapter {
         live.session = session;
         live.unsubscribe = session.on(live.onSessionEvent);
         void session.rpc.eventLog.registerInterest({ eventType: 'session_limits_exhausted.requested' }).catch(() => undefined);
+        live.sandboxFloor = undefined; // spec 087 FR-022d: the resumed session has no floor until applySandbox sends one (Allow all sends none)
+        live.lowerOutstanding = undefined; // spec 087 FR-022c (review on PR #833): a lowering sent to the old runtime is not waited for; its answer is ignored
+        await this.applySandbox(sid, live, live.broker.getMode(), client); // spec 087: the floor again on the new runtime, before any send
         for (const [name, on] of live.mcpToggles ?? []) {
           await (on ? session.rpc.mcp.enable({ serverName: name }) : session.rpc.mcp.disable({ serverName: name })).catch(() => undefined);
         }
@@ -435,6 +485,7 @@ export class CopilotAdapter implements AgentAdapter {
     if (!live) return;
     live.broker.stop();
     this.sessions.delete(sid);
+    this.endKeptFloor(sid, live);
     this.mappers.delete(sid);
     this.debug?.(`refreshAuth: ${sid.slice(0, 8)} not resumed: ${e instanceof Error ? e.message : String(e)}`);
     this.emit(sid, { type: 'status', status: 'stopped', intent: 'Could not reconnect after the sign-in. Send a message to resume.' });
@@ -695,8 +746,12 @@ export class CopilotAdapter implements AgentAdapter {
       },
     });
 
-    const onPermissionRequest = async (req: PermissionRequest): Promise<PermissionRequestResult> =>
-      broker.request(req as unknown as PermissionLike);
+    // spec 087 FR-021a (K15): a shell command asked for while the sandbox is on gets the card's own line (an approved one was seen
+    // running outside it on Linux); a copy of the request carries it, the runtime's object is not changed
+    const onPermissionRequest = async (req: PermissionRequest): Promise<PermissionRequestResult> => {
+      const note = String((req as { kind?: unknown }).kind) === 'shell' && this.sessions.get(sid)?.sandbox?.state === 'on';
+      return broker.request((note ? { ...req, sandboxNote: COPILOT_SANDBOX_NOTE_COMMAND } : req) as unknown as PermissionLike);
+    };
 
     // spec 066 FR-003: the runtime's plan (plan mode) waits for the user's answer; approve continues interactively (never autopilot)
     const onExitPlanModeRequest = async (req: { summary?: unknown; planContent?: unknown }): Promise<{ approved: boolean; selectedAction?: string; feedback?: string }> => {
@@ -773,10 +828,10 @@ export class CopilotAdapter implements AgentAdapter {
       // `disabledMcpServers` switches those off by name. Values (env, headers) are secrets: never logged, only names.
       ...(options.mcpServers && Object.keys(options.mcpServers).length ? { mcpServers: options.mcpServers as unknown as Record<string, MCPServerConfig> } : {}),
       ...(options.disabledMcpServers?.length ? { disabledMcpServers: options.disabledMcpServers } : {}),
-      // spec 069 FR-062: single MCP tools turned off in Durbar; `excludedTools` "always takes precedence" (read: SDK 1.0.22 types.d.ts), MCP
+      // spec 069 FR-062: single MCP tools turned off in Durbar; `excludedTools` "always takes precedence" (read: SDK 1.0.22-1.0.26 types.d.ts), MCP
       // tools by the runtime's wire name `<server>-<tool>` (read: toolSet.d.ts addMcp("github-list_issues")); not run on a real account
       ...(copilotExcludedTools(options.disabledMcpTools).length ? { excludedTools: copilotExcludedTools(options.disabledMcpTools) } : {}),
-      // AI-credit cap (spec 011): the SDK calls it "AI Credits"; the app treats 1 AIU = 1 credit. `sessionLimits` is @experimental in SDK 1.0.22.
+      // AI-credit cap (spec 011): the SDK calls it "AI Credits"; the app treats 1 AIU = 1 credit. `sessionLimits` is @experimental in SDK 1.0.22-1.0.26.
       ...(options.maxAiCredits && options.maxAiCredits > 0 && Number.isFinite(options.maxAiCredits) ? { sessionLimits: { maxAiCredits: options.maxAiCredits } } : {}),
       onPermissionRequest,
       onUserInputRequest,
@@ -832,6 +887,12 @@ export class CopilotAdapter implements AgentAdapter {
         if (live.userTitle !== undefined && (ev.data as { title?: unknown } | undefined)?.title !== live.userTitle) return;
         live.titled = true;
       }
+      // spec 087 FR-008: the one named surface of a lost sandbox (`read:` SDK rpc.d.ts); also used for a missing capability, so the
+      // chip may say less than is true, never more
+      if (live && ev.type === 'session.warning' && !ev.agentId && (ev.data as { warningType?: unknown } | undefined)?.warningType === 'sandbox' && live.sandbox) {
+        const msg = (ev.data as { message?: unknown }).message;
+        this.setSandbox(sid, live, copilotSandboxState({ mode: live.broker.getMode(), platform: this.sandboxPlatform, host: { supported: true, capabilities: [] }, warning: typeof msg === 'string' ? msg : '' }));
+      }
       this.map(sid, ev);
       if (live) this.trackCap(sid, live, ev);
       if (live && ev.type === 'session.idle') {
@@ -842,7 +903,7 @@ export class CopilotAdapter implements AgentAdapter {
     // FR-158: a reconnect resumes with the same handlers but no model fields, so the session keeps the model the runtime stored
     // (it may have been switched since this start).
     const startCap = options.maxAiCredits && options.maxAiCredits > 0 && Number.isFinite(options.maxAiCredits) ? options.maxAiCredits : null;
-    this.sessions.set(sid, { session, unsubscribe, cwd, folders: [cwd, ...folders], broker, resumeConfig: () => ({ ...config }), onSessionEvent, capNow: startCap, ...(hookDir ? { hookDir } : {}) });
+    this.sessions.set(sid, { session, unsubscribe, cwd, folders: [cwd, ...folders], broker, resumeConfig: () => ({ ...config }), onSessionEvent, capNow: startCap, ...(hookDir ? { hookDir } : {}), ...(options.requireOsSandbox ? { requireOsSandbox: true } : {}) });
     // spec 043 FR-002: a resumed session keeps its selected agent (stored by the runtime): show it
     if (resumedExisting)
       void Promise.resolve()
@@ -856,12 +917,25 @@ export class CopilotAdapter implements AgentAdapter {
     // Without a registered consumer the runtime does not ask the user when the cap is reached (SDK docs of `registerInterest`).
     void session.rpc.eventLog.registerInterest({ eventType: 'session_limits_exhausted.requested' }).catch((err: unknown) => this.debug?.(`limit interest not registered: ${err instanceof Error ? err.message : String(err)}`));
     if (!options.quiet) this.emit(sid, { type: 'status', status: 'idle', intent: `Ready in ${cwd}` });
+    // spec 087 FR-004: the floor before the first send of a created or resumed session (a refused update holds the first send back)
+    const live87 = this.sessions.get(sid);
+    if (live87) await this.applySandbox(sid, live87, startModeOf(options), client);
     return sid;
   }
 
   async send(sessionId: string, message: AgentMessage): Promise<void> {
     await this.refreshing?.catch(() => undefined); // FR-158: send on the reconnected session
     const live = this.mustGet(sessionId);
+    await live.sandboxApplying?.catch(() => undefined);
+    // spec 087 FR-007: the sandbox is not in force: nothing is sent until the person chooses (or, under the policy, ever)
+    const hold = live.sandboxHold;
+    if (hold && !(this.sandboxContinued.has(sessionId) && !live.requireOsSandbox)) {
+      if (live.requireOsSandbox || hold.refuse) throw new Error(hold.refuse ? hold.reason : copilotSandboxRefusal(hold.reason));
+      live.sandboxNoteOpen = true;
+      this.emit(sessionId, { type: 'sandbox', sandbox: live.sandbox ?? null, notice: { text: copilotSandboxNotice(hold.reason), actions: ['continue'] } });
+      this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Not sent: the OS sandbox could not start' });
+      return;
+    }
     // spec 011 FR-071: at or over the cap the message is held and the user is asked (the runtime would send it anyway)
     if (overCap(live)) {
       this.raiseLocalLimit(sessionId, live, message);
@@ -1017,7 +1091,13 @@ export class CopilotAdapter implements AgentAdapter {
     }
     this.sessions.delete(sessionId);
     this.mappers.delete(sessionId);
+    this.endKeptFloor(sessionId, live);
     this.emit(sessionId, { type: 'status', status: 'stopped' });
+  }
+
+  /** Spec 087 (review on PR 823): a floor kept in Allow all ends with its session; the next one starts with the mode's own state (none in Allow all). */
+  private endKeptFloor(sid: string, live: Live): void {
+    if (live.sandbox?.untilNewSession) this.setSandbox(sid, live, null);
   }
 
   /**
@@ -1028,6 +1108,8 @@ export class CopilotAdapter implements AgentAdapter {
     const live = this.sessions.get(sessionId);
     if (!live) return { pending: 0 };
     live.broker.setMode(mode);
+    // spec 087 FR-013: the new floor through options.update at the switch (to Allow all a floor in force is lowered, FR-022c)
+    this.chainSandbox(sessionId, live, mode);
     if (opts.clearGrants) live.broker.clearGrants();
     let pending = live.broker.pendingCount();
     if (pending) {
@@ -1042,6 +1124,171 @@ export class CopilotAdapter implements AgentAdapter {
    * The session's name from the runtime (`rpc.name.get`, @experimental; no prompt, no credits), asked at most once per session:
    * after a resume, or when a turn ended without a `session.title_changed`. Failures are ignored and never retried (issue #126).
    */
+  /* ---------------- spec 087: the OS sandbox floor ---------------- */
+
+  /** Spec 087: how long a sandbox call may take before it counts as refused (a hung runtime never blocks a start). */
+  protected sandboxTimeoutMs = 15_000;
+  private timed<T>(p: Promise<T>, what: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    return Promise.race([p, new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error(`${what} did not answer in time`)), this.sandboxTimeoutMs); })]).finally(() => clearTimeout(timer));
+  }
+
+  private hostSupport(client: CopilotClient): Promise<CopilotHostSupport | undefined> {
+    if (this.hostCache?.client === client) return this.hostCache.host;
+    const host = this.timed(Promise.resolve().then(() => (client as unknown as { rpc?: { sandbox?: { getHostSupport?: () => Promise<unknown> } } }).rpc?.sandbox?.getHostSupport?.()), 'Copilot')
+      .then((r) => copilotHostSupport(r), () => {
+        if (this.hostCache?.host === host) this.hostCache = undefined; // a failure is not kept: the next session asks again
+        return undefined; // a missing method (older runtime), an error or no answer: unavailable (FR-006)
+      });
+    this.hostCache = { client, host };
+    return host;
+  }
+
+  private setSandbox(sid: string, live: Live, st0: SandboxState | null): void {
+    // FR-022c (review on PR #833): a floor this session set is (assumed) in force and a switch to Allow all will ask to lower it: said in the
+    // normalized state, so the Allow all dialog can name it whatever the state word is
+    const st = st0 && live.sandboxFloor && !st0.untilNewSession && !st0.managed ? { ...st0, heldFloor: true } : st0;
+    if (JSON.stringify(st) === JSON.stringify(live.sandbox)) return;
+    live.sandbox = st;
+    this.emit(sid, { type: 'sandbox', sandbox: st });
+  }
+
+  /**
+   * FR-022c: one sandbox change at a time per session, in order (a narrowing after a lowering is sent after the lowering settled); sends wait
+   * for it. Without `mode` the session's mode when the change runs (the re-run after a late or overtaken lowering).
+   */
+  private chainSandbox(sid: string, live: Live, mode?: PermissionMode): void {
+    const prev = live.sandboxApplying;
+    const run = (): Promise<void> | undefined => (this.sessions.get(sid) === live ? this.applySandbox(sid, live, mode ?? live.broker.getMode()) : undefined);
+    const applying: Promise<void> = prev ? prev.catch(() => undefined).then(run) : Promise.resolve(run());
+    live.sandboxApplying = applying;
+    void applying.finally(() => {
+      if (live.sandboxApplying === applying) live.sandboxApplying = undefined;
+    });
+  }
+
+  /** FR-022c (review on PR #833): the late answer of a lowering that passed the time limit. A floor that went off is reported or put back. */
+  private lateLowering(sid: string, live: Live, handle: Live['session'], lowered: boolean): void {
+    // an answer from an older session handle (a sign-in refresh resumed the session on a new runtime) or for an ended session is ignored
+    if (this.sessions.get(sid) !== live || live.session !== handle || !live.lowerOutstanding) return;
+    live.lowerOutstanding = undefined;
+    if (lowered) live.sandboxFloor = undefined;
+    else if (live.broker.getMode() === 'allow') return; // refused late: the floor stays, and the state already says so
+    this.chainSandbox(sid, live); // Allow all: no floor (null); Read-only / Ask first: the floor is sent again, after the lowering
+  }
+
+  /** FR-004/FR-006/FR-007/FR-013: the floor for `mode` on this session; never throws (a failure holds the next send back). */
+  private async applySandbox(sid: string, live: Live, mode: PermissionMode, client: CopilotClient | undefined = this.client): Promise<void> {
+    const platform = this.sandboxPlatform;
+    const seq = (live.sandboxSeq = (live.sandboxSeq ?? 0) + 1);
+    if (mode === 'allow') {
+      live.sandboxHold = undefined;
+      live.sandboxNoteOpen = false;
+      if (live.sandbox?.managed) return; // a managed floor is never lowered (a policy conflict): the state stays as it is
+      const kept = copilotSandboxState({ mode, platform, keptFloor: live.sandboxFloor });
+      this.setSandbox(sid, live, kept); // a fresh Allow all session: null, nothing sent; a floor in force: kept until the lowering resolves
+      if (!kept || this.sessions.get(sid) !== live || live.lowerOutstanding) return; // an outstanding lowering: its late answer re-runs the mode
+      // FR-022c (T066 verdict A, real: 2026-10-28, Linux, CLI 1.0.98 / SDK 1.0.22): clear the floor in place with exactly the proven payload
+      const handle = live.session;
+      const raw = Promise.resolve().then(() => handle.rpc.options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' }));
+      let settled = false;
+      raw.then(() => { settled = true; }, () => { settled = true; }); // registered before the race in timed(), so it runs first
+      try {
+        await this.timed(raw, 'Copilot');
+      } catch {
+        // refused or no answer: the floor is assumed in force; untilNewSession stays and Restart without the sandbox is offered (FR-022).
+        // The person was told it is turned off, so the window says it was not (a toast). An answer after the limit is not ignored.
+        if (!settled && this.sessions.get(sid) === live) {
+          live.lowerOutstanding = true;
+          raw.then(() => this.lateLowering(sid, live, handle, true), () => this.lateLowering(sid, live, handle, false));
+        }
+        if (this.sessions.get(sid) === live) this.emit(sid, { type: 'sandbox', sandbox: live.sandbox ?? null, notLowered: true });
+        return;
+      }
+      if (this.sessions.get(sid) !== live || live.session !== handle) return; // the session ended (its kept floor with it) or was resumed on a new runtime
+      live.sandboxFloor = undefined;
+      // a later change ran while this lowering was out (sandboxSeq): the floor is off now, so that change's mode is applied again
+      if (live.sandboxSeq !== seq) return this.chainSandbox(sid, live);
+      return this.setSandbox(sid, live, null);
+    }
+    if (this.sandboxContinued.has(sid) && !live.requireOsSandbox) {
+      live.sandboxHold = undefined;
+      live.sandboxNoteOpen = false;
+      return this.setSandbox(sid, live, copilotSandboxState({ mode, platform, host: { supported: true, capabilities: [] }, continued: true }));
+    }
+    if (live.lowerOutstanding) {
+      // review on PR #833: a lowering that passed the limit may still land after a floor sent now, so nothing is claimed and nothing is sent
+      // (FR-007 hold) until it answers; then the mode runs again (lateLowering)
+      // the wait has no bound (accepted, FR-022c): End session or Restart session starts a new session that gets the floor again
+      live.sandboxHold = { reason: COPILOT_LOWER_WAIT };
+      const waiting = copilotSandboxState({ mode, platform, host: { supported: true, capabilities: [] } }); // state unknown
+      return this.setSandbox(sid, live, waiting && { ...waiting, reason: 'Waiting for Copilot to answer the earlier request to turn its sandbox off.' });
+    }
+    // the session's own runtime client (never a new start here: a dispose during a start must not bring up another runtime)
+    const c = client ?? (this.sessions.get(sid) === live ? await this.getClient().catch(() => undefined) : undefined);
+    const host = c ? await this.hostSupport(c) : undefined;
+    if (!host || !host.supported) {
+      const st = copilotSandboxState({ mode, platform, host });
+      live.sandboxHold = { reason: st?.reason ?? COPILOT_NO_REPORT };
+      return this.setSandbox(sid, live, st);
+    }
+    const roots = sandboxRoots(live.folders ?? [live.cwd], this.sandboxRealpath);
+    if (!roots.length) {
+      live.sandboxHold = { reason: "Durbar could not limit Copilot's sandbox to this session's folders. Read-only and Ask first need at least one usable folder, so nothing was sent.", refuse: true };
+      return this.setSandbox(sid, live, { state: 'off', covers: ['shell', 'mcp'], writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: 'No usable session folder for the sandbox.' });
+    }
+    const sandboxConfig = copilotSandboxConfig({ mode, roots, pathDirs: this.sandboxPathDirs(), host, home: this.sandboxHome(), platform, realpath: this.sandboxRealpath });
+    // review round 3 on PR 733: the credential filter dropped the session's OWN folder: refuse (FR-015) instead of a floor that fails there
+    const own = sandboxRoots([live.cwd], this.sandboxRealpath)[0];
+    const granted = sandboxConfig ? (mode === 'ask' ? sandboxConfig.userPolicy.filesystem.readwritePaths : sandboxConfig.userPolicy.filesystem.readonlyPaths) : [];
+    if (own === undefined) {
+      live.sandboxHold = { reason: "Durbar could not limit Copilot's sandbox to this session's own folder. Read-only and Ask first need a usable folder, so nothing was sent.", refuse: true };
+      return this.setSandbox(sid, live, { state: 'off', covers: ['shell', 'mcp'], writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: "This session's own folder is not usable for the sandbox." });
+    }
+    if (!sandboxConfig || !granted.includes(own)) {
+      const holds = !host.capabilities.includes('denied_paths');
+      live.sandboxHold = { reason: CREDENTIAL_FOLDER_REFUSAL('Copilot', holds), refuse: true };
+      return this.setSandbox(sid, live, { state: 'off', covers: ['shell', 'mcp'], writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: holds ? 'This folder is a credential folder, sits inside one or holds one, so the OS sandbox keeps its commands out of it.' : 'This folder is a credential folder or sits inside one, so the OS sandbox keeps its commands out of it.' });
+    }
+    // review round 4 on PR 733: the other session folders the floor leaves out are named, never dropped silently
+    const leftOut = splitFolders(live.folders ?? [live.cwd], live.cwd, granted, this.sandboxRealpath).leftOut;
+    try {
+      await this.timed(live.session.rpc.options.update({ sandboxConfig, sandboxConfigSource: 'session_flag' }), 'Copilot');
+      live.sandboxFloor = true;
+      live.sandboxHold = undefined;
+      live.sandboxNoteOpen = false;
+      const st = copilotSandboxState({ mode, platform, host, applied: true });
+      const lo = leftOutFields(leftOut);
+      this.setSandbox(sid, live, st && lo ? { ...st, ...lo } : st);
+    } catch (e) {
+      const st = copilotSandboxState({ mode, platform, host, refused: e instanceof Error ? e.message : String(e) });
+      live.sandboxHold = { reason: st?.reason ?? 'Copilot refused the sandbox settings.' };
+      this.setSandbox(sid, live, st);
+    }
+  }
+
+  /** FR-007a/FR-007c/FR-007d: *Continue without the OS sandbox* for this session; Copilot never offers *Always continue*. */
+  async continueWithoutSandbox(sessionId: string, opts: { always?: boolean } = {}): Promise<void> {
+    const live = this.mustGet(sessionId);
+    if (live.requireOsSandbox) throw new Error('Your organization requires the OS sandbox in Read-only and Ask first, so Durbar cannot continue without it.');
+    if (opts.always) throw new Error('Always continue is not offered for Copilot: its sandbox can be fixed on this computer.');
+    if (live.sandboxHold?.refuse) throw new Error(live.sandboxHold.reason);
+    if (!live.sandboxHold || !live.sandboxNoteOpen) throw new Error('There is no OS sandbox note to answer for this session.'); // never switch off a working floor
+    live.sandboxNoteOpen = false; // one-shot
+    this.sandboxContinued.add(sessionId);
+    live.sandboxHold = undefined;
+    this.setSandbox(sessionId, live, copilotSandboxState({ mode: live.broker.getMode(), platform: this.sandboxPlatform, host: { supported: true, capabilities: [] }, continued: true }));
+  }
+
+  /** FR-012: Settings > Agent apps. */
+  async sandboxHost(): Promise<SandboxHostView> {
+    try {
+      return copilotSandboxHost(await this.hostSupport(await this.getClient()), this.sandboxPlatform);
+    } catch {
+      return copilotSandboxHost(undefined, this.sandboxPlatform);
+    }
+  }
+
   private askTitle(sid: string): void {
     const live = this.sessions.get(sid);
     if (!live || live.titled || live.askedTitle) return;
@@ -1059,7 +1306,7 @@ export class CopilotAdapter implements AgentAdapter {
 
   /**
    * Switch the model of a live session (spec 030 FR-003..FR-009, SDK `rpc.model.switchTo`, @experimental).
-   * Built from the SDK 1.0.22 types and docs only, never run on a real account (T041..T046 are Phase 3, they cost credits).
+   * Built from the SDK 1.0.22-1.0.26 types and docs only, never run on a real account (T041..T046 are Phase 3, they cost credits).
    * Sent: model, effort, tier, `requireAvailable`, `deferIfModelChangeQueued`, `source: 'model_picker'`, `runCompactionPreflight`.
    * NEVER sent: `repoScope`, `modelChangeScope`, `pickerPersistence` (they write Copilot's own settings) and `compactionDecision`
    * (its values are unknown). To "compact and switch" the context is compacted first with `history.compact` (trigger `model_switch`),
@@ -1235,8 +1482,9 @@ export class CopilotAdapter implements AgentAdapter {
 
   /**
    * Spec 054 FR-002: remote control from github.com and GitHub Mobile (`rpc.remote.enable({ mode: 'on' })` / `disable()`, @experimental).
-   * Feature-detected: an SDK without `rpc.remote` answers `ok: false`. Never called by Durbar on its own; `remoteSession` and the client's
-   * `enableRemoteSessions` are never set (spec 054 Q1). Only an allowed github.com URL leaves the adapter; nothing is logged.
+   * Feature-detected: an SDK without `rpc.remote` answers `ok: false`. Never called by Durbar on its own: the only caller with `on: true` is
+   * `remoteops.ts` (IPC `agents:setRemote`, after the user's confirmation). The main session never sets `remoteSession` or the client's
+   * `enableRemoteSessions` (spec 054 Q1); SDK 1.0.26 dropped both, so this call is the one real control (delta 2026-10-28). Only an allowed github.com URL leaves the adapter; nothing is logged.
    */
   async setRemote(sessionId: string, on: boolean): Promise<RemoteState> {
     const live = this.sessions.get(sessionId);
@@ -1398,7 +1646,7 @@ export class CopilotAdapter implements AgentAdapter {
         await mcp.restartServer({ serverName: name });
         return;
       } catch (err) {
-        // SDK 1.0.22 always has the generated method (`dist/generated/rpc.js`): an older runtime answers that it does not know it
+        // SDK 1.0.22-1.0.26 always has the generated method (`dist/generated/rpc.js`): an older runtime answers that it does not know it
         // (JSON-RPC -32601, as the SDK's own `connect` check reads it). Only then fall back; any other error is the restart's own.
         // real 2026-10-21: a failed restart reads "Request session.mcp.restartServer failed with message: <the server's reason>"
         if (!isMethodNotFound(err)) throw new Error(sdkErrorText(err));
@@ -1410,7 +1658,7 @@ export class CopilotAdapter implements AgentAdapter {
 
   /**
    * Spec 058 FR-064 (T098): the runtime's own OAuth sign-in for one remote MCP server of this session. `rpc.mcp.oauth.login`
-   * (`@experimental`, read: SDK 1.0.22 `McpOauthLoginRequest`) with only the server name and two display texts: the runtime keeps its
+   * (`@experimental`, read: SDK 1.0.22-1.0.26 `McpOauthLoginRequest`) with only the server name and two display texts: the runtime keeps its
    * default loopback flow (discovery, PKCE, its own callback listener, token exchange, storage and reconnect), so no token and no
    * callback ever pass through Durbar. Never `handlePendingRequest`, `complete`, `prepareLogin`, `cancelLogin` or `onMcpAuthRequest`,
    * and never `clientId`, `clientSecret`, `redirectUri` or `grantType`. `forceReauth` only for the user's **Sign in again** (FR-164, owner
@@ -1441,7 +1689,7 @@ export class CopilotAdapter implements AgentAdapter {
    * servers", read: SDK 1.0.22) and hand it to the mapper's `reread`, which keeps a needs-auth mark that the tool failures set while the list still says `connected` (a re-read is not a new status from the runtime; issue #364), so the usual `mcp` event follows.
    * Real 2026-10-23: after a browser sign-in the runtime sent no status event for a long while. A missing method or a failure changes nothing. `[KNOWN GAP]` (T105) whether `list` can still start other servers on a real runtime.
    */
-  async refreshMcpStatus(sessionId: string, name?: string): Promise<void> {
+  async refreshMcpStatus(sessionId: string, name?: string, opts?: { startNothing?: boolean }): Promise<void> {
     const live = this.sessions.get(sessionId);
     if (!live) return;
     const mcp = live.session.rpc.mcp as unknown as { list?: () => Promise<{ servers?: unknown }>; isServerRunning?: (p: { serverName: string }) => Promise<{ running?: unknown }> };
@@ -1451,6 +1699,17 @@ export class CopilotAdapter implements AgentAdapter {
     if (name !== undefined && typeof mcp.isServerRunning === 'function') {
       const q = await mcp.isServerRunning({ serverName: name });
       if (q?.running !== true) return;
+    }
+    // FR-190 (owner, 2026-10-27; review on #800): the dialog's open-time read must not start a server (`list` "may start" them, and each start can
+    // read the macOS keychain, #623): it reads only when `isServerRunning` says yes for every server of the last report that is not off
+    // (no report yet, or no such check: nothing is read). Refresh (no `opts`) always reads.
+    if (name === undefined && opts?.startNothing === true) {
+      const names = this.mappers.get(sessionId)?.mcpNamesOn() ?? [];
+      if (!names.length || typeof mcp.isServerRunning !== 'function') return;
+      for (const n of names) {
+        const q = await mcp.isServerRunning({ serverName: n });
+        if (q?.running !== true) return;
+      }
     }
     const r = await mcp.list();
     if (this.sessions.get(sessionId) === live && Array.isArray(r?.servers)) this.mapperFor(sessionId).reread(r.servers);
@@ -1481,6 +1740,10 @@ export class CopilotAdapter implements AgentAdapter {
 
   revokeGrant(sessionId: string, key: string): void {
     this.sessions.get(sessionId)?.broker.revoke(key);
+  }
+
+  revokeCall(sessionId: string, callId: string): number {
+    return this.sessions.get(sessionId)?.broker.revokeCall(callId) ?? -1;
   }
 
   /** Stop all sessions and the shared runtime. */

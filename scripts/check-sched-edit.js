@@ -3,10 +3,12 @@
  *
  *   npm run check:sched-edit
  *
- * At 1440x900 and 1280x800: every Durbar row in the folder's Schedules dialog shows Edit..., Pause and Delete inside the dialog; Edit
+ * At 1440x900 and 1280x800: every Durbar row in the folder's Schedules dialog shows Edit..., Pause, Delete and History (spec 044 FR-040) inside the dialog; Edit
  * fills the form (title "Edit schedule", Save, Cancel, no template picker); Save changes the row in place (same data-id and order);
  * Cancel and Escape change nothing; a paused schedule stays paused; a done one-time schedule edited to a future time runs again
- * and a past time is refused; the prompt toggle works with a 2,000-character prompt and the dialog does not scroll sideways;
+ * and a past time is refused; the prompt toggle works with a 10,000-character prompt (the limit) and the dialog does not scroll sideways;
+ * the prompt box never cuts a paste: 12,000 characters stay, with the error in words, aria-describedby and aria-invalid, and Save disabled; the counter from 80%;
+ * a stored prompt over the limit (the simulator's `addRaw`) shows Needs review on its row, with Edit... (spec 044 FR-121..FR-124);
  * Settings > Schedules has the folder button on one line, nothing overlapping, and its Edit... opens the dialog in edit mode.
  * The clock is moved in the page (never slept) to finish a one-time schedule. A miss prints DRIVER FAILED (Electron still exits 0),
  * so the npm script exits non-zero unless "all checks passed" is printed. Writes 044-edit-form-<w>x<h>.png and 044-edit-settings-<w>x<h>.png.
@@ -15,7 +17,9 @@ const assert = require('assert');
 const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
-const LONG = ('Check the build, then list what changed since yesterday and what is still open. ').repeat(30).slice(0, 1999) + 'x'; // exactly 2,000 characters, none of them trailing space
+const LIMIT = 10000; // spec 044 FR-120 (issue #843): the longest prompt
+const text = (n) => ('Check the build, then list what changed since yesterday and what is still open. ').repeat(Math.ceil(n / 70) + 1).slice(0, n - 1) + 'x'; // exactly n characters, none of them trailing space
+const LONG = text(LIMIT);
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -42,7 +46,7 @@ module.exports = async (ctx) => {
     await H.calm();
     await openDlg();
 
-    // four schedules through the form: interval, calendar, one-time, and a 2,000-character prompt with a limit
+    // four schedules through the form: interval, calendar, one-time, and a 10,000-character prompt (the limit) with a limit
     await add('alpha interval', { every: '45' });
     await add('bravo daily', { kind: 'daily', daily: '09:15' });
     await add('charlie once', { kind: 'once' });
@@ -52,14 +56,14 @@ module.exports = async (ctx) => {
     const [A, B, C, D] = before.map((r) => r.id);
 
     // FR-022: every Durbar row has Edit..., Pause and Delete, inside the dialog (the owner's report)
-    for (const r of before) assert.deepStrictEqual(r.btns, ['Edit…', 'Pause', 'Delete'], `${tag}: buttons of "${r.p.slice(0, 20)}"`);
+    for (const r of before) assert.deepStrictEqual(r.btns, ['Edit…', 'Pause', 'Delete', 'History'], `${tag}: buttons of "${r.p.slice(0, 20)}"`);
     let g = await js(`(()=>{const d=document.querySelector('#schedDlg .dlg').getBoundingClientRect();return {sw:document.querySelector('#schedDlg .dlg').scrollWidth-document.querySelector('#schedDlg .dlg').clientWidth,out:[...document.querySelectorAll('#sdList .sc-row button:not(.sc-p)')].filter(b=>{const r=b.getBoundingClientRect();return !b.getClientRects().length||r.left<d.left-0.5||r.right>d.right+0.5}).map(b=>b.textContent)}})()`);
     assert.deepStrictEqual(g.out, [], `${tag}: every row button is visible inside the dialog`);
     assert.ok(g.sw <= 1, `${tag}: no horizontal scroll in the dialog (${g.sw})`);
 
-    // FR-025: the prompt toggle with a 2,000-character prompt
+    // FR-025: the prompt toggle with a 10,000-character prompt
     const tg = await js(`(()=>{const b=document.querySelector(${jsLiteral(`#sdList [data-id="${D}"] .sc-p`)});const f=b.nextElementSibling;const a=[b.getAttribute('aria-expanded'),f.hidden];b.click();const o=[b.getAttribute('aria-expanded'),f.hidden,f.textContent.length];const d=document.querySelector('#schedDlg .dlg');return {a,o,title:b.title.length,sw:d.scrollWidth-d.clientWidth}})()`);
-    assert.deepStrictEqual([tg.a, tg.o], [['false', true], ['true', false, 2000]], `${tag}: the toggle opens the whole prompt`);
+    assert.deepStrictEqual([tg.a, tg.o], [['false', true], ['true', false, LIMIT]], `${tag}: the toggle opens the whole prompt`);
     assert.ok(tg.title <= 300, `${tag}: tooltip is ${tg.title} characters`);
     assert.ok(tg.sw <= 1, `${tag}: no horizontal scroll with the whole prompt open (${tg.sw})`);
     await js(`document.querySelector(${jsLiteral(`#sdList [data-id="${D}"] .sc-p`)}).click()`);
@@ -125,7 +129,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(st.text, 'Schedules for this folder…');
     assert.ok(st.h <= st.lh * 1.5 + 14, `${tag}: the folder button is one line (height ${st.h})`); // padding included; two lines would be well over it
     assert.ok(!st.ov && st.inside, `${tag}: nothing overlaps the folder button`);
-    assert.ok(st.rowBtns.every((x) => x === 'Edit…/Pause/Delete' || x === 'Edit…/Resume/Delete'), `${tag}: Settings rows: ${st.rowBtns}`);
+    assert.ok(st.rowBtns.every((x) => x === 'Edit…/Pause/Delete/History' || x === 'Edit…/Resume/Delete/History'), `${tag}: Settings rows: ${st.rowBtns}`);
     await small(tag);
     await js(`(()=>{const sec=document.getElementById('schH').closest('section');sec.scrollIntoView({block:'start'})})()`); await settle();
     await ctx.shot(path.join(OUT, `044-edit-settings-${tag}.png`));
@@ -153,7 +157,7 @@ module.exports = async (ctx) => {
     await js(`(()=>{const x=new Date(Date.now()+2*3600e3),p=n=>String(n).padStart(2,'0');document.getElementById('scAt').value=x.getFullYear()+'-'+p(x.getMonth()+1)+'-'+p(x.getDate())+'T'+p(x.getHours())+':'+p(x.getMinutes());document.getElementById('scAdd').click();return true})()`);
     await until(`document.getElementById('scFormT').hidden&&!document.querySelector('#sdList .sc-row small').textContent.includes('done')`);
     const again = (await rows())[0];
-    assert.deepStrictEqual([again.id, again.off, /done/.test(again.line), again.btns], [O, false, false, ['Edit…', 'Pause', 'Delete']], `${tag}: a future time runs it again`);
+    assert.deepStrictEqual([again.id, again.off, /done/.test(again.line), again.btns], [O, false, false, ['Edit…', 'Pause', 'Delete', 'History']], `${tag}: a future time runs it again`);
     // FR-022: a schedule sent to one session, edited from Settings, shows that session's name in Send to
     await js(`document.getElementById('scClose').click()`); await until(`!document.getElementById('schedDlg')`);
     await js(`document.querySelector('#stage .desk[data-id]').click()`); await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('schedHdrBtn')`); await settle();
@@ -194,6 +198,85 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('scAdd').click()`); await until(`document.getElementById('scFormT').hidden`);
     const moved = (await rows()).find((r) => r.id === CF.id);
     assert.ok(moved && !/ of /.test(moved.line) && /→/.test(moved.line), `${tag}: saved, sent to the session, no limit (${moved && moved.line})`);
+
+    // spec 044 FR-121/FR-122 (issue #843): the box never cuts a paste; the counter from 80%; over the limit the error in words and Save disabled
+    {
+      const q = (e) => js(e);
+      const count = () => q(`(()=>{const c=document.getElementById('scCount'),p=document.getElementById('scPrompt'),a=document.getElementById('scAdd');return {len:p.value.length,max:p.hasAttribute('maxlength'),desc:p.getAttribute('aria-describedby'),inv:p.getAttribute('aria-invalid'),dis:a.disabled,text:c.textContent,hidden:c.textContent==='',shown:!!c.getClientRects().length,live:document.getElementById('scLive').textContent,liveRole:document.getElementById('scLive').getAttribute('role')}})()`);
+      const type = async (s) => { await js(`(()=>{const p=document.getElementById('scPrompt');p.value='';p.dispatchEvent(new Event('input',{bubbles:true}));p.focus();return true})()`); ctx.win.webContents.insertText(s); await until(`document.getElementById('scPrompt').value.length===${jsLiteral(s.length)}`); };
+      const nRows = await js(`document.querySelectorAll('#sdList .sc-row').length`);
+      await type(text(12000));
+      let c = await count();
+      assert.deepStrictEqual([c.len, c.max, c.desc, c.inv, c.dis, c.text, c.hidden], [12000, false, 'scCount', 'true', true, '12,000 of 10,000 characters: shorten it to save', false], `${tag}: 12,000 typed characters stay whole, with the error and Save disabled`);
+      assert.deepStrictEqual([c.liveRole, c.live, c.shown], ['status', '12,000 of 10,000 characters: shorten it to save', true], `${tag}: the always present status region announces the error`);
+      assert.strictEqual(await js(`document.getElementById('scPrompt').value`), text(12000), `${tag}: the whole text is kept, nothing cut`);
+      await js(`document.getElementById('scAdd').click()`); await settle();
+      assert.strictEqual(await js(`document.querySelectorAll('#sdList .sc-row').length`), nRows, `${tag}: a disabled Save adds nothing`);
+      await small(tag);
+      const fit = await js(`(()=>{const d=document.querySelector('#schedDlg .dlg'),c=document.getElementById('scCount').getBoundingClientRect(),r=d.getBoundingClientRect();return {sw:d.scrollWidth-d.clientWidth,inside:c.left>=r.left&&c.right<=r.right,h:c.height,col:getComputedStyle(document.getElementById('scCount')).color}})()`);
+      assert.ok(fit.sw <= 1 && fit.inside && fit.h > 0, `${tag}: the error fits the dialog (${JSON.stringify(fit)})`);
+      await js(`document.getElementById('scCount').scrollIntoView({block:'center'})`); await settle();
+      await ctx.shot(path.join(OUT, `044-length-error-${tag}.png`));
+      await type(text(7999)); c = await count();
+      assert.deepStrictEqual([c.hidden, c.text, c.inv, c.dis], [true, '', 'false', false], `${tag}: no counter below 80%`);
+      assert.deepStrictEqual([c.shown, c.live], [false, ''], `${tag}: an empty counter takes no room and the announcement is cleared`);
+      await type(text(8412)); c = await count();
+      assert.deepStrictEqual([c.hidden, c.text, c.inv, c.dis], [false, '8,412 / 10,000', 'false', false], `${tag}: the counter from 80%`);
+      assert.strictEqual(c.live, '8,412 / 10,000 characters', `${tag}: the counter's start is announced`);
+      await js(`document.getElementById('scPrompt').focus()`); ctx.win.webContents.insertText('y'); await until(`document.getElementById('scPrompt').value.length===8413`); assert.strictEqual((await count()).live, '8,412 / 10,000 characters', `${tag}: a further key does not announce again`); assert.strictEqual((await count()).text, '8,413 / 10,000', `${tag}: but the visible counter updates`); await type(text(8412));
+      await js(`document.getElementById('scCount').scrollIntoView({block:'center'})`); await settle();
+      await ctx.shot(path.join(OUT, `044-length-counter-${tag}.png`));
+      await type(text(10001)); c = await count();
+      assert.deepStrictEqual([c.inv, c.dis, c.text], ['true', true, '10,001 of 10,000 characters: shorten it to save'], `${tag}: one over the limit is an error`);
+      await type(text(10000)); c = await count();
+      assert.deepStrictEqual([c.inv, c.dis, c.text], ['false', false, '10,000 / 10,000'], `${tag}: exactly at the limit saves`);
+      // a template fills the box through the same check
+      await js(`(()=>{const p=document.getElementById('scPrompt');p.value='';p.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
+      c = await count();
+      assert.deepStrictEqual([c.hidden, c.dis], [true, false], `${tag}: an empty box has no counter and Save is on`);
+      // the limit itself saved whole, then its row
+      await type(text(LIMIT));
+      await js(`document.getElementById('scAdd').click()`); await until(`document.querySelectorAll('#sdList .sc-row').length===${jsLiteral(nRows + 1)}`);
+      const top = await js(`(()=>{const r=[...document.querySelectorAll('#sdList .sc-row')].pop(),b=r.querySelector('.sc-p'),d=document.querySelector('#schedDlg .dlg');b.click();return {len:r.querySelector('.sc-full').textContent.length,title:b.title.length,sw:d.scrollWidth-d.clientWidth,count:document.getElementById('scPrompt').value.length}})()`);
+      assert.deepStrictEqual([top.len, top.sw <= 1, top.title <= 300, top.count], [LIMIT, true, true, 0], `${tag}: the 10,000-character prompt was saved whole and shows without sideways scroll`);
+      const wide = await js(`(()=>{const r=[...document.querySelectorAll('#sdList .sc-row')].pop(),f=r.querySelector('.sc-full').getBoundingClientRect(),w=r.getBoundingClientRect();return {f:f.width,w:w.width}})()`);
+      assert.ok(wide.f >= wide.w - 2, `${tag}: an opened long prompt takes the whole row width, not a column beside the buttons (${JSON.stringify(wide)})`);
+      await js(`[...document.querySelectorAll('#sdList .sc-row')].pop().querySelector('.sc-p').click()`); // fold it again, so it does not push the next rows out of view
+      assert.ok(await until(`[...document.querySelectorAll('#sdList .sc-row')].pop().querySelector('.sc-full').hidden`), 'the opened 10,000-character row folds again');
+      await small(tag);
+      // a stored prompt over the limit (as a hand-edited file would hold it) needs review: the row says why and offers Edit...
+      const raw = await js(`window.__durbarSimSched.addRaw(${jsLiteral(text(12345))})`);
+      await until(`!!document.querySelector(${jsLiteral(`#sdList [data-id="${raw}"]`)})`);
+      const rr = (await rows()).find((r) => r.id === raw);
+      assert.match(rr.line, /Needs review: the prompt is over 10,000 characters, shorten it with Edit…/, `${tag}: the row says why it is not sent`);
+      assert.strictEqual(rr.btns[0], 'Edit…', `${tag}: the needs-review row has Edit…`);
+      await js(`document.querySelector(${jsLiteral(`#sdList [data-sc="pause"][data-id="${raw}"]`)}).click()`); await until(`document.querySelector(${jsLiteral(`#sdList [data-id="${raw}"]`)}).classList.contains('off')`);
+      assert.strictEqual(await js(`document.querySelector(${jsLiteral(`#sdList [data-id="${raw}"] .sc-full`)}).textContent.length`), 12345, `${tag}: Pause keeps the long prompt whole`);
+      await js(`document.querySelector(${jsLiteral(`#sdList [data-sc="pause"][data-id="${raw}"]`)}).click()`); await until(`!document.querySelector(${jsLiteral(`#sdList [data-id="${raw}"]`)}).classList.contains('off')`);
+      await edit(raw);
+      c = await count();
+      assert.deepStrictEqual([c.len, c.inv, c.dis, c.text], [12345, 'true', true, '12,345 of 10,000 characters: shorten it to save'], `${tag}: Edit… shows the whole prompt and the error, Save disabled`);
+      // the picture shows the row that says "Needs review" (review of #845): it is scrolled into the list's viewport and checked
+      const rawSel = `#sdList [data-id="${raw}"] small`;
+      await js(`document.querySelector(${jsLiteral(rawSel)}).scrollIntoView({block:'center'})`);
+      assert.ok(await until(`(()=>{const e=document.querySelector(${jsLiteral(rawSel)}),l=document.getElementById('sdList').getBoundingClientRect(),r=e.getBoundingClientRect(),w=document.documentElement.clientHeight;return /Needs review/.test(e.textContent)&&r.height>0&&r.top>=l.top&&r.bottom<=l.bottom&&r.top>=0&&r.bottom<=w})()`, 5000), 'the raw row\'s Needs review line is inside the list and the window');
+      await settle();
+      assert.ok(await until(`(()=>{const e=document.querySelector(${jsLiteral(rawSel)}),l=document.getElementById('sdList').getBoundingClientRect(),r=e.getBoundingClientRect();return r.top>=l.top&&r.bottom<=l.bottom})()`, 5000), 'the raw row\'s line is still inside the list after the scroll settles'); // still inside after the scroll settled
+      await ctx.shot(path.join(OUT, `044-length-review-${tag}.png`));
+      await type(text(500)); c = await count();
+      assert.deepStrictEqual([c.inv, c.dis], ['false', false], `${tag}: shortened, Save is on`);
+      await js(`document.getElementById('scAdd').click()`); await until(`document.getElementById('scFormT').hidden`);
+      assert.doesNotMatch((await rows()).find((r) => r.id === raw).line, /Needs review/, `${tag}: saved short, no longer needs review`);
+      // a once schedule whose stored prompt is over the limit is paused for review, not done: it stays visible with Edit…
+      const onceRaw = await js(`window.__durbarSimSched.addRaw(${jsLiteral(text(12000))}, 'once')`);
+      await until(`!!document.querySelector(${jsLiteral(`#sdList [data-id="${onceRaw}"]`)})`);
+      await js(`window.__durbarSimSched.dueNow(${jsLiteral(onceRaw)})`);
+      await until(`/Needs review/.test(document.querySelector(${jsLiteral(`#sdList [data-id="${onceRaw}"] small`)}).textContent)&&document.querySelector(${jsLiteral(`#sdList [data-id="${onceRaw}"]`)}).classList.contains('off')`);
+      const or = (await rows()).find((r) => r.id === onceRaw);
+      assert.ok(!/done/.test(or.line) && /paused/i.test(or.line) && or.btns[0] === 'Edit…', `${tag}: a once schedule over the limit is paused for review, not done (${or.line})`);
+      assert.deepStrictEqual(or.btns.filter((x) => /^(Resume|Pause)$/.test(x)), [], `${tag}: a once schedule paused for review has no Resume (it could only fail), only Edit… and Delete (${or.btns})`);
+      assert.ok(or.btns.includes('Delete'), `${tag}: and Delete`);
+    }
     console.log('[sched-edit]', tag, 'ok');
   }
   console.log('[sched-edit] all checks passed');

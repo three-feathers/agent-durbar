@@ -14,6 +14,11 @@
 import { readClaudeOrgPolicy } from './claudeOrgPolicy';
 import type { OrgPolicy } from '../shared/orgpolicy';
 import { claudeSettingsJson } from '../shared/foldersetup';
+import { claudeSandboxExit, claudeSandboxHost, claudeSandboxPrecheck, claudeSandboxSettings, claudeSandboxState, withSandboxSettings } from './claudeSandbox';
+import type { ClaudeSandboxBlock, ClaudeSandboxFacts, ClaudeSandboxPre } from './claudeSandbox';
+import { CREDENTIAL_FOLDER_REFUSAL, leftOutFields, sandboxRoots, splitFolders } from './sandboxRoots';
+import type { LeftOut } from './sandboxRoots';
+import type { SandboxHostView, SandboxState } from '../shared/api';
 import { isAuthError, markAuthError } from './autherrors';
 import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
@@ -54,6 +59,7 @@ import { cleanAnswers, parseQuestionsWithOriginals, SkipNotes } from './question
 import type { SkipReason } from './questions';
 import { claudeSlashPlaces, cleanBuiltins, mergeSlash, SlashCache, vscodeUserPromptDirs } from './slashcommands';
 import type { SlashPlace } from './slashcommands';
+import { compareVersions } from './detect';
 import { agentsArg, listClaudeAgents } from './claudeAgents';
 import type { ClaudeAgentDef } from './claudeAgents';
 import type { AgentProfile, AskedQuestion, ElicitAnswer, SlashCommand, SlashExpansion } from './types';
@@ -94,6 +100,7 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   planMode: true, // spec 066 FR-004: set_permission_mode plan + ExitPlanMode through can_use_tool
   remote: true, // spec 054 FR-061 (real 2026-10-20): `remote_control` over stream-json; claude.ai sign-in on Pro/Max/Team/Enterprise
   remoteService: Object.freeze({ name: 'Claude', host: 'claude.ai', mobile: 'the Claude app' }),
+  osSandbox: true, // spec 087: Claude Code's bash sandbox under Read-only and Ask first (read: docs; not run on a real session, T060-T062)
 }) as AdapterCapabilities;
 
 /** Spec 059 FR-007: the SDK transport (dev opt-in, `DURBAR_CLAUDE_TRANSPORT=sdk`) does not apply `--name`, so it does not offer a rename. */
@@ -225,6 +232,14 @@ export interface ClaudeLaunch {
   name?: string;
   /** Spec 069 FR-062: single MCP tools turned off in Durbar, as `mcp__<server>__<tool>`, added to the mode's `--disallowedTools`. */
   disallowedMcpTools?: string[];
+  /** Spec 015 FR-016: pass `--forward-subagent-text` (set only when the installed Claude Code is known to have it; see `claudeForwardsSubagentText`). */
+  forwardSubagentText?: boolean;
+}
+
+/** Spec 015 FR-016: the first Claude Code with `--forward-subagent-text` (its CHANGELOG, `read:` 2.1.211). An older or unreadable version never gets the flag (an unknown flag would stop the CLI). */
+export const CLAUDE_FORWARD_SUBAGENT_MIN_VERSION = '2.1.211';
+export function claudeForwardsSubagentText(version: string | undefined): boolean {
+  return typeof version === 'string' && /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version) && compareVersions(version, CLAUDE_FORWARD_SUBAGENT_MIN_VERSION) >= 0;
 }
 
 export const CLAUDE_EFFORTS: ReadonlySet<string> = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
@@ -276,6 +291,7 @@ export function claudeDisallowedMcp(off: Readonly<Record<string, readonly string
 export function claudeArgs(i: ClaudeLaunch): string[] {
   const o = claudeOptionsFor(i.mode, i.folderAllow);
   const a = ['-p', '--output-format', 'stream-json', '--verbose', '--input-format', 'stream-json', '--permission-prompt-tool', 'stdio', '--include-partial-messages'];
+  if (i.forwardSubagentText) a.push('--forward-subagent-text');
   a.push('--permission-mode', o.permissionMode);
   if (o.allowDangerouslySkipPermissions) a.push('--allow-dangerously-skip-permissions');
   if (o.allowedTools?.length) a.push('--allowedTools', o.allowedTools.join(','));
@@ -494,7 +510,38 @@ export interface ClaudeAdapterDeps {
   now?: () => number;
   /** Spec 058 FR-175: how long to wait for the `mcp_authenticate` answer (tests pass a short one). Default 30 s. */
   signInTimeoutMs?: number;
+  /** Spec 087 FR-006: the host facts the sandbox pre-check reads (platform, `claude --version`, `bwrap`/`socat` found). Tests inject them. */
+  sandboxFacts?: () => Promise<ClaudeSandboxFacts>;
+  /** Spec 087 FR-015: resolves a root before it goes into the sandbox block (tests inject one). Default `fs.realpathSync.native`. */
+  realpath?: (p: string) => string;
+  /** Spec 087: the home folder the credential folders are under (tests inject one). Default the OS account record. */
+  home?: string;
 }
+
+/** Spec 087 FR-006: the real host facts: no shell; `claude --version` through detection, `bwrap`/`socat` located like spec 012's detection. */
+export async function nodeClaudeSandboxFacts(): Promise<ClaudeSandboxFacts> {
+  const { detectBinary, candidates, CLAUDE_BINARY, nodeExec, nodeDetectEnv, claudeConfiguredPath } = await import('./detect');
+  const env = nodeDetectEnv();
+  const r = await detectBinary(CLAUDE_BINARY, env, nodeExec, claudeConfiguredPath()).catch(() => undefined);
+  const have = (name: string): boolean => candidates({ name, versionArgs: [], installHint: '' }, env).some((c) => env.isFile(c));
+  const linux = process.platform === 'linux';
+  return { platform: process.platform, version: r?.version, haveBwrap: linux && have('bwrap'), haveSocat: linux && have('socat') };
+}
+
+/** The home folder from the OS account record (not HOME/USERPROFILE, spec 076 FR-172), else `os.homedir()`. */
+const homeDirOf = (): string => {
+  try {
+    return os.userInfo().homedir;
+  } catch {
+    return os.homedir();
+  }
+};
+
+/** Spec 087 FR-007: the note when the sandbox cannot start (nothing was sent), and the refusal when the organization requires it (FR-019). */
+export const claudeSandboxNotice = (reason: string): string => `Claude Code could not start its OS sandbox: ${reason.replace(/[.\s]+$/, '')}. Nothing was sent.`;
+export const claudeSandboxRefusal = (reason: string): string => `Claude Code could not start its OS sandbox: ${reason.replace(/[.\s]+$/, '')}. Read-only and Ask first need it on this computer (your organization's policy), so nothing was sent.`;
+/** Spec 087 (K5): the SDK transport (a dev opt-in) does not pass Durbar's sandbox block. */
+const SDK_NO_SANDBOX: ClaudeSandboxPre = { try: false, reason: "The Agent SDK transport does not pass Durbar's sandbox settings yet.", permanent: false };
 
 export type RunOnce = (file: string, args: string[], o: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number }) => Promise<{ code: number | null; stdout: string }>;
 
@@ -597,6 +644,21 @@ interface Session {
   questions?: Map<string, { asked: AskedQuestion[]; originals: string[]; resolve: (a: Record<string, string> | null) => void }>;
   /** MCP elicitations waiting for the user (FR-151): request id -> waiter. */
   elicitations?: Map<string, ElicitWaiter>;
+  /** Spec 087: the `sandbox` block of the next (or running) launch; undefined = none (Allow all, or continued without it). */
+  sandboxBlock?: ClaudeSandboxBlock;
+  /** Spec 087: the mode and host facts the block was planned with. */
+  sandboxMode?: PermissionMode;
+  sandboxFacts?: ClaudeSandboxFacts;
+  /** Spec 087 FR-011: the state last emitted (undefined = none yet; null = nothing to show). */
+  sandboxState?: SandboxState | null;
+  /** Spec 087 FR-006: the classified reason of a sandbox exit of the current launch (before `init`). */
+  sandboxExit?: string;
+  /** Spec 087 (review rounds 4-5 on PR 733): the session folders the floor left out, with why (named in the state). */
+  sandboxLeftOut?: LeftOut[];
+  /** Spec 087 (review round 5): under the floor, the ONLY `--add-dir` folders: the other folders the block holds (an allow-list). */
+  sandboxAddDirs?: string[];
+  /** Spec 087 FR-007a (review on PR 733): the actions of the open sandbox note; Continue is accepted only while it is open. */
+  sandboxNote?: ReadonlyArray<'continue' | 'always'>;
 }
 
 export class ClaudeAdapter implements AgentAdapter {
@@ -610,6 +672,12 @@ export class ClaudeAdapter implements AgentAdapter {
   /** Spec 059 FR-007: names for sessions that are not open yet (by Claude session id); applied at their first start. */
   private pendingNames = new Map<string, string>();
   private listeners = new Set<(event: AgentEvent) => void>();
+  /**
+   * Spec 087 FR-007b: sessions whose person chose *Continue without the OS sandbox*, in memory for this run only (never saved): the
+   * mode-switch relaunch and a resume in the same run do not try again; a new session id or a restart of Durbar tries again.
+   */
+  private continuedIds = new Set<string>();
+  private factsCache?: { at: number; facts: Promise<ClaudeSandboxFacts> };
 
   constructor(private readonly deps: ClaudeAdapterDeps) {
     // spec 059 FR-007: on the SDK transport `--name` is not applied, so no rename is offered (capability and member agree, contract C2)
@@ -794,6 +862,7 @@ export class ClaudeAdapter implements AgentAdapter {
     this.sessions.set(id, { id, cwd: ws.cwd, roots, options: { ...options, permissionMode: mode }, broker, mapper, resumable, capUsd: usdCap(options.maxAiCredits), spentUsd: 0, ...(this.pendingNames.has(id) ? { pendingName: this.pendingNames.get(id), needsRelaunch: false } : {}) });
     this.pendingNames.delete(id);
     if (!options.quiet) this.emit(id, { type: 'status', status: 'idle', intent: `Ready in ${ws.cwd}` });
+    void this.previewSandbox(id); // spec 087 FR-009: what the first launch will try, before the first message (no process is started)
     return id;
   }
 
@@ -805,13 +874,17 @@ export class ClaudeAdapter implements AgentAdapter {
       return;
     }
     if (message.attachments?.length) s.broker.allowReadPaths(message.attachments.map((a) => a.path));
+    // FR-116: new flags for a changed mode, but never in the middle of a turn (the hook keeps the current mode until then)
+    const relaunch = !!s.transport?.alive && !s.turnOpen && ((s.launchedMode !== undefined && s.launchedMode !== s.broker.getMode()) || !!s.needsRelaunch);
+    // spec 087 FR-007: the floor of the launch this message needs is decided before anything is sent; a refusal throws (the send fails)
+    if ((relaunch || !s.transport?.alive) && !s.starting && !(await this.planSandbox(s))) return; // held: the note says why, nothing sent
     this.emit(sessionId, { type: 'status', status: 'working', intent: 'Thinking' });
     let t: ClaudeTransport;
     try {
-      // FR-116: new flags for a changed mode, but never in the middle of a turn (the hook keeps the current mode until then)
-      if (s.transport?.alive && !s.turnOpen && ((s.launchedMode !== undefined && s.launchedMode !== s.broker.getMode()) || s.needsRelaunch)) await this.relaunchForMode(s);
+      if (relaunch) await this.relaunchForMode(s);
       t = await this.ensureTransport(s);
     } catch (e) {
+      if (s.sandboxExit !== undefined) return; // spec 087 FR-007: the sandbox exit already said why; nothing is re-sent
       this.emit(sessionId, { type: 'status', status: 'error', intent: e instanceof Error ? e.message : 'Claude could not start' });
       return;
     }
@@ -1027,6 +1100,10 @@ export class ClaudeAdapter implements AgentAdapter {
     this.sessions.get(sessionId)?.broker.revoke(key);
   }
 
+  revokeCall(sessionId: string, callId: string): number {
+    return this.sessions.get(sessionId)?.broker.revokeCall(callId) ?? -1;
+  }
+
   async dispose(): Promise<void> {
     await Promise.all([...this.sessions.keys()].map((id) => this.stop(id)));
   }
@@ -1078,12 +1155,15 @@ export class ClaudeAdapter implements AgentAdapter {
       ...(s.agent ? { agent: { name: s.agent.profile.id, json: agentsArg(s.agent) } } : {}),
       mcpConfig: mcpConfigOf(o.mcpServers, o.disabledMcpServers),
       ...(claudeDisallowedMcp(o.disabledMcpTools).length ? { disallowedMcpTools: claudeDisallowedMcp(o.disabledMcpTools) } : {}),
-      settingsJson: claudeSettingsJson(o.folderSetup),
+      settingsJson: withSandboxSettings(claudeSettingsJson(o.folderSetup), s.sandboxBlock), // spec 087 FR-003: Durbar's block is the `sandbox` key
       ...(o.folderSetup?.rules?.allow.length ? { folderAllow: o.folderSetup.rules.allow } : {}),
       appendSystemPrompt: (this.deps.claudeMd ?? claudeMdPrompt)(s.cwd),
-      ...(s.roots.length > 1 ? { addDirs: s.roots.filter((r) => r !== s.cwd) } : {}),
+      // spec 087 (review round 4 on PR 733): under the floor a folder it left out is not an `--add-dir` (Claude would grant it writes)
+      // under the floor only folders the block holds (review round 5: an allow-list, so a folder dropped for ANY reason is never added)
+      ...(s.sandboxBlock ? (s.sandboxAddDirs?.length ? { addDirs: [...s.sandboxAddDirs] } : {}) : s.roots.length > 1 ? { addDirs: s.roots.filter((r) => r !== s.cwd) } : {}),
       ...(s.capUsd !== undefined ? { maxBudgetUsd: s.capUsd - s.spentUsd } : {}),
       ...(claudeNameOk(s.pendingName) ? { name: s.pendingName } : {}),
+      ...(claudeForwardsSubagentText((await this.sandboxFactsNow()).version) ? { forwardSubagentText: true } : {}), // spec 015 FR-016
     };
     const handlers: TransportHandlers = {
       message: (m) => this.onMessage(s, m),
@@ -1123,7 +1203,11 @@ export class ClaudeAdapter implements AgentAdapter {
   }
 
   private onMessage(s: Session, m: ClaudeMessage): void {
-    if (m.type === 'system' && m.subtype === 'init') s.initSeen = true;
+    if (m.type === 'system' && m.subtype === 'init') {
+      s.initSeen = true;
+      // spec 087 FR-006: `on` only here: the CLI started with the block (failIfUnavailable: true) and reached init
+      if (s.sandboxBlock && s.sandboxFacts && s.sandboxState?.state === 'unknown') this.setSandbox(s, this.withLeftOut(s, claudeSandboxState({ mode: s.sandboxMode ?? 'read-only', facts: s.sandboxFacts, started: true })));
+    }
     if (m.type === 'result') {
       s.turnOpen = false;
       // Spec 059 FR-007: the first turn after a launch with `--name` finished: the CLI stored the title, so report it
@@ -1461,7 +1545,138 @@ export class ClaudeAdapter implements AgentAdapter {
     this.cancelQuestions(s, 'exit');
     // FR-157: Claude ended because its sign-in failed; the stderr text itself is never shown (only this sentence)
     if (isAuthError(info.stderrTail)) return this.emit(s.id, { type: 'status', status: 'error', intent: 'Claude Code could not authenticate: its sign-in is missing or has expired.', errorKind: 'auth' });
+    // spec 087 FR-006/FR-007: an exit before init that is the sandbox's own refusal: nothing is re-sent, the person chooses (or the
+    // policy refuses); any other early exit takes the crash path below and the state stays `unknown`
+    const why = !s.initSeen && s.sandboxBlock ? claudeSandboxExit(info) : undefined;
+    if (why !== undefined) {
+      s.sandboxExit = why;
+      s.sandboxBlock = undefined;
+      s.resumable = (this.deps.sessionExists ?? claudeSessionExists)(s.id); // Continue relaunches with --resume only if Claude wrote the session
+      const st = claudeSandboxState({ mode: s.sandboxMode ?? 'read-only', facts: s.sandboxFacts ?? { platform: 'unknown' }, startExit: why });
+      const reason = st?.reason ?? why;
+      this.setSandbox(s, st, s.options.requireOsSandbox ? { text: claudeSandboxRefusal(reason), actions: [], refused: true } : { text: claudeSandboxNotice(reason), actions: ['continue'] });
+      return this.emit(s.id, { type: 'status', status: 'idle', intent: 'Not sent: the OS sandbox could not start' });
+    }
     this.emit(s.id, { type: 'status', status: 'error', intent: info.code === 0 ? 'Claude ended the session; send a message to continue.' : `Claude stopped unexpectedly (exit ${info.code ?? info.signal ?? '?'}). Send a message to resume.` });
+  }
+
+  /* ---------------- spec 087: the OS sandbox floor ---------------- */
+
+  private sandboxFactsNow(): Promise<ClaudeSandboxFacts> {
+    const now = performance.now(); // monotonic: a clock jump never keeps old facts
+    if (this.factsCache && now - this.factsCache.at < 60_000) return this.factsCache.facts;
+    const facts = (this.deps.sandboxFacts ?? nodeClaudeSandboxFacts)().catch((): ClaudeSandboxFacts => ({ platform: process.platform })); // unreadable: no version, so unavailable
+    this.factsCache = { at: now, facts };
+    return facts;
+  }
+
+  /** Review round 4 on PR 733: the state, with the folders the floor left out named in its reason (the tooltip shows it). */
+  private withLeftOut(s: Session, st: SandboxState | null): SandboxState | null {
+    const lo = leftOutFields(s.sandboxLeftOut ?? []);
+    return st && lo && st.state !== 'off' ? { ...st, ...lo } : st;
+  }
+
+  /** FR-011: emit the state when it changed (and always with a notice). */
+  private setSandbox(s: Session, st: SandboxState | null, notice?: { text: string; actions: Array<'continue' | 'always'>; refused?: boolean }): void {
+    if (notice) s.sandboxNote = notice.refused ? undefined : notice.actions;
+    else if (st && st.state !== 'off') s.sandboxNote = undefined; // a new attempt (checking, or on) closes the note
+    const same = JSON.stringify(st) === JSON.stringify(s.sandboxState);
+    s.sandboxState = st;
+    if (!same || notice) this.emit(s.id, { type: 'sandbox', sandbox: st, ...(notice ? { notice } : {}) });
+  }
+
+  /** FR-009: before the first message, what the first launch will try (no process, no notice). */
+  private async previewSandbox(id: string): Promise<void> {
+    const s = this.sessions.get(id);
+    if (!s) return;
+    const facts = await this.sandboxFactsNow();
+    if (this.sessions.get(id) !== s || s.transport || s.starting || s.sandboxState !== undefined) return;
+    const mode = s.broker.getMode();
+    const continued = this.continuedIds.has(s.id) && !s.options.requireOsSandbox;
+    this.setSandbox(s, claudeSandboxState({ mode, facts, continued, ...(this.deps.sdkTransport ? { pre: SDK_NO_SANDBOX } : {}) }));
+  }
+
+  /**
+   * FR-003/FR-006/FR-007: the floor of the next launch. Returns false when the message is held (the note says why, nothing was sent);
+   * throws the refusal when the organization requires the sandbox (FR-019, FR-007d) or no root is left (FR-015).
+   */
+  private async planSandbox(s: Session): Promise<boolean> {
+    s.sandboxExit = undefined;
+    const mode = s.broker.getMode();
+    if (mode === 'allow') {
+      s.sandboxBlock = undefined;
+      this.setSandbox(s, null);
+      return true;
+    }
+    const facts = await this.sandboxFactsNow();
+    s.sandboxFacts = facts;
+    s.sandboxMode = mode;
+    const require = !!s.options.requireOsSandbox;
+    if (this.continuedIds.has(s.id) && !require) {
+      s.sandboxBlock = undefined;
+      this.setSandbox(s, claudeSandboxState({ mode, facts, continued: true }));
+      return true;
+    }
+    const pre = this.deps.sdkTransport ? SDK_NO_SANDBOX : claudeSandboxPrecheck(facts);
+    if (!pre.try) {
+      s.sandboxBlock = undefined;
+      const st = claudeSandboxState({ mode, facts, pre });
+      if (require) {
+        this.setSandbox(s, st);
+        throw new Error(claudeSandboxRefusal(st?.reason ?? pre.reason));
+      }
+      if (pre.permanent && s.options.sandboxAlwaysContinue) {
+        this.setSandbox(s, st); // FR-007c: the stored choice only skips the note; the pre-check above ran again
+        return true;
+      }
+      this.setSandbox(s, st, { text: claudeSandboxNotice(st?.reason ?? pre.reason), actions: pre.permanent ? ['continue', 'always'] : ['continue'] });
+      this.emit(s.id, { type: 'status', status: 'idle', intent: 'Not sent: the OS sandbox could not start' });
+      return false;
+    }
+    const roots = sandboxRoots(s.roots, this.deps.realpath ?? ((p) => fs.realpathSync.native(p)));
+    if (!roots.length) throw new Error("Durbar could not limit Claude Code's sandbox to this session's folders. Read-only and Ask first need at least one usable folder, so nothing was sent.");
+    const block = claudeSandboxSettings(mode, roots, this.deps.home ?? homeDirOf(), this.deps.realpath ?? ((p) => fs.realpathSync.native(p)), facts.platform);
+    // review round 3 on PR 733: the credential filter runs after the roots check; when it drops the session's OWN folder every sandboxed
+    // command would fail there while the chip said Sandboxed, so refuse as FR-015 does (nothing sent, Change mode… offered)
+    const own = sandboxRoots([s.cwd], this.deps.realpath ?? ((p) => fs.realpathSync.native(p)))[0];
+    if (own === undefined) {
+      s.sandboxBlock = undefined; // review round 5: the session's own folder is not usable (a root, "..", a quote, unresolvable): FR-015
+      throw new Error("Durbar could not limit Claude Code's sandbox to this session's own folder. Read-only and Ask first need a usable folder, so nothing was sent.");
+    }
+    if (!block || !block.filesystem.allowRead.includes(own)) {
+      s.sandboxBlock = undefined;
+      throw new Error(CREDENTIAL_FOLDER_REFUSAL('Claude Code'));
+    }
+    // the other folders: only those the block holds go on as --add-dir; every other one is named with why
+    const split = splitFolders(s.roots, s.cwd, block.filesystem.allowRead, this.deps.realpath ?? ((p: string) => fs.realpathSync.native(p)));
+    s.sandboxLeftOut = split.leftOut;
+    s.sandboxAddDirs = split.kept.filter((d) => d !== own);
+    s.sandboxBlock = block;
+    this.setSandbox(s, this.withLeftOut(s, claudeSandboxState({ mode, facts })));
+    return true;
+  }
+
+  /** FR-007a/FR-007c/FR-007d: *Continue without the OS sandbox* (this session), optionally *Always continue on this computer*. */
+  async continueWithoutSandbox(sessionId: string, opts: { always?: boolean } = {}): Promise<void> {
+    const s = this.mustGet(sessionId);
+    if (s.options.requireOsSandbox) throw new Error('Your organization requires the OS sandbox in Read-only and Ask first, so Durbar cannot continue without it.');
+    const note = s.sandboxNote;
+    if (!note?.includes('continue')) throw new Error('There is no OS sandbox note to answer for this session.'); // never switch off a working floor
+    if (opts.always && !note.includes('always')) throw new Error('Always continue was not offered for this session.');
+    s.sandboxNote = undefined; // one-shot
+    const facts = await this.sandboxFactsNow();
+    const pre = this.deps.sdkTransport ? SDK_NO_SANDBOX : claudeSandboxPrecheck(facts);
+    if (opts.always && (pre.try || !pre.permanent)) throw new Error("Always continue is offered only where this computer can never run Claude Code's sandbox.");
+    this.continuedIds.add(s.id);
+    s.sandboxBlock = undefined;
+    if (s.transport?.alive && s.launchedMode !== 'allow') s.needsRelaunch = true; // a CLI with the block still running: the next message relaunches
+    this.setSandbox(s, claudeSandboxState({ mode: s.broker.getMode(), facts, continued: true }));
+  }
+
+  /** FR-012: Settings > Agent apps (main adds the stored *Always continue* choice). */
+  async sandboxHost(): Promise<SandboxHostView> {
+    if (this.deps.sdkTransport) return { available: false, reason: SDK_NO_SANDBOX.try ? undefined : SDK_NO_SANDBOX.reason };
+    return claudeSandboxHost(await this.sandboxFactsNow());
   }
 
   private onBroker(sid: string, e: BrokerEvent): void {
@@ -1512,8 +1727,8 @@ export const CLAUDE_DESCRIPTOR: AdapterDescriptor = claudeDescriptor();
 let cachedPath: string | undefined;
 export async function claudeBinaryPath(): Promise<string | undefined> {
   if (cachedPath) return cachedPath;
-  const { detectBinary, CLAUDE_BINARY, nodeExec, nodeDetectEnv } = await import('./detect');
-  const r = await detectBinary(CLAUDE_BINARY, nodeDetectEnv(), nodeExec);
+  const { detectBinary, CLAUDE_BINARY, nodeExec, nodeDetectEnv, claudeConfiguredPath } = await import('./detect');
+  const r = await detectBinary(CLAUDE_BINARY, nodeDetectEnv(), nodeExec, claudeConfiguredPath());
   if (r.state === 'ready' && r.path) cachedPath = r.path;
   return cachedPath;
 }

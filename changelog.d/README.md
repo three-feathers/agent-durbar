@@ -25,12 +25,17 @@ no merge freeze is needed:
 2. The release manager **tags a commit on `main`**. `release.yml`'s `verify` job checks the tag (on `main`, equal to
    `package.json`, the previous release already folded) and writes the draft's notes from exactly that commit's fragments:
    `node scripts/changelog.js build --release "<heading>" --stdout` prints the same section and edits nothing.
+   Before you tag, classify the release for the DORA records (AGENTS.md, *Bug and deployment incident triage*): list the
+   incidents with `gh issue list --label incident --state all`, decide whether this release is an unplanned corrective
+   response to one (`Yes`), an ordinary planned release (`No`) or unclear (`Unknown`), and once it is published record the
+   tag on each incident issue. A `-test.M` test build is not a deployment for DORA.
 3. A **doc-only fold PR**, from the tag, with the heading from the run's job summary:
 
    ```bash
    git fetch origin --tags && git switch -c NNN-fold-alpha-N v0.1.0-alpha.N
    npm run changelog:build -- --release "v0.1.0-alpha.N ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.N), YYYY-MM-DD)"
    # add the release's intro paragraph and the README status block, commit
+   # the first STABLE release (spec 050 FR-013): also change docs/site/landing.json: hero.eyebrow ("early alpha") and status ("Alpha · unsigned …"), they are hand-written and checked against the README status block (test:site only checks that the page shows what landing.json says)
    git merge origin/main   # fragments that landed after the tag come back for the next release
    ```
 
@@ -43,6 +48,21 @@ Branch names must match the Spec Kit gate (lowercase letters, digits and hyphens
    A fragment edited on `main` after the tag gives a **modify/delete conflict** in `git merge origin/main`. Keep the deletion
    (`git rm changelog.d/<file>`): the tag's text is what was released. If the edit added something genuinely new, put that in
    a new fragment for the next release.
+
+## A stable release (spec 008 FR-129)
+
+A tag without a `-` (`v1.2.3`) is handled by the same flow with these differences, all decided by `releaseKind()` in
+`scripts/release-notes.js` and passed to the workflow as `verify`'s outputs:
+
+- The draft is **not** a pre-release. A tag with a `-` (alpha, beta, rc, `-test.M`) stays a draft pre-release, never latest.
+- The notes use the stable intro (unsigned and not notarized, no "alpha") and the heading
+  `v1.2.3 ([release](<url>), YYYY-MM-DD)`; `changelog:build --release` accepts it.
+- The fold branch is `NNN-fold-1-2-3` (no dots).
+- It stays a **draft**: the owners check it, then publish it **and mark it latest** by hand. "Latest" is not set while it is a
+  draft, so run (the job summary prints it too): `gh release edit v1.2.3 --draft=false --latest`. It ran on GitHub for
+  `v0.1.0` (2026-10-26); check the published release shows as *Latest*.
+- The fold PR for a stable tag also updates the hand-written alpha wording that tests assert: the landing page eyebrow and
+  status in `docs/site/landing.json` with their asserts in `scripts/test-site.js`, and the README status block.
 
 ## Test builds (spec 008 FR-121..FR-124)
 

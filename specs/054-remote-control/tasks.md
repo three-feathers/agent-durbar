@@ -33,7 +33,7 @@ Not done and not planned here: the owner moved Claude channels to idea #485 ("Fo
 
 ## Phase 3: Codex mobile (host integration research)
 
-- [x] T040 Research whether ChatGPT mobile reaches `codex app-server` sessions and whether there is a method or flag [FR-030]. `read:` OpenAI documents mobile access through a connected desktop/SSH host using a managed app-server; its daemon controls are not a per-thread method for Durbar's separate stdio child. `real:` 2026-10-24, Codex CLI 0.164.0: one read-only prompt through `CodexAdapter` returned its expected response, but the owner could not see the thread in the already-paired mobile app. The managed daemon was running; desktop UI was closed and remote-control state was not verified. One prompt used; usage not measured. See spec Changes for scope and limitation.
+- [x] T040 Research whether ChatGPT mobile reaches `codex app-server` sessions and whether there is a method or flag [FR-030]. `read:` OpenAI documents mobile access through a connected desktop/SSH host using a managed app-server; its daemon controls are not a per-thread method for Durbar's separate stdio child. `real:` 2026-10-24, Codex CLI 0.164.0: one read-only prompt through `CodexAdapter` returned its expected response, but the owner could not see the thread in the already-paired mobile app. The managed daemon was running; desktop UI was closed and remote-control state was not verified. One prompt used; usage not measured. See spec Changes for scope and limitation. [KNOWN GAP] not verified on a real phone with an active connected host.
 - [x] T041 Disposition: do not add `CodexAdapter.setRemote` to the existing per-session capability. Mobile access requires managed host/app-server integration, a distinct architecture and permission-boundary design; defer until separately scoped and approved. No implementation planned in this task [FR-031].
 - [x] T011 FR-011 security review: native consent in main, refused in Allow all (and Allow all refused while on), off on GitHub before End/Remove/quit, activity log rows, fromApp on remote/mode/schedule handlers; notification body without the command
 
@@ -43,3 +43,9 @@ Not done and not planned here: the owner moved Claude channels to idea #485 ("Fo
 - [x] T051 `ClaudeAdapter.setRemote` over `remote_control`; relaunch turns it back on; `remote` event when that fails [FR-061, FR-062]
 - [x] T052 Copilot "not started" message [FR-063]; README Codex line [FR-064]
 - [x] T053 Unit tests (fake CLI and remote ops), simulator Claude kind with remote, driver and screenshots (`054-remote-claude-link-*`); real: `remote_control` over `claude -p` stream-json returned a claude.ai `session_url` (2026-10-20); through Durbar's window: sim only [FR-060..FR-064]
+
+## 2026-10-23 delta (owner, spec 017 doors)
+- [x] T054 Door closed by you: remote control off and refused, and the window offers to open the door (FR-040; built in spec 017 T013, T019) (renumbered from T040 in review: main's T040 is the Codex check, owned by PR 710)
+
+## 2026-10-28 delta (SDK 1.0.26 drops `remoteSession`)
+- [x] T055 `remoteSession: 'off'` kept as a 1.0.22-only hint with a comment; tests stop presenting it as a control; `test:remote` pins that `remote.enable` is reached only by `setRemote(id, true)` from `remoteops.ts`; "SDK 1.0.22" comments refreshed; real 1.0.103 check stays a KNOWN GAP [FR-070, FR-071]
