@@ -98,7 +98,7 @@ try {
 const wf = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'weekly-retro.yml'), 'utf8');
 assert.ok(/cron: '17 6 \* \* 1'/.test(wf) && /workflow_dispatch:/.test(wf));
 assert.ok(!/pull_request/.test(wf.replace(/^#.*$/gm, '')), 'no pull_request trigger');
-assert.ok(/permissions:\n  issues: write\n  contents: read\n  actions: read\n\n/.test(wf), 'minimal permissions');
+assert.ok(/permissions:\n  issues: write\n  contents: read\n  actions: read\n  pull-requests: read\n\n/.test(wf), 'minimal permissions');
 for (const m of wf.matchAll(/uses:\s*(\S+)/g)) assert.ok(/@[0-9a-f]{40}$/.test(m[1]), `unpinned ${m[1]}`);
 assert.ok(!/secrets\./.test(wf));
 
