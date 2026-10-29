@@ -19,7 +19,9 @@ const e2e = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'e2e-real.ym
 assert.ok(!/^\s*pull_request(_target)?\s*:/m.test(e2e), 'e2e-real.yml does not run on pull_request');
 // spec 062 FR-006/FR-007 (2026-10-22, cost): no push trigger, a daily schedule, the turn on macOS and Windows only when chosen
 assert.ok(!/^\s*push\s*:/m.test(e2e), 'e2e-real.yml has no push trigger (it spent credits on every merge)');
-assert.ok(/^\s*-\s*cron:\s*'17 5 \* \* \*'/m.test(e2e), 'e2e-real.yml runs once a day');
+// spec 062 FR-009: the schedule is paused (issue #856); no live schedule key, at most the commented-out block. Restore the daily cron check with T009.
+assert.ok(!/^\s*schedule\s*:/m.test(e2e) && /^\s*#\s*-\s*cron:\s*'17 5 \* \* \*'/m.test(e2e), 'e2e-real.yml is paused: no schedule trigger, manual runs only');
+assert.ok(/^\s*workflow_dispatch\s*:/m.test(e2e), 'e2e-real.yml can still be run by hand');
 assert.ok(/full_turn:[\s\S]*type:\s*boolean[\s\S]*default:\s*false/.test(e2e), 'e2e-real.yml has a full_turn input, off by default');
 assert.ok(e2e.includes('flag=--no-turn') && e2e.includes('"$RUNNER_OS" = "Linux"') && e2e.includes('date -u +%u)" = "1"') && e2e.includes('${E2E_FLAG:+"$E2E_FLAG"}'), 'e2e-real.yml passes --no-turn on macOS and Windows except Mondays or full_turn');
 assert.strictEqual((e2e.match(/\$\{\{\s*secrets\./g) ?? []).length, 3, 'secrets are used in one step only (three names)');
@@ -34,4 +36,4 @@ assert.deepStrictEqual(cheapCodex([m('gpt-6-gemini')], {}), { model: 'gpt-6-gemi
 assert.deepStrictEqual(cheapCodex(codexList, { E2E_CODEX_MODEL: 'gpt-7-mini', E2E_CODEX_EFFORT: 'minimal' }), { model: 'gpt-7-mini', effort: 'minimal' }, 'the env wins');
 assert.deepStrictEqual(cheapCodex(codexList, { E2E_CODEX_MODEL: 'claude-haiku', E2E_CODEX_EFFORT: 'Bad Value' }), { model: 'gpt-6-mini', effort: 'low' }, 'a non-Codex model or a malformed effort in the env is ignored');
 assert.deepStrictEqual(cheapCodex([], {}), {}, 'nothing listed: Codex decides');
-console.log(`platforms: ${(list as string[]).join(', ')}; e2e-real and install-check use the list; no pull_request with secrets, no push trigger, daily; Codex picks a small model`);
+console.log(`platforms: ${(list as string[]).join(', ')}; e2e-real and install-check use the list; no pull_request with secrets, no push trigger, schedule paused; Codex picks a small model`);
