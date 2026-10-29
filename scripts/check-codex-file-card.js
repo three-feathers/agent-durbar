@@ -1,7 +1,7 @@
 /*
  * Check for spec 052 FR-172: a Codex write request's permission card names the files and shows the change. Simulator only (no AI credits).
  *
- *   npm run check:codex-file-card
+ *   npm run check:ui -- --only check-codex-file-card
  *   OUT=docs/screenshots  (optional) also saves the screenshots
  *
  * `simkinds=mixed` makes Lena a Codex agent waiting for a write; `simcodexfile=1` gives her request the shape the Codex adapter now

@@ -86,3 +86,7 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 - [x] T081 `check:crew` picks Characters = Cheeky on `CREW_THEME`; run on Retro Pixel and Corporate at both sizes; `check:office` with `OFFICE_CHARACTERS=cheeky` on the same two themes at both sizes [FR-070, FR-069]
 - [x] T082 Driver `check-characters` (Cheeky, Minimalist and *The theme's own* on Retro Pixel and Corporate, a theme switch with Cheeky on; screenshots of the Settings section at both sizes), in `ui-suite.js` [FR-068, FR-070]
 - [x] T083 Docs: README *Themes* (Theme and Characters), changelog fragment, agent notes if something new was learned; linked screenshots that show the theme picker retaken (`npm run shots:docs -- --list`) [FR-068]
+
+## A sleeping crew character in the bed slot (delta 2026-10-29, issue #871; FR-071)
+
+- [x] T084 Spec delta FR-071; `app.js` (`restHTML`: the seat crop and a crew blanket for a crew sleeper; `lg-bunk solo` for a one-bed column) and `styles.css` (the crew bed slot: figure, name under it, chip top-left; a solo bunk without posts and at full height); `check:crew` lounge step at both sizes; changelog fragment; linked lounge screenshots retaken [FR-071]

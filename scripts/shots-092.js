@@ -105,11 +105,21 @@ module.exports = async (ctx) => {
     await reset(w, h, { simfloors: '1' });
     const pref0 = (await view()).pref;
     assert.ok(pref0, `${tag}: precondition: a current floor is saved`);
-    await js(`document.getElementById('wsFilter').focus()`);
-    await key('PageDown'); await settle();
-    // the select takes the key for its own choice (the folder filter moves to the next folder); the floor stays and nothing is announced
+    // the select takes the key for its own choice (the folder filter moves to the next folder); the floor stays and nothing is announced.
+    // The key goes through the OS focus and the select's own handling, so on a busy runner it can land late (or, with the window not focused, not at all):
+    // the window owns the focus first, the select's value is waited for (not read once after a fixed pause), and one more press if the first was lost
+    const ownFocus = async () => { for (let i = 0; i < 3; i++) { ctx.win.show(); ctx.win.focus(); ctx.win.webContents.focus(); if (await until('document.hasFocus()', 3000)) return true; } return false; };
+    assert.ok(await ownFocus(), `${tag}: the window owns the focus before the key`);
+    const used = `document.getElementById('wsFilter').value!=='all'`;
+    for (let tries = 0; tries < 2 && !(await js(used)); tries++) {
+      await js(`document.getElementById('wsFilter').focus()`);
+      await key('PageDown');
+      await until(used, 4000);
+      if (!(await js(used))) await ownFocus();
+    }
+    assert.ok(await until(used), `${tag}: the select used the key`);
+    await settle();
     assert.strictEqual((await view()).pref, pref0, `${tag}: PageDown in the folder select does not change the floor`);
-    assert.notStrictEqual(await js(`document.getElementById('wsFilter').value`), 'all', `${tag}: the select used the key`);
     await annEq([], `${tag}: and nothing was announced`);
     await js(`(()=>{const s=document.getElementById('wsFilter');s.value='all';s.dispatchEvent(new Event('change',{bubbles:true}));s.blur();})()`);
     assert.ok(await onFloor('Ground floor'), `${tag}: the floor is the same`);
@@ -237,9 +247,13 @@ module.exports = async (ctx) => {
       const labels = await js(`[...document.querySelectorAll('.lobby .place')].map(p=>p.getAttribute('aria-label')||'').join(' | ')`);
       assert.ok(/\((?:[^()]*, )(?:Ground floor|Client A|Personal)\)/.test(labels), `${tag}: a visitor of another floor has its floor in the label: ${labels.slice(0, 300)}`);
       assert.strictEqual(i0.walking, 0, `${tag}: no walk is drawn for them`);
-      // the simulator's visitors come and go over time, so the same visitors on both floors is read in one page call: the set, a PageDown (the floor change renders at once), the set again
-      const same = await js(`(()=>{const ids=()=>[...document.querySelectorAll('.lobby .pv[data-visitor]')].map(e=>e.dataset.visitor).sort().join();const a=ids();
-        document.dispatchEvent(new KeyboardEvent('keydown',{key:'PageDown',bubbles:true,cancelable:true}));return {a,b:ids(),walking:document.querySelectorAll('#walkers .walker.walking').length};})()`);
+      // The lobby's visitors are drawn from the agents' state by a render that may still be queued (a frame on a busy runner), so a set read from the DOM can be older than the
+      // model, and the render that a floor change does at once then shows the newer set: that is not the lobby changing with the floor. So everything runs in one page task, where
+      // nothing can be queued in between: a floor change and back (each renders at once from the model), then the set, a PageDown and the set again.
+      const same = await js(`(()=>{const ids=()=>[...document.querySelectorAll('.lobby .pv[data-visitor]')].map(e=>e.dataset.visitor).sort().join();
+        const press=k=>document.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:true,cancelable:true}));
+        press('PageDown');press('PageUp');const a=ids();
+        press('PageDown');return {a,b:ids(),walking:document.querySelectorAll('#walkers .walker.walking').length};})()`);
       assert.ok(await onFloor('Client A'), `${tag}: PageDown went to Client A`); await settle();
       assert.ok(same.a, `${tag}: precondition: visitors at the moment of the change`);
       assert.strictEqual(same.b, same.a, `${tag}: the lobby keeps the same visitors on every floor`);

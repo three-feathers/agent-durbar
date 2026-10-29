@@ -11,7 +11,7 @@
  *   caret-after-copy and toast-over-composer (the chat), popover-width (T169: the S/M token and --pop-pad), and tone-contrast (every rule that moved from a literal light colour to the
  *   --tone-* tokens reads at 4.5:1 in the 6 built-in themes and the dark fixture; the CSS is parsed here, the colours are resolved in the page).
  *
- *   npm run check:ui-text
+ *   npm run check:ui -- --only check-ui-text
  *
  * Simulator only: no real agent, no AI credits. Linux with xvfb-run (the npm script). All violations are listed, then the driver
  * fails (DRIVER FAILED, Electron itself exits 0), so the npm script exits non-zero unless "all checks passed" is printed.

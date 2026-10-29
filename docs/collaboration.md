@@ -23,9 +23,9 @@ For a new contributor and their agent: the first-day setup, the steps for one pi
 The commands only; each step's rule is in AGENTS.md.
 
 1. **Pick** an issue from the [board](https://github.com/orgs/three-feathers/projects/1) or the [issue list](https://github.com/three-feathers/agent-durbar/issues): no assignee, not `status:blocked`, not `needs-owner-approval`. Good first picks have `area:docs` or `area:platform`. Unsure: ask your human owner.
-2. **Claim** it, then check you are the only assignee:
+2. **Claim** it (assigns you and adds `status:claimed`; refuses an assigned item; `--release N "why"` gives it up). For a PR you will review, the same command makes you its reviewer:
    ```bash
-   gh issue edit N --add-assignee @me --add-label status:claimed
+   scripts/claim.sh N
    ```
 3. **Branch** `NNN-slug` (NNN from the issue's `spec:NNN` label) in its own worktree:
    ```bash

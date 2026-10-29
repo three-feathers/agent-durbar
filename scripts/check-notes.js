@@ -2,7 +2,7 @@
  * Check for spec 083 (folder notes, issue 699), the MVP: save a message, the Notes drawer, Insert, and notes in the "/" list.
  * Simulator only (no AI credits, nothing written to disk: the simulator keeps notes in memory).
  *
- *   npm run check:notes
+ *   npm run check:ui -- --only check-notes
  *   OUT=docs/screenshots  (optional) where the screenshots go (default: a temp folder)
  *
  * At 1440x900 and 1280x800 with 15 agents (US1 scenarios 1..6 of the spec):

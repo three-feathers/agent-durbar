@@ -2,7 +2,7 @@
  * Check for spec 052 FR-180 (issue #789): the chat header's first row gives the session title (and the line under it) all the width
  * that is free up to the buttons; it is cut with an ellipsis only when the row is really full. Simulator only (no AI credits).
  *
- *   npm run check:chat-title
+ *   npm run check:ui -- --only check-chat-title
  *
  * At 1440x900 and 1280x800, with `simtitles=long` (a 120-character session title):
  *   1. wide panel (the full-screen chat): if the title or the line under it is cut, no free room is left between it and the next
