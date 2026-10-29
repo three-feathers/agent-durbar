@@ -188,8 +188,8 @@ module.exports = async (ctx) => {
       assert.ok(/\[redacted\]/.test(titles), `${tag}: a previous session title shows masked: ${titles}`);
       await scan(tag, 'previous-sessions list');
       await js(`document.querySelector('#prevLists [data-pv="resume"]').click()`);
-      await until(`window.__durbarSimUi.agents().some(a=>/^Resumed: /.test(a.task||''))`);
-      assert.ok(await js(`(window.__taskLog||[]).some(t=>/^Resumed: /.test(t))`), `${tag}: a resumed line was stored`);
+      await until(`window.__durbarSimUi.agents().some(a=>/^Resumed/.test(a.task||''))`);
+      assert.ok(await js(`(window.__taskLog||[]).some(t=>/^Resumed/.test(t))`), `${tag}: a resumed line was stored`);
       await back();
       await scan(tag, 'resumed session');
     }
@@ -243,8 +243,8 @@ module.exports = async (ctx) => {
   const r = await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.info&&x.info.resumeLast);return a?a.id:''})()`);
   assert.ok(r, 'an agent with a session to continue');
   await js(`document.querySelector('#stage .desk[data-id='+JSON.stringify(${jsLiteral(r)})+']').click()`);
-  await until(`window.__durbarSimUi.agents().some(a=>/^Continued: /.test(a.task||''))`);
-  assert.ok(await js(`(window.__taskLog||[]).some(t=>/^Continued: /.test(t))`), 'a continued line was stored');
+  await until(`window.__durbarSimUi.agents().some(a=>/^Continued/.test(a.task||''))`);
+  assert.ok(await js(`(window.__taskLog||[]).some(t=>/^Continued/.test(t))`), 'a continued line was stored');
   await back();
   await scan('continued', 'continued session');
   }

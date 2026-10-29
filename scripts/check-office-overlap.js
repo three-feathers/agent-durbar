@@ -465,6 +465,40 @@ async function driver(ctx) {
       if (!shown) { failed++; console.log(`FAIL titles sim${sim}-${w}x${h}: no session title on any card`); }
     }
   }
+  /* spec 001 delta 2026-10-26 (issue #451): a session resumed from Previous sessions whose runtime title is long, with a bracketed URL-like token
+     (simnames=long). Its card keeps the title inside the card on at most 2 lines, desks of one row have one height, and the card's own line
+     does not repeat the title. Forced `full` (3 agents, the layout of the report) and the 15-agent layout, both sizes. Waits with `waitFor`. */
+  for (const [w, h] of SIZES) {
+    for (const [sim, dens] of [[3, '&density=full'], [15, '']]) {
+      if (!mine()) continue;
+      const tag = `resumed title sim${sim}-${w}x${h}`;
+      await load(`sim=${sim}&simfreeze=1&simnames=long${dens}`, w, h);
+      const ok = async (expr, ms = 8000) => ctx.waitFor(expr, ms);
+      await ctx.js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>!x.parent&&x.info&&x.info.cwd==='~/work/mcp-swiss');const d=a&&document.querySelector('#stage .desk[data-id='+JSON.stringify(a.id)+']');if(d)d.click();})()`); /* the simulator keeps earlier sessions in mcp-swiss */
+      await ok(`!!document.getElementById('prevBtn')&&!document.getElementById('prevBtn').hidden`);
+      if (!(await ctx.js(`!!document.querySelector('#prev .prev-row')`))) await ctx.js(`document.getElementById('prevBtn').click()`);
+      await ok(`document.querySelector('#prevLists [data-pv="resume"]')`);
+      await ctx.js(`document.querySelector('#prevLists [data-pv="resume"]').click()`);
+      await ok(`window.__durbarSimUi.agents().some(a=>/^Resumed/.test(a.task||'')&&a.name.startsWith('Why is the lookup slow?'))`);
+      await ctx.js(`document.getElementById('backBtn').click()`);
+      await ok(`!document.body.classList.contains('panel-open')`);
+      const q = `(()=>{const a=window.__durbarSimUi.agents().find(x=>/^Resumed/.test(x.task||''));const d=a&&document.querySelector('#stage .desk[data-id='+JSON.stringify(a.id)+']');if(!d)return null;
+        const c=d.getBoundingClientRect(),n=d.querySelector('.name'),b=n.getBoundingClientRect(),lh=parseFloat(getComputedStyle(n).lineHeight);
+        const same=[...document.querySelectorAll('#stage .desk[data-id]')].filter(x=>!x.matches('.helper')&&Math.abs(x.getBoundingClientRect().top-c.top)<2&&x.closest('.room')===d.closest('.room')).map(x=>Math.round(x.getBoundingClientRect().height));
+        return {name:n.textContent,lines:Math.round(b.height/lh),out:b.right>c.right+0.5||b.left<c.left-0.5,scroll:n.matches('.who .name')&&n.scrollWidth>n.clientWidth+1,heights:[...new Set(same)],task:a.task,tip:!!(n.title||d.title||d.getAttribute('aria-label')),text:d.innerText};})()`;
+      let r = null;
+      for (let i = 0; i < 40 && !(r && r.name.startsWith('Why is the lookup slow?')); i++) { r = await ctx.js(q); if (!r || !r.name.startsWith('Why is the lookup slow?')) await sleep(100); }
+      total++;
+      if (!r) { failed++; console.log(`FAIL ${tag}: the resumed desk is not in the office`); continue; }
+      const bad = [];
+      if (r.out || r.scroll) bad.push('the title leaves its card');
+      if (r.lines > 2) bad.push(`the title takes ${r.lines} lines`);
+      if (r.heights.length > 1) bad.push(`desks of its row differ in height: ${r.heights}`);
+      if (!r.tip) bad.push('no full title in a tooltip or the accessible name');
+      if (/lookup slow/i.test(r.task) || (r.text.match(/Why is the lookup slow/g) || []).length > 1) bad.push(`the line repeats the title: ${r.task}`);
+      if (bad.length) { failed++; console.log(`FAIL ${tag}: ${bad.join('; ')}`); }
+    }
+  }
   /* spec 033: floors on/off (3, 2 and 1 floors on), with and without closed doors, both sizes */
   for (const [w, h] of SIZES) {
     if (!mine()) continue;
