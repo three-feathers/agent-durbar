@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: index
 title: Copilot adapter and normalized events
-status: implemented; delta 2026-10-18: normalized `title` event from `session.title_changed`, `name.get` fallback (issue #126); delta 2026-10-19: questions from Copilot (`ask_user`, FR-058)
+status: built
+note: open: helper attribution on a real multi-agent run (T021); unmapped user-input events need clarify (T023)
 -->
 
 **Feature Branch**: `002-copilot-adapter-and-events` (reverse-engineered; milestones 1, 3, 5, 6)
@@ -98,6 +99,13 @@ A developer adds another agent runtime by implementing `AgentAdapter` and emitti
 - The user has a Copilot subscription (free works) and has run `copilot login`.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> implemented; delta 2026-10-18: normalized `title` event from `session.title_changed`, `name.get` fallback (issue #126); delta 2026-10-19: questions from Copilot (`ask_user`, FR-058)
+
 
 - **2026-10-17, feature 030 Phase 2 (fake session only, no credits):** `AgentAdapter` gained three optional members: `setModel(sessionId, request)`, `cancelQueuedModel(sessionId, queueId)` and `compact(sessionId, focus?)`, and the normalized events `model` and `compaction` (types in `src/shared/modelswitch.ts`). `CopilotAdapter` implements them on `rpc.model.switchTo`, `rpc.queue.removeAt` and `rpc.history.compact` (experimental SDK calls, read from the SDK 1.0.22 types and docs). Main derives the UI's `modelControl` from which members exist, so an adapter without them (a future one, or the simulator's "none" agent) shows a disabled menu with a reason and New session. `StartOptions` gained `contextTier`; `start()` passes the saved model, effort and tier on create and on resume and the `auto` routing preference only for a new session. The pure helpers are in `src/adapters/copilotmodel.ts`. `listModelOptions` returns the extra price fields. `test:copilotmodel` runs the real adapter against a fake client and session. `[KNOWN GAP]` What the real runtime does with these calls is unverified (030 T040..T046). See [030](../030-switch-model-context/spec.md).
 - **2026-10-17, feature 030 Phase 3 (`real:`, free plan, `auto` only, 0.56 AIU):** `setModel`, `cancelQueuedModel`, `compact` and resume were run against a real session. Changes: `status: "cancelled"` maps to `rejected` with a plain message; runtime error text is unwrapped; `session.compaction_complete` also emits a `usage` event from `compactionTokensUsed` (the cost was invisible before); Stop drops a queued switch (no event; the renderer clears its pending note on the `Aborted` idle). Details: [030](../030-switch-model-context/spec.md).

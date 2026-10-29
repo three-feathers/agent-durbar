@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Daily screenshot refresh: a workflow captures the simulator on Linux, Windows and macOS when main changed and keeps one "screenshots: refresh" PR up to date; a text gate replaces image review
-status: **spec only** 2026-10-23: nothing built; blocked by the 001-screenshot-sweep capture script; font and flake handling are [KNOWN GAP]
+status: specified
+note: spec only, nothing built; blocked by the screenshot sweep script
 -->
 
 **Feature Branch**: `075-screenshot-refresh`
@@ -66,3 +67,11 @@ Real-session screenshots (they cost credits and are taken by hand per AGENTS.md)
 - **SC-004** A PR with one extra file (for example under `src/`) fails the text gate.
 - **SC-006** A human commit on `screenshots/refresh` that forges the author `github-actions[bot]` and the marker, with an edited PR body, fails the gate: its head sha is not the sha recorded by the workflow run. A run that is not the refresh workflow on `main`, or was triggered by anything but `schedule` or `workflow_dispatch`, is also refused.
 - **SC-005** The website shows the Linux images in the main gallery and Windows and macOS in the platform gallery.
+
+## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **spec only** 2026-10-23: nothing built; blocked by the 001-screenshot-sweep capture script; font and flake handling are [KNOWN GAP]

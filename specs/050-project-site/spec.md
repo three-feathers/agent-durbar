@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Project website on GitHub Pages, generated from the README, the specs index, screenshots, the CHANGELOG and the latest release; deployed by CI (issue #293)
-status: **built and live** at https://three-feathers.github.io/agent-durbar/; delta 2026-10-20: a curated landing page from `docs/site/landing.json` (checked against the README) plus a docs page with the whole README (FR-006..FR-010) built
+status: built
+note: live; T010 later: a page per built spec, screenshot refresh, custom domain
 -->
 
 **Feature Branch**: `050-project-site`
@@ -51,6 +52,13 @@ A friendly front door at <https://three-feathers.github.io/agent-durbar/>: what 
 - A custom domain (a `CNAME` plus DNS, an owner decision).
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **built and live** at https://three-feathers.github.io/agent-durbar/; delta 2026-10-20: a curated landing page from `docs/site/landing.json` (checked against the README) plus a docs page with the whole README (FR-006..FR-010) built
+
 
 ### 2026-10-19: built
 

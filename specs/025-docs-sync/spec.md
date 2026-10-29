@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 025
 title: "Keep docs in sync" rule, PR template Docs box, warning-only Docs check, catch-up of README/CHANGELOG/spec statuses
-status: built; stale screenshots regenerated (T006, T008); delta 2026-10-22: changelog fragments in `changelog.d/` and a specs index generated from each spec's block, rows not committed (FR-007..FR-016, `changelog:check`, `specs:check`; warning only until the strict marker) built, unit tests; merge-time import and first release in #520
+status: built
+note: T007 review and T017 strict marker wait on two weeks of use and open PRs
 -->
 
 **Feature Branch**: `025-docs-sync`
@@ -31,6 +32,17 @@ status: built; stale screenshots regenerated (T006, T008); delta 2026-10-22: cha
 Making the docs check required (decide after two weeks of use, like spec 021 T013). Auto-generating docs. Any change to `src/`.
 
 ## Changes
+
+### 2026-10-29: fixed status words (spec 021 FR-063)
+
+The index block's `status:` is now one word (`draft`, `specified`, `building`, `built`, `released`, `superseded`) with an optional `note:` of at most 160 characters, and `specs:check` refuses anything else. `scripts/specs-index.js` and `specs/README.md` carry the rule; a new spec from `--add` starts as `draft`.
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> built; stale screenshots regenerated (T006, T008); delta 2026-10-22: changelog fragments in `changelog.d/` and a specs index generated from each spec's block, rows not committed (FR-007..FR-016, `changelog:check`, `specs:check`; warning only until the strict marker) built, unit tests; merge-time import and first release in #520
+
 
 ### 2026-10-22: fewer merge conflicts (changelog fragments, generated specs index)
 

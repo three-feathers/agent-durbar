@@ -1,7 +1,0 @@
-# Tasks 091
-
-- [x] T001 Version bump (package.json, package-lock.json root entries, sim About label) [FR-001]
-- [x] T002 Tag `v0.1.0` on `main`; `verify` writes the notes [FR-002]
-- [x] T003 Draft checked, published and marked latest [FR-003]
-- [x] T004 Fold PR from the tag: changelog, intro, README status block, landing.json + test-site asserts [FR-004]
-- [x] T005 DORA classification before the tag [FR-005]

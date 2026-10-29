@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Usability pass from eleven rounds of AI persona reviews (about 37 personas): answer bar and inbox, Simple/Expert, restore strip, palette and Cost view, one word per concept, interaction polish, accessibility, calmer visuals, notifications, activity log, Windows first run, house rules, plain words, macOS conventions, daily use, pre-release fixes, a one-row top bar, New in the chat header, + Folder / + Workspace first in the top bar and a Mac File menu (FR-164), a help and UI text pass: wrapping, widths, menus, tooltips, long names, chat, dark-theme tokens (FR-165..FR-171, #464), a Codex write card with its files and diff (FR-172)
-status: **built** through round 11, FR-164 and the text pass FR-165..FR-171 (simulator, unit; the text pass: Linux fonts only, the install, update, import and hand-off review dialogs are not opened by `check:ui-text`; OS notifications, badge, High Contrast, macOS menu and window behaviour, window restore not checked on a real OS; FR-138 Mac title bar on every screen is simulator-checked only; FR-160/FR-161 question card in full and Enter sends a custom answer, simulator only; FR-164/FR-163 waiting question in the answer bar and compactions folded into one line, simulator only; FR-173 list focus survives a re-render, simulator only; FR-071 fix 2026-10-21 (#474): the activity table has its own window global, `test:globals` and `check:activity-table`, simulator only; FR-172 a Codex write request names its files and shows the diff, unit, simulator and one real Codex 0.163 edit on Linux (T163))
+status: building
+note: rounds to 11 built; accessibility tasks T036-T044 and round 3 open
 -->
 
 **Feature Branch**: `052-usability-pass`
@@ -106,6 +107,13 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
 - `[KNOWN GAP]`: the reviews were AI personas working from screenshots and the source, not people; nobody ran a screen reader or 150% zoom.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **built** through round 11, FR-164 and the text pass FR-165..FR-171 (simulator, unit; the text pass: Linux fonts only, the install, update, import and hand-off review dialogs are not opened by `check:ui-text`; OS notifications, badge, High Contrast, macOS menu and window behaviour, window restore not checked on a real OS; FR-138 Mac title bar on every screen is simulator-checked only; FR-160/FR-161 question card in full and Enter sends a custom answer, simulator only; FR-164/FR-163 waiting question in the answer bar and compactions folded into one line, simulator only; FR-173 list focus survives a re-render, simulator only; FR-071 fix 2026-10-21 (#474): the activity table has its own window global, `test:globals` and `check:activity-table`, simulator only; FR-172 a Codex write request names its files and shows the diff, unit, simulator and one real Codex 0.163 edit on Linux (T163))
+
 
 - **2026-10-27, floors as places (spec 092, issue #782).** The shortcut sheet gets PageUp / PageDown (previous / next floor, with the Fn note for Mac laptops). The inbox *Open* / *Answer in chat* (and a notification, which opens the inbox) set the office's current floor to the agent's floor before the chat shows, and a floor change behind a chat is announced on *Back to the office*. `swapView()` (FR-070) is not used for the floor slide (092 FR-030). Not built yet.
 ### 2026-10-19: round 2, new personas on the round-1 build

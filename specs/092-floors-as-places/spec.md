@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Floors as places (issue #782): each floor that is on is one whole screen of a vertical building; a lift button panel slides the view to another floor (about 300 ms, instant with reduced motion); attention from other floors shows on the lift buttons; PageUp/PageDown and jump-to-floor from the inbox and notifications; an *All floors* choice on the lift shows the whole building on one screen
-status: **in progress** 2026-10-28: phase 1 (floor screens, PageUp/PageDown, instant) built on `092-floor-screens`; phase 2 (lift panel, badges, edge rows) and the *All floors* view (FR-031..FR-037, owner 2026-10-28) built on `092-lift-all-floors` (instant changes); slide and jumps (phases 3-4) not built; owner answers Q1-Q7 of issue #782 and Q-A, Q-B (both a) recorded
+status: building
+note: phases 1-2 and All floors built; slide and jumps (phases 3-4) not built
 -->
 
 **Feature Branch**: spec on `033-floors-as-places`; the code branches are named `092-...` per phase (amends 033 floors FR-011 and FR-012; uses 024 shared lobby, 001 office layout, 052 inbox and notifications, 074 keyboard navigator)
@@ -242,6 +243,13 @@ The slide is short and soft. It never blocks input and never hides a waiting age
 - Windows, macOS and Linux behave the same; PageUp/PageDown exist on all three (Fn+Up/Down on a Mac laptop). *[unverified on a real Mac or Windows keyboard.]*
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **in progress** 2026-10-28: phase 1 (floor screens, PageUp/PageDown, instant) built on `092-floor-screens`; phase 2 (lift panel, badges, edge rows) and the *All floors* view (FR-031..FR-037, owner 2026-10-28) built on `092-lift-all-floors` (instant changes); slide and jumps (phases 3-4) not built; owner answers Q1-Q7 of issue #782 and Q-A, Q-B (both a) recorded
+
 
 ### 2026-10-27, phase 1 (floor screens; branch `092-floor-screens`)
 

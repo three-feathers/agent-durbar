@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: A folder's own agent setup (MCP servers, hooks, permission rules) is used by default and shown when the folder is added, for all three agent apps (issue #289)
-status: **built** 2026-10-21: folder hooks, rules and MCP servers listed in full when a folder is added, applied only when accepted (hooks and broad allow rules, every `Bash` rule included, need an explicit tick), AI explanation per hook, `+ folder rules` chip; real checks on Claude Code and Copilot; Codex hooks not supported
+status: built
 -->
 
 **Status:** built (2026-10-21; see `## Changes`), review on #424 fixed (2026-10-21, second entry). Owner decisions recorded (issue #289, 2026-10-20). Constitution **Amendment 1** (principle III, v1.1.0) is in force (#395). Review requirements FR-010..FR-014 (Paco, Ruben, #394). Checked on real Claude Code and Copilot sessions. Open: the `[KNOWN GAP]` list at the end. S1 decided by the owner (Vikram, Telegram, 2026-10-21: every `Bash(...)` allow rule needs the explicit tick; see the third `## Changes` entry).
@@ -292,3 +292,11 @@ The composed Claude `--settings` JSON (FR-004) keeps the folder's hooks and rule
 Read-only and Ask first, or absent (a folder `sandbox` key is dropped, also in Allow all) ([spec 087](../087-os-sandbox-floor/spec.md) FR-003,
 `withSandboxSettings`, `test:` `scripts/test-sandbox-floor.ts`). An accepted folder allow rule (`Bash(npm test:*)`) still passes Durbar's
 Read-only, and the command it lets through then runs inside the app's OS sandbox where it can start.
+
+## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **built** 2026-10-21: folder hooks, rules and MCP servers listed in full when a folder is added, applied only when accepted (hooks and broad allow rules, every `Bash` rule included, need an explicit tick), AI explanation per hook, `+ folder rules` chip; real checks on Claude Code and Copilot; Codex hooks not supported

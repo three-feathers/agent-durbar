@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 015-018
 title: Thinking that shows up, sub-agent activity
-status: milestone 7; delta 2026-10-28 Claude helper text (`--forward-subagent-text`, `[KNOWN GAP]` no real session); delta 2026-10-25 (issue #601) built on the simulator: Compacting on the desk, Claude, Codex and truncation mapping, `[KNOWN GAP]` not seen on a real session
+status: built
+note: Claude helper text has no real-session check ([KNOWN GAP])
 -->
 
 **Feature Branch**: `015-thinking-and-subagent-activity` (milestone 7; amends 002 FR-007, FR-010, FR-013)
@@ -48,6 +49,13 @@ status: milestone 7; delta 2026-10-28 Claude helper text (`--forward-subagent-te
 - **KNOWN LIMIT** Reasoning of `auto` arrives in one ~1 s burst after a few seconds of waiting, so "streaming" is short; no explicit reasoning model could be tested on this plan; nested sub-agents are shown flat under the top-level agent.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> milestone 7; delta 2026-10-28 Claude helper text (`--forward-subagent-text`, `[KNOWN GAP]` no real session); delta 2026-10-25 (issue #601) built on the simulator: Compacting on the desk, Claude, Codex and truncation mapping, `[KNOWN GAP]` not seen on a real session
+
 
 ### 2026-10-28: Claude Code only sends a helper's text and thinking when asked (`--forward-subagent-text`)
 

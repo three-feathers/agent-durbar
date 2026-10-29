@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 035-040
 title: User themes: `userData/themes/<id>/manifest.json`, import/export, validation
-status: **built** (`test:userthemes`); delta 2026-10-19: make a theme with AI, light or dark with art, several passes, ideas (FR-014..FR-021, issue #182), and Export fixed (FR-019) built; delta 2026-10-20: the AI theme maker on Copilot (FR-015, T026, #301) built on a fake SDK; real check done 2026-10-20 (T027: 2 prompts, 0.50 AI credits; bare token names fixed, FR-022); delta 2026-10-21: a picked theme redraws desks, walkers and helper tiles, headwear over the hair, art on every scene kit (FR-023, `check:theme-art`) built
+status: built
 -->
 
 **Feature Branch**: `035-theme-foundation` (issue #129)
@@ -40,6 +40,13 @@ status: **built** (`test:userthemes`); delta 2026-10-19: make a theme with AI, l
 - Import a hand-made pack on disk → appears, applies, survives restart, exports byte-identical; a tampered manifest is refused with a clear toast; `npm test` covers the store/validate paths without Electron.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **built** (`test:userthemes`); delta 2026-10-19: make a theme with AI, light or dark with art, several passes, ideas (FR-014..FR-021, issue #182), and Export fixed (FR-019) built; delta 2026-10-20: the AI theme maker on Copilot (FR-015, T026, #301) built on a fake SDK; real check done 2026-10-20 (T027: 2 prompts, 0.50 AI credits; bare token names fixed, FR-022); delta 2026-10-21: a picked theme redraws desks, walkers and helper tiles, headwear over the hair, art on every scene kit (FR-023, `check:theme-art`) built
+
 
 ### 2026-10-18: imported themes are untrusted input (review of PR #137)
 

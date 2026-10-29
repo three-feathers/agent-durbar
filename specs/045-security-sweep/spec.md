@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 045
 title: Security and quality sweep before alpha.6: uniform place ids, one-pass unescape, Windows `cmd.exe` from SystemRoot, window navigation and web-permission hardening, alert triage
-status: built 2026-10-19 (unit tests, Electron check on the simulator); T021 (2026-10-21, #411): `main.ts` split into 18 IPC modules under `src/main/ipc/` (FR-060), every channel registered once and the 23 `fromApp` checks kept (`test:ipcchannels`)
+status: built
 -->
 
 **Feature Branch**: `045-security-sweep`
@@ -38,6 +38,13 @@ status: built 2026-10-19 (unit tests, Electron check on the simulator); T021 (20
 - The dismissed alerts stay listed here, so the reasons are in the repository, not only on GitHub.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> built 2026-10-19 (unit tests, Electron check on the simulator); T021 (2026-10-21, #411): `main.ts` split into 18 IPC modules under `src/main/ipc/` (FR-060), every channel registered once and the 23 `fromApp` checks kept (`test:ipcchannels`)
+
 
 - **2026-10-20 (issue #332, from the round-7 security review):** **FR-008** every IPC handler in the main process is registered through `ipcHandle` / `ipcOn` (`src/main/ipcguard.ts`), which answer only the app's own page in the window's main frame (`senderAllowed`). A call from anywhere else is rejected before it reaches the handler, so a new handler cannot forget the check. This is defense in depth: the sandbox, the navigation guard, the deny-all window-open handler and the CSP already keep other pages and frames out. `test:` `scripts/test-wincmd.ts` fails if any file in `src/main` registers on `ipcMain` directly; `sim:` the welcome driver passes on the real bridge. `[KNOWN GAP]` The check itself needs Electron, so it is not unit-tested; the rule it applies (`senderAllowed`) is.
 

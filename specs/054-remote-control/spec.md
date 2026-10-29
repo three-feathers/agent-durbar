@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Remote control and chat channels: Copilot remote steering from github.com and GitHub Mobile (Phase 1); Claude Code Remote Control from claude.ai and the Claude app (Phase 2); Claude Code channels wizard out of scope, moved to idea #485 (owner 2026-10-21)
-status: **Phases 1-2 built** (unit, simulator driver); Copilot real check 2026-10-20: not started on a free plan, also in a private GitHub repository, started on Pro; owner used a real Copilot remote session 2026-10-21 ("works perfectly"); Claude `remote_control` real over `claude -p`, Durbar window sim only; Codex mobile is documented for connected desktop/SSH hosts using managed app-server, but Durbar's per-session stdio process did not appear in one live test; active connected-host workflow remains unverified ([KNOWN GAP], not verified on a real phone; research record only, #490); delta 2026-10-23 (owner): a door closed by you turns remote control off and refuses it (FR-040; queuing remote messages is a known gap, FR-041)
+status: built
+note: Phases 1-2; the Codex connected-host flow is unverified ([KNOWN GAP])
 -->
 
 **Feature Branch**: `054-remote-control`
@@ -188,6 +189,13 @@ Owner (Vikram, DM 14:45 UTC): while the user has closed an agent's cabin door, r
 - **FR-042** [IMPLEMENTED] `test: test-doors` `sim: shots-017-signs` (review on #631) Closing the door turns remote control off before the door closes; if that fails the door stays open and the user is told. When it worked, main sends `agents:remoteOff` (reason: the door is closed), so the window drops the Remote chip and the card's "· Remote"; reopening the door says that remote control stays off.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **Phases 1-2 built** (unit, simulator driver); Copilot real check 2026-10-20: not started on a free plan, also in a private GitHub repository, started on Pro; owner used a real Copilot remote session 2026-10-21 ("works perfectly"); Claude `remote_control` real over `claude -p`, Durbar window sim only; Codex mobile is documented for connected desktop/SSH hosts using managed app-server, but Durbar's per-session stdio process did not appear in one live test; active connected-host workflow remains unverified ([KNOWN GAP], not verified on a real phone; research record only, #490); delta 2026-10-23 (owner): a door closed by you turns remote control off and refuses it (FR-040; queuing remote messages is a known gap, FR-041)
+
 
 ### 2026-10-28 delta: SDK 1.0.26 no longer has `remoteSession` (supply-chain follow-up to Dependabot #828, task T055)
 - Read in the published packages (`npm pack`, typings and code only, nothing run): `@github/copilot-sdk` 1.0.22 has `SessionConfig.remoteSession` and the client option `enableRemoteSessions`; **1.0.26 has neither** (`client.js` no longer forwards them). Remote control is then reached only through `rpc.remote.enable`.

@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Full theme tokens: typed tokens for fonts (system allow-list, no downloads), title weight, radii and shadows; the people's clothes and hair; cup and laptop slots; per-value fallback with a note, pair-wise contrast fallback, hostile values refuse the pack; AI maker extended; a ratchet on the renderer's colour literals
-status: **Phase 1 built** (`test:theme-tokens`, `check:theme-art`, `check:geometry` with *Pink Studio*); Phase 2 (remaining literals onto tokens) open; the new AI prompt checked on a real model (Claude haiku, 2026-10-22, 1 prompt; FR-031 fix)
+status: building
+note: phase 1 built; T020 remaining colour literals onto tokens open
 -->
 
 **Feature Branch**: `070-theme-tokens`
@@ -86,6 +87,13 @@ A pack with a script in an SVG, a font that is not on the allow-list, a 2px font
 - **SC-004** No theme can fetch anything from the network or load a file other than its `manifest.json`.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **Phase 1 built** (`test:theme-tokens`, `check:theme-art`, `check:geometry` with *Pink Studio*); Phase 2 (remaining literals onto tokens) open; the new AI prompt checked on a real model (Claude haiku, 2026-10-22, 1 prompt; FR-031 fix)
+
 
 - **2026-10-22 (review on #500 by Paco's agent)**
   - FR-020: the allow-lists are looked up by own property (`FONT_INDEX` is a `Map` in `themetokens.ts` and a null-prototype object in `theme.js`; `typedValue`, `token()` and the built-in id checks in `theme.js` use an own-property check), so `"--font":"constructor"` (or `__proto__`, `toString`, `hasOwnProperty`) is an unusable font: an imported pack drops it and the AI maker drops it with a warning instead of refusing the whole theme. FR-020 also says that main keeps unknown `--names` on disk while the renderer counts them.

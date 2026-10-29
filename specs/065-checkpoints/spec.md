@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Undo an agent's file changes per turn: a copy kept just before each file-edit write, a previewed and confirmed restore, refusal when a file changed since, undo of the undo (issue #431)
-status: **built** 2026-10-21: unit tests, simulator driver, real checks on Claude Code and Copilot; Codex unit-tested only (not covered in Allow all)
+status: built
+note: Codex unit-tested only
 -->
 
 **Feature Branch**: `065-checkpoints`
@@ -53,6 +54,13 @@ Not covered, said in the dialog and the README: files changed by shell commands 
 Native rewind features (Claude Code's checkpoints / rewind, any Copilot snapshot): researched, not used yet, because one Durbar-side mechanism behaves the same for every agent app and covers Copilot, which has none; revisit when they are exposed to SDK clients in a documented way (`[KNOWN GAP]`).
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **built** 2026-10-21: unit tests, simulator driver, real checks on Claude Code and Copilot; Codex unit-tested only (not covered in Allow all)
+
 
 ### 2026-10-21: built (T001-T005)
 

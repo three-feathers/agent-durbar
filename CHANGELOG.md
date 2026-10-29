@@ -631,7 +631,7 @@ Themes that change the whole office, main agents named by their Copilot session 
 
 ## v0.1.0-alpha.4 ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4), 2026-10-17)
 
-Published as a **pre-release** (built as a draft by the release workflow, then published after checking its eight files). On top of v0.1.0-alpha.3: places in the office, the VS Code MCP import, the dialog focus fix and the first steps of switching model and context window inside a session. Spec: [031](specs/031-release-alpha4/spec.md). Built and tested on the simulator, on fake sessions and with unit tests; **no AI credits were spent for the release itself** (the earlier real-account checks are listed below with their cost).
+Published as a **pre-release** (built as a draft by the release workflow, then published after checking its eight files). On top of v0.1.0-alpha.3: places in the office, the VS Code MCP import, the dialog focus fix and the first steps of switching model and context window inside a session. Spec: [031, now in the release table](specs/008-packaging-and-release/spec.md#release-table). Built and tested on the simulator, on fake sessions and with unit tests; **no AI credits were spent for the release itself** (the earlier real-account checks are listed below with their cost).
 
 ### Read this first
 
@@ -673,7 +673,7 @@ Published as a **pre-release** (built as a draft by the release workflow, then p
 
 ## v0.1.0-alpha.3 ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.3), 2026-10-17)
 
-Published by the maintainer as a **pre-release** (it was built as a draft first). It is the first published release. Small update on top of v0.1.0-alpha.2 (never published; its draft was removed in favour of this one, the [git tag](https://github.com/three-feathers/agent-durbar/tree/v0.1.0-alpha.2) remains): the permission mode rename, usage totals, Windows grant-scope tests and a docs catch-up. Spec: [026](specs/026-release-alpha3/spec.md). Built and tested on the simulator and unit tests; **no AI credits were spent for the release itself.**
+Published by the maintainer as a **pre-release** (it was built as a draft first). It is the first published release. Small update on top of v0.1.0-alpha.2 (never published; its draft was removed in favour of this one, the [git tag](https://github.com/three-feathers/agent-durbar/tree/v0.1.0-alpha.2) remains): the permission mode rename, usage totals, Windows grant-scope tests and a docs catch-up. Spec: [026, now in the release table](specs/008-packaging-and-release/spec.md#release-table). Built and tested on the simulator and unit tests; **no AI credits were spent for the release itself.**
 
 ### Read this first
 
@@ -693,7 +693,7 @@ Published by the maintainer as a **pre-release** (it was built as a draft first)
 
 > The alpha.2 draft was deleted and replaced by alpha.3, which includes everything below. The git tag `v0.1.0-alpha.2` remains.
 
-Everything since [v0.1.0-alpha.1](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.1) (milestones 6 to 10 plus ownership). Spec: [023](specs/023-release-alpha2/spec.md). Built and tested on the simulator and unit tests; the real Copilot runtime was used only for small research captures (about 0.17 AIU) and free checks. **No AI credits were spent for the release itself.**
+Everything since [v0.1.0-alpha.1](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.1) (milestones 6 to 10 plus ownership). Spec: [008 release table](specs/008-packaging-and-release/spec.md#release-table). Built and tested on the simulator and unit tests; the real Copilot runtime was used only for small research captures (about 0.17 AIU) and free checks. **No AI credits were spent for the release itself.**
 
 ### Read this first
 

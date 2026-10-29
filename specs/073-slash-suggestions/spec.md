@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Slash suggestions: `/` in the message box lists the folder's, the user's and the app's skills, commands and prompt files; a folder or user entry is sent as its file's text
-status: **built** 2026-10-22, VS Code prompt files 2026-10-23 (`test:slashcommands`, `check:slash-suggest`); real: Claude Code (folder command not loaded, built-in `/context` runs), Copilot (`session.send` does not run built-ins); Codex read only
+status: built
+note: open items are all [KNOWN GAP]s
 -->
 
 **Feature Branch**: `073-slash-suggestions` (based on `main`; its first base, `005-composer-toolbar`, landed as #498)
@@ -188,6 +189,13 @@ with "No commands for this agent app here" for a bare `/`, so the user learns th
   in this version.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> **built** 2026-10-22, VS Code prompt files 2026-10-23 (`test:slashcommands`, `check:slash-suggest`); real: Claude Code (folder command not loaded, built-in `/context` runs), Copilot (`session.send` does not run built-ins); Codex read only
+
 
 ### 2026-10-23: token shapes in the list are masked (issue #608, security)
 

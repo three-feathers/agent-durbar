@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 011-014
 title: Live verification of Stop, resume and thinking
-status: run 2026-10-19: C1-C7 pass on a real Copilot session (9 prompts, 0.31 AIU); several models, real cap, VS Code and macOS/Windows still open (2026-10-20: C8 still blocked, the login lists no models; C9 estimated and skipped); C8 and C9 run on Copilot Pro 2026-10-20 (C9: the runtime did not stop at the cap, see spec 011)
+status: built
+note: T008 packaged-app VS Code check on macOS and Windows open
 -->
 
 **Feature Branch**: `013-live-verification-stop-resume-thinking`
@@ -109,3 +110,11 @@ Real app driven by script (`DURBAR_DRIVER`), one real Copilot session in a throw
 
   So, on this runtime, the session limit is checked when a session is created or resumed, not before each turn, and it does not stop a running session. GitHub's docs say the next model call is blocked; that did not happen. **Durbar must enforce the cap itself** (spec 011 change, same day).
 - Credits: C8 0.43 AIU; C9 about 75.7 AIU (the capped session's own total). All Copilot Pro checks of the day: about **81.8 AIU, about USD 0.82**, inside spec 030's Q8 budget of USD 1.
+
+## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> run 2026-10-19: C1-C7 pass on a real Copilot session (9 prompts, 0.31 AIU); several models, real cap, VS Code and macOS/Windows still open (2026-10-20: C8 still blocked, the login lists no models; C9 estimated and skipped); C8 and C9 run on Copilot Pro 2026-10-20 (C9: the runtime did not stop at the cap, see spec 011)

@@ -3,7 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Agent-app updates (owner request, issue #662): Settings > Agent apps shows "installed X, latest Y" per app, checked in the background at every Durbar start and on "Check for updates" (owner decision Q1 = C; organization policy can turn it off); a new version gets a badge and one toast; Update runs the updater of the source that installed the copy Durbar uses (no shell, argv, native confirmation, masked output); open sessions are warned about, ended or waited for; failures (admin rights, managed machines, locked files on Windows) say what to do
-status: Built on the simulator and with fake tools (2026-10-25): check, update, gate and failures; T008 is in PR #698 (detection uses the shared limit); real-machine checks T040-T042 not run; Q1-Q7 answered by Vikram
+status: building
+note: built on the simulator; T037 final run and real-machine checks T040-T043 open
 -->
 
 **Feature Branch**: `081-cli-updates` (extends 051 harness setup, 060 platform parity and 012 detection; reads 076 managed config)
@@ -498,6 +499,13 @@ When the start check finds a new version, the Settings entry and the card get a 
 - **`features.agentAppUpdateCheck: false` and `updates.mode: "off"`** hide the check entirely (076 FR-158); `allowInAppInstall: false` keeps the read-only button (FR-022). T036 updates 076 FR-174.
 
 ## Changes
+
+### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
+
+The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
+
+> Built on the simulator and with fake tools (2026-10-25): check, update, gate and failures; T008 is in PR #698 (detection uses the shared limit); real-machine checks T040-T042 not run; Q1-Q7 answered by Vikram
+
 
 ### 2026-10-25: "Could not check: exit 127" on a Mac (owner's report, v0.1.0-alpha.16; refs #662)
 
