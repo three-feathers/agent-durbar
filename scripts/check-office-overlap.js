@@ -353,7 +353,7 @@ async function driver(ctx) {
      starting at k, so n parallel jobs cover the whole check. Unset: everything, as before. */
   const SHARDS = Math.max(1, Number(process.env.OFFICE_SHARDS) || 1), SHARD = Number(process.env.OFFICE_SHARD) || 0;
   let unit = 0;
-  const ONLY = process.env.OFFICE_ONLY || ''; // a developer aid: OFFICE_ONLY=screens (spec 092 floor screens), =allfloors (spec 092 FR-033, the All floors view) or =floors (spec 033 floors cases) runs that block alone
+  const ONLY = process.env.OFFICE_ONLY || ''; // a developer aid: OFFICE_ONLY=screens (spec 092 floor screens), =allfloors (spec 092 FR-033, the All floors view) or =floors (spec 033 floors cases) or =resumed (issue #451, a resumed session's long title) runs that block alone
   const mine = () => !ONLY && unit++ % SHARDS === SHARD;
   const mineIn = (name) => ONLY === name || mine();
   const mineScreens = () => mineIn('screens');
@@ -543,7 +543,7 @@ async function driver(ctx) {
      does not repeat the title. Forced `full` (3 agents, the layout of the report) and the 15-agent layout, both sizes. Waits with `waitFor`. */
   for (const [w, h] of SIZES) {
     for (const [sim, dens] of [[3, '&density=full'], [15, '']]) {
-      if (!mine()) continue;
+      if (!mineIn('resumed')) continue;
       const tag = `resumed title sim${sim}-${w}x${h}`;
       await load(`sim=${sim}&simfreeze=1&simnames=long${dens}`, w, h);
       const ok = async (expr, ms = 8000) => ctx.waitFor(expr, ms);
