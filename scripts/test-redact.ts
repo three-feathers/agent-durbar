@@ -36,7 +36,10 @@ const MAX_RATIO = 40;
 // CPU timers tick in about 15.6 ms on Windows (as in test-browserurl), so a fast 1/16 baseline can read 0: never divide by less than one tick there
 const MIN_BASE_MS = process.platform === 'win32' ? 16 : 2;
 let worstGrowth = { ratio: 0, label: '' }; // the highest full/baseline ratio seen, printed at the end
-const assertLinearGrowth = (label: string, run: (input: string) => { cpu: number; wall: number }, input: string, floorMs = 100): void => {
+// `reps` (default 1, so the other callers are unchanged): the baseline is timed as `run(small, reps)`, and `run` must then repeat the work `reps`
+// times inside one timing and give the mean per run, so a baseline of a few ms is read well above the Windows timer tick (a tick-sized baseline
+// caps the ratio near 15 and hides a quadratic rule that stays under the floor).
+const assertLinearGrowth = (label: string, run: (input: string, reps?: number) => { cpu: number; wall: number }, input: string, floorMs = 100, reps = 1): void => {
   const small = input.slice(0, Math.ceil(input.length / FACTOR));
   let full = Infinity;
   let base = Infinity;
@@ -45,7 +48,7 @@ const assertLinearGrowth = (label: string, run: (input: string) => { cpu: number
     const f = run(input);
     wall = Math.max(wall, f.wall);
     full = Math.min(full, f.cpu);
-    base = Math.min(base, run(small).cpu);
+    base = Math.min(base, run(small, reps).cpu);
     if (full < Math.max(floorMs, Math.max(base, MIN_BASE_MS) * MAX_RATIO)) break;
   }
   if (full / Math.max(base, MIN_BASE_MS) > worstGrowth.ratio && full >= floorMs) worstGrowth = { ratio: full / Math.max(base, MIN_BASE_MS), label };
@@ -436,14 +439,14 @@ assert.strictEqual(redact('https://API.TELEGRAM.ORG/BOT123456789:' + TG35 + '/x'
   };
   for (const [k, unit] of Object.entries(units)) {
     const tail = k.endsWith('Dot') ? '.abcdef.' : '';
-    const input = unit.repeat(Math.ceil(64_000 / unit.length));
-    const run = (text: string): { cpu: number; wall: number } => {
+    const input = unit.repeat(Math.ceil(256_000 / unit.length));
+    const run = (text: string, reps = 1): { cpu: number; wall: number } => {
       let wall = 0;
-      const cpu = cpuMs(() => { const w = process.hrtime.bigint(); redact(text + tail, {}); wall = Number(process.hrtime.bigint() - w) / 1e6; }, 1000);
-      return { cpu, wall };
+      const cpu = cpuMs(() => { const w = process.hrtime.bigint(); for (let i = 0; i < reps; i++) redact(text + tail, {}); wall = Number(process.hrtime.bigint() - w) / 1e6; }, 1000 * reps);
+      return { cpu: cpu / reps, wall };
     };
-    run(input.slice(0, 4000)); // warm up
-    assertLinearGrowth(`growth ${k}`, run, input);
+    run(input.slice(0, 16_000)); // warm up
+    assertLinearGrowth(`growth ${k}`, run, input, 100, 8); // 256k vs 16k x 8 runs
   }
 }
 // the guard never changes the result (T132 review): every kind x encoding x prefix, then random strings of markers and separators
