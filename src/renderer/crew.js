@@ -9,6 +9,14 @@
 
   /* the characters, in a fixed order (a new one is appended, so the old ones never move); the 13 of spec 077 (the old order's three are kept, a stored id that no longer exists is dropped by loadCrew) */
   const IDS = ['punk', 'gamer', 'hacker', 'rocker', 'buzzcut', 'bookworm', 'scientist', 'metalhead', 'bob-glasses', 'skater', 'surfer', 'disco', 'sporty'];
+  /* spec 077 FR-072 (issue #815): more crews as more Characters values. `IDS` stays the Cheeky crew (its ids, order and saved choices never change);
+     the Prehistoric crew has 6 characters, shown as `crew/art/prehistoric-<id>-<pose>.webp` so a name can never clash with Cheeky's. Every id is unique across crews. */
+  const PREHISTORIC_IDS = ['youngbeard', 'braids', 'bigbeard', 'ponytail', 'inventor', 'shaman'];
+  const CREWS = { cheeky: IDS, prehistoric: PREHISTORIC_IDS };
+  const ALL_IDS = IDS.concat(PREHISTORIC_IDS);
+  /* the characters of a Characters value (an unknown value or the theme's own: the Cheeky crew, as before) and the key the choice is stored under */
+  const idsFor = (choice) => has(CREWS, choice) ? CREWS[choice] : IDS;
+  const storeKey = (choice) => choice === 'prehistoric' ? 'durbar.crew.prehistoric' : 'durbar.crew';
   const MAX_ENTRIES = 500, MAX_ID = 200;
   /* the portraits (spec 077 FR-050..FR-055, FR-059, FR-060): three poses per character, `crew/art/<id>-<pose>.webp`, 352x352 and square, drawn
      in a fixed square box of the 200x124 stage: 88x88 units at x 24, y 22 (twice the first build's, owner 2026-10-23). Its right edge is the
@@ -36,6 +44,13 @@
     surfer: { working: [190, 155], waiting: [193, 155], resting: [190, 155] },
     disco: { working: [205, 170], waiting: [186, 170], resting: [192, 170] },
     sporty: { working: [185, 160], waiting: [190, 160], resting: [182, 160] },
+    /* Prehistoric (FR-072): read from each picture's contact sheet with a 50 px grid, like the others */
+    youngbeard: { working: [206, 155], waiting: [205, 150], resting: [215, 150] },
+    braids: { working: [200, 160], waiting: [213, 160], resting: [218, 155] },
+    bigbeard: { working: [205, 170], waiting: [218, 170], resting: [206, 160] },
+    ponytail: { working: [200, 160], waiting: [210, 160], resting: [216, 160] },
+    inventor: { working: [195, 170], waiting: [185, 170], resting: [205, 170] },
+    shaman: { working: [198, 160], waiting: [190, 160], resting: [211, 160] },
   };
   const k = BOX.w / PIC;
   /* a face box or the avatar's crop, in stage units: [x, y, w, h]; null for an unknown picture */
@@ -53,10 +68,10 @@
   }
   /* the pose for a status: working and thinking type, waiting and error need the person, the rest rests */
   const poseFor = (st) => (st === 'working' || st === 'thinking' || st === 'avatar') ? 'working' : (st === 'waiting' || st === 'error') ? 'waiting' : 'resting';
-  const file = (id, pose) => 'crew/art/' + id + '-' + pose + '.webp';
+  const file = (id, pose) => 'crew/art/' + (PREHISTORIC_IDS.includes(id) ? 'prehistoric-' : '') + id + '-' + pose + '.webp';
   const files = (ids) => (ids || IDS).reduce((a, id) => a.concat(POSES.map((p) => file(id, p))), []);
   /* FR-055: a character can be drawn when it is known and none of its pictures failed to load (`bad`: a Set of character ids) */
-  const usable = (id, bad) => typeof id === 'string' && IDS.includes(id) && !(bad && bad.has && bad.has(id));
+  const usable = (id, bad) => typeof id === 'string' && ALL_IDS.includes(id) && !(bad && bad.has && bad.has(id));
 
   /* a small repeatable random source from a string (the session id): FNV-1a into mulberry32 */
   function seeded(str) {
@@ -118,5 +133,5 @@
     return out;
   }
 
-  return { POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
+  return { CREWS, PREHISTORIC_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
 })());

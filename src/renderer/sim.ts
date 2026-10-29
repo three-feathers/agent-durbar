@@ -1952,7 +1952,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const simQuery = typeof window !== 'undefined' && window.location ? new URLSearchParams(window.location.search) : new URLSearchParams();
     let simTheme = /^[a-z0-9_-]{1,64}$/.test(simQuery.get('theme') ?? '') ? (simQuery.get('theme') as string) : undefined;
     /* characters=<value> (spec 077 FR-064, FR-070): who sits at the desks in this run, in memory, like the theme; only a listed value */
-    const CHARS = ['theme', 'minimalist', 'cheeky'] as const;
+    const CHARS = ['theme', 'minimalist', 'cheeky', 'prehistoric'] as const;
     type SimChars = (typeof CHARS)[number];
     const isChars = (v: unknown): v is SimChars => typeof v === 'string' && (CHARS as readonly string[]).includes(v);
     let simCharacters: SimChars = isChars(simQuery.get('characters')) ? (simQuery.get('characters') as SimChars) : 'theme';
