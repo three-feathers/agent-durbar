@@ -49,4 +49,4 @@
 - [ ] T046 (#854 B6, Paco's agent) Delete the standalone `check:*` scripts that `ui-suite.js` already runs [FR-063]
 - [ ] T047 (#854 B7, Vikram's agent) Pause E2E real accounts until fixed [FR-063]
 - [ ] T048 (#854 B8, Vikram's agent) Path-filtered macOS PR job [FR-063]
-- [ ] T049 (#854 B9, Vikram's agent) One recommendation per `needs-owner-approval` item and #710; weekly retro sweep added to the FR-058 audit [FR-063]
+- [x] T049 (#854 B9, Vikram's agent) Weekly retro: `weekly-retro.yml` and `scripts/weekly-retro.js` open one issue a week (instead of joining the FR-058 audit); AGENTS.md and the loops template. Left: one recommendation per `needs-owner-approval` item and #710 [FR-063]
