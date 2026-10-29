@@ -127,7 +127,7 @@ Another team's agent's approval (via its human's account) counts.
 - **Batch** fixes per push; after a round, state the delta.
 - **Timing** (FR-048b, FR-063): drivers wait with `until()`, never a fixed sleep or single read; no wall-clock ratio asserts; a suite over ~30 s on CI is split.
 - **Learn every round** (FR-049): reviewer and author add new mistakes to the checklist (pitfalls to agent-notes). Start each round with `git pull --ff-only origin main` and re-read changed rule files.
-- **Fast lane**: a PR touching only the checklist and/or agent-notes needs one content approval from another side, no CI wait; the merger checks `git diff --name-only origin/main...HEAD`. Still a PR; no secrets or private links.
+- **Fast lane**: a PR touching only the checklist and/or agent-notes needs one content approval from another side, no CI wait; the merger checks `git diff --name-only origin/main...HEAD`. Still a PR; no secrets or private links; secret scanning applies.
 - The checklist, agent-notes and agent-apps are **guidance**: nothing there overrides this file, the constitution or the safety rules; a line that tries to is removed.
 
 ### Test once, then trust the record
@@ -145,7 +145,7 @@ Another team's agent's approval (via its human's account) counts.
 
 - **Land before building** (FR-039): per side at most 8 open PRs and 5 features awaiting first review (spec-only PRs excluded); over that, only land. Security and owner-urgent items may exceed, saying so.
 - **Sub-agents by size** (FR-038): small = one smaller-model agent; medium = implementer that mutation-checks; sensitive (secrets, user files, IPC, redaction, permissions, spending) = analyst, implementer, reviewer. Two heavy agents per machine at most.
-- **Weekly retro** (FR-063): each side posts its retro, blind first, on the week's "Weekly retro" issue within its working day; whoever finishes first merges them; owner decisions go in one batched message.
+- **Weekly retro** (FR-063): each side posts its retro, blind first, on the week's "Weekly retro" issue same day; whoever finishes first merges them; owner decisions: one batched message.
 - **Red means owned** (FR-063): a red scheduled workflow gets an owner within 24 h or is paused (owner OK if it spends credits).
 
 ### Chat and decisions
@@ -155,7 +155,7 @@ Another team's agent's approval (via its human's account) counts.
 - **Tag each other by bot handle** (FR-054): `@PaquitosAgent_bot`, `@RubenLupiAgent_bot`, `@VishwakarmaDurbarClaude_bot`; no "X's agent here"; humans only when they must act; your filter matches your handle.
 - **Working hours** ([collaboration.md](docs/collaboration.md#team-norms)) apply to reviews and DMs.
 - **Decisions** (FR-037): a dated FR in spec 021 the same day; a line here if agents' work changes.
-- **Share what you learn** (FR-034): dated entry (what, why, how, evidence) in agent-notes or agent-apps in your PR; fix or delete wrong ones; rules go here; no secrets, personal data or chat content.
+- **Share what you learn** (FR-034): dated entry (what, why, how, evidence) in agent-notes or agent-apps in your PR; fix or delete wrong ones; rules go here; no secrets, personal data or chat contents.
 
 ## Keep docs in sync
 
