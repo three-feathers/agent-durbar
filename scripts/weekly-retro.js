@@ -100,7 +100,7 @@ function buildFacts(d, now, root, repo) {
 
   // red scheduled workflows: the newest finished scheduled run of each workflow is a failure
   const latest = new Map();
-  for (const r of (d.scheduled || []).filter((x) => ours(x) && x.conclusion === 'success' || x.conclusion === 'failure')) {
+  for (const r of (d.scheduled || []).filter((x) => ours(x) && (x.conclusion === 'success' || x.conclusion === 'failure'))) {
     const cur = latest.get(r.workflowName);
     if (!cur || ts(r.createdAt) > ts(cur.createdAt)) latest.set(r.workflowName, r);
   }
