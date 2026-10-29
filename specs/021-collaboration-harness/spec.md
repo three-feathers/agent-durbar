@@ -398,3 +398,7 @@ Proposed 2026-10-24 and reviewed by the owner. **Acceptance (FR-037):** Vikram (
   - Every red scheduled workflow has an owner within 24 h, or is paused.
   - A weekly retro sweep joins the FR-058 weekly audit (claims, statuses, red signals, rule-file size) and ends in one batched owner-decision message with recommendations.
   - `[KNOWN GAP]` The budgets and the sweep do not exist yet; they are the planned work below (T041..T049).
+
+### 2026-10-29: `test:runtime` and `test:notes` split into parallel suites (retro #854 B1, T041; FR-063, no new FR)
+
+`scripts/run-tests.js` runs the suites named in `test:serial` in parallel, but `test:runtime` (27 files, one suite) and `test:notes` (5 files) were each one suite, so they set the length of `npm test`. They are now `test:runtime-core` (14 files), `test:runtime-redact`, `test:runtime-mcp` (8), `test:runtime-sandbox` (4), `test:notes-core` (4) and `test:notes-store`. `test:serial` lists the new names; `test:runtime` and `test:notes` stay as aliases that run the parts in order. Every file runs in exactly one part (the before/after lists are in the PR). `[IMPLEMENTED]` `read:` `scripts/run-tests.js` unchanged. `[KNOWN GAP]` `test-redact` alone takes about 140 s and `test-notesstore` about 32 s on a 4-core machine, so the critical path is now those two single files; shortening them is separate work.
