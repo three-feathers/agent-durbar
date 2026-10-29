@@ -1,0 +1,1 @@
+- **Faster `npm test`** (spec 021, T041): `test:runtime` and `test:notes` are split into six suites that run in parallel (the old names stay as aliases); no test file was dropped. Development only, no behaviour change.
