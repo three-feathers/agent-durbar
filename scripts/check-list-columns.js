@@ -2,7 +2,7 @@
  * Spec 001 FR-182..FR-184 (issues #812, #813): List columns follow their content; the room's bottom wall is whole; the room header's
  * pencil is only an icon. Simulator only (no AI credits). Linux with xvfb-run:
  *
- *   npm run check:listcols
+ *   npm run check:ui -- --only check-list-columns
  *
  * List, at 1440x900, 1280x800, 1024x700 and the window's minimum (640x480), 15 agents: the page has no horizontal scroll and no row
  * sticks out of the list; text is at least 10.5px; Agent app, Active, Usage and Status stay within their caps and the Agent app column
@@ -166,8 +166,12 @@ module.exports = async (ctx) => {
     const st = () => js(`(()=>{const e=document.querySelector(${jsLiteral(SEL)}),s=getComputedStyle(e);return JSON.stringify({pageFocus:document.hasFocus(),active:document.activeElement===e,focus:e.matches(':focus'),fv:e.matches(':focus-visible'),opacity:s.opacity,transition:s.transitionProperty+' '+s.transitionDuration})})()`);
     assert.ok(await until(`document.querySelector(${jsLiteral(SEL)}).matches(':focus-visible')`), `${tag}: Tab gives the pencil :focus-visible ${await st()}`);
     assert.ok(await until(`parseFloat(getComputedStyle(document.querySelector(${jsLiteral(SEL)})).opacity)>=0.99`), `${tag}: the focused pencil is fully shown ${await st()}`);
-    const f = await js(`(()=>{const e=document.querySelector(${jsLiteral(SEL)}),s=getComputedStyle(e);return {fv:e.matches(':focus-visible'),bg:s.backgroundColor,op:s.opacity,ow:parseFloat(s.outlineWidth),os:s.outlineStyle}})()`);
-    assert.ok(f.fv && f.op === '1' && !clear(f.bg) && f.ow >= 2 && f.os !== 'none', `${tag}: keyboard focus shows a tile, a focus ring and the icon ${JSON.stringify(f)}`);
+    // the state is read until it holds (the opacity transition and the focus ring are painted frames, not instants), and the message carries what was last seen
+    const shown = `(()=>{const e=document.querySelector(${jsLiteral(SEL)}),s=getComputedStyle(e),c=s.backgroundColor;return e.matches(':focus-visible')&&s.opacity==='1'&&!(/^rgba\\(\\d+, \\d+, \\d+, 0\\)$/.test(c)||c==='transparent')&&parseFloat(s.outlineWidth)>=2&&s.outlineStyle!=='none'})()`;
+    const ring = `(()=>{const s=getComputedStyle(document.querySelector(${jsLiteral(SEL)}));return JSON.stringify({bg:s.backgroundColor,ow:s.outlineWidth,os:s.outlineStyle})})()`;
+    const isShown = await until(shown);
+    const seen = isShown ? '' : `${await st()} ${await js(ring)}`;
+    assert.ok(isShown, `${tag}: keyboard focus shows a tile, a focus ring and the icon ${seen}`);
     console.log(`[listcols] ${tag} room ok`);
   }
   console.log('[listcols] all checks passed');

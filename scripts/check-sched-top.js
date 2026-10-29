@@ -1,7 +1,7 @@
 /*
  * Spec 044 FR-027..FR-035 (issue #523): the Schedules button in the top bar. Simulator only (no AI credits). Linux with xvfb-run:
  *
- *   npm run check:sched-top
+ *   npm run check:ui -- --only check-sched-top
  *
  * At 1440x900 and 1280x800, Expert and Simple, with `simsched=1` (four schedules over two folders; one missed its last run and one
  * failed, hours ago): the button is shown, between the ⋯ button and Needs you, in one row (at most 52px) with nothing overlapping or

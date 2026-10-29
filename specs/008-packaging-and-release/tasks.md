@@ -143,3 +143,7 @@
 - [x] T113: attest-build-provenance in `draft-release` (SHA-pinned, job-level `id-token`/`attestations` write) and README "Verify a download" [FR-132]
 - [x] T114: `scripts/verify-tarball.js` used by `prepare-runtime.js`, with `scripts/test-verify-tarball.js` [FR-133]
 - [x] T115: exact `electron` and `electron-builder` pins [FR-134]
+
+## 2026-10-29: real macOS on pull requests, path-filtered (#854 B8)
+
+- [x] T116: `.github/workflows/macos-pr.yml` (real macOS build and test, `paths:` filter, not required), `test-ui-suite.ts` guards, README/AGENTS wording [FR-135]

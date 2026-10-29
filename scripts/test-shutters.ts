@@ -114,7 +114,7 @@ eq(S.spoken('3 h ago'), '3 hours ago', 'hours');
 eq(S.spoken('1 d ago'), '1 day ago', 'one day');
 eq(S.spoken(''), '', 'unknown');
 
-// ---- the page uses it (source checks; the layout itself is checked in the browser by check:office and check:office-fill) ----
+// ---- the page uses it (source checks; the layout itself is checked in the browser by check:office and check-office-fill) ----
 const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
 const css = fs.readFileSync(path.join(R, 'styles.css'), 'utf8');
 const ok = (c: boolean, m: string): void => { assert.ok(c, m); n++; };
@@ -131,7 +131,7 @@ ok(/const on=SHUT\.turn\(LOUNGE_TURN,list\.length\)/.test(app) && /k=SHUT\.turn\
 ok(/\.lg-t\{[^}]*font-size:10\.5px/.test(css) && /\.lg-t\{[^}]*transition:opacity \.6s/.test(css), 'bubble text 10.5px, a gentle fade (off with reduced motion, the global rule)');
 ok(/\(m\.rolled\|\|\[\]\)\.map\(x=>\[x\.a\.id,x\.k\]\)/.test(app), 'the layout key follows who rests and where');
 ok(/function shutReply\(a,n\)\{[^}]*safeExcerpt\(a\.lastOutput,n,fb\)/.test(app), 'the reply line is masked then cut through the one helper (FR-043, spec 041 FR-065), fail closed');
-ok(/<button class="desk shut is-\$\{st\} rest-\$\{k\}\$\{roll\}" type="button" data-id="\$\{esc\(a\.id\)\}" data-state="\$\{st\}" data-rest="\$\{k\}" aria-pressed/.test(app), 'resting agents are desk buttons with data-id (click, Enter, arrow keys); the state is data-state and the first is-* class, the resting kind is not an is-* class (review of #554: shots-033 reads the first is-*)');
+ok(/<button class="desk shut is-\$\{st\} rest-\$\{k\}\$\{crewBed\?' crew-bed':''\}\$\{roll\}" type="button" data-id="\$\{esc\(a\.id\)\}" data-state="\$\{st\}" data-rest="\$\{k\}" aria-pressed/.test(app), 'resting agents are desk buttons with data-id (click, Enter, arrow keys); the state is data-state and the first is-* class, the resting kind is not an is-* class (review of #554: shots-033 reads the first is-*)');
 ok(/<button class="desk card is-\$\{st\}[^"]*" data-id="\$\{esc\(a\.id\)\}" data-state="\$\{st\}"/.test(app) && /desk=`<button class="desk is-\$\{st\}[^"]*" data-id="\$\{esc\(a\.id\)\}" data-state="\$\{st\}"/.test(app), 'every desk button (card and full desk) carries its state as data-state');
 ok(!/is-recent|is-old/.test(app + css), 'no is-recent / is-old class left (it read as a state)');
 /* FR-051 in the page (review of #554): the room rule's input. `away` and `helpersBusy` must come from the agent, not a constant */

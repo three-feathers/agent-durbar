@@ -2,7 +2,7 @@
  * Check for spec 083 T030..T032 (issue 699): the header count, the marker on a saved message, and the drawer's search.
  * Simulator only (no AI credits, nothing on disk).
  *
- *   npm run check:notes-count
+ *   npm run check:ui -- --only check-notes-count
  *   OUT=docs/screenshots  (optional) where the screenshots go (default: a temp folder)
  *   NOTES_ONE_SIZE=1      one size only (a quick run, the planted-mutation runs)
  *

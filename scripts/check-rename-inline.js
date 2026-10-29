@@ -1,7 +1,7 @@
 /*
  * Check for spec 059 (issue #636): rename in place, in the simulator (no AI credits, no agent app). Simulator only.
  *
- *   npm run check:rename-inline
+ *   npm run check:ui -- --only check-rename-inline
  *   OUT=docs/screenshots  (optional) also saves the screenshots of the field open on the header, a card, a Previous sessions row and a folder
  *
  * At 1440x900 and 1280x800, in Expert and in Simple: every surface of FR-020 (chat title by click, F2 and Enter; desk card pencil and F2;

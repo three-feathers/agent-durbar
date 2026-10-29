@@ -1,7 +1,7 @@
 /*
  * Check for spec 052 FR-071 (delta 2026-10-21, issue #474): Tools > Activity shows the activity log table. Simulator only (no AI credits).
  *
- *   npm run check:activity-table
+ *   npm run check:ui -- --only check-activity-table
  *   OUT=docs/screenshots  (optional) also saves the screenshots
  *
  * At 1440x900 and 1280x800: activity.js and activitytable.js each keep their own window global (DurbarActivity, DurbarActivityTable);

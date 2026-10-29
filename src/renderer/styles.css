@@ -1698,7 +1698,7 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
    animated. prefers-reduced-motion: reduce gives the static glow only (no scale, no breathe). */
 .desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)){--hl:var(--desk-new);--hl-e:1.15;--hl-b:1.05;--hl-p:2.4s}
 .desk.is-waiting{--hl:var(--desk-needs);--hl-e:1.25;--hl-b:1.1;--hl-p:1.6s}
-.desk.is-waiting:has(.crew-pic){--hl-e:1.15;--hl-b:1.07} /* spec 077: a crew portrait is bigger than the drawn figure, so at 1.25 its face reached the chat number at 1280x800; New's 1.15 keeps it clear (check:crew) */
+.desk.is-waiting:has(.crew-pic){--hl-e:1.15;--hl-b:1.07} /* spec 077: a crew portrait is bigger than the drawn figure, so at 1.25 its face reached the chat number at 1280x800; New's 1.15 keeps it clear (check-crew) */
 .desk.is-waiting,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)){isolation:isolate} /* the glow layer sits behind the card's content inside the card, above the room */
 .desk.is-waiting::after,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error))::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:-1;box-shadow:0 0 6px 2px color-mix(in srgb,var(--hl) 90%,transparent),0 0 24px 8px color-mix(in srgb,var(--hl) 60%,transparent)}
 .desk.is-waiting .pp,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)) .pp{transform-box:view-box;transform-origin:74px 99px}
@@ -2049,6 +2049,14 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 /* issue 576: a sleeper's name is on the top line, where the chat number sits on the couch: the number goes to the bed's foot corner, beside the lying character, so the name stays whole */
 .stage .desk.shut.rest-old .chatno{left:auto;top:auto;right:2px;bottom:2px}
 .desk.shut.rest-old .lg-name{top:0;bottom:auto;background:transparent;font-weight:500;color:var(--ink-2)}
+/* spec 077 FR-071: a one-bed bunk has no posts; with Cheeky its slot is the whole column and the sleeper is the couch's head and shoulders (the same crop and size rule), the blanket over its lower edge, the name under it, the chat number on its top-left corner */
+.lg-bunk.solo{background:none}
+.stage .lg-bunk.solo>.desk.shut.crew-bed{flex:1 1 0;min-height:0}
+.desk.shut.crew-bed .lg-bed,.desk.shut.crew-bed .lg-blanket{height:min(45%,44px)}
+.desk.shut.rest-old.crew-bed .lg-av{position:absolute;left:50%;bottom:calc(min(45%,44px) * .42);height:min(56px,calc(100% - min(45%,44px) * .42 - 2px));aspect-ratio:1;transform:translateX(-50%);border-radius:50% 50% 30% 30%;overflow:hidden}
+.stage .desk.shut.rest-old.crew-bed .chatno{left:2px;top:2px;right:auto;bottom:auto}
+.desk.shut.rest-old.crew-bed .lg-name{top:auto;bottom:2px;background:color-mix(in srgb,var(--surface) 78%,transparent);font-weight:600;color:var(--ink)}
+@container lounge (max-height:99px){.desk.shut.rest-old.crew-bed .lg-av{bottom:13px;height:calc(100% - 13px)}}
 .lg-beds>.shut-more{width:52px;height:auto;padding:0 2px;font-size:10.5px;line-height:13px;flex:none;border-radius:10px;white-space:normal}
 /* the peek card: beside the lounge (left, or right when measured too close to the room's edge), never moving anything */
 .desk.shut .peek{display:none;position:absolute;right:calc(100% + 6px);top:0;z-index:30;width:300px;flex-direction:column;gap:3px;padding:8px 10px;border-radius:10px;

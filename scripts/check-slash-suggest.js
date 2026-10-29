@@ -1,7 +1,7 @@
 /*
  * Check for spec 073 (owner request, 2026-10-22): the "/" list in the chat's message box. Simulator only (no AI credits).
  *
- *   npm run check:slash-suggest
+ *   npm run check:ui -- --only check-slash-suggest
  *   OUT=docs/screenshots  (optional) where the screenshots go (default: a temp folder)
  *
  * At 1440x900 and 1280x800 (simkinds=mixed: Noor is an idle Claude Code agent, Hugo an idle Copilot one):
