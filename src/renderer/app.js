@@ -72,7 +72,7 @@ const crewMainIds=()=>agents.filter(a=>!a.parent).map(a=>a.id);
 function syncCrew(){
   if(!CREW)return;
   const ch=crewChoice(), ids0=crewIds(ch);
-  if(crewStale()){CREW_FOR=agents;CREW_CH=ch;CREW_MAP={};CREW_HELP={};if(!demoOn&&rememberOn()){try{CREW_MAP=CREW.loadCrew(localStorage.getItem(CREW.storeKey(ch)),ids0);}catch(e){CREW_MAP={};}}}
+  if(crewStale()){CREW_FOR=agents;CREW_CH=ch;CREW_MAP=SIM&&window.DurbarSimCrew?window.DurbarSimCrew.seed(ch,agents,ids0):{};CREW_HELP={};if(!demoOn&&rememberOn()){try{CREW_MAP=CREW.loadCrew(localStorage.getItem(CREW.storeKey(ch)),ids0);}catch(e){CREW_MAP={};}}}
   const ids=crewMainIds(); CREW_IDS=ids.join('\n');
   for(const h of Object.keys(CREW_HELP))if(!agents.some(a=>a.id===h))delete CREW_HELP[h]; /* a removed helper frees its character */
   /* a session that is gone frees its character once the office has loaded (before that, restored sessions keep theirs) */

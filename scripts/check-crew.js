@@ -6,7 +6,7 @@
  *   - every desk scene draws exactly one portrait, in its fixed box, and that box keeps clear of the protected zones of FR-014 (the
  *     monitor and halo, the thought bubble and chat badge corner, the cup zone); the picture is the pose of the desk's status;
  *   - every picture loads (natural size known) and is drawn at no more than half its natural size (sharp, FR-051);
- *   - several characters are in use (the simulator's seeded least-used pick), and no desk shows a broken picture or a console error;
+ *   - several characters are in use (the simulator gives each demo name a fitting character, spec 077 FR-073: Ada and Hugo are checked), and no desk shows a broken picture or a console error;
  *   - the walking figures, chat strip chips and the lounge draw the portrait too.
  * At 1920x1080 with 2 agents (grown desks, spec 001 FR-041) the largest shown size of a portrait is still at most half its natural size.
  * Then the review fixes of PR 621: sessions removed (the map, the helpers), a character falling back after the header and the inbox are open, and crew.js itself missing.
@@ -256,7 +256,19 @@ async function runCrew(ctx, full) {
       sharpOk(`${tag} scene ${i}`, im, nat[im.href]);
     }
     await faceChecks(tag);
-    assert.ok(seen.size === CREW_IDS.length, `${tag}: all ${CREW_IDS.length} ${CHARS} characters on screen with 15 agents (least-used pick) (${[...seen]})`);
+    assert.ok(seen.size === CREW_IDS.length, `${tag}: all ${CREW_IDS.length} ${CHARS} characters on screen with 15 agents (the simulator's name table uses every one, FR-073) (${[...seen]})`);
+    // spec 077 FR-073 (issue #879): the simulator gives each demo name its fitting character; Ada and Hugo are the check's anchors (literals, not read from the table)
+    const want = { cheeky: { Ada: 'gamer', Hugo: 'bookworm' }, prehistoric: { Ada: 'braids', Hugo: 'inventor' } }[CHARS];
+    const SC = require('../src/renderer/simcrew.js');
+    assert.ok(await H.until(`(()=>{const U=window.__durbarSimUi,s=U.crew.state();return U.agents().filter((x)=>!x.parent).every((x)=>s.map[x.id]);})()`, 6000), `${tag}: every main agent has a character`);
+    const named = await H.js(`(()=>{const U=window.__durbarSimUi,s=U.crew.state();return U.agents().filter((x)=>!x.parent).map((x)=>{const d=document.querySelector('#stage .desk[data-id="'+x.id+'"] svg.scene');return {name:x.baseName||x.name,c:s.map[x.id],sig:d?d.dataset.sig||'':null};});})()`);
+    for (const [n, c] of Object.entries(want)) {
+      const a = named.find((x) => x.name === n);
+      assert.ok(a, `${tag}: the demo agent ${n} is in the office`);
+      assert.strictEqual(a.c, c, `${tag}: ${n} wears ${c} in the ${CHARS} crew (got ${a.c})`);
+      assert.ok(a.sig && a.sig.includes('|crew|' + c), `${tag}: ${n}'s desk draws ${c} (sig ${a.sig})`);
+    }
+    for (const a of named) assert.strictEqual(a.c, SC.characterFor(CHARS, a.name, CREW_IDS), `${tag}: ${a.name} wears its table character`);
     for (const [kind, list] of [['walker', s.walkers], ['chip', s.chips], ['lounge figure', s.lounge]]) for (const [i, imgs] of list.entries()) {
       assert.strictEqual(imgs.length, 1, `${tag}: ${kind} ${i} draws the portrait`);
       sharpOk(`${tag} ${kind} ${i}`, imgs[0], nat[imgs[0].href]);
