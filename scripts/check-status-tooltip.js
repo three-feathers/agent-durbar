@@ -100,8 +100,12 @@ module.exports = async (ctx) => {
     await ok(shown, `${tag}: keyboard focus on ${k0} shows the tooltip`, 1500);
     assert.strictEqual(await tipText(), expected(k0, await count(k0), await on(k0)), `${tag}: focus text`);
     checkGeo(await geo(k0), k0, `${tag} ${k0} focus`);
+    await js(`window.__escSeen=0;window.__escCount=window.__escCount||(window.addEventListener('keydown',e=>{if(e.key==='Escape')window.__escSeen++;}),true)`);
     await H.key('Escape', [], { pause: 60 });
     await ok(hidden, `${tag}: Escape hides the tooltip`);
+    assert.strictEqual(await js(`window.__escSeen`), 0, `${tag}: that Escape is used up (it never reaches the window, so no panel closes)`);
+    await H.key('Escape', [], { pause: 60 });
+    assert.ok(await until(`window.__escSeen===1`, 1500), `${tag}: with no tooltip shown, Escape reaches the window as usual (the listener works)`);
     assert.strictEqual(await js(`document.activeElement.dataset.k`), k0, `${tag}: Escape leaves focus on the pill`);
     await js(`document.activeElement.blur()`); // focus away and back
     await ok(hidden, `${tag}: focus elsewhere: no tooltip`);

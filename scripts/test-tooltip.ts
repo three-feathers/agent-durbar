@@ -71,6 +71,17 @@ const inside = (p: Placed, s: { w: number; h: number }, v: { w: number; h: numbe
   ok(!overlaps(a, p, S) && inside(p, S, V), 'flipped: clear and inside');
 }
 {
+  // the room above is positive but under the margin: not flipped there (that would put it within MARGIN of the top), clamped inside instead
+  const v = { w: 400, h: 100 }, s = { w: 100, h: 40 };
+  const a: Box = { left: 150, top: 50, right: 250, bottom: 70 };
+  const up = a.top - T.GAP - s.h;
+  ok(up > 0 && up < T.MARGIN, 'precondition: the room above is between 0 and the margin');
+  const p = T.place(a, s, v);
+  eq(p.flipped, false, 'not flipped into the top margin');
+  eq(p.y, v.h - T.MARGIN - s.h, 'clamped at the bottom margin instead');
+  ok(p.y >= T.MARGIN, 'never closer than the margin to the top');
+}
+{
   const small = { w: 100, h: 60 };
   const a: Box = { left: 10, top: 20, right: 60, bottom: 40 };
   const p = T.place(a, { w: 300, h: 50 }, small);
