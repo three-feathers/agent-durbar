@@ -383,3 +383,14 @@ Proposed 2026-10-24 and reviewed by the owner. **Acceptance (FR-037):** Vikram (
 ### 2026-10-28: Dependabot cooldown of 7 days (amends FR-062 (a); issue: PR #828)
 
 - **FR-062 (a), amended** `[IMPLEMENTED]` `test:` The first grouped npm PR (#828) carried a 5-day-old `@github/copilot-sdk` and a 4-day-old `node-abi`: a freshly published release is the likeliest to be a poisoned or yanked one. Now each ecosystem entry (`github-actions`, `npm`) in `.github/dependabot.yml` has `cooldown:` with `default-days: 7`, so Dependabot proposes a version only once it is 7 days old. Security updates are not delayed by a cooldown (GitHub docs, read: docs.github.com Dependabot options reference). `semver-*-days` is not used: GitHub Actions does not support it and one number is easier to check. `test:supplychain` fails when an ecosystem has no cooldown or fewer than 7 days (planted cases: missing, 3 days; mutant: check removed, caught). Vikram's OK 2026-10-28. Task T040 (T037 is taken by open PR #820).
+
+### 2026-10-29: retro decisions and how we work from now on (FR-063, owner decision)
+
+- **FR-063** `[IMPLEMENTED]` `read:` Owner decision of Vikram, 2026-10-29 07:07 UTC, in his DM to his agent, relayed in the team chat and on issue #854 (retro of both sides): he agrees with every B recommendation and the C list. Paco and Ruben may still object on #854. Operating rules (C), one line each; AGENTS.md is rewritten to carry them in B2:
+  - One rule in, one rule out: a PR that adds a rule names what it replaces; rule files have a word budget.
+  - A check over a sentence: a rule that can be checked gets a script.
+  - Waits use `until()`; no wall-clock ratio asserts on shared runners.
+  - A suite over about 30 s on CI is split.
+  - Every red scheduled workflow has an owner within 24 h, or is paused.
+  - A weekly retro sweep joins the FR-058 weekly audit (claims, statuses, red signals, rule-file size) and ends in one batched owner-decision message with recommendations.
+  - `[KNOWN GAP]` The budgets and the sweep do not exist yet; they are the planned work below (T041..T049).

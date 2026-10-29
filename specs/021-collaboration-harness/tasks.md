@@ -41,3 +41,12 @@
 - [x] T038 (2026-10-27, owner decision, FR-062) Supply-chain guards: `.github/dependabot.yml` (weekly, grouped), `npm run test:supplychain` (lockfile source and integrity, no tracked executables or archives, actions pinned to a sha; mutation-checked), review-checklist line for outside and Dependabot PRs, `environment: copilot` on the two secrets jobs, host hardening checklist in `docs/agent-setup/always-on-host.md`. Owner still moves the secrets into the `copilot` environment.
 - [x] T039 (2026-10-28, PR #824 failed CI) Dependabot groups minor/patch only, ignores semver-major and `electron`; `test:supplychain` checks the shape and was mutation-checked [FR-062]
 - [x] T040 (2026-10-28, Vikram's OK, PR #828) Dependabot `cooldown: default-days: 7` in both ecosystems; `test:supplychain` requires it (missing and 3-day cases planted, mutant caught) [FR-062]
+- [ ] T041 (2026-10-29, #854 B1, Vikram's agent) Split `test:runtime` and `test:notes` into parallel suites; update docs that cite the names [FR-063]
+- [ ] T042 (#854 B2, Vikram's agent) Rule slimming: AGENTS.md about 2.5k words, CLAUDE.md and copilot-instructions as pointers, spec 021 as a decision log, agent-notes under 8k words, word-budget check [FR-063]
+- [ ] T043 (#854 B3, Vikram's agent) Protocol comments to GitHub mechanics: claim script and assignee, review check or label, CI instead of `checks run at` [FR-063]
+- [ ] T044 (#854 B4, Vikram's agent) Screenshots out of git history: delete unreferenced files, then move retakes to artifacts or a Pages branch [FR-063]
+- [ ] T045 (#854 B5, Vikram's agent) Release spec folders to one table in spec 008; spec status vocabulary checked by `specs:check` [FR-063]
+- [ ] T046 (#854 B6, Paco's agent) Delete the standalone `check:*` scripts that `ui-suite.js` already runs [FR-063]
+- [ ] T047 (#854 B7, Vikram's agent) Pause E2E real accounts until fixed [FR-063]
+- [ ] T048 (#854 B8, Vikram's agent) Path-filtered macOS PR job [FR-063]
+- [ ] T049 (#854 B9, Vikram's agent) One recommendation per `needs-owner-approval` item and #710; weekly retro sweep added to the FR-058 audit [FR-063]
