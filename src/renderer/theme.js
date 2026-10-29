@@ -514,18 +514,6 @@
     return t;
   }
 
-  function resolveSlots(manifest){
-    const s=Object.assign({}, CLEAN_SLOTS);
-    if(manifest && manifest.art) Object.assign(s, manifest.art);
-    return s;
-  }
-
-  function resolveWords(manifest){
-    const w=Object.assign({}, CLEAN_WORDS);
-    if(manifest && manifest.words) Object.assign(w, manifest.words);
-    return w;
-  }
-
   function applyTokens(tokens){
     if(typeof document==='undefined' || !document.documentElement) return;
     const el=document.documentElement;
