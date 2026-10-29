@@ -40,9 +40,6 @@ export const UNIX_SOCKET_MAX_BYTES = 103;
 export const MCP_STATUSES = ['pending', 'applied', 'denied', 'expired', 'stale', 'failed', 'busy', 'refused'] as const;
 export type McpStatus = (typeof MCP_STATUSES)[number];
 
-/** Text of the `refused` answer to a switch to Allow all (FR-050, FR-060). */
-export const MCP_REFUSE_ALLOW_ALL = "Allow all can only be turned on in Durbar's own window.";
-
 /** File and folder names (plan: Transport, bridge and key file). */
 export const MCP_DIR_NAME = 'mcp';
 export const MCP_KEY_FILE_NAME = 'connection.json';

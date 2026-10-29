@@ -355,7 +355,6 @@ const REDIRECTS = [301, 302, 303, 307, 308];
 
 /** True when a URL is exactly one of the allow-listed lookups (the network layer refuses everything else). */
 export const lookupAllowed = (url: string): boolean => Object.values(LOOKUPS).some((l) => l.some((x) => x.url === url));
-export const lookupFor = (url: string): Lookup | undefined => Object.values(LOOKUPS).flat().find((x) => x.url === url);
 
 /** What the network layer reports for one lookup. */
 export type LookupResponse = { kind: 'redirect'; status: number; url: string } | { kind: 'body'; status: number; text: string };

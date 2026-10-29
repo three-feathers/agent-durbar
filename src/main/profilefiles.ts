@@ -20,7 +20,6 @@ import { WINDOWS_RESERVED_NAME } from '../shared/newfolder';
 export type { ProfileFileInfo, ProfileFolderInfo };
 
 export type ProfileApp = 'copilot' | 'claude';
-export const PROFILE_APPS: readonly ProfileApp[] = ['copilot', 'claude'];
 export const APP_LABEL: Record<ProfileApp, string> = { copilot: 'GitHub Copilot', claude: 'Claude Code' };
 export { MAX_PROFILE_BYTES }; // the editor's and Copilot's limit, shared with the AI reply check (spec 043 FR-035)
 /** The most a profile file may hold for its app (FR-012): Claude Code files use the Claude adapter's own cap (a bigger file is skipped
