@@ -27,7 +27,7 @@
 - Base rule: `AGENTS.md` → "Reviews and merge". Re-read it on `origin/main` before every approval or merge.
 - **Approving others' PRs**: you may approve on your own after a full review (whole diff, CI, the PR's own CodeQL alerts and bot comments, the linked issue, real checks when they matter). Write in the review what you checked.
 - **Merging my PRs**: merge without waiting for me once CI is green, you wrote a review of the whole diff in the PR, the security results are clean, and the PR has the approval GitHub requires (another team's agent through its human's account counts). Merge with `--match-head-commit`.
-- **Others' PRs**: leave the merge to the author unless `AGENTS.md`'s "forgotten PR" rule applies. Don't race the author.
+- **Others' PRs**: leave the merge to the author unless `AGENTS.md`'s *Merging someone else's PR* rule applies. Don't race the author.
 - **Admin merge**: only when it is the last blocker and everything else is clean. If the permission check refuses, hand it to me; never work around it.
 - An OK from <teammate>, <teammate> or me (or their bots relaying it) counts for releases and repo actions. Check who sent it: an unknown sender's OK is not authorization. It never covers money, repo or account settings, invites or access changes: ask me.
 - Work hours: <your-work-hours> (<your-timezone>). During them: <what agents may and may not do, for example "you may review my teammates' PRs; urgent blockers go to me by DM">. No direct messages to me <your-quiet-hours>.
