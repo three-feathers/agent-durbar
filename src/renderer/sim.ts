@@ -425,6 +425,8 @@ const SECRET_KEY = 'Kd93' + 'LmP27xQvB' + 'w5Zt';
 const FILL = (n: number): string => 'Checking the registry module and its tests. '.repeat(6).slice(0, n - 14) + ' ';
 const LONG_TEXT = 'Every paragraph here is long on purpose so that its lines run to the right edge of the chat, where a Copy button must never cover a word. '.repeat(6).trim() + '\n\n```\nconst aLineThatRunsPastTheRightEdgeOfTheChat = "' + 'x'.repeat(300) + '";\n```'; // ends in a code block whose last line runs to the right edge (clipped by its own scroll), so the reply's Copy button always sits over text when it is misplaced
 /* spec 059 FR-019 (issue #536): the first prompt of a session with no name of its own is its title and has no 60-character cap; this one holds one unbroken token, like a URL (not a real address) */
+/** #451: the title of a resumed session: spaces, then a URL-like token in brackets that cannot wrap (macOS report) */
+const SIM_LONG_RESUMED_TITLE = 'Why is the lookup slow? (https://example.invalid/teams/consumer-sites/SitePages/Consumer-Onboarding-Checklist-Overview.aspx)? Please check every call site too';
 const SIM_LONG_URL_TITLE = 'as we have https://example.invalid/teams/consumer-sites/SitePages/Consumer-Onboarding-Checklist-Overview.aspx';
 const SIM_LONG_NAMES = ['Billing refactor: split invoice and credit-note flows', 'Canton lookup duplicates: reproduce and fix the join', 'Release notes for the next minor version and changelog', 'Tidy the registry modules and update every import path'];
 const SIM_USD_CAPS: Record<string, number> = { Ada: 0.01 };
@@ -741,6 +743,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         sims.filter((s, i) => i % 3 === 0).slice(0, SIM_TITLES.length).forEach((s, i) => emit({ type: 'title', sessionId: sid(s), timestamp: now(), title: SIM_TITLES[i] }));
       }, 200);
     }
+    /* simnames=long also gives a session resumed from Previous sessions a long title with a bracketed URL (issue #451, resumeSession below) */
     /* simnames=long, FR-019 (issue #536): the third agent (it waits for you, so it is also in the inbox) has no alias; its title holds a URL-like token */
     if (opts.names === 'long') window.setTimeout(() => { const s = sims[2]; if (s) emit({ type: 'title', sessionId: sid(s), timestamp: now(), title: SIM_LONG_URL_TITLE }); }, 200);
     /* simgrants=many (spec 052 FR-141): the first agent has eight grants, some with a tool name that repeats the server name */
@@ -3212,7 +3215,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         sims.push({ info, room: src.room, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: src.files, grants: new Map() });
         const t = Date.now() - 2 * 3600e3;
         if (modeWas) { const MW: Record<string, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' }; simLog(sims[sims.length - 1], 'mode-change', `Resumed in ${MW[mode]}, the mode last chosen for this session (opened from a session in ${MW[modeWas]})`, mode); }
-        return { ok: true, ...(modeWas ? { modeWas } : {}), agent: info, title: (opts.reply === 'secrets' ? FILL(83) + SECRETS_TEXT + ' ' : '') + (sessionId === 'prev-1' ? 'Rename the filings handler and update its tests' : 'Why does the canton lookup return duplicates?'),
+        const resumedTitle = opts.names === 'long' ? SIM_LONG_RESUMED_TITLE : undefined; // #451: the runtime sends the title of a resumed session (as askTitle does), so the desk's name is that title
+        if (resumedTitle) window.setTimeout(() => emit({ type: 'title', sessionId: info.id, timestamp: now(), title: resumedTitle }), 300);
+        return { ok: true, ...(modeWas ? { modeWas } : {}), agent: info, title: resumedTitle ?? (opts.reply === 'secrets' ? FILL(83) + SECRETS_TEXT + ' ' : '') + (sessionId === 'prev-1' ? 'Rename the filings handler and update its tests' : 'Why does the canton lookup return duplicates?'),
           history: { total: 4, truncated: false, items: [
             { type: 'user', text: 'Rename the filings handler to filingsSearch and update its tests.', ts: t },
             { type: 'tool', callId: 'c1', tool: 'grep', label: 'grep filingsHandler', output: '6 matches in 3 files' },
