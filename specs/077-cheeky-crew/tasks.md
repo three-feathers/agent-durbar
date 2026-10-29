@@ -98,3 +98,7 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 - [x] T087 18 pictures `crew/art/prehistoric-*.webp` (speck-cleaned) and their `ASSETS.md` rows; the size cap raised [FR-072, FR-050, FR-054]
 - [x] T088 Tests: `test:crew`, `test:characters`, `test:crew-assets` for the new value, Cheeky unchanged; `check-crew` runs both crews at both sizes (`CREW_CHARS`), `check-characters` picks Prehistoric [FR-072]
 - [x] T089 Docs: README, changelog fragment, the linked Settings screenshots retaken [FR-072]
+- [x] T090 Spec delta FR-073 [spec]
+- [x] T091 `simcrew.js` (demo name -> character per crew), seeded in `app.js` `syncCrew` under the simulator only [FR-073]
+- [x] T092 Tests: `test:crew` (every demo name has a valid id in each crew, the real path is untouched); `check-crew` asserts Ada and Hugo wear their characters in both crews at both sizes [FR-073]
+- [x] T093 Docs: changelog fragment, the linked screenshots that show crew characters retaken [FR-073]
