@@ -2,11 +2,18 @@
 
 Agent Durbar `v0.1.0` is the first stable release. Builds are unsigned and not notarized (see "Honest limits" in the README for where each OS has been run). Each entry names the spec that describes the behavior and how it was checked.
 
-## Unreleased (on `main`, after the v0.1.1 tag)
+## Unreleased (on `main`, after the v0.1.2 tag)
 
 Not released yet: each change is a file in [`changelog.d/`](changelog.d/) until the next release folds them in (`npm run changelog:preview` lists them).
 
 <!-- changelog.d: fragments only; a bullet here fails npm run changelog:check -->
+
+## v0.1.2 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.2), 2026-10-29)
+
+- **Desk pencil no longer covers the details column** (spec 001 FR-185, issue #850): on a wide desk card the rename pencil sat over the first letter of "Last tool" or "Last activity"; it now stays in the name's column. `check:office` tests the pencil against the card's details text, role and task line.
+- Process: commits and PRs carry only the owner's identity (no AI co-author trailer or "generated with" line) and every commit is SSH-signed so GitHub shows Verified; setup in `AGENTS.md`, `docs/collaboration.md` and `docs/agent-setup/` (spec 021 FR-061).
+- **A scheduled prompt can be 10,000 characters, and is never cut silently** (spec 044 FR-120..FR-125, issue #843, owner decision): the limit was 2,000 and a longer paste or a longer stored prompt lost its tail without a word. Now the prompt box keeps everything you paste; from 8,000 characters it shows a counter ("8,412 / 10,000"), and over the limit it says "12,345 of 10,000 characters: shorten it to save" (read out to screen readers) and **Save** stays off until it fits. The app refuses a longer prompt too. A stored prompt that is over the limit (an edited file) is kept whole, is **not sent**, and its row says "Needs review" with **Edit…**; the run log shows *not sent: the prompt is over 10,000 characters*. A once-only schedule over the limit is paused for review instead of being marked done (fixing it needs a future time), and a closed door refuses a held run ("not kept") once its file would pass about 3.5 MB. Checked with unit tests (`test:schedules`, `test:schedhist`: parser, save, runs, counter words, 50 schedules at the maximum) and the simulator driver `check:sched-edit` at 1440x900 and 1280x800; not tried with a real agent app (no 10,000-character prompt was sent to Copilot, Claude Code or Codex).
+- **Floors: a lift panel and an All floors view** (spec 092 phase 2, FR-006..FR-008, FR-013..FR-017, FR-028, FR-031..FR-037; owner decision on issue #782): with two or more floors on, a lift panel at the right of the office has one numbered button per floor, with a badge counting the agents on other floors that need you (waiting, error, limit reached, New reply); its **All** button shows every floor on one screen as before phase 1, and the choice is remembered. Checked on the simulator (`shots-092-lift`, `check:office` with the panel and the All floors view at 1440x900 and 1280x800: no density lost) and with `test:floornav`; not tried with a screen reader.
 
 ## v0.1.1 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.1), 2026-10-28)
 
