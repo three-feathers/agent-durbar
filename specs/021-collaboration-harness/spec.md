@@ -410,7 +410,6 @@ Proposed 2026-10-24 and reviewed by the owner. **Acceptance (FR-037):** Vikram (
   - **Word budgets** (C list, "one rule in, one rule out"): `npm run rules:check` (`scripts/rules-check.js`, in `npm test` as `test:rules`) fails when a file is over its budget or missing: `AGENTS.md` 3,000 (the hard maximum), `CLAUDE.md` 150, `.github/copilot-instructions.md` 100, `docs/collaboration.md` 1,150, `docs/agent-notes.md` 4,600, `docs/review-checklist.md` 2,450, `docs/agent-apps.md` 9,000 (about 10% above the slimmed files). `scripts/test-rules-check.js` pins the file set and every budget, plants files at, over and missing, and removes its temp folders; mutants (a file dropped from the table, a budget raised, always ok, off-by-two, missing ignored, exit 0) are caught. `scripts/labels-backfill.ts` classifies `docs/agent-apps.md` and the rules-check scripts as `area:harness` (`test:labelsbackfill`). Raising a budget is a rule change through this spec.
   - Not in this change: spec 021 itself as a short decision log (a separate PR), and `docs/agent-setup/` (templates that still restate some rules). `[KNOWN GAP]` nothing checks that a new rule names the one it replaces; reviewers do.
 
-  - `[KNOWN GAP]` The budgets and the sweep do not exist yet; they are the planned work below (T041..T049).
 
 ### 2026-10-29: unreferenced screenshots deleted (FR-063 / T044, retro issue #854 item B4; no new FR)
 
