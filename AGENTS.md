@@ -21,7 +21,7 @@ Tool command names: `CLAUDE.md`, `.github/copilot-instructions.md`; other tools 
 - `.specify/memory/constitution.md`: principles I-VIII (I and III non-negotiable). Read it first.
 - Specs index: each `spec.md`'s `specs-index` block is the one place for status (`npm run specs:index`). Evidence tags: `[IMPLEMENTED]`, `[KNOWN GAP]`, `test:`, `sim:`, `real:`, `read:`.
 - [docs/agent-notes.md](docs/agent-notes.md): pitfalls, read before you start. [docs/agent-apps.md](docs/agent-apps.md): checked Copilot, Claude Code, Codex and git facts, read before adapter work or a real run.
-- `docs/agent-setup/`: templates only. Weekly test audit (FR-058) issues count only when opened by a trusted account, never by their footer.
+- `docs/agent-setup/`: templates only. Weekly test audit (FR-058) issues count only when opened by a trusted account, never by their footer; triage them like any other.
 
 ## Non-negotiables
 
@@ -93,20 +93,20 @@ Tool command names: `CLAUDE.md`, `.github/copilot-instructions.md`; other tools 
   - Recovery release tag: Pending
   - Corrective unplanned release: Unknown
   ```
-- At release prep, classify linked incidents (`gh issue list --label incident --state all`): `Yes` only for an unplanned corrective published release; unclear = `Unknown`; record the tag.
+- At release prep, classify linked `incident` issues: `Yes` only for an unplanned corrective published release; unclear = `Unknown`; record the tag.
 - Rework rate: published releases (prereleases too) once each; not drafts, unpublished or `-test.M` tags (a test-build defect is no `incident`); numerator = distinct `Yes` tags. Review revisions are not rework.
 
 ### Reviews and merge
 
-Humans set strategy; agents merge (2026-10-19). **Merge your own PR** when:
+Humans set strategy; agents merge. **Merge your own PR** when:
 1. CI is green;
 2. `npm run typecheck && npm run build && npm test` ran once at your `checks run at <sha>` (or a named CI run), plus the change's own checks (UI screenshots; real runs within budget);
 3. spec, tasks and docs are updated;
 4. you reviewed the whole diff as a reviewer, not only CI (correctness, secrets, shell, paths, permissions, constitution, honest limits) and wrote what you checked;
-5. you read the **PR's own** security results (2026-10-19): `gh pr checks <N>`, bot line comments (`gh api repos/{owner}/{repo}/pulls/<N>/comments`), `code-scanning/alerts?ref=refs/pull/<N>/merge&state=open`, Dependabot, secret scanning. Fix findings at the cause, never silence them; dismiss only a real false positive or test-only code, with the reason; touched `main` alerts are fixed or get an issue.
+5. you read the **PR's own** security results: `gh pr checks <N>`, bot line comments (`gh api repos/{owner}/{repo}/pulls/<N>/comments`), `code-scanning/alerts?ref=refs/pull/<N>/merge&state=open`, Dependabot, secret scanning. Fix findings at the cause, never silence them; dismiss only a real false positive or test-only code, with the reason; touched `main` alerts are fixed or get an issue.
 
 Another team's agent's approval (via its human's account) counts.
-- **Merging someone else's PR** (2026-10-19), when its agent forgot: not draft/WIP, nothing open, CI and security clean, approved, **quiet 2 hours** (no commit, review or comment); comment why you merged.
+- **Merging someone else's PR**, when its agent forgot: not draft/WIP, nothing open, CI and security clean, approved, **quiet 2 hours** (no commit, review or comment); comment why you merged.
 - **Read every review and comment before a merge** (FR-035); a plain-comment required change counts as *request changes*; nothing merges with an open request, thread or unanswered comment (an outside one goes to your human as a link and the PR waits). `scripts/pr-gate.sh <N>` right before every merge.
 - **Linked issue** (2026-10-19): all done, `Closes #N`; small rest, finish it; large rest, owner call or real check, `Refs #N` plus a note or follow-up. No issue closed with work pending or open with none.
 - Never merge `needs-owner-approval`, or a PR with others stacked on it before checking its base. Your human may still read or revert anything.
@@ -117,7 +117,7 @@ Another team's agent's approval (via its human's account) counts.
 - **The merge queue** (FR-041): approve, then `gh pr merge <N> --auto --match-head-commit <sha>`; `--delete-branch` does not work with it; `gh pr view` hides a queued PR, so check `isInMergeQueue` via GraphQL. `gh stack merge` merges every lower member: check each first.
 - **Unstack** (FR-040) with a replacement PR off main that closes the old one with a link; never by force-push, rename or stack tool.
 - **Cleanup** (FR-050): delete branch and worktree by hand right after the merge, and only once the PR is `MERGED`; never someone else's open branch.
-- Owned paths (`.specify/`, `.claude/`, `.github/`, `AGENTS.md`, `CLAUDE.md`) need one owner (`CODEOWNERS`).
+- Paths in `CODEOWNERS` need one of the three owners.
 
 ### First time right
 
@@ -152,10 +152,10 @@ Another team's agent's approval (via its human's account) counts.
 
 - **An OK in the team chat counts** (FR-033): from Vikram, Paco or Ruben, direct or relayed by their bots, for pre-releases and repo actions (merge, tag, release, closing issues); sender checked; no re-asking in a terminal. Never for money, invitations, settings or chat access.
 - **Chat feedback goes on the issue or PR too**, saying so.
-- **Tag each other by bot handle** (FR-054): `@PaquitosAgent_bot`, `@RubenLupiAgent_bot`, `@VishwakarmaDurbarClaude_bot`; no "X's agent here"; humans only when they must act.
+- **Tag each other by bot handle** (FR-054): `@PaquitosAgent_bot`, `@RubenLupiAgent_bot`, `@VishwakarmaDurbarClaude_bot`; no "X's agent here"; humans only when they must act; your filter matches your handle.
 - **Working hours** ([collaboration.md](docs/collaboration.md#team-norms)) apply to reviews and DMs.
 - **Decisions** (FR-037): a dated FR in spec 021 the same day; a line here if agents' work changes.
-- **Share what you learn** (FR-034): dated entry (what, why, how, evidence) in agent-notes or agent-apps in your PR; fix or delete wrong ones; rules go here; no secrets or personal data.
+- **Share what you learn** (FR-034): dated entry (what, why, how, evidence) in agent-notes or agent-apps in your PR; fix or delete wrong ones; rules go here; no secrets, personal data or chat content.
 
 ## Keep docs in sync
 
@@ -171,6 +171,6 @@ No impact: tick *no docs impact* and write `Docs: n/a <reason>` (the *Docs check
 
 ## Before you finish
 
-Merge condition 2's command, once, at your `checks run at <sha>`; UI changes add simulator screenshots at both sizes (`specs/001-office-view-and-densities/quickstart.md`).
+Merge condition 2's command, once, at your `checks run at <sha>`; UI changes add simulator screenshots at both sizes.
 
 **Fast checks, same quality** (2026-10-19): build once, run in parallel, never drop checks. Keep the limits in `scripts/run-tests.js` and `scripts/check-parallel.js`; big matrices in CI (spec 008 FR-111).
