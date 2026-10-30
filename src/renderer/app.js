@@ -2958,12 +2958,12 @@ async function startOverNotes(a,opener){
   await notesFetch(a);
 }
 /* a row's ⋯: the shared menu element, the keyboard rules of the Previous sessions row menu */
-function openNoteMenu(a,n,anchor,x,y){
+function openNoteMenu(a,n,anchor,x,y,onScreen){
   closeModeMenu();
   const it=(act,label,sub,cls)=>`<button type="button" role="menuitem" data-nmact="${act}"${cls?` class="${cls}"`:''} title="${esc(sub)}"><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu nt-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Actions for the note '+(safeMask(n.title)||''));
   m.innerHTML=it('rename','Rename…','Change its title')+it('copy','Copy','Copy its text')
-    +(n.done===true?it('undone','Mark not done','Back among the notes to use'):it('done','Mark done','Out of the / list and the count; kept under Done')) /* FR-045 */
+    +(n.done===true?it('undone','Mark not done','Back among the notes to use'):it('done','Mark done',onScreen?'Hides it from the / suggestions and the count; it moves to Done (N) below':'Hides it from this list, the / suggestions and the count; it stays under Done on the folder\'s Notes screen')) /* FR-045 */
     +it('delete','Delete…','Remove it from the notes','mm-danger');
   document.body.appendChild(m);
   const b=m.getBoundingClientRect();m.style.left=Math.max(8,Math.min(x,innerWidth-b.width-8))+'px';m.style.top=Math.max(8,Math.min(y,innerHeight-b.height-8))+'px';
@@ -3077,7 +3077,7 @@ function wireNotesScreen(h){
     const row=b.closest('.nt-row'),st=notesOf(a),n=row&&st&&st.notes.find(x=>x.id===row.dataset.id); if(!n)return;
     if(b.dataset.nt==='insert'){nsInsert(a,n);}
     else if(b.dataset.nt==='edit')editNote(a,n,b);
-    else if(b.dataset.nt==='more'){const r=b.getBoundingClientRect();openNoteMenu(a,n,b,r.left,r.bottom+4);}
+    else if(b.dataset.nt==='more'){const r=b.getBoundingClientRect();openNoteMenu(a,n,b,r.left,r.bottom+4,true);}
   });
   h.addEventListener('keydown',e=>{
     const row=e.target.closest&&e.target.closest('.nt-row'); if(!row)return;
