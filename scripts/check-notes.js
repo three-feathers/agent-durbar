@@ -425,6 +425,7 @@ module.exports = async (ctx) => {
     check(await until(`document.querySelectorAll('#slashList [role="option"]').length===1&&document.querySelector('#slashList .sl-note')`, 3000), `${tag}: "/migra" lists only the plan note`);
     const u5 = await users();
     await key('Return');
+    await until(`document.getElementById('msgInput').value.includes('Back up the tables')`, 4000); /* the pick lands after the key's own handler */
     const v5 = await value();
     check(/Plan for the migration/.test(v5) && /Back up the tables/.test(v5) && !/^\/pla/.test(v5), `${tag}: Enter replaced /pla with the note's text (${JSON.stringify(v5.slice(0, 40))})`);
     check((await users()) === u5 && !(await js(`!!document.getElementById('slashList')`)), `${tag}: Enter on a note sent nothing and closed the list`);
