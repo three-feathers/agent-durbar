@@ -1,1 +1,0 @@
-- **Codex mobile access guidance** (spec 054): ChatGPT mobile uses a connected desktop/SSH host and managed app-server; one read-only Durbar test session did not appear in the already-paired mobile app. The desktop UI was closed and remote-control state was not verified.
