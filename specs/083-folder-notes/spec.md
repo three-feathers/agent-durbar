@@ -4,14 +4,14 @@
 group: 046
 title: Notes (issue #699): save a message, a selection or a typed idea per folder and carry on with it; a Notes drawer in the chat (Ctrl+Shift+M), insert with one click or from the `/` list, a header count and a saved-message icon; stored masked in local data (0600), opt-in mirror to `.durbar/notes.md` per folder
 status: building
-note: MVP and per-folder screen built; selection save, export and delete all, project file not built
+note: MVP, selection save and per-folder screen built; export and delete all, project file not built
 -->
 
 **Feature Branch**: `083-folder-notes` (touches 005 chat panel and message actions, 073 the `/` list, 074 the shortcut list, 006 the folder menu, 010 simulator)
 
 **Created**: 2026-10-24
 
-**Status**: In progress (2026-10-30): T010..T032 and T034a built (store, masking, IPC, simulator, the MVP in the window, the header count, the marker, the search and the per-folder Notes screen); T033, T034b and T040..T050 not built
+**Status**: In progress (2026-10-30): T010..T034a built (store, masking, IPC, simulator, the MVP in the window, the header count, the marker, the search, selection save and the per-folder Notes screen); T034b and T040..T050 not built
 
 **Input**: Owner request (Ruben, 2026-10-24, issue #699): "While working in a session, I sometimes get an idea, a good answer from the agent, a plan or a list of next steps that I want to keep and come back to later, often to carry on in that same session or in a new one." Owner decisions in the issue's decision comment (Ruben, 2026-10-24), quoted below.
 
@@ -382,3 +382,14 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 ### 2026-10-26: review rounds 2 and 3 on PR #778 (T061)
 
 Round 2 (independent review of a019a828): the guard has its own token and is broken by move-aside; Start over checks the lock token; a transient read error on the lock is retried; the gap wording was corrected. Round 3 (Vikram's agent): a release is a move-aside plus a token check (no check-then-unlink); the time half of the identity check is tested; leftovers of a crash are swept under the guard; the Windows limits are listed in FR-008. No new task numbers.
+
+### 2026-10-30: saving a selection (T033, FR-042; decided by the coordinator under Ruben's delegation)
+
+*Built:* the floating **Save to notes** button beside a selection and *Save selection to notes* in a message's `⋯`. Decisions on points the spec left open:
+
+- **When the button shows:** one non-collapsed selection whose start and end are inside the same finished message of a main, live chat (an agent reply's bubble or the user's own message) and that holds more than blanks. A selection across messages, outside the log, in the read-only VS Code view, in a helper's or demo chat, or in an unfinished (streaming) reply shows nothing. It appears about 120 ms after the selection stops changing (not while dragging), hides when the selection changes, a dialog opens or the Notes drawer opens (the selection may survive, the button does not come back until a new selection), and follows the chat when it scrolls; it is hidden when the selection's end is scrolled out of the visible log (review round, 2026-10-30).
+- **Place:** just below the end of the selection, clamped to the window with `placeMenu`; when that would cover the composer or the answer bar it goes above the selection's start instead, and when neither place is clear of them (and inside the log) there is no button (`DurbarNotes.selButtonTop` returns null; unit-tested). A selection over 65,536 characters gets its own toast, *That selection is too long to save.*, and stores nothing.
+- **What is saved:** the selected text (line ends unified, ends trimmed, zero-width marks dropped) with `from: selection` and the message's `role` and `ord`; main masks it like every other save (known values and token shapes only; see the `[KNOWN GAP]` below) and computes the digest of the selected text, so a saved selection does not mark its whole message with the saved-message marker (FR-041 matches whole messages). The buttons' own labels (`Copy`, `⋯`, the marker) are not selectable, so they are never in the text. After a save the selection is cleared; the toast is the one of *Save to notes* (Rename…, Show), or *Already in notes* for the same selection again.
+- **Keyboard:** the `⋯` menu (click, right-click or Shift+F10 on the message) adds *Save selection to notes* after *Save to notes* when a selection lies inside that message.
+- *Evidence:* `test:` `scripts/test-notes.ts` (`selectionText`, `selButtonTop`); `sim:` `npm run check:ui -- --only check-notes` (selection inside one reply and one user message, across messages, outside the log, the VS Code view, the menu item with and without a selection, a token inside a selection is masked in the store) at 1440x900 and 1280x800; [the button at 1440x900](../../docs/screenshots/083-notes-selection-1440x900.png), [at 1280x800](../../docs/screenshots/083-notes-selection-1280x800.png). `[KNOWN GAP]` a screen reader's browse mode and touch selection handles were not tried; a selection made by keyboard only (caret browsing) was not run. `[KNOWN GAP]` a partial secret selected by hand is stored as selected: main masks known values and token shapes only, so a fragment of a secret (no prefix, half a known value) is kept like pasting it into a typed note. Real mouse input (`sendInputEvent`) covers pressing the floating button and clicking `⋯` with a selection; dragging a selection with the mouse was not driven.
+

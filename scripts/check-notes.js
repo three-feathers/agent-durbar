@@ -67,7 +67,7 @@ module.exports = async (ctx) => {
   const closeDrawer = async () => { if (await drawerOpen()) { await key('Escape'); await until(`document.getElementById('notesDrawer').hidden`, 3000); } };
   /* the first finished reply of the open chat: its ⋯ and index */
   /* page helpers, installed after every load: the first finished reply's ⋯ and a drawer row by title text (no value is spliced into page code) */
-  const inject = () => js(`window.__ntd={dots:()=>{const b=[...document.querySelectorAll('#chat .msg.agent .bubble')].find(x=>x.querySelector(':scope > .nt-btn'));return b?b.querySelector(':scope > .nt-btn'):null},row:t=>[...document.querySelectorAll('#notesDrawer .nt-row')].find(r=>r.querySelector('.nt-title').textContent.includes(t))};true`);
+  const inject = () => js(`window.__ntd={textNode:(b,min)=>{const w=document.createTreeWalker(b,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.parentElement.closest('.cp-btn,.nt-btn,.nt-mark')?NodeFilter.FILTER_REJECT:(n.textContent.trim().length>=min?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_SKIP)});return w.nextNode();},pick:(b,from,to)=>{const t=__ntd.textNode(b,to+1);const r=document.createRange();r.setStart(t,from);r.setEnd(t,to);const s=getSelection();s.removeAllRanges();s.addRange(r);return s.toString();},across:(b1,b2)=>{const t1=__ntd.textNode(b1,3),t2=__ntd.textNode(b2,3);const r=document.createRange();r.setStart(t1,0);r.setEnd(t2,3);const s=getSelection();s.removeAllRanges();s.addRange(r);return s.toString();},dots:()=>{const b=[...document.querySelectorAll('#chat .msg.agent .bubble')].find(x=>x.querySelector(':scope > .nt-btn'));return b?b.querySelector(':scope > .nt-btn'):null},row:t=>[...document.querySelectorAll('#notesDrawer .nt-row')].find(r=>r.querySelector('.nt-title').textContent.includes(t))};true`);
   const pressDots = async () => { check(await until('!!__ntd.dots()', 8000), 'a finished reply has a ⋯'); await js('__ntd.dots().click()'); return until(`!!document.querySelector('#modeMenu [data-nact]')`, 3000); };
   /* every text node, title and aria-* value in some root, for the secret checks */
   const texts = (sel) => js(`(()=>{const out=[];for(const r of document.querySelectorAll(${jsLiteral(sel)})){out.push(r.textContent);for(const e of [r,...r.querySelectorAll('*')])for(const a of e.attributes)if(a.name==='title'||a.name==='aria-label'||a.name==='aria-description')out.push(a.name+'='+a.value);}return out;})()`);
@@ -84,12 +84,19 @@ module.exports = async (ctx) => {
     /* the ⋯ is as visible as Copy: the same computed opacity (Copy is readable at rest, spec 052) */
     const ops = await js(`JSON.stringify({nt:getComputedStyle(document.querySelector('#chat .nt-btn')).opacity,cp:[...document.querySelectorAll('#chat .cp-msg')].map(b=>getComputedStyle(b).opacity)})`).then(JSON.parse);
     check(ops.cp.length === 0 || ops.cp.every((o) => o === ops.nt), `${tag}: the ⋯ has Copy's opacity (${JSON.stringify(ops)})`);
+    /* a streaming reply (unfinished) cannot be saved from yet: a selection inside it shows no button */
+    const strSel = await js(`(()=>{const b=document.querySelector('#chat .bubble.caret');if(!b)return '';const t=__ntd.textNode(b,5);if(!t)return '';const r=document.createRange();r.setStart(t,0);r.setEnd(t,5);const s=getSelection();s.removeAllRanges();s.addRange(r);return s.toString()})()`);
+    check(strSel.length > 0 && !(await js(`window.__durbarSimUi.notes.selNow()`)), `${tag}: a selection in a streaming reply shows no button (selected "${strSel}")`);
+    await js(`getSelection().removeAllRanges();true`);
     /* the read-only VS Code chat view has no ⋯ (it would open nothing) */
     if (!(await js(`!!document.querySelector('#prev [data-pv="view"]')`))) { await js(`document.getElementById('prevBtn').click()`); }
     check(await until(`!!document.querySelector('#prev [data-pv="view"]')`, 6000), `${tag}: a VS Code chat can be viewed`);
     await js(`document.querySelector('#prev [data-pv="view"]').click()`);
     check(await until(`!!document.querySelector('#chat .vsview .vsbody')&&document.querySelectorAll('#chat .vsview .bubble').length>0`, 8000), `${tag}: the VS Code view shows its messages`);
     check(await js(`document.querySelectorAll('#chat .nt-btn').length===0`), `${tag}: no ⋯ in the read-only VS Code view`);
+    const vsSel = await js(`(()=>{const b=document.querySelector('#chat .vsview .bubble');const t=__ntd.textNode(b,5);const r=document.createRange();r.setStart(t,0);r.setEnd(t,5);const s=getSelection();s.removeAllRanges();s.addRange(r);return s.toString()})()`);
+    check(vsSel.length > 0 && !(await js(`window.__durbarSimUi.notes.selNow()`)), `${tag}: a selection in the read-only VS Code view shows no button (selected "${vsSel}")`);
+    await js(`getSelection().removeAllRanges();true`);
     await js(`document.getElementById('vsBack').click()`);
     await until(`!document.querySelector('#chat .vsview')`, 4000);
     if (await js(`document.getElementById('prevBtn')&&document.getElementById('prevBtn').getAttribute('aria-expanded')==='true'`)) await js(`document.getElementById('prevBtn').click()`); /* Previous sessions stays closed: its state is remembered and would show in the pictures */
@@ -97,6 +104,22 @@ module.exports = async (ctx) => {
     /* a canned demo chat (not live) has none either, and no Notes… item */
     await js(`document.getElementById('backBtn').click()`);
     await until(`!document.body.classList.contains('panel-open')`, 4000);
+    /* a HELPER's chat (it has a parent) has no notes (FR-042): the same message markup and a selection give no button */
+    {
+      const hp = await js(`(()=>{const h=window.__durbarSimUi.agents().find(a=>a.parent&&document.querySelector('#stage .helper[data-id="'+CSS.escape(a.id)+'"]'));return h?{id:h.id,parent:h.parent}:null})()`);
+      check(!!hp, `${tag}: a helper is on the office floor`);
+      if (hp) {
+        await js(`document.querySelector('#stage .helper[data-id="'+CSS.escape(${jsLiteral(hp.id)})+'"]').click()`);
+        check(await until(`document.body.classList.contains('panel-open')&&!!document.querySelector('#panel .panel-in.ro')`, 10000), `${tag}: the helper's chat is open`);
+        await settle();
+        /* the helper is made live in the page only, and a notes-enabled message is planted in its log, so only the parent test can hide the button */
+        const hs = await js(`(()=>{const U=window.__durbarSimUi,h=U.agents().find(a=>a.id===${jsLiteral(hp.id)}),was=h.live;h.live=true;const root=document.createElement('div');root.className='chat-inner';root.setAttribute('data-notes','1');root.innerHTML='<div class="msg agent"><div class="bubble"><button type="button" class="nt-btn" aria-label="Message actions">x</button>A planted helper reply with enough words to select.</div></div>';document.getElementById('chat').appendChild(root);const b=root.querySelector('.bubble');const t=[...b.childNodes].find(n=>n.nodeType===3);const r=document.createRange();r.setStart(t,2);r.setEnd(t,20);const s=getSelection();s.removeAllRanges();s.addRange(r);const sel=s.toString().length;const par=h.parent;h.parent='';const without=U.notes.selNow();h.parent=par;const withP=U.notes.selNow();h.live=was;root.remove();getSelection().removeAllRanges();return JSON.stringify({sel,without,withP,par:!!par})})()`).then(JSON.parse);
+        check(hs.sel > 0 && hs.par && hs.without === true, `${tag}: the planted message would show the button without the parent (the precondition: ${JSON.stringify(hs)})`);
+        check(hs.withP === false, `${tag}: a selection inside a message of a helper chat shows NO Save to notes button`);
+      }
+      await js(`document.getElementById('backBtn').click()`);
+      await until(`!document.body.classList.contains('panel-open')`, 4000);
+    }
     await js(`(()=>{const t=document.getElementById('demoToggle');t.checked=true;t.dispatchEvent(new Event('change',{bubbles:true}));})()`);
     check(await until(`document.querySelectorAll('#stage .desk[data-id]').length>0&&!!document.getElementById('demoToggle').checked`, 6000), `${tag}: the demo is on`);
     await js(`document.querySelector('#stage .desk[data-id]').click()`);
@@ -166,6 +189,123 @@ module.exports = async (ctx) => {
     await js(`(()=>{const b=__ntd.dots().parentElement;b.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:300,clientY:300}));})()`);
     check(await until(`!!document.querySelector('#modeMenu [data-nact]')`, 2000), `${tag}: right-click opens the message menu`);
     await key('Escape');
+
+    /* ---- T033: saving a selection (FR-042) ---- */
+    const replyB = `__ntd.dots().parentElement`;
+    const userB = `document.querySelector('#chat .msg.user .bubble')`;
+    const countSel = () => js(`window.__durbarSimUi.notes.all().filter(n=>n.from==='selection').length`);
+    await js(`window.getSelection().removeAllRanges();true`);
+    const picked = await js(`__ntd.pick(${replyB},2,16)`);
+    check(picked.trim().length >= 10, `${tag}: a selection of ${picked.length} characters is made inside one reply (the precondition)`);
+    check(await until(`(()=>{const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden&&b.getClientRects().length>0})()`, 3000), `${tag}: a selection inside one message shows the button`);
+    const sb = await js(`(()=>{const b=document.getElementById('ntSelBtn'),R=b.getBoundingClientRect(),c=document.querySelector('#panel .composer').getBoundingClientRect(),sel=getSelection().getRangeAt(0).getBoundingClientRect();return JSON.stringify({t:b.textContent,l:b.getAttribute('aria-label'),r:R.right,btm:R.bottom,top:R.top,left:R.left,cTop:c.top,w:innerWidth,h:innerHeight,selBottom:sel.bottom,selTop:sel.top,fs:parseFloat(getComputedStyle(b).fontSize),hgt:R.height})})()`).then(JSON.parse);
+    check(sb.t === 'Save to notes' && /selected text/.test(sb.l) && sb.fs >= 10.5 && sb.hgt >= 24, `${tag}: the button is named and readable (${JSON.stringify(sb)})`);
+    check(sb.left >= 0 && sb.r <= sb.w && sb.top >= 0 && sb.btm <= sb.h, `${tag}: the button is inside the window`);
+    check(sb.btm <= sb.cTop + 0.5, `${tag}: the button is not over the composer (${sb.btm} vs ${sb.cTop})`);
+    check(sb.top >= sb.selTop - 40 && sb.top <= sb.selBottom + 40, `${tag}: the button is next to the selection (${sb.top} vs ${sb.selTop}..${sb.selBottom})`);
+    await shot(`083-notes-selection-${tag}.png`);
+    const s0 = await countSel();
+    await js(`document.getElementById('ntSelBtn').click()`);
+    check(await until(`/Saved to notes/.test([...document.querySelectorAll('#toasts .toast')].map(t=>t.textContent).join(' '))`, 5000), `${tag}: the button saves (${await toastText()})`);
+    check(await until(`window.__durbarSimUi.notes.all().filter(n=>n.from==='selection').length===${jsLiteral(s0 + 1)}`, 5000), `${tag}: one note with from selection is stored`);
+    const sn = await js(`JSON.stringify(window.__durbarSimUi.notes.all().filter(n=>n.from==='selection').pop())`).then(JSON.parse);
+    check(sn.text.replace(/\s+/g, ' ') === picked.trim().replace(/\s+/g, ' ') && sn.source && sn.source.role === 'agent' && /^sim-\d+$/.test(sn.source.session), `${tag}: only the selected text is saved, with the message's source (${JSON.stringify(sn).slice(0, 160)})`);
+    check(await until(`getSelection().isCollapsed&&document.getElementById('ntSelBtn').hidden`, 3000), `${tag}: the selection and the button are gone after the save`);
+    /* a selection across two messages, or outside the log: no button */
+    const across = await js(`__ntd.across(${userB},${replyB})`);
+    check(across.length > 3 && !(await js(`window.__durbarSimUi.notes.selNow()`)), `${tag}: a selection across two messages shows no button (selected ${across.length} characters)`);
+    const outside = await js(`(()=>{const t=document.getElementById('panelTitle');const r=document.createRange();r.selectNodeContents(t);const s=getSelection();s.removeAllRanges();s.addRange(r);return s.toString()})()`);
+    check(outside.length > 0 && !(await js(`window.__durbarSimUi.notes.selNow()`)), `${tag}: a selection outside the chat log shows no button (selected "${outside.slice(0, 20)}")`);
+    await js(`getSelection().removeAllRanges();true`);
+    check(!(await js(`window.__durbarSimUi.notes.selNow()`)), `${tag}: no selection, no button`);
+    /* the keyboard path: the message's ⋯ has the item while a selection lies inside it, and not without one */
+    await js(`window.getSelection().removeAllRanges();true`);
+    await js(`__ntd.dots().click()`);
+    check(await until(`!!document.querySelector('#modeMenu [data-nact]')`, 3000), `${tag}: ⋯ opens the menu (no selection)`);
+    check(await js(`!document.querySelector('#modeMenu [data-nact="savesel"]')`), `${tag}: no selection: no Save selection item`);
+    await key('Escape');
+    await until(`!document.getElementById('modeMenu')`, 2000);
+    const picked2 = await js(`__ntd.pick(${replyB},20,34)`);
+    check(picked2.trim().length >= 10, `${tag}: a second selection is made (the precondition)`);
+    /* FR-042: the selection lies in reply A; the menu of ANOTHER message (the user's) does not offer the item */
+    check(await js(`(()=>{const u=document.querySelector('#chat .msg.user .bubble'),r=__ntd.dots().parentElement;return !!u&&u!==r&&!!u.querySelector(':scope > .nt-btn')&&!getSelection().isCollapsed&&r.contains(getSelection().anchorNode)})()`), `${tag}: the selection is in the reply and the user's message has its own ⋯ (the precondition)`);
+    await js(`document.querySelector('#chat .msg.user .bubble > .nt-btn').click()`);
+    check(await until(`!!document.querySelector('#modeMenu [data-nact="save"]')`, 3000), `${tag}: another message's ⋯ opens its menu`);
+    check(await js(`!document.querySelector('#modeMenu [data-nact="savesel"]')`), `${tag}: a selection in one message adds no Save selection item to another message's menu`);
+    await key('Escape');
+    await until(`!document.getElementById('modeMenu')`, 2000);
+    await js(`__ntd.pick(${replyB},20,34)`);
+    await js(`__ntd.dots().click()`);
+    check(await until(`!!document.querySelector('#modeMenu [data-nact="savesel"]')`, 3000), `${tag}: with a selection inside the message, ⋯ offers Save selection to notes`);
+    check(await js(`[...document.querySelectorAll('#modeMenu [data-nact] b')].map(b=>b.textContent).join()==='Save to notes,Save selection to notes,Copy'||[...document.querySelectorAll('#modeMenu [data-nact] b')].map(b=>b.textContent).join()==='Show in notes,Save selection to notes,Copy'`), `${tag}: the menu order is Save, Save selection, Copy`);
+    await key('Down');
+    check(await js(`document.activeElement.getAttribute('data-nact')==='savesel'`), `${tag}: the arrow keys reach the item`);
+    const s1 = await countSel();
+    await key('Return');
+    check(await until(`window.__durbarSimUi.notes.all().filter(n=>n.from==='selection').length===${jsLiteral(s1 + 1)}`, 5000), `${tag}: Enter on the item saves the selection`);
+    const sn2 = await js(`JSON.stringify(window.__durbarSimUi.notes.all().filter(n=>n.from==='selection').pop())`).then(JSON.parse);
+    check(sn2.text.replace(/\s+/g, ' ') === picked2.trim().replace(/\s+/g, ' '), `${tag}: ...with only the selected text (${sn2.text.slice(0, 40)})`);
+    await js(`window.getSelection().removeAllRanges();true`);
+    await until(`!document.querySelector('#modeMenu')`, 2000);
+    /* ---- T033 review round: real mouse input, a selection scrolled out of the log, the drawer, a too-long selection ---- */
+    const btnVisible = `(()=>{const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden&&b.getClientRects().length>0})()`;
+    const centerOf = (expr) => js(`(()=>{const e=${expr};if(!e)return null;const r=e.getBoundingClientRect();return JSON.stringify({x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)})})()`).then((t) => (t ? JSON.parse(t) : null));
+    const mouseClick = async (pt) => { wc().sendInputEvent({ type: 'mouseMove', x: pt.x, y: pt.y }); await until(`(()=>{const e=document.elementFromPoint(${jsLiteral(pt.x)},${jsLiteral(pt.y)});return !!e&&e.matches(':hover')})()`, 3000); wc().sendInputEvent({ type: 'mouseDown', x: pt.x, y: pt.y, button: 'left', clickCount: 1 }); wc().sendInputEvent({ type: 'mouseUp', x: pt.x, y: pt.y, button: 'left', clickCount: 1 }); };
+    /* real input: pressing the floating button keeps the selection (its mousedown is not a focus move), so the click saves it */
+    const pr = await js(`__ntd.pick(${replyB},3,17)`);
+    check(pr.trim().length >= 10 && await until(btnVisible, 3000), `${tag}: (real input) a selection is made and the button shows (the precondition)`);
+    const bp = await centerOf(`document.getElementById('ntSelBtn')`);
+    const r0 = await countSel();
+    await mouseClick(bp);
+    check(await until(`window.__durbarSimUi.notes.all().filter(n=>n.from==='selection').length===${jsLiteral(r0 + 1)}`, 5000), `${tag}: a real mouse press on the floating button saves the selection (the selection survived the press)`);
+    /* real input: a left-click on the message's ⋯ while a selection exists keeps it, so the menu offers Save selection */
+    await until(`getSelection().isCollapsed`, 3000);
+    const pr2 = await js(`__ntd.pick(${replyB},20,34)`);
+    check(pr2.trim().length >= 10, `${tag}: (real input) a selection is made before the ⋯ is clicked (the precondition)`);
+    await mouseClick(await centerOf(`__ntd.dots()`));
+    check(await until(`!!document.querySelector('#modeMenu [data-nact="savesel"]')`, 3000), `${tag}: a real left-click on ⋯ keeps the selection, so the menu offers Save selection to notes`);
+    await key('Escape');
+    await until(`!document.getElementById('modeMenu')`, 2000);
+    /* a selection scrolled out of the log (both ways) shows no button, and it never lands on the composer or the header */
+    for (const dir of ['above', 'below']) {
+      await js(`window.getSelection().removeAllRanges();true`);
+      const ps = await js(`__ntd.pick(${replyB},2,16)`);
+      check(ps.trim().length >= 10 && await until(btnVisible, 3000), `${tag}: (${dir}) a selection is made and the button shows (the precondition)`);
+      const away = await js(`(()=>{const lg=document.getElementById('chat'),inner=lg.querySelector('.chat-inner'),sp=document.createElement('div');sp.id='ntSpacer';sp.style.cssText='height:4000px;flex:none';
+        const bub=__ntd.dots().parentElement;
+        if(${jsLiteral(dir)}==='above'){inner.appendChild(sp);lg.scrollTop=lg.scrollHeight;}else{inner.insertBefore(sp,inner.firstChild);lg.scrollTop=lg.scrollTop===0?1:0;}
+        const c=lg.getBoundingClientRect(),b=bub.getBoundingClientRect();return JSON.stringify({c:[c.top,c.bottom],b:[b.top,b.bottom],st:lg.scrollTop,sh:lg.scrollHeight,ch:lg.clientHeight})})()`).then(JSON.parse);
+      check(dir === 'above' ? away.b[1] < away.c[0] : away.b[0] > away.c[1], `${tag}: (${dir}) the log really scrolled: the message is out of the log (${JSON.stringify(away)})`);
+      check(!(await js(`getSelection().isCollapsed`)), `${tag}: (${dir}) the selection is still there`);
+      check(await until(`(()=>{const b=document.getElementById('ntSelBtn');return !b||b.hidden})()`, 3000), `${tag}: (${dir}) a selection scrolled out of the log shows no button`);
+      check(!(await js(`window.__durbarSimUi.notes.selNow()`)), `${tag}: (${dir}) nor does a re-check`);
+      await js(`(()=>{const sp=document.getElementById('ntSpacer');if(sp)sp.remove();getSelection().removeAllRanges();__ntd.dots().parentElement.scrollIntoView({block:'center'});return true})()`);
+    }
+    /* the Notes drawer: opening it hides the button although the selection survives; a new selection after closing shows it again */
+    await js(`window.getSelection().removeAllRanges();true`);
+    const pd = await js(`__ntd.pick(${replyB},2,16)`);
+    check(pd.trim().length >= 10 && await until(btnVisible, 3000), `${tag}: (drawer) a selection is made and the button shows (the precondition)`);
+    check(await openDrawer(), `${tag}: (drawer) the drawer opens`);
+    check(!(await js(`getSelection().isCollapsed`)), `${tag}: (drawer) the selection survived the drawer opening (the precondition)`);
+    check(await until(`(()=>{const b=document.getElementById('ntSelBtn');return !b||b.hidden})()`, 3000), `${tag}: (drawer) the button is gone while the drawer is open`);
+    check(!(await js(`window.__durbarSimUi.notes.selNow()`)), `${tag}: (drawer) and a re-check does not bring it back`);
+    await closeDrawer();
+    await js(`window.getSelection().removeAllRanges();true`);
+    const pd2 = await js(`__ntd.pick(${replyB},2,16)`);
+    check(pd2.trim().length >= 10 && await until(btnVisible, 3000), `${tag}: (drawer) after closing it, a new selection shows the button again`);
+    await js(`window.getSelection().removeAllRanges();true`);
+    /* a selection over 64K characters has its own words and stores nothing (the text is planted in the reply and put back) */
+    const big = await js(`(()=>{const b=__ntd.dots().parentElement,t=__ntd.textNode(b,5);window.__ntOrig=t.data;t.data='word '.repeat(14000);const r=document.createRange();r.setStart(t,0);r.setEnd(t,t.data.length);const s=getSelection();s.removeAllRanges();s.addRange(r);b.scrollIntoView({block:'end'});return s.toString().length})()`);
+    check(big > 65536 && await until(btnVisible, 3000), `${tag}: (too long) a selection of ${big} characters shows the button (the precondition)`);
+    const l0 = await countSel();
+    await js(`document.getElementById('ntSelBtn').click()`);
+    check(await until(`/That selection is too long to save\./.test([...document.querySelectorAll('#toasts .toast')].map(t=>t.textContent).join(' '))`, 4000), `${tag}: (too long) its own toast, not the message wording (${await toastText()})`);
+    check((await countSel()) === l0, `${tag}: (too long) nothing was stored`);
+    await js(`(()=>{const t=__ntd.textNode(__ntd.dots().parentElement,5);if(window.__ntOrig!=null)t.data=window.__ntOrig;getSelection().removeAllRanges();return true})()`);
+    /* the notes of this block are removed again, so the scenarios below see what they saw before */
+    await js(`(async()=>{const U=window.__durbarSimUi,b=U.bridge(),ag=U.agents().find(x=>x.name==='Noor');for(const n of U.notes.all().filter(x=>x.from==='selection'))await b.notesDelete(ag.id,n.id,n.rev);return true})()`);
+    check(await until(`window.__durbarSimUi.notes.all().filter(n=>n.from==='selection').length===0&&window.__durbarSimUi.notes.all().length===1`, 5000), `${tag}: the selection notes are removed (one note left)`);
+    await js(`document.getElementById('msgInput').focus()`);
 
     /* ---- scenario 3: the drawer and its keys ---- */
     await focusBox('');
@@ -364,6 +504,7 @@ module.exports = async (ctx) => {
     check(await until(`document.querySelectorAll('#slashList [role="option"]').length===1&&document.querySelector('#slashList .sl-note')`, 3000), `${tag}: "/migra" lists only the plan note`);
     const u5 = await users();
     await key('Return');
+    await until(`document.getElementById('msgInput').value.includes('Back up the tables')`, 4000); /* the pick lands after the key's own handler */
     const v5 = await value();
     check(/Plan for the migration/.test(v5) && /Back up the tables/.test(v5) && !/^\/pla/.test(v5), `${tag}: Enter replaced /pla with the note's text (${JSON.stringify(v5.slice(0, 40))})`);
     check((await users()) === u5 && !(await js(`!!document.getElementById('slashList')`)), `${tag}: Enter on a note sent nothing and closed the list`);
@@ -401,6 +542,15 @@ module.exports = async (ctx) => {
     await until(`!!document.querySelector('#modeMenu [data-nact="save"]')`, 3000);
     await js(`document.querySelector('#modeMenu [data-nact="save"]').click()`);
     check(await until(`/Saved to notes/.test([...document.querySelectorAll('#toasts .toast')].map(t=>t.textContent).join(' '))`, 5000), `${tag}: the user message is saved`);
+    /* a selection that holds the token is saved through the same masking: nothing raw is stored */
+    const tokSel = await js(`(()=>{const b=[...document.querySelectorAll('#chat .msg.user .bubble')].find(x=>x._raw&&x._raw.includes('please keep'));const t=__ntd.textNode(b,20);const i=t.textContent.indexOf('ghp_');const r=document.createRange();r.setStart(t,i-5);r.setEnd(t,i+${jsLiteral(TOKEN.length)}+4);const s=getSelection();s.removeAllRanges();s.addRange(r);return s.toString()})()`);
+    check(tokSel.includes(TOKEN), `${tag}: the selection holds the token (the precondition: ${tokSel.length} characters)`);
+    check(await until(`(()=>{const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden})()`, 3000), `${tag}: the button shows for a selection in the user's message`);
+    const sel6 = await js(`window.__durbarSimUi.notes.all().filter(n=>n.from==='selection').length`);
+    await js(`document.getElementById('ntSelBtn').click()`);
+    check(await until(`window.__durbarSimUi.notes.all().filter(n=>n.from==='selection').length===${jsLiteral(sel6 + 1)}`, 5000), `${tag}: the selection with the token is saved`);
+    const tsn = await js(`JSON.stringify(window.__durbarSimUi.notes.all().filter(n=>n.from==='selection').pop())`);
+    check(!leak(tsn) && /\[redacted\]/.test(tsn) && JSON.parse(tsn).source.role === 'user', `${tag}: ...masked, from the user's message (${tsn.slice(0, 140)})`);
     /* the toast's Rename… (entry point 1): the field holds the stored, masked title */
     await js(`[...document.querySelectorAll('#toasts .toast .toast-act')].find(b=>b.textContent==='Rename…').click()`);
     check(await until(`!!document.querySelector('#modeDlg input')`, 3000), `${tag}: the toast's Rename… opens the title field`);

@@ -122,7 +122,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
 - [x] T032 [US2] [P] Drawer search. [FR-043, SC-005]
   - AC1: the field filters both groups by title rank then text words, case-insensitive, on masked text; the no-match line names the words (masked).
   - AC2: with `simnotes=many` the open and a search take under 100 ms of renderer time (`performance.measure`, best of 3).
-- [ ] T033 [US3] Selection save. [FR-042]
+- [x] T033 [US3] Selection save. [FR-042]
   - AC1: a selection inside one bubble shows the button at its end (placed with `placeMenu`, never over the composer); it saves only the selected text with `from: selection` and the message's source.
   - AC2: a selection across messages or outside the log shows no button.
   - AC3: the message `⋯` has *Save selection to notes* while a selection lies inside it (keyboard path).

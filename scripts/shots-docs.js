@@ -68,7 +68,7 @@ const DOC_SHOTS = [
   { name: 'shots-064-send-several', files: ['064-send-several-1440x900.png'] },
   { name: 'shots-068-coffee', files: ['068-coffee-office-15-1440x900.png', '068-coffee-bar-1440x900.png'] },
   { name: 'check-slash-suggest', files: ['073-slash-1440x900.png'] },
-  { name: 'check-notes', files: ['083-notes-drawer-1440x900.png', '083-notes-drawer-1280x800.png', '083-notes-slash-1440x900.png', '083-notes-slash-1280x800.png'] }, // spec 083: the Notes drawer and the notes in the "/" list
+  { name: 'check-notes', files: ['083-notes-drawer-1440x900.png', '083-notes-drawer-1280x800.png', '083-notes-slash-1440x900.png', '083-notes-slash-1280x800.png', '083-notes-selection-1440x900.png', '083-notes-selection-1280x800.png'] }, // spec 083: the Notes drawer and the notes in the "/" list
   { name: 'check-notes-count', files: ['083-notes-count-1440x900.png', '083-notes-count-1280x800.png', '083-notes-marker-1440x900.png', '083-notes-marker-1280x800.png'] }, // spec 083 T030, T031: the header count and the marker
   { name: 'check-notes-screen', files: ['083-notes-screen-1440x900.png', '083-notes-screen-1280x800.png'] }, // spec 083 T034a: the per-folder Notes screen
   { name: 'shots-074-navigator', files: ['074-navigator-start-1440x900.png'] },
