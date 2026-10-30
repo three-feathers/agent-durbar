@@ -51,3 +51,4 @@
 - [x] T048 (#854 B8, Vikram's agent) Path-filtered macOS PR job: `.github/workflows/macos-pr.yml`, spec 008 FR-135 [FR-063]
 - [x] T049 (#854 B9, Vikram's agent) Weekly retro: `weekly-retro.yml` and `scripts/weekly-retro.js` open one issue a week (instead of joining the FR-058 audit); AGENTS.md and the loops template. Left: one recommendation per `needs-owner-approval` item and #710 [FR-063]
 - [x] T050 (#854 N1, issue #883, Vikram's agent) `scripts/pr-gate.sh` prints a trusted approval as `approved by: ...` and does not count its body as an ask; test in `test:trustedcontent` [FR-035]
+- [x] T051 (Vikram's decision 2026-10-30, Vikram's agent) Daily stable release published by agents: AGENTS.md *Needs approval* and *Daily release*, `changelog.d/README.md` [FR-064]
