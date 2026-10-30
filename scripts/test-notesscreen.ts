@@ -125,7 +125,7 @@ assert.deepStrictEqual(NSX.neighbours(null, 'a'), { next: '', prev: '' });
   assert.ok(!/createElement\('div'\)[^;]*mode-menu|id='modeMenu'/.test(block), 'no menu element of its own (the row ⋯ is openNoteMenu)');
   assert.ok(/openNoteMenu\(/.test(block) && /editNote\(/.test(block) && /addNoteUi\(/.test(block) && /notesChange\(/.test(block), 'the drawer\'s actions are reused');
   assert.ok(/it\('done','Mark done'/.test(app) && /it\('undone','Mark not done'/.test(app), 'Mark done / Mark not done in the row menu');
-  assert.ok(/onScreen\?'[^']*moves to Done \(N\) below':'[^']*stays under Done on the folder\\'s Notes screen'/.test(app) && !/the \/ list/.test(app.slice(app.indexOf('function openNoteMenu'), app.indexOf('function openNoteMenu') + 1500)), 'Mark done subtitle differs on the screen and in the drawer');
+  assert.ok(/onScreen\?'[^']*moves to Done below':'[^']*stays under Done on the folder\\'s Notes screen'/.test(app) && !/the \/ list/.test(app.slice(app.indexOf('function openNoteMenu'), app.indexOf('function openNoteMenu') + 1500)), 'Mark done subtitle differs on the screen and in the drawer');
   assert.ok(/id="ntAll"[^>]*>All notes of this folder…</.test(app), 'the drawer\'s footer has All notes of this folder…');
   assert.ok(/'Notes of '\+r\.name/.test(app), 'Ctrl+K has Notes of <folder>');
   assert.ok(/data-fact="\$\{act\}"/.test(app) && /it\('notes',NSX\(\)\.menuLabel\(/.test(app), 'the folder ⋯ has Notes (N)…');

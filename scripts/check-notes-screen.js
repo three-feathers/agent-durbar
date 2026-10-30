@@ -136,7 +136,7 @@ module.exports = async (ctx) => {
     check(await menuOf('Ask about the staging quota'), `${tag}: the row ⋯ opens`);
     const items = await js(`JSON.stringify([...document.querySelectorAll('#modeMenu [data-nmact] b')].map(b=>b.textContent))`).then(JSON.parse);
     check(items.join('|') === 'Rename…|Copy|Mark done|Delete…', `${tag}: the row menu (${items.join('|')})`);
-    check(await js(`document.querySelector('#modeMenu [data-nmact="done"] small').textContent.includes('moves to Done (N) below')`), `${tag}: on the screen the Mark done subtitle says it moves to Done (N) below`);
+    check(await js(`document.querySelector('#modeMenu [data-nmact="done"] small').textContent.includes('moves to Done below')`), `${tag}: on the screen the Mark done subtitle says it moves to Done (N) below`);
     await js(`document.querySelector('#modeMenu [data-nmact="done"]').click()`);
     check(await until(`document.querySelector('#nsDone > summary')&&document.querySelector('#nsDone > summary').textContent==='Done (2)'&&[...document.querySelectorAll('#nsList .ns-list .nt-row')].length===1`, 4000), `${tag}: Mark done moves it to Done (2)`);
     check(await until(`window.__durbarSimUi.notes.all().some(n=>n.title==='Ask about the staging quota'&&n.done===true)`, 2000), `${tag}: the store has it done`);
