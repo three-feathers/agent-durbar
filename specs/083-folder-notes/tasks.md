@@ -126,12 +126,14 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
   - AC1: a selection inside one bubble shows the button at its end (placed with `placeMenu`, never over the composer); it saves only the selected text with `from: selection` and the message's source.
   - AC2: a selection across messages or outside the log shows no button.
   - AC3: the message `⋯` has *Save selection to notes* while a selection lies inside it (keyboard path).
-- [ ] T034 [US4] The per-folder Notes screen. [FR-044, FR-045, FR-048]
+- [ ] T034 [US4] The per-folder Notes screen. [FR-044, FR-045, FR-048] Split on 2026-10-30 into T034a and T034b (spec *Changes*, decided by the coordinator under Ruben's delegation): *Export…* needs T040's writer.
+- [ ] T034a [US4] The screen, its ways in and *Done*. [FR-044, FR-045]
   - AC1: reached from the folder `⋯` (*Notes (N)…*), the drawer's *All notes of this folder…* and Ctrl+K *Notes of <folder>*; nothing new on the office floor (`check:office` unchanged).
   - AC2: all notes, search, *Done (N)* folded, *Mark done* / *Mark not done*; done notes leave the `/` list and the count.
+  - AC5: screenshots of the screen at both sizes.
+- [ ] T034b [US4] Export, delete all and removed folders (after T040). [FR-048]
   - AC3: *Export…* goes through main's save dialog (the window sends no path) and writes FR-052's format without session ids, mode 0600 (unit test with a fake dialog).
   - AC4: *Delete all…* asks with the count (*Cancel* focused) and leaves tombstones.
-  - AC5: screenshots of the screen at both sizes.
   - AC6: *Remove folder*'s dialog has *Also delete its notes* (only when the folder has notes, unticked by default); unticked: the text says the notes stay and re-adding the folder shows them; ticked: the store file is gone after removal (unit test on the store key and the IPC flag).
   - AC7: a note is added on #559 (and in this spec) that any data-reset path must include `<userData>/notes/`.
 
@@ -185,4 +187,4 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
 
 - T001 first (spec deltas). T010, T011, T014 in parallel; T012 after T010 and T011; T013 after T012.
 - T020..T023 after T013 and T014 (T021 can start with T010). T024 closes the MVP.
-- Phase 3 tasks after T024; T030..T032 in parallel. Phase 4 after T034 (the switch lives in the screen). T050 after T024.
+- Phase 3 tasks after T024; T030..T032 in parallel. Phase 4 after T034a (the switch lives in the screen); T034b after T040 (*Export…* uses its writer). T050 after T024.

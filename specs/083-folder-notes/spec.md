@@ -4,14 +4,14 @@
 group: 046
 title: Notes (issue #699): save a message, a selection or a typed idea per folder and carry on with it; a Notes drawer in the chat (Ctrl+Shift+M), insert with one click or from the `/` list, a header count and a saved-message icon; stored masked in local data (0600), opt-in mirror to `.durbar/notes.md` per folder
 status: building
-note: MVP built; selection save, per-folder screen, project file not built
+note: MVP and per-folder screen built; selection save, export and delete all, project file not built
 -->
 
 **Feature Branch**: `083-folder-notes` (touches 005 chat panel and message actions, 073 the `/` list, 074 the shortcut list, 006 the folder menu, 010 simulator)
 
 **Created**: 2026-10-24
 
-**Status**: In progress (2026-10-26): T010..T032 built (store, masking, IPC, simulator, the MVP in the window, the header count, the marker and the search); T033..T050 not built
+**Status**: In progress (2026-10-30): T010..T032 and T034a built (store, masking, IPC, simulator, the MVP in the window, the header count, the marker, the search and the per-folder Notes screen); T033, T034b and T040..T050 not built
 
 **Input**: Owner request (Ruben, 2026-10-24, issue #699): "While working in a session, I sometimes get an idea, a good answer from the agent, a plan or a list of next steps that I want to keep and come back to later, often to carry on in that same session or in a new one." Owner decisions in the issue's decision comment (Ruben, 2026-10-24), quoted below.
 
@@ -229,7 +229,7 @@ In the drawer I choose **Open source** on a note: the chat it came from opens an
 - **FR-045** **Done.** *Mark done* moves a note into *Done (N)* (folded); *Mark not done* moves it back. Done notes are not in the `/` list or the header count.
 - **FR-046** **Open source (US6, D11).** For a note with a source: when that session is open in the office, its chat opens and the message (found by `role` + `digest`, `ord` first) is revealed inside the chat log (`DurbarScroll.reveal`, never the page) and outlined for 1.2 s (no animation under reduced motion). When it is one of the folder's previous sessions, Durbar opens it exactly as the Previous sessions list does (no message sent), then reveals the message. When the session is gone: toast *The session this note came from is no longer available. The note stays.*; when the message is not found: the chat opens and the toast says *Could not find the message in this session.*
 - **FR-047** `[LATER]` **Start a new session with it** (the issue's *Continuing from a note*): needs a first-message field in the New session dialog; its own spec delta. *Continue in this session* is *Insert* (FR-024).
-- **FR-048** **Export and delete.** *Export…* writes the folder's notes (done ones included) in FR-052's format to a file the person picks in the system save dialog (main shows it; the window never sends a path), mode 0600. *Delete all…* asks (*Cancel* focused, the count in the text) and removes the notes and keeps tombstones (FR-008). *Remove folder* (spec 006) gets a box **Also delete its notes** (`askDialog` `check`, shown only when the folder has notes, **unticked by default**: a removed folder's notes are kept by default, *owner-confirmed 2026-10-24*, Paco's question C on PR #702); unticked, the dialog says *Its notes stay; they come back if you add the folder again.*; ticked, the folder's store file is deleted after the folder is removed (no tombstones are kept, the file is gone). This is the only way to delete a removed folder's notes without adding it back. **Data reset:** Durbar has no app-wide data reset today (`read:` no reset path in `src/main` other than the usage-totals reset, `src/main/usagetotalsstore.ts:109`); any path that resets or deletes Durbar's data (a future *Reset Durbar*, #559's import with *replace*, a profile wipe in a test helper) must include `<userData>/notes/` (a task for that spec; noted on #559). `[LATER]` #559 export/import includes notes.
+- **FR-048** **Export and delete.** *Export…* writes the folder's notes (done ones included) in FR-052's format to a file the person picks in the system save dialog (main shows it; the window never sends a path), mode 0600. *Delete all…* asks (*Cancel* focused, the count in the text) and removes the notes and keeps tombstones (FR-008). *Remove folder* (spec 006) gets a box **Also delete its notes** (`askDialog` `check`, shown only when the folder has notes, **unticked by default**: a removed folder's notes are kept by default, *owner-confirmed 2026-10-24*, Paco's question C on PR #702); unticked, the dialog says *Its notes stay; they come back if you add the folder again.*; ticked, the folder's store file is deleted after the folder is removed (no tombstones are kept, the file is gone). This is the only way to delete a removed folder's notes without adding it back. **Data reset (T034b):** Durbar has no app-wide data reset today (`read:` no reset path in `src/main` other than the usage-totals reset, `src/main/usagetotalsstore.ts:109`); any path that resets or deletes Durbar's data (a future *Reset Durbar*, #559's import with *replace*, a profile wipe in a test helper) must include `<userData>/notes/` (a task for that spec; noted on #559). `[LATER]` #559 export/import includes notes.
 
 ### The project file (US5, OD1)
 
@@ -292,6 +292,22 @@ In the drawer I choose **Open source** on a note: the chat it came from opens an
 - `read:` only for the code facts above; nothing here was run against a real agent app (none is needed: notes never call one).
 
 ## Changes
+
+### 2026-10-30: the per-folder Notes screen, first half (T034 split into T034a and T034b; decided by the coordinator under Ruben's delegation)
+
+*Why split:* *Export…* (FR-048) writes FR-052's format, whose writer and parser are T040 (`src/shared/notesmd.ts`, not built); *Delete all…*, the Remove folder box and `removeFolder {deleteNotes}` are deletion paths through main that deserve their own reviewed PR. T034 is therefore two tasks: **T034a** (the screen, its three ways in, *Done*, AC1, AC2, AC5) is built now; **T034b** (*Export…*, *Delete all…*, *Also delete its notes*, the data-reset note on #559) follows after T040. The screen has no *Export…* or *Delete all…* button until T034b, and no project-file switch until T042.
+
+Decisions on points FR-044/FR-045 left open (T034a):
+
+- **The frame** is a full-page screen of `screens.js` (kind `notes`, the frame the folder's *MCP extras* screen uses: its header, *Close*, Esc), painted by app.js (as Settings' Schedules section is), with the drawer's row actions, dialogs and IPC calls reused (`notesChange`, `renameNote`, `editNote`, `deleteNote`, `addNoteUi`, the shared menu element). The pure parts (the two groups, the menu label, the search over both groups) are in `src/renderer/notesscreen.js` (`window.DurbarNotesScreen`).
+- **Which folder:** main finds the folder from an agent id (FR-062), so the screen is offered only for a folder that has a main, live chat (not in the demo office); it is opened with that chat's id (the open chat when it is in this folder, else the folder's first main chat). No new IPC channel; the window sends no path.
+- **The folder `⋯`** gets *Notes (N)…* (N = notes not done) after *Schedules*, with *Saved messages and ideas of this folder* under it; when the folder's notes were not fetched yet it reads *Notes…* and the count fills in when they arrive. **Ctrl+K** gets one *Notes of <folder>* action per folder that has a main, live chat. **The drawer's footer** gets *All notes of this folder…* next to *+ Note*.
+- **The screen:** heading *Notes · <folder>*, a search field (FR-043's rule over both groups), *+ Note*, then all notes not done, newest first (no *This session* split: the screen is the folder's), then a folded *Done (N)* group (`<details>`, closed at each open; while searching, N counts the done notes that match). Empty: *No notes in this folder yet. Save a message with its ⋯ menu, or add one.*
+- **Row actions:** *Edit…* and the row's `⋯` (*Rename…*, *Copy*, *Mark done* or *Mark not done*, *Delete…*). *Insert* is on a row only when the screen was opened over a chat of this folder; it closes the screen and inserts into that chat's message box (FR-024's rule). *Mark done* is also in the drawer row's `⋯` (FR-022 lists it there); the drawer lists no done notes, so it never offers *Mark not done*.
+- **Done** (FR-045) is `notes:update {done}` (built in T013); done notes stay out of the drawer, the `/` list and the header count (`DurbarNotes.groups`, unchanged). After *Mark done* or *Mark not done* the focus goes to the next row (else the previous, else the search field) and the change is announced.
+- **Closing:** *Close* or Esc (a non-empty search field is cleared first) closes the screen and puts the focus back where it was opened from (the folder's door, the drawer's button or the message box). Another folder's notes or a changed note while the screen is open repaint it (`notes:changed`).
+- **Nothing on the office floor** (D10): `check:office` is unchanged.
+
 
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
