@@ -11,6 +11,8 @@ import { parseAddress } from '../../shared/browserurl';
 
 export const SIM_SCHEME_NAME = SIM_VIEW_SCHEME.slice(0, -1); // 'durbar-sim'
 export const SIM_PAGE_HOST = 'pages';
+/** A second test host, for the script-redirect page (a page-started navigation to another origin). */
+export const SIM_OTHER_HOST = 'other';
 /** The slow page waits this long unless `?ms=` says less (at most 10 s). */
 export const SIM_SLOW_MS = 2500;
 
@@ -35,7 +37,7 @@ const page = (title: string, body: string, head = ''): string =>
   `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${esc(title)}</title>${head}<style>body{font:16px system-ui,sans-serif;margin:24px;line-height:1.5}a{color:#0b57d0}nav a{margin-right:12px}label{display:block;margin:8px 0}</style></head><body><nav><a href="/index">Index</a><a href="/links">Links</a><a href="/form">Form</a><a href="/slow">Slow</a></nav><h1>${esc(title)}</h1>${body}</body></html>`;
 
 const PAGES: Record<string, (req: { method: string; body: string; query: URLSearchParams }) => SimResponse | Promise<SimResponse>> = {
-  '/index': () => html('Simulator test pages', '<ul><li><a href="/links">Links</a></li><li><a href="/form">Form (POST)</a></li><li><a href="/getform">Form (GET)</a></li><li><a href="/download">Download</a></li><li><a href="/file">File input</a></li><li><a href="/slow">Slow load</a></li><li><a href="/unload">Page that asks before leaving</a></li><li><a href="/alert">Alert</a></li><li><a href="/confirm">Confirm</a></li><li><a href="/prompt">Prompt</a></li></ul>'),
+  '/index': () => html('Simulator test pages', '<ul><li><a href="/links">Links</a></li><li><a href="/form">Form (POST)</a></li><li><a href="/getform">Form (GET)</a></li><li><a href="/download">Download</a></li><li><a href="/file">File input</a></li><li><a href="/slow">Slow load</a></li><li><a href="/unload">Page that asks before leaving</a></li><li><a href="/alert">Alert</a></li><li><a href="/confirm">Confirm</a></li><li><a href="/prompt">Prompt</a></li><li><a href="/fields">Sensitive fields</a></li><li><a href="/slide">Sliding element</a></li><li><a href="/redirect">Script redirect</a></li><li><a href="/auth">Basic-auth challenge</a></li><li><a href="/storage">Storage</a></li></ul>'),
   '/links': () => html('Links', '<p><a id="l-form" href="/form">Form page</a></p><p><a id="l-blank" target="_blank" href="/index">Opens in a new tab</a></p><p><a id="l-web" href="https://example.com/">A web page (needs the network)</a></p><p><a id="l-file" href="file:///etc/hostname">A file link (refused)</a></p>'),
   '/form': (r) =>
     r.method === 'POST'
@@ -56,6 +58,16 @@ const PAGES: Record<string, (req: { method: string; body: string; query: URLSear
   },
   '/confirm': () => html('Confirm page', '<button id="ask" onclick="document.getElementById(\'result\').textContent=\'confirm returned \'+confirm(\'Delete this item?\')">Ask</button><p id="result"></p>'),
   '/prompt': () => html('Prompt page', '<script>var r;try{r="prompt returned "+prompt("Name?");}catch(e){r="prompt threw";}document.addEventListener("DOMContentLoaded",function(){document.getElementById("result").textContent=r;});</script><p id="result"></p>'),
+  // FR-045 (Phase 2 fixtures): the fields an agent must not type into
+  '/fields': () => html('Sensitive fields', '<form onsubmit="return false"><label>Name <input id="name" name="name" autocomplete="name"></label><label>Password <input id="pw" type="password" name="pw" autocomplete="current-password"></label><label>One-time code <input id="otp" name="otp" autocomplete="one-time-code" inputmode="numeric"></label><label>Card number <input id="cc" name="cc" autocomplete="cc-number" inputmode="numeric"></label><button id="go" type="submit">Go</button></form>'),
+  // FR-046 (Phase 2 fixture): a button that an element slides over after a moment, so a click at the button's old position hits the cover
+  '/slide': () => html('Sliding element', '<button id="target" style="position:absolute;left:40px;top:160px;width:160px;height:48px">Target</button><div id="cover" style="position:absolute;left:-200px;top:150px;width:240px;height:70px;background:#fc0;animation:s 400ms 300ms forwards">Cover</div><p id="result"></p><script>document.getElementById("target").addEventListener("click",function(){document.getElementById("result").textContent="target clicked";});</script>', '<style>@keyframes s{to{left:20px}}</style>'),
+  // a script redirect to another test host (a page-started navigation to another origin)
+  '/redirect': () => html('Redirecting', '<p>You are being sent to another test host.</p><script>setTimeout(function(){location.replace("durbar-sim://other/landing");},150);</script>'),
+  // FR-025c: a basic-auth challenge; the view cancels it, so the 401 body is what shows
+  '/auth': () => ({ status: 401, headers: { 'content-type': 'text/html; charset=utf-8', 'www-authenticate': 'Basic realm="sim"' }, body: page('Unauthorized', '<p id="result">Authentication is cancelled in the session browser.</p>') }),
+  // SC-002 / SC-004: what a session's storage holds; `?set=v` writes it
+  '/storage': (r) => html('Storage', '<p id="result"></p><script>(function(){var v=' + JSON.stringify(r.query.get('set')).replace(/</g, '\\u003c') + ';if(v!==null){localStorage.setItem("k",v);document.cookie="c="+encodeURIComponent(v)+"; path=/";}document.getElementById("result").textContent="k="+localStorage.getItem("k")+";c="+(document.cookie||"none");})();</script>'),
   '/slow': async (r) => {
     const asked = Number(r.query.get('ms'));
     const ms = Number.isFinite(asked) && asked >= 0 ? Math.min(asked, 10_000) : SIM_SLOW_MS;
@@ -82,7 +94,9 @@ export async function simPage(rawUrl: string, method = 'GET', body = ''): Promis
   } catch {
     return notFound();
   }
-  if (u.protocol !== SIM_VIEW_SCHEME || u.hostname !== SIM_PAGE_HOST) return notFound();
+  if (u.protocol !== SIM_VIEW_SCHEME) return notFound();
+  if (u.hostname === SIM_OTHER_HOST) return u.pathname === '/landing' ? html('Another test host', '<p id="result">You arrived at the other host.</p>') : notFound();
+  if (u.hostname !== SIM_PAGE_HOST) return notFound();
   const name = u.pathname === '/' ? '/index' : u.pathname;
   const make = Object.prototype.hasOwnProperty.call(PAGES, name) ? PAGES[name] : undefined;
   if (!make) return notFound();

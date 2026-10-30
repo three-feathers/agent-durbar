@@ -50,10 +50,10 @@ function fakeSession(id: string) {
   });
   const view = { webContents: wc, bounds: undefined as unknown, setBounds(b: unknown) { this.bounds = b; } };
   const navs: unknown[] = [];
-  const sv = { id, view, driver: 'user' as const, navs, events: undefined as unknown as import('../src/main/browser/views').ViewEvents, navigate: async (a: unknown) => { navs.push(a); return true; }, destroy: async () => undefined };
+  const sv = { id, view, driver: 'user' as const, navs, events: undefined as unknown as import('../src/main/browser/views').ViewEvents, navigate: async (a: unknown) => { navs.push(a); if (a && typeof a === 'object') { wc.url = (a as { url: string }).url; wc.emit('did-start-navigation'); wc.emit('did-navigate'); } return true; }, destroy: async () => undefined };
   return { wc, view, sv, navs };
 }
-function rig(opts: { sim?: boolean; known?: (id: string) => boolean; win?: ReturnType<typeof fakeWin> | undefined; zoom?: number; consent?: boolean; snapshotMs?: number } = {}) {
+function rig(opts: { sim?: boolean; known?: (id: string) => boolean; win?: ReturnType<typeof fakeWin> | undefined; zoom?: number; consent?: boolean; snapshotMs?: number; now?: () => number } = {}) {
   const win = 'win' in opts ? opts.win : fakeWin(undefined, opts.zoom);
   const sessions = new Map<string, ReturnType<typeof fakeSession>>();
   const ensured: string[] = [];
@@ -67,6 +67,7 @@ function rig(opts: { sim?: boolean; known?: (id: string) => boolean; win?: Retur
   const consent = { on: opts.consent !== false };
   const deps: BrowserDeps = {
     snapshotMs: opts.snapshotMs,
+    now: opts.now,
     consented: () => consent.on,
     pageDialog: (d) => void dialogs.push(d),
     askLeave: async (id, known, shown) => (leaves.push([id, known, shown]), true),
@@ -209,16 +210,16 @@ process.on('exit', () => {
     await r.ctl.open('s1');
     r.flush();
     const wc = r.sessions.get('s1')!.wc;
-    wc.url = 'https://user:pw@example.com/a?q=1';
+    wc.url = 'https://user:pw@example.invalid/a?q=1';
     wc.title = 'Hello\u0000\u0007 world ' + 'x'.repeat(500);
     wc.loading = true;
     wc.canBack = true;
     wc.emit('did-navigate');
     r.flush();
     const s = r.emitted[r.emitted.length - 1];
-    assert.deepStrictEqual(Object.keys(s).sort(), STATE_KEYS.filter((k) => k !== 'error' && k !== 'note').sort(), 'exactly the BrowserState keys');
+    assert.deepStrictEqual(Object.keys(s).sort(), STATE_KEYS.filter((k) => k !== 'error' && k !== 'note' && k !== 'memory').sort(), 'exactly the BrowserState keys');
     for (const [k, v] of Object.entries(s)) assert.ok(['string', 'boolean'].includes(typeof v), `${k} is a primitive (${typeof v})`);
-    assert.strictEqual(s.url, 'https://example.com/a?q=1', 'userinfo dropped');
+    assert.strictEqual(s.url, 'https://example.invalid/a?q=1', 'userinfo dropped');
     assert.ok(!/pw/.test(JSON.stringify(s)));
     assert.ok(s.title.startsWith('Hello') && !/[\u0000-\u001f]/.test(s.title) && s.title.length <= 200, 'title cleaned and cut');
     assert.strictEqual(s.loading, true);
@@ -275,15 +276,15 @@ process.on('exit', () => {
     const r = rig();
     await r.ctl.open('s1');
     const s1 = r.sessions.get('s1')!;
-    for (const bad of ['file:///etc/passwd', 'javascript:alert(1)', 'https://user:pw@example.com/', 'two words', '', 5, null, 'durbar-sim://pages/form', 'chrome://gpu', 'data:text/html,hi']) {
+    for (const bad of ['file:///etc/passwd', 'javascript:alert(1)', 'https://user:pw@example.invalid/', 'two words', '', 5, null, 'durbar-sim://pages/form', 'chrome://gpu', 'data:text/html,hi']) {
       const res = await r.ctl.navigate('s1', bad);
       assert.strictEqual(res.ok, false, `refused: ${String(bad)}`);
       assert.ok(!res.ok && typeof res.reason === 'string' && res.reason.length > 5);
     }
     assert.deepStrictEqual(s1.navs, [], 'nothing was loaded');
     assert.ok((await r.ctl.navigate('s1', 'localhost:3000')).ok);
-    assert.ok((await r.ctl.navigate('s1', 'example.com/a')).ok);
-    assert.deepStrictEqual(s1.navs, [{ url: 'http://localhost:3000/' }, { url: 'https://example.com/a' }]);
+    assert.ok((await r.ctl.navigate('s1', 'example.invalid/a')).ok);
+    assert.deepStrictEqual(s1.navs, [{ url: 'http://localhost:3000/' }, { url: 'https://example.invalid/a' }]);
     await r.ctl.history('s1', 'back'); await r.ctl.history('s1', 'forward'); await r.ctl.history('s1', 'reload');
     assert.deepStrictEqual(s1.navs.slice(2), ['back', 'forward', 'reload']);
     assert.strictEqual((await r.ctl.history('s1', 'sideways')).ok, false);
@@ -305,9 +306,9 @@ process.on('exit', () => {
       wc.url = u;
       assert.deepStrictEqual(await r.ctl.openSystem('s1'), { ok: false }, u);
     }
-    wc.url = 'https://example.com/x';
+    wc.url = 'https://example.invalid/x';
     assert.deepStrictEqual(await r.ctl.openSystem('s1'), { ok: true });
-    assert.deepStrictEqual(r.opened, ['https://example.com/x']);
+    assert.deepStrictEqual(r.opened, ['https://example.invalid/x']);
     assert.deepStrictEqual(await r.ctl.openSystem('nobody'), { ok: false });
   }
   // teardown: off the window first, the view destroyed, the window told
@@ -343,7 +344,7 @@ process.on('exit', () => {
   // ---- consent (FR-025d, Q2): no view before the user accepted ----
   {
     const r = rig({ consent: false });
-    for (const res of [await r.ctl.open('s1'), await r.ctl.navigate('s1', 'localhost:3000'), await r.ctl.open('s1', 'example.com')]) assert.ok(!res.ok && res.needsConsent === true, 'refused until the note is accepted');
+    for (const res of [await r.ctl.open('s1'), await r.ctl.navigate('s1', 'localhost:3000'), await r.ctl.open('s1', 'example.invalid')]) assert.ok(!res.ok && res.needsConsent === true, 'refused until the note is accepted');
     assert.deepStrictEqual(r.ensured, [], 'no view is made before the user accepted');
     r.consent.on = true;
     assert.ok((await r.ctl.open('s1')).ok);
@@ -434,6 +435,194 @@ process.on('exit', () => {
     const src = fs.readFileSync(path.join(ROOT, 'src/main/browser/controller.ts'), 'utf8');
     assert.ok(/Promise\.race\(\[t\.wc\.capturePage\(\)/.test(src), 'the capture has a time limit');
   }
+  // ---- chat links (spec 080 T017, FR-030, FR-024): main classifies, whatever the window did ----
+  {
+    const HOSTILE = ['ms-msdt:/id', 'search-ms:query=x', 'search:query=x', 'ms-officecmd:x', 'ms-settings:x', 'smb://host/share', 'file:///etc/hostname', 'vscode://file/x', 'slack://open', 'tel:+123', 'MS-MSDT:x', '  ms-msdt:x', 'javascript:alert(1)', 'data:text/html,hi', 'chrome://gpu', 'view-source:https://a.com', 'durbar-sim://pages/form', '', 'not a url', 'https://user:pw@example.invalid/', 'https://a.com/\u0001'];
+    const r = rig();
+    for (const u of HOSTILE) {
+      const res = await r.ctl.openLink('s1', u);
+      assert.strictEqual(res.ok, false, `refused or not opened: ${JSON.stringify(u)}`);
+      if (/user:pw/.test(u)) assert.ok(!res.ok && !res.link, 'a web link with a user name is refused by the address rules, not as another scheme');
+      else assert.ok(!res.ok && res.link === 'refused' && res.reason === 'Durbar opens only mail links in other apps.', `static refusal text for ${JSON.stringify(u)}: ${JSON.stringify(res)}`);
+    }
+    for (const bad of [undefined, null, 5, {}]) assert.strictEqual((await r.ctl.openLink('s1', bad)).ok, false);
+    assert.deepStrictEqual(r.opened, [], 'zero shell.openExternal calls for the whole hostile list');
+    assert.deepStrictEqual(r.ensured, [], 'and no view was made for a link that is not a web link');
+    // a mail link: no offer to the system until the user's click
+    const m = await r.ctl.openLink('s1', 'mailto:a@example.invalid');
+    assert.ok(!m.ok && m.link === 'mailto' && m.reason === 'This link wants to open your mail app.');
+    assert.deepStrictEqual(r.opened, [], 'a mail link opens nothing by itself');
+    for (const u of HOSTILE.concat(['https://example.invalid/', 'http://localhost:3000/', 'MAILTO:x@y.z.evil'])) {
+      if (u.toLowerCase().startsWith('mailto:')) continue;
+      assert.deepStrictEqual(await r.ctl.openMail(u), { ok: false }, `openMail refuses ${JSON.stringify(u)}`);
+    }
+    assert.deepStrictEqual(r.opened, [], 'openMail never hands anything but mailto: to the system');
+    assert.deepStrictEqual(await r.ctl.openMail('  mailto:a@example.invalid?subject=hi '), { ok: true });
+    assert.deepStrictEqual(r.opened, ['mailto:a@example.invalid?subject=hi'], 'only after the click, and only the mail link');
+    assert.deepStrictEqual(await r.ctl.openMail('MAILTO:x@y.z'), { ok: true }, 'the scheme is case-insensitive like the classifier');
+    // 2026-10-30 security review: what is handed to the system is a normalised mail link from a conservative grammar, never the raw text
+    {
+      const HOSTILE_MAIL = ['mailto:a"b --x', 'mailto:a b@example.invalid', 'mailto:\\\\host\\share', 'mailto:%00@example.invalid', 'mailto:a@example.invalid?attach=C:\\x', 'mailto:' + 'a'.repeat(4000) + '@example.invalid',
+        'mailto:a@example.invalid?subject=x%0d%0abcc=y', 'mailto:a@example.invalid?body=hi', 'mailto:a@example.invalid?from=b@example.invalid', 'mailto:a@example.invalid?subject=hi&attach=x', 'mailto:a@example.invalid?cc=<b@example.invalid>',
+        'mailto:<a>@example.invalid', 'mailto:a@example.invalid%22', 'mailto:a%5Cb@example.invalid', 'mailto:a%20b@example.invalid', 'mailto:', 'mailto:@example.invalid', 'mailto:a@example.invalid?', 'mailto:a@example.invalid?subject', 'mailto:a@example.invalid?subject=%00',
+        'mailto:a@example.invalid?subject=a b', 'mailto:a@example.invalid,,b@example.invalid', 'mailto:a@example.invalid?cc=x', 'mailto:a..b@example.invalid', 'mailto:a@example.invalid?subject=' + 'x'.repeat(600),
+        // escaped Unicode controls and format characters, invalid UTF-8, double encoding (2026-10-30 review)
+        'mailto:a@example.invalid?subject=x%C2%85y', 'mailto:a@example.invalid?subject=x%E2%80%A8y', 'mailto:a@example.invalid?subject=x%E2%80%A9y', 'mailto:a@example.invalid?subject=x%E2%80%AEy', 'mailto:a@example.invalid?subject=x%E2%81%A6y', 'mailto:a@example.invalid?subject=x%E2%80%8By',
+        'mailto:a@example.invalid?subject=x%EF%BB%BFy', 'mailto:a@example.invalid?subject=x%C2%9Fy', 'mailto:a%C2%85@example.invalid', 'mailto:a@example.invalid?subject=%C0%80', 'mailto:a@example.invalid?subject=%2541', 'mailto:a%2541@example.invalid',
+        'mailto:a@example.invalid?subject=%25%30A', 'mailto:a@example.invalid?subject=%25%32%35', 'mailto:a@example.invalid?subject=x%C2%ADy', 'mailto:a@example.invalid?subject=x%E2%81%A0y', 'mailto:a@example.invalid?subject=x%F3%A0%80%81y', 'mailto:a@example.invalid?subject=50%25', 'mailto:a@example.invalid?subject=x%E2%80%8Dy',
+        // host labels and the local part
+        'mailto:a@.', 'mailto:a@-.com', 'mailto:a@-b.com', 'mailto:a@b-.com', 'mailto:a@b..com', 'mailto:a@b.com.', 'mailto:-a@b.com', 'mailto:a@example.invalid?cc=a@-b.com'];
+      const r2 = rig();
+      for (const u of HOSTILE_MAIL) {
+        assert.deepStrictEqual(await r2.ctl.openMail(u), { ok: false }, `openMail refuses ${JSON.stringify(u.slice(0, 60))}`);
+        const c = await r2.ctl.openLink('s1', u);
+        assert.ok(!c.ok && c.link === 'refused' && c.reason === 'Durbar opens only mail links in other apps.', `a hostile mail link is refused with static text and no button: ${JSON.stringify(u.slice(0, 60))}`);
+      }
+      assert.deepStrictEqual(r2.opened, [], 'nothing hostile reached the system');
+      const GOOD: [string, string][] = [['mailto:a@example.invalid?subject=Hi%20there', 'mailto:a@example.invalid?subject=Hi%20there'], ['  MAILTO:a@example.invalid,b+c@example.invalid?cc=d@example.invalid&Subject=x', 'mailto:a@example.invalid,b+c@example.invalid?cc=d@example.invalid&subject=x'], ['mailto:a%2Bb@example.invalid', 'mailto:a%2Bb@example.invalid'], ['mailto:a@example.invalid?subject=caf%C3%A9', 'mailto:a@example.invalid?subject=caf%C3%A9'], ['mailto:a@x-y.example.invalid', 'mailto:a@x-y.example.invalid']];
+      for (const [raw, norm] of GOOD) {
+        const lr = await r2.ctl.openLink('s1', raw);
+        assert.ok(!lr.ok && lr.link === 'mailto', `a good mail link is offered: ${raw}`);
+        assert.deepStrictEqual(await r2.ctl.openMail(raw), { ok: true }, raw);
+        assert.strictEqual(r2.opened[r2.opened.length - 1], norm, 'the normalised href is what opens');
+      }
+      assert.strictEqual(r2.opened.length, GOOD.length);
+      // the link's own text never reaches the system as sent: only the parsed one does
+      const src = fs.readFileSync(path.join(ROOT, 'src/main/browser/controller.ts'), 'utf8');
+      assert.ok(/const href = parseMailto\(url\);[\s\S]*?deps\.openExternal\(href\)/.test(src) && !/openExternal\(\(url as string\)/.test(src), 'openMail hands over the normalised href');
+    }
+    // a web link opens in that session's own view, never in another (SC-002, FR-030)
+    const a = await r.ctl.openLink('s1', 'https://example.invalid/docs?x=1');
+    assert.ok(a.ok);
+    const b = await r.ctl.openLink('s2', 'http://localhost:3000/');
+    assert.ok(b.ok);
+    assert.deepStrictEqual(r.sessions.get('s1')!.navs, [{ url: 'https://example.invalid/docs?x=1' }], "A's link loads in A only");
+    assert.deepStrictEqual(r.sessions.get('s2')!.navs, [{ url: 'http://localhost:3000/' }], "B's link loads in B only");
+    assert.deepStrictEqual(r.opened.length, 2, 'a web link never calls the system either (only the two mail clicks above)');
+    assert.strictEqual((await r.ctl.openLink('nobody', 'https://example.invalid/')).ok, false, 'the session is looked up in main');
+    assert.strictEqual((await r.ctl.openLink('../s1', 'https://example.invalid/')).ok, false);
+    // the one-time note comes first
+    const c = rig({ consent: false });
+    const cr = await c.ctl.openLink('s1', 'https://example.invalid/');
+    assert.ok(!cr.ok && cr.needsConsent === true && c.ensured.length === 0, 'no view before the note is accepted');
+    // the simulator's test pages only under the simulator
+    const sim = rig({ sim: true });
+    assert.ok((await sim.ctl.openLink('s1', 'durbar-sim://pages/form')).ok);
+    assert.ok(!(await sim.ctl.openLink('s1', 'durbar-sim://evil/form')).ok);
+    const nosim = rig();
+    assert.ok(!(await nosim.ctl.openLink('s1', 'durbar-sim://pages/form')).ok, 'refused outside the simulator');
+    assert.deepStrictEqual(nosim.sessions.size, 0);
+  }
+  // ---- the soft cap on loaded pages (FR-011, T013 AC3/AC4) ----
+  {
+    let clock = 1000;
+    const mk = () => rig({ now: () => clock++ });
+    const loadIn = async (r: ReturnType<typeof mk>, id: string, url: string, keep = false): Promise<void> => {
+      await r.ctl.open(id);
+      r.ctl.bounds(id, B);
+      r.ctl.visible(id, true);
+      await r.ctl.navigate(id, url);
+      r.flush();
+      if (!keep) r.ctl.visible(id, false);
+    };
+    const urlOf = (r: ReturnType<typeof mk>, id: string): string => (r.ctl.stateOf(id) as BrowserState).url;
+    // six pages with no forms: four stay loaded, the two least recently shown are dropped, and come back with the note
+    {
+      const r = mk();
+      for (let i = 1; i <= 6; i++) await loadIn(r, 's' + i, `https://site${i}.example/`);
+      r.flush();
+      const loaded = ['s1', 's2', 's3', 's4', 's5', 's6'].filter((id) => urlOf(r, id) !== '');
+      assert.deepStrictEqual(loaded, ['s3', 's4', 's5', 's6'], 'four are loaded; the two least recently shown were dropped');
+      assert.strictEqual(r.sessions.get('s1')!.wc.url, 'about:blank');
+      assert.strictEqual((r.ctl.stateOf('s6') as BrowserState).memory, undefined, 'no note while a safe view could be dropped');
+      // shown again: it reloads its own address, says so, and another view makes room
+      r.ctl.bounds('s1', B);
+      r.ctl.visible('s1', true);
+      r.flush();
+      assert.deepStrictEqual(r.sessions.get('s1')!.navs.slice(-1), [{ url: 'https://site1.example/' }], 'reloaded from its kept address');
+      assert.strictEqual((r.ctl.stateOf('s1') as BrowserState).memory, 'reloaded', 'with *Reloaded to save memory*');
+      const loaded2 = ['s1', 's2', 's3', 's4', 's5', 's6'].filter((id) => urlOf(r, id) !== '');
+      assert.strictEqual(loaded2.length, 4, 'still four loaded');
+      assert.ok(urlOf(r, 's1') !== '' && urlOf(r, 's2') === '' && urlOf(r, 's3') === '', 's2 and s3 are the least recently shown now');
+      // the note goes with the next navigation of that view
+      await r.ctl.navigate('s1', 'https://other.example/');
+      r.flush();
+      assert.strictEqual((r.ctl.stateOf('s1') as BrowserState).memory, undefined);
+      // the view on screen is never dropped
+      const shown = mk();
+      await loadIn(shown, 's1', 'https://a.example/', true);
+      for (let i = 2; i <= 6; i++) await loadIn(shown, 's' + i, `https://site${i}.example/`);
+      assert.notStrictEqual(urlOf(shown, 's1'), '', 'the shown view stays loaded');
+    }
+    // typing in a page protects it (AC4): five typed pages are never dropped, the sixth says too many are open
+    {
+      const r = mk();
+      for (let i = 1; i <= 5; i++) {
+        await loadIn(r, 's' + i, `https://site${i}.example/`);
+        r.sessions.get('s' + i)!.wc.emit('input-event', {}, { type: 'char' });
+      }
+      await loadIn(r, 's6', 'https://site6.example/');
+      r.flush();
+      for (let i = 1; i <= 6; i++) assert.notStrictEqual(urlOf(r, 's' + i), '', `s${i} stays loaded`);
+      assert.strictEqual((r.ctl.stateOf('s6') as BrowserState).memory, 'many', 'the newest says *Many pages are open; close some to save memory*');
+      // a key that is not a character does not protect a page; a new page resets the protection
+      const k = mk();
+      for (let i = 1; i <= 5; i++) await loadIn(k, 's' + i, `https://site${i}.example/`);
+      k.sessions.get('s2')!.wc.emit('input-event', {}, { type: 'keyDown' });
+      k.flush();
+      assert.strictEqual(urlOf(k, 's1'), '', 'a plain key down protects nothing: s1 (least recent) was dropped');
+      const n = mk();
+      for (let i = 1; i <= 4; i++) await loadIn(n, 's' + i, `https://site${i}.example/`);
+      n.sessions.get('s1')!.wc.emit('input-event', {}, { type: 'char' });
+      await n.ctl.navigate('s1', 'https://fresh.example/'); // a new page: typing counts from its load
+      await loadIn(n, 's5', 'https://site5.example/');
+      assert.ok(urlOf(n, 's1') === '' || urlOf(n, 's2') === '', 'after a new page the old typing no longer protects it');
+    }
+    // a link clicked in a dropped page's chat: the new address wins, the old one is never loaded over it (2026-10-30 review)
+    {
+      const r = mk();
+      for (let i = 1; i <= 6; i++) await loadIn(r, 's' + i, `https://site${i}.example/`);
+      r.flush();
+      assert.strictEqual(urlOf(r, 's1'), '', 'precondition: s1 was dropped');
+      const res = await r.ctl.openLink('s1', 'https://clicked.example/new');
+      assert.ok(res.ok);
+      r.ctl.bounds('s1', B);
+      r.ctl.visible('s1', true);
+      r.flush();
+      assert.deepStrictEqual(r.sessions.get('s1')!.navs.slice(-1), [{ url: 'https://clicked.example/new' }], 'the clicked page is the last navigation: the old address is not reloaded over it');
+      assert.strictEqual(urlOf(r, 's1'), 'https://clicked.example/new');
+      assert.strictEqual((r.ctl.stateOf('s1') as BrowserState).memory, undefined, 'and no *Reloaded to save memory* note');
+      assert.ok(!r.sessions.get('s1')!.navs.some((n, i, a) => i > 0 && (n as { url?: string }).url === 'https://site1.example/' && i > a.length - 3), 'site1 is not loaded again');
+      // Reload on a dropped page brings it back; Back or typing an address does not load the old page
+      const k = mk();
+      for (let i = 1; i <= 6; i++) await loadIn(k, 's' + i, `https://site${i}.example/`);
+      k.flush();
+      await k.ctl.history('s1', 'reload');
+      k.flush();
+      assert.deepStrictEqual(k.sessions.get('s1')!.navs.slice(-1), [{ url: 'https://site1.example/' }], 'Reload on a dropped page loads its kept address');
+      assert.strictEqual((k.ctl.stateOf('s1') as BrowserState).memory, 'reloaded');
+      const m = mk();
+      for (let i = 1; i <= 6; i++) await loadIn(m, 's' + i, `https://site${i}.example/`);
+      m.flush();
+      await m.ctl.navigate('s1', 'https://typed.example/');
+      m.ctl.bounds('s1', B);
+      m.ctl.visible('s1', true);
+      m.flush();
+      assert.strictEqual(urlOf(m, 's1'), 'https://typed.example/', 'a typed address wins too');
+    }
+    // a page reached by a form is never dropped (the history's transition type)
+    {
+      const r = mk();
+      await loadIn(r, 's1', 'https://form.example/');
+      r.sessions.get('s1')!.sv.events.onNavigationKind!('s1', 'form_submit');
+      for (let i = 2; i <= 6; i++) await loadIn(r, 's' + i, `https://site${i}.example/`);
+      r.flush();
+      assert.notStrictEqual(urlOf(r, 's1'), '', 'the form page stays');
+      assert.strictEqual(urlOf(r, 's2'), '', 'the next least recent was dropped instead');
+      const src = fs.readFileSync(path.join(ROOT, 'src/main/browser/views.ts'), 'utf8');
+      assert.ok(/Page\.getNavigationHistory/.test(src) && /onNavigationKind/.test(src), 'views.ts reads the transition type from the debugger it owns');
+    }
+  }
   // ---- the still picture ----
   {
     const r = rig();
@@ -456,7 +645,7 @@ process.on('exit', () => {
   }
 
   // ---- 2. the wiring ----
-  const CH = ['open', 'state', 'navigate', 'back', 'forward', 'reload', 'stop', 'bounds', 'visible', 'overlay', 'mute', 'openSystem', 'consentAccept', 'snapshot', 'leaveAnswer'].map((c) => 'browser:' + c);
+  const CH = ['open', 'state', 'navigate', 'back', 'forward', 'reload', 'stop', 'bounds', 'visible', 'overlay', 'mute', 'openSystem', 'consentAccept', 'snapshot', 'leaveAnswer', 'openLink', 'openMail'].map((c) => 'browser:' + c);
   const ipcSrc = read('src/main/ipc/browser.ts');
   const ctlSrc = read('src/main/browser/controller.ts');
   {
@@ -517,6 +706,20 @@ process.on('exit', () => {
     const al = await get('alert?ms=50&n=2');
     assert.ok(/setTimeout\(go,50\)/.test(al.body) && /var n=2/.test(al.body) && /token=gh/.test(al.body), 'the alert page: delay and count from the query');
     assert.ok(!/ghp_/.test(fs.readFileSync(path.join(ROOT, 'src/main/browser/simpages.ts'), 'utf8')), 'no secret-looking literal in the source');
+    // T018 AC2: the sensitive fields, the sliding element, the script redirect, the basic-auth challenge, storage, a second host
+    const fields = (await get('fields')).body;
+    for (const needle of ['type="password"', 'autocomplete="one-time-code"', 'autocomplete="cc-number"']) assert.ok(fields.includes(needle), `fields page: ${needle}`);
+    const slide = (await get('slide')).body;
+    assert.ok(/id="target"/.test(slide) && /id="cover"/.test(slide) && /animation:s 400ms/.test(slide), 'the sliding element page');
+    assert.ok(/location\.replace\("durbar-sim:\/\/other\/landing"\)/.test((await get('redirect')).body), 'the script redirect goes to the other test host');
+    const other = await simPage('durbar-sim://other/landing');
+    assert.ok(other.status === 200 && other.body.includes('other host'));
+    assert.strictEqual((await simPage('durbar-sim://other/form')).status, 404, 'the other host serves its landing page only');
+    const auth = await get('auth');
+    assert.ok(auth.status === 401 && /Basic realm/.test(auth.headers['www-authenticate']), 'a basic-auth challenge');
+    const st = (await get('storage?set=v1')).body;
+    assert.ok(/localStorage\.setItem/.test(st) && /"v1"/.test(st), 'the storage page writes only on ?set=');
+    assert.ok(!(await get('storage?set=' + encodeURIComponent('</script><b>x'))).body.includes('</script><b>'), 'a value cannot close the script tag');
     const dl = await get('download');
     assert.ok(/attachment/.test(dl.headers['content-disposition']), 'the download page sends an attachment');
     const post = await simPage('durbar-sim://pages/form', 'POST', 'name=Ada&note=a+%3Cb%3E');

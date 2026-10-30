@@ -57,6 +57,10 @@ export function register(deps: BrowserIpcDeps): BrowserController {
     openExternal: (url) => (simulator ? Promise.resolve(false) : shell.openExternal(url)), // the simulator never opens the real desktop
   });
   ipcHandle('browser:open', (e, id: unknown, address: unknown) => (fromApp(e) ? ctl.open(id, address) : REFUSED));
+  // the url of a chat link is agent text: main classifies it (web / mail / refused) whatever the window did; the window is trusted only as far as the other channels here
+  ipcHandle('browser:openLink', (e, id: unknown, url: unknown) => (fromApp(e) ? ctl.openLink(id, url) : REFUSED));
+  // the only way a browser link reaches another app: a mailto: link after the user's click, re-checked here
+  ipcHandle('browser:openMail', (e, url: unknown) => (fromApp(e) ? ctl.openMail(url) : { ok: false }));
   ipcHandle('browser:state', (e, id: unknown) => (fromApp(e) ? ctl.state(id) : REFUSED));
   ipcHandle('browser:navigate', (e, id: unknown, address: unknown) => (fromApp(e) ? ctl.navigate(id, address) : REFUSED));
   ipcHandle('browser:back', (e, id: unknown) => (fromApp(e) ? ctl.history(id, 'back') : REFUSED));
