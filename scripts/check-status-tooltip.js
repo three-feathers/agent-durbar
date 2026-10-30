@@ -46,6 +46,23 @@ module.exports = async (ctx) => {
   const click = async (k) => { await hover(k); const p = await rectOf(k); wc().sendInputEvent({ type: 'mouseDown', x: p.x, y: p.y, button: 'left', clickCount: 1 }); wc().sendInputEvent({ type: 'mouseUp', x: p.x, y: p.y, button: 'left', clickCount: 1 }); };
   const shown = `(()=>{const t=document.getElementById('appTip');return !!t&&!t.hidden&&t.getClientRects().length>0})()`;
   const hidden = `(()=>{const t=document.getElementById('appTip');return !t||t.hidden||!t.getClientRects().length})()`;
+  // Windows runners: the OS can take the window's focus or move it at any moment, and the tooltip rightly hides on a window blur, resize or
+  // scroll (FR-187), so a step that fails is tried again (up to 3 times) only when such a trusted event came; with none it fails at once
+  const osWatch = () => js(`(()=>{window.__osEv=[];if(!window.__osWatch){window.__osWatch=1;['blur','resize','scroll'].forEach(t=>window.addEventListener(t,e=>{if(e.isTrusted&&(t!=='blur'||e.target===window))window.__osEv.push(t);},true));}})()`);
+  const osEvents = () => js(`(window.__osEv||[]).join(',')`);
+  const focusWin = async () => { for (let i = 0; i < 20 && !(await js(`document.hasFocus()`)); i++) { ctx.win.show(); ctx.win.focus(); wc().focus(); await ctx.sleep(150); } }; // a window the OS did not activate has no :focus-visible
+  const osRetry = async (what, fn) => {
+    for (let i = 0; ; i++) {
+      await focusWin(); await osWatch();
+      try { return await fn(); } catch (e) {
+        const ev = await osEvents();
+        if (!ev || i === 2) assert.fail(`${e.message} ${ev ? `(the OS took the window on 3 tries: ${ev})` : '(no window blur, resize or scroll came)'}`);
+        console.log(`[statustip] ${what}: the OS took the window (${ev}), trying again`);
+        await away();
+      }
+    }
+  };
+  const hoverShown = (k, what) => osRetry(what, async () => { await hover(k); await ok(shown, what, 1500); }); // at once: no system delay, a poll or two
   const tipText = () => js(`document.getElementById('appTip').textContent`);
   const count = (k) => js(`+document.querySelector(${jsLiteral(pill(k) + ' b')}).textContent`);
   const on = (k) => js(`document.querySelector(${jsLiteral(pill(k))}).getAttribute('aria-pressed')==='true'`);
@@ -80,8 +97,7 @@ module.exports = async (ctx) => {
 
     // hover: each count, at once, with its state and count; moving away hides it
     for (const k of KEYS) {
-      await hover(k);
-      await ok(shown, `${tag}: hovering ${k} shows the tooltip`, 1500); // at once: no system delay, a poll or two
+      await hoverShown(k, `${tag}: hovering ${k} shows the tooltip`);
       const n = await count(k);
       assert.strictEqual(await tipText(), expected(k, n, false), `${tag}: ${k} text: ${await tipText()}`);
       checkGeo(await geo(k), k, `${tag} ${k} hover`);
@@ -91,30 +107,32 @@ module.exports = async (ctx) => {
     }
 
     // keyboard focus: Tab to a pill, Escape, and it stays hidden until focus returns
-    await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur();document.body.focus()`);
-    for (let i = 0; i < 20 && !(await js(`document.hasFocus()`)); i++) { ctx.win.show(); ctx.win.focus(); wc().focus(); await ctx.sleep(150); } // a window the OS did not activate has no :focus-visible
-    assert.ok(await js(`document.hasFocus()`), `${tag}: the page has focus`);
-    let k0 = null;
-    for (let i = 0; i < 40 && !k0; i++) { await H.key('Tab', [], { pause: 40 }); k0 = await js(`(document.activeElement&&document.activeElement.matches&&document.activeElement.matches('#stats .stat[data-k]'))?document.activeElement.dataset.k:null`); }
-    assert.ok(k0, `${tag}: Tab reaches a status count`);
-    await ok(shown, `${tag}: keyboard focus on ${k0} shows the tooltip`, 1500);
-    assert.strictEqual(await tipText(), expected(k0, await count(k0), await on(k0)), `${tag}: focus text`);
-    checkGeo(await geo(k0), k0, `${tag} ${k0} focus`);
-    await js(`window.__escSeen=0;window.__escCount=window.__escCount||(window.addEventListener('keydown',e=>{if(e.key==='Escape')window.__escSeen++;}),true)`);
-    await H.key('Escape', [], { pause: 60 });
-    await ok(hidden, `${tag}: Escape hides the tooltip`);
-    assert.strictEqual(await js(`window.__escSeen`), 0, `${tag}: that Escape is used up (it never reaches the window, so no panel closes)`);
-    await H.key('Escape', [], { pause: 60 });
-    assert.ok(await until(`window.__escSeen===1`, 1500), `${tag}: with no tooltip shown, Escape reaches the window as usual (the listener works)`);
-    assert.strictEqual(await js(`document.activeElement.dataset.k`), k0, `${tag}: Escape leaves focus on the pill`);
-    await js(`document.activeElement.blur()`); // focus away and back
-    await ok(hidden, `${tag}: focus elsewhere: no tooltip`);
-    await js(`document.querySelector(${jsLiteral(pill(k0))}).focus()`);
-    await ok(shown, `${tag}: focus returns to ${k0}: the tooltip shows again`, 1500);
-    await H.key('Tab', [], { pause: 60 }); // on to the next pill or control: the tooltip follows focus
-    await ok(`(()=>{const a=document.activeElement;return a&&a.dataset&&a.dataset.k&&a.dataset.k!==${jsLiteral(k0)}?document.getElementById('appTip').textContent.startsWith((a.dataset.k[0].toUpperCase()+a.dataset.k.slice(1))+' · '):document.getElementById('appTip').hidden})()`, `${tag}: Tab moves the tooltip to the next pill or hides it`);
-    await js(`document.activeElement.blur()`);
-    await ok(hidden, `${tag}: blur hides it`);
+    await osRetry(`${tag}: keyboard`, async () => {
+      await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur();document.body.focus()`);
+      await focusWin();
+      assert.ok(await js(`document.hasFocus()`), `${tag}: the page has focus`);
+      let k0 = null;
+      for (let i = 0; i < 40 && !k0; i++) { await H.key('Tab', [], { pause: 40 }); k0 = await js(`(document.activeElement&&document.activeElement.matches&&document.activeElement.matches('#stats .stat[data-k]'))?document.activeElement.dataset.k:null`); }
+      assert.ok(k0, `${tag}: Tab reaches a status count`);
+      await ok(shown, `${tag}: keyboard focus on ${k0} shows the tooltip`, 1500);
+      assert.strictEqual(await tipText(), expected(k0, await count(k0), await on(k0)), `${tag}: focus text`);
+      checkGeo(await geo(k0), k0, `${tag} ${k0} focus`);
+      await js(`window.__escSeen=0;window.__escCount=window.__escCount||(window.addEventListener('keydown',e=>{if(e.key==='Escape')window.__escSeen++;}),true)`);
+      await H.key('Escape', [], { pause: 60 });
+      await ok(hidden, `${tag}: Escape hides the tooltip`);
+      assert.strictEqual(await js(`window.__escSeen`), 0, `${tag}: that Escape is used up (it never reaches the window, so no panel closes)`);
+      await H.key('Escape', [], { pause: 60 });
+      assert.ok(await until(`window.__escSeen===1`, 1500), `${tag}: with no tooltip shown, Escape reaches the window as usual (the listener works)`);
+      assert.strictEqual(await js(`document.activeElement.dataset.k`), k0, `${tag}: Escape leaves focus on the pill`);
+      await js(`document.activeElement.blur()`); // focus away and back
+      await ok(hidden, `${tag}: focus elsewhere: no tooltip`);
+      await js(`document.querySelector(${jsLiteral(pill(k0))}).focus()`);
+      await ok(shown, `${tag}: focus returns to ${k0}: the tooltip shows again`, 1500);
+      await H.key('Tab', [], { pause: 60 }); // on to the next pill or control: the tooltip follows focus
+      await ok(`(()=>{const a=document.activeElement;return a&&a.dataset&&a.dataset.k&&a.dataset.k!==${jsLiteral(k0)}?document.getElementById('appTip').textContent.startsWith((a.dataset.k[0].toUpperCase()+a.dataset.k.slice(1))+' · '):document.getElementById('appTip').hidden})()`, `${tag}: Tab moves the tooltip to the next pill or hides it`);
+      await js(`document.activeElement.blur()`);
+      await ok(hidden, `${tag}: blur hides it`);
+    });
 
     // click hides it and turns the filter on; hovering again says Click to show all
     await click('idle');
@@ -122,15 +140,20 @@ module.exports = async (ctx) => {
     await ok(hidden, `${tag}: the click hides the tooltip`);
     await H.settle();
     await away();
-    await hover('idle');
-    await ok(shown, `${tag}: hovering the filtered pill shows the tooltip`, 1500);
+    await hoverShown('idle', `${tag}: hovering the filtered pill shows the tooltip`);
     assert.strictEqual(await tipText(), expected('idle', await count('idle'), true), `${tag}: filter-on text: ${await tipText()}`);
     // a redraw while shown (the folder filter changes the counts): new text, still shown, still clear of the pill
     const opt = await js(`(()=>{const o=[...document.querySelectorAll('#wsFilter option')].find(x=>x.value!=='all');return o?o.value:null})()`);
     if (opt) {
-      await js(`(()=>{const s=document.getElementById('wsFilter');s.value=${jsLiteral(opt)};s.dispatchEvent(new Event('change'))})()`);
-      await H.settle();
-      await ok(shown, `${tag}: still shown after the top bar redrew`);
+      await osRetry(`${tag}: redraw`, async () => { // from the filter 'all': hover, then the redraw
+        await js(`(()=>{const s=document.getElementById('wsFilter');s.value='all';s.dispatchEvent(new Event('change'))})()`);
+        await H.settle();
+        await hover('idle');
+        await ok(shown, `${tag}: shown before the redraw`, 1500);
+        await js(`(()=>{const s=document.getElementById('wsFilter');s.value=${jsLiteral(opt)};s.dispatchEvent(new Event('change'))})()`);
+        await H.settle();
+        await ok(shown, `${tag}: still shown after the top bar redrew`);
+      });
       assert.strictEqual(await tipText(), expected('idle', await count('idle'), await on('idle')), `${tag}: the text follows the redraw: ${await tipText()}`);
       checkGeo(await geo('idle'), 'idle', `${tag} after redraw`);
       await js(`(()=>{const s=document.getElementById('wsFilter');s.value='all';s.dispatchEvent(new Event('change'))})()`);
@@ -144,13 +167,11 @@ module.exports = async (ctx) => {
 
     // never sticks: scroll, window blur, resize, the pill going away
     for (const [what, code] of [['scroll', `document.getElementById('floor').dispatchEvent(new Event('scroll'))`], ['window blur', `window.dispatchEvent(new Event('blur'))`], ['resize', `window.dispatchEvent(new Event('resize'))`]]) {
-      await away(); await hover('waiting');
-      await ok(shown, `${tag}: shown before ${what}`, 1500);
+      await away(); await hoverShown('waiting', `${tag}: shown before ${what}`);
       await js(code);
       await ok(hidden, `${tag}: ${what} hides it`);
     }
-    await away(); await hover('done');
-    await ok(shown, `${tag}: shown before the pill goes away`, 1500);
+    await away(); await hoverShown('done', `${tag}: shown before the pill goes away`);
     // read in the same page task as the removal: the simulator redraws the counts on its own clock, and the pill that comes back under a
     // still pointer may rightly show its tooltip again, so a later poll would race that redraw (flaked 4 of 6 runs on Linux)
     assert.ok(await js(`(()=>{document.querySelector(${jsLiteral(pill('done'))}).remove();window.DurbarTip.refresh();const t=document.getElementById('appTip');return !t||t.hidden})()`), `${tag}: a pill that is gone takes its tooltip with it`);
@@ -158,8 +179,7 @@ module.exports = async (ctx) => {
     // the picture
     await H.load({ w, h });
     await H.calm({ blur: true });
-    await hover('idle');
-    await ok(shown, `${tag}: shown for the picture`, 1500);
+    await hoverShown('idle', `${tag}: shown for the picture`);
     await H.shot(path.join(OUT, `001-status-tooltip-${tag}.png`), { prep: 'none', settle: false, tag: 'statustip' });
     await away();
     console.log(`[statustip] ${tag} ok`);
@@ -174,8 +194,7 @@ module.exports = async (ctx) => {
     await ok(`window.THEME.current().id===${jsLiteral(theme)}`, theme + ' applied');
     await H.settle();
     for (const k of ['idle', 'error']) {
-      await away(); await hover(k);
-      await ok(shown, `${theme}: ${k} shows the tooltip`, 1500);
+      await away(); await hoverShown(k, `${theme}: ${k} shows the tooltip`);
       const g = await geo(k);
       checkGeo(g, k, `${theme} ${k}`);
       console.log(`[statustip] ${theme} ${k}: contrast ${g.ratio}:1`);
@@ -184,8 +203,7 @@ module.exports = async (ctx) => {
   await js(`window.THEME.setTheme(${jsLiteral(NIGHT)})`);
   await ok(`window.THEME.current().id==='night-tip'`, 'the dark theme applied');
   await H.settle();
-  await away(); await hover('waiting');
-  await ok(shown, 'dark theme: the tooltip shows', 1500);
+  await away(); await hoverShown('waiting', 'dark theme: the tooltip shows');
   checkGeo(await geo('waiting'), 'waiting', 'dark theme');
   console.log(`[statustip] dark theme: contrast ${(await geo('waiting')).ratio}:1`);
   await away();
@@ -199,8 +217,7 @@ module.exports = async (ctx) => {
   await H.click('#scrClose');
   await ok(`!document.getElementById('seriousSw')||!document.getElementById('seriousSw').getClientRects().length`, 'Settings closes');
   assert.ok(await js(`document.documentElement.hasAttribute('data-serious')`), 'Serious mode is on');
-  await away(); await hover('idle');
-  await ok(shown, 'Serious mode: the tooltip shows', 1500);
+  await away(); await hoverShown('idle', 'Serious mode: the tooltip shows');
   checkGeo(await geo('idle'), 'idle', 'Serious mode');
   console.log('[statustip] all checks passed');
 };
