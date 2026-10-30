@@ -104,6 +104,22 @@ module.exports = async (ctx) => {
     /* a canned demo chat (not live) has none either, and no Notes… item */
     await js(`document.getElementById('backBtn').click()`);
     await until(`!document.body.classList.contains('panel-open')`, 4000);
+    /* a HELPER's chat (it has a parent) has no notes (FR-042): the same message markup and a selection give no button */
+    {
+      const hp = await js(`(()=>{const h=window.__durbarSimUi.agents().find(a=>a.parent&&document.querySelector('#stage .helper[data-id="'+CSS.escape(a.id)+'"]'));return h?{id:h.id,parent:h.parent}:null})()`);
+      check(!!hp, `${tag}: a helper is on the office floor`);
+      if (hp) {
+        await js(`document.querySelector('#stage .helper[data-id="'+CSS.escape(${jsLiteral(hp.id)})+'"]').click()`);
+        check(await until(`document.body.classList.contains('panel-open')&&!!document.querySelector('#panel .panel-in.ro')`, 10000), `${tag}: the helper's chat is open`);
+        await settle();
+        /* the helper is made live in the page only, and a notes-enabled message is planted in its log, so only the parent test can hide the button */
+        const hs = await js(`(()=>{const U=window.__durbarSimUi,h=U.agents().find(a=>a.id===${jsLiteral(hp.id)}),was=h.live;h.live=true;const root=document.createElement('div');root.className='chat-inner';root.setAttribute('data-notes','1');root.innerHTML='<div class="msg agent"><div class="bubble"><button type="button" class="nt-btn" aria-label="Message actions">x</button>A planted helper reply with enough words to select.</div></div>';document.getElementById('chat').appendChild(root);const b=root.querySelector('.bubble');const t=[...b.childNodes].find(n=>n.nodeType===3);const r=document.createRange();r.setStart(t,2);r.setEnd(t,20);const s=getSelection();s.removeAllRanges();s.addRange(r);const sel=s.toString().length;const par=h.parent;h.parent='';const without=U.notes.selNow();h.parent=par;const withP=U.notes.selNow();h.live=was;root.remove();getSelection().removeAllRanges();return JSON.stringify({sel,without,withP,par:!!par})})()`).then(JSON.parse);
+        check(hs.sel > 0 && hs.par && hs.without === true, `${tag}: the planted message would show the button without the parent (the precondition: ${JSON.stringify(hs)})`);
+        check(hs.withP === false, `${tag}: a selection inside a message of a helper chat shows NO Save to notes button`);
+      }
+      await js(`document.getElementById('backBtn').click()`);
+      await until(`!document.body.classList.contains('panel-open')`, 4000);
+    }
     await js(`(()=>{const t=document.getElementById('demoToggle');t.checked=true;t.dispatchEvent(new Event('change',{bubbles:true}));})()`);
     check(await until(`document.querySelectorAll('#stage .desk[data-id]').length>0&&!!document.getElementById('demoToggle').checked`, 6000), `${tag}: the demo is on`);
     await js(`document.querySelector('#stage .desk[data-id]').click()`);
@@ -211,6 +227,14 @@ module.exports = async (ctx) => {
     await until(`!document.getElementById('modeMenu')`, 2000);
     const picked2 = await js(`__ntd.pick(${replyB},20,34)`);
     check(picked2.trim().length >= 10, `${tag}: a second selection is made (the precondition)`);
+    /* FR-042: the selection lies in reply A; the menu of ANOTHER message (the user's) does not offer the item */
+    check(await js(`(()=>{const u=document.querySelector('#chat .msg.user .bubble'),r=__ntd.dots().parentElement;return !!u&&u!==r&&!!u.querySelector(':scope > .nt-btn')&&!getSelection().isCollapsed&&r.contains(getSelection().anchorNode)})()`), `${tag}: the selection is in the reply and the user's message has its own ⋯ (the precondition)`);
+    await js(`document.querySelector('#chat .msg.user .bubble > .nt-btn').click()`);
+    check(await until(`!!document.querySelector('#modeMenu [data-nact="save"]')`, 3000), `${tag}: another message's ⋯ opens its menu`);
+    check(await js(`!document.querySelector('#modeMenu [data-nact="savesel"]')`), `${tag}: a selection in one message adds no Save selection item to another message's menu`);
+    await key('Escape');
+    await until(`!document.getElementById('modeMenu')`, 2000);
+    await js(`__ntd.pick(${replyB},20,34)`);
     await js(`__ntd.dots().click()`);
     check(await until(`!!document.querySelector('#modeMenu [data-nact="savesel"]')`, 3000), `${tag}: with a selection inside the message, ⋯ offers Save selection to notes`);
     check(await js(`[...document.querySelectorAll('#modeMenu [data-nact] b')].map(b=>b.textContent).join()==='Save to notes,Save selection to notes,Copy'||[...document.querySelectorAll('#modeMenu [data-nact] b')].map(b=>b.textContent).join()==='Show in notes,Save selection to notes,Copy'`), `${tag}: the menu order is Save, Save selection, Copy`);
