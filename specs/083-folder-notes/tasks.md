@@ -127,7 +127,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
   - AC2: a selection across messages or outside the log shows no button.
   - AC3: the message `⋯` has *Save selection to notes* while a selection lies inside it (keyboard path).
 - [ ] T034 [US4] The per-folder Notes screen. [FR-044, FR-045, FR-048] Split on 2026-10-30 into T034a and T034b (spec *Changes*, decided by the coordinator under Ruben's delegation): *Export…* needs T040's writer.
-- [ ] T034a [US4] The screen, its ways in and *Done*. [FR-044, FR-045]
+- [x] T034a [US4] The screen, its ways in and *Done*. [FR-044, FR-045]
   - AC1: reached from the folder `⋯` (*Notes (N)…*), the drawer's *All notes of this folder…* and Ctrl+K *Notes of <folder>*; nothing new on the office floor (`check:office` unchanged).
   - AC2: all notes, search, *Done (N)* folded, *Mark done* / *Mark not done*; done notes leave the `/` list and the count.
   - AC5: screenshots of the screen at both sizes.

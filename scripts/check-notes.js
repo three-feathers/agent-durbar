@@ -254,7 +254,7 @@ module.exports = async (ctx) => {
     /* Rename… */
         await js(`__ntd.row("onerror").querySelector('[data-nt="more"]').click()`);
     check(await until(`!!document.querySelector('#modeMenu [data-nmact="rename"]')`, 2000), `${tag}: a row's ⋯ opens the menu`);
-    check(await js(`[...document.querySelectorAll('#modeMenu [data-nmact] b')].map(b=>b.textContent).join()==='Rename…,Copy,Delete…'`), `${tag}: the row menu holds Rename…, Copy, Delete…`);
+    check(await js(`[...document.querySelectorAll('#modeMenu [data-nmact] b')].map(b=>b.textContent).join()==='Rename…,Copy,Mark done,Delete…'`), `${tag}: the row menu holds Rename…, Copy, Mark done (T034a), Delete…`);
     await js(`document.querySelector('#modeMenu [data-nmact="rename"]').click()`);
     check(await until(`!!document.querySelector('#modeDlg input')`, 3000), `${tag}: Rename… asks for the title`);
     await js(`(()=>{const t=document.querySelector('#modeDlg input');t.value='Renamed idea';t.dispatchEvent(new Event('input',{bubbles:true}));})()`);

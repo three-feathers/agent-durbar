@@ -29,14 +29,16 @@
   }
   function close(){
     if(!cur)return;
+    const after=cur.kind==='notes'&&typeof cur.onClose==='function'?cur.onClose:null; /* spec 083 T034a: the Notes screen puts the focus back */
     cur=null;root().hidden=true;root().innerHTML='';if(window.DurbarHarnesses&&window.DurbarHarnesses.shown)window.DurbarHarnesses.shown(false);
     document.body.classList.remove('screen-open');
     ['toolsBtn','settingsBtn'].forEach(id=>{const b=$(id);if(b)b.setAttribute('aria-pressed','false');});
+    if(after){try{after();}catch(e){/* the screen is closed whatever the hook does */}}
   }
   const isOpen=()=>!!cur;
   function paint(focus){
     if(!cur)return;
-    if(cur.kind==='tools')paintTools(focus);else if(cur.kind==='folder')paintFolder(focus);else paintSettings(focus);
+    if(cur.kind==='tools')paintTools(focus);else if(cur.kind==='folder')paintFolder(focus);else if(cur.kind==='notes')paintNotes(focus);else paintSettings(focus);
     if(cur.kind!=='settings'&&window.DurbarHarnesses&&window.DurbarHarnesses.shown)window.DurbarHarnesses.shown(false);
   }
   /* modal: body is an element or html; buttons [{label,value,cls}]; resolves value (or null when dismissed). `validate(root)` may return an error text (keeps it open and shows it), `true` (keeps it open; the caller already showed the error) or a promise of either. */
@@ -866,6 +868,20 @@
     const li=e.target.closest('li.srv');if(!li||!li.dataset.amb)return;
     const act=(e.target.closest('[data-act]')||{}).dataset;
     if(act&&act.act==='amb'){const sw0=e.target.closest('[data-act]');const on=sw0.getAttribute('aria-checked')!=='true';await X.bridge.mcpSetCli(li.dataset.amb,on);X.toast(esc(li.dataset.amb)+(on?' will start in new sessions.':' will not start in new sessions.'),3200);paintSettings();}
+  }
+
+  /* ---------------- a folder's Notes (spec 083 FR-044, T034a) ----------------
+     The frame only (the heading, Close, Esc); app.js paints the body into #nsHost with the drawer's row actions (cur.render). */
+  function openNotes(o){
+    if(!o||typeof o.render!=='function')return false;
+    open('notes',{key:String(o.key||''),name:String(o.name||''),render:o.render,onClose:o.onClose});
+    return true;
+  }
+  function paintNotes(focus){
+    const r=root();
+    r.innerHTML=head('Notes · '+cur.name)+'<div class="scr-body"><div id="nsHost"></div></div>';
+    wireHead();
+    cur.render(focus);
   }
 
   /* ---------------- a folder's MCP extras (spec 020) ---------------- */
@@ -1700,6 +1716,8 @@
   window.DurbarScreens={oneShotCostLine,aiCredits,
     init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,mask:ctx.mask,toast:(t)=>ctx.toast(ctx.esc(t),3600),onAccounts:(a)=>{if(ctx.setAccounts)ctx.setAccounts(a);},onBadge:setUpdBadge,onChange:(again)=>{X._hsRefresh=true;X._acctRefresh='check';if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
+    folderNotes:openNotes, /* spec 083 T034a: {key, name, render(focus), onClose()} */
+    notesKey:()=>cur&&cur.kind==='notes'?cur.key:null,
     openSettings:(section)=>{mcp=null;X._acctRefresh=X._acctRefresh==='check'?'check':true;open('settings',section==='mcp'||section==='harnesses'||section==='schedules'?{section}:null);},
     openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},
     agentMcp,

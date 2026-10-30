@@ -100,6 +100,7 @@ const PREV_KEYS=['mod','shift','H'], PREV_KEY=keyText(PREV_KEYS);
 var DN=window.DurbarNotes||null;
 var NOTES_KEYS=['mod','shift','M'];
 var NT={by:new Map(),open:null,ret:null,notice:null,ro:null,rv:new Map(),mm:new Map(),markT:0}; /* by: folder key -> {ok,notes,session,readOnly,error,unreadable}; open: {id} while the drawer shows */
+var NS={id:'',key:'',name:'',over:false,ret:null,doneOpen:false,sub:null}; /* spec 083 T034a: the folder's Notes screen (the chat it reads through, its folder key, where the focus goes back) */
 
 const SCHED_KEY=keyText(['mod','shift','S']); /* spec 044 FR-031: the top-bar Schedules button */
 const ADD_KEY=keyText(['mod','O']), ADDWS_KEY=keyText(['mod','shift','O']); /* spec 052 FR-164: + Folder, + Workspace (the Mac File menu has the same keys) */
@@ -2591,6 +2592,7 @@ async function notesFetch(a){
   if(NT.rv.size>1500)NT.rv.clear(); if(NT.mm.size>3000)NT.mm.clear(); /* the row and masked-text caches are keyed by id and rev (a changed note is a new key), so a refetch keeps them; bounded */
   if(ui.selected===a.id){ntCountSync(a);notesMarkSoon();}
   if(NT.open&&NT.open.id===a.id)notesPaint();
+  if(nsShown()&&NS.key===notesKey(a))nsPaint(false); /* spec 083 T034a: the folder's Notes screen */
   if(slashUi&&slashUi.a===a)slashUpdate();
   return st;
 }
@@ -2696,11 +2698,11 @@ async function addNoteUi(a,returnFocus){
   let r=null;try{r=await bridge.notesAdd(liveRoot(a).id,{text:String(res.text)});}catch(e){r=null;}
   if(!r||!r.ok){toast(esc((r&&r.error)||'Could not save the note.'),5000).classList.add('err');return;}
   await notesFetch(a);announce('Note saved.');
-  if(NT.open&&r.note)notesFocusRow(r.note.id);
+  if(nsShown()&&r.note)nsFocusRow(r.note.id);else if(NT.open&&r.note)notesFocusRow(r.note.id);
 }
 async function deleteNote(a,note,after){
   const title=safeMask(note.title)||'this note';
-  const res=await askDialog({title:'Delete note?',body:'Delete the note "'+title+'"? This cannot be undone.',returnFocus:()=>document.querySelector('#notesDrawer .nt-row[data-id="'+CSS.escape(note.id)+'"]')||$('ntAdd'),
+  const res=await askDialog({title:'Delete note?',body:'Delete the note "'+title+'"? This cannot be undone.',returnFocus:()=>ntRowEl(note.id)||$(ntHost().add),
     buttons:[{label:'Cancel',value:null},{label:'Delete',value:'ok',cls:'primary danger'}]});
   if(!res||res.value!=='ok')return;
   let r=null;try{r=await bridge.notesDelete(liveRoot(a).id,note.id,note.rev);}catch(e){r=null;}
@@ -2708,8 +2710,8 @@ async function deleteNote(a,note,after){
   await notesFetch(a);announce('Note deleted.');
   /* FR-014: focus goes to the next row, else the previous, else + Note */
   const tgt=after&&after.next||after&&after.prev;
-  const el=tgt&&document.querySelector('#notesDrawer .nt-row[data-id="'+CSS.escape(tgt)+'"]');
-  focusIn(el||$('ntAdd'));
+  const el=tgt&&ntRowEl(tgt);
+  focusIn(el||$(ntHost().add));
 }
 
 /* ---- inserting into the message box (FR-024): never sends ---- */
@@ -2744,13 +2746,14 @@ function placeNotesDrawer(){
   const d=$('notesDrawer'),c=$('chat'); if(!d||!c)return;
   d.style.top=c.offsetTop+'px';d.style.left=c.offsetLeft+'px';d.style.width=c.offsetWidth+'px';d.style.height=c.offsetHeight+'px';
 }
-function noteRowHTML(n,a,tab){
-  const ck=n.id+'|'+n.rev+'|'+a.name; let v=NT.rv.get(ck); if(!v){v=DN.rowView(n,SAFE,a.name);NT.rv.set(ck,v);} /* masked once per fetched note (SC-005) */
+function noteRowHTML(n,a,tab,o){
+  const nm=o&&typeof o.agentName==='string'?o.agentName:a.name; /* the screen names the agent only for its own chat's notes (T034a) */
+  const ck=n.id+'|'+n.rev+'|'+nm; let v=NT.rv.get(ck); if(!v){v=DN.rowView(n,SAFE,nm);NT.rv.set(ck,v);} /* masked once per fetched note (SC-005) */
   const title=v.title||'Untitled note';
   const meta=[v.when,v.from].filter(Boolean).join(' · ');
   return `<div class="nt-row" role="listitem" data-id="${esc(n.id)}" tabindex="${tab?0:-1}" aria-label="${esc(title)}">`
     +`<div class="nt-main"><b class="nt-title">${esc(title)}</b><span class="nt-meta">${esc(meta)}</span>${v.excerpt?`<p class="nt-ex">${esc(v.excerpt)}</p>`:''}</div>`
-    +`<div class="nt-acts"><button class="btn sm" type="button" data-nt="insert"${boxUsable()?'':` aria-disabled="true" title="${esc(BOX_NO_REASON)}"`}>Insert</button><button class="btn sm" type="button" data-nt="edit">Edit…</button><button class="btn sm nt-more" type="button" data-nt="more" aria-haspopup="menu" aria-label="More actions for this note" title="More actions for this note">${NT_DOTS}</button></div></div>`;
+    +`<div class="nt-acts">${o&&o.insert===false?'':`<button class="btn sm" type="button" data-nt="insert"${boxUsable()?'':` aria-disabled="true" title="${esc(BOX_NO_REASON)}"`}>Insert</button>`}<button class="btn sm" type="button" data-nt="edit">Edit…</button><button class="btn sm nt-more" type="button" data-nt="more" aria-haspopup="menu" aria-label="More actions for this note" title="More actions for this note">${NT_DOTS}</button></div></div>`;
 }
 function notesPaint(){
   const d=$('notesDrawer'),a=NT.open&&byId(NT.open.id); if(!d||!a||d.hidden)return;
@@ -2851,7 +2854,7 @@ const notesIsOpen=()=>!!(NT.open&&$('notesDrawer')&&!$('notesDrawer').hidden);
 function toggleNotes(a,opener){return notesIsOpen()?(closeNotes(true),Promise.resolve(false)):openNotes(a,{opener});}
 /* the drawer is a region of the chat, not a dialog (spec 083 FR-020): it is deliberately NOT a focus trap, the message box and the header stay reachable with Tab while it is open */
 function notesDrawerHTML(){
-  return `<div class="notes-drawer" id="notesDrawer" role="region" aria-label="Notes" hidden><div class="nt-head"><h3 class="nt-h">Notes</h3><input class="nt-find" id="ntSearch" type="search" placeholder="Search notes" aria-label="Search notes" autocomplete="off" spellcheck="false"><button class="btn sm" id="ntClose" type="button" aria-label="Close notes" title="Close (Esc)">Close</button></div><div class="nt-body" id="ntBody"></div><div class="nt-foot"><button class="btn sm primary" id="ntAdd" type="button">+ Note</button></div></div>`;
+  return `<div class="notes-drawer" id="notesDrawer" role="region" aria-label="Notes" hidden><div class="nt-head"><h3 class="nt-h">Notes</h3><input class="nt-find" id="ntSearch" type="search" placeholder="Search notes" aria-label="Search notes" autocomplete="off" spellcheck="false"><button class="btn sm" id="ntClose" type="button" aria-label="Close notes" title="Close (Esc)">Close</button></div><div class="nt-body" id="ntBody"></div><div class="nt-foot"><button class="btn sm primary" id="ntAdd" type="button">+ Note</button><button class="btn sm" id="ntAll" type="button" title="The Notes screen of this folder, done notes included">All notes of this folder…</button></div></div>`;
 }
 function wireNotesDrawer(a){
   const d=$('notesDrawer'); if(!d)return;
@@ -2861,6 +2864,7 @@ function wireNotesDrawer(a){
     const a2=byId(ui.selected); if(!a2)return;
     if(e.target.closest('#ntClose')){closeNotes(true);return;}
     if(e.target.closest('#ntAdd')){addNoteUi(a2,$('ntAdd'));return;}
+    if(e.target.closest('#ntAll')){openNotesScreen(a2,{opener:$('msgInput')});return;} /* spec 083 FR-044: the drawer closes; the screen's Close comes back to the message box */
     const b=e.target.closest('[data-nt]'); if(!b)return;
     if(b.dataset.nt==='startover'){startOverNotes(a2,b);return;}
     const row=b.closest('.nt-row'),st=notesOf(a2),n=row&&st&&st.notes.find(x=>x.id===row.dataset.id); if(!n)return;
@@ -2894,20 +2898,153 @@ function openNoteMenu(a,n,anchor,x,y){
   closeModeMenu();
   const it=(act,label,sub,cls)=>`<button type="button" role="menuitem" data-nmact="${act}"${cls?` class="${cls}"`:''} title="${esc(sub)}"><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu nt-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Actions for the note '+(safeMask(n.title)||''));
-  m.innerHTML=it('rename','Rename…','Change its title')+it('copy','Copy','Copy its text')+it('delete','Delete…','Remove it from the notes','mm-danger');
+  m.innerHTML=it('rename','Rename…','Change its title')+it('copy','Copy','Copy its text')
+    +(n.done===true?it('undone','Mark not done','Back among the notes to use'):it('done','Mark done','Out of the / list and the count; kept under Done')) /* FR-045 */
+    +it('delete','Delete…','Remove it from the notes','mm-danger');
   document.body.appendChild(m);
   const b=m.getBoundingClientRect();m.style.left=Math.max(8,Math.min(x,innerWidth-b.width-8))+'px';m.style.top=Math.max(8,Math.min(y,innerHeight-b.height-8))+'px';
   const back=()=>{if(anchor&&document.contains(anchor))focusIn(anchor);};
   m.addEventListener('click',e=>{const t=e.target.closest('[data-nmact]');if(!t)return;closeModeMenu();const act=t.dataset.nmact;
     if(act==='rename')renameNote(a,n,anchor);
     else if(act==='copy'){const ct=noteBoxText(n.text);if(ct==null){toast('Could not check this note for secrets, so it was not copied.',4500).classList.add('err');back();return;}navigator.clipboard.writeText(ct).then(()=>toast('Copied.',1500),()=>toast('Could not copy to the clipboard.',3000).classList.add('err'));back();}
+    else if(act==='done'||act==='undone')markNoteDone(a,n,act==='done');
     else if(act==='delete'){
-      const ids=[...document.querySelectorAll('#notesDrawer .nt-row')].map(r=>r.dataset.id),i=ids.indexOf(n.id);
+      const ids=ntRowIds(),i=ids.indexOf(n.id);
       deleteNote(a,n,{row:n.id,next:ids[i+1]||'',prev:ids[i-1]||''});}});
   m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-nmact]')],i=its.indexOf(document.activeElement);
     if(e.key==='ArrowDown'){e.preventDefault();focusIn(its[(i+1)%its.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(its[(i+its.length-1)%its.length]);}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();back();}});
   focusIn(m.querySelector('button'));
+}
+
+/* ---------------- spec 083 FR-044, FR-045 (T034a): the folder's Notes screen ----------------
+   A full-page screen (screens.js gives the frame: heading, Close, Esc) with every note of the folder: the ones not done newest first,
+   then a folded Done (N). Reached from the folder's ⋯ (Notes (N)…), the drawer's All notes of this folder… and Ctrl+K Notes of <folder>.
+   Main finds the folder from a chat's id (FR-062): the window never sends a path. The rows, dialogs and calls are the drawer's
+   (noteRowHTML, notesChange, renameNote, editNote, deleteNote, addNoteUi, openNoteMenu); the pure parts are in notesscreen.js. */
+const NSX=()=>window.DurbarNotesScreen;
+function nsShown(){const S=window.DurbarScreens;return !!(NS.key&&S&&S.notesKey&&S.notesKey()===NS.key&&$('nsHost'));}
+/* where the drawer's row actions look for rows: the screen while it is shown, else the drawer */
+function ntHost(){return nsShown()?{rows:'#nsHost',add:'nsAdd',find:'nsSearch'}:{rows:'#notesDrawer',add:'ntAdd',find:'ntSearch'};}
+function ntRowEl(id){return id?document.querySelector(ntHost().rows+' .nt-row[data-id="'+CSS.escape(id)+'"]'):null;}
+function ntRowIds(){return (nsShown()?nsVisibleRows():[...document.querySelectorAll(ntHost().rows+' .nt-row')]).map(r=>r.dataset.id);} /* the screen: the rows shown (a folded Done group's are not) */
+/* the chat of a room the screen talks to main through ({id, over}), or null (no main, live chat; the demo office has none) */
+function nsAgentOf(r){
+  if(!r||!NSX()||demoOn||!window.DurbarScreens||!window.DurbarScreens.folderNotes)return null;
+  return NSX().pickAgent(agents,r.id,ui.selected,document.body.classList.contains('panel-open'),a=>notesOn(a));
+}
+function nsMenuCount(r){const p=nsAgentOf(r),a=p&&byId(p.id),st=a&&notesOf(a);return st&&st.ok?DN.countOf(st.notes,'').total:null;}
+async function nsMenuCountSoon(r,m){
+  if(nsMenuCount(r)!=null)return;
+  const p=nsAgentOf(r),a=p&&byId(p.id); if(!a)return;
+  await notesFetch(a);
+  const b=m.isConnected&&m.querySelector('[data-fact="notes"] b'), n=nsMenuCount(r);
+  if(b&&n!=null)b.textContent=NSX().menuLabel(n);
+}
+function notesPalItems(){
+  if(!NSX()||!bridge||!bridge.notesList)return [];
+  return roomsInOrder().filter(roomShown).map(r=>{const p=nsAgentOf(r);return p?{label:'Notes of '+r.name,hint:'Saved messages and ideas of this folder',kw:'notes saved messages ideas folder all done',run:()=>{const a=byId(p.id);if(a)openNotesScreen(a);}}:null;}).filter(Boolean);
+}
+async function openNotesScreen(a,o){
+  o=o||{};
+  if(!a||!notesOn(a)||!NSX()||!window.DurbarScreens||!window.DurbarScreens.folderNotes)return false;
+  const r=roomOf(a), p=r?nsAgentOf(r):null; if(!p)return false;
+  const b=byId(p.id)||a, key=notesKey(b);
+  const ret=o.opener&&document.contains(o.opener)?o.opener:(document.activeElement&&document.activeElement!==document.body?document.activeElement:null);
+  if(notesIsOpen())closeNotes(false); /* from the drawer: the screen replaces it */
+  NS={id:b.id,key,name:r.name,over:p.over,ret,doneOpen:false,sub:NS.sub};
+  if(!NS.sub&&bridge.onNotesChanged)NS.sub=bridge.onNotesChanged(()=>{if(nsShown()){const c=byId(NS.id);if(c)notesFetch(c);}}); /* another chat or process changed them */
+  window.DurbarScreens.folderNotes({key,name:r.name,render:nsRender,onClose:nsClosed});
+  await notesFetch(b);
+  if(!nsShown())return false;
+  nsFocusRow(''); /* the rows are there now: the first one gets the focus (the frame painted before the fetch) */
+  const st=notesOf(b), n=st&&st.ok?NSX().groups(st.notes).open.length:0;
+  announce('Notes of '+r.name+'. '+(n?n+(n===1?' note.':' notes.'):'No notes yet.'));
+  return true;
+}
+function nsClosed(){
+  const r=NS.ret; NS.key='';NS.ret=null;
+  const t=r&&document.contains(r)&&r.getClientRects().length?r:(NS.over?$('msgInput'):null);
+  if(t)focusIn(t);
+}
+/* the screen's body: the tools once, the list on every change (so the search field keeps its focus and text) */
+function nsRender(focus){
+  const h=$('nsHost'); if(!h)return;
+  h.innerHTML=`<section class="scr-sec ns-sec" aria-label="${esc('Notes of '+NS.name)}"><div class="ns-tools"><input class="nt-find" id="nsSearch" type="search" placeholder="Search notes" aria-label="Search notes" autocomplete="off" spellcheck="false"><button class="btn sm primary" id="nsAdd" type="button">+ Note</button></div><div id="nsList"></div></section>`;
+  wireNotesScreen(h);
+  nsPaint(false);
+}
+function nsPaint(keep){
+  const list=$('nsList'),a=byId(NS.id); if(!list||!nsShown())return;
+  const st=(a&&notesOf(a))||{ok:true,notes:[]};
+  const had=document.activeElement&&list.contains(document.activeElement)?document.activeElement.closest('.nt-row'):null, hadId=had&&had.dataset.id;
+  let html='';
+  if(!a||!notesOn(a))html='<p class="nt-banner" role="alert">The chat these notes were opened from is not running any more. Close this screen and open the notes again.</p>';
+  else if(!st.ok)html=`<p class="nt-banner" role="alert">${esc(st.unreadable?'Durbar could not read the notes file of this folder; it is left as it is.':st.error)}</p>${st.unreadable&&bridge.notesStartOver?'<p><button class="btn sm" type="button" data-nt="startover">Start over…</button></p>':''}`;
+  else{
+    if(st.readOnly)html+=`<p class="nt-banner" role="alert">${esc(st.readOnly)}</p>`;
+    const f=$('nsSearch'), q=f?f.value:'', g0=NSX().groups(st.notes), g=q.trim()?NSX().filter(g0,q,DN.search,NAV&&NAV.rank,memoMask):g0;
+    if(!g0.open.length&&!g0.done.length)html+=`<p class="nt-empty">${esc(NSX().EMPTY)}</p>`;
+    else if(!g.open.length&&!g.done.length)html+=`<p class="nt-empty" role="status">${esc(DN.noMatch(q,safeMask))}</p>`;
+    let first=true;
+    const own=n=>!!(st.session&&n.source&&n.source.session===st.session); /* another session's agent may have another name: "The agent" */
+    const rows=items=>items.map(n=>{const x=noteRowHTML(n,a,first,{insert:NS.over,agentName:own(n)?a.name:''});first=false;return x;}).join('');
+    if(g.open.length)html+=`<div role="list" aria-label="Notes" class="ns-list">${rows(g.open)}</div>`;
+    if(g.done.length)html+=`<details class="ns-done" id="nsDone"${NS.doneOpen?' open':''}><summary>${esc(NSX().doneLabel(g.done.length))}</summary><div role="list" aria-label="Done notes">${rows(g.done)}</div></details>`;
+  }
+  list.innerHTML=html;
+  const d=$('nsDone'); if(d)d.addEventListener('toggle',()=>{NS.doneOpen=d.open;});
+  const rws=[...list.querySelectorAll('.nt-row')];
+  if(hadId){const r=rws.find(x=>x.dataset.id===hadId);if(r){rws.forEach(x=>x.tabIndex=-1);r.tabIndex=0;if(keep!==false)focusIn(r);}}
+  const add=$('nsAdd'); if(add)add.disabled=!a||!notesOn(a)||!st.ok||!!st.readOnly;
+}
+/* the rows the keyboard can reach: a folded Done group's rows are not shown */
+function nsVisibleRows(){return [...document.querySelectorAll('#nsList .nt-row')].filter(r=>!r.closest('details:not([open])'));} /* a closed <details> keeps its rows' boxes in Chromium: test the fold, not the boxes */
+function nsFocusRow(id){
+  const rows=nsVisibleRows(), r=(id&&rows.find(x=>x.dataset.id===id))||(!id?rows[0]:null);
+  if(id&&!r){const d=$('nsDone'),x=ntRowEl(id);if(d&&x&&d.contains(x)){d.open=true;NS.doneOpen=true;return nsFocusRow(id);}}
+  if(r){document.querySelectorAll('#nsList .nt-row').forEach(x=>x.tabIndex=-1);r.tabIndex=0;focusIn(r);}else focusIn($('nsSearch')||$('nsAdd'));
+}
+function wireNotesScreen(h){
+  h.addEventListener('click',e=>{
+    const a=byId(NS.id); if(!a)return;
+    if(e.target.closest('#nsAdd')){addNoteUi(a,$('nsAdd'));return;}
+    const b=e.target.closest('[data-nt]'); if(!b)return;
+    if(b.dataset.nt==='startover'){startOverNotes(a,b);return;}
+    const row=b.closest('.nt-row'),st=notesOf(a),n=row&&st&&st.notes.find(x=>x.id===row.dataset.id); if(!n)return;
+    if(b.dataset.nt==='insert'){nsInsert(a,n);}
+    else if(b.dataset.nt==='edit')editNote(a,n,b);
+    else if(b.dataset.nt==='more'){const r=b.getBoundingClientRect();openNoteMenu(a,n,b,r.left,r.bottom+4);}
+  });
+  h.addEventListener('keydown',e=>{
+    const row=e.target.closest&&e.target.closest('.nt-row'); if(!row)return;
+    const rows=nsVisibleRows(),i=rows.indexOf(row);
+    const go=j=>{e.preventDefault();rows.forEach(x=>x.tabIndex=-1);const r=rows[Math.max(0,Math.min(rows.length-1,j))];r.tabIndex=0;focusIn(r);};
+    if(e.key==='ArrowDown')go(i+1);else if(e.key==='ArrowUp')go(i-1);else if(e.key==='Home')go(0);else if(e.key==='End')go(rows.length-1);
+    else if(e.key==='Enter'&&e.target===row&&NS.over){const a=byId(NS.id),st=notesOf(a),n=st&&st.notes.find(x=>x.id===row.dataset.id);if(n){e.preventDefault();nsInsert(a,n);}}
+  });
+  h.addEventListener('contextmenu',e=>{const row=e.target.closest('.nt-row');if(!row)return;e.preventDefault();const m=row.querySelector('.nt-more');if(m)m.click();});
+  const f=$('nsSearch');
+  if(f){
+    f.addEventListener('input',()=>{nsPaint(false);const n=document.querySelectorAll('#nsList .nt-row').length;announce(f.value.trim()?(n?n+(n===1?' note matches':' notes match'):'No notes match'):'');}); /* a number: nothing of a note is read out */
+    f.addEventListener('keydown',e=>{if(e.key==='ArrowDown'){const r=nsVisibleRows()[0];if(r){e.preventDefault();nsFocusRow(r.dataset.id);}}});
+  }
+}
+/* Insert from the screen (only over a chat of this folder): the screen closes, then the drawer's insert (FR-024) */
+function nsInsert(a,n){
+  if(!NS.over||ui.selected!==a.id)return false;
+  NS.ret=null; window.DurbarScreens.close();
+  return notesInsert(a,n);
+}
+/* FR-045: Mark done / Mark not done, then the focus goes to the next row, else the previous, else the search field */
+async function markNoteDone(a,n,done){
+  const nb=NSX()?NSX().neighbours(ntRowIds(),n.id):{next:'',prev:''};
+  const r=await notesChange(a,n,{done});
+  if(!r)return;
+  announce(done?'Marked done.':'Marked not done.');
+  const el=ntRowEl(nb.next)||ntRowEl(nb.prev);
+  if(nsShown()){if(el)nsFocusRow(el.dataset.id);else focusIn($('nsSearch')||$('nsAdd'));}
+  else{const h=ntHost();focusIn(el||$(h.find)||$(h.add));}
 }
 
 /* ---- notes in the "/" list (FR-030, spec 073 FR-066/FR-067) ---- */
@@ -3252,6 +3389,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
     if($('inboxDlg')){closeInbox();return;}
     if(e.target&&e.target.id==='prevQ'&&e.target.value){e.target.value='';e.target.dispatchEvent(new Event('input',{bubbles:true}));return;} /* spec 006 FR-023: Escape clears the search first */
+    if(e.target&&e.target.id==='nsSearch'&&e.target.value&&!document.getElementById('modeDlg')){e.target.value='';nsPaint(false);return;} /* spec 083 T034a: Esc clears the screen's search first */
     if(window.DurbarScreens&&window.DurbarScreens.isOpen()&&!document.getElementById('scrDlg')&&!document.getElementById('modeDlg')){window.DurbarScreens.close();return;}
     if(document.getElementById('sessDlg')){closeSessDlg();return;}
     if(!$('foldersPop').hidden){toggleFolders(false);return;}
@@ -3558,6 +3696,7 @@ function palActions(){
     {label:'End all sessions',hint:'Ends every running session; the chats stay',kw:'end stop all sessions quit day close',run:()=>endAllSessions(),ok:()=>!!bridge&&!!bridge.end&&endAllTargets().length>0},
     ...remotePalItems(),
     ...handoverPalItems(),
+    ...notesPalItems(), /* spec 083 FR-044: Notes of <folder> */
   ].filter(x=>!x.ok||x.ok()).map(x=>({...x,group:'Actions'}));
 }
 function palAll(withRecent){
@@ -5957,6 +6096,7 @@ function openFolderMenu(r,x,y,anchor){
     const here=canMove&&floorById(r.floor);
     m.innerHTML=(bridge.newSession&&anyKindReady()?it('new','New session','Another agent with its own chat here'):'')
       +(bridge.listSchedules?it('sched',SH().hereLabel(schedulesOf(r).filter(s=>!s.done).length),(()=>{const n=schedulesOf(r).filter(s=>!s.done).length;return n?n+' scheduled, '+(nextRunOf(schedulesOf(r))?'next '+nextRunOf(schedulesOf(r)):'paused'):'Prompts sent here at a time, every day or at an interval';})()):'')
+      +(nsAgentOf(r)?it('notes',NSX().menuLabel(nsMenuCount(r)),'Saved messages and ideas of this folder'):'') /* spec 083 FR-044, D10 */
       +(bridge.renameFolder?it('rename','Rename…','A display name for this room'):'')
       +(canMove?`<button type="button" role="menuitem" data-fact="floor" aria-haspopup="menu" aria-expanded="false"><span class="mt"><b>Move to floor</b><small>${esc(here?'Now on '+here.name+'. Its agents go with it':'Its agents go with it')}</small></span><span class="ck" aria-hidden="true">▸</span></button>`:'')
       +(bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))?it('mcp','MCP extras…','Optional servers for this folder only'):'')
@@ -5975,12 +6115,14 @@ function openFolderMenu(r,x,y,anchor){
     focusIn(m.querySelector('[data-fact="to"]:not([aria-disabled="true"])')||m.querySelector('button'));
   };
   document.body.appendChild(m);paintTop(false);
+  nsMenuCountSoon(r,m); /* spec 083: the count fills in when the folder's notes were not fetched yet */
   m.addEventListener('click',e=>{const t=e.target.closest('[data-fact]');if(!t)return;const f=t.dataset.fact;
     if(f==='floor'){paintFloors();return;}
     if(f==='back'){paintTop(true);return;}
     if(t.getAttribute('aria-disabled')==='true')return;
     closeModeMenu();
     if(f==='to'){moveFolderByMenu(r,t.dataset.floor,anchor);return;}
+    if(f==='notes'){const p=nsAgentOf(r);if(p)openNotesScreen(byId(p.id),{opener:anchor});return;}
     const ag=agents.find(q=>!q.parent&&q.room===r.id);
     if(f==='new'){if(ag)newSession(ag);}else if(f==='sched')openSchedules(r);else if(f==='mcp'){const o=folderOfRoom(r.id);if(o)window.DurbarScreens.folderMcp(o.key,o.name);}else if(f==='cost')window.DurbarScreens.openTools(null,'cost');else if(f==='rename')renameFolder(r,anchor);else if(f==='hide')hideFolder(r,true);else removeFolder(r);});
   m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-fact]')],i=its.indexOf(document.activeElement),sub=!!m.querySelector('[data-fact="back"]');

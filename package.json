@@ -217,7 +217,7 @@
     "test:mcpglobal": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcp-global.js",
     "test:mcpservertools": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcp-servertools.js",
     "test:slashcommands": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-slashcommands.js",
-    "test:notes-core": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-notes.js && node dist-scripts/scripts/test-notesmask.js && node dist-scripts/scripts/test-notesipc.js && node dist-scripts/scripts/test-notessim.js",
+    "test:notes-core": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-notes.js && node dist-scripts/scripts/test-notesmask.js && node dist-scripts/scripts/test-notesipc.js && node dist-scripts/scripts/test-notessim.js && node dist-scripts/scripts/test-notesscreen.js",
     "test:notes-store": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-notesstore.js",
     "test:notes": "npm run test:notes-core && npm run test:notes-store"
   },
