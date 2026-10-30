@@ -232,3 +232,5 @@ Numbers checked against `main` (00d340eb) and every open PR on 2026-10-25: none 
 - [x] T158 Issue #737 (FR-189): `places.js` `lobbyFit` (hard minimums, `tileNamed`, the Bank's name from 96 px), `app.js` (`compact` tiles: no name, no count), `styles.css` (`.place.compact`)
 - [x] T159 Issue #737 (FR-189): `check-office-overlap.js` `pageCheck`: a compact tile has no count when its "+N" holds everyone
 - [x] T160 Issue #737 (FR-189): docs: spec delta, README Known limits bullet removed, `changelog.d/001-lobby-seat-narrow.md`, pictures checked (`shots:docs -- --list`: none shows the lobby under 1000 px wide)
+- [x] T161 Issue #897 (FR-190): `styles.css` `.task` `min-height: calc(3em*1.35)`; `check-office-overlap.js` row-height failure prints unrounded heights and title lines
+- [x] T162 Issue #897 (FR-190): docs: spec delta, `changelog.d/001-office-height-diag.md`; screenshots not retaken (0.6 px)
