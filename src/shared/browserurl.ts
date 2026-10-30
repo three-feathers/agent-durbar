@@ -119,12 +119,14 @@ const MAIL_ADDR = /^(?:[A-Za-z0-9._+-]|%(?!00|0[0-9A-Fa-f]|1[0-9A-Fa-f]|20|22|3[
 const MAIL_VALUE = /^(?:[A-Za-z0-9._+@,~*!'()-]|%(?!00|0[0-9A-Fa-f]|1[0-9A-Fa-f]|7[Ff])[0-9A-Fa-f]{2})*$/;
 const MAIL_HEADERS = new Set(['subject', 'cc', 'bcc']);
 
-/** Decoded characters a mail link may not carry: C0 and C1 controls (NEL included), line and paragraph separators, bidi controls, zero-width and format characters. */
-// eslint-disable-next-line no-control-regex
-const BAD_DECODED = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069\u200b-\u200f\ufeff]/;
-/** True when an escaped sequence decodes to a forbidden character, is not valid UTF-8, or is itself escaped again (`%25` + hex pair). */
+/** Decoded characters a mail link may not carry: every control (C0 and C1, NEL included), every format character (bidi controls, zero-width, soft hyphen, word joiner, tag characters ...), line and paragraph separators. */
+const BAD_DECODED = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+/**
+ * True when an escaped sequence decodes to a forbidden character or is not valid UTF-8, or when the escapes decode to a `%` at all: a literal
+ * percent is not needed in a mail link, and a `%` that comes out of an escape is a double encoding (`%2541`, `%25%30A`, `%25%32%35`).
+ */
 function badEscapes(text: string): boolean {
-  if (/%25[0-9A-Fa-f]{2}/.test(text)) return true;
+  if (/%25/i.test(text)) return true;
   for (const run of text.match(/(?:%[0-9A-Fa-f]{2})+/g) ?? []) {
     let decoded: string;
     try {
@@ -132,7 +134,7 @@ function badEscapes(text: string): boolean {
     } catch {
       return true;
     }
-    if (BAD_DECODED.test(decoded)) return true;
+    if (decoded.includes('%') || BAD_DECODED.test(decoded)) return true;
   }
   return false;
 }

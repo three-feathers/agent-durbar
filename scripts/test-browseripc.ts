@@ -469,6 +469,7 @@ process.on('exit', () => {
         // escaped Unicode controls and format characters, invalid UTF-8, double encoding (2026-10-30 review)
         'mailto:a@example.invalid?subject=x%C2%85y', 'mailto:a@example.invalid?subject=x%E2%80%A8y', 'mailto:a@example.invalid?subject=x%E2%80%A9y', 'mailto:a@example.invalid?subject=x%E2%80%AEy', 'mailto:a@example.invalid?subject=x%E2%81%A6y', 'mailto:a@example.invalid?subject=x%E2%80%8By',
         'mailto:a@example.invalid?subject=x%EF%BB%BFy', 'mailto:a@example.invalid?subject=x%C2%9Fy', 'mailto:a%C2%85@example.invalid', 'mailto:a@example.invalid?subject=%C0%80', 'mailto:a@example.invalid?subject=%2541', 'mailto:a%2541@example.invalid',
+        'mailto:a@example.invalid?subject=%25%30A', 'mailto:a@example.invalid?subject=%25%32%35', 'mailto:a@example.invalid?subject=x%C2%ADy', 'mailto:a@example.invalid?subject=x%E2%81%A0y', 'mailto:a@example.invalid?subject=x%F3%A0%80%81y', 'mailto:a@example.invalid?subject=50%25', 'mailto:a@example.invalid?subject=x%E2%80%8Dy',
         // host labels and the local part
         'mailto:a@.', 'mailto:a@-.com', 'mailto:a@-b.com', 'mailto:a@b-.com', 'mailto:a@b..com', 'mailto:a@b.com.', 'mailto:-a@b.com', 'mailto:a@example.invalid?cc=a@-b.com'];
       const r2 = rig();
