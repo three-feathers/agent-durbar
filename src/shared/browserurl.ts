@@ -119,6 +119,34 @@ const MAIL_ADDR = /^(?:[A-Za-z0-9._+-]|%(?!00|0[0-9A-Fa-f]|1[0-9A-Fa-f]|20|22|3[
 const MAIL_VALUE = /^(?:[A-Za-z0-9._+@,~*!'()-]|%(?!00|0[0-9A-Fa-f]|1[0-9A-Fa-f]|7[Ff])[0-9A-Fa-f]{2})*$/;
 const MAIL_HEADERS = new Set(['subject', 'cc', 'bcc']);
 
+/** Decoded characters a mail link may not carry: C0 and C1 controls (NEL included), line and paragraph separators, bidi controls, zero-width and format characters. */
+// eslint-disable-next-line no-control-regex
+const BAD_DECODED = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069\u200b-\u200f\ufeff]/;
+/** True when an escaped sequence decodes to a forbidden character, is not valid UTF-8, or is itself escaped again (`%25` + hex pair). */
+function badEscapes(text: string): boolean {
+  if (/%25[0-9A-Fa-f]{2}/.test(text)) return true;
+  for (const run of text.match(/(?:%[0-9A-Fa-f]{2})+/g) ?? []) {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(run);
+    } catch {
+      return true;
+    }
+    if (BAD_DECODED.test(decoded)) return true;
+  }
+  return false;
+}
+/** A host: dot-separated labels of letters, digits and hyphens, none empty, none longer than 63, none starting or ending with a hyphen. */
+function mailHostOk(host: string): boolean {
+  const labels = host.split('.');
+  return labels.length > 0 && labels.every((l) => l.length > 0 && l.length <= 63 && !l.startsWith('-') && !l.endsWith('-'));
+}
+function mailAddressOk(a: string): boolean {
+  if (a.length === 0 || a.length > 254 || a.includes('..') || !MAIL_ADDR.test(a)) return false;
+  const at = a.lastIndexOf('@');
+  return !a.startsWith('-') && mailHostOk(a.slice(at + 1)) && !badEscapes(a);
+}
+
 /**
  * FR-024: the only link that may be handed to another app. A conservative grammar, checked in main again when the user clicks Open, and the
  * text handed to the system is the normalised result (never the raw link): `mailto:` + one or more addresses (comma-separated) + optional
@@ -134,7 +162,7 @@ export function parseMailto(input: unknown): string | null {
   const path = q < 0 ? rest : rest.slice(0, q);
   const query = q < 0 ? '' : rest.slice(q + 1);
   const addrs = path.split(',');
-  if (!addrs.length || !addrs.every((a) => a.length > 0 && a.length <= 254 && MAIL_ADDR.test(a) && !a.includes('..'))) return null;
+  if (!addrs.length || !addrs.every(mailAddressOk)) return null;
   const kept: string[] = [];
   if (q >= 0) {
     if (!query) return null;
@@ -143,8 +171,8 @@ export function parseMailto(input: unknown): string | null {
       if (eq <= 0) return null;
       const key = pair.slice(0, eq).toLowerCase();
       const val = pair.slice(eq + 1);
-      if (!MAIL_HEADERS.has(key) || !MAIL_VALUE.test(val)) return null;
-      if ((key === 'cc' || key === 'bcc') && !val.split(',').every((a) => a.length > 0 && MAIL_ADDR.test(a))) return null; // cc and bcc hold addresses
+      if (!MAIL_HEADERS.has(key) || !MAIL_VALUE.test(val) || badEscapes(val)) return null;
+      if ((key === 'cc' || key === 'bcc') && !val.split(',').every(mailAddressOk)) return null; // cc and bcc hold addresses
       kept.push(key + '=' + val);
     }
   }

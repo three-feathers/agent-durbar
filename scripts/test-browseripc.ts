@@ -465,7 +465,12 @@ process.on('exit', () => {
       const HOSTILE_MAIL = ['mailto:a"b --x', 'mailto:a b@example.invalid', 'mailto:\\\\host\\share', 'mailto:%00@example.invalid', 'mailto:a@example.invalid?attach=C:\\x', 'mailto:' + 'a'.repeat(4000) + '@example.invalid',
         'mailto:a@example.invalid?subject=x%0d%0abcc=y', 'mailto:a@example.invalid?body=hi', 'mailto:a@example.invalid?from=b@example.invalid', 'mailto:a@example.invalid?subject=hi&attach=x', 'mailto:a@example.invalid?cc=<b@example.invalid>',
         'mailto:<a>@example.invalid', 'mailto:a@example.invalid%22', 'mailto:a%5Cb@example.invalid', 'mailto:a%20b@example.invalid', 'mailto:', 'mailto:@example.invalid', 'mailto:a@example.invalid?', 'mailto:a@example.invalid?subject', 'mailto:a@example.invalid?subject=%00',
-        'mailto:a@example.invalid?subject=a b', 'mailto:a@example.invalid,,b@example.invalid', 'mailto:a@example.invalid?cc=x', 'mailto:a..b@example.invalid', 'mailto:a@example.invalid?subject=' + 'x'.repeat(600)];
+        'mailto:a@example.invalid?subject=a b', 'mailto:a@example.invalid,,b@example.invalid', 'mailto:a@example.invalid?cc=x', 'mailto:a..b@example.invalid', 'mailto:a@example.invalid?subject=' + 'x'.repeat(600),
+        // escaped Unicode controls and format characters, invalid UTF-8, double encoding (2026-10-30 review)
+        'mailto:a@example.invalid?subject=x%C2%85y', 'mailto:a@example.invalid?subject=x%E2%80%A8y', 'mailto:a@example.invalid?subject=x%E2%80%A9y', 'mailto:a@example.invalid?subject=x%E2%80%AEy', 'mailto:a@example.invalid?subject=x%E2%81%A6y', 'mailto:a@example.invalid?subject=x%E2%80%8By',
+        'mailto:a@example.invalid?subject=x%EF%BB%BFy', 'mailto:a@example.invalid?subject=x%C2%9Fy', 'mailto:a%C2%85@example.invalid', 'mailto:a@example.invalid?subject=%C0%80', 'mailto:a@example.invalid?subject=%2541', 'mailto:a%2541@example.invalid',
+        // host labels and the local part
+        'mailto:a@.', 'mailto:a@-.com', 'mailto:a@-b.com', 'mailto:a@b-.com', 'mailto:a@b..com', 'mailto:a@b.com.', 'mailto:-a@b.com', 'mailto:a@example.invalid?cc=a@-b.com'];
       const r2 = rig();
       for (const u of HOSTILE_MAIL) {
         assert.deepStrictEqual(await r2.ctl.openMail(u), { ok: false }, `openMail refuses ${JSON.stringify(u.slice(0, 60))}`);
@@ -473,7 +478,7 @@ process.on('exit', () => {
         assert.ok(!c.ok && c.link === 'refused' && c.reason === 'Durbar opens only mail links in other apps.', `a hostile mail link is refused with static text and no button: ${JSON.stringify(u.slice(0, 60))}`);
       }
       assert.deepStrictEqual(r2.opened, [], 'nothing hostile reached the system');
-      const GOOD: [string, string][] = [['mailto:a@example.invalid?subject=Hi%20there', 'mailto:a@example.invalid?subject=Hi%20there'], ['  MAILTO:a@example.invalid,b+c@example.invalid?cc=d@example.invalid&Subject=x', 'mailto:a@example.invalid,b+c@example.invalid?cc=d@example.invalid&subject=x'], ['mailto:a%2Bb@example.invalid', 'mailto:a%2Bb@example.invalid']];
+      const GOOD: [string, string][] = [['mailto:a@example.invalid?subject=Hi%20there', 'mailto:a@example.invalid?subject=Hi%20there'], ['  MAILTO:a@example.invalid,b+c@example.invalid?cc=d@example.invalid&Subject=x', 'mailto:a@example.invalid,b+c@example.invalid?cc=d@example.invalid&subject=x'], ['mailto:a%2Bb@example.invalid', 'mailto:a%2Bb@example.invalid'], ['mailto:a@example.invalid?subject=caf%C3%A9', 'mailto:a@example.invalid?subject=caf%C3%A9'], ['mailto:a@x-y.example.invalid', 'mailto:a@x-y.example.invalid']];
       for (const [raw, norm] of GOOD) {
         const lr = await r2.ctl.openLink('s1', raw);
         assert.ok(!lr.ok && lr.link === 'mailto', `a good mail link is offered: ${raw}`);
@@ -571,6 +576,38 @@ process.on('exit', () => {
       await n.ctl.navigate('s1', 'https://fresh.example/'); // a new page: typing counts from its load
       await loadIn(n, 's5', 'https://site5.example/');
       assert.ok(urlOf(n, 's1') === '' || urlOf(n, 's2') === '', 'after a new page the old typing no longer protects it');
+    }
+    // a link clicked in a dropped page's chat: the new address wins, the old one is never loaded over it (2026-10-30 review)
+    {
+      const r = mk();
+      for (let i = 1; i <= 6; i++) await loadIn(r, 's' + i, `https://site${i}.example/`);
+      r.flush();
+      assert.strictEqual(urlOf(r, 's1'), '', 'precondition: s1 was dropped');
+      const res = await r.ctl.openLink('s1', 'https://clicked.example/new');
+      assert.ok(res.ok);
+      r.ctl.bounds('s1', B);
+      r.ctl.visible('s1', true);
+      r.flush();
+      assert.deepStrictEqual(r.sessions.get('s1')!.navs.slice(-1), [{ url: 'https://clicked.example/new' }], 'the clicked page is the last navigation: the old address is not reloaded over it');
+      assert.strictEqual(urlOf(r, 's1'), 'https://clicked.example/new');
+      assert.strictEqual((r.ctl.stateOf('s1') as BrowserState).memory, undefined, 'and no *Reloaded to save memory* note');
+      assert.ok(!r.sessions.get('s1')!.navs.some((n, i, a) => i > 0 && (n as { url?: string }).url === 'https://site1.example/' && i > a.length - 3), 'site1 is not loaded again');
+      // Reload on a dropped page brings it back; Back or typing an address does not load the old page
+      const k = mk();
+      for (let i = 1; i <= 6; i++) await loadIn(k, 's' + i, `https://site${i}.example/`);
+      k.flush();
+      await k.ctl.history('s1', 'reload');
+      k.flush();
+      assert.deepStrictEqual(k.sessions.get('s1')!.navs.slice(-1), [{ url: 'https://site1.example/' }], 'Reload on a dropped page loads its kept address');
+      assert.strictEqual((k.ctl.stateOf('s1') as BrowserState).memory, 'reloaded');
+      const m = mk();
+      for (let i = 1; i <= 6; i++) await loadIn(m, 's' + i, `https://site${i}.example/`);
+      m.flush();
+      await m.ctl.navigate('s1', 'https://typed.example/');
+      m.ctl.bounds('s1', B);
+      m.ctl.visible('s1', true);
+      m.flush();
+      assert.strictEqual(urlOf(m, 's1'), 'https://typed.example/', 'a typed address wins too');
     }
     // a page reached by a form is never dropped (the history's transition type)
     {

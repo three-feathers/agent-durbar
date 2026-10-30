@@ -61,7 +61,7 @@ module.exports = async (ctx) => {
       // a page with a text field; a click gives it focus and real key events reach the page (and the view's input-event)
       await typeAddress(PAGE + 'fields');
       await wait(() => view().webContents.getURL() === PAGE + 'fields', id + ' fields page');
-      await ctx.sleep(300);
+      await wait(() => view().webContents.executeJavaScript(`!!document.getElementById('name')&&document.readyState==='complete'`, true), id + ': the field exists');
       const r = await view().webContents.executeJavaScript(`(()=>{const b=document.getElementById('name').getBoundingClientRect();return {x:Math.round(b.left+b.width/2),y:Math.round(b.top+b.height/2)}})()`, true);
       const wc = view().webContents;
       wc.sendInputEvent({ type: 'mouseDown', x: r.x, y: r.y, button: 'left', clickCount: 1 });
@@ -72,10 +72,10 @@ module.exports = async (ctx) => {
       await typeAddress(PAGE + 'links');
       await wait(() => view().webContents.getURL() === PAGE + 'links', id + ' links page');
     }
-    await ctx.sleep(250);
+    await wait(() => states().some((x) => x.id === id && x.url !== '' && !x.loading), id + ': its page finished loading');
     await js(`document.getElementById('tabChat').click()`);
     await wait(() => views().length === 0, id + ' chat tab');
-    await ctx.sleep(120);
+    { const t0 = Date.now(); await wait(() => Date.now() > t0 + 1, 'the clock moved on'); } // the least-recently-shown order needs distinct millisecond stamps
   }
 
   if (!typing) {
@@ -93,9 +93,8 @@ module.exports = async (ctx) => {
     console.log('[browser-cap] AC3 ok');
   } else {
     // AC4
-    const ls = loaded();
-    for (const id of ['sim-1', 'sim-2', 'sim-3', 'sim-4', 'sim-5', 'sim-6']) assert.ok(ls.includes(id), `${id} is still loaded: ${JSON.stringify(ls)}`);
-    assert.strictEqual(states().find((s) => s.id === 'sim-6').memory, 'many', 'the sixth is over the cap and says so');
+    await wait(() => ['sim-1', 'sim-2', 'sim-3', 'sim-4', 'sim-5', 'sim-6'].every((id) => loaded().includes(id)), 'none of the six was dropped: ' + JSON.stringify(loaded()));
+    await wait(() => (states().find((x) => x.id === 'sim-6') || {}).memory === 'many', 'the sixth is over the cap and says so');
     await js(`document.querySelector('#stripList [data-sw="sim-6"]').click()`);
     await wait(() => js(`document.querySelector('.sitem.sel')&&document.querySelector('.sitem.sel').dataset.sw==='sim-6'`), 'sim-6 open');
     await js(`document.getElementById('tabBrowser').click()`);

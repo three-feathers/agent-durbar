@@ -202,7 +202,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC2: main hides the view and the pane shows a `capturePage` still picture, kept in memory only.
   - AC3: a sim driver opens the More menu, a dialog, a toast and the slash list over the browser, and checks each is visible (`elementFromPoint` plus a screenshot).
 - [x] T017 [US2] Chat links open in the session browser. [FR-030, FR-031, FR-033]
-  - **Status 2026-10-30:** AC1-AC6 built (`src/main/ipc/browser.ts` `browser:openLink` / `browser:openMail`, `controller.ts` `openLink`, `app.js` `openChatLink`, `openLinkMenu`; `test:chatlinks`, `test:browseripc`, `check-browser-links`). **AC7 is open** (it needs T043's classifier, Phase 2): a chat-link click while agent control is on is not gated by network class yet; Phase 1 has no agent control, so nothing is exposed now.
+  - **Status 2026-10-30:** AC1-AC6 built (`src/main/ipc/browser.ts` `browser:openLink` / `browser:openMail`, `controller.ts` `openLink`, `app.js` `openChatLink`, `openLinkMenu`; `test:chatlinks`, `test:browseripc`, `check-browser-links`). **AC7 moved to T043 AC9** (it needs T043's classifier, Phase 2): a chat-link click while agent control is on is not gated by network class yet; Phase 1 has no agent control, so nothing is exposed now.
   - AC1: an `.md a` http(s) click calls `browser:open` for `ui.selected`'s root session; the URL is checked with `isHttpUrl` (`src/shared/url.ts`) in main.
   - AC2: Ctrl/Cmd+click and the context-menu item *Open in system browser* (shared menu element) go to the existing `app:openExternal`, unchanged.
   - AC3: Settings *Open chat links in* (default Session browser), saved in `SettingsStore` with `parseSettings`.
@@ -215,7 +215,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
     - the profile editor preview (`src/renderer/profileeditor.js:302`).
   - AC5: only a `mailto:` link gets *Open*, which calls `shell.openExternal` after the click; every other non-web scheme gets the refusal text and no button (a test with the T011 hostile list counts zero `shell.openExternal` calls).
   - AC6: a sim driver checks that session A's link never loads in B.
-  - AC7: while agent control is on, a chat-link click (FR-058): link-local or metadata is refused with only *Open in system browser*; private asks with the mode's text; loopback opens. Uses T043's classifier.
+  - AC7 **moved to T043 AC9** (2026-10-30; it needs T043's classifier, Phase 2): the chat-link click while agent control is on. T017 is ticked for AC1-AC6.
 - [x] T018 [US1] [US2] Simulator: test pages and links. [FR-091]
   - **Status 2026-10-24 (slice 3):** AC1 and part of AC2 built (`src/main/browser/simpages.ts`: index, links, form POST, GET form, download, file input, slow load, `beforeunload`, and `alert` (delay and count from the query, with a fake token built at run time), `confirm` and `prompt` pages; `test:browseripc` covers the guard; `check-browser-dialogs` uses the `beforeunload` and `alert` pages; no driver answers a `confirm` or `prompt` yet). The password, `one-time-code` and `cc-number` fields, the sliding element, the script redirect and the basic-auth challenge, AC3 and AC4 are open.
   - **Status 2026-10-30:** all ACs built: the pages (fields, sliding element, script redirect to a second host, basic-auth 401, storage, `confirm`/`prompt` answered in `check-browser-scenarios`), simulated agents print links (`links` reply), `check-browser-scenarios` covers US1 1-5 and US2 1-3 with SC-002 and SC-004 (SC-002's cookie half unproven, see the spec).
@@ -349,6 +349,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC6: the metadata list matches FR-058's sourced entries plus the three marked own additions.
   - AC8: the classifier extends `blockedAuthHost` (`src/main/mcpsignin.ts`), moved into `src/shared/netclass.ts` and still used by spec 058's sign-in path, whose tests keep passing; there is no second IP-literal parser (a grep test).
   - AC7: Local Network Access (T010 AC14, not run): in a throwaway probe, try marking a loopback test server as public with Chromium's `--ip-address-space-overrides` switch (probe only, never the app; whether Electron 44 honours it is not known), and record whether a private request from that page is blocked, prompted or allowed under FR-025's deny-all handlers. If it cannot be done offline, FR-058's `[KNOWN GAP]` stays and the README says so.
+  - AC9 (moved from T017 AC7): while agent control is on, a chat-link click (FR-058): link-local or metadata is refused with only *Open in system browser*; private asks with the mode's text; loopback opens. Uses this classifier; the click path is `openLink` in `src/main/browser/controller.ts`.
 - [ ] T044 [US3] Agent-caused navigations count as `url`. [FR-057]
   - AC1: while the switch is on and the driver is not `user`, every main-frame Document request (any method, redirects included per T010 AC6) is paused and checked against host grants and FR-058.
   - AC2: Ask first asks with the full masked URL (userinfo removed, token shapes masked, cut to 300 characters).

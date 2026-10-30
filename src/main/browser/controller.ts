@@ -69,7 +69,7 @@ export interface BrowserDeps {
   };
   /** A change worth telling the window about (coalesced, and only when something differs). */
   emit(s: BrowserState): void;
-  /** The existing external-link path (`shell.openExternal`); never called for anything but http(s). */
+  /** The existing external-link path (`shell.openExternal`): called with an http(s) address (Open in system browser) or with a normalised `mailto:` href after the user's click (`openMail`); never with anything else. */
   openExternal(url: string): Promise<unknown>;
   /** FR-025d (Q2): the one-time note was accepted for this app profile. The view is not created before. */
   consented(): boolean;
@@ -338,8 +338,14 @@ export function makeBrowserController(deps: BrowserDeps) {
   const result = (id: string): BrowserResult => ({ ok: true, state: stateOf(id) });
 
   /** Runs a main-started navigation without waiting for the page to finish loading; a refusal is answered at once. */
-  function go(id: string, t: Tracked, action: NavAction): void {
+  function go(id: string, t: Tracked, action: NavAction, restoring = false): void {
     t.error = undefined;
+    if (!restoring) {
+      // main starts a navigation to somewhere new: the address kept for a dropped page is stale and must never be loaded over it (FR-011)
+      t.unloadedUrl = undefined;
+      t.memory = undefined;
+      t.memoryHold = false;
+    }
     void t.sv.navigate(action).then((ok) => ok || changed(id), () => undefined);
   }
   async function navigate(id: unknown, address: unknown): Promise<BrowserResult> {
@@ -402,6 +408,15 @@ export function makeBrowserController(deps: BrowserDeps) {
       if (what !== 'back' && what !== 'forward' && what !== 'reload') return refuse('Unknown action.');
       const t = tracked.get(id);
       if (!t) return refuse('The browser is not open.');
+      if (what === 'reload' && t.unloadedUrl) {
+        // Reload on a page the cap dropped brings that page back
+        const u = t.unloadedUrl;
+        t.unloadedUrl = undefined;
+        t.memory = 'reloaded';
+        t.memoryHold = true;
+        go(id, t, { url: u }, true);
+        return result(id);
+      }
       go(id, t, what);
       return result(id);
     },
@@ -438,7 +453,7 @@ export function makeBrowserController(deps: BrowserDeps) {
           t.unloadedUrl = undefined;
           t.memory = 'reloaded';
           t.memoryHold = true;
-          go(id, t, { url: u });
+          go(id, t, { url: u }, true);
         }
       }
       applyAttach(id);

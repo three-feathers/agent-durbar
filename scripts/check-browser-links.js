@@ -76,7 +76,7 @@ module.exports = async (ctx) => {
     await wait(() => js(`!!document.querySelector('#modeDlg .dlg')`), 'a link click asks the one-time note');
     assert.strictEqual(views().length, 0, 'no view while the note is open');
     assert.ok(await H.clickText('#modeDlg .dbtn button', 'Not now'));
-    await wait(() => logged.includes('http://127.0.0.1:9/page'), 'Not now: the link goes to the system browser this time');
+    await wait(() => logged.some((u) => u === 'http://127.0.0.1:9/page'), 'Not now: the link goes to the system browser this time');
     assert.strictEqual(views().length, 0, 'Not now opens nothing');
     await clickLink('a local page');
     await wait(() => js(`!!document.querySelector('#modeDlg .dlg')`), 'asked again after Not now');
@@ -119,7 +119,7 @@ module.exports = async (ctx) => {
 
   // 4. Ctrl/Cmd+click and the menu's system item: the system path, nothing loads
   assert.ok(await clickLink('a web page', { mod: true }));
-  await wait(() => logged.includes('https://example.invalid/docs'), 'Ctrl/Cmd+click goes to the system browser path');
+  await wait(() => logged.some((u) => u === 'https://example.invalid/docs'), 'Ctrl/Cmd+click goes to the system browser path');
   assert.strictEqual(urlOf(viewB), 'durbar-sim://pages/links', 'and loads nothing in the tab');
   await js(`(()=>{const a=[...document.querySelectorAll('#chat .md a')].find(x=>x.textContent.trim()==='a web page');const r=a.getBoundingClientRect();a.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+4,clientY:r.top+4}))})()`);
   await wait(() => js(`!!document.querySelector('#modeMenu [data-lact="sys"]')&&!!document.querySelector('#modeMenu [data-lact="tab"]')`), 'the link menu offers both');
