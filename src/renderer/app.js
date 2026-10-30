@@ -2686,17 +2686,24 @@ function selButton(){
 function hideSelButton(){const b=document.getElementById('ntSelBtn');if(b)b.hidden=true;}
 /* shown next to the end of the selection (placeMenu keeps it in the window), never over the composer or the answer bar */
 function showSelButton(){
-  const i=selInfo(); if(!i||document.querySelector(MODAL_SEL)){hideSelButton();return;}
+  const i=selInfo(), dr=$('notesDrawer'), lg=$('chat'); /* not while the Notes drawer is open: it would float over text the user cannot see */
+  if(!i||(dr&&!dr.hidden)||!lg||document.querySelector(MODAL_SEL)){hideSelButton();return;}
+  const cr=lg.getBoundingClientRect(); /* the selection's end must be inside the visible log, else it was scrolled away */
+  if(!(i.end.bottom>cr.top&&i.end.bottom-1<cr.bottom&&i.end.right>cr.left&&i.end.right<=cr.right+1)){hideSelButton();return;}
   const b=selButton(); b.hidden=false;
   const hgt=b.getBoundingClientRect().height, avoid=[document.querySelector('#panel .composer'),$('answerBar')].find(e=>e&&!e.hidden&&e.getClientRects().length);
-  const top=DN.selButtonTop({endBottom:i.end.bottom,startTop:i.startTop},hgt,{top:0,bottom:innerHeight},avoid?avoid.getBoundingClientRect():null);
+  const top=DN.selButtonTop({endBottom:i.end.bottom,startTop:i.startTop},hgt,{top:cr.top,bottom:cr.bottom},avoid?avoid.getBoundingClientRect():null);
+  if(top==null){hideSelButton();return;}
   placeMenu(b,i.end.right,top,null);
 }
 let selT=0;
 document.addEventListener('selectionchange',()=>{hideSelButton();clearTimeout(selT);selT=setTimeout(showSelButton,120);}); /* after the drag settles */
 document.addEventListener('scroll',()=>{const b=document.getElementById('ntSelBtn');if(b&&!b.hidden){clearTimeout(selT);selT=setTimeout(showSelButton,60);}},true);
+window.addEventListener('resize',()=>{const b=document.getElementById('ntSelBtn');if(b&&!b.hidden){clearTimeout(selT);selT=setTimeout(showSelButton,60);}});
+const SEL_MAX=65536; /* main's NOTES_LIMITS.inputChars: its refusal says "message", a selection gets its own words */
 async function notesSaveSel(i){
   const a=i.a, root=liveRoot(a);
+  if(i.text.length>SEL_MAX){toast('That selection is too long to save.',5000).classList.add('err');return;}
   let r=null;try{r=await bridge.notesSave(root.id,{role:i.role,ord:i.ord,text:i.text,from:'selection'});}catch(e){r=null;}
   if(!r||!r.ok){toast(esc((r&&r.error)||'Could not save the note.'),5000).classList.add('err');return;}
   try{window.getSelection().removeAllRanges();}catch(e){}
@@ -2874,7 +2881,7 @@ async function openNotes(a,o){
   if(BP)await DN.showChatTab(BP); /* FR-025: from the Browser tab, Chat comes first */
   const d=$('notesDrawer'); if(!d||ui.selected!==a.id)return false;
   if(!NT.open){NT.ret=o.opener&&document.contains(o.opener)?o.opener:(document.activeElement&&document.activeElement!==document.body?document.activeElement:$('msgInput'));}
-  NT.open={id:a.id}; d.hidden=false;
+  NT.open={id:a.id}; d.hidden=false; hideSelButton(); /* the selection may survive, the button does not float over the drawer */
   document.querySelectorAll('[data-notes-toggle]').forEach(b=>b.setAttribute('aria-expanded','true'));
   placeNotesDrawer();
   if(window.ResizeObserver&&!NT.ro){NT.ro=new ResizeObserver(placeNotesDrawer);NT.ro.observe($('chat'));NT.ro.observe($('panel'));}

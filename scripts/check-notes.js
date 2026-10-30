@@ -247,6 +247,62 @@ module.exports = async (ctx) => {
     check(sn2.text.replace(/\s+/g, ' ') === picked2.trim().replace(/\s+/g, ' '), `${tag}: ...with only the selected text (${sn2.text.slice(0, 40)})`);
     await js(`window.getSelection().removeAllRanges();true`);
     await until(`!document.querySelector('#modeMenu')`, 2000);
+    /* ---- T033 review round: real mouse input, a selection scrolled out of the log, the drawer, a too-long selection ---- */
+    const btnVisible = `(()=>{const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden&&b.getClientRects().length>0})()`;
+    const centerOf = (expr) => js(`(()=>{const e=${expr};if(!e)return null;const r=e.getBoundingClientRect();return JSON.stringify({x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)})})()`).then((t) => (t ? JSON.parse(t) : null));
+    const mouseClick = async (pt) => { wc().sendInputEvent({ type: 'mouseMove', x: pt.x, y: pt.y }); await ctx.sleep(80); wc().sendInputEvent({ type: 'mouseDown', x: pt.x, y: pt.y, button: 'left', clickCount: 1 }); wc().sendInputEvent({ type: 'mouseUp', x: pt.x, y: pt.y, button: 'left', clickCount: 1 }); };
+    /* real input: pressing the floating button keeps the selection (its mousedown is not a focus move), so the click saves it */
+    const pr = await js(`__ntd.pick(${replyB},3,17)`);
+    check(pr.trim().length >= 10 && await until(btnVisible, 3000), `${tag}: (real input) a selection is made and the button shows (the precondition)`);
+    const bp = await centerOf(`document.getElementById('ntSelBtn')`);
+    const r0 = await countSel();
+    await js(`window.__ev=[];for(const t of ['mousedown','mouseup','click'])document.addEventListener(t,e=>window.__ev.push(t+':'+(e.target.id||e.target.className||e.target.tagName)+':'+e.defaultPrevented+':'+getSelection().isCollapsed),true);true`);
+    await mouseClick(bp);
+    check(await until(`window.__durbarSimUi.notes.all().filter(n=>n.from==='selection').length===${jsLiteral(r0 + 1)}`, 5000), `${tag}: a real mouse press on the floating button saves the selection (the selection survived the press) ${await js(`JSON.stringify(window.__ev)+getSelection().isCollapsed`)} at ${JSON.stringify(bp)}`);
+    /* real input: a left-click on the message's ⋯ while a selection exists keeps it, so the menu offers Save selection */
+    await until(`getSelection().isCollapsed`, 3000);
+    const pr2 = await js(`__ntd.pick(${replyB},20,34)`);
+    check(pr2.trim().length >= 10, `${tag}: (real input) a selection is made before the ⋯ is clicked (the precondition)`);
+    await mouseClick(await centerOf(`__ntd.dots()`));
+    check(await until(`!!document.querySelector('#modeMenu [data-nact="savesel"]')`, 3000), `${tag}: a real left-click on ⋯ keeps the selection, so the menu offers Save selection to notes`);
+    await key('Escape');
+    await until(`!document.getElementById('modeMenu')`, 2000);
+    /* a selection scrolled out of the log (both ways) shows no button, and it never lands on the composer or the header */
+    for (const dir of ['above', 'below']) {
+      await js(`window.getSelection().removeAllRanges();true`);
+      const ps = await js(`__ntd.pick(${replyB},2,16)`);
+      check(ps.trim().length >= 10 && await until(btnVisible, 3000), `${tag}: (${dir}) a selection is made and the button shows (the precondition)`);
+      const away = await js(`(()=>{const lg=document.getElementById('chat'),inner=lg.querySelector('.chat-inner'),sp=document.createElement('div');sp.id='ntSpacer';sp.style.cssText='height:4000px;flex:none';
+        const bub=__ntd.dots().parentElement;
+        if(${jsLiteral(dir)}==='above'){inner.appendChild(sp);lg.scrollTop=lg.scrollHeight;}else{inner.insertBefore(sp,inner.firstChild);lg.scrollTop=lg.scrollTop===0?1:0;}
+        const c=lg.getBoundingClientRect(),b=bub.getBoundingClientRect();return JSON.stringify({c:[c.top,c.bottom],b:[b.top,b.bottom],st:lg.scrollTop,sh:lg.scrollHeight,ch:lg.clientHeight})})()`).then(JSON.parse);
+      check(dir === 'above' ? away.b[1] < away.c[0] : away.b[0] > away.c[1], `${tag}: (${dir}) the log really scrolled: the message is out of the log (${JSON.stringify(away)})`);
+      check(!(await js(`getSelection().isCollapsed`)), `${tag}: (${dir}) the selection is still there`);
+      check(await until(`(()=>{const b=document.getElementById('ntSelBtn');return !b||b.hidden})()`, 3000), `${tag}: (${dir}) a selection scrolled out of the log shows no button`);
+      check(!(await js(`window.__durbarSimUi.notes.selNow()`)), `${tag}: (${dir}) nor does a re-check`);
+      await js(`(()=>{const sp=document.getElementById('ntSpacer');if(sp)sp.remove();getSelection().removeAllRanges();__ntd.dots().parentElement.scrollIntoView({block:'center'});return true})()`);
+    }
+    /* the Notes drawer: opening it hides the button although the selection survives; a new selection after closing shows it again */
+    await js(`window.getSelection().removeAllRanges();true`);
+    const pd = await js(`__ntd.pick(${replyB},2,16)`);
+    check(pd.trim().length >= 10 && await until(btnVisible, 3000), `${tag}: (drawer) a selection is made and the button shows (the precondition)`);
+    check(await openDrawer(), `${tag}: (drawer) the drawer opens`);
+    check(!(await js(`getSelection().isCollapsed`)), `${tag}: (drawer) the selection survived the drawer opening (the precondition)`);
+    check(await until(`(()=>{const b=document.getElementById('ntSelBtn');return !b||b.hidden})()`, 3000), `${tag}: (drawer) the button is gone while the drawer is open`);
+    check(!(await js(`window.__durbarSimUi.notes.selNow()`)), `${tag}: (drawer) and a re-check does not bring it back`);
+    await closeDrawer();
+    await js(`window.getSelection().removeAllRanges();true`);
+    const pd2 = await js(`__ntd.pick(${replyB},2,16)`);
+    check(pd2.trim().length >= 10 && await until(btnVisible, 3000), `${tag}: (drawer) after closing it, a new selection shows the button again`);
+    await js(`window.getSelection().removeAllRanges();true`);
+    /* a selection over 64K characters has its own words and stores nothing (the text is planted in the reply and put back) */
+    const big = await js(`(()=>{const b=__ntd.dots().parentElement,t=__ntd.textNode(b,5);window.__ntOrig=t.data;t.data='word '.repeat(14000);const r=document.createRange();r.setStart(t,0);r.setEnd(t,t.data.length);const s=getSelection();s.removeAllRanges();s.addRange(r);b.scrollIntoView({block:'end'});return s.toString().length})()`);
+    check(big > 65536 && await until(btnVisible, 3000), `${tag}: (too long) a selection of ${big} characters shows the button (the precondition)`);
+    const l0 = await countSel();
+    await js(`document.getElementById('ntSelBtn').click()`);
+    check(await until(`/That selection is too long to save\./.test([...document.querySelectorAll('#toasts .toast')].map(t=>t.textContent).join(' '))`, 4000), `${tag}: (too long) its own toast, not the message wording (${await toastText()})`);
+    check((await countSel()) === l0, `${tag}: (too long) nothing was stored`);
+    await js(`(()=>{const t=__ntd.textNode(__ntd.dots().parentElement,5);if(window.__ntOrig!=null)t.data=window.__ntOrig;getSelection().removeAllRanges();return true})()`);
     /* the notes of this block are removed again, so the scenarios below see what they saw before */
     await js(`(async()=>{const U=window.__durbarSimUi,b=U.bridge(),ag=U.agents().find(x=>x.name==='Noor');for(const n of U.notes.all().filter(x=>x.from==='selection'))await b.notesDelete(ag.id,n.id,n.rev);return true})()`);
     check(await until(`window.__durbarSimUi.notes.all().filter(n=>n.from==='selection').length===0&&window.__durbarSimUi.notes.all().length===1`, 5000), `${tag}: the selection notes are removed (one note left)`);

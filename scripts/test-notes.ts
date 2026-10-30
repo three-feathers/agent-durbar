@@ -358,7 +358,7 @@ assert.deepStrictEqual(o.map((n) => n.text), ['b', 'c', 'a']);
 
   // FR-042: the selected text as saved, and where the floating button goes
   {
-    const SEL = DN as unknown as { selectionText(r: unknown): string; selButtonTop(s: { endBottom: number; startTop: number }, h: number, v: { top: number; bottom: number }, a: { top: number; bottom: number } | null): number };
+    const SEL = DN as unknown as { selectionText(r: unknown): string; selButtonTop(s: { endBottom: number; startTop: number }, h: number, v: { top: number; bottom: number }, a: { top: number; bottom: number } | null): number | null };
     assert.strictEqual(SEL.selectionText('  two lines\r\nof text \n'), 'two lines\nof text', 'line ends unified, ends trimmed');
     assert.strictEqual(SEL.selectionText('a\u200bb\ufeff'), 'ab', 'zero-width marks are dropped');
     assert.strictEqual(SEL.selectionText('   \n\t '), '', 'only blanks: nothing to save');
@@ -371,6 +371,15 @@ assert.deepStrictEqual(o.map((n) => n.text), ['b', 'c', 'a']);
     assert.strictEqual(SEL.selButtonTop({ endBottom: 770, startTop: 700 }, 28, view, null), 776, 'no composer to avoid: below');
     assert.strictEqual(SEL.selButtonTop({ endBottom: 5, startTop: 0 }, 28, view, null), 11, 'never above the window top (8px margin)');
     assert.strictEqual(SEL.selButtonTop({ endBottom: 895, startTop: 880 }, 28, view, null), 864, 'never below the window bottom');
+    // the visible log is the view; the composer is avoided after the clamp too (the selection scrolled out of the log)
+    const log = { top: 245, bottom: 778 }, comp = { top: 778, bottom: 900 };
+    assert.strictEqual(SEL.selButtonTop({ endBottom: 1000, startTop: 500 }, 28, view, comp), null, 'end below the composer: the clamp would land on it, so no button (never 864)');
+    assert.notStrictEqual(SEL.selButtonTop({ endBottom: 1000, startTop: 500 }, 28, view, comp), 864, 'never 864 over the composer');
+    for (const [e, st] of [[798, 760], [1000, 500], [2109, 2000], [-886, -900], [190, 170], [770, 700], [300, 280]] as const) {
+      const t = SEL.selButtonTop({ endBottom: e, startTop: st }, 28, log, comp);
+      assert.ok(t === null || (t + 28 <= comp.top && t >= log.top + 8), `end ${e}: null or inside the log and clear of the composer (got ${t})`);
+    }
+    assert.strictEqual(SEL.selButtonTop({ endBottom: 300, startTop: 280 }, 28, log, comp), 306, 'in the log: below the end');
   }
 
   // the notice above the box (FR-024)
