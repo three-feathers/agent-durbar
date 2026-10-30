@@ -321,7 +321,10 @@ const placeIcon=p=>{
 };
 const lobbyArt=()=>{
   const v=THEME.slot('lobby-art');
-  return v===null?'':`<svg class="lobby-art" data-slot="lobby-art" viewBox="0 0 320 36" preserveAspectRatio="none" aria-hidden="true" focusable="false">${v}</svg>`;
+  /* spec 040 FR-030 (issue 903): a user theme's band keeps its proportions (circles stay round) and covers the lobby, cropped to its middle; the built-in packs were drawn
+     to be stretched to the lobby width (320x36 to about 1300x58), so they stay as they are */
+  const cur=THEME.current().id, own=!THEME.list().some(t=>t.id===cur);
+  return v===null?'':`<svg class="lobby-art" data-slot="lobby-art" viewBox="0 0 320 36" preserveAspectRatio="${own?'xMidYMid slice':'none'}" aria-hidden="true" focusable="false">${v}</svg>`;
 };
 /* the lobby's tiles (spec 001 FR-039): the places with the Boss in the middle of the row, then the coffee corner (spec 068), the Bank and the
    Postbox (only where the app has schedules, not in the demo); the fixed tiles are never mapping choices */
