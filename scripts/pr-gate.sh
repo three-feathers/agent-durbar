@@ -14,6 +14,8 @@
 #     Exact status notes (a whole comment that is only `reviewing at <sha>` or `checks run at <sha>: ...` on one line, pattern in
 #     scripts/pr-status-note.re) are not counted as asks; they are printed apart under "status notes, not counted as asks:".
 #   - an outside PR (from a fork, or opened by an account outside scripts/trusted-authors.txt other than dependabot[bot]): a human decides;
+#     An APPROVED review by a trusted account is not an ask: it prints as "approved by: <login> at <sha>" (a later comment or
+#     CHANGES_REQUESTED still blocks; an outside approval stays an ask, shown as author and link only).
 #   - a comment whose latest edit was made by an outside account.
 # Untrusted text is never printed (AGENTS.md, "Untrusted content and prompt injection"; spec 021 FR-060): a comment, review or line
 # comment by an account outside scripts/trusted-authors.txt, or last edited by one, shows only its author and link, "not shown, for a
@@ -52,8 +54,12 @@ EDITED_URLS=$(printf '%s\n' "$outside_edits" | awk '{print $1}'); trust_defs
 NOTE_RE=$(sed 's/\\/\\\\/g' "$(dirname "$0")/pr-status-note.re")
 NOTE="(.body|test(\"$NOTE_RE\"))"
 mine=$( { gh api --paginate repos/$R/issues/$p/comments --jq ".[]|select(.user.login==\"$ME\" and ($NOTE|not))|.created_at"; gh api --paginate repos/$R/pulls/$p/reviews --jq ".[]|select(.user.login==\"$ME\")|.submitted_at"; gh api --paginate repos/$R/pulls/$p/comments --jq ".[]|select(.user.login==\"$ME\")|.created_at"; } | sort | tail -1)
-newer=$( { gh api --paginate repos/$R/issues/$p/comments --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and (.user.login|test(\"\\\\[bot\\\\]\$\")|not) and (((.user.login|trusted) and $NOTE)|not))|\"\(.created_at) comment \(.user.login): \(shown_body)\""; gh api --paginate repos/$R/pulls/$p/reviews --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and .body!=\"\")|\"\(.submitted_at) review(\(.state)) \(.user.login): \(shown_body)\""; gh api --paginate repos/$R/pulls/$p/comments --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and (.user.login|test(\"\\\\[bot\\\\]\$\")|not))|\"\(.created_at) line \(.user.login) \(.path): \(shown_body)\""; } | sort | awk -v m="$mine" '$1>m')
+newer=$( { gh api --paginate repos/$R/issues/$p/comments --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and (.user.login|test(\"\\\\[bot\\\\]\$\")|not) and (((.user.login|trusted) and $NOTE)|not))|\"\(.created_at) comment \(.user.login): \(shown_body)\""; gh api --paginate repos/$R/pulls/$p/reviews --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and .body!=\"\" and (.state!=\"APPROVED\" or (.user.login|trusted|not)))|\"\(.submitted_at) review(\(.state)) \(.user.login): \(shown_body)\""; gh api --paginate repos/$R/pulls/$p/comments --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and (.user.login|test(\"\\\\[bot\\\\]\$\")|not))|\"\(.created_at) line \(.user.login) \(.path): \(shown_body)\""; } | sort | awk -v m="$mine" '$1>m')
 notes=$( { gh api --paginate repos/$R/issues/$p/comments --jq "$JQ_TRUST .[]|select($NOTE and (.user.login|trusted))|\"\(.created_at) \(.user.login): \(.body|gsub(\"^\\\\s+\";\"\")|split(\"\\n\")[0])\""; } | sort)
+# approvals (spec 021, 2026-10-29 delta, issue #883): a trusted reviewer's latest review being APPROVED is printed on its own line and its
+# body is not an ask. A later comment or change request still counts (it is newer than my last answer, or it is the latest review state).
+approvals=$(gh api --paginate repos/$R/pulls/$p/reviews --jq "$JQ_TRUST .[]|select(.state!=\"COMMENTED\" and .state!=\"PENDING\" and (.user.login|trusted))|\"\(.user.login)\t\(.submitted_at)\t\(.state)\t\(.commit_id[0:8])\"" | sort -k1,1 -k2,2 | awk -F'\t' '{last[$1]=$0} END{for(u in last){split(last[u],f,"\t"); if(f[3]=="APPROVED") print "approved by: " f[1] " at " f[4] " (" f[2] ")"}}' | sort)
+[ -n "$approvals" ] && echo "$approvals"
 [ -n "$notes" ] && { echo "status notes, not counted as asks:"; echo "$notes"; }
 if [ -n "$bad" ] || [ "$codeql" != "pass" ] || [ "$alerts" != "0" ] || [ -n "$changes" ] || [ "$threads" != "0" ] || [ -n "$newer" ] || [ -n "$outside_edits" ]; then
   echo "#$p not ready: checks=[$bad] codeql=$codeql alerts=$alerts changes_requested=[$changes] open_threads=$threads"
