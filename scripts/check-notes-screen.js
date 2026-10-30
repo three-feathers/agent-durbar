@@ -196,9 +196,9 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('msgInput').focus()`);
     await key('M', [MOD, 'shift'], { char: 'never' });
     check(await until(`!document.getElementById('notesDrawer').hidden&&document.querySelectorAll('#notesDrawer .nt-row').length===2`, 5000), `${tag}: the drawer lists 2 notes`);
-    const rowSel = (host, t) => `[...document.querySelectorAll(${jsLiteral(host + ' .nt-row')})].find(r=>r.querySelector('.nt-title').textContent===${jsLiteral(t)})`;
-    const press = (host, t, nt) => js(`(()=>{const r=${rowSel(host, t)};const b=r&&r.querySelector(${jsLiteral(`[data-nt="${nt}"]`)});if(!b)return false;b.focus();b.click();return true;})()`);
-    const focusOn = (host, t, nt) => until(`(()=>{const e=document.activeElement,r=e&&e.closest&&e.closest('.nt-row');return !!r&&r===${rowSel(host, t)}&&e.dataset.nt===${jsLiteral(nt)}})()`, 4000);
+    await js(`window.__nsRow=(host,t)=>[...document.querySelectorAll(host+' .nt-row')].find(r=>r.querySelector('.nt-title').textContent===t);true`);
+    const press = (host, t, nt) => js(`(()=>{const r=__nsRow(${jsLiteral(host)},${jsLiteral(t)});const b=r&&r.querySelector(${jsLiteral(`[data-nt="${nt}"]`)});if(!b)return false;b.focus();b.click();return true;})()`);
+    const focusOn = (host, t, nt) => until(`(()=>{const e=document.activeElement,r=e&&e.closest&&e.closest('.nt-row');return !!r&&r===__nsRow(${jsLiteral(host)},${jsLiteral(t)})&&e.dataset.nt===${jsLiteral(nt)}})()`, 4000);
     const fill = async (sel, v) => { await until(`!!document.querySelector(${jsLiteral('#modeDlg ' + sel)})`, 3000); await js(`(()=>{const t=document.querySelector(${jsLiteral('#modeDlg ' + sel)});t.value=${jsLiteral(v)};t.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#modeDlg .primary').click();})()`); };
     const rename = async (host, t, to) => { await press(host, t, 'more'); await until(`!!document.querySelector('#modeMenu [data-nmact="rename"]')`, 3000); await js(`document.querySelector('#modeMenu [data-nmact="rename"]').click()`); await fill('input', to); };
     for (const [host, where] of [['#notesDrawer', 'drawer'], ['#nsList', 'screen']]) {
@@ -212,7 +212,7 @@ module.exports = async (ctx) => {
       check(await until(`window.__durbarSimUi.notes.all().some(n=>n.text.includes(${jsLiteral('first in the ' + where)}))`, 4000), `${tag} ${where}: the edit is saved`);
       check(await focusOn(host, t0, 'edit'), `${tag} ${where}: after Edit… the focus is back on that row's Edit… (${await active()})`);
       await rename(host, t0, 'Plan ' + where);
-      check(await until(`!!${rowSel(host, 'Plan ' + where)}`, 4000), `${tag} ${where}: renamed`);
+      check(await until(`!!__nsRow(${jsLiteral(host)},${jsLiteral('Plan ' + where)})`, 4000), `${tag} ${where}: renamed`);
       check(await focusOn(host, 'Plan ' + where, 'more'), `${tag} ${where}: after Rename… the focus is back on that row's ⋯ (${await active()})`);
       await js(`(()=>{const m=document.getElementById('modeMenu');if(m)m.remove();})()`);
       if (where === 'drawer') {
@@ -220,7 +220,7 @@ module.exports = async (ctx) => {
         check(await press(host, 'Ask about the staging quota', 'more'), `${tag} drawer: the ⋯ of the second row`);
         check(await until(`!!document.querySelector('#modeMenu [data-nmact="done"]')`, 3000), `${tag} drawer: the row menu has Mark done`);
         await js(`document.querySelector('#modeMenu [data-nmact="done"]').click()`);
-        check(await until(`document.querySelectorAll('#notesDrawer .nt-row').length===1&&!${rowSel(host, 'Ask about the staging quota')}`, 4000), `${tag} drawer: the done note leaves the drawer`);
+        check(await until(`document.querySelectorAll('#notesDrawer .nt-row').length===1&&!__nsRow(${jsLiteral(host)},${jsLiteral('Ask about the staging quota')})`, 4000), `${tag} drawer: the done note leaves the drawer`);
         check(await until(`(document.getElementById('ntCount')||{}).textContent==='Notes 1'`, 4000), `${tag} drawer: the header count drops to 1`);
         check(await focusOn(host, 'Plan drawer', '') || await until(`(()=>{const e=document.activeElement;return !!e&&e.classList.contains('nt-row')&&e.querySelector('.nt-title').textContent==='Plan drawer'})()`, 3000), `${tag} drawer: after Mark done the focus is on the previous row (${await active()})`);
       }
