@@ -108,6 +108,46 @@ export function classifyLink(input: unknown): LinkKind {
   } catch {
     return 'refused';
   }
-  if (u.protocol === 'mailto:') return 'mailto';
+  if (u.protocol === 'mailto:') return parseMailto(text) ? 'mailto' : 'refused';
   return 'refused';
+}
+
+/** A mail link is at most this long (FR-024 hardening, 2026-10-30 security review): it is handed to the system. */
+export const MAILTO_MAX = 512;
+// an address: a conservative local part, `@`, a host name; or a `%XX` escape that is not a control character, a space, a quote, a backslash or an angle bracket
+const MAIL_ADDR = /^(?:[A-Za-z0-9._+-]|%(?!00|0[0-9A-Fa-f]|1[0-9A-Fa-f]|20|22|3[Cc]|3[Ee]|5[Cc]|7[Ff])[0-9A-Fa-f]{2})+@[A-Za-z0-9.-]+$/;
+const MAIL_VALUE = /^(?:[A-Za-z0-9._+@,~*!'()-]|%(?!00|0[0-9A-Fa-f]|1[0-9A-Fa-f]|7[Ff])[0-9A-Fa-f]{2})*$/;
+const MAIL_HEADERS = new Set(['subject', 'cc', 'bcc']);
+
+/**
+ * FR-024: the only link that may be handed to another app. A conservative grammar, checked in main again when the user clicks Open, and the
+ * text handed to the system is the normalised result (never the raw link): `mailto:` + one or more addresses (comma-separated) + optional
+ * `subject`, `cc` and `bcc` headers. Anything else (a space, quote, backslash, angle bracket, control character, an `attach`, `body`, `from` or
+ * other header, an escaped control character, more than `MAILTO_MAX` characters) is refused as a whole. Returns the href, or null.
+ */
+export function parseMailto(input: unknown): string | null {
+  if (typeof input !== 'string') return null;
+  const text = input.trim();
+  if (text.length > MAILTO_MAX || hasControl(text) || !/^mailto:/i.test(text)) return null;
+  const rest = text.slice('mailto:'.length);
+  const q = rest.indexOf('?');
+  const path = q < 0 ? rest : rest.slice(0, q);
+  const query = q < 0 ? '' : rest.slice(q + 1);
+  const addrs = path.split(',');
+  if (!addrs.length || !addrs.every((a) => a.length > 0 && a.length <= 254 && MAIL_ADDR.test(a) && !a.includes('..'))) return null;
+  const kept: string[] = [];
+  if (q >= 0) {
+    if (!query) return null;
+    for (const pair of query.split('&')) {
+      const eq = pair.indexOf('=');
+      if (eq <= 0) return null;
+      const key = pair.slice(0, eq).toLowerCase();
+      const val = pair.slice(eq + 1);
+      if (!MAIL_HEADERS.has(key) || !MAIL_VALUE.test(val)) return null;
+      if ((key === 'cc' || key === 'bcc') && !val.split(',').every((a) => a.length > 0 && MAIL_ADDR.test(a))) return null; // cc and bcc hold addresses
+      kept.push(key + '=' + val);
+    }
+  }
+  const href = 'mailto:' + addrs.join(',') + (kept.length ? '?' + kept.join('&') : '');
+  return href.length <= MAILTO_MAX ? href : null;
 }

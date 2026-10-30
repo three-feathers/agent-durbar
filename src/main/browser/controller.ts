@@ -12,7 +12,7 @@
  * Electron's parts come in as arguments so the test runs it against fakes.
  */
 import { simAddress } from './simpages';
-import { classifyLink } from '../../shared/browserurl';
+import { classifyLink, parseMailto } from '../../shared/browserurl';
 import { isHttpUrl } from '../../shared/url';
 import type { BrowserResult, BrowserState } from '../../shared/api';
 import type { NavAction } from '../hardening';
@@ -386,8 +386,10 @@ export function makeBrowserController(deps: BrowserDeps) {
     },
     /** FR-024: the user pressed *Open* on a mail link. The only path from the browser to another app; a link that is not `mailto:` is refused again here. */
     async openMail(url: unknown): Promise<{ ok: boolean }> {
-      if (classifyLink(url) !== 'mailto') return { ok: false };
-      await deps.openExternal((url as string).trim());
+      // main re-parses the link and hands over the normalised href, never the text the window sent (2026-10-30 security review)
+      const href = parseMailto(url);
+      if (!href) return { ok: false };
+      await deps.openExternal(href);
       return { ok: true };
     },
     state(id: unknown): BrowserResult {

@@ -202,6 +202,13 @@
     return !!(a&&a.ok);
   }
 
+  /* FR-030, FR-031: where a click on a chat link goes. `rootAvailable`: the chat's root session is live and has a browser. When it is not (the demo, an ended
+     or removed parent of a helper's chat) a web link goes to the system browser and any other link is refused: a link is never lost silently. */
+  function linkRoute(web,mod,setting,rootAvailable){
+    if(web&&(mod||setting==='system'))return 'system';
+    if(!rootAvailable)return web?'system':'refuse';
+    return 'tab';
+  }
   /* FR-030: a chat link for this session's browser. Main classifies it (web, mail or refused) and navigates; the one-time note is asked on the first
      use, and *Not now* gives {fallback:true} (the caller opens the system browser this time). Returns main's answer. */
   async function openLink(id,url){
@@ -332,5 +339,5 @@
   /* The page area while the Browser tab is selected, shown or still attaching (the overlay test must see an overlay that is open during the attach) */
   function paneRect(){const v=$('bView');return cur&&cur.tab==='browser'&&v?v.getBoundingClientRect():null;}
   const covered=()=>!!(cur&&cur.covered);
-  return {tabKey,barModel,boundsOf,init,available,tabsHTML,paneHTML,mount,hide,select,current,overlay,areaRect,wantTab,dialogOpen,covered,paneRect,openLink,openMail};
+  return {tabKey,barModel,boundsOf,init,available,tabsHTML,paneHTML,mount,hide,select,current,overlay,areaRect,wantTab,dialogOpen,covered,paneRect,openLink,openMail,linkRoute};
 })());

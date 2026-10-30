@@ -49,6 +49,19 @@ for (const v of ['"session"', '"System"', '"other"', 'true', '1', 'null', '{}'])
   assert.ok(/Open chat links in/.test(scr) && /<option value="session"[^>]*>Session browser<\/option><option value="system"[^>]*>System browser<\/option>/.test(scr), 'the Settings row offers Session browser and System browser');
 }
 
+// the scan also finds the forms that dodge `shell.openExternal(`: `const { openExternal } = shell`, `shell['openExternal']`, `const f = shell.openExternal`, `require('electron').shell`
+function aliasesOf(src: string): string[] {
+  const out: string[] = [];
+  if (/\bshell\s*\[\s*['"`]openExternal['"`]\s*\]/.test(src)) out.push('shell[\'openExternal\']');
+  if (/\{[^}]*\bopenExternal\b[^}]*\}\s*=\s*(?:shell\b|require\(\s*['"]electron['"]\s*\)\.shell\b)/.test(src)) out.push('destructured openExternal');
+  if (/=\s*shell\.openExternal\b(?!\s*\()/.test(src) || /\bshell\.openExternal\b(?!\s*\()/.test(src.replace(/\bshell\.openExternal\(/g, ''))) out.push('shell.openExternal used as a value');
+  if (/\brequire\(\s*['"]electron['"]\s*\)\s*\.\s*shell\b/.test(src) || /\bshell\s*:\s*\w+\b[^;]*\bfrom\s+['"]electron['"]/.test(src)) out.push('shell aliased through require');
+  if (/import\s*\{[^}]*\bshell\s+as\b/.test(src)) out.push('shell imported under another name');
+  return out;
+}
+for (const [sample, found] of [["const { openExternal } = shell;", 1], ["shell['openExternal'](u)", 1], ["const f = shell.openExternal; f(u)", 1], ["require('electron').shell.openExternal(u)", 1], ["import { shell as sh } from 'electron'", 1], ["await shell.openExternal(u);", 0], ["import { shell } from 'electron';", 0]] as const) {
+  assert.strictEqual(aliasesOf(sample).length > 0 ? 1 : 0, found, `the alias scan on: ${sample}`);
+}
 // ---- 2. FR-033: the other openExternal paths ----
 {
   const EXPECT: Record<string, number> = {
@@ -63,8 +76,10 @@ for (const v of ['"session"', '"System"', '"other"', 'true', '1', 'null', '{}'])
   const found: Record<string, number> = {};
   for (const f of walk(path.join(ROOT, 'src'))) {
     const rel = path.relative(ROOT, f).replace(/\\/g, '/');
-    const n = (stripComments(fs.readFileSync(f, 'utf8')).match(/\bshell\.openExternal\(/g) ?? []).length;
+    const src = stripComments(fs.readFileSync(f, 'utf8'));
+    const n = (src.match(/\bshell\.openExternal\(/g) ?? []).length;
     if (n) found[rel] = n;
+    assert.deepStrictEqual(aliasesOf(src), [], `${rel}: openExternal is reached only as shell.openExternal(...) (no alias, destructuring or computed name)`);
   }
   assert.deepStrictEqual(found, EXPECT, 'the call sites of shell.openExternal are exactly the known ones (a new one needs this list and its spec)');
   // each one still does what FR-033 lists
@@ -89,7 +104,7 @@ for (const v of ['"session"', '"System"', '"other"', 'true', '1', 'null', '{}'])
   assert.ok(/const lk=e\.target\.closest\('\.md a'\);\n\s*if\(lk\)\{e\.preventDefault\(\);/.test(click), 'a chat link click never navigates the window: preventDefault first');
   assert.ok(/openChatLink\(u,IS_MAC\?e\.metaKey:e\.ctrlKey\)/.test(click), 'Cmd on a Mac, Ctrl elsewhere');
   const fn = app.slice(app.indexOf('async function openChatLink'), app.indexOf('function openLinkMenu'));
-  assert.ok(/if\(web&&\(mod\|\|CHAT_LINKS==='system'\)\)return openLinkExternal\(u\)/.test(fn), 'Ctrl/Cmd+click and the System setting use the existing openExternal');
+  assert.ok(/const route=BP\.linkRoute\(web,mod,CHAT_LINKS,!!root&&BP\.available\(root\)\);\n\s*if\(route==='system'\)return openLinkExternal\(u\)/.test(fn), 'Ctrl/Cmd+click, the System setting and a missing root use the existing openExternal (BP.linkRoute is tested in test:browserpane)');
   assert.ok(/BP\.openLink\(root\.id,u\)/.test(fn), 'a plain click asks main for the chat\'s root session');
   assert.ok(/r\.fallback\)\{if\(web\)openLinkExternal\(u\)/.test(fn), 'Not now on the note: the system browser, this time');
   assert.ok(/r\.link==='mailto'\)\{toastAction\(esc\(r\.reason\),'Open',\(\)=>BP\.openMail\(u\)/.test(fn), 'a mail link offers Open; only that click reaches the system');

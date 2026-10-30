@@ -460,6 +460,31 @@ process.on('exit', () => {
     assert.deepStrictEqual(await r.ctl.openMail('  mailto:a@example.invalid?subject=hi '), { ok: true });
     assert.deepStrictEqual(r.opened, ['mailto:a@example.invalid?subject=hi'], 'only after the click, and only the mail link');
     assert.deepStrictEqual(await r.ctl.openMail('MAILTO:x@y.z'), { ok: true }, 'the scheme is case-insensitive like the classifier');
+    // 2026-10-30 security review: what is handed to the system is a normalised mail link from a conservative grammar, never the raw text
+    {
+      const HOSTILE_MAIL = ['mailto:a"b --x', 'mailto:a b@example.invalid', 'mailto:\\\\host\\share', 'mailto:%00@example.invalid', 'mailto:a@example.invalid?attach=C:\\x', 'mailto:' + 'a'.repeat(4000) + '@example.invalid',
+        'mailto:a@example.invalid?subject=x%0d%0abcc=y', 'mailto:a@example.invalid?body=hi', 'mailto:a@example.invalid?from=b@example.invalid', 'mailto:a@example.invalid?subject=hi&attach=x', 'mailto:a@example.invalid?cc=<b@example.invalid>',
+        'mailto:<a>@example.invalid', 'mailto:a@example.invalid%22', 'mailto:a%5Cb@example.invalid', 'mailto:a%20b@example.invalid', 'mailto:', 'mailto:@example.invalid', 'mailto:a@example.invalid?', 'mailto:a@example.invalid?subject', 'mailto:a@example.invalid?subject=%00',
+        'mailto:a@example.invalid?subject=a b', 'mailto:a@example.invalid,,b@example.invalid', 'mailto:a@example.invalid?cc=x', 'mailto:a..b@example.invalid', 'mailto:a@example.invalid?subject=' + 'x'.repeat(600)];
+      const r2 = rig();
+      for (const u of HOSTILE_MAIL) {
+        assert.deepStrictEqual(await r2.ctl.openMail(u), { ok: false }, `openMail refuses ${JSON.stringify(u.slice(0, 60))}`);
+        const c = await r2.ctl.openLink('s1', u);
+        assert.ok(!c.ok && c.link === 'refused' && c.reason === 'Durbar opens only mail links in other apps.', `a hostile mail link is refused with static text and no button: ${JSON.stringify(u.slice(0, 60))}`);
+      }
+      assert.deepStrictEqual(r2.opened, [], 'nothing hostile reached the system');
+      const GOOD: [string, string][] = [['mailto:a@example.invalid?subject=Hi%20there', 'mailto:a@example.invalid?subject=Hi%20there'], ['  MAILTO:a@example.invalid,b+c@example.invalid?cc=d@example.invalid&Subject=x', 'mailto:a@example.invalid,b+c@example.invalid?cc=d@example.invalid&subject=x'], ['mailto:a%2Bb@example.invalid', 'mailto:a%2Bb@example.invalid']];
+      for (const [raw, norm] of GOOD) {
+        const lr = await r2.ctl.openLink('s1', raw);
+        assert.ok(!lr.ok && lr.link === 'mailto', `a good mail link is offered: ${raw}`);
+        assert.deepStrictEqual(await r2.ctl.openMail(raw), { ok: true }, raw);
+        assert.strictEqual(r2.opened[r2.opened.length - 1], norm, 'the normalised href is what opens');
+      }
+      assert.strictEqual(r2.opened.length, GOOD.length);
+      // the link's own text never reaches the system as sent: only the parsed one does
+      const src = fs.readFileSync(path.join(ROOT, 'src/main/browser/controller.ts'), 'utf8');
+      assert.ok(/const href = parseMailto\(url\);[\s\S]*?deps\.openExternal\(href\)/.test(src) && !/openExternal\(\(url as string\)/.test(src), 'openMail hands over the normalised href');
+    }
     // a web link opens in that session's own view, never in another (SC-002, FR-030)
     const a = await r.ctl.openLink('s1', 'https://example.invalid/docs?x=1');
     assert.ok(a.ok);

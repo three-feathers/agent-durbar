@@ -3105,13 +3105,11 @@ function showSessionBrowser(id){
   BP.wantTab(id,'browser');openPanel(id,false);
 }
 async function openChatLink(u,mod){
-  const a=byId(ui.selected),root=a&&liveRoot(a);
+  const a=byId(ui.selected),root=a&&liveRoot(a); /* a helper's chat uses its parent's browser; its own id never gets a view */
   const web=/^https?:\/\//i.test(u);
-  if(web&&(mod||CHAT_LINKS==='system'))return openLinkExternal(u);
-  if(!root||!BP.available(root)){ /* the demo, or a session that is not live: no browser to open it in */
-    if(web)return openLinkExternal(u);
-    toast(esc(REFUSED_LINK),4200);return;
-  }
+  const route=BP.linkRoute(web,mod,CHAT_LINKS,!!root&&BP.available(root));
+  if(route==='system')return openLinkExternal(u);
+  if(route==='refuse'){toast(esc(REFUSED_LINK),4200);return;}
   const r=await BP.openLink(root.id,u);
   if(r&&r.ok){showSessionBrowser(root.id);return;}
   if(r&&r.fallback){if(web)openLinkExternal(u);return;} /* Not now on the one-time note: the system browser, this time */

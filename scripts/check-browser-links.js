@@ -186,5 +186,22 @@ module.exports = async (ctx) => {
   await wait(() => views().length === 1 && urlOf(view()).startsWith('http://127.0.0.1:9/'), 'Session browser: a plain click loads it in the tab (a closed local port, nothing else)');
   assert.strictEqual(logged.length, sysBefore + 1, 'and does not touch the system');
   assert.notStrictEqual(urlOf(view()), viewsBefore);
+  // 8. a link clicked in a HELPER's chat opens its PARENT's Browser tab; the helper's own id never gets a view (FR-030: the chat's root session)
+  const hp = await js(`(()=>{const h=window.__durbarSimUi.agents().find(a=>a.parent&&document.querySelector('#stage .helper[data-id="'+CSS.escape(a.id)+'"]'));return h?{id:h.id,parent:h.parent}:null})()`).catch(() => null);
+  await js(`document.getElementById('backBtn').click()`);
+  await wait(() => js(`!document.body.classList.contains('panel-open')`), 'back to the office');
+  const helper = await js(`(()=>{const h=window.__durbarSimUi.agents().find(a=>a.parent&&document.querySelector('#stage .helper[data-id="'+CSS.escape(a.id)+'"]'));return h?{id:h.id,parent:h.parent}:null})()`);
+  assert.ok(helper, 'a helper is on the office floor' + JSON.stringify(hp));
+  assert.ok(!ctx.browserStates().some((x) => x.id === helper.id), 'precondition: the helper has no browser');
+  await js(`document.querySelector('#stage .helper[data-id="'+CSS.escape(${jsLiteral(helper.id)})+'"]').click()`);
+  await wait(() => js(`document.body.classList.contains('panel-open')&&document.querySelector('#panel .panel-in.ro')`), "the helper's (read-only) chat is open");
+  assert.strictEqual(await js(`!!document.getElementById('tabBrowser')`), false, 'a helper\'s chat has no Browser tab of its own');
+  await js(`(()=>{const c=document.getElementById('chat');const d=document.createElement('div');d.className='md';const a=document.createElement('a');a.href='durbar-sim://pages/form';a.textContent='helper link';d.appendChild(a);c.appendChild(d);})()`);
+  assert.ok(await clickLink('helper link'));
+  await wait(() => js(`document.querySelector('.sitem.sel')&&document.querySelector('.sitem.sel').dataset.sw===${jsLiteral(helper.parent)}`), "the panel switched to the helper's parent");
+  await wait(() => views().length === 1 && urlOf(view()) === 'durbar-sim://pages/form', "the link loaded in the parent's Browser tab");
+  assert.strictEqual(await js(`document.getElementById('tabBrowser').getAttribute('aria-selected')`), 'true');
+  assert.ok(ctx.browserStates().some((x) => x.id === helper.parent), 'the parent has the browser');
+  assert.ok(!ctx.browserStates().some((x) => x.id === helper.id), "the helper's own id never got a view");
   console.log('[browser-links] all checks passed');
 };

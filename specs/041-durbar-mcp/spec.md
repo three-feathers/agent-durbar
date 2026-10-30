@@ -238,7 +238,7 @@ As a user, I can be sure that an agent running inside Durbar cannot use Durbar's
 
 ## Changes
 
-- **2026-10-26, spec 080 (session browser) delta, T001 of `specs/080-session-browser/tasks.md`** (*decided by the coordinator under Ruben's delegation*; docs only, no new FR or task number here). Spec 080 adds a second Durbar-owned MCP server for agents, so this spec records what stays and what does not apply to it:
+- **2026-10-30, spec 080 (session browser) delta, T001 of `specs/080-session-browser/tasks.md`** (*decided by the coordinator under Ruben's delegation*; docs only, no new FR or task number here). Spec 080 adds a second Durbar-owned MCP server for agents, so this spec records what stays and what does not apply to it:
   - **The server.** `durbar-browser` is a per-session server that gives a session's own agent the browser tools of 080 FR-045. It is **not** this spec's server (`agent-durbar`): it has its own helper flag (`--durbar-browser-tool <tokenfile>`), its own socket or pipe name (`src/main/mcp/paths.ts`) and no switch of this spec. It lives beside 072's `durbar-loop`, the same per-session pattern.
   - **FR-030 still holds for `agent-durbar` only.** Durbar's own control server is still never added to any agent's MCP configuration. FR-030 does not cover `durbar-browser` (and `durbar-loop`): those are added to one session's `mcpServers` only while their switch is on (080 FR-041, 072).
   - **`isDurbarBridge` (T040) learns the browser flag.** It recognises the browser helper's flag the way it recognises this spec's bridge flag and the loop flag, so a user entry that points at the browser helper is refused (080 FR-047).

@@ -1,5 +1,6 @@
 /** Markdown rendering and XSS tests (jsdom, no credits): `npm run test:markdown`. See specs/016. */
 import * as assert from 'assert';
+import * as fs from 'fs';
 import * as path from 'path';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { JSDOM } = require('jsdom') as { JSDOM: new (html: string) => { window: any } }; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -91,6 +92,11 @@ for (const bad of ['ms-msdt:/id', 'search-ms:query=x', 'search:query=x', 'ms-off
   const sim = create(marked, (createPurify.default ?? createPurify)(new JSDOM('<!doctype html><html><body></body></html>').window)) as { render(t: string): string; allowSimLinks(): void };
   const d2 = (t: string): Document => new JSDOM('<body>' + sim.render(t) + '</body>').window.document;
   assert.strictEqual(d2('[p](durbar-sim://pages/form)').querySelector('a[href]'), null, 'off by default');
+  const mdSrc = fs.readFileSync(path.join(root, 'src', 'renderer', 'markdown.js'), 'utf8');
+  assert.ok(/let simLinks=false;/.test(mdSrc) && !/ALLOWED_URI_REGEXP:[^\n]*durbar-sim/.test(mdSrc), 'the simulator pages are off until allowSimLinks() runs, in the source too');
+  const app = fs.readFileSync(path.join(root, 'src', 'renderer', 'app.js'), 'utf8');
+  assert.strictEqual((app.match(/allowSimLinks\(\)/g) ?? []).length, 1, 'allowSimLinks() is called once');
+  assert.ok(/if\(SIM&&window\.DurbarMD&&window\.DurbarMD\.allowSimLinks\)window\.DurbarMD\.allowSimLinks\(\);/.test(app), 'and only under the simulator flag');
   sim.allowSimLinks();
   assert.strictEqual(d2('[p](durbar-sim://pages/form)').querySelector('a')!.getAttribute('href'), 'durbar-sim://pages/form');
   assert.strictEqual(d2('[p](durbar-sim://other/form)').querySelector('a[href]'), null, 'only the pages host');
