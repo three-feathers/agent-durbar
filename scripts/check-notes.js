@@ -250,15 +250,14 @@ module.exports = async (ctx) => {
     /* ---- T033 review round: real mouse input, a selection scrolled out of the log, the drawer, a too-long selection ---- */
     const btnVisible = `(()=>{const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden&&b.getClientRects().length>0})()`;
     const centerOf = (expr) => js(`(()=>{const e=${expr};if(!e)return null;const r=e.getBoundingClientRect();return JSON.stringify({x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)})})()`).then((t) => (t ? JSON.parse(t) : null));
-    const mouseClick = async (pt) => { wc().sendInputEvent({ type: 'mouseMove', x: pt.x, y: pt.y }); await ctx.sleep(80); wc().sendInputEvent({ type: 'mouseDown', x: pt.x, y: pt.y, button: 'left', clickCount: 1 }); wc().sendInputEvent({ type: 'mouseUp', x: pt.x, y: pt.y, button: 'left', clickCount: 1 }); };
+    const mouseClick = async (pt) => { wc().sendInputEvent({ type: 'mouseMove', x: pt.x, y: pt.y }); await until(`(()=>{const e=document.elementFromPoint(${jsLiteral(pt.x)},${jsLiteral(pt.y)});return !!e&&e.matches(':hover')})()`, 3000); wc().sendInputEvent({ type: 'mouseDown', x: pt.x, y: pt.y, button: 'left', clickCount: 1 }); wc().sendInputEvent({ type: 'mouseUp', x: pt.x, y: pt.y, button: 'left', clickCount: 1 }); };
     /* real input: pressing the floating button keeps the selection (its mousedown is not a focus move), so the click saves it */
     const pr = await js(`__ntd.pick(${replyB},3,17)`);
     check(pr.trim().length >= 10 && await until(btnVisible, 3000), `${tag}: (real input) a selection is made and the button shows (the precondition)`);
     const bp = await centerOf(`document.getElementById('ntSelBtn')`);
     const r0 = await countSel();
-    await js(`window.__ev=[];for(const t of ['mousedown','mouseup','click'])document.addEventListener(t,e=>window.__ev.push(t+':'+(e.target.id||e.target.className||e.target.tagName)+':'+e.defaultPrevented+':'+getSelection().isCollapsed),true);true`);
     await mouseClick(bp);
-    check(await until(`window.__durbarSimUi.notes.all().filter(n=>n.from==='selection').length===${jsLiteral(r0 + 1)}`, 5000), `${tag}: a real mouse press on the floating button saves the selection (the selection survived the press) ${await js(`JSON.stringify(window.__ev)+getSelection().isCollapsed`)} at ${JSON.stringify(bp)}`);
+    check(await until(`window.__durbarSimUi.notes.all().filter(n=>n.from==='selection').length===${jsLiteral(r0 + 1)}`, 5000), `${tag}: a real mouse press on the floating button saves the selection (the selection survived the press)`);
     /* real input: a left-click on the message's ⋯ while a selection exists keeps it, so the menu offers Save selection */
     await until(`getSelection().isCollapsed`, 3000);
     const pr2 = await js(`__ntd.pick(${replyB},20,34)`);
