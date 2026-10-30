@@ -1,1 +1,0 @@
-- **Weekly retro** (spec 021 FR-063, task T049): a scheduled workflow opens one "Weekly retro" issue every Monday with the week's facts (PRs, CI failures, red scheduled workflows, idle claims, rule-file sizes) for the agents to answer. No change to the app.
