@@ -1,10 +1,11 @@
 /** Cheeky crew (spec 077): the pure pick and storage rules of src/renderer/crew.js. `npm run test:crew`. No DOM, no credits. */
 import * as assert from 'assert';
+import * as fs from 'fs';
 import * as path from 'path';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const C = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'crew.js')) as {
-  IDS: string[]; MAX_ENTRIES: number; MAX_ID: number;
+  IDS: string[]; PREHISTORIC_IDS: string[]; ALL_IDS: string[]; CREWS: Record<string, string[]>; idsFor: (c: unknown) => string[]; storeKey: (c: unknown) => string; MAX_ENTRIES: number; MAX_ID: number;
   seeded: (s: string) => () => number;
   seededRand: (s: string) => number;
   pickCharacter: (id: string, ids: string[], inUse: string[], rand?: (id: string) => number) => string;
@@ -18,6 +19,23 @@ const C = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'crew.js')
 const ids = ['a', 'b', 'c', 'd'];
 assert.deepStrictEqual(C.IDS, ['punk', 'gamer', 'hacker', 'rocker', 'buzzcut', 'bookworm', 'scientist', 'metalhead', 'bob-glasses', 'skater', 'surfer', 'disco', 'sporty'], 'the 13 characters (FR-059)');
 assert.ok(C.IDS.every((i) => /^[a-z]+(-[a-z]+)?$/.test(i)), 'ids are file-name safe');
+// FR-072 (issue #815): the Prehistoric crew is another list; Cheeky's ids, order and key do not change
+assert.deepStrictEqual(C.PREHISTORIC_IDS, ['youngbeard', 'braids', 'bigbeard', 'ponytail', 'inventor', 'shaman'], 'the 6 Prehistoric characters');
+assert.deepStrictEqual(C.ALL_IDS, [...C.IDS, ...C.PREHISTORIC_IDS]);
+assert.strictEqual(new Set(C.ALL_IDS).size, C.ALL_IDS.length, 'an id is in one crew only, so one saved map can never confuse two crews');
+assert.ok(C.PREHISTORIC_IDS.every((i) => /^[a-z]+$/.test(i)), 'Prehistoric ids are file-name safe');
+assert.deepStrictEqual(C.idsFor('cheeky'), C.IDS);
+assert.deepStrictEqual(C.idsFor('prehistoric'), C.PREHISTORIC_IDS);
+for (const v of ['theme', 'minimalist', 'nope', undefined, null, '__proto__', 'constructor', 'toString']) assert.deepStrictEqual(C.idsFor(v), C.IDS, 'any other value: the Cheeky crew, as before (' + String(v) + ')');
+assert.strictEqual(C.storeKey('cheeky'), 'durbar.crew', "Cheeky's saved choices keep their key");
+assert.strictEqual(C.storeKey('theme'), 'durbar.crew');
+assert.strictEqual(C.storeKey('prehistoric'), 'durbar.crew.prehistoric', 'each crew has its own saved map');
+assert.deepStrictEqual(C.loadCrew({ s1: 'braids', s2: 'punk' }, C.PREHISTORIC_IDS), { s1: 'braids' }, "a Prehistoric load drops Cheeky's ids");
+assert.deepStrictEqual(C.loadCrew({ s1: 'braids', s2: 'punk' }), { s2: 'punk' }, "a Cheeky load (the default list) drops Prehistoric's ids");
+{
+  const six = Array.from({ length: 6 }, (_, i) => 's' + i);
+  assert.strictEqual(new Set(Object.values(C.assignCrew({}, six, C.PREHISTORIC_IDS, (id) => C.seededRand(id)))).size, 6, 'six sessions wear the six Prehistoric characters, no twin');
+}
 
 // ---- seeded: repeatable, in [0,1), and different ids differ ----
 const s1 = C.seeded('session-1'), s2 = C.seeded('session-1');
@@ -96,6 +114,11 @@ assert.strictEqual(C.poseFor('whatever'), 'resting', 'an unknown status rests');
 assert.strictEqual(C.file('punk', 'working'), 'crew/art/punk-working.webp');
 assert.strictEqual(C.file('bob-glasses', 'resting'), 'crew/art/bob-glasses-resting.webp');
 assert.strictEqual(C.files().length, C.IDS.length * 3, 'three pictures per character');
+assert.strictEqual(C.file('braids', 'working'), 'crew/art/prehistoric-braids-working.webp', 'a Prehistoric picture has its own prefix: no clash with a Cheeky name');
+assert.strictEqual(C.files(C.PREHISTORIC_IDS).length, 18, '6 characters x 3 poses');
+assert.ok(C.files(C.PREHISTORIC_IDS).every((f) => /^crew\/art\/prehistoric-[a-z]+-(working|waiting|resting)\.webp$/.test(f)));
+assert.ok(C.files(C.PREHISTORIC_IDS).every((f) => !C.files().includes(f)), 'no file name is in both crews');
+assert.ok(C.usable('shaman') && C.usable('punk'), 'a character of either crew can be drawn');
 assert.ok(C.files(['punk']).every((f) => f.startsWith('crew/art/punk-')));
 assert.ok(C.usable('punk') && C.usable('punk', new Set(['gamer'])), 'a known character with no failed picture');
 assert.ok(!C.usable('punk', new Set(['punk'])), 'a character with a failed picture is not usable');
@@ -106,7 +129,7 @@ assert.strictEqual(C.BOX.w, C.BOX.h, 'the box is square, like the 352x352 art (F
 assert.ok(C.BOX.x + C.BOX.w <= 112, 'the box ends before the monitor');
 assert.strictEqual(C.BOX.w * C.PX_PER_UNIT, 352, 'the art is 4 pixels per stage unit');
 // FR-060: every picture has a face point, and its face box is inside the picture, clear of the monitor and the badge corner and above the desk top (y 86)
-for (const id of C.IDS) for (const pose of C.POSES) {
+for (const id of C.ALL_IDS) for (const pose of C.POSES) {
   const b = C.faceBox(id, pose);
   assert.ok(b, id + '-' + pose + ' has a face box');
   const [x, y, w, h] = b as number[];
@@ -118,13 +141,13 @@ for (const id of C.IDS) for (const pose of C.POSES) {
   assert.ok(vb[0] >= C.BOX.x && vb[1] >= C.BOX.y && vb[0] + vb[2] <= C.BOX.x + C.BOX.w && vb[1] + vb[3] <= C.BOX.y + C.BOX.h, id + '-' + pose + ': the avatar crop is inside the picture');
   assert.ok(vb[0] + vb[2] / 2 > x && vb[0] + vb[2] / 2 < x + w, id + '-' + pose + ': the avatar crop is centred on the face');
 }
-for (const id of C.IDS) for (const pose of C.POSES) {
+for (const id of C.ALL_IDS) for (const pose of C.POSES) {
   const sv = (C.viewBox(id, pose, 'seat') as string).split(' ').map(Number), [fx, fy, fw, fh] = C.faceBox(id, pose) as number[];
   assert.ok(sv[1] === C.BOX.y && sv[0] + sv[2] <= C.BOX.x + C.BOX.w, id + '-' + pose + ': a seat shows the picture from its top edge, not past its right edge');
   assert.ok(fx >= sv[0] && fx + fw <= sv[0] + sv[2] && fy + fh <= sv[1] + sv[3], id + '-' + pose + ': the whole face box is in the seat crop');
 }
 assert.strictEqual(C.viewBox('nope', 'working', 'face'), null, 'an unknown character has no crop');
-assert.deepStrictEqual(Object.keys(C.FACE).sort(), [...C.IDS].sort(), 'a face table row per character');
+assert.deepStrictEqual(Object.keys(C.FACE).sort(), [...C.ALL_IDS].sort(), 'a face table row per character, of every crew');
 // a stored id that no longer exists (an old placeholder-only id) is dropped, and the session gets a new character
 {
   const stored = C.loadCrew({ s1: 'nerd', s2: 'surfer', s3: 'metal' });
@@ -138,5 +161,50 @@ assert.deepStrictEqual(Object.keys(C.FACE).sort(), [...C.IDS].sort(), 'a face ta
   const ss = Array.from({ length: 13 }, (_, i) => 's' + i);
   const m = C.assignCrew({}, ss, C.IDS, (id) => C.seededRand(id));
   assert.strictEqual(new Set(Object.values(m)).size, 13, 'thirteen sessions wear thirteen different characters');
+}
+
+// ---- spec 077 FR-073 (issue #879): the simulator gives each demo name a fitting character; real sessions are untouched ----
+{
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const S = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'simcrew.js')) as {
+    NAMES: Record<string, string[]>; CREW_KEYS: string[]; keyFor: (c: unknown) => string;
+    characterFor: (c: unknown, name: unknown, ids?: string[]) => string; seed: (c: unknown, agents: unknown[], ids?: string[]) => Record<string, string>;
+  };
+  const root = path.join(__dirname, '..', '..');
+  const simTs = fs.readFileSync(path.join(root, 'src', 'renderer', 'sim.ts'), 'utf8');
+  const roster = simTs.slice(simTs.indexOf('const ROSTER: Row[] = ['), simTs.indexOf('// Spec 052 FR-046: each waiting agent'));
+  const demoNames = [...roster.matchAll(/^\s*\['([A-Z][a-z]+)', '/gm)].map((m) => m[1]);
+  assert.ok(demoNames.length >= 15 && demoNames.includes('Ada') && demoNames.includes('Hugo'), 'found the simulator roster: ' + demoNames.join(','));
+  assert.deepStrictEqual(S.CREW_KEYS, Object.keys(C.CREWS), 'one column per crew, in the crews\' order');
+  for (const choice of Object.keys(C.CREWS)) {
+    const ids = C.idsFor(choice), used = new Set<string>();
+    for (const n of demoNames) {
+      const c = S.characterFor(choice, n, ids);
+      assert.ok(ids.includes(c), n + ' has a character of the ' + choice + ' crew, got "' + c + '"');
+      used.add(c);
+    }
+    assert.strictEqual(used.size, ids.length, 'every ' + choice + ' character is worn by some demo name');
+  }
+  assert.deepStrictEqual([S.NAMES.Ada, S.NAMES.Hugo], [['gamer', 'braids'], ['bookworm', 'inventor']], 'the anchors the driver checks: Ada a woman\'s character, Hugo a man\'s');
+  assert.deepStrictEqual(Object.keys(S.NAMES).sort(), [...demoNames].sort(), 'the table has a row for every demo name and no other');
+  // the table never uses a character from another crew, and the theme\'s own / an unknown value draw the Cheeky crew like crew.js
+  assert.strictEqual(S.keyFor('theme'), 'cheeky'); assert.strictEqual(S.keyFor('prehistoric'), 'prehistoric');
+  assert.strictEqual(S.characterFor('cheeky', 'Ada', C.PREHISTORIC_IDS), '', 'an id that is not in the crew is refused');
+  assert.strictEqual(S.characterFor('cheeky', 'Task: fix the build'), '', 'a name without a row (a real session) gets nothing');
+  assert.strictEqual(S.characterFor('cheeky', '__proto__'), '', 'only own rows count');
+  // seed: main agents only, by the agent\'s own name
+  const agents = [{ id: 'sim-1', baseName: 'Ada', name: 'a very long alias' }, { id: 'sim-2', name: 'Hugo' }, { id: 'h1', parent: 'sim-1', name: 'Ada' }, { id: 'r1', name: 'Fix the build' }];
+  assert.deepStrictEqual(S.seed('cheeky', agents, C.IDS), { 'sim-1': S.NAMES.Ada[0], 'sim-2': S.NAMES.Hugo[0] }, 'helpers and unknown names are not seeded');
+  assert.deepStrictEqual(S.seed('prehistoric', agents, C.PREHISTORIC_IDS), { 'sim-1': S.NAMES.Ada[1], 'sim-2': S.NAMES.Hugo[1] });
+  assert.deepStrictEqual(S.seed('cheeky', [], C.IDS), {});
+  // and the seeded map goes through the same assignCrew as before: the unseeded sessions get a random character, the seeded keep theirs
+  const m = C.assignCrew(S.seed('cheeky', agents, C.IDS), ['sim-1', 'sim-2', 'r1'], C.IDS, (id) => C.seededRand(id));
+  assert.strictEqual(m['sim-1'], S.NAMES.Ada[0]); assert.ok(C.IDS.includes(m.r1));
+  // the real-session path is untouched: the table is read only in app.js's syncCrew, only under SIM, and crew.js does not know it
+  const app = fs.readFileSync(path.join(root, 'src', 'renderer', 'app.js'), 'utf8');
+  const uses = app.split('\n').filter((l) => l.includes('DurbarSimCrew'));
+  assert.strictEqual(uses.length, 1, 'app.js reads the table in one place');
+  assert.ok(/SIM&&window\.DurbarSimCrew\?window\.DurbarSimCrew\.seed\(/.test(uses[0]), 'and only when SIM is on');
+  assert.ok(!/simcrew|DurbarSimCrew/i.test(fs.readFileSync(path.join(root, 'src', 'renderer', 'crew.js'), 'utf8')), 'crew.js does not know the table');
 }
 console.log('crew tests passed');

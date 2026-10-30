@@ -6,15 +6,20 @@
  *   - every desk scene draws exactly one portrait, in its fixed box, and that box keeps clear of the protected zones of FR-014 (the
  *     monitor and halo, the thought bubble and chat badge corner, the cup zone); the picture is the pose of the desk's status;
  *   - every picture loads (natural size known) and is drawn at no more than half its natural size (sharp, FR-051);
- *   - several characters are in use (the simulator's seeded least-used pick), and no desk shows a broken picture or a console error;
+ *   - several characters are in use (the simulator gives each demo name a fitting character, spec 077 FR-073: Ada and Hugo are checked), and no desk shows a broken picture or a console error;
  *   - the walking figures, chat strip chips and the lounge draw the portrait too.
  * At 1920x1080 with 2 agents (grown desks, spec 001 FR-041) the largest shown size of a portrait is still at most half its natural size.
  * Then the review fixes of PR 621: sessions removed (the map, the helpers), a character falling back after the header and the inbox are open, and crew.js itself missing.
  * Then FR-055: a copy of dist/ with one picture removed. The desks of that character draw the plain figure (no <image>), the others
  * keep their pictures, and nothing is broken.
  *
+ * Spec 077 FR-072 (issue #815): the same checks run for the Prehistoric crew (Characters = Prehistoric) with its 6 characters: the desks, poses,
+ * sharpness, faces, glow, idle, the bed slot at both sizes and the missing-picture fallback. The steps that do not depend on the crew (the
+ * review fixes of PR 621, the missing module) run once, with Cheeky.
+ *
  *   npm run check:ui -- --only check-crew            (builds first)
  *   CREW_THEME=<theme id>         the theme under the crew (default clean-office)
+ *   CREW_CHARS=<cheeky|prehistoric>  run one crew only (default: both)
  *   SHOTS_OUT=<folder>            screenshots (default: crew-shots in the OS temp folder)
  */
 const fs = require('fs');
@@ -25,7 +30,8 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 
 /* spec 077 FR-064..FR-066: Cheeky is a Characters choice, picked on top of a theme */
 const THEME_ID = process.env.CREW_THEME || 'clean-office';
-const CHARS = 'cheeky';
+let CHARS = 'cheeky'; // the crew being checked (see RUNS)
+const RUNS = process.env.CREW_CHARS ? [[process.env.CREW_CHARS, true]] : [['cheeky', true], ['prehistoric', false]]; // [Characters value, whole check (the crew-independent steps too)]
 /* FR-014 zones in stage units: [x0, y0, x1, y1] */
 const ZONES = { 'monitor and halo': [101, 22, 187, 88], 'bubble and badge corner': [16, 3, 61, 34], 'cup zone': [96, 66, 114, 87] };
 /* FR-060: the screen's frame starts here; the portrait box ends here, so the status colour is never under it */
@@ -140,11 +146,12 @@ function glowZoom() {
 const naturals = (files) => `Promise.all(${jsLiteral(files)}.map(f=>new Promise(r=>{const i=new Image();i.onload=()=>r([f,i.naturalWidth,i.naturalHeight]);i.onerror=()=>r([f,0,0]);i.src=f;})))`;
 const hit = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
 
-module.exports = async (ctx) => {
+async function runCrew(ctx, full) {
   const H = helpers(ctx);
   const out = process.env.SHOTS_OUT || path.join(os.tmpdir(), 'crew-shots');
   fs.mkdirSync(out, { recursive: true });
   const C = require('../src/renderer/crew.js');
+  const CREW_IDS = C.idsFor(CHARS), PIC_RE = /crew\/art\/(?:prehistoric-)?([\w-]+)-(working|waiting|resting)\.webp/;
   /* one Settings pick: a theme (kind 'theme', #thList) or a Characters value (kind 'characters', #chList) */
   const pickIn = async (kind, id) => {
     const list = kind === 'theme' ? '#thList' : '#chList', sel = `${list} [data-${kind}="${id}"]`;
@@ -165,7 +172,7 @@ module.exports = async (ctx) => {
   const useCrew = async () => {
     if (await H.js(`window.THEME.current().id`) !== THEME_ID) await pick(THEME_ID);
     await pickChars(CHARS);
-    assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'crew', `${THEME_ID}: Characters = Cheeky draws the crew kit`);
+    assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'crew', `${THEME_ID}: Characters = ${CHARS} draws the crew kit`);
   };
   console.log(`[crew] theme ${THEME_ID}, characters ${CHARS}`);
 
@@ -175,7 +182,7 @@ module.exports = async (ctx) => {
     const uses = {};
     for (const f of list) {
       if (!f.href) continue; // the plain figure (fallback) has no picture
-      const m = /crew\/art\/([\w-]+)-(working|waiting|resting)\.webp/.exec(f.href);
+      const m = PIC_RE.exec(f.href);
       assert.ok(m, `${tag}: ${f.use}: a crew picture (${f.href})`);
       const [id, pose] = [m[1], m[2]];
       const fb = C.faceBox(id, pose); // stage units
@@ -217,7 +224,7 @@ module.exports = async (ctx) => {
     const seats = list.filter((f) => f.use === 'seat' && f.href).map((f) => ({ seat: [Math.round(f.clip[2] - f.clip[0]), Math.round(f.clip[3] - f.clip[1])], badge: (f.covers.find(([n]) => n === 'chat badge') || [, null])[1] }));
     console.log(`[crew] ${tag} seats`, JSON.stringify(seats.map((s) => ({ seat: s.seat, badge: s.badge && [Math.round(s.badge[2] - s.badge[0]), Math.round(s.badge[3] - s.badge[1])] }))));
   };
-  const sizes = async () => Object.fromEntries((await H.js(naturals(C.files()))).map(([f, w, h]) => [f, [w, h]]));
+  const sizes = async () => Object.fromEntries((await H.js(naturals(C.files(CREW_IDS)))).map(([f, w, h]) => [f, [w, h]]));
   const sharpOk = (tag, img, nat) => {
     assert.ok(nat && nat[0] > 0, `${tag}: ${img.href} loads`);
     assert.ok(nat[0] >= 2 * img.shown[0] - 0.5 && nat[1] >= 2 * img.shown[1] - 0.5, `${tag}: ${img.href} is shown at ${img.shown.map(Math.round)} px, natural ${nat} is not at least 2x (FR-051)`);
@@ -240,6 +247,7 @@ module.exports = async (ctx) => {
       assert.strictEqual(sc.images.length, 1, `${tag}: scene ${i} (${sc.st}) draws exactly one portrait`);
       const im = sc.images[0], id = (/\|crew\|([\w-]+)/.exec(sc.sig) || [])[1];
       seen.add(id);
+      assert.ok(CREW_IDS.includes(id), `${tag}: scene ${i} wears ${id}, a character of the ${CHARS} crew`);
       assert.strictEqual(im.href, C.file(id, C.poseFor(sc.st)), `${tag}: scene ${i} (${sc.st}) shows the ${C.poseFor(sc.st)} pose of ${id}`);
       assert.deepStrictEqual([im.x, im.y, im.w, im.h], [C.BOX.x, C.BOX.y, C.BOX.w, C.BOX.h], `${tag}: scene ${i}: the portrait's fixed box`);
       const box = [im.x, im.y, im.x + im.w, im.y + im.h];
@@ -248,7 +256,19 @@ module.exports = async (ctx) => {
       sharpOk(`${tag} scene ${i}`, im, nat[im.href]);
     }
     await faceChecks(tag);
-    assert.ok(seen.size === C.IDS.length, `${tag}: all ${C.IDS.length} characters on screen with 15 agents (least-used pick) (${[...seen]})`);
+    assert.ok(seen.size === CREW_IDS.length, `${tag}: all ${CREW_IDS.length} ${CHARS} characters on screen with 15 agents (the simulator's name table uses every one, FR-073) (${[...seen]})`);
+    // spec 077 FR-073 (issue #879): the simulator gives each demo name its fitting character; Ada and Hugo are the check's anchors (literals, not read from the table)
+    const want = { cheeky: { Ada: 'gamer', Hugo: 'bookworm' }, prehistoric: { Ada: 'braids', Hugo: 'inventor' } }[CHARS];
+    const SC = require('../src/renderer/simcrew.js');
+    assert.ok(await H.until(`(()=>{const U=window.__durbarSimUi,s=U.crew.state();return U.agents().filter((x)=>!x.parent).every((x)=>s.map[x.id]);})()`, 6000), `${tag}: every main agent has a character`);
+    const named = await H.js(`(()=>{const U=window.__durbarSimUi,s=U.crew.state();return U.agents().filter((x)=>!x.parent).map((x)=>{const d=document.querySelector('#stage .desk[data-id="'+x.id+'"] svg.scene');return {name:x.baseName||x.name,c:s.map[x.id],sig:d?d.dataset.sig||'':null};});})()`);
+    for (const [n, c] of Object.entries(want)) {
+      const a = named.find((x) => x.name === n);
+      assert.ok(a, `${tag}: the demo agent ${n} is in the office`);
+      assert.strictEqual(a.c, c, `${tag}: ${n} wears ${c} in the ${CHARS} crew (got ${a.c})`);
+      assert.ok(a.sig && a.sig.includes('|crew|' + c), `${tag}: ${n}'s desk draws ${c} (sig ${a.sig})`);
+    }
+    for (const a of named) assert.strictEqual(a.c, SC.characterFor(CHARS, a.name, CREW_IDS), `${tag}: ${a.name} wears its table character`);
     for (const [kind, list] of [['walker', s.walkers], ['chip', s.chips], ['lounge figure', s.lounge]]) for (const [i, imgs] of list.entries()) {
       assert.strictEqual(imgs.length, 1, `${tag}: ${kind} ${i} draws the portrait`);
       sharpOk(`${tag} ${kind} ${i}`, imgs[0], nat[imgs[0].href]);
@@ -257,7 +277,7 @@ module.exports = async (ctx) => {
     console.log(`[crew] ${tag}`, JSON.stringify({ scenes: mains.length, characters: [...seen], walkers: s.walkers.length, chips: s.chips.length, lounge: s.lounge.length }));
     await H.clearToasts();
     await ctx.sleep(200);
-    await ctx.shot(path.join(out, `crew-office-${THEME_ID}-${tag}.png`));
+    await ctx.shot(path.join(out, `crew-office-${CHARS}-${THEME_ID}-${tag}.png`));
     // FR-061: an idle desk's portrait is full colour; its furniture keeps the dim
     const idle = await H.js(`(${idleOpacity.toString()})()`);
     assert.ok(idle.length >= 1, `${tag}: an idle desk or helper is on screen (${idle.length})`);
@@ -270,7 +290,7 @@ module.exports = async (ctx) => {
     const gz = await H.js(`(${glowZoom.toString()})()`);
     assert.ok(gz.length >= 1, `${tag}: a desk to measure the glow on`);
     for (const g of gz) {
-      const m = /crew\/art\/([\w-]+)-(working|waiting|resting)\.webp/.exec(g.href), fb = C.faceBox(m[1], m[2]), [vx, vy] = g.vb;
+      const m = PIC_RE.exec(g.href), fb = C.faceBox(m[1], m[2]), [vx, vy] = g.vb;
       const z = (p, o) => o + (p - o) * g.e, X = (u) => z(u, 74), Y = (u) => z(u, 99); // the zoom about the chair, in stage units
       const [u0, v0, u1, v1] = [X(fb[0]), Y(fb[1]), X(fb[0] + fb[2]), Y(fb[1] + fb[3])];
       const R = g.svg, sc = Math.min((R[2] - R[0]) / g.vb[2], (R[3] - R[1]) / g.vb[3]), ox = R[0] + ((R[2] - R[0]) - g.vb[2] * sc) / 2, oy = R[1] + ((R[3] - R[1]) - g.vb[3] * sc) / 2;
@@ -303,7 +323,7 @@ module.exports = async (ctx) => {
     const biggest = Math.max(...imgs.map((i) => i.shown[0]));
     console.log('[crew] 1920x1080 grown desks: largest shown width', Math.round(biggest), 'px, natural', C.BOX.w * C.PX_PER_UNIT);
     for (const im of imgs) sharpOk('1920x1080 grown', im, nat[im.href]);
-    await ctx.shot(path.join(out, 'crew-office-1920x1080-grown.png'));
+    await ctx.shot(path.join(out, `crew-office-${CHARS}-1920x1080-grown.png`));
   }
 
   // issue 871 (FR-071): a sleeping crew character in the bed slot reads like the couch seat, at both sizes. One agent on the couch and a lone sleeper.
@@ -322,7 +342,11 @@ module.exports = async (ctx) => {
     await H.js(`(()=>{for(const [id,min] of [['sim-2',2],['sim-3',30]]){window.__durbarSimUi.agents().find(x=>x.id===id).lastEventAt=Date.now()-min*60000;}window.__durbarSimUi.render();})()`);
     assert.ok(await H.until(`!!document.querySelector('#stage .lounge .desk.rest-old.crew-bed')&&!!document.querySelector('#stage .lounge .lg-av svg image')`, 6000), `${tag}: a crew sleeper is in a nap bed`);
     await H.settle();
-    const list = await H.js(`(${sleepers.toString()})()`);
+    // the lounge is laid out again for a moment after the sleepers appear (a fit pass; seen as a flake on Retro Pixel on main too): measure when two reads 300 ms apart agree
+    let list = await H.js(`(${sleepers.toString()})()`);
+    let settled = false;
+    for (let i = 0; i < 20 && !settled; i++) { await ctx.sleep(300); const next = await H.js(`(${sleepers.toString()})()`); settled = JSON.stringify(next) === JSON.stringify(list); list = next; } // a poll interval, not a fixed wait: it stops on two equal reads
+    assert.ok(settled, `${tag}: the lounge settles (two reads 300 ms apart agree within 6 s)`);
     const lone = list.filter((x) => x.solo);
     assert.ok(lone.length >= 1, `${tag}: a lone sleeper (a bunk with one bed) is on screen (${list.length} sleepers)`);
     for (const x of lone) {
@@ -330,7 +354,7 @@ module.exports = async (ctx) => {
       assert.ok(x.crew && !x.lying && x.href, `${where}: drawn with the crew picture, upright (${JSON.stringify({ crew: x.crew, lying: x.lying, href: x.href })})`);
       assert.ok(inside(x.av, x.slot) && inside(x.slot, x.lounge), `${where}: the figure ${x.av.map(Math.round)} is inside its bed slot ${x.slot.map(Math.round)} and the lounge ${x.lounge.map(Math.round)}`);
       // the face is not cut: the face box of the picture, mapped to the screen, is inside the visible figure
-      const m = /crew\/art\/([\w-]+)-(working|waiting|resting)\.webp/.exec(x.href), fb = C.faceBox(m[1], m[2]), [vx, vy, vw, vh] = x.vb, R = x.svg;
+      const m = PIC_RE.exec(x.href), fb = C.faceBox(m[1], m[2]), [vx, vy, vw, vh] = x.vb, R = x.svg;
       const sc = Math.min((R[2] - R[0]) / vw, (R[3] - R[1]) / vh), ox = R[0] + ((R[2] - R[0]) - vw * sc) / 2, oy = R[1] + ((R[3] - R[1]) - vh * sc) / 2;
       const face = [ox + (fb[0] - vx) * sc, oy + (fb[1] - vy) * sc, ox + (fb[0] + fb[2] - vx) * sc, oy + (fb[1] + fb[3] - vy) * sc];
       assert.ok(inside(face, x.av), `${where}: the face box ${face.map(Math.round)} is inside the visible figure ${x.av.map(Math.round)} (not cut)`);
@@ -348,7 +372,7 @@ module.exports = async (ctx) => {
       console.log(`[crew] ${tag}`, JSON.stringify({ figure: x.av.map(Math.round), bed: x.bed.map(Math.round), name: x.name.map(Math.round) }));
     }
     await H.clearToasts();
-    await ctx.shot(path.join(out, `crew-bed-${THEME_ID}-${w}x${h}.png`));
+    await ctx.shot(path.join(out, `crew-bed-${CHARS}-${THEME_ID}-${w}x${h}.png`));
   }
 
   // FR-055: one picture removed from a copy of dist/: its character is drawn as the plain figure, the others keep their pictures
@@ -358,8 +382,8 @@ module.exports = async (ctx) => {
     try {
       fs.cpSync(path.join(__dirname, '..', 'dist'), path.join(tmp, 'dist'), { recursive: true });
       const index = path.join(tmp, 'dist', 'renderer', 'index.html');
-      const lost = 'punk';
-      fs.rmSync(path.join(tmp, 'dist', 'renderer', 'crew', 'art', `${lost}-waiting.webp`));
+      const lost = CREW_IDS[0];
+      fs.rmSync(path.join(tmp, 'dist', 'renderer', ...C.file(lost, 'waiting').split('/')));
       await H.load({ w: 1440, h: 900, index, query: { theme: THEME_ID, characters: CHARS }, ready: 'fit', settle: false });
       await H.office(15);
       assert.ok(await H.until(`window.THEME.current().id===${jsLiteral(THEME_ID)}&&window.THEME.sceneKit()==='crew'`, 4000), 'the theme and the crew are on');
@@ -373,12 +397,13 @@ module.exports = async (ctx) => {
       for (const sc of mains.filter((x) => !lostScenes.includes(x))) assert.strictEqual(sc.images.length, 1, 'the other characters keep their pictures');
       assert.ok(s.walkers.every((w) => w.length === 1 || w.length === 0), 'figures draw a picture or the plain figure');
       await H.clearToasts();
-      await ctx.shot(path.join(out, 'crew-fallback-1440x900.png'));
+      await ctx.shot(path.join(out, `crew-fallback-${CHARS}-1440x900.png`));
       console.log(`[crew] fallback: ${lostScenes.length} desk(s) of ${lost} drawn as the plain figure`);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
   }
+  if (!full) { console.log(`[crew] ${CHARS}: crew steps passed`); return; }
   // PR 621 review: the characters of a closed session are freed (the main-session ids decide, the array keeps its identity), the last one too
   // the helpers' characters go with their parent; no stale id stays in the map (nor in durbar.crew where it is stored)
   {
@@ -458,6 +483,15 @@ module.exports = async (ctx) => {
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
+  }
+  console.log(`[crew] ${CHARS}: checks passed`);
+}
+
+module.exports = async (ctx) => {
+  for (const [chars, full] of RUNS) {
+    CHARS = chars;
+    assert.ok(require('../src/renderer/crew.js').CREWS[chars], `CREW_CHARS ${chars} is a crew`);
+    await runCrew(ctx, full);
   }
   console.log('[crew] checks passed');
   process.exitCode = 0;

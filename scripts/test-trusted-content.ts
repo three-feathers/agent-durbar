@@ -110,6 +110,28 @@ try {
   assert.strictEqual(r.code, 0, r.out);
   assert.ok(r.out.includes('ready to merge'), r.out);
 
+  // 3b. approvals (spec 021, 2026-10-29 delta, #883): a trusted approval is listed apart and is not an ask; later asks and outsiders still block
+  put('pull', pull('vikramgorla'));
+  const rv = (login: string, state: string, body: string, t: string, id: string): object => ({ user: { login }, body, state, submitted_at: t, commit_id: 'abcdef0123456789', html_url: url(id) });
+  put('comments', [c('vikramgorla', 'done', '2026-10-27T10:00:00Z', 'issuecomment-1')]);
+  put('lines', []); put('edits', edits([]));
+  put('reviews', [rv('fjcabello', 'APPROVED', 'Strengths: tidy. Questions: none.', '2026-10-27T11:00:00Z', 'pullrequestreview-1')]);
+  r = gateRun();
+  assert.strictEqual(r.code, 0, `an approval alone is ready:\n${r.out}`);
+  assert.ok(r.out.includes('approved by: fjcabello at abcdef01'), r.out);
+  assert.ok(!r.out.includes('Strengths: tidy'), 'the approval body is not printed as an ask');
+  put('comments', [c('vikramgorla', 'done', '2026-10-27T10:00:00Z', 'issuecomment-1'), c('rubenlupi', 'please also rename foo', '2026-10-27T11:30:00Z', 'issuecomment-2')]);
+  r = gateRun();
+  assert.ok(r.code === 1 && r.out.includes('please also rename foo'), `a comment after an approval blocks:\n${r.out}`);
+  put('comments', [c('vikramgorla', 'done', '2026-10-27T10:00:00Z', 'issuecomment-1')]);
+  put('reviews', [rv('fjcabello', 'APPROVED', 'ok', '2026-10-27T11:00:00Z', 'pullrequestreview-1'), rv('fjcabello', 'CHANGES_REQUESTED', '', '2026-10-27T12:00:00Z', 'pullrequestreview-2')]);
+  r = gateRun();
+  assert.ok(r.code === 1 && r.out.includes('changes_requested=[fjcabello]') && !r.out.includes('approved by: fjcabello'), `changes requested after an approval blocks:\n${r.out}`);
+  put('reviews', [rv('mallory', 'APPROVED', INJ(11), '2026-10-27T11:00:00Z', 'pullrequestreview-3')]);
+  r = gateRun();
+  assert.ok(r.code === 1 && r.out.includes(`not shown, for a human: ${url('pullrequestreview-3')}`) && !/PLANTED|IGNORE ALL|approved by: mallory/.test(r.out), `an outside approval is a link only:\n${r.out}`);
+  put('reviews', []);
+
   // 3. outside PRs: a fork, an outsider's PR; dependabot's PR is ours (its body is never printed by pr-gate)
   put('pull', pull('vikramgorla', 'mallory/r'));
   r = gateRun();

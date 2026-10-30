@@ -37,6 +37,7 @@ const DOC_SHOTS = [
   { name: 'shots-001-live-activity', freeze: false, files: ['001-live-activity-dense-1440x900.png', '001-live-activity-side-1440x900.png'] },
   { name: 'shots-001-lobby', files: ['001-lobby-15-1280x800.png', '001-lobby-15-1440x900.png', '001-lobby-15-1440x900-retro.png', '001-lobby-3-1440x900.png'] },
   { name: 'check-unread', files: ['001-unread-1440x900.png'] }, // spec 001 FR-172 (issue #691): two unread replies on their desks
+  { name: 'check-status-tooltip', files: ['001-status-tooltip-1440x900.png'] }, // spec 001 FR-187 (issue #875): the tooltip on the Idle count (hover)
   { name: 'shots-005-cardmenu', files: ['005-card-menu-stop-end-1440x900.png'] },
   { name: 'check-ro-ask', files: ['003-ro-ask-menu-1440x900.png'] },
   { name: 'check-why-allowed', files: ['003-why-allowed-1440x900.png'] },

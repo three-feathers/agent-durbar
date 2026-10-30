@@ -90,6 +90,10 @@ html[data-density="compact"] #topMoreMenu{--h-ctl:32px; --h-chip:26px; --h-pill:
 .stat span.l{font-size:12px;color:var(--ink-2)}
 .stat.attn{background:var(--warn-bg)}
 .stat.attn span.l{color:var(--amber-ink);font-weight:600}
+/* spec 001 FR-187: the instant tooltip (tooltip.js). Inverted tokens, so the contrast holds in every theme; placed by script (fixed), never over its anchor */
+.app-tip{position:fixed;left:0;top:0;z-index:200;max-width:min(280px,calc(100vw - 16px));padding:6px 10px;border-radius:var(--r-sm);background:var(--ink);color:var(--surface);border:1px solid var(--surface);font-size:12px;line-height:1.35;font-weight:500;box-shadow:var(--shadow-pop);pointer-events:none;overflow-wrap:break-word}
+.app-tip[hidden]{display:none}
+@media (forced-colors:active){.app-tip{background:Canvas;color:CanvasText;border:1px solid CanvasText}}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--gray);flex:none;display:inline-block}
 .dot.working{background:var(--c-working)} .dot.thinking,.dot.compacting{background:var(--c-thinking)} .dot.waiting{background:var(--c-waiting)} .dot.failing,.dot.retrying{background:var(--c-waiting)} /* spec 052 FR-092: Failing reuses the waiting colour; spec 034 FR-018: Retrying too */
 .dot.idle{background:transparent;border:2px solid var(--c-idle);box-shadow:0 0 0 1px var(--pc-idle)} .dot.error{background:var(--c-error)} .dot.done{background:var(--c-done)}
@@ -1217,6 +1221,8 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .place .pv-go:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .place .bw{margin-left:auto;flex:none;font-size:10.5px;font-weight:600;color:var(--amber-ink);white-space:nowrap}
 .place .bw+.pc{margin-left:0}
+.place.compact{padding-left:2px;padding-right:2px} /* issue #737 (spec 001 FR-189): a place under 56 px shows its icon (the name is in the tooltip and the label) and the "+N" circle, which already counts everyone there (the count is not drawn); 2 px of padding keeps both inside a 28 px tile */
+.place.compact .plh,.place.compact .prow{justify-content:center}
 .place.boss.busy{border-color:color-mix(in srgb,var(--c-waiting) 55%,var(--line));background:color-mix(in srgb,var(--c-waiting) 10%,var(--raised))}
 .walker .wb{position:absolute;left:-6px;top:-6px;min-width:13px;height:13px;box-sizing:border-box;padding:0 2px;border-radius:var(--r-md);display:flex;align-items:center;justify-content:center;background:var(--amber-ink);color:var(--surface);border:1.5px solid var(--surface);font-size:10.5px;font-weight:800;line-height:1}
 .walker[data-ask]:not([data-ask=""])::after{display:none} /* at the Boss the badge says what is wanted; the trouble dot would crowd it */

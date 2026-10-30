@@ -45,14 +45,16 @@ const chatNoHTML=a=>{const n=chatNoOf(a);return n?`<span class="chatno" data-n="
 /* spec 077 (Cheeky Crew): which character a session wears. Random among the ones the office uses least, kept per session id in this window's
    localStorage like the chat numbers (ids and character names only), outside the simulator and the demo; there the pick is seeded by the id. Helpers
    get a character by the same rule and are not stored. Only the crew scene kit asks (crewOf), so other themes cost nothing. */
-const CREW_KEY='durbar.crew', CREW=window.DurbarCrew||null; /* null: crew.js did not load, every crew call below answers "no character" and the kit draws the plain figure (FR-017, T028) */
-let CREW_MAP={}, CREW_FOR=null, CREW_IDS=null, CREW_HELP={}; /* CREW_FOR: the agents array the map was loaded for; CREW_IDS: the main-session ids it was last synced to (a removal keeps the array's identity, so the ids decide) */
+const CREW=window.DurbarCrew||null; /* the storage key and the characters depend on the Characters value (spec 077 FR-072): crew.js storeKey and idsFor; the Cheeky key is still 'durbar.crew' */ /* null: crew.js did not load, every crew call below answers "no character" and the kit draws the plain figure (FR-017, T028) */
+let CREW_MAP={}, CREW_FOR=null, CREW_CH=null, CREW_IDS=null, CREW_HELP={}; /* CREW_FOR: the agents array the map was loaded for; CREW_IDS: the main-session ids it was last synced to (a removal keeps the array's identity, so the ids decide) */
 /* FR-055: every portrait is loaded and decoded once the crew kit is first used; a character with a picture that is missing or cannot be
    decoded is marked bad and its desks draw the plain office-style figure (the mark is in the signature and the cache keys, so they redraw) */
-const CREW_BAD=new Set(); let crewLoaded=false;
-function crewPreload(){
-  if(crewLoaded||!CREW)return; crewLoaded=true;
-  for(const id of CREW.IDS)for(const pose of CREW.POSES){
+const CREW_BAD=new Set(); const crewLoaded=new Set(); /* the Characters values whose pictures were asked for */
+const crewChoice=()=>THEME.characters(), crewIds=choice=>CREW.idsFor(choice||crewChoice());
+function crewPreload(choice){
+  const ch=choice||crewChoice();
+  if(!CREW||crewLoaded.has(ch))return; crewLoaded.add(ch);
+  for(const id of crewIds(ch))for(const pose of CREW.POSES){
     const f=CREW.file(id,pose), im=new Image();
     const bad=()=>{if(CREW_BAD.has(id))return;CREW_BAD.add(id);console.warn('[crew] picture '+f+' is missing or cannot be decoded: '+id+' is drawn as the plain figure');crewRefreshAvatars();scheduleRender();};
     im.onerror=bad; im.src=f; if(im.decode)im.decode().catch(bad);
@@ -63,26 +65,29 @@ function crewRefreshAvatars(){
   const sel=typeof ui!=='undefined'&&byId(ui.selected), ph=document.querySelector('#panelHead .avatar'); if(sel&&ph)ph.innerHTML=avatar(sel);
   document.querySelectorAll('.inbox-row[data-id] .ib-av').forEach(av=>{const a=byId(av.closest('.inbox-row').dataset.id);if(a)av.innerHTML=avatar(a);});
 }
+/* the map was built for another agents array or another Characters value (each crew keeps its own saved map) */
+const crewStale=()=>CREW_FOR!==agents||CREW_CH!==crewChoice();
 const crewRand=()=>CREW&&!rememberOn()?CREW.seededRand:undefined;
 const crewMainIds=()=>agents.filter(a=>!a.parent).map(a=>a.id);
 function syncCrew(){
   if(!CREW)return;
-  if(CREW_FOR!==agents){CREW_FOR=agents;CREW_MAP={};CREW_HELP={};if(!demoOn&&rememberOn()){try{CREW_MAP=CREW.loadCrew(localStorage.getItem(CREW_KEY));}catch(e){CREW_MAP={};}}}
+  const ch=crewChoice(), ids0=crewIds(ch);
+  if(crewStale()){CREW_FOR=agents;CREW_CH=ch;CREW_MAP=SIM&&window.DurbarSimCrew?window.DurbarSimCrew.seed(ch,agents,ids0):{};CREW_HELP={};if(!demoOn&&rememberOn()){try{CREW_MAP=CREW.loadCrew(localStorage.getItem(CREW.storeKey(ch)),ids0);}catch(e){CREW_MAP={};}}}
   const ids=crewMainIds(); CREW_IDS=ids.join('\n');
   for(const h of Object.keys(CREW_HELP))if(!agents.some(a=>a.id===h))delete CREW_HELP[h]; /* a removed helper frees its character */
   /* a session that is gone frees its character once the office has loaded (before that, restored sessions keep theirs) */
-  const next=CREW.assignCrew(agentsListed||demoOn?CREW.pruneCrew(CREW_MAP,ids):CREW_MAP,ids,CREW.IDS,crewRand());
-  if(JSON.stringify(next)!==JSON.stringify(CREW_MAP)){CREW_MAP=next;if(!demoOn&&rememberOn()){try{localStorage.setItem(CREW_KEY,JSON.stringify(CREW_MAP));}catch(e){}}}
+  const next=CREW.assignCrew(agentsListed||demoOn?CREW.pruneCrew(CREW_MAP,ids):CREW_MAP,ids,ids0,crewRand());
+  if(JSON.stringify(next)!==JSON.stringify(CREW_MAP)){CREW_MAP=next;if(!demoOn&&rememberOn()){try{localStorage.setItem(CREW.storeKey(ch),JSON.stringify(CREW_MAP));}catch(e){}}}
 }
 const crewOf=a=>{
   if(!a||!CREW)return '';
   crewPreload();
   if(a.parent){
-    if(CREW_FOR!==agents||crewMainIds().join('\n')!==CREW_IDS)syncCrew();
-    if(!CREW_HELP[a.id])CREW_HELP[a.id]=CREW.pickCharacter(a.id,CREW.IDS,Object.values(CREW_MAP).concat(Object.values(CREW_HELP)),crewRand());
+    if(crewStale()||crewMainIds().join('\n')!==CREW_IDS)syncCrew();
+    if(!CREW_HELP[a.id])CREW_HELP[a.id]=CREW.pickCharacter(a.id,crewIds(),Object.values(CREW_MAP).concat(Object.values(CREW_HELP)),crewRand());
     return CREW_HELP[a.id];
   }
-  if(CREW_FOR!==agents||!(a.id in CREW_MAP)||crewMainIds().join('\n')!==CREW_IDS)syncCrew();
+  if(crewStale()||!(a.id in CREW_MAP)||crewMainIds().join('\n')!==CREW_IDS)syncCrew();
   return CREW_MAP[a.id]||'';
 };
 /* the character in a cache key or a walker's key: nothing outside the crew kit, so the other themes' keys do not change */
@@ -270,12 +275,12 @@ async function applyCharacters(v){
   else toast('Characters: <b>'+esc(CHARACTER_NAMES[applied]||applied)+'</b>.',2600);
   return applied;
 }
-const CHARACTER_NAMES={theme:'The theme\u2019s own',minimalist:'Minimalist',cheeky:'Cheeky'};
+const CHARACTER_NAMES={theme:'The theme\u2019s own',minimalist:'Minimalist',cheeky:'Cheeky',prehistoric:'Prehistoric'};
 /* FR-068: one figure per choice for its pick button: the kit that choice draws on the current theme, one Cheeky portrait for the crew */
 function charPreview(choice){
   const kit=THEME.kitFor(THEME.themeKit(),choice), a={id:'characters-preview',look:lookFor('characters-preview')};
-  if(kit==='crew')crewPreload();
-  return avatar(a,undefined,{kit,crew:kit==='crew'&&CREW?CREW.IDS[0]:''});
+  if(kit==='crew')crewPreload(choice);
+  return avatar(a,undefined,{kit,crew:kit==='crew'&&CREW?CREW.idsFor(choice)[0]:''});
 }
 const SIREN=()=>'<span class="siren" aria-hidden="true"><svg viewBox="0 0 14 14" focusable="false"><rect class="siren-light" x="3" y="2" width="8" height="6.5" rx="3.2"/><rect x="1.5" y="8.5" width="11" height="3" rx="1" fill="'+T_('--siren-base')+'"/></svg></span>';
 /* "impatient" starts after 60 s without any event, so look every few seconds and redraw only when somebody's mood changed */
@@ -379,7 +384,7 @@ function lobbyHTML(aw){
   return `<section class="lobby" data-key="lobby" aria-label="${esc(wordOf('lobby-label'))}">${all.map(p=>{
     const box=own[p.id]||null, cf=p.id===D.COFFEE, boss=p.id===D.BOSS, bank=p.id===D.BANK;
     if(p.id===D.POSTBOX)return postboxHTML(p,box);
-    const named=!box||box.named, sty=box?` style="flex:0 0 ${box.width}px"`:'';
+    const named=box?box.named:fit.tileNamed, sty=box?` style="flex:0 0 ${box.width}px"`:'';
     const caps=box?box.chips:fit.caps, ids=placeVisitors(p.id);
     /* the Boss shows as many of its queue as it can: names only when everyone there fits by name, else initials (FR-034) */
     const {mode,slots:cap}=boss&&ids.length>caps.named?{mode:'initials',slots:caps.initials}:D.chipsFor(caps,ids.length);
@@ -393,7 +398,7 @@ function lobbyHTML(aw){
     const more=sp.more?`<button class="pv pv-more" type="button" data-key="pv-more:${esc(p.id)}" data-placemore="${esc(p.id)}" aria-haspopup="menu" title="${sp.more} more here. Open the list." aria-label="${sp.more} more at ${esc(placeLabelFull(p.id))}: ${esc(ids.slice(sp.shown).map(id=>byId(id).name).join(', '))}"><span class="slot more" data-slot="${sp.shown}">+${sp.more}</span>${mode==='named'?'<span class="pv-t"><b class="pv-n">more</b></span>':''}</button>`:'';
     const wait=boss&&ids.length?bossWait(ids[0]):''; /* FR-034: the longest wait, in the header */
     const label=`${placeLabelFull(p.id)}: ${who.length?who.join(cf||bank?', ':'; '):'nobody'}${wait?'. Longest wait '+wait:''}`; /* the accessible name: everyone there, in full (the title is placeTip) */
-    return `<div class="place${ids.length?' busy':''}${cf?' coffee':''}${boss?' boss':''}${bank?' bank':''}${named?'':' unnamed'}"${sty} data-key="place:${p.id}" data-place="${p.id}" data-chips="${mode}" tabindex="-1" role="group" title="${esc(placeTip(p.id,ids,wait))}" aria-label="${esc(label)}"><span class="plh">${placeIcon(p)}${named?`<span class="pn">${esc(placeLabel(p.id))}</span>`:''}${wait?`<span class="bw" aria-hidden="true">${esc(wait)}</span>`:''}${ids.length?`<span class="pc" aria-hidden="true">${ids.length}</span>`:''}</span><span class="prow" aria-hidden="${ids.length?'false':'true'}">${ids.length?chips+more:'<span class="pv-none">nobody</span>'}</span></div>`;
+    return `<div class="place${ids.length?' busy':''}${cf?' coffee':''}${boss?' boss':''}${bank?' bank':''}${named?'':' unnamed'}${box||named?'':' compact'}"${sty} data-key="place:${p.id}" data-place="${p.id}" data-chips="${mode}" tabindex="-1" role="group" title="${esc(placeTip(p.id,ids,wait))}" aria-label="${esc(label)}"><span class="plh">${placeIcon(p)}${named?`<span class="pn">${esc(placeLabel(p.id))}</span>`:''}${wait&&(!boss||box.wait)?`<span class="bw" aria-hidden="true">${esc(wait)}</span>`:''}${ids.length&&(box||named)?`<span class="pc" aria-hidden="true">${ids.length}</span>`:''}</span><span class="prow" aria-hidden="${ids.length?'false':'true'}">${ids.length?chips+more:'<span class="pv-none">nobody</span>'}</span></div>`;
   }).join('')}${add?'<button class="place-add" type="button" data-key="place-add" title="Add a place" aria-label="Add a place">+</button>':''}${lobbyArt()}</section>`;
 }
 /* spec 001 FR-038: the Postbox: the next three scheduled runs, the letters still due today, a flag for a missed or failed last run. A button:
@@ -838,12 +843,17 @@ const unesc=s=>String(s).replace(/&(amp|lt|gt|quot);/g,(m,k)=>({amp:'&',lt:'<',g
 
 /* ---------------- top bar ---------------- */
 function visibleAgents(){return agents.filter(a=>roomShown(roomOf(a))&&(ui.ws==='all'||wsOf(a)===ui.ws));}
+let statCounts={}; /* the counts renderStats drew last: the status tooltip reads them (spec 001 FR-187) */
 function renderStats(){
   renderInboxBtn(); renderSchedTop();
   const list=visibleAgents().filter(a=>!a.parent); const c={working:0,waiting:0,idle:0,error:0,done:0};
   list.forEach(a=>{const s=vis(a); if(s==='working'||s==='thinking')c.working++; else c[s]++;});
   const defs=[['working','Working','working or thinking'],['waiting','Waiting','waiting for you'],['idle','Idle','idle or paused'],['error',c.error===1?'Error':'Errors','with errors'],['done','Done','done']];
-  morphHTML($('stats'),defs.map(([k,l,t])=>`<button class="stat${(k==='waiting'||k==='error')&&c[k]?' attn':''}" data-k="${k}" aria-pressed="${ui.status===k}" title="Show only agents ${t}" aria-label="${c[k]} ${t}. Toggle filter."><span class="dot ${k}"></span><b>${c[k]}</b><span class="l">${l}</span></button>`).join('')+aiuChip());
+  morphHTML($('stats'),defs.map(([k,l])=>`<button class="stat${(k==='waiting'||k==='error')&&c[k]?' attn':''}" data-k="${k}" aria-pressed="${ui.status===k}" title="" aria-label="${l}: ${c[k]}"><span class="dot ${k}"></span><b>${c[k]}</b><span class="l">${l}</span></button>`).join('')+aiuChip());
+  statCounts=c;
+  /* spec 001 FR-187: the pills' own instant tooltip, never a native title (title="" also stops the #stats group's title from showing on them) */
+  window.DurbarTip.bind($('stats'),{selector:'.stat[data-k]',text:el=>window.DurbarTip.statusText(el.dataset.k,statCounts[el.dataset.k],ui.status===el.dataset.k)});
+  window.DurbarTip.refresh();
 }
 function renderFilter(){
   const sel=$('wsFilter');
@@ -7379,7 +7389,7 @@ async function wakeLast(a,crash){
   a.waking=false;
   if(!r||!r.ok){setState(a,'idle','Not started','Your last session here. It continues when you open it.');toast('Could not continue the last session: '+esc((r&&r.error)||'unknown error'),7000);return false;}
   if(a.info){a.info.resumeLast=false;a.info.lazy=false;}
-  if(r.resumed){a.resumed=true;replayHistory(a,r.history,r.title,crash?'Resumed after a crash':'Continued after restart');setState(a,'idle',null,(crash?'Resumed after a crash: ':'Continued: ')+SHORT(safeMask(r.title)||'last session',90));
+  if(r.resumed){a.resumed=true;replayHistory(a,r.history,r.title,crash?'Resumed after a crash':'Continued after restart');setState(a,'idle',null,crash?'Resumed after a crash. New messages continue it.':'Continued after restart. New messages continue it.'); /* spec 001 delta 2026-10-29 (issue 451): the desk's name is the session title; the line does not repeat it (the chat note has it) */
     /* spec 006 FR-045: honest about the lost turn; nothing is sent again */
     if(crash)addNote(liveChat(a),'Durbar stopped while this session was working, so the reply it was writing is lost. Nothing was sent again; say “continue” to go on.');}
   else{if(r.resumed===false)addNote(liveChat(a),'The last session is no longer available; this is a new session.');setState(a,'idle',null,'Ready. Send a message to start.');}
@@ -7408,7 +7418,7 @@ async function resumePrev(a,sid,btn){
   const na=liveById(r.agent.id); if(!na)return;
   na.resumed=true; na.sent=false; replayHistory(na,r.history,r.title);
   modeBackNote(na,r.modeWas);
-  setState(na,'idle',null,'Resumed: '+SHORT(safeMask(r.title),90));
+  setState(na,'idle',null,'Resumed. New messages continue this session.'); /* spec 001 delta 2026-10-29 (issue 451): no title here, it is the desk's name */
   openPanel(na.id,false);
 }
 function leaveVsView(){
@@ -7712,7 +7722,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={agents:()=>agents,crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded=false;crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
+if(SIM)window.__durbarSimUi={agents:()=>agents,crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,

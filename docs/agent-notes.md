@@ -77,6 +77,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **A page check that changes the page puts it back**: `pageCheck` used to leave `body.ren-show` on and every picture showed rename pencils (PR 631).
 - **Do not wait for a short animation and its end state in one poll**: set a `MutationObserver` flag before triggering, then wait for the end state; read reduced motion from `matchMedia`, not an env flag (#511).
 - **Reduced motion takes other code paths**: the Windows runner reports it by itself. Reproduce with `--force-prefers-reduced-motion`; when an animation's end does work, the instant branch must too (spec 001 FR-051).
+- **A hover or focus driver on a Mac needs the window active and one mouse move at a time**: `sendInputEvent` moves sent back to back are merged (no `pointerout`/`pointerover`), so wait for `:hover` after each; `:focus-visible` is false while `document.hasFocus()` is false, so call `win.show(); win.focus(); wc.focus()` until it is true. A user dark theme must set `--card-waiting` and `--card-error` too, or `theme.js` repairs `--ink` toward grey (spec 001 FR-187, `real:` Mac, 2026-10-29).
 - **A covered window stops drawing** (`visibilityState` hidden): test runs set `backgroundThrottling: false` and `--disable-backgrounding-occluded-windows`. Reproduce Windows-only flakes with `UI_SUITE_JOBS=4 xvfb-run -a node scripts/ui-suite.js` (spec 008 FR-103).
 - **Check a transient state in the same `js()` call as its cause**: a demo turn can end before a poll (Stop button); `until()` is for states that stay (PR #498).
 - **Comparison drivers race the first frame**: wait for `window.__durbarSimUi.settleNow()`, throw on a wait timeout, load a fresh page per capture; `settleNow()` draws a queued frame, so never use it where the page must draw on its own (spec 008 FR-113).
@@ -109,6 +110,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **A dark-theme screenshot needs a user manifest** (`window.THEME.setTheme({id, extends:'clean-office', tokens})`, see `shots-043-editor.js`); no built-in theme has a dark surface (spec 043 T012d).
 - **jsdom has no `localStorage` on a `file:` URL**: use `http://localhost/` in unit tests (spec 043).
 - **Timing the renderer**: patch a copy of the built `dist/renderer/app.js` (never `src/`), run old and new builds alternately and compare medians. Layout cost is mostly style recalculation: skip `<svg>` children in `#probe` and register self-only custom properties with `@property` (spec 001 FR-033).
+- **Windows runners take the window's focus at random** (2026-10-30, #891's CI): `check-status-tooltip` failed 3 times in a row at 3 different steps (a hover, a keyboard focus, a redraw), each time with the tooltip hidden, which it rightly does on a window blur, resize or scroll. A driver step that depends on the window keeping focus records the trusted window `blur`/`resize`/`scroll` events and retries only when one came, failing at once otherwise and naming what it saw (`osRetry` in `scripts/check-status-tooltip.js`); never a longer wait, which cannot bring a lost hover back.
 
 ## Electron and platform
 
@@ -128,6 +130,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **A shortcut clash check needs more than the app's keys**: macOS Control letters edit text, IBus owns Ctrl+Shift+U/E, and handlers match `e.key` or `e.code` (Dvorak). Refuse a recorded shortcut whose position or typed letter is taken (`clashOf` in `navigator.js`); `test-navigator.ts` scans `app.js` (#552).
 - **CSS subgrid rows count the row's padding inside the first and last tracks**: add it to those track sizes and measure the cell (#812, spec 001 FR-182).
 - **Scene pictures**: an `<image href>` with a relative path works under `img-src 'self'`; detect a broken one with `new Image()` + `decode()` and key it in `data-sig` (`check-crew.js`). Pillow `save(..., 'WEBP', exif=b'')` writes clean chunks (`test:crew-assets`) (spec 077).
+- **A new crew's `FACE` points do not move a couch seat's face**: the seat crop is anchored on the face point (62% across), so only the picture's own pixels decide whether the chat badge covers the face; if `check-crew` fails on a seat, look at the picture, not the point. Read new points with a 50 px grid and a red 110x140 box over the picture next to a Cheeky one (#815). The bed step of `check-crew` on Retro Pixel flaked on `main` (3 of 5 runs) until it measured when two reads 300 ms apart agree.
 
 ## Team chat
 
