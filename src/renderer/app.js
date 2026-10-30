@@ -2592,7 +2592,7 @@ async function notesFetch(a){
   if(NT.rv.size>1500)NT.rv.clear(); if(NT.mm.size>3000)NT.mm.clear(); /* the row and masked-text caches are keyed by id and rev (a changed note is a new key), so a refetch keeps them; bounded */
   if(ui.selected===a.id){ntCountSync(a);notesMarkSoon();}
   if(NT.open&&NT.open.id===a.id)notesPaint();
-  if(nsShown()&&NS.key===notesKey(a))nsPaint(false); /* spec 083 T034a: the folder's Notes screen */
+  if(nsShown()&&NS.key===notesKey(a))nsPaint(); /* spec 083 T034a: the folder's Notes screen */
   if(slashUi&&slashUi.a===a)slashUpdate();
   return st;
 }
@@ -2798,6 +2798,15 @@ function notesInsert(a,n,opts){
 }
 
 /* ---- the drawer over the chat log (FR-020..FR-024) ---- */
+/* a repaint rebuilds the rows: when the focus was on a row (or one of its buttons) it goes back to the same row and button after it,
+   found by note id (a dialog's Save, a notes:changed refetch); the search field keeps its focus and caret (it is not in the list) */
+function ntFocusMark(list){const e=document.activeElement,r=e&&list.contains(e)?e.closest('.nt-row'):null;return r?{id:r.dataset.id,nt:(e.dataset&&e.dataset.nt)||''}:null;}
+function ntFocusBack(list,m){
+  if(!m)return;
+  const rows=[...list.querySelectorAll('.nt-row')],r=rows.find(x=>x.dataset.id===m.id); if(!r||r.closest('details:not([open])'))return;
+  rows.forEach(x=>x.tabIndex=-1);r.tabIndex=0;
+  const b=m.nt&&r.querySelector('[data-nt="'+CSS.escape(m.nt)+'"]');focusIn(b||r);
+}
 function placeNotesDrawer(){
   const d=$('notesDrawer'),c=$('chat'); if(!d||!c)return;
   d.style.top=c.offsetTop+'px';d.style.left=c.offsetLeft+'px';d.style.width=c.offsetWidth+'px';d.style.height=c.offsetHeight+'px';
@@ -2814,7 +2823,7 @@ function noteRowHTML(n,a,tab,o){
 function notesPaint(){
   const d=$('notesDrawer'),a=NT.open&&byId(NT.open.id); if(!d||!a||d.hidden)return;
   const st=notesOf(a)||{ok:true,notes:[],session:''}, list=d.querySelector('#ntBody');
-  const had=document.activeElement&&list.contains(document.activeElement)?document.activeElement.closest('.nt-row'):null, hadId=had&&had.dataset.id;
+  const fm=ntFocusMark(list);
   let html='';
   if(!st.ok){
     html=`<p class="nt-banner" role="alert">${esc(st.unreadable?'Durbar could not read the notes file of this folder; it is left as it is.':st.error)}</p>${st.unreadable&&bridge.notesStartOver?'<p><button class="btn sm" type="button" data-nt="startover">Start over…</button></p>':''}`;
@@ -2829,8 +2838,7 @@ function notesPaint(){
     html+=grp('This session','ntGrpS',g.session)+grp('This folder','ntGrpF',g.folder);
   }
   list.innerHTML=html;
-  const rows=[...list.querySelectorAll('.nt-row')];
-  if(hadId){const r=rows.find(x=>x.dataset.id===hadId);if(r){rows.forEach(x=>x.tabIndex=-1);r.tabIndex=0;}}
+  ntFocusBack(list,fm);
   const add=$('ntAdd'); if(add)add.disabled=!st.ok||!!st.readOnly;
 }
 /* ---- the header count (FR-040) ---- */
@@ -3028,12 +3036,12 @@ function nsRender(focus){
   const h=$('nsHost'); if(!h)return;
   h.innerHTML=`<section class="scr-sec ns-sec" aria-label="${esc('Notes of '+NS.name)}"><div class="ns-tools"><input class="nt-find" id="nsSearch" type="search" placeholder="Search notes" aria-label="Search notes" autocomplete="off" spellcheck="false"><button class="btn sm primary" id="nsAdd" type="button">+ Note</button></div><div id="nsList"></div></section>`;
   wireNotesScreen(h);
-  nsPaint(false);
+  nsPaint();
 }
-function nsPaint(keep){
+function nsPaint(){
   const list=$('nsList'),a=byId(NS.id); if(!list||!nsShown())return;
   const st=(a&&notesOf(a))||{ok:true,notes:[]};
-  const had=document.activeElement&&list.contains(document.activeElement)?document.activeElement.closest('.nt-row'):null, hadId=had&&had.dataset.id;
+  const fm=ntFocusMark(list);
   let html='';
   if(!a||!notesOn(a))html='<p class="nt-banner" role="alert">The chat these notes were opened from is not running any more. Close this screen and open the notes again.</p>';
   else if(!st.ok)html=`<p class="nt-banner" role="alert">${esc(st.unreadable?'Durbar could not read the notes file of this folder; it is left as it is.':st.error)}</p>${st.unreadable&&bridge.notesStartOver?'<p><button class="btn sm" type="button" data-nt="startover">Start over…</button></p>':''}`;
@@ -3050,8 +3058,7 @@ function nsPaint(keep){
   }
   list.innerHTML=html;
   const d=$('nsDone'); if(d)d.addEventListener('toggle',()=>{NS.doneOpen=d.open;});
-  const rws=[...list.querySelectorAll('.nt-row')];
-  if(hadId){const r=rws.find(x=>x.dataset.id===hadId);if(r){rws.forEach(x=>x.tabIndex=-1);r.tabIndex=0;if(keep!==false)focusIn(r);}}
+  ntFocusBack(list,fm);
   const add=$('nsAdd'); if(add)add.disabled=!a||!notesOn(a)||!st.ok||!!st.readOnly;
 }
 /* the rows the keyboard can reach: a folded Done group's rows are not shown */
@@ -3082,7 +3089,7 @@ function wireNotesScreen(h){
   h.addEventListener('contextmenu',e=>{const row=e.target.closest('.nt-row');if(!row)return;e.preventDefault();const m=row.querySelector('.nt-more');if(m)m.click();});
   const f=$('nsSearch');
   if(f){
-    f.addEventListener('input',()=>{nsPaint(false);const n=document.querySelectorAll('#nsList .nt-row').length;announce(f.value.trim()?(n?n+(n===1?' note matches':' notes match'):'No notes match'):'');}); /* a number: nothing of a note is read out */
+    f.addEventListener('input',()=>{nsPaint();const n=document.querySelectorAll('#nsList .nt-row').length;announce(f.value.trim()?(n?n+(n===1?' note matches':' notes match'):'No notes match'):'');}); /* a number: nothing of a note is read out */
     f.addEventListener('keydown',e=>{if(e.key==='ArrowDown'){const r=nsVisibleRows()[0];if(r){e.preventDefault();nsFocusRow(r.dataset.id);}}});
   }
 }
@@ -3445,7 +3452,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
     if($('inboxDlg')){closeInbox();return;}
     if(e.target&&e.target.id==='prevQ'&&e.target.value){e.target.value='';e.target.dispatchEvent(new Event('input',{bubbles:true}));return;} /* spec 006 FR-023: Escape clears the search first */
-    if(e.target&&e.target.id==='nsSearch'&&e.target.value&&!document.getElementById('modeDlg')){e.target.value='';nsPaint(false);return;} /* spec 083 T034a: Esc clears the screen's search first */
+    if(e.target&&e.target.id==='nsSearch'&&e.target.value&&!document.getElementById('modeDlg')){e.target.value='';nsPaint();return;} /* spec 083 T034a: Esc clears the screen's search first */
     if(window.DurbarScreens&&window.DurbarScreens.isOpen()&&!document.getElementById('scrDlg')&&!document.getElementById('modeDlg')){window.DurbarScreens.close();return;}
     if(document.getElementById('sessDlg')){closeSessDlg();return;}
     if(!$('foldersPop').hidden){toggleFolders(false);return;}
