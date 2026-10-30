@@ -212,6 +212,8 @@ export interface AppSettingsView {
   notifyNeedsMe?: boolean;
   /** Spec 068 FR-006: after a coffee break, `auto` resumes by itself when it costs nothing extra; `ask` always asks. */
   breakResume?: 'auto' | 'ask';
+  /** Spec 080 FR-031: where a plain click on a chat link opens (default `'session'`). */
+  chatLinksIn?: 'session' | 'system';
 }
 
 /** A profile file (spec 043 FR-010); `path` is for display only, the window sends `id` back. */
@@ -854,6 +856,7 @@ export interface DurbarApi {
   setNotifyNeedsMe?(on: boolean): Promise<{ ok: boolean; notifyNeedsMe?: boolean }>;
   /** Spec 068 FR-006: what happens when a coffee break ends. */
   setBreakResume?(v: 'auto' | 'ask'): Promise<{ ok: boolean; breakResume?: 'auto' | 'ask' }>;
+  setChatLinksIn?(v: 'session' | 'system'): Promise<{ ok: boolean; chatLinksIn?: 'session' | 'system' }>;
   /** The "needs you" count on the app icon (spec 052 FR-059): an integer from 0 to 999. Badge on macOS and Linux where supported; on Windows the taskbar button flashes when it grows in the background. */
   setBadge?(count: number): Promise<{ ok: boolean }>;
   /** Bring the window to the front (a click on a "needs you" notification, spec 052 FR-059). */
@@ -1105,6 +1108,10 @@ export interface DurbarApi {
   browserMute?(id: string, muted: boolean): Promise<BrowserResult>;
   /** Open the view's current http(s) address in the system browser (the existing external-link path). */
   browserOpenSystem?(id: string): Promise<{ ok: boolean }>;
+  /** Spec 080 FR-030: a link from the chat (agent text): main classifies it. A web link opens in the session's browser; `link` says why a refused one is not opened (`mailto` waits for the user's click through `browserOpenMail`). */
+  browserOpenLink?(id: string, url: string): Promise<BrowserResult>;
+  /** Spec 080 FR-024: the user pressed *Open* on a mail link; main checks it is a `mailto:` link before it hands it to the system. */
+  browserOpenMail?(url: string): Promise<{ ok: boolean }>;
   onBrowserState?(cb: (s: BrowserState) => void): () => void;
   /** The user accepted the one-time note (FR-025d); remembered in settings, never asked again. */
   browserConsentAccept?(): Promise<{ ok: boolean }>;
@@ -1153,10 +1160,12 @@ export interface BrowserState {
   dialogOpen: boolean;
   /** The note of a dialog main closed for the agent (FR-025d); the bar shows it with an icon. Page text, already masked. */
   note?: string;
+  /** FR-011: the page was dropped to save memory and came back (`reloaded`), or too many pages are open and none could be unloaded (`many`). */
+  memory?: 'reloaded' | 'many';
   /** A Chromium network error name such as ERR_CONNECTION_REFUSED after the last load failed. */
   error?: string;
 }
-export type BrowserResult = { ok: true; state: BrowserState } | { ok: false; reason: string; state?: BrowserState; needsConsent?: true };
+export type BrowserResult = { ok: true; state: BrowserState } | { ok: false; reason: string; state?: BrowserState; needsConsent?: true; link?: 'mailto' | 'refused' };
 /** A page dialog opened (FR-025d): the window raises a toast naming the session and, for a hidden view, brings its chat forward. `text` is masked page text. */
 export interface BrowserDialogEvent { id: string; type: string; text: string; shown: boolean }
 /** FR-025e: ask *Leave this page?*; answer with `browserLeaveAnswer(req, leave)`. */

@@ -133,6 +133,7 @@ Retired spec numbers, never to be reused for a new spec (`specs:check` and `--ad
 | `v0.1.0` | 2026-10-26 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0) | First stable release, shown as Latest; tag on `b70d3d82`, published 17:59 UTC; fold PR `091-fold-0-1-0`; feature freeze (FR-129, spec 021 FR-059; was spec 091). | No |
 | `v0.1.1` | 2026-10-28 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.1) | First update after the stable release; planned, not a response to an incident. | No |
 | `v0.1.2` | 2026-10-29 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.2) | Desk pencil fix (issue #850) and the commit-identity process change; planned. | No |
+| `v0.1.3` | 2026-10-30 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.3) | First daily stable release (spec 021 FR-064): chat links in the session browser, Save selection to notes, status tooltips, lobby and desk-height fixes, macOS PR tests; planned. | No |
 
 ## Changes
 

@@ -1078,6 +1078,9 @@ app.whenReady().then(() => {
       childProcessAttempts: () => childSeal?.tried(),
       /** Spec 010 FR-032: the IPC channels main refused under the simulator since startup (none on a plain start). */
       simRefused: () => simRefusedChannels(),
+      /** Spec 080: the session browsers main holds (state only: address, memory note, ...), and what End session does to one (the simulator's End never reaches main). */
+      browserStates: () => browser.liveIds().map((id) => browser.stateOf(id)),
+      browserGone: (id: string) => browser.destroy(id),
       js: <T>(code: string): Promise<T> => (win as BrowserWindow).webContents.executeJavaScript(code, true) as Promise<T>,
       sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
       shot: async (file: string) => fs.writeFileSync(file, (await (win as BrowserWindow).webContents.capturePage()).toPNG()),

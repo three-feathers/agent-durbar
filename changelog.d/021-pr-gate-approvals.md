@@ -1,1 +1,0 @@
-- **Merge gate lists approvals apart** (spec 021, #883): `scripts/pr-gate.sh` prints a trusted approving review as `approved by: <login> at <sha>` instead of an unanswered comment; later comments, change requests and open threads still block, and outside text stays hidden. Checked with a fake `gh` test and a planted mutation.
