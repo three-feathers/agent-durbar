@@ -2168,3 +2168,10 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 .nt-find:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
 
 .nt-row{content-visibility:auto;contain-intrinsic-size:auto 78px} /* spec 083 SC-005: 300 rows, only the ones in view are laid out and painted */
+/* spec 083 T033 (FR-042): the floating "Save to notes" beside a selection, and the buttons that must never be part of a selection */
+.nt-selbtn{position:fixed;z-index:70;height:28px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-size:12px;font-weight:600;cursor:pointer;box-shadow:var(--shadow-pop);white-space:nowrap}
+.nt-selbtn:hover,.nt-selbtn:focus-visible{background:var(--surface-2)}
+.nt-selbtn:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.nt-selbtn[hidden]{display:none}
+.cp-btn,.nt-btn,.nt-mark{user-select:none;-webkit-user-select:none}
+

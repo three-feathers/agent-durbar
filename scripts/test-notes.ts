@@ -356,6 +356,23 @@ assert.deepStrictEqual(o.map((n) => n.text), ['b', 'c', 'a']);
     assert.ok(DN2.noMatch('w'.repeat(200), SAFE.mask).length <= 80, 'long words are cut');
   }
 
+  // FR-042: the selected text as saved, and where the floating button goes
+  {
+    const SEL = DN as unknown as { selectionText(r: unknown): string; selButtonTop(s: { endBottom: number; startTop: number }, h: number, v: { top: number; bottom: number }, a: { top: number; bottom: number } | null): number };
+    assert.strictEqual(SEL.selectionText('  two lines\r\nof text \n'), 'two lines\nof text', 'line ends unified, ends trimmed');
+    assert.strictEqual(SEL.selectionText('a\u200bb\ufeff'), 'ab', 'zero-width marks are dropped');
+    assert.strictEqual(SEL.selectionText('   \n\t '), '', 'only blanks: nothing to save');
+    assert.strictEqual(SEL.selectionText(null), '');
+    assert.strictEqual(SEL.selectionText(`x ${tok} y`), `x ${tok} y`, 'the text is not changed here: main masks it like every other save');
+    const view = { top: 0, bottom: 900 };
+    assert.strictEqual(SEL.selButtonTop({ endBottom: 300, startTop: 280 }, 28, view, { top: 780, bottom: 900 }), 306, 'below the end of the selection');
+    assert.strictEqual(SEL.selButtonTop({ endBottom: 770, startTop: 700 }, 28, view, { top: 780, bottom: 900 }), 666, 'over the composer: above the selection instead (700 - 28 - 6)');
+    assert.strictEqual(SEL.selButtonTop({ endBottom: 760, startTop: 700 }, 28, view, { top: 780, bottom: 900 }), 666, 'it would touch the composer by a pixel: above');
+    assert.strictEqual(SEL.selButtonTop({ endBottom: 770, startTop: 700 }, 28, view, null), 776, 'no composer to avoid: below');
+    assert.strictEqual(SEL.selButtonTop({ endBottom: 5, startTop: 0 }, 28, view, null), 11, 'never above the window top (8px margin)');
+    assert.strictEqual(SEL.selButtonTop({ endBottom: 895, startTop: 880 }, 28, view, null), 864, 'never below the window bottom');
+  }
+
   // the notice above the box (FR-024)
   assert.strictEqual(DN.noticeText({ hidden: true, from: 'agent' }), 'Parts of this note were hidden when it was saved');
   assert.strictEqual(DN.noticeText({ hidden: false, from: 'file' }), 'From the project file');
