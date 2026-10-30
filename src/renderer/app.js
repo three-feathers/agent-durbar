@@ -2618,12 +2618,14 @@ function openMsgMenu(btn,x,y){
   closeModeMenu();
   const it=(act,label,sub)=>`<button type="button" role="menuitem" data-nact="${act}" title="${esc(sub)}"><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu nt-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Actions for this message');
-  m.innerHTML=it('save','Save to notes','Keep it for later in this folder')+it('copy','Copy','Copy this message');
+  const sel0=selInfo(), selHere=sel0&&sel0.bubble===info.bubble?sel0:null; /* FR-042: a selection inside THIS message adds the item (the keyboard path) */
+  m.innerHTML=it('save','Save to notes','Keep it for later in this folder')+(selHere?it('savesel','Save selection to notes','Keep only the selected text'):'')+it('copy','Copy','Copy this message');
   document.body.appendChild(m);
   const b=m.getBoundingClientRect();m.style.left=Math.max(8,Math.min(x,innerWidth-b.width-8))+'px';m.style.top=Math.max(8,Math.min(y,innerHeight-b.height-8))+'px';
   const back=()=>{if(btn&&document.contains(btn))focusIn(btn);else{const mi=$('msgInput');if(mi)focusIn(mi);}};
   m.addEventListener('click',e=>{const t=e.target.closest('[data-nact]');if(!t)return;closeModeMenu();
     if(t.dataset.nact==='copy'){navigator.clipboard.writeText(info.text).then(()=>toast('Copied.',1500),()=>toast('Could not copy to the clipboard.',3000).classList.add('err'));back();return;}
+    if(t.dataset.nact==='savesel'){if(selHere)notesSaveSel(selHere);return;}
     notesSaveMsg(a,info,btn);});
   m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-nact]')],i=its.indexOf(document.activeElement);
     if(e.key==='ArrowDown'){e.preventDefault();focusIn(its[(i+1)%its.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(its[(i+its.length-1)%its.length]);}
@@ -2656,6 +2658,60 @@ async function notesSaveMsg(a,info,btn){
   if(r.existing){toastActions('Already in notes',[{label:'Show',onClick:()=>openNotes(a,{focusId:n&&n.id})}]);announce('Already in notes');return;}
   toastActions('Saved to notes',[{label:'Rename…',onClick:()=>n&&renameNote(a,n,null)},{label:'Show',onClick:()=>openNotes(a,{focusId:n&&n.id})}]);
   announce('Saved to notes');
+}
+
+/* ---- saving a selection (FR-042, T033) ---- */
+/* The selection when it lies inside ONE finished message of this main chat: {bubble, btn, role, ord, text, rect}; null otherwise (collapsed,
+   across messages, outside the log, in the read-only VS Code view or a helper's chat, or only blanks). The text is sent raw to main, which
+   masks it like every other save; the buttons' own labels are not selectable (CSS), so they are never in it. */
+function selInfo(){
+  const sel=window.getSelection&&window.getSelection(); if(!sel||sel.rangeCount!==1||sel.isCollapsed)return null;
+  const a=byId(ui.selected); if(!notesOn(a))return null;
+  const r=sel.getRangeAt(0), bubble=(r.commonAncestorContainer.nodeType===1?r.commonAncestorContainer:r.commonAncestorContainer.parentElement).closest('#chat .chat-inner[data-notes] .bubble');
+  if(!bubble||!bubble.contains(r.startContainer)||!bubble.contains(r.endContainer))return null;
+  const btn=bubble.querySelector(':scope > .nt-btn'); if(!btn)return null; /* finished messages only */
+  const text=DN.selectionText(sel.toString()); if(!text)return null;
+  const mi=msgInfo(btn); if(!mi)return null;
+  const rects=[...r.getClientRects()].filter(x=>x.width>0||x.height>0), last=rects[rects.length-1]||r.getBoundingClientRect(), first=rects[0]||last;
+  return {a,bubble,btn,role:mi.role,ord:mi.ord,text,end:{right:last.right,bottom:last.bottom},startTop:first.top};
+}
+function selButton(){
+  let b=document.getElementById('ntSelBtn');
+  if(!b){b=document.createElement('button');b.type='button';b.id='ntSelBtn';b.className='nt-selbtn';b.textContent='Save to notes';b.setAttribute('aria-label','Save the selected text to notes');b.hidden=true;
+    b.addEventListener('mousedown',e=>e.preventDefault()); /* the selection stays */
+    b.addEventListener('click',()=>{const i=selInfo();hideSelButton();if(i)notesSaveSel(i);});
+    document.body.appendChild(b);}
+  return b;
+}
+function hideSelButton(){const b=document.getElementById('ntSelBtn');if(b)b.hidden=true;}
+/* shown next to the end of the selection (placeMenu keeps it in the window), never over the composer or the answer bar */
+function showSelButton(){
+  const i=selInfo(), dr=$('notesDrawer'), lg=$('chat'); /* not while the Notes drawer is open: it would float over text the user cannot see */
+  if(!i||(dr&&!dr.hidden)||!lg||document.querySelector(MODAL_SEL)){hideSelButton();return;}
+  const cr=lg.getBoundingClientRect(); /* the selection's end must be inside the visible log, else it was scrolled away */
+  if(!(i.end.bottom>cr.top&&i.end.bottom-1<cr.bottom&&i.end.right>cr.left&&i.end.right<=cr.right+1)){hideSelButton();return;}
+  const b=selButton(); b.hidden=false;
+  const hgt=b.getBoundingClientRect().height, avoid=[document.querySelector('#panel .composer'),$('answerBar')].find(e=>e&&!e.hidden&&e.getClientRects().length);
+  const top=DN.selButtonTop({endBottom:i.end.bottom,startTop:i.startTop},hgt,{top:cr.top,bottom:cr.bottom},avoid?avoid.getBoundingClientRect():null);
+  if(top==null){hideSelButton();return;}
+  placeMenu(b,i.end.right,top,null);
+}
+let selT=0;
+document.addEventListener('selectionchange',()=>{hideSelButton();clearTimeout(selT);selT=setTimeout(showSelButton,120);}); /* after the drag settles */
+document.addEventListener('scroll',()=>{const b=document.getElementById('ntSelBtn');if(b&&!b.hidden){clearTimeout(selT);selT=setTimeout(showSelButton,60);}},true);
+window.addEventListener('resize',()=>{const b=document.getElementById('ntSelBtn');if(b&&!b.hidden){clearTimeout(selT);selT=setTimeout(showSelButton,60);}});
+const SEL_MAX=65536; /* main's NOTES_LIMITS.inputChars: its refusal says "message", a selection gets its own words */
+async function notesSaveSel(i){
+  const a=i.a, root=liveRoot(a);
+  if(i.text.length>SEL_MAX){toast('That selection is too long to save.',5000).classList.add('err');return;}
+  let r=null;try{r=await bridge.notesSave(root.id,{role:i.role,ord:i.ord,text:i.text,from:'selection'});}catch(e){r=null;}
+  if(!r||!r.ok){toast(esc((r&&r.error)||'Could not save the note.'),5000).classList.add('err');return;}
+  try{window.getSelection().removeAllRanges();}catch(e){}
+  await notesFetch(a);
+  const n=r.note;
+  if(r.existing){toastActions('Already in notes',[{label:'Show',onClick:()=>openNotes(a,{focusId:n&&n.id})}]);announce('Already in notes');return;}
+  toastActions('Saved to notes',[{label:'Rename…',onClick:()=>n&&renameNote(a,n,null)},{label:'Show',onClick:()=>openNotes(a,{focusId:n&&n.id})}]);
+  announce('Saved the selection to notes');
 }
 
 /* ---- changing a note: one place for rev, stale and the answer (FR-008, FR-013) ---- */
@@ -2825,7 +2881,7 @@ async function openNotes(a,o){
   if(BP)await DN.showChatTab(BP); /* FR-025: from the Browser tab, Chat comes first */
   const d=$('notesDrawer'); if(!d||ui.selected!==a.id)return false;
   if(!NT.open){NT.ret=o.opener&&document.contains(o.opener)?o.opener:(document.activeElement&&document.activeElement!==document.body?document.activeElement:$('msgInput'));}
-  NT.open={id:a.id}; d.hidden=false;
+  NT.open={id:a.id}; d.hidden=false; hideSelButton(); /* the selection may survive, the button does not float over the drawer */
   document.querySelectorAll('[data-notes-toggle]').forEach(b=>b.setAttribute('aria-expanded','true'));
   placeNotesDrawer();
   if(window.ResizeObserver&&!NT.ro){NT.ro=new ResizeObserver(placeNotesDrawer);NT.ro.observe($('chat'));NT.ro.observe($('panel'));}
@@ -3080,7 +3136,7 @@ function wireToolbar(){
   fitToolbar();
 }
 function closePanel(){closeSlash();keepDraft();
-  BP.hide(); /* spec 080 FR-009: the browser view comes off the window; the page stays loaded */
+  BP.hide(); hideSelButton(); /* spec 080 FR-009: the browser view comes off the window; the page stays loaded */
   if(ctObs){ctObs.res.disconnect();ctObs.mut.disconnect();ctObs=null;} closeCtMore(false); closeCtxMenu();
   const id=ui.selected; ui.selected=null; document.body.classList.remove('panel-open'); $('panel').innerHTML='';
   renderAll();
@@ -7781,7 +7837,7 @@ const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueu
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
 if(SIM)window.__durbarSimUi={agents:()=>agents,crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
-  readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
+  readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,
   /* spec 059 T076 (FR-023): a driver makes the things that change while a field is open happen through the real paths */

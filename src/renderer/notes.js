@@ -142,5 +142,18 @@
     return t?'No notes match "'+t+'"':'No notes match';
   }
 
-  return {groups,flat,countOf,countTip,markerFor,search,noMatch,noticeText,when,fromLabel,rowView,insertInto,replaceWord,digestInput,digestOf,findSaved,slashEntries,SLASH_NOTES_MAX,SCOPE_WORD,showChatTab};
+  /* FR-042: the selected text as it is saved: line ends unified, the ends trimmed, no zero-width marks; '' when nothing is left */
+  function selectionText(raw){return String(raw==null?'':raw).replace(/\r\n?/g,'\n').replace(/[\u200b-\u200d\ufeff]/g,'').trim();}
+  /* FR-042: where the floating "Save to notes" button goes: just below the end of the selection; when that would cover the avoided box
+     (the composer, the answer bar) it goes above the selection's start instead; always inside `view` (the visible chat log). When
+     neither place keeps it clear of the avoided box (the selection is out of the log), null: no button. Rects are {top,bottom}. */
+  function selButtonTop(sel,h,view,avoid){
+    const gap=6, clash=t=>!!avoid&&t+h>avoid.top&&t<avoid.bottom;
+    let top=sel.endBottom+gap;
+    if(clash(top))top=sel.startTop-h-gap;
+    top=Math.max(view.top+8,Math.min(top,view.bottom-h-8));
+    return clash(top)?null:top;
+  }
+
+  return {selectionText,selButtonTop,groups,flat,countOf,countTip,markerFor,search,noMatch,noticeText,when,fromLabel,rowView,insertInto,replaceWord,digestInput,digestOf,findSaved,slashEntries,SLASH_NOTES_MAX,SCOPE_WORD,showChatTab};
 })());
