@@ -83,7 +83,9 @@ module.exports = async (ctx) => {
     check(await until(`!!document.querySelector('#modeMenu [data-fact="notes"]')`, 4000), `${tag}: the folder ⋯ has a Notes item`);
     const fname = await menuName();
     check(!!fname, `${tag}: the folder has a name`);
-    check(await until(`(document.querySelector('#modeMenu [data-fact="notes"] b')||{}).textContent==='Notes (2)…'`, 5000), `${tag}: it reads Notes (2)… (3 notes, one done): ${await js(`(document.querySelector('#modeMenu [data-fact="notes"] b')||{}).textContent`)}`);
+    const two = await until(`(document.querySelector('#modeMenu [data-fact="notes"] b')||{}).textContent==='Notes (2)…'`, 5000);
+    const label = await js(`(document.querySelector('#modeMenu [data-fact="notes"] b')||{}).textContent`);
+    check(two, `${tag}: it reads Notes (2)… (3 notes, one done): ${label}`);
     await js(`document.querySelector('#modeMenu [data-fact="notes"]').click()`);
     check(await until(`!!document.getElementById('nsHost')&&document.querySelectorAll('#nsList .nt-row').length===3`, 6000), `${tag}: the folder ⋯ opens the Notes screen with the 3 notes`);
     const head = await js(`(document.querySelector('#screen .scr-head h2')||{}).textContent`);
