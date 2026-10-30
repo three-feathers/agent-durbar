@@ -1,1 +1,0 @@
-- Process: the 18 one-release spec folders are one release table in spec 008, and a spec's index status is one fixed word (draft, specified, building, built, released, superseded) with a short note, checked by `npm run specs:check` (spec 021 FR-063, spec 008, spec 025).

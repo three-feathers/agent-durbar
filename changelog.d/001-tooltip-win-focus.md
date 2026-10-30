@@ -1,1 +1,0 @@
-- **The status tooltip check copes with Windows runners losing focus** (spec 001 FR-187): `check-status-tooltip` now retries a hover, keyboard or redraw step only when the window really lost focus, was resized or scrolled (which rightly hides the tooltip), and fails at once with what it saw otherwise. Test-only, no app change.

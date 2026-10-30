@@ -30,7 +30,7 @@
       canForward:open&&!!s.canForward,
       reload:loading?'stop':'reload',
       reloadLabel:loading?'Stop':'Reload',
-      status:loading?{kind:'loading',word:'Loading…'}:s&&typeof s.failed==='string'?{kind:'error',word:s.failed}:err?{kind:'error',word:'Could not load this page ('+err+')'}:!open&&!(s&&s.connecting)?{kind:'closed',word:'The page closed with the session.'}:open&&typeof s.note==='string'&&s.note?{kind:'dialog',word:s.note}:null,
+      status:loading?{kind:'loading',word:'Loading…'}:s&&typeof s.failed==='string'?{kind:'error',word:s.failed}:err?{kind:'error',word:'Could not load this page ('+err+')'}:!open&&!(s&&s.connecting)?{kind:'closed',word:'The page closed with the session.'}:open&&typeof s.note==='string'&&s.note?{kind:'dialog',word:s.note}:open&&s.memory==='reloaded'?{kind:'memory',word:'Reloaded to save memory'}:open&&s.memory==='many'?{kind:'memory',word:'Many pages are open; close some to save memory.'}:null,
       title:open&&!loading&&!err&&typeof s.title==='string'?s.title:'',
       sound:open&&s.muted===false?{on:true,word:'Sound on',hint:'Mute this page'}:{on:false,word:'Sound off',hint:'Turn the sound on'},
       dialogOpen:open&&s.dialogOpen===true,
@@ -56,6 +56,7 @@
     loading:'<svg class="bspin" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M8 2.2a5.8 5.8 0 1 1-5.8 5.8"/></svg>',
     error:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><path d="M8 4.8v3.8M8 11.1v.1"/></svg>',
     dialog:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.2" y="3" width="11.6" height="9" rx="1.8"/><path d="M5 6.2h6M5 8.8h3.6"/></svg>',
+    memory:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="10" height="8" rx="1.5"/><path d="M6 2v2M10 2v2M6 12v2M10 12v2"/></svg>',
     closed:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><path d="M5 8h6"/></svg>'
   };
 
@@ -201,6 +202,27 @@
     return !!(a&&a.ok);
   }
 
+  /* FR-030, FR-031: where a click on a chat link goes. `rootAvailable`: the chat's root session is live and has a browser. When it is not (the demo, an ended
+     or removed parent of a helper's chat) a web link goes to the system browser and any other link is refused: a link is never lost silently. */
+  function linkRoute(web,mod,setting,rootAvailable){
+    if(web&&(mod||setting==='system'))return 'system';
+    if(!rootAvailable)return web?'system':'refuse';
+    return 'tab';
+  }
+  /* FR-030: a chat link for this session's browser. Main classifies it (web, mail or refused) and navigates; the one-time note is asked on the first
+     use, and *Not now* gives {fallback:true} (the caller opens the system browser this time). Returns main's answer. */
+  async function openLink(id,url){
+    if(!bridge||!bridge.browserOpenLink)return {ok:false,reason:'The browser is not available.'};
+    let r=await bridge.browserOpenLink(id,url).catch(()=>null);
+    if(r&&r.ok===false&&r.needsConsent){
+      if(!(await askConsent()))return {fallback:true};
+      r=await bridge.browserOpenLink(id,url).catch(()=>null);
+    }
+    return r||{ok:false,reason:'The browser could not start.'};
+  }
+  /* FR-024: the user pressed Open on a mail link; main checks it is mailto: again */
+  function openMail(url){return bridge&&bridge.browserOpenMail?bridge.browserOpenMail(url).catch(()=>null):Promise.resolve(null);}
+
   /* FR-025d (Q3): a page dialog opened. Toast naming the session (page text, masked in main); a hidden view's chat comes forward on its Browser tab */
   function onDialog(d){
     if(!d||typeof d.id!=='string')return;
@@ -317,5 +339,5 @@
   /* The page area while the Browser tab is selected, shown or still attaching (the overlay test must see an overlay that is open during the attach) */
   function paneRect(){const v=$('bView');return cur&&cur.tab==='browser'&&v?v.getBoundingClientRect():null;}
   const covered=()=>!!(cur&&cur.covered);
-  return {tabKey,barModel,boundsOf,init,available,tabsHTML,paneHTML,mount,hide,select,current,overlay,areaRect,wantTab,dialogOpen,covered,paneRect};
+  return {tabKey,barModel,boundsOf,init,available,tabsHTML,paneHTML,mount,hide,select,current,overlay,areaRect,wantTab,dialogOpen,covered,paneRect,openLink,openMail,linkRoute};
 })());

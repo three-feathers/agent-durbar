@@ -652,3 +652,12 @@ Nothing here was run on a real session for this delta (0 credits); the `real:` e
   - **Honest limits:** `[KNOWN GAP]` the places need 28 px each (36 px with their gap) plus 406 px: 5 places fit from 634 px, 6 from 670 px, 7 and 8 from about 706 px. Under that the tiles go below 28 px; measured (`sim:`) they still hold down to about 22 px (6 to 8 places at 660 to 700 px: 0 problems), but at 640x480 with 7 or 8 custom places (tiles 19 and 20 px) a "+N" circle sticks out of its tile (4 problems), as it did before this change. `[KNOWN GAP]` no Windows or macOS run here; the layout is CSS and a pure function, run in Linux CI. At 640 the "+N" cards of the helpers (density `card`) are a different layout and were not changed.
 
 **Tasks:** T157..T160 in `tasks.md` (issue #737). Numbers taken here: FR-189, T157..T160 (checked against `main`, the remote branches and the open PR 885, which has FR-188 and T156, on 2026-10-29).
+
+### 2026-10-30: a three-line task no longer makes its desk taller (issue #897)
+
+- **FR-190** The task line under a desk's name holds room for exactly its three clamped lines (`min-height: calc(3em * 1.35)`, 48.6 px at 12 px). Before, the minimum was 48 px while three lines take 48.6 px, so a desk whose task wrapped to three lines was 0.6 px taller than the desks next to it, and "desks of one row have one height" failed. That happened only where the fonts wrap the task to three lines: the scheduled *UI on three OSes* run of 2026-10-30 failed on `macos-latest` (`resumed title sim3-1280x800: 274,275`), and it also failed on Linux under Xvfb on the reporting machine (`sim:`, task 48.00 vs 48.56 px, unrounded 274.06 vs 274.63 px), while the Linux and Windows CI runners passed.
+  - Desks whose tasks have fewer than three lines grow by 0.6 px. The 15-agent layout at 1440x900 and 1280x800 is checked by `check-office-overlap` (`sim:`).
+  - When the row check fails, its message now gives each desk's unrounded height and title line count, so the cause shows in the log.
+  - **Honest limits:** `[KNOWN GAP]` not verified on macOS before merge; the next scheduled *UI on three OSes* run is the check. The linked screenshots are not retaken: a 0.6 px change does not show at their scale.
+
+**Tasks:** T161..T162 in `tasks.md` (issue #897). Numbers taken here: FR-190, T161..T162 (checked against `main`, the remote branches and the open PRs on 2026-10-30).

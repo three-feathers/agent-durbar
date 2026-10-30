@@ -1,1 +1,0 @@
-- A session resumed from Previous sessions no longer shows its title twice on the desk: the grey line says `Resumed. New messages continue this session.` and the title stays in the card's name (#451).

@@ -149,4 +149,18 @@ assert.ok(/\.panel-in\.on-browser #chat\{[^}]*visibility:hidden/.test(block), 't
   await sel;
   assert.deepStrictEqual(calls.slice(-1), ['visible true'], 'the view is attached last, after the flag was cleared');
   console.log('browser pane (cover during attach) ok');
+  // FR-030/031: where a click goes, including a parent that is gone (2026-10-30 security review)
+  {
+    const R = (BP as unknown as { linkRoute(web: boolean, mod: boolean, setting: string, avail: boolean): string }).linkRoute;
+    assert.strictEqual(R(true, false, 'session', true), 'tab', 'a plain web click opens the session browser');
+    assert.strictEqual(R(true, true, 'session', true), 'system', 'Ctrl/Cmd+click: the system browser');
+    assert.strictEqual(R(true, false, 'system', true), 'system', 'the System setting');
+    assert.strictEqual(R(false, false, 'system', true), 'tab', 'the setting never changes how a non-web link is classified (main does)');
+    assert.strictEqual(R(false, true, 'session', true), 'tab', 'a modifier does not send a non-web link to the system');
+    assert.strictEqual(R(true, false, 'session', false), 'system', 'no live root (the demo, an ended or removed parent): a web link goes to the system browser, not nowhere');
+    assert.strictEqual(R(false, false, 'session', false), 'refuse', 'and a non-web link is refused with the static text');
+    const app2 = fs.readFileSync(path.join(ROOT, 'src/renderer/app.js'), 'utf8');
+    assert.ok(/root=a&&liveRoot\(a\)[^\n]*\n[^\n]*\n\s*const route=BP\.linkRoute\(web,mod,CHAT_LINKS,!!root&&BP\.available\(root\)\)/.test(app2), "the click uses the chat's root session (a helper's parent), never the clicked chat's own id");
+    assert.ok(/BP\.openLink\(root\.id,u\)/.test(app2), 'and asks main for the root id');
+  }
 })().then(() => console.log('browser pane tests passed'), (e) => { console.error(e); process.exit(1); });

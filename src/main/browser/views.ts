@@ -22,6 +22,8 @@ export interface ViewEvents {
   onPageDialog?(sessionId: string, d: { type: string; text: string; forAgent: boolean }): void;
   /** FR-025d: the dialog closed (`Page.javascriptDialogClosed`): the *Dialog open* marker goes. */
   onPageDialogClosed?(sessionId: string): void;
+  /** FR-011: how the page now shown was reached, from Chromium's own history (`transitionType`: `form_submit` for a submitted form, so a POST page is never unloaded). */
+  onNavigationKind?(sessionId: string, transitionType: string): void;
 }
 
 export interface SessionView {
@@ -176,6 +178,17 @@ export function makeViews(deps: ViewDeps) {
       wc.debugger.attach('1.3');
       await wc.debugger.sendCommand('Page.enable'); // only Page; the other domains are Phase 2
       wireViewDialogs(sv, wc, events);
+      wc.on('did-navigate', (() => {
+        if (!events.onNavigationKind) return;
+        wc.debugger.sendCommand('Page.getNavigationHistory').then(
+          (h) => {
+            const hist = h as { currentIndex?: number; entries?: { transitionType?: string }[] };
+            const e = hist && Array.isArray(hist.entries) && typeof hist.currentIndex === 'number' ? hist.entries[hist.currentIndex] : undefined;
+            if (e && typeof e.transitionType === 'string') events.onNavigationKind!(sessionId, e.transitionType);
+          },
+          () => undefined,
+        );
+      }) as never);
     } catch (e) {
       await sv.destroy(); // a half-built view must not stay open with its partition
       throw e;

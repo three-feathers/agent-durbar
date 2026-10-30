@@ -2618,12 +2618,14 @@ function openMsgMenu(btn,x,y){
   closeModeMenu();
   const it=(act,label,sub)=>`<button type="button" role="menuitem" data-nact="${act}" title="${esc(sub)}"><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu nt-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Actions for this message');
-  m.innerHTML=it('save','Save to notes','Keep it for later in this folder')+it('copy','Copy','Copy this message');
+  const sel0=selInfo(), selHere=sel0&&sel0.bubble===info.bubble?sel0:null; /* FR-042: a selection inside THIS message adds the item (the keyboard path) */
+  m.innerHTML=it('save','Save to notes','Keep it for later in this folder')+(selHere?it('savesel','Save selection to notes','Keep only the selected text'):'')+it('copy','Copy','Copy this message');
   document.body.appendChild(m);
   const b=m.getBoundingClientRect();m.style.left=Math.max(8,Math.min(x,innerWidth-b.width-8))+'px';m.style.top=Math.max(8,Math.min(y,innerHeight-b.height-8))+'px';
   const back=()=>{if(btn&&document.contains(btn))focusIn(btn);else{const mi=$('msgInput');if(mi)focusIn(mi);}};
   m.addEventListener('click',e=>{const t=e.target.closest('[data-nact]');if(!t)return;closeModeMenu();
     if(t.dataset.nact==='copy'){navigator.clipboard.writeText(info.text).then(()=>toast('Copied.',1500),()=>toast('Could not copy to the clipboard.',3000).classList.add('err'));back();return;}
+    if(t.dataset.nact==='savesel'){if(selHere)notesSaveSel(selHere);return;}
     notesSaveMsg(a,info,btn);});
   m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-nact]')],i=its.indexOf(document.activeElement);
     if(e.key==='ArrowDown'){e.preventDefault();focusIn(its[(i+1)%its.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(its[(i+its.length-1)%its.length]);}
@@ -2656,6 +2658,60 @@ async function notesSaveMsg(a,info,btn){
   if(r.existing){toastActions('Already in notes',[{label:'Show',onClick:()=>openNotes(a,{focusId:n&&n.id})}]);announce('Already in notes');return;}
   toastActions('Saved to notes',[{label:'Rename…',onClick:()=>n&&renameNote(a,n,null)},{label:'Show',onClick:()=>openNotes(a,{focusId:n&&n.id})}]);
   announce('Saved to notes');
+}
+
+/* ---- saving a selection (FR-042, T033) ---- */
+/* The selection when it lies inside ONE finished message of this main chat: {bubble, btn, role, ord, text, rect}; null otherwise (collapsed,
+   across messages, outside the log, in the read-only VS Code view or a helper's chat, or only blanks). The text is sent raw to main, which
+   masks it like every other save; the buttons' own labels are not selectable (CSS), so they are never in it. */
+function selInfo(){
+  const sel=window.getSelection&&window.getSelection(); if(!sel||sel.rangeCount!==1||sel.isCollapsed)return null;
+  const a=byId(ui.selected); if(!notesOn(a))return null;
+  const r=sel.getRangeAt(0), bubble=(r.commonAncestorContainer.nodeType===1?r.commonAncestorContainer:r.commonAncestorContainer.parentElement).closest('#chat .chat-inner[data-notes] .bubble');
+  if(!bubble||!bubble.contains(r.startContainer)||!bubble.contains(r.endContainer))return null;
+  const btn=bubble.querySelector(':scope > .nt-btn'); if(!btn)return null; /* finished messages only */
+  const text=DN.selectionText(sel.toString()); if(!text)return null;
+  const mi=msgInfo(btn); if(!mi)return null;
+  const rects=[...r.getClientRects()].filter(x=>x.width>0||x.height>0), last=rects[rects.length-1]||r.getBoundingClientRect(), first=rects[0]||last;
+  return {a,bubble,btn,role:mi.role,ord:mi.ord,text,end:{right:last.right,bottom:last.bottom},startTop:first.top};
+}
+function selButton(){
+  let b=document.getElementById('ntSelBtn');
+  if(!b){b=document.createElement('button');b.type='button';b.id='ntSelBtn';b.className='nt-selbtn';b.textContent='Save to notes';b.setAttribute('aria-label','Save the selected text to notes');b.hidden=true;
+    b.addEventListener('mousedown',e=>e.preventDefault()); /* the selection stays */
+    b.addEventListener('click',()=>{const i=selInfo();hideSelButton();if(i)notesSaveSel(i);});
+    document.body.appendChild(b);}
+  return b;
+}
+function hideSelButton(){const b=document.getElementById('ntSelBtn');if(b)b.hidden=true;}
+/* shown next to the end of the selection (placeMenu keeps it in the window), never over the composer or the answer bar */
+function showSelButton(){
+  const i=selInfo(), dr=$('notesDrawer'), lg=$('chat'); /* not while the Notes drawer is open: it would float over text the user cannot see */
+  if(!i||(dr&&!dr.hidden)||!lg||document.querySelector(MODAL_SEL)){hideSelButton();return;}
+  const cr=lg.getBoundingClientRect(); /* the selection's end must be inside the visible log, else it was scrolled away */
+  if(!(i.end.bottom>cr.top&&i.end.bottom-1<cr.bottom&&i.end.right>cr.left&&i.end.right<=cr.right+1)){hideSelButton();return;}
+  const b=selButton(); b.hidden=false;
+  const hgt=b.getBoundingClientRect().height, avoid=[document.querySelector('#panel .composer'),$('answerBar')].find(e=>e&&!e.hidden&&e.getClientRects().length);
+  const top=DN.selButtonTop({endBottom:i.end.bottom,startTop:i.startTop},hgt,{top:cr.top,bottom:cr.bottom},avoid?avoid.getBoundingClientRect():null);
+  if(top==null){hideSelButton();return;}
+  placeMenu(b,i.end.right,top,null);
+}
+let selT=0;
+document.addEventListener('selectionchange',()=>{hideSelButton();clearTimeout(selT);selT=setTimeout(showSelButton,120);}); /* after the drag settles */
+document.addEventListener('scroll',()=>{const b=document.getElementById('ntSelBtn');if(b&&!b.hidden){clearTimeout(selT);selT=setTimeout(showSelButton,60);}},true);
+window.addEventListener('resize',()=>{const b=document.getElementById('ntSelBtn');if(b&&!b.hidden){clearTimeout(selT);selT=setTimeout(showSelButton,60);}});
+const SEL_MAX=65536; /* main's NOTES_LIMITS.inputChars: its refusal says "message", a selection gets its own words */
+async function notesSaveSel(i){
+  const a=i.a, root=liveRoot(a);
+  if(i.text.length>SEL_MAX){toast('That selection is too long to save.',5000).classList.add('err');return;}
+  let r=null;try{r=await bridge.notesSave(root.id,{role:i.role,ord:i.ord,text:i.text,from:'selection'});}catch(e){r=null;}
+  if(!r||!r.ok){toast(esc((r&&r.error)||'Could not save the note.'),5000).classList.add('err');return;}
+  try{window.getSelection().removeAllRanges();}catch(e){}
+  await notesFetch(a);
+  const n=r.note;
+  if(r.existing){toastActions('Already in notes',[{label:'Show',onClick:()=>openNotes(a,{focusId:n&&n.id})}]);announce('Already in notes');return;}
+  toastActions('Saved to notes',[{label:'Rename…',onClick:()=>n&&renameNote(a,n,null)},{label:'Show',onClick:()=>openNotes(a,{focusId:n&&n.id})}]);
+  announce('Saved the selection to notes');
 }
 
 /* ---- changing a note: one place for rev, stale and the answer (FR-008, FR-013) ---- */
@@ -2825,7 +2881,7 @@ async function openNotes(a,o){
   if(BP)await DN.showChatTab(BP); /* FR-025: from the Browser tab, Chat comes first */
   const d=$('notesDrawer'); if(!d||ui.selected!==a.id)return false;
   if(!NT.open){NT.ret=o.opener&&document.contains(o.opener)?o.opener:(document.activeElement&&document.activeElement!==document.body?document.activeElement:$('msgInput'));}
-  NT.open={id:a.id}; d.hidden=false;
+  NT.open={id:a.id}; d.hidden=false; hideSelButton(); /* the selection may survive, the button does not float over the drawer */
   document.querySelectorAll('[data-notes-toggle]').forEach(b=>b.setAttribute('aria-expanded','true'));
   placeNotesDrawer();
   if(window.ResizeObserver&&!NT.ro){NT.ro=new ResizeObserver(placeNotesDrawer);NT.ro.observe($('chat'));NT.ro.observe($('panel'));}
@@ -3080,7 +3136,7 @@ function wireToolbar(){
   fitToolbar();
 }
 function closePanel(){closeSlash();keepDraft();
-  BP.hide(); /* spec 080 FR-009: the browser view comes off the window; the page stays loaded */
+  BP.hide(); hideSelButton(); /* spec 080 FR-009: the browser view comes off the window; the page stays loaded */
   if(ctObs){ctObs.res.disconnect();ctObs.mut.disconnect();ctObs=null;} closeCtMore(false); closeCtxMenu();
   const id=ui.selected; ui.selected=null; document.body.classList.remove('panel-open'); $('panel').innerHTML='';
   renderAll();
@@ -3088,11 +3144,68 @@ function closePanel(){closeSlash();keepDraft();
 }
 
 /* ---------------- events ---------------- */
+/* ---------------- spec 080 T017: links in the chat (FR-030, FR-031, FR-024) ----------------
+   A plain click on an http(s) link opens it in the session browser of the chat's root session (Settings > Open chat links in; default Session
+   browser). Ctrl (Cmd on a Mac) + click and the menu item go to the system browser through the existing openExternal, unchanged. Whatever the
+   click, the link text is agent text: main classifies it (web / mail / other) and the window only shows the static answer. The page never
+   navigates: preventDefault runs first, and the window's navigation guard stays. */
+let CHAT_LINKS='session'; /* the setting: 'session' or 'system' */
+const REFUSED_LINK='Durbar opens only mail links in other apps.';
+function openLinkExternal(u){
+  if(!/^https?:\/\//i.test(u))return; /* app:openExternal refuses anything else in main too */
+  if(bridge&&bridge.openExternal)bridge.openExternal(u);else toast('Would open <code>'+esc(SHORT(safeMask(u),80))+'</code> in your browser',3200);
+}
+/* the chat of a session shows its Browser tab (the panel switches to the root session of a helper's chat) */
+function showSessionBrowser(id){
+  if(ui.selected===id){BP.select('browser');return;}
+  BP.wantTab(id,'browser');openPanel(id,false);
+}
+async function openChatLink(u,mod){
+  const a=byId(ui.selected),root=a&&liveRoot(a); /* a helper's chat uses its parent's browser; its own id never gets a view */
+  const web=/^https?:\/\//i.test(u);
+  const route=BP.linkRoute(web,mod,CHAT_LINKS,!!root&&BP.available(root));
+  if(route==='system')return openLinkExternal(u);
+  if(route==='refuse'){toast(esc(REFUSED_LINK),4200);return;}
+  const r=await BP.openLink(root.id,u);
+  if(r&&r.ok){showSessionBrowser(root.id);return;}
+  if(r&&r.fallback){if(web)openLinkExternal(u);return;} /* Not now on the one-time note: the system browser, this time */
+  if(r&&r.link==='mailto'){toastAction(esc(r.reason),'Open',()=>BP.openMail(u),8000);return;} /* only the click on Open hands it to the system */
+  toast(esc((r&&r.reason)||REFUSED_LINK),4200);
+}
+/* the menu of a link: the shared menu element (#modeMenu), like the other menus */
+function openLinkMenu(u,x,y,anchor){
+  const a=byId(ui.selected),root=a&&liveRoot(a);
+  const web=/^https?:\/\//i.test(u),canTab=!!root&&BP.available(root);
+  if(!web&&!canTab)return false;
+  closeModeMenu();
+  const it=(act,label,sub)=>`<button type="button" role="menuitem" data-lact="${act}"><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
+  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Link');
+  m.innerHTML=(canTab?it('tab','Open in session browser','This session\'s own browser'):'')+(web?it('sys','Open in system browser','Your usual browser'):'');
+  document.body.appendChild(m);
+  const b=m.getBoundingClientRect();m.style.left=Math.max(8,Math.min(x,innerWidth-b.width-8))+'px';m.style.top=Math.max(8,Math.min(y,innerHeight-b.height-8))+'px';
+  const back=()=>{if(anchor&&anchor.focus&&document.contains(anchor))focusIn(anchor);};
+  m.addEventListener('click',e=>{const t=e.target.closest('[data-lact]');if(!t)return;closeModeMenu();back();if(t.dataset.lact==='sys')openLinkExternal(u);else openChatLink(u,false);});
+  m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-lact]')],i=its.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'){e.preventDefault();focusIn(its[(i+1)%its.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(its[(i+its.length-1)%its.length]);}
+    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();back();}});
+  focusIn(m.querySelector('button'));
+  return true;
+}
+document.addEventListener('contextmenu',e=>{
+  const lk=e.target.closest&&e.target.closest('.md a');if(!lk||!ui.selected)return;
+  const u=lk.getAttribute('href')||'';if(!u)return;
+  if(openLinkMenu(u,e.clientX,e.clientY,lk))e.preventDefault();
+});
+document.addEventListener('keydown',e=>{
+  if(!((e.key==='F10'&&e.shiftKey)||e.key==='ContextMenu'))return;
+  const lk=e.target.closest&&e.target.closest('.md a');if(!lk||!ui.selected)return;
+  const u=lk.getAttribute('href')||'';if(!u)return;
+  const r=lk.getBoundingClientRect();if(openLinkMenu(u,r.left,r.bottom+4,lk))e.preventDefault();
+});
 document.addEventListener('click',e=>{
-  /* markdown links: only http(s) leaves the app, through the system browser (main re-checks the URL) */
   const lk=e.target.closest('.md a');
   if(lk){e.preventDefault();const u=lk.getAttribute('href')||'';
-    if(/^https?:\/\//i.test(u)){if(bridge&&bridge.openExternal)bridge.openExternal(u);else toast('Would open <code>'+esc(SHORT(u,80))+'</code> in your browser',3200);}
+    if(u)openChatLink(u,IS_MAC?e.metaKey:e.ctrlKey).catch(()=>{});
     return;}
   const cp=e.target.closest('.codebox .copy');
   if(cp){const code=cp.parentNode.querySelector('code');const txt=code?code.textContent:'';
@@ -3861,6 +3974,7 @@ function bringBrowserForward(id){
   PULLED.add(id); BP.wantTab(id,'browser');
   pulling=true; try{openPanel(id,false);}finally{pulling=false;}
 }
+if(SIM&&window.DurbarMD&&window.DurbarMD.allowSimLinks)window.DurbarMD.allowSimLinks(); /* the simulator's test pages can be printed as links (spec 080 FR-091); never in the app */
 BP.init({ bridge: window.agentDurbar,
   ask:o=>askDialog(o),
   say:d=>{const a=byId(d.id);toast('A page in <b>'+esc(a?a.name:'a session')+'</b> is asking: <span class="pagetext">\u201c'+esc(d.text)+'\u201d</span> <span class="sr-only">(page text)</span>',6500);},
@@ -7644,7 +7758,7 @@ if(bridge){
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
   document.body.classList.toggle('simple',SIMPLE);
-  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},signs:{get:()=>SIGN_PREF,set:setSignsOn,usable:()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign)},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},signs:{get:()=>SIGN_PREF,set:setSignsOn,usable:()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign)},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     applyCharacters,charPreview, /* spec 077 FR-068 */
@@ -7706,7 +7820,7 @@ if(bridge){
       :apply();
     }).catch(()=>apply());}else apply();
   };
-  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();NOTIFY=!!(v&&v.notifyNeedsMe!==false);BREAK_RESUME=v&&v.breakResume==='ask'?'ask':'auto';themeBoot(v);}).catch(()=>{});
+  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();NOTIFY=!!(v&&v.notifyNeedsMe!==false);BREAK_RESUME=v&&v.breakResume==='ask'?'ask':'auto';CHAT_LINKS=v&&v.chatLinksIn==='system'?'system':'session';themeBoot(v);}).catch(()=>{});
   setInterval(()=>{if(VISITS.tick())scheduleRender();},250);
   setInterval(coffeeTick,SIM_BREAK?1000:5000); /* spec 068: resume, ask or remind when a break is due */
   agents=LIVE.agents; ROOMS=LIVE.rooms;
@@ -7723,7 +7837,7 @@ const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueu
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
 if(SIM)window.__durbarSimUi={agents:()=>agents,crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
-  readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
+  readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,
   /* spec 059 T076 (FR-023): a driver makes the things that change while a field is open happen through the real paths */
