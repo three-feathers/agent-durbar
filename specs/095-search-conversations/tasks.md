@@ -9,7 +9,7 @@
 ## Phase 0: Spec (this PR)
 
 - [x] T001 Spec, plan, tasks and specs-index block (`specs/095-search-conversations/`)
-- [ ] T002 Owner answers to Q1-Q9 recorded under *Clarifications* (Paco), and posted on issue #877 as a comment saying where they were given (AGENTS.md: chat feedback goes on the issue)
+- [x] T002 Owner answers to Q1-Q9 recorded under *Clarifications* (Paco), and posted on issue #877 as a comment saying where they were given (AGENTS.md: chat feedback goes on the issue)
 - [ ] T003 Cross-reference lines under `## Changes` in spec 006 (FR-023: titles-only box unchanged; content search is spec 095) and spec 052 (List view gets a results view) [FR-041]
 
 ## Phase 1: Pure core and readers (PR 1)

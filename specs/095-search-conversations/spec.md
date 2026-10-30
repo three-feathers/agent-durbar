@@ -4,14 +4,14 @@
 group: 046
 title: Search conversations (issue #877): a search box in the top bar finds the text of open and previous sessions (title, your messages, the agent's replies; no tool output); results are List rows with the matching line highlighted; opening one jumps to that message; local only, masked, streamed with cancel
 status: draft
-note: spec, plan and tasks drafted; open questions for the owner; nothing built
+note: spec, plan and tasks drafted; owner answered Q1-Q9 (2026-10-30); nothing built
 -->
 
 **Feature Branch**: `095-search-conversations` (spec); code branches `095-pN-slug`, one per phase
 
 **Created**: 2026-10-29
 
-**Status**: Draft (2026-10-29). Owner decisions D1-D3 are recorded; Q1-Q9 are open (*Open questions*). Nothing is built.
+**Status**: Draft (2026-10-29). Owner decisions D1-D3 are recorded, and the owner answered Q1-Q9 on 2026-10-30 (*Clarifications*). Nothing is built.
 
 **Input**: Issue #877 (Paco, 2026-10-29): "I often cannot find in which session I talked about something. Today only titles can be searched, and only in Previous sessions. A search box in the top bar: typing switches to the List view and shows the sessions whose conversation contains the word or text."
 
@@ -41,6 +41,19 @@ The title search belongs to spec 006 (FR-023, `src/renderer/sessionsearch.js`) a
 - **D1 Scope**: open sessions (the office) **and** previous sessions of Copilot CLI, Claude Code, Codex and VS Code, through the existing history readers. A previous session in the results opens with the existing Resume (VS Code chats: View).
 - **D2 Content**: the title, the user's messages and the agent's replies. **Tool output (commands, files read) is not searched.**
 - **D3 Results**: each result is the session's List row plus a short excerpt around the match, highlighted. Opening it jumps to that message.
+
+### Owner answers to the open questions (Paco, 2026-10-30, in the coordinator's terminal)
+
+Each picked the recommended option except Q3:
+- **Q1** (a): a compact field after the view toggle, collapsing to a magnifier button on narrow widths.
+- **Q2** (a): Ctrl+Shift+F (⌘⇧F on a Mac), configurable.
+- **Q3** (b): **3 characters** minimum, not the recommended 2.
+- **Q4** (a): earlier Copilot sessions are searched by title only, and the end state says so.
+- **Q5** (a): hidden sessions are searched only when that folder's Show hidden is on.
+- **Q6** (a): a streamed scan only, with no index.
+- **Q7** (a): up to 3 excerpts, then "+N more".
+- **Q8** (a): pinned sessions are ranked by recency.
+- **Q9** (a): sessions on floors that are off are skipped.
 
 ### Owner requirements from the issue (binding)
 
@@ -110,7 +123,7 @@ I type "invoice export" in the top-bar box. The window switches to the List view
 
 ## Edge Cases
 
-- **Query**: trimmed; fewer than 2 characters (Q7) searches nothing and says "Type at least 2 letters"; at most 200 characters and 8 words (the rest is cut and said); control characters removed; the query is data (never a regex: plain substring of folded words). A query of only spaces clears the results.
+- **Query**: trimmed; fewer than 3 characters (Q3) searches nothing and says "Type at least 3 letters"; at most 200 characters and 8 words (the rest is cut and said); control characters removed; the query is data (never a regex: plain substring of folded words). A query of only spaces clears the results.
 - **Huge or hostile text**: a single message is searched up to 20 000 characters (the reader's `maxTextChars`); an item over that is cut by the reader and a note says so only if the match could lie beyond (not claimed otherwise). The masking step is bounded (FR-031).
 - **Masked matches**: a query that matches only inside a masked span (a token, a URL password, a home path user name) finds nothing (A2). The query `~` or `[redacted]` is just text.
 - **Same text in many messages**: at most 3 excerpts per session in the row and "+N more" with the count; at most 200 sessions in the result list ("200 shown; narrow your search").
@@ -187,11 +200,11 @@ I type "invoice export" in the top-bar box. The window switches to the List view
 - The mask can hide text that you typed: you cannot search for a secret by its value (A2).
 - Not verified: the cost of a scan over a real store with thousands of sessions; the constants of FR-022 are starting values to be checked on real data by the owner (`real:` entry later).
 
-## Open questions (for the owner; each has a recommended option)
+## Open questions (answered 2026-10-30, see *Clarifications*; kept for the options)
 
 1. **Q1 Where does the box sit at 1280x800?** (a) A compact field after the view toggle, collapsing to a magnifier button on narrow widths **(recommended)**; (b) only a magnifier button everywhere; (c) only the palette (Ctrl+K) with a "Search conversations" mode and no new top-bar control.
 2. **Q2 Shortcut.** Ctrl+K (palette) and Ctrl+F (navigator, configurable) are taken. (a) **Ctrl+Shift+F** (⌘⇧F on a Mac), configurable like the navigator's **(recommended)**; (b) "/" when no field has focus; (c) none, only the box and the palette entry.
-3. **Q3 Minimum query length.** (a) 2 characters **(recommended)**; (b) 3; (c) 1.
+3. **Q3 Minimum query length.** (a) 2 characters (recommended); (b) **3, chosen by the owner**; (c) 1.
 4. **Q4 Copilot previous sessions have no content reader without starting them.** (a) Title only for Copilot earlier sessions in v1, said in the end state, until a read-only reader is verified **(recommended)**; (b) read the SDK's session store files directly, read-only (spec 006 FR-028 says deletes go "through the runtime only"; reading is a different risk but the store layout is unverified); (c) resume each one in the background (starts processes, may cost; not recommended).
 5. **Q5 Hidden previous sessions.** (a) Not searched unless that folder's "Show hidden" is on **(recommended)**; (b) always searched and tagged "Hidden"; (c) never.
 6. **Q6 Index later?** (a) Streamed scan only now; revisit with real timings **(recommended)**; (b) build a local index now (stores conversation text on disk: needs its own privacy decision, location and Clear).
