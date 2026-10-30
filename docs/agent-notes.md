@@ -110,6 +110,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **A dark-theme screenshot needs a user manifest** (`window.THEME.setTheme({id, extends:'clean-office', tokens})`, see `shots-043-editor.js`); no built-in theme has a dark surface (spec 043 T012d).
 - **jsdom has no `localStorage` on a `file:` URL**: use `http://localhost/` in unit tests (spec 043).
 - **Timing the renderer**: patch a copy of the built `dist/renderer/app.js` (never `src/`), run old and new builds alternately and compare medians. Layout cost is mostly style recalculation: skip `<svg>` children in `#probe` and register self-only custom properties with `@property` (spec 001 FR-033).
+- **Windows runners take the window's focus at random** (2026-10-30, #891's CI): `check-status-tooltip` failed 3 times in a row at 3 different steps (a hover, a keyboard focus, a redraw), each time with the tooltip hidden, which it rightly does on a window blur, resize or scroll. A driver step that depends on the window keeping focus records the trusted window `blur`/`resize`/`scroll` events and retries only when one came, failing at once otherwise and naming what it saw (`osRetry` in `scripts/check-status-tooltip.js`); never a longer wait, which cannot bring a lost hover back.
 
 ## Electron and platform
 
