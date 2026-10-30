@@ -12,6 +12,7 @@
  *        Esc clears it before it closes the screen; Mark done moves a note to Done and out of the header count and the "/" list;
  *        Mark not done brings it back; the focus goes to the next row; Close and Esc put the focus back where the screen was opened;
  *        Insert shows only over a chat of the folder, closes the screen and puts the text in the box without sending;
+ *        + Note on the screen; a hostile title is text, never HTML;
  *   AC5  a screenshot of the screen at each size; the screen fits (no overflow, text at least 10.5px); a token in a note never shows.
  * A miss is collected; the run fails at the end unless "all checks passed" is printed.
  */
@@ -196,6 +197,15 @@ module.exports = async (ctx) => {
     check(await until(`document.querySelectorAll('#nsList .nt-row').length===1`, 6000), `${tag}: the secret note is listed`);
     const all = await js(`(()=>{const s=document.getElementById('screen');return s.innerText+' '+[...s.querySelectorAll('*')].map(e=>[e.getAttribute('aria-label'),e.title].join(' ')).join(' ')})()`);
     check(!leak(all), `${tag}: no piece of the token on the screen (${leak(all)})`);
+    /* + Note on the screen; a hostile title is text, never HTML (escaping has a test) */
+    const hostile = '<img src=x onerror="window.__nsx=1"><b>bold</b> idea';
+    await js(`document.getElementById('nsAdd').click()`);
+    check(await until(`!!document.querySelector('#modeDlg textarea')`, 3000), `${tag}: + Note on the screen opens the dialog`);
+    await js(`(()=>{const t=document.querySelector('#modeDlg textarea');t.value=${jsLiteral(hostile + '\n\nmore')};t.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await js(`document.querySelector('#modeDlg .primary').click()`);
+    check(await until(`document.querySelectorAll('#nsList .nt-row').length===2`, 5000), `${tag}: the new note is on the screen`);
+    check(await js(`!document.querySelector('#nsList img,#nsList .nt-title b')&&!window.__nsx&&[...document.querySelectorAll('#nsList .nt-title')].some(t=>t.textContent.includes('<img'))`), `${tag}: a hostile title shows as text`);
+    check(await until(`document.activeElement&&document.activeElement.classList.contains('nt-row')&&document.activeElement.querySelector('.nt-title').textContent.includes('<img')`, 3000), `${tag}: the focus is on the new row (${await active()})`);
     await closeScreen();
   }
   console.log('[notes-screen] screenshots in ' + OUT);
