@@ -355,7 +355,7 @@ async function driver(ctx) {
      starting at k, so n parallel jobs cover the whole check. Unset: everything, as before. */
   const SHARDS = Math.max(1, Number(process.env.OFFICE_SHARDS) || 1), SHARD = Number(process.env.OFFICE_SHARD) || 0;
   let unit = 0;
-  const ONLY = process.env.OFFICE_ONLY || ''; // a developer aid: OFFICE_ONLY=screens (spec 092 floor screens), =allfloors (spec 092 FR-033, the All floors view) or =floors (spec 033 floors cases) or =resumed (issue #451, a resumed session's long title) runs that block alone
+  const ONLY = process.env.OFFICE_ONLY || ''; // a developer aid: OFFICE_ONLY=screens (spec 092 floor screens), =allfloors (spec 092 FR-033, the All floors view) or =floors (spec 033 floors cases) or =resumed (issue #451, a resumed session's long title) or =browser (spec 001 FR-191, the chats and their Browser tab) runs that block alone
   const mine = () => !ONLY && unit++ % SHARDS === SHARD;
   const mineIn = (name) => ONLY === name || mine();
   const mineScreens = () => mineIn('screens');
@@ -419,23 +419,37 @@ async function driver(ctx) {
   /* spec 024 T027 (#406): a figure that is still walking (the renderer marks it `.walking`; under load that mark can end while the CSS transition is still running, so a running transition on the figure counts as walking too) is not on a slot yet, and under load
      the walk can still be going when the case is measured. Re-measure while a figure is walking, in small steps for up to SETTLE_MS; a figure
      that has arrived must be on a lit slot (4px), as before. Still walking at the end: "did not reach a slot". No figure walking (motion off): one
-     instant measurement. OFFICE_TEST_STUCK_WALKER=1 adds a figure that never arrives (proves the failure), =late one that arrives after 1.2 s (proves the wait). */
+     instant measurement (a figure off its slot: two identical reads, FR-191). OFFICE_TEST_STUCK_WALKER=1 adds a figure that never arrives (proves the failure), =late one that arrives after 1.2 s (proves the wait),
+     =off one that has arrived off any slot and stays still (proves the FR-191 two-read failure), =moved one that has arrived off a slot and keeps moving
+     for 1.2 s, then lands on a lit slot (proves that FR-191 re-measures while the figures or slots move). */
   const SETTLE_MS = 3000, NOT_ON_SLOT = 'a walking figure is not on a slot';
+  const WALK_SIG = `(async()=>{await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const f=(e)=>{const r=e.getBoundingClientRect();return Math.round(r.x)+','+Math.round(r.y)+','+Math.round(r.width)+','+Math.round(r.height)};
+    return [...document.querySelectorAll('#walkers .walker')].map(f).join(';')+'|'+[...document.querySelectorAll('.lobby .slot.on')].map(f).join(';')})()`;
   const measure = async (expanded) => {
-    const hook = process.env.OFFICE_TEST_STUCK_WALKER; /* '1': never arrives; 'late': arrives on a lit slot after 1.2 s */
-    const hooked = hook === '1' || hook === 'late';
-    if (hooked) await ctx.js(`(()=>{const l=document.getElementById('walkers');if(!l)return;l.querySelectorAll('.walker[data-stuck]').forEach(x=>x.remove());const e=document.createElement('span');e.className='walker walking';e.dataset.stuck='1';e.style.transform='translate(3px,3px)';l.appendChild(e);})()`);
+    const hook = process.env.OFFICE_TEST_STUCK_WALKER; /* '1': never arrives; 'late': arrives on a lit slot after 1.2 s; 'off', 'moved': see above */
+    const hooked = hook === '1' || hook === 'late' || hook === 'off' || hook === 'moved';
+    if (hooked) await ctx.js(`(()=>{const l=document.getElementById('walkers');if(!l)return;l.querySelectorAll('.walker[data-stuck]').forEach(x=>x.remove());const e=document.createElement('span');e.className=${jsLiteral(hook === 'off' || hook === 'moved' ? 'walker' : 'walker walking')};e.dataset.stuck='1';e.style.transform='translate(3px,3px)';l.appendChild(e);})()`);
     const t0 = Date.now();
-    let arrived = false;
+    let arrived = false, walkSig = null, nudge = 0;
     for (;;) {
-      if (hook === 'late' && !arrived && Date.now() - t0 >= 1200) {
+      if (hook === 'moved' && Date.now() - t0 < 1200) await ctx.js(`(()=>{const e=document.querySelector('#walkers .walker[data-stuck]');if(e)e.style.transform='translate('+${jsLiteral(3 + (++nudge % 40))}+'px,3px)';})()`);
+      if ((hook === 'late' || hook === 'moved') && !arrived && Date.now() - t0 >= 1200) {
         arrived = true;
         await ctx.js(`(()=>{const l=document.getElementById('walkers'),e=l&&l.querySelector('.walker[data-stuck]'),s=document.querySelector('.lobby .slot.on');if(!e)return;if(!s){e.remove();return;}const r=s.getBoundingClientRect(),lr=l.getBoundingClientRect();e.style.transform='translate('+Math.round((r.left+r.right)/2-lr.left)+'px,'+Math.round((r.top+r.bottom)/2-lr.top)+'px)';e.classList.remove('walking');})()`);
       }
       const res = await ctx.js(`(${pageCheck.toString()})(${expanded}, ${expectPlaces})`);
       if (!res.problems.some((p) => p.startsWith(NOT_ON_SLOT))) return res;
-      if (!(await ctx.js(`[...document.querySelectorAll('#walkers .walker')].some(w=>w.classList.contains('walking')||w.getAnimations().some(a=>a.transitionProperty==='transform'))`))) return res; /* arrived (no walking mark, no transition running) and still off its slot: a real failure */
-      if (Date.now() - t0 >= SETTLE_MS) {
+      const walking = await ctx.js(`[...document.querySelectorAll('#walkers .walker')].some(w=>w.classList.contains('walking')||w.getAnimations().some(a=>a.transitionProperty==='transform'))`);
+      if (!walking) {
+        /* spec 001 FR-191: arrived (no walking mark, no transition running) and off its slot. The slots can still move after the figure
+           arrived (the lobby re-lays out as others come and go), so this is a real failure only when two reads in a row, each after two
+           animation frames, see the same figures and the same lit slots; while they differ, re-measure (bounded by SETTLE_MS). */
+        const sig = await ctx.js(WALK_SIG);
+        if (sig === walkSig) return res;
+        walkSig = sig;
+        if (Date.now() - t0 >= SETTLE_MS) { res.problems = res.problems.map((p) => (p.startsWith(NOT_ON_SLOT) ? `${p} (the figures or lit slots still moved after ${SETTLE_MS} ms)` : p)); return res; }
+      } else walkSig = null;
+      if (walking && Date.now() - t0 >= SETTLE_MS) {
         res.problems = res.problems.map((p) => (p.startsWith(NOT_ON_SLOT) ? `a walking figure did not reach a slot within ${SETTLE_MS} ms${p.slice(NOT_ON_SLOT.length)}` : p));
         return res;
       }
@@ -928,6 +942,22 @@ async function driver(ctx) {
     if (v.right > innerWidth + 1 || v.bottom > innerHeight + 1) P.push('the page area leaves the window');
     return P;
   };
+  /* spec 001 FR-191: poll the window's native web views (not the window's own page) until `done(v)` holds or `ms` passes; each poll first
+     clears any toast (an overlay that rightly takes the browser view off). Returns the last read: count, bounds, the window's content size,
+     whether the one view lies on the window (at least 300x150, inside it with 2 px slack) and how long it waited. */
+  const nativeViews = async (done, ms = 15000) => {
+    const t0 = Date.now();
+    for (;;) {
+      await ctx.js(`document.querySelectorAll('#toasts .toast').forEach(x=>x.remove());true`);
+      const kids = ctx.win.contentView.children.filter((c) => c.webContents && c.webContents !== ctx.win.webContents);
+      const cb = ctx.win.getContentBounds();
+      const bounds = kids.map((k) => k.getBounds());
+      const b = bounds[0];
+      const v = { count: kids.length, bounds, win: { width: cb.width, height: cb.height }, onWindow: kids.length === 1 && b.width >= 300 && b.height >= 150 && b.x >= 0 && b.y >= 0 && b.x + b.width <= cb.width + 2 && b.y + b.height <= cb.height + 2, ms: Date.now() - t0 };
+      if (done(v) || v.ms >= ms) return v;
+      await sleep(50); /* poll step of this bounded wait, not a wait for a state */
+    }
+  };
   /* FR-139: + New opens the new-session dialog; a helper's chat, the demo and an office without a ready app do not offer it */
   const newBtnFlow = async (w, h) => {
     await ctx.js(`(async()=>{const d=document.querySelector('#stage .desk[data-id]');if(d)d.click();await new Promise(r=>setTimeout(r,300));const b=document.getElementById('newSessHdrBtn');if(b)b.click();await new Promise(r=>setTimeout(r,300));return true})()`);
@@ -942,7 +972,7 @@ async function driver(ctx) {
   };
   for (const [w, h] of SIZES) {
     for (const q of ['sim=15&simfreeze=1', 'sim=15&simfreeze=1&simkinds=mixed', 'sim=12&simfreeze=1&simtitles=1', 'sim=15&simfreeze=1&simnotes=some']) { /* the last one: every folder has notes, so the header count is shown (spec 083 T030) */
-      if (!mine()) continue;
+      if (!(q === 'sim=15&simfreeze=1' ? mineIn('browser') : mine())) continue; /* OFFICE_ONLY=browser: the chat checks with the Browser tab (FR-191) */
       await load(q, w, h);
       const ids = await ctx.js(`[...document.querySelectorAll('#stage .desk')].map((d)=>d.dataset.id)`);
       let bad = 0;
@@ -969,15 +999,20 @@ async function driver(ctx) {
         /* spec 080 T015 AC4: the chat open on the Browser tab, three agents (first, middle, last); the view sits on the page area and leaves with the panel */
         let badB = 0;
         for (const id of [ids[0], ids[Math.floor(ids.length / 2)], ids[ids.length - 1]]) {
-          await ctx.js(`(async()=>{const d=document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)});if(d)d.click();await new Promise(r=>setTimeout(r,250));document.querySelectorAll('#toasts .toast').forEach(x=>x.remove()); /* a start-up toast over the page area is an overlay: it rightly takes the view off */ const t=document.getElementById('tabBrowser');if(t)t.click();await new Promise(r=>setTimeout(r,900));return true})()`);
+          /* spec 001 FR-191: no fixed pauses. Wait for the panel, then click the tab and poll the window's native views (attaching takes several
+             round trips to main) until exactly one sits on the window; a toast that appears meanwhile is an overlay that rightly takes the view
+             off, so each poll clears it again. A view that never attaches fails after the timeout with what was last seen. */
+          await must(`!document.body.classList.contains('panel-open')`, 'the office (no chat open) before opening agent ' + id);
+          await ctx.js(`(()=>{const d=document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)});if(d)d.click();return true})()`);
+          await must(`document.body.classList.contains('panel-open')&&!!document.getElementById('tabBrowser')`, `the chat of agent ${id} to open`);
+          await ctx.js(`(()=>{document.querySelectorAll('#toasts .toast').forEach(x=>x.remove());const t=document.getElementById('tabBrowser');if(t)t.click();return true})()`);
+          const seen = await nativeViews((v) => v.count === 1 && v.onWindow);
           const pb = await ctx.js(`(${browserTabCheck.toString()})()`);
-          const kids = ctx.win.contentView.children.filter((c) => c.webContents && c.webContents !== ctx.win.webContents);
-          const cb = ctx.win.getContentBounds();
-          if (kids.length !== 1) pb.push(`${kids.length} native views are attached (expected 1)`);
-          else { const b = kids[0].getBounds(); if (b.width < 300 || b.height < 150 || b.x < 0 || b.y < 0 || b.x + b.width > cb.width + 2 || b.y + b.height > cb.height + 2) pb.push('the native view is off the window ' + JSON.stringify(b)); }
-          await ctx.js(`(async()=>{const b=document.getElementById('backBtn');if(b)b.click();await new Promise(r=>setTimeout(r,300));return true})()`);
-          const left = ctx.win.contentView.children.filter((c) => c.webContents && c.webContents !== ctx.win.webContents).length;
-          if (left) pb.push(`${left} native view(s) stay on the window after the panel closed`);
+          if (seen.count !== 1) pb.push(`${seen.count} native views are attached (expected 1) after ${seen.ms} ms, last seen bounds ${JSON.stringify(seen.bounds)} in ${JSON.stringify(seen.win)}`);
+          else if (!seen.onWindow) pb.push(`the native view is off the window after ${seen.ms} ms: ${JSON.stringify(seen.bounds[0])} in ${JSON.stringify(seen.win)}`);
+          await ctx.js(`(()=>{const b=document.getElementById('backBtn');if(b)b.click();return true})()`);
+          const gone = await nativeViews((v) => v.count === 0);
+          if (gone.count) pb.push(`${gone.count} native view(s) stay on the window ${gone.ms} ms after the panel closed, last seen bounds ${JSON.stringify(gone.bounds)}`);
           total++;
           if (pb.length) { failed++; badB++; console.log(`FAIL browser tab ${w}x${h} agent ${id}: ${pb.slice(0, 4).join('; ')}`); }
         }
