@@ -3128,8 +3128,8 @@ function wireToolbar(){
   ctObs={res,mut};
   fitToolbar();
 }
-function closePanel(){closeSlash();hideSelButton();keepDraft();
-  BP.hide(); /* spec 080 FR-009: the browser view comes off the window; the page stays loaded */
+function closePanel(){closeSlash();keepDraft();
+  BP.hide(); hideSelButton(); /* spec 080 FR-009: the browser view comes off the window; the page stays loaded */
   if(ctObs){ctObs.res.disconnect();ctObs.mut.disconnect();ctObs=null;} closeCtMore(false); closeCtxMenu();
   const id=ui.selected; ui.selected=null; document.body.classList.remove('panel-open'); $('panel').innerHTML='';
   renderAll();
