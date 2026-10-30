@@ -1,0 +1,1 @@
+- **Desks in one row keep one height when a task wraps to three lines** (spec 001 FR-190, #897): the task line now reserves its three lines (48.6 px), so a three-line task no longer makes its desk 0.6 px taller than the desks next to it.
