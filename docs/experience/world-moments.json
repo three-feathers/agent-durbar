@@ -1,0 +1,504 @@
+{
+  "version": 1,
+  "note": "Spec 098 registry of WORLD MOMENTS only (tool surfaces are not registered). Seeded 2026-10-31 from the experience inventory (surfaces.json, 27 world moments; mood-signs folded into desk-card, spec 098 D1). code: present = the root carries data-surface in src/renderer; planned = not yet. Cell states: built | designed | fallback-flat | missing (spec 098 D3).",
+  "nonNegotiableKeys": {
+    "T": "text >= 10.5px",
+    "A": "approval/question wording, button labels and order unchanged",
+    "S": "safety labels unchanged (Read-only / Ask first / Allow all, costs, limits)",
+    "K": "keyboard + screen reader unchanged (roles, names, focus order, announce())",
+    "M": "reduced motion + Serious mode stop motion; no flashing",
+    "F": "15 agents fit at 1440x900 and 1280x800, no overlap or office scroll",
+    "P": "Windows/macOS/Linux parity (CSS/JS only, no OS paths)",
+    "C": "forced colours / prefers-contrast handled; never colour alone",
+    "R": "masking/redaction path reused (no new text source)"
+  },
+  "blocks": [
+    "person",
+    "light-slots",
+    "speech-bubble",
+    "slip",
+    "lift",
+    "panel-frame",
+    "desk-screen",
+    "fixture"
+  ],
+  "worlds": {
+    "photo": {
+      "name": "Photo office",
+      "crews": [
+        "theme",
+        "minimalist",
+        "mine"
+      ],
+      "shippable": false,
+      "pack": "src/renderer/realoffice/worlds/photo"
+    },
+    "cave": {
+      "name": "Prehistoric cave",
+      "crews": [
+        "prehistoric"
+      ],
+      "shippable": false,
+      "pack": "src/renderer/realoffice/worlds/cave"
+    },
+    "loft": {
+      "name": "Cheeky loft",
+      "crews": [
+        "cheeky"
+      ],
+      "shippable": false,
+      "pack": "src/renderer/realoffice/worlds/loft"
+    }
+  },
+  "moments": [
+    {
+      "id": "office-floor",
+      "name": "Office floor (one floor screen)",
+      "spec": "001, 092 FR-001..005, 097",
+      "where": "main#floor > #stage (renderOffice)",
+      "code": "planned",
+      "blocks": [
+        "desk-screen",
+        "fixture",
+        "person"
+      ],
+      "worlds": {
+        "photo": "designed",
+        "cave": "designed",
+        "loft": "designed"
+      },
+      "nonNegotiables": "TFMKPC"
+    },
+    {
+      "id": "lobby",
+      "name": "Lobby band and places",
+      "spec": "024, 001 FR-034..040, 068",
+      "where": "places.js; .lobby (097 lobby())",
+      "code": "planned",
+      "blocks": [
+        "fixture",
+        "person",
+        "light-slots"
+      ],
+      "worlds": {
+        "photo": "designed",
+        "cave": "designed",
+        "loft": "designed"
+      },
+      "nonNegotiables": "TFMKC"
+    },
+    {
+      "id": "boss-bank-post-coffee",
+      "name": "Boss / Bank / Postbox / Coffee",
+      "spec": "001 FR-034..040, 017 FR-019, 068",
+      "where": "places.js SPECIAL",
+      "code": "planned",
+      "blocks": [
+        "fixture",
+        "person",
+        "light-slots"
+      ],
+      "worlds": {
+        "photo": "designed",
+        "cave": "designed",
+        "loft": "designed"
+      },
+      "nonNegotiables": "TAMKC"
+    },
+    {
+      "id": "desk-card",
+      "name": "Desk (agent)",
+      "spec": "001, 034, 097 FR-010..022",
+      "where": ".desk (scenekits.js, mood.js); 097 station()",
+      "code": "planned",
+      "blocks": [
+        "person",
+        "desk-screen",
+        "light-slots"
+      ],
+      "worlds": {
+        "photo": "designed",
+        "cave": "designed",
+        "loft": "designed"
+      },
+      "nonNegotiables": "TFMKCR"
+    },
+    {
+      "id": "desk-lights",
+      "name": "Desk lamp, screen glow, call light",
+      "spec": "097 FR-040..052",
+      "where": "097 lightFor() overlays (planned)",
+      "code": "planned",
+      "blocks": [
+        "light-slots",
+        "desk-screen"
+      ],
+      "worlds": {
+        "photo": "designed",
+        "cave": "designed",
+        "loft": "designed"
+      },
+      "nonNegotiables": "MCT"
+    },
+    {
+      "id": "live-screen",
+      "name": "Live screen + hover zoom",
+      "spec": "097 FR-030..035",
+      "where": "097 .scr / .zoom",
+      "code": "planned",
+      "blocks": [
+        "desk-screen"
+      ],
+      "worlds": {
+        "photo": "designed",
+        "cave": "designed",
+        "loft": "designed"
+      },
+      "nonNegotiables": "RTKM"
+    },
+    {
+      "id": "lounge",
+      "name": "Lounge: couch and nap bunks",
+      "spec": "001 FR-051..057, 097 Q5",
+      "where": "shutters.js, app.js ~1089",
+      "code": "planned",
+      "blocks": [
+        "person",
+        "desk-screen",
+        "light-slots"
+      ],
+      "worlds": {
+        "photo": "missing",
+        "cave": "missing",
+        "loft": "missing"
+      },
+      "nonNegotiables": "FMK"
+    },
+    {
+      "id": "walk",
+      "name": "Walk desk <-> place",
+      "spec": "024 FR-005, 097 FR-073/075",
+      "where": "#walkers, WALK_MS 1000",
+      "code": "planned",
+      "blocks": [
+        "person",
+        "fixture"
+      ],
+      "worlds": {
+        "photo": "missing",
+        "cave": "missing",
+        "loft": "missing"
+      },
+      "nonNegotiables": "M"
+    },
+    {
+      "id": "empty-office",
+      "name": "Empty office",
+      "spec": "052 FR-070",
+      "where": ".empty-desk",
+      "code": "planned",
+      "blocks": [
+        "desk-screen"
+      ],
+      "worlds": {
+        "photo": "missing",
+        "cave": "missing",
+        "loft": "missing"
+      },
+      "nonNegotiables": "TK"
+    },
+    {
+      "id": "first-run",
+      "name": "Welcome / first run",
+      "spec": "001 FR-026, 052 FR-031/082",
+      "where": "WELCOME_HTML section.welcome",
+      "code": "planned",
+      "blocks": [
+        "fixture",
+        "panel-frame"
+      ],
+      "worlds": {
+        "photo": "missing",
+        "cave": "missing",
+        "loft": "missing"
+      },
+      "nonNegotiables": "TKS"
+    },
+    {
+      "id": "lift-panel",
+      "name": "Lift panel",
+      "spec": "092 FR-006..016, 028, 032",
+      "where": "#lift (renderLift app.js:4317)",
+      "code": "planned",
+      "blocks": [
+        "lift"
+      ],
+      "worlds": {
+        "photo": "designed",
+        "cave": "designed",
+        "loft": "designed"
+      },
+      "nonNegotiables": "TKMCF"
+    },
+    {
+      "id": "floor-change",
+      "name": "Moving between floors",
+      "spec": "092 FR-009..012 (slide is phase 3, not built)",
+      "where": "goToFloor() (instant today)",
+      "code": "planned",
+      "blocks": [
+        "lift"
+      ],
+      "worlds": {
+        "photo": "designed",
+        "cave": "designed",
+        "loft": "designed"
+      },
+      "nonNegotiables": "MK"
+    },
+    {
+      "id": "floor-indicator",
+      "name": "Floor display during a ride",
+      "spec": "new (097 delta)",
+      "where": "none",
+      "code": "planned",
+      "blocks": [
+        "lift"
+      ],
+      "worlds": {
+        "photo": "designed",
+        "cave": "designed",
+        "loft": "designed"
+      },
+      "nonNegotiables": "TKC"
+    },
+    {
+      "id": "all-floors",
+      "name": "All floors view",
+      "spec": "092 FR-031..037",
+      "where": ".lift-all, setFloorView()",
+      "code": "planned",
+      "blocks": [
+        "lift",
+        "desk-screen",
+        "fixture"
+      ],
+      "worlds": {
+        "photo": "designed",
+        "cave": "designed",
+        "loft": "designed"
+      },
+      "nonNegotiables": "TFKM"
+    },
+    {
+      "id": "building-preview",
+      "name": "All button hover: building preview",
+      "spec": "new (097 delta)",
+      "where": "none",
+      "code": "planned",
+      "blocks": [
+        "lift"
+      ],
+      "worlds": {
+        "photo": "designed",
+        "cave": "designed",
+        "loft": "designed"
+      },
+      "nonNegotiables": "TK"
+    },
+    {
+      "id": "floor-jumps",
+      "name": "Jump to an agent's floor",
+      "spec": "092 FR-018/019/027 (phase 4)",
+      "where": "goToFloor (jumps not built)",
+      "code": "planned",
+      "blocks": [
+        "lift"
+      ],
+      "worlds": {
+        "photo": "missing",
+        "cave": "missing",
+        "loft": "missing"
+      },
+      "nonNegotiables": "KM"
+    },
+    {
+      "id": "inbox",
+      "name": "Needs-you inbox",
+      "spec": "052 FR-027",
+      "where": "#inboxBtn, openInbox() app.js:3642",
+      "code": "planned",
+      "blocks": [
+        "slip",
+        "fixture"
+      ],
+      "worlds": {
+        "photo": "missing",
+        "cave": "missing",
+        "loft": "missing"
+      },
+      "nonNegotiables": "AKTS"
+    },
+    {
+      "id": "chat-open",
+      "name": "Opening a chat from a desk",
+      "spec": "005, 097 FR-006",
+      "where": "openPanel() app.js:2344 (slide .28s)",
+      "code": "planned",
+      "blocks": [
+        "panel-frame",
+        "person"
+      ],
+      "worlds": {
+        "photo": "designed",
+        "cave": "designed",
+        "loft": "designed"
+      },
+      "nonNegotiables": "MK"
+    },
+    {
+      "id": "chat-shell",
+      "name": "Chat panel shell + desk-side column",
+      "spec": "005",
+      "where": "aside#panel > .panel-in",
+      "code": "planned",
+      "blocks": [
+        "panel-frame",
+        "person",
+        "desk-screen",
+        "light-slots"
+      ],
+      "worlds": {
+        "photo": "designed",
+        "cave": "designed",
+        "loft": "designed"
+      },
+      "nonNegotiables": "TKF"
+    },
+    {
+      "id": "chat-header",
+      "name": "Chat header",
+      "spec": "005 FR-039, 059, 063",
+      "where": "#panelHead",
+      "code": "planned",
+      "blocks": [
+        "person",
+        "light-slots",
+        "panel-frame"
+      ],
+      "worlds": {
+        "photo": "designed",
+        "cave": "designed",
+        "loft": "designed"
+      },
+      "nonNegotiables": "TKSC"
+    },
+    {
+      "id": "limit-card",
+      "name": "Spending-limit card",
+      "spec": "011",
+      "where": ".note.perm.limit",
+      "code": "planned",
+      "blocks": [
+        "panel-frame",
+        "person",
+        "fixture"
+      ],
+      "worlds": {
+        "photo": "missing",
+        "cave": "missing",
+        "loft": "missing"
+      },
+      "nonNegotiables": "ATSK"
+    },
+    {
+      "id": "permission-card",
+      "name": "Permission (approval) card",
+      "spec": "003, 052 FR-037/076/080",
+      "where": "showPerm app.js:5456 .note.perm",
+      "code": "planned",
+      "blocks": [
+        "panel-frame",
+        "slip",
+        "person"
+      ],
+      "worlds": {
+        "photo": "designed",
+        "cave": "designed",
+        "loft": "designed"
+      },
+      "nonNegotiables": "ASKTC"
+    },
+    {
+      "id": "question-card",
+      "name": "Question card",
+      "spec": "002, 052 FR-160/161/178",
+      "where": "showQuestion app.js:5123",
+      "code": "planned",
+      "blocks": [
+        "panel-frame",
+        "speech-bubble",
+        "person"
+      ],
+      "worlds": {
+        "photo": "designed",
+        "cave": "designed",
+        "loft": "designed"
+      },
+      "nonNegotiables": "AKT"
+    },
+    {
+      "id": "elicitation",
+      "name": "MCP elicitation card",
+      "spec": "012 FR-151",
+      "where": "showElicitation",
+      "code": "planned",
+      "blocks": [
+        "panel-frame",
+        "person",
+        "fixture"
+      ],
+      "worlds": {
+        "photo": "missing",
+        "cave": "missing",
+        "loft": "missing"
+      },
+      "nonNegotiables": "AKS"
+    },
+    {
+      "id": "answer-bar",
+      "name": "Answer bar",
+      "spec": "052 FR-016/060/162/177",
+      "where": "#answerBar (wireAnswerBar)",
+      "code": "planned",
+      "blocks": [
+        "speech-bubble",
+        "person"
+      ],
+      "worlds": {
+        "photo": "designed",
+        "cave": "designed",
+        "loft": "designed"
+      },
+      "nonNegotiables": "AKT"
+    },
+    {
+      "id": "coffee-bar",
+      "name": "Coffee-break bar",
+      "spec": "068",
+      "where": "#coffeeBar",
+      "code": "planned",
+      "blocks": [
+        "person",
+        "fixture",
+        "panel-frame"
+      ],
+      "worlds": {
+        "photo": "missing",
+        "cave": "missing",
+        "loft": "missing"
+      },
+      "nonNegotiables": "TK"
+    }
+  ]
+}

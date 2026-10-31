@@ -1085,6 +1085,8 @@ app.whenReady().then(() => {
       /** Spec 080: the session browsers main holds (state only: address, memory note, ...), and what End session does to one (the simulator's End never reaches main). */
       browserStates: () => browser.liveIds().map((id) => browser.stateOf(id)),
       browserGone: (id: string) => browser.destroy(id),
+      /** Spec 080 T026: a session browser's page tabs, as the window gets them. */
+      browserTabs: (id: string) => browser.tabsOf(id),
       js: <T>(code: string): Promise<T> => (win as BrowserWindow).webContents.executeJavaScript(code, true) as Promise<T>,
       sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
       shot: async (file: string) => fs.writeFileSync(file, (await (win as BrowserWindow).webContents.capturePage()).toPNG()),

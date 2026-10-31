@@ -3371,13 +3371,13 @@ function showSessionBrowser(id){
   if(ui.selected===id){BP.select('browser');return;}
   BP.wantTab(id,'browser');openPanel(id,false);
 }
-async function openChatLink(u,mod){
+async function openChatLink(u,mod,how){
   const a=byId(ui.selected),root=a&&liveRoot(a); /* a helper's chat uses its parent's browser; its own id never gets a view */
   const web=/^https?:\/\//i.test(u);
-  const route=BP.linkRoute(web,mod,CHAT_LINKS,!!root&&BP.available(root));
+  const route=BP.linkRoute(web,mod,how==='newTab'?'session':CHAT_LINKS,!!root&&BP.available(root)); /* spec 080 FR-124: the menu's Open in a new tab takes the session browser whatever the setting */
   if(route==='system')return openLinkExternal(u);
   if(route==='refuse'){toast(esc(REFUSED_LINK),4200);return;}
-  const r=await BP.openLink(root.id,u);
+  const r=await BP.openLink(root.id,u,how);
   if(r&&r.ok){showSessionBrowser(root.id);return;}
   if(r&&r.fallback){if(web)openLinkExternal(u);return;} /* Not now on the one-time note: the system browser, this time */
   if(r&&r.link==='mailto'){toastAction(esc(r.reason),'Open',()=>BP.openMail(u),8000);return;} /* only the click on Open hands it to the system */
@@ -3391,11 +3391,11 @@ function openLinkMenu(u,x,y,anchor){
   closeModeMenu();
   const it=(act,label,sub)=>`<button type="button" role="menuitem" data-lact="${act}"><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Link');
-  m.innerHTML=(canTab?it('tab','Open in session browser','This session\'s own browser'):'')+(web?it('sys','Open in system browser','Your usual browser'):'');
+  m.innerHTML=(canTab?it('tab','Open in session browser','This session\'s own browser'):'')+(canTab?it('newtab','Open in a new tab','A new tab of this session\'s browser'):'')+(web?it('sys','Open in system browser','Your usual browser'):''); /* spec 080 FR-124: Open in a new tab */
   document.body.appendChild(m);
   const b=m.getBoundingClientRect();m.style.left=Math.max(8,Math.min(x,innerWidth-b.width-8))+'px';m.style.top=Math.max(8,Math.min(y,innerHeight-b.height-8))+'px';
   const back=()=>{if(anchor&&anchor.focus&&document.contains(anchor))focusIn(anchor);};
-  m.addEventListener('click',e=>{const t=e.target.closest('[data-lact]');if(!t)return;closeModeMenu();back();if(t.dataset.lact==='sys')openLinkExternal(u);else openChatLink(u,false);});
+  m.addEventListener('click',e=>{const t=e.target.closest('[data-lact]');if(!t)return;closeModeMenu();back();if(t.dataset.lact==='sys')openLinkExternal(u);else openChatLink(u,false,t.dataset.lact==='newtab'?'newTab':undefined);});
   m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-lact]')],i=its.indexOf(document.activeElement);
     if(e.key==='ArrowDown'){e.preventDefault();focusIn(its[(i+1)%its.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(its[(i+its.length-1)%its.length]);}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();back();}});
@@ -3996,13 +3996,15 @@ function openKbdHelp(back){
   /* FR-084: ⌥⌘ on a Mac (Option alone types accents there), Alt elsewhere */
   const ck=k=>keyLabels(KEYS.chatParts(k,IS_MAC));
   const inChat=[[ck('A'),'Allow once'],[ck('S'),'Allow for this session'],[ck('D'),'Deny'],[ck('N'),'Next agent that needs you']];
+  /* spec 080 FR-130: in a session's Browser tab (its tab strip, its bar or its page) */
+  const inBrowser=[[keyLabels(['mod','T']),'New page tab'],[keyLabels(['mod','W']),'Close the page tab'],[['Ctrl','Tab'],'Next page tab (with Shift: previous; Control on a Mac too)'],[['Delete'],'Close the focused tab in the tab strip']];
   /* spec 052 FR-064 */
   const inList=[[['J'],['K'],'Next or previous row (also ↓ ↑)'],[['Enter'],'Open chat']];
   /* spec 074 FR-015: inside the navigator */
   const inNav=[[['F','Space'],'All folders'],[['C','3'],'Chat 3 (C and its number)'],[['1','2','3'],'Pick by the number shown'],[['Esc'],'Back one level (or Backspace in an empty box)']];
   const row=(keys,what,alt)=>'<tr><td class="kb-k">'+kbdHTML(keys)+(alt?' <span class="kb-or">or</span> '+kbdHTML(alt):'')+'</td><td>'+esc(what)+'</td></tr>';
   const d=document.createElement('div');d.id='kbdDlg';d.className='dlg-ov';
-  d.innerHTML='<div class="dlg kbd-dlg" role="dialog" aria-modal="true" aria-labelledby="kbdT"><h3 id="kbdT">Keyboard shortcuts</h3><div class="kb-cols"><div class="kb-col"><table class="kb-t"><tbody>'+rows.map(r=>row(r[0],r[1],r[2])).join('')+'</tbody></table><h4 class="kb-h">In the list view</h4><table class="kb-t"><tbody>'+inList.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In Go to (the navigator)</h4><table class="kb-t"><tbody>'+inNav.map(r=>row(r[0],r[1])).join('')+'</tbody></table></div><div class="kb-col"><h4 class="kb-h">In the Needs you inbox</h4><table class="kb-t"><tbody>'+inbox.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In a chat that waits for you</h4><table class="kb-t"><tbody>'+inChat.map(r=>row(r[0],r[1])).join('')+'</tbody></table></div></div><div class="dbtn"><button class="btn" type="button" id="kbdClose">Close</button></div></div>';
+  d.innerHTML='<div class="dlg kbd-dlg" role="dialog" aria-modal="true" aria-labelledby="kbdT"><h3 id="kbdT">Keyboard shortcuts</h3><div class="kb-cols"><div class="kb-col"><table class="kb-t"><tbody>'+rows.map(r=>row(r[0],r[1],r[2])).join('')+'</tbody></table><h4 class="kb-h">In the list view</h4><table class="kb-t"><tbody>'+inList.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In Go to (the navigator)</h4><table class="kb-t"><tbody>'+inNav.map(r=>row(r[0],r[1])).join('')+'</tbody></table></div><div class="kb-col"><h4 class="kb-h">In the Needs you inbox</h4><table class="kb-t"><tbody>'+inbox.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In a chat that waits for you</h4><table class="kb-t"><tbody>'+inChat.map(r=>row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In the Browser tab</h4><table class="kb-t"><tbody>'+inBrowser.map(r=>row(r[0],r[1])).join('')+'</tbody></table></div></div><div class="dbtn"><button class="btn" type="button" id="kbdClose">Close</button></div></div>';
   document.body.appendChild(d);
   d.addEventListener('click',e=>{if(e.target===d)closeKbdHelp();});
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeKbdHelp();}else if(e.key==='Tab'){e.preventDefault();focusIn($('kbdClose'));}});
@@ -4180,12 +4182,29 @@ const bridge = sim || window.agentDurbar;
 const BP = window.DurbarBrowserPane; /* spec 080 T015: the session browser's tabs and bar; it talks to the real preload API (main refuses it outside the app's own page) */
 /* spec 080 FR-025d (Q3): a hidden session's page dialog brings that session's chat forward on its Browser tab, at most once per session until the user opens that chat themselves */
 const PULLED=new Set(); let pulling=false;
-function bringBrowserForward(id){
+function bringBrowserForward(id,tabId){
   if(!byId(id))return;
-  if(ui.selected===id){BP.select('browser');return;} /* its chat is open on the Chat tab */
+  if(ui.selected===id){BP.select('browser');if(tabId)BP.selectPageTab(id,tabId);return;} /* its chat is open on the Chat tab */
   if(PULLED.has(id))return;
   PULLED.add(id); BP.wantTab(id,'browser');
+  if(tabId)BP.selectPageTab(id,tabId); /* spec 080 FR-132: the chat comes forward on the tab that asks */
   pulling=true; try{openPanel(id,false);}finally{pulling=false;}
+}
+/* spec 080 FR-123: the browser bar's More menu, on the shared menu element (#modeMenu) as the link menu; items: [{act,label,sub,checked}] */
+function openBrowserMenu(anchor,items,pick){
+  closeModeMenu();
+  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Browser');
+  m.innerHTML=items.map(x=>`<button type="button" role="menuitemcheckbox" aria-checked="${x.checked?'true':'false'}" data-bact="${esc(x.act)}"><span class="ck" aria-hidden="true">${x.checked?'\u2713':''}</span><span class="mt"><b>${esc(x.label)}</b><small>${esc(x.sub)}</small></span></button>`).join('');
+  document.body.appendChild(m);
+  const r=anchor.getBoundingClientRect(),b=m.getBoundingClientRect();
+  m.style.left=Math.max(8,Math.min(r.right-b.width,innerWidth-b.width-8))+'px';m.style.top=Math.max(8,Math.min(r.bottom+4,innerHeight-b.height-8))+'px';
+  anchor.setAttribute('aria-expanded','true');
+  const back=()=>{anchor.setAttribute('aria-expanded','false');if(document.contains(anchor))focusIn(anchor);};
+  m.addEventListener('click',e=>{const t=e.target.closest('[data-bact]');if(!t)return;closeModeMenu();back();pick(t.dataset.bact);});
+  m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-bact]')],i=its.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'){e.preventDefault();focusIn(its[(i+1)%its.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(its[(i+its.length-1)%its.length]);}
+    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();back();}});
+  focusIn(m.querySelector('button'));
 }
 if(SIM&&window.DurbarMD&&window.DurbarMD.allowSimLinks)window.DurbarMD.allowSimLinks(); /* the simulator's test pages can be printed as links (spec 080 FR-091); never in the app */
 BP.init({ bridge: window.agentDurbar,
@@ -4193,6 +4212,7 @@ BP.init({ bridge: window.agentDurbar,
   say:d=>{const a=byId(d.id);toast('A page in <b>'+esc(a?a.name:'a session')+'</b> is asking: <span class="pagetext">\u201c'+esc(d.text)+'\u201d</span> <span class="sr-only">(page text)</span>',6500);},
   nameOf:id=>{const a=byId(id);return a?a.name:'another session';},
   bringForward:bringBrowserForward,
+  menu:openBrowserMenu,
   marksChanged:()=>scheduleRender(),
   chatShown:()=>syncSeen(),
   recheck:()=>overlaySync(),

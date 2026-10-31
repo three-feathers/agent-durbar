@@ -178,6 +178,13 @@ const refused: [Combo, boolean, RegExp][] = [
   [{ mod: true, code: 'KeyJ', sup: true }, false, /Super/], [{ mod: true, code: 'ArrowUp' }, false, /letter, a digit/], [{ mod: true, code: 'Escape' }, false, /letter, a digit/],
   [{ alt: true, code: 'KeyJ' }, true, /accented/], [{ mod: true, alt: true, code: 'KeyJ' }, false, /AltGr/], [{ mod: true, alt: true, code: 'F2' }, false, /consoles/],
 ];
+// spec 080 FR-130: the browser's tab keys are taken (Ctrl+T, ⌘T); Ctrl+Tab cannot be recorded at all (Tab is not a recordable key), and TAKEN names it too
+refused.push([{ mod: true, code: 'KeyT' }, false, /New browser tab/], [{ mod: true, code: 'KeyT' }, true, /New browser tab/], [{ mod: true, code: 'KeyW' }, false, /closes a browser tab/]);
+for (const mac of [false, true]) for (const shift of [false, true]) assert.ok(N.clashOf({ ctrl: mac, mod: !mac, shift, code: 'Tab' }, mac) !== '', `Ctrl+${shift ? 'Shift+' : ''}Tab is refused (mac=${mac})`);
+{
+  const navSrc0 = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'navigator.js'), 'utf8');
+  assert.ok(/\['ctrl\+Tab','Switching browser tabs'\]/.test(navSrc0) && /\['ctrl\+shift\+Tab','Switching browser tabs'\]/.test(navSrc0), 'TAKEN names Ctrl+Tab and Ctrl+Shift+Tab (FR-130)');
+}
 for (const [c, mac, re] of refused) {
   const why = N.clashOf(c, mac);
   assert.ok(why && re.test(why), `${JSON.stringify(c)} on ${mac ? 'a Mac' : 'Windows/Linux'} is refused for ${re}: got "${why}"`);
