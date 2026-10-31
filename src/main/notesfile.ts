@@ -58,8 +58,8 @@ export const EXCLUDE_UNSAFE_NAME = "This folder's name cannot be written to .git
 /** FR-050: the dialog's line when the existing file cannot be imported. */
 export const COUNT_UNREADABLE = 'The existing file cannot be read; Durbar will not change it.';
 const READ_WHY: Record<Exclude<Read, { ok: true }>['code'], string> = {
-  missing: 'it is not there', link: 'it is a link', 'not-file': 'it is not a regular file', links: 'it has more than one link (a hard link)',
-  'too-big': 'it is too large', changing: 'it changed while being read', error: 'it could not be opened',
+  missing: 'is not there', link: 'is a link', 'not-file': 'is not a regular file', links: 'has more than one link (a hard link)',
+  'too-big': 'is too large', changing: 'changed while being read', error: 'could not be opened',
 };
 
 /**
@@ -127,8 +127,6 @@ export class NotesFile {
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly pid: number;
   private readonly uid: () => number | undefined;
-  /** Per real folder: the hash of the last `notes.md` this process imported (an import not yet written back is not imported twice). */
-  private readonly imported = new Map<string, string>();
   /** Per real folder: the hash of a `notes.md` that did not parse (a conflict): the same bytes are not parsed again on every cycle. */
   private readonly unreadable = new Map<string, { sha: string; code: 'conflict' | 'too-big' }>();
 
@@ -188,7 +186,7 @@ export class NotesFile {
   private current(p: Place): { ok: true; buf: Buffer | null } | { ok: false; why: string; code: FileFail['code'] } {
     let st: nodeFs.Stats;
     try { st = this.fs.lstatSync(p.notes); } catch (e) {
-      return errCode(e) === 'ENOENT' ? { ok: true, buf: null } : { ok: false, code: 'refused', why: `it could not be checked (${errCode(e)})` };
+      return errCode(e) === 'ENOENT' ? { ok: true, buf: null } : { ok: false, code: 'refused', why: `could not be checked (${errCode(e)})` };
     }
     if (st.isSymbolicLink()) return { ok: false, code: 'refused', why: READ_WHY.link };
     if (!st.isFile()) return { ok: false, code: 'refused', why: READ_WHY['not-file'] };
@@ -203,15 +201,15 @@ export class NotesFile {
    * FR-054: has `notes.md` changed since Durbar last wrote it (`mirror`) or last imported it? Only then is it decoded and parsed (a
    * conflict or a file that does not parse is `conflict`: no import, no write). Missing: `sha: null`, nothing to import.
    */
-  readBack(folderPath: string, mirror: NotesMirror | undefined): ReadBack {
+  readBack(folderPath: string, mirror: NotesMirror | undefined, imported?: string): ReadBack {
     const pl = this.place(folderPath, false);
     if (!pl.ok) return pl;
     if (!pl.p.hasDurbar) return { ok: true, sha: null, changed: false };
     const cur = this.current(pl.p);
-    if (!cur.ok) return { ok: false, code: cur.code, error: cur.code === 'too-big' ? NOTES_MD_UNREADABLE : READ_FAIL(cur.why) };
+    if (!cur.ok) return { ok: false, code: cur.code, error: cur.code === 'too-big' ? NOTES_MD_UNREADABLE : READ_FAIL(`it ${cur.why}`) };
     if (!cur.buf) return { ok: true, sha: null, changed: false };
     const sha = sha256(cur.buf);
-    if (sha === mirror?.sha256 || sha === this.imported.get(pl.p.folder)) return { ok: true, sha, changed: false };
+    if (sha === mirror?.sha256 || sha === imported) return { ok: true, sha, changed: false };
     const bad = this.unreadable.get(pl.p.folder);
     if (bad?.sha === sha) return { ok: false, code: bad.code, error: NOTES_MD_UNREADABLE };
     const parsed = parseNotesMd(cur.buf.toString('utf8'));
@@ -221,11 +219,6 @@ export class NotesFile {
       return { ok: false, code, error: NOTES_MD_UNREADABLE };
     }
     return { ok: true, sha, changed: true, sections: parsed.sections, strayText: parsed.strayText, overflow: parsed.overflow };
-  }
-
-  /** Remember that the file with this hash was imported (called after the store took the import). */
-  markImported(folderPath: string, sha: string): void {
-    try { this.imported.set(this.fs.realpathSync(folderPath), sha); } catch { /* the folder is gone: nothing to remember */ }
   }
 
   /**
@@ -384,7 +377,7 @@ export class NotesFile {
     const exclude = path.join(info, 'exclude');
     let existing = '';
     let st: nodeFs.Stats | undefined;
-    try { st = this.fs.lstatSync(exclude); } catch (e) { if (errCode(e) !== 'ENOENT') return fail(`it could not be checked (${errCode(e)})`); }
+    try { st = this.fs.lstatSync(exclude); } catch (e) { if (errCode(e) !== 'ENOENT') return fail(`info/exclude could not be checked (${errCode(e)})`); }
     if (st) {
       if (st.isSymbolicLink()) return fail('info/exclude is a link');
       if (!st.isFile()) return fail('info/exclude is not a regular file');
@@ -420,16 +413,16 @@ export async function syncNotesFile(d: {
   file: NotesFile; store: NotesStore; folderKey: string; folderName: string; folderPath: string; values: readonly string[]; now?: () => Date;
 }): Promise<{ state: NotesFileState; retry?: boolean }> {
   const mirror = await d.store.getMirror(d.folderKey);
-  const rb = d.file.readBack(d.folderPath, mirror);
+  const rb = d.file.readBack(d.folderPath, mirror, await d.store.getFileImport(d.folderKey));
   if (!rb.ok) return { state: { error: rb.error } };
   const info: string[] = [];
   if (rb.changed) {
-    const imp = await d.store.importFile(d.folderKey, d.folderName, rb.sections, d.values);
+    const imp = await d.store.importFile(d.folderKey, d.folderName, rb.sections, d.values, rb.sha);
     if (!imp.ok) return { state: { error: imp.error } };
-    d.file.markImported(d.folderPath, rb.sha);
     const c = imp.counts;
     if (rb.strayText) info.push(NOTES_MD_STRAY);
     const notIn = (c?.tooLong ?? 0) + (c?.overCap ?? 0) + rb.overflow;
+    if (c?.older) info.push(`${c.older} note${c.older === 1 ? '' : 's'} in notes.md ${c.older === 1 ? 'was an older copy' : 'were older copies'}; Durbar's version was kept`);
     if (notIn) info.push(`${notIn} note${notIn === 1 ? '' : 's'} in notes.md could not be added (too long, or over ${NOTES_LIMITS.notesPerFolder} notes)`);
   }
   const v = await d.store.list(d.folderKey);

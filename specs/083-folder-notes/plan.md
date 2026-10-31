@@ -57,7 +57,8 @@ No violation; no Complexity Tracking entry.
                   "ord": 0, "digest": "[0-9a-f]{16}", "at": "ISO UTC" }   // optional
   } ],
   "tombstones": [ { "id": "n-…", "deletedAt": "ISO UTC" } ],
-  "mirror": { "sha256": "[0-9a-f]{64}", "bytes": 0, "at": "ISO UTC" } }   // optional: the last notes.md Durbar wrote (FR-053)
+  "mirror": { "sha256": "[0-9a-f]{64}", "bytes": 0, "at": "ISO UTC" },   // optional: the last notes.md Durbar wrote (FR-053)
+  "fileImport": { "sha256": "[0-9a-f]{64}", "at": "ISO UTC" } }        // optional: the last notes.md imported (FR-054, T041 review)
 ```
 
 Parsing is tolerant per note (a bad note is dropped, the rest kept) but a bad document (unknown version, not JSON, over 16 MB) is FR-007. Session ids are checked with `sessionIdOk(app, id)` (`src/shared/sessionid.ts`).

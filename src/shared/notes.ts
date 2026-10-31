@@ -82,6 +82,8 @@ export interface NotesDoc {
   notes: Note[];
   tombstones: Tombstone[];
   mirror?: NotesMirror;
+  /** The last `notes.md` imported (FR-054; T041 review): the same file is never imported twice, after a restart too. */
+  fileImport?: { sha256: string; at: string };
 }
 
 export const NOTE_ID_RE = /^n-[a-z0-9]{12}$/;
@@ -253,7 +255,9 @@ export function parseNotesDoc(raw: string): ParseResult {
   const m = d.mirror as Record<string, unknown> | undefined;
   const mirror = m && typeof m === 'object' && typeof m.sha256 === 'string' && /^[0-9a-f]{64}$/.test(m.sha256) && intIn(m.bytes, 0, NOTES_LIMITS.mdBytes) && isoOk(m.at)
     ? { sha256: m.sha256, bytes: m.bytes as number, at: m.at as string } : undefined;
-  return { ok: true, dropped, doc: { version: 1, folderName: cleanFolderName(d.folderName), notes, tombstones: capTombstones(tombstones), ...(mirror ? { mirror } : {}) } };
+  const fi = d.fileImport as Record<string, unknown> | undefined;
+  const fileImport = fi && typeof fi === 'object' && typeof fi.sha256 === 'string' && /^[0-9a-f]{64}$/.test(fi.sha256) && isoOk(fi.at) ? { sha256: fi.sha256, at: fi.at as string } : undefined;
+  return { ok: true, dropped, doc: { version: 1, folderName: cleanFolderName(d.folderName), notes, tombstones: capTombstones(tombstones), ...(mirror ? { mirror } : {}), ...(fileImport ? { fileImport } : {}) } };
 }
 
 /** Compact JSON, the way it is written and measured. */
@@ -364,12 +368,14 @@ export function mergeDocs(a: NotesDoc, b: NotesDoc): NotesDoc {
   }
   notes.sort((x, y) => (x.createdAt < y.createdAt ? -1 : x.createdAt > y.createdAt ? 1 : x.id < y.id ? -1 : 1));
   const mirror = [a.mirror, b.mirror].filter((m): m is NotesMirror => !!m).sort((x, y) => (x.at < y.at ? 1 : -1))[0];
+  const fileImport = [a.fileImport, b.fileImport].filter((m): m is { sha256: string; at: string } => !!m).sort((x, y) => (x.at < y.at ? 1 : -1))[0];
   return {
     version: 1,
     folderName: a.folderName || b.folderName,
     notes,
     tombstones: capTombstones([...dead].map(([id, deletedAt]) => ({ id, deletedAt }))),
     ...(mirror ? { mirror } : {}),
+    ...(fileImport ? { fileImport } : {}),
   };
 }
 

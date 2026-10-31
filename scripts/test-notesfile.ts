@@ -139,6 +139,19 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(after.file, {});
     assert.ok(after.notes.some((x) => x.title === 'from an agent' && x.from === 'file'), 'the outside edit is imported');
     assert.strictEqual(nodeFs.readFileSync(md(folder), 'utf8'), writeNotesMd(after.notes));
+    // a file that changes before every rename: one retry, then the cycles stop until the next change or open
+    let lastTmp = false;
+    c.hook.openSync = (real, p, ...rest) => { lastTmp = typeof p === 'string' && p.endsWith('.tmp'); return real(p, ...rest); };
+    c.hook.closeSync = (real, fd) => { const out = real(fd); if (lastTmp) { lastTmp = false; nodeFs.appendFileSync(md(folder), '\nagain\n'); } return out; };
+    timers.length = 0;
+    must(await store.add(folder, 'proj', { text: 'fifth' })); // straight to the store: something to write, no cycle scheduled
+    await ops.syncFile('a1');
+    assert.strictEqual(timers.length, 1, 'one retry');
+    timers.shift()!();
+    await ops.syncFile('a1', 0);
+    assert.strictEqual(timers.length, 0, 'no second retry');
+    delete c.hook.closeSync;
+    delete c.hook.openSync;
   });
 
   await test('AC1: the temp file is O_CREAT|O_EXCL|O_WRONLY|O_NOFOLLOW 0600, the file and .durbar are owner-only, the mirror is returned and persisted', async () => {
@@ -351,10 +364,60 @@ async function main(): Promise<void> {
     await cycle(r);
     const old = nodeFs.readFileSync(md(r.folder), 'utf8').replace('first, newer in Durbar', 'first').replace(/(id=[a-z0-9-]+ created=\S+ updated=)\S+/, `$1${a.updatedAt}`);
     nodeFs.writeFileSync(md(r.folder), old);
-    await cycle(r);
+    const olderSt = await cycle(r);
+    assert.match(olderSt.state.info ?? '', /^1 note in notes\.md was an older copy; Durbar's version was kept\.$/, 'the kept version is said, not silent');
     ns = await notesOf(r.store, r.key);
     assert.strictEqual(ns.find((n) => n.id === a.id)!.text, 'first, newer in Durbar', 'an older copy does not roll the note back');
     assert.ok(nodeFs.readFileSync(md(r.folder), 'utf8').includes('first, newer in Durbar'));
+  });
+
+  await test('review: a note added in the file without an id is imported once (a retry, a failing write with a second edit, restarts)', async () => {
+    const titles = async (st: NotesStore, key: string): Promise<string> => (await notesOf(st, key)).map((n) => n.text).sort().join('|');
+    // (a) the file changes right before the rename: the next cycle sees the same id-less section again
+    {
+      const r = rig();
+      must(await r.store.add(r.key, 'proj', { text: 'base' }));
+      await cycle(r);
+      nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\n## idea\n\nnew idea text\n');
+      r.c.calls.length = 0;
+      let armed = true;
+      r.c.hook.closeSync = (real, fd) => { const out = real(fd); if (armed && r.c.calls.some((x) => x.m === 'openSync' && x.p.endsWith('.tmp'))) { armed = false; nodeFs.writeFileSync(md(r.folder), nodeFs.readFileSync(md(r.folder), 'utf8').replace('\nbase\n', '\nbase edited\n')); } return out; };
+      assert.strictEqual((await cycle(r)).retry, true);
+      await cycle(r);
+      assert.strictEqual(await titles(r.store, r.key), 'base edited|new idea text');
+    }
+    // (b) the write keeps failing (EIO) and the person edits the file again in the same process
+    {
+      const r = rig();
+      must(await r.store.add(r.key, 'proj', { text: 'base' }));
+      await cycle(r);
+      r.c.hook.renameSync = () => { throw Object.assign(new Error('io'), { code: 'EIO' }); };
+      nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\nidless\n');
+      assert.match((await cycle(r)).state.error ?? '', /EIO/);
+      nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\nsecond\n');
+      assert.match((await cycle(r)).state.error ?? '', /EIO/);
+      assert.strictEqual(await titles(r.store, r.key), 'base|idless|second');
+    }
+    // (c) restarts while the write fails: the imported hash is kept in the store, so the same file is not imported again
+    {
+      const r = rig();
+      must(await r.store.add(r.key, 'proj', { text: 'base' }));
+      await cycle(r);
+      nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\nidless\n');
+      const dir = path.join(r.folder, '..', 'userdata', 'notes');
+      for (let i = 0; i < 4; i++) {
+        const st = new NotesStore(dir);
+        const c = countingFs();
+        c.hook.renameSync = () => { throw Object.assign(new Error('io'), { code: 'EIO' }); };
+        let imports = 0;
+        const orig = st.importFile.bind(st);
+        st.importFile = (...a: Parameters<NotesStore['importFile']>) => { imports++; return orig(...a); };
+        await syncNotesFile({ file: new NotesFile({ fs: c.fs }), store: st, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [] });
+        assert.strictEqual(imports, i === 0 ? 1 : 0, `restart ${i}: the same file is imported once`);
+        assert.strictEqual(await st.getFileImport(r.key), sha(nodeFs.readFileSync(md(r.folder))));
+      }
+      assert.strictEqual(await titles(new NotesStore(dir), r.key), 'base|idless');
+    }
   });
 
   await test('AC13/AC14: titles from the file are masked and lose bidi and zero-width characters; texts are masked, then cut', async () => {
@@ -517,7 +580,7 @@ async function main(): Promise<void> {
     ];
     if (canLink) {
       swaps.push(['.durbar swapped for a link', (r) => { const d = path.join(r.folder, '.durbar'); nodeFs.renameSync(d, d + '-old'); nodeFs.symlinkSync(outside, d, 'dir'); }, /\.durbar is a link/]);
-      swaps.push(['notes.md turned into a link', (r) => { nodeFs.unlinkSync(md(r.folder)); nodeFs.writeFileSync(path.join(outside, 'target.md'), 'x'); nodeFs.symlinkSync(path.join(outside, 'target.md'), md(r.folder), 'file'); }, /it is a link/]);
+      swaps.push(['notes.md turned into a link', (r) => { nodeFs.unlinkSync(md(r.folder)); nodeFs.writeFileSync(path.join(outside, 'target.md'), 'x'); nodeFs.symlinkSync(path.join(outside, 'target.md'), md(r.folder), 'file'); }, /notes\.md is a link/]);
     } else skip('no symbolic links here: the link swaps are not run');
     for (const [name, swap, why] of swaps) {
       const r = rig();
@@ -597,6 +660,25 @@ async function main(): Promise<void> {
       const linked = f.addExclude(r3);
       assert.ok(!linked.ok && /link/.test(linked.error), JSON.stringify(linked));
       assert.strictEqual(nodeFs.readFileSync(target, 'utf8'), '', 'nothing written through the link');
+    }
+    if (posix && canLink) {
+      // swapped between the lstat and the open: a link (O_NOFOLLOW), and a hard link appearing where exclude was missing (nlink)
+      const target = path.join(fresh('outside'), 'victim');
+      nodeFs.writeFileSync(target, 'keep\n');
+      for (const kind of ['symlink', 'hardlink'] as const) {
+        const r4 = fresh('repo4');
+        gitDir(path.join(r4, '.git'));
+        const e4 = path.join(r4, '.git', 'info', 'exclude');
+        if (kind === 'symlink') nodeFs.writeFileSync(e4, '# exclude\n');
+        const c4 = countingFs();
+        c4.hook.openSync = (real, p, ...rest) => {
+          if (p === e4 && ((rest[0] as number) & nodeFs.constants.O_APPEND)) { try { nodeFs.unlinkSync(e4); } catch { /* missing */ } if (kind === 'symlink') nodeFs.symlinkSync(target, e4, 'file'); else nodeFs.linkSync(target, e4); }
+          return real(p, ...rest);
+        };
+        const res = new NotesFile({ fs: c4.fs }).addExclude(r4);
+        assert.ok(!res.ok, `${kind} swapped in before the open: refused (${JSON.stringify(res)})`);
+        assert.strictEqual(nodeFs.readFileSync(target, 'utf8'), 'keep\n', `${kind}: nothing written to the other file`);
+      }
     }
     const plain = fresh('plain');
     const no = f.addExclude(plain);

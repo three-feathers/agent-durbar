@@ -24,7 +24,7 @@ import { notesMdText, type NotesMdSection } from '../shared/notesmd';
 import { HIDDEN_ALL_RE } from '../shared/names';
 
 /** What one import of `.durbar/notes.md` did (FR-054; spec Changes 2026-10-31, T041). Counts only: never a title or a text. */
-export interface NotesImport { added: number; edited: number; older: number; deleted: number; tooLong: number; overCap: number }
+export interface NotesImport { added: number; edited: number; older: number; deleted: number; tooLong: number; overCap: number; again: number }
 /** A file title as Durbar keeps it: hidden bidi and zero-width characters removed (T041 AC14), then `cleanTitle` (undefined: none). */
 const fileTitle = (t: string | undefined): string | undefined => (t === undefined ? undefined : cleanTitle(t.replace(HIDDEN_ALL_RE, '')));
 const yieldNow = (): Promise<void> => new Promise((r) => setImmediate(r));
@@ -478,8 +478,11 @@ export class NotesStore {
    * a text over `inputChars` is not imported. A section that is gone deletes nothing. Masking runs before the lock, yielding between
    * sections; everything is applied in one write.
    */
-  async importFile(folderKey: string, folderName: string, sections: readonly NotesMdSection[], values: readonly string[] = []): Promise<NotesWrote & { counts?: NotesImport }> {
-    const counts: NotesImport = { added: 0, edited: 0, older: 0, deleted: 0, tooLong: 0, overCap: 0 };
+  async importFile(folderKey: string, folderName: string, sections: readonly NotesMdSection[], values: readonly string[] = [], fileSha?: string): Promise<NotesWrote & { counts?: NotesImport }> {
+    const counts: NotesImport = { added: 0, edited: 0, older: 0, deleted: 0, tooLong: 0, overCap: 0, again: 0 };
+    // ids the file holds: a note an earlier import added and that was written back has its id in the file
+    const fileIds = new Set<string>();
+    for (const s of sections) if (s.id !== undefined) fileIds.add(s.id);
     const snap = await this.list(folderKey);
     const known = new Map<string, Note>(snap.ok ? snap.notes.map((n) => [n.id, n]) : []);
     // what the file says differs from the stored note (cheap string compares, no mask yet)
@@ -508,7 +511,7 @@ export class NotesStore {
     }
     const now = this.now();
     const res = await this.mutate(folderKey, folderName, (doc) => {
-      Object.assign(counts, { added: 0, edited: 0, older: 0, deleted: 0, tooLong: 0, overCap: 0 });
+      Object.assign(counts, { added: 0, edited: 0, older: 0, deleted: 0, tooLong: 0, overCap: 0, again: 0 });
       let d = doc;
       const dead = new Set(doc.tombstones.map((t) => t.id));
       for (const s of sections) {
@@ -532,17 +535,30 @@ export class NotesStore {
         if (s.id !== undefined && dead.has(s.id)) { counts.deleted++; continue; } // deleted in Durbar: it leaves the file at the next write
         const m = maskOne(s);
         if (!m.text.trim()) continue;
+        // the same new section seen again before a write put its id into the file (a retry, a failing write, a restart): not a second note
+        const title = m.title ?? guessTitle(m.text, now);
+        if (d.notes.some((n) => n.from === 'file' && !fileIds.has(n.id) && n.text === m.text && n.title === title)) { counts.again++; continue; }
         if (d.notes.length >= NOTES_LIMITS.notesPerFolder) { counts.overCap++; continue; }
         const keepId = s.id !== undefined ? s.id : undefined;
-        const r = applyChange(d, { op: 'add', text: m.text, title: m.title ?? guessTitle(m.text, now), from: 'file', hidden: m.hidden }, now, () => keepId ?? newNoteId(this.rand));
+        const r = applyChange(d, { op: 'add', text: m.text, title, from: 'file', hidden: m.hidden }, now, () => keepId ?? newNoteId(this.rand));
         if (!r.ok || !r.note) continue;
         if (s.done) { const i = r.doc.notes.findIndex((n) => n.id === r.note!.id); r.doc.notes[i] = { ...r.doc.notes[i], done: true }; }
         d = r.doc;
         counts.added++;
       }
+      if (fileSha && d.fileImport?.sha256 !== fileSha) d = { ...d, fileImport: { sha256: fileSha, at: now.toISOString() } };
       return d === doc ? { ok: true, existing: true } : { ok: true, doc: d };
     });
     return res.ok ? { ...res, counts } : res;
+  }
+
+  /** The hash of the last `notes.md` imported (FR-054), as the document holds it. */
+  async getFileImport(folderKey: string): Promise<string | undefined> {
+    const fp = this.fingerprintOf(folderKey);
+    return this.queue(fp, async () => {
+      const l = this.load(fp);
+      return l.ok ? l.entry.doc.fileImport?.sha256 : undefined;
+    });
   }
 
   /** The last `notes.md` Durbar wrote (FR-053), as the document holds it. */
