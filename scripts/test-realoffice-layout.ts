@@ -3,7 +3,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
+import { screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
 
@@ -255,7 +255,7 @@ for (const [W, H] of SIZES) {
   assert.ok(runTall / upTall > 0.9 && runTall / upTall < 1.0, `a runner is a little shorter than upright (bent knees): ${(runTall / upTall).toFixed(3)}`);
 }
 // ---- the running pose: every person has both strides, measured, the same canvas for both (no jump when P2 steps them) ----
-assert.strictEqual(POSE_FRAME_B.runA, 'runB', 'stride B is recorded for P2');
+assert.strictEqual(POSE_FRAME_B.runA, 'runB', 'stride B of the running pose');
 for (const pid of PEOPLE) {
   const st = META.stand[pid];
   for (const p of ['runA', 'runB']) assert.ok(Array.isArray(st.poses[p]) && st.feet && st.feet[p] > 0.9 && st.top && st.top[p] < 0.1, `${pid} has a measured ${p}`);
@@ -389,8 +389,90 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.feet as Record<s
     vm.runInContext('var exports=self.exports;', ctx);
     for (const f of page) vm.runInContext(fs.readFileSync(path.join(DIST, f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
     const ex = vm.runInContext('exports', ctx) as Record<string, unknown>;
-    for (const k of ['realLayout', 'lobbyWidths', 'assignPeople', 'lightFor', 'lightState', 'ambientFor', 'doneTick', 'fixtureLight', 'redact']) assert.strictEqual(typeof ex[k], 'function', `${k} is on the page's exports with every shared module loaded`);
+    for (const k of ['screenFor', 'screenFit', 'personMotion', 'zoomRect', 'realLayout', 'lobbyWidths', 'assignPeople', 'lightFor', 'lightState', 'ambientFor', 'doneTick', 'fixtureLight', 'redact']) assert.strictEqual(typeof ex[k], 'function', `${k} is on the page's exports with every shared module loaded`);
   } else console.log('(dist/shared not built: the page-load check is skipped; npm test builds first)');
+}
+
+// spec 097 phase P2. FR-032: how a glass shows text
+{
+  const small = screenFit({ w: 90, h: 58 });
+  assert.ok(small.small && small.rows === 1 && small.font >= 10.5, 'a small screen: bars and the newest line, at least 10.5 px');
+  assert.ok(small.bars >= 2, 'bars fill it');
+  assert.ok(screenFit({ w: 149, h: 200 }).small && screenFit({ w: 300, h: 59 }).small, 'under 150x60 is small on either side');
+  assert.deepStrictEqual([screenFit({ w: 150, h: 60 }).small, screenFit({ w: 150, h: 60 }).font], [false, 11], 'real lines at 11 px');
+  assert.strictEqual(screenFit({ w: 300, h: 200 }).font, 11, '200 px tall is not over 200');
+  assert.strictEqual(screenFit({ w: 300, h: 201 }).font, 13, 'over 200 px: 13 px');
+  assert.ok(screenFit({ w: 300, h: 170 }).rows >= 8 && screenFit({ w: 300, h: 150 }).rows >= 8, 'SC-003: a big screen holds at least 8 lines');
+  assert.strictEqual(screenFit({ w: 4, h: 4 }).bars, 0, 'no room: no bars, no negative');
+  // FR-030, FR-035: what a state shows
+  const log = [{ n: 3, k: 'cmd', t: 'Running x' }, { n: 4, k: 'ok', t: 'Reading y' }];
+  const q = [{ k: 'plain', t: 'Allow this?' }], rep = [{ k: 'reply', t: 'All done.' }];
+  assert.deepStrictEqual(screenFor('asleep', log, q, rep, 'Asleep'), { off: true, caret: false, lines: [] }, 'asleep: off, no text');
+  assert.strictEqual(screenFor('working', log, q, rep, 'Working').caret, true, 'a caret only on working screens');
+  for (const st of ['thinking', 'waiting', 'error', 'limit', 'done', 'idle'] as RealState[]) assert.strictEqual(screenFor(st, log, q, rep, 'W').caret, false, 'no caret: ' + st);
+  assert.deepStrictEqual(screenFor('working', log, q, rep, 'W').lines, log, 'the agent\'s own lines win');
+  const ask = screenFor('waiting', log, q, rep, 'W').lines;
+  assert.deepStrictEqual(ask[ask.length - 1], { n: 5, k: 'ask', t: 'Allow this?' }, 'needs-you: the question is the newest line, next number');
+  assert.strictEqual(screenFor('limit', log, q, rep, 'W').lines[2].k, 'ask', 'limit: the same');
+  assert.strictEqual(screenFor('error', log, q, rep, 'W').lines[2].k, 'err', 'error: its error is the newest line');
+  assert.strictEqual(screenFor('done', log, [], rep, 'W').lines[1].k, 'done', 'done: the newest line marked green');
+  assert.strictEqual(log[1].k, 'ok', 'the log itself is not changed');
+  assert.strictEqual(screenFor('done', [], [], rep, 'W').lines[0].t, 'All done.', 'no lines: the last reply');
+  assert.strictEqual(screenFor('working', [], q, [], 'W').lines[0].t, 'Allow this?', 'no reply: the task');
+  assert.strictEqual(screenFor('idle', [], [], [], 'Ready').lines[0].t, 'Ready', 'nothing at all: the status word, never an empty screen');
+  assert.strictEqual(screenFor('working', Array.from({ length: 30 }, (_, i) => ({ n: i, k: 'cmd', t: 'l' + i })), [], [], 'W').lines.length, 24, 'at most 24');
+  // FR-070, FR-071, FR-181: the frames, their pace, per agent
+  assert.deepStrictEqual([POSE_FRAME_B.typeA, POSE_FRAME_B.waveA, POSE_FRAME_B.runA], ['typeB', 'waveB', 'runB'], 'the two-frame poses');
+  const periods = new Set<number>();
+  for (let i = 0; i < 200; i++) {
+    const id = 'sess-' + i;
+    for (const pose of ['typeA', 'waveA', 'runA']) { const m = personMotion(id, pose, pose === 'runA' ? null : 'working'); assert.strictEqual(m.kind, 'frames'); assert.ok(m.period >= 1 && 2 / m.period <= 2, 'at most 2 changes a second: ' + m.period); assert.ok(m.offset >= 0 && m.offset < m.period * 1000); }
+    const t = personMotion(id, 'typeA', 'working'); assert.ok(t.period >= 1.15 && t.period <= 1.5, 'FR-070: 1.15-1.5 s: ' + t.period); periods.add(t.period);
+    for (const st of ['thinking', 'done', 'idle'] as RealState[]) { const b = personMotion(id, st === 'thinking' ? 'think' : 'rest', st); assert.strictEqual(b.kind, 'breathe'); assert.ok(b.period >= 4 && b.period <= 5.5, 'breath: ' + b.period); assert.ok(4 / b.period <= 2); }
+  }
+  assert.ok(periods.size > 15, 'the room does not move in step: ' + periods.size);
+  assert.strictEqual(personMotion('a', 'think', 'error').kind, null, 'FR-036: error is still');
+  assert.strictEqual(personMotion('a', 'coffee', null).kind, 'sip');
+  assert.strictEqual(personMotion('a', 'knock', null).kind, 'knock');
+  assert.strictEqual(personMotion('a', 'book', null).kind, 'breathe');
+  // the layout names the second frame; every file it names exists in the pack and shares the first frame's canvas
+  const L3 = realLayout(model(15, 4, { states: ['working', 'waiting', 'thinking', 'error', 'done'] }), { w: 1280, h: 740 }, META);
+  for (const d of L3.zones.flatMap((z) => z.desks)) if (d.person) {
+    assert.strictEqual(d.person.fileB, POSE_FRAME_B[d.person.pose] ? d.person.file.replace(d.person.pose, POSE_FRAME_B[d.person.pose]) : null, 'frame B of ' + d.person.file);
+    if (d.person.fileB) assert.ok(fs.existsSync(path.join(ROOT, 'src', 'renderer', 'realoffice', 'art', d.person.fileB)), 'frame B exists: ' + d.person.fileB);
+  }
+  // FR-034: zoomRect
+  const view = { x: 0, y: 0, w: 1280, h: 740 }, size = { w: 420, h: 248, minH: 124 };
+  const inside = (r: Rect) => r.x >= view.x && r.y >= view.y && r.x + r.w <= view.x + view.w && r.y + r.h <= view.y + view.h;
+  const clear = (r: Rect, av: Rect[]) => av.every((a) => r.x >= a.x + a.w || a.x >= r.x + r.w || r.y >= a.y + a.h || a.y >= r.y + r.h);
+  const T = { x: 500, y: 400, w: 90, h: 58 }, own = { x: 480, y: 500, w: 160, h: 36 };
+  let z = zoomRect(T, [T, own], view, size);
+  assert.strictEqual(z.side, 'above', 'first above');
+  assert.ok(z.y + z.h <= T.y, 'really above');
+  z = zoomRect({ ...T, y: 60 }, [{ ...T, y: 60 }, { ...own, x: 1000, y: 130 }], view, size);
+  assert.strictEqual(z.side, 'below', 'then below');
+  z = zoomRect({ ...T, y: 250 }, [{ ...T, y: 250 }, { x: 0, y: 0, w: 1280, h: 200 }, { x: 0, y: 350, w: 1280, h: 390 }], view, { w: 420, h: 124, minH: 124 });
+  assert.ok(z.side === 'right' || z.side === 'left', 'then beside: ' + z.side);
+  // every desk of a full office with every plate needing the user, both sizes, the corners included
+  let zoomCases = 0;
+  for (const [w, h] of [[1440, 830], [1280, 730]]) for (const states of [['waiting'], ['working', 'waiting', 'idle'], ['idle']] as RealState[][]) for (const f of [1, 4, 7]) {
+    const lay = realLayout(model(15, f, { states, away: false }), { w, h }, META), desks = lay.zones.flatMap((zz) => zz.desks), V = { x: 0, y: 0, w: lay.width, h: lay.height };
+    const needs = desks.filter((d) => d.state === 'waiting').map((d) => d.plate);
+    for (const d of desks) {
+      const av = [d.screen, d.plate, ...needs], r = zoomRect(d.screen, av, V, { w: 420, h: 248, minH: 124 });
+      zoomCases++;
+      assert.ok(r.x >= 0 && r.y >= 0 && r.x + r.w <= V.w + 1e-6 && r.y + r.h <= V.h + 1e-6, 'stays in the view');
+      assert.ok(!r.covers && clear(r, av), `covers nothing it must not: ${w}x${h} ${states} ${f} ${JSON.stringify(r)}`);
+      assert.ok(r.w >= 380 && r.w <= 480, 'FR-034 width');
+    }
+  }
+  // a window too small: stays in the view, says it covers, covers the least
+  z = zoomRect({ x: 10, y: 10, w: 80, h: 40 }, [{ x: 0, y: 0, w: 300, h: 300 }], { x: 0, y: 0, w: 300, h: 300 }, size);
+  assert.ok(z.covers && z.x === 0 && z.y === 0 && z.w === 300 && z.h <= 300, 'no room: inside, flagged');
+  z = zoomRect(T, [], { x: 40, y: 900, w: 1000, h: 300 }, size);
+  assert.ok(z.y >= 900 && z.y + z.h <= 1200, 'a scrolled view: its own coordinates');
+  assert.ok(inside({ ...zoomRect(T, [T], view, size) }), 'inside');
+  console.log(`zoom: ${zoomCases} placements`);
 }
 
 console.log(`realoffice layout and lights tests passed (${cases} layouts, faces ${JSON.stringify(faces)})`);

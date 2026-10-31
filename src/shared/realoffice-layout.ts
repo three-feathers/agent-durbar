@@ -19,14 +19,14 @@ export interface RealMeta {
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface DeskBox {
   id: string; state: RealState; slot: Rect; desk: Rect & { full: number }; plate: Rect; screen: Rect; glass: Rect;
-  person: (Rect & { file: string; pose: string; pid: string; vis: Rect }) | null;
+  person: (Rect & { file: string; fileB: string | null; pose: string; pid: string; vis: Rect }) | null;
   face: Rect | null; away: { x: number; y: number } | null; narrow: boolean; lamp: Rect;
   bubble: { x: number; y: number } | null; bang: { x: number; y: number } | null; dots: { x: number; y: number } | null;
   call: { x: number; y: number };
 }
 /** `id` is the folder's id; `part` is 1, or 2, 3... for the rest of a folder split over rows */
 export interface ZoneBox { id: string; part: number; box: Rect; sign: Rect; desks: DeskBox[] }
-export interface VisitorBox { id: string; fig: (Rect & { file: string; pose: string; feetY: number }) | null; chip: { x: number; y: number }; face: Rect | null; shadow: Rect | null }
+export interface VisitorBox { id: string; fig: (Rect & { file: string; fileB: string | null; pose: string; feetY: number }) | null; chip: { x: number; y: number }; face: Rect | null; shadow: Rect | null }
 export interface FixtureBox { id: string; custom: boolean; art: Rect | null; slot: Rect; plate: { x: number; y: number; w: number }; visitors: VisitorBox[]; more: number; light: Rect }
 export interface Layout {
   u: number; big: boolean; lobbyH: number; floorH: number; width: number; height: number; scroll: boolean; faceH: number;
@@ -49,9 +49,9 @@ export const BIG_MAX = 4;
 /** FR-024: visitors' activity pose per place, and the fallback when a person has no picture for it. */
 export const FX_POSE: Record<string, string> = { library: 'book', software: 'box', terminal: 'runA', web: 'touch', boss: 'knock', coffee: 'coffee', bank: 'letter', postbox: 'letter', other: 'tool' };
 export const POSE_FALLBACK: Record<string, string> = { box: 'letter', touch: 'letter', tool: 'letter', wait: 'letter', runA: 'letter' };
-/** Owner 2026-10-31 ("make a real running pose", replacing the treadmill): the Terminal visitor jogs in place. P1 draws stride A
- *  still; the second frame of each two-frame pose is recorded here for the stepped motion of phase P2. */
-export const POSE_FRAME_B: Record<string, string> = { runA: 'runB' };
+/** FR-070: the second frame of each two-frame pose. Owner 2026-10-31 ("make a real running pose", replacing the treadmill): the
+ *  Terminal visitor jogs in place, runA and runB. */
+export const POSE_FRAME_B: Record<string, string> = { typeA: 'typeB', waveA: 'waveB', runA: 'runB' };
 /** Owner 2026-10-31 10:19 ("it must be real"): people in the lobby are scaled against the Boss door: a door is about 2.1 m, a person 1.7 m. */
 export const DOOR_M = 2.1, PERSON_M = 1.7;
 /** Owner 2026-10-31 10:48 ("their feet are above the floor"): visitors stand IN FRONT of the fixtures, on the floor strip, not on the
@@ -263,7 +263,7 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
         /* the feet (the picture's lowest opaque row) stand on the front floor plane, in front of the fixture; one scale per person,
            from its upright 'letter' pose, NEAR_SCALE larger than at the wall line. */
         const k = nearPx / standHeight(meta, String(v.person)), fw2 = sp.size[0] * k, fh2 = sp.size[1] * k;
-        fig = { x: cx - fw2 / 2, y: frontY - sp.feet * fh2, w: fw2, h: fh2, file: `${v.person}-${sp.pose}.webp`, pose: sp.pose, feetY: frontY };
+        fig = { x: cx - fw2 / 2, y: frontY - sp.feet * fh2, w: fw2, h: fh2, file: `${v.person}-${sp.pose}.webp`, fileB: roOwn(POSE_FRAME_B, sp.pose) && roOwn(meta.stand[String(v.person)].poses, POSE_FRAME_B[sp.pose]) ? `${v.person}-${POSE_FRAME_B[sp.pose]}.webp` : null, pose: sp.pose, feetY: frontY };
         const headY = fig.y + sp.top * fh2;
         face = { x: cx - 0.065 * nearPx, y: headY, w: 0.13 * nearPx, h: 0.13 * nearPx };
         /* a soft elliptical contact shadow on the floor, centred on the foot line, a little wider than the stance */
@@ -293,7 +293,7 @@ function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: numb
   const pose = SEAT_POSE[a.state];
   if (m && pose) {
     const k = u / m.bodyH, w = m.w * k, h = m.h * k, top = headY - m.headTop * k;
-    person = { x: px - w / 2, y: top, w, h, file: `${a.person}-${pose}.webp`, pose, pid: String(a.person),
+    person = { x: px - w / 2, y: top, w, h, file: `${a.person}-${pose}.webp`, fileB: roOwn(POSE_FRAME_B, pose) ? `${a.person}-${POSE_FRAME_B[pose]}.webp` : null, pose, pid: String(a.person),
       vis: { x: px - 0.3 * u, y: headY, w: 0.6 * u, h: Math.max(0, deskY - headY) } }; /* the head and shoulders: the monitor may cover a shoulder edge, never the face */
     face = { x: px - FACE_U * u * 0.4, y: headY, w: FACE_U * u * 0.8, h: FACE_U * u };
   }
@@ -390,4 +390,106 @@ export function assignPeople(map: Record<string, string>, sessions: readonly { i
     out[s.id] = pool[Math.floor((Number.isFinite(r) ? Math.min(Math.max(r, 0), 0.999999) : 0) * pool.length)];
   }
   return out;
+}
+
+/* ---- Phase P2: live screens and motion (FR-030..FR-035, FR-070..FR-074) ---- */
+
+/** One line of a monitor: `n` stays with the line while it scrolls, `k` is its kind (FR-032's colours), `t` is masked text. */
+export interface ScreenLine { n: number; k: string; t: string }
+/** FR-032: a screen under this size shows line bars and the newest line; larger ones real lines, 13 px when taller than 200 px. */
+export const SCREEN_SMALL = { w: 150, h: 60 };
+export const SCREEN_PAD = 4;
+/** FR-032: how a glass of this size shows text: `rows` lines of text and `bars` line bars above them. */
+export function screenFit(glass: { w: number; h: number }): { small: boolean; font: number; lh: number; rows: number; bars: number; whole: number } {
+  const room = Math.max(0, glass.h - 2 * SCREEN_PAD);
+  if (glass.w < SCREEN_SMALL.w || glass.h < SCREEN_SMALL.h) {
+    const lh = 13;
+    /* the newest line wraps over the rows it needs, the bars show above it as far as room is left; `whole`: the height of whole text rows */
+    return { small: true, font: 10.5, lh, rows: 1, bars: Math.max(0, Math.floor((room - lh - 2) / 6)), whole: Math.max(lh, Math.floor(room / lh) * lh) };
+  }
+  const font = glass.h > 200 ? 13 : 11, lh = font === 13 ? 17 : 15;
+  const rows = Math.max(1, Math.floor(room / lh));
+  return { small: false, font, lh, rows, bars: 0, whole: rows * lh };
+}
+/**
+ * FR-030, FR-035: what a screen shows for a state. `log`: the agent's own lines, oldest first; `task` and `reply`: the same masked
+ * steps over its task and last reply, used when it has no lines; `word`: the status word, so that a screen never stands empty. Asleep:
+ * off, no text. Needs-you and error: the question or the error is the newest line. Done: the newest line is marked done (green).
+ */
+export function screenFor(state: RealState, log: readonly ScreenLine[], task: readonly { k: string; t: string }[], reply: readonly { k: string; t: string }[], word: string): { off: boolean; caret: boolean; lines: ScreenLine[] } {
+  if (state === 'asleep') return { off: true, caret: false, lines: [] };
+  const lines: ScreenLine[] = log.map((l) => ({ ...l }));
+  const add = (src: readonly { k: string; t: string }[], k?: string) => { for (const l of src) { const last = lines[lines.length - 1]; if (!last || last.t !== l.t) lines.push({ n: last ? last.n + 1 : 0, k: k || l.k, t: l.t }); else if (k) last.k = k; } };
+  if (state === 'waiting' || state === 'limit') add(task, 'ask');
+  else if (state === 'error') add(task, 'err');
+  else if (!lines.length) { add(reply.length ? reply : task); }
+  if (!lines.length) lines.push({ n: 0, k: state === 'error' ? 'err' : state === 'waiting' || state === 'limit' ? 'ask' : 'plain', t: word });
+  if (state === 'done') lines[lines.length - 1].k = 'done';
+  return { off: false, caret: state === 'working', lines: lines.slice(-24) };
+}
+/** A stable number from a session id: the room does not move in step (FR-070). */
+function roHash(id: string): number { let h = 7; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0; return h; }
+/**
+ * FR-070, FR-071, spec 097 FR-181 (at most 2 changes a second a desk): the motion of a seated or standing pose. `kind`: 'frames' (two
+ * pictures in step, with `period` s per pair), 'breathe', 'sip', 'knock', or null (a still pose: error, a person on hold). The period is
+ * per agent: 1.15-1.5 s for two frames, 4-5.5 s for a breath. `offset` is where its cycle starts, in ms.
+ */
+export function personMotion(id: string, pose: string, state: RealState | null): { kind: 'frames' | 'breathe' | 'sip' | 'knock' | null; period: number; offset: number } {
+  const h = roHash(String(id)), share = (h % 1000) / 1000;
+  const out = (kind: 'frames' | 'breathe' | 'sip' | 'knock' | null, period: number) => ({ kind, period: Math.round(period * 100) / 100, offset: Math.round(share * period * 1000) });
+  if (state === 'error') return out(null, 0); /* FR-036: error is still */
+  if (pose === 'runA') return out('frames', 1 + 0.3 * share); /* FR-181 caps a stride at 2 changes a second (FR-070 said 0.55 s) */
+  if (roOwn(POSE_FRAME_B, pose)) return out('frames', 1.15 + 0.35 * share);
+  if (pose === 'coffee') return out('sip', 4);
+  if (pose === 'knock') return out('knock', 2.6);
+  return out('breathe', 4 + 1.5 * share);
+}
+
+export interface ZoomPlace extends Rect { side: 'above' | 'below' | 'right' | 'left' | 'near' | 'covering'; covers: boolean }
+const roHits = (a: Rect, b: Rect, gap = 0) => a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
+/**
+ * FR-034: where the zoom panel goes. Above the target if that is free, then below, then beside; then the nearest free place; each at
+ * the wished height, then lower down to `minH`. Never leaves `view`; never covers `avoid` (the target's own plate, every needs-you
+ * plate and the target itself) unless no place at all is free: then the least covered, `covers` true. Pure.
+ */
+export function zoomRect(target: Rect, avoid: readonly Rect[], view: Rect, size: { w: number; h: number; minH: number; gap?: number }): ZoomPlace {
+  const gap = size.gap ?? 6, w = Math.min(size.w, view.w), maxH = Math.min(size.h, view.h), minH = Math.min(size.minH, maxH);
+  const free = (r: Rect) => !avoid.some((a) => roHits(r, a));
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+  const cx = target.x + target.w / 2, cy = target.y + target.h / 2;
+  const heights: number[] = [];
+  for (let h = maxH; h > minH; h -= 28) heights.push(h);
+  heights.push(minH);
+  for (const h of heights) {
+    const X = clamp(cx - w / 2, view.x, view.x + view.w - w), Y = clamp(cy - h / 2, view.y, view.y + view.h - h);
+    const named: [ZoomPlace['side'], number, number][] = [
+      ['above', X, target.y - gap - h], ['below', X, target.y + target.h + gap],
+      ['right', target.x + target.w + gap, Y], ['left', target.x - gap - w, Y],
+    ];
+    for (const [side, x, y] of named) {
+      if (x < view.x || x + w > view.x + view.w || y < view.y || y + h > view.y + view.h) continue;
+      if (free({ x, y, w, h })) return { x, y, w, h, side, covers: false };
+    }
+    /* the nearest free place: its edges can only stand against an avoided box or the view */
+    const xs = new Set([X, view.x, view.x + view.w - w]), ys = new Set([Y, view.y, view.y + view.h - h]);
+    for (const a of avoid) { xs.add(a.x - w - gap); xs.add(a.x + a.w + gap); ys.add(a.y - h - gap); ys.add(a.y + a.h + gap); }
+    let best: ZoomPlace | null = null, bestD = Infinity;
+    for (const x of xs) {
+      if (x < view.x || x + w > view.x + view.w) continue;
+      for (const y of ys) {
+        if (y < view.y || y + h > view.y + view.h) continue;
+        const d = Math.hypot(x + w / 2 - cx, y + h / 2 - cy);
+        if (d < bestD && free({ x, y, w, h })) { best = { x, y, w, h, side: 'near', covers: false }; bestD = d; }
+      }
+    }
+    if (best) return best;
+  }
+  /* nothing is free (a window too small for it): the least covered place, still inside the view */
+  const h = minH, lap = (r: Rect) => avoid.reduce((s, a) => s + Math.max(0, Math.min(r.x + r.w, a.x + a.w) - Math.max(r.x, a.x)) * Math.max(0, Math.min(r.y + r.h, a.y + a.h) - Math.max(r.y, a.y)), 0);
+  let best: ZoomPlace = { x: clamp(cx - w / 2, view.x, view.x + view.w - w), y: view.y, w, h, side: 'covering', covers: true }, least = Infinity;
+  for (let i = 0; i <= 8; i++) for (let j = 0; j <= 8; j++) {
+    const r = { x: view.x + (view.w - w) * i / 8, y: view.y + (view.h - h) * j / 8, w, h }, l = lap(r);
+    if (l < least) { least = l; best = { ...r, side: 'covering', covers: true }; }
+  }
+  return best;
 }
