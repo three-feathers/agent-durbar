@@ -4,7 +4,7 @@
  * it (FR-012). Main builds the prompt; the renderer may mirror `cleanDescription` for the live counter but never decides.
  */
 import { DEFAULT_STYLE_ID, stylePreset } from './charstyle';
-import { pickIdeas } from './themegen';
+import { pickFrom } from './ideas';
 
 export const MAX_CHAR_DESCRIPTION = 300;
 export const MIN_CHAR_DESCRIPTION = 3;
@@ -87,7 +87,7 @@ export function buildCharacterPrompt(description: unknown, styleId: string = DEF
   return prompt;
 }
 
-/** FR-013: `n` different ideas for the dialog's chips (the theme maker's `pickIdeas`, with the character list). */
+/** FR-013: `n` different ideas for the dialog's chips (the neutral `pickFrom` of ideas.ts, which the theme maker's `pickIdeas` also uses). */
 export function pickCharacterIdeas(n: number, rand: () => number = Math.random): string[] {
-  return pickIdeas(n, rand, CHARACTER_IDEAS);
+  return pickFrom(CHARACTER_IDEAS, n, rand);
 }
