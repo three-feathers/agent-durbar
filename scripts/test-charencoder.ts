@@ -106,6 +106,14 @@ nameOk('<b>Greta</b> {x}', 'bGreta/b x');
 nameOk('\u{1F469}\u200D\u{1F4BB} Ada', '\u{1F469}\u200D\u{1F4BB} Ada');
 nameOk('x'.repeat(40), 'x'.repeat(40));
 nameOk('\u{1F600}'.repeat(40), '\u{1F600}'.repeat(40));
+// no visible character: a blank row in the list and a blank export (review of phase 3), and a joiner or selector outside a real emoji sequence
+for (const blank of ['\u200D', '\uFE0F', '\u034F', '\u3164', '\u2800', '\u115F', '\u1160', '\uFFA0', '\uFE00', '\u{E0100}', '\u0301', '\u3164\u3164', ' \u2800 ', '\u200D\u200D', 'a\u200Db', '\u200Da', 'a\u200D', '\u{1F469}\u200D', '\u200D\u{1F4BB}', 'a\u200D\u{1F469}', 'a\uFE0F', 'Greta\u2800', '\uE000', '\uD83D']) nameBad(blank);
+nameOk('\u{1F469}\u{1F3FD}\u200D\u{1F4BB}', '\u{1F469}\u{1F3FD}\u200D\u{1F4BB}');
+nameOk('\u2764\uFE0F', '\u2764\uFE0F');
+nameOk('1\uFE0F\u20E3', '1\uFE0F\u20E3');
+nameOk('\u{1F1E8}\u{1F1ED} Ada', '\u{1F1E8}\u{1F1ED} Ada');
+nameOk('Jose\u0301', 'Jose\u0301');
+nameOk('\u65E5\u672C\u8A9E', '\u65E5\u672C\u8A9E');
 for (const bad of ['', '   ', '<>', 'x'.repeat(41), 'x'.repeat(100000), 'a\nb', 'a\u0007b', 'a\u202Eb', 'a\u200Bb', 'a\u2028b', '\u0000', 7, null, undefined, {}, ['a']]) nameBad(bad);
 
 // --- the reply is untrusted (FR-022, FR-023) ---
@@ -163,6 +171,11 @@ assert.ok(!/persist:/.test(stripped), 'an in-memory session');
 assert.ok(/fromPartition\(ENCODER_PARTITION\)/.test(stripped) && !/defaultSession/.test(stripped), "its own session, not the app's");
 assert.ok(/ENCODER_TIMEOUT_MS = 20_000/.test(stripped), 'the 20 s limit');
 assert.ok(/render-process-gone/.test(stripped), 'a crash refuses');
+assert.ok(/setWindowOpenHandler\(\(\) => \(\{ action: 'deny' \}\)\)/.test(stripped) && /'will-navigate', \(e\) => e\.preventDefault\(\)/.test(stripped), 'no new window, no navigation');
+assert.ok(/setPermissionRequestHandler\(\(_wc, _perm, cb\) => cb\(false\)\)/.test(stripped) && /setPermissionCheckHandler\(\(\) => false\)/.test(stripped), 'no permission');
+assert.ok(/devTools: false/.test(stripped) && /webviewTag: false/.test(stripped), 'no DevTools, no webview');
+assert.ok(/'did-start-navigation', \(d\) => \{ if \(pageIn\.has\(wc\) && d\.isMainFrame && !d\.isSameDocument/.test(stripped) && /win\.on\('closed', refuse\)/.test(stripped), 'a navigation with no request ends the window and its job');
+assert.ok(/setWebRTCIPHandlingPolicy\('disable_non_proxied_udp'\)/.test(stripped), 'no WebRTC UDP around the session');
 assert.ok(/\.destroy\(\)/.test(stripped), 'the window is destroyed');
 assert.ok(/parseEncoderReply\(m\.data\)/.test(stripped), 'the reply goes through the check');
 assert.ok(/content="default-src 'none'; img-src data: blob:"/.test(read('src', 'renderer', 'charencoder.html')), 'the CSP is exactly the spec\'s');

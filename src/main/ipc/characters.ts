@@ -2,8 +2,8 @@
  * IPC for the AI character maker and My characters (spec 096 FR-020, FR-031..FR-033, FR-035). Main decides: the window sends only a description, an adapter id, a
  * `tryId`, an id main listed, a name, or a folder key; no text from the window becomes a path. Every channel is owner-only (`fromApp`) and none is open to the simulator.
  * The description goes to the adapter once, inside the prompt, and is never stored, logged or kept in an error (D3, FR-032, SC-004). A try is held only in memory.
- * `[KNOWN GAP]` a partial echo of the description in an error is not recognised: only the whole text (raw or cleaned) is removed.
- * `[KNOWN GAP]` the login gate of FR-034 is the dialog's (T041a, phase 4): no adapter reports `imageGen` yet (T030 waits for probes P2 and P8), so nothing can run.
+ * `[KNOWN GAP]` a partial echo of the description in an error is not recognised: only the whole text (raw or cleaned, plain or JSON-escaped) is removed.
+ * `[KNOWN GAP]` FR-034's login gate is not enforced here yet: no adapter reports `imageGen`, so nothing can run. T030a must add it here before Codex's `imageGen` turns on.
  */
 import { app } from 'electron';
 import { randomBytes } from 'crypto';
@@ -15,11 +15,10 @@ import type { AdapterRegistry } from '../../adapters/registry';
 import type { AdapterRouter } from '../../adapters/router';
 import { CHARACTER_IDEAS, SHEET_NAME, buildCharacterPrompt, cleanDescription } from '../../shared/chargen';
 import { DEFAULT_STYLE_ID } from '../../shared/charstyle';
-import { MAX_CHARACTERS, cleanCharacterName, isFolderKey } from '../../shared/charrules';
+import { MAX_CHARACTERS, cleanCharacterName, pinDecision } from '../../shared/charrules';
 import type { EncoderResult, FaceSet, FrameSet } from '../../shared/charrules';
 import { MAX_IMAGE_BYTES, checkImage } from '../../shared/imagecheck';
 import { maskHomePaths, redactMarkdown } from '../../shared/redact';
-import { normaliseFolderKey } from '../../shared/usagedoc';
 import { encodeSheet } from '../charencoder';
 import type { EncodeOptions } from '../charencoder';
 import { CharacterStore } from '../charstore';
@@ -32,6 +31,8 @@ const TRY_TTL_MS = 10 * 60_000;
 /** Past the adapter's own time limit, main stops waiting for it too. */
 const GUARD_GRACE_MS = 10_000;
 const MAX_ERROR = 200;
+/** Only the cleaned text (300 code points) goes to the adapter; a longer raw input is not searched for. */
+const MAX_ECHO_INPUT = 4000;
 const NEEDS_CODEX = 'This needs OpenAI Codex, installed and signed in with ChatGPT on this computer.';
 const NO_PICTURE = 'No picture came back. Try again.';
 const COULD_NOT = 'Codex could not make the picture. Try again.';
@@ -47,6 +48,8 @@ export interface CharactersIpcDeps {
   openFolderKeys(): string[];
   /** Tests: the encoder window is Electron's, so `test:charipc` replaces it (`check-charencoder` runs the real one). */
   encode?: (bytes: Uint8Array, header: { width: number; height: number }, opts: EncodeOptions) => Promise<EncoderResult>;
+  /** Tests: the platform whose folder keys are normalised (default this one's). */
+  platform?: string;
   /** Tests: shorter limits. */
   limits?: { generateMs?: number; graceMs?: number; tryTtlMs?: number };
 }
@@ -103,12 +106,13 @@ function readSheet(file: string): SheetRead {
   }
 }
 
-/** FR-032: what a failed try says. The description is removed first (any case), then secrets and home folders are masked, and the cut comes last, so nothing is left half-masked. */
+/** The forms an echo of the text can take: as it is, and JSON-escaped once or twice (as a log or an error wrapping another error carries it; the same idea as `maskHomePaths`). */
+const echoForms = (d: string): string[] => { const once = JSON.stringify(d).slice(1, -1); return [d, once, JSON.stringify(once).slice(1, -1)]; };
+/** FR-032: what a failed try says. The description is removed first (any case, escaped forms too), then secrets and home folders are masked, and the cut comes last, so nothing is left half-masked. */
 export function safeGenerateError(err: unknown, description: readonly string[]): string {
   let s = err instanceof Error && typeof err.message === 'string' ? err.message : '';
-  for (const d of [...description].sort((a, b) => b.length - a.length)) {
-    if (d) s = s.replace(new RegExp(d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '[your description]');
-  }
+  const forms = [...new Set(description.filter(Boolean).flatMap(echoForms))].sort((a, b) => b.length - a.length);
+  for (const d of forms) s = s.replace(new RegExp(d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '[your description]');
   s = maskHomePaths(redactMarkdown(s, s)).replace(/\s+/g, ' ').trim();
   if (!s.replace(/\[your description\]/g, '').trim()) return COULD_NOT;
   return Array.from(s).slice(0, MAX_ERROR).join('');
@@ -180,7 +184,7 @@ export function register(deps: CharactersIpcDeps): CharactersIpc {
       return { ok: true, tryId, frames: enc.frames, face: enc.face, notes: enc.notes, tookMs: Date.now() - started };
     } catch (err) {
       if (err instanceof Cancelled) return timedOut ? { ok: false, error: 'Codex took too long. Try again.' } : { ok: false, cancelled: true };
-      return { ok: false, error: safeGenerateError(err, typeof description === 'string' ? [description, clean.text] : [clean.text]) };
+      return { ok: false, error: safeGenerateError(err, typeof description === 'string' && description.length <= MAX_ECHO_INPUT ? [description, clean.text] : [clean.text]) };
     } finally {
       clearTimeout(guard);
       running = null;
@@ -240,17 +244,14 @@ export function register(deps: CharactersIpcDeps): CharactersIpc {
     if (!dir) return { ok: false, cancelled: true };
     return store.export(id, dir);
   });
-  /* FR-033, FR-031: a pin is set only on an open folder and a listed id; a pin can always be cleared, since its folder may not be open now (*Edge cases*) */
+  /* FR-033, FR-031: the rule is `pinDecision`, shared with the simulator's copy */
   ipcHandle('character:pin', (e, folderKey: unknown, id: unknown) => {
     if (!fromApp(e)) return REFUSED;
     const settings = getSettingsStore();
-    if (!settings || !isFolderKey(folderKey)) return { ok: false, error: 'That folder cannot be used.' };
-    const key = normaliseFolderKey(folderKey, process.platform);
-    if (id !== null) {
-      if (!store.has(id)) return { ok: false, error: 'That character is not in the list.' };
-      if (!openFolderKeys().some((k) => normaliseFolderKey(k, process.platform) === key)) return { ok: false, error: 'That folder is not open.' };
-    }
-    const ok = settings.setCharacterPin(key, id as string | null);
+    if (!settings) return { ok: false, error: 'The pin could not be saved.' };
+    const d = pinDecision(folderKey, id, { known: (x) => store.has(x), open: openFolderKeys(), platform: deps.platform ?? process.platform });
+    if (!d.ok) return d;
+    const ok = settings.setCharacterPin(d.key, id as string | null);
     return ok ? { ok: true, pins: settings.characterPinsOf(ids()) } : { ok: false, error: 'The pin could not be saved.' };
   });
   ipcHandle('character:ideas', (e) => {

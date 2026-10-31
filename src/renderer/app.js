@@ -266,7 +266,10 @@ async function applyTheme(idOrManifest,instant){
   else toast('Theme: <b>'+esc(THEME.list().find(t=>t.id===applied)?.name||applied)+'</b>.',2600);
 }
 /* Characters (spec 077 FR-064, FR-068): who sits at the desks, on top of any theme; the same cross-fade, cache clear and save as a theme */
-async function applyCharacters(v){
+/* spec 096 (coordinator's choice of 2026-10-31): `mine` draws the theme's own figures until T042 and T044 can show My characters; a stored value stays stored */
+const drawableCharacters=c=>c==='mine'?'theme':c;
+async function applyCharacters(chosen){
+  const v=drawableCharacters(chosen);
   let applied=null;
   await swapView(()=>{applied=THEME.setCharacters(v);SC_CACHE.clear();renderAll();});
   if(applied==null){applied=THEME.setCharacters(v);SC_CACHE.clear();renderAll();}
@@ -7975,7 +7978,7 @@ if(bridge){
   /* User themes (spec 040): register imported packs, then apply the saved theme id */
   THEME.setTheme.resolveUser=bridge.getUserTheme?(id)=>bridge.getUserTheme(id):null;
   const themeBoot=(v)=>{
-    THEME.setCharacters(v&&v.characters); /* spec 077 FR-064: the saved choice (an unknown value is the default) */
+    THEME.setCharacters(drawableCharacters(v&&v.characters)); /* spec 077 FR-064: the saved choice (an unknown value is the default) */
     let tid=(v&&v.theme)||'clean-office';
     /* FR-067: the old Cheeky Crew id from a run theme or the simulator's query: Clean Office with Cheeky, for this run (nothing saved) */
     if(tid===THEME.LEGACY_CREW_THEME){if(THEME.characters()==='theme')THEME.setCharacters('cheeky');tid='clean-office';}

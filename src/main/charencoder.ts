@@ -8,7 +8,7 @@
  * the fixed bundled `charencoder.js` runs through `executeJavaScript`, before any untrusted byte exists in the window (spec `## Changes`, 2026-10-31).
  */
 import { BrowserWindow, MessageChannelMain, session } from 'electron';
-import type { BrowserWindowConstructorOptions, Session } from 'electron';
+import type { BrowserWindowConstructorOptions, Session, WebContents } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ENCODER_FAILED, parseEncoderReply } from '../shared/charrules';
@@ -53,6 +53,29 @@ export function encoderWindowOptions(ses: Session): BrowserWindowConstructorOpti
   };
 }
 
+const pageIn = new WeakSet<WebContents>();
+/** The window with its guards, nothing loaded yet. `check-charencoder` attacks this same window. */
+export function createEncoderWindow(): BrowserWindow {
+  const win = new BrowserWindow(encoderWindowOptions(encoderSession()));
+  const wc = win.webContents;
+  wc.setWebRTCIPHandlingPolicy('disable_non_proxied_udp'); // WebRTC is outside the session's requests and this CSP: no UDP around them
+  wc.setWindowOpenHandler(() => ({ action: 'deny' }));
+  wc.on('will-navigate', (e) => e.preventDefault());
+  // `about:blank?x` makes no request and fires no `will-navigate`, yet would leave a page with no CSP: once the page is in, any other document ends the window, and the job with it
+  wc.on('did-start-navigation', (d) => { if (pageIn.has(wc) && d.isMainFrame && !d.isSameDocument && !win.isDestroyed()) win.destroy(); });
+  return win;
+}
+
+/** Writes the fixed page into `about:blank`, which makes no request, and runs the fixed script (see the top of this file). */
+export async function loadEncoderPage(wc: WebContents): Promise<void> {
+  await wc.loadURL('about:blank');
+  pageIn.add(wc);
+  const dir = path.join(__dirname, '..', 'renderer');
+  // both are fixed files of the app, never picture bytes or user text; JSON.stringify only quotes the page as a script string
+  await wc.executeJavaScript(`document.open();document.write(${JSON.stringify(fs.readFileSync(path.join(dir, 'charencoder.html'), 'utf8'))});document.close();0`);
+  await wc.executeJavaScript(`${fs.readFileSync(path.join(dir, 'charencoder.js'), 'utf8')}\n;0`);
+}
+
 export interface EncodeOptions {
   /** How long a job may take (default 20 s, FR-022); a test shortens it. */
   timeoutMs?: number;
@@ -80,16 +103,11 @@ export function encodeSheet(bytes: Uint8Array, header: { width: number; height: 
     const timer = setTimeout(refuse, opts.timeoutMs ?? ENCODER_TIMEOUT_MS);
     opts.signal?.addEventListener('abort', onAbort, { once: true });
     void (async () => {
-      win = new BrowserWindow(encoderWindowOptions(encoderSession()));
+      win = createEncoderWindow();
       const wc = win.webContents;
-      wc.setWindowOpenHandler(() => ({ action: 'deny' }));
-      wc.on('will-navigate', (e) => e.preventDefault());
       wc.on('render-process-gone', refuse);
       win.on('closed', refuse);
-      await wc.loadURL('about:blank');
-      const dir = path.join(__dirname, '..', 'renderer');
-      await wc.executeJavaScript(`document.open();document.write(${JSON.stringify(fs.readFileSync(path.join(dir, 'charencoder.html'), 'utf8'))});document.close();0`);
-      await wc.executeJavaScript(`${fs.readFileSync(path.join(dir, 'charencoder.js'), 'utf8')}\n;0`);
+      await loadEncoderPage(wc);
       if (settled) return;
       const { port1, port2 } = new MessageChannelMain();
       port = port1;

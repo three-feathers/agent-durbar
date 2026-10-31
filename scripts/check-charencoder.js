@@ -3,28 +3,123 @@
  *   - a transparent sheet and a flat-background sheet give four frames that pass webpcheck, with points inside the bounds;
  *   - a background too uneven to key out, a bleeding panel, undecodable bytes, a size unlike the header's and a non-square sheet are refused, each with its own sentence;
  *   - the window is sandboxed with no Node, its CSP is the spec's, nothing is left after each job, a timeout, a crash and a cancel refuse;
- *   - the session cancels every web request (a local server sees none).
+ *   - the session cancels every web request (a local server sees none);
+ *   - a hostile page in the real window: inline script, fetch, remote image, remote script and worker each raise a CSP violation, a navigation is refused or ends the window, window.open is refused, no webview, no
+ *     permission, no WebRTC UDP. `devTools: false` is checked in `test:charencoder`'s source test only: a hidden window did not open DevTools here either way.
  *
  *   npm run check:ui -- --only check-charencoder     (builds first)
  */
 const assert = require('assert');
 const http = require('http');
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, session } = require('electron');
 const path = require('path');
 const { helpers } = require('./driver-helpers');
 const { sheetPng, encodePng } = require('./fakes/png-sheet');
 
 const DIST = path.join(__dirname, '..', 'dist');
-const { encodeSheet, encoderSession, ENCODER_PARTITION } = require(path.join(DIST, 'main', 'charencoder.js'));
+const { createEncoderWindow, encodeSheet, encoderSession, loadEncoderPage, ENCODER_PARTITION } = require(path.join(DIST, 'main', 'charencoder.js'));
 const { checkImage } = require(path.join(DIST, 'shared', 'imagecheck.js'));
 const { checkFrames, stripChunks, webpInfo } = require(path.join(DIST, 'shared', 'webpcheck.js'));
 const { ENCODER_REFUSALS, ENCODER_FAILED, isStoredFace } = require(path.join(DIST, 'shared', 'charrules.js'));
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
+  // the permission handlers have no getter: caught on their way in, before the encoder's first job sets them
+  const permission = {};
+  const ses = session.fromPartition(ENCODER_PARTITION);
+  for (const [name, key] of [['setPermissionRequestHandler', 'request'], ['setPermissionCheckHandler', 'check']]) {
+    const real = ses[name].bind(ses);
+    ses[name] = (fn) => { permission[key] = fn; return real(fn); };
+  }
   const others = () => BrowserWindow.getAllWindows().filter((w) => w !== ctx.win);
   const encode = (bytes, opts) => { const h = checkImage(bytes); assert.ok(h.ok, 'the fixture passes the header check'); return encodeSheet(bytes, h, opts); };
   const noneLeft = (what) => assert.strictEqual(others().length, 0, `${what}: the encoder window is gone`);
+
+  // --- the guards: a page that turned hostile attacks the real window, in its own script, with a user gesture so a popup is not stopped by anything but the guard ---
+  {
+    let hits = 0;
+    const server = http.createServer((req, res) => { hits++; res.end('x'); });
+    server.on('connection', (s) => s.resume());
+    await new Promise((res) => server.listen(0, '127.0.0.1', res));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const win = createEncoderWindow();
+    const wc = win.webContents;
+    assert.strictEqual(typeof permission.request, 'function', 'a permission request handler is set');
+    assert.strictEqual(typeof permission.check, 'function', 'a permission check handler is set');
+    for (const p of ['media', 'geolocation', 'notifications', 'clipboard-read']) {
+      let answer = null;
+      permission.request(null, p, (v) => { answer = v; });
+      assert.strictEqual(answer, false, `${p}: a request is refused`);
+      assert.strictEqual(permission.check(null, p), false, `${p}: a check is refused`);
+    }
+    await loadEncoderPage(wc);
+    const prefs = wc.getLastWebPreferences();
+    assert.notStrictEqual(prefs.webviewTag, true, 'no webview tag');
+    assert.strictEqual(await wc.executeJavaScript(`typeof customElements.get('webview')`), 'undefined', 'no webview element in the page');
+    assert.strictEqual(wc.getWebRTCIPHandlingPolicy(), 'disable_non_proxied_udp', 'no WebRTC UDP around the session');
+    const seen = await wc.executeJavaScript(`(async()=>{
+      const violations=[];
+      document.addEventListener('securitypolicyviolation',(e)=>violations.push(e.effectiveDirective));
+      const load=(el)=>new Promise((res)=>{el.onload=()=>res('loaded');el.onerror=()=>res('blocked');});
+      const out={};
+      const inline=document.createElement('script');inline.textContent='window.__inlineRan=1';document.head.appendChild(inline);
+      out.inline=window.__inlineRan===1?'ran':'blocked';
+      out.fetch=await fetch(${JSON.stringify(base + '/fetch')}).then(()=>'loaded',()=>'blocked');
+      const img=new Image();const imgDone=load(img);img.src=${JSON.stringify(base + '/x.png')};out.image=await imgDone;
+      /* the control: what the CSP allows still works, so "blocked" above is the CSP's answer and not a broken probe */
+      const okImg=new Image();const okDone=load(okImg);okImg.src='data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';out.dataImage=await okDone;
+      const sc=document.createElement('script');const scDone=load(sc);sc.src=${JSON.stringify(base + '/x.js')};document.head.appendChild(sc);out.script=await scDone;
+      out.worker=await new Promise((res)=>{try{const w=new Worker(URL.createObjectURL(new Blob(['postMessage(1)'],{type:'text/javascript'})));w.onmessage=()=>res('ran');w.onerror=()=>res('blocked');}catch(e){res('blocked');}});
+      out.notification=typeof Notification==='undefined'?'none':Notification.permission;
+      for(let i=0;i<500&&violations.length<5;i++)await new Promise((r)=>setTimeout(r,10));
+      out.violations=violations.slice().sort();
+      return out;})()`, true);
+    assert.strictEqual(seen.inline, 'blocked', 'an inline script does not run');
+    assert.strictEqual(seen.fetch, 'blocked', 'fetch is blocked');
+    assert.strictEqual(seen.image, 'blocked', 'a remote image is blocked');
+    assert.strictEqual(seen.script, 'blocked', 'a remote script is blocked');
+    assert.strictEqual(seen.worker, 'blocked', 'a worker is blocked');
+    assert.strictEqual(seen.dataImage, 'loaded', 'the control: a data: image loads');
+    assert.notStrictEqual(seen.notification, 'granted', 'no notification permission');
+    for (const d of ['connect-src', 'img-src', 'worker-src']) assert.ok(seen.violations.includes(d), `the CSP itself refused ${d}: ${seen.violations}`);
+    assert.strictEqual(seen.violations.filter((d) => d.startsWith('script-src')).length, 2, `the CSP itself refused the inline and the remote script: ${seen.violations}`);
+    assert.strictEqual(hits, 0, 'the local server saw nothing from the page');
+    const url = `${base}/asked-through-the-session`;
+    assert.notStrictEqual(await ses.fetch(url).then(() => 'answered', () => 'failed'), 'answered', 'the session cancels a request the CSP never sees');
+    assert.strictEqual(hits, 0, 'the local server saw nothing from the session');
+    // window.open, with a user gesture
+    const before = BrowserWindow.getAllWindows().length;
+    assert.strictEqual(await wc.executeJavaScript(`String(window.open('about:blank'))`, true), 'null', 'window.open gives nothing');
+    assert.strictEqual(BrowserWindow.getAllWindows().length, before, 'and no window');
+    // a same-document move is harmless and stays
+    await wc.executeJavaScript(`location.hash='h';0`);
+    assert.strictEqual(win.isDestroyed(), false, 'a hash change does not end the window');
+    // any other document ends the window: first a navigation that makes no request and fires no will-navigate, and would drop the CSP
+    const ended = (w) => new Promise((res) => { w.once('closed', () => res('closed')); setTimeout(() => res('still open'), 10_000); });
+    let gone = ended(win);
+    void wc.executeJavaScript(`location.href='about:blank?navigated';0`, true).catch(() => undefined); // not awaited: its answer dies with the page
+    assert.strictEqual(await gone, 'closed', 'a navigation with no request ends the window');
+    // then one with a request
+    const win2 = createEncoderWindow();
+    await loadEncoderPage(win2.webContents);
+    gone = ended(win2);
+    void win2.webContents.executeJavaScript(`location.href=${JSON.stringify(base + '/away')};0`, true).catch(() => undefined);
+    assert.strictEqual(await gone, 'closed', 'a navigation with a request ends the window');
+    assert.strictEqual(hits, 0, 'the local server saw no navigation');
+    // will-navigate on its own, before the page is written: refused, the blank page stays
+    const win3 = createEncoderWindow();
+    const wc3 = win3.webContents;
+    await wc3.loadURL('about:blank');
+    const asked = new Promise((res) => { wc3.once('will-navigate', () => res(true)); setTimeout(() => res(false), 10_000); });
+    const settled = new Promise((res) => { wc3.once('did-fail-load', () => res('failed')); wc3.once('did-navigate', () => res('navigated')); setTimeout(() => res('stayed'), 2000); });
+    await wc3.executeJavaScript(`location.href=${JSON.stringify(base + '/away')};0`, true);
+    assert.ok(await asked, 'the navigation was tried (the check is not empty)');
+    assert.strictEqual(await settled, 'stayed', 'will-navigate refuses it');
+    assert.strictEqual(wc3.getURL(), 'about:blank');
+    win3.destroy();
+    await new Promise((res) => server.close(res));
+    noneLeft('the attacks');
+  }
 
   // --- good sheets (FR-022..FR-025) ---
   for (const kind of ['transparent', 'flat']) {
@@ -108,6 +203,11 @@ module.exports = async (ctx) => {
   assert.ok(await crashed, 'the job window was crashed');
   assert.ok(!r.ok && r.error === ENCODER_FAILED, 'a crash refuses');
   noneLeft('crash');
+  // a window that ends for any reason (the navigation guard above) ends its job
+  app.once('browser-window-created', (_e, w) => { w.webContents.once('did-finish-load', () => w.destroy()); });
+  r = await Promise.race([encode(big, { timeoutMs: 600_000 }), new Promise((res) => setTimeout(() => res('still waiting'), 60_000))]);
+  assert.ok(r !== 'still waiting' && !r.ok && r.error === ENCODER_FAILED, 'a window gone refuses');
+  noneLeft('window gone');
   const ac = new AbortController();
   const cancelled = encode(big, { signal: ac.signal });
   ac.abort();
@@ -139,7 +239,8 @@ module.exports = async (ctx) => {
     out.bad=await b.characterRename(saved.id,'a\\u0007b');out.bad2=await b.characterRename('../x','b');
     out.rename=await b.characterRename(saved.id,'Greta <B>');
     const running=b.characterGenerate('another person entirely','codex');const c=await b.characterCancel();out.cancel={c,r:await running};
-    out.pin=await b.characterPin('/w/a',saved.id);out.del=await b.characterDelete(saved.id);out.after=await b.characterList();
+    out.pinClosed=await b.characterPin('/closed/folder',saved.id);out.pinBadKey=await b.characterPin('relative',saved.id);out.pinUnknown=await b.characterPin('~/work/blog','my-ffffffffffff');
+    out.pin=await b.characterPin('~/work/blog/',saved.id);out.clearClosed=await b.characterPin('/closed/folder',null);out.del=await b.characterDelete(saved.id);out.after=await b.characterList();
     out.ideas=(await b.characterIdeas()).length;
     const caps=(await b.listAdapters()).map(a=>[a.id,!!(a.capabilities&&a.capabilities.imageGen)]);out.caps=caps;
     return out;})()`);
@@ -154,6 +255,7 @@ module.exports = async (ctx) => {
   assert.ok(!sim.bad.ok && !sim.bad2.ok, 'a control character and an unknown id are refused');
   assert.strictEqual(sim.rename.name, 'Greta B', 'angle brackets are removed');
   assert.ok(sim.cancel.c.ok && !sim.cancel.r.ok && sim.cancel.r.cancelled, 'cancel with no id ends the running generation');
+  assert.ok(!sim.pinClosed.ok && !sim.pinBadKey.ok && !sim.pinUnknown.ok && sim.clearClosed.ok, 'the simulator pins like main: ' + JSON.stringify([sim.pinClosed, sim.pinBadKey, sim.pinUnknown, sim.clearClosed]));
   assert.ok(sim.pin.ok && sim.del.ok && sim.del.pinsRemoved === 1 && sim.after.length === 0, 'delete removes the character and counts its pin');
   assert.strictEqual(sim.ideas, 24);
   const caps = Object.fromEntries(sim.caps);

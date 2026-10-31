@@ -11,7 +11,7 @@ import { pathToFileURL } from 'url';
 import { FakeCodexServer } from './fakes/codex-app-server';
 import type { FakeChild, FakeImageMode } from './fakes/codex-app-server';
 import * as ts from 'typescript';
-import { cleanCharacterName, parseEncoderReply } from '../src/shared/charrules';
+import { cleanCharacterName, parseEncoderReply, pinDecision } from '../src/shared/charrules';
 import type { EncoderResult } from '../src/shared/charrules';
 import { MARK_CLOSE, MARK_OPEN, SHEET_NAME } from '../src/shared/chargen';
 
@@ -24,9 +24,12 @@ const art = fs.readdirSync(artDir).filter((f) => f.endsWith('.webp')).slice(0, 4
 const FACE = [[176, 150], [176, 150], [176, 150], [176, 150]];
 const encodeOk = (): Promise<EncoderResult> => Promise.resolve(parseEncoderReply({ ok: true, frames: art, face: FACE }));
 
+/** Names both copies of the rule must answer alike on (spec 096 FR-031; the review's invisible names first). */
+const NAME_CORPUS = ['\u200D', '\uFE0F', '\u034F', '\u3164', '\u2800', '\u115F', '\u1160', '\uFFA0', '\uFE00', '\u{E0100}', '\u0301', 'a\u200Db', '\u200Da', 'a\u200D', '\u{1F469}\u200D', '\u200D\u{1F4BB}', 'a\u200D\u{1F469}', '\u{1F469}\u200D\u{1F4BB}', '\u{1F469}\u{1F3FD}\u200D\u{1F4BB}', '\u2764\uFE0F', '1\uFE0F\u20E3', '\u{1F1E8}\u{1F1ED}', 'a\uFE0F', 'x\u0301', '\uE000', '\uD83D'];
 const tick = (): Promise<void> => new Promise((r) => setImmediate(r));
-async function until(f: () => boolean, what: string): Promise<void> {
-  for (let i = 0; i < 2000; i++) { if (f()) return; await new Promise((r) => setTimeout(r, 2)); }
+async function until(f: () => boolean | Promise<boolean>, what: string): Promise<void> {
+  const end = Date.now() + 30_000;
+  while (Date.now() < end) { if (await f()) return; await new Promise((r) => setTimeout(r, 2)); }
   assert.fail('timed out waiting for ' + what);
 }
 const tempFolders = (): string[] => fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith('durbar-img-'));
@@ -72,6 +75,11 @@ function imageAdapter(server: FakeCodexServer, log: string[]): Rec {
 
 async function main(): Promise<void> {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-charipc-'));
+  // its own OS temp folder: this suite lists and removes `durbar-img-*` there, and other worktrees' runs share the real one
+  const ownTemp = path.join(base, 'tmp');
+  fs.mkdirSync(ownTemp);
+  for (const k of ['TMPDIR', 'TEMP', 'TMP']) process.env[k] = ownTemp;
+  assert.strictEqual(os.tmpdir(), ownTemp, 'os.tmpdir follows the environment');
   const electronPath = require.resolve('electron');
   const handlers = new Map<string, Handler>();
   const userData = path.join(base, 'userData');
@@ -275,10 +283,10 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(await call('character:cancel'), { ok: false }, 'nothing to cancel now');
     // an abort during the encoder
     mode('sheet');
-    encode = (_b, _h, o) => new Promise((resolve) => o.signal?.addEventListener('abort', () => resolve({ ok: false, error: 'The picture could not be read. Try again.' })));
+    let inEncoder = false;
+    encode = (_b, _h, o) => new Promise((resolve) => { inEncoder = true; o.signal?.addEventListener('abort', () => resolve({ ok: false, error: 'The picture could not be read. Try again.' })); });
     { const r = call('character:generate', DESC, 'codex');
-      await until(() => server.current.requests('turn/start').length === 1, 'the turn');
-      await new Promise((res) => setTimeout(res, 30));
+      await until(() => inEncoder, 'the encoder to start');
       assert.deepStrictEqual(await call('character:cancel'), { ok: true });
       assert.deepStrictEqual(await r, { ok: false, cancelled: true }, 'a cancel during the encoder holds nothing'); }
     encode = encodeOk;
@@ -332,6 +340,13 @@ async function main(): Promise<void> {
     {
       const home = os.homedir();
       const raw = 'A Tall Woman With Round Glasses';
+      // an echo inside JSON, once or twice: quotes, a backslash and a line break in the raw text (FR-032)
+      const tricky = 'a "tall" woman\nwith a back\\slash';
+      const cleanedTricky = 'a "tall" woman with a back\\slash';
+      for (const form of [tricky, cleanedTricky, JSON.stringify(tricky), JSON.stringify(cleanedTricky), JSON.stringify(JSON.stringify(tricky)), JSON.stringify(JSON.stringify(cleanedTricky)), JSON.stringify(tricky.toUpperCase())]) {
+        const out = safeGenerateError(new Error(`codex said: {"prompt":${form}}`), [tricky, cleanedTricky]);
+        assert.ok(!/tall|woman|back/i.test(out), 'no echo left: ' + out);
+      }
       const token = 'ghp_' + 'a1B2c3D4e5'.repeat(4);
       adapter = { id: 'codex', capabilities: { imageGen: true }, generateImage: () => Promise.reject(new Error(`refused "${DESC}" and ${raw} in ${home}/secret.txt with ${token} ${'x'.repeat(400)}`)) };
       const r = await call('character:generate', DESC, 'codex');
@@ -341,6 +356,7 @@ async function main(): Promise<void> {
       assert.strictEqual(safeGenerateError(new Error(DESC), [DESC]), 'Codex could not make the picture. Try again.', 'nothing but the echo');
       assert.strictEqual(safeGenerateError('not an error', [DESC]), 'Codex could not make the picture. Try again.');
       assert.strictEqual(safeGenerateError(new Error('no room (.*)'), ['(.*)']), 'no room [your description]', 'the description is literal text, not a pattern');
+      assert.ok(!/woman/.test(safeGenerateError(new Error(`in ${JSON.stringify('a tall\nwoman')}`), ['a tall\nwoman'])), 'a JSON-escaped line break');
       const secretCut = safeGenerateError(new Error('x'.repeat(190) + ' ' + token), []);
       assert.ok(!secretCut.includes('ghp_a1B2'), 'masked before the cut: ' + secretCut);
     }
@@ -378,7 +394,7 @@ async function main(): Promise<void> {
     // --- pins (FR-033, FR-031) ---
     {
       const pinned = await call('character:pin', '/work/app/', ours);
-      assert.deepStrictEqual(pinned, { ok: true, pins: process.platform === 'win32' ? { '/work/app': ours } : { '/work/app': ours } }, 'the key is normalised');
+      assert.deepStrictEqual(pinned, { ok: true, pins: { '/work/app': ours } }, 'the key is normalised');
       assert.strictEqual((await call('settings:get') as Rec).characterMotion, true);
       assert.deepStrictEqual((await call('settings:get') as Rec).characterPins, { '/work/app': ours });
       assert.strictEqual((await call('character:pin', '/closed/folder', ours)).ok, false, 'a folder that is not open');
@@ -402,6 +418,33 @@ async function main(): Promise<void> {
       fs.writeFileSync(file, JSON.stringify(onDisk));
       settings.load();
       assert.deepStrictEqual((await call('settings:get') as Rec).characterPins, { '/work/app': ours, '/work/site': ours }, 'only pins to listed ids');
+      // a pin that replied ok is one that a restart reads back: Windows keys, whatever this machine is (the drive root normalises to `c:`)
+      {
+        const quick = new Map<string, Handler>();
+        const keepHandle = fake.ipcMain.handle;
+        fake.ipcMain.handle = (ch: string, fn: Handler) => quick.set(ch, fn);
+        const winFile = path.join(base, 'win-settings.json');
+        const winSettings = new SettingsStore(winFile);
+        winSettings.load();
+        const winIpc = register({
+          dev: {} as never, registry: { has: () => true } as never, router: { instance: () => adapter } as never, getSettingsStore: () => winSettings, encode: encodeOk, platform: 'win32',
+          openFolderKeys: () => ['C:\\', 'C:\\Work\\App', '\\\\srv\\share\\repo', 'D:/x/'],
+        });
+        fake.ipcMain.handle = keepHandle;
+        const q = async (...a: unknown[]): Promise<Rec> => (await quick.get('character:pin')!(win, ...a)) as Rec;
+        const want: Record<string, string> = {};
+        for (const [asked, stored] of [['C:\\', 'c:'], ['c:/', 'c:'], ['C:\\work\\app\\', 'c:/work/app'], ['\\\\SRV\\share\\repo', '//srv/share/repo'], ['d:\\X', 'd:/x']] as const) {
+          want[stored] = ours;
+          const r = await q(asked, ours);
+          assert.deepStrictEqual(r, { ok: true, pins: want }, 'pinned ' + asked);
+          assert.deepStrictEqual(new SettingsStore(winFile).load().characterPins, want, 'a restart reads it back: ' + asked);
+        }
+        assert.strictEqual((await q('C:\\Other', ours)).ok, false, 'a folder that is not open');
+        assert.strictEqual((await q('C:relative', ours)).ok, false, 'a drive-relative path');
+        assert.deepStrictEqual((await q('C:\\', null)).ok, true, 'a drive root can be cleared');
+        assert.ok(!('c:' in (new SettingsStore(winFile).load().characterPins ?? {})), 'and stays cleared');
+        assert.strictEqual(winIpc.ids().includes(ours), true);
+      }
       // the cap of 500
       const many = Object.fromEntries(Array.from({ length: 600 }, (_, i) => [`/f/${i}`, ours]));
       fs.writeFileSync(file, JSON.stringify({ version: 1, characterPins: many }));
@@ -452,8 +495,8 @@ async function main(): Promise<void> {
       mode('sheet');
       const t = await q('character:generate', DESC, 'codex');
       assert.strictEqual(t.ok, true);
-      await new Promise((res) => setTimeout(res, 60));
-      assert.strictEqual((await q('character:save', t.tryId, 'x')).ok, false, 'the try is gone after its time');
+      // a refused name says which: "no longer held" only once the try is gone
+      await until(async () => /no longer held/.test(String((await q('character:save', t.tryId, 'a\u0007b')).error)), 'the try to go after its time');
       // main's own time limit, for an adapter that never answers
       adapter = { id: 'codex', capabilities: { imageGen: true }, generateImage: () => new Promise(() => undefined) };
       assert.deepStrictEqual(await q('character:generate', DESC, 'codex'), { ok: false, error: 'Codex took too long. Try again.' });
@@ -521,9 +564,26 @@ async function main(): Promise<void> {
       assert.ok(block, 'the marked block is there');
       const js = ts.transpileModule(block as string, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
       const simRule = new Function(`${js}; return simCharacterName;`)() as (r: unknown) => unknown;
-      for (const v of ['Greta', '  Greta B ', '<b>x</b>', '{y}', '<>', '', ' ', 'x'.repeat(40), 'x'.repeat(41), 'x'.repeat(161), '\u{1F600}'.repeat(40), '\u{1F469}\u200D\u{1F4BB}', 'a\nb', 'a\u0007b', 'a\u202Eb', 'a\u200Bb', 'a\u2028b', 7, null, undefined, {}]) {
+      for (const v of [...NAME_CORPUS, 'Greta', '  Greta B ', '<b>x</b>', '{y}', '<>', '', ' ', 'x'.repeat(40), 'x'.repeat(41), 'x'.repeat(161), '\u{1F600}'.repeat(40), '\u{1F469}\u200D\u{1F4BB}', 'a\nb', 'a\u0007b', 'a\u202Eb', 'a\u200Bb', 'a\u2028b', 7, null, undefined, {}]) {
         assert.deepStrictEqual(simRule(v), cleanCharacterName(v), 'the same answer for ' + JSON.stringify(v));
       }
+    }
+    // and its copy of the pin rule (finding of the review: closed folders, UNC paths)
+    {
+      const sim = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'sim.ts'), 'utf8');
+      const block = /\/\* simcharpin:begin[\s\S]*?\*\/([\s\S]*?)\/\* simcharpin:end \*\//.exec(sim)?.[1];
+      assert.ok(block, 'the marked pin block is there');
+      const js = ts.transpileModule(block as string, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+      const simPin = new Function(`${js}; return simPinDecision;`)() as typeof pinDecision;
+      const known = (x: unknown): boolean => x === 'my-0123456789ab';
+      const keys: unknown[] = ['~/', '/work/app', '/work/app/', '/closed', '~/work/blog', '~/work/none', 'C:\\', 'c:', 'c:/', 'C:\\Work\\', 'C:relative', '\\\\srv\\share', '//srv/share', '/', '', ' ', 'relative', '..', '../x', '__proto__', '/a\nb', '/' + 'x'.repeat(5000), null, undefined, 7, {}];
+      for (const platform of ['win32', 'linux', 'darwin']) {
+        const ctx = { known, platform, open: ['/work/app', '~/work/blog', 'C:\\', 'c:/work', '\\\\srv\\share'] };
+        for (const k of keys) for (const id of ['my-0123456789ab', 'my-ffffffffffff', null, undefined, 7]) assert.deepStrictEqual(simPin(k, id, ctx), pinDecision(k, id, ctx), `the same answer for ${JSON.stringify(k)}, ${String(id)} on ${platform}`);
+      }
+      assert.deepStrictEqual(pinDecision('/closed', null, { known, platform: 'linux', open: [] }), { ok: true, key: '/closed' }, 'a closed folder can be cleared');
+      assert.strictEqual(pinDecision('/closed', 'my-0123456789ab', { known, platform: 'linux', open: [] }).ok, false, 'not set');
+      assert.strictEqual(pinDecision('~/', null, { known, platform: 'linux', open: [] }).ok, false, 'what normalises to a key the file would drop is refused, not answered ok');
     }
     noTemps('at the end');
     realConsole.log('test-charipc: ok');
@@ -532,7 +592,6 @@ async function main(): Promise<void> {
     if (saved) require.cache[electronPath] = saved;
     else delete require.cache[electronPath];
     fs.rmSync(base, { recursive: true, force: true });
-    for (const f of tempFolders()) if (!startTemps.has(f)) fs.rmSync(path.join(os.tmpdir(), f), { recursive: true, force: true });
   }
 }
 process.exitCode = 1;

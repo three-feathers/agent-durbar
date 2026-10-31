@@ -198,20 +198,40 @@ function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: strin
 /* simcharname:begin (spec 096 FR-031, the same rule as `cleanCharacterName` in src/shared/charrules.ts; `test:charipc` compares them) */
 function simCharacterName(raw: unknown): { ok: true; name: string } | { ok: false; error: string } {
   if (typeof raw !== 'string' || raw.length > 160) return { ok: false, error: 'Use 1 to 40 characters.' };
-  if (/[\p{Cc}\p{Zl}\p{Zp}]|[^\P{Cf}\u200D]/u.test(raw)) return { ok: false, error: 'Remove control or hidden characters from the name.' };
+  if (/[\p{C}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800]/u.test(raw.replace(/\p{Extended_Pictographic}\p{Emoji_Modifier}?[\uFE0E\uFE0F]?(?:\u200D\p{Extended_Pictographic}\p{Emoji_Modifier}?[\uFE0E\uFE0F]?)*|[0-9#*]\uFE0F\u20E3/gu, 'x'))) return { ok: false, error: 'Remove control or hidden characters from the name.' };
   const name = raw.replace(/[<>{}]/g, '').trim();
   const n = Array.from(name).length;
-  if (n < 1 || n > 40) return { ok: false, error: 'Use 1 to 40 characters.' };
+  if (n < 1 || n > 40 || !/[\p{L}\p{N}\p{P}\p{S}]/u.test(name)) return { ok: false, error: 'Use 1 to 40 characters.' };
   return { ok: true, name };
 }
 /* simcharname:end */
+
+/* simcharpin:begin (spec 096 FR-031, FR-033, the same rule as `pinDecision` in src/shared/charrules.ts, `normaliseFolderKey` included; `test:charipc` compares them) */
+function simPinDecision(folderKey: unknown, id: unknown, ctx: { known(id: unknown): boolean; open: readonly string[]; platform: string }): { ok: true; key: string } | { ok: false; error: string } {
+  const good = (v: unknown): v is string => typeof v === 'string' && v.length <= 4096 && /^(?:\/|~\/|[A-Za-z]:(?:[\\/]|$)|\\\\)/.test(v) && !/[\p{Cc}\p{Zl}\p{Zp}]/u.test(v);
+  const norm = (p: string): string => {
+    let t = String(p ?? '').trim();
+    if (ctx.platform === 'win32') t = t.replace(/\\/g, '/').toLowerCase();
+    t = t.replace(/[\\/]+$/g, '');
+    return t || '/';
+  };
+  if (!good(folderKey)) return { ok: false, error: 'That folder cannot be used.' };
+  const key = norm(folderKey);
+  if (!good(key)) return { ok: false, error: 'That folder cannot be used.' };
+  if (id !== null) {
+    if (!ctx.known(id)) return { ok: false, error: 'That character is not in the list.' };
+    if (!ctx.open.some((k) => norm(k) === key)) return { ok: false, error: 'That folder is not open.' };
+  }
+  return { ok: true, key };
+}
+/* simcharpin:end */
 
 /**
  * Spec 096 FR-070 (T038): the fake image generator and a store in the page, at zero credits. `generateCharacter` waits 1.5 s (0.2 s with `simfast=1`, the drivers' flag) and draws four
  * frames on a canvas: a simple bust in a colour from a hash of the description, the blink frame with the eyes closed. They reach the window through the same bridge calls as main's.
  * Nothing is kept across a reload, and the description is not kept at all.
  */
-function simCharactersApi(qs: URLSearchParams): Pick<DurbarApi, 'characterGenerate' | 'characterCancel' | 'characterSave' | 'characterList' | 'characterFrames' | 'characterRename' | 'characterDelete' | 'characterExport' | 'characterPin' | 'characterIdeas'> & { simPins(): Record<string, string> } {
+function simCharactersApi(qs: URLSearchParams, openFolders: () => string[]): Pick<DurbarApi, 'characterGenerate' | 'characterCancel' | 'characterSave' | 'characterList' | 'characterFrames' | 'characterRename' | 'characterDelete' | 'characterExport' | 'characterPin' | 'characterIdeas'> & { simPins(): Record<string, string> } {
   type Frames = NonNullable<CharacterTryResult['frames']>;
   type Face = NonNullable<CharacterTryResult['face']>;
   const FACE: Face = { working: [176, 150], waiting: [176, 150], resting: [176, 150] };
@@ -308,10 +328,13 @@ function simCharactersApi(qs: URLSearchParams): Pick<DurbarApi, 'characterGenera
     },
     characterExport: async (id) => (find(id) ? { ok: true, to: '/simulated/export' } : UNKNOWN), // the simulator writes nothing
     characterPin: async (folderKey, id) => {
-      if (typeof folderKey !== 'string' || !/^(?:\/|[A-Za-z]:[\\/])/.test(folderKey)) return { ok: false, error: 'That folder cannot be used.' };
-      if (id !== null && !find(id)) return UNKNOWN;
-      if (id === null) delete pins[folderKey];
-      else Object.defineProperty(pins, folderKey, { value: id, enumerable: true, writable: true, configurable: true });
+      const d = simPinDecision(folderKey, id, { known: (x) => !!find(x), open: openFolders(), platform: /Windows/.test(navigator.userAgent) ? 'win32' : 'other' });
+      if (!d.ok) return d;
+      if (id === null) delete pins[d.key];
+      else {
+        if (!Object.prototype.hasOwnProperty.call(pins, d.key) && Object.keys(pins).length >= 500) return { ok: false, error: 'The pin could not be saved.' };
+        Object.defineProperty(pins, d.key, { value: id, enumerable: true, writable: true, configurable: true });
+      }
       return { ok: true, pins: { ...pins } };
     },
     characterIdeas: async () => IDEAS.slice(),
@@ -2103,7 +2126,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       simUserTheme = null;
     }
     const simNotesBridge = simNotesApi(simQuery, (id) => { const s = sims.find((x) => x.info.id === id); return s ? { key: s.info.workspaceFile || s.info.cwd, name: (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name, session: s.info.id } : undefined; }); // spec 083 FR-060
-    const { simPins, ...simCharacters_ } = simCharactersApi(simQuery); // spec 096 FR-070
+    const { simPins, ...simCharacters_ } = simCharactersApi(simQuery, () => sims.map((x) => x.info.workspaceFile || x.info.cwd)); // spec 096 FR-070
     let simCharacterMotion = true;
     const capApi: Partial<DurbarApi> = {
       ...simCharacters_,

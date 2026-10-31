@@ -2,6 +2,7 @@
  * Rules for a generated character that main, the store and the tests share (spec 096 FR-023, FR-025, FR-030, FR-031). Pure: no Electron, no I/O.
  * What the sandboxed encoder window sends back is untrusted: `parseEncoderReply` takes only the known fields and checks them again.
  */
+import { normaliseFolderKey } from './usagedoc';
 import { MAX_FRAME_BYTES, checkFrames, stripChunks } from './webpcheck';
 
 export const CHARACTER_ID_RE = /^my-[0-9a-f]{12}$/;
@@ -36,9 +37,27 @@ export function isStoredFace(p: unknown): p is FacePoint {
 /** FR-033: at most this many pins. */
 export const MAX_CHARACTER_PINS = 500;
 const MAX_FOLDER_KEY = 4096;
-/** A folder key as `folderKeyOf` gives it: an absolute POSIX or Windows path of a sane length, no control characters. */
+/**
+ * A folder key as `folderKeyOf` gives it, before or after `normaliseFolderKey`: an absolute POSIX, Windows or UNC path of a sane length, no control characters. A Windows drive root
+ * normalises to `c:`, so that form counts; `~/` is how the simulator names its folders (a real key never has it, and a pin is only set on a folder that is open).
+ */
 export function isFolderKey(v: unknown): v is string {
-  return typeof v === 'string' && v.length <= MAX_FOLDER_KEY && /^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(v) && !/[\p{Cc}\p{Zl}\p{Zp}]/u.test(v);
+  return typeof v === 'string' && v.length <= MAX_FOLDER_KEY && /^(?:\/|~\/|[A-Za-z]:(?:[\\/]|$)|\\\\)/.test(v) && !/[\p{Cc}\p{Zl}\p{Zp}]/u.test(v);
+}
+export type PinDecision = { ok: true; key: string } | { ok: false; error: string };
+/**
+ * FR-031, FR-033: whether a pin may be set (`id`) or cleared (`null`), and the key to store. The key is checked again after normalising, since `parseCharacterPins` reads it back. A pin
+ * is set only on a folder open now and a listed id; it can always be cleared, since its folder may not be open (*Edge cases*). `sim.ts` has a marked copy (`test:charipc`).
+ */
+export function pinDecision(folderKey: unknown, id: unknown, ctx: { known(id: unknown): boolean; open: readonly string[]; platform: string }): PinDecision {
+  if (!isFolderKey(folderKey)) return { ok: false, error: 'That folder cannot be used.' };
+  const key = normaliseFolderKey(folderKey, ctx.platform);
+  if (!isFolderKey(key)) return { ok: false, error: 'That folder cannot be used.' };
+  if (id !== null) {
+    if (!ctx.known(id)) return { ok: false, error: 'That character is not in the list.' };
+    if (!ctx.open.some((k) => normaliseFolderKey(k, ctx.platform) === key)) return { ok: false, error: 'That folder is not open.' };
+  }
+  return { ok: true, key };
 }
 /** FR-033, the settings file's `characterPins`: folder key to id; anything else is dropped, and at most 500 are kept. Which ids still exist is checked where they are listed. */
 export function parseCharacterPins(v: unknown): Record<string, string> {
@@ -48,19 +67,22 @@ export function parseCharacterPins(v: unknown): Record<string, string> {
 }
 
 export type NameResult = { ok: true; name: string } | { ok: false; error: string };
-// control characters, line separators and invisible format characters, except the joiner emoji sequences need (as `cleanDescription`)
-const NAME_REFUSED_RE = /[\p{Cc}\p{Zl}\p{Zp}]|[^\P{Cf}\u200D]/u;
+// a real emoji sequence may hold a joiner and a variation selector; anywhere else they are hidden characters
+const NAME_EMOJI_RE = /\p{Extended_Pictographic}\p{Emoji_Modifier}?[\uFE0E\uFE0F]?(?:\u200D\p{Extended_Pictographic}\p{Emoji_Modifier}?[\uFE0E\uFE0F]?)*|[0-9#*]\uFE0F\u20E3/gu;
+// control, format, private and unassigned characters, line separators, what fonts draw as nothing (Hangul fillers, grapheme joiner, variation selectors) and the blank braille cell
+const NAME_REFUSED_RE = /[\p{C}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800]/u;
+const NAME_VISIBLE_RE = /[\p{L}\p{N}\p{P}\p{S}]/u;
 
 /**
- * FR-031, plain text of 1-40 characters (code points): `<`, `>`, `{` and `}` are removed. A name holding a control or hidden character is refused,
- * not cleaned (US4 scenario 4; coordinator's choice of 2026-10-31, spec `## Changes`), and so is a name too long: nothing is cut silently.
+ * FR-031, plain text of 1-40 characters (code points): `<`, `>`, `{` and `}` are removed. A name holding a control or hidden character is refused, not cleaned (US4 scenario 4;
+ * coordinator's choice of 2026-10-31, spec `## Changes`), and so are a name too long (nothing is cut silently) and a name with nothing to see, which would be blank in the list and export.
  */
 export function cleanCharacterName(raw: unknown): NameResult {
   if (typeof raw !== 'string' || raw.length > 4 * MAX_CHARACTER_NAME) return { ok: false, error: `Use 1 to ${MAX_CHARACTER_NAME} characters.` };
-  if (NAME_REFUSED_RE.test(raw)) return { ok: false, error: 'Remove control or hidden characters from the name.' };
+  if (NAME_REFUSED_RE.test(raw.replace(NAME_EMOJI_RE, 'x'))) return { ok: false, error: 'Remove control or hidden characters from the name.' };
   const name = raw.replace(/[<>{}]/g, '').trim();
   const n = Array.from(name).length;
-  if (n < 1 || n > MAX_CHARACTER_NAME) return { ok: false, error: `Use 1 to ${MAX_CHARACTER_NAME} characters.` };
+  if (n < 1 || n > MAX_CHARACTER_NAME || !NAME_VISIBLE_RE.test(name)) return { ok: false, error: `Use 1 to ${MAX_CHARACTER_NAME} characters.` };
   return { ok: true, name };
 }
 
