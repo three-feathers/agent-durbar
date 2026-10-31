@@ -884,6 +884,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .more-it svg{width:14px;height:14px;flex:none}
 .more-it:hover,.more-it:focus-visible{background:var(--surface-2)}
 .more-it:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.ow-note{margin:0;padding:4px 12px 6px;font-size:var(--t5-size);color:var(--muted);line-height:1.35;max-width:36ch}
 .more-it.danger{color:var(--red-ink)}
 .more-it .mt{display:flex;flex-direction:column;gap:1px}
 .more-it .mt small{font-size:var(--t5-size);color:var(--muted);font-weight:400;text-wrap:balance} /* spec 052 FR-165: a hint is one line or two even ones, never an orphan word */

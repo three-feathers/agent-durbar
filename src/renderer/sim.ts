@@ -3274,6 +3274,13 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           { type: 'assistant' as const, text: 'You are welcome. This is the last reply.' },
         ] } }),
       openInVSCode: async () => ({ ok: true }),
+      // spec 009 FR-019 (issue #685): fixed stand-ins; nothing is launched in the simulator
+      openWithTargets: async () => [
+        { id: 'vscode', label: 'VS Code', hint: 'Opens this folder in VS Code' },
+        { id: 'vscodium', label: 'VSCodium', hint: 'Opens this folder in VSCodium' },
+        { id: 'folder', label: 'Show in folder', hint: 'Opens it in Finder' },
+      ],
+      openWith: async (_id: string, target: string) => ({ ok: true, edition: target === 'folder' ? 'the file manager' : target === 'vscodium' ? 'VSCodium' : 'VS Code' }),
       // spec 063 FR-006: a fixed git status per agent (no git repository needed): branch, 0-4 changed files, one non-repository folder
       gitStatus: async (id: string) => {
         const n = Number(String(id).replace(/\D/g, '')) || 0;
