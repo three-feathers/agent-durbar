@@ -535,7 +535,7 @@ async function main(): Promise<void> {
     const ino = nodeFs.statSync(path.join(outside, 'notes.md')).ino;
     const real = path.join(path.dirname(folder), 'real-durbar');
     const stop = path.join(path.dirname(folder), 'stop');
-    const code = `const fs=require('fs');const [d,real,out,stop]=process.argv.slice(1);const end=Date.now()+120000;let n=0;process.stdout.write('R');
+    const code = `const fs=require('fs');const [d,real,out,stop]=process.argv.slice(1);const end=Date.now()+60000;let n=0;process.stdout.write('R');
       while(!fs.existsSync(stop)&&Date.now()<end){try{fs.renameSync(d,real);fs.symlinkSync(out,d,'dir');for(let k=0;k<(n%7)*4;k++)fs.statSync(out);fs.unlinkSync(d);fs.renameSync(real,d);n++;}catch(e){try{if(!fs.existsSync(d)&&fs.existsSync(real))fs.renameSync(real,d);}catch(_){}}}
       try{if(fs.lstatSync(d).isSymbolicLink())fs.unlinkSync(d);}catch(_){}try{if(fs.existsSync(real))fs.renameSync(real,d);}catch(_){}process.stdout.write(String(n));`;
     nodeFs.writeFileSync(path.join(folder, '.durbar', 'keep.txt'), 'keeps .durbar from being removed when empty');
@@ -546,12 +546,14 @@ async function main(): Promise<void> {
     await new Promise<void>((res) => { const t = (): void => { if (swaps.includes('R')) res(); else setImmediate(t); }; t(); }); // the swapper runs
     const f = (): NotesFile => fw;
     let deleted = 0, exposed = 0, restored = 0;
-    const MAX_ATTEMPTS = 200000, WANT = 5; // until 5 exposures are seen, bounded
+    // review 3 of PR 931: a fixed, bounded number of attempts; the exposures are REPORTED, not asserted (they are chance, FR-048b).
+    // The proof is the deterministic hook tests above; this run only shows that a real racing process deletes no outside file.
+    const MAX_ATTEMPTS = 20000;
     let attempts = 0;
     // count the exposures: a rename of notes.md that landed in the other folder through the swapped link (the dangerous rounds)
     const watched = { ...nodeFs, renameSync: (a: nodeFs.PathLike, b: nodeFs.PathLike): void => { nodeFs.renameSync(a, b); if (String(a) === md(folder) && nodeFs.existsSync(path.join(outside, path.basename(String(b))))) exposed++; } } as unknown as NotesFileFs;
     const fw = new NotesFile({ fs: watched, now: tickClock });
-    for (let i = 0; i < MAX_ATTEMPTS && exposed < WANT; i++) {
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
       attempts++;
       try { if (nodeFs.lstatSync(path.join(folder, '.durbar')).isDirectory()) nodeFs.writeFileSync(md(folder), bytes, { flag: 'wx' }); } catch { /* there already, or swapped: next round */ }
       if (f().remove(folder, mirror).removed) deleted++;
@@ -565,7 +567,7 @@ async function main(): Promise<void> {
     nodeFs.writeFileSync(stop, '');
     await exited;
     console.log(`  (swapper: ${swaps.replace('R', '')} swaps; ${attempts} delete attempts, ${deleted} deletes of Durbar's own file, ${exposed} renames that landed in the other folder (exposures), ${restored} of them left under the random name and put back by the test)`);
-    assert.ok(Number(swaps.replace('R', '')) > 0 && deleted > 0 && exposed > 0, `the race really ran: swaps, deletes and exposures all happened (${exposed} exposures)`);
+    assert.ok(swaps.startsWith('R'), 'the swapper process ran');
     const left = nodeFs.readdirSync(outside).map((n) => nodeFs.statSync(path.join(outside, n)).ino);
     assert.ok(left.includes(ino), `the outside file survived ${swaps} swaps and ${deleted} deletes (${nodeFs.readdirSync(outside).join()})`);
   });
@@ -607,6 +609,86 @@ async function main(): Promise<void> {
     q.folders.upsert({ workspace: tabbed, permMode: 'read-only' });
     const t = await q.ops.setFile('t1', true, { exclude: true }) as { ok: boolean; error?: string };
     assert.strictEqual(t.error, "This folder's name cannot be written to .git/info/exclude safely. The switch stays off.");
+  });
+  /** A folder on a real disk (os.tmpdir() may be tmpfs): /var/tmp on POSIX when it is there, else the OS temp folder. */
+  /** Whether this file system records a birth time, asked of the OS directly (not of the code under test). */
+  const hasBirth = (p: string): boolean => nodeFs.statSync(p, { bigint: true }).birthtimeNs > 86_400_000_000_000n;
+  const diskRoot = ((): string => { const c = posix && nodeFs.existsSync('/var/tmp') ? '/var/tmp' : os.tmpdir(); return realOf(nodeFs.mkdtempSync(path.join(c, 'durbar-notesswitch-disk-'))); })();
+  await test('PR 931 review 3, point 1: the identity tells a folder deleted and made again at the same path apart (birth time); a file added inside keeps it', () => {
+    const f = new NotesFile();
+    const dir = path.join(diskRoot, 'proj');
+    nodeFs.mkdirSync(dir);
+    nodeFs.writeFileSync(path.join(dir, 'a.txt'), 'x');
+    const id1 = f.folderId(dir)!;
+    if (!hasBirth(dir)) { skip('this file system gives no birth time: only device and inode are compared (spec 083 known gap)'); return; }
+    nodeFs.writeFileSync(path.join(dir, 'b.txt'), 'y');
+    assert.ok(NotesFile.sameFolder(id1, f.folderId(dir)!), 'a file added inside: the same folder');
+    let reused = 0;
+    for (let i = 0; i < 20; i++) {
+      nodeFs.rmSync(dir, { recursive: true }); // the test's own folder
+      nodeFs.mkdirSync(dir);
+      nodeFs.writeFileSync(path.join(dir, 'a.txt'), 'x');
+      const id2 = f.folderId(dir)!;
+      if (id2.split(':')[1] === id1.split(':')[1]) reused++;
+      assert.ok(!NotesFile.sameFolder(id1, id2), `deleted and made again (${reused} times the inode number was reused): not the same folder`);
+    }
+    console.log(`  (inode number reused in ${reused} of 20 recreations; the birth time told them apart)`);
+    assert.ok(NotesFile.sameFolder('1:2', '1:2:3') && !NotesFile.sameFolder('1:2:3', '1:2:4') && !NotesFile.sameFolder('1:2', '9:2'), 'birth time compared only when both have it');
+  });
+  await test('PR 931 review 3, point 2: the identity is recorded at turn-on, so a folder replaced before the first write is not written into', async () => {
+    let locked = false;
+    const r = rig({ pending: () => locked });
+    okOf(await r.ops.setFile('a1', true));
+    const ff = await r.store.getFileFolder(r.folder);
+    assert.ok(ff && NotesFile.sameFolder(ff, r.file.folderId(r.folder)!), 'recorded at turn-on');
+    if (!hasBirth(r.folder)) { skip('no birth time here: a delete and re-create is not detected (spec 083 known gap)'); return; }
+    // no write has happened since (as when the vault locked right after the box): no mirror, no file
+    nodeFs.rmSync(path.join(r.folder, '.durbar'), { recursive: true });
+    await r.store.setMirror(r.folder, 'proj', undefined);
+    // another repository with its own notes.md is cloned to the same path: deleted and made again, not renamed aside
+    nodeFs.rmSync(r.folder, { recursive: true }); // the test's own folder
+    nodeFs.mkdirSync(path.join(r.folder, '.durbar'), { recursive: true });
+    const theirs = '# Notes\n\n<!-- durbar-note -->\n## their note\n\nfrom another repository\n';
+    nodeFs.writeFileSync(md(r.folder), theirs);
+    okOf(await r.ops.add('a1', { text: 'my private idea' }));
+    const st = okOf(await r.ops.list('a1')).file;
+    assert.deepStrictEqual(st, { error: 'This folder looks replaced, or its drive was remounted. Turn the switch off and on again to write .durbar/notes.md here.' });
+    assert.strictEqual(nodeFs.readFileSync(md(r.folder), 'utf8'), theirs, 'nothing written into the other folder');
+    void locked;
+  });
+  await test('PR 931 review 3, points 4 and 5: the rename back never unlinks through a swapped link; when the second unlink fails only one name is left', async () => {
+    if (!canLink) { skip('cannot make links here'); return; }
+    // 4: the rename lands outside; .durbar real for its check; a decoy with OTHER bytes under the random name here; the hash check
+    // fails and the hard link back succeeds; then .durbar is a link again: nothing outside may be deleted
+    {
+      const c = countingFs();
+      const { folder, store } = await written();
+      const outside = fresh('outside4');
+      nodeFs.copyFileSync(md(folder), path.join(outside, 'notes.md'));
+      const ino = nodeFs.statSync(path.join(outside, 'notes.md')).ino;
+      const d = path.join(folder, '.durbar'), aside = path.join(path.dirname(folder), 'aside4');
+      let state: 'real' | 'link' = 'real', phase = 0, doomed = '';
+      const toLink = (): void => { if (state === 'link') return; nodeFs.renameSync(d, aside); nodeFs.symlinkSync(outside, d, 'dir'); state = 'link'; };
+      const toReal = (): void => { if (state === 'real') return; nodeFs.unlinkSync(d); nodeFs.renameSync(aside, d); state = 'real'; };
+      c.hook.renameSync = (real, ...a) => { if (String(a[0]) === md(folder) && phase === 0) { doomed = String(a[1]); toLink(); phase = 1; } return real(...a); };
+      c.hook.lstatSync = (real, ...a) => { if (phase === 1 && String(a[0]) === d) { toReal(); nodeFs.renameSync(md(folder), doomed); nodeFs.writeFileSync(doomed, 'a decoy with other bytes\n'); phase = 2; } return real(...a); };
+      c.hook.realpathSync = (real, ...a) => { if (phase === 3 && String(a[0]) === doomed) toLink(); return real(...a); };
+      c.hook.linkSync = (real, ...a) => { const r = real(...a); phase = 3; return r; };
+      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
+      assert.ok(phase === 3 && !r.removed, `the sequence ran: ${JSON.stringify(r)}`);
+      assert.ok(nodeFs.readdirSync(outside).map((n) => nodeFs.statSync(path.join(outside, n)).ino).includes(ino), `the outside file still exists (${nodeFs.readdirSync(outside).join()})`);
+      assert.ok(/are now two names of the same file: delete \.notes\.md\.\d+\.[a-z0-9]+\.del in \.durbar once nothing holds it\.$/.test(r.why!), r.why);
+    }
+    // 5: every unlink of the random name fails (a Windows editor holds it): the new name is removed again, so only the random one is left
+    {
+      const c = countingFs();
+      const { folder, store } = await written();
+      let doomed = '';
+      c.hook.unlinkSync = (real, ...a) => { if (String(a[0]).endsWith('.del')) { doomed = String(a[0]); throw Object.assign(new Error('perm'), { code: 'EPERM' }); } return real(...a); };
+      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
+      assert.ok(!nodeFs.existsSync(md(folder)) && nodeFs.statSync(doomed).nlink === 1, 'one name left: the random one');
+      assert.strictEqual(r.why, `Durbar did not delete .durbar/notes.md: it could not be deleted (EPERM); the file may be left as ${path.basename(doomed)}, in .durbar or in another folder: renaming it back to notes.md restores it.`);
+    }
   });
   await test('PR 931 review 2, points 2 and 3: only turning on creates the file; another folder at the same path is not written into', async () => {
     const r = rig();
@@ -724,6 +806,7 @@ async function main(): Promise<void> {
   });
 
   nodeFs.rmSync(root, { recursive: true, force: true }); // the suite's own temp folder, by its exact path
+  nodeFs.rmSync(diskRoot, { recursive: true, force: true }); // the same for the disk-backed one
   if (failures) { console.log(`notes switch: ${failures} failed`); process.exitCode = 1; return; }
   if (!posix) console.log('  (Windows: link cases depend on the runner allowing symlinks)');
   console.log('notes switch: flag saved and read back, delete only what Durbar wrote (hash, links, rmdir), exclude before the first write, options and paths refused, channels app-only');

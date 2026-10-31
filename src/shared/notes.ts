@@ -74,8 +74,7 @@ export interface Note {
 }
 
 export interface Tombstone { id: string; deletedAt: string }
-/** `folder`: the project folder's device and inode as `<dev>:<ino>` (review 2 of PR 931), never a path. */
-export interface NotesMirror { sha256: string; bytes: number; at: string; folder?: string }
+export interface NotesMirror { sha256: string; bytes: number; at: string }
 
 export interface NotesDoc {
   version: 1;
@@ -85,6 +84,11 @@ export interface NotesDoc {
   mirror?: NotesMirror;
   /** The last `notes.md` imported (FR-054; T041 review): the same file is never imported twice, after a restart too. */
   fileImport?: { sha256: string; at: string };
+  /**
+   * The project folder's identity recorded when the switch was turned on (review 3 of PR 931): `<dev>:<ino>:<birth time in ns>` (or
+   * `<dev>:<ino>` where the file system has no birth time), never a path. Every cycle compares it with the folder found now.
+   */
+  fileFolder?: { id: string; at: string };
   /** Ids of notes imported from `notes.md` sections without an id that no successful write has put into the file yet (T041 review). */
   filePending?: string[];
 }
@@ -257,11 +261,13 @@ export function parseNotesDoc(raw: string): ParseResult {
   }
   const m = d.mirror as Record<string, unknown> | undefined;
   const mirror = m && typeof m === 'object' && typeof m.sha256 === 'string' && /^[0-9a-f]{64}$/.test(m.sha256) && intIn(m.bytes, 0, NOTES_LIMITS.mdBytes) && isoOk(m.at)
-    ? { sha256: m.sha256, bytes: m.bytes as number, at: m.at as string, ...(typeof m.folder === 'string' && /^[0-9]{1,24}:[0-9]{1,24}$/.test(m.folder) ? { folder: m.folder } : {}) } : undefined;
+    ? { sha256: m.sha256, bytes: m.bytes as number, at: m.at as string } : undefined;
+  const ff = d.fileFolder as Record<string, unknown> | undefined;
+  const fileFolder = ff && typeof ff === 'object' && typeof ff.id === 'string' && /^[0-9]{1,24}:[0-9]{1,24}(?::[0-9]{1,24})?$/.test(ff.id) && isoOk(ff.at) ? { id: ff.id, at: ff.at as string } : undefined;
   const fi = d.fileImport as Record<string, unknown> | undefined;
   const fileImport = fi && typeof fi === 'object' && typeof fi.sha256 === 'string' && /^[0-9a-f]{64}$/.test(fi.sha256) && isoOk(fi.at) ? { sha256: fi.sha256, at: fi.at as string } : undefined;
   const filePending = Array.isArray(d.filePending) ? [...new Set(d.filePending.filter((x): x is string => typeof x === 'string' && ids.has(x)))] : [];
-  return { ok: true, dropped, doc: { version: 1, folderName: cleanFolderName(d.folderName), notes, tombstones: capTombstones(tombstones), ...(mirror ? { mirror } : {}), ...(fileImport ? { fileImport } : {}), ...(filePending.length ? { filePending } : {}) } };
+  return { ok: true, dropped, doc: { version: 1, folderName: cleanFolderName(d.folderName), notes, tombstones: capTombstones(tombstones), ...(mirror ? { mirror } : {}), ...(fileFolder ? { fileFolder } : {}), ...(fileImport ? { fileImport } : {}), ...(filePending.length ? { filePending } : {}) } };
 }
 
 /** Compact JSON, the way it is written and measured. */
@@ -384,6 +390,7 @@ export function mergeDocs(a: NotesDoc, b: NotesDoc): NotesDoc {
   notes.sort((x, y) => (x.createdAt < y.createdAt ? -1 : x.createdAt > y.createdAt ? 1 : x.id < y.id ? -1 : 1));
   const mirror = [a.mirror, b.mirror].filter((m): m is NotesMirror => !!m).sort((x, y) => (x.at < y.at ? 1 : -1))[0];
   const fileImport = [a.fileImport, b.fileImport].filter((m): m is { sha256: string; at: string } => !!m).sort((x, y) => (x.at < y.at ? 1 : -1))[0];
+  const fileFolder = [a.fileFolder, b.fileFolder].filter((m): m is { id: string; at: string } => !!m).sort((x, y) => (x.at < y.at ? 1 : -1))[0];
   return {
     version: 1,
     folderName: a.folderName || b.folderName,
@@ -391,6 +398,7 @@ export function mergeDocs(a: NotesDoc, b: NotesDoc): NotesDoc {
     tombstones: capTombstones([...dead].map(([id, deletedAt]) => ({ id, deletedAt }))),
     ...(mirror ? { mirror } : {}),
     ...(fileImport ? { fileImport } : {}),
+    ...(fileFolder ? { fileFolder } : {}),
     ...pendingOf(a, b, notes, mirror),
   };
 }

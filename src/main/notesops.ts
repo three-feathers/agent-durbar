@@ -324,6 +324,9 @@ export class NotesOps {
         // review of PR 931 (point 4): turning on starts from no `mirror`, so a file that was gone is written again only now
         const m = await t.store.setMirror(t.key, folderNameOf(t.a), undefined);
         if (!m.ok) return m;
+        // review 3 of PR 931: the folder's identity is recorded now, apart from the mirror, and every cycle checks it
+        const ff = await t.store.setFileFolder(t.key, folderNameOf(t.a), t.file.folderId(t.a.cwd));
+        if (!ff.ok) return ff;
         if (!setOn(t.key, true)) return refuse(SWITCH_UNSAVED);
       }
       const file = await this.syncFile(t.a.id, 1, !was); // only turning on may create the file (review 2 of PR 931)

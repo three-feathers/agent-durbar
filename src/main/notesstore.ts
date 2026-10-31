@@ -603,6 +603,25 @@ export class NotesStore {
     });
   }
 
+  /** The project folder's identity recorded at turn-on (review 3 of PR 931). */
+  async getFileFolder(folderKey: string): Promise<string | undefined> {
+    const fp = this.fingerprintOf(folderKey);
+    return this.queue(fp, async () => {
+      const l = this.load(fp);
+      return l.ok ? l.entry.doc.fileFolder?.id : undefined;
+    });
+  }
+
+  /** Record (or forget) the project folder's identity, at turn-on, in an atomic write of the document. */
+  setFileFolder(folderKey: string, folderName: string, id: string | undefined): Promise<NotesWrote> {
+    return this.mutate(folderKey, folderName, (doc) => {
+      const next: NotesDoc = { ...doc, notes: doc.notes.map((n) => ({ ...n })), tombstones: doc.tombstones.map((t) => ({ ...t })) };
+      if (id) next.fileFolder = { id, at: this.now().toISOString() };
+      else delete next.fileFolder;
+      return { ok: true, doc: next };
+    });
+  }
+
   /** The last `notes.md` Durbar wrote (FR-053), as the document holds it. */
   async getMirror(folderKey: string): Promise<NotesMirror | undefined> {
     const fp = this.fingerprintOf(folderKey);
@@ -616,7 +635,7 @@ export class NotesStore {
   setMirror(folderKey: string, folderName: string, mirror: NotesMirror | undefined): Promise<NotesWrote> {
     return this.mutate(folderKey, folderName, (doc) => {
       const next: NotesDoc = { ...doc, notes: doc.notes.map((n) => ({ ...n })), tombstones: doc.tombstones.map((t) => ({ ...t })) };
-      if (mirror) { next.mirror = { sha256: mirror.sha256, bytes: mirror.bytes, at: mirror.at, ...(mirror.folder ? { folder: mirror.folder } : {}) }; delete next.filePending; } // written: every note is in the file now
+      if (mirror) { next.mirror = { sha256: mirror.sha256, bytes: mirror.bytes, at: mirror.at }; delete next.filePending; } // written: every note is in the file now
       else delete next.mirror;
       return { ok: true, doc: next };
     });

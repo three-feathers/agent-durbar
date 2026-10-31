@@ -203,7 +203,7 @@ module.exports = async (ctx) => {
     await closeScreen();
 
     /* ===== AC3: the conflict and the write error, on the screen and in the drawer; AC4: turning off ===== */
-    for (const [mode, re] of [['conflict', CONFLICT], ['writefail', 'Could not write .durbar/notes.md: EACCES']]) {
+    for (const [mode, re] of [['conflict', CONFLICT], ['writefail', 'Could not write .durbar/notes.md: EACCES'], ['replaced', 'This folder looks replaced, or its drive was remounted. Turn the switch off and on again to write .durbar/notes.md here.']]) {
       await load(w, h, mode);
       await openScreen(tag);
       const t = await js(`(()=>{const e=document.querySelector('#nsList .nt-file-err');return e?{text:e.textContent,role:e.getAttribute('role'),vis:e.getClientRects().length>0}:null})()`);
