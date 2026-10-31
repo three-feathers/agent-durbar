@@ -11,7 +11,7 @@ import {
 import type { AuthStat, HandshakeResult, KeyFileDeps, McpFs } from '../src/main/mcp/auth';
 
 // ---- fake fs --------------------------------------------------------------------------------
-interface Node { kind: 'file' | 'dir' | 'link' | 'fifo'; mode: number; uid: number; data: string }
+interface Node { kind: 'file' | 'dir' | 'link' | 'fifo'; mode: number; uid: number; data: string; nlink?: number }
 function makeFs(uid = 501) {
   const nodes = new Map<string, Node>();
   const fail: { writeAfter?: number; rename?: boolean } = {};
@@ -33,14 +33,17 @@ function makeFs(uid = 501) {
       nodes.set(f, { kind: 'file', mode, uid, data });
     },
     rename(a, b) { if (fail.rename) throw err('EXDEV'); const n = nodes.get(a); if (!n) throw err('ENOENT'); nodes.delete(a); nodes.set(b, n); },
-    open(f) {
-      const n = nodes.get(f); if (!n) throw err('ENOENT');
-      if (n.kind === 'link') throw err('ELOOP'); // O_NOFOLLOW
-      const fd = nextFd++; fds.set(fd, n); return fd; // a FIFO opens without blocking (O_NONBLOCK) and is refused by fstat
+    io: {
+      openSync(f) {
+        const n = nodes.get(f); if (!n) throw err('ENOENT');
+        if (n.kind === 'link') throw err('ELOOP'); // O_NOFOLLOW
+        const fd = nextFd++; fds.set(fd, n); return fd; // a FIFO opens without blocking (O_NONBLOCK) and is refused by fstat
+      },
+      fstatSync(fd) { const n = fds.get(fd); if (!n) throw err('EBADF'); return { ...stat(n), nlink: n.nlink ?? 1 }; },
+      readSync(fd, buf, off, len, pos) { const n = fds.get(fd); if (!n) throw err('EBADF'); return buf.write(n.data.slice(pos, pos + len), off); },
+      closeSync(fd) { fds.delete(fd); },
     },
-    fstat(fd) { const n = fds.get(fd); if (!n) throw err('EBADF'); return stat(n); },
-    readFd(fd, max) { const n = fds.get(fd); if (!n) throw err('EBADF'); return n.data.slice(0, max); },
-    close(fd) { fds.delete(fd); },
+    flags: { O_RDONLY: 0 },
     lstat(p) { const n = nodes.get(p); if (!n) throw err('ENOENT'); const st = stat(n); hook.afterLstat?.(p); return st; },
     readdir(dir) { return [...nodes.keys()].filter((k) => k.startsWith(dir + '/')).map((k) => k.slice(dir.length + 1)); },
     unlink(p) { if (!nodes.delete(p)) throw err('ENOENT'); },
@@ -99,6 +102,8 @@ function deps(f: ReturnType<typeof makeFs>, over: Partial<KeyFileDeps> = {}): Ke
   f = mk(); f.nodes.get(FILE)!.uid = 0; refused(f);
   f = mk(); f.nodes.get(FILE)!.kind = 'link'; refused(f);
   f = mk(); f.nodes.get(FILE)!.kind = 'dir'; refused(f);
+  // issue #917: the shared read also refuses a key file with a second link (new for this caller)
+  f = mk(); f.nodes.get(FILE)!.nlink = 2; { const r = refused(f); assert.match(r.message, /more than one link/); }
   f = mk(); f.nodes.get(DIR)!.mode = 0o755; refused(f);
   f = mk(); f.nodes.get(DIR)!.kind = 'link'; refused(f);
   f = mk(); f.nodes.get(DIR)!.uid = 7; refused(f);
