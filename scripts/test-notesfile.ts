@@ -566,6 +566,71 @@ async function main(): Promise<void> {
     }
   });
 
+  await test('review 4: pending ids across two stores, hand-edited and stale ones never let a section overwrite a note', async () => {
+    const { parseNotesDoc } = require('../src/shared/notes') as typeof import('../src/shared/notes');
+    const dir = (r: ReturnType<typeof rig>): string => path.join(r.folder, '..', 'userdata', 'notes');
+    const raw = (r: ReturnType<typeof rig>): { filePending?: string[]; notes: Note[] } => JSON.parse(nodeFs.readFileSync(path.join(dir(r), nodeFs.readdirSync(dir(r)).find((f) => f.endsWith('.json'))!), 'utf8'));
+    const eio = (c: ReturnType<typeof countingFs>): void => { c.hook.renameSync = () => { throw Object.assign(new Error('io'), { code: 'EIO' }); }; };
+    // two stores on one folder: B still holds X as pending when A's write clears it; B's merge must not bring it back
+    {
+      const r = rig();
+      must(await r.store.add(r.key, 'proj', { text: 'base' }));
+      await cycle(r);
+      const b = new NotesStore(dir(r));
+      await notesOf(b, r.key); // B caches the document before X exists, so its next change merges
+      eio(r.c);
+      nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\nX text\n');
+      await cycle(r);
+      const x = (await notesOf(r.store, r.key)).find((n) => n.text === 'X text')!;
+      must(await b.add(r.key, 'proj', { text: 'from B while X is pending' }));
+      assert.deepStrictEqual(raw(r).filePending, [x.id], 'a merge keeps a pending id that is still pending');
+      await notesOf(b, r.key); // B caches X as pending
+      delete r.c.hook.renameSync;
+      assert.deepStrictEqual((await cycle(r)).state, {});
+      assert.strictEqual(raw(r).filePending, undefined, 'the write cleared it');
+      must(await b.add(r.key, 'proj', { text: 'from B after the write' }));
+      assert.strictEqual(raw(r).filePending, undefined, 'the merge in B did not bring X back');
+      // X's section removed and a new section without an id added: X stays
+      const t = nodeFs.readFileSync(md(r.folder), 'utf8');
+      const at = t.indexOf(`<!-- durbar-note id=${x.id}`);
+      nodeFs.writeFileSync(md(r.folder), t.slice(0, at) + t.slice(t.indexOf('<!-- durbar-note', at + 5)) + '\n<!-- durbar-note -->\nnew Z\n');
+      await syncNotesFile({ file: new NotesFile(), store: b, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [] });
+      assert.strictEqual((await notesOf(b, r.key)).find((n) => n.id === x.id)?.text, 'X text');
+    }
+    // a hand-edited filePending listing every note (and a bogus id): a note in the file and a typed note are never overwritten
+    {
+      const r = rig();
+      nodeFs.mkdirSync(path.join(r.folder, '.durbar'));
+      nodeFs.writeFileSync(md(r.folder), '<!-- durbar-note -->\nfrom the file F\n');
+      await cycle(r);
+      const typed = must(await r.store.add(r.key, 'proj', { text: 'typed T' })).note!; // never written: no cycle after it
+      const f = (await notesOf(r.store, r.key)).find((n) => n.text === 'from the file F')!;
+      const doc = raw(r);
+      const file = path.join(dir(r), nodeFs.readdirSync(dir(r)).find((n) => n.endsWith('.json'))!);
+      nodeFs.writeFileSync(file, JSON.stringify({ ...doc, filePending: [f.id, typed.id, 'n-bogus0000000'] }));
+      assert.deepStrictEqual(parseNotesDoc(nodeFs.readFileSync(file, 'utf8')).ok && (parseNotesDoc(nodeFs.readFileSync(file, 'utf8')) as { doc: { filePending?: string[] } }).doc.filePending, [f.id, typed.id], 'an id that is not a note is dropped when read');
+      nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\nnew Z\n');
+      const fresh2 = new NotesStore(dir(r));
+      await syncNotesFile({ file: new NotesFile(), store: fresh2, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [] });
+      const ns = await notesOf(fresh2, r.key);
+      assert.deepStrictEqual([ns.find((n) => n.id === f.id)?.text, ns.find((n) => n.id === typed.id)?.text, ns.some((n) => n.text === 'new Z')], ['from the file F', 'typed T', true]);
+    }
+    // a pending note deleted in Durbar leaves the pending list at the next import
+    {
+      const r = rig();
+      must(await r.store.add(r.key, 'proj', { text: 'base' }));
+      await cycle(r);
+      eio(r.c);
+      nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\np1\n');
+      await cycle(r);
+      const p1 = (await notesOf(r.store, r.key)).find((n) => n.text === 'p1')!;
+      must(await r.store.remove(r.key, 'proj', p1.id, p1.rev));
+      nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\np2\n');
+      await cycle(r);
+      assert.ok(!(raw(r).filePending ?? []).includes(p1.id), 'a deleted note is not pending');
+    }
+  });
+
   await test('review 2: merging two documents keeps the newer fileImport', () => {
     const { mergeDocs, emptyNotesDoc } = require('../src/shared/notes') as typeof import('../src/shared/notes');
     const older = { ...emptyNotesDoc('p'), fileImport: { sha256: 'a'.repeat(64), at: '2026-10-31T10:00:00.000Z' } };

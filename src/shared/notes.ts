@@ -344,6 +344,17 @@ export function applyChange(doc: NotesDoc, change: NoteChange, now: Date, newId:
   return { ok: true, doc: d, note: next };
 }
 
+/**
+ * The pending ids (T041) of either copy that are still notes AND were created after the newest successful write (`mirror.at`): a note
+ * created before that write was in it, so another copy that still lists it is stale. When in doubt this gives a duplicate, never an
+ * overwrite of a note that is in the file.
+ */
+function pendingOf(a: NotesDoc, b: NotesDoc, notes: readonly Note[], mirror: NotesMirror | undefined): { filePending?: string[] } {
+  const after = new Map(notes.map((n) => [n.id, !mirror || Date.parse(n.createdAt) > Date.parse(mirror.at)]));
+  const ids = [...new Set([...(a.filePending ?? []), ...(b.filePending ?? [])])].filter((x) => after.get(x) === true);
+  return ids.length ? { filePending: ids } : {};
+}
+
 const sameContent = (a: Note, b: Note): boolean => a.title === b.title && a.text === b.text && a.done === b.done && a.hidden === b.hidden && a.fileEdited === b.fileEdited;
 
 /**
@@ -351,13 +362,6 @@ const sameContent = (a: Note, b: Note): boolean => a.title === b.title && a.text
  * tombstone wins over an edit that is not newer than it; tombstones are kept (newest per id) and capped at `tombstones`, oldest dropped.
  * When two different versions meet, the result's `rev` is above both, so a window holding either one sees its change as stale.
  */
-/** The pending ids of either copy that are still notes (a write that cleared them in one copy is not seen in the other: the safe side keeps them). */
-function pendingOf(a: NotesDoc, b: NotesDoc, notes: readonly Note[]): { filePending?: string[] } {
-  const live = new Set(notes.map((n) => n.id));
-  const ids = [...new Set([...(a.filePending ?? []), ...(b.filePending ?? [])])].filter((x) => live.has(x));
-  return ids.length ? { filePending: ids } : {};
-}
-
 export function mergeDocs(a: NotesDoc, b: NotesDoc): NotesDoc {
   const dead = new Map<string, string>();
   for (const t of [...a.tombstones, ...b.tombstones]) if (!dead.has(t.id) || dead.get(t.id)! < t.deletedAt) dead.set(t.id, t.deletedAt);
@@ -386,7 +390,7 @@ export function mergeDocs(a: NotesDoc, b: NotesDoc): NotesDoc {
     tombstones: capTombstones([...dead].map(([id, deletedAt]) => ({ id, deletedAt }))),
     ...(mirror ? { mirror } : {}),
     ...(fileImport ? { fileImport } : {}),
-    ...(pendingOf(a, b, notes)),
+    ...pendingOf(a, b, notes, mirror),
   };
 }
 
