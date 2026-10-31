@@ -27,9 +27,12 @@ module.exports = async (ctx) => {
     const target = before[before.length - 1];
     const openMenu = `(()=>{const h=document.querySelector(${jsLiteral(`#stage .room [data-door="${target}"]`)}).closest('.room-head');const b=h.getBoundingClientRect();h.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:b.left+40,clientY:b.top+10}));return true})()`;
     await js(openMenu); await until(menuItems, 'the folder menu');
+    /* the Notes item reads 'Notes…' until the count arrives, then 'Notes (N)…': both are one token, the order stays strict */
+    const normNotes = t => t.replace(/^Notes(?: \(\d+\))?…$/, 'Notes (N)…');
+    assert.ok(normNotes('Notes…') === 'Notes (N)…' && normNotes('Notes (3)…') === 'Notes (N)…' && normNotes('Notes (0)…') === 'Notes (N)…' && normNotes('Rename…') === 'Rename…', 'both Notes forms normalise to one token');
     const items = await js(`[...document.querySelectorAll('#modeMenu [data-fact] b')].map(b=>b.textContent)`);
     console.log('[006-rm]', w, 'menu', JSON.stringify(items));
-    assert.deepStrictEqual(items.map(t => t.replace(/^Notes \(\d+\)…$/, 'Notes (N)…')), ['New session', 'Schedules here', 'Notes (N)…', 'Rename…', 'MCP extras…', 'Cost', 'Hide', 'Remove folder']);
+    assert.deepStrictEqual(items.map(normNotes), ['New session', 'Schedules here', 'Notes (N)…', 'Rename…', 'MCP extras…', 'Cost', 'Hide', 'Remove folder']);
     assert.ok(await js(`document.activeElement&&document.activeElement.closest('#modeMenu')!==null`), 'focus is in the menu');
     // the visible ⋯ button opens the same menu
     await js(`(document.getElementById('modeMenu')&&document.getElementById('modeMenu').remove(),true)`);
