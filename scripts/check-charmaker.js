@@ -216,6 +216,9 @@ module.exports = async (ctx) => {
       await H.key('Tab');
       assert.ok(await until(`document.activeElement&&document.activeElement.closest('#scrDlg')!==null`, 2000), `${where}: Tab from Make it stays in the dialog (focus on ${await js(`document.activeElement&&document.activeElement.textContent.slice(0,20)`)})`);
       assert.strictEqual(await js(`document.activeElement.textContent`), 'Cancel', `${where}: and wraps to Cancel`);
+      await H.key('Tab', ['shift']);
+      assert.ok(await until(`document.activeElement.textContent==='Make it'`, 2000), `${where}: Shift+Tab from Cancel wraps to Make it (focus on ${await js(`document.activeElement.textContent.slice(0,20)`)})`);
+      await js(`${btn('Cancel')}.focus();0`);
       await js(`document.getElementById('addFolder').focus();0`);
       assert.ok(await until(`document.activeElement.closest('#scrDlg')!==null`, 2000), `${where}: focus stolen by the page comes back`);
       await js(`document.activeElement.blur();document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));0`);

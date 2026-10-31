@@ -395,8 +395,8 @@ Q1-Q5 are answered (*Clarifications*, owner decisions, 2026-10-31). Their text a
 - **All frames unreadable**: the item, the rows and a toast say so, instead of "Characters: My characters." over the theme's figures.
 - **A session with no folder** had the key `/`; it now has none, so a pin on `/` cannot dress it (`pinKey`).
 - **A decode failure** of a My character is tried once more before it counts, and new URLs start clean.
-- **Scale**: a rename or pin no longer decodes every frame again (preload once per set of URLs).
-- **Cost in `ui-platforms`** (macOS runs one at a time, 80-minute limit): SCALE_NOTE
+- **Scale**: a rename or pin no longer decodes every frame again (preload once per set of URLs). Measured `sim:` on this Mac with 60 characters: Settings opens in 24 ms and a rename takes 20 ms against 36 and 16 ms with 3. The store with real-sized frames: reading all frames of 60 takes 12 ms, of 200 takes 129 ms. Settings' serial fetch stays, since that does not scale badly. `[KNOWN GAP]` real IPC cost at large counts was not measured.
+- **Cost in `ui-platforms`** (macOS runs one at a time, 80-minute limit): `check-charmaker` adds 53 s and `check-crew mine` 16 s, measured on this Mac; `ui-platforms` on macOS was 43 minutes in October. They were not split further: both are `check-crew`'s and the maker's only window coverage.
 - T041's plan line is split off as T041c. T061 is done here, since this PR ships the CSP change. SC-001 and SC-002 now say where they run.
 
 ### 2026-10-31: warn and let people pass (owner's principle)
