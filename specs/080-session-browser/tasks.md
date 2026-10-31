@@ -415,6 +415,7 @@ Owner decisions (Vikram, 2026-10-31 05:17 UTC): *Open chat links in a new tab* i
   - AC3: takeover, Watch-only and the driver state apply to the agent's tab only; input in another tab takes nothing over (sim driver with the fake agent, T040).
   - AC4: a `target=_blank` in the agent's tab loads in that tab; the agent never makes a second tab; FR-124 never reuses its tab (test).
   - AC5: closing the agent's tab: the next `url`/`drive` call makes a new one; a call in flight on it is answered with an error, never moved to another tab (test).
+  - AC6: (found while building Phase 1b, 2026-10-31) the tab keys of FR-130 caught in the view's `before-input-event` are ignored while a Durbar `drive` action is in flight (CDP input fires that event, T010 AC4), so the agent can never open, close or switch the user's tabs by typing (test).
 - [ ] T042 [US3] [US4] Docs for Phase 2. [Phase 2 FRs]
   - AC1: README:
     - *Safety model*: Read-only lets the agent read only the open page (once T006 is in; before that, no browser), never private-network pages; while agent control is on, private and loopback frames and subresources inside a public page are blocked, also on pages you opened yourself; Ask first is the browse mode and asks per site; form posts, downloads and uploads; the untrusted-page warning;

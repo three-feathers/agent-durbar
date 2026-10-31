@@ -133,6 +133,7 @@ function sameWebOrigin(a: string | undefined, b: string | undefined): boolean {
     return false;
   }
 }
+
 export interface ViewHandlerContext {
   /** Under DURBAR_SIM only (FR-091). */
   sim?: boolean;

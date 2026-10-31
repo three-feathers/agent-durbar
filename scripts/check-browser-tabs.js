@@ -27,7 +27,7 @@
 const assert = require('assert');
 const path = require('path');
 const { webContents, app } = require('electron');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, shotWithView } = require('./driver-helpers');
 
 const IS_MAC = process.platform === 'darwin';
 const MOD = IS_MAC ? 'meta' : 'control';
@@ -224,7 +224,11 @@ module.exports = async (ctx) => {
   if (process.env.OUT || process.env.SHOTS_OUT) {
     await js(`(async()=>{const r=await window.agentDurbar.browserSelectTab('sim-1',${jsLiteral(tabs().tabs[0].tabId)});return true})()`);
     await wait(() => tabs().active === tabs().tabs[0].tabId && view() && !view().webContents.isLoading(), 'the first tab for the picture');
-    await H.shot(path.join(process.env.OUT || process.env.SHOTS_OUT, `080-browser-tabs-${size}.png`), { prep: 'calm', tag: 'browser-tabs' });
+    win().webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
+    await H.calm({ blur: true });
+    const file = path.join(process.env.OUT || process.env.SHOTS_OUT, `080-browser-tabs-${size}.png`);
+    await shotWithView(win(), view(), file); // the strip and the page itself (the window's capture leaves the native view out)
+    console.log('[browser-tabs] saved', path.basename(file));
   }
   // a chat link at 10 loads in the active (non-empty) tab
   const nonEmpty = tabs().tabs.find((x) => x.url && !/\/slow/.test(x.url));
