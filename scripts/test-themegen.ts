@@ -1,7 +1,7 @@
 /** AI theme maker (spec 040 FR-014..FR-020, #182): prompts, the safe subset, art through the renderer's sanitizer, contrast issues for fix passes, unique ids. `npm run test:themegen`. No model, no credits. */
 import * as assert from 'assert';
 import * as path from 'path';
-import { CONTRAST_PAIRS, GEN_ART, GEN_WORDS, THEME_IDEAS, buildFixPrompt, buildRetryPrompt, keepArt, buildThemePrompt, contrast, firstJsonObject, isBlocking, parseGeneratedTheme, pickIdeas, themeIssues, toHex } from '../src/shared/themegen';
+import { ART_STYLE, CONTRAST_PAIRS, GEN_ART, MAX_PLACE_NAME, artWarnings, fitPlaceName, GEN_WORDS, THEME_IDEAS, buildFixPrompt, buildRetryPrompt, keepArt, buildThemePrompt, contrast, firstJsonObject, isBlocking, parseGeneratedTheme, pickIdeas, themeIssues, toHex } from '../src/shared/themegen';
 import { checkUserManifest, SCENE_KITS, UI_STYLES } from '../src/shared/themes';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -12,7 +12,7 @@ const ctx = { clean, sanitizeArt: (s: string) => T._sanitizeSlot(s), taken: () =
 
 const light = {
   name: 'Paper newsroom', ui: 'corporate', scene: 'office',
-  tokens: { '--bg': '#eceff3', '--surface': '#fbfcfd', '--ink': '#1b2230', '--ink-2': '#3a4456', '--muted': '#5f6a7c', '--sage': '#3f7d6c', '--brand-bg': '#E0A84A', '--brand-mark': '#1b2230' },
+  tokens: { '--bg': '#eceff3', '--surface': '#fbfcfd', '--ink': '#1b2230', '--ink-2': '#3a4456', '--muted': '#5f6a7c', '--sage': '#3f7d6c', '--brand-bg': '#9A5B00', '--brand-mark': '#ffffff' },
   words: { 'place-library': 'Archive', 'place-web': 'Newswire', 'lobby-label': 'The newsroom floor' },
   art: { 'char-headwear': '<path d="M62 33h24l-3-7H65z" fill="#2b3344"/>', 'place-web': '<circle cx="10" cy="10" r="6"/>' },
 };
@@ -80,7 +80,7 @@ assert.deepStrictEqual(firstJsonObject('{bad} then {"ok":true}'), { ok: true });
     const m = r.manifest as Record<string, unknown>;
     assert.strictEqual(m.id, 'ai-paper-newsroom');
     assert.strictEqual(m.author, 'AI theme maker');
-    assert.strictEqual((m.tokens as Record<string, string>)['--brand-bg'], '#e0a84a');
+    assert.strictEqual((m.tokens as Record<string, string>)['--brand-bg'], '#9a5b00');
     assert.deepStrictEqual(Object.keys(m.art as object).sort(), ['char-headwear', 'place-web']);
     assert.ok(checkUserManifest(JSON.stringify(m)).ok);
     assert.deepStrictEqual(r.issues, []);
@@ -116,9 +116,9 @@ assert.deepStrictEqual(firstJsonObject('{bad} then {"ok":true}'), { ok: true });
     assert.strictEqual(m.css, undefined);
     for (const k of ['--sage', '--blue', '--evil']) assert.strictEqual(t[k], undefined, k);
     assert.strictEqual(t['--line'], '#010203', 'rgb() is converted');
-    assert.strictEqual(w['place-library'], 'img onerror=xArchive');
+    assert.strictEqual(w['place-library'], 'img', 'tags are stripped, then the name is cut to whole words that fit a lobby tile (14 characters)');
     assert.strictEqual(w['door-close'], 'x');
-    assert.strictEqual(w['place-other'].length, 40);
+    assert.strictEqual(w['place-other'].length, 14, 'a place name is cut at 14 characters, the tile width');
   }
 }
 
@@ -129,7 +129,8 @@ assert.deepStrictEqual(firstJsonObject('{bad} then {"ok":true}'), { ok: true });
   assert.ok(r.ok);
   if (r.ok) {
     assert.ok(r.issues.some((i) => /the page is dark but these tokens keep the light default; set them for the dark look: .*--surface-2/.test(i)), 'light leftovers named');
-    assert.ok(!r.issues.some(isBlocking), 'nothing blocking');
+    // spec 040 FR-027: the room tints it left at the light default now fail the text on them, which the fix pass corrects
+    assert.ok(r.issues.some((i) => /^--ink \(.*\) on --tint-sage \(#eaf0e9\)/.test(i)), 'light room tints under light text are named');
   }
   const full: Record<string, string> = {};
   for (const k of Object.keys(clean)) full[k] = '#20242a';
@@ -147,7 +148,7 @@ assert.deepStrictEqual(firstJsonObject('{bad} then {"ok":true}'), { ok: true });
   assert.ok(iss.some((i) => /^--pc-error .* on --pb-error/.test(i)));
   assert.ok(iss.filter(isBlocking).length >= 1);
   assert.ok(!isBlocking('--pc-error (#1) on --pb-error (#2) has contrast 1:1, needs 4.5:1'));
-  assert.strictEqual(CONTRAST_PAIRS.length, 25);
+  assert.strictEqual(CONTRAST_PAIRS.length, 37);
   // spec 052 FR-169: --surface is the text of a primary (--sage-ink), danger (--red-ink) and warn (--amber-ink) button, so each is a pair
   for (const ink of ['--sage-ink', '--red-ink', '--amber-ink']) {
     assert.ok(CONTRAST_PAIRS.some(([a, b, m]) => a === '--surface' && b === ink && m === 4.5), ink);
@@ -238,6 +239,114 @@ assert.match(buildRetryPrompt('a fox den', clean, 'no JSON'), /a fox den[\s\S]*Y
       assert.ok(r.warnings.some((w) => /font or shape value was not usable/.test(w)), r.warnings.join('|'));
       assert.ok(checkUserManifest(JSON.stringify(r.manifest)).ok, 'and the saved pack imports');
     }
+  }
+}
+// ---- spec 040 FR-025..FR-030 (#903): quality stage 1 ----
+// FR-025 (R2): the scenery slots the renderer supports are in the prompt, with their geometry, and survive parsing
+{
+  const p = buildThemePrompt('a sunny wooden library', clean);
+  for (const k of ['room-back-wall', 'room-back-window', 'room-floor', 'desk-back']) {
+    assert.ok(GEN_ART[k] && /viewBox 0 0 (320 118|200 124)/.test(GEN_ART[k]), `${k} has its geometry`);
+    assert.ok(p.includes(`  ${k}: `), `${k} is in the prompt`);
+    assert.ok(T.ART_SLOTS.includes(k), `${k} is a renderer slot`);
+  }
+  const scenery = { ...light, art: {
+    'room-back-wall': '<rect x="0" y="0" width="320" height="70" fill="#c9a36b"/><rect x="10" y="10" width="60" height="50" fill="#8a5a2b"/><rect x="90" y="10" width="60" height="50" fill="#8a5a2b"/><rect x="170" y="10" width="60" height="50" fill="#8a5a2b"/>',
+    'room-back-window': '<rect x="120" y="8" width="80" height="44" fill="#9ed0f0"/><circle cx="160" cy="30" r="12" fill="#ffd45e"/><path d="M120 30h80" stroke="#6b4a2b" stroke-width="3"/>',
+    'room-floor': '<rect x="0" y="40" width="320" height="78" fill="#b98a55"/><path d="M0 60h320M0 80h320M0 100h320" stroke="#8a5a2b" stroke-width="2"/><path d="M60 40v78M160 40v78M260 40v78" stroke="#8a5a2b" stroke-width="2"/><rect x="100" y="70" width="120" height="30" fill="#7a2f2f"/>',
+    'desk-back': '<rect x="14" y="80" width="172" height="8" fill="#6b4a2b"/><rect x="30" y="81" width="40" height="5" fill="#9a6b3b"/>',
+  } };
+  const r = parseGeneratedTheme(JSON.stringify(scenery), 'wood', ctx);
+  assert.ok(r.ok);
+  if (r.ok) {
+    assert.deepStrictEqual(Object.keys(r.manifest.art as object).sort(), ['desk-back', 'room-back-wall', 'room-back-window', 'room-floor'], 'all four are kept');
+    assert.ok(checkUserManifest(JSON.stringify(r.manifest)).ok);
+    assert.deepStrictEqual(r.warnings.filter((w) => /sparse|thin|small/.test(w)), [], 'good scenery has no art warnings');
+  }
+  const evil = parseGeneratedTheme(JSON.stringify({ ...light, art: { 'room-floor': '<script>x</script>', 'room-back-wall': '<rect onclick="x()" width="1" height="1"/>' } }), 'x', ctx);
+  assert.ok(evil.ok && !evil.manifest.art && evil.warnings.some((w) => /art left out by the safety check: room-back-wall, room-floor|room-floor, room-back-wall/.test(w)), 'scenery goes through the same sanitizer');
+}
+
+// FR-026 (R3): grouped tokens with meanings; every token still listed once, with its value
+{
+  const p = buildThemePrompt('x', clean);
+  for (const k of Object.keys(clean)) assert.strictEqual(p.split(new RegExp(`(?:^|\\s)${k}=`)).length - 1, 1, `${k} appears once with its value`);
+  assert.match(p, /Brand\. --brand-bg fills the lobby tile icons and the primary buttons in the UI styles "corporate", "retro", "court-\*"/);
+  assert.match(p, /Room tints\./);
+  assert.match(p, /--room-path the folder path in each room header, which sits on the room tints/);
+  assert.match(p, /--raised buttons, chips and the lobby tiles/);
+  assert.ok(p.length < 16000, 'prompt length ' + p.length);
+}
+
+// FR-027 (R5): the new pairs. --brand-bg on --raised and --bg (non-text 3:1) in the UI styles that paint with it, the primary button text, and the text on every room tint
+{
+  const dark = { '--bg': '#121417', '--surface': '#1b1e23', '--raised': '#23272d', '--tint-sage': '#1c2420', '--tint-blue': '#1c2127', '--tint-sand': '#25221c', '--tint-clay': '#261f1c', '--ink': '#eef1f5', '--muted': '#a9b0bb', '--room-path': '#a9b0bb', '--brand-mark': '#101010' };
+  const ok = { ...dark, '--brand-bg': '#e0a84a' };
+  assert.deepStrictEqual(themeIssues(ok, clean, 'corporate').filter((i) => /--brand|--tint/.test(i)), [], 'a bright brand colour on a dark theme passes');
+  // a pastel brand colour on a light page: the lobby icons vanish (the audit's 1.2:1)
+  const pastel = { '--bg': '#f7f6f3', '--raised': '#ffffff', '--brand-bg': '#e4ece6', '--brand-mark': '#1b2230' };
+  for (const ui of ['corporate', 'retro', 'court-indian', 'court-european', 'court-japanese']) {
+    const iss = themeIssues(pastel, clean, ui);
+    assert.ok(iss.some((i) => /^--brand-bg \(#e4ece6\) on --raised \(#ffffff\) has contrast 1\.2:1, needs 3:1/.test(i)), `${ui}: brand-bg on raised`);
+    assert.ok(iss.some((i) => /^--brand-bg \(#e4ece6\) on --bg \(#f7f6f3\)/.test(i)), `${ui}: brand-bg on bg`);
+  }
+  assert.ok(!themeIssues(pastel, clean, 'clean').some((i) => /--brand-bg/.test(i)), 'UI "clean" does not paint with --brand-bg: no pair (Clean Office itself is pale)');
+  // the primary button text, 4.5:1 (it was 3:1)
+  const btn = themeIssues({ '--brand-bg': '#9a5b00', '--brand-mark': '#d9c7a8' }, clean, 'retro');
+  assert.ok(btn.some((i) => /^--brand-mark \(#d9c7a8\) on --brand-bg \(#9a5b00\) has contrast 3\.3:1, needs 4\.5:1/.test(i)), btn.join('|'));
+  assert.ok(!themeIssues({ '--brand-bg': '#9a5b00', '--brand-mark': '#ffffff' }, clean, 'retro').some((i) => /--brand-mark/.test(i)));
+  // paths, muted text and ink on each room tint, not only --bg
+  for (const t of ['sage', 'blue', 'sand', 'clay']) for (const fg of ['--room-path', '--muted', '--ink']) {
+    assert.ok(CONTRAST_PAIRS.some(([a, b, m]) => a === fg && b === `--tint-${t}` && m === 4.5), `${fg} on --tint-${t}`);
+    const iss = themeIssues({ ...dark, [`--tint-${t}`]: '#6a7a70', [fg]: '#5a6a60' }, clean, 'clean');
+    assert.ok(iss.some((i) => i.startsWith(`${fg} (#5a6a60) on --tint-${t} (#6a7a70)`)), `${fg} on --tint-${t} is reported`);
+  }
+  assert.ok(!themeIssues(dark, clean, 'clean').some((i) => /--tint-/.test(i)), 'readable text on the tints: no issue');
+  // a dark theme that left the light default tints: the dark ink on... reported, so the fix pass sets them
+  assert.ok(themeIssues({ '--bg': '#121417', '--ink': '#eef1f5', '--muted': '#a9b0bb', '--room-path': '#a9b0bb' }, clean, 'clean').some((i) => /on --tint-sage \(#eaf0e9\)/.test(i)));
+  // Clean Office itself passes the tint pairs (built-ins are not repaired at run time)
+  assert.deepStrictEqual(themeIssues({}, clean, 'clean'), [], 'the defaults pass every pair');
+}
+
+// FR-028 (R7): the art style guide, and warnings for art that is too small or too sparse
+{
+  const p = buildThemePrompt('x', clean);
+  assert.ok(p.includes(ART_STYLE));
+  assert.match(ART_STYLE, /Nothing thinner than about 3 px/);
+  assert.match(ART_STYLE, /Fill the slot's main area/);
+  assert.match(ART_STYLE, /One consistent palette/);
+  assert.match(ART_STYLE, /Scenery evokes the look/);
+  assert.match(ART_STYLE, /No text/);
+  assert.deepStrictEqual(artWarnings('room-floor', '<rect x="0" y="40" width="320" height="78" fill="#b98a55"/>').length, 1, 'a floor of one shape is sparse');
+  assert.match(artWarnings('room-floor', '<rect x="0" y="40" width="320" height="78" fill="#b98a55"/>')[0], /room-floor: sparse \(1 shape, at least 4 expected\)/);
+  assert.strictEqual(artWarnings('lobby-art', '<path d="M0 0h4" /><path d="M0 0h4" /><path d="M0 0h4" /><path d="M0 0h4" /><path d="M0 0h4" />').length, 0);
+  assert.ok(artWarnings('char-robe', '<path d="M60 70h30v20H60z" stroke="#000" stroke-width="0.4" fill="none"/><path d="M60 70h30" stroke="#000" stroke-width="0.4"/>').some((w) => /lines too thin/.test(w)));
+  assert.ok(artWarnings('place-web', '<circle cx="10" cy="10" r="6" stroke="currentColor" stroke-width="0.5" fill="none"/>').some((w) => /too thin/.test(w)), 'icons: under 1');
+  assert.strictEqual(artWarnings('place-web', '<circle cx="10" cy="10" r="6" stroke-width="1.5"/>').length, 0);
+  assert.ok(artWarnings('char-headwear', '<rect x="70" y="30" width="2" height="2"/><rect x="74" y="30" width="2" height="2"/>').some((w) => /too small/.test(w)), 'all shapes under 3 units');
+  assert.strictEqual(artWarnings('char-headwear', '<rect x="62" y="28" width="24" height="8" stroke-width="2"/><rect x="68" y="24" width="12" height="5"/>').length, 0, 'bold shapes pass; stroke-width is not a size');
+  // the parser reports them to the person
+  const r = parseGeneratedTheme(JSON.stringify({ ...light, art: { 'room-floor': '<rect x="0" y="40" width="320" height="78" fill="#b98a55"/>' } }), 'x', ctx);
+  assert.ok(r.ok && r.warnings.some((w) => /room-floor: sparse/.test(w)));
+}
+
+// FR-029 (R11): place names fit a lobby tile
+{
+  assert.strictEqual(MAX_PLACE_NAME, 14);
+  assert.strictEqual(fitPlaceName('Chart Room'), 'Chart Room');
+  assert.strictEqual(fitPlaceName('Observation Deck Annex'), 'Observation');
+  assert.strictEqual(fitPlaceName('Supercalifragilistic'), 'Supercalifragi');
+  assert.strictEqual(fitPlaceName('Exactly14chars'), 'Exactly14chars');
+  const p = buildThemePrompt('x', clean);
+  assert.match(p, new RegExp(`"place-\\.\\.\\." name is shown on a lobby tile and must be at most ${MAX_PLACE_NAME} characters`));
+  const r = parseGeneratedTheme(JSON.stringify({ ...light, words: { 'place-library': 'The Grand Reading Library', 'place-boss': 'Captain', 'door-close': 'Close the whole room for now please' } }), 'x', ctx);
+  assert.ok(r.ok);
+  if (r.ok) {
+    const w = r.manifest.words as Record<string, string>;
+    assert.strictEqual(w['place-library'], 'The Grand', 'cut to whole words that fit');
+    assert.strictEqual(w['place-boss'], 'Captain');
+    assert.strictEqual(w['door-close'], 'Close the whole room for now please', 'other words keep 40');
+    assert.ok(r.warnings.some((x) => /place name shortened to fit a lobby tile \(14 characters\): place-library/.test(x)));
   }
 }
 console.log('themegen: ok');

@@ -13,6 +13,12 @@ export const HANDOFF_PROMPT = [
 ].join(' ');
 
 export const HANDOFF_MAX_CHARS = 8000;
+/**
+ * The limit for a one-shot reply that is data, not a summary (spec 040 FR-024, issue #903): the AI theme maker's JSON holds up to 19 art
+ * slots of 4,000 characters (76,000) plus about 150 colours, fonts and words (under 10,000). 128,000 leaves room for that with
+ * margin, and is still a hard bound (a runaway reply is cut, which then fails the JSON parse, not the app).
+ */
+export const ONE_SHOT_MAX_CHARS = 128_000;
 
 export interface HandoffResult {
   /** Markdown, trimmed and at most HANDOFF_MAX_CHARS; empty means "no summary". */
@@ -22,13 +28,13 @@ export interface HandoffResult {
 }
 
 /** Trim, drop a wrapping code fence, cut at the limit (on a line break when one is near). */
-export function cleanSummary(text: unknown): string {
+export function cleanSummary(text: unknown, max: number = HANDOFF_MAX_CHARS): string {
   if (typeof text !== 'string') return '';
   let t = text.replace(/\r\n/g, '\n').trim();
   const fence = /^```(?:markdown|md)?\n([\s\S]*?)\n```$/.exec(t);
   if (fence) t = fence[1].trim();
-  if (t.length <= HANDOFF_MAX_CHARS) return t;
-  const cut = t.slice(0, HANDOFF_MAX_CHARS);
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
   const nl = cut.lastIndexOf('\n');
-  return (nl > HANDOFF_MAX_CHARS * 0.8 ? cut.slice(0, nl) : cut).trimEnd() + '\n…';
+  return (nl > max * 0.8 ? cut.slice(0, nl) : cut).trimEnd() + '\n…';
 }

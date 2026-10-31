@@ -27,7 +27,7 @@ export const GEN_WORDS: Record<string, string> = {
   'door-open': 'button to open a room ("Open room")',
 };
 
-/** Art slots a generated theme may draw, with where and how big (spec 040 FR-010, FR-020). */
+/** Art slots a generated theme may draw, with where and how big (spec 040 FR-010, FR-020, FR-025). */
 export const GEN_ART: Record<string, string> = {
   'char-headwear': 'a hat or headdress on the person. Office scene coordinates (viewBox 0 0 200 124): the head is a circle at cx 74 cy 44 r 12.5, so a hat sits about y 24-36, x 60-88',
   'char-robe': 'clothing over the body: the torso spans about x 55-93, y 63-99 (a jacket, robe, uniform)',
@@ -36,6 +36,10 @@ export const GEN_ART: Record<string, string> = {
   'hair-acc': 'a small hair accessory near the top of the head: about x 66-84, y 24-34',
   'desk-art': 'a small object on the desk top (y 78-86) between x 20 and 100, or a front panel on the desk front (y 93-114, x 15-185)',
   'monitor-art': 'a small frame or sticker on the monitor bezel ONLY (the bezel is x 112-176, y 32-77; keep x 116-172, y 36-73 clear: that is the screen that shows the agent state)',
+  'room-back-wall': 'the back wall of every room, behind the desks: viewBox 0 0 320 118, stretched to the room (so shapes are not exactly round; use rectangles, arches, lines). Wall panelling, shelves, bookcases, banners, lanterns, in y 4-70 (the desks hide the lower part). Keep it calm (opacity .3-.7 for big shapes): desk cards and text sit on it',
+  'room-back-window': 'a window, porthole, arch or skylight in the back wall, above the desks: viewBox 0 0 320 118 (stretched), the glass and frame inside x 20-300, y 6-55; sky, sun, moon, stars or a view go here',
+  'room-floor': 'the floor of every room: viewBox 0 0 320 118 stretched into the bottom 38% of the room, so draw the whole floor across x 0-320, y 40-118 (planks, tiles, a rug or carpet, in perspective); the desks stand on it',
+  'desk-back': 'a backdrop on each desk, drawn over the desk and under the monitor: a desk mat, blotter, cloth or runner on the desk top (office scene coordinates, viewBox 0 0 200 124: y 80-88, x 14-186) or a panel on the desk front (y 93-114, x 15-185)',
   'plant': 'the potted plant in each room header: viewBox 0 0 26 30 (pot at the bottom, about y 20-30)',
   'place-library': 'icon for the Library place: viewBox 0 0 20 20, drawn with strokes (stroke="currentColor", fill="none", about 1.5 wide)',
   'place-software': 'icon for the Software library place: same as above',
@@ -45,9 +49,11 @@ export const GEN_ART: Record<string, string> = {
   'gadget-cup': 'the cup on an idle agent\'s desk, REPLACES the app\'s cup: about x 96-114, y 66-87 (steam is added above it by the app)',
   'gadget-laptop': 'the laptop or keyboard on the desk in front of the person, REPLACES the app\'s: about x 55-99, y 79-88',
   'door-art': 'a small emblem on the room door: viewBox 0 0 20 20, the door is x 4-16, y 2.5-17.5',
-  'lobby-art': 'a decorative band above the lobby: viewBox 0 0 320 36 (stretched to the lobby width)',
+  'lobby-art': 'a decorative band behind the lobby tiles: viewBox 0 0 320 36, scaled to cover the lobby band and cropped to its middle on wide windows, so keep the motif in y 8-28 and make it a repeating pattern or a wide scene. Circles stay round. It is drawn BEHIND the tiles and the add button, so keep it faint (opacity .25-.6)',
 };
 export const MAX_ART_CHARS = 4000;
+/** Spec 040 FR-029: place names are shown on lobby tiles about this wide; longer ones are cut. */
+export const MAX_PLACE_NAME = 14;
 
 /** Example looks shown in the dialog (a few at random) so people see how to describe one (spec 040 FR-021). */
 export const THEME_IDEAS = [
@@ -70,6 +76,45 @@ export const MAX_PASSES = 3;
 
 const svgRules = 'Each art value is an SVG fragment (no <svg> wrapper) using only g, path, rect, circle, ellipse, line, polyline, polygon, with attributes fill, stroke, stroke-width, stroke-linecap, stroke-linejoin, opacity, d, x, y, width, height, rx, ry, cx, cy, r, x1, y1, x2, y2, points, transform. Colours in art may be hex or var(--token). No text, no images, no style, no scripts, no links, no url().';
 
+/**
+ * The Clean Office tokens in groups, each with what it paints and what it must contrast with (spec 040 FR-026, from styles.css
+ * and themes.css). A token in no group goes to the last one. Every token is still listed as `--name=value`.
+ */
+export const TOKEN_GROUPS: Array<{ title: string; keys: Array<string | RegExp> }> = [
+  { title: 'Surfaces. --bg is the page; --surface panels, dialogs, menus and (UI "clean", "court-japanese") the top bar; --raised buttons, chips and the lobby tiles (lifted above --bg); --card the desk cards, --card-waiting and --card-error their states; --soft, --note, --surface-2 and the two tinted notes are quiet blocks. ALL carry --ink text at 4.5:1', keys: ['--bg', '--surface', '--surface-2', '--raised', '--card', '--card-waiting', '--card-error', '--soft', '--note', '--warn-bg', '--bad-bg'] },
+  { title: 'Text. --ink is body text, --ink-2 secondary text, --muted hints and counts (4.5:1 on --surface), --room-path the folder path in each room header, which sits on the room tints below (4.5:1 on each tint, not only on --bg)', keys: ['--ink', '--ink-2', '--muted', '--room-path'] },
+  { title: 'Room tints. Rooms cycle through four backgrounds (--tint-X) with a wall line (--wall-X, and --cwall-X when the office is crowded). Text sits on the tints: in a dark theme they must be dark, in a light one light', keys: [/^--(tint|wall|cwall)-/] },
+  { title: 'Brand. --brand-bg fills the lobby tile icons and the primary buttons in the UI styles "corporate", "retro", "court-*" (and the top bar of the Indian and European courts), so it must stand out from --raised and --bg (3:1 or more: a mid or dark saturated colour on a light theme, a bright one on a dark theme, never a pastel). --brand-mark is the text on it (4.5:1)', keys: ['--brand-bg', '--brand-mark'] },
+  { title: 'Button and accent inks. --sage-ink, --red-ink and --amber-ink fill the primary, danger and warn buttons under --surface text (4.5:1); --sage, --blue, --amber, --red, --green, --gray and --blue-ink are accents and chips', keys: ['--sage', '--sage-ink', '--blue', '--blue-ink', '--amber', '--amber-ink', '--red', '--red-ink', '--green', '--gray'] },
+  { title: 'Lines and focus. Borders and dividers (--line soft, --line-2 stronger, --line-ctl the border of buttons and inputs), the keyboard focus ring, the selected-desk ring and the links between rooms', keys: ['--line', '--line-2', '--line-ctl', '--card-waiting-line', '--card-error-line', '--focus', '--focus-halo', '--sel-border', '--sel-ring', '--sel-ring-2', '--stat-sel-border', '--stat-sel-ring', '--proto-line', '--place-busy', '--link'] },
+  { title: 'Status. The six states (working blue-ish, thinking violet-ish, waiting amber, error red, done green, idle grey): --c-X and --halo-X the dot and glow, --pb-X the pill background and --pc-X its text (4.5:1), --screen-X the monitor screen; --desk-new and --desk-needs the glow of a new desk and of a desk that needs you (3:1 on the card)', keys: [/^--(c|halo|pb|pc|screen)-/, '--desk-new', '--desk-needs', '--badge-idle', '--idle-stub', '--idle-stub-ink', '--wait-dot', '--drop', '--drop-bg', '--drop-ink'] },
+];
+
+/** The "tokens" part of the prompt: each group's meaning, then its `--name=value` pairs. */
+export function tokenGroupLines(clean: Record<string, string>): string[] {
+  const left = new Set(Object.keys(clean));
+  const out: string[] = [];
+  const take = (title: string, match: (k: string) => boolean): void => {
+    const ks = [...left].filter(match);
+    if (!ks.length) return;
+    ks.forEach((k) => left.delete(k));
+    out.push(`  ${title}:`, '  ' + ks.map((k) => `${k}=${clean[k]}`).join(' '));
+  };
+  for (const g of TOKEN_GROUPS) take(g.title, (k) => g.keys.some((m) => (typeof m === 'string' ? m === k : m.test(k))));
+  take('Drawing colours of the people, desks, monitors, doors, plant, ambulance and icons: keep them in the same palette as the rest, and make the desk, chair and walls distinct from each other and from the floor', () => true);
+  return out;
+}
+
+/** Spec 040 FR-028: what good art looks like at the size the app draws it (the real run of 2026-10-30 gave tiny, sparse, pale art). */
+export const ART_STYLE = [
+  'Art style: it is drawn small (a desk is about 200 px wide, a place icon 18 px), so make it bold and simple.',
+  '- Nothing thinner than about 3 px at rendered size: stroke-width at least 2 in scene art (viewBox units are about 1 px), at least 1.5 in the 20x20 icons; no features smaller than 3 units.',
+  '- Fill the slot\'s main area (a hat covers the head top, a floor spans the full width, a wall has several panels), not one small shape in a corner.',
+  '- One consistent palette for all art: reuse the theme\'s own colours (hex of your tokens, or var(--brand-bg), var(--ink), var(--desk) ...), with at most 3 to 5 colours per slot and a light and a dark tone for depth.',
+  '- Scenery evokes the look in words: if the user says wood, draw planks and grain; sun, draw a sun with rays; shelves, draw shelves with books. Every scenery slot (wall, window, floor, lobby band) should say something about the prompt, not repeat a pattern.',
+  '- No text, letters or numbers in the art.',
+].join('\n');
+
 /** Pass 1: the whole theme. `clean` = Clean Office's token values, sent as the reference for what each token is. */
 export function buildThemePrompt(description: string, clean: Record<string, string>): string {
   const d = String(description ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_DESCRIPTION);
@@ -80,8 +125,8 @@ export function buildThemePrompt(description: string, clean: Record<string, stri
     '- "name": a short theme name, at most 40 characters.',
     `- "ui": one of ${UI_STYLES.map((u) => JSON.stringify(u)).join(', ')} (the shape of buttons and panels; "retro" suits pixel and arcade looks, the court styles suit palaces).`,
     `- "scene": one of ${SCENE_KITS.map((u) => JSON.stringify(u)).join(', ')} (how people and furniture are drawn; your character, desk and monitor art is drawn over any of them, and "office" is the plainest base for it).`,
-    '- "tokens": colours as hex like "#1a2b3c", for ALL of these keys. The value after each key is the default light theme, so you can see what the token is for:',
-    Object.entries(clean).map(([k, v]) => `${k}=${v}`).join(' '),
+    '- "tokens": colours as hex like "#1a2b3c", for ALL of these keys, in groups with what they paint. The value after each key is the default light theme:',
+    ...tokenGroupLines(clean),
     '- "fonts and shapes", also in "tokens" (spec 070; leave one out to keep the default):',
     `  --font (body text), --ui-display (titles, brand, room plates), --font-mono (paths and code): a font stack of 1-4 names, ONLY from: ${FONT_ALLOW.join(', ')}. Installed system fonts only; never a URL.`,
     '  --t1-weight: the title weight, one of 500, 550, 600, 650, 700, 750, 800.',
@@ -89,11 +134,12 @@ export function buildThemePrompt(description: string, clean: Record<string, stri
     '  --shadow-card (desk cards; default "none") and --shadow-pop (menus and popovers): "none" or one or two layers like "0 2px 8px rgba(0,0,0,.12)" (offsets up to 40px, blur up to 64px).',
     'Sizes, spacing and borders are fixed by the app and cannot be set.',
     '- "figures": {"shirts": [up to 8 hex colours], "hairs": [up to 8 hex colours]}: the clothes and hair colours of the people (their skin tones stay as they are).',
-    '- "words": short plain-text names (at most 40 characters) that fit the look, for:',
+    `- "words": short plain-text names that fit the look, for: (each "place-..." name is shown on a lobby tile and must be at most ${MAX_PLACE_NAME} characters, e.g. "Chart Room"; the others at most 40)`,
     ...Object.entries(GEN_WORDS).map(([k, v]) => `  ${k}: ${v}`),
     '- "art": SVG fragments for these slots (give the character a costume that fits the look):',
     ...Object.entries(GEN_ART).map(([k, v]) => `  ${k}: ${v}`),
     svgRules,
+    ART_STYLE,
     'The UI style matters for the top bar: "corporate" and "retro" fill it with --ink and "court-indian"/"court-european" with --brand-bg, under FIXED light text, so those tokens must be dark there; "clean" and "court-japanese" use --surface and --ink. For a dark page, "clean" or "court-japanese" is the safe choice.',
     'Rules: light or dark are both fine, but be consistent: for a dark look set EVERY token, so nothing of the light default remains. Text must read well: --ink on --bg and --surface at least 4.5:1, --ink-2 on --surface 4.5:1, --muted on --surface 4.5:1, and each status pill text --pc-X on its background --pb-X at least 4.5:1. Keep the status meaning: working is blue-ish, thinking violet-ish, waiting amber, error red, done green, idle grey. Keep it calm: no neon on neon.',
   ].join('\n');
@@ -158,6 +204,7 @@ export function contrast(a: string, b: string): number {
   return (l1 + 0.05) / (l2 + 0.05);
 }
 
+const TINTS = ['sage', 'blue', 'sand', 'clay'];
 /** The pairs checked on every pass (FR-017): [text, background, minimum]. */
 export const CONTRAST_PAIRS: Array<[string, string, number]> = [
   ['--ink', '--bg', 4.5], ['--ink', '--surface', 4.5], ['--ink', '--raised', 4.5], ['--ink', '--card', 4.5], ['--ink', '--card-waiting', 4.5], ['--ink', '--card-error', 4.5], ['--ink-2', '--soft', 4.5], ['--ink-2', '--note', 4.5], ['--ink-2', '--surface', 4.5], ['--muted', '--surface', 4.5] /* spec 052 FR-052: muted text is read, not decoration (was 3:1) */, ['--room-path', '--bg', 3],
@@ -165,7 +212,58 @@ export const CONTRAST_PAIRS: Array<[string, string, number]> = [
   ['--surface', '--sage-ink', 4.5], ['--surface', '--red-ink', 4.5], ['--surface', '--amber-ink', 4.5] /* spec 052 FR-169: the text of a primary, danger or warn button is --surface on these three */,
   ['--drop-ink', '--drop-bg', 4.5], ['--brand-mark', '--brand-bg', 3], ['--idle-stub-ink', '--idle-stub', 3],
   ['--desk-new', '--card', 3], ['--desk-needs', '--card-waiting', 3] /* spec 001 FR-178: the glow of a New desk and of a desk that needs you shows on its card */,
+  // spec 040 FR-027 (#903): the text of a room header and a desk sits on the room tint, not on --bg (the audit found paths at 2.5 to 3.0:1 in dark themes)
+  ...TINTS.flatMap((t): Array<[string, string, number]> => [['--room-path', `--tint-${t}`, 4.5], ['--muted', `--tint-${t}`, 4.5], ['--ink', `--tint-${t}`, 4.5]]),
 ];
+
+/**
+ * Pairs that matter only in some UI styles (spec 040 FR-027). `--brand-bg` fills the lobby tile icons and the primary buttons in every style
+ * but "clean" (themes.css), so it must stand out from the tile (--raised, and --bg behind it: non-text 3:1, WCAG 1.4.11) and carry the
+ * button text (--brand-mark, 4.5:1). Clean Office's own --brand-bg is a pale tint on purpose, so these are not in CONTRAST_PAIRS.
+ * [fg, bg, minimum, what it is for].
+ */
+export const UI_PAIRS: Array<[string, string, number, string]> = [
+  ['--brand-bg', '--raised', 3, 'the lobby tile icons are painted with --brand-bg on --raised'],
+  ['--brand-bg', '--bg', 3, 'the lobby tile icons are painted with --brand-bg on a mix of --raised and --bg'],
+  ['--brand-mark', '--brand-bg', 4.5, 'the text of a primary button is --brand-mark on --brand-bg'],
+];
+/** The UI styles that paint with --brand-bg (every one but "clean"). */
+export const BRAND_UIS = UI_STYLES.filter((u) => u !== 'clean');
+
+/** A place name that fits its lobby tile: whole words up to MAX_PLACE_NAME characters, else cut at that length. */
+export function fitPlaceName(name: string): string {
+  if (name.length <= MAX_PLACE_NAME) return name;
+  const words = name.split(' ');
+  let out = '';
+  for (const w of words) {
+    const next = out ? out + ' ' + w : w;
+    if (next.length > MAX_PLACE_NAME) break;
+    out = next;
+  }
+  return out || name.slice(0, MAX_PLACE_NAME).trimEnd();
+}
+
+/** Slots drawn over a whole room, the lobby band or a desk: they need several shapes to read as scenery. [minimum shapes] */
+const MIN_SHAPES: Record<string, number> = { 'room-back-wall': 4, 'room-back-window': 3, 'room-floor': 4, 'lobby-art': 5, 'desk-back': 2, 'char-robe': 2, 'char-headwear': 2 };
+const SHAPE_RE = /<(path|rect|circle|ellipse|line|polyline|polygon)\b/g;
+/**
+ * Spec 040 FR-028: warnings for art that is too sparse or too thin to see at the size the app draws it. Not blocking (a fix pass does
+ * not send the art back): the person sees them in the preview. `svg` is the sanitized fragment.
+ */
+export function artWarnings(slot: string, svg: string): string[] {
+  const out: string[] = [];
+  const shapes = (svg.match(SHAPE_RE) ?? []).length;
+  const min = MIN_SHAPES[slot] ?? 1;
+  if (shapes < min) out.push(`${slot}: sparse (${shapes} shape${shapes === 1 ? '' : 's'}, at least ${min} expected)`);
+  const widths = [...svg.matchAll(/stroke-width="([0-9.]+)"/g)].map((m) => Number(m[1])).filter((n) => Number.isFinite(n));
+  const floor = /^(place-|door-art)/.test(slot) ? 1 : 1.5;
+  if (widths.length && widths.every((w) => w < floor)) out.push(`${slot}: lines too thin to see (stroke-width under ${floor})`);
+  if (!/^(place-)/.test(slot) && shapes > 0) {
+    const sizes = [...svg.matchAll(/(?<![-\w])(?:width|height|r|rx|ry)="([0-9.]+)"/g)].map((m) => Number(m[1]));
+    if (sizes.length && !svg.includes(' d="') && !svg.includes(' points="') && sizes.every((n) => n < 3)) out.push(`${slot}: features too small to see (under 3 units)`);
+  }
+  return out;
+}
 
 const slug = (s: string): string => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
 const plain = (v: unknown, max: number): string => (typeof v === 'string' ? v.replace(/[<>{}\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, max) : '');
@@ -228,6 +326,14 @@ export function themeIssues(tokens: Record<string, string>, clean: Record<string
     const r = contrast(a, b);
     if (r < min) out.push(`${fg} (${tokens[fg] ?? clean[fg]}) on ${bg} (${tokens[bg] ?? clean[bg]}) has contrast ${r.toFixed(1)}:1, needs ${min}:1`);
   }
+  if (BRAND_UIS.includes(ui)) {
+    for (const [fg, bg, min, why] of UI_PAIRS) {
+      const a = c(fg), b = c(bg);
+      if (!a || !b) continue;
+      const r = contrast(a, b);
+      if (r < min) out.push(`${fg} (${a}) on ${bg} (${b}) has contrast ${r.toFixed(1)}:1, needs ${min}:1 (with ui "${ui}", ${why}); change ${fg === '--brand-mark' ? '--brand-mark' : '--brand-bg'}`);
+    }
+  }
   const tb = TOP_BAR[ui];
   const tbBg = tb ? c(tb[0]) : undefined;
   if (tb && tbBg && contrast(tb[1], tbBg) < 4.5) out.push(`${TOP_BAR_ISSUE}: with ui "${ui}" it is filled with ${tb[0]} (${tbBg}) under fixed light text ${tb[1]} (contrast ${contrast(tb[1], tbBg).toFixed(1)}:1, needs 4.5:1); make ${tb[0]} darker, or use ui "clean" or "court-japanese", whose top bar follows --surface and --ink`);
@@ -289,10 +395,15 @@ export function parseGeneratedTheme(reply: string, description: string, ctx: Gen
   if (figDropped) warnings.push(`${figDropped} clothes or hair colour${figDropped > 1 ? 's were' : ' was'} not usable`);
   const words: Record<string, string> = {};
   const rw = r.words && typeof r.words === 'object' && !Array.isArray(r.words) ? (r.words as Record<string, unknown>) : {};
+  const shortened: string[] = [];
   for (const k of Object.keys(GEN_WORDS)) {
-    const w = plain(rw[k], 40);
+    const w0 = plain(rw[k], 40);
+    // spec 040 FR-029: a place name is shown on a lobby tile that holds about 14 characters
+    const w = k.startsWith('place-') ? fitPlaceName(w0) : w0;
     if (w) words[k] = w;
+    if (w !== w0) shortened.push(k);
   }
+  if (shortened.length) warnings.push(`place name${shortened.length > 1 ? 's' : ''} shortened to fit a lobby tile (${MAX_PLACE_NAME} characters): ${shortened.join(', ')}`);
   const art: Record<string, string> = {};
   const ra = r.art && typeof r.art === 'object' && !Array.isArray(r.art) ? (r.art as Record<string, unknown>) : {};
   const refused: string[] = [];
@@ -300,8 +411,10 @@ export function parseGeneratedTheme(reply: string, description: string, ctx: Gen
     const v = ra[k];
     if (typeof v !== 'string' || !v.trim()) continue;
     const clean = v.length <= MAX_ART_CHARS ? ctx.sanitizeArt(v) : null;
-    if (clean) art[k] = clean;
-    else refused.push(k);
+    if (clean) {
+      art[k] = clean;
+      warnings.push(...artWarnings(k, clean));
+    } else refused.push(k);
   }
   if (refused.length) warnings.push(`art left out by the safety check: ${refused.join(', ')}`);
   const manifest: Record<string, unknown> = {
