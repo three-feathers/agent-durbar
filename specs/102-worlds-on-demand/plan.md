@@ -4,7 +4,7 @@
 
 ## Summary
 
-A world pack becomes a validated, code-free data file that can arrive from outside the app. One validator (`src/shared/worldpack.ts`, `worldzip.ts`) sits behind four entrances: download (project source with hashes pinned in the app; an organisation's or person's source, signed or first-seen), upload, generation and import. Main owns network, disk and decisions; a sandboxed encoder window decodes hostile pictures; the renderer gets bytes by key and part name, through the 097 world seam. Worlds and character sets are two flat lists of separate packs; project art is under `worlds/<id>/` and sets under `sets/<id>/`, outside the app except Flat, Photo and Office people (OP-10). They wait for the 097 FR-179 gate.
+A world pack becomes a validated, code-free data file that can arrive from outside the app. One validator (`src/shared/worldpack.ts`, `worldzip.ts`) sits behind four entrances: download (project source with hashes pinned in the app; an organisation's or person's source, signed or first-seen), upload, generation and import. Main owns network, disk and decisions; a sandboxed encoder window decodes hostile pictures; the renderer gets bytes by key and part name, through the 097 world seam. Worlds and character sets are two flat lists of separate packs; project art is under `worlds/<id>/` and sets under `sets/<id>/`, outside the app except the shipped worlds and their sets (FR-213). They wait for the 097 FR-179 gate.
 
 ## Technical Context
 
@@ -115,6 +115,7 @@ P1 to P3 may merge before the gate with nothing visible as available; P4 to P6 r
 - **Weekly matrix growth** with 19 picture worlds; shard per world.
 - **Art backlog**: crews to full poses, Retro pixel people and five new worlds are much more art than the places; each gate in FR-035 keeps them from shipping half done, and `coming` keeps the list honest.
 - **Repo growth** from art (OP-3); about 2.5 MB per world version, and redos count.
+- **App size**: about 22.6 MB of shipped art, then about 26.8 MB with Retro game (estimates, FR-213); the 30 MB budget test stops growth.
 
 ## Done when
 
