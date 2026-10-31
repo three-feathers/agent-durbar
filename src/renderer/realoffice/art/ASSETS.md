@@ -19,13 +19,14 @@ in the repository.
   person, but they did not carry the fictional-people clause, which spec 097 added later the same day. The clause is recorded beside
   each person sheet below (`fictional:`); every new prompt for this pack must carry it in the prompt itself.
 - **Resemblance check (FR-068):** Vikram (owner) looked at a contact sheet of all 15 people (p01–p15) and confirmed, by
-  Telegram DM on 2026-10-31 at 10:46 UTC, that he approves them and that none resembles a real or famous person; every
-  person sheet's `likeness-check` records it. A new person sheet starts as `pending (<approver>)`, and a release must not ship with
+  Telegram DM on 2026-10-31 at 10:46 UTC, that he approves them and that none resembles a real or famous person; the
+  `seat`, `stand` and `stand2` sheets' `likeness-check` records it; the `run-pNN` sheets are newer images and need their own check. A new person sheet starts as `pending (<approver>)`, and a release must not ship with
   a pending entry. If a resemblance is reported, the picture is removed and replaced,
   and the removal is recorded under *Removed* (picture, date, who reported, replacement) and in the changelog.
 - **Provenance is only here (FR-069, [KNOWN GAP]):** the re-encode strips any C2PA or content-credential manifest the generator
   embedded, so the shipped files carry no machine-readable provenance.
-- **No treadmill (2026-10-31, Vikram 11:22 UTC):** the standing sheets' third pose (a person on a treadmill desk) is not shipped (15 pictures removed, `people.json` without `tread`); the prompts below are kept exactly as run. A running or jogging pose without the machine needs new art (a Codex follow-up, with Vikram's approval).
+- **No treadmill (2026-10-31, Vikram 11:22 UTC):** the standing sheets' third pose (a person on a treadmill desk) is not shipped (15 pictures removed, `people.json` without `tread`); the prompts below are kept exactly as run. The running pose that replaces it is the `run-pNN` sheets below.
+- **Running sheets (2026-10-31):** p01 and p04 used the first prompt; every other sheet used the second, which adds "mirror strides" because the first gave p02 and p03 the same leg twice. Each section's prompt is the one that sheet was made with. Two sheets still lift the same leg in both frames after their one retry: p03 (attempt 2, the retry) and p15 (attempt 1, of its two the closer to the person); P1 draws only stride A, so this first shows in P2's stepped motion.
 - **Not generated:** the monitors are drawn in CSS; lights are CSS overlays (D4).
 
 
@@ -563,6 +564,231 @@ in the repository.
 - reference: none
 - prompt: A wide 16:9 panoramic view of the back wall of the office, seen straight on from the front. From left to right along the wall: a library bookshelf, a software shelf, a wall-mounted terminal screen, a globe kiosk, double doors (the Boss office), a coffee bar, a bank counter with a glass panel, a blue postbox, and a red tool cart. High windows above the wall with daylight. The floor in the foreground is light oak and completely empty. No people. Photoreal 3D render, front-facing eye-level-from-slightly-above camera (about 20° down), mild perspective, modern open-plan software office, warm daylight, light oak, white walls, black steel, plants; clean, calm, realistic, no text, no logos.
 - cut: the build PR re-cropped every fixture from the wall at one top (y 192) and one floor line (y 468), so each is whole and all share a scale (FR-023); sides feathered over 14 px; the Terminal keeps the wall screen only (rows above y 331), the Web the globe only (rows from y 332); `floor.webp` is the floor band (y 470..600) at quality 0.70; WebP, no metadata
+- licence: MIT
+
+### run-p01
+
+- files: p01-runA.webp p01-runB.webp
+- source: `room-art/run/run-p01.png` (not shipped; attempt 1)
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 (asked for it in the terminal: "yes make a real running pose"; the picture itself waits for his likeness check below)
+- reference: `p01-letter.webp` (the same person's shipped standing picture, as a PNG with a transparent margin), for the face, hair, clothes, camera, light and scale
+- prompt: Create a character sheet: TWO running poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). A clear empty gap between the two poses; both drawn at exactly the same scale, full body from the top of the head to the shoes, both shoes fully visible and nothing cut off, the lowest shoe of each pose on the same baseline. The SAME person as in the attached image (same face, hair, clothes and shoes), now jogging in place, body turned slightly toward the viewer (front three-quarter view), elbows bent at about 90 degrees, arms swinging, relaxed and friendly. Pose 1, stride A: left knee lifted forward, right foot flat on the ground, right arm forward. Pose 2, stride B: the opposite moment, right knee lifted forward, left foot flat on the ground, left arm forward. No treadmill, no machine, no floor, no props. The person is fictional and resembles no real or famous person. Photoreal 3D render with the same camera, light and scale as the attached image: front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos, transparent background.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt itself carries the clause)
+- likeness-check: Vikram, 2026-10-31 12:44 UTC (running-sheet contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
+- licence: MIT
+
+### run-p02
+
+- files: p02-runA.webp p02-runB.webp
+- source: `room-art/run/run-p02.png` (not shipped; attempt 2)
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 (asked for it in the terminal: "yes make a real running pose"; the picture itself waits for his likeness check below)
+- reference: `p02-letter.webp` (the same person's shipped standing picture, as a PNG with a transparent margin), for the face, hair, clothes, camera, light and scale
+- prompt: Create a character sheet: TWO running poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). A clear empty gap between the two poses; both drawn at exactly the same scale, full body from the top of the head to the shoes, both shoes fully visible and nothing cut off, the lowest shoe of each pose on the same baseline. The SAME person as in the attached image (same face, hair, clothes and shoes), now jogging in place, body turned slightly toward the viewer (front three-quarter view), elbows bent at about 90 degrees, arms swinging, relaxed and friendly. The two poses MUST be mirror strides, not the same pose twice. Pose 1 (left in the image), stride A: the leg on the VIEWER'S RIGHT side of the picture is lifted with the knee forward, the leg on the viewer's left stands flat on the ground; the opposite arm forward. Pose 2 (right in the image), stride B: the leg on the VIEWER'S LEFT side of the picture is lifted with the knee forward, the leg on the viewer's right stands flat on the ground; the opposite arm forward. No treadmill, no machine, no floor, no props. The person is fictional and resembles no real or famous person. Photoreal 3D render with the same camera, light and scale as the attached image: front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos, transparent background.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt itself carries the clause)
+- likeness-check: Vikram, 2026-10-31 12:44 UTC (running-sheet contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
+- licence: MIT
+
+### run-p03
+
+- files: p03-runA.webp p03-runB.webp
+- source: `room-art/run/run-p03.png` (not shipped; attempt 2)
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 (asked for it in the terminal: "yes make a real running pose"; the picture itself waits for his likeness check below)
+- reference: `p03-letter.webp` (the same person's shipped standing picture, as a PNG with a transparent margin), for the face, hair, clothes, camera, light and scale
+- prompt: Create a character sheet: TWO running poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). A clear empty gap between the two poses; both drawn at exactly the same scale, full body from the top of the head to the shoes, both shoes fully visible and nothing cut off, the lowest shoe of each pose on the same baseline. The SAME person as in the attached image (same face, hair, clothes and shoes), now jogging in place, body turned slightly toward the viewer (front three-quarter view), elbows bent at about 90 degrees, arms swinging, relaxed and friendly. The two poses MUST be mirror strides, not the same pose twice. Pose 1 (left in the image), stride A: the leg on the VIEWER'S RIGHT side of the picture is lifted with the knee forward, the leg on the viewer's left stands flat on the ground; the opposite arm forward. Pose 2 (right in the image), stride B: the leg on the VIEWER'S LEFT side of the picture is lifted with the knee forward, the leg on the viewer's right stands flat on the ground; the opposite arm forward. No treadmill, no machine, no floor, no props. The person is fictional and resembles no real or famous person. Photoreal 3D render with the same camera, light and scale as the attached image: front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos, transparent background.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt itself carries the clause)
+- likeness-check: Vikram, 2026-10-31 12:44 UTC (running-sheet contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
+- licence: MIT
+
+### run-p04
+
+- files: p04-runA.webp p04-runB.webp
+- source: `room-art/run/run-p04.png` (not shipped; attempt 1)
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 (asked for it in the terminal: "yes make a real running pose"; the picture itself waits for his likeness check below)
+- reference: `p04-letter.webp` (the same person's shipped standing picture, as a PNG with a transparent margin), for the face, hair, clothes, camera, light and scale
+- prompt: Create a character sheet: TWO running poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). A clear empty gap between the two poses; both drawn at exactly the same scale, full body from the top of the head to the shoes, both shoes fully visible and nothing cut off, the lowest shoe of each pose on the same baseline. The SAME person as in the attached image (same face, hair, clothes and shoes), now jogging in place, body turned slightly toward the viewer (front three-quarter view), elbows bent at about 90 degrees, arms swinging, relaxed and friendly. Pose 1, stride A: left knee lifted forward, right foot flat on the ground, right arm forward. Pose 2, stride B: the opposite moment, right knee lifted forward, left foot flat on the ground, left arm forward. No treadmill, no machine, no floor, no props. The person is fictional and resembles no real or famous person. Photoreal 3D render with the same camera, light and scale as the attached image: front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos, transparent background.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt itself carries the clause)
+- likeness-check: Vikram, 2026-10-31 12:44 UTC (running-sheet contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
+- licence: MIT
+
+### run-p05
+
+- files: p05-runA.webp p05-runB.webp
+- source: `room-art/run/run-p05.png` (not shipped; attempt 1)
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 (asked for it in the terminal: "yes make a real running pose"; the picture itself waits for his likeness check below)
+- reference: `p05-letter.webp` (the same person's shipped standing picture, as a PNG with a transparent margin), for the face, hair, clothes, camera, light and scale
+- prompt: Create a character sheet: TWO running poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). A clear empty gap between the two poses; both drawn at exactly the same scale, full body from the top of the head to the shoes, both shoes fully visible and nothing cut off, the lowest shoe of each pose on the same baseline. The SAME person as in the attached image (same face, hair, clothes and shoes), now jogging in place, body turned slightly toward the viewer (front three-quarter view), elbows bent at about 90 degrees, arms swinging, relaxed and friendly. The two poses MUST be mirror strides, not the same pose twice. Pose 1 (left in the image), stride A: the leg on the VIEWER'S RIGHT side of the picture is lifted with the knee forward, the leg on the viewer's left stands flat on the ground; the opposite arm forward. Pose 2 (right in the image), stride B: the leg on the VIEWER'S LEFT side of the picture is lifted with the knee forward, the leg on the viewer's right stands flat on the ground; the opposite arm forward. No treadmill, no machine, no floor, no props. The person is fictional and resembles no real or famous person. Photoreal 3D render with the same camera, light and scale as the attached image: front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos, transparent background.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt itself carries the clause)
+- likeness-check: Vikram, 2026-10-31 12:44 UTC (running-sheet contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
+- licence: MIT
+
+### run-p06
+
+- files: p06-runA.webp p06-runB.webp
+- source: `room-art/run/run-p06.png` (not shipped; attempt 1)
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 (asked for it in the terminal: "yes make a real running pose"; the picture itself waits for his likeness check below)
+- reference: `p06-letter.webp` (the same person's shipped standing picture, as a PNG with a transparent margin), for the face, hair, clothes, camera, light and scale
+- prompt: Create a character sheet: TWO running poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). A clear empty gap between the two poses; both drawn at exactly the same scale, full body from the top of the head to the shoes, both shoes fully visible and nothing cut off, the lowest shoe of each pose on the same baseline. The SAME person as in the attached image (same face, hair, clothes and shoes), now jogging in place, body turned slightly toward the viewer (front three-quarter view), elbows bent at about 90 degrees, arms swinging, relaxed and friendly. The two poses MUST be mirror strides, not the same pose twice. Pose 1 (left in the image), stride A: the leg on the VIEWER'S RIGHT side of the picture is lifted with the knee forward, the leg on the viewer's left stands flat on the ground; the opposite arm forward. Pose 2 (right in the image), stride B: the leg on the VIEWER'S LEFT side of the picture is lifted with the knee forward, the leg on the viewer's right stands flat on the ground; the opposite arm forward. No treadmill, no machine, no floor, no props. The person is fictional and resembles no real or famous person. Photoreal 3D render with the same camera, light and scale as the attached image: front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos, transparent background.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt itself carries the clause)
+- likeness-check: Vikram, 2026-10-31 12:44 UTC (running-sheet contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
+- licence: MIT
+
+### run-p07
+
+- files: p07-runA.webp p07-runB.webp
+- source: `room-art/run/run-p07.png` (not shipped; attempt 1)
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 (asked for it in the terminal: "yes make a real running pose"; the picture itself waits for his likeness check below)
+- reference: `p07-letter.webp` (the same person's shipped standing picture, as a PNG with a transparent margin), for the face, hair, clothes, camera, light and scale
+- prompt: Create a character sheet: TWO running poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). A clear empty gap between the two poses; both drawn at exactly the same scale, full body from the top of the head to the shoes, both shoes fully visible and nothing cut off, the lowest shoe of each pose on the same baseline. The SAME person as in the attached image (same face, hair, clothes and shoes), now jogging in place, body turned slightly toward the viewer (front three-quarter view), elbows bent at about 90 degrees, arms swinging, relaxed and friendly. The two poses MUST be mirror strides, not the same pose twice. Pose 1 (left in the image), stride A: the leg on the VIEWER'S RIGHT side of the picture is lifted with the knee forward, the leg on the viewer's left stands flat on the ground; the opposite arm forward. Pose 2 (right in the image), stride B: the leg on the VIEWER'S LEFT side of the picture is lifted with the knee forward, the leg on the viewer's right stands flat on the ground; the opposite arm forward. No treadmill, no machine, no floor, no props. The person is fictional and resembles no real or famous person. Photoreal 3D render with the same camera, light and scale as the attached image: front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos, transparent background.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt itself carries the clause)
+- likeness-check: Vikram, 2026-10-31 12:44 UTC (running-sheet contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
+- licence: MIT
+
+### run-p08
+
+- files: p08-runA.webp p08-runB.webp
+- source: `room-art/run/run-p08.png` (not shipped; attempt 1)
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 (asked for it in the terminal: "yes make a real running pose"; the picture itself waits for his likeness check below)
+- reference: `p08-letter.webp` (the same person's shipped standing picture, as a PNG with a transparent margin), for the face, hair, clothes, camera, light and scale
+- prompt: Create a character sheet: TWO running poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). A clear empty gap between the two poses; both drawn at exactly the same scale, full body from the top of the head to the shoes, both shoes fully visible and nothing cut off, the lowest shoe of each pose on the same baseline. The SAME person as in the attached image (same face, hair, clothes and shoes), now jogging in place, body turned slightly toward the viewer (front three-quarter view), elbows bent at about 90 degrees, arms swinging, relaxed and friendly. The two poses MUST be mirror strides, not the same pose twice. Pose 1 (left in the image), stride A: the leg on the VIEWER'S RIGHT side of the picture is lifted with the knee forward, the leg on the viewer's left stands flat on the ground; the opposite arm forward. Pose 2 (right in the image), stride B: the leg on the VIEWER'S LEFT side of the picture is lifted with the knee forward, the leg on the viewer's right stands flat on the ground; the opposite arm forward. No treadmill, no machine, no floor, no props. The person is fictional and resembles no real or famous person. Photoreal 3D render with the same camera, light and scale as the attached image: front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos, transparent background.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt itself carries the clause)
+- likeness-check: Vikram, 2026-10-31 12:44 UTC (running-sheet contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
+- licence: MIT
+
+### run-p09
+
+- files: p09-runA.webp p09-runB.webp
+- source: `room-art/run/run-p09.png` (not shipped; attempt 1)
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 (asked for it in the terminal: "yes make a real running pose"; the picture itself waits for his likeness check below)
+- reference: `p09-letter.webp` (the same person's shipped standing picture, as a PNG with a transparent margin), for the face, hair, clothes, camera, light and scale
+- prompt: Create a character sheet: TWO running poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). A clear empty gap between the two poses; both drawn at exactly the same scale, full body from the top of the head to the shoes, both shoes fully visible and nothing cut off, the lowest shoe of each pose on the same baseline. The SAME person as in the attached image (same face, hair, clothes and shoes), now jogging in place, body turned slightly toward the viewer (front three-quarter view), elbows bent at about 90 degrees, arms swinging, relaxed and friendly. The two poses MUST be mirror strides, not the same pose twice. Pose 1 (left in the image), stride A: the leg on the VIEWER'S RIGHT side of the picture is lifted with the knee forward, the leg on the viewer's left stands flat on the ground; the opposite arm forward. Pose 2 (right in the image), stride B: the leg on the VIEWER'S LEFT side of the picture is lifted with the knee forward, the leg on the viewer's right stands flat on the ground; the opposite arm forward. No treadmill, no machine, no floor, no props. The person is fictional and resembles no real or famous person. Photoreal 3D render with the same camera, light and scale as the attached image: front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos, transparent background.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt itself carries the clause)
+- likeness-check: Vikram, 2026-10-31 12:44 UTC (running-sheet contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
+- licence: MIT
+
+### run-p10
+
+- files: p10-runA.webp p10-runB.webp
+- source: `room-art/run/run-p10.png` (not shipped; attempt 1)
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 (asked for it in the terminal: "yes make a real running pose"; the picture itself waits for his likeness check below)
+- reference: `p10-letter.webp` (the same person's shipped standing picture, as a PNG with a transparent margin), for the face, hair, clothes, camera, light and scale
+- prompt: Create a character sheet: TWO running poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). A clear empty gap between the two poses; both drawn at exactly the same scale, full body from the top of the head to the shoes, both shoes fully visible and nothing cut off, the lowest shoe of each pose on the same baseline. The SAME person as in the attached image (same face, hair, clothes and shoes), now jogging in place, body turned slightly toward the viewer (front three-quarter view), elbows bent at about 90 degrees, arms swinging, relaxed and friendly. The two poses MUST be mirror strides, not the same pose twice. Pose 1 (left in the image), stride A: the leg on the VIEWER'S RIGHT side of the picture is lifted with the knee forward, the leg on the viewer's left stands flat on the ground; the opposite arm forward. Pose 2 (right in the image), stride B: the leg on the VIEWER'S LEFT side of the picture is lifted with the knee forward, the leg on the viewer's right stands flat on the ground; the opposite arm forward. No treadmill, no machine, no floor, no props. The person is fictional and resembles no real or famous person. Photoreal 3D render with the same camera, light and scale as the attached image: front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos, transparent background.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt itself carries the clause)
+- likeness-check: Vikram, 2026-10-31 12:44 UTC (running-sheet contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
+- licence: MIT
+
+### run-p11
+
+- files: p11-runA.webp p11-runB.webp
+- source: `room-art/run/run-p11.png` (not shipped; attempt 1)
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 (asked for it in the terminal: "yes make a real running pose"; the picture itself waits for his likeness check below)
+- reference: `p11-letter.webp` (the same person's shipped standing picture, as a PNG with a transparent margin), for the face, hair, clothes, camera, light and scale
+- prompt: Create a character sheet: TWO running poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). A clear empty gap between the two poses; both drawn at exactly the same scale, full body from the top of the head to the shoes, both shoes fully visible and nothing cut off, the lowest shoe of each pose on the same baseline. The SAME person as in the attached image (same face, hair, clothes and shoes), now jogging in place, body turned slightly toward the viewer (front three-quarter view), elbows bent at about 90 degrees, arms swinging, relaxed and friendly. The two poses MUST be mirror strides, not the same pose twice. Pose 1 (left in the image), stride A: the leg on the VIEWER'S RIGHT side of the picture is lifted with the knee forward, the leg on the viewer's left stands flat on the ground; the opposite arm forward. Pose 2 (right in the image), stride B: the leg on the VIEWER'S LEFT side of the picture is lifted with the knee forward, the leg on the viewer's right stands flat on the ground; the opposite arm forward. No treadmill, no machine, no floor, no props. The person is fictional and resembles no real or famous person. Photoreal 3D render with the same camera, light and scale as the attached image: front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos, transparent background.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt itself carries the clause)
+- likeness-check: Vikram, 2026-10-31 12:44 UTC (running-sheet contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
+- licence: MIT
+
+### run-p12
+
+- files: p12-runA.webp p12-runB.webp
+- source: `room-art/run/run-p12.png` (not shipped; attempt 2)
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 (asked for it in the terminal: "yes make a real running pose"; the picture itself waits for his likeness check below)
+- reference: `p12-letter.webp` (the same person's shipped standing picture, as a PNG with a transparent margin), for the face, hair, clothes, camera, light and scale
+- prompt: Create a character sheet: TWO running poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). A clear empty gap between the two poses; both drawn at exactly the same scale, full body from the top of the head to the shoes, both shoes fully visible and nothing cut off, the lowest shoe of each pose on the same baseline. The SAME person as in the attached image (same face, hair, clothes and shoes), now jogging in place, body turned slightly toward the viewer (front three-quarter view), elbows bent at about 90 degrees, arms swinging, relaxed and friendly. The two poses MUST be mirror strides, not the same pose twice. Pose 1 (left in the image), stride A: the leg on the VIEWER'S RIGHT side of the picture is lifted with the knee forward, the leg on the viewer's left stands flat on the ground; the opposite arm forward. Pose 2 (right in the image), stride B: the leg on the VIEWER'S LEFT side of the picture is lifted with the knee forward, the leg on the viewer's right stands flat on the ground; the opposite arm forward. No treadmill, no machine, no floor, no props. The person is fictional and resembles no real or famous person. Photoreal 3D render with the same camera, light and scale as the attached image: front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos, transparent background.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt itself carries the clause)
+- likeness-check: Vikram, 2026-10-31 12:44 UTC (running-sheet contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
+- licence: MIT
+
+### run-p13
+
+- files: p13-runA.webp p13-runB.webp
+- source: `room-art/run/run-p13.png` (not shipped; attempt 1)
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 (asked for it in the terminal: "yes make a real running pose"; the picture itself waits for his likeness check below)
+- reference: `p13-letter.webp` (the same person's shipped standing picture, as a PNG with a transparent margin), for the face, hair, clothes, camera, light and scale
+- prompt: Create a character sheet: TWO running poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). A clear empty gap between the two poses; both drawn at exactly the same scale, full body from the top of the head to the shoes, both shoes fully visible and nothing cut off, the lowest shoe of each pose on the same baseline. The SAME person as in the attached image (same face, hair, clothes and shoes), now jogging in place, body turned slightly toward the viewer (front three-quarter view), elbows bent at about 90 degrees, arms swinging, relaxed and friendly. The two poses MUST be mirror strides, not the same pose twice. Pose 1 (left in the image), stride A: the leg on the VIEWER'S RIGHT side of the picture is lifted with the knee forward, the leg on the viewer's left stands flat on the ground; the opposite arm forward. Pose 2 (right in the image), stride B: the leg on the VIEWER'S LEFT side of the picture is lifted with the knee forward, the leg on the viewer's right stands flat on the ground; the opposite arm forward. No treadmill, no machine, no floor, no props. The person is fictional and resembles no real or famous person. Photoreal 3D render with the same camera, light and scale as the attached image: front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos, transparent background.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt itself carries the clause)
+- likeness-check: Vikram, 2026-10-31 12:44 UTC (running-sheet contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
+- licence: MIT
+
+### run-p14
+
+- files: p14-runA.webp p14-runB.webp
+- source: `room-art/run/run-p14.png` (not shipped; attempt 2)
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 (asked for it in the terminal: "yes make a real running pose"; the picture itself waits for his likeness check below)
+- reference: `p14-letter.webp` (the same person's shipped standing picture, as a PNG with a transparent margin), for the face, hair, clothes, camera, light and scale
+- prompt: Create a character sheet: TWO running poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). A clear empty gap between the two poses; both drawn at exactly the same scale, full body from the top of the head to the shoes, both shoes fully visible and nothing cut off, the lowest shoe of each pose on the same baseline. The SAME person as in the attached image (same face, hair, clothes and shoes), now jogging in place, body turned slightly toward the viewer (front three-quarter view), elbows bent at about 90 degrees, arms swinging, relaxed and friendly. The two poses MUST be mirror strides, not the same pose twice. Pose 1 (left in the image), stride A: the leg on the VIEWER'S RIGHT side of the picture is lifted with the knee forward, the leg on the viewer's left stands flat on the ground; the opposite arm forward. Pose 2 (right in the image), stride B: the leg on the VIEWER'S LEFT side of the picture is lifted with the knee forward, the leg on the viewer's right stands flat on the ground; the opposite arm forward. No treadmill, no machine, no floor, no props. The person is fictional and resembles no real or famous person. Photoreal 3D render with the same camera, light and scale as the attached image: front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos, transparent background.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt itself carries the clause)
+- likeness-check: Vikram, 2026-10-31 12:44 UTC (running-sheet contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
+- licence: MIT
+
+### run-p15
+
+- files: p15-runA.webp p15-runB.webp
+- source: `room-art/run/run-p15.png` (not shipped; attempt 1)
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 (asked for it in the terminal: "yes make a real running pose"; the picture itself waits for his likeness check below)
+- reference: `p15-letter.webp` (the same person's shipped standing picture, as a PNG with a transparent margin), for the face, hair, clothes, camera, light and scale
+- prompt: Create a character sheet: TWO running poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). A clear empty gap between the two poses; both drawn at exactly the same scale, full body from the top of the head to the shoes, both shoes fully visible and nothing cut off, the lowest shoe of each pose on the same baseline. The SAME person as in the attached image (same face, hair, clothes and shoes), now jogging in place, body turned slightly toward the viewer (front three-quarter view), elbows bent at about 90 degrees, arms swinging, relaxed and friendly. The two poses MUST be mirror strides, not the same pose twice. Pose 1 (left in the image), stride A: the leg on the VIEWER'S RIGHT side of the picture is lifted with the knee forward, the leg on the viewer's left stands flat on the ground; the opposite arm forward. Pose 2 (right in the image), stride B: the leg on the VIEWER'S LEFT side of the picture is lifted with the knee forward, the leg on the viewer's right stands flat on the ground; the opposite arm forward. No treadmill, no machine, no floor, no props. The person is fictional and resembles no real or famous person. Photoreal 3D render with the same camera, light and scale as the attached image: front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos, transparent background.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt itself carries the clause)
+- likeness-check: Vikram, 2026-10-31 12:44 UTC (running-sheet contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
 - licence: MIT
 
 ## References (generated the same day, not shipped)

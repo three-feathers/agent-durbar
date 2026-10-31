@@ -47,8 +47,11 @@ export const ORDER_SEARCH_MAX = 7;
 /** FR-020: big screens with this many visible agents or fewer. */
 export const BIG_MAX = 4;
 /** FR-024: visitors' activity pose per place, and the fallback when a person has no picture for it. */
-export const FX_POSE: Record<string, string> = { library: 'book', software: 'box', terminal: 'touch', web: 'touch', boss: 'knock', coffee: 'coffee', bank: 'letter', postbox: 'letter', other: 'tool' };
-export const POSE_FALLBACK: Record<string, string> = { box: 'letter', touch: 'letter', tool: 'letter', wait: 'letter' };
+export const FX_POSE: Record<string, string> = { library: 'book', software: 'box', terminal: 'runA', web: 'touch', boss: 'knock', coffee: 'coffee', bank: 'letter', postbox: 'letter', other: 'tool' };
+export const POSE_FALLBACK: Record<string, string> = { box: 'letter', touch: 'letter', tool: 'letter', wait: 'letter', runA: 'letter' };
+/** Owner 2026-10-31 ("make a real running pose", replacing the treadmill): the Terminal visitor jogs in place. P1 draws stride A
+ *  still; the second frame of each two-frame pose is recorded here for the stepped motion of phase P2. */
+export const POSE_FRAME_B: Record<string, string> = { runA: 'runB' };
 /** Owner 2026-10-31 10:19 ("it must be real"): people in the lobby are scaled against the Boss door: a door is about 2.1 m, a person 1.7 m. */
 export const DOOR_M = 2.1, PERSON_M = 1.7;
 /** Owner 2026-10-31 10:48 ("their feet are above the floor"): visitors stand IN FRONT of the fixtures, on the floor strip, not on the

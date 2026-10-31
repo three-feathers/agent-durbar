@@ -3,7 +3,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { realLayout, lobbyWidths, sortDesks, assignPeople, standPose, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
+import { realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
 
@@ -243,10 +243,28 @@ for (const [W, H] of SIZES) {
     }
   }
   assert.ok(n >= 5, 'visitors were checked: ' + n);
-  /* owner 2026-10-31 11:22 ("may be don't use treadmill"): the Terminal visitor stands at the terminal (reaching to it, else the plain standing pose) */
+  /* owner 2026-10-31 ("Treadmill is not on floor ... use running"; "yes make a real running pose"): the Terminal visitor jogs in
+     place beside the terminal, stride A in P1, on the front floor plane like everyone else (no treadmill) */
   const term = L.fixtures.find((f) => f.id === 'terminal')!.visitors[0];
-  assert.ok(['touch', 'letter'].includes(term.fig!.pose), 'the Terminal visitor stands, no treadmill: ' + term.fig!.pose);
+  assert.strictEqual(term.fig!.pose, 'runA', 'the Terminal visitor runs (stride A), no treadmill');
+  assert.strictEqual(term.fig!.file, 'p03-runA.webp', 'the running picture of that person');
   assert.ok(Math.abs(term.fig!.feetY - front) <= 0.5, 'the Terminal visitor stands on the front floor plane');
+  const sr = META.stand.p03, tf = (sr.feet as Record<string, number>).runA, tt = (sr.top as Record<string, number>).runA;
+  assert.ok(Math.abs(term.fig!.y + term.fig!.h * tf - front) <= 2, `the runner's lowest foot is on the front floor plane at ${W} (within 2 px)`);
+  const runTall = term.fig!.h * (tf - tt), upTall = (L.fixtures.find((f) => f.id === 'terminal')!.visitors[0].fig!.h / sr.poses.runA[1]) * standHeight(META, 'p03');
+  assert.ok(runTall / upTall > 0.9 && runTall / upTall < 1.0, `a runner is a little shorter than upright (bent knees): ${(runTall / upTall).toFixed(3)}`);
+}
+// ---- the running pose: every person has both strides, measured, the same canvas for both (no jump when P2 steps them) ----
+assert.strictEqual(POSE_FRAME_B.runA, 'runB', 'stride B is recorded for P2');
+for (const pid of PEOPLE) {
+  const st = META.stand[pid];
+  for (const p of ['runA', 'runB']) assert.ok(Array.isArray(st.poses[p]) && st.feet && st.feet[p] > 0.9 && st.top && st.top[p] < 0.1, `${pid} has a measured ${p}`);
+  assert.deepStrictEqual(st.poses.runA, st.poses.runB, `${pid}: both strides share one canvas`);
+  assert.strictEqual(standPose(META, pid, 'terminal', false)!.pose, 'runA', `${pid} runs at the Terminal`);
+}
+{
+  const noRun = JSON.parse(JSON.stringify(META)) as RealMeta; delete noRun.stand.p01.poses.runA;
+  assert.strictEqual(standPose(noRun, 'p01', 'terminal', false)!.pose, 'letter', 'a person without the running picture stands (letter)');
 }
 // the anchor uses the measured foot line, not the picture's box: the mockup's art had up to 6 % empty rows under the feet
 assert.ok(Object.values(META.stand).some((s) => Object.values(s.feet as Record<string, number>).some((f) => f < 0.97)), 'some sprite has empty rows under its feet (so a box anchor would float)');

@@ -21,7 +21,7 @@
  *   - a picture that fails to load leaves a broken image instead of the initials disc (FR-065).
  *   - the world chrome (FR-113): in Real office the top bar, More menu, a toast, Settings and a dialog do not use the photo world's
  *     tokens (glass, bar ink, page ink), text under 10.5px, or leaving Real office does not restore the theme exactly; flat has no world.
- * Screenshots: <SHOTS_OUT>/097-world-{menu,toast,settings,dialog}-<w>x<h>.png, 097-real-15-<w>x<h>.png, 097-real-3-<w>x<h>.png, 097-real-lights-1440x900.png, 097-office-layout-1440x900.png.
+ * Screenshots: <SHOTS_OUT>/097-world-{menu,toast,settings,dialog}-<w>x<h>.png, 097-real-15-<w>x<h>.png, 097-real-lobby-<w>x<h>.png (the lobby band, with the Terminal runner), 097-real-3-<w>x<h>.png, 097-real-lights-1440x900.png, 097-office-layout-1440x900.png.
  */
 const os = require('os');
 const fs = require('fs');
@@ -109,14 +109,15 @@ module.exports = async (ctx) => {
     assert.strictEqual(bub.x, bub.e, 'one "!" per error desk');
     // ---- owner 2026-10-31 10:19 and 10:48: every visitor's feet (its measured foot line) on the FRONT floor plane (in front of the
     //      fixtures, FRONT_DEPTH of the strip below the wall line) within 2 px, with a contact shadow there; no chip over a figure's lower 25 % ----
-    const feet = await js(`(()=>{const A=self.DurbarRealOfficeArt,sr=document.querySelector('#stage .ro-strip').getBoundingClientRect(),wl=sr.top+3,fl=wl+self.exports.FRONT_DEPTH*(sr.bottom-wl),out=[];
+    const FEET = `(()=>{const A=self.DurbarRealOfficeArt,sr=document.querySelector('#stage .ro-strip').getBoundingClientRect(),wl=sr.top+3,fl=wl+self.exports.FRONT_DEPTH*(sr.bottom-wl),out=[];
       const chips=[...document.querySelectorAll('#stage .ro-chip')].map(c=>c.getBoundingClientRect());
       for(const im of document.querySelectorAll('#stage .ro-visitor')){const m=/(p\\d\\d)-(\\w+)\\.webp$/.exec(im.getAttribute('src'));const f=A.stand[m[1]].feet[m[2]],t=A.stand[m[1]].top[m[2]];
         const r=im.getBoundingClientRect(),y=r.top+r.height*f,cx=r.left+r.width/2,lo=r.top+r.height*(f-0.25*(f-t));
         const sh=[...document.querySelectorAll('#stage .ro-shadow')].some(s=>{const q=s.getBoundingClientRect();return q.left<cx&&q.right>cx&&Math.abs((q.top+q.bottom)/2-fl)<=2;});
         const legs=chips.filter(q=>q.left<r.left+r.width*0.8&&q.right>r.left+r.width*0.2&&q.top<y&&q.bottom>lo).length;
         out.push({who:im.dataset.for,pose:m[2],off:Math.round((y-fl)*10)/10,wall:Math.round((y-wl)*10)/10,sh,legs});}
-      return out;})()`);
+      return out;})()`;
+    const feet = await js(FEET);
     console.log('[097] feet vs front floor plane', w, JSON.stringify(feet.map((f) => f.pose + ':' + f.off + ' (wall +' + f.wall + ')')));
     assert.ok(feet.length >= 3, 'visitors stand in the lobby');
     for (const f of feet) {
@@ -126,6 +127,26 @@ module.exports = async (ctx) => {
       assert.strictEqual(f.legs, 0, `${f.who}: no name chip covers the feet or legs`);
     }
     await H.shot(path.join(OUT, `097-real-15-${w}x${h}.png`), { prep: 'calm' });
+    // ---- owner 2026-10-31 ("make a real running pose"): someone at the Terminal jogs in place (stride A in P1), no treadmill; a
+    //      close crop of the lobby band shows it ----
+    // A simulator visit comes and goes, so wait for one, let its pictures decode, take the crop, and keep the crop only if the runner is still there.
+    const RUNNER = `[...document.querySelectorAll('#stage .ro-visitor')].some(i=>/-runA\\.webp$/.test(i.getAttribute('src'))&&i.complete&&i.naturalWidth>0)`;
+    let crop = null, run = null, runners = [];
+    for (let t = 0; t < 8 && !crop; t++) {
+      await must(RUNNER, 'someone running at the Terminal', 40000);
+      run = await js(`(async()=>{const v=[...document.querySelectorAll('#stage .ro-visitor')];await Promise.all(v.map(i=>i.decode().catch(()=>0)));await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+        const lob=document.querySelector('#stage .ro-lobby').getBoundingClientRect();
+        return {tread:v.filter(i=>/tread/.test(i.getAttribute('src'))).length,poses:v.map(i=>i.dataset.pose).join(','),lobby:[lob.left,lob.top,lob.width,lob.height].map(Math.round)}})()`);
+      runners = (await js(FEET)).filter((x) => x.pose === 'runA');
+      const [lx, ly, lw, lh] = run.lobby;
+      const c = await ctx.win.webContents.capturePage({ x: lx, y: ly, width: lw, height: lh });
+      if (runners.length && await js(RUNNER)) crop = c;
+    }
+    assert.ok(crop, 'a lobby crop with someone running at the Terminal');
+    console.log('[097] lobby poses', w, run.poses);
+    assert.strictEqual(run.tread, 0, 'no treadmill picture');
+    for (const f of runners) assert.ok(Math.abs(f.off) <= 2 && f.sh && f.legs === 0, `the runner ${f.who} is on the floor with a shadow and no chip on the legs (${f.off} px)`);
+    fs.writeFileSync(path.join(OUT, `097-real-lobby-${w}x${h}.png`), crop.toPNG());
   }
 
   // ---- FR-020: few agents, big screens ----

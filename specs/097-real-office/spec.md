@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Real office mode (owner request, Vikram 2026-10-30/31): a realistic front-facing open-plan office as a second office mode beside flat (default), live screens, animated people, status lights; folds in #692
-note: P1 (scene, lights) built; P2 (screens, motion), P3 (My characters, manual lighting) not; crews' scene adaptation (Q6) pending
+note: P1 (scene, lights) built; P2 (screens, motion), P3 (My characters, manual lighting) not; crews' worlds (FR-100/FR-114) not
 status: building
 -->
 
@@ -11,13 +11,13 @@ status: building
 
 **Created**: 2026-10-31
 
-**Status**: In progress (2026-10-31). Phase P1 (the scene and the lights) is built (see *Changes*); P2 and P3 are not. Q1-Q5 are answered; Q6 is answered in part (crews appear in Real office in their own art; how the scene adapts to them waits for a proposal).
+**Status**: In progress (2026-10-31). Phase P1 (the scene and the lights) is built (see *Changes*); P2 and P3 are not. Q1-Q6 are answered (Q6: crews appear in Real office in their own art and their own world, Vikram and Paco 2026-10-31; FR-100, FR-114).
 
 **Input**: Owner requests (Vikram, Telegram DMs, 2026-10-30 and 2026-10-31):
 - "lets make it realistic … it looks like a dashboard and not real office"; "quality is the key as it is visual".
 - He chose the **front-facing open-plan layout** (mockup variant B) over isometric rooms, because isometric wastes too much screen space.
 - "dont unnecessarily waste screenspace … if there is no functionality … screen space is important to not show details too small".
-- Lobby visitors stand in activity poses at their fixture: flipping books at the Library, sipping coffee, reaching to the standing terminal, knocking at the Boss door, and so on (no treadmill: owner 2026-10-31 11:22, see *Changes*).
+- Lobby visitors stand in activity poses at their fixture: flipping books at the Library, sipping coffee, jogging in place beside the standing terminal, knocking at the Boss door, and so on (no treadmill: owner 2026-10-31 11:22, see *Changes*).
 - Each agent's monitor shows its live screen (output text, scrolling); hover zooms in; with few agents, big screens and readable text.
 - People animate (typing, waving, thinking, resting).
 - "this realistic should be one of the modes, while we still support old modes for people who want flat". **Flat stays the default and is unchanged.**
@@ -183,7 +183,7 @@ I can put my own characters (spec 096) in the Real office, and set a room or a d
 #### Lobby band
 
 - **FR-023** **Band and fixtures.** The lobby is a band across the top, between 116 and 150 px high (15 % of the office height) and at most 24 %; it shows the fixtures in the spec 001 FR-039 order. Each fixture is **scaled to fit the band height whole**, never cut at the top (the mockup's cut Library shelf and Boss door are fixed by re-cropping the art to a common baseline and scaling, FR-062).
-- **FR-024** **Visitors.** A visiting agent stands in front of its fixture in that fixture's activity pose: Library `book`, Software library `box`, Terminal `touch` (reaching to the terminal; changed 2026-10-31 11:22 from `tread`, a treadmill desk, which is no longer shipped: see *Changes*), Web `touch`, Boss `knock`, Coffee `coffee`, Bank `letter` (holding the wallet card of spec 017 FR-019), Postbox `letter`, Other tools `tool`, a custom place `wait`; a missing pose falls back (`box`/`touch`/`tool`/`wait` → `letter`). A name chip with a hand icon when it needs the user sits above its head (changed 2026-10-31 10:48: never over the feet or legs; FR-117). **Target: a lobby face of at least 18 px with 15 agents at 1280x800** (mockup: about 12 px); if it cannot be met without taking desk space, it stays a `[KNOWN GAP]` and the chip, plate count and hover card carry the identity.
+- **FR-024** **Visitors.** A visiting agent stands in front of its fixture in that fixture's activity pose: Library `book`, Software library `box`, Terminal `runA` (jogging in place beside the terminal, stride A; `runB`, stride B, is kept for P2's stepped motion; changed 2026-10-31 from `tread`, a treadmill desk, which is no longer shipped, and then from the interim `touch`: see *Changes*), Web `touch`, Boss `knock`, Coffee `coffee`, Bank `letter` (holding the wallet card of spec 017 FR-019), Postbox `letter`, Other tools `tool`, a custom place `wait`; a missing pose falls back (`box`/`touch`/`tool`/`wait`/`runA` → `letter`). A name chip with a hand icon when it needs the user sits above its head (changed 2026-10-31 10:48: never over the feet or legs; FR-117). **Target: a lobby face of at least 18 px with 15 agents at 1280x800** (mockup: about 12 px); if it cannot be met without taking desk space, it stays a `[KNOWN GAP]` and the chip, plate count and hover card carry the identity.
 - **FR-025** **Crowding** (owner 2026-10-31 09:03, replacing the first text). Exactly **one fixture per place**, never two; any number of visitors may crowd it. Each place's width grows with its visitors and an empty place shrinks to a compact fixture (`lobbyWidths`, pure). When the band is short, in order: empty fixtures are drawn smaller (to 0.55); visitors stand closer (step 0.8 to 0.45 of a person); busy fixtures are drawn smaller (to 0.6); the biggest crowds show fewer people and a `+N`; empty places become a plate-only slot, from the right; all fixtures get smaller still; plate-only slots narrow. An occupied place always keeps its fixture and at least one person. Name chips that would touch move up a level (three levels), then show initials.
 - **FR-026** **Place plates.** Each fixture has its plate (its label; owner 2026-10-31 09:03: no bare visitor count when the visitors are visible, a `+N` only for the ones that do not fit); its title and accessible name list who is there (spec 001 FR-036 `placeTip`). The Postbox plate is a button that opens Settings > Schedules as in flat; a visitor's chip opens its chat (at the Boss, Bank and Coffee corner at its request, `data-pvopen`, as the flat lobby).
 - **FR-027** **Custom places** use the generic fixture (D5): a CSS kiosk the size of the Web fixture with the place's icon and name.
@@ -444,3 +444,17 @@ Numbers checked 2026-10-31 against `main`, the P1 branch and open PRs: 097 uses 
 - Mutation-checked (each planted, its test failed, restored): the restore (theme tokens not re-applied, `--wb-*` left, shadows not restored), the apply (a theme drops the world, no `data-world`, `token()` ignores the world), the contrast check (a dim bar text, a page text that fails only as glass, the composite dropped, a pale brand tile, a status colour changed), the CSS (a colour literal, another glass share, the forced-colours rule dropped), FR-083's note (shown for the Office people, shown outside Real office), the floor plane (feet, shadow, chips back at the feet, another near scale) and a pending likeness check.
 - `[KNOWN GAP]` Not run on Windows or macOS by hand; forced colours and reduced transparency are emulated in Chromium, not tried with an OS setting; a theme's UI style (corporate, retro, the courts) keeps its own top-bar rules under the world only where they are more specific, checked on Clean Office only; the notice strips under the bar keep their tone colours (warning amber).
 
+### 2026-10-31: a real running pose at the Terminal (P1 build, #921)
+
+**Owner decision** (Vikram, relayed by his coordinating agent): after "Treadmill is not on floor, may be don't use treadmill - use running" (11:22 UTC) the Terminal visitor stood at the terminal as an interim; he then asked to "make a real running pose", and confirmed the restart at 12:05 UTC ("yes, go"). This replaces the interim `touch`/`letter` pose of the previous delta (FR-024 above; task T064).
+
+**Changed**:
+- **FR-024**: Terminal `runA`, a person jogging in place beside the terminal, with no machine; the fallback for a person without the picture is `letter`. `POSE_FRAME_B` records `runB` for P2's stepped motion; P1 draws stride A still, so `runB` ships unused until P2.
+- **FR-117** applies unchanged: the runner's lowest foot (its measured foot line) is on the front floor plane within 2 px, with the same contact shadow, and no name chip over its lower 25 %. Its height is 0.97 of the person's upright height (bent knees, an estimate recorded in `ASSETS.md`).
+- **FR-067, FR-068**: each new sheet's prompt carries the fictional-people clause itself. These are new images, so the 10:46 UTC likeness check does not cover them: each `run-pNN` section needs its own. FR-068 and the asset test stay as they are: a `pending` entry fails `npm test`, so these pictures, `people.json` and the code that needs them are committed only after the check.
+
+**As built** (simulator only; the art on Vikram's ChatGPT plan, no API credits):
+- Art: 15 sheets of two frames (`run-p01`..`run-p15`), split, foot lines aligned on one canvas, WebP quality 0.80, 22 to 35 KB a frame, 640 px tall, no metadata (FR-062). 30 new pictures: the pack is 207 pictures, 6.06 MB (cap 10 MB).
+- `test:` `test:realoffice-layout`: every person has `runA` and `runB`, measured, on one canvas; the Terminal visitor at both sizes is `runA`, its lowest foot within 2 px of the front floor plane; `letter` when the picture is missing. `test:realoffice-assets`: the poses, the `run-pNN` sheets checked as person sheets, no pending entry.
+- `sim:` `shots-097-realoffice` at both sizes: waits for a runner with decoded pictures, checks the foot line, the shadow and the chips, and takes the crop: [lobby 1440x900](../../docs/screenshots/097-real-lobby-1440x900.png), [lobby 1280x800](../../docs/screenshots/097-real-lobby-1280x800.png).
+- `[KNOWN GAP]` p03 and p15 lift the same leg in both frames (each already had its one retry); P1 draws only stride A, so it shows first in P2. The 0.97 height of a runner is an estimate, not measured against a real jog. Not run on Windows or macOS by hand.

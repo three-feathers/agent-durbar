@@ -4,7 +4,7 @@
 
 **Tests**: required (constitution VII; SC-001..SC-008). Node tests and the simulator only; 0 AI credits; no network. Driver waits use `until()`, never a fixed sleep.
 
-**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`, then a `Test:` line. `[P]` = can run in parallel. A phase = one PR. Numbers taken: spec 097, FR-001..FR-093 (sparse by group; FR-084 added 2026-10-31), T001..T063 (T025..T027 added 2026-10-31).
+**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`, then a `Test:` line. `[P]` = can run in parallel. A phase = one PR. Numbers taken: spec 097, FR-001..FR-093 (sparse by group; FR-084 added 2026-10-31), T001..T064 (T025..T029 and T064 added 2026-10-31).
 
 ## Phase 0: Spec (this PR)
 
@@ -35,6 +35,7 @@
 - [x] T026 [US1] Lobby widths (owner 2026-10-31 09:03): one fixture per place, widths that follow the crowd, compact empty fixtures, `+N` only past what fits, chips that do not touch. Test: `test:realoffice-layout` (0, 1, 5 and 12 visitors at one place, all places busy, both sizes); `check:office` Real office variant (chips) [FR-025, FR-026] Evidence: `test:`, `sim:`.
 - [x] T028 [US1] The photo world's chrome token set (owner 2026-10-31 10:46; the photo part of T103 brought into P1): `theme.js` `WORLD_SETS`, `setWorld`, `worldContrast`; `realoffice-world.css` (tokens only); `app.js` `syncWorld`; Settings theme note. Test: `test:theme-tokens` sections 6 and 7 (contrast of every pair with glass composited, applied and restored exactly), `shots-097-realoffice` (top bar, More menu, toast, Settings, dialog at both sizes; forced colours and reduced transparency emulated) [FR-113, FR-130]
 - [x] T029 [US1] People in front of the fixtures (owner 2026-10-31 10:48): the front floor plane, near scale, elliptical contact shadow, chips above the head and never over the legs or a place plate; no treadmill (owner 11:22: the Terminal visitor stands, the 15 `tread` pictures removed); FR-083's note rendered from `realOfficeNote` with a test (Paco's review). Test: `test:realoffice-layout`, `shots-097-realoffice` [FR-117, FR-083]
+- [x] T064 [US1] A real running pose for the Terminal (owner 2026-10-31: "use running", "yes make a real running pose"): 15 new two-frame sheets (Codex, Vikram's plan), `runA`/`runB` per person in `people.json` with measured feet and top, `FX_POSE.terminal = 'runA'` (fallback `letter`), `POSE_FRAME_B` records stride B for P2; `ASSETS.md` sections, committed only with Vikram's `likeness-check` on record (the asset test fails on a pending entry, FR-068). Test: `test:realoffice-layout` (the runner's feet within 2 px of the front plane, no chip on its lower quarter, both strides on one canvas), `test:realoffice-assets` (the poses, no pending entry), `shots-097-realoffice` (a runner at the Terminal, the lobby crop at both sizes) [FR-024, FR-117, FR-068]
 
 ## Phase 2: Screens and motion (PR P2) - US3, US4
 

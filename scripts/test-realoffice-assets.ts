@@ -55,7 +55,7 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
     for (const k of KEYS) if (!s[k]) out.push(`ASSETS.md ${name}: no "${k}"`);
     if (s.licence && !/^MIT\b/.test(s.licence)) out.push(`ASSETS.md ${name}: licence is not MIT`);
     if (s.date && !/^\d{4}-\d{2}-\d{2}$/.test(s.date)) out.push(`ASSETS.md ${name}: date is not YYYY-MM-DD`);
-    const person = /^(seat|stand|stand2)-p\d\d$/.test(name);
+    const person = /^(seat|stand|stand2|run)-p\d\d$/.test(name);
     if (person) {
       if (!CLAUSE.test(s.fictional || '')) out.push(`ASSETS.md ${name}: no fictional-people clause (FR-067)`);
       const lc = s['likeness-check'] || '';
@@ -121,7 +121,7 @@ assert.deepStrictEqual(real, [], 'the shipped pack passes: ' + real.slice(0, 10)
 const total = [...files.values()].reduce((s, b) => s + b.length, 0);
 const META = JSON.parse(pj);
 assert.strictEqual(Object.keys(META.seat).length, 15, '15 seated people (the Office people)');
-assert.ok(Object.values(META.stand as Record<string, { poses: object }>).every((s) => ['book', 'coffee', 'letter', 'knock'].every((p) => p in s.poses) && !('tread' in s.poses)), 'every person has the four standing poses, and no treadmill (owner 2026-10-31 11:22)');
+assert.ok(Object.values(META.stand as Record<string, { poses: object }>).every((s) => ['book', 'coffee', 'letter', 'knock', 'runA', 'runB'].every((p) => p in s.poses) && !('tread' in s.poses)), 'every person has the four standing poses and the two running strides, and no treadmill (owner 2026-10-31 11:22)');
 const pending = [...sections(md)].filter(([, s]) => /^pending/.test(s['likeness-check'] || '')).map(([n]) => n);
 assert.deepStrictEqual(pending, [], 'every Office person has its likeness check on record (Vikram, 2026-10-31 10:46 UTC; FR-068)');
 
