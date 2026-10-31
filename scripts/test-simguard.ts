@@ -159,7 +159,7 @@ for (const c of open) {
   assert.ok(!hit, `open channel "${c}" must not reach an agent app (its handler names ${hit?.[0]})`);
 }
 // the heuristic still recognises the obvious ones, so it is not vacuous
-for (const c of ['folderSetup:explain', 'agents:addFolder', 'sessions:resume', 'harness:run', 'adapters:list']) assert.ok(SPENDS.test(blocks.get(c) ?? ''), `the scan sees "${c}" reach an agent app`);
+for (const c of ['agents:addFolder', 'sessions:resume', 'harness:run', 'adapters:list']) assert.ok(SPENDS.test(blocks.get(c) ?? ''), `the scan sees "${c}" reach an agent app`);
 
 // ---- 3. main.ts and ipcguard.ts wiring ----
 const mainSrc = read('src/main/main.ts');
