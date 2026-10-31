@@ -279,11 +279,36 @@ process.on('exit', () => { if (!finished) { console.error('autopilot test did no
     assert.strictEqual(b2.run.checkElapsed(), false);
     b2.clock.t += 1;
     assert.strictEqual(b2.run.checkElapsed(), true, 'an hour before and an hour after the step back add up');
-    for (const bad of [NaN, Infinity, undefined as unknown as number]) {
+    for (const bad of [NaN, Infinity, -Infinity, undefined as unknown as number, '5' as unknown as number]) {
       const n = rig(5);
+      n.run.start();
       n.clock.t = bad;
-      assert.strictEqual(n.run.checkElapsed(), false, 'a broken clock reading is skipped');
+      assert.strictEqual(n.run.checkElapsed(), true, `a clock that reads ${String(bad)} ends the run`);
+      assert.strictEqual(n.run.reason, 'error', 'as error: it fails closed');
+      assert.deepStrictEqual(n.halts, ['error']);
     }
+    // an always-bad clock, from the constructor on: the first continuation ends it
+    const nan = new AutopilotRun({ limit: 5, runId: 'c', now: () => NaN, halt: () => undefined, emit: () => undefined });
+    assert.strictEqual(nan.continuation(), 'ended');
+    assert.strictEqual(nan.reason, 'error');
+    // a clock that was bad when the run began and is fine later still fails closed: its start is unknown
+    let ck = NaN;
+    const late = new AutopilotRun({ limit: 5, runId: 'c', now: () => ck, halt: () => undefined, emit: () => undefined });
+    ck = 1_000_000;
+    assert.strictEqual(late.checkElapsed(), true);
+    assert.strictEqual(late.reason, 'error');
+    // sampling every CLOCK_SAMPLE_MS: a step back that is sampled never delays the end
+    assert.strictEqual(core.CLOCK_SAMPLE_MS, 60_000);
+    const sm = rig(5);
+    sm.run.start();
+    sm.clock.t += H;
+    sm.run.checkElapsed();
+    sm.clock.t -= 5 * H;
+    sm.run.checkElapsed();
+    sm.clock.t += H - core.CLOCK_SAMPLE_MS;
+    assert.strictEqual(sm.run.checkElapsed(), false);
+    sm.clock.t += core.CLOCK_SAMPLE_MS;
+    assert.strictEqual(sm.run.checkElapsed(), true, '+1 h, -5 h, +1 h, each sampled: 2 hours of forward time end the run');
     // per-app turn bound: Codex limit + 1
     const cx = new AutopilotRun({ limit: 5, runId: 'c', backstopPer: 1, halt: () => undefined, emit: () => undefined });
     assert.strictEqual(cx.backstopTurns, 6);
@@ -435,7 +460,11 @@ process.on('exit', () => { if (!finished) { console.error('autopilot test did no
     assert.deepStrictEqual(t('clear the cache'), { ok: true, text: 'clear the cache' });
     assert.deepStrictEqual(t('clearly'), { ok: true, text: 'clearly' });
     assert.deepStrictEqual(t('stop it'), { ok: true, text: 'stop it' });
-    assert.deepStrictEqual(t('a\u202eb\u2028c\u2029d\u200be\ufeff'), { ok: true, text: 'abcde' }, 'bidi, line separators, ZWSP and BOM are removed');
+    assert.deepStrictEqual(t('a\u202eb\u200bc\ufeffd'), { ok: true, text: 'abcd' }, 'bidi, ZWSP and BOM are removed');
+    assert.deepStrictEqual(t('one\u2028two\u2029three'), { ok: true, text: 'one\ntwo\nthree' }, 'U+2028 and U+2029 are newlines: two words never join');
+    for (const ch of ['\u200e', '\u200f', '\u061c', '\u206a', '\u206f', '\u{e0001}', '\u{e0041}', '\u{e007f}', '\u202a', '\u2066']) assert.deepStrictEqual(t(`a${ch}b`), { ok: true, text: 'ab' }, `U+${ch.codePointAt(0)!.toString(16)} is removed`);
+    for (const v of ['\u200f', '\u200d', '\u200c\u200d', ' \u200d ', '\u202e\u200b', '\u{e0041}\u{e0042}', '\u061c\n']) for (const app of [undefined, 'claude', 'codex', 'copilot'] as const) assert.deepStrictEqual(t(v, app), { ok: false, reason: 'empty' }, `${JSON.stringify(v)} has no visible character`);
+    assert.deepStrictEqual(t('\u0915\u094d\u200d\u0937'), { ok: true, text: '\u0915\u094d\u200d\u0937' }, 'a joiner between letters of a real script stays');
     assert.deepStrictEqual(t('a\u200db\u200c'), { ok: true, text: 'a\u200db\u200c' }, 'joiners stay');
     // over 4000 trimmed characters: Claude Code's own limit, refused with a reason there only
     const L4000 = 'x'.repeat(4000);
@@ -446,8 +475,8 @@ process.on('exit', () => { if (!finished) { console.error('autopilot test did no
     assert.deepStrictEqual(t(L4000 + 'y', 'codex'), { ok: true, text: L4000 + 'y' }, 'Codex has no such limit here');
     assert.deepStrictEqual(t(L4000 + 'y', 'copilot'), { ok: true, text: L4000 + 'y' });
     // a line that starts with a slash could run a second command on Claude Code
-    for (const v of ['/compact', 'fix it\n/compact', 'fix it\n  /goal clear', '/goal x', '\n\n /x']) assert.deepStrictEqual(t(v, 'claude'), { ok: false, reason: 'command' }, JSON.stringify(v));
-    assert.deepStrictEqual(t('see /usr/bin and a/b', 'claude'), { ok: true, text: 'see /usr/bin and a/b' }, 'a slash inside a line is fine');
+    for (const v of ['/compact', 'fix it\n/compact', 'fix it\n  /goal clear', '/goal x', '\n\n /x', '\u200d/compact', 'a\n\u200d /compact', 'a\u2028/compact', '/compact\u200b', '/c\u200fompact', '/tmp is full']) assert.deepStrictEqual(t(v, 'claude'), { ok: false, reason: 'command' }, JSON.stringify(v));
+    for (const v of ['/usr/bin/env is broken', '/usr/bin\n/etc/hosts\n/var/log/x', '/ foo', '/', 'see /usr/bin and a/b', '/a/b', '//x', 'fix ./a and /compact']) assert.strictEqual(t(v, 'claude').ok, true, `${JSON.stringify(v)} is not a slash command`);
     assert.deepStrictEqual(t('/compact', 'codex'), { ok: true, text: '/compact' });
     // a long input finishes (a backtracking pattern would not; no wall clock is asserted, FR-048b)
     for (const unit of ['\u0001 ', ' \r\n', '\u0001'.repeat(3), 'a\u0000', '\u200b\u0001', '\n ']) {
@@ -500,6 +529,8 @@ process.on('exit', () => { if (!finished) { console.error('autopilot test did no
     assert.strictEqual(isClaudeContinuation(msg({ parent_tool_use_id: 'toolu_1' })), false, 'a helper (FR-008)');
     assert.strictEqual(isClaudeContinuation(msg({ parent_tool_use_id: null })), true);
     assert.strictEqual(isClaudeContinuation(msg({ agentId: 'a1' })), false);
+    assert.strictEqual(isClaudeContinuation(msg({ isSidechain: true })), false, 'a sidechain (helper) message');
+    assert.strictEqual(isClaudeContinuation(msg({ isSidechain: false })), true);
     assert.strictEqual(isClaudeContinuation(msg({ agentId: null })), true, 'a null agentId is the main stream, like a null parent_tool_use_id');
     assert.strictEqual(isClaudeContinuation(msg({ message: { role: 'user', content: [{ type: 'text', text: 'note' }, { type: 'text', text: fb }] } })), true, 'a marker in a later text block counts');
     assert.strictEqual(isClaudeContinuation(msg({ message: { role: 'user', content: [{ type: 'text', text: 'note' }, { type: 'image' }] } })), false);

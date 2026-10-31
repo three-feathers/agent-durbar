@@ -25,6 +25,8 @@ export const MAX_HOURS = 168;
 export const BACKSTOP_TURNS_PER = 100;
 /** FR-023: two continuations in a row with an unchanged folder fingerprint. */
 export const NO_PROGRESS_AFTER = 2;
+/** How often an adapter must call `checkElapsed()` (and the most a clock set back between two samples can delay the backstop is bounded by what it hid in one). */
+export const CLOCK_SAMPLE_MS = 60_000;
 /** FR-011: Claude Code's own limit: a goal over this many trimmed characters gets a plain-text refusal from the CLI, so Durbar refuses it first, with a reason (spec Changes, awaiting owner review). */
 export const GOAL_MAX_CLAUDE = 4000;
 /** FR-011: the words that make Claude Code's `/goal` clear the goal instead of setting one (CLI 2.1.316, `read:`), trimmed and case-insensitive. */
@@ -71,19 +73,25 @@ export interface AutopilotRunOptions {
   /**
    * The adapter's own FR-050 order (stop, clear), called with the end reason; it differs per app. Called once when the run ends, for every reason
    * (a `done` end still clears the goal, FR-041, and the adapter decides what that means), and again for each continuation that arrives
-   * while the guard is armed. It must resolve only when the app confirmed the stop (FR-054); a rejection arms the guard.
+   * after the end. So `halt('done')` must really stop the app when a continuation comes: on Copilot, whose done keeps its mode (D8), the
+   * adapter's `halt` must do a real stop (`mode.set interactive` and `abort`) for a repeat. It must resolve only when the app confirmed the
+   * stop (FR-054); a rejection or throw keeps the guard armed.
    */
   halt: (reason: AutopilotEnd) => void | Promise<void>;
   /** Gets each event once, in order. Never throws into the run. */
   emit: (e: AutopilotRunEvent) => void;
-  /** The clock, in ms. Injected so tests need no timers. Only forward steps count: a clock that goes back never delays the backstop. */
+  /**
+   * The clock, in ms. Injected so tests need no timers. Only forward steps between two samples count, and a reading that is not a finite number ends
+   * the run as `error` (fail closed). The core owns no timer: the adapter must call `checkElapsed()` at least every `CLOCK_SAMPLE_MS`, so a
+   * step back can hide at most what happened inside one sample. `[KNOWN GAP]`: a step back between two samples still delays the end by its size.
+   */
   now?: () => number;
   /** Backstop model turns per `limit + 1`: 100 (default; Copilot, Claude Code), 1 for Codex, which counts `turn/completed` (FR-021). A positive whole number. */
   backstopPer?: number;
 }
 
 /** What `continuation()` did with the call. */
-export type ContinuationResult = 'counted' | 'ended' | 'ignored' | 'interrupted';
+export type ContinuationResult = 'counted' | 'ended' | 'interrupted';
 
 /**
  * One Autopilot run: the counter, the limit, the end-once guard, the no-progress counter and the backstop (FR-020, FR-021, FR-023, FR-054).
@@ -103,6 +111,7 @@ export class AutopilotRun {
   private readonly per: number;
   private lastNow: number;
   private elapsedMs = 0;
+  private clockBad: boolean;
   private seq = 0;
   private n = 0;
   private turns = 0;
@@ -127,16 +136,18 @@ export class AutopilotRun {
     const per = o.backstopPer === undefined ? BACKSTOP_TURNS_PER : o.backstopPer;
     if (!(typeof per === 'number' && Number.isInteger(per) && per >= 1 && per <= BACKSTOP_TURNS_PER)) throw new RangeError('Autopilot backstopPer must be a whole number from 1 to 100');
     this.per = per;
-    this.lastNow = this.now();
+    const t0 = this.now();
+    this.clockBad = !(typeof t0 === 'number' && Number.isFinite(t0));
+    this.lastNow = this.clockBad ? 0 : t0;
   }
 
   /** Continuations that ran so far; never above `limit`. */
   get count(): number { return this.n; }
   get ended(): boolean { return this.over; }
   get reason(): AutopilotEnd | undefined { return this.why; }
-  /** True after a stop or clear that failed (or was not confirmed): any later continuation is interrupted again (FR-054). */
+  /** True from the end until the newest `halt` is confirmed, and after `clearFailed()` (FR-054). Any continuation after the end repeats the stop. */
   get guardArmed(): boolean { return this.armed; }
-  /** How many later continuations the armed guard interrupted. */
+  /** How many continuations after the end were interrupted. */
   get guardInterrupts(): number { return this.interrupts; }
   /** The most turns the backstop allows before it ends the run: `backstopPer * (limit + 1)` (100 by default, 1 for Codex). */
   get backstopTurns(): number { return this.per * (this.limit + 1); }
@@ -216,10 +227,13 @@ export class AutopilotRun {
 
   private timeUp(): boolean {
     const t = this.now();
-    if (typeof t === 'number' && Number.isFinite(t)) {
-      if (t > this.lastNow) this.elapsedMs += t - this.lastNow;
-      this.lastNow = t;
+    if (this.clockBad || !(typeof t === 'number' && Number.isFinite(t))) {
+      this.clockBad = true;
+      this.end('error'); // a clock that gives no time cannot bound the run: fail closed
+      return true;
     }
+    if (t > this.lastNow) this.elapsedMs += t - this.lastNow;
+    this.lastNow = t;
     if (this.elapsedMs < this.hours * 3_600_000) return false;
     this.end('error');
     return true;
@@ -227,10 +241,9 @@ export class AutopilotRun {
 
   /** A continuation after the end: the app is still going, so the stop is repeated, whether or not the first one was confirmed. Not counted. */
   private guard(): ContinuationResult {
-    if (this.why === undefined) return 'ignored';
     this.interrupts += 1;
     this.armed = true;
-    void this.runHalt(this.why);
+    void this.runHalt(this.why ?? 'error');
     return 'interrupted';
   }
 
@@ -259,34 +272,39 @@ export class AutopilotRun {
 
 export type GoalTextResult = { ok: true; text: string } | { ok: false; reason: 'empty' | 'reserved' | 'too-long' | 'command' };
 
+/** Hidden characters removed from a goal: `HIDDEN_ALL_RE` plus the bidi marks it leaves (LRM, RLM, ALM, the deprecated U+206A-F) and the tag characters. ZWNJ and ZWJ stay: real scripts need them. */
+const GOAL_HIDDEN_RE = /[\u200e\u200f\u061c\u206a-\u206f]|[\u{e0000}-\u{e007f}]/gu;
+/** A slash command: the line starts with `/word`, and that first word holds no further `/` (so `/usr/bin/env` and `/ foo` are not one). */
+const SLASH_COMMAND_RE = /^\/[^\s/]+(?:\s|$)/;
+
 /**
- * FR-011, S2: the goal sent for a message. Hidden characters (bidi, U+2028/9, zero-width space and the rest of `HIDDEN_ALL_RE`; joiners stay)
- * are removed; each run of C0 (but newline), DEL and C1 characters becomes one space, so CRLF becomes a space and a newline. Empty text is
- * refused for every app. On Claude Code (and with no `app`, the strictest rules) it also refuses: a whole text that is one of
- * `CLAUDE_GOAL_RESERVED` (the CLI would clear the goal), a trimmed text over 4000 characters (the CLI refuses it in plain text), and any line
- * that starts with `/` (it could run a second command; the safe default, awaiting owner review). Linear in the input length; takes the
- * user's text only.
+ * FR-011, S2: the goal sent for a message. U+2028/9 become a newline (two words never join); the other hidden characters (bidi, zero-width space,
+ * tag characters, the rest of `HIDDEN_ALL_RE`; ZWNJ and ZWJ stay) are removed; each run of C0 (but newline), DEL and C1 characters becomes
+ * one space, so CRLF becomes a space and a newline. Text with no visible character (spaces and joiners only) is `empty`, for every app.
+ * On Claude Code (and with no `app`, the strictest rules) it also refuses: a whole text that is one of `CLAUDE_GOAL_RESERVED` (the CLI would
+ * clear the goal), a trimmed text over 4000 characters (the CLI refuses it in plain text), and a line shaped like a slash command (`/word`, no
+ * further `/` in that word; a safe default, awaiting owner review). Linear in the input length; takes the user's text only.
  */
 export function goalText(text: unknown, app?: 'claude' | 'codex' | 'copilot'): GoalTextResult {
   if (typeof text !== 'string') return { ok: false, reason: 'empty' };
   // eslint-disable-next-line no-control-regex
-  const clean = text.replace(HIDDEN_ALL_RE, '').replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]+/g, ' ');
+  const clean = text.replace(/[\u2028\u2029]/g, '\n').replace(HIDDEN_ALL_RE, '').replace(GOAL_HIDDEN_RE, '').replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]+/g, ' ');
   const t = clean.trim();
-  if (!t) return { ok: false, reason: 'empty' };
+  if (!t || !/[^\s\u200c\u200d]/.test(t)) return { ok: false, reason: 'empty' };
   if (app === undefined || app === 'claude') {
     if (t.length > GOAL_MAX_CLAUDE) return { ok: false, reason: 'too-long' };
     if (CLAUDE_GOAL_RESERVED.includes(t.toLowerCase())) return { ok: false, reason: 'reserved' };
-    if (clean.split('\n').some((line) => line.trimStart().startsWith('/'))) return { ok: false, reason: 'command' };
+    if (clean.split('\n').some((line) => SLASH_COMMAND_RE.test(line.replace(/^[\s\u200c\u200d]+/, '')))) return { ok: false, reason: 'command' };
   }
   return { ok: true, text: clean };
 }
 
 /**
  * FR-020: a Claude Code continuation is a synthetic user message of the main stream (`agentId` and `parent_tool_use_id` missing or null) with a text block that starts with `Stop hook feedback:`. A message the
- * user typed with the same words has no `isSynthetic: true`, and a helper's message (FR-008) carries an agent or parent id.
+ * user typed with the same words has no `isSynthetic: true`, and a helper's message (FR-008) carries an agent or parent id or `isSidechain: true`.
  */
 export function isClaudeContinuation(msg: unknown): boolean {
-  if (!isObj(msg) || msg.type !== 'user' || msg.isSynthetic !== true) return false;
+  if (!isObj(msg) || msg.type !== 'user' || msg.isSynthetic !== true || msg.isSidechain === true) return false;
   if ((msg.agentId !== undefined && msg.agentId !== null) || (msg.parent_tool_use_id !== undefined && msg.parent_tool_use_id !== null)) return false;
   const m = msg.message;
   if (!isObj(m)) return false;
