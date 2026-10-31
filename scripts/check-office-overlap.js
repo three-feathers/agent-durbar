@@ -926,10 +926,20 @@ async function driver(ctx) {
     if (de.scrollWidth > innerWidth + 1 || de.scrollHeight > innerHeight + 1) P.push(`page overflows (${de.scrollWidth}x${de.scrollHeight} in ${innerWidth}x${innerHeight})`);
     const tabs = document.getElementById('panelTabs'), pane = document.getElementById('browserPane'), view = document.getElementById('bView');
     if (!tabs || !pane || pane.hidden || !view) return ['the Browser tab is not showing'];
-    const els = [...document.querySelectorAll('#panelTabs, #panelTabs *, #browserPane .bbar, #browserPane .bbar *, #browserPane .bstat, #browserPane .bstat *')].filter((e) => e.getClientRects().length && R(e).width > 0);
-    for (const e of els) { const r = R(e); if (r.left < -1 || r.right > innerWidth + 1) P.push(`${e.id || e.className} leaves the window`); }
-    for (const g of [...document.querySelectorAll('#panelTabs, #browserPane .bbar, #browserPane .bstat, #browserPane .bacts')]) {
-      const kids = [...g.children].filter((c) => c.getClientRects().length && R(c).width > 0);
+    /* spec 080 SC-011: the page-tab strip too. Tabs scrolled out of the strip are inside it (the strip scrolls sideways itself), so only the strip,
+       + and the tabs in view are held to the window; the active tab must be in view and every tab at least 72px */
+    const list = document.getElementById('bTabs'), lr = list ? R(list) : null;
+    const inStrip = (e) => !!list && list.contains(e) && e !== list;
+    const els = [...document.querySelectorAll('#panelTabs, #panelTabs *, #browserPane .bstrip, #browserPane .bstrip *, #browserPane .bbar, #browserPane .bbar *, #browserPane .bstat, #browserPane .bstat *')].filter((e) => e.getClientRects().length && R(e).width > 0 && !e.classList.contains('sr-only'));
+    for (const e of els) { const r = R(e); if (inStrip(e) && lr && (r.right <= lr.left + 1 || r.left >= lr.right - 1)) continue; if (r.left < -1 || r.right > innerWidth + 1) P.push(`${e.id || e.className} leaves the window`); }
+    if (list) {
+      const on = list.querySelector('.btab.on');
+      if (on && lr) { const a = R(on); if (a.left < lr.left - 1 || a.right > lr.right + 1) P.push('the active page tab is not in view'); }
+      for (const t of list.querySelectorAll('.btab')) if (R(t).width < 71.5) P.push(`a page tab is ${Math.round(R(t).width)}px wide (under 72px)`);
+      if (list.closest('.bstrip') && R(list.closest('.bstrip')).right > innerWidth + 1) P.push('the tab strip widens the panel');
+    }
+    for (const g of [...document.querySelectorAll('#panelTabs, #browserPane .bstrip, #browserPane .bbar, #browserPane .bstat, #browserPane .bacts')]) {
+      const kids = [...g.children].filter((c) => c.getClientRects().length && R(c).width > 0 && !c.classList.contains('sr-only'));
       for (let i = 0; i < kids.length; i++) for (let j = i + 1; j < kids.length; j++) {
         const a = R(kids[i]), b = R(kids[j]);
         if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > T && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > T) P.push(`${kids[i].id || kids[i].className} overlaps ${kids[j].id || kids[j].className}`);
@@ -1007,7 +1017,22 @@ async function driver(ctx) {
           await must(`document.body.classList.contains('panel-open')&&!!document.getElementById('tabBrowser')`, `the chat of agent ${id} to open`);
           await ctx.js(`(()=>{document.querySelectorAll('#toasts .toast').forEach(x=>x.remove());const t=document.getElementById('tabBrowser');if(t)t.click();return true})()`);
           const seen = await nativeViews((v) => v.count === 1 && v.onWindow);
+          if (id === ids[0]) {
+            /* spec 080 SC-011: this session's Browser tab with 10 page tabs (+ nine times; each waits for the strip to show the new tab) */
+            for (let k = 2; k <= 10; k++) {
+              await ctx.js(`(()=>{const b=document.getElementById('bNewTab');if(b&&!b.disabled)b.click();return true})()`);
+              await must(`document.querySelectorAll('#bTabs .btab').length>=${k}`, `page tab ${k} in the strip`);
+            }
+            await must(`document.getElementById('bNewTab').disabled===true`, '+ disabled at 10 tabs');
+          }
           const pb = await ctx.js(`(${browserTabCheck.toString()})()`);
+          if (id === ids[0]) {
+            /* back to one tab (the empty ones have no view, FR-004), so the next size starts as this one did */
+            for (let k = 10; k > 1; k--) {
+              await ctx.js(`(()=>{const x=[...document.querySelectorAll('#bTabs .btab-x')].pop();if(x)x.click();return true})()`);
+              await must(`document.querySelectorAll('#bTabs .btab').length<=${k - 1}`, `page tab ${k} closed`);
+            }
+          }
           if (seen.count !== 1) pb.push(`${seen.count} native views are attached (expected 1) after ${seen.ms} ms, last seen bounds ${JSON.stringify(seen.bounds)} in ${JSON.stringify(seen.win)}`);
           else if (!seen.onWindow) pb.push(`the native view is off the window after ${seen.ms} ms: ${JSON.stringify(seen.bounds[0])} in ${JSON.stringify(seen.win)}`);
           await ctx.js(`(()=>{const b=document.getElementById('backBtn');if(b)b.click();return true})()`);

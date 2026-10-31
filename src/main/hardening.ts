@@ -133,22 +133,6 @@ function sameWebOrigin(a: string | undefined, b: string | undefined): boolean {
     return false;
   }
 }
-/** Spec 080 FR-091, FR-125: under DURBAR_SIM only, the simulator's test pages count as one web origin per host (Node gives a non-special scheme an opaque origin). */
-function simPageUrl(url: string | undefined, sim: boolean): URL | undefined {
-  if (!sim || !url) return undefined;
-  try {
-    const u = new URL(url);
-    return u.protocol === SIM_VIEW_SCHEME && u.host !== '' && !u.username && !u.password ? u : undefined;
-  } catch {
-    return undefined;
-  }
-}
-function sameTabOrigin(a: string | undefined, b: string | undefined, sim: boolean): boolean {
-  if (sameWebOrigin(a, b)) return true;
-  const x = simPageUrl(a, sim), y = simPageUrl(b, sim);
-  return !!x && !!y && x.host === y.host;
-}
-
 export interface ViewHandlerContext {
   /** Under DURBAR_SIM only (FR-091). */
   sim?: boolean;
@@ -157,7 +141,7 @@ export interface ViewHandlerContext {
   /**
    * Spec 080 FR-125: a user tab's same-origin tab request opens a NEW tab of the same session (main makes it; the window open is still denied).
    * `foreground`: Electron's `foreground-tab` (else `background-tab`). Returns false when main refuses it (the 10-tab or the 5-per-load limit):
-   * then the request gets the *Open in system browser* offer like a popup. Only called for an allowed http(s) URL (or a simulator page under sim).
+   * then the request gets the *Open in system browser* offer like a popup. Only called for an allowed http(s) URL.
    */
   openTab?(url: string, foreground: boolean): boolean;
   /** A scripted popup was refused; the bar offers *Open in system browser* for its URL (FR-026). */
@@ -256,11 +240,11 @@ export function buildViewHandlers(ctx: ViewHandlerContext): ViewHandlers {
       // And only when the opener is the view's own top-level origin: a cross-origin iframe (which Chromium stops from touching
       // `top.location`) must not replace the page through `window.open` (framebusting). An empty or opaque referrer fails closed.
       // FR-125: in a user tab such a request opens a new tab that Durbar makes itself (still `deny` here); the agent's tab loads it in place.
+      // (Chromium sends no referrer from a non-web scheme, so the simulator's own test-page scheme never passes this: its driver serves the pages over loopback http)
       const web = isWebUrl(d.url);
-      const page = web || !!simPageUrl(d.url, !!ctx.sim);
       const tab = d.disposition === 'foreground-tab' || d.disposition === 'background-tab';
       let taken = false;
-      if (page && tab && sameTabOrigin(d.referrer?.url, ctx.currentUrl?.(), !!ctx.sim)) {
+      if (web && tab && sameWebOrigin(d.referrer?.url, ctx.currentUrl?.())) {
         if (ctx.openTab) taken = ctx.openTab(d.url, d.disposition === 'foreground-tab') === true;
         else {
           ctx.loadInView(d.url);

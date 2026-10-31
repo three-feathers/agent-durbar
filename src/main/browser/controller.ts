@@ -776,6 +776,7 @@ export function makeBrowserController(deps: BrowserDeps) {
         if (!closed) return result(id); // Stay
       }
       if (!live(S, tab)) return result(id); // closed meanwhile (the session ended, or a second close)
+      // one synchronous step: the list, the active tab and the window's view change together (no reader ever sees a removed tab as active)
       S.tabs.delete(tab.tabId);
       const next = S.active === tab.tabId ? nextActive(S.order, tab.tabId) : S.active;
       S.order = S.order.filter((x) => x !== tab.tabId);
@@ -783,8 +784,8 @@ export function makeBrowserController(deps: BrowserDeps) {
       if (tab.t) detach(tab.t);
       tab.t = undefined;
       tab.opening = undefined;
-      await deps.views.closeTabView(id, tab.tabId).catch(() => undefined);
-      if (sessions.get(id) !== S) return result(id);
+      // its view goes (a view still being made closes itself when it arrives); the partition stays
+      void deps.views.closeTabView(id, tab.tabId).catch(() => undefined);
       if (!S.order.length) {
         // the last tab: one empty New tab, no view until an address is loaded (FR-004); the partition and its cookies stay
         const empty: Tab = { tabId: newTabId(new Set([tab.tabId])), kind: 'user', lastShownAt: 0, opened: 0 };

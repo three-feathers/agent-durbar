@@ -78,6 +78,7 @@ function rig(opts: { sim?: boolean; known?: (id: string) => boolean; win?: Retur
   const keys: { id: string; key: string }[] = [];
   const tabsSeen: import('../src/shared/api').BrowserTabs[] = [];
   const links = { on: false };
+  const closeHold = { on: false };
   const ensured: string[] = [];
   const destroyed: string[] = [];
   const emitted: BrowserState[] = [];
@@ -110,6 +111,7 @@ function rig(opts: { sim?: boolean; known?: (id: string) => boolean; win?: Retur
       },
       closeTabView: async (id, tabId) => {
         closedTabs.push(id + '/' + tabId);
+        if (closeHold.on) return new Promise<void>(() => undefined); // a view still being made: its close waits for it
         const f = tabViews.get(id + '/' + tabId);
         if (f) { f.sv.close(); tabViews.delete(id + '/' + tabId); }
       },
@@ -127,7 +129,7 @@ function rig(opts: { sim?: boolean; known?: (id: string) => boolean; win?: Retur
   };
   const ctl = makeBrowserController(deps);
   const flush = (): void => { while (queue.length) queue.shift()!(); };
-  return { ctl, win: win!, sessions, tabViews, closedTabs, keys, tabsSeen, links, ensured, destroyed, emitted, opened, flush, dialogs, leaves, dropped, consent };
+  return { ctl, win: win!, sessions, tabViews, closedTabs, closeHold, keys, tabsSeen, links, ensured, destroyed, emitted, opened, flush, dialogs, leaves, dropped, consent };
 }
 const B = { x: 10, y: 120, width: 600, height: 400 };
 
@@ -910,6 +912,19 @@ process.on('exit', () => {
     // closing the rightmost active tab activates the one to its left
     await r.ctl.closeTab('s1', right);
     assert.strictEqual(activeOf(r), keep, 'else the tab to its left');
+  }
+  // the list and the active tab change in one step: a close never waits for the view's teardown, and no reader sees a removed tab as active
+  {
+    const r = rig();
+    await r.ctl.open('s1');
+    await r.ctl.newTab('s1', 'https://a.example/');
+    const a = activeOf(r);
+    await r.ctl.newTab('s1', 'https://b.example/');
+    await r.ctl.selectTab('s1', a);
+    r.closeHold.on = true;
+    const res = await r.ctl.closeTab('s1', a); // resolves although the view's teardown is still pending
+    assert.ok(res.ok && res.state.tabId !== a && res.tabs!.active !== a && !res.tabs!.tabs.some((x) => x.tabId === a), 'the answer already has the new active tab');
+    assert.notStrictEqual(activeOf(r), a, 'main\'s active tab moved with the list (a check-browser-tabs race, 2026-10-31)');
   }
   // a tab closed while its view is still being made never keeps a view
   {

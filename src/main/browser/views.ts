@@ -97,6 +97,9 @@ interface SessionRec {
   cleared?: Promise<void>;
 }
 
+/** FR-128: how long a closing tab's page may take to run its `beforeunload` before the tab is closed anyway (a page that asks is not timed). */
+export const CLOSE_ASK_MS = 3000;
+
 export function makeViews(deps: ViewDeps) {
   const sessions = new Map<string, SessionRec>();
 
@@ -145,6 +148,8 @@ export function makeViews(deps: ViewDeps) {
     let blocked: { action: NavAction; settled: Promise<unknown> } | undefined; // the in-flight one when a beforeunload cancelled it
     let closed = false;
     let closingAsk: ((closed: boolean) => void) | undefined; // a user close waiting for the page's beforeunload (FR-128)
+    let closeTimer: ReturnType<typeof setTimeout> | undefined;
+    let asking = false; // Durbar's Leave this page? is open for that close
     const sv: SessionView = {
       sessionId,
       tabId,
@@ -173,6 +178,11 @@ export function makeViews(deps: ViewDeps) {
           }
           if (closingAsk) closingAsk(false); // a second close while the first still asks: the first one's answer decides
           closingAsk = resolve;
+          // a page that never answers (hung, or Chromium skipped the event) must not keep its tab open: closed after CLOSE_ASK_MS unless it asked
+          clearTimeout(closeTimer);
+          closeTimer = setTimeout(() => {
+            if (closingAsk && !asking) sv.close();
+          }, CLOSE_ASK_MS);
           try {
             // runs the page's beforeunload: with no handler the page closes ('destroyed'); a handler that asks reaches willPreventUnload below
             wc.close({ waitForBeforeUnload: true });
@@ -181,6 +191,8 @@ export function makeViews(deps: ViewDeps) {
           }
         }),
       close: () => {
+        clearTimeout(closeTimer);
+        asking = false;
         if (closingAsk) {
           const r = closingAsk;
           closingAsk = undefined;
@@ -211,6 +223,7 @@ export function makeViews(deps: ViewDeps) {
       leave,
       onUnloadBlocked: () => {
         blocked = inFlight; // undefined for a page-started unload
+        if (closingAsk) asking = true; // the page asked: the person answers, no time limit
       },
       onLeaveAnswer: (leave) => {
         const b = blocked;
@@ -219,6 +232,8 @@ export function makeViews(deps: ViewDeps) {
           // FR-128: the question came from the user closing this tab: Leave closes it (no second beforeunload), Stay keeps it
           const r = closingAsk;
           closingAsk = undefined;
+          asking = false;
+          clearTimeout(closeTimer);
           if (leave) sv.close();
           r(leave);
           return;

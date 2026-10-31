@@ -127,16 +127,10 @@ assert.deepStrictEqual(popups, ['https://example.com/b'], 'about:blank and empty
   }
   assert.strictEqual(tabs.length, t0, 'zero tabs for a hostile scheme');
   assert.strictEqual(offers.length, o0, 'zero offers (no shell.openExternal path) for a hostile scheme');
-  // the simulator's pages open tabs only under the simulator, and only from the same test host
+  // the simulator's test-page scheme never opens a tab (Chromium sends no referrer from it; the tab driver serves its pages over loopback http)
   const st: string[] = [];
-  const hs = buildViewHandlers({ sim: true, currentUrl: () => 'durbar-sim://pages/links', loadInView: () => undefined, onPopupBlocked: () => undefined, openTab: (u) => (st.push(u), true) });
-  hs.windowOpen({ url: 'durbar-sim://pages/index', disposition: 'foreground-tab', referrer: { url: 'durbar-sim://pages/links' } });
-  hs.windowOpen({ url: 'durbar-sim://other/landing', disposition: 'foreground-tab', referrer: { url: 'durbar-sim://other/x' } });
-  hs.windowOpen({ url: 'durbar-sim://pages/index', disposition: 'foreground-tab', referrer: { url: 'durbar-sim://user@pages/links' } });
-  assert.deepStrictEqual(st, ['durbar-sim://pages/index'], 'same test host only');
-  const off: string[] = [];
-  buildViewHandlers({ sim: false, currentUrl: () => 'durbar-sim://pages/links', loadInView: () => undefined, onPopupBlocked: () => undefined, openTab: (u) => (off.push(u), true) }).windowOpen({ url: 'durbar-sim://pages/index', disposition: 'foreground-tab', referrer: { url: 'durbar-sim://pages/links' } });
-  assert.deepStrictEqual(off, [], 'never without the simulator');
+  buildViewHandlers({ sim: true, currentUrl: () => 'durbar-sim://pages/links', loadInView: () => undefined, onPopupBlocked: () => undefined, openTab: (u) => (st.push(u), true) }).windowOpen({ url: 'durbar-sim://pages/index', disposition: 'foreground-tab', referrer: { url: 'durbar-sim://pages/links' } });
+  assert.deepStrictEqual(st, [], 'http(s) only');
 }
 for (const [url, isMainFrame, ok] of [['https://a.com/', true, true], ['file:///etc/passwd', true, false], ['file:///x', false, false], ['data:text/html,x', true, false], ['data:text/html,x', false, true], ['chrome://gpu', true, false], ['durbar-sim://x', true, false]] as const) {
   const e = ev();
