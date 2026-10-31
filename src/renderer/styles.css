@@ -748,13 +748,19 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .stage:not([data-d="full"]) .sc-c .head{animation:none}
 
 /* keep 15+ animated scenes cheap: compact scenes animate in coarse steps (a few repaints per second, not 60) */
-.sc-c .halo{animation-timing-function:steps(6)}
-.sc-c .wave{animation-timing-function:steps(8)}
-.sc-c .bar{animation-timing-function:steps(8)}
+/* spec 097 FR-178 (T158): these run on the main thread (SVG parts are not composited), so every change is a style, layout-free repaint: measured at 15 agents
+   (Xvfb, 15 s) idle 40 % of a core with the old steps, 22 % at 4 steps, 16 % at 2, 4 % with none. A step is `steps x keyframe intervals / duration` changes a
+   second per animation: here at most about 1.5 each, about 10 a second for a working desk (`check-office-ops` counts them) */
+.sc-c .halo{animation-timing-function:steps(4)}
+.sc-c .wave{animation-timing-function:steps(2)}
+.sc-c .bar{animation-timing-function:steps(3)}
+.sc-c .hand-l{animation-duration:1.2s}
+.sc-c .hand-r{animation-duration:1.5s}
 .sc-c .hand-l,.sc-c .hand-r{animation-timing-function:steps(1)}
-.sc-c .bubble-g{animation-timing-function:steps(4)}
-.sc-c .td,.sc-c .cursor{animation-timing-function:steps(5)}
-.sc-c .steam{animation-timing-function:steps(6)}
+.sc-c .bubble-g{animation-timing-function:steps(2)}
+.sc-c .td,.sc-c .cursor{animation-timing-function:steps(1)}
+.sc-c .steam{animation-timing-function:steps(2)}
+.sc-c .dizzy{animation-timing-function:steps(5)}
 .sc{contain:paint}
 
 /* attachments: cap message, counter, drop overlay */

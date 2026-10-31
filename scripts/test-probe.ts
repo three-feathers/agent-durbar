@@ -259,8 +259,8 @@ for (const [w, h] of [[1280, 800], [1440, 900], [1920, 1080]]) {
     assert.ok(bottom <= Math.max(10, r.rowGap) + 1, `too much at the bottom: ${tag}`);
   }
   // the page: renderOffice spreads the drawn office only when it fits, after drawing; the CSS splits a room's extra above and below its desks
-  assert.ok(/function spreadOffice\(stage,on\)\{[\s\S]*?window\.DurbarProbe\.spreadRows\(/.test(app), 'spreadOffice uses spreadRows');
-  assert.ok(/spreadOffice\(stage,!!layout\.fit\)/.test(app), 'renderOffice spreads the office it drew');
+  assert.ok(/function spreadOffice\(stage,on(?:,fcs0)?\)\{[\s\S]*?window\.DurbarProbe\.spreadRows\(/.test(app), 'spreadOffice uses spreadRows');
+  assert.ok(/spreadOffice\(stage,!!layout\.fit(?:,cs)?\)/.test(app), 'renderOffice spreads the office it drew');
   assert.ok(css.some((l) => /^\.stage\[data-spread\] \.room>\.room-head\{margin-bottom:calc\(var\(--rx\) \/ 2\)\}/.test(l)), 'a grown room keeps its header at the top');
 }
 

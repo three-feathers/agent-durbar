@@ -892,6 +892,7 @@ function announceFilterNote(){ /* once per change of the pill, not on every coun
 /* the layout is sized from every main session, so a status pill does not reshape the cards; but the lounge of finished agents the pill hides
    is not drawn (roomHTML reads the filtered model), so it reserves no width either */
 let lastSizing=[];
+const OPS={renders:0,searches:0}; /* spec 097 FR-186: counts of office renders and layout searches since the page started; the simulator's driver reads them (`__durbarSimUi.ops`), nothing else does */
 const sizingModel=model=>ui.status?officeModel(true).map(m=>({...m,rolled:(m.rolled||[]).filter(x=>matchStatus(x.a))})):model;
 
 /* ---------------- office view ---------------- */
@@ -1322,18 +1323,25 @@ function stageParts(sizing,d,aw,cap){
    desk. Each part's HTML is remembered; only a part whose HTML changed is parsed and morphed. Anything unexpected (parts added,
    removed or reordered, a part with more than one root) falls back to the full morph, so the result is the same DOM. */
 let stagePrev=null;
+/* spec 097 FR-184 (T156): the parts of the stage (rooms, lobby) that a morph rewrote. null = anything may have changed (first draw, a whole-stage morph),
+   so renderOffice fits and places everything; an array = only these parts, because the others are the same HTML as the last render and were fitted then */
+let MORPHED=null;
 function morphParts(stage,parts){
   const prev=stagePrev;
+  MORPHED=null;
   if(!prev||prev.length!==parts.length)return false;
   const kids=[...stage.children].filter(k=>!k.classList.contains('scene-out'));
   if(kids.length!==parts.length)return false;
+  const touched=[];
   for(let i=0;i<parts.length;i++){
     if(parts[i]===prev[i])continue;
     const t=document.createElement('template');t.innerHTML=parts[i];
     const n=t.content.firstElementChild;
-    if(!n||t.content.childElementCount!==1||keyOf(n)==null||keyOf(n)!==keyOf(kids[i]))return false;
+    if(!n||t.content.childElementCount!==1||keyOf(n)==null||keyOf(n)!==keyOf(kids[i])){MORPHED=null;return false;}
     morphNode(kids[i],n);
+    touched.push(kids[i]);
   }
+  MORPHED=touched;
   return true;
 }
 /* spec 017 FR-015, FR-017: the door button of a desk. Closing it: Do not disturb (scheduled runs are held, remote control goes off first;
@@ -1521,6 +1529,7 @@ function probeSet(probe,html){
   probe.innerHTML=html; probePrev=bare;
 }
 function chooseLayout(sizing,aw,ah){
+  OPS.searches++;
   const probe=$('probe'); probe.style.width=aw+'px';
   GROW=0; HX=0; setGrow(probe,0); /* a grown render leaves GROW (and the helper level) on: the plain candidates are probed with plain text and compact tiles */
   const openOnly=sizing.filter(m=>!m.r.closed);
@@ -1644,6 +1653,7 @@ const EMPTY_DESK='<svg class="empty-desk" viewBox="0 0 120 72" aria-hidden="true
 function ringFolder(){if(reducedMotion())return;setTimeout(()=>{const b=$('addFolder'),st=$('stage');if(!b||!st||!st.querySelector('.welcome')||!b.getClientRects().length)return;
   b.classList.remove('ring-once');void b.offsetWidth;b.classList.add('ring-once');setTimeout(()=>b.classList.remove('ring-once'),1600);},600);}
 function renderOffice(){
+  PLACE_ONLY=null;
   if(ui.view!=='office')return;
   const floor=$('floor'), stage=$('stage');
   renderFilterNote(); /* before the padding is read below */
@@ -1671,29 +1681,35 @@ function renderOffice(){
     floor.classList.remove('scrolls'); return;
   }
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
+  OPS.renders++;
   const sizing=lastSizing=sizingModel(model); /* what chooseLayout is given (the hook below reads it) */
   const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),THEME.themeIdForCache(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),curFloorId(),allFloorsView(),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]]),(m.rolled||[]).map(x=>[x.a.id,x.k]),!!ui.expanded['shut:'+m.r.id]])]);
-  if(key!==layoutKey||!layout){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
+  const reused=key===layoutKey&&!!layout; /* spec 097 FR-184: the last layout search still holds (same shape, width and height) */
+  if(!reused){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
   HCAP=layout.hcap; HBOOST=new Map(layout.boost); LIVE_SIDE=!!layout.side; GROW=layout.grow?1:0; HX=layout.hx||0; /* a cached layout skips chooseLayout: restore the helper level too */
   const parts=stageParts(model,layout.d,aw,layout.cap);
   const fresh=stage.dataset.d!==layout.d||!!stage.querySelector('.empty');
   stage.style.width=aw+'px'; stage.style.height='auto'; stage.dataset.d=layout.d; setGrow(stage,layout.grow||0);
+  MORPHED=null;
   if(fresh)stage.innerHTML=parts.join(''); else if(!morphParts(stage,parts))morphHTML(stage,parts.join(''));
+  const only=reused&&!fresh&&MORPHED?MORPHED:null; /* the parts to fit and to place pencils on; null = all */
+  PLACE_ONLY=only;
   stagePrev=parts; SHUT_PREV=new Set(model.flatMap(m=>(m.rolled||[]).map(x=>x.a.id)));
   stage.dataset.fit=layout.fit?'ok':'scroll'; stage.dataset.h=String(layout.hcap); stage.dataset.side=layout.side?'1':'0';
-  fitUsage(stage);
+  fitUsage(only||stage);
   /* spec 001 FR-023 (change 2026-10-23): the layout is cached by the office's shape, but a header can gain a part without the shape changing
      (the siren, the cost chip, the MCP chip arrive after the first layout). A layout picked because its headers held their parts is
      searched again when a header on screen no longer does; once per layout key and header contents, so it cannot loop. */
   const heads=stage.querySelectorAll('.room-head');
-  if(layout.heads&&[...heads].some(h=>!headHolds(h))){
+  const toCheck=only?only.flatMap(k=>[...k.querySelectorAll('.room-head')]):[...heads]; /* a header in a part that was not rewritten held at the last render */
+  if(layout.heads&&toCheck.some(h=>!headHolds(h))){
     const sig=key+'\n'+[...heads].map(h=>[...h.children].map(e=>e.getAttribute('class')).join(' ')+'='+h.textContent).join('\n');
     if(sig!==HEAD_RETRY){HEAD_RETRY=sig;layoutKey='';renderOffice();return;}
   }
   if(layout.side)stage.querySelectorAll('.liveside .ls-t').forEach(fitSide);
   if(layout.grow){stage.querySelectorAll('.desk.card').forEach(setGrownCols);stage.querySelectorAll('.desk.card .intent').forEach(fitLines);stage.querySelectorAll('.desk.card[data-gc] .gx-t').forEach(fitClamp);} /* FR-043, FR-047: columns, then whole lines, the newest in view */
   floor.classList.toggle('scrolls',!layout.fit);
-  spreadOffice(stage,!!layout.fit); /* FR-086, FR-087: the spare height, after everything else is drawn */
+  spreadOffice(stage,!!layout.fit,cs); /* FR-086, FR-087: the spare height, after everything else is drawn */
   if(doorAnim){const el=stage.querySelector(`[data-door="${CSS.escape(doorAnim)}"]`),box=el&&(el.closest('.room')||el);if(box&&!REDUCED){box.classList.add('enter');setTimeout(()=>box.classList.remove('enter'),420);}doorAnim=null;}
 }
 
@@ -1703,10 +1719,10 @@ function renderOffice(){
    (DurbarProbe.spreadRows, pure). Measured from the layout (offsetTop and the computed border-box height), not the screen box, so a room's
    door animation (a transform) does not change it. The layout search never sees it: #probe has no data-spread. */
 const SPREAD_CAP=0.2;
-function spreadOffice(stage,on){
+function spreadOffice(stage,on,fcs0){
   stage.style.removeProperty('--rx'); stage.style.removeProperty('padding-top'); stage.style.removeProperty('row-gap'); delete stage.dataset.spread;
   if(!on)return;
-  const floor=$('floor'), fcs=getComputedStyle(floor);
+  const floor=$('floor'), fcs=fcs0||getComputedStyle(floor); /* spec 097 FR-184 (T159): renderOffice passes the style it already read, so a render asks for the floor's style once */
   const avail=floor.clientHeight-parseFloat(fcs.paddingTop)-parseFloat(fcs.paddingBottom), gap=parseFloat(getComputedStyle(stage).rowGap)||0;
   const rows=[];
   for(const k of stage.children){
@@ -1725,6 +1741,7 @@ function spreadOffice(stage,on){
    short form of a capped figure ("33/30"), then the cost itself (its tooltip and the status pill still say it). */
 const USE_STEPS=['no-tok','no-unit','short','no-cost'];
 function fitUsage(root){
+  if(Array.isArray(root)){root.forEach(fitUsage);return;} /* spec 097 FR-184: just the parts that were rewritten */
   for(const u of root.querySelectorAll('.desk .use')){
     u.classList.remove(...USE_STEPS);
     const cost=u.querySelector('.aiu'), tok=u.querySelector('.tok');
@@ -1877,7 +1894,7 @@ function renderAll(){
   if(id&&!inPanel){const n=document.querySelector(`${scope}[${key}="${CSS.escape(id)}"]`); if(n&&ae!==n)n.focus({preventScroll:true});}
   if(ui.selected){updatePanelHeader();renderStrip();}
   rememberUi();
-  placePencils(); INL().follow(); /* spec 059 FR-023 item 5: the open field follows its name */
+  placePencils(ui.view==='office'?PLACE_ONLY:null); INL().follow(); /* spec 059 FR-023 item 5: the open field follows its name; spec 097 FR-184: pencils only on the parts renderOffice rewrote */
   if(floorSwitchTimed)endFloorSwitchTiming();
 }
 
@@ -7485,7 +7502,11 @@ function placeRen(b){
   const pad=(b.offsetWidth-S)/2; /* the box is 24px (a 24px target, spec 052), the glyph 16px in its middle */
   b.style.left=Math.round(left-pad-or.left-(op.clientLeft||0))+'px'; b.style.top=Math.round(top-pad-or.top-(op.clientTop||0))+'px';
 }
-function placePencils(){document.querySelectorAll('#stage .ren[data-ren],#list .ren[data-ren]').forEach(placeRen);}
+let PLACE_ONLY=null; /* set by renderOffice: the stage parts it rewrote (null = all); read by the placePencils that follows it in renderAll */
+function placePencils(only){
+  if(Array.isArray(only)){only.forEach(k=>k.querySelectorAll('.ren[data-ren]').forEach(placeRen));return;}
+  document.querySelectorAll('#stage .ren[data-ren],#list .ren[data-ren]').forEach(placeRen);
+}
 /* spec 006 FR-017: one main session out of the office; the last one of a folder stays (Folders > Remove) */
 function siblingsOf(a){const r=liveRoot(a);return agents.filter(x=>!x.parent&&x.room===r.room&&x.id!==r.id);}
 async function removeSessionUi(a){
@@ -8002,7 +8023,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={agents:()=>agents,crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
+if(SIM)window.__durbarSimUi={ops:()=>({...OPS}),agents:()=>agents,crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,
