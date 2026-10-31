@@ -1304,7 +1304,7 @@ export class ClaudeAdapter implements AgentAdapter {
     return out;
   }
 
-  /** Spec 040 FR-015: one prompt in an empty temp folder (the AI theme maker); no session is created or kept. */
+  /** Spec 040 FR-015: one prompt in an empty temp folder (first for the AI theme maker, retired in spec 040 FR-031); no session is created or kept. */
   async generateText(prompt: string): Promise<{ text: string; costUsd?: number }> {
     const file = await this.deps.claudePath();
     if (!file) throw new Error('Claude Code is not installed or could not be found.');

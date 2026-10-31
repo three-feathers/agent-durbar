@@ -1379,7 +1379,7 @@ export class CopilotAdapter implements AgentAdapter {
   }
 
   /**
-   * Spec 040 FR-015: one prompt (the AI theme maker) on a throw-away session of the shared runtime (no second process): see `oneShotConfig`.
+   * Spec 040 FR-015: one prompt (first for the AI theme maker, retired in spec 040 FR-031) on a throw-away session of the shared runtime (no second process): see `oneShotConfig`.
    * Every permission request is denied; after `ONE_SHOT_TIMEOUT_MS` the turn is aborted. The session is disconnected and deleted from disk in
    * a `finally`, also on an error or a timeout, and its temp folder removed. Returns the last top-level assistant message and the AI credits
    * the runtime reported for the session (`assistant.usage`), if any. The prompt and the reply are never logged.

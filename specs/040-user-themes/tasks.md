@@ -40,7 +40,7 @@
 
 ## Changes 2026-10-31 (owner decision, spec 021 FR-067): AI theme maker retired
 
-- [ ] T039 `theme:remove` with a confirm and a Remove button on saved themes; can land first. Test: `test:userthemes`: a link in the folder is not followed; the theme in use goes to Clean Office; `sim:` both sizes [FR-032]
-- [ ] T040 Freeze: no new work; one line in `docs/themes.md`, no code. Test: `read:` [FR-031]
-- [ ] T041 Remove FR-031's list in the same PR as spec 102 T061..T063, T120; tests in `test:themegen` keep the helpers, the rest go; `screens.js` maker parts go unless 096 or 102 uses them; docs, README, screenshots, changelog fragment in that PR (spec 021 FR-068). Test: `test:themegen`, `test:userthemes`, `test:ui-suite`, `npm run shots:docs`; `git grep` for the removed names is empty [FR-031, FR-033]
-- [ ] T042 076's keys become no-ops and its FR-091, FR-158 are updated. Test: `read:` [FR-031]
+- [x] T039 `theme:remove` with a confirm and a Remove button on saved themes; can land first. Test: `test:userthemes`: a link in the folder is not followed; the theme in use goes to Clean Office; `sim:` both sizes [FR-032]
+- [x] T040 Freeze: no new work; one line in `docs/themes.md`, no code. Test: `read:` [FR-031]
+- [x] T041 Remove FR-031's list (built ahead of spec 102 T061..T063, T120; see the order-of-work note in the spec); tests in `test:themegen` keep the helpers, the rest go; `screens.js` maker parts go unless 096 or 102 uses them; docs, README, screenshots, changelog fragment in that PR (spec 021 FR-068). Test: `test:themegen`, `test:userthemes`, `test:ui-suite`, `npm run shots:docs`; `git grep` for the removed names is empty [FR-031, FR-033]
+- [x] T042 076's keys become no-ops and its FR-091, FR-158 are updated. Test: `read:` [FR-031]

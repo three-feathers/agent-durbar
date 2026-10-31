@@ -108,7 +108,7 @@ async function run(sim: string | undefined): Promise<{ ran: Set<string>; refused
   // the sender check still comes first: a foreign frame gets the old refusal, not the simulator's
   {
     const foreign = { senderFrame: { url: 'https://example.com/' }, sender: { mainFrame: {} } };
-    await assert.rejects(async () => handles.get('theme:generate')!(foreign), /did not come from its own window/);
+    await assert.rejects(async () => handles.get('folderSetup:explain')!(foreign), /did not come from its own window/);
   }
   for (const v of [undefined, '0', 'abc']) {
     const real = await run(v);
@@ -125,7 +125,7 @@ async function run(sim: string | undefined): Promise<{ ran: Set<string>; refused
 
 // ---- 2. the channels that reach an agent app (spec 010 FR-023, one by one) and the open list's hygiene ----
 const REACHES_AGENT_APP = [
-  'theme:generate', 'folderSetup:explain',
+  'folderSetup:explain',
   'agents:addFolder', 'agents:addWorkspaceFile', 'agents:newSession', 'agents:send', 'agents:wake', 'sessions:resume',
   'agents:stop', 'agents:end', 'agents:compact', 'agents:handoff', 'agents:setModel', 'agents:cancelQueuedModel', 'agents:setMode', 'agents:setCap',
   'agents:resolvePermission', 'agents:resolvePlan', 'agents:resolveLimit', 'agents:revokeGrant', 'agents:answerQuestion', 'agents:answerElicitation',
@@ -159,7 +159,7 @@ for (const c of open) {
   assert.ok(!hit, `open channel "${c}" must not reach an agent app (its handler names ${hit?.[0]})`);
 }
 // the heuristic still recognises the obvious ones, so it is not vacuous
-for (const c of ['theme:generate', 'agents:addFolder', 'sessions:resume', 'harness:run', 'adapters:list']) assert.ok(SPENDS.test(blocks.get(c) ?? ''), `the scan sees "${c}" reach an agent app`);
+for (const c of ['folderSetup:explain', 'agents:addFolder', 'sessions:resume', 'harness:run', 'adapters:list']) assert.ok(SPENDS.test(blocks.get(c) ?? ''), `the scan sees "${c}" reach an agent app`);
 
 // ---- 3. main.ts and ipcguard.ts wiring ----
 const mainSrc = read('src/main/main.ts');
