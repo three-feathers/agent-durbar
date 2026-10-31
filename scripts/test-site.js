@@ -123,8 +123,12 @@ assert.match(docs, /\.docs\{grid-template-columns:minmax\(0,1fr\)/, 'the docs co
 assert.match(docs, /<a class="keep" href="index\.html#download">Download<\/a>/, 'Download stays in the docs header on phones');
 
 // spec 050 FR-012 (issue #759): every picture the site links is a palette PNG (colour type 3), made by `npm run shots:docs` or `npm run shots:compress`;
-// a linked picture the quality guard refused to compress is named in KEPT_ORIGINAL with the reason (none today)
-const KEPT_ORIGINAL = {};
+// a linked picture the quality guard refused to compress is named in KEPT_ORIGINAL with the reason
+const KEPT_ORIGINAL = {
+  /* spec 097 (2026-10-31): the Real office photo with the world's warm page colours: a 256-colour palette misses the guard by a hair
+     (mean error 1.03 > 1), so it ships as written (668 KB; the site stays under its 8 MB budget) */
+  '097-real-3-1440x900.png': 'quality guard refused: mean error 1.03 > 1',
+};
 for (const f of require('./shots-docs.js').linkedImages(ROOT)) {
   const b = fs.readFileSync(path.join(ROOT, 'docs', 'screenshots', f)).subarray(0, 26);
   assert.ok(KEPT_ORIGINAL[f] || b[25] === 3, `${f} is not a palette PNG: run \`npm run shots:compress\` (or name it in KEPT_ORIGINAL with the reason the quality guard refused it)`);

@@ -87,4 +87,6 @@ Agent Durbar is by **Three Feathers**. Key contributors: [vikramgorla](https://g
 
 The Cheeky and Prehistoric Crew pictures (`src/renderer/crew/art/`) were made by Paco with ChatGPT image generation, and Paco did the final pass; [`ASSETS.md`](src/renderer/crew/art/ASSETS.md) gives the tool and date of each (spec 077). The app id is `io.github.three-feathers.agentdurbar` since 2026-10-16; a build from before then is a separate app to the OS.
 
+The Real office pictures (`src/renderer/realoffice/art/`) were made with Codex image generation on Vikram's plan and approved by Vikram, MIT like the code; [`ASSETS.md`](src/renderer/realoffice/art/ASSETS.md) gives each sheet's tool, date and prompt (spec 097).
+
 See also [SECURITY.md](SECURITY.md), [CONTRIBUTING.md](CONTRIBUTING.md) and the [CHANGELOG](CHANGELOG.md).
