@@ -3,6 +3,7 @@
  * The renderer runs its own JS validator (theme.js); both enforce the same contract:
  * data-only manifest, id kebab-case ≤64 chars, manifest ≤64 KB, ≤160 tokens, ≤24 art slots, ≤24 words.
  */
+import { LEGACY_CREW_THEME } from './characters';
 import { parseThemeId } from './credits';
 import { HOSTILE_RE, TYPED_TOKENS, typedValue } from './themetokens';
 
@@ -68,6 +69,8 @@ export const UI_STYLES = ['clean', 'retro'];
  * keeps working: that one value falls back to `clean` or `office` (theme.js), with a note.
  */
 export const REMOVED_THEMES: readonly string[] = ['corporate', 'durbar-indian', 'durbar-european', 'durbar-japanese'];
+/** Ids no user theme may take (imported or saved): the built-in themes, the removed ones (FR-018) and the old Cheeky Crew (spec 077 FR-066). main's `theme:*` handlers use it. */
+export const RESERVED_THEME_IDS: readonly string[] = ['clean-office', 'retro', LEGACY_CREW_THEME, ...REMOVED_THEMES];
 const REMOVED_STYLES: readonly string[] = ['corporate', 'court-indian', 'court-european', 'court-japanese'];
 
 /** A stored `theme` naming a removed built-in is cleared (Clean Office), once; `characters` and the rest are untouched. `changed` says to write the file. */

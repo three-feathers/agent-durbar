@@ -3,8 +3,12 @@ import * as assert from 'node:assert';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { checkUserManifest, USER_THEME_LIMITS } from '../src/shared/themes';
+import { checkUserManifest, USER_THEME_LIMITS, RESERVED_THEME_IDS } from '../src/shared/themes';
 import { UserThemeStore } from '../src/main/themes';
+
+// reserved ids (spec 035 FR-018): the built-in, the old Cheeky Crew and the removed ones; main's handlers use exactly this list
+for (const id of ['clean-office', 'retro', 'cheeky-crew', 'corporate', 'durbar-indian', 'durbar-european', 'durbar-japanese']) assert.ok(RESERVED_THEME_IDS.includes(id), `${id} is reserved`);
+assert.ok(/BUILT_IN_THEME_IDS = RESERVED_THEME_IDS;/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'themes.ts'), 'utf8')), 'ipc/themes.ts reads the shared reserved list');
 
 // --- manifest validation ---
 assert.strictEqual(checkUserManifest('{"id":"ocean","name":"Ocean"}').ok, true);

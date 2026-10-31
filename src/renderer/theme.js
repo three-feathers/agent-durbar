@@ -704,7 +704,7 @@
     if(listOrMap&&typeof listOrMap==='object'){
       for(const [id,m] of Object.entries(listOrMap)){
         const v=validateManifest(m);
-        if(v&&v.id===id&&!own(BUILT_IN,id))USER_MANIFESTS[id]=v;
+        if(v&&v.id===id&&!own(BUILT_IN,id)&&!REMOVED_THEMES.includes(id))USER_MANIFESTS[id]=v; /* spec 035 FR-018: a removed id stays reserved */
         else console.warn('[theme] user theme dropped on registration:',id);
       }
     }

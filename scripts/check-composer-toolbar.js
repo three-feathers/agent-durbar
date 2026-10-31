@@ -460,7 +460,7 @@ module.exports = async (ctx) => {
         await key('Escape');
         check(await until(`!document.getElementById('ctxMenu')&&(document.activeElement||{}).id==='ctxChip'`, 3000), `${tag}: Escape does not close the summary back to the ring`);
       }
-      /* FR-055: the six built-in themes lay the row out the same: no overlap, 28px, 10.5px, everything incl. MCP in the row */
+      /* FR-055: the built-in themes lay the row out the same: no overlap, 28px, 10.5px, everything incl. MCP in the row */
       for (const th of THEMES) {
         await load(w, h, { theme: th });
         await until(`window.THEME&&THEME.current().id===${jsLiteral(th)}`, 6000);
