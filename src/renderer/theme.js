@@ -677,6 +677,10 @@
     return p[name]!==undefined?p[name]:(MOTION_PRESETS.default[name]||'none');
   }
   function onChange(fn){ listeners.push(fn); }
+  /* Is this id one of the built-in packs (asked directly, so it stays right once list() also holds user themes)? */
+  function isBuiltIn(id){ return own(BUILT_IN,id); }
+  /* spec 040 FR-030: a user theme's lobby band keeps its proportions and covers the lobby; built-in bands were drawn to be stretched */
+  function lobbyArtAspect(id){ return isBuiltIn(id)?'none':'xMidYMid slice'; }
   /* User themes (spec 040): the main process passes validated manifests; id becomes selectable. */
   function registerUserThemes(listOrMap){
     USER_MANIFESTS={};
@@ -1048,6 +1052,8 @@
     _validateManifest:validateManifest,
     _compilePixelMap:compilePixelMap,
     _tokens(){return resolveTokens(currentManifest);},
+    isBuiltIn,
+    lobbyArtAspect,
     _builtins(){return BUILT_IN;},
   };
 }));

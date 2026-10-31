@@ -36,4 +36,4 @@
 - [x] T035 Contrast pairs: room tints (text), `--brand-bg` on `--raised`/`--bg` and the primary button text (UI styles with `--brand-bg`); unit tests per pair [FR-027]
 - [x] T036 Art style guide in the prompt and `artWarnings` (sparse, thin, tiny) [FR-028]
 - [x] T037 Place names at most 14 characters, in the prompt and the parser [FR-029]
-- [x] T038 Lobby art: the "+" button above the band, user-theme band keeps its proportions; `check:theme-art` and `check:office` checks [FR-030]
+- [x] T038 Lobby art: the "+" button above the band, user-theme band keeps its proportions (decided by `THEME.isBuiltIn`, unit-tested in `test:theme`); `check:theme-art` and `check:office` checks [FR-030]
