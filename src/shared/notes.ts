@@ -423,4 +423,6 @@ export type NotesFileCount = { ok: true; count: number; exists: boolean; strayTe
 /** `notes:setFile` (FR-050, FR-055): the switch's new position, the mirror's state after turning on, and a short line for the screen. */
 export type NotesSetFile = { ok: true; on: boolean; file?: NotesFileState; message?: string; demo?: boolean } | (NotesFail & { excludeFailed?: true });
 export type NotesView = { ok: true; fingerprint: string; folderName: string; notes: Note[]; max: number; readOnly?: string; session?: string; file?: NotesFileState; fileSwitch?: NotesFileSwitch } | NotesFail;
-export type NotesWrote = { ok: true; fingerprint: string; note?: Note; existing?: boolean } | NotesFail;
+export type NotesWrote = { ok: true; fingerprint: string; note?: Note; existing?: boolean; count?: number } | NotesFail;
+/** FR-048 (T034b): what *Export…* did: the count and the chosen file's base name (never its folder), a cancel, or the demo's answer. */
+export type NotesExport = { ok: true; count: number; name: string } | { ok: true; demo: true; message: string } | { ok: false; cancelled: true } | NotesFail;

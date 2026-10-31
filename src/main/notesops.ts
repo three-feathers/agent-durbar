@@ -11,8 +11,10 @@ import type { NoteSource } from '../shared/notes';
 import { sessionIdOk } from '../shared/sessionid';
 import { folderKeyOf, folderNameOf } from '../shared/usagedoc';
 import type { NotesStore, NotesView, NotesWrote } from './notesstore';
-import type { NotesFileCount, NotesFileState, NotesFileSwitch, NotesSetFile } from '../shared/notes';
+import type { NotesExport, NotesFail, NotesFileCount, NotesFileState, NotesFileSwitch, NotesSetFile } from '../shared/notes';
 import { syncNotesFile, type NotesFile } from './notesfile';
+import { writeNotesMd } from '../shared/notesmd';
+import { exportDialogOptions, writeNotesExport, type ExportDialogOptions, type NotesExportOptions } from './notesexport';
 
 export interface NotesOpsDeps {
   agents: Map<string, AgentInfo>;
@@ -42,10 +44,18 @@ export interface NotesOpsDeps {
    */
   valuesPending?(folderKey: string): boolean;
   /**
-   * A native confirmation the page cannot answer (Cancel is the default; `nativeConfirm` in main), before the switch is turned on and
-   * before *Delete the file* (review of PR 931, Q2). Absent: both are refused.
+   * A native confirmation the page cannot answer (Cancel is the default; `nativeConfirm` in main), before the switch is turned on,
+   * before *Delete the file* (review of PR 931, Q2), before *Delete all* and before a removed folder's notes are deleted (T034b, with
+   * the count of notes). Absent: all are refused.
    */
-  confirmNative?(kind: 'on' | 'delete', folderName: string): Promise<boolean>;
+  confirmNative?(kind: NativeKind, folderName: string, count?: number): Promise<boolean>;
+  /**
+   * FR-048 (T034b): main's save dialog (`dialog.showSaveDialog`); the chosen path, or `undefined` when cancelled. Absent: *Export…*
+   * is not available. The window never sends a path.
+   */
+  saveDialog?(opts: ExportDialogOptions): Promise<string | undefined>;
+  /** Options for writing the export (tests inject an `fs`). */
+  exportOpts?: NotesExportOptions;
   setTimer?(fn: () => void, ms: number): unknown;
 }
 
@@ -59,6 +69,24 @@ export const NATIVE_CANCELLED = 'Cancelled: nothing changed.';
 export const DELETE_LEFTOVER = 'A temp file from a crash (.notes.md.*.tmp) may remain in .durbar.';
 export const SWITCH_UNSAVED = 'Could not save the choice in the folder list.';
 export const EXCLUDE_KEPT = 'The .durbar/ line in .git/info/exclude stays (it is harmless).';
+
+/** What a native confirmation is for (`confirmNative`). */
+export type NativeKind = 'on' | 'delete' | 'deleteAll' | 'forget';
+/** FR-048 (T034b): short fixed texts, never a path. */
+export const EXPORT_NONE = 'There are no notes to export.';
+export const EXPORT_PENDING = 'A secret value is still locked in the secret store, so Durbar cannot mask the export yet. Start a session that uses MCP extras, then try again.';
+export const EXPORT_UNAVAILABLE = 'Export is not available.';
+export const DELETE_ALL_NONE = 'There are no notes to delete.';
+
+/** The words of each native confirmation (`nativeConfirm` in main): pure, so the texts are tested. The folder's name, never a path. */
+export function notesConfirmText(kind: NativeKind, name: string, count?: number): { ok: string; message: string; detail: string } {
+  const n = typeof count === 'number' && Number.isInteger(count) && count > 0 ? count : 0;
+  const notes = n === 1 ? '1 note' : `${n} notes`;
+  if (kind === 'on') return { ok: 'Turn on', message: `Keep the notes of ${name} in the project?`, detail: 'Durbar will write .durbar/notes.md in this folder. It may get committed and pushed with your code.' };
+  if (kind === 'delete') return { ok: 'Delete the file', message: `Delete .durbar/notes.md in ${name}?`, detail: 'Durbar deletes it only if it holds exactly what Durbar would write.' };
+  if (kind === 'deleteAll') return { ok: 'Delete all', message: `Delete all ${notes} of ${name}?`, detail: 'They are deleted from this computer. This cannot be undone.' };
+  return { ok: 'Remove and delete notes', message: n ? `Remove ${name} and delete its ${notes}?` : `Remove ${name} and delete its notes?`, detail: 'The notes are deleted from this computer. .durbar/notes.md in the project is not touched.' };
+}
 
 /** FR-053: at most one project-file write per folder in this time. */
 const FILE_EVERY_MS = 500;
@@ -231,10 +259,82 @@ export class NotesOps {
     return this.changed(agentId, await t.store.remove(t.key, t.name, id, rev));
   }
 
-  async removeAll(agentId: unknown): Promise<NotesWrote | Refusal> {
+  /**
+   * FR-048 (T034b): *Delete all…*. Main counts the folder's notes itself and asks a native confirmation the page cannot answer (Cancel
+   * the default), then deletes them with a tombstone each (FR-008), so neither the project file nor another process brings them back.
+   */
+  async removeAll(agentId: unknown): Promise<(NotesWrote & { count?: number }) | Refusal> {
     const t = this.target(agentId);
     if ('ok' in t) return t;
-    return this.changed(agentId, await t.store.removeAll(t.key, t.name));
+    const v = await t.store.list(t.key);
+    if (!v.ok) return v;
+    if (v.readOnly) return { ok: false, code: 'unreadable', error: v.readOnly };
+    const count = v.notes.length;
+    if (!count) return refuse(DELETE_ALL_NONE);
+    if (!(await this.native('deleteAll', t.a, count))) return refuse(NATIVE_CANCELLED);
+    const r = this.changed(agentId, await t.store.removeAll(t.key, t.name));
+    return r.ok ? { ...r, count } : r;
+  }
+
+  /**
+   * FR-048 (T034b): *Export…*. Main shows the save dialog (the window sends no path), then writes FR-052's format of every note, done
+   * ones included, masked again with the CURRENT values exactly as the project file is (`fileValues`, `NotesFile.forFile`), so the
+   * output never depends on which chat asked; refused while a secret value is still locked. No session id is written (`writeNotesMd`).
+   */
+  async export(agentId: unknown): Promise<NotesExport> {
+    const t = this.target(agentId);
+    if ('ok' in t) return t;
+    const file = this.d.file?.();
+    if (!this.d.saveDialog || !file) return refuse(EXPORT_UNAVAILABLE);
+    const v = await t.store.list(t.key);
+    if (!v.ok) return v;
+    if (!v.notes.length) return refuse(EXPORT_NONE);
+    let pending = false;
+    try { pending = this.d.valuesPending?.(t.key) === true; } catch { pending = true; }
+    if (pending) return refuse(EXPORT_PENDING); // an incomplete mask would un-mask the shared file (review of PR 931)
+    let chosen: string | undefined;
+    try { chosen = await this.d.saveDialog(exportDialogOptions(t.name)); } catch { return refuse(EXPORT_UNAVAILABLE); }
+    if (typeof chosen !== 'string' || !chosen) return { ok: false, cancelled: true };
+    // read again after the dialog (a note may have changed while it was open), then mask with the values known now
+    const now = await t.store.list(t.key);
+    if (!now.ok) return now;
+    let pendingNow = false;
+    try { pendingNow = this.d.valuesPending?.(t.key) === true; } catch { pendingNow = true; }
+    if (pendingNow) return refuse(EXPORT_PENDING);
+    const text = writeNotesMd(file.forFile(now.notes, this.fileValues(t.key)));
+    const w = await writeNotesExport(chosen, text, this.d.exportOpts);
+    if (!w.ok) return refuse(w.error);
+    return { ok: true, count: now.notes.length, name: w.name };
+  }
+
+  /**
+   * FR-048 (T034b): before a folder is removed with *Also delete its notes*: the folder's key and how many notes it has, after a native
+   * confirmation when it has any (Cancel: nothing is removed). The folder is found from the agent id, never from the window.
+   */
+  async confirmForget(agentId: unknown): Promise<{ ok: true; key: string; count: number } | Refusal> {
+    const t = this.target(agentId);
+    if ('ok' in t) return t;
+    const v = await t.store.list(t.key);
+    const count = v.ok ? v.notes.length : 0;
+    if (v.ok && !count) return { ok: true, key: t.key, count };
+    // an unreadable file holds notes too: it is confirmed like a folder with notes
+    if (!(await this.native('forget', t.a, count))) return refuse(NATIVE_CANCELLED);
+    return { ok: true, key: t.key, count };
+  }
+
+  /**
+   * FR-048 (T034b): a removed folder's notes file is deleted, after a mirror cycle of the folder already running has finished (a queued
+   * one finds the switch off with the folder gone and writes nothing). Only `<fingerprint(folderKey)>.json`; `.durbar/notes.md` and
+   * `.git/info/exclude` in the project are never touched here.
+   */
+  async forget(folderKey: string): Promise<{ ok: true; deleted: boolean } | NotesFail | Refusal> {
+    const store = this.d.store();
+    if (!store) return refuse('Notes are not available.');
+    for (let p = this.cycles.get(folderKey); p;) { await p.catch(() => undefined); const n = this.cycles.get(folderKey); if (n === p) break; p = n; }
+    const r = await store.forget(folderKey);
+    if (!r.ok) return r;
+    this.cycles.delete(folderKey);
+    return { ok: true, deleted: r.deleted };
   }
 
   /** FR-050 (T042): the switch as the screen shows it; `undefined` for a `.code-workspace` (not offered) or when the mirror is not wired. */
@@ -291,9 +391,9 @@ export class NotesOps {
     return run;
   }
 
-  private async native(kind: 'on' | 'delete', a: AgentInfo): Promise<boolean> {
+  private async native(kind: NativeKind, a: AgentInfo, count?: number): Promise<boolean> {
     if (!this.d.confirmNative) return false;
-    try { return (await this.d.confirmNative(kind, folderNameOf(a))) === true; } catch { return false; }
+    try { return (await this.d.confirmNative(kind, folderNameOf(a), count)) === true; } catch { return false; }
   }
 
   private async setFileNow(t: { a: AgentInfo; store: NotesStore; key: string; file: NotesFile }, on: boolean, o: { deleteFile?: unknown; exclude?: unknown }): Promise<NotesSetFile | Refusal> {

@@ -430,6 +430,35 @@ export class NotesStore {
     return this.mutate(folderKey, folderName, (doc) => applyChange(doc, { op: 'deleteAll' }, this.now(), () => ''));
   }
 
+  /**
+   * FR-048 (T034b): *Also delete its notes* of a removed folder. Deletes only this folder's `<fingerprint>.json` (the fingerprint of
+   * main's own folder key), under the folder's queue and lock; no tombstones are kept, the file is gone. A link there is unlinked as a
+   * link; anything that is not a file or a link is refused. Files moved aside by *Start over* (`.json.bad-*`) are left.
+   */
+  forget(folderKey: string): Promise<{ ok: true; fingerprint: string; deleted: boolean } | NotesFail> {
+    const fp = this.fingerprintOf(folderKey);
+    return this.queue(fp, async () => {
+      const lk = await this.lock(fp);
+      if (!lk.ok) return lk;
+      try {
+        if (!(await this.ownsLock(fp, lk.token))) return { ok: false, code: 'write', error: 'The notes are busy (another Durbar is writing them). Try again.' } as NotesFail;
+        const file = this.fileOf(fp);
+        let deleted = false;
+        try {
+          const st = this.fs.lstatSync(file);
+          if (!st.isFile() && !st.isSymbolicLink()) return { ok: false, code: 'write', error: 'The notes file of this folder is not a file; it was left.' } as NotesFail;
+          this.fs.unlinkSync(file);
+          deleted = true;
+        } catch (e) {
+          if (errCode(e) !== 'ENOENT') return { ok: false, code: 'write', error: `Could not delete the notes (${errCode(e)}).` } as NotesFail;
+        }
+        this.cache.delete(fp);
+        this.fire(fp);
+        return { ok: true as const, fingerprint: fp, deleted };
+      } finally { await this.unlockFile(fp, lk.token); }
+    });
+  }
+
   /** FR-007: a file Durbar cannot read is renamed to `<fingerprint>.json.bad-<UTC time>` (0600) and the folder starts empty. */
   startOver(folderKey: string): Promise<{ ok: true; fingerprint: string } | NotesFail> {
     const fp = this.fingerprintOf(folderKey);
