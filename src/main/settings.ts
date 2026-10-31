@@ -160,6 +160,17 @@ export class SettingsStore {
   }
 
   /** OS notifications when an agent needs you (spec 052 FR-059): on by default; only `false` is written. */
+  /** Spec 099 S1: the turn limit last used for Autopilot, remembered only after the person confirmed it. */
+  get autopilotLimit(): number | undefined {
+    return this.s.autopilotLimit;
+  }
+
+  setAutopilotLimit(v: number): void {
+    if (!Number.isInteger(v) || v < 1 || v > 1000) return;
+    this.s = { ...this.s, autopilotLimit: v };
+    this.save();
+  }
+
   get notifyNeedsMe(): boolean {
     return this.s.notifyNeedsMe !== false;
   }

@@ -83,7 +83,7 @@ export function sessionFromHead(id: string, head: ClaudeSessionHead, mtimeMs: nu
 }
 
 /** The chat history of a session file's text: prompts, assistant text, tool calls with a short result. Side-chain lines are skipped. */
-export function claudeHistoryFromText(text: string, limits: Partial<HistoryLimits> = {}): HistoryResult {
+export function claudeHistoryFromText(text: string, limits: Partial<HistoryLimits> = {}, dropGoalClear = false): HistoryResult {
   const lim = { ...DEFAULT_HISTORY_LIMITS, ...limits };
   const items: HistoryItem[] = [];
   const toolIdx = new Map<string, number>();
@@ -92,6 +92,7 @@ export function claudeHistoryFromText(text: string, limits: Partial<HistoryLimit
     const content = o.message.content;
     if (o.type === 'user') {
       const p = typedPrompt(o);
+      if (dropGoalClear && p === '/goal clear') continue; // spec 099 FR-053: Durbar's own clear, never a person's message; off in the default build (spec *Changes*)
       if (p) {
         items.push({ type: 'user', text: cut(p, lim.maxTextChars), ts: tsOf(o) });
         continue;
@@ -184,7 +185,7 @@ function findSessionFile(sessionId: string, configDir: string): string | undefin
 }
 
 /** The chat history of one session (FR-126); empty when the file is missing, too large or unreadable. */
-export function readClaudeHistory(sessionId: string, cwd: string | undefined, configDir = claudeConfigDir()): HistoryResult {
+export function readClaudeHistory(sessionId: string, cwd: string | undefined, configDir = claudeConfigDir(), dropGoalClear = false): HistoryResult {
   const empty: HistoryResult = { items: [], total: 0, truncated: false };
   if (!ID_RE.test(sessionId)) return empty;
   const file = cwd !== undefined ? path.join(configDir, 'projects', claudeProjectSlug(cwd), `${sessionId}.jsonl`) : findSessionFile(sessionId, configDir);
@@ -192,7 +193,7 @@ export function readClaudeHistory(sessionId: string, cwd: string | undefined, co
   try {
     const st = fs.statSync(file);
     if (!st.isFile() || st.size > MAX_FILE_BYTES) return empty;
-    return claudeHistoryFromText(fs.readFileSync(file, 'utf8'));
+    return claudeHistoryFromText(fs.readFileSync(file, 'utf8'), {}, dropGoalClear);
   } catch {
     return empty;
   }

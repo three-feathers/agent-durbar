@@ -21,8 +21,11 @@ export interface RemoteOpsDeps {
   record?(id: string, on: boolean): void;
   /** FR-040 (spec 017 FR-018, owner 2026-10-23): the agent's door is closed by the user; turning remote control on is then refused. */
   doorClosed?(id: string): boolean;
+  /** Spec 099 FR-007: the session is on Autopilot, or being turned on. Its own check, so that a later change to Autopilot's state cannot open this. */
+  autopilotOn?(id: string): boolean;
 }
 
+export const NOT_ON_AUTOPILOT = 'Remote control is off on Autopilot: anyone who can steer this session remotely could make it run commands without asking you. Stop Autopilot and switch to Ask first, then turn it on.';
 export const DOOR_CLOSED = 'The door is closed (Do not disturb). Open it first.';
 
 export const NO_REMOTE = 'This agent app cannot be controlled remotely.';
@@ -32,6 +35,9 @@ export const NOT_IN_ALLOW_ALL = 'Remote control is off in Allow all: anyone who 
 export function createRemoteOps(deps: RemoteOpsDeps) {
   /** Last state per agent id while remote control is on; dropped when it is turned off, fails, or the session ends. */
   const state = new Map<string, RemoteState>();
+  /** Spec 099 FR-007: asked or being turned on, not yet in `state`; Autopilot's own check after its dialog looks here. */
+  const turningOn = new Map<string, number>();
+  const raised = (id: string): string | undefined => (deps.autopilotOn?.(id) ? NOT_ON_AUTOPILOT : deps.modeOf?.(id) === 'allow' ? NOT_IN_ALLOW_ALL : undefined);
   return {
     async setRemote(id: unknown, on: unknown): Promise<RemoteState> {
       if (typeof id !== 'string' || !id || id.length > 200 || !deps.known(id) || typeof on !== 'boolean') return { ok: false, error: 'unknown agent' };
@@ -39,14 +45,32 @@ export function createRemoteOps(deps: RemoteOpsDeps) {
       if (!ad || typeof ad.setRemote !== 'function' || !ad.capabilities.remote) return { ok: false, error: NO_REMOTE };
       if (!ad.isLive(id)) return { ok: false, error: NOT_RUNNING };
       // FR-011 (security review, 2026-10-20): never with Allow all, and only after the main process's own confirmation
-      if (on && deps.modeOf?.(id) === 'allow') return { ok: false, error: NOT_IN_ALLOW_ALL };
+      const up = on && raised(id);
+      if (up) return { ok: false, error: up };
       if (on && deps.doorClosed?.(id)) return { ok: false, error: DOOR_CLOSED };
-      if (on && deps.confirm && !(await deps.confirm(id))) return { ok: false, cancelled: true, error: 'Cancelled.' };
+      if (on) turningOn.set(id, (turningOn.get(id) ?? 0) + 1);
       let r: RemoteState;
       try {
-        r = await ad.setRemote(id, on);
-      } catch (err) {
-        r = { ok: false, error: cleanRemoteError(err) };
+        if (on && deps.confirm && !(await deps.confirm(id))) return { ok: false, cancelled: true, error: 'Cancelled.' };
+        // a raise while the dialog was open (spec 099 FR-007): asked again here, and once more after the app's answer
+        const during = on && raised(id);
+        if (during) return { ok: false, error: during };
+        try {
+          r = await ad.setRemote(id, on);
+        } catch (err) {
+          r = { ok: false, error: cleanRemoteError(err) };
+        }
+        const late = on && r?.ok && r.on === true && raised(id);
+        if (late) {
+          await Promise.resolve().then(() => ad.setRemote?.(id, false)).catch(() => undefined);
+          return { ok: false, error: late };
+        }
+      } finally {
+        if (on) {
+          const n = (turningOn.get(id) ?? 1) - 1;
+          if (n > 0) turningOn.set(id, n);
+          else turningOn.delete(id);
+        }
       }
       // only plain, checked fields cross back to the window
       const out: RemoteState = r && r.ok ? { ok: true, on: r.on === true } : { ok: false, error: cleanRemoteError(r?.error) };
@@ -100,6 +124,10 @@ export function createRemoteOps(deps: RemoteOpsDeps) {
     },
     has(id: string): boolean {
       return state.has(id);
+    },
+    /** On, or on its way (its dialog is open, or the app has not answered): spec 099 FR-007. */
+    engaged(id: string): boolean {
+      return state.has(id) || turningOn.has(id);
     },
   };
 }

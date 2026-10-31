@@ -36,6 +36,7 @@ const api: DurbarApi = {
   compact: (id, focus) => ipcRenderer.invoke('agents:compact', id, focus),
   handoff: (id) => ipcRenderer.invoke('agents:handoff', id),
   setRemote: (id, on) => ipcRenderer.invoke('agents:setRemote', id, on),
+  setAutopilot: (id, settings) => ipcRenderer.invoke('agents:setAutopilot', id, settings),
   openRemote: (id) => ipcRenderer.invoke('agents:openRemote', id),
   checkpointPreview: (id, turn) => ipcRenderer.invoke('agents:checkpointPreview', id, turn),
   checkpointUndo: (id, turn) => ipcRenderer.invoke('agents:checkpointUndo', id, turn),

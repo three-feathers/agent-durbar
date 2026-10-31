@@ -15,6 +15,8 @@ export interface RemoteIpcDeps {
   logActivity(a: AgentInfo, decision: ActivityDecision, action: string): void;
   /** Spec 054 FR-040: the agent's door is closed by the user. */
   doorClosed?(id: string): boolean;
+  /** Spec 099 FR-007: read when asked, since Autopilot's ops are created after this. */
+  autopilotOn?(id: string): boolean;
 }
 
 /** Registers the handlers and returns the remote-control operations the rest of main uses (end a session, quit, sign-in). */
@@ -36,6 +38,7 @@ export function register(deps: RemoteIpcDeps): ReturnType<typeof createRemoteOps
       });
     },
     doorClosed: (id) => !!deps.doorClosed?.(id),
+    autopilotOn: (id) => !!deps.autopilotOn?.(id),
     record: (id, on) => {
       const a = agents.get(id);
       if (a) logActivity(a, on ? 'remote-on' : 'remote-off', on ? 'Remote control from GitHub turned on' : 'Remote control from GitHub turned off');

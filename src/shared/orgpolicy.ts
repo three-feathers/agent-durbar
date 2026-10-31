@@ -30,6 +30,8 @@ export interface OrgPolicy {
   app: string;
   /** A policy applies (a file was found, or the runtime reported managed settings). */
   found: boolean;
+  /** Spec 099 FR-070 (the same field as spec 044's): the app's runtime is the authority and did not answer: `failed`, or `none` before any runtime exists. The file was read instead. */
+  runtimeUnread?: 'failed' | 'none';
   /** Something of it could not be read (a problem says what). */
   unreadable: boolean;
   /** Where it came from: file paths, or the runtime (never the contents). */

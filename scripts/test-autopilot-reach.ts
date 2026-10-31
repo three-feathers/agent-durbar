@@ -1,12 +1,13 @@
 /**
- * Spec 099: what Phase 2 leaves reachable. The real adapters report the capability (T020-T022, `verified: false`), and nothing outside the
- * adapters reads it or calls `setAutopilot`: no channel, no main caller, no window. T030 and T033 change the lists below on purpose, and T030 must flip
- * `AUTOPILOT_WIRED` in the same commit (the last assertion).
+ * Spec 099 (*Changes*, Phase 3 gate): what stays out of reach. `AUTOPILOT_WIRED` is false, so the default build is unchanged for every person: the mode menu has no item, `agents:setAutopilot`
+ * refuses, the window hears of no capability, the simulator offers none. All the code is behind it. Main's only way in is `autopilotOn`, whose other half is `autopilotTestGate`, which a packaged
+ * build cannot open. The flip is one commit: `AUTOPILOT_WIRED`, `AUTOPILOT_SHIPPED` below, and T038's README; it waits for the review of #923 and the owners.
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { AUTOPILOT_WIRED } from '../src/adapters/autopilotHost';
+import { autopilotTestGate } from '../src/main/devhooks';
 import { CLAUDE_SDK_CAPABILITIES, CLAUDE_CAPABILITIES } from '../src/adapters/claude';
 import { CODEX_CAPABILITIES } from '../src/adapters/codex';
 import { COPILOT_CAPABILITIES } from '../src/adapters/copilot';
@@ -24,16 +25,34 @@ for (const c of [COPILOT_CAPABILITIES, CLAUDE_CAPABILITIES, CODEX_CAPABILITIES])
 assert.strictEqual(CLAUDE_SDK_CAPABILITIES.autopilot, undefined, 'the dev SDK transport was never probed with /goal: no Autopilot on it');
 assert.strictEqual(CODEX_CAPABILITIES.autopilot?.planApproval, false, 'FR-060: not on the Codex plan card');
 
-assert.deepStrictEqual(hits(/agents:setAutopilot/), [], 'no agents:setAutopilot channel');
-assert.deepStrictEqual(hits(/setAutopilot/, 'src/main/'), ['src/main/simguard.ts'], 'main never calls setAutopilot (the simulator guard only lists the name)');
-assert.deepStrictEqual(hits(/autopilot/i, 'src/renderer/'), [], 'nothing in the window offers it');
-assert.deepStrictEqual(hits(/autopilot/i, 'src/main/'), ['src/main/simguard.ts'], 'nothing in main reads the capability');
-assert.deepStrictEqual(hits(/autopilot/i, 'src/shared/'), ['src/shared/api.ts'], 'only the AgentInfo type');
-assert.ok(!/autopilot/i.test(src('src/adapters/router.ts')), 'the router has no path to it');
+/** The one line that says it shipped. It moves with `AUTOPILOT_WIRED`, and until the owners are through both stay false. */
+const AUTOPILOT_SHIPPED = false;
+assert.strictEqual(AUTOPILOT_WIRED, AUTOPILOT_SHIPPED, 'AUTOPILOT_WIRED is false in the default build until the review of #923 and the owners are through (spec *Changes*, Phase 3 gate)');
 
-// FR-053 cannot be forgotten: once main can turn Autopilot on, a real resume must clear first
-const mainCalls = hits(/\.setAutopilot\?*\.?\(/, 'src/main/').length > 0;
-assert.ok(AUTOPILOT_WIRED === mainCalls, 'AUTOPILOT_WIRED must be true exactly when main calls setAutopilot (T030)');
+// one path in: the channel, on the window's frame only, through the ops, which ask `enabled` first
+assert.deepStrictEqual(hits(/agents:setAutopilot/), ['src/main/ipc/agents.ts', 'src/preload/preload.ts'], 'one channel');
+assert.deepStrictEqual(hits(/\bad\??\.setAutopilot\?*\.?\(/, 'src/main/').sort(), ['src/main/autopilotops.ts'], 'only the ops call the adapter');
+assert.ok(/fromApp\(e\) \? deps\.autopilot\.setAutopilot\(id, settings\)/.test(src('src/main/ipc/agents.ts')), 'FR-004: the window only');
+assert.ok(!/autopilot/i.test(src('src/adapters/router.ts').replace(/.*FR-082.*\n/g, '')), 'the router has no path to it');
+assert.ok(!/setAutopilot/.test(src('src/main/mcp/tools.ts')), 'FR-004: no MCP tool');
+const main = src('src/main/main.ts');
+assert.ok(main.includes('const autopilotOn = (): boolean => AUTOPILOT_WIRED || autopilotTestGate(process.env, app.isPackaged);'), "main's gate");
+assert.ok(main.includes('enabled: autopilotOn,'), 'the ops read it');
+assert.ok(main.includes('windowAdapters(infos, autopilotOn())'), 'the window hears of no capability');
+assert.ok(main.includes("if (autopilotOn()) query.simautopilot = '1';"), 'the simulator offers it only then');
+assert.ok(!/AUTOPILOT_WIRED\s*=\s*true/.test(src('src/adapters/autopilotHost.ts')));
+// the simulator's capability is behind main's query, nothing else
+assert.ok(/get\('simautopilot'\)/.test(src('src/renderer/sim.ts')), 'the simulator asks main');
+
+// the gate itself: a packaged build cannot open it by any variable
+const G = { DURBAR_AUTOPILOT_TEST: '1', DURBAR_SIM: '15' } as NodeJS.ProcessEnv;
+assert.strictEqual(autopilotTestGate(G, false), true);
+assert.strictEqual(autopilotTestGate({ DURBAR_AUTOPILOT_TEST: '1', DURBAR_DRIVER: '/d.js' } as NodeJS.ProcessEnv, false), true);
+assert.strictEqual(autopilotTestGate(G, true), false, 'packaged');
+assert.strictEqual(autopilotTestGate({ ...G, DURBAR_DEV: '1' } as NodeJS.ProcessEnv, true), false, 'packaged with the developer opt-in: still closed');
+assert.strictEqual(autopilotTestGate({ DURBAR_AUTOPILOT_TEST: '1' } as NodeJS.ProcessEnv, false), false, 'a plain npm start');
+for (const v of [undefined, '', '0', 'true', ' 1', '11']) assert.strictEqual(autopilotTestGate({ DURBAR_SIM: '15', DURBAR_AUTOPILOT_TEST: v } as NodeJS.ProcessEnv, false), false, String(v));
+assert.strictEqual(autopilotTestGate({ DURBAR_SIM: '15' } as NodeJS.ProcessEnv, false), false, 'the simulator alone: absent');
 
 // the fake adapter (FR-027): the member exists exactly with the capability, and it refuses outside Allow all
 void (async () => {

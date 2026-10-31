@@ -15,6 +15,9 @@
     'remote-on':'Remote control on','remote-off':'Remote control off',
     'session-deleted':'Session deleted',
     'mcp-restart':'MCP restart',
+    'autopilot-on':'Autopilot on',
+    'autopilot-end':'Autopilot ended',
+    'autopilot-off':'Autopilot off',
   };
   const MODE_WORDS={'read-only':'Read-only',ask:'Ask first',allow:'Allow all'};
   const NOTE='Kept on this computer. Actions and decisions only; never prompts, replies or file contents.';

@@ -8,6 +8,7 @@
  * `git clone`), plus the one fixed config read the clone needs (`readUserSshCommand`). It is separate from the read-only runner on purpose: it spawns (streaming output, no 4 s limit,
  * Cancel ends the process tree) and takes a typed request, never argv. The read-only runner below is unchanged.
  */
+import { createHash } from 'crypto';
 import { execFile, spawn } from 'child_process';
 import type { ChildProcess } from 'child_process';
 import * as path from 'path';
@@ -225,6 +226,17 @@ export async function folderGitStatus(dir: string, exec: GitExec = nodeGitExec):
   } catch {
     return { repo: false };
   }
+}
+
+/**
+ * Spec 099 FR-023: what Autopilot's no-progress check compares: the porcelain status and a hash of the diff, through the same read-only, hardened runner. `null`: not a git folder.
+ * A diff over the runner's size limit or any failure rejects, and the caller counts that as not known.
+ */
+export async function folderFingerprint(dir: string, exec: GitExec = nodeGitExec): Promise<string | null> {
+  const status = await exec(['-C', dir, 'status', '--porcelain=v1', '--branch', '-z', '--untracked-files=all']).catch(() => undefined);
+  if (status === undefined || !parsePorcelainZ(status).branch) return null;
+  const diff = await exec(['-C', dir, 'diff', 'HEAD', '--no-ext-diff', '--no-textconv', '--no-color']);
+  return createHash('sha256').update(status).update('\0').update(diff).digest('hex');
 }
 
 /* ---- Spec 093: creating a folder (FR-030..FR-034): `git init` (phase 1) and `git clone` (phase 2) ---- */

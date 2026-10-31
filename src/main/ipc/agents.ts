@@ -15,6 +15,7 @@ import type { SessionSummary } from '../sessionsummary';
 import { applySetPaused } from '../mcp/agentstate';
 import { mcpRestartSessionOp } from '../mcpsession';
 import type { AgentStateTracker } from '../mcp/agentstate';
+import type { AutopilotOps } from '../autopilotops';
 import type { CheckpointStore } from '../checkpoints';
 import type { createRemoteOps } from '../remoteops';
 import type { Scheduler } from '../schedules';
@@ -52,6 +53,8 @@ export interface AgentsIpcDeps {
   mcpSecrets(id: string): string[];
   /** Spec 087 FR-007a: an ended or removed session's open sandbox note is forgotten (main's one-shot Continue). */
   forgetSandboxNote?(id: string): void;
+  /** Spec 099: main's Autopilot; its gate is inside (`enabled`). */
+  autopilot: Pick<AutopilotOps, 'setAutopilot' | 'forget'>;
   /** Spec 052 activity log row for Restart session (spec 058 FR-022). */
   logMcp(a: AgentInfo, action: string): void;
 }
@@ -99,6 +102,7 @@ export function register(deps: AgentsIpcDeps): void {
   ipcHandle('agents:end', async (_e, id: string) => {
     if (!agents.has(id)) return;
     await endSession(id);
+    deps.autopilot.forget(id); // spec 099 FR-052
     sessionStarts.forget(id); // spec 085: the next session in this folder starts its own count
     deps.profileFreshness?.forget(id); // spec 043 FR-041
     deps.forgetSandboxNote?.(id); // spec 087
@@ -152,6 +156,8 @@ export function register(deps: AgentsIpcDeps): void {
       return { ok: false, error: errText(err) };
     }
   });
+  // spec 099 FR-004: from Durbar's own window only; never MCP, remote control or a schedule. Validated, confirmed and refused in `autopilotops.ts`
+  ipcHandle('agents:setAutopilot', (e, id: unknown, settings: unknown) => (fromApp(e) ? deps.autopilot.setAutopilot(id, settings) : { ok: false, error: 'invalid request' }));
   ipcHandle('agents:setMode', (e, id: unknown, mode: unknown, opts: unknown) => {
     if (!fromApp(e)) return { ok: false, error: 'invalid request' };
     // spec 054 FR-011: Allow all and remote control never together (anyone steering on GitHub could run commands unasked)
@@ -175,6 +181,7 @@ export function register(deps: AgentsIpcDeps): void {
     } catch {
       /* already gone */
     }
+    deps.autopilot.forget(a.id); // spec 099 FR-052
     router.unbind(a.id);
     checkpointStore()?.forget(a.id); // spec 065 FR-006
     sessionStarts.forget(a.id); // spec 085
