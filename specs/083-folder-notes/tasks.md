@@ -171,6 +171,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
   - AC5: in the simulator the switch answers *Demo: no file written*; README's *Safety model* line on notes (T024 AC4) now also says the file may be committed and that Durbar never adds it to git.
   - AC6: with an existing `notes.md` the dialog says how many notes it will add (*marked "From the project file"*); an unreadable or conflicted file says so and the switch stays off.
   - AC7: inside a git repository the dialog has *Keep it out of commits (adds `.durbar/` to `.git/info/exclude`, local only)*, on by default, with the already-committed line; outside one it is not shown; turning the switch off leaves the line and says so.
+  - AC8 (added 2026-10-31, review of PR #916): the FR-050 warning also says that text outside notes in an existing `notes.md` is removed when Durbar writes the file.
 
 ## Phase 5: User Story 6, back to the source (P3)
 

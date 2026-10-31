@@ -12,7 +12,7 @@ import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
 import type { AgentInfo } from '../src/shared/api';
 import { CUT_LINE, NOTES_LIMITS, type Note } from '../src/shared/notes';
-import { NOTES_MD_STRAY, NOTES_MD_UNREADABLE, parseNotesMd, writeNotesMd } from '../src/shared/notesmd';
+import { NOTES_MD_UNREADABLE, parseNotesMd, writeNotesMd } from '../src/shared/notesmd';
 import { COUNT_UNREADABLE, EXCLUDE_UNSAFE_NAME, NotesFile, escapeGitSegment, excludeLine, readCapped, syncNotesFile, type NotesFileFs } from '../src/main/notesfile';
 import { NotesStore } from '../src/main/notesstore';
 import { NotesOps } from '../src/main/notesops';
@@ -291,6 +291,33 @@ async function main(): Promise<void> {
       process.stdout.write(JSON.stringify([a.ok, a.code, b.ok]));`;
     const out = execFileSync(process.execPath, ['-e', code], { timeout: 8000, encoding: 'utf8' });
     assert.deepStrictEqual(JSON.parse(out), [false, 'not-file', false], `both refused without blocking (${out})`);
+  });
+
+  await test('review: notes.md swapped for a link between the lstat and the read open is refused (O_NOFOLLOW); a gitdir: with a control character is refused', async () => {
+    if (!posix || !canLink) return skip('no O_NOFOLLOW on Windows (the lstat check is the guard there), or no symbolic links here');
+    const r = rig();
+    must(await r.store.add(r.key, 'proj', { text: 'base' }));
+    await cycle(r);
+    const secretFile = path.join(fresh('private'), 'key.txt');
+    nodeFs.writeFileSync(secretFile, `<!-- durbar-note -->\n## private\n\nprivate line\n`);
+    nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\nlocal edit\n');
+    let swapped = false;
+    r.c.hook.openSync = (real, p, ...rest) => {
+      if (!swapped && p === md(r.folder) && !((rest[0] as number) & nodeFs.constants.O_WRONLY)) { swapped = true; nodeFs.unlinkSync(md(r.folder)); nodeFs.symlinkSync(secretFile, md(r.folder), 'file'); }
+      return real(p, ...rest);
+    };
+    const st = await cycle(r);
+    assert.ok(swapped);
+    assert.match(st.state.error ?? '', /is a link/);
+    assert.ok(!(await notesOf(r.store, r.key)).some((n) => n.text.includes('private line')), 'nothing read through the link');
+    assert.ok(nodeFs.lstatSync(md(r.folder)).isSymbolicLink() && nodeFs.readFileSync(secretFile, 'utf8').includes('private line'), 'nothing written');
+    // a .git file whose gitdir: holds a control character, even one naming a real git directory
+    const odd = gitDir(path.join(fresh('g'), 'g' + String.fromCharCode(1) + 'd'));
+    const wt = fresh('wt');
+    nodeFs.writeFileSync(path.join(wt, '.git'), `gitdir: ${odd}\n`);
+    const res = new NotesFile().addExclude(wt);
+    assert.ok(!res.ok && /not a git repository/.test(res.error), JSON.stringify(res));
+    assert.ok(!nodeFs.existsSync(path.join(odd, 'info', 'exclude')));
   });
 
   await test('AC3/AC11/AC16: edits of known ids are imported masked and set fileEdited; done counts; a trailing blank line is no edit; nothing is deleted', async () => {
@@ -676,13 +703,25 @@ async function main(): Promise<void> {
     assert.ok(!l.text.includes(GH.slice(0, 8)), 'a token across the cut leaves no piece (mask, then cut)');
   });
 
-  await test('AC13: a section over inputChars is not imported; past notesPerFolder the rest is counted, not imported', async () => {
+  await test('AC13 + review: a section that cannot be added (too long, over the cap) is not imported AND the file is not overwritten until it is removed', async () => {
     const r = rig();
-    nodeFs.mkdirSync(path.join(r.folder, '.durbar'));
-    nodeFs.writeFileSync(md(r.folder), `<!-- durbar-note -->\n## huge\n\n${'y'.repeat(NOTES_LIMITS.inputChars + 1)}\n<!-- durbar-note -->\n## small\n\nok\n`);
+    must(await r.store.add(r.key, 'proj', { text: 'base' }));
+    await cycle(r);
+    const log = 'log line\n'.repeat(Math.ceil((NOTES_LIMITS.inputChars + 1) / 9));
+    nodeFs.appendFileSync(md(r.folder), `\n<!-- durbar-note -->\n## pasted log\n\n${log}\n<!-- durbar-note -->\n## small\n\nok\n`);
+    const pasted = nodeFs.readFileSync(md(r.folder), 'utf8');
     const st = await cycle(r);
-    assert.deepStrictEqual((await notesOf(r.store, r.key)).map((n) => n.title), ['small']);
-    assert.match(st.state.info ?? '', /^1 note in notes\.md could not be added/);
+    assert.match(st.state.error ?? '', /^1 section of notes\.md could not be added \(too long\)\. Durbar left the file as it is until they are fixed or removed\.$/);
+    assert.strictEqual(nodeFs.readFileSync(md(r.folder), 'utf8'), pasted, 'the pasted log stays in the file');
+    must(await r.store.add(r.key, 'proj', { text: 'a change in Durbar' }));
+    assert.match((await cycle(r)).state.error ?? '', /could not be added/, 'still refused on the next cycle (after a change too)');
+    assert.strictEqual(nodeFs.readFileSync(md(r.folder), 'utf8'), pasted);
+    assert.deepStrictEqual((await notesOf(r.store, r.key)).map((n) => n.text).sort(), ['a change in Durbar', 'base', 'ok'], 'the rest is imported once, the log is not');
+    // the person removes the log: the next cycle writes
+    nodeFs.writeFileSync(md(r.folder), pasted.replace(`\n<!-- durbar-note -->\n## pasted log\n\n${log}`, '\n'));
+    assert.deepStrictEqual((await cycle(r)).state, {});
+    assert.strictEqual(nodeFs.readFileSync(md(r.folder), 'utf8'), writeNotesMd(await notesOf(r.store, r.key)));
+    // over the cap: one over the store's 300, two past the parser's
     const f = rig();
     must(await f.store.add(f.key, 'proj', { text: 'local one' }));
     nodeFs.mkdirSync(path.join(f.folder, '.durbar'));
@@ -691,7 +730,33 @@ async function main(): Promise<void> {
     nodeFs.writeFileSync(md(f.folder), t);
     const fs2 = await cycle(f);
     assert.strictEqual((await notesOf(f.store, f.key)).length, NOTES_LIMITS.notesPerFolder);
-    assert.match(fs2.state.info ?? '', /^3 notes in notes\.md could not be added/, 'one over the store cap, two past the parser cap');
+    assert.match(fs2.state.error ?? '', /^3 sections of notes\.md could not be added \(over 300 notes\)/);
+    assert.strictEqual(nodeFs.readFileSync(md(f.folder), 'utf8'), t, 'not overwritten');
+    // overflow alone (the parser's cap, the store not full)
+    const o = rig();
+    nodeFs.mkdirSync(path.join(o.folder, '.durbar'));
+    let t2 = '';
+    for (let i = 0; i < NOTES_LIMITS.notesPerFolder + 1; i++) t2 += `<!-- durbar-note -->\n## m${i}\n\ny${i}\n`;
+    nodeFs.writeFileSync(md(o.folder), t2);
+    assert.match((await cycle(o)).state.error ?? '', /^1 section of notes\.md could not be added \(over 300 notes\)/);
+    assert.strictEqual(nodeFs.readFileSync(md(o.folder), 'utf8'), t2);
+  });
+
+  await test('review Q1: the file gets the notes masked with the CURRENT folder values; the store keeps its text and a later file read is no edit', async () => {
+    const r = rig();
+    const n = must(await r.store.add(r.key, 'proj', { text: `deploy with ${KNOWN} today` })).note!; // the value was not known when saved
+    nodeFs.mkdirSync(path.join(r.folder, '.durbar'));
+    await cycle(r, [KNOWN]);
+    const disk = nodeFs.readFileSync(md(r.folder), 'utf8');
+    assert.ok(!disk.includes(KNOWN) && disk.includes('deploy with [redacted] today'), 'the shared file never holds the value');
+    nodeFs.writeFileSync(md(r.folder), disk + '\n<!-- durbar-note -->\nunrelated new note\n');
+    await cycle(r, [KNOWN]);
+    const after = (await notesOf(r.store, r.key)).find((x) => x.id === n.id)!;
+    assert.deepStrictEqual([after.rev, after.fileEdited], [1, false], 'its masked copy in the file is not an edit');
+    assert.ok(!nodeFs.readFileSync(md(r.folder), 'utf8').includes(KNOWN));
+    must(await r.store.update(r.key, 'proj', n.id, after.rev, { text: `now ${KNOWN} again` }));
+    await cycle(r, [KNOWN]);
+    assert.ok(nodeFs.readFileSync(md(r.folder), 'utf8').includes('now [redacted] again'), 'an edit reaches the file (masked again)');
   });
 
   await test('AC15/AC7: the byte cap applies before decoding: a file over mdBytes is never read; a file that grows while read is refused', async () => {
@@ -994,7 +1059,7 @@ async function main(): Promise<void> {
     nodeFs.mkdirSync(path.join(r.folder, '.durbar'));
     nodeFs.writeFileSync(md(r.folder), 'random words\n\n<!-- durbar-note -->\n## a\n\nb\n');
     const st = await cycle(r);
-    assert.strictEqual(st.state.info, NOTES_MD_STRAY + '.');
+    assert.strictEqual(st.state.info, '1 line of text outside notes in notes.md was removed.', 'loud, not silent');
     assert.strictEqual((await cycle(r)).state.info, undefined, 'the file written back has no stray text');
   });
 }

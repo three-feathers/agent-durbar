@@ -19,11 +19,12 @@
 import * as nodeFs from 'fs';
 import * as path from 'path';
 import { createHash, randomInt } from 'crypto';
-import { NOTES_LIMITS } from '../shared/notes';
-import type { NotesFileState, NotesMirror } from '../shared/notes';
-import { NOTES_MD_STRAY, NOTES_MD_UNREADABLE, parseNotesMd, writeNotesMd, type NotesMdSection } from '../shared/notesmd';
+import { NOTES_LIMITS, cleanTitle, fitText } from '../shared/notes';
+import type { Note, NotesFileState, NotesMirror } from '../shared/notes';
+import { NOTES_MD_UNREADABLE, parseNotesMd, writeNotesMd, type NotesMdSection } from '../shared/notesmd';
 import { isInsideRoots } from '../adapters/permissions';
 import type { NotesStore } from './notesstore';
+import { maskNoteText } from '../shared/redact';
 
 export type NotesFileFs = Pick<typeof nodeFs, 'realpathSync' | 'lstatSync' | 'statSync' | 'openSync' | 'fstatSync' | 'readSync' | 'writeSync' | 'fsyncSync' | 'closeSync' | 'renameSync' | 'unlinkSync' | 'mkdirSync'>;
 /** The open flags used; tests pass a set without `O_NOFOLLOW` to act like Windows. */
@@ -129,6 +130,25 @@ export class NotesFile {
   private readonly uid: () => number | undefined;
   /** Per real folder: the hash of a `notes.md` that did not parse (a conflict): the same bytes are not parsed again on every cycle. */
   private readonly unreadable = new Map<string, { sha: string; code: 'conflict' | 'too-big' }>();
+  /** Notes masked for the file, by id and rev and the values used (masking 300 full notes on every write would cost about a second). */
+  private readonly masked = new Map<string, { sig: string; rev: number; title: string; text: string }>();
+
+  /**
+   * Q1 (spec Changes, T041): the notes as the shared file gets them, masked again with the folder's CURRENT secret values, so a value
+   * registered after a note was saved never reaches `notes.md` (then cut, as on save). The store keeps its text as it is.
+   */
+  forFile(notes: readonly Note[], values: readonly string[]): Note[] {
+    if (!values.length) return [...notes];
+    const sig = sha256(values.join('\u0000'));
+    return notes.map((n) => {
+      let m = this.masked.get(n.id);
+      if (!m || m.sig !== sig || m.rev !== n.rev) {
+        m = { sig, rev: n.rev, title: cleanTitle(maskNoteText(n.title, values).text) ?? n.title, text: fitText(maskNoteText(n.text, values).text).text };
+        this.masked.set(n.id, m);
+      }
+      return { ...n, title: m.title, text: m.text };
+    });
+  }
 
   constructor(opts: NotesFileOptions = {}) {
     this.fs = opts.fs ?? nodeFs;
@@ -417,19 +437,23 @@ export async function syncNotesFile(d: {
   if (!rb.ok) return { state: { error: rb.error } };
   const info: string[] = [];
   if (rb.changed) {
-    const imp = await d.store.importFile(d.folderKey, d.folderName, rb.sections, d.values, rb.sha);
+    const imp = await d.store.importFile(d.folderKey, d.folderName, rb.sections, d.values, rb.overflow ? undefined : rb.sha);
     if (!imp.ok) return { state: { error: imp.error } };
     const c = imp.counts;
-    if (rb.strayText) info.push(NOTES_MD_STRAY);
     const notIn = (c?.tooLong ?? 0) + (c?.overCap ?? 0) + rb.overflow;
+    // FR-053, FR-054: a section that could not be added exists only in the file: never write over it
+    if (notIn) {
+      const why = [c?.tooLong ? 'too long' : '', (c?.overCap ?? 0) + rb.overflow ? `over ${NOTES_LIMITS.notesPerFolder} notes` : ''].filter(Boolean).join(', ');
+      return { state: { error: `${notIn} section${notIn === 1 ? '' : 's'} of notes.md could not be added (${why}). Durbar left the file as it is until they are fixed or removed.` } };
+    }
+    if (rb.strayText) info.push(`${rb.strayText} line${rb.strayText === 1 ? '' : 's'} of text outside notes in notes.md ${rb.strayText === 1 ? 'was' : 'were'} removed`);
     if (c?.keptDurbar) info.push(`${c.keptDurbar} note${c.keptDurbar === 1 ? '' : 's'} added in notes.md ${c.keptDurbar === 1 ? 'was' : 'were'} changed in Durbar before reaching the file; Durbar's version was kept`);
     if (c?.older) info.push(`${c.older} note${c.older === 1 ? '' : 's'} in notes.md ${c.older === 1 ? 'was an older copy' : 'were older copies'}; Durbar's version was kept`);
-    if (notIn) info.push(`${notIn} note${notIn === 1 ? '' : 's'} in notes.md could not be added (too long, or over ${NOTES_LIMITS.notesPerFolder} notes)`);
   }
   const v = await d.store.list(d.folderKey);
   if (!v.ok) return { state: { error: v.error } };
   if (v.readOnly) return { state: { error: v.readOnly } };
-  const text = writeNotesMd(v.notes);
+  const text = writeNotesMd(d.file.forFile(v.notes, d.values));
   const want = sha256(Buffer.from(text, 'utf8'));
   const done = (state: NotesFileState): NotesFileState => (info.length ? { ...state, info: info.join('. ') + '.' } : state);
   if (rb.sha === want) {

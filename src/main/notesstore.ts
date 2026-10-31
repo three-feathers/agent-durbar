@@ -486,9 +486,12 @@ export class NotesStore {
     const snap = await this.list(folderKey);
     const known = new Map<string, Note>(snap.ok ? snap.notes.map((n) => [n.id, n]) : []);
     // what the file says differs from the stored note (cheap string compares, no mask yet)
+    // the file holds the note masked with the CURRENT values (a secret registered after the note was saved): compared that way too
     const differs = (s: NotesMdSection, n: Note): boolean => {
       const t = fileTitle(s.title);
-      return (t !== undefined && t !== n.title) || notesMdText(n.text) !== s.text || s.done !== n.done;
+      if (s.done !== n.done) return true;
+      if (t !== undefined && t !== n.title && t !== cleanTitle(maskNoteText(n.title, values).text)) return true;
+      return notesMdText(n.text) !== s.text && notesMdText(fitText(maskNoteText(n.text, values).text).text) !== s.text;
     };
     const masked = new Map<NotesMdSection, { text: string; title?: string; hidden: boolean }>();
     const maskOne = (s: NotesMdSection): { text: string; title?: string; hidden: boolean } => {
@@ -584,7 +587,8 @@ export class NotesStore {
         counts.added++;
       }
       if (newPending.length) d = { ...d, filePending: [...(d.filePending ?? []).filter((x) => d.notes.some((n) => n.id === x)), ...newPending] };
-      if (fileSha && d.fileImport?.sha256 !== fileSha) d = { ...d, fileImport: { sha256: fileSha, at: new Date(now.getTime() + added).toISOString() } }; // not before a note this import made
+      // a file with sections that could not be added is not recorded as imported: it is read again (and not overwritten) until fixed
+      if (fileSha && !counts.tooLong && !counts.overCap && d.fileImport?.sha256 !== fileSha) d = { ...d, fileImport: { sha256: fileSha, at: new Date(now.getTime() + added).toISOString() } }; // not before a note this import made
       return d === doc ? { ok: true, existing: true } : { ok: true, doc: d };
     });
     return res.ok ? { ...res, counts } : res;
