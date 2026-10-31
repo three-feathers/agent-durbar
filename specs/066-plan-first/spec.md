@@ -62,6 +62,30 @@ In a chat, the user opens the mode menu and picks **Plan first (next message)**;
 
 ## Changes
 
+### 2026-10-31: Approve and run on Autopilot (spec 099 FR-060; owner decision D6)
+
+- **Why**: the owner chose an Autopilot mode (spec 099, Vikram, Telegram DM, 2026-10-31), and he chose for the plan card to be
+  able to offer it (D6). FR-003 and the *Constitution* line say Copilot's `autopilot` is "never" selected. That stays true for
+  plain **Approve**. It is lifted only for a new, separate button that the user confirms.
+- **FR-006 delta** `[KNOWN GAP]` (not built; spec 099 T040):
+  - the plan card gets a fourth button, **Approve and run on Autopilot…**;
+  - it is shown only when the adapter reports `capabilities.autopilot`, the organization policy allows Allow all, and the
+    session's mode is not Read-only or Ask first;
+  - it opens spec 099's Autopilot confirmation (FR-055). Cancel leaves the plan card open and unanswered.
+- **FR-003 delta (Copilot)** `[KNOWN GAP]`: on that button, `{approved: true, selectedAction: 'autopilot'}` (`read:` SDK 1.0.24
+  `ExitPlanModeAction`). Plain Approve still answers `interactive`.
+- **FR-004 delta (Claude Code)** `[KNOWN GAP]`: on that button, `allow` for `ExitPlanMode`, `set_permission_mode` back to
+  `bypassPermissions`, then the user message `/goal Carry out the approved plan above, completely, and check the result.`
+- **FR-005 delta (Codex)** `[KNOWN GAP]`: on that button, `thread/goal/set` with the objective "Carry out the approved plan above,
+  completely, and check the result." in place of the "Go ahead with the plan above." turn.
+- **Constitution line, corrected**: "III: plan mode only narrows, so nothing runs while planning. Approve uses the folder's
+  mode, and Allow all is never chosen for the user. Copilot `autopilot` is selected only by *Approve and run on Autopilot*,
+  after spec 099's confirmation; plain Approve never selects it."
+- Tests (spec 099 T040, in `scripts/test-plan-mode.ts`):
+  - plain Approve still sends `interactive`;
+  - the new button sends `autopilot` only after the confirmation;
+  - the button is absent in Read-only and Ask first, and when the capability is missing.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
