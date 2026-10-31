@@ -223,9 +223,12 @@ module.exports = async (ctx) => {
   assert.deepStrictEqual(fit, [], 'SC-011 at ' + size);
   if (process.env.OUT || process.env.SHOTS_OUT) {
     await js(`(async()=>{const r=await window.agentDurbar.browserSelectTab('sim-1',${jsLiteral(tabs().tabs[0].tabId)});return true})()`);
-    await wait(() => tabs().active === tabs().tabs[0].tabId && view() && !view().webContents.isLoading(), 'the first tab for the picture');
+    const first = tabs().tabs[0];
+    await wait(async () => tabs().active === first.tabId && view() && !view().webContents.isLoading() && (await js(`(()=>{const e=document.querySelector('#bTabs .btab.on');return !!e&&e.dataset.tab===${jsLiteral(first.tabId)}&&document.getElementById('bAddr').value===${jsLiteral(first.url)}})()`)), 'the first tab for the picture, in the strip and the bar too');
     win().webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
     await H.calm({ blur: true });
+    win().webContents.invalidate(); // the window's page repaints under the native view before its capture
+    await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`);
     const file = path.join(process.env.OUT || process.env.SHOTS_OUT, `080-browser-tabs-${size}.png`);
     await shotWithView(win(), view(), file); // the strip and the page itself (the window's capture leaves the native view out)
     console.log('[browser-tabs] saved', path.basename(file));
