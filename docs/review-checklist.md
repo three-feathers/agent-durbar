@@ -98,8 +98,9 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **A handler main gives Electron answers on every path**: `setWindowOpenHandler` code that calls main's own logic is wrapped so a throw still returns `deny` (and a test makes it throw); a page's request never moves the keyboard focus unless the page itself had it (spec 080, review of #915, 2026-10-31).
 - [ ] **A driver runs a page's script in that page's own `webContents`**, not in "the attached view": a page that opens a tab stops being the attached one mid-step (spec 080 `check-browser-tabs`, 2026-10-31).
 - [ ] **A menu row sends only its own field**, merged when its turn comes; a fake answers as the real runtime does (spec 030).
-- [ ] **Mutate each guard both ways**: a surviving mutant hid "ask when costlier", "refused leaves state alone", "failed replacement keeps the older item" and "empty list asked again" (#935).
+- [ ] **Mutate each guard both ways**: surviving mutants hid four real gaps (#935).
 - [ ] **No unquoted `$` or heredoc in a shell comment body**: `$0.0066` became `/bin/bash.0066`.
+- [ ] **Sub-agents get unique scratch folders and one PR-body file each**: files overwritten on 2026-10-23 and again 2026-10-31.
 
 ## UI and accessibility
 
