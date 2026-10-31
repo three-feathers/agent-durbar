@@ -30,7 +30,7 @@ export interface NotesOpsDeps {
   /** The project-file mirror (T041, FR-053, FR-054). Absent: never used. */
   file?(): NotesFile | undefined;
   /**
-   * Whether a folder's project-file switch is on (FR-050; `notesFile` in folders.json comes with T042). Absent or false: nothing reads,
+   * Whether a folder's project-file switch is on (FR-050; `notesFile` in folders.json, T042). Absent or false: nothing reads,
    * stats or writes the folder's `.durbar/notes.md`.
    */
   fileOn?(folderKey: string): boolean;
@@ -54,6 +54,7 @@ export const SWITCH_WORKSPACE = 'The project file is not offered for a VS Code w
 export const SWITCH_MISSING = 'The folder is not there, so Durbar cannot keep .durbar/notes.md in it.';
 export const SWITCH_ALREADY_OFF = 'The switch is already off; Durbar does not touch .durbar/notes.md while it is off.';
 export const VALUES_PENDING = 'Waiting for the secret store to unlock (it unlocks when a session with MCP extras starts); notes.md is not updated until then.';
+export const VALUES_PENDING_ON = 'A secret value is still locked in the secret store, so Durbar cannot mask the file yet; the switch stays off. Start a session that uses MCP extras, then try again.';
 export const NATIVE_CANCELLED = 'Cancelled: nothing changed.';
 export const DELETE_LEFTOVER = 'A temp file from a crash (.notes.md.*.tmp) may remain in .durbar.';
 export const SWITCH_UNSAVED = 'Could not save the choice in the folder list.';
@@ -95,7 +96,7 @@ export class NotesOps {
    * One mirror cycle for the folder (FR-053, FR-054), one at a time per folder; `undefined` while the switch is off. A cycle whose
    * rename found the file changed runs once more after 500 ms (`retries`), so the outside edit is imported, then written.
    */
-  syncFile(agentId: unknown, retries = 1): Promise<NotesFileState | undefined> {
+  syncFile(agentId: unknown, retries = 1, create = false): Promise<NotesFileState | undefined> {
     const t = this.target(agentId);
     if ('ok' in t) return Promise.resolve(undefined);
     const ft = this.fileTarget(t.a, t.key);
@@ -106,7 +107,7 @@ export class NotesOps {
       let pending = false;
       try { pending = this.d.valuesPending?.(t.key) === true; } catch { pending = true; }
       if (pending) return { error: VALUES_PENDING }; // review of PR 931: an incomplete mask would un-mask the shared file
-      const r = await syncNotesFile({ file: ft.file, store: t.store, folderKey: t.key, folderName: t.name, folderPath: ft.folderPath, values: this.fileValues(t.key), now: this.d.now });
+      const r = await syncNotesFile({ file: ft.file, store: t.store, folderKey: t.key, folderName: t.name, folderPath: ft.folderPath, values: this.fileValues(t.key), now: this.d.now, create });
       if (r.retry && retries > 0) this.schedule(t.a.id, t.key, retries - 1);
       return r.state;
     }).catch((): NotesFileState => ({ error: 'Could not write .durbar/notes.md: ERROR' }));
@@ -269,9 +270,11 @@ export class NotesOps {
   }
 
   /**
-   * FR-050, FR-055 (T042): turn the folder's project file on or off. On: counts again (an unreadable file keeps the switch off), saves
-   * the flag, adds the exclude line when asked and the folder is in a repository (before the first write), then runs one cycle. Off:
-   * waits for a cycle in flight, saves the flag, and with `deleteFile` deletes `notes.md` only when it is what Durbar last wrote.
+   * FR-050, FR-055 (T042, reviews of PR 931): turn the folder's project file on or off. On: refused while a secret value is locked;
+   * counts again (an unreadable file keeps the switch off); asks the native box; adds the exclude line when asked and the folder is in a
+   * repository (a failure keeps the switch off); clears the mirror, saves the flag and runs the one cycle that may create the file. Off:
+   * saves the flag, waits for a cycle already writing, and with `deleteFile` (after the native box) deletes `notes.md` only when it
+   * holds exactly what Durbar would write.
    */
   async setFile(agentId: unknown, on: unknown, opts?: unknown): Promise<NotesSetFile | Refusal> {
     if (typeof on !== 'boolean') return refuse('On is yes or no.');
@@ -304,13 +307,17 @@ export class NotesOps {
         const c = t.file.count(t.a.cwd, new Set(v.notes.map((n) => n.id)));
         if (!c.ok) return refuse(c.error); // COUNT_UNREADABLE for a conflict or a file that does not parse: the switch stays off
       }
+      // review 2 of PR 931: never turn on with an incomplete mask; the first write must happen in this call
+      let pending = false;
+      try { pending = !was && this.d.valuesPending?.(t.key) === true; } catch { pending = true; }
+      if (pending) return refuse(VALUES_PENDING_ON);
       // review of PR 931 (Q2): main asks with a native box the page cannot answer, before anything is written
       if (!was && !(await this.native('on', t.a))) return refuse(NATIVE_CANCELLED);
       let message: string | undefined;
       if (o.exclude === true && t.file.inRepo(t.a.cwd)) {
         // review of PR 931 (point 3): the line goes in BEFORE the switch is saved; when it cannot, the switch stays off (no fail-open)
         const x = t.file.addExclude(t.a.cwd);
-        if (!x.ok) return was ? { ok: true, on: true, message: x.error } : { ...refuse(`${x.error}. The switch stays off.`), excludeFailed: true };
+        if (!x.ok) return was ? { ok: true, on: true, message: x.error } : { ...refuse(`${x.error.replace(/\.$/, '')}. The switch stays off.`), excludeFailed: true };
         message = x.added ? 'Added .durbar/ to .git/info/exclude (local only).' : '.durbar/ is already in .git/info/exclude.';
       }
       if (!was) {
@@ -319,7 +326,7 @@ export class NotesOps {
         if (!m.ok) return m;
         if (!setOn(t.key, true)) return refuse(SWITCH_UNSAVED);
       }
-      const file = await this.syncFile(t.a.id);
+      const file = await this.syncFile(t.a.id, 1, !was); // only turning on may create the file (review 2 of PR 931)
       return { ok: true, on: true, ...(file ? { file } : {}), ...(message ? { message } : {}) };
     }
     // FR-050: while the switch is off Durbar never reads, stats or writes notes.md, so *Delete* is only part of turning it off

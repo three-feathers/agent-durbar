@@ -74,7 +74,8 @@ export interface Note {
 }
 
 export interface Tombstone { id: string; deletedAt: string }
-export interface NotesMirror { sha256: string; bytes: number; at: string }
+/** `folder`: the project folder's device and inode as `<dev>:<ino>` (review 2 of PR 931), never a path. */
+export interface NotesMirror { sha256: string; bytes: number; at: string; folder?: string }
 
 export interface NotesDoc {
   version: 1;
@@ -256,7 +257,7 @@ export function parseNotesDoc(raw: string): ParseResult {
   }
   const m = d.mirror as Record<string, unknown> | undefined;
   const mirror = m && typeof m === 'object' && typeof m.sha256 === 'string' && /^[0-9a-f]{64}$/.test(m.sha256) && intIn(m.bytes, 0, NOTES_LIMITS.mdBytes) && isoOk(m.at)
-    ? { sha256: m.sha256, bytes: m.bytes as number, at: m.at as string } : undefined;
+    ? { sha256: m.sha256, bytes: m.bytes as number, at: m.at as string, ...(typeof m.folder === 'string' && /^[0-9]{1,24}:[0-9]{1,24}$/.test(m.folder) ? { folder: m.folder } : {}) } : undefined;
   const fi = d.fileImport as Record<string, unknown> | undefined;
   const fileImport = fi && typeof fi === 'object' && typeof fi.sha256 === 'string' && /^[0-9a-f]{64}$/.test(fi.sha256) && isoOk(fi.at) ? { sha256: fi.sha256, at: fi.at as string } : undefined;
   const filePending = Array.isArray(d.filePending) ? [...new Set(d.filePending.filter((x): x is string => typeof x === 'string' && ids.has(x)))] : [];

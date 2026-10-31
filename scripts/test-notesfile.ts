@@ -64,7 +64,7 @@ function rig(opts: { file?: ConstructorParameters<typeof NotesFile>[0]; now?: ()
   return { store, file, folder, key: folder, c };
 }
 const cycle = (r: { store: NotesStore; file: NotesFile; folder: string; key: string }, values: string[] = []): ReturnType<typeof syncNotesFile> =>
-  syncNotesFile({ file: r.file, store: r.store, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values, now: tickClock });
+  syncNotesFile({ file: r.file, store: r.store, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values, now: tickClock, create: true });
 const notesOf = async (s: NotesStore, key: string): Promise<Note[]> => { const v = await s.list(key); assert.ok(v.ok); return (v as Extract<typeof v, { ok: true }>).notes; };
 
 /** A tiny gitignore matcher for one anchored pattern: `\x` is a literal x, `*` and `?` stay in a segment, `[...]` is a class. */
@@ -120,7 +120,8 @@ async function main(): Promise<void> {
     await ops.add('w1', { text: 'in a workspace' });
     assert.strictEqual(await ops.syncFile('w1'), undefined, 'a .code-workspace has no project file');
     assert.deepStrictEqual([c.calls.length, timers.length], [0, 0]);
-    // on: opening writes the file; a change schedules one cycle (two changes share it)
+    // on: turning on writes the file (the one cycle that may create it, review 2 of PR 931); a change schedules one cycle (two share it)
+    assert.deepStrictEqual(await ops.syncFile('a1', 1, true), {});
     const v = must(await ops.list('a1') as { ok: true; file?: unknown; notes: Note[] });
     assert.deepStrictEqual(v.file, {});
     assert.strictEqual(nodeFs.readFileSync(md(folder), 'utf8'), writeNotesMd(v.notes));
@@ -182,7 +183,7 @@ async function main(): Promise<void> {
     // restart: a fresh store and file see their own notes.md as unchanged (no import, no write)
     const store2 = new NotesStore(path.join(r.folder, '..', 'userdata', 'notes'), { now: tickClock });
     const c2 = countingFs();
-    const st2 = await syncNotesFile({ file: new NotesFile({ fs: c2.fs, now: tickClock }), store: store2, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [], now: tickClock });
+    const st2 = await syncNotesFile({ file: new NotesFile({ fs: c2.fs, now: tickClock }), store: store2, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [], now: tickClock, create: true });
     assert.deepStrictEqual(st2.state, {});
     assert.ok(!c2.calls.some((x) => x.m === 'renameSync' || x.m === 'writeSync'), 'nothing written after a restart');
     assert.strictEqual((await notesOf(store2, r.key)).length, 1);
@@ -253,14 +254,14 @@ async function main(): Promise<void> {
     const via = path.join(r.folder, '..', 'via-link');
     nodeFs.symlinkSync(r.folder, via, 'dir');
     must(await r.store.add(r.key, 'proj', { text: 'mine' }));
-    const st = await syncNotesFile({ file: r.file, store: r.store, folderKey: r.key, folderName: 'proj', folderPath: via, values: [], now: tickClock });
+    const st = await syncNotesFile({ file: r.file, store: r.store, folderKey: r.key, folderName: 'proj', folderPath: via, values: [], now: tickClock, create: true });
     assert.deepStrictEqual(st.state, {});
     assert.ok(nodeFs.existsSync(md(r.folder)), 'written in the real folder');
     const outside = fresh('outside');
     nodeFs.rmSync(path.join(r.folder, '.durbar'), { recursive: true });
     nodeFs.symlinkSync(outside, path.join(r.folder, '.durbar'), 'dir');
     must(await r.store.add(r.key, 'proj', { text: 'more' }));
-    const st2 = await syncNotesFile({ file: r.file, store: r.store, folderKey: r.key, folderName: 'proj', folderPath: via, values: [], now: tickClock });
+    const st2 = await syncNotesFile({ file: r.file, store: r.store, folderKey: r.key, folderName: 'proj', folderPath: via, values: [], now: tickClock, create: true });
     assert.match(st2.state.error ?? '', /\.durbar is a link/);
     assert.deepStrictEqual(nodeFs.readdirSync(outside), []);
   });
@@ -472,7 +473,7 @@ async function main(): Promise<void> {
         let imports = 0;
         const orig = st.importFile.bind(st);
         st.importFile = (...a: Parameters<NotesStore['importFile']>) => { imports++; return orig(...a); };
-        await syncNotesFile({ file: new NotesFile({ fs: c.fs, now: tickClock }), store: st, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [], now: tickClock });
+        await syncNotesFile({ file: new NotesFile({ fs: c.fs, now: tickClock }), store: st, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [], now: tickClock, create: true });
         assert.strictEqual(imports, i === 0 ? 1 : 0, `restart ${i}: the same file is imported once`);
         assert.strictEqual(await st.getFileImport(r.key), sha(nodeFs.readFileSync(md(r.folder))));
       }
@@ -555,7 +556,7 @@ async function main(): Promise<void> {
       const c2 = countingFs();
       c2.hook.renameSync = () => { throw Object.assign(new Error('io'), { code: 'EIO' }); };
       const st2 = new NotesStore(path.join(r.folder, '..', 'userdata', 'notes'), { now: tickClock });
-      await syncNotesFile({ file: new NotesFile({ fs: c2.fs, now: tickClock }), store: st2, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [], now: tickClock });
+      await syncNotesFile({ file: new NotesFile({ fs: c2.fs, now: tickClock }), store: st2, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [], now: tickClock, create: true });
       assert.strictEqual(await texts(st2, r.key), 'base|survivor v2');
     }
     // a note that reached the file with its id, then its section removed and a new one added in the same save: both stay
@@ -654,7 +655,7 @@ async function main(): Promise<void> {
       const t = nodeFs.readFileSync(md(r.folder), 'utf8');
       const at = t.indexOf(`<!-- durbar-note id=${x.id}`);
       nodeFs.writeFileSync(md(r.folder), t.slice(0, at) + t.slice(t.indexOf('<!-- durbar-note', at + 5)) + '\n<!-- durbar-note -->\nnew Z\n');
-      await syncNotesFile({ file: new NotesFile({ now: tickClock }), store: b, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [], now: tickClock });
+      await syncNotesFile({ file: new NotesFile({ now: tickClock }), store: b, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [], now: tickClock, create: true });
       assert.strictEqual((await notesOf(b, r.key)).find((n) => n.id === x.id)?.text, 'X text');
     }
     // a hand-edited filePending listing every note (and a bogus id): a note in the file and a typed note are never overwritten
@@ -671,7 +672,7 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(parseNotesDoc(nodeFs.readFileSync(file, 'utf8')).ok && (parseNotesDoc(nodeFs.readFileSync(file, 'utf8')) as { doc: { filePending?: string[] } }).doc.filePending, [f.id, typed.id], 'an id that is not a note is dropped when read');
       nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\nnew Z\n');
       const fresh2 = new NotesStore(dir(r), { now: tickClock });
-      await syncNotesFile({ file: new NotesFile({ now: tickClock }), store: fresh2, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [], now: tickClock });
+      await syncNotesFile({ file: new NotesFile({ now: tickClock }), store: fresh2, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [], now: tickClock, create: true });
       const ns = await notesOf(fresh2, r.key);
       assert.deepStrictEqual([ns.find((n) => n.id === f.id)?.text, ns.find((n) => n.id === typed.id)?.text, ns.some((n) => n.text === 'new Z')], ['from the file F', 'typed T', true]);
     }

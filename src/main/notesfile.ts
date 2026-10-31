@@ -26,7 +26,7 @@ import { isInsideRoots } from '../adapters/permissions';
 import type { NotesStore } from './notesstore';
 import { maskNoteText } from '../shared/redact';
 
-export type NotesFileFs = Pick<typeof nodeFs, 'realpathSync' | 'lstatSync' | 'statSync' | 'openSync' | 'fstatSync' | 'readSync' | 'writeSync' | 'fsyncSync' | 'closeSync' | 'renameSync' | 'unlinkSync' | 'mkdirSync' | 'rmdirSync'>;
+export type NotesFileFs = Pick<typeof nodeFs, 'realpathSync' | 'lstatSync' | 'statSync' | 'openSync' | 'fstatSync' | 'readSync' | 'writeSync' | 'fsyncSync' | 'closeSync' | 'renameSync' | 'unlinkSync' | 'mkdirSync' | 'rmdirSync' | 'linkSync'>;
 /** The open flags used; tests pass a set without `O_NOFOLLOW` to act like Windows. */
 export type NotesFileFlags = Pick<typeof nodeFs.constants, 'O_RDONLY' | 'O_WRONLY' | 'O_CREAT' | 'O_EXCL' | 'O_APPEND'> & { O_NOFOLLOW?: number; O_NONBLOCK?: number };
 
@@ -124,6 +124,7 @@ export type RemoveResult = { removed: boolean; dirRemoved: boolean; why?: string
 export const REMOVE_CHANGED = '.durbar/notes.md changed since Durbar last wrote it, so it was left in the project.';
 export const REMOVE_NONE = 'There was no .durbar/notes.md to delete.';
 /** Review of PR 931 (point 4): the switch is on, Durbar wrote the file before, and it is gone (the folder was replaced, or the file deleted). */
+export const NOTES_REPLACED = 'This folder was replaced by another one at the same place. Turn the switch off and on again to write .durbar/notes.md here.';
 export const NOTES_GONE = 'The project file is gone. Turn the switch off and on again to write .durbar/notes.md.';
 const REMOVE_REFUSED = (why: string): string => `Durbar did not delete .durbar/notes.md: ${why}.`;
 
@@ -313,7 +314,8 @@ export class NotesFile {
         this.fs.renameSync(tmp, p.notes);
       }
       made = false;
-      return { ok: true, mirror: { sha256: sha256(bytes), bytes: bytes.length, at: this.now().toISOString() } };
+      const folder = this.folderId(p.folder);
+      return { ok: true, mirror: { sha256: sha256(bytes), bytes: bytes.length, at: this.now().toISOString(), ...(folder ? { folder } : {}) } };
     } catch (e) {
       return { ok: false, code: 'write', error: WRITE_FAIL(errCode(e)) };
     } finally {
@@ -366,8 +368,19 @@ export class NotesFile {
       const folder = this.fs.realpathSync(folderPath);
       if (!this.fs.lstatSync(folder).isDirectory()) return false;
       const g = this.findDotGit(folder);
-      return !!g && (g.st.isDirectory() || g.st.isFile());
+      return !!g && (g.st.isDirectory() || g.st.isFile() || g.st.isSymbolicLink()); // a linked .git counts: addExclude then refuses it and the switch stays off (review 2 of PR 931)
     } catch { return false; }
+  }
+
+  /**
+   * Review 2 of PR 931: the identity of the project folder (device and inode of its real path, as decimal text, never a path), stored
+   * with the mirror; another folder put at the same path (a fresh clone) has another one. `undefined` where the OS gives no inode.
+   */
+  folderId(folderPath: string): string | undefined {
+    try {
+      const st = this.fs.lstatSync(this.fs.realpathSync(folderPath), { bigint: true }) as unknown as { dev: bigint; ino: bigint; isDirectory(): boolean };
+      return st.isDirectory() && st.ino > 0n ? `${st.dev}:${st.ino}` : undefined;
+    } catch { return undefined; }
   }
 
   /** FR-050 (T042): is the folder there (a real folder after its real path)? Stats the folder only, never `.durbar` or `notes.md`. */
@@ -398,11 +411,25 @@ export class NotesFile {
       // Review of PR 931: never unlink by the name `notes.md`, which a swapped `.durbar` could point elsewhere. Rename the file to a random
       // name inside `.durbar`, check THAT name (its folder's real path, a regular file with one link, Durbar's hash), and unlink only it.
       // A swap before the rename moves the other file to the random name elsewhere, and the real-path check of that name (last, right
-      // before the unlink) fails; a swap after it finds no file with that random name elsewhere, so the unlink fails. Under attack a file may be left renamed (recoverable), never deleted.
-      const doomed = path.join(pl.p.durbar, `.notes.md.${this.pid}.${this.rand(36 ** 8).toString(36)}.del`);
+      // before the unlink) fails; a swap after it finds no file with that random name elsewhere, so the unlink fails. This closes the race
+      // for a process that cannot read the other folder and narrows it otherwise: one that can read it learns the random name, can put a
+      // decoy under it here and swap again before the unlink (Node has no unlinkat). Under attack a file may be left under the random name.
+      const name = `.notes.md.${this.pid}.${this.rand(36 ** 8).toString(36)}.del`;
+      const doomed = path.join(pl.p.durbar, name);
       try { this.fs.renameSync(pl.p.notes, doomed); } catch (e) { return keep(REMOVE_REFUSED(`it could not be deleted (${errCode(e)})`)); }
+      const left = (why: string, newer: boolean): RemoveResult => keep(REMOVE_REFUSED(`${why}; ${newer ? 'a newer notes.md is there, so the old one' : 'the file'} may be left as ${name}, in .durbar or in another folder: renaming it back to notes.md restores it`));
+      // the rename back never replaces a notes.md that appeared meanwhile (a POSIX rename would): a hard link fails with EEXIST instead
       const putBack = (why: string): RemoveResult => {
-        try { this.fs.renameSync(doomed, pl.p.notes); return keep(REMOVE_REFUSED(why)); } catch { return keep(REMOVE_REFUSED(`${why}; it may be left as .durbar/.notes.md.*.del`)); }
+        try {
+          this.fs.linkSync(doomed, pl.p.notes);
+        } catch (e) {
+          if (errCode(e) === 'EEXIST') return left(why, true);
+          // no hard links here (some file systems): rename only when nothing is at notes.md
+          try { this.fs.lstatSync(pl.p.notes); return left(why, true); } catch (e2) { if (errCode(e2) !== 'ENOENT') return left(why, false); }
+          try { this.fs.renameSync(doomed, pl.p.notes); return keep(REMOVE_REFUSED(why)); } catch { return left(why, false); }
+        }
+        try { this.fs.unlinkSync(doomed); } catch { /* both names hold the same file: notes.md is back */ }
+        return keep(REMOVE_REFUSED(why));
       };
       const moved = this.checkDurbar(pl.p.folder, pl.p.durbar);
       if (moved) return putBack('.durbar changed while it was being deleted');
@@ -508,12 +535,17 @@ export class NotesFile {
  */
 export async function syncNotesFile(d: {
   file: NotesFile; store: NotesStore; folderKey: string; folderName: string; folderPath: string; values: readonly string[]; now?: () => Date;
+  /** Only the turn-on call may create the file (review 2 of PR 931): any other cycle that finds no file reports it gone. */
+  create?: boolean;
 }): Promise<{ state: NotesFileState; retry?: boolean }> {
   const mirror = await d.store.getMirror(d.folderKey);
+  // review 2 of PR 931: another folder at the same path (a fresh clone) is not the one Durbar wrote into: nothing is read or written
+  const here = mirror?.folder ? d.file.folderId(d.folderPath) : undefined;
+  if (mirror?.folder && here && here !== mirror.folder) return { state: { error: NOTES_REPLACED } };
   const rb = d.file.readBack(d.folderPath, mirror, await d.store.getFileImport(d.folderKey));
   if (!rb.ok) return { state: { error: rb.error } };
   // review of PR 931 (point 4): a file Durbar wrote is gone (another clone at the same path, a deleted folder): never recreate it unasked
-  if (mirror && rb.sha === null) return { state: { error: NOTES_GONE } };
+  if (!d.create && rb.sha === null) return { state: { error: NOTES_GONE } };
   const info: string[] = [];
   if (rb.changed) {
     const imp = await d.store.importFile(d.folderKey, d.folderName, rb.sections, d.values, rb.overflow ? undefined : rb.sha);
@@ -550,7 +582,8 @@ export async function syncNotesFile(d: {
   const want = sha256(Buffer.from(text, 'utf8'));
   const done = (state: NotesFileState): NotesFileState => (info.length ? { ...state, info: info.join('. ') + '.' } : state);
   if (rb.sha === want) {
-    if (mirror?.sha256 !== want) await d.store.setMirror(d.folderKey, d.folderName, { sha256: want, bytes: Buffer.byteLength(text, 'utf8'), at: (d.now?.() ?? new Date()).toISOString() });
+    const folder = d.file.folderId(d.folderPath);
+    if (mirror?.sha256 !== want || (folder && mirror?.folder !== folder)) await d.store.setMirror(d.folderKey, d.folderName, { sha256: want, bytes: Buffer.byteLength(text, 'utf8'), at: (d.now?.() ?? new Date()).toISOString(), ...(folder ? { folder } : {}) });
     return { state: done({}) };
   }
   const w = await d.file.syncOut(d.folderPath, text, rb.sha);
