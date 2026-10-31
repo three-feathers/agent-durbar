@@ -1098,6 +1098,14 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .sched-dlg .sc-hint[hidden]{display:none}
 .sched-dlg .sc-opts:focus-within + .sc-hint{white-space:normal;overflow-wrap:break-word} /* spec 044 FR-021: while the select has focus the full name wraps, so it does not depend on the title tooltip */
 .sched-dlg .sc-opts #scCapU{white-space:nowrap}
+.sched-dlg .sc-row.sc-wait{flex-wrap:wrap}
+.sched-dlg .sc-row.sc-wait>.sc-t{flex:1 1 100%}
+.sm-list{display:flex;flex-direction:column;gap:8px;max-height:46vh;overflow:auto;margin:8px 0}
+.sm-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.sm-row .sc-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.sm-row .sc-t b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sm-row label{flex:none}
+.sm-row select{font:inherit;font-size:13px;border:1px solid var(--line-ctl);border-radius:8px;padding:3px 6px;background:var(--surface);color:var(--ink)}
 .sched-dlg .sc-opts label[hidden],.sched-dlg .sc-days[hidden],.sched-dlg .sc-own[hidden]{display:none}
 .sched-dlg .sc-opts input[type=number]{width:90px}
 .sched-dlg .sc-own{margin:0 0 10px;max-height:120px;overflow-y:auto}

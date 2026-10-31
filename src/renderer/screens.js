@@ -315,7 +315,7 @@
     /* Schedules (spec 044 FR-011): every folder's schedules, painted by app.js into #schedSet */
     const schedSec=X.sched&&X.sched.on()?`<section class="scr-sec" aria-labelledby="schH"><h3 id="schH" tabindex="-1">Schedules</h3>
         <p class="scr-note">Prompts sent to a folder's agent at a time, every day or at an interval, <b>only while Agent Durbar is open</b>.</p>
-        <details class="scr-more"><summary>More</summary><p class="scr-note small">A run is skipped when the agent is busy or waiting for you; the agent's own permission mode and cap apply. The Schedules button in the top bar (Ctrl+Shift+S) opens this list. A folder's ⋯ menu, its clock in the room header and the Schedules button in its chat open the same list for that folder, with a starter kit of templates.</p></details>
+        <details class="scr-more"><summary>More</summary><p class="scr-note small">A run is skipped when the agent is busy or waiting for you. Each schedule runs in its own mode, for that one turn; the agent's cap applies. The Schedules button in the top bar (Ctrl+Shift+S) opens this list. A folder's ⋯ menu, its clock in the room header and the Schedules button in its chat open the same list for that folder, with a starter kit of templates.</p></details>
         <div class="sched-set" id="schedSet"></div></section>`:'';
     /* Theme (specs 037-040): pick a built-in or imported pack; applies live, no restart. */
     const curTheme=(app.theme||'clean-office');
