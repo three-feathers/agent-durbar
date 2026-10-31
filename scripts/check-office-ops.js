@@ -1,10 +1,11 @@
 /*
- * Spec 097 FR-184..FR-186 (T142, flat rows): operation counts of the flat office, never times. Simulator only (DURBAR_SIM=15 DURBAR_SIM_FREEZE=1),
- * no AI credits. At 15 and 40 agents one text change goes through the normal event path (`__durbarSimEmit`), the driver waits with until() for
- * the change to be drawn, and the counts of that change are asserted:
- *   - elements recalculated: the `elementCount` of every UpdateLayoutTree of one short contentTracing of the change, summed. A count, not a time:
- *     one broad `:has()` rule (FR-185) made one change restyle most of the page. Animations are switched off for the trace so that only the change counts.
- * A row that fails today would be named in KNOWN_FAILURES with its fix task, and that task's PR deletes the entry (none is open for the flat rows).
+ * Spec 097 FR-185, FR-186 (T142, T148; flat rows only so far): operation counts of the flat office, never times. Simulator only (DURBAR_SIM=15 DURBAR_SIM_FREEZE=1),
+ * no AI credits. At 15 and 40 agents the driver replaces the text of one desk's name (a child-list change, which is what a render does and what `:has()` watches),
+ * reads a layout property so that the style is recalculated inside the trace, and counts:
+ *   - elements recalculated: the `elementCount` of every UpdateLayoutTree on the renderer's main thread in a short contentTracing of that change, summed. A count, not a
+ *     time. Animations are switched off for the trace so that only the change counts. A trace without one such event fails the row (a renamed thread or category would
+ *     otherwise read as 0 and pass).
+ * It is not a status change: FR-186's status event (renders, layout reads) is a row still to build. What one status change still costs is not asserted here.
  *
  *   npm run check:ui -- --only check-office-ops      (builds first)
  *   OPS_INDEX=<index.html>   load another build of the page (a mutation or a before/after run)
@@ -14,7 +15,7 @@ const os = require('os');
 const path = require('path');
 const assert = require('assert');
 const { contentTracing } = require('electron');
-const { helpers, waits, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 
 /* Limits are counts. FR-185 / T148: one text change recalculates at most this many elements (measured after the fix: see the spec). */
 const LIMITS = { elementsRecalculated: 50 };
@@ -43,7 +44,6 @@ function elementsRecalculated(events) {
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js } = H;
-  const { until } = waits(ctx);
   const rows = {};
   for (const n of [15, 40]) {
     await H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n) }, ready: FLAT, readyMs: 30000 });
@@ -54,6 +54,7 @@ module.exports = async (ctx) => {
     await H.settle();
     const counts = [];
     for (let i = 1; i <= 4; i++) counts.push(elementsRecalculated(await trace(() => change(i))));
+    assert.ok(counts.every((c) => c > 0), `${n} agents: a replaced text node must recalculate some element; a trace with none means the trace's thread or event name changed (${counts})`);
     rows[`elementsRecalculated@${n}`] = Math.max(...counts);
     console.log(`[ops] ${n} agents: elements recalculated by one text change`, counts.join(' '));
   }
