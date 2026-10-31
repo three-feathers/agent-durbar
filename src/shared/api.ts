@@ -13,7 +13,7 @@ import type { AdapterInfo } from './adapters';
 import type { OrgPolicyAppView } from './orgpolicy';
 import type { ActivityRow } from './activity';
 import type { RemoteState } from './remote';
-import type { NotesView, NotesWrote } from './notes';
+import type { NotesFileCount, NotesSetFile, NotesView, NotesWrote } from './notes';
 export type { RemoteState };
 export type { AdapterInfo };
 
@@ -1038,7 +1038,7 @@ export interface DurbarApi {
   slashCommands?(id: string): Promise<{ ok: boolean; error?: string; entries: SlashCommandInfo[] }>;
   /**
    * Spec 083 FR-062 (issue 699): the folder's notes, by agent id (the window never passes a path). Everything stored is masked in main
-   * before it is written; a refusal carries a short reason. `notesSetFile` is answered by the simulator only for now (*Demo: no file written*).
+   * before it is written; a refusal carries a short reason. `notesFileCount` / `notesSetFile` are the project-file switch (T042; the simulator answers *Demo: no file written*).
    */
   notesList?(id: string): Promise<NotesView>;
   notesSave?(id: string, input: { role: 'user' | 'agent'; ord: number; text: string; from?: 'agent' | 'user' | 'selection' }): Promise<NotesWrote>;
@@ -1047,7 +1047,8 @@ export interface DurbarApi {
   notesDelete?(id: string, noteId: string, rev: number): Promise<NotesWrote>;
   notesDeleteAll?(id: string): Promise<NotesWrote>;
   notesStartOver?(id: string): Promise<NotesWrote>;
-  notesSetFile?(id: string, on: boolean): Promise<{ ok: boolean; demo?: boolean; message?: string; error?: string }>;
+  notesFileCount?(id: string): Promise<NotesFileCount>;
+  notesSetFile?(id: string, on: boolean, opts?: { deleteFile?: boolean; exclude?: boolean }): Promise<NotesSetFile>;
   /** A folder's notes changed (another chat, another process): refetch the open folder's notes when the fingerprint is its own. */
   onNotesChanged?(cb: (v: { fingerprint: string }) => void): () => void;
   /** Spec 066: answer a proposed plan (window only). */

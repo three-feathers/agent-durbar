@@ -153,7 +153,7 @@ async function main(): Promise<void> {
   // AC1, AC5 and "nothing logged": the channels, the sender check, the change event, no logging, no Electron in the testable part
   const ipc = src('src/main/ipc/notes.ts');
   const chans = [...ipc.matchAll(/ipcHandle\('(notes:[A-Za-z]+)'/g)].map((x) => x[1]).sort();
-  assert.deepStrictEqual(chans, ['notes:add', 'notes:delete', 'notes:deleteAll', 'notes:list', 'notes:save', 'notes:startOver', 'notes:update']);
+  assert.deepStrictEqual(chans, ['notes:add', 'notes:delete', 'notes:deleteAll', 'notes:fileCount', 'notes:list', 'notes:save', 'notes:setFile', 'notes:startOver', 'notes:update']);
   for (const c of chans) {
     const line = ipc.split('\n').find((x) => x.includes(`ipcHandle('${c}'`))!;
     assert.ok(/\(!fromApp\(e\) \? NO :/.test(line), `${c} checks fromApp(e) first`);
