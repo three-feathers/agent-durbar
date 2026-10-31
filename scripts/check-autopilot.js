@@ -132,6 +132,15 @@ module.exports = async (ctx) => {
     assert.strictEqual(warned.none, true, 'a cap ticked: the no-cap sentence goes');
     assert.ok(warned.inside && warned.btn, `${w}: dialog on screen, buttons inside`);
     assert.deepStrictEqual(await small('#modeDlg'), [], `${w}: form text`);
+    // the picture, not only the words: each field sits on one line with its text, and the rows start at the left
+    const rows = await js(`[...document.querySelectorAll('#modeDlg .ap-row')].map(r=>{const c=getComputedStyle(r),i=r.querySelector('.ap-num').getBoundingClientRect(),l=r.querySelector('.ap-lbl').getBoundingClientRect(),b=r.getBoundingClientRect();return {dir:c.flexDirection,mid:Math.abs((i.top+i.bottom)/2-(l.top+l.bottom)/2),left:r.firstElementChild.getBoundingClientRect().left-b.left,h:b.height};})`);
+    assert.strictEqual(rows.length, 3);
+    for (const r of rows) {
+      assert.strictEqual(r.dir, 'row', `${w}: a row`);
+      assert.ok(r.mid <= 3, `${w}: the field and its text on one line ${JSON.stringify(r)}`);
+      assert.ok(r.left <= 1, `${w}: from the left ${JSON.stringify(r)}`);
+      assert.ok(r.h <= 40, `${w}: one line ${JSON.stringify(r)}`);
+    }
     await H.shot(path.join(OUT, `099-form-warnings-${w}.png`), { prep: 'calm' });
     for (const bad of [0, 1001, 1.5, '']) {
       await setv('apLimit', bad);
@@ -144,12 +153,12 @@ module.exports = async (ctx) => {
     assert.match((await chip()).text, /Read-only/, 'Esc: nothing changed');
 
     // main's "No": nothing changes
-    await js(`window.__durbarSimUi.autopilotDialog=()=>false`);
+    await js(`window.__durbarSimUi.autopilotDialog=()=>false;0`);
     await turnOn();
     await must(`(window.__durbarSimUi.autopilotAsked||[]).length>=1`, 'the (simulated) native dialog was asked');
     assert.match((await chip()).text, /Read-only/, 'Cancel at the native dialog: nothing changed');
     assert.strictEqual(await js(`window.__durbarSimUi.agents().find(a=>a.id===${JSON.stringify(id)}).info.permMode`), 'read-only');
-    await js(`window.__durbarSimUi.autopilotDialog=null`);
+    await js(`window.__durbarSimUi.autopilotDialog=null;0`);
 
     // on: the real mode on the chip, the menu, the desk and the list
     await turnOn();

@@ -143,6 +143,7 @@ function pageChecks(): void {
   // nothing in the menu or the flow writes the state before main answered
   const flow = part('async function autopilotFlow', '/* FR-040, FR-057: the chat lines');
   assert.ok(flow.indexOf('await bridge.setAutopilot') < flow.indexOf('a.info.autopilot=res.autopilot'), 'main first');
+  assert.ok(!flow.slice(0, flow.indexOf('await bridge.setAutopilot')).includes('a.info.autopilot='), 'main first: the page writes nothing before it');
   assert.ok(flow.indexOf('if(!res.ok)') < flow.indexOf('a.info.autopilot=res.autopilot'), 'only on its yes');
   // every text the Autopilot code puts in innerHTML goes through esc
   const code = part('/* ---------------- spec 099: Autopilot in the window', 'function closeModeMenu(){');

@@ -89,7 +89,7 @@ async function main(): Promise<void> {
 
   // ---- the gate (spec *Changes*, Phase 3 gate): off refuses first, whatever else is true, and nothing moves ----
   {
-    const x = await office({ enabled: false, mode: 'read-only', confirm: async () => assert.fail('no dialog in the default build') as never });
+    const x = await office({ enabled: false, mode: 'read-only', confirm: async () => assert.fail('no dialog in the default build') as never, org: async () => assert.fail('off refuses first, before it reads anything') as never });
     assert.deepStrictEqual(await turnOn(x), { ok: false, error: NOT_AVAILABLE });
     assert.strictEqual(x.a.autopilot, undefined);
     assert.strictEqual(x.a.permMode, 'read-only');
@@ -263,7 +263,7 @@ async function main(): Promise<void> {
 
   // ---- T039, FR-007: never with remote control, both directions ----
   {
-    const x = await office({ mode: 'ask' });
+    const x = await office({ mode: 'ask', org: async () => assert.fail('remote control refuses first') as never });
     assert.strictEqual((await x.remoteOps.setRemote(x.id, true)).ok, true);
     assert.strictEqual((await turnOn(x)).error, REMOTE_ON);
     assert.deepStrictEqual(x.asked, [], 'before the dialog');
@@ -289,6 +289,19 @@ async function main(): Promise<void> {
     await p;
     assert.ok(z.a.autopilot, 'and Autopilot goes on');
 
+    // remote control comes on while Autopilot's dialog is open, by any path: seen after it, and nothing moves
+    let rel1: (v: boolean) => void = () => undefined;
+    const rc = await office({ mode: 'ask', confirm: () => new Promise((res) => { rel1 = res; }) });
+    const prc = turnOn(rc);
+    await until(() => rc.ops.engaged(rc.id));
+    await tick();
+    (rc.remoteOps as unknown as { engaged: (id: string) => boolean }).engaged = () => true;
+    rel1(true);
+    assert.strictEqual((await prc).error, REMOTE_ON, 'checked again after the native dialog');
+    assert.strictEqual(rc.a.permMode, 'ask');
+    assert.deepStrictEqual(rc.saved, []);
+    assert.deepStrictEqual(onCalls(rc), []);
+
     // the other order: remote control's dialog is open while Autopilot is accepted
     let rel2: (v: boolean) => void = () => undefined;
     const w = await office({ mode: 'ask', remoteConfirm: () => new Promise((res) => { rel2 = res; }) });
@@ -303,6 +316,10 @@ async function main(): Promise<void> {
     // Autopilot turned on while remote control's dialog was open is seen after that dialog (the race the review found on a sibling)
     let rel3: (v: boolean) => void = () => undefined;
     const v = await office({ mode: 'ask', remoteConfirm: () => new Promise((res) => { rel3 = res; }) });
+    let vCalls = 0;
+    const vf = v.fake as unknown as { setRemote: (s: string, on: boolean) => Promise<unknown> };
+    const vReal = vf.setRemote;
+    vf.setRemote = async (a0, a1) => { vCalls++; return vReal.call(v.fake, a0, a1); };
     const rp3 = v.remoteOps.setRemote(v.id, true);
     await tick();
     v.a.permMode = 'allow'; // a raise during the dialog, by any path
@@ -311,6 +328,7 @@ async function main(): Promise<void> {
     assert.strictEqual(r3.ok, false);
     assert.match(String(r3.error), /off in Allow all/);
     assert.strictEqual(v.remoteOps.has(v.id), false);
+    assert.strictEqual(vCalls, 0, 'the app was never asked');
 
     // remote control comes on while Autopilot's adapter call is in flight: it comes back down
     const u = await office({ mode: 'allow' });
@@ -503,6 +521,7 @@ async function main(): Promise<void> {
       { type: 'autopilot', phase: 'ended', runId: 'r1', n: 1, limit: 5, reason: 'ghp_' + 'a'.repeat(36) },
       { type: 'autopilot', phase: 'ended', runId: 'r1', n: 1, limit: 5, reason: 'done', spend: { unit: 'x', value: -1 } },
       { type: 'autopilot', phase: 'continued', runId: 'r1', n: 1, limit: 5, agentId: 'helper' },
+      { type: 'autopilot', phase: 'ghp_' + 'a'.repeat(36) + '\nx', runId: 'r1', n: 1, limit: 5 },
       { type: 'question', phase: 'asked', requestId: 'q', questions: [{ question: 'q?', options: [] }], autoAnswered: 'yes' },
     ];
     for (const b of bad) x.emit(b);
