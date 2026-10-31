@@ -89,6 +89,7 @@ import { UsageStore } from './usagestore';
 import { AgentTrustStore } from './agenttrust';
 import { Scheduler, loadSchedules, publicDoc, saveSchedules, scheduleBusy } from './schedules';
 import type { SchedulerDeps } from './schedules';
+import { RunModes, modeCheckOp } from './schedmode';
 import { UsageTotalsStore } from './usagetotalsstore';
 import { ActivityStore } from './activitystore';
 import { decisionOf } from '../shared/activity';
@@ -250,7 +251,10 @@ router.onEvent((e) => {
 /** Each main agent's last status (spec 044: a scheduled run is skipped while the folder's agent is busy). */
 const lastStatus = new Map<string, string>();
 router.onEvent((e) => {
-  if (e.type === 'status' && !e.agentId) lastStatus.set(e.sessionId, e.status);
+  if (e.type === 'status' && !e.agentId) {
+    lastStatus.set(e.sessionId, e.status);
+    runModes.onStatus(e.sessionId, e.status); // spec 044 FR-180: a turn that ended gives the session its own mode back
+  }
   // spec 044 FR-015: usage between a scheduled send and the end of that turn counts toward the schedule's own limit
   if (e.type === 'usage') scheduler?.noteUsage(e.sessionId, e);
   else if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) scheduler?.turnEnded(e.sessionId);
@@ -279,7 +283,7 @@ router.onEvent((e) => {
   if (a) usageTotalsStore?.record(folderKeyOf(a), folderNameOf(a), e);
 });
 /** One activity row for agent `a` (spec 052 FR-071): names, the folder's base name, the adapter's display name and a short summary. */
-const logActivity = (a: AgentInfo, decision: ActivityDecision, action: string, mode: string = a.permMode): void => {
+const logActivity = (a: AgentInfo, decision: ActivityDecision, action: string, mode: string = runModes.modeOf(a.id) ?? a.permMode): void => {
   activityStore?.record({ agent: a.alias || a.label || a.name, folder: folderNameOf(a), app: registry.get(a.adapterId)?.displayName ?? a.adapterId, mode, action, decision });
 };
 // The answer to a permission request, or an automatic approval (Allow all, a session permission), arrives as a `permission` event;
@@ -510,6 +514,8 @@ router.onEvent((e) => {
 });
 
 async function sendOp(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter, plan = false): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string }> {
+  const heldMode = runModes.userSendRefusal(id, busyStatus(id)); // spec 044 FR-180: a typed message never runs under a schedule's higher mode
+  if (heldMode) return { ok: false, error: heldMode };
   const safe = (Array.isArray(attachments) ? attachments : []).filter((a) => pickedFiles.has(a.path));
   // Caps are enforced here too, not only in the UI.
   if (safe.length > MAX_ATTACH_FILES) return { ok: false, error: `Up to ${MAX_ATTACH_FILES} attachments per message (got ${safe.length}).` };
@@ -538,6 +544,8 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
 
 // ---- scheduled prompts (spec 044): per folder, while the app runs; the run goes through the user's own send path ----
 let scheduler: Scheduler | undefined;
+/* spec 044 FR-180: the one-turn mode of a scheduled run (rules and tests: schedmode.ts); never saved */
+const runModes = new RunModes({ agents, router, orgRefusal: (a, mode) => orgPolicies.refusalNow(appIdOf(a.id), { mode }), log: (a, action, mode) => logActivity(a, 'mode-change', action, mode) });
 /* spec 017 FR-015..FR-017, spec 044 FR-110: doors the user closed (Do not disturb) and the runs held there; keyed by the session's resume id */
 let doors: Doors | undefined;
 const doorKey = (a: AgentInfo): string => resumeIdFor(a.id);
@@ -559,7 +567,7 @@ router.onEvent((e) => {
 const scheduleDeps = (file: string): SchedulerDeps => ({
   now: () => Date.now(),
   /* spec 068 FR-008: an agent on a coffee break is busy too (the rule and its test: schedules.ts scheduleBusy) */
-  isBusy: (folder, session) => scheduleBusy(folder, session, { sessions: () => [...agents.values()].map((x) => ({ id: x.id, folder: wsKey(x) })), busy: busyStatus, breaks: agentState }),
+  isBusy: (folder, session) => scheduleBusy(folder, session, { sessions: () => [...agents.values()].map((x) => ({ id: x.id, folder: wsKey(x) })), busy: (id) => busyStatus(id) || runModes.holds(id), breaks: agentState }),
   hasSession: (session) => agents.has(session),
   /* spec 081 FR-013: a prompt that would start or resume a session of an app that is updating is held, and goes when the update has finished; a prompt to a session that is still open goes through */
   heldBy: (s) => {
@@ -585,15 +593,35 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
     agentState.noteSend(a.id); // same as the interactive send: the window shows Thinking from the moment a prompt goes out
     try {
       await ensureLive(a);
+      // spec 044 FR-180, FR-184: the schedule's mode for this one turn; a live session that cannot take it is not sent
+      const refused = runModes.apply(a, s.mode);
+      if (refused) {
+        agentState.noteSendFailed(a.id);
+        return { refused };
+      }
       toRenderer('agent:event', { type: 'user', sessionId: a.id, timestamp: Date.now(), text: prompt });
-      toRenderer('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at, rule: s.rule });
+      toRenderer('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at, rule: s.rule, mode: s.mode, modeTurn: runModes.holds(a.id) });
       await ad.send(a.id, { text: prompt });
+      runModes.sent(a.id);
       noteLastSession(a);
     } catch (err) {
+      runModes.end(a.id); // spec 044 FR-180: a send that failed gives the session its own mode back
       agentState.noteSendFailed(a.id);
       throw err;
     }
     return a.id;
+  },
+  /* spec 044 FR-182..FR-184: the check at a save and at each run; the rule and its tests are in schedmode.ts */
+  modeCheck: (s) => modeCheckOp({ router, orgRefusal: (a, mode) => orgPolicies.refusalNow(appIdOf(a.id), { mode }) }, s, scheduleAgent(s)),
+  /* FR-182: what the confirmation names, from main's own records */
+  modeAgent: (s) => {
+    const a = scheduleAgent(s);
+    const app = a ? router.adapterIdOf(a.id) : undefined;
+    return a && app ? { app, appName: registry.get(app)?.displayName ?? app, agent: a.alias || a.label || a.name, folderName: folderNameOf(a) } : undefined;
+  },
+  orgWords: (s, mode) => {
+    const a = scheduleAgent(s);
+    return a && mode !== 'autopilot' ? orgPolicies.refusalNow(appIdOf(a.id), { mode }) : undefined;
   },
   setTimer: (ms, fn) => setTimeout(fn, ms),
   clearTimer: (t) => clearTimeout(t as NodeJS.Timeout),
@@ -750,7 +778,7 @@ const browser = registerBrowserIpc({ agents, getWin: () => win, toRenderer, simu
 const browserGone = (id: string): void => void browser.destroy(id).catch(() => undefined);
 /** Spec 043 FR-041: which profile file changes each session has seen (shared by ipc/agents.ts and ipc/profiles.ts). */
 const profileFreshness = createProfileFreshness();
-registerAgentsIpc({ browserGone, agents, router, agentState, opsDeps, remoteOps, mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id) }); // spec 087: sandboxOps is set below, before any IPC call
+registerAgentsIpc({ browserGone, agents, router, agentState, opsDeps, remoteOps, mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, forgetRunMode: (id) => runModes.forget(id), getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id) }); // spec 087: sandboxOps is set below, before any IPC call
 registerAttachmentsIpc({ dev, pickedFiles, getStageDir, sizeOf });
 registerPreviousIpc({ browserGone, renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });

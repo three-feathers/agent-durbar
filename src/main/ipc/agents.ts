@@ -31,6 +31,8 @@ export interface AgentsIpcDeps {
   opsDeps: OpsDeps;
   remoteOps: ReturnType<typeof createRemoteOps>;
   getScheduler(): Scheduler | undefined;
+  /** Spec 044 FR-180: a removed agent's one-turn run mode goes with it. */
+  forgetRunMode?(id: string): void;
   getCheckpointStore(): CheckpointStore | undefined;
   /** Spec 043 FR-041: the profile list freshness shared with ipc/profiles.ts; a session that ends or is removed is forgotten. */
   profileFreshness?: { forget(id: string): void };
@@ -181,6 +183,7 @@ export function register(deps: AgentsIpcDeps): void {
     deps.profileFreshness?.forget(a.id); // spec 043 FR-041
     deps.forgetSandboxNote?.(a.id); // spec 087
     deps.browserGone?.(a.id); // spec 080 FR-023
+    deps.forgetRunMode?.(a.id);
     agents.delete(a.id);
     agentState.remove(a.id);
     vsChatRefs.delete(a.id);

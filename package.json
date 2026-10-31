@@ -172,7 +172,7 @@
     "test:about": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-about.js",
     "test:modelswitch": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-modelswitch.js",
     "test:simevents": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-sim-events.js",
-    "test:schedules": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-schedules.js && node dist-scripts/scripts/test-schedules-runs.js",
+    "test:schedules": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-schedules.js && node dist-scripts/scripts/test-schedules-runs.js && node dist-scripts/scripts/test-schedmode.js",
     "test:loops": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-loops.js",
     "test:schedrules": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-schedrules.js",
     "test:simmodel": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-sim-model.js",

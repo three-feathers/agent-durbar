@@ -19,6 +19,8 @@
     held:{word:'held: not sent yet (closed door, update or break)',kind:'hold'},
     'skipped-door-full':{word:'not kept: the closed door already holds as many prompts as it can',kind:'stop'},
     'skipped-review':{word:'not sent: the prompt is over 10,000 characters, shorten it with Edit',kind:'stop'},
+    'skipped-mode':{word:'not sent: waiting for a mode',kind:'stop'},
+    'mode-refused':{word:'not sent: this mode was refused',kind:'stop'},
     ended:{word:'loop ended',kind:'end'}
   };
   /* FR-036: the closed list of reasons a run carries; a code is turned into words here and the error's own text is never kept. */
@@ -33,9 +35,18 @@
     time:'reached its end time',
     'no-pace':'the agent did not pace the loop',
     errors:'two passes failed',
-    'app-closed':'Durbar was closed'
+    'app-closed':'Durbar was closed',
+    /* spec 044 FR-181..FR-184: why a schedule's mode kept a run from going */
+    'no-mode':'no mode was chosen',
+    'other-agent':'it would have gone to another agent than the one chosen',
+    'mode-org':"your organization's policy refuses it",
+    'mode-lacking':'this agent app does not have this mode',
+    'mode-live':'this session cannot switch to it',
+    'mode-autopilot':'Autopilot is not available on a schedule yet',
+    'mode-loop-autopilot':'Autopilot is not offered on a loop'
   };
   const own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
+  const WITH_REASON=['failed','ended','skipped-mode','mode-refused'];
   const cap1=t=>t?t.charAt(0).toUpperCase()+t.slice(1):t;
   /* the row's words for an outcome; an unknown one shows as it is */
   function outcomeWord(outcome){return own(OUTCOMES,outcome)?OUTCOMES[outcome].word:String(outcome);}
@@ -46,8 +57,18 @@
     if(!run)return '';
     const base=cap1(outcomeWord(run.outcome)), why=reasonWords(run.reason);
     const now=run.manual?' (Run now)':'';
-    if(run.outcome==='failed'||run.outcome==='ended')return base+now+(why?': '+why:'');
+    if(WITH_REASON.includes(run.outcome))return base+now+(why?': '+why:'');
     return base+now;
+  }
+  /* spec 044 FR-183: the row's "last" words: a mode's refusal says why there too (`last.reason`) */
+  function lastWord(last){
+    if(!last)return '';
+    const why=last.outcome==='skipped-mode'||last.outcome==='mode-refused'?reasonWords(last.reason):'';
+    return outcomeWord(last.outcome)+(why?': '+why:'');
+  }
+  /* spec 044 FR-181: this schedule cannot run until someone chooses a mode (the same rule as main's `waitingForMode`; test:schedhist compares them) */
+  function waitingForMode(s){
+    return !!s&&!s.mode&&!(s.loop&&s.loop.ended)&&(!s.done||!!(s.last&&s.last.outcome==='skipped-mode'));
   }
   /* FR-037: a skip that repeated is one entry: "3 times, until 08:45" */
   function foldText(run,clockOf){
@@ -87,5 +108,5 @@
     const d=own(P,kind)?P[kind]:P.skip;
     return '<svg class="sh-ic" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'+d+'</svg>';
   }
-  return {OUTCOMES,REASONS,outcomeWord,kindOf,reasonWords,runWords,foldText,runText,emptyText,hereLabel,listName,iconSvg,KINDS:Object.keys(P)};
+  return {OUTCOMES,REASONS,lastWord,waitingForMode,outcomeWord,kindOf,reasonWords,runWords,foldText,runText,emptyText,hereLabel,listName,iconSvg,KINDS:Object.keys(P)};
 })());

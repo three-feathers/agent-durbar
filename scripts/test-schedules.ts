@@ -4,6 +4,18 @@ import { MAX_PROMPT, MAX_SCHEDULES, Scheduler, alignedNext, loopSupport, cleanSc
 import type { Schedule, SchedulesDoc, SchedulerDeps } from '../src/main/schedules';
 
 const MIN = 60_000;
+
+/** Spec 044 FR-180: these tests are about everything but the mode (test-schedmode.ts is), so a schedule that says nothing about one has Ask first. */
+export function withModes<D extends SchedulesDoc>(doc: D): D {
+  for (const s of doc.schedules) if (!s.mode) { s.mode = 'ask'; s.modeFor = { app: 'copilot', ...(s.target ? { session: s.target.session } : {}) }; }
+  return doc;
+}
+export function modeful(sch: Scheduler): Scheduler {
+  const save = sch.save.bind(sch);
+  sch.save = (input, ok) => save(input && typeof input === 'object' && !('mode' in input) ? { ...input, mode: 'ask' } : input, ok);
+  return sch;
+}
+export const MODE_DEPS = { modeCheck: () => undefined, modeAgent: () => ({ app: 'copilot', appName: 'Copilot', agent: 'a', folderName: 'f' }) };
 export function harness(doc: SchedulesDoc, t0 = 1_000_000_000_000, extra: Partial<SchedulerDeps> = {}) {
   let now = t0;
   const sent: string[] = [];
@@ -13,7 +25,8 @@ export function harness(doc: SchedulesDoc, t0 = 1_000_000_000_000, extra: Partia
   const unit: { v: 'aiu' | 'usd' | undefined } = { v: 'aiu' };
   const timers: { at: number; fn: () => void }[] = [];
   let saved = 0;
-  const sch = new Scheduler(doc, {
+  const sch = modeful(new Scheduler(withModes(doc), {
+    ...MODE_DEPS,
     now: () => now,
     isBusy: (f, session) => (session ? busy.has(session) : busy.has(f)),
     hasSession: (id) => sessions.has(id),
@@ -23,7 +36,7 @@ export function harness(doc: SchedulesDoc, t0 = 1_000_000_000_000, extra: Partia
     clearTimer: (t) => { const i = timers.indexOf(t as never); if (i >= 0) timers.splice(i, 1); },
     save: () => { saved++; },
     ...extra,
-  });
+  }));
   const advance = async (ms: number): Promise<void> => {
     now += ms;
     for (;;) {
@@ -381,6 +394,9 @@ async function phase2(): Promise<void> {
     assert.strictEqual(h.sch.doc.schedules[0].pausedReason, 'session-ended', 'the reason stays');
     const moved = h.sch.save({ ...s, target: null, paused: false }, () => true);
     assert.ok(moved.ok && !moved.schedule.target && !moved.schedule.paused && !moved.schedule.pausedReason, 'Use the folder\'s agent');
+    // spec 044 FR-182: the mode was chosen for that session: moving the schedule leaves it waiting for a new choice, and nothing goes out until then
+    assert.strictEqual(moved.ok && moved.schedule.mode, undefined, 'it waits for a mode');
+    assert.ok(moved.ok && h.sch.setMode(moved.schedule.id, 'ask').ok);
     await h.advance(10 * MIN);
     assert.strictEqual(h.sent.length, 2);
     // at a due run the session is gone (no sessionsChanged call): recorded and paused

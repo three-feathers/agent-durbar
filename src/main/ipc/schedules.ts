@@ -20,6 +20,10 @@ export function register(deps: SchedulesIpcDeps): void {
   // spec 044 FR-043: one schedule's run log, newest first. Read-only (no channel writes, clears or edits a log); the id is checked here, an unknown one gives an empty list
   ipcHandle('schedules:runs', (e, id: unknown) => (fromApp(e) ? runsReply(scheduler(), id) : { ok: false }));
   ipcHandle('schedules:save', (e, input: unknown) => (!fromApp(e) ? { ok: false, error: 'invalid request' } : scheduler() ? scheduler()!.save(input, (f) => !!folderStore()?.get(f)) : { ok: false, error: 'Schedules are not available.' }));
+  // spec 044 FR-182: the window's question before it asks a person about Allow all, and FR-181's choice of a mode. Only these and `schedules:save`
+  // change a mode, all behind `fromApp`; MCP tools and remote control have no way to them (test:schedules scans for other callers).
+  ipcHandle('schedules:askMode', (e, input: unknown) => (!fromApp(e) ? { ok: false, error: 'invalid request' } : scheduler() ? scheduler()!.askMode(input) : { ok: false, error: 'Schedules are not available.' }));
+  ipcHandle('schedules:setMode', (e, id: unknown, mode: unknown, proof: unknown) => (!fromApp(e) ? { ok: false, error: 'invalid request' } : scheduler() ? scheduler()!.setMode(id, mode, proof) : { ok: false, error: 'Schedules are not available.' }));
   ipcHandle('schedules:remove', (e, id: unknown) => ({ ok: fromApp(e) && typeof id === 'string' && !!scheduler()?.remove(id) }));
   // spec 052 FR-089: "Run missed now" from the Since you were away card: one run through the same send path as a scheduled one
   ipcHandle('schedules:runNow', async (e, id: unknown) => (!fromApp(e) || typeof id !== 'string' || id.length > 100 ? { ok: false, error: 'invalid request' } : scheduler() ? scheduler()!.runNow(id) : { ok: false, error: 'Schedules are not available.' }));

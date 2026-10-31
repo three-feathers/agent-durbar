@@ -261,14 +261,18 @@ export interface ProfileInfo {
 }
 
 /** What a scheduled run came to (spec 044; main's `Outcome`). */
-export type ScheduleOutcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full' | 'skipped-review';
+export type ScheduleOutcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full' | 'skipped-review' | 'skipped-mode' | 'mode-refused';
+/** Spec 044 FR-036: why a run did not go, or why a loop ended. A closed list. */
+export type ScheduleRunReason = 'no-agent' | 'send-error' | 'user' | 'agent' | 'session' | 'limit' | 'passes' | 'time' | 'no-pace' | 'errors' | 'app-closed' | 'mode-org' | 'mode-lacking' | 'mode-live' | 'mode-autopilot' | 'mode-loop-autopilot' | 'no-mode' | 'other-agent';
+/** Spec 044 FR-180: a schedule's own mode; `autopilot` is kept but not usable yet (FR-184, spec 099 T097). */
+export type ScheduleMode = 'read-only' | 'ask' | 'allow' | 'autopilot';
 /** Spec 044 FR-036: one entry of a schedule's run log, as `scheduleRuns` returns it (newest first). Reason codes only, never text. */
 export interface ScheduleRunInfo {
   at: number;
   outcome: ScheduleOutcome;
   /** The agent id the prompt went to, or would have gone to. */
   session?: string;
-  reason?: 'no-agent' | 'send-error' | 'user' | 'agent' | 'session' | 'limit' | 'passes' | 'time' | 'no-pace' | 'errors' | 'app-closed';
+  reason?: ScheduleRunReason;
   manual?: true;
   /** A skip repeated n times, the last at `until` (FR-037). */
   n?: number;
@@ -288,7 +292,11 @@ export interface ScheduleInfo {
   /** Why the app paused it (FR-014, FR-015). */
   pausedReason?: 'cap' | 'session-ended' | 'review';
   done?: boolean;
-  last?: { at: number; outcome: ScheduleOutcome };
+  last?: { at: number; outcome: ScheduleOutcome; reason?: ScheduleRunReason };
+  /** FR-180: the mode its runs use; missing means it waits and sends nothing (FR-181). */
+  mode?: ScheduleMode;
+  /** FR-182: who the mode was chosen for; set by main. */
+  modeFor?: { app: string; session?: string };
   /** FR-014: one session instead of the folder's agent. */
   target?: { session: string; agent: string; name?: string };
   /** FR-015: the schedule's own limit and what its runs spent. */
@@ -919,7 +927,11 @@ export interface DurbarApi {
   resolveLimit?(id: string, requestId: string, choice: LimitChoice): Promise<{ ok: boolean; error?: string }>;
   /** Scheduled prompts (spec 044). */
   listSchedules?(): Promise<SchedulesInfo>;
-  saveSchedule?(input: Partial<ScheduleInfo> & { folder: string; prompt: string; edit?: boolean }): Promise<{ ok: true; schedule: ScheduleInfo } | { ok: false; error: string }>;
+  saveSchedule?(input: Partial<ScheduleInfo> & { folder: string; prompt: string; edit?: boolean; modeProof?: string }): Promise<{ ok: true; schedule: ScheduleInfo } | { ok: false; error: string }>;
+  /** Spec 044 FR-182: whether this mode needs a confirmation for this schedule, with main's words and a one-time token for the save that follows. */
+  askScheduleMode?(input: { id?: string; folder?: string; prompt?: string; target?: ScheduleInfo['target'] | null; mode: ScheduleMode }): Promise<{ ok: true; needed: false } | { ok: true; needed: true; token: string; title: string; body: string } | { ok: false; error: string }>;
+  /** Spec 044 FR-181: *Choose a mode*: this schedule's mode and nothing else; nothing is sent. */
+  setScheduleMode?(id: string, mode: ScheduleMode, modeProof?: string): Promise<{ ok: true; schedule: ScheduleInfo } | { ok: false; error: string }>;
   removeSchedule?(id: string): Promise<{ ok: boolean }>;
   setSchedulesPaused?(on: boolean): Promise<{ ok: boolean; pausedAll: boolean }>;
   /** Spec 052 FR-089: one run of a schedule now ("Run missed now"), through the same path as a scheduled run. */
@@ -933,7 +945,7 @@ export interface DurbarApi {
   interrupted?(): Promise<InterruptedInfo | null>;
   dismissInterrupted?(): Promise<{ ok: boolean }>;
   onSchedules?(cb: (doc: SchedulesInfo) => void): () => void;
-  onScheduleRan?(cb: (r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void): () => void;
+  onScheduleRan?(cb: (r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule']; mode?: ScheduleMode; modeTurn?: boolean }) => void): () => void;
   /** Answer the agent's question (spec 012 FR-128): question text -> answer; null = skip. */
   answerQuestion?(id: string, requestId: string, answers: Record<string, string> | null): Promise<{ ok: boolean; error?: string }>;
   /** Answer an MCP elicitation (spec 012 FR-151): `accept` with the form's values (checked in main), `decline` or `cancel`. `field` names a field that failed the check. */

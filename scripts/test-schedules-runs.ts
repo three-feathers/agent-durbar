@@ -104,8 +104,9 @@ async function main(): Promise<void> {
     const before = JSON.stringify(log(h, id));
     const s0 = h.sch.doc.schedules.find((x) => x.id === id)!;
     assert.ok(h.sch.save({ ...s0, edit: true, prompt: 'changed', every: 30 }, () => true).ok);
-    assert.ok(h.sch.save({ ...s0, paused: true }, () => true).ok);
-    assert.ok(h.sch.save({ ...s0, paused: false }, () => true).ok);
+    const s1 = h.sch.doc.schedules.find((x) => x.id === id);
+    assert.ok(h.sch.save({ ...s1, paused: true }, () => true).ok);
+    assert.ok(h.sch.save({ ...s1, paused: false }, () => true).ok);
     assert.strictEqual(JSON.stringify(log(h, id)), before, 'edit, pause and resume keep the log');
     // runsOf: newest first, a copy, empty for an unknown id
     const ro = h.sch.runsOf(id);
