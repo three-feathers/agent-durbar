@@ -26,7 +26,7 @@ Full list in [CHANGELOG.md](../CHANGELOG.md). Short version, since alpha.5:
 
 Full list in [CHANGELOG.md](../CHANGELOG.md). Short version, since alpha.4:
 
-- **Themes** (specs 035-040): Settings > Theme switches the whole office live: **Corporate**, **Retro Pixel** and three **Durbar** courts (Indian, European, Japanese) each change the colours, the top bar, room frames, cards, fonts, place names and **the people and furniture** (suits at glass desks, 8-bit people at a CRT, courtiers in turbans, periwigs or kimono). **Clean Office** is today's look. Status, permission and credit wording and the layout stay the same in every theme. You can import and export your own theme packs (data only: no scripts, no CSS).
+- **Themes** (specs 035-040): Settings > Theme switches the whole office live: **Retro Pixel** changes the colours, the top bar, room frames, cards, fonts, place names and **the people and furniture** (8-bit people at a CRT). **Clean Office** is today's look. Status, permission and credit wording and the layout stay the same in every theme. You can import and export your own theme packs (data only: no scripts, no CSS).
 - **Main agents show their session title** (specs 001/002, issue #126): the name Copilot gives the session (from your first prompt) instead of the folder name; checked once on a real session.
 - **Floors** (spec 033): group rooms on floors and switch a floor off; its agents keep running.
 - **Agents show how they are doing** (spec 034): heavier near a full context window, an ambulance for errors, fainting at the credit limit; rooms take the tone of their worst agent. *Serious mode* turns it off.
@@ -74,25 +74,19 @@ Since alpha.1:
 
 ## Milestones and features (newest first)
 
-### Status (themes: Clean Office, Corporate, Retro Pixel, three Durbar courts, your own packs)
+### Status (themes: Clean Office, Retro Pixel, your own packs; Corporate and the three Durbar courts were removed on 2026-10-31, spec 035 FR-017)
 
 Specs [035](../specs/035-theme-foundation/spec.md)-[040](../specs/040-user-themes/spec.md) (issue #129), PR #137. Built and tested on the simulator and unit tests. **AI credits spent: 0 AIU.** In `v0.1.0-alpha.5`.
 
-- **Settings > Theme** switches the look of the whole app live, no restart: colours, the top bar, room frames, cards, buttons, pills, lobby tiles, display fonts, the place names and **the people and furniture**: each theme draws its own characters, chairs, desks and monitors (suits at glass desks, 8-bit people at a CRT, courtiers in turbans, periwigs or kimono at carved, gilded or lacquer desks). Status cues stay in the same place in every theme.
+- **Settings > Theme** switches the look of the whole app live, no restart: colours, the top bar, room frames, cards, buttons, pills, lobby tiles, display fonts, the place names and **the people and furniture**: each theme draws its own characters, chairs, desks and monitors (8-bit people at a CRT). Status cues stay in the same place in every theme.
 - **Clean Office** is today's look and the fallback for anything unknown or broken (checked against `main`: the same pixels with animations frozen).
-- **Corporate**: a navy top bar, white rooms with a coloured accent edge, square corners, tag-style pills, uppercase room labels; places become Records, Repository, Server room, Network, Facilities.
 - **Retro Pixel**: a dark arcade page, a black bar with a yellow monospace title, black-outlined rooms in game colours with hard shadows, square tiles and pixel characters; places become Arcade, Cartridge Bay, Console, Modem, Gadgets.
-- **Durbar · Indian / European / Japanese**: a maroon bar with a gold rule and arched rooms in a double gold frame; a royal navy bar with gilt rules and gilded frames in small caps; a paper bar with a vermilion rule and seal, washi and thin ink lines. Each has its own court place names.
 - **The text that matters never changes**: status, permission and credit wording are the same in every theme, and so is the layout (15 agents at 1440x900 and 1280x800; `npm run check:themes` runs the office check per theme and on a sample user theme, and fails if the theme on screen is not the one it asked for).
 - **Your own themes**: a folder with a `manifest.json` (colours, a UI style and a scene kit from the fixed lists, small SVG art, place names), imported and exported in Settings. A theme is data only: no scripts and no CSS; SVG art is rebuilt from allowed shapes, colours must be plain colour values, and a pack that breaks a rule is refused with a message.
 
-![Corporate, 1440x900](screenshots/035-corporate-1440x900.png)
 ![Retro Pixel, 1440x900](screenshots/035-retro-1440x900.png)
-![Durbar · Indian, 1440x900](screenshots/035-durbar-indian-1440x900.png)
-![Durbar · European, 1280x800](screenshots/035-durbar-european-1280x800.png)
-![Durbar · Japanese, 1280x800](screenshots/035-durbar-japanese-1280x800.png)
 
-**Limits.** Display fonts are your system's serif and monospace fonts (no font files are shipped), so the courts and Retro look a little different per OS; only Linux was looked at. Not checked on a real Copilot session. The Durbar word lists and the five looks wait for the owner's review.
+**Limits.** Display fonts are your system's serif and monospace fonts (no font files are shipped), so Retro looks a little different per OS; only Linux was looked at. Not checked on a real Copilot session.
 
 Tests: `test:theme` (packs, tokens, words, the sanitizer, UI styles, and a guard that `themes.css` never sets a size), `test:scenekits` (3600 scenes: every kit, status, mood and look) and `test:userthemes`. Screenshots: `scripts/shots-themes.js`.
 ### Status (main agents show their session title)

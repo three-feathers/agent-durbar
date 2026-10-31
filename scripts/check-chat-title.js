@@ -10,7 +10,7 @@
  *   2. a 480px panel: the title is cut (the row is really full) and nothing in the first row overlaps;
  *   3. (review on PR 796) a title far wider than the row (450 characters), wide and in a 480px panel: the title is cut and the buttons
  *      (`.actions`) stay on the title's row, inside the panel (spec 052 FR-095: the actions never move down).
- * It runs in the default theme, Retro and Corporate (CHAT_TITLE_THEMES=,retro,corporate; `window.THEME.setTheme`).
+ * It runs in the default theme, Retro (CHAT_TITLE_THEMES=,retro; `window.THEME.setTheme`).
  * A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
 const { helpers, jsLiteral } = require('./driver-helpers');
@@ -29,7 +29,7 @@ module.exports = async (ctx) => {
       if(Math.min(a.right,b.right)-Math.max(a.left,b.left)>0.5&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>0.5)over.push((kids[i].className||kids[i].id)+' x '+(kids[j].className||kids[j].id));}
     const act=top.querySelector('.actions'),ar=act&&R(act),pr=R(document.getElementById('panel'));
     return {idTop:Math.round(ir.top),actTop:ar?Math.round(ar.top):null,actRight:ar?Math.round(ar.right):null,panelRight:Math.round(pr.right),titleCut:cut(h),subCut:cut(sub),free:Math.round(stop-ir.right),w:Math.round(ir.width),ttl:(h.getAttribute('title')||''),text:h.textContent.length,over}})()`);
-  const THEMES = (process.env.CHAT_TITLE_THEMES || ',retro,corporate').split(',');
+  const THEMES = (process.env.CHAT_TITLE_THEMES || ',retro').split(',');
   for (const [w, h, theme] of [[1440, 900], [1280, 800]].flatMap(([a, b]) => THEMES.map((t) => [a, b, t]))) {
     const at = `${w}x${h}${theme ? ' ' + theme : ''}`;
     await H.load({ w, h, query: { simtitles: 'long' }, ready: 'fit' });

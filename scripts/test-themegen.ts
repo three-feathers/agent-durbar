@@ -11,7 +11,7 @@ assert.ok(Object.keys(clean).length > 100, 'all of Clean Office');
 const ctx = { clean, sanitizeArt: (s: string) => T._sanitizeSlot(s), taken: () => false };
 
 const light = {
-  name: 'Paper newsroom', ui: 'corporate', scene: 'office',
+  name: 'Paper newsroom', ui: 'clean', scene: 'office',
   tokens: { '--bg': '#eceff3', '--surface': '#fbfcfd', '--ink': '#1b2230', '--ink-2': '#3a4456', '--muted': '#5f6a7c', '--sage': '#3f7d6c', '--brand-bg': '#9A5B00', '--brand-mark': '#ffffff' },
   words: { 'place-library': 'Archive', 'place-web': 'Newswire', 'lobby-label': 'The newsroom floor' },
   art: { 'char-headwear': '<path d="M62 33h24l-3-7H65z" fill="#2b3344"/>', 'place-web': '<circle cx="10" cy="10" r="6"/>' },
@@ -159,11 +159,10 @@ assert.deepStrictEqual(firstJsonObject('{bad} then {"ok":true}'), { ok: true });
   assert.ok(CONTRAST_PAIRS.some(([a, b, m]) => a === '--muted' && b === '--surface' && m === 4.5));
   assert.ok(themeIssues({ '--surface': '#ffffff', '--muted': '#8a8f99' }, clean).some((i) => /^--muted \(#8a8f99\) on --surface/.test(i)));
   assert.ok(!themeIssues({ '--surface': '#ffffff', '--muted': '#5f6a7c' }, clean).some((i) => /^--muted /.test(i)));
-  // the top bar of retro/corporate is --ink under fixed light text: a light --ink there is an issue; clean is fine
+  // the top bar of retro is --ink under fixed light text: a light --ink there is an issue; clean is fine
   const darkTok = { '--bg': '#101010', '--surface': '#181818', '--ink': '#f0f0f0', '--raised': '#202020', '--card': '#202020', '--card-waiting': '#2a2410', '--card-error': '#2a1414', '--soft': '#1c1c1c', '--note': '#1c1c1c' };
   assert.ok(themeIssues(darkTok, clean, 'retro').some((i) => /^the top bar: with ui "retro" it is filled with --ink/.test(i)));
   assert.ok(!themeIssues(darkTok, clean, 'clean').some((i) => /^the top bar/.test(i)));
-  assert.ok(!themeIssues({ '--brand-bg': '#5a1a1a' }, clean, 'court-indian').some((i) => /^the top bar/.test(i)), 'a dark brand under gold text is fine');
   assert.ok(Math.abs(contrast('#000000', '#ffffff') - 21) < 0.01);
   assert.ok(Math.abs(contrast('#777', '#777777cc') - 1) < 1e-9, 'alpha ignored, short hex expanded');
 }
@@ -271,7 +270,7 @@ assert.match(buildRetryPrompt('a fox den', clean, 'no JSON'), /a fox den[\s\S]*Y
 {
   const p = buildThemePrompt('x', clean);
   for (const k of Object.keys(clean)) assert.strictEqual(p.split(new RegExp(`(?:^|\\s)${k}=`)).length - 1, 1, `${k} appears once with its value`);
-  assert.match(p, /Brand\. --brand-bg fills the lobby tile icons and the primary buttons in the UI styles "corporate", "retro", "court-\*"/);
+  assert.match(p, /Brand\. --brand-bg fills the lobby tile icons and the primary buttons in the UI style "retro"/);
   assert.match(p, /Room tints\./);
   assert.match(p, /--room-path the folder path in each room header, which sits on the room tints/);
   assert.match(p, /--raised buttons, chips and the lobby tiles/);
@@ -282,10 +281,10 @@ assert.match(buildRetryPrompt('a fox den', clean, 'no JSON'), /a fox den[\s\S]*Y
 {
   const dark = { '--bg': '#121417', '--surface': '#1b1e23', '--raised': '#23272d', '--tint-sage': '#1c2420', '--tint-blue': '#1c2127', '--tint-sand': '#25221c', '--tint-clay': '#261f1c', '--ink': '#eef1f5', '--muted': '#a9b0bb', '--room-path': '#a9b0bb', '--brand-mark': '#101010' };
   const ok = { ...dark, '--brand-bg': '#e0a84a' };
-  assert.deepStrictEqual(themeIssues(ok, clean, 'corporate').filter((i) => /--brand|--tint/.test(i)), [], 'a bright brand colour on a dark theme passes');
+  assert.deepStrictEqual(themeIssues(ok, clean, 'retro').filter((i) => /--brand|--tint/.test(i)), [], 'a bright brand colour on a dark theme passes');
   // a pastel brand colour on a light page: the lobby icons vanish (the audit's 1.2:1)
   const pastel = { '--bg': '#f7f6f3', '--raised': '#ffffff', '--brand-bg': '#e4ece6', '--brand-mark': '#1b2230' };
-  for (const ui of ['corporate', 'retro', 'court-indian', 'court-european', 'court-japanese']) {
+  for (const ui of ['retro']) {
     const iss = themeIssues(pastel, clean, ui);
     assert.ok(iss.some((i) => /^--brand-bg \(#e4ece6\) on --raised \(#ffffff\) has contrast 1\.2:1, needs 3:1/.test(i)), `${ui}: brand-bg on raised`);
     assert.ok(iss.some((i) => /^--brand-bg \(#e4ece6\) on --bg \(#f7f6f3\)/.test(i)), `${ui}: brand-bg on bg`);

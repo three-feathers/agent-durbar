@@ -188,7 +188,7 @@ module.exports = async (ctx) => {
   // every built-in theme, a dark user theme and Serious mode: shown, inside, clear, contrast
   await H.load({ w: 1280, h: 800 });
   await H.calm({ blur: true });
-  const themes = ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese'];
+  const themes = ['clean-office', 'retro'];
   for (const theme of themes) {
     await js(`window.THEME.setTheme(${jsLiteral(theme)})`);
     await ok(`window.THEME.current().id===${jsLiteral(theme)}`, theme + ' applied');

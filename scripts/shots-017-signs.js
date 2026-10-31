@@ -39,7 +39,7 @@ const { pageCheck } = require('./check-office-overlap.js');
 
 const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-017-signs-'));
 const SIZES = [[1440, 900], [1280, 800]];
-const THEMES = ['clean-office', 'corporate', 'durbar-european', 'durbar-indian', 'durbar-japanese', 'retro'];
+const THEMES = ['clean-office', 'retro'];
 /* the oracle: spec 017 FR-003's table, written out again here (not imported) so a wrong mapping in the app fails */
 const TABLE = {
   attention: { word: 'Error', short: 'Alert', icon: 'alert', open: true },

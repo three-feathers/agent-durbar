@@ -129,7 +129,7 @@ module.exports = async (ctx) => {
   const SEL = '#stage .room-head>.ren.ren-in';
   await H.load({ w: 1440, h: 900 });
   const themes = await js(`window.THEME.list().map(t=>t.id)`);
-  assert.ok(themes.length >= 6, 'the built-in themes are listed');
+  assert.ok(themes.length >= 2, 'the built-in themes are listed (Clean Office and Retro Pixel, spec 035 FR-017)');
   for (const theme of themes) for (const [w, h] of [[1440, 900], [1280, 800]]) {
     const tag = `${theme} ${w}x${h}`;
     await H.load({ w, h, focus: true }); // the page has to own the focus, or :focus and :focus-visible never match

@@ -63,3 +63,7 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 ### 2026-10-23: the fold moves after the tag (spec 008 FR-117..FR-120)
 
 - Where FR-009 and FR-014 say "release PR", read the release's doc-only *fold PR*, cut from the tag after the tag's workflow has written the release notes from that commit's fragments (spec 008 owns the release flow). The fold itself is unchanged; `changelog:build` gains `--stdout` (print only the new section, edit nothing) and `--previous <tag>` (refuse while the previous release has no section). No change to this spec's status.
+
+### 2026-10-31: `deprecated` (spec 021 FR-068)
+
+- **FR-017** `[IMPLEMENTED]` The fixed status words gain `deprecated`: removed with no direct replacement; the note says why and when. Built by spec 021 T053. Which specs change: spec 021 FR-068's PRs; see spec 035 FR-020, spec 040 FR-033, spec 017 FR-035.
