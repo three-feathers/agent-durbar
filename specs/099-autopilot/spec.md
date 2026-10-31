@@ -4,7 +4,7 @@
 group: 046
 title: Autopilot mode: a fourth safety mode above Allow all, per session and confirmed each time, only for agent apps that support it; the agent's questions are shown but not waited on, the app keeps going after each turn until the task is done, up to a continuation limit (default 5) and an optional spend cap; Stop ends it; plan approval may offer Approve and run on Autopilot (spec 066 delta)
 status: draft
-note: spec, plan, tasks; owner answers Q1-Q4; real probes T090, T093; review of PR 923 applied; owner ruling D13; schedules out of the first build; nothing built
+note: spec, plan, tasks; owner answers; probes T090, T093; D13 applied; schedules out; phase 1 (core, types, event guard) built, no adapter or UI
 -->
 
 **Feature Branch**: `099-autopilot` (spec). Code branches `099-pN-slug`, one per phase. It touches 003 (the permission modes), 002, 012
@@ -645,3 +645,10 @@ Each recommendation is the reviewer's (rubenlupi, review of PR #923 at `dfe6428e
     - `empty` and `reserved` goal text: not limits, the message would do something else (`/goal clear`, a bare `/goal`).
   - **Warnings, new**: more than 3 sessions on Autopilot at once, proposed (FR-072).
   - **Spec 044's new FRs** (FR-180..FR-184) hold no number. Stored `autopilot` refused and no Autopilot on a loop are held or open for the owners, not limits on money. The 10,000 character prompt limit is an older owner decision, not in these FRs, and is not changed.
+- **2026-10-31 (Phase 1 built, T010-T014; choices awaiting owner review, none is an owner decision)**: `src/adapters/autopilot.ts`, the types, `eventguard`, `scripts/test-autopilot.ts`. No adapter, IPC or UI; no descriptor reports `autopilot`. Where the spec was silent the choice below fails closed:
+  - `AgentInfo.autopilot.run` is `{continuation, startedAt}` as FR-002 has it (the plan said `n`; plan brought into line).
+  - **Goal text**: `empty` covers whitespace-only text and non-strings; `reserved` is `clear` after trimming and ignoring case (the CLI's handling of ` clear` or `Clear` is not probed, so both are refused). With no app named, Claude Code's rules apply; the over-4000 warning is Claude Code only. Only C0, DEL and C1 are collapsed; other invisible characters (U+2028, bidi marks) are not.
+  - **Event guard**: `n` may be up to `limit + 1` (the bound in the task), although `AutopilotRun` never emits above `limit`; a `reason` on any phase but `ended` is refused.
+  - **`AutopilotRun`**: `halt` is called for every end reason, `done` included (FR-041 clears after every end); a backstop time of 1-168 hours may be fractional.
+  - `isClaudeContinuation` reads `isSynthetic` on the top level of the stream message and refuses messages with an `agentId` or a `parent_tool_use_id`; the probe's exact placement of `isSynthetic` is in the PR body, not checked here (`[KNOWN GAP]`, T091).
+  - `[KNOWN GAP]`: a continuation that arrives while the first `halt` is still pending is ignored, not interrupted again; if that `halt` then fails, only the next continuation is interrupted, and FR-054's 10 second wait (T025) covers the rest.

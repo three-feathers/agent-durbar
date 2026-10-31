@@ -62,6 +62,8 @@ export interface AgentInfo {
   maxAiCredits?: number;
   /** Restored from a saved Allow all after a restart (spec 003 FR-026): shown as a small "restored" note until the mode is switched. */
   permRestored?: boolean;
+  /** Spec 099 FR-002: this session is on Autopilot (Allow all plus a goal loop). Main memory only: never saved, never restored (FR-005). */
+  autopilot?: { limit: number; cap?: number; hours?: number; run?: { continuation: number; startedAt: number } };
   /**
    * Spec 003 (2026-10-21): where the mode of a session that came back (restart or Previous sessions) was taken from, so the chat
    * can say it: `session` = the mode last chosen for this very session; `folder` = the folder's saved mode (nothing remembered for

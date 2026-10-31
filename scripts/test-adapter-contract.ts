@@ -52,7 +52,7 @@ export interface ContractReport {
 }
 
 const ID_RE = /^[a-z][a-z0-9-]{0,31}$/;
-const TYPES = new Set(['user', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'sandbox']); // spec 087: the OS sandbox state
+const TYPES = new Set(['user', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'sandbox', 'autopilot']); // spec 087; spec 099: the OS sandbox state
 const ALL_MODES: PermissionMode[] = ['read-only', 'ask', 'allow'];
 
 /** Waits (a few event-loop turns at most) for something that must already be on its way. */
@@ -141,6 +141,7 @@ export async function runContract(name: string, make: () => ContractTarget, hook
     assert.strictEqual(has('handoffSummary'), !!cap.handoff, M('C2', 'handoffSummary() <=> capabilities.handoff'));
     assert.strictEqual(has('generateText'), !!cap.oneShot, M('C2', 'generateText() <=> capabilities.oneShot'));
     assert.strictEqual(has('setRemote'), !!cap.remote, M('C2', 'setRemote() <=> capabilities.remote (spec 054 FR-001)'));
+    assert.strictEqual(has('setAutopilot'), !!cap.autopilot, M('C2', 'setAutopilot() <=> capabilities.autopilot (spec 099 FR-001)'));
     assert.strictEqual(has('renameSession'), !!cap.renameSession, M('C2', 'renameSession() <=> capabilities.renameSession (spec 059 FR-007)'));
     assert.strictEqual(has('deleteSession'), !!cap.deleteSession, M('C2', 'deleteSession() <=> capabilities.deleteSession (spec 006 FR-028)'));
     assert.strictEqual(has('sandboxHost'), !!cap.osSandbox, M('C2', 'sandboxHost() <=> capabilities.osSandbox (spec 087 FR-012)'));
@@ -362,7 +363,7 @@ const OMITTABLE: Record<OptionalMember, true> = {
 export const ALL_OPTIONAL = Object.keys(OMITTABLE) as OptionalMember[];
 /** Optional `AgentAdapter` members FakeAdapter does not implement (so it cannot omit them): fields, and methods no fake test needs yet. */
 const NOT_IN_FAKE = [
-  'debug', 'writeGuard', 'resolvePlan', 'answerQuestion', 'answerElicitation', 'listAgentProfiles', 'reloadAgentProfiles', 'selectAgentProfile', 'setRemote',
+  'debug', 'writeGuard', 'resolvePlan', 'answerQuestion', 'answerElicitation', 'listAgentProfiles', 'reloadAgentProfiles', 'selectAgentProfile', 'setRemote', 'setAutopilot',
   'authStatus', 'verifySignIn', 'accountInfo', 'refreshAuth', 'resumeIdOf', 'listSlashCommands', 'expandSlashCommand', 'readOrgPolicy',
   'continueWithoutSandbox', 'sandboxHost', // spec 087: real adapters only (C2 below)
 ];

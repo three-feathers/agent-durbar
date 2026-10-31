@@ -1,0 +1,1 @@
+- **Autopilot core, types and event guard** (spec 099 phase 1): the shared run counter (stop at limit + 1, end once, backstop, fail-closed guard), the goal text and end-reason helpers, the `autopilot` event and `autoAnswered` checks. Not reachable yet: no adapter reports it and there is no setting or button. Checked with `npm run test:autopilot` and mutation checks.

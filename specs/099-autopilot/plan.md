@@ -52,18 +52,19 @@ Autopilot on a schedule (FR-084) is out of the first build, pending the other tw
 - `AgentEvent` adds `{ type: 'autopilot'; phase: 'started' | 'continued' | 'ended'; runId: string; n: number; limit: number; reason?: AutopilotEnd; spend?: { unit; value } }`,
   with `AutopilotEnd = 'done' | 'cap' | 'limit' | 'no-progress' | 'blocked' | 'stopped' | 'error'`. `eventguard` validates it.
 - `question` events get `autoAnswered?: true`.
-- `AgentInfo.autopilot?: { limit; cap?; run?: { n; startedAt } }` lives in main memory only.
+- `AgentInfo.autopilot?: { limit; cap?; hours?; run?: { continuation; startedAt } }` (the spec's FR-002 name) lives in main memory only.
 
 ### The shared core (`src/adapters/autopilot.ts`, pure)
 
 - `AutopilotRun`: a small state machine with the counter, the limit, the end-once guard and the no-progress counter. It takes
   one injected `halt()` callback (each adapter writes its own FR-050 order) and is used by all three adapters, so the rules are written once.
   - The backstop (FR-021): a second counter fed by each adapter, and elapsed time from an injected clock. Both end the run with `error`. It is a safety bound against a changed app, not a money limit. Proposed values: 2 hours (a raisable default, D13), `100 × (limit + 1)`.
-  - The guard stays armed after a failed stop or clear, and interrupts any later continuation (FR-054).
+  - The guard stays armed after a failed stop or clear, and interrupts any later continuation (FR-054). Built in Phase 1: `halt(reason)` is called once at the end, for every reason (the adapter decides what a `done` clear means), and its rejection arms the guard; a later continuation calls `halt` again and is not counted; `clearFailed()` arms it for a clear the adapter ran itself, `confirmCleared()` disarms it. A continuation that arrives while the first `halt` is still pending is ignored (that `halt` is the interrupt).
+  - Values as built: `limitOrDefault` (none = 5; 0, 1001, 1.5, NaN, null and text throw), backstop time 1-168 hours (default 2, from an injected clock, `checkElapsed()` and `deadlineMs` for the adapter's one timer; reaching it ends the run), backstop turns `100 × (limit + 1)` (more than that ends the run; `backstopTurn()`), no progress after 2 unchanged (`noteProgress`), all ending with the reasons of FR-040.
 - `AUTOPILOT_ANSWER` and the end-reason words.
 - `goalText(text)`: replaces control characters other than newline with a space, and for Claude Code refuses exactly `clear`
   and empty text, returning the reason, and flags more than 4000 characters for a warning (D13, spec *Changes*).
-- `isClaudeContinuation(msg)`: a user message with `isSynthetic` whose text starts with `Stop hook feedback:`.
+- `isClaudeContinuation(msg)`: a main-stream user message with `isSynthetic === true` (a typed one never counts) whose text starts with `Stop hook feedback:`.
 - `codexGoalEnd(status)`: maps `complete` to done, `budgetLimited` and `usageLimited` to cap, `blocked` and `paused` to
   blocked, and `active` to nothing.
 
