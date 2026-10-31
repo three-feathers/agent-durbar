@@ -37,3 +37,4 @@
 - [x] T039 (2026-10-26, release triage, #770) README Safety model: trusted read-only MCP mark, what is stored (scheduled prompts), best-effort masking, plain-file sign-ins on Linux without a keyring (docs only)
 - [x] T040 Approval card line next to the session buttons: what "for this session" covers for a write (every file in the folder) and for "any arguments" (every simple command of that name, `git` also `git push`) (FR-108, FR-013). `scopeHint` in `src/shared/` (pure, tested), shown by `src/renderer/app.js`; README Safety model; changelog fragment.
 
+- [ ] T041 (issue #605) The agent apps' own reasons where an app reports one (FR-109..FR-112): Codex `item/autoApprovalReview/completed` and Copilot `permission.completed` (`assisted_approval`) give a quiet `allowedBy: app/classifier`; Claude Code reports none (OTel only); words fixed; fake tests, mutants; `real:` checks stay open.
