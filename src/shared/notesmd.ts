@@ -205,9 +205,12 @@ export function parseNotesMd(raw: string): NotesMdParse {
 
   // before the first marker: the header, `## ` headings as new notes, stray text
   let i = 0;
-  let head: { title?: string; line: number; body: string[] } | null = null;
+  // a section past `notesPerFolder` is only counted: its marker, title and text are never read (a hostile file at the cap stays cheap)
+  const full = (): boolean => sections.length >= NOTES_LIMITS.notesPerFolder;
+  let head: { title?: string; line: number; body: string[]; skip?: true } | null = null;
   const endHead = (): void => {
     if (!head) return;
+    if (head.skip) { overflow++; head = null; return; }
     push({ origin: 'heading', line: head.line, ...(head.title !== undefined ? { title: head.title } : {}), text: bodyText(head.body, true), done: false });
     head = null;
   };
@@ -216,8 +219,8 @@ export function parseNotesMd(raw: string): NotesMdParse {
     const l = lines[i];
     const inFence = fence !== null;
     fence = fenceStep(fence, l);
-    if (!inFence && isHeading(l)) { endHead(); head = { title: headingTitle(l), line: i + 1, body: [] }; continue; }
-    if (head) head.body.push(l);
+    if (!inFence && isHeading(l)) { endHead(); head = full() ? { line: i + 1, body: [], skip: true } : { title: headingTitle(l), line: i + 1, body: [] }; continue; }
+    if (head) { if (!head.skip) head.body.push(l); }
     else if (!isBlank(l) && !isHeaderLine(l)) strayText++;
   }
   endHead();
@@ -225,6 +228,11 @@ export function parseNotesMd(raw: string): NotesMdParse {
   // the marker sections
   while (i < lines.length) {
     const start = i;
+    if (full()) {
+      overflow++;
+      for (i++; i < lines.length && !isMarkerLine(lines[i]); i++) { /* skipped unread */ }
+      continue;
+    }
     const m = readMarker(lines[i++]);
     let title: string | undefined;
     if (i < lines.length && isHeading(lines[i])) {

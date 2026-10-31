@@ -36,7 +36,10 @@ export const NOTES_LIMITS = (() => {
    */
   const noteMdBytes = 3 * (textChars + titleChars) + Math.ceil(textChars / 17) + 1 + 256;
   const mdBytes = notesPerFolder * noteMdBytes + 1_024;
-  return { textChars, titleChars, notesPerFolder, tombstones, folderNameChars, inputChars, titleInputChars, ordMax, noteExtraBytes, tombstoneBytes, docExtraBytes, noteJsonBytes, storeBytes, noteMdBytes, mdBytes } as const;
+  /** FR-051: the most read of a worktree's or submodule's `.git` file and of its `commondir` file, and of `info/exclude` (files Durbar did not write). */
+  const gitFileBytes = 4_096;
+  const excludeBytes = 1_048_576;
+  return { textChars, titleChars, notesPerFolder, tombstones, folderNameChars, inputChars, titleInputChars, ordMax, noteExtraBytes, tombstoneBytes, docExtraBytes, noteJsonBytes, storeBytes, noteMdBytes, mdBytes, gitFileBytes, excludeBytes } as const;
 })();
 
 export type NoteFrom = 'agent' | 'user' | 'selection' | 'typed' | 'file';
@@ -378,5 +381,7 @@ export function orderForFolder(notes: readonly Note[], session?: string): Note[]
 
 /** What the notes calls answer (spec 083 FR-062): a refusal carries a short reason, and `stale` the note as saved. */
 export type NotesFail = { ok: false; code: 'stale' | 'cap' | 'missing' | 'invalid' | 'unreadable' | 'write'; error: string; current?: Note };
-export type NotesView = { ok: true; fingerprint: string; folderName: string; notes: Note[]; max: number; readOnly?: string; session?: string } | NotesFail;
+/** The project file's state while its switch is on (FR-053, FR-054): `error` blocks writing it (a conflict, a refused link, a failed write); `info` is a note for the screen (stray text, notes not imported). */
+export interface NotesFileState { error?: string; info?: string }
+export type NotesView = { ok: true; fingerprint: string; folderName: string; notes: Note[]; max: number; readOnly?: string; session?: string; file?: NotesFileState } | NotesFail;
 export type NotesWrote = { ok: true; fingerprint: string; note?: Note; existing?: boolean } | NotesFail;
