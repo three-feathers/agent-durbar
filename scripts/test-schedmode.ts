@@ -821,6 +821,7 @@ async function main(): Promise<void> {
     t.runs.end('a1');
     await t.tick();
     assert.strictEqual(await t.typed(), 'sent', 'free at once, while ensureLive still waits');
+    assert.strictEqual(t.h.sch.doc.schedules[0].last?.outcome, 'skipped-busy', 'its wait ended too, though ensureLive never answered');
     open();
     await t.tick();
     assert.deepStrictEqual([t.sets, t.sentOut, t.announced], [[], [], []], 'no mode set, no send');
@@ -978,6 +979,8 @@ async function main(): Promise<void> {
     // re-review 11: overdue at the same start, later due times and later launches keep saying why, and choosing clears it
     const od = load({ next: T0 - 5 * MIN, modeSeal: undefined });
     assert.deepStrictEqual([od.sch.doc.schedules[0].last?.outcome, od.sch.doc.schedules[0].last?.reason, od.sch.doc.schedules[0].modeLost], ['skipped-mode', 'no-seal', 'no-seal'], 'overdue does not overwrite it');
+    const once = load({ every: undefined, next: undefined, at: T0 - 5 * MIN, modeSeal: undefined });
+    assert.deepStrictEqual([once.sch.doc.schedules[0].last?.reason, once.sch.doc.schedules[0].done], ['no-seal', true], 'a once schedule\'s overdue time neither');
     await od.advance(30 * MIN);
     assert.strictEqual(od.sch.doc.schedules[0].last?.reason, 'no-seal', 'nor does a due time');
     const od2 = harness(parseSchedules(JSON.stringify(od.sch.doc), od.now));
