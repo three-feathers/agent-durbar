@@ -4,7 +4,7 @@
 group: 046
 title: Autopilot mode: a fourth safety mode above Allow all, per session and confirmed each time, only for agent apps that support it; the agent's questions are shown but not waited on, the app keeps going after each turn until the task is done, up to a continuation limit (default 5) and an optional spend cap; Stop ends it; plan approval may offer Approve and run on Autopilot (spec 066 delta)
 status: draft
-note: spec, plan, tasks; owner answers; probes T090, T093; D13 applied; schedules out; phases 1 and 2 (core, adapters on fakes) built; no IPC or UI, unreachable
+note: spec, plan, tasks; owner answers; probes T090, T093; D13 applied; schedules out; phases 1 to 3 (core, adapters, main and window on fakes and the simulator) built; AUTOPILOT_WIRED false, so not reachable in any build
 -->
 
 **Feature Branch**: `099-autopilot` (spec). Code branches `099-pN-slug`, one per phase. It touches 003 (the permission modes), 002, 012
@@ -15,7 +15,7 @@ organization policy), 018 (the mode switch) and 010 (the simulator).
 
 **Status**: Draft. The owner decided the shape (D1-D7), answered Q1-Q4 (D8-D11 below) Q-D (D12) and, in one ruling, Q-A, Q-B and Q-C (D13; Q-A still pending Paco and Ruben). Real probes ran on Claude Code, Codex
 and, for Copilot, one autopilot turn capped at 30 AI credits (T090), then longer runs on all three apps with a question,
-several continuations and Stop at the limit (T093, *Evidence*). Phases 1 and 2 (the core, the types, the event guard, the adapters on fakes) are built; no IPC or window yet, so nothing can turn it on.
+several continuations and Stop at the limit (T093, *Evidence*). Phases 1 to 3 (the core, the types, the event guard, the adapters, main and the window, on fakes and the simulator) are built, behind `AUTOPILOT_WIRED`, which stays false: nothing a person runs can turn it on (*Changes*, Phase 3 gate).
 
 **Input**: Owner (Vikram, Telegram DM, 2026-10-31 10:43 UTC): "I go with your suggestions except spend cap as mandatory, have it
 optional", answering the coordinator's proposal for an Autopilot mode.
@@ -667,3 +667,16 @@ Each recommendation is the reviewer's (rubenlupi, review of PR #923 at `dfe6428e
   - **Codex shapes** are `read:` from the schema Codex 0.164.0 generates locally (`codex app-server generate-json-schema`): `thread/goal/updated {threadId, turnId?, goal}`, `thread/goal/cleared {threadId}`, `thread/goal/set` answers `{goal}`, `thread/goal/clear` answers `{cleared}`, `origin` is `user` or `automatic` on the requests. The notifications carry **no `origin`**, so FR-006's "not from Durbar" is read as "no run of Durbar's". Not seen on a real app with these exact fields but `status` and `tokensUsed` (T093).
   - `[KNOWN GAP]` **Whether an Autopilot cap stays in Copilot's stored session** after End session, a quit or a sign-in refresh in the middle of a run: those paths send no restore, and nothing shows what a later resume without `sessionLimits` gets. If it stays, it is the tighter cap, the safe side. T094 checks it.
   - `[KNOWN GAP]`: all of it on fakes. Not run: any real session, FR-054's 10 seconds on a real app, Windows and macOS process kills.
+- **2026-10-31 (Phase 3 gate, Vikram's coordinating agent: Autopilot reaches nobody until the review of #923 and the owners are through)**: **`AUTOPILOT_WIRED` stays false in the default build; T030's flip is not done.** All of Phase 3 is built behind it.
+  - **In the default build Autopilot is not reachable**: the mode-menu item is absent, `agents:setAutopilot` refuses before it looks at anything else, the window's list of agent apps carries no `autopilot` capability, the simulator offers none, and nothing a person sees changes. A test pins this (`test-autopilot-reach.ts`, `test-autopilot-ipc.ts`).
+  - **The test-only switch** is `autopilotTestGate` (`src/main/devhooks.ts`): not packaged, and `DURBAR_AUTOPILOT_TEST=1`, and a simulator or driver run (`DURBAR_SIM` or `DURBAR_DRIVER`). It is stricter than `hooksEnabled`: `DURBAR_DEV=1` does not open it, because `app.isPackaged` alone decides, so a packaged app cannot enable it by any variable. It also leaves the adapters' `AUTOPILOT_WIRED` branches alone (FR-006, FR-053 keep acting only where `setAutopilot` ran).
+  - **The flip** is one commit: `AUTOPILOT_WIRED = true` in `autopilotHost.ts`, the pin `AUTOPILOT_SHIPPED` in `test-autopilot-reach.ts`, and T038's FR-090 README text with T037's `docs/screenshots/099-autopilot-*`. It waits for the review of #923 and the owners; nobody flips it from this entry.
+  - **Choices where no owner decision exists, each failing closed, awaiting owner review** (none is an owner decision):
+    - **T038** README and T037 screenshots: until the flip the README says only that Autopilot is not available yet, and no picture of it is committed or linked. FR-090's wording stays in the spec for the flip.
+    - **T098** The Stop-only path is built as main's `remoteStop` (a request is exactly `{kind: 'stop'}`, anything else refused), and **no transport reaches it**: no channel, no listener. Who may call it, and how they are told apart, needs its own design and owners. `[KNOWN GAP]`: until then the window is the only Stop.
+    - **FR-070** a policy Durbar could not read refuses Autopilot (no answer, a failed read, or a `doubt` on Allow all), where spec 076 keeps `doubt` as advice for Allow all itself. The advice line on Claude's `disableAllHooks` and `allowManagedHooksOnly` is not built, because spec 076's reader has no such key: `[KNOWN GAP]`.
+    - **FR-002** requests already waiting when a session goes to Autopilot from Ask first are not approved: the page's *Also approve* box belongs to Allow all, and D12's dialog has no box. They stay waiting and the chat says so.
+    - **FR-023** a fingerprint that cannot be read counts as progress (no end): it is a heuristic, and the limit and the backstop still bound the run.
+    - **FR-007** `setRemote` is refused on Autopilot by its own check, and the Allow all and Autopilot checks are made again after its native dialog and after the app's answer; the second turns remote control back off. Allow all's own rule (spec 054 FR-011) gets the recheck too: a person cannot reach that race, since the dialog covers the window.
+    - **Stored `autopilot` on a schedule** (T032): kept as a marker when read, so the run log says why (`skipped-autopilot`) instead of the field being dropped and the prompt running in the session's mode. A schedule due for a session on Autopilot gets the same outcome.
+    - **Not in the Claude replay** (T030): the replay drops exactly `/goal clear`, once wired or where `setAutopilot` ran. A person's own typed `/goal clear` looks the same in the transcript, so in the default build the replay is unchanged. `/goal <text>` stays in the replay: it is what the person wrote, with the word that sent it.

@@ -69,7 +69,7 @@ Autopilot on a schedule (FR-084) is out of the first build, pending the other tw
 
 ### Adapters
 
-Written once in `src/adapters/autopilotHost.ts` (Phase 2): the settings and run of one session, the 10 second wait, the clock sample, S3 and the fixed chat lines. `AUTOPILOT_WIRED` stays false until T030 (spec *Changes*).
+Written once in `src/adapters/autopilotHost.ts` (Phase 2): the settings and run of one session, the 10 second wait, the clock sample, S3 and the fixed chat lines. `AUTOPILOT_WIRED` stays false after T030 too, until the owners are through (spec *Changes*, Phase 3 gate); main's `agents:setAutopilot` refuses while it is, and only the test-only `autopilotTestGate` opens it, never in a packaged build.
 
 - **Copilot** (`copilot.ts`):
   - `setAutopilot` sets `live.autopilot` and calls `mode.set autopilot` or `interactive`;
