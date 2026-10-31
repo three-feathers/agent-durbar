@@ -297,6 +297,53 @@ module.exports = async (ctx) => {
   await need(`!document.querySelector(${jsLiteral(DLG)})&&document.activeElement.id==='chMake'`, 'form Cancel: the focus is back on the button');
   console.log('[charmaker] no orphan ok');
 
+  /* ---------- a security prompt from the background waits for the maker and never vanishes (spec 061 with spec 096) ---------- */
+  await load({ simfoldersetup: '1', simfast: undefined });
+  await need(`!!document.querySelector('.dlg.fs')`, 'setup: the prompt of the first folder opens by itself');
+  await js(`document.querySelector('.dlg.fs').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));0`);
+  await need(`!document.querySelector('.dlg.fs')`, 'setup: dismissed for now');
+  const askSetup = () => js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>!x.parent&&x.info);window.DurbarFolderSetup.openFor(a.info);})();0`);
+  const makeBefore = (await calls()).started;
+  // over the busy line: the try goes on, its Cancel stays, no prompt covers it
+  await openMaker();
+  await describe('a person');
+  await press('Make the character');
+  await need(`!!document.getElementById('cmBusy')`, 'setup: the busy line');
+  await askSetup();
+  await ctx.sleep(500);
+  assert.ok(await js(`!!document.getElementById('cmBusy')&&!document.querySelector('.dlg.fs')`), 'setup: the prompt waits, the busy line stays');
+  await preview();
+  assert.strictEqual((await calls()).started, makeBefore + 1, 'setup: the try was not cancelled');
+  // over the preview: the picture stays and can be saved; the name typed stays
+  await js(`(()=>{const n=document.getElementById('cmName');n.value='Kept';n.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+  await ctx.sleep(500);
+  assert.ok(await js(`document.getElementById('cmName').value==='Kept'&&!document.querySelector('.dlg.fs')`), 'setup: the preview stays, with its name');
+  await press('Save to My characters');
+  await need(`!!document.querySelector('.dlg.fs')`, 'setup: when the flow ends the prompt is shown, unread nothing');
+  assert.strictEqual((await list()).filter((c) => c.name === 'Kept').length, 1, 'setup: the picture was saved');
+  // a dialog forced over the prompt: the prompt comes back when it closes
+  await js(`void window.DurbarScreens.dialog({title:'Other',html:'',buttons:[{label:'Close',value:null}]});0`);
+  await need(`!document.querySelector('.dlg.fs')&&!!document.getElementById('scrDlgT')&&document.getElementById('scrDlgT').textContent==='Other'`, 'setup: replaced for a moment');
+  await press('Close');
+  await need(`!!document.querySelector('.dlg.fs')`, 'setup: a replaced prompt comes back');
+  await js(`document.querySelector('.dlg.fs').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));0`);
+  await need(`!document.querySelector('.dlg.fs')`, 'setup: closed');
+  // `dialog` over an open askDialog: only the top one takes the keys
+  await need(`!!document.querySelector('#chmList [data-chact="delete"]')`, 'over: a row');
+  await js(`document.querySelector('#chmList [data-chact="delete"]').click();0`);
+  await need(`!!document.getElementById('modeDlg')`, 'over: the lower dialog');
+  await js(`void window.DurbarScreens.dialog({title:'Upper',html:'',buttons:[{label:'One',value:null},{label:'Two',value:'two',cls:'primary'}]});0`);
+  await need(`document.getElementById('scrDlgT')&&document.activeElement.textContent==='Two'`, 'over: the upper dialog has the focus');
+  ctx.win.show(); ctx.win.focus(); ctx.win.webContents.focus();
+  await H.key('Tab');
+  await need(`document.activeElement.textContent==='One'`, 'over: Tab moves in the upper dialog, not back to the lower one', 2000);
+  await H.key('Escape');
+  await need(`!document.getElementById('scrDlgT')`, 'over: Escape closes the upper dialog', 2000);
+  assert.ok(await js(`!!document.getElementById('modeDlg')`), 'over: and not the lower one');
+  await press('Cancel');
+  await need(`!document.getElementById('modeDlg')`, 'over: the lower dialog closes on its own Cancel');
+  console.log('[charmaker] background prompts ok');
+
   /* ---------- every frame unreadable: said plainly ---------- */
   await load({ simmine: '2', simminebad: 'all' });
   await openSettings();

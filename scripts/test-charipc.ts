@@ -14,9 +14,8 @@ import * as ts from 'typescript';
 import { CHARACTERS_WARN_AT, cleanCharacterName, parseEncoderReply, pinDecision } from '../src/shared/charrules';
 import type { EncoderResult } from '../src/shared/charrules';
 import { MARK_CLOSE, MARK_OPEN, SHEET_NAME } from '../src/shared/chargen';
-import { COPILOT_DESCRIPTOR } from '../src/adapters/copilot';
-import { CLAUDE_DESCRIPTOR } from '../src/adapters/claude';
-import { CODEX_DESCRIPTOR } from '../src/adapters/codex';
+import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
+import { offeredDescriptors } from '../src/adapters/experimental';
 
 type Handler = (e: unknown, ...a: unknown[]) => unknown;
 type Rec = Record<string, unknown>;
@@ -600,6 +599,8 @@ async function main(): Promise<void> {
 process.exitCode = 1;
 /* ---- T041a, FR-034: the window's login gate. It fails closed; `check-charmaker` runs it in the page. ---- */
 async function loginGateTests(): Promise<void> {
+  /* what main registers: the same lists, with every optional app on */
+  const ALL_DESCRIPTORS = [...PRODUCTION_DESCRIPTORS, ...offeredDescriptors({}), ...offeredDescriptors({ DURBAR_CLAUDE_TRANSPORT: 'sdk' })];
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const CM = require(path.join(ROOT, 'src', 'renderer', 'charmaker.js')) as {
     loginGate(k: unknown): string; readLoginKind(b: unknown, id: string): Promise<string>; availability(k: unknown): { state: string; kinds: unknown[] };
@@ -675,7 +676,7 @@ async function loginGateTests(): Promise<void> {
   // outside the simulator main refuses whatever the window sends, until T030a gates it: no real adapter may switch imageGen on before that (the descriptors' and instances' real values, not their source text)
   const charIpc = fs.readFileSync(path.join(ROOT, 'src', 'main', 'ipc', 'characters.ts'), 'utf8');
   if (!/FR-034 gate in main/.test(charIpc)) {
-    for (const d of [COPILOT_DESCRIPTOR, CLAUDE_DESCRIPTOR, CODEX_DESCRIPTOR]) {
+    for (const d of ALL_DESCRIPTORS) {
       assert.notStrictEqual(d.capabilities.imageGen, true, `${d.id}: T030a before T030: no adapter sets imageGen until main enforces FR-034`);
       const ad = d.create();
       assert.notStrictEqual(ad.capabilities?.imageGen, true, `${d.id}: and no instance does`);

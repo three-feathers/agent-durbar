@@ -110,10 +110,12 @@
   async function openMaker() {
     if (flowOpen) return;
     flowOpen = true;
+    const release = S.holdDialogs(); /* a background prompt waits for the end of the flow, so it can never cancel a try or drop a picture */
     try { await makerFlow(); } finally {
       flowOpen = false;
       const b = document.getElementById('chMake');
       if (b && !document.querySelector('.dlg-ov') && !(document.activeElement && document.activeElement.closest && document.activeElement.closest('#chManage'))) S.focusIn(b); /* Manage has put it on a row */
+      release();
     }
   }
   /* FR-040, FR-041: the whole flow; the description lives in this function's variable and the dialog's box */

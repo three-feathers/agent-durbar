@@ -389,6 +389,7 @@ Q1-Q5 are answered (*Clarifications*, owner decisions, 2026-10-31). Their text a
 ### 2026-10-31: review of phase 4, fixes
 
 - **Modal dialogs** (`dialog` in `screens.js`, used by FR-034's question and the busy line): no focus trap let Tab reach the page behind, and a second open deleted the busy line, leaving a running try with no Cancel. Now: Tab wraps, stolen focus returns, Escape works with the focus anywhere, focus goes back to what opened it; a replaced dialog is dismissed, so its try is cancelled; the maker runs one flow at a time. This applies to every caller of `dialog`.
+- **A background prompt** (a folder's setup, spec 061) waits until no dialog or maker flow is open (`dialogsFree`, `holdDialogs`), so it cannot cancel a try or drop a picture; replaced by a dialog, it comes back, since it asks only once per folder. `DurbarDialog` now acts only when it is the top dialog.
 - **`{ confirmed }`** never reached main: the preload dropped it. It now passes it (`test:charipc` runs the real preload's source). Main still does not read it (T030a).
 - **Helpers** kept a deleted character; `syncCrew` drops it.
 - **`blob:` URLs with a quote** had no test; added, and `scenekits` escapes the URL as a second line.

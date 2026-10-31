@@ -46,7 +46,7 @@
   function dialog({title,html,buttons,wide,size,cls,validate,onOpen}){
     return new Promise(resolve=>{
       /* spec 096: a dialog replaced by another is dismissed, so whoever waits on it hears (a running try is cancelled, never left with no Cancel) */
-      const old=document.getElementById('scrDlg');if(old){if(old._close)old._close();else old.remove();}
+      const old=document.getElementById('scrDlg');if(old){if(old._onReplaced)old._onReplaced();if(old._close)old._close();else old.remove();}
       const back=document.activeElement; /* focus goes back here when it closes (spec 096 review) */
       const d=document.createElement('div');d.id='scrDlg';d.className='dlg-ov';
       d.innerHTML=`<div class="dlg${wide?' wide':''}${size==='m'||size==='l'?' '+size:''}${cls?' '+cls:''}" role="dialog" aria-modal="true" aria-labelledby="scrDlgT"><h3 id="scrDlgT"></h3><div class="dbody">${html||''}</div><p class="derr" id="scrDlgErr" role="alert" hidden></p><div class="dbtn"></div></div>`;
@@ -79,6 +79,13 @@
       d._close=()=>done(null);
     });
   }
+  /* spec 096 review: a prompt from the background (a folder's setup) must neither replace what the person is doing nor vanish: it waits. A flow of several dialogs holds them while it runs. */
+  let dialogHolds=0;const holdWatchers=new Set();
+  const dialogsAreFree=()=>!dialogHolds&&!document.querySelector('.dlg-ov');
+  function holdDialogs(){dialogHolds++;let on=true;return()=>{if(!on)return;on=false;dialogHolds--;holdWatchers.forEach(f=>f());};}
+  function dialogsFree(){return new Promise(res=>{if(dialogsAreFree())return res();
+    const tick=()=>{if(dialogsAreFree()){ob.disconnect();holdWatchers.delete(tick);res();}};
+    const ob=new MutationObserver(tick);ob.observe(document.body,{childList:true});holdWatchers.add(tick);});}
   const sw=(on,label,attrs)=>`<button class="swt${on?' on':''}" type="button" role="switch" aria-checked="${on?'true':'false'}" aria-label="${esc(label)}" ${attrs||''}><i></i></button>`;
 
   /* ---------------- Settings: Profiles (custom agents), spec 043 FR-010/FR-014 ---------------- */
@@ -467,7 +474,7 @@
       X.applyCharacters(b.dataset.characters);
       $('chList').querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
     });
-    if($('chMake')&&window.DurbarCharMaker)window.DurbarCharMaker.paint({X,dialog,focusIn,scrollTo:scrollInBody,maker:window.DurbarScreens.maker,repaintChoices:()=>{const l=$('chList');if(l)l.innerHTML=charItems();}}); /* spec 096 T041, T045 */
+    if($('chMake')&&window.DurbarCharMaker)window.DurbarCharMaker.paint({X,dialog,holdDialogs,focusIn,scrollTo:scrollInBody,maker:window.DurbarScreens.maker,repaintChoices:()=>{const l=$('chList');if(l)l.innerHTML=charItems();}}); /* spec 096 T041, T045 */
     if($('thImport'))$('thImport').onclick=async()=>{
       if(!X.bridge.importTheme)return;
       const res=await X.bridge.importTheme().catch(()=>null);
@@ -1761,6 +1768,7 @@
     liveEvent, /* spec 058 FR-083: a chat stopped or is ready again */
     placeDialog,
     dialog, /* spec 061: the folder-setup list uses the same modal; spec 096: a replaced one is dismissed */
+    dialogsFree,
     close,isOpen,
     /* live refresh while the Tools view is open (called when events arrive) */
     refresh:()=>{if(cur&&cur.kind==='tools'&&!document.getElementById('scrDlg'))paintTools();},
