@@ -1,0 +1,1 @@
+- **Notes: *Keep it out of commits* now works on macOS for folder names with accents** (spec 083): a folder path in decomposed Unicode form got an exclude line git did not match, so `git add -A` could stage `.durbar/notes.md`. On macOS the line is now written for each form of the name. Checked with a real `git add -A` on APFS, with git's `core.precomposeunicode` on and off.

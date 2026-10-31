@@ -10,7 +10,7 @@
  * - Writes go to a temp file in `.durbar` opened `O_CREAT | O_EXCL | O_WRONLY` (and `O_NOFOLLOW`), 0600 on POSIX; right before the
  *   rename everything is checked again, including that `notes.md` still has the hash this cycle started from (an outside edit is
  *   imported first, never overwritten). On Windows a refused rename is tried once more after 200 ms.
- * - FR-051: no process is ever started (no git), no `.gitignore` or other committed file is written; `addExclude` appends one
+ * - FR-051: no process is ever started (no git), no `.gitignore` or other committed file is written; `addExclude` appends one (on macOS, one per Unicode form of the path)
  *   escaped, anchored line to a real git directory's `info/exclude` and never creates `info/`.
  *
  * Nothing here logs; messages carry a short reason, never a path or a note's text. The caller (`NotesOps`) decides whether the switch
@@ -487,6 +487,8 @@ export class NotesFile {
     const segments = rel ? rel.split(path.sep) : [];
     if (segments.some((s) => /[\u0000-\u001f\u007f]/.test(s))) return { ok: false, error: EXCLUDE_UNSAFE_NAME };
     const line = excludeLine(segments);
+    // macOS merges NFC and NFD names, and git may compare either form (core.precomposeunicode), so every form gets its line (spec Changes)
+    const lines = this.platform === 'darwin' ? [...new Set([line, excludeLine(segments.map((s) => s.normalize('NFC'))), excludeLine(segments.map((s) => s.normalize('NFD')))])] : [line];
 
     let target: string;
     if (dotGit.isSymbolicLink()) return fail('.git is a link');
@@ -528,14 +530,16 @@ export class NotesFile {
       const r = readCapped(this.fs, this.k, exclude, NOTES_LIMITS.excludeBytes);
       if (!r.ok) return fail(`info/exclude ${READ_WHY[r.code]}`);
       existing = r.buf.toString('utf8');
-      if (existing.split(/\r?\n/).includes(line)) return { ok: true, added: false, line };
     }
+    const have = existing.split(/\r?\n/);
+    const missing = lines.filter((l) => !have.includes(l));
+    if (!missing.length) return { ok: true, added: false, line };
     let fd: number | undefined;
     try {
       fd = this.fs.openSync(exclude, this.k.O_WRONLY | this.k.O_APPEND | this.k.O_CREAT | (this.k.O_NOFOLLOW ?? 0), 0o600);
       const st2 = this.fs.fstatSync(fd);
       if (!st2.isFile() || st2.nlink > 1) return fail('info/exclude is not a regular file');
-      const add = Buffer.from(`${existing && !existing.endsWith('\n') ? '\n' : ''}${line}\n`, 'utf8');
+      const add = Buffer.from(`${existing && !existing.endsWith('\n') ? '\n' : ''}${missing.join('\n')}\n`, 'utf8');
       let off = 0;
       while (off < add.length) off += this.fs.writeSync(fd, add, off, add.length - off);
       return { ok: true, added: true, line };

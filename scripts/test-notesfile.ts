@@ -2,7 +2,7 @@
  * Spec 083 T041 (FR-050..FR-054, issue 699): the `.durbar/notes.md` mirror in main (`src/main/notesfile.ts`), its import into the
  * store and the switch gate in `NotesOps`. `npm run test:notesfile`. Real temp folders under the OS temp folder and a counting fake
  * `fs` that can swap files between two checks; the FIFO cases run in a child process with a time limit, so a blocking open fails
- * this suite instead of hanging it. No Electron, no git process, no credits. Fake secrets are built at run time (push protection).
+ * this suite instead of hanging it. No Electron, no credits; the module starts no git process (one test checks its lines with real `git add -A`). Fake secrets are built at run time (push protection).
  */
 import * as assert from 'assert';
 import * as nodeFs from 'fs';
@@ -1066,6 +1066,64 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(new NotesFile().addExclude(path.join(repo, bad)), { ok: false, error: EXCLUDE_UNSAFE_NAME }, JSON.stringify(bad));
       assert.ok(!nodeFs.existsSync(path.join(repo, '.git', 'info', 'exclude')), 'nothing appended');
     }
+  });
+
+  await test('FR-051 on macOS: the file stays out of a real git add -A whichever Unicode form the path and git use (spec Changes)', () => {
+    const NFC = 'caf\u00e9', NFD = 'cafe\u0301';
+    const git = (cwd: string, ...a: string[]): string => execFileSync('git', a, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    try { git(root, '--version'); } catch { return skip('no git here'); }
+    const excl = (repo: string): string[] => nodeFs.readFileSync(path.join(repo, '.git', 'info', 'exclude'), 'utf8').split('\n').filter((l) => l.includes('.durbar'));
+    for (const disk of [NFC, NFD]) for (const precompose of ['true', 'false']) {
+      const probe = fresh('probe');
+      nodeFs.mkdirSync(path.join(probe, disk));
+      const merged = nodeFs.existsSync(path.join(probe, disk === NFC ? NFD : NFC));
+      for (const given of merged ? [NFC, NFD] : [disk]) {
+        const tag = `disk ${disk === NFC ? 'NFC' : 'NFD'}, given ${given === NFC ? 'NFC' : 'NFD'}, precompose ${precompose}`;
+        const repo = fresh('repo');
+        git(repo, 'init', '-q');
+        git(repo, 'config', 'core.precomposeunicode', precompose);
+        nodeFs.mkdirSync(path.join(repo, disk, 'sub'), { recursive: true });
+        nodeFs.writeFileSync(path.join(repo, disk, 'sub', 'keep.txt'), 'k');
+        const folder = path.join(repo, given, 'sub');
+        const res = must(new NotesFile().addExclude(folder));
+        assert.strictEqual(res.added, true, tag);
+        nodeFs.mkdirSync(path.join(folder, '.durbar'));
+        nodeFs.writeFileSync(md(folder), 'private');
+        git(repo, 'add', '-A');
+        const staged = git(repo, 'diff', '--cached', '--name-only', '-z').split('\0').filter(Boolean);
+        assert.strictEqual(staged.length, 1, `${tag}: the other file is staged, proving add -A ran (${JSON.stringify(staged)})`);
+        assert.ok(!staged.some((f) => f.includes('.durbar')), `${tag}: notes.md is not staged (${JSON.stringify(staged)})`);
+        const before = excl(repo);
+        assert.strictEqual(must(new NotesFile().addExclude(folder)).added, false, `${tag}: a second call adds nothing`);
+        assert.deepStrictEqual(excl(repo), before, `${tag}: no line twice`);
+      }
+    }
+    // the lines, on any machine (injected platform; the name need not exist in the other form)
+    const repo = fresh('repo');
+    gitDir(path.join(repo, '.git'));
+    nodeFs.mkdirSync(path.join(repo, NFD));
+    const res = must(new NotesFile({ platform: 'darwin' }).addExclude(path.join(repo, NFD)));
+    assert.strictEqual(res.line, `/${NFD}/.durbar/`, 'the answer keeps the line as given');
+    assert.deepStrictEqual(excl(repo).sort(), [`/${NFC}/.durbar/`, `/${NFD}/.durbar/`].sort(), 'both forms on macOS');
+    // an older clone that has only the NFD line gets the other one
+    const old = fresh('repo');
+    gitDir(path.join(old, '.git'));
+    nodeFs.mkdirSync(path.join(old, NFD));
+    nodeFs.writeFileSync(path.join(old, '.git', 'info', 'exclude'), `/${NFD}/.durbar/\n`);
+    assert.strictEqual(must(new NotesFile({ platform: 'darwin' }).addExclude(path.join(old, NFD))).added, true, 'the missing form is added');
+    assert.deepStrictEqual(excl(old).sort(), [`/${NFC}/.durbar/`, `/${NFD}/.durbar/`].sort());
+    for (const platform of ['linux', 'win32']) {
+      const r = fresh('repo');
+      gitDir(path.join(r, '.git'));
+      nodeFs.mkdirSync(path.join(r, NFD));
+      must(new NotesFile({ platform, uid: () => undefined }).addExclude(path.join(r, NFD)));
+      assert.deepStrictEqual(excl(r), [`/${NFD}/.durbar/`], `${platform}: one line, as given`);
+    }
+    const plain = fresh('repo');
+    gitDir(path.join(plain, '.git'));
+    nodeFs.mkdirSync(path.join(plain, 'ascii'));
+    must(new NotesFile({ platform: 'darwin' }).addExclude(path.join(plain, 'ascii')));
+    assert.deepStrictEqual(excl(plain), ['/ascii/.durbar/'], 'one form: one line');
   });
 
   await test('FR-054: stray text before the first note is reported once as info', async () => {
