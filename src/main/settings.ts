@@ -123,6 +123,22 @@ export class SettingsStore {
     return v;
   }
 
+  /** Spec 001 FR-192: *Still highlights (no motion)*, off by default. */
+  get stillHighlights(): boolean {
+    return this.s.stillHighlights === true;
+  }
+
+  /** Only a real boolean changes it; the default (off) is not written. Returns the value now in force. */
+  setStillHighlights(v: unknown): boolean {
+    if (typeof v !== 'boolean') return this.stillHighlights;
+    const next: AppSettings = { ...this.s };
+    if (v) next.stillHighlights = true;
+    else delete next.stillHighlights;
+    this.s = next;
+    this.save();
+    return v;
+  }
+
   /** Serious mode (spec 034): off by default. */
   get seriousMode(): boolean {
     return this.s.seriousMode === true;

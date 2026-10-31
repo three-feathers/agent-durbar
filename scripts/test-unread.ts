@@ -110,7 +110,7 @@ ok(/e\.key==='F10'&&e\.shiftKey\)\|\|e\.key==='ContextMenu'\)\)return;\s*const d
 ok(/\.unread-mark\{[^}]*font-size:11px/.test(css), 'the badge text is 11px (never under 10.5px)');
 ok(/\.unread-mark i\{/.test(css) && /\.desk\.is-waiting::after[^{]*\{[^}]*box-shadow:[^}]*var\(--hl\)/.test(css) && /--hl:var\(--desk-new\)/.test(css) && /--hl:var\(--desk-needs\)/.test(css) && !/\.desk[^{]*\{outline:\d/.test(css), 'a dot and a glow (no outline) besides the colour');
 ok(/@media \(prefers-reduced-motion:no-preference\)\{\.unread-mark\.fresh\{animation:unread-pulse/.test(css), 'the pulse only when motion is allowed');
-ok(/const unreadFresh=a=>!REDUCED&&!reducedMotion\(\)&&/.test(app), 'and the page does not add the pulse class under reduced motion');
+ok(/const unreadFresh=a=>!REDUCED&&!STILL_HL&&!reducedMotion\(\)&&/.test(app), 'and the page does not add the pulse class under reduced motion or Still highlights (FR-192)');
 ok(/@media \(prefers-reduced-motion:no-preference\)\{\s*\.desk\.is-waiting \.pp,[^@]*hl-enter[^@]*hl-glow/.test(css) && !/^\.desk[^{]*\{[^}]*animation:hl-/m.test(css) && /\.pp\{transform-box:view-box;transform-origin/.test(css) && !/\.desk(\.[a-z-]+)*\{[^}]*transform:scale/.test(css), 'the desk zoom and glow breathe only when motion is allowed (FR-178)');
 ok(!/localStorage[^;]*unread|unread[^;]*localStorage/i.test(app), 'the marker is not stored (FR-176: not kept across a restart)');
 

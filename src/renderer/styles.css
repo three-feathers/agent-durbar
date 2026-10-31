@@ -1730,7 +1730,7 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
   .desk.hl-in.is-waiting .pp,.desk.hl-in.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)) .pp{animation:hl-enter .6s ease-in-out 3,hl-breathe var(--hl-p) ease-in-out 1.8s infinite}
   .desk.is-waiting::after,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error))::after{animation:hl-glow var(--hl-p) ease-in-out infinite}
 }
-html.hl-still .desk .pp,html.hl-still .desk::after{animation:none!important} /* simulator drivers only (see app.js): the glow stays, the person holds still */
+html:is(.hl-still,[data-still-highlights]) .desk .pp,html:is(.hl-still,[data-still-highlights]) .desk::after,html[data-still-highlights] .unread-mark{animation:none!important} /* hl-still: simulator drivers only (see app.js). data-still-highlights: Settings > Still highlights (FR-192, WCAG 2.2.2); same result as reduced motion: the glow and the New badge stay, the person and the badge hold still */
 @keyframes hl-enter{0%,100%{transform:scale(1)}50%{transform:scale(var(--hl-e,1.15))}}
 @keyframes hl-breathe{0%,100%{transform:scale(1)}50%{transform:scale(var(--hl-b,1.05))}}
 @keyframes hl-glow{0%,100%{opacity:.7}50%{opacity:1}}

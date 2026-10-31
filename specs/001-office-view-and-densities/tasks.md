@@ -236,3 +236,5 @@ Numbers checked against `main` (00d340eb) and every open PR on 2026-10-25: none 
 - [x] T162 Issue #897 (FR-190): docs: spec delta, `changelog.d/001-office-height-diag.md`; screenshots not retaken (0.6 px)
 - [x] T163 (FR-191): `check-office-overlap.js`: the Browser tab block polls the native views (`nativeViews`: exactly one on the window, none after Back, toasts cleared each poll, last-seen diagnostics) instead of fixed pauses; `measure` fails a figure off its slot only after two identical reads of the figures and lit slots; hooks `OFFICE_TEST_STUCK_WALKER=off|moved`, `OFFICE_ONLY=browser`
 - [x] T164 (FR-191): docs: spec delta, `changelog.d/001-office-browser-waits.md`; no screenshots (driver only)
+- [x] T165 Issue #780 (FR-192): `still-highlights` setting: `credits.ts` parse, `settings.ts` store, `ipc/settings.ts` channel, `preload.ts`, `api.ts`, `sim.ts`; `app.js` (`data-still-highlights`, `hlIn`, `unreadFresh`), `styles.css`, `screens.js` Highlights section; `test-stillhighlights.ts`, `check-unread.js`
+- [x] T166 Issue #780 (FR-192): docs: spec delta, `docs/features.md`, `changelog.d/001-still-highlights.md`, pictures `shots:docs`
