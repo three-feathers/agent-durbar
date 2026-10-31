@@ -232,11 +232,12 @@ module.exports = async (ctx) => {
     await wait(`!!document.getElementById('mmRun')`, 'the menu says so');
     assert.ok(/Allow all for a schedule/.test(await js(`document.getElementById('mmRun').textContent`)));
     assert.strictEqual(await js(`document.querySelector('#modeMenu [data-mode="allow"]').getAttribute('aria-checked')`), 'true', 'the real one is checked');
+    assert.deepStrictEqual(await js(`['read-only','allow'].map(k=>document.querySelector('#modeMenu [data-mode="'+k+'"]').textContent.includes('✓'))`), [false, true], 'and has the check mark');
     await H.shot(path.join(dir, `044-mode-turn-${tag}.png`), { prep: 'mouse', settle: true });
     const notes0 = await js(`document.querySelectorAll('.note').length`);
     await js(`document.querySelector('#modeMenu [data-mode="read-only"]').click();0`);
     await wait(`!document.getElementById('modeChip').textContent.includes('this turn')&&document.getElementById('modeChip').textContent.includes('Read-only')`, 'the way down works, with no confirmation');
-    await wait(`document.querySelectorAll('.note').length>${notes0}&&[...document.querySelectorAll('.note')].some(n=>n.textContent.includes('Back to Read-only'))`, 'and it says it came back');
+    await wait(`document.querySelectorAll('.note').length>${jsLiteral(notes0)}&&[...document.querySelectorAll('.note')].some(n=>n.textContent.includes('Back to Read-only'))`, 'and it says it came back');
     // a turn that ends by itself
     await js(`window.__durbarSimSched.runMode(${jsLiteral(pick.id)},'ask');0`);
     await wait(`document.getElementById('modeChip').textContent.includes('Ask first (this turn)')`);
@@ -248,7 +249,6 @@ module.exports = async (ctx) => {
     const hostile = '<img src=x onerror="window.__xss=1"><b id="hx">h</b><script>window.__xss=2</script>"\'&amp;';
     const tail = 'THE-TAIL-OF-THE-PROMPT';
     const hid = await js(`window.__durbarSimSched.addWaiting(${jsLiteral(hostile)},${jsLiteral(pick.cwd)})`);
-    const hrow = `[...document.querySelectorAll('#sdList .sc-row')].find(x=>x.dataset.id===${jsLiteral(hid)})`;
     await js(`window.__durbarSimSched.addWaiting(${jsLiteral('x'.repeat(9900) + ' ' + tail)},${jsLiteral(pick.cwd)});0`);
     await js(`document.getElementById('foldersBtn').click()`); await wait(`document.querySelectorAll('[data-fp="sched"]').length>=2`);
     const nf = await js(`document.querySelectorAll('[data-fp="sched"]').length`);
@@ -256,14 +256,14 @@ module.exports = async (ctx) => {
     for (let i = 0; i < nf && !found; i++) {
       if (i) { await js(`document.getElementById('foldersBtn').click()`); await wait(`document.querySelectorAll('[data-fp="sched"]').length>=2`); }
       await js(`document.querySelectorAll('[data-fp="sched"]')[${i}].click()`); await wait(`!!document.getElementById('scAdd')`);
-      found = await js(`!!${hrow}`);
+      found = await js(`!![...document.querySelectorAll('#sdList .sc-row')].find(x=>x.dataset.id===${jsLiteral(hid)})`);
       if (!found) await closeDlg();
     }
     assert.ok(found, 'the folder with the hostile prompt');
-    assert.ok((await js(`${hrow}.querySelector('.sc-p').textContent`)).includes('onerror'), 'the row shows the markup as its words');
+    assert.ok((await js(`[...document.querySelectorAll('#sdList .sc-row')].find(x=>x.dataset.id===${jsLiteral(hid)}).querySelector('.sc-p').textContent`)).includes('onerror'), 'the row shows the markup as its words');
     const clean = () => js(`!document.getElementById('hx')&&!document.querySelector('#schedDlg img,#schedModeDlg img,#modeDlg img')&&window.__xss===undefined`);
     assert.ok(await clean(), 'a row shows it as text');
-    await js(`(()=>{const b=${hrow}.querySelector('[data-sc="mode"]');b.focus();b.click()})();0`);
+    await js(`(()=>{const b=[...document.querySelectorAll('#sdList .sc-row')].find(x=>x.dataset.id===${jsLiteral(hid)}).querySelector('[data-sc="mode"]');b.focus();b.click()})();0`);
     await wait(`!!document.getElementById('schedModeDlg')`);
     assert.ok(await clean(), 'the popup shows it as text');
     await js(`(()=>{const s=document.querySelector('.sm-mode');s.value='allow';document.getElementById('smSave').click()})();0`);
