@@ -71,3 +71,5 @@ Review notes (Mac coordinator):
 30. Added `batch6/rebels-fox-working` and `-waiting` (2026-10-27). The fox now has all 3 poses.
 31. Added `batch6/rebels-bulldog-resting.webp` (2026-10-27). **Animal Rebels is complete: 6 characters** (raccoon, punk cat, bulldog, fox, owl, panda).
 32. `batch6/pirate-cook-waiting` and `-working` were replaced with the cartoon-style redo (2026-10-27); *working* now shows no hands. **Pirate is complete: 6 characters.** All five collections are complete, 30 characters in all.
+
+8. Batch 8 (2026-10-31, Paco in the terminal: "quedate con las mejores"): new renders of the privateer, hook, cook and cabin boy were compared with batches 1-6 at desk size. Kept: the **hook pirate from batch 8** (working now types at the keyboard, the hook on the same arm in all 3 poses); the privateer, cook and cabin boy stay as they were (complete and consistent sets; the new cook rests with open eyes, the new cabin boy has no usable working pose). Speck-cleaned, 352x352 WebP, under 40 KB.
