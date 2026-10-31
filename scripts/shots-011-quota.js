@@ -12,7 +12,7 @@
  */
 const assert = require('assert');
 const path = require('path');
-const { helpers } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
 
 module.exports = async (ctx) => {
@@ -36,7 +36,7 @@ module.exports = async (ctx) => {
     assert.ok(r.page === 0 && r.side <= 0, tag + ': the page does not scroll: ' + JSON.stringify(r));
     assert.ok(r.body >= 10.5, tag + ': block font ' + r.body);
   };
-  const checkAgain = (kind = 'copilot') => js(`document.querySelector('[data-hs="check"][data-kind="${kind}"]').click();0`);
+  const checkAgain = (kind = 'copilot') => js(`document.querySelector('[data-hs="check"][data-kind='+${jsLiteral(JSON.stringify(kind))}+']').click();0`);
   const reads = () => js(`(window.__durbarSimQuotaReads||[]).slice()`);
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
@@ -217,10 +217,10 @@ module.exports = async (ctx) => {
   await load(w, h, 'copilot:near');
   const named = await js(`(()=>{const x=window.__durbarSimUi.agents().find(a=>a.live&&!a.parent&&(a.info&&a.info.adapterId||'copilot')==='copilot');x.name='<img src=x onerror=document.title=9>';return x.id})()`);
   await js(`window.DurbarHarnesses.loadQuota('cached');0`);
-  assert.ok(await until(`[...document.querySelectorAll('[data-hs="qhand"]')].some(b=>b.dataset.agent===${JSON.stringify(named)}&&b.textContent.includes('<img src=x'))`), 'the name is text');
+  assert.ok(await until(`[...document.querySelectorAll('[data-hs="qhand"]')].some(b=>b.dataset.agent===${jsLiteral(named)}&&b.textContent.includes('<img src=x'))`), 'the name is text');
   assert.strictEqual(await js(`document.querySelectorAll('.hs-quota img').length`), 0);
-  await js(`window.__durbarSimUi.agents().find(a=>a.id===${JSON.stringify(named)}).live=false;window.DurbarHarnesses.loadQuota('cached');0`);
-  assert.ok(await until(`![...document.querySelectorAll('[data-hs="qhand"]')].some(b=>b.dataset.agent===${JSON.stringify(named)})`), 'a session that ended is not offered');
+  await js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(named)}).live=false;window.DurbarHarnesses.loadQuota('cached');0`);
+  assert.ok(await until(`![...document.querySelectorAll('[data-hs="qhand"]')].some(b=>b.dataset.agent===${jsLiteral(named)})`), 'a session that ended is not offered');
 
   // ---- FR-085: with the window open and no action, Current turns; the timer stops when Settings closes
   await load(w, h, 'copilot:agingsoon');
