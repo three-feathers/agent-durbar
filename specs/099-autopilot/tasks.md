@@ -3,10 +3,10 @@
 **Input**: [spec.md](spec.md), [plan.md](plan.md)
 
 **Tests**: required (constitution VII; SC-001..SC-003): node tests on the fakes and the simulator, 0 AI credits, driver waits with
-`until()`. Real checks are separate tasks (T090-T093) within the owner's budget (D7; Copilot runs need an OK each, D11).
+`until()`. Real checks are separate tasks (T090-T094) within the owner's budget (D7; Copilot runs need an OK each, D11).
 
 **Format**: `- [ ] Tnnn [P?] description (file) [requirements]`. `[P]` means the task can run in parallel. One phase is one PR.
-Numbers taken: spec 099, FR-001..FR-090 (sparse by group), T001..T093.
+Numbers taken: spec 099, FR-001..FR-090 (sparse by group), T001..T094.
 
 ## Phase 0: Spec (this PR)
 
@@ -28,7 +28,8 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group), T001..T093.
 
 - [ ] T020 Claude Code: `/goal` send, continuation count, `AskUserQuestion` auto-deny, end mapping, `/goal clear` after every
   end and on Stop, `/goal` typed by the user refused while on Autopilot; capability `{capUnit: 'usd', verified: false}`.
-  Tests on the scripted CLI fake replay the probe's message shapes (`Stop hook feedback`, `aborted_streaming`, `Goal cleared`)
+  Tests on the scripted CLI fake replay the probe's message shapes (`Stop hook feedback`, `aborted_streaming`, `Goal cleared`,
+  `stop-hook-block-cap` before a `success` result ends with blocked)
   [FR-011, FR-020, FR-021, FR-030, FR-040, FR-041, FR-050, FR-058]
 - [ ] T021 Codex: `thread/goal/set` in place of `turn/start`, `tokenBudget`, the `turn/started` count, the `goal/updated` mapping,
   Stop with `goal/clear` and then `turn/interrupt`, `requestUserInput` auto-answer, never on an ephemeral thread; capability
@@ -78,5 +79,10 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group), T001..T093.
   (`--max-budget-usd` 0.02); a multi-line condition [FR-011, FR-021, FR-022]
 - [ ] T092 **Codex** through the built adapter: one run to done, one to the limit (limit 1), one to `budgetLimited`; a model
   switch between runs [FR-012, FR-021, FR-022]
-- [ ] T093 **Copilot** through the built adapter (needs a new owner OK, cap 30): a run to done, one to the limit (limit 1) to see
-  `isAutopilotContinuation`, Stop mid-run, and a prompt that makes it call `ask_user` [FR-010, FR-020, FR-021, FR-030, FR-050]
+- [x] T093 **Longer probes on all three apps** (owner OK, Vikram, Telegram, 2026-10-31 11:11 UTC; Copilot cap 30): a staged task
+  with a question, to done, then a run stopped at limit 1, through the SDK, CLI and app-server the way the adapters use them
+  (nothing is built yet). Done 2026-10-31, 1.626 AI credits, $0.0228, 65,827 Codex tokens: Copilot `isAutopilotContinuation`
+  and `ask_user` seen, Stop quiet; Claude's `stop-hook-block-cap`; Codex `blocked` [FR-010, FR-020, FR-021, FR-030, FR-040,
+  FR-050]
+- [ ] T094 **Copilot** through the built adapter (needs a new owner OK, cap 30): a run to done, one to the limit (limit 1), and
+  one with `ask_user` [FR-010, FR-020, FR-021, FR-030, FR-050]

@@ -23,7 +23,7 @@ in the mode menu, a confirmation dialog, a chip state and chat lines. Spec 066's
   - Codex 0.163.0 (`thread/goal/*`, stable feature `goals`).
 - **Tests**: node unit tests on the adapters' fakes (`scripts/test-*.ts`), the IPC guard tests, a simulator driver with
   screenshots at 1440x900 and 1280x800. 0 AI credits.
-- **Real checks**: separate tasks within D7's budget (T090-T093; Copilot runs need an OK each, D11).
+- **Real checks**: separate tasks within D7's budget (T090-T094; Copilot runs need an OK each, D11).
 
 ## Constitution Check
 
@@ -79,7 +79,8 @@ in the mode menu, a confirmation dialog, a chip state and chat lines. Spec 066's
   - `onControl` answers `AskUserQuestion` with `deny` and `AUTOPILOT_ANSWER`;
   - the stream reader counts `isClaudeContinuation`;
   - a `result` ends the run: `success` with no interrupt is done, `error_max_budget_usd` is cap, and an interrupt by Durbar
-    keeps the reason Durbar set;
+    keeps the reason Durbar set; a `system` notification with `key: 'stop-hook-block-cap'` earlier in the run makes the
+    `success` result **blocked** (T093);
   - after every end it sends `/goal clear` (free) and ignores its `result` in the chat;
   - Stop is an interrupt and then `/goal clear`;
   - the cap is the existing `--max-budget-usd` with a relaunch.
@@ -131,12 +132,15 @@ other reasons.
    the README.
 4. **p4, plan first**: the spec 066 delta built: the button, three adapters, tests, screenshots.
 
-T090 ran on the SDK before p1 (owner OK, D11). The other real checks (T091-T093) come after p2 and before `verified: true`.
+T090 and T093 ran on the SDK, the CLI and the app-server before p1 (owner OKs, D11 and 2026-10-31 11:11 UTC). The real checks
+through the built adapters (T091, T092, T094) come after p2 and before `verified: true`.
 
 ## Risks
 
-- Copilot's continuation marker (`isAutopilotContinuation`) is only read from the SDK types: T090 finished without a
-  continuation. The count sits behind one small function, and the fake SDK tests set the field.
+- Copilot's continuation marker (`isAutopilotContinuation`) was seen set in T093 (3 continuations) on SDK 1.0.24; a later SDK
+  may change it. The count sits behind one small function, and the fake SDK tests set the field.
+- Claude Code's own cap (`stop-hook-block-cap`, 9 consecutive blocks) ends a goal with a `result` that looks like success; the
+  adapter must read the notification, or the run would be reported as done (T093).
 - Claude's goal judge is a model: "done" is its judgement. The end card says "<App> judged the task done", not "done" as a
   fact.
 - No progress is a heuristic, and may stop a run that reads a lot before writing. Two unchanged continuations is a low bar,

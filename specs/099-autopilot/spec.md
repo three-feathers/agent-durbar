@@ -4,7 +4,7 @@
 group: 046
 title: Autopilot mode: a fourth safety mode above Allow all, per session and confirmed each time, only for agent apps that support it; the agent's questions are shown but not waited on, the app keeps going after each turn until the task is done, up to a continuation limit (default 5) and an optional spend cap; Stop ends it; plan approval may offer Approve and run on Autopilot (spec 066 delta)
 status: draft
-note: spec, plan and tasks; owner answers Q1-Q4; real probes on Claude Code, Codex and one capped Copilot autopilot turn (T090, 2026-10-31); nothing built
+note: spec, plan and tasks; owner answers Q1-Q4; real probes on all three apps (T090, and longer runs with questions and Stop, T093); nothing built
 -->
 
 **Feature Branch**: `099-autopilot` (spec). Code branches `099-pN-slug`, one per phase. It touches 003 (the permission modes), 002, 012
@@ -14,7 +14,8 @@ organization policy), 018 (the mode switch) and 010 (the simulator).
 **Created**: 2026-10-31
 
 **Status**: Draft. The owner decided the shape (D1-D7) and answered Q1-Q4 (D8-D11 below). Real probes ran on Claude Code, Codex
-and, for Copilot, one autopilot turn capped at 30 AI credits (T090, *Evidence*). Nothing is built.
+and, for Copilot, one autopilot turn capped at 30 AI credits (T090), then longer runs on all three apps with a question,
+several continuations and Stop at the limit (T093, *Evidence*). Nothing is built.
 
 **Input**: Owner (Vikram, Telegram DM, 2026-10-31 10:43 UTC): "I go with your suggestions except spend cap as mandatory, have it
 optional", answering the coordinator's proposal for an Autopilot mode.
@@ -238,18 +239,20 @@ the dialog says plainly that only done, the continuation limit, no progress, blo
   - **Claude Code**: one per synthetic user message (`isSynthetic: true`) whose text starts with `Stop hook feedback:`.
     `real:` 2026-10-31.
   - **Codex**: one per `turn/started` after the first in a run. `real:` 2026-10-31.
-  - **Copilot**: one per `user.message` with `isAutopilotContinuation: true` (`read:` SDK 1.0.24 `UserMessageData`:
-    "auto-injected by autopilot's continuation loop"). `assistant.turn_start` is **not** a signal: T090 had 3 model turns
-    inside one user message and no continuation. `[KNOWN GAP]`: no continuation happened in T090 (the task finished in the
-    first send), so the field is not yet seen set.
+  - **Copilot**: one per `user.message` with `isAutopilotContinuation: true`. `real:` T093: 3 continuations in the long run,
+    each such a `user.message` with `source: 'autopilot'`, empty `content` and `agentMode: 'autopilot'`, with the SDK's
+    default options (no `continueOnAutoMode`). `assistant.turn_start` is **not** a signal: T090 had 3 model turns inside one
+    user message and no continuation. `session.idle` comes only once, after the last continuation (between them there is only
+    `assistant.idle`), so the adapter's turn, which closes on `session.idle`, stays open for the whole run.
 - **FR-021** **The limit** is always on (S1): default 5, range 1-20, chosen in the dialog. When continuation `limit + 1` starts,
   Durbar stops it at once, in the same way as Stop (FR-050). The run ends with reason **limit**.
   - Claude Code: `interrupt` plus `/goal clear`, `real:` 2026-10-31.
   - Codex: `thread/goal/clear` plus `turn/interrupt`, `real:` 2026-10-31.
-  - Copilot: `abort()` plus `mode.set interactive`, `[KNOWN GAP]` (not exercised in T090).
+  - Copilot: `mode.set interactive` plus `abort()`, `real:` T093 (limit 1, stopped when continuation 2 started).
 
-  The agent app's own limit is never relied on: the SDK has no option for the CLI's `--max-autopilot-continues`, and
-  Claude Code and Codex have none (*Evidence*).
+  The agent app's own limit is never relied on: the SDK has no option for the CLI's `--max-autopilot-continues`, and Codex has
+  none. Claude Code has a fixed one that Durbar cannot set: it overrides the goal after 9 consecutive Stop hook blocks
+  (`real:` T093, FR-040). With a limit above 8, Claude Code may end the run first; that run ends with **blocked**.
 - **FR-022** **The optional spend cap** (D3) is off unless the user ticks it. It uses each app's own cap, in its own unit.
   - **Copilot**: the session's AI-credit cap (spec 011): `rpc.options.update({sessionLimits: {maxAiCredits}})` when it
     differs from the current cap.
@@ -281,19 +284,27 @@ the dialog says plainly that only done, the continuation limit, no progress, blo
   with `AUTOPILOT_ANSWER` = "The user is away and will not answer. Decide by yourself, say what you chose, and keep going."
   The card is shown with *Decided by itself (Autopilot)*, no buttons, and the question text. Per app:
   - **Copilot** `onUserInputRequest`: `{answer: AUTOPILOT_ANSWER, wasFreeform: true}`. `askUserDisabled` is not set, so the
-    question still reaches the card. `[KNOWN GAP]`: in T090 the model decided an ambiguous point itself and never called
-    `ask_user`, so whether the runtime calls the handler in autopilot is still unobserved.
+    question still reaches the card. `real:` T093: the runtime calls `onUserInputRequest` in autopilot (events
+    `user_input.requested` with `question`, `choices` and `allowFreeform`, then `user_input.completed` with the answer); the
+    model chose the recommended option, said so, and went on. (In T090 the model decided an ambiguous point without asking.)
   - **Claude Code** `AskUserQuestion` through `can_use_tool`: `deny` with `AUTOPILOT_ANSWER`. `real:` 2026-10-31: the model
-    chose the recommended option and finished.
+    chose the recommended option and finished. `real:` T093: the same inside a `/goal` run, but when the condition itself says
+    the user must choose, the goal judge never accepts the model's choice and keeps continuing (FR-040, the CLI's cap).
   - **Codex** `item/tool/requestUserInput`: every question answered with `AUTOPILOT_ANSWER`. In default mode Codex has no such
-    tool and asks in plain text, which ends the turn; the goal then continues (`real:` 2026-10-31, without a goal).
+    tool and asks in plain text, which ends the turn; the goal then continues (`real:` 2026-10-31, without a goal). `real:`
+    T093, with a goal: no server request came; each continuation asked again and did no work, and after 3 (another run: 5)
+    continuations the model set the goal to `blocked` itself, which ends the run with **blocked**. Durbar does not answer a
+    plain-text question: a `turn/start` with `AUTOPILOT_ANSWER` after `blocked` ran one turn (the model chose and did the
+    stage) but the goal stayed `blocked` and started no further turn.
   - **MCP elicitations** (all apps): `decline`, and the card says "Declined (Autopilot)". A form or a sign-in cannot be
     decided for the user.
 - **FR-040** **End reasons.** Each run ends with exactly one reason, emitted as `autopilot {phase: 'ended', reason, n, spend?}`:
   - **done**:
-    - Copilot `session.task_complete` (the model calls the `task_complete` tool), then `session.idle`. `real:` T090; the
-      `outcome` value was not captured, so `outcome` other than `blocked` counts as done (`[KNOWN GAP]`);
-    - Claude a `result` with `subtype: 'success'` and no interrupt from Durbar (`real:`);
+    - Copilot `session.task_complete` (the model calls the `task_complete` tool), then `session.idle`. `real:` T090, T093:
+      `{success: true, summary}` with **no `outcome` field**, so a missing `outcome` or any value other than `blocked` counts
+      as done (`outcome: 'blocked'` is `read:` only);
+    - Claude a `result` with `subtype: 'success'`, no interrupt from Durbar, and no `stop-hook-block-cap` notification before
+      it in the run (`real:`);
     - Codex goal status `complete` (`real:`);
   - **cap** (FR-022);
   - **limit** (FR-021);
@@ -301,8 +312,13 @@ the dialog says plainly that only done, the continuation limit, no progress, blo
   - **blocked**:
     - Copilot `session.task_complete` with `outcome: 'blocked'`, or an objective `paused` with a `pauseReason` (`read:`
       SDK 1.0.24);
-    - Codex goal status `blocked` or `paused` (`read:` schema; not seen in the probes);
-    - Claude has no such signal, so no progress covers it;
+    - Codex goal status `blocked` (`real:` T093: the model set it itself while waiting for an answer) or `paused` (`read:`
+      schema, not seen);
+    - Claude a `system` message with `subtype: 'notification'` and `key: 'stop-hook-block-cap'` ("A hook blocked the turn
+      from ending 9 consecutive times — overriding and ending turn"), after which the CLI ends the goal with a `result`
+      `success`, `terminal_reason: 'completed'` that looks like done. `real:` T093 (13 continuations; the 9 were the ones with
+      no tool call; whether a tool call resets the count is not checked). Durbar's limit or no progress usually ends such a
+      run first;
   - **stopped** (FR-050);
   - **error** (the turn failed, or the process exited).
 
@@ -319,7 +335,11 @@ the dialog says plainly that only done, the continuation limit, no progress, blo
     `result` with `terminal_reason: aborted_streaming`, **and the goal stays set until `/goal clear`**.
   - **Codex**: `thread/goal/clear {origin: 'user'}` first (so no new turn starts), then `turn/interrupt`. `real:` 2026-10-31:
     `cleared: true`, the turn is `interrupted`, and no further turn starts.
-  - **Copilot**: `mode.set interactive` first, then `abort()`. `[KNOWN GAP]` (not exercised in T090).
+  - **Copilot**: `mode.set interactive` first, then `abort()`. `real:` T093: `session.mode_changed` to `interactive`, the
+    events `abort {reason: 'user_initiated'}` and `session.idle {aborted: true, mode: 'interactive'}`, and no event in the
+    next 33 s.
+
+  `real:` T093 for all three: after the stop sequence no event, turn or continuation came in the next 33 s.
 - **FR-051** **Switching to another mode** during a run ends the run in the same way as Stop (reason **stopped**) before the new
   mode applies. Switching to Allow all is only a stop; switching to Ask first or Read-only then follows the existing switch
   (spec 018, 087).
@@ -438,7 +458,7 @@ empty `git init` folder, with the same SDK, flags and JSON-RPC that Durbar's ada
   - `AskUserQuestion` still comes through `can_use_tool` under bypass, and a deny with "decide by yourself" made it choose
     and finish;
   - a continuation is a synthetic `Stop hook feedback:` user message, and the whole goal is one `result`;
-  - an unreachable goal kept continuing with no turn cap;
+  - an unreachable goal kept continuing; the CLI's only cap is 9 consecutive Stop hook blocks (T093 below);
   - interrupt ended the run, but **the goal stayed until `/goal clear`**, which cost nothing.
 - `real:` **Codex**, 4 runs, `gpt-6-luna`, Allow all thread settings, about 25k non-cached tokens:
   - an ephemeral thread refuses goals;
@@ -459,14 +479,29 @@ empty `git init` folder, with the same SDK, flags and JSON-RPC that Durbar's ada
   - the ambiguous "better file name format" was decided by the model; `ask_user` was not called;
   - no continuation: one `user.message`, three model turns, then the `task_complete` tool, `session.task_complete`,
     `session.idle {mode: 'autopilot'}`; the mode stays `autopilot` after idle.
+- `real:` **T093 longer runs** (owner OK, Vikram, Telegram, 2026-10-31 11:11 UTC; probe scripts, not the built adapter). One
+  staged task on all three apps (a node project in 4 stages, one stage per turn, ask the user ESM or CommonJS first), then a
+  second run stopped at limit 1 (when continuation 2 started). **Total: 1.626 AI credits, $0.0228, 65,827 non-cached tokens.**
+  - Copilot (`claude-haiku-5.5`, cap 30), 1.100 + 0.526 AI credits: 3 continuations seen (`isAutopilotContinuation: true`,
+    `source: 'autopilot'`); `ask_user` reached `onUserInputRequest` and the model chose ESM; ended by `session.task_complete
+    {success: true}` with no `outcome`; Stop (`mode.set interactive`, `abort()`) gave `session.idle {aborted: true}`, then
+    nothing;
+  - Claude Code (`haiku`, `--max-budget-usd 0.30`), $0.0169 + $0.0059: 13 continuations; `AskUserQuestion` denied with the
+    answer and the model chose CommonJS; the judge never accepted the goal and the CLI's `stop-hook-block-cap` ended it after 9
+    blocks with a `result` that looks like success; Stop (interrupt, `/goal clear`) gave `aborted_streaming` and "Goal
+    cleared", then nothing;
+  - Codex (`gpt-6-luna`, `tokenBudget` 60000), 26,658 + 31,168 + 8,001 non-cached tokens: 3 and 5 continuations; the question
+    came as plain text every turn until the model set `blocked`; a later `turn/start` with the answer ran one turn but left
+    the goal `blocked`; Stop (`goal/clear`, `turn/interrupt`) gave `cleared: true`, `interrupted`, `goal: null`, then nothing.
 - `read:` **Copilot SDK 1.0.24 types**: `MessageOptions.agentMode`, `ExitPlanModeAction` `autopilot`, `session.task_complete`
   outcomes, `session.autopilot_objective_changed`, abort reason `autopilot_credit_limit`, and
   `permissions.setApproveAll({source: 'autopilot_confirmation'})`. There is no option matching `--max-autopilot-continues`.
 - `[KNOWN GAP]`:
-  - Copilot: a continuation (`isAutopilotContinuation` seen set), `ask_user` in autopilot, the `task_complete` `outcome`
-    values, Stop and the cap in the middle of a run, and a run through the built adapter (T093, needs a new owner OK);
-  - Claude's cap in the middle of a goal, a multi-line condition, and resume with a goal;
-  - Codex model switch, `blocked` and `paused`;
+  - Copilot: `outcome: 'blocked'`, the cap reached in the middle of a run, plan approval with `autopilot`, and runs through
+    the built adapter (T094, needs a new owner OK);
+  - Claude's cap in the middle of a goal, a multi-line condition, resume with a goal, whether the goal is still set after the
+    `stop-hook-block-cap` override, and whether a tool call resets that count;
+  - Codex model switch and `paused`;
   - macOS and Windows;
   - an organization policy on a real managed machine.
 
@@ -477,3 +512,8 @@ empty `git init` folder, with the same SDK, flags and JSON-RPC that Durbar's ada
   FR-055). T090 ran (0.434 AI credits): FR-010 keeps the broker and drops the `setApproveAll` fallback; FR-020 names
   `isAutopilotContinuation` as Copilot's signal; FR-040 maps `session.task_complete`; FR-041 records that the mode stays
   `autopilot` after done.
+- **2026-10-31 (T093)**: Longer real runs on all three apps (owner OK 11:11 UTC; 1.626 AI credits, $0.0228, 65,827 non-cached
+  tokens). FR-020 Copilot marker and FR-030 Copilot `ask_user` are now `real:`; FR-021 and FR-050 Copilot Stop `real:`; FR-040
+  fixed: Claude's `stop-hook-block-cap` notification ends a run with **blocked** (its `result` looks like success), Copilot's
+  `task_complete` has no `outcome` field, Codex `blocked` is `real:`; FR-030 Codex records that a plain-text question loops
+  until the model sets `blocked`. T093 is split: the SDK-level probes are done; T094 keeps the run through the built adapter.
