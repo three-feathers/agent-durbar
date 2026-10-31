@@ -167,7 +167,8 @@ module.exports = async (ctx) => {
   await must(`!document.body.classList.contains('panel-open')&&!!document.querySelector('#stage .ro .ro-plate')`, 'the office again');
 
   // ---- FR-037: a session keeps its person, also across a status filter that hides it ----
-  const who = `JSON.stringify(Object.fromEntries([...document.querySelectorAll('#stage .ro-person')].map(i=>[i.dataset.for,i.getAttribute('src').replace(/-\\w+\\.webp$/,'')])))`;
+  /* a session is drawn at its desk (.ro-person) or, while the simulator sends it on a visit (wall clock, not frozen by simfreeze), in the lobby (.ro-visitor): read both; a visit between the two reads moves a session, it must not change its person */
+  const who = `JSON.stringify(Object.fromEntries([...document.querySelectorAll('#stage .ro-person, #stage .ro-visitor')].map(i=>[i.dataset.for,i.getAttribute('src').replace(/-\\w+\\.webp$/,'')])))`;
   const before = await js(who);
   const all = await js(`document.querySelectorAll('#stage .ro-plate').length`);
   await js(`document.querySelector('.stat[data-k="waiting"]').click()`);
@@ -175,7 +176,11 @@ module.exports = async (ctx) => {
   await js(`document.querySelector('.stat[data-k="waiting"]').click()`);
   await must(`document.querySelectorAll('#stage .ro-plate').length===window.__durbarSimUi.agents().filter(a=>!a.parent).length`, 'the filter off');
   await must(PICS, 'the pictures');
-  assert.strictEqual(await js(who), before, 'every session keeps its person across a filter');
+  /* only sessions drawn in both reads are compared (one may be on a visit or just back, not drawn in one of them); the check still fails if any shared session's person differs */
+  const b0 = JSON.parse(before), a0 = JSON.parse(await js(who));
+  const shared = Object.keys(b0).filter((id) => id in a0);
+  assert.ok(shared.length >= 5, `most sessions are drawn in both reads (${shared.length} of ${Object.keys(b0).length})`);
+  for (const id of shared) assert.strictEqual(a0[id], b0[id], `every session keeps its person across a filter (${id})`);
   // ---- FR-047: Serious mode: no light animation ----
   await js(`document.documentElement.setAttribute('data-serious','')`);
   const anim = await js(`[...document.querySelectorAll('#stage .ro-lights *')].filter(e=>getComputedStyle(e).animationName!=='none').length`);
