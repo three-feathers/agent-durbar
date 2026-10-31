@@ -25,8 +25,8 @@ export const NOTES_LIMITS = (() => {
   /** The fields besides title and text: id, times, flags, source (session id up to 100 characters), digest. */
   const noteExtraBytes = 1_024;
   const tombstoneBytes = 128;
-  /** The document's own fields: version, folder name (3 bytes per character), mirror, punctuation. */
-  const docExtraBytes = 3 * folderNameChars + 1_024;
+  /** The document's own fields: version, folder name (3 bytes per character), mirror, punctuation, and up to one pending id per note (14 characters, quotes, comma). */
+  const docExtraBytes = 3 * folderNameChars + 1_024 + notesPerFolder * 17;
   const noteJsonBytes = 3 * (textChars + titleChars) + noteExtraBytes;
   const storeBytes = notesPerFolder * noteJsonBytes + tombstones * tombstoneBytes + docExtraBytes;
   /**
@@ -84,6 +84,8 @@ export interface NotesDoc {
   mirror?: NotesMirror;
   /** The last `notes.md` imported (FR-054; T041 review): the same file is never imported twice, after a restart too. */
   fileImport?: { sha256: string; at: string };
+  /** Ids of notes imported from `notes.md` sections without an id that no successful write has put into the file yet (T041 review). */
+  filePending?: string[];
 }
 
 export const NOTE_ID_RE = /^n-[a-z0-9]{12}$/;
@@ -257,7 +259,8 @@ export function parseNotesDoc(raw: string): ParseResult {
     ? { sha256: m.sha256, bytes: m.bytes as number, at: m.at as string } : undefined;
   const fi = d.fileImport as Record<string, unknown> | undefined;
   const fileImport = fi && typeof fi === 'object' && typeof fi.sha256 === 'string' && /^[0-9a-f]{64}$/.test(fi.sha256) && isoOk(fi.at) ? { sha256: fi.sha256, at: fi.at as string } : undefined;
-  return { ok: true, dropped, doc: { version: 1, folderName: cleanFolderName(d.folderName), notes, tombstones: capTombstones(tombstones), ...(mirror ? { mirror } : {}), ...(fileImport ? { fileImport } : {}) } };
+  const filePending = Array.isArray(d.filePending) ? [...new Set(d.filePending.filter((x): x is string => typeof x === 'string' && ids.has(x)))] : [];
+  return { ok: true, dropped, doc: { version: 1, folderName: cleanFolderName(d.folderName), notes, tombstones: capTombstones(tombstones), ...(mirror ? { mirror } : {}), ...(fileImport ? { fileImport } : {}), ...(filePending.length ? { filePending } : {}) } };
 }
 
 /** Compact JSON, the way it is written and measured. */
@@ -348,6 +351,13 @@ const sameContent = (a: Note, b: Note): boolean => a.title === b.title && a.text
  * tombstone wins over an edit that is not newer than it; tombstones are kept (newest per id) and capped at `tombstones`, oldest dropped.
  * When two different versions meet, the result's `rev` is above both, so a window holding either one sees its change as stale.
  */
+/** The pending ids of either copy that are still notes (a write that cleared them in one copy is not seen in the other: the safe side keeps them). */
+function pendingOf(a: NotesDoc, b: NotesDoc, notes: readonly Note[]): { filePending?: string[] } {
+  const live = new Set(notes.map((n) => n.id));
+  const ids = [...new Set([...(a.filePending ?? []), ...(b.filePending ?? [])])].filter((x) => live.has(x));
+  return ids.length ? { filePending: ids } : {};
+}
+
 export function mergeDocs(a: NotesDoc, b: NotesDoc): NotesDoc {
   const dead = new Map<string, string>();
   for (const t of [...a.tombstones, ...b.tombstones]) if (!dead.has(t.id) || dead.get(t.id)! < t.deletedAt) dead.set(t.id, t.deletedAt);
@@ -376,6 +386,7 @@ export function mergeDocs(a: NotesDoc, b: NotesDoc): NotesDoc {
     tombstones: capTombstones([...dead].map(([id, deletedAt]) => ({ id, deletedAt }))),
     ...(mirror ? { mirror } : {}),
     ...(fileImport ? { fileImport } : {}),
+    ...(pendingOf(a, b, notes)),
   };
 }
 

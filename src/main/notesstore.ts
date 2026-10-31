@@ -518,7 +518,10 @@ export class NotesStore {
       // Those sections are their only copy, so each section without an id is first matched exactly (masked title and text) against
       // them, and the rest are paired in order with the pending notes left: the section is that note, edited again, not a new one.
       // Only notes that existed BEFORE this import count, so two equal sections in one file stay two notes.
-      const pending = doc.notes.filter((n) => n.from === 'file' && !fileIds.has(n.id))
+      // pending: imported from a section without an id and not yet written back (`filePending`, kept across restarts); a note that reached
+      // the file with its id and whose section was later removed is NOT pending, so a new section can never overwrite it
+      const pendingIds = new Set(doc.filePending ?? []);
+      const pending = doc.notes.filter((n) => n.from === 'file' && pendingIds.has(n.id) && !fileIds.has(n.id))
         .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
       const usable = (s: NotesMdSection): boolean => s.id === undefined && s.text.length <= NOTES_LIMITS.inputChars && !!maskOne(s).text.trim();
       const titleOf = (m: { text: string; title?: string }): string => m.title ?? guessTitle(m.text, now);
@@ -533,6 +536,7 @@ export class NotesStore {
       // a pending note changed in Durbar since the last import keeps Durbar's version (the state says so)
       const lastImport = doc.fileImport?.at;
       let added = 0;
+      const newPending: string[] = [];
       for (const s of sections) {
         if (s.text.length > NOTES_LIMITS.inputChars) { counts.tooLong++; continue; }
         const cur = s.id !== undefined ? d.notes.find((n) => n.id === s.id) : undefined;
@@ -574,10 +578,12 @@ export class NotesStore {
         // created one millisecond apart, in file order: the notes keep the file's order, and pending notes pair in that order
         const r = applyChange(d, { op: 'add', text: m.text, title, from: 'file', hidden: m.hidden }, new Date(now.getTime() + added++), () => keepId ?? newNoteId(this.rand));
         if (!r.ok || !r.note) continue;
+        if (keepId === undefined) newPending.push(r.note.id);
         if (s.done) { const i = r.doc.notes.findIndex((n) => n.id === r.note!.id); r.doc.notes[i] = { ...r.doc.notes[i], done: true }; }
         d = r.doc;
         counts.added++;
       }
+      if (newPending.length) d = { ...d, filePending: [...(d.filePending ?? []).filter((x) => d.notes.some((n) => n.id === x)), ...newPending] };
       if (fileSha && d.fileImport?.sha256 !== fileSha) d = { ...d, fileImport: { sha256: fileSha, at: new Date(now.getTime() + added).toISOString() } }; // not before a note this import made
       return d === doc ? { ok: true, existing: true } : { ok: true, doc: d };
     });
@@ -606,7 +612,7 @@ export class NotesStore {
   setMirror(folderKey: string, folderName: string, mirror: NotesMirror | undefined): Promise<NotesWrote> {
     return this.mutate(folderKey, folderName, (doc) => {
       const next: NotesDoc = { ...doc, notes: doc.notes.map((n) => ({ ...n })), tombstones: doc.tombstones.map((t) => ({ ...t })) };
-      if (mirror) next.mirror = { sha256: mirror.sha256, bytes: mirror.bytes, at: mirror.at };
+      if (mirror) { next.mirror = { sha256: mirror.sha256, bytes: mirror.bytes, at: mirror.at }; delete next.filePending; } // written: every note is in the file now
       else delete next.mirror;
       return { ok: true, doc: next };
     });

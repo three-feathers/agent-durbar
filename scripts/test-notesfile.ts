@@ -50,10 +50,10 @@ async function test(name: string, fn: () => unknown): Promise<void> {
 }
 
 /** A store, a file and the folder they belong to. */
-function rig(opts: { file?: ConstructorParameters<typeof NotesFile>[0]; now?: () => Date } = {}): { store: NotesStore; file: NotesFile; folder: string; key: string; c: ReturnType<typeof countingFs> } {
+function rig(opts: { file?: ConstructorParameters<typeof NotesFile>[0]; now?: () => Date; rand?: (n: number) => number } = {}): { store: NotesStore; file: NotesFile; folder: string; key: string; c: ReturnType<typeof countingFs> } {
   const folder = fresh();
   const c = countingFs();
-  const store = new NotesStore(path.join(folder, '..', 'userdata', 'notes'), { now: opts.now });
+  const store = new NotesStore(path.join(folder, '..', 'userdata', 'notes'), { now: opts.now, rand: opts.rand });
   const file = new NotesFile({ fs: c.fs, ...opts.file });
   return { store, file, folder, key: folder, c };
 }
@@ -450,9 +450,11 @@ async function main(): Promise<void> {
       assert.strictEqual(await texts(r.store, r.key), 'base|idless v2');
       assert.ok(ns.find((n) => n.text === 'idless v2')!.fileEdited);
     }
-    // two pending notes pair in file order; a changed title is an edit too
+    // two pending notes pair in file order; a changed title is an edit too. The ids sort OPPOSITE to the file order (each new id is
+    // made of a lower digit), so only the creation order of one import keeps the pairing right.
     {
-      const r = rig();
+      let idCalls = 0;
+      const r = rig({ rand: (n) => (n === 36 ? 35 - Math.floor(idCalls++ / 12) : 0) });
       await base(r);
       failing(r);
       nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\n## Title A\n\none\n\n<!-- durbar-note -->\ntwo\n');
@@ -468,6 +470,51 @@ async function main(): Promise<void> {
       edit(r, '## Title B\n', '## Title C\n');
       await cycle(r);
       assert.deepStrictEqual((await notesOf(r.store, r.key)).filter((n) => n.text === 'one v2').map((n) => n.title), ['Title C']);
+    }
+    // pending sections reordered, unchanged: each keeps its note, nothing is marked edited
+    {
+      const r = rig();
+      await base(r);
+      failing(r);
+      nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\nalpha\n\n<!-- durbar-note -->\nbeta\n');
+      await cycle(r);
+      const ids = new Map((await notesOf(r.store, r.key)).map((n) => [n.text, n.id]));
+      edit(r, '\n<!-- durbar-note -->\nalpha\n\n<!-- durbar-note -->\nbeta\n', '\n<!-- durbar-note -->\nbeta\n\n<!-- durbar-note -->\nalpha\n');
+      await cycle(r);
+      const after = await notesOf(r.store, r.key);
+      assert.deepStrictEqual(after.filter((n) => n.text !== 'base').map((n) => [n.text, n.id === ids.get(n.text), n.fileEdited, n.rev]).sort(), [['alpha', true, false, 1], ['beta', true, false, 1]]);
+    }
+    // pending survives a restart: a fresh store and file pair the edited section with the same note
+    {
+      const r = rig();
+      await base(r);
+      failing(r);
+      nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\nsurvivor\n');
+      await cycle(r);
+      edit(r, '\nsurvivor\n', '\nsurvivor v2\n');
+      const c2 = countingFs();
+      c2.hook.renameSync = () => { throw Object.assign(new Error('io'), { code: 'EIO' }); };
+      const st2 = new NotesStore(path.join(r.folder, '..', 'userdata', 'notes'));
+      await syncNotesFile({ file: new NotesFile({ fs: c2.fs }), store: st2, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [] });
+      assert.strictEqual(await texts(st2, r.key), 'base|survivor v2');
+    }
+    // a note that reached the file with its id, then its section removed and a new one added in the same save: both stay
+    {
+      const r = rig();
+      nodeFs.mkdirSync(path.join(r.folder, '.durbar'));
+      nodeFs.writeFileSync(md(r.folder), '<!-- durbar-note -->\nfrom file X\n');
+      await cycle(r);
+      const t = nodeFs.readFileSync(md(r.folder), 'utf8');
+      const at = t.indexOf('<!-- durbar-note id=');
+      assert.ok(at > 0, 'X was written back with its id');
+      nodeFs.writeFileSync(md(r.folder), t.slice(0, at) + '<!-- durbar-note -->\nbrand new Y\n');
+      const st = await cycle(r);
+      assert.deepStrictEqual(st.state, {});
+      assert.strictEqual(await texts(r.store, r.key), 'brand new Y|from file X', 'X is not overwritten');
+      // the same through a pull of a teammate's file that dropped X and added a note
+      nodeFs.writeFileSync(md(r.folder), '# Notes\n\n<!-- durbar-note -->\n## teammate\n\nteammate note\n');
+      await cycle(r);
+      assert.strictEqual(await texts(r.store, r.key), 'brand new Y|from file X|teammate note');
     }
     // the pending note was changed in Durbar meanwhile: Durbar's version is kept, and the state says so
     {
