@@ -19,3 +19,4 @@
 - [ ] T024 Verify that our sessions appear in VS Code's session list with the External filter (feature 013). [FR-012]
 - [ ] T025 Clarify support for portable, Flatpak/Snap and remote workspaces. [FR-010]
 - [x] T026 VS Code chat view: open at the latest message; `questionCarousel` read-only block and `mcpServersStarting` as a known hidden kind (synthetic fixtures); Continue in VS Code button; unit tests, simulator, scroll check at both sizes, docs (issue #253) [FR-016, FR-017, FR-018]
+- [ ] T027 (2026-11-01, issue #685) **Open with** menu in the chat header: installed editions plus Show in folder, folder from main by agent id, checked folder (exists, directory, not a link), fixed argv, `shell.openPath` on a directory only, honest wording about handoff, `test:openwith`, driver pictures, changelog fragment. [FR-019..FR-025]
