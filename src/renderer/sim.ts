@@ -198,7 +198,7 @@ function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: strin
 /* simcharname:begin (spec 096 FR-031, the same rule as `cleanCharacterName` in src/shared/charrules.ts; `test:charipc` compares them) */
 function simCharacterName(raw: unknown): { ok: true; name: string } | { ok: false; error: string } {
   if (typeof raw !== 'string' || raw.length > 160) return { ok: false, error: 'Use 1 to 40 characters.' };
-  if (/[\p{C}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800]/u.test(raw.replace(/\p{Extended_Pictographic}\p{Emoji_Modifier}?[\uFE0E\uFE0F]?(?:\u200D\p{Extended_Pictographic}\p{Emoji_Modifier}?[\uFE0E\uFE0F]?)*|[0-9#*]\uFE0F\u20E3/gu, 'x'))) return { ok: false, error: 'Remove control or hidden characters from the name.' };
+  if (/[\p{C}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800\u{1D159}]/u.test(raw.replace(/\p{Extended_Pictographic}\p{Emoji_Modifier}?[\uFE0E\uFE0F]?(?:\u200D\p{Extended_Pictographic}\p{Emoji_Modifier}?[\uFE0E\uFE0F]?)*(?:[\u{E0020}-\u{E007E}]+\u{E007F})?|[0-9#*]\uFE0F\u20E3/gu, 'x').replace(/(?<=[\p{L}\p{M}])(?<!\p{Script=Latin})[\u200C\u200D](?=[\p{L}\p{M}])(?!\p{Script=Latin})|(?<=\p{L}\p{M})(?<!\p{Script=Latin}\p{M})[\u200C\u200D](?![\p{L}\p{M}])/gu, ''))) return { ok: false, error: 'Remove control or hidden characters from the name.' };
   const name = raw.replace(/[<>{}]/g, '').trim();
   const n = Array.from(name).length;
   if (n < 1 || n > 40 || !/[\p{L}\p{N}\p{P}\p{S}]/u.test(name)) return { ok: false, error: 'Use 1 to 40 characters.' };

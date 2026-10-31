@@ -114,6 +114,14 @@ nameOk('1\uFE0F\u20E3', '1\uFE0F\u20E3');
 nameOk('\u{1F1E8}\u{1F1ED} Ada', '\u{1F1E8}\u{1F1ED} Ada');
 nameOk('Jose\u0301', 'Jose\u0301');
 nameOk('\u65E5\u672C\u8A9E', '\u65E5\u672C\u8A9E');
+// spelling, not hidden: a joiner inside a script that uses it, and a flag's tags (review of phase 3)
+nameOk('\u0DC1\u0DCA\u200D\u0DBB\u0DD3', '\u0DC1\u0DCA\u200D\u0DBB\u0DD3'); // Sinhala
+nameOk('\u0D28\u0D4D\u200D', '\u0D28\u0D4D\u200D'); // Malayalam chillu, word-final
+nameOk('\u0D28\u0D4D\u200D \u0D15', '\u0D28\u0D4D\u200D \u0D15'); // Malayalam in a phrase
+nameOk('\u0915\u094D\u200D\u0937', '\u0915\u094D\u200D\u0937'); // Devanagari
+nameOk('\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645', '\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645'); // Persian with ZWNJ
+nameOk('\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}', '\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}'); // the England flag
+for (const hidden of ['\u200C', '\u200D\u200C', '\u200D\u0D28', '\u200C\u0645', '\u0645\u200C', '\u0645\u200C \u0645', '\u0D4D\u200D', '\u0301\u200D\u0301', '\u034F\u200D\u034F', '\u3164\u200D\u3164', 'x\u0301\u200D', 'a\u200Cb', 'a\u200D\u0915', '\u0915\u200Da', '\u{E0067}\u{E007F}', 'a\u{E0067}\u{E007F}', '\u{1F3F4}\u{E0067}\u{E0062}', '\u{1D159}', 'Greta\u{1D159}']) nameBad(hidden);
 for (const bad of ['', '   ', '<>', 'x'.repeat(41), 'x'.repeat(100000), 'a\nb', 'a\u0007b', 'a\u202Eb', 'a\u200Bb', 'a\u2028b', '\u0000', 7, null, undefined, {}, ['a']]) nameBad(bad);
 
 // --- the reply is untrusted (FR-022, FR-023) ---

@@ -67,10 +67,12 @@ export function parseCharacterPins(v: unknown): Record<string, string> {
 }
 
 export type NameResult = { ok: true; name: string } | { ok: false; error: string };
-// a real emoji sequence may hold a joiner and a variation selector; anywhere else they are hidden characters
-const NAME_EMOJI_RE = /\p{Extended_Pictographic}\p{Emoji_Modifier}?[\uFE0E\uFE0F]?(?:\u200D\p{Extended_Pictographic}\p{Emoji_Modifier}?[\uFE0E\uFE0F]?)*|[0-9#*]\uFE0F\u20E3/gu;
-// control, format, private and unassigned characters, line separators, what fonts draw as nothing (Hangul fillers, grapheme joiner, variation selectors) and the blank braille cell
-const NAME_REFUSED_RE = /[\p{C}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800]/u;
+// a real emoji sequence may hold a joiner, a variation selector and flag tags
+const NAME_EMOJI_RE = /\p{Extended_Pictographic}\p{Emoji_Modifier}?[\uFE0E\uFE0F]?(?:\u200D\p{Extended_Pictographic}\p{Emoji_Modifier}?[\uFE0E\uFE0F]?)*(?:[\u{E0020}-\u{E007E}]+\u{E007F})?|[0-9#*]\uFE0F\u20E3/gu;
+// a joiner (ZWJ, ZWNJ) is spelling in scripts that use it: between letters or marks that are not Latin, or word-final after a letter and its mark (Malayalam chillu); anywhere else it is hidden
+const NAME_JOINER_RE = /(?<=[\p{L}\p{M}])(?<!\p{Script=Latin})[\u200C\u200D](?=[\p{L}\p{M}])(?!\p{Script=Latin})|(?<=\p{L}\p{M})(?<!\p{Script=Latin}\p{M})[\u200C\u200D](?![\p{L}\p{M}])/gu;
+// control, format, private and unassigned characters, line separators, what fonts draw as nothing (Hangul fillers, grapheme joiner, variation selectors), the blank braille cell and the null notehead
+const NAME_REFUSED_RE = /[\p{C}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800\u{1D159}]/u;
 const NAME_VISIBLE_RE = /[\p{L}\p{N}\p{P}\p{S}]/u;
 
 /**
@@ -79,7 +81,7 @@ const NAME_VISIBLE_RE = /[\p{L}\p{N}\p{P}\p{S}]/u;
  */
 export function cleanCharacterName(raw: unknown): NameResult {
   if (typeof raw !== 'string' || raw.length > 4 * MAX_CHARACTER_NAME) return { ok: false, error: `Use 1 to ${MAX_CHARACTER_NAME} characters.` };
-  if (NAME_REFUSED_RE.test(raw.replace(NAME_EMOJI_RE, 'x'))) return { ok: false, error: 'Remove control or hidden characters from the name.' };
+  if (NAME_REFUSED_RE.test(raw.replace(NAME_EMOJI_RE, 'x').replace(NAME_JOINER_RE, ''))) return { ok: false, error: 'Remove control or hidden characters from the name.' };
   const name = raw.replace(/[<>{}]/g, '').trim();
   const n = Array.from(name).length;
   if (n < 1 || n > MAX_CHARACTER_NAME || !NAME_VISIBLE_RE.test(name)) return { ok: false, error: `Use 1 to ${MAX_CHARACTER_NAME} characters.` };
