@@ -54,7 +54,7 @@ The *Spec Kit gate* check explains itself. Common causes: the branch is not `NNN
 
 ## When the Docs check warns
 
-*Docs check (warning only)* warns when `src/` changed but `README.md`, `docs/` and the changelog did not, when `package.json` scripts changed but `README.md` did not, when a non-release PR edits `CHANGELOG.md`, or when a row is added to `specs/README.md`. It never fails the PR. Fix the docs, or write `Docs: n/a <reason>` in the PR description (or ask a maintainer for the `docs-n/a` label, then save the description once: a label alone does not re-run the check). Script: `.github/scripts/docs-check.sh`, tested by `.github/scripts/test-docs-check.sh`.
+*Docs check (warning only)* warns when `src/` changed but `README.md`, `docs/` and the changelog did not, when `package.json` scripts changed but `README.md` and `docs/development.md` did not, when a non-release PR edits `CHANGELOG.md`, or when a row is added to `specs/README.md`. It never fails the PR. Fix the docs, or write `Docs: n/a <reason>` in the PR description (or ask a maintainer for the `docs-n/a` label, then save the description once: a label alone does not re-run the check). Script: `.github/scripts/docs-check.sh`, tested by `.github/scripts/test-docs-check.sh`.
 
 ## For the maintainer
 

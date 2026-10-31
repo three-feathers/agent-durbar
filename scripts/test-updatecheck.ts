@@ -915,8 +915,8 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
       const pre = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'preload', 'preload.ts'), 'utf8');
       assert.ok(!/acceptTerms/.test(pre), 'the preload passes no terms flag');
     }
-    // FR-017 (review on #721): the README and the Settings note name the headers, as sent (netget FIXED_HEADERS)
-    for (const f of ['README.md', path.join('src', 'renderer', 'harnesses.js')]) {
+    // FR-017 (review on #721): docs/harnesses.md (was the README) and the Settings note name the headers, as sent (netget FIXED_HEADERS)
+    for (const f of [path.join('docs', 'harnesses.md'), path.join('src', 'renderer', 'harnesses.js')]) {
       const t = fs.readFileSync(path.join(__dirname, '..', '..', f), 'utf8');
       assert.match(t, /set by Durbar: `?User-Agent: AgentDurbar`?, `?Accept: \*\/\*`? and `?Accept-Language: en`? \(never your locale\); added by Chromium: its fixed `?Accept-Encoding`? and `?Sec-Fetch/, f);
       assert.ok(!/Chromium's fixed `?Accept[`,]/.test(t), f + ': Accept is Durbar\'s own header, not Chromium\'s (review on #721)');

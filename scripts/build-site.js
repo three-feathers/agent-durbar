@@ -112,6 +112,30 @@ function makeMd(baseDir, { ids = false } = {}) {
 }
 const mdRoot = makeMd('');
 
+/* The text the site's docs page and the landing page checks read (spec 021 FR-065, 2026-10-31): the README is short on GitHub, so its
+ * detail lives in docs/*.md pages listed in docs/site/pages.json. This joins the README's top (title, status block, picture), those
+ * pages' `## ` sections in order and the README's "License and credits", as one README-shaped text with repo-root-relative links. */
+function siteSource() {
+  const readme = read('README.md');
+  const pages = JSON.parse(read('docs/site/pages.json'));
+  const names = new Set(pages);
+  const rebase = (md) => md.replace(/\]\(([^)\s]+)((?:\s+"[^"]*")?)\)/g, (m, t, title) => {
+    if (/^(https?:|mailto:|#)/.test(t)) return m;
+    const [file, frag] = t.split('#');
+    if (names.has(file)) return `](#${frag || ''}${title})`;
+    return `](${path.posix.normalize(path.posix.join('docs', file))}${frag ? '#' + frag : ''}${title})`;
+  });
+  const parts = [readme.slice(0, readme.indexOf('\n## ') + 1).trim()];
+  for (const f of pages) {
+    const md = read('docs/' + f);
+    const i = md.indexOf('\n## ');
+    if (i < 0) throw new Error(`docs/${f} has no "## " section`);
+    parts.push(rebase(md.slice(i + 1)).trim());
+  }
+  parts.push(`## License and credits\n\n${section(readme, 'License and credits')}`);
+  return parts.join('\n\n') + '\n';
+}
+
 /* README: the text of one `## Title` section (until the next `## `). */
 function section(readme, title) {
   const lines = readme.split('\n');
@@ -591,7 +615,7 @@ function copyTalks(out) {
 }
 
 async function main() {
-  const readme = read('README.md');
+  const readme = siteSource();
   const intro = readme.split('\n').find((l) => l.startsWith('Agent Durbar is ')) || '';
   const landing = JSON.parse(read('docs/site/landing.json'));
   const errs = validateLanding(landing, { readme });
@@ -623,7 +647,7 @@ async function main() {
   console.log(`site: ${OUT} (index ${index.length} B, docs ${docs.length} B, ${feats.length} features, ${gallery.length} gallery images, ${copied.size} images copied${rel ? ', release ' + rel.tag : ', no release info'}${talks.length ? `, ${talks.length} unlisted talk page(s)` : ''})`);
 }
 
-module.exports = { copyTalks, validateLanding, headingAnchors, harnessNames, installSteps, features, latestChanges, shortChanges, stripRefs, slugger };
+module.exports = { siteSource, copyTalks, validateLanding, headingAnchors, harnessNames, installSteps, features, latestChanges, shortChanges, stripRefs, slugger };
 
 if (require.main === module) {
   main().catch((e) => {

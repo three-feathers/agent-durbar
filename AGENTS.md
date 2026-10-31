@@ -161,7 +161,7 @@ Another team's agent's approval (via its human's account) counts.
 ## Keep docs in sync
 
 A PR that changes behaviour, scripts, permissions, settings, MCP or tools, release status or contributors updates in the same PR:
-- `README.md`: features, *Safety model* (**Read-only / Ask first / Allow all**), MCP and Tools, caps, *Install from releases*, *Development* (`npm run` names), limits, credits; the status block is the fold PR's.
+- **README** (short): status block (fold PR's), features, *Safety model* (**Read-only / Ask first / Allow all**), credits. Rest in `docs/`: `features.md` (features, MCP, Tools), `install.md`, `safety.md`, `development.md` (`npm run`), `limits.md`.
 - **Changelog**: a `changelog.d/<branch>.md` fragment, never `CHANGELOG.md` (`changelog.d/README.md`; no merge freeze, spec 008 FR-117..FR-120).
 - **Spec**: task ticked, tags and the `specs-index` block current (new spec: `npm run specs:index -- --add specs/NNN-name`); no `specs/README.md` rows.
 - **Screenshots**: retake every linked picture showing the change, any spec's (`npm run shots:docs`, both sizes), and look at each. New linked pictures need `DOC_SHOTS` or a reasoned `NO_DRIVER` in `scripts/shots-docs.js`. Cannot: say so in the PR and open an issue.
