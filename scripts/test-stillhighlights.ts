@@ -44,12 +44,18 @@ async function main(): Promise<void> {
     assert.strictEqual(read().stillHighlights, true, 'written as true');
     assert.strictEqual(new SettingsStore(file).load().stillHighlights, true, 'survives a restart');
     for (const junk of ['yes', 'true', 1, 0, null, undefined, {}, []]) {
-      assert.deepStrictEqual(await call('settings:setStillHighlights', junk), { ok: true, stillHighlights: true }, 'a non-boolean changes nothing: ' + JSON.stringify(junk));
+      assert.deepStrictEqual(await call('settings:setStillHighlights', junk), { ok: false, stillHighlights: true }, 'a non-boolean changes nothing: ' + JSON.stringify(junk));
     }
     assert.strictEqual(new SettingsStore(file).load().stillHighlights, true, 'a refused value changes nothing on disk');
     assert.deepStrictEqual(await call('settings:setStillHighlights', false), { ok: true, stillHighlights: false });
     assert.ok(!('stillHighlights' in read()), 'off is not written');
     assert.strictEqual(new SettingsStore(file).load().stillHighlights, undefined, 'off after a restart');
+    // no store (a profile that failed to open): refused, never "saved"
+    handlers.clear();
+    register({ getSettingsStore: () => undefined, getRunTheme: () => undefined, clearRunTheme: () => undefined });
+    assert.deepStrictEqual(await call('settings:setStillHighlights', true), { ok: false, stillHighlights: false }, 'no store: ok is false');
+    handlers.clear();
+    register({ getSettingsStore: () => store, getRunTheme: () => undefined, clearRunTheme: () => undefined });
     // another setting keeps it
     await call('settings:setStillHighlights', true);
     store.setSeriousMode(true);

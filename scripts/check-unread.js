@@ -324,6 +324,16 @@ module.exports = async (ctx) => {
       assert.ok(st.glow !== 'none' && st.glow.includes(await glowOf('--desk-new')), `${tag}: the glow stays: ${st.glow}`);
       assert.ok(st.anim === 'none' && st.gAnim === 'none' && (await js(`getComputedStyle(document.querySelector(${jsLiteral(sel(B) + ' .pp')})).transform`)) === 'none', `${tag}: no zoom, no breathe: ${st.anim} / ${st.gAnim}`);
       assert.strictEqual(await js(`getComputedStyle(document.querySelector(${jsLiteral(sel(B))}),'::after').animationName`), 'none', `${tag}: the glow does not breathe`);
+      // a desk that needs you (the issue's first case). The people at real needs-you desks walk to the Boss (an empty chair: glow only, FR-178), so the
+      // real desk proves the glow and its still ::after, and a present person's desk is given the state in the page for one synchronous read of the CSS.
+      const needsReal = () => js(`(()=>{const d=document.querySelector('#stage .desk.is-waiting');if(!d)return null;return {id:d.dataset.id,cls:d.className,glow:getComputedStyle(d,'::after').boxShadow,gAnim:getComputedStyle(d,'::after').animationName}})()`);
+      const needsPerson = () => js(`(()=>{const d=[...document.querySelectorAll('#stage .desk:not(.is-waiting):not(.is-away):not(.is-unread)')].find(x=>x.querySelector('.pp'));if(!d)return null;d.classList.add('is-waiting');try{const p=d.querySelector('.pp');return {id:d.dataset.id,glow:getComputedStyle(d,'::after').boxShadow,gAnim:getComputedStyle(d,'::after').animationName,anim:getComputedStyle(p).animationName,tf:getComputedStyle(p).transform}}finally{d.classList.remove('is-waiting');}})()`);
+      const nr = await needsReal();
+      assert.ok(nr, `${tag}: there is a needs-you desk`);
+      assert.ok(nr.glow !== 'none' && nr.glow.includes(await glowOf('--desk-needs')) && nr.gAnim === 'none', `${tag}: needs you: the amber glow stays and does not breathe: ${JSON.stringify(nr)}`);
+      const np = await needsPerson();
+      assert.ok(np, `${tag}: a desk with a person to give the needs-you state`);
+      assert.ok(np.glow.includes(await glowOf('--desk-needs')) && np.gAnim === 'none' && np.anim === 'none' && np.tf === 'none', `${tag}: needs you, person present: glow kept, no animation, no zoom: ${JSON.stringify(np)}`);
       await sw(false);
       await H.calm({ blur: true });
       await turn(C, 'Maya, motion back.');
@@ -331,6 +341,8 @@ module.exports = async (ctx) => {
       await ctx.sleep(300);
       const on = await info(C);
       assert.ok(/hl-breathe|hl-enter/.test(on.anim), `${tag}: switched off, the person moves again: ${on.anim}`);
+      const nOff = await needsPerson();
+      assert.ok(nOff && /hl-breathe|hl-enter/.test(nOff.anim) && /hl-glow/.test(nOff.gAnim), `${tag}: switched off, the needs-you person and glow move again: ${JSON.stringify(nOff)}`);
       console.log(`[unread] ${tag} ok`);
     } finally {
       await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] });

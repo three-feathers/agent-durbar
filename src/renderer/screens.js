@@ -843,6 +843,7 @@
     if(st&&X.bridge.setStillHighlights){
       const on=st.getAttribute('aria-checked')!=='true';
       let res=null; try{res=await X.bridge.setStillHighlights(on);}catch(err){res=null;}
+      if(!res||!res.ok){const m=$('stillMsg');if(m)m.textContent='Could not save this setting. It stays '+(st.getAttribute('aria-checked')==='true'?'on':'off')+'.';return;}
       if(res&&res.ok){X.setStillHl(!!res.stillHighlights);st.classList.toggle('on',!!res.stillHighlights);st.setAttribute('aria-checked',res.stillHighlights?'true':'false');const m=$('stillMsg');if(m)m.textContent=res.stillHighlights?'Still highlights is on: the glow stays, nothing moves.':'Still highlights is off.';}
       return;
     }
