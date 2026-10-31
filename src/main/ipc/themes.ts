@@ -1,5 +1,5 @@
 /** IPC for themes: your own imported themes, import / export by folder pick, the AI theme maker (spec 040; moved out of main.ts as it was, spec 045 FR-060). */
-import { app, dialog } from 'electron';
+import { app } from 'electron';
 import * as path from 'path';
 import { ipcHandle } from '../ipcguard';
 import type { AdapterRegistry } from '../../adapters/registry';
@@ -8,6 +8,7 @@ import { MAX_DESCRIPTION, MAX_PASSES, THEME_IDEAS, TOP_BAR_ISSUE, buildFixPrompt
 import { errText } from '../agentops';
 import type { DevEnv } from '../devhooks';
 import { copilotDir, copilotServerNames } from '../mcpfiles';
+import { pickFolder as pickFolderIn } from '../pickfolder';
 import { UserThemeStore } from '../themes';
 
 export interface ThemesIpcDeps {
@@ -22,12 +23,7 @@ export function register(deps: ThemesIpcDeps): void {
   const userThemes = new UserThemeStore(path.join(app.getPath('userData'), 'themes'));
   // spec 077 FR-066: 'cheeky-crew' is no longer a theme but stays reserved, so no imported or AI pack can take the old id (FR-067 migrates it)
   const BUILT_IN_THEME_IDS = ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese', 'cheeky-crew'];
-  const pickFolder = async (title: string, create = false): Promise<string | null> => {
-    if (dev.DURBAR_PICK) { const first = dev.DURBAR_PICK.split(path.delimiter)[0]; return first || null; } // path.delimiter keeps C:\ paths whole (spec 040 FR-008)
-    // spec 040 FR-019: an export target may be a new folder (macOS shows "New Folder" only with createDirectory)
-    const r = await dialog.showOpenDialog({ title, properties: create ? ['openDirectory', 'createDirectory'] : ['openDirectory'] });
-    return r.canceled || !r.filePaths.length ? null : r.filePaths[0];
-  };
+  const pickFolder = (title: string, create = false): Promise<string | null> => pickFolderIn(dev, title, create);
   /* Spec 040 FR-014..FR-021: the AI theme maker. One prompt to a harness that has `generateText` (no tools, no session kept); the
      reply keeps only the safe subset and must pass the contrast rules and `checkUserManifest`. The description is never logged. */
   ipcHandle('theme:generate', async (_e, description: unknown, adapterId: unknown) => {

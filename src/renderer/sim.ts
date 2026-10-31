@@ -14,6 +14,7 @@ type AgentEvent = import('../adapters/types').AgentEvent;
 type McpServerStatus = import('../adapters/types').McpServerStatus;
 type AgentInfo = import('../shared/api').AgentInfo;
 type DurbarApi = import('../shared/api').DurbarApi;
+type CharacterTryResult = import('../shared/api').CharacterTryResult;
 type UpdatesView = import('../shared/api').UpdatesView;
 type NewFolderProgress = import('../shared/api').NewFolderProgress;
 type NewFolderCheck = import('../shared/api').NewFolderCheck;
@@ -194,6 +195,129 @@ function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: strin
 }
 
 /** Spec 005 FR-026: a simulated diff (removed lines, then added lines) with its counts. */
+/* simcharname:begin (spec 096 FR-031, the same rule as `cleanCharacterName` in src/shared/charrules.ts; `test:charipc` compares them) */
+function simCharacterName(raw: unknown): { ok: true; name: string } | { ok: false; error: string } {
+  if (typeof raw !== 'string' || raw.length > 160) return { ok: false, error: 'Use 1 to 40 characters.' };
+  if (/[\p{Cc}\p{Zl}\p{Zp}]|[^\P{Cf}‍]/u.test(raw)) return { ok: false, error: 'Remove control or hidden characters from the name.' };
+  const name = raw.replace(/[<>{}]/g, '').trim();
+  const n = Array.from(name).length;
+  if (n < 1 || n > 40) return { ok: false, error: 'Use 1 to 40 characters.' };
+  return { ok: true, name };
+}
+/* simcharname:end */
+
+/**
+ * Spec 096 FR-070 (T038): the fake image generator and a store in the page, at zero credits. `generateCharacter` waits 1.5 s (0.2 s with `simfast=1`, the drivers' flag) and draws four
+ * frames on a canvas: a simple bust in a colour from a hash of the description, the blink frame with the eyes closed. They reach the window through the same bridge calls as main's.
+ * Nothing is kept across a reload, and the description is not kept at all.
+ */
+function simCharactersApi(qs: URLSearchParams): Pick<DurbarApi, 'characterGenerate' | 'characterCancel' | 'characterSave' | 'characterList' | 'characterFrames' | 'characterRename' | 'characterDelete' | 'characterExport' | 'characterPin' | 'characterIdeas'> & { simPins(): Record<string, string> } {
+  type Frames = NonNullable<CharacterTryResult['frames']>;
+  type Face = NonNullable<CharacterTryResult['face']>;
+  const FACE: Face = { working: [176, 150], waiting: [176, 150], resting: [176, 150] };
+  const delay = qs.get('simfast') === '1' ? 200 : 1500;
+  const IDEAS = ['a night-shift nurse turned developer, tired but kind', 'a retired sea captain in a navy jumper', 'a young bakery owner with flour on his apron', 'a quiet librarian with a long braid and a cardigan', 'a cheerful bicycle courier in a yellow rain jacket', 'a calm yoga teacher with a bun and a linen shirt', 'a grandfather with a white beard and a tweed jacket', 'a freckled intern in an oversized hoodie', 'a sharp-eyed lawyer in a charcoal blazer', 'a gardener with a straw hat and dirt-stained hands', 'a jazz pianist in a rolled-sleeve shirt and suspenders', 'a lab scientist with safety glasses pushed up on her hair', 'a fisherman turned accountant in a wool cap', 'a tired new parent with a coffee-stained shirt', 'a stern but fair head chef in a white jacket', 'a curly-haired architect with a pencil behind the ear', 'a soft-spoken teacher in a mustard scarf', 'a skateboarder in his thirties with a denim jacket', 'a museum guide in a neat waistcoat', 'a farmer in clean overalls on a city day', 'a nervous first-day hire in a crisp new shirt', 'a night owl with messy hair and big headphones', 'a retired pilot in a cream polo shirt', 'a tall woman in her fifties with short grey hair, round glasses and a green cardigan'];
+  const hex = (n: number): string => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => b.toString(16).padStart(2, '0')).join('');
+  const hashOf = (t: string): number => { let h = 0; for (const c of t) h = (h * 31 + (c.codePointAt(0) as number)) >>> 0; return h; };
+  async function drawFrame(hue: number, pose: 'working' | 'waiting' | 'resting' | 'blink'): Promise<Uint8Array> {
+    const c = new OffscreenCanvas(352, 352);
+    const g = c.getContext('2d') as OffscreenCanvasRenderingContext2D;
+    g.fillStyle = `hsl(${hue} 45% 45%)`;
+    g.beginPath(); g.ellipse(176, 330, 120, 130, 0, Math.PI, 0); g.fill();
+    g.fillStyle = 'hsl(28 45% 72%)';
+    g.beginPath(); g.arc(176, 140, 62, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'hsl(28 30% 20%)';
+    if (pose === 'working' || pose === 'waiting') {
+      g.beginPath(); g.arc(154, 134, 6, 0, Math.PI * 2); g.arc(198, 134, 6, 0, Math.PI * 2); g.fill();
+    } else {
+      g.fillRect(146, 133, 16, 3); g.fillRect(190, 133, 16, 3);
+    }
+    if (pose === 'waiting') { g.fillStyle = `hsl(${hue} 45% 45%)`; g.fillRect(290, 190, 30, 80); }
+    if (pose === 'resting') { g.fillStyle = 'hsl(200 15% 88%)'; g.fillRect(150, 240, 52, 56); }
+    return new Uint8Array(await (await c.convertToBlob({ type: 'image/webp', quality: 0.82 })).arrayBuffer());
+  }
+  interface SimChar { id: string; name: string; created: string; frames: Frames }
+  let chars: SimChar[] = [];
+  let held: { tryId: string; frames: Frames } | null = null;
+  let running: { stop(): void } | null = null;
+  const pins: Record<string, string> = {};
+  const UNKNOWN = { ok: false, error: 'That character is not in the list.' };
+  const find = (id: unknown): SimChar | undefined => chars.find((c) => c.id === id);
+  const generateCharacter = async (description: string, adapterId: string): Promise<CharacterTryResult> => {
+    if (running) return { ok: false, error: 'One character at a time: wait for this one or cancel it.' };
+    const text = typeof description === 'string' ? description.trim() : '';
+    if (Array.from(text).length < 3) return { ok: false, error: 'Describe the person in at least 3 characters.' };
+    if (adapterId !== 'codex') return { ok: false, error: 'This needs OpenAI Codex, installed and signed in with ChatGPT on this computer.' };
+    if (chars.length >= 24) return { ok: false, error: 'You have 24 characters, the most Durbar keeps. Delete one first.', full: true };
+    held = null;
+    const started = Date.now();
+    const go = await new Promise<boolean>((resolve) => {
+      const t = setTimeout(() => { running = null; resolve(true); }, delay);
+      running = { stop: () => { clearTimeout(t); running = null; resolve(false); } };
+    });
+    if (!go) return { ok: false, cancelled: true };
+    const hue = hashOf(text) % 360;
+    const [working, waiting, resting, blink] = await Promise.all((['working', 'waiting', 'resting', 'blink'] as const).map((p) => drawFrame(hue, p)));
+    const frames: Frames = { working, waiting, resting, blink };
+    const tryId = hex(12);
+    held = { tryId, frames };
+    return { ok: true, tryId, frames, face: FACE, notes: [], tookMs: Date.now() - started };
+  };
+  return {
+    simPins: () => ({ ...pins }),
+    characterGenerate: generateCharacter,
+    characterCancel: async (tryId) => {
+      if (tryId === undefined || tryId === null) { if (!running) return { ok: false }; running.stop(); return { ok: true }; }
+      if (!held || held.tryId !== tryId) return { ok: false };
+      held = null;
+      return { ok: true };
+    },
+    characterSave: async (tryId, name) => {
+      if (!held || held.tryId !== tryId) return { ok: false, error: 'That character is no longer held. Make it again.' };
+      let final = '';
+      if (typeof name !== 'string' || name.replace(/[<>{}\s]/g, '') !== '') {
+        if (name !== undefined && name !== null) {
+          const n = simCharacterName(name);
+          if (!n.ok) return n;
+          final = n.name;
+        }
+      }
+      if (!final) { let n = chars.length + 1; while (chars.some((c) => c.name === `My character ${n}`)) n++; final = `My character ${n}`; }
+      if (chars.length >= 24) return { ok: false, error: 'You have 24 characters, the most Durbar keeps. Delete one first.' };
+      const c: SimChar = { id: `my-${hex(6)}`, name: final, created: new Date().toISOString(), frames: held.frames };
+      chars = [c, ...chars];
+      held = null;
+      return { ok: true, id: c.id, name: c.name };
+    },
+    characterList: async () => chars.map((c) => ({ id: c.id, name: c.name, face: FACE, blink: true, style: 'realistic-office-v1', created: c.created })),
+    characterFrames: async (id) => { const c = find(id); return c ? { ok: true, frames: c.frames } : UNKNOWN; },
+    characterRename: async (id, name) => {
+      const c = find(id);
+      if (!c) return UNKNOWN;
+      const n = simCharacterName(name);
+      if (!n.ok) return n;
+      c.name = n.name;
+      return { ok: true, id: c.id, name: c.name };
+    },
+    characterDelete: async (id) => {
+      if (!find(id)) return UNKNOWN;
+      chars = chars.filter((c) => c.id !== id);
+      let pinsRemoved = 0;
+      for (const k of Object.keys(pins)) if (pins[k] === id) { delete pins[k]; pinsRemoved++; }
+      return { ok: true, pinsRemoved };
+    },
+    characterExport: async (id) => (find(id) ? { ok: true, to: '/simulated/export' } : UNKNOWN), // the simulator writes nothing
+    characterPin: async (folderKey, id) => {
+      if (typeof folderKey !== 'string' || !/^(?:\/|[A-Za-z]:[\\/])/.test(folderKey)) return { ok: false, error: 'That folder cannot be used.' };
+      if (id !== null && !find(id)) return UNKNOWN;
+      if (id === null) delete pins[folderKey];
+      else Object.defineProperty(pins, folderKey, { value: id, enumerable: true, writable: true, configurable: true });
+      return { ok: true, pins: { ...pins } };
+    },
+    characterIdeas: async () => IDEAS.slice(),
+  };
+}
+
 function simDiffOf(oldL: string[], newL: string[], at: number): { diff: string; added: number; removed: number } {
   const head = `@@ -${oldL.length ? at : 0},${oldL.length} +${newL.length ? at : 0},${newL.length} @@`;
   return { diff: [head, ...oldL.map((l) => '-' + l), ...newL.map((l) => '+' + l)].join('\n'), added: newL.length, removed: oldL.length };
@@ -460,7 +584,7 @@ const SIM_APP_NAME: Record<string, string> = { copilot: 'GitHub Copilot', claude
 const SIM_COPILOT_CAPS = { ...SIM_PLAN_CAPS, remoteService: { name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }, interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'next-message', mcpToggleApplies: 'live', mcpRestart: true, handoff: true, remote: true, oneShot: true, deleteSession: true, renameSession: 'any' } as AdapterInfo['capabilities'];
 const SIM_MIXED_KINDS: AdapterInfo[] = [
   { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, remote: true, remoteService: { name: 'Claude', host: 'claude.ai', mobile: 'the Claude app' }, mcpToggle: true, mcpStart: 'next-message', permModeSwitch: 'live', helpers: true, history: true, deleteSession: false, renameSession: 'next-turn' } }, // spec 006 FR-028: Claude Code has no per-session delete
-  { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpRestart: false, remote: false } }, // spec 058 T028: the real switch values (FR-133, FR-147)
+  { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, imageGen: true, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpRestart: false, remote: false } }, // spec 058 T028: the real switch values (FR-133, FR-147)
   { id: 'basic', displayName: 'Basic agent (simulated)', state: 'ready', version: 'sim', capabilities: { interrupt: false, resume: false, images: false, models: false, effort: false, permissionModes: ['read-only'], permModeSwitch: 'none', usage: { tokens: true, costUsd: false, nanoAiu: false }, context: false, caps: false, helpers: false, history: false, mcpStatus: false, mcpToggle: false } as AdapterInfo['capabilities'] },
 ];
 
@@ -1964,7 +2088,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const simQuery = typeof window !== 'undefined' && window.location ? new URLSearchParams(window.location.search) : new URLSearchParams();
     let simTheme = /^[a-z0-9_-]{1,64}$/.test(simQuery.get('theme') ?? '') ? (simQuery.get('theme') as string) : undefined;
     /* characters=<value> (spec 077 FR-064, FR-070): who sits at the desks in this run, in memory, like the theme; only a listed value */
-    const CHARS = ['theme', 'minimalist', 'cheeky', 'prehistoric'] as const;
+    const CHARS = ['theme', 'minimalist', 'cheeky', 'prehistoric', 'mine'] as const;
     type SimChars = (typeof CHARS)[number];
     const isChars = (v: unknown): v is SimChars => typeof v === 'string' && (CHARS as readonly string[]).includes(v);
     let simCharacters: SimChars = isChars(simQuery.get('characters')) ? (simQuery.get('characters') as SimChars) : 'theme';
@@ -1979,10 +2103,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       simUserTheme = null;
     }
     const simNotesBridge = simNotesApi(simQuery, (id) => { const s = sims.find((x) => x.info.id === id); return s ? { key: s.info.workspaceFile || s.info.cwd, name: (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name, session: s.info.id } : undefined; }); // spec 083 FR-060
+    const { simPins, ...simCharacters_ } = simCharactersApi(simQuery); // spec 096 FR-070
+    let simCharacterMotion = true;
     const capApi: Partial<DurbarApi> = {
+      ...simCharacters_,
+      setCharacterMotion: async (on) => { if (typeof on === 'boolean') simCharacterMotion = on; return { ok: true, characterMotion: simCharacterMotion }; }, // spec 096 FR-060
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.4 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, characterPins: simPins(), characterMotion: simCharacterMotion, about: { name: 'Agent Durbar', version: '0.1.4 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },

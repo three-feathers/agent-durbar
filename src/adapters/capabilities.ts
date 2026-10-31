@@ -63,6 +63,8 @@ export interface AdapterCapabilities {
   readonly handoff?: boolean;
   /** `generateText()` exists: one prompt, no tools, no session kept (spec 040 FR-015); missing = false. */
   readonly oneShot?: boolean;
+  /** Spec 096 FR-001: `generateImage()` exists: one prompt makes one picture in an empty temp folder; missing = false. Codex stays off until probes P2 and P8 (T030). */
+  readonly imageGen?: boolean;
   /** `setRemote()` exists: the session can be followed and steered from the vendor's web or mobile app (spec 054 FR-001); missing = false. */
   readonly remote?: boolean;
   /**

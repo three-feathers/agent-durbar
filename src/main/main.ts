@@ -13,6 +13,7 @@ import { register as registerAgentsIpc } from './ipc/agents';
 import { register as registerAppIpc } from './ipc/app';
 import { register as registerBrowserIpc } from './ipc/browser';
 import { noteWindowZoom } from './titledblclick';
+import { register as registerCharactersIpc } from './ipc/characters';
 import { register as registerAttachmentsIpc } from './ipc/attachments';
 import { register as registerCheckpointsIpc } from './ipc/checkpoints';
 import { register as registerFloorsIpc } from './ipc/floors';
@@ -757,7 +758,8 @@ registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busy
 registerSchedulesIpc({ getScheduler: () => scheduler, getFolderStore: () => folderStore });
 registerUsageIpc({ agents, getUsageStore: () => usageStore, getUsageTotalsStore: () => usageTotalsStore, usageLabel });
 const newFolderIpc = registerNewFolderIpc({ addMany, getSettingsStore: () => settingsStore, asEffort, toRenderer }); // spec 093: create a folder from + Folder (clone, new repository, empty folder)
-registerSettingsIpc({ getSettingsStore: () => settingsStore, getRunTheme: () => runTheme, clearRunTheme: () => { runTheme = undefined; } });
+const charactersIpc = registerCharactersIpc({ dev, registry, router, getSettingsStore: () => settingsStore, openFolderKeys: () => [...agents.values()].map((a) => folderKeyOf(a)) }); // spec 096: the AI character maker and My characters
+registerSettingsIpc({ getSettingsStore: () => settingsStore, getRunTheme: () => runTheme, clearRunTheme: () => { runTheme = undefined; }, characterIds: () => charactersIpc.ids() });
 registerThemesIpc({ dev, registry, router });
 const harnessIpc = registerHarnessIpc({
   dev, registry, router, remoteOps, toRenderer, getWin: () => win, adaptersList,
@@ -1162,6 +1164,7 @@ app.on('before-quit', (ev) => {
     .finally(() => app.quit());
 });
 app.on('will-quit', () => {
+  charactersIpc.shutdown(); // spec 096 *Edge cases*: a generation in progress is cancelled; nothing is saved
   scheduler?.flush(); // spec 044 FR-037: a fold counted during the 3 s dispose window of before-quit
   void destroyAllViews(); // spec 080 FR-023: the session browsers (none exist until the browser pane lands)
   usageStore?.flush();

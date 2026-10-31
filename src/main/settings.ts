@@ -13,6 +13,7 @@ import { addCustomPlace, removeCustomPlace, setPlaceEntry, updateCustomPlace } f
 import type { CustomPlace, PlaceError, PlaceMap } from '../shared/places';
 import { migrateLegacyTheme, parseCharacters } from '../shared/characters';
 import type { CharacterChoice } from '../shared/characters';
+import { MAX_CHARACTER_PINS } from '../shared/charrules';
 
 /** Result of a custom-place call (spec 024 FR-020): the list and the map as they are now, whether the call worked or not. */
 export interface PlaceCallResult {
@@ -274,6 +275,57 @@ export class SettingsStore {
       return { ok: false, characters: this.characters };
     }
     return { ok: true, characters: c };
+  }
+
+  /** Spec 096 FR-033: the pins to characters that still exist (`ids`, main's list); a pin to anything else is dropped on read. A copy. */
+  characterPinsOf(ids: readonly string[]): Record<string, string> {
+    return Object.fromEntries(Object.entries(this.s.characterPins ?? {}).filter(([, id]) => ids.includes(id)));
+  }
+
+  /** Spec 096 FR-033: set or (with `null`) clear one pin, at most 500. The caller checked the key and the id. False when it could not be kept. */
+  setCharacterPin(key: string, id: string | null): boolean {
+    const pins: Record<string, string> = Object.fromEntries(Object.entries(this.s.characterPins ?? {}));
+    if (id === null) delete pins[key];
+    else {
+      if (!Object.prototype.hasOwnProperty.call(pins, key) && Object.keys(pins).length >= MAX_CHARACTER_PINS) return false;
+      Object.defineProperty(pins, key, { value: id, enumerable: true, writable: true, configurable: true });
+    }
+    return this.commitPins(pins);
+  }
+
+  /** Spec 096 FR-033: deleting a character removes its pins. Returns how many went. */
+  removeCharacterPins(id: string): number {
+    const all = Object.entries(this.s.characterPins ?? {});
+    const keep = all.filter(([, v]) => v !== id);
+    if (keep.length === all.length) return 0;
+    return this.commitPins(Object.fromEntries(keep)) ? all.length - keep.length : 0;
+  }
+
+  private commitPins(pins: Record<string, string>): boolean {
+    const before = this.s;
+    const next: AppSettings = { ...this.s };
+    if (Object.keys(pins).length) next.characterPins = pins;
+    else delete next.characterPins;
+    this.s = next;
+    if (this.save()) return true;
+    this.s = before;
+    return false;
+  }
+
+  /** Spec 096 FR-060: Settings > Characters > Motion, on unless turned off; only `false` is written. */
+  get characterMotion(): boolean {
+    return this.s.characterMotion !== false;
+  }
+
+  /** Only a real boolean changes it; anything else keeps the current value. Returns the value now in force. */
+  setCharacterMotion(v: unknown): boolean {
+    if (typeof v !== 'boolean') return this.characterMotion;
+    const next: AppSettings = { ...this.s };
+    if (v) delete next.characterMotion;
+    else next.characterMotion = false;
+    this.s = next;
+    this.save();
+    return v;
   }
 
   /** Place mapping (spec 024): MCP server name -> place id or `desk`. A copy, never the stored object. */
