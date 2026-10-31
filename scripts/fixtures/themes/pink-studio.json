@@ -1,9 +1,9 @@
 {
   "id": "ai-pink-studio",
   "name": "Pink Studio",
-  "author": "AI theme maker",
+  "author": "Agent Durbar tests",
   "version": "1.0",
-  "description": "a bright pink fashion studio with pearls and hearts (a sample of what the AI theme maker writes, for checks): colours, fonts, corners, shadows, clothes and gadgets",
+  "description": "a bright pink fashion studio with pearls and hearts (a sample pack for checks): colours, fonts, corners, shadows, clothes and gadgets",
   "extends": "clean-office",
   "ui": "clean",
   "scene": "office",

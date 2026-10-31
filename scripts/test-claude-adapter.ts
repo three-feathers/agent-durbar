@@ -1190,7 +1190,7 @@ async function main(): Promise<void> {
     await ad.stop(sid);
   }
 
-  // ---- spec 040 FR-015: a stand-alone one-shot (AI theme maker): no session, no tools, an empty temp folder removed after ----
+  // ---- spec 040 FR-015: a stand-alone one-shot: no session, no tools, an empty temp folder removed after ----
   {
     const a = oneShotArgs('make a theme');
     const at = (f: string) => a[a.indexOf(f) + 1];

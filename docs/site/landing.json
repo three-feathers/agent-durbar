@@ -70,11 +70,6 @@
       "swatch": "#1d2b53"
     }
   ],
-  "aiTheme": {
-    "text": "…or describe your own and let AI make it.",
-    "screenshot": "040-aitheme-preview-1440x900.png",
-    "alt": "The AI theme maker's result for \"a night-shift newsroom\": colour swatches, style and place names, with Try it and Save"
-  },
   "harnesses": [
     {
       "name": "GitHub Copilot",
