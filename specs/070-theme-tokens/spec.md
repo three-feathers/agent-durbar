@@ -120,3 +120,7 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 
 - **D3 delta.** In the `crew` scene kit only, a character's skin tone comes from its portrait and its cast entry (`CAST` in `crew.js`), not from the agent's hash: skin tones stay varied across the cast (spec 077 Q1.2). Every other kit and the plain fallback figure keep D3.
 - **FR-040 delta.** The ratchet counts code, not bitmaps: the portraits under `src/renderer/crew/` are fixed-colour pictures governed by spec 077 FR-050..FR-056 (`test:crew-assets`) instead. `crew.js` holds the cast's hand and sleeve colours and is outside the scanned files; `scenekits.js` gains no colour literal.
+
+## Changes 2026-10-31: doors removed (pointer, spec 017 T024)
+
+Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout, the desk door button, meeting-room signs, room door plates, **Close all** / **Open all**, door-held schedules and the door refusal of remote control, and `door-art`, `--door-*` and the door words of the theme contract. Any requirement in this spec about those (door plates, plate totals or siren, door signs, collapse, Close all / Open all, the `door` field) no longer applies and is kept as a record; Hide folder, floors and the plain status word stay. See spec 017's table of what was lost and what remains.

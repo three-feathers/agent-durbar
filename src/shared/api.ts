@@ -902,6 +902,8 @@ export interface DurbarApi {
   /** Send the chosen runs (all when no ids), one by one through the schedules; `skipped` = runs whose session or schedule has gone (they stay held). */
   heldSend?(ids?: string[]): Promise<{ ok: true; started: number; skipped: number } | { ok: false; error: string }>;
   heldDiscard?(ids?: string[]): Promise<{ ok: true; discarded: number } | { ok: false; error: string }>;
+  /** Delete the `.bad` file that was kept aside (the notice named it). */
+  heldDiscardBad?(): Promise<{ ok: boolean }>;
   onHeldChanged?(cb: (l: HeldBeforeList) => void): () => void;
   /** A Send stopped; the run stays held (why: paused-all, paused, cap, ended, updating, gone, failed). */
   onHeldStopped?(cb: (p: { id?: string; why: string }) => void): () => void;

@@ -94,6 +94,7 @@ const api: DurbarApi = {
   heldNoticed: () => ipcRenderer.invoke('heldmig:noticed'),
   heldSend: (ids) => ipcRenderer.invoke('heldmig:send', ids),
   heldDiscard: (ids) => ipcRenderer.invoke('heldmig:discard', ids),
+  heldDiscardBad: () => ipcRenderer.invoke('heldmig:discardBad'),
   onHeldChanged: (cb) => sub('heldmig:changed', cb),
   onHeldStopped: (cb) => sub('heldmig:stopped', cb),
   onOrgNote: (cb) => sub('agents:orgNote', cb),

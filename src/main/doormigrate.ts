@@ -41,6 +41,9 @@ function cleanRun(v: unknown): HeldRun | undefined {
   return out;
 }
 
+/** One limit end to end (checklist): the most run ids one IPC call may carry is every run the file may hold. */
+export const MAX_IDS = MAX_KEYS * MAX_HELD;
+
 export interface HeldDoc {
   /** Session key (its resume id) -> its held runs, in order. */
   held: Record<string, HeldRun[]>;
@@ -50,26 +53,41 @@ export interface HeldDoc {
 
 /** Tolerant parse of the old file: `closed` and `releasing` are ignored; a key with nothing held is dropped. */
 export function parseHeld(text: string): HeldDoc {
+  return parseHeldCounting(text).doc;
+}
+
+/** The same, and how many held runs (or keys) were not usable: malformed, over the caps, or a key that is refused. A usable file has 0. */
+export function parseHeldCounting(text: string): { doc: HeldDoc; dropped: number } {
   const held: Record<string, HeldRun[]> = Object.create(null);
+  let dropped = 0;
   let raw: unknown;
   try {
     raw = JSON.parse(text);
   } catch {
-    return { held, noticed: false };
+    return { doc: { held, noticed: false }, dropped: 0 };
   }
   const o = raw && typeof raw === 'object' ? (raw as { doors?: unknown; noticed?: unknown }) : {};
   const src = o.doors && typeof o.doors === 'object' ? (o.doors as Record<string, unknown>) : {};
   let n = 0;
   for (const [k, v] of Object.entries(src)) {
-    if (n >= MAX_KEYS) break;
-    if (!okKey(k) || !v || typeof v !== 'object') continue;
-    const h = (v as { held?: unknown }).held;
-    const runs = Array.isArray(h) ? h.map(cleanRun).filter((x): x is HeldRun => !!x).slice(0, MAX_HELD) : [];
+    const h = v && typeof v === 'object' ? (v as { held?: unknown }).held : undefined;
+    const count = Array.isArray(h) ? h.length : 0;
+    if (n >= MAX_KEYS) {
+      dropped += count;
+      continue;
+    }
+    if (!okKey(k) || !v || typeof v !== 'object') {
+      dropped += count;
+      continue;
+    }
+    const all = Array.isArray(h) ? h.map(cleanRun).filter((x): x is HeldRun => !!x) : [];
+    const runs = all.slice(0, MAX_HELD);
+    dropped += count - runs.length;
     if (!runs.length) continue;
     held[k] = runs;
     n++;
   }
-  return { held, noticed: o.noticed === true };
+  return { doc: { held, noticed: o.noticed === true }, dropped };
 }
 
 /** What the file is written as: the old `doors` shape without `closed`, so an older build still reads it. */
@@ -81,7 +99,7 @@ export function heldText(doc: HeldDoc): string {
 
 export interface LoadedHeld {
   doc: HeldDoc;
-  /** The file was too large or not JSON: it was kept aside as `<file>.bad` and nothing was read from it. */
+  /** The file was too large or not JSON, or some of its runs were unusable: it was kept aside as `<file>.bad` (part of it may still be read). */
   damaged: boolean;
 }
 
@@ -113,7 +131,17 @@ export function loadHeld(file: string): LoadedHeld {
   } catch {
     return { doc: empty(), damaged: keepAside(file) };
   }
-  const doc = parseHeld(text);
+  const { doc, dropped } = parseHeldCounting(text);
+  if (dropped > 0) {
+    // runs that could not be read are never deleted silently: the whole file is kept aside, the notice says so
+    try {
+      fs.copyFileSync(file, `${file}.bad`);
+    } catch {
+      /* the notice still says it */
+    }
+    if (!Object.keys(doc.held).length) removeFile(file);
+    return { doc, damaged: true };
+  }
   if (!Object.keys(doc.held).length) removeFile(file);
   return { doc, damaged: false };
 }
@@ -160,6 +188,8 @@ export interface MigrateDeps {
   /** Scheduler.releaseDoorRun: the run goes through the scheduler's own checks. */
   release(run: HeldRun): Promise<ReleaseResult>;
   persist(doc: HeldDoc): void;
+  /** Delete the kept-aside `.bad` file (only when the person chooses); true when it is gone. */
+  discardBad?(): boolean;
   /** The list changed (the window redraws). */
   changed(): void;
   /** A Send stopped with a run still held (the window says why). */
@@ -283,12 +313,26 @@ export class HeldBeforeUpdate {
     this.deps.persist(this.doc);
   }
 
-  /** A status event: when a main session's turn ended (idle), the next chosen run of its key may go. */
-  onStatus(e: { type: string; agentId?: string; sessionId: string; status?: string }, keyOf: (agentId: string) => string | undefined): void {
+  /**
+   * A status event: when any main session's turn ends (idle), every chosen run is tried again. The scheduler's `busy` can come from a
+   * sibling session of the folder (a schedule without a target) or a coffee break, so the run's own session may never idle again.
+   */
+  onStatus(e: { type: string; agentId?: string; sessionId: string; status?: string }): void {
     if (e.type !== 'status' || e.agentId || e.status !== 'idle') return;
-    const key = keyOf(e.sessionId);
-    if (!key || !this.releasing.has(key)) return;
-    (this.deps.later ?? ((fn) => void setTimeout(fn, 0)))(() => void this.pump(key));
+    this.retry();
+  }
+
+  /** Try every chosen run again now (also called on a timer by main, so a break that ends is noticed). `release` checks everything again. */
+  retry(): void {
+    if (!this.releasing.size) return;
+    (this.deps.later ?? ((fn) => void setTimeout(fn, 0)))(() => {
+      for (const key of [...this.releasing.keys()]) void this.pump(key);
+    });
+  }
+
+  /** Delete the kept-aside file after the notice named it (only on the person's choice). */
+  discardBad(): boolean {
+    return this.deps.discardBad ? this.deps.discardBad() : false;
   }
 
   /** For tests: is a Send in progress for this key. */

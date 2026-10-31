@@ -49,13 +49,16 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`/Collapse all|Expand all/.test(document.body.innerHTML)`), false, `${tag}: no Collapse all or Expand all anywhere`);
     // a folder is renamed in place from its header: the pencil, and F2 on the folder button
     const rid = await js(`document.querySelector('#stage .room[data-room]').dataset.room`);
-    if (await js(`!!document.querySelector(${jsLiteral(`#stage .room[data-room="${rid}"] [data-foldermenu]`)})`)) {
-      await js(`document.querySelector(${jsLiteral(`#stage .room[data-room="${rid}"] [data-foldermenu]`)}).focus()`);
-      await H.key('F2');
-      await ok(`!!document.querySelector('.inl-input')`, `${tag}: F2 on the folder button opens the name field`);
-      await H.key('Escape');
-      await ok(`!document.querySelector('.inl-input')`, `${tag}: Escape closes it`);
-    }
+    assert.ok(await js(`!!document.querySelector(${jsLiteral(`#stage .room[data-room="${rid}"] [data-foldermenu]`)})`), `${tag}: the room header has its folder button`);
+    await js(`document.querySelector(${jsLiteral(`#stage .room[data-room="${rid}"] [data-foldermenu]`)}).focus()`);
+    await H.key('F2');
+    await ok(`!!document.querySelector('.inl-input')`, `${tag}: F2 on the folder button opens the name field`);
+    await H.key('Escape');
+    await ok(`!document.querySelector('.inl-input')`, `${tag}: Escape closes it`);
+    // the old preference of the removed Office layout row is deleted on a start (spec 017 FR-034)
+    await js(`localStorage.setItem('durbar.doorsigns','off')`);
+    await H.load({ w, h, ready: 'fit' });
+    assert.strictEqual(await js(`localStorage.getItem('durbar.doorsigns')`), null, `${tag}: durbar.doorsigns is removed on a start`);
     // Settings: no Office layout row
     await openSched();
     assert.strictEqual(await js(`/Office layout|Office with cabins|cabin/i.test(document.getElementById('screen').innerText)`), false, `${tag}: Settings has no Office layout row`);
@@ -101,7 +104,7 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#schedSet #heldBefore [data-ss="held-send"]').click()`);
     await ok(`[...document.querySelectorAll('#toasts .toast')].some(t=>/held prompts go out one by one/.test(t.innerText))`, `${tag}: Send says the prompts go out one by one`, 8000);
     rows = await heldRows();
-    assert.ok(rows.length === 1 && /(3|2) held/.test(rows[0].text), `${tag}: nothing was dropped while the agent is busy: ${JSON.stringify(rows)}`);
+    assert.ok(rows.length === 1 && /3 held/.test(rows[0].text), `${tag}: nothing was sent or dropped while the agent is busy: ${JSON.stringify(rows)}`);
     await H.key('Escape');
   }
   console.log('[017] all checks passed');

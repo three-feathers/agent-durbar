@@ -726,7 +726,7 @@ const renameSessionOpFor = (openIds: () => ReadonlySet<string>) => renameOp({
 // ---- IPC (spec 045 FR-060): every handler lives in src/main/ipc/<area>.ts, registered here through ipcHandle / ipcOn (ipcguard.ts). ----
 // Stores created in whenReady, and state that changes, are passed as getters so a handler reads them when it runs.
 const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity });
-registerHeldMigIpc({ held: () => heldBefore, router, keyOf: (id) => (agents.has(id) ? resumeIdFor(id) : undefined) });
+registerHeldMigIpc({ held: () => heldBefore, router });
 registerAppIpc({
   getSinceAway: () => sinceAway,
   clearSinceAway: () => { sinceAway = null; },
@@ -1058,9 +1058,11 @@ app.whenReady().then(() => {
       scheduleExists: (id) => !!id && !!scheduler?.doc.schedules.some((x) => x.id === id),
       release: (run) => (scheduler ? scheduler.releaseDoorRun(run.scheduleId, run.prompt) : Promise.resolve('failed' as const)),
       persist: (doc) => { try { saveHeld(dfile, doc); } catch (err) { console.warn('[held] could not save', err instanceof Error ? err.message : err); } },
+      discardBad: () => { try { fs.rmSync(`${dfile}.bad`, { force: true }); return true; } catch { return false; } },
       changed: () => toRenderer('heldmig:changed', heldBefore?.list()),
       stopped: (agentId, why) => toRenderer('heldmig:stopped', { id: agentId, why }),
     });
+    setInterval(() => heldBefore?.retry(), 5000).unref(); // a coffee break that ends, or a sibling that frees the folder, moves a chosen Send on (retry does nothing without one)
   }
   {
     const file = path.join(app.getPath('userData'), 'durbar-schedules.json');

@@ -231,3 +231,7 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 - FR-019: CI runs `npm test` on Windows, macOS and Linux; the layout was looked at on macOS only.
 - Deviation from the first design: the floor for new folders is chosen in the Floors panel, not in the top bar (no room at 1280x800; research R7, FR-006 updated).
 - `[KNOWN GAP]` The Tools view is not filtered by floor (out of scope). An older build that saves the folder file drops floors (folders kept).
+
+## Changes 2026-10-31: doors removed (pointer, spec 017 T024)
+
+Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout, the desk door button, meeting-room signs, room door plates, **Close all** / **Open all**, door-held schedules and the door refusal of remote control, and `door-art`, `--door-*` and the door words of the theme contract. Any requirement in this spec about those (door plates, plate totals or siren, door signs, collapse, Close all / Open all, the `door` field) no longer applies and is kept as a record; Hide folder, floors and the plain status word stay. See spec 017's table of what was lost and what remains.

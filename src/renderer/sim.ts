@@ -2246,6 +2246,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         H.changed();
         return { ok: true as const, discarded: n - H.items.length };
       },
+      heldDiscardBad: async () => ({ ok: true }),
       onHeldChanged: (cb) => { simHeldSubs.push(cb); return () => undefined; },
       onHeldStopped: (cb) => { simHeldStopSubs.push(cb); return () => undefined; },
       onRemoteOff: (cb) => { simRemoteOffSubs.push(cb); return () => undefined; },

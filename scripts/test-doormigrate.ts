@@ -37,6 +37,7 @@ function make(file: string, opts: { sessions?: string[]; schedules?: string[]; r
 const fileHeld = (file: string): string[] => (fs.existsSync(file) ? Object.values(parseHeld(fs.readFileSync(file, 'utf8')).held).flat().map((r) => r.prompt) : []);
 
 async function main(): Promise<void> {
+  process.exitCode = 1; // a promise that never settles must not exit 0: set to 0 only after the last line
   // ---- parse: tolerant; `closed` and `releasing` ignored; nothing from the prototype; a key with nothing held is dropped ----
   assert.deepStrictEqual(Object.keys(parseHeld('nope').held), []);
   const p = parseHeld(OLD({ s1: { closed: true, releasing: true, held: [{ id: 'a', at: 1, prompt: 'hi', scheduleId: 'x' }, { id: '', at: 1, prompt: 'bad' }, { id: 'b', at: 'x', prompt: 'bad' }] }, s2: { closed: true, held: [] }, s3: { closed: false, held: [] }, __proto__: { held: [run('z')] }, s4: 'x' }));
@@ -80,16 +81,15 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(fileHeld(f1), ['one', 'two', 'three']);
     assert.strictEqual(t.m.isReleasing('k1'), true, 'the Send waits for the next idle of that session');
     t.results = ['sent'];
-    t.m.onStatus({ type: 'status', sessionId: 'agent-k1', status: 'working' }, (id) => id.replace('agent-', ''));
-    t.m.onStatus({ type: 'status', sessionId: 'agent-k1', agentId: 'sub', status: 'idle' }, (id) => id.replace('agent-', ''));
-    t.m.onStatus({ type: 'status', sessionId: 'agent-k2', status: 'idle' }, (id) => id.replace('agent-', ''));
-    assert.strictEqual(t.later.length, 0, 'only the end of a chosen session\'s main turn moves a Send on');
-    t.m.onStatus({ type: 'status', sessionId: 'agent-k1', status: 'idle' }, (id) => id.replace('agent-', ''));
+    t.m.onStatus({ type: 'status', sessionId: 'agent-k1', status: 'working' });
+    t.m.onStatus({ type: 'status', sessionId: 'agent-k1', agentId: 'sub', status: 'idle' });
+    assert.strictEqual(t.later.length, 0, 'a working status or a helper\'s idle moves nothing');
+    t.m.onStatus({ type: 'status', sessionId: 'agent-k1', status: 'idle' });
     t.later.shift()?.();
     await new Promise((r2) => setImmediate(r2));
     assert.deepStrictEqual(t.sends, ['one'], 'the first goes when the agent is free');
     assert.deepStrictEqual(fileHeld(f1), ['two', 'three'], 'and leaves the queue only now');
-    t.m.onStatus({ type: 'status', sessionId: 'agent-k1', status: 'idle' }, (id) => id.replace('agent-', ''));
+    t.m.onStatus({ type: 'status', sessionId: 'agent-k1', status: 'idle' });
     t.later.shift()?.();
     await new Promise((r2) => setImmediate(r2));
     assert.deepStrictEqual(t.sends, ['one', 'two'], 'one at a time, in order');
@@ -97,7 +97,7 @@ async function main(): Promise<void> {
     // a restart: a half-done Send stops, nothing further goes out by itself
     const r2 = make(f1);
     assert.strictEqual(r2.m.isReleasing('k2'), false);
-    r2.m.onStatus({ type: 'status', sessionId: 'agent-k2', status: 'idle' }, (id) => id.replace('agent-', ''));
+    r2.m.onStatus({ type: 'status', sessionId: 'agent-k2', status: 'idle' });
     assert.strictEqual(r2.later.length, 0, 'after a restart no idle moves anything');
     assert.deepStrictEqual(r2.sends, []);
   }
@@ -111,7 +111,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(fileHeld(f), ['one', 'two'], `${why}: both still held (never lost)`);
     assert.deepStrictEqual(t.stops, ['agent-k1:' + why], `${why}: the window is told`);
     assert.strictEqual(t.m.isReleasing('k1'), false, `${why}: the Send is over; nothing further goes by itself`);
-    t.m.onStatus({ type: 'status', sessionId: 'agent-k1', status: 'idle' }, (id) => id.replace('agent-', ''));
+    t.m.onStatus({ type: 'status', sessionId: 'agent-k1', status: 'idle' });
     assert.strictEqual(t.later.length, 0, `${why}: an idle does not restart it`);
   }
 
@@ -176,6 +176,65 @@ async function main(): Promise<void> {
 
   // ---- the file is written atomically (temp file, then rename) and stays readable by `parseHeld` ----
   assert.deepStrictEqual(fs.readdirSync(dir).filter((x) => x.endsWith('.tmp')), [], 'no temp file left behind');
+
+  // ---- review on #954 item 3: a chosen Send is retried on ANY main session's idle and on the timer, since `busy` can come from a sibling or a break ----
+  {
+    const f = path.join(dir, 'sibling.json');
+    fs.writeFileSync(f, OLD({ k1: { held: [run('a', 'one')] } }));
+    const t = make(f, { results: ['busy'] });
+    await t.m.send();
+    assert.deepStrictEqual(t.sends, [], 'a sibling session is working: busy, nothing sent');
+    assert.strictEqual(t.m.isReleasing('k1'), true);
+    t.results = ['sent'];
+    t.m.onStatus({ type: 'status', sessionId: 'agent-OTHER', status: 'idle' }); // the sibling's turn ended, not k1's
+    t.later.shift()?.();
+    await new Promise((r) => setImmediate(r));
+    assert.deepStrictEqual(t.sends, ['one'], 'the run goes when ANY main session idles');
+    // the timer path (a coffee break that ends emits no status): retry() alone moves it on
+    fs.writeFileSync(f, OLD({ k1: { held: [run('b', 'two')] } }));
+    const t2 = make(f, { results: ['busy'] });
+    await t2.m.send();
+    t2.results = ['sent'];
+    t2.m.retry();
+    t2.later.shift()?.();
+    await new Promise((r) => setImmediate(r));
+    assert.deepStrictEqual(t2.sends, ['two'], 'retry() (main\'s timer) moves a stalled Send on');
+    const t3 = make(f);
+    t3.m.retry();
+    assert.strictEqual(t3.later.length, 0, 'with no Send chosen, retry does nothing (never sends by itself)');
+  }
+
+  // ---- review on #954 item 5: a valid file whose runs are all unusable is never deleted silently ----
+  {
+    const f = path.join(dir, 'unusable.json');
+    const body = JSON.stringify({ doors: { k: { held: [{ id: 'x', at: 'yesterday', prompt: 'p' }] } } });
+    fs.writeFileSync(f, body);
+    const t = make(f);
+    assert.deepStrictEqual([t.m.list().items.length, t.m.list().damaged, t.m.list().notice], [0, true, true], 'it says so');
+    assert.ok(fs.existsSync(f + '.bad') && fs.readFileSync(f + '.bad', 'utf8') === body, 'the whole file is kept aside');
+    // partly usable: the usable run is held, the file is kept aside too, and the notice says so
+    const g = path.join(dir, 'partial.json');
+    fs.writeFileSync(g, JSON.stringify({ doors: { k: { held: [run('a', 'ok'), { id: 'x', at: 'bad', prompt: 'p' }] } } }));
+    const t2 = make(g);
+    assert.deepStrictEqual([t2.m.list().items.map((i) => i.prompt), t2.m.list().damaged], [['ok'], true]);
+    assert.ok(fs.existsSync(g + '.bad'), 'kept aside, nothing silently dropped');
+    // over the per-key cap: the extra runs are not lost silently
+    const h = path.join(dir, 'overcap.json');
+    fs.writeFileSync(h, JSON.stringify({ doors: { k: { held: Array.from({ length: MAX_HELD + 3 }, (_, i) => run('r' + i)) } } }));
+    make(h);
+    assert.ok(fs.existsSync(h + '.bad'), 'runs over the cap: the file is kept aside');
+    // a closed door with nothing at all held is still removed with no fuss
+    const c = path.join(dir, 'closedonly2.json');
+    fs.writeFileSync(c, OLD({ k: { closed: true, held: [] } }));
+    assert.strictEqual(make(c).m.list().damaged, false);
+    assert.ok(!fs.existsSync(c) && !fs.existsSync(c + '.bad'));
+    // discard of the kept-aside file only on the person's choice
+    let gone = 0;
+    const t4 = new HeldBeforeUpdate(loadHeld(path.join(dir, 'none.json')), { sessionOf: () => undefined, scheduleExists: () => false, release: async () => 'failed', persist: () => undefined, discardBad: () => (gone++, true), changed: () => undefined, stopped: () => undefined });
+    assert.strictEqual(gone, 0, 'nothing is deleted on start');
+    assert.strictEqual(t4.discardBad(), true);
+    assert.strictEqual(gone, 1);
+  }
 
   // ---- old schedule logs (spec 044 FR-127) ----
   {
@@ -243,6 +302,7 @@ async function main(): Promise<void> {
   }
 
 
+  process.exitCode = 0;
   console.log('doormigrate tests passed');
 }
 

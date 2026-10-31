@@ -1249,7 +1249,7 @@ async function heldAct(how,ids){
   const fn=how==='send'?bridge.heldSend:bridge.heldDiscard;
   const q=fn?await fn(ids).catch(()=>null):null;
   if(!q||!q.ok){toast('The held prompts are still there: '+esc((q&&q.error)||'could not '+how+' them')+'.',5200).classList.add('err');return;}
-  if(how==='send')toast(q.started?(q.started===1?'The held prompt goes out when its session is free.':'The '+q.started+' held prompts go out one by one.')+(q.skipped?' '+q.skipped+' cannot be sent; they stay held until you discard them.':''):'Nothing could be sent: '+(q.skipped||0)+' stay held until you discard them.',5200);
+  if(how==='send')toast(q.started?(q.started===1?'The held prompt goes out as soon as the schedules\' rules allow it (Pause all, limits, a busy agent).':'The '+q.started+' held prompts go out one by one, as soon as the schedules\' rules allow.')+(q.skipped?' '+q.skipped+' cannot be sent; they stay held until you discard them.':''):'Nothing could be sent: '+(q.skipped||0)+' stay held until you discard them.',5200);
   else toast(q.discarded===1?'1 held prompt discarded.':q.discarded+' held prompts discarded.',4200);
 }
 /* the one notice: shown once (main remembers), whatever is chosen; Escape and "Decide later" change nothing */
@@ -1259,13 +1259,20 @@ async function heldNotice(){
   await bridge.heldNoticed().catch(()=>{});
   const lines=heldGroups().slice(0,8).map(g=>{const gone=g.items.every(i=>!i.canSend);return g.name+': '+g.items.length+(gone&&g.items[0].why?' · only Discard ('+g.items[0].why+')':'');});
   if(HELD.items.length>lines.length&&heldGroups().length>8)lines.push('and '+(heldGroups().length-8)+' more');
-  const dmg=HELD.damaged?'A file of held prompts could not be read and was kept aside; nothing from it was used. ':'';
-  if(!n){await askDialog({title:'A file of held prompts was kept aside',body:dmg+'Nothing was sent.',buttons:[{label:'OK',value:null}]});return;}
+  const dmg=HELD.damaged?'Parts of the old file of held prompts could not be read, so the file was kept aside as durbar-doors.json.bad in the app\'s data folder; nothing unreadable was used or sent. ':'';
+  if(HELD.damaged){const w=await askDialog({title:'Held prompts: a file was kept aside',body:dmg+(n?'':'Nothing was sent. ')+'You can delete the kept-aside file now, or keep it (it is not looked at again).',buttons:[{label:'Keep it',value:null},{label:'Delete the kept-aside file',value:'del'}]});if(w&&w.value==='del'&&bridge.heldDiscardBad){const r=await bridge.heldDiscardBad().catch(()=>null);toast(r&&r.ok?'The kept-aside file was deleted.':'The kept-aside file could not be deleted.',4200);}if(!n)return;}
   const v=await askDialog({title:'Scheduled prompts were held behind a door',
-    body:dmg+(n===1?'1 scheduled prompt was':n+' scheduled prompts were')+' held behind a door. Doors are gone. Nothing was sent. Send goes one by one through the schedules (Pause all and each schedule\'s limit still apply). Decide later keeps them in Settings > Schedules.',
+    body:(n===1?'1 scheduled prompt was':n+' scheduled prompts were')+' held behind a door. Doors are gone. Nothing was sent. Send goes one by one through the schedules (Pause all and each schedule\'s limit still apply). Decide later keeps them in Settings > Schedules.',
     lines,buttons:[{label:'Decide later',value:null},{label:'Discard ('+n+')',value:'discard'},...(sendable?[{label:'Send ('+sendable+')',value:'send'}]:[])]});
   if(v&&v.value==='send')await heldAct('send');
   else if(v&&v.value==='discard')await heldAct('discard');
+}
+let heldRefreshing=false;
+/* the list's `canSend` and sessions change without a held-prompt change (a session opened again, a schedule deleted): Settings reads it again whenever it is painted */
+async function heldRefresh(){
+  if(heldRefreshing||!bridge||!bridge.heldList||!HELD.items.length)return;
+  heldRefreshing=true;
+  try{const l=heldClean(await bridge.heldList());if(JSON.stringify(l.items)!==JSON.stringify(HELD.items)){HELD.items=l.items;renderSchedSettings();}}catch(e){}finally{heldRefreshing=false;}
 }
 function heldSettingsHTML(){
   if(!HELD.items.length)return '';
@@ -4049,6 +4056,7 @@ document.addEventListener('scroll',()=>INL().follow(),{capture:true,passive:true
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
 const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='long'?'long':qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':qs.get('simreply')==='secrets'?'secrets':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', sched:qs.get('simsched')==='1',ws:qs.get('simws')==='1', schedFire:Math.max(0,Math.min(600,parseInt(qs.get('simschedfire')||'0',10)||0)), seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), edits:qs.get('simedits')==='1', floors:qs.get('simfloors')==='1'||qs.get('simfloors')==='ground', floorsGround:qs.get('simfloors')==='ground', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
+try{localStorage.removeItem('durbar.doorsigns');}catch(e){} /* spec 017 FR-034: the preference of the removed Office layout row is deleted on the first start */
 const BP = window.DurbarBrowserPane; /* spec 080 T015: the session browser's tabs and bar; it talks to the real preload API (main refuses it outside the app's own page) */
 /* spec 080 FR-025d (Q3): a hidden session's page dialog brings that session's chat forward on its Browser tab, at most once per session until the user opens that chat themselves */
 const PULLED=new Set(); let pulling=false;
@@ -6160,8 +6168,8 @@ async function moveFolderByMenu(r,floorId,anchor){
 }
 document.addEventListener('contextmenu',e=>{
   const h=e.target.closest('#stage .room-head');
-  if(h&&!e.target.closest('.desk')){const door=h.querySelector('[data-foldermenu]'),r=door&&ROOMS.find(x=>x.id===door.dataset.foldermenu);
-    if(r&&bridge&&bridge.removeFolder&&!demoOn){e.preventDefault();const b=h.getBoundingClientRect();openFolderMenu(r,e.clientX||b.left+16,e.clientY||b.bottom,door);return;}}
+  if(h&&!e.target.closest('.desk')){const menuBtn=h.querySelector('[data-foldermenu]'),r=menuBtn&&ROOMS.find(x=>x.id===menuBtn.dataset.foldermenu);
+    if(r&&bridge&&bridge.removeFolder&&!demoOn){e.preventDefault();const b=h.getBoundingClientRect();openFolderMenu(r,e.clientX||b.left+16,e.clientY||b.bottom,menuBtn);return;}}
   /* spec 033 FR-024: in the List view the Folder cell opens the folder menu of that row's folder; the rest of the row keeps the agent's menu */
   const lf=e.target.closest('#list .lrow[data-id] .lfold');
   if(lf&&bridge&&bridge.removeFolder&&!demoOn){const a=byId(lf.closest('.lrow').dataset.id),rr=a&&roomOf(a);if(rr&&ROOMS.includes(rr)){e.preventDefault();const b=lf.getBoundingClientRect();openFolderMenu(rr,e.clientX||b.left+8,e.clientY||b.bottom,lf.closest('.lrow'));return;}}
@@ -7207,6 +7215,7 @@ function renderSchedSettings(){
       :'<p class="scr-note small">No schedules yet.</p>')
     +(without.length?`<div class="scr-tools"><label class="ss-add">Add a schedule to<select id="ssRoom">${without.map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label><button class="btn" type="button" data-ss="add">Add…</button></div>`:'');
   histPaint();histEnsure();
+  heldRefresh();
   renderSchedTop(); /* spec 044 FR-029: the section may be on screen as soon as it is painted */
 }
 document.addEventListener('click',async e=>{
