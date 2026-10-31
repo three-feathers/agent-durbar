@@ -32,6 +32,7 @@ import { register as registerSlashIpc } from './ipc/slash';
 import { register as registerNotesIpc } from './ipc/notes';
 import { NotesOps } from './notesops';
 import { NotesStore } from './notesstore';
+import { NotesFile } from './notesfile';
 import { register as registerQuestionsIpc } from './ipc/questions';
 import { register as registerRemoteIpc } from './ipc/remote';
 import { register as registerDoorsIpc } from './ipc/doors';
@@ -1018,11 +1019,14 @@ app.whenReady().then(() => {
   usageStore.load();
   usageTotalsStore = new UsageTotalsStore(path.join(app.getPath('userData'), 'durbar-usage-totals.json'));
   // spec 083: notes are masked with the folder's and the session's known secret values before they are stored (FR-005); the window is told which folder changed
+  const notesFile = new NotesFile();
   const notesStore = new NotesStore(path.join(app.getPath('userData'), 'notes'), { onChanged: (fingerprint) => toRenderer('notes:changed', { fingerprint }) });
   notesOps = new NotesOps({
     agents, store: () => notesStore, resumeIdFor, adapterIdOf: (id) => router.adapterIdOf(id),
     folderValues: (key) => mcpStore?.knownSecretValues(key) ?? [], // FR-005: never decrypts, so no keychain prompt from a notes save
     sessionValues: (id) => (mcpStore?.noPrompt() ? mcp.secretValuesFor(id) : []), // forSession could unlock the vault: only when it cannot
+    // FR-050..FR-054 (T041): the .durbar/notes.md mirror; every folder's switch reads as off until T042 saves `notesFile` in folders.json, so no project file is touched
+    file: () => notesFile, fileOn: () => false,
   });
   appState = new AppStateStore(path.join(app.getPath('userData'), 'durbar-app-state.json'));
   appState.load();

@@ -116,7 +116,7 @@ assert.strictEqual(L.storeBytes, L.notesPerFolder * L.noteJsonBytes + L.tombston
 assert.strictEqual(L.mdBytes, L.notesPerFolder * L.noteMdBytes + 1024);
 assert.ok(L.storeBytes < 16 * 1024 * 1024, `the store cap (${L.storeBytes}) is below 16 MB`);
 const SRC = path.join(__dirname, '..', '..', 'src');
-for (const f of ['shared/notes.ts', 'main/notesstore.ts', 'main/notesops.ts', 'main/ipc/notes.ts']) {
+for (const f of ['shared/notes.ts', 'main/notesstore.ts', 'main/notesops.ts', 'main/ipc/notes.ts', 'main/notesfile.ts']) {
   const src = fs.readFileSync(path.join(SRC, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   const body = f === 'shared/notes.ts' ? src.replace(/export const NOTES_LIMITS = \(\(\) => \{[\s\S]*?\n\}\)\(\);/, '') : src;
   assert.ok(!/\b(?:16_?000|65_?536|300|80|400)\b/.test(body.replace(/'[^'\n]*'|`[^`\n]*`/g, "''")), `${f}: no cap number outside NOTES_LIMITS`);
