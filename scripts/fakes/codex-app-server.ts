@@ -5,9 +5,24 @@
  * assert what the adapter sent. Fixtures replayed through it are SYNTHETIC (`scripts/fixtures/codex/`); nothing here claims to be recorded.
  */
 import { EventEmitter } from 'events';
+import * as fs from 'fs';
+import * as path from 'path';
 import type { RpcChild, SpawnFn, SpawnOptions } from '../../src/adapters/codexRpc';
 
 type Json = Record<string, unknown>;
+
+/**
+ * Spec 096 FR-070 (T032): what a turn does with the thread's `cwd` when the image tool is faked. `sheet` writes a fixture sheet as `sheet.png`;
+ * the others are the bad cases of FR-020: `none` writes nothing, `two-files` adds a second picture, `other-name` writes only under another
+ * name, `symlink` makes `sheet.png` a link to a file outside the folder, `text` is a text file named `sheet.png`, `oversize` is one byte over the
+ * 20 MB cap (sparse), and `hang` writes nothing and never ends the turn until `turn/interrupt` or the child is closed.
+ * `[KNOWN GAP]` no image `item/*` notification is sent: its real shape is probe P1, not yet run, so nothing here claims to be recorded.
+ */
+export type FakeImageMode = 'sheet' | 'none' | 'two-files' | 'other-name' | 'symlink' | 'text' | 'oversize' | 'hang';
+const IMAGE_OVER_CAP = 20 * 1024 * 1024 + 1;
+/** The fixture sheet (a plain-JS helper, shared with the encoder driver, which has no compiled scripts to load). */
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pngSheet = (kind: string): Buffer => (require(path.join(__dirname, '..', '..', '..', 'scripts', 'fakes', 'png-sheet.js')) as { sheetPng(k: string, side?: number): Buffer }).sheetPng(kind, 512);
 const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 export interface FakeCodexOptions {
@@ -45,6 +60,10 @@ export interface FakeCodexOptions {
   account?: Record<string, unknown> | 'missing' | 'error';
   /** spec 059: answer `thread/name/set` with this error message. */
   refuseRename?: string;
+  /** Spec 096 FR-070: a turn acts as the image tool in the thread's `cwd`, in this way. Unset: no file is touched, as for every other test. */
+  imageMode?: FakeImageMode;
+  /** Spec 096: the kind of fixture sheet `imageMode: 'sheet'` writes (`png-sheet.js`; default `transparent`), or the bytes themselves. */
+  imageSheet?: string | Uint8Array;
   /** Exit (no answer) when a request with this method arrives. */
   exitOn?: { method: string; code?: number | null; signal?: NodeJS.Signals | null };
 }
@@ -359,6 +378,7 @@ export class FakeCodexServer {
           return;
         }
         this.openTurn.set(tid, turnId);
+        if (this.opts.imageMode) this.actAsImageTool(this.threads.get(tid) as string);
         if (this.opts.holdTurnStart) {
           this.held.push(() => {
             this.reply(child, id, { turn: { id: turnId, status: 'inProgress' } });
@@ -418,7 +438,35 @@ export class FakeCodexServer {
       if (n.method === 'turn/completed' && isObj(p) && p.threadId === tid) completed = true;
     }
     if (completed) this.openTurn.delete(tid);
-    else if (!this.opts.holdTurn) this.completeTurn(child, tid, turnId, 'completed');
+    else if (!this.opts.holdTurn && this.opts.imageMode !== 'hang') this.completeTurn(child, tid, turnId, 'completed');
+  }
+
+  /** Files outside a thread's folder that `symlink` mode made; a test removes them. */
+  imageOutside: string[] = [];
+  /** Spec 096 FR-070: write what `imageMode` asks into the thread's folder. A file system error (no link rights on Windows) ends in `imageError`. */
+  imageError: string | undefined;
+  private actAsImageTool(cwd: string): void {
+    const sheet = (): Uint8Array => (typeof this.opts.imageSheet === 'object' ? this.opts.imageSheet : pngSheet(this.opts.imageSheet ?? 'transparent'));
+    const file = (name: string): string => path.join(cwd, name);
+    try {
+      switch (this.opts.imageMode) {
+        case 'sheet': fs.writeFileSync(file('sheet.png'), sheet()); break;
+        case 'two-files': fs.writeFileSync(file('sheet.png'), sheet()); fs.writeFileSync(file('other.png'), sheet()); break;
+        case 'other-name': fs.writeFileSync(file('picture.png'), sheet()); break;
+        case 'symlink': {
+          const outside = `${cwd}-outside.png`;
+          fs.writeFileSync(outside, sheet());
+          this.imageOutside.push(outside);
+          fs.symlinkSync(outside, file('sheet.png'));
+          break;
+        }
+        case 'text': fs.writeFileSync(file('sheet.png'), 'I could not make a picture, sorry.\n'); break;
+        case 'oversize': fs.writeFileSync(file('sheet.png'), sheet()); fs.truncateSync(file('sheet.png'), IMAGE_OVER_CAP); break;
+        default: break; // none, hang
+      }
+    } catch (err) {
+      this.imageError = (err as NodeJS.ErrnoException).code ?? 'write failed';
+    }
   }
 
   private completeTurn(child: FakeChild, tid: string, turnId: string, status: 'completed' | 'interrupted'): void {
