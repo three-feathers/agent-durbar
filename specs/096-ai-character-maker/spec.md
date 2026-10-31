@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: AI character maker (owner request, Vikram 2026-10-30): make realistic crew characters with Codex image generation (3 poses + blink), My characters, folder pins, light portrait motion
-note: spec, plan and tasks drafted; Q1-Q5 open for the owner; probes P1-P6 need a real Codex run; nothing built
+note: spec, plan, tasks drafted; Q1-Q5 answered 2026-10-31; Q1b (built-in crew motion) open for Paco; probes P1-P8 not run; nothing built
 status: draft
 -->
 
@@ -11,7 +11,7 @@ status: draft
 
 **Created**: 2026-10-31
 
-**Status**: Draft (2026-10-31). Spec, plan and tasks only; nothing is built. Five open questions for the owner (*Open questions*), each with a recommended answer. Probes P1-P6 (plan.md) need a real Codex run on the owner's ChatGPT plan before the adapter phase.
+**Status**: Draft (2026-10-31). Spec, plan and tasks only; nothing is built. Q1-Q5 are answered by the owner (*Clarifications*); one question is open for Paco (Q1b, motion on the built-in crews). Probes P1-P8 (plan.md) are OK'd by the owner on his ChatGPT plan and not yet run; they come before the adapter phase.
 
 **Input**: Owner requests (Vikram, Telegram DMs, 2026-10-30 and 2026-10-31):
 - "for characters, add ai character maker";
@@ -71,15 +71,26 @@ A delta would bury that in 077's 70+ requirements, so it is a new spec, number *
 - R3: realistic, office-like art. "Quality is the key because it is visual."
 - R4: Codex image generation on his ChatGPT plan is approved. This is plan usage, not API money and not Copilot AI credits.
 
-### Decisions taken by this spec (change them under *Open questions*)
+### Owner decisions on Q1-Q5 (Vikram, Telegram, 2026-10-31 05:35 UTC)
+
+Quote: "ok and go with your pick". This answers all five questions with the recommended option; he also OK'd the P1-P6 Codex probes on his plan (P7, P8 are added after that message and use the same kind of call, 1 image at most: they are run with P1 and need his go to be stated again before the run).
+
+- **Q1 Animation route**: (1) living portraits (cross-fade, bob, blink, typing cue, glow). Scope: generated characters only in v1; the built-in crews are Q1b.
+- **Q2**: **My characters** is its own Characters value; pins work under any crew.
+- **Q3**: pins apply only when Characters is a crew value (My characters, Cheeky, Prehistoric) in v1.
+- **Q4**: export only in v1; import in a follow-up through the same validator.
+- **Q5**: at most 24 saved characters, one generation at a time, a 5-minute timeout, no Durbar daily cap; the dialog warns about plan use on every try.
+- **Q1b (open, Paco)**: motion on the built-in Cheeky and Prehistoric crews stays the crew owner's call (FR-062).
+
+### Decisions taken by this spec
 
 - **D1 Codex only in v1.** Only Codex has a checked image tool. Claude Code and Copilot get `imageGen: false`. The dialog names what it needs, as the theme maker does.
 - **D2 One sheet, four frames.** One generation asks for a 2x2 sheet: working, waiting, resting, and a fourth frame with the working pose and the eyes closed (the blink).
   - Why one sheet: one call (about 1 minute) instead of four, and one picture keeps one face. Image models are poor at keeping a person the same across separate calls.
   - Main slices the sheet. When probe P4 shows that sheets are not reliable, the fallback is four calls, the last three with the first frame as a reference image (P5). If that is not reliable either, there are three calls and no blink.
-- **D3 Nothing from the description is kept.** It goes to Codex once, inside a fixed wrapper prompt (FR-012), and is never stored, logged or shown in errors. The saved character has a name the user types, not the description. This is stricter than the theme maker, which stores the description as the theme's `description`.
+- **D3 Durbar keeps nothing from the description.** It goes to Codex once, inside a fixed wrapper prompt (FR-012), and Durbar never stores, logs or shows it in errors. The saved character has a name the user types, not the description. This is stricter than the theme maker, which stores the description as the theme's `description`. **This is not a claim about Codex**: `[KNOWN GAP]` Codex keeps its own copy of every picture it generates, discarded tries included, under `~/.codex/generated_images/` (agent-apps, 2026-10-31), made from the description. Durbar neither reads nor deletes anything under `~/.codex` (AGENTS.md: never read `~/.codex`; Durbar removes only its own folders), so those copies stay until the user removes them. Whether `--ephemeral` or the app-server route also leaves a copy is probe P7 (FR-033).
 - **D4 One style for all generated art** (FR-050): a style preset with an id and a fixed prompt prefix. The realistic-office layout (mockup in progress) reuses it, so characters and the office match.
-- **D5 Animation route 1** (living portraits), as recommended under *Animation design analysis*. Q1 asks the owner to confirm.
+- **D5 Animation route 1** (living portraits), as recommended under *Animation design analysis*, **in v1 for generated characters (My characters) only**. Motion on the built-in Cheeky and Prehistoric crews (spec 077, Paco's art) is a crew-owner decision: Q1b, open for Paco (no answer on the PR at 2026-10-31).
 
 ## Animation design analysis
 
@@ -96,7 +107,7 @@ The goal is to replace "static heads" with figures that look alive, without brea
 | Built-in crews too | cross-fade, bob, typing cue and glow: yes. Blink: only where a blink frame exists (generated characters; built-in crews get one only if Paco adds frames) | only with new art for all 19 characters | needs new art for all of them |
 | Build effort | small to medium | large (frame pipeline, consistency checks, size caps) | large, and lower quality |
 
-**Recommendation: route (1)** for v1, for generated and built-in characters alike. It is the only route that keeps the quality the owner asked for at a cost of one image per character. Route (2) can come back as a later spec when an image model keeps faces stable across frames (a probe per model). Route (3) is not recommended. Owner decision: **Q1**.
+**Recommendation: route (1)** for v1, for generated and built-in characters alike. It is the only route that keeps the quality the owner asked for at a cost of one image per character. Route (2) can come back as a later spec when an image model keeps faces stable across frames (a probe per model). Route (3) is not recommended. Owner decision: **Q1**, route (1), answered 2026-10-31.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -110,7 +121,7 @@ In Settings > Characters I press **Make a character with AI…**, type "a tall w
 
 **Acceptance Scenarios**:
 
-1. `sim:` **Given** the simulator with Codex (simulated) ready, **When** I open Settings > Characters > Make a character with AI…, **Then** the dialog shows a description box (at most 300 characters), 4 idea chips and **More ideas**, **Made by** listing only adapters with `imageGen`, the cost line "Uses your own Codex (ChatGPT plan): about a minute and one picture from your plan's limits per try. No API money.", and the points "One picture, about a minute", "Nothing kept from your description", "Preview before saving".
+1. `sim:` **Given** the simulator with Codex (simulated) ready, **When** I open Settings > Characters > Make a character with AI…, **Then** the dialog shows a description box (at most 300 characters), 4 idea chips and **More ideas**, **Made by** listing only adapters with `imageGen`, the cost line "Uses your own Codex (ChatGPT plan): about a minute and one picture from your plan's limits per try. No API money." (when the login is ChatGPT; otherwise FR-034 applies), and the points "One picture, about a minute", "Durbar keeps nothing from your description (Codex keeps its own copy of the picture)", "Preview before saving".
 2. `sim:` **Given** a description, **When** I press Make the character, **Then** a busy line with elapsed time and a **Cancel** button shows; the fake returns after a set delay; the preview shows the working, waiting and resting frames at the office's portrait size and as a round avatar crop, plus the line "Made in 1 try, about 1 minute, with Codex".
 3. `sim:` **Given** the preview, **When** I type a name and press Save to My characters, **Then** main stores it, returns its id, and the Characters section lists it under My characters with its working pose. The name is plain text of at most 40 characters; an empty name gets "My character N".
 4. `sim:` **Given** the preview, **When** I press Discard, **Then** nothing is stored (the store lists the same characters as before) and the temp files of that try are gone (fake store, `test:` on the real store).
@@ -169,7 +180,7 @@ Under My characters each character has **Rename**, **Delete** and **Export…**.
 
 ### Edge Cases
 
-- **Codex missing, not signed in, or signed in with an API key instead of ChatGPT.** The maker is offered only for ready adapters with `imageGen`. With an API key, image generation would spend API money: `[KNOWN GAP]` (P6 checks how to tell from `account/read`). Until then the cost line says "Uses your own Codex account's limits", and the README says an API-key login is charged by OpenAI.
+- **Codex missing, not signed in, or signed in with an API key instead of ChatGPT.** The maker is offered only for ready adapters with `imageGen`. With an API key, image generation would spend API money, so it fails safe (FR-034): while the login kind is unknown or an API key, every try (Try again included) first asks a plain confirmation; once P6 can tell, an API-key login is refused. `[KNOWN GAP]` until P6 is run, the kind is unknown. Durbar's Codex child keeps `OPENAI_API_KEY` in its environment (`codexChildEnv`), so a set variable can make Codex bill the API even when the user signed in with ChatGPT.
 - **The plan's limit is reached** (`usageLimitExceeded`, docs/agent-apps.md *Usage-limit signals*). The maker says "Your ChatGPT plan's image limit is reached. Try again later." and keeps nothing.
 - **Codex takes too long.** The timeout is 5 minutes per image. **Cancel** closes the child, and the temp folder is removed.
 - **Codex returns no file, several files, a symlink, a file under another name, or text only.** Main reads only the expected file name as a regular file (`lstat`, no link) and ignores anything else. Otherwise the result is "No picture came back. Try again." The temp folder is always removed.
@@ -200,8 +211,11 @@ Under My characters each character has **Rename**, **Delete** and **Export…**.
 - **FR-002** **Codex** implements it. Route A (preferred, P1) is a short-lived `codex app-server` child as in `generateText`: `thread/start` with `{ cwd: <temp>, ephemeral: true, approvalPolicy: 'never', sandbox: 'workspace-write' }`, then one `turn/start`. Route B, if P1 fails, is `codex exec --skip-git-repo-check --ephemeral -s workspace-write -C <temp> <prompt>`. Both:
   - spawn the resolved Codex path (spec 012 FR-162) with an argv array and no shell;
   - pass the user's text only inside the prompt argument or field;
-  - use Durbar's usual Codex environment rules;
-  - add no `--dangerously-*` flag and no network permission.
+  - use the environment of every Codex child, `codexChildEnv(process.env)` (`src/adapters/codex.ts`, spec 012 D5), unchanged: names starting `GH_`, `GITHUB_`, `COPILOT_`, `ANTHROPIC_`, `CLAUDE_`, `DURBAR_` and names that look like a secret are dropped; `OPENAI_API_KEY`, `CODEX_*`, proxy and CA variables, `PATH`, `HOME` and the other plain variables are kept. Values are never logged;
+  - **`CODEX_HOME` is not emptied or redirected.** Durbar sets none (agent-apps: an empty or missing `CODEX_HOME` reads as "not signed in", and the image call needs the user's sign-in), so Codex reads the user's real `~/.codex/config.toml` and auth. That is also why FR-033 copies exist;
+  - **MCP servers are off for this run** (FR-001): the thread or exec call carries `config` with every server disabled, so the user's `~/.codex/config.toml` servers do not start. `[KNOWN GAP]` how to switch them all off for this child (the sessions' `codexMcpConfig` handles named servers only) is probe P2; until P2 passes, `generateImage` is not enabled;
+  - **network is off for the run except the model and image call itself**: `workspace-write` without `network_access` (its default; no `-c sandbox_workspace_write.network_access=true`), no `--dangerously-*` flag, no `danger-full-access`, `approvalPolicy: 'never'`. `[KNOWN GAP]` that the default really blocks a shell command's network, and that the image call still works under it, is probe P8 (a turn asked, with the wrapper's own words, to run a network command, reading only the exit status; 1 turn);
+  - `workspace-write` still lets Codex **read outside** the temp folder, so a prompt-injected description could ask it to read files. Durbar reads back only `sheet.png` (FR-020) and, with the network off, nothing read can leave; Codex's own transcript is not shown.
   - `[KNOWN GAP]` whether the app-server thread can use the image tool, and in what item it reports it, is unverified (P1). Whether user MCP servers load in this child, and how to turn them off for it, is P2.
 - **FR-003** Claude Code, Copilot and the simulator's other harnesses report `imageGen: false`. The simulator's Codex reports `imageGen: true` and uses the fake generator (FR-070). Contract test: `generateImage` is present exactly when `capabilities.imageGen` is true (as contract C2 does for `oneShot`).
 - **FR-004** The Linux and macOS sandbox failures of `workspace-write` (spec 012 FR-140, FR-162) give the same plain sentences as sessions do, and nothing runs. `[KNOWN GAP]` Windows sandbox behaviour for the image tool is unverified.
@@ -249,6 +263,12 @@ Under My characters each character has **Rename**, **Delete** and **Export…**.
   - Every id must be one main listed; a name is plain text, 1-40 characters, with `<`, `>`, `{`, `}` and control characters removed.
   - None of these channels is open to the simulator guard list (`SIM_OPEN_CHANNELS`), the MCP tools or remote control.
 - **FR-032** **The description is never stored or logged**. Error texts from Codex are cut to 200 characters, have the description's text removed if echoed, and are masked with `redactMarkdown` and `maskHomePaths` before they reach the window. `debug` lines name the step, not the content.
+- **FR-033** **Copies Codex keeps** (`[KNOWN GAP]`). Codex writes each generated picture under `~/.codex/generated_images/` (or `CODEX_HOME`) before it is copied to the temp folder, so every try leaves a picture made from the description there. Durbar does not read, list or delete that folder (no cleanup rule: deleting inside another tool's folder is not safe, and it also holds the user's own Codex pictures). The dialog's help text and the README say where the copies are and that the user can delete them. Probe P7 checks whether `--ephemeral` (route B) or the app-server `ephemeral: true` thread (route A) avoids the copy; if one does, FR-002 uses it and this gap shrinks to what is observed.
+- **FR-034** **API-key login fails safe** (constitution III, AGENTS.md *No AI credits*). The login kind is `chatgpt`, `apikey` or `unknown`; `unknown` until P6 shows how `account/read` tells them (and `unknown` again if it errors).
+  - `chatgpt`: the cost line of acceptance 1, no extra confirmation.
+  - `unknown` or `apikey` before P6: each try opens a confirmation first, text "If Codex is signed in with an API key, OpenAI charges this picture. Make it?", **Cancel** focused, **Make it** second. Cancel makes no call.
+  - `apikey` after P6: refused with "Codex is signed in with an API key, so each picture would be charged by OpenAI. Sign in to Codex with ChatGPT to make characters." No process starts.
+  - The cost line never says "No API money" unless the kind is `chatgpt`.
 - **FR-033** **Pins**: `characterPins` in main's settings (`durbar-settings.json`, spec 011 FR-012) maps a folder key (`folderKeyOf` / `normaliseFolderKey` in `src/shared/usagedoc.ts`, the key other per-folder data already uses) to a character id; at most 500 pins. It is validated on read: unknown ids are dropped. Deleting a character removes its pins.
 
 #### Window
@@ -273,14 +293,15 @@ Under My characters each character has **Rename**, **Delete** and **Export…**.
 - **FR-055** **Pose cross-fade**: on a pose change, the old and new `<image>` cross-fade for 250 ms (`fill-opacity` is not available on `<image>`, so CSS `opacity` on the image during the fade only, with `will-change` off afterwards). Afterwards only the new image is left, and the still frame passes spec 077 FR-051 sharpness (`check:crew`).
 - **FR-056** **Breathing**: a SMIL `<animate attributeName="y" calcMode="discrete">` on the `<image>`, moving it 0, 0.25 and 0.5 stage units (1-2 device pixels at 4 px per unit) over a 4.2 s cycle. Each desk starts at a phase from `seeded(sessionId)`, so desks are out of step. Only working and waiting desks breathe.
 - **FR-057** **Blink**: for a character with a blink frame, in the working pose only, the `href` swaps to the blink frame for 120 ms at random intervals of 4-9 s. It is driven by one shared timer for all desks, not one per desk.
-- **FR-058** **Typing cue**: on working desks, 3 small keys on the drawn keyboard light up in turn (`fill-opacity` animation, a paint property, per the agent note on compositor blur). They are drawn by code at fixed positions inside the keyboard zone, for every crew and the office kit.
+- **FR-058** **Typing cue**: on working desks of **My characters**, 3 small keys on the drawn keyboard light up in turn (`fill-opacity` animation, a paint property, per the agent note on compositor blur). They are drawn by code at fixed positions inside the keyboard zone. Built-in crews and the office kit get no cue in v1 (FR-062).
 - **FR-059** **Status glow**: the existing halo and glow (spec 077 FR-053, FR-062) are reused unchanged; no new glow.
 - **FR-060** **Calm rules** for all motion:
   - none under `prefers-reduced-motion`, in Serious mode (spec 034), or with Settings > Characters > **Motion** off (a new checkbox, default on, stored as `characterMotion` in main's settings, validated boolean);
   - every animation pauses when `document.hidden`, and when the window is not focused and 60 s pass without input; it resumes on show, focus or input;
   - resting, idle and error desks are still;
   - nothing animated leaves the portrait box or the keyboard zone (spec 077 FR-014 zones).
-- **FR-061** **Spec 077 FR-057 changes.** This changes spec 077 FR-057 ("never ... a user-supplied picture"): main-validated, re-encoded pictures from userData are allowed through `blob:` (FR-043). A line is added under 077's `## Changes`.
+- **FR-061** **Spec 077 FR-057 changes.** This changes spec 077 FR-057 ("never ... a user-supplied picture"): main-validated, re-encoded pictures from userData are allowed through `blob:` (FR-043). A line is added under 077's `## Changes` that also records that built-in crews are not animated by spec 096 (FR-062, Q1b).
+- **FR-062** **Motion scope in v1**: FR-055..FR-058 apply to desks drawn from My characters (generated characters) only. The built-in Cheeky and Prehistoric crews and the themes' own figures stay still, exactly as spec 077 draws them, until Paco answers Q1b. If he says yes, a follow-up spec delta enables the same motion for those crews (the code is crew-kit generic, so it is a switch, not a rewrite). No `src/renderer/crew/art/` file and no 077 FR changes for built-in crews in this spec.
 
 #### Simulator and tests
 
@@ -321,7 +342,8 @@ Under My characters each character has **Rename**, **Delete** and **Export…**.
 - `[KNOWN GAP]` Not verified:
   - Codex image generation through `codex app-server` (only `codex exec` was seen working, P1);
   - transparency (P3), the 2x2 sheet's reliability (P4), and reference-image input (P5);
-  - telling a ChatGPT login from an API-key login (P6);
+  - telling a ChatGPT login from an API-key login (P6): until then every try asks for confirmation (FR-034);
+  - `[KNOWN GAP]` Codex keeps its own copy of each generated picture under `~/.codex/generated_images/`; Durbar does not read or delete it (FR-033, P7);
   - how much of the plan's limit one image uses: Codex reports no per-image cost, so the UI says "one picture from your plan's limits" and shows the plan's usage window when `account/rateLimits/read` answers (spec 051).
 - `[KNOWN GAP]` Windows: Codex's `workspace-write` sandbox and the image tool were not tried. macOS was not tried by a person.
 - `[KNOWN GAP]` No automatic check that a generated face is not a real person's. The user reviews the preview, and nothing is saved without Save.
@@ -329,13 +351,11 @@ Under My characters each character has **Rename**, **Delete** and **Export…**.
 - The built-in crews keep their cartoon look. Generated characters use the realistic preset, so mixing them would clash (Q2).
 - Generated pictures follow OpenAI's terms (output owned by the user, as spec 077 `ASSETS.md` records). They are the user's files, never shipped, so they need no `ASSETS.md` row.
 
-## Open questions (for the owner, at most 5; each has a recommended answer)
+## Open questions
 
-- **Q1 Animation route.** (1) living portraits (cross-fade, bob, blink, typing cue, glow); (2) animated WebP loops per pose; (3) layered SVG. **Recommended: (1)**, for all characters (the blink only where a blink frame exists). It is the only route that keeps realistic quality at one image per character. (2) flickers because image models do not keep faces stable between frames, and it costs 12-24 images per character. (3) cannot look realistic.
-- **Q2 Do my characters mix with a built-in crew?** (a) **My characters** is its own Characters value (only generated characters in the random pick), plus pins that work under any crew; (b) they also join the Cheeky or Prehistoric pick. **Recommended: (a)**: the realistic style next to cartoon crews looks inconsistent (R3). Pins still let one favourite sit in a cartoon office.
-- **Q3 Where do pins apply?** (a) only when Characters is a crew value (My characters, Cheeky, Prehistoric); (b) always, even on the Minimalist or the theme's own figures, by drawing that one desk with the crew kit. **Recommended: (a)** for v1: one kit per office keeps the layout checks simple. (b) can come later.
-- **Q4 Import in v1?** Export writes a folder that could be imported on another computer, by teammates sharing characters. (a) export only in v1, and import in a follow-up through the same validator; (b) import now. **Recommended: (a)**: import makes Durbar read pictures from anywhere, and it should get its own review. The export format is designed to be importable.
-- **Q5 Limits.** **Recommended:** at most 24 saved characters, one generation at a time, a 5-minute timeout, and no daily cap from Durbar (the plan has its own). Every try, Try again included, is one picture from the plan's limits, and the dialog says so before each try.
+Q1-Q5 are answered (*Clarifications*, owner decisions, 2026-10-31). Their text and the options considered are kept in *Animation design analysis* and the decisions D1-D5.
+
+- **Q1b Motion on the built-in crews (needs Paco, the crew owner).** Should Cheeky and Prehistoric (spec 077) also get the cross-fade, bob and typing cue? (a) not in v1, only generated characters move; (b) yes, same motion. **Recommended: (a)**: it is Paco's art, and a still crew next to one living crew is a smaller risk than moving art without its owner's OK. Paco was asked on the PR; no answer at 2026-10-31. Until he answers, FR-062 holds (a).
 
 ## Constitution check
 
@@ -350,4 +370,4 @@ Under My characters each character has **Rename**, **Delete** and **Export…**.
 - V Calm UI: motion is small, stops for reduced motion, Serious mode, hidden or idle windows and the Motion setting, and never covers text. The 15-agent layout is checked at both sizes.
 - VI Parity: paths through `path.join`; no POSIX-only shell. Windows sandbox behaviour is a `[KNOWN GAP]`.
 - VII Quality gates: unit tests, drivers, contract test.
-- VIII Honest limits: probes P1-P6 and the gaps above.
+- VIII Honest limits: probes P1-P8 and the gaps above.

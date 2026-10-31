@@ -10,7 +10,7 @@
 
 - [x] T001 Spec, plan, tasks and specs-index block (`specs/096-ai-character-maker/`). Test: `npm run specs:check`, `npm run rules:check`.
 - [x] T002 Checked Codex image-generation fact recorded in `docs/agent-apps.md` (Codex, 2026-10-31). Test: read-through; no secret or private path.
-- [ ] T003 Owner answers Q1-Q5 recorded under *Clarifications*, and posted on the PR (AGENTS.md: chat feedback goes on GitHub too). Test: the spec has no open question left without an answer.
+- [x] T003 Owner answers Q1-Q5 recorded under *Clarifications* (Vikram, 2026-10-31, "ok and go with your pick"), and posted on the PR (AGENTS.md: chat feedback goes on GitHub too). Q1b (built-in crew motion) stays open for Paco. Test: the spec's only open question is Q1b.
 
 ## Phase 1: Probes (real; owner's go; about 5 images)
 
@@ -18,8 +18,10 @@
 - [ ] T011 P2: do user MCP servers load in that child, and how to turn them off. Test: `read:` docs and `real:` observation in T010 [FR-002]
 - [ ] T012 P3 + P4: transparency and the 2x2 sheet, 3 descriptions, owner looks at them. Test: `real:` 3 sheets, alpha present or not, gutters measured, the owner's verdict quoted [D2, FR-024, FR-026]
 - [ ] T013 P5: reference-image turn (fallback of D2). Test: `real:` 1 image, owner's verdict [D2]
-- [ ] T014 P6: ChatGPT login vs API key in `account/read`. Test: `read:` schema field named, or `[KNOWN GAP]` kept [Edge cases]
-- [ ] T015 Record P1-P6 in `docs/agent-apps.md` and the spec's `## Changes`; adjust D2 and FR-002 to the results. Test: `npm run specs:check`
+- [ ] T014 P6: ChatGPT login vs API key in `account/read`, and the effect of a set `OPENAI_API_KEY` in the child env. Test: `read:` schema field named, or `[KNOWN GAP]` kept; result sets the `unknown`/`chatgpt`/`apikey` rule of FR-034 [FR-034; Edge cases]
+- [ ] T014a P7: does `--ephemeral` or the app-server `ephemeral: true` leave a copy under `~/.codex/generated_images/`? Test: `real:` file names before and after, no contents read; result in agent-apps and FR-033 [FR-033]
+- [ ] T014b P8: network off under `workspace-write` (no `network_access`) while the image call works; P2: all MCP servers off for this child. Test: `real:` exit status of a network command, no servers started [FR-002]
+- [ ] T015 Record P1-P8 in `docs/agent-apps.md` and the spec's `## Changes`; adjust D2 and FR-002 to the results. Test: `npm run specs:check`
 
 ## Phase 2: Pure core (PR 2)
 
@@ -31,8 +33,8 @@
 
 ## Phase 3: Adapter, main and IPC (PR 3)
 
-- [ ] T030 `capabilities.ts`: `imageGen?: boolean`; `types.ts`: `generateImage?(prompt, opts)`, `GenerateImageOptions`, `GenerateImageResult`; Codex `imageGen: true`, others false. Test: `test:runtime` contract C2-style: `generateImage` present iff `imageGen` [FR-001, FR-003]
-- [ ] T031 `CodexAdapter.generateImage` (route from T010): temp folder via `fs.mkdtemp`, `probe` child, `thread/start` with `workspace-write`, `turn/start`, timeout and `AbortSignal` cancel close the child; returns the path of `outName` only. Test: `test:runtime` on the fake app-server: success, no file, two files, a symlink, text named `sheet.png`, oversize, hang then timeout, cancel; the folder is gone afterwards in every case [FR-002, FR-004]
+- [ ] T030 `capabilities.ts`: `imageGen?: boolean`; `types.ts`: `generateImage?(prompt, opts)`, `GenerateImageOptions`, `GenerateImageResult`; Codex `imageGen: true` only after P2 and P8 pass, others false. Test: `test:runtime` contract C2-style: `generateImage` present iff `imageGen` [FR-001, FR-003]
+- [ ] T031 `CodexAdapter.generateImage` (route from T010): temp folder via `fs.mkdtemp`, `probe` child, `thread/start` with `workspace-write`, `turn/start`, timeout and `AbortSignal` cancel close the child; returns the path of `outName` only. Test: `test:runtime` on the fake app-server: success, no file, two files, a symlink, text named `sheet.png`, oversize, hang then timeout, cancel; the folder is gone afterwards in every case [FR-002, FR-004] Env and argv test: the child env equals `codexChildEnv(process.env)` (no `GH_*`/`ANTHROPIC_*`/`DURBAR_*`, no `CODEX_HOME` set by Durbar), the argv or thread params carry no network permission, no `--dangerously-*` and no `danger-full-access`, MCP servers off, and only `sheet.png` is read back (a second file, a symlink and a read outside are ignored) [FR-002, FR-020]
 - [ ] T032 [P] `scripts/fakes/codex-app-server.ts`: image modes (writes a fixture sheet into `cwd`, or the bad cases above). Test: used by T031
 - [ ] T033 `src/main/charencoder.ts` + `src/renderer/charencoder.html`/`.js`: hidden `BrowserWindow` (`show:false`, `sandbox:true`, `contextIsolation:true`, no Node, a session that cancels all requests, CSP `default-src 'none'`), `MessagePort` in and out, decode, size equals header, slice 2x2, key-out, resize 352, WebP 0.82 down to 0.70, face points, panel sanity; destroyed per job; 20 s timeout. Test: `sim:` `check-charencoder` (Electron, simulator build) on fixture sheets: transparent, flat background, bleeding panels, undecodable; outputs pass `webpcheck` [FR-022, FR-024..FR-026]
 - [ ] T034 `src/main/charstore.ts` (no Electron import): ids `my-` + 12 hex, temp then rename, list skips bad folders and links, rename, delete, export without overwrite (` (2)`), cap 24. Test: `scripts/test-charstore.ts` in a temp userData; source test: no write outside the root [FR-030, US4]
@@ -45,6 +47,8 @@
 ## Phase 4: The window (PR 4)
 
 - [ ] T040 [US1] Factor the theme maker's idea chips, harness picker and cost line into helpers in `screens.js`; `aiTheme()` uses them unchanged. Test: `shots-040-aitheme.js` still passes; no visual change [FR-041]
+- [ ] T041a [US1] Login-kind gate (FR-034): `unknown` or `apikey` before P6 asks "If Codex is signed in with an API key, OpenAI charges this picture. Make it?" on every try, Try again included, Cancel focused and making no call; after P6 `apikey` is refused with no process; the "No API money" wording only for `chatgpt`. Test: `check-charmaker` (simulator login kinds `chatgpt`, `unknown`, `apikey`: confirm shown or not, Cancel starts nothing, refusal text) and `test:charipc` (no generate call on refusal or Cancel) [FR-034]
+- [ ] T041b [US1] Dialog help and README line: Codex keeps its own copy of each generated picture under `~/.codex/generated_images/`, Durbar neither reads nor deletes it; point text "Durbar keeps nothing from your description". Test: `check-charmaker` reads the text; the Docs check [FR-033, D3]
 - [ ] T041 [US1] Maker dialog: describe, ideas, Made by (`imageGen` only), cost and plan line (with `account/rateLimits/read` when it answers), busy line with elapsed time and Cancel, error and Try again, preview of 4 frames at desk size + round crop, name field, Discard / Try again / Save to My characters. Test: `check-charmaker` steps 1-5 of US1 at 1440x900 and 1280x800, text at least 10.5px [FR-040, FR-041; US1]
 - [ ] T042 [US2] `crew.js` `registerOwn(list)`, `idsFor('mine')`, `storeKey('mine')`, `facePoint` for registered ids; `app.js` loads `character:list`, fetches frames, makes URLs (R3 decision: `blob:` with CSP `img-src 'self' data: blob:`, or `data:`), preloads with `decode()`, revokes on delete or switch. Test: `test:crew` (registerOwn, unknown id dropped by `loadCrew`, least-used with registered ids); `check:crew` with `OFFICE_CHARACTERS=mine` [FR-043; US2]
 - [ ] T043 [US2] Pins in the pick (`syncCrew`: pinned first, then `assignCrew`); pins under Cheeky and Prehistoric too (Q3). Test: `test:crew` pin cases; `check-charmaker` pin step (2 sessions in folder A wear it) [FR-044]
@@ -56,18 +60,18 @@
 ## Phase 5: Motion (PR 5)
 
 - [ ] T050 [US3] `motionAllowed()` (reduced motion, Serious, `characterMotion`) and pause on `visibilitychange`, blur + 60 s idle (`pauseAnimations()` on office SVGs, `body.motion-paused`). Test: `check-charmotion` US3 scenarios 3 and 4 [FR-060]
-- [ ] T051 [US3] Discrete breathing bob on working and waiting portraits, phase from `seeded(sessionId)`. Test: `check-charmotion` scenario 1 (`y` takes at least two values) and the sharpness check of `check:crew` on a still frame [FR-056]
-- [ ] T052 [US3] Blink frame swap, one shared timer, working pose only, only with a blink frame. Test: `check-charmotion` (blink seen within 10 s; none for Cheeky) [FR-057]
-- [ ] T053 [US3] Pose cross-fade 250 ms, one `<image>` after. Test: `check-charmotion` scenario 2; `check:crew` sharpness after the fade [FR-055]
-- [ ] T054 [US3] Typing cue keys (`fill-opacity`) on every kit's keyboard zone. Test: `check-charmotion` boxes inside the keyboard zone at 8 sampled times; `check:office` unchanged [FR-058]
+- [ ] T051 [US3] Discrete breathing bob on working and waiting portraits, phase from `seeded(sessionId)`. (My characters only, FR-062) Test: `check-charmotion` scenario 1 (`y` takes at least two values) and the sharpness check of `check:crew` on a still frame [FR-056]
+- [ ] T052 [US3] Blink frame swap, one shared timer, working pose only, only with a blink frame. Test: `check-charmotion` (blink seen within 10 s; no motion at all on Cheeky and Prehistoric until Q1b) [FR-057]
+- [ ] T053 [US3] Pose cross-fade 250 ms, one `<image>` after. (My characters only, FR-062) Test: `check-charmotion` scenario 2; `check:crew` sharpness after the fade [FR-055]
+- [ ] T054 [US3] Typing cue keys (`fill-opacity`) on My characters desks' keyboard zone only. Test: `check-charmotion` boxes inside the keyboard zone at 8 sampled times; Cheeky, Prehistoric and the office kit have no cue and `check:crew`/`check:office` are unchanged [FR-058, FR-062]
 - [ ] T055 [US3] Settings > Characters > Motion checkbox, stored `characterMotion`. Test: `test:characters` round trip; `check-charmotion` toggles it [FR-060]
 - [ ] T056 [US3] CPU record: 15 working agents, motion on vs off, 30 s. Test: `check-charmotion` logs both numbers; `[KNOWN GAP]` not gated [US3 scenario 6]
 - [ ] T057 Motion screenshots or a short note of what was seen (still screenshots cannot show motion). Test: PR text
 
 ## Phase 6: Close-out
 
-- [ ] T060 README: features (AI character maker, My characters, motion), *Safety model* (Codex image generation writes only a temp folder; description not stored), limits (Codex only, API-key login charged, Windows not tried). Test: the *Docs check* passes
-- [ ] T061 Spec 077 `## Changes`: FR-061 line (user pictures via main-validated pipeline; CSP note if `blob:`). Test: `npm run specs:check`
+- [ ] T060 README: features (AI character maker, My characters, motion), *Safety model* (Codex image generation writes only a temp folder; Durbar stores nothing of the description, Codex keeps its own copy of each picture; network off, MCP off), limits (Codex only, API-key login asks first and is refused once detectable, Windows not tried). Test: the *Docs check* passes
+- [ ] T061 Spec 077 `## Changes`: FR-061 line (user pictures via main-validated pipeline; CSP note if `blob:`) and the line that spec 096 does not animate the built-in crews (FR-062, Q1b, Paco's call). Test: `npm run specs:check`
 - [ ] T062 `changelog.d/<branch>.md` fragment in each code PR. Test: `npm run changelog:check`
 - [ ] T063 Real run (SC-006) on the owner's go: one character on Codex 0.163.x, owner's verdict on the preview; result in `## Changes` with `real:`. Test: `real:`
 - [ ] T064 `/speckit.converge`: tags `[IMPLEMENTED]`, `[KNOWN GAP]`, specs-index status. Test: `npm run specs:check`
