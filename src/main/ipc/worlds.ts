@@ -24,6 +24,7 @@ export interface WorldsIpc {
   shutdown(): void;
 }
 
+const EMPTY = (): { worlds: never[]; removed: number; revocationChecked: boolean } => ({ worlds: [], removed: 0, revocationChecked: true });
 const turn = (): Promise<void> => new Promise((r) => setImmediate(r));
 
 export function register(deps: WorldsIpcDeps = {}): WorldsIpc {
@@ -31,9 +32,17 @@ export function register(deps: WorldsIpcDeps = {}): WorldsIpc {
   if (!deps.simulator) {
     try { store.repair(); } catch { console.warn('[worlds] the start repair failed'); }
   }
-  /** The revoked hashes in force, then (for the list) the sweep that removes those worlds. */
-  const revoke = (sweep: boolean): void => {
-    try { store.setRevoked(deps.revoked?.() ?? []); if (sweep) store.sweepRevoked(); } catch { /* a failing provider revokes nothing */ }
+  /** Worlds the sweep removed that the window has not been told about yet (a count: no name or key leaves here). */
+  let removed = 0;
+  /**
+   * The revoked hashes in force, then (for the list) the sweep that removes those worlds. Returns false when the provider failed: the last set it gave stays in force (so a world already known to be
+   * revoked stays revoked), and on the first call there is none, so nothing is revoked. The list says so (`revocationChecked: false`) rather than looking like a clean check (FR-083).
+   */
+  const revoke = (sweep: boolean): boolean => {
+    let ok = true;
+    try { store.setRevoked(deps.revoked?.() ?? []); } catch { ok = false; }
+    if (sweep) { try { removed += store.sweepRevoked().length; } catch { /* the next list sweeps again */ } }
+    return ok;
   };
   if (!deps.simulator) revoke(true);
   let chain: Promise<unknown> = Promise.resolve();
@@ -46,9 +55,10 @@ export function register(deps: WorldsIpcDeps = {}): WorldsIpc {
   };
 
   ipcHandle('world:list', async (e) => {
-    if (!fromApp(e)) return [];
-    if (closed) return [];
-    return queued(() => { revoke(true); return store.list(); });
+    if (!fromApp(e)) return EMPTY();
+    if (closed) return EMPTY();
+    // FR-083: `removed` counts worlds taken away for a revocation since the last list (the window says so once); `revocationChecked` is false when the catalogue could not be read this time
+    return queued(() => { const revocationChecked = revoke(true); const n = removed; removed = 0; return { worlds: store.list(), removed: n, revocationChecked }; });
   });
   ipcHandle('world:part', async (e, key: unknown, name: unknown) => {
     if (!fromApp(e)) return REFUSED;

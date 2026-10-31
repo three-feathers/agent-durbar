@@ -82,7 +82,7 @@ async function main(): Promise<void> {
     const call = (e: Rec, ch: string, ...a: unknown[]): Promise<unknown> => Promise.resolve().then(() => handlers.get(ch)!(e, ...a));
 
     // ---- list: names, states, no path ----
-    const list = (await call(app, 'world:list')) as Array<Rec>;
+    const list = ((await call(app, 'world:list')) as { worlds: Rec[] }).worlds;
     assert.deepStrictEqual(list.map((w) => w.key).sort(), [k1, k2].sort());
     const wire = JSON.stringify(list);
     assert.ok(!wire.includes(userData) && !wire.includes(base) && !/installed\.json|description|licence|synthetic/i.test(wire), 'no path, no description in the list');
@@ -115,7 +115,7 @@ async function main(): Promise<void> {
       for (const [ch, args] of [['world:list', []], ['world:part', [k1, 'wall.webp']], ['world:remove', [k1]]] as Array<[string, unknown[]]>) {
         let out: unknown, threw = false;
         try { out = await call(e, ch, ...args); } catch { threw = true; }
-        assert.ok(threw || !(out as Rec | unknown[] | undefined) || (Array.isArray(out) ? out.length === 0 : (out as Rec).ok === false), 'a foreign frame gets nothing from ' + ch);
+        assert.ok(threw || !(out as Rec | unknown[] | undefined) || (Array.isArray((out as Rec).worlds) ? ((out as Rec).worlds as unknown[]).length === 0 : (out as Rec).ok === false), 'a foreign frame gets nothing from ' + ch);
         assert.ok(!(out && (out as Rec).bytes), 'no bytes to a foreign frame');
       }
     }
@@ -131,7 +131,7 @@ async function main(): Promise<void> {
     const bad = (await call(app, 'world:part', k2, 'wall.webp')) as Rec;
     assert.deepStrictEqual(bad, { ok: false, reason: 'damaged' }, 'one byte changed: Damaged, and the reply has no bytes');
     assert.ok(!('bytes' in bad));
-    assert.strictEqual(((await call(app, 'world:list')) as Array<Rec>).find((w) => w.key === k2)?.state, 'damaged');
+    assert.strictEqual(((await call(app, 'world:list')) as { worlds: Rec[] }).worlds.find((w) => w.key === k2)?.state, 'damaged');
     assert.strictEqual(((await call(app, 'world:part', k1, 'wall.webp')) as Rec).ok, true, 'the other world still serves');
     // revoked: served nothing
     store.setRevoked([]);
@@ -145,7 +145,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(await call(app, 'world:remove', k2), { ok: true });
     assert.ok(!fs.existsSync(path.join(root, k2)) && fs.existsSync(path.join(root, k1)));
     assert.deepStrictEqual(await call(app, 'world:remove', k2), { ok: false }, 'a second remove: not in the list');
-    assert.deepStrictEqual(((await call(app, 'world:list')) as Array<Rec>).map((w) => w.key), [k1]);
+    assert.deepStrictEqual(((await call(app, 'world:list')) as { worlds: Rec[] }).worlds.map((w) => w.key), [k1]);
 
     // ---- revocation through the channels (FR-083): the provider's hashes are applied on every list and part; the list sweeps ----
     {
@@ -159,13 +159,36 @@ async function main(): Promise<void> {
       revoked = [sha256(files3['wall.webp'])];
       assert.deepStrictEqual(await call(app, 'world:part', k3, 'wall.webp'), { ok: false, reason: 'revoked' }, 'a revoked world serves nothing');
       assert.ok(fs.existsSync(path.join(root, k3)), 'a part call does not delete');
-      assert.ok(!((await call(app, 'world:list')) as Array<Rec>).some((w) => w.key === k3), 'the list sweeps it');
+      assert.ok(!((await call(app, 'world:list')) as { worlds: Rec[] }).worlds.some((w) => w.key === k3), 'the list sweeps it');
       assert.ok(!fs.existsSync(path.join(root, k3)), 'and it is gone from disk');
       assert.ok(fs.existsSync(path.join(root, k1)), 'a world with other hashes stays');
       revoked = [];
       handlers.clear();
       register({ store, revoked: () => { throw new Error('provider down'); } });
-      assert.ok(((await call(app, 'world:list')) as Array<Rec>).some((w) => w.key === k1), 'a failing provider revokes nothing');
+      assert.ok(((await call(app, 'world:list')) as { worlds: Rec[] }).worlds.some((w) => w.key === k1), 'a failing provider revokes nothing');
+      {
+        // FR-083: the note is in the return value. A first call with a failing provider says it did not check; a sweep says how many worlds went; the note is given once
+        const r0 = (await call(app, 'world:list')) as { worlds: Rec[]; removed: number; revocationChecked: boolean };
+        assert.strictEqual(r0.revocationChecked, false, 'a failing provider is not shown as a clean check');
+        assert.strictEqual(r0.removed, 0);
+        const fl = goodPack({ id: 'fourth', name: 'Fourth' });
+        fl['wall.webp'] = webp(120, 160, 41);
+        const k4 = (store.save(input('fourth', 'Fourth', fl)) as { key: string }).key;
+        let mode: 'ok' | 'down' = 'ok';
+        const hashes = [sha256(fl['wall.webp'])];
+        handlers.clear();
+        register({ store, revoked: () => { if (mode === 'down') throw new Error('provider down'); return hashes; } });
+        const r1 = (await call(app, 'world:list')) as { worlds: Rec[]; removed: number; revocationChecked: boolean };
+        assert.ok(!r1.worlds.some((w) => w.key === k4) && !fs.existsSync(path.join(root, k4)), 'the sweep removed it');
+        assert.deepStrictEqual({ removed: r1.removed, checked: r1.revocationChecked }, { removed: 1, checked: true }, 'and the list says one world was removed (counted from the start sweep)');
+        const r2 = (await call(app, 'world:list')) as { removed: number };
+        assert.strictEqual(r2.removed, 0, 'the note is given once');
+        // the last set stays in force while the provider is down: a world saved again with a revoked file is still revoked
+        const k4b = (store.save(input('fourth', 'Fourth', fl)) as { key: string }).key;
+        mode = 'down';
+        const r3 = (await call(app, 'world:list')) as { worlds: Rec[]; removed: number; revocationChecked: boolean };
+        assert.deepStrictEqual({ removed: r3.removed, checked: r3.revocationChecked, gone: !r3.worlds.some((w) => w.key === k4b) }, { removed: 1, checked: false, gone: true }, 'a failing provider keeps the last set: it still sweeps, and says it could not check');
+      }
       handlers.clear();
       last = register({ store });
     }
@@ -173,7 +196,7 @@ async function main(): Promise<void> {
     // ---- remove: a truthful sentence when it cannot; an orphan leftover can be listed and removed ----
     {
       const k5 = (store.save(input('fifth', 'Fifth', goodPack({ id: 'fifth', name: 'Fifth' }))) as { key: string }).key;
-      fs.mkdirSync(path.join(root, k5, 'a', 'b', 'c', 'd', 'e'), { recursive: true });
+      fs.mkdirSync(path.join(root, k5, ...Array.from({ length: 70 }, () => 'a')), { recursive: true });
       const rm = (await call(app, 'world:remove', k5)) as Rec;
       assert.ok(rm.ok === false && /unexpected/.test(String(rm.error)) && !String(rm.error).includes(userData), 'the store\'s own sentence, no path');
       fs.rmSync(path.join(root, k5, 'a'), { recursive: true });
@@ -184,7 +207,7 @@ async function main(): Promise<void> {
       b6[b6.length - 1] ^= 0x55;
       fs.writeFileSync(w6, b6);
       store.repair();
-      const l6 = ((await call(app, 'world:list')) as Array<Rec>).find((w) => w.key === k6);
+      const l6 = ((await call(app, 'world:list')) as { worlds: Rec[] }).worlds.find((w) => w.key === k6);
       assert.strictEqual(l6?.state, 'damaged', 'an orphan leftover is listed as damaged');
       assert.deepStrictEqual(await call(app, 'world:remove', k6), { ok: true }, 'and can be removed through the channel');
       assert.ok(!fs.existsSync(path.join(root, '.old-' + k6)));
@@ -193,7 +216,7 @@ async function main(): Promise<void> {
 
     // ---- shutdown: nothing starts after quit ----
     last.shutdown();
-    assert.deepStrictEqual(await call(app, 'world:list'), []);
+    assert.deepStrictEqual(await call(app, 'world:list'), { worlds: [], removed: 0, revocationChecked: true });
     assert.deepStrictEqual(await call(app, 'world:part', k1, 'wall.webp'), { ok: false });
 
     // ---- wiring: preload, main, MCP and remote control ----

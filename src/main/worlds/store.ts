@@ -18,8 +18,8 @@ import { randomBytes } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { THEME_ID_RE } from '../../shared/credits';
-import { MANIFEST_BYTES, MANIFEST_NAME, MAX_PARTS, PACK_MAX_BYTES, PART_TABLE, partProblem, pictureHeader } from '../../shared/worldpack';
-import type { PackResult, PartSpec } from '../../shared/worldpack';
+import { CALL_SHAPES, LAMP_SHAPES, MANIFEST_BYTES, MANIFEST_NAME, MAX_PARTS, PACK_MAX_BYTES, PART_TABLE, canonToken, partProblem, pictureHeader, readAnchors } from '../../shared/worldpack';
+import type { PackResult, PartSpec, SafeManifest } from '../../shared/worldpack';
 import { openZip, sha256 } from '../../shared/worldzip';
 
 export type Origin = 'project' | 'source' | 'uploaded' | 'made' | 'imported';
@@ -37,7 +37,7 @@ export const WARN_STORE_BYTES = 500 * 1024 * 1024;
 /** FR-061 as changed on 2026-10-31 (owner principle: warn, do not limit a person's own use): 64 worlds is a warning on save and in the list, never a refusal. */
 export const WARN_WORLD_COUNT = 64;
 /** A world folder is two levels (its files); anything deeper is not ours and `remove` says so instead of deleting half of it. */
-const MAX_DEPTH = 4;
+const MAX_DEPTH = 64; // levels a delete will go down (a world folder holds none; a stray extra may). Deeper is refused before anything is deleted
 const TRANSIENT = new Set(['EMFILE', 'ENFILE', 'EAGAIN', 'EBUSY', 'EIO', 'EINTR', 'ENOMEM']);
 
 export const WORLD_ID_RE = THEME_ID_RE;
@@ -86,6 +86,8 @@ export interface StoreInput {
   packSha256?: string;
   /** `world.json` and parts, by closed-list name. */
   files: ReadonlyArray<{ name: string; data: Uint8Array }>;
+  /** The validator's reading of world.json (`fromValidated` sets it): when present, the stored world.json must say the same about tokens, anchors, hashes, lights and ride style. */
+  manifest?: SafeManifest;
 }
 export type SaveResult = { ok: true; key: string; warnings: Array<'count' | 'size'> } | StoreFailure;
 export type PartResult = { ok: true; bytes: Buffer; mime: 'image/webp' | 'image/png' } | { ok: false; reason: 'unknown' | 'damaged' | 'revoked' | 'unreadable' };
@@ -93,6 +95,42 @@ export type PartResult = { ok: true; bytes: Buffer; mime: 'image/webp' | 'image/
 const hex = (n: number): string => randomBytes(n).toString('hex');
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const own = (o: Record<string, unknown>, k: string): unknown => (Object.prototype.hasOwnProperty.call(o, k) ? o[k] : undefined);
+
+const stable = (v: unknown): string => JSON.stringify(v, (_k, x: unknown) => (isObj(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x));
+/**
+ * The part of world.json that reaches the window (tokens, anchors, hashes, lights, ride style) must be what the validator read, compared in canonical form (a colour written `rgb()` equals its `#rrggbb`; key order does not matter).
+ * With no result to compare (a direct `save`), every token must already be in the validator's form and every anchor must be valid for its part.
+ */
+function worldTie(raw: Record<string, unknown>, m: SafeManifest | undefined): boolean {
+  const rt = own(raw, 'tokens');
+  if (rt !== undefined && !isObj(rt)) return false;
+  const tk = rt ?? {};
+  const keys = Object.keys(tk);
+  if (m && keys.length !== Object.keys(m.tokens).length) return false;
+  for (const k of keys) {
+    const c = canonToken(k, tk[k]);
+    if (c === undefined || (m ? own(m.tokens, k) !== c : c !== tk[k])) return false;
+  }
+  const rp = own(raw, 'parts');
+  if (!isObj(rp)) return false;
+  for (const n of Object.keys(rp)) {
+    const spec = SPEC_OF.get(n), e = rp[n];
+    if (!spec || !isObj(e)) return false;
+    const a = readAnchors(own(e, 'anchors'), spec.anchors);
+    if (typeof a === 'string') return false;
+    if (m) {
+      const me = own(m.parts, n) as SafeManifest['parts'][string] | undefined;
+      if (!me || stable(a) !== stable(me.anchors) || own(e, 'sha256') !== me.sha256 || own(e, 'bytes') !== me.bytes) return false;
+    }
+  }
+  if (m) {
+    const rl = own(raw, 'lights');
+    const lamp = (isObj(rl) ? own(rl, 'lamp') : undefined) ?? LAMP_SHAPES[0], call = (isObj(rl) ? own(rl, 'call') : undefined) ?? CALL_SHAPES[0];
+    if (lamp !== m.lights.lamp || call !== m.lights.call || (own(raw, 'rideStyle') ?? null) !== m.rideStyle) return false;
+    if (Object.keys(rp).length !== Object.keys(m.parts).length) return false;
+  }
+  return true;
+}
 
 type Reader = (name: string) => Buffer | null;
 const parseObj = (b: Buffer): Record<string, unknown> | null => {
@@ -114,8 +152,8 @@ function fromReader(read: Reader, result: PackResult, ctx: { origin: Origin; sou
     // the world.json that is stored is the one the validator read: its id, name, version, default set and part list are the result's
     const raw = parseObj(files[0].data as Buffer);
     const listed = raw && isObj(raw.parts) ? Object.keys(raw.parts).sort().join('|') : null;
-    if (!raw || raw.id !== m.id || raw.name !== m.name || raw.version !== m.version || raw.defaultSet !== m.defaultSet || listed !== [...result.parts].sort().join('|')) return null;
-    return { origin: ctx.origin, sourceId: ctx.sourceId, worldId: ctx.origin === 'project' || ctx.origin === 'source' ? m.id : undefined, name: m.name, version: m.version, unfinished: result.unfinished.length > 0, packSha256: ctx.packSha256, files };
+    if (!raw || raw.id !== m.id || raw.name !== m.name || raw.version !== m.version || raw.defaultSet !== m.defaultSet || listed !== [...result.parts].sort().join('|') || !worldTie(raw, m)) return null;
+    return { origin: ctx.origin, sourceId: ctx.sourceId, worldId: ctx.origin === 'project' || ctx.origin === 'source' ? m.id : undefined, name: m.name, version: m.version, unfinished: result.unfinished.length > 0, packSha256: ctx.packSha256, files, manifest: m };
   } catch {
     return null;
   }
@@ -310,12 +348,29 @@ export class WorldStore {
       const dir = this.dirOf(key) as string;
       const rec = this.readInstalled(dir, key);
       if (!rec) { out.push({ key, name: '', origin: null, version: 0, size: 0, state: 'damaged', unfinished: false, parts: [], date: '' }); continue; }
+      this.reread(key, dir, rec);
       let state: WorldState = rec.state;
       if (this.isRevoked(rec)) state = 'revoked';
       else if (this.damaged.has(key) || !this.sizesOk(dir, rec)) state = 'damaged';
       out.push({ key, name: rec.name, origin: rec.origin, version: rec.version, size: rec.size, state, unfinished: rec.state === 'unfinished', parts: Object.keys(rec.files).filter((n) => n !== MANIFEST_NAME).sort(), date: rec.date });
     }
     return out;
+  }
+
+  /**
+   * A world marked damaged is re-read when it is listed (only those: one hash per marked part, the whole world for a `*` mark), so a file put back is Damaged no longer than the next list, not until someone opens that part.
+   * A world that was never marked is not hashed by the list (its size and link check only): a same-size change shows at the next part read or `verify`.
+   */
+  private reread(key: string, dir: string, rec: Installed): void {
+    const marks = this.damaged.get(key);
+    if (!marks) return;
+    for (const what of [...marks]) {
+      if (what === '*') { if (this.checkDir(dir, key)) this.unmark(key, '*'); continue; }
+      const r = rec.files[what], f = r ? this.fileIn(dir, what) : null;
+      const rd = r && f ? this.readFile(f, r.bytes) : null;
+      if (rd && rd.ok && rd.buf.length === r.bytes && sha256(rd.buf) === r.sha256 && typeof pictureHeader(rd.buf) !== 'string') this.unmark(key, what);
+      else if (!r) this.unmark(key, what);
+    }
   }
 
   /** The keys main lists now (a damaged one included, so it can be removed). */
@@ -361,12 +416,12 @@ export class WorldStore {
   }
 
   // ---- writing ----
-  /** What the store can tie without the validator: world.json is a JSON object whose id, name and version are the ones being saved, with the format this app reads, and whose part list is exactly the part files. */
+  /** What the store can tie without the validator: world.json is a JSON object whose id, name and version are the ones being saved, with the format this app reads, and whose part list is exactly the part files; tokens and anchors are tied to the validator's result when there is one (`worldTie`). */
   private worldJsonOk(data: Buffer, input: StoreInput, names: string[]): boolean {
     const m = parseObj(data);
     if (!m || m.formatVersion !== 1 || typeof m.id !== 'string' || !WORLD_ID_RE.test(m.id)) return false;
     if ((input.origin === 'project' || input.origin === 'source') && m.id !== input.worldId) return false;
-    if (m.name !== input.name || m.version !== input.version || !isObj(m.parts)) return false;
+    if (m.name !== input.name || m.version !== input.version || !isObj(m.parts) || !worldTie(m, input.manifest)) return false;
     return Object.keys(m.parts).sort().join('|') === names.filter((n) => n !== MANIFEST_NAME).sort().join('|');
   }
 
@@ -479,6 +534,7 @@ export class WorldStore {
       this.fsx.writeFileSync(this.fileIn(tmp, INSTALLED_NAME) as string, body, { flag: 'wx', mode: 0o600 });
       if (!this.checkDir(tmp, key)) throw new Error('written folder did not check out');
       if (existing) {
+        if (this.tooDeep(dest)) throw new Stuck(); // its `.old-` could never be deleted: refuse before moving anything
         const old = this.oldOf(key);
         this.fsx.renameSync(dest, old);
         try {
@@ -495,9 +551,9 @@ export class WorldStore {
       }
       this.damaged.delete(key);
       return { ok: true, key, warnings: [...(count + (existing ? 0 : 1) > WARN_WORLD_COUNT ? ['count' as const] : []), ...(bytes + prep.size > this.warnBytes ? ['size' as const] : [])] };
-    } catch {
+    } catch (e) {
       if (tmpMade) try { this.rmTree(tmp); } catch { /* the sweep gets it */ }
-      return fail('failed');
+      return fail(e instanceof Stuck ? 'stuck' : 'failed');
     }
   }
 
@@ -508,8 +564,10 @@ export class WorldStore {
     const k = key as string;
     if (!this.lstatOf(dir) && !this.lstatOf(this.oldOf(k))) return fail('unknown');
     try {
+      // both trees are checked before anything is deleted: a refusal is whole, and never leaves a `.old-` behind a removed world (a stray deep folder is removed with the same link guards)
+      if (this.tooDeep(dir) || this.tooDeep(this.oldOf(k))) throw new Stuck();
+      this.rmTree(this.oldOf(k)); // the leftover first: if the live folder then fails, nothing can bring a removed world back at the next start
       this.rmTree(dir);
-      this.rmTree(this.oldOf(k));
       this.damaged.delete(k);
       return { ok: true };
     } catch (e) {

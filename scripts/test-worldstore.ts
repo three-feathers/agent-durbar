@@ -30,7 +30,7 @@ for (const k of ['log', 'warn', 'error', 'info', 'debug'] as const) { const real
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const T = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'theme.js')) as { _tokens(): Record<string, string> };
-const opts = { clean: T._tokens(), knownSets: ['office'] };
+const opts = { clean: T._tokens(), knownSets: ['office'], requireHashes: false };
 
 const base = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-worldstore-'));
 let fresh = 0;
@@ -737,7 +737,7 @@ try {
     // a folder deeper than a world folder can be: refused before anything is deleted, with a truthful sentence
     const d = env();
     const dk = saved(d.store.save(goodInput()));
-    const deep = path.join(d.root, dk, 'a', 'b', 'c', 'd', 'e');
+    const deep = path.join(d.root, dk, ...Array.from({ length: 70 }, () => 'a'));
     fs.mkdirSync(deep, { recursive: true });
     const rr = d.store.remove(dk);
     assert.ok(!rr.ok && rr.code === 'stuck' && /unexpected/.test(rr.error) && !/userData|worlds/.test(rr.error), 'a deep folder is left alone, and the sentence says why');
@@ -751,6 +751,184 @@ try {
     fh.unlinkSync = () => { throw Object.assign(new Error('busy'), { code: 'EBUSY' }); };
     const rh = new WorldStore(h.root, fh as unknown as FsLike).remove(hk);
     assert.ok(!rh.ok && rh.code === 'remove' && /removed/.test(rh.error) && !/saved/.test(rh.error), 'a remove failure is worded as one');
+  }
+
+  // ---- 6f. removal re-checks the folder after its own listing and before the final rmdir (device, inode, a real folder); deep extras ----
+  {
+    const names = (d: string): string[] => fs.readdirSync(d).sort();
+    /** A fs whose hooks fire on the listings of `target` (counted from 1) and on the unlinks inside it. */
+    const hooked = (target: string, h: { onList?: (n: number) => void; afterUnlink?: (n: number) => void; lstat?: (p: string, st: fs.Stats) => fs.Stats }): { fsx: FsLike; lists: () => number } => {
+      const fsx = { ...(fs as unknown as Record<string, unknown>), constants: fs.constants } as Record<string, unknown>;
+      let lists = 0, unlinks = 0;
+      fsx.readdirSync = (p: string, o?: unknown) => { const r = fs.readdirSync(p, o as never); if (p === target) { lists++; h.onList?.(lists); } return r; };
+      fsx.unlinkSync = (p: string) => { fs.unlinkSync(p); if (path.dirname(p) === target) { unlinks++; h.afterUnlink?.(unlinks); } };
+      fsx.lstatSync = (p: string, o?: unknown) => { const st = fs.lstatSync(p, o as never); return h.lstat ? h.lstat(p, st) : st; };
+      return { fsx: fsx as unknown as FsLike, lists: () => lists };
+    };
+    /** Puts a different real folder at `dir` (new inode), holding files named like the world's, and returns it. */
+    const swapFor = (dir: string, files: string[]): void => { fs.renameSync(dir, dir + '.moved'); fs.mkdirSync(dir); for (const f of files) fs.writeFileSync(path.join(dir, f), 'victim ' + f); };
+    const WORLD_FILES = [...Object.keys(GOOD), INSTALLED_NAME].sort();
+
+    // how many times a plain remove lists the world folder: the precheck, the depth check at the top of `rmTree`, and `rmTree`'s own listing (the third). A change here must be seen.
+    const probe = env();
+    const pk = saved(probe.store.save(goodInput()));
+    const counter = hooked(path.join(probe.root, pk), {});
+    assert.ok(new WorldStore(probe.root, counter.fsx).remove(pk).ok);
+    assert.strictEqual(counter.lists(), 3, 'remove lists the world folder three times');
+
+    // A: a swap at each listing, to a different folder: nothing in the new folder is touched (the third listing is the one only the re-check in the loop catches)
+    for (const at of [1, 2, 3]) {
+      const e = env();
+      const k = saved(e.store.save(goodInput()));
+      const dir = path.join(e.root, k);
+      let swapped = false;
+      const hk = hooked(dir, { onList: (n) => { if (n === at) { swapFor(dir, WORLD_FILES); swapped = true; } } });
+      const r = new WorldStore(e.root, hk.fsx).remove(k);
+      assert.ok(swapped);
+      assert.ok(!r.ok, `a swap at listing ${at} stops the removal`);
+      assert.deepStrictEqual(names(dir), WORLD_FILES, `a swap at listing ${at}: the folder put in its place keeps every file`);
+    }
+    // B: a swap after the last file of the folder is deleted: the folder put in its place (empty, new inode) is not removed by the final rmdir
+    {
+      const e = env();
+      const k = saved(e.store.save(goodInput()));
+      const dir = path.join(e.root, k);
+      let n = 0;
+      const hk = hooked(dir, { afterUnlink: (c) => { if (c === WORLD_FILES.length) { fs.renameSync(dir, dir + '.moved'); fs.mkdirSync(dir); n = c; } } });
+      const r = new WorldStore(e.root, hk.fsx).remove(k);
+      assert.strictEqual(n, WORLD_FILES.length, 'the swap ran after the last file');
+      assert.ok(!r.ok, 'a swap after the last file stops the removal');
+      assert.ok(fs.existsSync(dir) && fs.statSync(dir).isDirectory(), 'the folder put in its place was not removed');
+    }
+    // C: the same inode that is no longer a folder (an inode can be reused): not a real folder, nothing is deleted
+    {
+      const e = env();
+      const k = saved(e.store.save(goodInput()));
+      const dir = path.join(e.root, k);
+      let spoof = false;
+      const hk = hooked(dir, { onList: (n) => { if (n === 3) spoof = true; }, lstat: (p, st) => (spoof && p === dir ? Object.assign(Object.create(Object.getPrototypeOf(st)) as fs.Stats, st, { isDirectory: () => false }) : st) });
+      const r = new WorldStore(e.root, hk.fsx).remove(k);
+      assert.ok(spoof && !r.ok, 'something that is not a folder (same inode) stops the removal');
+      assert.deepStrictEqual(names(dir), WORLD_FILES, 'and nothing was deleted');
+    }
+
+    // ---- c. a folder deeper than 4 inside a world folder ----
+    const deepIn = (base: string, levels: number): string => { const d = path.join(base, ...Array.from({ length: levels }, () => 'd')); fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(path.join(d, 'x.txt'), 'x'); return d; };
+    // a deep extra is removed with the same guards: a replace deletes its `.old-` and the next save is not blocked
+    {
+      const e = env();
+      const k = saved(e.store.save(goodInput()));
+      deepIn(path.join(e.root, k), 6);
+      assert.ok(e.store.save(goodInput({}, 2), { replace: true }).ok, 'a replace over a world with a deep extra');
+      assert.deepStrictEqual(fs.readdirSync(e.root), [k], 'the old folder is gone, deep tree and all');
+      assert.ok(e.store.save(goodInput({}, 3), { replace: true }).ok, 'the next save is not "leftover"');
+      // Remove takes a deep tree away too, a link inside it as a link
+      const victim = path.join(e.outside, 'vic');
+      fs.mkdirSync(victim);
+      fs.writeFileSync(path.join(victim, 'keep.txt'), 'keep');
+      const d6 = deepIn(path.join(e.root, k), 6);
+      if (linkOk(victim, path.join(d6, 'lnk'), 'dir')) fs.writeFileSync(path.join(d6, 'plain.txt'), 'p');
+      assert.ok(e.store.remove(k).ok, 'Remove works on a world with a deep extra');
+      assert.deepStrictEqual(fs.readdirSync(e.root), [], 'nothing left');
+      assert.deepStrictEqual(fs.readdirSync(victim), ['keep.txt'], 'a link inside the deep tree was removed as a link');
+    }
+    // beyond what a delete will go down: Remove refuses whole (the `.old-` is not taken either), a replace refuses before it moves anything
+    {
+      const e = env();
+      const k = saved(e.store.save(goodInput()));
+      const live = path.join(e.root, k), old = path.join(e.root, '.old-' + k);
+      fs.mkdirSync(old);
+      fs.writeFileSync(path.join(old, 'junk.txt'), 'junk');
+      deepIn(live, 70);
+      const r = e.store.remove(k);
+      assert.ok(!r.ok && r.code === 'stuck', 'a live folder too deep: refused');
+      assert.ok(fs.existsSync(path.join(old, 'junk.txt')), 'the `.old-` beside it is not deleted either (no half removal)');
+      assert.ok(fs.existsSync(path.join(live, 'wall.webp')), 'the live folder is whole');
+      const rep2 = e.store.save(goodInput({}, 2), { replace: true });
+      assert.ok(!rep2.ok && rep2.code === 'stuck', 'a replace never moves a folder it could not delete after');
+      assert.deepStrictEqual(names(e.root), [k], 'no `.old-` and no temp is left by that refusal');
+      fs.rmSync(path.join(live, 'd'), { recursive: true });
+      assert.ok(e.store.remove(k).ok, 'once the person removes the deep folder, Remove works');
+      // a deep `.old-` beside a healthy live folder (what a crash could leave): refused whole, the live folder stays
+      const e2 = env();
+      const k2 = saved(e2.store.save(goodInput()));
+      const old2 = path.join(e2.root, '.old-' + k2);
+      deepIn(old2, 70);
+      const r2 = e2.store.remove(k2);
+      assert.ok(!r2.ok && r2.code === 'stuck', 'a deep leftover: refused');
+      assert.ok(fs.existsSync(path.join(e2.root, k2, 'wall.webp')), 'the live world was not deleted first (no orphan `.old-`)');
+    }
+  }
+
+  // ---- 6g. a part put back is not Damaged until it is opened ----
+  {
+    const e = env();
+    const k = saved(e.store.save(goodInput()));
+    const f = path.join(e.root, k, 'wall.webp');
+    const good = fs.readFileSync(f);
+    flip(f);
+    assert.deepStrictEqual(e.store.part(k, 'wall.webp'), { ok: false, reason: 'damaged' });
+    assert.strictEqual(e.store.list()[0].state, 'damaged', 'damaged while the file is wrong');
+    fs.writeFileSync(f, good);
+    assert.strictEqual(e.store.list()[0].state, 'ok', 'the file is back: the next list says ok, with no part opened');
+    flip(f);
+    assert.strictEqual(e.store.verify(k), false);
+    fs.writeFileSync(f, good);
+    assert.strictEqual(e.store.list()[0].state, 'ok', 'a full-check mark clears the same way');
+    flip(f, -2);
+    assert.strictEqual(e.store.verify(k), false);
+    assert.strictEqual(e.store.list()[0].state, 'damaged', 'and stays while it is wrong');
+  }
+
+  // ---- 6h. world.json tokens, anchors, hashes, lights and ride style are tied to the validator's result ----
+  {
+    const edit = (fn: (m: Record<string, unknown>) => void, up = false): Record<string, Buffer> => {
+      const f = goodPack();
+      let t = f[MANIFEST_NAME].toString();
+      if (up) t = t.replace(/#[0-9a-f]{6}/g, (c) => c.toUpperCase());
+      const m = JSON.parse(t) as Record<string, unknown>;
+      fn(m);
+      return { ...f, [MANIFEST_NAME]: Buffer.from(JSON.stringify(m)) };
+    };
+    const zipA = toStored(GOOD), resA = validateWorldZip(zipA, opts);
+    assert.ok(resA.ok, 'the good pack passes: ' + resA.reason);
+    const ctx = { origin: 'imported' as const };
+    assert.ok(fromValidated(zipA, resA, ctx), 'the same pack is accepted');
+    const firstTok = Object.keys((JSON.parse(GOOD[MANIFEST_NAME].toString()) as { tokens: Record<string, string> }).tokens).find((k) => /^#[0-9a-f]{6}$/i.test((JSON.parse(GOOD[MANIFEST_NAME].toString()) as { tokens: Record<string, string> }).tokens[k]))!;
+    // the same colours in capitals: the same pack for the store (canonical comparison), against either result
+    const up = edit(() => undefined, true);
+    const resU = validateWorldZip(toStored(up), opts);
+    assert.ok(resU.ok);
+    assert.ok(fromValidated(toStored(up), resA, ctx) && fromValidated(zipA, resU, ctx), 'a colour written differently but equal is accepted');
+    const variants: Array<[string, Record<string, Buffer>]> = [
+      ['a changed colour', edit((m) => { (m.tokens as Record<string, string>)[firstTok] = '#123456'; })],
+      ['an added token', edit((m) => { (m.tokens as Record<string, string>)['--zzz-extra'] = '#123456'; })],
+      ['a removed token', edit((m) => { delete (m.tokens as Record<string, string>)[firstTok]; })],
+      ['tokens removed', edit((m) => { delete m.tokens; })],
+      ['a changed anchor', edit((m) => { const p = m.parts as Record<string, { anchors?: Record<string, unknown> }>; for (const n of Object.keys(p)) { const a = p[n].anchors; if (a) for (const q of Object.keys(a)) if (typeof a[q] === 'number') { a[q] = 0.123; return; } } })],
+      ['a changed anchor box', edit((m) => { const p = m.parts as Record<string, { anchors?: Record<string, { x: number }> }>; for (const n of Object.keys(p)) { const a = p[n].anchors; if (a) for (const q of Object.keys(a)) if (typeof a[q] === 'object' && a[q].x !== undefined) { a[q].x = a[q].x > 0.2 ? 0.01 : 0.3; return; } } })],
+      ['other lights', edit((m) => { m.lights = { lamp: 'neon-strip', call: 'flame' }; })],
+      ['a ride style', edit((m) => { m.rideStyle = 'gate'; })],
+    ];
+    for (const [what, files] of variants) {
+      assert.strictEqual(fromValidated(toStored(files), resA, ctx), null, 'fromValidated refuses ' + what);
+      assert.strictEqual(fromValidatedFiles(Object.keys(files).map((name) => ({ name, data: files[name] })), resA, ctx), null, 'fromValidatedFiles refuses ' + what);
+    }
+    // a direct save: the result's reading (when given) is tied again, and with none, tokens must be in the validator's form and anchors valid for their part
+    const e = env();
+    const good = fromValidated(zipA, resA, { origin: 'project', worldId: 'test-world' })!;
+    for (const [what, files] of variants.slice(0, 7)) {
+      const bad: StoreInput = { ...good, files: Object.keys(files).map((name) => ({ name, data: files[name] })) };
+      assert.ok(!e.store.save(bad).ok, 'save refuses ' + what + ' against the result it carries');
+    }
+    assert.ok(e.store.save(good).ok, 'and saves the matching one');
+    const e2 = env();
+    const plain = (files: Record<string, Buffer>): StoreInput => ({ origin: 'made', name: 'Test world', version: 1, unfinished: false, files: Object.keys(files).map((name) => ({ name, data: files[name] })) });
+    assert.ok(e2.store.save(plain(GOOD)).ok, 'a direct save of a canonical pack');
+    assert.ok(!e2.store.save(plain(up)).ok, 'a direct save with colours not in the validator\'s form is refused');
+    assert.ok(!e2.store.save(plain(edit((m) => { (m.tokens as Record<string, string>)[firstTok] = 'javascript:alert(1)'; }))).ok, 'a token that is no colour is refused');
+    assert.ok(!e2.store.save(plain(edit((m) => { (m.tokens as Record<string, unknown>)[firstTok] = 5; }))).ok, 'a token that is no string is refused');
+    assert.ok(!e2.store.save(plain(edit((m) => { const p = m.parts as Record<string, { anchors?: Record<string, unknown> }>; const n = Object.keys(p)[0]; p[n].anchors = { nonsense: 3 }; }))).ok, 'an anchor the part does not have is refused');
   }
 
   // ---- 6e. leftovers: an orphan .old- can be listed and removed; a good copy is never lost to a stray file ----

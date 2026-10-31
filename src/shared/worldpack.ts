@@ -118,7 +118,7 @@ function plainText(v: unknown, min: number, max: number): string | undefined {
 }
 const unit = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1 ? v : undefined);
 
-function readAnchors(raw: unknown, allowed: Readonly<Record<string, AnchorKind>>): Anchors | string {
+export function readAnchors(raw: unknown, allowed: Readonly<Record<string, AnchorKind>>): Anchors | string {
   if (raw === undefined) return {};
   if (!isObj(raw)) return 'its anchors are not an object';
   const out: Anchors = {};
@@ -201,6 +201,13 @@ function colourBytes(v: string): { hex: string; alpha: number } | undefined {
   if (d.length === 3) d = d.split('').map((c) => c + c).join('');
   if (d.length === 6) d += 'ff';
   return { hex: '#' + d.slice(0, 6), alpha: parseInt(d.slice(6), 16) }; // toHex only returns 3, 6 or 8 digits, so d is 8 digits here
+}
+/** The form `checkTokens` returns for one value (typed token: its typed value; colour: `#rrggbb`, or `#rrggbbaa` with alpha), or undefined when it is neither. The store ties a stored world.json to the validator's result with it. */
+export function canonToken(name: string, value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  if (Object.prototype.hasOwnProperty.call(TYPED_TOKENS, name)) return typedValue(name, value) ?? undefined;
+  const c = colourBytes(value);
+  return c ? (c.alpha === 255 ? c.hex : c.hex + c.alpha.toString(16).padStart(2, '0')) : undefined;
 }
 const PAIR_KEYS: ReadonlySet<string> = new Set([...CONTRAST_PAIRS.flatMap((p) => [p[0], p[1]]), ...UI_PAIRS.flatMap((p) => [p[0], p[1]])]);
 
