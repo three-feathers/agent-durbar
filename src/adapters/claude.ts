@@ -489,6 +489,8 @@ export const cliTransportFactory: TransportFactory = (o) => {
 };
 
 export interface ClaudeAdapterDeps {
+  /** Spec 100: how long `get_context_usage` may take (tests). */
+  mcpContextTimeoutMs?: number;
   /** Absolute path of `claude` (from detect); resolved lazily at the first start of a CLI. */
   claudePath: () => Promise<string | undefined>;
   /** Makes a transport (tests inject a fake; default: the CLI transport; the SDK transport when chosen, FR-113). */
@@ -1094,7 +1096,7 @@ export class ClaudeAdapter implements AgentAdapter {
     if (!s?.transport?.alive) return { servers: [] };
     if (s.turnOpen) return { servers: [], busy: true };
     try {
-      return claudeMcpContext(await s.transport.request({ subtype: 'get_context_usage', detail: 'summary' }, MCP_CONTEXT_TIMEOUT_MS), (s.lastMcp ?? []).map((x) => x.name));
+      return claudeMcpContext(await s.transport.request({ subtype: 'get_context_usage', detail: 'summary' }, this.deps.mcpContextTimeoutMs ?? MCP_CONTEXT_TIMEOUT_MS), (s.lastMcp ?? []).map((x) => x.name));
     } catch {
       return { servers: [] };
     }

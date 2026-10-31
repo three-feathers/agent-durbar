@@ -3170,7 +3170,8 @@ const MCP_CTX=new Map(); /* agent id -> the last McpContextView */
 let mcpLevels=null;
 const mcpLevelsNow=()=>mcpLevels||MCPX().mcpWarnDefaults();
 /* the window to measure against when the report has none: the reported context figure, else the model's; none right after a model change (FR-024) */
-function mcpWindow(a){const c=STATS.agent(a.id).ctx;return a.ctxWaiting?0:(c&&c.limit>0?c.limit:(modelWindow(a)||0));}
+/* finding 4: only a model change makes the window unknown. After a compaction whose new size was not said (Codex, Claude) the window is still the one last reported */
+function mcpWindow(a){const c=STATS.agent(a.id).ctx;if(a.ctxWaiting===true)return 0;if(c&&c.limit>0)return c.limit;return a.mcpWinKnown||modelWindow(a)||0;}
 const mcpReport=a=>{const v=MCP_CTX.get(a.id);return v&&v.report||null;};
 function mcpChipCost(a){
   const X=MCPX(), r=mcpReport(a);
@@ -3188,10 +3189,10 @@ function repaintMcpChip(a){
   if(n.outerHTML===el.outerHTML)return; /* a context event per message: no DOM change when nothing changed */
   el.replaceWith(n);if(had)n.focus({preventScroll:true});
 }
-function mcpActions(a,top,onDismiss){
+function mcpActions(a,onDismiss){
   const box=document.createElement('span');box.className='mcp-acts';
   const btn=(label,fn)=>{const b=document.createElement('button');b.type='button';b.className='linkbtn';b.textContent=label;b.onclick=fn;box.appendChild(b);};
-  btn('Switch off for this session\u2026',()=>{Promise.resolve(window.DurbarScreens.agentMcp(a,{...mcpOpts(a),focusServer:top})).finally(()=>refreshMcpCount(a));}); /* FR-022: the dialog, the heaviest focused; only the person's own switch changes anything (FR-023) */
+  btn('Switch off for this session\u2026',()=>{const top=MCPX().heaviest(mcpReport(a),1)[0];Promise.resolve(window.DurbarScreens.agentMcp(a,{...mcpOpts(a),focusServer:top&&top.name})).finally(()=>refreshMcpCount(a));}); /* FR-022: the dialog, the heaviest focused; only the person's own switch changes anything (FR-023) */
   btn('Open MCP servers',()=>window.DurbarScreens.openSettings('mcp'));
   btn('Dismiss',onDismiss);
   return box;
@@ -3207,7 +3208,7 @@ function mcpWarnLine(a){
     const chat=liveChat(a),el=document.createElement('div');el.className='note info cline mcp-line';el.setAttribute('role','status');
     const t=document.createElement('span');t.className='mcp-line-t';el.appendChild(t);
     const dismiss=()=>{st.dismissed=st.shown;st.shown='none';el.remove();st.el=null;};
-    el.appendChild(mcpActions(a,w.servers[0]&&w.servers[0].name,dismiss));
+    el.appendChild(mcpActions(a,dismiss));
     chat.el.appendChild(el);st.el=el;
   }
   if(w&&st.el){const t=st.el.querySelector('.mcp-line-t'),txt=X.warningText(w);if(t.textContent!==txt)t.textContent=txt;st.el.classList.toggle('mcp-strong',w.level==='strong');st.shown=w.level;}
@@ -3224,11 +3225,17 @@ function mcpCompactHint(a,R,now){
     st.shown[h.level]=true;if(st.el)st.el.remove();
     const el=document.createElement('span');el.className='mcp-hint';
     const t=document.createElement('span');t.textContent=' '+h.text+' ';el.appendChild(t);
-    el.appendChild(mcpActions(a,h.top,()=>{el.remove();st.el=null;st.run=null;}));
+    el.appendChild(mcpActions(a,()=>{el.remove();st.el=null;st.run=null;}));
     st.el=el;st.run=R;
   }
   if(st.el&&st.run===R&&st.el.parentNode!==R.el)R.el.appendChild(st.el); /* the fold's textContent removes it on each new compaction */
   stick();
+}
+function mcpSessionEnded(a){
+  if(a.mcpLine&&a.mcpLine.el)a.mcpLine.el.remove();
+  if(a.mcpHint&&a.mcpHint.el)a.mcpHint.el.remove();
+  a.mcpLine=null;a.mcpHint=null;a.compTimes=[];a.mcpWinKnown=0;MCP_CTX.delete(a.id);
+  repaintMcpChip(a);
 }
 function mcpViewChanged(id,view){
   const a=liveById(id);if(!a||a.parent)return;
@@ -5685,7 +5692,7 @@ function feedStats(a,e){
   /* sub-agent events are counted for the agent that owns them (a.id is the session) */
   if(e.type==='toolCall')STATS.recordTool(a.id,e);
   else if(e.type==='usage')STATS.recordModel(a.id,e.model);
-  else if(e.type==='context'&&!e.agentId){STATS.setContext(a.id,e);if(a.ctxWaiting){a.ctxWaiting=false;}}
+  else if(e.type==='context'&&!e.agentId){STATS.setContext(a.id,e);if(a.ctxWaiting){a.ctxWaiting=false;}if(e.limit>0)a.mcpWinKnown=e.limit;}
   else if(e.type==='mcp'){a.mcp=e.servers;refreshMcpCount(a);if(window.DurbarScreens.mcpEvent)window.DurbarScreens.mcpEvent(a.id);} /* spec 005 FR-037: the MCP chip's count; spec 058 FR-004: an open MCP dialog follows it */
   else return;
   if(e.type==='usage'||e.type==='context'||(e.type==='toolCall'&&e.phase==='start')){
@@ -5825,6 +5832,7 @@ function onLiveEvent(e){
       setGrants(a,[]);
       if(a.remote){a.remote=null;updateRemoteUi(a);} /* spec 054 FR-003: remote control ends with the session */
       a.worked=false; /* spec 058 FR-022: the turn ended with the session; a resume's "idle" (Restart session) is not a finished turn ("Done") */
+      mcpSessionEnded(a); /* spec 100: the figures, a dismissal and the compaction times belong to that session */
       closeTurn(a);setState(a,'idle','Ended','Session ended. Send a message to resume it.');}
     return;}
   case 'permission':if(main)settlePerm(a,e.permission);return;

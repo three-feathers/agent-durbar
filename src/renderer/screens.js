@@ -248,7 +248,7 @@
     if(!X.bridge.setMcpWarnLevels||!X.mcpLevels)return '';
     const L=X.mcpLevels(), mc=window.exports||{};
     const per={};for(const [app,m] of Object.entries(mcpCosts||{}))for(const [n,e] of Object.entries(m||{}))(Object.prototype.hasOwnProperty.call(per,n)?per[n]:(per[n]={}))[app]=e;
-    const clock=at=>new Date(at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    const now=Date.now(), clock=at=>mc.costWhen(at,now); /* FR-012: a month-old figure does not read as today's */
     const rows=Object.keys(per).sort((a,b)=>a.localeCompare(b)).map(n=>{const t=mc.costLine(per[n],clock);return t?`<li><b>${esc(n)}</b> <span>${esc(t)}</span></li>`:'';}).join('');
     return `<h4 class="scr-sub" id="mcpWarnH">Tool definitions in the context window</h4>
         <div class="scr-tools mcp-levels"><label class="capf">Warn when MCP tool definitions take more than <input id="mcpWarnPct" type="number" min="5" max="90" step="1" value="${L.warn}"> % of a session's window</label><label class="capf">strongly above <input id="mcpStrongPct" type="number" min="5" max="90" step="1" value="${L.strong}"> %</label><label class="mcp-off"><input id="mcpWarnOff" type="checkbox"${L.off?' checked':''}> Off</label><button class="btn" type="button" id="mcpWarnSave">Save</button><span class="scr-note small" id="mcpWarnMsg" role="status"></span></div>
@@ -260,8 +260,9 @@
     save.onclick=async()=>{
       const v={warn:Number($('mcpWarnPct').value),strong:Number($('mcpStrongPct').value),off:$('mcpWarnOff').checked}, msg=$('mcpWarnMsg');
       if(!(window.exports||{}).parseWarnLevels(v)){msg.textContent='Use whole percents from 5 to 90, the first below the second.';return;}
-      const r=await X.bridge.setMcpWarnLevels(v);
-      if(r&&r.levels){X.setMcpLevels(r.levels);msg.textContent='Saved.';}
+      let r=null;try{r=await X.bridge.setMcpWarnLevels(v);}catch(e){r=null;}
+      if(r&&r.levels)X.setMcpLevels(r.levels);
+      msg.textContent=r&&r.ok?'Saved.':'Not saved.';
     };
   }
   async function paintSettings(focus){

@@ -675,7 +675,7 @@ async function main(): Promise<void> {
         setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response } }), 0);
       };
     };
-    const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const ad = new ClaudeAdapter({ mcpContextTimeoutMs: 40, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
     assert.deepStrictEqual([ad.capabilities.mcpRestart, ad.capabilities.mcpStart, ad.capabilities.mcpToggleApplies, typeof ad.restartMcpServer], [true, 'next-message', 'live', 'function']);
     const ev: AgentEvent[] = [];
     ad.onEvent((e) => ev.push(e));
@@ -711,6 +711,8 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(usageReqs, [{ subtype: 'get_context_usage', detail: 'summary' }], 'summary, never full (decided Q2)');
     usageMode = 'unknown';
     assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [] }, 'a CLI that does not know the request: no figures');
+    usageMode = 'silent';
+    assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [] }, 'a CLI that never answers: the time limit, no figures');
     usageMode = 'ok';
     (ad as unknown as { sessions: Map<string, { turnOpen?: boolean }> }).sessions.get(sid)!.turnOpen = true;
     usageReqs.length = 0;

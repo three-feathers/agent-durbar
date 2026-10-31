@@ -1,19 +1,17 @@
 /**
  * Spec 100 FR-001: each agent app's answer as a neutral `McpContextReport`. Pure, tolerant of odd shapes; only names and numbers come out.
- * The vendor words stay in this folder: `src/shared` and the renderer see the report only (FR-043).
+ * The vendor words stay in this folder: `src/shared` and the renderer see the report only (FR-043). Names are not cut here: main masks first, then cuts (`cleanReport`).
  */
 import { normalizeServer, parseMcpToolName } from './claudeMap';
 import { estimateTools, safeTokens } from '../shared/mcpcost';
 import type { McpContextReport, McpContextServer } from '../shared/mcpcost';
 
-const MAX_NAME = 128;
 /** Plan: at most this many entries or tools are read from a reply. */
 const MAX_ROWS = 2000;
 export const MCP_CONTEXT_TIMEOUT_MS = 10_000;
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const nameOk = (v: unknown): v is string => typeof v === 'string' && !!v;
-const cutName = (n: string): string => n.slice(0, MAX_NAME);
 const rowsOf = (v: unknown): unknown[] => (Array.isArray(v) ? v.slice(0, MAX_ROWS) : []);
 
 /**
@@ -28,7 +26,7 @@ export function copilotMcpContext(raw: unknown): McpContextReport {
   const servers = new Map<string, { name: string; own: number; children: number }>();
   for (const e of entries) {
     if (e.kind !== 'mcpServer' || !nameOk(e.id)) continue;
-    servers.set(e.id, { name: cutName(e.id.replace(/^mcpServer:/, '')), own: safeTokens(e.tokens) ?? 0, children: 0 });
+    servers.set(e.id, { name: e.id.replace(/^mcpServer:/, ''), own: safeTokens(e.tokens) ?? 0, children: 0 });
   }
   for (const e of entries) {
     const parent = typeof e.parentId === 'string' ? servers.get(e.parentId) : undefined;
@@ -59,12 +57,11 @@ export function claudeMcpContext(raw: unknown, names: readonly string[]): McpCon
     const name = fromTool ?? (nameOk(t.serverName) ? (byNorm.get(t.serverName) ?? t.serverName) : undefined);
     const tokens = safeTokens(t.tokens);
     if (!name || tokens === undefined) continue;
-    const key = cutName(name);
-    const s = servers.get(key) ?? { name: key, tokens: 0, deferredTokens: 0, tools: 0, source: 'reported' as const };
+    const s = servers.get(name) ?? { name, tokens: 0, deferredTokens: 0, tools: 0, source: 'reported' as const };
     if (t.isLoaded === false) s.deferredTokens = (s.deferredTokens ?? 0) + tokens;
     else s.tokens = (s.tokens ?? 0) + tokens;
     s.tools = (s.tools ?? 0) + 1;
-    servers.set(key, s);
+    servers.set(name, s);
   }
   const usage = isObj(raw.modelUsage) ? Object.values(raw.modelUsage).find((m) => isObj(m) && safeTokens(m.contextWindow)) : undefined;
   const window = safeTokens(raw.rawMaxTokens) || safeTokens(raw.maxTokens) || (isObj(usage) ? safeTokens(usage.contextWindow) : undefined);
@@ -77,7 +74,7 @@ export function codexMcpContext(rows: readonly unknown[]): McpContextReport {
   let partial = false;
   for (const row of rows.slice(0, MAX_ROWS)) {
     if (!isObj(row) || !nameOk(row.name)) continue;
-    const name = cutName(row.name);
+    const name = row.name; // main masks, then cuts (a cut here could leave a token's head unmasked)
     if (typeof row.toolsError === 'string' && row.toolsError) {
       partial = true;
       servers.push({ name, source: 'unknown', error: 'list failed' }); // a fixed word: the app's text may hold anything (FR-040)

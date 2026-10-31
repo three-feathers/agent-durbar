@@ -114,13 +114,15 @@ export class SettingsStore {
     return this.s.mcpWarnLevels ?? mcpWarnDefaults();
   }
 
-  /** Whole percents from 5 to 90, warn below strong; anything else keeps the current value. Returns the value now in force. */
-  setMcpWarnLevels(v: unknown): McpWarnLevels {
+  /** Whole percents from 5 to 90, warn below strong. Refused or not written: `ok` false and the value stays as it was. Returns what is in force. */
+  setMcpWarnLevels(v: unknown): { ok: boolean; levels: McpWarnLevels } {
     const levels = parseWarnLevels(v);
-    if (!levels) return this.mcpWarnLevels;
+    if (!levels) return { ok: false, levels: this.mcpWarnLevels };
+    const before = this.s;
     this.s = { ...this.s, mcpWarnLevels: levels };
-    this.save();
-    return levels;
+    if (this.save()) return { ok: true, levels };
+    this.s = before;
+    return { ok: false, levels: this.mcpWarnLevels };
   }
 
   /** Serious mode (spec 034): off by default. */

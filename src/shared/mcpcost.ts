@@ -24,7 +24,7 @@ export interface McpContextServer {
 export interface McpContextReport {
   servers: McpContextServer[];
   window?: number;
-  /** Set only when the agent app gives a total but no server figures; else the sum of the servers. */
+  /** The agent app's own MCP total, when it reports one: a floor under the servers' sum (`reportTotal`). */
   total?: number;
   /** A server failed to list: the total is "of the servers that answered". */
   partial?: boolean;
@@ -45,8 +45,15 @@ export const MCP_STRONG_DEFAULT = 30;
 export const MCP_LEVEL_MIN = 5;
 export const MCP_LEVEL_MAX = 90;
 export const MCP_COST_MAX_TOOLS = 500;
+/** Stop counting one server here (about 8 MB of definitions): already far above any window. */
+export const MCP_COST_MAX_ESTIMATE = 2_000_000;
 /** Above this a number from an agent app is not believed. */
 const MAX_TOKENS = 1e9;
+
+/** Finding 3: control and bidi characters of a name an agent app reports (C0, DEL, C1, zero-width, line separators, BOM, bidi marks and overrides). A loop-free regex: linear. */
+export function stripUnsafe(s: string): string {
+  return s.replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g, '');
+}
 
 /** A token figure that can be shown: a finite number from 0 to under a billion, whole; anything else is no figure (T010). */
 export function safeTokens(v: unknown): number | undefined {
@@ -71,14 +78,28 @@ export function estimateTool(t: unknown): number {
 
 /** FR-002: one server's sum. Takes an array, or a map by tool name (Codex). At most 500 tools are counted (spec 069 FR-032); then `capped`. */
 export function estimateTools(tools: unknown): { tokens: number; tools: number; capped: boolean } {
-  const list: unknown[] = Array.isArray(tools) ? tools : tools && typeof tools === 'object' ? Object.entries(tools as Record<string, unknown>).map(([k, v]) => (v && typeof v === 'object' ? { name: k, ...(v as object) } : { name: k })) : [];
+  const isMap = !Array.isArray(tools) && !!tools && typeof tools === 'object';
+  const keys = isMap ? Object.keys(tools as object) : [];
+  const total = Array.isArray(tools) ? tools.length : keys.length;
   let tokens = 0;
-  const counted = list.slice(0, MCP_COST_MAX_TOOLS);
-  for (const t of counted) tokens += estimateTool(t);
-  return { tokens, tools: list.length, capped: list.length > MCP_COST_MAX_TOOLS };
+  let capped = total > MCP_COST_MAX_TOOLS;
+  for (let i = 0; i < Math.min(total, MCP_COST_MAX_TOOLS); i++) {
+    // one at a time, nothing copied for the tools past the cap
+    const raw = isMap ? (tools as Record<string, unknown>)[keys[i]] : (tools as unknown[])[i];
+    const n = estimateTool(isMap ? (raw && typeof raw === 'object' ? { name: keys[i], ...(raw as object) } : { name: keys[i] }) : raw);
+    tokens += n;
+    if (tokens > MCP_COST_MAX_ESTIMATE) {
+      capped = true; // a server whose definitions are huge: the part counted, with "≥"
+      break;
+    }
+  }
+  return { tokens, tools: total, capped };
 }
 
-/** The tokens the report says are in the window: the servers' sum (deferred tools are not), or the app's total when no server has a figure; undefined when nothing was reported. */
+/**
+ * The tokens the report says are in the window: the servers' sum (deferred tools are not), with the app's own MCP total as a floor. A max, never
+ * a sum, so nothing counts twice: where Copilot's rows fall short of its `categories.mcpTools` the warning is not understated. Undefined when nothing was reported.
+ */
 export function reportTotal(r: McpContextReport | null | undefined): number | undefined {
   if (!r || !Array.isArray(r.servers)) return undefined;
   let sum: number | undefined;
@@ -86,7 +107,8 @@ export function reportTotal(r: McpContextReport | null | undefined): number | un
     const t = safeTokens(s.tokens);
     if (t !== undefined) sum = (sum ?? 0) + t;
   }
-  return sum ?? safeTokens(r.total);
+  const total = safeTokens(r.total);
+  return sum === undefined ? total : total === undefined ? sum : Math.max(sum, total);
 }
 
 /** The window of the report, or the one the caller knows from the context figure. Undefined while unknown (FR-024). */
@@ -209,8 +231,9 @@ export function chipWords(r: McpContextReport | null | undefined, window: number
   const est = anyEstimated(r);
   const share = shareOf(r, window);
   const level = levelOf(share, levels);
-  const parts = [`MCP tool definitions: ${tokenWords(t, est)}`];
-  if (share !== undefined) parts.push(`${pctWord(share)} % of the window`);
+  const least = r.partial ? 'at least ' : '';
+  const parts = [`MCP tool definitions: ${least}${tokenWords(t, est && !least)}`];
+  if (share !== undefined) parts.push(`${least}${pctWord(share)} % of the window`);
   parts.push(est ? 'estimated' : 'reported');
   const said = parts.join(', ');
   if (level === 'strong') return `${said}. Far above the warning level of ${levels.strong} %`;
@@ -252,13 +275,13 @@ const COST_APP_WORDS: Record<string, string> = { copilot: 'Copilot', claude: 'Cl
  * FR-012: one server's last figures in Settings: "≈12k in Codex, 0.4k on demand in Claude Code, measured 10:21". `per` is the entries of
  * this server by agent app; the time is the newest one's. '' when there is none.
  */
-export function costLine(per: Record<string, { tokens?: number; deferredTokens?: number; source: string; at: number } | undefined>, time: (at: number) => string): string {
+export function costLine(per: Record<string, { tokens?: number; deferredTokens?: number; source: string; capped?: boolean; at: number } | undefined>, time: (at: number) => string): string {
   const parts: string[] = [];
   let at = 0;
   for (const app of Object.keys(COST_APP_WORDS)) {
     const e = per[app];
     if (!e) continue;
-    const mark = e.source === 'estimated' ? '≈' : '';
+    const mark = e.capped ? '≥' : e.source === 'estimated' ? '≈' : '';
     const t = safeTokens(e.tokens);
     const dt = safeTokens(e.deferredTokens);
     const bits = [t !== undefined && (t > 0 || !dt) ? `${mark}${fmtK(t)}` : '', dt ? `${mark}${fmtK(dt)} on demand` : ''].filter(Boolean);
@@ -267,6 +290,13 @@ export function costLine(per: Record<string, { tokens?: number; deferredTokens?:
     at = Math.max(at, e.at);
   }
   return parts.length ? `${parts.join(', ')}, measured ${time(at)}` : '';
+}
+
+/** FR-012: when a kept figure was measured: the time today, with the date on any other day, so a month-old figure does not read as today's. */
+export function costWhen(at: number, now: number): string {
+  const d = new Date(at);
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === new Date(now).toDateString() ? time : `${d.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })}, ${time}`;
 }
 
 /** FR-011: a dialog row's figure. `status` is the row's state: a failed or switched-off server is "not loaded" and has no figure (US1 scenario 3). */

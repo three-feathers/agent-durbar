@@ -150,6 +150,13 @@ module.exports = async (ctx) => {
     const bgWarn = await chipBg();
     assert.ok(bgWarn !== bgCalm && bgWarn !== bgStrong, `${w}: amber is drawn: ${bgWarn}`);
     await shot(`100-warn-20-${w}x${h}.png`);
+    // finding: the action follows the current heaviest server, not the one of the first figure
+    await setFig(B, rep([['my-notes', 45_000], ['github', 40_000]], 200_000));
+    assert.ok(await until(`/my-notes 45k/.test((document.querySelector('.mcp-line-t')||{}).textContent||'')`), `${w}: the line follows`);
+    await pressInLine('Switch off for this session\u2026');
+    assert.ok(await until(`document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.n==='my-notes'`), `${w}: the current heaviest is focused`);
+    await closeDlg();
+    await setFig(B, rep([['github', 40_000]], 200_000));
     await pressInLine('Dismiss');
     assert.ok(await until(`document.querySelectorAll('.mcp-line').length===0`), 'Dismiss takes it away');
     await setFig(B, rep([['github', 44_000]], 200_000));
@@ -184,6 +191,7 @@ module.exports = async (ctx) => {
     await setFig(D, { servers: [{ name: 'github', tokens: 40_000, source: 'estimated' }, { name: 'my-notes', source: 'unknown', error: 'list failed' }, { name: 'github-mcp-server', source: 'unknown' }], window: 200_000, partial: true });
     assert.ok(await until(`document.querySelectorAll('.mcp-line').length===1`), `${w}: partial above the level`);
     assert.match((await lines())[0].text, /take at least 20 %/, `${w}: at least`);
+    assert.match((await chip()).name, /at least 40 thousand tokens, at least 20 % of the window/, `${w}: the chip says at least too`);
     await openDlg();
     assert.strictEqual(await cost('my-notes'), 'size not known', `${w}: the failed list's row`);
     assert.match(await total(), /Tool definitions of the servers that answered: ≈40k tokens, 20 % of the 200k window/, `${w}: the partial total`);
@@ -217,6 +225,38 @@ module.exports = async (ctx) => {
     await settle();
     assert.strictEqual(await js(`document.querySelectorAll('.mcp-hint').length`), 0, `${w}: dismissed, not back at this level`);
 
+    // ---- spec 100: per session: Restart session starts over: the figures, a dismissal and the compaction times ----
+    await js(`window.__durbarSimUi.bridge().agentMcpRestartSession(${jsLiteral(B)},true)`);
+    assert.ok(await until(`!document.querySelector('#mcpBtn .ct-mcpk')||/62k/.test(document.querySelector('#mcpBtn .ct-mcpk').textContent)`), `${w}: restarted`);
+    assert.ok(await until(`document.querySelectorAll('.mcp-line').length===1`), `${w}: a new session: the dismissed line can show again`);
+    await settle();
+    assert.strictEqual(await js(`document.querySelectorAll('.mcp-hint').length`), 0, `${w}: and no hint from the last session`);
+    for (let i = 0; i < 3; i++) await comp(i + 20);
+    await settle();
+    assert.strictEqual(await js(`document.querySelectorAll('.mcp-hint').length`), 0, `${w}: 3 compactions of the new session: its times started over`);
+    await comp(23);
+    assert.ok(await until(`document.querySelectorAll('.mcp-hint').length===1`), `${w}: the 4th of this session brings it, once per session`);
+    // ...and a session that ended shows nothing until the next one reports
+    await emit(B, { type: 'status', status: 'stopped' });
+    assert.ok(await until(`!document.querySelector('#mcpBtn .ct-mcpk')&&!document.querySelector('.mcp-line')&&!document.querySelector('.mcp-hint')`), `${w}: ended: no figure, line or hint`);
+    await emit(B, { type: 'status', status: 'idle' });
+    await js(`window.__durbarSimMcpCtx.push(${jsLiteral(B)});true`);
+    assert.ok(await until(`document.querySelectorAll('.mcp-line').length===1`), `${w}: resumed: the figures come back`);
+
+    // ---- hostile names: markup stays text, in the line, the hint and Settings ----
+    const EVIL = '<img id=pwn src=x onerror=window.__pwned=1>';
+    await setFig(B, rep([[EVIL, 80_000]], 200_000));
+    assert.ok(await until(`(document.querySelector('.mcp-line-t')||{}).textContent&&document.querySelector('.mcp-line-t').textContent.includes(${jsLiteral(EVIL)})`), `${w}: the line shows the name as text`);
+    await js(`window.__durbarSimMcpCtx.costs={copilot:{${jsLiteral(EVIL)}:{tokens:5,source:'reported',capped:true,at:Date.now()-30*86400000}}};true`);
+    await js(`window.DurbarScreens.openSettings('mcp')`);
+    assert.ok(await until(`!!document.getElementById('mcpCosts')`), `${w}: Settings lists it`);
+    const evilRow = await js(`document.getElementById('mcpCosts').innerText.replace(/\\s+/g,' ')`);
+    assert.ok(evilRow.includes(EVIL) && /\u22655 in Copilot|\u22650 in Copilot|in Copilot/.test(evilRow) && /20\d\d/.test(evilRow), `${w}: as text, with the date: ${evilRow}`);
+    assert.ok(await js(`!document.getElementById('pwn')&&!window.__pwned`), `${w}: no element came from the name`);
+    await js(`window.__durbarSimMcpCtx.refuseSave=true;document.getElementById('mcpWarnPct').value='15';document.getElementById('mcpStrongPct').value='30';document.getElementById('mcpWarnMsg').textContent='';document.getElementById('mcpWarnSave').click();true`);
+    assert.ok(await until(`document.getElementById('mcpWarnMsg').textContent==='Not saved.'`), `${w}: a save that failed says so`);
+    await js(`window.__durbarSimMcpCtx.refuseSave=false;window.__durbarSimMcpCtx.costs=undefined;window.DurbarScreens.close&&window.DurbarScreens.close();true`);
+
     // ---- Copilot "not reported": no figure, no estimate, no line ----
     await H.load({ w, h, ready: 'fit', focus: true, query: { simmcpctx: 'notreported' } });
     const [N] = await liveOf('copilot');
@@ -237,6 +277,9 @@ module.exports = async (ctx) => {
     assert.ok(X, `${w}: a running Codex chat`);
     await openChat(X);
     assert.ok(await until(`/≈38k/.test((document.querySelector('#mcpBtn .ct-mcpk')||{}).textContent||'')`), `${w}: the ≈ mark`);
+    // a real Codex report has no window: it comes from the context event
+    await emit(X, { type: 'context', tokens: 50_000, limit: 200_000 });
+    assert.ok(await until(`/19 % of the window/.test(document.getElementById('mcpBtn').getAttribute('aria-label'))`), `${w}: the share against the reported window`);
     c = await chip();
     assert.ok(/about 38 thousand tokens, 19 % of the window, estimated/.test(c.name) && c.warn, `${w}: estimated ${JSON.stringify(c)}`);
     assert.match((await lines())[0].text, /github ≈26k/, `${w}: the line marks estimates`);
@@ -245,6 +288,11 @@ module.exports = async (ctx) => {
     assert.match(await total(), /Estimated by Agent Durbar from the tool definitions/);
     await shot(`100-codex-${w}x${h}.png`);
     await closeDlg();
+    // FR-030 on Codex: its compactions do not say the new size and its report has no window: the hint still comes (finding 4)
+    const T1 = await js(`Date.now()`);
+    for (let i = 0; i < 4; i++) await emit(X, { type: 'compaction', phase: 'complete', trigger: 'auto', timestamp: T1 + i * 200_000 });
+    assert.ok(await until(`document.querySelectorAll('.mcp-hint').length===1`), `${w}: the hint on Codex, after a compaction with no size`);
+    assert.match(await js(`document.querySelector('.mcp-hint').innerText`), /19 % of the window/, `${w}: of the window last reported`);
     const [K] = await liveOf('claude');
     assert.ok(K, `${w}: a running Claude Code chat`);
     await openChat(K);

@@ -17,6 +17,7 @@ import { agentMcpReply, mcpRefreshOp, mcpRestartOp } from './mcpsession';
 import { McpCallTracker } from './mcpcall';
 import { mcpToolsOp } from './mcptoolsop';
 import { McpContextTracker } from './mcpcontextop';
+import type { McpCostStore } from './mcpcosts';
 import { McpSignInStore, SignInPoller, mcpCancelSignInOp, mcpOpenSignInOp, mcpSignInOp, serverUrlFor } from './mcpsignin';
 import { McpStore } from './mcpstore';
 import { mcpHealthUpdate } from '../shared/mcphealth';
@@ -81,6 +82,8 @@ export function registerMcpIpc(deps: {
   orgTool?(agentId: string, server: string, tool: string): Promise<OrgVerdict | undefined>;
   /** Spec 100 FR-003: new MCP figures for the window. */
   pushContext?(id: string, view: McpContextView): void;
+  /** Spec 100 FR-004, FR-012: the last figures, in their own file: never in the store that holds the user's servers and secrets. */
+  costs?(): McpCostStore | undefined;
 }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[]; disabledMcpTools?: Record<string, string[]> }; secretValuesFor(agentId: string): string[] } {
   const { agents, router, dev } = deps;
   const store = deps.store;
@@ -135,7 +138,7 @@ export function registerMcpIpc(deps: {
     live: (id) => live.get(id) ?? [],
     off: (id) => off.get(id) ?? new Set<string>(),
     push: (id, view) => deps.pushContext?.(id, view),
-    persist: (id, servers, at) => { const app = deps.appOf?.(id); if (app) store().setMcpCosts(app, servers, at); },
+    persist: (id, servers, at) => { const app = deps.appOf?.(id); if (app) deps.costs?.()?.set(app, servers, at); },
     now: deps.now,
   });
   router.onEvent((e) => {
@@ -312,7 +315,29 @@ export function registerMcpIpc(deps: {
   /** Spec 100 FR-003: the last figures; `open` asks first, at most once a minute. Names and numbers only (FR-040). */
   ipcHandle('agents:mcpContext', (_e, id: unknown, open: unknown) => contexts.get(id, open));
   /** Spec 100 FR-012: the last figures per agent app, for Settings. */
-  ipcHandle('mcp:costs', () => ({ ok: true, costs: store().mcpCosts() }));
+  ipcHandle('mcp:costs', () => {
+    const c = deps.costs?.();
+    if (!c) return { ok: false, costs: {} };
+    // FR-012: a figure of a server no list has any more goes; a list that could not be read keeps its app's figures
+    const gn = deps.globalNames?.() ?? {};
+    const running = new Map<string, string[]>();
+    for (const [id, list] of live) {
+      const app = deps.appOf?.(id);
+      if (app) running.set(app, [...(running.get(app) ?? []), ...list.map((x) => x.name)]);
+    }
+    let extras: string[] = [];
+    let cliList: string[] = [];
+    try {
+      extras = store().extraNames([]);
+      cliList = cliNames();
+    } catch {
+      return { ok: true, costs: c.all() }; // the store is not ready: nothing is pruned on a guess
+    }
+    const known: Record<string, string[]> = {};
+    for (const app of ['copilot', 'claude', 'codex']) known[app] = [...(gn[app as GlobalApp] ?? []), ...extras, ...(running.get(app) ?? []), ...(app === 'copilot' ? cliList : [])];
+    c.prune(known);
+    return { ok: true, costs: c.all() };
+  });
   ipcHandle('agents:setMcp', async (_e, id: unknown, name: unknown, enabled: unknown) => {
     const r = await setMcpOp({ agents, router, wsKey: keyOf, orgMcpRefusal: async (a, n) => { const v = await deps.orgMcp?.(a.id, serverDefOf(a.id, n)); return v?.refuse ? `${v.why}: it cannot be switched on.` : undefined; } }, off, id, name, enabled);
     if (r.ok && typeof id === 'string' && typeof name === 'string') { const t = touched.get(id) ?? new Set<string>(); t.add(name); touched.set(id, t); }

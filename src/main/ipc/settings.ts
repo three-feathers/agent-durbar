@@ -27,7 +27,9 @@ export function register(deps: SettingsIpcDeps): void {
   /* spec 080 FR-031: where a plain click on a chat link opens. A preference like the others here (the window's trust boundary); the URL of a click is checked in main whichever it is. */
   ipcHandle('settings:setChatLinksIn', (_e, v: unknown) => ({ ok: true, chatLinksIn: settingsStore()?.setChatLinksIn(v) ?? 'session' }));
   /* spec 100 FR-020: the MCP warning levels; refused values keep the setting */
-  ipcHandle('settings:setMcpWarnLevels', (_e, v: unknown) => ({ ok: true, levels: settingsStore()?.setMcpWarnLevels(v) ?? mcpWarnDefaults() }));
+  ipcHandle('settings:setMcpWarnLevels', (_e, v: unknown) => {
+    return settingsStore()?.setMcpWarnLevels(v) ?? { ok: false, levels: mcpWarnDefaults() }; // a refusal or a failed write says so: never "Saved"
+  });
   /* DURBAR_THEME (spec 040 FR-008): a theme for this run only, never saved; a pick in Settings replaces it and is saved as usual. */
   ipcHandle('settings:setTheme', (_e, id: unknown) => {
     clearRunTheme();

@@ -2,7 +2,7 @@
  * Spec 100 FR-002, FR-020..FR-024, FR-030: the estimator and the level rules. `npm run test:mcpcost`. No Electron, no network, no credits.
  */
 import * as assert from 'assert';
-import { chipFigure, chipWords, compactionBurst, compactionHint, compactionHintText, costLine, estimateTool, estimateTools, figureOf, fmtK, footnoteOf, hasFigures, heaviest, levelOf, lineAction, mcpWarnDefaults, parseWarnLevels, reportTotal, rowFigure, safeTokens, shareOf, totalLine, warningOf, warningText } from '../src/shared/mcpcost';
+import { chipFigure, chipWords, compactionBurst, compactionHint, compactionHintText, costLine, costWhen, MCP_COST_MAX_ESTIMATE, stripUnsafe, estimateTool, estimateTools, figureOf, fmtK, footnoteOf, hasFigures, heaviest, levelOf, lineAction, mcpWarnDefaults, parseWarnLevels, reportTotal, rowFigure, safeTokens, shareOf, totalLine, warningOf, warningText } from '../src/shared/mcpcost';
 import type { McpContextReport, McpLevel } from '../src/shared/mcpcost';
 import { claudeMcpContext, codexMcpContext, copilotMcpContext } from '../src/adapters/mcpcontext';
 
@@ -39,7 +39,8 @@ assert.strictEqual(safeTokens(12.4), 12);
 assert.strictEqual(reportTotal({ servers: [{ name: 'a', tokens: NaN, source: 'reported' }, { name: 'b', tokens: -5, source: 'reported' }, { name: 'c', tokens: 10, source: 'reported' }] }), 10, 'bad numbers are not summed');
 assert.strictEqual(reportTotal({ servers: [{ name: 'a', tokens: Infinity, source: 'reported' }] }), undefined, 'only bad numbers: no figure, not 0');
 assert.strictEqual(reportTotal({ servers: [], total: 500 }), 500, "no server figures: the app's total");
-assert.strictEqual(reportTotal({ servers: [{ name: 'a', tokens: 3, source: 'reported' }], total: 500 }), 3, 'the rows win over a total, so the total line equals the rows');
+assert.strictEqual(reportTotal({ servers: [{ name: 'a', tokens: 3, source: 'reported' }], total: 500 }), 500, "the app's total is a floor (a max, never added)");
+assert.strictEqual(reportTotal({ servers: [{ name: 'a', tokens: 800, source: 'reported' }], total: 500 }), 800, 'the rows above the total stay');
 assert.strictEqual(reportTotal({ servers: [{ name: 'a', tokens: 3, deferredTokens: 90_000, source: 'reported' }] }), 3, 'deferred tools are not in the window (spec 100 Changes 2026-10-31)');
 assert.strictEqual(reportTotal(null), undefined);
 assert.strictEqual(hasFigures({ servers: [{ name: 'a', source: 'unknown' }] }), false);
@@ -141,6 +142,18 @@ assert.strictEqual(footnoteOf(rep(1), 'Copilot'), 'Reported by Copilot.');
 assert.strictEqual(footnoteOf({ servers: [] }, 'Copilot'), 'Size not reported by Copilot.', 'no estimate from Copilot (decided Q4)');
 assert.ok(/about 4 characters per token; the real figure can differ by a third/.test(footnoteOf({ servers: [{ name: 'a', tokens: 1, source: 'estimated' }] }, 'Codex')));
 
+// a server's definitions stop being counted at a limit, marked, and nothing past the cap is copied
+const heavy = estimateTools(Array.from({ length: 400 }, (_, i) => ({ name: `t${i}`, description: 'x'.repeat(40_000) })));
+assert.ok(heavy.capped && heavy.tokens > MCP_COST_MAX_ESTIMATE && heavy.tokens < MCP_COST_MAX_ESTIMATE + 20_000, `stops counting: ${heavy.tokens}`);
+const hostile = new Proxy([], { get(t, k) { if (k === 'length') return 5_000_000; const i = Number(k); if (Number.isInteger(i)) { if (i >= 500) throw new Error('read past the cap'); return { name: 'x' }; } return Reflect.get(t, k); } });
+assert.strictEqual(estimateTools(hostile).tools, 5_000_000, 'an array past the cap is counted without being read');
+// names: control and bidi characters
+assert.strictEqual(stripUnsafe('a\nb\u202ec\u0007d\u0000e\u2066f\u200bg\ufeffh\u009bi\u2028j'), 'abcdefghij');
+assert.strictEqual(stripUnsafe('plain-name_1.2 é 日本'), 'plain-name_1.2 é 日本');
+// partial in the chip's words (finding 7)
+assert.strictEqual(chipWords(rep(70_000, { partial: true }), undefined, L), 'MCP tool definitions: at least 70 thousand tokens, at least 35 % of the window, reported. Far above the warning level of 30 %');
+assert.ok(/at least 40 thousand tokens, at least 20 %.*estimated/.test(chipWords({ servers: [{ name: 'a', tokens: 40_000, source: 'estimated' }], window: 200_000, partial: true }, undefined, L)), 'no "at least about"');
+
 // FR-030: the hint
 const burst = [NOW, NOW - MIN, NOW - 2 * MIN, NOW - 3 * MIN];
 const r31: McpContextReport = { window: 200_000, servers: [{ name: 'github', tokens: 41_000, source: 'estimated' }, { name: 'jira', tokens: 21_000, source: 'estimated' }] };
@@ -162,6 +175,11 @@ const at = (ms: number): string => `t${ms}`;
 assert.strictEqual(costLine({ codex: { tokens: 12_000, source: 'estimated', at: 5 }, claude: { tokens: 0, deferredTokens: 400, source: 'reported', at: 9 } }, at), '0.4k on demand in Claude Code, ≈12k in Codex, measured t9');
 assert.strictEqual(costLine({ copilot: { tokens: 12_000, source: 'reported', at: 5 } }, at), '12k in Copilot, measured t5');
 assert.strictEqual(costLine({}, at), '', 'never measured: nothing');
+assert.strictEqual(costLine({ codex: { tokens: 12_000, source: 'estimated', capped: true, at: 5 } }, at), '≥12k in Codex, measured t5', 'over the cap: ≥, as the dialog');
+// FR-012: the date when not today
+const T0 = new Date(2026, 9, 31, 10, 21).getTime();
+assert.strictEqual(costWhen(T0, T0 + 3_600_000), new Date(T0).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), 'today: the time only');
+assert.ok(costWhen(T0 - 30 * 86_400_000, T0).includes('2026') && costWhen(T0 - 30 * 86_400_000, T0).length > costWhen(T0, T0).length, `another day: with the date: ${costWhen(T0 - 30 * 86_400_000, T0)}`);
 
 // T012: Copilot's reply, parsed
 const entry = (kind: string, id: string, tokens: unknown, parentId?: string) => ({ kind, id, label: 'ignored', tokens, ...(parentId ? { parentId } : {}) });
@@ -176,7 +194,7 @@ assert.strictEqual(cop([], { limit: NaN }).window, undefined, 'a bad limit is no
 assert.strictEqual(cop([], { categories: { mcpTools: 5000 } }).total, 5000);
 assert.strictEqual(copilotMcpContext({ entries: [], limit: 1000 }).window, 1000, 'a reply without the wrapper');
 for (const bad of [null, undefined, 'x', 7, [], { contextAttribution: null }, { contextAttribution: 'x' }]) assert.deepStrictEqual(copilotMcpContext(bad), { servers: [] }, 'not a report');
-assert.strictEqual(cop([entry('mcpServer', 'mcpServer:' + 'n'.repeat(500), 1)]).servers[0].name.length, 128, 'names cut at 128');
+assert.strictEqual(cop([entry('mcpServer', 'mcpServer:' + 'n'.repeat(500), 1)]).servers[0].name.length, 500, 'not cut here: main masks, then cuts');
 assert.strictEqual(cop(Array.from({ length: 2100 }, (_, i) => entry('mcpServer', `mcpServer:s${i}`, 1))).servers.length, 2000, 'at most 2000 entries');
 
 // T013: Claude's reply, parsed
@@ -188,7 +206,8 @@ assert.deepStrictEqual(cl([{ name: 'mcp__a__b__t', serverName: 'a', tokens: 5 }]
 assert.deepStrictEqual(cl([{ serverName: 'unlisted', tokens: 5 }]).servers.map((x) => x.name), ['unlisted'], 'a server the list does not have keeps its name');
 assert.deepStrictEqual(cl([{ serverName: 'web', tokens: NaN }, { serverName: 'web', tokens: 1e10 }, { serverName: 'web', tokens: -1 }, { tokens: 5 }, null]).servers, [], 'bad numbers and no name: dropped');
 assert.strictEqual(cl(Array.from({ length: 2500 }, () => ({ serverName: 'web', tokens: 1 }))).servers[0].tokens, 2000, 'at most 2000 tools');
-assert.strictEqual(cl([{ serverName: 'n'.repeat(500), tokens: 1 }]).servers[0].name.length, 128, 'names cut at 128');
+assert.strictEqual(cl([{ serverName: 'n'.repeat(500), tokens: 1 }]).servers[0].name.length, 500, 'not cut here: main masks, then cuts');
+assert.strictEqual(codexMcpContext([{ name: 'n'.repeat(500) }]).servers[0].name.length, 500, 'not cut here: main masks, then cuts');
 assert.strictEqual(cl([], { maxTokens: 160_000 }).window, 160_000, 'maxTokens without rawMaxTokens');
 assert.strictEqual(cl([], { modelUsage: { m: { contextWindow: 1_000_000 } } }).window, 1_000_000, 'modelUsage last');
 assert.strictEqual(cl([], { rawMaxTokens: 200_000, maxTokens: 1, modelUsage: { m: { contextWindow: 3 } } }).window, 200_000, 'rawMaxTokens first');

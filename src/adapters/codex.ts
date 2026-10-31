@@ -16,7 +16,7 @@ import * as path from 'path';
 import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, PlanAnswer, SignInCheck, SlashCommand, SlashExpansion, StartOptions, Unsubscribe, WriteGuard } from './types';
 import type { McpContextReport, McpToolInfo } from './types';
 import { normMcpTools } from './mcptools';
-import { codexMcpContext } from './mcpcontext';
+import { codexMcpContext, MCP_CONTEXT_TIMEOUT_MS } from './mcpcontext';
 import { codexSlashPlaces, SlashCache, vscodeUserPromptDirs } from './slashcommands';
 import type { SlashPlace } from './slashcommands';
 import { cleanPlanText, reviseText } from './plan';
@@ -91,6 +91,8 @@ export interface CodexLocation {
 }
 
 export interface CodexAdapterOptions {
+  /** Spec 100: the limit over all pages of one `mcpContext` read (tests). */
+  mcpContextTimeoutMs?: number;
   spawn?: SpawnFn;
   locate?: () => Promise<CodexLocation | undefined>;
   platform?: string;
@@ -296,6 +298,9 @@ export class CodexAdapter implements AgentAdapter {
   writeGuard?: WriteGuard;
   private listeners = new Set<(event: AgentEvent) => void>();
   private sessions = new Map<string, Live>();
+  /** Spec 100: the read under way per session, and its limit. */
+  private readonly mcpContextReads = new Map<string, Promise<McpContextReport>>();
+  private mcpContextLimitMs = MCP_CONTEXT_TIMEOUT_MS;
   /** Ids this run has used, live or not: a stopped one cannot be silently restarted as a new thread (resume is T043b). */
   private known = new Set<string>();
   /** FR-143: Durbar session id -> Codex thread id, so a known session restarts by resuming its thread. */
@@ -315,6 +320,7 @@ export class CodexAdapter implements AgentAdapter {
   private readonly killGraceMs?: number;
 
   constructor(o: CodexAdapterOptions = {}) {
+    if (o.mcpContextTimeoutMs !== undefined) this.mcpContextLimitMs = o.mcpContextTimeoutMs;
     this.spawnFn = o.spawn ?? realSpawn;
     this.locate = o.locate ?? detectLocate;
     this.platform = o.platform ?? process.platform;
@@ -1282,15 +1288,30 @@ export class CodexAdapter implements AgentAdapter {
     throw new Error(`${name} is not running in this session.`);
   }
 
-  /** Spec 100 FR-001, FR-004: every server's tools on this thread's connection, estimated here; the schemas stay in this call and are dropped with it. */
-  async mcpContext(sessionId: string): Promise<McpContextReport> {
+  /**
+   * Spec 100 FR-001, FR-004: every server's tools on this thread's connection, estimated here; the schemas stay in this call and are dropped
+   * with it. One read per session at a time, with one limit over all its pages: a second ask joins the read, none starts beside it.
+   */
+  mcpContext(sessionId: string): Promise<McpContextReport> {
     const live = this.sessions.get(sessionId);
-    if (!live || !live.rpc || !live.threadId) return { servers: [] };
+    if (!live || !live.rpc || !live.threadId) return Promise.resolve({ servers: [] });
+    const running = this.mcpContextReads.get(sessionId);
+    if (running) return running;
+    const read = this.readMcpContext(live).finally(() => this.mcpContextReads.delete(sessionId));
+    this.mcpContextReads.set(sessionId, read);
+    return read;
+  }
+
+  private async readMcpContext(live: { rpc?: { request(method: string, params: unknown): Promise<unknown> }; threadId?: string }): Promise<McpContextReport> {
+    const limit = this.mcpContextLimitMs;
     const all: unknown[] = [];
-    let cursor: string | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<'expired'>((r) => { timer = setTimeout(() => r('expired'), limit); });
     try {
+      let cursor: string | undefined;
       for (let page = 0; page < 20; page++) {
-        const res = await live.rpc.request('mcpServerStatus/list', { threadId: live.threadId, detail: 'toolsAndAuthOnly', limit: 100, ...(cursor ? { cursor } : {}) });
+        const res = await Promise.race([live.rpc?.request('mcpServerStatus/list', { threadId: live.threadId, detail: 'toolsAndAuthOnly', limit: 100, ...(cursor ? { cursor } : {}) }), expired]);
+        if (res === 'expired') return { servers: [] };
         if (isObj(res) && Array.isArray(res.data)) all.push(...res.data);
         const next = isObj(res) && typeof res.nextCursor === 'string' && res.nextCursor ? res.nextCursor : undefined;
         if (!next || next === cursor) break;
@@ -1298,6 +1319,8 @@ export class CodexAdapter implements AgentAdapter {
       }
     } catch {
       return { servers: [] };
+    } finally {
+      if (timer) clearTimeout(timer);
     }
     return codexMcpContext(all);
   }

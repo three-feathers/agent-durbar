@@ -77,6 +77,7 @@ import { McpStore } from './mcpstore';
 import { AgentStateTracker } from './mcp/agentstate';
 import { maskMcpEvent, maskMcpHistory } from './mcpmask';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
+import { McpCostStore } from './mcpcosts';
 import { appServerUrls } from './mcpsignin';
 import { globalFiles } from './mcpglobal';
 import { GlobalLists, sessionGlobalFor } from './mcpglobalio';
@@ -144,6 +145,7 @@ let folderStore: FolderStore | undefined;
 let settingsStore: SettingsStore | undefined;
 /** Global MCP servers (spec 019), created when the app is ready (needs userData and safeStorage). */
 let mcpStore: McpStore | undefined;
+let mcpCostStore: McpCostStore | undefined;
 /** All-time tool usage (spec 020), created when the app is ready. */
 let usageStore: UsageStore | undefined;
 /** Credit totals per folder kept across restarts (spec 011 FR-025, issue #21). */
@@ -200,6 +202,7 @@ const mcp = registerMcpIpc({
   orgMcpNow: (id, s) => orgPolicies.mcpNow(appIdOf(id), s),
   orgTool: (id, server, tool) => orgPolicies.tool(appIdOf(id), server, tool),
   pushContext: (id, view) => toRenderer('mcp-context', { id, view }), // spec 100 FR-003
+  costs: () => mcpCostStore,
 });
 registerMcpGlobalIpc({ lists: () => globalLists, offList: () => mcpStore?.ambientDisabled() ?? [], setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off) });
 /** Files the user picked through the native dialog; only these can be attached. */
@@ -1014,6 +1017,8 @@ app.whenReady().then(() => {
   /* Dev/test theme seed (spec 036 FR-005): DURBAR_THEME=<id> makes the office open on that theme for the per-theme checks; invalid ids fall back in the renderer. */
   if (dev.DURBAR_THEME) runTheme = parseThemeId(dev.DURBAR_THEME);
   mcpStore = new McpStore(path.join(app.getPath('userData'), 'durbar-mcp.json'), safeStorageCodec);
+  mcpCostStore = new McpCostStore(path.join(app.getPath('userData'), 'durbar-mcp-costs.json')); // spec 100: its own file, so a figure can never overwrite a server store that failed to load
+  mcpCostStore.load();
   folderSetupStore = new FolderSetupStore(path.join(app.getPath('userData'), 'folder-setup.json')); // spec 061: digests and paths only
   mcpStore.load();
   usageStore = new UsageStore(path.join(app.getPath('userData'), 'durbar-tool-usage.json'));

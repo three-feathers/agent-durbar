@@ -772,6 +772,26 @@ async function main(): Promise<void> {
         const req = server.requests('mcpServerStatus/list').pop()!.params as Record<string, unknown>;
         assert.deepStrictEqual([req.threadId, req.serverName, req.detail], [sid, undefined, 'toolsAndAuthOnly'], 'the spec 069 call for every server');
         assert.strictEqual(ad.capabilities.mcpContext, 'estimated');
+        // one read at a time, and one limit over all pages: a second ask joins it, none starts beside it
+        {
+          const before = server.requests('mcpServerStatus/list').length;
+          server.holdMcpList = true;
+          const first = ad.mcpContext!(sid), second = ad.mcpContext!(sid);
+          await new Promise((r) => setImmediate(r));
+          await server.flush();
+          assert.strictEqual(server.requests('mcpServerStatus/list').length, before + 1, 'one request, however many asks');
+          (ad as unknown as { mcpContextLimitMs: number }).mcpContextLimitMs = 30;
+          server.holdMcpList = false;
+          server.releaseMcpList();
+          assert.deepStrictEqual(await second, await first, 'the same read');
+          server.holdMcpList = true;
+          const hung = ad.mcpContext!(sid);
+          assert.deepStrictEqual(await hung, { servers: [] }, 'the limit ends a read that hangs');
+          assert.ok(!(ad as unknown as { mcpContextReads: Map<string, unknown> }).mcpContextReads.has(sid), 'and a later ask may start');
+          server.holdMcpList = false;
+          server.releaseMcpList();
+          (ad as unknown as { mcpContextLimitMs: number }).mcpContextLimitMs = 10_000;
+        }
         assert.deepStrictEqual(await ad.mcpContext!('no-such'), { servers: [] });
         server.mcpList = Array.from({ length: 25 }, (_v, i) => ({ name: `srv-${i}`, authStatus: 'unsupported', runtimeStatus: 'connected', tools: { [`t${i}`]: { name: `t${i}`, inputSchema: {} } }, resources: [], resourceTemplates: [] }));
         server.mcpPageSize = 10;

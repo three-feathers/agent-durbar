@@ -1483,17 +1483,17 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       '10': simFix(200_000, [['github', 14_000], ['my-notes', 4000], ['github-mcp-server', 2000]]),
       '20': simFix(200_000, [['github', 28_000], ['my-notes', 8000], ['github-mcp-server', 4000]]),
       '35': simFix(200_000, [['github', 50_000], ['my-notes', 12_000], ['github-mcp-server', 8000]]),
-      '1m': simFix(1_000_000, [['github', 150_000], ['my-notes', 30_000], ['github-mcp-server', 20_000]]), // 20 % of 1M
+      '1m': simFix(1_000_000, [['github', 150_000], ['my-notes', 30_000], ['github-mcp-server', 20_000]]), // 20 % of 1M; fixtures name what main would keep, and main adds "unknown" and "at least" for a running server left out
       notreported: { servers: [] }, // Copilot's call missing or null
       nowindow: simFix(undefined, [['github', 28_000]]),
-      estimated: simFix(200_000, [['github', 26_000], ['my-notes', 8000], ['github-mcp-server', 4000]], { source: 'estimated' }), // Codex: 19 %
-      failed: { servers: [{ name: 'github', tokens: 34_000, source: 'estimated' }, { name: 'my-notes', source: 'unknown', error: 'list failed' }, { name: 'github-mcp-server', tokens: 6000, source: 'estimated' }], window: 200_000, partial: true }, // 20 %: "at least"
-      failedlow: { servers: [{ name: 'github', tokens: 10_000, source: 'estimated' }, { name: 'my-notes', source: 'unknown', error: 'list failed' }], window: 200_000, partial: true },
+      estimated: simFix(undefined, [['github', 26_000], ['my-notes', 8000], ['github-mcp-server', 4000]], { source: 'estimated' }), // Codex: no window of its own, as a real report (the context event gives it)
+      failed: { servers: [{ name: 'github', tokens: 34_000, source: 'estimated' }, { name: 'my-notes', source: 'unknown', error: 'list failed' }, { name: 'github-mcp-server', tokens: 6000, source: 'estimated' }], partial: true }, // Codex: no window in the report; 20 % of a 200k window: "at least"
+      failedlow: { servers: [{ name: 'github', tokens: 10_000, source: 'estimated' }, { name: 'my-notes', source: 'unknown', error: 'list failed' }], partial: true },
       deferred: { servers: [{ name: 'github', tokens: 1500, deferredTokens: 40_000, tools: 30, source: 'reported' }, { name: 'my-notes', tokens: 0, deferredTokens: 400, tools: 2, source: 'reported' }, { name: 'github-mcp-server', tokens: 500, tools: 3, source: 'reported' }], window: 200_000 }, // tool search on: no warning
     };
     let simMcpLevels: McpWarnLevels = { warn: 15, strong: 30, off: false };
     const simMcpCtxListeners = new Set<(p: { id: string; view: McpContextView }) => void>();
-    const simMcpCtxHook = { opens: 0, set: (id: string, r: McpContextReport | null) => { if (r) simMcpOver.set(id, r); else simMcpOver.delete(id); simMcpCtxPush(id); }, push: (id: string) => simMcpCtxPush(id) };
+    const simMcpCtxHook = { opens: 0, refuseSave: false, costs: undefined as import('../shared/api').McpCosts | undefined, set: (id: string, r: McpContextReport | null) => { if (r) simMcpOver.set(id, r); else simMcpOver.delete(id); simMcpCtxPush(id); }, push: (id: string) => simMcpCtxPush(id) };
     const simMcpOver = new Map<string, McpContextReport>();
     (window as unknown as { __durbarSimMcpCtx?: unknown }).__durbarSimMcpCtx = simMcpCtxHook;
     const simMcpScenario = (s: SimAgent): McpContextReport | undefined => {
@@ -1918,12 +1918,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return simMcpCtxView(id);
       },
       onMcpContext: (cb) => { simMcpCtxListeners.add(cb); return () => simMcpCtxListeners.delete(cb); },
-      mcpCosts: async () => ({ ok: true, costs: (simMcpCostsOn ? { copilot: { github: { tokens: 41_000, source: 'reported', at: Date.now() }, 'github-mcp-server': { tokens: 12_000, source: 'reported', at: Date.now() } }, codex: { github: { tokens: 38_000, source: 'estimated', at: Date.now() } }, claude: { github: { tokens: 0, deferredTokens: 400, source: 'reported', at: Date.now() } } } : {}) as import('../shared/api').McpCosts }),
+      mcpCosts: async () => ({ ok: true, costs: (simMcpCtxHook.costs ?? (simMcpCostsOn ? { copilot: { github: { tokens: 41_000, source: 'reported', at: Date.now() }, 'github-mcp-server': { tokens: 12_000, source: 'reported', at: Date.now() } }, codex: { github: { tokens: 38_000, source: 'estimated', at: Date.now() } }, claude: { github: { tokens: 0, deferredTokens: 400, source: 'reported', at: Date.now() } } } : {})) as import('../shared/api').McpCosts }),
       setMcpWarnLevels: async (v) => {
         const X = (window as unknown as { exports: { parseWarnLevels(x: unknown): McpWarnLevels | undefined } }).exports;
         const l = X.parseWarnLevels(v);
         if (l) simMcpLevels = l;
-        return { ok: true, levels: simMcpLevels };
+        return { ok: !!l && !simMcpCtxHook.refuseSave, levels: simMcpLevels };
       },
     };
 
@@ -3065,6 +3065,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         }
         s.ctx ??= { tokens: 0, limit: 128000 }; // agentMcp reads "live" from it
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Ready in ' + s.info.cwd });
+        simMcpCtxPush(id); // spec 100: the resumed session reports its figures again
         return { ok: true };
       },
       resolvePermission: async (id, req, approve, remember) => {

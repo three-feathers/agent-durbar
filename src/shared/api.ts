@@ -703,6 +703,7 @@ export interface McpCostEntry {
   tokens?: number;
   deferredTokens?: number;
   source: 'reported' | 'estimated';
+  capped?: boolean;
   at: number;
 }
 /** By agent app id, then server name. */
