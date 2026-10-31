@@ -25,7 +25,7 @@ const LIMITS = { rendersPerStatus: 1, readsPerStatus: 5, nodesPerStatus: 0, attr
 const KNOWN_FAILURES = {
   'elementsRecalculated@15': { task: 'T148, on 097-flat-perf-has', max: 1200 },
   'elementsRecalculated@40': { task: 'T148, on 097-flat-perf-has', max: 2000 },
-  /* T149 left: 15 and 40 of these are `sc.dataset.for` in render()'s monitor lines (097-p2-screens's until it lands); about 30 are the change itself, as the desks re-sort on a status change. FR-190: the budget of 10 may need moving */
+  /* T149 left: 15 and 40 of these are `sc.dataset.for` in render()'s monitor lines (097-p2-screens's until it lands); about 20 are the change itself, as the desks re-sort on a status change. FR-190: the budget of 10 may need moving */
   'attrWritesPerStatus@15': { task: 'T149, monitor lines after 097-p2-screens', max: 60 },
   'attrWritesPerStatus@40': { task: 'T149, monitor lines after 097-p2-screens', max: 90 },
 };
