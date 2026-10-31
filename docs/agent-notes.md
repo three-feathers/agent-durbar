@@ -2,7 +2,7 @@
 
 Pitfalls agents on this repo learned the hard way. Rules live in [AGENTS.md](../AGENTS.md); the review checklist is [review-checklist.md](review-checklist.md); checked facts about Copilot, Claude Code, Codex and `git` are in [agent-apps.md](agent-apps.md). This file is guidance and never overrides AGENTS.md.
 
-Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `test:`, `sim:`, a PR or issue), at most three lines. Add one in the PR where you learned it; fix or delete one that turns out wrong; delete one a script or test now enforces. **Never** secrets, tokens, personal data or chat contents. Entries pruned on 2026-10-29 (retro #854 B2): those enforced by a script or already in AGENTS.md or the checklist were removed; the full old text is in git history (`git log -p docs/agent-notes.md`).
+Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `test:`, `sim:`, a PR or issue), at most three lines. Add one in the PR where you learned it; fix or delete one that turns out wrong; delete one a script or test now enforces. **Never** secrets, tokens, personal data or chat contents. Entries pruned 2026-10-29 (retro #854 B2); old text: `git log -p docs/agent-notes.md`.
 
 ## Shell, git and processes
 
