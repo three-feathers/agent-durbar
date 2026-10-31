@@ -24,7 +24,7 @@
  *   - a click on a person or a plate does not open that agent's chat (FR-006);
  *   - a picture that fails to load leaves a broken image instead of the initials disc (FR-065).
  *   - the world chrome (FR-113): in Real office the top bar, More menu, a toast, Settings and a dialog do not use the photo world's
- *     tokens (glass, bar ink, page ink), text under 10.5px, or leaving Real office does not restore the theme exactly; flat has no world.
+ *     tokens (glass on the menu and toast, bar ink, page ink; FR-182: a dialog has no blur and is the opaque surface, its text at 4.5:1 on computed colours), text under 10.5px, or leaving Real office does not restore the theme exactly; flat has no world.
  * Screenshots: <SHOTS_OUT>/097-world-{menu,toast,settings,dialog}-<w>x<h>.png, 097-real-15-<w>x<h>.png, 097-real-lobby-<w>x<h>.png (the lobby band, with the Terminal runner), 097-real-3-<w>x<h>.png, 097-real-lights-1440x900.png, 097-office-layout-1440x900.png.
  */
 const os = require('os');
@@ -315,9 +315,10 @@ module.exports = async (ctx) => {
     // the More menu: frosted glass with the page values back (dark text on the cream glass), inside the bar
     await js(`document.getElementById('topMoreBtn').click()`);
     await must(`!document.getElementById('topMoreMenu').hidden`, 'the More menu');
-    const menu = await js(`(()=>{const m=document.getElementById('topMoreMenu'),cs=getComputedStyle(m),it=m.querySelector('.more-it .mt');return {bf:cs.backdropFilter,bg:cs.backgroundColor,ink:getComputedStyle(it).color,font:parseFloat(getComputedStyle(it.querySelector('small')||it).fontSize)};})()`);
+    const menu = await js(`(()=>{const m=document.getElementById('topMoreMenu'),cs=getComputedStyle(m),it=m.querySelector('.more-it .mt');return {bf:cs.backdropFilter,bg:cs.backgroundColor,ink:getComputedStyle(it).color,font:parseFloat(getComputedStyle(it.querySelector('small')||it).fontSize),share:Math.round(m.getBoundingClientRect().width*m.getBoundingClientRect().height/(innerWidth*innerHeight)*100)};})()`);
     console.log('[097] world More menu', w, JSON.stringify(menu));
     assert.ok(/blur/.test(menu.bf), 'the menu is frosted glass');
+    assert.ok(menu.share <= 15, `FR-182: a blurred menu fits 15 % of the window: ${menu.share} %`);
     assert.ok(/color-mix|rgba|color\(srgb/.test(menu.bg) || menu.bg !== RGB(W['--surface']), 'the menu fill is translucent: ' + menu.bg);
     assert.strictEqual(menu.ink, RGB(W['--ink']), 'menu text is the page ink, not the bar ink');
     assert.ok(menu.font >= 10.5, 'menu text at least 10.5px');
@@ -343,12 +344,22 @@ module.exports = async (ctx) => {
     assert.strictEqual(set.ink, RGB(W['--ink']), 'Settings text is the world ink');
     await H.shot(path.join(OUT, `097-world-settings-${w}x${h}.png`), { prep: 'calm' });
     await js(`document.getElementById('scrClose').click()`);
-    // a dialog: the keyboard shortcuts sheet, frosted glass on a warm scrim
+    // a dialog: the keyboard shortcuts sheet on a warm scrim. FR-182: no blur, the opaque token surface, and every text checked on the computed colours (constitution V)
     await js(`document.getElementById('kbdHelpBtn').click()`);
     await must(`!!document.querySelector('.dlg-ov .dlg')`, 'a dialog');
-    const dlg = await js(`(()=>{const d=document.querySelector('.dlg-ov .dlg'),cs=getComputedStyle(d);return {bf:cs.backdropFilter,ink:cs.color,h2:getComputedStyle(d.querySelector('h2,h3')).color};})()`);
-    assert.ok(/blur/.test(dlg.bf), 'the dialog is frosted glass');
+    await ensureLum();
+    const dlg = await js(`(()=>{const d=document.querySelector('.dlg-ov .dlg'),cs=getComputedStyle(d),ratio=window.__roRatio;
+      const bgOf=e=>{for(let x=e;x;x=x.parentElement){const c=getComputedStyle(x).backgroundColor;if(c&&!/rgba\\(0, 0, 0, 0\\)|transparent/.test(c))return c;}return cs.backgroundColor;};
+      let min=99,minAt='',minFont=99;const w=document.createTreeWalker(d,NodeFilter.SHOW_TEXT);
+      while(w.nextNode()){if(!w.currentNode.data.trim())continue;const e=w.currentNode.parentElement;if(!e.getClientRects().length)continue;const r=ratio(getComputedStyle(e).color,bgOf(e));if(r<min){min=r;minAt=(e.className||e.tagName)+' '+getComputedStyle(e).color+' on '+bgOf(e);}minFont=Math.min(minFont,parseFloat(getComputedStyle(e).fontSize));}
+      const b=d.getBoundingClientRect();
+      return {bf:cs.backdropFilter,wbf:cs.webkitBackdropFilter,bg:cs.backgroundColor,h2:getComputedStyle(d.querySelector('h2,h3')).color,min:Math.round(min*100)/100,minAt,minFont,share:Math.round(b.width*b.height/(innerWidth*innerHeight)*100)};})()`);
+    console.log('[097] world dialog', w, JSON.stringify(dlg));
+    assert.strictEqual(dlg.bf, 'none', 'FR-182: no blur on a dialog: ' + dlg.bf);
+    assert.strictEqual(dlg.bg, RGB(W['--surface']), 'FR-182: the dialog is the opaque token surface: ' + dlg.bg);
     assert.strictEqual(dlg.h2, RGB(W['--ink']), 'dialog text is the world ink');
+    assert.ok(dlg.min >= 4.5, 'dialog text at 4.5:1 or more on the opaque surface: ' + JSON.stringify(dlg));
+    assert.ok(dlg.minFont >= 10.5, 'dialog text at least 10.5px: ' + dlg.minFont);
     await H.shot(path.join(OUT, `097-world-dialog-${w}x${h}.png`), { prep: 'calm' });
     await js(`document.getElementById('kbdClose').click()`);
     await must(`!document.querySelector('.dlg-ov .dlg')`, 'the dialog closed');
