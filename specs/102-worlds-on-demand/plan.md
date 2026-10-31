@@ -61,7 +61,7 @@ Facts below were read in the repo or checked on 2026-10-31; the web sources are 
    scripts/world-pack.js  reproducible zip
 ```
 
-**The notice is enforced in main.** `world:download` takes a one-use token that main issued when it composed the notice (key, URL, size, host), valid for 5 minutes. No token means no request, so the renderer alone cannot start a silent download.
+**The notice is enforced in main.** `world:download` takes a one-use token that main issued when it composed the notice (key, URL, size, host), valid for 5 minutes on a monotonic clock. No token means no request, so the renderer alone cannot start a silent download.
 
 **Download flow**: list -> notice token -> click -> `makeDownloadGet` per hop with host check -> length and SHA-256 -> zip -> `worldpack` -> encoder -> part hashes -> temp folder -> rename -> `installed.json` -> world offered.
 
@@ -104,6 +104,7 @@ P1 to P3 may merge before the gate with nothing visible as available; P4 to P6 r
 
 ## Risks
 
+- **#936 first**: FR-179 and T156..T159 exist only on that branch. T036 and every `available` row wait for it to merge; the test treats a missing task as not met.
 - **Spec 096 not built**: P5 needs the encoder, `imagecheck.ts` and `webpcheck.ts`. P5 builds them to 096's words and 096 then reuses them.
 - **Daily releases carry the catalogue**: a mis-typed hash breaks one world for one day; `test:world-catalogue` and T043's check catch it first.
 - **Hand-made quality**: anchors from alpha may misplace a visitor; the report and Try it show it; 097 FR-117's check runs on the try (`[KNOWN GAP]` for odd art).
