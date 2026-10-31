@@ -1332,16 +1332,18 @@ function morphParts(stage,parts){
   if(!prev||prev.length!==parts.length)return false;
   const kids=[...stage.children].filter(k=>!k.classList.contains('scene-out'));
   if(kids.length!==parts.length)return false;
-  const touched=[]; MDIRTY=new Set();
+  const touched=[]; MDIRTY=new Set(); let widthMoved=false;
   for(let i=0;i<parts.length;i++){
     if(parts[i]===prev[i])continue;
     const t=document.createElement('template');t.innerHTML=parts[i];
     const n=t.content.firstElementChild;
     if(!n||t.content.childElementCount!==1||keyOf(n)==null||keyOf(n)!==keyOf(kids[i])){MORPHED=null;MDIRTY=null;return false;}
+    const st0=kids[i].getAttribute('style');
     morphNode(kids[i],n);
+    if(kids[i].getAttribute('style')!==st0)widthMoved=true; /* a room's --w or --cols changed (a status filter, desks added or removed): rooms share a line by --w, so a neighbour whose HTML did not change has a new width */
     touched.push(kids[i]);
   }
-  MORPHED=touched; MORPHED_DIRTY=MDIRTY; MDIRTY=null;
+  MORPHED=widthMoved?null:touched; MORPHED_DIRTY=widthMoved?null:MDIRTY; MDIRTY=null;
   return true;
 }
 /* spec 017 FR-015, FR-017: the door button of a desk. Closing it: Do not disturb (scheduled runs are held, remote control goes off first;
@@ -1459,7 +1461,7 @@ const keyOf=n=>n.nodeType===1?(n.getAttribute('data-key')||(n.dataset.id!=null?'
    subtree changed, so the fitting and the pencils that follow work on those and not on the whole room */
 let MCNT=0, MDIRTY=null;
 function syncAttrs(o,n){
-  const mine=o.hasAttribute('data-placed'); /* spec 097 FR-184: a role that placeRen moved keeps its margin (a style the code wrote after the render, not part of the drawn HTML): a morph that wiped it made every desk of the room need its pencil placed again */
+  const mine=o.hasAttribute('data-placed')&&n.matches('.role,.ren'); /* spec 097 FR-184: a role that placeRen moved keeps its margin (a style the code wrote after the render, not part of the drawn HTML): a morph that wiped it made every desk of the room need its pencil placed again; only while the new node is also a role or a pencil, since keyless siblings are matched by position and the margin must not move onto another element */
   for(const at of [...o.attributes])if(!n.hasAttribute(at.name)&&!(mine&&(at.name==='style'||at.name==='data-placed'))){o.removeAttribute(at.name);MCNT++;}
   for(const at of n.attributes)if(o.getAttribute(at.name)!==at.value){o.setAttribute(at.name,at.value);MCNT++;}
 }
@@ -1629,7 +1631,7 @@ function growSearch(sizing,aw,ah,openOnly,lo){
   GROW=0; setGrow(probe,0);
   return best;
 }
-let layoutKey='', layout=null;
+let layoutKey='', layout=null, FIT_KEY='';
 let SIM_QUIET_HEADS=new Set(); /* spec 001 FR-023 (2026-10-23): simulator only (__durbarSimUi.quietHeads(['siren','aiu'])): room headers drawn without those parts, so a driver can lay the office out first and add them after, as a late siren or cost does */
 let HEAD_RETRY=''; /* the layout key and header contents of the last relayout made because a header no longer held its parts */
 /* spec 001 FR-026: what a new user needs before the first folder: sign in once (spec 052 FR-056: named by the AI account, not the app), add a folder (Read-only), or look around in the demo */
@@ -1703,7 +1705,9 @@ function renderOffice(){
   stage.style.width=aw+'px'; stage.style.height='auto'; stage.dataset.d=layout.d; setGrow(stage,layout.grow||0);
   MORPHED=null;
   if(fresh)stage.innerHTML=parts.join(''); else if(!morphParts(stage,parts))morphHTML(stage,parts.join(''));
-  const only=reused&&!fresh&&MORPHED?MORPHED:null; /* the parts to fit and to place pencils on; null = all */
+  /* what else decides how a header or a usage line fits without changing the rooms' HTML: Simple or Expert (shows or hides the path and MCP chips), the doors' signs, the body's classes (chat open, zoom...), Serious mode */
+  const fitKey=[SIMPLE?1:0,signsOn()?1:0,document.body.className,document.documentElement.getAttribute('data-serious')||''].join('|'), fitSame=fitKey===FIT_KEY; FIT_KEY=fitKey;
+  const only=reused&&fitSame&&!fresh&&MORPHED?MORPHED:null; /* the parts to fit and to place pencils on; null = all */
   const dirty=only?MORPHED_DIRTY:null; /* inside them, the elements the morph really changed (fitting and pencils skip the rest) */
   PLACE_ONLY=only; PLACE_DIRTY=dirty;
   stagePrev=parts; SHUT_PREV=new Set(model.flatMap(m=>(m.rolled||[]).map(x=>x.a.id)));
@@ -8114,7 +8118,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={ops:()=>({...OPS}),agents:()=>agents,crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
+if(SIM)window.__durbarSimUi={ops:()=>({...OPS}),setDetail,agents:()=>agents,crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,

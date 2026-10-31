@@ -1,15 +1,17 @@
 /*
- * Spec 097 FR-184..FR-186 (T142, flat rows): operation counts of the flat office, never times. Simulator only (DURBAR_SIM=15 DURBAR_SIM_FREEZE=1),
- * no AI credits. At 15 and 40 agents one text change goes through the normal event path (`__durbarSimEmit`), the driver waits with until() for
- * the change to be drawn, and the counts of that change are asserted:
- *   - elements recalculated: the `elementCount` of every UpdateLayoutTree of one short contentTracing of the change, summed. A count, not a time:
- *     one broad `:has()` rule (FR-185) made one change restyle most of the page. Animations are switched off for the trace so that only the change counts.
- *   - T156, T159 (one status event of one agent through the normal path, the median of 8): renders of the office and layout searches (counters the app keeps for
- *     the simulator, `__durbarSimUi.ops()`; the first proxy for T159, `getComputedStyle(#floor)`, was read twice by one render and so showed two renders where there was
- *     one), and layout reads (offset*, client*, scroll* and getBoundingClientRect/getClientRects calls).
- *   - T158 (FR-180): the infinite animations running, and how many of them animate a property other than transform and opacity (those cost the main thread a restyle
- *     and a repaint on every tick), read from the page's own animations.
- * A row that fails today is named in KNOWN_FAILURES with its fix task and the most it may reach meanwhile; the task's PR deletes the entry.
+ * Spec 097 FR-184..FR-186 (T142, T148, T156, T158, T159; flat rows): operation counts of the flat office, never times. Simulator only (DURBAR_SIM=15
+ * DURBAR_SIM_FREEZE=1), no AI credits, no timing assert: every wait is an until(), every row a count, judged by `office-ops-rules.js` (its unit test shows the
+ * judge can fail). At 15 and 40 agents, desks as scenes:
+ *   - at start: renders, layout searches and probes (a probe is one trial office laid out into the hidden #probe, a forced layout) the page made by the time the office is drawn;
+ *   - animations: the infinite ones running, how many animate a property other than transform and opacity (FR-180), and the positions a compact desk's tapping hand shows;
+ *   - elements recalculated by one replaced text node (the `elementCount` of every UpdateLayoutTree on the main thread in a short contentTracing, animations
+ *     off; a trace with none fails the row, so a renamed thread cannot read as 0);
+ *   - one status event of one agent, 8 times, each a real change (every sample must draw, none may search; renders, style reads of the floor and layout reads are the median): renders and searches are the app's own counters (`__durbarSimUi.ops()`), reads are offset*, client*, scroll*, getBoundingClientRect and
+ *     getClientRects calls. The first proxy for renders, `getComputedStyle(#floor)`, was read twice per render and showed two where there was one;
+ *   - after each of those status updates no `data-placed` mark sits on anything but a role or a pencil (a finished turn marks the desk unread and shifts keyless spans);
+ *   - at 15 agents, 1100x700 (headers are tight there): after each status pill's filter and its clearing, and after Simple to Expert and back, the header and usage-line fit classes equal what a
+ *     full fit gives (stale fits).
+ * A row over its limit today is a KNOWN_FAILURE with its open task and a ceiling.
  *
  *   npm run check:ui -- --only check-office-ops      (builds first)
  *   OPS_INDEX=<index.html>   load another build of the page (a mutation or a before/after run)
@@ -20,15 +22,7 @@ const path = require('path');
 const assert = require('assert');
 const { contentTracing } = require('electron');
 const { helpers, waits, jsLiteral } = require('./driver-helpers');
-
-/* Limits are counts. FR-185 / T148: one text change recalculates at most this many elements (measured after the fix: see the spec). */
-const LIMITS = { elementsRecalculated: 50, rendersPerStatus: 1, searchesPerStatus: 0, readsPerStatus: 110, animatedOtherProperties: 0, animationsRunning: 90, 'animationsRunning@40': 260, searchesAtStart: 2, probesAtStart: 90, rendersAtStart: 8 };
-/* A row over its limit today is named here with its fix task and the most it may reach meanwhile; the task's PR deletes the entry. None now.
-   Limits that are floors, not targets: readsPerStatus 110 (measured 98 at 15 agents, 86 at 40 with desks as scenes, from 650 and 998): what is left is what a status change
-   needs: the changed room header's fit (about 20), the lobby figures' positions (27), the spare-height spread (13), the changed desk's pencil (11), the rest small.
-   animationsRunning: measured 78 at 15 agents (halo 13, bar 32, tap 16, wave 4, dotp 4, steam 4, ...) and 250 at 40, limits 90 and 260, counted so that a new animation is noticed.
-   searchesAtStart / probesAtStart: measured 2 / 30 at 15 agents and 1-2 / 47-85 at 40 (limit 90); the cost of a search is its probes (each a forced layout). */
-const KNOWN_FAILURES = {}; // 'row@n': 'T-number of the task that fixes it'
+const { judge } = require('./office-ops-rules');
 
 const FLAT = `document.querySelectorAll('#stage .desk[data-id]').length>=1&&!document.querySelector('#stage .ro')`;
 
@@ -50,34 +44,46 @@ function elementsRecalculated(events) {
     .reduce((s, e) => s + ((e.args && e.args.elementCount) || 0), 0);
 }
 
-
-/* The counters, in the page: renders, searches and layout reads between `start()` and `stop()` */
-const INSTRUMENT = `(()=>{ if(window.__ops)return; const O=window.__ops={on:false,reads:0,renders:0,searches:0,gcsFloor:0};
+/* The counters, in the page: layout reads and the floor's style reads between `start()` and `stop()`, renders and searches from the app's own counters */
+const INSTRUMENT = `(()=>{ if(window.__ops)return; const O=window.__ops={on:false,reads:0,gcsFloor:0,base:null};
   const bump=()=>{if(O.on)O.reads++;};
   for(const prop of ['offsetWidth','offsetHeight','offsetTop','offsetLeft','clientWidth','clientHeight','clientTop','clientLeft','scrollHeight','scrollWidth','scrollTop','scrollLeft'])
     for(const proto of [HTMLElement.prototype,Element.prototype]){const d=Object.getOwnPropertyDescriptor(proto,prop);if(d&&d.get)Object.defineProperty(proto,prop,{...d,get(){bump();return d.get.call(this);}});}
   for(const m of ['getBoundingClientRect','getClientRects']){const f=Element.prototype[m];Element.prototype[m]=function(){bump();return f.apply(this,arguments);};}
   const g=window.getComputedStyle;window.getComputedStyle=function(e){if(O.on&&e&&e.id==='floor')O.gcsFloor++;return g.apply(this,arguments);};
-  O.base=null;O.start=()=>{O.reads=0;O.gcsFloor=0;O.base=window.__durbarSimUi.ops();O.on=true;};
+  O.start=()=>{O.reads=0;O.gcsFloor=0;O.base=window.__durbarSimUi.ops();O.on=true;};
   O.stop=()=>{O.on=false;const n=window.__durbarSimUi.ops();return {reads:O.reads,renders:n.renders-O.base.renders,searches:n.searches-O.base.searches,gcsFloor:O.gcsFloor};};
 })()`;
+const TWO_FRAMES = `new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`;
+/* the header and usage-line fit classes: what a full fit (DurbarFit) would change is a stale fit */
+const FIT_STATE = `[...document.querySelectorAll('#stage .room-head,#stage .desk .use')].map(e=>e.className).join('|')`;
+
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js } = H;
   const { until } = waits(ctx);
   const rows = {};
+  const med = (a) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
+  /* run `action` (page code) and wait until the office has drawn at least one more render, then two frames */
+  const drawn = async (action, ms = 8000) => {
+    const before = await js(`window.__durbarSimUi.ops().renders`);
+    await js(action);
+    assert.ok(await until(`window.__durbarSimUi.ops().renders>${before}`, ms), `the office drew after: ${action.slice(0, 80)}`);
+    await js(TWO_FRAMES);
+  };
   for (const n of [15, 40]) {
-    const load = () => H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n) }, ready: FLAT, readyMs: 30000 });
+    const load = (w = 1440, h = 900) => H.load({ w, h, index: process.env.OPS_INDEX || undefined, query: { sim: String(n) }, ready: FLAT, readyMs: 30000 });
     await load();
     await js(`localStorage.setItem('durbar.doorsigns','off')`); // desks as scenes, not doors: every working desk animates (the doors and signs are going)
     await load();
-    /* the start: what the page had done by the time the office was drawn and still (a layout search lays trial offices out into the hidden probe: its cost is the number of probes) */
+
+    /* the start */
     const start = await js(`window.__durbarSimUi.ops()`);
     rows[`searchesAtStart@${n}`] = start.searches; rows[`probesAtStart@${n}`] = start.probes; rows[`rendersAtStart@${n}`] = start.renders;
     console.log('[ops]', n, 'agents at start: renders', start.renders, 'layout searches', start.searches, 'probes', start.probes);
-    /* FR-180: only `transform` and `opacity` animate. An animation of any other property (the halo's fill-opacity was one) is restyled and repainted on the main
-       thread on every tick, instead of running on the compositor; counted from the page's own running animations, with their number */
+
+    /* animations (FR-180): only transform and opacity animate */
     const anim = await js(`(()=>{const ok=new Set(['offset','easing','composite','computedOffset','transform','opacity']);let running=0,other=0;const names={};
       for(const a of document.getAnimations()){if(a.playState!=='running'||!a.effect||a.effect.getComputedTiming().iterations!==Infinity)continue;running++;
         const bad=new Set();for(const kf of a.effect.getKeyframes())for(const k of Object.keys(kf))if(!ok.has(k))bad.add(k);
@@ -86,46 +92,75 @@ module.exports = async (ctx) => {
     rows[`animatedOtherProperties@${n}`] = anim.other;
     rows[`animationsRunning@${n}`] = anim.running;
     console.log('[ops]', n, 'agents:', anim.running, 'infinite animations running,', anim.other, 'animate a property other than transform and opacity', JSON.stringify(anim.names));
+    /* a tapping hand of a compact desk: the positions it shows, sampled by setting the animation's time (two cycles, forward and back), so no clock is involved */
+    const hand = await js(`(()=>{for(const h of document.querySelectorAll('#stage svg.sc-c .hand-l')){const a=h.getAnimations()[0];if(!a)continue;
+      const d=a.effect.getComputedTiming().duration;a.pause();const seen=new Set();
+      for(const t of [0.05,0.3,0.55,0.8,0.95,1.05,1.3,1.55,1.8,1.95]){a.currentTime=t*d;seen.add(getComputedStyle(h).transform);}
+      a.play();return {positions:seen.size,dur:d};}return null;})()`);
+    assert.ok(hand, `${n} agents: a compact desk has a tapping hand`);
+    rows[`handPositions@${n}`] = hand.positions;
+    console.log('[ops]', n, 'agents: a compact desk hand shows', hand.positions, 'positions over two cycles');
+
+    /* one replaced text node, animations off so that only the change counts */
     await js(`(()=>{const s=document.createElement('style');s.textContent='*,*::before,*::after{animation:none!important;transition:none!important}';document.head.append(s);})()`);
-    /* one text change in one desk (a name's text node replaced: a child-list change, which is what a render does and what `:has()` watches), then a layout read so that the style is recalculated inside the trace */
     const change = (i) => js(`(()=>{document.querySelector('#stage .desk[data-id] .name').textContent=${jsLiteral('Op ')}+${i};return document.body.offsetHeight;})()`);
     await change(0);
     await H.settle();
     const counts = [];
     for (let i = 1; i <= 4; i++) counts.push(elementsRecalculated(await trace(() => change(i))));
-    rows[`elementsRecalculated@${n}`] = Math.max(...counts);
-    /* status events through the normal path, one at a time; each waits until the page has drawn it (two frames) before the next */
+    assert.ok(counts.every((c) => c > 0), `${n} agents: a replaced text node must recalculate some element; a trace with none means the trace's thread or event name changed (${counts})`);
+    rows[`elementsRecalculated@${n}`] = Math.min(...counts); // the least of 4: a render that lands inside one trace by itself (a timer) only adds, and the `:has()` cost shows in all 4
+    console.log('[ops]', n, 'agents: elements recalculated by one text change', counts.join(' '));
+
+    /* one status event of one agent, each a real change; every sample must be one render, no search, one style read of the floor */
     await js(INSTRUMENT);
     const ids = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id)`);
-    const per = { renders: [], searches: [], reads: [], gcsFloor: [] };
     const id = ids[3];
-    const emit = (st) => js(`window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(id)},timestamp:Date.now(),status:${jsLiteral(st)}})`);
-    await emit('working'); // so that every change below is a real change of one agent's status
-    await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(r,100))))`);
+    const emit = (st) => `window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(id)},timestamp:Date.now(),status:${jsLiteral(st)}})`;
+    await drawn(emit('working')); // so that every change below is a real change of one agent's status
+    const per = { renders: [], searches: [], reads: [], gcsFloor: [] }, leaks = [];
     for (let i = 0; i < 8; i++) {
-      const st = i % 2 ? 'working' : 'idle';
       await js(`window.__ops.start()`);
-      await emit(st);
-      await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(r,100))))`);
+      await drawn(emit(i % 2 ? 'working' : 'idle'));
       const o = await js(`window.__ops.stop()`);
       for (const k of Object.keys(per)) per[k].push(o[k]);
+      /* a finished turn marks the desk unread (a "New" label before the name), which shifts the keyless spans a morph matches by position */
+      leaks.push(await js(`document.querySelectorAll('#stage [data-placed]:not(.role):not(.ren)').length`));
     }
-    const med = (a) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
+    rows[`leakedPlaced@${n}`] = Math.max(...leaks);
+    console.log('[ops]', n, 'agents, per status update (8): renders', per.renders.join(','), 'searches', per.searches.join(','), 'reads', per.reads.join(','), 'floor style reads', per.gcsFloor.join(','));
+    /* every update drew (a missed render would show 0), and at most one render of something else (the coffee break's own timer, \`coffeeTick\`, can fall in the window and
+       add one: traced, it is the only other caller); the row is the median, so a second render caused by the update itself would show */
+    assert.ok(per.renders.every((r) => r >= 1 && r <= 2), `${n} agents: every status update is one render, two at most with a timer's (${per.renders})`);
     rows[`rendersPerStatus@${n}`] = med(per.renders);
-    rows[`searchesPerStatus@${n}`] = med(per.searches);
+    rows[`searchesPerStatus@${n}`] = Math.max(...per.searches);
+    rows[`floorStyleReadsPerStatus@${n}`] = med(per.gcsFloor);
     rows[`readsPerStatus@${n}`] = med(per.reads);
-    console.log('[ops]', n, 'agents, per status update (8, median): renders', per.renders.join(','), 'searches', per.searches.join(','), 'reads', per.reads.join(','), 'getComputedStyle(#floor)', per.gcsFloor.join(','));
-    console.log(`[ops] ${n} agents: elements recalculated by one text change`, counts.join(' '));
+
+    if (n === 15) {
+      /* stale fits (T156): what an incremental fit leaves must equal a full fit, after a status filter and its clearing, and across Simple and Expert, at 1280x800 */
+      await load(1100, 700);
+      await js(INSTRUMENT);
+      const stale = [];
+      const compare = async (what) => {
+        const after = await js(FIT_STATE);
+        await js(`window.DurbarFit()`);
+        const full = await js(FIT_STATE);
+        if (after !== full) stale.push(what);
+      };
+      const pills = await js(`[...document.querySelectorAll('#stats .stat[data-k]')].map(b=>b.dataset.k)`);
+      for (const k of pills) { // every status pill leaves some rooms some desks and others all of theirs
+        await drawn(`document.querySelector('#stats .stat[data-k=${jsLiteral(k)}]').click()`); await compare(`status filter ${k} on`);
+        await drawn(`document.querySelector('#stats .stat[data-k=${jsLiteral(k)}]').click()`); await compare(`status filter ${k} cleared`);
+      }
+      await drawn(`window.__durbarSimUi.setDetail('simple')`); await compare('Expert to Simple');
+      await drawn(`window.__durbarSimUi.setDetail('expert')`); await compare('Simple to Expert');
+      rows[`staleFits@${n}`] = stale.length;
+      if (stale.length) console.log('[ops] stale fits after:', stale.join(', '));
+    }
   }
-  const failed = [];
-  for (const [key, value] of Object.entries(rows)) {
-    const [row, n] = key.split('@');
-    const known = KNOWN_FAILURES[key];
-    if (value > LIMITS[key] || LIMITS[row]) {
-      if (known && value <= known.max) console.log(`[ops] ${key} = ${value} over ${LIMITS[key] || LIMITS[row]} (known failure, ${known.task}; may not pass ${known.max})`);
-      else failed.push(`${key} = ${value}, limit ${known ? known.max : LIMITS[key] || LIMITS[row]}`);
-    } else if (known) failed.push(`${key} = ${value} is within its limit: delete its KNOWN_FAILURES entry (${known.task})`);
-  }
+  const { failed, notes } = judge(rows);
+  for (const l of notes) console.log('[ops]', l);
   assert.deepStrictEqual(failed, [], `op rows over their limits:\n  ${failed.join('\n  ')}`);
   console.log('[ops] checks passed');
   process.exitCode = 0;
