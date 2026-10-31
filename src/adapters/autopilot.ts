@@ -4,6 +4,7 @@
  */
 
 import { isObj } from '../shared/guards';
+import { HIDDEN_ALL_RE } from '../shared/names';
 import type { AutopilotEnd, AutopilotEvent } from './types';
 
 /** FR-040: the end reasons, in the order the spec lists them. */
@@ -24,8 +25,10 @@ export const MAX_HOURS = 168;
 export const BACKSTOP_TURNS_PER = 100;
 /** FR-023: two continuations in a row with an unchanged folder fingerprint. */
 export const NO_PROGRESS_AFTER = 2;
-/** FR-011 (D13): a goal over this many characters on Claude Code is warned about, never refused. */
-export const GOAL_WARN_LENGTH = 4000;
+/** FR-011: Claude Code's own limit: a goal over this many trimmed characters gets a plain-text refusal from the CLI, so Durbar refuses it first, with a reason (spec Changes, awaiting owner review). */
+export const GOAL_MAX_CLAUDE = 4000;
+/** FR-011: the words that make Claude Code's `/goal` clear the goal instead of setting one (CLI 2.1.316, `read:`), trimmed and case-insensitive. */
+export const CLAUDE_GOAL_RESERVED: readonly string[] = ['clear', 'stop', 'off', 'reset', 'none', 'cancel'];
 export const RUN_ID_MAX = 128;
 
 /** FR-030: the one sentence every question gets. An exact constant: nothing the agent writes is ever put into it. */
@@ -33,7 +36,11 @@ export const AUTOPILOT_ANSWER = 'The user is away and will not answer. Decide by
 
 export const validLimit = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= MIN_LIMIT && v <= MAX_LIMIT;
 export const validHours = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= MIN_HOURS && v <= MAX_HOURS;
-export const validRunId = (v: unknown): v is string => typeof v === 'string' && v.length >= 1 && v.length <= RUN_ID_MAX;
+/** A run id is 1 to 128 of letters, digits and `._:-`: nothing that can hide, break a line or end a string. */
+export const validRunId = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(v);
+/** FR-021 (D13): the form and the native dialog warn above these; they never refuse. */
+export const limitWarns = (limit: number): boolean => limit > LIMIT_WARN_ABOVE;
+export const hoursWarn = (hours: number): boolean => hours > HOURS_WARN_ABOVE;
 export const isAutopilotEnd = (v: unknown): v is AutopilotEnd => typeof v === 'string' && (AUTOPILOT_ENDS as readonly string[]).includes(v);
 export const isSpendUnit = (v: unknown): v is (typeof SPEND_UNITS)[number] => typeof v === 'string' && (SPEND_UNITS as readonly string[]).includes(v);
 
@@ -57,7 +64,7 @@ export type AutopilotRunEvent = Pick<AutopilotEvent, 'phase' | 'runId' | 'n' | '
 export interface AutopilotRunOptions {
   /** Required, already chosen: use `limitOrDefault(settings.limit)`. Throws unless valid. */
   limit: number;
-  /** Unique per run; 1 to 128 characters. */
+  /** Unique per run; 1 to 128 of letters, digits and `._:-`. */
   runId: string;
   /** Backstop time in hours; undefined = 2. */
   hours?: number;
@@ -69,8 +76,10 @@ export interface AutopilotRunOptions {
   halt: (reason: AutopilotEnd) => void | Promise<void>;
   /** Gets each event once, in order. Never throws into the run. */
   emit: (e: AutopilotRunEvent) => void;
-  /** The clock, in ms. Injected so tests need no timers. */
+  /** The clock, in ms. Injected so tests need no timers. Only forward steps count: a clock that goes back never delays the backstop. */
   now?: () => number;
+  /** Backstop model turns per `limit + 1`: 100 (default; Copilot, Claude Code), 1 for Codex, which counts `turn/completed` (FR-021). A positive whole number. */
+  backstopPer?: number;
 }
 
 /** What `continuation()` did with the call. */
@@ -91,7 +100,10 @@ export class AutopilotRun {
   readonly hours: number;
   private readonly o: AutopilotRunOptions;
   private readonly now: () => number;
-  private readonly startedAtMs: number;
+  private readonly per: number;
+  private lastNow: number;
+  private elapsedMs = 0;
+  private seq = 0;
   private n = 0;
   private turns = 0;
   private unchanged = 0;
@@ -112,7 +124,10 @@ export class AutopilotRun {
     this.limit = o.limit;
     this.hours = hoursOrDefault(o.hours);
     this.now = o.now ?? Date.now;
-    this.startedAtMs = this.now();
+    const per = o.backstopPer === undefined ? BACKSTOP_TURNS_PER : o.backstopPer;
+    if (!(typeof per === 'number' && Number.isInteger(per) && per >= 1 && per <= BACKSTOP_TURNS_PER)) throw new RangeError('Autopilot backstopPer must be a whole number from 1 to 100');
+    this.per = per;
+    this.lastNow = this.now();
   }
 
   /** Continuations that ran so far; never above `limit`. */
@@ -123,10 +138,10 @@ export class AutopilotRun {
   get guardArmed(): boolean { return this.armed; }
   /** How many later continuations the armed guard interrupted. */
   get guardInterrupts(): number { return this.interrupts; }
-  /** The most main-session model turns the backstop allows before it ends the run: `100 * (limit + 1)`. */
-  get backstopTurns(): number { return BACKSTOP_TURNS_PER * (this.limit + 1); }
-  /** The time the backstop ends the run, in the injected clock's ms, so the adapter can arm one timer. */
-  get deadlineMs(): number { return this.startedAtMs + this.hours * 3_600_000; }
+  /** The most turns the backstop allows before it ends the run: `backstopPer * (limit + 1)` (100 by default, 1 for Codex). */
+  get backstopTurns(): number { return this.per * (this.limit + 1); }
+  /** About when the backstop ends the run, on the injected clock, for the adapter's one timer; it moves later if the clock was set back. `checkElapsed()` decides. */
+  get deadlineMs(): number { return this.lastNow + Math.max(0, this.hours * 3_600_000 - this.elapsedMs); }
   /** Resolves (never rejects) when the first `halt` has settled. */
   whenStopped(): Promise<void> { return this.stopped; }
 
@@ -141,6 +156,7 @@ export class AutopilotRun {
   continuation(): ContinuationResult {
     if (this.over) return this.guard();
     this.start();
+    if (this.over) return 'ended'; // an owner that ended the run from the `started` event
     if (this.timeUp()) return 'ended';
     if (this.n + 1 > this.limit) {
       this.end('limit');
@@ -178,6 +194,7 @@ export class AutopilotRun {
     this.over = true;
     this.begun = true;
     this.why = r;
+    this.armed = true; // armed from the moment of the end until a halt is confirmed (FR-054)
     this.stopped = this.runHalt(r);
     const ev: AutopilotRunEvent = { phase: 'ended', runId: this.runId, n: this.n, limit: this.limit, reason: r };
     if (spend && isSpendUnit(spend.unit) && typeof spend.value === 'number' && Number.isFinite(spend.value) && spend.value >= 0) ev.spend = { unit: spend.unit, value: spend.value };
@@ -198,20 +215,31 @@ export class AutopilotRun {
   }
 
   private timeUp(): boolean {
-    if (this.now() - this.startedAtMs < this.hours * 3_600_000) return false;
+    const t = this.now();
+    if (typeof t === 'number' && Number.isFinite(t)) {
+      if (t > this.lastNow) this.elapsedMs += t - this.lastNow;
+      this.lastNow = t;
+    }
+    if (this.elapsedMs < this.hours * 3_600_000) return false;
     this.end('error');
     return true;
   }
 
+  /** A continuation after the end: the app is still going, so the stop is repeated, whether or not the first one was confirmed. Not counted. */
   private guard(): ContinuationResult {
-    if (!this.armed || this.why === undefined) return 'ignored';
+    if (this.why === undefined) return 'ignored';
     this.interrupts += 1;
+    this.armed = true;
     void this.runHalt(this.why);
     return 'interrupted';
   }
 
-  /** Calls `halt` and settles without rejecting: a resolve disarms the guard (unless a clear failed on its own), a reject or throw arms it. */
+  /**
+   * Calls `halt` and settles without rejecting. Only the newest call decides: its resolve disarms the guard (unless a clear failed on its
+   * own), its reject or throw keeps it armed; an older call that settles late changes nothing.
+   */
   private runHalt(reason: AutopilotEnd): Promise<void> {
+    const id = ++this.seq;
     let p: Promise<void>;
     try {
       p = Promise.resolve(this.o.halt(reason));
@@ -219,8 +247,8 @@ export class AutopilotRun {
       p = Promise.reject(e);
     }
     return p.then(
-      () => { if (!this.failedClear) this.armed = false; },
-      () => { this.armed = true; },
+      () => { if (id === this.seq && !this.failedClear) this.armed = false; },
+      () => { if (id === this.seq) this.armed = true; },
     );
   }
 
@@ -229,39 +257,43 @@ export class AutopilotRun {
   }
 }
 
-export type GoalTextResult = { ok: true; text: string; warn?: 'long' } | { ok: false; reason: 'empty' | 'reserved' };
+export type GoalTextResult = { ok: true; text: string } | { ok: false; reason: 'empty' | 'reserved' | 'too-long' | 'command' };
 
 /**
- * FR-011, S2: the goal sent for a message. Each run of C0 (but newline), DEL and C1 characters becomes one space, so CRLF becomes a space and a
- * newline. Empty text and the word `clear` (it would run `/goal clear`) are refused with a reason; over 4000 characters on Claude Code is a
- * warning, not a refusal (D13). With no `app` the strictest rules (Claude Code's) apply. Linear in the input length; takes the user's text only.
+ * FR-011, S2: the goal sent for a message. Hidden characters (bidi, U+2028/9, zero-width space and the rest of `HIDDEN_ALL_RE`; joiners stay)
+ * are removed; each run of C0 (but newline), DEL and C1 characters becomes one space, so CRLF becomes a space and a newline. Empty text is
+ * refused for every app. On Claude Code (and with no `app`, the strictest rules) it also refuses: a whole text that is one of
+ * `CLAUDE_GOAL_RESERVED` (the CLI would clear the goal), a trimmed text over 4000 characters (the CLI refuses it in plain text), and any line
+ * that starts with `/` (it could run a second command; the safe default, awaiting owner review). Linear in the input length; takes the
+ * user's text only.
  */
 export function goalText(text: unknown, app?: 'claude' | 'codex' | 'copilot'): GoalTextResult {
   if (typeof text !== 'string') return { ok: false, reason: 'empty' };
   // eslint-disable-next-line no-control-regex
-  const clean = text.replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]+/g, ' ');
+  const clean = text.replace(HIDDEN_ALL_RE, '').replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]+/g, ' ');
   const t = clean.trim();
   if (!t) return { ok: false, reason: 'empty' };
-  if (t.toLowerCase() === 'clear') return { ok: false, reason: 'reserved' };
-  const claude = app === undefined || app === 'claude';
-  return claude && clean.length > GOAL_WARN_LENGTH ? { ok: true, text: clean, warn: 'long' } : { ok: true, text: clean };
+  if (app === undefined || app === 'claude') {
+    if (t.length > GOAL_MAX_CLAUDE) return { ok: false, reason: 'too-long' };
+    if (CLAUDE_GOAL_RESERVED.includes(t.toLowerCase())) return { ok: false, reason: 'reserved' };
+    if (clean.split('\n').some((line) => line.trimStart().startsWith('/'))) return { ok: false, reason: 'command' };
+  }
+  return { ok: true, text: clean };
 }
 
 /**
- * FR-020: a Claude Code continuation is a synthetic user message of the main stream whose text starts with `Stop hook feedback:`. A message the
+ * FR-020: a Claude Code continuation is a synthetic user message of the main stream (`agentId` and `parent_tool_use_id` missing or null) with a text block that starts with `Stop hook feedback:`. A message the
  * user typed with the same words has no `isSynthetic: true`, and a helper's message (FR-008) carries an agent or parent id.
  */
 export function isClaudeContinuation(msg: unknown): boolean {
   if (!isObj(msg) || msg.type !== 'user' || msg.isSynthetic !== true) return false;
-  if (msg.agentId !== undefined || (msg.parent_tool_use_id !== undefined && msg.parent_tool_use_id !== null)) return false;
+  if ((msg.agentId !== undefined && msg.agentId !== null) || (msg.parent_tool_use_id !== undefined && msg.parent_tool_use_id !== null)) return false;
   const m = msg.message;
   if (!isObj(m)) return false;
-  let text: unknown = m.content;
-  if (Array.isArray(text)) {
-    const first = text[0];
-    text = isObj(first) && first.type === 'text' ? first.text : undefined;
-  }
-  return typeof text === 'string' && text.startsWith('Stop hook feedback:');
+  const content = m.content;
+  const marked = (t: unknown): boolean => typeof t === 'string' && t.startsWith('Stop hook feedback:');
+  if (typeof content === 'string') return marked(content);
+  return Array.isArray(content) && content.some((b) => isObj(b) && b.type === 'text' && marked(b.text));
 }
 
 /** FR-040: a Codex goal status as an end reason; `active` and anything unknown is no end. */
