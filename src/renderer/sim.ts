@@ -198,7 +198,7 @@ function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: strin
 /* simcharname:begin (spec 096 FR-031, the same rule as `cleanCharacterName` in src/shared/charrules.ts; `test:charipc` compares them) */
 function simCharacterName(raw: unknown): { ok: true; name: string } | { ok: false; error: string } {
   if (typeof raw !== 'string' || raw.length > 160) return { ok: false, error: 'Use 1 to 40 characters.' };
-  if (/[\p{Cc}\p{Zl}\p{Zp}]|[^\P{Cf}‍]/u.test(raw)) return { ok: false, error: 'Remove control or hidden characters from the name.' };
+  if (/[\p{Cc}\p{Zl}\p{Zp}]|[^\P{Cf}\u200D]/u.test(raw)) return { ok: false, error: 'Remove control or hidden characters from the name.' };
   const name = raw.replace(/[<>{}]/g, '').trim();
   const n = Array.from(name).length;
   if (n < 1 || n > 40) return { ok: false, error: 'Use 1 to 40 characters.' };

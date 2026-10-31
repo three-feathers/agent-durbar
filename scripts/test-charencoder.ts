@@ -103,10 +103,10 @@ const nameBad = (raw: unknown): void => assert.strictEqual(cleanCharacterName(ra
 nameOk('Greta', 'Greta');
 nameOk('  Greta B ', 'Greta B');
 nameOk('<b>Greta</b> {x}', 'bGreta/b x');
-nameOk('\u{1F469}‍\u{1F4BB} Ada', '\u{1F469}‍\u{1F4BB} Ada');
+nameOk('\u{1F469}\u200D\u{1F4BB} Ada', '\u{1F469}\u200D\u{1F4BB} Ada');
 nameOk('x'.repeat(40), 'x'.repeat(40));
 nameOk('\u{1F600}'.repeat(40), '\u{1F600}'.repeat(40));
-for (const bad of ['', '   ', '<>', 'x'.repeat(41), 'x'.repeat(100000), 'a\nb', 'a\u0007b', 'a‮b', 'a​b', 'a b', '\u0000', 7, null, undefined, {}, ['a']]) nameBad(bad);
+for (const bad of ['', '   ', '<>', 'x'.repeat(41), 'x'.repeat(100000), 'a\nb', 'a\u0007b', 'a\u202Eb', 'a\u200Bb', 'a\u2028b', '\u0000', 7, null, undefined, {}, ['a']]) nameBad(bad);
 
 // --- the reply is untrusted (FR-022, FR-023) ---
 const artDir = path.join(ROOT, 'src', 'renderer', 'crew', 'art');

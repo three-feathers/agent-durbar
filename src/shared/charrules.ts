@@ -49,7 +49,7 @@ export function parseCharacterPins(v: unknown): Record<string, string> {
 
 export type NameResult = { ok: true; name: string } | { ok: false; error: string };
 // control characters, line separators and invisible format characters, except the joiner emoji sequences need (as `cleanDescription`)
-const NAME_REFUSED_RE = /[\p{Cc}\p{Zl}\p{Zp}]|[^\P{Cf}‍]/u;
+const NAME_REFUSED_RE = /[\p{Cc}\p{Zl}\p{Zp}]|[^\P{Cf}\u200D]/u;
 
 /**
  * FR-031, plain text of 1-40 characters (code points): `<`, `>`, `{` and `}` are removed. A name holding a control or hidden character is refused,
