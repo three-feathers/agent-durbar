@@ -281,7 +281,7 @@ module.exports = async (ctx) => {
   await H.shot(path.join(OUT, '097-real-lights-1440x900.png'), { prep: 'calm' });
 
   // ---- FR-065: a picture that fails: no broken image, the initials disc ----
-  const victim = await js(`(()=>{const i=document.querySelector('#stage .ro-person');const f=i.dataset.for;i.src='realoffice/art/missing.webp';return f})()`);
+  const victim = await js(`(()=>{const i=document.querySelector('#stage .ro-person');const f=i.dataset.for;i.removeAttribute('srcset');i.src='realoffice/art/missing.webp';return f})()`);
   await must(`!!document.querySelector('#stage .ro-initials[data-for="'+CSS.escape(${jsLiteral(victim)})+'"]')`, 'the initials disc after a failed picture');
   assert.strictEqual(await js(`[...document.querySelectorAll('#stage .ro img')].filter(i=>i.complete&&!i.naturalWidth).length`), 0, 'no broken image left on screen');
 

@@ -43,11 +43,14 @@
   function sweep(layer) { for (const [k, e] of layer._k) if (!layer._seen.has(k)) { e.remove(); layer._k.delete(k); } }
   function text(e, t) { t = String(t == null ? '' : t); if (e.textContent !== t) e.textContent = t; }
   function attr(e, k, v) { if (v == null || v === false) { if (e.hasAttribute(k)) e.removeAttribute(k); } else if (e.getAttribute(k) !== String(v)) e.setAttribute(k, String(v)); }
-  function img(e, file) {
-    const src = ART + file;
+  /* FR-183: a person or the desk comes in two sizes, chosen by what it is shown at (`shown`, CSS px; the browser multiplies by the device pixel ratio); `px` is the full picture's width. FR-065: a failed picture marks `file`, whichever size failed */
+  function img(e, file, shown) {
+    const src = ART + file, meta = root.DurbarRealOfficeArt, w = meta && meta.px && meta.px[file];
+    if (w) { const sizes = Math.ceil(shown) + 'px'; if (e.getAttribute('sizes') !== sizes) e.setAttribute('sizes', sizes); }
     if (e.getAttribute('src') !== src) {
       if (e.getAttribute('aria-hidden') !== 'true') { e.alt = ''; e.decoding = 'async'; e.draggable = false; e.setAttribute('aria-hidden', 'true'); }
       e.onerror = () => { if (!BAD.has(file)) { BAD.add(file); if (onArt) onArt(); } };
+      if (w) e.setAttribute('srcset', ART + file.replace(/\.webp$/, '.h.webp') + ' ' + Math.ceil(w / 2) + 'w, ' + src + ' ' + w + 'w'); else e.removeAttribute('srcset');
       e.src = src;
     }
   }
@@ -119,12 +122,12 @@
         const lt = L.lightFor(d.state, { still: !!opts.still });
         /* the person (FR-036 first frame; P2 adds the second frame and motion), behind the desk; FR-065: the initials disc when the picture failed */
         if (d.person) {
-          const pe = el(art, 'p:' + k, 'img', 'ro-person'); box(pe, d.person); dset(pe, 'for', k); dset(pe, 'pose', d.person.pose); img(pe, d.person.file);
+          const pe = el(art, 'p:' + k, 'img', 'ro-person'); box(pe, d.person); dset(pe, 'for', k); dset(pe, 'pose', d.person.pose); img(pe, d.person.file, d.person.w);
         } else if (!d.narrow) {
           const ini = el(art, 'i:' + k, 'div', 'ro-initials'); const r = 0.5 * lay.u; box(ini, { x: d.slot.x + 0.05 * d.slot.w + 0.42 * lay.u - r / 2, y: d.desk.y - r - 6, w: r, h: r }); dset(ini, 'for', k); text(ini, initials(a.name));
         }
         const dc = el(art, 'd:' + k, 'div', 'ro-desk' + (d.narrow ? ' narrow' : '')); box(dc, d.desk); dset(dc, 'for', k);
-        const dk = dc.firstChild || dc.appendChild(document.createElement('img')); sty(dk, 'height', px(d.desk.full)); img(dk, 'desk.webp');
+        const dk = dc.firstChild || dc.appendChild(document.createElement('img')); sty(dk, 'height', px(d.desk.full)); img(dk, 'desk.webp', d.desk.w);
         /* the monitor: P1 shows the status on the glass (decorative line bars; live, masked text is phase P2, FR-030..FR-035) */
         const sc = el(art, 'm:' + k, 'div', 'ro-screen st-' + d.state + (lt.glow === 'off' ? ' off' : '')); box(sc, d.screen); sc.dataset.for = k;
         if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass"></div></div><div class="ro-neck"></div><div class="ro-foot"></div>';
@@ -167,7 +170,7 @@
         if (v.fig && !BAD.has(v.fig.file)) {
           /* owner 2026-10-31 10:19 and 10:48: the feet on the front floor plane (layout), with a soft contact shadow under them */
           const sh = el(art, 'vs:' + v.id, 'div', 'ro-shadow'); box(sh, v.shadow);
-          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor'); box(im, v.fig); dset(im, 'for', v.id); dset(im, 'pose', v.fig.pose); dset(im, 'feet', String(Math.round(v.fig.feetY * 10) / 10)); img(im, v.fig.file);
+          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor'); box(im, v.fig); dset(im, 'for', v.id); dset(im, 'pose', v.fig.pose); dset(im, 'feet', String(Math.round(v.fig.feetY * 10) / 10)); img(im, v.fig.file, v.fig.w);
         }
         /* FR-026 "as the flat lobby": a go-place visitor (Boss, Bank, Coffee) is the flat lobby's own button (data-pvopen, and
            data-coffeeid for the coffee menu): app.js's delegated handlers open the chat; others forward to their plate (data-for) */

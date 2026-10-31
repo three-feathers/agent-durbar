@@ -28,8 +28,6 @@ const KNOWN_FAILURES = {
   /* T149 left: 15 and 40 of these are `sc.dataset.for` in render()'s monitor lines (097-p2-screens's until it lands); about 30 are the change itself, as the desks re-sort on a status change. FR-190: the budget of 10 may need moving */
   'attrWritesPerStatus@15': { task: 'T149, monitor lines after 097-p2-screens', max: 60 },
   'attrWritesPerStatus@40': { task: 'T149, monitor lines after 097-p2-screens', max: 90 },
-  'pictureArea@15': { task: 'T153', max: 12 },
-  'pictureArea@40': { task: 'T153', max: 24 },
 };
 
 const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
