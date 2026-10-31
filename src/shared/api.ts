@@ -70,8 +70,6 @@ export interface AgentInfo {
   permFrom?: 'session' | 'folder' | 'opener';
   /** The folder is hidden from the office (it keeps its saved sessions). */
   hidden?: boolean;
-  /** The room's door is closed (compact door plate in the office). */
-  closed?: boolean;
   /** Floor of the folder (spec 033); absent = the ground floor. */
   floor?: string;
   /** Display name of the folder's room (spec 006 FR-018); absent = the folder's own name. */
@@ -261,6 +259,9 @@ export interface ProfileInfo {
 }
 
 /** What a scheduled run came to (spec 044; main's `Outcome`). */
+/** Spec 017 FR-031: one prompt held behind a door before the update, as the window sees it (it masks and cuts the text). */
+export interface HeldBeforeItem { id: string; session?: string; prompt: string; at: number; canSend: boolean; why?: string }
+export interface HeldBeforeList { items: HeldBeforeItem[]; notice: boolean; damaged: boolean }
 export type ScheduleOutcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full' | 'skipped-review';
 /** Spec 044 FR-036: one entry of a schedule's run log, as `scheduleRuns` returns it (newest first). Reason codes only, never text. */
 export interface ScheduleRunInfo {
@@ -814,8 +815,6 @@ export interface DurbarApi {
   checkpointPreview?(id: string, turn: number): Promise<CheckpointPreview | { ok: false; error: string }>;
   checkpointUndo?(id: string, turn: number): Promise<CheckpointUndo>;
   onCheckpoint?(cb: (p: CheckpointNote) => void): () => void;
-  /** Close or open the door of the room (folder) of agent `id`; remembered. */
-  setRoomClosed?(id: string, closed: boolean): Promise<{ ok: boolean }>;
   /** Hide or show the folder of agent `id`; the choice is remembered. */
   setFolderHidden?(id: string, hidden: boolean): Promise<{ ok: boolean }>;
   /** Remove the folder of agent `id`: ends its sessions and forgets the folder. */
@@ -896,17 +895,18 @@ export interface DurbarApi {
   /** spec 012 FR-158: remote control ended because the agent app reconnected after a new sign-in. */
   /** Remote control ended without the user (spec 012 FR-158, spec 054 FR-062): an agent id, or the id with a plain reason. */
   onRemoteOff?(cb: (p: string | { id: string; reason?: string }) => void): () => void;
-  /** Spec 017 FR-015..FR-017: per agent id, a door the user closed and how many runs are held there (only doors that are closed or hold something). */
-  doorsList?(): Promise<Record<string, { closed: boolean; held: number }>>;
-  setDoor?(id: string, closed: boolean): Promise<{ ok: true; closed: boolean; held: number; remoteOff?: boolean } | { ok: false; error: string }>;
-  releaseHeld?(id: string, action: 'send' | 'discard'): Promise<{ ok: true; queued?: number; sent?: number; discarded?: number } | { ok: false; error: string }>;
-  onDoorsChanged?(cb: (doors: Record<string, { closed: boolean; held: number }>) => void): () => void;
-  /** Review on #631: the held prompts of a door (the window masks and cuts them in the Send all dialog). */
-  doorsHeld?(id: string): Promise<{ prompt: string; at: number }[]>;
-  /** Send all stopped; the runs stay held (why: paused-all, paused, cap, ended, failed). */
-  onDoorsStopped?(cb: (p: { id: string; why: string }) => void): () => void;
-  /** A scheduled run could not be kept at a closed door whose queue is full. */
-  onDoorsFull?(cb: (p: { id: string }) => void): () => void;
+  /** Spec 017 FR-031: scheduled prompts that were held behind a door before the update. Never sent or dropped without the person's choice. */
+  heldList?(): Promise<HeldBeforeList>;
+  /** The one-time notice was shown (whatever was chosen); it never comes again. */
+  heldNoticed?(): Promise<{ ok: boolean }>;
+  /** Send the chosen runs (all when no ids), one by one through the schedules; `skipped` = runs whose session or schedule has gone (they stay held). */
+  heldSend?(ids?: string[]): Promise<{ ok: true; started: number; skipped: number } | { ok: false; error: string }>;
+  heldDiscard?(ids?: string[]): Promise<{ ok: true; discarded: number } | { ok: false; error: string }>;
+  /** Delete the `.bad` file that was kept aside (the notice named it). */
+  heldDiscardBad?(): Promise<{ ok: boolean }>;
+  onHeldChanged?(cb: (l: HeldBeforeList) => void): () => void;
+  /** A Send stopped; the run stays held (why: paused-all, paused, cap, ended, updating, gone, failed). */
+  onHeldStopped?(cb: (p: { id?: string; why: string }) => void): () => void;
   /** Spec 076 FR-203: a session started under advice of its agent app's organization policy; the words to show (no policy values). */
   onOrgNote?(cb: (p: { id: string; text: string }) => void): () => void;
   /** Spec 054 FR-062: remote control is still on with a new (checked) link after a relaunch. */

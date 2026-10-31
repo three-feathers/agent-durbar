@@ -3,6 +3,7 @@
 import * as assert from 'node:assert';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { REMOVED_THEMES } from '../src/shared/themes';
 
 const T = require(path.resolve(process.cwd(), 'src', 'renderer', 'theme.js'));
 
@@ -30,8 +31,8 @@ assert.strictEqual(id2, 'clean-office');
 
 // --- Manifest validation ---
 const good = T._validateManifest({
-  id: 'corporate',
-  name: 'Corporate Office',
+  id: 'paper-office',
+  name: 'Paper Office',
   author: 'Test',
   version: '0.1',
   extends: 'clean-office',
@@ -39,7 +40,7 @@ const good = T._validateManifest({
   art: { 'desk-art': '<rect x="0" y="0" width="10" height="10" fill="#333"/>', 'chair-back': '<rect width="1" height="1"/>' },
   words: { 'place-terminal': 'Server room', room: 'office' },
 });
-assert.strictEqual(good.id, 'corporate');
+assert.strictEqual(good.id, 'paper-office');
 assert.strictEqual(good.extends, 'clean-office');
 assert.strictEqual(good.tokens['--bg'], '#eef1f4');
 assert.ok(good.art['desk-art']);
@@ -176,11 +177,33 @@ T.setTheme('clean-office');
 assert.strictEqual(T._validateManifest({ id: 'u1' }).ui, 'clean', 'no ui = clean');
 assert.strictEqual(T._validateManifest({ id: 'u2', ui: 'retro' }).ui, 'retro');
 assert.strictEqual(T._validateManifest({ id: 'u3', ui: 'x"><style>' }).ui, 'clean', 'unknown ui = clean');
-assert.deepStrictEqual(T.UI_STYLES, ['clean', 'corporate', 'retro', 'court-indian', 'court-european', 'court-japanese']);
-for (const [id, ui] of [['corporate', 'corporate'], ['retro', 'retro'], ['durbar-indian', 'court-indian'], ['durbar-european', 'court-european'], ['durbar-japanese', 'court-japanese'], ['clean-office', 'clean']]) {
+assert.deepStrictEqual(T.UI_STYLES, ['clean', 'retro']);
+for (const [id, ui] of [['retro', 'retro'], ['clean-office', 'clean']]) {
   T.setTheme(id);
   assert.strictEqual(T.current().manifest.ui, ui, id + ' uses the ' + ui + ' UI style');
 }
+T.setTheme('clean-office');
+
+// Removed built-ins (spec 035 FR-017, FR-018): the ids apply Clean Office without a warning, the lists are gone, a saved theme that names a removed
+// style or kit keeps working with that one value back to clean / office and a note
+const REMOVED = ['corporate', 'durbar-indian', 'durbar-european', 'durbar-japanese'];
+assert.deepStrictEqual(T.REMOVED_THEMES, REMOVED, 'the renderer names the removed ids');
+assert.deepStrictEqual([...REMOVED_THEMES], REMOVED, 'src/shared/themes.ts names the same removed ids');
+for (const id of REMOVED) {
+  T.setTheme('retro');
+  assert.strictEqual(T.setTheme(id), 'clean-office', id + ' applies Clean Office');
+  assert.ok(!T.list().some((t: { id: string }) => t.id === id), id + ' is not listed');
+  assert.strictEqual(T._builtins()[id], undefined, id + ' has no pack');
+}
+for (const k of ['corporate', 'court-indian', 'court-european', 'court-japanese']) {
+  assert.ok(!T.UI_STYLES.includes(k) && !T.SCENE_KITS.includes(k), k + ' is not a UI style or scene kit');
+  const old = T._validateManifest({ id: 'old-' + k, ui: k, scene: k });
+  assert.strictEqual(old.ui, 'clean', k + ': ui falls back to clean');
+  assert.strictEqual(old.scene, 'office', k + ': scene falls back to office');
+  assert.deepStrictEqual(old.dropped, ['ui', 'scene'], k + ': both values are named in the note (spec 070 FR-022)');
+}
+assert.deepStrictEqual(T._validateManifest({ id: 'old-ok', ui: 'retro', scene: 'pixel' }).dropped, [], 'a kept style and kit make no note');
+assert.ok(T.MOTION_PRESETS.court === undefined, 'the court motion preset is gone');
 T.setTheme('clean-office');
 
 // Words (spec 040 FR-007): scene keys only, short, no control characters
@@ -199,7 +222,7 @@ assert.ok(pixPack.art['hair-acc']&&pixPack.art['hair-acc'].includes('<rect'),'pi
 
 // --- Every built-in pack (specs 036-039) ---
 const packs=T.list().map((t:any)=>t.id);
-assert.deepStrictEqual(packs,['clean-office','corporate','retro','durbar-indian','durbar-european','durbar-japanese'],'all six built-in packs registered (spec 077 FR-066: Cheeky Crew is a Characters choice, not a theme)');
+assert.deepStrictEqual(packs,['clean-office','retro'],'two built-in packs registered (spec 035 FR-017: Corporate and the courts are removed, FR-019: Retro stays; spec 077 FR-066: Cheeky Crew is a Characters choice)');
 for(const id of packs){
   T.setTheme(id);
   assert.strictEqual(T.current().id,id);
@@ -209,22 +232,22 @@ for(const id of packs){
   assert.ok(T.motion('wave'),id+': motion preset');
 }
 /* --- Art slots (stage D, spec 035 FR-013): built-in packs draw their people and furniture with a scene kit and carry
-   only room, door, lobby, place and plant art; the overlay slots stay for user themes on the office kit --- */
+   only room, lobby, place and plant art; the overlay slots stay for user themes on the office kit --- */
 const OVERLAY_SLOTS=['char-body','char-robe','char-headwear','char-collar','desk-back','desk-art','monitor-art','hair-acc'];
 const ROOM_SLOTS=['room-back-wall','room-back-window','room-floor'];
 const ICON_SLOTS=['place-library','place-software','place-terminal','place-web','place-other'];
-const THEMED_PACKS=['corporate','retro','durbar-indian','durbar-european','durbar-japanese']; 
-assert.deepStrictEqual([...T.ART_SLOTS].sort(),['plant',...ROOM_SLOTS,'lobby-art','door-art',...ICON_SLOTS,...OVERLAY_SLOTS,'gadget-cup','gadget-laptop'].sort(),'the whitelist is exactly what the renderer draws');
+const THEMED_PACKS=['retro'];
+assert.deepStrictEqual([...T.ART_SLOTS].sort(),['plant',...ROOM_SLOTS,'lobby-art',...ICON_SLOTS,...OVERLAY_SLOTS,'gadget-cup','gadget-laptop'].sort(),'the whitelist is exactly what the renderer draws');
 
 /* Clean Office omits every slot but the plant: THEME.slot() returns null (the renderer draws the default). */
 T.setTheme('clean-office');
 for(const n of T.ART_SLOTS.filter((x:string)=>x!=='plant'))assert.strictEqual(T.slot(n),null,'clean-office omits art slot '+n);
 
-/* Every themed pack: no dead overlay data, its room look (back wall and floor), door and lobby art, all sanitized */
+/* Every themed pack: no dead overlay data, its room look (back wall and floor) and lobby art, all sanitized */
 for(const id of THEMED_PACKS){
   const art=T._builtins()[id].art||{};
   for(const s of OVERLAY_SLOTS)assert.strictEqual(art[s],undefined,id+': no '+s+' (its scene kit draws the people and furniture)');
-  for(const s of ['room-back-wall','room-floor','door-art','lobby-art'])assert.ok(art[s]!==undefined,id+': '+s+' present');
+  for(const s of ['room-back-wall','room-floor','lobby-art'])assert.ok(art[s]!==undefined,id+': '+s+' present');
   for(const k of Object.keys(art))assert.ok(T.ART_SLOTS.includes(k),id+': '+k+' is a slot the renderer draws');
   T.setTheme(id);
   for(const [k,v] of Object.entries(art)){
@@ -235,8 +258,6 @@ for(const id of THEMED_PACKS){
 }
 T.setTheme('retro');
 assert.ok(T.slot('room-back-wall').includes('<rect'),'retro: pixel-map wall compiles to rects');
-T.setTheme('durbar-indian');
-assert.strictEqual(T.slot('room-back-window'),null,'indian omits room-back-window (independent fallback)');
 
 /* overlays on the office kit: a user pack (fixture) resolves each slot through THEME.slot() and falls back per slot */
 const overlayPack=T._validateManifest({id:'u-overlay',art:{
@@ -279,9 +300,7 @@ assert.strictEqual(artManifest.art['desk-art'],undefined,'user desk-art with onc
 assert.ok(artManifest.art['char-robe'],'user char-robe accepted');
 
 /* scene words of each pack differ from Clean Office where they claim to */
-assert.strictEqual(T._builtins()['corporate'].words['place-library'],'Records');
 assert.strictEqual(T._builtins()['retro'].words['place-web'],'Modem');
-assert.strictEqual(T._builtins()['durbar-indian'].words['door-close'],'Close gate');
 
 /* status/permission/credit wording is never a scene word: no pack may define those keys */
 const FORBIDDEN=['working','thinking','waiting','idle','error','done','read-only','ask','allow','aiu','credits'];
@@ -312,10 +331,11 @@ T.setTheme('clean-office');
 const partial = T._validateManifest({
   id: 'partial',
   tokens: 'not-an-object',
-  art: { 'door-art': '<script/>', 'lobby-art': '<circle cx="5" cy="5" r="5"/>' },
+  art: { 'place-web': '<script/>', 'door-art': '<circle cx="5" cy="5" r="5"/>', 'lobby-art': '<circle cx="5" cy="5" r="5"/>' },
 });
 assert.deepStrictEqual(partial.tokens, {});
-assert.strictEqual(partial.art['door-art'], undefined, 'unsafe art is dropped');
+assert.strictEqual(partial.art['place-web'], undefined, 'unsafe art is dropped');
+assert.strictEqual(partial.art['door-art'], undefined, 'spec 017 FR-034: a saved theme naming the removed door-art slot still loads; the slot is ignored');
 assert.ok(partial.art['lobby-art'], 'safe art on a real slot is kept');
 
 // spec 037 FR-014: each built-in theme previews its own colours; unknown ids fall back to Clean Office; only colour values
@@ -357,8 +377,8 @@ assert.ok(partial.art['lobby-art'], 'safe art on a real slot is kept');
 }
 /* spec 040 FR-030: the lobby band is stretched only for built-in packs; a user theme keeps its proportions, whatever list() holds */
 {
-  assert.strictEqual(T.isBuiltIn('corporate'), true);
-  assert.strictEqual(T.lobbyArtAspect('corporate'), 'none', 'a built-in pack keeps none');
+  assert.strictEqual(T.isBuiltIn('retro'), true);
+  assert.strictEqual(T.lobbyArtAspect('retro'), 'none', 'a built-in pack keeps none');
   assert.strictEqual(T.lobbyArtAspect(T.CLEAN_ID), 'none');
   assert.strictEqual(T.isBuiltIn('ai-pink'), false);
   assert.strictEqual(T.lobbyArtAspect('ai-pink'), 'xMidYMid slice', 'a user theme is sliced, not stretched');

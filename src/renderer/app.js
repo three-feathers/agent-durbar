@@ -586,12 +586,9 @@ function syncWalkers(){
     /* spec 001 FR-034: at the Boss, a tiny badge on the figure: ? for a question, a key for a permission */
     const v=VISITS.at(id),k=v&&v.place===window.DurbarPlaces.BOSS?v.label:'';
     if((w.el.dataset.ask||'')!==k){w.el.dataset.ask=k;let b=w.el.querySelector('.wb');if(!k){if(b)b.remove();}else{if(!b){b=document.createElement('span');b.className='wb';w.el.appendChild(b);}b.innerHTML=k==='q'?'?':BADGE_KEY;}}
-    /* spec 017 FR-019, FR-020 (owner 2026-10-23): the same pose as at the door: an empty wallet at Durbar's spending limit wherever the
-       figure is (Bank, coffee corner, walking), a wave while it waits at the Boss; drawn in its own colours, still with reduced motion */
-    const pr=a&&signsOn()?(a.limit?'wallet':k?'wave':''):'';
-    if((w.el.dataset.prop||'')!==pr){w.el.dataset.prop=pr;let q=w.el.querySelector('.wprop');if(!pr){if(q)q.remove();}else{if(!q){q=document.createElement('span');q.className='wprop';q.setAttribute('aria-hidden','true');w.el.appendChild(q);}q.innerHTML=pr==='wallet'?walletSvg(a,'w-wallet'):waveArmSvg(a,'w-arm');}}});
+  });
 }
-function roomAiu(r){const f=folderOfRoom(r.id),t=LEDGER.room(r.id,f&&f.key),usd=usdEstimates(r.id),m=t.calls&&!(t.unreported>=t.calls&&!usd)?approx(t.nano/1e9*AIU_USD+usd):'';return t.calls&&!demoOn?{long:m||window.DurbarUsage.fmtTotal(t),short:m||window.DurbarUsage.fmtShort(t),tip:window.DurbarUsage.tooltip(t,{scope:'folder',since:LEDGER.since(),run:LEDGER.roomRun(r.id)})}:null;}
+function roomAiu(r){const f=folderOfRoom(r.id),t=LEDGER.room(r.id,f&&f.key),usd=usdEstimates(r.id),m=t.calls&&!(t.unreported>=t.calls&&!usd)?approx(t.nano/1e9*AIU_USD+usd):'';return t.calls&&!demoOn?{long:m||window.DurbarUsage.fmtTotal(t),tip:window.DurbarUsage.tooltip(t,{scope:'folder',since:LEDGER.since(),run:LEDGER.roomRun(r.id)})}:null;}
 
 /* spec 052 FR-076: one word per status on every screen (pills, list, header, palette, counters); longer phrases only in sentences */
 const LABELS={working:'Working',thinking:'Thinking',waiting:'Waiting',idle:'Idle',error:'Error',done:'Done'};
@@ -1047,8 +1044,8 @@ function helperCardHTML(h,L){
 const visitPlace=a=>{const v=a.parent?null:VISITS.at(a.id);return v?v.place:(RETURNING.has(a.id)?null:null);};
 function cardHTML(a,d,nSubs){
   const st=vis(a), use=usageShort(a);
-  return `<button class="desk card is-${st}${isUnread(a)?' is-unread':''}${hlIn(a,st)}${isRetrying(a)?' is-retrying':isCompacting(a)?' is-compacting':isFailing(a)?' is-failing':''}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" data-state="${st}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(deskTip(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}${unreadWords(a)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}${doorWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(deskMask(taskOf(a)))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
-    <span class="sc">${cabinHTML(a,'c',sceneC(a))}</span>
+  return `<button class="desk card is-${st}${isUnread(a)?' is-unread':''}${hlIn(a,st)}${isRetrying(a)?' is-retrying':isCompacting(a)?' is-compacting':isFailing(a)?' is-failing':''}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" data-state="${st}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(deskTip(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}${unreadWords(a)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(deskMask(taskOf(a)))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
+    <span class="sc">${sceneC(a)}</span>
     <span class="ci"><span class="l1">${chatNoHTML(a)}${draftHTML(a)}${unreadHTML(a)}${dialogHTML(a)}<span class="name"${nameTipAttr(a)}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span><span class="stl st-${pillSt(a)}">${esc(stWord(a,true))}</span></span>    <span class="intent"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</span>
     <span class="l3"><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a,true))}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${useCost(use.split(' · ')[1])}</span>`:`<span class="tok">${esc(use.split(' · ')[0]||'')}</span>${use.includes(' · ')?`<span class="aiu"><span class="sep">&nbsp;· </span>${useCost(use.split(' · ')[1])}</span>`:''}`}</span></span></span>${GROW?grownSideHTML(a):''}</button>`;
 }
@@ -1081,12 +1078,12 @@ function unitHTML(a,d){
   }
   let desk;
   if(d==='full'){
-    desk=`<button class="desk is-${st}${isUnread(a)?' is-unread':''}${hlIn(a,st)}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" data-state="${st}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}"${lastTip(a)?` title="${esc(lastTip(a).slice(3))}"`:''} aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}${unreadWords(a)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}${doorWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(deskMask(taskOf(a)))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
-      ${cabinHTML(a,'f',scene(a,false))}<span class="badge ${st}">${badgeSVG(st)}</span>
+    desk=`<button class="desk is-${st}${isUnread(a)?' is-unread':''}${hlIn(a,st)}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" data-state="${st}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}"${lastTip(a)?` title="${esc(lastTip(a).slice(3))}"`:''} aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}${unreadWords(a)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(deskMask(taskOf(a)))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
+      ${scene(a,false)}<span class="badge ${st}">${badgeSVG(st)}</span>
       <div class="info"><div class="who">${chatNoHTML(a)}${draftHTML(a)}${unreadHTML(a)}${dialogHTML(a)}<span class="name"${nameTipAttr(a)}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span></div>
       <p class="task"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</p><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}${pillWarn(a)}</span></div></button>`;    if(LIVE_SIDE)desk+=sideHTML(a);
   } else desk=cardHTML(a,d,nSubs);
-  return `<div class="unit${nSubs?' has-h':''}${SHUT_PREV&&SHUT_PREV.has(a.id)?' unrolling':''}" data-key="unit:${esc(a.id)}">${desk}${renBtn(a)}${helpers}${doorBtnHTML(a)}</div>`; /* the door button last: sibling rules such as .liveside+.helpers stay true */
+  return `<div class="unit${nSubs?' has-h':''}${SHUT_PREV&&SHUT_PREV.has(a.id)?' unrolling':''}" data-key="unit:${esc(a.id)}">${desk}${renBtn(a)}${helpers}</div>`;
 }
 const unitWidth=(a,d)=>{const D=DENS[d];return D.cw+(d==='full'&&LIVE_SIDE?SIDE_W+SIDE_GAP+(helpersOf(a).length?2:0):0)+(helpersOf(a).length?(d==='full'?D.hw+14+8:D.hw+18):0);};
 /* ---- spec 001 FR-051..FR-056: finished agents rest in the lounge when their room has others at work. A resting agent is not a desk in the
@@ -1116,7 +1113,7 @@ function restHTML(x,i){
   const roll=SHUT_PREV&&!SHUT_PREV.has(a.id)?' rolling':'';
   const where=k==='recent'?'resting on the couch':'asleep on a nap bed';
   const lab=`${esc(a.name)}${chatNoWords(a)}${draftWords(a)}, ${esc(who)}, folder ${esc(roomOf(a).path)}, ${where}, ${st==='done'?'finished':'idle after its reply'}${said?' '+esc(said):''}: ${esc(line)}${/[.!?…]$/.test(line)?'':'.'} Open chat panel.`; /* every part escaped here */
-  const peek=`<span class="peek" aria-hidden="true"><span class="pk-h"><b>${esc(a.name)}</b><span class="pk-role">${esc(who)}</span></span><span class="pk-st">${signsOn()?(g=>`<span class="dsign-tx" data-sign="${g.key}">${signIcon(g.icon)}${esc(g.word)}</span>`)(signOf(a,true)):SHUT_MARK+esc(stWord(a))}${ago?' · finished '+esc(ago):''} · ${where}</span><span class="pk-tx">${esc(shutReply(a,300))}</span></span>`;
+  const peek=`<span class="peek" aria-hidden="true"><span class="pk-h"><b>${esc(a.name)}</b><span class="pk-role">${esc(who)}</span></span><span class="pk-st">${SHUT_MARK+esc(stWord(a))}${ago?' · finished '+esc(ago):''} · ${where}</span><span class="pk-tx">${esc(shutReply(a,300))}</span></span>`;
   const crewBed=k==='old'&&THEME.sceneKit()==='crew'; /* spec 077 FR-071: a sleeping crew character is the couch's head and shoulders, not a turned face */
   const bedSvg=`<svg class="lg-bed" viewBox="0 0 44 24" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="bd-frame" x="1" y="10" width="42" height="11" rx="3"/><rect class="bd-head" x="1" y="3" width="5" height="18" rx="2"/><rect class="bd-mat" x="5" y="8" width="37" height="6" rx="2.5"/><rect class="bd-pil" x="6" y="5" width="10" height="5" rx="2.5"/><rect class="bd-leg" x="3" y="20" width="3" height="4"/><rect class="bd-leg" x="38" y="20" width="3" height="4"/></svg>`;
   const art=k==='recent'
@@ -1187,112 +1184,6 @@ function officeModel(ignoreStatus){
   });
   return rooms;
 }
-/* ---- room doors (spec 017): a closed room is a compact door plate with a one-line status ---- */
-/* door colours come from the theme (spec 036) */
-/* ink: spec 017 FR-004, the same door drawn in the text colour (currentColor) for a session's door sign; no theme art there */
-function doorSvg(open,ink){
-  const t=ink?(n=>/-(line|knob)$/.test(n)?'currentColor':'none'):T_; /* ink: outlines and the knob only, no fills */
-  const art=ink?null:THEME.slot('door-art'), ov=art===null?'':`<g class="art-slot" data-slot="door-art">${art}</g>`;
-  return open
-    ?`<svg class="door-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="4" y="2.5" width="12" height="15" rx="1.6" fill="${t('--door-bg')}" stroke="${t('--door-line')}" stroke-width="1.2"/>${ov}<path class="leaf" d="M4.4 3.2 9.6 4.6V15.4L4.4 16.8Z" fill="${t('--door-leaf')}" stroke="${t('--door-leaf-line')}" stroke-width="1"/><circle cx="8.2" cy="10" r=".8" fill="${t('--door-knob')}"/></svg>`
-    :`<svg class="door-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="4" y="2.5" width="12" height="15" rx="1.6" fill="${t('--door-leaf')}" stroke="${t('--door-leaf-line')}" stroke-width="1.2"/><rect x="6.2" y="4.7" width="7.6" height="4.4" rx=".9" fill="${t('--door-panel')}"/><circle cx="13.1" cy="12" r="1" fill="${t('--door-knob')}"/>${ov}</svg>`;
-}
-/* ---- spec 017 FR-003..FR-009 (2026-10-23, owner): a session's meeting-room door sign. The sign is derived from the shown state
-   (DurbarRoom.doorSign); it takes the place of the desk's status pill or word and uses the same .st-* colours. The plain word stays in
-   the desk's accessible name, its tooltip, the list and the counters. */
-const SIGN_ICONS={
-  alert:'<path d="M6 1.6 11 10.4H1Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6 4.8v2.6M6 8.9v.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
-  hourglass:'<path d="M3 1.5h6M3 10.5h6M3.6 1.6c0 2.6 4.8 2.6 4.8 4.4S3.6 7.8 3.6 10.4M8.4 1.6c0 2.6-4.8 2.6-4.8 4.4s4.8 1.8 4.8 4.4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>',
-  bar:'<circle cx="6" cy="6" r="4.7" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3.6 6h4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
-  clock:'<circle cx="6" cy="6" r="4.7" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6 3.4V6l1.8 1.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>',
-  people:'<circle cx="4.2" cy="4" r="1.7" fill="currentColor"/><circle cx="8.2" cy="4.4" r="1.5" fill="currentColor"/><path d="M1.2 10.2c.3-2.2 1.5-3.2 3-3.2s2.7 1 3 3.2ZM7.6 7.2c1.6-.3 2.9.6 3.2 3H8.5" fill="currentColor"/>',
-  dot:'<circle cx="6" cy="6" r="4.7" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="6" r="2.5" fill="currentColor"/>',
-  check:'<circle cx="6" cy="6" r="4.7" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3.8 6.1 5.3 7.6 8.3 4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
-  inbox:'<path d="M1.6 7.2 3 2.4h6l1.4 4.8v2.6H1.6Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M1.6 7.2h2.6l.7 1.2h2.2l.7-1.2h2.6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>',
-  retry:'<path d="M9.6 4.4A4 4 0 1 0 10 7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M9.9 1.8v2.8H7.1" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>',
-  compress:'<path d="M6 1.4v3.4M4.3 3.1 6 4.8l1.7-1.7M6 10.6V7.2M4.3 8.9 6 7.2l1.7 1.7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M1.8 6h8.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>',
-  bolt:'<path d="M6.8 1.2 2.6 6.9h3l-.8 3.9 4.6-6H6.4Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>',
-  bubble:'<path d="M2 3.4A1.6 1.6 0 0 1 3.6 1.8h4.8A1.6 1.6 0 0 1 10 3.4v3A1.6 1.6 0 0 1 8.4 8H5.2L3 10V8h0A1.6 1.6 0 0 1 2 6.4Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><circle cx="4.4" cy="4.9" r=".6" fill="currentColor"/><circle cx="6" cy="4.9" r=".6" fill="currentColor"/><circle cx="7.6" cy="4.9" r=".6" fill="currentColor"/>',
-  ring:'<circle cx="6" cy="6" r="4.7" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="6" r="1.6" fill="none" stroke="currentColor" stroke-width="1.2"/>',
-  wallet:'<rect x="1.4" y="3.2" width="9.2" height="6.8" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M1.6 4.6 8.6 2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="8.4" cy="6.6" r=".9" fill="currentColor"/>',
-  lock:'<rect x="2.3" y="5.3" width="7.4" height="5.2" rx="1.1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 5.3V3.9a2 2 0 0 1 4 0v1.4" fill="none" stroke="currentColor" stroke-width="1.3"/>'
-};
-/* spec 017 FR-011a, FR-019, FR-020 (owner 2026-10-23): the figure's props, in the agent's own shirt and skin colours and the theme's door
-   tokens (no new colours); `still` under reduced motion or in Serious mode (FR-022) */
-const motionStill=()=>REDUCED||SERIOUS?' still':'';
-function waveArmSvg(a,cls){const k=themedLook(a.look);return `<svg class="${cls}${motionStill()}" viewBox="24 0 24 48" aria-hidden="true" focusable="false"><path d="M37.5 47 41 30.5" stroke="${k.shirt}" stroke-width="5.5" stroke-linecap="round" fill="none"/><circle cx="41.8" cy="26.6" r="3.6" fill="${k.skin}"/></svg>`;}
-/* an open, empty wallet held out in both hands (calm, no money): the theme's door colours for the leather, the surface inside */
-function walletSvg(a,cls){const k=themedLook(a.look),t=T_;return `<svg class="${cls}${motionStill()}" viewBox="0 0 48 30" aria-hidden="true" focusable="false"><path d="M6 29 12 17M42 29 36 17" stroke="${k.shirt}" stroke-width="5" stroke-linecap="round" fill="none"/><rect x="9" y="6" width="30" height="16" rx="3" fill="${t('--door-leaf-line')}"/><rect x="12" y="8.5" width="24" height="11" rx="2" fill="${t('--surface')}"/><path d="M17 14h14" stroke="${t('--door-leaf-line')}" stroke-width="1.4" stroke-dasharray="2 2.4" stroke-linecap="round"/><circle cx="12" cy="17" r="3.2" fill="${k.skin}"/><circle cx="36" cy="17" r="3.2" fill="${k.skin}"/></svg>`;}
-/* FR-021: small flames on the desk of an agent in error, in the error and waiting colour tokens; they flicker, still under FR-022 */
-function fireSvg(){const t=T_;return `<svg class="cb-fire${motionStill()}" viewBox="0 0 60 24" preserveAspectRatio="xMidYMax meet" aria-hidden="true" focusable="false"><g class="fl fl1"><path d="M10 24C4 20 7 13 11 9c0 5 4 5 4 10 0 3-2 5-5 5Z" fill="${t('--c-error')}"/><path d="M11 24c-2-2-1-5 1-7 0 3 2 3 2 5 0 1-1 2-3 2Z" fill="${t('--c-waiting')}"/></g><g class="fl fl2"><path d="M30 24c-7-4-4-13 1-18 0 6 6 7 6 13 0 3-3 5-7 5Z" fill="${t('--c-error')}"/><path d="M31 24c-3-2-2-6 1-9 0 4 3 4 3 7 0 1-2 2-4 2Z" fill="${t('--c-waiting')}"/></g><g class="fl fl3"><path d="M50 24c-5-3-3-9 1-12 0 4 4 5 4 9 0 2-2 3-5 3Z" fill="${t('--c-error')}"/><path d="M50.5 24c-2-1.5-1-4 .8-6 0 2.5 2 2.8 2 4.6 0 .9-1.3 1.4-2.8 1.4Z" fill="${t('--c-waiting')}"/></g></svg>`;}
-const signIcon=k=>`<svg class="ds-ic" viewBox="0 0 12 12" aria-hidden="true" focusable="false" data-icon="${k}">${SIGN_ICONS[k]||''}</svg>`;
-let SIGN_PREF=(()=>{try{return localStorage.getItem('durbar.doorsigns')!=='off';}catch(e){return true;}})();
-const signsOn=()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign)&&SIGN_PREF;
-/* spec 017 FR-027 (owner 2026-10-24; review on PR 631): Settings > Office layout. Open office has no doors, so a door you closed is never
-   hidden while it holds prompts: switching asks first (Keep cabins / Open the doors, or Discard / Send all when prompts are held) and
-   opens each such door; if a door cannot be opened the office stays with cabins. A door still closed or holding prompts in an open office
-   (a failed open, a stopped Send all, a restart) keeps its cabin and button, so it can always be opened. */
-async function setSignsOn(on){
-  on=!!on;
-  if(!on&&SIGN_PREF&&bridge&&bridge.setDoor){
-    const mine=agents.filter(a=>!a.parent&&(doorOf(a).closed||doorOf(a).held));
-    if(mine.length){
-      const held=mine.reduce((n,a)=>n+doorOf(a).held,0), shut=mine.filter(a=>doorOf(a).closed).length;
-      const v=await askDialog({title:'Switch to an open office?',
-        body:'An open office has no doors. '+(shut?(shut===1?'1 door you closed is opened':shut+' doors you closed are opened')+' first'+(held?', and ':'.'):'')+(held?(held===1?'1 prompt is':held+' prompts are')+' held there: send them (in order, through the schedules) or discard them.':''),
-        lines:mine.slice(0,8).map(a=>a.name+(doorOf(a).closed?' · door closed':'')+(doorOf(a).held?' · '+doorOf(a).held+' held':'')).concat(mine.length>8?['and '+(mine.length-8)+' more']:[]),
-        buttons:[{label:'Keep cabins',value:null},...(held?[{label:'Discard',value:'discard'},{label:'Send all ('+held+')',value:'send'}]:[{label:'Open the doors',value:'open',cls:'primary'}])],
-        returnFocus:()=>document.querySelector('[data-officelayout="open"]')});
-      if(!v||!v.value)return false;
-      for(const a of mine){
-        const d=doorOf(a);
-        if(d.closed){
-          const r=await bridge.setDoor(a.id,false).catch(()=>null);
-          if(!r||!r.ok){toast('Could not open the door of '+esc(a.name)+', so the office keeps its cabins.',5200).classList.add('err');scheduleRender();return false;}
-          DOORS[a.id]={closed:false,held:r.held||0};doorRemoteOff.delete(a.id);
-        }
-        if(doorOf(a).held&&v.value!=='open')await sendOrDiscard(a,v.value,doorOf(a).held);
-      }
-    }
-  }
-  SIGN_PREF=on;try{localStorage.setItem('durbar.doorsigns',SIGN_PREF?'on':'off');}catch(e){}layoutKey='';scheduleRender();
-  return true;
-}
-/* FR-027: a door the user closed, or one still holding prompts, stays visible (cabin, sign and button) in an open office */
-const doorShown=a=>signsOn()||(!!(window.DurbarRoom&&window.DurbarRoom.doorSign)&&!!a&&!a.parent&&(doorOf(a).closed||doorOf(a).held>0));
-/* spec 017 FR-015: doors the user closed (id -> {closed, held}), from main (bridge.doorsList, kept fresh by onDoorsChanged) */
-let DOORS={};
-const doorOf=a=>(a&&!a.parent&&DOORS[a.id])||{closed:false,held:0};
-const signOf=(a,resting)=>window.DurbarRoom.doorSign({state:vis(a),paused:!!a.paused,coffee:!!a.coffee,limit:!!a.limit,ended:vis(a)==='idle'&&a.label==='Ended',resting:!!resting,failing:isFailing(a),retrying:isRetrying(a),compacting:isCompacting(a),helpers:helpersOf(a).map(vis),userClosed:doorOf(a).closed,held:doorOf(a).held});
-const signTitle=(a,g)=>g.key==='shut'?'Do not disturb (you closed it)'+(doorOf(a).held?' · '+doorOf(a).held+' held':''):g.word;
-/* spec 017 FR-011..FR-014 (owner 2026-10-23, "real office cabin style"): each session is a cabin. While the agent is busy, waits, must
-   not be disturbed or is away, its cabin door is closed and drawn in place of the desk scene (same box, so the layout is unchanged): the
-   door in the theme's door colours (the folder door's tokens), the agent's photo (its avatar from the scene kit) and a meeting-room sign
-   (icon and short word in the status colours). When its work is done, it is free or it has an error, the door stands open: the desk
-   scene as today, an open door leaf at its edge and a tag (Done, Available, Alert). kind: 'c' (card scene box) or 'f' (full desk). */
-function cabinHTML(a,kind,sceneHTML){
-  if(!doorShown(a))return sceneHTML;
-  const g=signOf(a), tag=`<span class="cb-sign st-${g.tone}" data-sign="${g.key}" title="${esc(signTitle(a,g))}">${signIcon(g.icon)}<span class="cb-w" data-w="${esc(g.short)}"></span></span>`; /* the word as CSS content: a desk's text still starts with its name (drivers and the office check find desks that way) */
-  if(g.door==='open')return `<span class="cb-scene cb-${kind}">${sceneHTML}<span class="cb-open" data-cabin="open" aria-hidden="true"><span class="cb-leaf-open"></span>${g.effect==='fire'?fireSvg():''}${tag}</span></span>`;
-  /* FR-019: at Durbar's spending limit the agent stands at its closed door holding out an empty wallet, the Limit sign above */
-  if(g.figure==='wallet')return `<span class="cabin cb-${kind} cb-waiting cb-limit st-${g.tone}" data-cabin="limit" aria-hidden="true"><span class="cb-door"><span class="cb-knob"></span></span><span class="cb-figure">${avatar(a)}${walletSvg(a,'cb-wallet')}</span>${tag}</span>`;
-  /* owner 2026-10-23 13:59 UTC: someone waiting for you is not shut in: it stands in front of its closed door and waves, the sign above it.
-     The figure is the scene kit's avatar; the waving arm is drawn in its own shirt and skin colours; no animation with reduced motion or
-     in Serious mode (a static raised hand) */
-  if(g.figure==='wave'){
-    const arm=waveArmSvg(a,'cb-arm');
-    return `<span class="cabin cb-${kind} cb-waiting st-${g.tone}" data-cabin="waiting" aria-hidden="true"><span class="cb-door"><span class="cb-knob"></span></span><span class="cb-figure">${avatar(a)}${arm}</span>${tag}</span>`;
-  }
-  return `<span class="cabin cb-${kind} st-${g.tone}" data-cabin="closed" aria-hidden="true"><span class="cb-door"><span class="cb-photo">${avatar(a)}</span><span class="cb-knob"></span></span>${tag}</span>`;
-}
-/* spec 017 FR-015: the door button beside a desk (not inside it: a button cannot hold a button), on the scene's corner */
-function doorBtnHTML(a){
-  if(!doorShown(a)||!bridge||!bridge.setDoor||demoOn||a.parent)return '';
-  const d=doorOf(a), lab=d.closed?'Open the door: '+a.name+(d.held?' ('+d.held+' held)':''):d.held?'Send or discard '+d.held+' held: '+a.name:'Close the door (do not disturb): '+a.name;
-  /* the tooltip names the agent cut short (a long session title, spec 052 FR-171's 120 characters); the accessible name is whole */
-  const tip=(d.closed?'Open the door: ':d.held?'Send or discard '+d.held+' held: ':'Close the door (do not disturb): ')+DurbarCutText.cutText(a.name,60)+(d.closed&&d.held?' ('+d.held+' held)':'');
-  return `<button class="cb-toggle" type="button" data-doorset="${esc(a.id)}" aria-pressed="${d.closed}" aria-label="${esc(lab)}" title="${esc(tip)}">${doorSvg(!d.closed,true)}</button>`;
-}
 function roomArt(){
   let s='';
   for(const name of ['room-back-wall','room-back-window','room-floor']){
@@ -1301,22 +1192,12 @@ function roomArt(){
   }
   return s;
 }
-function roomSummary(r){
-  const mains=agents.filter(a=>!a.parent&&a.room===r.id);
-  const sum=window.DurbarRoom.summarizeRoom(mains.map(a=>({state:vis(a),helpers:helpersOf(a).map(vis)})));
-  return Object.assign({n:mains.length},sum);
-}
-function plateHTML({r}){
-  const sm=roomSummary(r), u=roomAiu(r), al=roomAlert(r);
-  return `<button class="plate tone-${sm.tone}" type="button" data-door="${esc(r.id)}" data-key="door:${esc(r.id)}" data-tint="${r.tint}" aria-expanded="false" aria-label="${esc(wordOf('door-open'))} ${esc(r.name)}. ${esc(sm.text)}. ${sm.n} agent${sm.n===1?'':'s'}.${u?' Usage: '+esc(u.long)+'.':''}${al.siren?' '+ALERT_WORDS+'.':''}" title="${esc(r.path)}">${doorSvg(false)}<span class="plate-tx"><b>${esc(r.name)}</b>${al.siren?SIREN():''}${floorTag(r)}<span class="plate-sum">${esc(sm.text)}</span></span>${u?`<span class="plate-aiu" title="${esc(u.tip)}">${esc(u.short)}</span>`:''}<span class="plate-n">${sm.n}</span></button>`;
-}
-const doorsHTML=list=>list.length?`<div class="doors" data-key="doors">${list.map(plateHTML).join('')}</div>`:'';
 function stageHTML(sizing,d,aw,cap){return stageParts(sizing,d,aw,cap).join('');}
-/* the stage in parts (each open room, the lobby, the door plates), so a render can patch only the parts that changed */
+/* the stage in parts (each room, the lobby), so a render can patch only the parts that changed */
 function stageParts(sizing,d,aw,cap){
-  const open=sizing.filter(m=>!m.r.closed).map(m=>roomHTML(m,d,aw,cap)), doors=doorsHTML(sizing.filter(m=>m.r.closed)), lob=lobbyHTML(aw);
-  const mid=!lob?open.length:open.length<2?open.length:Math.ceil(open.length/2); /* one room: below it; none: above the door plates */
-  return [...open.slice(0,mid),lob,...open.slice(mid),doors].filter(Boolean);
+  const open=sizing.map(m=>roomHTML(m,d,aw,cap)), lob=lobbyHTML(aw);
+  const mid=!lob?open.length:open.length<2?open.length:Math.ceil(open.length/2); /* one room: below it */
+  return [...open.slice(0,mid),lob,...open.slice(mid)].filter(Boolean);
 }
 /* spec 052 (2026-10-21, measured): a render used to rebuild, parse and diff the whole stage although a tick usually changes one
    desk. Each part's HTML is remembered; only a part whose HTML changed is parsed and morphed. Anything unexpected (parts added,
@@ -1336,75 +1217,73 @@ function morphParts(stage,parts){
   }
   return true;
 }
-/* spec 017 FR-015, FR-017: the door button of a desk. Closing it: Do not disturb (scheduled runs are held, remote control goes off first;
-   if that fails the door stays open and says so). Opening it with runs held asks, listing them: Send all (in order, through the
-   scheduler), Discard, or Keep closed (the default: Escape and Enter keep it closed). An open door that still holds runs asks the same. */
-const doorRemoteOff=new Set(); /* agents whose remote control the door turned off: reopening says it stays off */
-/* review on PR 631: the held prompts, each masked first, then its first line cut (never cut before masking); fail closed without the mask */
-async function heldLines(a){
-  const list=bridge.doorsHeld?await bridge.doorsHeld(a.id).catch(()=>[]):[], R=window.DurbarRedact, out=[];
-  const MAXL=8;
-  for(const h of (Array.isArray(list)?list:[]).slice(0,MAXL)){
-    const t=h&&typeof h.prompt==='string'?h.prompt:'';
-    const m=R&&typeof R.redact==='function'?R.redact(t):null;
-    out.push(m===null?'(hidden: masking is not available)':DurbarCutText.cutText(String(m).split(/\r?\n/).find(x=>x.trim())||'(empty)',90));
+/* spec 017 FR-031 (owner 2026-10-31: no doors): scheduled prompts that were held behind a door before the update. Never sent and never lost
+   without a choice: one notice, once (Send, Discard, or Decide later: the default, and Escape), and what is undecided stays as a row in
+   Settings > Schedules. Prompts are masked first, then cut (never cut before masking); without the mask they are not shown (fail closed). */
+let HELD={items:[],notice:false,damaged:false};
+const heldClean=l=>{
+  const o={items:[],notice:false,damaged:false};
+  if(!l||typeof l!=='object')return o;
+  o.notice=l.notice===true;o.damaged=l.damaged===true;
+  for(const i of (Array.isArray(l.items)?l.items:[]).slice(0,2000)){
+    if(!i||typeof i!=='object'||typeof i.id!=='string'||typeof i.prompt!=='string')continue;
+    o.items.push({id:i.id,session:typeof i.session==='string'?i.session:'',prompt:i.prompt,canSend:i.canSend===true,why:typeof i.why==='string'?i.why.slice(0,100):''});
   }
-  if(Array.isArray(list)&&list.length>MAXL)out.push('and '+(list.length-MAXL)+' more');
-  return out;
+  return o;
+};
+function heldLine(prompt){
+  const R=window.DurbarRedact, m=R&&typeof R.redact==='function'?R.redact(String(prompt)):null;
+  return m===null?'(hidden: masking is not available)':DurbarCutText.cutText(String(m).split(/\r?\n/).find(x=>x.trim())||'(empty)',90);
 }
-async function askHeld(a,btn,closed){
-  const n=doorOf(a).held, lines=await heldLines(a);
-  return askDialog({title:(closed?'Open the door of ':'Held prompts of ')+a.name+'?',body:n+(n===1?' prompt was':' prompts were')+' held while the door was closed. Send all sends them in order through the schedules (Pause all and each schedule\'s limit still apply): the first now, each next one when '+a.name+' is free again.',
-    lines,buttons:[{label:closed?'Keep closed':'Not now',value:null},...(closed?[]:[{label:'Close the door',value:'close'}]),{label:'Discard',value:'discard'},{label:'Send all ('+n+')',value:'send'}],returnFocus:()=>document.querySelector(`[data-doorset="${CSS.escape(a.id)}"]`)||btn});
+/* the held runs per session (those whose session has gone together), in the order main lists them */
+function heldGroups(){
+  const g=new Map();
+  for(const i of HELD.items){
+    const k=i.session&&byId(i.session)?i.session:'';
+    if(!g.has(k))g.set(k,{sid:k,name:k?byId(k).name:'A session that has gone',items:[]});
+    g.get(k).items.push(i);
+  }
+  return [...g.values()];
 }
-async function sendOrDiscard(a,how,n){
-  const q=await bridge.releaseHeld(a.id,how).catch(()=>null);
+async function heldAct(how,ids){
+  const fn=how==='send'?bridge.heldSend:bridge.heldDiscard;
+  const q=fn?await fn(ids).catch(()=>null):null;
   if(!q||!q.ok){toast('The held prompts are still there: '+esc((q&&q.error)||'could not '+how+' them')+'.',5200).classList.add('err');return;}
-  toast(esc(a.name)+': '+(how==='send'?(n===1?'the held prompt goes out when '+esc(a.name)+' is free.':'the '+n+' held prompts go out one by one.'):(n===1?'1 held prompt discarded.':n+' held prompts discarded.')),4200);
+  if(how==='send')toast(q.started?(q.started===1?'The held prompt goes out as soon as the schedules\' rules allow it (Pause all, limits, a busy agent).':'The '+q.started+' held prompts go out one by one, as soon as the schedules\' rules allow.')+(q.skipped?' '+q.skipped+' cannot be sent; they stay held until you discard them.':''):'Nothing could be sent: '+(q.skipped||0)+' stay held until you discard them.',5200);
+  else toast(q.discarded===1?'1 held prompt discarded.':q.discarded+' held prompts discarded.',4200);
 }
-async function closeDoor(a){
-  const r=await bridge.setDoor(a.id,true).catch(()=>null);
-  if(!r||!r.ok){toast('Could not close the door'+(r&&r.error?': '+esc(r.error):'.'),5200).classList.add('err');return;}
-  DOORS[a.id]={closed:true,held:r.held||0};
-  if(r.remoteOff)doorRemoteOff.add(a.id); /* main also sent agents:remoteOff: the Remote chip and the card's tag go (onRemoteOff) */
-  scheduleRender();
-  announce(a.name+': door closed. Do not disturb: scheduled prompts are held until you open it.');
-  toast(esc(a.name)+': door closed. Scheduled prompts wait here until you open it'+(r.remoteOff?'; remote control is off.':'.'),4200);
+/* the one notice: shown once (main remembers), whatever is chosen; Escape and "Decide later" change nothing */
+async function heldNotice(){
+  if(!HELD.notice||!bridge||!bridge.heldNoticed)return;
+  const sendable=HELD.items.filter(i=>i.canSend).length, n=HELD.items.length;
+  await bridge.heldNoticed().catch(()=>{});
+  const lines=heldGroups().slice(0,8).map(g=>{const gone=g.items.every(i=>!i.canSend);return g.name+': '+g.items.length+(gone&&g.items[0].why?' · only Discard ('+g.items[0].why+')':'');});
+  if(HELD.items.length>lines.length&&heldGroups().length>8)lines.push('and '+(heldGroups().length-8)+' more');
+  const dmg=HELD.damaged?'Parts of the old file of held prompts could not be read, so the file was kept aside as durbar-doors.json.bad in the app\'s data folder; nothing unreadable was used or sent. ':'';
+  if(HELD.damaged){const w=await askDialog({title:'Held prompts: a file was kept aside',body:dmg+(n?'':'Nothing was sent. ')+'You can delete the kept-aside file now, or keep it (it is not looked at again).',buttons:[{label:'Keep it',value:null},{label:'Delete the kept-aside file',value:'del'}]});if(w&&w.value==='del'&&bridge.heldDiscardBad){const r=await bridge.heldDiscardBad().catch(()=>null);toast(r&&r.ok?'The kept-aside file was deleted.':'The kept-aside file could not be deleted.',4200);}if(!n)return;}
+  const v=await askDialog({title:'Scheduled prompts were held behind a door',
+    body:(n===1?'1 scheduled prompt was':n+' scheduled prompts were')+' held behind a door. Doors are gone. Nothing was sent. Send goes one by one through the schedules (Pause all and each schedule\'s limit still apply). Decide later keeps them in Settings > Schedules.',
+    lines,buttons:[{label:'Decide later',value:null},{label:'Discard ('+n+')',value:'discard'},...(sendable?[{label:'Send ('+sendable+')',value:'send'}]:[])]});
+  if(v&&v.value==='send')await heldAct('send');
+  else if(v&&v.value==='discard')await heldAct('discard');
 }
-async function toggleDoor(id,btn){
-  const a=byId(id); if(!a||a.parent||!bridge||!bridge.setDoor)return;
-  const cur=doorOf(a);
-  if(!cur.closed&&!cur.held)return closeDoor(a);
-  if(!cur.closed){ /* an open door that still holds runs */
-    const v=await askHeld(a,btn,false);
-    if(!v||!v.value)return;
-    if(v.value==='close')return closeDoor(a);
-    return sendOrDiscard(a,v.value,cur.held);
-  }
-  let how=null;
-  if(cur.held){const v=await askHeld(a,btn,true);if(!v||!v.value)return;how=v.value;} /* Keep closed */
-  const r=await bridge.setDoor(a.id,false).catch(()=>null);
-  if(!r||!r.ok){toast('Could not open the door.',4200).classList.add('err');return;}
-  DOORS[a.id]={closed:false,held:r.held||0};scheduleRender();
-  const stays=doorRemoteOff.delete(a.id)?' Remote control stays off; turn it on again from the chat if you need it.':'';
-  announce(a.name+': door open.'+stays);
-  if(stays)toast(esc(a.name)+': door open.'+esc(stays),5200);
-  if(how)await sendOrDiscard(a,how,cur.held);
+let heldRefreshing=false;
+/* the list's `canSend` and sessions change without a held-prompt change (a session opened again, a schedule deleted): Settings reads it again whenever it is painted */
+async function heldRefresh(){
+  if(heldRefreshing||!bridge||!bridge.heldList||!HELD.items.length)return;
+  heldRefreshing=true;
+  try{const l=heldClean(await bridge.heldList());if(JSON.stringify(l.items)!==JSON.stringify(HELD.items)){HELD.items=l.items;renderSchedSettings();}}catch(e){}finally{heldRefreshing=false;}
 }
-function setRoomClosed(r,closed,quiet){
-  if(!!r.closed===!!closed)return;
-  r.closed=!!closed;
-  const ag=agents.find(x=>!x.parent&&x.room===r.id);
-  if(ag&&ag.live&&bridge&&bridge.setRoomClosed)bridge.setRoomClosed(ag.id,!!closed);
-  if(!quiet){doorAnim=r.id;renderAll();}
-}
-let doorAnim=null;
-function renderDoorBar(){
-  const b=$('doorBar'); if(!b)return;
-  const vis_=ROOMS.filter(r=>roomShown(r)&&onScreen(r)&&(ui.ws==='all'||ui.ws===r.id)&&agents.some(a=>!a.parent&&a.room===r.id));
-  const open=vis_.filter(r=>!r.closed).length, shut=vis_.length-open;
-  b.hidden=vis_.length<2||ui.view!=='office';
-  $('closeAll').disabled=!open; $('openAll').disabled=!shut;
+function heldSettingsHTML(){
+  if(!HELD.items.length)return '';
+  return '<div class="ss-group" id="heldBefore"><div class="ss-head"><b>Held from before the update</b><small>Scheduled prompts that were held behind a door. Nothing is sent until you choose.</small></div>'
+    +heldGroups().map(g=>{
+      const ids=g.items.map(i=>esc(i.id)).join(','), can=g.items.filter(i=>i.canSend).map(i=>esc(i.id)).join(',');
+      return `<div class="ss-row held-row" data-held-group="${esc(g.sid)}"><span class="ss-main"><b>${esc(g.name)}</b> · ${g.items.length} held`
+        +g.items.slice(0,5).map(i=>`<small class="held-line">${esc(heldLine(i.prompt))}${i.canSend?'':' · only Discard ('+esc(i.why||'it cannot be sent')+')'}</small>`).join('')
+        +(g.items.length>5?`<small class="held-line">and ${g.items.length-5} more</small>`:'')+'</span>'
+        +(can?`<button class="btn" type="button" data-ss="held-send" data-ids="${can}">Send</button>`:'')
+        +`<button class="btn" type="button" data-ss="held-discard" data-ids="${ids}">Discard</button></div>`;}).join('')+'</div>';
 }
 /* The folder/workspace of a room: the key its MCP extras are stored under (same key as the saved folder list). */
 function folderOfRoom(roomId){
@@ -1429,20 +1308,20 @@ function roomHTML({r,mains,all,rolled},d,aw,cap){
   const dots=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?`<span class="rd${k==='waiting'?' attn':(k==='done'||k==='idle')?' calm':''}" title="${n} ${LABELS[k]}"><span class="dot ${k}"></span>${n}<span class="rdw"> ${LABELS[k].toLowerCase()}</span></span>`:''}).join(''); /* spec 001 FR-037: "5 working" when the header has room */
   /* spec 052 FR-006: the counts in words too (screen readers, and a tooltip for colour-blind users) */
   const dotsLabel=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?n+' '+LABELS[k].toLowerCase():'';}).filter(Boolean).join(', ');
-  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="${esc(wordOf('door-close'))} ${esc(r.name)}" title="${esc(wordOf('door-title-prefix'))}: ${esc(r.name)} ${esc(wordOf('door-plate-suffix'))}">${doorSvg(true)}</button><span class="room-name" title="${esc(r.name)}\n${esc(r.path)}${(()=>{const u=roomAiu(r);return u?'\n'+esc(u.long):'';})()}">${esc(r.name)}</span>${renFolderBtn(r,true)}${al.siren&&!SIM_QUIET_HEADS.has('siren')?SIREN():''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(showPath(r.path))}</span>${(()=>{const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);return u?`<button class="room-aiu" type="button" data-costview="${esc(r.id)}" title="${esc(u.tip+'\nClick for the cost by folder.')}">${esc(u.long)}</button>`:'';})()}${dotsLabel?`<span class="room-dots" role="img" aria-label="${esc(dotsLabel)}" title="${esc(dotsLabel)}">${dots}</span>`:`<span class="room-dots" aria-hidden="true">${dots}</span>`}${bridge&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.removeFolder&&!demoOn?`<button class="room-new room-more" type="button" data-foldermenu="${esc(r.id)}" title="Folder actions: new session, schedules, rename, hide, remove" aria-label="Folder actions for ${esc(r.name)}" aria-haspopup="menu">⋯</button>`:''}${roomSchedChip(r)}${bridge&&bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT()}</div>`;
+  const head=`<div class="room-head"><span class="room-name" title="${esc(r.name)}\n${esc(r.path)}${(()=>{const u=roomAiu(r);return u?'\n'+esc(u.long):'';})()}">${esc(r.name)}</span>${renFolderBtn(r,true)}${al.siren&&!SIM_QUIET_HEADS.has('siren')?SIREN():''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(showPath(r.path))}</span>${(()=>{const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);return u?`<button class="room-aiu" type="button" data-costview="${esc(r.id)}" title="${esc(u.tip+'\nClick for the cost by folder.')}">${esc(u.long)}</button>`:'';})()}${dotsLabel?`<span class="room-dots" role="img" aria-label="${esc(dotsLabel)}" title="${esc(dotsLabel)}">${dots}</span>`:`<span class="room-dots" aria-hidden="true">${dots}</span>`}${bridge&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.removeFolder&&!demoOn?`<button class="room-new room-more" type="button" data-foldermenu="${esc(r.id)}" title="Folder actions: new session, schedules, rename, hide, remove" aria-label="Folder actions for ${esc(r.name)}" aria-haspopup="menu">⋯</button>`:''}${roomSchedChip(r)}${bridge&&bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT()}</div>`;
   if(d==='full'){
     const gap=6, pad=12;
     const sw=shutW(r,rolled), widths=mains.map(a=>unitWidth(a,d)).concat(sw?[sw]:[]); /* FR-053: the squeezed group sits in the desks' row */
     const basis=Math.min(aw,widths.reduce((x,y)=>x+y,0)+gap*(widths.length-1)+2*pad+30);
     const min=Math.max(DENS.full.cw,...widths)+2*pad+30;
-    return `<section class="room" data-key="room:${esc(r.id)}" data-tint="${r.tint}"${alAttr} style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Folder ${esc(r.name)}${alLabel}">${head}
+    return `<section class="room" data-room="${esc(r.id)}" data-key="room:${esc(r.id)}" data-tint="${r.tint}"${alAttr} style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Folder ${esc(r.name)}${alLabel}">${head}
       <div class="units">${roomArt()}${mains.map(a=>unitHTML(a,d)).join('')}${shuttersHTML(r,rolled)}</div></section>`;
   }
   /* compact: the room is a floor-plan zone with `cols` desk columns */
   const D=DENS[d], sw=shutW(r,rolled), over=2*D.rp+4+(sw?sw+D.gap:0); /* FR-053: the room's width counts the squeezed group */
   const cols=Math.max(1,Math.min(mains.length||1,cap,sw?Math.floor((aw-over+D.gap)/(D.cw+D.gap)):Infinity)); /* and its columns still get a whole cell each */
   const basis=cols*D.cw+(cols-1)*D.gap+over, min=D.cw+over;
-  return `<section class="room" data-key="room:${esc(r.id)}" data-tint="${r.tint}"${alAttr} style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Folder ${esc(r.name)}${alLabel}">${head}
+  return `<section class="room" data-room="${esc(r.id)}" data-key="room:${esc(r.id)}" data-tint="${r.tint}"${alAttr} style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Folder ${esc(r.name)}${alLabel}">${head}
     ${sw?`<div class="units has-shut">${roomArt()}<div class="units-in" style="--cols:${cols}">${mains.map(a=>unitHTML(a,d)).join('')}</div>${shuttersHTML(r,rolled)}</div>`:`<div class="units" style="--cols:${cols}">${roomArt()}${mains.map(a=>unitHTML(a,d)).join('')}</div>`}</section>`;
 }
 /* ---- keyed DOM updates: patch only what changed, so desk animations keep running ---- */
@@ -1523,8 +1402,7 @@ function probeSet(probe,html){
 function chooseLayout(sizing,aw,ah){
   const probe=$('probe'); probe.style.width=aw+'px';
   GROW=0; HX=0; setGrow(probe,0); /* a grown render leaves GROW (and the helper level) on: the plain candidates are probed with plain text and compact tiles */
-  const openOnly=sizing.filter(m=>!m.r.closed);
-  if(!openOnly.length){probe.innerHTML=svgHollow(stageHTML(sizing,'card',aw,1));probe.dataset.d='card';const ok=probe.scrollHeight<=ah+1;probe.innerHTML='';probePrev=null;return {d:'card',hcap:1,cap:1,fit:ok,boost:[],heads:false};}
+  if(!sizing.length){probe.innerHTML=svgHollow(stageHTML(sizing,'card',aw,1));probe.dataset.d='card';const ok=probe.scrollHeight<=ah+1;probe.innerHTML='';probePrev=null;return {d:'card',hcap:1,cap:1,fit:ok,boost:[],heads:false};}
   /* spec 001 FR-023 (change 2026-10-23): a layout fits when the office fits the floor AND every room header holds its parts. A layout that
      fits only by size is kept as the fallback (soft), so a header that cannot fit anywhere never sends the office into scroll mode. */
   const sizeFits=()=>probe.scrollHeight<=ah+1&&probe.scrollWidth<=aw+1;
@@ -1543,7 +1421,7 @@ function chooseLayout(sizing,aw,ah){
       lastAny={d,hcap,cap:0,fit:false,boost:[],side:!!side};continue;
     }
     const D=DENS[d], over=2*D.rp+4;
-    const maxCap=Math.max(1,Math.min(Math.max(...openOnly.map(m=>m.mains.length)),Math.floor((aw-over+D.gap)/(D.cw+D.gap))));
+    const maxCap=Math.max(1,Math.min(Math.max(...sizing.map(m=>m.mains.length)),Math.floor((aw-over+D.gap)/(D.cw+D.gap))));
     let best=null, bySize=null, any=null;
     for(let c=maxCap;c>=1;c--){
       probeSet(probe,stageHTML(sizing,d,aw,c));
@@ -1569,20 +1447,20 @@ function chooseLayout(sizing,aw,ah){
      than `roomy`. Never after card/mini/micro (15 agents lay out as before) or with a forced density. */
   /* spec 001 FR-091 (issue 697), the helper step: first, expanded helper cards (level 2, then 1) while the grown desks stay at least HX_MIN_F; when
      neither fits, today's grown step below runs exactly. Only after a fitting full or roomy (DurbarProbe.stepRuns), never for card, mini or micro. */
-  if(HXC&&!HX_OFF&&window.DurbarProbe.stepRuns({d:res&&res.d,forced:FORCE_DENSITY,fit:res&&res.fit,helpers:openOnly.some(m=>m.mains.some(a=>helpersOf(a).length>0))})){
-    const hx=window.DurbarProbe.helperStep((L,f)=>{HX=L;return growSearch(sizing,aw,ah,openOnly,f);},window.DurbarHelperCard.HX_MIN_F);
+  if(HXC&&!HX_OFF&&window.DurbarProbe.stepRuns({d:res&&res.d,forced:FORCE_DENSITY,fit:res&&res.fit,helpers:sizing.some(m=>m.mains.some(a=>helpersOf(a).length>0))})){
+    const hx=window.DurbarProbe.helperStep((L,f)=>{HX=L;return growSearch(sizing,aw,ah,f);},window.DurbarHelperCard.HX_MIN_F);
     HX=0;
     if(hx)res={d:'roomy',hcap:3,cap:hx.g.c,fit:true,boost:[],grow:hx.g.f,heads:res.heads,hx:hx.level};
   }
   if(res&&res.fit&&!res.hx&&!FORCE_DENSITY&&(res.d==='full'||res.d==='roomy')){
-    const g=growSearch(sizing,aw,ah,openOnly,GR.MIN+GR.STEP);
+    const g=growSearch(sizing,aw,ah,GR.MIN+GR.STEP);
     if(g)res={d:'roomy',hcap:3,cap:g.c,fit:true,boost:[],grow:g.f,heads:res.heads};
   }
   /* Leftover floor space (also what closed rooms free up): give the agents with the most helpers more of them, one step up
      (1 -> 3, 2 -> 3, 3 -> 6 shown before "+N more"), attention first, while the layout still fits. */
   if(res&&res.fit){
     const up={1:3,2:3,3:6}[res.hcap]||res.hcap;
-    const many=openOnly.flatMap(m=>m.mains).filter(a=>helpersOf(a).length>res.hcap+1).sort((x,y)=>Math.min(prio(x),...helpersOf(x).map(prio))-Math.min(prio(y),...helpersOf(y).map(prio))||helpersOf(y).length-helpersOf(x).length);
+    const many=sizing.flatMap(m=>m.mains).filter(a=>helpersOf(a).length>res.hcap+1).sort((x,y)=>Math.min(prio(x),...helpersOf(x).map(prio))-Math.min(prio(y),...helpersOf(y).map(prio))||helpersOf(y).length-helpersOf(x).length);
     HCAP=res.hcap; LIVE_SIDE=!!res.side; probe.dataset.d=res.d; GROW=res.grow?1:0; HX=res.hx||0; setGrow(probe,res.grow||0);
     for(const a of many){
       HBOOST.set(a.id,up); probe.style.height='auto';
@@ -1595,9 +1473,9 @@ function chooseLayout(sizing,aw,ah){
 }
 /* FR-042: for each column count (most first), the largest f at which the office fits; the stage HTML goes into the probe once per column
    count (probeSet sets the column change in place) and each f only changes --gf on the probe. Returns {c, f, h} or null. */
-function growSearch(sizing,aw,ah,openOnly,lo){
+function growSearch(sizing,aw,ah,lo){
   const probe=$('probe'), D=DENS.roomy, over=2*D.rp+4;
-  const maxCap=Math.max(1,Math.min(Math.max(...openOnly.map(m=>m.mains.length)),Math.floor((aw-over+D.gap)/(D.cw+D.gap))));
+  const maxCap=Math.max(1,Math.min(Math.max(...sizing.map(m=>m.mains.length)),Math.floor((aw-over+D.gap)/(D.cw+D.gap))));
   HCAP=3; HBOOST=new Map(); LIVE_SIDE=false; GROW=1; probe.dataset.d='roomy'; probe.style.height='auto';
   const cols=[]; for(let c=maxCap;c>=1;c--)cols.push(c);
   let cur=0;
@@ -1672,7 +1550,7 @@ function renderOffice(){
   }
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
   const sizing=lastSizing=sizingModel(model); /* what chooseLayout is given (the hook below reads it) */
-  const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),THEME.themeIdForCache(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),curFloorId(),allFloorsView(),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]]),(m.rolled||[]).map(x=>[x.a.id,x.k]),!!ui.expanded['shut:'+m.r.id]])]);
+  const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),THEME.themeIdForCache(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),curFloorId(),allFloorsView(),sizing.map(m=>[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]]),(m.rolled||[]).map(x=>[x.a.id,x.k]),!!ui.expanded['shut:'+m.r.id]])]);
   if(key!==layoutKey||!layout){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
   HCAP=layout.hcap; HBOOST=new Map(layout.boost); LIVE_SIDE=!!layout.side; GROW=layout.grow?1:0; HX=layout.hx||0; /* a cached layout skips chooseLayout: restore the helper level too */
   const parts=stageParts(model,layout.d,aw,layout.cap);
@@ -1694,14 +1572,13 @@ function renderOffice(){
   if(layout.grow){stage.querySelectorAll('.desk.card').forEach(setGrownCols);stage.querySelectorAll('.desk.card .intent').forEach(fitLines);stage.querySelectorAll('.desk.card[data-gc] .gx-t').forEach(fitClamp);} /* FR-043, FR-047: columns, then whole lines, the newest in view */
   floor.classList.toggle('scrolls',!layout.fit);
   spreadOffice(stage,!!layout.fit); /* FR-086, FR-087: the spare height, after everything else is drawn */
-  if(doorAnim){const el=stage.querySelector(`[data-door="${CSS.escape(doorAnim)}"]`),box=el&&(el.closest('.room')||el);if(box&&!REDUCED){box.classList.add('enter');setTimeout(()=>box.classList.remove('enter'),420);}doorAnim=null;}
 }
 
 /* spec 001 FR-086, FR-087 (owner report, issue 619): a drawn office that fits and is shorter than the floor used to leave all the spare
    height below its last row. The rows of rooms grow first (every room row by the same whole px, at most SPREAD_CAP of the shortest; the
    CSS puts half of it under the header and half under the desks), then the rest becomes even gaps above, between and below the rows
    (DurbarProbe.spreadRows, pure). Measured from the layout (offsetTop and the computed border-box height), not the screen box, so a room's
-   door animation (a transform) does not change it. The layout search never sees it: #probe has no data-spread. */
+   entrance animation (a transform) does not change it. The layout search never sees it: #probe has no data-spread. */
 const SPREAD_CAP=0.2;
 function spreadOffice(stage,on){
   stage.style.removeProperty('--rx'); stage.style.removeProperty('padding-top'); stage.style.removeProperty('row-gap'); delete stage.dataset.spread;
@@ -1727,10 +1604,8 @@ const USE_STEPS=['no-tok','no-unit','short','no-cost'];
 function fitUsage(root){
   for(const u of root.querySelectorAll('.desk .use')){
     u.classList.remove(...USE_STEPS);
-    const cost=u.querySelector('.aiu'), tok=u.querySelector('.tok');
-    /* spec 017 FR-007 (2026-10-23): a token count cut inside itself ("1" of "14k tok") reads as a wrong number, so it does not fit either;
-       with cabins only (FR-027: Open office lays out exactly as before) */
-    const fits=()=>{if(signsOn()&&tok&&tok.getClientRects().length&&tok.scrollWidth>tok.clientWidth+0.5)return false;if(!cost||!cost.getClientRects().length)return u.scrollWidth<=u.clientWidth+0.5;const c=cost.getBoundingClientRect(),b=u.getBoundingClientRect();return u.scrollWidth<=u.clientWidth+0.5&&c.right<=b.right+0.5&&c.left>=b.left-0.5;};
+    const cost=u.querySelector('.aiu');
+    const fits=()=>{if(!cost||!cost.getClientRects().length)return u.scrollWidth<=u.clientWidth+0.5;const c=cost.getBoundingClientRect(),b=u.getBoundingClientRect();return u.scrollWidth<=u.clientWidth+0.5&&c.right<=b.right+0.5&&c.left>=b.left-0.5;};
     for(const st of USE_STEPS){if(fits())break;u.classList.add(st);}
   }
   /* the same for room headers: a name cut (even by a pixel, which shows an ellipsis) while its path still shows hides the path (also in the tooltip) */
@@ -1864,14 +1739,13 @@ function renderAll(){
   AMB_ID=pickAmbulanceId();
   syncDesks(); /* spec 001 FR-034: who walks to the Boss and who comes back */
   prepareWalkers();
-  const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more||ae.dataset.door||ae.dataset.lsort||ae.dataset.ren), inPanel=ae&&ae.closest&&ae.closest('#panel'), scope=ae&&ae.closest?(ae.closest('#list')?'#list ':ae.closest('#stage')?'#stage ':''):''; /* FR-173: read before the render detaches it */
-  const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.more?'data-more':ae.dataset.door?'data-door':ae.dataset.lsort?'data-lsort':ae.dataset.ren?'data-ren':''); /* spec 052 FR-064: a sort header keeps focus too */
+  const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more||ae.dataset.foldermenu||ae.dataset.lsort||ae.dataset.ren), inPanel=ae&&ae.closest&&ae.closest('#panel'), scope=ae&&ae.closest?(ae.closest('#list')?'#list ':ae.closest('#stage')?'#stage ':''):''; /* FR-173: read before the render detaches it */
+  const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.more?'data-more':ae.dataset.foldermenu?'data-foldermenu':ae.dataset.lsort?'data-lsort':ae.dataset.ren?'data-ren':''); /* spec 052 FR-064: a sort header keeps focus too; spec 017: so does a room's ⋯ button (it was the door button's place) */
   renderStats();
   updateFloorAttention();
   renderLift(); /* spec 092 FR-006, FR-008: before the office measures its width */
   announceFilterNote();
   if(ui.view==='office')renderOffice(); else{renderFilterNote();renderList();}
-  renderDoorBar();
   syncWalkers();
   /* spec 052 FR-173: look in the view the focus was in. The office desks stay in the page (hidden) while the list shows, with the same data-id, so a document-wide lookup found the hidden desk and the focus fell to the page. */
   if(id&&!inPanel){const n=document.querySelector(`${scope}[${key}="${CSS.escape(id)}"]`); if(n&&ae!==n)n.focus({preventScroll:true});}
@@ -3437,11 +3311,6 @@ document.addEventListener('click',e=>{
   if(so){const blk=so.closest('.subblk'),id=blk&&blk.dataset.sub,par=ui.selected&&byId(ui.selected),card=par&&liveById(par.id+':'+id);if(card)openPanel(card.id,false);return;}
   const pc=e.target.closest('[data-parentchat]');
   if(pc){const cur=byId(ui.selected);if(cur&&cur.parent)openPanel(cur.parent,false);return;}
-  const dset=e.target.closest('[data-doorset]'); if(dset){toggleDoor(dset.dataset.doorset,dset);return;} /* spec 017 FR-015: before the desk's own click */
-  const dr=e.target.closest('[data-door]'); if(dr){const r=ROOMS.find(x=>x.id===dr.dataset.door);if(r)setRoomClosed(r,!r.closed);return;}
-  if(e.target.closest('#closeAll,#openAll')){const shut=!!e.target.closest('#closeAll');
-    ROOMS.filter(r=>roomShown(r)&&onScreen(r)&&(ui.ws==='all'||ui.ws===r.id)&&agents.some(a=>!a.parent&&a.room===r.id)).forEach(r=>setRoomClosed(r,shut,true));
-    layoutKey='';renderAll();return;}
   if(e.target.closest('[data-fn-all]')){const pill=document.querySelector(`.stat[data-k="${ui.status}"]`);if(pill)pill.click();else{ui.status=null;renderAll();}return;} /* FR-180: Show all is the pill's own toggle */
   const st=e.target.closest('.stat[data-k]'); if(st){const k=st.dataset.k;ui.status=ui.status===k?null:k;renderAll();const n=document.querySelector(`.stat[data-k="${k}"]`);if(n)focusIn(n);return;}
   const rn=e.target.closest('[data-ren]'); if(rn){const a=byId(rn.dataset.ren);if(a)startSessionEdit(a,rn.closest('#list')?'list':'desk','pencil');return;} /* spec 059 FR-020 item 2: before [data-id] */
@@ -3522,9 +3391,9 @@ document.addEventListener('keydown',e=>{
     else if(t.matches('.ren[data-ren]')){a=byId(t.dataset.ren);surf=t.closest('#list')?'list':'desk';from='pencil';}
     else if(t.closest('#prev .prev-row[data-pg="cli"]')){a=byId(ui.selected);surf='prev';from=t.matches('.ren')?'pencil':'row';pid=t.closest('.prev-row').dataset.pk;}
     if(a&&surf&&startSessionEdit(a,surf,from,pid)){e.preventDefault();return;}
-    const rid=t.matches('[data-door]')?t.dataset.door:t.matches('[data-foldermenu]')?t.dataset.foldermenu:t.matches('.ren[data-renfolder]')?t.dataset.renfolder:'';
+    const rid=t.matches('[data-foldermenu]')?t.dataset.foldermenu:t.matches('.ren[data-renfolder]')?t.dataset.renfolder:'';
     const fr=rid&&ROOMS.find(x=>x.id===rid);
-    if(fr&&startFolderEdit(fr,t.closest('#foldersPop')?'fp':'room',t.matches('.ren')?'pencil':'door')){e.preventDefault();return;}
+    if(fr&&startFolderEdit(fr,t.closest('#foldersPop')?'fp':'room',t.matches('.ren')?'pencil':'menu')){e.preventDefault();return;}
   }
   if(e.key==='Escape'){
     if($('inboxDlg')){closeInbox();return;}
@@ -3552,7 +3421,7 @@ document.addEventListener('keydown',e=>{
   /* spec 052 FR-043: ? opens the keyboard shortcut sheet, outside text fields and dialogs */
   if(e.key==='?'&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.isComposing&&!(e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"],[role="dialog"],[role="menu"]'))&&!modalOpen()){e.preventDefault();openKbdHelp();return;}
   if((e.key==='n'||e.key==='N')&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.isComposing&&!(e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"],[role="dialog"],[role="menu"]'))&&!modalOpen()){e.preventDefault();openNextNeedsMe();return;}
-  /* spec 001 FR-019: arrow keys move between desks, helpers and door plates; left/right in reading order, up/down to the nearest one in that direction */
+  /* spec 001 FR-019: arrow keys move between desks and helpers; left/right in reading order, up/down to the nearest one in that direction */
   if(/^Arrow(Left|Right|Up|Down)$/.test(e.key)&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&e.target.matches&&e.target.matches(DESK_NAV)){
     const all=[...document.querySelectorAll(DESK_NAV)].filter(x=>x.getClientRects().length), i=all.indexOf(e.target);
     let next=null;
@@ -3825,8 +3694,6 @@ function palActions(){
     {label:'Defaults for new sessions',kw:'defaults agent app mode permission model new session',run:()=>toggleDefaults(true),ok:()=>palUsable('defaultsBtn')},
     {label:'Detail level: Simple',kw:'simple detail beginner view',run:()=>setDetail('simple')},
     {label:'Detail level: Expert',kw:'expert detail developer view',run:()=>setDetail('expert')},
-    {label:'Collapse all folders',kw:'doors close collapse compact plates rooms',run:palClick('closeAll'),ok:()=>palUsable('closeAll')},
-    {label:'Expand all folders',kw:'doors open expand rooms',run:palClick('openAll'),ok:()=>palUsable('openAll')},
     {label:'Back to the previous chat',kw:'previous last recent chat toggle switch',keys:['Ctrl','`'],run:openPreviousChat,ok:()=>!!previousChat()},
     {label:SIMPLE?'Show or hide earlier chats':'Show or hide previous sessions',kw:'previous earlier sessions chats history resume list collapse expand',keys:keyLabels(PREV_KEYS),run:togglePrevByKey,ok:()=>{const b=$('prevBtn'),x=$('prev');return !!b&&!!x&&!x.hidden&&!vsViewing;}}, /* spec 006 FR-036 */
     {label:'Notes',hint:'Saved messages and ideas of this folder',kw:'notes saved messages ideas drawer insert keep',keys:keyLabels(NOTES_KEYS),run:()=>toggleNotes(byId(ui.selected)),ok:()=>!!ui.selected&&!!$('notesDrawer')&&notesOn(byId(ui.selected))}, /* spec 083 */
@@ -3996,7 +3863,7 @@ function openKbdHelp(back){
     [keyLabels(PREV_KEYS),SIMPLE?'Show or hide earlier chats in a chat':'Show or hide previous sessions in a chat'], /* spec 006 FR-036 */
     [keyLabels(NOTES_KEYS),'Show or hide the Notes drawer in a chat'], /* spec 083 FR-026 */
     [['←','→','↑','↓'],'Move between desks'],
-    [['F2'],'Rename the focused session or folder (Fn+F2 on a Mac)'], /* spec 059 FR-024: in place, on a desk, row, door or chat title */
+    [['F2'],'Rename the focused session or folder (Fn+F2 on a Mac)'], /* spec 059 FR-024: in place, on a desk, row, folder button or chat title */
     [['Esc'],'Back, or close'],
     [keyLabels(['mod',IS_MAC?'⌫':'Backspace']),'Back to the office from a chat, outside text (in a text box it deletes)'], /* spec 074 FR-020 */
     [['?'],'This list'],
@@ -4170,7 +4037,7 @@ async function renderAwayStrip(){
 }
 $('endAllBtn').onclick=()=>endAllSessions($('topMoreBtn'));
 if($('sendSeveralBtn'))$('sendSeveralBtn').onclick=()=>sendToSeveral($('topMoreBtn'));
-const DESK_NAV='#stage .desk, #stage .helper, #stage .plate';
+const DESK_NAV='#stage .desk, #stage .helper';
 $('wsFilter').addEventListener('change',e=>{ui.ws=e.target.value;renderAll();});
 function setView(v){ui.view=v;document.body.classList.toggle('list-mode',v==='list');
   $('vOffice').setAttribute('aria-pressed',String(v==='office'));$('vList').setAttribute('aria-pressed',String(v==='list'));renderAll();}
@@ -4189,6 +4056,7 @@ document.addEventListener('scroll',()=>INL().follow(),{capture:true,passive:true
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
 const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='long'?'long':qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':qs.get('simreply')==='secrets'?'secrets':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', sched:qs.get('simsched')==='1',ws:qs.get('simws')==='1', schedFire:Math.max(0,Math.min(600,parseInt(qs.get('simschedfire')||'0',10)||0)), seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), edits:qs.get('simedits')==='1', floors:qs.get('simfloors')==='1'||qs.get('simfloors')==='ground', floorsGround:qs.get('simfloors')==='ground', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
+try{localStorage.removeItem('durbar.doorsigns');}catch(e){} /* spec 017 FR-034: the preference of the removed Office layout row is deleted on the first start */
 const BP = window.DurbarBrowserPane; /* spec 080 T015: the session browser's tabs and bar; it talks to the real preload API (main refuses it outside the app's own page) */
 /* spec 080 FR-025d (Q3): a hidden session's page dialog brings that session's chat forward on its Browser tab, at most once per session until the user opens that chat themselves */
 const PULLED=new Set(); let pulling=false;
@@ -4249,8 +4117,6 @@ function overlaySync(){const c=coversBrowser(BP.paneRect());if(c)overlayOpen('do
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;
 const TINTS=['sage','blue','sand','clay'];
-const CLOSED_Q=(qs.get('closed')||'').split(',').filter(Boolean); /* dev/screenshots: ?closed=blog,infra-notes */
-ROOMS.forEach(r=>{if(CLOSED_Q.includes(r.name)||CLOSED_Q.includes(r.id))r.closed=true;});
 const hashN=str=>{let h=0;for(const c of str)h=(h*31+c.charCodeAt(0))>>>0;return h;};
 const lookFor=key=>{const h=hashN(key);return L(S.sk[h%5],S.hr[(h>>>3)%6],['bun','short','long','curly'][(h>>>6)%4],S.sh[(h>>>9)%7],(h>>>12)%3===0);};
 const liveById=id=>LIVE.agents.find(a=>a.id===id);
@@ -4313,8 +4179,6 @@ const kindTag=a=>{const r=a&&a.parent?byId(a.parent):a;if(!r||!r.live||!r.info)r
 /* spec 054 FR-007: remote control on = text in the card's existing role line and its accessible name (no new element, no size change) */
 const remoteTag=a=>a&&!a.parent&&a.remote?' · Remote':'';
 const remoteWords=a=>a&&!a.parent&&a.remote?', remote control on':'';
-/* spec 017 FR-005, FR-028 (review on PR 631): a door you closed is said in the desk's name on every desk, with what it holds */
-const doorWords=a=>{if(!a||a.parent||!doorShown(a))return '';const d=doorOf(a),h=d.held?d.held+' held':'';return d.closed?', door closed by you (do not disturb)'+(h?', '+h:''):h?', '+h:'';};
 const modeWords=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?', '+MODE_NAME[a.info.permMode]+(a.info.permMode==='allow'&&a.info.permRestored?' (restored)':''):'';
 /* spec 052 FR-065: Allow all is a small red "Allow all" text badge in the icon's slot (the words, not only a padlock); the other modes keep the icon */
 /* spec 052 FR-065: the list row says "Allow all" in a red badge (text=true); a desk card keeps the red icon, because a text badge
@@ -4623,7 +4487,7 @@ function addLiveAgent(info){
   if(liveById(info.id))return;
   if(window.DurbarFolderSetup&&!info.parent)setTimeout(()=>window.DurbarFolderSetup.check(info),0); /* spec 061 FR-001: new and saved folders, once each per run */
   let room=LIVE.rooms.find(r=>r.path===info.cwd);
-  if(!room){room={id:'r'+LIVE.rooms.length+':'+info.cwd,name:(info.label||info.roomName||info.name),folderName:(info.roomName||info.name),path:info.cwd,tint:TINTS[LIVE.rooms.length%4],floor:info.floor||'ground',hidden:!!info.hidden,closed:!!info.closed||CLOSED_Q.includes(info.roomName||info.name)};LIVE.rooms.push(room);}
+  if(!room){room={id:'r'+LIVE.rooms.length+':'+info.cwd,name:(info.label||info.roomName||info.name),folderName:(info.roomName||info.name),path:info.cwd,tint:TINTS[LIVE.rooms.length%4],floor:info.floor||'ground',hidden:!!info.hidden};LIVE.rooms.push(room);}
   let name=info.name; const dup=LIVE.agents.filter(x=>!x.parent&&x.room===room.id&&x.baseName===info.name).length; if(dup)name=info.name+' #'+(dup+1);
   LIVE.agents.push({id:info.id,name:SN().displayName(info.alias,safeMask(info.title)||undefined,name),alias:info.alias,folderLabel:name,title:safeMask(info.title)||undefined,baseName:info.name,role:info.role||roleFor(info),room:room.id,state:'idle',label:info.lazy?'Not started':null,task:info.lazy?(info.resumeLast?'Your last session here. It continues when you open it.':'Saved folder. A session starts with your first message.'):'Ready. Send a message to start.',
     look:lookFor(info.id),files:[],paused:false,live:true,info,usage:{calls:0,inT:0,outT:0,nano:0},usageText:'',turn:null,worked:false,pend:new Map(),settled:new Set(),grants:[]});
@@ -6237,7 +6101,7 @@ document.addEventListener('click',e=>{
   if(chip){e.stopPropagation();if(document.getElementById('modeMenu')){closeModeMenu();return;}const r=chip.getBoundingClientRect(),a=byId(ui.selected);if(a)openModeMenu(a,r.left,r.bottom+6,chip);return;}
   if(!e.target.closest('#modeMenu,[data-act="ro-ask"]'))closeModeMenu(); /* spec 003 FR-095: the Read-only denial's button toggles the menu itself */
 },true);
-/* spec 006 FR-022: folder actions on a room's header (right-click, or the context-menu key on its door), same menu element as the mode menu.
+/* spec 006 FR-022: folder actions on a room's header (right-click on it, or its ⋯ button), same menu element as the mode menu.
    spec 033 FR-024 (issue 590): with two or more floors, "Move to floor ▸" opens a second level in the same element (‹ Back, one radio
    item per floor, the current one ticked and disabled); the move is the Floors panel's moveRoomToFloor, then an Undo toast. */
 function openFolderMenu(r,x,y,anchor){
@@ -6304,8 +6168,8 @@ async function moveFolderByMenu(r,floorId,anchor){
 }
 document.addEventListener('contextmenu',e=>{
   const h=e.target.closest('#stage .room-head');
-  if(h&&!e.target.closest('.desk')){const door=h.querySelector('[data-door]'),r=door&&ROOMS.find(x=>x.id===door.dataset.door);
-    if(r&&bridge&&bridge.removeFolder&&!demoOn){e.preventDefault();const b=h.getBoundingClientRect();openFolderMenu(r,e.clientX||b.left+16,e.clientY||b.bottom,door);return;}}
+  if(h&&!e.target.closest('.desk')){const menuBtn=h.querySelector('[data-foldermenu]'),r=menuBtn&&ROOMS.find(x=>x.id===menuBtn.dataset.foldermenu);
+    if(r&&bridge&&bridge.removeFolder&&!demoOn){e.preventDefault();const b=h.getBoundingClientRect();openFolderMenu(r,e.clientX||b.left+16,e.clientY||b.bottom,menuBtn);return;}}
   /* spec 033 FR-024: in the List view the Folder cell opens the folder menu of that row's folder; the rest of the row keeps the agent's menu */
   const lf=e.target.closest('#list .lrow[data-id] .lfold');
   if(lf&&bridge&&bridge.removeFolder&&!demoOn){const a=byId(lf.closest('.lrow').dataset.id),rr=a&&roomOf(a);if(rr&&ROOMS.includes(rr)){e.preventDefault();const b=lf.getBoundingClientRect();openFolderMenu(rr,e.clientX||b.left+8,e.clientY||b.bottom,lf.closest('.lrow'));return;}}
@@ -6887,16 +6751,10 @@ function updateRemoteUi(a){
 }
 const remoteBack=()=>$('moreBtn')||$('panelTitle');
 let remoteBusy=false;
-function doorClosedToast(a){
-  const t=toastAction(esc(a.name)+': the door is closed (Do not disturb), so remote control stays off. Open the door first.','Open the door',()=>toggleDoor(a.id,remoteBack()),8000);
-  if(t)t.classList.add('err');
-}
 async function remoteOn(a){
   /* spec 054 FR-011: never together with Allow all (main refuses too); say why before asking anything */
   if(a&&a.info&&a.info.permMode==='allow'){toast('Remote control is off in Allow all: anyone steering this session on '+esc(svc(a).name)+' could make it run commands without asking you. Switch '+esc(a.name)+' to Ask first, then turn it on.',7000).classList.add('err');return;}
   if(!canRemote(a)||remoteBusy||a.remote)return;
-  /* spec 054 FR-040, spec 017 FR-027 (review on PR 631): a door you closed refuses remote control; offer to open it right here */
-  if(doorOf(a).closed){doorClosedToast(a);return;}
   const S=svc(a);
   const r=await askDialog({title:'Control this session from '+S.name+'?',
     body:'Durbar turns on remote control for this session. Its messages are sent to '+S.name+', so you can follow and steer it from '+S.host+' and '+S.mobile+'. Anyone who can see this session on '+S.name+' can steer it.',
@@ -6906,7 +6764,6 @@ async function remoteOn(a){
   remoteBusy=true; let res;
   try{res=await bridge.setRemote(a.id,true);}catch(e){res={ok:false,error:String(e&&e.message||e)};}finally{remoteBusy=false;}
   if(res&&res.cancelled)return; /* spec 054 FR-011: the user said no in the main process's own confirmation */
-  if(res&&!res.ok&&doorOf(a).closed){doorClosedToast(a);return;}
   if(!res||!res.ok){toast('Could not turn on remote control: '+esc(res&&res.error||'unknown error'),6000).classList.add('err');return;}
   a.remote={url:typeof res.url==='string'?res.url:'',steerable:res.steerable!==false,visibility:res.visibility||''};
   updateRemoteUi(a);
@@ -7352,17 +7209,20 @@ function renderSchedSettings(){
   const groups=rooms.map(r=>({r,ss:schedulesOf(r)})).filter(g=>g.ss.length);
   const without=rooms.filter(r=>!schedulesOf(r).length);
   host.innerHTML=`<label class="fp-pause"><input type="checkbox" id="schedPauseAllSet"${SCHED.pausedAll?' checked':''}> Pause all schedules</label>`
+    +heldSettingsHTML()
     +(groups.length?groups.map(({r,ss})=>`<div class="ss-group"><div class="ss-head"><b>${esc(r.name)}</b><small>${esc(r.path)}</small><button class="btn" type="button" data-ss="open" data-room="${esc(r.id)}" title="See this folder's schedules and add one">Schedules for this folder…</button></div>`
       +ss.map(s=>schedRow(s,'ss')).join('')+'</div>').join('')
       :'<p class="scr-note small">No schedules yet.</p>')
     +(without.length?`<div class="scr-tools"><label class="ss-add">Add a schedule to<select id="ssRoom">${without.map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label><button class="btn" type="button" data-ss="add">Add…</button></div>`:'');
   histPaint();histEnsure();
+  heldRefresh();
   renderSchedTop(); /* spec 044 FR-029: the section may be on screen as soon as it is painted */
 }
 document.addEventListener('click',async e=>{
   const b=e.target.closest('#schedSet [data-ss]');if(!b)return;
   const act=b.dataset.ss;
   if(act==='hist')return; /* the history toggle is handled by its own listener */
+  if(act==='held-send'||act==='held-discard'){const ids=(b.dataset.ids||'').split(',').filter(Boolean);if(ids.length)await heldAct(act==='held-send'?'send':'discard',ids);return;} /* spec 017 FR-031 */
   if(act==='open'){const r=ROOMS.find(x=>x.id===b.dataset.room);if(r)openSchedules(r);return;}
   if(act==='add'){const r=ROOMS.find(x=>x.id===$('ssRoom').value);if(r)openSchedules(r);return;}
   const s=SCHED.schedules.find(x=>x.id===b.dataset.id);if(!s)return;
@@ -7405,13 +7265,13 @@ async function undoCheckpoint(a,turn,btn){
   checkpointNote(a,Object.assign({id:a.id},u.undo));
 }
 if(bridge&&bridge.onCheckpoint)bridge.onCheckpoint(n=>{const a=n&&liveById(n.id);if(a)checkpointNote(a,n);});
-/* spec 017 FR-015..FR-017: doors the user closed, from main; a change redraws the desks (same sizes, so no new layout) */
-const setDoors=d=>{const o={};if(d&&typeof d==='object')for(const [k,v] of Object.entries(d))if(v&&typeof v==='object')o[k]={closed:v.closed===true,held:Number.isInteger(v.held)&&v.held>0?v.held:0};DOORS=o;scheduleRender();};
-if(bridge&&bridge.doorsList){bridge.doorsList().then(setDoors).catch(()=>{});if(bridge.onDoorsChanged)bridge.onDoorsChanged(setDoors);}
-/* review on PR 631: why Send all stopped (the runs stay held), and a run a full door could not keep: never silent */
-const STOP_WHY={'paused-all':'schedules are paused (Pause all)',paused:'its schedule is paused',cap:"its schedule reached its own limit",ended:'its session has ended',updating:'its agent app is updating',failed:'it could not be sent'};
-if(bridge&&bridge.onDoorsStopped)bridge.onDoorsStopped(p=>{const a=p&&byId(p.id);if(!a)return;const t=esc(a.name)+': Send all stopped because '+esc(STOP_WHY[p.why]||'it could not go now')+'. The rest stay held; use the door button to send or discard them.';toast(t,6000).classList.add('err');addNote(liveChat(a),t);});
-if(bridge&&bridge.onDoorsFull)bridge.onDoorsFull(p=>{const a=p&&byId(p.id);if(!a)return;const t='A scheduled prompt for '+esc(a.name)+' was not kept: its closed door already holds as many prompts as it can. Open the door to send or discard them.';toast(t,6000).classList.add('err');addNote(liveChat(a),t);});
+/* spec 017 FR-031: prompts held behind a door before the update: the list, the one notice, and why a Send stopped (never silent) */
+const HELD_STOP_WHY={'paused-all':'schedules are paused (Pause all)',paused:'its schedule is paused',cap:"its schedule reached its own limit",ended:'its session has ended',updating:'its agent app is updating',gone:'its schedule has gone',failed:'it could not be sent'};
+if(bridge&&bridge.heldList){
+  bridge.heldList().then(l=>{HELD=heldClean(l);renderSchedSettings();if(HELD.notice){let n=0;const go=()=>{if(!agents.length&&n++<20)return setTimeout(go,250);heldNotice();};go();}}).catch(()=>{});
+  if(bridge.onHeldChanged)bridge.onHeldChanged(l=>{HELD=heldClean(l);renderSchedSettings();});
+  if(bridge.onHeldStopped)bridge.onHeldStopped(p=>{const a=p&&p.id&&byId(p.id);const t=(a?esc(a.name)+': ':'')+'Send stopped because '+esc(HELD_STOP_WHY[p&&p.why]||'it could not go now')+'. The rest stay held in Settings > Schedules.';toast(t,6000).classList.add('err');});
+}
 /* spec 076 FR-203: a session started while Durbar could not read all of its agent app's organization policy: the advice, once */
 if(bridge&&bridge.onOrgNote){bridge.onOrgNote(p=>{if(p&&typeof p.text==='string'&&p.text)toast(esc(p.text.slice(0,300)),7000);});}
 if(bridge&&bridge.onRemoteOff){bridge.onRemoteOff(p=>{const id=typeof p==='string'?p:p&&p.id;const a=liveById(id);if(!a||!a.remote)return;a.remote=null;updateRemoteUi(a);
@@ -7515,16 +7375,15 @@ function startSessionEdit(a0,surface,from,pid){
 function focusAfterGone(how){
   if(how!=='gone')return;
   const ae=document.activeElement; if(ae&&ae!==document.body&&document.contains(ae))return;
-  const t=document.querySelector('#stage .room-head .door')||document.querySelector('#stage .desk[data-id]')||document.querySelector('#list button.lrow')||$('vOffice');
+  const t=document.querySelector('#stage .room-head [data-foldermenu]')||document.querySelector('#stage .desk[data-id]')||document.querySelector('#list button.lrow')||$('vOffice');
   if(t)focusIn(t);
 }
-/* A folder's display name edited in place ('room' = the room header or the closed plate, 'fp' = the Folders panel row). Same submit part as the dialog. */
+/* A folder's display name edited in place ('room' = the room header, 'fp' = the Folders panel row). Same submit part as the dialog. */
 function folderNameEl(surface,r){
   if(!ROOMS.includes(r))return 'gone';
   if(surface==='fp'){const p=$('foldersPop');if(!p||p.hidden)return null;const b=p.querySelector('[data-fp="rename"][data-room="'+CSS.escape(r.id)+'"]');const row=b&&b.closest('.fp-row');return row?row.querySelector('.fpn'):null;}
   if(!roomShown(r))return 'gone';
-  const d=document.querySelector('#stage [data-door="'+CSS.escape(r.id)+'"]'); if(!d)return null;
-  const h=d.closest('.room-head'); return h?h.querySelector('.room-name'):(d.closest('.plate')?d.querySelector('.plate-tx b'):null);
+  const n=document.querySelector('#stage .room[data-room="'+CSS.escape(r.id)+'"] .room-name'); return n||null;
 }
 function startFolderEdit(r,surface,from){
   if(!canRenameFolder(r)||modalOpen())return false;
@@ -7533,8 +7392,8 @@ function startFolderEdit(r,surface,from){
     label:'Name of folder '+r.name,hint:'Enter saves, Escape cancels. Empty uses the folder name.',
     check:SN().folderError,submit:async t=>{const o=await submitFolderName(r,t);return {ok:o.ok,reason:o.reason};},
     notify:m=>toast(esc(m),5000).classList.add('err'),onClose:focusAfterGone,reanchor:find,
-    maxWidth:360,clip:()=>{const n=find();return n&&n!=='gone'?n.closest('.room-head,.plate,.fp-t'):null;},
-    focusBack:()=>{const sel=from==='pencil'?(surface==='fp'?'#foldersPop':'#stage')+' .ren[data-renfolder="'+CSS.escape(r.id)+'"]':surface==='fp'?'#foldersPop [data-fp="rename"][data-room="'+CSS.escape(r.id)+'"]':'#stage [data-door="'+CSS.escape(r.id)+'"]';return document.querySelector(sel)||document.querySelector('#stage [data-door="'+CSS.escape(r.id)+'"]');}});
+    maxWidth:360,clip:()=>{const n=find();return n&&n!=='gone'?n.closest('.room-head,.fp-t'):null;},
+    focusBack:()=>{const sel=from==='pencil'?(surface==='fp'?'#foldersPop':'#stage')+' .ren[data-renfolder="'+CSS.escape(r.id)+'"]':surface==='fp'?'#foldersPop [data-fp="rename"][data-room="'+CSS.escape(r.id)+'"]':'#stage [data-foldermenu="'+CSS.escape(r.id)+'"]';return document.querySelector(sel)||document.querySelector('#stage [data-foldermenu="'+CSS.escape(r.id)+'"]');}});
   return true;
 }
 /* The pencil of a card or row sits at the end of the name (after the mode icon); when that would cover another part of it
@@ -7999,7 +7858,7 @@ if(bridge){
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
   document.body.classList.toggle('simple',SIMPLE);
-  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},signs:{get:()=>SIGN_PREF,set:setSignsOn,usable:()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign)},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     applyCharacters,charPreview, /* spec 077 FR-068 */

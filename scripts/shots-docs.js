@@ -28,11 +28,10 @@ const SHOTS = path.join(ROOT, 'docs', 'screenshots');
 const CLOCK = '2026-10-20T09:30:00Z';
 
 /** `f`: a file the driver writes under the same name; `{ to, from }`: the linked name and the name the driver writes. */
-const THEMES = [['clean-office', 'clean'], ['corporate'], ['durbar-european'], ['durbar-indian'], ['durbar-japanese'], ['retro']];
+const THEMES = [['clean-office', 'clean'], ['retro']];
 const DOC_SHOTS = [
   { name: 'shots-hero', files: ['m5-sim15-1440x900-closed.png', 'm6-fullchat-sim15-1280x800.png'] },
   { name: 'shots-003-011', files: ['m6-fullchat-sim15-1440x900.png', '003-allow-all-menu-1440x900.png'] },
-  { name: 'shots-017-signs', files: ['017-signs-1440x900.png', '017-held-dialog-1440x900.png', '017-open-office-1440x900.png', '017-open-office-1280x800.png', '017-office-layout-1440x900.png'] }, // spec 017 FR-004: meeting-room door signs on the desks
   { name: 'check-office-fill', files: ['001-helpers-2-1440x900.png', '001-helpers-2-1280x800.png', '001-helpers-3-1440x900.png', '001-helpers-3-1280x800.png', '001-fill-1-1440x900.png', '001-fill-1-1920x1080.png', '001-fill-4-1440x900.png', '001-fill-6-1440x900.png', '001-shutters-1440x900.png'] },
   { name: 'shots-001-live-activity', freeze: false, files: ['001-live-activity-dense-1440x900.png', '001-live-activity-side-1440x900.png'] },
   { name: 'shots-001-lobby', files: ['001-lobby-15-1280x800.png', '001-lobby-15-1440x900.png', '001-lobby-15-1440x900-retro.png', '001-lobby-3-1440x900.png'] },
@@ -82,7 +81,7 @@ const DOC_SHOTS = [
   ...THEMES.map(([id, short]) => ({
     label: `shots-themes ${id}`, name: 'shots-themes', env: { DURBAR_THEME: id, SHOTS_SIZE: '1440x900', SHOTS_PREFIX: '' },
     files: [{ to: `site-theme-${short || id}-1440x900.png`, from: `${id}-1440x900.png` }]
-      .concat(['corporate', 'durbar-indian', 'retro'].includes(id) ? [{ to: `035-${id}-1440x900.png`, from: `${id}-1440x900.png` }] : []),
+      .concat(['retro'].includes(id) ? [{ to: `035-${id}-1440x900.png`, from: `${id}-1440x900.png` }] : []),
   })),
 ];
 

@@ -2,7 +2,7 @@
  * AI theme maker (spec 040 FR-014..FR-020, issue #182). Pure: the prompts for a harness, and turning a reply into a theme
  * manifest that keeps only safe values, with checks that are sent back to the model for up to three passes.
  * - Colours: every Clean Office token may be set (the model gets Clean's values as a reference), hex values only.
- * - Art: character, desk, monitor, plant, place, door and lobby slots as SVG fragments, each passed through the renderer's own
+ * - Art: character, desk, monitor, plant, place and lobby slots as SVG fragments, each passed through the renderer's own
  *   sanitizer (injected, so this file stays pure and the result is exactly what the app will draw).
  * - Words: the scene words, short plain text.
  * The result then goes through `checkUserManifest` like any imported pack. The description is user text: never logged.
@@ -23,8 +23,6 @@ export const GEN_WORDS: Record<string, string> = {
   'place-postbox': 'the tile with the next scheduled runs ("Postbox")',
   'boss-note': 'the note on an empty desk while its agent is at the boss ("Went to see the boss")',
   'lobby-label': 'the lobby caption ("Lobby: the places where agents work")',
-  'door-close': 'button to close a room ("Close room")',
-  'door-open': 'button to open a room ("Open room")',
 };
 
 /** Art slots a generated theme may draw, with where and how big (spec 040 FR-010, FR-020, FR-025). */
@@ -48,7 +46,6 @@ export const GEN_ART: Record<string, string> = {
   'place-other': 'icon for the Other tools place: same as above',
   'gadget-cup': 'the cup on an idle agent\'s desk, REPLACES the app\'s cup: about x 96-114, y 66-87 (steam is added above it by the app)',
   'gadget-laptop': 'the laptop or keyboard on the desk in front of the person, REPLACES the app\'s: about x 55-99, y 79-88',
-  'door-art': 'a small emblem on the room door: viewBox 0 0 20 20, the door is x 4-16, y 2.5-17.5',
   'lobby-art': 'a decorative band behind the lobby tiles: viewBox 0 0 320 36, scaled to cover the lobby band and cropped to its middle on wide windows, so keep the motif in y 8-28 and make it a repeating pattern or a wide scene. Circles stay round. It is drawn BEHIND the tiles and the add button, so keep it faint (opacity .25-.6)',
 };
 export const MAX_ART_CHARS = 4000;
@@ -81,10 +78,10 @@ const svgRules = 'Each art value is an SVG fragment (no <svg> wrapper) using onl
  * and themes.css). A token in no group goes to the last one. Every token is still listed as `--name=value`.
  */
 export const TOKEN_GROUPS: Array<{ title: string; keys: Array<string | RegExp> }> = [
-  { title: 'Surfaces. --bg is the page; --surface panels, dialogs, menus and (UI "clean", "court-japanese") the top bar; --raised buttons, chips and the lobby tiles (lifted above --bg); --card the desk cards, --card-waiting and --card-error their states; --soft, --note, --surface-2 and the two tinted notes are quiet blocks. ALL carry --ink text at 4.5:1', keys: ['--bg', '--surface', '--surface-2', '--raised', '--card', '--card-waiting', '--card-error', '--soft', '--note', '--warn-bg', '--bad-bg'] },
+  { title: 'Surfaces. --bg is the page; --surface panels, dialogs, menus and (UI "clean") the top bar; --raised buttons, chips and the lobby tiles (lifted above --bg); --card the desk cards, --card-waiting and --card-error their states; --soft, --note, --surface-2 and the two tinted notes are quiet blocks. ALL carry --ink text at 4.5:1', keys: ['--bg', '--surface', '--surface-2', '--raised', '--card', '--card-waiting', '--card-error', '--soft', '--note', '--warn-bg', '--bad-bg'] },
   { title: 'Text. --ink is body text, --ink-2 secondary text, --muted hints and counts (4.5:1 on --surface), --room-path the folder path in each room header, which sits on the room tints below (4.5:1 on each tint, not only on --bg)', keys: ['--ink', '--ink-2', '--muted', '--room-path'] },
   { title: 'Room tints. Rooms cycle through four backgrounds (--tint-X) with a wall line (--wall-X, and --cwall-X when the office is crowded). Text sits on the tints: in a dark theme they must be dark, in a light one light', keys: [/^--(tint|wall|cwall)-/] },
-  { title: 'Brand. --brand-bg fills the lobby tile icons and the primary buttons in the UI styles "corporate", "retro", "court-*" (and the top bar of the Indian and European courts), so it must stand out from --raised and --bg (3:1 or more: a mid or dark saturated colour on a light theme, a bright one on a dark theme, never a pastel). --brand-mark is the text on it (4.5:1)', keys: ['--brand-bg', '--brand-mark'] },
+  { title: 'Brand. --brand-bg fills the lobby tile icons and the primary buttons in the UI style "retro", so it must stand out from --raised and --bg (3:1 or more: a mid or dark saturated colour on a light theme, a bright one on a dark theme, never a pastel). --brand-mark is the text on it (4.5:1)', keys: ['--brand-bg', '--brand-mark'] },
   { title: 'Button and accent inks. --sage-ink, --red-ink and --amber-ink fill the primary, danger and warn buttons under --surface text (4.5:1); --sage, --blue, --amber, --red, --green, --gray and --blue-ink are accents and chips', keys: ['--sage', '--sage-ink', '--blue', '--blue-ink', '--amber', '--amber-ink', '--red', '--red-ink', '--green', '--gray'] },
   { title: 'Lines and focus. Borders and dividers (--line soft, --line-2 stronger, --line-ctl the border of buttons and inputs), the keyboard focus ring, the selected-desk ring and the links between rooms', keys: ['--line', '--line-2', '--line-ctl', '--card-waiting-line', '--card-error-line', '--focus', '--focus-halo', '--sel-border', '--sel-ring', '--sel-ring-2', '--stat-sel-border', '--stat-sel-ring', '--proto-line', '--place-busy', '--link'] },
   { title: 'Status. The six states (working blue-ish, thinking violet-ish, waiting amber, error red, done green, idle grey): --c-X and --halo-X the dot and glow, --pb-X the pill background and --pc-X its text (4.5:1), --screen-X the monitor screen; --desk-new and --desk-needs the glow of a new desk and of a desk that needs you (3:1 on the card)', keys: [/^--(c|halo|pb|pc|screen)-/, '--desk-new', '--desk-needs', '--badge-idle', '--idle-stub', '--idle-stub-ink', '--wait-dot', '--drop', '--drop-bg', '--drop-ink'] },
@@ -101,7 +98,7 @@ export function tokenGroupLines(clean: Record<string, string>): string[] {
     out.push(`  ${title}:`, '  ' + ks.map((k) => `${k}=${clean[k]}`).join(' '));
   };
   for (const g of TOKEN_GROUPS) take(g.title, (k) => g.keys.some((m) => (typeof m === 'string' ? m === k : m.test(k))));
-  take('Drawing colours of the people, desks, monitors, doors, plant, ambulance and icons: keep them in the same palette as the rest, and make the desk, chair and walls distinct from each other and from the floor', () => true);
+  take('Drawing colours of the people, desks, monitors, plant, ambulance and icons: keep them in the same palette as the rest, and make the desk, chair and walls distinct from each other and from the floor', () => true);
   return out;
 }
 
@@ -123,7 +120,7 @@ export function buildThemePrompt(description: string, clean: Record<string, stri
     `The look the user wants: "${d}".`,
     'Reply with ONE JSON object and nothing else (no code fence, no explanation). Fields:',
     '- "name": a short theme name, at most 40 characters.',
-    `- "ui": one of ${UI_STYLES.map((u) => JSON.stringify(u)).join(', ')} (the shape of buttons and panels; "retro" suits pixel and arcade looks, the court styles suit palaces).`,
+    `- "ui": one of ${UI_STYLES.map((u) => JSON.stringify(u)).join(', ')} (the shape of buttons and panels; "retro" suits pixel and arcade looks).`,
     `- "scene": one of ${SCENE_KITS.map((u) => JSON.stringify(u)).join(', ')} (how people and furniture are drawn; your character, desk and monitor art is drawn over any of them, and "office" is the plainest base for it).`,
     '- "tokens": colours as hex like "#1a2b3c", for ALL of these keys, in groups with what they paint. The value after each key is the default light theme:',
     ...tokenGroupLines(clean),
@@ -140,7 +137,7 @@ export function buildThemePrompt(description: string, clean: Record<string, stri
     ...Object.entries(GEN_ART).map(([k, v]) => `  ${k}: ${v}`),
     svgRules,
     ART_STYLE,
-    'The UI style matters for the top bar: "corporate" and "retro" fill it with --ink and "court-indian"/"court-european" with --brand-bg, under FIXED light text, so those tokens must be dark there; "clean" and "court-japanese" use --surface and --ink. For a dark page, "clean" or "court-japanese" is the safe choice.',
+    'The UI style matters for the top bar: "retro" fills it with --ink under FIXED light text, so that token must be dark there; "clean" uses --surface and --ink. For a dark page, "clean" is the safe choice.',
     'Rules: light or dark are both fine, but be consistent: for a dark look set EVERY token, so nothing of the light default remains. Text must read well: --ink on --bg and --surface at least 4.5:1, --ink-2 on --surface 4.5:1, --muted on --surface 4.5:1, and each status pill text --pc-X on its background --pb-X at least 4.5:1. Keep the status meaning: working is blue-ish, thinking violet-ish, waiting amber, error red, done green, idle grey. Keep it calm: no neon on neon.',
   ].join('\n');
 }
@@ -256,7 +253,7 @@ export function artWarnings(slot: string, svg: string): string[] {
   const min = MIN_SHAPES[slot] ?? 1;
   if (shapes < min) out.push(`${slot}: sparse (${shapes} shape${shapes === 1 ? '' : 's'}, at least ${min} expected)`);
   const widths = [...svg.matchAll(/stroke-width="([0-9.]+)"/g)].map((m) => Number(m[1])).filter((n) => Number.isFinite(n));
-  const floor = /^(place-|door-art)/.test(slot) ? 1 : 1.5;
+  const floor = /^place-/.test(slot) ? 1 : 1.5;
   if (widths.length && widths.every((w) => w < floor)) out.push(`${slot}: lines too thin to see (stroke-width under ${floor})`);
   if (!/^(place-)/.test(slot) && shapes > 0) {
     const sizes = [...svg.matchAll(/(?<![-\w])(?:width|height|r|rx|ry)="([0-9.]+)"/g)].map((m) => Number(m[1]));
@@ -307,10 +304,10 @@ export type GenResult =
   | { ok: false; error: string };
 
 /**
- * The top bar of some UI styles has fixed light text on a theme colour (themes.css): corporate and retro paint it with --ink,
- * the Indian and European courts with --brand-bg. [token behind the text, the fixed text colour].
+ * The top bar of some UI styles has fixed light text on a theme colour (themes.css): retro paints it with --ink.
+ * [token behind the text, the fixed text colour].
  */
-export const TOP_BAR: Record<string, [string, string]> = { corporate: ['--ink', '#ffffff'], retro: ['--ink', '#ffec27'], 'court-indian': ['--brand-bg', '#f6d58a'], 'court-european': ['--brand-bg', '#e8c873'] };
+export const TOP_BAR: Record<string, [string, string]> = { retro: ['--ink', '#ffec27'] };
 export const TOP_BAR_ISSUE = 'the top bar';
 
 /** The problems a fix pass should solve (contrast, the top bar of the UI style, a dark page with light leftovers). Empty = good. */
@@ -336,7 +333,7 @@ export function themeIssues(tokens: Record<string, string>, clean: Record<string
   }
   const tb = TOP_BAR[ui];
   const tbBg = tb ? c(tb[0]) : undefined;
-  if (tb && tbBg && contrast(tb[1], tbBg) < 4.5) out.push(`${TOP_BAR_ISSUE}: with ui "${ui}" it is filled with ${tb[0]} (${tbBg}) under fixed light text ${tb[1]} (contrast ${contrast(tb[1], tbBg).toFixed(1)}:1, needs 4.5:1); make ${tb[0]} darker, or use ui "clean" or "court-japanese", whose top bar follows --surface and --ink`);
+  if (tb && tbBg && contrast(tb[1], tbBg) < 4.5) out.push(`${TOP_BAR_ISSUE}: with ui "${ui}" it is filled with ${tb[0]} (${tbBg}) under fixed light text ${tb[1]} (contrast ${contrast(tb[1], tbBg).toFixed(1)}:1, needs 4.5:1); make ${tb[0]} darker, or use ui "clean", whose top bar follows --surface and --ink`);
   const bg = c('--bg');
   if (bg && luminance(bg) < 0.2) {
     const missing = Object.keys(clean).filter((k) => !(k in tokens) && HEX.test(clean[k]) && luminance(clean[k]) > 0.6);

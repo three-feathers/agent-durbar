@@ -43,7 +43,7 @@ module.exports = async (ctx) => {
   const closeMenu = async () => { await H.key('Escape'); await until(`!document.getElementById('modeMenu')`); };
   const openMenuBy = async (how, room) => {
     if (how === 'dots') await js(`document.querySelector(${jsLiteral(`#stage [data-foldermenu="${room.id}"]`)}).click()`);
-    else if (how === 'context') await js(`(()=>{const h=document.querySelector(${jsLiteral(`#stage .room [data-door="${room.id}"]`)}).closest('.room-head');const b=h.getBoundingClientRect();h.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:b.left+40,clientY:b.top+10}));return true})()`);
+    else if (how === 'context') await js(`(()=>{const h=document.querySelector(${jsLiteral(`#stage .room[data-room="${room.id}"] .room-head`)});const b=h.getBoundingClientRect();h.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:b.left+40,clientY:b.top+10}));return true})()`);
     else await js(`(()=>{const c=document.querySelector('#list .lrow[data-id="'+CSS.escape(${jsLiteral(room.first)})+'"] .lfold');const b=c.getBoundingClientRect();c.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:b.left+8,clientY:b.top+8}));return true})()`);
     return until(`!!document.querySelector('#modeMenu [data-fact="sched"]')`);
   };

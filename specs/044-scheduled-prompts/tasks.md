@@ -90,3 +90,7 @@
 - [x] T125 Review round on #843 (FR-124): a once schedule with an over-limit prompt is paused with `pausedReason: review` instead of done; an edit that fits unpauses it and needs a future time; `start()` records `skipped-review`; a loop test (no send, record, next moved one pass); tests for all
 - [x] T126 Doors (FR-126): `Doors.hold` refuses a run that would take the file past `HELD_FILE_CAP`; `test:doors` cases: 200 multi-byte runs at the maximum, 5 doors of ASCII, control characters, and the file still loads
 - [x] T127 Form and limit: always-present `role="status"` region announcing only state changes; one number for the limit (the simulator and the row read `PROMPT_MAX`, `test:schedhist` keeps the word equal); screenshots `044-length-*` committed (exact 1440x900 and 1280x800; linked from no page, so not in `DOC_SHOTS`)
+
+## Changes 2026-10-31 (owner decision, spec 021 FR-067): no door
+
+- [x] T128 In spec 017's removal PR: `hold` and `door` paths out of the scheduler; old outcomes readable; history words. Test: `test-schedules`, `test:schedhist`; an old log with `skipped-door-full` loads; `check:sched-history` at both sizes [FR-127, FR-128]

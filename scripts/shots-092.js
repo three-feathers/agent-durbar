@@ -40,7 +40,7 @@ module.exports = async (ctx) => {
   const ann = () => js(`window.__ann.filter(t=>/^Floor /.test(t))`); // the palette and other parts announce too: only the floor announcements are counted
   /* what the office shows now */
   const view = () => js(`(()=>{
-    const tags=[...new Set([...document.querySelectorAll('#stage .room-head .floor-tag, #stage .plate .floor-tag')].map(t=>t.textContent.trim()))];
+    const tags=[...new Set([...document.querySelectorAll('#stage .room-head .floor-tag')].map(t=>t.textContent.trim()))];
     const desks=[...document.querySelectorAll('#stage .desk[data-id]')].filter(d=>!d.closest('.helpers')).map(d=>d.dataset.id);
     const pills=[...document.querySelectorAll('#stats .stat[data-k] b')].reduce((n,b)=>n+(+b.textContent||0),0);
     const fl=document.getElementById('floor');

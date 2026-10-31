@@ -63,7 +63,6 @@
     "place-library": "<path d=\"M4 4h5v12H4zM11 4h5v12h-5z\"/><path d=\"M6.5 8h0M13.5 8h0\"/>",
     "place-terminal": "<path d=\"M10 16.5c-5-3.5-7-6-7-8.5a3.5 3.5 0 0 1 7-1 3.5 3.5 0 0 1 7 1c0 2.5-2 5-7 8.5z\"/>",
     "place-web": "<circle cx=\"10\" cy=\"10\" r=\"6.5\"/><path d=\"M10 5.5v9M5.5 10h9\"/>",
-    "door-art": "<path d=\"M10 12.6c-1.6-1.2-2.6-2.1-2.6-3.1a1.3 1.3 0 0 1 2.6-.4 1.3 1.3 0 0 1 2.6.4c0 1-1 1.9-2.6 3.1z\" fill=\"#e0218a\"/>",
     "lobby-art": "<rect x=\"0\" y=\"30\" width=\"320\" height=\"6\" fill=\"#f6c2dc\"/><rect x=\"0\" y=\"33\" width=\"320\" height=\"1.5\" fill=\"#e0218a\"/>",
     "gadget-cup": "<path d=\"M98 76h10v7q0 3-3 3h-4q-3 0-3-3z\" fill=\"#ff5fb0\"/><path d=\"M108 78q4 0 4 3t-4 3\" fill=\"none\" stroke=\"#e0218a\" stroke-width=\"1.4\"/><path d=\"M103 82c-1-1.4-3-.4-2 1l2 1.6 2-1.6c1-1.4-1-2.4-2-1z\" fill=\"#ffffff\"/>",
     "gadget-laptop": "<rect x=\"59\" y=\"82\" width=\"36\" height=\"4\" rx=\"2\" fill=\"#f48fb1\"/><rect x=\"74\" y=\"82.6\" width=\"6\" height=\"1.6\" rx=\".8\" fill=\"#ffffff\"/>"

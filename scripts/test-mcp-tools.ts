@@ -279,7 +279,7 @@ async function main(): Promise<void> {
       secretValue: SECRETS.extraPart,
     } as any;
     const mk = (n: number, nf: number, over: Partial<ReadToolsDeps> = {}) => {
-      const folders = Array.from({ length: nf }, (_, i) => folder(i, i === 1 ? { hidden: true, closed: true, label: 'Nice room', floor: 'f-aaaaaaaa', maxAiCredits: 120 } : {}));
+      const folders = Array.from({ length: nf }, (_, i) => folder(i, i === 1 ? { hidden: true, label: 'Nice room', floor: 'f-aaaaaaaa', maxAiCredits: 120 } : {}));
       const agents = Array.from({ length: n }, (_, i) => agentOf(folders[i % nf], i, i === 0 ? { lazy: true } : i === 1 ? { floor: 'f-aaaaaaaa', maxAiCredits: 120, permMode: 'allow' } : {}));
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-t016-'));
       const usage = new UsageTotalsStore(path.join(dir, 'u.json'), { delayMs: 1e9, setTimer: () => 0, clearTimer: () => undefined });
@@ -336,9 +336,9 @@ async function main(): Promise<void> {
       const { call, folders } = mk(15, 40);
       const f = (await call('durbar_list_folders')).data.folders;
       assert.strictEqual(f.length, 40);
-      assert.deepStrictEqual(Object.keys(f[1]).sort(), ['adapter', 'agents', 'cap', 'door', 'floor', 'floorOn', 'hidden', 'key', 'mode', 'name']);
+      assert.deepStrictEqual(Object.keys(f[1]).sort(), ['adapter', 'agents', 'cap', 'floor', 'floorOn', 'hidden', 'key', 'mode', 'name']);
       assert.strictEqual(f[1].name, 'Nice room');
-      assert.strictEqual(f[1].door, 'closed');
+      assert.ok(!('door' in f[1]), 'spec 041 FR-066: no door field');
       assert.strictEqual(f[1].hidden, true);
       assert.strictEqual(f[1].cap, 120);
       assert.strictEqual(f[1].floorOn, false, 'the attic is off');

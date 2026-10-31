@@ -2,7 +2,7 @@
  * Cheeky Crew (spec 077 FR-014, FR-051, FR-055, FR-058). Simulator only (DURBAR_SIM=15 DURBAR_SIM_FREEZE=1), no AI credits.
  *
  * At 1440x900 and 1280x800, with Characters = Cheeky picked in Settings on top of the theme CREW_THEME (default Clean Office; spec 077 FR-070
- * runs it on Retro Pixel and Corporate too), both through Settings (the real path):
+ * runs it on Retro Pixel too), both through Settings (the real path):
  *   - every desk scene draws exactly one portrait, in its fixed box, and that box keeps clear of the protected zones of FR-014 (the
  *     monitor and halo, the thought bubble and chat badge corner, the cup zone); the picture is the pose of the desk's status;
  *   - every picture loads (natural size known) and is drawn at no more than half its natural size (sharp, FR-051);
@@ -233,8 +233,6 @@ async function runCrew(ctx, full) {
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     const tag = `${w}x${h}`;
     await H.load({ w, h, ready: 'fit', settle: false });
-    // spec 017: with the cabins on (the default) a busy or waiting desk is a closed door, not a scene; this step measures the scenes, so the cabins are off here (the cabin portrait is checked below)
-    if (await H.js(`localStorage.getItem('durbar.doorsigns')!=='off'`)) { await H.js(`localStorage.setItem('durbar.doorsigns','off')`); await H.load({ w, h, ready: 'fit', settle: false }); }
     await H.office(15);
     await useCrew();
     const nat = await sizes();

@@ -28,7 +28,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - **Needs you:** one inbox of every agent waiting for an answer or a permission, oldest first.
 - **Sessions that last:** resume after a restart or a crash, scheduled prompts, undo an agent's file changes, notes, continue in another app.
 - **MCP servers** shared across your agent apps, with health, sign-in and per-tool switches.
-- **Six themes** and a theme maker.
+- **Two themes** (Clean Office and Retro Pixel) and a theme maker.
 
 ![Full-screen chat with the other agents in a slim strip, 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
 

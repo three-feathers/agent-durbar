@@ -71,3 +71,11 @@ note: T008 stage D check ran as a one-off harness, not a script
 
 **Corrected wording.**
 - **FR-005** `[IMPLEMENTED]` In simulator runs the theme travels as the page address parameter `theme=<id>` (main adds `DURBAR_THEME` to it next to `sim=`); the simulator bridge returns it as the saved theme, so the normal start-up path applies it. `check-office-overlap.js` adds `theme=$OFFICE_THEME` to every combination and **fails** when the theme on screen (`THEME.current().id` and `data-ui`) is not the one asked for, so a check can never again pass on the wrong theme. A user theme for the check travels as `usertheme=<manifest JSON>` (simulator only) and goes through the same validation as an imported pack (spec 040 T005).
+
+### 2026-10-31: fewer built-in packs (spec 035 FR-017)
+
+- The built-in packs are now Clean Office and Retro Pixel; the motion preset `court` is gone (a user theme that names it gets `default`, the rule for an unknown preset). Everything else here stands. Specs 037 and 039 are marked `deprecated` and `superseded`.
+
+## Changes 2026-10-31: doors removed (pointer, spec 017 T024)
+
+Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout, the desk door button, meeting-room signs, room door plates, **Close all** / **Open all**, door-held schedules and the door refusal of remote control, and `door-art`, `--door-*` and the door words of the theme contract. Any requirement in this spec about those (door plates, plate totals or siren, door signs, collapse, Close all / Open all, the `door` field) no longer applies and is kept as a record; Hide folder, floors and the plain status word stay. See spec 017's table of what was lost and what remains.

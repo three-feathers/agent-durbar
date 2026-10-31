@@ -36,9 +36,8 @@ import { NotesStore } from './notesstore';
 import { NotesFile } from './notesfile';
 import { register as registerQuestionsIpc } from './ipc/questions';
 import { register as registerRemoteIpc } from './ipc/remote';
-import { register as registerDoorsIpc } from './ipc/doors';
-import { Doors, loadDoors, saveDoors } from './doors';
-import type { HeldRun } from './doors';
+import { register as registerHeldMigIpc } from './ipc/heldmig';
+import { HeldBeforeUpdate, loadHeld, saveHeld } from './doormigrate';
 import { register as registerSchedulesIpc } from './ipc/schedules';
 import { register as registerSettingsIpc } from './ipc/settings';
 import { register as registerThemesIpc } from './ipc/themes';
@@ -394,7 +393,7 @@ async function addWorkspace(
   const { result: id } = await startGuardOp(orgGuard, ad, { ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId });
   router.bind(id, adapterId);
   const saved = folderStore?.get(wsKey(draft));
-  const info: AgentInfo = { ...draft, id, hidden: saved?.hidden, closed: saved?.closed, label: saved?.label, defaultAgent: saved?.defaultAgent };
+  const info: AgentInfo = { ...draft, id, hidden: saved?.hidden, label: saved?.label, defaultAgent: saved?.defaultAgent };
   agents.set(id, info);
   applyStoredAlias(info); // spec 059 FR-014
   if (opts.persist) folderStore?.upsert({ workspace: wsKey(info), permMode, model, effort, maxAiCredits: usdCap ? saved?.maxAiCredits : info.maxAiCredits, floor: opts.floor, adapterId });
@@ -478,7 +477,7 @@ function restoreFolders(): void {
         // last mode wins over the folder's (several sessions of one folder may be in different modes), and the chat says which it was.
         const sm = modeForSession(f, [ls?.id], f.permMode);
         const rm = restoreMode(sm.mode);
-        const info = infoFor(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, permFrom: ls ? (sm.fromSession ? 'session' : 'folder') : undefined, maxAiCredits: router.instance(kind).capabilities?.capUnit === 'usd' ? undefined : f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(kind));
+        const info = infoFor(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, permFrom: ls ? (sm.fromSession ? 'session' : 'folder') : undefined, maxAiCredits: router.instance(kind).capabilities?.capUnit === 'usd' ? undefined : f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(kind));
         if (ls) info.resumeLast = true;
         if (f.label) info.label = f.label;
         if (f.defaultAgent) info.defaultAgent = f.defaultAgent;
@@ -539,9 +538,8 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
 
 // ---- scheduled prompts (spec 044): per folder, while the app runs; the run goes through the user's own send path ----
 let scheduler: Scheduler | undefined;
-/* spec 017 FR-015..FR-017, spec 044 FR-110: doors the user closed (Do not disturb) and the runs held there; keyed by the session's resume id */
-let doors: Doors | undefined;
-const doorKey = (a: AgentInfo): string => resumeIdFor(a.id);
+/* spec 017 FR-031: the scheduled prompts that were held behind a door before the update; asked about once, never sent or dropped by themselves. Keyed by the session's resume id. */
+let heldBefore: HeldBeforeUpdate | undefined;
 const folderAgent = (folder: string): AgentInfo | undefined => [...agents.values()].find((x) => wsKey(x) === folder);
 /** The session a schedule runs in: its target (FR-014), only while that session is in this folder, else the folder's agent. */
 const scheduleAgent = (s: { folder: string; target?: { session: string } }): AgentInfo | undefined => {
@@ -575,9 +573,6 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
     const unit = caps.capUnit === 'usd' ? 'usd' : 'aiu';
     return (unit === 'usd' ? caps.usage.costUsd : caps.usage.nanoAiu) ? unit : undefined; // FR-015: a limit needs the spend in that unit
   },
-  /* spec 044 FR-110: a run for an agent behind a door the user closed is queued there (held): never sent, never dropped. A full queue
-     (spec 017 FR-016, 200 runs) still answers true, so nothing goes out while the door is closed. */
-  hold: (s, now) => doorsIpc.hold(scheduleAgent(s)?.id, { at: now, prompt: s.prompt, scheduleId: s.id }), // the rule: doorops.ts (tested)
   send: async (folder, prompt, s) => {
     const a = scheduleAgent(s);
     const ad = a ? router.forAgent(a.id) : undefined;
@@ -730,10 +725,8 @@ const renameSessionOpFor = (openIds: () => ReadonlySet<string>) => renameOp({
 
 // ---- IPC (spec 045 FR-060): every handler lives in src/main/ipc/<area>.ts, registered here through ipcHandle / ipcOn (ipcguard.ts). ----
 // Stores created in whenReady, and state that changes, are passed as getters so a handler reads them when it runs.
-const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity, doorClosed: (id) => { const a = agents.get(id); return !!a && !!doors?.isClosed(doorKey(a)); } });
-/* spec 017 FR-017: a held run goes out through the same path as a scheduled one (the window shows it as the user's message) */
-/* spec 044 FR-111 (review on #631): Send all goes through the scheduler (Pause all, the schedule, its limit, busy incl. coffee breaks, credited) */
-const doorsIpc = registerDoorsIpc({ agents, router, doors: () => doors, keyOf: doorKey, remoteOps, toRenderer, release: (run: HeldRun) => (scheduler ? scheduler.releaseDoorRun(run.scheduleId, run.prompt) : Promise.resolve('failed' as const)) });
+const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity });
+registerHeldMigIpc({ held: () => heldBefore, router });
 registerAppIpc({
   getSinceAway: () => sinceAway,
   clearSinceAway: () => { sinceAway = null; },
@@ -1056,8 +1049,20 @@ app.whenReady().then(() => {
     interrupted = found.items.length ? found : null;
   }
   {
+    // spec 017 FR-031: read through the old caps and the `.bad` rule; its `closed` flags are ignored; the file goes when its queue is empty
     const dfile = path.join(app.getPath('userData'), 'durbar-doors.json');
-    doors = new Doors(loadDoors(dfile), (doc) => { try { saveDoors(dfile, doc); } catch (err) { console.warn('[doors] could not save', err instanceof Error ? err.message : err); } });
+    const loaded = loadHeld(dfile);
+    if (loaded.damaged) console.warn('[held] the old file of held prompts could not be read; it was kept aside as durbar-doors.json.bad');
+    heldBefore = new HeldBeforeUpdate(loaded, {
+      sessionOf: (key) => [...agents.keys()].find((id) => resumeIdFor(id) === key),
+      scheduleExists: (id) => !!id && !!scheduler?.doc.schedules.some((x) => x.id === id),
+      release: (run) => (scheduler ? scheduler.releaseDoorRun(run.scheduleId, run.prompt) : Promise.resolve('failed' as const)),
+      persist: (doc) => { try { saveHeld(dfile, doc); } catch (err) { console.warn('[held] could not save', err instanceof Error ? err.message : err); } },
+      discardBad: () => { try { fs.rmSync(`${dfile}.bad`, { force: true }); return true; } catch { return false; } },
+      changed: () => toRenderer('heldmig:changed', heldBefore?.list()),
+      stopped: (agentId, why) => toRenderer('heldmig:stopped', { id: agentId, why }),
+    });
+    setInterval(() => heldBefore?.retry(), 5000).unref(); // a coffee break that ends, or a sibling that frees the folder, moves a chosen Send on (retry does nothing without one)
   }
   {
     const file = path.join(app.getPath('userData'), 'durbar-schedules.json');

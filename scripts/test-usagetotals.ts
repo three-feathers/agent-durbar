@@ -7,7 +7,6 @@ const U = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'usagetota
   createLedger: () => { record: (room: string, e: unknown) => void; room: (id: string, key?: string) => Total; roomRun: (id: string) => Total; roomIds: () => string[]; office: () => Total; officeRun: () => Total; setBaseline: (v: unknown) => void; clearRun: () => void; since: () => string; hasUnlisted: () => boolean };
   validNano: (x: unknown) => boolean;
   fmtTotal: (t: Total, digits?: number) => string;
-  fmtShort: (t: Total) => string;
   tooltip: (t: Total, o?: { scope?: string; removed?: boolean; since?: string; run?: Total; offFloors?: Total; estimate?: string; full?: boolean }) => string;
   sum: (list: Total[]) => Total;
 };
@@ -27,7 +26,6 @@ assert.strictEqual(l.office().nano, l.room('a').nano + l.room('b').nano, 'office
 assert.deepStrictEqual(l.roomIds().sort(), ['a', 'b']);
 assert.strictEqual(U.fmtTotal(l.office()), '2.00 AIU');
 assert.strictEqual(U.fmtTotal(l.office(), 3), '2.000 AIU');
-assert.strictEqual(U.fmtShort(l.room('a')), '0.75 AIU');
 
 // nothing is ever subtracted: a folder that disappears from the screen still counted (the ledger has no remove)
 assert.strictEqual(typeof (l as unknown as { remove?: unknown }).remove, 'undefined', 'the ledger cannot forget spend');
@@ -39,7 +37,6 @@ assert.strictEqual(l.room('a').calls, 3);
 // unknown folder: empty, not an error
 assert.deepStrictEqual(l.room('nope'), { calls: 0, inTokens: 0, outTokens: 0, nano: 0, unreported: 0 });
 assert.strictEqual(U.fmtTotal(l.room('nope')), '', 'no calls: nothing to show');
-assert.strictEqual(U.fmtShort(l.room('nope')), '');
 assert.strictEqual(U.tooltip(l.room('nope')), '');
 
 // invalid credit figures are "not reported", never NaN or a huge number
@@ -49,7 +46,6 @@ assert.strictEqual(bad.room('r').calls, 8);
 assert.strictEqual(bad.room('r').unreported, 8);
 assert.strictEqual(bad.room('r').nano, 0);
 assert.strictEqual(U.fmtTotal(bad.room('r')), 'cost not reported', 'all calls unreported: never 0.00 AIU');
-assert.strictEqual(U.fmtShort(bad.room('r')), 'n/r');
 assert.ok(!/NaN|Infinity/.test(U.tooltip(bad.room('r'))));
 assert.ok(/cost not reported/.test(U.tooltip(bad.room('r'), { scope: 'folder' })));
 assert.ok(U.validNano(0) && U.validNano(1e15) && !U.validNano(1e15 + 1) && !U.validNano(-0.001));

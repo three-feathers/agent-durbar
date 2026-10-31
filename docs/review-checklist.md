@@ -88,7 +88,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **A test that accepts the failure path proves nothing** ("passes on 'Could not copy' too"). [#538](https://github.com/three-feathers/agent-durbar/pull/538)
 - [ ] **Office changes with floors on run every driver that loads `simfloors`** (`grep -l simfloors scripts/*.js`). Spec 092 phase 1
 - [ ] **Shared desk markup changes run the whole UI suite** (`node scripts/ui-suite.js`), keeping each feature's own wording. [#631](https://github.com/three-feathers/agent-durbar/pull/631)
-- [ ] **A setting that hides a feature also releases what it holds** (a closed door's prompts, a refused remote control): ask and release, or keep that piece visible. PR 631
+- [ ] **Removing a feature never sends or drops what it held** (queued prompts): ask once, and test with a send counter that stays 0. PR 631
 - [ ] **When the simulator bypasses main, test main's logic in a pure function**; never open a sim channel to main (spec 010 FR-022..FR-027). [#693](https://github.com/three-feathers/agent-durbar/pull/693)
 - [ ] **An inode number is not an identity**: it is reused after a delete; test delete and recreate, not only rename. PR #931
 - [ ] **A safe delete also needs its failure path checked**: the rename-back, and where the file ended up. PR #931

@@ -225,3 +225,7 @@ I type "invoice export" in the top-bar box. The window switches to the List view
 ## Constitution check
 
 - **I**: spec, plan and tasks are committed before any `src/`; each code PR changes `specs/095-search-conversations/`. **II**: only adapter readers (`history`, the history modules) are used; no agent type in the renderer or `src/shared`; the `textOnly` option is on the shared `HistoryLimits`. **III**: local only, masked before matching and cutting, nothing stored, window sends only the query, IPC validated, no shell. **IV**: fakes only. **V**: List view reuse, 10.5px, reduced motion, live region. **VI**: readers' own per-OS roots; no new path code. **VII**: pure matcher, bounded scan and masking tested with planted mutations. **VIII**: gaps above.
+
+## Changes 2026-10-31: doors removed (pointer, spec 017 T024)
+
+Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout, the desk door button, meeting-room signs, room door plates, **Close all** / **Open all**, door-held schedules and the door refusal of remote control, and `door-art`, `--door-*` and the door words of the theme contract. Any requirement in this spec about those (door plates, plate totals or siren, door signs, collapse, Close all / Open all, the `door` field) no longer applies and is kept as a record; Hide folder, floors and the plain status word stay. See spec 017's table of what was lost and what remains.

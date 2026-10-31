@@ -397,7 +397,7 @@ module.exports = async (ctx) => {
     await closeChat();
   };
   const CONTRAST_SURFACES = ['tools-screen', 'settings-theme', 'settings-places', 'settings-cap', 'place-dialog', 'chat-waiting', 'agent-strip'];
-  const BUILTIN = ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese']; // spec 077 FR-066: Cheeky Crew is a Characters choice now, not a theme
+  const BUILTIN = ['clean-office', 'retro']; // spec 077 FR-066: Cheeky Crew is a Characters choice now, not a theme
 
   const tones = async (id) => { // T152 round 2: the contrast of the rules that moved to the --tone-* tokens, in this theme
     const list = toneList();
@@ -456,8 +456,7 @@ module.exports = async (ctx) => {
     }
   }
 
-  // FR-169: the contrast of the controls that carried a light literal, in EVERY built-in theme (Clean Office, Corporate, Retro Pixel and
-  // the three courts), not only the dark fixture. 1280x800 only: a theme does not change a control's size.
+  // FR-169: the contrast of the controls that carried a light literal, in EVERY built-in theme (Clean Office and Retro Pixel), not only the dark fixture. 1280x800 only: a theme does not change a control's size.
   if (PART !== 'dark' && (!ONLY || ONLY.has('contrast'))) {
     W = 1280; Hh = 800; theme = 'light'; extraQuery = {};
     for (const id of BUILTIN) {

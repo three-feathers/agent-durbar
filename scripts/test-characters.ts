@@ -31,7 +31,7 @@ for (const v of corpus) {
 }
 
 // --- kit resolution (FR-065): every built-in theme, each value ---
-const OWN: Record<string, string> = { 'clean-office': 'office', corporate: 'corporate', retro: 'pixel', 'durbar-indian': 'court-indian', 'durbar-european': 'court-european', 'durbar-japanese': 'court-japanese' };
+const OWN: Record<string, string> = { 'clean-office': 'office', retro: 'pixel' };
 assert.deepStrictEqual(T.list().map((t: { id: string }) => t.id).sort(), Object.keys(OWN).sort(), 'the built-in themes; Cheeky Crew is not one of them (FR-066)');
 assert.ok(!T.list().some((t: { id: string; name: string }) => t.id === LEGACY_CREW_THEME || /cheeky/i.test(t.name)), 'Cheeky is not listed as a theme');
 for (const [id, own] of Object.entries(OWN)) {
@@ -145,6 +145,22 @@ async function main(): Promise<void> {
     assert.strictEqual(s2.characters, 'theme');
     fs.writeFileSync(file, '{not json');
     assert.deepStrictEqual(new SettingsStore(file).load(), {}, 'a corrupt file is no settings');
+
+    // spec 035 FR-018: a removed built-in theme (Corporate, the courts) becomes Clean Office once, written at once; Characters and the rest are untouched
+    for (const gone of ['corporate', 'durbar-indian', 'durbar-european', 'durbar-japanese']) {
+      fs.writeFileSync(file, JSON.stringify({ version: 1, theme: gone, characters: 'prehistoric', seriousMode: true }));
+      const sr = new SettingsStore(file);
+      const gr = sr.load();
+      assert.deepStrictEqual({ theme: gr.theme, characters: gr.characters, seriousMode: gr.seriousMode }, { theme: undefined, characters: 'prehistoric', seriousMode: true }, gone + ': Clean Office, Characters and the rest kept');
+      assert.ok(!('theme' in read()) && read().characters === 'prehistoric', gone + ': written to the file at once');
+      fs.utimesSync(file, new Date(0), new Date(0));
+      new SettingsStore(file).load();
+      assert.strictEqual(fs.statSync(file).mtimeMs, 0, gone + ': the next load writes nothing (once)');
+      assert.deepStrictEqual(sr.setTheme(gone), { ok: true, theme: 'clean-office' }, gone + ': never stored again');
+      assert.ok(!('theme' in read()), gone + ': not in the file after setTheme');
+    }
+    fs.writeFileSync(file, JSON.stringify({ version: 1, theme: 'retro' }));
+    assert.strictEqual(new SettingsStore(file).load().theme, 'retro', 'Retro Pixel stays (FR-019)');
 
     // round trip through the handlers
     fs.rmSync(file);

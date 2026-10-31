@@ -14,6 +14,7 @@ type AgentEvent = import('../adapters/types').AgentEvent;
 type McpServerStatus = import('../adapters/types').McpServerStatus;
 type AgentInfo = import('../shared/api').AgentInfo;
 type DurbarApi = import('../shared/api').DurbarApi;
+type HeldBeforeList = import('../shared/api').HeldBeforeList;
 type UpdatesView = import('../shared/api').UpdatesView;
 type NewFolderProgress = import('../shared/api').NewFolderProgress;
 type NewFolderCheck = import('../shared/api').NewFolderCheck;
@@ -715,10 +716,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (server) (simDoc.servers[server] ??= { calls: 0, failed: 0 })[f]++;
     };
     let simSchedHook: ((e: AgentEvent) => void) | undefined; // spec 044 FR-018: usage of a scheduled run counts toward its limit
-    const simDoorSubs: ((d: Record<string, { closed: boolean; held: number }>) => void)[] = []; // listeners can subscribe before the schedules start
-    const simDoorStopSubs: ((p: { id: string; why: string }) => void)[] = [];
-    const simRemoteOffSubs: ((p: { id: string; reason?: string }) => void)[] = []; // spec 054 FR-040: the door's remote-off event, as main sends it
-    let simDoorsRef: { map: Map<string, { closed: boolean; held: { prompt: string; at: number; scheduleId?: string }[]; releasing?: boolean }>; subs: ((d: Record<string, { closed: boolean; held: number }>) => void)[]; list(): Record<string, { closed: boolean; held: number }>; changed(): void } | undefined; // spec 017 FR-015 (set below, with the schedules)
+    const simHeldSubs: ((l: HeldBeforeList) => void)[] = []; // listeners can subscribe before the schedules start
+    const simHeldStopSubs: ((p: { id?: string; why: string }) => void)[] = [];
+    const simRemoteOffSubs: ((p: { id: string; reason?: string }) => void)[] = []; // spec 054 FR-062: the remote-off event, as main sends it
+    let simHeldRef: { items: { id: string; session?: string; prompt: string; at: number; scheduleId?: string }[]; noticed: boolean; chosen: Set<string>; list(): HeldBeforeList; changed(): void } | undefined; // spec 017 FR-031 (set below, with the schedules)
     let selfMcp = false; /* the simulator's own `mcp` event, as opposed to one a driver reports */
     /* spec 058 FR-187 (issue #779 A): src/shared/mcpcall.ts `classifyMcpCall`, copied (this file cannot import); test:mcpcall cuts this block out and compares the two */
     /* mcpcall:begin */
@@ -984,39 +985,46 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       else sc.spent = (sc.spent ?? 0) + amt;
       simSched.changed();
     };
-    /* spec 017 FR-015..FR-017, spec 044 FR-110: doors the user closed and the runs held there (memory only: the simulator keeps no profile) */
-    type SimHeld = { prompt: string; at: number; scheduleId?: string };
-    const simDoors = { map: new Map<string, { closed: boolean; held: SimHeld[]; releasing?: boolean }>(), subs: simDoorSubs,
-      list(): Record<string, { closed: boolean; held: number }> { const o: Record<string, { closed: boolean; held: number }> = {}; this.map.forEach((v, k) => { if (v.closed || v.held.length) o[k] = { closed: v.closed, held: v.held.length }; }); return o; },
+    /* spec 017 FR-031: prompts held behind a door before the update (memory only: the simulator keeps no profile). `simheld=N` seeds N
+       for the first agent and 1 whose session has gone (`simheld=N,nogone` seeds none of those), with a schedule for each of the first agent's. */
+    type SimHeld = { id: string; session?: string; prompt: string; at: number; scheduleId?: string };
+    const simHeld = { items: [] as SimHeld[], noticed: false, chosen: new Set<string>(), subs: simHeldSubs,
+      list(): HeldBeforeList { return { items: this.items.map((h) => ({ id: h.id, ...(h.session ? { session: h.session } : {}), prompt: h.prompt, at: h.at, canSend: !!h.session && simSched.list.some((x) => x.id === h.scheduleId), ...(!h.session ? { why: 'its session has gone' } : !simSched.list.some((x) => x.id === h.scheduleId) ? { why: 'its schedule has gone' } : {}) })), notice: !this.noticed && this.items.length > 0, damaged: false }; },
       changed() { const d = this.list(); this.subs.forEach((f) => f(d)); } };
-    simDoorsRef = simDoors;
+    simHeldRef = simHeld;
+    {
+      const n = Math.max(0, Math.min(40, Number((simQs?.get('simheld') ?? '').split(',')[0]) || 0));
+      const first = sims[0];
+      for (let i = 0; i < n && first; i++) simHeld.items.push({ id: 'sh' + i, session: first.info.id, prompt: `Held prompt ${i + 1}: run the checks and report`, at: Date.now() - (n - i) * 60_000, scheduleId: 'sim-held-sched' });
+      if (n && !(simQs?.get('simheld') ?? '').includes('nogone')) simHeld.items.push({ id: 'shg', prompt: 'A prompt for a session that has gone', at: Date.now() - 30_000, scheduleId: 'sim-held-gone' });
+      if (n && first) simSched.list.push({ id: 'sim-held-sched', folder: first.info.workspaceFile || first.info.cwd, prompt: 'Held prompt', every: 60, next: Date.now() + 3_600_000, target: { session: first.info.id } } as never);
+    }
     const simIdle = (s: SimAgent): boolean => !(s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.perm);
     window.setInterval(() => {
       const now = Date.now();
       let any = false;
-      // Send all: the next held run goes when the agent is free again, through the schedule's rules (spec 044 FR-111, as main's Scheduler.releaseDoorRun)
-      simDoors.map.forEach((d, id) => {
-        if (d.closed || !d.releasing) return;
-        const s = sims.find((x) => x.info.id === id);
-        const r = d.held[0];
-        if (!s || !r) { d.releasing = false; simDoors.changed(); return; }
+      // Send: the next chosen run of a session goes when the agent is free, through the schedule's rules (spec 044 FR-128, as main's Scheduler.releaseDoorRun)
+      for (const r of [...simHeld.items]) {
+        if (!simHeld.chosen.has(r.id)) continue;
+        const s = sims.find((x) => x.info.id === r.session);
         const sc = simSched.list.find((x) => x.id === r.scheduleId);
-        const stop = (why: string) => { d.releasing = false; simDoors.changed(); simDoorStopSubs.forEach((f) => f({ id, why })); };
-        if (!sc) { d.held.shift(); if (!d.held.length) d.releasing = false; simDoors.changed(); return; } // its schedule was deleted
-        if (simSched.pausedAll) return stop('paused-all');
-        if (sc.paused) return stop('paused');
-        if (sc.cap && (sc.spent ?? 0) >= sc.cap.amount) return stop('cap');
-        if (!simIdle(s) || (!!s.breakUntil && Date.now() < s.breakUntil)) return; // busy: next tick
-        d.held.shift();
-        if (!d.held.length) d.releasing = false;
-        emit({ type: 'user', sessionId: id, timestamp: now, text: r.prompt } as AgentEvent);
-        simSched.ran.forEach((f) => f({ agentId: id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
-        simSched.attrib.set(id, sc.id);
-        simRecord(sc, simSched.runs, 'sent', now, { session: id });
-        void api.send(id, r.prompt, []);
+        const stop = (why: string) => { simHeld.chosen.clear(); simHeld.changed(); simHeldStopSubs.forEach((f) => f({ id: r.session, why })); };
+        if (!s || !sc) { simHeld.chosen.delete(r.id); simHeld.changed(); continue; } // gone: it stays held
+        if (simSched.pausedAll) { stop('paused-all'); break; }
+        if (sc.paused) { stop('paused'); break; }
+        if (sc.cap && (sc.spent ?? 0) >= sc.cap.amount) { stop('cap'); break; }
+        if (!simIdle(s) || (!!s.breakUntil && Date.now() < s.breakUntil)) continue; // busy: next tick
+        simHeld.items = simHeld.items.filter((x) => x.id !== r.id);
+        simHeld.chosen.delete(r.id);
+        emit({ type: 'user', sessionId: s.info.id, timestamp: now, text: r.prompt } as AgentEvent);
+        simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
+        simSched.attrib.set(s.info.id, sc.id);
+        simRecord(sc, simSched.runs, 'sent', now, { session: s.info.id });
+        void api.send(s.info.id, r.prompt, []);
         simSched.changed();
-        simDoors.changed();
-      });
+        simHeld.changed();
+        break; // one at a time: the next goes on a later tick, when this turn has ended
+      }
       for (const sc of simSched.list) {
         if (sc.target && !sc.done && !sc.paused && !sims.some((x) => x.info.id === sc.target?.session)) { sc.paused = true; sc.pausedReason = 'session-ended'; any = true; continue; } // FR-014
         const recurring = sc.every !== undefined || !!sc.rule;
@@ -1025,9 +1033,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         any = true;
         const s = simAgentOf(sc);
         const busy = !!s && (s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.perm || (!!s.breakUntil && Date.now() < s.breakUntil)); // spec 068 FR-008: a coffee break counts as busy
-        const door = s ? simDoors.map.get(s.info.id) : undefined;
-        const outcome = sc.prompt.length > simPromptMax() ? 'skipped-review' : simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : !s ? 'failed' : door?.closed ? 'held' : busy ? 'skipped-busy' : 'sent';
-        if (outcome === 'held' && door) { door.held.push({ prompt: sc.prompt, at: now, scheduleId: sc.id }); simDoors.changed(); } // spec 044 FR-110
+        const outcome = sc.prompt.length > simPromptMax() ? 'skipped-review' : simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : !s ? 'failed' : busy ? 'skipped-busy' : 'sent';
         if (outcome === 'sent' && s) {
           emit({ type: 'user', sessionId: s.info.id, timestamp: now, text: sc.prompt } as AgentEvent);
           simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
@@ -2219,35 +2225,31 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       setSchedulesPaused: async (on) => { simSched.pausedAll = on === true; simSched.changed(); return { ok: true, pausedAll: simSched.pausedAll }; },
       onSchedules: (cb) => { simSched.subs.push(cb); return () => undefined; },
       onScheduleRan: (cb) => { simSched.ran.push(cb); return () => undefined; },
-      // spec 017 FR-015..FR-017: doors the user closes (memory only in the simulator)
-      doorsList: async () => simDoorsRef?.list() ?? {},
-      setDoor: async (id, closed) => {
-        const D = simDoorsRef;
-        if (!D || !sims.some((x) => x.info.id === id) || typeof closed !== 'boolean') return { ok: false as const, error: 'invalid request' };
-        const d = D.map.get(id) ?? { closed: false, held: [] };
-        const remoteOff = closed && simRemote.has(id);
-        if (remoteOff) { simRemote.delete(id); simRemoteOffSubs.forEach((f) => f({ id, reason: 'the door is closed (Do not disturb)' })); } // spec 054 FR-040
-        d.closed = closed;
-        if (closed) d.releasing = false;
-        D.map.set(id, d);
-        D.changed();
-        return { ok: true as const, closed, held: d.held.length, ...(remoteOff ? { remoteOff: true } : {}) };
+      // spec 017 FR-031: prompts held behind a door before the update (memory only in the simulator)
+      heldList: async () => simHeldRef ? simHeldRef.list() : { items: [], notice: false, damaged: false },
+      heldNoticed: async () => { if (simHeldRef) simHeldRef.noticed = true; return { ok: true }; },
+      heldSend: async (ids) => {
+        const H = simHeldRef;
+        if (!H || (ids !== undefined && (!Array.isArray(ids) || ids.some((x) => typeof x !== 'string')))) return { ok: false as const, error: 'invalid request' };
+        const want = H.items.filter((h) => (!ids || ids.includes(h.id)));
+        const go = want.filter((h) => !!h.session && simSched.list.some((x) => x.id === h.scheduleId));
+        go.forEach((h) => H.chosen.add(h.id));
+        H.changed();
+        return { ok: true as const, started: go.length, skipped: want.length - go.length };
       },
-      releaseHeld: async (id, action) => {
-        const d = simDoorsRef?.map.get(id);
-        if (!simDoorsRef || !d || (action !== 'send' && action !== 'discard')) return { ok: false as const, error: 'invalid request' };
-        if (d.closed) return { ok: false as const, error: 'Open the door first.' };
-        if (action === 'discard') { const n = d.held.length; d.held = []; simDoorsRef.changed(); return { ok: true as const, discarded: n }; }
-        const n = d.held.length;
-        d.releasing = n > 0;
-        simDoorsRef.changed();
-        return { ok: true as const, queued: n };
+      heldDiscard: async (ids) => {
+        const H = simHeldRef;
+        if (!H || (ids !== undefined && (!Array.isArray(ids) || ids.some((x) => typeof x !== 'string')))) return { ok: false as const, error: 'invalid request' };
+        const n = H.items.length;
+        H.items = H.items.filter((h) => ids && !ids.includes(h.id));
+        [...H.chosen].forEach((id) => { if (!H.items.some((h) => h.id === id)) H.chosen.delete(id); });
+        H.changed();
+        return { ok: true as const, discarded: n - H.items.length };
       },
-      onDoorsChanged: (cb) => { simDoorSubs.push(cb); return () => undefined; },
-      onDoorsStopped: (cb) => { simDoorStopSubs.push(cb); return () => undefined; },
-      onDoorsFull: () => () => undefined,
+      heldDiscardBad: async () => ({ ok: true }),
+      onHeldChanged: (cb) => { simHeldSubs.push(cb); return () => undefined; },
+      onHeldStopped: (cb) => { simHeldStopSubs.push(cb); return () => undefined; },
       onRemoteOff: (cb) => { simRemoteOffSubs.push(cb); return () => undefined; },
-      doorsHeld: async (id) => (simDoorsRef?.map.get(id)?.held ?? []).map((h) => ({ prompt: h.prompt, at: h.at })),
       resolvePlan: async (id: string, requestId: string, answer: { kind: string; feedback?: string }) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || !s.planReq || s.planReq.id !== requestId) return { ok: false, error: 'unknown plan' };
@@ -2427,7 +2429,6 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       setRemote: async (id, on) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || typeof on !== 'boolean') return { ok: false, error: 'unknown agent' };
-        if (on && simDoorsRef?.map.get(id)?.closed) return { ok: false, error: 'The door is closed (Do not disturb). Open it first.' }; // spec 054 FR-040
         const k = caps(s.info.adapterId ?? 'copilot');
         if (!k.remote) return { ok: false, error: 'This agent app cannot be controlled remotely.' };
         await new Promise((r) => window.setTimeout(r, 600));
@@ -3080,7 +3081,6 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         console.info('[sim] would open in the system browser:', url);
         return { ok: /^https?:\/\//i.test(url) };
       },
-      setRoomClosed: async () => ({ ok: true }),
       // spec 087 FR-007a/FR-007c/FR-012: the choices and the Settings line, simulated (no real call)
       sandboxContinue: async (id, o) => {
         const s = sims.find((x) => x.info.id === id);

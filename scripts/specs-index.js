@@ -15,7 +15,7 @@
  * feature cell. `status` is ONE word from a fixed list (spec 021 FR-063, delta 2026-10-29): draft (outline, not agreed), specified
  * (spec, plan and tasks agreed, nothing or little built), building (work in progress, or planned build tasks still open), built
  * (done; open tasks are only deferred follow-ups, [KNOWN GAP]s or checks that need a real account or an owner), released (built
- * and shipped in a published release), superseded (replaced by another spec; say which in the note). The detail belongs in the
+ * and shipped in a published release), superseded (replaced by another spec; say which in the note), deprecated (removed with no direct replacement; the note says why and when, spec 021 FR-068). The detail belongs in the
  * spec's `## Changes`, not here. `note` is optional and shown after the status. One line each, Markdown allowed, no "|", no
  * "-->" or "--!>". specs/README.md holds only the hand-written text and the markers; the tables are built from the blocks by the
  * website (spec 050) and by this script.
@@ -42,7 +42,7 @@ const MARK_RE = /^<!--\s*specs-index group=([A-Za-z0-9._-]+)\s*-->$/;
 const ROW_RE = /^\| \[(\d{3})\]\((\d{3}-[a-z0-9-]+)\/spec\.md\) \| (.*?) \| (.*) \|$/;
 const KEYS = ['group', 'title', 'status', 'note'];
 const REQUIRED = ['group', 'title', 'status'];
-const STATUSES = ['draft', 'specified', 'building', 'built', 'released', 'superseded'];
+const STATUSES = ['draft', 'specified', 'building', 'built', 'released', 'superseded', 'deprecated'];
 const NOTE_MAX = 160;
 /* Numbers of the one-release spec folders folded into spec 008's release table (spec 021 FR-063): never reused for a new spec. */
 const RETIRED = ['023', '026', '031', '042', '046', '047', '053', '055', '067', '071', '078', '079', '082', '086', '088', '089', '090', '091'];

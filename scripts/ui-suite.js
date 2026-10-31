@@ -31,7 +31,7 @@ const DRIVERS = [
   { name: 'shots-001-welcome', sim: false }, // the first-run screen: no simulator
   { name: 'check-office-fill' }, // spec 001 FR-041..FR-046: grown desks with few agents (its own sim, simrooms and simhelpers per layout)
   { name: 'shots-017' },
-  { name: 'shots-017-signs' }, // spec 017 FR-003..FR-009: meeting-room door signs on session desks (word, icon, colour, contrast in 6 themes, fit)
+  { name: 'check-no-doors' }, // spec 017 FR-029..FR-034: no doors anywhere (15 agents, both sizes), and the prompts held behind a door before the update: one notice, Send / Discard / Decide later, never sent or dropped on their own
   { name: 'shots-018' },
   { name: 'shots-033', env: { DURBAR_SIM_FLOORS: '1' } },
   { name: 'shots-092', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 092 phase 1: floor screens (one floor at a time), PageUp/PageDown, the scroll rule, floors going off and on, an empty floor
@@ -96,7 +96,8 @@ const DRIVERS = [
   { name: 'check-theme-art' }, // spec 040 FR-023: a picked theme's characters and gadgets on desks, walkers, places and chips
   { name: 'check-crew' }, // spec 077: Cheeky portraits (Characters = Cheeky on Clean Office): box vs protected zones, pose, sharpness, the fallback with a picture removed
   { name: 'check-crew', label: 'check-crew retro', env: { CREW_THEME: 'retro' } }, // spec 077 FR-070: the same with Characters = Cheeky on Retro Pixel
-  { name: 'check-characters' }, // spec 077 FR-064..FR-069: Settings > Characters on Retro Pixel and Corporate (Cheeky, Minimalist, the theme's own)
+  { name: 'check-characters' }, // spec 077 FR-064..FR-069: Settings > Characters on Retro Pixel (Cheeky, Minimalist, the theme's own)
+  { name: 'check-removed-themes' }, // spec 035 FR-017, FR-018: a stored id of a removed theme shows Clean Office, in both sizes; Retro stays
   { name: 'check-permission-scope' }, // spec 003 FR-108: the approval card says how far "for this session" reaches
   { name: 'check-ro-ask' }, // spec 003 FR-094..FR-097: a Read-only denial's "Switch to Ask first…" opens the mode menu
   { name: 'check-why-allowed' }, // spec 003 FR-099..FR-105 (#605): the why-allowed tag on tool cards and Undo this rule
