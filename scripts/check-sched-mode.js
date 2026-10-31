@@ -247,7 +247,8 @@ module.exports = async (ctx) => {
     // ---- markup in a prompt stays text in the rows, the popup and the confirmation; the whole of a long prompt is shown; the popup's keys ----
     const hostile = '<img src=x onerror="window.__xss=1"><b id="hx">h</b><script>window.__xss=2</script>"\'&amp;';
     const tail = 'THE-TAIL-OF-THE-PROMPT';
-    await js(`window.__durbarSimSched.addWaiting(${jsLiteral(hostile)},${jsLiteral(pick.cwd)});0`);
+    const hid = await js(`window.__durbarSimSched.addWaiting(${jsLiteral(hostile)},${jsLiteral(pick.cwd)})`);
+    const hrow = `[...document.querySelectorAll('#sdList .sc-row')].find(x=>x.dataset.id===${jsLiteral(hid)})`;
     await js(`window.__durbarSimSched.addWaiting(${jsLiteral('x'.repeat(9900) + ' ' + tail)},${jsLiteral(pick.cwd)});0`);
     await js(`document.getElementById('foldersBtn').click()`); await wait(`document.querySelectorAll('[data-fp="sched"]').length>=2`);
     const nf = await js(`document.querySelectorAll('[data-fp="sched"]').length`);
@@ -255,19 +256,20 @@ module.exports = async (ctx) => {
     for (let i = 0; i < nf && !found; i++) {
       if (i) { await js(`document.getElementById('foldersBtn').click()`); await wait(`document.querySelectorAll('[data-fp="sched"]').length>=2`); }
       await js(`document.querySelectorAll('[data-fp="sched"]')[${i}].click()`); await wait(`!!document.getElementById('scAdd')`);
-      found = await js(`[...document.querySelectorAll('#sdList .sc-p')].some(x=>x.textContent.includes('onerror'))`);
+      found = await js(`!!${hrow}`);
       if (!found) await closeDlg();
     }
     assert.ok(found, 'the folder with the hostile prompt');
+    assert.ok((await js(`${hrow}.querySelector('.sc-p').textContent`)).includes('onerror'), 'the row shows the markup as its words');
     const clean = () => js(`!document.getElementById('hx')&&!document.querySelector('#schedDlg img,#schedModeDlg img,#modeDlg img')&&window.__xss===undefined`);
     assert.ok(await clean(), 'a row shows it as text');
-    await js(`(()=>{const b=[...document.querySelectorAll('#sdList .sc-row')].find(x=>x.querySelector('.sc-p').textContent.includes('onerror')).querySelector('[data-sc="mode"]');b.focus();b.click()})();0`);
+    await js(`(()=>{const b=${hrow}.querySelector('[data-sc="mode"]');b.focus();b.click()})();0`);
     await wait(`!!document.getElementById('schedModeDlg')`);
     assert.ok(await clean(), 'the popup shows it as text');
     await js(`(()=>{const s=document.querySelector('.sm-mode');s.value='allow';document.getElementById('smSave').click()})();0`);
     await wait(`!!document.getElementById('modeDlg')`);
     assert.ok(await clean(), 'the confirmation shows it as text');
-    assert.ok((await js(`document.getElementById('mdL').textContent`)).includes('onerror'), 'and whole');
+    assert.ok((await js(`(document.getElementById('mdL')||{textContent:''}).textContent`)).includes('onerror'), 'and whole');
     await js(`document.querySelector('#modeDlg [data-cancel]').click();0`);
     await wait(`!document.getElementById('modeDlg')`);
     // Tab wraps; Escape gives the focus back to what opened it
@@ -286,7 +288,7 @@ module.exports = async (ctx) => {
     assert.ok(await js(`(()=>{const d=document.querySelector('#schedModeDlg .dlg').getBoundingClientRect();return d.top>=0&&d.bottom<=innerHeight})()`), 'the popup stays on screen with it open');
     await js(`(()=>{const s=document.querySelector('.sm-mode');s.value='allow';document.getElementById('smSave').click()})();0`);
     await wait(`!!document.getElementById('modeDlg')`);
-    assert.ok((await js(`document.getElementById('mdL').textContent`)).endsWith(tail), 'the confirmation shows the whole prompt');
+    assert.ok((await js(`(document.getElementById('mdL')||{textContent:''}).textContent`)).endsWith(tail), 'the confirmation shows the whole prompt');
     assert.ok(await js(`(()=>{const d=document.querySelector('#modeDlg .dlg').getBoundingClientRect(),l=document.getElementById('mdL'),b=document.querySelector('#modeDlg .primary').getBoundingClientRect();return d.top>=0&&d.bottom<=innerHeight&&b.bottom<=innerHeight&&l.scrollHeight>l.clientHeight})()`), 'it scrolls, and its buttons stay on screen');
     await H.shot(path.join(dir, `044-mode-longprompt-${tag}.png`), { prep: 'mouse', settle: true });
     await js(`document.querySelector('#modeDlg [data-cancel]').click();0`);
