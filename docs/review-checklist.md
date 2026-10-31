@@ -101,6 +101,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **A refusable action says so**: the handler returns whether it acted, the UI announces success only then, the button is disabled with the reason. [#640](https://github.com/three-feathers/agent-durbar/pull/640)
 - [ ] **Announcements reach a screen reader** (live region used and tested); focus lands sensibly after Escape. [#622](https://github.com/three-feathers/agent-durbar/pull/622)
 - [ ] **Theme tokens, not literals**; check one dark and one non-default theme. [#530](https://github.com/three-feathers/agent-durbar/pull/530), [#588](https://github.com/three-feathers/agent-durbar/pull/588)
+- [ ] **A driver's contrast check parses `color(srgb 0-1 …)`** too: `getComputedStyle` gives `color-mix()` colours that way, and an `rgb()`-only parser reads them as black and passes. [#921](https://github.com/three-feathers/agent-durbar/pull/921)
 - [ ] **Tooltips stay within the limit** with the longest real value. [#630](https://github.com/three-feathers/agent-durbar/pull/630)
 - [ ] **Screenshots at 1440x900 and 1280x800**, every linked picture of the changed screen retaken (`npm run shots:docs`) and looked at (no figures mid-walk). [#632](https://github.com/three-feathers/agent-durbar/pull/632), [#574](https://github.com/three-feathers/agent-durbar/pull/574)
 
