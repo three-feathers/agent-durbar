@@ -661,3 +661,13 @@ Nothing here was run on a real session for this delta (0 credits); the `real:` e
   - **Honest limits:** `[KNOWN GAP]` not verified on macOS before merge; the next scheduled *UI on three OSes* run is the check. The linked screenshots are not retaken: a 0.6 px change does not show at their scale.
 
 **Tasks:** T161..T162 in `tasks.md` (issue #897). Numbers taken here: FR-190, T161..T162 (checked against `main`, the remote branches and the open PRs on 2026-10-30).
+
+### 2026-10-30: `check:office` waits for the Browser tab's native view and for the lobby to stop moving (flaky runs; branch `001-office-browser-waits`)
+
+- **FR-191** `[IMPLEMENTED]` `sim:` `check:office` Two blocks that still trusted a fixed pause or a single read now wait on a condition, so a slow or loaded machine no longer fails them by chance (they failed about one full run in three on loaded machines, a different agent each time). No change to `src/`, no check weakened.
+  - **Browser tab** (spec 080 T015 AC4): before opening an agent, the driver waits until no chat is open, then for that chat to open, clears any toast and clicks the Browser tab. Attaching the native view takes several round trips to the main process, so it then polls the window's native views (50 ms steps, 15 s at most) until exactly one is attached and lies on the window (at least 300x150, inside it with 2 px slack); a toast that appears meanwhile is an overlay that rightly takes the view off, so each poll clears it again. After Back it polls the same way until no native view is left. Before, it waited a fixed 250 + 900 ms and 300 ms and read once. A failure now says how long it waited and what it last saw: the view count, every view's bounds and the window's size.
+  - **A figure off its slot** (spec 024 T027): a figure that has arrived (no walking mark, no transition running) but is not on a lit slot is a failure only when two reads in a row, each after two animation frames, see the same figures and the same lit slots (the lobby can still re-lay out after the figure arrived). While they differ it re-measures, bounded by the same `SETTLE_MS` (3 s); still moving at the end, the message says so.
+  - **Proof hooks:** `OFFICE_TEST_STUCK_WALKER=off` plants a figure that has arrived off any slot and stays still (it must fail); `=moved` one that has arrived off a slot and moves for 1.2 s before it lands on a lit slot (it must pass). `OFFICE_ONLY=browser` runs the chats with the Browser tab alone (a developer aid, like `=floors`).
+  - **Honest limits:** `[KNOWN GAP]` checked on Linux under Xvfb only; not verified on Windows or macOS.
+
+**Tasks:** T163..T164 in `tasks.md`. Numbers taken here: FR-191, T163..T164 (checked against `main`, the remote branches and the open PRs on 2026-10-30).

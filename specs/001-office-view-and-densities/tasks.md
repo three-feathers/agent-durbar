@@ -234,3 +234,5 @@ Numbers checked against `main` (00d340eb) and every open PR on 2026-10-25: none 
 - [x] T160 Issue #737 (FR-189): docs: spec delta, README Known limits bullet removed, `changelog.d/001-lobby-seat-narrow.md`, pictures checked (`shots:docs -- --list`: none shows the lobby under 1000 px wide)
 - [x] T161 Issue #897 (FR-190): `styles.css` `.task` `min-height: calc(3em*1.35)`; `check-office-overlap.js` row-height failure prints unrounded heights and title lines
 - [x] T162 Issue #897 (FR-190): docs: spec delta, `changelog.d/001-office-height-diag.md`; screenshots not retaken (0.6 px)
+- [x] T163 (FR-191): `check-office-overlap.js`: the Browser tab block polls the native views (`nativeViews`: exactly one on the window, none after Back, toasts cleared each poll, last-seen diagnostics) instead of fixed pauses; `measure` fails a figure off its slot only after two identical reads of the figures and lit slots; hooks `OFFICE_TEST_STUCK_WALKER=off|moved`, `OFFICE_ONLY=browser`
+- [x] T164 (FR-191): docs: spec delta, `changelog.d/001-office-browser-waits.md`; no screenshots (driver only)

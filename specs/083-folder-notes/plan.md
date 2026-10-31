@@ -70,7 +70,7 @@ header   := "# Notes" LF LF "<!-- Kept by Agent Durbar (spec 083). One section p
 section  := LF marker LF "## " title LF LF body LF
 marker   := "<!-- durbar-note id=" ID " created=" ISO " updated=" ISO [" done"] " -->"   (written)
           | "<!-- durbar-note" [any attributes] " -->"                                  (read: no or unknown id = a new note)
-body     := lines; a line starting with "<!-- durbar-note" is written as "\<!-- durbar-note…"; trailing blank lines trimmed
+body     := lines; a line starting (after any "\") with "<!-- durbar-note", or with a conflict marker outside a closed fence, gets one more leading "\"; trailing blank lines trimmed; an empty text has no blank line and no body (spec Changes 2026-10-31)
 ```
 
 Read: CRLF accepted and turned into LF; a section ends at the next `marker` line at column 0 (code fences do not hide a marker; the write-side escape is what keeps a note's own marker-like line inside it); a `## ` line right after a marker is the title, else the title is guessed (FR-004). Text before the first marker, other than the header, is not imported: a `## ` heading there starts a new note (FR-054); any other stray text is dropped at the next write, and the view says once *Text outside notes in notes.md is not kept* (tested).
@@ -81,7 +81,7 @@ Read: CRLF accepted and turned into LF; a section ends at the next `marker` line
 
 - `src/shared/notes.ts` (pure): types, `NOTES_LIMITS` (character caps, and `storeBytes` / `mdBytes` computed from them, FR-006), `stripControls`, `fitsCap(bytes, cap)`, `parseNotesDoc`, `cleanTitle`, `guessTitle`, `newNoteId(rand)`, `mergeDocs(a, b)`, `applyChange(doc, change, now)` (rev check), `orderForFolder`, `rawDigestInput` (the normalisation both sides use).
 - `src/shared/redact.ts`: `maskNoteText(text, env?)` (R4).
-- `src/shared/notesmd.ts` (pure): `writeNotesMd(notes)`, `parseNotesMd(text)` → `{ ok, sections, conflict?, strayText? }`.
+- `src/shared/notesmd.ts` (pure): `writeNotesMd(notes)`, `parseNotesMd(text)` → `{ ok: true, sections, strayText, duplicates, overflow }` or `{ ok: false, reason: 'conflict' | 'too-big', error }`, `notesMdText(text)` (the text form both sides compare).
 - `src/main/notesstore.ts`: `NotesStore(dir, { fs?, now?, rand?, platform? })`: `list(folderKey)`, `save`, `update`, `delete`, `deleteAll`, `exportText`; per-folder queue; stat-and-merge; FR-007 read-only state; `notes:changed` callback.
 - `src/main/notesfile.ts`: the project mirror, used only while `notesFile` is on: `count(folderPath)` (the turn-on dialog only), `syncOut(folderPath, notes, mirror)` (checks, `O_EXCL`+`O_NOFOLLOW` temp, then right before the rename: real path and `lstat` of `.durbar`, `lstat` of `notes.md`, hash equal to `mirror.sha256`; a different hash aborts and imports first; returns the new `mirror` for the store to persist), `readBack(folderPath, mirror)` (≤ `mdBytes`, imports as `from: file` / `fileEdited`), `remove(folderPath, mirror)`, `addExclude(folderPath)` (walk up to `.git`, `gitdir`/`commondir`, append one anchored line with `O_APPEND`/`O_NOFOLLOW`; no git process, no `.gitignore`); link, real-path, FIFO, size and Windows-retry guards; injected `fs`.
 - `src/main/ipc/notes.ts`: `register({ agents, store, file, folders, resumeIdFor, adapterOf, showSaveDialog })`; `fromApp`; `import { register as registerNotes } from './ipc/notes'` (the `test:ipcchannels` rule).
@@ -93,7 +93,7 @@ Read: CRLF accepted and turned into LF; a section ends at the next `marker` line
 
 - `src/renderer/notes.js` (pure, `window.DurbarNotes`, a new global name: `test:globals`): grouping and order (FR-021), row view (masked), search (FR-043), insert text (FR-024's blank-line rule), `digestInput`, marker matching (FR-041), `/` entries from notes (FR-030).
 - `src/renderer/app.js`: message `⋯` (FR-010), save calls and toasts, drawer (FR-020..FR-027), `/` list wiring (`slashSupported`, `slashPick` with `insertText`), header count, marker, selection button, Ctrl+Shift+M, Ctrl+K entries, More item.
-- `src/renderer/screens.js`: the Notes screen (FR-044..FR-048, FR-050).
+- `src/renderer/screens.js`: the Notes screen's frame (kind `notes`); app.js paints its body with the drawer's row actions (FR-044..FR-048, FR-050). `src/renderer/notesscreen.js` (pure, `window.DurbarNotesScreen`, a new global name: `test:globals`): the screen's two groups, search over them and the menu label (T034a, spec *Changes* 2026-10-30).
 - `src/renderer/navigator.js`: one `TAKEN` row. `slashsuggest.js`: `insert` for `insertText`, `optionHtml` for `note` rows, `RANK.note=3`.
 - `styles.css`: drawer, rows, marker, count chip; tokens only (theme ratchet); comments say "issue 699", never `#699`.
 - Digest in the window: `crypto.subtle.digest('SHA-256', …)` over `DurbarNotes.digestInput(raw)`; main computes its own on save and is the authority; a shared test vector keeps both equal.
@@ -109,8 +109,8 @@ specs/083-folder-notes/   spec.md, plan.md, research.md, tasks.md
 src/shared/               notes.ts, notesmd.ts, redact.ts (maskNoteText), api.ts
 src/main/                 notesstore.ts, notesfile.ts, ipc/notes.ts, folders.ts, main.ts (wiring)
 src/preload/              the bridge calls
-src/renderer/             notes.js, app.js, screens.js, slashsuggest.js, navigator.js, sim.ts, index.html (script tag), styles.css
-scripts/                  test-notes.ts, test-notesmd.ts, check-notes.js; test-redact.ts, test-navigator.ts, test-slashcommands.ts, ui-suite.js
+src/renderer/             notes.js, notesscreen.js, app.js, screens.js, slashsuggest.js, navigator.js, sim.ts, index.html (script tag), styles.css
+scripts/                  test-notes.ts, test-notesmd.ts, check-notes.js, check-notes-screen.js; test-redact.ts, test-navigator.ts, test-slashcommands.ts, ui-suite.js
 docs/                     README feature list and *Safety model* line on notes; changelog.d/083-folder-notes.md; screenshots
 ```
 
