@@ -402,7 +402,7 @@ module.exports = async (ctx) => {
     assert.ok(await until(`__d17.b().getAttribute('aria-pressed')==='true'`, 4000), 'the door is closed');
     /* a held prompt with a token-shaped secret in it (built here, never a real token) */
     const TOKEN = ['ghp', '_', 'Z9'.repeat(18)].join('');
-    const saved = await js(`window.__durbarSimUi.bridge().saveSchedule({folder:(window.__durbarSimUi.agents().find((a)=>a.id===${jsLiteral(target)}).info||{}).cwd||window.__durbarSimUi.agents().find((a)=>a.id===${jsLiteral(target)}).cwd,prompt:${jsLiteral('deploy with ' + TOKEN + ' please')},at:Date.now()+1500,target:{session:${jsLiteral(target)}}}).then((r)=>!!r.ok||JSON.stringify(r))`);
+    const saved = await js(`window.__durbarSimUi.bridge().saveSchedule({folder:(window.__durbarSimUi.agents().find((a)=>a.id===${jsLiteral(target)}).info||{}).cwd||window.__durbarSimUi.agents().find((a)=>a.id===${jsLiteral(target)}).cwd,prompt:${jsLiteral('deploy with ' + TOKEN + ' please')},at:Date.now()+1500,mode:'ask',target:{session:${jsLiteral(target)}}}).then((r)=>!!r.ok||JSON.stringify(r))`);
     assert.strictEqual(saved, true, 'a one-off schedule for that agent: ' + saved);
     assert.ok(await until(`window.__durbarSimUi.bridge().doorsList().then((d)=>(d[${jsLiteral(target)}]||{}).held===1)`, 10000), 'its run is held at the closed door');
     /* FR-028: on a card desk the door you closed shows its word, and the desk's name says it */

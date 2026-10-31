@@ -567,6 +567,9 @@ async function main(): Promise<void> {
       await h2.advance(MIN);
       s = h2.sch.doc.schedules[0];
       assert.deepStrictEqual([h2.sent, s.last?.outcome, s.last?.reason, s.loop?.passes ?? 0], [[], 'mode-refused', 'mode-loop-autopilot', 0]);
+      // and it cannot be kept by an edit either: Autopilot is not offered on a loop
+      const keep = h2.sch.save({ id: s.id, edit: true, prompt: s.prompt, target: s.target, loop, mode: 'autopilot' }, () => true);
+      assert.ok(!keep.ok && /on a loop/.test(keep.error), JSON.stringify(keep));
       // no mode: a loop waits a pass length
       const none = stored({ id: 'sched-loop2', every: undefined, next: T0 + MIN, target: { session: 's2', agent: 'copilot' }, loop });
       const h3 = harness({ pausedAll: false, schedules: [none] });

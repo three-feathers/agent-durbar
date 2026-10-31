@@ -198,7 +198,7 @@ module.exports = async (ctx) => {
     const targets = [at.boss[0], at.bank[0], at.coffee[0], rest[0]];
     for (const [i, id] of targets.entries()) await emit({ type: 'title', sessionId: id, title: hostile(i + 1) });
     const folder = await js(`(()=>{const a=window.__durbarSimUi.agents().find(a=>!a.parent&&a.live);return a?(a.info.workspaceFile||a.info.cwd||''):''})()`);
-    const saved = await js(`window.__durbarSimUi.bridge().saveSchedule({folder:${q(folder)},prompt:${q(hostile(9) + ' sweep')},at:Date.now()+60000})`);
+    const saved = await js(`window.__durbarSimUi.bridge().saveSchedule({folder:${q(folder)},prompt:${q(hostile(9) + ' sweep')},at:Date.now()+60000,mode:'ask'})`);
     assert.ok(saved && saved.ok !== false, `hostile: the schedule is saved: ${JSON.stringify(saved)}`);
     assert.ok(await H.until(`[...document.querySelectorAll('#stage .place.boss .pv-n, #stage .place.bank .pv-n, #stage .place.coffee .pv-n')].some(e=>e.textContent.includes('<img'))&&(document.querySelector('#stage .place.postbox').getAttribute('aria-label')||'').includes('<img src=x')`, 6000), 'hostile: the new names and the prompt are drawn');
     await settleWalk();

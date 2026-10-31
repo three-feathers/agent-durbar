@@ -911,7 +911,7 @@ export interface DurbarApi {
   onDoorsChanged?(cb: (doors: Record<string, { closed: boolean; held: number }>) => void): () => void;
   /** Review on #631: the held prompts of a door (the window masks and cuts them in the Send all dialog). */
   doorsHeld?(id: string): Promise<{ prompt: string; at: number }[]>;
-  /** Send all stopped; the runs stay held (why: paused-all, paused, cap, ended, failed). */
+  /** Send all stopped; the runs stay held (why: paused-all, paused, cap, ended, updating, mode, failed). */
   onDoorsStopped?(cb: (p: { id: string; why: string }) => void): () => void;
   /** A scheduled run could not be kept at a closed door whose queue is full. */
   onDoorsFull?(cb: (p: { id: string }) => void): () => void;
