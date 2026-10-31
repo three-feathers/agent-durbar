@@ -3,10 +3,13 @@ import * as assert from 'node:assert';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { checkUserManifest, USER_THEME_LIMITS } from '../src/shared/themes';
+import { checkUserManifest, USER_THEME_LIMITS, RESERVED_THEME_IDS } from '../src/shared/themes';
 import { UserThemeStore } from '../src/main/themes';
 
-const BUILT = new Set(['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese', 'cheeky-crew']);
+const BUILT = new Set(RESERVED_THEME_IDS);
+for (const id of ['clean-office', 'retro', 'cheeky-crew', 'corporate', 'durbar-indian', 'durbar-european', 'durbar-japanese']) assert.ok(BUILT.has(id), `${id} is reserved (spec 035 FR-018)`);
+// main's handlers use exactly this list: no local copy (a mutant that drops the spread there fails this)
+assert.ok(/BUILT_IN_THEME_IDS = RESERVED_THEME_IDS;/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'themes.ts'), 'utf8')), 'ipc/themes.ts reads the shared reserved list');
 
 // --- manifest validation ---
 assert.strictEqual(checkUserManifest('{"id":"ocean","name":"Ocean"}').ok, true);

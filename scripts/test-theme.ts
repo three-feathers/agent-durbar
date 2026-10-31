@@ -204,6 +204,19 @@ for (const k of ['corporate', 'court-indian', 'court-european', 'court-japanese'
 }
 assert.deepStrictEqual(T._validateManifest({ id: 'old-ok', ui: 'retro', scene: 'pixel' }).dropped, [], 'a kept style and kit make no note');
 assert.ok(T.MOTION_PRESETS.court === undefined, 'the court motion preset is gone');
+// a user theme folder named after a removed id stays refused at registration (FR-018: the ids stay reserved)
+for (const id of REMOVED) {
+  const warned: string[] = [];
+  const realWarn = console.warn;
+  console.warn = (...a: unknown[]) => { warned.push(a.join(' ')); };
+  T.registerUserThemes({ [id]: { id, name: 'Mine' } });
+  console.warn = realWarn;
+  assert.ok(warned.some((w) => w.includes('dropped on registration') && w.includes(id)), id + ': a saved folder of that name is dropped at registration');
+  assert.strictEqual(T.setTheme(id), 'clean-office', id + ': a saved folder of that name is never applied');
+}
+T.registerUserThemes({ 'fine-one': { id: 'fine-one', name: 'Fine' } });
+assert.strictEqual(T.setTheme('fine-one'), 'fine-one', 'a normal saved theme still registers');
+T.registerUserThemes({});
 T.setTheme('clean-office');
 
 // Words (spec 040 FR-007): scene keys only, short, no control characters
