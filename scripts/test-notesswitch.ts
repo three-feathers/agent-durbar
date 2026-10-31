@@ -656,7 +656,7 @@ async function main(): Promise<void> {
     assert.strictEqual(nodeFs.readFileSync(md(r.folder), 'utf8'), theirs, 'nothing written into the other folder');
     void locked;
   });
-  await test('PR 931 review 3, points 4 and 5: the rename back never unlinks through a swapped link; when the second unlink fails only one name is left', async () => {
+  await test('PR 931 review 3, points 4 and 5: the rename back never unlinks through a swapped link; when the second unlink fails both names are reported, notes.md is never unlinked by name', async () => {
     if (!canLink) { skip('cannot make links here'); return; }
     // 4: the rename lands outside; .durbar real for its check; a decoy with OTHER bytes under the random name here; the hash check
     // fails and the hard link back succeeds; then .durbar is a link again: nothing outside may be deleted
@@ -679,15 +679,49 @@ async function main(): Promise<void> {
       assert.ok(nodeFs.readdirSync(outside).map((n) => nodeFs.statSync(path.join(outside, n)).ino).includes(ino), `the outside file still exists (${nodeFs.readdirSync(outside).join()})`);
       assert.ok(/are now two names of the same file: delete \.notes\.md\.\d+\.[a-z0-9]+\.del in \.durbar once nothing holds it\.$/.test(r.why!), r.why);
     }
-    // 5: every unlink of the random name fails (a Windows editor holds it): the new name is removed again, so only the random one is left
+    // 5: every unlink of the random name fails (a Windows editor holds it): nothing unlinks notes.md; the answer names both names
     {
       const c = countingFs();
       const { folder, store } = await written();
       let doomed = '';
       c.hook.unlinkSync = (real, ...a) => { if (String(a[0]).endsWith('.del')) { doomed = String(a[0]); throw Object.assign(new Error('perm'), { code: 'EPERM' }); } return real(...a); };
       const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
-      assert.ok(!nodeFs.existsSync(md(folder)) && nodeFs.statSync(doomed).nlink === 1, 'one name left: the random one');
-      assert.strictEqual(r.why, `Durbar did not delete .durbar/notes.md: it could not be deleted (EPERM); the file may be left as ${path.basename(doomed)}, in .durbar or in another folder: renaming it back to notes.md restores it.`);
+      assert.ok(nodeFs.existsSync(md(folder)) && nodeFs.statSync(doomed).nlink === 2, 'two names of one file: notes.md and the random one');
+      assert.ok(!c.calls.some((x) => x.m === 'unlinkSync' && x.p === md(folder)), 'notes.md is never unlinked by name');
+      const n = path.basename(doomed);
+      assert.strictEqual(r.why, `Durbar did not delete .durbar/notes.md: it could not be deleted (EPERM); notes.md and ${n} are now two names of the same file: delete ${n} in .durbar once nothing holds it.`);
+    }
+    // re-check of review 3: the rename lands outside through a link; .durbar swapped back (a decoy under the random name here, the other
+    // folder's file put back under its name); the unlink of the random name fails; .durbar swapped to the link: the outside notes.md survives
+    {
+      const c = countingFs();
+      const { folder, store } = await written();
+      const outside = fresh('outside5');
+      nodeFs.writeFileSync(path.join(outside, 'notes.md'), 'the other folder\'s own file\n');
+      const ino = nodeFs.statSync(path.join(outside, 'notes.md')).ino;
+      const d = path.join(folder, '.durbar'), aside = path.join(path.dirname(folder), 'aside5');
+      let state: 'real' | 'link' = 'real', phase = 0, doomed = '';
+      const toLink = (): void => { if (state === 'link') return; nodeFs.renameSync(d, aside); nodeFs.symlinkSync(outside, d, 'dir'); state = 'link'; };
+      const toReal = (): void => { if (state === 'real') return; nodeFs.unlinkSync(d); nodeFs.renameSync(aside, d); state = 'real'; };
+      c.hook.renameSync = (real, ...a) => { if (String(a[0]) === md(folder) && phase === 0) { doomed = String(a[1]); toLink(); phase = 1; } return real(...a); };
+      c.hook.lstatSync = (real, ...a) => {
+        if (phase === 1 && String(a[0]) === d) {
+          toReal();
+          nodeFs.renameSync(path.join(outside, path.basename(doomed)), path.join(outside, 'notes.md')); // the other file back under its name
+          nodeFs.renameSync(md(folder), doomed); // a decoy under the random name here, so the hard link back succeeds
+          nodeFs.writeFileSync(doomed, 'a decoy\n');
+          phase = 2;
+        }
+        return real(...a);
+      };
+      c.hook.unlinkSync = (real, ...a) => {
+        if (String(a[0]).endsWith('.del')) { phase = 3; throw Object.assign(new Error('perm'), { code: 'EPERM' }); }
+        if (phase === 3 && String(a[0]) === md(folder)) toLink(); // swapped right after any check, before an unlink by the name notes.md
+        return real(...a);
+      };
+      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
+      assert.ok(phase === 3 && !r.removed, `the sequence ran: ${JSON.stringify(r)}`);
+      assert.ok(nodeFs.existsSync(path.join(outside, 'notes.md')) && nodeFs.statSync(path.join(outside, 'notes.md')).ino === ino, 'the other folder\'s notes.md survives');
     }
   });
   await test('PR 931 review 2, points 2 and 3: only turning on creates the file; another folder at the same path is not written into', async () => {

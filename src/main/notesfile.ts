@@ -445,9 +445,9 @@ export class NotesFile {
           try { this.fs.renameSync(doomed, pl.p.notes); return keep(REMOVE_REFUSED(why)); } catch { return left(why, false); }
         }
         // two names for one file now: drop the random one, but only where it really is in this `.durbar` (review 3 of PR 931: an
-        // unchecked unlink here could remove a file a swapped link points to); failing that, drop the new name, checked the same way
+        // unchecked unlink here could remove a file a swapped link points to). Nothing on this path ever unlinks the name `notes.md`
+        // (re-check of review 3): when the random name cannot go, the answer says the file has two names and which one to delete.
         if (this.isHere(doomed)) { try { this.fs.unlinkSync(doomed); return keep(REMOVE_REFUSED(why)); } catch { /* held open: below */ } }
-        if (this.isHere(pl.p.notes)) { try { this.fs.unlinkSync(pl.p.notes); return left(why, false); } catch { /* held open too */ } }
         return keep(REMOVE_REFUSED(`${why}; notes.md and ${name} are now two names of the same file: delete ${name} in .durbar once nothing holds it`));
       };
       const moved = this.checkDurbar(pl.p.folder, pl.p.durbar);
