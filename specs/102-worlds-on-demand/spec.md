@@ -3,8 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Worlds and character sets as two flat lists of untrusted data packs (owner decisions, Vikram 2026-10-31; #932, #933): any set in any world, downloaded on demand with a plain internet notice from an extensible source, made in the app or by a prompt pack, and shared; one validator for all
-note: spec, plan, tasks only; nothing built; art stays outside the repo until each world's own task; first ship waits for spec 097 FR-179
-status: draft
+note: phase 1 built (zip reader, pack validator, moments, prompts; no caller, UI or network yet); phases 2 to 8 and all art not built; ship waits for 097 FR-179
+status: building
 -->
 
 **Feature Branch**: `102-worlds` (spec); code branches `102-pN-slug`, one per phase
@@ -597,3 +597,17 @@ D4, OP-7, OP-9 and the crew edge case are replaced; FR-010, FR-011, FR-035 (h), 
 ### 2026-10-31: owner's answers on OP-10, OP-11, OP-12 (spec 021 FR-067)
 
 Shipped worlds and their cost (FR-213, D7, SC-007); Minimalist to full poses; Retro game ships when the theme goes; `worlds-*` releases at any time. OP-1, OP-5 and OP-6 are marked as agent decisions.
+
+### 2026-10-31: phase 1 built, and the choices it had to make (PR `102-pack-validator`, tasks T010..T012, T014..T016)
+
+`src/shared/worldzip.ts`, `worldpack.ts`, `worldmoments.ts`, `worldprompts.ts` and `scripts/fixtures/worlds/gen.ts` exist, with `test:worldzip`, `test:worldpack` and `test:world-packs` in `npm test`. Pure code: nothing calls it yet, so no user sees any change. `[IMPLEMENTED]` FR-050, FR-051, FR-052 (header, not decode), FR-040, FR-041, FR-042, FR-043, FR-030, FR-031, FR-034, FR-056, FR-131 (the text), FR-152 (cleaning), `test:` the three suites. `[KNOWN GAP]` FR-053 and FR-054 (decode in the sandboxed encoder window) and FR-019, T017 (floor line from alpha) are phase 5; T013 and T018 are partly done (see `tasks.md`).
+
+Where the spec was silent or ambiguous the code chose the strict side, listed here for the owners to change in one line each (all in the `PART_TABLE` and constants of `worldpack.ts` and `worldzip.ts`):
+- **File names and limits not given by 098 FR-030**: `lift-shaft.webp` (60 KB, at most 180 px wide), `lift-cover.webp` (150 KB), `lift-cutaway.webp` (200 KB, optional), `speech-bubble.webp` and `slip.webp` (24 KB), `panel-frame.webp` (60 KB), `panel-backdrop.webp` (150 KB, optional). Picture-size limits where FR-042 gave none: `floor.webp` and the desk, lift cover, cut-away, panel and backdrop pictures at most 1920x1200; the bubble 720x720, the slip 840x840; a window at least 48x8 px; every part at most 4096 px a side.
+- **A pack needs only `world.json` to be valid**; missing parts make it `unfinished` (FR-034), they are not errors. The listed-and-present rule of 098 FR-032 holds both ways.
+- **`world.json` has no `v` field**; FR-040's "`v: 1`" is read as `formatVersion: 1`, and a field not on the list is refused.
+- **Half-size desk screen**: `screenRect` must be at least 40x20 px at `desk-half.webp`'s own size (FR-032 gives no number; 097 FR-032's bars need room). Anchors: `standX`, `plateAnchor`, `lightAnchor`, `floorLine` per fixture, `doorRect` on the Boss only, and `surfaceY`, `screenRect`, `plateRect`, `lampAnchor`, `callAnchor` on the two desk pictures.
+- **Zip names are ASCII only** (letters, digits, `.`, `_`, `-`, space; at most 64 bytes), which refuses control, bidi, NUL and Unicode look-alike or normalisation variants in one rule. A zip comment is refused. Kept entries are the closed list only; `README.txt` and any other file are refused.
+- **PNG is accepted by magic** as well as WebP (FR-052), under a `.webp` name; a PNG may hold only `IHDR PLTE tRNS gAMA cHRM sRGB pHYs IDAT IEND`, with correct CRCs and nothing after `IEND`, because project packs are not re-encoded.
+- **Tokens**: values go through `checkUserManifest` and an unusable value (an unknown font, a typed token out of range) refuses the pack. Contrast is measured with `themeIssues` against Clean Office's tokens that the caller passes in; without them a pack with tokens is refused. The repair itself (`contrastFix`) lives inside the renderer's `theme.js` and cannot be imported by shared code, so P1 only reports `contrastIssues`; the renderer repairs when it applies the world (phase 2), as for user themes.
+- **`webpcheck.ts`** is copied from #938 byte for byte; `imagecheck.ts` is not (its 512 px floor is for characters). `worldprompts.ts` has its own small description cleaner (`cleanPlaceIdea`) because #938's `cleanDescription` is not on `main`; once it is, both should use one helper (follow-up in the phase 5 PR).

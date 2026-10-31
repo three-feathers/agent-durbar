@@ -84,6 +84,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **A tested op is not tested wiring**: call the registered IPC channel on a stand-in `electron` (`test-orgwiring.ts`), pin `main.ts` hand-over lines by text, plant "dependency dropped" and "returns `undefined`". [#644](https://github.com/three-feathers/agent-durbar/pull/644)
 - [ ] **A driver assert on an outcome the simulator also enforces proves nothing**: assert the request was never sent (wrap the bridge call). [#644](https://github.com/three-feathers/agent-durbar/pull/644)
 - [ ] **An async test whose promise never settles exits 0**: `process.exitCode = 1` at the start, 0 only after the OK line. Spec 093 phase 2
+- [ ] **A hostile-file fixture pins its refusal reason** (refused for the wrong reason proves nothing); "limits before work" is shown by a spy on the inflater or decoder; redundant guards are removed or each has a fixture only it stops. Spec 102 phase 1
 - [ ] **A test that accepts the failure path proves nothing** ("passes on 'Could not copy' too"). [#538](https://github.com/three-feathers/agent-durbar/pull/538)
 - [ ] **Office changes with floors on run every driver that loads `simfloors`** (`grep -l simfloors scripts/*.js`). Spec 092 phase 1
 - [ ] **Shared desk markup changes run the whole UI suite** (`node scripts/ui-suite.js`), keeping each feature's own wording. [#631](https://github.com/three-feathers/agent-durbar/pull/631)
