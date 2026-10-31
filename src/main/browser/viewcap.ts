@@ -3,6 +3,8 @@
  * it facts main already has and reloads the unloaded view with *Reloaded to save memory* when it is shown again.
  */
 export const MAX_LIVE_VIEWS = 4;
+/** Spec 080 FR-126 (owner decision Q2, 2026-10-31): at most this many page tabs per session, empty ones included. It never raises `MAX_LIVE_VIEWS`. */
+export const MAX_TABS_PER_SESSION = 10;
 
 export interface CapView {
   id: string;
@@ -21,6 +23,8 @@ export interface CapView {
   callInCurrentTurn: boolean;
   /** A `browser_type` call ran since the page loaded (`Input.insertText` fires no `input-event`; always false in Phase 1). */
   browserTypeSinceLoad: boolean;
+  /** FR-126: a tab that is not its session's active tab. Safe background tabs are picked before any session's active tab. */
+  background?: boolean;
 }
 
 export function safeToUnload(v: CapView): boolean {
@@ -34,7 +38,8 @@ export function safeToUnload(v: CapView): boolean {
 export function pickUnload(views: readonly CapView[], cap: number = MAX_LIVE_VIEWS): { unload: string[]; overCap: boolean } {
   const live = views.filter((v) => v.loaded).length;
   const need = Math.max(0, live + 1 - Math.max(1, cap));
-  const candidates = views.filter(safeToUnload).sort((a, b) => a.lastShownAt - b.lastShownAt);
+  // FR-126: background tabs first (least recently shown first), then the active tabs of sessions that are not shown, as before
+  const candidates = views.filter(safeToUnload).sort((a, b) => Number(!!b.background) - Number(!!a.background) || a.lastShownAt - b.lastShownAt);
   const unload = candidates.slice(0, need).map((v) => v.id);
   return { unload, overCap: unload.length < need };
 }

@@ -116,7 +116,7 @@ assert.ok(/\.panel-in\.on-browser #chat\{[^}]*visibility:hidden/.test(block), 't
   const rect = { left: 0, top: 0, width: 500, height: 300, right: 500, bottom: 300 };
   const el = (id: string): unknown => {
     if (made[id]) return made[id];
-    const store: Record<string, unknown> = { dataset: {}, style: { setProperty() {} }, classList: { toggle() {}, add() {}, remove() {} }, getBoundingClientRect: () => rect, appendChild() {}, remove() {}, focus() {}, setAttribute() {}, querySelector: () => el('q'), querySelectorAll: () => [] };
+    const store: Record<string, unknown> = { dataset: {}, style: { setProperty() {} }, classList: { toggle() {}, add() {}, remove() {} }, getBoundingClientRect: () => rect, appendChild() {}, remove() {}, focus() {}, setAttribute() {}, removeAttribute() {}, contains: () => false, querySelector: () => el('q'), querySelectorAll: () => [] };
     return (made[id] = new Proxy(store, { get: (t, k) => (k in t ? t[k as string] : undefined), set: (t, k, v) => ((t[k as string] = v), true) }));
   };
   const g = globalThis as unknown as Record<string, unknown>;
@@ -160,7 +160,55 @@ assert.ok(/\.panel-in\.on-browser #chat\{[^}]*visibility:hidden/.test(block), 't
     assert.strictEqual(R(true, false, 'session', false), 'system', 'no live root (the demo, an ended or removed parent): a web link goes to the system browser, not nowhere');
     assert.strictEqual(R(false, false, 'session', false), 'refuse', 'and a non-web link is refused with the static text');
     const app2 = fs.readFileSync(path.join(ROOT, 'src/renderer/app.js'), 'utf8');
-    assert.ok(/root=a&&liveRoot\(a\)[^\n]*\n[^\n]*\n\s*const route=BP\.linkRoute\(web,mod,CHAT_LINKS,!!root&&BP\.available\(root\)\)/.test(app2), "the click uses the chat's root session (a helper's parent), never the clicked chat's own id");
-    assert.ok(/BP\.openLink\(root\.id,u\)/.test(app2), 'and asks main for the root id');
+    assert.ok(/root=a&&liveRoot\(a\)[^\n]*\n[^\n]*\n\s*const route=BP\.linkRoute\(web,mod,how==='newTab'\?'session':CHAT_LINKS,!!root&&BP\.available\(root\)\)/.test(app2), "the click uses the chat's root session (a helper's parent), never the clicked chat's own id");
+    assert.ok(/BP\.openLink\(root\.id,u,how\)/.test(app2), 'and asks main for the root id');
+  }
+  // ---- spec 080 T024: the page tabs (FR-122, FR-123, FR-126, FR-129, FR-133) ----
+  {
+    const P = BP as unknown as { stripHTML(t: unknown): string; tabName(x: unknown): string; tabStep(t: unknown, id: string, step: number): string | null; TAB_LIMIT: string; barModel(s: unknown): { status: { kind: string; word: string } | null } };
+    const T = (n: number, active = 1) => ({ id: 's', active: 't0000000' + active, tabs: Array.from({ length: n }, (_, i) => ({ tabId: 't0000000' + (i + 1), kind: 'user', title: i === 1 ? '<img src=x onerror=alert(1)> "Q"' : i === 2 ? '' : 'Page ' + (i + 1), url: i === 2 ? 'https://host.example:8080/p' : 'https://a.example/', loading: i === 3, dialogOpen: i === 4, memory: i === 5 ? 'dropped' : undefined })) });
+    const h = P.stripHTML(T(6, 2));
+    // AC1: role=tab buttons with aria-selected, aria-controls the page area, a roving tabindex; close buttons are siblings named Close <title>
+    const tabs = [...h.matchAll(/<button class="btab-b" role="tab"[^>]*>/g)].map((m) => m[0]);
+    assert.strictEqual(tabs.length, 6);
+    assert.strictEqual(tabs.filter((t) => /aria-selected="true"/.test(t)).length, 1, 'one selected tab');
+    assert.ok(/id="btab-t00000002" aria-selected="true" aria-controls="bView" aria-setsize="6" aria-posinset="2" tabindex="0"/.test(h), 'the selected tab: aria-selected, aria-controls, its position, tabindex 0');
+    assert.strictEqual(tabs.filter((t) => /tabindex="0"/.test(t)).length, 1, 'roving tabindex: one tab stop');
+    assert.ok(!/<button[^>]*role="tab"[^>]*>(?:(?!<\/button>).)*<button/.test(h), 'the close button is never nested in the tab');
+    assert.strictEqual((h.match(/class="btab-x"/g) ?? []).length, 6, 'a close button per tab');
+    assert.ok(/aria-label="Close Page 1"/.test(h), 'named Close <title>');
+    assert.ok(!/<img/.test(h) && /&lt;img src=x onerror=alert\(1\)&gt; &quot;Q&quot;/.test(h), 'a page title is escaped (page text)');
+    assert.ok(/<span class="btab-t">host\.example:8080<\/span>/.test(h), 'no title: the host');
+    assert.ok(/<span class="sr-only">, Loading<\/span>/.test(h) && /<span class="sr-only">, Dialog open<\/span>/.test(h) && /<span class="sr-only">, Unloaded to save memory<\/span>/.test(h), 'every state has an icon and a word');
+    assert.strictEqual(P.tabName({ title: '', url: '' }), 'New tab', 'an empty tab is New tab');
+    assert.strictEqual(P.stripHTML({ id: 's', active: 'x', tabs: [{ tabId: '../evil', title: 'x' }, { tabId: 't0000000a"><script>', title: 'y' }] }), '', 'a malformed tab id is never written');
+    assert.strictEqual(P.stripHTML(null), '');
+    assert.strictEqual(P.tabStep(T(3, 3), 't00000003', 1), 't00000001', 'Ctrl+Tab wraps');
+    assert.strictEqual(P.tabStep(T(3, 1), 't00000001', -1), 't00000003', 'Ctrl+Shift+Tab wraps');
+    // the limit note (US6.5)
+    assert.ok(/10 tabs, the most it can hold/.test(P.TAB_LIMIT));
+    const lim = P.barModel({ id: 's', open: true, url: 'https://a.example/', title: 'x', loading: true, tabLimit: true });
+    assert.deepStrictEqual(lim.status, { kind: 'limit', word: P.TAB_LIMIT }, 'the bar says it, with an icon');
+    // the pane: the strip above the bar, + named New tab, the More button, a polite live region
+    const pane = BP.paneHTML();
+    assert.ok(pane.indexOf('id="bTabs"') < pane.indexOf('class="bbar"'), 'the strip is above the bar, inside the Browser tab');
+    assert.ok(/id="bTabs" role="tablist" aria-label="Pages"/.test(pane), 'tablist named Pages');
+    assert.ok(/id="bNewTab" type="button" aria-label="New tab"/.test(pane), '+ is named New tab');
+    assert.ok(/id="bMore" type="button" aria-label="More browser actions"[^>]*aria-haspopup="menu"/.test(pane), 'More browser actions');
+    assert.ok(/id="bLive" aria-live="polite"/.test(pane), 'Opened in a new tab is announced politely (FR-129)');
+    const bp = fs.readFileSync(path.join(ROOT, 'src/renderer/browserpane.js'), 'utf8');
+    assert.ok(/plus\.disabled=full;if\(full\)plus\.setAttribute\('aria-describedby','bLimitText'\)/.test(bp), '+ is disabled at 10 with the limit text as its description');
+    assert.ok(/announce\('Opened in a new tab'\)/.test(bp), 'a background tab from a page is announced, no focus move');
+    // FR-123: the More menu uses the shared menu element (#modeMenu), no new menu component
+    const app3 = fs.readFileSync(path.join(ROOT, 'src/renderer/app.js'), 'utf8');
+    assert.ok(/function openBrowserMenu\(anchor,items,pick\)\{\n  closeModeMenu\(\);\n  const m=document\.createElement\('div'\);m\.id='modeMenu';m\.className='mode-menu';m\.setAttribute\('role','menu'\)/.test(app3), 'the More menu is the shared #modeMenu');
+    assert.ok(/role="menuitemcheckbox" aria-checked="\$\{x\.checked\?'true':'false'\}"/.test(app3), 'the toggle is a checkable item');
+    assert.ok(/menu:openBrowserMenu,/.test(app3), 'lent to the pane');
+    assert.ok(/label:'Open chat links in a new tab'/.test(bp), 'the item\'s words');
+    // the strip CSS: 72px minimum, scrolls inside itself, no motion beyond the shared spinner rule
+    const css = fs.readFileSync(path.join(ROOT, 'src/renderer/styles.css'), 'utf8');
+    assert.ok(/\.btab\{flex:0 1 168px;min-width:72px;/.test(css), 'tabs shrink to 72px');
+    assert.ok(/\.btabs\{[^}]*overflow-x:auto;overflow-y:hidden/.test(css), 'then the strip scrolls sideways inside itself');
+    assert.ok(!/scrollIntoView/.test(bp), 'the active tab is kept in view by the strip\'s own scrollLeft, never scrollIntoView (it would scroll the office)');
   }
 })().then(() => console.log('browser pane tests passed'), (e) => { console.error(e); process.exit(1); });

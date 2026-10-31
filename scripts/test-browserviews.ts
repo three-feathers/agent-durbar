@@ -102,6 +102,42 @@ for (const url of ['', 'about:blank', 'about:srcdoc', 'data:text/html,x', 'blob:
 assert.deepStrictEqual(loaded, ['https://example.com/a'], 'nothing but http(s) loads in the view');
 assert.deepStrictEqual(popups, ['https://example.com/b'], 'about:blank and empty are blocked popups with no offer');
 
+// spec 080 FR-125 (T023 AC4): in a user tab a same-origin tab request opens a NEW tab through main; the window open is still denied
+{
+  const tabs: [string, boolean][] = [], inView: string[] = [], offers: string[] = [];
+  let room = true;
+  const ht = buildViewHandlers({ sim: false, currentUrl: () => 'https://example.com/page', loadInView: (u) => inView.push(u), onPopupBlocked: (u) => offers.push(u), openTab: (u, fg) => (tabs.push([u, fg]), room) });
+  assert.deepStrictEqual(ht.windowOpen({ url: 'https://example.com/a', disposition: 'foreground-tab', referrer: { url: 'https://example.com/page' } }), { action: 'deny' }, 'still deny: Durbar makes the tab itself');
+  assert.deepStrictEqual(ht.windowOpen({ url: 'https://example.com/b', disposition: 'background-tab', referrer: { url: 'https://example.com/x' } }), { action: 'deny' });
+  assert.deepStrictEqual(tabs, [['https://example.com/a', true], ['https://example.com/b', false]], 'foreground and background tabs');
+  assert.deepStrictEqual(inView, [], 'a user tab never loads it in place');
+  for (const [d, why] of [[{ url: 'https://evil.test/x', disposition: 'foreground-tab', referrer: { url: 'https://evil.test/frame' } }, 'cross-origin frame'], [{ url: 'https://example.com/c', disposition: 'foreground-tab', referrer: { url: '' } }, 'empty referrer'], [{ url: 'https://example.com/c', disposition: 'foreground-tab' }, 'no referrer'], [{ url: 'https://example.com/c', disposition: 'new-window', referrer: { url: 'https://example.com/page' } }, 'a popup with features']] as const) {
+    const n = tabs.length;
+    assert.deepStrictEqual(ht.windowOpen(d as never), { action: 'deny' });
+    assert.strictEqual(tabs.length, n, `${why}: no tab`);
+  }
+  assert.strictEqual(offers.length, 4, 'each of those is offered for the system browser');
+  room = false;
+  ht.windowOpen({ url: 'https://example.com/full', disposition: 'foreground-tab', referrer: { url: 'https://example.com/page' } });
+  assert.strictEqual(offers[offers.length - 1], 'https://example.com/full', 'refused by main (the limits): offered instead');
+  // the T011 hostile list: zero tabs and zero offers (nothing reaches shell.openExternal)
+  const t0 = tabs.length, o0 = offers.length;
+  for (const url of ['javascript:alert(1)', 'file:///etc/passwd', 'chrome://settings', 'ms-msdt:/id PCWDiagnostic', 'search-ms:query=x', 'search:query=x', 'ms-officecmd:x', 'ms-settings:privacy', 'smb://host/share', 'vscode://x', 'slack://open', 'tel:123', 'MS-MSDT:/id', ' ms-msdt:/id', 'mailto:a@b.c', 'about:blank', '', 'data:text/html,x', 'blob:https://example.com/x', 'durbar-sim://pages/index']) {
+    for (const disposition of ['foreground-tab', 'background-tab', 'new-window']) ht.windowOpen({ url, disposition, referrer: { url: 'https://example.com/page' } });
+  }
+  assert.strictEqual(tabs.length, t0, 'zero tabs for a hostile scheme');
+  assert.strictEqual(offers.length, o0, 'zero offers (no shell.openExternal path) for a hostile scheme');
+  // the simulator's pages open tabs only under the simulator, and only from the same test host
+  const st: string[] = [];
+  const hs = buildViewHandlers({ sim: true, currentUrl: () => 'durbar-sim://pages/links', loadInView: () => undefined, onPopupBlocked: () => undefined, openTab: (u) => (st.push(u), true) });
+  hs.windowOpen({ url: 'durbar-sim://pages/index', disposition: 'foreground-tab', referrer: { url: 'durbar-sim://pages/links' } });
+  hs.windowOpen({ url: 'durbar-sim://other/landing', disposition: 'foreground-tab', referrer: { url: 'durbar-sim://other/x' } });
+  hs.windowOpen({ url: 'durbar-sim://pages/index', disposition: 'foreground-tab', referrer: { url: 'durbar-sim://user@pages/links' } });
+  assert.deepStrictEqual(st, ['durbar-sim://pages/index'], 'same test host only');
+  const off: string[] = [];
+  buildViewHandlers({ sim: false, currentUrl: () => 'durbar-sim://pages/links', loadInView: () => undefined, onPopupBlocked: () => undefined, openTab: (u) => (off.push(u), true) }).windowOpen({ url: 'durbar-sim://pages/index', disposition: 'foreground-tab', referrer: { url: 'durbar-sim://pages/links' } });
+  assert.deepStrictEqual(off, [], 'never without the simulator');
+}
 for (const [url, isMainFrame, ok] of [['https://a.com/', true, true], ['file:///etc/passwd', true, false], ['file:///x', false, false], ['data:text/html,x', true, false], ['data:text/html,x', false, true], ['chrome://gpu', true, false], ['durbar-sim://x', true, false]] as const) {
   const e = ev();
   h.navigate({ url, isMainFrame, preventDefault: () => e.preventDefault() });
@@ -323,9 +359,11 @@ assert.deepStrictEqual(pickUnload([mk('v1', { charKeySinceLoad: true }), mk('v2'
 
 // ---- views.ts against a fake Electron (T012 AC5-AC7, Paco/reviewer items) ----
 import { makeViews, type ViewDeps } from '../src/main/browser/views';
+const T1 = 't00000001';
 function fakeElectron() {
   const log: string[] = [];
   const created: { wc: any; ses: any }[] = [];
+  const sesByName = new Map<string, any>();
   const gate: { loadHold?: Promise<void>; attachFails?: boolean; enableFails?: boolean; unloadBlocks?: boolean; direct?: string[] } = {};
   const deps: ViewDeps = {
     chromeVersion: '152.0.0.1',
@@ -344,7 +382,7 @@ function fakeElectron() {
       let cancelling = false;
       const wc = Object.assign(new EventEmitter(), {
         prefs, debugger: dbg, msg,
-        setWindowOpenHandler() {}, setUserAgent: (u: string) => void log.push(`${i}:ua ${u}`), getUserAgent: () => 'Mozilla/5.0 (X11; Linux x86_64) Chrome/152.0.0.1 Electron/44 Safari/537.36',
+        openHandler: undefined as unknown, setWindowOpenHandler(h: unknown) { (this as { openHandler: unknown }).openHandler = h; }, setUserAgent: (u: string) => void log.push(`${i}:ua ${u}`), getUserAgent: () => 'Mozilla/5.0 (X11; Linux x86_64) Chrome/152.0.0.1 Electron/44 Safari/537.36',
         setAudioMuted: (m: boolean) => void log.push(`${i}:mute ${m}`),
         // a page with a beforeunload handler: the unload event fires, and the navigation is cancelled unless the handler prevented it
         unload(): boolean { const e = { prevented: false, preventDefault() { this.prevented = true; } }; (this as unknown as EventEmitter).emit('will-prevent-unload', e); return e.prevented; },
@@ -357,18 +395,29 @@ function fakeElectron() {
         getURL: () => 'https://a.com/', reload() {},
         navigationHistory: { getActiveIndex: () => 1, getEntryAtIndex: (n: number) => (n === 0 ? { url: 'https://a.com/0' } : { url: 'https://a.com/1' }), length: () => 2,
           goToIndex(n: number) { log.push(`${i}:go ${n}`); if (gate.unloadBlocks && !(wc as unknown as { unload(): boolean }).unload()) log.push(`${i}:cancelled`); } },
-        close: (o: object) => { log.push(`${i}:close ${JSON.stringify(o)}`); destroyed = true; }, isDestroyed: () => destroyed,
+        // FR-128: waitForBeforeUnload runs the page's beforeunload; a page that asks keeps the view open (Electron fires will-prevent-unload)
+        close: (o: { waitForBeforeUnload?: boolean }) => {
+          if (destroyed) return;
+          if (o && o.waitForBeforeUnload && gate.unloadBlocks && !(wc as unknown as { unload(): boolean }).unload()) { log.push(`${i}:close kept`); return; }
+          log.push(`${i}:close ${JSON.stringify(o)}`); destroyed = true; (wc as unknown as EventEmitter).emit('destroyed');
+        }, isDestroyed: () => destroyed,
       });
-      const ses = Object.assign(new EventEmitter(), {
-        nulls: 0, set: [] as string[],
-        setPermissionRequestHandler(f: unknown) { if (!f) this.nulls++; this.set.push('req'); }, setPermissionCheckHandler(f: unknown) { if (!f) this.nulls++; }, setDevicePermissionHandler(f: unknown) { if (!f) this.nulls++; }, setDisplayMediaRequestHandler(f: unknown) { if (!f) this.nulls++; },
-        clearStorageData: async () => void log.push(`${i}:clearStorage`), clearCache: async () => void log.push(`${i}:clearCache`),
-      });
+      const ses = sesByName.get(String(prefs.partition));
       created.push({ wc, ses });
-      (deps as { lastSes?: unknown }).lastSes = ses;
       return { webContents: wc as never };
     },
-    sessionFromPartition: () => (deps as { lastSes?: never }).lastSes as never,
+    // FR-121: one session object per partition name (made before its first view, as Electron's session.fromPartition does)
+    sessionFromPartition: (name: string) => {
+      if (!sesByName.has(name)) {
+        const i = created.length;
+        sesByName.set(name, Object.assign(new EventEmitter(), {
+          nulls: 0, set: [] as string[], name,
+          setPermissionRequestHandler(f: unknown) { if (!f) this.nulls++; this.set.push('req'); }, setPermissionCheckHandler(f: unknown) { if (!f) this.nulls++; }, setDevicePermissionHandler(f: unknown) { if (!f) this.nulls++; }, setDisplayMediaRequestHandler(f: unknown) { if (!f) this.nulls++; },
+          clearStorageData: async () => void log.push(`${i}:clearStorage`), clearCache: async () => void log.push(`${i}:clearCache`),
+        }));
+      }
+      return sesByName.get(name) as never;
+    },
   };
   return { deps, log, created, gate };
 }
@@ -376,12 +425,12 @@ function fakeElectron() {
   // creation: muted, about:blank first, then attach, then only Page.enable; the UA has no Electron token; the options are the builder's
   {
     const f = fakeElectron(); const v = makeViews(f.deps);
-    const sv = await v.ensureSessionView('s1');
+    const sv = await v.ensureTabView('s1', T1);
     assert.deepStrictEqual(f.log.filter((l) => !l.includes(':ua ')), ['0:mute true', '0:load about:blank', '0:attach 1.3', '0:cmd Page.enable'], 'mute, about:blank, attach, Page only');
     assert.ok(f.log.some((l) => l.startsWith('0:ua ') && !/electron/i.test(l)));
     assert.ok(VIEW_PARTITION_RE.test(f.created[0].wc.prefs.partition) && !('disableDialogs' in f.created[0].wc.prefs));
     assert.strictEqual(sv.partition, f.created[0].wc.prefs.partition);
-    assert.strictEqual(await v.ensureSessionView('s1'), sv, 'lazy and shared');
+    assert.strictEqual(await v.ensureTabView('s1', T1), sv, 'lazy and shared');
     assert.strictEqual(v.liveViewCount(), 1);
     // the dialog part: only while the agent drives
     f.log.length = 0;
@@ -397,7 +446,7 @@ function fakeElectron() {
       const seen: unknown[] = [];
       const f2 = fakeElectron(); f2.gate.unloadBlocks = true;
       const v2 = makeViews(f2.deps);
-      const sv2 = await v2.ensureSessionView('s2', { onPageDialog: (_s, d) => void seen.push(['open', d]), onPageDialogClosed: () => void seen.push('closed'), askLeave: async (_s, known) => (seen.push(['leave', known]), false) });
+      const sv2 = await v2.ensureTabView('s2', T1, { onPageDialog: (_s, d) => void seen.push(['open', d]), onPageDialogClosed: () => void seen.push('closed'), askLeave: async (_s, known) => (seen.push(['leave', known]), false) });
       const msg2 = f2.created[0].wc.msg;
       msg2.emit('message', {}, 'Page.javascriptDialogOpening', { type: 'confirm', message: 'Delete? token=' + 'gh' + 'p_' + 'A1b2'.repeat(9) });
       msg2.emit('message', {}, 'Page.javascriptDialogOpening', { type: 'beforeunload', message: '' });
@@ -426,17 +475,18 @@ function fakeElectron() {
     assert.strictEqual(cancelled, 1, 'teardown cancels a running download');
     assert.deepStrictEqual(f.log, ['0:detach', '0:close {"waitForBeforeUnload":false}', '0:clearStorage', '0:clearCache'], 'teardown order');
     assert.strictEqual(v.liveViewCount(), 0);
-    await sv.destroy();
-    assert.strictEqual(f.log.length, 4, 'a second destroy does nothing');
+    sv.close();
+    await v.destroySessionView('s1');
+    assert.strictEqual(f.log.length, 4, 'a second close or teardown does nothing');
   }
   // a failing attach or Page.enable cleans up the half-built view
   for (const which of ['attachFails', 'enableFails'] as const) {
     const f = fakeElectron(); f.gate[which] = true; const v = makeViews(f.deps);
-    await assert.rejects(v.ensureSessionView('s1'));
+    await assert.rejects(v.ensureTabView('s1', T1));
     assert.ok(f.log.includes('0:close {"waitForBeforeUnload":false}') && f.log.includes('0:clearStorage') && f.log.includes('0:clearCache'), which + ': closed and cleared');
     assert.strictEqual(v.liveViewCount(), 0, 'not kept');
     f.gate[which] = false;
-    const sv = await v.ensureSessionView('s1');
+    const sv = await v.ensureTabView('s1', T1);
     assert.notStrictEqual(f.created[1], undefined, 'a retry builds a new view');
     assert.notStrictEqual(sv.partition, f.created[0].wc.prefs.partition);
   }
@@ -445,11 +495,11 @@ function fakeElectron() {
     const f = fakeElectron(); let release!: () => void;
     f.gate.loadHold = new Promise<void>((r) => (release = r));
     const v = makeViews(f.deps);
-    const first = v.ensureSessionView('s1'); first.catch(() => undefined);
+    const first = v.ensureTabView('s1', T1); first.catch(() => undefined);
     await new Promise((r) => setImmediate(r));
     const ended = v.destroySessionView('s1');
     f.gate.loadHold = undefined;
-    const second = v.ensureSessionView('s1');
+    const second = v.ensureTabView('s1', T1);
     release();
     await assert.rejects(first, /ended while/);
     await ended;
@@ -457,7 +507,7 @@ function fakeElectron() {
     assert.ok(f.log.includes('0:close {"waitForBeforeUnload":false}'), 'the stale view was closed');
     assert.ok(!f.log.some((l) => l.startsWith('1:close')), 'the new one is alive');
     assert.strictEqual(v.liveViewCount(), 1);
-    assert.strictEqual(await v.ensureSessionView('s1'), sv2, 'the registry holds the new view');
+    assert.strictEqual(await v.ensureTabView('s1', T1), sv2, 'the registry holds the new view');
     await v.destroyAllViews();
     assert.ok(f.log.includes('1:close {"waitForBeforeUnload":false}'));
     assert.strictEqual(v.liveViewCount(), 0);
@@ -466,7 +516,7 @@ function fakeElectron() {
   {
     const mkv = async (ask: () => Promise<boolean>) => {
       const f = fakeElectron(); f.gate.unloadBlocks = true;
-      const v = makeViews(f.deps); const sv = await v.ensureSessionView('s1', { askLeave: ask });
+      const v = makeViews(f.deps); const sv = await v.ensureTabView('s1', T1, { askLeave: ask });
       f.log.length = 0;
       return { f, sv, wc: f.created[0].wc };
     };
@@ -508,9 +558,119 @@ function fakeElectron() {
       assert.deepStrictEqual(f.log, [], 'the earlier navigation is not repeated');
     }
   }
+  // ---- spec 080 T022: tabs share the session's partition; closing a tab never clears it; the teardown clears it once, after every view ----
+  {
+    const f = fakeElectron(); const v = makeViews(f.deps);
+    const a = await v.ensureTabView('s1', 't00000001');
+    const b = await v.ensureTabView('s1', 't00000002');
+    const c = await v.ensureTabView('s2', 't00000001');
+    assert.strictEqual(a.partition, b.partition, 'two tabs of one session share the partition (FR-121)');
+    assert.notStrictEqual(a.partition, c.partition, 'two sessions never do (FR-020)');
+    assert.strictEqual(f.created[0].ses, f.created[1].ses, 'the same session object');
+    assert.notStrictEqual(f.created[0].ses, f.created[2].ses);
+    assert.strictEqual(f.created[0].ses.set.length, 1, 'the deny-all session handlers go on once per session');
+    assert.strictEqual((f.created[0].ses as EventEmitter).listenerCount('will-download'), 2, 'one handler and one download watch per session, not per tab');
+    assert.strictEqual(v.liveViewCount(), 3);
+    assert.strictEqual(v.partitionOf('s1'), a.partition);
+    f.log.length = 0;
+    await v.closeTabView('s1', 't00000001');
+    assert.deepStrictEqual(f.log, ['0:detach', '0:close {"waitForBeforeUnload":false}'], 'closing a tab closes its view only: no clearStorageData, no clearCache');
+    assert.strictEqual(v.liveViewCount(), 2);
+    assert.strictEqual(await v.ensureTabView('s1', 't00000003').then((x) => x.partition), a.partition, 'a later tab still uses it (the logins stay)');
+    f.log.length = 0;
+    await v.destroySessionView('s1');
+    const clears = f.log.filter((l) => /clear/.test(l));
+    assert.deepStrictEqual(clears, ['0:clearStorage', '0:clearCache'], 'the teardown clears the partition exactly once');
+    const lastClose = Math.max(...f.log.map((l, i) => (/close/.test(l) ? i : -1)));
+    assert.ok(lastClose >= 0 && lastClose < f.log.indexOf('0:clearStorage'), 'after every view of the session is closed');
+    assert.ok(f.log.includes('1:close {"waitForBeforeUnload":false}') && f.log.includes('3:close {"waitForBeforeUnload":false}'), 'every tab closed, without beforeunload');
+    assert.strictEqual(v.partitionOf('s1'), undefined);
+    assert.strictEqual(v.liveViewCount(), 1, 's2 untouched');
+    assert.notStrictEqual(await v.ensureTabView('s1', 't00000001').then((x) => x.partition), a.partition, 'a session started again gets a new partition');
+    await v.destroyAllViews();
+    assert.strictEqual(v.liveViewCount(), 0);
+  }
+  // a tab view still being built when the session ends: closed, and the partition is cleared only after it settled
+  {
+    const f = fakeElectron(); let release!: () => void;
+    const v = makeViews(f.deps);
+    await v.ensureTabView('s1', 't00000001');
+    f.gate.loadHold = new Promise<void>((r) => (release = r));
+    const slow = v.ensureTabView('s1', 't00000002'); slow.catch(() => undefined);
+    await new Promise((r) => setImmediate(r));
+    f.log.length = 0;
+    const ended = v.destroySessionView('s1');
+    await new Promise((r) => setImmediate(r));
+    assert.ok(!f.log.some((l) => /clear/.test(l)), 'not cleared while a view is still being built');
+    release();
+    await ended;
+    await assert.rejects(slow);
+    assert.ok(f.log.includes('1:close {"waitForBeforeUnload":false}'), 'the late view is closed');
+    assert.ok(f.log.indexOf('1:close {"waitForBeforeUnload":false}') < f.log.indexOf('0:clearStorage'), 'and only then the partition is cleared');
+  }
+  // closing the last tab keeps the partition (a closed tab's late build too)
+  {
+    const f = fakeElectron(); const v = makeViews(f.deps);
+    const a = await v.ensureTabView('s1', 't00000001');
+    await v.closeTabView('s1', 't00000001');
+    assert.ok(!f.log.some((l) => /clear/.test(l)), 'the last tab closed: nothing cleared');
+    assert.strictEqual(v.partitionOf('s1'), a.partition, 'the session browser and its partition stay');
+  }
+  // FR-128: the user closes a tab: the page's beforeunload runs; Stay keeps it, Leave closes it; no handler closes at once
+  {
+    const f = fakeElectron(); f.gate.unloadBlocks = true;
+    let answer = false;
+    const asked: boolean[] = [];
+    const v = makeViews(f.deps);
+    const sv = await v.ensureTabView('s1', 't00000001', { askLeave: async (_s, known) => (asked.push(known), answer) });
+    f.log.length = 0;
+    assert.strictEqual(await sv.closeAsk(), false, 'Stay: the tab stays');
+    assert.deepStrictEqual(f.log, ['0:close kept'], 'the close ran the page\'s beforeunload, which asked');
+    assert.strictEqual(asked.length, 1, 'Durbar\'s Leave this page? was asked');
+    assert.ok(!f.created[0].wc.isDestroyed());
+    answer = true;
+    assert.strictEqual(await sv.closeAsk(), true, 'Leave: closed');
+    assert.ok(f.created[0].wc.isDestroyed());
+    assert.ok(f.log.includes('0:close {"waitForBeforeUnload":false}'), 'closed without a second beforeunload');
+    assert.strictEqual(await sv.navigate({ url: 'https://late.example/' }), false, 'a closed tab never loads again');
+    // a page with no beforeunload closes at once
+    const g = fakeElectron(); const v2 = makeViews(g.deps);
+    const sv2 = await v2.ensureTabView('s1', 't00000001', { askLeave: async () => false });
+    assert.strictEqual(await sv2.closeAsk(), true, 'no handler: closed');
+    // the agent's tab (driver agent) is never blocked
+    const h2 = fakeElectron(); h2.gate.unloadBlocks = true; const v3 = makeViews(h2.deps);
+    const sv3 = await v3.ensureTabView('s1', 't00000001', { askLeave: async () => false });
+    sv3.driver = 'agent';
+    assert.strictEqual(await sv3.closeAsk(), true, 'driver agent: closed at once');
+    // the session ends while the question waits: the close resolves
+    const k = fakeElectron(); k.gate.unloadBlocks = true; const v4 = makeViews(k.deps);
+    const sv4 = await v4.ensureTabView('s1', 't00000001', { askLeave: () => new Promise<boolean>(() => undefined) });
+    const pending = sv4.closeAsk();
+    await v4.destroySessionView('s1');
+    assert.strictEqual(await pending, true, 'the teardown answers a waiting close');
+  }
+  // FR-125, FR-130: a view's tab requests and tab keys reach the controller's events
+  {
+    const f = fakeElectron(); const v = makeViews(f.deps);
+    const reqs: unknown[] = [], keys: unknown[] = [];
+    await v.ensureTabView('s1', 't00000001', { onTabRequest: (s, u, fg) => (reqs.push([s, u, fg]), true), onTabKey: (s, k) => void keys.push([s, k]) });
+    const wc = f.created[0].wc;
+    // the window open handler is the builder's
+    const handler = (wc as { openHandler?: (d: unknown) => unknown }).openHandler!;
+    assert.deepStrictEqual(handler({ url: 'https://a.com/x', disposition: 'foreground-tab', referrer: { url: 'https://a.com/' } }), { action: 'deny' });
+    assert.deepStrictEqual(reqs, [['s1', 'https://a.com/x', true]], 'a same-origin tab request goes to main');
+    const key = (input: object) => { const e = { prevented: 0, preventDefault() { this.prevented++; } }; (wc as unknown as EventEmitter).emit('before-input-event', e, input); return e.prevented; };
+    const mod = process.platform === 'darwin' ? { meta: true } : { control: true };
+    assert.strictEqual(key({ type: 'keyDown', key: 't', code: 'KeyT', ...mod }), 1, 'Ctrl/Cmd+T is kept from the page');
+    assert.strictEqual(key({ type: 'keyDown', key: 'Tab', code: 'Tab', control: true }), 1, 'Ctrl+Tab too');
+    assert.strictEqual(key({ type: 'keyDown', key: 'w', code: 'KeyW', ...mod }), 1);
+    assert.strictEqual(key({ type: 'keyDown', key: 'a', code: 'KeyA', ...mod }), 0, 'other keys reach the page');
+    assert.strictEqual(key({ type: 'keyUp', key: 't', code: 'KeyT', ...mod }), 0);
+    assert.deepStrictEqual(keys, [['s1', 'new'], ['s1', 'next'], ['s1', 'close']], 'and main acts on them');
+  }
   // a refused navigation through the view's helper
   {
-    const f = fakeElectron(); const v = makeViews(f.deps); const sv = await v.ensureSessionView('s1');
+    const f = fakeElectron(); const v = makeViews(f.deps); const sv = await v.ensureTabView('s1', T1);
     f.log.length = 0;
     assert.strictEqual(await sv.navigate({ url: 'file:///etc/passwd' }), false);
     assert.deepStrictEqual(f.log, [], 'loadURL never called');

@@ -133,12 +133,33 @@ function sameWebOrigin(a: string | undefined, b: string | undefined): boolean {
     return false;
   }
 }
+/** Spec 080 FR-091, FR-125: under DURBAR_SIM only, the simulator's test pages count as one web origin per host (Node gives a non-special scheme an opaque origin). */
+function simPageUrl(url: string | undefined, sim: boolean): URL | undefined {
+  if (!sim || !url) return undefined;
+  try {
+    const u = new URL(url);
+    return u.protocol === SIM_VIEW_SCHEME && u.host !== '' && !u.username && !u.password ? u : undefined;
+  } catch {
+    return undefined;
+  }
+}
+function sameTabOrigin(a: string | undefined, b: string | undefined, sim: boolean): boolean {
+  if (sameWebOrigin(a, b)) return true;
+  const x = simPageUrl(a, sim), y = simPageUrl(b, sim);
+  return !!x && !!y && x.host === y.host;
+}
 
 export interface ViewHandlerContext {
   /** Under DURBAR_SIM only (FR-091). */
   sim?: boolean;
-  /** `target=_blank` link: load it in the same view (FR-026). Only called for an allowed main-frame URL. */
+  /** `target=_blank` link: load it in the same view (FR-026). Only called for an allowed main-frame URL. The agent's tab (FR-131) keeps this. */
   loadInView(url: string): void;
+  /**
+   * Spec 080 FR-125: a user tab's same-origin tab request opens a NEW tab of the same session (main makes it; the window open is still denied).
+   * `foreground`: Electron's `foreground-tab` (else `background-tab`). Returns false when main refuses it (the 10-tab or the 5-per-load limit):
+   * then the request gets the *Open in system browser* offer like a popup. Only called for an allowed http(s) URL (or a simulator page under sim).
+   */
+  openTab?(url: string, foreground: boolean): boolean;
   /** A scripted popup was refused; the bar offers *Open in system browser* for its URL (FR-026). */
   onPopupBlocked(url: string): void;
   /** The view's current top-level URL; its origin must equal the popup's referrer origin for a tab popup to load in the view. */
@@ -234,10 +255,19 @@ export function buildViewHandlers(ctx: ViewHandlerContext): ViewHandlers {
       // Only http(s) loads in the view: `about:blank` or an empty URL (`window.open('')`, the OAuth pattern) must never wipe the user's page.
       // And only when the opener is the view's own top-level origin: a cross-origin iframe (which Chromium stops from touching
       // `top.location`) must not replace the page through `window.open` (framebusting). An empty or opaque referrer fails closed.
+      // FR-125: in a user tab such a request opens a new tab that Durbar makes itself (still `deny` here); the agent's tab loads it in place.
       const web = isWebUrl(d.url);
+      const page = web || !!simPageUrl(d.url, !!ctx.sim);
       const tab = d.disposition === 'foreground-tab' || d.disposition === 'background-tab';
-      if (web && tab && sameWebOrigin(d.referrer?.url, ctx.currentUrl?.())) ctx.loadInView(d.url);
-      else if (web) ctx.onPopupBlocked(d.url); // only http(s) URLs get an *Open in system browser* offer
+      let taken = false;
+      if (page && tab && sameTabOrigin(d.referrer?.url, ctx.currentUrl?.(), !!ctx.sim)) {
+        if (ctx.openTab) taken = ctx.openTab(d.url, d.disposition === 'foreground-tab') === true;
+        else {
+          ctx.loadInView(d.url);
+          taken = true;
+        }
+      }
+      if (!taken && web) ctx.onPopupBlocked(d.url); // only http(s) URLs get an *Open in system browser* offer
       return { action: 'deny' };
     },
     navigate: (d) => {
@@ -308,7 +338,12 @@ export const VIEW_WEBCONTENTS_EVENTS = ['will-navigate', 'will-redirect', 'will-
 export const VIEW_SESSION_EVENTS = ['select-hid-device', 'select-serial-port', 'select-usb-device', 'will-download'] as const;
 /** Returns a disposer for the listeners put on the session (Electron keeps the session until quit; the deny-all handlers stay, never `null`). */
 export function installViewHandlers(wc: ViewWebContentsLike, ses: ViewSessionLike, h: ViewHandlers): () => void {
-  const on = (t: Listen, ev: string, fn: (...a: never[]) => void): void => void t.on(ev, fn);
+  installViewWebContentsHandlers(wc, h);
+  return installViewSessionHandlers(ses, h);
+}
+const on = (t: Listen, ev: string, fn: (...a: never[]) => void): void => void t.on(ev, fn);
+/** Spec 080 FR-121: the per-view half (every tab's `webContents` gets it). */
+export function installViewWebContentsHandlers(wc: ViewWebContentsLike, h: ViewHandlers): void {
   wc.setWindowOpenHandler(h.windowOpen);
   // Electron 44: the three navigation events take one `details` object (url, isMainFrame, preventDefault)
   for (const ev of ['will-navigate', 'will-redirect', 'will-frame-navigate']) on(wc, ev, h.navigate as never);
@@ -317,6 +352,9 @@ export function installViewHandlers(wc: ViewWebContentsLike, ses: ViewSessionLik
   on(wc, 'select-bluetooth-device', h.selectBluetooth as never);
   on(wc, 'login', h.login as never);
   on(wc, 'will-prevent-unload', h.willPreventUnload as never);
+}
+/** Spec 080 FR-121: the per-partition half, installed once per session (its tabs share the partition). Returns the disposer of its listeners. */
+export function installViewSessionHandlers(ses: ViewSessionLike, h: ViewHandlers): () => void {
   const sesListeners: [string, (...a: never[]) => void][] = [
     ['select-hid-device', h.selectHid as never],
     ['select-serial-port', h.selectSerial as never],
