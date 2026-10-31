@@ -4,6 +4,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { webpInfo } from './webpinfo';
 
 const ROOT = path.join(__dirname, '..', '..');
 const DIR = path.join(ROOT, 'src', 'renderer', 'crew', 'art');
@@ -13,20 +14,8 @@ const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as { IDS: strin
 const MAX_FILE = 40 * 1024, MAX_TOTAL = 2.5 * 1024 * 1024; // FR-050, FR-072 (3 poses per character; 13 Cheeky characters are 1.2 MB, 6 Prehistoric ones 0.6 MB)
 const COLUMNS = ['file', 'character', 'tool', 'date', 'prompt', 'made by', 'edited by', 'licence', 'generator terms read'];
 
-/** The RIFF chunks of a WebP: [fourcc, size] in order, and the picture's size from its VP8, VP8L or VP8X header. */
-export function webpInfo(buf: Buffer): { chunks: string[]; width: number; height: number } {
-  assert.ok(buf.length > 30 && buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WEBP', 'a WebP file');
-  const chunks: string[] = []; let width = 0, height = 0;
-  for (let p = 12; p + 8 <= buf.length;) {
-    const id = buf.toString('latin1', p, p + 4), size = buf.readUInt32LE(p + 4), d = p + 8;
-    chunks.push(id);
-    if (id === 'VP8X') { width = 1 + buf.readUIntLE(d + 4, 3); height = 1 + buf.readUIntLE(d + 7, 3); }
-    else if (id === 'VP8 ' && !width) { width = buf.readUInt16LE(d + 6) & 0x3fff; height = buf.readUInt16LE(d + 8) & 0x3fff; }
-    else if (id === 'VP8L' && !width) { const b = buf.readUInt32LE(d + 1); width = (b & 0x3fff) + 1; height = ((b >> 14) & 0x3fff) + 1; }
-    p = d + size + (size & 1);
-  }
-  return { chunks, width, height };
-}
+/** The RIFF chunk walker lives in webpinfo.ts (shared with test-realoffice-assets.ts, spec 097 T011). */
+export { webpInfo };
 
 /** The rows of the provenance table: file name (from backticks) -> its cells. */
 export function assetRows(md: string): Map<string, string[]> {

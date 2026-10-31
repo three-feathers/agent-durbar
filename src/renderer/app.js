@@ -100,7 +100,7 @@ const PREV_KEYS=['mod','shift','H'], PREV_KEY=keyText(PREV_KEYS);
 var DN=window.DurbarNotes||null;
 var NOTES_KEYS=['mod','shift','M'];
 var NT={by:new Map(),open:null,ret:null,notice:null,ro:null,rv:new Map(),mm:new Map(),markT:0}; /* by: folder key -> {ok,notes,session,readOnly,error,unreadable}; open: {id} while the drawer shows */
-var NS={id:'',key:'',name:'',over:false,ret:null,doneOpen:false,sub:null}; /* spec 083 T034a: the folder's Notes screen (the chat it reads through, its folder key, where the focus goes back) */
+var NS={id:'',key:'',name:'',over:false,ret:null,doneOpen:false,sub:null,fileMsg:'',fileBusy:false}; /* spec 083 T034a: the folder's Notes screen (the chat it reads through, its folder key, where the focus goes back) */
 
 const SCHED_KEY=keyText(['mod','shift','S']); /* spec 044 FR-031: the top-bar Schedules button */
 const ADD_KEY=keyText(['mod','O']), ADDWS_KEY=keyText(['mod','shift','O']); /* spec 052 FR-164: + Folder, + Workspace (the Mac File menu has the same keys) */
@@ -1234,7 +1234,14 @@ const signsOn=()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign)&&SIGN_PREF;
    (a failed open, a stopped Send all, a restart) keeps its cabin and button, so it can always be opened. */
 async function setSignsOn(on){
   on=!!on;
-  if(!on&&SIGN_PREF&&bridge&&bridge.setDoor){
+  if(!on&&SIGN_PREF&&!(await openDoorsFirst('open')))return false;
+  SIGN_PREF=on;try{localStorage.setItem('durbar.doorsigns',SIGN_PREF?'on':'off');}catch(e){}layoutKey='';scheduleRender();
+  return true;
+}
+/* FR-027, and spec 097 FR-004: leaving the cabins for an office without doors (Open office or Real office) asks first when a door you
+   closed is shut or holds prompts, then opens those doors; false when the user keeps the cabins or a door could not be opened */
+async function openDoorsFirst(to){
+  if(bridge&&bridge.setDoor){
     const mine=agents.filter(a=>!a.parent&&(doorOf(a).closed||doorOf(a).held));
     if(mine.length){
       const held=mine.reduce((n,a)=>n+doorOf(a).held,0), shut=mine.filter(a=>doorOf(a).closed).length;
@@ -1242,7 +1249,7 @@ async function setSignsOn(on){
         body:'An open office has no doors. '+(shut?(shut===1?'1 door you closed is opened':shut+' doors you closed are opened')+' first'+(held?', and ':'.'):'')+(held?(held===1?'1 prompt is':held+' prompts are')+' held there: send them (in order, through the schedules) or discard them.':''),
         lines:mine.slice(0,8).map(a=>a.name+(doorOf(a).closed?' · door closed':'')+(doorOf(a).held?' · '+doorOf(a).held+' held':'')).concat(mine.length>8?['and '+(mine.length-8)+' more']:[]),
         buttons:[{label:'Keep cabins',value:null},...(held?[{label:'Discard',value:'discard'},{label:'Send all ('+held+')',value:'send'}]:[{label:'Open the doors',value:'open',cls:'primary'}])],
-        returnFocus:()=>document.querySelector('[data-officelayout="open"]')});
+        returnFocus:()=>document.querySelector(`[data-officelayout="${to}"]`)});
       if(!v||!v.value)return false;
       for(const a of mine){
         const d=doorOf(a);
@@ -1255,7 +1262,6 @@ async function setSignsOn(on){
       }
     }
   }
-  SIGN_PREF=on;try{localStorage.setItem('durbar.doorsigns',SIGN_PREF?'on':'off');}catch(e){}layoutKey='';scheduleRender();
   return true;
 }
 /* FR-027: a door the user closed, or one still holding prompts, stays visible (cabin, sign and button) in an open office */
@@ -1643,6 +1649,89 @@ const EMPTY_DESK='<svg class="empty-desk" viewBox="0 0 120 72" aria-hidden="true
    It waits 600ms and checks the card is still there, so a start that loads agents a moment later does not ring. */
 function ringFolder(){if(reducedMotion())return;setTimeout(()=>{const b=$('addFolder'),st=$('stage');if(!b||!st||!st.querySelector('.welcome')||!b.getClientRects().length)return;
   b.classList.remove('ring-once');void b.offsetWidth;b.classList.add('ring-once');setTimeout(()=>b.classList.remove('ring-once'),1600);},600);}
+/* ---------------- Real office (spec 097 phase P1) ----------------
+   A second renderer of the same office model (D1): Settings > Office layout > Real office (FR-001), kept in localStorage
+   `durbar.officeview` (FR-003; any other value or a storage error is flat, the default). Its script, CSS, pure modules and art load
+   only on first use (FR-061): flat mode never requests them. `durbar.doorsigns` is untouched, so leaving Real office restores the
+   cabins or open choice. */
+let OFFICE_VIEW=(()=>{try{return localStorage.getItem('durbar.officeview')==='real'?'real':'flat';}catch(e){return 'flat';}})();
+if(qs.has('sim')&&/^(real|flat)$/.test(qs.get('officeview')||''))OFFICE_VIEW=qs.get('officeview'); /* drivers: the simulator only */
+const officeView=()=>OFFICE_VIEW;
+/* spec 097 FR-100, FR-113 (owner 2026-10-31 10:46: the top bar and menus follow the Real office look): while Real office is shown, its
+   world's token set (today the photo world for every Characters value, until the crew worlds ship) paints the whole chrome; flat, or a
+   Real office that failed to load, gives the user's theme back (theme.js setWorld) */
+const syncWorld=()=>{
+  const on=OFFICE_VIEW==='real'&&RO_LOAD!=='failed';
+  if(on&&!document.getElementById('roWorldCss')){const l=document.createElement('link');l.id='roWorldCss';l.rel='stylesheet';l.href='realoffice-world.css';document.head.appendChild(l);} /* its rules, also in the List view (FR-061: only once Real office is chosen) */
+  if(THEME&&THEME.setWorld)THEME.setWorld(on?'photo':null);
+};
+/* FR-004: from the cabins, the same "Switch to an open office?" question as Open office; false when the user keeps the cabins */
+async function setOfficeView(v){
+  v=v==='real'?'real':'flat';
+  if(v===OFFICE_VIEW)return true;
+  if(v==='real'&&signsOn()&&!(await openDoorsFirst('real')))return false;
+  OFFICE_VIEW=v;try{localStorage.setItem('durbar.officeview',v);}catch(e){}
+  syncWorld();layoutKey='';scheduleRender();return true;
+}
+/* spec 097 FR-084 (owners 2026-10-31): the Characters setting applies in Real office too; a set without Real office pictures (today
+   every crew) shows the Office people, and Settings says so until that crew's world ships (FR-083, FR-100, FR-114) */
+const realOfficeSet=()=>CREW&&CREW.realOfficeSet?CREW.realOfficeSet(crewChoice()):{set:'office',scene:'office',coming:false};
+let RO_LOAD=''; /* '', 'loading', 'ready', 'failed' */
+syncWorld();
+function loadRealOffice(){
+  if(RO_LOAD)return;
+  RO_LOAD='loading';
+  const css=document.createElement('link');css.rel='stylesheet';css.href='realoffice.css';document.head.appendChild(css);
+  const files=['../shared/lights.js','../shared/realoffice-layout.js','realoffice/art/people.js','realoffice.js']; /* the pure modules write to window.exports (exports-shim.js) */
+  const next=i=>{
+    if(i>=files.length){RO_LOAD=window.DurbarRealOffice&&window.exports&&window.exports.realLayout?'ready':'failed';if(RO_LOAD==='failed')roFailed();layoutKey='';scheduleRender();return;}
+    const sc=document.createElement('script');sc.src=files[i];sc.onload=()=>next(i+1);sc.onerror=()=>{RO_LOAD='failed';roFailed();layoutKey='';scheduleRender();};
+    document.body.appendChild(sc);
+  };
+  next(0);
+}
+function roFailed(){syncWorld();toast('The Real office could not be loaded, so the office is shown flat.',5200).classList.add('err');}
+/* the plain model Real office draws (no markup but the places' own icons): every text is already masked (deskMask = DurbarSafeText) */
+function realModel(model){
+  const D=window.DurbarPlaces, E=window.exports;
+  const stOf=(a,asleep)=>E.lightState(isFailing(a)?'failing':isRetrying(a)?'retrying':isCompacting(a)?'compacting':vis(a),{limit:!!a.limit,paused:!!a.paused,asleep:!!asleep});
+  const folders=model.map(m=>{
+    const r=m.r, old=new Set((m.rolled||[]).filter(x=>x.k==='old').map(x=>x.a.id)); /* Q5: an agent asleep in a nap bed keeps a narrow desk, lamp and screen off */
+    const list=m.mains.concat((m.rolled||[]).map(x=>x.a));
+    const counts=['waiting','error','working','done','idle'].map(k=>{const n=m.all.filter(a=>!a.parent&&(k==='working'?(vis(a)==='working'||vis(a)==='thinking'):vis(a)===k)).length;return {state:k,n,word:LABELS[k].toLowerCase()};}).filter(c=>c.n);
+    const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);
+    return {id:r.id,name:r.name,path:deskMask(showPath(r.path)),cost:u?u.long:'',counts,newSess:!!(bridge&&bridge.newSession&&anyKindReady()&&!demoOn),menu:!!(bridge&&bridge.removeFolder&&!demoOn),
+      agents:list.map(a=>{const v=VISITS.at(a.id),st=stOf(a,old.has(a.id)),task=deskMask(taskOf(a)),place=v?placeLabel(v.place):'',needs=st==='waiting'||st==='limit';
+        return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tip:deskTip(a),selected:ui.selected===a.id,away:v?v.place:null,awayLabel:place,
+          label:[a.name,a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
+          helpers:helpersOf(a).map(h=>stOf(h,false))};})};
+  });
+  const places=lobbyPlaces().map(p=>{
+    const ids=p.id===D.POSTBOX?[]:placeVisitors(p.id), custom=CUSTOM.some(q=>q.id===p.id);
+    const wait=p.id===D.BOSS&&ids.length?bossWait(ids[0]):'';
+    return {id:p.id,label:placeLabel(p.id),custom,icon:custom?placeIcon(p):'',post:p.id===D.POSTBOX,go:p.id===D.BOSS||p.id===D.BANK||p.id===D.COFFEE,
+      title:p.id===D.POSTBOX?placeLabelFull(p.id)+': the next scheduled runs. Open Settings > Schedules.':placeTip(p.id,ids,wait),
+      visitors:ids.map(id=>{const a=byId(id),v=VISITS.at(id);return {id,name:a.name,needsYou:vis(a)==='waiting'||!!a.limit,title:visitorWords(a,v,true)};})};
+  });
+  return {folders,places,alertIcon:signIcon('alert'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
+}
+let RO_LAST=null; /* the last layout, for the drivers (window.__durbarSimUi.realLayout) */
+function renderReal(stage,floor,aw,ah,model){
+  if(RO_LOAD!=='ready'){
+    loadRealOffice();
+    if(RO_LOAD==='failed')return false;
+    if(stage.dataset.d!=='real-wait'){stage.dataset.d='real-wait';stage.style.width=aw+'px';stage.style.height='auto';stage.innerHTML='<div class="empty">Opening the Real office…</div>';}
+    return true;
+  }
+  if(stage.dataset.d!=='real'){stage.dataset.d='real';stage.textContent='';}
+  layoutKey='';GROW=0;setGrow(stage,0);spreadOffice(stage,false);stagePrev=null;
+  const set=realOfficeSet();
+  RO_LAST=window.DurbarRealOffice.render(stage,realModel(model),{w:aw,h:ah},{still:REDUCED||SERIOUS,set:set.set,remember:rememberOn(),
+    rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender()});
+  stage.style.width=aw+'px';stage.style.height=RO_LAST.height+'px';
+  stage.dataset.fit=RO_LAST.scroll?'scroll':'ok';floor.classList.toggle('scrolls',!!RO_LAST.scroll);
+  return true;
+}
 function renderOffice(){
   if(ui.view!=='office')return;
   const floor=$('floor'), stage=$('stage');
@@ -1670,6 +1759,7 @@ function renderOffice(){
     stage.innerHTML='<div class="empty">'+EMPTY_DESK+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" at the top left to add a folder'+(SIMPLE?'.':' (or "+ Workspace" for a VS Code .code-workspace file).'):(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open Manage folders (next to the folder filter) to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?(FLOORS.floors.length>1?'All floors are off. Open "Floors" above or Settings > Floors to switch one on.':'Your only floor is off. Switch it on in Settings > Floors.'):agents.length&&ROOMS.every(r=>!roomShown(r))?('Nothing to show: every folder is hidden or on a floor that is off. Open '+(floorsLive()&&FLOORS.floors.length>1?(SIMPLE?'"Floors" above, or ':'"Floors" or "Folders" above, or '):(SIMPLE?'':'"Folders" above, or '))+'Settings > Floors.'):'No agents match these filters.'))+'</div>';
     floor.classList.remove('scrolls'); return;
   }
+  if(officeView()==='real'&&renderReal(stage,floor,aw,ah,model))return; /* spec 097: Real office draws the same model; flat below is unchanged */
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
   const sizing=lastSizing=sizingModel(model); /* what chooseLayout is given (the hook below reads it) */
   const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),THEME.themeIdForCache(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),curFloorId(),allFloorsView(),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]]),(m.rolled||[]).map(x=>[x.a.id,x.k]),!!ui.expanded['shut:'+m.r.id]])]);
@@ -2589,7 +2679,7 @@ async function notesFetch(a){
   if(!notesOn(a))return null;
   const root=liveRoot(a);
   let r=null;try{r=await bridge.notesList(root.id);}catch(e){r=null;}
-  const st=r&&r.ok?{ok:true,notes:Array.isArray(r.notes)?r.notes:[],session:r.session||'',readOnly:r.readOnly||'',max:r.max||300}
+  const st=r&&r.ok?{ok:true,notes:Array.isArray(r.notes)?r.notes:[],session:r.session||'',readOnly:r.readOnly||'',max:r.max||300,file:ntFileState(r.file),fileSwitch:r.fileSwitch&&typeof r.fileSwitch==='object'?{on:r.fileSwitch.on===true,disabled:typeof r.fileSwitch.disabled==='string'?r.fileSwitch.disabled:''}:null}
     :{ok:false,notes:[],session:'',unreadable:!!(r&&r.code==='unreadable'),error:String((r&&r.error)||'Notes are not available.')};
   NT.by.set(notesKey(a),st);
   if(NT.rv.size>1500)NT.rv.clear(); if(NT.mm.size>3000)NT.mm.clear(); /* the row and masked-text caches are keyed by id and rev (a changed note is a new key), so a refetch keeps them; bounded */
@@ -2823,6 +2913,9 @@ function noteRowHTML(n,a,tab,o){
     +`<div class="nt-main"><b class="nt-title">${esc(title)}</b><span class="nt-meta">${esc(meta)}</span>${v.excerpt?`<p class="nt-ex">${esc(v.excerpt)}</p>`:''}</div>`
     +`<div class="nt-acts">${o&&o.insert===false?'':`<button class="btn sm" type="button" data-nt="insert"${boxUsable()?'':` aria-disabled="true" title="${esc(BOX_NO_REASON)}"`}>Insert</button>`}<button class="btn sm" type="button" data-nt="edit">Edit…</button><button class="btn sm nt-more" type="button" data-nt="more" aria-haspopup="menu" aria-label="More actions for this note" title="More actions for this note">${NT_DOTS}</button></div></div>`;
 }
+/* spec 083 T042 (FR-053, FR-054): the project file's state while its switch is on: an error blocks writing it, info is a quieter line */
+function ntFileState(f){return f&&typeof f==='object'?{error:typeof f.error==='string'?f.error:'',info:typeof f.info==='string'?f.info:''}:null;}
+function ntFileHTML(st){const f=st&&st.ok&&st.file;if(!f)return '';return (f.error?`<p class="nt-banner nt-file-err" role="alert">${esc(f.error)}</p>`:'')+(f.info?`<p class="nt-empty nt-file-info" role="status">${esc(f.info)}</p>`:'');}
 function notesPaint(){
   const d=$('notesDrawer'),a=NT.open&&byId(NT.open.id); if(!d||!a||d.hidden)return;
   const st=notesOf(a)||{ok:true,notes:[],session:''}, list=d.querySelector('#ntBody');
@@ -2832,6 +2925,7 @@ function notesPaint(){
     html=`<p class="nt-banner" role="alert">${esc(st.unreadable?'Durbar could not read the notes file of this folder; it is left as it is.':st.error)}</p>${st.unreadable&&bridge.notesStartOver?'<p><button class="btn sm" type="button" data-nt="startover">Start over…</button></p>':''}`;
   }else{
     if(st.readOnly)html+=`<p class="nt-banner" role="alert">${esc(st.readOnly)}</p>`;
+    html+=ntFileHTML(st);
     const g0=DN.groups(st.notes,st.session), total0=g0.session.length+g0.folder.length;
     const q=ntQuery(), g=q.trim()?DN.search(g0,q,NAV&&NAV.rank,memoMask):g0, total=g.session.length+g.folder.length;
     if(!total0)html+='<p class="nt-empty">No notes yet. Save a message with its ⋯ menu, or add one.</p>';
@@ -3019,7 +3113,7 @@ async function openNotesScreen(a,o){
   const b=byId(p.id)||a, key=notesKey(b);
   const ret=o.opener&&document.contains(o.opener)?o.opener:(document.activeElement&&document.activeElement!==document.body?document.activeElement:null);
   if(notesIsOpen())closeNotes(false); /* from the drawer: the screen replaces it */
-  NS={id:b.id,key,name:r.name,over:p.over,ret,doneOpen:false,sub:NS.sub};
+  NS={id:b.id,key,name:r.name,over:p.over,ret,doneOpen:false,sub:NS.sub,fileMsg:'',fileBusy:false};
   if(!NS.sub&&bridge.onNotesChanged)NS.sub=bridge.onNotesChanged(()=>{if(nsShown()){const c=byId(NS.id);if(c)notesFetch(c);}}); /* another chat or process changed them */
   window.DurbarScreens.folderNotes({key,name:r.name,render:nsRender,onClose:nsClosed});
   await notesFetch(b);
@@ -3037,7 +3131,7 @@ function nsClosed(){
 /* the screen's body: the tools once, the list on every change (so the search field keeps its focus and text) */
 function nsRender(focus){
   const h=$('nsHost'); if(!h)return;
-  h.innerHTML=`<section class="scr-sec ns-sec" aria-label="${esc('Notes of '+NS.name)}"><div class="ns-tools"><input class="nt-find" id="nsSearch" type="search" placeholder="Search notes" aria-label="Search notes" autocomplete="off" spellcheck="false"><button class="btn sm primary" id="nsAdd" type="button">+ Note</button></div><div id="nsList"></div></section>`;
+  h.innerHTML=`<section class="scr-sec ns-sec" aria-label="${esc('Notes of '+NS.name)}"><div class="ns-tools"><input class="nt-find" id="nsSearch" type="search" placeholder="Search notes" aria-label="Search notes" autocomplete="off" spellcheck="false"><button class="btn sm primary" id="nsAdd" type="button">+ Note</button></div><div id="nsFile" class="ns-file"></div><div id="nsList"></div></section>`;
   wireNotesScreen(h);
   nsPaint();
 }
@@ -3050,6 +3144,7 @@ function nsPaint(){
   else if(!st.ok)html=`<p class="nt-banner" role="alert">${esc(st.unreadable?'Durbar could not read the notes file of this folder; it is left as it is.':st.error)}</p>${st.unreadable&&bridge.notesStartOver?'<p><button class="btn sm" type="button" data-nt="startover">Start over…</button></p>':''}`;
   else{
     if(st.readOnly)html+=`<p class="nt-banner" role="alert">${esc(st.readOnly)}</p>`;
+    html+=ntFileHTML(st);
     const f=$('nsSearch'), q=f?f.value:'', g0=NSX().groups(st.notes), g=q.trim()?NSX().filter(g0,q,DN.search,NAV&&NAV.rank,memoMask):g0;
     if(!g0.open.length&&!g0.done.length)html+=`<p class="nt-empty">${esc(NSX().EMPTY)}</p>`;
     else if(!g.open.length&&!g.done.length)html+=`<p class="nt-empty" role="status">${esc(DN.noMatch(q,safeMask))}</p>`;
@@ -3063,6 +3158,74 @@ function nsPaint(){
   const d=$('nsDone'); if(d)d.addEventListener('toggle',()=>{NS.doneOpen=d.open;});
   ntFocusBack(list,fm);
   const add=$('nsAdd'); if(add)add.disabled=!a||!notesOn(a)||!st.ok||!!st.readOnly;
+  nsFilePaint(a,st);
+}
+/* ---- the project-file switch (spec 083 T042, FR-050, FR-055) ----
+   Off by default; main says whether it is on and why it is greyed (fileSwitch). Turning it on asks first (Cancel focused), turning it
+   off asks Leave or Delete; the window sends only the chat's id and two yes/no choices, never a path. */
+const NS_FILE_LABEL='Also keep these notes as .durbar/notes.md in the project';
+const NS_FILE_WARN='Durbar will write every note of this folder to .durbar/notes.md in the project. Agents and anyone with the folder can read it, and it may get committed and pushed with your code. Secrets are masked, but private ideas are not. Durbar never adds it to git.';
+const NS_FILE_STRAY='Text outside notes in an existing notes.md is removed when Durbar writes the file.';
+const NS_FILE_EXCLUDE='Keep it out of commits (adds .durbar/ to .git/info/exclude, local only)';
+const NS_FILE_OWN='This is Durbar\'s own write: it also happens in Read-only mode.';
+const NS_FILE_COMMITTED='If .durbar/notes.md was already committed, this does not remove it from the repository.';
+function nsFilePaint(a,st){
+  const h=$('nsFile'); if(!h)return;
+  const S=window.DurbarScreens, sw=st&&st.ok?st.fileSwitch:null;
+  if(!a||!notesOn(a)||!st||!st.ok||!S||!S.switchHtml||!bridge.notesSetFile){h.innerHTML='';return;}
+  if(!sw){h.innerHTML=`<p class="ns-file-why">${esc('The project file is not offered for a VS Code workspace.')}</p>`;return;}
+  const had=document.activeElement&&document.activeElement.id==='nsFileSw';
+  const why=sw.disabled?`<p class="ns-file-why" id="nsFileWhy">${esc(sw.disabled)}</p>`:'';
+  const attrs='id="nsFileSw"'+(sw.disabled||NS.fileBusy?' disabled':'')+(sw.disabled?' aria-describedby="nsFileWhy"':'');
+  h.innerHTML=`<div class="ns-file-row"><span class="ns-file-l"><b>${esc(NS_FILE_LABEL)}</b><small>${esc(sw.on?'On: Durbar keeps the file in step with these notes.':'Off: nothing is written in the project.')}</small></span>${S.switchHtml(sw.on,NS_FILE_LABEL,attrs)}</div>${why}<p class="ns-file-msg" id="nsFileMsg" role="status">${esc(NS.fileMsg||'')}</p>`;
+  if(had){const b=$('nsFileSw');if(b&&!b.disabled)focusIn(b);}
+}
+async function nsFileToggle(a,btn){
+  if(NS.fileBusy||!bridge.notesSetFile)return;
+  const st=notesOf(a), sw=st&&st.ok&&st.fileSwitch; if(!sw||sw.disabled)return;
+  NS.fileBusy=true;
+  try{if(sw.on)await nsFileOff(a,btn);else await nsFileOn(a,btn);}
+  finally{NS.fileBusy=false;const c=byId(NS.id);if(c&&nsShown()){nsFilePaint(c,notesOf(c));const b=$('nsFileSw'),f=document.activeElement;if(b&&!b.disabled&&(!f||f===document.body||!document.contains(f)))focusIn(b);}} /* the repaint replaced the switch: the focus stays on it */
+}
+function nsFileSay(t,a){NS.fileMsg=t||'';const m=$('nsFileMsg');if(m)m.textContent=NS.fileMsg;if(t)announce(t);}
+async function nsFileOn(a,btn){
+  const id=liveRoot(a).id, back=()=>$('nsFileSw')||btn;
+  let c=null;try{c=bridge.notesFileCount?await bridge.notesFileCount(id):null;}catch(e){c=null;}
+  if(!c||!c.ok){ /* FR-050: an unreadable or conflicted file says so, and the switch stays off */
+    const why=(c&&c.error)||'Durbar could not check the folder.';
+    await askDialog({title:'Keep these notes in the project?',body:why,lines:['The switch stays off.'],buttons:[{label:'Close',value:null,cls:'primary'}],returnFocus:back});
+    nsFileSay(why+' The switch stays off.');return;
+  }
+  const lines=[];
+  if(c.exists&&c.strayText>0)lines.push(c.strayText+(c.strayText===1?' line':' lines')+' of your text in the existing file will be removed.'); /* review of PR 931: never destroyed with only a generic warning */
+  if(c.exists&&c.count>0)lines.push(c.count+(c.count===1?' note':' notes')+' in the existing file will be added, marked "From the project file".');
+  lines.push(NS_FILE_STRAY);
+  lines.push(NS_FILE_OWN);
+  if(c.repo)lines.push(NS_FILE_COMMITTED);
+  const v=await askDialog({title:'Keep these notes in the project?',body:NS_FILE_WARN,lines,size:'m',check:c.repo?{label:NS_FILE_EXCLUDE,checked:true}:undefined,returnFocus:back,
+    buttons:[{label:'Cancel',value:null},{label:'Turn on',value:'on',cls:'primary warn'}]});
+  if(!v||v.value!=='on')return;
+  let r=null;try{r=await bridge.notesSetFile(id,true,c.repo?{exclude:v.checked===true}:undefined);}catch(e){r=null;}
+  if(r&&!r.ok&&r.excludeFailed){ /* review of PR 931: the exclude line could not be added, so nothing was turned on; the person decides */
+    nsFileSay(r.error||'');
+    const v2=await askDialog({title:'Could not keep it out of commits',body:(r.error||'')+' Turn it on anyway? .durbar/notes.md may then show in git status and get committed.',size:'m',returnFocus:back,
+      buttons:[{label:'Cancel',value:null},{label:'Turn on without keeping it out of commits',value:'on',cls:'primary warn'}]});
+    if(!v2||v2.value!=='on'){await notesFetch(a);return;}
+    try{r=await bridge.notesSetFile(id,true,{exclude:false});}catch(e){r=null;}
+  }
+  if(!r||!r.ok){nsFileSay(/stays off/.test((r&&r.error)||'')?r.error:((r&&r.error)||'Could not turn it on.')+' The switch stays off.');await notesFetch(a);return;}
+  await notesFetch(a);
+  nsFileSay(r.demo?(r.message||'Demo: no file written'):[r.file&&r.file.error?'':'Durbar now keeps .durbar/notes.md in the project.',r.message||''].filter(Boolean).join(' '));
+}
+async function nsFileOff(a,btn){
+  const id=liveRoot(a).id, back=()=>$('nsFileSw')||btn;
+  const v=await askDialog({title:'Stop keeping .durbar/notes.md?',body:'Durbar stops writing the file. Leave it in the project, or delete it? Durbar deletes it only when it holds exactly what Durbar would write.',lines:['If the file is tracked in git, deleting it shows as a deletion.'],size:'m',returnFocus:back,
+    buttons:[{label:'Cancel',value:null},{label:'Delete the file',value:'delete',cls:'danger'},{label:'Leave the file',value:'leave',cls:'primary'}]});
+  if(!v||(v.value!=='leave'&&v.value!=='delete'))return;
+  let r=null;try{r=await bridge.notesSetFile(id,false,{deleteFile:v.value==='delete'});}catch(e){r=null;}
+  await notesFetch(a);
+  if(!r||!r.ok){nsFileSay((r&&r.error)||'Could not turn it off.');return;}
+  nsFileSay(r.demo?(r.message||'Demo: no file written'):(r.message||'Durbar stopped writing .durbar/notes.md.'));
 }
 /* the rows the keyboard can reach: a folded Done group's rows are not shown */
 function nsVisibleRows(){return [...document.querySelectorAll('#nsList .nt-row')].filter(r=>!r.closest('details:not([open])'));} /* a closed <details> keeps its rows' boxes in Chromium: test the fold, not the boxes */
@@ -3075,6 +3238,7 @@ function wireNotesScreen(h){
   h.addEventListener('click',e=>{
     const a=byId(NS.id); if(!a)return;
     if(e.target.closest('#nsAdd')){addNoteUi(a,$('nsAdd'));return;}
+    const fsw=e.target.closest('#nsFileSw'); if(fsw){if(!fsw.disabled)nsFileToggle(a,fsw);return;}
     const b=e.target.closest('[data-nt]'); if(!b)return;
     if(b.dataset.nt==='startover'){startOverNotes(a,b);return;}
     const row=b.closest('.nt-row'),st=notesOf(a),n=row&&st&&st.notes.find(x=>x.id===row.dataset.id); if(!n)return;
@@ -7925,7 +8089,7 @@ if(bridge){
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
   document.body.classList.toggle('simple',SIMPLE);
-  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},signs:{get:()=>SIGN_PREF,set:setSignsOn,usable:()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign)},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},signs:{get:()=>SIGN_PREF,set:setSignsOn,usable:()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign),view:{get:officeView,set:setOfficeView,note:()=>CREW&&CREW.realOfficeNote?CREW.realOfficeNote(crewChoice(),officeView()):''}},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     applyCharacters,charPreview, /* spec 077 FR-068 */
@@ -8002,7 +8166,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={agents:()=>agents,crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
+if(SIM)window.__durbarSimUi={agents:()=>agents,toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,
