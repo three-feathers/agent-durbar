@@ -95,6 +95,8 @@ export class McpStore {
   /** A secret value was added, changed or dropped since the vault was written: the next save encrypts a new vault. */
   private vaultDirty = false;
   private persistKnown?: boolean;
+  /** Spec 019 change 2026-10-31: the file exists but could not be used, so it loaded as empty: moved aside before the first write. */
+  private unreadable = false;
 
   constructor(
     private readonly file: string,
@@ -205,14 +207,23 @@ export class McpStore {
     this.vaultBlob = undefined;
     this.unlocked = false;
     this.vaultDirty = false;
+    this.unreadable = false;
     let doc: unknown;
     try {
-      if (fs.statSync(this.file).size > MAX_FILE) return;
+      if (fs.statSync(this.file).size > MAX_FILE) {
+        this.unreadable = true;
+        return;
+      }
       doc = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-    } catch {
+    } catch (e) {
+      this.unreadable = (e as NodeJS.ErrnoException).code !== 'ENOENT'; // a missing file is a normal empty store
       return;
     }
-    const o = (doc && typeof doc === 'object' ? doc : {}) as Record<string, unknown>;
+    if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+      this.unreadable = true;
+      return;
+    }
+    const o = doc as Record<string, unknown>;
     if (typeof o.vault === 'string') this.vaultBlob = o.vault;
     const to = o.toolsOff && typeof o.toolsOff === 'object' && !Array.isArray(o.toolsOff) ? (o.toolsOff as Record<string, unknown>) : {};
     for (const key of Object.keys(to).slice(0, MAX_FOLDERS)) {
@@ -236,7 +247,25 @@ export class McpStore {
     }
   }
 
+  /** Rename the unusable file to a dated sibling. Never deleted, never read; a failed rename throws, so the save writes nothing over it. */
+  private moveUnreadableAside(): void {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-'); // no ":" in a Windows file name
+    let dest = `${this.file}.unreadable-${stamp}`;
+    for (let n = 1; fs.existsSync(dest); n++) dest = `${this.file}.unreadable-${stamp}-${n}`;
+    try {
+      fs.renameSync(this.file, dest);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; // gone since the load: nothing left to keep
+      this.unreadable = false;
+      return;
+    }
+    this.unreadable = false;
+    safe(() => fs.chmodSync(dest, fs.statSync(dest).isDirectory() ? 0o700 : 0o600), undefined); // a folder needs its search bit to stay readable
+    console.warn(`MCP store: an unreadable file was moved aside as ${path.basename(dest)}`);
+  }
+
   private save(): void {
+    if (this.unreadable) this.moveUnreadableAside();
     let vault = this.vaultBlob;
     if (this.vaultDirty) {
       // A value changed: the new vault needs every value, so the old one is decrypted first (once per run), then encrypted once.
