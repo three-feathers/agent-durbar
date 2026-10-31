@@ -228,10 +228,45 @@ export function warningText(w: NonNullable<ReturnType<typeof warningOf>>): strin
 }
 
 /** FR-030: the sentence added to the compaction line. */
-export function compactionHintText(w: NonNullable<ReturnType<typeof warningOf>>): string {
+export function compactionHintText(w: { share: number; atLeast: boolean; servers: readonly McpContextServer[] }): string {
   const top = w.servers[0];
   const free = top ? ` Switching off ${top.name} would free ${figureOf(top)}.` : '';
   return `MCP tool definitions take ${w.atLeast ? 'at least ' : ''}${pctWord(w.share)} % of the window, so each compaction frees less.${free}`;
+}
+
+/**
+ * FR-030: the hint for a compaction, or null: a burst, the MCP share at least the warn level, not yet shown at this level. `shown` is what
+ * this session already showed or dismissed.
+ */
+export function compactionHint(r: McpContextReport | null | undefined, window: number | undefined, levels: McpWarnLevels, times: readonly number[], now: number, shown: Partial<Record<McpLevel, boolean>>): { level: McpLevel; text: string; top?: string } | null {
+  const share = shareOf(r, window);
+  if (!r || levels.off || share === undefined || share < levels.warn || !compactionBurst(times, now)) return null;
+  const level: McpLevel = share > levels.strong ? 'strong' : 'warn';
+  if (shown[level] === true) return null;
+  const servers = heaviest(r, 1);
+  return { level, text: compactionHintText({ share, atLeast: !!r.partial, servers }), ...(servers[0] ? { top: servers[0].name } : {}) };
+}
+
+const COST_APP_WORDS: Record<string, string> = { copilot: 'Copilot', claude: 'Claude Code', codex: 'Codex' };
+/**
+ * FR-012: one server's last figures in Settings: "≈12k in Codex, 0.4k on demand in Claude Code, measured 10:21". `per` is the entries of
+ * this server by agent app; the time is the newest one's. '' when there is none.
+ */
+export function costLine(per: Record<string, { tokens?: number; deferredTokens?: number; source: string; at: number } | undefined>, time: (at: number) => string): string {
+  const parts: string[] = [];
+  let at = 0;
+  for (const app of Object.keys(COST_APP_WORDS)) {
+    const e = per[app];
+    if (!e) continue;
+    const mark = e.source === 'estimated' ? '≈' : '';
+    const t = safeTokens(e.tokens);
+    const dt = safeTokens(e.deferredTokens);
+    const bits = [t !== undefined && (t > 0 || !dt) ? `${mark}${fmtK(t)}` : '', dt ? `${mark}${fmtK(dt)} on demand` : ''].filter(Boolean);
+    if (!bits.length) continue;
+    parts.push(`${bits.join(', ')} in ${COST_APP_WORDS[app]}`);
+    at = Math.max(at, e.at);
+  }
+  return parts.length ? `${parts.join(', ')}, measured ${time(at)}` : '';
 }
 
 /** FR-011: a dialog row's figure. `status` is the row's state: a failed or switched-off server is "not loaded" and has no figure (US1 scenario 3). */

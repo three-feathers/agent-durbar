@@ -41,6 +41,8 @@ export interface AdapterCapabilities {
   readonly mcpRestart?: boolean;
   /** Spec 069 FR-031: `listMcpTools()` exists: the tools of one server of a running session can be listed; missing = false. */
   readonly mcpTools?: boolean;
+  /** Spec 100 FR-001: `mcpContext()` exists and how its figures come: the agent app's own, or estimated from the tool definitions; missing = no figures. */
+  readonly mcpContext?: 'reported' | 'estimated';
   /** Spec 069 FR-062/FR-064: the adapter passes `StartOptions.disabledMcpTools` to its agent app's own filter; missing = single tools cannot be turned off. */
   readonly mcpToolFilter?: boolean;
   /** Spec 058 FR-064: `startMcpSignIn()` (and `cancelMcpSignIn()`) exist: the agent app's own sign-in for an MCP server can be started; missing = false. */

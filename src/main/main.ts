@@ -199,6 +199,7 @@ const mcp = registerMcpIpc({
   orgMcp: (id, s) => orgPolicies.mcp(appIdOf(id), s), // spec 076 FR-202/FR-203
   orgMcpNow: (id, s) => orgPolicies.mcpNow(appIdOf(id), s),
   orgTool: (id, server, tool) => orgPolicies.tool(appIdOf(id), server, tool),
+  pushContext: (id, view) => toRenderer('mcp-context', { id, view }), // spec 100 FR-003
 });
 registerMcpGlobalIpc({ lists: () => globalLists, offList: () => mcpStore?.ambientDisabled() ?? [], setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off) });
 /** Files the user picked through the native dialog; only these can be attached. */

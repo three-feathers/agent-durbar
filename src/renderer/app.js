@@ -3158,19 +3158,92 @@ function mcpChipHTML(a){
   const v=MCP_N.get(a.id), known=!!v, f=MCP_F.get(a.id)||0;
   /* spec 058 FR-094 (issue 603): a dot in the error colour when a server failed, said in the name and tooltip too (never colour alone) */
   const failed=f?', '+f+' failed':'';
-  const lab=known?v.on+' of '+v.total+' MCP servers on'+failed+'. Open the list':'MCP servers'+(f?': '+f+' failed':'')+'. Open the list';
-  return `<button class="mchip mchip-btn${f?' mcp-failed':''}" id="mcpBtn" type="button" aria-label="${esc(lab)}" title="${f?esc('MCP servers for this agent: '+(known?v.on+' of '+v.total+' on, ':'')+f+' failed. Click to see why.'):`MCP servers for this agent${known?': '+v.on+' of '+v.total+' switched on':''}. Click to see or switch them (set globally in Settings).`}">${CT_IC.mcp}<span>MCP</span>${known?`<b class="ct-n">${v.on}/${v.total}</b>`:''}${f?'<i class="ct-dot" aria-hidden="true"></i>':''}</button>`;
+  /* spec 100 FR-010, FR-021: the tokens MCP tool definitions take, and the level in the colour, the name and the tooltip (never colour alone) */
+  const C=mcpChipCost(a), cw=C.words?' '+C.words+'.':'';
+  const lab=(known?v.on+' of '+v.total+' MCP servers on'+failed+'.':'MCP servers'+(f?': '+f+' failed':'')+'.')+cw+' Open the list';
+  const tip=(f?'MCP servers for this agent: '+(known?v.on+' of '+v.total+' on, ':'')+f+' failed. Click to see why.':`MCP servers for this agent${known?': '+v.on+' of '+v.total+' switched on':''}. Click to see or switch them (set globally in Settings).`)+cw;
+  return `<button class="mchip mchip-btn${f?' mcp-failed':''}${C.level==='none'?'':' mcp-'+C.level}" id="mcpBtn" type="button" aria-label="${esc(lab)}" title="${esc(tip)}">${CT_IC.mcp}<span>MCP</span>${known?`<b class="ct-n">${v.on}/${v.total}</b>`:''}${C.fig?`<span class="ct-mcpk">\u00b7 ${esc(C.fig)}</span>`:''}${f?'<i class="ct-dot" aria-hidden="true"></i>':''}</button>`;
 }
+/* ---- spec 100: MCP tool definitions in the context window. The rules and words are src/shared/mcpcost.ts; here the state per agent, the chip, the one line ---- */
+const MCPX=()=>window.exports||{}; /* mcpcost.js, loaded before this file */
+const MCP_CTX=new Map(); /* agent id -> the last McpContextView */
+let mcpLevels=null;
+const mcpLevelsNow=()=>mcpLevels||MCPX().mcpWarnDefaults();
+/* the window to measure against when the report has none: the reported context figure, else the model's; none right after a model change (FR-024) */
+function mcpWindow(a){const c=STATS.agent(a.id).ctx;return a.ctxWaiting?0:(c&&c.limit>0?c.limit:(modelWindow(a)||0));}
+const mcpReport=a=>{const v=MCP_CTX.get(a.id);return v&&v.report||null;};
+function mcpChipCost(a){
+  const X=MCPX(), r=mcpReport(a);
+  if(!r)return {fig:'',words:'',level:'none'};
+  const w=mcpWindow(a), L=mcpLevelsNow();
+  return {fig:X.chipFigure(r),words:X.hasFigures(r)?X.chipWords(r,w,L):'Size of their tool definitions not reported by '+mcpAppWord(a),level:X.levelOf(X.shareOf(r,w),L)};
+}
+/* spec 100: "Copilot", "Claude Code", "Codex": the footnote's and the line's short name */
+const mcpAppWord=a=>String(kindWord(a.info&&a.info.adapterId)||'the agent app').replace(/^GitHub /,'');
+/* FR-013: the bar of the token summary */
+function mcpBar(a){const X=MCPX(),r=mcpReport(a);const t=r?X.reportTotal(r):undefined;return t===undefined?undefined:{tokens:t,estimated:X.chipFigure(r).charAt(0)==='\u2248'};}
+function repaintMcpChip(a){
+  const el=$('mcpBtn'),cur=ui.selected&&byId(ui.selected);if(!el||!cur||liveRoot(cur)!==a)return;
+  const had=document.activeElement===el,t=document.createElement('template');t.innerHTML=mcpChipHTML(a);const n=t.content.firstElementChild;
+  if(n.outerHTML===el.outerHTML)return; /* a context event per message: no DOM change when nothing changed */
+  el.replaceWith(n);if(had)n.focus({preventScroll:true});
+}
+function mcpActions(a,top,onDismiss){
+  const box=document.createElement('span');box.className='mcp-acts';
+  const btn=(label,fn)=>{const b=document.createElement('button');b.type='button';b.className='linkbtn';b.textContent=label;b.onclick=fn;box.appendChild(b);};
+  btn('Switch off for this session\u2026',()=>{Promise.resolve(window.DurbarScreens.agentMcp(a,{...mcpOpts(a),focusServer:top})).finally(()=>refreshMcpCount(a));}); /* FR-022: the dialog, the heaviest focused; only the person's own switch changes anything (FR-023) */
+  btn('Open MCP servers',()=>window.DurbarScreens.openSettings('mcp'));
+  btn('Dismiss',onDismiss);
+  return box;
+}
+/* FR-022, FR-024: one line per session; it follows the figure in place, and a dismissed one comes back only from warn to strong */
+function mcpWarnLine(a){
+  if(!a||a.parent)return;
+  const X=MCPX(),st=a.mcpLine||(a.mcpLine={shown:'none',dismissed:'none',el:null});
+  const w=X.warningOf(mcpReport(a),mcpWindow(a),mcpLevelsNow()), level=w?w.level:'none', act=X.lineAction(st,level);
+  if(act==='hide'){if(st.el)st.el.remove();st.el=null;st.shown='none';return;}
+  if(act==='show'){
+    const chat=liveChat(a),el=document.createElement('div');el.className='note info cline mcp-line';el.setAttribute('role','status');
+    const t=document.createElement('span');t.className='mcp-line-t';el.appendChild(t);
+    const dismiss=()=>{st.dismissed=st.shown;st.shown='none';el.remove();st.el=null;};
+    el.appendChild(mcpActions(a,w.servers[0]&&w.servers[0].name,dismiss));
+    chat.el.appendChild(el);st.el=el;stickyScroll(chat);
+  }
+  if(w&&st.el){const t=st.el.querySelector('.mcp-line-t'),txt=X.warningText(w);if(t.textContent!==txt)t.textContent=txt;st.el.classList.toggle('mcp-strong',w.level==='strong');st.shown=w.level;}
+}
+/* FR-030: the extra sentence on the folded compaction line; once per session per level, dismissible */
+function mcpCompactHint(a,R,now){
+  if(a.parent||!R||!R.el)return;
+  const X=MCPX(),st=a.mcpHint||(a.mcpHint={shown:{},el:null,run:null});
+  const h=X.compactionHint(mcpReport(a),mcpWindow(a),mcpLevelsNow(),a.compTimes||[],now,st.shown);
+  if(h){
+    st.shown[h.level]=true;if(st.el)st.el.remove();
+    const el=document.createElement('span');el.className='mcp-hint';
+    const t=document.createElement('span');t.textContent=' '+h.text+' ';el.appendChild(t);
+    el.appendChild(mcpActions(a,h.top,()=>{el.remove();st.el=null;st.run=null;}));
+    st.el=el;st.run=R;
+  }
+  if(st.el&&st.run===R&&st.el.parentNode!==R.el)R.el.appendChild(st.el); /* the fold's textContent removes it on each new compaction */
+}
+function mcpViewChanged(id,view){
+  const a=liveById(id);if(!a||a.parent)return;
+  if(view&&view.ok)MCP_CTX.set(id,view);else MCP_CTX.delete(id);
+  repaintMcpChip(a);mcpWarnLine(a);
+  if(window.DurbarScreens&&window.DurbarScreens.mcpEvent)window.DurbarScreens.mcpEvent(id);
+}
+function mcpLevelsChanged(l){mcpLevels=l;for(const id of MCP_CTX.keys()){const a=liveById(id);if(a){repaintMcpChip(a);mcpWarnLine(a);}}}
+if(bridge&&bridge.onMcpContext)bridge.onMcpContext(p=>{if(p&&typeof p.id==='string')mcpViewChanged(p.id,p.view);});
+if(bridge&&bridge.getSettings)Promise.resolve(bridge.getSettings()).then(s=>{if(s&&s.mcpWarnLevels)mcpLevelsChanged(s.mcpWarnLevels);}).catch(()=>{});
 async function refreshMcpCount(a){
   if(!a||!bridge.agentMcp||!ui.selected)return;
   {const cur=byId(ui.selected);if(!cur||liveRoot(cur)!==a||!$('mcpBtn'))return;} /* only for the open chat; opening a chat asks again */
   let st=null;try{st=await bridge.agentMcp(a.id);}catch(e){st=null;}
+  if(bridge.agentMcpContext)Promise.resolve(bridge.agentMcpContext(a.id)).then(v=>{if(v&&v.ok){const o=MCP_CTX.get(a.id);if(JSON.stringify(o)!==JSON.stringify(v))mcpViewChanged(a.id,v);}}).catch(()=>{}); /* spec 100 FR-003: the last figures; asks nothing */
   if(!st||!st.ok)return;
   const all=st.servers||[], n=all.filter(x=>x.defaultOn&&!x.off).length, was=MCP_N.get(a.id);
   const f=all.filter(x=>x.status==='failed'||x.status==='needs-auth').length;
   if(was&&was.on===n&&was.total===all.length&&(MCP_F.get(a.id)||0)===f)return; MCP_N.set(a.id,{on:n,total:all.length});MCP_F.set(a.id,f);
-  const el=$('mcpBtn'),cur=ui.selected&&byId(ui.selected);if(!el||!cur||liveRoot(cur)!==a)return;
-  const had=document.activeElement===el;el.outerHTML=mcpChipHTML(a);if(had){const f=$('mcpBtn');if(f)f.focus({preventScroll:true});}
+  repaintMcpChip(a);
 }
 const RUN_SAID={id:null,run:false,stopped:false}; /* spec 005 T074: what the live region last said about the open chat's turn */
 /* FR-038: a turn runs (live: the same rule that greys Compact; demo: the canned turn plays) */
@@ -3214,6 +3287,7 @@ function ctxSummaryHTML(a){
   let h=`<p class="mm-h">Context window</p>`;
   if(!s.known)return h+`<p class="mm-info cb-note">${esc(s.note)}</p>`;
   h+=`<div class="cb-head ${lv}"><p class="cb-total">${esc(s.pct===null?f(s.tokens)+' tokens used · window not reported':f(s.tokens)+' of '+f(s.limit)+' tokens · '+s.pct+'%')}</p>${s.pct===null?'':`<span class="cb-total-bar" aria-hidden="true"><i style="width:${Math.max(1,s.pct)}%"></i></span>`}</div>`;
+  if(s.note&&s.bars.length)h+=`<p class="mm-info cb-note">${esc(s.note)}</p>`; /* spec 100 FR-013: only the MCP bar is known */
   if(s.bars.length)h+=`<ul class="cb-rows" aria-label="Tokens by type">`+s.bars.map(b=>`<li class="cb-row cb-${esc(b.key)}"><span class="cb-l">${esc(b.label)}</span><span class="cb-n">${esc(f(b.tokens))} · ${b.share}%</span><span class="cb-bar" aria-hidden="true"><i style="width:${Math.max(1,b.share)}%"></i></span></li>`).join('')+`</ul>`;
   else h+=`<p class="mm-info cb-note">${esc(s.note)}</p>`;
   return h;
@@ -3247,6 +3321,7 @@ function fitToolbar(){
   const bar=$('cToolbar'),row=$('ctItems'),pop=$('ctMorePop'),more=$('ctMoreBtn'); if(!bar||!row||!pop||!more)return;
   if(!bar.getClientRects().length||!pop.hidden)return; /* not while the popover is open: it refits when it closes */
   /* the common case: nothing in ⋯ and the row fits: no DOM change (a chip's text updates often) */
+  bar.classList.remove('ct-tight'); /* spec 100 FR-010: the MCP tokens drop before the chip's count, and before anything moves to the popover */
   if(!pop.querySelector('.ct')&&row.scrollWidth<=row.clientWidth+1){if(!more.hidden)more.hidden=true;return;}
   ctFitting=true;
   const ae=document.activeElement; /* moving a node drops its focus: put it back */
@@ -3256,6 +3331,7 @@ function fitToolbar(){
     all.forEach(n=>row.appendChild(n)); /* the canonical order */
     more.hidden=true;
     const fits=()=>row.scrollWidth<=row.clientWidth+1;
+    if(!fits())bar.classList.add('ct-tight');
     if(!fits()){
       more.hidden=false;
       const out=all.filter(n=>n.dataset.ct).sort((p,q)=>(+p.dataset.ct)-(+q.dataset.ct));
@@ -5613,6 +5689,7 @@ function feedStats(a,e){
     updateCtxChip(a);
     if(e.type==='context')updateModelChip(a); /* spec 005 FR-037: the model chip shows the window the runtime reports */
     if(e.type==='context')maybeSuggestFresh(a);
+    if(e.type==='context'&&!e.agentId&&MCP_CTX.has(a.id)){repaintMcpChip(a);mcpWarnLine(a);} /* spec 100: the window became known or changed: the share again */
     if(window.DurbarScreens.isOpen()&&!statsRefresh)statsRefresh=setTimeout(()=>{statsRefresh=0;window.DurbarScreens.refresh();},700);
   }
 }
@@ -5621,7 +5698,7 @@ function ctxChipHTML(a){const c=window.DurbarScreens.ctxChip(a);
 /* spec 052 FR-081: Simple says "Memory 74% full" (same id, same click). FR-093: Simple shows it only from 70% full (class mem-low hides it) */
 /* spec 005 FR-051, FR-052 (issue 627): the figure for the ring and its token summary (src/renderer/ctxbreakdown.js); never estimated */
 function ctxSummary(a){ /* the window as the model chip has it (modelWindow: reported, else the model list's for this tier); the event's own limit wins in summary() */
-  return window.DurbarCtxBreakdown.summary(STATS.agent(a.id).ctx,{limit:modelWindow(a),app:kindWord(a.info&&a.info.adapterId),waiting:a.ctxWaiting||false});
+  return window.DurbarCtxBreakdown.summary(STATS.agent(a.id).ctx,{limit:modelWindow(a),app:kindWord(a.info&&a.info.adapterId),waiting:a.ctxWaiting||false,mcp:mcpBar(a)});
 }
 /* the ring: a track and an arc filled clockwise by the share in use (pathLength 100); level colour from theme tokens (styles.css);
    above 90% a centre dot too, so the colour is never the only cue (the tooltip and the name carry the number) */
@@ -6717,6 +6794,7 @@ function onCompaction(a,e){
   if(!R)R=a.compRun={chat,n:0,at:'',el:null,log:[]};
   const t=DM.compactionFoldText(e,R.n+(e.phase==='complete'?1:0),e.phase==='complete'?at():R.at);
   if(R.el)R.el.textContent=t;else R.el=line(t);
+  if(e.phase==='complete'&&!a.parent){const ct=a.compTimes||(a.compTimes=[]);ct.push(typeof e.timestamp==='number'?e.timestamp:Date.now());if(ct.length>200)ct.shift();}
   R.el.classList.toggle('failed',e.phase==='failed');
   stickyScroll(chat);
   R.pending=e.phase==='start';
@@ -6733,6 +6811,7 @@ function onCompaction(a,e){
       else{a.ctxWaiting='compaction';STATS.clearContext(a.id);} /* spec 015 FR-012: the app did not say the new size (Claude, Codex): no stale figure, no "nearly full" note on it */
     }else a.compactFailed=true;
   }
+  if(a.compTimes&&a.compTimes.length)mcpCompactHint(a,R,a.compTimes[a.compTimes.length-1]); /* spec 100 FR-030 */
   updateCtxChip(a);if(e.phase!=='start'&&!a.ctxWaiting)maybeSuggestFresh(a);
   scheduleRender();updatePanelHeader(); /* spec 015 FR-010: the desk, list, strip and header say Compacting, or go back */
 }
@@ -7919,6 +7998,11 @@ if(bridge){
     staticLimit:a=>{const m=modelsFor(a.info&&a.info.adapterId).find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},
     /* spec 058 FR-082: a running chat for Settings' live MCP list: the live agent (state, grants, remote: the Restart session questions)
        and the same options the MCP chip passes to the chat's MCP dialog */
+    /* spec 100: the dialog's and Settings' view of the figures */
+    mcpCtx:id=>{const a=liveById(id);return a?{view:MCP_CTX.get(id)||null,window:mcpWindow(a),app:mcpAppWord(a)}:null;},
+    mcpCtxSet:(id,v)=>mcpViewChanged(id,v),
+    mcpLevels:()=>mcpLevelsNow(),
+    setMcpLevels:l=>mcpLevelsChanged(l),
     mcpSession:id=>{const r=LIVE.agents.find(y=>y.id===id&&y.live&&!y.parent);return r?{a:r,mcp:!!feat(r,'mcp'),o:mcpOpts(r)}:null;},
     folderOf:x=>{const ag=LIVE.agents.find(y=>y.id===(x&&x.id||x));return ag?folderOfRoom(ag.room):null;},
     openAgent:id=>openPanel(id,false),

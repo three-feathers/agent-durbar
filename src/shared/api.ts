@@ -1,6 +1,7 @@
 import type { FolderSetupDecision, FolderSetupView, HookExplanation } from './foldersetup';
 import type { BroadKind } from './broadfolder';
 import type { AgentEvent, McpServerStatus } from '../adapters/types';
+import type { McpContextReport, McpWarnLevels } from './mcpcost';
 import type { HistoryItem, PreviousSession } from '../adapters/history';
 import type { VsChatSummary, VsChatTranscript } from '../adapters/vscodeChat';
 import type { UsageDoc } from './toolusage';
@@ -194,6 +195,8 @@ export interface CustomPlaceResult {
 }
 
 export interface AppSettingsView {
+  /** Spec 100 FR-020: when the MCP warning shows. */
+  mcpWarnLevels?: McpWarnLevels;
   /** Owner, version and contributors for Settings > About (spec 008 FR-018). */
   about?: AboutView;
   /** Default cap (AIU) applied to new sessions; unset = none. */
@@ -688,6 +691,23 @@ export interface AgentMcpReply {
   toolFilter?: boolean;
 }
 
+/** `agents:mcpContext` and the `mcp-context` push (spec 100): names and numbers only. `supported` false: this agent app has no figures at all. */
+export interface McpContextView {
+  ok: boolean;
+  supported: boolean;
+  report?: McpContextReport;
+  at?: number;
+}
+/** Spec 100 FR-012: one server's last figure kept in the MCP store. */
+export interface McpCostEntry {
+  tokens?: number;
+  deferredTokens?: number;
+  source: 'reported' | 'estimated';
+  at: number;
+}
+/** By agent app id, then server name. */
+export type McpCosts = Record<string, Record<string, McpCostEntry>>;
+
 /** `agents:mcpTools` (spec 069 FR-032): one server's tools, masked and cut in main. */
 export interface McpToolsResult {
   ok: boolean;
@@ -1017,6 +1037,14 @@ export interface DurbarApi {
   agentMcpCancelSignIn?(id: string, name: string): Promise<{ ok: boolean; error?: string }>;
   /** Spec 069 FR-032: the tools of one MCP server of this agent's running session. */
   agentMcpTools?(id: string, name: string): Promise<McpToolsResult>;
+  /** Spec 100 FR-003: the last MCP figures of this agent; `open` (the dialog opening) asks the agent app first, at most once a minute. */
+  agentMcpContext?(id: string, open?: boolean): Promise<McpContextView>;
+  /** Spec 100 FR-003: new figures after a first load, a switch, a restart or a model change. */
+  onMcpContext?(cb: (p: { id: string; view: McpContextView }) => void): () => void;
+  /** Spec 100 FR-012: the last figures per agent app and server. */
+  mcpCosts?(): Promise<{ ok: boolean; costs: McpCosts }>;
+  /** Spec 100 FR-020: warn and strong levels, or off; validated in main; returns what is in force. */
+  setMcpWarnLevels?(v: McpWarnLevels): Promise<{ ok: boolean; levels: McpWarnLevels }>;
   /** Spec 069 FR-061: the tools of one server turned off in this agent's folder (applies to new sessions and after Restart session). */
   setAgentMcpToolsOff?(id: string, name: string, off: string[]): Promise<{ ok: boolean; error?: string }>;
   /** Spec 058 FR-022: end and resume this agent's session with the current MCP servers; `confirmed` after the window asked.

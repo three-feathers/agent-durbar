@@ -5,6 +5,7 @@
  * wire params, the FR-087 refusals, crash, stop, fixtures, and the approval/interrupt wiring.
  */
 import * as assert from 'assert';
+import { estimateTools } from '../src/shared/mcpcost';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -95,7 +96,8 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(CODEX_CAPABILITIES)), {
       interrupt: true, resume: true, images: true, models: true, planMode: true, effort: true, modelSwitch: { verified: true, contextTier: false },
       permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'next-message',
-      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpTools: true, mcpToolFilter: true, mcpRestart: false, handoff: true, oneShot: true, deleteSession: true, renameSession: 'any', osSandbox: true,
+      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpTools: true, mcpToolFilter: true, mcpContext: 'estimated',
+    mcpRestart: false, handoff: true, oneShot: true, deleteSession: true, renameSession: 'any', osSandbox: true,
     });
     assert.ok(Object.isFrozen(CODEX_CAPABILITIES) && Object.isFrozen(CODEX_CAPABILITIES.permissionModes) && Object.isFrozen(CODEX_CAPABILITIES.usage), 'capabilities are deeply frozen');
     const { ad } = make();
@@ -754,6 +756,26 @@ async function main(): Promise<void> {
       assert.strictEqual(server.requests('mcpServerStatus/list').length - before, 3, 'three pages asked');
       assert.strictEqual((server.requests('mcpServerStatus/list').pop()!.params as Record<string, unknown>).cursor, '20');
       await assert.rejects(ad.listMcpTools!(sid, 'srv-99'), /not running in this session/, 'not on any page');
+      // spec 100 T014: every server's schemas, estimated; the schemas go no further than the call; a failed list is partial
+      {
+        const SECRET_DESC = 'A description that must not stay anywhere';
+        server.mcpList = [
+          { name: 'big', authStatus: 'unsupported', runtimeStatus: 'connected', tools: { read: { name: 'read', description: SECRET_DESC, inputSchema: { type: 'object' } } } },
+          { name: 'down', authStatus: 'unsupported', runtimeStatus: 'failed', tools: {}, toolsError: 'tools/list failed: token=abc123 refused' },
+        ];
+        server.mcpPageSize = 1;
+        const rep = await ad.mcpContext!(sid);
+        const want = estimateTools({ read: { name: 'read', description: SECRET_DESC, inputSchema: { type: 'object' } } }).tokens;
+        assert.deepStrictEqual(rep, { servers: [{ name: 'big', tokens: want, tools: 1, source: 'estimated' }, { name: 'down', source: 'unknown', error: 'list failed' }], partial: true }, 'both pages read');
+        const text = JSON.stringify(rep);
+        assert.ok(!text.includes(SECRET_DESC) && !text.includes('inputSchema') && !text.includes('abc123'), 'no schema, description or app text in the report (FR-004, FR-040)');
+        const req = server.requests('mcpServerStatus/list').pop()!.params as Record<string, unknown>;
+        assert.deepStrictEqual([req.threadId, req.serverName, req.detail], [sid, undefined, 'toolsAndAuthOnly'], 'the spec 069 call for every server');
+        assert.strictEqual(ad.capabilities.mcpContext, 'estimated');
+        assert.deepStrictEqual(await ad.mcpContext!('no-such'), { servers: [] });
+        server.mcpList = Array.from({ length: 25 }, (_v, i) => ({ name: `srv-${i}`, authStatus: 'unsupported', runtimeStatus: 'connected', tools: { [`t${i}`]: { name: `t${i}`, inputSchema: {} } }, resources: [], resourceTemplates: [] }));
+        server.mcpPageSize = 10;
+      }
       // re-review on #499: a pager that always answers the same nextCursor: the second request repeats it, so the search stops there
       server.mcpStuckCursor = 'same';
       const stuck = server.requests('mcpServerStatus/list').length;

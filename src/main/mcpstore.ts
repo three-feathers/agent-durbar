@@ -17,6 +17,9 @@ import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { MAX_SERVERS, MCP_TOOL_OFF_RE, NAME_RE, trustHash, validateInput } from '../shared/mcp';
+import { safeTokens } from '../shared/mcpcost';
+import type { McpContextServer } from '../shared/mcpcost';
+import type { McpCostEntry, McpCosts } from '../shared/api';
 import type { McpSecretKey, McpServerInput, McpServerSpec, McpServerView, McpTransport, McpTrustInfo } from '../shared/mcp';
 
 export interface SecretCodec {
@@ -80,6 +83,38 @@ function safe<T>(f: () => T, fallback: T): T {
   }
 }
 
+const MCP_COST_APPS = ['copilot', 'claude', 'codex'] as const;
+const MAX_COST_SERVERS = 200;
+const MAX_COST_NAME = 128;
+
+/** One kept figure: known fields, checked numbers; undefined when there is no figure. */
+function costEntry(v: unknown): McpCostEntry | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const o = v as Record<string, unknown>;
+  const tokens = safeTokens(o.tokens);
+  const deferredTokens = safeTokens(o.deferredTokens);
+  if ((o.source !== 'reported' && o.source !== 'estimated') || (tokens === undefined && !deferredTokens) || typeof o.at !== 'number' || !Number.isFinite(o.at)) return undefined;
+  return { ...(tokens !== undefined ? { tokens } : {}), ...(deferredTokens ? { deferredTokens } : {}), source: o.source, at: o.at };
+}
+
+/** Tolerant: only the known apps, odd entries dropped. */
+function parseMcpCosts(v: unknown): McpCosts {
+  const out: McpCosts = {};
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return out;
+  for (const app of MCP_COST_APPS) {
+    if (!Object.prototype.hasOwnProperty.call(v, app)) continue;
+    const m = (v as Record<string, unknown>)[app];
+    if (!m || typeof m !== 'object' || Array.isArray(m)) continue;
+    const rec: Record<string, McpCostEntry> = {};
+    for (const [name, raw] of Object.entries(m as Record<string, unknown>).slice(0, MAX_COST_SERVERS)) {
+      const e = costEntry(raw);
+      if (e && name && name.length <= MAX_COST_NAME && name !== '__proto__') rec[name] = e;
+    }
+    if (Object.keys(rec).length) out[app] = rec;
+  }
+  return out;
+}
+
 export class McpStore {
   /** Extras by folder/workspace key (the saved-folder key: .code-workspace file or folder path). */
   private folders = new Map<string, Rec[]>();
@@ -88,6 +123,8 @@ export class McpStore {
   private disabledAmbient = new Set<string>();
   /** Spec 069 FR-061: single MCP tools turned off, per folder key, by server name (names only). */
   private toolsOff = new Map<string, Record<string, string[]>>();
+  /** Spec 100 FR-004, FR-012 (decided Q3): the last figures per agent app and server: names, numbers and the time only. */
+  private costs: McpCosts = {};
   /** The encrypted vault as read from or last written to disk (never decrypted on load). */
   private vaultBlob?: string;
   /** True once the vault (and any old per-value blobs) was decrypted, or found to need nothing: never decrypted twice. */
@@ -202,6 +239,7 @@ export class McpStore {
     this.legacyRecs = [];
     this.disabledAmbient = new Set();
     this.toolsOff = new Map();
+    this.costs = {};
     this.vaultBlob = undefined;
     this.unlocked = false;
     this.vaultDirty = false;
@@ -225,6 +263,7 @@ export class McpStore {
       }
       if (Object.keys(rec).length) this.toolsOff.set(key, rec);
     }
+    this.costs = parseMcpCosts(o.mcpCosts);
     if (Array.isArray(o.disabledAmbient)) for (const n of o.disabledAmbient) if (typeof n === 'string' && n.length <= 80) this.disabledAmbient.add(n);
     // Version 1 (milestone 8) had one global `servers` list: it becomes `legacy`. Version 2 has `legacy` too.
     this.legacyRecs = this.parseList([...(Array.isArray(o.servers) ? o.servers : []), ...(Array.isArray(o.legacy) ? o.legacy : [])]);
@@ -278,7 +317,7 @@ export class McpStore {
     for (const [k, list] of this.folders) if (list.length) folders[k] = list.map(ser);
     const toolsOff: Record<string, Record<string, string[]>> = {};
     for (const [k, m] of this.toolsOff) if (Object.keys(m).length) toolsOff[k] = m;
-    const doc = { version: 3, folders, legacy: this.legacyRecs.map(ser), disabledAmbient: [...this.disabledAmbient], ...(Object.keys(toolsOff).length ? { toolsOff } : {}), ...(vault !== undefined ? { vault } : {}) };
+    const doc = { version: 3, folders, legacy: this.legacyRecs.map(ser), disabledAmbient: [...this.disabledAmbient], ...(Object.keys(toolsOff).length ? { toolsOff } : {}), ...(Object.keys(this.costs).length ? { mcpCosts: this.costs } : {}), ...(vault !== undefined ? { vault } : {}) };
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     const tmp = `${this.file}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(doc, null, 1), { mode: 0o600 });
@@ -507,6 +546,28 @@ export class McpStore {
     }
     this.save();
     return { ok: true };
+  }
+
+  /** Spec 100 FR-012: the last figures, for Settings. */
+  mcpCosts(): McpCosts {
+    return this.costs;
+  }
+
+  /** Spec 100 FR-004: a report's figures for this agent app replace that server's last ones; a server with no figure changes nothing; at most 200 servers per app, the oldest go first. */
+  setMcpCosts(app: string, servers: readonly McpContextServer[], at: number): void {
+    if (!(MCP_COST_APPS as readonly string[]).includes(app) || !Number.isFinite(at)) return;
+    const m: Record<string, McpCostEntry> = { ...(this.costs[app] ?? {}) };
+    let changed = false;
+    for (const s of servers) {
+      const e = costEntry({ ...s, at });
+      if (!e || !s.name || s.name.length > MAX_COST_NAME || s.name === '__proto__') continue;
+      m[s.name] = e;
+      changed = true;
+    }
+    if (!changed) return;
+    const keep = Object.entries(m).sort((a, b) => b[1].at - a[1].at).slice(0, MAX_COST_SERVERS);
+    this.costs = { ...this.costs, [app]: Object.fromEntries(keep) };
+    this.save();
   }
 
   ambientDisabled(): string[] {

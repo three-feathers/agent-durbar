@@ -13,7 +13,8 @@
   const share=(v,of)=>of>0?Math.max(0,Math.min(100,Math.round(v/of*100))):0;
 
   /* ctx: {tokens, limit, system?, conversation?, toolDefinitions?} or null. o: {limit: the model list's window when the event has none,
-     app: the agent app's name, waiting: the model just changed and the old figure belongs to the old window} */
+     app: the agent app's name, waiting: the model just changed and the old figure belongs to the old window,
+     mcp: {tokens, estimated} spec 100 FR-013: what MCP tool definitions take} */
   function summary(ctx,o){
     o=o||{};
     const app=o.app||'this agent app', fmt=S.fmtTokens;
@@ -30,9 +31,12 @@
     const bars=[];let sum=0;
     for(const [key,label] of PARTS){const v=ctx[key];if(!num(v))continue;sum+=v;bars.push({key,label,tokens:v,share:share(v,of)});}
     if(bars.length&&tokens-sum>0)bars.push({key:'other',label:'Other',tokens:tokens-sum,share:share(tokens-sum,of)});
+    /* spec 100 FR-013: the MCP part, labelled as estimated when it is. It is inside "Tool definitions" where that is reported, so it never joins the sum above */
+    const note=bars.length?'':'Breakdown not reported by '+app+'.';
+    if(o.mcp&&num(o.mcp.tokens))bars.push({key:'mcp',label:'MCP tools'+(o.mcp.estimated?' (estimated)':''),tokens:o.mcp.tokens,share:share(o.mcp.tokens,of)});
     const tip=lv.pct===null?'Context: '+fmt(tokens)+' tokens used, window size not reported':'Context '+lv.pct+'% of '+fmt(limit);
     const name=(lv.pct===null?'Context window: '+fmt(tokens)+' tokens used, window size not reported':'Context window '+lv.pct+'% used: '+fmt(tokens)+' of '+fmt(limit)+' tokens')+'. Open the token summary';
-    return {known:true,tokens,limit,pct:lv.pct,level:lv.level,bars,note:bars.length?'':'Breakdown not reported by '+app+'.',tip,name};
+    return {known:true,tokens,limit,pct:lv.pct,level:lv.level,bars,note,tip,name};
   }
   return {summary,PARTS};
 });

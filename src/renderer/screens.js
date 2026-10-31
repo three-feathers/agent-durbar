@@ -242,6 +242,28 @@
       void agentMcp(m.a,m.o);
     }
   }
+  /* ---------------- spec 100 FR-012, FR-020: Settings > MCP servers: the warning levels and the last figures (never measured: nothing; Durbar starts no server for it) ---------------- */
+  let mcpCosts=null;
+  function mcpCostSection(){
+    if(!X.bridge.setMcpWarnLevels||!X.mcpLevels)return '';
+    const L=X.mcpLevels(), mc=window.exports||{};
+    const per={};for(const [app,m] of Object.entries(mcpCosts||{}))for(const [n,e] of Object.entries(m||{}))(Object.prototype.hasOwnProperty.call(per,n)?per[n]:(per[n]={}))[app]=e;
+    const clock=at=>new Date(at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    const rows=Object.keys(per).sort((a,b)=>a.localeCompare(b)).map(n=>{const t=mc.costLine(per[n],clock);return t?`<li><b>${esc(n)}</b> <span>${esc(t)}</span></li>`:'';}).join('');
+    return `<h4 class="scr-sub" id="mcpWarnH">Tool definitions in the context window</h4>
+        <div class="scr-tools mcp-levels"><label class="capf">Warn when MCP tool definitions take more than <input id="mcpWarnPct" type="number" min="5" max="90" step="1" value="${L.warn}"> % of a session's window</label><label class="capf">strongly above <input id="mcpStrongPct" type="number" min="5" max="90" step="1" value="${L.strong}"> %</label><label class="capf"><input id="mcpWarnOff" type="checkbox"${L.off?' checked':''}> Off</label><button class="btn" type="button" id="mcpWarnSave">Save</button><span class="scr-note small" id="mcpWarnMsg" role="status"></span></div>
+        <p class="scr-note small">The warning never changes anything by itself.</p>
+        ${rows?`<ul class="mcp-costs" id="mcpCosts" aria-label="Last measured size of each server's tool definitions">${rows}</ul>`:''}`;
+  }
+  function wireMcpLevels(){
+    const save=$('mcpWarnSave');if(!save)return;
+    save.onclick=async()=>{
+      const v={warn:Number($('mcpWarnPct').value),strong:Number($('mcpStrongPct').value),off:$('mcpWarnOff').checked}, msg=$('mcpWarnMsg');
+      if(!(window.exports||{}).parseWarnLevels(v)){msg.textContent='Use whole percents from 5 to 90, the first below the second.';return;}
+      const r=await X.bridge.setMcpWarnLevels(v);
+      if(r&&r.levels){X.setMcpLevels(r.levels);msg.textContent='Saved.';}
+    };
+  }
   async function paintSettings(focus){
     const first=!mcp;
     if(first)root().innerHTML=head('Settings')+'<div class="scr-body"><p class="scr-note">Loading…</p></div>';
@@ -249,6 +271,7 @@
     if(!cur||cur.kind!=='settings')return;
     const r=root();
     if(!mcp){r.innerHTML=head('Settings')+'<div class="scr-body"><p class="scr-note">MCP settings are not available in this build.</p></div>';wireHead();return;}
+    if(X.bridge.mcpCosts){try{const c=await X.bridge.mcpCosts();mcpCosts=c&&c.ok?c.costs:null;}catch(e){mcpCosts=null;}}
     const amb=mcp.cli.map(cliRow).join('');
     const globSec=globalSection();
     let app={};
@@ -386,6 +409,7 @@
         <p class="scr-warn" role="note"><b>MCP servers run local commands with your user rights.</b> The Copilot runtime starts the servers of your CLI list in every session, exactly as the CLI does. Read-only MCP tools can run without asking even in Read-only mode.</p>
         ${fileNote}
         <h4 class="scr-sub">From the Copilot CLI list <small>all agents</small></h4>
+        ${mcpCostSection(app)}
         <ul class="srvs" id="ambList">${amb}</ul>
         <p class="scr-note small">${glob&&glob.ok?'<b>Remove…</b> edits':'You cannot edit these here: change'} <code>${esc(f.label)}</code>${glob&&glob.ok?' after you confirm, with a backup next to it.':' with the Copilot CLI or an editor.'} The switch only controls whether <b>new</b> sessions started by this app start a server; a running session keeps its servers until it ends, or until you switch one in that agent's MCP menu.</p>
         ${globSec}
@@ -409,6 +433,7 @@
     if(X.sched&&$('schedSet'))X.sched.render();
     /* spec 044 FR-030: the top-bar Schedules button, Ctrl+Shift+S and Ctrl+K open Settings at the Schedules heading (also when Settings is open already) */
     if(cur.section==='schedules'){cur.section=null;const h=$('schH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}
+    wireMcpLevels();
     if($('capSave'))$('capSave').onclick=async()=>{
       const v=parseFloat($('capDef').value),msg=$('capMsg');
       if($('capDef').value.trim()!==''&&!(v>=30&&v<=1e6)){msg.textContent='Enter a number from 30 (the runtime minimum), or leave it empty for no cap.';return;}
@@ -1186,6 +1211,9 @@
     const load=async()=>X.bridge.agentMcp(a.id);
     /* FR-176: opening the dialog counts as a look (like the window regaining focus): main reads the list once soon after a sign-in attempt */
     let st=await X.bridge.agentMcp(a.id,true);
+    /* spec 100 FR-003, FR-011: the MCP figures; opening asks (main: at most once a minute), the answer repaints through mcpEvent */
+    const mc=window.exports||{}, ctxOf=()=>X.mcpCtx?X.mcpCtx(a.id):null;
+    if(X.bridge.agentMcpContext&&X.mcpCtxSet)void Promise.resolve(X.bridge.agentMcpContext(a.id,true)).then(v=>{if(v&&v.ok)X.mcpCtxSet(a.id,v);}).catch(()=>0);
     const restarting=new Set(); /* server names whose Restart is under way (FR-031: the button stays disabled) */
     const openDet=new Set(); /* server names whose Details are open (kept over a repaint) */
     let sessBusy=false;
@@ -1234,6 +1262,7 @@
       return `<div class="mcp-refresh"><button class="btn sm" type="button" id="mcpRefresh" data-refresh="1"${refreshBusy?' aria-disabled="true"':''} aria-label="Refresh the state of every server">${refreshBusy?'Refreshing…':'Refresh'}</button><span class="dsub small" id="mcpRefreshNote" role="status">${esc(refreshNote||'Asks '+app+' for the state of every server again.')}</span></div>`;
     };
     const body=s=>{
+      const mcC=ctxOf(), mcRep=mcC&&mcC.view&&mcC.view.report||null, mcTop=mcRep?(mc.heaviest(mcRep,1)[0]||{}).name:undefined;
       const rows=s.servers.map(x=>{
         const W=window.DurbarMcpWords, app=s.app||o&&o.appName;
         const octx={off:x.off,defaultOn:x.defaultOn,origin:x.origin,app,launchedOff:x.launchedOff,switchedHere:x.switchedHere};
@@ -1269,14 +1298,16 @@
         const rmb=removable&&(X.bridge.mcpGlobalRemovePreview||X.bridge.mcpRemove)?`<button class="btn sm" type="button" data-mrm="${esc(x.name)}" aria-label="${esc('Remove '+x.name+'…')}" title="Remove it from the list it comes from (you review the change first)">Remove…</button>`:'';
         const why=removable?'':srcs.includes('builtin')?'Built into the agent app':'Reported by the running session; managed by the agent app';
         const sg=x.canSignIn||x.signInSteps||x.signIn?signHTML(x,s):'';
-        return `<li class="srv sm${open||sg?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${org?'<span class="mtag warn org-tag">Blocked by your organization</span>':''}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hh.why}${org?`<span class="srv-hint srv-org" id="${orgId}">${esc(org)}.</span>`:orgMay?`<span class="srv-hint srv-org">${esc(orgMay)}.</span>`:''}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${btnRow(det,hh.diag)}${detBox}</div>
+        /* spec 100 FR-011: this row's tokens and label */
+        const cw=mcRep&&s.live?mc.rowFigure(mcRep.servers.find(y=>y.name===x.name),{off:x.off||!x.defaultOn,status:x.status,hasReport:true,largest:mcTop===x.name}):'';
+        return `<li class="srv sm${open||sg?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${org?'<span class="mtag warn org-tag">Blocked by your organization</span>':''}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}${cw?`<span class="mcp-cost">${esc(cw)}</span>`:''}</div>${hh.why}${org?`<span class="srv-hint srv-org" id="${orgId}">${esc(org)}.</span>`:orgMay?`<span class="srv-hint srv-org">${esc(orgMay)}.</span>`:''}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${btnRow(det,hh.diag)}${detBox}</div>
           <div class="srv-act">${rs}${againB(x)}${rmb}${sw(eff,(appOff?x.name+' is off in '+(app?W.plain(app,40):'the agent app'):(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts')),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed||appOff||org?' disabled':'')+(org?' aria-describedby="'+orgId+'"':''))}</div>${sg}${open?toolsHTML(x.name):''}</li>`;}).join('');
       /* FR-022 / FR-030 / FR-032: Restart session lives only here (Q10) */
       const rsess=s.canRestartSession&&X.bridge.agentMcpRestartSession?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpRestartSess"${sessBusy?' disabled':''}>${sessBusy?'Restarting session…':'Restart session with these servers'}</button><span class="dsub small">${noServerRestart?esc(o.appName||'This agent app')+' cannot restart one server; use this instead. ':''}Ends this session and resumes it with the servers in Settings and the folder's extras. The conversation is kept.${s.start==='next-message'?' The servers start with your next message.':''}</span></div>`:'';
       /* spec 058 FR-164 (owner 2026-10-23): sign in again to every server Copilot can redo, so the signed runtime writes each sign-in anew */
       const againN=(s.servers||[]).filter(x=>x.canSignInAgain&&!x.signIn).length;
       const againAll=againN>1&&X.bridge.agentMcpSignIn?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpSignAgainAll"${againBusy?' disabled':''}>${againBusy?'Starting sign-ins…':'Sign in again to all ('+againN+')…'}</button><span class="dsub small">For keychain prompts that come back on every launch (sign-ins saved by an older Agent Durbar): ${esc(s.app||'the agent app')} forgets each saved sign-in and you sign in again in your browser, one page per server.</span></div>`:'';
-      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}${refreshRow(s)}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${rsess}${againAll}<p class="dsub small">A switch stays for this agent, also in its next sessions, until the app is closed.</p>`;
+      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}${refreshRow(s)}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${mcRep&&s.live?`<p class="dsub small mcp-total" id="mcpTotal">${mc.totalLine(mcRep,mcC.window)?`<b>${esc(mc.totalLine(mcRep,mcC.window))}.</b> `:''}${esc(mc.footnoteOf(mcRep,mcC.app))}${mcRep.servers.some(y=>y.deferredTokens)?' Tools loaded on demand are not in the window until they are used, so they are not in this total.':''}</p>`:''}${rsess}${againAll}<p class="dsub small">A switch stays for this agent, also in its next sessions, until the app is closed.</p>`;
     };
     let dlg=null;
     /* spec 069 FR-032/FR-033: expanded rows and their tools, loaded once per open dialog (again after a Restart) */
@@ -1477,7 +1508,10 @@
       await repaint();
     };
     const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
-      onOpen:d=>{dlg=d.querySelector('.dlg');dlg._ov=d;if(st.canRefresh)setTimeout(()=>{void refresh(false);},0); /* FR-190: every open reads the states again */d.addEventListener('click',async e=>{
+      onOpen:d=>{dlg=d.querySelector('.dlg');dlg._ov=d;
+        /* spec 100 FR-022: from the warning line: the heaviest server's switch has the focus; nothing is switched */
+        if(o&&o.focusServer)setTimeout(()=>{const b=[...d.querySelectorAll('.dbody button.swt')].find(x=>x.dataset.n===o.focusServer);if(b)focusIn(b);},0);
+        if(st.canRefresh)setTimeout(()=>{void refresh(false);},0); /* FR-190: every open reads the states again */d.addEventListener('click',async e=>{
         const tg=e.target.closest('button[data-tools]');if(tg){void toggleTools(tg.dataset.tools);return;}
         const ad=e.target.closest('[data-tall][aria-disabled="true"],input[data-tool][aria-disabled="true"]');if(ad){e.preventDefault();return;} /* FR-064: focusable, never changed */
         const ta=e.target.closest('button[data-tall]');if(ta&&!ta.disabled){const n=ta.dataset.tall,r=toolsOf.get(n);if(r&&r.ok){void saveOff(n,ta.getAttribute('aria-checked')==='true'?r.tools.filter(t=>!t.orgBlocked).map(t=>t.name).filter(t=>/^[A-Za-z0-9_.-]{1,128}$/.test(t)):[]);}return;}

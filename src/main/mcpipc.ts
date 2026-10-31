@@ -3,7 +3,7 @@ import type { OrgMcpServer, OrgVerdict } from '../shared/orgpolicy';
 import { safeStorage } from 'electron';
 import { fromAppFrame as fromApp, ipcHandle } from './ipcguard';
 import * as path from 'path';
-import type { AgentInfo, AgentMcpReply, GlobalApp, McpFolderState, McpState } from '../shared/api';
+import type { AgentInfo, AgentMcpReply, GlobalApp, McpContextView, McpFolderState, McpState } from '../shared/api';
 import type { McpServerStatus } from '../adapters/types';
 import { setMcpOp } from './agentops';
 import type { AdapterRouter } from '../adapters/router';
@@ -16,6 +16,7 @@ import { claudeOffKey, mergeSessionServers, offOf } from './mcpglobal';
 import { agentMcpReply, mcpRefreshOp, mcpRestartOp } from './mcpsession';
 import { McpCallTracker } from './mcpcall';
 import { mcpToolsOp } from './mcptoolsop';
+import { McpContextTracker } from './mcpcontextop';
 import { McpSignInStore, SignInPoller, mcpCancelSignInOp, mcpOpenSignInOp, mcpSignInOp, serverUrlFor } from './mcpsignin';
 import { McpStore } from './mcpstore';
 import { mcpHealthUpdate } from '../shared/mcphealth';
@@ -78,6 +79,8 @@ export function registerMcpIpc(deps: {
   /** The same from the last read, for the often repainted list (never waits). */
   orgMcpNow?(agentId: string, s: OrgMcpServer): OrgVerdict | undefined;
   orgTool?(agentId: string, server: string, tool: string): Promise<OrgVerdict | undefined>;
+  /** Spec 100 FR-003: new MCP figures for the window. */
+  pushContext?(id: string, view: McpContextView): void;
 }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[]; disabledMcpTools?: Record<string, string[]> }; secretValuesFor(agentId: string): string[] } {
   const { agents, router, dev } = deps;
   const store = deps.store;
@@ -124,6 +127,17 @@ export function registerMcpIpc(deps: {
   };
   /** Spec 058 FR-187: the class of each server's last failed tool call (a word only; the text is classified and dropped here). */
   const calls = new McpCallTracker();
+  /** Spec 100: what each session's MCP tool definitions take in its window (FR-003, FR-004). */
+  const contexts = new McpContextTracker({
+    agents,
+    router,
+    secrets: secretValuesFor,
+    live: (id) => live.get(id) ?? [],
+    off: (id) => off.get(id) ?? new Set<string>(),
+    push: (id, view) => deps.pushContext?.(id, view),
+    persist: (id, servers, at) => { const app = deps.appOf?.(id); if (app) store().setMcpCosts(app, servers, at); },
+    now: deps.now,
+  });
   router.onEvent((e) => {
     calls.onEvent(e);
     if (e.type === 'mcp') {
@@ -136,6 +150,7 @@ export function registerMcpIpc(deps: {
       health.delete(e.sessionId);
       signIns.dropAgent(e.sessionId); // End session, Restart session (it ends the session first), a failed reconnect
     }
+    contexts.onEvent(e); // after `live` is current
   });
 
   /** The Copilot CLI list is read again on every call, so edits of the file show up the next time a screen opens. */
@@ -294,6 +309,10 @@ export function registerMcpIpc(deps: {
   });
   /** Spec 069 FR-032: the tools of one server of this agent's running session, masked and cut. */
   ipcHandle('agents:mcpTools', (_e, id: unknown, name: unknown) => mcpToolsOp({ agents, router, secrets: secretValuesFor, orgTool: deps.orgTool }, id, name));
+  /** Spec 100 FR-003: the last figures; `open` asks first, at most once a minute. Names and numbers only (FR-040). */
+  ipcHandle('agents:mcpContext', (_e, id: unknown, open: unknown) => contexts.get(id, open));
+  /** Spec 100 FR-012: the last figures per agent app, for Settings. */
+  ipcHandle('mcp:costs', () => ({ ok: true, costs: store().mcpCosts() }));
   ipcHandle('agents:setMcp', async (_e, id: unknown, name: unknown, enabled: unknown) => {
     const r = await setMcpOp({ agents, router, wsKey: keyOf, orgMcpRefusal: async (a, n) => { const v = await deps.orgMcp?.(a.id, serverDefOf(a.id, n)); return v?.refuse ? `${v.why}: it cannot be switched on.` : undefined; } }, off, id, name, enabled);
     if (r.ok && typeof id === 'string' && typeof name === 'string') { const t = touched.get(id) ?? new Set<string>(); t.add(name); touched.set(id, t); }
