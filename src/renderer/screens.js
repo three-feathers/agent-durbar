@@ -483,10 +483,20 @@
       return parts.length?esc(t.name)+': '+parts.join('; '):'';}).filter(Boolean);
     return lines.length?`<p class="scr-note small" role="status" id="thFallbacks">${lines.join('; ')}.</p>`:'';
   }
+  /* spec 096 T040 (spec 021 FR-031): the parts of any "make one with AI" dialog, neutral on purpose: they know no theme, character or world (spec 102 reuses them). The ids are the caller's. */
+  const pickIdeas=(list,n)=>{const f=window.exports&&window.exports.pickFrom;return f?f(list,n):list.slice(0,n);}; /* src/shared/ideas.ts, read at call time */
+  const ideaChipsHtml=(ideas,ids)=>ideas.length?`<div class="ai-ideas" id="${ids.box}"><span class="scr-note small">Ideas:</span>${pickIdeas(ideas,4).map((i)=>`<button class="btn ai-idea" type="button" data-idea="${esc(i)}">${esc(i)}</button>`).join('')}<button class="btn ai-more" type="button" id="${ids.more}" title="Show other ideas">More ideas</button></div>`:'';
+  /* a chip fills the description box; More ideas draws four others */
+  const wireIdeaChips=(d,ideas,ids,box,onPick)=>d.addEventListener('click',(e)=>{const b=e.target.closest&&e.target.closest('.ai-idea');if(b){box.value=b.dataset.idea;onPick(box.value);focusIn(box);return;}
+    if(e.target.closest&&e.target.closest('#'+ids.more)){const el=d.querySelector('#'+ids.box);if(el)el.outerHTML=ideaChipsHtml(ideas,ids);}});
+  /* the ready agent apps with one capability ([] when the list cannot be read), and the Made by picker over them */
+  async function readyKinds(cap){if(!X.bridge.listAdapters)return [];try{return ((await X.bridge.listAdapters())||[]).filter((k)=>k&&k.state==='ready'&&k.capabilities&&k.capabilities[cap]);}catch(e){return [];}}
+  const harnessPickerHtml=(kinds,chosen,id)=>`<label>Made by<select id="${id}">${kinds.map((k)=>`<option value="${esc(k.id)}"${k.id===chosen?' selected':''}>${esc(k.displayName||k.id)}</option>`).join('')}</select></label>`;
+  /* the cost line follows the pick: it names only the app picked (spec 052 FR-093) */
+  const wireHarnessPicker=(d,id,costId,onPick,costOf)=>d.querySelector('#'+id).addEventListener('change',(e)=>{onPick(e.target.value);const c=d.querySelector('#'+costId);if(c)c.textContent=costOf(e.target.value);});
   async function aiTheme(){
     const before=(window.THEME&&window.THEME.current&&window.THEME.current().id)||'clean-office';
-    let kinds=[];
-    if(X.bridge.listAdapters){try{kinds=((await X.bridge.listAdapters())||[]).filter((k)=>k&&k.state==='ready'&&k.capabilities&&k.capabilities.oneShot);}catch(e){kinds=[];}}
+    const kinds=await readyKinds('oneShot');
     if(!kinds.length){await dialog({title:'Make a theme with AI',html:'<p class="dsub">This needs Claude Code, OpenAI Codex or GitHub Copilot, installed and signed in on this computer.</p>',buttons:[{label:'Close',value:'ok',cls:'primary'}]});return;}
     let desc='',kind=kinds[0].id;
     /* spec 052 FR-093: the cost line names only the app picked in "Made by", and follows the selection */
@@ -494,21 +504,19 @@
     /* spec 040 FR-021: a few example looks at random, so people see how to describe one */
     let ideas=[];
     if(X.bridge.themeIdeas){try{ideas=(await X.bridge.themeIdeas())||[];}catch(e){ideas=[];}}
-    const pick=()=>{const p=ideas.slice(),o=[];while(o.length<4&&p.length)o.push(p.splice(Math.floor(Math.random()*p.length),1)[0]);return o;};
-    const ideaHtml=()=>ideas.length?`<div class="ai-ideas" id="aiIdeas"><span class="scr-note small">Ideas:</span>${pick().map((i)=>`<button class="btn ai-idea" type="button" data-idea="${esc(i)}">${esc(i)}</button>`).join('')}<button class="btn ai-more" type="button" id="aiMore" title="Show other ideas">More ideas</button></div>`:'';
+    const IDEA_IDS={box:'aiIdeas',more:'aiMore'};
     for(;;){
       const r=await dialog({title:'Make a theme with AI',size:'m',html:`<p class="dsub">Describe a look in a few words, for example “a night-shift newsroom” or “a ship's bridge at dawn”.</p>
         <ul class="dlist ai-pts"><li>One request, small cost</li><li>No tools, nothing kept</li><li>Preview before saving</li></ul>
         <p class="scr-note small">The agent app you pick designs a light or dark theme. Durbar keeps only safe values and checks that text stays readable.</p>
         <label>Look<textarea id="aiDesc" rows="3" maxlength="300" placeholder="A calm library at night">${esc(desc)}</textarea></label>
-        ${ideaHtml()}
-        <label>Made by<select id="aiKind">${kinds.map((k)=>`<option value="${esc(k.id)}"${k.id===kind?' selected':''}>${esc(k.displayName||k.id)}</option>`).join('')}</select></label>
+        ${ideaChipsHtml(ideas,IDEA_IDS)}
+        ${harnessPickerHtml(kinds,kind,'aiKind')}
         <p class="scr-note small" id="aiCost">${esc(aiCostLine(kind))}</p>`,
         buttons:[{label:'Cancel',value:null},{label:'Make the theme',value:'go',cls:'primary'}],
         validate:(d)=>{const v=d.querySelector('#aiDesc').value.trim();return v.length<3?'Describe the look in a few words.':false;},
         onOpen:(d)=>{const t=d.querySelector('#aiDesc');t.addEventListener('input',()=>{desc=t.value;});
-          d.addEventListener('click',(e)=>{const b=e.target.closest&&e.target.closest('.ai-idea');if(b){t.value=b.dataset.idea;desc=t.value;focusIn(t);return;}
-            if(e.target.closest&&e.target.closest('#aiMore')){const box=d.querySelector('#aiIdeas');if(box)box.outerHTML=ideaHtml();}});d.querySelector('#aiKind').addEventListener('change',(e)=>{kind=e.target.value;const c=d.querySelector('#aiCost');if(c)c.textContent=aiCostLine(kind);});}});
+          wireIdeaChips(d,ideas,IDEA_IDS,t,(v)=>{desc=v;});wireHarnessPicker(d,'aiKind','aiCost',(v)=>{kind=v;},aiCostLine);}});
       if(!r||r.value!=='go')return;
       const busy=X.toast?X.toast('Making the theme… this can take up to a minute.',60000):null;
       let g=null;
@@ -1714,6 +1722,7 @@
   }
 
   window.DurbarScreens={oneShotCostLine,aiCredits,
+    maker:{readyKinds,ideaChipsHtml,wireIdeaChips,harnessPickerHtml,wireHarnessPicker}, /* spec 096 T040 */
     init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,mask:ctx.mask,toast:(t)=>ctx.toast(ctx.esc(t),3600),onAccounts:(a)=>{if(ctx.setAccounts)ctx.setAccounts(a);},onBadge:setUpdBadge,onChange:(again)=>{X._hsRefresh=true;X._acctRefresh='check';if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
     folderNotes:openNotes, /* spec 083 T034a: {key, name, render(focus), onClose()} */
