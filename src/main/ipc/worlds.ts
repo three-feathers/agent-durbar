@@ -16,6 +16,8 @@ export interface WorldsIpcDeps {
   simulator?: boolean;
   /** Tests: a store over a temp folder. */
   store?: WorldStore;
+  /** FR-083: the hashes the catalogue revoked, read each time. Main passes none until the catalogue exists (T035, T042); with none, nothing is revoked. */
+  revoked?: () => Iterable<string>;
 }
 export interface WorldsIpc {
   store: WorldStore;
@@ -29,6 +31,11 @@ export function register(deps: WorldsIpcDeps = {}): WorldsIpc {
   if (!deps.simulator) {
     try { store.repair(); } catch { console.warn('[worlds] the start repair failed'); }
   }
+  /** The revoked hashes in force, then (for the list) the sweep that removes those worlds. */
+  const revoke = (sweep: boolean): void => {
+    try { store.setRevoked(deps.revoked?.() ?? []); if (sweep) store.sweepRevoked(); } catch { /* a failing provider revokes nothing */ }
+  };
+  if (!deps.simulator) revoke(true);
   let chain: Promise<unknown> = Promise.resolve();
   let closed = false;
   /** One read at a time. */
@@ -41,13 +48,14 @@ export function register(deps: WorldsIpcDeps = {}): WorldsIpc {
   ipcHandle('world:list', async (e) => {
     if (!fromApp(e)) return [];
     if (closed) return [];
-    return queued(() => store.list());
+    return queued(() => { revoke(true); return store.list(); });
   });
   ipcHandle('world:part', async (e, key: unknown, name: unknown) => {
     if (!fromApp(e)) return REFUSED;
     if (closed) return { ok: false };
     return queued(() => {
       if (typeof key !== 'string' || !store.keys().includes(key)) return { ok: false }; // a key main does not list gets nothing
+      revoke(false);
       const r = store.part(key, name);
       return r.ok ? { ok: true, bytes: new Uint8Array(r.bytes), mime: r.mime } : { ok: false, reason: r.reason };
     });
@@ -57,7 +65,8 @@ export function register(deps: WorldsIpcDeps = {}): WorldsIpc {
     if (closed) return { ok: false };
     return queued(() => {
       if (typeof key !== 'string' || !store.keys().includes(key)) return { ok: false };
-      return store.remove(key).ok ? { ok: true } : { ok: false };
+      const r = store.remove(key);
+      return r.ok ? { ok: true } : { ok: false, error: r.error }; // the store's own sentence, no path
     });
   });
   return { store, shutdown: () => { closed = true; } };

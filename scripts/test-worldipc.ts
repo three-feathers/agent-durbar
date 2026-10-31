@@ -11,7 +11,8 @@ import { pathToFileURL } from 'url';
 import { WorldStore } from '../src/main/worlds/store';
 import type { FsLike, StoreInput } from '../src/main/worlds/store';
 import { PART_NAMES } from '../src/shared/worldpack';
-import { goodPack } from './fixtures/worlds/gen';
+import { sha256 } from '../src/shared/worldzip';
+import { goodPack, webp } from './fixtures/worlds/gen';
 
 type Handler = (e: unknown, ...a: unknown[]) => unknown;
 type Rec = Record<string, unknown>;
@@ -69,7 +70,7 @@ async function main(): Promise<void> {
     assert.strictEqual(simS.calls.length, 0, 'under the simulator main touches no folder at start');
     assert.ok(fs.existsSync(path.join(root, '.tmp-aaaaaaaaaaaa')));
     handlers.clear(); // a second registration of the same channels is the test's own doing, not main's
-    const ipc = register({ store });
+    let last = register({ store });
     assert.ok(!fs.existsSync(path.join(root, '.tmp-aaaaaaaaaaaa')), 'the start repair swept the leftover');
     assert.deepStrictEqual([...handlers.keys()].sort(), ['world:list', 'world:part', 'world:remove'], 'exactly three channels');
     for (const c of handlers.keys()) assert.ok(!simChannelOpen(c) && !(c in SIM_OPEN_CHANNELS), c + ' is closed to the simulator');
@@ -146,8 +147,52 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(await call(app, 'world:remove', k2), { ok: false }, 'a second remove: not in the list');
     assert.deepStrictEqual(((await call(app, 'world:list')) as Array<Rec>).map((w) => w.key), [k1]);
 
+    // ---- revocation through the channels (FR-083): the provider's hashes are applied on every list and part; the list sweeps ----
+    {
+      const files3 = goodPack({ id: 'third', name: 'Third' });
+      files3['wall.webp'] = webp(120, 150, 40);
+      const k3 = (store.save(input('third', 'Third', files3)) as { key: string }).key;
+      let revoked: string[] = [];
+      handlers.clear();
+      register({ store, revoked: () => revoked });
+      assert.strictEqual(((await call(app, 'world:part', k3, 'wall.webp')) as Rec).ok, true, 'served before the revocation');
+      revoked = [sha256(files3['wall.webp'])];
+      assert.deepStrictEqual(await call(app, 'world:part', k3, 'wall.webp'), { ok: false, reason: 'revoked' }, 'a revoked world serves nothing');
+      assert.ok(fs.existsSync(path.join(root, k3)), 'a part call does not delete');
+      assert.ok(!((await call(app, 'world:list')) as Array<Rec>).some((w) => w.key === k3), 'the list sweeps it');
+      assert.ok(!fs.existsSync(path.join(root, k3)), 'and it is gone from disk');
+      assert.ok(fs.existsSync(path.join(root, k1)), 'a world with other hashes stays');
+      revoked = [];
+      handlers.clear();
+      register({ store, revoked: () => { throw new Error('provider down'); } });
+      assert.ok(((await call(app, 'world:list')) as Array<Rec>).some((w) => w.key === k1), 'a failing provider revokes nothing');
+      handlers.clear();
+      last = register({ store });
+    }
+
+    // ---- remove: a truthful sentence when it cannot; an orphan leftover can be listed and removed ----
+    {
+      const k5 = (store.save(input('fifth', 'Fifth', goodPack({ id: 'fifth', name: 'Fifth' }))) as { key: string }).key;
+      fs.mkdirSync(path.join(root, k5, 'a', 'b', 'c', 'd', 'e'), { recursive: true });
+      const rm = (await call(app, 'world:remove', k5)) as Rec;
+      assert.ok(rm.ok === false && /unexpected/.test(String(rm.error)) && !String(rm.error).includes(userData), 'the store\'s own sentence, no path');
+      fs.rmSync(path.join(root, k5, 'a'), { recursive: true });
+      const k6 = (store.save(input('sixth', 'Sixth', goodPack({ id: 'sixth', name: 'Sixth' }))) as { key: string }).key;
+      fs.renameSync(path.join(root, k6), path.join(root, '.old-' + k6));
+      const w6 = path.join(root, '.old-' + k6, 'wall.webp');
+      const b6 = fs.readFileSync(w6);
+      b6[b6.length - 1] ^= 0x55;
+      fs.writeFileSync(w6, b6);
+      store.repair();
+      const l6 = ((await call(app, 'world:list')) as Array<Rec>).find((w) => w.key === k6);
+      assert.strictEqual(l6?.state, 'damaged', 'an orphan leftover is listed as damaged');
+      assert.deepStrictEqual(await call(app, 'world:remove', k6), { ok: true }, 'and can be removed through the channel');
+      assert.ok(!fs.existsSync(path.join(root, '.old-' + k6)));
+      assert.deepStrictEqual(await call(app, 'world:remove', k5), { ok: true }, 'a normal folder goes');
+    }
+
     // ---- shutdown: nothing starts after quit ----
-    ipc.shutdown();
+    last.shutdown();
     assert.deepStrictEqual(await call(app, 'world:list'), []);
     assert.deepStrictEqual(await call(app, 'world:part', k1, 'wall.webp'), { ok: false });
 

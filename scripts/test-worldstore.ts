@@ -7,9 +7,9 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { INSTALLED_NAME, KEY_RE, MAX_STORE_BYTES, SOURCE_ID_RE, WARN_WORLD_COUNT, WORLD_ID_RE, WorldStore, fromValidated } from '../src/main/worlds/store';
+import { INSTALLED_NAME, KEY_RE, SOURCE_ID_RE, WARN_STORE_BYTES, WARN_WORLD_COUNT, WORLD_ID_RE, WorldStore, fromValidated, fromValidatedFiles } from '../src/main/worlds/store';
 import type { FsLike, StoreInput } from '../src/main/worlds/store';
-import { MANIFEST_NAME, PART_NAMES, validateWorldZip } from '../src/shared/worldpack';
+import { MANIFEST_NAME, PART_NAMES, validateWorldFiles, validateWorldZip } from '../src/shared/worldpack';
 import { sha256 } from '../src/shared/worldzip';
 import { goodPack, hostileSet, rawFrom, rawZip, toStored, webp } from './fixtures/worlds/gen';
 
@@ -36,7 +36,7 @@ const base = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-worldstore-'));
 let fresh = 0;
 const win = process.platform === 'win32';
 interface Env { dir: string; root: string; outside: string; store: WorldStore }
-function env(fsx?: FsLike, ids?: () => string, maxBytes?: number): Env {
+function env(fsx?: FsLike, ids?: () => string, warnBytes?: number): Env {
   const dir = path.join(base, 't' + fresh++);
   fs.mkdirSync(dir);
   const outside = path.join(dir, 'outside');
@@ -44,22 +44,26 @@ function env(fsx?: FsLike, ids?: () => string, maxBytes?: number): Env {
   fs.writeFileSync(path.join(outside, 'keep.txt'), 'keep');
   const root = path.join(dir, 'userData', 'worlds');
   let n = 0;
-  return { dir, root, outside, store: new WorldStore(root, fsx ?? fs, ids ?? (() => (++n).toString(16).padStart(16, '0')), undefined, maxBytes) };
+  return { dir, root, outside, store: new WorldStore(root, fsx ?? fs, ids ?? (() => (++n).toString(16).padStart(16, '0')), undefined, warnBytes) };
 }
 const tree = (d: string): string[] => fs.readdirSync(d, { recursive: true, encoding: 'utf8' }).map((s) => s.split(path.sep).join('/')).sort();
 const linkOk = (target: string, at: string, type?: 'dir'): boolean => { try { fs.symlinkSync(target, at, type); return true; } catch { console.log('test-worldstore: no link rights here, a link case is skipped'); return false; } };
 
 const GOOD = goodPack();
-const goodInput = (over: Partial<StoreInput> = {}, version = 1, files = GOOD): StoreInput => ({
-  origin: 'project', worldId: 'test-world', name: 'Test world', version, unfinished: false,
-  files: Object.keys(files).map((name) => ({ name, data: files[name] })), ...over,
-});
+/** world.json of a file set with the id, name and version being saved (the store ties them). */
+const withManifest = (files: Record<string, Buffer>, id: string, name: string, version: number): Record<string, Buffer> => {
+  const m = JSON.parse(files[MANIFEST_NAME].toString());
+  m.id = id; m.name = name; m.version = version;
+  return { ...files, [MANIFEST_NAME]: Buffer.from(JSON.stringify(m)) };
+};
+const goodInput = (over: Partial<StoreInput> = {}, version = 1, files: Record<string, Buffer> = GOOD): StoreInput => {
+  const base = { origin: 'project' as const, worldId: 'test-world', name: 'Test world', ...over };
+  const f = withManifest(files, String(base.worldId ?? 'test-world'), base.name, version);
+  return { version, unfinished: false, files: Object.keys(f).map((name) => ({ name, data: f[name] })), ...base, ...over };
+};
 /** A pack of the world.json and one picture only: the store keeps what the validator passed, finished or not. */
-const tiny = (n = 1): StoreInput => {
-  const f = goodPack({}, ['wall.webp']);
-  const m = JSON.parse(f['world.json'].toString());
-  m.version = n;
-  f['world.json'] = Buffer.from(JSON.stringify(m));
+const tiny = (n = 1, worldId = 'tiny-world'): StoreInput => {
+  const f = withManifest(goodPack({}, ['wall.webp']), worldId, 'Mine ' + n, n);
   return { origin: 'made', name: 'Mine ' + n, version: n, unfinished: true, files: Object.keys(f).map((name) => ({ name, data: f[name] })) };
 };
 const saved = (r: ReturnType<WorldStore['save']>): string => { assert.ok(r.ok, 'saved: ' + JSON.stringify(r)); return (r as { key: string }).key; };
@@ -141,9 +145,8 @@ try {
     const png = (await_png());
     const f2 = goodPack({}, ['wall.webp']);
     f2['wall.webp'] = png;
-    const m2 = JSON.parse(f2['world.json'].toString());
-    f2['world.json'] = Buffer.from(JSON.stringify(m2));
-    const k2 = saved(store.save({ origin: 'uploaded', name: 'Png', version: 1, unfinished: true, files: Object.keys(f2).map((name) => ({ name, data: f2[name] })) }));
+    const f3 = withManifest(f2, 'test-world', 'Png', 1);
+    const k2 = saved(store.save({ origin: 'uploaded', name: 'Png', version: 1, unfinished: true, files: Object.keys(f3).map((name) => ({ name, data: f3[name] })) }));
     const pr = store.part(k2, 'wall.webp');
     assert.ok(pr.ok && pr.mime === 'image/png', 'PNG is served as image/png');
     assert.strictEqual(store.list().find((x) => x.key === k2)?.state, 'unfinished', 'unfinished is kept');
@@ -301,8 +304,8 @@ try {
     let hard = true;
     try { fs.linkSync(hp, path.join(f.outside, 'floor-twin.webp')); } catch { hard = false; console.log('test-worldstore: no hard links here, skipped'); }
     if (hard) {
+      assert.strictEqual(f.store.list()[0].state, 'damaged', 'the list shows a hard-linked part by its link count alone (no read, no earlier mark)');
       assert.deepStrictEqual(f.store.part('p--test-world', 'floor.webp'), { ok: false, reason: 'damaged' }, 'a hard-linked part is refused (nlink > 1)');
-      assert.strictEqual(f.store.list()[0].state, 'damaged');
       assert.ok(!f.store.verify('p--test-world'));
     }
     // a directory where a file should be, a FIFO where a file should be
@@ -450,7 +453,7 @@ try {
     failingFrom(mid.root, nth2[1]).store.save(goodInput({}, 2), { replace: true });
     assert.ok(fs.readdirSync(mid.root).some((n) => n.startsWith('.old-')) && fs.readdirSync(mid.root).some((n) => n.startsWith('.tmp-')) && !fs.existsSync(path.join(mid.root, 'p--test-world')), 'between the renames: old and new are in dot folders');
     const reopened = new WorldStore(mid.root);
-    assert.strictEqual(reopened.list().length, 0, 'before repair the world is not listed');
+    assert.deepStrictEqual(reopened.list().map((e) => e.state), ['damaged'], 'before repair only the leftover shows, as damaged');
     reopened.repair();
     assert.strictEqual(reopened.list()[0].version, 1, 'repair brings the complete old one back');
     // crash right after the second rename: new in place, old still beside it
@@ -543,7 +546,6 @@ try {
       ['truncated part', (d) => fs.truncateSync(path.join(d, 'wall.webp'), 40), (st, k) => assert.strictEqual(st.part(k, 'wall.webp').ok, false)],
       ['extended part', (d) => fs.appendFileSync(path.join(d, 'wall.webp'), 'x'), (st, k) => assert.strictEqual(st.part(k, 'wall.webp').ok, false)],
       ['deleted part', (d) => fs.rmSync(path.join(d, 'wall.webp')), (st, k) => assert.strictEqual(st.part(k, 'wall.webp').ok, false)],
-      ['extra file', (d) => fs.writeFileSync(path.join(d, 'evil.js'), 'x'), (st, k) => assert.strictEqual(st.verify(k), false)],
       ['world.json changed', (d) => flip(path.join(d, MANIFEST_NAME), 20), (st, k) => assert.strictEqual(st.verify(k), false)],
       ['installed.json not JSON', (d) => fs.writeFileSync(path.join(d, INSTALLED_NAME), '{nope'), (st, k) => assert.strictEqual(st.part(k, 'wall.webp').ok, false)],
       ['installed.json empty', (d) => fs.writeFileSync(path.join(d, INSTALLED_NAME), ''), (st, k) => assert.strictEqual(st.part(k, 'wall.webp').ok, false)],
@@ -560,6 +562,15 @@ try {
       assert.strictEqual(c.store.list()[0].state, 'damaged', what + ': listed as damaged');
       assert.deepStrictEqual(c.store.list()[0].key, k, 'and can be removed');
       assert.ok(c.store.remove(k).ok && !fs.existsSync(path.join(c.root, k)), what + ': removed');
+    }
+    // a file the record does not list (a .DS_Store, Thumbs.db) is never read or served and costs nothing
+    {
+      const c = env();
+      const k = saved(c.store.save(goodInput()));
+      for (const n of ['.DS_Store', 'Thumbs.db', 'evil.js']) fs.writeFileSync(path.join(c.root, k, n), 'x');
+      assert.ok(c.store.verify(k), 'extra files do not make a world damaged');
+      assert.strictEqual(c.store.list()[0].state, 'ok');
+      assert.ok(c.store.part(k, 'wall.webp').ok && !c.store.part(k, 'evil.js').ok && !c.store.part(k, '.DS_Store').ok, 'and only listed parts are served');
     }
     // another world's installed.json copied in: its key is not this folder's
     const two = env();
@@ -593,28 +604,263 @@ try {
     assert.deepStrictEqual(store.list(), []);
   }
 
-  // ---- 13. caps: size is a hard stop, a count is a warning ----
+  // ---- 13. caps: a size or a count is a warning, never a refusal ----
   {
-    const one = tiny(1);
-    const size = one.files.reduce((n, f) => n + f.data.length, 0);
-    const { store } = env(undefined, undefined, size * 3 + 10);
-    let last: ReturnType<WorldStore['save']> | undefined;
-    let n = 0;
-    while (n < 20) { last = store.save(tiny(++n)); if (!last.ok) break; }
-    assert.ok(last && !last.ok && last.code === 'full' && /500 MB/.test(last.error), 'over the byte cap a save is refused with a plain sentence');
-    assert.strictEqual(store.list().length, 3, 'three fitted, and nothing of the fourth was written');
-    assert.ok(MAX_STORE_BYTES === 500 * 1024 * 1024);
+    const size = tiny(1).files.reduce((n, f) => n + f.data.length, 0);
+    assert.strictEqual(WARN_STORE_BYTES, 500 * 1024 * 1024);
+    // at the line exactly: no warning; one byte over: a warning, and the world is saved all the same
+    const at = env(undefined, undefined, size);
+    const r0 = at.store.save(tiny(1));
+    assert.ok(r0.ok && r0.warnings.length === 0, 'a total equal to the line is not over it');
+    const r1 = at.store.save(tiny(2, 'two'));
+    assert.ok(r1.ok && r1.warnings.join() === 'size', 'over the line: saved, with a warning');
+    assert.strictEqual(at.store.list().length, 2, 'nothing was refused for size');
     // a replace counts its own old size out
-    const r = env(undefined, undefined, size * 2 + 10);
-    const key = saved(r.store.save({ ...tiny(1), origin: 'project', worldId: 'tiny' }));
-    assert.ok(r.store.save({ ...tiny(2), origin: 'project', worldId: 'tiny' }, { replace: true }).ok, 'replacing within the cap works');
-    assert.ok(key);
+    const rp = env(undefined, undefined, size);
+    assert.ok(rp.store.save({ ...tiny(1, 'same'), origin: 'project', worldId: 'same' }).ok);
+    const rr = rp.store.save({ ...tiny(2, 'same'), origin: 'project', worldId: 'same' }, { replace: true });
+    assert.ok(rr.ok && rr.warnings.length === 0, 'replacing a world does not count the old copy too');
+    // a full disk is a plain failure with no path
+    const full = { ...(fs as unknown as Record<string, unknown>), constants: fs.constants } as Record<string, unknown>;
+    full.writeFileSync = () => { throw Object.assign(new Error('no room'), { code: 'ENOSPC' }); };
+    const fd = env(full as unknown as FsLike);
+    const fr = fd.store.save(tiny(1));
+    assert.ok(!fr.ok && fr.code === 'failed' && !/no room|userData/.test(fr.error), 'ENOSPC is a plain failure');
+    assert.deepStrictEqual(fs.readdirSync(fd.root), [], 'and leaves nothing');
     // 64 worlds is a warning, never a refusal
     const c = env();
     let warn: unknown[] = [];
     for (let i = 1; i <= WARN_WORLD_COUNT + 1; i++) { const q = c.store.save(tiny(i)); assert.ok(q.ok, 'world ' + i + ' is saved'); if (q.ok) warn = q.warnings; if (i === WARN_WORLD_COUNT) assert.deepStrictEqual(warn, [], 'no warning at 64'); }
     assert.deepStrictEqual(warn, ['count'], 'the 65th is saved with a warning');
     assert.strictEqual(c.store.list().length, WARN_WORLD_COUNT + 1, 'nothing was refused for a count');
+  }
+
+
+  // ---- 6b. each link guard alone, by a fs that hides the other one's evidence ----
+  {
+    const fake = (st: fs.Stats, over: Record<string, unknown>): fs.Stats => new Proxy(st, { get: (t, k) => (k in over ? over[k as string] : typeof (t as never)[k] === 'function' ? ((t as never)[k] as () => unknown).bind(t) : (t as never)[k]) });
+    const base = (): Record<string, unknown> => ({ ...(fs as unknown as Record<string, unknown>), constants: fs.constants });
+    const hardLinked = (fsx: Record<string, unknown>): { st: WorldStore; key: string } => {
+      const e = env(fsx as unknown as FsLike);
+      const key = saved(e.store.save(goodInput()));
+      try { fs.linkSync(path.join(e.root, key, 'floor.webp'), path.join(e.outside, 'twin.webp')); } catch { return { st: e.store, key: '' }; }
+      return { st: e.store, key };
+    };
+    // the lstat check alone: fstat says one link
+    const a = base();
+    a.fstatSync = (fd: number) => fake(fs.fstatSync(fd), { nlink: 1 });
+    const ha = hardLinked(a);
+    if (ha.key) assert.deepStrictEqual(ha.st.part(ha.key, 'floor.webp'), { ok: false, reason: 'damaged' }, 'the lstat link count refuses a hard link on its own');
+    // the fstat check alone: lstat says one link
+    const b = base();
+    b.lstatSync = (p: string, o?: unknown) => { const st = fs.lstatSync(p, o as never) as fs.Stats; return st.isFile() ? fake(st, { nlink: 1 }) : st; };
+    const hb = hardLinked(b);
+    if (hb.key) assert.deepStrictEqual(hb.st.part(hb.key, 'floor.webp'), { ok: false, reason: 'damaged' }, 'the fstat link count refuses a hard link on its own');
+    // O_NOFOLLOW alone: lstat answers for the link's target, so only the open can tell
+    if (!win) {
+      const c = base();
+      const e = env(c as unknown as FsLike);
+      const key = saved(e.store.save(goodInput()));
+      const part = path.join(e.root, key, 'wall.webp');
+      fs.copyFileSync(part, path.join(e.outside, 'wall-copy.webp'));
+      fs.rmSync(part);
+      if (linkOk(path.join(e.outside, 'wall-copy.webp'), part)) {
+        c.lstatSync = (p: string, o?: unknown) => (p === part ? fs.statSync(p) : fs.lstatSync(p, o as never));
+        assert.deepStrictEqual(e.store.part(key, 'wall.webp'), { ok: false, reason: 'damaged' }, 'O_NOFOLLOW refuses a link even when the stat was swapped for the target\'s');
+      }
+    }
+  }
+
+  // ---- 6c. a failing system is not damage; a bad hash is, and goes when the part reads right again ----
+  {
+    const fsx = { ...(fs as unknown as Record<string, unknown>), constants: fs.constants } as Record<string, unknown>;
+    let fail = 0;
+    fsx.openSync = (p: string, f: number) => { if (fail && p.endsWith('wall.webp')) { fail--; throw Object.assign(new Error('too many open files'), { code: 'EMFILE' }); } return fs.openSync(p, f); };
+    const { store, root } = env(fsx as unknown as FsLike);
+    const key = saved(store.save(goodInput()));
+    fail = 1;
+    assert.deepStrictEqual(store.part(key, 'wall.webp'), { ok: false, reason: 'unreadable' }, 'EMFILE is reported as unreadable');
+    assert.strictEqual(store.list()[0].state, 'ok', 'and does not make the world damaged');
+    assert.ok(store.part(key, 'wall.webp').ok, 'the next read works');
+    const file = path.join(root, key, 'desk.webp');
+    const good = fs.readFileSync(file);
+    flip(file);
+    assert.deepStrictEqual(store.part(key, 'desk.webp'), { ok: false, reason: 'damaged' });
+    assert.strictEqual(store.list()[0].state, 'damaged');
+    fs.writeFileSync(file, good);
+    assert.ok(store.part(key, 'desk.webp').ok, 'the part reads right again');
+    assert.strictEqual(store.list()[0].state, 'ok', 'so the mark is gone: damage is derived, not kept');
+    flip(file);
+    assert.ok(!store.verify(key) && store.list()[0].state === 'damaged');
+    fs.writeFileSync(file, good);
+    assert.ok(store.verify(key) && store.list()[0].state === 'ok', 'a full check that passes clears it');
+  }
+
+  // ---- 6d. removal never follows a folder swapped for a link; a deep folder is refused whole ----
+  {
+    const e = env();
+    const key = saved(e.store.save(goodInput()));
+    const dest = path.join(e.root, key);
+    const victim = path.join(e.outside, 'victim');
+    fs.mkdirSync(victim);
+    fs.writeFileSync(path.join(victim, 'v1.txt'), 'v1');
+    fs.writeFileSync(path.join(victim, 'v2.txt'), 'v2');
+    let swapped = false;
+    const fsx = { ...(fs as unknown as Record<string, unknown>), constants: fs.constants } as Record<string, unknown>;
+    fsx.readdirSync = (p: string, o?: unknown) => {
+      if (!swapped && p === dest) { swapped = true; fs.renameSync(dest, dest + '.moved'); try { fs.symlinkSync(victim, dest, 'dir'); } catch { swapped = false; fs.renameSync(dest + '.moved', dest); } }
+      return fs.readdirSync(p, o as never);
+    };
+    const st = new WorldStore(e.root, fsx as unknown as FsLike);
+    const r = st.remove(key);
+    if (swapped) {
+      assert.ok(!r.ok, 'a swap between lstat and the listing stops the removal');
+      assert.deepStrictEqual(fs.readdirSync(victim).sort(), ['v1.txt', 'v2.txt'], 'the folder the link points at lost nothing');
+    } else console.log('test-worldstore: no link rights here, the swap case is skipped');
+    // the same for repair (a temp folder swapped for a link)
+    const g = env();
+    saved(g.store.save(goodInput()));
+    const t = path.join(g.root, '.tmp-aaaaaaaaaaaa');
+    fs.mkdirSync(t);
+    fs.writeFileSync(path.join(t, 'x'), 'x');
+    const victim2 = path.join(g.outside, 'victim2');
+    fs.mkdirSync(victim2);
+    fs.writeFileSync(path.join(victim2, 'keep.txt'), 'keep');
+    let swapped2 = false;
+    const f2 = { ...(fs as unknown as Record<string, unknown>), constants: fs.constants } as Record<string, unknown>;
+    f2.readdirSync = (p: string, o?: unknown) => {
+      if (!swapped2 && p === t) { swapped2 = true; fs.renameSync(t, t + '-moved'); try { fs.symlinkSync(victim2, t, 'dir'); } catch { swapped2 = false; fs.renameSync(t + '-moved', t); } }
+      return fs.readdirSync(p, o as never);
+    };
+    new WorldStore(g.root, f2 as unknown as FsLike).repair();
+    assert.deepStrictEqual(fs.readdirSync(victim2), ['keep.txt'], 'repair does not empty a folder a temp name was swapped for');
+    // a folder deeper than a world folder can be: refused before anything is deleted, with a truthful sentence
+    const d = env();
+    const dk = saved(d.store.save(goodInput()));
+    const deep = path.join(d.root, dk, 'a', 'b', 'c', 'd', 'e');
+    fs.mkdirSync(deep, { recursive: true });
+    const rr = d.store.remove(dk);
+    assert.ok(!rr.ok && rr.code === 'stuck' && /unexpected/.test(rr.error) && !/userData|worlds/.test(rr.error), 'a deep folder is left alone, and the sentence says why');
+    assert.ok(fs.existsSync(path.join(d.root, dk, 'wall.webp')) && fs.existsSync(deep), 'nothing was deleted from it');
+    fs.rmSync(path.join(d.root, dk, 'a'), { recursive: true });
+    assert.ok(d.store.remove(dk).ok, 'a normal one is removed');
+    // a failing delete says the removal failed, not that the save did
+    const h = env();
+    const hk = saved(h.store.save(goodInput()));
+    const fh = { ...(fs as unknown as Record<string, unknown>), constants: fs.constants } as Record<string, unknown>;
+    fh.unlinkSync = () => { throw Object.assign(new Error('busy'), { code: 'EBUSY' }); };
+    const rh = new WorldStore(h.root, fh as unknown as FsLike).remove(hk);
+    assert.ok(!rh.ok && rh.code === 'remove' && /removed/.test(rh.error) && !/saved/.test(rh.error), 'a remove failure is worded as one');
+  }
+
+  // ---- 6e. leftovers: an orphan .old- can be listed and removed; a good copy is never lost to a stray file ----
+  {
+    const { store, root } = env();
+    const key = saved(store.save(goodInput()));
+    fs.renameSync(path.join(root, key), path.join(root, '.old-' + key));
+    flip(path.join(root, '.old-' + key, 'wall.webp'));
+    const again = new WorldStore(root);
+    again.repair();
+    assert.ok(fs.existsSync(path.join(root, '.old-' + key)), 'a broken leftover with no folder is left alone');
+    assert.deepStrictEqual(again.list().map((e) => [e.key, e.state]), [[key, 'damaged']], 'it is listed as damaged, so a person can Remove it');
+    assert.deepStrictEqual(again.keys(), [key]);
+    const sv = again.save(goodInput());
+    assert.ok(!sv.ok && sv.code === 'leftover' && /Remove that world/.test(sv.error), 'a save over it says what to do');
+    assert.ok(again.remove(key).ok && fs.readdirSync(root).length === 0, 'Remove clears it');
+    assert.ok(again.save(goodInput()).ok, 'and the world can be saved again');
+    // the .old- guard of save alone: two empty folders repair cannot settle, and rename would overwrite an empty one
+    const g = env();
+    fs.mkdirSync(path.join(g.root, 'p--test-world'), { recursive: true });
+    fs.mkdirSync(path.join(g.root, '.old-p--test-world'));
+    const gr = g.store.save(goodInput(), { replace: true });
+    assert.ok(!gr.ok && gr.code === 'leftover', 'a replace never goes on over a leftover');
+    // a complete new copy with a .DS_Store, an old copy beside it: the new copy is kept
+    const a = env(), b = env();
+    const ka = saved(a.store.save(goodInput({}, 1)));
+    saved(b.store.save(goodInput({}, 2)));
+    fs.renameSync(path.join(a.root, ka), path.join(a.root, '.old-' + ka));
+    fs.cpSync(path.join(b.root, ka), path.join(a.root, ka), { recursive: true });
+    for (const n of ['.DS_Store', 'Thumbs.db']) fs.writeFileSync(path.join(a.root, ka, n), 'x');
+    const ra = new WorldStore(a.root);
+    ra.repair();
+    assert.deepStrictEqual(fs.readdirSync(a.root), [ka], 'the old copy is gone');
+    assert.strictEqual(ra.list()[0].version, 2, 'and the complete new one stays, stray files and all');
+    assert.ok(fs.existsSync(path.join(a.root, ka, '.DS_Store')) && ra.verify(ka));
+  }
+
+  // ---- 6f. no count limit on what is listed, counted or removed ----
+  {
+    const { store, root } = env();
+    const first = saved(store.save(tiny(1, 'w0')));
+    const rec = JSON.parse(fs.readFileSync(path.join(root, first, INSTALLED_NAME), 'utf8'));
+    let last = first;
+    for (let i = 1; i < 520; i++) { // copies of one saved world under other keys (a save per world would read every record each time)
+      const key = 'u-' + (0x100000 + i).toString(16).padStart(16, '0');
+      fs.cpSync(path.join(root, first), path.join(root, key), { recursive: true });
+      fs.writeFileSync(path.join(root, key, INSTALLED_NAME), JSON.stringify({ ...rec, key }));
+      last = key > last ? key : last;
+    }
+    last = store.keys()[519];
+    assert.strictEqual(store.list().length, 520, 'all 520 are listed');
+    assert.strictEqual(store.keys().length, 520);
+    assert.ok(store.part(last, 'wall.webp').ok, 'the last one is served');
+    assert.ok(store.remove(last).ok && store.list().length === 519, 'and can be removed');
+    const r = store.save(tiny(1, 'extra'));
+    assert.ok(r.ok && r.warnings.join() === 'count', 'the count warning stays a warning');
+  }
+
+  // ---- 6g. what is written was checked: a corrupted write is caught, world.json is tied, folders import ----
+  {
+    const fsx = { ...(fs as unknown as Record<string, unknown>), constants: fs.constants } as Record<string, unknown>;
+    fsx.writeFileSync = (p: string, d: Buffer | string, o?: unknown) => {
+      if (String(p).endsWith('fx-coffee.webp')) { const c = Buffer.from(d as Buffer); c[c.length - 1] ^= 0x55; return fs.writeFileSync(p, c, o as never); }
+      return fs.writeFileSync(p, d, o as never);
+    };
+    const e = env(fsx as unknown as FsLike);
+    const r = e.store.save(goodInput());
+    assert.ok(!r.ok && r.code === 'failed', 'a write that did not land right is not moved in');
+    assert.deepStrictEqual(fs.readdirSync(e.root), [], 'and leaves nothing');
+    const { store } = env();
+    const j = (mut: (m: Record<string, unknown>) => void): StoreInput => {
+      const m = JSON.parse(GOOD[MANIFEST_NAME].toString());
+      mut(m);
+      const i = goodInput();
+      return { ...i, files: i.files.map((f) => (f.name === MANIFEST_NAME ? { name: f.name, data: Buffer.from(JSON.stringify(m)) } : f)) };
+    };
+    const bad = (i: StoreInput, what: string): void => { const q = store.save(i); assert.ok(!q.ok && q.code === 'bad', 'refused: ' + what); };
+    bad({ ...goodInput(), files: goodInput().files.map((f) => (f.name === MANIFEST_NAME ? { name: f.name, data: Buffer.from('not json at all') } : f)) }, 'a world.json that is not JSON');
+    bad(j((m) => { m.id = 'other'; }), 'a world.json with another id');
+    bad(j((m) => { m.name = 'Another'; }), 'a world.json with another name');
+    bad(j((m) => { m.version = 7; }), 'a world.json with another version');
+    bad(j((m) => { m.formatVersion = 2; }), 'a newer format');
+    bad(j((m) => { delete m.parts; }), 'no part list');
+    bad(j((m) => { (m.parts as Record<string, unknown>)['fx-extra.webp'] = {}; }), 'a part list naming a file that is not there');
+    bad(j((m) => { delete (m.parts as Record<string, unknown>)['wall.webp']; }), 'a file the part list does not name');
+    assert.ok(store.save(goodInput()).ok, 'the matching one is saved');
+    // the adapter ties the zip's own world.json to the validator's manifest
+    const zip = toStored(GOOD);
+    const res = validateWorldZip(zip, opts);
+    assert.ok(res.ok && res.manifest);
+    assert.ok(fromValidated(zip, res, { origin: 'imported' }), 'the real pair is taken');
+    for (const mut of [(m: NonNullable<typeof res.manifest>) => { m.name = 'Another'; }, (m: NonNullable<typeof res.manifest>) => { m.version = 9; }, (m: NonNullable<typeof res.manifest>) => { m.id = 'other-world'; }, (m: NonNullable<typeof res.manifest>) => { m.defaultSet = 'elsewhere'; }]) {
+      const m: NonNullable<typeof res.manifest> = { ...(res.manifest as NonNullable<typeof res.manifest>) };
+      mut(m);
+      assert.strictEqual(fromValidated(zip, { ...res, manifest: m }, { origin: 'imported' }), null, 'a manifest that is not the zip\'s own world.json is refused');
+    }
+    assert.strictEqual(fromValidated(zip, { ...res, parts: res.parts.slice(1) }, { origin: 'imported' }), null, 'a part list that is not the file list is refused');
+    // a folder import: the same rules, no zip
+    const files = Object.keys(GOOD).map((name) => ({ name, data: GOOD[name] }));
+    const fres = validateWorldFiles(files, opts);
+    assert.ok(fres.ok, 'the folder validates');
+    const fin = fromValidatedFiles(files, fres, { origin: 'uploaded' });
+    assert.ok(fin && fin.files.length === files.length, 'a folder gives a store input');
+    const e2 = env();
+    const fk = saved(e2.store.save(fin as StoreInput));
+    assert.ok(e2.store.verify(fk) && e2.store.list()[0].origin === 'uploaded');
+    assert.strictEqual(fromValidatedFiles([...files, { name: '../x', data: Buffer.from('x') }], fres, { origin: 'uploaded' }), null, 'a name off the list');
+    assert.strictEqual(fromValidatedFiles([...files, files[0]], fres, { origin: 'uploaded' }), null, 'a name twice');
+    assert.strictEqual(fromValidatedFiles(files.slice(1), fres, { origin: 'uploaded' }), null, 'a missing file');
+    assert.strictEqual(fromValidatedFiles(files, { ...fres, ok: false }, { origin: 'uploaded' }), null);
   }
 
   // ---- 14. pack text and the network stay out ----

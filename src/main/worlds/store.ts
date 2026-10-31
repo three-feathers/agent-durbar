@@ -9,8 +9,10 @@
  *  - Every removal `lstat`s first and unlinks a link as a link; it never follows one out of the store.
  *  - A world is *Damaged* when `installed.json` is unreadable or when a file is not the regular file with the recorded size and sha256. The state is derived at read time, never trusted from the disk.
  * No error text here carries a path: the sentences are the store's own. Pack text (name) is kept in `installed.json` for the Manage list and goes nowhere else (FR-065).
- * `[KNOWN GAP]` a program that can write the profile folder can swap a folder between our `lstat` of it and the open of a file in it (O_NOFOLLOW covers the last part only); it can also rewrite
- * `installed.json` together with a part (out of scope, spec *Known gaps*). Writes are not `fsync`ed: a power cut can leave an empty file, which the hash check at load calls Damaged.
+ * `[KNOWN GAP]` a program that can write the profile folder can swap a folder between our `lstat` of it and the open of a file in it (O_NOFOLLOW covers the last part only). The same holds for removal and
+ * repair: `rmTree` re-`lstat`s the folder after listing it and before each delete and compares device and inode, so a swap before the list is caught and nothing is deleted; a swap in the instant between
+ * that check and one `unlink` is not. Such a program can also rewrite `installed.json` together with a part (out of scope, spec *Known gaps*). Writes are not `fsync`ed: a power cut can leave an empty file,
+ * which the hash check at load calls Damaged. A file in a world folder that `installed.json` does not list (a `.DS_Store`) is never read or served and does not make the world damaged.
  */
 import { randomBytes } from 'crypto';
 import * as fs from 'fs';
@@ -22,7 +24,7 @@ import { openZip, sha256 } from '../../shared/worldzip';
 
 export type Origin = 'project' | 'source' | 'uploaded' | 'made' | 'imported';
 export type WorldState = 'ok' | 'unfinished' | 'damaged' | 'revoked';
-export type FailCode = 'bad' | 'exists' | 'full' | 'failed' | 'unknown';
+export type FailCode = 'bad' | 'exists' | 'failed' | 'unknown' | 'remove' | 'stuck' | 'leftover';
 export type StoreFailure = { ok: false; code: FailCode; error: string };
 
 /** The file system calls the store makes: a test hands in a wrapper that fails at a chosen step. */
@@ -30,11 +32,13 @@ export type FsLike = Pick<typeof fs, 'lstatSync' | 'openSync' | 'fstatSync' | 'r
 
 export const INSTALLED_NAME = 'installed.json';
 export const MAX_INSTALLED_BYTES = 16 * 1024;
-/** FR-061 (a hard limit, disk safety): all installed worlds together. Over it a save is refused. */
-export const MAX_STORE_BYTES = 500 * 1024 * 1024;
+/** FR-061 as changed on 2026-10-31 (owner principle: warn, do not limit a person's own use; a full disk is already a plain `failed`): all worlds together over 500 MB is a warning on save, never a refusal. */
+export const WARN_STORE_BYTES = 500 * 1024 * 1024;
 /** FR-061 as changed on 2026-10-31 (owner principle: warn, do not limit a person's own use): 64 worlds is a warning on save and in the list, never a refusal. */
 export const WARN_WORLD_COUNT = 64;
-const MAX_SCAN = 512;
+/** A world folder is two levels (its files); anything deeper is not ours and `remove` says so instead of deleting half of it. */
+const MAX_DEPTH = 4;
+const TRANSIENT = new Set(['EMFILE', 'ENFILE', 'EAGAIN', 'EBUSY', 'EIO', 'EINTR', 'ENOMEM']);
 
 export const WORLD_ID_RE = THEME_ID_RE;
 export const SOURCE_ID_RE = /^[a-z0-9]{1,16}$/;
@@ -55,9 +59,11 @@ const capOf = (n: string): number => (n === MANIFEST_NAME ? MANIFEST_BYTES : SPE
 const MSG = {
   bad: 'That world could not be saved: it did not pass the final check.',
   exists: 'A world with that name is already installed.',
-  full: 'There is not room: the installed worlds would pass 500 MB. Remove one in Manage first.',
   failed: 'The world could not be saved. Check that the disk has room and the profile folder can be written.',
   unknown: 'That world is not in the list.',
+  remove: 'The world could not be removed. Close anything that is using its folder and try again.',
+  stuck: 'That world\'s folder holds something unexpected, so Durbar left it alone. Remove the folder in your file manager.',
+  leftover: 'A leftover from an earlier crash is in the way. Remove that world in Manage first.',
 } as const;
 const fail = (code: FailCode): StoreFailure => ({ ok: false, code, error: MSG[code] });
 
@@ -81,45 +87,72 @@ export interface StoreInput {
   /** `world.json` and parts, by closed-list name. */
   files: ReadonlyArray<{ name: string; data: Uint8Array }>;
 }
-export type SaveResult = { ok: true; key: string; warnings: Array<'count'> } | StoreFailure;
-export type PartResult = { ok: true; bytes: Buffer; mime: 'image/webp' | 'image/png' } | { ok: false; reason: 'unknown' | 'damaged' | 'revoked' };
+export type SaveResult = { ok: true; key: string; warnings: Array<'count' | 'size'> } | StoreFailure;
+export type PartResult = { ok: true; bytes: Buffer; mime: 'image/webp' | 'image/png' } | { ok: false; reason: 'unknown' | 'damaged' | 'revoked' | 'unreadable' };
 
 const hex = (n: number): string => randomBytes(n).toString('hex');
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const own = (o: Record<string, unknown>, k: string): unknown => (Object.prototype.hasOwnProperty.call(o, k) ? o[k] : undefined);
 
-/** The one adapter to the validator (#955 may still change its signature): its result plus the zip's bytes become a `StoreInput`. Anything off is null. Only names from the closed list are read from the zip. */
-export function fromValidated(zip: Buffer, result: PackResult, ctx: { origin: Origin; sourceId?: string; worldId?: string; packSha256?: string }): StoreInput | null {
+type Reader = (name: string) => Buffer | null;
+const parseObj = (b: Buffer): Record<string, unknown> | null => {
+  try { const v: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(b)); return isObj(v) ? v : null; } catch { return null; }
+};
+function fromReader(read: Reader, result: PackResult, ctx: { origin: Origin; sourceId?: string; worldId?: string; packSha256?: string }): StoreInput | null {
   try {
     if (!result || result.ok !== true || !result.manifest) return null;
     const m = result.manifest;
     if (ctx.worldId !== undefined && ctx.worldId !== m.id) return null;
-    const z = openZip(zip);
-    if (!z.ok) return null;
     const names = [MANIFEST_NAME, ...result.parts];
     if (new Set(names).size !== names.length || names.some((n) => !isStoredName(n))) return null;
     const files: Array<{ name: string; data: Uint8Array }> = [];
     for (const n of names) {
-      const data = z.read(n);
+      const data = read(n);
       if (!data) return null;
       files.push({ name: n, data });
     }
+    // the world.json that is stored is the one the validator read: its id, name, version, default set and part list are the result's
+    const raw = parseObj(files[0].data as Buffer);
+    const listed = raw && isObj(raw.parts) ? Object.keys(raw.parts).sort().join('|') : null;
+    if (!raw || raw.id !== m.id || raw.name !== m.name || raw.version !== m.version || raw.defaultSet !== m.defaultSet || listed !== [...result.parts].sort().join('|')) return null;
     return { origin: ctx.origin, sourceId: ctx.sourceId, worldId: ctx.origin === 'project' || ctx.origin === 'source' ? m.id : undefined, name: m.name, version: m.version, unfinished: result.unfinished.length > 0, packSha256: ctx.packSha256, files };
   } catch {
     return null;
   }
 }
+/** The one adapter to the validator (#955 may still change its signature): a zip and its result become a `StoreInput`; anything off is null. Only closed-list names are read from the zip, in memory. */
+export function fromValidated(zip: Buffer, result: PackResult, ctx: { origin: Origin; sourceId?: string; worldId?: string; packSha256?: string }): StoreInput | null {
+  try {
+    const z = openZip(zip);
+    return z.ok ? fromReader((n) => z.read(n), result, ctx) : null;
+  } catch { return null; }
+}
+/** The same for a folder the person picked (`validateWorldFiles` input: main did the `lstat` and read each file). A name off the list, or twice, is null. */
+export function fromValidatedFiles(files: ReadonlyArray<{ name: string; data: Uint8Array }>, result: PackResult, ctx: { origin: Origin; sourceId?: string; worldId?: string; packSha256?: string }): StoreInput | null {
+  try {
+    if (!Array.isArray(files) || files.length > MAX_PARTS + 1) return null;
+    const map = new Map<string, Buffer>();
+    for (const f of files) {
+      if (!f || typeof f.name !== 'string' || !isStoredName(f.name) || map.has(f.name) || !(f.data instanceof Uint8Array)) return null;
+      map.set(f.name, Buffer.from(f.data));
+    }
+    return fromReader((n) => map.get(n) ?? null, result, ctx);
+  } catch { return null; }
+}
+
+class Stuck extends Error {}
 
 export class WorldStore {
-  private readonly damaged = new Set<string>();
+  /** key to the parts whose bytes did not match their hash when last read (`*`: the full check failed). A mark goes when that part reads right again, so nothing stays damaged for good. */
+  private readonly damaged = new Map<string, Set<string>>();
   private revoked: ReadonlySet<string> = new Set();
-  /** `fsx`, `newId`, `now` and `maxBytes` (only ever lowered) are for tests. */
+  /** `fsx`, `newId`, `now` and `warnBytes` (only ever lowered) are for tests. */
   constructor(
     private readonly root: string,
     private readonly fsx: FsLike = fs,
     private readonly newId: () => string = () => hex(8),
     private readonly now: () => Date = () => new Date(),
-    private readonly maxBytes: number = MAX_STORE_BYTES,
+    private readonly warnBytes: number = WARN_STORE_BYTES,
   ) {}
 
   // ---- paths: the only place a path is made ----
@@ -135,16 +168,17 @@ export class WorldStore {
 
   private lstatOf(p: string): fs.Stats | null { try { return this.fsx.lstatSync(p); } catch { return null; } }
 
-  /** A regular file, never a link, with one link only, up to `cap` bytes. Checked by `lstat` before and `fstat` after the open; at most cap + 1 bytes are asked for. */
-  private readRegular(file: string, cap: number): Buffer | null {
+  /** A regular file, never a link, with one link only, up to `cap` bytes. Checked by `lstat` before and `fstat` after the open; at most cap + 1 bytes are asked for. `io`: the system failed (too many open files...), which says nothing about the file. */
+  private readFile(file: string, cap: number): { ok: true; buf: Buffer } | { ok: false; why: 'bad' | 'io' } {
+    const BAD = { ok: false, why: 'bad' } as const;
     const st = this.lstatOf(file);
-    if (!st || !st.isFile() || st.size > cap || st.nlink > 1) return null;
+    if (!st || !st.isFile() || st.size > cap || st.nlink > 1) return BAD;
     const { O_RDONLY, O_NOFOLLOW, O_NONBLOCK } = this.fsx.constants;
     let fd: number | undefined;
     try {
       fd = this.fsx.openSync(file, O_RDONLY | (O_NOFOLLOW ?? 0) | (O_NONBLOCK ?? 0));
       const now = this.fsx.fstatSync(fd);
-      if (!now.isFile() || now.size > cap || now.ino !== st.ino || now.nlink > 1) return null;
+      if (!now.isFile() || now.size > cap || now.ino !== st.ino || now.nlink > 1) return BAD;
       const buf = Buffer.alloc(Math.min(now.size, cap) + 1);
       let got = 0;
       while (got < buf.length) {
@@ -152,12 +186,16 @@ export class WorldStore {
         if (n <= 0) break;
         got += n;
       }
-      return got === now.size && got <= cap ? buf.subarray(0, got) : null; // grown or shrunk while open: refused
-    } catch {
-      return null;
+      return got === now.size && got <= cap ? { ok: true, buf: buf.subarray(0, got) } : BAD; // grown or shrunk while open: refused
+    } catch (e) {
+      return TRANSIENT.has((e as NodeJS.ErrnoException).code ?? '') ? { ok: false, why: 'io' } : BAD;
     } finally {
       if (fd !== undefined) try { this.fsx.closeSync(fd); } catch { /* closed */ }
     }
+  }
+  private readRegular(file: string, cap: number): Buffer | null {
+    const r = this.readFile(file, cap);
+    return r.ok ? r.buf : null;
   }
 
   /** The root as a real folder: a link in its place is not used. */
@@ -229,13 +267,10 @@ export class WorldStore {
     return true;
   }
 
-  /** The full check: the record, every file read and hashed, and nothing else in the folder. Null when anything is off. */
+  /** The full check: the record, and every recorded file read and hashed. Files the record does not list are never read or served, so they do not count (a `.DS_Store` must not cost a world). */
   private checkDir(dir: string, key: string): Installed | null {
     const rec = this.readInstalled(dir, key);
     if (!rec) return null;
-    let listed: string[];
-    try { listed = this.fsx.readdirSync(dir); } catch { return null; }
-    if (listed.length !== Object.keys(rec.files).length + 1 || listed.some((n) => n !== INSTALLED_NAME && !(n in rec.files))) return null;
     for (const [n, r] of Object.entries(rec.files)) {
       const f = this.fileIn(dir, n);
       const buf = f ? this.readRegular(f, r.bytes) : null;
@@ -245,11 +280,17 @@ export class WorldStore {
   }
 
   // ---- reading ----
+  /** Every key with a folder or a `.old-<key>` leftover (a leftover with no folder is listed as damaged, so a person can remove it). No count limit: a limit here would hide worlds from Remove and from the byte count. */
   private keysOnDisk(): string[] {
     if (!this.rootOk()) return [];
     let names: fs.Dirent[];
     try { names = this.fsx.readdirSync(this.root, { withFileTypes: true }); } catch { return []; }
-    return names.map((d) => d.name).filter((n) => KEY_RE.test(n)).sort().slice(0, MAX_SCAN);
+    const keys = new Set<string>();
+    for (const d of names) {
+      if (KEY_RE.test(d.name)) keys.add(d.name);
+      else { const m = OLD_RE.exec(d.name); if (m) keys.add(m[1]); }
+    }
+    return [...keys].sort();
   }
 
   private isRevoked(rec: Installed): boolean {
@@ -291,29 +332,44 @@ export class WorldStore {
     if (!dir || typeof name !== 'string' || !SPEC_OF.has(name)) return { ok: false, reason: 'unknown' };
     const k = key as string;
     const rec = this.readInstalled(dir, k);
-    if (!rec) { if (this.lstatOf(dir)) this.damaged.add(k); return { ok: false, reason: this.lstatOf(dir) ? 'damaged' : 'unknown' }; }
+    if (!rec) return { ok: false, reason: this.lstatOf(dir) ? 'damaged' : 'unknown' }; // listed as damaged from the same read: nothing to remember
     if (this.isRevoked(rec)) return { ok: false, reason: 'revoked' };
     const r = rec.files[name];
     if (!r) return { ok: false, reason: 'unknown' };
     const f = this.fileIn(dir, name);
-    const buf = f ? this.readRegular(f, r.bytes) : null;
-    const pic = buf ? pictureHeader(buf) : null;
-    if (!buf || buf.length !== r.bytes || sha256(buf) !== r.sha256 || !pic || typeof pic === 'string') { this.damaged.add(k); return { ok: false, reason: 'damaged' }; }
+    const rd = f ? this.readFile(f, r.bytes) : ({ ok: false, why: 'bad' } as const);
+    if (!rd.ok) return { ok: false, reason: rd.why === 'io' ? 'unreadable' : 'damaged' }; // a failing system is not damage; a bad file shows in the list by its own size and link check
+    const buf = rd.buf;
+    const pic = pictureHeader(buf);
+    if (buf.length !== r.bytes || sha256(buf) !== r.sha256 || typeof pic === 'string') { this.mark(k, name); return { ok: false, reason: 'damaged' }; }
+    this.unmark(k, name);
     return { ok: true, bytes: Buffer.from(buf), mime: pic.kind === 'png' ? 'image/png' : 'image/webp' };
   }
 
-  /** The full check of one world (every file read and hashed). Marks it damaged, or clears the mark. */
+  private mark(key: string, what: string): void { const s = this.damaged.get(key) ?? new Set<string>(); s.add(what); this.damaged.set(key, s); }
+  private unmark(key: string, what: string): void { const s = this.damaged.get(key); if (s) { s.delete(what); if (!s.size) this.damaged.delete(key); } }
+
+  /** The full check of one world (every file read and hashed). A failure marks it damaged; a pass clears every mark. */
   verify(key: unknown): boolean {
     const dir = this.dirOf(key);
     if (!dir) return false;
     const k = key as string;
     const rec = this.checkDir(dir, k);
-    if (!rec || this.isRevoked(rec)) { if (this.lstatOf(dir)) this.damaged.add(k); return false; }
+    if (!rec || this.isRevoked(rec)) { if (this.lstatOf(dir)) this.mark(k, '*'); return false; }
     this.damaged.delete(k);
     return true;
   }
 
   // ---- writing ----
+  /** What the store can tie without the validator: world.json is a JSON object whose id, name and version are the ones being saved, with the format this app reads, and whose part list is exactly the part files. */
+  private worldJsonOk(data: Buffer, input: StoreInput, names: string[]): boolean {
+    const m = parseObj(data);
+    if (!m || m.formatVersion !== 1 || typeof m.id !== 'string' || !WORLD_ID_RE.test(m.id)) return false;
+    if ((input.origin === 'project' || input.origin === 'source') && m.id !== input.worldId) return false;
+    if (m.name !== input.name || m.version !== input.version || !isObj(m.parts)) return false;
+    return Object.keys(m.parts).sort().join('|') === names.filter((n) => n !== MANIFEST_NAME).sort().join('|');
+  }
+
   private prepare(input: StoreInput): { files: Array<{ name: string; data: Buffer }>; size: number } | null {
     if (!input || !(ORIGINS as readonly string[]).includes(input.origin)) return null;
     if (input.origin === 'source' ? typeof input.sourceId !== 'string' || !SOURCE_ID_RE.test(input.sourceId) : input.sourceId !== undefined) return null;
@@ -337,18 +393,41 @@ export class WorldStore {
       files.push({ name: f.name, data });
     }
     if (!seen.has(MANIFEST_NAME) || size > PACK_MAX_BYTES) return null;
+    if (!this.worldJsonOk(files.find((f) => f.name === MANIFEST_NAME)!.data, input, files.map((f) => f.name))) return null;
     return { files, size };
   }
 
+  /** The folder `p` is still the very folder `st` described (same device and inode, a real folder, not a link put in its place). */
+  private sameDir(p: string, st: fs.Stats): boolean {
+    const now = this.lstatOf(p);
+    return !!now && now.isDirectory() && now.ino === st.ino && now.dev === st.dev;
+  }
+
+  /** Read only: is anything under `p` deeper than a world folder can be? Run before any delete, so a folder that is not ours is refused whole rather than half removed. */
+  private tooDeep(p: string, depth = 0): boolean {
+    const st = this.lstatOf(p);
+    if (!st || !st.isDirectory()) return false;
+    if (depth >= MAX_DEPTH) return true;
+    const kids = this.fsx.readdirSync(p, { withFileTypes: true });
+    if (!this.sameDir(p, st)) throw new Error('changed under us');
+    return kids.some((d) => this.tooDeep(path.join(p, d.name), depth + 1));
+  }
+
+  /** Removes `p`: `lstat` first, a link is unlinked as a link, and a folder is listed, then re-checked (same device and inode) before every delete in it. */
   private rmTree(p: string, depth = 0): void {
+    if (depth === 0 && this.tooDeep(p)) throw new Stuck();
     const st = this.lstatOf(p);
     if (!st) return;
     if (!st.isDirectory()) {
       try { this.fsx.unlinkSync(p); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return; this.fsx.rmdirSync(p); } // a directory link on Windows is removed as a link
       return;
     }
-    if (depth > 3) throw new Error('too deep');
-    for (const d of this.fsx.readdirSync(p, { withFileTypes: true })) this.rmTree(path.join(p, d.name), depth + 1);
+    const kids = this.fsx.readdirSync(p, { withFileTypes: true });
+    for (const d of kids) {
+      if (!this.sameDir(p, st)) throw new Error('changed under us');
+      this.rmTree(path.join(p, d.name), depth + 1);
+    }
+    if (!this.sameDir(p, st)) throw new Error('changed under us');
     this.fsx.rmdirSync(p);
   }
 
@@ -382,9 +461,8 @@ export class WorldStore {
       this.repair();
       const existing = this.lstatOf(dest);
       if (existing && !opts.replace) return fail('exists');
-      if (this.lstatOf(this.oldOf(key))) return fail('failed'); // a leftover repair could not settle: a person removes the world first
+      if (this.lstatOf(this.oldOf(key))) return fail('leftover'); // a leftover repair could not settle: a person removes the world first
       const { bytes, count } = this.bytesExcept(key);
-      if (bytes + prep.size > this.maxBytes) return fail('full');
       const files: Record<string, FileRec> = {};
       this.fsx.mkdirSync(tmp, { mode: 0o700 });
       tmpMade = true;
@@ -416,7 +494,7 @@ export class WorldStore {
         tmpMade = false;
       }
       this.damaged.delete(key);
-      return { ok: true, key, warnings: count + (existing ? 0 : 1) > WARN_WORLD_COUNT ? ['count'] : [] };
+      return { ok: true, key, warnings: [...(count + (existing ? 0 : 1) > WARN_WORLD_COUNT ? ['count' as const] : []), ...(bytes + prep.size > this.warnBytes ? ['size' as const] : [])] };
     } catch {
       if (tmpMade) try { this.rmTree(tmp); } catch { /* the sweep gets it */ }
       return fail('failed');
@@ -434,8 +512,8 @@ export class WorldStore {
       this.rmTree(this.oldOf(k));
       this.damaged.delete(k);
       return { ok: true };
-    } catch {
-      return fail('failed');
+    } catch (e) {
+      return fail(e instanceof Stuck ? 'stuck' : 'remove');
     }
   }
 
