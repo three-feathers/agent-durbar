@@ -1,0 +1,123 @@
+name: World matrix
+
+# Spec 098 FR-050..FR-056, FR-063: every present world moment x every world, one picture and one check result per cell
+# (scripts/world-matrix.js). Simulator only: no account, no agent session, 0 AI credits. Free runners (ubuntu-latest) only.
+# Artifacts only (14 days): nothing is committed, the matrix is not in shots:docs. Not a required check.
+#
+#   weekly (Monday 04:47 UTC, outside the retro's hour): full set at 1440x900 and 1280x800, one forced-colours pass at 1280x800,
+#     and the tool-surface driver at both sizes. `issues: write` is the spec's (FR-063: only the scheduled and manual run may write
+#     to GitHub, for the "World coverage" issue of T043); no step in this file uses it yet.
+#   pull request: only for the world-layer paths of FR-052 (shared renderer files do not start it: D5). The touched worlds (all
+#     worlds when anything outside worlds/<id>/ changed) at 1280x800 only, plus the tool-surface driver. contents: read, no secret,
+#     so a fork PR can run it. A red scheduled run is reported by nightly-watch.yml (FR-055).
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'src/renderer/realoffice/**'
+      - 'docs/experience/**'
+      - 'scripts/world-matrix.js'
+      - 'scripts/check-world-tools.js'
+      - '.github/workflows/world-matrix.yml'
+  schedule:
+    - cron: '47 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  subset:
+    name: World matrix (pull request subset)
+    if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Which worlds were touched
+        id: worlds
+        # file names come from the PR: they are only matched, never run; a world id must be kebab-case to pass
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          all=0; ids=""
+          while IFS= read -r f; do
+            if [[ "$f" =~ ^src/renderer/realoffice/worlds/([a-z0-9-]+)/ ]]; then
+              case ",$ids," in *",${BASH_REMATCH[1]},"*) ;; *) ids="${ids:+$ids,}${BASH_REMATCH[1]}" ;; esac
+            else
+              all=1
+            fi
+          done < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          if [ "$all" = 1 ] || [ -z "$ids" ]; then ids=""; fi
+          echo "worlds=$ids" >> "$GITHUB_OUTPUT"
+          echo "worlds: ${ids:-all}"
+      - run: sudo apt-get update && sudo apt-get install -y xvfb
+      - run: npm ci
+      - run: npm run build
+      - name: World matrix at 1280x800
+        env:
+          WORLDS: ${{ steps.worlds.outputs.worlds }}
+        run: |
+          if [ -n "$WORLDS" ]; then node scripts/world-matrix.js --size 1280x800 --worlds "$WORLDS"; else node scripts/world-matrix.js --size 1280x800; fi
+      # spec 098 T021 builds this driver; until it exists the step is skipped (read the run to see which)
+      - name: Tool surfaces at 1280x800
+        if: ${{ (success() || failure()) && hashFiles('scripts/check-world-tools.js') != '' }}
+        run: node scripts/check-world-tools.js --size 1280x800
+      - name: World matrix pictures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: world-matrix-subset
+          path: out/world-matrix
+          retention-days: 14
+          if-no-files-found: ignore
+
+  weekly:
+    name: World matrix (full, weekly)
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y xvfb
+      - run: npm ci
+      - run: npm run build
+      - name: World matrix at 1440x900 and 1280x800
+        run: node scripts/world-matrix.js
+      - name: World matrix, forced colours at 1280x800
+        if: ${{ success() || failure() }}
+        run: node scripts/world-matrix.js --forced-colors
+      - name: Tool surfaces at both sizes
+        if: ${{ (success() || failure()) && hashFiles('scripts/check-world-tools.js') != '' }}
+        run: node scripts/check-world-tools.js --size 1440x900,1280x800
+      - name: World matrix pictures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: world-matrix
+          path: out/world-matrix
+          retention-days: 14
+          if-no-files-found: ignore
