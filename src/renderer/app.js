@@ -1111,12 +1111,12 @@ function shutReply(a,n){const fb=vis(a)==='done'?'Finished.':'Ready.';return (a.
    seat (recent) or a nap bed (old); a speech bubble over the couch and a dream cloud over the beds take turns (LOUNGE_TURN, FR-055). */
 let LOUNGE_TURN=0;
 function restHTML(x,i){
-  const {a,k}=x, st=vis(a), ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140);
+  const {a,k}=x, sumw=loungeSum(a), st=vis(a), ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140);
   const who=a.profile?a.profile.name+' · '+a.role:a.role;
   const roll=SHUT_PREV&&!SHUT_PREV.has(a.id)?' rolling':'';
   const where=k==='recent'?'resting on the couch':'asleep on a nap bed';
-  const lab=`${esc(a.name)}${chatNoWords(a)}${draftWords(a)}, ${esc(who)}, folder ${esc(roomOf(a).path)}, ${where}, ${st==='done'?'finished':'idle after its reply'}${said?' '+esc(said):''}: ${esc(line)}${/[.!?…]$/.test(line)?'':'.'} Open chat panel.`; /* every part escaped here */
-  const peek=`<span class="peek" aria-hidden="true"><span class="pk-h"><b>${esc(a.name)}</b><span class="pk-role">${esc(who)}</span></span><span class="pk-st">${signsOn()?(g=>`<span class="dsign-tx" data-sign="${g.key}">${signIcon(g.icon)}${esc(g.word)}</span>`)(signOf(a,true)):SHUT_MARK+esc(stWord(a))}${ago?' · finished '+esc(ago):''} · ${where}</span><span class="pk-tx">${esc(shutReply(a,300))}</span></span>`;
+  const lab=`${esc(a.name)}${chatNoWords(a)}${draftWords(a)}, ${esc(who)}, folder ${esc(roomOf(a).path)}, ${where}, ${st==='done'?'finished':'idle after its reply'}${said?' '+esc(said):''}: ${esc(line)}${/[.!?…]$/.test(line)?'':'.'}${sumw?' Changed: '+esc(sumw)+'.':''} Open chat panel.`; /* every part escaped here */
+  const peek=`<span class="peek" aria-hidden="true"><span class="pk-h"><b>${esc(a.name)}</b><span class="pk-role">${esc(who)}</span></span><span class="pk-st">${signsOn()?(g=>`<span class="dsign-tx" data-sign="${g.key}">${signIcon(g.icon)}${esc(g.word)}</span>`)(signOf(a,true)):SHUT_MARK+esc(stWord(a))}${ago?' · finished '+esc(ago):''} · ${where}</span><span class="pk-tx">${esc(shutReply(a,300))}</span>${sumw?`<span class="pk-sum" data-sumfiles="${esc(a.id)}" title="Counted by Agent Durbar. Click to list the changed files.">${esc(sumw)} · <u>Show changed files</u></span>`:''}</span>`;
   const crewBed=k==='old'&&THEME.sceneKit()==='crew'; /* spec 077 FR-071: a sleeping crew character is the couch's head and shoulders, not a turned face */
   const bedSvg=`<svg class="lg-bed" viewBox="0 0 44 24" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="bd-frame" x="1" y="10" width="42" height="11" rx="3"/><rect class="bd-head" x="1" y="3" width="5" height="18" rx="2"/><rect class="bd-mat" x="5" y="8" width="37" height="6" rx="2.5"/><rect class="bd-pil" x="6" y="5" width="10" height="5" rx="2.5"/><rect class="bd-leg" x="3" y="20" width="3" height="4"/><rect class="bd-leg" x="38" y="20" width="3" height="4"/></svg>`;
   const art=k==='recent'
@@ -1140,10 +1140,12 @@ function shutGroup(r,rolled){
 }
 const shutW=(r,rolled)=>{const g=shutGroup(r,rolled);return g?g.w:0;};
 /* one bubble: every resident's line, the one whose turn it is shown; its tail points at that resident (x: the centre of its seat or bed) */
+/* spec 085 FR-008: the bubble's line starts with the numbers when the agent has them (then it opens the changed-files list), else the reply */
+const bubLine=x=>{const w=loungeBrief(x.a),r=shutReply(x.a,160);return w?w+' · '+r:r;};
 function bubbleHTML(cls,list,width,xOf,lineOf,tip){
   if(!list.length)return width?`<span class="lg-bub none" style="flex-basis:${width}px"></span>`:'';
   const on=SHUT.turn(LOUNGE_TURN,list.length);
-  return `<span class="lg-bub ${cls}" style="flex-basis:${width}px;--tail:${xOf(on)}px" aria-hidden="true"${tip?` title="${esc(tip)}"`:''}>${list.map((x,i)=>`<span class="lg-t${i===on?' on':''}" style="--tx:${xOf(i)}px">${cls==='dream'?'<b class="lg-zz">z z</b> ':''}${esc(lineOf(x))}</span>`).join('')}</span>`;
+  return `<span class="lg-bub ${cls}" style="flex-basis:${width}px;--tail:${xOf(on)}px" aria-hidden="true"${tip?` title="${esc(tip)}"`:''}>${list.map((x,i)=>`<span class="lg-t${i===on?' on':''}${loungeSum(x.a)?' sum':''}"${loungeSum(x.a)?` data-sumfiles="${esc(x.a.id)}" title="Click to list the changed files"`:''} style="--tx:${xOf(i)}px">${cls==='dream'?'<b class="lg-zz">z z</b> ':''}${esc(lineOf(x))}</span>`).join('')}</span>`;
 }
 function shuttersHTML(r,rolled){
   const g=shutGroup(r,rolled); if(!g)return '';
@@ -1155,8 +1157,8 @@ function shuttersHTML(r,rolled){
   const couches=cs.map(k=>{const xs=g.recent.slice(seat,seat+k);seat+=k;
     return `<span class="lg-couch" style="flex-basis:${k*SHUT.SEAT_W+SHUT.COUCH_PAD}px"><svg class="lg-sofa" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="sf-back" x="4" y="2" width="92" height="24" rx="7"/><rect class="sf-seat" x="4" y="20" width="92" height="14" rx="4"/><rect class="sf-arm" x="0" y="12" width="9" height="24" rx="4"/><rect class="sf-arm" x="91" y="12" width="9" height="24" rx="4"/><rect class="sf-leg" x="8" y="34" width="5" height="6"/><rect class="sf-leg" x="87" y="34" width="5" height="6"/></svg>${xs.map(restHTML).join('')}</span>`;}).join('');
   const all=g.old, dreams=all.map(x=>x.a.name+': '+shutReply(x.a,90)).join('\n');
-  const say=bubbleHTML('say',g.recent,g.sayW,seatX,x=>shutReply(x.a,160),'');
-  const dream=bubbleHTML('dream',all,g.dreamW,i=>bedX(i),x=>shutReply(x.a,160),dreams);
+  const say=bubbleHTML('say',g.recent,g.sayW,seatX,bubLine,'');
+  const dream=bubbleHTML('dream',all,g.dreamW,i=>bedX(i),bubLine,dreams);
   /* bunks: two beds to a column (the lower bunk first) */
   const bunks=[];for(let i=0;i<g.shown.length;i+=2)bunks.push(`<span class="lg-bunk${i+1>=g.shown.length?' solo':''}">${g.shown.slice(i,i+2).map(restHTML).join('')}</span>`);
   const beds=bunks.join('')+(g.hidden.length?`<button class="more shut-more" type="button" data-more="${esc(g.key)}" aria-expanded="false" aria-label="Show ${g.hidden.length} more finished agents asleep in ${esc(r.name)}" title="${g.hidden.length} more asleep">+${g.hidden.length} asleep</button>`:'')+(g.fewer?`<button class="more shut-more fewer" type="button" data-more="${esc(g.key)}" aria-expanded="true" aria-label="Show fewer finished agents in ${esc(r.name)}">Fewer</button>`:'');
@@ -1183,6 +1185,7 @@ function officeModel(ignoreStatus){
     const key=a=>Math.min(prio(a),...helpersOf(a).map(prio));
     shown.sort((x,y)=>key(x)-key(y));
     const mains=shown.filter(a=>!plan.has(a.id)), rolled=shown.filter(a=>plan.has(a.id)).map(a=>({a,k:plan.get(a.id)}));
+    rolled.forEach(x=>refreshLoungeSummary(x.a,true)); /* spec 085 FR-008: a resting agent's numbers (one read per reply; no start in this run = no line) */
     rooms.push({r,mains,rolled,all:agents.filter(a=>wsOf(a)===r.id)});
   });
   return rooms;
@@ -3444,6 +3447,7 @@ document.addEventListener('click',e=>{
     layoutKey='';renderAll();return;}
   if(e.target.closest('[data-fn-all]')){const pill=document.querySelector(`.stat[data-k="${ui.status}"]`);if(pill)pill.click();else{ui.status=null;renderAll();}return;} /* FR-180: Show all is the pill's own toggle */
   const st=e.target.closest('.stat[data-k]'); if(st){const k=st.dataset.k;ui.status=ui.status===k?null:k;renderAll();const n=document.querySelector(`.stat[data-k="${k}"]`);if(n)focusIn(n);return;}
+  const sf=e.target.closest('[data-sumfiles]'); if(sf){const a=byId(sf.dataset.sumfiles),ra=a&&liveRoot(a);if(ra&&ra.live)showSessionChanges(ra,sf,0);return;} /* spec 085 FR-008: the lounge line opens the changed-files list, not the chat */
   const rn=e.target.closest('[data-ren]'); if(rn){const a=byId(rn.dataset.ren);if(a)startSessionEdit(a,rn.closest('#list')?'list':'desk','pencil');return;} /* spec 059 FR-020 item 2: before [data-id] */
   const rf=e.target.closest('[data-renfolder]'); if(rf){const r=ROOMS.find(x=>x.id===rf.dataset.renfolder);if(r)startFolderEdit(r,rf.closest('#foldersPop')?'fp':'room','pencil');return;}
   const rp=e.target.closest('[data-renprev]'); if(rp){const a=byId(ui.selected);if(a)startSessionEdit(a,'prev','pencil',rp.dataset.renprev);return;}
@@ -4154,8 +4158,10 @@ async function renderAwayStrip(){
   let s=null; try{s=await bridge.sinceAway();}catch(e){s=null;}
   if(!s||typeof s.awayMs!=='number'){el.hidden=true;el.innerHTML='';return;}
   const missed=Array.isArray(s.missed)?s.missed:[];
+  const briefW=SSUM&&SSUM.briefing?SSUM.briefing(s.briefing):''; /* spec 085 FR-009: numbers only, from main's rollup, coerced again */
   el.innerHTML='<span class="ns-ic" aria-hidden="true">i</span><span class="ns-t"><b>Since you were away</b> ('+esc(awayWords(s.awayMs))+'): '+
     (missed.length?(missed.length===1?'1 scheduled prompt':missed.length+' scheduled prompts')+' did not run while the app was closed.':'nothing was scheduled while the app was closed.')+
+    (briefW?' <span class="aw-brief" title="'+esc(SSUM.briefingTip)+'">'+esc(briefW)+'</span>':'')+
     '</span>'+(missed.length?'<span class="aw-list">'+missed.map(m=>'<span class="aw-it" data-sched="'+esc(m.id)+'"><span class="aw-w"><b>'+esc(m.folderName)+'</b>: “'+esc(safeExcerpt(m.prompt,80,''))+'”'+(m.repeats?' <small>(runs again as planned)</small>':'')+'</span>'+(bridge.runScheduleNow?'<button class="btn" type="button" data-awrun="'+esc(m.id)+'">Run missed now</button>':'')+'</span>').join('')+'</span>':'')+
     '<span class="ns-act"><button class="btn" type="button" data-aw="close">Dismiss</button></span>';
   el.hidden=false;
@@ -5799,7 +5805,7 @@ function onLiveEvent(e){
       updateCtxChip(a);scheduleRender();
     } /* spec 015 FR-010: a stop or an error ends the mark even if the adapter sent no end */
     const gaveUp=e.status==='error'?a.gaveUp:null; a.gaveUp=null; /* spec 034 FR-019: the line of a turn that gave up after retries */
-    if(e.status==='idle')refreshFolderStatus(a); /* spec 063 FR-005: a finished turn may have changed files */
+    if(e.status==='idle'){refreshFolderStatus(a);refreshLoungeSummary(a,false);} /* spec 063 FR-005: a finished turn may have changed files; spec 085 FR-008: the lounge line */
     /* spec 068: the turn that hit a usage limit ends quietly (the coffee break says why); working again, Stop or the end of the session end the break */
     if(a.coffee&&!a.limit){
       /* only the turn's closing status keeps the break (2026-10-22): the adapters' marker reason 'usage-limit' (never the words), then at most one plain idle of the same turn */
@@ -6039,11 +6045,30 @@ const SSUM=window.DurbarSessionSummary||null;
 /* asked before the end (main forgets the start when the session ends); never delays the end by more than 5 s; null = no card */
 async function readSessionSummary(r){
   if(!SSUM||!bridge.sessionSummary||!r)return null;
-  try{const s=await Promise.race([bridge.sessionSummary(r.id),new Promise(res=>setTimeout(()=>res(null),5000))]);return s&&s.ok===true?s:null;}catch(e){return null;}
+  try{const s=await Promise.race([bridge.sessionSummary(r.id,true),new Promise(res=>setTimeout(()=>res(null),5000))]);return s&&s.ok===true?s:null;}catch(e){return null;}
 }
 /* the cost part is the session's own usage figure (the same words as its usage line): money, tokens only for an agent app without a price, else nothing */
 function sessionSummaryCost(r){const t=costText(r);return !t?'':/ tok$/.test(t)?t.replace(/ tok$/,' tokens'):'cost '+t;}
 if(SIM)window.__durbarSumCost=id=>{const a=byId(id);return a?sessionSummaryCost(liveRoot(a)):null;}; /* simulator only: the driver checks the card's cost part against the session's own usage figure */
+/* the changed-files list: the spec 063 dialog from a fresh gitStatus (the card's button, the lounge line); `commits`: what the session committed is in git's history, not in this list */
+async function showSessionChanges(r,anchor,commits){
+  const st=await bridge.gitStatus(r.id).catch(()=>null);
+  if(!st||!st.repo||!GS.count(st)){toast('No uncommitted changes in the folder now.'+(commits>0?' What the session committed is in the folder\'s git history.':''),4200);return;}
+  showFolderStatus(r,anchor,st);
+}
+/* spec 085 FR-008: when a main agent finishes a turn, its numbers are read once (one read in flight) for the lounge line; words from numbers only, kept in memory, '' = nothing to say */
+const LSUM=new Map();
+function refreshLoungeSummary(a0,onlyNew){
+  const a=a0&&liveRoot(a0); if(!a||!a.live||a.parent||!SSUM||!bridge.sessionSummary)return;
+  const c=LSUM.get(a.id)||{busy:false,words:'',brief:'',key:undefined,asked:false};LSUM.set(a.id,c);
+  if(c.busy||(onlyNew&&c.asked&&c.key===a.lastOutput))return; /* resting agents are read once per reply; a finished turn reads again */
+  c.busy=true;c.asked=true;c.key=a.lastOutput;
+  Promise.race([bridge.sessionSummary(a.id),new Promise(res=>setTimeout(()=>res(null),5000))])
+    .then(s=>{c.words=s&&s.ok===true?SSUM.short(s):'';c.brief=s&&s.ok===true?SSUM.brief(s):'';},()=>{c.words='';c.brief='';})
+    .finally(()=>{c.busy=false;scheduleRender();});
+}
+const loungeSum=a=>{const c=a&&LSUM.get(a.id);return c&&c.words||'';};
+const loungeBrief=a=>{const c=a&&LSUM.get(a.id);return c&&c.brief||'';};
 function sessionSummaryNote(r,sum){
   if(!SSUM||!sum)return;
   const t=SSUM.text(sum,sessionSummaryCost(r));if(!t)return;
@@ -6051,9 +6076,7 @@ function sessionSummaryNote(r,sum){
   if(sum.git&&sum.git.repo===true&&bridge.gitStatus){
     const row=document.createElement('div');row.className='note-actions';
     const b=document.createElement('button');b.type='button';b.className='btn';b.textContent='Show uncommitted changes';b.dataset.act='sumFiles';
-    b.onclick=async()=>{const st=await bridge.gitStatus(r.id).catch(()=>null);
-      if(!st||!st.repo||!GS.count(st)){toast('No uncommitted changes in the folder now.'+(sum.git.commits>0?' What the session committed is in the folder\'s git history.':''),4200);return;}
-      showFolderStatus(r,b,st);};
+    b.onclick=()=>showSessionChanges(r,b,sum.git.commits);
     row.appendChild(b);note.appendChild(row);
   }
 }

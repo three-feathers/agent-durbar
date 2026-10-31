@@ -2029,6 +2029,10 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 .lg-bub.dream{border-style:dashed;border-radius:12px}
 .lg-t{position:absolute;inset:1px 7px;font-size:10.5px;line-height:15px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:0;transition:opacity .6s ease}
 .lg-t.on{opacity:1}
+/* spec 085 FR-008: only the visible line that carries numbers takes a click (it lists the changed files) */
+.lg-t{pointer-events:none}
+.lg-t.sum.on{pointer-events:auto;cursor:pointer}
+.lg-t.sum.on:hover{text-decoration:underline;text-underline-offset:2px}
 .lg-bub::after{content:"";position:absolute;bottom:-5px;left:calc(var(--tail,50%) - 4px);width:7px;height:7px;background:var(--bubble,var(--surface));border-right:1px solid var(--bubble-line,var(--line-2));border-bottom:1px solid var(--bubble-line,var(--line-2));transform:rotate(45deg)}
 .lg-bub.dream::after{border-radius:50%;transform:none;width:6px;height:6px;bottom:-8px;border:1px solid var(--bubble-line,var(--line-2))}
 .lg-bub.none::after{display:none}
@@ -2092,6 +2096,8 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 .peek .pk-st{display:flex;align-items:center;gap:5px;font-size:11px;line-height:15px;color:var(--ink-2)}
 .peek .sh-mark{width:11px;height:11px;flex:none;color:var(--c-done)}
 .peek .pk-tx{font-size:11.5px;line-height:15px;color:var(--ink-2);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:normal}
+.peek .pk-sum{font-size:11px;line-height:15px;color:var(--ink-2);margin-top:2px;padding-top:3px;border-top:1px solid var(--line-2);cursor:pointer;white-space:normal}
+.peek .pk-sum u{color:var(--accent,var(--ink));text-underline-offset:2px}
 /* FR-055: one settle-in when an agent arrives in the lounge, one rise when it goes back to its desk (transform only) */
 .desk.shut.rolling .lg-sp{animation:shut-in .22s ease-out}
 .unit.unrolling{animation:shut-out .22s ease-out;transform-origin:50% 100%}
@@ -2192,3 +2198,6 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 .nt-selbtn[hidden]{display:none}
 .cp-btn,.nt-btn,.nt-mark{user-select:none;-webkit-user-select:none}
 
+
+/* spec 085 FR-009: the day's numbers in the Since you were away strip */
+.aw-brief{display:block;font-size:11px;line-height:15px;color:var(--ink-2);margin-top:2px}

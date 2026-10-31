@@ -85,6 +85,8 @@ export interface MissedRun {
 export interface SinceAway {
   awayMs: number;
   missed: MissedRun[];
+  /** Spec 085 FR-009: sessions the user ended yesterday and today, numbers only (added when the window asks). */
+  briefing?: { sessions: number; files: number; added: number; removed: number; commits: number; minutes: number };
 }
 
 const snippet = (t: string): string => t.replace(/\s+/g, ' ').trim();

@@ -2169,6 +2169,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
       // spec 044: scheduled prompts in memory; a 1 s check sends through the simulated agents (no credits)
       // spec 041 FR-065: the welcome-back card with a missed schedule whose prompt holds the planted secrets across character 80
+      // spec 085 FR-009: `simaway=1` gives the Since you were away strip yesterday's and today's ended sessions (numbers only), and `simaway=hostile` numbers a broken main could send
+      ...(simQuery.get('simaway') ? { sinceAway: async () => ({ awayMs: 5 * 3600e3, missed: [], briefing: simQuery.get('simaway') === 'hostile'
+        ? { sessions: '3', files: -4, added: 1e30, removed: NaN, commits: { x: 1 }, minutes: 'abc' } : { sessions: 3, files: 18, added: 400, removed: 90, commits: 2, minutes: 130 } }), dismissSinceAway: async () => ({ ok: true }) } : {}),
       ...(opts.reply === 'secrets' ? { sinceAway: async () => ({ awayMs: 3 * 3600e3, missed: [{ id: 'aw1', folderName: 'mcp-swiss', prompt: FILL(76) + SECRETS_TEXT, repeats: true }] }), dismissSinceAway: async () => ({ ok: true }) } : {}),
       listSchedules: async () => ({ pausedAll: simSched.pausedAll, schedules: simSched.list.map((x) => ({ ...x })) }),
       saveSchedule: async (inputIn) => {
@@ -3291,9 +3294,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       sessionSummary: async (id: string) => {
         if (!simQuery.get('simsummary')) return { ok: false as const, error: 'not in the simulator' };
         const n = Number(String(id).replace(/\D/g, '')) || 0;
-        if (n === 1) return { ok: true as const, ms: 25 * 60000 + 20000, pullRequests: 1, git: { repo: true as const, files: 12, added: 340, removed: 80, binary: 0, newFiles: 3, commits: 1, dirtyAtStart: false } };
+        if (n === 1) return { ok: true as const, ms: 25 * 60000 + 20000, pullRequests: 1, reported: { source: 'copilot', files: 12, added: 338, removed: 80, nanoAiu: 2_500_000_000, requests: 2 }, git: { repo: true as const, files: 12, added: 340, removed: 80, binary: 0, newFiles: 3, commits: 1, dirtyAtStart: false } };
         if (n === 2) return { ok: true as const, ms: 3 * 60000, git: { repo: false as const } };
         if (n === 3) return { ok: true as const, ms: 65 * 60000, git: { repo: true as const, files: 2, added: 5, removed: 1, binary: 0, newFiles: 0, commits: 0, dirtyAtStart: true } };
+        // the two agents that rest in the lounge (Noor sim-4, Maya sim-15): spec 085 FR-008
+        if (n === 4) return { ok: true as const, ms: 40 * 60000, git: { repo: true as const, files: 6, added: 120, removed: 35, binary: 0, newFiles: 0, commits: 1, dirtyAtStart: false } };
+        if (n === 15) return { ok: true as const, ms: 12 * 60000, git: { repo: true as const, files: 2, added: 8, removed: 2, binary: 0, newFiles: 0, commits: 0, dirtyAtStart: false } };
         return { ok: true as const, ms: 20000, git: { repo: true as const, files: 0, added: 0, removed: 0, binary: 0, newFiles: 0, commits: 0, dirtyAtStart: false } };
       },
       onEvent: (cb) => { listeners.add(cb); return () => listeners.delete(cb); },

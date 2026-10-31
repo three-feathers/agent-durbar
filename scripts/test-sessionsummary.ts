@@ -1,12 +1,18 @@
 /** Unit test (spec 085): git output parsing with hostile text, the start/summary flow with a fake git runner (argv, bounds, failures), and the card words. No real git, no Electron. */
 import * as assert from 'assert';
 import * as path from 'path';
-import { SessionStarts, countBinary, isNotRepo, parseCount, parseShortstat, validRef } from '../src/main/sessionsummary';
+import * as fs from 'fs';
+import * as os from 'os';
+import { SessionStarts, countBinary, dayNumbers, isNotRepo, parseCount, parseShortstat, readReported, sourceId, validRef } from '../src/main/sessionsummary';
+import { SummaryDays, localDay, parseDays } from '../src/main/summarydays';
+import { boundedCount, cleanVendorStats, copilotVendorStats } from '../src/adapters/vendorstats';
+import { FakeAdapter } from '../src/adapters/fake';
+import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
 import { hardenedArgv, makeGitExec } from '../src/main/gitstatus';
 import type { GitExec, GitRun } from '../src/main/gitstatus';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const W = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'sessionsummary.js')) as { text: (s: unknown, c: unknown) => string; duration: (ms: unknown) => string; tip: string };
+const W = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'sessionsummary.js')) as { text: (s: unknown, c: unknown) => string; duration: (ms: unknown) => string; tip: string; short: (s: unknown) => string; brief: (s: unknown) => string; reported: (r: unknown) => string; briefing: (b: unknown) => string };
 const Z = (...r: string[]): string => r.join('\0') + '\0';
 const REF = 'a'.repeat(40);
 
@@ -229,6 +235,131 @@ async function main(): Promise<void> {
   assert.match(t, /no tracked files changed, 1000000000 commits, under 1 min/);
   assert.ok(!t.includes('\u0007') && t.length < 300, 'control characters removed, cost cut');
   assert.ok(!/already had changes/.test(t), 'dirtyAtStart must be the boolean true');
+
+  // ---- spec 085 (2026-10-31): vendor-reported numbers, the lounge line, the day rollup
+  // FR-013: bounded counts only
+  assert.strictEqual(boundedCount(3.9), 3);
+  for (const bad of [-1, NaN, Infinity, '5', null, undefined, {}, [], true]) assert.strictEqual(boundedCount(bad), undefined, String(bad));
+  assert.strictEqual(boundedCount(1e30), 1e12, 'clamped');
+  assert.deepStrictEqual(cleanVendorStats({ files: 3, added: 4.7, removed: 0, nanoAiu: 2e9, requests: 2, path: '/etc/passwd', name: 'x' }), { files: 3, added: 4, removed: 0, nanoAiu: 2e9, requests: 2 }, 'only the five counts survive');
+  assert.strictEqual(cleanVendorStats({ files: 'x', added: -1, removed: NaN }), undefined, 'nothing usable is nothing reported, not zeros');
+  assert.strictEqual(cleanVendorStats(null), undefined);
+  assert.strictEqual(cleanVendorStats([1, 2]), undefined);
+  assert.strictEqual(cleanVendorStats(JSON.parse('{"__proto__":{"files":9}}')), undefined, 'an inherited or __proto__ member is not read');
+  // the Copilot shape (read: SDK 1.0.24 usage.getMetrics): names are counted and dropped
+  assert.deepStrictEqual(copilotVendorStats({ codeChanges: { filesModified: ['/home/u/secret.ts', 'b'], filesModifiedCount: 5, linesAdded: 10, linesRemoved: 2 }, totalNanoAiu: 1e9, totalUserRequests: 1 }), { files: 5, added: 10, removed: 2, nanoAiu: 1e9, requests: 1 });
+  assert.deepStrictEqual(copilotVendorStats({ codeChanges: { filesModified: ['a', 'b', 'c'], linesAdded: 1, linesRemoved: 0 } }), { files: 3, added: 1, removed: 0 }, 'no count: the length of the list');
+  assert.ok(!JSON.stringify(copilotVendorStats({ codeChanges: { filesModified: ['/home/u/secret.ts'], filesModifiedCount: 1, linesAdded: 1, linesRemoved: 1 } })).includes('secret'), 'no file name leaves the adapter');
+  assert.strictEqual(copilotVendorStats({ codeChanges: 'x', totalNanoAiu: 'y' }), undefined);
+  assert.strictEqual(copilotVendorStats(undefined), undefined);
+  // FR-010: the adapter call, with the limits
+  assert.strictEqual(sourceId('copilot'), 'copilot');
+  for (const bad of ['<b>', 'A', '', 'x'.repeat(21), 5, null, 'a b']) assert.strictEqual(sourceId(bad), 'agent', String(bad));
+  const fa = new FakeAdapter({ id: 'copilot', capabilities: { sessionStats: true } });
+  const sid = await fa.start({ workspace: os.tmpdir() });
+  assert.deepStrictEqual(await readReported(fa, sid), { source: 'copilot', files: 3, added: 40, removed: 7, nanoAiu: 2.5e9, requests: 2 });
+  fa.statsAnswer = { files: '<script>', added: -3, nanoAiu: NaN };
+  assert.strictEqual(await readReported(fa, sid), undefined, 'a hostile answer is not reported');
+  fa.statsAnswer = async () => { throw new Error('boom'); };
+  assert.strictEqual(await readReported(fa, sid), undefined, 'a rejection is not reported');
+  fa.statsAnswer = () => new Promise(() => undefined);
+  assert.strictEqual(await readReported(fa, sid, 20), undefined, 'a hang is not reported after the limit');
+  const off = new FakeAdapter({ id: 'claude', capabilities: { sessionStats: false } });
+  assert.strictEqual(off.sessionStats, undefined, 'no capability, no member');
+  assert.strictEqual(await readReported(off, 'x'), undefined);
+  assert.strictEqual(await readReported(undefined, 'x'), undefined);
+  assert.strictEqual(await readReported({ id: 'x', capabilities: { sessionStats: true } }, 'x'), undefined, 'a flag without the member is nothing');
+  assert.strictEqual(await readReported({ id: 'x', capabilities: { sessionStats: false }, sessionStats: async () => ({ files: 1 }) }, 'x'), undefined, 'a member without the flag is not asked (FR-027)');
+  // a hostile adapter that returns a lot: main bounds it again
+  const hostile = { id: '<img>', capabilities: { sessionStats: true }, sessionStats: async () => ({ files: 1e30, added: 5, extra: 'x', path: '/p' }) };
+  assert.deepStrictEqual(await readReported(hostile, 'x'), { source: 'agent', files: 1e12, added: 5 });
+  // the Copilot adapter on the fake SDK
+  const client = new FakeClient();
+  const cop = new FakeCopilot(client);
+  const csid = await cop.start({ workspace: os.tmpdir(), quiet: true });
+  assert.strictEqual(cop.capabilities.sessionStats, true);
+  assert.deepStrictEqual(await cop.sessionStats!(csid), { files: 3, added: 40, removed: 7, nanoAiu: 2.5e9, requests: 2 }, 'from usage.getMetrics');
+  client.last.metricsFail = 'nope';
+  await assert.rejects(cop.sessionStats!(csid), /nope/);
+  assert.strictEqual(await readReported(cop, csid), undefined, 'a failing runtime is not reported');
+  client.last.metricsFail = '';
+  client.last.metricsHangs = true;
+  assert.strictEqual(await readReported(cop, csid, 20), undefined);
+  client.last.metricsHangs = false;
+  const usageNs = (client.last.rpc as Record<string, unknown>).usage;
+  delete (client.last.rpc as Record<string, unknown>).usage;
+  assert.strictEqual(await cop.sessionStats!(csid), undefined, 'an older runtime without usage.getMetrics');
+  (client.last.rpc as Record<string, unknown>).usage = usageNs;
+  client.last.metricsAnswer = { codeChanges: { filesModified: Array.from({ length: 4 }, (_, i) => `/home/x/${i}`), linesAdded: '9', linesRemoved: -1 }, totalNanoAiu: Infinity };
+  assert.deepStrictEqual(await cop.sessionStats!(csid), { files: 4 }, 'hostile members dropped, names counted');
+  // the words: a vendor sentence of its own, naming it
+  assert.strictEqual(W.reported({ source: 'copilot', files: 3, added: 40, removed: 7, nanoAiu: 2.5e9, requests: 2 }), 'GitHub Copilot reported: 3 files, +40 −7, 2.5 AI credits, 2 requests.');
+  assert.strictEqual(W.reported({ source: 'copilot', files: 1 }), 'GitHub Copilot reported: 1 file.', 'a missing member is left out, never a zero');
+  assert.strictEqual(W.reported({ source: '<b>x</b>', files: 1 }), 'the agent app reported: 1 file.', 'the name comes from a fixed table');
+  assert.strictEqual(W.reported({ source: 'copilot', files: 'x', added: -1, nanoAiu: NaN }), '');
+  assert.strictEqual(W.reported(null), '');
+  assert.strictEqual(W.reported([1]), '');
+  assert.strictEqual(W.reported(JSON.parse('{"__proto__":{"files":9},"source":"claude"}')), '', 'inherited members are not read');
+  assert.ok(!/Infinity|NaN|undefined|\[object/.test(W.reported({ source: 'codex', files: 1e30, nanoAiu: 1e30 })));
+  const both = W.text({ ...full, reported: { source: 'copilot', files: 11, added: 300, removed: 80, nanoAiu: 1.25e9 } }, 'cost ≈ $0.40');
+  assert.ok(both.startsWith('Session summary: 12 files changed, +340 −80, 3 new files, 1 commit, 25 min, cost ≈ $0.40.'), 'Durbar\'s own count stays first and unchanged');
+  assert.ok(both.endsWith(' GitHub Copilot reported: 11 files, +300 −80, 1.25 AI credits.'), 'the vendor\'s numbers are separate and labelled, not merged: ' + both);
+  assert.doesNotMatch(W.text(full, ''), /reported:/, 'no vendor sentence without vendor numbers');
+  // FR-008: the short form
+  assert.strictEqual(W.short(full), '12 files changed, +340 −80, 3 new files, 1 commit, 25 min');
+  assert.strictEqual(W.short({ ok: true, ms: 20000, git: { repo: true, files: 0, added: 0, removed: 0, commits: 0 } }), 'no files changed, under 1 min');
+  assert.strictEqual(W.brief(full), '12 files, +340 −80');
+  assert.strictEqual(W.brief({ ok: true, ms: 20000, git: { repo: true, files: 1, added: 2, removed: 0, commits: 0 } }), '1 file, +2 −0');
+  assert.strictEqual(W.brief({ ok: true, ms: 20000, git: { repo: true, files: 0, added: 0, removed: 0, commits: 0 } }), 'no files changed');
+  assert.strictEqual(W.brief({ ok: true, ms: 1, git: { repo: false } }), '');
+  assert.strictEqual(W.brief(null), '');
+  for (const none of [{ ok: true, ms: 1, git: { repo: false } }, { ok: true, ms: 1, git: { repo: false, unreadable: true } }, { ok: true, ms: 1, git: { repo: true, noHead: true, files: 0 } }, { ok: false, error: 'x' }, null, undefined, 'x']) assert.strictEqual(W.short(none), '', JSON.stringify(none));
+  assert.ok(!/NaN|Infinity|undefined|<|\[object/.test(W.short(evil)), W.short(evil));
+  // FR-009: the briefing sentence and the rollup
+  assert.strictEqual(W.briefing({ sessions: 3, files: 18, added: 400, removed: 90, commits: 2, minutes: 130 }), 'Sessions ended yesterday and today: 3, 18 files changed, +400 −90, 2 commits, 2 h 10 min.');
+  assert.strictEqual(W.briefing({ sessions: 0 }), '');
+  assert.strictEqual(W.briefing(undefined), '');
+  assert.strictEqual(W.briefing({ sessions: '3', files: -4, added: 1e30, removed: NaN, commits: { x: 1 }, minutes: 'abc' }), '', 'a string for the session count is no count');
+  assert.ok(!/NaN|Infinity|undefined|\[object/.test(W.briefing({ sessions: 2, files: -4, added: 1e30, removed: NaN, commits: { x: 1 }, minutes: 'abc' })));
+  assert.deepStrictEqual(dayNumbers({ ok: true, ms: 125000, git: { repo: true, files: 2, added: 3, removed: 1, binary: 0, newFiles: 0, commits: 1, dirtyAtStart: false } }), { minutes: 2, files: 2, added: 3, removed: 1, commits: 1 });
+  assert.deepStrictEqual(dayNumbers({ ok: true, ms: 60000, git: { repo: false } }), { minutes: 1 }, 'a non-git folder adds the session and its minutes only');
+  assert.strictEqual(dayNumbers({ ok: false, error: 'x' }), undefined);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-days-'));
+  const file = path.join(dir, 'durbar-summary-days.json');
+  let dayNow = new Date(2026, 9, 31, 10, 0, 0);
+  const D = new SummaryDays(file, () => dayNow);
+  D.load();
+  assert.strictEqual(D.recent(), undefined, 'nothing ended: nothing to say');
+  D.add({ files: 5, added: 50, removed: 5, commits: 1, minutes: 30 });
+  dayNow = new Date(2026, 9, 31, 18, 0, 0);
+  D.add({ files: 2, added: 10, removed: 0, commits: 0, minutes: 5 });
+  assert.deepStrictEqual(D.recent(), { sessions: 2, files: 7, added: 60, removed: 5, commits: 1, minutes: 35 });
+  dayNow = new Date(2026, 10, 1, 9, 0, 0);
+  assert.strictEqual(D.recent()!.sessions, 2, 'yesterday still counts');
+  dayNow = new Date(2026, 10, 2, 9, 0, 0);
+  assert.strictEqual(D.recent(), undefined, 'two days later it does not');
+  const text = fs.readFileSync(file, 'utf8');
+  assert.deepStrictEqual(Object.keys(JSON.parse(text)).sort(), ['days', 'version']);
+  assert.ok(!/[\\/]/.test(text.replace(/"day":"[\d-]+"/g, '')), 'no path in the file');
+  if (process.platform !== 'win32') assert.strictEqual(fs.statSync(file).mode & 0o077, 0, 'owner only');
+  assert.ok(!fs.readdirSync(dir).some((f) => f.endsWith('.tmp')), 'atomic: no temp file left');
+  const D2 = new SummaryDays(file, () => new Date(2026, 9, 31, 20, 0, 0));
+  D2.load();
+  assert.strictEqual(D2.recent()!.sessions, 2, 'survives a restart');
+  assert.strictEqual(localDay(new Date(2026, 0, 5)), '2026-01-05');
+  // a corrupt, hostile or oversized file is an empty rollup; only 7 days are kept
+  for (const bad of ['', 'not json', '[]', '{"days":"x"}', '{"days":[null,1,"a",{"day":"../../etc","sessions":1},{"day":"2026-10-31"}]}', JSON.stringify({ days: [{ day: '2026-10-31', sessions: 1 }], pad: 'x'.repeat(70000) })]) assert.deepStrictEqual(parseDays(bad), [], bad.slice(0, 40));
+  const odd = parseDays(JSON.stringify({ days: [{ day: '2026-10-31', sessions: 2, files: '9', added: -1, removed: 1e30, commits: NaN, minutes: 3.7, path: '/x', __proto__: { y: 1 } }] }));
+  assert.deepStrictEqual(odd, [{ day: '2026-10-31', sessions: 2, files: 0, added: 0, removed: 1e9, commits: 0, minutes: 3 }]);
+  const many = parseDays(JSON.stringify({ days: Array.from({ length: 20 }, (_, i) => ({ day: `2026-10-${String(i + 1).padStart(2, '0')}`, sessions: 1 })) }));
+  assert.strictEqual(many.length, 7);
+  assert.strictEqual(many[6].day, '2026-10-20', 'the newest 7');
+  fs.writeFileSync(file, 'garbage');
+  const D3 = new SummaryDays(file, () => dayNow);
+  D3.load();
+  D3.add({ minutes: 1 });
+  assert.strictEqual(D3.recent()!.sessions, 1, 'a corrupt file starts over');
+  fs.rmSync(dir, { recursive: true, force: true });
   console.log('[sessionsummary] all checks passed');
 }
 main().catch((e) => { console.error(e); process.exit(1); });

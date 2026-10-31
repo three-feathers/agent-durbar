@@ -7,6 +7,9 @@
  */
 import { nodeGitExec, parsePorcelainZ } from './gitstatus';
 import type { GitExec } from './gitstatus';
+import { cleanVendorStats } from '../adapters/vendorstats';
+import type { VendorStats } from '../adapters/vendorstats';
+import type { DaySum } from './summarydays';
 
 export interface SessionGit {
   repo: true;
@@ -25,7 +28,9 @@ export interface SessionGit {
   newFilesUnknown?: boolean;
 }
 export type SessionNoGit = { repo: false; unreadable?: true };
-export type SessionSummary = { ok: true; ms: number; git: SessionNoGit | SessionGit } | { ok: false; error: string };
+/** Spec 085 FR-010: what the agent app itself reported (counts only) and which app: its adapter id, never vendor text. */
+export type ReportedStats = VendorStats & { source: string };
+export type SessionSummary = { ok: true; ms: number; git: SessionNoGit | SessionGit; reported?: ReportedStats } | { ok: false; error: string };
 
 /** Git said the folder is not a repository (its own message); anything else (timeout, size, git missing, another locale's words) is "could not read". */
 export const isNotRepo = (e: unknown): boolean => /not a git repository/i.test(String((e as { message?: unknown } | undefined)?.message ?? e));
@@ -140,4 +145,37 @@ export class SessionStarts {
       },
     };
   }
+}
+
+/** The adapter's id as the window may see it: lower-case letters, digits and `-`, at most 20 characters; anything else is "agent". */
+export const sourceId = (id: unknown): string => (typeof id === 'string' && /^[a-z0-9-]{1,20}$/.test(id) ? id : 'agent');
+
+/**
+ * Spec 085 FR-010: ask the adapter for its own totals. At most `limitMs` (a hang is "not reported"); a rejection, a missing method or an answer
+ * with no usable count is `undefined`; every member is bounded again here whatever the adapter did. Never throws.
+ */
+export async function readReported(
+  ad: { id: string; capabilities: { sessionStats?: boolean }; sessionStats?(id: string): Promise<unknown> } | undefined,
+  sessionId: string,
+  limitMs = 2000,
+): Promise<ReportedStats | undefined> {
+  if (!ad || ad.capabilities.sessionStats !== true || typeof ad.sessionStats !== 'function') return undefined;
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const raw = await Promise.race([ad.sessionStats(sessionId), new Promise<undefined>((res) => { timer = setTimeout(() => res(undefined), limitMs); })]);
+    const st = cleanVendorStats(raw);
+    return st ? { source: sourceId(ad.id), ...st } : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** Durbar's own numbers of an ended session as the day rollup adds them (FR-009); a folder git could not read adds only the session and its minutes. */
+export function dayNumbers(sum: SessionSummary): Partial<DaySum> | undefined {
+  if (!sum.ok) return undefined;
+  const base = { minutes: Math.floor(sum.ms / 60000) };
+  const g = sum.git;
+  return g.repo === true ? { ...base, files: g.files, added: g.added, removed: g.removed, commits: g.commits } : base;
 }
