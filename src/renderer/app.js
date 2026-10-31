@@ -1528,8 +1528,7 @@ function morphHTML(el,html){const t=document.createElement('template');t.innerHT
 const {svgHollow,styleSplit}=window.DurbarProbe;
 let probePrev=null; /* the last trial's HTML without its style attributes, while the probe holds it */
 function probeSet(probe,html){
-  OPS.probes++;
-  html=svgHollow(html);
+  html=svgHollow(html); OPS.probes++;
   const {bare,vals}=styleSplit(html);
   if(probePrev!==null&&bare===probePrev){
     const els=probe.querySelectorAll('[style]');
