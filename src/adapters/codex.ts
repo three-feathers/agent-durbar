@@ -301,6 +301,9 @@ interface Live {
   goalClearing?: boolean;
 }
 
+/** How many times one message may reopen a session while the wanted mode moves. */
+const MAX_REOPENS = 8;
+
 interface Child {
   rpc: CodexRpc;
   exited: Promise<void>;
@@ -338,6 +341,8 @@ export class CodexAdapter implements AgentAdapter {
   private readonly autopilotTuning?: AutopilotTuning;
   /** Spec 099: during a reopen (`reopening`) the Autopilot state waiting for the new child, and a Stop that came meanwhile. */
   private readonly parked = new Map<string, { auto: AutopilotState; stopped: boolean }>();
+  /** How many times one `send` opened the session again: the wanted mode can move during each, and this bounds that. */
+  private readonly reopenStarts = new Map<string, number>();
   /** Spec 099 FR-053: `setAutopilot` was called on this adapter, so a goal may exist whatever `AUTOPILOT_WIRED` says. */
   private autopilotUsed = false;
 
@@ -567,6 +572,14 @@ export class CodexAdapter implements AgentAdapter {
     const named = options.sessionId;
     if (!named) return this.startInner(options, { cancelled: false });
     if (this.sessions.has(named) || this.starting.has(named)) throw new Error(`Session ${named} is already running.`);
+    // a reopen compares the mode it wants with the one it got: a value that is no mode would never match (`startModeOf` opens it as Read-only), so it asks for Read-only; and a mode that keeps moving ends it
+    const reopen = this.reopening.get(named);
+    if (reopen) {
+      if (!(this.capabilities.permissionModes as readonly unknown[]).includes(reopen.mode)) reopen.mode = 'read-only';
+      const n = (this.reopenStarts.get(named) ?? 0) + 1;
+      this.reopenStarts.set(named, n);
+      if (n > MAX_REOPENS) throw new Error('The permission mode kept changing while Codex reopened this session, so nothing was sent. Send the message again.');
+    }
     // FR-143: a session that ran before (End session, a crash, a mode relaunch) comes back by resuming its own thread
     const prior = this.known.has(named) ? this.threadOf.get(named) : undefined;
     if (this.known.has(named) && !prior && options.resumeSessionId === undefined) throw new Error(`Session ${named} cannot be restarted.`);
@@ -779,6 +792,17 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   async send(sessionId: string, message: AgentMessage): Promise<void> {
+    const hold: { parked?: { auto: AutopilotState; stopped: boolean } } = {};
+    try {
+      await this.sendInner(sessionId, message, hold);
+    } finally {
+      // spec 099: on every path, a throw during a reopen included; only this call's own entry
+      if (hold.parked && this.parked.get(sessionId) === hold.parked) this.parked.delete(sessionId);
+      if (!this.reopening.has(sessionId)) this.reopenStarts.delete(sessionId);
+    }
+  }
+
+  private async sendInner(sessionId: string, message: AgentMessage, hold: { parked?: { auto: AutopilotState; stopped: boolean } }): Promise<void> {
     let live = this.mustGet(sessionId);
     // spec 099: refusals first, so a refused message leaves everything as it was
     const on = live.auto?.on ? live.auto : undefined;
@@ -788,7 +812,10 @@ export class CodexAdapter implements AgentAdapter {
     if (startsRun && message.attachments?.length) throw new Error(AUTOPILOT_TEXT_ONLY); // D10
     const goal = startsRun ? goalText(message.text, 'codex') : undefined;
     if (goal && !goal.ok) throw new Error(goalRefusal(goal));
-    if (on) this.parked.set(sessionId, { auto: on, stopped: false });
+    if (on) {
+      hold.parked = { auto: on, stopped: false };
+      this.parked.set(sessionId, hold.parked);
+    }
     // FR-144/FR-147: a mode or MCP switch chosen while it ran applies now, on a fresh child that resumes the same thread
     if (((live.wantMode && live.wantMode !== live.mode) || live.relaunch) && live.turnId === undefined && !live.turnStarting) {
       // spec 044 FR-180: the wanted mode can change while this reopens (Stop, a mode chosen, a scheduled run's end): read again after each await, and open again if it moved
@@ -808,11 +835,9 @@ export class CodexAdapter implements AgentAdapter {
         this.reopening.delete(sessionId);
       }
     }
-    const parked = this.parked.get(sessionId);
-    this.parked.delete(sessionId);
     if (on?.on) this.adoptAutopilot(live, on); // the settings outlive the child; the clear ran on the resume
     // spec 099 FR-050: Stop came during the reopen: the session is back, and nothing is sent
-    if (parked?.stopped) {
+    if (hold.parked?.stopped) {
       this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Aborted' });
       return;
     }

@@ -395,6 +395,29 @@ async function main(): Promise<void> {
     await assert.rejects(d.p, /ended/);
     assert.strictEqual(d.r.ad.isLive(d.r.sid), false, 'End session: it does not open again');
     assert.strictEqual(d.r.srv.requests('thread/goal/set').length, 0);
+    assert.strictEqual((d.r.ad as unknown as { parked: Map<string, unknown> }).parked.size, 0, 'a throw during the reopen leaves no entry');
+    assert.strictEqual((a.r.ad as unknown as { parked: Map<string, unknown> }).parked.size, 0, 'nor does a Stop');
+
+    // a value that is no mode cannot spin the reopen: it opens as Read-only, and no goal goes
+    const e = await reopening();
+    e.r.ad.setPermMode(e.r.sid, 'junk' as never);
+    const ended = await Promise.race([e.p.then(() => 'done'), sleep(1000).then(() => 'spinning')]);
+    assert.strictEqual(ended, 'done', 'the loop ends');
+    assert.strictEqual((e.r.ad as unknown as { sessions: Map<string, { mode: string }> }).sessions.get(e.r.sid)!.mode, 'read-only');
+    assert.strictEqual(e.r.srv.requests('thread/goal/set').length, 0);
+
+    // a mode that keeps moving: the reopen is bounded, nothing is sent
+    const f = await rig({}, undefined, 'ask');
+    f.ad.setPermMode(f.sid, 'allow');
+    let flip = false;
+    const a2 = f.ad as unknown as { spawnFn: (...x: unknown[]) => unknown };
+    const spawn = a2.spawnFn;
+    a2.spawnFn = (...x: unknown[]) => { flip = !flip; f.ad.setPermMode(f.sid, flip ? 'read-only' : 'ask'); return spawn(...x); };
+    const moved = await Promise.race([f.ad.send(f.sid, { text: 'x' }).then(() => 'sent', (err: Error) => err.message), sleep(3000).then(() => 'spinning')]);
+    assert.ok(/kept changing/.test(moved), `bounded, got: ${moved}`);
+    assert.strictEqual(f.srv.requests('turn/start').length, 0);
+    assert.ok(f.srv.spawns.length <= 10, 'at most the bound');
+    assert.strictEqual((f.ad as unknown as { reopenStarts: Map<string, number> }).reopenStarts.size, 0, 'the count goes with the send');
   }
 
   // an MCP switch during a run does not relaunch it; it applies when the run ended
