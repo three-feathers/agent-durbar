@@ -1,6 +1,6 @@
 /**
  * Spec 099 (Autopilot), the shared core: pure, no SDK, no I/O, no timers. All three adapters use it, so the rules are written once.
- * Phase 1 only: nothing in the adapters or in main calls this yet, and no descriptor reports `capabilities.autopilot`.
+ * The adapters use it through `autopilotHost.ts`; nothing in main calls it before T030.
  */
 
 import { isObj } from '../shared/guards';

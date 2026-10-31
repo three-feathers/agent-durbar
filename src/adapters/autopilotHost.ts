@@ -1,10 +1,10 @@
 /**
  * Spec 099 Phase 2: what every adapter does around one `AutopilotRun`, written once: the settings a session is on, the run, the wait for the app's
- * answer (FR-054), the time backstop's one timer (FR-021), S3 and the fixed chat lines. The rules themselves stay in the core (`autopilot.ts`).
+ * answer (FR-054), the time backstop's clock sample (FR-021), S3 and the fixed chat lines. The rules themselves stay in the core (`autopilot.ts`).
  * No SDK and no vendor word: each adapter passes its own FR-050 order as `halt`.
  */
 import { randomUUID } from 'crypto';
-import { AUTOPILOT_ANSWER, AutopilotRun, hoursOrDefault, limitOrDefault } from './autopilot';
+import { AUTOPILOT_ANSWER, AutopilotRun, CLOCK_SAMPLE_MS, hoursOrDefault, limitOrDefault } from './autopilot';
 import type { GoalTextResult } from './autopilot';
 import type { AskedQuestion, AutopilotEnd, AutopilotEvent, AutopilotSettings } from './types';
 import type { EventBody } from './map';
@@ -40,7 +40,7 @@ export const LINE_CAP_NOT_RESTORED = "Durbar could not put this session's own sp
 export interface AutopilotTuning {
   now?: () => number;
   waitMs?: number;
-  /** Replaces the backstop's one timer. Returns its cancel. */
+  /** Replaces the backstop's repeating clock sample. Returns its cancel. */
   setTimer?: (fn: () => void, ms: number) => () => void;
   /** Replaces `AUTOPILOT_WIRED` (FR-053 tests). */
   clearFirst?: boolean;
@@ -141,11 +141,10 @@ export class AutopilotState {
 
   private armTimer(run: AutopilotRun): void {
     const fire = (): void => { run.checkElapsed(); };
-    const ms = run.hours * 3_600_000;
-    if (this.tuning.setTimer) { this.cancelTimer = this.tuning.setTimer(fire, ms); return; }
-    const t = setTimeout(fire, ms);
+    if (this.tuning.setTimer) { this.cancelTimer = this.tuning.setTimer(fire, CLOCK_SAMPLE_MS); return; }
+    const t = setInterval(fire, CLOCK_SAMPLE_MS); // the core owns no timer and samples the clock only here (FR-021)
     t.unref?.();
-    this.cancelTimer = () => clearTimeout(t);
+    this.cancelTimer = () => clearInterval(t);
   }
 
   private onRun(e: Parameters<NonNullable<ConstructorParameters<typeof AutopilotRun>[0]['emit']>>[0]): void {
