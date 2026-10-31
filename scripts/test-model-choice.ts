@@ -78,9 +78,10 @@ async function main(): Promise<void> {
     const lists: Record<string, unknown[]> = {
       copilot: [{ id: 'auto', name: 'Auto', efforts: [], disabled: false }, { id: 'gpt-wide', name: 'Wide', efforts: ['low', 'high'], contextTiers: ['default', 'long'], disabled: false }, { id: 'gpt-deep', name: 'Deep', efforts: ['low', 'high'], contextTiers: ['default', 'long'], disabled: false }],
       claude: [{ id: 'default', name: 'Default', efforts: ['low', 'high', 'max'], disabled: false }, { id: 'sonnet', name: 'Sonnet', efforts: ['low', 'high'], disabled: false }, { id: 'sonnet[1m]', name: 'Sonnet 1M', efforts: ['low', 'high'], disabled: false }],
+      extra: [],
       codex: [{ id: 'gpt-sol', name: 'Sol', efforts: ['low', 'high'], disabled: false }, { id: 'gpt-luna', name: 'Luna', efforts: ['low'], disabled: false }],
     };
-    const got: Record<string, ModelSwitchRequest[]> = { copilot: [], claude: [], codex: [] };
+    const got: Record<string, ModelSwitchRequest[]> = { copilot: [], claude: [], codex: [], extra: [] };
     const ads: Record<string, FakeAdapter> = {};
     const agents = new Map<string, AgentInfo>();
     const ids: Record<string, string> = {};
@@ -126,6 +127,10 @@ async function main(): Promise<void> {
     await setOk('codex', { model: 'gpt-next' }, 'the newest list counts');
     assert.ok(!(await call('agents:setModel', ids.codex, { model: 'gpt-sol' })).ok, 'and the older one no longer');
     await setOk('copilot', { model: 'gpt-deep' }, "and Copilot's list is untouched");
+    // an app whose first list is empty is asked again at the next request, not cached empty (review on PR 935)
+    assert.ok(!(await call('agents:setModel', ids.extra, { model: 'gpt-late' })).ok, 'an empty list offers nothing');
+    lists.extra = [{ id: 'gpt-late', name: 'Late', efforts: [], disabled: false }];
+    await setOk('extra', { model: 'gpt-late' }, 'a list that was empty first is fetched again, without models:list');
 
     // ---- one choice after another, whole requests: what main holds and saves at each step, in the three orders that end with each field last
     const k = 'copilot', a = agents.get(ids[k])!;

@@ -29,6 +29,7 @@ const STEP = { model: (m) => `[data-pick=${jsLiteral(m)}]`, effort: (e) => `[dat
 const SPY = `(()=>{if(window.__mc)return;const b=window.__durbarSimUi.bridge(),M=window.__mc={reqs:[],cancels:[],busy:0,done:0,delay:0,quiet:false};
   const set=b.setModel.bind(b),can=b.cancelQueuedModel.bind(b);
   b.setModel=async(id,req)=>{M.busy++;M.reqs.push(JSON.parse(JSON.stringify(req)));try{if(M.delay)await new Promise(r=>setTimeout(r,M.delay));
+    if(M.refuse>0){M.refuse--;return {ok:false,error:'That model is not in the list your account offers.'};}
     if(M.quiet)return {ok:true,result:{status:'applied',model:req.model,message:'Used from the first message: this agent has not started yet.'}};const r=await set(id,req);M.queued=(M.queued||0)+(r&&r.result&&r.result.status==='queued'?1:0);return r;}finally{M.busy--;M.done++;}};
   b.cancelQueuedModel=async(id,q)=>{M.cancels.push(q);return can(id,q);};})()`;
 
@@ -44,7 +45,7 @@ module.exports = async (ctx) => {
   const stateOf = (id) => jval(`(a=>({model:a.info.model,effort:a.info.effort||null,tier:a.info.tier||'default'}))(${agentExpr(id)})`);
   const pendingOf = (id) => jval(`(a=>a.pendingModel&&a.pendingModel.req?{model:a.pendingModel.req.model,effort:a.pendingModel.req.effort||null,tier:a.pendingModel.req.contextTier||'default'}:(a.pendingModel?'no request kept':null))(${agentExpr(id)})`);
   const lastReq = async () => { const r = await jval(`__mc.reqs[__mc.reqs.length-1]||null`); return r && { model: r.model, effort: r.effort || null, tier: r.contextTier || 'default' }; };
-  const resetSpy = (o = {}) => js(`Object.assign(__mc,{reqs:[],cancels:[],queued:0,delay:${Number(o.delay) || 0},quiet:${!!o.quiet}})`);
+  const resetSpy = (o = {}) => js(`Object.assign(__mc,{reqs:[],cancels:[],queued:0,delay:${Number(o.delay) || 0},quiet:${!!o.quiet},refuse:0})`);
   /* the agent's state as this scenario starts: through the simulator's own switch, whose event sets the window's state; `keepSim`: an agent mid-reply, whose switch would queue */
   const putOn = async (id, model, o = {}) => {
     await js(`(async(id,model,keep)=>{const a=window.__durbarSimUi.agents().find(x=>x.id===id);__mc.quiet=false;if(keep){a.info.model=model;a.info.effort=undefined;a.info.tier=undefined;}else await window.__durbarSimUi.bridge().setModel(id,{model,effort:null,contextTier:'default'});})(${jsLiteral(id)},${jsLiteral(model)},${jsLiteral(!!o.keepSim)})`);
@@ -144,6 +145,59 @@ module.exports = async (ctx) => {
       check(/long context/i.test(t) && /effort/i.test(t) && /Sim Fast/.test(t), `${what}: the toast says what was dropped: ${t}`);
       await click('#toasts .toast-act'); await until(`${agentExpr(idle)}.info.model==='sim-deep'`); await until(`__mc.busy===0`);
       same(await stateOf(idle), { model: 'sim-deep', effort: 'high', tier: 'long' }, `undo after merged choices at ${tag}`);
+    }
+
+
+    // a refused switch leaves the state alone and says why (main refuses a stale or unknown model); the chip and the next menu are as before
+    {
+      const what = `refused switch at ${tag}`;
+      await open(idle); await putOn(idle, 'sim-deep');
+      await js(`__mc.refuse=1`);
+      await choose(STEP.model('sim-wide'), what);
+      same(await stateOf(idle), { model: 'sim-deep', effort: null, tier: 'default' }, `${what}: the session`);
+      check(/Sim Deep/.test(await chipName()) && !/Sim Wide/.test(await chipName()), `${what}: the chip: ${await chipName()}`);
+      check(/Could not change the model/.test(await text('#toasts')), `${what}: the toast says why: ${await text('#toasts')}`);
+      same(await ticks(), { model: 'sim-deep', effort: null, tier: 'default' }, `${what}: the next menu`); await closeMenu();
+    }
+
+    // during a reply, a costlier model on top of a queued one still asks (FR-061); the effort on the queued model does not ask again
+    {
+      const what = `ask with a queued switch at ${tag}`;
+      await open(busy); await putOn(busy, 'sim-fast', { keepSim: true });
+      /* true when the dialog came up (and is answered Switch); false when the call went out without one */
+      const dialogAfter = async (sel) => {
+        await openMenu(); const n = await js('__mc.done'); await click(`#modelMenu ${sel}`);
+        let asked = false;
+        const end = Date.now() + 3000;
+        while (Date.now() < end) {
+          if (await exists('#modeDlg')) { asked = true; break; }
+          if ((await js('__mc.done')) > n && (await js('__mc.busy')) === 0) break;
+          await ctx.sleep(25);
+        }
+        if (asked) await js(`(b=>{if(b)b.click();})(document.querySelector('#modeDlg .btn.primary'))`);
+        await until(`!document.getElementById('modeDlg')&&__mc.busy===0`); await H.clearToasts();
+        return asked;
+      };
+      check(await dialogAfter(STEP.model('sim-mid')), `${what}: the first, costlier model asks`);
+      check(await dialogAfter(STEP.model('sim-wide')), `${what}: another costlier model on top of the queued one asks`);
+      check(!(await dialogAfter(STEP.effort('high'))), `${what}: only the effort on the queued model does not ask again`);
+      same(await pendingOf(busy), { model: 'sim-wide', effort: 'high', tier: 'default' }, `${what}: the queued choice`);
+      await openMenu(); await click('#modelMenu [data-cancelq]'); await until(`!${agentExpr(busy)}.pendingModel`);
+    }
+
+    // a refused replacement keeps the earlier queued switch (review on PR 935)
+    {
+      const what = `refused replacement at ${tag}`;
+      await open(busy); await putOn(busy, 'sim-deep', { keepSim: true });
+      await choose(STEP.model('sim-wide'), what);
+      same(await pendingOf(busy), { model: 'sim-wide', effort: null, tier: 'default' }, `${what}: queued first`);
+      await js(`__mc.refuse=1`);
+      await choose(STEP.effort('high'), what);
+      same(await pendingOf(busy), { model: 'sim-wide', effort: null, tier: 'default' }, `${what}: the earlier switch is still queued`);
+      same(await js(`${agentExpr(busy)}.pendingModel&&${agentExpr(busy)}.pendingModel.queueId?1:0`), 1, `${what}: with a queue id of its own`);
+      check(/Could not change the model/.test(await text('#toasts')) && !/was cancelled/.test(await text('#toasts')), `${what}: the toast: ${await text('#toasts')}`);
+      await openMenu(); check(/Sim Wide/.test(await text('#modelMenu .mm-pend')), `${what}: the menu still names it`);
+      await click('#modelMenu [data-cancelq]'); await until(`!${agentExpr(busy)}.pendingModel`);
     }
 
     // during a reply: one queued switch holds all three

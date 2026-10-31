@@ -6667,11 +6667,12 @@ async function chooseAutoTierInner(a,to,anchor){
 }
 async function sendModelChange(a,req,ctx){
   /* spec 030 FR-061: this request holds the whole choice, so it replaces a queued one: the older switch leaves the runtime's queue first, or it would run too and Cancel would miss it */
-  const old=a.pendingModel;
-  if(old){if(bridge.cancelQueuedModel)await bridge.cancelQueuedModel(a.id,old.queueId).catch(()=>undefined);a.pendingModel=undefined;updateModelChip(a);}
+  const old=a.pendingModel||ctx.old,queuedNow=a.pendingModel;
+  if(queuedNow){if(bridge.cancelQueuedModel)await bridge.cancelQueuedModel(a.id,queuedNow.queueId).catch(()=>undefined);a.pendingModel=undefined;updateModelChip(a);}
+  /* review on PR 935: when this request does not take, the earlier valid switch is asked for again, so a refusal never loses it */
+  const keep=async()=>{if(old)await sendModelChange(a,old.req,{tgt:modelOf(old.req.model,a.info.adapterId),prev:old.prev,anchor:ctx.anchor,quiet:true});};
   const res=await bridge.setModel(a.id,req).catch(e=>({ok:false,error:String(e&&e.message||e)}));
-  const lost=old?' The switch that was queued was cancelled.':'';
-  if(!res||!res.ok){toast('Could not change the model: '+esc((res&&res.error)||'unknown error')+lost,6000);return;}
+  if(!res||!res.ok){toast('Could not change the model: '+esc((res&&res.error)||'unknown error')+(old?' The switch queued before stays.':''),6000);await keep();return;}
   const r=res.result||{},nm=ctx.tgt.name+(req.autoTier?' ('+DM.autoTierName(req.autoTier)+' routing)':'')+(DM.choiceWords(req)?' ('+DM.choiceWords(req)+')':''),gone=ctx.gone?' '+esc(ctx.gone):'';
   if(r.status==='applied'){
     /* spec 030 FR-060: the answer is the state: a session that has not started and a same-model change send no model event, and the next choice is built on this */
@@ -6687,14 +6688,14 @@ async function sendModelChange(a,req,ctx){
     else toast(esc(a.name)+': back to <b>'+esc(nm)+'</b>.',3800);
   }else if(r.status==='queued'){
     a.pendingModel={queueId:r.queueId,name:ctx.tgt.name+(req.autoTier?' ('+DM.autoTierName(req.autoTier)+')':''),req,prev:ctx.prev};updateModelChip(a);
-    toast(esc(a.name)+' is replying: <b>'+esc(nm)+'</b> applies when the reply ends.'+gone,5000);
+    if(!ctx.quiet)toast(esc(a.name)+' is replying: <b>'+esc(nm)+'</b> applies when the reply ends.'+gone,5000);
   }else if(r.status==='needs-confirmation'){
     const cf=r.confirmation||{};
     const d=await askDialog({title:'Compact the context first?',body:(cf.targetName||ctx.tgt.name)+' has a window of '+DM.fmtTokens(cf.targetLimit)+' tokens, and this conversation uses '+DM.fmtTokens(cf.currentTokens)+'. It must be compacted before the switch, which costs one model call.',returnFocus:ctx.anchor,
       buttons:[{label:'Cancel',value:null},{label:'Compact and switch',value:'ok',cls:'primary'}]});
-    if(d)await sendModelChange(a,Object.assign({},req,{confirm:{compaction:'accept'}}),ctx);
-    else if(old)toast(esc(a.name)+': the model was not changed.'+lost,5000);
-  }else toast(esc(r.message||'The model was not changed.')+lost,5000);
+    if(d)await sendModelChange(a,Object.assign({},req,{confirm:{compaction:'accept'}}),Object.assign({},ctx,{old}));
+    else{if(old)toast(esc(a.name)+': the model was not changed. The switch queued before stays.',5000);await keep();}
+  }else{toast(esc(r.message||'The model was not changed.')+(old?' The switch queued before stays.':''),5000);await keep();}
 }
 function undoModel(a,prev,anchor){return modelTurn(a,()=>undoModelInner(a,prev,anchor));}
 async function undoModelInner(a,prev,anchor){
