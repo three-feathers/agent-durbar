@@ -11,6 +11,11 @@
  *   npm run build
  *   DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_DRIVER=$PWD/scripts/check-perf.js xvfb-run -a npx electron . --no-sandbox
  *
+ * `--record <file>` (spec 097 FR-187, T145): instead of the checks above, record every measure of the performance table as JSON (flat and Real
+ * office, 15 and 40 agents, 3 runs, medians; machine, load, pixel ratio, gpu_compositing, app sha). No assert on any time; exit 0 unless the driver
+ * itself breaks. Pure Node, so it runs on macOS and Windows too (T162): `npm run check:perf -- --record perf.json [--gpu] [--quick] [--runs N] [--only real-15,flat-40]`.
+ * `--gpu` adds the real-GPU A/B rows (blur, blending, animations on and off). Details and limits: scripts/perf-record-driver.js, scripts/perf-record.js.
+ *
  * PERF_SECONDS (default 20) sets the load phase; PERF_SPEED (default 10) how much faster the simulator works than normal.
  */
 const assert = require('assert');
@@ -20,6 +25,8 @@ const SECONDS = Number(process.env.PERF_SECONDS || 20);
 const SPEED = String(process.env.PERF_SPEED || 10);
 
 module.exports = async (ctx) => {
+  // spec 097 T145: `--record` (scripts/perf-record.js) starts this file as the driver with PERF_PHASE set; it only records, it asserts nothing
+  if (process.env.PERF_PHASE) return require('./perf-record-driver.js')(ctx);
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const { js } = H;
   await H.load({ w: 1440, h: 900, query: { simspeed: SPEED, simfreeze: undefined }, settle: false }); // not frozen: the page never stops changing, so no settling wait
@@ -73,6 +80,11 @@ module.exports = async (ctx) => {
 
 // `npm run check:perf` (or `node scripts/check-perf.js` after a build): starts Electron with this driver; xvfb-run on Linux without a display
 if (require.main === module) {
+  const rec = require('./perf-record.js').parseArgs(process.argv.slice(2));
+  if (process.argv.includes('--record')) {
+    if (!rec.record) { console.error('--record needs a file'); process.exit(2); }
+    process.exit(require('./perf-record.js').recordAll(rec));
+  }
   const fs = require('fs');
   const os = require('os');
   const { spawnSync } = require('child_process');
