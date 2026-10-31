@@ -558,8 +558,8 @@ async function driver(ctx) {
     const res0 = await measure(false);
     const tag = `demo ${w}x${h}`;
     /* the case would be vacuous with roomy headers (nothing has to give way): narrow every header, refit, and require that some header really had to give way */
-    await ctx.js(`(()=>{const st=document.createElement('style');st.id='demoNarrow';st.textContent='#stage .room-head{max-width:190px}';document.head.append(st);window.DurbarFit();})()`);
-    await must(`getComputedStyle(document.querySelector('#stage .room-head')).maxWidth==='190px'`, 'the narrowed headers to apply');
+    await ctx.js(`(()=>{const st=document.createElement('style');st.id='demoNarrow';st.textContent='#stage .room-head{max-width:164px}';document.head.append(st);window.DurbarFit();})()`);
+    await must(`getComputedStyle(document.querySelector('#stage .room-head')).maxWidth==='164px'`, 'the narrowed headers to apply');
     await stable('narrowed headers');
     /* headers that had to give way: the cost is the only part allowed to (it is in the name's tooltip); none gave way means the narrowing proved nothing */
     const squeezed = await ctx.js(`[...document.querySelectorAll('#stage .room-head')].filter(hd=>!hd.querySelector('.room-more')&&hd.classList.contains('no-aiu')).length`);

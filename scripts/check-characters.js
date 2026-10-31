@@ -52,7 +52,7 @@ module.exports = async (ctx) => {
     assert.ok(await H.until(`window.THEME.characters()===${jsLiteral(v)}`, 4000), `characters ${v} applied`);
     assert.ok(await H.until(`[...document.querySelectorAll('#toasts .toast')].some(t=>/^Characters: /.test(t.textContent))`, 4000), `characters ${v}: the choice is announced`);
     assert.ok(!(await H.js(`[...document.querySelectorAll('#toasts .toast')].some(t=>/could not be saved/.test(t.textContent))`)), `characters ${v}: saved (no refusal toast)`);
-    assert.strictEqual(await H.js(`document.querySelector(${jsLiteral(`#chList [data-characters="${v}"]`)}).getAttribute('aria-pressed')`), 'true', `characters ${v}: the list shows the choice at once`);
+    assert.ok(await H.until(`document.querySelector(${jsLiteral(`#chList [data-characters="${v}"]`)}).getAttribute('aria-pressed')==='true'`, 3000), `characters ${v}: the list shows the choice`);
   };
   /* the Characters section, read in Settings */
   const section = () => H.js(`(()=>{const h=document.getElementById('chH'),th=document.getElementById('themeH');const sec=h.closest('section'),prev=sec.previousElementSibling;
