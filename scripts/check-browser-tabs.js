@@ -348,12 +348,20 @@ module.exports = async (ctx) => {
   await toChat();
   const n2 = count();
   await js(`document.getElementById('msgInput').focus()`);
-  // Linux only: on a Mac Cmd+W is the menu's Close Window, and on Windows Ctrl+W outside the Browser tab also takes the window away (CI,
-  // 2026-10-31): that is the old behaviour, which would end this driver, so those two only check that nothing here pressed it closes a tab
-  if (process.platform === 'linux') await H.key('W', ['control'], { char: 'never' });
+  // Windows and Linux have no app menu (spec 052 FR-083, appmenu.ts), so nothing there binds Ctrl+W: pressed here it must close no tab and
+  // no window. On a Mac Cmd+W is the menu's Close Window (it hides the window, the old behaviour; FR-130 [KNOWN GAP]), so it is not pressed.
+  // A closed window ends the app (window-all-closed) with exit 0 before any assertion below runs, so the close itself fails the driver.
+  const w0 = win();
+  const onClosed = () => { console.error('DRIVER FAILED AssertionError: Ctrl+W outside the Browser tab closed the window'); app.exit(1); };
+  w0.once('closed', onClosed);
+  if (!IS_MAC) await H.key('W', ['control'], { char: 'never' });
   await toBrowser(); // the precondition: the browser still answers, and nothing was closed
   await wait(() => count() === n2 && tabs().tabs.length === n2, 'Ctrl+W outside the Browser tab closed no tab');
-  assert.ok(!win().isDestroyed() && win().isVisible(), 'and the window is still there');
+  // A close destroys the window on Windows and Linux (it only hides on a Mac, appmenu.ts hideOnClose), so not destroyed is the check there.
+  // isVisible() is not: on the Windows CI runner it is false for this window even when no key was pressed (run 41191186758, 2026-10-31).
+  const winState = w0.isDestroyed() ? 'destroyed' : `visible=${w0.isVisible()} minimized=${w0.isMinimized()}`;
+  assert.ok(!w0.isDestroyed() && !w0.webContents.isDestroyed() && (process.platform === 'win32' || w0.isVisible()), 'and the window is still there: ' + winState);
+  w0.removeListener('closed', onClosed);
   console.log('[browser-tabs] US6.11 ok');
 
   // US6.10 and the cap: six pages in this session's tabs; at most four stay loaded; a dropped background tab has no view and comes back
