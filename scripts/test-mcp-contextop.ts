@@ -10,6 +10,7 @@ import { createHash } from 'crypto';
 import type { AgentEvent, McpServerStatus } from '../src/adapters/types';
 import type { McpContextView } from '../src/shared/api';
 import type { McpContextReport } from '../src/shared/mcpcost';
+import { reportTotal } from '../src/shared/mcpcost';
 import { cleanName, cleanReport, McpContextTracker, serverKey } from '../src/main/mcpcontextop';
 import { MAX_COST_NAME, McpCostStore } from '../src/main/mcpcosts';
 
@@ -283,6 +284,29 @@ async function main(): Promise<void> {
     t.onEvent(modelEv());
     await settle();
     assert.deepStrictEqual(h.pushed.at(-1)?.report, { servers: [] }, 'a real empty list replaces them');
+    // a server switched off, then a failed read: the kept figures leave it out, the warning follows, and the time stays that of the measurement
+    const two: McpContextReport = { servers: [{ name: 'heavy', tokens: 60_000, source: 'reported' }, { name: 'small', tokens: 1000, source: 'reported' }], window: 200_000, total: 61_000 };
+    let answer2: McpContextReport = two;
+    const sw = harness(() => answer2);
+    sw.h.live = conn('heavy', 'small');
+    sw.t.onEvent(mcpEv(sw.h.live));
+    await settle();
+    const at0 = sw.t.view(ID).at;
+    assert.strictEqual(reportTotal(sw.t.view(ID).report), 61_000);
+    answer2 = { servers: [], failed: true };
+    sw.h.now += 5000;
+    sw.h.live = [{ name: 'heavy', status: 'disabled' }, { name: 'small', status: 'connected' }];
+    sw.t.onEvent(mcpEv(sw.h.live));
+    await settle();
+    const after = sw.h.pushed.at(-1);
+    assert.deepStrictEqual(nk(after?.report?.servers), [{ name: 'small', source: 'reported', tokens: 1000 }], 'the off server has left the kept report');
+    assert.strictEqual(reportTotal(after?.report), 1000, 'and the total: no 60k in the warning');
+    assert.strictEqual(after?.at, at0, 'still dated when it was measured');
+    const n2 = sw.h.pushed.length;
+    sw.t.onEvent(modelEv());
+    await settle();
+    assert.strictEqual(sw.h.pushed.length, n2, 'another failed read with nothing changed pushes nothing');
+
     // with nothing to keep, a failed read is a report with no figures ("not reported"), and `failed` does not reach the window
     const fresh = harness(() => ({ servers: [], failed: true }));
     fresh.t.onEvent(mcpEv(conn('github')));
@@ -393,7 +417,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(nk(by.get('quiet')), { name: 'quiet', source: 'unknown' }, 'running with no figure');
     assert.ok(out.servers.every((s) => !s.name.includes('s3cretvalue')), 'a secret value in a name is masked');
     assert.ok(out.servers.every((s) => s.name.length <= 128));
-    const text = JSON.stringify(out);
+    const text = JSON.stringify(nk(out)); // without the salted hex keys, which can hold any short word
     for (const bad of ['abc', 'a tool text', 'schema', 'env', 'busy']) assert.ok(!text.includes(bad), `not in the report: ${bad}`);
     assert.strictEqual(out.window, undefined, 'a bad window is left out');
     assert.strictEqual(out.total, undefined, 'with rows, the rows are the figure');

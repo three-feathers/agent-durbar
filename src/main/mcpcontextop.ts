@@ -41,6 +41,8 @@ export interface McpContextDeps {
 
 interface Slot {
   report?: McpContextReport;
+  /** That report as the adapter gave it, names and numbers, in memory only: refiltered when a failed read keeps it. */
+  raw?: McpContextReport;
   at?: number;
   /** The last time the agent app was asked (the dialog's once-a-minute limit). */
   askedAt?: number;
@@ -176,9 +178,18 @@ export class McpContextTracker {
       s.atTurnEnd = true;
       return;
     }
-    if (r?.failed === true && hasFigures(s.report)) return; // a failed read says nothing about the servers: the last figures stay, nothing is pushed
+    if (r?.failed === true && hasFigures(s.report)) {
+      // a failed read says nothing about the figures: the last ones stay, but only for servers still loaded (a switch-off must not stay in the warning)
+      const kept = cleanReport(s.raw as McpContextReport, this.d.live(id), this.d.off(id), this.d.secrets(id));
+      if (JSON.stringify(kept) !== JSON.stringify(s.report)) {
+        s.report = kept;
+        this.d.push(id, this.view(id));
+      }
+      return;
+    }
     const report = cleanReport(r as McpContextReport, this.d.live(id), this.d.off(id), this.d.secrets(id));
     const at = this.now();
+    s.raw = r as McpContextReport;
     s.report = report;
     s.at = at;
     if (hasFigures(report)) {

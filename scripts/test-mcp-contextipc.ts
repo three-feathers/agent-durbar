@@ -54,6 +54,7 @@ async function main(): Promise<void> {
     const store = new McpStore(storeFile);
     let costs: InstanceType<typeof McpCostStore> | undefined = new McpCostStore(costsFile);
     let global: Partial<Record<'copilot' | 'claude' | 'codex', string[]>> = {};
+    const sessionSecret = 'supersecretvalue123';
     registerMcpIpc({
       store: () => store,
       agents: new Map([[ID, { id: ID, cwd: root } as never]]),
@@ -61,6 +62,7 @@ async function main(): Promise<void> {
       dev: { DURBAR_COPILOT_DIR: path.join(root, 'no-copilot') } as never,
       appOf: () => 'copilot',
       globalList: (app) => global[app],
+      globalFor: () => ({ s: { env: { T: sessionSecret } } } as never),
       pushContext: (id, view) => pushed.push({ id, view }),
       costs: () => costs,
     });
@@ -143,6 +145,20 @@ async function main(): Promise<void> {
     assert.strictEqual(memRead.ok, true, 'the read answers');
     costs = new McpCostStore(costsFile);
     costs.load();
+
+    // ---- a session secret in a listed server's name: nowhere in the file or the reply, not even in the list mark ----
+    emit({ type: 'status', status: 'stopped' });
+    const LEAK = `srv-${sessionSecret}`;
+    global = { copilot: [LEAK, 'plain-listed'] };
+    answer = { servers: [{ name: LEAK, tokens: 7, source: 'reported' }, { name: 'plain-listed', tokens: 8, source: 'reported' }] };
+    emit({ type: 'mcp', servers: servers(LEAK, 'plain-listed') });
+    await tick();
+    const leakReply = await call('mcp:costs');
+    assert.ok(!JSON.stringify(leakReply).includes(sessionSecret), `not in the reply: ${JSON.stringify(leakReply)}`);
+    assert.ok(!fs.readFileSync(costsFile, 'utf8').includes(sessionSecret), 'not in the file');
+    const leakCosts = (leakReply.costs as Record<string, Record<string, { list?: string }>>).copilot;
+    assert.strictEqual(leakCosts['plain-listed'].list, 'plain-listed', 'a plain name is still marked');
+    assert.ok(Object.entries(leakCosts).some(([n, e]) => n.includes('[redacted]') && e.list === undefined), 'the masked one is kept, not marked');
 
     // ---- finding 4: names through the dialog's figures: a row finds its figure, whatever the shown name became ----
     emit({ type: 'status', status: 'stopped' });

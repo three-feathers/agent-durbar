@@ -147,7 +147,10 @@ export function registerMcpIpc(deps: {
       deps.costs?.()?.set(app, servers, at, (s) => {
         if (!list) return null;
         const raw = list.find((n) => serverKey(n) === s.key);
-        return raw === undefined ? undefined : cleanName(raw, []);
+        if (raw === undefined) return undefined;
+        // the mark is compared with lists cleaned without session values: a name holding one is not marked, so that value is never written (its figure stays until the cap)
+        const plain = cleanName(raw, []);
+        return cleanName(raw, secretValuesFor(id)) === plain ? plain : undefined;
       });
     },
     now: deps.now,
