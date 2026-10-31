@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { MAX_FOLDER_LABEL } from '../src/shared/names';
-import { FolderStore, adapterOf, parseAdapterId, parseDefaultAgent, parseLabel, labelError, renameFolderOp, MAX_LABEL, parseLastSession, parseOpenSessions, parsePrevMarks, MAX_PREV_MARKS, parseSavedFloors, parseSavedFolders, restoreMode, sessionsToRestore, MAX_OPEN_SESSIONS, MAX_SESSION_NAMES, parseSessionNames, parseSessionModes, modeForSession, MAX_SESSION_MODES } from '../src/main/folders';
+import { FolderStore, hasLegacyClosed, adapterOf, parseAdapterId, parseDefaultAgent, parseLabel, labelError, renameFolderOp, MAX_LABEL, parseLastSession, parseOpenSessions, parsePrevMarks, MAX_PREV_MARKS, parseSavedFloors, parseSavedFolders, restoreMode, sessionsToRestore, MAX_OPEN_SESSIONS, MAX_SESSION_NAMES, parseSessionNames, parseSessionModes, modeForSession, MAX_SESSION_MODES } from '../src/main/folders';
 import { GROUND, GROUND_NAME } from '../src/shared/floors';
 
 const abs = (p: string): string => path.resolve('/', p);
@@ -25,8 +25,8 @@ const parsed = parseSavedFolders(
   }),
 );
 assert.strictEqual(parsed.length, 2);
-assert.deepStrictEqual(parsed[0], { workspace: abs('a'), permMode: 'ask', hidden: true, closed: undefined, model: 'auto', effort: 'high', contextTier: undefined, maxAiCredits: undefined, floor: undefined, adapterId: undefined });
-assert.deepStrictEqual(parsed[1], { workspace: abs('b'), permMode: 'read-only', hidden: false, closed: undefined, model: undefined, effort: undefined, contextTier: undefined, maxAiCredits: undefined, floor: undefined, adapterId: undefined }, 'unknown values fall back to safe defaults');
+assert.deepStrictEqual(parsed[0], { workspace: abs('a'), permMode: 'ask', hidden: true, model: 'auto', effort: 'high', contextTier: undefined, maxAiCredits: undefined, floor: undefined, adapterId: undefined });
+assert.deepStrictEqual(parsed[1], { workspace: abs('b'), permMode: 'read-only', hidden: false, model: undefined, effort: undefined, contextTier: undefined, maxAiCredits: undefined, floor: undefined, adapterId: undefined }, 'unknown values fall back to safe defaults');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folders-'));
 try {
@@ -60,20 +60,31 @@ try {
   const d2 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folders2-'));
   try {
     const f2 = path.join(d2, 'f.json');
+    // spec 017 FR-034 (owner decision 2026-10-31: no doors): `closed` in an old file is ignored on read and dropped from the file at the first load
+    fs.writeFileSync(f2, JSON.stringify({ version: 1, folders: [{ workspace: abs('r1'), permMode: 'allow', hidden: true, closed: true, floor: 'f-keep', maxAiCredits: 70 }, { workspace: abs('r2'), permMode: 'ask', closed: false }, { workspace: abs('r3') }] }));
+    assert.strictEqual(hasLegacyClosed(fs.readFileSync(f2, 'utf8')), true);
     const st = new FolderStore(f2);
-    st.upsert({ workspace: abs('r1'), permMode: 'read-only' });
-    assert.ok(st.setClosed(abs('r1'), true));
-    assert.ok(st.setPermMode(abs('r1'), 'allow'));
-    assert.ok(!st.setClosed(abs('nope'), true));
-    const again = new FolderStore(f2).load();
-    assert.strictEqual(again[0].closed, true, 'closed door survives a restart');
-    assert.strictEqual(again[0].permMode, 'allow', 'Allow all is saved as chosen (spec 003 FR-025)');
+    const loaded = st.load();
+    assert.ok(loaded.every((f) => !('closed' in f)), 'no folder carries a closed flag after the read');
+    assert.deepStrictEqual(loaded.map((f) => [f.workspace, f.permMode, f.hidden, f.maxAiCredits]), [[abs('r1'), 'allow', true, 70], [abs('r2'), 'ask', false, undefined], [abs('r3'), 'read-only', false, undefined]], 'everything else about the folders is kept (closed rooms open; hidden stays hidden)');
+    const onDisk = fs.readFileSync(f2, 'utf8');
+    assert.strictEqual(hasLegacyClosed(onDisk), false, 'the file no longer carries closed');
+    assert.ok(!/"closed"/.test(onDisk), 'not even closed: false');
+    assert.deepStrictEqual(new FolderStore(f2).load().map((f) => [f.workspace, f.permMode, f.hidden]), loaded.map((f) => [f.workspace, f.permMode, f.hidden]), 'a second start reads the same');
+    // a file without the flag is not rewritten by a load; a damaged file is never written over
+    fs.utimesSync(f2, 1000, 1000);
+    new FolderStore(f2).load();
+    assert.strictEqual(fs.statSync(f2).mtimeMs, 1000 * 1000, 'a load of a file without the flag writes nothing');
+    const bad2 = path.join(d2, 'bad.json');
+    fs.writeFileSync(bad2, '{"folders": [{"workspace": "x", "closed": true');
+    new FolderStore(bad2).load();
+    assert.strictEqual(fs.readFileSync(bad2, 'utf8'), '{"folders": [{"workspace": "x", "closed": true', 'a damaged file is left as it is');
+    assert.strictEqual(hasLegacyClosed('not json'), false);
+    assert.strictEqual(hasLegacyClosed(JSON.stringify({ folders: 'x' })), false);
+    // the other saves still work on the same file
     st.upsert({ workspace: abs('r1'), permMode: 'allow' });
-    st.upsert({ workspace: abs('r2'), permMode: 'ask' });
-    st.remove(abs('r2'));
-    assert.strictEqual(new FolderStore(f2).load()[0].closed, true, 'closed survives new/removed folders');
-    st.setClosed(abs('r1'), false);
-    assert.strictEqual(new FolderStore(f2).load()[0].closed, undefined);
+    assert.ok(st.setPermMode(abs('r1'), 'allow'));
+    assert.strictEqual(new FolderStore(f2).load()[0].permMode, 'allow', 'Allow all is saved as chosen (spec 003 FR-025)');
   } finally {
     fs.rmSync(d2, { recursive: true, force: true });
   }
@@ -186,7 +197,7 @@ assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: 
   try {
     const f6 = path.join(d6, 'f.json');
     // a file written before this feature: one ground floor, on, every folder on it
-    fs.writeFileSync(f6, JSON.stringify({ version: 1, folders: [{ workspace: abs('old1'), permMode: 'ask', hidden: true, closed: true, model: 'auto', effort: 'high', maxAiCredits: 50 }, { workspace: abs('old2') }] }));
+    fs.writeFileSync(f6, JSON.stringify({ version: 1, folders: [{ workspace: abs('old1'), permMode: 'ask', hidden: true, model: 'auto', effort: 'high', maxAiCredits: 50 }, { workspace: abs('old2') }] }));
     const st = new FolderStore(f6);
     st.load();
     assert.deepStrictEqual(st.floors(), { floors: [{ id: GROUND, name: GROUND_NAME, on: true }], lastFloor: GROUND });
@@ -194,7 +205,7 @@ assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: 
     assert.strictEqual(st.floorOfFolder(abs('unknown')), GROUND);
     const snapshot = (w: string): unknown => {
       const f = new FolderStore(f6).load().find((x) => x.workspace === w);
-      return f && [f.permMode, f.hidden, f.closed, f.model, f.effort, f.contextTier, f.maxAiCredits];
+      return f && [f.permMode, f.hidden, f.model, f.effort, f.contextTier, f.maxAiCredits];
     };
     const before = snapshot(abs('old1'));
     // create + move + restart
@@ -331,10 +342,9 @@ assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: 
     const fl = stF.floors().floors[1].id;
     assert.ok(stF.moveFolder(abs('s1'), fl));
     assert.ok(stF.setHidden(abs('s1'), true));
-    assert.ok(stF.setClosed(abs('s1'), true));
     const others = (): unknown => {
       const f = new FolderStore(f7).load()[0];
-      return [f.model, f.floor, f.maxAiCredits, f.permMode, f.hidden, f.closed, f.effort, f.workspace];
+      return [f.model, f.floor, f.maxAiCredits, f.permMode, f.hidden, f.effort, f.workspace];
     };
     const snap = others();
     assert.ok(stF.setAdapterId(abs('s1'), 'codex'));

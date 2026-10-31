@@ -3,12 +3,13 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 015-018
 title: Room doors (collapse/expand)
-status: built
+status: deprecated
+note: removed 2026-10-31 (owner decision: no doors, no cabins), no replacement; its requirements stay as a record
 -->
 
 **Feature Branch**: `017-room-doors` (milestone 7; amends 001, 006)
 **Created**: 2026-10-16
-**Status**: Implemented (milestone 7)
+**Status**: Deprecated 2026-10-31: removed, owner decision: no doors (FR-029..FR-035). Implemented in milestone 7 before that.
 **Input**: Vikram: each room can be closed/opened with a door; closed rooms become a compact door plate with a one-line status; closed rooms free space for bigger densities.
 
 ## Acceptance
@@ -120,12 +121,12 @@ Earlier open questions (now answered above; kept for the record):
 
 Owner decision: no doors in any world or in flat, including the safety behaviour behind them. Keep it simple. It replaces the first plan to keep Do not disturb. Read for this delta: this spec, 001, 006, 011, 024, 033, 034, 035, 036, 039, 040, 041, 044, 048, 052, 054, 059, 068, 070, 077, 092, 095, 097, 098 and `doors.ts`, `doorops.ts`, `remoteops.ts`, `schedules.ts`, `ipc/doors.ts`, `app.js`, `screens.js`. No code changes here; T020..T027 do it in one PR (spec 021 FR-068).
 
-- **FR-029** **Removed.** The Office with cabins layout and its Settings row; the door button on a session (FR-015); meeting-room signs (FR-003..FR-009, FR-023, FR-026); door drawings, wave, wallet and flames (FR-011..FR-014, FR-019..FR-022, FR-028). **Room doors too** (FR-001, FR-002: door plates, **Close all** and **Open all**; confirmed by the owner). Hide folder and floors remain. The plain status word stays (FR-025), and Open office is the only layout, and the default.
-- **FR-030** **What stays because it is not this feature.** The lobby's Boss-door fixture and the `knock` pose (098 `fixture.doorRect`); lift doors (097 FR-102); doors drawn in a world's art. No door or board block goes into the world contract or spec 102's validator.
-- **FR-031** **Held prompts: never auto-sent, never lost.** A prompt in `durbar-doors.json` at update time stays queued and paused. One plain notice, once, lists them per session: "N scheduled prompts were held behind a door. Doors are gone. Nothing was sent." with **Send** (one by one, through `Scheduler.releaseDoorRun`, so Pause all, limits, a busy agent and the update lock still apply), **Discard**, and **Decide later** (the default, and Escape). What is undecided stays as a row in Settings > Schedules, "Held from before the update", with the same two actions. A run whose session or schedule has gone can only be discarded, and it says why. A half-done `releasing` state stops: nothing further goes out by itself. The file is read through today's caps and `.bad` rule, its `closed` flags are ignored, and it is removed when its queue is empty. `test:` a send counter stays 0 across the update.
-- **FR-032** **Schedules run as normal.** After the update, a schedule for a session that had a closed door just runs as normal: there is no door check anywhere. A plain consequence of this decision (owner decision): a person who had closed a door will see those schedules send, and the notice of FR-031 does not stop them. Only prompts already queued at update time are held back (FR-031).
-- **FR-033** **Remote control: stays off.** The update turns nothing on. It holds by construction: start, resume, rename and the one-shot never call `setRemote(id, true)` (054 FR-070), and on needs its own confirmation (054 FR-011). `test:` a session whose door had turned it off is off after the update, with no `setRemote(true)` call. See 054 FR-065 for what changes after that.
-- **FR-034** **Saved choices.** `durbar.doorsigns` is removed on first start. `closed` in `durbar-folders.json` is ignored and dropped, so closed rooms open; the office fit rule still holds (constitution V). 041's `door` field in `durbar_list_folders` goes (041 FR-066): a change for MCP clients, in the changelog.
+- **FR-029** `[IMPLEMENTED]` **Removed.** The Office with cabins layout and its Settings row; the door button on a session (FR-015); meeting-room signs (FR-003..FR-009, FR-023, FR-026); door drawings, wave, wallet and flames (FR-011..FR-014, FR-019..FR-022, FR-028). **Room doors too** (FR-001, FR-002: door plates, **Close all** and **Open all**; confirmed by the owner). Hide folder and floors remain. The plain status word stays (FR-025), and Open office is the only layout, and the default.
+- **FR-030** `[IMPLEMENTED]` **What stays because it is not this feature.** The lobby's Boss-door fixture and the `knock` pose (098 `fixture.doorRect`); lift doors (097 FR-102); doors drawn in a world's art. No door or board block goes into the world contract or spec 102's validator.
+- **FR-031** `[IMPLEMENTED]` **Held prompts: never auto-sent, never lost.** A prompt in `durbar-doors.json` at update time stays queued and paused. One plain notice, once, lists them per session: "N scheduled prompts were held behind a door. Doors are gone. Nothing was sent." with **Send** (one by one, through `Scheduler.releaseDoorRun`, so Pause all, limits, a busy agent and the update lock still apply), **Discard**, and **Decide later** (the default, and Escape). What is undecided stays as a row in Settings > Schedules, "Held from before the update", with the same two actions. A run whose session or schedule has gone can only be discarded, and it says why. A half-done `releasing` state stops: nothing further goes out by itself. The file is read through today's caps and `.bad` rule, its `closed` flags are ignored, and it is removed when its queue is empty. `test:` a send counter stays 0 across the update.
+- **FR-032** `[IMPLEMENTED]` **Schedules run as normal.** After the update, a schedule for a session that had a closed door just runs as normal: there is no door check anywhere. A plain consequence of this decision (owner decision): a person who had closed a door will see those schedules send, and the notice of FR-031 does not stop them. Only prompts already queued at update time are held back (FR-031).
+- **FR-033** `[IMPLEMENTED]` **Remote control: stays off.** The update turns nothing on. It holds by construction: start, resume, rename and the one-shot never call `setRemote(id, true)` (054 FR-070), and on needs its own confirmation (054 FR-011). `test:` a session whose door had turned it off is off after the update, with no `setRemote(true)` call. See 054 FR-065 for what changes after that.
+- **FR-034** `[IMPLEMENTED]` **Saved choices.** `durbar.doorsigns` is removed on first start. `closed` in `durbar-folders.json` is ignored and dropped, so closed rooms open; the office fit rule still holds (constitution V). 041's `door` field in `durbar_list_folders` goes (041 FR-066): a change for MCP clients, in the changelog.
 - **Behaviour lost, listed.**
 
   | Where | Lost | What remains |
@@ -140,5 +141,5 @@ Owner decision: no doors in any world or in flat, including the safety behaviour
   | 097 FR-001, FR-003, FR-004, *Doors you closed* | Layout button and switch question | Through spec 102 T002 |
   | 098 | **Nothing**: its "cabin" is the lift's cabin outline | None |
 
-- **FR-035** **Status.** At the removal PR, this spec's status becomes `deprecated` (needs spec 021 T053 first), with the note "removed, owner decision 2026-10-31: no doors". Its requirements stay as a record.
+- **FR-035** `[IMPLEMENTED]` **Status.** At the removal PR, this spec's status becomes `deprecated` (needs spec 021 T053 first), with the note "removed, owner decision 2026-10-31: no doors". Its requirements stay as a record.
 - `[KNOWN GAP]` The default office's look changes for everyone, and CPU and memory with more portraits on screen are read only after T021 (097 FR-187's record covers flat).

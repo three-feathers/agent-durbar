@@ -609,7 +609,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .stage[data-d="mini"]{--ch:64px;--sw:78px;--hh:38px;--hsw:42px;--gap:6px;--rp:10px;--stub:26px;--cmax:300px}
 .stage[data-d="micro"]{--ch:52px;--sw:60px;--hh:33px;--hsw:34px;--gap:5px;--rp:8px;--stub:20px;--cmax:270px}
 
-/* room = floor-plan zone: tinted floor with faint tiles, wall edge, door gap, nameplate, plant */
+/* room = floor-plan zone: tinted floor with faint tiles, wall edge, nameplate, plant */
 .stage:not([data-d="full"]) .room{
   border:2px solid var(--wall);border-radius:10px;padding:calc(var(--rp) - 4px) var(--rp) var(--rp);
   background-color:var(--tint);
@@ -619,7 +619,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .stage:not([data-d="full"]) .room[data-tint="blue"]{--wall:var(--cwall-blue,#b5c8d8)}
 .stage:not([data-d="full"]) .room[data-tint="sand"]{--wall:var(--cwall-sand,#d2c4a4)}
 .stage:not([data-d="full"]) .room[data-tint="clay"]{--wall:var(--cwall-clay,#d8c1b3)}
-/* spec 001 FR-183 (issue #813): no doorway notch in the bottom wall; the room's door is the icon in its header */
+/* spec 001 FR-183 (issue #813): no doorway notch in the bottom wall */
 .stage:not([data-d="full"]) .room-head{min-height:calc(var(--rp) + 14px);gap:8px;padding-right:4px} /* spec 052 (#311): the plant is decoration for the full layout only; denser rooms give its room to the 24px controls */
 .stage:not([data-d="full"]) .room-name{font-size:12.5px;line-height:18px;padding:0 9px;border-radius:6px;background:color-mix(in srgb,var(--raised) 72%,transparent);border:1px solid var(--wall)}
 .stage:not([data-d="full"]) .room-head{container-type:inline-size}
@@ -630,7 +630,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .stage .room{container:room / inline-size}
 .stage .room-head .room-name{min-width:0;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
 .stage .room-head:has(.room-aiu) .room-name{flex-shrink:1}
-.stage .room-head .door,.stage .room-head .room-new,.stage .room-head .room-more,.stage .room-head .room-mcp,.stage .room-head .siren{flex:none}
+.stage .room-head .room-new,.stage .room-head .room-more,.stage .room-head .room-mcp,.stage .room-head .siren{flex:none}
 /* spec 052: the floor tag gives way (ellipsis, full name in its title) before the controls touch the plant */
 .stage .room-head .floor-tag{flex:0 1 auto;min-width:28px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @container room (max-width:340px){
@@ -669,8 +669,8 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .desk.card.is-waiting[aria-pressed="true"],.desk.card.is-failing[aria-pressed="true"],.desk.card.is-retrying[aria-pressed="true"],.helper.hc.is-waiting[aria-pressed="true"]{box-shadow:inset 3px 0 0 var(--c-waiting),0 0 0 1.5px var(--sel-border,#7fa0bd)}
 .desk.card.is-error[aria-pressed="true"],.helper.hc.is-error[aria-pressed="true"]{box-shadow:inset 3px 0 0 var(--c-error),0 0 0 1.5px var(--sel-border,#7fa0bd)}
 .sc{display:block;min-width:0}
-.sc>svg,.sc>.cb-scene>svg{width:100%;height:auto;display:block;overflow:visible}
-.is-idle .sc>svg:not(:has(.crew-pic)),.is-idle .sc>.cb-scene>svg:not(:has(.crew-pic)){opacity:.68}
+.sc>svg{width:100%;height:auto;display:block;overflow:visible}
+.is-idle .sc>svg:not(:has(.crew-pic)){opacity:.68}
 .is-idle svg:has(.crew-pic)>:not(.pp),.is-idle svg:has(.crew-pic) .pp>:not(.crew-pic){opacity:.7} /* spec 077 FR-061: an idle crew portrait is full colour; the furniture and text keep the dim */
 .ci{min-width:0;display:flex;flex-direction:column;gap:2px;container-type:inline-size}
 .l1{display:flex;align-items:baseline;gap:6px;min-width:0}
@@ -1023,7 +1023,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .dlg .dbtn{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
 #foldersPop{position:fixed;top:58px;right:14px;z-index:40;width:min(var(--pop-w-m),calc(100vw - 32px));max-height:min(70vh,520px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(40,35,25,.2);padding:var(--pop-pad)}
 #foldersPop[hidden]{display:none}
-/* floors (spec 033): panel like the folders popover; floor tag in room headers and door plates */
+/* floors (spec 033): panel like the folders popover; floor tag in room headers */
 #floorsPop{position:fixed;top:58px;right:14px;z-index:40;width:min(var(--pop-w-m),calc(100vw - 32px));max-height:min(72vh,560px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(40,35,25,.2);padding:var(--pop-pad)}
 #floorsPop[hidden]{display:none}
 #floorsPop:focus{outline:none}
@@ -1053,7 +1053,6 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .fl-err{margin:6px 0 0;font-size:12px;color:var(--tone-bad-ink)}
 .fl-err[hidden]{display:none}
 .floor-tag{flex:0 1 auto;min-width:0;max-width:16ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10.5px;font-weight:650;line-height:16px;padding:0 6px;border-radius:999px;border:1px solid var(--line);background:color-mix(in srgb,var(--raised) 60%,transparent);color:var(--ink-2)}
-.plate-tx .floor-tag{display:inline-block;vertical-align:1px;margin-left:5px;max-width:12ch}
 .fl-into{display:flex;align-items:center;gap:8px;padding:2px 0 8px;font-size:12.5px;color:var(--ink-2)}
 .fl-into select{height:var(--h-ctl);max-width:220px;border:1px solid var(--line-ctl);background:var(--surface-2);border-radius:8px;font:inherit;font-size:12.5px;color:var(--ink)}
 .fp-h{font-size:13px;font-weight:650;padding:8px 0 4px}
@@ -1130,6 +1129,10 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .sched-set .ss-group{margin:8px 0 12px}
 .sched-set .ss-head{display:flex;align-items:baseline;gap:8px;margin-bottom:2px}
 .sched-set .ss-head b{font-size:13px}
+.sched-set .held-row{display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-top:1px solid var(--line)}
+.sched-set .held-row .ss-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;font-size:12px}
+.sched-set .held-row .held-line{color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sched-set .held-row .btn{height:var(--h-ctl);padding:0 10px;font-size:12px;flex:none}
 .sched-set .ss-head small{flex:1;min-width:0;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sched-set .ss-head .btn,.sched-set .scr-tools .btn{height:var(--h-ctl);padding:0 10px;font-size:12px}
 .sched-set .ss-add{display:inline-flex;align-items:center;gap:8px;font-size:13px}
@@ -1204,12 +1207,6 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .panel-in.ro .composer{display:none}
 @media (prefers-reduced-motion:reduce){.subblk.running .sub-st::before,.bubble.caret.md>*:last-child::after{animation:none}}
 
-/* ---------- room doors (spec 017) ---------- */
-.door{flex:none;width:26px;height:26px;padding:0;border:1px solid transparent;border-radius:8px;background:transparent;cursor:pointer;display:grid;place-items:center;margin-left:-4px}
-.door:hover{background:color-mix(in srgb,var(--raised) 70%,transparent);border-color:var(--wall,var(--line))}
-.door-svg{width:20px;height:20px;display:block;overflow:visible}
-.door-svg .leaf{transform-origin:4.4px 10px;transition:transform .25s ease}
-.door:hover .door-svg .leaf{transform:scaleX(.82)}
 /* ---- lobby and walking figures (spec 024): one shared band with the places agents go to ---- */
 .lobby{flex:0 0 100%;display:flex;gap:8px;align-items:stretch;min-width:0}
 .place{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:4px;height:58px;box-sizing:border-box;padding:5px 10px;border-radius:12px;border:1px solid var(--wall);background:color-mix(in srgb,var(--raised) 55%,var(--bg));color:var(--ink-2);transition:background .2s,border-color .2s}
@@ -1279,80 +1276,6 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 /* spec 068: an agent on a coffee break holds a cup (calm: no trouble dot) */
 .walker[data-coffee="1"]::after{content:"";position:absolute;right:-4px;bottom:-2px;width:8px;height:8px;border-radius:1px 1px 3px 3px;background:var(--cup);border:1.5px solid var(--cup-line);box-shadow:2px 0 0 -0.5px var(--cup-line)}
 @media (prefers-reduced-motion:reduce){.walker.walking .wk{animation:none}.walker,.place{transition:none!important}}
-.doors{flex:0 0 100%;display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
-.plate{--tone:#c9c2b2;--tonebg:#f6f2e9;display:flex;align-items:center;gap:9px;min-width:210px;max-width:320px;flex:0 1 auto;min-height:44px;padding:5px 12px 5px 8px;border-radius:14px;border:1.5px solid var(--tone);background:var(--tonebg);cursor:pointer;text-align:left;transition:background .15s,border-color .15s,transform .15s}
-.plate:hover{background:var(--raised);transform:translateY(-1px)}
-.plate .door-svg{width:26px;height:26px;flex:none}
-.plate-tx{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
-.plate-tx b{font-size:13px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.plate-sum{font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.plate-aiu{flex:none;font-size:11px;color:var(--ink-2);white-space:nowrap;font-variant-numeric:tabular-nums}
-.plate-n{flex:none;font-size:11.5px;font-weight:650;color:var(--muted);background:color-mix(in srgb,var(--raised) 70%,transparent);border:1px solid var(--line);border-radius:999px;padding:0 7px;min-width:22px;text-align:center}
-.plate.tone-waiting{--tone:#e5be78;--tonebg:#fdf3df}.plate.tone-waiting .plate-sum{color:var(--amber-ink);font-weight:600}
-.plate.tone-error{--tone:#e3b5af;--tonebg:#f9e9e6}.plate.tone-error .plate-sum{color:var(--red-ink);font-weight:600}
-.plate.tone-busy,.plate.tone-meeting{--tone:var(--cwall-blue,#b5c8d8);--tonebg:#eef3f7}
-.plate.tone-done{--tone:#bcd5c4;--tonebg:#eef5f0}
-.room.enter,.plate.enter{animation:doorin .32s ease-out}
-@keyframes doorin{from{opacity:.0;transform:scale(.96)}to{opacity:1;transform:none}}
-/* spec 017 FR-011..FR-014 (owner 2026-10-23): the session's cabin. Closed: in the desk scene's own box (same aspect ratio, so the layout
-   does not move), the door in the theme's door tokens, the agent's photo and the sign. Open: an open leaf at the scene's edge and a tag. */
-.cabin{position:relative;display:block;width:100%;border-radius:6px;background:var(--door-bg);box-shadow:inset 0 0 0 1px var(--door-line);overflow:hidden}
-.cabin.cb-c{aspect-ratio:176/116}
-.cabin.cb-f{aspect-ratio:200/124}
-.cb-door{position:absolute;left:50%;bottom:0;transform:translateX(-50%);height:92%;aspect-ratio:.66;background:var(--door-leaf);border:1.5px solid var(--door-leaf-line);border-bottom:0;border-radius:4px 4px 0 0}
-.cb-photo{position:absolute;left:50%;top:30%;transform:translateX(-50%);width:58%;aspect-ratio:1;border-radius:50%;overflow:hidden;background:var(--surface);border:1.5px solid var(--door-leaf-line)}
-.cb-photo>svg{display:block;width:100%;height:100%}
-.cb-knob{position:absolute;right:9%;top:62%;width:9%;aspect-ratio:1;border-radius:50%;background:var(--door-knob)}
-.cb-sign{position:absolute;left:50%;bottom:9%;transform:translateX(-50%);display:inline-flex;align-items:center;gap:3px;max-width:96%;height:17px;padding:0 6px 0 4px;border-radius:4px;background:var(--pb);color:var(--pc);border:1px solid color-mix(in srgb,var(--pc) 30%,var(--pb));font-size:10.5px;font-weight:650;line-height:1;white-space:nowrap;box-shadow:0 1px 2px color-mix(in srgb,var(--ink) 18%,transparent)}
-.cb-sign .ds-ic{width:10px;height:10px;flex:none;display:block}
-.cb-sign .cb-w{min-width:0;overflow:hidden;text-overflow:ellipsis;line-height:15px}
-.cb-sign .cb-w::before{content:attr(data-w)}
-.cb-waiting .cb-door{left:58%}
-.cb-figure{position:absolute;left:34%;bottom:0;transform:translateX(-50%);height:74%;aspect-ratio:1}
-.cb-figure>svg{position:absolute;inset:0;display:block;width:100%;height:100%}
-.cb-figure>.cb-arm{inset:auto;right:0;top:0;width:50%;height:100%}
-.cb-arm{transform-origin:56% 98%;animation:cbwave var(--m-wave,1.4s ease-in-out infinite alternate)}
-.cb-arm.still{animation:none;transform:rotate(-6deg)}
-@keyframes cbwave{from{transform:rotate(-14deg)}to{transform:rotate(10deg)}}
-@media (prefers-reduced-motion:reduce){.cb-arm{animation:none;transform:rotate(-6deg)}}
-/* spec 017 FR-015: the door button on the scene's lower left corner of a desk (a sibling of the desk button, keyboard reachable) */
-.unit>.cb-toggle{position:absolute;z-index:2;left:4px;top:calc(var(--ch,60px) - 27px);width:24px;height:24px;padding:0;display:grid;place-items:center;border-radius:6px;border:1px solid var(--line-2);background:var(--surface);color:var(--ink-2);cursor:pointer;box-shadow:0 1px 2px color-mix(in srgb,var(--ink) 14%,transparent)}
-.stage[data-d="full"] .unit>.cb-toggle{top:8px;left:8px}
-.stage[data-grow]:not([data-d="full"]) .unit>.cb-toggle{top:calc(var(--ch,60px) * var(--gf,1) - 27px)}
-.unit>.cb-toggle .door-svg{width:16px;height:16px}
-.unit>.cb-toggle[aria-pressed="true"]{background:var(--pb-idle);color:var(--pc-idle);border-color:var(--pc-idle)}
-.unit>.cb-toggle:hover{background:var(--raised)}
-.unit>.cb-toggle:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
-/* FR-019: the empty wallet held out in front of the figure (at the door) */
-.cb-figure>.cb-wallet{inset:auto 6% 0 6%;width:88%;height:auto}
-/* FR-021: small flames on the desk, inside the scene box, under the tag */
-.cb-fire{position:absolute;left:32%;bottom:6%;height:34%;width:64%;pointer-events:none}
-.cb-fire .fl{transform-box:fill-box;transform-origin:50% 100%;animation:cbflame var(--m-flame,1.1s ease-in-out infinite alternate)}
-.cb-fire .fl2{animation-delay:-.35s}.cb-fire .fl3{animation-delay:-.7s}
-.cb-fire.still .fl{animation:none}
-@keyframes cbflame{from{transform:scale(1,1)}to{transform:scale(.88,1.12)}}
-/* FR-019, FR-020: the same props on the lobby figure (22px): a waving arm at the Boss, the empty wallet anywhere */
-.walker .wprop{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
-.walker .wprop .w-arm{position:absolute;right:-5px;top:-16px;width:10px;height:18px;transform-origin:56% 98%;animation:cbwave var(--m-wave,1.4s ease-in-out infinite alternate)}
-.walker .wprop .w-wallet{position:absolute;left:3px;top:13px;width:16px;height:10px}
-.walker .wprop .still{animation:none;transform:rotate(-6deg)}
-@media (prefers-reduced-motion:reduce){.cb-fire .fl,.walker .wprop .w-arm{animation:none}}
-.cabin:not(.cb-waiting) .cb-sign{top:5%;bottom:auto;left:auto;right:4%;transform:none} /* the sign on the door's top right like a name plate: clear of the chat number (top left) and the door button (lower left) */
-.cb-waiting .cb-sign{bottom:auto;top:6%;left:auto;right:4%;transform:none}
-.cabin.cb-f:not(.cb-waiting) .cb-sign{top:auto;bottom:9%;left:50%;right:auto;transform:translateX(-50%)} /* a full desk: clear of its status badge (top right) */
-.cabin.cb-f.cb-waiting .cb-sign{top:auto;bottom:6%}
-/* review on PR 631: where the desk is narrow (card, mini, micro) the door's sign is its icon only, so it never runs under the chat number;
-   the word is on the desk's status pill or word right beside it (colour is still never the only cue) */
-.stage:is([data-d="card"],[data-d="mini"],[data-d="micro"]) .cb-sign:not([data-sign="shut"]) .cb-w{display:none} /* FR-028: a door you closed keeps its word (DND) on every desk */
-.stage:is([data-d="card"],[data-d="mini"],[data-d="micro"]) .cb-sign{padding:0 3px;gap:0}
-.cb-open{position:absolute;inset:0;pointer-events:none}
-.cb-leaf-open{position:absolute;left:0;top:4%;bottom:0;width:11%;background:var(--door-leaf);border:1px solid var(--door-leaf-line);clip-path:polygon(0 0,100% 9%,100% 91%,0 100%)}
-.cb-open .cb-sign{left:auto;right:3px;top:3px;bottom:auto;transform:none}
-.cb-scene.cb-f .cb-sign{right:auto;left:50%;top:6px;transform:translateX(-50%)}
-.cb-scene{position:relative;display:block}
-.peek .dsign-tx{display:inline-flex;align-items:center;gap:4px}
-.peek .dsign-tx .ds-ic{width:11px;height:11px;flex:none}
-@media (prefers-reduced-motion:reduce){.room.enter,.plate.enter{animation:none}.door-svg .leaf{transition:none}.plate{transition:none}}
 
 /* ---------- permission mode (spec 018) ---------- */
 .modeic{display:inline-grid;place-items:center;width:15px;height:15px;flex:none;color:var(--muted);margin-left:2px;align-self:center}
@@ -1476,9 +1399,6 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .siren-light{fill:var(--amb-light,#d9534f);animation:sirenblink 1.6s ease-in-out 6} /* spec 052 FR-069: same slow breathe, still red and visible */
 @keyframes sirenblink{0%,100%{opacity:1}50%{opacity:.45}}
 @media (prefers-reduced-motion:reduce){.siren-light{animation:none}}
-/* on a door plate the siren sits on the corner of the door icon, so the plate keeps its size */
-.plate{position:relative}
-.plate .siren{position:absolute;left:25px;top:4px;width:15px;height:15px}
 
 /* ---- theme art slots (specs 037-040 stage D): non-layout overlays. A pack that omits a slot renders no element at all,
    so Clean Office stays byte-identical. Art never has size or position of its own: it is drawn under/behind the real

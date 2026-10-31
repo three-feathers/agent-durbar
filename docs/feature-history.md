@@ -51,7 +51,7 @@ Full list in [CHANGELOG.md](../CHANGELOG.md). Short version, since alpha.3:
 Full list in [CHANGELOG.md](../CHANGELOG.md). Short version, since alpha.2:
 
 - **The permission mode is called *Allow all*** (was *Allow edits*; it always approved everything). Names are **Read-only / Ask first / Allow all** (spec 003, PR #15). Builds of alpha.2 still say *Allow edits*.
-- **Usage totals:** the office header shows the total AI credits (AIU) of all agents since the app opened, and each room header and closed door plate shows that folder's total. In memory only, not saved across restarts; "credits not reported" is shown when the runtime sends no figure (spec 011, PR #17).
+- **Usage totals:** the office header shows the total AI credits (AIU) of all agents since the app opened, and each room header shows that folder's total. In memory only, not saved across restarts; "credits not reported" is shown when the runtime sends no figure (spec 011, PR #17).
 - Windows paths in "Approve for this session" scopes are unit-tested (spec 003, PR #16); a known gap remains for case and `/` vs `\` in grant keys.
 - Docs catch-up and a "Keep docs in sync" rule (spec 025).
 - **Still unsigned and not notarized** (steps below). **Untested on real macOS and Windows hardware**: CI builds and unit-tests them, only Linux has been run by hand.
@@ -113,13 +113,12 @@ Spec [034](../specs/034-agent-health/spec.md) (issue #20; amends 001). Built and
 - **Trouble.** An **ambulance** parks by the desk of the agent with the latest error (one ambulance at a time; other agents in Error keep the plain error look). An agent at its credit limit **faints**. One whose permission request has waited 60 s or more **taps the desk**. Three failed tool calls in a row make it **dizzy** (a successful call clears it).
 - **The text never changes.** The card's tooltip and accessible label add the state ("context nearly full (93%)", "needs help: error", "fainted: credit limit reached", "impatient: waiting 2 min for you", "dizzy: 3 failed tool calls in a row").
 - **Serious mode.** Settings > *Agent mood* > **Serious mode** turns every drawing and these words off (saved). With reduced motion the drawings stay but nothing blinks or moves.
-- **Rooms.** A room takes the tone of its worst agent: its own colour, a little darker with a heavy agent and clearly darker with a monster, an agent in Error or any trouble. A small red/blue **siren** blinks next to the room name (and on the door plate of a closed room) while the room has the ambulance or a fainted agent; the room's label then says "Alert: an agent needs help". Header text stays readable (4.5:1 or more): it gets darker with the floor, and the folder path is a little darker in every room.
+- **Rooms.** A room takes the tone of its worst agent: its own colour, a little darker with a heavy agent and clearly darker with a monster, an agent in Error or any trouble. A small red/blue **siren** blinks next to the room name while the room has the ambulance or a fainted agent; the room's label then says "Alert: an agent needs help". Header text stays readable (4.5:1 or more): it gets darker with the floor, and the folder path is a little darker in every room.
 - Simulator: `simwaitold=1` makes waiting requests 2 minutes old, so "impatient" shows at once.
 
 ![Office: a monster, the ambulance, fainted and impatient agents; rooms darkened by their worst agent, sirens in two rooms, 1440x900](screenshots/034-office-1440x900.png)
 ![Close-ups: ambulance, faint, impatient, monster, dizzy](screenshots/034-closeups.png)
 ![Serious mode on, 1280x800](screenshots/034-serious-1280x800.png)
-![Closed rooms: the siren on the door plate of the room with the ambulance, 1280x800](screenshots/034-plates-1280x800.png)
 
 **Limits.** Not checked on a real Copilot session. An agent away at a place in the lobby shows an empty chair, so its drawing is hidden (the words stay); the walking figure shows it with a ring, horns or a small dot (spec 034 FR-015), and the List view writes the mood words in amber at the start of the agent's task (FR-014).
 
@@ -132,7 +131,7 @@ Spec [033](../specs/033-floors/spec.md) (amends 001, 006, 017; uses 011 and 024)
 - **Floors button** in the top bar, shown **once you have two or more floors** (a small icon and `2/3` = two of three floors on; with only the Ground floor the top bar is as before and you create the first floor in **Settings > Floors**). Its panel has an **On/Off** switch per floor, **Only** (that floor on, every other floor off), **Rename**, **Up/Down**, **Delete** (asks first; its folders go back to Ground floor; no folder is removed and no session ended), a **Move to** choice per folder, a *hidden* tag for folders hidden with Folders > Hide, **New floor**, and **New folders go to** (the floor `+ Folder` / `+ Workspace` add to; their tooltips name it). **Settings > Floors** has the same controls; a change in one place shows in the other at once.
 - **A floor that is off** leaves the office, the list, the folder filter, the full-screen chat strip and the lobby, and is **not counted** in Working / Waiting / Idle / Errors / Done. The office uses the freed space (a roomier density). An open chat of an agent on that floor closes.
 - **Its agents keep running.** Switching a floor off pauses, stops or ends nothing. A request waiting there stays pending until you act on it. There are **no alerts** from a floor that is off (no pill, toast, sound or change to the button); what waits for you there is shown **only as text on that floor's row** in the Floors panel and Settings, for example *Off, 1 waiting, 1 at credit limit* (maintainer decision, issue #122). The **office credit total still counts every floor** (since the last reset, spec 011), and its tooltip says how much came from floors that are off.
-- **Room labels.** With two or more floors on, rooms are grouped in floor order and each room header and door plate shows its floor; with one floor on nothing extra is shown. *(Since spec 092 phase 1, 2026-10-27, the office shows one floor at a time with two or more floors on; the label names that floor and the picture below shows the first floor only.)*
+- **Room labels.** With two or more floors on, rooms are grouped in floor order and each room header shows its floor; with one floor on nothing extra is shown. *(Since spec 092 phase 1, 2026-10-27, the office shows one floor at a time with two or more floors on; the label names that floor and the picture below shows the first floor only.)*
 - **Saved** in the app's own folder file (`durbar-folders.json`: floor ids, names, order, on/off and each folder's floor). Floors are local to this computer.
 
 ![Three floors on, rooms labelled, 1440x900](screenshots/033-floors-on-1440x900.png)
@@ -143,13 +142,13 @@ Spec [033](../specs/033-floors/spec.md) (amends 001, 006, 017; uses 011 and 024)
 
 **Limits.** Agents on a floor that is off keep running and can spend credits and wait for approvals; you see it only in the office credit total and on the floor's row in the Floors panel or Settings (no alert, by design). Closing and reopening the app behaves as before for them. The Tools view is not filtered by floor. An older build that saves the folder file drops the floors (folders are kept, all on one floor). Up to 40 floors. Checked on the simulator at 1440x900 and 1280x800 (macOS); Windows and Linux only through CI unit tests.
 
-Tests: `npm test` adds `test:floors` and floor cases in `test:folders` and `test:usagetotals`; `npm run check:office` adds floors cases (3, 2 and 1 floors on, with closed doors, a 40-character floor name, the off-floor text, no Floors button with one floor, and the top bar at 1280x800); set `OFFICE_FONT_FILE` (and `OFFICE_FONT_BOLD`, `OFFICE_FONT_MONO`) to DejaVu Sans files to measure with the wider fonts CI uses on Linux (see the script's header); `scripts/shots-033.js` drives the simulator (`DURBAR_SIM_FLOORS=1`, `DURBAR_SIM_FLOORS_OFF=<name>`) and saves the pictures above.
+Tests: `npm test` adds `test:floors` and floor cases in `test:folders` and `test:usagetotals`; `npm run check:office` adds floors cases (3, 2 and 1 floors on, a 40-character floor name, the off-floor text, no Floors button with one floor, and the top bar at 1280x800); set `OFFICE_FONT_FILE` (and `OFFICE_FONT_BOLD`, `OFFICE_FONT_MONO`) to DejaVu Sans files to measure with the wider fonts CI uses on Linux (see the script's header); `scripts/shots-033.js` drives the simulator (`DURBAR_SIM_FLOORS=1`, `DURBAR_SIM_FLOORS_OFF=<name>`) and saves the pictures above.
 
 ### Status (usage totals kept across restarts)
 
 Spec [011](../specs/011-credit-caps-and-usage-display/spec.md), second delta of 2026-10-17 (issue #21). Built and tested on the simulator and unit tests. **AI credits spent: 0 AIU.** In `v0.1.0-alpha.5`.
 
-- **Saved totals.** The office chip in the header and each folder's total (room header, closed door plate) count **since the last reset** and survive restarts. The main process records every usage event per folder, so it also counts while no window is open. The tooltip says since when, and how much was spent since the app opened.
+- **Saved totals.** The office chip in the header and each folder's total (room header) count **since the last reset** and survive restarts. The main process records every usage event per folder, so it also counts while no window is open. The tooltip says since when, and how much was spent since the app opened.
 - **Only numbers on disk.** `durbar-usage-totals.json` in the app's userData folder holds numbers, folder display names and a fingerprint (hash) of each folder's path; never prompts, output or paths. Folders that are no longer listed keep counting in the office total ("includes folders no longer shown").
 - **Reset.** Settings > Credit cap > *Usage totals* shows the current figure and *Reset usage totals* (with a confirmation). Tool counts in Tools > *All time* are not changed.
 - **"credits not reported"** is shown instead of 0 when a folder's calls carry no credits; in the simulator, `simunreported=<room>` shows it (and `simtotals=1` starts from totals of a previous run).
@@ -276,7 +275,7 @@ Spec [019](../specs/019-mcp-tools-and-context/spec.md) (research in [research.md
 
 Tests: `npm test` adds MCP store/import/validation (fake secret codec, dummy fixtures), tool statistics, MCP/usage mapping on real-event fixtures and the MCP permission key. Screenshots: `scripts/shots-m8.js` (replaced by `scripts/shots-m10.js` in milestone 10; the milestone-8 pictures are kept in `docs/screenshots/`). `npm run check:office`: 95/95 still pass.
 
-### Status (milestone 7: thinking, sub-agents, Markdown, room doors, permission mode)
+### Status (milestone 7: thinking, sub-agents, Markdown, room doors (since removed), permission mode)
 
 Specs [015](../specs/015-thinking-and-subagent-activity/spec.md) to [018](../specs/018-permission-mode-switch/spec.md). Built and tested on the simulator and on sanitised recordings of real events (no further AI credits).
 
@@ -298,14 +297,7 @@ Specs [015](../specs/015-thinking-and-subagent-activity/spec.md) to [018](../spe
 
 ![Markdown](screenshots/m7-markdown.png)
 
-**Room doors.** Each room has a door: click it (or Enter/Space, `aria-expanded`) to close it into a compact plate with a one-line summary (Busy - N working, Waiting for you - N, Available, Meeting in progress, Needs attention - error, All done). Waiting and error rooms stay amber/red and still count in the top-bar pills. Closed rooms free space so the open ones may use a bigger density. Closed state persists in userData. **Close all / Open all** in the toolbar. Simulator: `?closed=a,b` or the buttons.
-
-![Doors 1280x800](screenshots/m7-doors-1280x800.png)
-
-**Doors fix (m7b).** A class-name collision (`.helpers.strip` vs the chat bar's `.strip`, fixed height 64px and a background) made two-row helper strips overlap the next desk row and gave strips a stray box; it is now `.hstrip`. With rooms closed the layout search also gets `full` with 2 helpers and a per-agent helper boost, so open rooms grow into the freed space (3 rooms closed at 1440x900: `full`, 714 of 810px used instead of `roomy`, 427px). `npm run check:office` (Electron under xvfb, no AI credits) checks bounding-box overlap, clipping, floor/page overflow and the 10.5px floor for SIM=12/15 at 1440x900 and 1280x800 with 0/1/2/3/4/all rooms closed; it runs in CI on Ubuntu (job `office-check`, about 70 s).
-
-![Doors, 3 rooms closed, 1440x900](screenshots/m7b-doors-1440x900.png)
-![Doors, 3 rooms closed, 1280x800](screenshots/m7b-doors-1280x800.png)
+**Room doors, doors fix.** *(Removed 2026-10-31 with all doors, spec 017: the pictures and text are gone; the `.helpers.strip` class collision it fixed stays fixed as `.hstrip`.)*
 
 **Permission mode any time.** The chat header chip and the card context menu (right click) switch Read-only / Ask first / Allow all for that agent. It applies from the next request without restarting the session (the broker reads the mode dynamically). Switching to Allow all asks for confirmation and, if a request is pending, offers to approve it; leaving Allow all asks whether to forget session grants. Cards show a small mode icon; the mode is saved per folder and restored. The top-bar selector is the default for new sessions. The confirmation works from the keyboard: focus stays inside it, Tab is trapped, Escape cancels (the mode stays as it was) and focus goes back to the chip; *Allow all* always needs an explicit confirm (spec 003 FR-033).
 
@@ -385,7 +377,7 @@ Remaining: a layout re-search (resize, opening the panel, adding agents) takes r
 The compact densities (`card` / `mini` / `micro`, used automatically for 10-15 agents) no longer look like a dashboard of cards; the office is a floor plan again. No AI credits were used (`DURBAR_SIM=12` / `15`, plus `?sim=30` for a stress check).
 
 - **Every agent is a tiny desk scene** (the prototype's flat-vector person, desk and monitor, cropped and reused). Status is shown by the scene itself: typing hands and a soft monitor glow while working, a thought bubble with blinking cursor while thinking, a raised waving hand and amber monitor when waiting for you, a red screen with `!` on error, a green check on done, and a dimmed figure with a coffee mug when idle. A coloured status word stays next to the name, so colour is never the only cue.
-- **Rooms are floor-plan zones**: tinted floor with faint tiles, a wall edge with a door gap, a nameplate and a plant. Desks sit on a grid so rows and columns line up. The renderer also tries several desk-column counts per room and keeps the one whose desks are closest to a comfortable width among those that fit.
+- **Rooms are floor-plan zones**: tinted floor with faint tiles, a wall edge, a nameplate and a plant. Desks sit on a grid so rows and columns line up. The renderer also tries several desk-column counts per room and keeps the one whose desks are closest to a comfortable width among those that fit.
 - **Helpers are smaller figures at mini-desks** on a strip under their parent, joined by a connector. The strip shows the highest-priority helper (waiting, then error first) plus a `+N more` chip with status dots that expands in place ("Show fewer" collapses it). Sorting (waiting-for-you, then errors first) and the status / folder filters are unchanged.
 - `card` keeps role, a two-line intent, a status pill and usage; `mini` is name, status word and a two-line intent; `micro` is name, status word and a one-line intent. Text never goes below 10.5px.
 - **Calm and light**: flat tints, no emoji, no blur filters in compact scenes. Animations are CSS only, run in coarse steps (a few repaints per second), and all stop under `prefers-reduced-motion`. In headless Chrome with software rendering, 15 animated agents (78 running animations) use about 10% of one core in total and about 0.2% with reduced motion; the sim tick is the only JS and only touches changed agents.
@@ -472,7 +464,7 @@ An Electron app that:
 - [x] Permission approve/deny flow (basic; read-only default)
 - [x] AI-credit counter and per-session caps with a global default (milestone 9; the limit-reached flow follows GitHub's docs and is not yet verified on a real account)
 - [x] Tools "All time" view, Copilot CLI MCP list first, MCP extras per folder (milestone 10), per-folder import from VS Code's `.vscode/mcp.json`
-- [x] Usage totals: office total in the header and per-folder totals in room headers and door plates, kept across restarts with a reset in Settings (spec 011, 2026-10-17)
+- [x] Usage totals: office total in the header and per-folder totals in room headers, kept across restarts with a reset in Settings (spec 011, 2026-10-17)
 - [x] Places in the office: a shared lobby, main agents walk to the place of the tool they use, place per MCP server in Settings (spec 024, simulator only)
 - [x] Resume Copilot CLI/SDK sessions per folder and show VS Code chat history read-only (milestone 6); not done: continuing VS Code's own chats, discovery of sessions from other folders
 - [x] Open in VS Code (`code <folder>`)

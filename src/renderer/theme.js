@@ -117,12 +117,6 @@
     '--pot':'#d4b99a',
     '--link':'#a9b6ad',
     '--siren-base':'#6b6f76',
-    '--door-bg':'#efe8d8',
-    '--door-line':'#b3a07c',
-    '--door-leaf':'#d8c6a8',
-    '--door-leaf-line':'#a89572',
-    '--door-knob':'#8a7650',
-    '--door-panel':'#e8dcc6',
     '--brand-mark':'#4f7f65',
     '--brand-bg':'#e4ece6',
     '--focus':'#2f5f8a', // spec 052 FR-009: 3:1 on every surface (was #4f7fa8)
@@ -188,7 +182,7 @@
   };
 
   /* Scene words a theme may rename (035 FR-001, 036 FR-003). Status, permission and credit wording
-     is never themeable; ids (`place-*` values, door ids) never change — only the display text. */
+     is never themeable; ids (`place-*` values) never change — only the display text. */
   const CLEAN_WORDS={
     'place-library':'Library',
     'place-software':'Software library',
@@ -201,10 +195,6 @@
     'place-postbox':'Postbox',       /* spec 001 FR-038: the next scheduled runs */
     'boss-note':'Went to see the boss', /* spec 001 FR-034: the empty desk's note */
     'lobby-label':'Lobby: the places where agents work',
-    'door-close':'Close room',
-    'door-open':'Open room',
-    'door-title-prefix':'Close the door',
-    'door-plate-suffix':'becomes a compact plate',
   };
 
   /* Motion presets (036 FR-006): fixed per theme, `reduced` is forced when prefers-reduced-motion matches. */
@@ -344,7 +334,7 @@
   /* UI styles (spec 035 FR-009): the app owns their CSS (themes.css); a manifest only names one. */
   /* Art slots the renderer draws (spec 040 FR-010); any other key is dropped. char-*, desk-*, monitor-art and hair-acc
      are overlays of the office kit only (spec 035 FR-013). */
-  const ART_SLOTS=['plant','room-back-wall','room-back-window','room-floor','lobby-art','door-art',
+  const ART_SLOTS=['plant','room-back-wall','room-back-window','room-floor','lobby-art',
     'place-library','place-software','place-terminal','place-web','place-other',
     'char-body','char-robe','char-headwear','char-collar','desk-back','desk-art','monitor-art','hair-acc',
     'gadget-cup','gadget-laptop']; /* spec 070 FR-011: replace the idle cup and the laptop */
@@ -745,7 +735,6 @@
       '--bubble-line':'#b9bce0','--think-dot':'#8b8fc9',
       '--cup':'#f2ecd9','--cup-line':'#b3a37c','--steam':'#9d987e',
       '--link':'#989e8a','--star':'#e0a92c',
-      '--door-bg':'#e6dfd0','--door-line':'#a3967a','--door-leaf':'#c2b096','--door-leaf-line':'#988a6c','--door-knob':'#6e6248','--door-panel':'#ddd3ba',
       '--brand-mark':'#111122','--brand-bg':'#ffec27','--focus':'#111122','--focus-halo':'#ffec27' /* spec 052 FR-052: dark ring, yellow halo: shows on cream and on navy */,'--line-ctl':'#111122',
       '--sel-border':'#ff004d','--sel-ring':'#ffccaa','--sel-ring-2':'#ffccaa','--stat-sel-border':'#ff004d','--stat-sel-ring':'#ffccaa',
       '--avatar-bg':'#e0ead2','--walker-bg':'#fff1e8','--drop':'#6d8cc2','--drop-bg':'rgb(230 236 248 / .93)','--drop-ink':'#26456e',
@@ -782,18 +771,6 @@
         const a='ss..'.repeat(7)+'ss', b='..ss'.repeat(7)+'..', a2='ss..ss.kss..ss..ss..ss..ss.kss';
         return [a,a2,b,b,a,a2,b,b,a,a2,b];
       })()},
-      'door-art':{cell:1,palette:{c:'#e0a92c',s:'#988a6c',b:'#23233a'},rows:[
-        '..ccccccccc....',
-        '.cssssssssc....',
-        '.scsssssssc....',
-        '.scssscsssc....',
-        '.scsssssssc....',
-        '.scsscssssc....',
-        '.ccsscssscc....',
-        '..ccccccccc....',
-        '.........b.....',
-        '.........bb....',
-      ]},
       'lobby-art':{cell:3,palette:{l:'#a89f86',k:'#3a3c52',g:'#5fae76'},rows:[
         'l'.repeat(30),
         'k'+'.'.repeat(28)+'k',

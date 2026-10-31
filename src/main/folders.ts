@@ -22,8 +22,6 @@ export interface SavedFolder {
   workspace: string;
   permMode: SavedPermMode;
   hidden: boolean;
-  /** The room's door is closed in the office (spec 017). */
-  closed?: boolean;
   model?: string;
   effort?: string;
   /** Context tier chosen for this folder's sessions (spec 030); absent = the model's default. Only ever our own choice, never Copilot's settings. */
@@ -236,6 +234,16 @@ export function parsePrevMarks(v: unknown): PrevMark[] | undefined {
 
 const MAX_FOLDERS = 200;
 
+/** Spec 017 FR-034: does a saved folder still carry the old `closed` flag (a door plate)? It is ignored on read and dropped from the file. */
+export function hasLegacyClosed(text: string): boolean {
+  try {
+    const list = (JSON.parse(text) as { folders?: unknown } | null)?.folders;
+    return Array.isArray(list) && list.some((e) => !!e && typeof e === 'object' && 'closed' in (e as object));
+  } catch {
+    return false;
+  }
+}
+
 /** Parse the file text; unknown shapes and bad entries are dropped, duplicates collapsed. */
 export function parseSavedFolders(text: string): SavedFolder[] {
   let doc: unknown;
@@ -256,7 +264,6 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       workspace: o.workspace,
       permMode: o.permMode === 'ask' || o.permMode === 'allow' ? o.permMode : 'read-only',
       hidden: o.hidden === true,
-      closed: o.closed === true ? true : undefined,
       model: typeof o.model === 'string' && o.model.length <= 100 ? o.model : undefined,
       effort: parseEffort(o.effort),
       contextTier: parseTier(o.contextTier),
@@ -294,16 +301,19 @@ export class FolderStore {
   constructor(private readonly file: string) {}
 
   load(): SavedFolder[] {
+    let legacy = false;
     try {
       const text = fs.readFileSync(this.file, 'utf8');
       this.folders = parseSavedFolders(text);
       this.floorsDoc = parseSavedFloors(text);
+      legacy = hasLegacyClosed(text);
     } catch {
       this.folders = [];
       this.floorsDoc = floorOps.defaultFloors();
     }
     // A folder pointing at a floor that is gone is on the ground floor (FR-014).
     for (const f of this.folders) if (f.floor && floorOps.floorOf(f.floor, this.floorsDoc) === floorOps.GROUND) f.floor = undefined;
+    if (legacy) this.save(); // spec 017 FR-034: the old `closed` flags are dropped from the file now, not at some later save
     return this.list();
   }
 
@@ -586,14 +596,6 @@ export class FolderStore {
     cur.prevPinned = pin.length ? pin : undefined;
     cur.prevHidden = hide.length ? hide : undefined;
     this.save();
-  }
-
-  setClosed(workspace: string, closed: boolean): boolean {
-    const cur = this.get(workspace);
-    if (!cur) return false;
-    cur.closed = closed ? true : undefined;
-    this.save();
-    return true;
   }
 
   /** Remember the permission mode chosen for this folder (used when the agent is restored on the next start). */

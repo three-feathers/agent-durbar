@@ -20,12 +20,12 @@ module.exports = async (ctx) => {
   /* spec 021 FR-057 (review of #752): an assert waits on the condition it asserts, never on a fixed sleep */
   const until = async (expr, what) => { assert.ok(await ctx.waitFor(expr, 10000), 'timed out waiting for ' + what); };
   const menuItems = `[...document.querySelectorAll('#modeMenu [data-fact] b')].map(b=>b.textContent).length>=5`;
-  const rooms = () => js(`[...document.querySelectorAll('#stage .room [data-door]')].map(d=>d.dataset.door)`);
+  const rooms = () => js(`[...document.querySelectorAll('#stage .room[data-room]')].map(d=>d.dataset.room)`);
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await H.load({ w, h });
     const before = await rooms();
     const target = before[before.length - 1];
-    const openMenu = `(()=>{const h=document.querySelector(${jsLiteral(`#stage .room [data-door="${target}"]`)}).closest('.room-head');const b=h.getBoundingClientRect();h.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:b.left+40,clientY:b.top+10}));return true})()`;
+    const openMenu = `(()=>{const h=document.querySelector(${jsLiteral(`#stage .room[data-room="${target}"] .room-head`)});const b=h.getBoundingClientRect();h.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:b.left+40,clientY:b.top+10}));return true})()`;
     await js(openMenu); await until(menuItems, 'the folder menu');
     /* the Notes item reads 'Notes…' until the count arrives, then 'Notes (N)…': both are one token, the order stays strict */
     const normNotes = t => t.replace(/^Notes(?: \(\d+\))?…$/, 'Notes (N)…');
@@ -46,7 +46,7 @@ module.exports = async (ctx) => {
     // Remove
     await js(openMenu); await until(menuItems, 'the folder menu again');
     await js(`(window.confirm=()=>true,true)`);
-    await js(`document.querySelector('#modeMenu [data-fact="rm"]').click()`); await until(`document.querySelectorAll('#stage .room [data-door]').length===${jsLiteral(before.length - 1)}`, 'the folder to go');
+    await js(`document.querySelector('#modeMenu [data-fact="rm"]').click()`); await until(`document.querySelectorAll('#stage .room[data-room]').length===${jsLiteral(before.length - 1)}`, 'the folder to go');
     const after = await rooms();
     assert.ok(!after.includes(target) && after.length === before.length - 1, `the folder is removed (${before.length} -> ${after.length})`);
     // one agent per folder: Remove folder in the chat header
@@ -56,7 +56,7 @@ module.exports = async (ctx) => {
     assert.ok(await js(`!!document.getElementById('rmFolderBtn')&&!document.getElementById('rmSessBtn')`), 'a single-session folder shows Remove folder, not Remove from office');
     await H.shot(path.join(OUT, `remove-folder-chat-${w}x${h}.png`), { prep: 'calm', delay: 200 });
     await js(`(window.confirm=()=>true,true)`);
-    await js(`document.getElementById('rmFolderBtn').click()`); await until(`document.querySelectorAll('#stage .room [data-door]').length===${jsLiteral(solo.length - 1)}`, 'the folder to go from the chat header');
+    await js(`document.getElementById('rmFolderBtn').click()`); await until(`document.querySelectorAll('#stage .room[data-room]').length===${jsLiteral(solo.length - 1)}`, 'the folder to go from the chat header');
     const solo2 = await rooms();
     assert.strictEqual(solo2.length, solo.length - 1, `the folder is removed from the chat header (${solo.length} -> ${solo2.length})`);
   }

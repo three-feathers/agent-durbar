@@ -430,4 +430,4 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 
 ### 2026-10-31: no `door` in list folders (spec 017 FR-034; planned, not built)
 
-- **FR-066** `durbar_list_folders` drops its `door` field with spec 017's removal PR (spec 017 T024). A change for MCP clients, said in the changelog.
+- **FR-066** `[IMPLEMENTED]` `durbar_list_folders` drops its `door` field with spec 017's removal PR (spec 017 T024). A change for MCP clients, said in the changelog.

@@ -91,7 +91,7 @@ assert.deepStrictEqual(firstJsonObject('{bad} then {"ok":true}'), { ok: true });
 {
   const evil = { ...light, art: {
     'char-robe': '<script>alert(1)</script>', 'char-collar': '<path d="M1 1" onload="x()"/>', 'desk-art': '<image href="http://x/y.png"/>',
-    'plant': '<a href="http://x"><path d="M1 1"/></a>', 'door-art': '<path d="M1 1" style="fill:red"/>', 'lobby-art': '<rect width="1" height="1" fill="url(http://x)"/>',
+    'plant': '<a href="http://x"><path d="M1 1"/></a>', 'place-web': '<path d="M1 1" style="fill:red"/>', 'lobby-art': '<rect width="1" height="1" fill="url(http://x)"/>',
     'hair-acc': '<circle cx="74" cy="28" r="3" fill="var(--sage)"/>', 'monitor-art': 'x'.repeat(5000), 'not-a-slot': '<path d="M1 1"/>',
   } };
   const r = parseGeneratedTheme(JSON.stringify(evil), 'x', ctx);
@@ -106,7 +106,7 @@ assert.deepStrictEqual(firstJsonObject('{bad} then {"ok":true}'), { ok: true });
 {
   const bad = { ...light, ui: 'javascript:alert(1)', scene: '../x', css: 'body{}',
     tokens: { ...light.tokens, '--sage': 'url(http://x)', '--blue': 'red;x', '--evil': '#000', '--line': 'rgb(1,2,3)' },
-    words: { 'place-library': '<img onerror=x>Archive', 'door-close': '{{x}}', 'place-other': 'a'.repeat(80) } };
+    words: { 'place-library': '<img onerror=x>Archive', 'boss-note': '{{x}}', 'place-other': 'a'.repeat(80) } };
   const r = parseGeneratedTheme(JSON.stringify(bad), 'x', ctx);
   assert.ok(r.ok);
   if (r.ok) {
@@ -117,7 +117,7 @@ assert.deepStrictEqual(firstJsonObject('{bad} then {"ok":true}'), { ok: true });
     for (const k of ['--sage', '--blue', '--evil']) assert.strictEqual(t[k], undefined, k);
     assert.strictEqual(t['--line'], '#010203', 'rgb() is converted');
     assert.strictEqual(w['place-library'], 'img', 'tags are stripped, then the name is cut to whole words that fit a lobby tile (14 characters)');
-    assert.strictEqual(w['door-close'], 'x');
+    assert.strictEqual(w['boss-note'], 'x');
     assert.strictEqual(w['place-other'].length, 14, 'a place name is cut at 14 characters, the tile width');
   }
 }
@@ -338,13 +338,13 @@ assert.match(buildRetryPrompt('a fox den', clean, 'no JSON'), /a fox den[\s\S]*Y
   assert.strictEqual(fitPlaceName('Exactly14chars'), 'Exactly14chars');
   const p = buildThemePrompt('x', clean);
   assert.match(p, new RegExp(`"place-\\.\\.\\." name is shown on a lobby tile and must be at most ${MAX_PLACE_NAME} characters`));
-  const r = parseGeneratedTheme(JSON.stringify({ ...light, words: { 'place-library': 'The Grand Reading Library', 'place-boss': 'Captain', 'door-close': 'Close the whole room for now please' } }), 'x', ctx);
+  const r = parseGeneratedTheme(JSON.stringify({ ...light, words: { 'place-library': 'The Grand Reading Library', 'place-boss': 'Captain', 'boss-note': 'Went to see the boss for now please' } }), 'x', ctx);
   assert.ok(r.ok);
   if (r.ok) {
     const w = r.manifest.words as Record<string, string>;
     assert.strictEqual(w['place-library'], 'The Grand', 'cut to whole words that fit');
     assert.strictEqual(w['place-boss'], 'Captain');
-    assert.strictEqual(w['door-close'], 'Close the whole room for now please', 'other words keep 40');
+    assert.strictEqual(w['boss-note'], 'Went to see the boss for now please', 'other words keep 40');
     assert.ok(r.warnings.some((x) => /place name shortened to fit a lobby tile \(14 characters\): place-library/.test(x)));
   }
 }

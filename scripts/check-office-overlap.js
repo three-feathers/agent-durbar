@@ -2,27 +2,25 @@
  * Office layout check (spec 001 FR-021, T025): no overlaps, no clipping, no floor overflow.
  *
  *   npm run check:office                       (builds, then runs this file under Electron; xvfb-run on Linux without DISPLAY)
- *   OFFICE_SHOTS=/path/dir npm run check:office  also saves a screenshot per combination as <dir>/<prefix>-sim15-1440x900-closed3-....png
- *   OFFICE_QUICK=1 npm run check:office        a smaller matrix (sizes x sims x 0/1/3/all closed, one subset each)
+ *   OFFICE_SHOTS=/path/dir npm run check:office  also saves a screenshot per combination as <dir>/<prefix>-sim15-1440x900-office.png
  *
- * Runs against the simulator only (no AI credits). For SIM=12 and SIM=15, at 1440x900 and 1280x800, with 0, 1, 3, 4 and all
- * rooms closed (every subset of 1 and 3 rooms, plus `?closed=` by room name), and again after expanding a `+N more` chip,
+ * Runs against the simulator only (no AI credits). For SIM=12 and SIM=15, at 1440x900 and 1280x800, and again after expanding a `+N more` chip,
  * it measures the rendered boxes and fails (exit code 1) on:
- *   - two boxes intersecting (desk cards, helper tiles, `+N more`/`Show fewer` chips, helper strips, door plates; tolerance 0.5px),
- *   - a box sticking out of its room / door row / floor (clipped by the floor's overflow:hidden),
+ *   - two boxes intersecting (desk cards, helper tiles, `+N more`/`Show fewer` chips, helper strips; tolerance 0.5px),
+ *   - a box sticking out of its room / floor (clipped by the floor's overflow:hidden),
  *   - a unit that does not contain its own desk and helpers,
  *   - a helper strip with a background, border or a height that is not its content's (the 2026-10-16 `.strip` collision),
  *   - the floor scrolling or the page overflowing (stage data-fit must be ok), text below 10.5px,
  *   - the fixed lobby tiles (spec 001 FR-034/FR-035/FR-038/FR-039): the Boss not in the middle of the row, the coffee corner, Bank and Postbox not last in that order;
  *   - who is at a place (spec 001 FR-036): visitor entries that overlap, stick out of their tile or entry, have no name or tooltip, a count that is not the number of visitors;
- *   - the lobby (spec 024): missing, sticking out of the floor, overlapping a room or the door plates, not holding its places (5 plus the custom ones, spec 024 FR-026), more than one row of tiles, a missing Add button below 8 tiles or one at 8, a place or slot
+ *   - the lobby (spec 024): missing, sticking out of the floor, overlapping a room, not holding its places (5 plus the custom ones, spec 024 FR-026), more than one row of tiles, a missing Add button below 8 tiles or one at 8, a place or slot
  *     sticking out of its tile, a walking figure that is not standing on a slot once the walks have settled, or more figures than empty chairs.
  *   - room headers (spec 001 FR-023/FR-024, also `simrooms=solo`: one agent per folder): two header parts overlapping, or one leaving its header;
  *   - the chat panel (spec 005 SC-001): for every main agent, Copilot-only and mixed kinds, no page overflow and the header's chips and
  *     buttons inside the window without overlapping;
- *   - floors (spec 033, `simfloors=1`): with two or more floors on, a room header or door plate without its floor tag; with one floor on,
+ *   - floors (spec 033, `simfloors=1`): with two or more floors on, a room header without its floor tag; with one floor on,
  *     any floor tag; the top bar controls overlapping each other or sticking out of the window (the Floors button must fit at 1280x800);
- *     a 40-character floor name (renamed through the panel) breaking a room header, a plate or the top bar; a floor that is off with agents
+ *     a 40-character floor name (renamed through the panel) breaking a room header or the top bar; a floor that is off with agents
  *     waiting for you that does not say so on its row in the Floors panel, or that shows it anywhere else (pills, button) (FR-010, issue #122).
  *
  *   - floor screens (spec 092, `simfloors=1`, `simfloors=ground`): with two or more floors on, each floor screen (reached with PageDown) is checked like the whole office
@@ -58,12 +56,12 @@ function pageCheck(expanded, expectPlaces) {
   const stage = document.getElementById('stage'), floor = document.getElementById('floor');
   const R = (e) => { const b = e.getBoundingClientRect(); return { x: b.left, y: b.top, r: b.right, b: b.bottom, w: b.width, h: b.height }; };
   const name = (e) => {
-    const id = e.dataset && (e.dataset.id || e.dataset.door || e.dataset.more);
+    const id = e.dataset && (e.dataset.id || e.dataset.more);
     const p = e.closest('.unit'), pid = p && p.dataset.key;
     return (e.className && typeof e.className === 'string' ? e.className.split(' ').slice(0, 2).join('.') : e.tagName) + (id ? '[' + id + ']' : pid ? '{' + pid + '}' : '');
   };
   const problems = [];
-  const items = [...stage.querySelectorAll('.desk, .helper, .more, .helpers, .liveside, .plate, .place, .place-add')].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; });
+  const items = [...stage.querySelectorAll('.desk, .helper, .more, .helpers, .liveside, .place, .place-add')].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; });
   for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
     const a = items[i], b = items[j];
     if (a.contains(b) || b.contains(a)) continue; /* a strip contains its tiles */
@@ -84,7 +82,6 @@ function pageCheck(expanded, expectPlaces) {
     inside(room, { x: fx0, y: -1e9, r: fx1, b: expanded ? 1e9 : fy1 }, 'the floor');
     room.querySelectorAll('.desk, .helper, .more, .helpers, .liveside').forEach((e) => inside(e, R(room), 'its room ' + room.dataset.key));
   });
-  stage.querySelectorAll('.doors').forEach((d) => { inside(d, { x: fx0, y: -1e9, r: fx1, b: expanded ? 1e9 : fy1 }, 'the floor'); d.querySelectorAll('.plate').forEach((e) => inside(e, R(d), 'the door row')); });
   stage.querySelectorAll('.unit').forEach((u) => u.querySelectorAll('.desk, .helper, .more, .helpers, .liveside').forEach((e) => inside(e, R(u), 'its unit ' + u.dataset.key)));
   /* lobby (spec 024 FR-004, FR-009) */
   const lobby = stage.querySelector('.lobby');
@@ -92,7 +89,7 @@ function pageCheck(expanded, expectPlaces) {
   else {
     const L = R(lobby);
     inside(lobby, { x: fx0, y: -1e9, r: fx1, b: expanded ? 1e9 : fy1 }, 'the floor');
-    stage.querySelectorAll('.room, .doors').forEach((e) => {
+    stage.querySelectorAll('.room').forEach((e) => {
       const p = R(e), ox = Math.min(p.r, L.r) - Math.max(p.x, L.x), oy = Math.min(p.b, L.b) - Math.max(p.y, L.y);
       if (ox > T && oy > T) problems.push(`lobby overlaps ${name(e)} by ${ox.toFixed(1)}x${oy.toFixed(1)}px`);
     });
@@ -138,7 +135,7 @@ function pageCheck(expanded, expectPlaces) {
       const b = R(w), cx = (b.x + b.r) / 2, cy = (b.y + b.b) / 2;
       if (!slots.some((q) => Math.abs((q.x + q.r) / 2 - cx) < 4 && Math.abs((q.y + q.b) / 2 - cy) < 4)) problems.push(`a walking figure is not on a slot (${cx.toFixed(0)},${cy.toFixed(0)})`);
     });
-    /* an empty chair means its agent is at a place (a visitor listed in a tile); a closed room keeps its visitors in the lobby on purpose */
+    /* an empty chair means its agent is at a place (a visitor listed in a tile) */
     const who = places.map((pl) => pl.getAttribute('aria-label')).join(', ');
     document.querySelectorAll('#stage .desk.is-away').forEach((d) => { const n = d.querySelector('.name'); if (n && !who.includes(n.textContent.trim())) problems.push(`empty chair of ${n.textContent.trim()} but nobody of that name is at a place`); });
   }
@@ -176,7 +173,7 @@ function pageCheck(expanded, expectPlaces) {
   if (!hadRenShow) document.body.classList.remove('ren-show');
   /* spec 052 (2026-10-21; real 15-session office at 1280x800): inside a desk card no icon (svg, status dot, warning) and no cost text
      leaves the card or is cut by a clipping ancestor; a cut cost or icon once went unnoticed by every other rule here */
-  /* spec 059 FR-020 item 4: a room header's pencil stays inside the header and covers no door, chip, siren, floor tag, cost or count */
+  /* spec 059 FR-020 item 4: a room header's pencil stays inside the header and covers no chip, siren, floor tag, cost or count */
   stage.querySelectorAll('.room-head > .ren[data-renfolder]').forEach((b) => {
     if (!b.getClientRects().length) return;
     const B0 = R(b), B = { x: B0.x + 4, y: B0.y + 4, r: B0.r - 4, b: B0.b - 4 }, hd = b.parentElement, H = R(hd), who = b.dataset.renfolder;
@@ -227,11 +224,11 @@ function pageCheck(expanded, expectPlaces) {
       if (B.x < N.r - T && B.r > N.x + T && B.y < N.b - T && B.b > N.y + T) problems.push(`room "${key}": the folder pencil is over the name`);
     }
   });
-  /* spec 001 FR-023 (T030): a room header's parts (door, name, path, dots, +, MCP, AIU, plant, floor tag) never overlap or leave the header */
+  /* spec 001 FR-023 (T030): a room header's parts (name, path, dots, +, MCP, AIU, plant, floor tag) never overlap or leave the header */
   stage.querySelectorAll('.room-head').forEach((hd) => {
     const H = R(hd), key = (hd.closest('.room') || {}).dataset?.key || '?';
     const parts = [...hd.children].filter((e) => e.getClientRects().length && R(e).w > 0 && getComputedStyle(e).visibility !== 'hidden'); /* spec 001 FR-179: the rename pencil is in the header's flow now, so it is a part like the others */
-    parts.forEach((e) => { const p = R(e), slack = e.classList.contains('door') ? 5 : 1; /* the door hangs 4px left on purpose */ if (p.x < H.x - slack || p.r > H.r + 1) problems.push(`header part ${name(e)} sticks out of the header of ${key}`); });
+    parts.forEach((e) => { const p = R(e), slack = 1; if (p.x < H.x - slack || p.r > H.r + 1) problems.push(`header part ${name(e)} sticks out of the header of ${key}`); });
     for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
       const p = R(parts[i]), q = R(parts[j]);
       const ox = Math.min(p.r, q.r) - Math.max(p.x, q.x), oy = Math.min(p.b, q.b) - Math.max(p.y, q.y);
@@ -258,7 +255,7 @@ function pageCheck(expanded, expectPlaces) {
   const stageH = R(stage).h;
   return {
     problems,
-    info: { d: stage.dataset.d, h: stage.dataset.h, fit: stage.dataset.fit, stageH: Math.round(stageH), floorH: Math.round(floor.clientHeight), desks: stage.querySelectorAll('.desk').length, plates: stage.querySelectorAll('.plate').length, rooms: stage.querySelectorAll('.room').length, minFont },
+    info: { d: stage.dataset.d, h: stage.dataset.h, fit: stage.dataset.fit, stageH: Math.round(stageH), floorH: Math.round(floor.clientHeight), desks: stage.querySelectorAll('.desk').length, rooms: stage.querySelectorAll('.room').length, minFont },
   };
 }
 
@@ -266,7 +263,7 @@ function pageCheck(expanded, expectPlaces) {
 function floorsCheck(expectTags) {
   const problems = [];
   const stage = document.getElementById('stage');
-  const boxes = [...stage.querySelectorAll('.room-head, .plate')];
+  const boxes = [...stage.querySelectorAll('.room-head')];
   boxes.forEach((b) => {
     const t = b.querySelector('.floor-tag');
     if (expectTags && !t) problems.push('no floor tag in ' + (b.querySelector('.room-name, b') || b).textContent.trim());
@@ -287,8 +284,7 @@ function floorsCheck(expectTags) {
   /* spec 052 FR-105 (round 11): the top bar is one row of about 48px, also with the Floors button (its widest case) */
   const tbh = R(document.querySelector('.topbar')).height;
   if (tbh > 52.5) problems.push(`top bar is ${Math.round(tbh)}px tall: it wrapped to a second row`);
-  /* every room header keeps the floor tag and the + / MCP buttons inside it (a long tag shrinks, it never pushes them out;
-     the door button sits on the room's edge on purpose and is not checked) */
+  /* every room header keeps the floor tag and the + / MCP buttons inside it (a long tag shrinks, it never pushes them out) */
   stage.querySelectorAll('.room-head').forEach((h) => {
     const hb = R(h);
     [...h.querySelectorAll('.floor-tag, .room-new, .room-mcp, .room-dots, .room-aiu')].forEach((c) => { const b = R(c); if (b.width && (b.right > hb.right + 0.5 || b.left < hb.left - 0.5)) problems.push(`room header part sticks out: ${(c.className || c.tagName).toString().slice(0, 20)}`); });
@@ -312,16 +308,8 @@ function offAttentionCheck() {
   return problems;
 }
 
-function subsets(list, k) {
-  const out = [];
-  const rec = (start, cur) => { if (cur.length === k) { out.push(cur.slice()); return; } for (let i = start; i < list.length; i++) { cur.push(list[i]); rec(i + 1, cur); cur.pop(); } };
-  rec(0, []);
-  return out;
-}
-
 async function driver(ctx) {
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
-  const quick = process.env.OFFICE_QUICK === '1';
   const shotsDir = process.env.OFFICE_SHOTS || '';
   const prefix = process.env.OFFICE_SHOT_PREFIX || 'office';
   if (shotsDir) fs.mkdirSync(shotsDir, { recursive: true });
@@ -330,7 +318,7 @@ async function driver(ctx) {
      `stable` waits until the laid-out office has stopped moving (two reads in a row, each after two animation frames, give the same rects). */
   const must = async (expr, what, ms = 15000) => { if (!(await H.until(expr, ms))) throw new Error(`timed out after ${ms} ms waiting for ${what}`); };
   const LAYOUT_SIG = `(async()=>{await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const s=document.getElementById('stage');
-    return innerWidth+'x'+innerHeight+'|'+(s?s.dataset.d+'/'+s.dataset.h+'/'+s.dataset.fit:'')+'|'+[...document.querySelectorAll('#stage .room,#stage .desk,#stage .plate,#stage .more,#stage .room-head,#lift')].map(e=>{const r=e.getBoundingClientRect();return Math.round(r.x)+','+Math.round(r.y)+','+Math.round(r.width)+','+Math.round(r.height)}).join(';')})()`;
+    return innerWidth+'x'+innerHeight+'|'+(s?s.dataset.d+'/'+s.dataset.h+'/'+s.dataset.fit:'')+'|'+[...document.querySelectorAll('#stage .room,#stage .desk,#stage .more,#stage .room-head,#lift')].map(e=>{const r=e.getBoundingClientRect();return Math.round(r.x)+','+Math.round(r.y)+','+Math.round(r.width)+','+Math.round(r.height)}).join(';')})()`;
   const stable = async (what, ms = 15000) => {
     const end = Date.now() + ms;
     let prev = null;
@@ -403,7 +391,7 @@ async function driver(ctx) {
       try { await ctx.waitFor(`window.THEME.characters()===${jsLiteral(wantChars)}`, 5000); } catch (e) { /* reported below */ }
       const ch = await ctx.js(`window.THEME.characters()`);
       if (ch !== wantChars) throw new Error(`characters ${wantChars} were not applied (on screen: ${ch})`);
-      /* Cheeky: the kit drawn must be the crew, and the desk scenes on screen (none when every room is closed) must show it, or the run would measure the theme's own figures */
+      /* Cheeky: the kit drawn must be the crew, and the desk scenes on screen must show it, or the run would measure the theme's own figures */
       if (wantChars === 'cheeky') {
         const crewOn = `window.THEME.sceneKit()==='crew'&&(()=>{const sc=[...document.querySelectorAll('#stage svg.scene')].filter(s=>s.getClientRects().length);return !sc.length||sc.some(s=>/\\|crew(\\||$)/.test(s.dataset.sig||''));})()`;
         try { await ctx.waitFor(crewOn, 8000); } catch (e) { /* reported below */ }
@@ -482,49 +470,18 @@ async function driver(ctx) {
       /* spec 033 FR-007: with only the Ground floor the top bar is as before (no Floors button) */
       total++;
       if (!(await ctx.js(`document.getElementById('floorsBtn').hidden`))) { failed++; console.log(`FAIL sim${sim}-${w}x${h}: Floors button shown with one floor`); }
-      const names = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].map(e=>e.textContent.trim())`);
       const themeTag = (process.env.OFFICE_THEME ? process.env.OFFICE_THEME + ' ' : '') + (wantChars ? wantChars + ' ' : '');
       const tag = `${themeTag}sim${sim}-${w}x${h}`;
-      const combos = [{ n: 0, closed: [] }];
-      for (let k = 1; k < names.length; k++) {
-        let subs = subsets(names, k);
-        if (k !== 1 && k !== 3 && subs.length > 3) subs = subs.slice(0, 3);
-        if (quick) subs = subs.slice(0, 1);
-        subs.forEach((s) => combos.push({ n: k, closed: s }));
-      }
-      combos.push({ n: names.length, closed: names });
-      let shotted = new Set();
-      for (const c of combos) {
-        const q = base + (c.closed.length ? '&closed=' + c.closed.map(encodeURIComponent).join(',') : '');
-        const key = c.n === names.length ? 'all' : String(c.n);
-        const wantShot = !shotted.has(key) ? `${tag}-closed${key}` : '';
-        if (wantShot) shotted.add(key);
-        await run(`${tag} closed=${c.n}${c.closed.length ? ' [' + c.closed.join(',') + ']' : ''}`, q, w, h, wantShot);
-      }
-      /* interactive: Close all / Open all, and a single door */
-      await load(base, w, h);
-      await changed(() => ctx.js(`document.getElementById('closeAll').click()`), `${tag} Close all`);
-      let r = await measure(false); total++;
-      if (r.problems.length) { failed++; console.log(`FAIL ${tag} Close all click: ${r.problems.join('; ')}`); }
-      await changed(() => ctx.js(`document.getElementById('openAll').click()`), `${tag} Open all`);
-      r = await measure(false); total++;
-      if (r.problems.length) { failed++; console.log(`FAIL ${tag} Open all click: ${r.problems.join('; ')}`); }
+      await run(tag, base, w, h, `${tag}-office`);
     }
   }
   /* spec 024 FR-026: the same base cases with three custom places (24-character names in the real run of shots-024-custom.js; the simulator seeds
-     Database, Ticket desk and a 24-character name) so the lobby has 8 tiles. No extra room-closing combinations: none, the first room, the first three, all. */
+     Database, Ticket desk and a 24-character name) so the lobby has 8 tiles. */
   for (const sim of SIMS) {
     for (const [w, h] of SIZES) {
       if (!mine()) continue;
       const base = `sim=${sim}&simfreeze=1&simplaces=3`;
-      await load(base, w, h);
-      const names = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].map(e=>e.textContent.trim())`);
-      const tag = `places3 sim${sim}-${w}x${h}`;
-      const cases = [[], names.slice(0, 1), names.slice(0, 3), names];
-      for (const closed of cases) {
-        const qy = base + (closed.length ? '&closed=' + closed.map(encodeURIComponent).join(',') : '');
-        await run(`${tag} closed=${closed.length}`, qy, w, h, closed.length === 0 ? `${tag}-closed0` : '');
-      }
+      await run(`places3 sim${sim}-${w}x${h}`, base, w, h, `places3 sim${sim}-${w}x${h}-office`);
     }
   }
   /* spec 059 FR-016 (SC-005): every main agent carries a 60-character user name, both sizes; the run fails when no card shows one. sim 3 is the full layout (FR-019: the URL-like name must stay in its 164px card) */
@@ -616,19 +573,19 @@ async function driver(ctx) {
     rows.push({ label: tag, ...res.info, problems: res.problems.length });
     await ctx.js(`(async()=>{const n=document.getElementById('demoNarrow');if(n)n.remove();const t=document.getElementById('demoToggle');t.checked=false;t.dispatchEvent(new Event('change'));await new Promise(r=>setTimeout(r,300));})()`);
   }
-  /* spec 033: floors on/off (3, 2 and 1 floors on), with and without closed doors, both sizes */
+  /* spec 033: floors on/off (3, 2 and 1 floors on), both sizes */
   for (const [w, h] of SIZES) {
     if (!mineIn('floors')) continue;
     const cases = [
       ['3 floors on', 'sim=15&simfreeze=1&simfloors=1', true],
       ['2 floors on', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Personal', true],
       ['1 floor on', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Personal,Client%20A', false],
-      ['3 floors on, 2 doors closed', 'sim=15&simfreeze=1&simfloors=1&closed=blog,infra-notes', true],
-      ['2 floors on, 1 door closed', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Client%20A&closed=mcp-swiss', true],
-      ['40-char floor name', 'sim=15&simfreeze=1&simfloors=1&closed=infra-notes', true, 'long'],
+      ['3 floors on', 'sim=15&simfreeze=1&simfloors=1', true],
+      ['2 floors on', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Client%20A', true],
+      ['40-char floor name', 'sim=15&simfreeze=1&simfloors=1', true, 'long'],
       /* spec 024 FR-026 with spec 033: floors on and three custom places together (8 lobby tiles); same assertions as every other case (pageCheck + floorsCheck) */
       ['3 floors on, 3 custom places', 'sim=15&simfreeze=1&simfloors=1&simplaces=3', true],
-      ['2 floors on, 3 custom places, 1 door closed', 'sim=15&simfreeze=1&simfloors=1&simplaces=3&floorsoff=Personal&closed=mcp-swiss', true],
+      ['2 floors on, 3 custom places', 'sim=15&simfreeze=1&simfloors=1&simplaces=3&floorsoff=Personal', true],
       ['1 floor on, 3 custom places', 'sim=15&simfreeze=1&simfloors=1&simplaces=3&floorsoff=Personal,Client%20A', false],
       /* spec 001 FR-179 (issue #788): schedule and MCP chips next to a floor tag, one agent per folder (one-desk rooms): the name keeps its minimum, the pencil is never over it, what gave way is in the ⋯ menu */
       ['3 floors on, schedules', 'sim=15&simfreeze=1&simfloors=1&simsched=1', true],
@@ -692,7 +649,7 @@ async function driver(ctx) {
     const screens = [
       ['3 floors, 15 agents spread', 'sim=15&simfreeze=1&simfloors=1'],
       ['3 floors, all 15 agents on the Ground floor', 'sim=15&simfreeze=1&simfloors=ground'],
-      ['2 floors on, 1 door closed', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Client%20A&closed=mcp-swiss'],
+      ['2 floors on', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Client%20A'],
       ['3 floors, 3 custom places', 'sim=15&simfreeze=1&simfloors=1&simplaces=3'],
       ['3 floors, schedules, long names', 'sim=15&simfreeze=1&simfloors=1&simsched=1&simnames=long'],
       ['3 floors, one desk per room', 'sim=15&simfreeze=1&simfloors=1&simrooms=solo'],
@@ -802,13 +759,11 @@ async function driver(ctx) {
       if (why.length) { failed++; console.log(`FAIL all-off ${w}x${h} ${label}: ${why.join('; ')}`); }
     }
   }
-  /* spec 001 FR-023/FR-024 (T030): many folders with one agent each (simrooms=solo), with and without a closed door, both sizes */
+  /* spec 001 FR-023/FR-024 (T030): many folders with one agent each (simrooms=solo), both sizes */
   for (const [w, h] of SIZES) {
     for (const sim of SIMS) {
       if (!mine()) continue;
       await run(`solo sim${sim}-${w}x${h}`, `sim=${sim}&simfreeze=1&simrooms=solo`, w, h, shotsDir ? `solo-sim${sim}-${w}x${h}` : '');
-      const names = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].map(e=>e.textContent.trim())`);
-      await run(`solo sim${sim}-${w}x${h} closed=1`, `sim=${sim}&simfreeze=1&simrooms=solo&closed=${encodeURIComponent(names[0] || '')}`, w, h, '');
       const tip = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].every((n)=>(n.title||'').startsWith(n.textContent.replace(/…$/,'')))`);
       total++;
       if (!tip) { failed++; console.log(`FAIL solo sim${sim}-${w}x${h}: a room name has no full-name tooltip`); }
@@ -1041,7 +996,7 @@ async function driver(ctx) {
           total++;
           if (pb.length) { failed++; badB++; console.log(`FAIL browser tab ${w}x${h} agent ${id}: ${pb.slice(0, 4).join('; ')}`); }
         }
-        rows.push({ label: `browser tab ${w}x${h}`, d: 'chat', h: '-', rooms: '-', plates: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: badB });
+        rows.push({ label: `browser tab ${w}x${h}`, d: 'chat', h: '-', rooms: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: badB });
       }
       if (q === 'sim=15&simfreeze=1') {
         /* Simple hides the developer details (VS Code, model chips); the header must still fit and keep + New */
@@ -1059,7 +1014,7 @@ async function driver(ctx) {
         await ctx.js(`(()=>{localStorage.setItem('durbar.detail','expert');return true})()`);
         await load(q, w, h);
       }
-      rows.push({ label: `chat ${w}x${h} ${q}`, d: 'chat', h: '-', rooms: '-', plates: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: bad });
+      rows.push({ label: `chat ${w}x${h} ${q}`, d: 'chat', h: '-', rooms: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: bad });
     }
   }
   /* spec 009 FR-016 / T026: the VS Code chat view opens scrolled to the latest message (and has Continue in VS Code) */
@@ -1077,7 +1032,7 @@ async function driver(ctx) {
     total++;
     if (!vs) { failed++; console.log(`FAIL vschat ${w}x${h}: the VS Code chat view did not open`); }
     else if (vs.sh <= vs.ch * 2 || Math.abs(vs.st + vs.ch - vs.sh) > 2 || !vs.lastIn || !vs.cont) { failed++; console.log(`FAIL vschat ${w}x${h}: not opened at the latest message or no Continue button ${JSON.stringify(vs)}`); }
-    rows.push({ label: `vschat ${w}x${h}`, d: 'vschat', h: '-', rooms: '-', plates: '-', desks: '-', stageH: 0, floorH: 0, minFont: '-', problems: !vs || vs.sh <= vs.ch * 2 || Math.abs(vs.st + vs.ch - vs.sh) > 2 || !vs.lastIn || !vs.cont ? 1 : 0 });
+    rows.push({ label: `vschat ${w}x${h}`, d: 'vschat', h: '-', rooms: '-', desks: '-', stageH: 0, floorH: 0, minFont: '-', problems: !vs || vs.sh <= vs.ch * 2 || Math.abs(vs.st + vs.ch - vs.sh) > 2 || !vs.lastIn || !vs.cont ? 1 : 0 });
   }
 
   /* spec 005 FR-017 / T026: the card menu of a working main agent offers Stop and End session, a helper does not, and the menu fits the window */
@@ -1100,7 +1055,7 @@ async function driver(ctx) {
       if (r && r.open && (r.stop || r.end)) say(`helper ${id} has Stop/End`);
     }
     await ctx.js(`(()=>{const m=document.getElementById('modeMenu');if(m)m.remove();return true})()`);
-    rows.push({ label: `card menu ${w}x${h}`, d: 'menu', h: '-', rooms: '-', plates: '-', desks: ids.w.length, stageH: 0, floorH: 0, minFont: '-', problems: bad });
+    rows.push({ label: `card menu ${w}x${h}`, d: 'menu', h: '-', rooms: '-', desks: ids.w.length, stageH: 0, floorH: 0, minFont: '-', problems: bad });
   }
 
   /* spec 006 FR-023 (T031): the Previous sessions search box at both sizes: shown with 2+ entries, filters by title ignoring case and accents,
@@ -1144,11 +1099,11 @@ async function driver(ctx) {
     }
     total++;
     if (P.length) { failed++; console.log(`FAIL ${tag}: ${P.join('; ')}`); }
-    rows.push({ label: tag, d: 'prev', h: '-', rooms: '-', plates: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: P.length });
+    rows.push({ label: tag, d: 'prev', h: '-', rooms: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: P.length });
   }
 
   console.log('\nlayout summary (density/helpers shown, stage height vs floor):');
-  rows.forEach((r) => console.log(`  ${r.problems ? 'FAIL' : 'ok  '} ${r.label.padEnd(60)} ${String(r.d).padEnd(5)} h=${r.h} rooms=${r.rooms} plates=${r.plates} desks=${r.desks} stage ${r.stageH}/${r.floorH}px minFont=${r.minFont}`));
+  rows.forEach((r) => console.log(`  ${r.problems ? 'FAIL' : 'ok  '} ${r.label.padEnd(60)} ${String(r.d).padEnd(5)} h=${r.h} rooms=${r.rooms} desks=${r.desks} stage ${r.stageH}/${r.floorH}px minFont=${r.minFont}`));
   console.log(`\noffice check: ${total - failed}/${total} checks passed, ${failed} failed`);
   if (failed) process.exitCode = 1;
   if (failed) fs.writeFileSync(process.env.OFFICE_FAIL_MARKER || path.join(os.tmpdir(), 'durbar-office-check.fail'), String(failed));

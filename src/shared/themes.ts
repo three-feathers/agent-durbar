@@ -55,9 +55,11 @@ export function unusableTokens(tokens: unknown): string[] {
 
 /** UI styles a manifest may name (spec 035 FR-009); the same list as `UI_STYLES` in theme.js. */
 /** Art slots the renderer draws (spec 040 FR-010); the same list as `ART_SLOTS` in theme.js. */
-export const ART_SLOTS = ['plant', 'room-back-wall', 'room-back-window', 'room-floor', 'lobby-art', 'door-art',
+export const ART_SLOTS = ['plant', 'room-back-wall', 'room-back-window', 'room-floor', 'lobby-art',
   'place-library', 'place-software', 'place-terminal', 'place-web', 'place-other',
   'char-body', 'char-robe', 'char-headwear', 'char-collar', 'desk-back', 'desk-art', 'monitor-art', 'hair-acc', 'gadget-cup', 'gadget-laptop'];
+/** Spec 017 FR-034: art slots that were removed with the doors. A saved theme naming one still loads; the slot is ignored and listed as dropped. */
+export const RETIRED_ART_SLOTS = ['door-art'];
 /** Scene kits a manifest may name (spec 035 FR-013); the same list as `SCENE_KITS` in theme.js. */
 export const SCENE_KITS = ['office', 'pixel', 'crew'];
 export const UI_STYLES = ['clean', 'retro'];
@@ -100,9 +102,9 @@ export function checkUserManifest(text: string): UserThemeCheck {
   if (m.ui !== undefined && !(typeof m.ui === 'string' && UI_STYLES.includes(m.ui)) && !removed(m.ui)) return { ok: false, error: 'ui must be one of: ' + UI_STYLES.join(', ') };
   if (m.scene !== undefined && !(typeof m.scene === 'string' && SCENE_KITS.includes(m.scene)) && !removed(m.scene)) return { ok: false, error: 'scene must be one of: ' + SCENE_KITS.join(', ') };
   const art = m.art && typeof m.art === 'object' && !Array.isArray(m.art) ? Object.keys(m.art as object) : [];
-  const unknownSlot = art.find((k) => !ART_SLOTS.includes(k));
+  const unknownSlot = art.find((k) => !ART_SLOTS.includes(k) && !RETIRED_ART_SLOTS.includes(k));
   if (unknownSlot !== undefined) return { ok: false, error: 'art slot ' + JSON.stringify(unknownSlot.slice(0, 40)) + ' is not one the app draws' };
   const bad = badToken(m.tokens);
   if (bad) return { ok: false, error: 'token ' + bad + ' is not allowed (keys are --names; values may not hold markup, url() or CSS syntax)' };
-  return { ok: true, id, name, manifest: m, dropped: [...unusableTokens(m.tokens), ...(removed(m.ui) ? ['ui'] : []), ...(removed(m.scene) ? ['scene'] : [])] };
+  return { ok: true, id, name, manifest: m, dropped: [...unusableTokens(m.tokens), ...art.filter((k) => RETIRED_ART_SLOTS.includes(k)).map((k) => 'art.' + k), ...(removed(m.ui) ? ['ui'] : []), ...(removed(m.scene) ? ['scene'] : [])] };
 }

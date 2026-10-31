@@ -12,6 +12,13 @@ const BUILT = new Set(['clean-office', 'corporate', 'retro', 'durbar-indian', 'd
 assert.strictEqual(checkUserManifest('{"id":"ocean","name":"Ocean"}').ok, true);
 assert.strictEqual(checkUserManifest('{"id":"ocean"}').id, 'ocean');
 assert.strictEqual(checkUserManifest('not json').ok, false);
+// spec 017 FR-034 (owner decision 2026-10-31: no doors): a saved theme naming the removed door-art slot or --door-* tokens still loads; they are ignored and listed as dropped
+{
+  const old = checkUserManifest(JSON.stringify({ id: 'olddoors', name: 'Old', tokens: { '--door-bg': '#112233', '--plant-dark': '#223344' }, art: { 'door-art': '<path d="M1 1"/>', 'lobby-art': '<rect width="1" height="1"/>' } }));
+  assert.strictEqual(old.ok, true, 'a theme with door-art loads');
+  if (old.ok) assert.ok(old.dropped?.includes('art.door-art'), 'door-art is listed as dropped');
+  assert.strictEqual(checkUserManifest(JSON.stringify({ id: 'nope', name: 'N', art: { 'not-a-slot': '<path d="M1 1"/>' } })).ok, false, 'any other unknown slot is still refused');
+}
 assert.strictEqual(checkUserManifest('[]').ok, false);
 assert.strictEqual(checkUserManifest('{"id":"Bad Id"}').ok, false, 'id must be lowercase kebab');
 assert.strictEqual(checkUserManifest('{"id":""}').ok, false);

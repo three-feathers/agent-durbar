@@ -59,8 +59,8 @@ assert.strictEqual(H.runWords({ at: 1, outcome: 'ended', reason: 'user' }), 'Loo
 assert.strictEqual(H.runWords({ at: 1, outcome: 'sent', reason: 'no-agent' }), 'Sent', 'a reason only shows where it explains the outcome');
 assert.strictEqual(H.runWords(undefined as unknown as Run), '');
 // the row's line uses the same table
-assert.strictEqual(H.outcomeWord('held'), 'held: not sent yet (closed door, update or break)');
-assert.strictEqual(H.outcomeWord('skipped-door-full'), 'not kept: the closed door already holds as many prompts as it can');
+assert.strictEqual(H.outcomeWord('held'), 'held: not sent yet (update or break)');
+assert.strictEqual(H.outcomeWord('skipped-door-full'), 'not kept: an older version of Durbar could not hold more prompts (an old record)');
 assert.strictEqual(H.outcomeWord('skipped-review'), 'not sent: the prompt is over 10,000 characters, shorten it with Edit'); // spec 044 FR-124
 assert.strictEqual(H.kindOf('skipped-review'), 'stop');
 assert.ok(H.outcomeWord('skipped-review').includes(MAX_PROMPT.toLocaleString('en-US')), 'the word names main\'s limit (the one figure written in words)');

@@ -2,7 +2,7 @@
  * AI theme maker (spec 040 FR-014..FR-020, issue #182). Pure: the prompts for a harness, and turning a reply into a theme
  * manifest that keeps only safe values, with checks that are sent back to the model for up to three passes.
  * - Colours: every Clean Office token may be set (the model gets Clean's values as a reference), hex values only.
- * - Art: character, desk, monitor, plant, place, door and lobby slots as SVG fragments, each passed through the renderer's own
+ * - Art: character, desk, monitor, plant, place and lobby slots as SVG fragments, each passed through the renderer's own
  *   sanitizer (injected, so this file stays pure and the result is exactly what the app will draw).
  * - Words: the scene words, short plain text.
  * The result then goes through `checkUserManifest` like any imported pack. The description is user text: never logged.
@@ -23,8 +23,6 @@ export const GEN_WORDS: Record<string, string> = {
   'place-postbox': 'the tile with the next scheduled runs ("Postbox")',
   'boss-note': 'the note on an empty desk while its agent is at the boss ("Went to see the boss")',
   'lobby-label': 'the lobby caption ("Lobby: the places where agents work")',
-  'door-close': 'button to close a room ("Close room")',
-  'door-open': 'button to open a room ("Open room")',
 };
 
 /** Art slots a generated theme may draw, with where and how big (spec 040 FR-010, FR-020, FR-025). */
@@ -48,7 +46,6 @@ export const GEN_ART: Record<string, string> = {
   'place-other': 'icon for the Other tools place: same as above',
   'gadget-cup': 'the cup on an idle agent\'s desk, REPLACES the app\'s cup: about x 96-114, y 66-87 (steam is added above it by the app)',
   'gadget-laptop': 'the laptop or keyboard on the desk in front of the person, REPLACES the app\'s: about x 55-99, y 79-88',
-  'door-art': 'a small emblem on the room door: viewBox 0 0 20 20, the door is x 4-16, y 2.5-17.5',
   'lobby-art': 'a decorative band behind the lobby tiles: viewBox 0 0 320 36, scaled to cover the lobby band and cropped to its middle on wide windows, so keep the motif in y 8-28 and make it a repeating pattern or a wide scene. Circles stay round. It is drawn BEHIND the tiles and the add button, so keep it faint (opacity .25-.6)',
 };
 export const MAX_ART_CHARS = 4000;
@@ -101,7 +98,7 @@ export function tokenGroupLines(clean: Record<string, string>): string[] {
     out.push(`  ${title}:`, '  ' + ks.map((k) => `${k}=${clean[k]}`).join(' '));
   };
   for (const g of TOKEN_GROUPS) take(g.title, (k) => g.keys.some((m) => (typeof m === 'string' ? m === k : m.test(k))));
-  take('Drawing colours of the people, desks, monitors, doors, plant, ambulance and icons: keep them in the same palette as the rest, and make the desk, chair and walls distinct from each other and from the floor', () => true);
+  take('Drawing colours of the people, desks, monitors, plant, ambulance and icons: keep them in the same palette as the rest, and make the desk, chair and walls distinct from each other and from the floor', () => true);
   return out;
 }
 
@@ -256,7 +253,7 @@ export function artWarnings(slot: string, svg: string): string[] {
   const min = MIN_SHAPES[slot] ?? 1;
   if (shapes < min) out.push(`${slot}: sparse (${shapes} shape${shapes === 1 ? '' : 's'}, at least ${min} expected)`);
   const widths = [...svg.matchAll(/stroke-width="([0-9.]+)"/g)].map((m) => Number(m[1])).filter((n) => Number.isFinite(n));
-  const floor = /^(place-|door-art)/.test(slot) ? 1 : 1.5;
+  const floor = /^place-/.test(slot) ? 1 : 1.5;
   if (widths.length && widths.every((w) => w < floor)) out.push(`${slot}: lines too thin to see (stroke-width under ${floor})`);
   if (!/^(place-)/.test(slot) && shapes > 0) {
     const sizes = [...svg.matchAll(/(?<![-\w])(?:width|height|r|rx|ry)="([0-9.]+)"/g)].map((m) => Number(m[1]));

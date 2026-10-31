@@ -45,7 +45,7 @@ html[data-ui="retro"] .topbar{background:var(--ink);border-bottom-color:var(--in
 html[data-ui="retro"] .brand h1{text-transform:uppercase;letter-spacing:.08em;font-weight:800}
 html[data-ui="retro"] .brand-mark{border-radius:0;box-shadow:3px 3px 0 var(--sel-border)}
 html[data-ui="retro"] .stat,html[data-ui="retro"] .btn,html[data-ui="retro"] .seg,html[data-ui="retro"] .seg button,html[data-ui="retro"] .select-wrap select,html[data-ui="retro"] .defaults-grp select,
-html[data-ui="retro"] .pill,html[data-ui="retro"] .chip,html[data-ui="retro"] .toast,html[data-ui="retro"] .plate,html[data-ui="retro"] .door{border-radius:0}
+html[data-ui="retro"] .pill,html[data-ui="retro"] .chip,html[data-ui="retro"] .toast{border-radius:0}
 html[data-ui="retro"] .btn,html[data-ui="retro"] .stat,html[data-ui="retro"] .seg,html[data-ui="retro"] .select-wrap select,html[data-ui="retro"] .defaults-grp select{border-color:var(--line);box-shadow:0 0 0 1px var(--line),3px 3px 0 1px var(--line)}
 html[data-ui="retro"] .topbar .btn,html[data-ui="retro"] .topbar .stat,html[data-ui="retro"] .topbar .seg,html[data-ui="retro"] .topbar select{box-shadow:0 0 0 1px var(--line),3px 3px 0 1px var(--sel-border)}
 html[data-ui="retro"] .btn:active,html[data-ui="retro"] .stat:active{transform:translate(2px,2px);box-shadow:0 0 0 1px var(--line),1px 1px 0 1px var(--line)}

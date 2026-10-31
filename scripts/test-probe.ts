@@ -231,7 +231,7 @@ for (const [w, h] of [[1280, 800], [1440, 900], [1920, 1080]]) {
     assert.ok(Math.abs(r.top - 15) < 0.02 && Math.abs(r.rowGap - 15) < 0.02, JSON.stringify(r));
     assert.ok(Math.abs(828 - lay(owner, r) - 15) < 0.1, 'the gap below the last row is the even gap');
   }
-  // no room row (only the lobby and the door plates): even gaps only
+  // no room row (only the lobby): even gaps only
   {
     const r = spreadRows([{ h: 58, room: false }, { h: 40, room: false }], 400, 10, 0.2);
     assert.strictEqual(r.rx, 0);

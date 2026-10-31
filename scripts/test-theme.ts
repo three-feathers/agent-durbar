@@ -232,22 +232,22 @@ for(const id of packs){
   assert.ok(T.motion('wave'),id+': motion preset');
 }
 /* --- Art slots (stage D, spec 035 FR-013): built-in packs draw their people and furniture with a scene kit and carry
-   only room, door, lobby, place and plant art; the overlay slots stay for user themes on the office kit --- */
+   only room, lobby, place and plant art; the overlay slots stay for user themes on the office kit --- */
 const OVERLAY_SLOTS=['char-body','char-robe','char-headwear','char-collar','desk-back','desk-art','monitor-art','hair-acc'];
 const ROOM_SLOTS=['room-back-wall','room-back-window','room-floor'];
 const ICON_SLOTS=['place-library','place-software','place-terminal','place-web','place-other'];
 const THEMED_PACKS=['retro'];
-assert.deepStrictEqual([...T.ART_SLOTS].sort(),['plant',...ROOM_SLOTS,'lobby-art','door-art',...ICON_SLOTS,...OVERLAY_SLOTS,'gadget-cup','gadget-laptop'].sort(),'the whitelist is exactly what the renderer draws');
+assert.deepStrictEqual([...T.ART_SLOTS].sort(),['plant',...ROOM_SLOTS,'lobby-art',...ICON_SLOTS,...OVERLAY_SLOTS,'gadget-cup','gadget-laptop'].sort(),'the whitelist is exactly what the renderer draws');
 
 /* Clean Office omits every slot but the plant: THEME.slot() returns null (the renderer draws the default). */
 T.setTheme('clean-office');
 for(const n of T.ART_SLOTS.filter((x:string)=>x!=='plant'))assert.strictEqual(T.slot(n),null,'clean-office omits art slot '+n);
 
-/* Every themed pack: no dead overlay data, its room look (back wall and floor), door and lobby art, all sanitized */
+/* Every themed pack: no dead overlay data, its room look (back wall and floor) and lobby art, all sanitized */
 for(const id of THEMED_PACKS){
   const art=T._builtins()[id].art||{};
   for(const s of OVERLAY_SLOTS)assert.strictEqual(art[s],undefined,id+': no '+s+' (its scene kit draws the people and furniture)');
-  for(const s of ['room-back-wall','room-floor','door-art','lobby-art'])assert.ok(art[s]!==undefined,id+': '+s+' present');
+  for(const s of ['room-back-wall','room-floor','lobby-art'])assert.ok(art[s]!==undefined,id+': '+s+' present');
   for(const k of Object.keys(art))assert.ok(T.ART_SLOTS.includes(k),id+': '+k+' is a slot the renderer draws');
   T.setTheme(id);
   for(const [k,v] of Object.entries(art)){
@@ -331,10 +331,11 @@ T.setTheme('clean-office');
 const partial = T._validateManifest({
   id: 'partial',
   tokens: 'not-an-object',
-  art: { 'door-art': '<script/>', 'lobby-art': '<circle cx="5" cy="5" r="5"/>' },
+  art: { 'place-web': '<script/>', 'door-art': '<circle cx="5" cy="5" r="5"/>', 'lobby-art': '<circle cx="5" cy="5" r="5"/>' },
 });
 assert.deepStrictEqual(partial.tokens, {});
-assert.strictEqual(partial.art['door-art'], undefined, 'unsafe art is dropped');
+assert.strictEqual(partial.art['place-web'], undefined, 'unsafe art is dropped');
+assert.strictEqual(partial.art['door-art'], undefined, 'spec 017 FR-034: a saved theme naming the removed door-art slot still loads; the slot is ignored');
 assert.ok(partial.art['lobby-art'], 'safe art on a real slot is kept');
 
 // spec 037 FR-014: each built-in theme previews its own colours; unknown ids fall back to Clean Office; only colour values

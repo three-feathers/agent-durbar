@@ -21,7 +21,7 @@
     if(e.key==='Tab')return 'tab';
     return null;
   }
-  /* Does this key start an edit on a focused title, card, row or door? F2 anywhere; Enter only when `allowEnter` (the chat title, D1). */
+  /* Does this key start an edit on a focused title, card, row or folder button? F2 anywhere; Enter only when `allowEnter` (the chat title, D1). */
   function startsEdit(e,allowEnter){
     if(!e||e.isComposing||e.keyCode===229||e.altKey||e.ctrlKey||e.metaKey||e.shiftKey)return false;
     return e.key==='F2'||(!!allowEnter&&e.key==='Enter');
@@ -63,7 +63,7 @@
      o.max          maxlength
      o.label        aria-label of the field
      o.hint         sr-only help, linked with aria-describedby
-     o.key          a string that names what is being edited (data-id, door, prev key), for drivers
+     o.key          a string that names what is being edited (data-id, folder menu, prev key), for drivers
      o.check(text)  the rule's reason for this text, or '' (the dialog's pre-check)
      o.submit(text) the existing save; resolves {ok:boolean, reason?:string}; `reason` = a rule refusal (stay open on Enter)
      o.notify(msg)  a toast line (blur save refused)
