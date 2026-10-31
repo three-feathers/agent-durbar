@@ -7,8 +7,8 @@
  *   - T156, T159 (one status event of one agent through the normal path, the median of 8): renders of the office and layout searches (counters the app keeps for
  *     the simulator, `__durbarSimUi.ops()`; the first proxy for T159, `getComputedStyle(#floor)`, was read twice by one render and so showed two renders where there was
  *     one), and layout reads (offset*, client*, scroll* and getBoundingClientRect/getClientRects calls).
- *   - T158: the changes a second of the SVG animations of the compact scenes (they run on the main thread): steps x keyframe intervals / duration, per animation and per
- *     scene, read from the page's own running animations; an animation that is not stepped counts as unbounded.
+ *   - T158 (FR-180): the infinite animations running, and how many of them animate a property other than transform and opacity (those cost the main thread a restyle
+ *     and a repaint on every tick), read from the page's own animations.
  * A row that fails today is named in KNOWN_FAILURES with its fix task and the most it may reach meanwhile; the task's PR deletes the entry.
  *
  *   npm run check:ui -- --only check-office-ops      (builds first)
@@ -22,10 +22,13 @@ const { contentTracing } = require('electron');
 const { helpers, waits, jsLiteral } = require('./driver-helpers');
 
 /* Limits are counts. FR-185 / T148: one text change recalculates at most this many elements (measured after the fix: see the spec). */
-const LIMITS = { elementsRecalculated: 50, rendersPerStatus: 1, searchesPerStatus: 0, readsPerStatus: 40, animationRateMax: 2.5, animationRatePerScene: 12 };
-/* A row over its limit today, with the fix task and the most it may reach meanwhile (a regression guard). T156: the pencils, headers and usage lines of the room a
-   status change rewrote are still fitted (about 190 reads at 15 agents, 160 at 40, from 650 and 1000), and the walkers' positions are read once more. */
-const KNOWN_FAILURES = { 'readsPerStatus@15': { task: 'T156', max: 250 }, 'readsPerStatus@40': { task: 'T156', max: 250 } }; // 'row@n': 'T-number of the task that fixes it'
+const LIMITS = { elementsRecalculated: 50, rendersPerStatus: 1, searchesPerStatus: 0, readsPerStatus: 110, animatedOtherProperties: 0, animationsRunning: 90, 'animationsRunning@40': 260, searchesAtStart: 2, probesAtStart: 90, rendersAtStart: 8 };
+/* A row over its limit today is named here with its fix task and the most it may reach meanwhile; the task's PR deletes the entry. None now.
+   Limits that are floors, not targets: readsPerStatus 110 (measured 98 at 15 agents, 86 at 40 with desks as scenes, from 650 and 998): what is left is what a status change
+   needs: the changed room header's fit (about 20), the lobby figures' positions (27), the spare-height spread (13), the changed desk's pencil (11), the rest small.
+   animationsRunning: measured 78 at 15 agents (halo 13, bar 32, tap 16, wave 4, dotp 4, steam 4, ...) and 250 at 40, limits 90 and 260, counted so that a new animation is noticed.
+   searchesAtStart / probesAtStart: measured 2 / 30 at 15 agents and 1-2 / 47-85 at 40 (limit 90); the cost of a search is its probes (each a forced layout). */
+const KNOWN_FAILURES = {}; // 'row@n': 'T-number of the task that fixes it'
 
 const FLAT = `document.querySelectorAll('#stage .desk[data-id]').length>=1&&!document.querySelector('#stage .ro')`;
 
@@ -65,15 +68,24 @@ module.exports = async (ctx) => {
   const { until } = waits(ctx);
   const rows = {};
   for (const n of [15, 40]) {
-    await H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n) }, ready: FLAT, readyMs: 30000 });
-    /* the SVG animations of the compact scenes run on the main thread: changes a second = steps x keyframe intervals / duration, counted from the page's own animations */
-    const anim = await js(`(()=>{const out=[];for(const svg of document.querySelectorAll('#stage svg.sc-c')){let sum=0,max=0,n=0;
-      for(const a of svg.getAnimations({subtree:true})){const e=a.effect;if(!e||a.playState!=='running'||e.getComputedTiming().iterations!==Infinity)continue; /* the ambulance light's six blinks end by themselves */const kf=e.getKeyframes(),d=e.getComputedTiming().duration;
-        const m=/^steps\\((\\d+)/.exec((kf[0]&&kf[0].easing)||'');const r=m&&d>0?Number(m[1])*(kf.length-1)/(d/1000):Infinity;sum+=r;max=Math.max(max,r);n++;}
-      out.push({n,sum,max});}return out;})()`);
-    rows[`animationRateMax@${n}`] = Math.round(Math.max(...anim.map((x) => x.max)) * 100) / 100;
-    rows[`animationRatePerScene@${n}`] = Math.round(Math.max(...anim.map((x) => x.sum)) * 100) / 100;
-    console.log(`[ops] ${n} agents: ${anim.filter((x) => x.n).length} compact scenes animate; most changes a second for one animation ${rows[`animationRateMax@${n}`]}, for one scene ${rows[`animationRatePerScene@${n}`]}`);
+    const load = () => H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n) }, ready: FLAT, readyMs: 30000 });
+    await load();
+    await js(`localStorage.setItem('durbar.doorsigns','off')`); // desks as scenes, not doors: every working desk animates (the doors and signs are going)
+    await load();
+    /* the start: what the page had done by the time the office was drawn and still (a layout search lays trial offices out into the hidden probe: its cost is the number of probes) */
+    const start = await js(`window.__durbarSimUi.ops()`);
+    rows[`searchesAtStart@${n}`] = start.searches; rows[`probesAtStart@${n}`] = start.probes; rows[`rendersAtStart@${n}`] = start.renders;
+    console.log('[ops]', n, 'agents at start: renders', start.renders, 'layout searches', start.searches, 'probes', start.probes);
+    /* FR-180: only `transform` and `opacity` animate. An animation of any other property (the halo's fill-opacity was one) is restyled and repainted on the main
+       thread on every tick, instead of running on the compositor; counted from the page's own running animations, with their number */
+    const anim = await js(`(()=>{const ok=new Set(['offset','easing','composite','computedOffset','transform','opacity']);let running=0,other=0;const names={};
+      for(const a of document.getAnimations()){if(a.playState!=='running'||!a.effect||a.effect.getComputedTiming().iterations!==Infinity)continue;running++;
+        const bad=new Set();for(const kf of a.effect.getKeyframes())for(const k of Object.keys(kf))if(!ok.has(k))bad.add(k);
+        if(bad.size){other++;names[[...bad].join(',')]=(names[[...bad].join(',')]||0)+1;}}
+      return {running,other,names};})()`);
+    rows[`animatedOtherProperties@${n}`] = anim.other;
+    rows[`animationsRunning@${n}`] = anim.running;
+    console.log('[ops]', n, 'agents:', anim.running, 'infinite animations running,', anim.other, 'animate a property other than transform and opacity', JSON.stringify(anim.names));
     await js(`(()=>{const s=document.createElement('style');s.textContent='*,*::before,*::after{animation:none!important;transition:none!important}';document.head.append(s);})()`);
     /* one text change in one desk (a name's text node replaced: a child-list change, which is what a render does and what `:has()` watches), then a layout read so that the style is recalculated inside the trace */
     const change = (i) => js(`(()=>{document.querySelector('#stage .desk[data-id] .name').textContent=${jsLiteral('Op ')}+${i};return document.body.offsetHeight;})()`);
@@ -109,9 +121,9 @@ module.exports = async (ctx) => {
   for (const [key, value] of Object.entries(rows)) {
     const [row, n] = key.split('@');
     const known = KNOWN_FAILURES[key];
-    if (value > LIMITS[row]) {
-      if (known && value <= known.max) console.log(`[ops] ${key} = ${value} over ${LIMITS[row]} (known failure, ${known.task}; may not pass ${known.max})`);
-      else failed.push(`${key} = ${value}, limit ${known ? known.max : LIMITS[row]}`);
+    if (value > LIMITS[key] || LIMITS[row]) {
+      if (known && value <= known.max) console.log(`[ops] ${key} = ${value} over ${LIMITS[key] || LIMITS[row]} (known failure, ${known.task}; may not pass ${known.max})`);
+      else failed.push(`${key} = ${value}, limit ${known ? known.max : LIMITS[key] || LIMITS[row]}`);
     } else if (known) failed.push(`${key} = ${value} is within its limit: delete its KNOWN_FAILURES entry (${known.task})`);
   }
   assert.deepStrictEqual(failed, [], `op rows over their limits:\n  ${failed.join('\n  ')}`);
