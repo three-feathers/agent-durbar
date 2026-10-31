@@ -29,8 +29,8 @@ delta in this PR for its one new button (FR-060).
 
 Existing capabilities checked (AGENTS.md FR-031):
 - **Self-paced loops (spec 072)** send a prompt again and again on Durbar's timer, within Durbar's limits. Autopilot sends one
-  message and lets the agent app continue inside its own goal loop. The two do not share a mechanism. A loop's pass on a
-  session in Autopilot is sent as a normal Allow all message (FR-004).
+  message and lets the agent app continue inside its own goal loop. The two do not share a mechanism. A loop's pass runs in
+  its schedule's mode (FR-083; spec 044 FR-180).
 - **Reused**: `setModeOp` and the Allow all path (FR-002), the cap paths of spec 011 and 012 FR-150 (FR-022), the question
   card (FR-030), the plan card (FR-060), the organization checks of spec 076 (FR-070), and the git status runner of spec 063
   (FR-023).
@@ -85,7 +85,7 @@ Number check (2026-10-31):
   whose adapter reports support. It is not a separate toggle.
 - **D2** **The agent's questions** are shown as cards but not waited on: the agent decides by itself and keeps going.
 - **D3** **The spend cap is optional**. The continuation limit defaults to 5.
-- **D4** **Scope**: Autopilot is per session and confirmed each time, like Allow all. A folder cannot default to Autopilot.
+- **D4** **Scope**: Autopilot is per session and confirmed each time, like Allow all. A folder cannot default to Autopilot. *(Amended 2026-10-31 19:02 UTC, FR-084: a schedule may hold it, confirmed when chosen.)*
 - **D5** **Claude Code**: the Allow all mapping (`bypassPermissions`) plus `/goal <condition>`.
 - **D6** **Plan approval** may offer **Approve and run on Autopilot**. This needs a spec 066 delta (FR-060 here, and spec 066
   `## Changes`).
@@ -150,7 +150,7 @@ the session goes back to **Allow all**. The chip and the chat say so (FR-050).
 
 - **Autopilot…** appears only for agent apps that report the capability (FR-001).
 - It is greyed out with the reason when the organization's policy blocks Allow all or the app's goal feature (FR-070).
-- It is never offered as a folder's default, when adding a folder, or in schedules (FR-004).
+- It is never offered as a folder's default or when adding a folder (FR-004). A schedule may choose it (FR-084).
 - After a restart or a resume, the session comes back in **Allow all**, never in Autopilot, and the chat says so (FR-005).
 
 ### Story 4 - Approve a plan and let it run (P2)
@@ -183,15 +183,14 @@ the dialog says plainly that only done, the continuation limit, no progress, blo
     check, the sandbox note of spec 087 FR-022c, and the pending approvals.
   - **Read-only and Ask first can never be combined with Autopilot.** Choosing either one ends Autopilot first (FR-051), so
     no code path leaves `autopilot` set while the mode is not `allow`.
-- **FR-003** **The confirmation is asked every time** Autopilot is turned on: from the menu, from *Run again on Autopilot…*, and
+- **FR-003** *(For a schedule, asked when it is chosen or edited: FR-084.)* **The confirmation is asked every time** Autopilot is turned on: from the menu, from *Run again on Autopilot…*, and
   from the plan card. There is no "don't ask again".
 - **FR-004** **Never a default.**
   - Not offered when adding or creating a folder (the `confirmAllow` path), nor as a folder's mode.
-  - Not used by schedules: a scheduled prompt runs in the mode attached to that schedule, never as an Autopilot run (FR-083;
-    spec 044 FR-180).
+  - A scheduled prompt runs in the mode attached to that schedule (FR-083, FR-084; spec 044 FR-180).
   - Not settable by Durbar's MCP tools or by remote control.
   - `agents:setAutopilot` is window-only (`fromApp`).
-- **FR-005** **Never saved.**
+- **FR-005** **Never saved** *(for a session; a schedule stores its own choice: FR-084)*.
   - The folder store keeps `allow` for a session that was on Autopilot (`setSessionMode` gets `allow`).
   - After a restart, a sign-in refresh (spec 012 FR-158), *End session* followed by a message, or a resume from Previous
     sessions, the session is in Allow all. The chat says: "Autopilot ended when this session closed. It is in Allow all."
@@ -427,7 +426,7 @@ the dialog says plainly that only done, the continuation limit, no progress, blo
 ## Success Criteria
 
 - **SC-001** On the simulator, every end reason is reachable and is shown with words and an icon, at both sizes, 15 agents.
-- **SC-002** Tests prove that no path sets `autopilot` with a mode other than `allow`, and that nothing saves it.
+- **SC-002** Tests prove that no path sets `autopilot` with a mode other than `allow`, and that nothing saves it for a session or folder; only a schedule's own confirmed choice is stored (FR-084).
 - **SC-003** Tests prove that the continuation count stops a run at `limit + 1` for each adapter's fake.
 - **SC-004** A real run per app is recorded under `## Changes` before `verified` becomes true, as one tiny task within the D7
   budget.
@@ -435,9 +434,9 @@ the dialog says plainly that only done, the continuation limit, no progress, blo
 ## Constitution
 
 - **III (safe by default)**:
-  - Autopilot is an explicit, per-session opt-in, confirmed every time, never a default, never saved, and named honestly. It
-    only adds to Allow all, which is already the explicit opt-in that III names, so **no amendment is needed**: Read-only stays
-    the default, and Ask first and Read-only cannot combine with it.
+  - In a session, Autopilot is an explicit, per-session opt-in, confirmed every time, never a default, never saved, and named honestly. It
+    only adds to Allow all, which is already the explicit opt-in that III names: Read-only stays the default, and Ask first and Read-only cannot combine with it.
+  - **On a schedule (FR-084, spec 044 FR-182) this is for the three owners to confirm**: the opt-in is per schedule and agent, stored, and runs unattended. Whether III needs an amendment is proposed in the PR, not decided here.
   - Questions are answered by a fixed sentence, never by text from the agent.
   - Nothing new is stored. No tokens are read.
 - **II (adapters are plug-ins)**: the capability and the events are normalized, and vendor calls stay in the adapters.
@@ -523,5 +522,7 @@ empty `git init` folder, with the same SDK, flags and JSON-RPC that Durbar's ada
   - **FR-083 (first wording, replaced by the entry below) A later message never runs silently under the goal loop.** D8 stands: after a run ends **done**, the session stays in Autopilot. But Copilot's runtime also stays in `autopilot` then (FR-050), so a scheduled message (FR-004), which is a normal message, could run under the app's goal loop with no run counting it. A message that is not a run MUST NOT reach the app in its goal mode: the adapter leaves that mode for the message where it can (Copilot `mode.set interactive`) and returns to it after, without changing what the session shows; where it cannot, the message is **refused with a visible reason**, and the gap is written `[KNOWN GAP]`. Test with the fake adapter. Task T096 (Phase 3). Asked for the alternative of returning the session to its previous mode at a done ending: **not taken**, because it would replace D8, which is the owner's; open for the owner.
   - **Phase 1 corrections to the plan**: `setAutopilot(sessionId, s, reason?)` carries the end reason (plan's no-progress call needs one). `AutopilotRun` takes one injected `halt()` that each adapter writes, because FR-050's order differs per app. An `ended` event's `n` is the continuations that ran, never above `limit`, so "after N more turns" (FR-040) reads 5 with limit 5; `continued` never exceeds `limit`.
 - **2026-10-31 18:56 UTC (owner decision, Vikram, relayed by his coordinating agent: "a scheduled prompt runs in the mode attached to that scheduled prompt")**: replaces FR-083's wording above. D8 otherwise stands.
-  - **FR-083** A scheduled prompt runs in **its schedule's mode** (spec 044 FR-180). The session's Autopilot state does not decide. The adapter leaves the goal mode for that prompt, applies the schedule's mode for that one turn, and when the turn ends the session returns to what it was, Autopilot included (D8). It is not a run: the continuation count, limit and end card are untouched, and no `autopilot` event is emitted for it. Where the adapter cannot switch a live session, the prompt is **not sent**: the run log says why, visibly, and it is `[KNOWN GAP]` per app. Fake adapter test for a scheduled prompt after a done ending, for both outcomes. T096.
-  - **A schedule cannot be set to Autopilot and never counts as a run** (proposed, open to the owner): a schedule is saved and runs unattended, and FR-003 and FR-005 with D4 say Autopilot is confirmed each time and never saved. This is read from those decisions; the owner has not ruled on this case itself.
+  - **FR-083** A scheduled prompt runs in **its schedule's mode** (spec 044 FR-180). The session's Autopilot state does not decide. The adapter leaves the goal mode for that prompt, applies the schedule's mode for that one turn, and when the turn ends the session returns to what it was, Autopilot included (D8). Unless the schedule's own mode is Autopilot (FR-084), it is not a run: the session's continuation count, limit and end card are untouched, and no `autopilot` event is emitted for it. Where the adapter cannot switch a live session, the prompt is **not sent**: the run log says why, visibly, and it is `[KNOWN GAP]` per app. Fake adapter test for a scheduled prompt after a done ending, for both outcomes. T096.
+- **2026-10-31 19:02 UTC (owner ruling, Vikram, relayed by his coordinating agent: schedules support all modes, with a selection on each schedule)**: amends D4, FR-003, FR-004, FR-005, SC-002 and the *Constitution* section. Spec 044 FR-180..FR-184 hold the schedule side.
+  - **FR-084 Autopilot on a schedule.** A schedule may choose Autopilot where the agent has `capabilities.autopilot`; elsewhere it is not offered, and a stored one is refused with a visible reason (spec 044 FR-184). Each due time is **one run**: Autopilot's continuation limit (always on, 1-20, stored on the schedule, default 5), its optional spend cap (D9 applies; the schedule's own limit, spec 044 FR-015, is separate and whichever is reached first ends it), the same chip and visible state, the same **Stop** (FR-050), questions not waited on (D2). The confirmation is asked when it is chosen or edited and names the schedule and the agent (spec 044 FR-182), not at each run. A running one makes the next due time `skipped-busy`. When the run ends, however it ends, the session returns to what it was (FR-083): S3 and D8 apply to a session's own Autopilot, not to a schedule's run. Not on a loop (open, spec 044). T097.
+  - **What this changes in earlier decisions, for the owner's eye**: D4 and FR-003 ("confirmed each time") hold for sessions only; a recurring schedule runs many times on one confirmation. FR-005 and SC-002 ("never saved") hold for sessions and folders only. S3 ("any other ending returns to Allow all") does not apply to a schedule's run. A session in Read-only can now carry one Autopilot run (the run's mode is `allow` plus the goal, so FR-002 still holds for the run). **Spend**: each run is bounded by the limit, but the spend cap is optional (D3), so a schedule that recurs has no total bound unless it sets one.

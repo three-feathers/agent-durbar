@@ -6,7 +6,7 @@
 `until()`. Real checks are separate tasks (T090-T094) within the owner's budget (D7; Copilot runs need an OK each, D11).
 
 **Format**: `- [ ] Tnnn [P?] description (file) [requirements]`. `[P]` means the task can run in parallel. One phase is one PR.
-Numbers taken: spec 099, FR-001..FR-090 (sparse by group), T001..T096.
+Numbers taken: spec 099, FR-001..FR-090 (sparse by group), T001..T097.
 
 ## Phase 0: Spec (this PR)
 
@@ -64,7 +64,8 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group), T001..T096.
 - [ ] T038 README Safety model, mode-menu sentence, *What Durbar does not do*, *Costs and caps*; changelog fragment [FR-090]
 
 - [ ] T095 Main validates every `autopilot` event and `question.autoAnswered` with `eventguard` before use, and drops a bad one with a masked log line; test on a stand-in with a bad event from a fake adapter [FR-082]
-- [ ] T096 A scheduled prompt runs in its schedule's mode, leaving the goal mode for that turn and returning after; not a run; where the adapter cannot switch, not sent, with a visible reason and a `[KNOWN GAP]`. Fake adapter test for both outcomes after a done ending. Needs spec 044 T140 [FR-083]
+- [ ] T096 A scheduled prompt runs in its schedule's mode, leaving the goal mode for that turn and returning after; where the adapter cannot switch, not sent, with a visible reason and a `[KNOWN GAP]`. Fake adapter test for both outcomes after a done ending. Needs spec 044 T140 [FR-083]
+- [ ] T097 Autopilot on a schedule: one run per due time with the limit, optional cap, visible state and Stop; `skipped-busy` while one runs; the session returns to what it was; not offered without the capability, refused when stored. Fake adapter and simulator tests; 0 credits; a real run is `real:` to do, `[KNOWN GAP]`. Needs spec 044 T140, T141 [FR-084]
 
 ## Phase 4: Plan first (PR `099-p4-plan`)
 
