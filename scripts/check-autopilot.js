@@ -196,6 +196,8 @@ module.exports = async (ctx) => {
     assert.strictEqual(run.pending, 0, 'and nothing waits');
     assert.notStrictEqual(run.state, 'waiting');
     assert.deepStrictEqual(await small('#panel .note.ap-line, #panel .note.ap-question, #modeChip'), [], `${w}: chat lines`);
+    const stacked = await js(`(()=>{const n=[...document.querySelectorAll('#panel .note.ap-line, #panel .note.ap-question')].map(x=>x.getBoundingClientRect());return n.every((r,i)=>i===0||r.top>=n[i-1].bottom-1);})()`);
+    assert.ok(stacked, `${w}: the lines stack, one under the other`);
     await H.shot(path.join(OUT, `099-chip-run-${w}.png`), { prep: 'calm' });
     // Stop: at once, back to Allow all, and the card says so
     await H.click('#stopBtn');
@@ -230,16 +232,14 @@ module.exports = async (ctx) => {
     assert.match(desk.aria, /Autopilot/, 'the desk says it in words');
     assert.deepStrictEqual(await small('#stage .desk .ci, #stage .desk .info'), [], `${w}: desks`);
     assert.match(await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${JSON.stringify(id)});return document.querySelector('#stage .desk[data-id="'+CSS.escape(a.id)+'"]').getAttribute('aria-label');})()`), /On Autopilot:/, 'the desk line');
-    const viewBtn = await js(`(()=>{const b=document.querySelector('[data-view="list"],#viewList');if(b){b.click();return true;}return false;})()`);
-    if (!viewBtn) await H.key('l', undefined, { char: 'always' });
+    await H.click('#vList');
     await must(`!!document.querySelector('#list .lrow .ap-badge')`, 'the list says Autopilot');
     const list = await js(`(()=>{const b=document.querySelector('#list .lrow .ap-badge');const s=getComputedStyle(b);const r=b.getBoundingClientRect();return {t:b.textContent,font:parseFloat(s.fontSize),n:document.querySelectorAll('#list .lrow .ap-badge').length,w:r.width,color:s.color,allowBadges:[...document.querySelectorAll('#list .lrow .modebadge')].filter(x=>x.textContent==='Allow all').length};})()`);
     assert.strictEqual(list.t, 'Autopilot');
     assert.ok(list.font >= 10.5, `list badge ${list.font}`);
     assert.ok(list.n >= 10);
     await H.shot(path.join(OUT, `099-list-${w}.png`), { prep: 'calm' });
-    await js(`(()=>{const b=document.querySelector('[data-view="office"],#viewOffice');if(b)b.click();})()`);
-    await H.key('l', undefined, { char: 'always' });
+    await H.click('#vOffice');
 
     // down from Autopilot, by the menu: Allow all is only a stop; another mode ends it first
     await H.load({ w, h, query: q() });
@@ -298,6 +298,12 @@ module.exports = async (ctx) => {
     assert.strictEqual(n.btns.includes('Run again on Autopilot…'), reason !== 'done', `S3 ${reason}`);
     const c = await chip();
     if (reason === 'done') assert.match(c.text, /^Autopilot$/, 'D8: stays on');
+    else {
+      const st = await js(`document.querySelector('#panel .st-pill,#panel [class*="pill"]')?document.querySelector('#panel .st-pill,#panel [class*="pill"]').innerText:''`);
+      const task = await js(`window.__durbarSimUi.agents().find(a=>a.id===${JSON.stringify(o.id)}).task`);
+      assert.ok(!/^Done/.test(st.trim()), `${reason}: never Done: ${st}`);
+      assert.match(String(task), /^Autopilot ended: /, `${reason}: the status says why: ${task}`);
+    }
     else assert.match(c.text, /^Allow all/, `S3 ${reason}: ${c.text}`);
     if (w === 1280 || reason === 'limit') await H.shot(path.join(OUT, `099-end-${reason}-${w}.png`), { prep: 'calm' });
     shown.add(reason);

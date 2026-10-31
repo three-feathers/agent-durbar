@@ -150,7 +150,7 @@ function pageChecks(): void {
   const q = /\bq\.question\b/g;
   assert.ok(q.test(code) && /p\.textContent=String\(q&&q\.question/.test(code), 'the question is textContent');
   assert.ok(!/innerHTML\s*=\s*[^I]/.test(code), 'one innerHTML, for an icon: ' + (code.match(/innerHTML\s*=\s*.{0,40}/g) ?? []).join());
-  assert.ok(/addNote\(chat,esc\(t\)\)/.test(code), 'the chat lines go through esc');
+  assert.ok(/n\.textContent=t;tChips/.test(code), 'the chat lines are text');
   assert.ok(/w\.textContent=APW\.endLine/.test(code), 'the end card is text');
   const html = fs.readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8');
   assert.ok(html.includes('<script src="autopilot.js"></script>'));

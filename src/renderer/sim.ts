@@ -3199,7 +3199,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const asked = { from: s.info.permMode, settings };
         if (ui) (ui.autopilotAsked ??= []).push(asked);
         if (ui?.autopilotDialog && !ui.autopilotDialog(asked)) return { ok: false, cancelled: true, error: 'Cancelled.' };
-        if (s.info.permMode !== 'allow') { simLog(s, 'mode-change', `to Allow all`, 'allow'); s.info.permMode = 'allow'; }
+        if (s.info.permMode !== 'allow') { // as `setPermMode` does: Allow all has no floor here
+          simLog(s, 'mode-change', `to Allow all`, 'allow');
+          s.info.permMode = 'allow';
+          if (s.info.sandbox) { delete s.info.sandbox; emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: null }); }
+        }
         const finalCap = c !== undefined && cap.capUnit === 'aiu' ? Math.max(c, 30) : c;
         s.info.autopilot = { limit: lim, hours: hrs, ...(finalCap !== undefined ? { cap: finalCap } : {}) };
         simLog(s, 'autopilot-on', `Autopilot on: up to ${lim} more turns`);

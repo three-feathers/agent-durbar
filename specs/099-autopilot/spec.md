@@ -4,7 +4,7 @@
 group: 046
 title: Autopilot mode: a fourth safety mode above Allow all, per session and confirmed each time, only for agent apps that support it; the agent's questions are shown but not waited on, the app keeps going after each turn until the task is done, up to a continuation limit (default 5) and an optional spend cap; Stop ends it; plan approval may offer Approve and run on Autopilot (spec 066 delta)
 status: draft
-note: spec, plan, tasks; owner answers; probes T090, T093; D13 applied; schedules out; phases 1 to 3 (core, adapters, main and window on fakes and the simulator) built; AUTOPILOT_WIRED false, so not reachable in any build
+note: owner answers; probes T090, T093; D13; schedules out; phases 1-3 built on fakes and the simulator; AUTOPILOT_WIRED false: not reachable in any build
 -->
 
 **Feature Branch**: `099-autopilot` (spec). Code branches `099-pN-slug`, one per phase. It touches 003 (the permission modes), 002, 012

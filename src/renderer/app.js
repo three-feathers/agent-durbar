@@ -5799,6 +5799,7 @@ function onLiveEvent(e){
   case 'status':{
     /* spec 099 FR-005, FR-052: a closed session is not on Autopilot; no card, and no ended event comes */
     if(a.info&&a.info.autopilot&&!e.agentId&&(e.status==='stopped'||(APW&&e.intent===APW.CLOSED_LINE))){a.info.autopilot=undefined;apRepaint(a);}
+    if(a.apEndTask&&!e.agentId&&e.status==='idle'){const t=a.apEndTask;a.apEndTask=null;closeTurn(a);a.worked=false;setState(a,'idle',null,t);updatePanelHeader();scheduleRender();return;}
     if(!main)return;
     /* spec 015 FR-009b: the desk mark ends when the agent goes idle, stops or fails (a compaction in the background may still run: its line stays until the result);
        a stop or an error also ends the line, honestly: "stopped", never "failed" */
@@ -6160,7 +6161,7 @@ async function autopilotFlow(a,anchor){
 function onAutopilot(a,e){
   if(!APW||!a.info||a.parent)return;
   const chat=liveChat(a),ap=a.info.autopilot,unit=apUnit(a);
-  const line=t=>{const n=addNote(chat,esc(t));n.classList.add('ap-line');return n;};
+  const line=t=>{const n=document.createElement('div');n.className='note ap-line';n.textContent=t;tChips(ensureTurn(a).T).appendChild(n);return n;}; /* in the turn, in order with its question card */
   if(e.phase==='started'){if(ap)ap.run={continuation:0,startedAt:Date.now()};a.apEnded=false;line(APW.startLine(ap||{limit:e.limit},unit));}
   else if(e.phase==='continued'){if(ap)ap.run={continuation:e.n,startedAt:(ap.run||{}).startedAt||Date.now()};line(APW.contLine(e.n,e.limit));}
   else if(e.phase==='ended'){
@@ -6174,6 +6175,8 @@ function onAutopilot(a,e){
     if(feat(a,'modeList','ask'))btn('Switch to Ask first…',()=>void changeMode(a,'ask',null));
     if(row.children.length)n.appendChild(row);
     a.apEndReason=e.reason;
+    /* the end reason on the status too: an idle after a run that did not finish is never "Done" (stopped says so by itself) */
+    if(e.reason!=='done'&&e.reason!=='stopped'){if(busyNow(a))a.apEndTask=w.textContent;else{closeTurn(a);a.worked=false;setState(a,'idle',null,w.textContent);}}
     a.apEnded=e.reason!=='done'&&!(ui.selected===a.id&&document.body.classList.contains('panel-open')); /* FR-056: needs me until it is seen */
     if(typeof renderInboxBtn==='function')renderInboxBtn();
   }

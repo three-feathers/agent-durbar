@@ -2198,12 +2198,14 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 .mode-menu .mm-autopilot .mi{color:var(--red-ink)}
 .mm-autopilot{border-top:1px solid var(--line)}
 .ap-noatt{display:inline-grid;place-items:center;opacity:.4;cursor:help}
-.note.ap-line{font-size:12px;color:var(--ink-2)}
+.note.ap-line{font-size:12px;color:var(--ink-2);background:none;border:0;padding:1px 0;box-shadow:none}
 .note.ap-end{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;border-left:3px solid var(--tone-info-line)}
 .note.ap-end:not([data-reason="done"]){border-left-color:var(--tone-bad-line)}
 .note.ap-end .ap-ic{font-weight:700}
 .note.ap-end .ap-words{font-weight:600;min-width:0;overflow-wrap:anywhere}
 .note.ap-end .note-actions{flex-basis:100%}
+.note.ap-line,.note.ap-question{flex:0 0 100%;box-sizing:border-box;max-width:100%}
+.note.ap-question{width:fit-content;flex-basis:auto;margin-right:100%}
 .note.ap-question b{display:block;font-size:12px}
 .note.ap-question .q-text{margin:4px 0 0;overflow-wrap:anywhere}
 .ap-form{display:flex;flex-direction:column;gap:6px;margin:8px 0}
