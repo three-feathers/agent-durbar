@@ -3198,7 +3198,7 @@ function mcpActions(a,top,onDismiss){
 }
 /* FR-022, FR-024: one line per session; it follows the figure in place, and a dismissed one comes back only from warn to strong */
 function mcpWarnLine(a){
-  if(!a||a.parent)return;
+  if(!a||a.parent||!MCPX().warningOf)return;
   const X=MCPX(),st=a.mcpLine||(a.mcpLine={shown:'none',dismissed:'none',el:null});
   const w=X.warningOf(mcpReport(a),mcpWindow(a),mcpLevelsNow()), level=w?w.level:'none', act=X.lineAction(st,level);
   if(act==='hide'){if(st.el)st.el.remove();st.el=null;st.shown='none';return;}
@@ -3217,7 +3217,7 @@ function mcpWarnLine(a){
 function mcpStick(a){const c=$('chat'),chat=liveChat(a),on=!!c&&chat.el.parentNode===c&&c.dataset.pin!=='0';return ()=>{if(on){c.scrollTop=c.scrollHeight;c.dataset.pin='1';stickyScroll(chat);}};} /* now, and once more on the next frame: the opening chat still lays out */
 /* FR-030: the extra sentence on the folded compaction line; once per session per level, dismissible */
 function mcpCompactHint(a,R,now){
-  if(a.parent||!R||!R.el)return;
+  if(a.parent||!R||!R.el||!mcpReport(a))return; /* no figures, nothing to say; the simulator's start-up replay runs before mcpcost.js has loaded */
   const X=MCPX(),st=a.mcpHint||(a.mcpHint={shown:{},el:null,run:null});
   const h=X.compactionHint(mcpReport(a),mcpWindow(a),mcpLevelsNow(),a.compTimes||[],now,st.shown), stick=mcpStick(a);
   if(h){
