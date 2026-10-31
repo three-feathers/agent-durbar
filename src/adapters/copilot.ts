@@ -1743,7 +1743,7 @@ export class CopilotAdapter implements AgentAdapter {
     try {
       return copilotMcpContext(await metadata.getContextAttribution());
     } catch {
-      return { servers: [] };
+      return { servers: [], failed: true };
     }
   }
 

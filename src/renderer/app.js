@@ -3192,7 +3192,7 @@ function repaintMcpChip(a){
 function mcpActions(a,onDismiss){
   const box=document.createElement('span');box.className='mcp-acts';
   const btn=(label,fn)=>{const b=document.createElement('button');b.type='button';b.className='linkbtn';b.textContent=label;b.onclick=fn;box.appendChild(b);};
-  btn('Switch off for this session\u2026',()=>{const top=MCPX().heaviest(mcpReport(a),1)[0];Promise.resolve(window.DurbarScreens.agentMcp(a,{...mcpOpts(a),focusServer:top&&top.name})).finally(()=>refreshMcpCount(a));}); /* FR-022: the dialog, the heaviest focused; only the person's own switch changes anything (FR-023) */
+  btn('Switch off for this session\u2026',()=>{const top=MCPX().heaviest(mcpReport(a),1)[0];Promise.resolve(window.DurbarScreens.agentMcp(a,{...mcpOpts(a),focusServer:top})).finally(()=>refreshMcpCount(a));}); /* FR-022: the dialog, the heaviest focused; only the person's own switch changes anything (FR-023) */
   btn('Open MCP servers',()=>window.DurbarScreens.openSettings('mcp'));
   btn('Dismiss',onDismiss);
   return box;
@@ -6770,6 +6770,7 @@ function onModelEvent(a,e){
     a.role=roleFor(a.info);
   }
   a.ctxWaiting=true; /* the runtime reports the new window with the next message */
+  a.mcpWinKnown=0; /* spec 100: the old model's window says nothing about this one */
   if(e.cause==='user'&&a.pendingModel)a.pendingModel=undefined;
   /* the start-up report and Auto's own routing are not a change the user needs to hear about */
   const quiet=e.cause==='runtime'&&(!e.previousModel||keepAuto);
@@ -6818,7 +6819,7 @@ function onCompaction(a,e){
     if(e.phase==='complete'){
       a.compactions=(a.compactions||0)+1;a.compactFailed=false;
       const old=STATS.agent(a.id).ctx;
-      if(e.tokensAfter>=0){STATS.setContext(a.id,{tokens:e.tokensAfter,limit:e.limit>0?e.limit:(old&&old.limit)||0});a.ctxWaiting=false;}
+      if(e.tokensAfter>=0){STATS.setContext(a.id,{tokens:e.tokensAfter,limit:e.limit>0?e.limit:(a.ctxWaiting!==true&&old&&old.limit)||0});a.ctxWaiting=false;} /* after a model change the old figure's window is the old model's */
       else{a.ctxWaiting='compaction';STATS.clearContext(a.id);} /* spec 015 FR-012: the app did not say the new size (Claude, Codex): no stale figure, no "nearly full" note on it */
     }else a.compactFailed=true;
   }

@@ -16,7 +16,7 @@ import { claudeOffKey, mergeSessionServers, offOf } from './mcpglobal';
 import { agentMcpReply, mcpRefreshOp, mcpRestartOp } from './mcpsession';
 import { McpCallTracker } from './mcpcall';
 import { mcpToolsOp } from './mcptoolsop';
-import { McpContextTracker } from './mcpcontextop';
+import { cleanName, McpContextTracker, serverKey } from './mcpcontextop';
 import type { McpCostStore } from './mcpcosts';
 import { McpSignInStore, SignInPoller, mcpCancelSignInOp, mcpOpenSignInOp, mcpSignInOp, serverUrlFor } from './mcpsignin';
 import { McpStore } from './mcpstore';
@@ -84,6 +84,8 @@ export function registerMcpIpc(deps: {
   pushContext?(id: string, view: McpContextView): void;
   /** Spec 100 FR-004, FR-012: the last figures, in their own file: never in the store that holds the user's servers and secrets. */
   costs?(): McpCostStore | undefined;
+  /** Spec 100 FR-012: the names of one agent app's own user list, or undefined when that list could not be read. */
+  globalList?(app: GlobalApp): string[] | undefined;
 }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[]; disabledMcpTools?: Record<string, string[]> }; secretValuesFor(agentId: string): string[] } {
   const { agents, router, dev } = deps;
   const store = deps.store;
@@ -138,7 +140,16 @@ export function registerMcpIpc(deps: {
     live: (id) => live.get(id) ?? [],
     off: (id) => off.get(id) ?? new Set<string>(),
     push: (id, view) => deps.pushContext?.(id, view),
-    persist: (id, servers, at) => { const app = deps.appOf?.(id); if (app) deps.costs?.()?.set(app, servers, at); },
+    persist: (id, servers, at) => {
+      const app = deps.appOf?.(id);
+      if (!app) return;
+      const list = deps.globalList?.(app as GlobalApp);
+      deps.costs?.()?.set(app, servers, at, (s) => {
+        if (!list) return null;
+        const raw = list.find((n) => serverKey(n) === s.key);
+        return raw === undefined ? undefined : cleanName(raw, []);
+      });
+    },
     now: deps.now,
   });
   router.onEvent((e) => {
@@ -205,7 +216,11 @@ export function registerMcpIpc(deps: {
       return { ok: false, error: 'Could not save the server list.' };
     }
   });
-  ipcHandle('mcp:remove', (_e, key: unknown, name: unknown) => ({ ok: knownKey(key) && typeof name === 'string' && store().remove(key, name) }));
+  ipcHandle('mcp:remove', (_e, key: unknown, name: unknown) => {
+    const ok = knownKey(key) && typeof name === 'string' && store().remove(key, name);
+    if (ok && !store().extraNames([]).includes(name as string)) deps.costs?.()?.forget(cleanName(name as string, [])); // spec 100 FR-012
+    return { ok };
+  });
   ipcHandle('mcp:setEnabled', (_e, key: unknown, name: unknown, enabled: unknown, trustAck: unknown) =>
     knownKey(key) && typeof name === 'string' ? store().setEnabled(key, name, enabled === true, trustAck === true) : { ok: false, error: 'Unknown server.' });
   ipcHandle('mcp:moveLegacy', (_e, name: unknown, key: unknown) => (knownKey(key) && typeof name === 'string' ? store().moveLegacy(name, key, cliNames()) : bad));
@@ -241,7 +256,7 @@ export function registerMcpIpc(deps: {
     // Claude sessions; Codex reports its own list as the session runs (runtime rows).
     const gn = deps.globalNames?.() ?? {};
     const all = cli().servers;
-    return agentMcpReply({
+    const reply = agentMcpReply({
       a,
       ad: router.forAgent(a.id),
       live: live.get(a.id) ?? [],
@@ -263,6 +278,7 @@ export function registerMcpIpc(deps: {
       global: gn,
       builtin: new Set(all.filter((x) => x.origin === 'builtin').map((x) => x.name)),
     });
+    return { ...reply, servers: reply.servers.map((x) => ({ ...x, costKey: serverKey(x.name) })) }; // spec 100: a row finds its figure whatever masking did to the shown name
   });
   /** Spec 058 FR-190: read the agent app's whole server list again (the dialog opening, Refresh); one read at a time per agent. */
   const refreshing = new Map<string, Promise<void>>();
@@ -318,24 +334,13 @@ export function registerMcpIpc(deps: {
   ipcHandle('mcp:costs', () => {
     const c = deps.costs?.();
     if (!c) return { ok: false, costs: {} };
-    // FR-012: a figure of a server no list has any more goes; a list that could not be read keeps its app's figures
-    const gn = deps.globalNames?.() ?? {};
-    const running = new Map<string, string[]>();
-    for (const [id, list] of live) {
-      const app = deps.appOf?.(id);
-      if (app) running.set(app, [...(running.get(app) ?? []), ...list.map((x) => x.name)]);
+    // FR-012: a figure of a server its app's own list no longer has goes; a list that could not be read proves nothing
+    const lists: Record<string, string[]> = {};
+    for (const app of ['copilot', 'claude', 'codex'] as const) {
+      const l = deps.globalList?.(app);
+      if (l) lists[app] = l.map((n) => cleanName(n, []));
     }
-    let extras: string[] = [];
-    let cliList: string[] = [];
-    try {
-      extras = store().extraNames([]);
-      cliList = cliNames();
-    } catch {
-      return { ok: true, costs: c.all() }; // the store is not ready: nothing is pruned on a guess
-    }
-    const known: Record<string, string[]> = {};
-    for (const app of ['copilot', 'claude', 'codex']) known[app] = [...(gn[app as GlobalApp] ?? []), ...extras, ...(running.get(app) ?? []), ...(app === 'copilot' ? cliList : [])];
-    c.prune(known);
+    c.prune(lists);
     return { ok: true, costs: c.all() };
   });
   ipcHandle('agents:setMcp', async (_e, id: unknown, name: unknown, enabled: unknown) => {

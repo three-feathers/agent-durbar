@@ -5,6 +5,7 @@
  * wire params, the FR-087 refusals, crash, stop, fixtures, and the approval/interrupt wiring.
  */
 import * as assert from 'assert';
+import { McpContextTracker } from '../src/main/mcpcontextop';
 import { estimateTools } from '../src/shared/mcpcost';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -786,16 +787,32 @@ async function main(): Promise<void> {
           assert.deepStrictEqual(await second, await first, 'the same read');
           server.holdMcpList = true;
           const hung = ad.mcpContext!(sid);
-          assert.deepStrictEqual(await hung, { servers: [] }, 'the limit ends a read that hangs');
+          assert.deepStrictEqual(await hung, { servers: [], failed: true }, 'the limit ends a read that hangs: a failed read');
           assert.ok(!(ad as unknown as { mcpContextReads: Map<string, unknown> }).mcpContextReads.has(sid), 'and a later ask may start');
           server.holdMcpList = false;
           server.releaseMcpList();
           // a later page that hangs: the limit gives up with nothing, not with the first page's part
           const partly = await (ad as unknown as { readMcpContext(l: unknown): Promise<unknown> }).readMcpContext({ threadId: 't', rpc: { request: async (_m: string, p: { cursor?: string }) => (p.cursor ? new Promise(() => undefined) : { data: [{ name: 'a', tools: { x: { name: 'x' } } }], nextCursor: '1' }) } });
-          assert.deepStrictEqual(partly, { servers: [] }, 'no figure from part of the list');
+          assert.deepStrictEqual(partly, { servers: [], failed: true }, 'no figure from part of the list');
+          // finding 1, through the tracker: a read over the limit after figures keeps them
+          {
+            let now = 0;
+            const t = new McpContextTracker({ agents: new Map([[sid, { id: sid } as never]]), router: { forAgent: () => ad } as never, secrets: () => [], live: () => [], off: () => new Set(), push: () => undefined, now: () => now });
+            server.holdMcpList = false;
+            server.releaseMcpList();
+            await server.flush();
+            const first2 = await t.get(sid, true);
+            assert.ok((first2.report?.servers.length ?? 0) > 0, 'figures first');
+            server.holdMcpList = true;
+            now += 61_000;
+            assert.deepStrictEqual((await t.get(sid, true)).report, first2.report, 'the last figures stay');
+            server.holdMcpList = false;
+            server.releaseMcpList();
+            await server.flush();
+          }
           (ad as unknown as { mcpContextLimitMs: number }).mcpContextLimitMs = 10_000;
         }
-        assert.deepStrictEqual(await ad.mcpContext!('no-such'), { servers: [] });
+        assert.deepStrictEqual(await ad.mcpContext!('no-such'), { servers: [], failed: true });
         server.mcpList = Array.from({ length: 25 }, (_v, i) => ({ name: `srv-${i}`, authStatus: 'unsupported', runtimeStatus: 'connected', tools: { [`t${i}`]: { name: `t${i}`, inputSchema: {} } }, resources: [], resourceTemplates: [] }));
         server.mcpPageSize = 10;
       }

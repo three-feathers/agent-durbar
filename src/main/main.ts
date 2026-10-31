@@ -203,6 +203,7 @@ const mcp = registerMcpIpc({
   orgTool: (id, server, tool) => orgPolicies.tool(appIdOf(id), server, tool),
   pushContext: (id, view) => toRenderer('mcp-context', { id, view }), // spec 100 FR-003
   costs: () => mcpCostStore,
+  globalList: (app) => { const a = globalLists.state(() => []).apps.find((x) => x.app === app); return a && !a.error ? a.servers.map((v) => v.name) : undefined; }, // spec 100 FR-012
 });
 registerMcpGlobalIpc({ lists: () => globalLists, offList: () => mcpStore?.ambientDisabled() ?? [], setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off) });
 /** Files the user picked through the native dialog; only these can be attached. */

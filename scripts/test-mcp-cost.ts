@@ -2,7 +2,7 @@
  * Spec 100 FR-002, FR-020..FR-024, FR-030: the estimator and the level rules. `npm run test:mcpcost`. No Electron, no network, no credits.
  */
 import * as assert from 'assert';
-import { chipFigure, chipWords, compactionBurst, compactionHint, compactionHintText, costLine, costWhen, MCP_COST_MAX_ESTIMATE, stripUnsafe, estimateTool, estimateTools, figureOf, fmtK, footnoteOf, hasFigures, heaviest, levelOf, lineAction, mcpWarnDefaults, parseWarnLevels, reportTotal, rowFigure, safeTokens, shareOf, totalLine, warningOf, warningText } from '../src/shared/mcpcost';
+import { chipFigure, chipWords, compactionBurst, compactionHint, compactionHintText, costLine, costWhen, MCP_COST_MAX_ESTIMATE, forMasking, serverOf, stripUnsafe, estimateTool, estimateTools, figureOf, fmtK, footnoteOf, hasFigures, heaviest, levelOf, lineAction, mcpWarnDefaults, parseWarnLevels, reportTotal, rowFigure, safeTokens, shareOf, totalLine, warningOf, warningText } from '../src/shared/mcpcost';
 import type { McpContextReport, McpLevel } from '../src/shared/mcpcost';
 import { claudeMcpContext, codexMcpContext, copilotMcpContext } from '../src/adapters/mcpcontext';
 
@@ -150,6 +150,16 @@ assert.strictEqual(estimateTools(hostile).tools, 5_000_000, 'an array past the c
 // names: control and bidi characters
 assert.strictEqual(stripUnsafe('a\nb\u202ec\u0007d\u0000e\u2066f\u200bg\ufeffh\u009bi\u2028j'), 'abcdefghij');
 assert.strictEqual(stripUnsafe('plain-name_1.2 é 日本'), 'plain-name_1.2 é 日本');
+// joiners and variation selectors are text
+for (const text of ['می\u200cخواهم', 'क्\u200dष', '👩\u200d💻', '❤\ufe0f']) assert.strictEqual(stripUnsafe(text), text, `kept: ${text}`);
+// the masks' copy has no invisibles at all
+for (const invisible of ['\u00ad', '\u034f', '\u180e', '\u{e0041}', '\u200c', '\u200d', '\ufe0f', '\u2060', '\u3164']) assert.strictEqual(forMasking(`ghp${invisible}_AAA`), 'ghp_AAA', `U+${invisible.codePointAt(0)?.toString(16)}`);
+// a row finds its figure by the key, whatever the shown name became
+const keyed: McpContextReport = { servers: [{ name: 'shown #1', key: 'k1', tokens: 1, source: 'reported' }, { name: 'plain', tokens: 2, source: 'reported' }] };
+assert.strictEqual(serverOf(keyed, { name: 'raw', costKey: 'k1' })?.tokens, 1, 'by the key');
+assert.strictEqual(serverOf(keyed, { name: 'shown #1', costKey: 'other' }), undefined, 'a key that differs wins over the same shown name');
+assert.strictEqual(serverOf(keyed, { name: 'plain' })?.tokens, 2, 'by the name where there is no key (the simulator)');
+assert.strictEqual(serverOf(null, { name: 'x' }), undefined);
 // partial in the chip's words (finding 7)
 assert.strictEqual(chipWords(rep(70_000, { partial: true }), undefined, L), 'MCP tool definitions: at least 70 thousand tokens, at least 35 % of the window, reported. Far above the warning level of 30 %');
 assert.ok(/at least 40 thousand tokens, at least 20 %.*estimated/.test(chipWords({ servers: [{ name: 'a', tokens: 40_000, source: 'estimated' }], window: 200_000, partial: true }, undefined, L)), 'no "at least about"');
@@ -193,7 +203,8 @@ assert.deepStrictEqual(cop([{ kind: 'mcpServer' }, null, 'x', entry('other', 'mc
 assert.strictEqual(cop([], { limit: NaN }).window, undefined, 'a bad limit is no window');
 assert.strictEqual(cop([], { categories: { mcpTools: 5000 } }).total, 5000);
 assert.strictEqual(copilotMcpContext({ entries: [], limit: 1000 }).window, 1000, 'a reply without the wrapper');
-for (const bad of [null, undefined, 'x', 7, [], { contextAttribution: null }, { contextAttribution: 'x' }]) assert.deepStrictEqual(copilotMcpContext(bad), { servers: [] }, 'not a report');
+for (const bad of [null, undefined, 'x', 7, [], { contextAttribution: null }, { contextAttribution: 'x' }]) assert.deepStrictEqual(copilotMcpContext(bad), { servers: [], failed: true }, 'not a report: a failed read');
+assert.strictEqual(cop([]).failed, undefined, 'a real empty list is not a failure');
 assert.strictEqual(cop([entry('mcpServer', 'mcpServer:' + 'n'.repeat(500), 1)]).servers[0].name.length, 500, 'not cut here: main masks, then cuts');
 assert.strictEqual(cop(Array.from({ length: 2100 }, (_, i) => entry('mcpServer', `mcpServer:s${i}`, 1))).servers.length, 2000, 'at most 2000 entries');
 
@@ -212,7 +223,9 @@ assert.strictEqual(cl([], { maxTokens: 160_000 }).window, 160_000, 'maxTokens wi
 assert.strictEqual(cl([], { modelUsage: { m: { contextWindow: 1_000_000 } } }).window, 1_000_000, 'modelUsage last');
 assert.strictEqual(cl([], { rawMaxTokens: 200_000, maxTokens: 1, modelUsage: { m: { contextWindow: 3 } } }).window, 200_000, 'rawMaxTokens first');
 assert.strictEqual(cl([], { rawMaxTokens: Infinity }).window, undefined);
-assert.deepStrictEqual(claudeMcpContext(null, NAMES), { servers: [] });
+assert.deepStrictEqual(claudeMcpContext(null, NAMES), { servers: [], failed: true });
+assert.strictEqual(claudeMcpContext({ mcpTools: [] }, NAMES).failed, undefined, 'a real empty list is not a failure');
+assert.strictEqual(codexMcpContext([]).failed, undefined, 'a real empty list is not a failure');
 assert.strictEqual(reportTotal(cl([{ serverName: 'web', tokens: 40_000, isLoaded: false }, { serverName: 'web', tokens: 10, isLoaded: true }])), 10, 'an unloaded tool is not in the window');
 
 // T014: Codex

@@ -11,9 +11,9 @@
  */
 import type { AgentEvent, AgentAdapter, McpServerStatus } from '../adapters/types';
 import type { AgentInfo, McpContextView } from '../shared/api';
-import { hasFigures, safeTokens, stripUnsafe } from '../shared/mcpcost';
+import { forMasking, hasFigures, safeTokens, stripUnsafe } from '../shared/mcpcost';
 import type { McpContextReport, McpContextServer } from '../shared/mcpcost';
-import { createHash } from 'crypto';
+import { createHash, createHmac, randomBytes } from 'crypto';
 import { cut } from '../shared/redact';
 import { maskMcpText } from './mcpmask';
 
@@ -57,17 +57,25 @@ interface Slot {
   atTurnEnd?: boolean;
 }
 
+const KEY_SALT = randomBytes(16);
+/** A stable key of a reported name, this run only: the same on a report row and a server row, whatever was masked. Salted, so it confirms no guess. */
+export function serverKey(raw: string): string {
+  return createHmac('sha256', KEY_SALT).update(raw).digest('hex').slice(0, 16);
+}
+
 /**
- * A reported name as it may be shown and kept: control and bidi characters gone, masked, at most 128 characters. Strip first (a control
- * character inside a token would hide it from the mask), mask before the cut (a token across the cut would leave its head). A name that was masked
- * or cut gets a short fingerprint of the original, so two long or token-like names stay two rows; `cut` backs over token characters, so no head stays.
+ * A reported name as it may be shown and kept, at most 128 characters. The masks read a copy with every invisible removed, so a soft hyphen cannot
+ * hide a token; when they change nothing the name stays as written, minus control and bidi characters (joiners are text). A name that was masked or cut
+ * shows the masked text with a short fingerprint of that masked text: nothing a guess of a secret could confirm, and two long names stay two.
+ * Mask before the cut: a token across it would leave its head; `cut` backs over token characters.
  */
 export function cleanName(raw: string, secrets: readonly string[]): string {
-  const clean = stripUnsafe(raw);
-  const masked = maskMcpText(clean, secrets) ?? '';
-  if (masked === clean && masked && masked.length <= NAME_HEAD) return masked;
+  const shown = stripUnsafe(raw);
+  const copy = forMasking(raw);
+  const masked = maskMcpText(copy, secrets) ?? '';
+  if (masked === copy && shown && masked && shown.length <= NAME_HEAD) return shown;
   const head = masked.length > NAME_HEAD ? cut(masked, NAME_HEAD) : masked;
-  return `${head || 'unnamed'} #${createHash('sha256').update(raw).digest('hex').slice(0, 8)}`;
+  return `${head || 'unnamed'} #${createHash('sha256').update(masked).digest('hex').slice(0, 8)}`;
 }
 
 /** What may reach the window: known fields, checked numbers, masked names; a server that failed or is off is not in it, one the app did not figure is "unknown" (US1 scenario 3, FR-040). */
@@ -82,10 +90,10 @@ export function cleanReport(r: McpContextReport, live: readonly McpServerStatus[
     const tokens = safeTokens(s.tokens);
     const deferredTokens = safeTokens(s.deferredTokens);
     const tools = safeTokens(s.tools);
-    servers.push({ name: name(s.name), source: s.source === 'reported' || s.source === 'estimated' ? s.source : 'unknown', ...(tokens !== undefined ? { tokens } : {}), ...(deferredTokens ? { deferredTokens } : {}), ...(tools !== undefined ? { tools } : {}), ...(s.capped === true ? { capped: true } : {}), ...(s.error ? { error: 'list failed' } : {}) });
+    servers.push({ name: name(s.name), key: serverKey(s.name), source: s.source === 'reported' || s.source === 'estimated' ? s.source : 'unknown', ...(tokens !== undefined ? { tokens } : {}), ...(deferredTokens ? { deferredTokens } : {}), ...(tools !== undefined ? { tools } : {}), ...(s.capped === true ? { capped: true } : {}), ...(s.error ? { error: 'list failed' } : {}) });
   }
   const named = new Set(rows.map((s) => s.name));
-  for (const s of live) if ((s.status === 'connected' || s.status === 'pending') && !named.has(s.name) && !off.has(s.name) && servers.length < MAX_SERVERS) servers.push({ name: name(s.name), source: 'unknown' });
+  for (const s of live) if ((s.status === 'connected' || s.status === 'pending') && !named.has(s.name) && !off.has(s.name) && servers.length < MAX_SERVERS) servers.push({ name: name(s.name), key: serverKey(s.name), source: 'unknown' });
   const window = safeTokens(r?.window);
   const total = rows.some((s) => notLoaded(s.name)) ? undefined : safeTokens(r?.total); // a row left out must leave the total
   // finding 7: a running server with no figure means the total is "at least", whatever the app said
@@ -168,6 +176,7 @@ export class McpContextTracker {
       s.atTurnEnd = true;
       return;
     }
+    if (r?.failed === true && hasFigures(s.report)) return; // a failed read says nothing about the servers: the last figures stay, nothing is pushed
     const report = cleanReport(r as McpContextReport, this.d.live(id), this.d.off(id), this.d.secrets(id));
     const at = this.now();
     s.report = report;

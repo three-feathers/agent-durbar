@@ -17,6 +17,8 @@ export interface McpContextServer {
   source: McpCostSource;
   /** The list failed. A fixed word from the adapter, never the agent app's text. */
   error?: string;
+  /** Main's stable key of the server's reported name (`serverKey`): matches a server row's `costKey` even when the shown name was masked or cut. No secret: a salted hash, this run only. */
+  key?: string;
   /** Over the 500-tool cap: `tokens` is the part counted, shown with "≥" (spec 100 edge cases). */
   capped?: boolean;
 }
@@ -28,6 +30,8 @@ export interface McpContextReport {
   total?: number;
   /** A server failed to list: the total is "of the servers that answered". */
   partial?: boolean;
+  /** The read failed (a time-out, an error, an app not ready): says nothing about the servers, so main keeps the last figures. A real empty list has no `failed`. */
+  failed?: boolean;
   /** Claude Code's control channel is busy with a turn: nothing was asked; main asks again at the turn's end (FR-003). */
   busy?: boolean;
 }
@@ -50,9 +54,22 @@ export const MCP_COST_MAX_ESTIMATE = 2_000_000;
 /** Above this a number from an agent app is not believed. */
 const MAX_TOKENS = 1e9;
 
-/** Finding 3: control and bidi characters of a name an agent app reports (C0, DEL, C1, zero-width, line separators, BOM, bidi marks and overrides). A loop-free regex: linear. */
+/**
+ * What a name an agent app reports may never carry when shown: control characters, bidi marks and overrides, line separators, BOM, zero-width space.
+ * Joiners stay (ZWNJ in Persian, ZWJ in Devanagari and emoji sequences): they are part of the text. Linear.
+ */
 export function stripUnsafe(s: string): string {
-  return s.replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g, '');
+  return s.replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200b\u200e\u200f\u2028-\u202e\u2066-\u2069\ufeff]/g, '');
+}
+
+/** The copy of a name the masks read: also without every default-ignorable character (soft hyphen, U+034F, U+180E, joiners, tag characters...), so none can hide a token. Never shown when masking changes nothing. */
+export function forMasking(s: string): string {
+  return stripUnsafe(s).replace(/\p{Default_Ignorable_Code_Point}/gu, '');
+}
+
+/** The report's row for a server row: one stable key from main on both sides, whatever masking did to the shown name; the name where there is no key (the simulator). */
+export function serverOf(r: McpContextReport | null | undefined, row: { name: string; costKey?: string }): McpContextServer | undefined {
+  return r?.servers.find((s) => (s.key !== undefined && row.costKey !== undefined ? s.key === row.costKey : s.name === row.name));
 }
 
 /** A token figure that can be shown: a finite number from 0 to under a billion, whole; anything else is no figure (T010). */

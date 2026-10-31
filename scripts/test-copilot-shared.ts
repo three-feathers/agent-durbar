@@ -4,6 +4,7 @@
  * returns a new `FakeClient` per runtime start): no runtime process, no account, no credits.
  */
 import * as assert from 'assert';
+import { McpContextTracker } from '../src/main/mcpcontextop';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -180,9 +181,9 @@ async function main(): Promise<void> {
       let listed = 0;
       meta.getContextAttribution = async () => { listed++; if (answer instanceof Error) throw answer; return answer; };
       const tools = (): number => s.calls.filter((c) => c.name === 'mcp.listTools').length;
-      assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [] }, 'null until the session has initialised: no figures');
+      assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [], failed: true }, 'null until the session has initialised: a failed read, not an empty list');
       answer = new Error('method not enabled on this plan');
-      assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [] }, 'a failure: no figures, and its text goes nowhere');
+      assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [], failed: true }, 'a failure: a failed read, and its text goes nowhere');
       answer = { contextAttribution: { limit: 200_000, categories: { mcpTools: 62_000 }, entries: [
         { kind: 'mcpServer', id: 'mcpServer:github', label: 'GitHub (shown)', tokens: 41_000 },
         { kind: 'mcpServer', id: 'mcpServer:jira', label: 'jira', tokens: 21_000 },
@@ -194,6 +195,18 @@ async function main(): Promise<void> {
       assert.strictEqual(listed, 3);
       assert.deepStrictEqual(await ad.mcpContext('no-such'), { servers: [] }, 'no session: no figures');
       assert.strictEqual(ad.capabilities.mcpContext, 'reported');
+      // finding 1, through the tracker: a failure after figures keeps them
+      {
+        let now = 0;
+        const t = new McpContextTracker({ agents: new Map([[sid, { id: sid } as never]]), router: { forAgent: () => ad } as never, secrets: () => [], live: () => [], off: () => new Set(), push: () => undefined, now: () => now });
+        const v1 = await t.get(sid, true);
+        assert.strictEqual(v1.report?.servers[0].tokens, 41_000);
+        for (const bad of [new Error('down'), { contextAttribution: null }]) {
+          answer = bad;
+          now += 61_000;
+          assert.strictEqual((await t.get(sid, true)).report?.servers[0].tokens, 41_000, 'the last figures stay');
+        }
+      }
     }
 
     // ---- FR-163: nothing Durbar does asks the runtime to connect a server that is not connected (each attempt can read the keychain)

@@ -243,6 +243,11 @@ module.exports = async (ctx) => {
     await js(`window.__durbarSimMcpCtx.push(${jsLiteral(B)});true`);
     assert.ok(await until(`document.querySelectorAll('.mcp-line').length===1`), `${w}: resumed: the figures come back`);
 
+    // ---- names as written: joiners stay in the line ----
+    const FA = 'می\u200cخواهم';
+    await setFig(B, rep([[FA, 80_000]], 200_000));
+    assert.ok(await until(`(document.querySelector('.mcp-line-t')||{}).textContent&&document.querySelector('.mcp-line-t').textContent.includes(${jsLiteral(FA)})`), `${w}: the Persian name keeps its joiner`);
+
     // ---- hostile names: markup stays text, in the line, the hint and Settings ----
     const EVIL = '<img id=pwn src=x onerror=window.__pwned=1>';
     await setFig(B, rep([[EVIL, 80_000]], 200_000));
@@ -293,6 +298,19 @@ module.exports = async (ctx) => {
     for (let i = 0; i < 4; i++) await emit(X, { type: 'compaction', phase: 'complete', trigger: 'auto', timestamp: T1 + i * 200_000 });
     assert.ok(await until(`document.querySelectorAll('.mcp-hint').length===1`), `${w}: the hint on Codex, after a compaction with no size`);
     assert.match(await js(`document.querySelector('.mcp-hint').innerText`), /19 % of the window/, `${w}: of the window last reported`);
+    // the window after a model change is not the old model's, also when a compaction comes first (finding 5)
+    assert.ok(await until(`document.querySelectorAll('.mcp-hint').length===1`), `${w}: still the hint`);
+    await emit(X, { type: 'model', model: 'other-model', cause: 'user' });
+    await emit(X, { type: 'compaction', phase: 'complete', trigger: 'auto', timestamp: T1 + 900_000 });
+    assert.ok(await until(`!/19 % of the window/.test(document.getElementById('mcpBtn').getAttribute('aria-label'))`), `${w}: not the old window: ${(await chip()).name}`);
+    await emit(X, { type: 'context', tokens: 50_000, limit: 500_000 });
+    assert.ok(await until(`/8 % of the window/.test(document.getElementById('mcpBtn').getAttribute('aria-label'))`), `${w}: a known window`);
+    // a compaction that says its size after a model change must not carry the old window over
+    await emit(X, { type: 'model', model: 'third-model', cause: 'user' });
+    await emit(X, { type: 'compaction', phase: 'complete', trigger: 'auto', tokensAfter: 5000, timestamp: T1 + 950_000 });
+    assert.ok(await until(`!/8 % of the window/.test(document.getElementById('mcpBtn').getAttribute('aria-label'))`), `${w}: not the old window after a sized compaction: ${(await chip()).name}`);
+    await emit(X, { type: 'context', tokens: 50_000, limit: 100_000 });
+    assert.ok(await until(`/38 % of the window/.test(document.getElementById('mcpBtn').getAttribute('aria-label'))`), `${w}: the new model's window`);
     const [K] = await liveOf('claude');
     assert.ok(K, `${w}: a running Claude Code chat`);
     await openChat(K);

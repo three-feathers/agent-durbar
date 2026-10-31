@@ -1263,7 +1263,7 @@
       return `<div class="mcp-refresh"><button class="btn sm" type="button" id="mcpRefresh" data-refresh="1"${refreshBusy?' aria-disabled="true"':''} aria-label="Refresh the state of every server">${refreshBusy?'Refreshing…':'Refresh'}</button><span class="dsub small" id="mcpRefreshNote" role="status">${esc(refreshNote||'Asks '+app+' for the state of every server again.')}</span></div>`;
     };
     const body=s=>{
-      const mcC=ctxOf(), mcRep=mcC&&mcC.view&&mcC.view.report||null, mcTop=mcRep?(mc.heaviest(mcRep,1)[0]||{}).name:undefined;
+      const mcC=ctxOf(), mcRep=mcC&&mcC.view&&mcC.view.report||null, mcTop=mcRep?mc.heaviest(mcRep,1)[0]:undefined;
       const rows=s.servers.map(x=>{
         const W=window.DurbarMcpWords, app=s.app||o&&o.appName;
         const octx={off:x.off,defaultOn:x.defaultOn,origin:x.origin,app,launchedOff:x.launchedOff,switchedHere:x.switchedHere};
@@ -1300,7 +1300,7 @@
         const why=removable?'':srcs.includes('builtin')?'Built into the agent app':'Reported by the running session; managed by the agent app';
         const sg=x.canSignIn||x.signInSteps||x.signIn?signHTML(x,s):'';
         /* spec 100 FR-011: this row's tokens and label */
-        const costW=mcRep&&s.live?mc.rowFigure(mcRep.servers.find(y=>y.name===x.name),{off:x.off||!x.defaultOn,status:x.status,hasReport:true,largest:mcTop===x.name}):'';
+        const costW=mcRep&&s.live?mc.rowFigure(mc.serverOf(mcRep,x),{off:x.off||!x.defaultOn,status:x.status,hasReport:true,largest:!!mcTop&&mc.serverOf({servers:[mcTop]},x)===mcTop}):'';
         return `<li class="srv sm${open||sg?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${org?'<span class="mtag warn org-tag">Blocked by your organization</span>':''}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}${costW?`<span class="mcp-cost">${esc(costW)}</span>`:''}</div>${hh.why}${org?`<span class="srv-hint srv-org" id="${orgId}">${esc(org)}.</span>`:orgMay?`<span class="srv-hint srv-org">${esc(orgMay)}.</span>`:''}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${btnRow(det,hh.diag)}${detBox}</div>
           <div class="srv-act">${rs}${againB(x)}${rmb}${sw(eff,(appOff?x.name+' is off in '+(app?W.plain(app,40):'the agent app'):(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts')),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed||appOff||org?' disabled':'')+(org?' aria-describedby="'+orgId+'"':''))}</div>${sg}${open?toolsHTML(x.name):''}</li>`;}).join('');
       /* FR-022 / FR-030 / FR-032: Restart session lives only here (Q10) */
@@ -1511,7 +1511,7 @@
     const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
       onOpen:d=>{dlg=d.querySelector('.dlg');dlg._ov=d;
         /* spec 100 FR-022: from the warning line: the heaviest server's switch has the focus; nothing is switched */
-        if(o&&o.focusServer)setTimeout(()=>{const b=[...d.querySelectorAll('.dbody button.swt')].find(x=>x.dataset.n===o.focusServer);if(b)focusIn(b);},0);
+        if(o&&o.focusServer)setTimeout(()=>{const row=(st.servers||[]).find(y=>mc.serverOf({servers:[o.focusServer]},y)),b=row&&[...d.querySelectorAll('.dbody button.swt')].find(x=>x.dataset.n===row.name);if(b)focusIn(b);},0);
         if(st.canRefresh)setTimeout(()=>{void refresh(false);},0); /* FR-190: every open reads the states again */d.addEventListener('click',async e=>{
         const tg=e.target.closest('button[data-tools]');if(tg){void toggleTools(tg.dataset.tools);return;}
         const ad=e.target.closest('[data-tall][aria-disabled="true"],input[data-tool][aria-disabled="true"]');if(ad){e.preventDefault();return;} /* FR-064: focusable, never changed */

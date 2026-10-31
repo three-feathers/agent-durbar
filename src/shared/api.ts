@@ -620,6 +620,8 @@ export interface UsageView {
 
 /** One MCP server as one agent sees it. */
 export interface AgentMcpEntry {
+  /** Spec 100: the key of this name in `McpContextReport` rows (`serverKey`). */
+  costKey?: string;
   name: string;
   /** `cli` = Copilot CLI list or built-in, `folder` = an extra of this agent's folder, `runtime` = only reported by the runtime. */
   origin: 'cli' | 'folder' | 'runtime';
@@ -704,6 +706,8 @@ export interface McpCostEntry {
   deferredTokens?: number;
   source: 'reported' | 'estimated';
   capped?: boolean;
+  /** The name in the agent app's own user list, when it was on it at measuring time (`cleanName` form): only such a figure goes when the list no longer has it. */
+  list?: string;
   at: number;
 }
 /** By agent app id, then server name. */

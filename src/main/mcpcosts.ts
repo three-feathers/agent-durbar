@@ -15,6 +15,8 @@ const MAX_FILE = 256 * 1024;
 export const MAX_COST_SERVERS = 200;
 export const MAX_COST_NAME = 128;
 
+const nameOk = (n: string): boolean => !!n && n.length <= MAX_COST_NAME && n !== '__proto__' && stripUnsafe(n) === n;
+
 /** One kept figure: known fields, checked numbers; undefined when there is no figure. */
 function entry(v: unknown): McpCostEntry | undefined {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
@@ -22,10 +24,8 @@ function entry(v: unknown): McpCostEntry | undefined {
   const tokens = safeTokens(o.tokens);
   const deferredTokens = safeTokens(o.deferredTokens);
   if ((o.source !== 'reported' && o.source !== 'estimated') || (tokens === undefined && !deferredTokens) || typeof o.at !== 'number' || !Number.isFinite(o.at)) return undefined;
-  return { ...(tokens !== undefined ? { tokens } : {}), ...(deferredTokens ? { deferredTokens } : {}), source: o.source, ...(o.capped === true ? { capped: true } : {}), at: o.at };
+  return { ...(tokens !== undefined ? { tokens } : {}), ...(deferredTokens ? { deferredTokens } : {}), source: o.source, ...(o.capped === true ? { capped: true } : {}), ...(typeof o.list === 'string' && nameOk(o.list) ? { list: o.list } : {}), at: o.at };
 }
-
-const nameOk = (n: string): boolean => !!n && n.length <= MAX_COST_NAME && n !== '__proto__' && stripUnsafe(n) === n;
 
 export class McpCostStore {
   /** Maps, not objects: a name is never a property of anything. */
@@ -60,13 +60,17 @@ export class McpCostStore {
     return Object.fromEntries([...this.costs].map(([app, m]) => [app, Object.fromEntries(m)]));
   }
 
-  /** A report's figures replace that server's last ones; a server with no figure changes nothing; at most 200 per app, the oldest go first. */
-  set(app: string, servers: readonly McpContextServer[], at: number): void {
+  /**
+   * A report's figures replace that server's last ones; a server with no figure changes nothing; at most 200 per app, the oldest go first. `listAs`: the
+   * name in the app's own user list, if it is there now, or `null` when that list could not be read (the last mark stays).
+   */
+  set(app: string, servers: readonly McpContextServer[], at: number, listAs?: (s: McpContextServer) => string | undefined | null): void {
     if (!(APPS as readonly string[]).includes(app) || !Number.isFinite(at)) return;
     const m = new Map(this.costs.get(app) ?? []);
     let changed = false;
     for (const s of servers) {
-      const e = entry({ ...s, at });
+      const mark = listAs?.(s);
+      const e = entry({ ...s, at, list: mark === null ? m.get(s.name)?.list : mark });
       if (!e || !nameOk(s.name)) continue;
       m.set(s.name, e);
       changed = true;
@@ -76,15 +80,19 @@ export class McpCostStore {
     this.save();
   }
 
-  /** FR-012: drop a figure of a server its app's lists no longer have. An app with an empty list is left alone: an unreadable list is not an empty one. */
-  prune(known: Record<string, readonly string[]>): void {
+  /**
+   * FR-012: drop a figure only on evidence: it was on its app's own user list when measured (`list`) and that list, read completely now, no longer has it.
+   * `lists` holds an app only when its list could be read; names in the `cleanName` form. Runtime, built-in and project servers have no such list and stay
+   * (dated in Settings, and the oldest go at the cap).
+   */
+  prune(lists: Record<string, readonly string[]>): void {
     let changed = false;
-    for (const [app, m] of this.costs) {
-      const names = known[app];
-      if (!names || !names.length) continue;
+    for (const [app, m] of [...this.costs]) {
+      const names = lists[app];
+      if (!names) continue;
       const keep = new Set(names);
-      for (const n of [...m.keys()]) {
-        if (!keep.has(n)) {
+      for (const [n, e] of [...m]) {
+        if (e.list !== undefined && !keep.has(e.list)) {
           m.delete(n);
           changed = true;
         }
@@ -94,10 +102,25 @@ export class McpCostStore {
     if (changed) this.save();
   }
 
+  /** A folder extra the user removed, when no other folder has it. */
+  forget(name: string): void {
+    let changed = false;
+    for (const [app, m] of [...this.costs]) {
+      if (m.delete(name)) changed = true;
+      if (!m.size) this.costs.delete(app);
+    }
+    if (changed) this.save();
+  }
+
+  /** A full disk or read-only profile: the figures stay for this run; a read of them never fails on it. */
   private save(): void {
-    fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    const tmp = `${this.file}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(this.all(), null, 1), { mode: 0o600 });
-    fs.renameSync(tmp, this.file);
+    try {
+      fs.mkdirSync(path.dirname(this.file), { recursive: true });
+      const tmp = `${this.file}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(this.all(), null, 1), { mode: 0o600 });
+      fs.renameSync(tmp, this.file);
+    } catch {
+      /* see above */
+    }
   }
 }

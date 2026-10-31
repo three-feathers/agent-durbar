@@ -1294,7 +1294,7 @@ export class CodexAdapter implements AgentAdapter {
    */
   mcpContext(sessionId: string): Promise<McpContextReport> {
     const live = this.sessions.get(sessionId);
-    if (!live || !live.rpc || !live.threadId) return Promise.resolve({ servers: [] });
+    if (!live || !live.rpc || !live.threadId) return Promise.resolve({ servers: [], failed: true });
     const running = this.mcpContextReads.get(sessionId);
     if (running) return running;
     const read = this.readMcpContext(live).finally(() => this.mcpContextReads.delete(sessionId));
@@ -1311,14 +1311,14 @@ export class CodexAdapter implements AgentAdapter {
       let cursor: string | undefined;
       for (let page = 0; page < 20; page++) {
         const res = await Promise.race([live.rpc?.request('mcpServerStatus/list', { threadId: live.threadId, detail: 'toolsAndAuthOnly', limit: 100, ...(cursor ? { cursor } : {}) }), expired]);
-        if (res === 'expired') return { servers: [] };
+        if (res === 'expired') return { servers: [], failed: true };
         if (isObj(res) && Array.isArray(res.data)) all.push(...res.data);
         const next = isObj(res) && typeof res.nextCursor === 'string' && res.nextCursor ? res.nextCursor : undefined;
         if (!next || next === cursor) break;
         cursor = next;
       }
     } catch {
-      return { servers: [] };
+      return { servers: [], failed: true };
     } finally {
       if (timer) clearTimeout(timer);
     }

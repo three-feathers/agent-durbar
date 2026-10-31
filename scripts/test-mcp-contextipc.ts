@@ -13,7 +13,9 @@ import { pathToFileURL } from 'url';
 import type { AgentEvent, McpServerStatus } from '../src/adapters/types';
 import type { McpContextView } from '../src/shared/api';
 import type { McpContextReport } from '../src/shared/mcpcost';
+import { serverOf } from '../src/shared/mcpcost';
 
+const nk = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v, (k, x) => (k === 'key' ? undefined : x))));
 const tick = async (): Promise<void> => { for (let i = 0; i < 6; i++) await new Promise((r) => setImmediate(r)); };
 
 async function main(): Promise<void> {
@@ -55,10 +57,10 @@ async function main(): Promise<void> {
     registerMcpIpc({
       store: () => store,
       agents: new Map([[ID, { id: ID, cwd: root } as never]]),
-      router: { onEvent: (fn: (e: AgentEvent) => void) => { listeners.push(fn); return () => undefined; }, forAgent: (id: string) => (id === ID ? { isLive: () => true, mcpContext: async () => { asks++; return answer; } } : undefined) } as never,
+      router: { onEvent: (fn: (e: AgentEvent) => void) => { listeners.push(fn); return () => undefined; }, forAgent: (id: string) => (id === ID ? { capabilities: {}, displayName: 'Copilot', isLive: () => true, mcpContext: async () => { asks++; return answer; } } : undefined) } as never,
       dev: { DURBAR_COPILOT_DIR: path.join(root, 'no-copilot') } as never,
       appOf: () => 'copilot',
-      globalNames: () => global,
+      globalList: (app) => global[app],
       pushContext: (id, view) => pushed.push({ id, view }),
       costs: () => costs,
     });
@@ -75,7 +77,7 @@ async function main(): Promise<void> {
     assert.strictEqual(asks, 1, 'the first running servers ask');
     assert.strictEqual(pushed.length, 1, 'the push');
     assert.strictEqual(pushed[0].id, ID);
-    assert.deepStrictEqual(pushed[0].view.report, { servers: [{ name: 'github', source: 'reported', tokens: 41_000, tools: 3 }], window: 200_000 }, 'only names and numbers: not the tool text');
+    assert.deepStrictEqual(nk(pushed[0].view.report), { servers: [{ name: 'github', source: 'reported', tokens: 41_000, tools: 3 }], window: 200_000 }, 'only names and numbers: not the tool text');
     const got = await call('agents:mcpContext', ID);
     assert.deepStrictEqual(got.report, pushed[0].view.report, 'the handler gives the same');
     assert.strictEqual(asks, 1, 'a plain read asks nothing');
@@ -109,22 +111,65 @@ async function main(): Promise<void> {
     fs.rmSync(storeFile);
     store.load();
 
-    // ---- finding 10: a removed server's figure goes at the next read; a server still listed stays ----
+    // ---- a removed server's figure goes at the next read, only on evidence; running, runtime and masked names keep theirs ----
+    fs.rmSync(costsFile, { force: true });
     costs = new McpCostStore(costsFile);
     costs.load();
-    costs.set('copilot', [{ name: 'gone', tokens: 5, source: 'reported' }, { name: 'stays', tokens: 6, source: 'reported' }], 2);
-    costs.set('codex', [{ name: 'cx', tokens: 7, source: 'estimated', capped: true }], 3);
-    global = { copilot: ['stays'] };
-    const c2 = (await call('mcp:costs')).costs as Record<string, Record<string, unknown>>;
-    assert.ok(!('gone' in c2.copilot) && 'stays' in c2.copilot, `pruned: ${JSON.stringify(c2)}`);
-    assert.deepStrictEqual(c2.codex.cx, { tokens: 7, source: 'estimated', capped: true, at: 3 }, 'an app with no list keeps its figures, capped too');
+    emit({ type: 'status', status: 'stopped' });
+    const TOKEN_NAME = 'ghp_' + 'Z'.repeat(36);
+    global = { copilot: ['listed', 'later-gone', TOKEN_NAME] };
+    answer = { servers: [{ name: 'listed', tokens: 1, source: 'reported' }, { name: 'later-gone', tokens: 2, source: 'reported' }, { name: 'runtime-only', tokens: 3, source: 'reported' }, { name: TOKEN_NAME, tokens: 4, source: 'reported' }] };
+    emit({ type: 'mcp', servers: servers('listed', 'later-gone', 'runtime-only', TOKEN_NAME) });
+    await tick();
+    const shownAll = Object.keys(((await call('mcp:costs')).costs as Record<string, object>).copilot);
+    assert.strictEqual(shownAll.length, 4, `all kept while on the list: ${shownAll}`);
+    assert.ok(shownAll.every((n) => !n.includes('ZZZZ')), 'the token is masked in the kept name');
+    global = { copilot: ['listed', TOKEN_NAME] };
+    emit({ type: 'status', status: 'stopped' }); // no session: nothing is running
+    const after = Object.keys(((await call('mcp:costs')).costs as Record<string, object>).copilot);
+    assert.strictEqual(after.length, 3, `only the removed one went: ${after}`);
+    assert.ok(!after.includes('later-gone') && after.includes('listed') && after.includes('runtime-only'), 'a runtime server stays with no session');
+    assert.ok(after.some((n) => n.includes('#')), 'a masked name on the list stays: the same form is compared');
+    global = {};
+    assert.strictEqual(Object.keys(((await call('mcp:costs')).costs as Record<string, object>).copilot).length, 3, 'an unreadable list removes nothing');
+    global = { copilot: [] };
+    assert.deepStrictEqual(Object.keys(((await call('mcp:costs')).costs as Record<string, object>).copilot), ['runtime-only'], 'a list read as empty removes what it held');
+    // a save that fails does not fail the read
+    fs.writeFileSync(path.join(root, 'afile'), 'x');
+    const memOnly = new McpCostStore(path.join(root, 'afile', 'c.json'));
+    memOnly.set('copilot', [{ name: 'm', tokens: 1, source: 'reported' }], 1, () => 'm');
+    costs = memOnly;
+    const memRead = await call('mcp:costs');
+    assert.strictEqual(memRead.ok, true, 'the read answers');
+    costs = new McpCostStore(costsFile);
+    costs.load();
+
+    // ---- finding 4: names through the dialog's figures: a row finds its figure, whatever the shown name became ----
+    emit({ type: 'status', status: 'stopped' });
+    global = {};
+    const NAMES = ['می\u200cخواهم', 'क्\u200dष', '👩\u200d💻-tools', TOKEN_NAME, 'L'.repeat(150), 'with\u202eoverride'];
+    answer = { servers: NAMES.map((name, i) => ({ name, tokens: 1000 * (i + 1), source: 'reported' })) };
+    emit({ type: 'mcp', servers: servers(...NAMES) });
+    await tick();
+    const rep = pushed.at(-1)!.view.report!;
+    const rows = ((await call('agents:mcp', ID)) as unknown as { servers: { name: string; costKey?: string }[] }).servers;
+    for (const [i, name] of NAMES.entries()) {
+      const row = rows.find((x) => x.name === name);
+      assert.ok(row, `the row of ${name}`);
+      assert.strictEqual(serverOf(rep, row!)?.tokens, 1000 * (i + 1), `the figure of ${name}`);
+    }
+    assert.strictEqual(rep.servers[0].name, NAMES[0], 'Persian as written, with its joiner');
+    assert.strictEqual(rep.servers[1].name, NAMES[1], 'Devanagari as written, with its joiner');
+    assert.strictEqual(rep.servers[2].name, NAMES[2], 'an emoji sequence as written');
+    answer = { servers: [{ name: 'github', tokens: 41_000, source: 'reported' }], window: 200_000 };
+
     costs = undefined;
     assert.deepStrictEqual(await call('mcp:costs'), { ok: false, costs: {} }, 'no costs store: says so');
     emit({ type: 'status', status: 'stopped' });
     answer = null;
     emit({ type: 'mcp', servers: servers('github') });
     await tick();
-    assert.deepStrictEqual(pushed.at(-1)?.view.report?.servers, [{ name: 'github', source: 'unknown' }], 'an adapter answering null: no figures, nothing thrown');
+    assert.deepStrictEqual(nk(pushed.at(-1)?.view.report?.servers), [{ name: 'github', source: 'unknown' }], 'an adapter answering null: no figures, nothing thrown');
 
     // ---- the levels: the handler, the store, the file, the reload ----
     const settingsFile = path.join(root, 'durbar-settings.json');

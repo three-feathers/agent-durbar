@@ -21,7 +21,7 @@ const rowsOf = (v: unknown): unknown[] => (Array.isArray(v) ? v.slice(0, MAX_ROW
  */
 export function copilotMcpContext(raw: unknown): McpContextReport {
   const a = isObj(raw) && 'contextAttribution' in raw ? raw.contextAttribution : raw;
-  if (!isObj(a)) return { servers: [] };
+  if (!isObj(a)) return { servers: [], failed: true }; // `null` until the session has initialised, or junk: says nothing about the servers
   const entries = rowsOf(a.entries).filter(isObj);
   const servers = new Map<string, { name: string; own: number; children: number }>();
   for (const e of entries) {
@@ -48,7 +48,7 @@ export function copilotMcpContext(raw: unknown): McpContextReport {
  * a tool its full size there, and its own total leaves it out (spec 100 Changes 2026-10-31).
  */
 export function claudeMcpContext(raw: unknown, names: readonly string[]): McpContextReport {
-  if (!isObj(raw)) return { servers: [] };
+  if (!isObj(raw)) return { servers: [], failed: true };
   const byNorm = new Map(names.map((n) => [normalizeServer(n), n]));
   const servers = new Map<string, McpContextServer>();
   for (const t of rowsOf(raw.mcpTools)) {

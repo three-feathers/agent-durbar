@@ -6,10 +6,11 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { createHash } from 'crypto';
 import type { AgentEvent, McpServerStatus } from '../src/adapters/types';
 import type { McpContextView } from '../src/shared/api';
 import type { McpContextReport } from '../src/shared/mcpcost';
-import { cleanName, cleanReport, McpContextTracker } from '../src/main/mcpcontextop';
+import { cleanName, cleanReport, McpContextTracker, serverKey } from '../src/main/mcpcontextop';
 import { MAX_COST_NAME, McpCostStore } from '../src/main/mcpcosts';
 
 process.exitCode = 1;
@@ -22,6 +23,8 @@ const ctxEv = (): AgentEvent => ({ ...base, type: 'context', tokens: 10, limit: 
 const statusEv = (status: string): AgentEvent => ({ ...base, type: 'status', status }) as AgentEvent;
 const modelEv = (): AgentEvent => ({ ...base, type: 'model', model: 'm', cause: 'user' }) as AgentEvent;
 const FIG: McpContextReport = { servers: [{ name: 'github', tokens: 41_000, source: 'reported' }], window: 200_000 };
+/** Without main's per-run keys, for comparing whole values. */
+const nk = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v, (k, x) => (k === 'key' ? undefined : x))));
 const conn = (...names: string[]): McpServerStatus[] => names.map((name) => ({ name, status: 'connected' }));
 
 function harness(answer: () => McpContextReport | Promise<McpContextReport> = () => FIG) {
@@ -151,7 +154,7 @@ async function main(): Promise<void> {
     await settle();
     assert.strictEqual(h.asks, 1, 'asked with the others up');
     const r = h.pushed.at(-1)?.report;
-    assert.deepStrictEqual(r?.servers.find((x) => x.name === 'stuck'), { name: 'stuck', source: 'unknown' });
+    assert.deepStrictEqual(nk(r?.servers.find((x) => x.name === 'stuck')), { name: 'stuck', source: 'unknown' });
     assert.strictEqual(r?.partial, true, 'the figure is "at least"');
     for (let i = 0; i < 5; i++) t.onEvent(ctxEv());
     await settle();
@@ -180,7 +183,7 @@ async function main(): Promise<void> {
       t.onEvent(mcpEv(conn('github')));
       await settle();
       assert.strictEqual(h.asks, 1);
-      assert.deepStrictEqual(h.pushed.at(-1)?.report?.servers, [{ name: 'github', source: 'unknown' }], `junk ${String(junk)}: the running server, no figure`);
+      assert.deepStrictEqual(nk(h.pushed.at(-1)?.report?.servers), [{ name: 'github', source: 'unknown' }], `junk ${String(junk)}: the running server, no figure`);
     }
     // the window's end of it throwing (a closed window) rejects nothing either
     const { h: h2, t: t2 } = harness();
@@ -260,6 +263,33 @@ async function main(): Promise<void> {
     assert.strictEqual(h.asks, 2);
   }
 
+  // finding 1: a failed read says nothing about the servers: the last figures and the line stay, nothing is pushed; a real empty list replaces them
+  {
+    let reply: McpContextReport = FIG;
+    const { h, t } = harness(() => reply);
+    t.onEvent(mcpEv(conn('github')));
+    await settle();
+    assert.strictEqual(t.view(ID).report?.servers[0].tokens, 41_000);
+    const pushed = h.pushed.length;
+    reply = { servers: [], failed: true };
+    t.onEvent(modelEv());
+    await settle();
+    assert.strictEqual(h.asks, 2);
+    assert.strictEqual(h.pushed.length, pushed, 'nothing pushed');
+    assert.strictEqual(t.view(ID).report?.servers[0].tokens, 41_000, 'the last figures stay');
+    assert.strictEqual(h.kept.length, 1, 'nothing written');
+    reply = { servers: [] };
+    h.live = [];
+    t.onEvent(modelEv());
+    await settle();
+    assert.deepStrictEqual(h.pushed.at(-1)?.report, { servers: [] }, 'a real empty list replaces them');
+    // with nothing to keep, a failed read is a report with no figures ("not reported"), and `failed` does not reach the window
+    const fresh = harness(() => ({ servers: [], failed: true }));
+    fresh.t.onEvent(mcpEv(conn('github')));
+    await settle();
+    assert.ok(fresh.h.pushed.length === 1 && !('failed' in (fresh.h.pushed[0].report ?? {})) && fresh.h.pushed[0].report?.servers[0].source === 'unknown', JSON.stringify(fresh.h.pushed));
+  }
+
   // FR-003: the time limit: a read that never answers is given up when it fires, keeps the last figures, and does not block the next ask
   {
     let mode: 'ok' | 'hang' | 'throw' = 'ok';
@@ -310,8 +340,21 @@ async function main(): Promise<void> {
     const a = cleanName('L'.repeat(300) + '1', []), b = cleanName('L'.repeat(300) + '2', []);
     assert.notStrictEqual(a, b, 'two long names stay two');
     assert.ok(a.length <= MAX_COST_NAME && b.length <= MAX_COST_NAME, 'and the store accepts both');
+    // two token-like names show the same masked text; their rows stay apart by the key, and the fingerprint is of the masked text only
     const t1 = cleanName('ghp_' + 'C'.repeat(36), []), t2 = cleanName('ghp_' + 'D'.repeat(36), []);
-    assert.notStrictEqual(t1, t2, 'two token-like names stay two');
+    assert.strictEqual(t1, t2, 'the shown name holds nothing of either token, and no hash of it');
+    assert.notStrictEqual(serverKey('ghp_' + 'C'.repeat(36)), serverKey('ghp_' + 'D'.repeat(36)));
+    // finding: a hash of the raw name would let a guess be confirmed: the same masked text gives the same fingerprint, whatever was behind it
+    assert.ok(!t1.includes(createHash('sha256').update('ghp_' + 'C'.repeat(36)).digest('hex').slice(0, 8)), 'not a hash of the raw name');
+    assert.strictEqual(cleanName('x-sEcReT-9', ['sEcReT-9']), cleanName('x-oThEr-99', ['oThEr-99']), 'two secrets behind one masked text: one fingerprint');
+    // invisibles cannot hide a token from the mask
+    for (const inv of ['\u00ad', '\u034f', '\u180e', '\u{e0041}', '\u200c', '\u200d', '\u2060']) {
+      const out2 = cleanName(`ghp${inv}_` + 'E'.repeat(36), []);
+      assert.ok(!out2.includes('EEEE'), `U+${inv.codePointAt(0)?.toString(16)} hid a token: ${out2}`);
+    }
+    // joiners survive when nothing was masked
+    for (const text of ['می\u200cخواهم', 'क्\u200dष', '👩\u200d💻', 'caf\u00e9\u00ad-mcp']) assert.strictEqual(cleanName(text, []), text, `as written: ${text}`);
+    assert.strictEqual(cleanName('می\u200cخواهم\u202e', []), 'می\u200cخواهم', 'minus bidi');
     assert.ok(/^unnamed #[0-9a-f]{8}$/.test(cleanName('\u0000\u202e', [])), 'nothing left: a neutral name');
     assert.strictEqual(cleanName('github-mcp-server', []), 'github-mcp-server', 'a plain name is untouched');
     // end to end: the report and the kept file
@@ -343,11 +386,11 @@ async function main(): Promise<void> {
     ], window: NaN, total: 77, partial: true, env: { TOKEN: 'abc' }, busy: true } as unknown as McpContextReport;
     const out = cleanReport(raw, [{ name: 'down', status: 'failed', error: 'x' }, { name: 'quiet', status: 'connected' }, { name: 'github', status: 'connected' }], new Set(['switched']), ['s3cretvalue']);
     const by = new Map(out.servers.map((s) => [s.name, s]));
-    assert.deepStrictEqual(by.get('github'), { name: 'github', source: 'reported', tokens: 41_000, deferredTokens: 300, tools: 5 }, 'known fields only');
-    assert.deepStrictEqual(by.get('bad'), { name: 'bad', source: 'unknown' }, 'a bad number and an odd source');
+    assert.deepStrictEqual(nk(by.get('github')), { name: 'github', source: 'reported', tokens: 41_000, deferredTokens: 300, tools: 5 }, 'known fields only');
+    assert.deepStrictEqual(nk(by.get('bad')), { name: 'bad', source: 'unknown' }, 'a bad number and an odd source');
     assert.ok(!by.has('down') && !by.has('switched'), 'failed and off: not in the report or the total');
-    assert.deepStrictEqual(by.get('list-failed'), { name: 'list-failed', source: 'unknown', error: 'list failed' }, 'the fixed word, never the text');
-    assert.deepStrictEqual(by.get('quiet'), { name: 'quiet', source: 'unknown' }, 'running with no figure');
+    assert.deepStrictEqual(nk(by.get('list-failed')), { name: 'list-failed', source: 'unknown', error: 'list failed' }, 'the fixed word, never the text');
+    assert.deepStrictEqual(nk(by.get('quiet')), { name: 'quiet', source: 'unknown' }, 'running with no figure');
     assert.ok(out.servers.every((s) => !s.name.includes('s3cretvalue')), 'a secret value in a name is masked');
     assert.ok(out.servers.every((s) => s.name.length <= 128));
     const text = JSON.stringify(out);
@@ -411,16 +454,31 @@ async function main(): Promise<void> {
       assert.ok(!keys.includes('s0') && keys.includes('s204'), 'the oldest go first');
       capped.set('nope', [{ name: 'x', tokens: 1, source: 'reported' }], 1);
       assert.ok(!('nope' in capped.all()), 'an unknown app is refused');
-      // a removed server goes; an app whose list is empty or unread keeps its figures
+      // a figure goes only when it was on its app's own list and that list, read completely, no longer has it
       const pr = new McpCostStore(path.join(dir, 'prune.json'));
-      pr.set('copilot', [{ name: 'gone', tokens: 1, source: 'reported' }, { name: 'here', tokens: 2, source: 'reported' }], 1);
-      pr.set('codex', [{ name: 'c', tokens: 3, source: 'estimated' }], 1);
-      pr.prune({ copilot: ['here'], codex: [] });
-      assert.deepStrictEqual(Object.keys(pr.all().copilot), ['here'], 'the removed server is gone');
-      assert.deepStrictEqual(Object.keys(pr.all().codex), ['c'], 'an empty list is not a removal');
+      const onList = (s2: { name: string }): string | undefined => (['gone', 'here'].includes(s2.name) ? s2.name : undefined);
+      pr.set('copilot', [{ name: 'gone', tokens: 1, source: 'reported' }, { name: 'here', tokens: 2, source: 'reported' }, { name: 'runtime-only', tokens: 3, source: 'reported' }], 1, onList);
+      pr.set('codex', [{ name: 'c', tokens: 3, source: 'estimated' }], 1, () => 'c');
+      pr.prune({ copilot: ['here'] });
+      assert.deepStrictEqual(Object.keys(pr.all().copilot).sort(), ['here', 'runtime-only'], 'the removed server is gone; one on no list stays');
+      assert.deepStrictEqual(Object.keys(pr.all().codex), ['c'], 'an app whose list could not be read keeps its figures');
+      pr.prune({ codex: [] });
+      assert.ok(!('codex' in pr.all()), 'a list read as empty proves it');
       const pr2 = new McpCostStore(path.join(dir, 'prune.json'));
       pr2.load();
-      assert.deepStrictEqual(Object.keys(pr2.all().copilot), ['here'], 'and it is gone from the file');
+      assert.deepStrictEqual(Object.keys(pr2.all().copilot).sort(), ['here', 'runtime-only'], 'and it is gone from the file, the marks kept');
+      assert.strictEqual(pr2.all().copilot.here.list, 'here');
+      // a list that could not be read at measuring time keeps the mark it had
+      pr2.set('copilot', [{ name: 'here', tokens: 9, source: 'reported' }], 2, () => null);
+      assert.strictEqual(pr2.all().copilot.here.list, 'here');
+      pr2.forget('here');
+      assert.deepStrictEqual(Object.keys(pr2.all().copilot), ['runtime-only'], 'forget');
+      // a save that fails: memory goes on, nothing throws
+      fs.writeFileSync(path.join(dir, 'afile'), 'x');
+      const noDisk = new McpCostStore(path.join(dir, 'afile', 'c.json'));
+      noDisk.set('copilot', [{ name: 'a', tokens: 1, source: 'reported' }], 1, () => 'a');
+      noDisk.prune({ copilot: [] });
+      assert.deepStrictEqual(noDisk.all(), {}, 'no throw from set or prune');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

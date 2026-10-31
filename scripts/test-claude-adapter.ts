@@ -3,6 +3,7 @@
  * `npm run test:claudeadapter`. No claude, no account, no credits.
  */
 import * as assert from 'assert';
+import { McpContextTracker } from '../src/main/mcpcontextop';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -710,17 +711,29 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [{ name: 'web', tokens: 1000, deferredTokens: 40_000, tools: 3, source: 'reported' }, { name: 'notes', tokens: 50, deferredTokens: 0, tools: 1, source: 'reported' }], window: 200_000 });
     assert.deepStrictEqual(usageReqs, [{ subtype: 'get_context_usage', detail: 'summary' }], 'summary, never full (decided Q2)');
     usageMode = 'unknown';
-    assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [] }, 'a CLI that does not know the request: no figures');
+    assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [], failed: true }, 'a CLI that does not know the request: a failed read');
     usageMode = 'silent';
-    assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [] }, 'a CLI that never answers: the time limit, no figures');
+    assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [], failed: true }, 'a CLI that never answers: the time limit, a failed read');
     usageMode = 'ok';
+    // finding 1, through the tracker: a failure after figures keeps them; a real empty list replaces them
+    {
+      let now = 0;
+      const t = new McpContextTracker({ agents: new Map([[sid, { id: sid } as never]]), router: { forAgent: () => ad } as never, secrets: () => [], live: () => [], off: () => new Set(), push: () => undefined, now: () => now });
+      assert.strictEqual((await t.get(sid, true)).report?.servers[0].name, 'web');
+      for (const mode of ['unknown', 'silent'] as const) {
+        usageMode = mode;
+        now += 61_000;
+        assert.strictEqual((await t.get(sid, true)).report?.servers[0].name, 'web', `${mode}: the last figures stay`);
+      }
+      usageMode = 'ok';
+    }
     (ad as unknown as { sessions: Map<string, { turnOpen?: boolean }> }).sessions.get(sid)!.turnOpen = true;
     usageReqs.length = 0;
     assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [], busy: true }, 'during a turn: nothing asked, main asks at its end (FR-003)');
     assert.strictEqual(usageReqs.length, 0);
     (ad as unknown as { sessions: Map<string, { turnOpen?: boolean }> }).sessions.get(sid)!.turnOpen = false;
     await ad.stop(sid);
-    assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [] }, 'a stopped CLI is not started for it');
+    assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [], failed: true }, 'a stopped CLI is not started for it');
     // the SDK transport (dev opt-in) sends no mcp_reconnect: no Restart there (C2)
     const sdk = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, sdkTransport: true, claudePath: async () => '/usr/bin/claude', sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) } as never);
     assert.deepStrictEqual([sdk.capabilities.mcpRestart, typeof sdk.restartMcpServer], [undefined, 'undefined'], 'SDK transport: no restartMcpServer');

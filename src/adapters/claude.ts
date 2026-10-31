@@ -1089,16 +1089,16 @@ export class ClaudeAdapter implements AgentAdapter {
   /**
    * Spec 100 FR-001, FR-003: the CLI's own figures (`get_context_usage`, `summary`: no extra network requests, decided Q2). Only a running
    * CLI is asked and never during a turn (`busy`: main asks again at the turn's end). A CLI that does not know the request, a failure or a
-   * time-out is a report with no figures.
+   * time-out is a failed read: main keeps the last figures.
    */
   async mcpContext(sessionId: string): Promise<McpContextReport> {
     const s = this.sessions.get(sessionId);
-    if (!s?.transport?.alive) return { servers: [] };
+    if (!s?.transport?.alive) return { servers: [], failed: true };
     if (s.turnOpen) return { servers: [], busy: true };
     try {
       return claudeMcpContext(await s.transport.request({ subtype: 'get_context_usage', detail: 'summary' }, this.deps.mcpContextTimeoutMs ?? MCP_CONTEXT_TIMEOUT_MS), (s.lastMcp ?? []).map((x) => x.name));
     } catch {
-      return { servers: [] };
+      return { servers: [], failed: true };
     }
   }
 
