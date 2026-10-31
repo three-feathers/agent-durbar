@@ -13,10 +13,10 @@ export const le32 = (n: number): Buffer => { const b = Buffer.alloc(4); b.writeU
 const be32 = (n: number): Buffer => { const b = Buffer.alloc(4); b.writeUInt32BE(n >>> 0); return b; };
 
 // ---- pictures ----
-function chunk(id: string, data: Buffer): Buffer { return Buffer.concat([Buffer.from(id, 'latin1'), le32(data.length), data, data.length & 1 ? Buffer.alloc(1) : Buffer.alloc(0)]); }
-function riff(chunks: Buffer[]): Buffer { const body = Buffer.concat([Buffer.from('WEBP'), ...chunks]); return Buffer.concat([Buffer.from('RIFF'), le32(body.length), body]); }
+export function chunk(id: string, data: Buffer): Buffer { return Buffer.concat([Buffer.from(id, 'latin1'), le32(data.length), data, data.length & 1 ? Buffer.alloc(1) : Buffer.alloc(0)]); }
+export function riff(chunks: Buffer[]): Buffer { const body = Buffer.concat([Buffer.from('WEBP'), ...chunks]); return Buffer.concat([Buffer.from('RIFF'), le32(body.length), body]); }
 export function vp8l(w: number, h: number, pad = 24): Buffer { const d = Buffer.alloc(Math.max(5, pad), 7); d[0] = 0x2f; d.writeUInt32LE(((w - 1) & 0x3fff) | (((h - 1) & 0x3fff) << 14) | (1 << 28), 1); return chunk('VP8L', d); }
-export function vp8(w: number, h: number): Buffer { const d = Buffer.alloc(30, 3); d[3] = 0x9d; d[4] = 0x01; d[5] = 0x2a; d.writeUInt16LE(w, 6); d.writeUInt16LE(h, 8); return chunk('VP8 ', d); }
+export function vp8(w: number, h: number): Buffer { const d = Buffer.alloc(30, 3); d[0] = 0x10; /* key frame, version 0, shown */ d[3] = 0x9d; d[4] = 0x01; d[5] = 0x2a; d.writeUInt16LE(w, 6); d.writeUInt16LE(h, 8); return chunk('VP8 ', d); }
 export function vp8x(w: number, h: number, flags: number): Buffer { const d = Buffer.alloc(10); d[0] = flags; d.writeUIntLE(w - 1, 4, 3); d.writeUIntLE(h - 1, 7, 3); return chunk('VP8X', d); }
 /** A header-valid WebP of the given size; `pad` grows the picture data to reach a byte size. */
 export function webp(w: number, h: number, pad = 24): Buffer { return riff([vp8l(w, h, pad)]); }
@@ -25,6 +25,12 @@ export function pngChunk(type: string, data: Buffer): Buffer { const t = Buffer.
 export function png(w: number, h: number, extra: Buffer[] = [], opts: { iend?: boolean; trailing?: Buffer } = {}): Buffer {
   const ihdr = Buffer.concat([be32(w), be32(h), Buffer.from([8, 6, 0, 0, 0])]);
   return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), pngChunk('IHDR', ihdr), ...extra, pngChunk('IDAT', Buffer.alloc(40, 1)), ...(opts.iend === false ? [] : [pngChunk('IEND', Buffer.alloc(0))]), ...(opts.trailing ? [opts.trailing] : [])]);
+}
+
+/** A PNG built chunk by chunk: `before` chunks between IHDR and the single IDAT, `after` chunks between IDAT and IEND, and the IHDR fields. */
+export function pngShaped(o: { w?: number; h?: number; depth?: number; ctype?: number; inter?: number; before?: Buffer[]; idat?: Buffer[]; after?: Buffer[]; iendData?: Buffer; ihdrs?: number }): Buffer {
+  const ihdr = Buffer.concat([be32(o.w ?? 100), be32(o.h ?? 100), Buffer.from([o.depth ?? 8, o.ctype ?? 6, 0, 0, o.inter ?? 0])]);
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), pngChunk('IHDR', ihdr), ...Array.from({ length: (o.ihdrs ?? 1) - 1 }, () => pngChunk('IHDR', ihdr)), ...(o.before || []), ...(o.idat || [pngChunk('IDAT', Buffer.alloc(40, 1))]), ...(o.after || []), pngChunk('IEND', o.iendData || Buffer.alloc(0))]);
 }
 
 // ---- the good pack ----
@@ -65,7 +71,7 @@ export interface RawEntry {
   /** what the directory claims (default: the real values) */ size?: number; csize?: number; crc?: number;
   /** what the local header claims */ lsize?: number; lcsize?: number; lcrc?: number;
   /** raw (already compressed) bytes in place of the data */ packed?: Buffer;
-  descriptor?: 'sig' | 'nosig' | 'none'; /** the descriptor's own values, when they should differ from the directory */ ddata?: [number, number, number]; offset?: number; diskStart?: number;
+  /** bytes of the entry's comment in the central directory */ ccomment?: Buffer; descriptor?: 'sig' | 'nosig' | 'none'; /** the descriptor's own values, when they should differ from the directory */ ddata?: [number, number, number]; offset?: number; diskStart?: number;
 }
 export interface RawOpts { prefix?: Buffer; suffix?: Buffer; comment?: Buffer; eocd?: { commentLen?: number; total?: number; disk?: number; cdDisk?: number; onDisk?: number; cdSize?: number; cdOff?: number }; locator?: boolean; gapAfterFirst?: Buffer; gapAfterLast?: Buffer; shiftOffsets?: boolean }
 export function rawZip(entries: RawEntry[], o: RawOpts = {}): Buffer {
@@ -84,7 +90,7 @@ export function rawZip(entries: RawEntry[], o: RawOpts = {}): Buffer {
       le16((e.lname || name).length), le16((e.lextra || Buffer.alloc(0)).length), e.lname || name, e.lextra || Buffer.alloc(0)]);
     const here = e.offset ?? off;
     const ch = Buffer.concat([le32(0x02014b50), le16(e.made ?? ((3 << 8) | 20)), le16(20), le16(flags), le16(method), le16(0), le16(0x21), le32(crc), le32(csize), le32(size),
-      le16(name.length), le16((e.cextra || Buffer.alloc(0)).length), le16(0), le16(e.diskStart ?? 0), le16(0), le32(e.attr ?? ((0o100644 << 16) >>> 0)), le32(here + (o.shiftOffsets ? prefix.length : 0)), name, e.cextra || Buffer.alloc(0)]);
+      le16(name.length), le16((e.cextra || Buffer.alloc(0)).length), le16((e.ccomment || Buffer.alloc(0)).length), le16(e.diskStart ?? 0), le16(0), le32(e.attr ?? ((((name[name.length - 1] === 0x2f) ? ((0o040755 << 16) | 0x10) : (0o100644 << 16)) >>> 0))), le32(here + (o.shiftOffsets ? prefix.length : 0)), name, e.cextra || Buffer.alloc(0), e.ccomment || Buffer.alloc(0)]);
     parts.push(lh, packed);
     let len = lh.length + packed.length;
     const dd = e.ddata || [crc, csize, size];
@@ -322,6 +328,126 @@ export function hostileSet(): Hostile[] {
   add('manifest-invalid-utf8', mf(Buffer.concat([Buffer.from('{"formatVersion":1,"name":"'), Buffer.from([0xff, 0xfe]), Buffer.from('"}')])));
   add('manifest-too-big', mf(Buffer.from(JSON.stringify({ ...JSON.parse(goodPack()['world.json'].toString()), description: 'x'.repeat(70000) }))));
   add('manifest-deep-nesting', mf(Buffer.from('['.repeat(30000) + ']'.repeat(30000))));
+  // ---- review of #955 (each reproducer pinned) ----
+  const goodObj = (): Record<string, any> => JSON.parse(good['world.json'].toString());
+  const withTokens = (tokens: Record<string, unknown>): Buffer => toStored({ ...goodPack(), 'world.json': Buffer.from(JSON.stringify({ ...goodObj(), tokens })) });
+  const textPack = (text: string): Buffer => toStored({ ...goodPack(), 'world.json': Buffer.from(text) });
+  const gt = JSON.stringify(goodObj());
+  // item 1: colours that cannot be measured, or draw nothing
+  add('token-ink-transparent', withTokens({ '--ink': 'transparent' }));
+  add('token-ink-alpha-zero-hex8', withTokens({ '--bg': '#ffffff', '--ink': '#00000000' }));
+  add('token-ink-alpha-zero-hex4', withTokens({ '--ink': '#fff0' }));
+  add('token-ink-seven-digit-hex', withTokens({ '--ink': '#fffffff' }));
+  add('token-ink-same-as-bg-rgb', withTokens({ '--ink': 'rgb(247,246,243)' }));
+  add('token-ink-same-as-bg-hex', withTokens({ '--bg': '#ffffff', '--ink': '#fefefe' }));
+  add('token-ink-hsl', withTokens({ '--ink': 'hsl(0 0% 10%)' }));
+  add('token-bg-rgb-javascript', withTokens({ '--bg': 'rgb(javascript)' }));
+  add('token-bg-seethrough-with-text', withTokens({ '--drop-bg': 'rgb(233 241 248 / .3)' }));
+  // item 2: known names and types only
+  add('token-unknown-t5-size', withTokens({ '--t5-size': '2px' }));
+  add('token-unknown-s-1', withTokens({ '--s-1': '9999px' }));
+  add('token-unknown-z-top', withTokens({ '--z-top': '-1' }));
+  add('token-colour-name-size-value', withTokens({ '--bg': '999999999px' }));
+  add('token-colour-name-word-value', withTokens({ '--ink': 'hidden' }));
+  add('token-colour-name-time-value', withTokens({ '--bg': '.5s' }));
+  add('token-value-not-a-string', withTokens({ '--bg': 5 }));
+  add('token-value-deep-array', textPack(JSON.stringify({ ...goodObj(), tokens: undefined }).slice(0, -1) + ',"tokens":{"--a":' + '['.repeat(20000) + ']'.repeat(20000) + '}}'));
+  // item 3: status colours keep their meaning
+  add('token-status-swapped', withTokens({ '--c-waiting': '#2e7d32', '--c-error': '#2e7d32', '--c-done': '#d32f2f' }));
+  add('token-status-grey-error', withTokens({ '--c-error': '#808080' }));
+  add('token-status-pill-wrong-hue', withTokens({ '--pb-done': '#fbe9e7', '--pc-done': '#8e3a32' }));
+  // item 4: nothing rides along in a picture chunk (50 KB of marker bytes)
+  const blob = Buffer.alloc(50 * 1024, 0x41);
+  add('png-gama-blob', swap('wall.webp', pngShaped({ before: [pngChunk('gAMA', blob)] })));
+  add('png-srgb-blob', swap('wall.webp', pngShaped({ before: [pngChunk('sRGB', blob)] })));
+  add('png-phys-blob', swap('wall.webp', pngShaped({ before: [pngChunk('pHYs', blob)] })));
+  add('png-trns-blob', swap('wall.webp', pngShaped({ ctype: 2, before: [pngChunk('tRNS', blob)] })));
+  add('png-iend-blob', swap('wall.webp', pngShaped({ iendData: blob })));
+  add('png-second-ihdr', swap('wall.webp', pngShaped({ w: 100, h: 100, ihdrs: 2 })));
+  add('png-idat-before-plte', swap('wall.webp', pngShaped({ ctype: 2, before: [], after: [pngChunk('PLTE', Buffer.alloc(3))] })));
+  add('png-plte-twice', swap('wall.webp', pngShaped({ ctype: 2, before: [pngChunk('PLTE', Buffer.alloc(3)), pngChunk('PLTE', Buffer.alloc(3))] })));
+  add('png-bad-depth-and-type', swap('wall.webp', pngShaped({ depth: 99, ctype: 99 })));
+  add('png-bad-interlace', swap('wall.webp', pngShaped({ inter: 7 })));
+  add('png-plte-with-greyscale', swap('wall.webp', pngShaped({ ctype: 0, depth: 8, before: [pngChunk('PLTE', Buffer.alloc(3))] })));
+  add('png-trns-with-alpha-type', swap('wall.webp', pngShaped({ ctype: 6, before: [pngChunk('tRNS', Buffer.alloc(2))] })));
+  add('png-palette-type-without-plte', swap('wall.webp', pngShaped({ ctype: 3, depth: 8 })));
+  add('png-gama-after-plte', swap('wall.webp', pngShaped({ ctype: 2, before: [pngChunk('PLTE', Buffer.alloc(3)), pngChunk('gAMA', Buffer.alloc(4))] })));
+  add('png-chunk-between-idats', swap('wall.webp', pngShaped({ idat: [pngChunk('IDAT', Buffer.alloc(8, 1)), pngChunk('pHYs', Buffer.alloc(9)), pngChunk('IDAT', Buffer.alloc(8, 1))] })));
+  add('webp-vp8x-blob', swap('wall.webp', riff([chunk('VP8X', blob), vp8l(600, 200)])));
+  add('webp-vp8x-short', swap('wall.webp', riff([chunk('VP8X', Buffer.alloc(5)), vp8l(600, 200)])));
+  add('webp-second-vp8x-animated', swap('wall.webp', riff([vp8x(600, 200, 0x10), vp8x(4096, 4096, 0x12), vp8l(600, 200)])));
+  add('webp-alph-blob-with-vp8l', swap('wall.webp', riff([vp8x(600, 200, 0x10), chunk('ALPH', blob), vp8l(600, 200)])));
+  add('webp-alph-after-bitstream', swap('wall.webp', riff([vp8x(600, 200, 0x10), vp8(600, 200), chunk('ALPH', blob)])));
+  add('webp-alph-twice', swap('wall.webp', riff([vp8x(600, 200, 0x10), chunk('ALPH', Buffer.alloc(8)), chunk('ALPH', Buffer.alloc(8)), vp8(600, 200)])));
+  add('webp-alph-without-alpha-flag', swap('wall.webp', riff([vp8x(600, 200, 0), chunk('ALPH', Buffer.alloc(8)), vp8(600, 200)])));
+  add('webp-vp8x-extra-flags', swap('wall.webp', riff([vp8x(600, 200, 0x38), vp8l(600, 200)])));
+  add('webp-vp8x-reserved-bytes', swap('wall.webp', (() => { const b = Buffer.from(riff([vp8x(600, 200, 0x10), vp8l(600, 200)])); b[21] = 1; return b; })()));
+  add('webp-vp8-inter-frame', swap('wall.webp', (() => { const b = Buffer.from(riff([vp8(600, 200)])); b[20] |= 1; return b; })()));
+  add('webp-vp8-hidden-frame', swap('wall.webp', (() => { const b = Buffer.from(riff([vp8(600, 200)])); b[20] &= ~0x10; return b; })()));
+  add('webp-vp8-scaled', swap('wall.webp', (() => { const b = Buffer.from(riff([vp8(600, 200)])); b[27] |= 0x40; return b; })()));
+  add('webp-vp8l-version-7', swap('wall.webp', (() => { const b = Buffer.from(webp(600, 200)); b[24] |= 0xe0; return b; })()));
+  add('webp-pad-byte-carries-data', swap('wall.webp', (() => { const odd = chunk('VP8L', (() => { const d = Buffer.alloc(25, 7); d[0] = 0x2f; d.writeUInt32LE(((600 - 1) & 0x3fff) | (((200 - 1) & 0x3fff) << 14) | (1 << 28), 1); return d; })()); odd[odd.length - 1] = 0x41; return riff([odd]); })()));
+  // item 7: bytes the reader says it refuses
+  add('entry-comment-in-directory', rawZip(rawFrom(good).map((e) => (e.name === 'wall.webp' ? { ...e, ccomment: Buffer.alloc(3000, 0x41) } : e))));
+  add('deflate-junk-after-final-block', rawZip(rawFrom(good).map((e) => (e.name === 'world.json' ? { name: e.name, data: good['world.json'], method: 8, packed: Buffer.concat([zlib.deflateRawSync(good['world.json']), Buffer.alloc(3000, 0x41)]) } : e))));
+  const uniExtra = (id: number): Buffer => Buffer.concat([le16(id), le16(40), Buffer.alloc(40, 0x2e)]);
+  add('unicode-path-extra-cd', plus({ name: 'a.bin', data: Buffer.from('x'), cextra: uniExtra(0x7075) }));
+  add('unicode-comment-extra-cd', plus({ name: 'a.bin', data: Buffer.from('x'), cextra: uniExtra(0x6375) }));
+  add('unicode-path-extra-local', plus({ name: 'a.bin', data: Buffer.from('x'), lextra: uniExtra(0x7075) }));
+  // item 8: attributes
+  add('reparse-bit-ntfs-host', plus({ name: 'rp', data: Buffer.alloc(0), made: (10 << 8) | 20, attr: 0x400 }));
+  add('reparse-bit-unix-host', plus({ name: 'rp', data: Buffer.alloc(0), made: (3 << 8) | 20, attr: ((0o100644 << 16) | 0x400) >>> 0 }));
+  add('world-json-with-directory-mode', rawZip(rawFrom(good).map((e) => (e.name === 'world.json' ? { ...e, attr: (0o040755 << 16) >>> 0 } : e))));
+  add('file-with-dos-directory-bit', rawZip(rawFrom(good).map((e) => (e.name === 'wall.webp' ? { ...e, attr: ((0o100644 << 16) | 0x10) >>> 0 } : e))));
+  add('folder-entry-with-regular-mode', rawZip([{ name: 'my-world/', data: Buffer.alloc(0), attr: (0o100644 << 16) >>> 0 }, ...rawFrom(good).map((e) => ({ ...e, name: 'my-world/' + (e.name as string) }))]));
+  // item 9: the folder rule does not depend on the order of entries
+  add('junk-folder-a-then-pack-folder-b', rawZip([{ name: 'a/.DS_Store', data: Buffer.from('x') }, ...rawFrom(good).map((e) => ({ ...e, name: 'b/' + (e.name as string) }))]));
+  add('pack-folder-b-then-junk-folder-a', rawZip([...rawFrom(good).map((e) => ({ ...e, name: 'b/' + (e.name as string) })), { name: 'a/.DS_Store', data: Buffer.from('x') }]));
+  add('junk-in-folder-with-root-pack', rawZip([{ name: 'a/.DS_Store', data: Buffer.from('x') }, ...rawFrom(good)]));
+  add('thumbs-in-two-folders-with-root-pack', rawZip([{ name: 'a/Thumbs.db', data: Buffer.from('x') }, { name: 'c/Thumbs.db', data: Buffer.from('x') }, ...rawFrom(good)]));
+  add('dsstore-inside-dsstore-folder', rawZip([{ name: '.DS_Store/.DS_Store', data: Buffer.from('x') }, ...rawFrom(good)]));
+  // item 13 and the survivors: more reserved names
+  add('reserved-com0', one('com0/world.json'));
+  add('reserved-lpt0-ext', one('lpt0.a'));
+  add('reserved-with-space-before-dot', one('con .txt'));
+  // duplicate JSON keys (decision of the coordinator): the last one must not silently win
+  add('json-duplicate-top-level-id', textPack(gt.slice(0, -1) + ',"id":"evil"}'));
+  add('json-duplicate-escaped-key', textPack(gt.slice(0, -1) + ',"\\u0069d":"evil"}'));
+  add('json-duplicate-token', textPack(JSON.stringify({ ...goodObj(), tokens: undefined }).slice(0, -1) + ',"tokens":{"--bg":"url(evil)","--bg":"#ffffff"}}'));
+  add('json-duplicate-in-parts', textPack(gt.replace('"wall.webp":{"anchors":{}}', '"wall.webp":{"anchors":{},"anchors":{}}')));
+  // item 11: names that look blank
+  for (const [id, name] of [['u3164', 'ㅤㅤ'], ['braille-blank', '⠀'], ['cgj', '͏'], ['vs16-alone', '️'], ['mongolian-vs', '᠋᠋']] as const) add('name-blank-' + id, man({ name }));
+  // single-fault shapes, one rule each (a fixture with two faults lets either rule hide the other)
+  const patched = (f: (b: Buffer) => void): Buffer => { const b = Buffer.from(png(600, 200)); f(b); return b; };
+  add('png-ihdr-length-12', swap('wall.webp', patched((b) => { b.writeUInt32BE(12, 8); })));
+  add('png-first-chunk-idat', swap('wall.webp', patched((b) => { b.write('IDAT', 12, 'latin1'); })));
+  add('png-colour-type-5', swap('wall.webp', pngShaped({ ctype: 5 })));
+  add('png-depth-4-for-rgb', swap('wall.webp', pngShaped({ ctype: 2, depth: 4 })));
+  add('png-compression-1', swap('wall.webp', patched((b) => { b[26] = 1; })));
+  add('png-filter-1', swap('wall.webp', patched((b) => { b[27] = 1; })));
+  add('png-width-over-2-pow-31', swap('wall.webp', pngShaped({ w: 0x80000000 })));
+  add('png-chrm-31-bytes', swap('wall.webp', pngShaped({ before: [pngChunk('cHRM', Buffer.alloc(31))] })));
+  add('png-srgb-2-bytes', swap('wall.webp', pngShaped({ before: [pngChunk('sRGB', Buffer.alloc(2))] })));
+  add('png-srgb-value-5', swap('wall.webp', pngShaped({ before: [pngChunk('sRGB', Buffer.from([5]))] })));
+  add('png-phys-10-bytes', swap('wall.webp', pngShaped({ before: [pngChunk('pHYs', Buffer.alloc(10))] })));
+  add('png-phys-unit-2', swap('wall.webp', pngShaped({ before: [pngChunk('pHYs', Buffer.from([0, 0, 0, 1, 0, 0, 0, 1, 2]))] })));
+  add('png-plte-4-bytes', swap('wall.webp', pngShaped({ ctype: 2, before: [pngChunk('PLTE', Buffer.alloc(4))] })));
+  add('png-plte-empty', swap('wall.webp', pngShaped({ ctype: 2, before: [pngChunk('PLTE', Buffer.alloc(0))] })));
+  add('png-plte-771-bytes-16-bit', swap('wall.webp', pngShaped({ ctype: 2, depth: 16, before: [pngChunk('PLTE', Buffer.alloc(771))] })));
+  add('png-plte-3-entries-1-bit', swap('wall.webp', pngShaped({ ctype: 3, depth: 1, before: [pngChunk('PLTE', Buffer.alloc(9))] })));
+  add('png-trns-before-plte', swap('wall.webp', pngShaped({ ctype: 2, before: [pngChunk('tRNS', Buffer.alloc(6)), pngChunk('PLTE', Buffer.alloc(3))] })));
+  add('png-trns-grey-4-bytes', swap('wall.webp', pngShaped({ ctype: 0, before: [pngChunk('tRNS', Buffer.alloc(4))] })));
+  add('png-trns-palette-too-long', swap('wall.webp', pngShaped({ ctype: 3, before: [pngChunk('PLTE', Buffer.alloc(9)), pngChunk('tRNS', Buffer.alloc(4))] })));
+  add('png-trns-palette-empty', swap('wall.webp', pngShaped({ ctype: 3, before: [pngChunk('PLTE', Buffer.alloc(9)), pngChunk('tRNS', Buffer.alloc(0))] })));
+  add('png-trns-palette-without-plte', swap('wall.webp', pngShaped({ ctype: 3, before: [pngChunk('tRNS', Buffer.alloc(1))] })));
+  add('webp-alph-without-vp8x', swap('wall.webp', riff([chunk('ALPH', Buffer.alloc(8)), vp8(600, 200)])));
+  add('webp-alph-empty', swap('wall.webp', riff([vp8x(600, 200, 0x10), chunk('ALPH', Buffer.alloc(0)), vp8(600, 200)])));
+  add('webp-two-vp8x-only', swap('wall.webp', riff([vp8x(600, 200, 0x10), vp8x(600, 200, 0x10)])));
+  add('webp-vp8l-4-bytes', swap('wall.webp', riff([chunk('VP8L', Buffer.from([0x2f, 0, 0, 0]))])));
+  add('webp-vp8-6-bytes', swap('wall.webp', riff([chunk('VP8 ', Buffer.from([0x10, 0, 0, 0x9d, 0x01, 0x2a]))])));
+  add('webp-vp8-version-4', swap('wall.webp', (() => { const b = Buffer.from(riff([vp8(600, 200)])); b[20] = 0x18; return b; })()));
+  add('webp-vp8x-posing-as-bitstream', swap('wall.webp', riff([vp8x(600, 200, 0x10), chunk('VP8X', Buffer.from([0x10, 0, 0, 0x9d, 0x01, 0x2a, 600 & 255, 600 >> 8, 200, 0]))])));
+  add('nested-folder-entry', rawZip([{ name: 'a/b/', data: Buffer.alloc(0) }, ...rawFrom(good)]));
   add('manifest-missing', (() => { const f = goodPack(); delete f['world.json']; return toStored(f); })());
   return out;
 }

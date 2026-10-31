@@ -15,7 +15,7 @@ export const EXCLUSION_CLAUSE = 'Draw a real contemporary office with local mate
 export const NO_REAL_PERSON = 'no real person';
 
 const CONTROL_RE = /[\p{Cc}\u2028\u2029]/gu;
-const FORMAT_RE = /[\p{Cf}\p{Co}\p{Cs}]/gu;
+const FORMAT_RE = /[\p{Cf}\p{Co}\p{Cs}\p{Cn}\p{Default_Ignorable_Code_Point}]/gu;
 const ANGLE_RE = /[<>]/g;
 
 export type IdeaResult = { ok: true; text: string } | { ok: false; reason: string };
@@ -62,7 +62,7 @@ export const PROMPT_PARTS: readonly string[] = PART_TABLE.map((p) => p.name);
 function build(spec: PartSpec, slot: string): string {
   const b = brief(spec);
   const out = [WRAPPER_BEFORE, EXCLUSION_CLAUSE, 'File: ' + spec.name, b.size, b.background, b.framing, MARK_OPEN, slot, MARK_CLOSE, WRAPPER_AFTER].join('\n');
-  return out.length > MAX_PROMPT_CHARS ? out.slice(0, MAX_PROMPT_CHARS) : out;
+  return out; // never longer than MAX_PROMPT_CHARS: the idea is cut at 300 code points, the rest is fixed text (test:worldpack runs the longest case); a silent cut here would drop the closing marker
 }
 
 /** The exact prompt for one part and the person's idea. Throws a plain Error (safe to show) for an unknown part or an idea that is too short; the part name comes from our own list. */

@@ -10,13 +10,13 @@ import * as path from 'path';
 import * as zlib from 'zlib';
 import { execFileSync } from 'child_process';
 import { openZip, readZip, writeStoredZip, crc32, segmentProblem, MAX_RAW_ENTRIES, MAX_KEPT_ENTRIES } from '../src/shared/worldzip';
-import { validateWorldZip } from '../src/shared/worldpack';
+import { validateWorldZip, type PackOptions } from '../src/shared/worldpack';
 import { goodPack, toStored, rawZip, rawFrom, hostileSet, webp, le32 } from './fixtures/worlds/gen';
 
 process.exitCode = 1;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const T = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'theme.js')) as { _tokens(): Record<string, string> };
-const opts = { clean: T._tokens(), knownSets: ['office'] };
+const opts: PackOptions = { clean: T._tokens(), knownSets: ['office'], requireHashes: false };
 
 assert.strictEqual(crc32(Buffer.from('123456789')), 0xcbf43926, 'CRC-32 check value');
 assert.strictEqual(crc32(Buffer.alloc(0)), 0);
@@ -83,8 +83,20 @@ const names = Object.keys(good);
 
 // ---- names (segmentProblem is the one rule) ----
 for (const ok of ['wall.webp', 'fx-library.webp', 'world.json', 'a_b-c.D', 'x']) assert.strictEqual(segmentProblem(ok), '', ok);
-for (const bad of ['', '.', '..', 'a.', 'a ', 'con', 'CON.txt', 'nul.x', 'Com1', 'lpt9.webp', 'a:b', 'a\\b', 'a\0b', 'a\tb', 'é', '‮', 'a/b', 'x'.repeat(65), 'a*b', 'a?b', 'a"b', 'a<b', 'a|b']) assert.notStrictEqual(segmentProblem(bad), '', JSON.stringify(bad) + ' must be refused');
-assert.strictEqual(segmentProblem('com10.webp'), '', 'com10 is not a device name'); // COM1..COM9 only
+for (const bad of ['', '.', '..', 'a.', 'a ', 'con', 'com0', 'lpt0.a', 'con .txt', 'nul .x', 'aux.', 'CON.txt', 'nul.x', 'Com1', 'lpt9.webp', 'a:b', 'a\\b', 'a\0b', 'a\tb', 'é', '‮', 'a/b', 'x'.repeat(65), 'a*b', 'a?b', 'a"b', 'a<b', 'a|b']) assert.notStrictEqual(segmentProblem(bad), '', JSON.stringify(bad) + ' must be refused');
+assert.strictEqual(segmentProblem('com10.webp'), '', 'com10 is not a device name'); // COM0..COM9 only
+assert.strictEqual(segmentProblem('console.webp'), '', 'a longer word is fine');
+
+// ---- attributes of real tools are accepted (the new checks must not refuse what Explorer, Finder and zip write) ----
+{
+  const fileA = 0x20, dirA = 0x10; // Windows Explorer: made by host 0 (MS-DOS), archive bit on files, directory bit on folders, no unix mode
+  const win = rawZip([{ name: 'my-world/', data: Buffer.alloc(0), made: 20, attr: dirA }, ...rawFrom(good).map((e) => ({ ...e, name: 'my-world/' + (e.name as string), made: 20, attr: fileA }))]);
+  assert.ok(validateWorldZip(win, opts).ok, 'Windows-style attributes');
+  const mac = rawZip([{ name: 'my-world/', data: Buffer.alloc(0), made: (3 << 8) | 20, attr: ((0o040755 << 16) | dirA) >>> 0 }, ...rawFrom(good).map((e) => ({ ...e, name: 'my-world/' + (e.name as string), attr: (0o100644 << 16) >>> 0 }))]);
+  assert.ok(validateWorldZip(mac, opts).ok, 'unix-style attributes');
+  const none = rawZip(rawFrom(good).map((e) => ({ ...e, attr: 0 })));
+  assert.ok(validateWorldZip(none, opts).ok, 'no attributes at all');
+}
 
 // ---- the writer (FR-085): byte-identical on two runs, readable, strict ----
 {
@@ -103,14 +115,14 @@ assert.strictEqual(segmentProblem('com10.webp'), '', 'com10 is not a device name
 }
 
 // ---- hostile zips: the reader (not only the pack rules) refuses the structural ones ----
-const NOT_ZIP_LEVEL = /^(manifest-|not-on-list|svg-|html-|jpeg-|gif-|empty-picture|png-|riff-|webp-|too-tall|too-wide|welcome-|window-|over-byte|lift-shaft|secret-marker)/;
+const NOT_ZIP_LEVEL = /^(manifest-|not-on-list|svg-|html-|jpeg-|gif-|empty-picture|png-|riff-|webp-|too-tall|too-wide|welcome-|window-|over-byte|lift-shaft|secret-marker|token-|json-|name-blank-)/;
 let structural = 0;
 for (const h of hostileSet()) {
   if (NOT_ZIP_LEVEL.test(h.id)) continue;
   structural++;
   const r = readZip(h.zip);
   assert.ok(!r.ok, 'the reader itself refuses ' + h.id);
-  assert.ok(!openZip(h.zip).ok || /^(crc-wrong|bomb-declared-small|deflate-garbage|deflate-shorter-than-declared|deflate-empty-small)$/.test(h.id), 'openZip refuses ' + h.id + ' before any inflate (except where only the data is bad)');
+  assert.ok(!openZip(h.zip).ok || /^(crc-wrong|bomb-declared-small|deflate-garbage|deflate-shorter-than-declared|deflate-empty-small|deflate-junk-after-final-block)$/.test(h.id), 'openZip refuses ' + h.id + ' before any inflate (except where only the data is bad)');
 }
 assert.ok(structural >= 80, 'enough structural cases: ' + structural);
 

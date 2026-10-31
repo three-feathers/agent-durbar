@@ -6,16 +6,16 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { PART_TABLE, PART_NAMES, readManifest, type PackOptions, validateWorldFiles, validateWorldZip, partProblem, pictureHeader, MANIFEST_BYTES, PACK_MAX_BYTES, MAX_SIDE, LAMP_SHAPES, CALL_SHAPES, RIDE_STYLES } from '../src/shared/worldpack';
+import { PART_TABLE, PART_NAMES, readManifest, type PackOptions, validateWorldFiles, validateWorldZip, partProblem, pictureHeader, MANIFEST_BYTES, PACK_MAX_BYTES, hasDuplicateKeys, MAX_SIDE, LAMP_SHAPES, CALL_SHAPES, RIDE_STYLES } from '../src/shared/worldpack';
 import { MOMENT_BLOCKS, BLOCK_PARTS, MOMENT_EXTRAS, momentCoverage, uncoveredMoments, momentsNeeding } from '../src/shared/worldmoments';
 import { buildPartPrompt, buildPartTemplate, cleanPlaceIdea, EXCLUSION_CLAUSE, MARK_OPEN, MARK_CLOSE, MAX_PLACE_IDEA, MAX_PROMPT_CHARS, PROMPT_PARTS, WRAPPER_BEFORE } from '../src/shared/worldprompts';
-import { goodPack, toStored, webp, webpOfSize, png, goodTokens, SECRET_MARKER } from './fixtures/worlds/gen';
+import { goodPack, toStored, webp, webpOfSize, png, pngShaped, pngChunk, chunk, riff, vp8, vp8x, vp8l, goodTokens, SECRET_MARKER } from './fixtures/worlds/gen';
 
 process.exitCode = 1;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const T = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'theme.js')) as { _tokens(): Record<string, string> };
 const clean = T._tokens();
-const opts: PackOptions = { clean, knownSets: ['office', 'retro'] };
+const opts: PackOptions = { clean, knownSets: ['office', 'retro'], requireHashes: false };
 const asFiles = (f: Record<string, Buffer>): { name: string; data: Buffer }[] => Object.keys(f).map((name) => ({ name, data: f[name] }));
 const check = (f: Record<string, Buffer>, o: PackOptions = opts) => validateWorldFiles(asFiles(f), o);
 const withManifest = (m: Record<string, unknown>, only?: string[]) => check(goodPack(m, only));
@@ -83,7 +83,12 @@ for (const bad of ['a b', ' lead', 'trail ', 'a\nb', 'a​b', 'a\ud800b', 'a 
   assert.ok(!r.ok && /newer Agent Durbar/.test(r.reason), 'newer format is refused first: ' + r.reason);
 }
 // defaultSet: shape always, membership when the caller knows the sets
-assert.ok(!withManifest({ defaultSet: 'nope' }).ok); assert.ok(check(goodPack({ defaultSet: 'nope' }), { clean }).ok, 'no list given, shape only'); assert.ok(withManifest({ defaultSet: 'retro' }).ok);
+assert.ok(!withManifest({ defaultSet: 'nope' }).ok); assert.ok(!check(goodPack(), { clean, knownSets: [], requireHashes: false }).ok, 'an empty list refuses every pack'); assert.ok(withManifest({ defaultSet: 'retro' }).ok);
+// the two arguments that change the verdict cannot be forgotten: leaving one out does not compile (typecheck runs this file)
+// @ts-expect-error requireHashes and knownSets are required
+validateWorldZip(toStored(goodPack()), { clean });
+// @ts-expect-error the options argument itself is required
+validateWorldZip(toStored(goodPack()));
 // one value per place: a pack cannot set realHeight, at the top or in a part
 assert.ok(!withManifest({ realHeight: 2.1 }).ok); assert.ok(/real height/.test(withManifest({ realHeight: 2.1 }).reason));
 { const m = JSON.parse(goodPack()['world.json'].toString()); m.parts['fx-boss.webp'].anchors.realHeight = 2.1; const f = goodPack(); f['world.json'] = Buffer.from(JSON.stringify(m)); assert.ok(!check(f).ok, 'realHeight inside anchors'); }
@@ -169,18 +174,107 @@ assert.ok(withManifest({ tokens: {} }).ok);
 for (const v of ['url(x)', 'URL( x )', '"Papyrus Fancy"', 'expression(1)', '<b>', 'red;}', 'var(--x)', '@import', '\\41']) assert.ok(!withManifest({ tokens: { '--font': v } }).ok, 'font ' + v);
 for (const v of ['url(https://evil.example/a.png)', 'javascript:alert(1)', '#zzz', 'rgb(0,0,0); x:y']) assert.ok(!withManifest({ tokens: { '--bg': v } }).ok, 'colour ' + v);
 assert.ok(!withManifest({ tokens: { '--': '#fff' } }).ok && !withManifest({ tokens: { '--A': '#fff' } }).ok && !withManifest({ tokens: { bg: '#fff' } }).ok, 'token keys are --lower-case names');
-{ const r = check(goodPack(), { knownSets: ['office'] }); assert.ok(!r.ok && /cannot be checked/.test(r.reason), 'tokens without a base theme cannot be checked, so they are refused: ' + r.reason); }
-assert.ok(check(goodPack({ tokens: undefined }), { knownSets: ['office'] }).ok, 'no tokens, no base needed');
-{ // contrast: reported, and the pack is still valid (the renderer repairs, as for user themes)
-  const r = withManifest({ tokens: { ...goodTokens(), '--bg': '#ffffff', '--ink': '#dddddd' } });
-  assert.ok(r.ok && r.contrastIssues > 0, 'low contrast is reported: ' + r.contrastIssues);
+{ const r = check(goodPack(), { knownSets: ['office'], requireHashes: false }); assert.ok(!r.ok && /cannot be checked/.test(r.reason), 'tokens without a base theme cannot be checked, so they are refused: ' + r.reason); }
+assert.ok(check(goodPack({ tokens: undefined }), { knownSets: ['office'], requireHashes: false }).ok, 'no tokens, no base needed');
+{ // contrast: a pair that is not body text is reported and the pack stays valid (the renderer repairs, as for user themes); unreadable body text refuses it
+  const r = withManifest({ tokens: { '--pb-working': '#e3ecf4', '--pc-working': '#c6d9ea' } });
+  assert.ok(r.ok && r.contrastIssues > 0, 'low contrast on a pill is reported: ' + r.contrastIssues + ' ' + r.reason);
   assert.ok(r.report.some((x) => x.part === 'world.json' && /contrast/.test(x.reason)), 'in plain words');
   assert.strictEqual(withManifest({}).contrastIssues, 0);
+  const t = withManifest({ tokens: { '--bg': '#ffffff', '--ink': '#dddddd' } });
+  assert.ok(!t.ok && /cannot be read/.test(t.reason), 'body text at 1.4:1 refuses the pack: ' + t.reason);
+  for (const k of ['--ink-2', '--muted']) { const u = withManifest({ tokens: { '--bg': '#ffffff', '--surface': '#ffffff', '--soft': '#ffffff', '--note': '#ffffff', [k]: '#fefefe' } }); assert.ok(!u.ok && /cannot be read/.test(u.reason), k + ' on white: ' + u.reason); }
 }
+
+// tokens, review of #955: names, types, alpha, status meaning; normalised output
+{
+  const ok = (tokens: Record<string, unknown>) => withManifest({ tokens });
+  const r1 = ok({ '--bg': '#FFF', '--ink': 'rgb(34, 34, 34)', '--surface': 'rgba(250,250,250,1)', '--sage-ink': '#2E7D32FF' });
+  assert.ok(r1.ok, 'hex3, rgb(), rgba(,1) and hex8 with full alpha are measurable: ' + r1.reason);
+  assert.deepStrictEqual(r1.manifest!.tokens, { '--bg': '#ffffff', '--ink': '#222222', '--surface': '#fafafa', '--sage-ink': '#2e7d32' }, 'colours come back as #rrggbb, which is what contrast measured');
+  assert.ok(ok({ '--drop-bg': 'rgb(233 241 248 / .93)' }).ok && ok({ '--focus-halo': 'transparent' }).ok, 'a name whose Clean value has alpha may keep alpha (the pair --drop-ink on --drop-bg needs at least .9)');
+  assert.ok(!ok({ '--drop-bg': 'rgb(233 241 248 / .89)' }).ok, 'alpha .89 under text is refused');
+  assert.ok(!ok({ '--bg': 'transparent' }).ok && !ok({ '--bg': '#ffffff00' }).ok && !ok({ '--bg': '#fffffffe' }).ok && ok({ '--bg': '#ffffffff' }).ok, 'an opaque-by-default name takes full alpha only');
+  for (const v of ['hsl(0 0% 10%)', 'red', '#fffffff', '#fff0', '#ffff', 'rgb(1,2)', 'rgb(256,0,0)', 'color(srgb 1 0 0)', '0', '']) assert.ok(!ok({ '--ink': v }).ok, 'ink ' + JSON.stringify(v));
+  for (const k of ['--t5-size', '--t1-size', '--measure', '--h-ctl', '--s-1', '--z-top', '--anything', '--constructor', '--proto']) assert.ok(!ok({ [k]: '2px' }).ok, 'unknown name ' + k);
+  assert.ok(ok({ '--radius': '8px', '--font': 'Georgia, serif', '--t1-weight': '700' }).ok, 'typed tokens of spec 070 stay allowed');
+  assert.ok(!ok({ '--radius': '8000px' }).ok && !ok({ '--t1-weight': 'bold' }).ok, 'typed tokens keep their range');
+  for (const v of [5, null, true, ['#fff'], { a: 1 }]) assert.ok(!ok({ '--bg': v }).ok, 'token value ' + JSON.stringify(v));
+  // every one of Clean Office's own colours is a legal value for its own name, and Clean's status colours pass the status check
+  const all: Record<string, string> = {};
+  for (const k of Object.keys(clean)) all[k] = clean[k];
+  const r2 = ok(all);
+  assert.ok(r2.ok, 'Clean Office as a pack: ' + r2.reason);
+  // status meaning (FR-055, 070 FR-050): working blue, waiting amber, error red, done green, for every token of the family
+  const FAM = ['working', 'waiting', 'error', 'done'];
+  const strong: Record<string, string> = { working: '#2f6fb5', waiting: '#d9962b', error: '#bf3a30', done: '#2e8a4f' };
+  const pale: Record<string, string> = { working: '#e3ecf4', waiting: '#fbefd6', error: '#f6e2df', done: '#e0eee6' }; // surfaces under body text must stay light
+  for (const st of FAM) for (const k of ['--c-' + st, '--pb-' + st, '--pc-' + st].concat(st === 'done' ? [] : ['--halo-' + st]).concat(st === 'waiting' || st === 'error' ? ['--card-' + st, '--card-' + st + '-line'] : [])) {
+    const bands = /^--(pb|card)-/.test(k) ? pale : strong;
+    assert.ok(ok({ [k]: bands[st] }).ok, k + ' in its own colour');
+    for (const other of FAM.filter((o) => o !== st)) assert.ok(!ok({ [k]: bands[other] }).ok, k + ' in the colour of ' + other + ' is a swapped meaning');
+    assert.ok(!ok({ [k]: '#808080' }).ok, k + ' grey carries no meaning');
+  }
+  assert.ok(ok({ '--c-thinking': '#d32f2f', '--c-idle': '#2e7d32' }).ok, 'thinking and idle have no fixed meaning in 070 FR-050');
+  // hue band edges (degrees): working 185..260, waiting 20..65, error 340..22 (wrapping), done 95..170, saturation at least .2
+  const hsv = (h: number): string => { const c = 0.8, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = 0.1; const [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x]; return '#' + [r + m, g + m, b + m].map((v) => Math.round(v * 255).toString(16).padStart(2, '0')).join(''); };
+  for (const [st, ok1, bad1] of [['working', [190, 255], [172, 272]], ['waiting', [25, 60], [12, 72]], ['done', [100, 165], [87, 178]], ['error', [350, 10], [335, 30]]] as Array<[string, number[], number[]]>) {
+    for (const h of ok1) assert.ok(ok({ ['--c-' + st]: hsv(h) }).ok, st + ' at ' + h + ' degrees');
+    for (const h of bad1) assert.ok(!ok({ ['--c-' + st]: hsv(h) }).ok, st + ' at ' + h + ' degrees is outside');
+  }
+  { const r = check(goodPack({ tokens: { '--bg': '#ffffff' } }), { ...opts, clean: { ...clean, '--bg': 'not a colour' } }); assert.ok(!r.ok && /not a plain colour/.test(r.reason), 'a base theme whose own value is no colour cannot vouch for a pack: ' + r.reason); }
+  // a pack that holds a hostile value in one token and a valid one beside it is refused whole
+  assert.ok(!ok({ '--bg': '#ffffff', '--ink': 'url(x)' }).ok);
+}
+
+// duplicate JSON keys (the coordinator's decision on #955): refused, so no reader can see a different value than the app does
+{
+  for (const [text, dup] of [['{"a":1,"a":2}', true], ['{"a":1,"b":{"a":2}}', false], ['{"a":{"b":1,"b":2}}', true], ['[{"a":1},{"a":2}]', false], ['{"a":"x","\\u0061":"y"}', true], ['{"a":[{"b":1,"b":1}]}', true], ['{"a":"\\"a\\":1","b":2}', false], ['{"a":"{\\"x\\":1,\\"x\\":2}"}', false], ['{"__proto__":1,"__proto__":2}', true], ['{"a b":1,"a b":2}', true], ['{"":1,"":2}', true], ['{"a":1,"A":2}', false], ['[]', false], ['{}', false], ['"a"', false]] as Array<[string, boolean]>) assert.strictEqual(hasDuplicateKeys(text), dup, text);
+  assert.strictEqual(hasDuplicateKeys('['.repeat(30000) + ']'.repeat(30000)), false, 'deep nesting is walked without recursion');
+  assert.strictEqual(hasDuplicateKeys('{"k":' .repeat(20000) + '1' + '}'.repeat(20000)), false);
+  const big = '{' + Array.from({ length: 5000 }, (_, i) => '"k' + i + '":1').join(',') + '}';
+  assert.strictEqual(hasDuplicateKeys(big), false); assert.strictEqual(hasDuplicateKeys(big.slice(0, -1) + ',"k77":2}'), true);
+  assert.strictEqual(hasDuplicateKeys('{"a":"x\\"y","b":1,"b":2}'), true, 'an escaped quote does not end a string early');
+  assert.strictEqual(hasDuplicateKeys('{"a\\"":1,"a\\"":2}'), true); assert.strictEqual(hasDuplicateKeys('{"a\\"":1,"a":2}'), false);
+  assert.strictEqual(hasDuplicateKeys('["a","a",1,1,{"b":1},{"b":1}]'), false, 'values in an array are not keys');
+  assert.strictEqual(hasDuplicateKeys('["a","a","a"]'), false); assert.strictEqual(hasDuplicateKeys('{"x":["k","k","k"],"k":1}'), false);
+  assert.ok(!readManifest(Buffer.from('{"formatVersion":1,"id":"p","id":"q","name":"p","version":1,"defaultSet":"office","parts":{}}'), ['world.json'], opts).ok, 'readManifest refuses a repeated field');
+}
+
+// readManifest never throws, even called alone with a hostile file (review of #955, item 10)
+{
+  const deep = '{"formatVersion":1,"id":"p","name":"p","version":1,"defaultSet":"office","tokens":{"--a":' + '['.repeat(20000) + ']'.repeat(20000) + '},"parts":{}}';
+  let r; try { r = readManifest(Buffer.from(deep), ['world.json'], opts); } catch (e) { assert.fail('readManifest threw ' + String(e)); }
+  assert.ok(!r.ok, 'a deeply nested token value is refused, not thrown');
+  assert.ok(!readManifest(null as never, [], opts).ok && !readManifest(Buffer.from('{}'), null as never, opts).ok && !readManifest(Buffer.from('{}'), [], null as never).ok, 'bad arguments are a refusal');
+}
+
+// names that look blank are refused; real names with emoji, accents and CJK are fine (item 11)
+for (const name of ['ㅤ', 'ㅤㅤ', '⠀', '͏', '️', '᠋', '⠀ ⠀', '   ']) assert.ok(!withManifest({ name }).ok, 'blank-looking name ' + JSON.stringify(name));
+for (const name of ['\u{1F3DD}️ Island', 'Café Zürich', '平和', 'a', '⠀x']) assert.ok(withManifest({ name }).ok, 'name ' + JSON.stringify(name));
+assert.ok(withManifest({ description: '' }).ok, 'an empty description is no description');
+assert.ok(!withManifest({ description: 'ㅤ' }).ok, 'a blank description');
 
 // ---- pictures (FR-052) ----
 assert.deepStrictEqual(pictureHeader(webp(600, 200)), { kind: 'webp', width: 600, height: 200 });
 assert.deepStrictEqual(pictureHeader(png(600, 200)), { kind: 'png', width: 600, height: 200 });
+// the exact shapes that ARE pictures stay accepted (the strict rules must not refuse what a real encoder writes)
+{
+  const okPic = (b: Buffer, what: string, w = 100, h = 100): void => { const r = pictureHeader(b); assert.ok(typeof r !== 'string' && r.width === w && r.height === h, what + ': ' + (typeof r === 'string' ? r : '')); };
+  okPic(pngShaped({}), 'RGBA 8-bit');
+  okPic(pngShaped({ ctype: 2, depth: 16, inter: 1 }), 'RGB 16-bit interlaced');
+  okPic(pngShaped({ ctype: 0, depth: 1, before: [pngChunk('tRNS', Buffer.alloc(2))] }), 'greyscale with a transparent grey');
+  okPic(pngShaped({ ctype: 2, before: [pngChunk('tRNS', Buffer.alloc(6))] }), 'RGB with a transparent colour');
+  okPic(pngShaped({ ctype: 3, depth: 2, before: [pngChunk('PLTE', Buffer.alloc(12)), pngChunk('tRNS', Buffer.alloc(3))] }), 'palette with transparency');
+  okPic(pngShaped({ ctype: 2, depth: 16, before: [pngChunk('PLTE', Buffer.alloc(768))] }), 'RGB with a suggested palette of 256');
+  okPic(pngShaped({ before: [pngChunk('gAMA', Buffer.alloc(4)), pngChunk('cHRM', Buffer.alloc(32)), pngChunk('sRGB', Buffer.from([0])), pngChunk('pHYs', Buffer.alloc(9))] }), 'colour and size information');
+  okPic(pngShaped({ idat: [pngChunk('IDAT', Buffer.alloc(8, 1)), pngChunk('IDAT', Buffer.alloc(8, 1)), pngChunk('IDAT', Buffer.alloc(8, 1))] }), 'IDAT in pieces');
+  okPic(pngShaped({ ctype: 0, depth: 16 }), 'greyscale 16-bit'); okPic(pngShaped({ ctype: 4, depth: 8 }), 'grey with alpha');
+  okPic(riff([vp8(100, 100)]), 'lossy'); okPic(riff([vp8l(100, 100)]), 'lossless');
+  okPic(riff([vp8x(100, 100, 0), vp8(100, 100)]), 'extended lossy without alpha'); okPic(riff([vp8x(100, 100, 0x10), vp8l(100, 100)]), 'extended lossless with alpha');
+  okPic(riff([vp8x(100, 100, 0x10), chunk('ALPH', Buffer.alloc(7, 1)), vp8(100, 100)]), 'lossy with an alpha plane (odd length, zero pad)');
+  assert.ok(withManifest({}, undefined).ok);
+}
 for (const junk of [Buffer.alloc(0), Buffer.alloc(11), Buffer.from('RIFF'), Buffer.from('RIFF\0\0\0\0WEBP'), Buffer.from('<svg/>'), Buffer.from([0x89, 0x50])]) assert.strictEqual(typeof pictureHeader(junk), 'string', 'refused: ' + junk.length);
 
 // ---- coverage (FR-030, FR-031, FR-034, T014) ----
@@ -193,7 +287,7 @@ for (const junk of [Buffer.alloc(0), Buffer.alloc(11), Buffer.from('RIFF'), Buff
   assert.ok(Object.keys(BLOCK_PARTS).length === reg.blocks.length, 'every registry block has a parts line');
   // FR-041's closed list written out by hand, so the maps under test cannot vouch for themselves
   assert.deepStrictEqual(JSON.parse(JSON.stringify(BLOCK_PARTS)), { 'desk-screen': ['desk.webp', 'desk-half.webp'], fixture: ['library', 'software', 'terminal', 'web', 'boss', 'coffee', 'bank', 'post', 'tools', 'kiosk'].map((n) => 'fx-' + n + '.webp'), lift: ['lift-shaft.webp'], 'speech-bubble': ['speech-bubble.webp'], slip: ['slip.webp'], 'panel-frame': ['panel-frame.webp'], person: [], 'light-slots': [] }, 'the files each block needs');
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(MOMENT_EXTRAS)), { 'first-run': ['welcome.webp'], 'floor-change': ['lift-cover.webp', 'rideStyle'] }, 'FR-031 extras');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(MOMENT_EXTRAS)), { 'office-floor': ['wall.webp', 'floor.webp'], lobby: ['wall.webp'], 'first-run': ['welcome.webp'], 'floor-change': ['lift-cover.webp', 'rideStyle'] }, 'FR-031 extras (and the room: review of #955)');
   const all = PART_NAMES.slice();
   const full = momentCoverage({ parts: all, rideStyle: 'doors' });
   assert.ok(full.every((m) => m.covered && m.missing.length === 0) && full.length === reg.moments.length, 'everything present covers everything');
@@ -211,10 +305,12 @@ for (const junk of [Buffer.alloc(0), Buffer.alloc(11), Buffer.from('RIFF'), Buff
   assert.deepStrictEqual(uncoveredMoments({ parts: all.filter((p) => p !== 'welcome.webp'), rideStyle: 'gate' }), ['first-run'], 'FR-031: first-run needs welcome');
   assert.deepStrictEqual(uncoveredMoments({ parts: all.filter((p) => p !== 'lift-cover.webp'), rideStyle: 'gate' }), ['floor-change'], 'FR-031: floor-change needs the ride cover');
   assert.ok(uncoveredMoments({ parts: all.filter((p) => p !== 'lift-cutaway.webp'), rideStyle: 'drop' }).length === 0, 'building-preview stays optional');
-  assert.ok(uncoveredMoments({ parts: all.filter((p) => !p.startsWith('window-') && p !== 'wall.webp' && p !== 'floor.webp'), rideStyle: 'drop' }).length === 0, 'room windows, wall and floor are optional for coverage');
+  assert.ok(uncoveredMoments({ parts: all.filter((p) => !p.startsWith('window-') && p !== 'panel-backdrop.webp'), rideStyle: 'drop' }).length === 0, 'room windows and the panel backdrop are optional for coverage');
+  assert.deepStrictEqual(uncoveredMoments({ parts: all.filter((p) => p !== 'wall.webp'), rideStyle: 'drop' }).sort(), ['lobby', 'office-floor'], 'no wall: the lobby and the floor are not covered');
+  assert.deepStrictEqual(uncoveredMoments({ parts: all.filter((p) => p !== 'floor.webp'), rideStyle: 'drop' }), ['office-floor'], 'no floor: the floor screen is not covered');
   assert.strictEqual(uncoveredMoments({ parts: [] }).length, 26, 'an empty pack covers nothing');
   const miss = momentCoverage({ parts: [] }).find((m) => m.id === 'lobby')!;
-  assert.deepStrictEqual(miss.missing, BLOCK_PARTS.fixture.slice().sort(), 'the lobby names the ten fixtures it lacks');
+  assert.deepStrictEqual(miss.missing, [...BLOCK_PARTS.fixture, 'wall.webp'].sort(), 'the lobby names the ten fixtures and the wall it lacks');
   // the pack result carries it
   const r = check(goodPack({}, ['fx-library.webp', 'wall.webp']));
   assert.ok(r.ok && r.unfinished.includes('lobby') && r.unfinished.includes('live-screen'), 'unfinished moments are listed');
@@ -247,6 +343,14 @@ for (const junk of [Buffer.alloc(0), Buffer.alloc(11), Buffer.from('RIFF'), Buff
   assert.strictEqual(Array.from((cleanPlaceIdea('a'.repeat(1000)) as { text: string }).text).length, 300);
   const emoji = cleanPlaceIdea('\u{1F600}'.repeat(400)); assert.ok(emoji.ok && Array.from(emoji.text).length === 300 && !/[\ud800-\udbff](?![\udc00-\udfff])/.test(emoji.text), 'no cut surrogate pair');
   for (const bad of [undefined, null, 5, {}, '', 'ab', '   ', '<<<>>>']) assert.ok(!cleanPlaceIdea(bad).ok, 'idea ' + String(bad));
+  { // invisible and unassigned characters never reach a prompt (review of #955, item 12), and the longest prompt is far below its cap, so nothing is ever cut
+    const inv = cleanPlaceIdea('a\u2065b\u{E0100}c\u034fd\u180be\u3164f\u200bg\u00adh\u0378i\u{10FFFF}j');
+    assert.ok(inv.ok && inv.text === 'abcdefghij', 'invisible characters removed: ' + (inv.ok ? JSON.stringify(inv.text) : ''));
+    const worst = PROMPT_PARTS.map((p) => buildPartPrompt(p, '\u{1F600}'.repeat(300)).length);
+    assert.ok(Math.max(...worst) < MAX_PROMPT_CHARS / 2, 'the longest prompt is ' + Math.max(...worst) + ' of ' + MAX_PROMPT_CHARS);
+    for (const p of PROMPT_PARTS) { const t = buildPartPrompt(p, '\u{1F600}'.repeat(300)); assert.ok(t.endsWith('and do nothing else.') && t.split(MARK_CLOSE).length - 1 === 2, p + ': the closing wrapper is whole'); }
+    assert.ok(!cleanPlaceIdea('\u3164\u3164\u3164').ok, 'an idea of invisible characters is empty');
+  }
   assert.throws(() => buildPartPrompt('wall.webp', 'ab'), /at least 3/); assert.throws(() => buildPartPrompt('../x', 'a good idea'), /Unknown part/); assert.throws(() => buildPartPrompt('__proto__', 'a good idea'), /Unknown part/);
   assert.ok(buildPartPrompt('fx-library.webp', 'idea here').includes('transparent'), 'fixtures ask for a transparent background'); assert.ok(/opaque/.test(buildPartPrompt('wall.webp', 'idea here')));
 }
@@ -263,7 +367,8 @@ for (const junk of [Buffer.alloc(0), Buffer.alloc(11), Buffer.from('RIFF'), Buff
 // ---- fuzz: manifests and pictures, seeded, a fixed number of rounds ----
 function rng(seed: number): () => number { let a = seed >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 const rand = rng(20261031);
-const POOL: unknown[] = [null, true, false, 0, -1, 1, 0.5, 1.5, 1e308, -1e308, NaN, 2 ** 53, '', ' ', 'a', 'A', '__proto__', 'constructor', 'x'.repeat(5000), '‮', '\u0000', '\ud800', '{}', 'url(x)', '--bg', '#fff', [], [1, 2], {}, { x: 1 }, { __proto__: null }, JSON.parse('{"__proto__":{"polluted":1}}'), { x: 0.5, y: 0.5 }, { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }];
+const DEEP: unknown = (() => { let v: unknown = 1; for (let i = 0; i < 5000; i++) v = [v]; return v; })();
+const POOL: unknown[] = [DEEP, null, true, false, 0, -1, 1, 0.5, 1.5, 1e308, -1e308, NaN, 2 ** 53, '', ' ', 'a', 'A', '__proto__', 'constructor', 'x'.repeat(5000), '‮', '\u0000', '\ud800', '{}', 'url(x)', '--bg', '#fff', [], [1, 2], {}, { x: 1 }, { __proto__: null }, JSON.parse('{"__proto__":{"polluted":1}}'), { x: 0.5, y: 0.5 }, { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }];
 type Json = unknown;
 function mutate(v: Json, depth = 0): Json {
   if (v && typeof v === 'object') {
