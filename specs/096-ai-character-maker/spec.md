@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: AI character maker (owner request, Vikram 2026-10-30): make realistic crew characters with Codex image generation (3 poses + blink), My characters, folder pins, light portrait motion
-note: spec, plan, tasks drafted; Q1-Q5 answered 2026-10-31; Q1b (built-in crew motion) open for Paco; probes P1-P8 not run; nothing built
+note: spec, plan, tasks drafted; Q1-Q5 answered 2026-10-31; Q1b (built-in crew motion) answered yes by Paco 2026-10-31; probes P1-P8 not run; nothing built
 status: draft
 -->
 
@@ -11,7 +11,7 @@ status: draft
 
 **Created**: 2026-10-31
 
-**Status**: Draft (2026-10-31). Spec, plan and tasks only; nothing is built. Q1-Q5 are answered by the owner (*Clarifications*); one question is open for Paco (Q1b, motion on the built-in crews). Probes P1-P8 (plan.md) are OK'd by the owner on his ChatGPT plan and not yet run; they come before the adapter phase.
+**Status**: Draft (2026-10-31). Spec, plan and tasks only; nothing is built. Q1-Q5 are answered by the owner (*Clarifications*); Paco answered Q1b (yes, built-in crews move too, 2026-10-31; *Changes*). Probes P1-P8 (plan.md) are OK'd by the owner on his ChatGPT plan and not yet run; they come before the adapter phase.
 
 **Input**: Owner requests (Vikram, Telegram DMs, 2026-10-30 and 2026-10-31):
 - "for characters, add ai character maker";
@@ -75,12 +75,12 @@ A delta would bury that in 077's 70+ requirements, so it is a new spec, number *
 
 Quote: "ok and go with your pick". This answers all five questions with the recommended option; he also OK'd the P1-P6 Codex probes on his plan (P7, P8 are added after that message and use the same kind of call, 1 image at most: they are run with P1 and need his go to be stated again before the run).
 
-- **Q1 Animation route**: (1) living portraits (cross-fade, bob, blink, typing cue, glow). Scope: generated characters only in v1; the built-in crews are Q1b.
+- **Q1 Animation route**: (1) living portraits (cross-fade, bob, blink, typing cue, glow). Scope: My characters and the built-in crews (Q1b, answered yes 2026-10-31).
 - **Q2**: **My characters** is its own Characters value; pins work under any crew.
 - **Q3**: pins apply only when Characters is a crew value (My characters, Cheeky, Prehistoric) in v1.
 - **Q4**: export only in v1; import in a follow-up through the same validator.
 - **Q5**: at most 24 saved characters, one generation at a time, a 5-minute timeout, no Durbar daily cap; the dialog warns about plan use on every try.
-- **Q1b (open, Paco)**: motion on the built-in Cheeky and Prehistoric crews stays the crew owner's call (FR-062).
+- **Q1b** (Paco): answered yes 2026-10-31, see *Changes*.
 
 ### Decisions taken by this spec
 
@@ -90,7 +90,7 @@ Quote: "ok and go with your pick". This answers all five questions with the reco
   - Main slices the sheet. When probe P4 shows that sheets are not reliable, the fallback is four calls, the last three with the first frame as a reference image (P5). If that is not reliable either, there are three calls and no blink.
 - **D3 Durbar keeps nothing from the description.** It goes to Codex once, inside a fixed wrapper prompt (FR-012), and Durbar never stores, logs or shows it in errors. The saved character has a name the user types, not the description. This is stricter than the theme maker, which stores the description as the theme's `description`. **This is not a claim about Codex**: `[KNOWN GAP]` Codex keeps its own copy of every picture it generates, discarded tries included, under `~/.codex/generated_images/` (agent-apps, 2026-10-31), made from the description. Durbar neither reads nor deletes anything under `~/.codex` (AGENTS.md: never read `~/.codex`; Durbar removes only its own folders), so those copies stay until the user removes them. Whether `--ephemeral` or the app-server route also leaves a copy is probe P7 (FR-035).
 - **D4 One style for all generated art** (FR-050): a style preset with an id and a fixed prompt prefix. The realistic-office layout (mockup in progress) reuses it, so characters and the office match.
-- **D5 Animation route 1** (living portraits), as recommended under *Animation design analysis*, **in v1 for generated characters (My characters) only**. Motion on the built-in Cheeky and Prehistoric crews (spec 077, Paco's art) is a crew-owner decision: Q1b, open for Paco (no answer on the PR at 2026-10-31).
+- **D5 Animation route 1** (living portraits), as recommended under *Animation design analysis*, **in v1 for My characters plus the built-in Cheeky and Prehistoric crews** (Q1b: Paco, owner of spec 077, answered yes 2026-10-31; no blink for crews without eyes-closed frames; *Changes*).
 
 ## Animation design analysis
 
@@ -293,15 +293,15 @@ Under My characters each character has **Rename**, **Delete** and **Export…**.
 - **FR-055** **Pose cross-fade**: on a pose change, the old and new `<image>` cross-fade for 250 ms (`fill-opacity` is not available on `<image>`, so CSS `opacity` on the image during the fade only, with `will-change` off afterwards). Afterwards only the new image is left, and the still frame passes spec 077 FR-051 sharpness (`check:crew`).
 - **FR-056** **Breathing**: a SMIL `<animate attributeName="y" calcMode="discrete">` on the `<image>`, moving it 0, 0.25 and 0.5 stage units (1-2 device pixels at 4 px per unit) over a 4.2 s cycle. Each desk starts at a phase from `seeded(sessionId)`, so desks are out of step. Only working and waiting desks breathe.
 - **FR-057** **Blink**: for a character with a blink frame, in the working pose only, the `href` swaps to the blink frame for 120 ms at random intervals of 4-9 s. It is driven by one shared timer for all desks, not one per desk.
-- **FR-058** **Typing cue**: on working desks of **My characters**, 3 small keys on the drawn keyboard light up in turn (`fill-opacity` animation, a paint property, per the agent note on compositor blur). They are drawn by code at fixed positions inside the keyboard zone. Built-in crews and the office kit get no cue in v1 (FR-062).
+- **FR-058** **Typing cue**: on working desks of **My characters and the built-in crews**, 3 small keys on the drawn keyboard light up in turn (`fill-opacity` animation, a paint property, per the agent note on compositor blur). They are drawn by code at fixed positions inside the keyboard zone. The themes' own figures and the office kit get no cue (FR-062).
 - **FR-059** **Status glow**: the existing halo and glow (spec 077 FR-053, FR-062) are reused unchanged; no new glow.
 - **FR-060** **Calm rules** for all motion:
   - none under `prefers-reduced-motion`, in Serious mode (spec 034), or with Settings > Characters > **Motion** off (a new checkbox, default on, stored as `characterMotion` in main's settings, validated boolean);
   - every animation pauses when `document.hidden`, and when the window is not focused and 60 s pass without input; it resumes on show, focus or input;
   - resting, idle and error desks are still;
   - nothing animated leaves the portrait box or the keyboard zone (spec 077 FR-014 zones).
-- **FR-061** **Spec 077 FR-057 changes.** This changes spec 077 FR-057 ("never ... a user-supplied picture"): main-validated, re-encoded pictures from userData are allowed through `blob:` (FR-043). A line is added under 077's `## Changes` that also records that built-in crews are not animated by spec 096 (FR-062, Q1b).
-- **FR-062** **Motion scope in v1**: FR-055..FR-058 apply to desks drawn from My characters (generated characters) only. The built-in Cheeky and Prehistoric crews and the themes' own figures stay still, exactly as spec 077 draws them, until Paco answers Q1b. If he says yes, a follow-up spec delta enables the same motion for those crews (the code is crew-kit generic, so it is a switch, not a rewrite). No `src/renderer/crew/art/` file and no 077 FR changes for built-in crews in this spec.
+- **FR-061** **Spec 077 FR-057 changes.** This changes spec 077 FR-057 ("never ... a user-supplied picture"): main-validated, re-encoded pictures from userData are allowed through `blob:` (FR-043). A line is added under 077's `## Changes` that points to spec 096 for crew motion (FR-062, Q1b).
+- **FR-062** **Motion scope in v1** (changed 2026-10-31, Q1b): FR-055..FR-058 apply to desks drawn from My characters and from the built-in Cheeky and Prehistoric crews: breathing bob, pose cross-fade, typing cue and status glow. The blink (FR-057) runs only for a character that has an eyes-closed frame: My characters have one, the built-in crews have none until Paco adds eyes-closed frames, so they do not blink. No art change: no `src/renderer/crew/art/` file changes. The themes' own figures and the office kit stay still. FR-060 calm rules, reduced motion included, apply to the crews too. The code is crew-kit generic, so this is a switch, not a rewrite. Spec 077 gets a pointer line in its `## Changes`; no 077 FR changes.
 
 #### Simulator and tests
 
@@ -355,7 +355,7 @@ Under My characters each character has **Rename**, **Delete** and **Export…**.
 
 Q1-Q5 are answered (*Clarifications*, owner decisions, 2026-10-31). Their text and the options considered are kept in *Animation design analysis* and the decisions D1-D5.
 
-- **Q1b Motion on the built-in crews (needs Paco, the crew owner).** Should Cheeky and Prehistoric (spec 077) also get the cross-fade, bob and typing cue? (a) not in v1, only generated characters move; (b) yes, same motion. **Recommended: (a)**: it is Paco's art, and a still crew next to one living crew is a smaller risk than moving art without its owner's OK. Paco was asked on the PR; no answer at 2026-10-31. Until he answers, FR-062 holds (a).
+- None open. Q1b was answered yes by Paco on 2026-10-31 (*Changes*).
 
 ## Constitution check
 
@@ -371,3 +371,11 @@ Q1-Q5 are answered (*Clarifications*, owner decisions, 2026-10-31). Their text a
 - VI Parity: paths through `path.join`; no POSIX-only shell. Windows sandbox behaviour is a `[KNOWN GAP]`.
 - VII Quality gates: unit tests, drivers, contract test.
 - VIII Honest limits: probes P1-P8 and the gaps above.
+
+## Changes
+
+### 2026-10-31: built-in crews get v1 motion (Q1b answered yes)
+
+- **Decision**: Paco (owner of spec 077, the crews) answered Q1b: yes. The built-in Cheeky and Prehistoric crews get the same v1 motion as My characters: the breathing bob, the pose cross-fade, the typing cue and the status glow. No art change, and no blink until he adds eyes-closed frames.
+- **Source**: Paco, relayed by his agent in the team chat on 2026-10-31 07:02 UTC and noted on PR #912.
+- **Changed**: Q1b moved out of *Open questions*; D5, FR-058, FR-061 and FR-062 (motion scope), T051..T054, T061 and plan R11 updated from "My characters only" to "My characters plus the built-in crews, no blink for crews without eyes-closed frames". FR-062 asked for this follow-up delta and for a line in spec 077 `## Changes`; both are done. No FR or task number added.

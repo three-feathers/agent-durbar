@@ -23,7 +23,7 @@ no merge freeze is needed:
 
 0. **No spec folder per release** (spec 021 FR-063): a release adds one row to the *Release table* in [spec 008](../specs/008-packaging-and-release/spec.md#release-table) (tag, date, release link, one-line notes, corrective Yes/No/Unknown), in the version PR or the fold PR.
 1. A **version-only PR** sets the new version (`package.json`, `package-lock.json`, the simulator's About label).
-2. The release manager **tags a commit on `main`** (annotated, after an owner's OK). `release.yml`'s `verify` job checks the tag (on `main`, equal to
+2. The release manager **tags a commit on `main`** (annotated; the daily stable release needs no owner OK, spec 021 FR-064; any other tag does). `release.yml`'s `verify` job checks the tag (on `main`, equal to
    `package.json`, the previous release already folded) and writes the draft's notes from exactly that commit's fragments:
    `node scripts/changelog.js build --release "<heading>" --stdout` prints the same section and edits nothing.
    Before you tag, classify the release for the DORA records (AGENTS.md, *Bug and deployment incident triage*): list the
@@ -61,7 +61,7 @@ A tag without a `-` (`v1.2.3`) is handled by the same flow with these difference
 - The notes use the stable intro (unsigned and not notarized, no "alpha") and the heading
   `v1.2.3 ([release](<url>), YYYY-MM-DD)`; `changelog:build --release` accepts it.
 - The fold branch is `NNN-fold-1-2-3` (no dots).
-- It stays a **draft**: the owners check it, then publish it **and mark it latest** by hand. "Latest" is not set while it is a
+- It stays a **draft**: the release manager checks it (all assets, `SHA256SUMS.txt`, the notes), then publishes it **and marks it latest**. "Latest" is not set while it is a
   draft, so run (the job summary prints it too): `gh release edit v1.2.3 --draft=false --latest`. It ran on GitHub for
   `v0.1.0` (2026-10-26); check the published release shows as *Latest*.
 - The fold PR for a stable tag also updates the hand-written alpha wording that tests assert: the landing page eyebrow and

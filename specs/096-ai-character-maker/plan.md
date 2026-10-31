@@ -126,7 +126,7 @@ Results go to `docs/agent-apps.md` (Codex) and this spec's `## Changes`, with `r
 - **R8 API-key login spends money** (P6). Fails safe (FR-034): until P6 every try asks a confirmation, after P6 an API-key login is refused; the README states it.
 - **R9 Codex keeps its own copies** of each picture (FR-035, P7): a `[KNOWN GAP]`, no cleanup by Durbar; the dialog help and README say where.
 - **R10 Codex environment** (FR-002, P2, P8): `codexChildEnv` unchanged, real `CODEX_HOME`, MCP off and network off to be proven by probes; `generateImage` is not enabled until P2 passes.
-- **R11 Built-in crew motion** is Paco's call (Q1b); v1 animates generated characters only (FR-062).
+- **R11 Built-in crew motion**: Paco answered Q1b yes (2026-10-31); v1 animates My characters and the built-in crews, no blink for crews without eyes-closed frames (FR-062).
 
 ## Phases (one PR each; the spec PR is phase 0)
 
