@@ -321,6 +321,18 @@ module.exports = async (ctx) => {
   await press('Save to My characters');
   await need(`!!document.querySelector('.dlg.fs')`, 'setup: when the flow ends the prompt is shown, unread nothing');
   assert.strictEqual((await list()).filter((c) => c.name === 'Kept').length, 1, 'setup: the picture was saved');
+  await js(`document.querySelector('.dlg.fs').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));0`);
+  await need(`!document.querySelector('.dlg.fs')`, 'setup: closed before the next step');
+  // between two dialogs of the flow nothing is open, and the flow still holds: the prompt must not slip in there
+  await openMaker();
+  await js(`(()=>{window.__fsSeen=0;new MutationObserver(()=>{if(document.querySelector('.dlg.fs'))window.__fsSeen++;}).observe(document.body,{childList:true});})()`);
+  await askSetup();
+  await describe('a person between dialogs');
+  await press('Make the character');
+  await preview();
+  await press('Discard');
+  await need(`!!document.querySelector('.dlg.fs')`, 'setup: shown at the end of the flow');
+  assert.strictEqual(await js(`window.__fsSeen`), 1, 'setup: and not in a gap between the flow\'s dialogs');
   // a dialog forced over the prompt: the prompt comes back when it closes
   await js(`void window.DurbarScreens.dialog({title:'Other',html:'',buttons:[{label:'Close',value:null}]});0`);
   await need(`!document.querySelector('.dlg.fs')&&!!document.getElementById('scrDlgT')&&document.getElementById('scrDlgT').textContent==='Other'`, 'setup: replaced for a moment');
