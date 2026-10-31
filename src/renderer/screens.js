@@ -317,6 +317,10 @@
         <p class="scr-note">Prompts sent to a folder's agent at a time, every day or at an interval, <b>only while Agent Durbar is open</b>.</p>
         <details class="scr-more"><summary>More</summary><p class="scr-note small">A run is skipped when the agent is busy or waiting for you; the agent's own permission mode and cap apply. The Schedules button in the top bar (Ctrl+Shift+S) opens this list. A folder's ⋯ menu, its clock in the room header and the Schedules button in its chat open the same list for that folder, with a starter kit of templates.</p></details>
         <div class="sched-set" id="schedSet"></div></section>`:'';
+    /* Organization (spec 076 FR-208, issue 602): what each agent app's own organization policy blocks, read-only, painted after the paint into #orgSet */
+    const orgSec=X.bridge.orgPolicyView&&window.DurbarOrgWords?`<section class="scr-sec" aria-labelledby="orgH" id="orgSec"><h3 id="orgH" tabindex="-1">Organization</h3>
+        <p class="scr-note">What your organization's own policy for each agent app blocks. Agent Durbar only reads it, never changes it.</p>
+        <div id="orgSet" role="status" aria-live="polite"><p class="scr-note small">Reading…</p></div></section>`:'';
     /* Theme (specs 037-040): pick a built-in or imported pack; applies live, no restart. */
     const curTheme=(app.theme||'clean-office');
     let userThemes=[];
@@ -377,7 +381,7 @@
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${schedSec}${floorsSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${schedSec}${floorsSec}${orgSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3><span class="mtag warn" id="advMcpAtt"${live&&live.agg.attention?'':' hidden'}>${esc(attText(live?live.agg.attention:0))}</span></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         ${liveSection()}
@@ -396,6 +400,14 @@
       </section></details>${aboutSec}</div>`;
     if(window.DurbarHarnesses&&window.DurbarHarnesses.shown)window.DurbarHarnesses.shown(!!hsSec); /* spec 081 FR-016: the card is the announcement while it is on screen */
     if(hsSec)window.DurbarHarnesses.loadAccounts(acctAgain); /* spec 051 FR-014: the account lines fill in after the paint (Codex takes about 2 s) */
+    if(orgSec){(async()=>{ /* FR-208: a failed read is "unknown", never "no policy"; an empty view hides the section */
+      let v=null,failed=false;try{v=await X.bridge.orgPolicyView();}catch(e){failed=true;}
+      const box=$('orgSet');if(!box||!(cur&&cur.kind==='settings'))return;
+      const sec=window.DurbarOrgWords.sectionOf(v,failed);
+      if(!sec.failed&&!sec.rows.length){const w=$('orgSec');if(w)w.remove();return;}
+      const e=X.esc;
+      box.innerHTML=sec.failed?`<p class="scr-note warn">${e(sec.failText)}</p>`:`<ul class="orgrows">${sec.rows.map(r=>`<li class="orgrow" data-org="${e(r.id)}" data-state="${r.state}"><b>${e(r.app)}</b> <span class="mtag${r.state==='unknown'?' warn':''}">${e(r.status)}</span>${r.note?`<small>${e(r.note)}</small>`:''}${r.paths.length?`<small>From: ${r.paths.map(x=>`<code>${e(x)}</code>`).join(', ')}</small>`:''}${r.modes.length?`<ul>${r.modes.map(m=>`<li>${e(m.mode)}: ${e(m.why)}${m.refused?'':' (advice only)'}</li>`).join('')}</ul>`:''}${r.noMode?`<small>${e(r.noMode)}</small>`:''}${r.counts.length?`<small>${e(r.counts.join(' · '))}</small>`:''}${r.problems.map(x=>`<small class="warn">${e(x)}</small>`).join('')}</li>`).join('')}</ul>`;
+    })();}
     if(hsSec&&window.DurbarHarnesses.loadSandbox)window.DurbarHarnesses.loadSandbox(); /* spec 087 FR-012: the OS sandbox line per app, after the paint */
     wireHead();
     /* spec 051 FR-008: entry points open Settings at Agent apps */

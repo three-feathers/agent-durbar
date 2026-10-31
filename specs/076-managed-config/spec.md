@@ -1012,8 +1012,8 @@ https://learn.chatgpt.com/docs/enterprise/managed-configuration.md (`allowed_app
 - **FR-207 For the Organization page.** `orgpolicy:view` returns, per app: whether a policy applies, whether part of it could not be
   read, where it came from (`paths`: file paths, or *the Copilot runtime*), what was wrong (`problems`: path and kind, never a value),
   the mode verdicts (words and whether refused), and counts of the model, server and tool rules (no values). The window uses it for the
-  mode menus; spec 076's Settings > Organization page (FR-194) will list it.
-  `[IMPLEMENTED]` test: `test-orgpolicy.ts` (e: no value of any list, valid or not, reaches the view). The Organization page itself is FR-194 (not built).
+  mode menus; Settings > Organization (FR-208) lists it.
+  `[IMPLEMENTED]` test: `test-orgpolicy.ts` (e: no value of any list, valid or not, reaches the view). The Organization page is FR-208 (built; FR-194's key list is not).
 
 - **FR-208 Settings > Organization (issue #602, spec delta 2026-10-31).** A read-only section of Settings, built only from `orgpolicy:view` (FR-207; no
   new read, nothing written, no values of any rule). One row per agent app in the view: its name, one status line, where it came from
@@ -1025,7 +1025,7 @@ https://learn.chatgpt.com/docs/enterprise/managed-configuration.md (`allowed_app
   reader and are not listed. The text is escaped, at least 10.5px, and the section is not shown when the bridge has no view or the view is
   empty. Not built here: showing top-level keys of the vendor files (FR-194's key list), FR-195's "which one wins" line, macOS MDM and the
   Windows registry (P17), server-managed settings, Codex `mcp_servers` identity rules and a real managed machine (`[KNOWN GAP]`, FR-206).
-  Section O's phase P27 stays open for those. `test:` `test-orgwords.ts`; `sim:` `shots-076-orgpolicy.js` (`?simorgpolicy=1`).
+  Section O's phase P27 stays open for those. `[IMPLEMENTED]` `test:` `test-orgwords.ts`; `sim:` `shots-076-orgpolicy.js` (`?simorgpolicy=1`).
 
 ### M. Testing
 

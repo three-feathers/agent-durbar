@@ -184,6 +184,23 @@ module.exports = async (ctx) => {
     } else assert.fail('tools: the Claude Code session is not running, so the tools list was not checked');
     await shot('076-orgpolicy-mcp', w, h);
     await closeAll();
+
+    // ---- FR-208: Settings > Organization lists each app; a partly read policy is "unknown", never "no policy" ----
+    await js(`document.getElementById('settingsBtn').click()`);
+    assert.ok(await until(`document.querySelectorAll('#orgSet li.orgrow').length===3`), 'Organization: three apps listed');
+    const orgRows = await js(`[...document.querySelectorAll('#orgSet li.orgrow')].map(l=>({id:l.dataset.org,state:l.dataset.state,text:l.textContent}))`);
+    const byId = Object.fromEntries(orgRows.map((r) => [r.id, r]));
+    assert.strictEqual(byId.claude.state, 'applies');
+    assert.ok(byId.claude.text.includes('Allow all: ' + CLAUDE_TEXT), 'Organization: Claude Code row has the reason');
+    assert.strictEqual(byId.codex.state, 'unknown', 'Organization: Codex (partly read) is unknown');
+    assert.ok(/so what it blocks is unknown/.test(byId.codex.text) && !/No policy file found/.test(byId.codex.text), 'Organization: Codex is not "no policy"');
+    await js(`document.getElementById('orgH').scrollIntoView({block:'start'})`);
+    await settle();
+    const of = await minFont('#orgSec');
+    assert.ok(of.min >= 10.5, `Organization: text >= 10.5px (${of.min} ${of.who})`);
+    await shot('076-orgpolicy-organization', w, h);
+    await js(`document.getElementById('scrClose').click()`);
+    await until(`!document.getElementById('orgSec')`);
   }
 
   // ---- without the canned policy nothing is greyed ----
@@ -195,6 +212,11 @@ module.exports = async (ctx) => {
   assert.ok(await until(`!!document.querySelector('#agMcp li.srv[data-n="my-notes"]')`), 'no policy: the dialog lists my-notes');
   assert.strictEqual(await js(`document.querySelectorAll('#agMcp .org-tag,#agMcp .srv-org').length`), 0, 'no policy: no row is greyed');
   await closeAll();
+
+  // no canned policy: the view is empty, so the section is not shown
+  await js(`document.getElementById('settingsBtn').click()`);
+  assert.ok(await until(`!!document.getElementById('scrClose')&&!document.getElementById('orgSec')`), 'no policy: no Organization section');
+  await js(`document.getElementById('scrClose').click()`);
 
   console.log('[076] orgpolicy PASS');
 };
