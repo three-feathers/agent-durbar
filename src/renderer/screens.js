@@ -31,6 +31,7 @@
     if(!cur)return;
     const after=cur.kind==='notes'&&typeof cur.onClose==='function'?cur.onClose:null; /* spec 083 T034a: the Notes screen puts the focus back */
     cur=null;root().hidden=true;root().innerHTML='';if(window.DurbarHarnesses&&window.DurbarHarnesses.shown)window.DurbarHarnesses.shown(false);
+    if(X.own)X.own.screenClosed(); /* spec 096 FR-043: the rows' pictures are no longer shown */
     document.body.classList.remove('screen-open');
     ['toolsBtn','settingsBtn'].forEach(id=>{const b=$(id);if(b)b.setAttribute('aria-pressed','false');});
     if(after){try{after();}catch(e){/* the screen is closed whatever the hook does */}}
@@ -331,17 +332,22 @@
         ${themeFallbackNote(themes)}
         ${badThemes.length?`<p class="scr-note warn" role="status">${badThemes.length} theme folder${badThemes.length>1?'s were':' was'} ignored: ${esc(badThemes.map((b)=>b.id+': '+(b.error||'invalid')).join('; '))}</p>`:''}
         <div class="scr-tools">${X.bridge.generateTheme?'<button class="btn" type="button" id="thAi">Make a theme with AI…</button>':''}<button class="btn" type="button" id="thImport">Import a theme…</button><button class="btn" type="button" id="thExport" title="Copy the active theme's folder (one of your own themes) to a folder you pick">Export the active theme…</button></div></section>`;
+    if(X.own&&X.bridge.characterList)await X.own.load(); /* spec 096 FR-040: the list, the count and the preview of My characters */
     /* Characters (spec 077 FR-064, FR-068): who sits at the desks, on top of any theme; the theme picker's pattern, one figure per choice */
     const KIT_NAMES={office:'Minimalist',corporate:'Corporate',pixel:'Pixel','court-indian':'Indian court','court-european':'European court','court-japanese':'Japanese court',crew:'Cheeky'};
     /* the items are painted again after a theme pick: the theme's own figures and every preview follow the theme */
     const charItems=()=>{
-      const cur=window.THEME.characters(), own=window.THEME.themeKit(), crewN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.IDS)?window.DurbarCrew.IDS.length:0; const preN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PREHISTORIC_IDS)?window.DurbarCrew.PREHISTORIC_IDS.length:0;
+      const cur=X.charactersChosen?X.charactersChosen():window.THEME.characters(), own=window.THEME.themeKit(), crewN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.IDS)?window.DurbarCrew.IDS.length:0; const preN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PREHISTORIC_IDS)?window.DurbarCrew.PREHISTORIC_IDS.length:0;
       const list=[{id:'theme',name:'The theme\u2019s own',sub:(KIT_NAMES[own]||own)+' figures'},{id:'minimalist',name:'Minimalist',sub:'The calm office figure'},{id:'cheeky',name:'Cheeky',sub:crewN?crewN+' cheeky characters':'Cheeky characters'},{id:'prehistoric',name:'Prehistoric',sub:preN?preN+' cave characters':'Cave characters'}];
-      return list.map((c)=>`<li class="throw"><button class="thpick" type="button" data-characters="${esc(c.id)}" aria-pressed="${c.id===cur}" aria-label="Characters ${esc(c.name)}: ${esc(c.sub)}"><span class="chsw" aria-hidden="true">${X.charPreview?X.charPreview(c.id):''}</span><span class="thtx"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc(c.sub)}</small></span></button></li>`).join('');
+      /* spec 096 FR-040: My characters; with none yet it says "Make one first" and does nothing else */
+      const mineN=X.own&&X.bridge.characterList?X.own.list().length:-1;
+      if(mineN>=0)list.push({id:'mine',name:'My characters',sub:mineN?mineN+(mineN===1?' character':' characters'):'Make one first',off:!mineN});
+      return list.map((c)=>`<li class="throw"><button class="thpick" type="button" data-characters="${esc(c.id)}" aria-pressed="${c.id===cur}"${c.off?' aria-disabled="true"':''} aria-label="Characters ${esc(c.name)}: ${esc(c.sub)}"><span class="chsw" aria-hidden="true">${X.charPreview?X.charPreview(c.id):''}</span><span class="thtx"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc(c.sub)}</small></span></button></li>`).join('');
     };
     const charSec=window.THEME&&window.THEME.setCharacters&&X.applyCharacters?`<section class="scr-sec" aria-labelledby="chH"><h3 id="chH">Characters</h3>
         <p class="scr-note">Who sits at the desks, on top of any theme; the choice applies at once and is kept on this computer.</p>
-        <ul class="thlist" id="chList">${charItems()}</ul></section>`:'';
+        <ul class="thlist" id="chList">${charItems()}</ul>
+        ${X.own&&X.bridge.characterList?`<div class="scr-tools"><button class="btn" type="button" id="chMake">Make a character with AI…</button></div><p class="scr-note small" id="chMakeNote" hidden></p><div id="chManage"></div>`:''}</section>`:'';
     const ab=app.about;
     const aboutSec=ab?`<section class="scr-sec" aria-labelledby="aboutH"><h3 id="aboutH">About</h3>
         <p class="scr-note"><b>${esc(ab.name)}</b> ${esc(ab.version)} · by <b>${esc(ab.owner)}</b></p>
@@ -441,10 +447,11 @@
     });
     /* spec 077 FR-068: a Characters pick applies live through app.js's applyCharacters and shows the new choice at once */
     if($('chList'))$('chList').addEventListener('click',(e)=>{
-      const b=e.target.closest&&e.target.closest('[data-characters]');if(!b||!X.applyCharacters)return;
+      const b=e.target.closest&&e.target.closest('[data-characters]');if(!b||!X.applyCharacters||b.getAttribute('aria-disabled')==='true')return;
       X.applyCharacters(b.dataset.characters);
       $('chList').querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
     });
+    if($('chMake')&&window.DurbarCharMaker)window.DurbarCharMaker.paint({X,dialog,focusIn,scrollTo:scrollInBody,maker:window.DurbarScreens.maker,repaintChoices:()=>{const l=$('chList');if(l)l.innerHTML=charItems();}}); /* spec 096 T041, T045 */
     if($('thImport'))$('thImport').onclick=async()=>{
       if(!X.bridge.importTheme)return;
       const res=await X.bridge.importTheme().catch(()=>null);
@@ -472,6 +479,9 @@
   /* spec 040 FR-015 / spec 052 FR-093: what one one-shot request costs, in the words of the app's plan (also used by spec 043 FR-028) */
   function oneShotCostLine(k){const n=k.displayName||k.id;
     return 'Uses your own '+n+' account: '+(k.id==='claude'?'a small cost (at most $0.25, usually about a cent).':k.id==='copilot'?'a few AI credits from your plan.':k.id==='codex'?'a small part of your ChatGPT plan\'s usage.':'a small cost on your own plan.');}
+  /* spec 096 FR-034: one picture. "No API money" only for a login known to be ChatGPT; `login` is `chatgpt`, `apikey` or anything else (unknown) */
+  function imageCostLine(k,login){const n=k.id==='codex'?'Codex':(k.displayName||k.id);
+    return login==='chatgpt'?'Uses your own '+n+' (ChatGPT plan): about a minute and one picture from your plan\'s limits per try. No API money.':login==='apikey'?n+' is signed in with an API key, so a picture would be charged by OpenAI.':'Uses your own '+n+': about a minute and one picture per try. If it is signed in with an API key, OpenAI charges each picture, so Durbar asks before every try.';}
   /* spec 040 FR-015: AI credits a Copilot generation reported (1e9 nano = 1 credit) */
   const aiCredits=(nano)=>(Number(nano)/1e9).toFixed(2);
   /* spec 070 FR-022: one line per own theme that could not use some of its values (dropped, or a text pair set back for contrast) */
@@ -1722,7 +1732,7 @@
   }
 
   window.DurbarScreens={oneShotCostLine,aiCredits,
-    maker:{readyKinds,ideaChipsHtml,wireIdeaChips,harnessPickerHtml,wireHarnessPicker}, /* spec 096 T040 */
+    maker:{readyKinds,ideaChipsHtml,wireIdeaChips,harnessPickerHtml,wireHarnessPicker,imageCostLine}, /* spec 096 T040 */
     init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,mask:ctx.mask,toast:(t)=>ctx.toast(ctx.esc(t),3600),onAccounts:(a)=>{if(ctx.setAccounts)ctx.setAccounts(a);},onBadge:setUpdBadge,onChange:(again)=>{X._hsRefresh=true;X._acctRefresh='check';if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
     folderNotes:openNotes, /* spec 083 T034a: {key, name, render(focus), onClose()} */

@@ -231,7 +231,7 @@ function simPinDecision(folderKey: unknown, id: unknown, ctx: { known(id: unknow
  * frames on a canvas: a simple bust in a colour from a hash of the description, the blink frame with the eyes closed. They reach the window through the same bridge calls as main's.
  * Nothing is kept across a reload, and the description is not kept at all.
  */
-function simCharactersApi(qs: URLSearchParams, openFolders: () => string[]): Pick<DurbarApi, 'characterGenerate' | 'characterCancel' | 'characterSave' | 'characterList' | 'characterFrames' | 'characterRename' | 'characterDelete' | 'characterExport' | 'characterPin' | 'characterIdeas'> & { simPins(): Record<string, string> } {
+function simCharactersApi(qs: URLSearchParams, openFolders: () => string[]): Pick<DurbarApi, 'characterGenerate' | 'characterCancel' | 'characterSave' | 'characterList' | 'characterFrames' | 'characterRename' | 'characterDelete' | 'characterExport' | 'characterPin' | 'characterIdeas' | 'characterLoginKind'> & { simPins(): Record<string, string> } {
   type Frames = NonNullable<CharacterTryResult['frames']>;
   type Face = NonNullable<CharacterTryResult['face']>;
   const FACE: Face = { working: [176, 150], waiting: [176, 150], resting: [176, 150] };
@@ -258,18 +258,44 @@ function simCharactersApi(qs: URLSearchParams, openFolders: () => string[]): Pic
   }
   interface SimChar { id: string; name: string; created: string; frames: Frames }
   let chars: SimChar[] = [];
+  /* FR-034 (T041a): `simlogin=chatgpt` (default), `unknown`, `apikey`, or `absent` (no answer, as the real app today, so `unknown`). The fake holds the gate as T030a will hold it in main: a call around the dialog gets nothing. Every call is counted for the drivers. */
+  const login = qs.get('simlogin') ?? 'chatgpt';
+  const calls = { generate: 0, started: 0 };
+  (window as unknown as { __simCharCalls?: unknown }).__simCharCalls = calls;
+  /* FR-070: `simmine=N` starts with N saved characters; `simminename=hostile`: main's name rule is skipped, so the first name and every reply's name are markup: the window must never treat them as markup */
+  const HOSTILE = '"><img src=x onerror="window.__pwned=1"><b>Eve</b>&amp;';
+  const hostile = qs.get('simminename') === 'hostile';
+  const SEED_NAMES = ['Greta', 'Bo', 'Ines', 'Tariq', 'Wen', 'Asha'];
+  const seedCount = Math.min(60, Math.max(0, Number(qs.get('simmine')) || 0));
+  const seedIds = Array.from({ length: seedCount }, () => `my-${hex(6)}`);
+  /* `simminepin=<folder>`: that folder starts pinned to the newest saved character, so a load shows the pick with a pin in place */
+  const seedPin = qs.get('simminepin');
+  const seeded = (async () => {
+    const n = seedCount;
+    const made: SimChar[] = [];
+    for (let i = 0; i < n; i++) {
+      const hue = (i * 67 + 20) % 360;
+      const [working, waiting, resting, blink] = await Promise.all((['working', 'waiting', 'resting', 'blink'] as const).map((p) => drawFrame(hue, p)));
+      made.push({ id: seedIds[i], name: hostile && i === 0 ? HOSTILE : (SEED_NAMES[i] ?? `Person ${i + 1}`), created: new Date(Date.UTC(2026, 9, 30, 12, 0, 24 - i)).toISOString(), frames: { working, waiting, resting, blink } });
+    }
+    chars = made;
+  })();
   let held: { tryId: string; frames: Frames } | null = null;
   let running: { stop(): void } | null = null;
   const pins: Record<string, string> = {};
+  if (seedPin && seedIds.length) pins[seedPin] = seedIds[0];
   const UNKNOWN = { ok: false, error: 'That character is not in the list.' };
   const find = (id: unknown): SimChar | undefined => chars.find((c) => c.id === id);
-  const generateCharacter = async (description: string, adapterId: string): Promise<CharacterTryResult> => {
+  const generateCharacter = async (description: string, adapterId: string, opts?: { confirmed: boolean }): Promise<CharacterTryResult> => {
+    calls.generate++;
+    if (login === 'apikey') return { ok: false, error: 'Codex is signed in with an API key, so each picture would be charged by OpenAI. Sign in to Codex with ChatGPT to make characters.' };
+    if (login !== 'chatgpt' && opts?.confirmed !== true) return { ok: false, error: 'This try was not confirmed.' };
     if (running) return { ok: false, error: 'One character at a time: wait for this one or cancel it.' };
     const text = typeof description === 'string' ? description.trim() : '';
     if (Array.from(text).length < 3) return { ok: false, error: 'Describe the person in at least 3 characters.' };
     if (adapterId !== 'codex') return { ok: false, error: 'This needs OpenAI Codex, installed and signed in with ChatGPT on this computer.' };
-    if (chars.length >= 24) return { ok: false, error: 'You have 24 characters, the most Durbar keeps. Delete one first.', full: true };
     held = null;
+    calls.started++;
     const started = Date.now();
     const go = await new Promise<boolean>((resolve) => {
       const t = setTimeout(() => { running = null; resolve(true); }, delay);
@@ -295,7 +321,7 @@ function simCharactersApi(qs: URLSearchParams, openFolders: () => string[]): Pic
     characterSave: async (tryId, name) => {
       if (!held || held.tryId !== tryId) return { ok: false, error: 'That character is no longer held. Make it again.' };
       let final = '';
-      if (typeof name !== 'string' || name.replace(/[<>{}\s]/g, '') !== '') {
+      if (!hostile && (typeof name !== 'string' || name.replace(/[<>{}\s]/g, '') !== '')) {
         if (name !== undefined && name !== null) {
           const n = simCharacterName(name);
           if (!n.ok) return n;
@@ -303,20 +329,20 @@ function simCharactersApi(qs: URLSearchParams, openFolders: () => string[]): Pic
         }
       }
       if (!final) { let n = chars.length + 1; while (chars.some((c) => c.name === `My character ${n}`)) n++; final = `My character ${n}`; }
-      if (chars.length >= 24) return { ok: false, error: 'You have 24 characters, the most Durbar keeps. Delete one first.' };
+      if (hostile) final = HOSTILE;
       const c: SimChar = { id: `my-${hex(6)}`, name: final, created: new Date().toISOString(), frames: held.frames };
       chars = [c, ...chars];
       held = null;
       return { ok: true, id: c.id, name: c.name };
     },
-    characterList: async () => chars.map((c) => ({ id: c.id, name: c.name, face: FACE, blink: true, style: 'realistic-office-v1', created: c.created })),
-    characterFrames: async (id) => { const c = find(id); return c ? { ok: true, frames: c.frames } : UNKNOWN; },
+    characterList: async () => (await seeded, chars).map((c) => ({ id: c.id, name: c.name, face: FACE, blink: true, style: 'realistic-office-v1', created: c.created })),
+    characterFrames: async (id) => { await seeded; const c = find(id); return c ? { ok: true, frames: c.frames } : UNKNOWN; },
     characterRename: async (id, name) => {
       const c = find(id);
       if (!c) return UNKNOWN;
       const n = simCharacterName(name);
       if (!n.ok) return n;
-      c.name = n.name;
+      c.name = hostile ? HOSTILE : n.name;
       return { ok: true, id: c.id, name: c.name };
     },
     characterDelete: async (id) => {
@@ -338,6 +364,7 @@ function simCharactersApi(qs: URLSearchParams, openFolders: () => string[]): Pic
       return { ok: true, pins: { ...pins } };
     },
     characterIdeas: async () => IDEAS.slice(),
+    ...(login === 'absent' ? {} : { characterLoginKind: async () => login }),
   };
 }
 
@@ -2695,7 +2722,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const simExpired = new Set<string>(simAuthMode === 'expired' ? ['copilot', 'claude'] : []);
     const SIM_AUTH_ERROR = 'Failed to authenticate. API Error: 401 OAuth access token is invalid.';
     const signInState = (a: AdapterInfo): AdapterInfo => (a.state === 'ready' && simSignedOut.has(a.id) ? { ...a, state: 'not-signed-in', hint: 'Sign in first: open Settings > Agent apps and choose Sign in….' } : a);
-    const simAdapters = (): AdapterInfo[] => simAdapterList().map(signInState);
+    /* spec 096: `simimagegen=0`: Codex ready but with no `imageGen`, which is every real app today */
+    const simAdapters = (): AdapterInfo[] => simAdapterList().map(signInState).map((a) => (a.id === 'codex' && simQuery.get('simimagegen') === '0' ? { ...a, capabilities: { ...a.capabilities, imageGen: false } } : a));
     const simAdapterList = (): AdapterInfo[] => [
       { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps } },
       ...(simKinds ? [
@@ -2703,7 +2731,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           ? { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } }
           : { id: 'claude', displayName: 'Claude Code', state: 'ready', version: 'sim', where: '~/.local/bin/claude', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } },
         // spec 060 FR-003: found through a version manager's folder (nvm), shown as where it was found
-        { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', where: '~/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'], remote: false } },      ] as AdapterInfo[] : []),
+        { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', where: '~/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, imageGen: true, interrupt: false, history: false, permissionModes: ['read-only'], remote: false } },      ] as AdapterInfo[] : []),
       ...(mixed ? SIM_MIXED_KINDS : []),
     ];
     const notReady = (adapterId: string): string | undefined => {

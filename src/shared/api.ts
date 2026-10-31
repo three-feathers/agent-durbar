@@ -242,7 +242,7 @@ export interface CharacterListItem {
   style: string;
   created: string;
 }
-/** Spec 096 FR-031: the reply of `character:generate`. `cancelled`: the user cancelled; `full`: the 24-character cap is reached (the maker offers Manage). */
+/** Spec 096 FR-031: the reply of `character:generate`. `cancelled`: the user cancelled. */
 export interface CharacterTryResult {
   ok: boolean;
   tryId?: string;
@@ -252,7 +252,6 @@ export interface CharacterTryResult {
   tookMs?: number;
   error?: string;
   cancelled?: boolean;
-  full?: boolean;
 }
 
 /** A profile file (spec 043 FR-010); `path` is for display only, the window sends `id` back. */
@@ -907,7 +906,10 @@ export interface DurbarApi {
   /** Spec 096 FR-060: Settings > Characters > Motion; a real boolean only. */
   setCharacterMotion?(on: boolean): Promise<{ ok: boolean; characterMotion: boolean }>;
   /** Spec 096 FR-031: one try: frames as WebP bytes, held by main under `tryId` until saved or dropped. The description is never stored. */
-  characterGenerate?(description: string, adapterId: string): Promise<CharacterTryResult>;
+  /** `confirmed`: this try's own answer to FR-034's question. T030a makes main enforce it; until then no real adapter makes pictures (`test:charipc`), and the simulator's fake enforces it. */
+  characterGenerate?(description: string, adapterId: string, opts?: { confirmed: boolean }): Promise<CharacterTryResult>;
+  /** Spec 096 FR-034: how the app is signed in. Only the simulator answers: no real channel exists until probe P6 (T014) and T030a, and no answer means `unknown`. */
+  characterLoginKind?(adapterId: string): Promise<string>;
   /** Spec 096 FR-031: no id cancels the running generation; a `tryId` drops that held try (Discard). */
   characterCancel?(tryId?: string): Promise<{ ok: boolean }>;
   /** Spec 096 FR-031: an empty name gets "My character N". */

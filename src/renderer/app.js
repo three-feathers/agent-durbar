@@ -54,9 +54,12 @@ const crewChoice=()=>THEME.characters(), crewIds=choice=>CREW.idsFor(choice||cre
 function crewPreload(choice){
   const ch=choice||crewChoice();
   if(!CREW||crewLoaded.has(ch))return; crewLoaded.add(ch);
-  for(const id of crewIds(ch))for(const pose of CREW.POSES){
+  crewPreloadIds(crewIds(ch));
+}
+function crewPreloadIds(ids){
+  for(const id of ids)for(const pose of CREW.POSES){
     const f=CREW.file(id,pose), im=new Image();
-    const bad=()=>{if(CREW_BAD.has(id))return;CREW_BAD.add(id);console.warn('[crew] picture '+f+' is missing or cannot be decoded: '+id+' is drawn as the plain figure');crewRefreshAvatars();scheduleRender();};
+    const bad=()=>{if(CREW_BAD.has(id)||CREW.file(id,pose)!==f)return;CREW_BAD.add(id);console.warn('[crew] picture '+f+' is missing or cannot be decoded: '+id+' is drawn as the plain figure');crewRefreshAvatars();scheduleRender();};
     im.onerror=bad; im.src=f; if(im.decode)im.decode().catch(bad);
   }
 }
@@ -74,9 +77,11 @@ function syncCrew(){
   const ch=crewChoice(), ids0=crewIds(ch);
   if(crewStale()){CREW_FOR=agents;CREW_CH=ch;CREW_MAP=SIM&&window.DurbarSimCrew?window.DurbarSimCrew.seed(ch,agents,ids0):{};CREW_HELP={};if(!demoOn&&rememberOn()){try{CREW_MAP=CREW.loadCrew(localStorage.getItem(CREW.storeKey(ch)),ids0);}catch(e){CREW_MAP={};}}}
   const ids=crewMainIds(); CREW_IDS=ids.join('\n');
+  if(!ids0.length){CREW_MAP={};return;} /* spec 096: no character in the list: nothing to pick from (My characters then draw the theme's own, `drawableCharacters`) */
   for(const h of Object.keys(CREW_HELP))if(!agents.some(a=>a.id===h))delete CREW_HELP[h]; /* a removed helper frees its character */
   /* a session that is gone frees its character once the office has loaded (before that, restored sessions keep theirs) */
-  const next=CREW.assignCrew(agentsListed||demoOn?CREW.pruneCrew(CREW_MAP,ids):CREW_MAP,ids,ids0,crewRand());
+  /* spec 096 FR-044: pinned first, so a pinned character counts as in use for the rest of the pick */
+  const next=CREW.assignCrew(CREW.pinCrew(agentsListed||demoOn?CREW.pruneCrew(CREW_MAP,ids):CREW_MAP,agents.filter(a=>!a.parent).map(a=>({id:a.id,key:ownKeyOf(a.info&&(a.info.workspaceFile||a.info.cwd))})),OWN_STATE.pins,ids0,CREW_BAD),ids,ids0,crewRand());
   if(JSON.stringify(next)!==JSON.stringify(CREW_MAP)){CREW_MAP=next;if(!demoOn&&rememberOn()){try{localStorage.setItem(CREW.storeKey(ch),JSON.stringify(CREW_MAP));}catch(e){}}}
 }
 const crewOf=a=>{
@@ -91,7 +96,56 @@ const crewOf=a=>{
   return CREW_MAP[a.id]||'';
 };
 /* the character in a cache key or a walker's key: nothing outside the crew kit, so the other themes' keys do not change */
-const crewKey=a=>{if(THEME.sceneKit()!=='crew')return '';const c=crewOf(a);return '|'+c+(CREW_BAD.has(c)?'!':'');};
+const crewKey=a=>{if(THEME.sceneKit()!=='crew')return '';const c=crewOf(a);return '|'+c+CREW.ownRev(c)+(CREW_BAD.has(c)?'!':'');};
+/* spec 096 US4 scenario 1: a desk's tooltip names the My character it wears; one of the crews has no name to show */
+const wearWords=a=>{if(!CREW||THEME.sceneKit()!=='crew')return '';const n=CREW.ownName(crewOf(a));return n?' · Wearing '+n:'';};
+/* spec 096 FR-043, FR-044: My characters in the window. `CHARS_CHOSEN` is the stored Characters value; THEME.characters() is what is drawn (a stored `mine` with no character draws the theme's own). Frames
+   become blob: URLs (R3, FR-043: `img-src 'self' data: blob:`), one set per character, revoked when it is deleted and when nothing needs them; loads run one at a time, so a set is never made twice. */
+let CHARS_CHOSEN='theme';
+const OWN_STATE={list:[],urls:new Map(),pins:{}};
+let ownQueue=Promise.resolve();
+const ownKeyOf=p=>CREW.folderKey(p,(window.agentDurbar&&window.agentDurbar.platform)||(/Windows/.test(navigator.userAgent)?'win32':'other'));
+const ownNeeded=()=>CHARS_CHOSEN==='mine'||(Object.keys(OWN_STATE.pins).length>0&&THEME.kitFor(THEME.themeKit(),CHARS_CHOSEN)==='crew')||!!(window.DurbarScreens&&window.DurbarScreens.isOpen());
+const drawableCharacters=c=>c==='mine'&&!(CREW&&CREW.idsFor('mine').length)?'theme':c;
+function ownRevoke(id){const u=OWN_STATE.urls.get(id);if(!u)return;OWN_STATE.urls.delete(id);for(const k of Object.keys(u))URL.revokeObjectURL(u[k]);}
+function ownRegister(){CREW.registerOwn(OWN_STATE.list.filter(c=>OWN_STATE.urls.has(c.id)).map(c=>({id:c.id,name:c.name,face:c.face,urls:OWN_STATE.urls.get(c.id)})));}
+/* asks main, makes the URLs of new characters, drops those of gone ones; a list that cannot be read keeps what is there */
+function ownLoad(){
+  ownQueue=ownQueue.then(async()=>{
+    if(!CREW||!bridge||!bridge.characterList)return;
+    let list=null;try{list=await bridge.characterList();}catch(e){list=null;}
+    if(!Array.isArray(list))return;
+    for(const c of list){
+      if(OWN_STATE.urls.has(c.id))continue;
+      let r=null;try{r=await bridge.characterFrames(c.id);}catch(e){r=null;}
+      if(!r||!r.ok||!r.frames)continue; /* it stays in the rows without a picture and is drawn nowhere */
+      const u={};for(const k of ['working','waiting','resting','blink'])if(r.frames[k])u[k]=URL.createObjectURL(new Blob([r.frames[k]],{type:'image/webp'}));
+      OWN_STATE.urls.set(c.id,u);
+    }
+    for(const id of [...OWN_STATE.urls.keys()])if(!list.some(c=>c.id===id))ownRevoke(id);
+    OWN_STATE.list=list;ownRegister();
+  }).catch(()=>{});
+  return ownQueue.then(()=>OWN_STATE.list);
+}
+/* FR-043: nothing shows them any more (another Characters value, no pin, Settings closed): the URLs go */
+function ownRelease(){
+  ownQueue=ownQueue.then(()=>{
+    if(!CREW||ownNeeded()||!OWN_STATE.urls.size)return;
+    for(const id of [...OWN_STATE.urls.keys()])ownRevoke(id);
+    CREW.registerOwn([]);crewLoaded.delete('mine');SC_CACHE.clear();
+  }).catch(()=>{});
+  return ownQueue;
+}
+/* the list changed (or just loaded): what is drawn follows, at once */
+function ownApply(){
+  if(!CREW)return;
+  const want=drawableCharacters(CHARS_CHOSEN);
+  if(THEME.characters()!==want)THEME.setCharacters(want);
+  crewLoaded.delete('mine');crewPreloadIds(CREW.idsFor('mine'));
+  SC_CACHE.clear();
+  if(CREW_FOR)syncCrew();
+  renderAll();crewRefreshAvatars();
+}
 const chatNoWords=a=>{const n=chatNoOf(a);return n?', chat '+n:'';};
 const INBOX_KEY=keyText(['mod','shift','A']), NEXT_KEY=keyText(['mod','shift','N']), PAL_KEY=keyText(['mod','K']);
 /* spec 006 FR-036: show or hide Previous sessions (H for history) */
@@ -266,20 +320,21 @@ async function applyTheme(idOrManifest,instant){
   else toast('Theme: <b>'+esc(THEME.list().find(t=>t.id===applied)?.name||applied)+'</b>.',2600);
 }
 /* Characters (spec 077 FR-064, FR-068): who sits at the desks, on top of any theme; the same cross-fade, cache clear and save as a theme */
-/* spec 096 (coordinator's choice of 2026-10-31): `mine` draws the theme's own figures until T042 and T044 can show My characters; a stored value stays stored */
-const drawableCharacters=c=>c==='mine'?'theme':c;
 async function applyCharacters(chosen){
-  const v=drawableCharacters(chosen);
+  CHARS_CHOSEN=THEME.parseCharacters(chosen)||'theme';
+  if(CREW&&ownNeeded())await ownLoad();
+  const v=drawableCharacters(CHARS_CHOSEN);
   let applied=null;
   await swapView(()=>{applied=THEME.setCharacters(v);SC_CACHE.clear();renderAll();});
   if(applied==null){applied=THEME.setCharacters(v);SC_CACHE.clear();renderAll();}
   let saved=false; /* saved only when main (or the simulator) says so: a missing or refused call is announced, never assumed */
-  if(bridge&&bridge.setCharacters){const r=await bridge.setCharacters(applied).catch(()=>null);saved=!!(r&&r.ok&&r.characters===applied);}
+  if(bridge&&bridge.setCharacters){const r=await bridge.setCharacters(CHARS_CHOSEN).catch(()=>null);saved=!!(r&&r.ok&&r.characters===CHARS_CHOSEN);}
   if(!saved)toast('The characters could not be saved.',4000);
-  else toast('Characters: <b>'+esc(CHARACTER_NAMES[applied]||applied)+'</b>.',2600);
+  else toast('Characters: <b>'+esc(CHARACTER_NAMES[CHARS_CHOSEN]||CHARS_CHOSEN)+'</b>.',2600);
+  ownRelease();
   return applied;
 }
-const CHARACTER_NAMES={theme:'The theme\u2019s own',minimalist:'Minimalist',cheeky:'Cheeky',prehistoric:'Prehistoric'};
+const CHARACTER_NAMES={theme:'The theme\u2019s own',minimalist:'Minimalist',cheeky:'Cheeky',prehistoric:'Prehistoric',mine:'My characters'};
 /* FR-068: one figure per choice for its pick button: the kit that choice draws on the current theme, one Cheeky portrait for the crew */
 function charPreview(choice){
   const kit=THEME.kitFor(THEME.themeKit(),choice), a={id:'characters-preview',look:lookFor('characters-preview')};
@@ -1050,7 +1105,7 @@ function helperCardHTML(h,L){
 const visitPlace=a=>{const v=a.parent?null:VISITS.at(a.id);return v?v.place:(RETURNING.has(a.id)?null:null);};
 function cardHTML(a,d,nSubs){
   const st=vis(a), use=usageShort(a);
-  return `<button class="desk card is-${st}${isUnread(a)?' is-unread':''}${hlIn(a,st)}${isRetrying(a)?' is-retrying':isCompacting(a)?' is-compacting':isFailing(a)?' is-failing':''}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" data-state="${st}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(deskTip(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}${unreadWords(a)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}${doorWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(deskMask(taskOf(a)))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
+  return `<button class="desk card is-${st}${isUnread(a)?' is-unread':''}${hlIn(a,st)}${isRetrying(a)?' is-retrying':isCompacting(a)?' is-compacting':isFailing(a)?' is-failing':''}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" data-state="${st}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(deskTip(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}${esc(wearWords(a))}" aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}${unreadWords(a)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}${doorWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(deskMask(taskOf(a)))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
     <span class="sc">${cabinHTML(a,'c',sceneC(a))}</span>
     <span class="ci"><span class="l1">${chatNoHTML(a)}${draftHTML(a)}${unreadHTML(a)}${dialogHTML(a)}<span class="name"${nameTipAttr(a)}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span><span class="stl st-${pillSt(a)}">${esc(stWord(a,true))}</span></span>    <span class="intent"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</span>
     <span class="l3"><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a,true))}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${useCost(use.split(' · ')[1])}</span>`:`<span class="tok">${esc(use.split(' · ')[0]||'')}</span>${use.includes(' · ')?`<span class="aiu"><span class="sep">&nbsp;· </span>${useCost(use.split(' · ')[1])}</span>`:''}`}</span></span></span>${GROW?grownSideHTML(a):''}</button>`;
@@ -1084,7 +1139,7 @@ function unitHTML(a,d){
   }
   let desk;
   if(d==='full'){
-    desk=`<button class="desk is-${st}${isUnread(a)?' is-unread':''}${hlIn(a,st)}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" data-state="${st}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}"${lastTip(a)?` title="${esc(lastTip(a).slice(3))}"`:''} aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}${unreadWords(a)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}${doorWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(deskMask(taskOf(a)))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
+    desk=`<button class="desk is-${st}${isUnread(a)?' is-unread':''}${hlIn(a,st)}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" data-state="${st}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}"${lastTip(a)||wearWords(a)?` title="${esc((lastTip(a)+wearWords(a)).slice(3))}"`:''} aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}${unreadWords(a)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}${doorWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(deskMask(taskOf(a)))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
       ${cabinHTML(a,'f',scene(a,false))}<span class="badge ${st}">${badgeSVG(st)}</span>
       <div class="info"><div class="who">${chatNoHTML(a)}${draftHTML(a)}${unreadHTML(a)}${dialogHTML(a)}<span class="name"${nameTipAttr(a)}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span></div>
       <p class="task"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</p><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}${pillWarn(a)}</span></div></button>`;    if(LIVE_SIDE)desk+=sideHTML(a);
@@ -7932,6 +7987,10 @@ if(bridge){
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     applyCharacters,charPreview, /* spec 077 FR-068 */
+    charactersChosen:()=>CHARS_CHOSEN, /* spec 096: the stored value, which a stored `mine` with no character does not draw */
+    own:{load:ownLoad,changed:async()=>{await ownLoad();ownApply();},list:()=>OWN_STATE.list,urlsOf:id=>OWN_STATE.urls.get(id),pins:()=>OWN_STATE.pins,setPins:p=>{OWN_STATE.pins=p&&typeof p==='object'?p:{};},keyOf:ownKeyOf,screenClosed:()=>{ownRelease();}},
+    /* FR-042: the folders with a session open now, as main counts them (spec 096 FR-031) */
+    openFolders:()=>ROOMS.filter(r=>agents.some(x=>!x.parent&&x.room===r.id&&x.info)).map(r=>({key:folderKeyOf(r),name:r.name})),
     previewTheme:(m)=>{swapView(()=>{THEME.setTheme(m);SC_CACHE.clear();renderAll();});}, /* spec 040 FR-014: Try it / Discard, nothing saved */
     agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,adapterId:x.info&&x.info.adapterId,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),
     staticLimit:a=>{const m=modelsFor(a.info&&a.info.adapterId).find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},
@@ -7978,10 +8037,12 @@ if(bridge){
   /* User themes (spec 040): register imported packs, then apply the saved theme id */
   THEME.setTheme.resolveUser=bridge.getUserTheme?(id)=>bridge.getUserTheme(id):null;
   const themeBoot=(v)=>{
-    THEME.setCharacters(drawableCharacters(v&&v.characters)); /* spec 077 FR-064: the saved choice (an unknown value is the default) */
+    CHARS_CHOSEN=THEME.parseCharacters(v&&v.characters)||'theme'; OWN_STATE.pins=(v&&v.characterPins)||{};
+    THEME.setCharacters(drawableCharacters(CHARS_CHOSEN)); /* spec 077 FR-064: the saved choice (an unknown value is the default); spec 096: a stored `mine` until its list is here draws the theme's own */
     let tid=(v&&v.theme)||'clean-office';
     /* FR-067: the old Cheeky Crew id from a run theme or the simulator's query: Clean Office with Cheeky, for this run (nothing saved) */
-    if(tid===THEME.LEGACY_CREW_THEME){if(THEME.characters()==='theme')THEME.setCharacters('cheeky');tid='clean-office';}
+    if(tid===THEME.LEGACY_CREW_THEME){if(CHARS_CHOSEN==='theme'){CHARS_CHOSEN='cheeky';THEME.setCharacters('cheeky');}tid='clean-office';}
+    if(CREW&&ownNeeded())ownLoad().then(ownApply); /* spec 096 FR-043 */
     const apply=()=>{if(THEME.current().id!==tid)applyTheme(tid,true);else scheduleRender();};
     if(bridge.listUserThemes){bridge.listUserThemes().then(list=>{
       const good={};(list||[]).filter(t=>t.ok&&t.manifest!==false).forEach(t=>{});
@@ -8005,7 +8066,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={agents:()=>agents,crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
+if(SIM)window.__durbarSimUi={agents:()=>agents,crew:{own:()=>({chosen:CHARS_CHOSEN,pins:{...OWN_STATE.pins},list:OWN_STATE.list.map(c=>c.id),entries:OWN_STATE.list.filter(c=>OWN_STATE.urls.has(c.id)).map(c=>({id:c.id,name:c.name,face:c.face,urls:OWN_STATE.urls.get(c.id)})),urls:[...OWN_STATE.urls.keys()],registered:CREW.idsFor('mine')}),fallOwn:id=>{const u=OWN_STATE.urls.get(id);if(!u)return false;URL.revokeObjectURL(u.working);crewPreloadIds([id]);return true;},state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,
