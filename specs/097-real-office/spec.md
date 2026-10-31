@@ -466,3 +466,9 @@ Numbers checked 2026-10-31 against `main`, the P1 branch and open PRs: 097 uses 
 - **FR-047**: Serious mode (the real Settings switch) and reduced motion (emulated over CDP, page loaded with it) make the scene `.still` with no moving light; **FR-051**: no lights under forced colours (emulated); **FR-037**: the folder-first pick is pinned by `test:realoffice-layout`.
 - The driver waits with `until()` until every awake desk is a person, a visitor or an initials disc, then reads once (simulator visits run on the wall clock). `check-parallel.js` reads the Real office summary line.
 - Site: the docs page links the 1280x800 take of the 3-agent picture (about 120 KB smaller); see FR-092.
+
+### 2026-10-31: Paco's art review of #921 (fix round)
+
+- **FR-026 chips**: a crowded chip takes the nearest free spot (up to 64 px left or right, up to three levels up, inside the band) and shows its name there; only when none is free it shows the first letters and an ellipsis, then initials. `sim:` `shots-097-realoffice` asserts at most one chip with bare initials in the 15-agent office at both sizes (mutant: spots limited to the chip's own place, fails).
+- **FR-023 place plates**: a plate wider than its slot grows into free space on its row (right, then left, never over another plate, no fixture moves), so "Other tools" and "Postbox" read in full at 1280x800; text stays at least 10.5 px (`sim:` the driver measures each plate's text against its box, overlaps of plates and chips, and the font size; mutant: no plate fitting, fails).
+- Pictures retaken (the same files, so the site budget is unchanged).
