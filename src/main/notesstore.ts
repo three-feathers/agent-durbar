@@ -616,7 +616,7 @@ export class NotesStore {
   setMirror(folderKey: string, folderName: string, mirror: NotesMirror | undefined): Promise<NotesWrote> {
     return this.mutate(folderKey, folderName, (doc) => {
       const next: NotesDoc = { ...doc, notes: doc.notes.map((n) => ({ ...n })), tombstones: doc.tombstones.map((t) => ({ ...t })) };
-      if (mirror) { next.mirror = { sha256: mirror.sha256, bytes: mirror.bytes, at: mirror.at }; delete next.filePending; } // written: every note is in the file now
+      if (mirror) { next.mirror = { sha256: mirror.sha256, bytes: mirror.bytes, at: mirror.at, ...(mirror.folder ? { folder: mirror.folder } : {}) }; delete next.filePending; } // written: every note is in the file now
       else delete next.mirror;
       return { ok: true, doc: next };
     });

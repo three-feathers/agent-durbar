@@ -26,7 +26,7 @@ import { isInsideRoots } from '../adapters/permissions';
 import type { NotesStore } from './notesstore';
 import { maskNoteText } from '../shared/redact';
 
-export type NotesFileFs = Pick<typeof nodeFs, 'realpathSync' | 'lstatSync' | 'statSync' | 'openSync' | 'fstatSync' | 'readSync' | 'writeSync' | 'fsyncSync' | 'closeSync' | 'renameSync' | 'unlinkSync' | 'mkdirSync'>;
+export type NotesFileFs = Pick<typeof nodeFs, 'realpathSync' | 'lstatSync' | 'statSync' | 'openSync' | 'fstatSync' | 'readSync' | 'writeSync' | 'fsyncSync' | 'closeSync' | 'renameSync' | 'unlinkSync' | 'mkdirSync' | 'rmdirSync' | 'linkSync'>;
 /** The open flags used; tests pass a set without `O_NOFOLLOW` to act like Windows. */
 export type NotesFileFlags = Pick<typeof nodeFs.constants, 'O_RDONLY' | 'O_WRONLY' | 'O_CREAT' | 'O_EXCL' | 'O_APPEND'> & { O_NOFOLLOW?: number; O_NONBLOCK?: number };
 
@@ -118,6 +118,15 @@ export type ReadBack =
   | { ok: true; sha: string; changed: true; sections: NotesMdSection[]; strayText: number; overflow: number }
   | FileFail;
 export type ExcludeResult = { ok: true; added: boolean; line: string } | { ok: false; error: string };
+/** FR-055 (T042): what *Delete the file* did. `removed` false: the file stays and `why` says so (a short fixed text, never a path). */
+export type RemoveResult = { removed: boolean; dirRemoved: boolean; why?: string };
+/** FR-055: the reasons a delete leaves the file. */
+export const REMOVE_CHANGED = '.durbar/notes.md changed since Durbar last wrote it, so it was left in the project.';
+export const REMOVE_NONE = 'There was no .durbar/notes.md to delete.';
+/** Review of PR 931 (point 4): the switch is on, Durbar wrote the file before, and it is gone (the folder was replaced, or the file deleted). */
+export const NOTES_REPLACED = 'This folder was replaced by another one at the same place. Turn the switch off and on again to write .durbar/notes.md here.';
+export const NOTES_GONE = 'The project file is gone. Turn the switch off and on again to write .durbar/notes.md.';
+const REMOVE_REFUSED = (why: string): string => `Durbar did not delete .durbar/notes.md: ${why}.`;
 
 export class NotesFile {
   private readonly fs: NotesFileFs;
@@ -135,10 +144,10 @@ export class NotesFile {
 
   /**
    * Q1 (spec Changes, T041): the notes as the shared file gets them, masked again with the folder's CURRENT secret values, so a value
-   * registered after a note was saved never reaches `notes.md` (then cut, as on save). The store keeps its text as it is.
+   * registered after a note was saved never reaches `notes.md` (then cut, as on save). The token shapes run too when no value is known
+   * (review of PR 931: a shape added to the mask after a note was saved). `syncNotesFile` writes a changed note back to the store.
    */
   forFile(notes: readonly Note[], values: readonly string[]): Note[] {
-    if (!values.length) return [...notes];
     const sig = sha256(values.join('\u0000'));
     return notes.map((n) => {
       let m = this.masked.get(n.id);
@@ -245,16 +254,16 @@ export class NotesFile {
    * FR-050: how many notes an existing `notes.md` would add (sections whose id is not in `knownIds`), for the turn-on dialog only.
    * No file: 0. A conflict, a parse error or a refused file: `COUNT_UNREADABLE` (the switch then stays off).
    */
-  count(folderPath: string, knownIds: ReadonlySet<string> = new Set()): { ok: true; count: number; exists: boolean } | { ok: false; error: string } {
+  count(folderPath: string, knownIds: ReadonlySet<string> = new Set()): { ok: true; count: number; exists: boolean; strayText: number } | { ok: false; error: string } {
     const pl = this.place(folderPath, false);
     if (!pl.ok) return pl.code === 'missing' ? { ok: false, error: pl.error } : { ok: false, error: COUNT_UNREADABLE };
-    if (!pl.p.hasDurbar) return { ok: true, count: 0, exists: false };
+    if (!pl.p.hasDurbar) return { ok: true, count: 0, exists: false, strayText: 0 };
     const cur = this.current(pl.p);
     if (!cur.ok) return { ok: false, error: COUNT_UNREADABLE };
-    if (!cur.buf) return { ok: true, count: 0, exists: false };
+    if (!cur.buf) return { ok: true, count: 0, exists: false, strayText: 0 };
     const parsed = parseNotesMd(cur.buf.toString('utf8'));
     if (!parsed.ok) return { ok: false, error: COUNT_UNREADABLE };
-    return { ok: true, count: parsed.sections.filter((s) => s.id === undefined || !knownIds.has(s.id)).length + parsed.overflow, exists: true };
+    return { ok: true, count: parsed.sections.filter((s) => s.id === undefined || !knownIds.has(s.id)).length + parsed.overflow, exists: true, strayText: parsed.strayText };
   }
 
   /** FR-053 right before the rename: `.durbar` unchanged, `notes.md` missing or a regular file, and its hash still `expect` (`null`: still missing). */
@@ -305,7 +314,8 @@ export class NotesFile {
         this.fs.renameSync(tmp, p.notes);
       }
       made = false;
-      return { ok: true, mirror: { sha256: sha256(bytes), bytes: bytes.length, at: this.now().toISOString() } };
+      const folder = this.folderId(p.folder);
+      return { ok: true, mirror: { sha256: sha256(bytes), bytes: bytes.length, at: this.now().toISOString(), ...(folder ? { folder } : {}) } };
     } catch (e) {
       return { ok: false, code: 'write', error: WRITE_FAIL(errCode(e)) };
     } finally {
@@ -340,6 +350,107 @@ export class NotesFile {
     return r.ok ? r.buf.toString('utf8') : undefined;
   }
 
+  /** Walk up from a real folder path to the first `.git` (a folder, a file or anything else: the caller checks it). No git process (FR-051). */
+  private findDotGit(folder: string): { root: string; st: nodeFs.Stats } | undefined {
+    for (let dir = folder, i = 0; i < 256; i++) {
+      try { return { root: dir, st: this.fs.lstatSync(path.join(dir, '.git')) }; } catch (e) { if (errCode(e) !== 'ENOENT') return undefined; }
+      const up = path.dirname(dir);
+      if (up === dir) return undefined;
+      dir = up;
+    }
+    return undefined;
+  }
+
+  /** FR-050 (T042): is the folder inside a git repository (a `.git` folder or file found walking up from its real path)? Only for the dialog's box. */
+  inRepo(folderPath: string): boolean {
+    try {
+      if (typeof folderPath !== 'string' || !path.isAbsolute(folderPath)) return false;
+      const folder = this.fs.realpathSync(folderPath);
+      if (!this.fs.lstatSync(folder).isDirectory()) return false;
+      const g = this.findDotGit(folder);
+      return !!g && (g.st.isDirectory() || g.st.isFile() || g.st.isSymbolicLink()); // a linked .git counts: addExclude then refuses it and the switch stays off (review 2 of PR 931)
+    } catch { return false; }
+  }
+
+  /**
+   * Review 2 of PR 931: the identity of the project folder (device and inode of its real path, as decimal text, never a path), stored
+   * with the mirror; another folder put at the same path (a fresh clone) has another one. `undefined` where the OS gives no inode.
+   */
+  folderId(folderPath: string): string | undefined {
+    try {
+      const st = this.fs.lstatSync(this.fs.realpathSync(folderPath), { bigint: true }) as unknown as { dev: bigint; ino: bigint; isDirectory(): boolean };
+      return st.isDirectory() && st.ino > 0n ? `${st.dev}:${st.ino}` : undefined;
+    } catch { return undefined; }
+  }
+
+  /** FR-050 (T042): is the folder there (a real folder after its real path)? Stats the folder only, never `.durbar` or `notes.md`. */
+  folderThere(folderPath: string): boolean {
+    try {
+      if (typeof folderPath !== 'string' || !path.isAbsolute(folderPath)) return false;
+      return this.fs.lstatSync(this.fs.realpathSync(folderPath)).isDirectory();
+    } catch { return false; }
+  }
+
+  /**
+   * FR-055 (T042): *Delete the file*. `notes.md` is unlinked only when `.durbar` passes FR-053's checks, `notes.md` is a regular file with
+   * one link (a symlink or a hard link is never deleted) and its SHA-256 is `mirror` (the file Durbar last wrote); all of it is checked
+   * again right before the unlink. Then `.durbar` is removed with `rmdir` only when it is empty (never recursively). Never throws.
+   */
+  remove(folderPath: string, mirror: NotesMirror | undefined): RemoveResult {
+    const keep = (why: string): RemoveResult => ({ removed: false, dirRemoved: false, why });
+    try {
+      const pl = this.place(folderPath, false);
+      if (!pl.ok) return keep(pl.code === 'missing' ? REMOVE_REFUSED('the folder is not there') : REMOVE_REFUSED(pl.error.replace(/^Could not read \.durbar\/notes\.md: /, '')));
+      if (!pl.p.hasDurbar) return keep(REMOVE_NONE);
+      const cur = this.current(pl.p);
+      if (!cur.ok) return keep(cur.code === 'too-big' ? REMOVE_CHANGED : REMOVE_REFUSED(`it ${cur.why}`));
+      if (!cur.buf) return keep(REMOVE_NONE);
+      if (!mirror || sha256(cur.buf) !== mirror.sha256) return keep(REMOVE_CHANGED);
+      const again = this.recheck(pl.p, mirror.sha256);
+      if (again) return keep(again.code === 'changed' ? REMOVE_CHANGED : REMOVE_REFUSED(again.error.replace(/^Could not write \.durbar\/notes\.md: /, '').replace(/^notes\.md /, 'it ')));
+      // Review of PR 931: never unlink by the name `notes.md`, which a swapped `.durbar` could point elsewhere. Rename the file to a random
+      // name inside `.durbar`, check THAT name (its folder's real path, a regular file with one link, Durbar's hash), and unlink only it.
+      // A swap before the rename moves the other file to the random name elsewhere, and the real-path check of that name (last, right
+      // before the unlink) fails; a swap after it finds no file with that random name elsewhere, so the unlink fails. This closes the race
+      // for a process that cannot read the other folder and narrows it otherwise: one that can read it learns the random name, can put a
+      // decoy under it here and swap again before the unlink (Node has no unlinkat). Under attack a file may be left under the random name.
+      const name = `.notes.md.${this.pid}.${this.rand(36 ** 8).toString(36)}.del`;
+      const doomed = path.join(pl.p.durbar, name);
+      try { this.fs.renameSync(pl.p.notes, doomed); } catch (e) { return keep(REMOVE_REFUSED(`it could not be deleted (${errCode(e)})`)); }
+      const left = (why: string, newer: boolean): RemoveResult => keep(REMOVE_REFUSED(`${why}; ${newer ? 'a newer notes.md is there, so the old one' : 'the file'} may be left as ${name}, in .durbar or in another folder: renaming it back to notes.md restores it`));
+      // the rename back never replaces a notes.md that appeared meanwhile (a POSIX rename would): a hard link fails with EEXIST instead
+      const putBack = (why: string): RemoveResult => {
+        try {
+          this.fs.linkSync(doomed, pl.p.notes);
+        } catch (e) {
+          if (errCode(e) === 'EEXIST') return left(why, true);
+          // no hard links here (some file systems): rename only when nothing is at notes.md
+          try { this.fs.lstatSync(pl.p.notes); return left(why, true); } catch (e2) { if (errCode(e2) !== 'ENOENT') return left(why, false); }
+          try { this.fs.renameSync(doomed, pl.p.notes); return keep(REMOVE_REFUSED(why)); } catch { return left(why, false); }
+        }
+        try { this.fs.unlinkSync(doomed); } catch { /* both names hold the same file: notes.md is back */ }
+        return keep(REMOVE_REFUSED(why));
+      };
+      const moved = this.checkDurbar(pl.p.folder, pl.p.durbar);
+      if (moved) return putBack('.durbar changed while it was being deleted');
+      const r = readCapped(this.fs, this.k, doomed, NOTES_LIMITS.mdBytes);
+      if (!r.ok || sha256(r.buf) !== mirror.sha256) return putBack('it changed while it was being deleted');
+      // the decisive check, last before the unlink: the random name really is in this folder's `.durbar` now. A rename that landed
+      // elsewhere through a swapped link left no file with that name here, so a swap after this check finds no such name elsewhere.
+      let rp = '';
+      try { rp = this.fs.realpathSync(doomed); } catch { return putBack('.durbar changed while it was being deleted'); }
+      if (!this.same(rp, doomed)) return putBack('.durbar changed while it was being deleted');
+      try { this.fs.unlinkSync(doomed); } catch (e) { return putBack(`it could not be deleted (${errCode(e)})`); }
+      let dirRemoved = false;
+      if (!this.checkDurbar(pl.p.folder, pl.p.durbar)) {
+        try { this.fs.rmdirSync(pl.p.durbar); dirRemoved = true; } catch { /* not empty (ENOTEMPTY, EEXIST) or held open: it stays */ }
+      }
+      return { removed: true, dirRemoved };
+    } catch (e) {
+      return keep(REMOVE_REFUSED(`it could not be checked (${errCode(e)})`));
+    }
+  }
+
   /**
    * FR-051: append the anchored `/<path>/.durbar/` line to the repository's `info/exclude`, once. The repository is found by walking up
    * from the folder's real path to the first `.git`: a folder, or a file (worktree, submodule) whose `gitdir:` and `commondir` lead to
@@ -350,16 +461,9 @@ export class NotesFile {
     const fail = (why: string): ExcludeResult => ({ ok: false, error: EXCLUDE_FAIL(why) });
     let folder: string;
     try { folder = this.fs.realpathSync(folderPath); if (!this.fs.lstatSync(folder).isDirectory()) return fail('the folder is not there'); } catch { return fail('the folder is not there'); }
-    // walk up to the first `.git`
-    let root: string | undefined;
-    let dotGit: nodeFs.Stats | undefined;
-    for (let dir = folder, i = 0; i < 256; i++) {
-      try { dotGit = this.fs.lstatSync(path.join(dir, '.git')); root = dir; break; } catch (e) { if (errCode(e) !== 'ENOENT') return fail('not a git repository'); }
-      const up = path.dirname(dir);
-      if (up === dir) break;
-      dir = up;
-    }
-    if (!root || !dotGit) return fail('not a git repository');
+    const found = this.findDotGit(folder);
+    if (!found) return fail('not a git repository');
+    const { root, st: dotGit } = found;
     const rel = path.relative(root, folder);
     const segments = rel ? rel.split(path.sep) : [];
     if (segments.some((s) => /[\u0000-\u001f\u007f]/.test(s))) return { ok: false, error: EXCLUDE_UNSAFE_NAME };
@@ -431,10 +535,17 @@ export class NotesFile {
  */
 export async function syncNotesFile(d: {
   file: NotesFile; store: NotesStore; folderKey: string; folderName: string; folderPath: string; values: readonly string[]; now?: () => Date;
+  /** Only the turn-on call may create the file (review 2 of PR 931): any other cycle that finds no file reports it gone. */
+  create?: boolean;
 }): Promise<{ state: NotesFileState; retry?: boolean }> {
   const mirror = await d.store.getMirror(d.folderKey);
+  // review 2 of PR 931: another folder at the same path (a fresh clone) is not the one Durbar wrote into: nothing is read or written
+  const here = mirror?.folder ? d.file.folderId(d.folderPath) : undefined;
+  if (mirror?.folder && here && here !== mirror.folder) return { state: { error: NOTES_REPLACED } };
   const rb = d.file.readBack(d.folderPath, mirror, await d.store.getFileImport(d.folderKey));
   if (!rb.ok) return { state: { error: rb.error } };
+  // review of PR 931 (point 4): a file Durbar wrote is gone (another clone at the same path, a deleted folder): never recreate it unasked
+  if (!d.create && rb.sha === null) return { state: { error: NOTES_GONE } };
   const info: string[] = [];
   if (rb.changed) {
     const imp = await d.store.importFile(d.folderKey, d.folderName, rb.sections, d.values, rb.overflow ? undefined : rb.sha);
@@ -450,14 +561,29 @@ export async function syncNotesFile(d: {
     if (c?.keptDurbar) info.push(`${c.keptDurbar} note${c.keptDurbar === 1 ? '' : 's'} added in notes.md ${c.keptDurbar === 1 ? 'was' : 'were'} changed in Durbar before reaching the file; Durbar's version was kept`);
     if (c?.older) info.push(`${c.older} note${c.older === 1 ? '' : 's'} in notes.md ${c.older === 1 ? 'was an older copy' : 'were older copies'}; Durbar's version was kept`);
   }
-  const v = await d.store.list(d.folderKey);
+  let v = await d.store.list(d.folderKey);
   if (!v.ok) return { state: { error: v.error } };
   if (v.readOnly) return { state: { error: v.readOnly } };
-  const text = writeNotesMd(d.file.forFile(v.notes, d.values));
+  // review of PR 931 (point 1b): a note the file masks differently is masked in the store too, so the file never un-masks later
+  let out = d.file.forFile(v.notes, d.values);
+  let fixed = 0;
+  for (let i = 0; i < out.length; i++) {
+    const n = v.notes[i], m = out[i];
+    if (m.title === n.title && m.text === n.text) continue;
+    const u = await d.store.update(d.folderKey, d.folderName, n.id, n.rev, { ...(m.title !== n.title ? { title: n.title } : {}), ...(m.text !== n.text ? { text: n.text } : {}), values: d.values });
+    if (u.ok) fixed++;
+  }
+  if (fixed) {
+    v = await d.store.list(d.folderKey);
+    if (!v.ok) return { state: { error: v.error } };
+    out = d.file.forFile(v.notes, d.values);
+  }
+  const text = writeNotesMd(out);
   const want = sha256(Buffer.from(text, 'utf8'));
   const done = (state: NotesFileState): NotesFileState => (info.length ? { ...state, info: info.join('. ') + '.' } : state);
   if (rb.sha === want) {
-    if (mirror?.sha256 !== want) await d.store.setMirror(d.folderKey, d.folderName, { sha256: want, bytes: Buffer.byteLength(text, 'utf8'), at: (d.now?.() ?? new Date()).toISOString() });
+    const folder = d.file.folderId(d.folderPath);
+    if (mirror?.sha256 !== want || (folder && mirror?.folder !== folder)) await d.store.setMirror(d.folderKey, d.folderName, { sha256: want, bytes: Buffer.byteLength(text, 'utf8'), at: (d.now?.() ?? new Date()).toISOString(), ...(folder ? { folder } : {}) });
     return { state: done({}) };
   }
   const w = await d.file.syncOut(d.folderPath, text, rb.sha);
