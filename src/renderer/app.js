@@ -6771,6 +6771,7 @@ function onModelEvent(a,e){
   }
   a.ctxWaiting=true; /* the runtime reports the new window with the next message */
   a.mcpWinKnown=0; /* spec 100: the old model's window says nothing about this one */
+  if(MCP_CTX.has(a.id)){repaintMcpChip(a);mcpWarnLine(a);}
   if(e.cause==='user'&&a.pendingModel)a.pendingModel=undefined;
   /* the start-up report and Auto's own routing are not a change the user needs to hear about */
   const quiet=e.cause==='runtime'&&(!e.previousModel||keepAuto);
@@ -6824,6 +6825,7 @@ function onCompaction(a,e){
     }else a.compactFailed=true;
   }
   if(a.compTimes&&a.compTimes.length)mcpCompactHint(a,R,a.compTimes[a.compTimes.length-1]); /* spec 100 FR-030 */
+  if(e.phase!=='start'&&MCP_CTX.has(a.id))repaintMcpChip(a); /* spec 100: the window may have changed with it */
   updateCtxChip(a);if(e.phase!=='start'&&!a.ctxWaiting)maybeSuggestFresh(a);
   scheduleRender();updatePanelHeader(); /* spec 015 FR-010: the desk, list, strip and header say Compacting, or go back */
 }
