@@ -1021,7 +1021,7 @@ async function driver(ctx) {
             /* spec 080 SC-011: this session's Browser tab with 10 page tabs (+ nine times; each waits for the strip to show the new tab) */
             for (let k = 2; k <= 10; k++) {
               await ctx.js(`(()=>{const b=document.getElementById('bNewTab');if(b&&!b.disabled)b.click();return true})()`);
-              await must(`document.querySelectorAll('#bTabs .btab').length>=${k}`, `page tab ${k} in the strip`);
+              await must(`document.querySelectorAll('#bTabs .btab').length>=${jsLiteral(k)}`, `page tab ${k} in the strip`);
             }
             await must(`document.getElementById('bNewTab').disabled===true`, '+ disabled at 10 tabs');
           }
@@ -1030,7 +1030,7 @@ async function driver(ctx) {
             /* back to one tab (the empty ones have no view, FR-004), so the next size starts as this one did */
             for (let k = 10; k > 1; k--) {
               await ctx.js(`(()=>{const x=[...document.querySelectorAll('#bTabs .btab-x')].pop();if(x)x.click();return true})()`);
-              await must(`document.querySelectorAll('#bTabs .btab').length<=${k - 1}`, `page tab ${k} closed`);
+              await must(`document.querySelectorAll('#bTabs .btab').length<=${jsLiteral(k - 1)}`, `page tab ${k} closed`);
             }
           }
           if (seen.count !== 1) pb.push(`${seen.count} native views are attached (expected 1) after ${seen.ms} ms, last seen bounds ${JSON.stringify(seen.bounds)} in ${JSON.stringify(seen.win)}`);
