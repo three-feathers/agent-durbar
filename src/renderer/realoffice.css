@@ -4,7 +4,7 @@
    is UI uses the theme's tokens (D2). Light colours are fixed for meaning (FR-049). Lights are opacity and transforms only, with
    no blur filter and no script per frame (FR-048). */
 .ro{position:relative;overflow:hidden;border-radius:var(--r-lg,10px);background:#c9a77c url(realoffice/art/floor.webp) center/cover;
-  --ro-warm:255,214,150;--ro-amber:240,160,48;--ro-red:217,68,58;--ro-orange:240,122,32;--ro-green:63,170,99;--ro-screen:150,190,235}
+  --ro-warm:255,214,150;--ro-amber:240,160,48;--ro-red:217,68,58;--ro-orange:240,122,32;--ro-green:63,170,99;--ro-screen:150,190,235;--ro-lit:255,194,122;--ro-ring:255,255,255}
 .ro *{box-sizing:border-box}
 .ro-art,.ro-amb,.ro-lights,.ro-chrome{position:absolute;inset:0;pointer-events:none}
 .ro-chrome>*,.ro-art>[data-for],.ro-art .ro-screen{pointer-events:auto}
@@ -31,7 +31,7 @@
 .ro-glass i{display:block;height:3px;border-radius:2px;background:#9aa5b1;opacity:.7;flex:none}
 .ro-glass i:nth-child(4n+2){background:#8db8e0}.ro-glass i:nth-child(5n){background:#8fd19e}
 .ro-screen.st-error .ro-glass{background:#1d1111}.ro-screen.st-error .ro-glass i:nth-last-child(-n+3){background:#ff8b7b}
-.ro-screen:is(.st-waiting,.st-limit) .ro-glass{background:#1b1610}.ro-screen:is(.st-waiting,.st-limit) .ro-glass i:last-child{background:#ffc27a}
+.ro-screen:is(.st-waiting,.st-limit) .ro-glass{background:#1b1610}.ro-screen:is(.st-waiting,.st-limit) .ro-glass i:last-child{background:rgb(var(--ro-lit))}
 .ro-screen.st-done .ro-glass i:last-child{background:#8fd19e;width:30%}
 .ro-screen.off .ro-glass{background:#121314}.ro-screen.off .ro-glass i{display:none}
 .ro-neck{position:absolute;left:50%;bottom:4px;width:10%;height:8%;min-height:6px;transform:translateX(-50%);background:linear-gradient(90deg,#222,#3a3a3a,#222)}
@@ -48,7 +48,7 @@
 .ro-glow{border-radius:8px;opacity:0;box-shadow:0 0 18px 6px rgba(var(--ro-screen),.35)}
 .ro-glow.glow-on{opacity:.8}.ro-glow.glow-breathe{opacity:.7}.ro-glow.glow-low{opacity:.25}
 .ro-glow.glow-red{opacity:.9;box-shadow:0 0 14px 4px rgba(var(--ro-red),.4)}
-.ro-call{width:10px;height:10px;border-radius:50%;border:1.5px solid rgba(255,255,255,.85)}
+.ro-call{width:10px;height:10px;border-radius:50%;border:1.5px solid rgba(var(--ro-ring),.85)}
 .ro-call.call-amber{background:rgb(var(--ro-amber));box-shadow:0 0 8px 3px rgba(var(--ro-amber),.55)}
 .ro-call.call-red{background:rgb(var(--ro-red));box-shadow:0 0 6px 2px rgba(var(--ro-red),.45)}
 .ro-call.call-orange{background:rgb(var(--ro-orange));box-shadow:0 0 6px 2px rgba(var(--ro-orange),.45)}
