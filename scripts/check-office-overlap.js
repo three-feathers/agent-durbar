@@ -108,7 +108,7 @@ function pageCheck(expanded, expectPlaces) {
     if (L.h > 60 || L.h < 56) problems.push(`lobby is ${L.h.toFixed(0)}px tall, not 58`); /* spec 001 FR-036: a header row and the visitors under it */
     const addBtns = lobby.querySelectorAll('.place-add');
     if (addBtns.length !== (expectPlaces < 8 ? 1 : 0)) problems.push(`${addBtns.length} Add buttons with ${expectPlaces} places`);
-    addBtns.forEach((b) => { inside(b, L, 'the lobby'); if (!b.getAttribute('aria-label')) problems.push('the Add button has no accessible name'); });
+    addBtns.forEach((b) => { inside(b, L, 'the lobby'); if (!b.getAttribute('aria-label')) problems.push('the Add button has no accessible name'); const cs = getComputedStyle(b); if (cs.position === 'static' || !(Number(cs.zIndex) >= 1)) problems.push('the Add button is not above the lobby art band (spec 040 FR-030: positioned, z-index 1)'); });
     /* spec 052 FR-013: a themed place may add its plain name, "Cartridge Bay (Software library): …" */
     const fullName = (t, n) => t.startsWith(n + ':') || t.startsWith(n + ' (');
     places.forEach((pl) => { const n = pl.querySelector('.pn'); if (pl.classList.contains('unnamed')) { if (!/: /.test(pl.getAttribute('aria-label') || '') || !pl.title) problems.push(`the unnamed ${pl.dataset.place} tile has no label`); return; } if (!n || !fullName(pl.getAttribute('aria-label'), n.textContent) || !fullName(pl.title, n.textContent)) problems.push(`place ${pl.dataset.place}: its full name is not in the tooltip and the label`); });

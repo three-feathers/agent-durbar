@@ -456,7 +456,8 @@
   const CONTRAST_PAIRS=[['--ink','--bg',4.5],['--ink','--surface',4.5],['--ink','--raised',4.5],['--ink','--card',4.5],['--ink','--card-waiting',4.5],['--ink','--card-error',4.5],['--ink-2','--soft',4.5],['--ink-2','--note',4.5],['--ink-2','--surface',4.5],['--muted','--surface',4.5],['--room-path','--bg',3]]
     .concat(['working','thinking','waiting','idle','error','done'].map(s=>['--pc-'+s,'--pb-'+s,4.5]))
     .concat([['--surface','--sage-ink',4.5],['--surface','--red-ink',4.5],['--surface','--amber-ink',4.5]]) /* spec 052 FR-169: primary, danger and warn button text */
-    .concat([['--drop-ink','--drop-bg',4.5],['--brand-mark','--brand-bg',3],['--idle-stub-ink','--idle-stub',3],['--desk-new','--card',3],['--desk-needs','--card-waiting',3]]);
+    .concat([['--drop-ink','--drop-bg',4.5],['--brand-mark','--brand-bg',3],['--idle-stub-ink','--idle-stub',3],['--desk-new','--card',3],['--desk-needs','--card-waiting',3]])
+    .concat(['sage','blue','sand','clay'].flatMap(t=>[['--room-path','--tint-'+t,4.5],['--muted','--tint-'+t,4.5],['--ink','--tint-'+t,4.5]])); /* spec 040 FR-027: header text sits on the room tints */
   const HEX_ANY=/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
   function lum(hex){
     let h=HEX_ANY.exec(hex)[1]; if(h.length===3)h=h.split('').map(c=>c+c).join(''); h=h.slice(0,6);
@@ -466,6 +467,7 @@
   function ratio(a,b){const [x,y]=[lum(a),lum(b)].sort((p,q)=>q-p);return (x+0.05)/(y+0.05);}
   /* spec 070 FR-023: the surfaces a theme is built on. A failing pair never changes them, so a dark theme stays dark and a light one light */
   const BASE_SURFACE=/^--(bg|surface|surface-2|raised|card(-[a-z]+)?|soft|note|pb-[a-z]+|drop-bg|brand-bg|idle-stub)$/;
+  const TINT=/^--tint-[a-z]+$/;
   function hex6(v){let h=HEX_ANY.exec(v)[1];if(h.length===3)h=h.split('').map(c=>c+c).join('');return h;}
   function mixHex(v,to,w){
     const h=hex6(v),t=hex6(to);
@@ -489,8 +491,18 @@
         const a=t[fg],b=t[bg];
         if(!HEX_ANY.test(String(a||''))||!HEX_ANY.test(String(b||'')))continue;
         if(ratio(a,b)>=min)continue;
-        const k=BASE_SURFACE.test(fg)&&!BASE_SURFACE.test(bg)?bg:fg;
-        const v=readableOn(t[k],t[k===fg?bg:fg],min);
+        /* a room tint paints only the rooms, but --ink, --muted and --room-path are also read on the page, cards and tooltips (spec 040 FR-027):
+           move the text token only when the result keeps every non-tint pair it is part of; else repair the tint, and the text only if no tint can reach the ratio */
+        let k=BASE_SURFACE.test(fg)&&!BASE_SURFACE.test(bg)?bg:fg;
+        let v;
+        if(TINT.test(bg)){
+          k=fg;v=readableOn(a,b,min);
+          const keeps=CONTRAST_PAIRS.every(([f,g,m])=>f!==fg||TINT.test(g)||!HEX_ANY.test(String(t[g]||''))||ratio(v,t[g])>=m);
+          if(!keeps){
+            const tv=readableOn(b,a,min);
+            if(ratio(a,tv)>=min){k=bg;v=tv;}
+          }
+        }else v=readableOn(t[k],t[k===fg?bg:fg],min);
         if(v===t[k])continue;
         t[k]=v;changed=true;
         if(!back.includes(k))back.push(k);
@@ -676,6 +688,10 @@
     return p[name]!==undefined?p[name]:(MOTION_PRESETS.default[name]||'none');
   }
   function onChange(fn){ listeners.push(fn); }
+  /* Is this id one of the built-in packs (asked directly, so it stays right once list() also holds user themes)? */
+  function isBuiltIn(id){ return own(BUILT_IN,id); }
+  /* spec 040 FR-030: a user theme's lobby band keeps its proportions and covers the lobby; built-in bands were drawn to be stretched */
+  function lobbyArtAspect(id){ return isBuiltIn(id)?'none':'xMidYMid slice'; }
   /* User themes (spec 040): the main process passes validated manifests; id becomes selectable. */
   function registerUserThemes(listOrMap){
     USER_MANIFESTS={};
@@ -1047,6 +1063,8 @@
     _validateManifest:validateManifest,
     _compilePixelMap:compilePixelMap,
     _tokens(){return resolveTokens(currentManifest);},
+    isBuiltIn,
+    lobbyArtAspect,
     _builtins(){return BUILT_IN;},
   };
 }));

@@ -355,4 +355,13 @@ assert.ok(partial.art['lobby-art'], 'safe art on a real slot is kept');
   assert.ok(String(T.slot('char-robe')).includes('#880e4f'), 'the new art is live');
   T.setTheme(T.CLEAN_ID);
 }
+/* spec 040 FR-030: the lobby band is stretched only for built-in packs; a user theme keeps its proportions, whatever list() holds */
+{
+  assert.strictEqual(T.isBuiltIn('corporate'), true);
+  assert.strictEqual(T.lobbyArtAspect('corporate'), 'none', 'a built-in pack keeps none');
+  assert.strictEqual(T.lobbyArtAspect(T.CLEAN_ID), 'none');
+  assert.strictEqual(T.isBuiltIn('ai-pink'), false);
+  assert.strictEqual(T.lobbyArtAspect('ai-pink'), 'xMidYMid slice', 'a user theme is sliced, not stretched');
+  assert.strictEqual(T.lobbyArtAspect('__proto__'), 'xMidYMid slice', 'inherited keys are not built-ins');
+}
 console.log('theme tests passed');
