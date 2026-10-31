@@ -4,7 +4,7 @@
 group: 046
 title: Autopilot mode: a fourth safety mode above Allow all, per session and confirmed each time, only for agent apps that support it; the agent's questions are shown but not waited on, the app keeps going after each turn until the task is done, up to a continuation limit (default 5) and an optional spend cap; Stop ends it; plan approval may offer Approve and run on Autopilot (spec 066 delta)
 status: draft
-note: spec, plan and tasks; probes on Claude Code and Codex, Copilot setup only (2026-10-31); nothing built
+note: spec, plan and tasks; owner answers Q1-Q4; real probes on Claude Code, Codex and one capped Copilot autopilot turn (T090, 2026-10-31); nothing built
 -->
 
 **Feature Branch**: `099-autopilot` (spec). Code branches `099-pN-slug`, one per phase. It touches 003 (the permission modes), 002, 012
@@ -13,8 +13,8 @@ organization policy), 018 (the mode switch) and 010 (the simulator).
 
 **Created**: 2026-10-31
 
-**Status**: Draft. The owner decided the shape (D1-D7 below). Real probes ran on Claude Code and Codex; for Copilot only the
-session setup was probed (no model call, *Evidence*). Nothing is built.
+**Status**: Draft. The owner decided the shape (D1-D7) and answered Q1-Q4 (D8-D11 below). Real probes ran on Claude Code, Codex
+and, for Copilot, one autopilot turn capped at 30 AI credits (T090, *Evidence*). Nothing is built.
 
 **Input**: Owner (Vikram, Telegram DM, 2026-10-31 10:43 UTC): "I go with your suggestions except spend cap as mandatory, have it
 optional", answering the coordinator's proposal for an Autopilot mode.
@@ -98,26 +98,29 @@ Number check (2026-10-31):
   (*Evidence*: Claude kept continuing an unreachable goal).
 - **S2** **What a goal is**: the text of the message the user sends while in Autopilot, as written. Durbar adds no condition of
   its own. Run 1 of the Claude probe showed that the condition is also the task, so the user writes one thing.
-- **S3** **How long Autopilot lasts**:
+- **S3** **How long Autopilot lasts** (decided: D8):
   - after **done**, the session stays in Autopilot, and the next message is a new run;
   - after **Stop**, a cap, the limit, no progress, blocked, or an error, the session returns to **Allow all**. The end card
     offers *Run again on Autopilot…*, which asks for confirmation again.
-- **S4** **No attachments on Autopilot** for Claude Code and Codex (v1): their goal APIs take text only. The composer says so.
-  Copilot takes attachments as usual.
+- **S4** **Attachments follow each app's goal input** (decided: D10, replacing "no attachments on Autopilot"): Copilot takes
+  attachments on Autopilot (`real:` T090); Claude Code `/goal` and Codex `thread/goal/set` take text only, so their attach button
+  is hidden on Autopilot, with a tooltip saying why.
 - **S5** **Who can turn it on**: Autopilot is turned on only from Durbar's own window, never by MCP tools, remote control, a
   schedule, a restart or a resume.
 
-### Open questions for the owner
+### Owner decisions on Q1-Q4 (Vikram, Telegram DM, 2026-10-31 11:05 UTC)
 
-- **Q1** Should a session stay in Autopilot after a run ends **done** (S3, recommended), or should every run need its own
-  confirmation?
-- **Q2** **Copilot's smallest cap is 30 AI credits** (the probe, *Evidence*). If the user sets an Autopilot cap below 30, should
-  the dialog raise it to 30 and say so (recommended), or refuse it?
-- **Q3** Attachments on Claude Code and Codex in Autopilot (S4): refuse them in v1 (recommended), or send them first as a normal
-  turn and then set the goal?
-- **Q4** Copilot's continuations: the SDK has no `--max-autopilot-continues` option, so Durbar counts the continuations and stops
-  them (FR-021). Approve **one capped real Copilot probe at the runtime's minimum cap of 30 AI credits** (T090), so that the
-  counting signal and the permission behaviour are measured, not guessed.
+"Ok for all except 3 - if copilot support attachments, let's support as well and show it only for it"
+
+- **D8 (Q1, yes)** After a run ends **done**, the session stays in Autopilot. Any other ending returns it to Allow all (S3).
+- **D9 (Q2, yes)** A Copilot spend cap below 30 AI credits (the runtime's minimum, *Evidence*) is raised to 30, and the dialog
+  says so (FR-022, FR-055).
+- **D10 (Q3, changed)** Attachments on Autopilot are supported for each app whose Autopilot path accepts them, and offered only
+  there. Copilot's `send` takes attachments with `agentMode: 'autopilot'` (`read:` SDK 1.0.24 `MessageOptions`; `real:` T090).
+  Claude Code `/goal` and Codex `thread/goal/set` take text only: the attach button is hidden on Autopilot for them, with a
+  tooltip saying why (FR-001, FR-058).
+- **D11 (Q4, yes)** One real Copilot probe, session cap 30 AI credits, the cheapest model (T090). The approval covers that one
+  probe only; nothing else spends Copilot credits without a new OK.
 
 ## User Scenarios
 
@@ -164,9 +167,11 @@ the dialog says plainly that only done, the continuation limit, no progress, blo
 
 ### Mode model
 
-- **FR-001** **The capability.** `AdapterCapabilities.autopilot?: Readonly<{ capUnit: 'aiu' | 'usd' | 'tokens' | null; verified: boolean }>`.
+- **FR-001** **The capability.** `AdapterCapabilities.autopilot?: Readonly<{ capUnit: 'aiu' | 'usd' | 'tokens' | null; attachments: boolean; verified: boolean }>`.
   - Missing means the app has no Autopilot, and the mode menu does not offer it.
   - `capUnit` is the unit of the optional spend cap (`null`: no cap is possible).
+  - `attachments` is true only when the app's Autopilot send takes attachments (D10): Copilot `true` (`real:` T090), Claude
+    Code and Codex `false` (their goal input is text).
   - `verified` is true only after a real run is recorded under `## Changes`. Until then the dialog and the chip tooltip say
     *Not verified on a real session yet.*
 - **FR-002** **Autopilot is Allow all plus a per-session `autopilot` state**, not a new value of `PermMode`, `OrgMode` or a
@@ -197,17 +202,16 @@ the dialog says plainly that only done, the continuation limit, no progress, blo
 ### Running a goal, per app
 
 - **FR-010** **Copilot.**
-  - **On**: the broker in `allow` mode (unchanged), then `session.rpc.mode.set({mode: 'autopilot'})`. `real:` setup only:
-    accepted, `mode.get` returns `autopilot`, and `session.mode_changed` is emitted.
-  - **Send**: `send({prompt, attachments, agentMode: 'autopilot'})`.
+  - **On**: the broker in `allow` mode (unchanged), then `session.rpc.mode.set({mode: 'autopilot'})`. `real:` accepted,
+    `mode.get` returns `autopilot`, and `session.mode_changed` is emitted.
+  - **Send**: `send({prompt, attachments, agentMode: 'autopilot'})`. `real:` T090: accepted with one `file` attachment; the
+    `user.message` carries `agentMode: 'autopilot'` and the attachment, and the model read it.
   - **Off**: `mode.set({mode: 'interactive'})`.
-  - Durbar keeps `onPermissionRequest` and its broker, so the folder roots, the blocked MCP tools (spec 069) and the
-    checkpoint `beforeWrite` (spec 065) still apply. It does not call `permissions.setApproveAll`.
-  - `[KNOWN GAP]` (T090): whether the runtime still calls `onPermissionRequest` in autopilot, or auto-denies. The research
-    reading of the 1.0.22 docs suggests that autopilot without the runtime's own allow-all denies tools. If T090 shows that,
-    the plan's fallback applies: `permissions.setApproveAll({enabled: true, source: 'autopilot_confirmation'})` for the run,
-    with Durbar's roots and blocked tools still enforced by `excludedTools`. The fallback is decided only from the probe
-    result.
+  - Durbar keeps `onPermissionRequest` and its broker, so the folder roots, the attachment read paths, the blocked MCP tools
+    (spec 069) and the checkpoint `beforeWrite` (spec 065) still apply. It does **not** call `permissions.setApproveAll`.
+    `real:` T090: the runtime still calls `onPermissionRequest` in autopilot, once per tool (`read`, `write`, `write`), and
+    each approval ran the tool; nothing was auto-denied. So the `setApproveAll` fallback the research note suggested is
+    dropped.
 - **FR-011** **Claude Code.**
   - **On**: the Allow all launch (`bypassPermissions`, unchanged).
   - **Send**: each message on Autopilot is sent as the user message `/goal <text>`. The CLI answers "Goal set: …" and starts on
@@ -234,21 +238,24 @@ the dialog says plainly that only done, the continuation limit, no progress, blo
   - **Claude Code**: one per synthetic user message (`isSynthetic: true`) whose text starts with `Stop hook feedback:`.
     `real:` 2026-10-31.
   - **Codex**: one per `turn/started` after the first in a run. `real:` 2026-10-31.
-  - **Copilot**: one per `user.message` that Durbar did not send, arriving after Durbar's message and before the run ends,
-    or per an `assistant.turn_start` that follows `session.idle` with no send in between. `[KNOWN GAP]` (T090): which of the
-    two signals is the right one.
+  - **Copilot**: one per `user.message` with `isAutopilotContinuation: true` (`read:` SDK 1.0.24 `UserMessageData`:
+    "auto-injected by autopilot's continuation loop"). `assistant.turn_start` is **not** a signal: T090 had 3 model turns
+    inside one user message and no continuation. `[KNOWN GAP]`: no continuation happened in T090 (the task finished in the
+    first send), so the field is not yet seen set.
 - **FR-021** **The limit** is always on (S1): default 5, range 1-20, chosen in the dialog. When continuation `limit + 1` starts,
   Durbar stops it at once, in the same way as Stop (FR-050). The run ends with reason **limit**.
   - Claude Code: `interrupt` plus `/goal clear`, `real:` 2026-10-31.
   - Codex: `thread/goal/clear` plus `turn/interrupt`, `real:` 2026-10-31.
-  - Copilot: `abort()` plus `mode.set interactive`, `[KNOWN GAP]` (T090).
+  - Copilot: `abort()` plus `mode.set interactive`, `[KNOWN GAP]` (not exercised in T090).
 
   The agent app's own limit is never relied on: the SDK has no option for the CLI's `--max-autopilot-continues`, and
   Claude Code and Codex have none (*Evidence*).
 - **FR-022** **The optional spend cap** (D3) is off unless the user ticks it. It uses each app's own cap, in its own unit.
   - **Copilot**: the session's AI-credit cap (spec 011): `rpc.options.update({sessionLimits: {maxAiCredits}})` when it
     differs from the current cap.
-    - The runtime refuses caps under 30 AI credits at session start (*Evidence*), so the dialog's minimum is 30 (Q2).
+    - The runtime refuses caps under 30 AI credits at session start (*Evidence*). A cap entered below 30 is raised to 30,
+      and the dialog says "Copilot's smallest cap is 30 AI credits, so Autopilot uses 30." (D9). Spec 011 already floors
+      every other Copilot cap at 30 (`MIN_CAP`, `src/shared/credits.ts`), so existing caps do not hit the runtime's refusal.
     - When the cap is reached, the `session_limits_exhausted` request is answered `cancel` and the run ends with **cap**.
       The cap card stays, so the user can raise the cap for later messages.
   - **Claude Code**: `--max-budget-usd` (spec 012 FR-150) for the run; it applies on the relaunch the cap change already
@@ -274,7 +281,8 @@ the dialog says plainly that only done, the continuation limit, no progress, blo
   with `AUTOPILOT_ANSWER` = "The user is away and will not answer. Decide by yourself, say what you chose, and keep going."
   The card is shown with *Decided by itself (Autopilot)*, no buttons, and the question text. Per app:
   - **Copilot** `onUserInputRequest`: `{answer: AUTOPILOT_ANSWER, wasFreeform: true}`. `askUserDisabled` is not set, so the
-    question still reaches the card. `[KNOWN GAP]` (T090): the runtime may not call it in autopilot.
+    question still reaches the card. `[KNOWN GAP]`: in T090 the model decided an ambiguous point itself and never called
+    `ask_user`, so whether the runtime calls the handler in autopilot is still unobserved.
   - **Claude Code** `AskUserQuestion` through `can_use_tool`: `deny` with `AUTOPILOT_ANSWER`. `real:` 2026-10-31: the model
     chose the recommended option and finished.
   - **Codex** `item/tool/requestUserInput`: every question answered with `AUTOPILOT_ANSWER`. In default mode Codex has no such
@@ -283,7 +291,8 @@ the dialog says plainly that only done, the continuation limit, no progress, blo
     decided for the user.
 - **FR-040** **End reasons.** Each run ends with exactly one reason, emitted as `autopilot {phase: 'ended', reason, n, spend?}`:
   - **done**:
-    - Copilot `session.task_complete` with `outcome: 'completed'`, or idle with no further continuation (`[KNOWN GAP]`, T090);
+    - Copilot `session.task_complete` (the model calls the `task_complete` tool), then `session.idle`. `real:` T090; the
+      `outcome` value was not captured, so `outcome` other than `blocked` counts as done (`[KNOWN GAP]`);
     - Claude a `result` with `subtype: 'success'` and no interrupt from Durbar (`real:`);
     - Codex goal status `complete` (`real:`);
   - **cap** (FR-022);
@@ -302,14 +311,15 @@ the dialog says plainly that only done, the continuation limit, no progress, blo
 - **FR-041** After every end, Durbar clears the app's goal, so a later normal message never runs under an old goal:
   - Claude `/goal clear` (free: a `result` with `num_turns: 0`, `real:`);
   - Codex `thread/goal/clear` (`real:`);
-  - Copilot `mode.set interactive` when leaving Autopilot (S3).
+  - Copilot `mode.set interactive` when leaving Autopilot (S3). After done it stays in `autopilot` (D8; `real:` T090:
+    `mode.get` is still `autopilot` after `session.idle`).
 - **FR-050** **Stop** on a session on Autopilot aborts the turn, clears the goal (FR-041), and returns the session to **Allow
   all**, with reason **stopped**. Per app:
   - **Claude Code**: `control_request {subtype: 'interrupt'}`, then `/goal clear`. `real:` 2026-10-31: the interrupt gives a
     `result` with `terminal_reason: aborted_streaming`, **and the goal stays set until `/goal clear`**.
   - **Codex**: `thread/goal/clear {origin: 'user'}` first (so no new turn starts), then `turn/interrupt`. `real:` 2026-10-31:
     `cleared: true`, the turn is `interrupted`, and no further turn starts.
-  - **Copilot**: `mode.set interactive` first, then `abort()`. `[KNOWN GAP]` (T090).
+  - **Copilot**: `mode.set interactive` first, then `abort()`. `[KNOWN GAP]` (not exercised in T090).
 - **FR-051** **Switching to another mode** during a run ends the run in the same way as Stop (reason **stopped**) before the new
   mode applies. Switching to Allow all is only a stop; switching to Ask first or Read-only then follows the existing switch
   (spec 018, 087).
@@ -327,7 +337,7 @@ the dialog says plainly that only done, the continuation limit, no progress, blo
   - fields:
     - "Keep going for at most [5] more turns per message" (1-20; FR-021);
     - "[ ] Stop at a spend cap of [ ] <unit>" (FR-022: unit words "AI credits", "US dollars (Claude's estimate)", "tokens";
-      Copilot minimum 30);
+      Copilot minimum 30: a lower value is raised to 30 with the D9 sentence);
     - the no-cap sentence while it is unticked;
   - buttons: *Cancel* and *Start Autopilot* (`primary warn`), with focus on Cancel. Esc cancels.
 - **FR-056** **The card and the chip.**
@@ -345,7 +355,8 @@ the dialog says plainly that only done, the continuation limit, no progress, blo
   - the end card of FR-040, with *Run again on Autopilot…* (except after done) and *Switch to Ask first…*.
 - **FR-058** **The composer** on Autopilot:
   - placeholder "Describe the finished result. <App> keeps going until it is done.";
-  - attachments disabled for Claude Code and Codex, with the reason (S4);
+  - the attach button hidden when the app's `autopilot.attachments` is false (Claude Code, Codex), with the tooltip "On
+    Autopilot <App> takes text only: its goal is set from your message." (D10); Copilot keeps it;
   - a message typed while a run is on is sent as the app queues it today, and does not start a new count;
   - `/goal` typed by the user in Claude Code is refused while on Autopilot ("Autopilot sets the goal from your message.").
 
@@ -356,7 +367,7 @@ the dialog says plainly that only done, the continuation limit, no progress, blo
   hidden: the card's existing line says the plan runs in that mode.
   - Pressing it shows the FR-055 dialog. On confirm, Durbar turns Autopilot on (FR-002) and answers the plan:
     - **Copilot**: `{approved: true, selectedAction: 'autopilot'}`, with mode `autopilot` set by the runtime (`read:`
-      `ExitPlanModeAction`; `[KNOWN GAP]` T090).
+      `ExitPlanModeAction`; `[KNOWN GAP]`: not exercised in T090).
     - **Claude Code**: `allow` for `ExitPlanMode`, `set_permission_mode` back to the launch mode (`bypassPermissions`), then
       `/goal Carry out the approved plan above, completely, and check the result.`
     - **Codex**: `thread/goal/set` with the objective "Carry out the approved plan above, completely, and check the
@@ -440,11 +451,20 @@ empty `git init` folder, with the same SDK, flags and JSON-RPC that Durbar's ada
   - `sessionLimits.maxAiCredits: 1` was refused with "Minimum session limit is 30 AI credits";
   - with no model call, `mode.set autopilot` is applied, `options.update({askUserDisabled, continueOnAutoMode})` is
     accepted, and `autopilotObjective.getState()` returns `null`.
+- `real:` **Copilot T090**, one autopilot turn, `claude-haiku-5.5` (tied cheapest), cap 30, Allow-all handler, **0.434 AI
+  credits** (1 premium request, 3 model calls):
+  - the cap of 30 is accepted;
+  - `onPermissionRequest` is called for every tool (`read`, `write`, `write`), and approving runs it: no auto-deny;
+  - a `file` attachment is accepted with `agentMode: 'autopilot'` and read by the model;
+  - the ambiguous "better file name format" was decided by the model; `ask_user` was not called;
+  - no continuation: one `user.message`, three model turns, then the `task_complete` tool, `session.task_complete`,
+    `session.idle {mode: 'autopilot'}`; the mode stays `autopilot` after idle.
 - `read:` **Copilot SDK 1.0.24 types**: `MessageOptions.agentMode`, `ExitPlanModeAction` `autopilot`, `session.task_complete`
   outcomes, `session.autopilot_objective_changed`, abort reason `autopilot_credit_limit`, and
   `permissions.setApproveAll({source: 'autopilot_confirmation'})`. There is no option matching `--max-autopilot-continues`.
 - `[KNOWN GAP]`:
-  - Copilot behaviour in a real autopilot turn: permissions, continuations, `ask_user` (T090, needs Q4);
+  - Copilot: a continuation (`isAutopilotContinuation` seen set), `ask_user` in autopilot, the `task_complete` `outcome`
+    values, Stop and the cap in the middle of a run, and a run through the built adapter (T093, needs a new owner OK);
   - Claude's cap in the middle of a goal, a multi-line condition, and resume with a goal;
   - Codex model switch, `blocked` and `paused`;
   - macOS and Windows;
@@ -452,4 +472,8 @@ empty `git init` folder, with the same SDK, flags and JSON-RPC that Durbar's ada
 
 ## Changes
 
-(none yet)
+- **2026-10-31**: Owner answers to Q1-Q4 recorded as D8-D11 (quote under *Clarifications*). S4 changed from "no attachments on
+  Autopilot" to attachments per app capability (FR-001 `attachments`, FR-058). Copilot caps below 30 are raised to 30 (FR-022,
+  FR-055). T090 ran (0.434 AI credits): FR-010 keeps the broker and drops the `setApproveAll` fallback; FR-020 names
+  `isAutopilotContinuation` as Copilot's signal; FR-040 maps `session.task_complete`; FR-041 records that the mode stays
+  `autopilot` after done.

@@ -3,20 +3,20 @@
 **Input**: [spec.md](spec.md), [plan.md](plan.md)
 
 **Tests**: required (constitution VII; SC-001..SC-003): node tests on the fakes and the simulator, 0 AI credits, driver waits with
-`until()`. Real checks are separate tasks (T090-T092) within the owner's budget (D7).
+`until()`. Real checks are separate tasks (T090-T093) within the owner's budget (D7; Copilot runs need an OK each, D11).
 
 **Format**: `- [ ] Tnnn [P?] description (file) [requirements]`. `[P]` means the task can run in parallel. One phase is one PR.
-Numbers taken: spec 099, FR-001..FR-090 (sparse by group), T001..T092.
+Numbers taken: spec 099, FR-001..FR-090 (sparse by group), T001..T093.
 
 ## Phase 0: Spec (this PR)
 
 - [x] T001 Spec, plan, tasks and the specs-index block (`specs/099-autopilot/`), with the probe record in the PR body
 - [x] T002 Spec 066 delta under `## Changes` for *Approve and run on Autopilot* [FR-060]
-- [ ] T003 Owner answers to Q1-Q4 recorded under *Clarifications*, and posted on the PR [Q1-Q4]
+- [x] T003 Owner answers to Q1-Q4 recorded under *Clarifications* (D8-D11), and posted on the PR [Q1-Q4]
 
 ## Phase 1: Core and types (PR `099-p1-core`)
 
-- [ ] T010 `AdapterCapabilities.autopilot`, `AutopilotSettings`, `setAutopilot?`, the `autopilot` event, `question.autoAnswered`,
+- [ ] T010 `AdapterCapabilities.autopilot` (with `attachments`, D10), `AutopilotSettings`, `setAutopilot?`, the `autopilot` event, `question.autoAnswered`,
   `AgentInfo.autopilot` (`capabilities.ts`, `types.ts`, `src/shared/api.ts`) [FR-001, FR-002, FR-081]
 - [ ] T011 `eventguard` accepts and bounds the `autopilot` event (`n` 0-21, `limit` 1-20, a known reason) + test [FR-081]
 - [ ] T012 `src/adapters/autopilot.ts`: `AutopilotRun` (count, limit, end once, no-progress counter), `AUTOPILOT_ANSWER`,
@@ -34,8 +34,10 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group), T001..T092.
   Stop with `goal/clear` and then `turn/interrupt`, `requestUserInput` auto-answer, never on an ephemeral thread; capability
   `{capUnit: 'tokens', verified: false}`. Tests on the app-server fake replay the probe's notifications [FR-012, FR-020-FR-022, FR-030, FR-040, FR-050]
 - [ ] T022 Copilot on the fake SDK: `mode.set autopilot` and `interactive`, `agentMode`, `onUserInputRequest` auto-answer,
-  elicitation declined, `task_complete` and objective mapping, the cap at least 30 and `cancel` on exhausted, Stop order;
-  capability `{capUnit: 'aiu', verified: false}`. The continuation signal stays behind a small function, settled by T090
+  elicitation declined, `task_complete` and objective mapping, a cap below 30 raised to 30 and `cancel` on exhausted, Stop
+  order, attachments sent with `agentMode`, the broker still answering permissions (no `setApproveAll`); capability
+  `{capUnit: 'aiu', attachments: true, verified: false}`. Continuations counted from `isAutopilotContinuation` behind a small
+  function (T090)
   [FR-010, FR-020-FR-022, FR-030, FR-040, FR-050]
 - [ ] T023 [P] FR-006: an app entering its own autopilot or goal without Durbar is switched back and said in the chat, for each
   adapter + tests [FR-006]
@@ -53,7 +55,8 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group), T001..T092.
 - [ ] T034 Renderer: the chip with its glyph and `n/limit`, the desk line, the List column, the needs-me sorting after a
   non-done end [FR-056]
 - [ ] T035 Renderer: the chat lines, the question card *Decided by itself*, the end card with *Run again on Autopilot…*, the
-  composer placeholder, attachments disabled for Claude Code and Codex [FR-057, FR-058, S4]
+  composer placeholder, the attach button hidden with its tooltip where `autopilot.attachments` is false; the dialog's
+  cap-raised-to-30 line for Copilot [FR-022, FR-055, FR-057, FR-058, S4, D9, D10]
 - [ ] T036 Simulator: the capability on every kind, the run with 2 continuations, the `?sim=autopilot-<reason>` scripts [FR-080]
 - [ ] T037 Driver `scripts/check-autopilot.js` at 1440x900 and 1280x800, with 15 agents: menu, dialog, chip, every end reason,
   no text under 10.5px; screenshots `docs/screenshots/099-autopilot-*` in `DOC_SHOTS` [SC-001, FR-056]
@@ -67,10 +70,13 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group), T001..T092.
 
 ## Real checks (D7 budget; one tiny task each, results under `## Changes`)
 
-- [ ] T090 **Copilot** (needs Q4: a cap of 30 AI credits, the runtime minimum), one tiny task on the cheapest model through the
-  built adapter. It records: whether `onPermissionRequest` is called in autopilot; the continuation signal and count; what
-  `ask_user` does; Stop; and the end events. It settles the `[KNOWN GAP]`s of FR-010, FR-020, FR-030, FR-040, FR-050 and FR-060
+- [x] T090 **Copilot** (D11: cap 30 AI credits, the runtime minimum), one tiny task on the cheapest model through the SDK the
+  way the adapter uses it (nothing is built yet). Done 2026-10-31, 0.434 AI credits: `onPermissionRequest` is called in
+  autopilot (no auto-deny), attachments are accepted, `session.task_complete` ends it, the mode stays `autopilot`. Not seen:
+  a continuation, `ask_user`, Stop mid-run (still `[KNOWN GAP]` in FR-020, FR-030, FR-050, FR-060)
 - [ ] T091 **Claude Code** through the built adapter: one run to done, one to the limit (limit 1), one cap in the middle of a goal
   (`--max-budget-usd` 0.02); a multi-line condition [FR-011, FR-021, FR-022]
 - [ ] T092 **Codex** through the built adapter: one run to done, one to the limit (limit 1), one to `budgetLimited`; a model
   switch between runs [FR-012, FR-021, FR-022]
+- [ ] T093 **Copilot** through the built adapter (needs a new owner OK, cap 30): a run to done, one to the limit (limit 1) to see
+  `isAutopilotContinuation`, Stop mid-run, and a prompt that makes it call `ask_user` [FR-010, FR-020, FR-021, FR-030, FR-050]

@@ -23,7 +23,7 @@ in the mode menu, a confirmation dialog, a chip state and chat lines. Spec 066's
   - Codex 0.163.0 (`thread/goal/*`, stable feature `goals`).
 - **Tests**: node unit tests on the adapters' fakes (`scripts/test-*.ts`), the IPC guard tests, a simulator driver with
   screenshots at 1440x900 and 1280x800. 0 AI credits.
-- **Real checks**: separate tasks within D7's budget (T090-T092).
+- **Real checks**: separate tasks within D7's budget (T090-T093; Copilot runs need an OK each, D11).
 
 ## Constitution Check
 
@@ -67,12 +67,13 @@ in the mode menu, a confirmation dialog, a chip state and chat lines. Spec 066's
 - **Copilot** (`copilot.ts`):
   - `setAutopilot` sets `live.autopilot` and calls `mode.set autopilot` or `interactive`;
   - `send` adds `agentMode: 'autopilot'`, `onUserInputRequest` auto-answers, and the elicitation is declined;
-  - `onSessionEvent` counts continuations (the signal from T090), maps `session.task_complete`, the objective changes, the
-    limit request and `abort` with `autopilot_credit_limit`;
+  - `onSessionEvent` counts `user.message` with `isAutopilotContinuation: true` (never `assistant.turn_start`, T090), maps
+    `session.task_complete`, the objective changes, the limit request and `abort` with `autopilot_credit_limit`;
   - Stop is `mode.set interactive` and then `abort()`;
-  - the cap uses the existing `rpc.options.update({sessionLimits})`, minimum 30.
-  - Fallback, only if T090 shows the runtime auto-denies tools: `permissions.setApproveAll({enabled: true, source: 'autopilot_confirmation'})`
-    for the run, and `false` at its end. Recorded as a spec delta before it is used.
+  - the cap uses the existing `rpc.options.update({sessionLimits})`; a value below 30 is raised to 30 (D9);
+  - attachments go with the Autopilot send as today (capability `attachments: true`);
+  - the broker keeps answering `onPermissionRequest`: T090 showed the runtime still calls it in autopilot, so there is no
+    `permissions.setApproveAll`.
 - **Claude Code** (`claude.ts`):
   - `send` on Autopilot writes the user message `/goal <goalText>`;
   - `onControl` answers `AskUserQuestion` with `deny` and `AUTOPILOT_ANSWER`;
@@ -92,7 +93,7 @@ in the mode menu, a confirmation dialog, a chip state and chat lines. Spec 066's
 ### Main (`src/main/agentops.ts`, `src/main/ipc/agents.ts`)
 
 - `agents:setAutopilot(id, settings | null)`, `fromApp` only. It validates the limit (an integer in 1-20) and the cap (the unit
-  from the capability; Copilot at least 30), checks the capability and the organization (`orgRefusal(a, 'allow')` plus the
+  from the capability; a Copilot cap below 30 is raised to 30, D9), checks the capability and the organization (`orgRefusal(a, 'allow')` plus the
   Claude hooks advice), then calls `setModeOp(a, 'allow')` when the mode is not already Allow all, then
   `adapter.setAutopilot`.
 - It is not added to `SIM_OPEN_CHANNELS` (the simulator fakes it in `sim.ts`), not to the MCP tools, and not to remote control.
@@ -112,7 +113,8 @@ in the mode menu, a confirmation dialog, a chip state and chat lines. Spec 066's
   FR-055 text.
 - The chip, the desk line, the List column, the chat lines, the question card variant, and the end card with *Run again on
   Autopilot…*.
-- The composer placeholder, attachments disabled for Claude Code and Codex, and `/goal` refused while on Autopilot.
+- The composer placeholder, the attach button hidden with a tooltip where `autopilot.attachments` is false (Claude Code,
+  Codex; D10), and `/goal` refused while on Autopilot.
 - The plan card button (FR-060).
 - The setting `autopilotLimit` (default 5) in `src/shared/credits.ts`'s settings parser, remembered from the last dialog.
 
@@ -124,17 +126,17 @@ other reasons.
 ## Phases (one PR each)
 
 1. **p1, core and types**: `autopilot.ts`, the types, the capability, `eventguard`, and the unit tests. No wiring.
-2. **p2, adapters**: Claude Code and Codex first (`real:`-backed), then Copilot on the fake SDK, with its open points behind T090.
+2. **p2, adapters**: Claude Code and Codex first (`real:`-backed), then Copilot on the fake SDK, shaped by T090 (`real:`).
 3. **p3, main and window**: IPC, the dialog, the chip, the chat, the composer, the simulator, the driver and screenshots, and
    the README.
 4. **p4, plan first**: the spec 066 delta built: the button, three adapters, tests, screenshots.
 
-The real checks (T090-T092) come after p2 and before `verified: true`.
+T090 ran on the SDK before p1 (owner OK, D11). The other real checks (T091-T093) come after p2 and before `verified: true`.
 
 ## Risks
 
-- The Copilot runtime may deny tools in autopilot when Durbar answers permissions itself (research note, unverified): T090
-  decides, and the fallback is written above.
+- Copilot's continuation marker (`isAutopilotContinuation`) is only read from the SDK types: T090 finished without a
+  continuation. The count sits behind one small function, and the fake SDK tests set the field.
 - Claude's goal judge is a model: "done" is its judgement. The end card says "<App> judged the task done", not "done" as a
   fact.
 - No progress is a heuristic, and may stop a run that reads a lot before writing. Two unchanged continuations is a low bar,
