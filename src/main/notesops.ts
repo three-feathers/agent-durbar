@@ -11,7 +11,7 @@ import type { NoteSource } from '../shared/notes';
 import { sessionIdOk } from '../shared/sessionid';
 import { folderKeyOf, folderNameOf } from '../shared/usagedoc';
 import type { NotesStore, NotesView, NotesWrote } from './notesstore';
-import type { NotesFileState } from '../shared/notes';
+import type { NotesFileCount, NotesFileState, NotesFileSwitch, NotesSetFile } from '../shared/notes';
 import { syncNotesFile, type NotesFile } from './notesfile';
 
 export interface NotesOpsDeps {
@@ -34,14 +34,23 @@ export interface NotesOpsDeps {
    * stats or writes the folder's `.durbar/notes.md`.
    */
   fileOn?(folderKey: string): boolean;
+  /** Saves the switch (`notesFile` in folders.json, T042); false when it could not be saved. Absent: the switch cannot be turned. */
+  setFileOn?(folderKey: string, on: boolean): boolean;
   setTimer?(fn: () => void, ms: number): unknown;
 }
+
+/** FR-050 (T042): the reasons the switch is refused or greyed; short fixed texts, never a path. */
+export const SWITCH_WORKSPACE = 'The project file is not offered for a VS Code workspace.';
+export const SWITCH_MISSING = 'The folder is not there, so Durbar cannot keep .durbar/notes.md in it.';
+export const SWITCH_UNSAVED = 'Could not save the choice in the folder list.';
+export const EXCLUDE_KEPT = 'The .durbar/ line in .git/info/exclude stays (it is harmless).';
 
 /** FR-053: at most one project-file write per folder in this time. */
 const FILE_EVERY_MS = 500;
 
 type Refusal = { ok: false; code: 'invalid'; error: string };
 const refuse = (error: string): Refusal => ({ ok: false, code: 'invalid', error });
+const REMOVE_KEPT = 'Durbar did not delete .durbar/notes.md.';
 
 /** FR-009: the first 16 hex characters of SHA-256 of the message text with `\r\n` turned into `\n` and the ends trimmed. */
 export function digestOf(raw: string): string {
@@ -76,7 +85,8 @@ export class NotesOps {
     const ft = this.fileTarget(t.a, t.key);
     if (!ft) return Promise.resolve(undefined);
     const prev = this.cycles.get(t.key) ?? Promise.resolve(undefined);
-    const run = prev.then(async (): Promise<NotesFileState> => {
+    const run = prev.then(async (): Promise<NotesFileState | undefined> => {
+      if (!this.fileTarget(t.a, t.key)) return undefined; // turned off while this cycle waited its turn (T042): it writes nothing
       const r = await syncNotesFile({ file: ft.file, store: t.store, folderKey: t.key, folderName: t.name, folderPath: ft.folderPath, values: this.values(t.key), now: this.d.now });
       if (r.retry && retries > 0) this.schedule(t.a.id, t.key, retries - 1);
       return r.state;
@@ -127,6 +137,8 @@ export class NotesOps {
     const v = await t.store.list(t.key);
     if (!v.ok) return v;
     if (fileState) (v as { file?: NotesFileState }).file = fileState;
+    const sw = this.switchOf(t.a, t.key);
+    if (sw) (v as { fileSwitch?: NotesFileSwitch }).fileSwitch = sw;
     // the chat's own session (main's `resumeIdFor`, never the window's), so the drawer can put "This session" first (FR-021); '' when it is unusable
     const app = this.d.adapterIdOf(t.a.id) ?? t.a.adapterId ?? 'copilot';
     const sid = this.d.resumeIdFor(t.a.id);
@@ -189,6 +201,83 @@ export class NotesOps {
     const t = this.target(agentId);
     if ('ok' in t) return t;
     return this.changed(agentId, await t.store.removeAll(t.key, t.name));
+  }
+
+  /** FR-050 (T042): the switch as the screen shows it; `undefined` for a `.code-workspace` (not offered) or when the mirror is not wired. */
+  private switchOf(a: AgentInfo, key: string): NotesFileSwitch | undefined {
+    if (a.workspaceFile || !this.d.file || !this.d.setFileOn) return undefined;
+    const file = this.d.file();
+    if (!file) return undefined;
+    let on = false;
+    try { on = this.d.fileOn?.(key) === true; } catch { on = false; }
+    return file.folderThere(a.cwd) ? { on } : { on, disabled: SWITCH_MISSING };
+  }
+
+  /** The folder a switch call acts on: a plain folder that is there, with the mirror wired. */
+  private switchTarget(agentId: unknown): { a: AgentInfo; store: NotesStore; key: string; name: string; file: NotesFile } | Refusal {
+    const t = this.target(agentId);
+    if ('ok' in t) return t;
+    if (t.a.workspaceFile) return refuse(SWITCH_WORKSPACE);
+    const file = this.d.file?.();
+    if (!file || !this.d.setFileOn) return refuse('The project file is not available.');
+    if (!file.folderThere(t.a.cwd)) return refuse(SWITCH_MISSING);
+    return { ...t, file };
+  }
+
+  /** FR-050: how many notes an existing `notes.md` would add, and whether the folder is in a repository (the turn-on dialog only). */
+  async fileCount(agentId: unknown): Promise<NotesFileCount | Refusal> {
+    const t = this.switchTarget(agentId);
+    if ('ok' in t) return t;
+    const v = await t.store.list(t.key);
+    if (!v.ok) return v;
+    const c = t.file.count(t.a.cwd, new Set(v.notes.map((n) => n.id)));
+    if (!c.ok) return refuse(c.error);
+    return { ok: true, count: c.count, exists: c.exists, repo: t.file.inRepo(t.a.cwd) };
+  }
+
+  /**
+   * FR-050, FR-055 (T042): turn the folder's project file on or off. On: counts again (an unreadable file keeps the switch off), saves
+   * the flag, adds the exclude line when asked and the folder is in a repository (before the first write), then runs one cycle. Off:
+   * waits for a cycle in flight, saves the flag, and with `deleteFile` deletes `notes.md` only when it is what Durbar last wrote.
+   */
+  async setFile(agentId: unknown, on: unknown, opts?: unknown): Promise<NotesSetFile | Refusal> {
+    if (typeof on !== 'boolean') return refuse('On is yes or no.');
+    if (opts !== undefined && (!isObj(opts) || Object.keys(opts).some((k) => k !== 'deleteFile' && k !== 'exclude'))) return refuse('Unknown options.');
+    const o = (opts ?? {}) as { deleteFile?: unknown; exclude?: unknown };
+    if ((o.deleteFile !== undefined && typeof o.deleteFile !== 'boolean') || (o.exclude !== undefined && typeof o.exclude !== 'boolean')) return refuse('Unknown options.');
+    if (on && o.deleteFile !== undefined) return refuse('Unknown options.');
+    if (!on && o.exclude !== undefined) return refuse('Unknown options.');
+    const t = this.switchTarget(agentId);
+    if ('ok' in t) return t;
+    const setOn = this.d.setFileOn!;
+    let was = false;
+    try { was = this.d.fileOn?.(t.key) === true; } catch { was = false; }
+    if (on) {
+      if (!was) {
+        const v = await t.store.list(t.key);
+        if (!v.ok) return v;
+        const c = t.file.count(t.a.cwd, new Set(v.notes.map((n) => n.id)));
+        if (!c.ok) return refuse(c.error); // COUNT_UNREADABLE for a conflict or a file that does not parse: the switch stays off
+        if (!setOn(t.key, true)) return refuse(SWITCH_UNSAVED);
+      }
+      let message: string | undefined;
+      if (o.exclude === true && t.file.inRepo(t.a.cwd)) {
+        const x = t.file.addExclude(t.a.cwd);
+        message = x.ok ? (x.added ? 'Added .durbar/ to .git/info/exclude (local only).' : '.durbar/ is already in .git/info/exclude.') : x.error;
+      }
+      const file = await this.syncFile(t.a.id);
+      return { ok: true, on: true, ...(file ? { file } : {}), ...(message ? { message } : {}) };
+    }
+    if (was && !setOn(t.key, false)) return refuse(SWITCH_UNSAVED);
+    // a cycle running or queued finishes first (a queued one now finds the switch off and writes nothing), then the file is looked at
+    for (let p = this.cycles.get(t.key); p;) { await p.catch(() => undefined); const n = this.cycles.get(t.key); if (n === p) break; p = n; }
+    const lines: string[] = [];
+    if (o.deleteFile === true) {
+      const r = t.file.remove(t.a.cwd, await t.store.getMirror(t.key));
+      lines.push(r.removed ? (r.dirRemoved ? 'Deleted .durbar/notes.md and the empty .durbar folder.' : 'Deleted .durbar/notes.md.') : r.why ?? REMOVE_KEPT);
+    } else lines.push('Durbar stopped writing .durbar/notes.md; the file is left in the project.');
+    if (t.file.inRepo(t.a.cwd)) lines.push(EXCLUDE_KEPT);
+    return { ok: true, on: false, message: lines.join(' ') };
   }
 
   async startOver(agentId: unknown): Promise<NotesWrote | Refusal> {

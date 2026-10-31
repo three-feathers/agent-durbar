@@ -163,7 +163,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
   - AC14: bidi and zero-width characters (`HIDDEN_ALL_RE`, `src/shared/names.ts`) are removed from titles read from the file, or the choice not to is written in the spec.
   - AC15: the `mdBytes` cap applies to the bytes read from disk before they are decoded; the parse runs off the hot path, and sections past `notesPerFolder` are counted without being built (a hostile file at the cap costs about 3 s of CPU today).
   - AC16: whether a `done` change in the file counts as an edit is decided and written in the spec, with a test.
-- [ ] T042 [US5] The switch and its states in the Notes screen. [FR-050, FR-055]
+- [x] T042 [US5] The switch and its states in the Notes screen. [FR-050, FR-055] Built 2026-10-31 (spec *Changes*, 2026-10-31, the project-file switch): `test:` `scripts/test-notesswitch.ts` (`npm run test:notesswitch`), `scripts/test-notessim.ts`, `scripts/test-notesipc.ts`, `scripts/test-ipcchannels.ts`; `sim:` `scripts/check-notes-switch.js` (in `ui-suite.js`), screenshots [1440x900](../../docs/screenshots/083-notes-switch-1440x900.png) and [1280x800](../../docs/screenshots/083-notes-switch-1280x800.png). Not run by a person on Windows or macOS.
   - AC1: off by default; turning it on shows the FR-050 warning with *Cancel* focused; `notesFile: true` saved in `folders.json` and read back.
   - AC2: not offered for a `.code-workspace`; greyed with a reason when the folder is missing.
   - AC3: the conflict and write-error states show their words in the screen and the drawer.

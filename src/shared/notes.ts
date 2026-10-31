@@ -404,5 +404,14 @@ export function orderForFolder(notes: readonly Note[], session?: string): Note[]
 export type NotesFail = { ok: false; code: 'stale' | 'cap' | 'missing' | 'invalid' | 'unreadable' | 'write'; error: string; current?: Note };
 /** The project file's state while its switch is on (FR-053, FR-054): `error` blocks writing it (a conflict, a refused link, a failed write); `info` is a note for the screen (stray text, notes not imported). */
 export interface NotesFileState { error?: string; info?: string }
-export type NotesView = { ok: true; fingerprint: string; folderName: string; notes: Note[]; max: number; readOnly?: string; session?: string; file?: NotesFileState } | NotesFail;
+/**
+ * The project-file switch as the Notes screen shows it (FR-050, T042): `on` from `notesFile` in folders.json; `disabled` is the reason the
+ * switch is greyed (the folder is not there). Absent from a `.code-workspace`'s view: the switch is not offered there.
+ */
+export interface NotesFileSwitch { on: boolean; disabled?: string }
+/** `notes:fileCount` (FR-050, only while turning on): notes the existing file would add, whether it exists, whether the folder is in a git repository. */
+export type NotesFileCount = { ok: true; count: number; exists: boolean; repo: boolean } | NotesFail;
+/** `notes:setFile` (FR-050, FR-055): the switch's new position, the mirror's state after turning on, and a short line for the screen. */
+export type NotesSetFile = { ok: true; on: boolean; file?: NotesFileState; message?: string; demo?: boolean } | NotesFail;
+export type NotesView = { ok: true; fingerprint: string; folderName: string; notes: Note[]; max: number; readOnly?: string; session?: string; file?: NotesFileState; fileSwitch?: NotesFileSwitch } | NotesFail;
 export type NotesWrote = { ok: true; fingerprint: string; note?: Note; existing?: boolean } | NotesFail;

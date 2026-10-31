@@ -1718,6 +1718,7 @@
     folderMcp:openFolder,
     folderNotes:openNotes, /* spec 083 T034a: {key, name, render(focus), onClose()} */
     notesKey:()=>cur&&cur.kind==='notes'?cur.key:null,
+    switchHtml:sw, /* spec 083 T042: the Notes screen's project-file switch is the same switch as Settings' */
     openSettings:(section)=>{mcp=null;X._acctRefresh=X._acctRefresh==='check'?'check':true;open('settings',section==='mcp'||section==='harnesses'||section==='schedules'?{section}:null);},
     openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},
     agentMcp,

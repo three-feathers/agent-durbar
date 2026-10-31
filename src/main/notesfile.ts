@@ -26,7 +26,7 @@ import { isInsideRoots } from '../adapters/permissions';
 import type { NotesStore } from './notesstore';
 import { maskNoteText } from '../shared/redact';
 
-export type NotesFileFs = Pick<typeof nodeFs, 'realpathSync' | 'lstatSync' | 'statSync' | 'openSync' | 'fstatSync' | 'readSync' | 'writeSync' | 'fsyncSync' | 'closeSync' | 'renameSync' | 'unlinkSync' | 'mkdirSync'>;
+export type NotesFileFs = Pick<typeof nodeFs, 'realpathSync' | 'lstatSync' | 'statSync' | 'openSync' | 'fstatSync' | 'readSync' | 'writeSync' | 'fsyncSync' | 'closeSync' | 'renameSync' | 'unlinkSync' | 'mkdirSync' | 'rmdirSync'>;
 /** The open flags used; tests pass a set without `O_NOFOLLOW` to act like Windows. */
 export type NotesFileFlags = Pick<typeof nodeFs.constants, 'O_RDONLY' | 'O_WRONLY' | 'O_CREAT' | 'O_EXCL' | 'O_APPEND'> & { O_NOFOLLOW?: number; O_NONBLOCK?: number };
 
@@ -118,6 +118,12 @@ export type ReadBack =
   | { ok: true; sha: string; changed: true; sections: NotesMdSection[]; strayText: number; overflow: number }
   | FileFail;
 export type ExcludeResult = { ok: true; added: boolean; line: string } | { ok: false; error: string };
+/** FR-055 (T042): what *Delete the file* did. `removed` false: the file stays and `why` says so (a short fixed text, never a path). */
+export type RemoveResult = { removed: boolean; dirRemoved: boolean; why?: string };
+/** FR-055: the reasons a delete leaves the file. */
+export const REMOVE_CHANGED = '.durbar/notes.md changed since Durbar last wrote it, so it was left in the project.';
+export const REMOVE_NONE = 'There was no .durbar/notes.md to delete.';
+const REMOVE_REFUSED = (why: string): string => `Durbar did not delete .durbar/notes.md: ${why}.`;
 
 export class NotesFile {
   private readonly fs: NotesFileFs;
@@ -340,6 +346,64 @@ export class NotesFile {
     return r.ok ? r.buf.toString('utf8') : undefined;
   }
 
+  /** Walk up from a real folder path to the first `.git` (a folder, a file or anything else: the caller checks it). No git process (FR-051). */
+  private findDotGit(folder: string): { root: string; st: nodeFs.Stats } | undefined {
+    for (let dir = folder, i = 0; i < 256; i++) {
+      try { return { root: dir, st: this.fs.lstatSync(path.join(dir, '.git')) }; } catch (e) { if (errCode(e) !== 'ENOENT') return undefined; }
+      const up = path.dirname(dir);
+      if (up === dir) return undefined;
+      dir = up;
+    }
+    return undefined;
+  }
+
+  /** FR-050 (T042): is the folder inside a git repository (a `.git` folder or file found walking up from its real path)? Only for the dialog's box. */
+  inRepo(folderPath: string): boolean {
+    try {
+      if (typeof folderPath !== 'string' || !path.isAbsolute(folderPath)) return false;
+      const folder = this.fs.realpathSync(folderPath);
+      if (!this.fs.lstatSync(folder).isDirectory()) return false;
+      const g = this.findDotGit(folder);
+      return !!g && (g.st.isDirectory() || g.st.isFile());
+    } catch { return false; }
+  }
+
+  /** FR-050 (T042): is the folder there (a real folder after its real path)? Stats the folder only, never `.durbar` or `notes.md`. */
+  folderThere(folderPath: string): boolean {
+    try {
+      if (typeof folderPath !== 'string' || !path.isAbsolute(folderPath)) return false;
+      return this.fs.lstatSync(this.fs.realpathSync(folderPath)).isDirectory();
+    } catch { return false; }
+  }
+
+  /**
+   * FR-055 (T042): *Delete the file*. `notes.md` is unlinked only when `.durbar` passes FR-053's checks, `notes.md` is a regular file with
+   * one link (a symlink or a hard link is never deleted) and its SHA-256 is `mirror` (the file Durbar last wrote); all of it is checked
+   * again right before the unlink. Then `.durbar` is removed with `rmdir` only when it is empty (never recursively). Never throws.
+   */
+  remove(folderPath: string, mirror: NotesMirror | undefined): RemoveResult {
+    const keep = (why: string): RemoveResult => ({ removed: false, dirRemoved: false, why });
+    try {
+      const pl = this.place(folderPath, false);
+      if (!pl.ok) return keep(pl.code === 'missing' ? REMOVE_REFUSED('the folder is not there') : REMOVE_REFUSED(pl.error.replace(/^Could not read \.durbar\/notes\.md: /, '')));
+      if (!pl.p.hasDurbar) return keep(REMOVE_NONE);
+      const cur = this.current(pl.p);
+      if (!cur.ok) return keep(cur.code === 'too-big' ? REMOVE_CHANGED : REMOVE_REFUSED(`it ${cur.why}`));
+      if (!cur.buf) return keep(REMOVE_NONE);
+      if (!mirror || sha256(cur.buf) !== mirror.sha256) return keep(REMOVE_CHANGED);
+      const again = this.recheck(pl.p, mirror.sha256);
+      if (again) return keep(again.code === 'changed' ? REMOVE_CHANGED : REMOVE_REFUSED(again.error.replace(/^Could not write \.durbar\/notes\.md: /, '').replace(/^notes\.md /, 'it ')));
+      try { this.fs.unlinkSync(pl.p.notes); } catch (e) { return keep(REMOVE_REFUSED(`it could not be deleted (${errCode(e)})`)); }
+      let dirRemoved = false;
+      if (!this.checkDurbar(pl.p.folder, pl.p.durbar)) {
+        try { this.fs.rmdirSync(pl.p.durbar); dirRemoved = true; } catch { /* not empty (ENOTEMPTY, EEXIST) or held open: it stays */ }
+      }
+      return { removed: true, dirRemoved };
+    } catch (e) {
+      return keep(REMOVE_REFUSED(`it could not be checked (${errCode(e)})`));
+    }
+  }
+
   /**
    * FR-051: append the anchored `/<path>/.durbar/` line to the repository's `info/exclude`, once. The repository is found by walking up
    * from the folder's real path to the first `.git`: a folder, or a file (worktree, submodule) whose `gitdir:` and `commondir` lead to
@@ -350,16 +414,9 @@ export class NotesFile {
     const fail = (why: string): ExcludeResult => ({ ok: false, error: EXCLUDE_FAIL(why) });
     let folder: string;
     try { folder = this.fs.realpathSync(folderPath); if (!this.fs.lstatSync(folder).isDirectory()) return fail('the folder is not there'); } catch { return fail('the folder is not there'); }
-    // walk up to the first `.git`
-    let root: string | undefined;
-    let dotGit: nodeFs.Stats | undefined;
-    for (let dir = folder, i = 0; i < 256; i++) {
-      try { dotGit = this.fs.lstatSync(path.join(dir, '.git')); root = dir; break; } catch (e) { if (errCode(e) !== 'ENOENT') return fail('not a git repository'); }
-      const up = path.dirname(dir);
-      if (up === dir) break;
-      dir = up;
-    }
-    if (!root || !dotGit) return fail('not a git repository');
+    const found = this.findDotGit(folder);
+    if (!found) return fail('not a git repository');
+    const { root, st: dotGit } = found;
     const rel = path.relative(root, folder);
     const segments = rel ? rel.split(path.sep) : [];
     if (segments.some((s) => /[\u0000-\u001f\u007f]/.test(s))) return { ok: false, error: EXCLUDE_UNSAFE_NAME };

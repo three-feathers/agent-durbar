@@ -1025,8 +1025,8 @@ app.whenReady().then(() => {
     agents, store: () => notesStore, resumeIdFor, adapterIdOf: (id) => router.adapterIdOf(id),
     folderValues: (key) => mcpStore?.knownSecretValues(key) ?? [], // FR-005: never decrypts, so no keychain prompt from a notes save
     sessionValues: (id) => (mcpStore?.noPrompt() ? mcp.secretValuesFor(id) : []), // forSession could unlock the vault: only when it cannot
-    // FR-050..FR-054 (T041): the .durbar/notes.md mirror; every folder's switch reads as off until T042 saves `notesFile` in folders.json, so no project file is touched
-    file: () => notesFile, fileOn: () => false,
+    // FR-050..FR-055 (T041, T042): the .durbar/notes.md mirror, only for a folder whose switch (`notesFile` in folders.json) is on
+    file: () => notesFile, fileOn: (key) => folderStore?.get(key)?.notesFile === true, setFileOn: (key, on) => folderStore?.setNotesFile(key, on) === true,
   });
   appState = new AppStateStore(path.join(app.getPath('userData'), 'durbar-app-state.json'));
   appState.load();
