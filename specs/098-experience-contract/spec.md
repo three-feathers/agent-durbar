@@ -52,7 +52,7 @@ Made by Vikram's agent on 2026-10-31 in its cache folder, from every spec that o
 
 - **D1 26 world moments, not 27.** `mood-signs` (moods, "?"/"!" cues) is drawn the same in every world as overlays on the desk (097 FR-038), so it is part of `desk-card`, not a moment of its own. The other 26 stay; each is something a world must draw or deliberately leave flat.
 - **D2 `data-surface` is for world moments only.** A tool surface carries no `data-surface`; the attribute names a registered moment and nothing else, so the static check can be exact (FR-021).
-- **D3 Cell states.** A matrix cell (moment × world) is `built` (the world draws it, in code), `designed` (a design exists, not built: the world shows the flat rendering for now), `fallback-flat` (deliberately the flat rendering, tokens only) or `missing` (nobody has decided). Only `missing` blocks shipping (FR-024); `designed` cells are listed in the coverage issue.
+- **D3 Cell states.** A matrix cell (moment × world) is `built` (the world draws it, in code), `designed` (a design exists, not built: the world shows the flat rendering for now), `fallback-flat` (deliberately the flat rendering, tokens only) or `missing` (nobody has decided). A world ships only when every cell is `built` or `designed` (FR-024, owner decision 2026-10-31); `fallback-flat` is not allowed in a shipping world (it stays a state for a world still in progress), and `missing` blocks too. Not-yet-shipping worlds' `designed` cells are listed in the coverage issue.
 - **D4 The spec template line goes into a Spec Kit override**, `.specify/templates/overrides/spec-template.md`, not into the managed template, so `specify integration status` stays clean (FR-070).
 - **D5 The PR subset runs only on world-layer paths.** `app.js`, `styles.css` and other shared files are not in the path filter: they change in most pull requests and would make the subset a job on almost every PR, against Ruben's condition. The world treatment of a moment lives in the world layer (`src/renderer/realoffice/**`), which is filtered; a moment's flat root in a shared file is covered by the weekly run (FR-053).
 - **D6 Tool-surface driver scenes**: Settings (the Office layout section, which holds the World row of 097), the *New session* dialog, and the List view.
@@ -61,14 +61,14 @@ Made by Vikram's agent on 2026-10-31 in its cache folder, from every spec that o
 
 ### User Story 1 - A new world cannot ship with holes (Priority: P1)
 
-A maintainer adds a world (for example the cave). The registry lists each world moment with that world's state. The world cannot be marked shippable while any moment is `missing`; every moment is either built, designed or deliberately flat.
+A maintainer adds a world (for example the cave). The registry lists each world moment with that world's state. The world cannot be marked shippable while any moment is `missing` or `fallback-flat`; every moment is built or designed (no deliberate flat fallback in a shipping world).
 
 **Why this priority**: this is the point of the contract: "the full app adapts", with the gaps visible and owned.
 
 **Independent Test**: `test:surfaces` on the seeded registry and on fixtures.
 
 **Acceptance Scenarios**:
-1. `test:` **Given** the seeded registry, **Then** the schema check passes, and with `cave` marked `shippable: true` it fails, naming the 9 missing moments.
+1. `test:` **Given** the seeded registry, **Then** the schema check passes, and with `cave` marked `shippable: true` it fails, naming the 9 missing moments; **Given** a shippable world with a `fallback-flat` cell, **Then** it fails too.
 2. `test:` **Given** a renderer file with `data-surface="lobby"` and the registry without `lobby`, **Then** the check fails with the file and id; **Given** `lobby` registered as `code: "present"` and no marker in `src/renderer`, **Then** it fails; marked `planned`, it passes.
 3. `test:` **Given** a marker whose value is not a string literal (a template string or a variable), **Then** the check fails ("data-surface needs a literal id").
 
@@ -141,7 +141,7 @@ A spec author fills the template's *Experience* line: "tool surface", or "world 
 - **FR-021** **Every marker is registered.** Every `data-surface` id in `src/renderer/**/*.{html,js}` is a registered moment; a marker whose value is not a string literal fails (US1-3).
 - **FR-022** **Every present moment exists.** Every moment with `code: "present"` has at least one marker in `src/renderer`; a `planned` moment may have none, and a `planned` moment that does have a marker fails ("mark it present").
 - **FR-023** **Schema.** The registry parses and matches FR-011; unknown keys, worlds, blocks or states fail.
-- **FR-024** **Shippable means no `missing`.** A world with `shippable: true` has no `missing` cell. A `built` cell needs `code: "present"`.
+- **FR-024** **Shippable means every moment designed.** (Vikram, 2026-10-31: "design all 9, I don't want partly done ui".) Real office ships only when every registered world moment is `designed` (or `built`, which includes a design) in each world that ships. A world with `shippable: true` has no `missing` and no `fallback-flat` cell. A `built` cell needs `code: "present"`.
 - **FR-025** **No styling on markers.** No CSS file in `src/renderer` contains `[data-surface`, and no JS reads `dataset.surface` or `getAttribute('data-surface')` (FR-014).
 - **FR-026** **The PR filter covers the world layer.** Every path in a moment's `files` matches a path filter of the matrix workflow's pull-request trigger (FR-052).
 
@@ -208,7 +208,7 @@ A spec author fills the template's *Experience* line: "tool surface", or "world 
 
 ## Success Criteria *(mandatory)*
 
-- **SC-001** `test:surfaces` passes on the seeded registry and fails on each mutation of US1 (unregistered marker, missing present moment, non-literal marker, `missing` cell in a shippable world, styled marker).
+- **SC-001** `test:surfaces` passes on the seeded registry and fails on each mutation of US1 (unregistered marker, missing present moment, non-literal marker, `missing` or `fallback-flat` cell in a shippable world, styled marker).
 - **SC-002** The token lint fails on a colour literal and on a size property in a world pack's CSS, and the ratchet covers the Real office files.
 - **SC-003** The pull-request subset finishes within its 12-minute timeout and starts only for the paths of FR-052 (read on the first runs; no wall-clock assertion in a test).
 - **SC-004** Nothing the matrix makes is committed: `docs/screenshots/`, `DOC_SHOTS` and the site size are unchanged by this spec's build.
@@ -224,7 +224,7 @@ A spec author fills the template's *Experience* line: "tool surface", or "world 
 
 ## Open questions
 
-- **Q1 Release gate for the photo world.** FR-024 means the photo world (097 P1) is not shippable while its 9 moments are `missing`. **Recommendation**: the P1 owner records the ones already decided (lounge: Q5, desk with lamp off; walk: 097 FR-073 cross-fade) as `designed`, and marks the rest `fallback-flat` or designs them before the first release with Real office; the decision is the owner's (Vikram).
+- **Q1 Release gate for the photo world (decided 2026-10-31, Vikram, Telegram DM)**: "design all 9, I don't want partly done ui". Real office ships only when every registered world moment is `designed` in each world that ships; `fallback-flat` is not allowed for a shipping world. The 9 moments that still need a design (lounge/asleep, desk-to-lobby walk, empty office, first run, floor jumps, inbox (Boss-door queue), limit card, MCP elicitation, coffee break) are tasks T032..T033; the photo world is not shippable until they are `designed`.
 - **Q2 Art-pipeline spec number and owner.** Paco's side writes it (decision 7). **Recommendation**: Paco's agent takes the next free number when it starts; FR-080 names it in a delta then.
 
 ## Constitution check
@@ -240,4 +240,6 @@ A spec author fills the template's *Experience* line: "tool surface", or "world 
 
 ## Changes
 
-None yet.
+### 2026-10-31: strict release gate (owner decision, Q1)
+
+Vikram (Telegram DM, 2026-10-31 10:27 UTC): "design all 9, I don't want partly done ui". Real office ships only when every registered world moment is `designed` in each world that ships; `fallback-flat` is not allowed for a shipping world. FR-024, D3, US1, SC-001, Q1 and tasks T010, T032, T033 updated. No code yet.
