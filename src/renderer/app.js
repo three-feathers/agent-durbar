@@ -4192,15 +4192,11 @@ function scheduleRenderSoon(){
   soonTimer=setTimeout(()=>{soonTimer=0;soonAt=performance.now();scheduleRender();},wait);
 }
 function scheduleRender(){if(renderQueued)return;renderQueued=true;requestAnimationFrame(()=>{if(!renderQueued)return;renderQueued=false;renderAll();});} /* settleNow() may have drawn it already */
-function setBadge(){const b=$('protoBadge'); if(!b)return; b.className='proto'+(SIM&&!demoOn?' sim':'');
-  /* spec 001 FR-027: not one agent app; the tooltip names the ready ones */
-  const ready=DMK().kindChoices(KINDS).filter(k=>!k.disabled).map(k=>k.name);
-  b.title=SIM&&!demoOn?'Demo: fake events, no sessions started, no AI credits used':(!demoOn&&ready.length?'Live: '+ready.join(', '):'');b.textContent=demoOn?'Demo: sample data':SIM?'Demo':'Live';}
 function applyMode(){
   agents=demoOn?DEMO.agents:LIVE.agents; ROOMS=demoOn?DEMO.rooms:LIVE.rooms;
   ui.ws='all'; ui.status=null;
   if(ui.selected)closePanel();
-  setBadge(); renderFloorsBtn(); renderIntoFloor(); renderFilter(); renderAll(); labelDemo();
+  renderFloorsBtn(); renderIntoFloor(); renderFilter(); renderAll(); labelDemo();
 }
 /* spec 052 round 10: the top bar's demo item says what choosing it does */
 function labelDemo(){const w=$('demoWord');if(w)w.textContent=demoOn?'Turn off demo':'Turn on demo';}
@@ -6410,7 +6406,6 @@ function applyKinds(){
   /* the other ready kinds' model lists, for their agents' model chips (spec 012 FR-120); a CLI probe, no prompt */
   (KINDS||[]).forEach(k=>{if(!isDefaultKind(k.id)&&k.state==='ready'&&DMK().shows(kindCaps(k.id),'models'))ensureModels(k.id).then(()=>scheduleRender());});
   syncKindModel();
-  setBadge(); /* FR-027: the badge's tooltip lists the ready harnesses */
 }
 async function loadKinds(refresh){
   if(!bridge||!bridge.listAdapters)return;
@@ -8024,7 +8019,6 @@ if(bridge){
   setInterval(()=>{if(VISITS.tick())scheduleRender();},250);
   setInterval(coffeeTick,SIM_BREAK?1000:5000); /* spec 068: resume, ask or remind when a break is due */
   agents=LIVE.agents; ROOMS=LIVE.rooms;
-  setBadge();
 }
 
 renderFilter(); renderAll();

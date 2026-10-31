@@ -342,3 +342,6 @@
 - [x] T190 Review on #693 (round 3): `MAX_ANSWER` shared with the page (`src/shared/answerlimits.ts`), both boxes use it, an over-long answer is refused with a reason (card and main) instead of cut; waits in the driver and `test-copilot-model` are condition waits; tests for the `reconnect` and `exit` reasons.
 - [x] T191 Release triage 2026-10-26: the spending-limit line in Settings, README and the website says "soft by one call" (`test:site`); README Safety model honest lines [FR-179]
 - [x] T192 Issue #789 (FR-180): `check-chat-title.js` first (fails on the 40% cap: cut with 385px free), then `.ph-id` without `max-width:40%` and with `flex:0 1 auto`; npm script and UI-suite entry; linked chat pictures retaken; `changelog.d/005-chat-title-flex.md`
+
+## FR-181: no Demo / Live badge in the top bar (2026-10-31, owner)
+- [x] T193 `check-no-demo-badge.js` first (fails with the badge), then `#protoBadge`, `.proto` and `setBadge` removed; UI-suite entry; the cues that remain are listed in the spec delta [FR-181]
