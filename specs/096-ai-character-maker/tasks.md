@@ -10,7 +10,7 @@
 
 - [x] T001 Spec, plan, tasks and specs-index block (`specs/096-ai-character-maker/`). Test: `npm run specs:check`, `npm run rules:check`.
 - [x] T002 Checked Codex image-generation fact recorded in `docs/agent-apps.md` (Codex, 2026-10-31). Test: read-through; no secret or private path.
-- [x] T003 Owner answers Q1-Q5 recorded under *Clarifications* (Vikram, 2026-10-31, "ok and go with your pick"), and posted on the PR (AGENTS.md: chat feedback goes on GitHub too). Q1b (built-in crew motion) stays open for Paco. Test: the spec's only open question is Q1b.
+- [x] T003 Owner answers Q1-Q5 recorded under *Clarifications* (Vikram, 2026-10-31, "ok and go with your pick"), and posted on the PR (AGENTS.md: chat feedback goes on GitHub too). Q1b (built-in crew motion) was answered yes by Paco on 2026-10-31 (*Changes*). Test: the spec has no open question.
 
 ## Phase 1: Probes (real; owner's go; about 5 images)
 
@@ -60,10 +60,10 @@
 ## Phase 5: Motion (PR 5)
 
 - [ ] T050 [US3] `motionAllowed()` (reduced motion, Serious, `characterMotion`) and pause on `visibilitychange`, blur + 60 s idle (`pauseAnimations()` on office SVGs, `body.motion-paused`). Test: `check-charmotion` US3 scenarios 3 and 4 [FR-060]
-- [ ] T051 [US3] Discrete breathing bob on working and waiting portraits, phase from `seeded(sessionId)`. (My characters only, FR-062) Test: `check-charmotion` scenario 1 (`y` takes at least two values) and the sharpness check of `check:crew` on a still frame [FR-056]
-- [ ] T052 [US3] Blink frame swap, one shared timer, working pose only, only with a blink frame. Test: `check-charmotion` (blink seen within 10 s; no motion at all on Cheeky and Prehistoric until Q1b) [FR-057]
-- [ ] T053 [US3] Pose cross-fade 250 ms, one `<image>` after. (My characters only, FR-062) Test: `check-charmotion` scenario 2; `check:crew` sharpness after the fade [FR-055]
-- [ ] T054 [US3] Typing cue keys (`fill-opacity`) on My characters desks' keyboard zone only. Test: `check-charmotion` boxes inside the keyboard zone at 8 sampled times; Cheeky, Prehistoric and the office kit have no cue and `check:crew`/`check:office` are unchanged [FR-058, FR-062]
+- [ ] T051 [US3] Discrete breathing bob on working and waiting portraits, phase from `seeded(sessionId)`. (My characters and the built-in crews, FR-062) Test: `check-charmotion` scenario 1 (`y` takes at least two values, on a crew desk too) and the sharpness check of `check:crew` on a still frame [FR-056]
+- [ ] T052 [US3] Blink frame swap, one shared timer, working pose only, only with a blink frame. Test: `check-charmotion` (blink seen within 10 s on My characters; Cheeky and Prehistoric have no eyes-closed frame, so no blink frame swap ever happens on them) [FR-057]
+- [ ] T053 [US3] Pose cross-fade 250 ms, one `<image>` after. (My characters and the built-in crews, FR-062) Test: `check-charmotion` scenario 2 (also on a crew desk; the reduced-motion run shows no cross-fade, bob or cue on crews); `check:crew` sharpness after the fade [FR-055]
+- [ ] T054 [US3] Typing cue keys (`fill-opacity`) on the keyboard zone of My characters and built-in crew desks. Test: `check-charmotion` boxes inside the keyboard zone at 8 sampled times on a crew desk too; the office kit has no cue; reduced motion, Serious mode and Motion off stop crew motion; `check:crew` sharpness on a still crew frame is unchanged [FR-058, FR-062]
 - [ ] T055 [US3] Settings > Characters > Motion checkbox, stored `characterMotion`. Test: `test:characters` round trip; `check-charmotion` toggles it [FR-060]
 - [ ] T056 [US3] CPU record: 15 working agents, motion on vs off, 30 s. Test: `check-charmotion` logs both numbers; `[KNOWN GAP]` not gated [US3 scenario 6]
 - [ ] T057 Motion screenshots or a short note of what was seen (still screenshots cannot show motion). Test: PR text
@@ -71,7 +71,7 @@
 ## Phase 6: Close-out
 
 - [ ] T060 README: features (AI character maker, My characters, motion), *Safety model* (Codex image generation writes only a temp folder; Durbar stores nothing of the description, Codex keeps its own copy of each picture; network off, MCP off), limits (Codex only, API-key login asks first and is refused once detectable, Windows not tried). Test: the *Docs check* passes
-- [ ] T061 Spec 077 `## Changes`: FR-061 line (user pictures via main-validated pipeline; CSP note if `blob:`) and the line that spec 096 does not animate the built-in crews (FR-062, Q1b, Paco's call). Test: `npm run specs:check`
+- [ ] T061 Spec 077 `## Changes`: FR-061 line (user pictures via main-validated pipeline; CSP note if `blob:`) and the pointer line that crew motion is specified in spec 096 (FR-062, Q1b answered yes by Paco; done in the 2026-10-31 delta). Test: `npm run specs:check`
 - [ ] T062 `changelog.d/<branch>.md` fragment in each code PR. Test: `npm run changelog:check`
 - [ ] T063 Real run (SC-006) on the owner's go: one character on Codex 0.163.x, owner's verdict on the preview; result in `## Changes` with `real:`. Test: `real:`
 - [ ] T064 `/speckit.converge`: tags `[IMPLEMENTED]`, `[KNOWN GAP]`, specs-index status. Test: `npm run specs:check`
@@ -79,5 +79,5 @@
 ## Dependencies
 
 - Phase 1 decides Phase 3's route (T031) and D2's fallback. Phase 2 can start in parallel with Phase 1.
-- Phase 3 needs Phase 2. Phase 4 needs Phase 3 (simulator fake T038 at least). Phase 5 needs Phase 4's `registerOwn` for the blink, but the bob, cross-fade and typing cue can start on the built-in crews after Phase 2.
+- Phase 3 needs Phase 2. Phase 4 needs Phase 3 (simulator fake T038 at least). Phase 5 needs Phase 4's `registerOwn` for the blink, but the bob, cross-fade and typing cue can start on the built-in crews after Phase 2 (they animate there too since Q1b).
 - T040 (shared helpers) before T041.
