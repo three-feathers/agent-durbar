@@ -397,6 +397,25 @@ async function main(): Promise<void> {
     assert.strictEqual(d.r.srv.requests('thread/goal/set').length, 0);
   }
 
+  // an MCP switch during a run does not relaunch it; it applies when the run ended
+  {
+    const r = await rig();
+    await onRun(r);
+    await r.ad.setMcpEnabled(r.sid, 'echo', false);
+    r.srv.endTurn(r.tid);
+    await settle(r.srv);
+    await r.ad.send(r.sid, { text: 'typed' });
+    await settle(r.srv);
+    assert.strictEqual(r.srv.spawns.length, 1, 'a run does not relaunch');
+    await r.ad.interrupt(r.sid);
+    await settle(r.srv);
+    r.srv.endTurn(r.tid);
+    await settle(r.srv);
+    await r.ad.send(r.sid, { text: 'plain' });
+    await settle(r.srv);
+    assert.strictEqual(r.srv.spawns.length, 2, 'the switch applies after the end');
+  }
+
   // Stop with Autopilot on and no run: a typed turn still going after a done ending is really stopped
   {
     const r = await rig({ holdTurn: true });

@@ -295,6 +295,8 @@ interface Live {
   heldCompleted?: string[];
   /** Spec 099 FR-022: tokens the goal reported, for the end's spend. */
   goalTokens?: number;
+  /** Spec 099: an MCP server switched during a run: a run does not relaunch, so it applies when the run ended. */
+  relaunchAfterRun?: boolean;
   /** Spec 099: Durbar sent `thread/goal/clear` and has no answer yet. */
   goalClearing?: boolean;
 }
@@ -323,8 +325,8 @@ export class CodexAdapter implements AgentAdapter {
   private inflight = new Set<Promise<unknown>>();
   /** Named sessions being started: reserved before the first await, so a second start or a stop sees them. */
   private starting = new Map<string, { cancelled: boolean; done: Promise<void> }>();
-  /** Spec 044 FR-180: sessions `send` is closing and opening again for a new mode, and the mode wanted now. Spec 099: the Autopilot state waiting for the new child, and a Stop that came meanwhile. */
-  private readonly reopening = new Map<string, { mode: PermissionMode; ended: boolean; auto?: AutopilotState; stopped?: boolean }>();
+  /** Spec 044 FR-180: sessions `send` is closing and opening again for a new mode, and the mode wanted now. */
+  private readonly reopening = new Map<string, { mode: PermissionMode; ended: boolean }>();
   private readonly spawnFn: SpawnFn;
   private readonly locate: () => Promise<CodexLocation | undefined>;
   private readonly platform: string;
@@ -334,6 +336,8 @@ export class CodexAdapter implements AgentAdapter {
   private readonly closeGraceMs?: number;
   private readonly killGraceMs?: number;
   private readonly autopilotTuning?: AutopilotTuning;
+  /** Spec 099: during a reopen (`reopening`) the Autopilot state waiting for the new child, and a Stop that came meanwhile. */
+  private readonly parked = new Map<string, { auto: AutopilotState; stopped: boolean }>();
   /** Spec 099 FR-053: `setAutopilot` was called on this adapter, so a goal may exist whatever `AUTOPILOT_WIRED` says. */
   private autopilotUsed = false;
 
@@ -784,10 +788,11 @@ export class CodexAdapter implements AgentAdapter {
     if (startsRun && message.attachments?.length) throw new Error(AUTOPILOT_TEXT_ONLY); // D10
     const goal = startsRun ? goalText(message.text, 'codex') : undefined;
     if (goal && !goal.ok) throw new Error(goalRefusal(goal));
-    // FR-144/FR-147: a mode or MCP switch chosen while it ran applies now, on a fresh child that resumes the same thread (never in the middle of a run)
-    if (((live.wantMode && live.wantMode !== live.mode) || live.relaunch) && live.turnId === undefined && !live.turnStarting && !live.auto?.running) {
+    if (on) this.parked.set(sessionId, { auto: on, stopped: false });
+    // FR-144/FR-147: a mode or MCP switch chosen while it ran applies now, on a fresh child that resumes the same thread
+    if (((live.wantMode && live.wantMode !== live.mode) || live.relaunch) && live.turnId === undefined && !live.turnStarting) {
       // spec 044 FR-180: the wanted mode can change while this reopens (Stop, a mode chosen, a scheduled run's end): read again after each await, and open again if it moved
-      const reopen: { mode: PermissionMode; ended: boolean; auto?: AutopilotState; stopped?: boolean } = { mode: live.wantMode ?? live.mode, ended: false, ...(on ? { auto: on } : {}) };
+      const reopen = { mode: live.wantMode ?? live.mode, ended: false };
       this.reopening.set(sessionId, reopen);
       try {
         let options = live.options;
@@ -802,12 +807,14 @@ export class CodexAdapter implements AgentAdapter {
       } finally {
         this.reopening.delete(sessionId);
       }
-      if (on?.on) this.adoptAutopilot(live, on); // the settings outlive the child; the clear ran on the resume
-      // spec 099 FR-050: Stop came during the reopen: the session is back, and nothing is sent
-      if (reopen.stopped) {
-        this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Aborted' });
-        return;
-      }
+    }
+    const parked = this.parked.get(sessionId);
+    this.parked.delete(sessionId);
+    if (on?.on) this.adoptAutopilot(live, on); // the settings outlive the child; the clear ran on the resume
+    // spec 099 FR-050: Stop came during the reopen: the session is back, and nothing is sent
+    if (parked?.stopped) {
+      this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Aborted' });
+      return;
     }
     // FR-050, FR-051: a Stop or a stricter mode during the reopen ended Autopilot, so this is no goal: a message in the mode now in force
     if (startsRun && goal?.ok && on?.on) return this.sendGoal(live, on, goal.text);
@@ -870,9 +877,9 @@ export class CodexAdapter implements AgentAdapter {
 
   /** FR-002, FR-012, FR-022: on for the next messages, or off (a running run stops, FR-050). The thread settings follow `setPermMode` from the next message (FR-144). */
   async setAutopilot(sessionId: string, settings: AutopilotSettings | null, reason: AutopilotEnd = 'stopped'): Promise<void> {
-    const waiting = this.reopening.get(sessionId)?.auto;
+    const waiting = this.reopening.has(sessionId) ? this.parked.get(sessionId) : undefined;
     if (settings === null && waiting) {
-      waiting.settings = undefined; // no child to tell yet, and no run: the reopen sends no goal
+      waiting.auto.settings = undefined; // no child to tell yet, and no run: the reopen sends no goal
       return;
     }
     const live = this.mustGet(sessionId);
@@ -932,7 +939,10 @@ export class CodexAdapter implements AgentAdapter {
         else live.pendingInterrupt = true;
       },
       failClosed: () => this.endForGood(holder.live),
-      settled: () => undefined, // FR-022: the budget goes with the goal
+      settled: () => { // FR-022: the budget goes with the goal. FR-147: a server switched during the run applies from here
+        if (holder.live.relaunchAfterRun) holder.live.relaunch = true;
+        holder.live.relaunchAfterRun = false;
+      },
       emit: (b) => this.emit(holder.live.sid, b),
       spend: () => (holder.live.goalTokens !== undefined ? { unit: 'tokens', value: holder.live.goalTokens } : undefined),
     }, this.autopilotTuning);
@@ -1132,10 +1142,10 @@ export class CodexAdapter implements AgentAdapter {
 
   async interrupt(sessionId: string): Promise<void> {
     // spec 099 FR-050: Stop while `send` reopens the session for a goal: no goal is sent, and it does not wait for the new child
-    const reopen = this.reopening.get(sessionId);
-    if (reopen?.auto) {
-      reopen.auto.settings = undefined;
-      reopen.stopped = true;
+    const waiting = this.reopening.has(sessionId) ? this.parked.get(sessionId) : undefined;
+    if (waiting) {
+      waiting.auto.settings = undefined;
+      waiting.stopped = true;
       return;
     }
     const live = this.sessions.get(sessionId);
@@ -1196,12 +1206,13 @@ export class CodexAdapter implements AgentAdapter {
 
   setPermMode(sessionId: string, mode: PermissionMode, opts: { clearGrants?: boolean; approvePending?: boolean } = {}): { pending: number } {
     const reopen = this.reopening.get(sessionId);
-    if (reopen) {
-      reopen.mode = mode; // `send` reads it again before it opens the session
-      if (mode !== 'allow' && reopen.auto) reopen.auto.settings = undefined; // spec 099 FR-051, FR-002
-    }
+    if (reopen) reopen.mode = mode; // `send` reads it again before it opens the session
     const live = this.sessions.get(sessionId);
-    if (!live) return { pending: 0 };
+    if (!live) {
+      const waiting = this.parked.get(sessionId);
+      if (reopen && waiting && mode !== 'allow') waiting.auto.settings = undefined; // spec 099 FR-051, FR-002
+      return { pending: 0 };
+    }
     // spec 099 FR-051: main ends Autopilot first (T030); here too, so no path leaves it on outside Allow all (FR-002)
     if (mode !== 'allow' && (live.auto?.on || live.auto?.running)) void this.autopilotOff(live, 'stopped');
     const rank = (m: PermissionMode): number => ({ 'read-only': 0, ask: 1, allow: 2 })[m] ?? 0;
@@ -1544,7 +1555,8 @@ export class CodexAdapter implements AgentAdapter {
     if (enabled) off.delete(name);
     else off.add(name);
     live.options = { ...live.options, disabledMcpServers: [...off] };
-    live.relaunch = true;
+    if (live.auto?.running) live.relaunchAfterRun = true; // spec 099
+    else live.relaunch = true;
     live.mcpAuthSeen?.delete(name);
     const cur = live.mcp.get(name) ?? { name, status: 'pending' };
     live.mcp.set(name, { ...cur, status: enabled ? 'pending' : 'disabled' });
