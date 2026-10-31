@@ -132,6 +132,16 @@ module.exports = async (ctx) => {
     assert.strictEqual(hs[1].why, '', `${w}: an unknown reason kind shows no tag`);
     assert.strictEqual(hs[2].why, '', `${w}: an unknown app source shows no tag`);
     assert.strictEqual(await js(`window.__pwn===undefined`), true, `${w}: the label ran nothing`);
+    // the agent app's report never replaces Durbar's own reason, in either order of arrival (FR-110)
+    const appBy = { kind: 'app', source: 'classifier' }, folderBy = { kind: 'in-folder' };
+    const perm = (rid, by) => ev({ permission: { requestId: rid, kind: 'read', summary: 'read x', state: 'approved', via: 'quiet', allowedBy: by } });
+    await perm('ao1', folderBy); await perm('ao1', appBy); await call('ao1'); // broker first, then the app, then the card
+    await call('ao2'); await perm('ao2', folderBy); await perm('ao2', appBy); // card first
+    await perm('ao3', appBy); await perm('ao3', folderBy); await call('ao3'); // app first, then the broker
+    await perm('ao4', appBy); await call('ao4'); // the app alone still tags
+    assert.ok(await until(`[...document.querySelectorAll('#chat .chip')].filter(c=>!c.classList.contains('att-chip')).slice(-4).every(c=>(c.querySelector(':scope>.why')||{}).textContent)`, 5000), `${w}: the four order cards are tagged`);
+    const ord = await js(`[...document.querySelectorAll('#chat .chip')].filter(c=>!c.classList.contains('att-chip')).slice(-4).map(c=>(c.querySelector(':scope>.why')||{}).textContent)`);
+    assert.deepStrictEqual(ord, ['Allowed: folder read', 'Allowed: folder read', 'Allowed: folder read', 'Allowed: agent app classifier'], `${w}: the broker's reason wins in every order ` + JSON.stringify(ord));
     // a write in several folders: one card, every rule listed, Undo asks main to revoke each of them (and only those)
     await ev({ type: 'grants', grants: [{ key: 'multi:a', kind: 'write', label: 'write in a/' }, { key: 'multi:b', kind: 'write', label: 'write in b/' }, { key: 'multi:other', kind: 'write', label: 'write in other/' }] });
     await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__revoked=[];const o=b.revokeGrant;b.revokeGrant=(i,k,c)=>{window.__revoked.push(k+'|'+(c||''));return o.call(b,i,k,c);};})()`);

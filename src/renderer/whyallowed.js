@@ -61,5 +61,7 @@
       default:return null;
     }
   }
-  return {describe,LABEL_MAX,KEYS_MAX};
+  /* the reason to keep when two events name one call: Durbar's own broker (any kind but 'app') beats an app's report, in either order */
+  const keep=(old,next)=>old&&old.kind!=='app'&&next&&next.kind==='app'?old:next;
+  return {describe,keep,LABEL_MAX,KEYS_MAX};
 });

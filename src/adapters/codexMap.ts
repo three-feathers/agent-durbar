@@ -184,8 +184,12 @@ export class CodexMapper {
     switch (method) {
       case 'item/autoApprovalReview/completed': {
         // spec 003 FR-110 ([UNSTABLE] in the app-server schema): only an `approved` review of a named item; the rationale text is never read
+        // one-to-one only: a stdin review names its parent command and an execve review is one of many for one item, so an approved
+        // child must not tag a parent whose other review may be denied; the source must be the app's own reviewer
         const id = ownStr(params, 'targetItemId');
-        if (!id || ownStr(own(params, 'review'), 'status') !== 'approved') return;
+        const kind = ownStr(own(params, 'action'), 'type');
+        if (!id || ownStr(params, 'decisionSource') !== 'agent' || ownStr(own(params, 'review'), 'status') !== 'approved') return;
+        if (kind !== 'command' && kind !== 'applyPatch' && kind !== 'mcpToolCall') return;
         return this.emit({ type: 'permission', permission: appApprovedPermission(id), agentId });
       }
       case 'error': {
