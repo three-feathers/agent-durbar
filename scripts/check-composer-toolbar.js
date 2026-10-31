@@ -99,7 +99,7 @@ function SUMMARY() {
   };
 }
 
-const THEMES = ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese'];
+const THEMES = ['clean-office', 'retro'];
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);

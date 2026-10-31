@@ -213,7 +213,6 @@
     'default':{bar:'3.4s ease-in-out infinite alternate',glow:'3.6s ease-in-out infinite alternate',halo:'3.6s ease-in-out infinite alternate',wave:'2.8s ease-in-out infinite',cursor:'1.6s ease-in-out infinite'},
     'calm':{bar:'6s ease-in-out infinite alternate',glow:'8s ease-in-out infinite alternate',halo:'7s ease-in-out infinite alternate',wave:'4.5s ease-in-out infinite',cursor:'2.4s ease-in-out infinite'},
     'arcade':{bar:'1.7s steps(4) infinite alternate',glow:'2.4s steps(2) infinite alternate',halo:'2.4s steps(3) infinite alternate',wave:'1.8s steps(2) infinite',cursor:'1.2s steps(2) infinite'},
-    'court':{bar:'5s ease-in-out infinite alternate',glow:'7s ease-in-out infinite alternate',halo:'6s ease-in-out infinite alternate',wave:'4s ease-in-out infinite',cursor:'2.2s ease-in-out infinite'},
     'reduced':{bar:'none',glow:'none',halo:'none',wave:'none',cursor:'none'},
   };
 
@@ -349,13 +348,14 @@
     'place-library','place-software','place-terminal','place-web','place-other',
     'char-body','char-robe','char-headwear','char-collar','desk-back','desk-art','monitor-art','hair-acc',
     'gadget-cup','gadget-laptop']; /* spec 070 FR-011: replace the idle cup and the laptop */
-  const UI_STYLES=['clean','corporate','retro','court-indian','court-european','court-japanese'];
+  const UI_STYLES=['clean','retro'];
   /* Scene kits (spec 035 FR-013): how people and desks are drawn; the drawing code is the app's (scenekits.js). */
-  const SCENE_KITS=['office','corporate','pixel','court-indian','court-european','court-japanese','crew'];
+  const SCENE_KITS=['office','pixel','crew'];
   /* Characters, separate from themes (spec 077 FR-064, FR-065): who sits at the desks. 'theme' is the theme's own kit (the default);
      the others name a kit that is drawn on top of any theme. The same list and rule as src/shared/characters.ts (test:characters). */
   const CHARACTERS=['theme','minimalist','cheeky','prehistoric'];
   const CHARACTER_KITS={minimalist:'office',cheeky:'crew',prehistoric:'crew'};
+  const REMOVED_THEMES=['corporate','durbar-indian','durbar-european','durbar-japanese']; /* spec 035 FR-017: removed built-ins; FR-018 maps them to Clean Office, same list as src/shared/themes.ts (test:theme) */
   const LEGACY_CREW_THEME='cheeky-crew'; /* FR-066: no longer a theme; FR-067 maps it to Clean Office with Characters = Cheeky */
   function parseCharacters(v){return typeof v==='string'&&CHARACTERS.includes(v)?v:undefined;}
   function kitFor(themeKit,choice){const c=parseCharacters(choice);if(c&&c!=='theme')return CHARACTER_KITS[c];return themeKit||'office';}
@@ -403,6 +403,9 @@
     out.motion=Object.assign({}, m.motion && typeof m.motion==='object'?m.motion:{});
     out.ui=UI_STYLES.includes(m.ui)?m.ui:'clean';
     out.scene=SCENE_KITS.includes(m.scene)?m.scene:'office';
+    /* spec 035 FR-018: a saved theme naming a removed style or kit (Corporate, the courts) keeps working; that one value falls back, with a note */
+    if(m.ui!==undefined&&out.ui!==m.ui)drop('ui');
+    if(m.scene!==undefined&&out.scene!==m.scene)drop('scene');
     out.words={}; /* only scene words, short, no control characters (spec 040 FR-007) */
     if(m.words && typeof m.words==='object'){
       for(const [k,v] of Object.entries(m.words)){
@@ -602,6 +605,7 @@
   function setTheme(idOrManifest){
     /* spec 077 FR-067: the old Cheeky Crew id is Clean Office with Characters = Cheeky (unless another choice is in force), no warning */
     if(idOrManifest===LEGACY_CREW_THEME){if(currentCharacters==='theme')setCharacters('cheeky');idOrManifest=CLEAN_ID;}
+    if(typeof idOrManifest==='string'&&REMOVED_THEMES.includes(idOrManifest))idOrManifest=CLEAN_ID; /* spec 035 FR-018 */
     let manifest=loadManifest(idOrManifest);
     if(!manifest){
       if(typeof setTheme.resolveUser==='function'&&typeof idOrManifest==='string'&&/^[a-z0-9_-]+$/i.test(idOrManifest)){
@@ -717,60 +721,9 @@
     return c;
   }
 
-  /* ================================= built-in packs (specs 037-039) =================================
+  /* ================================= built-in packs (spec 038) =================================
      Data-only: tokens (only Clean Office keys are meaningful), sanitized art slots, scene words,
      one motion preset. Status/permission/credit wording never changes; layout is never themed. */
-
-  /* ---- 037: Corporate — glass and steel, cool neutrals ---- */
-  registerBuiltIn({
-    id:'corporate', name:'Corporate', author:'Three Feathers', version:'1.0', extends:'clean-office',
-    ui:'corporate',
-    scene:'corporate',
-    tokens:{
-      '--bg':'#e6eaef','--surface':'#ffffff','--surface-2':'#eceff3' /* spec 052 FR-032: a greyer 1997-office panel */,'--line':'#d2d9e1','--line-2':'#b4bfcc',
-      '--ink':'#142131','--ink-2':'#33455a','--muted':'#55677b','--room-path':'#4b5d71',
-      '--sage':'#7fa3b8','--sage-ink':'#2c5468','--blue':'#5b83ad','--blue-ink':'#2a5578',
-      '--amber':'#c98f2b','--amber-ink':'#7a5505','--red':'#c05a50','--red-ink':'#8e382f','--green':'#4f8f6a','--gray':'#8f99a3',
-      '--c-working':'#5b83ad','--c-thinking':'#7d8fb0','--c-waiting':'#c98f2b','--c-idle':'#97a1ab','--c-error':'#c05a50','--c-done':'#4f8f6a',
-      '--halo-working':'#5b83ad','--halo-thinking':'#7d8fb0','--halo-waiting':'#c98f2b','--halo-error':'#c05a50',
-      '--chair':'#2f3946','--desk':'#bcd4e6','--desk-front':'#cfd7de','--desk-drawer':'#c0c9d2',
-      '--monitor-stand':'#8a96a3','--monitor-frame':'#1d232b','--laptop':'#c7cfd8',
-      '--screen-working':'#e8f0f7','--screen-thinking':'#e9edf4','--screen-waiting':'#f7eeda','--screen-idle':'#d5dadd','--screen-error':'#f6e3e0','--screen-done':'#e2eee7',
-      '--bar-sage':'#7fa3b8','--bar-blue':'#5b83ad','--bar-blue-2':'#9fb6cb',
-      '--bubble-line':'#c6d0dd','--think-dot':'#7d8fb0',
-      '--cup':'#eef2f5','--cup-line':'#b9c4cc','--steam':'#a4adb5',
-      '--plant-mid':'#93ab9a','--plant-dark':'#7b9883','--plant-light':'#a4b7aa','--pot':'#a8b2ba',
-      '--link':'#9aa9b4',
-      '--door-bg':'#e9edf1','--door-line':'#a8b4bf','--door-leaf':'#c9d1d9','--door-leaf-line':'#9faab6','--door-knob':'#77828c','--door-panel':'#e1e7ec',
-      '--brand-mark':'#ffffff','--brand-bg':'#1f5fa8','--focus':'#1f6fc5','--line-ctl':'#77838f',
-      '--sel-border':'#2f74c0','--sel-ring':'#cfe0f4','--sel-ring-2':'#d6e5f5','--stat-sel-border':'#2f74c0','--stat-sel-ring':'#d6e5f5',
-      '--avatar-bg':'#dfe7ee','--walker-bg':'#ffffff','--drop':'#6b93b8','--drop-bg':'rgb(229 238 246 / .93)','--drop-ink':'#23415c',
-      '--badge-idle':'#aab2ba','--place-busy':'#7fa7d1',
-      '--tint-sage':'#eef6f3','--wall-sage':'#1f8a70','--tint-blue':'#edf3fa','--wall-blue':'#2f6fb5','--tint-sand':'#f8f3e6','--wall-sand':'#b08427','--tint-clay':'#f9efed','--wall-clay':'#b0524a',
-      '--cwall-sage':'#1f8a70','--cwall-blue':'#2f6fb5','--cwall-sand':'#b08427','--cwall-clay':'#b0524a',
-      '--pb-working':'#dfe9f2','--pc-working':'#29506f','--pb-thinking':'#e6e9f1','--pc-thinking':'#3d4a72',
-      '--pb-waiting':'#f7ecd2','--pc-waiting':'#7a5505','--pb-idle':'#e7eaeb','--pc-idle':'#50575c',
-      '--pb-error':'#f6e2de','--pc-error':'#8e382f','--pb-done':'#dfeede','--pc-done':'#2d6142',
-      '--proto-line':'#eed9ac',
-      '--ic-read':'#4c6f8a','--ic-edit':'#6d7f52','--ic-run':'#37658a','--ic-search':'#7d6a44','--ic-tool':'#6c7683',
-    },
-    words:{'place-library':'Records','place-coffee':'Break room','place-boss':'Corner office','place-bank':'Finance','place-postbox':'Mailroom','boss-note':'Went to the corner office','place-software':'Repository','place-terminal':'Server room','place-web':'Network','place-other':'Facilities','lobby-label':'Reception: the places where agents work'},
-    motion:{preset:'calm'},
-    art:{
-      /* suit collar + tie under the neck, briefcase on the desk, glass wall with a skyline, blinds,
-         floor sheen lanes, steel frame in the lobby, corporate signage on the place tiles */
-      /* glass wall + skyline silhouette (right side) and blinds hints (left) */
-      'room-back-wall':'<rect x="2" y="3" width="128" height="30" rx="2" fill="#cdd8e2" opacity=".55"/><path d="M2 33V20 33ZM8 33V16h6v17ZM17 33V11h5v22ZM25 33V18h7v15ZM35 33V8h5v25ZM43 33V15h6v18ZM52 33V21h5v12ZM60 33V12h4v21ZM67 33V17h6v16ZM76 33V23h4v10ZM83 33V14h5v19ZM91 33V19h6v14ZM100 33V10h4v23ZM107 33V17h6v16ZM116 33V22h5v11ZM124 33V15h6v18Z" fill="#8fa3b4" opacity=".5"/><path d="M0 3h132M0 12h132M0 22h132" stroke="#ffffff" stroke-width=".8" opacity=".5"/><path d="M2 6h38M2 9h38M2 12h38M2 15h38M2 18h38" stroke="#a7b7c4" stroke-width="1" opacity=".6"/>',
-      'room-floor':'<path d="M4 112l40 -34h8l-40 34ZM300 112l-40 -34h-8l40 34ZM140 112l20 -34h4l-20 34ZM180 112l-20 -34h-4l20 34" fill="#ffffff" opacity=".35"/>',
-      'door-art':'<rect x="6" y="5" width="8" height="1.4" rx=".7" fill="#a8b4bf"/><rect x="6" y="8.4" width="8" height="1.4" rx=".7" fill="#a8b4bf"/><rect x="6" y="11.8" width="8" height="1.4" rx=".7" fill="#a8b4bf"/><rect x="11.6" y="2.5" width="1.6" height="15" fill="#9aa9b8" opacity=".7"/>',
-      'lobby-art':'<path d="M0 7h320M0 29h320" stroke="#b9c6d2" stroke-width="1" opacity=".6"/><path d="M12 7v22M308 7v22" stroke="#b9c6d2" stroke-width="1.2" opacity=".5"/>',
-      'place-library':'<path d="M3 16.5V4h3.5v12.5zM6.5 16.5V6h3.5v10.5zM10.5 16.5l3-11.5 3.4.9-3 11.4zM2 16.5h16"/><path d="M15.5 4h2v12.5h-2z" opacity=".55"/>',
-      'place-software':'<rect x="3" y="3.5" width="14" height="5" rx="1.5"/><rect x="3" y="11.5" width="14" height="5" rx="1.5"/><path d="M6 6h.01M6 14h.01M10 6h4M10 14h4"/><path d="M17 3.5v13" opacity=".4"/>',
-      'place-terminal':'<rect x="2.5" y="3.5" width="15" height="13" rx="2"/><path d="M6 8l3 2.5L6 13M11 13h3.5"/><circle cx="15" cy="6" r="1" opacity=".7"/>',
-      'place-web':'<circle cx="10" cy="10" r="7"/><path d="M3 10h14M10 3c2.5 2.2 2.5 11.8 0 14M10 3c-2.5 2.2-2.5 11.8 0 14"/><circle cx="14.5" cy="5.5" r="1.2" opacity=".7"/>',
-      'place-other':'<circle cx="10" cy="10" r="2.6"/><path d="M10 2.5v2.4M10 15.1v2.4M2.5 10h2.4M15.1 10h2.4M4.7 4.7l1.7 1.7M13.6 13.6l1.7 1.7M15.3 4.7l-1.7 1.7M6.4 13.6l-1.7 1.7"/>',
-    },
-  });
 
   /* ---- 038: Retro — 8-bit palette, blocky slot art ---- */
   registerBuiltIn({
@@ -856,163 +809,6 @@
     motion:{preset:'arcade'},
   });
 
-  /* ---- 039a: Durbar — Indian court (maroon, gold, sandalwood) ---- */
-  registerBuiltIn({
-    id:'durbar-indian', name:'Durbar · Indian Court', author:'Three Feathers', version:'1.0', extends:'clean-office',
-    ui:'court-indian',
-    scene:'court-indian',
-    tokens:{
-      '--bg':'#f3e6cc','--surface':'#fffaf0','--surface-2':'#fbf1dd','--line':'#e2c991','--line-2':'#b8892f',
-      '--ink':'#3b1d14','--ink-2':'#5e3424','--muted':'#76503e','--room-path':'#6b4130',
-      '--sage':'#8aab84','--sage-ink':'#3f6238','--blue':'#7d95b5','--blue-ink':'#3a5a80','--amber':'#d9962b','--amber-ink':'#80530a',
-      '--red':'#b85448','--red-ink':'#8e3226','--green':'#5f9a76','--gray':'#a39a87',
-      '--c-working':'#7d95b5','--c-thinking':'#9a8fbd','--c-waiting':'#d9962b','--c-idle':'#aca496','--c-error':'#b85448','--c-done':'#5f9a76',
-      '--halo-working':'#7d95b5','--halo-thinking':'#9a8fbd','--halo-waiting':'#d9962b','--halo-error':'#b85448',
-      '--chair':'#8a1c2c','--desk':'#9a6436','--desk-front':'#b07a45','--desk-drawer':'#b07c50',
-      '--monitor-stand':'#6e6560','--monitor-frame':'#5a2a1c','--laptop':'#7d746a',
-      '--screen-working':'#f2ecdc','--screen-thinking':'#ece7f0','--screen-waiting':'#f8edd4','--screen-idle':'#d6d2c6','--screen-error':'#f6e0da','--screen-done':'#e2efe6',
-      '--bar-sage':'#8aab84','--bar-blue':'#7d95b5','--bar-blue-2':'#b3c2d8',
-      '--face-dark':'#3a2c26','--mouth':'#7c4638',
-      '--plant-mid':'#a9bf92','--plant-dark':'#8aa474','--plant-light':'#bccba6','--pot':'#b8626a',
-      '--link':'#b3a68c','--star':'#d99a2c',
-      '--door-bg':'#f0e4cc','--door-line':'#a98b62','--door-leaf':'#cf9a5e','--door-leaf-line':'#a87b48','--door-knob':'#8a6436','--door-panel':'#e6d4ae',
-      '--brand-mark':'#f2c75c','--brand-bg':'#8a1c2c','--focus':'#0f6e6e','--line-ctl':'#9a7228',
-      '--sel-border':'#b5302f','--sel-ring':'#f3d9a8','--sel-ring-2':'#f3d9a8','--stat-sel-border':'#b5302f','--stat-sel-ring':'#f3d9a8',
-      '--avatar-bg':'#eee2ca','--walker-bg':'#fffaf0','--drop':'#a87b48','--drop-bg':'rgb(244 236 220 / .93)','--drop-ink':'#5c3c18',
-      '--badge-idle':'#bfb49e','--place-busy':'#d4a240',
-      '--tint-sage':'#eef0d8','--wall-sage':'#8a9a3a','--tint-blue':'#ddeeed','--wall-blue':'#0f6e6e','--tint-sand':'#fbe7c4','--wall-sand':'#d9822b','--tint-clay':'#f8dfdb','--wall-clay':'#a8343f',
-      '--cwall-sage':'#8a9a3a','--cwall-blue':'#0f6e6e','--cwall-sand':'#d9822b','--cwall-clay':'#a8343f',
-      '--pb-working':'#e2e9f2','--pc-working':'#315074','--pb-thinking':'#e8e4f2','--pc-thinking':'#4a3f80',
-      '--pb-waiting':'#f8ebcf','--pc-waiting':'#80530a','--pb-idle':'#eae4d6','--pc-idle':'#5c544a',
-      '--pb-error':'#f6e0dc','--pc-error':'#8e3226','--pb-done':'#ddeede','--pc-done':'#2f6240',
-      '--proto-line':'#ecd3a2',
-      '--ic-read':'#54749a','--ic-edit':'#7f8a54','--ic-run':'#8c4a3c','--ic-search':'#8a6f3c','--ic-tool':'#7c7286',
-    },
-    art:{
-      /* a turban arc + jewel on the head (abstract, geometric); sits with every hairstyle */
-      'plant':'<circle cx="13" cy="10" r="4.5" fill="var(--plant-mid)"/><circle cx="8" cy="14" r="3" fill="var(--plant-dark)"/><circle cx="18" cy="14" r="3" fill="var(--plant-light)"/><path d="M8 21h10l-1.5 8h-7z" fill="var(--pot)"/>',
-      /* court attire: a sherwani/robe silhouette over the torso + sash; drawn before the head so hair/turban stay on top */
-      /* royal durbar hall: arched colonnade + jharokha panels on the wall, a rich carpet below */
-      /* spec 052 FR-032: the colonnade is pale gold (--line) and faint, so its pillars read as the wall behind the cards, not table legs */
-      'room-back-wall':'<g fill="none" stroke="#e2c991" stroke-width="2.4" opacity=".45"><path d="M8 118V50Q8 22 30 22Q52 22 52 50V118"/><path d="M134 118V50Q134 22 160 22Q186 22 186 50V118"/><path d="M268 118V50Q268 22 290 22Q312 22 312 50V118"/></g><path d="M8 44Q30 36 52 44M134 44Q160 36 186 44M268 44Q290 36 312 44" fill="none" stroke="#8c2f3e" stroke-width="1.6" opacity=".8"/><circle cx="30" cy="28" r="2.6" fill="#d9a441"/><circle cx="160" cy="28" r="2.6" fill="#d9a441"/><circle cx="290" cy="28" r="2.6" fill="#d9a441"/><path d="M60 30h62v16H60zM196 30h62v16h-62z" fill="#efe0c0" stroke="#b98a3c" stroke-width="1.2" opacity=".8"/><path d="M64 34h54M64 38h54M64 42h54M200 34h50M200 38h50M200 42h50" stroke="#c9a85c" stroke-width=".8" opacity=".7"/>',
-      'room-floor':'<path d="M40 118L80 52h168l40 66z" fill="#8c2f3e" opacity=".9"/><path d="M50 118L86 58h156l36 60" fill="none" stroke="#d9a441" stroke-width="2.4"/><path d="M58 118L90 64h148l32 54" fill="none" stroke="#e8d0a0" stroke-width="1.2" stroke-dasharray="6 4" opacity=".8"/><path d="M78 94h172" stroke="#d9a441" stroke-width="1.4" opacity=".7"/><path d="M70 106h188" stroke="#d9a441" stroke-width="1.1" opacity=".55"/>',
-      'door-art':'<path d="M9.6 2.5Q9.6 6.6 6.4 8.2M10.2 2.5Q10.2 6.9 7.4 9" fill="none" stroke="#a98b62" stroke-width=".9"/><circle cx="13.6" cy="4.4" r=".9" fill="#d9a441"/><circle cx="13.6" cy="4.4" r=".45" fill="#8c2f3e"/>',
-      'lobby-art':'<path d="M0 33h320" stroke="#b98a3c" stroke-width="1.6" opacity=".7"/><path d="M0 30h320" stroke="#e3d0a8" stroke-width=".9" stroke-dasharray="10 6" opacity=".7"/><path d="M20 30Q24 18 30 30M290 30Q296 18 300 30" fill="none" stroke="#8c2f3e" stroke-width="1.4" opacity=".8"/>',
-      'place-library':'<path d="M4 17V8Q10 4 16 8v9z"/><path d="M4 17h12M7 8v9M13 8v9"/><circle cx="10" cy="6.4" r="1" opacity=".8"/>',
-      'place-software':'<path d="M4 17V7q6-3.6 12 0v10z"/><path d="M4 12h12M8 4.5V17M12 4.5V17"/>',
-      'place-terminal':'<path d="M3 17V9Q10 3.5 17 9v8z"/><path d="M6.5 11h7M6.5 14h7"/>',
-      'place-web':'<circle cx="10" cy="10" r="6.6"/><path d="M3.4 10h13.2M10 3.4q3.6 3.2 0 13.2M10 3.4q-3.6 3.2 0 13.2"/>',
-      'place-other':'<path d="M10 3l2.2 4.6L17 8.6l-3.7 3.4 1 5-4.3-2.6L5.7 17l1-5L3 8.6l4.8-1z"/>',
-    },
-    words:{'place-library':'Records Kothi','place-coffee':'Chai stall','place-boss':'Diwan-e-Khas','place-bank':'Khazana','place-postbox':'Dak ghar','boss-note':'Went to the Diwan-e-Khas','place-software':'Shastra Ghar','place-terminal':'Yantra Kaksh','place-web':'Jaal Khidki','place-other':'Chhota Kaam','lobby-label':'The durbar: the places where agents work','door-close':'Close gate','door-open':'Open gate','door-title-prefix':'Close the gate'},
-    motion:{preset:'court'},
-  });
-
-  /* ---- 039b: Durbar — European court (navy, silver, parchment) ---- */
-  registerBuiltIn({
-    id:'durbar-european', name:'Durbar · European Court', author:'Three Feathers', version:'1.0', extends:'clean-office',
-    ui:'court-european',
-    scene:'court-european',
-    tokens:{
-      '--bg':'#e9e2d1','--surface':'#fffdf7','--surface-2':'#f6f1e4','--line':'#d9cba6','--line-2':'#b8995a',
-      '--ink':'#1b2240','--ink-2':'#3b4266','--muted':'#585d7c','--room-path':'#4c5274',
-      '--sage':'#8fa9a0','--sage-ink':'#3f6258','--blue':'#5f7fae','--blue-ink':'#2c4a78','--amber':'#d2a03c','--amber-ink':'#7a5c0e',
-      '--red':'#bf5a6a','--red-ink':'#8e3642','--green':'#5f9a76','--gray':'#9a9884',
-      '--c-working':'#5f7fae','--c-thinking':'#8a8fbd','--c-waiting':'#d2a03c','--c-idle':'#a6a29a','--c-error':'#bf5a6a','--c-done':'#5f9a76',
-      '--halo-working':'#5f7fae','--halo-thinking':'#8a8fbd','--halo-waiting':'#d2a03c','--halo-error':'#bf5a6a',
-      '--chair':'#8e2a3a','--desk':'#6b2f1f','--desk-front':'#7a3a26','--desk-drawer':'#866c42',
-      '--monitor-stand':'#62687a','--monitor-frame':'#2a1f18','--laptop':'#767b8e',
-      '--screen-working':'#e6edf6','--screen-thinking':'#eae8f3','--screen-waiting':'#f6eed6','--screen-idle':'#d4d6d2','--screen-error':'#f6e2e2','--screen-done':'#e0eee4',
-      '--bar-sage':'#8fa9a0','--bar-blue':'#5f7fae','--bar-blue-2':'#a2b4d0',
-      '--bubble-line':'#c2c8e0','--think-dot':'#8a8fbd',
-      '--cup':'#f2f0e6','--cup-line':'#b8ae8e','--steam':'#a2a096',
-      '--plant-mid':'#92b294','--plant-dark':'#779c7a','--plant-light':'#a6c2a8','--pot':'#8a6f4c',
-      '--link':'#9aa4b0','--star':'#d2a03c',
-      '--door-bg':'#ece6d8','--door-line':'#a89a78','--door-leaf':'#b8a272','--door-leaf-line':'#96845c','--door-knob':'#6e5c34','--door-panel':'#e2d8bc',
-      '--brand-mark':'#e2bf63','--brand-bg':'#1b2a4e','--focus':'#2b4c9a','--line-ctl':'#8f7642',
-      '--sel-border':'#7a1f35','--sel-ring':'#ead9b0','--sel-ring-2':'#ead9b0','--stat-sel-border':'#7a1f35','--stat-sel-ring':'#ead9b0',
-      '--avatar-bg':'#e2e4ec','--walker-bg':'#fffdf7','--drop':'#7d94c2','--drop-bg':'rgb(232 236 246 / .93)','--drop-ink':'#2a3a66',
-      '--badge-idle':'#b6b4a4','--place-busy':'#b8995a',
-      '--tint-sage':'#e5ece2','--wall-sage':'#3f6b4f','--tint-blue':'#e4e9f4','--wall-blue':'#2b3f7a','--tint-sand':'#f4ebd3','--wall-sand':'#b08a35','--tint-clay':'#f2e2e2','--wall-clay':'#7a1f35',
-      '--cwall-sage':'#3f6b4f','--cwall-blue':'#2b3f7a','--cwall-sand':'#b08a35','--cwall-clay':'#7a1f35',
-      '--pb-working':'#dee6f2','--pc-working':'#2a4268','--pb-thinking':'#e6e4f2','--pc-thinking':'#41407a',
-      '--pb-waiting':'#f6ecd0','--pc-waiting':'#7a5c0e','--pb-idle':'#e8e6dc','--pc-idle':'#585650',
-      '--pb-error':'#f6e2e4','--pc-error':'#8e3642','--pb-done':'#ddeee0','--pc-done':'#2f6240',
-      '--proto-line':'#ead5a8',
-      '--ic-read':'#52688c','--ic-edit':'#7d814e','--ic-run':'#3e5f90','--ic-search':'#867040','--ic-tool':'#6e7286',
-    },
-    art:{
-      /* a crown: three points and a base band */
-      'plant':'<path d="M13 3l7 9h-14z" fill="var(--plant-dark)"/><path d="M13 8l6 8H7z" fill="var(--plant-mid)"/><path d="M8 21h10l-1.5 8h-7z" fill="var(--pot)"/>',
-      /* ermine-look collar + a gown skirt over the torso (fur spots are abstract dots, no heraldry) */
-      /* English royal courtroom: panelled walls + portrait frames + chandelier hints, a long carpet aisle */
-      'room-back-wall':'<g fill="none" stroke="#9aa4b8" stroke-width="1.4" opacity=".6"><rect x="14" y="16" width="86" height="44" rx="2"/><rect x="118" y="16" width="86" height="44" rx="2"/><rect x="222" y="16" width="86" height="44" rx="2"/></g><g fill="#e4d9c0" stroke="#8a7a52" stroke-width="1.2"><rect x="34" y="24" width="20" height="26" rx="1.5"/><rect x="138" y="24" width="20" height="26" rx="1.5"/><rect x="242" y="24" width="20" height="26" rx="1.5"/><rect x="290" y="24" width="12" height="26" rx="1.5"/></g><circle cx="44" cy="37" r="4" fill="#b9ab8a"/><circle cx="148" cy="37" r="4" fill="#b9ab8a"/><circle cx="252" cy="37" r="4" fill="#b9ab8a"/><path d="M150 6q10 4 20 0M150 6q10 4 20 0" fill="none" stroke="#c9a85c" stroke-width="1.2"/><path d="M160 4v8M156 12l4-4 4 4" fill="none" stroke="#c9a85c" stroke-width="1.2"/><circle cx="156" cy="13" r="1.4" fill="#e8d9a8"/><circle cx="164" cy="13" r="1.4" fill="#e8d9a8"/><circle cx="160" cy="15" r="1.4" fill="#e8d9a8"/>',
-      'room-floor':'<path d="M50 118L92 54h144l42 64z" fill="#37527a" opacity=".9"/><path d="M60 118L98 62h132l38 56" fill="none" stroke="#d9b23c" stroke-width="2.6"/><path d="M68 118L102 68h124l34 50" fill="none" stroke="#e8d9a8" stroke-width="1.1" stroke-dasharray="8 5" opacity=".75"/><path d="M84 96h160" stroke="#d9b23c" stroke-width="1.3" opacity=".65"/>',
-      'door-art':'<path d="M5.6 6.4h8.8M5.6 9h8.8" stroke="#96845c" stroke-width=".9"/><rect x="5.2" y="3.6" width="9.6" height="8.2" rx=".8" fill="none" stroke="#96845c" stroke-width=".8"/><circle cx="13.2" cy="13.2" r=".8" fill="#d9b23c"/>',
-      'lobby-art':'<path d="M0 32h320" stroke="#c9a85c" stroke-width="1.5" opacity=".7"/><path d="M0 29h320" stroke="#8a7a52" stroke-width=".8" stroke-dasharray="12 6" opacity=".6"/><rect x="18" y="8" width="16" height="12" rx="1.5" fill="#e4d9c0" stroke="#8a7a52" stroke-width="1"/><rect x="286" y="8" width="16" height="12" rx="1.5" fill="#e4d9c0" stroke="#8a7a52" stroke-width="1"/>',
-      'place-library':'<path d="M4 17V5h5v12zM9 17V7h5v10M14 17l2.8-11 2.6 1-2.8 10"/><path d="M3 17h14"/>',
-      'place-software':'<rect x="4" y="4" width="12" height="4.4" rx="1.4"/><rect x="4" y="11.6" width="12" height="4.4" rx="1.4"/><path d="M6.5 6.2h.01M6.5 13.8h.01"/>',
-      'place-terminal':'<path d="M3 17V6h14v11z"/><path d="M6 9l3 2.6-3 2.6M11 14h3.4"/>',
-      'place-web':'<circle cx="10" cy="10" r="6.4"/><path d="M3.6 10h12.8M10 3.6q3.4 3 0 12.8M10 3.6q-3.4 3 0 12.8"/>',
-      'place-other':'<path d="M10 4.2l1.8 3.8 4.2.6-3 3 .7 4.2-3.7-2-3.7 2 .7-4.2-3-3 4.2-.6z"/>',
-    },
-    words:{'place-library':'The Archive','place-coffee':'The Tea Room','place-boss':'The Chancellor','place-bank':'The Treasury','place-postbox':'The Post','boss-note':'Went to see the Chancellor','place-software':'The Atelier','place-terminal':'The Forge','place-web':'The Messenger Hall','place-other':'The Household', /* spec 052 FR-023: court words, not Victorian industry */'lobby-label':'The court: the places where agents work'},
-    motion:{preset:'court'},
-  });
-
-  /* ---- 039c: Durbar — Japanese court (indigo, vermilion, rice paper) ---- */
-  registerBuiltIn({
-    id:'durbar-japanese', name:'Durbar · Japanese Court', author:'Three Feathers', version:'1.0', extends:'clean-office',
-    ui:'court-japanese',
-    scene:'court-japanese',
-    tokens:{
-      '--bg':'#ede6d8','--surface':'#fdfbf5','--surface-2':'#f6f1e6','--line':'#d6cdb9','--line-2':'#a99c80',
-      '--ink':'#1c1a17','--ink-2':'#3f3a33','--muted':'#5f584e','--room-path':'#575047',
-      '--sage':'#8aa88e','--sage-ink':'#3c6244','--blue':'#5878ac','--blue-ink':'#2c4a78','--amber':'#d29838','--amber-ink':'#7a580e',
-      '--red':'#c24a42','--red-ink':'#8c2e26','--green':'#5c9a70','--gray':'#9c9886',
-      '--c-working':'#5878ac','--c-thinking':'#8b90bc','--c-waiting':'#d29838','--c-idle':'#a8a496','--c-error':'#c24a42','--c-done':'#5c9a70',
-      '--halo-working':'#5878ac','--halo-thinking':'#8b90bc','--halo-waiting':'#d29838','--halo-error':'#c24a42',
-      '--chair':'#c3bca8','--desk':'#4a3b2c','--desk-front':'#5c4936','--desk-drawer':'#3f3226', /* spec 052 FR-032: warm lacquer */
-      '--monitor-stand':'#2b2420','--monitor-frame':'#1c1a17','--laptop':'#4a3b2c' /* lacquer, not office grey */,
-      '--screen-working':'#e7eef8','--screen-thinking':'#eae9f2','--screen-waiting':'#f7eed4','--screen-idle':'#d5d6ce','--screen-error':'#f6e2dc','--screen-done':'#e1efe2',
-      '--bar-sage':'#8aa88e','--bar-blue':'#5878ac','--bar-blue-2':'#9cb2d4',
-      '--face-dark':'#262430','--mouth':'#7c443a',
-      '--bubble-line':'#c4c8e0','--think-dot':'#8b90bc',
-      '--plant-mid':'#96b296','--plant-dark':'#7a9a7a','--plant-light':'#aabf9f','--pot':'#c23b22' /* shu vermilion */,
-      '--link':'#9aa0ac','--star':'#d29838',
-      '--door-bg':'#e9e3d3','--door-line':'#a39874','--door-leaf':'#c0ab7c','--door-leaf-line':'#9c8c62','--door-knob':'#6e5c36','--door-panel':'#ddd2b8',
-      '--brand-mark':'#fdfbf5','--brand-bg':'#c23b22','--focus':'#2c4a7e','--line-ctl':'#857a63',
-      '--sel-border':'#c23b22','--sel-ring':'#f0d5cc','--sel-ring-2':'#f0d5cc','--stat-sel-border':'#c23b22','--stat-sel-ring':'#f0d5cc',
-      '--avatar-bg':'#e2e2da','--walker-bg':'#fdfbf5','--drop':'#7d90bc','--drop-bg':'rgb(233 236 246 / .93)','--drop-ink':'#2a3c64',
-      '--badge-idle':'#b8b4a2','--place-busy':'#8c9db8',
-      '--tint-sage':'#e8ecdd','--wall-sage':'#6b7d4a','--tint-blue':'#e3e8f0','--wall-blue':'#2c4a7e','--tint-sand':'#f3ecdb','--wall-sand':'#a88a52','--tint-clay':'#efe4dc','--wall-clay':'#b5432e',
-      '--cwall-sage':'#6b7d4a','--cwall-blue':'#2c4a7e','--cwall-sand':'#a88a52','--cwall-clay':'#b5432e',
-      '--pb-working':'#dfe6f2','--pc-working':'#28466e','--pb-thinking':'#e6e4f2','--pc-thinking':'#41427c',
-      '--pb-waiting':'#f7ecd1','--pc-waiting':'#7a580e','--pb-idle':'#e8e5da','--pc-idle':'#565450',
-      '--pb-error':'#f6e1dc','--pc-error':'#8c2e26','--pb-done':'#deeddc','--pc-done':'#2e6038',
-      '--proto-line':'#ead3a4',
-      '--ic-read':'#4e6c92','--ic-edit':'#7c804e','--ic-run':'#40548e','--ic-search':'#846c3c','--ic-tool':'#6c7080',
-    },
-    art:{
-      /* a small bonsai pine: a short twisted trunk, three flat cloud pads, a shallow vermilion pot */
-      'plant':'<path d="M12.4 23.4c-1.8-2.4 1.6-4 .2-6.4c-.9-1.7 1.2-3.2 1.6-6" fill="none" stroke="#4a3424" stroke-width="2.2" stroke-linecap="round"/><path d="M12.4 17.6c-1.8-.7-3.6-.4-5.2.6M13.8 13.4c1.8-.5 3.6-.2 5 .9" fill="none" stroke="#4a3424" stroke-width="1.2" stroke-linecap="round"/><g fill="#2f5233"><ellipse cx="7" cy="17.6" rx="4.6" ry="1.9"/><ellipse cx="19.4" cy="13.8" rx="4.4" ry="1.8"/><ellipse cx="13.6" cy="8.8" rx="5.2" ry="2.2"/></g><g fill="#4a6e44"><ellipse cx="7.4" cy="16.9" rx="3" ry=".9"/><ellipse cx="19.6" cy="13.1" rx="2.8" ry=".8"/><ellipse cx="13.8" cy="8" rx="3.4" ry="1"/></g><rect x="5" y="23" width="16" height="1.6" rx=".4" fill="var(--pot)"/><rect x="6.5" y="24.4" width="13" height="3.6" fill="var(--pot)"/><rect x="7.5" y="28" width="2" height="1" fill="#2b2420"/><rect x="16.5" y="28" width="2" height="1" fill="#2b2420"/>',
-      /* tatami floor (woven mats), shoji screen wall panels, hanging scroll hints */
-      'room-back-wall':'<g fill="#f3efe2" stroke="#a89a74" stroke-width="1.6" opacity=".92"><rect x="16" y="14" width="76" height="52" rx="1.5"/><rect x="104" y="14" width="76" height="52" rx="1.5"/><rect x="192" y="14" width="76" height="52" rx="1.5"/><rect x="280" y="14" width="28" height="52" rx="1.5"/></g><g stroke="#c2b48e" stroke-width=".8" opacity=".75"><path d="M35 14v52M54 14v52M73 14v52M123 14v52M142 14v52M161 14v52M211 14v52M230 14v52M249 14v52M290 14v52M299 14v52M16 31h76M16 48h76M104 31h76M104 48h76M192 31h76M192 48h76M280 31h28M280 48h28"/></g><rect x="94" y="8" width="3.4" height="58" fill="#8a7a52" opacity=".6"/><rect x="182" y="8" width="3.4" height="58" fill="#8a7a52" opacity=".6"/><rect x="270" y="8" width="3.4" height="58" fill="#8a7a52" opacity=".6"/>',
-      /* spec 052 FR-032: tatami, not beige strips: rush-straw mats (#d9cfa8) with a thin darker edge, a dark cloth
-         border (heri, #3a2f22, full opacity) on the long sides and a faint weave */
-      'room-floor':'<g stroke="#8f7f58" stroke-width=".8"><rect x="24" y="74" width="120" height="22" rx="1" fill="#d9cfa8"/><rect x="156" y="74" width="120" height="22" rx="1" fill="#d3c89f"/><rect x="24" y="98" width="120" height="22" rx="1" fill="#d3c89f"/><rect x="156" y="98" width="120" height="22" rx="1" fill="#d9cfa8"/></g><path d="M30 74v22M30 98v22M36 74v22M36 98v22M42 74v22M42 98v22M48 74v22M48 98v22M54 74v22M54 98v22M60 74v22M60 98v22M66 74v22M66 98v22M72 74v22M72 98v22M78 74v22M78 98v22M84 74v22M84 98v22M90 74v22M90 98v22M96 74v22M96 98v22M102 74v22M102 98v22M108 74v22M108 98v22M114 74v22M114 98v22M120 74v22M120 98v22M126 74v22M126 98v22M132 74v22M132 98v22M138 74v22M138 98v22M162 74v22M162 98v22M168 74v22M168 98v22M174 74v22M174 98v22M180 74v22M180 98v22M186 74v22M186 98v22M192 74v22M192 98v22M198 74v22M198 98v22M204 74v22M204 98v22M210 74v22M210 98v22M216 74v22M216 98v22M222 74v22M222 98v22M228 74v22M228 98v22M234 74v22M234 98v22M240 74v22M240 98v22M246 74v22M246 98v22M252 74v22M252 98v22M258 74v22M258 98v22M264 74v22M264 98v22M270 74v22M270 98v22" stroke="#b5a77e" stroke-width=".5" opacity=".6"/><g fill="#3a2f22"><rect x="24" y="74" width="120" height="2"/><rect x="24" y="94" width="120" height="2"/><rect x="156" y="74" width="120" height="2"/><rect x="156" y="94" width="120" height="2"/><rect x="24" y="98" width="120" height="2"/><rect x="24" y="118" width="120" height="2"/><rect x="156" y="98" width="120" height="2"/><rect x="156" y="118" width="120" height="2"/></g>',
-      'door-art':'<rect x="5.6" y="3.8" width="8.8" height="12.4" rx=".8" fill="none" stroke="#9c8c62" stroke-width=".9"/><path d="M8 3.8v12.4M11.6 3.8v12.4M5.6 8h8.8M5.6 12.2h8.8" stroke="#c2b48e" stroke-width=".6"/>',
-      'lobby-art':'<path d="M0 32h320" stroke="#a89a74" stroke-width="1.5" opacity=".7"/><path d="M30 32V12M60 32V12M90 32V12M230 32V12M260 32V12M290 32V12" stroke="#c2b48e" stroke-width=".9" opacity=".55"/><rect x="140" y="6" width="40" height="10" rx="2" fill="none" stroke="#8a7a52" stroke-width="1.1" opacity=".7"/><path d="M144 11h32" stroke="#c24a42" stroke-width="1.3" opacity=".75"/>',
-      'place-library':'<path d="M4 17V6h5v11zM9 17V8h5v9z"/><path d="M14 16.6l1.5-9.4 2.8 1-1.6 9.4"/><path d="M3.4 17h13.4"/>',
-      'place-software':'<rect x="4" y="5" width="12" height="3.6" rx="1.2"/><rect x="4" y="11" width="12" height="3.6" rx="1.2"/><path d="M6.5 6.8h.01M6.5 12.8h.01M10 6.8h3.4M10 12.8h3.4"/>',
-      'place-terminal':'<rect x="3" y="5.5" width="14" height="9.5" rx="1.6"/><path d="M6 8.6l2.8 2.4-2.8 2.4M10.6 13.4h3"/>',
-      'place-web':'<circle cx="10" cy="10" r="6.2"/><path d="M4 10h12M10 3.8q3.3 3 0 12.4M10 3.8q-3.3 3 0 12.4"/>',
-      'place-other':'<path d="M7 16.6V9.8L10 5.4l3 4.4v6.8"/><path d="M7 13h6"/>',
-    },
-    words:{'place-library':'Bunko','place-coffee':'Chashitsu','place-boss':'Tono','place-bank':'Kura','place-postbox':'Yūbinkyoku','boss-note':'Went to see the Tono','place-software':'Kōbō','place-terminal':'Tanmatsu-shitsu','place-web':'Tsūshinjo','place-other':'Dōgu-beya', /* spec 052 FR-023: Japanese words in the Japanese court (the plain names are in the tooltips, FR-013) */'lobby-label':'The Ō-hiroma: the places where agents work','door-close':'Slide shut','door-open':'Slide open','door-title-prefix':'Slide the fusuma shut'},
-    motion:{preset:'court'},
-  });
-
   /* spec 077 FR-066: Cheeky Crew is no longer a theme: its characters are Settings > Characters > Cheeky (the crew kit) on any theme */
 
   /* boot: apply Clean Office immediately so the page never has un-tokenized colours */
@@ -1060,6 +856,7 @@
     CHARACTERS:CHARACTERS.slice(),
     CHARACTER_KITS:Object.assign({},CHARACTER_KITS),
     LEGACY_CREW_THEME,
+    REMOVED_THEMES:REMOVED_THEMES.slice(),
     _validateManifest:validateManifest,
     _compilePixelMap:compilePixelMap,
     _tokens(){return resolveTokens(currentManifest);},

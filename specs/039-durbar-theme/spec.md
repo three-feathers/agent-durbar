@@ -3,8 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 035-040
 title: Durbar court styles: Indian, European, Japanese (head accessory slots, court words)
-status: built
-note: word lists await owner review
+status: superseded
+note: removed 2026-10-31 (spec 035 FR-017); replaced by the kingdom worlds of spec 102
 -->
 
 **Feature Branch**: `035-theme-foundation` (issue #129)
@@ -46,3 +46,7 @@ note: word lists await owner review
 
 - `[IMPLEMENTED]` The pack sets `ui` and stronger core colours: three courts with their own frame: **Indian** a maroon top bar with a gold rule, ivory pages, arched room tops with a double gold frame and serif headings; **European** a royal navy top bar with gilt rules, parchment pages, gilded double frames, small corners and serif small-caps headings; **Japanese** a paper top bar with a vermilion rule and a red seal brand mark, washi pages, thin ink lines, nearly square corners and Mincho-style serif headings. The Japanese terminal place is renamed **Machine Room** so it fits its tile. Sizes are unchanged; `check:themes` covers it. Owner review of the look requested in PR #137.
 - `[IMPLEMENTED]` (2026-10-18, spec 035 FR-013) Its own people and furniture: **Indian** courtiers in sherwanis with a sash and turbans with a jewel (or braids and buns with flowers) on an arched velvet throne, a carved low desk, the screen in a jharokha arch and a brass lamp; **European** nobles with ruffs, an order sash and powdered periwigs (or a tiara) on a gilt throne, a mahogany bureau, the screen in a gilded frame and a candlestick; **Japanese** figures in kimono and obi with topknots or a bun with a kanzashi, before a gold folding screen, at a low lacquer table, the screen in a wooden frame, a teacup and a bonsai (`court-*` kits). European place names shortened to Engine Room and Signal Tower so they fit.
+
+### 2026-10-31: removed (owner decision, spec 021 FR-067; spec 035 FR-017, FR-018)
+
+- **Superseded by spec 102's kingdom worlds** (new art; none of this is reused). The built-in themes `durbar-indian`, `durbar-european`, `durbar-japanese`, their UI styles and scene kits `court-*`, the motion preset `court` and their pictures are gone. A stored `theme` with one of the ids becomes Clean Office once (spec 035 FR-018). Everything above is history.
