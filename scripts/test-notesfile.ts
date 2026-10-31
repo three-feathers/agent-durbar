@@ -20,7 +20,10 @@ import { NotesOps } from '../src/main/notesops';
 const GH = 'gh' + 'p_' + 'Z9y8X7w6V5u4T3s2R1q0P9o8N7m6L5';
 const KNOWN = 'plain-' + 'folder-value-42';
 const posix = process.platform !== 'win32';
-const root = nodeFs.mkdtempSync(path.join(os.tmpdir(), 'durbar-notesfile-'));
+// the real path of the temp root (macOS: /var is a link to /private/var; Windows: 8.3 short names like RUNNER~1), so the paths the
+// tests build are the same ones the module sees after its own realpath, on every OS
+const realOf = (p: string): string => (nodeFs.realpathSync.native ?? nodeFs.realpathSync)(p);
+const root = realOf(nodeFs.mkdtempSync(path.join(os.tmpdir(), 'durbar-notesfile-')));
 let seq = 0;
 const fresh = (name = 'proj'): string => { const d = path.join(root, `c${++seq}`, name); nodeFs.mkdirSync(d, { recursive: true }); return d; };
 const sha = (b: Buffer | string): string => createHash('sha256').update(b).digest('hex');
@@ -239,6 +242,24 @@ async function main(): Promise<void> {
     nodeFs.mkdirSync(md(r.folder));
     const st2 = await cycle(r);
     assert.match(st2.state.error ?? '', /not a regular file/);
+  });
+
+  await test('AC2: a folder reached through a link (macOS /var, a linked project) is checked by its real path: written inside it, a linked .durbar still refused', async () => {
+    if (!canLink) return skip('this account cannot make symbolic links');
+    const r = rig();
+    const via = path.join(r.folder, '..', 'via-link');
+    nodeFs.symlinkSync(r.folder, via, 'dir');
+    must(await r.store.add(r.key, 'proj', { text: 'mine' }));
+    const st = await syncNotesFile({ file: r.file, store: r.store, folderKey: r.key, folderName: 'proj', folderPath: via, values: [] });
+    assert.deepStrictEqual(st.state, {});
+    assert.ok(nodeFs.existsSync(md(r.folder)), 'written in the real folder');
+    const outside = fresh('outside');
+    nodeFs.rmSync(path.join(r.folder, '.durbar'), { recursive: true });
+    nodeFs.symlinkSync(outside, path.join(r.folder, '.durbar'), 'dir');
+    must(await r.store.add(r.key, 'proj', { text: 'more' }));
+    const st2 = await syncNotesFile({ file: r.file, store: r.store, folderKey: r.key, folderName: 'proj', folderPath: via, values: [] });
+    assert.match(st2.state.error ?? '', /\.durbar is a link/);
+    assert.deepStrictEqual(nodeFs.readdirSync(outside), []);
   });
 
   await test('AC2: a Windows junction as .durbar is refused', async () => {
@@ -934,8 +955,11 @@ async function main(): Promise<void> {
   });
 
   await test('AC10: the line escapes gitignore specials per segment and matches exactly the folder; control characters are refused', () => {
-    const names = ['a*b', 'x?', '[draft]', '!keep', '#notes', path.join('outer', '[draft]', 'in*ner')];
-    if (posix) names.push('back\\slash', 'trail ', 'two  ');
+    // folder names Windows (NTFS) cannot hold (`< > : " | ? *`, a backslash, a trailing space or dot) are made only elsewhere; the
+    // escaping of those strings is still checked below without a folder
+    const names = ['[draft]', '!keep', '#notes', path.join('outer', '[draft]', '#in ner')];
+    if (posix) names.push('a*b', 'x?', path.join('outer', '[draft]', 'in*ner'), 'back\\slash', 'trail ', 'two  ');
+    else skip('Windows folder names cannot hold * ? \\ or a trailing space: those names are checked as strings only');
     const near: Record<string, string> = { 'a*b': 'aXXb', 'x?': 'xy', '[draft]': 'd', 'back\\slash': 'back/slash', 'trail ': 'trail', 'two  ': 'two' };
     for (const name of names) {
       const repo = fresh('repo');
@@ -950,6 +974,8 @@ async function main(): Promise<void> {
       assert.strictEqual(nodeFs.readFileSync(path.join(repo, '.git', 'info', 'exclude'), 'utf8').split('\n').filter(Boolean).length, 1, 'one line');
     }
     assert.strictEqual(escapeGitSegment('!a#b'), '\\!a#b');
+    assert.deepStrictEqual(['a*b', 'x?', 'in*ner', 'back\\slash', 'trail '].map(escapeGitSegment), ['a\\*b', 'x\\?', 'in\\*ner', 'back\\\\slash', 'trail\\ ']);
+    assert.ok(gitMatches(excludeLine(['a*b', 'x?']), 'a*b/x?/.durbar') && !gitMatches(excludeLine(['a*b', 'x?']), 'aXb/xy/.durbar'));
     assert.strictEqual(escapeGitSegment('#x '), '\\#x\\ ');
     assert.strictEqual(escapeGitSegment('a\\ '), 'a\\\\\\ ', 'a backslash before a trailing space: both escaped');
     assert.strictEqual(excludeLine([]), '/.durbar/');
