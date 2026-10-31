@@ -34,7 +34,7 @@ In **Folders**, each folder has **Schedules**. The dialog lists the folder's sch
 1. **Given** the agent is working or waiting for an approval or an answer when a run is due, **Then** that run is skipped (not queued) and recorded as "skipped: the agent was busy". *(test:)*
 2. **Given** the app was closed or the computer asleep at the due time, **When** the app runs again, **Then** a missed once-schedule is marked "missed" and is not sent; an interval schedule continues from now (the missed runs are not caught up). *(test:)*
 3. **Given** **Pause all schedules** (in the Folders panel), **Then** nothing is sent until it is switched off; the choice is kept across restarts. *(test:, sim:)*
-4. Runs use the session's own permission mode and credit cap: a schedule never allows more than the agent already may. *(read: the send path is the user's)*
+4. Runs use the session's own credit cap. *(Mode: replaced 2026-10-31, FR-180: a run uses its schedule's mode; it used to be the session's, so a schedule never allowed more than the agent already might.)* *(read: the send path is the user's)*
 
 ### Edge Cases
 
@@ -60,6 +60,17 @@ In **Folders**, each folder has **Schedules**. The dialog lists the folder's sch
 - Phase 2 (issue #291, built 2026-10-20, see *Changes*): a schedule per session, calendar rules, a per-schedule credit or cost cap, the agent's own schedules (shown read-only).
 
 ## Changes
+
+### 2026-10-31: a scheduled prompt runs in the schedule's own mode (spec 099 FR-083)
+
+**Owner decision** (Vikram, 2026-10-31 18:56 UTC, relayed by his coordinating agent): a scheduled prompt runs in the mode attached to that scheduled prompt. **Today a schedule has no mode** (`Schedule` in `src/main/schedules.ts`): a run takes the session's mode through `deps.send`. Not built; task T140. The items under *Proposed* are for the owner to review.
+
+- **FR-180** **A schedule has a mode.** `Schedule.mode?: 'read-only' | 'ask' | 'allow'`, validated in main (`validMode`: anything unknown is Read-only), shown on each row and in the form. A run applies it for that one turn only and then returns the session to its mode. The temporary mode is **never saved** (not `setModeOp`, which writes the folder's and the session's mode), so a crash leaves the saved mode as it was. Loops (spec 072) use the field the same way, per pass. The agent app's own schedules (FR-016) are not ours and have no mode here. The credit cap and the skip rules are unchanged.
+- **Proposed: no stored mode means Read-only**, never inherited, so nothing gains power by inheritance. **This changes existing schedules**: one that relied on an Allow all or Ask first session now has its writes denied. Its row says "Runs in Read-only" and the edit form offers the choice.
+- **Proposed: Allow all on a schedule** is asked for through the existing Allow all confirmation when saved or edited to it, from the window only (`fromApp`), never from MCP tools or remote control, and an organization policy (spec 076) refuses it at save and at each run. **For the owner:** constitution III says Allow all is "an explicit, per-agent opt-in"; this is an opt-in per schedule, and it can run with more power than its session has. No amendment is written here.
+- **Proposed: never Autopilot** (spec 099 FR-004, FR-083): the field has no such value, and a run is never an Autopilot run.
+- **Proposed: a session that cannot switch live** does not get the prompt: the run is logged `failed` with a new closed reason `mode-refused` (FR-036), visible in the run log, and `[KNOWN GAP]` per app until checked.
+- **Ask first on a schedule**: a request waits for the user as in any session, and the mode returns when that turn ends; a user message sent meanwhile waits as it does today.
 
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 

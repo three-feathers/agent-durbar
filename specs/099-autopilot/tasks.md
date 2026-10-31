@@ -64,7 +64,7 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group), T001..T096.
 - [ ] T038 README Safety model, mode-menu sentence, *What Durbar does not do*, *Costs and caps*; changelog fragment [FR-090]
 
 - [ ] T095 Main validates every `autopilot` event and `question.autoAnswered` with `eventguard` before use, and drops a bad one with a masked log line; test on a stand-in with a bad event from a fake adapter [FR-082]
-- [ ] T096 A message that is not a run never reaches the app in its goal mode: the adapter leaves the mode for it and returns, or it is refused with a visible reason and a `[KNOWN GAP]`; fake adapter test for a scheduled message after a done ending [FR-083]
+- [ ] T096 A scheduled prompt runs in its schedule's mode, leaving the goal mode for that turn and returning after; not a run; where the adapter cannot switch, not sent, with a visible reason and a `[KNOWN GAP]`. Fake adapter test for both outcomes after a done ending. Needs spec 044 T140 [FR-083]
 
 ## Phase 4: Plan first (PR `099-p4-plan`)
 
