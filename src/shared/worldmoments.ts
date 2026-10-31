@@ -46,6 +46,9 @@ export const BLOCK_PARTS: Readonly<Record<string, readonly string[]>> = {
 
 /** Moments that need more than their block list says (FR-031): extra files, or the manifest's `rideStyle` (named `rideStyle`). `building-preview` stays optional. */
 export const MOMENT_EXTRAS: Readonly<Record<string, readonly string[]>> = {
+  // the floor screen and the lobby are the room itself: without a wall and a floor a world is not finished (review of #955; FR-041 marks only the windows optional)
+  'office-floor': ['wall.webp', 'floor.webp'],
+  lobby: ['wall.webp'],
   'first-run': ['welcome.webp'],
   'floor-change': ['lift-cover.webp', 'rideStyle'],
 };

@@ -40,7 +40,7 @@ export function crc32(buf: Uint8Array, start = 0, end = buf.length): number {
 export const sha256 = (b: Uint8Array): string => createHash('sha256').update(b).digest('hex');
 
 // ---- names ----
-const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+const RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i;
 const SEGMENT_RE = /^[A-Za-z0-9._ -]{1,64}$/;
 /**
  * Why one path segment is not acceptable on Windows, macOS and Linux alike, or '' when it is. ASCII only: that removes control and bidi
@@ -68,6 +68,7 @@ function extraProblem(extra: Buffer): string {
     const id = u16(extra, p), len = u16(extra, p + 2);
     if (p + 4 + len > extra.length) return 'an extra field is damaged';
     if (id === 0x0001) return 'the zip uses ZIP64, which is not supported';
+    if (id === 0x7075 || id === 0x6375) return 'an entry carries a second, Unicode name or comment';
     p += 4 + len;
   }
   return '';
@@ -124,7 +125,8 @@ function openZipInner(buf: Buffer, limits: ZipLimits): ZipOpen {
     // Not a regular file: a unix mode in the high half of the attributes (symlink, device, pipe, socket) or a DOS reparse-point bit.
     const mode = attr >>> 16, fmt = mode & 0o170000;
     if (fmt !== 0 && fmt !== 0o100000 && fmt !== 0o040000) return fail('The zip holds a link or another file that is not a plain file.');
-    if ((made >> 8) === 0 && (attr & 0x400)) return fail('The zip holds a link or another file that is not a plain file.');
+    if (attr & 0x400) return fail('The zip holds a link or another file that is not a plain file.'); // the DOS reparse-point bit, whatever tool wrote it
+    if (cl !== 0) return fail('An entry has a comment, which is not supported.'); // bytes a reader would never show
     let name = '';
     for (const b of nameBytes) { if (b < 0x20 || b > 0x7e) return fail('An entry name is not on the list of allowed names.'); name += String.fromCharCode(b); }
     list.push({ name, dir: name.endsWith('/'), method, flags, crc, csize, size, off, descriptor: (flags & 0x0008) !== 0, made, attr, nameBytes, extra, ignore: false, keep: '' });
@@ -134,7 +136,6 @@ function openZipInner(buf: Buffer, limits: ZipLimits): ZipOpen {
 
   // Names: classify each entry as kept, ignored (what real tools add) or refused; the rules of FR-051 on the whole name, nothing normalised.
   const seen = new Set<string>();
-  let top = '';
   const files: Parsed[] = [];
   for (const e of list) {
     const lower = e.name.toLowerCase();
@@ -144,11 +145,18 @@ function openZipInner(buf: Buffer, limits: ZipLimits): ZipOpen {
     if (e.name.includes('\\')) return fail('An entry name has a backslash.');
     const segs = (e.dir ? e.name.slice(0, -1) : e.name).split('/');
     for (const s of segs) { const why = segmentProblem(s); if (why) return fail(why.charAt(0).toUpperCase() + why.slice(1) + '.'); }
+    { // a folder entry may not carry a regular-file mode, nor a file a folder mode or the DOS folder bit
+      const fmt = (e.attr >>> 16) & 0o170000;
+      if (e.dir ? fmt === 0o100000 : fmt === 0o040000 || (e.attr & 0x10) !== 0) return fail('The zip holds a link or another file that is not a plain file.');
+    }
     if (e.dir) { if (e.size !== 0 || e.csize > 2 || (e.method !== 0 && e.method !== 8)) return fail('A folder entry holds data.'); e.ignore = true; }
     files.push(e);
   }
-  // A single top-level folder is the one allowance (hand-made zips); every kept file is in it, or none is.
+  // A single top-level folder is the one allowance (hand-made zips); every kept file is in it, or none is. The folders of every entry that names one
+  // (folder entries, kept files, ignored .DS_Store and Thumbs.db) are collected and judged together, so the order of entries cannot matter.
   const kept: Parsed[] = [];
+  const folders = new Set<string>();
+  const addFolder = (f: string): string => (f.startsWith('.') || IGNORED_FILES.includes(f.toLowerCase()) ? 'The zip has folders inside folders.' : (folders.add(f), ''));
   for (const e of files) {
     const segs = (e.dir ? e.name.slice(0, -1) : e.name).split('/');
     const mac = segs[0] === '__MACOSX';
@@ -160,24 +168,24 @@ function openZipInner(buf: Buffer, limits: ZipLimits): ZipOpen {
       return fail('An entry name is not on the list of allowed names.');
     }
     if (e.dir) {
-      if (segs.length !== 1 || IGNORED_FILES.includes(segs[0].toLowerCase()) || segs[0].startsWith('.')) return fail('The zip has folders inside folders.');
-      if (top && top !== segs[0]) return fail('The zip has more than one top-level folder.');
-      top = segs[0];
+      if (segs.length !== 1) return fail('The zip has folders inside folders.');
+      const why = addFolder(segs[0]);
+      if (why) return fail(why);
       continue;
     }
     const leaf = segs[segs.length - 1];
     if ((leaf === '.DS_Store' || leaf === 'Thumbs.db') && segs.length <= 2) {
-      if (segs.length === 2) { if (top && top !== segs[0]) return fail('The zip has more than one top-level folder.'); }
+      if (segs.length === 2) { const why = addFolder(segs[0]); if (why) return fail(why); }
       e.ignore = true; continue;
     }
     if (segs.length === 1) { e.keep = leaf; kept.push(e); continue; }
-    if (segs.length !== 2 || segs[0].startsWith('.') || IGNORED_FILES.includes(segs[0].toLowerCase())) return fail('The zip has folders inside folders.');
-    if (top && top !== segs[0]) return fail('The zip has more than one top-level folder.');
-    top = segs[0];
+    if (segs.length !== 2) return fail('The zip has folders inside folders.');
+    const why = addFolder(segs[0]);
+    if (why) return fail(why);
     e.keep = leaf; kept.push(e);
   }
-  // all kept files at the root, or all inside the one folder (not a mix)
-  if (kept.length && top) { const inFolder = kept.filter((e) => e.name.includes('/')).length; if (inFolder !== kept.length) return fail('The zip mixes files inside and outside its folder.'); }
+  if (folders.size > 1) return fail('The zip has more than one top-level folder.');
+  if (folders.size === 1 && kept.some((e) => !e.name.includes('/'))) return fail('The zip mixes files inside and outside its folder.');
   if (kept.length > maxKept) return fail('The zip has too many files.');
 
   // Layout: the files tile [0, cdOff) exactly, each local header agrees with the directory.
@@ -243,7 +251,10 @@ function openZipInner(buf: Buffer, limits: ZipLimits): ZipOpen {
         let out: Buffer;
         if (e.method === 0) out = Buffer.from(raw);
         else {
-          out = zlib.inflateRawSync(raw, { maxOutputLength: Math.max(1, e.size) });
+          // `info: true` also tells how many input bytes the deflate stream used: all of the entry's packed bytes, or something is hidden after its end
+          const r = zlib.inflateRawSync(raw, { maxOutputLength: Math.max(1, e.size), info: true }) as unknown as { buffer: Buffer; engine: { bytesWritten: number } };
+          if (r.engine.bytesWritten !== e.csize) return null;
+          out = r.buffer;
         }
         if (out.length !== e.size) return null;
         if (crc32(out) !== e.crc) return null;
