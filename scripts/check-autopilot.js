@@ -9,7 +9,7 @@
 const assert = require('assert');
 const os = require('os');
 const path = require('path');
-const { helpers } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || os.tmpdir();
 const ON = process.env.DURBAR_AUTOPILOT_TEST === '1';
 const SIZES = [[1440, 900], [1280, 800]];
@@ -20,16 +20,16 @@ module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until } = H;
   const must = async (expr, msg, ms = 8000) => assert.ok(await until(expr, ms), msg + ' (' + expr.slice(0, 120) + ')');
-  const pick = (kind, mode) => `(a=>a.live&&!a.parent&&a.info&&(a.info.adapterId||'copilot')===${JSON.stringify(kind)}${mode ? `&&a.info.permMode===${JSON.stringify(mode)}` : ''})`;
+  const pick = (kind, mode) => `(a=>a.live&&!a.parent&&a.info&&(a.info.adapterId||'copilot')===${jsLiteral(kind)}${mode ? `&&a.info.permMode===${jsLiteral(mode)}` : ''})`;
   // text under 10.5px anywhere inside a selector; hidden nodes do not count
-  const small = (sel) => js(`(()=>{const o=[];for(const r of document.querySelectorAll(${JSON.stringify(sel)}))for(const n of [r,...r.querySelectorAll('*')]){if(!n.getClientRects().length)continue;const own=[...n.childNodes].some(c=>c.nodeType===3&&c.textContent.trim());if(own&&parseFloat(getComputedStyle(n).fontSize)<10.5)o.push(n.tagName+':'+n.textContent.trim().slice(0,30)+':'+getComputedStyle(n).fontSize);}return o;})()`);
-  const inView = (sel) => js(`(()=>{const e=document.querySelector(${JSON.stringify(sel)});if(!e)return false;const r=e.getBoundingClientRect();return r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight&&r.width>0;})()`);
+  const small = (sel) => js(`(()=>{const o=[];for(const r of document.querySelectorAll(${jsLiteral(sel)}))for(const n of [r,...r.querySelectorAll('*')]){if(!n.getClientRects().length)continue;const own=[...n.childNodes].some(c=>c.nodeType===3&&c.textContent.trim());if(own&&parseFloat(getComputedStyle(n).fontSize)<10.5)o.push(n.tagName+':'+n.textContent.trim().slice(0,30)+':'+getComputedStyle(n).fontSize);}return o;})()`);
+  const inView = (sel) => js(`(()=>{const e=document.querySelector(${jsLiteral(sel)});if(!e)return false;const r=e.getBoundingClientRect();return r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight&&r.width>0;})()`);
   const fitOffice = async (w) => {
     const f = await js(`(()=>{const ds=[...document.querySelectorAll('#stage .desk[data-id]')];const rs=ds.map(d=>d.getBoundingClientRect());let over=0;for(let i=0;i<rs.length;i++)for(let j=i+1;j<rs.length;j++){const a=rs[i],b=rs[j];if(a.left<b.right-1&&b.left<a.right-1&&a.top<b.bottom-1&&b.top<a.bottom-1)over++;}return {n:ds.length,over,sc:document.scrollingElement.scrollTop,bottom:Math.max(...rs.map(r=>r.bottom)),h:innerHeight,right:Math.max(...rs.map(r=>r.right)),w:innerWidth};})()`);
     assert.strictEqual(f.n >= 15, true, `${w}: 15 agents`);
     assert.strictEqual(f.over, 0, `${w}: no desks overlap`);
     assert.strictEqual(f.sc, 0, `${w}: the page does not scroll`);
-    assert.ok(f.bottom <= f.h && f.right <= f.w, `${w}: all fit ${JSON.stringify(f)}`);
+    assert.ok(f.bottom <= f.h && f.right <= f.w, `${w}: all fit ${jsLiteral(f)}`);
   };
 
   if (!ON) {
@@ -45,10 +45,10 @@ module.exports = async (ctx) => {
       assert.deepStrictEqual(r, { ok: false, error: 'Autopilot is not available yet.' }, 'the simulator refuses too');
       // real preload, real main: refused by main under the simulator, whatever the page asks
       const real = await js(`window.agentDurbar.setAutopilot('sim-1',{limit:5}).then(x=>x,e=>({threw:String(e&&e.message||e)}))`);
-      assert.ok(real.threw || real.ok === false, `main refuses: ${JSON.stringify(real)}`);
+      assert.ok(real.threw || real.ok === false, `main refuses: ${jsLiteral(real)}`);
       for (const kind of ['copilot', 'claude', 'codex']) {
         const o = await H.openSimAgent(pick(kind), '#modeChip');
-        assert.ok(o.ok, `${w}: open a ${kind} agent ${JSON.stringify(o.seen)}`);
+        assert.ok(o.ok, `${w}: open a ${kind} agent ${jsLiteral(o.seen)}`);
         await H.click('#modeChip');
         await must(`!!document.querySelector('#modeMenu [data-mode="allow"],#modeMenu [data-mode="ask"]')`, 'the mode menu opened');
         const m = await js(`(()=>{const x=document.getElementById('modeMenu');return {ap:!!x.querySelector('[data-act="autopilot"]'),text:x.innerText,modes:x.querySelectorAll('[data-mode]').length};})()`);
@@ -74,13 +74,13 @@ module.exports = async (ctx) => {
     await must(`!!document.querySelector('#modeMenu [data-act="autopilot"]')`, 'the menu item');
     await H.click('#modeMenu [data-act="autopilot"]');
     await must(`!!document.querySelector('#modeDlg .ap-form')`, 'the form');
-    if (cap !== undefined) await js(`(()=>{const b=document.getElementById('apCapOn');b.checked=true;b.dispatchEvent(new Event('change',{bubbles:true}));const c=document.getElementById('apCap');c.value=${JSON.stringify(String(cap))};c.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    if (cap !== undefined) await js(`(()=>{const b=document.getElementById('apCapOn');b.checked=true;b.dispatchEvent(new Event('change',{bubbles:true}));const c=document.getElementById('apCap');c.value=${jsLiteral(String(cap))};c.dispatchEvent(new Event('input',{bubbles:true}));})()`);
     await H.clickText('#modeDlg button', 'Continue…');
     await must(`!document.querySelector('#modeDlg')`, 'the form closed');
   };
   const chip = () => js(`(()=>{const c=document.getElementById('modeChip');const s=getComputedStyle(c);return {text:c.innerText.replace(/\\s+/g,' ').trim(),title:c.title,cls:c.className,color:s.color,bg:s.backgroundColor,font:parseFloat(s.fontSize),glyph:!!c.querySelector('.mi svg')};})()`);
   const send = async (t) => {
-    await js(`(()=>{const i=document.getElementById('msgInput');i.value=${JSON.stringify(t)};i.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('sendBtn').click();})()`);
+    await js(`(()=>{const i=document.getElementById('msgInput');i.value=${jsLiteral(t)};i.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('sendBtn').click();})()`);
   };
 
   for (const [w, h] of SIZES) {
@@ -92,7 +92,7 @@ module.exports = async (ctx) => {
 
     // the menu: in every mode (D13), with the real mode's check mark
     const o = await H.openSimAgent(pick('claude', 'read-only'), '#modeChip');
-    assert.ok(o.ok, `${w}: a Claude Code agent in Read-only ${JSON.stringify(o.seen)}`);
+    assert.ok(o.ok, `${w}: a Claude Code agent in Read-only ${jsLiteral(o.seen)}`);
     const id = o.id;
     assert.match((await chip()).text, /Read-only/);
     await H.click('#modeChip');
@@ -109,7 +109,7 @@ module.exports = async (ctx) => {
     // the form: grants nothing; warnings; Continue follows validity
     await H.click('#modeMenu [data-act="autopilot"]');
     await must(`!!document.querySelector('#modeDlg .ap-form')`, 'the form');
-    assert.strictEqual(await js(`window.__durbarSimUi.agents().find(a=>a.id===${JSON.stringify(id)}).info.autopilot===undefined`), true, 'the form grants nothing');
+    assert.strictEqual(await js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(id)}).info.autopilot===undefined`), true, 'the form grants nothing');
     const form = await js(`(()=>{const d=document.querySelector('#modeDlg');return {limit:document.getElementById('apLimit').value,hours:document.getElementById('apHours').value,text:d.innerText,warn:[...d.querySelectorAll('.ap-warn:not(.ap-folder)')].filter(x=>!x.hidden).length,folder:!!document.getElementById('apFolder'),btns:[...d.querySelectorAll('.dbtn button')].map(b=>b.textContent)};})()`);
     assert.strictEqual(form.limit, '5');
     assert.strictEqual(form.hours, '2');
@@ -120,7 +120,7 @@ module.exports = async (ctx) => {
     assert.ok(form.folder, 'from Read-only the form says the folder changes');
     assert.deepStrictEqual(form.btns, ['Cancel', 'Continue…']);
     await H.shot(path.join(OUT, `099-form-${w}.png`), { prep: 'calm' });
-    const setv = (fid, v) => js(`(()=>{const c=document.getElementById(${JSON.stringify(fid)});c.value=${JSON.stringify(String(v))};c.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    const setv = (fid, v) => js(`(()=>{const c=document.getElementById(${jsLiteral(fid)});c.value=${jsLiteral(String(v))};c.dispatchEvent(new Event('input',{bubbles:true}));})()`);
     await setv('apLimit', 21);
     await setv('apHours', 3);
     await js(`(()=>{const b=document.getElementById('apCapOn');b.click();})()`);
@@ -137,9 +137,9 @@ module.exports = async (ctx) => {
     assert.strictEqual(rows.length, 3);
     for (const r of rows) {
       assert.strictEqual(r.dir, 'row', `${w}: a row`);
-      assert.ok(r.mid <= 3, `${w}: the field and its text on one line ${JSON.stringify(r)}`);
-      assert.ok(r.left <= 1, `${w}: from the left ${JSON.stringify(r)}`);
-      assert.ok(r.h <= 40, `${w}: one line ${JSON.stringify(r)}`);
+      assert.ok(r.mid <= 3, `${w}: the field and its text on one line ${jsLiteral(r)}`);
+      assert.ok(r.left <= 1, `${w}: from the left ${jsLiteral(r)}`);
+      assert.ok(r.h <= 40, `${w}: one line ${jsLiteral(r)}`);
     }
     await H.shot(path.join(OUT, `099-form-warnings-${w}.png`), { prep: 'calm' });
     for (const bad of [0, 1001, 1.5, '']) {
@@ -157,7 +157,7 @@ module.exports = async (ctx) => {
     await turnOn();
     await must(`(window.__durbarSimUi.autopilotAsked||[]).length>=1`, 'the (simulated) native dialog was asked');
     assert.match((await chip()).text, /Read-only/, 'Cancel at the native dialog: nothing changed');
-    assert.strictEqual(await js(`window.__durbarSimUi.agents().find(a=>a.id===${JSON.stringify(id)}).info.permMode`), 'read-only');
+    assert.strictEqual(await js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(id)}).info.permMode`), 'read-only');
     await js(`window.__durbarSimUi.autopilotDialog=null;0`);
 
     // on: the real mode on the chip, the menu, the desk and the list
@@ -188,7 +188,7 @@ module.exports = async (ctx) => {
     // a run: the chip counts; the question is shown, not waited on; the chat says each step; no text under 10.5px
     await send('Add a flag and the tests');
     await must(`/Autopilot · 2\\/5/.test(document.getElementById('modeChip').innerText)`, 'the chip counts', 10000);
-    const run = await js(`(()=>{const q=[...document.querySelectorAll('.note.ap-question')].pop();return {lines:[...document.querySelectorAll('.note.ap-line')].map(n=>n.textContent),qHead:q&&q.querySelector('b').textContent,qBtns:q?q.querySelectorAll('button,textarea').length:-1,pending:document.querySelectorAll('.note.perm:not(.settled)').length,state:window.__durbarSimUi.agents().find(a=>a.id===${JSON.stringify(id)}).state};})()`);
+    const run = await js(`(()=>{const q=[...document.querySelectorAll('.note.ap-question')].pop();return {lines:[...document.querySelectorAll('.note.ap-line')].map(n=>n.textContent),qHead:q&&q.querySelector('b').textContent,qBtns:q?q.querySelectorAll('button,textarea').length:-1,pending:document.querySelectorAll('.note.perm:not(.settled)').length,state:window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(id)}).state};})()`);
     assert.ok(run.lines.includes('Autopilot: working on your message (up to 5 more turns, no spend cap)'), JSON.stringify(run.lines));
     assert.ok(run.lines.includes('Autopilot: continuing (2 of up to 5)'), JSON.stringify(run.lines));
     assert.strictEqual(run.qHead, 'Decided by itself (Autopilot)');
@@ -209,7 +209,8 @@ module.exports = async (ctx) => {
     assert.strictEqual(end.t, 'Autopilot ended: stopped by you, after 2 more turns, $0.04');
     assert.ok(end.ic, 'an icon, not colour alone');
     assert.deepStrictEqual(end.btns, ['Run again on Autopilot…', 'Switch to Ask first…']);
-    assert.strictEqual(await js(`document.getElementById('msgInput').getAttribute('aria-label')`), `Message ${await js(`window.__durbarSimUi.agents().find(a=>a.id===${JSON.stringify(id)}).name`)}`, 'the composer is back');
+    const backName = await js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(id)}).name`);
+    assert.strictEqual(await js(`document.getElementById('msgInput').getAttribute('aria-label')`), 'Message ' + backName, 'the composer is back');
     assert.ok(await js(`!!document.getElementById('attFile')&&getComputedStyle(document.getElementById('attFile')).display!=='none'&&!document.getElementById('apNoAttach')`), 'the attach button is back');
     await H.shot(path.join(OUT, `099-end-stopped-${w}.png`), { prep: 'calm' });
     // Run again asks again
@@ -226,12 +227,12 @@ module.exports = async (ctx) => {
     await must(`document.querySelectorAll('#stage .modeic.mode-autopilot').length>=10`, 'the desks show it');
     await H.shot(path.join(OUT, `099-office-${w}.png`), { prep: 'calm' });
     await fitOffice(w);
-    const desk = await js(`(()=>{const d=document.querySelector('#stage .desk[data-id="'+CSS.escape(${JSON.stringify(id)})+'"]');const ic=d.querySelector('.modeic.mode-autopilot');const name=d.querySelector('.name');const a=window.__durbarSimUi.agents().find(x=>x.id===${JSON.stringify(id)});return {glyph:!!ic&&!!ic.querySelector('svg'),color:ic&&getComputedStyle(ic).color,nameW:name.getBoundingClientRect().width,aria:d.getAttribute('aria-label')||'',task:d.innerText,stage:document.querySelectorAll('#stage .modebadge').length};})()`);
+    const desk = await js(`(()=>{const d=document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(id)})+'"]');const ic=d.querySelector('.modeic.mode-autopilot');const name=d.querySelector('.name');const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(id)});return {glyph:!!ic&&!!ic.querySelector('svg'),color:ic&&getComputedStyle(ic).color,nameW:name.getBoundingClientRect().width,aria:d.getAttribute('aria-label')||'',task:d.innerText,stage:document.querySelectorAll('#stage .modebadge').length};})()`);
     assert.ok(desk.glyph, 'the desk glyph');
     assert.ok(desk.nameW > 10, `the name is still shown: ${desk.nameW}`);
     assert.match(desk.aria, /Autopilot/, 'the desk says it in words');
     assert.deepStrictEqual(await small('#stage .desk .ci, #stage .desk .info'), [], `${w}: desks`);
-    assert.match(await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${JSON.stringify(id)});return document.querySelector('#stage .desk[data-id="'+CSS.escape(a.id)+'"]').getAttribute('aria-label');})()`), /On Autopilot:/, 'the desk line');
+    assert.match(await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(id)});return document.querySelector('#stage .desk[data-id="'+CSS.escape(a.id)+'"]').getAttribute('aria-label');})()`), /On Autopilot:/, 'the desk line');
     await H.click('#vList');
     await must(`!!document.querySelector('#list .lrow .ap-badge')`, 'the list says Autopilot');
     const list = await js(`(()=>{const b=document.querySelector('#list .lrow .ap-badge');const s=getComputedStyle(b);const r=b.getBoundingClientRect();return {t:b.textContent,font:parseFloat(s.fontSize),n:document.querySelectorAll('#list .lrow .ap-badge').length,w:r.width,color:s.color,allowBadges:[...document.querySelectorAll('#list .lrow .modebadge')].filter(x=>x.textContent==='Allow all').length};})()`);
@@ -259,7 +260,7 @@ module.exports = async (ctx) => {
     await must(`!!document.querySelector('#modeMenu [data-mode="read-only"]')`, 'menu');
     await H.click('#modeMenu [data-mode="read-only"]');
     await must(`/^Read-only/.test(document.getElementById('modeChip').innerText.trim())`, 'Read-only ends it first');
-    assert.strictEqual(await js(`window.__durbarSimUi.agents().find(a=>a.id===${JSON.stringify(o2.id)}).info.autopilot`), undefined);
+    assert.strictEqual(await js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(o2.id)}).info.autopilot`), undefined);
     // a new session from one on Autopilot is not on Autopilot (FR-008) is pinned in the simulator's new-session copy and in main by test-autopilot-ipc
 
     // Copilot keeps its attach button (D10), and shows the 30 line
@@ -289,8 +290,8 @@ module.exports = async (ctx) => {
     await turnOn();
     await must(`/Autopilot/.test(document.getElementById('modeChip').innerText)`, `on for ${reason}`);
     await send('Run it');
-    await must(`!!document.querySelector('.note.ap-end[data-reason=${JSON.stringify(reason)}]')`, `end ${reason}`, 12000);
-    const n = await js(`(()=>{const n=document.querySelector('.note.ap-end[data-reason=${JSON.stringify(reason)}]');return {t:n.querySelector('.ap-words').textContent,ic:n.querySelector('.ap-ic').textContent,btns:[...n.querySelectorAll('button')].map(b=>b.textContent),font:parseFloat(getComputedStyle(n.querySelector('.ap-words')).fontSize),border:getComputedStyle(n).borderLeftColor};})()`);
+    await must(`!!document.querySelector('.note.ap-end[data-reason=${jsLiteral(reason)}]')`, `end ${reason}`, 12000);
+    const n = await js(`(()=>{const n=document.querySelector('.note.ap-end[data-reason=${jsLiteral(reason)}]');return {t:n.querySelector('.ap-words').textContent,ic:n.querySelector('.ap-ic').textContent,btns:[...n.querySelectorAll('button')].map(b=>b.textContent),font:parseFloat(getComputedStyle(n.querySelector('.ap-words')).fontSize),border:getComputedStyle(n).borderLeftColor};})()`);
     const words = { done: /Copilot judged the task done/, cap: /spend cap was reached/, limit: /turn limit was reached/, 'no-progress': /no progress/, blocked: /blocked/, error: /error/ }[reason];
     assert.match(n.t, words, reason);
     assert.match(n.t, /^Autopilot ended: .*, after \d+ more turns?, 1\.5 AI credits$/, n.t);
@@ -299,12 +300,12 @@ module.exports = async (ctx) => {
     const c = await chip();
     if (reason === 'done') assert.match(c.text, /^Autopilot$/, 'D8: stays on');
     else {
+      assert.match(c.text, /^Allow all/, `S3 ${reason}: ${c.text}`);
       const st = await js(`document.querySelector('#panel .st-pill,#panel [class*="pill"]')?document.querySelector('#panel .st-pill,#panel [class*="pill"]').innerText:''`);
-      const task = await js(`window.__durbarSimUi.agents().find(a=>a.id===${JSON.stringify(o.id)}).task`);
+      const task = await js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(o.id)}).task`);
       assert.ok(!/^Done/.test(st.trim()), `${reason}: never Done: ${st}`);
       assert.match(String(task), /^Autopilot ended: /, `${reason}: the status says why: ${task}`);
     }
-    else assert.match(c.text, /^Allow all/, `S3 ${reason}: ${c.text}`);
     if (w === 1280 || reason === 'limit') await H.shot(path.join(OUT, `099-end-${reason}-${w}.png`), { prep: 'calm' });
     shown.add(reason);
   }
@@ -318,22 +319,22 @@ module.exports = async (ctx) => {
   await must(`/Autopilot/.test(document.getElementById('modeChip').innerText)`, 'on');
   await send('go');
   await must(`/Autopilot · 2\\/5/.test(document.getElementById('modeChip').innerText)`, 'running');
-  const before = await js(`window.__durbarSimUi.agents().find(a=>a.id===${JSON.stringify(o4.id)}).apEnded`);
+  const before = await js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(o4.id)}).apEnded`);
   assert.ok(!before);
   await js(`document.getElementById('closePanel')&&document.getElementById('closePanel').click()`);
   await H.key('Escape');
   await until(`!document.body.classList.contains('panel-open')`, 4000);
-  await js(`window.__durbarSimApGo(${JSON.stringify(o4.id)})`);
-  await must(`window.__durbarSimUi.agents().find(a=>a.id===${JSON.stringify(o4.id)}).apEnded===true`, 'needs me until it is seen', 10000);
-  await js(`document.querySelector('#stage .desk[data-id="'+CSS.escape(${JSON.stringify(o4.id)})+'"]').click()`);
-  await must(`window.__durbarSimUi.agents().find(a=>a.id===${JSON.stringify(o4.id)}).apEnded===false`, 'seen');
+  await js(`window.__durbarSimApGo(${jsLiteral(o4.id)})`);
+  await must(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(o4.id)}).apEnded===true`, 'needs me until it is seen', 10000);
+  await js(`document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(o4.id)})+'"]').click()`);
+  await must(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(o4.id)}).apEnded===false`, 'seen');
 
   // hostile text on every surface: a goal, a question, output and a session's name are text, never markup
   await H.load({ w: 1440, h: 900, query: q({ simhostile: '1' }) });
   await H.calm();
   const o5 = await H.openSimAgent(pick('claude'), '#modeChip');
   const evil = '<img src=x onerror="window.__apPwned=1">';
-  await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${JSON.stringify(o5.id)});a.name=${JSON.stringify(evil)};a.task=${JSON.stringify(evil)};})()`);
+  await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(o5.id)});a.name=${jsLiteral(evil)};a.task=${jsLiteral(evil)};})()`);
   await H.click('#modeChip');
   await must(`!!document.querySelector('#modeMenu [data-act="autopilot"]')`, 'menu');
   await H.click('#modeMenu [data-act="autopilot"]');
