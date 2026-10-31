@@ -18,6 +18,8 @@
  *   - the lights move or the scene is not .still under reduced motion (emulated over CDP, page loaded with it) or Serious mode (the real
  *     Settings switch) (FR-047), or the lights show under forced colours (FR-051, emulated);
  *   - the ambient is outside 0.7..1 (FR-043; that it dims with fewer active agents is test:realoffice-layout's);
+ *   - a place plate (Other tools, Postbox, ...) is cut by an ellipsis, is under 10.5 px or overlaps a plate or chip, or more than one chip
+ *     shows initials where a name has room (Paco's review of #921);
  *   - a lobby chip at the Boss, Bank or Coffee is not a button with a name, or Enter on it does not open the chat, or a chip has an
  *     emoji or a needs-you chip lacks the alert icon (FR-026, constitution V);
  *   - choosing Real office from the cabins with a door you closed does not ask first, or Keep cabins does not keep them (FR-004);
@@ -57,6 +59,16 @@ module.exports = async (ctx) => {
     try { await dbg.sendCommand('Emulation.setEmulatedMedia', { features }); await fn(); }
     finally { await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }).catch(() => undefined); }
   };
+
+  /* plates and chips of the lobby: cut, small, overlapping, initials (read in one script) */
+  const PLATES = `(()=>{const R=e=>e.getBoundingClientRect(),P=[...document.querySelectorAll('#stage .ro-lplate')],C=[...document.querySelectorAll('#stage .ro-chip')];
+      const hit=(a,b)=>{const x=R(a),y=R(b);return x.left<y.right-0.5&&y.left<x.right-0.5&&x.top<y.bottom-0.5&&y.top<x.bottom-0.5};
+      return {cut:P.filter(p=>[...p.querySelectorAll('span')].some(s=>{const r=document.createRange();r.selectNodeContents(s);return r.getBoundingClientRect().width>s.getBoundingClientRect().width+0.05})).map(p=>p.dataset.place+' "'+p.textContent+'"'),
+        small:P.filter(p=>parseFloat(getComputedStyle(p).fontSize)<10.5).length,
+        pp:P.flatMap((p,i)=>P.slice(i+1).filter(q=>hit(p,q)).map(q=>p.dataset.place+'/'+q.dataset.place)),
+        cp:C.flatMap(c=>P.filter(p=>hit(c,p)).map(p=>c.dataset.name+'/'+p.dataset.place)),
+        cc:C.flatMap((c,i)=>C.slice(i+1).filter(q=>hit(c,q)).map(q=>c.dataset.name+'/'+q.dataset.name)),
+        initials:C.filter(c=>{const t=(c.querySelector('.ro-cn')||{}).textContent;return t!==c.dataset.name&&!/\u2026$/.test(t)}).map(c=>c.dataset.name),shortened:C.filter(c=>/\u2026$/.test((c.querySelector('.ro-cn')||{}).textContent||'')).length,chips:C.length,labels:P.map(p=>p.textContent)}})()`;
 
   // ---- FR-002, SC-004: flat is the default and loads nothing of Real office ----
   await H.load({ w: 1440, h: 900 });
@@ -184,6 +196,16 @@ module.exports = async (ctx) => {
       await must(`!document.body.classList.contains('panel-open')&&!!document.querySelector('#stage .ro .ro-plate')`, 'the office again');
       await must(PICS, 'the pictures');
     }
+    // ---- Paco's review of #921: a place plate reads in full (no ellipsis) at text of 10.5 px or more, plates and chips never overlap,
+    //      and a chip shows a name where a free spot exists (initials only in a real crowd) ----
+    const pl = await js(PLATES);
+    console.log('[097] plates and chips', w, JSON.stringify(pl));
+    assert.deepStrictEqual(pl.cut, [], 'no place plate is cut by an ellipsis');
+    assert.strictEqual(pl.small, 0, 'place plates at 10.5 px or more');
+    assert.deepStrictEqual(pl.pp, [], 'no two place plates overlap');
+    assert.deepStrictEqual(pl.cp, [], 'no chip covers a place plate');
+    assert.deepStrictEqual(pl.cc, [], 'no two chips overlap');
+    assert.ok(pl.initials.length <= 1, `names where there is room, initials only in a real crowd: ${JSON.stringify(pl.initials)} of ${pl.chips}`);
     await H.shot(path.join(OUT, `097-real-15-${w}x${h}.png`), { prep: 'calm' });
     // ---- owner 2026-10-31 ("make a real running pose"): someone at the Terminal jogs in place (stride A in P1), no treadmill; a
     //      close crop of the lobby band shows it ----
@@ -201,6 +223,8 @@ module.exports = async (ctx) => {
       if (runners.length && await js(RUNNER)) crop = c;
     }
     assert.ok(crop, 'a lobby crop with someone running at the Terminal');
+    const pl2 = await js(PLATES);
+    assert.deepStrictEqual(pl2.cut, [], 'no place plate is cut in the lobby crop');
     console.log('[097] lobby poses', w, run.poses);
     assert.strictEqual(run.tread, 0, 'no treadmill picture');
     for (const f of runners) assert.ok(Math.abs(f.off) <= 2 && f.sh && f.legs === 0, `the runner ${f.who} is on the floor with a shadow and no chip on the legs (${f.off} px)`);
