@@ -331,6 +331,142 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 None yet.
 
+### 2026-10-31: performance budgets, measured (owner; FR-178..FR-190, SC-009..SC-011, T142..T164)
+
+Spec only; nothing here is built. A separate section from the P1 build's and the world moments' deltas (#921, #925), so they do not edit the same lines. Numbers taken: FR-178..FR-190, SC-009..SC-011, T142..T164; checked 2026-10-31 against `main`, the remote branches and open PRs (#921: FR-084, FR-130, T025..T029, T064; #925: FR-118..FR-129, T128..T141).
+
+**Source.** Owner request (Vikram, 2026-10-31 13:06 UTC): worlds must not perform badly, and everything in the app must be very fast. So the budgets cover the worlds and the flat app.
+
+**The surprise.** Flat is not the good baseline. At 15 agents Real office is already smoother than flat in everything the main thread does; flat has the long tasks, the slow start and the slow status update. Real office is worse only at 40 agents (one CSS rule, below), at idle on a software compositor, under a blurred dialog, and in memory. Spec 052 FR-145's "p95 16.8 ms" no longer holds for flat under 10x activity (58.9 ms).
+
+**How it was measured** (`sim:`, 0 AI credits). Commit `ac122ff1` (#921's head), a driver in the style of `check-perf.js` plus `contentTracing`, Electron 44.9.1 under `xvfb-run`, 4 cores, one Electron at a time, a fresh profile per launch, 1440x900, device pixel ratio 1, 3 launches per case, medians. The driver and raw results are not committed. Frames are `requestAnimationFrame` deltas (over 16.7 counted as over 17.5 ms, to leave out vsync jitter); status activity is `simspeed=10` as in `check-perf.js`, 20 s; "one update" is one status event through `__durbarSimEmit`, from the frame's first `requestAnimationFrame` callback to after paint (a `MessageChannel` message), 60 updates. Flat is Open office unless named. CPU is `/proc` ticks in % of one core, per process type (`app.getAppMetrics` `percentCPUUsage` read a quarter of that here: the same ticks over 4 cores). Memory is the PSS summed over the app's processes.
+
+`[KNOWN GAP]` **What these numbers cannot say.** `gpu_compositing` was `disabled_software`: the GPU process's CPU below is Skia drawing every frame in software. Blending, blur, raster and scrolling are therefore much worse here than on any machine with a GPU, by an unknown factor; rAF deltas do not see compositor-only jank at all. Device pixel ratio 1 hides Retina's fourfold pixels. So only the main-thread numbers (style, layout, script, long tasks) carry over, scaled by CPU speed; read everything else as a comparison, not a user's experience. A run on a real Mac and a real Windows GPU is required before the GPU rows bind (FR-189, T162).
+
+#### Measured: flat against Real office
+
+| Measure | Flat 15 | Real 15 | Flat 40 | Real 40 |
+|---|---|---|---|---|
+| Mode switch, first, to the first frame with all pictures decoded (ms) | n/a | 296 (DOM 160, decoded 291) | n/a | 385 |
+| Mode switch, repeat (ms) | n/a | 131 | n/a | 251 |
+| Back to flat from Real (ms; one long task) | 463 | n/a | 1016 | n/a |
+| Open office to cabins (ms; one long task) | 396 | n/a | 1053 | n/a |
+| App start, saved mode, process start to complete frame (ms) | 2465 (cabins 2234) | 1391 | 4738 | 1702 |
+| Frames at 10x activity: p50 / p95 / worst (ms) | 16.8 / 58.9 / 110.8 | 16.6 / 17.8 / 37.1 | 16.8 / 101.4 / 169.8 | 17.0 / 460.9 / 584.8 |
+| Same: frames over 16.7 / over 33 ms in 20 s; frames per second | 179 / 112; 46.4 | 95 / 1; 59.8 | 210 / 117; 35.7 | 54 / 48; 7.0 |
+| Frames at normal speed: p95 / worst; over 33 ms | 17.7 / 108.2; 14 | 17.5 / 27.8; 0 | 23.4 / 176.4; 14 | 17.8 / 118.1; 12 |
+| Chat open and close, 6 cycles: frame p95 / worst; over 33 ms | 23.9 / 347.1; 17 | 18.3 / 59.8; 10 | 25.4 / 174.3; 17 | 54.0 / 212.2; 17 |
+| Chat open / close, median (ms) | 58 / 111 | 60 / 43 | 63 / 145 | 80 / 205 |
+| Lobby visits, 24 in about 10 s: frame p95 / worst; over 33 ms | 28.9 / 409.1; 26 | 17.4 / 31.9; 0 | 41.0 / 866.4; 41 | 32.5 / 229.8; 20 |
+| Scrolling, 10 px a frame: p50 / p95 / worst | does not scroll | does not scroll | does not scroll | 19.8 / 26.2 / 38.1 (only 88 px to scroll, once 16 visitors are in the lobby) |
+| Long tasks at 10x activity in 20 s: count; longest (ms) | 81; 111 | 0 | 91; 168 | 47; 573 |
+| Long tasks with nothing changing | 0 | 0 | 0 | 0 |
+| One status update, main-thread cost p50 / p95 (ms) | 66.1 / 404.9 | 12.5 / 33.5 | 86.3 / 991.9 | 116.2 / 398.3 |
+| One update: layout reads; nodes added and removed; attribute writes | 335; 2, 2; 61 | 59; 5, 5; 170 | 552; 2, 1; 92 | 103; 5, 5; 525 |
+| Layout engine per render, p50 / max (ms) | n/a | 0.5 / 1.9 | n/a | 1.1 / 2.8 |
+| The office's whole render at 10x activity, p50 (ms) | not separable | 8.2 | not separable | 399.8 |
+| Renders a second at 10x activity | about 9.5 (a proxy) | 4.45 | about 9.1 (a proxy) | 2.45 (starved) |
+| Memory settled, PSS / private / working set (MB) | 374 / 254 / 649 | 422 / 283 / 721 | 461 / 335 / 740 | 506 / 357 / 813 |
+| JS heap after `gc()` (MB; noisy) | 8.4 | 12.3 | 12.7 | 11.0 |
+| Pictures: distinct, decoded MB, shown MB | none | 25; 14.7; 1.5 | none | 41; 24.1; 1.2 |
+| Idle, visible, 30 s: all / renderer / GPU process (% of a core) | 63 / 55 / 7 | 71 / 7 / 64 | 75 / 68 / 6 | 65 / 15 / 50 |
+| Idle, hidden, 30 s (% of a core; `visibilityState` hidden; no frames) | 0.7 | 0.2 | 1.0 | 0.3 |
+| Normal activity, hidden, 30 s (% of a core; no frames) | 0.9 | 0.3 | 1.3 | 0.9 |
+
+Blur, Real office at 15 agents with 10x activity beneath, 10 s, 2 runs of 2 alternating passes (flat has no blur: the same toggle changed nothing there):
+
+| Surface | Blur on: fps, frame p95, GPU process | Blur off: fps, frame p95, GPU process |
+|---|---|---|
+| Dialog (about 600x500 px) | 29.8, 51.4 ms, 96 % | 59.5, 19.0 ms, 67 % |
+| Top-bar menu | 50.7, 28.5 ms, 81 % | 59.4, 20.2 ms, 65 % |
+| Toast | 59.1, 19.4 ms, 70 % | 59.4, 19.5 ms, 65 % |
+
+#### Causes, from traces, A/B runs and patched copies of the built page (never `src/`)
+
+1. **One `:has()` rule makes any text change in the office recalculate the whole page.** `styles.css` `.is-idle svg:has(.crew-pic)>:not(.pp),.is-idle svg:has(.crew-pic) .pp>:not(.crew-pic){opacity:.7}` (spec 077 FR-061). Deleting the 17 `:has` rules one after the other from the live style sheets, a text change plus a layout read fell at exactly this rule, and a build without only this rule confirms it (the gains table): Real 40 from 7.3 to 0.3 ms, flat 15 from 9.0 to 0.8 ms. In the trace of Real 40 each of 1360 style recalculations in 10 s touched about 1314 elements (74 % of a core); the layout engine was innocent (1.1 ms). It hits both modes.
+2. **`stagger()` in `realoffice.js` reads layout after every chip write, on every render** (59 of the 65 reads per update at 15). With cause 1 that is a whole-page recalculation per chip.
+3. **Flat's layout search on every status change.** Stacks of the 335 reads per update: `headHolds`, `fitHead`, `nameCut`, `headsFitGiving` under `chooseLayout`, then `fitUsage` and `placePencils`. The same search gives the one-long-task layout switches and the start: `requestAnimationFrame` callbacks hold 932 ms of a flat page load at 15 and 3472 ms at 40, against 49 ms for Real office.
+4. **Flat's 75 running animations are mostly not composited.** SVG `transform` and `fill-opacity` (`bar`, `tap`, `halo`, `wave`, `steam`): `Layerize` runs 60 times a second, 25 % of a core on the main thread, on any machine. All animations off: 5-9 % against 38-64 %.
+5. **Real office's 4 animations cost a full-window redraw 60 times a second.** They are small (3 `ro-pulse`, 1 `ro-breathe`, transform and opacity only), but the `mix-blend-mode` lamps put 20 render passes in each frame (flat: 3). All off: 4-8 % against 71 %. Lamps without blending: the GPU process falls from 64 to 24 % (total 21-46 %, noisy). Glow off: 8 points less. No shadows in `.ro`: 10 points. Ambient off: none. Software-compositor numbers: on a GPU the gap is smaller, by an unknown amount (FR-189).
+6. **A render rewrites what did not change.** `box()` and `dataset` write on every desk on every render (170 attribute writes at 15), and a plate's text is rebuilt with new nodes when only its task changed.
+7. **Pictures decoded at up to 19 times what is shown.** The desk is 900x344 shown at 262x100; a person is about 450x620 shown at 130x175. WebP has no scaled decode, so the whole frame is decoded (411 ms of worker CPU in the first switch). Leaving Real office kept the memory in this session (433 MB PSS on flat again at 15, against 374 fresh).
+8. **`backdrop-filter`** costs half the frame rate behind a dialog and 15 % behind a menu here, because the lights and the office keep changing beneath it. It costs nothing visible on a toast.
+
+**Checked and not causes:** the layout engine (FR-019 holds in the app); 207 pictures (only the 25 or 41 shown are fetched, and flat fetches none: FR-061 holds); `will-change` (none in Real office); `content-visibility` (no scrolling at 15; at 40 the office scrolls only 88 px and only with a crowd in the lobby, and it would not fit four flat layers without a restructure); non-composited animation in Real office (none).
+
+**Measured gains on patched copies** (medians of 3; "remove rule" deleted the rule, so the idle look was not kept):
+
+| Patch | Real 15 | Real 40 | Flat 15 | Flat 40 |
+|---|---|---|---|---|
+| Remove the `:has` rule: update p50; fps at 10x; long tasks | 12.5 to 11.6 ms; 59.8; 0 | **116 to 21.6 ms; 7 to 55; 47 to 1** | 66 to 47 ms; 46 to 52; 81 to 32 | 86 to 72 ms; 36 to 42; 91 to 90 |
+| Plus chips measured only when they changed, plates in place: layout reads; update p50 / p95 | 59 to 3; 8.3 / 21.6 ms | 103 to 3; 11.4 / 53.1 ms | | |
+| Half-size people and desk: decoded MB; PSS; first switch | 14.7 to 4.9; -19 MB; 296 to 237 ms | 24.1 to 7.3; -57 MB (noisy); 385 to 334 ms | | |
+
+#### Requirements
+
+- **FR-178** **The budgets are the two tables below.** "Now" is what the table above measured. A row is either an **op budget** (a count, machine-independent, asserted in pull requests, FR-186) or a **recorded budget** (time or memory, recorded weekly and reported, never asserted in a driver, FR-187). Recorded budgets apply to the same simulator setup and are checked as a ratio to the same run's flat result where the table says so; absolute numbers are for this reference machine.
+
+**Real office (and every world)**
+
+| Budget | 15 agents (now) | 40 agents (now) | Kind |
+|---|---|---|---|
+| Renders per status update | 1 (1) | 1 (1) | op |
+| Layout reads per status update | ≤ 5 (59) | ≤ 5 (103) | op |
+| Nodes added or removed by a status-only update | 0 (5, 5) | 0 (5, 5) | op |
+| Attribute writes per status-only update | ≤ 10 (170) | ≤ 10 (525) | op |
+| Elements recalculated by one text change (`UpdateLayoutTree.elementCount`) | ≤ 50 (718) | ≤ 50 (1314) | op |
+| Decoded picture bytes: natural area over shown device-pixel area | ≤ 4 (9.6) | ≤ 4 (19.7) | op |
+| Running infinite animations with nothing needing attention | ≤ 1 per light that means something, 0 on people in P1 (4) | same | op |
+| Main-thread cost of a status update, p95 | ≤ 16.7 ms: never over one frame (33.5) | ≤ 33 ms (398) | recorded |
+| Frames at 10x activity: p95; worst; long tasks over 50 ms | ≤ 20 ms; ≤ 50 ms; 0 (17.8; 37.1; 0) | ≤ 34 ms; ≤ 100 ms; ≤ 2 in 20 s (461; 585; 47) | recorded |
+| Long tasks over 50 ms with nothing changing | 0 (0) | 0 (0) | recorded |
+| Mode switch, first: to the complete frame; longest task | ≤ 300 ms; ≤ 100 ms (296; 77) | ≤ 400 ms; ≤ 120 ms (385; 119) | recorded |
+| Mode switch, repeat | ≤ 150 ms (131) | ≤ 250 ms (251) | recorded |
+| App start, process start to complete frame, against flat | ≤ 1500 ms, ≤ 1.0 × flat (1391; 0.56) | ≤ 1800 ms, ≤ 1.0 × flat (1702; 0.36) | recorded |
+| Layout engine, each render (FR-019) | < 5 ms (1.9) | < 5 ms (2.8) | existing `test:` |
+| Memory: PSS over flat; JS heap over flat | ≤ 40 MB; ≤ 8 MB (48; 3.9) | ≤ 60 MB; ≤ 8 MB (46; -1.7) | recorded |
+| Memory after leaving Real office, over a fresh flat | ≤ 30 MB after 30 s (59) | ≤ 40 MB (57) | recorded |
+| Idle CPU, visible, software compositor | ≤ 15 % of a core (71) | ≤ 20 % (65) | recorded |
+| Idle CPU, visible, on a real GPU | ≤ 5 % of a core (unmeasured) | ≤ 8 % (unmeasured) | `real:` T162 |
+| Idle CPU, hidden; frames while hidden | ≤ 1 %; 0 (0.2; 0) | ≤ 1 %; 0 (0.3; 0) | recorded |
+| Scrolling, real GPU | not applicable | ≥ 55 fps (software: 49.7) | `real:` T162 |
+
+**The flat app** (everything else in the app inherits these rows in Real office too)
+
+| Budget | 15 agents (now) | 40 agents (now) | Kind |
+|---|---|---|---|
+| Renders per status update | 1 (2, by proxy) | 1 (2, by proxy) | op |
+| Layout reads per status update | ≤ 40 (335) | ≤ 60 (552) | op |
+| Elements recalculated by one text change | ≤ 50 (about 1870) | ≤ 50 (unmeasured, about 3000 nodes) | op |
+| Composited or stepped animation: main-thread frames a second with nothing changing | ≤ 10 (60) | ≤ 10 (60) | op, from the trace |
+| Main-thread cost of a status update, p95 | ≤ 16.7 ms (405) | ≤ 33 ms (992) | recorded |
+| Frames at 10x activity: p95; worst; long tasks over 50 ms | ≤ 20 ms; ≤ 50 ms; 0 (58.9; 110.8; 81) | ≤ 34 ms; ≤ 100 ms; ≤ 2 in 20 s (101; 170; 91) | recorded |
+| Long tasks over 50 ms with nothing changing | 0 (0) | 0 (0) | recorded |
+| Switching office layout (cabins, open), longest task | ≤ 100 ms (378) | ≤ 250 ms (1007) | recorded |
+| App start, process start to complete frame | ≤ 1500 ms (2465) | ≤ 2000 ms (4738) | recorded |
+| Chat open, close (052 FR-145's check stays) | ≤ 100 ms each (58; 111) | ≤ 150 ms each (63; 145) | recorded |
+| Idle CPU, visible, software compositor | ≤ 15 % of a core (63) | ≤ 20 % (75) | recorded |
+| Idle CPU, hidden; frames while hidden | ≤ 1 %; 0 (0.7; 0) | ≤ 1.5 %; 0 (1.0; 0) | recorded |
+
+- **FR-179** **The order of the work** (owner decision, 2026-10-31). The flat rows fail today, and they are not Real office's fault. A new world's first ship (cave, loft, a country, a user-made world) waits for the Real office table's op rows, the FR-180 and FR-182 rules, **and the flat tasks T156..T159**, so a new world never lands on a slow app. The photo world of the first Real office PR is not a new world under this rule: it is opt-in, flat stays the default, and it already beats flat at 15 agents on the main thread. The owner also decided FR-182 (dialogs lose their blur) and FR-180 (lamps lose `mix-blend-mode`, with the lights shown to him before and after, T150).
+- **FR-180** **Only `transform` and `opacity` animate, and nothing blends.** In world CSS (`realoffice*.css`, `realoffice/worlds/**`) every `@keyframes` and `transition` names only `transform` and `opacity` (extends FR-048); no `mix-blend-mode`, `filter`, `box-shadow` or layout property animates; no `mix-blend-mode` on anything at all, because it put 20 render passes in each frame (a lamp is a pre-tinted gradient); `will-change` only on an element that animates now. Reduced motion, Serious mode and a hidden window keep the FR-071 and FR-047 rules. **New worlds** cannot opt out: this is part of the block contract's check (spec 098 FR-030, T147).
+- **FR-181** **Motion that is not the point stops.** A light's pulse or breath runs only while its state asks for attention, in stepped timing (`steps()`, at most 8 changes a second: a stepped value causes damage only on a step, `[KNOWN GAP]` gain not measured); P2's two-frame people (FR-070) count: stepped, per-agent, at most 2 changes a second a desk.
+- **FR-182** **`backdrop-filter`: a hard rule.** Never on `.dlg`, on anything over 15 % of the window, or on anything under which a running animation can show. Dialogs in a world get the opaque token surface (this amends FR-113 for `.dlg` and the other large panels: the blurred dialog halves the frame rate here). Allowed list, in `test:theme-tokens` by selector: `.toast`, `.more-menu`, `.mode-menu`, `.grants-pop`, `.ct-more-pop`, `#defaultsPop`, `#foldersPop`, `#floorsPop`, and only while they fit the 15 %. `prefers-reduced-transparency`, `prefers-contrast: more` and forced colours keep turning it off. A menu's blur is reviewed against the real-GPU run (T162): if it costs more than 2 ms a frame there, the allow list loses it.
+- **FR-183** **Pictures are sized to what is shown.** Person and desk pictures come in two sizes, the 2x of today and a half-size set, chosen by `srcset`, so the natural area is at most 4 times the shown device-pixel area (the op row above). `decoding="async"` stays; a picture is decoded before it is shown so that nothing pops (FR-065's fallback stays). FR-062's per-world 10 MB cap holds: the half-size set adds about 2.6 MB to the photo pack (about 8.7 of 10 MB). At device pixel ratio 2 the full set is chosen, so Retina gains less: `[KNOWN GAP]` Retina memory not measured. Leaving Real office or a world drops its pictures (`src` removed, FR-115) and the row above checks the result.
+- **FR-184** **Nothing rewrites what did not change.** A Real office render writes an attribute or style only when its value differs; a status-only change updates a plate's existing nodes; chips and plates are measured only when a chip or plate rectangle or text changed, reads before writes, once per render. Flat: a status change that does not change a room's head text or the desk count does not rerun the layout search.
+- **FR-185** **No broad `:has()`.** A `:has()` whose subject is not one small, named element is not allowed in `styles.css` or a world's CSS: a class set by the code does the job. The op row (elements recalculated by one text change) is the test, since the harm cannot be read from a selector alone.
+- **FR-186** **Pull-request checks: operation counts only.** `scripts/check-office-ops.js` (in `ui-suite.js`; simulator; flat and Real office; 15 and 40 agents; under about 30 s, or split) emits one status event through `__durbarSimEmit`, waits with `until()` for the next frame, and asserts the op rows: renders, layout reads, nodes, attribute writes, elements recalculated (from one short `contentTracing` of a text change: a count, not a time), picture area ratio. **No timing assert, as AGENTS.md *Timing* (spec 021 FR-048b, FR-063) requires: no wall-clock ratio asserts in drivers.** Static checks: FR-180 and FR-182 in `test:theme-tokens` (no Electron, every OS). Unit: FR-019 stays CPU time, minimum of runs, as it is today.
+- **FR-187** **Times and memory: a weekly record, not an assert.** `scripts/check-perf.js` (spec 052; it reuses its instruments and stays out of the pull-request suite as `NOT_IN_SUITE` says) gains `--record <file>`: it writes every measure of the first table as JSON, flat and each shippable world, at 15 and 40 agents, 1 launch each, 3 runs, medians. It runs in the weekly `world-matrix.yml` job (spec 098 FR-057) only; its results are an artifact. A row over budget, or a ratio to flat worse by over 25 % against last week's artifact, becomes a line in the "World coverage" issue with its numbers. It never turns the job red: CI machines vary, and a red job for a noisy number would soon be ignored. Exit codes stay for what really broke (a crash, a timeout, the frozen frame and leak limits `check-perf.js` already has).
+- **FR-188** **Honest record.** Every recorded row names the machine and that it ran under software compositing. A number from a machine under load (load average above the core count) is flagged, not used for a ratio.
+- **FR-189** **A real GPU run decides the GPU rows.** Before Real office is the default anywhere or a world is shipped as finished: the same driver, simulator only, 0 AI credits, on a real Mac (ratio 2, integrated GPU) and a Windows or Linux laptop with an integrated GPU, by whoever has one. It confirms or replaces the rows marked `real:` and the FR-182 list. Until then `[KNOWN GAP]`: blur, blending, raster and scroll are unmeasured on real hardware.
+- **FR-190** **Budgets move by evidence.** A budget changes only in a dated delta with the measurement that justifies it. A new world moment or a new screen in a world adds its own row when it costs more than a status update (the lift ride, FR-102, is the first).
+
+#### Success criteria
+
+- **SC-009** With the fixes, `check-office-ops` passes every op row in flat and Real office at 15 and 40 agents on all three OS runners that run the suite.
+- **SC-010** Real office at 40 agents with 10x activity keeps at least 55 frames a second in the weekly record (today 7), and a status update never takes over one frame at 15 agents in the record.
+- **SC-011** Hidden, both modes draw no frames and stay at or under 1 % of a core (1.5 % for flat at 40), and it stays recorded weekly.
+
 ### 2026-10-31: worlds, the lift in the world, chat and answers in the world (experience inventory; branch `097-real-office-worlds`)
 
 A separate section from the P1 build's delta (branch `097-real-office-p1`), so the two do not edit the same lines. Spec only; nothing here is built.
