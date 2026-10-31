@@ -70,7 +70,7 @@ function survey(shirts) {
     chips: q('#stripList .sitem .sav').filter((e) => e.getClientRects().length).map((e) => ({ shirt: wears(e), robe: has(e, 'char-robe'), hatOver: hatOver(e), anyArt: !!e.querySelector('.art-slot') })),
     css: (() => {
       const cs = (sel, prop) => { const e = document.querySelector(sel); return e ? getComputedStyle(e)[prop] : ''; };
-      return { font: getComputedStyle(document.body).fontFamily, mono: cs('.room-path', 'fontFamily'), radius: cs('.select-wrap select', 'borderTopLeftRadius'), shadow: cs('#stage .desk.card:not(.is-waiting):not(.is-error):not(.is-failing)', 'boxShadow'), plate: cs('.plate-tx b', 'fontFamily') };
+      return { font: getComputedStyle(document.body).fontFamily, mono: cs('.room-path', 'fontFamily'), radius: cs('.select-wrap select', 'borderTopLeftRadius'), shadow: cs('#stage .desk.card:not(.is-waiting):not(.is-error):not(.is-failing)', 'boxShadow') };
     })(),
   };
 }
