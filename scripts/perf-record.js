@@ -135,7 +135,7 @@ function recordAll(opts) {
   for (const mode of MODES) {
     for (const n of SIZES) {
       const key = `${mode}-${n}`;
-      if (opts.only && !opts.only.includes(key)) continue;
+      if (opts.only && !opts.only.includes(key)) { record.cases[key] = { mode, n, available: false, reason: 'not asked for (--only)' }; continue; }
       const per = path.join(work, key);
       fs.mkdirSync(per);
       const userData = path.join(per, 'ud');
