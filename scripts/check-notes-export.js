@@ -88,7 +88,7 @@ module.exports = async (ctx) => {
     let d = await dlg();
     check(d && d.title === 'Delete all notes?' && /^Delete all 3 notes of .+, done ones included\? This cannot be undone\.$/.test(d.body), `${tag}: the count, done ones included (${d && d.body})`);
     check(d && d.buttons.join('|') === 'Cancel|Delete all' && d.focus === 'Cancel', `${tag}: Cancel focused (${JSON.stringify(d)})`);
-    check(d && d.lines.includes('Deleted notes do not come back from the project file or another Durbar.') && !d.lines.includes(MD_AGAIN), `${tag}: the tombstone line, no notes.md line while the switch is off (${d && d.lines.join(' / ')})`);
+    check(d && d.lines.includes('Durbar remembers the last 300 deleted notes, so they don\'t come back from an older copy.') && !d.lines.includes(MD_AGAIN), `${tag}: the tombstone line, no notes.md line while the switch is off (${d && d.lines.join(' / ')})`);
     lay = await layout();
     check(!lay.length, `${tag}: the Delete all dialog's layout: ${lay.join('; ')}`);
     await shot(`083-notes-export-${tag}.png`);

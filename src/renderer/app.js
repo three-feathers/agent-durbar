@@ -3158,7 +3158,7 @@ async function nsExport(a,btn){
 async function nsDeleteAll(a,btn){
   if(nsBusy||!bridge.notesDeleteAll)return;
   const st=notesOf(a), n=st&&st.ok?st.notes.length:0; if(!n)return;
-  const lines=['Deleted notes do not come back from the project file or another Durbar.'];
+  const lines=['Durbar remembers the last 300 deleted notes, so they don\'t come back from an older copy.'];
   if(st.fileSwitch&&st.fileSwitch.on)lines.push('.durbar/notes.md is written again without them.');
   const v=await askDialog({title:'Delete all notes?',body:'Delete all '+(n===1?'1 note':n+' notes')+' of '+NS.name+', done ones included? This cannot be undone.',lines,size:'m',returnFocus:()=>$('nsDelAll')||btn,
     buttons:[{label:'Cancel',value:null},{label:'Delete all',value:'ok',cls:'primary danger'}]});

@@ -53,7 +53,7 @@ const modeOf = (f: string): number => nodeFs.statSync(f).mode & 0o777;
 const leftovers = (dir: string): string[] => nodeFs.readdirSync(dir).filter((n) => n.endsWith('.tmp'));
 
 /** NotesOps on real stores with a fake save dialog. */
-type RigOpts = { choose?: (o: ExportDialogOptions) => string | undefined; confirm?: (kind: NativeKind, count?: number) => boolean; pending?: () => boolean; noDialog?: boolean };
+type RigOpts = { choose?: (o: ExportDialogOptions) => string | undefined | Promise<string | undefined>; confirm?: (kind: NativeKind, count?: number) => boolean | Promise<boolean>; pending?: () => boolean; noDialog?: boolean };
 interface Rig { ops: NotesOps; store: NotesStore; folders: FolderStore; notesDir: string; folder: string; other: string; agents: Map<string, AgentInfo>; dialogs: ExportDialogOptions[]; asked: { kind: NativeKind; name: string; count?: number }[]; timers: (() => void)[] }
 function rig(o: RigOpts = {}): Rig {
   const base = fresh('base');
@@ -244,6 +244,37 @@ async function main(): Promise<void> {
     assert.strictEqual(exp.slice(NOTES_EXPORT_HEADER.length), mirror.slice(NOTES_MD_HEADER.length), 'the same body');
   });
 
+  await test('the mode is best effort: a file system that refuses chmod (FAT, exFAT: EPERM) still gets the export', async () => {
+    const dir = fresh();
+    let tried = 0;
+    const fs = { ...nodeFs, fchmodSync: () => { tried++; throw Object.assign(new Error('not permitted'), { code: 'EPERM' }); } } as unknown as NotesExportFs;
+    okOf(await writeNotesExport(path.join(dir, 'usb.md'), 'x\n', { fs, platform: 'linux' }));
+    assert.strictEqual(tried, 1, 'precondition: the chmod was tried and refused');
+    assert.strictEqual(nodeFs.readFileSync(path.join(dir, 'usb.md'), 'utf8'), 'x\n');
+  });
+  await test('Windows: a rename another program refuses (EBUSY) is tried once more after 200 ms, checked again first', async () => {
+    for (const changed of [false, true]) {
+      const dir = fresh();
+      const f = path.join(dir, 'held.md');
+      const renames: string[] = [];
+      const slept: number[] = [];
+      const fs = { ...nodeFs, renameSync: (a: string, b: string) => { renames.push(b); if (renames.length === 1) throw Object.assign(new Error('busy'), { code: 'EBUSY' }); return nodeFs.renameSync(a, b); } } as unknown as NotesExportFs;
+      const sleep = async (ms: number): Promise<void> => { slept.push(ms); if (changed) nodeFs.writeFileSync(f, 'appeared while waiting'); };
+      const w = await writeNotesExport(f, 'mine\n', { fs, platform: 'win32', sleep });
+      assert.deepStrictEqual(slept, [200], `${changed}: one pause of 200 ms`);
+      if (!changed) {
+        okOf(w);
+        assert.strictEqual(renames.length, 2, 'renamed again');
+        assert.strictEqual(nodeFs.readFileSync(f, 'utf8'), 'mine\n');
+      } else {
+        refusedWith(w, /changed while Durbar was writing/, 'a target that appeared during the pause');
+        assert.strictEqual(renames.length, 1, 'no second rename over the new file');
+        assert.strictEqual(nodeFs.readFileSync(f, 'utf8'), 'appeared while waiting');
+      }
+      assert.deepStrictEqual(leftovers(dir), [], `${changed}: no temp file left`);
+    }
+  });
+
   // ---- NotesOps.export with a fake save dialog ----
   await test('export: main shows the dialog, writes FR-052\'s format of every note (done ones too), 0600, no session id', async () => {
     const out = fresh('exports');
@@ -304,6 +335,17 @@ async function main(): Promise<void> {
     okOf(await nd.ops.add('a1', { text: 'x' }));
     refusedWith(await nd.ops.export('a1') as { ok: boolean; error?: string }, /not available/, 'no dialog wired');
   });
+  await test('export: every note deleted while the dialog was open: refused, an earlier export is not replaced by an empty one', async () => {
+    const out = fresh('exports');
+    const chosen = path.join(out, 'earlier.md');
+    nodeFs.writeFileSync(chosen, 'an earlier export');
+    let r: Rig;
+    r = rig({ choose: async () => { const ids = (await notesOf(r.store, r.folder)).map((n) => ({ id: n.id, rev: n.rev })); await r.store.removeAll(r.folder, 'proj', ids); return chosen; } });
+    okOf(await r.ops.add('a1', { text: 'x' }));
+    refusedWith(await r.ops.export('a1') as { ok: boolean; error?: string }, EXPORT_NONE, 'empty after the dialog');
+    assert.strictEqual(r.dialogs.length, 1, 'precondition: the dialog was shown');
+    assert.strictEqual(nodeFs.readFileSync(chosen, 'utf8'), 'an earlier export', 'the chosen file is unchanged');
+  });
   await test('export: a chosen path that is a link is refused through NotesOps too, with a short reason', async () => {
     if (!canLink) return skip('symlinks are not allowed here');
     const out = fresh('exports');
@@ -340,6 +382,25 @@ async function main(): Promise<void> {
     refusedWith(await r.ops.removeAll('a1'), DELETE_ALL_NONE, 'nothing left');
     assert.strictEqual(r.asked.length, 2, 'no native box when there is nothing to delete');
   });
+  await test('Delete all deletes only what main counted: a note added or edited while the native box was open stays', async () => {
+    let r: Rig;
+    let late = '';
+    r = rig({ confirm: async (k) => {
+      if (k !== 'deleteAll') return true;
+      const ns = await notesOf(r.store, r.folder);
+      okOf(await r.store.update(r.folder, 'proj', ns[0].id, ns[0].rev, { title: 'edited meanwhile' }));
+      late = okOf(await r.store.add(r.folder, 'proj', { text: 'added meanwhile' })).note!.id;
+      return true;
+    } });
+    const ids: string[] = [];
+    for (const t of ['one', 'two', 'three']) ids.push(okOf(await r.ops.add('a1', { text: t })).note!.id);
+    const d = okOf(await r.ops.removeAll('a1'));
+    assert.deepStrictEqual(r.asked.map((x) => x.count), [3], 'the box counted 3');
+    const left = (await notesOf(r.store, r.folder)).map((n) => n.title).sort();
+    assert.deepStrictEqual(left, ['added meanwhile', 'edited meanwhile'], 'the uncounted note and the edited one stay');
+    assert.strictEqual(d.count, 2, 'count says what was really deleted');
+    assert.ok(late && (await notesOf(r.store, r.folder)).some((n) => n.id === late));
+  });
   await test('Delete all without a native confirmation wired is refused', async () => {
     const r = rig();
     okOf(await r.ops.add('a1', { text: 'x' }));
@@ -348,10 +409,11 @@ async function main(): Promise<void> {
     assert.strictEqual((await notesOf(r.store, r.folder)).length, 1);
   });
   await test('the native texts: counts, singular, the folder name only, Cancel stays the helper\'s default', () => {
-    assert.deepStrictEqual(notesConfirmText('deleteAll', 'proj', 3), { ok: 'Delete all', message: 'Delete all 3 notes of proj?', detail: 'They are deleted from this computer. This cannot be undone.' });
+    assert.deepStrictEqual(notesConfirmText('deleteAll', 'proj', 3), { ok: 'Delete all', message: 'Delete all 3 notes of proj?', detail: 'They are deleted from Durbar. A .durbar/notes.md left in the project and earlier exports still hold them.' });
     assert.strictEqual(notesConfirmText('deleteAll', 'proj', 1).message, 'Delete all 1 note of proj?');
     assert.strictEqual(notesConfirmText('forget', 'proj', 2).message, 'Remove proj and delete its 2 notes?');
-    assert.ok(/\.durbar\/notes\.md in the project is not touched/.test(notesConfirmText('forget', 'proj', 2).detail));
+    assert.ok(/deleted from Durbar\. \.durbar\/notes\.md in the project is not touched, and a copy moved aside by Start over stays/.test(notesConfirmText('forget', 'proj', 2).detail));
+    for (const k of ['deleteAll', 'forget'] as const) assert.ok(!/this computer/.test(notesConfirmText(k, 'proj', 2).detail), `${k}: no claim about the whole computer`);
     assert.strictEqual(notesConfirmText('forget', 'proj', 0).message, 'Remove proj and delete its notes?');
     assert.strictEqual(notesConfirmText('on', 'proj').ok, 'Turn on');
     assert.strictEqual(notesConfirmText('delete', 'proj').ok, 'Delete the file');

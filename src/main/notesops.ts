@@ -84,8 +84,8 @@ export function notesConfirmText(kind: NativeKind, name: string, count?: number)
   const notes = n === 1 ? '1 note' : `${n} notes`;
   if (kind === 'on') return { ok: 'Turn on', message: `Keep the notes of ${name} in the project?`, detail: 'Durbar will write .durbar/notes.md in this folder. It may get committed and pushed with your code.' };
   if (kind === 'delete') return { ok: 'Delete the file', message: `Delete .durbar/notes.md in ${name}?`, detail: 'Durbar deletes it only if it holds exactly what Durbar would write.' };
-  if (kind === 'deleteAll') return { ok: 'Delete all', message: `Delete all ${notes} of ${name}?`, detail: 'They are deleted from this computer. This cannot be undone.' };
-  return { ok: 'Remove and delete notes', message: n ? `Remove ${name} and delete its ${notes}?` : `Remove ${name} and delete its notes?`, detail: 'The notes are deleted from this computer. .durbar/notes.md in the project is not touched.' };
+  if (kind === 'deleteAll') return { ok: 'Delete all', message: `Delete all ${notes} of ${name}?`, detail: 'They are deleted from Durbar. A .durbar/notes.md left in the project and earlier exports still hold them.' };
+  return { ok: 'Remove and delete notes', message: n ? `Remove ${name} and delete its ${notes}?` : `Remove ${name} and delete its notes?`, detail: 'The notes are deleted from Durbar. .durbar/notes.md in the project is not touched, and a copy moved aside by Start over stays.' };
 }
 
 /** FR-053: at most one project-file write per folder in this time. */
@@ -272,8 +272,8 @@ export class NotesOps {
     const count = v.notes.length;
     if (!count) return refuse(DELETE_ALL_NONE);
     if (!(await this.native('deleteAll', t.a, count))) return refuse(NATIVE_CANCELLED);
-    const r = this.changed(agentId, await t.store.removeAll(t.key, t.name));
-    return r.ok ? { ...r, count } : r;
+    // only the notes main counted for the box (id and rev, main's own list): a note added or edited meanwhile stays (review of PR 975)
+    return this.changed(agentId, await t.store.removeAll(t.key, t.name, v.notes.map((n) => ({ id: n.id, rev: n.rev }))));
   }
 
   /**
@@ -301,6 +301,7 @@ export class NotesOps {
     let pendingNow = false;
     try { pendingNow = this.d.valuesPending?.(t.key) === true; } catch { pendingNow = true; }
     if (pendingNow) return refuse(EXPORT_PENDING);
+    if (!now.notes.length) return refuse(EXPORT_NONE); // all deleted while the dialog was open: never replace the chosen file with an empty one (review of PR 975)
     const text = writeNotesMd(file.forFile(now.notes, this.fileValues(t.key)), NOTES_EXPORT_HEADER);
     const w = await writeNotesExport(chosen, text, this.d.exportOpts);
     if (!w.ok) return refuse(w.error);

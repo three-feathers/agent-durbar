@@ -425,9 +425,14 @@ export class NotesStore {
     return this.mutate(folderKey, folderName, (doc) => applyChange(doc, { op: 'delete', id, rev }, this.now(), () => ''));
   }
 
-  /** FR-048: every note of the folder, tombstones kept. */
-  removeAll(folderKey: string, folderName: string): Promise<NotesWrote> {
-    return this.mutate(folderKey, folderName, (doc) => applyChange(doc, { op: 'deleteAll' }, this.now(), () => ''));
+  /** FR-048: every note of the folder (or only the counted ones, `only`: id and rev), tombstones kept. */
+  removeAll(folderKey: string, folderName: string, only?: readonly { id: string; rev: number }[]): Promise<NotesWrote & { count?: number }> {
+    let count = 0;
+    return this.mutate(folderKey, folderName, (doc) => {
+      const r = applyChange(doc, { op: 'deleteAll', ...(only ? { only } : {}) }, this.now(), () => '');
+      if (r.ok) count = doc.notes.length - r.doc.notes.length; // what was really deleted, under the folder's queue and lock
+      return r;
+    }).then((w) => (w.ok ? { ...w, count } : w));
   }
 
   /**

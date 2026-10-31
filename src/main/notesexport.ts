@@ -81,7 +81,7 @@ export async function writeNotesExport(file: unknown, text: string, opts: NotesE
   const rand = opts.rand ?? ((n: number) => randomInt(n));
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const pid = opts.pid ?? process.pid;
-  const p = platform === 'win32' ? path.win32 : path.posix;
+  const p = path; // paths of this machine; `platform` only picks modes and the Windows rename retry
   const fail = (why: string): ExportWrote => ({ ok: false, error: EXPORT_FAIL(why) });
   if (typeof file !== 'string' || !file || file.length > 4096 || file.includes('\u0000') || !p.isAbsolute(file)) return fail('that is not a file path');
   const bytes = Buffer.from(String(text), 'utf8');
@@ -124,7 +124,8 @@ export async function writeNotesExport(file: unknown, text: string, opts: NotesE
   try {
     fd = fs.openSync(tmp, k.O_CREAT | k.O_EXCL | k.O_WRONLY | (k.O_NOFOLLOW ?? 0), 0o600);
     made = true;
-    if (platform !== 'win32') fs.fchmodSync(fd, 0o600); // the mode is exactly 0600, whatever the umask
+    // best effort: opened 0600 it is never wider where the file system has modes; FAT/exFAT refuse a chmod (EPERM), which must not fail the export
+    if (platform !== 'win32') { try { fs.fchmodSync(fd, 0o600); } catch { /* no modes here */ } }
     let off = 0;
     while (off < bytes.length) off += fs.writeSync(fd, bytes, off, bytes.length - off);
     try { fs.fsyncSync(fd); } catch { /* best effort */ }

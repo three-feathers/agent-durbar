@@ -282,7 +282,8 @@ export type NoteChange =
   | { op: 'add'; text: string; title?: string; from: NoteFrom; hidden: boolean; source?: NoteSource }
   | { op: 'update'; id: string; rev: number; title?: string; text?: string; done?: boolean; hidden?: boolean }
   | { op: 'delete'; id: string; rev: number }
-  | { op: 'deleteAll' };
+  /** `only`: the notes main counted (id and rev); a later or edited note stays (T034b). Absent: every note. */
+  | { op: 'deleteAll'; only?: readonly { id: string; rev: number }[] };
 
 export type ChangeResult =
   | { ok: true; doc: NotesDoc; note?: Note }
@@ -314,8 +315,11 @@ export function applyChange(doc: NotesDoc, change: NoteChange, now: Date, newId:
     return { ok: true, doc: d, note };
   }
   if (change.op === 'deleteAll') {
-    for (const n of d.notes) d.tombstones.push({ id: n.id, deletedAt: stamp });
-    d.notes = [];
+    const only = change.only ? new Map(change.only.map((x) => [x.id, x.rev])) : undefined;
+    const gone = only ? d.notes.filter((n) => only.get(n.id) === n.rev) : d.notes;
+    for (const n of gone) d.tombstones.push({ id: n.id, deletedAt: stamp });
+    const goneIds = new Set(gone.map((n) => n.id));
+    d.notes = d.notes.filter((n) => !goneIds.has(n.id));
     d.tombstones = capTombstones(d.tombstones);
     return { ok: true, doc: d };
   }
