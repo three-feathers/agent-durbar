@@ -4,7 +4,7 @@
 
 ## Constitution check
 
-- I Spec Kit: spec, research, plan and tasks committed before `src/`; open questions Q1-Q6 answered before phase 2.
+- I Spec Kit: spec, research, plan and tasks committed before `src/`; Q1-Q6 answered by the owner 2026-10-31 (Copilot is the primary case: T012 first).
 - II Adapters: one optional member `mcpContext?` with a capability; vendor calls (`getContextAttribution`, `get_context_usage`,
   `mcpServerStatus/list`) stay in `src/adapters/`; `src/shared` gets a neutral `McpContextReport` and the pure estimator.
 - III Safe by default: read-only measurement; the warning never changes anything; names and numbers only reach the window; no schema

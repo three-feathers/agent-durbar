@@ -4,18 +4,21 @@
 group: 046
 title: MCP context cost (owner 2026-10-31): each MCP server's tool-definition tokens (the agent app's own figure where it reports one, else estimated) in the MCP chip and dialogs, a calm warning at 15 % / 30 % of the session's window naming the heaviest servers, a compaction hint, never changes anything by itself
 status: draft
-note: spec, research, plan and tasks only; open questions Q1-Q6; nothing built
+note: spec, research, plan and tasks only; Q1-Q6 decided by the owner 2026-10-31; nothing built
 -->
 
 **Feature Branch**: `100-mcp-context` (spec); code branches `100-pN-slug`, one per phase
 
 **Created**: 2026-10-31
 
-**Status**: Draft. Nothing is built. Open questions Q1-Q6 wait for the owner (*Clarifications*).
+**Status**: Draft. Nothing is built. Q1-Q6 decided by the owner 2026-10-31 (*Clarifications*).
 
 **Input**: Owner (Vikram, Telegram 2026-10-31 11:16 UTC): "I had an issue this week, I selected 200k context on Claude opus and it
 compacted like 200 times in a session. And then realized that majority was taken by MCP servers in the context - can you raise warning
 when MCP server list is taking too much context".
+
+**Owner answers** (Vikram, Telegram 2026-10-31 11:25 UTC): "Agree on all, mine was copilot". His 200k Opus session was in
+**Copilot**, so Copilot's `getContextAttribution` path is the primary case (FR-001, FR-044).
 
 **Builds on**: [019](../019-mcp-tools-and-context/spec.md) (MCP servers, context chip), [030](../030-switch-model-context/spec.md)
 (window, compaction events), [015](../015-thinking-and-subagent-activity/spec.md) and [005](../005-chat-fullscreen-and-agent-strip/spec.md)
@@ -114,10 +117,10 @@ and "Off". Kept in Durbar's settings.
 - **FR-001** `AgentAdapter.mcpContext?(sessionId): Promise<McpContextReport>` with capability `mcpContext?: 'reported' |
   'estimated'`. `McpContextReport = {servers: {name, tokens?, deferredTokens?, tools?, source: 'reported' | 'estimated' | 'unknown',
   error?}[], window?: number, total?: number, partial?: boolean}`. Names and numbers only.
-  - Copilot: `session.rpc.metadata.getContextAttribution()`; entries `kind === 'mcpServer'` summed per server (children by
+  - Copilot (primary case, the owner's): `session.rpc.metadata.getContextAttribution()`; entries `kind === 'mcpServer'` summed per server (children by
     `parentId`), `limit` as the window; unknown kinds ignored. On error or `null`: `source: 'unknown'` (no listTools-based estimate,
-    it has no schemas; Q4).
-  - Claude Code: control request `get_context_usage` with `detail: 'summary'` (no extra network requests; Q2); `mcpTools` grouped by
+    it has no schemas; decided Q4).
+  - Claude Code: control request `get_context_usage` with `detail: 'summary'` (no extra network requests; decided Q2); `mcpTools` grouped by
     `serverName` (normalised names matched to `mcp_status` names as `claudeMap.ts` does), `isLoaded === false` counted as deferred;
     the window from `rawMaxTokens`, else `maxTokens`, else `modelUsage.contextWindow`. Labelled "reported by Claude Code".
   - Codex: `mcpServerStatus/list {threadId, detail: 'toolsAndAuthOnly'}` (the spec 069 call) and the estimate of FR-002;
@@ -127,7 +130,7 @@ and "Off". Kept in Durbar's settings.
 - **FR-003** When asked: once after the session's servers are first reported loaded, after any MCP switch or restart in that session,
   after a model or tier change, and when the per-agent MCP dialog opens (at most once a minute per session, as spec 058 FR-190). Never
   on a timer, never while a turn streams on Claude Code if the control channel is busy (queued to the turn's end). Time limit 10 s.
-- **FR-004** Main holds the last report per agent in memory. Only server names, token numbers and the time persist (Q3); tool names,
+- **FR-004** Main holds the last report per agent in memory. Only server names, token numbers and the time persist (decided Q3); tool names,
   descriptions and schemas are never stored or logged. Server names pass the existing masking (`maskMcpError`) where shown in text.
 
 ### Showing
@@ -138,13 +141,13 @@ and "Off". Kept in Durbar's settings.
   `size not known`); a footnote names the source and, for estimates, "about 4 characters per token; the real figure can differ by a
   third". Sorted as today; the heaviest is marked in words ("largest").
 - **FR-012** Settings → MCP servers: the last known figure per server and agent app ("≈12k in Codex, 0.4k on demand in Claude Code,
-  measured 10:21"), or nothing when never measured. Durbar does not start servers to measure them (Q5).
+  measured 10:21"), or nothing when never measured. Durbar does not start servers to measure them (decided Q5).
 - **FR-013** The context ring's token summary (spec 005 FR-052) adds an "MCP tools" bar when a report exists, labelled as estimated
   when it is.
 
 ### Warning
 
-- **FR-020** Levels: warn above 15 %, strong above 30 % of the window (defaults, Q1); configurable 5-90 % in Settings, or off. The
+- **FR-020** Levels: warn above 15 %, strong above 30 % of the window (defaults, decided Q1); configurable 5-90 % in Settings, or off. The
   share uses only the tokens in the window (deferred tools count at their reported cost).
 - **FR-021** Chip colour: amber at warn, red at strong; level also in the name and tooltip.
 - **FR-022** One chat line per session at the first crossing (session start included: shown with the first figure), calm style
@@ -168,10 +171,10 @@ and "Off". Kept in Durbar's settings.
 - **FR-040** Only server names and numbers reach the window; no env, header, URL, command, or secret value; no tool schema is stored.
 - **FR-041** Read-only mode: same behaviour; the actions change Durbar's MCP choices only (as today's switch).
 - **FR-042** No credits: the Copilot attribution and Claude `summary` reads make no model call (`read:`); Claude `full` is not used
-  (Q2). The simulator and unit tests cover the feature; a real check needs the owner (`[KNOWN GAP]` until run).
+  (decided Q2). The simulator and unit tests cover the feature; a real check needs the owner (`[KNOWN GAP]` until run).
 - **FR-043** Adapter-neutral: vendor calls stay in adapters; `src/shared` and the renderer see `McpContextReport` only.
 - **FR-044** `[KNOWN GAP]` Codex figures are estimates only, and whether Codex defers MCP tools is unknown. Copilot's call is
-  experimental and may be missing on some plans. Claude `summary` figures are Claude Code's own estimates.
+  experimental and may be missing on some plans, a primary-case risk: then "not reported by Copilot" shows, never an estimate. Claude `summary` figures are Claude Code's own estimates.
 - **FR-045** UI: text at least 10.5px; the chip and dialog fit 1440x900 and 1280x800 with 15 agents; Windows, macOS, Linux alike.
 
 ## Success Criteria
@@ -183,21 +186,18 @@ and "Off". Kept in Durbar's settings.
 
 ## Clarifications
 
-Open, each with a recommendation:
+All decided by the owner on 2026-10-31 (Telegram 11:25 UTC: "Agree on all, mine was copilot"), each with the recommended option:
 
-- **Q1 Levels.** Warn at 15 % and strong at 30 %? (Claude Code itself turns tool search on at 10 %.) **Recommend: yes, 15 / 30,
-  configurable.**
-- **Q2 Claude Code `detail`.** `summary` (Claude Code's local estimate, no requests) or `full` (token-count API requests: free, rate
-  limited, network)? **Recommend: `summary`; `full` only behind a "Measure exactly" button later.**
-- **Q3 Persist the last figures** (names, numbers, time) for Settings before a session starts? **Recommend: yes, in the MCP store
-  file, numbers only.**
-- **Q4 Copilot fallback** when attribution is missing: estimate from `listTools` names and descriptions (undercounts, no schemas) or
-  show "not reported"? **Recommend: "not reported".**
-- **Q5 Measure before a session** by having Durbar start each server and call `tools/list` itself? **Recommend: no** (Durbar would run
-  the user's commands outside the agent app, with their secrets and sign-in; keep it to running sessions).
-- **Q6 "Turn off for this folder"** for servers that are not folder extras (today only global or per session)? **Recommend: a
-  follow-up spec delta to 069 (a per-folder off list fed into `forSession`); this spec offers per session and Settings.**
+- **Q1 Levels**: warn at 15 %, strong at 30 % of the window, configurable or off (FR-020).
+- **Q2 Claude Code `detail`**: `summary`; `full` only behind a "Measure exactly" button in a later spec (FR-001, FR-042).
+- **Q3 Persist the last figures**: yes, server names, numbers and time only, in the MCP store file (FR-004, FR-012).
+- **Q4 Copilot fallback**: "not reported by Copilot"; no estimate from `listTools` (FR-001, FR-024).
+- **Q5 Measure before a session**: no; Durbar never starts servers itself to measure (FR-012).
+- **Q6 "Turn off for this folder"**: for global servers, a small follow-up spec delta to
+  [069](../069-mcp-global-controls/spec.md) (per-folder off list fed into `forSession`), task T032; this spec offers per session and Settings.
+- **Owner's case**: the 200k Opus session was in Copilot, so the Copilot attribution path comes first (T012 before the other apps).
 
 ## Changes
 
+- 2026-10-31: owner answers recorded (Q1-Q6, Copilot is the primary case); FRs and tasks updated.
 - 2026-10-31: spec, research, plan and tasks drafted (owner report of 2026-10-31).
