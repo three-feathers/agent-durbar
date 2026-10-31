@@ -41,8 +41,8 @@ module.exports = async (ctx) => {
     // the picture for the website (Retro Pixel picked, the list scrolled into view)
     assert.ok(await pick('retro'));
     await until(`window.THEME.current().id==='retro'`, 3000);
-    await js(`(()=>{const l=document.getElementById('thList'),sec=l.closest('section')||l;let p=sec.parentElement;while(p&&p.scrollHeight<=p.clientHeight+1)p=p.parentElement;if(p)p.scrollTop+=sec.getBoundingClientRect().top-90;return true})()`);
-    await until(`(()=>{const r=document.getElementById('thList').getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight})()`, 3000);
+    await js(`(()=>{const l=document.getElementById('thList'),sec=l.closest('section')||l;let p=sec.parentElement;while(p&&p.scrollHeight<=p.clientHeight+1)p=p.parentElement;if(p)p.scrollTop+=sec.getBoundingClientRect().top-p.getBoundingClientRect().top-8;return true})()`);
+    await until(`(()=>{const r=document.getElementById('thList').getBoundingClientRect(),h=document.getElementById('themeH').getBoundingClientRect();return h.top>=0&&r.bottom<=innerHeight})()`, 3000);
     await H.shot(path.join(out, `040-theme-picker-${tag}.png`), { prep: 'toasts', delay: 300 });
     // a built-in theme says why it stays; no question
     await js(`document.getElementById('thRemove').click()`);
@@ -54,6 +54,7 @@ module.exports = async (ctx) => {
     await H.clearToasts();
     await js(`document.getElementById('thRemove').click()`);
     assert.ok(await until(`!!document.querySelector('#scrDlg .dlg')&&/Remove this theme\\?/.test(document.getElementById('scrDlgT').textContent)`, 3000), `${tag}: the question is asked`);
+    assert.ok(await until(`(()=>{const d=document.querySelector('#scrDlg .dlg');return !!d&&getComputedStyle(d).opacity==='1'})()`, 3000), `${tag}: the question has finished opening`);
     await H.shot(path.join(out, `040-remove-theme-${tag}.png`), { delay: 200 });
     assert.ok(await dlgButton('Cancel'));
     assert.ok(await until(`!document.querySelector('#scrDlg .dlg')`, 3000));
