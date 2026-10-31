@@ -16,7 +16,7 @@
  * (ui-suite.js runOne: a fresh profile each, no shell, xvfb-run on Linux without a display or with UI_SUITE_XVFB=1). Every driver
  * writes into a new temporary folder; only then are the files copied, so a failed run leaves the old pictures in place.
  * Every written picture is then palette-compressed in place (scripts/compress-shots.js, spec 050 FR-012; DURBAR_SHOTS_COMPRESS=off skips it).
- * Linked = `docs/screenshots/*.png` in README.md, `file` in docs/site/gallery.json, any `*.png` in docs/site/landing.json.
+ * Linked = `docs/screenshots/*.png` (or `screenshots/*.png` in a docs page) in README.md and the docs pages of docs/site/pages.json, `file` in docs/site/gallery.json, any `*.png` in docs/site/landing.json.
  * docs/feature-history.md and CHANGELOG.md keep their old pictures on purpose (a record, spec 025 FR-006).
  */
 const path = require('path');
@@ -71,7 +71,10 @@ const DOC_SHOTS = [
   { name: 'check-notes', files: ['083-notes-drawer-1440x900.png', '083-notes-drawer-1280x800.png', '083-notes-slash-1440x900.png', '083-notes-slash-1280x800.png', '083-notes-selection-1440x900.png', '083-notes-selection-1280x800.png'] }, // spec 083: the Notes drawer and the notes in the "/" list
   { name: 'check-notes-count', files: ['083-notes-count-1440x900.png', '083-notes-count-1280x800.png', '083-notes-marker-1440x900.png', '083-notes-marker-1280x800.png'] }, // spec 083 T030, T031: the header count and the marker
   { name: 'check-notes-screen', files: ['083-notes-screen-1440x900.png', '083-notes-screen-1280x800.png'] }, // spec 083 T034a: the per-folder Notes screen
+  { name: 'check-notes-switch', files: ['083-notes-switch-1440x900.png', '083-notes-switch-1280x800.png'] }, // spec 083 T042: the project-file switch's warning
   { name: 'shots-074-navigator', files: ['074-navigator-start-1440x900.png'] },
+  { name: 'check-browser-tabs', files: ['080-browser-tabs-1440x900.png'] }, // spec 080 FR-122 (US6): the page tab strip with 10 tabs
+  { label: 'check-browser-tabs 1280', name: 'check-browser-tabs', env: { BROWSER_TABS_SIZE: '1280x800' }, files: ['080-browser-tabs-1280x800.png'] },
   { name: 'shots-058-mcp-settings', files: ['058-mcp-settings-1440x900.png'] },
   { name: 'shots-076-orgpolicy', files: ['076-orgpolicy-mode-1440x900.png', '076-orgpolicy-server-1440x900.png'] },
   { name: 'shots-058-mcp-health', files: ['058-mcp-health-1440x900.png'] },
@@ -107,8 +110,10 @@ const source = (f) => (typeof f === 'string' ? f : f.from);
 /** The docs/screenshots files the README, the website gallery and the landing page link (sorted, unique). */
 function linkedImages(root = ROOT) {
   const out = new Set();
-  const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
-  for (const m of readme.matchAll(/docs\/screenshots\/([A-Za-z0-9._-]+\.png)/g)) out.add(m[1]);
+  // the README and the docs pages it moved its detail to (docs/site/pages.json, spec 021 FR-065)
+  const pages = JSON.parse(fs.readFileSync(path.join(root, 'docs', 'site', 'pages.json'), 'utf8'));
+  const readme = ['README.md', ...pages.map((f) => 'docs/' + f)].map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
+  for (const m of readme.matchAll(/(?:docs\/)?screenshots\/([A-Za-z0-9._-]+\.png)/g)) out.add(m[1]);
   const gallery = JSON.parse(fs.readFileSync(path.join(root, 'docs', 'site', 'gallery.json'), 'utf8'));
   for (const g of gallery) if (g && typeof g.file === 'string') out.add(g.file);
   const landing = fs.readFileSync(path.join(root, 'docs', 'site', 'landing.json'), 'utf8');

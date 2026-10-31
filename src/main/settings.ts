@@ -125,6 +125,22 @@ export class SettingsStore {
     return { ok: false, levels: this.mcpWarnLevels };
   }
 
+  /** Spec 080 FR-123: *Open chat links in a new tab*, app-wide, off by default. */
+  get chatLinksNewTab(): boolean {
+    return this.s.chatLinksNewTab === true;
+  }
+
+  /** Only a real boolean changes it; the default (off) is not written. Returns the value now in force. */
+  setChatLinksNewTab(v: unknown): boolean {
+    if (typeof v !== 'boolean') return this.chatLinksNewTab;
+    const next: AppSettings = { ...this.s };
+    if (v) next.chatLinksNewTab = true;
+    else delete next.chatLinksNewTab;
+    this.s = next;
+    this.save();
+    return v;
+  }
+
   /** Serious mode (spec 034): off by default. */
   get seriousMode(): boolean {
     return this.s.seriousMode === true;

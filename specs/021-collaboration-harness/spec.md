@@ -456,3 +456,23 @@ Proposed 2026-10-24 and reviewed by the owner. **Acceptance (FR-037):** Vikram (
   - Releases are cut within the team's working hours. The release manager announces the tag in the team chat and sends the installer links to the owners. Days with no new fragment get no release.
   - Paco's and Ruben's sides had asked to OK every publish (2026-10-26, FR-059). Both confirmed for the daily release only: Ruben by DM to his agent (2026-10-30 21:08 UTC, relayed in the team chat), and Paco by DM to his agent (2026-10-31 07:01 UTC, relayed in the team chat). Any of the three sides' agents may publish it. Other releases, money and settings still need each owner.
   - AGENTS.md: *Needs approval* says "a non-daily release"; *Pace and load* gains *Daily release*. To stay within the 3000-word budget (FR-063), four lines were shortened without changing their meaning: the *Fork PR CI* row, *Merging another's PR*, *Admin merge* and *Fast checks*.
+
+### 2026-10-31: a short README, the detail in docs/ (owner request; FR-065, task T052)
+
+- **FR-065** `[IMPLEMENTED]` `test:` `npm run test:site`, `test:docsscripts`, `test:about`, `rules:check` `read:` **`README.md` is a short GitHub front page (about 90 lines, was 400 lines and 22,800 words); every removed fact moved verbatim to a `docs/` page** (owner decision, Vikram, Telegram 2026-10-31 12:21 UTC: "main readme file is enormous, make it simple, it is a github repo readme, not the website to have too much info"). Nothing was deleted: the text moved with only its relative links rewritten.
+  - **Where each README section went:**
+
+    | Old README section | New home |
+    |---|---|
+    | What you can do (features, chat, sessions, MCP, Tools) | `docs/features.md` |
+    | Harnesses | `docs/harnesses.md` |
+    | Install | `docs/install.md` (the README keeps a short version with the three first-run steps) |
+    | Safety model, Costs and caps | `docs/safety.md` (the README keeps the three mode names, **Read-only / Ask first / Allow all**) |
+    | Themes | `docs/themes.md` |
+    | Build from source, How we work | `docs/development.md` (the README keeps 3 commands) |
+    | Known limits, Roadmap, the status block's run history | `docs/limits.md` (the README status block keeps a short version and the unsigned-build warning) |
+    | License and credits, status block, disclaimer | stay in `README.md` (`test:about` checks the credits there) |
+
+  - **The website** (`scripts/build-site.js`): its docs page and the landing page checks now read `siteSource()`: the README's top, the `## ` sections of the pages in `docs/site/pages.json` (in that order) and the README's *License and credits*, so the website and every `readmeAnchor` of `docs/site/landing.json` are unchanged. `scripts/shots-docs.js` `linkedImages` reads the same pages, so `shots:docs` still covers every linked picture.
+  - **Docs check** (`docs-check.sh`) accepts `docs/development.md` in place of the README for changed npm scripts; `pages.yml` also runs on `docs/*.md`. AGENTS.md *Keep docs in sync* names the new homes (replacing its README section list; same word budget).
+  - Open PRs that edit README lines (for example #921) must move those lines to the page above when they merge.

@@ -187,4 +187,28 @@ function helpers(ctx) {
   return { ...w, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
 }
 
-module.exports = { waits, helpers, jsLiteral, LIMIT, INDEX };
+/**
+ * Spec 080: a picture of the window with a session browser's native view blitted in (`capturePage` of the window leaves child views out).
+ * `view` is the attached `WebContentsView` (or none: the window's page alone). Written as PNG to `file`. Electron only (a driver).
+ */
+async function shotWithView(win, view, file) {
+  const { nativeImage } = require('electron');
+  const fs = require('fs');
+  const page = await win.webContents.capturePage();
+  const size = page.getSize();
+  const base = Buffer.from(page.toBitmap());
+  if (view) {
+    const b = view.getBounds();
+    const vi = await view.webContents.capturePage();
+    const vs = vi.getSize();
+    const vb = vi.toBitmap();
+    for (let y = 0; y < Math.min(vs.height, size.height - b.y); y++) {
+      const src = y * vs.width * 4;
+      const dst = ((b.y + y) * size.width + b.x) * 4;
+      vb.copy(base, dst, src, src + Math.min(vs.width, size.width - b.x) * 4);
+    }
+  }
+  fs.writeFileSync(file, nativeImage.createFromBitmap(base, { width: size.width, height: size.height }).toPNG());
+}
+
+module.exports = { waits, helpers, jsLiteral, shotWithView, LIMIT, INDEX };

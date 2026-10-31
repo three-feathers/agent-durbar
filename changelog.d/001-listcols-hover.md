@@ -1,1 +1,0 @@
-- **The list-columns check retries a lost hover on Windows** (spec 001): `check-list-columns` moves the pointer to the room-header pencil again (up to 4 times) until the page sees `:hover`, instead of relying on one mouse move that a Windows runner can drop while it activates the window. Test-only, no app change.

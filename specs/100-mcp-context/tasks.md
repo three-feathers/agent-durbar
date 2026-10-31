@@ -26,6 +26,6 @@
 
 ## Phase 3: docs and checks
 
-- [x] T030 README (*MCP servers*, *Known limits*), changelog fragment, specs index, dated pointers in 005, 058, 069 [FR-044]
+- [x] T030 README (one line since FR-065 of spec 021), docs/features.md (*MCP servers*), docs/limits.md (*Known limits*), changelog fragment, specs index, dated pointers in 005, 058, 069 [FR-044]
 - [ ] T031 `[KNOWN GAP]` `real:` to do. Optional real check with the owner's OK (reads only, expected 0 credits): one session per app with two servers. Also settles: whether `getContextAttribution` during a turn disturbs it, whether Copilot's `mcpServer` tokens hold their children's, Claude Code's unloaded-tool `tokens`, Copilot's `null` before initialising and the re-ask (spec *Changes* 2026-10-31) [FR-042]
 - [ ] T032 Follow-up spec 069 delta (own PR, small): "Turn off for this folder" for global servers, a per-folder off list fed into `forSession`; then link it from the warning line's actions [decided Q6]

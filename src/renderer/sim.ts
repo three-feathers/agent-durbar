@@ -74,7 +74,7 @@ type SimNotesView = import('../shared/notes').NotesView;
  * message saved twice makes one note. Page address `simnotes=some|many|long|secret` seeds each folder the first time it is asked.
  * Fake tokens are built at run time (push protection).
  */
-function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: string; name: string; session: string } | undefined): Pick<DurbarApi, 'notesList' | 'notesSave' | 'notesAdd' | 'notesUpdate' | 'notesDelete' | 'notesDeleteAll' | 'notesStartOver' | 'notesSetFile' | 'onNotesChanged'> {
+function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: string; name: string; session: string } | undefined): Pick<DurbarApi, 'notesList' | 'notesSave' | 'notesAdd' | 'notesUpdate' | 'notesDelete' | 'notesDeleteAll' | 'notesStartOver' | 'notesSetFile' | 'notesFileCount' | 'onNotesChanged'> {
   const MAX = 300;
   const store = new Map<string, SimNote[]>();
   const subs: Array<(v: { fingerprint: string }) => void> = [];
@@ -110,6 +110,12 @@ function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: strin
     return l;
   };
   const gone = { ok: false, code: 'invalid', error: 'That chat is not open.' } as const;
+  /* spec 083 T042: the project-file switch is shown and answered, never turned on, and nothing is written (simnotesfile= picks a state for drivers) */
+  const fileMode = qs.get('simnotesfile') || '';
+  const fileSwitch = (): { on: boolean; disabled?: string } | undefined => (fileMode === 'workspace' ? undefined
+    : { on: fileMode === 'on' || fileMode === 'conflict' || fileMode === 'writefail' || fileMode === 'replaced', ...(fileMode === 'missing' ? { disabled: 'The folder is not there, so Durbar cannot keep .durbar/notes.md in it.' } : {}) });
+  const fileState = (): { error?: string; info?: string } | undefined => (fileMode === 'conflict' ? { error: '.durbar/notes.md has merge conflicts or could not be read. Fix it in your editor; Durbar will not overwrite it until then.' }
+    : fileMode === 'writefail' ? { error: 'Could not write .durbar/notes.md: EACCES' } : fileMode === 'replaced' ? { error: 'This folder looks replaced, or its drive was remounted. Turn the switch off and on again to write .durbar/notes.md here.' } : fileMode === 'on' ? { info: '2 lines of text outside notes in notes.md were removed.' } : undefined);
   const noMask = { ok: false, code: 'invalid', error: 'Masking is not available.' } as const;
   const tell = (key: string): void => subs.slice().forEach((f) => f({ fingerprint: 'sim-' + key.length }));
   const titleOf = (text: string): string => (text.split('\n').find((l) => l.trim()) ?? 'Note').replace(/^[#>\-*\s]+/, '').replace(/(\*+|`+|~~)/g, '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Note';
@@ -135,7 +141,8 @@ function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: strin
     notesList: async (id): Promise<SimNotesView> => {
       const f = folderOf(id);
       if (!f) return gone;
-      return { ok: true, fingerprint: 'sim-' + f.key.length, folderName: f.name, notes: list(f.key, f.session).map((n) => ({ ...n })), max: MAX, session: f.session };
+      const sw = fileSwitch(), fs0 = sw && sw.on ? fileState() : undefined;
+      return { ok: true, fingerprint: 'sim-' + f.key.length, folderName: f.name, notes: list(f.key, f.session).map((n) => ({ ...n })), max: MAX, session: f.session, ...(sw ? { fileSwitch: sw } : {}), ...(fs0 ? { file: fs0 } : {}) };
     },
     notesSave: async (id, input) => {
       const f = folderOf(id);
@@ -191,7 +198,16 @@ function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: strin
       return { ok: true, fingerprint: 'sim' };
     },
     notesStartOver: async (id) => (folderOf(id) ? { ok: true, fingerprint: 'sim' } : gone),
-    notesSetFile: async () => ({ ok: true, demo: true, message: 'Demo: no file written' }),
+    notesFileCount: async (id) => {
+      if (!folderOf(id)) return gone;
+      if (fileMode === 'workspace') return { ok: false, code: 'invalid', error: 'The project file is not offered for a VS Code workspace.' };
+      if (fileMode === 'unreadable') return { ok: false, code: 'invalid', error: 'The existing file cannot be read; Durbar will not change it.' };
+      return { ok: true, count: fileMode === 'existing' ? 4 : 0, exists: fileMode === 'existing' || fileMode === 'stray', strayText: fileMode === 'stray' ? 3 : 0, repo: fileMode !== 'norepo' };
+    },
+    /* the demo never turns the switch: it answers its current position (off unless simnotesfile= says on) */
+    notesSetFile: async (id, on, opts) => (!folderOf(id) ? gone
+      : fileMode === 'excludefail' && on && opts && opts.exclude === true ? { ok: false, code: 'invalid', error: 'Could not add .durbar/ to .git/info/exclude: no info folder. The switch stays off.', excludeFailed: true }
+        : { ok: true, demo: true, on: !!fileSwitch()?.on, message: 'Demo: no file written' }),
     onNotesChanged: (cb) => { subs.push(cb); return () => { const i = subs.indexOf(cb); if (i >= 0) subs.splice(i, 1); }; },
   };
 }
@@ -1421,7 +1437,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (!/\bquick\b/i.test(text)) for (let i = 0; i < 4; i++) { think(s, 1); await wait(650); } // "quick": a turn where the model sends no reasoning
       if (/\blinks?\b/i.test(text)) {
         // spec 080 T018 AC3: the agent prints links to the simulator's test pages (and a mail link and a refused one), so a driver clicks them
-        const LINKS = 'Here are the pages:\n\n- [the form page](durbar-sim://pages/form)\n- [the links page](durbar-sim://pages/links)\n- [the slow page](durbar-sim://pages/slow?ms=1500)\n- [mail me](mailto:sim@example.invalid)\n- [a web page](https://example.invalid/docs)\n- [a local page](http://127.0.0.1:9/page)\n- [not a web link](ms-msdt:/id)';
+        const LINKS = 'Here are the pages:\n\n- [the form page](durbar-sim://pages/form)\n- [the links page](durbar-sim://pages/links)\n- [the slow page](durbar-sim://pages/slow?ms=1500)\n- [mail me](mailto:sim@example.invalid)\n- [a web page](https://example.invalid/docs)\n- [a local page](http://127.0.0.1:9/page)\n- [not a web link](ms-msdt:/id)\n- [the tabs page](durbar-sim://pages/tabs)\n- [the keys page](durbar-sim://pages/keys)';
         emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: LINKS, final: true, text: LINKS });
         emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'idle' });
         s.state = 'done';
@@ -2042,7 +2058,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.3 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.4 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
