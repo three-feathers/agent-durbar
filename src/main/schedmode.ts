@@ -18,7 +18,7 @@
  * through `setModeOp`, so a crash leaves nothing to undo: a restart starts the session in its own mode. `a.runMode` is what the window shows; not saved.
  */
 import type { AdapterRouter } from '../adapters/router';
-import { refusesLive, setPermModeOf } from '../adapters/router';
+import { interruptOf, refusesLive, setPermModeOf } from '../adapters/router';
 import type { AgentAdapter, AgentMessage } from '../adapters/types';
 import type { AgentInfo, PermMode } from '../shared/api';
 import type { ModeAgentInfo, ModeRefusal, ModeVerdict, Schedule, ScheduleMode, ScheduleTarget } from './schedules';
@@ -67,6 +67,8 @@ export interface RunHold {
   started: boolean;
   /** A person took over: this run no longer holds anything. */
   detached: boolean;
+  /** A person typed a message after taking over: a turn now running may be theirs, so it is not interrupted. */
+  typedSince: boolean;
   /** Rejects when a person takes over, so a run that waits on a hung call goes on. */
   readonly stopped: Promise<never>;
   stop(): void;
@@ -78,17 +80,17 @@ const HELD_WORDS = 'A scheduled run is using this session. Wait for it to end, o
 export class RunModes {
   private held = new Map<string, RunHold>();
   private typing = new Map<string, number>();
-  /** Sends a person walked away from, by session. They may still be running inside the adapter: their return sets the mode right once more. */
-  private loose = new Map<string, number>();
+  /** Sends a person walked away from, by session. They may still be running inside the adapter: their return sets the mode right once more, and stops what they delivered. */
+  private loose = new Map<string, Set<RunHold>>();
   constructor(private readonly d: RunModeDeps) {}
 
   /** The gate for a scheduled run: undefined when a typed message is on its way, another run holds the session or a send walked away from has not returned, or it is working. */
   reserve(id: string): RunHold | undefined {
-    if (this.isHeld(id) || (this.typing.get(id) ?? 0) > 0 || (this.loose.get(id) ?? 0) > 0 || this.d.statusBusy(id)) return undefined;
+    if (this.isHeld(id) || (this.typing.get(id) ?? 0) > 0 || (this.loose.get(id)?.size ?? 0) > 0 || this.d.statusBusy(id)) return undefined;
     let stop = (): void => undefined;
     const stopped = new Promise<never>((_r, rej) => { stop = () => rej(RUN_STOPPED); });
     stopped.catch(() => undefined);
-    const h: RunHold = { phase: 'setup', started: false, detached: false, stopped, stop };
+    const h: RunHold = { phase: 'setup', started: false, detached: false, typedSince: false, stopped, stop };
     this.held.set(id, h);
     return h;
   }
@@ -96,6 +98,12 @@ export class RunModes {
   /** The gate for a typed message: why it is refused, or undefined with the send counted until `endUserSend`. */
   beginUserSend(id: string): string | undefined {
     if (this.isHeld(id)) return HELD_WORDS;
+    const loose = this.loose.get(id);
+    if (loose?.size) {
+      // the session is closed while a send walked away from reopens it: a message now would start it with that send's options
+      if (this.d.router.forAgent(id)?.isLive(id) !== true) return 'This session is reopening after a scheduled run was stopped. Send your message in a moment.';
+      for (const h of loose) h.typedSince = true;
+    }
     this.typing.set(id, (this.typing.get(id) ?? 0) + 1);
     return undefined;
   }
@@ -149,14 +157,17 @@ export class RunModes {
     return { started };
   }
 
-  /** The adapter's send really returned. For a send a person walked away from, the mode is set right once more: a session reopening then could not take it. */
-  sendReturned(id: string, h: RunHold): void {
-    if (!h.detached) return;
-    const n = (this.loose.get(id) ?? 0) - 1;
-    if (n > 0) this.loose.set(id, n);
-    else this.loose.delete(id);
-    if (this.held.get(id)?.mode !== undefined) return;
-    this.putBack(id);
+  /**
+   * The adapter's send really returned. For a send a person walked away from: the mode is set right once more, and if it delivered the prompt that turn is
+   * stopped, since the person stopped it. A message they typed since may be what runs now: it is left alone. After End (`forget`) there is nothing left to do.
+   */
+  sendReturned(id: string, h: RunHold, delivered: boolean): void {
+    const loose = this.loose.get(id);
+    if (!loose?.delete(h)) return;
+    if (!loose.size) this.loose.delete(id);
+    if (this.held.get(id)?.mode === undefined) this.putBack(id, false);
+    const ad = this.d.router.forAgent(id);
+    if (delivered && !h.typedSince && ad?.isLive(id)) void interruptOf(ad, id).catch(() => undefined);
   }
 
   /** A main session's status. Before the send began it says nothing about this run; a status left over from a start or a resume does not end it. */
@@ -181,13 +192,13 @@ export class RunModes {
     if (!h) return;
     this.held.delete(id);
     h.detached = true;
-    if (h.phase === 'sending') this.loose.set(id, (this.loose.get(id) ?? 0) + 1);
-    this.restore(id, h);
+    if (h.phase === 'sending') this.loose.set(id, (this.loose.get(id) ?? new Set<RunHold>()).add(h));
+    this.restore(id, h, h.phase === 'sending');
     h.stop();
   }
 
   /** Back to the session's own mode. If the adapter throws here the session would keep the run's mode, so it is stopped: that is the one way left to be sure. */
-  private restore(id: string, h: RunHold): void {
+  private restore(id: string, h: RunHold, reopening = false): void {
     const mode = h.mode;
     if (mode === undefined) return;
     h.mode = undefined;
@@ -195,14 +206,14 @@ export class RunModes {
     if (!a) return;
     a.runMode = undefined;
     this.d.changed?.(a, undefined);
-    if (this.putBack(id)) this.d.log?.(a, `Back to ${WORDS[a.permMode] ?? a.permMode} after the scheduled run`, a.permMode);
+    if (this.putBack(id, reopening)) this.d.log?.(a, `Back to ${WORDS[a.permMode] ?? a.permMode} after the scheduled run`, a.permMode);
   }
 
-  /** A session that is not live needs nothing: its next start uses `a.permMode`. */
-  private putBack(id: string): boolean {
+  /** A session that is not live needs nothing: its next start uses `a.permMode`. Unless its send is in flight (`reopening`): the adapter may be reopening it, and must hear. */
+  private putBack(id: string, reopening: boolean): boolean {
     const a = this.d.agents.get(id);
     const ad = a ? this.d.router.forAgent(id) : undefined;
-    if (!a || !ad || !ad.isLive(id)) return false;
+    if (!a || !ad || (!reopening && !ad.isLive(id))) return false;
     try {
       setPermModeOf(ad, id, a.permMode);
       return true;
@@ -226,7 +237,7 @@ export class RunModes {
 
   /** Other schedules count this session as busy: a run holds it, a typed message is on its way, or a send walked away from has not returned. */
   busy(id: string): boolean {
-    return this.isHeld(id) || (this.typing.get(id) ?? 0) > 0 || (this.loose.get(id) ?? 0) > 0;
+    return this.isHeld(id) || (this.typing.get(id) ?? 0) > 0 || (this.loose.get(id)?.size ?? 0) > 0;
   }
 
   /** A run holds this session. A `running` one whose session has ended no longer does: nothing is left to restore (see the top of this file). */
@@ -300,7 +311,10 @@ export function createScheduleWiring(d: ScheduleWiringDeps) {
       d.announce(a, s, prompt, temp);
       // in a temporary mode the app may not keep the prompt for later (at a spending limit): it would run after the mode came back
       const msg: AgentMessage = temp ? { text: prompt, noHold: true } : { text: prompt };
-      await unlessStopped((ad as AgentAdapter).send(a.id, msg).finally(() => runs.sendReturned(a.id, h)));
+      await unlessStopped((ad as AgentAdapter).send(a.id, msg).then(() => runs.sendReturned(a.id, h, true), (err: unknown) => {
+        runs.sendReturned(a.id, h, false);
+        throw err;
+      }));
       ok = true;
     } catch (err) {
       d.noteSendFailed(a);

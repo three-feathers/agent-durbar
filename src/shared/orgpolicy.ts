@@ -37,6 +37,11 @@ export interface OrgPolicy {
   /** What was wrong, by path and kind ("not valid JSON", "unreadable key allowedMcpServers"); never a value. */
   problems: string[];
   modes: Partial<Record<OrgMode, OrgMark>>;
+  /**
+   * Spec 044 FR-183: this comes from the fallback file because the app's runtime, which merges every channel, did not answer: 'failed' (it failed, was late or
+   * gave nothing readable) or 'none' (no runtime yet). Fine with a person there; a raised mode nobody is watching does not run on it.
+   */
+  runtimeUnread?: 'failed' | 'none';
   /** Models: an allow-list (undefined = every model), a deny-list, how allow-list ids match, and a mark for every non-default model. */
   models: { allow?: string[]; deny: string[]; exact: boolean; all?: OrgMark };
   /**

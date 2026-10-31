@@ -10,7 +10,8 @@ import type { AgentAdapter } from '../src/adapters/types';
 import { setModeOp, startGuardOp, startModeOf, stopTurnOp } from '../src/main/agentops';
 import { OrgPolicyCache } from '../src/main/orgpolicy';
 import { RunModes, createScheduleWiring, modeCheckOp } from '../src/main/schedmode';
-import { wholeOrgPolicy } from '../src/shared/orgpolicy';
+import { readCopilotOrgPolicy } from '../src/adapters/copilotOrgPolicy';
+import { emptyOrgPolicy, wholeOrgPolicy } from '../src/shared/orgpolicy';
 import { MODE_PROOF_MS, SEND_PATIENCE_MS, Scheduler, cleanSchedule, loopSupport, parseMode, parseSchedules, publicDoc, publicSchedule, sealFrom, waitingForMode } from '../src/main/schedules';
 import type { ModeAgentInfo, ModeVerdict, Schedule, SchedulesDoc, SchedulerDeps } from '../src/main/schedules';
 import type { AgentInfo, PermMode } from '../src/shared/api';
@@ -506,12 +507,13 @@ async function main(): Promise<void> {
     await t.tick();
     t.runs.end('a1');
     assert.strictEqual(t.w.busy('a1'), true, 'its send has not returned: schedules wait');
-    assert.strictEqual(await t.typed(), 'sent', 'but the person has the session back');
+    assert.deepStrictEqual(t.sets, ['allow', 'read-only'], 'the adapter hears at once, though the session is closed: it reads this before it opens');
+    assert.ok((await t.typed()).startsWith('refused'), 'a typed message waits while it reopens');
     await t.ad.start({ sessionId: 'a1', cwd: '/w', permissionMode: 'allow' } as never);
     t.emit('working');
     s.release();
     await t.tick();
-    assert.deepStrictEqual(t.sets, ['allow', 'read-only'], 'back when it returned: it could not take the mode while it reopened');
+    assert.deepStrictEqual(t.sets, ['allow', 'read-only', 'read-only'], 'and once more when it returned');
     assert.strictEqual(t.runs.busy('a1'), false, 'the gate is free (the turn itself is still stopping)');
   }
   // review 2: one gate: a typed message on its way stops a run; a run in setup stops a typed message; a turn that began during the setup stops the switch
@@ -596,6 +598,20 @@ async function main(): Promise<void> {
       assert.strictEqual(await c.runRefusal('copilot', 'allow', false), undefined, `${name}: the mode the session has is not`);
       assert.strictEqual(await c.refusal('copilot', { mode: 'allow' }), undefined, `${name}: a start with the person there: advice as before`);
     }
+    // re-review 3: Copilot's fallback file after a runtime that did not answer: refused for a raised mode, and asked again at a run
+    const file = emptyOrgPolicy('Copilot');
+    let reads = 0;
+    const failedRuntime = mk(async () => (reads++, { ...file, runtimeUnread: 'failed' }) as never);
+    assert.ok(/managed settings could not be read/.test((await failedRuntime.runRefusal('copilot', 'allow', true)) ?? ''), 'a raised mode at a run');
+    assert.strictEqual(reads, 2, 'it asked again first');
+    assert.ok(failedRuntime.runRefusalNow('copilot', 'allow', true), 'and at a save');
+    assert.strictEqual(await failedRuntime.runRefusal('copilot', 'read-only', false), undefined, 'not Read-only');
+    assert.strictEqual(await failedRuntime.runRefusal('copilot', 'allow', false), undefined, 'not the session\'s own');
+    const noRuntime = mk(async () => ({ ...file, runtimeUnread: 'none' }) as never);
+    await noRuntime.fresh('copilot');
+    assert.strictEqual(noRuntime.runRefusalNow('copilot', 'allow', true), undefined, 'no runtime yet: a save goes on');
+    assert.ok(await noRuntime.runRefusal('copilot', 'allow', true), 'a run does not');
+    assert.deepStrictEqual([(await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => { throw new Error('x'); } } } } as never, () => file)).runtimeUnread, (await readCopilotOrgPolicy(undefined, () => file)).runtimeUnread], ['failed', 'none'], 'the reader says which');
     const c2 = mk(async () => undefined);
     assert.strictEqual(await c2.runRefusal('copilot', 'allow', true), undefined, 'a policy with nothing in it refuses nothing');
     const blocked = mk(async () => wholeOrgPolicy('App', [], ['x'], 'fatal'));
@@ -857,6 +873,35 @@ async function main(): Promise<void> {
     await t.tick();
     if (how === 'Stop') assert.strictEqual(t.sets[t.sets.length - 1], 'ask', 'its late return sets the mode right');
     assert.strictEqual(t.runs.busy('a1'), false);
+  }
+  // re-review 2: a prompt delivered after Stop does not run: its turn is interrupted when the send returns, unless the person typed since; a failed send has none to stop
+  for (const [name, typed, fails, want] of [['delivered', false, false, 1], ['typed since', true, false, 0], ['failed', false, true, 0]] as Array<[string, boolean, boolean, number]>) {
+    const t = await wired();
+    t.addRun('allow');
+    let release = (): void => undefined;
+    t.ad.send = () => new Promise<void>((res, rej) => { release = () => (fails ? rej(new Error('x')) : res()); });
+    let stops = 0;
+    t.ad.interrupt = async () => { stops++; };
+    await t.h.advance(MIN);
+    await t.tick();
+    t.runs.end('a1');
+    if (typed) assert.strictEqual(await t.typed(), 'sent', name);
+    release();
+    await t.tick();
+    assert.strictEqual(stops, want, name);
+  }
+  {
+    const t = await wired();
+    t.addRun('allow');
+    const s = t.holdSend();
+    let stops = 0;
+    t.ad.interrupt = async () => { stops++; };
+    await t.h.advance(MIN);
+    await s.entered;
+    t.runs.forget('a1');
+    s.release();
+    await t.tick();
+    assert.strictEqual(stops, 0, 'after End the session is gone: nothing to interrupt');
   }
   // one hung session does not stop the other schedules; its own schedule is not fired twice; a late answer is recorded
   {

@@ -617,7 +617,7 @@ async function main(): Promise<void> {
     (cyc.resolved as Record<string, unknown>).self = cyc;
     const fallback = emptyOrgPolicy(P);
     const cy = await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => cyc } } }, () => fallback);
-    assert.strictEqual(cy, fallback, 'i: Copilot: a cyclic runtime answer falls back to the file');
+    assert.deepStrictEqual(cy, { ...fallback, runtimeUnread: 'failed' }, 'i: Copilot: a cyclic runtime answer falls back to the file, and says so (spec 044 FR-183)');
     // the string-list byte cap (the rule list is ALSO bounded in total, so the problem text proves which cap fired)
     const bs = claude({ availableModels: Array.from({ length: 150 }, (_, i) => `${i}-` + 'y'.repeat(2000)) });
     assert.ok(bs.problems.some((x) => x.includes('availableModels is longer than Agent Durbar reads')), 'i: a string list over the byte cap says so (the list cap, not only the total)');

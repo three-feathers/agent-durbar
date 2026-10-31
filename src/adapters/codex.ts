@@ -303,6 +303,8 @@ export class CodexAdapter implements AgentAdapter {
   private inflight = new Set<Promise<unknown>>();
   /** Named sessions being started: reserved before the first await, so a second start or a stop sees them. */
   private starting = new Map<string, { cancelled: boolean; done: Promise<void> }>();
+  /** Spec 044 FR-180: sessions `send` is closing and opening again for a new mode, and the mode wanted now. */
+  private readonly reopening = new Map<string, { mode: PermissionMode; ended: boolean }>();
   private readonly spawnFn: SpawnFn;
   private readonly locate: () => Promise<CodexLocation | undefined>;
   private readonly platform: string;
@@ -742,10 +744,22 @@ export class CodexAdapter implements AgentAdapter {
     let live = this.mustGet(sessionId);
     // FR-144/FR-147: a mode or MCP switch chosen while it ran applies now, on a fresh child that resumes the same thread
     if (((live.wantMode && live.wantMode !== live.mode) || live.relaunch) && live.turnId === undefined && !live.turnStarting) {
-      const next = { ...live.options, permissionMode: live.wantMode ?? live.mode, sessionId, resumeSessionId: undefined, quiet: true };
-      await this.stop(sessionId, true);
-      await this.start(next);
-      live = this.mustGet(sessionId);
+      // spec 044 FR-180: the wanted mode can change while this reopens (Stop, a mode chosen, a scheduled run's end): read again after each await, and open again if it moved
+      const reopen = { mode: live.wantMode ?? live.mode, ended: false };
+      this.reopening.set(sessionId, reopen);
+      try {
+        let options = live.options;
+        do {
+          await this.stop(sessionId, true);
+          if (reopen.ended) throw new Error('This session was ended.');
+          await this.start({ ...options, permissionMode: reopen.mode, sessionId, resumeSessionId: undefined, quiet: true });
+          live = this.mustGet(sessionId);
+          options = live.options;
+          if (reopen.ended) throw new Error('This session was ended.');
+        } while (live.mode !== reopen.mode);
+      } finally {
+        this.reopening.delete(sessionId);
+      }
     }
     live.expectAborted = false;
     if (!live.mcpRead) void this.refreshMcp(live); // FR-147: after a quiet start, with the first message
@@ -922,6 +936,8 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   setPermMode(sessionId: string, mode: PermissionMode, opts: { clearGrants?: boolean; approvePending?: boolean } = {}): { pending: number } {
+    const reopen = this.reopening.get(sessionId);
+    if (reopen) reopen.mode = mode; // `send` reads it again before it opens the session
     const live = this.sessions.get(sessionId);
     if (!live) return { pending: 0 };
     const rank = (m: PermissionMode): number => ({ 'read-only': 0, ask: 1, allow: 2 })[m] ?? 0;
@@ -938,6 +954,8 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   async stop(sessionId: string, silent = false): Promise<void> {
+    const reopen = silent ? undefined : this.reopening.get(sessionId);
+    if (reopen) reopen.ended = true; // End session during a reopen: it does not open again
     const starting = this.starting.get(sessionId);
     if (starting) {
       // Stop during start: the start closes its child and never registers; wait for that.

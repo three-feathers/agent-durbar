@@ -1110,6 +1110,47 @@ async function main(): Promise<void> {
     assert.ok(!events.some((e) => e.type === 'status' && e.status === 'stopped'), 'the relaunch is silent');
     await ad.dispose();
   }
+  // spec 044 FR-180: the wanted mode can change while a send reopens the session (Stop of a scheduled run): the turn never goes out on the raised mode
+  for (const when of ['while it closes', 'while it opens'] as const) {
+    const ws = dir();
+    const { server, ad } = make();
+    const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', quiet: true });
+    ad.setPermMode!(sid, 'allow');
+    const spawned = server.spawns.length;
+    if (when === 'while it opens') {
+      const open = ad.start.bind(ad);
+      ad.start = (o) => {
+        const p = open(o);
+        ad.setPermMode!(sid, 'read-only'); // in the window: the open has begun, the session is not there yet
+        ad.start = open;
+        return p;
+      };
+    }
+    const sending = ad.send(sid, { text: 'scheduled' });
+    assert.strictEqual(ad.isLive(sid), false, 'it is closed during the reopen');
+    if (when === 'while it closes') ad.setPermMode!(sid, 'read-only');
+    await sending;
+    await server.flush();
+    const tp = server.requests('turn/start').pop()!.params as Record<string, unknown>;
+    assert.notDeepStrictEqual(tp.sandboxPolicy, { type: 'dangerFullAccess' }, `${when}: not on Allow all`);
+    assert.strictEqual(ad.isLive(sid), true);
+    assert.strictEqual(server.spawns.length, spawned + (when === 'while it opens' ? 2 : 1), `${when}: opened again only if it moved`);
+    await ad.dispose();
+  }
+  {
+    // End session during the reopen: it does not open again and nothing goes out
+    const ws = dir();
+    const { server, ad } = make();
+    const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', quiet: true });
+    ad.setPermMode!(sid, 'allow');
+    const sending = ad.send(sid, { text: 'scheduled' });
+    await ad.stop(sid);
+    await assert.rejects(sending, /ended/);
+    await server.flush();
+    assert.strictEqual(server.requests('turn/start').length, 0);
+    assert.strictEqual(ad.isLive(sid), false);
+    await ad.dispose();
+  }
   {
     // a stricter mode during a running turn interrupts it
     const ws = dir();
