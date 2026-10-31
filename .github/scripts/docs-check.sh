@@ -2,7 +2,7 @@
 # Docs check: a WARNING-ONLY reminder that user-visible changes need docs. It never fails (always exits 0), so it cannot block
 # anyone, and it is NOT a required status check. Rules (see AGENTS.md "Keep docs in sync"):
 #   1. src/ changed, but none of README.md, docs/, CHANGELOG.md, changelog.d/ changed -> warning
-#   2. package.json "scripts" changed, but README.md did not change             -> warning
+#   2. package.json "scripts" changed, but README.md and docs/development.md did not -> warning
 #   3. CHANGELOG.md got a new bullet outside a release (no new "## v" heading)  -> warning: add a changelog.d/ fragment
 #   4. specs/README.md got a spec row ("| [NNN](...")                           -> warning: edit the spec's specs-index block
 #   (3 and 4: spec 025 delta 2026-10-22; the PRs opened before it still edit those files, so they only warn)
@@ -34,7 +34,7 @@ fi
 
 src_files="$(printf '%s\n' "$changed" | grep -E '^src/' || true)"
 docs_touched="$(printf '%s\n' "$changed" | grep -E '^(README\.md|CHANGELOG\.md|changelog\.d/|docs/)' || true)"
-readme_touched="$(printf '%s\n' "$changed" | grep -Fx 'README.md' || true)"
+readme_touched="$(printf '%s\n' "$changed" | grep -Fx -e 'README.md' -e 'docs/development.md' || true)"
 
 # package.json "scripts" lines added, removed or edited (a line like:   "name": "command",  inside the diff)
 scripts_changed=""
@@ -63,7 +63,7 @@ else
     warned=1
   fi
   if [ -n "$scripts_changed" ] && [ -z "$readme_touched" ]; then
-    warn "package.json scripts changed but README.md did not (its Development section lists the npm run commands). Update it, or add 'Docs: n/a <reason>' to the PR description."
+    warn "package.json scripts changed but README.md and docs/development.md did not (docs/development.md lists the npm run commands). Update it, or add 'Docs: n/a <reason>' to the PR description."
     warned=1
   fi
   if [ -n "$changelog_hand" ]; then
