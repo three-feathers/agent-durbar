@@ -107,6 +107,10 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 
 ## Changes
 
+### 2026-10-31: MCP context cost (spec 100)
+
+**FR-052**: the token summary adds an *MCP tools* bar when a report exists, labelled as estimated when it is; the MCP chip adds the tokens (FR-053). Owned by [spec 100](../100-mcp-context/spec.md) FR-010, FR-013.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):

@@ -15,7 +15,7 @@ type Bar = { key: string; label: string; tokens: number; share: number };
 type Sum = { known: boolean; tokens?: number; limit: number; pct: number | null; level: string; bars: Bar[]; note: string; tip: string; name: string };
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const B = require(path.join(ROOT, 'src', 'renderer', 'ctxbreakdown.js')) as {
-  summary: (ctx: unknown, o?: { limit?: number; app?: string; waiting?: boolean }) => Sum;
+  summary: (ctx: unknown, o?: { limit?: number; app?: string; waiting?: boolean; mcp?: { tokens: number; estimated?: boolean } }) => Sum;
 };
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const S = require(path.join(ROOT, 'src', 'renderer', 'toolstats.js')) as { createStats: () => { setContext: (id: string, e: unknown) => void; agent: (id: string) => { ctx: unknown } } };

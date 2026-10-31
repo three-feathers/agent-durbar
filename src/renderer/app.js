@@ -3202,20 +3202,24 @@ function mcpWarnLine(a){
   const X=MCPX(),st=a.mcpLine||(a.mcpLine={shown:'none',dismissed:'none',el:null});
   const w=X.warningOf(mcpReport(a),mcpWindow(a),mcpLevelsNow()), level=w?w.level:'none', act=X.lineAction(st,level);
   if(act==='hide'){if(st.el)st.el.remove();st.el=null;st.shown='none';return;}
+  const stick=mcpStick(a); /* before the line grows the chat: a scroll event in between would read it as the person having scrolled up */
   if(act==='show'){
     const chat=liveChat(a),el=document.createElement('div');el.className='note info cline mcp-line';el.setAttribute('role','status');
     const t=document.createElement('span');t.className='mcp-line-t';el.appendChild(t);
     const dismiss=()=>{st.dismissed=st.shown;st.shown='none';el.remove();st.el=null;};
     el.appendChild(mcpActions(a,w.servers[0]&&w.servers[0].name,dismiss));
-    chat.el.appendChild(el);st.el=el;stickyScroll(chat);
+    chat.el.appendChild(el);st.el=el;
   }
   if(w&&st.el){const t=st.el.querySelector('.mcp-line-t'),txt=X.warningText(w);if(t.textContent!==txt)t.textContent=txt;st.el.classList.toggle('mcp-strong',w.level==='strong');st.shown=w.level;}
+  stick();
 }
+/* follows the chat's end if it was at the end; a person who scrolled up stays where they are */
+function mcpStick(a){const c=$('chat'),chat=liveChat(a),on=!!c&&chat.el.parentNode===c&&c.dataset.pin!=='0';return ()=>{if(on){c.scrollTop=c.scrollHeight;c.dataset.pin='1';stickyScroll(chat);}};} /* now, and once more on the next frame: the opening chat still lays out */
 /* FR-030: the extra sentence on the folded compaction line; once per session per level, dismissible */
 function mcpCompactHint(a,R,now){
   if(a.parent||!R||!R.el)return;
   const X=MCPX(),st=a.mcpHint||(a.mcpHint={shown:{},el:null,run:null});
-  const h=X.compactionHint(mcpReport(a),mcpWindow(a),mcpLevelsNow(),a.compTimes||[],now,st.shown);
+  const h=X.compactionHint(mcpReport(a),mcpWindow(a),mcpLevelsNow(),a.compTimes||[],now,st.shown), stick=mcpStick(a);
   if(h){
     st.shown[h.level]=true;if(st.el)st.el.remove();
     const el=document.createElement('span');el.className='mcp-hint';
@@ -3224,6 +3228,7 @@ function mcpCompactHint(a,R,now){
     st.el=el;st.run=R;
   }
   if(st.el&&st.run===R&&st.el.parentNode!==R.el)R.el.appendChild(st.el); /* the fold's textContent removes it on each new compaction */
+  stick();
 }
 function mcpViewChanged(id,view){
   const a=liveById(id);if(!a||a.parent)return;
@@ -3232,8 +3237,6 @@ function mcpViewChanged(id,view){
   if(window.DurbarScreens&&window.DurbarScreens.mcpEvent)window.DurbarScreens.mcpEvent(id);
 }
 function mcpLevelsChanged(l){mcpLevels=l;for(const id of MCP_CTX.keys()){const a=liveById(id);if(a){repaintMcpChip(a);mcpWarnLine(a);}}}
-if(bridge&&bridge.onMcpContext)bridge.onMcpContext(p=>{if(p&&typeof p.id==='string')mcpViewChanged(p.id,p.view);});
-if(bridge&&bridge.getSettings)Promise.resolve(bridge.getSettings()).then(s=>{if(s&&s.mcpWarnLevels)mcpLevelsChanged(s.mcpWarnLevels);}).catch(()=>{});
 async function refreshMcpCount(a){
   if(!a||!bridge.agentMcp||!ui.selected)return;
   {const cur=byId(ui.selected);if(!cur||liveRoot(cur)!==a||!$('mcpBtn'))return;} /* only for the open chat; opening a chat asks again */
@@ -7361,6 +7364,9 @@ document.addEventListener('click',async e=>{
 });
 document.addEventListener('change',async e=>{if(e.target&&e.target.id==='schedPauseAllSet'){const r=await bridge.setSchedulesPaused(e.target.checked);SCHED.pausedAll=r.pausedAll;schedChanged();}});
 /* spec 012 FR-158: a new sign-in reconnected the agent app, so remote control ended for this session */
+/* spec 100 */
+if(bridge&&bridge.onMcpContext)bridge.onMcpContext(p=>{if(p&&typeof p.id==='string')mcpViewChanged(p.id,p.view);});
+if(bridge&&bridge.getSettings)Promise.resolve(bridge.getSettings()).then(s=>{if(s&&s.mcpWarnLevels)mcpLevelsChanged(s.mcpWarnLevels);}).catch(()=>{});
 if(bridge&&bridge.onRemoteUrl)bridge.onRemoteUrl(p=>{const a=p&&liveById(p.id);if(a&&a.remote&&typeof p.url==='string')a.remote.url=p.url;});
 /* spec 065: after a turn that changed files, one muted line with "Undo these changes…"; the dialog previews, then restores */
 const CKPT=window.DurbarCheckpoints||null;

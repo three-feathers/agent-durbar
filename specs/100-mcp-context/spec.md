@@ -3,15 +3,15 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: MCP context cost (owner 2026-10-31): each MCP server's tool-definition tokens (the agent app's own figure where it reports one, else estimated) in the MCP chip and dialogs, a calm warning at 15 % / 30 % of the session's window naming the heaviest servers, a compaction hint, never changes anything by itself
-status: draft
-note: spec, research, plan and tasks only; Q1-Q6 decided by the owner 2026-10-31; nothing built
+status: building
+note: phases 1-3 built, unit tests, fakes and simulator; real check T031 and the per-folder off T032 to do
 -->
 
 **Feature Branch**: `100-mcp-context` (spec); code branches `100-pN-slug`, one per phase
 
 **Created**: 2026-10-31
 
-**Status**: Draft. Nothing is built. Q1-Q6 decided by the owner 2026-10-31 (*Clarifications*).
+**Status**: Building. Phases 1-3 are built and checked with unit tests, fakes and the simulator (`test:mcpcost`, `test:mcpcontextop`, the adapter tests, `sim:` `shots-100-mcp-context`); `[KNOWN GAP]` `real:` no real session has run them (T031, needs an owner's OK). Q1-Q6 decided by the owner 2026-10-31 (*Clarifications*).
 
 **Input**: Owner (Vikram, Telegram 2026-10-31 11:16 UTC): "I had an issue this week, I selected 200k context on Claude opus and it
 compacted like 200 times in a session. And then realized that majority was taken by MCP servers in the context - can you raise warning
@@ -170,8 +170,8 @@ and "Off". Kept in Durbar's settings.
 
 - **FR-040** Only server names and numbers reach the window; no env, header, URL, command, or secret value; no tool schema is stored.
 - **FR-041** Read-only mode: same behaviour; the actions change Durbar's MCP choices only (as today's switch).
-- **FR-042** No credits: the Copilot attribution and Claude `summary` reads make no model call (`read:`); Claude `full` is not used
-  (decided Q2). The simulator and unit tests cover the feature; a real check needs the owner (`[KNOWN GAP]` until run).
+- **FR-042** `[KNOWN GAP]` `real:` to do (T031). No credits: the Copilot attribution and Claude `summary` reads make no model call (`read:`); Claude `full` is not used
+  (decided Q2). The simulator and unit tests cover the feature; a real check needs the owner.
 - **FR-043** Adapter-neutral: vendor calls stay in adapters; `src/shared` and the renderer see `McpContextReport` only.
 - **FR-044** `[KNOWN GAP]` Codex figures are estimates only, and whether Codex defers MCP tools is unknown. Copilot's call is
   experimental and may be missing on some plans, a primary-case risk: then "not reported by Copilot" shows, never an estimate. Claude `summary` figures are Claude Code's own estimates.
