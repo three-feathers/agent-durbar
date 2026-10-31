@@ -466,7 +466,7 @@
       const res=await X.bridge.removeTheme(mine.id).catch(()=>null);
       if(!res||!res.ok){X.toast(esc(res&&res.error||'The theme could not be removed.'),4200);return;}
       if(window.THEME&&window.THEME.forgetUser)window.THEME.forgetUser(mine.id);
-      if(X.applyTheme)X.applyTheme('clean-office');
+      if(X.applyTheme)await X.applyTheme('clean-office'); /* saved before the list is painted again */
       X.toast('Theme <b>'+esc(mine.name)+'</b> removed. Clean Office is on.',3600);
       paintSettings();
     };
