@@ -90,7 +90,7 @@ export function register(deps: AgentsIpcDeps): void {
     agentState.ensure(id, agents.get(id)?.lazy);
     agentState.noteSend(id); // the window shows Thinking from the moment the user sends (app.js sendLive)
     const r = await sendOp(id, text, attachments, ad, plan);
-    if (!r.ok) agentState.noteSendFailed(id); // and Error when the send fails (app.js sendLive)
+    if (!r.ok && !r.held) agentState.noteSendFailed(id); // and Error when the send fails (app.js sendLive); `held`: spec 044 FR-180, a scheduled run's turn goes on
     return r;
   });
   // Stop only interrupts the running turn (the agent returns to Ready); End session frees the runtime session.

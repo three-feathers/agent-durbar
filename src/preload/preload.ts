@@ -118,6 +118,7 @@ const api: DurbarApi = {
   dismissInterrupted: () => ipcRenderer.invoke('app:dismissInterrupted'),
   onSchedules: (cb) => sub('schedules:changed', cb),
   onScheduleRan: (cb) => sub('schedule:ran', cb),
+  onScheduleMode: (cb) => sub('schedule:mode', cb),
   answerQuestion: (id, requestId, answers) => ipcRenderer.invoke('agents:answerQuestion', id, requestId, answers),
   answerElicitation: (id, requestId, action, values) => ipcRenderer.invoke('agents:answerElicitation', id, requestId, action, values),
   openElicitationUrl: (id, requestId) => ipcRenderer.invoke('agents:openElicitationUrl', id, requestId),

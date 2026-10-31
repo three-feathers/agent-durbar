@@ -24,7 +24,7 @@ export interface OrgAsk {
 }
 
 export class OrgPolicyCache {
-  private readonly cache = new Map<string, { at: number; p: OrgPolicy }>();
+  private readonly cache = new Map<string, { at: number; p: OrgPolicy; failed?: boolean }>();
   private readonly pending = new Map<string, Promise<OrgPolicy | undefined>>();
   constructor(private readonly src: OrgPolicySource) {}
 
@@ -48,12 +48,14 @@ export class OrgPolicyCache {
     if (!run) {
       run = (async () => {
         let p: OrgPolicy;
+        let failed = false;
         try {
           p = (await ad.readOrgPolicy!()) ?? emptyOrgPolicy(ad.displayName);
         } catch {
           p = wholeOrgPolicy(ad.displayName, [], ['the policy could not be read'], 'doubt'); // Durbar could not read it: advice, not a refusal
+          failed = true;
         }
-        this.cache.set(id, { at: this.now(), p });
+        this.cache.set(id, failed ? { at: this.now(), p, failed } : { at: this.now(), p });
         return p;
       })();
       this.pending.set(id, run);
@@ -81,6 +83,21 @@ export class OrgPolicyCache {
   /** FR-203: why a start, resume or switch must be refused (only `blocked` / `fatal`), after a fresh enough read. */
   async refusal(id: string | undefined, ask: OrgAsk): Promise<string | undefined> {
     return OrgPolicyCache.refusalOf(await this.fresh(id), ask);
+  }
+
+  /**
+   * Spec 044 FR-183: for a run nobody is watching, and a save that sets one up: as `refusal`, but a read that failed is a refusal too (for a start,
+   * with the person there, it is advice). An app with no policy reader has nothing to refuse.
+   */
+  async runRefusal(id: string | undefined, ask: OrgAsk): Promise<string | undefined> {
+    const p = await this.fresh(id);
+    return id && this.cache.get(id)?.failed ? `Your organization's policy could not be read: ${ask.mode ?? 'this mode'} cannot run unattended` : OrgPolicyCache.refusalOf(p, ask);
+  }
+
+  /** Spec 044 FR-183: the same from the last read, for a check that cannot wait. */
+  runRefusalNow(id: string | undefined, ask: OrgAsk): string | undefined {
+    const p = this.cached(id);
+    return id && this.cache.get(id)?.failed ? `Your organization's policy could not be read: ${ask.mode ?? 'this mode'} cannot run unattended` : OrgPolicyCache.refusalOf(p, ask);
   }
 
   /** FR-201: the advice words for a start (`doubt` on its mode or model), or undefined; never a refusal. */

@@ -87,9 +87,9 @@ import { cleanSandboxState } from '../shared/sandbox';
 import { toWindowEvent } from './sandboxops';
 import { UsageStore } from './usagestore';
 import { AgentTrustStore } from './agenttrust';
-import { Scheduler, loadSchedules, publicDoc, saveSchedules, scheduleBusy } from './schedules';
+import { Scheduler, loadSchedules, publicDoc, saveSchedules, scheduleBusy, sealFrom } from './schedules';
 import type { SchedulerDeps } from './schedules';
-import { RunModes, modeCheckOp } from './schedmode';
+import { createScheduleWiring } from './schedmode';
 import { UsageTotalsStore } from './usagetotalsstore';
 import { ActivityStore } from './activitystore';
 import { decisionOf } from '../shared/activity';
@@ -513,9 +513,12 @@ router.onEvent((e) => {
   if (s) toRenderer('agents:checkpoint', { id: e.sessionId, ...s });
 });
 
-async function sendOp(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter, plan = false): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string }> {
-  const heldMode = runModes.userSendRefusal(id, busyStatus(id)); // spec 044 FR-180: a typed message never runs under a schedule's higher mode
-  if (heldMode) return { ok: false, error: heldMode };
+/* spec 044 FR-180: a typed message goes through the session's gate: refused while a scheduled run holds it, and counted while on its way (`ensureLive` and the slash
+   expansion wait), so a run cannot start under it */
+function sendOp(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter, plan = false): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string; held?: true }> {
+  return scheduleWiring.userSend<{ ok: boolean; error?: string; slash?: string; slashNote?: string; held?: true }>(id, (error) => ({ ok: false, error, held: true }), () => sendOpGated(id, text, attachments, ad, plan));
+}
+async function sendOpGated(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter, plan: boolean): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string }> {
   const safe = (Array.isArray(attachments) ? attachments : []).filter((a) => pickedFiles.has(a.path));
   // Caps are enforced here too, not only in the UI.
   if (safe.length > MAX_ATTACH_FILES) return { ok: false, error: `Up to ${MAX_ATTACH_FILES} attachments per message (got ${safe.length}).` };
@@ -544,8 +547,6 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
 
 // ---- scheduled prompts (spec 044): per folder, while the app runs; the run goes through the user's own send path ----
 let scheduler: Scheduler | undefined;
-/* spec 044 FR-180: the one-turn mode of a scheduled run (rules and tests: schedmode.ts); never saved */
-const runModes = new RunModes({ agents, router, orgRefusal: (a, mode) => orgPolicies.refusalNow(appIdOf(a.id), { mode }), log: (a, action, mode) => logActivity(a, 'mode-change', action, mode) });
 /* spec 017 FR-015..FR-017, spec 044 FR-110: doors the user closed (Do not disturb) and the runs held there; keyed by the session's resume id */
 let doors: Doors | undefined;
 const doorKey = (a: AgentInfo): string => resumeIdFor(a.id);
@@ -564,10 +565,34 @@ router.onEvent((e) => {
   if (!crashMarker || e.type !== 'status' || e.agentId) return;
   crashMarker.setBusy([...agents.keys()].filter((id) => busyStatus(id)).map((id) => ({ id, adapterId: router.adapterIdOf(id) ?? DEFAULT_ADAPTER })));
 });
+/* spec 044 FR-180..FR-184: a scheduled run's mode and send: the rules, the state machine and the tests that run this wiring are in schedmode.ts */
+const scheduleWiring = createScheduleWiring({
+  agents,
+  router,
+  statusBusy: busyStatus,
+  remote: (id) => remoteOps.has(id),
+  log: (a, action, mode) => logActivity(a, 'mode-change', action, mode),
+  changed: (a, mode) => toRenderer('schedule:mode', { agentId: a.id, mode: mode ?? null }),
+  agentOf: (s) => scheduleAgent(s),
+  ensureLive: (a) => ensureLive(a),
+  orgNow: (a, mode) => orgPolicies.runRefusalNow(appIdOf(a.id), { mode }),
+  orgRun: (a, mode) => orgPolicies.runRefusal(appIdOf(a.id), { mode }),
+  noteSend: (a) => { agentState.ensure(a.id, a.lazy); agentState.noteSend(a.id); },
+  noteSendFailed: (a) => agentState.noteSendFailed(a.id),
+  noteSent: (a) => noteLastSession(a),
+  announce: (a, s, prompt, modeTurn) => {
+    toRenderer('agent:event', { type: 'user', sessionId: a.id, timestamp: Date.now(), text: prompt });
+    toRenderer('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at, rule: s.rule, mode: s.mode, modeTurn });
+  },
+  appName: (app) => registry.get(app)?.displayName ?? app,
+  agentName: (a) => a.alias || a.label || a.name,
+  folderName: (a) => folderNameOf(a),
+});
+const runModes = scheduleWiring.runs;
 const scheduleDeps = (file: string): SchedulerDeps => ({
   now: () => Date.now(),
   /* spec 068 FR-008: an agent on a coffee break is busy too (the rule and its test: schedules.ts scheduleBusy) */
-  isBusy: (folder, session) => scheduleBusy(folder, session, { sessions: () => [...agents.values()].map((x) => ({ id: x.id, folder: wsKey(x) })), busy: (id) => busyStatus(id) || runModes.holds(id), breaks: agentState }),
+  isBusy: (folder, session) => scheduleBusy(folder, session, { sessions: () => [...agents.values()].map((x) => ({ id: x.id, folder: wsKey(x) })), busy: scheduleWiring.busy, breaks: agentState }),
   hasSession: (session) => agents.has(session),
   /* spec 081 FR-013: a prompt that would start or resume a session of an app that is updating is held, and goes when the update has finished; a prompt to a session that is still open goes through */
   heldBy: (s) => {
@@ -585,44 +610,12 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
   /* spec 044 FR-110: a run for an agent behind a door the user closed is queued there (held): never sent, never dropped. A full queue
      (spec 017 FR-016, 200 runs) still answers true, so nothing goes out while the door is closed. */
   hold: (s, now) => doorsIpc.hold(scheduleAgent(s)?.id, { at: now, prompt: s.prompt, scheduleId: s.id }), // the rule: doorops.ts (tested)
-  send: async (folder, prompt, s) => {
-    const a = scheduleAgent(s);
-    const ad = a ? router.forAgent(a.id) : undefined;
-    if (!a || !ad) return false;
-    agentState.ensure(a.id, a.lazy);
-    agentState.noteSend(a.id); // same as the interactive send: the window shows Thinking from the moment a prompt goes out
-    try {
-      await ensureLive(a);
-      // spec 044 FR-180, FR-184: the schedule's mode for this one turn; a live session that cannot take it is not sent
-      const refused = runModes.apply(a, s.mode);
-      if (refused) {
-        agentState.noteSendFailed(a.id);
-        return { refused };
-      }
-      toRenderer('agent:event', { type: 'user', sessionId: a.id, timestamp: Date.now(), text: prompt });
-      toRenderer('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at, rule: s.rule, mode: s.mode, modeTurn: runModes.holds(a.id) });
-      await ad.send(a.id, { text: prompt });
-      runModes.sent(a.id);
-      noteLastSession(a);
-    } catch (err) {
-      runModes.end(a.id); // spec 044 FR-180: a send that failed gives the session its own mode back
-      agentState.noteSendFailed(a.id);
-      throw err;
-    }
-    return a.id;
-  },
-  /* spec 044 FR-182..FR-184: the check at a save and at each run; the rule and its tests are in schedmode.ts */
-  modeCheck: (s) => modeCheckOp({ router, orgRefusal: (a, mode) => orgPolicies.refusalNow(appIdOf(a.id), { mode }) }, s, scheduleAgent(s)),
-  /* FR-182: what the confirmation names, from main's own records */
-  modeAgent: (s) => {
-    const a = scheduleAgent(s);
-    const app = a ? router.adapterIdOf(a.id) : undefined;
-    return a && app ? { app, appName: registry.get(app)?.displayName ?? app, agent: a.alias || a.label || a.name, folderName: folderNameOf(a) } : undefined;
-  },
-  orgWords: (s, mode) => {
-    const a = scheduleAgent(s);
-    return a && mode !== 'autopilot' ? orgPolicies.refusalNow(appIdOf(a.id), { mode }) : undefined;
-  },
+  send: (_folder, prompt, s) => scheduleWiring.send(s, prompt),
+  modeCheck: scheduleWiring.modeCheck,
+  modeAgent: scheduleWiring.modeAgent,
+  orgWords: scheduleWiring.orgWords,
+  primeMode: scheduleWiring.primeMode,
+  seal: sealFrom(safeStorageCodec), // FR-182: a stored Allow all is sealed; the same OS store as the MCP secrets
   setTimer: (ms, fn) => setTimeout(fn, ms),
   clearTimer: (t) => clearTimeout(t as NodeJS.Timeout),
   save: (doc) => saveSchedules(file, doc),
@@ -630,7 +623,7 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
 });
 
 // The handler bodies that refuse a setting a live session cannot take live in agentops.ts (spec 012 FR-054); `store` is read when a handler runs.
-const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, sessionKey: (a) => resumeIdFor(a.id), log: (a, decision, action) => logActivity(a, decision, action), orgRefusal: (a, mode) => orgPolicies.refusalNow(appIdOf(a.id), { mode }) };
+const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, sessionKey: (a) => resumeIdFor(a.id), log: (a, decision, action) => logActivity(a, decision, action), orgRefusal: (a, mode) => orgPolicies.refusalNow(appIdOf(a.id), { mode }), endRunMode: (id) => runModes.end(id) };
 
 /* DURBAR_THEME (spec 040 FR-008): a theme for this run only, never saved; a pick in Settings replaces it and is saved as usual. */
 let runTheme: string | undefined;
@@ -757,7 +750,7 @@ const renameSessionOpFor = (openIds: () => ReadonlySet<string>) => renameOp({
 
 // ---- IPC (spec 045 FR-060): every handler lives in src/main/ipc/<area>.ts, registered here through ipcHandle / ipcOn (ipcguard.ts). ----
 // Stores created in whenReady, and state that changes, are passed as getters so a handler reads them when it runs.
-const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity, doorClosed: (id) => { const a = agents.get(id); return !!a && !!doors?.isClosed(doorKey(a)); } });
+const remoteOps = registerRemoteIpc({ runModeOf: (id) => runModes.modeOf(id), agents, router, toRenderer, getWin: () => win, logActivity, doorClosed: (id) => { const a = agents.get(id); return !!a && !!doors?.isClosed(doorKey(a)); } });
 /* spec 017 FR-017: a held run goes out through the same path as a scheduled one (the window shows it as the user's message) */
 /* spec 044 FR-111 (review on #631): Send all goes through the scheduler (Pause all, the schedule, its limit, busy incl. coffee breaks, credited) */
 const doorsIpc = registerDoorsIpc({ agents, router, doors: () => doors, keyOf: doorKey, remoteOps, toRenderer, release: (run: HeldRun) => (scheduler ? scheduler.releaseDoorRun(run.scheduleId, run.prompt) : Promise.resolve('failed' as const)) });

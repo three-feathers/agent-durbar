@@ -38,7 +38,7 @@ for (const o of outcomes) {
 assert.deepStrictEqual(Object.keys(H.OUTCOMES).sort(), [...outcomes].sort(), 'no word for an outcome main does not have');
 // every reason main can write (RunReason = no-agent | send-error | LoopEndReason) has fixed words
 const endReasons = [...(/export type LoopEndReason = ([^;]+);/.exec(mainSrc)?.[1] ?? '').matchAll(/'([a-z-]+)'/g)].map((m) => m[1]);
-const modeReasons = ['no-mode', 'other-agent', 'mode-org', 'mode-lacking', 'mode-live', 'mode-autopilot', 'mode-loop-autopilot']; // spec 044 FR-181..FR-184
+const modeReasons = ['no-mode', 'other-agent', 'mode-org', 'mode-lacking', 'mode-live', 'mode-limit', 'mode-autopilot', 'mode-loop-autopilot', 'no-seal']; // spec 044 FR-181..FR-184
 for (const r of ['no-agent', 'send-error', ...endReasons, ...modeReasons]) assert.ok(H.reasonWords(r).length > 3, `reason "${r}" has words`);
 assert.deepStrictEqual(Object.keys(H.REASONS).sort(), ['no-agent', 'send-error', ...endReasons, ...modeReasons].sort());
 // spec 044 FR-181, FR-183: the window's rule is main's, and a refusal says why on the row and in the history

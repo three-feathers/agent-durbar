@@ -1109,6 +1109,8 @@ async function main(): Promise<void> {
     const ex = await until('limit exhausted', () => limits(sid).find((e) => e.phase === 'exhausted'));
     assert.strictEqual(ex.maxAiCredits, 0.01);
     assert.ok(Math.abs((ex.usedAiCredits ?? 0) - 0.012) < 1e-9, 'used = the estimate so far');
+    // spec 044 FR-180: a scheduled run in a temporary mode is not kept for later: it would run after the mode came back
+    await assert.rejects(ad.send(sid, { text: 'scheduled', noHold: true }), (e: { code?: string }) => e.code === 'at-limit');
     await ad.send(sid, { text: 'four' });
     await tick(20);
     assert.strictEqual(limits(sid).filter((e) => e.phase === 'exhausted').length, 1, 'one notice per stop, a further message is held too');

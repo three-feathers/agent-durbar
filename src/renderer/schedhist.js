@@ -42,8 +42,10 @@
     'mode-org':"your organization's policy refuses it",
     'mode-lacking':'this agent app does not have this mode',
     'mode-live':'this session cannot switch to it',
+    'mode-limit':'this session is at its spending limit; raise it and the next run goes',
     'mode-autopilot':'Autopilot is not available on a schedule yet',
-    'mode-loop-autopilot':'Autopilot is not offered on a loop'
+    'mode-loop-autopilot':'Autopilot is not offered on a loop',
+    'no-seal':'its Allow all confirmation could not be checked, so it asks again'
   };
   const own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
   const WITH_REASON=['failed','ended','skipped-mode','mode-refused'];

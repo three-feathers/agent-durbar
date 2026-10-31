@@ -8,7 +8,8 @@
  *    each row says *Waiting for a mode* and has *Choose a mode*; choosing does not send; a due time records `skipped-mode` and sends nothing; a stored Autopilot
  *    keeps its value, is refused with a visible reason and is not offered; a once schedule whose time passed offers *Run missed now*;
  *  - no schedules without a mode: no popup, nothing in the way.
- * A miss prints DRIVER FAILED. Writes 044-mode-form, 044-mode-confirm, 044-mode-waiting, 044-mode-refused and 044-mode-popup, each -<w>x<h>.png.
+ * A miss prints DRIVER FAILED. Also: the chip, card menu and chat during a run's turn (the real mode, a way down, a note when it comes back); markup in a prompt stays text; a 10,000-character prompt can be read whole; the popup's Tab and focus.
+ * Writes 044-mode-form, 044-mode-confirm, 044-mode-waiting, 044-mode-refused, 044-mode-popup, 044-mode-turn and 044-mode-longprompt, each -<w>x<h>.png.
  */
 const assert = require('assert');
 const path = require('path');
@@ -215,6 +216,83 @@ module.exports = async (ctx) => {
     await wait(`(r=>r&&!!r.querySelector('[data-sc="runmissed"]'))([...document.querySelectorAll('#sdList .sc-row')].find(x=>x.querySelector('.sc-p').textContent.includes('Cut the pre-release')))`, 'Run missed now is offered');
     await js(`[...document.querySelectorAll('#sdList .sc-row')].find(x=>x.querySelector('.sc-p').textContent.includes('Cut the pre-release')).querySelector('[data-sc="runmissed"]').click();0`);
     await wait(`(r=>r&&r.querySelector('small').textContent.includes(': sent'))([...document.querySelectorAll('#sdList .sc-row')].find(x=>x.querySelector('.sc-p').textContent.includes('Cut the pre-release')))`, 'it ran, once');
+    await closeDlg();
+
+    // ---- FR-180: during a run's turn the window shows the real mode, offers a way down, and says when it comes back ----
+    await H.load({ w, h, query: { simsched: '1' }, ready: 'fit', settle: false });
+    await H.calm();
+    const pick = await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>!x.parent&&x.info&&x.info.permMode==='read-only'&&document.querySelector('#stage .desk[data-id="'+x.id+'"]'));return a?{id:a.id,cwd:a.info.workspaceFile||a.info.cwd}:null})()`);
+    assert.ok(pick, 'a session in Read-only');
+    await js(`document.querySelector(${jsLiteral(`#stage .desk[data-id="${pick.id}"]`)}).click();0`);
+    await wait(`!!document.getElementById('modeChip')`);
+    assert.ok(await js(`window.__durbarSimSched.runMode(${jsLiteral(pick.id)},'allow')`));
+    await wait(`document.getElementById('modeChip').textContent.includes('Allow all (this turn)')`, 'the chip shows the real mode');
+    assert.ok(/own mode is Read-only/.test(await js(`document.getElementById('modeChip').title`)), 'its tooltip names the session\'s own');
+    await js(`document.getElementById('modeChip').click();0`);
+    await wait(`!!document.getElementById('mmRun')`, 'the menu says so');
+    assert.ok(/Allow all for a schedule/.test(await js(`document.getElementById('mmRun').textContent`)));
+    assert.strictEqual(await js(`document.querySelector('#modeMenu [data-mode="allow"]').getAttribute('aria-checked')`), 'true', 'the real one is checked');
+    await H.shot(path.join(dir, `044-mode-turn-${tag}.png`), { prep: 'mouse', settle: true });
+    const notes0 = await js(`document.querySelectorAll('.note').length`);
+    await js(`document.querySelector('#modeMenu [data-mode="read-only"]').click();0`);
+    await wait(`!document.getElementById('modeChip').textContent.includes('this turn')&&document.getElementById('modeChip').textContent.includes('Read-only')`, 'the way down works, with no confirmation');
+    await wait(`document.querySelectorAll('.note').length>${notes0}&&[...document.querySelectorAll('.note')].some(n=>n.textContent.includes('Back to Read-only'))`, 'and it says it came back');
+    // a turn that ends by itself
+    await js(`window.__durbarSimSched.runMode(${jsLiteral(pick.id)},'ask');0`);
+    await wait(`document.getElementById('modeChip').textContent.includes('Ask first (this turn)')`);
+    await js(`window.__durbarSimSched.runMode(${jsLiteral(pick.id)},null);0`);
+    await wait(`!document.getElementById('modeChip').textContent.includes('this turn')`);
+    await H.key('Escape');
+
+    // ---- markup in a prompt stays text in the rows, the popup and the confirmation; the whole of a long prompt is shown; the popup's keys ----
+    const hostile = '<img src=x onerror="window.__xss=1"><b id="hx">h</b><script>window.__xss=2</script>"\'&amp;';
+    const tail = 'THE-TAIL-OF-THE-PROMPT';
+    await js(`window.__durbarSimSched.addWaiting(${jsLiteral(hostile)},${jsLiteral(pick.cwd)});0`);
+    await js(`window.__durbarSimSched.addWaiting(${jsLiteral('x'.repeat(9900) + ' ' + tail)},${jsLiteral(pick.cwd)});0`);
+    await js(`document.getElementById('foldersBtn').click()`); await wait(`document.querySelectorAll('[data-fp="sched"]').length>=2`);
+    const nf = await js(`document.querySelectorAll('[data-fp="sched"]').length`);
+    let found = false;
+    for (let i = 0; i < nf && !found; i++) {
+      if (i) { await js(`document.getElementById('foldersBtn').click()`); await wait(`document.querySelectorAll('[data-fp="sched"]').length>=2`); }
+      await js(`document.querySelectorAll('[data-fp="sched"]')[${i}].click()`); await wait(`!!document.getElementById('scAdd')`);
+      found = await js(`[...document.querySelectorAll('#sdList .sc-p')].some(x=>x.textContent.includes('onerror'))`);
+      if (!found) await closeDlg();
+    }
+    assert.ok(found, 'the folder with the hostile prompt');
+    const clean = () => js(`!document.getElementById('hx')&&!document.querySelector('#schedDlg img,#schedModeDlg img,#modeDlg img')&&window.__xss===undefined`);
+    assert.ok(await clean(), 'a row shows it as text');
+    await js(`(()=>{const b=[...document.querySelectorAll('#sdList .sc-row')].find(x=>x.querySelector('.sc-p').textContent.includes('onerror')).querySelector('[data-sc="mode"]');b.focus();b.click()})();0`);
+    await wait(`!!document.getElementById('schedModeDlg')`);
+    assert.ok(await clean(), 'the popup shows it as text');
+    await js(`(()=>{const s=document.querySelector('.sm-mode');s.value='allow';document.getElementById('smSave').click()})();0`);
+    await wait(`!!document.getElementById('modeDlg')`);
+    assert.ok(await clean(), 'the confirmation shows it as text');
+    assert.ok((await js(`document.getElementById('mdL').textContent`)).includes('onerror'), 'and whole');
+    await js(`document.querySelector('#modeDlg [data-cancel]').click();0`);
+    await wait(`!document.getElementById('modeDlg')`);
+    // Tab wraps; Escape gives the focus back to what opened it
+    await js(`document.getElementById('smSave').focus();0`);
+    await H.key('Tab');
+    await wait(`document.getElementById('schedModeDlg').contains(document.activeElement)`, 'Tab stays in the popup');
+    assert.strictEqual(await js(`document.activeElement.id`) === 'smSave', false, 'and wraps from the last control');
+    await H.key('Escape');
+    await wait(`!document.getElementById('schedModeDlg')`);
+    assert.strictEqual(await js(`document.activeElement&&document.activeElement.dataset.sc`), 'mode', 'the focus is back on Choose a mode');
+    // a 10,000-character prompt: the tail can be read in the popup and in the confirmation, and the dialog stays on screen
+    await js(`[...document.querySelectorAll('#sdList .sc-row')].find(x=>x.querySelector('.sc-p').textContent.startsWith('xxx')).querySelector('[data-sc="mode"]').click();0`);
+    await wait(`!!document.getElementById('schedModeDlg')`);
+    await js(`document.querySelector('#schedModeDlg .sc-p').click();0`);
+    await wait(`document.querySelector('#schedModeDlg .sc-full').textContent.includes(${jsLiteral(tail)})&&!document.querySelector('#schedModeDlg .sc-full').hidden`, 'the popup shows the whole prompt');
+    assert.ok(await js(`(()=>{const d=document.querySelector('#schedModeDlg .dlg').getBoundingClientRect();return d.top>=0&&d.bottom<=innerHeight})()`), 'the popup stays on screen with it open');
+    await js(`(()=>{const s=document.querySelector('.sm-mode');s.value='allow';document.getElementById('smSave').click()})();0`);
+    await wait(`!!document.getElementById('modeDlg')`);
+    assert.ok((await js(`document.getElementById('mdL').textContent`)).endsWith(tail), 'the confirmation shows the whole prompt');
+    assert.ok(await js(`(()=>{const d=document.querySelector('#modeDlg .dlg').getBoundingClientRect(),l=document.getElementById('mdL'),b=document.querySelector('#modeDlg .primary').getBoundingClientRect();return d.top>=0&&d.bottom<=innerHeight&&b.bottom<=innerHeight&&l.scrollHeight>l.clientHeight})()`), 'it scrolls, and its buttons stay on screen');
+    await H.shot(path.join(dir, `044-mode-longprompt-${tag}.png`), { prep: 'mouse', settle: true });
+    await js(`document.querySelector('#modeDlg [data-cancel]').click();0`);
+    await wait(`!document.getElementById('modeDlg')`);
+    await js(`document.getElementById('smClose').click();0`);
+    await wait(`!document.getElementById('schedModeDlg')`);
     await closeDlg();
   }
   console.log('check-sched-mode: all checks passed');

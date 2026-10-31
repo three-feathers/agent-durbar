@@ -9,7 +9,7 @@
  */
 import type { Doors, HeldRun } from './doors';
 
-export type ReleaseResult = 'sent' | 'busy' | 'paused-all' | 'paused' | 'cap' | 'ended' | 'updating' | 'gone' | 'mode' | 'failed';
+export type ReleaseResult = 'sent' | 'busy' | 'paused-all' | 'paused' | 'cap' | 'ended' | 'updating' | 'gone' | 'mode' | 'prompt-changed' | 'failed';
 
 export interface DoorOpsDeps {
   doors(): Doors | undefined;

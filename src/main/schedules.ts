@@ -24,7 +24,7 @@ export interface ModeFor {
   session?: string;
 }
 /** FR-183, FR-184: why a run with a known mode was not sent. A closed list, so a log or a row never holds a policy's or an app's own text. */
-export type ModeRefusal = 'mode-org' | 'mode-lacking' | 'mode-live' | 'mode-autopilot' | 'mode-loop-autopilot';
+export type ModeRefusal = 'mode-org' | 'mode-lacking' | 'mode-live' | 'mode-limit' | 'mode-autopilot' | 'mode-loop-autopilot';
 /** What main's check says about a stored mode for the agent that would run it now. */
 export type ModeVerdict = ModeRefusal | 'other-agent' | undefined;
 /** What the confirmation names (FR-182), built by main from its own records. */
@@ -97,6 +97,8 @@ export interface Schedule {
   mode?: ScheduleMode;
   /** FR-182: who `mode` was chosen for. A run that would go to anyone else is not sent and the schedule waits for a mode again. */
   modeFor?: ModeFor;
+  /** FR-182: `allow` sealed by main with the OS's safe storage over what it was confirmed for. Missing or wrong at load: no mode. Never sent to the window. */
+  modeSeal?: string;
   target?: ScheduleTarget;
   cap?: ScheduleCap;
   /** What this schedule's runs spent, in `cap.unit`, since it was created or resumed after reaching its limit. Kept by main. */
@@ -107,7 +109,7 @@ export interface Schedule {
   loop?: LoopSpec;
 }
 /** Spec 044 FR-036: why a run did not go (a closed list, never free text) or why a loop ended. */
-export type RunReason = 'no-agent' | 'send-error' | LoopEndReason | ModeRefusal | 'no-mode' | 'other-agent';
+export type RunReason = 'no-agent' | 'send-error' | LoopEndReason | ModeRefusal | 'no-mode' | 'other-agent' | 'no-seal';
 /** Spec 044 FR-036: one entry of a schedule's run log. No prompt text, error text, path or token is ever stored here. */
 export interface ScheduleRun {
   at: number;
@@ -149,7 +151,7 @@ export const MAX_EVERY = 1440;
 const MIN = 60_000;
 const OUTCOMES: Outcome[] = ['sent', 'skipped-busy', 'skipped-paused', 'skipped-cap', 'skipped-ended', 'missed', 'failed', 'held', 'ended', 'skipped-door-full', 'skipped-review', 'skipped-mode', 'mode-refused'];
 const END_REASONS: LoopEndReason[] = ['user', 'agent', 'session', 'limit', 'passes', 'time', 'no-pace', 'errors', 'app-closed'];
-const RUN_REASONS: RunReason[] = ['no-agent', 'send-error', ...END_REASONS, 'mode-org', 'mode-lacking', 'mode-live', 'mode-autopilot', 'mode-loop-autopilot', 'no-mode', 'other-agent'];
+const RUN_REASONS: RunReason[] = ['no-agent', 'send-error', ...END_REASONS, 'mode-org', 'mode-lacking', 'mode-live', 'mode-limit', 'mode-autopilot', 'mode-loop-autopilot', 'no-mode', 'other-agent', 'no-seal'];
 /** Spec 044 FR-037: a skip that repeats with the same outcome and session is one entry with a count. */
 const FOLDS: Outcome[] = ['skipped-busy', 'skipped-paused', 'held', 'skipped-door-full', 'skipped-review', 'skipped-mode', 'mode-refused'];
 /** The outcomes whose reason the row shows (`last.reason`, FR-183): it says why a run did not go, and only a closed word is stored. */
@@ -317,6 +319,7 @@ export function cleanSchedule(o: unknown, now: number, keepId = true): Schedule 
   if (mode && (modeFor || mode === 'autopilot')) {
     s.mode = mode;
     if (modeFor) s.modeFor = modeFor;
+    if (typeof r.modeSeal === 'string' && r.modeSeal.length <= 4096) s.modeSeal = r.modeSeal;
   }
   // Phase 2 fields: optional; present but not valid drops the schedule (never silently sent elsewhere or without its limit)
   if (r.target !== undefined && r.target !== null) {
@@ -408,7 +411,14 @@ export function runsReply(sch: Pick<Scheduler, 'runsOf'> | undefined, id: unknow
 
 /** The document as the window sees it: no run logs (FR-043; they are asked for one schedule at a time). */
 export function publicDoc(doc: SchedulesDoc): SchedulesDoc {
-  return { pausedAll: doc.pausedAll, schedules: doc.schedules };
+  return { pausedAll: doc.pausedAll, schedules: doc.schedules.map(publicSchedule) };
+}
+
+/** FR-182: a schedule as the window sees it: the seal stays in main. */
+export function publicSchedule(s: Schedule): Schedule {
+  if (s.modeSeal === undefined) return s;
+  const { modeSeal: _seal, ...rest } = s;
+  return rest;
 }
 
 export function parseSchedules(text: string, now: number): SchedulesDoc {
@@ -462,7 +472,7 @@ export interface SchedulerDeps {
   /** The folder's agent (or, with `session`, that session) is working or waiting for the user. */
   isBusy(folder: string, session?: string): boolean;
   /** Sends the prompt to the folder's agent or the schedule's target; false when it could not, else true or the session id it went to (for FR-015 attribution). */
-  send(folder: string, prompt: string, s: Schedule): Promise<boolean | string | { refused: ModeRefusal }>;
+  send(folder: string, prompt: string, s: Schedule): Promise<boolean | string | { refused: ModeRefusal } | { busy: true }>;
   /**
    * FR-182..FR-184: main's check of the stored mode against the agent that would run it now. Asked at each run, and at a save with the
    * identity the save would store. `other-agent`: it would go to someone else; undefined: it may go (or there is no agent: `send` says so).
@@ -472,6 +482,10 @@ export interface SchedulerDeps {
   modeAgent(s: Pick<Schedule, 'folder' | 'target'>): ModeAgentInfo | undefined;
   /** FR-183: the organization policy's own words for a refusal at a save (shown once, never stored). */
   orgWords?(s: Schedule, mode: ScheduleMode): string | undefined;
+  /** FR-183: reads the organization policy of the agent that would run this, before a save looks at it. */
+  primeMode?(s: { folder: string; target?: ScheduleTarget }): Promise<void>;
+  /** FR-182: the OS's safe storage (`sealFrom`), or undefined when there is none: then Allow all on a schedule lasts until the app closes and is asked again. */
+  seal?: ModeSealer;
   /** FR-014: the session still exists. */
   hasSession(session: string): boolean;
   /** FR-015: the cap unit of the agent app that would run the schedule, or undefined when it reports no spending in a unit. */
@@ -496,6 +510,32 @@ export interface SchedulerDeps {
   heldBy?(s: Schedule): string | undefined;
 }
 
+/** FR-182: seals a confirmation; a failure of the OS's store is `undefined`, never a throw. */
+export interface ModeSealer {
+  encrypt(text: string): string | undefined;
+  decrypt(blob: string): string | undefined;
+}
+
+/** FR-182: a sealer on main's `safeStorageCodec`. */
+export function sealFrom(codec: { available(): boolean; encrypt(plain: string): string; decrypt(blob: string): string }): ModeSealer {
+  return {
+    encrypt: (text) => {
+      try {
+        return codec.available() ? codec.encrypt(text) : undefined;
+      } catch {
+        return undefined;
+      }
+    },
+    decrypt: (blob) => {
+      try {
+        return codec.available() ? codec.decrypt(blob) : undefined;
+      } catch {
+        return undefined;
+      }
+    },
+  };
+}
+
 /** Spec 081: how long a held run waits before it is looked at again (a release also brings it forward at once). */
 export const HOLD_RETRY_MS = 5000;
 
@@ -503,14 +543,16 @@ export const HOLD_RETRY_MS = 5000;
 export const MODE_PROOF_MS = 5 * 60_000;
 const MAX_MODE_PROOFS = 20;
 /** The words for a refused run or save; the row and the history use the same list (`schedhist.js`). */
-const MODE_WORDS: Record<ModeRefusal | 'no-mode' | 'other-agent', string> = {
+const MODE_WORDS: Record<ModeRefusal | 'no-mode' | 'other-agent' | 'no-seal', string> = {
   'mode-org': "Your organization's policy refuses this mode for this agent app.",
   'mode-lacking': 'This agent app does not have this mode.',
   'mode-live': 'This session cannot switch to this mode while it runs.',
+  'mode-limit': 'This session is at its spending limit. Raise it to run this now.',
   'mode-autopilot': 'Autopilot is not available on a schedule yet.',
   'mode-loop-autopilot': 'Autopilot is not offered on a loop.',
   'no-mode': 'Choose a mode for this schedule first.',
   'other-agent': 'This schedule would go to another agent than the one its mode was chosen for. Choose a mode again.',
+  'no-seal': 'The Allow all confirmation of this schedule could not be checked. Choose a mode again.',
 };
 const sameTarget = (a?: ScheduleTarget, b?: ScheduleTarget): boolean => (a?.session ?? '') === (b?.session ?? '') && (a?.agent ?? '') === (b?.agent ?? '');
 const sameModeFor = (a?: ModeFor, b?: ModeFor): boolean => !!a && !!b && a.app === b.app && (a.session ?? '') === (b.session ?? '');
@@ -543,6 +585,15 @@ export class Scheduler {
   /** At start: once-schedules that are past are `missed`; intervals continue from now, anchored ones at their next time of day (missed runs are not caught up). */
   start(): void {
     const now = this.deps.now();
+    // FR-182: an Allow all whose seal is missing or wrong was not set here (or the OS's store is not there): it waits. Autopilot cannot run at all until
+    // spec 099 T097, which must seal it when it sets it; an unsealed one stays as a refused value so T097 can read it.
+    for (const s of this.doc.schedules) {
+      if (s.mode !== 'allow' || this.sealOk(s)) continue;
+      delete s.mode;
+      delete s.modeFor;
+      delete s.modeSeal;
+      this.record(s, 'skipped-mode', now, { session: s.target?.session, reason: 'no-seal' });
+    }
     for (const s of this.doc.schedules) {
       // spec 072 FR-008: a loop is never resumed by itself after a restart; nothing is sent
       if (s.loop) {
@@ -600,10 +651,10 @@ export class Scheduler {
   }
 
   /** What a send gave: its result, and whether it threw (`send-error`) or said it could not (`no-agent`, FR-036). */
-  private async sendRun(s: Schedule, prompt: string): Promise<{ r: boolean | string; reason?: RunReason; refused?: ModeRefusal }> {
+  private async sendRun(s: Schedule, prompt: string): Promise<{ r: boolean | string; reason?: RunReason; refused?: ModeRefusal; busy?: true }> {
     try {
       const r = await this.deps.send(s.folder, prompt, s);
-      if (r && typeof r === 'object') return { r: false, reason: r.refused, refused: r.refused };
+      if (r && typeof r === 'object') return 'busy' in r ? { r: false, busy: true } : { r: false, reason: r.refused, refused: r.refused };
       return r ? { r } : { r, reason: 'no-agent' };
     } catch {
       return { r: false, reason: 'send-error' };
@@ -623,6 +674,7 @@ export class Scheduler {
     if (v !== 'other-agent') return { outcome: 'mode-refused', reason: v };
     delete s.mode;
     delete s.modeFor;
+    delete s.modeSeal;
     this.real = true;
     return { outcome: 'skipped-mode', reason: 'other-agent' };
   }
@@ -843,7 +895,7 @@ export class Scheduler {
     this.attrib.set(session, s.id);
     const pass = l.passes;
     const started = l.startedAt; // restartLoop edits this object in place, so keep the value from before the await
-    const { r, reason, refused } = await this.sendRun(s, s.prompt);
+    const { r, reason, refused, busy } = await this.sendRun(s, s.prompt);
     const after = this.deps.now();
     // `save` (Pause, Resume, an edit) may have replaced the object while send was awaited: act on the current one, and only if it is
     // still this loop in this pass (not stopped, removed, or its turn already ended)
@@ -854,13 +906,14 @@ export class Scheduler {
       this.record(cur, 'sent', now, { session: typeof r === 'string' ? r : session });
       return;
     }
-    if (refused) {
-      // FR-184: the session could not take the mode when the pass was sent: nothing went out, so it is not a pass and not a failed one
+    if (refused || busy) {
+      // FR-184: the session could not take the mode, or a turn began meanwhile: nothing went out, so it is not a pass and not a failed one
       if (this.attrib.get(session) === cur.id) this.attrib.delete(session);
       cl.inPass = false;
       cl.passes = Math.max(0, (cl.passes ?? 1) - 1);
       cur.next = after + this.lastDelay(cl) * MIN;
-      this.record(cur, 'mode-refused', now, { session, reason: refused });
+      if (refused) this.record(cur, 'mode-refused', now, { session, reason: refused });
+      else this.record(cur, 'skipped-busy', now, { session });
       return;
     }
     // the pass could not be sent: it counts as a failed pass (FR-013)
@@ -987,7 +1040,7 @@ export class Scheduler {
     this.running = true;
     try {
       const now = this.deps.now();
-      for (const s of this.doc.schedules) {
+      for (let s of this.doc.schedules) {
         const t = this.dueNow(s);
         if (t === undefined || t > now) continue;
         if (s.loop) {
@@ -1018,8 +1071,10 @@ export class Scheduler {
           const sr = await this.sendRun(s, s.prompt);
           r = sr.r;
           reason = sr.reason;
-          outcome = r ? 'sent' : sr.refused ? 'mode-refused' : 'failed';
+          outcome = r ? 'sent' : sr.refused ? 'mode-refused' : sr.busy ? 'skipped-busy' : 'failed';
           if (typeof r === 'string' && r) this.attrib.set(r, s.id);
+          // `save` and `setMode` replace the object while the send is awaited: what follows (`done`, `next`) must reach the stored one, or a once schedule would run again
+          s = this.doc.schedules.find((x) => x.id === s.id) ?? s;
         }
         this.record(s, outcome, now, { session: typeof r === 'string' && r ? r : s.target?.session, reason });
         if (outcome === 'skipped-ended' || outcome === 'skipped-cap' || (outcome === 'skipped-review' && !recurring(s))) {
@@ -1069,17 +1124,19 @@ export class Scheduler {
     this.running = true;
     let r: boolean | string = false;
     let refused: ModeRefusal | undefined;
+    let busy = false;
     try {
       const sr = await this.sendRun(s, s.prompt);
       r = sr.r;
       refused = sr.refused;
+      busy = !!sr.busy;
       if (typeof r === 'string' && r) this.attrib.set(r, s.id);
-      this.record(s, r ? 'sent' : refused ? 'mode-refused' : 'failed', this.deps.now(), { session: typeof r === 'string' && r ? r : s.target?.session, reason: sr.reason, manual: true });
+      if (!busy) this.record(this.doc.schedules.find((x) => x.id === s.id) ?? s, r ? 'sent' : refused ? 'mode-refused' : 'failed', this.deps.now(), { session: typeof r === 'string' && r ? r : s.target?.session, reason: sr.reason, manual: true });
     } finally {
       this.running = false;
       this.commit();
     }
-    return r ? { ok: true } : { ok: false, error: refused ? MODE_WORDS[refused] : 'Could not send it.' };
+    return r ? { ok: true } : { ok: false, error: busy ? 'The agent is busy. Try again when it is free.' : refused ? MODE_WORDS[refused] : 'Could not send it.' };
   }
 
   /**
@@ -1088,7 +1145,7 @@ export class Scheduler {
    * scheduled run; it goes out through the same `send` (credited to the schedule, `schedule:ran`), and `last` records it.
    * 'gone': the schedule was deleted, so the run is dropped by the caller (the user deleted the schedule).
    */
-  async releaseDoorRun(scheduleId: string | undefined, prompt: string): Promise<'sent' | 'busy' | 'paused-all' | 'paused' | 'cap' | 'ended' | 'updating' | 'gone' | 'mode' | 'failed'> {
+  async releaseDoorRun(scheduleId: string | undefined, prompt: string): Promise<'sent' | 'busy' | 'paused-all' | 'paused' | 'cap' | 'ended' | 'updating' | 'gone' | 'mode' | 'prompt-changed' | 'failed'> {
     const s = typeof scheduleId === 'string' ? this.doc.schedules.find((x) => x.id === scheduleId) : undefined;
     if (!s) return 'gone';
     if (this.doc.pausedAll) return 'paused-all';
@@ -1098,29 +1155,30 @@ export class Scheduler {
     // FR-181..FR-184: the same check as a due run, and it stays held. A run held before an edit carries the old prompt, and an Allow all
     // confirmation names the schedule as it is now (FR-182), so that old prompt does not go out on it.
     const blocked = this.modeBlock(s);
-    if (blocked || (s.mode === 'allow' && prompt !== s.prompt)) {
-      if (blocked) {
-        this.record(s, blocked.outcome, this.deps.now(), { session: s.target?.session, reason: blocked.reason });
-        this.commit();
-      }
+    if (blocked) {
+      this.record(s, blocked.outcome, this.deps.now(), { session: s.target?.session, reason: blocked.reason });
+      this.commit();
       return 'mode';
     }
+    if (s.mode === 'allow' && prompt !== s.prompt) return 'prompt-changed';
     if (this.deps.heldBy?.(s)) return 'updating'; // spec 081 FR-013: its agent app is updating
     if (this.running || this.deps.isBusy(s.folder, s.target?.session)) return 'busy';
     this.running = true;
     let r: boolean | string = false;
     let refused: ModeRefusal | undefined;
+    let busy = false;
     try {
       const sr = await this.sendRun(s, prompt);
       r = sr.r;
       refused = sr.refused;
+      busy = !!sr.busy;
       if (typeof r === 'string' && r) this.attrib.set(r, s.id);
-      this.record(s, r ? 'sent' : refused ? 'mode-refused' : 'failed', this.deps.now(), { session: typeof r === 'string' && r ? r : s.target?.session, reason: sr.reason });
+      if (!busy) this.record(this.doc.schedules.find((x) => x.id === s.id) ?? s, r ? 'sent' : refused ? 'mode-refused' : 'failed', this.deps.now(), { session: typeof r === 'string' && r ? r : s.target?.session, reason: sr.reason });
     } finally {
       this.running = false;
       this.commit();
     }
-    return r ? 'sent' : refused ? 'mode' : 'failed';
+    return r ? 'sent' : busy ? 'busy' : refused ? 'mode' : 'failed';
   }
 
   /** Adds or replaces a schedule (validated); returns it, or an error. */
@@ -1246,6 +1304,7 @@ export class Scheduler {
       if (prev.prompt === s.prompt && sameTarget(prev.target, s.target)) {
         if (prev.mode) s.mode = prev.mode;
         if (prev.modeFor) s.modeFor = prev.modeFor;
+        if (prev.modeSeal) s.modeSeal = prev.modeSeal;
       }
       return undefined;
     }
@@ -1267,6 +1326,7 @@ export class Scheduler {
       if (!same || prev?.mode !== 'autopilot') return MODE_WORDS['mode-autopilot'];
       s.mode = want;
       if (prev.modeFor) s.modeFor = prev.modeFor;
+      if (prev.modeSeal) s.modeSeal = prev.modeSeal;
       return undefined;
     }
     const who = this.deps.modeAgent(s);
@@ -1275,6 +1335,7 @@ export class Scheduler {
       if (!same || prev?.mode !== want || !prev.modeFor) return 'There is no agent for this schedule now, so a mode cannot be chosen for it.';
       s.mode = want;
       s.modeFor = prev.modeFor;
+      if (prev.modeSeal) s.modeSeal = prev.modeSeal;
       return undefined;
     }
     const modeFor: ModeFor = s.target ? { app: who.app, session: s.target.session } : { app: who.app };
@@ -1285,7 +1346,27 @@ export class Scheduler {
     }
     s.mode = want;
     s.modeFor = modeFor;
+    delete s.modeSeal;
+    if (want === 'allow') {
+      const seal = this.deps.seal?.encrypt(proofKey(s.id, s, want, who.app));
+      if (seal) s.modeSeal = seal;
+    }
     return undefined;
+  }
+
+  /** FR-182: this schedule's Allow all was sealed by main for what it says now. */
+  private sealOk(s: Schedule): boolean {
+    if (!s.modeSeal || !s.modeFor || s.mode === undefined) return false;
+    return this.deps.seal?.decrypt(s.modeSeal) === proofKey(s.id, s, s.mode, s.modeFor.app);
+  }
+
+  /** FR-183: reads the policy of the agent a save or `setMode` is about, so the check that follows sees a real answer. Never throws. */
+  async readyForMode(input: unknown): Promise<void> {
+    const r = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+    const prev = typeof r.id === 'string' ? this.doc.schedules.find((x) => x.id === r.id) : undefined;
+    const folder = prev?.folder ?? (typeof r.folder === 'string' ? r.folder : '');
+    const target = r.target === undefined ? prev?.target : r.target === null ? undefined : cleanTarget(r.target);
+    if (folder) await this.deps.primeMode?.({ folder, target }).catch(() => undefined);
   }
 
   /** FR-182: uses a confirmation's token: true only once, within its time, for exactly this question. A wrong question does not use it up. */
@@ -1305,7 +1386,7 @@ export class Scheduler {
    * `save` in main) cannot raise a mode in one step. It does **not** prove a person pressed the button: script in the app's own page could
    * ask and answer by itself. `fromApp` cannot see further than the page.
    */
-  askMode(input: unknown): { ok: true; needed: false } | { ok: true; needed: true; token: string; title: string; body: string } | { ok: false; error: string } {
+  askMode(input: unknown): { ok: true; needed: false } | { ok: true; needed: true; token: string; title: string; body: string; prompt: string } | { ok: false; error: string } {
     const r = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
     const prev = typeof r.id === 'string' ? this.doc.schedules.find((x) => x.id === r.id) : undefined;
     if (r.id !== undefined && r.id !== null && !prev) return { ok: false, error: 'That schedule is gone.' };
@@ -1331,7 +1412,9 @@ export class Scheduler {
       needed: true,
       token,
       title: 'Allow all on this schedule?',
-      body: `Let the schedule “${scheduleName(prompt)}” run ${who.agent} (${who.appName}) in ${who.folderName} on Allow all? It will not ask you first, each time it is due, until you change this. Edits, shell commands, web requests and tools will run without asking, and nothing is undone automatically. Only this schedule's turns run this way; the session keeps its own mode.`,
+      // FR-182: a folder schedule is bound to the agent app, not one session: the words say so (open for the owners with FR-182)
+      body: `Let the schedule “${scheduleName(prompt)}” run ${target ? `${who.agent} (${who.appName})` : `this folder's ${who.appName} agent, now ${who.agent},`} in ${who.folderName} on Allow all? It will not ask you first, each time it is due, until you change this. Edits, shell commands, web requests and tools will run without asking, and nothing is undone automatically. Only this schedule's turns run this way; the session keeps its own mode. The whole prompt:`,
+      prompt,
     };
   }
 
@@ -1347,6 +1430,7 @@ export class Scheduler {
     const s: Schedule = { ...prev };
     delete s.mode;
     delete s.modeFor;
+    delete s.modeSeal;
     const no = this.applyMode(s, prev, want, proof);
     if (no) return { ok: false, error: no };
     this.doc.schedules[this.doc.schedules.indexOf(prev)] = s;

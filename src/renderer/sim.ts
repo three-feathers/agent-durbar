@@ -847,7 +847,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       ...simPF.filter((f) => f.made && f.app === 'copilot').map((f) => { const h = pfHead(f.text); return { id: f.fileName.replace(/\.agent\.md$/, ''), name: h.name || f.fileName, description: h.description ?? '', source: (f.scope === 'user' ? 'user' : 'repo') as 'user' | 'repo', path: f.path }; }),
     ];
     const pfFolders = (): { id: string; path: string }[] => [...new Set(sims.map((s) => s.info.cwd))].map((p) => ({ id: pfHash('folder\0' + p).slice(0, 32), path: p }));
-    const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule']; mode?: ScheduleInfo['mode']; modeTurn?: boolean }) => void)[],
+    const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], modeSubs: [] as ((r: { agentId: string; mode: 'read-only' | 'ask' | 'allow' | null }) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule']; mode?: ScheduleInfo['mode']; modeTurn?: boolean }) => void)[],
       changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); },
       attrib: new Map<string, string>(), runs: {} as Record<string, ScheduleRunInfo[]> };
     /* spec 044 FR-044: the run log with main's rules (Scheduler.record in src/main/schedules.ts): `last` and the log are set together, a repeated
@@ -938,6 +938,19 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return true;
       },
       /* spec 044 FR-124 (check-sched-edit): a stored prompt over the limit, as a hand-edited file would hold it (`save` refuses a new one) */
+      /* spec 044 FR-181 (check-sched-mode): a stored schedule with no mode, as an older version left it; the prompt is whatever a driver wants to throw at the rows */
+      /* spec 044 FR-180 (check-sched-mode): what the window shows while a run holds a session in its mode, for as long as a driver needs */
+      runMode: (id: string, mode: 'read-only' | 'ask' | 'allow' | null): boolean => {
+        const s = sims.find((x) => x.info.id === id);
+        if (s) simRunMode(s, mode);
+        return !!s;
+      },
+      addWaiting: (prompt: string, folder: string): string => {
+        const id = 'sched-wait' + ++simSched.n;
+        simSched.list.push({ id, folder, prompt, every: 60, next: Date.now() + 40 * 60000 });
+        simSched.changed();
+        return id;
+      },
       addRaw: (prompt: string, kind?: 'once'): string => { // in the folder of the newest schedule (the one a driver just added through the form)
         const id = 'sched-raw' + ++simSched.n;
         simSched.list.push({ id, folder: simSched.list[simSched.list.length - 1]?.folder ?? '', prompt, ...(kind === 'once' ? { at: Date.now() + 3600_000 } : { every: 60, next: Date.now() + 40 * 60000 }), mode: 'ask', modeFor: { app: 'copilot' } });
@@ -1008,9 +1021,20 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       sc.modeFor = { app, ...(sc.target ? { session: sc.target.session } : {}) };
       return undefined;
     };
+    /* spec 044 FR-180: what the window shows during a turn in a schedule's mode (the rules behind it: RunModes, tested on main's wiring) */
+    const simRunMode = (s: SimAgent, mode: ScheduleInfo['mode'] | null): void => {
+      const m = mode === 'read-only' || mode === 'ask' || mode === 'allow' ? mode : null;
+      simSched.modeSubs.forEach((f) => f({ agentId: s.info.id, mode: m })); // first: the window's copy may be this very object, and it compares with what it had
+      s.info.runMode = m ?? undefined;
+    };
     simSchedHook = (e) => {
       // FR-015: from a scheduled send until that session's turn ends, its usage counts toward the schedule
-      if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) { simSched.attrib.delete(e.sessionId); return; }
+      if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) {
+        simSched.attrib.delete(e.sessionId);
+        const held = sims.find((x) => x.info.id === e.sessionId);
+        if (held?.info.runMode) simRunMode(held, null);
+        return;
+      }
       if (e.type !== 'usage') return;
       const sc = simSched.list.find((x) => x.id === simSched.attrib.get(e.sessionId));
       if (!sc?.cap) return;
@@ -1067,6 +1091,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (outcome === 'held' && door) { door.held.push({ prompt: sc.prompt, at: now, scheduleId: sc.id }); simDoors.changed(); } // spec 044 FR-110
         if (outcome === 'sent' && s) {
           emit({ type: 'user', sessionId: s.info.id, timestamp: now, text: sc.prompt } as AgentEvent);
+          if (sc.mode !== s.info.permMode) simRunMode(s, sc.mode);
           simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule, mode: sc.mode, modeTurn: sc.mode !== s.info.permMode }));
           simSched.attrib.set(s.info.id, sc.id);
           void api.send(s.info.id, sc.prompt, []);
@@ -2271,11 +2296,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!who) return { ok: false as const, error: 'There is no agent for this schedule now, so a mode cannot be chosen for it.' };
         const app = who.info.adapterId ?? 'copilot';
         if (prev?.mode === 'allow' && prev.prompt === c.prompt && (prev.target?.session ?? '') === (c.target?.session ?? '') && prev.modeFor?.app === app) return { ok: true as const, needed: false as const };
-        const token = 'sim-proof-' + ++simSched.n;
+        const token = 'sim-proof-' + Math.random().toString(36).slice(2);
         simProofs.set(token, simProofKey(prev?.id ?? '', c, 'allow', app));
         const line = c.prompt.replace(/\s+/g, ' ');
         const appName = app === 'claude' ? 'Claude Code' : app === 'codex' ? 'Codex' : 'Copilot';
-        return { ok: true as const, needed: true as const, token, title: 'Allow all on this schedule?', body: `Let the schedule “${line.length > 60 ? line.slice(0, 59) + '…' : line}” run ${who.info.name} (${appName}) in ${(who.info.cwd ?? '').split('/').pop()} on Allow all? It will not ask you first, each time it is due, until you change this. Edits, shell commands, web requests and tools will run without asking, and nothing is undone automatically. Only this schedule's turns run this way; the session keeps its own mode.` };
+        return { ok: true as const, needed: true as const, token, title: 'Allow all on this schedule?', body: `Let the schedule “${line.length > 60 ? line.slice(0, 59) + '…' : line}” run ${who.info.name} (${appName}) in ${(who.info.cwd ?? '').split('/').pop()} on Allow all? It will not ask you first, each time it is due, until you change this. Edits, shell commands, web requests and tools will run without asking, and nothing is undone automatically. Only this schedule's turns run this way; the session keeps its own mode. The whole prompt:`, prompt: c.prompt };
       },
       setScheduleMode: async (id, mode, proof) => {
         const prev = simSched.list.find((x) => x.id === id);
@@ -2310,6 +2335,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       setSchedulesPaused: async (on) => { simSched.pausedAll = on === true; simSched.changed(); return { ok: true, pausedAll: simSched.pausedAll }; },
       onSchedules: (cb) => { simSched.subs.push(cb); return () => undefined; },
       onScheduleRan: (cb) => { simSched.ran.push(cb); return () => undefined; },
+      onScheduleMode: (cb) => { simSched.modeSubs.push(cb); return () => undefined; },
       // spec 017 FR-015..FR-017: doors the user closes (memory only in the simulator)
       doorsList: async () => simDoorsRef?.list() ?? {},
       setDoor: async (id, closed) => {
@@ -3209,6 +3235,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         s.info.permMode = mode;
         s.info.permRestored = undefined;
         s.info.permFrom = undefined;
+        if (s.info.runMode) simRunMode(s, null); // spec 044 FR-180: a mode chosen now replaces the run's for this turn
         { // spec 087 FR-013: the floor in force after the switch (the simulator applies it at once)
           const kind = s.info.adapterId ?? 'copilot';
           // spec 087 FR-022c: a Copilot floor is lowered at the switch to Allow all and the sim's lowering resolves, so no word is kept; with

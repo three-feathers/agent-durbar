@@ -938,6 +938,10 @@ export class CopilotAdapter implements AgentAdapter {
     }
     // spec 011 FR-071: at or over the cap the message is held and the user is asked (the runtime would send it anyway)
     if (overCap(live)) {
+      if (message.noHold) {
+        if (!live.localLimit) this.raiseLocalLimit(sessionId, live); // spec 044 FR-180: the notice with its way to raise the limit; a message already held stays
+        throw Object.assign(new Error('This session is at its spending limit.'), { code: 'at-limit' });
+      }
       this.raiseLocalLimit(sessionId, live, message);
       return;
     }

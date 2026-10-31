@@ -62,6 +62,8 @@ export interface AgentInfo {
   maxAiCredits?: number;
   /** Restored from a saved Allow all after a restart (spec 003 FR-026): shown as a small "restored" note until the mode is switched. */
   permRestored?: boolean;
+  /** Spec 044 FR-180: the mode this turn really runs in, while a scheduled run holds the session in its own. Never saved; `permMode` stays the session's. */
+  runMode?: PermMode;
   /**
    * Spec 003 (2026-10-21): where the mode of a session that came back (restart or Previous sessions) was taken from, so the chat
    * can say it: `session` = the mode last chosen for this very session; `folder` = the folder's saved mode (nothing remembered for
@@ -263,7 +265,7 @@ export interface ProfileInfo {
 /** What a scheduled run came to (spec 044; main's `Outcome`). */
 export type ScheduleOutcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full' | 'skipped-review' | 'skipped-mode' | 'mode-refused';
 /** Spec 044 FR-036: why a run did not go, or why a loop ended. A closed list. */
-export type ScheduleRunReason = 'no-agent' | 'send-error' | 'user' | 'agent' | 'session' | 'limit' | 'passes' | 'time' | 'no-pace' | 'errors' | 'app-closed' | 'mode-org' | 'mode-lacking' | 'mode-live' | 'mode-autopilot' | 'mode-loop-autopilot' | 'no-mode' | 'other-agent';
+export type ScheduleRunReason = 'no-agent' | 'send-error' | 'user' | 'agent' | 'session' | 'limit' | 'passes' | 'time' | 'no-pace' | 'errors' | 'app-closed' | 'mode-org' | 'mode-lacking' | 'mode-live' | 'mode-limit' | 'mode-autopilot' | 'mode-loop-autopilot' | 'no-mode' | 'other-agent' | 'no-seal';
 /** Spec 044 FR-180: a schedule's own mode; `autopilot` is kept but not usable yet (FR-184, spec 099 T097). */
 export type ScheduleMode = 'read-only' | 'ask' | 'allow' | 'autopilot';
 /** Spec 044 FR-036: one entry of a schedule's run log, as `scheduleRuns` returns it (newest first). Reason codes only, never text. */
@@ -911,7 +913,7 @@ export interface DurbarApi {
   onDoorsChanged?(cb: (doors: Record<string, { closed: boolean; held: number }>) => void): () => void;
   /** Review on #631: the held prompts of a door (the window masks and cuts them in the Send all dialog). */
   doorsHeld?(id: string): Promise<{ prompt: string; at: number }[]>;
-  /** Send all stopped; the runs stay held (why: paused-all, paused, cap, ended, updating, mode, failed). */
+  /** Send all stopped; the runs stay held (why: paused-all, paused, cap, ended, updating, mode, prompt-changed, failed). */
   onDoorsStopped?(cb: (p: { id: string; why: string }) => void): () => void;
   /** A scheduled run could not be kept at a closed door whose queue is full. */
   onDoorsFull?(cb: (p: { id: string }) => void): () => void;
@@ -929,7 +931,7 @@ export interface DurbarApi {
   listSchedules?(): Promise<SchedulesInfo>;
   saveSchedule?(input: Partial<ScheduleInfo> & { folder: string; prompt: string; edit?: boolean; modeProof?: string }): Promise<{ ok: true; schedule: ScheduleInfo } | { ok: false; error: string }>;
   /** Spec 044 FR-182: whether this mode needs a confirmation for this schedule, with main's words and a one-time token for the save that follows. */
-  askScheduleMode?(input: { id?: string; folder?: string; prompt?: string; target?: ScheduleInfo['target'] | null; mode: ScheduleMode }): Promise<{ ok: true; needed: false } | { ok: true; needed: true; token: string; title: string; body: string } | { ok: false; error: string }>;
+  askScheduleMode?(input: { id?: string; folder?: string; prompt?: string; target?: ScheduleInfo['target'] | null; mode: ScheduleMode }): Promise<{ ok: true; needed: false } | { ok: true; needed: true; token: string; title: string; body: string; prompt: string } | { ok: false; error: string }>;
   /** Spec 044 FR-181: *Choose a mode*: this schedule's mode and nothing else; nothing is sent. */
   setScheduleMode?(id: string, mode: ScheduleMode, modeProof?: string): Promise<{ ok: true; schedule: ScheduleInfo } | { ok: false; error: string }>;
   removeSchedule?(id: string): Promise<{ ok: boolean }>;
@@ -945,6 +947,8 @@ export interface DurbarApi {
   interrupted?(): Promise<InterruptedInfo | null>;
   dismissInterrupted?(): Promise<{ ok: boolean }>;
   onSchedules?(cb: (doc: SchedulesInfo) => void): () => void;
+  /** Spec 044 FR-180: a scheduled run put this session in its mode (`mode`), or the session is back in its own (null). */
+  onScheduleMode?(cb: (r: { agentId: string; mode: PermMode | null }) => void): () => void;
   onScheduleRan?(cb: (r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule']; mode?: ScheduleMode; modeTurn?: boolean }) => void): () => void;
   /** Answer the agent's question (spec 012 FR-128): question text -> answer; null = skip. */
   answerQuestion?(id: string, requestId: string, answers: Record<string, string> | null): Promise<{ ok: boolean; error?: string }>;
@@ -1045,7 +1049,7 @@ export interface DurbarApi {
   stageAttachment(name: string, mime: string, data: ArrayBuffer): Promise<StageResult>;
   /** `slash` (spec 073 FR-005): the message started with a folder or user entry and its text was sent; the value says where it came from.
    *  `slashNote` (a VS Code prompt file): the settings not applied and the variables left as written. */
-  send(id: string, text: string, attachments: PickedFile[], opts?: { plan?: boolean }): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string }>;
+  send(id: string, text: string, attachments: PickedFile[], opts?: { plan?: boolean }): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string; held?: true }>;
   /** Spec 073 FR-010: the "/" entries of the agent's app in its folder (folder, user, app). */
   slashCommands?(id: string): Promise<{ ok: boolean; error?: string; entries: SlashCommandInfo[] }>;
   /**
