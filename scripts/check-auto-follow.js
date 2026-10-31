@@ -306,6 +306,37 @@ module.exports = async (ctx) => {
     console.log(`[follow] ${tag} ok`);
   }
 
+  // ---- floors (spec 092): the follow shows the right floor and announces once
+  {
+    const tag = '1440x900 floors';
+    await H.load({ w: 1440, h: 900, query: { simfloors: '1' }, ready: 'fit' });
+    await H.calm({ blur: true });
+    wc.focus();
+    await hooks();
+    await setting(true);
+    let home = null, other = null;
+    await H.eachFloor(async (f) => { if (await js(`!!document.querySelector(${jsLiteral(sel(A))})`)) home = f; else if (!other) other = f; });
+    assert.ok(home && other, `${tag}: ${A} is on one floor and another floor exists: ${JSON.stringify([home, other])}`);
+    await H.goToFloor(other.id);
+    await ok(`localStorage.getItem('durbar.floor')===${jsLiteral(other.id)}`, `${tag}: on the other floor`);
+    await H.key('k', MOD, { char: 'never' });
+    await ok(`!!document.getElementById('palDlg')`, `${tag}: the palette opens`);
+    await type(await nameOf(A));
+    await ctx.sleep(300);
+    await H.key('Return');
+    await ok(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(await nameOf(A))}`, `${tag}: the chat opens`);
+    await js(`window.__ann=[]`);
+    await mclick('#msgInput'); await type('hello floor'); await H.key('Return');
+    await ok(`!document.body.classList.contains('panel-open')&&localStorage.getItem('durbar.floor')===${jsLiteral(home.id)}`, `${tag}: back in the office on ${home.name}`, 15000);
+    await ok(`!!document.querySelector(${jsLiteral(sel(A) + '.is-followed')})`, `${tag}: the desk is drawn and marked`);
+    await ctx.sleep(400);
+    const said = await anns();
+    assert.deepStrictEqual(said.filter((t) => /Back to the office/.test(t)).length, 1, `${tag}: one announcement: ${JSON.stringify(said)}`);
+    assert.ok(said.some((t) => t.includes(' on ' + home.name + '. Back to the office.')), `${tag}: it names the floor: ${JSON.stringify(said)}`);
+    assert.ok(!said.some((t) => /^Floor /.test(t)), `${tag}: no second, separate floor announcement: ${JSON.stringify(said)}`);
+    console.log(`[follow] ${tag} ok`);
+  }
+
   // ---- reduced motion: the marker and the strip add no animation or transition
   {
     const dbg = ctx.win.webContents.debugger;
