@@ -21,17 +21,13 @@ const assert = require('assert');
 const { contentTracing } = require('electron');
 const { helpers, jsLiteral } = require('./driver-helpers');
 
-const LIMITS = { rendersPerStatus: 1, readsPerStatus: 5, nodesPerStatus: 0, attrWritesPerStatus: 10, elementsRecalculated: 50, pictureArea: 4, animationsOverLights: 0, animationsOffLights: 0, animationsUnstepped: 0, animationsOtherProperty: 0, stepsPerSecond: 8, blendElements: 0, animationsStill: 0 };
+const LIMITS = { rendersPerStatus: 1, readsPerStatus: 5, nodesPerStatus: 0, attrWritesPerStatus: 10, elementsRecalculated: 50, pictureArea: 4, animationsOverLights: 0, animationsOffLights: 0, animationsUnstepped: 0, animationsOtherProperty: 0, lightsBoxShadow: 0, stepsPerSecond: 8, blendElements: 0, animationsStill: 0 };
 const KNOWN_FAILURES = {
   'elementsRecalculated@15': { task: 'T148, on 097-flat-perf-has', max: 1200 },
   'elementsRecalculated@40': { task: 'T148, on 097-flat-perf-has', max: 2000 },
   /* T149 left: 15 and 40 of these are `sc.dataset.for` in render()'s monitor lines (097-p2-screens's until it lands); about 30 are the change itself, as the desks re-sort on a status change. FR-190: the budget of 10 may need moving */
   'attrWritesPerStatus@15': { task: 'T149, monitor lines after 097-p2-screens', max: 60 },
   'attrWritesPerStatus@40': { task: 'T149, monitor lines after 097-p2-screens', max: 90 },
-  'animationsUnstepped@15': { task: 'T151', max: 15 },
-  'animationsUnstepped@40': { task: 'T151', max: 40 },
-  'stepsPerSecond@15': { task: 'T151', max: 60 },
-  'stepsPerSecond@40': { task: 'T151', max: 60 },
   'pictureArea@15': { task: 'T153', max: 12 },
   'pictureArea@40': { task: 'T153', max: 24 },
 };
@@ -127,7 +123,15 @@ module.exports = async (ctx) => {
     rows[`animationsUnstepped@${n}`] = a.unstepped;
     rows[`animationsOtherProperty@${n}`] = a.other;
     rows[`stepsPerSecond@${n}`] = a.stepsPerSecond;
+    rows[`lightsBoxShadow@${n}`] = a.boxShadow;
     rows[`blendElements@${n}`] = a.blend;
+    /* T151: what the moving lights make the main thread paint: logged, never asserted (a number of a stretch of time) */
+    for (let t = 0; t < 3; t++) {
+      const tick = await trace(() => ctx.sleep(2200));
+      const main = new Map(tick.filter((e) => e.ph === 'M' && e.name === 'thread_name').map((e) => [`${e.pid}:${e.tid}`, e.args.name]));
+      const count = (name) => tick.filter((e) => e.name === name && main.get(`${e.pid}:${e.tid}`) === 'CrRendererMain').length;
+      console.log('[ops]', n, 'agents, in 2.2 s of moving lights, main thread: Paint', count('Paint'), 'UpdateLayoutTree', count('UpdateLayoutTree'), 'PrePaint', count('PrePaint'), 'Layerize', count('Layerize'), '(logged only)');
+    }
     // ---- FR-184: one status change of one agent at its desk ----
     await js(INSTRUMENT);
     const id = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate')].find(x=>x.dataset.state==='working'&&document.querySelector('#stage .ro-person[data-for="'+CSS.escape(x.dataset.id)+'"]'))||[...document.querySelectorAll('#stage .ro-plate')].find(x=>x.dataset.state==='idle'&&document.querySelector('#stage .ro-person[data-for="'+CSS.escape(x.dataset.id)+'"]'));return p&&p.dataset.id})()`);

@@ -256,7 +256,7 @@ for (const f of FILES) {
   }
   assert.ok(!/(?:font|font-size|padding|margin|width|height|gap|line-height)\s*:/.test(block.replace(/\/\*[\s\S]*?\*\//g, '')), 'no font, size or spacing in the world rules (070 D2)');
 }
-// ---- 6b. spec 097 FR-180: what world CSS may animate, and nothing blends (known failure T151 is named below until its PR) ----
+// ---- 6b. spec 097 FR-180: what world CSS may animate, and nothing blends  ----
 function worldCssProblems(cssIn: string): string[] {
   const css = cssIn.replace(/\/\*[\s\S]*?\*\//g, ''), out: string[] = [];
   if (/mix-blend-mode\s*:/.test(css)) out.push('mix-blend-mode: nothing blends (FR-180)');
@@ -264,8 +264,11 @@ function worldCssProblems(cssIn: string): string[] {
     for (const d of m[2].matchAll(/([a-z-]+)\s*:/g)) if (!['transform', 'opacity'].includes(d[1])) out.push(`@keyframes ${m[1]} animates ${d[1]}: only transform and opacity (FR-180)`);
   }
   for (const m of css.matchAll(/(?:^|[;{\s])transition(?:-property)?\s*:\s*([^;}]+)/g)) {
-    for (const part of m[1].split(',')) { const name = part.trim().split(/\s+/)[0]; if (!['transform', 'opacity', 'none'].includes(name)) out.push(`transition names ${name}: only transform and opacity (FR-180)`); }
+    for (const part of m[1].replace(/\([^)]*\)/g, '').split(',')) { const name = part.trim().split(/\s+/)[0]; if (!['transform', 'opacity', 'none'].includes(name)) out.push(`transition names ${name}: only transform and opacity (FR-180)`); }
   }
+  /* FR-181: a light moves in steps; FR-180, T151: the lights have no box-shadow to repaint */
+  for (const m of css.matchAll(/(?:^|[;{\s])animation\s*:\s*([^;}]+)/g)) if (!/steps\(\d+/.test(m[1]) && !/^none\b/.test(m[1].trim())) out.push(`animation "${m[1].trim()}" is not stepped (FR-181)`);
+  for (const m of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) if (/\.ro-(glow|call|lamp|fxl)\b/.test(m[1]) && /box-shadow\s*:(?!\s*none)/.test(m[2])) out.push(`${m[1].trim()} has a box-shadow: a light is a static gradient (T151)`);
   if (/will-change\s*:/.test(css)) out.push('will-change: only on an element that animates now, and none does today (FR-180)');
   return out;
 }
@@ -279,7 +282,10 @@ function worldCssProblems(cssIn: string): string[] {
   red('.a{transition:opacity 1s,top 1s}', /transition names top/, 'the second name of a transition');
   red('.a{transition:all 1s}', /transition names all/, 'transition: all');
   red('.a{will-change:transform}', /will-change/, 'will-change');
+  red('.a{animation:k 2s ease-in-out infinite}', /not stepped/, 'a smooth animation');
+  red('.ro-glow.x{opacity:1;box-shadow:0 0 1px red}', /box-shadow/, 'a light with a box-shadow');
   assert.deepStrictEqual(worldCssProblems('/* mix-blend-mode:screen */ .a{transition:opacity 1s;background:red}@keyframes k{50%{opacity:.5;transform:scale(2)}}'), [], 'the allowed forms pass');
+  assert.deepStrictEqual(worldCssProblems('.a{animation:k 2s steps(4,end) infinite;box-shadow:0 0 1px red}.ro-call.b{animation:none}'), [], 'a stepped animation, none, and a shadow on something that is not a light pass');
 }
 // ---- 7. applied while Real office is shown, the user's theme restored on leaving (on a stub page) ----
 {
