@@ -133,6 +133,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **A new crew's `FACE` points do not move a couch seat's face**: the seat crop is anchored on the face point (62% across), so only the picture's own pixels decide whether the chat badge covers the face; if `check-crew` fails on a seat, look at the picture, not the point. Read new points with a 50 px grid and a red 110x140 box over the picture next to a Cheeky one (#815). The bed step of `check-crew` on Retro Pixel flaked on `main` (3 of 5 runs) until it measured when two reads 300 ms apart agree.
 - **A destroyed `WebContentsView` has no `webContents`**: keep the `webContents` before `close()` to check `isDestroyed()` and the OS process (`process.kill(pid, 0)` gives `ESRCH`). `Page.getNavigationHistory` gives each entry a `transitionType` (`form_submit` for a form), so main knows a form page without reading it; `sendInputEvent` (`char`) fires a view's `input-event`. `sim:` spec 080 T013/T018.
 - **The simulator's End session never reaches main**: a driver that checks a browser teardown uses the driver-context hooks `ctx.browserGone` / `ctx.browserStates` (`main.ts`), not the renderer.
+- **No referrer from a custom scheme** (2026-10-31): a `durbar-sim:` `_blank` has `referrer.url === ''`; test referrer rules over loopback http (`check-browser-tabs.js`).
 
 ## Team chat
 

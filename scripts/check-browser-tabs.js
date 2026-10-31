@@ -356,6 +356,14 @@ module.exports = async (ctx) => {
   } else assert.fail('the links tab (the oldest) should still be dropped: ' + JSON.stringify(tabs().tabs.map((x) => [x.url, x.memory])));
   console.log('[browser-tabs] US6.9/US6.10 ok');
 
+  // FR-130: the keyboard shortcut sheet lists the Browser tab's keys
+  await js(`document.getElementById('kbdHelpBtn').click()`);
+  await wait(() => js(`!!document.getElementById('kbdDlg')`), 'the shortcut sheet');
+  const sheet = await js(`document.getElementById('kbdDlg').innerText`);
+  assert.ok(/In the Browser tab/.test(sheet) && /New page tab/.test(sheet) && /Close the page tab/.test(sheet) && /Next page tab/.test(sheet), 'the sheet has the tab keys');
+  await js(`document.getElementById('kbdClose').click()`);
+  await wait(() => js(`!document.getElementById('kbdDlg')`), 'the sheet closes');
+
   // US6.8: the session ends with several tabs: every view goes, no process of any tab is left
   const mine = allViews().filter((w) => w.getURL().startsWith(PAGE));
   assert.ok(mine.length >= 2, 'several tabs with views');
