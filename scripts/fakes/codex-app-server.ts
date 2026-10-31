@@ -45,6 +45,10 @@ export interface FakeCodexOptions {
   account?: Record<string, unknown> | 'missing' | 'error';
   /** spec 059: answer `thread/name/set` with this error message. */
   refuseRename?: string;
+  /** Spec 099: this Codex has goals (off: method not found, an older Codex). `goalClear` how `thread/goal/clear` answers; `goalSetError` refuses `thread/goal/set`. */
+  goals?: boolean;
+  goalClear?: 'ok' | 'error' | 'hang' | 'malformed';
+  goalSetError?: string;
   /** Exit (no answer) when a request with this method arrives. */
   exitOn?: { method: string; code?: number | null; signal?: NodeJS.Signals | null };
 }
@@ -376,6 +380,27 @@ export class FakeCodexServer {
         }
         return;
       }
+      case 'thread/goal/set': {
+        if (!this.opts.goals) return this.fail(child, id, -32601, `method not found: ${method}`);
+        if (this.opts.goalSetError) return this.fail(child, id, -32600, this.opts.goalSetError);
+        const tid = isObj(params) && typeof params.threadId === 'string' ? params.threadId : '';
+        this.goals.add(tid);
+        this.reply(child, id, { goal: { threadId: tid, status: 'active' } });
+        this.goalTurn(tid); // like Codex 0.163 (`real:` T093): the goal starts its first turn with no `turn/start`
+        return;
+      }
+      case 'thread/goal/clear': {
+        if (!this.opts.goals) return this.fail(child, id, -32601, `method not found: ${method}`);
+        const how = this.opts.goalClear ?? 'ok';
+        if (how === 'hang') return;
+        if (how === 'error') return this.fail(child, id, -32603, 'goal store unavailable');
+        if (how === 'malformed') return this.reply(child, id, {});
+        const tid = isObj(params) && typeof params.threadId === 'string' ? params.threadId : '';
+        const had = this.goals.delete(tid);
+        this.reply(child, id, { cleared: had });
+        if (had) this.enqueue(child, { method: 'thread/goal/cleared', params: { threadId: tid } });
+        return;
+      }
       case 'turn/interrupt': {
         const tid = isObj(params) && typeof params.threadId === 'string' ? params.threadId : '';
         this.reply(child, id, {});
@@ -403,6 +428,26 @@ export class FakeCodexServer {
       default:
         return this.fail(child, id, -32601, `method not found: ${method}`);
     }
+  }
+
+  /** Spec 099: threads with a goal; shared by all children, as a goal lives on the thread. */
+  goals = new Set<string>();
+  /** Spec 099: the app starts a turn on its own. Returns its id. */
+  goalTurn(tid: string): string {
+    const child = this.threadChild.get(tid) as FakeChild;
+    const turnId = `turn_${this.nextTurn++}`;
+    this.openTurn.set(tid, turnId);
+    this.enqueue(child, { method: 'turn/started', params: { threadId: tid, turn: { id: turnId, status: 'inProgress' } } });
+    return turnId;
+  }
+  /** Spec 099: any notification, on the child that holds the thread. */
+  note(tid: string, method: string, params: Record<string, unknown>): void {
+    this.enqueue(this.threadChild.get(tid) as FakeChild, { method, params: { threadId: tid, ...params } });
+  }
+  /** Spec 099: the open turn of a thread ends by itself. */
+  endTurn(tid: string, status = 'completed'): void {
+    const open = this.openTurn.get(tid);
+    if (open) this.completeTurn(this.threadChild.get(tid) as FakeChild, tid, open, status as 'completed');
   }
 
   private replayTurn(child: FakeChild, tid: string, turnId: string): void {

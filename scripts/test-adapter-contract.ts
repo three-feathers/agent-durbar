@@ -358,12 +358,12 @@ const OMITTABLE: Record<OptionalMember, true> = {
   interrupt: true, resolvePermission: true, revokeGrant: true, revokeCall: true, setCap: true, resolveLimit: true, setMcpEnabled: true, setModel: true,
   cancelQueuedModel: true, compact: true, listModelOptions: true, listPreviousSessions: true, history: true, setPermMode: true,
   handoffSummary: true, generateText: true, deleteSession: true, renameSession: true, startMcpSignIn: true, cancelMcpSignIn: true, refreshMcpStatus: true,
-  restartMcpServer: true, listMcpTools: true,
+  restartMcpServer: true, listMcpTools: true, setAutopilot: true,
 };
 export const ALL_OPTIONAL = Object.keys(OMITTABLE) as OptionalMember[];
 /** Optional `AgentAdapter` members FakeAdapter does not implement (so it cannot omit them): fields, and methods no fake test needs yet. */
 const NOT_IN_FAKE = [
-  'debug', 'writeGuard', 'resolvePlan', 'answerQuestion', 'answerElicitation', 'listAgentProfiles', 'reloadAgentProfiles', 'selectAgentProfile', 'setRemote', 'setAutopilot',
+  'debug', 'writeGuard', 'resolvePlan', 'answerQuestion', 'answerElicitation', 'listAgentProfiles', 'reloadAgentProfiles', 'selectAgentProfile', 'setRemote',
   'authStatus', 'verifySignIn', 'accountInfo', 'refreshAuth', 'resumeIdOf', 'listSlashCommands', 'expandSlashCommand', 'readOrgPolicy',
   'continueWithoutSandbox', 'sandboxHost', // spec 087: real adapters only (C2 below)
 ];
@@ -391,7 +391,7 @@ function checkOptionalLists(): void {
   const fn = (ad: FakeAdapter, m: string): boolean => typeof (ad as unknown as Record<string, unknown>)[m] === 'function';
   const bare = new FakeAdapter({ omit: ALL_OPTIONAL });
   assert.deepStrictEqual(inIface.filter((m) => fn(bare, m)), [], 'fake-bare has no optional AgentAdapter method');
-  const full = new FakeAdapter({ capabilities: { deleteSession: true, renameSession: 'any', mcpSignIn: true, mcpRestart: true, mcpTools: true } });
+  const full = new FakeAdapter({ capabilities: { deleteSession: true, renameSession: 'any', mcpSignIn: true, mcpRestart: true, mcpTools: true, autopilot: { capUnit: null, attachments: false, planApproval: false, verified: false } } });
   assert.deepStrictEqual(ALL_OPTIONAL.filter((m) => !fn(full, m)), [], 'FakeAdapter implements every member in ALL_OPTIONAL');
   assert.deepStrictEqual(NOT_IN_FAKE.filter((m) => fn(full, m)), [], 'a member FakeAdapter implements belongs in OptionalMember, not NOT_IN_FAKE');
 }

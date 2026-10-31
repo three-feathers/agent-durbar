@@ -32,7 +32,7 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group; FR-007, FR-008, FR-009
   Tests on the scripted CLI fake replay the probe's message shapes (`Stop hook feedback`, `aborted_streaming`, `Goal cleared`,
   `stop-hook-block-cap` before a `success` result ends with blocked)
   [FR-011, FR-020, FR-021, FR-030, FR-040, FR-041, FR-050, FR-058]
-- [ ] T021 Codex: `thread/goal/set` in place of `turn/start`, `tokenBudget`, the `turn/started` count, the `goal/updated` mapping,
+- [x] T021 Codex: `thread/goal/set` in place of `turn/start`, `tokenBudget`, the `turn/started` count, the `goal/updated` mapping,
   Stop with `goal/clear` and then `turn/interrupt`, `requestUserInput` auto-answer, never on an ephemeral thread; capability
   `{capUnit: 'tokens', attachments: false, planApproval: false, verified: false}`. Tests on the app-server fake replay the probe's notifications [FR-012, FR-020-FR-022, FR-030, FR-040, FR-050]
 - [x] T022 Copilot on the fake SDK: `mode.set autopilot` and `interactive`, `agentMode`, `onUserInputRequest` auto-answer,

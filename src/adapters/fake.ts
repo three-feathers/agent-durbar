@@ -11,13 +11,13 @@ import type { EventBody } from './map';
 import { PermissionBroker, mcpToolBlockList, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { normMcpTools } from './mcptools';
-import type { AgentAdapter, AgentEvent, AgentMessage, CompactResult, LimitAction, McpSignInResult, McpToolInfo, ModelOption, ModelSwitchRequest, ModelSwitchResult, PermissionMode, StartOptions, UsageEvent } from './types';
+import type { AgentAdapter, AgentEvent, AgentMessage, AutopilotEnd, AutopilotSettings, CompactResult, LimitAction, McpSignInResult, McpToolInfo, ModelOption, ModelSwitchRequest, ModelSwitchResult, PermissionMode, StartOptions, UsageEvent } from './types';
 import type { HistoryResult, PreviousSession } from './history';
 
 export type OptionalMember =
   | 'interrupt' | 'resolvePermission' | 'revokeGrant' | 'revokeCall' | 'setCap' | 'resolveLimit' | 'setMcpEnabled' | 'setModel'
   | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText' | 'renameSession' | 'deleteSession' | 'restartMcpServer' | 'listMcpTools'
-  | 'startMcpSignIn' | 'cancelMcpSignIn' | 'refreshMcpStatus';
+  | 'startMcpSignIn' | 'cancelMcpSignIn' | 'refreshMcpStatus' | 'setAutopilot';
 
 export type Step =
   | { output: string }
@@ -123,6 +123,9 @@ export class FakeAdapter implements AgentAdapter {
   /** Every id `deleteSession` was called with (test log; nothing real is deleted). */
   readonly deleteCalls: string[] = [];
   declare setPermMode?: (sessionId: string, mode: PermissionMode, opts?: { clearGrants?: boolean; approvePending?: boolean }) => { pending: number };
+  declare setAutopilot?: (sessionId: string, settings: AutopilotSettings | null, reason?: AutopilotEnd) => Promise<void>;
+  /** Spec 099: every `setAutopilot` call, in order (for main's tests, T030). It records and refuses outside Allow all; it runs no goal loop: the real adapters' fakes do. */
+  readonly autopilotCalls: Array<{ sessionId: string; settings: AutopilotSettings | null; reason?: AutopilotEnd }> = [];
 
   /** Spec 059: every `renameSession` call, in order. */
   readonly renameCalls: Array<{ sessionId: string; name: string }> = [];
@@ -164,6 +167,7 @@ export class FakeAdapter implements AgentAdapter {
     if (c.mcpSignInNote === undefined) delete (caps as { mcpSignInNote?: unknown }).mcpSignInNote;
     if (!c.mcpSignInRestart || !caps.mcpRestart) delete (caps as { mcpSignInRestart?: unknown }).mcpSignInRestart;
     if (!c.renameSession || omit.has('renameSession')) delete (caps as { renameSession?: unknown }).renameSession;
+    if (!c.autopilot || omit.has('setAutopilot')) delete (caps as { autopilot?: unknown }).autopilot;
     this.capabilities = caps;
     const has = (m: OptionalMember): boolean => !omit.has(m);
     if (caps.interrupt && has('interrupt')) this.interrupt = (sid) => this.doInterrupt(sid);
@@ -251,6 +255,13 @@ export class FakeAdapter implements AgentAdapter {
         const at = this.previous.findIndex((p) => p.id === sid);
         if (at < 0) throw new Error('Session not found.');
         this.previous.splice(at, 1);
+      };
+    }
+    if (caps.autopilot) {
+      this.setAutopilot = async (sid, settings, reason) => {
+        const s = this.mustGet(sid);
+        if (settings !== null && s.broker.getMode() !== 'allow') throw new Error('Autopilot runs only in Allow all.');
+        this.autopilotCalls.push({ sessionId: sid, settings, ...(reason ? { reason } : {}) });
       };
     }
     if (caps.permModeSwitch !== 'none') this.setPermMode = (sid, mode, opts = {}) => this.doSetPermMode(sid, mode, opts);
