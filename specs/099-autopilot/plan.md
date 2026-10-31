@@ -33,7 +33,7 @@ Autopilot on a schedule (FR-084) is out of the first build, pending the other tw
 |---|---|
 | I Spec Kit | This spec, plan and tasks come first, then code in phases `099-p1..p4`. |
 | II Adapters | `capabilities.autopilot`, `setAutopilot()`, and the `autopilot` event are normalized. Vendor calls stay in `copilot.ts`, `claude.ts` and `codex.ts`; nothing about them reaches the renderer. |
-| III Safe | Autopilot is reached only from `allow`, with a native confirmation every time, and never with remote control on (FR-007). In a session it is never saved or a default, and it cannot be set from MCP or remote control. It is blocked wherever Allow all is. Questions get a fixed sentence. Read-only is untouched. On a schedule it is out of the first build, and whether III needs an amendment is for the three owners (spec *Constitution*, Q-A). |
+| III Safe | Autopilot always runs in `allow`, reached with a native confirmation every time that says so when the folder changes (D13), and never with remote control on (FR-007). In a session it is never saved or a default, and it cannot be set from MCP or remote control. It is blocked wherever Allow all is. Questions get a fixed sentence. Read-only is untouched. On a schedule it is out of the first build, and whether III needs an amendment is for the three owners (spec *Constitution*, Q-A). |
 | IV No credits | Fakes and the simulator. The real checks are separate tasks. |
 | V Calm UI | One chip word with a glyph, short chat lines, and the 15-agent fit checked by the driver. |
 | VI Parity | No paths, no shell. The apps' own APIs. macOS and Windows real runs are a `[KNOWN GAP]`. |
