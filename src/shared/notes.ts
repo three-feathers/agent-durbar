@@ -29,7 +29,11 @@ export const NOTES_LIMITS = (() => {
   const docExtraBytes = 3 * folderNameChars + 1_024;
   const noteJsonBytes = 3 * (textChars + titleChars) + noteExtraBytes;
   const storeBytes = notesPerFolder * noteJsonBytes + tombstones * tombstoneBytes + docExtraBytes;
-  /** The shortest marker-like line is `<!-- durbar-note` plus a line end: one escape byte per 17 characters at most. */
+  /**
+   * An escaped line (a marker-like or conflict-like text line, spec 083 Changes 2026-10-31) costs one byte more, but it is ASCII up to
+   * its marker, so it still costs under 3 bytes per character: `3 × characters` bounds every text; the `textChars / 17` term and the
+   * 256 bytes (marker line, `## `, blank lines) are slack. Tested at every cap (`test-notesmd.ts`).
+   */
   const noteMdBytes = 3 * (textChars + titleChars) + Math.ceil(textChars / 17) + 1 + 256;
   const mdBytes = notesPerFolder * noteMdBytes + 1_024;
   return { textChars, titleChars, notesPerFolder, tombstones, folderNameChars, inputChars, titleInputChars, ordMax, noteExtraBytes, tombstoneBytes, docExtraBytes, noteJsonBytes, storeBytes, noteMdBytes, mdBytes } as const;
