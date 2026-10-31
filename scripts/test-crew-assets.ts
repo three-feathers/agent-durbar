@@ -96,5 +96,5 @@ if (fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) {
   assert.deepStrictEqual(fs.readdirSync(OUT).sort(), [...files.keys()].sort(), 'dist/renderer/crew/art holds exactly the pictures: no ASSETS.md, no prompts');
 }
 const csp = /Content-Security-Policy" content="([^"]*)"/.exec(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8'));
-assert.strictEqual(csp && csp[1], "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;", 'the CSP is unchanged (FR-057)');
+assert.strictEqual(csp && csp[1], "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;", 'the CSP: spec 096 FR-043, FR-061 add blob: for images, for My characters; nothing else changed (FR-057)');
 console.log('crew assets tests passed (' + files.size + ' pictures)');

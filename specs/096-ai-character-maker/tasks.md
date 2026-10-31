@@ -56,7 +56,7 @@
 - [x] T044 [US2] Characters list: My characters value with preview, "Make one first" when empty; deleting the last character falls back with a toast. Test: `check-characters` gains the `mine` value; US2 scenario 4 [FR-040]
 - [x] T045 [US4] Manage rows: Rename, Pin to a folder…, Delete (confirm, pins removed and counted), Export… (`DURBAR_PICK`). Test: `check-charmaker` manage steps; `test:charstore` export [FR-042; US4]
 - [x] T046 Layout: `check:office` and `check:crew` with `OFFICE_CHARACTERS=mine`, 15 agents, 1440x900 and 1280x800. Test: both pass (SC-002)
-- [ ] T047 Screenshots: `docs/screenshots/096-charmaker-*.png`, `096-mycharacters-office-*.png` at both sizes via `shots:docs` (`DOC_SHOTS`). Test: look at each picture
+- [x] T047 Screenshots: `docs/screenshots/096-charmaker-*.png`, `096-mycharacters-office-*.png` at both sizes via `shots:docs` (`DOC_SHOTS`). Test: look at each picture
 
 ## Phase 5: Motion (PR 5)
 

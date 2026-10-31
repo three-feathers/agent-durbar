@@ -512,6 +512,11 @@ module.exports = async (ctx) => {
   await need(`[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length&&s.querySelector('circle[r="12.5"]')).length>=1`, 'its desks draw the plain figure');
 
   /* ---------- a hostile name: maker, list, rows, toast, tooltip ---------- */
+  // few agents: the full desk has its own tooltip
+  await H.load({ w: 1440, h: 900, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=2&&document.getElementById('stage').dataset.fit`, settle: false, query: { sim: '3', density: 'full', simhelpers: '0', simmine: '1', simminename: 'hostile', characters: 'mine' } });
+  await need(`document.querySelectorAll('#stage .desk[data-id] image.crew-pic[href^="blob:"]').length>=1`, 'hostile, full desks: portraits');
+  await need(`[...document.querySelectorAll('#stage .desk:not(.card)[data-id]')].some(d=>(d.title||'').includes(${jsLiteral('Wearing ' + HOSTILE)}))`, 'hostile, full desks: the tooltip holds the name as text');
+  await noMarkup('hostile, a full desk');
   await load({ simmine: '2', simminename: 'hostile', characters: 'mine' });
   await need(`document.querySelectorAll('#stage image.crew-pic[href^="blob:"]').length>=12`, 'hostile: portraits');
   await noMarkup('hostile, the office');
