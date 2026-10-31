@@ -139,7 +139,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
 
 ## Phase 4: User Story 5, the project file (P2)
 
-- [ ] T040 [US5] [P] Format `src/shared/notesmd.ts`. [FR-052, FR-054, SC-004]
+- [x] T040 [US5] [P] Format `src/shared/notesmd.ts`. [FR-052, FR-054, SC-004] Built 2026-10-31 (spec *Changes*, 2026-10-31): `test:` `scripts/test-notesmd.ts` (`npm run test:notesmd`, 1,000 seeded documents in LF, CRLF, lone CR and with a BOM; hostile cases; every cap).
   - AC1: `parseNotesMd(writeNotesMd(x))` equals `x` (ids, titles, texts, done, times) for 1,000 generated documents with `##` lines, marker-like lines, code fences, CRLF input, Unicode and empty texts.
   - AC2: notes are written in `createdAt` then `id` order; adding a note only appends lines (a diff test).
   - AC3: conflict markers at a line start outside fenced code make `parse` return `conflict`; inside a fence they do not.
@@ -156,6 +156,13 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
   - AC8: `addExclude` finds `info/exclude` from a `.git` folder, a worktree `.git` file (`gitdir` + `commondir`) and a subfolder of the repository, appends the anchored line once (idempotent), refuses a linked or oversized `exclude` with the reason, and runs no process.
   - AC9: `addExclude` refuses, with its reason and no write, a target that is not a real git directory: a `.git` file whose `gitdir` or `commondir` points to a plain folder (no `HEAD`, no `objects/`), to a `HEAD` or `objects` that is a link, to a folder owned by another user (POSIX, a fake `stat` uid), or to a git directory without `info/`; it never creates `info/` (a counting fake `fs` sees no `mkdir`).
   - AC10: the anchored line escapes `*`, `?`, `[`, `\`, a leading `!` or `#` and trailing spaces in every segment, tested with folders named `a*b`, `x?`, `[draft]`, `back\slash`, `!keep`, `#notes`, `trail ` and a nested path; each generated line is checked against a small gitignore matcher in the test to match exactly that folder's `.durbar/`; a name with CR, LF, a tab or another control character is refused with the FR-051 text and nothing is appended.
+  - Added 2026-10-31 after the review of T040 (decided by the coordinator under Ruben's delegation):
+  - AC11: a known note counts as edited only when `notesMdText(stored.text) !== section.text` (or the title differs), so a trailing blank line is never a file edit.
+  - AC12: for a known id, the marker's `created=` is ignored and `updated=` is clamped to the import time (`isoOk` accepts year 9999), so a hand edit cannot reorder notes or always win a merge.
+  - AC13: the title read from the file is masked like the text (FR-005), and the text is cut with `fitText` after masking (the parser returns text of any length).
+  - AC14: bidi and zero-width characters (`HIDDEN_ALL_RE`, `src/shared/names.ts`) are removed from titles read from the file, or the choice not to is written in the spec.
+  - AC15: the `mdBytes` cap applies to the bytes read from disk before they are decoded; the parse runs off the hot path, and sections past `notesPerFolder` are counted without being built (a hostile file at the cap costs about 3 s of CPU today).
+  - AC16: whether a `done` change in the file counts as an edit is decided and written in the spec, with a test.
 - [ ] T042 [US5] The switch and its states in the Notes screen. [FR-050, FR-055]
   - AC1: off by default; turning it on shows the FR-050 warning with *Cancel* focused; `notesFile: true` saved in `folders.json` and read back.
   - AC2: not offered for a `.code-workspace`; greyed with a reason when the folder is missing.
