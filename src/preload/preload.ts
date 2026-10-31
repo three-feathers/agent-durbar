@@ -71,10 +71,7 @@ const api: DurbarApi = {
   setCharacters: (v) => ipcRenderer.invoke('settings:setCharacters', v), // spec 077 FR-064
   listUserThemes: () => ipcRenderer.invoke('theme:listUser'),
   getUserTheme: (id) => ipcRenderer.invoke('theme:getUser', id),
-  importTheme: () => ipcRenderer.invoke('theme:import'),
-  generateTheme: (description, adapterId) => ipcRenderer.invoke('theme:generate', description, adapterId),
-  saveGeneratedTheme: (manifest) => ipcRenderer.invoke('theme:saveGenerated', manifest),
-  themeIdeas: () => ipcRenderer.invoke('theme:ideas'),
+  removeTheme: (id) => ipcRenderer.invoke('theme:remove', id),
   harnessPlans: (kind, op) => ipcRenderer.invoke('harness:plans', kind, op),
   harnessRun: (kind, op, planIndex, gate) => ipcRenderer.invoke('harness:run', kind, op, planIndex, gate),
   harnessUpdates: (what, app) => ipcRenderer.invoke('harness:updates', what === 'check' ? 'check' : undefined, typeof app === 'string' ? app : undefined),

@@ -1968,15 +1968,13 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     type SimChars = (typeof CHARS)[number];
     const isChars = (v: unknown): v is SimChars => typeof v === 'string' && (CHARS as readonly string[]).includes(v);
     let simCharacters: SimChars = isChars(simQuery.get('characters')) ? (simQuery.get('characters') as SimChars) : 'theme';
-    let simUserTheme: Record<string, unknown> | null = null;
-    const simUserThemes: Record<string, unknown>[] = []; // spec 040 FR-014: AI themes saved in this simulated run
-    let simThemeN = 0;
+    const simUserThemes: Record<string, unknown>[] = []; // spec 040 FR-032: the saved themes of this simulated run (from ?usertheme=), removable
     try {
       const raw = simQuery.get('usertheme');
       const parsed = raw && raw.length <= 64 * 1024 ? JSON.parse(raw) : null;
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && typeof parsed.id === 'string') simUserTheme = parsed;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && typeof parsed.id === 'string') simUserThemes.push(parsed);
     } catch {
-      simUserTheme = null;
+      /* no saved theme */
     }
     const simNotesBridge = simNotesApi(simQuery, (id) => { const s = sims.find((x) => x.info.id === id); return s ? { key: s.info.workspaceFile || s.info.cwd, name: (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name, session: s.info.id } : undefined; }); // spec 083 FR-060
     const capApi: Partial<DurbarApi> = {
@@ -1992,8 +1990,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       focusWindow: async () => { window.focus(); return { ok: true }; },
       setTheme: async (id) => { if (typeof id === 'string' && /^[a-z0-9_-]{1,64}$/.test(id)) simTheme = id; return { ok: true, theme: simTheme }; },
       setCharacters: async (v) => { if (!isChars(v)) return { ok: false, characters: simCharacters }; simCharacters = v; return { ok: true, characters: v }; }, // spec 077 FR-064: refused like main
-      listUserThemes: async () => [...(simUserTheme ? [simUserTheme] : []), ...simUserThemes].map((t) => ({ id: t.id as string, name: String(t.name ?? t.id), ok: true })),
-      getUserTheme: async (id) => (simUserTheme && id === simUserTheme.id ? simUserTheme : simUserThemes.find((t) => t.id === id) ?? null),
+      listUserThemes: async () => simUserThemes.map((t) => ({ id: t.id as string, name: String(t.name ?? t.id), ok: true })),
+      getUserTheme: async (id) => simUserThemes.find((t) => t.id === id) ?? null,
       setPlace: async (server, place) => {
         const name = typeof server === 'string' ? server.trim() : '';
         if (!name || name.length > 200 || name === '__proto__') return { ok: false, placeMap: { ...placeMap } };
@@ -2382,22 +2380,15 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         s.pendingModel = undefined;
         return { ok: true };
       },
-      // spec 040 FR-014: the AI theme maker in the simulator: a canned, valid theme after a short wait (no harness, no credits)
-      generateTheme: async (description, adapterId) => {
-        if (!String(description ?? '').trim()) return { ok: false, error: 'Describe the look in a few words.' };
-        if (!caps(String(adapterId ?? 'copilot')).oneShot) return { ok: false, error: 'That agent app cannot make a theme. Pick Claude Code, Codex or Copilot.' };
-        await new Promise((r) => window.setTimeout(r, 700));
-        const n = ++simThemeN;
-        // spec 040 FR-015: Claude reports a dollar estimate, Copilot AI credits, Codex nothing
-        const spend = adapterId === 'claude' ? { costUsd: 0.004 } : adapterId === 'copilot' ? { nanoAiu: 20_000_000 } : {};
-        return { ok: true, ...spend, warnings: [], manifest: { id: 'ai-night-shift-newsroom' + (n > 1 ? '-' + n : ''), name: 'Night-shift newsroom', author: 'AI theme maker', version: '1.0', description: String(description).slice(0, 300), extends: 'clean-office', ui: 'clean', scene: 'office',
-          tokens: { '--bg': '#eceff3', '--surface': '#fbfcfd', '--surface-2': '#f2f4f7', '--line': '#d5dae2', '--line-2': '#b9c1cd', '--ink': '#1b2230', '--ink-2': '#3a4456', '--muted': '#5f6a7c', '--room-path': '#56617a', '--sage': '#3f7d6c', '--blue': '#3d5e9e', '--amber': '#c4862b', '--brand-bg': '#1b2230', '--brand-mark': '#f2c063', '--focus': '#c4862b', '--sel-border': '#c4862b', '--desk': '#c9d1de', '--desk-front': '#b7c1d0', '--chair': '#2b3344', '--monitor-frame': '#1b2230', '--tint-sage': '#f1f5f4', '--tint-blue': '#f0f3f9', '--tint-sand': '#f8f5ee', '--tint-clay': '#f8f2f1' },
-          words: { 'place-library': 'Archive', 'place-software': 'Wire desk', 'place-terminal': 'Print room', 'place-web': 'Newswire', 'place-other': 'Copy desk', 'lobby-label': 'The newsroom floor' } } };
+      // spec 040 FR-032: remove a saved theme in the simulator, like main: only a saved one, nothing else
+      removeTheme: async (id) => {
+        const i = simUserThemes.findIndex((t) => t.id === id);
+        if (i < 0) return { ok: false, error: 'Only the themes you saved can be removed.' };
+        simUserThemes.splice(i, 1);
+        return { ok: true, id };
       },
-      themeIdeas: async () => ['a pirate ship at midnight', "a ship's bridge at dawn", 'a calm library at night', 'a night-shift newsroom', 'a 1980s arcade', 'a Japanese tea house in spring', 'a space station control room', 'a botanical greenhouse'],
-      saveGeneratedTheme: async (m) => { simUserThemes.push(m); return { ok: true, id: String(m.id), name: String(m.name) }; },
       // spec 040 FR-019: export in the simulator: a user theme answers like the real one (no file is written); a built-in one is refused
-      exportTheme: async (id) => (simUserThemes.some((t) => t.id === id) || (simUserTheme && simUserTheme.id === id) ? { ok: true, to: '~/Desktop/' + id } : { ok: false, error: 'Only your own imported themes can be exported.' }),
+      exportTheme: async (id) => (simUserThemes.some((t) => t.id === id) ? { ok: true, to: '~/Desktop/' + id } : { ok: false, error: 'Only your own imported themes can be exported.' }),
       // spec 030 FR-034: a canned hand-off summary (no runtime): goal, files and next step from the simulated agent
       handoff: async (id) => {
         const s = sims.find((x) => x.info.id === id);

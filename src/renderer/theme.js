@@ -455,7 +455,7 @@
     return pix?sanitizeSlot(pix):null;
   }
 
-  /* spec 070 FR-021: the text pairs of the AI maker's checks (themegen.ts CONTRAST_PAIRS; test:theme-tokens keeps them equal) */
+  /* spec 070 FR-021: the text pairs of themegen.ts CONTRAST_PAIRS (test:theme-tokens keeps them equal) */
   const CONTRAST_PAIRS=[['--ink','--bg',4.5],['--ink','--surface',4.5],['--ink','--raised',4.5],['--ink','--card',4.5],['--ink','--card-waiting',4.5],['--ink','--card-error',4.5],['--ink-2','--soft',4.5],['--ink-2','--note',4.5],['--ink-2','--surface',4.5],['--muted','--surface',4.5],['--room-path','--bg',3]]
     .concat(['working','thinking','waiting','idle','error','done'].map(s=>['--pc-'+s,'--pb-'+s,4.5]))
     .concat([['--surface','--sage-ink',4.5],['--surface','--red-ink',4.5],['--surface','--amber-ink',4.5]]) /* spec 052 FR-169: primary, danger and warn button text */
@@ -697,6 +697,8 @@
   /* spec 040 FR-030: a user theme's lobby band keeps its proportions and covers the lobby; built-in bands were drawn to be stretched */
   function lobbyArtAspect(id){ return isBuiltIn(id)?'none':'xMidYMid slice'; }
   /* User themes (spec 040): the main process passes validated manifests; id becomes selectable. */
+  /* spec 040 FR-032: a removed theme is forgotten at once (the picker lists what main has, but a stale id must not resolve) */
+  function forgetUser(id){if(typeof id==='string')delete USER_MANIFESTS[id];}
   function registerUserThemes(listOrMap){
     USER_MANIFESTS={};
     if(listOrMap&&typeof listOrMap==='object'){
@@ -841,6 +843,7 @@
     _HOSTILE_RE:HOSTILE_RE,
     registerBuiltIn,
     registerUserThemes,
+    forgetUser,
     MOTION_PRESETS,
     _sanitizeSlot:sanitizeSlot,
     _isTokenValue:isTokenValue,

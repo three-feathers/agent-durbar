@@ -6,9 +6,8 @@ import * as path from 'node:path';
 import { checkUserManifest, USER_THEME_LIMITS, RESERVED_THEME_IDS } from '../src/shared/themes';
 import { UserThemeStore } from '../src/main/themes';
 
-const BUILT = new Set(RESERVED_THEME_IDS);
-for (const id of ['clean-office', 'retro', 'cheeky-crew', 'corporate', 'durbar-indian', 'durbar-european', 'durbar-japanese']) assert.ok(BUILT.has(id), `${id} is reserved (spec 035 FR-018)`);
-// main's handlers use exactly this list: no local copy (a mutant that drops the spread there fails this)
+// reserved ids (spec 035 FR-018): the built-in, the old Cheeky Crew and the removed ones; main's handlers use exactly this list
+for (const id of ['clean-office', 'retro', 'cheeky-crew', 'corporate', 'durbar-indian', 'durbar-european', 'durbar-japanese']) assert.ok(RESERVED_THEME_IDS.includes(id), `${id} is reserved`);
 assert.ok(/BUILT_IN_THEME_IDS = RESERVED_THEME_IDS;/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'themes.ts'), 'utf8')), 'ipc/themes.ts reads the shared reserved list');
 
 // --- manifest validation ---
@@ -43,73 +42,83 @@ assert.strictEqual(checkUserManifest('{"id":"x","art":{"room-floor":"<rect/>","c
 assert.ok(checkUserManifest('{"id":"x","art":{"chair-back":"<rect/>"}}').error!.includes('not one the app draws'), 'an art slot the app never draws is refused');
 assert.ok(checkUserManifest('{"id":"x","scene":"robots"}').error!.includes('scene must be one of'), 'an unknown scene kit is refused');
 
-// --- store: list / import / export ---
+// --- store: list / export / remove (saved themes; Import and the AI maker were retired, spec 040 FR-031) ---
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-uth-'));
-const src = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-uth-src-'));
-fs.mkdirSync(path.join(src, 'ocean'));
-fs.writeFileSync(path.join(src, 'ocean', 'manifest.json'), JSON.stringify({ id: 'ocean', name: 'Ocean Blue', tokens: { '--bg': '#e8f2f8' }, words: { 'place-terminal': 'Console Cove' } }));
-fs.writeFileSync(path.join(src, 'ocean', 'README.txt'), 'a note');
+const themesDir = path.join(root, 'themes');
+const seed = (id: string, manifest: object | string, extra: Record<string, string> = {}): void => {
+  fs.mkdirSync(path.join(themesDir, id), { recursive: true });
+  fs.writeFileSync(path.join(themesDir, id, 'manifest.json'), typeof manifest === 'string' ? manifest : JSON.stringify(manifest));
+  for (const [f, text] of Object.entries(extra)) fs.writeFileSync(path.join(themesDir, id, f), text);
+};
+seed('ocean', { id: 'ocean', name: 'Ocean Blue', tokens: { '--bg': '#e8f2f8' }, words: { 'place-terminal': 'Console Cove' } }, { 'README.txt': 'a note' });
 
-const store = new UserThemeStore(path.join(root, 'themes'));
-let r = store.importFolder(path.join(src, 'ocean'), (id) => BUILT.has(id));
-assert.strictEqual(r.ok, true);
-assert.strictEqual(r.id, 'ocean');
-assert.strictEqual(r.name, 'Ocean Blue');
-
+const store = new UserThemeStore(themesDir);
 const list = store.list();
 assert.strictEqual(list.length, 1);
 assert.strictEqual(list[0].id, 'ocean');
 assert.strictEqual(list[0].ok, true);
 assert.deepStrictEqual(store.get('ocean')!.tokens, { '--bg': '#e8f2f8' });
+assert.strictEqual(typeof (store as unknown as { importFolder?: unknown }).importFolder, 'undefined', 'no Import any more');
+assert.strictEqual(typeof (store as unknown as { saveManifest?: unknown }).saveManifest, 'undefined', 'no saving of generated themes any more');
 
-// duplicate import refused
-r = store.importFolder(path.join(src, 'ocean'), (id) => BUILT.has(id));
-assert.strictEqual(r.ok, false);
-assert.ok(r.error!.includes('already installed'));
+// a saved theme naming a removed style or kit is still listed and valid (spec 035 FR-018)
+seed('old-court', { id: 'old-court', name: 'Old Court', ui: 'court-indian', scene: 'corporate' });
+assert.ok(store.list().some((t) => t.id === 'old-court' && t.ok), 'a theme saved with a removed ui and scene still lists');
+assert.strictEqual(store.get('old-court')!.ui, 'court-indian', 'the file is not rewritten; the window falls back');
 
-// built-in id refused
-const bsrc = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-uth-b-'));
-fs.mkdirSync(path.join(bsrc, 'retro'));
-fs.writeFileSync(path.join(bsrc, 'retro', 'manifest.json'), '{"id":"retro"}');
-r = store.importFolder(path.join(bsrc, 'retro'), (id) => BUILT.has(id));
-assert.strictEqual(r.ok, false);
-assert.ok(r.error!.includes('built-in'));
-
-// no manifest / bad manifest
-const nsrc = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-uth-n-'));
-fs.mkdirSync(path.join(nsrc, 'empty'));
-assert.strictEqual(store.importFolder(path.join(nsrc, 'empty'), () => false).ok, false);
-fs.writeFileSync(path.join(nsrc, 'empty', 'manifest.json'), '{bad');
-assert.strictEqual(store.importFolder(path.join(nsrc, 'empty'), () => false).ok, false);
 // folder name != manifest id refused on list
-fs.mkdirSync(path.join(root, 'themes', 'mismatch'));
-fs.writeFileSync(path.join(root, 'themes', 'mismatch', 'manifest.json'), '{"id":"other"}');
+seed('mismatch', '{"id":"other"}');
 const l2 = store.list();
 assert.ok(l2.some((t) => t.id === 'mismatch' && !t.ok), 'mismatched folder flagged bad');
 assert.strictEqual(store.get('other'), null);
 // corrupt entry ignored by get
-fs.mkdirSync(path.join(root, 'themes', 'broken'));
-fs.writeFileSync(path.join(root, 'themes', 'broken', 'manifest.json'), 'nope');
+seed('broken', 'nope');
 assert.ok(store.list().some((t) => t.id === 'broken' && !t.ok));
 
 // export
 const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-uth-out-'));
 const e = store.exportFolder('ocean', dest);
 assert.strictEqual(e.ok, true);
-assert.strictEqual(fs.readFileSync(path.join(String(e.to), 'manifest.json'), 'utf8'), fs.readFileSync(path.join(root, 'themes', 'ocean', 'manifest.json'), 'utf8'));
+assert.strictEqual(fs.readFileSync(path.join(String(e.to), 'manifest.json'), 'utf8'), fs.readFileSync(path.join(themesDir, 'ocean', 'manifest.json'), 'utf8'));
 assert.strictEqual(store.exportFolder('retro', dest).ok, false, 'no built-in id');
 assert.strictEqual(store.exportFolder('ocean', dest).ok, false, 'existing dest refused');
 
-// a failed copy returns ok:false, throws nothing and leaves no temporary folder (spec 040 FR-008)
-{
-  const fileRoot = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-uth-bad-')), 'themes');
-  fs.writeFileSync(fileRoot, 'a file where the themes folder should be');
-  const r2 = new UserThemeStore(fileRoot).importFolder(path.join(src, 'ocean'), (id) => BUILT.has(id));
-  assert.strictEqual(r2.ok, false, 'copy failure is reported');
-  assert.ok(r2.error && r2.error.includes('could not be copied'));
-}
-// an unfinished import (dot folder) is not listed as a broken theme
-fs.mkdirSync(path.join(root, 'themes', '.ocean.tmp-123'));
+// an unfinished folder (dot folder) is not listed as a broken theme
+fs.mkdirSync(path.join(themesDir, '.ocean.tmp-123'));
 assert.ok(!store.list().some((t) => t.id.startsWith('.')), 'dot folders are skipped');
+
+// --- remove (spec 040 FR-032, T039) ---
+assert.deepStrictEqual(store.remove('ocean'), { ok: true, id: 'ocean' });
+assert.ok(!fs.existsSync(path.join(themesDir, 'ocean')), 'the folder, with its other files, is gone');
+assert.ok(!store.list().some((t) => t.id === 'ocean'), 'no longer listed');
+assert.strictEqual(store.remove('ocean').ok, false, 'a second remove finds nothing');
+assert.strictEqual(store.remove('mismatch').ok, true, 'a folder that does not load can be cleared too');
+for (const bad of ['..', '../themes', 'a/b', '', '.ocean.tmp-123', 'nope', 'C:\\x', 'a'.repeat(65)]) assert.strictEqual(store.remove(bad).ok, false, `"${bad}" is refused`);
+assert.ok(fs.existsSync(path.join(themesDir, 'old-court')) && fs.existsSync(path.join(themesDir, '.ocean.tmp-123')), 'nothing else is touched');
+// links inside a theme folder are removed as links, never followed
+{
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-uth-outside-'));
+  fs.writeFileSync(path.join(outside, 'keep.txt'), 'mine');
+  fs.mkdirSync(path.join(outside, 'sub'));
+  fs.writeFileSync(path.join(outside, 'sub', 'keep2.txt'), 'mine too');
+  seed('linky', { id: 'linky', name: 'Linky' });
+  let linked = true;
+  try {
+    fs.symlinkSync(outside, path.join(themesDir, 'linky', 'dirlink'), 'junction'); // a junction needs no privilege on Windows
+    fs.symlinkSync(path.join(outside, 'keep.txt'), path.join(themesDir, 'linky', 'filelink'));
+  } catch {
+    linked = false; // a runner that cannot make links: the check below is skipped, not passed by accident
+  }
+  assert.strictEqual(store.remove('linky').ok, true);
+  assert.ok(!fs.existsSync(path.join(themesDir, 'linky')));
+  assert.ok(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8') === 'mine' && fs.readFileSync(path.join(outside, 'sub', 'keep2.txt'), 'utf8') === 'mine too', `a link inside the folder is not followed (links made: ${linked})`);
+  // the folder itself a link: not a theme folder (list() skips it), so remove() does nothing and nothing outside is touched
+  let top = true;
+  try { fs.symlinkSync(outside, path.join(themesDir, 'toplink'), 'junction'); } catch { top = false; }
+  if (top) {
+    store.remove('toplink');
+    assert.ok(fs.existsSync(path.join(outside, 'keep.txt')) && fs.existsSync(path.join(outside, 'sub', 'keep2.txt')), 'a linked folder never loses what it points to');
+  }
+}
 
 console.log('user theme tests passed');
