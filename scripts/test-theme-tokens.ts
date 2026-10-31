@@ -256,6 +256,31 @@ for (const f of FILES) {
   }
   assert.ok(!/(?:font|font-size|padding|margin|width|height|gap|line-height)\s*:/.test(block.replace(/\/\*[\s\S]*?\*\//g, '')), 'no font, size or spacing in the world rules (070 D2)');
 }
+// ---- 6b. spec 097 FR-180: what world CSS may animate, and nothing blends (known failure T151 is named below until its PR) ----
+function worldCssProblems(cssIn: string): string[] {
+  const css = cssIn.replace(/\/\*[\s\S]*?\*\//g, ''), out: string[] = [];
+  if (/mix-blend-mode\s*:/.test(css)) out.push('mix-blend-mode: nothing blends (FR-180)');
+  for (const m of css.matchAll(/@keyframes\s+([\w-]+)\s*\{((?:[^{}]*\{[^{}]*\})*)\s*\}/g)) {
+    for (const d of m[2].matchAll(/([a-z-]+)\s*:/g)) if (!['transform', 'opacity'].includes(d[1])) out.push(`@keyframes ${m[1]} animates ${d[1]}: only transform and opacity (FR-180)`);
+  }
+  for (const m of css.matchAll(/(?:^|[;{\s])transition(?:-property)?\s*:\s*([^;}]+)/g)) {
+    for (const part of m[1].split(',')) { const name = part.trim().split(/\s+/)[0]; if (!['transform', 'opacity', 'none'].includes(name)) out.push(`transition names ${name}: only transform and opacity (FR-180)`); }
+  }
+  if (/will-change\s*:/.test(css)) out.push('will-change: only on an element that animates now, and none does today (FR-180)');
+  return out;
+}
+{
+  for (const f of ['realoffice.css', 'realoffice-world.css']) assert.deepStrictEqual(worldCssProblems(fs.readFileSync(path.join(ROOT, 'src', 'renderer', f), 'utf8')), [], `${f}: FR-180`);
+  const red = (css: string, why: RegExp, what: string): void => assert.ok(worldCssProblems(css).some((p) => why.test(p)), 'red: ' + what);
+  red('.a{mix-blend-mode:screen}', /mix-blend-mode/, 'a blend mode');
+  red('@keyframes k{50%{box-shadow:0 0 1px red}}', /animates box-shadow/, 'a keyframe with box-shadow');
+  red('@keyframes k{0%{opacity:0}50%{filter:blur(1px)}}', /animates filter/, 'a keyframe with filter');
+  red('.a{transition:width 1s}', /transition names width/, 'a transition of a layout property');
+  red('.a{transition:opacity 1s,top 1s}', /transition names top/, 'the second name of a transition');
+  red('.a{transition:all 1s}', /transition names all/, 'transition: all');
+  red('.a{will-change:transform}', /will-change/, 'will-change');
+  assert.deepStrictEqual(worldCssProblems('/* mix-blend-mode:screen */ .a{transition:opacity 1s;background:red}@keyframes k{50%{opacity:.5;transform:scale(2)}}'), [], 'the allowed forms pass');
+}
 // ---- 7. applied while Real office is shown, the user's theme restored on leaving (on a stub page) ----
 {
   const mkDoc = (): { documentElement: { style: { m: Map<string, string>; setProperty: (k: string, v: string) => void; removeProperty: (k: string) => void }; dataset: Record<string, string> } } => {
