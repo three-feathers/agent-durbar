@@ -100,7 +100,7 @@ const PREV_KEYS=['mod','shift','H'], PREV_KEY=keyText(PREV_KEYS);
 var DN=window.DurbarNotes||null;
 var NOTES_KEYS=['mod','shift','M'];
 var NT={by:new Map(),open:null,ret:null,notice:null,ro:null,rv:new Map(),mm:new Map(),markT:0}; /* by: folder key -> {ok,notes,session,readOnly,error,unreadable}; open: {id} while the drawer shows */
-var NS={id:'',key:'',name:'',over:false,ret:null,doneOpen:false,sub:null}; /* spec 083 T034a: the folder's Notes screen (the chat it reads through, its folder key, where the focus goes back) */
+var NS={id:'',key:'',name:'',over:false,ret:null,doneOpen:false,sub:null,fileMsg:'',fileBusy:false}; /* spec 083 T034a: the folder's Notes screen (the chat it reads through, its folder key, where the focus goes back) */
 
 const SCHED_KEY=keyText(['mod','shift','S']); /* spec 044 FR-031: the top-bar Schedules button */
 const ADD_KEY=keyText(['mod','O']), ADDWS_KEY=keyText(['mod','shift','O']); /* spec 052 FR-164: + Folder, + Workspace (the Mac File menu has the same keys) */
@@ -2679,7 +2679,7 @@ async function notesFetch(a){
   if(!notesOn(a))return null;
   const root=liveRoot(a);
   let r=null;try{r=await bridge.notesList(root.id);}catch(e){r=null;}
-  const st=r&&r.ok?{ok:true,notes:Array.isArray(r.notes)?r.notes:[],session:r.session||'',readOnly:r.readOnly||'',max:r.max||300}
+  const st=r&&r.ok?{ok:true,notes:Array.isArray(r.notes)?r.notes:[],session:r.session||'',readOnly:r.readOnly||'',max:r.max||300,file:ntFileState(r.file),fileSwitch:r.fileSwitch&&typeof r.fileSwitch==='object'?{on:r.fileSwitch.on===true,disabled:typeof r.fileSwitch.disabled==='string'?r.fileSwitch.disabled:''}:null}
     :{ok:false,notes:[],session:'',unreadable:!!(r&&r.code==='unreadable'),error:String((r&&r.error)||'Notes are not available.')};
   NT.by.set(notesKey(a),st);
   if(NT.rv.size>1500)NT.rv.clear(); if(NT.mm.size>3000)NT.mm.clear(); /* the row and masked-text caches are keyed by id and rev (a changed note is a new key), so a refetch keeps them; bounded */
@@ -2913,6 +2913,9 @@ function noteRowHTML(n,a,tab,o){
     +`<div class="nt-main"><b class="nt-title">${esc(title)}</b><span class="nt-meta">${esc(meta)}</span>${v.excerpt?`<p class="nt-ex">${esc(v.excerpt)}</p>`:''}</div>`
     +`<div class="nt-acts">${o&&o.insert===false?'':`<button class="btn sm" type="button" data-nt="insert"${boxUsable()?'':` aria-disabled="true" title="${esc(BOX_NO_REASON)}"`}>Insert</button>`}<button class="btn sm" type="button" data-nt="edit">Edit…</button><button class="btn sm nt-more" type="button" data-nt="more" aria-haspopup="menu" aria-label="More actions for this note" title="More actions for this note">${NT_DOTS}</button></div></div>`;
 }
+/* spec 083 T042 (FR-053, FR-054): the project file's state while its switch is on: an error blocks writing it, info is a quieter line */
+function ntFileState(f){return f&&typeof f==='object'?{error:typeof f.error==='string'?f.error:'',info:typeof f.info==='string'?f.info:''}:null;}
+function ntFileHTML(st){const f=st&&st.ok&&st.file;if(!f)return '';return (f.error?`<p class="nt-banner nt-file-err" role="alert">${esc(f.error)}</p>`:'')+(f.info?`<p class="nt-empty nt-file-info" role="status">${esc(f.info)}</p>`:'');}
 function notesPaint(){
   const d=$('notesDrawer'),a=NT.open&&byId(NT.open.id); if(!d||!a||d.hidden)return;
   const st=notesOf(a)||{ok:true,notes:[],session:''}, list=d.querySelector('#ntBody');
@@ -2922,6 +2925,7 @@ function notesPaint(){
     html=`<p class="nt-banner" role="alert">${esc(st.unreadable?'Durbar could not read the notes file of this folder; it is left as it is.':st.error)}</p>${st.unreadable&&bridge.notesStartOver?'<p><button class="btn sm" type="button" data-nt="startover">Start over…</button></p>':''}`;
   }else{
     if(st.readOnly)html+=`<p class="nt-banner" role="alert">${esc(st.readOnly)}</p>`;
+    html+=ntFileHTML(st);
     const g0=DN.groups(st.notes,st.session), total0=g0.session.length+g0.folder.length;
     const q=ntQuery(), g=q.trim()?DN.search(g0,q,NAV&&NAV.rank,memoMask):g0, total=g.session.length+g.folder.length;
     if(!total0)html+='<p class="nt-empty">No notes yet. Save a message with its ⋯ menu, or add one.</p>';
@@ -3109,7 +3113,7 @@ async function openNotesScreen(a,o){
   const b=byId(p.id)||a, key=notesKey(b);
   const ret=o.opener&&document.contains(o.opener)?o.opener:(document.activeElement&&document.activeElement!==document.body?document.activeElement:null);
   if(notesIsOpen())closeNotes(false); /* from the drawer: the screen replaces it */
-  NS={id:b.id,key,name:r.name,over:p.over,ret,doneOpen:false,sub:NS.sub};
+  NS={id:b.id,key,name:r.name,over:p.over,ret,doneOpen:false,sub:NS.sub,fileMsg:'',fileBusy:false};
   if(!NS.sub&&bridge.onNotesChanged)NS.sub=bridge.onNotesChanged(()=>{if(nsShown()){const c=byId(NS.id);if(c)notesFetch(c);}}); /* another chat or process changed them */
   window.DurbarScreens.folderNotes({key,name:r.name,render:nsRender,onClose:nsClosed});
   await notesFetch(b);
@@ -3127,7 +3131,7 @@ function nsClosed(){
 /* the screen's body: the tools once, the list on every change (so the search field keeps its focus and text) */
 function nsRender(focus){
   const h=$('nsHost'); if(!h)return;
-  h.innerHTML=`<section class="scr-sec ns-sec" aria-label="${esc('Notes of '+NS.name)}"><div class="ns-tools"><input class="nt-find" id="nsSearch" type="search" placeholder="Search notes" aria-label="Search notes" autocomplete="off" spellcheck="false"><button class="btn sm primary" id="nsAdd" type="button">+ Note</button></div><div id="nsList"></div></section>`;
+  h.innerHTML=`<section class="scr-sec ns-sec" aria-label="${esc('Notes of '+NS.name)}"><div class="ns-tools"><input class="nt-find" id="nsSearch" type="search" placeholder="Search notes" aria-label="Search notes" autocomplete="off" spellcheck="false"><button class="btn sm primary" id="nsAdd" type="button">+ Note</button></div><div id="nsFile" class="ns-file"></div><div id="nsList"></div></section>`;
   wireNotesScreen(h);
   nsPaint();
 }
@@ -3140,6 +3144,7 @@ function nsPaint(){
   else if(!st.ok)html=`<p class="nt-banner" role="alert">${esc(st.unreadable?'Durbar could not read the notes file of this folder; it is left as it is.':st.error)}</p>${st.unreadable&&bridge.notesStartOver?'<p><button class="btn sm" type="button" data-nt="startover">Start over…</button></p>':''}`;
   else{
     if(st.readOnly)html+=`<p class="nt-banner" role="alert">${esc(st.readOnly)}</p>`;
+    html+=ntFileHTML(st);
     const f=$('nsSearch'), q=f?f.value:'', g0=NSX().groups(st.notes), g=q.trim()?NSX().filter(g0,q,DN.search,NAV&&NAV.rank,memoMask):g0;
     if(!g0.open.length&&!g0.done.length)html+=`<p class="nt-empty">${esc(NSX().EMPTY)}</p>`;
     else if(!g.open.length&&!g.done.length)html+=`<p class="nt-empty" role="status">${esc(DN.noMatch(q,safeMask))}</p>`;
@@ -3153,6 +3158,74 @@ function nsPaint(){
   const d=$('nsDone'); if(d)d.addEventListener('toggle',()=>{NS.doneOpen=d.open;});
   ntFocusBack(list,fm);
   const add=$('nsAdd'); if(add)add.disabled=!a||!notesOn(a)||!st.ok||!!st.readOnly;
+  nsFilePaint(a,st);
+}
+/* ---- the project-file switch (spec 083 T042, FR-050, FR-055) ----
+   Off by default; main says whether it is on and why it is greyed (fileSwitch). Turning it on asks first (Cancel focused), turning it
+   off asks Leave or Delete; the window sends only the chat's id and two yes/no choices, never a path. */
+const NS_FILE_LABEL='Also keep these notes as .durbar/notes.md in the project';
+const NS_FILE_WARN='Durbar will write every note of this folder to .durbar/notes.md in the project. Agents and anyone with the folder can read it, and it may get committed and pushed with your code. Secrets are masked, but private ideas are not. Durbar never adds it to git.';
+const NS_FILE_STRAY='Text outside notes in an existing notes.md is removed when Durbar writes the file.';
+const NS_FILE_EXCLUDE='Keep it out of commits (adds .durbar/ to .git/info/exclude, local only)';
+const NS_FILE_OWN='This is Durbar\'s own write: it also happens in Read-only mode.';
+const NS_FILE_COMMITTED='If .durbar/notes.md was already committed, this does not remove it from the repository.';
+function nsFilePaint(a,st){
+  const h=$('nsFile'); if(!h)return;
+  const S=window.DurbarScreens, sw=st&&st.ok?st.fileSwitch:null;
+  if(!a||!notesOn(a)||!st||!st.ok||!S||!S.switchHtml||!bridge.notesSetFile){h.innerHTML='';return;}
+  if(!sw){h.innerHTML=`<p class="ns-file-why">${esc('The project file is not offered for a VS Code workspace.')}</p>`;return;}
+  const had=document.activeElement&&document.activeElement.id==='nsFileSw';
+  const why=sw.disabled?`<p class="ns-file-why" id="nsFileWhy">${esc(sw.disabled)}</p>`:'';
+  const attrs='id="nsFileSw"'+(sw.disabled||NS.fileBusy?' disabled':'')+(sw.disabled?' aria-describedby="nsFileWhy"':'');
+  h.innerHTML=`<div class="ns-file-row"><span class="ns-file-l"><b>${esc(NS_FILE_LABEL)}</b><small>${esc(sw.on?'On: Durbar keeps the file in step with these notes.':'Off: nothing is written in the project.')}</small></span>${S.switchHtml(sw.on,NS_FILE_LABEL,attrs)}</div>${why}<p class="ns-file-msg" id="nsFileMsg" role="status">${esc(NS.fileMsg||'')}</p>`;
+  if(had){const b=$('nsFileSw');if(b&&!b.disabled)focusIn(b);}
+}
+async function nsFileToggle(a,btn){
+  if(NS.fileBusy||!bridge.notesSetFile)return;
+  const st=notesOf(a), sw=st&&st.ok&&st.fileSwitch; if(!sw||sw.disabled)return;
+  NS.fileBusy=true;
+  try{if(sw.on)await nsFileOff(a,btn);else await nsFileOn(a,btn);}
+  finally{NS.fileBusy=false;const c=byId(NS.id);if(c&&nsShown()){nsFilePaint(c,notesOf(c));const b=$('nsFileSw'),f=document.activeElement;if(b&&!b.disabled&&(!f||f===document.body||!document.contains(f)))focusIn(b);}} /* the repaint replaced the switch: the focus stays on it */
+}
+function nsFileSay(t,a){NS.fileMsg=t||'';const m=$('nsFileMsg');if(m)m.textContent=NS.fileMsg;if(t)announce(t);}
+async function nsFileOn(a,btn){
+  const id=liveRoot(a).id, back=()=>$('nsFileSw')||btn;
+  let c=null;try{c=bridge.notesFileCount?await bridge.notesFileCount(id):null;}catch(e){c=null;}
+  if(!c||!c.ok){ /* FR-050: an unreadable or conflicted file says so, and the switch stays off */
+    const why=(c&&c.error)||'Durbar could not check the folder.';
+    await askDialog({title:'Keep these notes in the project?',body:why,lines:['The switch stays off.'],buttons:[{label:'Close',value:null,cls:'primary'}],returnFocus:back});
+    nsFileSay(why+' The switch stays off.');return;
+  }
+  const lines=[];
+  if(c.exists&&c.strayText>0)lines.push(c.strayText+(c.strayText===1?' line':' lines')+' of your text in the existing file will be removed.'); /* review of PR 931: never destroyed with only a generic warning */
+  if(c.exists&&c.count>0)lines.push(c.count+(c.count===1?' note':' notes')+' in the existing file will be added, marked "From the project file".');
+  lines.push(NS_FILE_STRAY);
+  lines.push(NS_FILE_OWN);
+  if(c.repo)lines.push(NS_FILE_COMMITTED);
+  const v=await askDialog({title:'Keep these notes in the project?',body:NS_FILE_WARN,lines,size:'m',check:c.repo?{label:NS_FILE_EXCLUDE,checked:true}:undefined,returnFocus:back,
+    buttons:[{label:'Cancel',value:null},{label:'Turn on',value:'on',cls:'primary warn'}]});
+  if(!v||v.value!=='on')return;
+  let r=null;try{r=await bridge.notesSetFile(id,true,c.repo?{exclude:v.checked===true}:undefined);}catch(e){r=null;}
+  if(r&&!r.ok&&r.excludeFailed){ /* review of PR 931: the exclude line could not be added, so nothing was turned on; the person decides */
+    nsFileSay(r.error||'');
+    const v2=await askDialog({title:'Could not keep it out of commits',body:(r.error||'')+' Turn it on anyway? .durbar/notes.md may then show in git status and get committed.',size:'m',returnFocus:back,
+      buttons:[{label:'Cancel',value:null},{label:'Turn on without keeping it out of commits',value:'on',cls:'primary warn'}]});
+    if(!v2||v2.value!=='on'){await notesFetch(a);return;}
+    try{r=await bridge.notesSetFile(id,true,{exclude:false});}catch(e){r=null;}
+  }
+  if(!r||!r.ok){nsFileSay(/stays off/.test((r&&r.error)||'')?r.error:((r&&r.error)||'Could not turn it on.')+' The switch stays off.');await notesFetch(a);return;}
+  await notesFetch(a);
+  nsFileSay(r.demo?(r.message||'Demo: no file written'):[r.file&&r.file.error?'':'Durbar now keeps .durbar/notes.md in the project.',r.message||''].filter(Boolean).join(' '));
+}
+async function nsFileOff(a,btn){
+  const id=liveRoot(a).id, back=()=>$('nsFileSw')||btn;
+  const v=await askDialog({title:'Stop keeping .durbar/notes.md?',body:'Durbar stops writing the file. Leave it in the project, or delete it? Durbar deletes it only when it holds exactly what Durbar would write.',lines:['If the file is tracked in git, deleting it shows as a deletion.'],size:'m',returnFocus:back,
+    buttons:[{label:'Cancel',value:null},{label:'Delete the file',value:'delete',cls:'danger'},{label:'Leave the file',value:'leave',cls:'primary'}]});
+  if(!v||(v.value!=='leave'&&v.value!=='delete'))return;
+  let r=null;try{r=await bridge.notesSetFile(id,false,{deleteFile:v.value==='delete'});}catch(e){r=null;}
+  await notesFetch(a);
+  if(!r||!r.ok){nsFileSay((r&&r.error)||'Could not turn it off.');return;}
+  nsFileSay(r.demo?(r.message||'Demo: no file written'):(r.message||'Durbar stopped writing .durbar/notes.md.'));
 }
 /* the rows the keyboard can reach: a folded Done group's rows are not shown */
 function nsVisibleRows(){return [...document.querySelectorAll('#nsList .nt-row')].filter(r=>!r.closest('details:not([open])'));} /* a closed <details> keeps its rows' boxes in Chromium: test the fold, not the boxes */
@@ -3165,6 +3238,7 @@ function wireNotesScreen(h){
   h.addEventListener('click',e=>{
     const a=byId(NS.id); if(!a)return;
     if(e.target.closest('#nsAdd')){addNoteUi(a,$('nsAdd'));return;}
+    const fsw=e.target.closest('#nsFileSw'); if(fsw){if(!fsw.disabled)nsFileToggle(a,fsw);return;}
     const b=e.target.closest('[data-nt]'); if(!b)return;
     if(b.dataset.nt==='startover'){startOverNotes(a,b);return;}
     const row=b.closest('.nt-row'),st=notesOf(a),n=row&&st&&st.notes.find(x=>x.id===row.dataset.id); if(!n)return;
@@ -4282,15 +4356,11 @@ function scheduleRenderSoon(){
   soonTimer=setTimeout(()=>{soonTimer=0;soonAt=performance.now();scheduleRender();},wait);
 }
 function scheduleRender(){if(renderQueued)return;renderQueued=true;requestAnimationFrame(()=>{if(!renderQueued)return;renderQueued=false;renderAll();});} /* settleNow() may have drawn it already */
-function setBadge(){const b=$('protoBadge'); if(!b)return; b.className='proto'+(SIM&&!demoOn?' sim':'');
-  /* spec 001 FR-027: not one agent app; the tooltip names the ready ones */
-  const ready=DMK().kindChoices(KINDS).filter(k=>!k.disabled).map(k=>k.name);
-  b.title=SIM&&!demoOn?'Demo: fake events, no sessions started, no AI credits used':(!demoOn&&ready.length?'Live: '+ready.join(', '):'');b.textContent=demoOn?'Demo: sample data':SIM?'Demo':'Live';}
 function applyMode(){
   agents=demoOn?DEMO.agents:LIVE.agents; ROOMS=demoOn?DEMO.rooms:LIVE.rooms;
   ui.ws='all'; ui.status=null;
   if(ui.selected)closePanel();
-  setBadge(); renderFloorsBtn(); renderIntoFloor(); renderFilter(); renderAll(); labelDemo();
+  renderFloorsBtn(); renderIntoFloor(); renderFilter(); renderAll(); labelDemo();
 }
 /* spec 052 round 10: the top bar's demo item says what choosing it does */
 function labelDemo(){const w=$('demoWord');if(w)w.textContent=demoOn?'Turn off demo':'Turn on demo';}
@@ -6500,7 +6570,6 @@ function applyKinds(){
   /* the other ready kinds' model lists, for their agents' model chips (spec 012 FR-120); a CLI probe, no prompt */
   (KINDS||[]).forEach(k=>{if(!isDefaultKind(k.id)&&k.state==='ready'&&DMK().shows(kindCaps(k.id),'models'))ensureModels(k.id).then(()=>scheduleRender());});
   syncKindModel();
-  setBadge(); /* FR-027: the badge's tooltip lists the ready harnesses */
 }
 async function loadKinds(refresh){
   if(!bridge||!bridge.listAdapters)return;
@@ -8086,7 +8155,6 @@ if(bridge){
   setInterval(()=>{if(VISITS.tick())scheduleRender();},250);
   setInterval(coffeeTick,SIM_BREAK?1000:5000); /* spec 068: resume, ask or remind when a break is due */
   agents=LIVE.agents; ROOMS=LIVE.rooms;
-  setBadge();
 }
 
 renderFilter(); renderAll();

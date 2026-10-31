@@ -51,6 +51,8 @@ export interface SavedFolder {
   prevHidden?: PrevMark[];
   /** Spec 003 (2026-10-21 delta): the permission mode last chosen for each session of this folder (newest 50), so a session comes back in its own mode, not the folder's last one. Ids and modes only. */
   sessionModes?: SessionMode[];
+  /** Spec 083 FR-050 (T042): the folder's notes are mirrored to `.durbar/notes.md` in the project. A flag only; absent = off (the default). */
+  notesFile?: true;
 }
 
 export interface SessionMode {
@@ -272,6 +274,7 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       ...(parsePrevMarks(o.prevPinned) ? { prevPinned: parsePrevMarks(o.prevPinned) } : {}),
       ...(parsePrevMarks(o.prevHidden) ? { prevHidden: parsePrevMarks(o.prevHidden) } : {}),
       ...(parseSessionModes(o.sessionModes) ? { sessionModes: parseSessionModes(o.sessionModes) } : {}),
+      ...(o.notesFile === true ? { notesFile: true as const } : {}), // spec 083 FR-050: only `true` turns it on; anything else is off
     });
     if (out.length >= MAX_FOLDERS) break;
   }
@@ -594,6 +597,18 @@ export class FolderStore {
     cur.closed = closed ? true : undefined;
     this.save();
     return true;
+  }
+
+  /** Spec 083 FR-050 (T042): the project-file switch of the folder's notes; `false` when the folder is not saved or the file could not be written. */
+  setNotesFile(workspace: string, on: boolean): boolean {
+    const cur = this.get(workspace);
+    if (!cur) return false;
+    const was = cur.notesFile;
+    if (on) cur.notesFile = true;
+    else delete cur.notesFile;
+    if (this.save()) return true;
+    if (was) cur.notesFile = was; else delete cur.notesFile; // not remembered: the switch keeps its old position
+    return false;
   }
 
   /** Remember the permission mode chosen for this folder (used when the agent is restored on the next start). */

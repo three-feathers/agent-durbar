@@ -85,6 +85,7 @@ const DRIVERS = [
   { name: 'check-question-visible' },
   { name: 'check-chat-no-scroll' },
   { name: 'check-chat-title' }, // spec 052 FR-180 (#789): the chat header's title uses the free room up to the buttons
+  { name: 'check-no-demo-badge' }, // spec 052 FR-181: no Demo / Live badge in the top bar; the demo cues remain
   { name: 'check-sim-guard' }, // spec 010 FR-026: the real preload API is refused by main under DURBAR_SIM
   { name: 'shots-069-mcp-global' }, // spec 069: add to the agent apps' own lists, review, remove, source chips
   { name: 'shots-069-harmonize' }, // spec 069 part 2: copy servers between the agent apps' lists
@@ -104,6 +105,7 @@ const DRIVERS = [
   { name: 'check-notes' }, // spec 083: save a message, the Notes drawer, Insert and notes in the "/" list (US1 scenarios 1..6, SC-001, SC-002)
   { name: 'check-notes-count' }, // spec 083 T030..T032: the header count, the marker on a saved message, the drawer's search (SC-005)
   { name: 'check-notes-screen' }, // spec 083 T034a: the per-folder Notes screen, its three ways in, Done (FR-044, FR-045)
+  { name: 'check-notes-switch' }, // spec 083 T042: the project-file switch, its dialogs and states (FR-050, FR-055)
   { name: 'check-edits' }, // spec 005 FR-020..FR-026: file edits in the chat
   { name: 'shots-068-coffee' }, // spec 068: coffee break (simbreak=8 in its own query)
   { name: 'shots-097-realoffice' }, // spec 097 P1: Real office mode (the switch, the scene, the lights, flat loads none of it)
