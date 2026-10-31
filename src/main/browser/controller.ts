@@ -64,7 +64,7 @@ export interface BrowserWinLike {
   isDestroyed(): boolean;
   contentView: { addChildView(v: never): void; removeChildView(v: never): void };
   getContentBounds(): { width: number; height: number };
-  webContents: { getZoomFactor(): number; isFocused?(): boolean };
+  webContents: { getZoomFactor(): number; isFocused?(): boolean; focus?(): void };
 }
 export interface BrowserDeps {
   /** True for a top-level session of the office (looked up in main); under the simulator also the simulated agents' ids. */
@@ -681,10 +681,32 @@ export function makeBrowserController(deps: BrowserDeps) {
       if (S.active === tab.tabId) {
         showActive(S);
         // and only if the user has not gone to Durbar's own window content (the composer, the chat) while the view was being made
-        if (openerHadFocus && winFor()?.webContents.isFocused?.() !== true) t.wc.focus?.();
+        const uiHasFocus = winFor()?.webContents.isFocused?.() === true;
+        if (openerHadFocus && !uiHasFocus) t.wc.focus?.();
+        else if (uiHasFocus) keepFocusInWindow(t);
       }
     });
     return true;
+  }
+
+  /**
+   * FR-129 (2026-10-31 delta): Electron gives an attached view the focus when main loads a page in it (seen on Linux: a `focus` event on the
+   * new page while it loads, with no `focus()` call from Durbar). For a tab a page opened while the user is in Durbar's own window content,
+   * every such focus until this load stops goes straight back to the window, so the keys stay in the composer.
+   */
+  function keepFocusInWindow(t: Tracked): void {
+    let armed = true;
+    t.wc.on('focus', (() => {
+      if (!armed) return;
+      // after Chromium has finished moving the focus (taking it back inside the event is undone by the same focus change)
+      later(() => {
+        const w = winFor();
+        if (w && !w.isDestroyed() && !t.wc.isDestroyed() && t.wc.isFocused?.() !== false) w.webContents.focus?.();
+      });
+    }) as never);
+    t.wc.on('did-stop-loading', (() => {
+      armed = false;
+    }) as never);
   }
 
   return {

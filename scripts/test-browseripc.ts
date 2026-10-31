@@ -37,7 +37,7 @@ function fakeWin(content = { width: 1000, height: 700 }, zoom = 1) {
     isDestroyed() { return this.destroyed; },
     contentView: { addChildView: (v: unknown) => void children.push(v), removeChildView: (v: unknown) => { const i = children.indexOf(v); if (i >= 0) children.splice(i, 1); } },
     getContentBounds: () => content,
-    webContents: { focused: false, getZoomFactor: () => zoom, isFocused() { return this.focused; } },
+    webContents: { focused: false, focuses: 0, getZoomFactor: () => zoom, isFocused() { return this.focused; }, focus() { this.focuses++; this.focused = true; } },
   };
   return win;
 }
@@ -1063,6 +1063,19 @@ process.on('exit', () => {
     assert.deepStrictEqual(lastNav(viewOf(r, t1)), { url: 'https://site.example/timer' });
     assert.strictEqual(viewOf(r, t1)!.wc.focuses, 0, 'but its page never takes the focus from the composer');
     assert.strictEqual(ow.wc.focuses, 0, 'nor does the opener page');
+    // Electron focuses an attached view while main loads it: that first focus during the load goes back to the window
+    const uiWc = r.win.webContents as { focused: boolean; focuses: number };
+    uiWc.focused = false;
+    { const w = viewOf(r, t1)!.wc; w.focused = true; w.emit('focus'); }
+    r.flush();
+    { const w = viewOf(r, t1)!.wc; w.focused = true; w.emit('focus'); }
+    r.flush();
+    assert.strictEqual(uiWc.focuses, 2, 'each focus Electron gives the loading page goes back to Durbar\'s window content');
+    viewOf(r, t1)!.wc.emit('did-stop-loading');
+    { const w = viewOf(r, t1)!.wc; w.focused = true; w.emit('focus'); } // the user clicks in the page later
+    r.flush();
+    assert.strictEqual(uiWc.focuses, 2, 'after the load, a focus the user gives the page stays there');
+    uiWc.focused = true;
     // the opener had the focus when it asked, but the user went to the composer before the new view was made: no focus either
     await r.ctl.selectTab('s1', opener);
     (r.win.webContents as { focused: boolean }).focused = false;
@@ -1074,6 +1087,11 @@ process.on('exit', () => {
     const t2 = activeOf(r);
     assert.ok(t2 !== opener && t2 !== t1);
     assert.strictEqual(viewOf(r, t2)!.wc.focuses, 0, 'the user moved to the composer meanwhile: the page does not take the focus back');
+    const f0 = uiWc.focuses;
+    viewOf(r, t2)!.wc.emit('did-stop-loading');
+    { const w = viewOf(r, t2)!.wc; w.focused = true; w.emit('focus'); } // the load is over: a click in the page is the user's
+    r.flush();
+    assert.strictEqual(uiWc.focuses, f0, 'a focus after the load is never taken back');
     // neither the opener page nor Durbar's window content has the focus (another app, or the window in the background): no page takes it
     await r.ctl.selectTab('s1', opener);
     (r.win.webContents as { focused: boolean }).focused = false;
@@ -1081,6 +1099,10 @@ process.on('exit', () => {
     assert.strictEqual(ev.onTabRequest!('s1', 'https://site.example/away', true), true);
     await tick(); await tick();
     assert.strictEqual(viewOf(r, activeOf(r))!.wc.focuses, 0, 'an opener without the focus never hands it to its new page');
+    const f1 = uiWc.focuses;
+    { const w = viewOf(r, activeOf(r))!.wc; w.focused = true; w.emit('focus'); }
+    r.flush();
+    assert.strictEqual(uiWc.focuses, f1, 'Durbar\'s window content did not have it either: nothing is pulled into the window');
     // the opener page had the focus and the user stayed in it: the new page gets it (the FR-129 rule of the 2026-10-31 tabs delta)
     await r.ctl.selectTab('s1', opener);
     (r.win.webContents as { focused: boolean }).focused = false;
@@ -1088,6 +1110,10 @@ process.on('exit', () => {
     assert.strictEqual(ev.onTabRequest!('s1', 'https://site.example/click', true), true);
     await tick(); await tick();
     assert.strictEqual(viewOf(r, activeOf(r))!.wc.focuses, 1, 'a click in the page: the new page gets the focus');
+    const f2 = uiWc.focuses;
+    { const w = viewOf(r, activeOf(r))!.wc; w.focused = true; w.emit('focus'); }
+    r.flush();
+    assert.strictEqual(uiWc.focuses, f2, 'and keeps it');
   }
   // FR-132: a dialog in a background tab of the shown session (toast, marker), or in a hidden session's tab (also brought forward on that tab)
   {
