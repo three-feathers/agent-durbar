@@ -96,7 +96,7 @@ const crewOf=a=>{
   return CREW_MAP[a.id]||'';
 };
 /* the character in a cache key or a walker's key: nothing outside the crew kit, so the other themes' keys do not change */
-const crewKey=a=>{if(THEME.sceneKit()!=='crew')return '';const c=crewOf(a);return '|'+c+CREW.ownRev(c)+(CREW_BAD.has(c)?'!':'');};
+const crewKey=a=>{if(THEME.sceneKit()!=='crew')return '';const c=crewOf(a);return '|'+c+(CREW?CREW.ownRev(c):'')+(CREW_BAD.has(c)?'!':'');};
 /* spec 096 US4 scenario 1: a desk's tooltip names the My character it wears; one of the crews has no name to show */
 const wearWords=a=>{if(!CREW||THEME.sceneKit()!=='crew')return '';const n=CREW.ownName(crewOf(a));return n?' · Wearing '+n:'';};
 /* spec 096 FR-043, FR-044: My characters in the window. `CHARS_CHOSEN` is the stored Characters value; THEME.characters() is what is drawn (a stored `mine` with no character draws the theme's own). Frames
