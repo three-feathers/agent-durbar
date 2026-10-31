@@ -44,7 +44,7 @@ A CDP endpoint for the user's own Playwright MCP is researched (feasible in prin
 - no shell;
 - zero credits in tests.
 
-**Scale/Scope**: up to 15 sessions, each with one view; one tab per view.
+**Scale/Scope**: up to 15 sessions; from Phase 1b up to 10 page tabs per session, one view per loaded tab, at most 4 loaded pages in all (FR-011, FR-126).
 
 ## Constitution Check
 
@@ -122,6 +122,26 @@ renderer (app.js, new browserpane.js)            main                           
 
 **Simulator** (`src/renderer/sim.ts`, `src/main/mcp/simmain.ts`): links to the test pages; the test-page scheme under `DURBAR_SIM` only (FR-091); a scripted fake agent for the tools.
 
+### Page tabs (spec delta 2026-10-31, issue #910; Phase 1b)
+
+Owner decisions (Vikram, 2026-10-31 05:17 UTC): the toggle *Open chat links in a new tab* lives in the session browser, default off (FR-123); with it on, the same link focuses its tab (FR-124); at most 10 tabs per session, background tabs unloaded first (FR-126). Decided by Vikram's agent as suggested defaults: `target=_blank` opens a tab (FR-125); the agent gets its own tab in Phase 2 (FR-131). Nothing here changes an agent rule or adds a dependency.
+
+**Reuse (FR-031 review rule), named:**
+
+- `src/main/browser/views.ts` builds every tab's view with the existing builder (`viewWebPreferences`, `buildViewHandlers`, `installViewHandlers`, `navigateView`/`navigateChecked`, the `Page`-only debugger, the user agent, mute); the change is that `newViewPartition` runs once per **session** and the partition object is passed to each later view; teardown moves from per view to per session.
+- `src/main/browser/controller.ts`: `Tracked` becomes per `(sessionId, tabId)`; `stateOf`, `changed`, `wire`, `go` (with the #891 `restoring` rule), `applyAttach` and `enforceCap` work on tabs unchanged in shape; `openLink` keeps `classifyLink`/`simAddress` first and then asks the pure tab model where the link goes.
+- `src/main/browser/viewcap.ts`: `pickUnload` and `safeToUnload` stay; `CapView` gains `background`, the sort key becomes (`background` first, then `lastShownAt`); `MAX_TABS_PER_SESSION` sits next to `MAX_LIVE_VIEWS`.
+- New pure module `src/main/browser/tabs.ts`: tab ids, the reuse match, insertion and close order, the 10-tab limit, the 5-per-load page limit. No Electron.
+- `src/main/hardening.ts` `buildViewHandlers.windowOpen`: same `isWebUrl`, `sameWebOrigin` and disposition checks; `ctx.loadInView` becomes `ctx.openTab(url, foreground)` for user tabs and stays `loadInView` for the agent's tab; it still always returns `deny`.
+- `src/main/ipc/browser.ts`: four new channels plus `how` on `browser:openLink`, `fromApp`-checked like the rest; `SIM_OPEN_CHANNELS` and `test:ipcchannels` updated.
+- `src/main/settings.ts` / `src/shared/credits.ts` `parseSettings`: `chatLinksNewTab`, written only when true, as `chatLinksIn` and `browserNoteAccepted` are.
+- Renderer `src/renderer/browserpane.js`: `tabsHTML` gets a second, inner tablist builder for the page tabs; the bar gets a More button that opens the shared `#modeMenu` (as `openLinkMenu` in `app.js` does); `openLinkMenu` gains *Open in a new tab*; `linkRoute` keeps deciding system vs session.
+- Keys: the view's `before-input-event` (already the Watch-only hook of FR-066a) and `navigator.js` `TAKEN`.
+
+**Data flow.** Window → `browser:newTab/selectTab/closeTab/openLink(how)` → main validates the session id (`known`) and the tab id (shape and owner) → `tabs.ts` decides → `views.ts` makes or closes a view → `controller.ts` emits `browser:tabs` and `browser:state` (active tab). Pages' tab requests come from `setWindowOpenHandler` in main only.
+
+**Risks.** Memory with many tabs: dropped background tabs close their `webContents` (no process), and the 4-page soft cap is unchanged; T013 AC5 measures it. Key handling on macOS (T025 AC3). `controller.ts` grows: the per-tab split is done by keying, not by a second controller. Conflicts with Phase 2 work in `controller.ts` and `views.ts`: Phase 1b lands first or rebases often.
+
 ### Phases
 
 | Phase | Stories | What ships | Gate |
@@ -131,7 +151,8 @@ renderer (app.js, new browserpane.js)            main                           
 | 2 Agent control | US3, US4 | `durbar-browser` server, tokens, tools, broker kinds and host-side enforcement, POST/download/upload gates, driver state, takeover, highlight, log, untrusted-content label | Phase 1 merged; 041 T018 `bridgecore.ts` merged |
 | 3 Folder logins | US5 | Per-folder persistent partition with confirm, chip, clear, turn off; refused without a keyring | Phase 2 merged; T005 (fuse) merged |
 | 4 Headless (later) | — | FR-110..FR-113: a view in a hidden helper window (`show: false`, `fromSurface: false` screenshots) that the agent drives, still shown in the tab and on the desk, *Show* to move it into the panel (T070-T072) | Phase 2 merged; T070 measurement |
-| Later | — | FR-103 per-folder allowed hosts, FR-100 CDP endpoint (Q3; needs FR-029 and spec 008 FR-037/FR-038 amended), FR-101 `BROWSER` helper, FR-102 tabs and split (#452) | A new spec |
+| 1b Page tabs | US6 | Tabs per session (FR-120..FR-130, FR-132, FR-133): strip, +, close, keys, the *Open chat links in a new tab* toggle, `target=_blank` in a tab, the cap across tabs; T020-T027 (T028, the agent's own tab FR-131, is Phase 2) | Phase 1 merged (T012-T017) |
+| Later | — | FR-103 per-folder allowed hosts, FR-100 CDP endpoint (Q3; needs FR-029 and spec 008 FR-037/FR-038 amended), FR-101 `BROWSER` helper, FR-102 the chat-and-browser split (#452; tabs moved to Phase 1b) | A new spec |
 
 ### Risks
 
@@ -162,11 +183,11 @@ specs/080-session-browser/
 src/shared/browserserver.ts, browserurl.ts
 src/shared/netclass.ts
 src/main/toolserver/host.ts, tokens.ts   (shared with 072; next to 041 T018's bridgecore.ts)
-src/main/browser/views.ts, driver.ts, driverstate.ts, host.ts, policy.ts, snapshot.ts
+src/main/browser/views.ts, driver.ts, driverstate.ts, host.ts, policy.ts, snapshot.ts, tabs.ts (Phase 1b)
 src/main/ipc/browser.ts
 src/renderer/browserpane.js   (+ app.js, styles.css, index.html, sim.ts)
 src/adapters/permissions.ts   (classification only)
-scripts/test-browserurl.ts, test-netclass.ts, test-browserpolicy.ts, test-driverstate.ts, test-browsersnapshot.ts, test-toolserver.ts, test-browserhost.ts
+scripts/test-browserurl.ts, test-browsertabs.ts (Phase 1b), test-netclass.ts, test-browserpolicy.ts, test-driverstate.ts, test-browsersnapshot.ts, test-toolserver.ts, test-browserhost.ts
 scripts/shots-080-browser.js  (driver checks and screenshots)
 ```
 

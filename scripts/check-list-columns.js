@@ -149,7 +149,14 @@ module.exports = async (ctx) => {
     assert.ok(r.w >= 24 && r.h >= 24, `${tag}: the 24px target is kept (${r.w}x${r.h})`);
     const nm = await rect(`${SEL.replace('>.ren.ren-in', '')} .room-name`);
     assert.ok(Math.abs(nm.y - r.y) <= 3, `${tag}: the pencil sits on the name's line (${r.y} vs ${nm.y})`);
-    ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(r.x), y: Math.round(r.y) });
+    // the first moves can be lost while the OS activates the window (Windows runners, PR 907's run): move again until the page sees :hover
+    let hovered = false;
+    for (let i = 0; i < 4 && !hovered; i++) {
+      ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(r.x) - 1, y: Math.round(r.y) });
+      ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(r.x), y: Math.round(r.y) });
+      hovered = await until(`document.querySelector(${jsLiteral(SEL)}).matches(':hover')`, 1500);
+    }
+    assert.ok(hovered, `${tag}: the pointer reached the pencil`);
     await ok(`document.querySelector(${jsLiteral(SEL)}).matches(':hover')&&getComputedStyle(document.querySelector(${jsLiteral(SEL)})).opacity==='1'&&!/, 0\\)$/.test(getComputedStyle(document.querySelector(${jsLiteral(SEL)})).backgroundColor)`, `${tag}: hover shows the icon on a tile`);
     ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
     await ok(`!document.querySelector(${jsLiteral(SEL)}).matches(':hover')`, `${tag}: the pointer left`);

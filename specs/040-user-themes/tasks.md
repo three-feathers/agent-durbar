@@ -31,3 +31,9 @@
 - [x] T030 Sample AI-style pack `scripts/fixtures/themes/pink-studio.json` and `scripts/check-theme-art.js` (`npm run check:theme-art`, in `check:ui`): desks, walkers, lobby places and chips at 1440x900 and 1280x800, pixels and attributes, and back to Clean Office [FR-023]
 - [x] T031 Review of PR #496: tests that catch the headwear drawing order (office and kits) and the art on another kit (`check:theme-art` court-indian pass); driver screenshots in `os.tmpdir()`; `[KNOWN GAP]` for art shaped for the office figure [FR-023]
 - [x] T032 Re-review of PR #496 (2026-10-22): the doubled usage line in the `check-theme-art.js` header is gone; the positive pixel checks (pinks, chair, walker) read the capture again up to 4 times, a frame apart, before failing (a capture under load can show an unpainted frame; the bar is unchanged)
+- [x] T033 One-shot reply limit of its own (`ONE_SHOT_MAX_CHARS`) for Claude `generateText`; test with a 30 KB reply [FR-024]
+- [x] T034 Scenery slots (`room-back-wall`, `room-back-window`, `room-floor`, `desk-back`) in `GEN_ART`; grouped tokens with meanings in the prompt [FR-025, FR-026]
+- [x] T035 Contrast pairs: room tints (text), `--brand-bg` on `--raised`/`--bg` and the primary button text (UI styles with `--brand-bg`); unit tests per pair [FR-027]
+- [x] T036 Art style guide in the prompt and `artWarnings` (sparse, thin, tiny) [FR-028]
+- [x] T037 Place names at most 14 characters, in the prompt and the parser [FR-029]
+- [x] T038 Lobby art: the "+" button above the band, user-theme band keeps its proportions (decided by `THEME.isBuiltIn`, unit-tested in `test:theme`); `check:theme-art` and `check:office` checks [FR-030]

@@ -1208,6 +1208,13 @@ async function main(): Promise<void> {
     assert.ok(seenCwd && !fs.existsSync(seenCwd), 'the temp folder is removed');
     const bad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/local/bin/claude', env: () => ({}), runOnce: async () => ({ code: 1, stdout: '' }) });
     await assert.rejects(bad.generateText('p'), /no answer \(exit 1\)/);
+    // spec 040 FR-024 (#903): a theme is data, not a summary: a 30 KB reply (and one of 100 KB) is not cut at the 8,000-character hand-off cap
+    for (const size of [30_000, 100_000]) {
+      const big = JSON.stringify({ art: 'a'.repeat(size) });
+      const bigAd = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/local/bin/claude', env: () => ({}), runOnce: async () => ({ code: 0, stdout: JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: big }) }) });
+      assert.strictEqual((await bigAd.generateText('p')).text, big, `a ${size}-character reply survives intact`);
+    }
+    assert.strictEqual(parseHandoffOutput(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'x'.repeat(30_000) })).summary.length, 8002, 'the hand-off summary keeps its 8,000-character cap');
   }
 
   // ---- no claude installed: a clear error, no spawn ----
