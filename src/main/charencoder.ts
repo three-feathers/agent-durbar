@@ -66,9 +66,14 @@ export function createEncoderWindow(): BrowserWindow {
   return win;
 }
 
-/** Writes the fixed page into `about:blank`, which makes no request, and runs the fixed script (see the top of this file). */
+/** The window's first document, which makes no request; the guard on later documents is not on yet. */
+export function loadBlank(wc: WebContents): Promise<void> {
+  return wc.loadURL('about:blank');
+}
+
+/** Writes the fixed page into `about:blank` and runs the fixed script (see the top of this file). */
 export async function loadEncoderPage(wc: WebContents): Promise<void> {
-  await wc.loadURL('about:blank');
+  await loadBlank(wc);
   pageIn.add(wc);
   const dir = path.join(__dirname, '..', 'renderer');
   // both are fixed files of the app, never picture bytes or user text; JSON.stringify only quotes the page as a script string

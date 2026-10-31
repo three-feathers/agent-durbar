@@ -17,7 +17,7 @@ const { helpers } = require('./driver-helpers');
 const { sheetPng, encodePng } = require('./fakes/png-sheet');
 
 const DIST = path.join(__dirname, '..', 'dist');
-const { createEncoderWindow, encodeSheet, encoderSession, loadEncoderPage, ENCODER_PARTITION } = require(path.join(DIST, 'main', 'charencoder.js'));
+const { createEncoderWindow, encodeSheet, encoderSession, loadBlank, loadEncoderPage, ENCODER_PARTITION } = require(path.join(DIST, 'main', 'charencoder.js'));
 const { checkImage } = require(path.join(DIST, 'shared', 'imagecheck.js'));
 const { checkFrames, stripChunks, webpInfo } = require(path.join(DIST, 'shared', 'webpcheck.js'));
 const { ENCODER_REFUSALS, ENCODER_FAILED, isStoredFace } = require(path.join(DIST, 'shared', 'charrules.js'));
@@ -109,7 +109,7 @@ module.exports = async (ctx) => {
     // will-navigate on its own, before the page is written: refused, the blank page stays
     const win3 = createEncoderWindow();
     const wc3 = win3.webContents;
-    await wc3.loadURL('about:blank');
+    await loadBlank(wc3);
     const asked = new Promise((res) => { wc3.once('will-navigate', () => res(true)); setTimeout(() => res(false), 10_000); });
     const settled = new Promise((res) => { wc3.once('did-fail-load', () => res('failed')); wc3.once('did-navigate', () => res('navigated')); setTimeout(() => res('stayed'), 2000); });
     await wc3.executeJavaScript(`location.href=${JSON.stringify(base + '/away')};0`, true);
