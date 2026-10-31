@@ -26,8 +26,7 @@ const PERMS = [['model', 'effort', 'tier'], ['model', 'tier', 'effort'], ['effor
 const STEP = { model: (m) => `[data-pick=${jsLiteral(m)}]`, effort: (e) => `[data-effort=${jsLiteral(e)}]`, tier: () => '[data-tier="1"]' };
 
 /* In the page: every setModel and cancelQueuedModel call, in order. `quiet`: answer as main does for a session that has not started (FR-013: applied, no event). `delay`: a slow answer. */
-const BR = 'window.__durbarSimUi.bridge()';
-const SPY = `(()=>{if(window.__mc)return;const b=${BR},M=window.__mc={reqs:[],cancels:[],busy:0,done:0,delay:0,quiet:false};
+const SPY = `(()=>{if(window.__mc)return;const b=window.__durbarSimUi.bridge(),M=window.__mc={reqs:[],cancels:[],busy:0,done:0,delay:0,quiet:false};
   const set=b.setModel.bind(b),can=b.cancelQueuedModel.bind(b);
   b.setModel=async(id,req)=>{M.busy++;M.reqs.push(JSON.parse(JSON.stringify(req)));try{if(M.delay)await new Promise(r=>setTimeout(r,M.delay));
     if(M.quiet)return {ok:true,result:{status:'applied',model:req.model,message:'Used from the first message: this agent has not started yet.'}};const r=await set(id,req);M.queued=(M.queued||0)+(r&&r.result&&r.result.status==='queued'?1:0);return r;}finally{M.busy--;M.done++;}};
@@ -48,7 +47,7 @@ module.exports = async (ctx) => {
   const resetSpy = (o = {}) => js(`Object.assign(__mc,{reqs:[],cancels:[],queued:0,delay:${Number(o.delay) || 0},quiet:${!!o.quiet}})`);
   /* the agent's state as this scenario starts: through the simulator's own switch, whose event sets the window's state; `keepSim`: an agent mid-reply, whose switch would queue */
   const putOn = async (id, model, o = {}) => {
-    await js(`(async()=>{const a=${agentExpr(id)};__mc.quiet=false;${o.keepSim ? `a.info.model=${jsLiteral(model)};a.info.effort=undefined;a.info.tier=undefined;` : `await ${BR}.setModel(a.id,{model:${jsLiteral(model)},effort:null,contextTier:'default'});`}})()`);
+    await js(`(async()=>{const a=${agentExpr(id)};__mc.quiet=false;${o.keepSim ? `a.info.model=${jsLiteral(model)};a.info.effort=undefined;a.info.tier=undefined;` : `await window.__durbarSimUi.bridge().setModel(a.id,{model:${jsLiteral(model)},effort:null,contextTier:'default'});`}})()`);
     await until(`__mc.busy===0`); await settle(); await H.clearToasts(); await resetSpy(o);
   };
   const open = async (id) => {
@@ -116,7 +115,7 @@ module.exports = async (ctx) => {
       const what = `stale menu at ${tag}`;
       await putOn(idle, 'sim-deep');
       await openMenu();
-      await js(`${BR}.setModel(${jsLiteral(idle)},{model:'sim-wide',effort:'low',contextTier:'default'})`); await until(`${agentExpr(idle)}.info.model==='sim-wide'`);
+      await js(`window.__durbarSimUi.bridge().setModel(${jsLiteral(idle)},{model:'sim-wide',effort:'low',contextTier:'default'})`); await until(`${agentExpr(idle)}.info.model==='sim-wide'`);
       const n = await js(`__mc.done`);
       await click(`#modelMenu ${STEP.effort('high')}`); await until(`__mc.done>${n}&&__mc.busy===0`);
       same(await lastReq(), { model: 'sim-wide', effort: 'high', tier: 'default' }, `${what}: the runtime's model is kept`);
@@ -127,7 +126,7 @@ module.exports = async (ctx) => {
     {
       const what = `rapid double at ${tag}`;
       await putOn(idle, 'sim-deep', { delay: 200 });
-      await js(`(()=>{document.getElementById('modelChip').click();document.querySelector('#modelMenu ${STEP.model('sim-wide').replace(/"/g, '\\"')}').click();document.getElementById('modelChip').click();document.querySelector('#modelMenu ${STEP.effort('high').replace(/"/g, '\\"')}').click();})()`);
+      await js(`(()=>{document.getElementById('modelChip').click();document.querySelector(${jsLiteral(`#modelMenu ${STEP.model('sim-wide')}`)}).click();document.getElementById('modelChip').click();document.querySelector(${jsLiteral(`#modelMenu ${STEP.effort('high')}`)}).click();})()`);
       await until(`__mc.reqs.length>=2&&__mc.busy===0&&!document.getElementById('modeDlg')`);
       same(await lastReq(), { model: 'sim-wide', effort: 'high', tier: 'default' }, `${what}: the last call`);
       same(await stateOf(idle), { model: 'sim-wide', effort: 'high', tier: 'default' }, `${what}: the session`);
@@ -185,7 +184,7 @@ module.exports = async (ctx) => {
 
     // ---- Claude Code and Codex: the other model lists; they take the choice at once and use it from the next message ----
     await H.load({ w: W, h: H_, query: { simmodels: 'rich', simkinds: 'mixed' }, ready: 'fit' }); await js(SPY);
-    const pickAgent = (kind, busyOne) => js(`(window.__durbarSimUi.agents().find(a=>!a.parent&&a.live&&(a.info||{}).adapterId===${jsLiteral(kind)}&&${busyOne ? `['working','thinking'].includes(a.state)` : `!['working','thinking','waiting'].includes(a.state)`})||{}).id||''`);
+    const pickAgent = (kind, busyOne) => js(`(window.__durbarSimUi.agents().find(a=>!a.parent&&a.live&&(a.info||{}).adapterId===${jsLiteral(kind)}&&${jsLiteral(busyOne ? ['working', 'thinking'] : ['idle', 'done', 'error'])}.includes(a.state))||{}).id||''`);
     for (const [kind, from, to, name] of [['claude', 'sonnet', 'sonnet[1m]', 'Sim Sonnet (1M context)'], ['codex', 'sim-codex-a', 'sim-codex-b', 'Sim Codex B']]) {
       for (const busyOne of [false, true]) {
         const id = await pickAgent(kind, busyOne);
