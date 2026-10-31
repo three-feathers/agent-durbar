@@ -185,7 +185,7 @@ module.exports = async (ctx) => {
 
   mark('forty');
   /* ---- FR-181: 40 agents: a desk scrolled away stands still and does not paint; scrolled back it catches up ---- */
-  await loadReal(1280, 800, { sim: '40' });
+  await loadReal(1280, 560, { sim: '40' }); // a short window: past the 15-agent scale, whole rows are out of view
   await js(INSTALL);
   await must(`document.getElementById('floor').classList.contains('scrolls')`, 'a scrolling floor with 40 agents');
   await must(`document.querySelectorAll('#stage .ro-stext.ro-off').length>0`, 'desks out of view marked');
@@ -195,15 +195,23 @@ module.exports = async (ctx) => {
 return {out:out.length};})()`);
   console.log('[097-motion] 40 agents', JSON.stringify({ out: off.out }));
   assert.ok(off.out > 0, 'people out of view');
-  /* the farthest desk with its own lines; simulator visits can bring a desk into view meanwhile (a row lays out again): then it is a fair paint, and the read starts over on another */
+  /* a working desk scrolled away (a line would re-sort an idle one, FR-022, and bring it into view): scroll to the end, so the first rows are out. Simulator visits can still
+     lay a row out again and bring a desk back: then the paint is fair, and the read starts over on another */
+  /* visits start 600 ms after a call and shrink the desks: draw once more and wait until the layout's height holds for a second */
+  const first = (await js(pickWorking))[0];
+  await emit({ type: 'status', sessionId: first, status: 'working', intent: 'Driver work' });
+  let hgt = -1;
+  for (let t = 0; t < 40; t++) { const n = await js(`window.__durbarSimUi.realLayout().height`); if (n === hgt && t > 4) break; hgt = n; await ctx.sleep(250); }
+  await js(`(()=>{const f=document.getElementById('floor');f.scrollTop=f.scrollHeight;})();0`);
+  await must(`document.getElementById('floor').scrollTop>0&&window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).some(x=>x.state==='working'&&window.__scr(x.id)&&window.__scr(x.id).classList.contains('ro-off'))`, 'a working desk scrolled out of view');
   let proved = false;
   for (let t = 0; t < 4 && !proved; t++) {
-    const away = await js(`(()=>{const L=window.__durbarSimUi.realLayout();const d=L.zones.flatMap(z=>z.desks).filter(x=>['working','thinking','idle','done'].includes(x.state)&&window.__scr(x.id)&&window.__scr(x.id).classList.contains('ro-off')&&!window.__scr(x.id).textContent.includes('of-view')).sort((p,q)=>q.glass.y-p.glass.y);return d.length?d[0].id:'';})()`);
+    const away = await js(`(()=>{const L=window.__durbarSimUi.realLayout();const d=L.zones.flatMap(z=>z.desks).filter(x=>x.state==='working'&&window.__scr(x.id)&&window.__scr(x.id).classList.contains('ro-off')&&!window.__scr(x.id).textContent.includes('of-view')).sort((p,q)=>p.glass.y-q.glass.y);return d.length?d[0].id:'';})()`);
     if (!away) break;
     const t0 = await js(`window.__scr(${jsLiteral(away)}).textContent`);
     await emit({ type: 'toolCall', sessionId: away, callId: 'drv-off' + t, tool: 'read_file', phase: 'start', args: { path: 'src/out/of-view.ts' } });
     await js(`new Promise(r=>setTimeout(r,2300))`); // a bound on a negative
-    const after = await js(`(()=>{const e=window.__scr(${jsLiteral(away)});return {text:e.textContent,off:e.classList.contains('ro-off')};})()`);
+    const after = await js(`(()=>{const e=window.__scr(${jsLiteral(away)});return {text:e.textContent,off:e.classList.contains('ro-off'),top:Math.round(e.getBoundingClientRect().top)};})()`);
     if (!after.off) continue;
     assert.strictEqual(after.text, t0, 'no repaint out of view');
     await js(`(()=>{const b=window.__scr(${jsLiteral(away)}).getBoundingClientRect(),f=document.getElementById('floor');f.scrollTop+=b.top-f.getBoundingClientRect().top-100;})();0`);
