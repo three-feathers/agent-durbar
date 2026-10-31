@@ -91,6 +91,8 @@
 <div class="notice-strip info" id="awayStrip" role="status" hidden></div>
 <!-- spec 006 FR-041: sessions the last run left mid-turn (Resume all / Pick… / Dismiss); only after an unclean exit -->
 <div class="notice-strip info" id="crashStrip" role="status" hidden></div>
+<!-- spec 052 FR-182..FR-190 (issue 686): the Auto-follow strip, shown only while Auto-follow work is on -->
+<div class="notice-strip info follow-strip" id="followStrip" role="group" aria-label="Auto-follow" hidden></div>
 
 <div class="workspace">
   <div id="stage-host">
@@ -152,6 +154,7 @@
 <script src="activity.js"></script>
 <script src="shutters.js"></script>
 <script src="unread.js"></script>
+<script src="autofollow.js"></script>
 <script src="tooltip.js"></script><!-- spec 001 FR-187: the instant tooltip (window.DurbarTip), bound by renderStats -->
 <script src="helpercard.js"></script>
 <script src="editview.js"></script>
