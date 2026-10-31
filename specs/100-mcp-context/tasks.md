@@ -7,7 +7,7 @@
 
 ## Phase 1: measure and show (US1)
 
-- [ ] T010 `src/shared/mcpcost.ts` estimator and helpers; `scripts/test-mcp-cost.ts` (`test:mcpcost`, in `test:serial`): fixtures incl. a 500-tool server, non-ASCII, missing schema, NaN/negative/huge numbers [FR-002]
+- [x] T010 `src/shared/mcpcost.ts` estimator and helpers; `scripts/test-mcp-cost.ts` (`test:mcpcost`, in `test:serial`): fixtures incl. a 500-tool server, non-ASCII, missing schema, NaN/negative/huge numbers [FR-002]
 - [ ] T011 `McpContextReport`, `mcpContext?` and capability in `src/adapters/types.ts` [FR-001, FR-043]
 - [ ] T012 **Priority, first (the owner's case is Copilot)**: Copilot `mcpContext` via `metadata.getContextAttribution()`; fake SDK test (entries, unknown kinds, `null`, missing method: shows "not reported by Copilot", no estimate) [FR-001, FR-024]
 - [ ] T013 Claude Code `mcpContext` via `get_context_usage` `summary`; fake CLI test (grouping, `isLoaded`, normalised names, bounds, timeout) [FR-001]

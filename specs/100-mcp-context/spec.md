@@ -199,5 +199,9 @@ All decided by the owner on 2026-10-31 (Telegram 11:25 UTC: "Agree on all, mine 
 
 ## Changes
 
+- 2026-10-31 (build, awaiting the owner's review): **FR-003**: Copilot's `getContextAttribution` returns `null` until the session has initialised, and SC-001 wants the figure with the first context figure. A first ask that brought no figure is asked again **once**, on the next `context` event; never on a timer. A coordinator's choice, not yet the owner's.
+- 2026-10-31 (build, awaiting the owner's review): **FR-020, deferred tools**: `read:` Claude Code 2.1.316's program: `get_context_usage` gives an unloaded tool its **full** definition size in `tokens` (`isLoaded: false`) and its own `mcpToolTokens` leaves those out. So "deferred tools count at their reported cost" would warn about tokens that are not in the window. The share counts only `tokens`, as FR-020's first sentence says; `deferredTokens` shows as "loaded on demand" and is never in the share. `[KNOWN GAP]` `real:` to do (T031).
+- 2026-10-31 (build): **FR-001, Copilot parents**: the SDK types do not say whether an `mcpServer` entry's `tokens` already hold its children's (the runtime is not readable with a plain search). So as not to double count, a server's figure is the larger of its own and its children's sum, not their sum. `[KNOWN GAP]` `real:` to do (T031).
+- 2026-10-31 (build): **FR-012** has no task of its own; it is built under T020.
 - 2026-10-31: owner answers recorded (Q1-Q6, Copilot is the primary case); FRs and tasks updated.
 - 2026-10-31: spec, research, plan and tasks drafted (owner report of 2026-10-31).
