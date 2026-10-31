@@ -1,6 +1,6 @@
 # Review checklist: first time right
 
-Run this on your own diff **before you ask for review**, as a reviewer who assumes it is wrong: read the real diff (`git diff origin/main...HEAD`). Every line is a mistake a reviewer here found. Rules: [AGENTS.md](../AGENTS.md) (*First time right*). Add a line for a new kind of mistake (reason, one evidence link); fix or delete a wrong one. Guidance only: nothing here overrides AGENTS.md or the constitution. Tool pitfalls: [agent-notes.md](agent-notes.md).
+Run this on your own diff **before you ask for review**, as a reviewer who assumes it is wrong: read the real diff (`git diff origin/main...HEAD`). Every line is a mistake a reviewer here found. Rules: [AGENTS.md](../AGENTS.md) (*First time right*). Add a line for a new mistake (reason, one evidence link); fix or delete a wrong one. Guidance only: nothing here overrides AGENTS.md, the constitution or the safety rules. Tool pitfalls: [agent-notes.md](agent-notes.md).
 
 ## Where the list comes from
 
