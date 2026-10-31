@@ -201,8 +201,33 @@
       if (pl._sig !== lsig) { pl._sig = lsig; pl.textContent = ''; const s = document.createElement('span'); s.textContent = p.label; pl.appendChild(s); if (fx.more > 0) { const b = document.createElement('b'); b.className = 'ro-more'; b.textContent = '+' + fx.more; pl.appendChild(b); } }
     }
     [art, amb, lights, chrome].forEach(sweep);
-    stagger(chrome);
+    fitPlates(chrome, lay.width);
+    stagger(chrome, lay.width);
     return lay;
+  }
+
+  /* Paco's review of #921 (art): a lobby place plate reads in full (never an ellipsis) when there is room: a plate wider than its
+     slot grows to the right, then to the left, into free space only (up to the next plate on the same rows or the band's edge); no
+     fixture moves. Measured once per render, left to right, so a plate never covers another. Too little room keeps the ellipsis
+     (the driver fails on it). */
+  function fitPlates(chrome, W) {
+    const pl = [...chrome.querySelectorAll(':scope > .ro-lplate')].sort((a, b) => a.offsetLeft - b.offsetLeft);
+    const done = [];
+    for (const p of pl) {
+      const base = parseFloat(p.style.maxWidth) || p.offsetWidth, L0 = parseFloat(p.style.left) || 0;
+      p.style.maxWidth = 'none'; const need = p.getBoundingClientRect().width + 1; p.style.maxWidth = px(base); /* fractional, plus a pixel: a text 0.4 px wider than its box still gets the ellipsis */
+      const y0 = p.offsetTop, y1 = y0 + p.offsetHeight;
+      const rows = (q) => q.y0 < y1 && y0 < q.y1;
+      if (need > base) {
+        const mine = done.filter(rows), others = pl.filter((q) => q !== p && !done.includes(q)).map((q) => ({ x0: parseFloat(q.style.left) || 0, y0: q.offsetTop, y1: q.offsetTop + q.offsetHeight })).filter(rows);
+        const lo = Math.max(0, ...mine.map((q) => q.x1 + 2)), hi = Math.min(W, ...others.filter((q) => q.x0 >= L0).map((q) => q.x0 - 2));
+        let r = Math.min(L0 + need, hi), l = L0;
+        if (r - l < need) l = Math.max(lo, r - need);
+        if (r - l < need) r = Math.min(W, l + need);
+        p.style.left = px(l); p.style.maxWidth = px(Math.max(base, Math.min(r - l, need)));
+      }
+      done.push({ x0: p.offsetLeft, x1: p.offsetLeft + p.offsetWidth, y0, y1 });
+    }
   }
 
   /* a chip is [alert icon] + name; the icon is the app's own Alert sign (app.js signIcon, built from trusted markup, not the model's
@@ -218,34 +243,43 @@
   }
 
   /* visitors' name chips stand above their heads (owner 2026-10-31 10:48: never over the feet or legs; the layout gives each its
-     place); when two would touch (a crowd, long names, a neighbour place), the later one moves a little right (up to 28 px) or up a
-     level while it stays inside the band, else shows initials, which move right until they touch nobody; measured once per render,
-     left to right, so no two chips ever overlap */
-  function stagger(chrome) {
+     place); when two would touch, the chip takes the nearest free spot (up to 64 px left or right, up to three levels up, inside the
+     band), and shows initials only when no spot is free for the name; measured once per render, left to right, so no two chips ever
+     overlap */
+  function stagger(chrome, W) {
     const chips = [...chrome.querySelectorAll(':scope > .ro-chip')].sort((a, b) => parseFloat(a.dataset.x || a.style.left) - parseFloat(b.dataset.x || b.style.left));
     /* the place plates are there first: a chip never covers one */
     const placed = [...chrome.querySelectorAll(':scope > .ro-lplate')].map((e) => [e.offsetLeft, e.offsetLeft + e.offsetWidth, e.offsetTop, e.offsetTop + e.offsetHeight]);
+    const band = W || chrome.clientWidth || 1e9;
     for (const c of chips) {
       const base = parseFloat(c.dataset.y || c.style.top) || 0, x0 = parseFloat(c.dataset.x || c.style.left) || 0;
       c.style.left = px(x0); c.style.top = px(base); if (c.dataset.full) { text(c.querySelector('.ro-cn'), c.dataset.full); delete c.dataset.full; }
       const h = c.offsetHeight || 17;
-      const hits = (L0, R0, t) => placed.filter(([a, b, y0, y1]) => a < R0 + 2 && L0 < b + 2 && y0 < t + h && t < y1);
-      /* the least move to the right at level top `t` that touches nobody */
-      const shift = (l, r, t) => { let dx = 0; for (let i = 0; i < 20; i++) { const hit = hits(l + dx, r + dx, t); if (!hit.length) return dx; dx = Math.max(...hit.map(([, b]) => b)) + 3 - l; } return Infinity; };
-      const put = (l, w, t, dx) => { placed.push([l + dx, l + dx + w, t, t + h]); c.style.top = px(t); c.style.left = px(x0 + dx); };
-      let done = false;
-      for (let tries = 0; tries < 2 && !done; tries++) {
-        if (tries) { const n = c.querySelector('.ro-cn'); c.dataset.full = n.textContent; text(n, initials(c.dataset.name || '')); }
-        const w = c.offsetWidth, l = x0 - w / 2, limit = tries ? 40 : 28;
-        for (let k = 0; k < 3 && !done; k++) {
-          const t = base - 18 * k;
-          if (t < 0 && k > 0) break;
-          const dx = shift(l, l + w, t);
-          if (dx <= limit) { put(l, w, t, dx); done = true; }
+      const hits = (L0, R0, t) => placed.some(([a, b, y0, y1]) => a < R0 + 1 && L0 < b + 1 && y0 < t + h && t < y1);
+      /* Paco's review of #921: names while there is room. Every spot within 64 px left or right on up to three levels is tried, the
+         least move first (a level costs 12 px); only when none is free do the initials try the same, then (a crowd with no room) the
+         initials move right until they touch nobody */
+      const best = () => {
+        const w = c.offsetWidth, l = x0 - w / 2; let pick = null;
+        for (let k = 0; k < 3; k++) {
+          const t = base - 18 * k; if (t < 0 && k > 0) break;
+          for (let d = 0; d <= 64; d += 2) for (const dx of d ? [d, -d] : [0]) {
+            if (l + dx < 0 || l + dx + w > band || hits(l + dx, l + dx + w, t)) continue;
+            const score = d + 12 * k; if (!pick || score < pick.score) pick = { score, t, dx, l, w };
+          }
         }
+        return pick;
+      };
+      let pick = best();
+      /* no free spot for the whole name: a shorter name (first letters and "…") before bare initials */
+      const nm = c.dataset.name || '', n = c.querySelector('.ro-cn'), g = Array.from(nm);
+      for (const v of [g.length > 7 ? g.slice(0, 6).join('') + '\u2026' : '', g.length > 5 ? g.slice(0, 4).join('') + '\u2026' : '', initials(nm)]) {
+        if (pick || !v) continue;
+        c.dataset.full = nm; text(n, v); pick = best();
       }
-      /* a crowd with no room left: the initials move right until they touch nobody (never over another chip) */
-      if (!done) { const w = c.offsetWidth, l = x0 - w / 2; put(l, w, base, shift(l, l + w, base)); }
+      if (!pick) { const w = c.offsetWidth, l = x0 - w / 2; let dx = 0; for (let i = 0; i < 20 && hits(l + dx, l + dx + w, base); i++) dx += 6; pick = { t: base, dx, l, w }; }
+      placed.push([pick.l + pick.dx, pick.l + pick.dx + pick.w, pick.t, pick.t + h]);
+      c.style.top = px(pick.t); c.style.left = px(x0 + pick.dx);
     }
   }
 
