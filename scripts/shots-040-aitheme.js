@@ -48,6 +48,7 @@ module.exports = async (ctx) => {
     await js(`(()=>{const t=document.getElementById('aiDesc');t.value='a night-shift newsroom';t.dispatchEvent(new Event('input'));return true})()`);
     await js(`[...document.querySelectorAll('#scrDlg .dbtn button')].find(b=>b.textContent==='Make the theme').click()`);
     await ctx.waitFor(`!!document.querySelector('#scrDlg .ai-sws')`, 8000); await ctx.sleep(200);
+    await ctx.waitFor(`(()=>{const d=document.querySelector('#scrDlg .dlg');return !!d&&getComputedStyle(d).opacity==='1'})()`, 5000); // fully opened before the picture (a loaded machine shot it mid-fade)
     const pv = await js(`({title:document.getElementById('scrDlgT').textContent,sw:document.querySelectorAll('#scrDlg .ai-sw').length,words:document.querySelectorAll('#scrDlg .ai-words li').length})`);
     console.log('[040-ai]', w, JSON.stringify(pv));
     assert.match(pv.title, /^Theme: Night-shift newsroom/);

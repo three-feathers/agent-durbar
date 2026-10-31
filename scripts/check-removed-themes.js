@@ -32,6 +32,8 @@ module.exports = async (ctx) => {
       assert.strictEqual(await H.js(`document.documentElement.dataset.ui||''`), '', `${tag} ${id}: no UI style on the page`);
       assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'office', `${tag} ${id}: the office figure is drawn`);
       assert.ok(await H.js(`document.querySelectorAll('#stage .desk[data-id]').length>=12`), `${tag} ${id}: the office is drawn`);
+      await H.until(`!document.querySelector('.walker.walking')`, 8000); // the figures have arrived before the office check reads positions
+      await H.settle();
       const problems = (await H.js(`(${pageCheck.toString()})(false, 5)`)).problems;
       assert.deepStrictEqual(problems, [], `${tag} ${id}: the office check finds no overlap, clipping or small text: ${JSON.stringify(problems).slice(0, 300)}`);
       assert.deepStrictEqual(await H.js(`window.__rmErr`), [], `${tag} ${id}: no page or console error`);
