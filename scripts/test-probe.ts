@@ -143,14 +143,14 @@ for (const [w, h] of [[1280, 800], [1440, 900], [1920, 1080]]) {
 {
   const cl2 = app.slice(app.indexOf('function chooseLayout('), app.indexOf('let layoutKey='));
   // the helper step (FR-091): gated by DurbarProbe.stepRuns before today's grow step, level order from helperStep, a result with today's grow fields plus hx
-  assert.ok(/window\.DurbarProbe\.stepRuns\(\{d:res&&res\.d,forced:FORCE_DENSITY,fit:res&&res\.fit,helpers:/.test(cl2) && cl2.indexOf('stepRuns(') < cl2.indexOf('growSearch(sizing,aw,ah,openOnly,GR.MIN+GR.STEP)'), 'the helper step is gated by stepRuns and runs before the grown step');
-  assert.ok(/helperStep\(\(L,f\)=>\{HX=L;return growSearch\(sizing,aw,ah,openOnly,f\);\},window\.DurbarHelperCard\.HX_MIN_F\)/.test(cl2), 'the helper step searches from HX_MIN_F, one level at a time');
+  assert.ok(/window\.DurbarProbe\.stepRuns\(\{d:res&&res\.d,forced:FORCE_DENSITY,fit:res&&res\.fit,helpers:/.test(cl2) && cl2.indexOf('stepRuns(') < cl2.indexOf('growSearch(sizing,aw,ah,GR.MIN+GR.STEP)'), 'the helper step is gated by stepRuns and runs before the grown step');
+  assert.ok(/helperStep\(\(L,f\)=>\{HX=L;return growSearch\(sizing,aw,ah,f\);\},window\.DurbarHelperCard\.HX_MIN_F\)/.test(cl2), 'the helper step searches from HX_MIN_F, one level at a time');
   assert.ok(/res=\{d:'roomy',hcap:3,cap:hx\.g\.c,fit:true,boost:\[\],grow:hx\.g\.f,heads:res\.heads,hx:hx\.level\}/.test(cl2), 'the helper result keeps hcap 3, fit, boost and heads, and adds hx');
   assert.ok(/GROW=0; HX=0; setGrow\(probe,0\);/.test(cl2), 'chooseLayout resets HX first');
   assert.ok(/HX=res\.hx\|\|0;/.test(cl2), 'the boost runs with the chosen level');
   assert.ok(/HX=layout\.hx\|\|0;/.test(app), 'renderOffice restores HX from the cached layout');
   assert.ok(/liveOn\(\),THEME\.themeIdForCache\(\),/.test(app), 'the layout key holds the theme id');
-  assert.ok(/if\(res&&res\.fit&&!res\.hx&&!FORCE_DENSITY&&\(res\.d==='full'\|\|res\.d==='roomy'\)\)\{\s*const g=growSearch\(sizing,aw,ah,openOnly,GR\.MIN\+GR\.STEP\);/.test(cl2), 'grow only after full or roomy, one step up at least');
+  assert.ok(/if\(res&&res\.fit&&!res\.hx&&!FORCE_DENSITY&&\(res\.d==='full'\|\|res\.d==='roomy'\)\)\{\s*const g=growSearch\(sizing,aw,ah,GR\.MIN\+GR\.STEP\);/.test(cl2), 'grow only after full or roomy, one step up at least');
   assert.ok(cl2.indexOf('growSearch(sizing') > cl2.indexOf('for(const [d,hcap,side] of cands)') && cl2.indexOf('growSearch(sizing') < cl2.indexOf('Leftover floor space'), 'after the candidates, before the helper boost');
   assert.ok(/probe\.innerHTML='';\s*probePrev=null;\s*LIVE_SIDE=false;\s*GROW=0;\s*HX=0;\s*setGrow\(probe,0\);/.test(cl2), 'the probe drops the grow factor with its content');
   const gs = app.slice(app.indexOf('function growSearch('), app.indexOf('let layoutKey='));
