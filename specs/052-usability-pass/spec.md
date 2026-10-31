@@ -108,6 +108,10 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
 
 ## Changes
 
+### 2026-10-31: FR-145's numbers no longer hold for flat (measured for spec 097)
+
+`sim:` At `ac122ff1` under Xvfb, flat at 15 agents with 10x activity: frame p50 16.8 ms, p95 58.9 ms (FR-145: 16.8 on a quiet machine), 81 long tasks in 20 s. FR-142..FR-144 are not at fault: the causes are one `:has()` rule of spec 077 and the layout search on each status change. The budgets, causes and tasks are in [spec 097 *Changes*](../097-real-office/spec.md) (FR-178, T148, T156..T159); `check-perf.js` gains `--record` there (T145).
+
 ### 2026-10-31: no Demo / Live badge in the top bar (owner, FR-181)
 
 Vikram, 2026-10-31 (Telegram): "you can also remove demo/live from top bar as demo is only once at open."
