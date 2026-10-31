@@ -15,6 +15,8 @@ import type { AgentInfo, McpAmbientView } from '../src/shared/api';
 import type { McpServerView } from '../src/shared/mcp';
 import type { SavedFolder } from '../src/main/folders';
 import { officeTotals } from '../src/shared/usagedoc';
+/** CPU time of this process (user + system) in ms: the cost budgets below use it, never the wall clock, so a loaded machine cannot fail them (AGENTS.md, Timing; issue #940). */
+const cpuMs = (): number => { const c = process.cpuUsage(); return (c.user + c.system) / 1000; };
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const stubs = (): ToolHandlers => {
@@ -578,12 +580,12 @@ async function main(): Promise<void> {
         assert.deepStrictEqual(run(pf, ['C:\\Program Files\\nodejs\\node.exe', '/Users/me/Library/Application Support/x/s.js']), ['…/node.exe', '…/s.js'], `${pf}: an arg that starts with a path keeps the whole-arg rule`);
         assert.deepStrictEqual(run(pf, ['type=bind,src=/x/y']), ['type=bind,src=/x/y'], `${pf}: comma pairs stay (documented gap)`);
       }
-      const t0 = Date.now();
+      const t0 = cpuMs();
       const big = makePathReducer(saved, 'linux');
       for (const x of ['/a/'.repeat(70000), '--x='.repeat(40000), 'A=/'.repeat(70000), '"a '.repeat(66000), 'x /a/b '.repeat(28000)]) big(x);
-      const ms = Date.now() - t0;
+      const ms = cpuMs() - t0;
       console.log(`mcp read tools: path reducer on 200k-character inputs in ${ms} ms`);
-      assert.ok(ms < 10000, `path reducer on 200k-character inputs took ${ms} ms`);
+      assert.ok(ms < 10000, `path reducer on 200k-character inputs took ${ms.toFixed(0)} ms of CPU`);
     }
 
     // 12f3. T064 (n): `durbar_mcp_state` with a shell-string CLI entry and a quoted `command`
@@ -717,9 +719,9 @@ async function main(): Promise<void> {
       const state = async (entries: Array<Partial<McpAmbientView>>) => {
         // the handler is called directly: a result of megabytes is refused by the session, which is not what is timed here
         const h = createReadToolHandlers(cli(entries).deps);
-        const t0 = process.hrtime.bigint();
+        const t0 = cpuMs();
         const res = await h.durbar_mcp_state({});
-        const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+        const ms = cpuMs() - t0;
         const raw = (res.content[0] as { text: string }).text;
         return { raw, data: JSON.parse(raw), ms };
       };
@@ -809,9 +811,9 @@ async function main(): Promise<void> {
         const sv = (n: number): McpServerView => ({ name: `s${n}`, transport: 'stdio', enabled: true, trusted: true, needsSecrets: false, command: 'n', args: Array.from({ length: 64 }, () => 'a') } as any);
         const servers = Array.from({ length: 100 }, (_, n) => sv(n));
         const h = createReadToolHandlers(mk(1, 50, { mcpExtras: () => servers }).deps);
-        const t0 = process.hrtime.bigint();
+        const t0 = cpuMs();
         const res = await h.durbar_mcp_state({});
-        const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+        const ms = cpuMs() - t0;
         const r = { data: JSON.parse((res.content[0] as { text: string }).text) };
         console.log(`mcp read tools: 12l (vii) extras 50 folders x 100 servers x 64 tiny args: ${ms.toFixed(1)} ms`);
         assert.ok(ms < 2000, `12l(c): extras took ${ms.toFixed(1)} ms`);
@@ -826,9 +828,9 @@ async function main(): Promise<void> {
         const extraList = (k: number): McpServerView[] => Array.from({ length: 10 }, (_, n) => ({ ...typical(1000 + k * 10 + n), transport: 'stdio', enabled: true, trusted: true, needsSecrets: false, env: [{ key: 'API_KEY', set: true }, { key: 'REGION', set: true }], headers: [] }) as any);
         const mkFolders: string[] = [];
         const h = createReadToolHandlers(mk(1, 10, { folders: () => { if (!mkFolders.length) for (let i = 0; i < 10; i++) mkFolders.push(`/work/folder-${i}`); return mkFolders.map((w) => ({ workspace: w, permMode: 'read-only', hidden: false }) as SavedFolder); }, mcpExtras: (k) => extraList(Math.max(0, mkFolders.indexOf(k))), mcpCli: () => ({ cli: cliList.map((e) => ({ ...e, origin: 'copilot-config', transport: 'stdio', enabled: true }) as McpAmbientView), file: { label: 'f', found: true, skipped: 0 }, secretsPersist: false }) }).deps);
-        const t0 = process.hrtime.bigint();
+        const t0 = cpuMs();
         const res = await h.durbar_mcp_state({}); // called directly: the answer is far bigger than the session's frame limit
-        const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+        const ms = cpuMs() - t0;
         const r = { raw: (res.content[0] as { text: string }).text, data: JSON.parse((res.content[0] as { text: string }).text) };
         const nExtra = (r.data.extras as Array<{ servers: unknown[] }>).reduce((n, e) => n + e.servers.length, 0);
         console.log(`mcp read tools: 12l (viii) 200 typical servers: ${ms.toFixed(1)} ms, ${r.raw.length} bytes`);
@@ -843,9 +845,9 @@ async function main(): Promise<void> {
         const keys = Array.from({ length: 128 }, (_, i) => ({ key: `ENV_KEY_NUMBER_${i}`, set: true }));
         const servers = Array.from({ length: 100 }, (_, n) => ({ name: `s${n}`, transport: 'stdio', enabled: true, trusted: true, needsSecrets: false, command: 'n', env: keys, headers: [] }) as any as McpServerView);
         const h = createReadToolHandlers(mk(1, 10, { mcpExtras: () => servers }).deps);
-        const t0 = process.hrtime.bigint();
+        const t0 = cpuMs();
         const res = await h.durbar_mcp_state({});
-        const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+        const ms = cpuMs() - t0;
         const data = JSON.parse((res.content[0] as { text: string }).text);
         const shown = (data.extras as Array<{ servers: Array<{ envKeys: unknown[] }> }>).reduce((n, e) => n + e.servers.reduce((m, v) => m + v.envKeys.length, 0), 0);
         console.log(`mcp read tools: 12l (ix) 10 folders x 100 servers x 128 env key names: ${ms.toFixed(1)} ms, ${shown} key names shown`);
