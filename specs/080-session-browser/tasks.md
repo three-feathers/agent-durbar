@@ -233,6 +233,53 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
 
 ---
 
+## Phase 1b: US6, page tabs (spec delta 2026-10-31, issue #910)
+
+Owner decisions (Vikram, 2026-10-31 05:17 UTC): *Open chat links in a new tab* is a toggle in the session browser, default off (FR-123); with it on, the same link focuses the tab that has it (FR-124); at most 10 tabs per session, background tabs unloaded first (FR-126). Decided by Vikram's agent (suggested defaults the owner did not change): pages' `target=_blank` opens a tab (FR-125); the agent's own tab in Phase 2 (FR-131). Each task writes its test first where the test can exist before the code. Needs Phase 1 (T012-T017); does not need Phase 2.
+
+- [ ] T020 [P] [US6] Pure tab model in `src/main/browser/tabs.ts`, test first (`scripts/test-browsertabs.ts`, a `test:browsertabs` script in `test:serial`). [FR-120, FR-124, FR-126, FR-129]
+  - AC1: tab ids are minted only here (`t` + 8 hex, unique per session) and `validTabId` accepts only that shape (test with hostile ids: `''`, `t123`, `T0000000a`, `../`, numbers, objects, 9 hex digits).
+  - AC2: the reuse rule: normalised address (`URL.href`, fragment dropped) against committed, `pendingUrl` and `unloadedUrl` addresses of `user` tabs only; the most recently shown match wins; the agent's tab never matches; an unparsable address never matches (tests, including `#top`, trailing slash as WHATWG gives it, userinfo, case of the host).
+  - AC3: `MAX_TABS_PER_SESSION = 10` refuses an 11th tab on every path (+, chat link, page request, agent tab), and a chat link at the limit falls back to the active tab (test).
+  - AC4: insertion to the right of the active tab; closing the active tab activates right, else left; closing the last tab leaves one empty *New tab* with no view (tests).
+- [ ] T021 [US6] The cap with tabs: `viewcap.ts` gets `MAX_TABS_PER_SESSION` and a `background` flag in `CapView`; `pickUnload` picks safe background tabs first, then hidden sessions' active tabs; tests first in `test:browseripc` (or the existing viewcap tests). [FR-011, FR-126, SC-010]
+  - AC1: SC-010: 3 sessions x 10 tabs, pages loading in turn: never more than `MAX_LIVE_VIEWS` loaded except counted over-cap pages; no 11th tab; background tabs picked first while one is safe.
+  - AC2: every FR-011 never-pick rule holds per tab (`byForm`, `charKey`, call in flight or this turn, `browser_type`).
+  - AC3: the #891 rule per tab: a main-started navigation of tab A clears only A's `unloadedUrl`/`memory`/`memoryHold`; a restore keeps them as today; tab B's kept address is untouched (test).
+- [ ] T022 [US6] `views.ts`: one partition per session, shared by its tabs; one view per tab from the same builder; closing a tab closes only its `webContents`; session teardown closes every tab, cancels their downloads and clears the partition once after the last view. Tests first in `test:browserviews`. [FR-121, FR-128, FR-023]
+  - AC1: two tabs of one session share the partition object; two sessions never do (test with the fakes).
+  - AC2: closing one tab never calls `clearStorageData`/`clearCache`; teardown calls each exactly once, after every view is closed (test).
+  - AC3: sim driver: a value set in tab 1 is read in tab 2 of the same session and not in another session (extends `check-browser-scenarios`, SC-002); after *End session* no process of any tab is left (SC-004).
+  - AC4: a dropped background tab's `webContents` is closed and its process gone; the active tab of a hidden session keeps the `about:blank` drop (sim driver, `check-browser-cap`).
+- [ ] T023 [US6] Controller and IPC: `Tracked` per `(session, tab)`; `browser:newTab`, `selectTab`, `closeTab`, `setLinksNewTab`, `openLink(…, how)`, the `browser:tabs` push and `BrowserState.tabId`; the toggle in `SettingsStore` (`parseSettings` keeps only `chatLinksNewTab: true`); `buildViewHandlers.windowOpen` opens a tab through main (FR-125). Tests first in `test:browseripc`, `test:ipcchannels` and the settings parse test. [FR-123, FR-124, FR-125, FR-127, FR-128, FR-132]
+  - AC1: every new channel is `fromApp`-checked, in `SIM_OPEN_CHANNELS` with its reason, and refuses a tab id of another session, a malformed id, an unknown `how`, and a non-boolean toggle, with no effect (tests).
+  - AC2: the existing channels act on the active tab only; only the shown session's active tab is attached (test with two tabs: bounds and visible never attach a background tab).
+  - AC3: `browser:tabs` and `BrowserState` carry only the listed fields (key-set and type test, as T014 AC3); titles cleaned, URLs through `displayUrl`.
+  - AC4: FR-125: a same-origin http(s) `foreground-tab` opens an active tab, `background-tab` an inactive one; a cross-origin or empty referrer, a popup with features, the 6th request in one page load, or any request at 10 tabs gets only the offer; the T011 hostile list makes zero tabs and zero `shell.openExternal` calls; `setWindowOpenHandler` still always returns `deny` (tests).
+  - AC5: a tab closed while loading: its late `did-navigate`, `did-fail-load` and dialog events change nothing, its `navigate` promise settling later changes nothing (test with the fake clock and queue).
+  - AC6: FR-132: a dialog in a hidden session's background tab marks the tab, raises the toast and selects that tab when the chat is brought forward (once per session); in the shown session's background tab, marker and toast only (test).
+- [ ] T024 [US6] Renderer: the tab strip, the bar's **More** menu with the toggle, and the link menu's *Open in a new tab* (`browserpane.js`, `app.js` `openChatLink`/`openLinkMenu`, `styles.css`); the shared menu element `#modeMenu` is reused, no new menu component. Tests first in `test:browserpane`. [FR-122, FR-123, FR-124, FR-129, FR-133, SC-011]
+  - AC1: `role="tablist"` (`aria-label="Pages"`), `role="tab"` with `aria-selected`, `aria-controls`, roving `tabindex`; close buttons are siblings named *Close <title>*; + named *New tab* and disabled at 10 with the limit text (test of the HTML builder).
+  - AC2: arrows, Home, End, Enter, Space and Delete on the strip; focus rules of FR-129 (sim driver `check-browser-tabs`, new, with `until()` waits only).
+  - AC3: text at least 10.5 px, icon plus word for every state, no motion under `prefers-reduced-motion`; tabs shrink to 72 px, then the strip scrolls inside itself with the active tab in view.
+  - AC4: SC-011: `check:office` with 15 agents and one Browser tab holding 10 tabs, at 1440x900 and 1280x800.
+  - AC5: the toggle: off by default; on in one session shows checked in another; a plain chat link with it off loads in the active tab (US6.1), on opens a tab (US6.2) and reuses (US6.3); *System browser* in Settings wins (sim driver `check-browser-links`, extended).
+  - AC6: screenshots `docs/screenshots/080-browser-tabs-*.png` at both sizes, registered in `scripts/shots-docs.js` `DOC_SHOTS` if linked, and looked at.
+- [ ] T025 [US6] Shortcuts: the view's `before-input-event` handles Ctrl/Cmd+T, Ctrl/Cmd+W, Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+PageDown/PageUp with `preventDefault()`; the window's handler does the same in the strip and the bar only; `TAKEN` in `navigator.js` gains the new lines. Tests first in `test:navigator` (the clash sentences) and a pure key-match helper test. [FR-130]
+  - AC1: the navigator's key recorder refuses `mod+KeyT`, `ctrl+Tab`, `ctrl+shift+Tab` with their sentence (test).
+  - AC2: sim driver: with the focus inside a test page that logs its own `keydown`s, the keys switch, open and close tabs and the page logs none of them; with the focus in the chat composer, Ctrl+W does what it did before.
+  - AC3: macOS: whether the app menu's *Close Window* fires first when the focus is in the browser bar is checked on the CI macOS runner or recorded `[KNOWN GAP]` (FR-130); a fix there needs a spec 052 delta first.
+- [ ] T026 [US6] Simulator pages and scenarios for tabs (FR-091): a page with same-origin `target=_blank` links (one `rel=noreferrer`), a `window.open` loop of 7, a cross-origin frame that calls `window.open`, and links to each T011 hostile scheme with `target=_blank`; `check-browser-scenarios` (or `check-browser-tabs`) covers US6 scenarios 1-12. [FR-091, FR-125, US6]
+  - AC1: every US6 scenario has a named step in a driver, with `sim:` evidence in the spec once green.
+- [ ] T027 [US6] Docs for tabs. [FR-120..FR-133]
+  - AC1: README features and Known limits (the delta's `[KNOWN GAP]`s, no favicons, history lost on a dropped background tab), and *Development* if a new `npm run` name appears.
+  - AC2: a `changelog.d/080-browser-tabs.md` fragment.
+  - AC3: spec tags `[IMPLEMENTED]` with `sim:`/`test:` evidence, tasks ticked, the `specs-index` note current; T013 AC5 measures 15 sessions with 10 tabs in one of them.
+
+**Checkpoint**: tabs per session; chat links in the active tab by default or a new tab by choice; the cap unchanged in meaning.
+
+---
+
 ## Phase 2: US3 + US4, the agent drives its session's browser
 
 **Depends on**: Phase 1 merged; 041 T018's `bridgecore.ts` merged (the shared relay); T030 merges with `BROWSER_READONLY_READS = false`; flipping it to `true` waits for T006.
@@ -354,6 +401,12 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC1: while the switch is on and the driver is not `user`, every main-frame Document request (any method, redirects included per T010 AC6) is paused and checked against host grants and FR-058.
   - AC2: Ask first asks with the full masked URL (userinfo removed, token shapes masked, cut to 300 characters).
   - AC3: a sim driver: a grant for test host A, then a click on a link, a GET form and a script redirect to test host B; each asks and none leaves before the answer.
+- [ ] T028 [US3] The agent's own tab (Phase 2, after T035). [FR-131, FR-060, FR-061, FR-066a]
+  - AC1: the first `url` or `drive` call makes a tab of kind `agent`, labelled *Agent* with an icon; at 10 tabs the call answers *The browser has too many tabs open; ask the user to close one.* (test).
+  - AC2: every tool acts on that tab only; no tool schema has a tab argument and no result carries a tab id (test on the frozen `ToolDef`s, T031); `read` with no agent tab reads the active tab (FR-051).
+  - AC3: takeover, Watch-only and the driver state apply to the agent's tab only; input in another tab takes nothing over (sim driver with the fake agent, T040).
+  - AC4: a `target=_blank` in the agent's tab loads in that tab; the agent never makes a second tab; FR-124 never reuses its tab (test).
+  - AC5: closing the agent's tab: the next `url`/`drive` call makes a new one; a call in flight on it is answered with an error, never moved to another tab (test).
 - [ ] T042 [US3] [US4] Docs for Phase 2. [Phase 2 FRs]
   - AC1: README:
     - *Safety model*: Read-only lets the agent read only the open page (once T006 is in; before that, no browser), never private-network pages; while agent control is on, private and loopback frames and subresources inside a public page are blocked, also on pages you opened yourself; Ask first is the browse mode and asks per site; form posts, downloads and uploads; the untrusted-page warning;
@@ -422,9 +475,11 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - T011 → T012 → T013, then T014 → T015 → T016;
   - T017 needs T014 and T015;
   - T018 can start after T012 and must pass before T019.
+- **Phase 1b (tabs, 2026-10-31):** needs T012-T017; T020 and T021 first (tests), then T022 → T023 → T024; T025 and T026 after T023; T027 last. Independent of Phase 2.
 - **Phase 2:** needs Phase 1 and **041 T018 `bridgecore.ts`** (shared with 072 T033; proposed on #556).
   - T031 → T032 → T033 → T035 (T030, T034 and T043 run in parallel) → T044 → T036 → T037 → T038 → T039 → T040 → T042;
   - T041 any time after T037.
+  - T028 after T035, before T040's driver covers it.
 - **Phase 3:** T005 and Phase 2, then T050 → T051 → T052.
 - **Phase 4 (later):** Phase 2, then T070 → T071 → T072.
 - **T060:** last, with the owner's OK.
@@ -444,6 +499,8 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
 | FR-090..FR-093 | T015, T018, T033, T040 |
 | FR-100..FR-103 | none (out of scope or later) |
 | FR-110..FR-113 | T070, T071, T072 (later) |
+| FR-120..FR-130, FR-132, FR-133 | T020, T021, T022, T023, T024, T025, T026, T027 |
+| FR-131 | T028 |
 | SC-001 | T015, T038 |
 | SC-002, SC-004 | T018 |
 | SC-003 | T033 |
@@ -452,3 +509,5 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
 | SC-007 | T040 |
 | SC-008 | T011, T017, T043 |
 | SC-009 | T040 |
+| SC-010 | T021 |
+| SC-011 | T024 |
