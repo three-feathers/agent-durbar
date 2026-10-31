@@ -41,3 +41,15 @@ Backlog: capability flag (spec 012). (Office and per-folder totals: done 2026-10
 - [x] T040 Copilot adapter: used-credit tracking, hold before send, stop on crossing during a turn, local `resolveLimit`, Stop/End drop [FR-070..FR-074]
 - [x] T041 Unit tests on a fake session (`scripts/test-copilot-cap.ts`, in `npm test`) [FR-070..FR-074]
 - [x] T042 One real check on Copilot Pro (cheap model, under 3 credits), README *Costs and caps*, CHANGELOG [FR-071] Done 2026-10-20: 1.46 AIU (spec `## Changes`).
+
+## 2026-10-31: account quota per agent app (issue #690, FR-080..FR-094)
+
+- [ ] T050 `src/shared/quota.ts`: contract, sanitising, read steps, display rows, near limit, alternatives, `quotaLine`; `usagelimit.ts` shares its time parsing [FR-080, FR-082, FR-084, FR-085, FR-087]
+- [ ] T051 `accountQuota()` for Copilot and Codex, `quotamap.ts`, the capability, the contract and simulator lists; fakes [FR-081, FR-091]
+- [ ] T052 `src/main/quota.ts`, IPC `harness:quota` in the allow lists, preload, `DurbarApi` [FR-083, FR-090]
+- [ ] T053 Settings card block and its one timer; suggestion; the New session line [FR-085, FR-086, FR-088, FR-089]
+- [ ] T054 Simulator fixtures per app [FR-092]
+- [ ] T055 `scripts/test-quota.ts`, mutants [FR-093]
+- [ ] T056 `scripts/shots-011-quota.js`, pictures at both sizes [FR-093]
+- [ ] T057 Docs, agent-apps, changelog fragment, specs 012 and 051 cross-references
+- [ ] T059 `needs-owner-approval`: check the real shapes of `account.getQuota` and `account/rateLimits/read`, field names and printing nothing personal; free calls, no prompt, cost limit 0 credits [issue #690]
