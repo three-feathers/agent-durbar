@@ -62,19 +62,28 @@ function editProblems(x: unknown): string[] {
   return out;
 }
 
-/** Spec 099 FR-081, T011: an `autopilot` event: whole `n` of 0 to 1000 and at most `limit + 1`, a `limit` of 1 to 1000, a known `reason` on `ended` only, a bounded `runId`, a known spend unit. */
+/**
+ * Spec 099 FR-081, T011: an `autopilot` event, as `AutopilotRun` emits it: a `limit` of 1 to 1000; `n` a whole number that is 0 on `started`,
+ * 1 to `limit` on `continued` and 0 to `limit` on `ended`; a known `reason` on `ended` only; `spend` on `ended` only; a bounded `runId` of safe characters.
+ */
 function autopilotProblems(e: Record<string, unknown>): string[] {
   const out: string[] = [];
-  if (!oneOf(e.phase, ['started', 'continued', 'ended'])) out.push(`autopilot.phase ${String(e.phase)}`);
-  if (!validRunId(e.runId)) out.push('autopilot.runId missing or too long');
+  const phase = e.phase;
+  if (!oneOf(phase, ['started', 'continued', 'ended'])) out.push(`autopilot.phase ${String(phase)}`);
+  if (!validRunId(e.runId)) out.push('autopilot.runId missing, too long or not plain');
   const limitOk = validLimit(e.limit);
   if (!limitOk) out.push(`autopilot.limit is not a whole number from 1 to ${MAX_LIMIT}`);
   if (!(typeof e.n === 'number' && Number.isInteger(e.n) && e.n >= 0 && e.n <= MAX_LIMIT)) out.push(`autopilot.n is not a whole number from 0 to ${MAX_LIMIT}`);
-  else if (limitOk && e.n > (e.limit as number) + 1) out.push('autopilot.n is above limit + 1');
-  if (e.phase === 'ended') {
+  else {
+    if (phase === 'started' && e.n !== 0) out.push('autopilot.n is not 0 on started');
+    if (phase === 'continued' && e.n < 1) out.push('autopilot.n is below 1 on continued');
+    if (limitOk && e.n > (e.limit as number)) out.push('autopilot.n is above limit');
+  }
+  if (phase === 'ended') {
     if (!isAutopilotEnd(e.reason)) out.push('autopilot.reason missing or unknown on ended');
-  } else if (e.reason !== undefined) out.push(`autopilot.reason on phase ${String(e.phase)}`);
+  } else if (e.reason !== undefined) out.push(`autopilot.reason on phase ${String(phase)}`);
   if (e.spend !== undefined) {
+    if (phase !== 'ended') out.push(`autopilot.spend on phase ${String(phase)}`);
     if (!isObj(e.spend) || !isSpendUnit(e.spend.unit) || !(typeof e.spend.value === 'number' && Number.isFinite(e.spend.value) && e.spend.value >= 0)) out.push('autopilot.spend malformed');
   }
   return out;

@@ -89,6 +89,8 @@ for (const bad of [0, 0.5, 169, NaN, Infinity, '2', null]) assert.throws(() => h
 for (const ok of [1, 2, 168]) assert.strictEqual(hoursOrDefault(ok), ok);
 
 // ---- 5. stop at exactly limit + 1 ----
+let finished = false;
+process.on('exit', () => { if (!finished) { console.error('autopilot test did not finish (a promise never settled, or it threw)'); process.exitCode = 1; } });
 (async () => {
   for (const limit of [1, 5, 20, 1000]) {
     const r = rig(limit);
@@ -112,9 +114,10 @@ for (const ok of [1, 2, 168]) assert.strictEqual(hoursOrDefault(ok), ok);
     assert.deepStrictEqual(r.events.map((e) => e.phase), ['started', ...cont.map(() => 'continued'), 'ended']);
     await r.run.whenStopped();
     assert.strictEqual(r.run.guardArmed, false, 'a confirmed halt leaves the guard disarmed');
-    for (let i = 0; i < 3; i++) assert.strictEqual(r.run.continuation(), 'ignored', 'later continuations are ignored');
-    assert.strictEqual(r.halts.length, 1);
-    assert.strictEqual(r.events.length, 2 + limit);
+    assert.strictEqual(r.run.continuation(), 'interrupted', 'a continuation after the end means the app is still going: the stop is repeated');
+    assert.deepStrictEqual(r.halts, ['limit', 'limit']);
+    assert.strictEqual(r.events.length, 2 + limit, 'and no event, no count');
+    assert.strictEqual(r.run.count, limit);
   }
 
   // ---- 6. a second end is ignored ----
@@ -124,7 +127,6 @@ for (const ok of [1, 2, 168]) assert.strictEqual(hoursOrDefault(ok), ok);
     r.run.continuation();
     assert.strictEqual(r.run.end('cap', { unit: 'usd', value: 0.04 }), true);
     for (const reason of ['stopped', 'done', 'error', 'limit'] as const) assert.strictEqual(r.run.end(reason), false);
-    assert.strictEqual(r.run.continuation(), 'ignored');
     r.run.backstopTurn();
     r.run.noteProgress(false);
     r.run.noteProgress(false);
@@ -132,8 +134,10 @@ for (const ok of [1, 2, 168]) assert.strictEqual(hoursOrDefault(ok), ok);
     assert.strictEqual(r.run.reason, 'cap', 'the first reason stays');
     assert.strictEqual(ended(r).length, 1, 'one ended event');
     assert.deepStrictEqual(ended(r)[0].spend, { unit: 'usd', value: 0.04 });
-    assert.deepStrictEqual(r.halts, ['cap'], 'halt once');
+    assert.deepStrictEqual(r.halts, ['cap'], 'halt once for the ends');
     assert.strictEqual(r.events.length, 3, 'started, continued, ended: nothing more');
+    assert.strictEqual(r.run.continuation(), 'interrupted');
+    assert.strictEqual(r.events.length, 3);
     // an unknown reason, a bad spend: the run still ends once, as error and without the spend
     const q = rig(5);
     q.run.end('__proto__' as AutopilotEnd, { unit: 'eur' as 'usd', value: 1 });
@@ -161,7 +165,6 @@ for (const ok of [1, 2, 168]) assert.strictEqual(hoursOrDefault(ok), ok);
       assert.strictEqual(r.events.length, 3, 'and emits nothing');
       r.run.confirmCleared();
       assert.strictEqual(r.run.guardArmed, false);
-      assert.strictEqual(r.run.continuation(), 'ignored', 'after the acknowledged clear it is ignored');
     }
     // an interrupt that works disarms; a clear the adapter ran itself and could not confirm arms it even though halt resolved
     let fail = true;
@@ -256,6 +259,107 @@ for (const ok of [1, 2, 168]) assert.strictEqual(hoursOrDefault(ok), ok);
     assert.strictEqual(g.run.continuation(), 'interrupted');
   }
 
+  // ---- 8b. review of 716acc3b: clock, per-app turn bound, reentrancy, guard while a halt is pending ----
+  {
+    const H = 3_600_000;
+    // a clock set back does not defeat the bound: only forward steps count
+    const b = rig(5);
+    b.run.start();
+    b.clock.t -= 1_000_000_000;
+    assert.strictEqual(b.run.checkElapsed(), false);
+    b.clock.t += 102 * H;
+    assert.strictEqual(b.run.checkElapsed(), true, '+102 h after a step back still ends a 2 hour run');
+    const b2 = rig(5);
+    b2.run.start();
+    b2.clock.t += H;
+    b2.run.checkElapsed();
+    b2.clock.t -= 5 * H; // back
+    b2.run.checkElapsed();
+    b2.clock.t += H - 1;
+    assert.strictEqual(b2.run.checkElapsed(), false);
+    b2.clock.t += 1;
+    assert.strictEqual(b2.run.checkElapsed(), true, 'an hour before and an hour after the step back add up');
+    for (const bad of [NaN, Infinity, undefined as unknown as number]) {
+      const n = rig(5);
+      n.clock.t = bad;
+      assert.strictEqual(n.run.checkElapsed(), false, 'a broken clock reading is skipped');
+    }
+    // per-app turn bound: Codex limit + 1
+    const cx = new AutopilotRun({ limit: 5, runId: 'c', backstopPer: 1, halt: () => undefined, emit: () => undefined });
+    assert.strictEqual(cx.backstopTurns, 6);
+    for (let i = 0; i < 6; i++) cx.backstopTurn();
+    assert.strictEqual(cx.ended, false, 'limit + 1 turns on Codex do not end it');
+    cx.backstopTurn();
+    assert.strictEqual(cx.reason, 'error');
+    assert.strictEqual(rig(5).run.backstopTurns, 600);
+    for (const bad of [0, 101, 1.5, NaN, '1', null]) assert.throws(() => new AutopilotRun({ limit: 5, runId: 'c', backstopPer: bad as number, halt: () => undefined, emit: () => undefined }), RangeError, `backstopPer ${String(bad)}`);
+    // the owner ends the run from the started event: no continued after the ended, n stays
+    const events: AutopilotRunEvent[] = [];
+    const halts: AutopilotEnd[] = [];
+    const holder: { run?: AutopilotRun } = {};
+    holder.run = new AutopilotRun({ limit: 5, runId: 'r', halt: (r) => { halts.push(r); }, emit: (e) => { events.push(e); if (e.phase === 'started') holder.run!.end('stopped'); } });
+    assert.strictEqual(holder.run.continuation(), 'ended');
+    assert.deepStrictEqual(events.map((e) => `${e.phase}:${e.n}`), ['started:0', 'ended:0'], 'no continued after the end');
+    assert.strictEqual(holder.run.count, 0);
+    assert.deepStrictEqual(halts, ['stopped']);
+    // and from the continued event: continued, then ended with the same n
+    const ev2: AutopilotRunEvent[] = [];
+    const h2: { run?: AutopilotRun } = {};
+    h2.run = new AutopilotRun({ limit: 5, runId: 'r', halt: () => undefined, emit: (e) => { ev2.push(e); if (e.phase === 'continued') h2.run!.end('cap'); } });
+    h2.run.continuation();
+    assert.deepStrictEqual(ev2.map((e) => `${e.phase}:${e.n}`), ['started:0', 'continued:1', 'ended:1']);
+    assert.strictEqual(h2.run.count, 1);
+    // a halt that never settles: the guard is armed from the end, and each continuation is interrupted
+    let calls = 0;
+    const nv = rig(5, { halt: () => { calls += 1; return new Promise<void>(() => undefined); } });
+    nv.run.start();
+    nv.run.end('limit');
+    assert.strictEqual(nv.run.guardArmed, true, 'armed at the end, before any answer');
+    for (let i = 0; i < 3; i++) assert.strictEqual(nv.run.continuation(), 'interrupted');
+    assert.strictEqual(nv.run.guardInterrupts, 3);
+    assert.strictEqual(calls, 4);
+    // a halt that throws at once: armed in the same tick
+    const th = rig(5, { halt: () => { throw new Error('dead'); } });
+    th.run.end('stopped');
+    assert.strictEqual(th.run.guardArmed, true);
+    assert.strictEqual(th.run.continuation(), 'interrupted');
+    // a late result of an older halt does not decide: older resolves after a newer reject
+    const pend: Array<{ ok: () => void; no: () => void }> = [];
+    const st = rig(5, { halt: () => new Promise<void>((ok, no) => { pend.push({ ok, no: () => no(new Error('x')) }); }) });
+    st.run.end('limit'); // halt #1
+    st.run.continuation(); // halt #2
+    pend[1].no();
+    await new Promise((res) => setImmediate(res));
+    assert.strictEqual(st.run.guardArmed, true);
+    pend[0].ok(); // the older one confirms late
+    await new Promise((res) => setImmediate(res));
+    assert.strictEqual(st.run.guardArmed, true, 'a stale resolve does not disarm after a newer failure');
+    st.run.continuation(); // halt #3
+    pend[2].ok();
+    await new Promise((res) => setImmediate(res));
+    assert.strictEqual(st.run.guardArmed, false, 'the newest confirmed halt disarms');
+    // clearFailed() before the end keeps the guard armed after a resolved halt; confirmCleared() before the end changes nothing
+    const cf = rig(5);
+    cf.run.start();
+    cf.run.clearFailed();
+    cf.run.end('done');
+    await cf.run.whenStopped();
+    assert.strictEqual(cf.run.guardArmed, true);
+    const cc = rig(5);
+    cc.run.confirmCleared();
+    cc.run.end('done');
+    assert.strictEqual(cc.run.guardArmed, true, 'armed at the end, whatever was confirmed before');
+    await cc.run.whenStopped();
+    assert.strictEqual(cc.run.guardArmed, false);
+    // the id rule
+    for (const runId of ['a\u202eb', 'a\nb', 'a\u0000b', 'a b', '']) assert.throws(() => new AutopilotRun({ limit: 5, runId, halt: () => undefined, emit: () => undefined }), RangeError, JSON.stringify(runId));
+    // the names and warnings of FR-021
+    assert.deepStrictEqual([...AUTOPILOT_ENDS], ['done', 'cap', 'limit', 'no-progress', 'blocked', 'stopped', 'error']);
+    assert.deepStrictEqual([core.LIMIT_WARN_ABOVE, core.HOURS_WARN_ABOVE, core.MAX_LIMIT, core.MAX_HOURS, core.GOAL_MAX_CLAUDE], [20, 2, 1000, 168, 4000]);
+    assert.deepStrictEqual([20, 21].map(core.limitWarns), [false, true]);
+    assert.deepStrictEqual([2, 2.5].map(core.hoursWarn), [false, true]);
+  }
+
   // ---- 9. the event guard ----
   {
     const base = { type: 'autopilot', sessionId: 's', timestamp: 1, runId: 'r1', limit: 5 };
@@ -263,13 +367,20 @@ for (const ok of [1, 2, 168]) assert.strictEqual(hoursOrDefault(ok), ok);
     const bad = (e: object, why: string): void => assert.ok(eventProblems({ ...base, ...e }).length > 0, why);
     ok({ phase: 'started', n: 0 });
     ok({ phase: 'continued', n: 5 });
-    ok({ phase: 'continued', n: 6 }); // limit + 1 is the bound
+    bad({ phase: 'continued', n: 6 }, 'n above limit');
+    bad({ phase: 'ended', n: 6, reason: 'limit' }, 'ended n above limit');
+    bad({ phase: 'started', n: 6 }, 'started n 6');
+    bad({ phase: 'started', n: 1 }, 'started n 1');
+    bad({ phase: 'continued', n: 0 }, 'continued n 0');
+    bad({ phase: 'started', n: 0, spend: { unit: 'usd', value: 1 } }, 'spend on started');
+    bad({ phase: 'continued', n: 1, spend: { unit: 'usd', value: 1 } }, 'spend on continued');
+    for (const runId of ['a\u202eb', 'a\nb', 'a\u0000b', 'a b', 'a\u200bb', 'é', 'a/b']) bad({ phase: 'started', n: 0, runId }, `runId ${JSON.stringify(runId)}`);
     ok({ phase: 'ended', n: 5, reason: 'limit', spend: { unit: 'aiu', value: 1.5 } });
     for (const reason of AUTOPILOT_ENDS) ok({ phase: 'ended', n: 0, reason });
     for (const unit of ['aiu', 'usd', 'tokens']) ok({ phase: 'ended', n: 1, reason: 'done', spend: { unit, value: 0 } });
     ok({ phase: 'ended', n: 1000, limit: 1000, reason: 'done' });
+    bad({ phase: 'continued', n: 1, limit: 0 }, 'limit 0');
     for (const n of [-1, 1.5, NaN, '3', Infinity, 1001, null, undefined]) bad({ phase: 'continued', n }, `n ${String(n)}`);
-    bad({ phase: 'continued', n: 7 }, 'n above limit + 1');
     bad({ phase: 'continued', n: 1001, limit: 1000 }, 'n above 1000');
     for (const limit of [0, 1001, 1.5, NaN, '5', null, undefined, Infinity]) bad({ phase: 'continued', n: 1, limit }, `limit ${String(limit)}`);
     for (const phase of ['begun', '', 'END', undefined, 3, '__proto__']) bad({ phase, n: 1 }, `phase ${String(phase)}`);
@@ -314,36 +425,35 @@ for (const ok of [1, 2, 168]) assert.strictEqual(hoursOrDefault(ok), ok);
     assert.deepStrictEqual(t('   \n\t '), { ok: false, reason: 'empty' });
     assert.deepStrictEqual(t('\u0000\u0001'), { ok: false, reason: 'empty' });
     for (const v of [undefined, null, 5, {}, ['clear']]) assert.deepStrictEqual(t(v), { ok: false, reason: 'empty' });
-    assert.deepStrictEqual(t('clear'), { ok: false, reason: 'reserved' });
-    assert.deepStrictEqual(t('clear', 'claude'), { ok: false, reason: 'reserved' });
-    assert.deepStrictEqual(t(' clear\n'), { ok: false, reason: 'reserved' }, 'with spaces around it');
-    assert.deepStrictEqual(t('clear\u0000'), { ok: false, reason: 'reserved' }, 'with a control character around it');
-    assert.deepStrictEqual(t('CLEAR'), { ok: false, reason: 'reserved' });
+    for (const w of ['clear', 'stop', 'off', 'reset', 'none', 'cancel']) {
+      for (const v of [w, ` ${w}\n`, w.toUpperCase(), `${w}\u0000`, `\u202e${w}`, `${w}\u2028`]) assert.deepStrictEqual(t(v), { ok: false, reason: 'reserved' }, `${JSON.stringify(v)} on Claude Code`);
+      assert.deepStrictEqual(t(w, 'claude'), { ok: false, reason: 'reserved' });
+      assert.deepStrictEqual(t(w, 'codex'), { ok: true, text: w }, `${w} is a normal goal on Codex`);
+      assert.deepStrictEqual(t(w, 'copilot'), { ok: true, text: w }, `${w} is a normal goal on Copilot`);
+    }
+    assert.deepStrictEqual([...core.CLAUDE_GOAL_RESERVED], ['clear', 'stop', 'off', 'reset', 'none', 'cancel']);
     assert.deepStrictEqual(t('clear the cache'), { ok: true, text: 'clear the cache' });
     assert.deepStrictEqual(t('clearly'), { ok: true, text: 'clearly' });
-    // over 4000: a warning on Claude Code, never a refusal
+    assert.deepStrictEqual(t('stop it'), { ok: true, text: 'stop it' });
+    assert.deepStrictEqual(t('a\u202eb\u2028c\u2029d\u200be\ufeff'), { ok: true, text: 'abcde' }, 'bidi, line separators, ZWSP and BOM are removed');
+    assert.deepStrictEqual(t('a\u200db\u200c'), { ok: true, text: 'a\u200db\u200c' }, 'joiners stay');
+    // over 4000 trimmed characters: Claude Code's own limit, refused with a reason there only
     const L4000 = 'x'.repeat(4000);
     assert.deepStrictEqual(t(L4000, 'claude'), { ok: true, text: L4000 }, 'exactly 4000 is fine');
-    assert.deepStrictEqual(t(L4000 + 'y', 'claude'), { ok: true, text: L4000 + 'y', warn: 'long' });
-    assert.strictEqual((t(L4000 + 'y') as { warn?: string }).warn, 'long', 'no app: the strictest rules');
-    assert.strictEqual((t(L4000 + 'y', 'codex') as { warn?: string }).warn, undefined, 'the warning is Claude Code only');
-    assert.strictEqual((t(L4000 + 'y', 'copilot') as { warn?: string }).warn, undefined);
-    // linear time on a long input: a worst case for a backtracking pattern, checked by shape and a loose bound
-    for (const unit of ['\u0001 ', ' \r\n', '\u0001'.repeat(3), 'a\u0000']) {
+    assert.deepStrictEqual(t(`  ${L4000}  \n`, 'claude'), { ok: true, text: `  ${L4000}  \n` }, 'the count is the trimmed length');
+    assert.deepStrictEqual(t(L4000 + 'y', 'claude'), { ok: false, reason: 'too-long' });
+    assert.deepStrictEqual(t(L4000 + 'y'), { ok: false, reason: 'too-long' }, 'no app: the strictest rules');
+    assert.deepStrictEqual(t(L4000 + 'y', 'codex'), { ok: true, text: L4000 + 'y' }, 'Codex has no such limit here');
+    assert.deepStrictEqual(t(L4000 + 'y', 'copilot'), { ok: true, text: L4000 + 'y' });
+    // a line that starts with a slash could run a second command on Claude Code
+    for (const v of ['/compact', 'fix it\n/compact', 'fix it\n  /goal clear', '/goal x', '\n\n /x']) assert.deepStrictEqual(t(v, 'claude'), { ok: false, reason: 'command' }, JSON.stringify(v));
+    assert.deepStrictEqual(t('see /usr/bin and a/b', 'claude'), { ok: true, text: 'see /usr/bin and a/b' }, 'a slash inside a line is fine');
+    assert.deepStrictEqual(t('/compact', 'codex'), { ok: true, text: '/compact' });
+    // a long input finishes (a backtracking pattern would not; no wall clock is asserted, FR-048b)
+    for (const unit of ['\u0001 ', ' \r\n', '\u0001'.repeat(3), 'a\u0000', '\u200b\u0001', '\n ']) {
       const big = unit.repeat(Math.ceil(2_000_000 / unit.length));
-      const t0 = process.hrtime.bigint();
-      const res = t(big + 'z');
-      const ms = Number(process.hrtime.bigint() - t0) / 1e6;
-      assert.ok(res.ok, 'long input accepted');
-      assert.ok(ms < 5000, `2 MB took ${ms} ms`);
-    }
-    {
-      const s = (n: number): string => 'a\u0001'.repeat(n);
-      const time = (n: number): number => { const t0 = process.hrtime.bigint(); t(s(n)); return Number(process.hrtime.bigint() - t0) / 1e6; };
-      time(1000); // warm up
-      const small = Math.max(time(100_000), 1);
-      const large = time(1_600_000);
-      assert.ok(large < small * 16 * 8 + 50, `16x the input took ${large} ms against ${small} ms: not quadratic`);
+      assert.ok(t(big + 'z', 'codex').ok, 'long input accepted on Codex');
+      t(big + 'z', 'claude'); // finishes, whatever the answer
     }
   }
 
@@ -354,7 +464,7 @@ for (const ok of [1, 2, 168]) assert.strictEqual(hoursOrDefault(ok), ok);
     assert.ok(!/[\u0000-\u001f\u007f-\u009f]/.test(AUTOPILOT_ANSWER), 'no control characters');
     assert.strictEqual(typeof AUTOPILOT_ANSWER, 'string');
     const fns = Object.entries(core).filter(([, v]) => typeof v === 'function').map(([k]) => k).sort();
-    assert.deepStrictEqual(fns, ['AutopilotRun', 'codexGoalEnd', 'goalText', 'hoursOrDefault', 'isAutopilotEnd', 'isClaudeContinuation', 'isSpendUnit', 'limitOrDefault', 'validHours', 'validLimit', 'validRunId'], 'the exported functions: none builds an answer');
+    assert.deepStrictEqual(fns, ['AutopilotRun', 'codexGoalEnd', 'goalText', 'hoursOrDefault', 'hoursWarn', 'isAutopilotEnd', 'isClaudeContinuation', 'isSpendUnit', 'limitOrDefault', 'limitWarns', 'validHours', 'validLimit', 'validRunId'], 'the exported functions: none builds an answer');
     const file = path.join(ROOT, 'src/adapters/autopilot.ts');
     const sf = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
     const uses: string[] = [];
@@ -390,8 +500,12 @@ for (const ok of [1, 2, 168]) assert.strictEqual(hoursOrDefault(ok), ok);
     assert.strictEqual(isClaudeContinuation(msg({ parent_tool_use_id: 'toolu_1' })), false, 'a helper (FR-008)');
     assert.strictEqual(isClaudeContinuation(msg({ parent_tool_use_id: null })), true);
     assert.strictEqual(isClaudeContinuation(msg({ agentId: 'a1' })), false);
+    assert.strictEqual(isClaudeContinuation(msg({ agentId: null })), true, 'a null agentId is the main stream, like a null parent_tool_use_id');
+    assert.strictEqual(isClaudeContinuation(msg({ message: { role: 'user', content: [{ type: 'text', text: 'note' }, { type: 'text', text: fb }] } })), true, 'a marker in a later text block counts');
+    assert.strictEqual(isClaudeContinuation(msg({ message: { role: 'user', content: [{ type: 'text', text: 'note' }, { type: 'image' }] } })), false);
     for (const v of [undefined, null, 'Stop hook feedback:', 5, [], {}, { type: 'user', isSynthetic: true }, msg({ message: null }), msg({ message: { content: [] } })]) assert.strictEqual(isClaudeContinuation(v), false, `junk ${JSON.stringify(v)}`);
   }
 
+  finished = true;
   console.log('autopilot core (spec 099 phase 1): limit bounds, stop at limit + 1, end once, fail-closed guard, backstop, event guard, goalText, Codex and Claude mappings OK');
 })().catch((e) => { console.error(e); process.exit(1); });
