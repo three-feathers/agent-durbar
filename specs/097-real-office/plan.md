@@ -91,3 +91,13 @@ Passes; see spec *Constitution check*. No new runtime dependency; no IPC; no ada
 |---|---|---|
 | A second office renderer | The realistic look needs geometry the flat card layout cannot give (people behind desks, screens, lobby band) | Theming the flat office: tried as scene kits; the owner said it still "looks like a dashboard" |
 | 10 MB art pack | 15 people × 11 poses at 2x the shown size | Fewer people repeat too often at 15 agents; smaller pictures blur at n ≤ 4 |
+
+## Worlds, the lift and the chat in the world (delta 2026-10-31, branch `097-real-office-worlds`)
+
+- **World seam**: P1's `realOfficeSet(choice)` (`crew.js`, FR-084) grows into `realOfficeWorld(characters, worldPref)` → `{ world, people, note }`; `REAL_OFFICE_WORLDS` lists the shippable worlds and `test:surfaces` (spec 098) compares it with the registry (FR-112, FR-114).
+- **Packs**: `src/renderer/realoffice/worlds/<id>/` with `world.json` (spec 098 FR-031: blocks, anchors, `realHeight`, tokens, light-slot shapes), `world.css` (tokens plus world-moment rules only; 098 FR-040), pictures. Loaded by the existing lazy loader per world (FR-115); `scripts/copy-assets.js` copies the folder.
+- **Lift**: `renderLift` (`app.js`, 092) keeps the DOM and semantics; in Real office the world layer adds the shaft class, the cabin and reverses the drawn order for FR-116 (a pure helper `liftOrder(floors, natural)` in `floornav`, unit-tested, also giving PageUp/PageDown's direction). The ride uses 092's `motion()` slide (phase 3) with a world cover clipped to the desk area (FR-102).
+- **Chat**: `openPanel` keeps the panel; the world layer adds the column and the portrait when Real office is on and the window is at least 1200 px wide (FR-106); cards get a tail class only.
+- **Bubble and slip**: the inbox/answer-bar component renders into a bubble or slip frame (098 blocks); placement through `zoomRect` (FR-034) with plates, chips and the lift in the avoid list (FR-108..FR-110).
+- **Grounding**: `realLayout`'s lobby step places standing frames by `floorLine` and scales them by fixture px-per-metre (FR-117); the contact shadow is a CSS ellipse in the same rect.
+- **Checks**: spec 098's `test:surfaces`, `test:world-packs`, token lint and world matrix hold the worlds; 097's `check:office` Real office variant runs per world for the fit, grounding and contrast checks.
