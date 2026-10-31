@@ -45,6 +45,9 @@ function countingFs(): { fs: NotesFileFs; calls: { m: Method; p: string; a: unkn
   return { fs: fake as unknown as NotesFileFs, calls, hook };
 }
 const canLink = ((): boolean => { try { const t = path.join(root, 'probe'); nodeFs.symlinkSync(root, t, 'dir'); nodeFs.unlinkSync(t); return true; } catch { return false; } })();
+/** One clock for every store and file here: each call is one second later, so no two times tie (never the wall clock's milliseconds). */
+let tick = Date.parse('2026-10-31T09:00:00.000Z');
+const tickClock = (): Date => new Date(tick += 1000);
 const skip = (why: string): void => console.log(`  (skipped: ${why})`);
 
 let failures = 0;
@@ -56,12 +59,12 @@ async function test(name: string, fn: () => unknown): Promise<void> {
 function rig(opts: { file?: ConstructorParameters<typeof NotesFile>[0]; now?: () => Date; rand?: (n: number) => number } = {}): { store: NotesStore; file: NotesFile; folder: string; key: string; c: ReturnType<typeof countingFs> } {
   const folder = fresh();
   const c = countingFs();
-  const store = new NotesStore(path.join(folder, '..', 'userdata', 'notes'), { now: opts.now, rand: opts.rand });
-  const file = new NotesFile({ fs: c.fs, ...opts.file });
+  const store = new NotesStore(path.join(folder, '..', 'userdata', 'notes'), { now: opts.now ?? tickClock, rand: opts.rand });
+  const file = new NotesFile({ fs: c.fs, now: tickClock, ...opts.file });
   return { store, file, folder, key: folder, c };
 }
 const cycle = (r: { store: NotesStore; file: NotesFile; folder: string; key: string }, values: string[] = []): ReturnType<typeof syncNotesFile> =>
-  syncNotesFile({ file: r.file, store: r.store, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values });
+  syncNotesFile({ file: r.file, store: r.store, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values, now: tickClock });
 const notesOf = async (s: NotesStore, key: string): Promise<Note[]> => { const v = await s.list(key); assert.ok(v.ok); return (v as Extract<typeof v, { ok: true }>).notes; };
 
 /** A tiny gitignore matcher for one anchored pattern: `\x` is a literal x, `*` and `?` stay in a segment, `[...]` is a class. */
@@ -100,13 +103,13 @@ async function main(): Promise<void> {
   await test('AC1: while the switch is off nothing stats, reads or writes notes.md (counting fs), and a workspace never gets one', async () => {
     const folder = fresh();
     const c = countingFs();
-    const file = new NotesFile({ fs: c.fs });
-    const store = new NotesStore(path.join(folder, '..', 'ud'));
+    const file = new NotesFile({ fs: c.fs, now: tickClock });
+    const store = new NotesStore(path.join(folder, '..', 'ud'), { now: tickClock });
     const a = { id: 'a1', name: 'proj', cwd: folder, folders: [folder], permMode: 'read-only', status: 'ready' } as unknown as AgentInfo;
     const w = { ...a, id: 'w1', workspaceFile: path.join(folder, 'x.code-workspace') } as unknown as AgentInfo;
     let on = false;
     const timers: (() => void)[] = [];
-    const ops = new NotesOps({ agents: new Map([['a1', a], ['w1', w]]), store: () => store, resumeIdFor: () => '', adapterIdOf: () => 'copilot', folderValues: () => [], sessionValues: () => [], file: () => file, fileOn: () => on, setTimer: (fn) => { timers.push(fn); } });
+    const ops = new NotesOps({ agents: new Map([['a1', a], ['w1', w]]), store: () => store, resumeIdFor: () => '', adapterIdOf: () => 'copilot', folderValues: () => [], sessionValues: () => [], now: tickClock, file: () => file, fileOn: () => on, setTimer: (fn) => { timers.push(fn); } });
     const n = must(await ops.add('a1', { text: 'first idea' }) as { ok: true; note?: Note });
     await ops.list('a1');
     await ops.update('a1', n.note!.id, n.note!.rev, { done: true });
@@ -177,9 +180,9 @@ async function main(): Promise<void> {
     assert.deepStrictEqual([m?.sha256, m?.bytes], [sha(buf), buf.length], 'the mirror the store persisted is the file written');
     assert.deepStrictEqual(nodeFs.readdirSync(path.join(r.folder, '.durbar')), ['notes.md'], 'no temp file left');
     // restart: a fresh store and file see their own notes.md as unchanged (no import, no write)
-    const store2 = new NotesStore(path.join(r.folder, '..', 'userdata', 'notes'));
+    const store2 = new NotesStore(path.join(r.folder, '..', 'userdata', 'notes'), { now: tickClock });
     const c2 = countingFs();
-    const st2 = await syncNotesFile({ file: new NotesFile({ fs: c2.fs }), store: store2, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [] });
+    const st2 = await syncNotesFile({ file: new NotesFile({ fs: c2.fs, now: tickClock }), store: store2, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [], now: tickClock });
     assert.deepStrictEqual(st2.state, {});
     assert.ok(!c2.calls.some((x) => x.m === 'renameSync' || x.m === 'writeSync'), 'nothing written after a restart');
     assert.strictEqual((await notesOf(store2, r.key)).length, 1);
@@ -250,14 +253,14 @@ async function main(): Promise<void> {
     const via = path.join(r.folder, '..', 'via-link');
     nodeFs.symlinkSync(r.folder, via, 'dir');
     must(await r.store.add(r.key, 'proj', { text: 'mine' }));
-    const st = await syncNotesFile({ file: r.file, store: r.store, folderKey: r.key, folderName: 'proj', folderPath: via, values: [] });
+    const st = await syncNotesFile({ file: r.file, store: r.store, folderKey: r.key, folderName: 'proj', folderPath: via, values: [], now: tickClock });
     assert.deepStrictEqual(st.state, {});
     assert.ok(nodeFs.existsSync(md(r.folder)), 'written in the real folder');
     const outside = fresh('outside');
     nodeFs.rmSync(path.join(r.folder, '.durbar'), { recursive: true });
     nodeFs.symlinkSync(outside, path.join(r.folder, '.durbar'), 'dir');
     must(await r.store.add(r.key, 'proj', { text: 'more' }));
-    const st2 = await syncNotesFile({ file: r.file, store: r.store, folderKey: r.key, folderName: 'proj', folderPath: via, values: [] });
+    const st2 = await syncNotesFile({ file: r.file, store: r.store, folderKey: r.key, folderName: 'proj', folderPath: via, values: [], now: tickClock });
     assert.match(st2.state.error ?? '', /\.durbar is a link/);
     assert.deepStrictEqual(nodeFs.readdirSync(outside), []);
   });
@@ -318,6 +321,15 @@ async function main(): Promise<void> {
     const res = new NotesFile().addExclude(wt);
     assert.ok(!res.ok && /not a git repository/.test(res.error), JSON.stringify(res));
     assert.ok(!nodeFs.existsSync(path.join(odd, 'info', 'exclude')));
+    // a commondir with a control character, even one naming a real git directory
+    const common = gitDir(path.join(fresh('c'), 'c' + String.fromCharCode(1) + 'd'));
+    const wtGit = gitDir(path.join(fresh('w'), 'wtgit'), { objects: true, info: true });
+    nodeFs.writeFileSync(path.join(wtGit, 'commondir'), common + '\n');
+    const wt2 = fresh('wt2');
+    nodeFs.writeFileSync(path.join(wt2, '.git'), `gitdir: ${wtGit}\n`);
+    const res2 = new NotesFile().addExclude(wt2);
+    assert.ok(!res2.ok && /not a git repository/.test(res2.error), JSON.stringify(res2));
+    assert.ok(!nodeFs.existsSync(path.join(common, 'info', 'exclude')));
   });
 
   await test('AC3/AC11/AC16: edits of known ids are imported masked and set fileEdited; done counts; a trailing blank line is no edit; nothing is deleted', async () => {
@@ -454,17 +466,17 @@ async function main(): Promise<void> {
       nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\nidless\n');
       const dir = path.join(r.folder, '..', 'userdata', 'notes');
       for (let i = 0; i < 4; i++) {
-        const st = new NotesStore(dir);
+        const st = new NotesStore(dir, { now: tickClock });
         const c = countingFs();
         c.hook.renameSync = () => { throw Object.assign(new Error('io'), { code: 'EIO' }); };
         let imports = 0;
         const orig = st.importFile.bind(st);
         st.importFile = (...a: Parameters<NotesStore['importFile']>) => { imports++; return orig(...a); };
-        await syncNotesFile({ file: new NotesFile({ fs: c.fs }), store: st, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [] });
+        await syncNotesFile({ file: new NotesFile({ fs: c.fs, now: tickClock }), store: st, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [], now: tickClock });
         assert.strictEqual(imports, i === 0 ? 1 : 0, `restart ${i}: the same file is imported once`);
         assert.strictEqual(await st.getFileImport(r.key), sha(nodeFs.readFileSync(md(r.folder))));
       }
-      assert.strictEqual(await titles(new NotesStore(dir), r.key), 'base|idless');
+      assert.strictEqual(await titles(new NotesStore(dir, { now: tickClock }), r.key), 'base|idless');
     }
   });
 
@@ -542,8 +554,8 @@ async function main(): Promise<void> {
       edit(r, '\nsurvivor\n', '\nsurvivor v2\n');
       const c2 = countingFs();
       c2.hook.renameSync = () => { throw Object.assign(new Error('io'), { code: 'EIO' }); };
-      const st2 = new NotesStore(path.join(r.folder, '..', 'userdata', 'notes'));
-      await syncNotesFile({ file: new NotesFile({ fs: c2.fs }), store: st2, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [] });
+      const st2 = new NotesStore(path.join(r.folder, '..', 'userdata', 'notes'), { now: tickClock });
+      await syncNotesFile({ file: new NotesFile({ fs: c2.fs, now: tickClock }), store: st2, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [], now: tickClock });
       assert.strictEqual(await texts(st2, r.key), 'base|survivor v2');
     }
     // a note that reached the file with its id, then its section removed and a new one added in the same save: both stay
@@ -624,7 +636,7 @@ async function main(): Promise<void> {
       const r = rig();
       must(await r.store.add(r.key, 'proj', { text: 'base' }));
       await cycle(r);
-      const b = new NotesStore(dir(r));
+      const b = new NotesStore(dir(r), { now: tickClock });
       await notesOf(b, r.key); // B caches the document before X exists, so its next change merges
       eio(r.c);
       nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\nX text\n');
@@ -642,7 +654,7 @@ async function main(): Promise<void> {
       const t = nodeFs.readFileSync(md(r.folder), 'utf8');
       const at = t.indexOf(`<!-- durbar-note id=${x.id}`);
       nodeFs.writeFileSync(md(r.folder), t.slice(0, at) + t.slice(t.indexOf('<!-- durbar-note', at + 5)) + '\n<!-- durbar-note -->\nnew Z\n');
-      await syncNotesFile({ file: new NotesFile(), store: b, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [] });
+      await syncNotesFile({ file: new NotesFile({ now: tickClock }), store: b, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [], now: tickClock });
       assert.strictEqual((await notesOf(b, r.key)).find((n) => n.id === x.id)?.text, 'X text');
     }
     // a hand-edited filePending listing every note (and a bogus id): a note in the file and a typed note are never overwritten
@@ -658,8 +670,8 @@ async function main(): Promise<void> {
       nodeFs.writeFileSync(file, JSON.stringify({ ...doc, filePending: [f.id, typed.id, 'n-bogus0000000'] }));
       assert.deepStrictEqual(parseNotesDoc(nodeFs.readFileSync(file, 'utf8')).ok && (parseNotesDoc(nodeFs.readFileSync(file, 'utf8')) as { doc: { filePending?: string[] } }).doc.filePending, [f.id, typed.id], 'an id that is not a note is dropped when read');
       nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\nnew Z\n');
-      const fresh2 = new NotesStore(dir(r));
-      await syncNotesFile({ file: new NotesFile(), store: fresh2, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [] });
+      const fresh2 = new NotesStore(dir(r), { now: tickClock });
+      await syncNotesFile({ file: new NotesFile({ now: tickClock }), store: fresh2, folderKey: r.key, folderName: 'proj', folderPath: r.folder, values: [], now: tickClock });
       const ns = await notesOf(fresh2, r.key);
       assert.deepStrictEqual([ns.find((n) => n.id === f.id)?.text, ns.find((n) => n.id === typed.id)?.text, ns.some((n) => n.text === 'new Z')], ['from the file F', 'typed T', true]);
     }
