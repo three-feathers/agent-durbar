@@ -16,7 +16,7 @@
  * (ui-suite.js runOne: a fresh profile each, no shell, xvfb-run on Linux without a display or with UI_SUITE_XVFB=1). Every driver
  * writes into a new temporary folder; only then are the files copied, so a failed run leaves the old pictures in place.
  * Every written picture is then palette-compressed in place (scripts/compress-shots.js, spec 050 FR-012; DURBAR_SHOTS_COMPRESS=off skips it).
- * Linked = `docs/screenshots/*.png` in README.md, `file` in docs/site/gallery.json, any `*.png` in docs/site/landing.json.
+ * Linked = `docs/screenshots/*.png` (or `screenshots/*.png` in a docs page) in README.md and the docs pages of docs/site/pages.json, `file` in docs/site/gallery.json, any `*.png` in docs/site/landing.json.
  * docs/feature-history.md and CHANGELOG.md keep their old pictures on purpose (a record, spec 025 FR-006).
  */
 const path = require('path');
@@ -109,8 +109,10 @@ const source = (f) => (typeof f === 'string' ? f : f.from);
 /** The docs/screenshots files the README, the website gallery and the landing page link (sorted, unique). */
 function linkedImages(root = ROOT) {
   const out = new Set();
-  const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
-  for (const m of readme.matchAll(/docs\/screenshots\/([A-Za-z0-9._-]+\.png)/g)) out.add(m[1]);
+  // the README and the docs pages it moved its detail to (docs/site/pages.json, spec 021 FR-065)
+  const pages = JSON.parse(fs.readFileSync(path.join(root, 'docs', 'site', 'pages.json'), 'utf8'));
+  const readme = ['README.md', ...pages.map((f) => 'docs/' + f)].map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
+  for (const m of readme.matchAll(/(?:docs\/)?screenshots\/([A-Za-z0-9._-]+\.png)/g)) out.add(m[1]);
   const gallery = JSON.parse(fs.readFileSync(path.join(root, 'docs', 'site', 'gallery.json'), 'utf8'));
   for (const g of gallery) if (g && typeof g.file === 'string') out.add(g.file);
   const landing = fs.readFileSync(path.join(root, 'docs', 'site', 'landing.json'), 'utf8');
