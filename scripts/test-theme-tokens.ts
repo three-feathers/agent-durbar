@@ -157,6 +157,20 @@ for (const f of FILES) {
   assert.strictEqual(T.token('--chair'), '#c2185b', 'a value with no contrast pair is kept');
   assert.deepStrictEqual(pairsPass('lowc'), [], 'every pair passes');
 
+  // spec 040 FR-027 (#905): a dark pack that keeps Clean Office's light room tints: the tints are repaired, never --ink/--muted/--room-path (the tooltip and cards read them on the dark surfaces)
+  {
+    const night = { id: 'night-tint', tokens: { '--bg': '#14171c', '--surface': '#1d2127', '--raised': '#22272e', '--card': '#1d2127', '--soft': '#20252c', '--note': '#2a2f37', '--ink': '#e8eaee', '--ink-2': '#c4c9d1', '--muted': '#9aa2ae', '--card-waiting': '#2b2618', '--card-error': '#2e1c1c' } };
+    T.registerUserThemes({ 'night-tint': night });
+    const fn = T.fallbacks('night-tint').contrast;
+    assert.ok(['sage', 'blue', 'sand', 'clay'].every((t) => fn.includes('--tint-' + t)), `the room tints are repaired (${fn})`);
+    assert.ok(!fn.includes('--ink') && !fn.includes('--muted'), `the ink and muted text are not (${fn})`);
+    T.setTheme('night-tint');
+    assert.strictEqual(T.token('--muted'), '#9aa2ae', 'the muted text stays');
+    assert.strictEqual(T.token('--ink'), '#e8eaee', 'the ink stays light');
+    for (const bg of ['--surface', '--card', '--raised']) assert.ok(ratio(T.token('--ink'), T.token(bg)) >= 4.5, `ink on ${bg} still reads`);
+    assert.deepStrictEqual(pairsPass('night-tint'), [], 'every pair passes');
+  }
+
   // the dark fixture as designed: nothing to adjust
   const DARK = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'fixtures', 'themes', 'dark-audit.json'), 'utf8'));
   T.registerUserThemes({ 'audit-dark': DARK });

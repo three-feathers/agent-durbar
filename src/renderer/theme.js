@@ -467,6 +467,7 @@
   function ratio(a,b){const [x,y]=[lum(a),lum(b)].sort((p,q)=>q-p);return (x+0.05)/(y+0.05);}
   /* spec 070 FR-023: the surfaces a theme is built on. A failing pair never changes them, so a dark theme stays dark and a light one light */
   const BASE_SURFACE=/^--(bg|surface|surface-2|raised|card(-[a-z]+)?|soft|note|pb-[a-z]+|drop-bg|brand-bg|idle-stub)$/;
+  const TINT=/^--tint-[a-z]+$/;
   function hex6(v){let h=HEX_ANY.exec(v)[1];if(h.length===3)h=h.split('').map(c=>c+c).join('');return h;}
   function mixHex(v,to,w){
     const h=hex6(v),t=hex6(to);
@@ -490,8 +491,18 @@
         const a=t[fg],b=t[bg];
         if(!HEX_ANY.test(String(a||''))||!HEX_ANY.test(String(b||'')))continue;
         if(ratio(a,b)>=min)continue;
-        const k=BASE_SURFACE.test(fg)&&!BASE_SURFACE.test(bg)?bg:fg;
-        const v=readableOn(t[k],t[k===fg?bg:fg],min);
+        /* a room tint paints only the rooms, but --ink, --muted and --room-path are also read on the page, cards and tooltips (spec 040 FR-027):
+           move the text token only when the result keeps every non-tint pair it is part of; else repair the tint, and the text only if no tint can reach the ratio */
+        let k=BASE_SURFACE.test(fg)&&!BASE_SURFACE.test(bg)?bg:fg;
+        let v;
+        if(TINT.test(bg)){
+          k=fg;v=readableOn(a,b,min);
+          const keeps=CONTRAST_PAIRS.every(([f,g,m])=>f!==fg||TINT.test(g)||!HEX_ANY.test(String(t[g]||''))||ratio(v,t[g])>=m);
+          if(!keeps){
+            const tv=readableOn(b,a,min);
+            if(ratio(a,tv)>=min){k=bg;v=tv;}
+          }
+        }else v=readableOn(t[k],t[k===fg?bg:fg],min);
         if(v===t[k])continue;
         t[k]=v;changed=true;
         if(!back.includes(k))back.push(k);
