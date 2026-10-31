@@ -223,6 +223,10 @@ FR-011..FR-016 describe the drawn SVG option (b′). If Q1 picks raster, FR-050.
 
 ## Changes
 
+### 2026-10-31: crew motion is specified in spec 096
+
+Paco answered spec 096 Q1b: yes (team chat 2026-10-31 07:02 UTC, relayed by his agent, noted on PR #912). The built-in Cheeky and Prehistoric crews get the v1 motion of [spec 096](../096-ai-character-maker/spec.md) (FR-055..FR-062): breathing bob, pose cross-fade, typing cue and status glow, with the reduced-motion, Serious and Motion-off rules. No art change here, and no blink until eyes-closed frames exist. No FR of this spec changes.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
