@@ -1674,7 +1674,7 @@ async function setOfficeView(v){
   syncWorld();layoutKey='';scheduleRender();return true;
 }
 /* spec 097 FR-084 (owners 2026-10-31): the Characters setting applies in Real office too; a set without Real office pictures (today
-   every crew) shows the Office people, and Settings says how that crew appears there is still being decided */
+   every crew) shows the Office people, and Settings says so until that crew's world ships (FR-083, FR-100, FR-114) */
 const realOfficeSet=()=>CREW&&CREW.realOfficeSet?CREW.realOfficeSet(crewChoice()):{set:'office',scene:'office',coming:false};
 let RO_LOAD=''; /* '', 'loading', 'ready', 'failed' */
 syncWorld();
@@ -1713,7 +1713,7 @@ function realModel(model){
       title:p.id===D.POSTBOX?placeLabelFull(p.id)+': the next scheduled runs. Open Settings > Schedules.':placeTip(p.id,ids,wait),
       visitors:ids.map(id=>{const a=byId(id),v=VISITS.at(id);return {id,name:a.name,needsYou:vis(a)==='waiting'||!!a.limit,title:visitorWords(a,v,true)};})};
   });
-  return {folders,places,sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
+  return {folders,places,alertIcon:signIcon('alert'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
 }
 let RO_LAST=null; /* the last layout, for the drivers (window.__durbarSimUi.realLayout) */
 function renderReal(stage,floor,aw,ah,model){

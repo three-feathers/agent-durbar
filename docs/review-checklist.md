@@ -102,6 +102,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **Announcements reach a screen reader** (live region used and tested); focus lands sensibly after Escape. [#622](https://github.com/three-feathers/agent-durbar/pull/622)
 - [ ] **Theme tokens, not literals**; check one dark and one non-default theme. [#530](https://github.com/three-feathers/agent-durbar/pull/530), [#588](https://github.com/three-feathers/agent-durbar/pull/588)
 - [ ] **A driver's contrast check parses `color(srgb 0-1 …)`** too: `getComputedStyle` gives `color-mix()` colours that way, and an `rgb()`-only parser reads them as black and passes. [#921](https://github.com/three-feathers/agent-durbar/pull/921)
+- [ ] **No emoji as an icon** (constitution V; a missing glyph on Linux): the app's SVG icon; a clickable chip is a `button`. [#921](https://github.com/three-feathers/agent-durbar/pull/921)
 - [ ] **Tooltips stay within the limit** with the longest real value. [#630](https://github.com/three-feathers/agent-durbar/pull/630)
 - [ ] **Screenshots at 1440x900 and 1280x800**, every linked picture of the changed screen retaken (`npm run shots:docs`) and looked at (no figures mid-walk). [#632](https://github.com/three-feathers/agent-durbar/pull/632), [#574](https://github.com/three-feathers/agent-durbar/pull/574)
 
@@ -115,7 +116,8 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 
 - [ ] **Search for an existing helper, predicate, dialog or matcher** first (`git grep` the concept) and name it in the PR. [#628](https://github.com/three-feathers/agent-durbar/pull/628), [#560](https://github.com/three-feathers/agent-durbar/pull/560)
 - [ ] **Docs in the same PR**: `changelog.d/` fragment, `specs-index` status, task ticked, README and notes. [#535](https://github.com/three-feathers/agent-durbar/pull/535)
-- [ ] **Sub-agents get unique scratch folders and one PR-body file each**: three PR bodies were overwritten on 2026-10-23.
+- [ ] **A driver on wall-clock sim state** (visits) waits with `until()` for what it counts; loop it under load. [#921](https://github.com/three-feathers/agent-durbar/pull/921)
+- [ ] **Sub-agents get unique scratch folders and one PR-body file each** (three PR bodies were overwritten).
 
 ## How we review
 

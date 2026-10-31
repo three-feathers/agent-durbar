@@ -122,7 +122,7 @@ const run = (job) => new Promise((resolve) => {
     running.delete(r);
     const secs = ((Date.now() - t0) / 1000).toFixed(0);
     if (r.why === 'memory') { console.log(`  wait ${job.label.padEnd(22)} stopped: memory low, queued again (${secs}s)`); resolve('again'); return; }
-    const summary = (out.match(/office check: .*/) || ['(no summary line)'])[0];
+    const summary = (out.match(/office check[^:\n]*: .*/) || ['(no summary line)'])[0];
     if (code === 0) console.log(`  ok   ${job.label.padEnd(22)} ${summary} (${secs}s)`);
     else console.log(`  FAIL ${job.label.padEnd(22)} ${r.why || 'exit ' + code} (${secs}s)\n${out.split('\n').filter((l) => !/^\s+ok /.test(l)).join('\n')}`);
     resolve(code === 0 && !r.why ? 'ok' : 'fail');

@@ -126,8 +126,8 @@ assert.match(docs, /<a class="keep" href="index\.html#download">Download<\/a>/, 
 // a linked picture the quality guard refused to compress is named in KEPT_ORIGINAL with the reason
 const KEPT_ORIGINAL = {
   /* spec 097 (2026-10-31): the Real office photo with the world's warm page colours: a 256-colour palette misses the guard by a hair
-     (mean error 1.03 > 1), so it ships as written (668 KB; the site stays under its 8 MB budget) */
-  '097-real-3-1440x900.png': 'quality guard refused: mean error 1.03 > 1',
+     (mean error 1.03 > 1), so it ships as written (547 KB, the 1280x800 take; the 1440x900 one is 668 KB and is linked from the spec only; the site stays under its 8 MB budget) */
+  '097-real-3-1280x800.png': 'quality guard refused: mean error 1.03 > 1',
 };
 for (const f of require('./shots-docs.js').linkedImages(ROOT)) {
   const b = fs.readFileSync(path.join(ROOT, 'docs', 'screenshots', f)).subarray(0, 26);

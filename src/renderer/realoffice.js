@@ -186,9 +186,11 @@
           const sh = el(art, 'vs:' + v.id, 'div', 'ro-shadow'); box(sh, v.shadow);
           const im = el(art, 'v:' + v.id, 'img', 'ro-visitor'); box(im, v.fig); im.dataset.for = v.id; im.dataset.pose = v.fig.pose; im.dataset.feet = String(Math.round(v.fig.feetY * 10) / 10); img(im, v.fig.file);
         }
-        const ch = el(chrome, 'vc:' + v.id, 'span', 'ro-chip' + (ag.needsYou ? ' wait' : '')); box(ch, v.chip); ch.dataset.y = String(v.chip.y); ch.dataset.x = String(v.chip.x);
-        if (p.go) ch.dataset.pvopen = v.id; else ch.dataset.for = v.id;
-        attr(ch, 'title', ag.title); ch.dataset.name = ag.name; text(ch, (ag.needsYou ? '✋ ' : '') + ag.name);
+        /* FR-026 "as the flat lobby": a go-place visitor (Boss, Bank, Coffee) is the flat lobby's own button (data-pvopen, and
+           data-coffeeid for the coffee menu): app.js's delegated handlers open the chat; others forward to their plate (data-for) */
+        const ch = el(chrome, 'vc:' + v.id, p.go ? 'button' : 'span', 'ro-chip' + (ag.needsYou ? ' wait' : '')); box(ch, v.chip); ch.dataset.y = String(v.chip.y); ch.dataset.x = String(v.chip.x);
+        if (p.go) { ch.type = 'button'; ch.dataset.pvopen = v.id; if (fx.id === 'coffee') ch.dataset.coffeeid = v.id; attr(ch, 'aria-label', ag.title + '. Open the chat.'); } else ch.dataset.for = v.id;
+        attr(ch, 'title', ag.title); ch.dataset.name = ag.name; chipFill(ch, ag.name, ag.needsYou, model.alertIcon);
       }
       const pl = el(chrome, 'fp:' + fx.id, p.post ? 'button' : 'div', 'ro-lplate' + (p.visitors.some((v) => v.needsYou) ? ' wait' : '')); box(pl, { x: fx.plate.x, y: fx.plate.y });
       if (p.post) { pl.type = 'button'; pl.dataset.post = '1'; } else { attr(pl, 'role', 'group'); }
@@ -203,6 +205,18 @@
     return lay;
   }
 
+  /* a chip is [alert icon] + name; the icon is the app's own Alert sign (app.js signIcon, built from trusted markup, not the model's
+     text; constitution V: no emoji), the name goes in with textContent. `label` is the name or, when crowded, the initials. */
+  function chipFill(ch, label, wait, icon) {
+    const w = wait && icon ? icon : '';
+    if (ch._ic !== w || !ch.querySelector('.ro-cn')) {
+      ch._ic = w; ch.textContent = '';
+      if (w) { const i = document.createElement('span'); i.className = 'ro-ci'; i.setAttribute('aria-hidden', 'true'); i.innerHTML = w; ch.appendChild(i); }
+      const n = document.createElement('span'); n.className = 'ro-cn'; ch.appendChild(n);
+    }
+    text(ch.querySelector('.ro-cn'), label);
+  }
+
   /* visitors' name chips stand above their heads (owner 2026-10-31 10:48: never over the feet or legs; the layout gives each its
      place); when two would touch (a crowd, long names, a neighbour place), the later one moves a little right (up to 28 px) or up a
      level while it stays inside the band, else shows initials, which move right until they touch nobody; measured once per render,
@@ -213,7 +227,7 @@
     const placed = [...chrome.querySelectorAll(':scope > .ro-lplate')].map((e) => [e.offsetLeft, e.offsetLeft + e.offsetWidth, e.offsetTop, e.offsetTop + e.offsetHeight]);
     for (const c of chips) {
       const base = parseFloat(c.dataset.y || c.style.top) || 0, x0 = parseFloat(c.dataset.x || c.style.left) || 0;
-      c.style.left = px(x0); c.style.top = px(base); if (c.dataset.full) { c.textContent = c.dataset.full; delete c.dataset.full; }
+      c.style.left = px(x0); c.style.top = px(base); if (c.dataset.full) { text(c.querySelector('.ro-cn'), c.dataset.full); delete c.dataset.full; }
       const h = c.offsetHeight || 17;
       const hits = (L0, R0, t) => placed.filter(([a, b, y0, y1]) => a < R0 + 2 && L0 < b + 2 && y0 < t + h && t < y1);
       /* the least move to the right at level top `t` that touches nobody */
@@ -221,7 +235,7 @@
       const put = (l, w, t, dx) => { placed.push([l + dx, l + dx + w, t, t + h]); c.style.top = px(t); c.style.left = px(x0 + dx); };
       let done = false;
       for (let tries = 0; tries < 2 && !done; tries++) {
-        if (tries) { c.dataset.full = c.textContent; c.textContent = (c.classList.contains('wait') ? '✋ ' : '') + initials(c.dataset.name || ''); }
+        if (tries) { const n = c.querySelector('.ro-cn'); c.dataset.full = n.textContent; text(n, initials(c.dataset.name || '')); }
         const w = c.offsetWidth, l = x0 - w / 2, limit = tries ? 40 : 28;
         for (let k = 0; k < 3 && !done; k++) {
           const t = base - 18 * k;

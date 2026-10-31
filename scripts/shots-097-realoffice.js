@@ -15,8 +15,12 @@
  *     without a status word, a desk without a person that is not away or asleep, an away desk without "at <place>" (FR-017);
  *   - a status cue is missing: a waiting agent without its "?" and amber call light, an error agent without "!" and its red call light,
  *     a light shown without a word (FR-038, FR-041, FR-046);
- *   - the lights move under reduced motion (no running animation on .ro-lights) or Serious mode (FR-047), or show under forced colours (FR-051);
- *   - the room is not dimmer with fewer active agents (FR-043);
+ *   - the lights move or the scene is not .still under reduced motion (emulated over CDP, page loaded with it) or Serious mode (the real
+ *     Settings switch) (FR-047), or the lights show under forced colours (FR-051, emulated);
+ *   - the ambient is outside 0.7..1 (FR-043; that it dims with fewer active agents is test:realoffice-layout's);
+ *   - a lobby chip at the Boss, Bank or Coffee is not a button with a name, or Enter on it does not open the chat, or a chip has an
+ *     emoji or a needs-you chip lacks the alert icon (FR-026, constitution V);
+ *   - choosing Real office from the cabins with a door you closed does not ask first, or Keep cabins does not keep them (FR-004);
  *   - a click on a person or a plate does not open that agent's chat (FR-006);
  *   - a picture that fails to load leaves a broken image instead of the initials disc (FR-065).
  *   - the world chrome (FR-113): in Real office the top bar, More menu, a toast, Settings and a dialog do not use the photo world's
@@ -45,6 +49,14 @@ module.exports = async (ctx) => {
   };
   /* the requests the page made (performance entries): what flat mode must never fetch (SC-004) */
   const realFiles = () => js(`performance.getEntriesByType('resource').map(e=>e.name).filter(n=>/realoffice|\\/shared\\/(lights|realoffice-layout)\\.js/.test(n)).length`);
+
+  /* CDP media emulation (forced colours, reduced motion/transparency), always undone */
+  const emulate = async (features, fn) => {
+    const dbg = ctx.win.webContents.debugger;
+    if (!dbg.isAttached()) dbg.attach('1.3');
+    try { await dbg.sendCommand('Emulation.setEmulatedMedia', { features }); await fn(); }
+    finally { await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }).catch(() => undefined); }
+  };
 
   // ---- FR-002, SC-004: flat is the default and loads nothing of Real office ----
   await H.load({ w: 1440, h: 900 });
@@ -77,23 +89,52 @@ module.exports = async (ctx) => {
   await H.load({ w: 1440, h: 900 });
   assert.strictEqual(await js(`!!document.querySelector('.ro')`), false, 'a broken stored value means flat');
 
+  // ---- FR-004: from the cabins, with a door you closed, Real office asks the open-office question first ----
+  /* spec 017's cabins and doors are removed in a later change (spec 017 delta, PR 937); this test goes with them */
+  await js(`localStorage.setItem('durbar.officeview','flat');localStorage.setItem('durbar.doorsigns','on')`);
+  await H.load({ w: 1440, h: 900 });
+  const DOOR = `document.querySelector('#stage .unit [data-doorset][aria-pressed="false"]')`;
+  await must(`!!${DOOR}`, 'a cabin door button');
+  const doorId = await js(`${DOOR}.dataset.doorset`);
+  await js(`${DOOR}.click()`);
+  await must(`document.querySelector('#stage [data-doorset="'+CSS.escape(${jsLiteral(doorId)})+'"]').getAttribute('aria-pressed')==='true'`, 'the door closed');
+  const chooseReal = async () => { await js(`window.DurbarScreens.openSettings()`); await must(`!!document.querySelector('[data-officelayout="real"]')`, 'the Real office button'); await js(`document.querySelector('[data-officelayout="real"]').click()`); };
+  const DLG = `[...document.querySelectorAll('#modeDlg .dbtn button')].map((x)=>x.textContent)`;
+  await chooseReal();
+  await must(`!!document.getElementById('modeDlg')`, 'the question about the closed door');
+  assert.strictEqual(await js(`document.querySelector('#modeDlg h3').textContent`), 'Switch to an open office?', 'the open-office question');
+  assert.ok((await js(DLG)).includes('Keep cabins'), 'the dialog offers Keep cabins');
+  await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>x.textContent==='Keep cabins').click()`);
+  await must(`!document.getElementById('modeDlg')`, 'the dialog closed');
+  assert.notStrictEqual(await js(`localStorage.getItem('durbar.officeview')`), 'real', 'Keep cabins keeps the cabins');
+  await chooseReal();
+  await must(`!!document.getElementById('modeDlg')`, 'the question again');
+  await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>/^(Open the doors|Discard)$/.test(x.textContent)).click()`);
+  await must(`localStorage.getItem('durbar.officeview')==='real'`, 'Real office chosen after the doors opened');
+  await js(`localStorage.setItem('durbar.officeview','flat');localStorage.setItem('durbar.doorsigns','off')`);
+
   for (const [w, h] of SIZES) {
     await loadReal(w, h);
     // ---- FR-090, FR-016, FR-017, FR-036: plates, people, away desks ----
+    /* a session on a simulator visit (wall clock) stands in the lobby, not at its desk: wait until every non-asleep main agent is drawn as a person, a visitor or an initials disc, then read once */
+    const DRAWN = `(()=>{const has=(sel,id)=>!!document.querySelector('#stage '+sel+'[data-for="'+CSS.escape(id)+'"]');const bare=[...document.querySelectorAll('#stage .ro-plate')].filter(p=>p.dataset.state!=='asleep'&&!has('.ro-person',p.dataset.id)&&!has('.ro-visitor',p.dataset.id)&&!has('.ro-initials',p.dataset.id)).map(p=>p.dataset.id);return bare.length===0&&document.querySelectorAll('#stage .ro-person, #stage .ro-visitor').length>=8})()`;
+    await must(DRAWN, 'every awake desk drawn as a person at the desk or a visitor in the lobby');
     const d = await js(`(()=>{const ids=window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id);
       const plates=[...document.querySelectorAll('#stage .ro-plate')];
       return {ids:ids.length,plates:plates.length,missing:ids.filter(id=>!plates.some(p=>p.dataset.id===id)),
         noWord:plates.filter(p=>!/(Working|Thinking|Waiting|Error|Done|Idle|Paused|Limit|Retrying|Compacting|Failing|Ended|Ready|break|asleep|Stopped)/i.test(p.getAttribute('aria-label')||'')).map(p=>p.getAttribute('aria-label')),
         notButton:plates.filter(p=>p.tagName!=='BUTTON').length,
         away:document.querySelectorAll('#stage .ro-away').length,visitors:document.querySelectorAll('#stage .ro-visitor').length,
-        persons:document.querySelectorAll('#stage .ro-person').length,fixtures:document.querySelectorAll('#stage .ro-fx').length,
+        persons:document.querySelectorAll('#stage .ro-person').length,
+        bare:plates.filter(p=>p.dataset.state!=='asleep'&&!document.querySelector('#stage .ro-person[data-for="'+CSS.escape(p.dataset.id)+'"], #stage .ro-visitor[data-for="'+CSS.escape(p.dataset.id)+'"], #stage .ro-initials[data-for="'+CSS.escape(p.dataset.id)+'"]')).map(p=>p.dataset.id),fixtures:document.querySelectorAll('#stage .ro-fx').length,
         face:+document.querySelector('#stage .ro').dataset.face,states:[...new Set(plates.map(p=>p.dataset.state))].sort().join(',')}})()`);
     console.log('[097]', w, h, JSON.stringify(d));
     assert.deepStrictEqual(d.missing, [], 'every main agent has its plate');
     assert.strictEqual(d.plates, d.ids, 'one plate per main agent');
     assert.strictEqual(d.notButton, 0, 'plates are buttons');
     assert.deepStrictEqual(d.noWord, [], 'every plate names its status in words');
-    assert.ok(d.persons >= 8, 'people sit at their desks: ' + d.persons);
+    assert.deepStrictEqual(d.bare, [], 'no awake desk is empty without a visit');
+    assert.ok(d.persons + d.visitors >= 8, `people sit at their desks or stand in the lobby on a visit: ${d.persons} + ${d.visitors}`);
     assert.ok(d.fixtures >= 8, 'the lobby fixtures are drawn: ' + d.fixtures);
     const aw = await js(`[...document.querySelectorAll('#stage .ro-away')].every(e=>/^at .+ ↑$/.test(e.textContent))`);
     assert.ok(aw, 'away desks say where');
@@ -125,6 +166,23 @@ module.exports = async (ctx) => {
       assert.ok(f.wall >= 6, `${f.who} stands in front of the fixtures, not on the wall's base line (${f.wall} px below it)`);
       assert.ok(f.sh, `${f.who} has a contact shadow`);
       assert.strictEqual(f.legs, 0, `${f.who}: no name chip covers the feet or legs`);
+    }
+    // ---- FR-026 (as the flat lobby), constitution V: a go-place chip is a button (the flat lobby's data-pvopen) with a name; no emoji; the needs-you mark is the app's alert icon ----
+    await must(`!!document.querySelector('#stage .ro-chip[data-pvopen]')`, 'a visitor chip at the Boss, Bank or Coffee', 40000);
+    const chips = await js(`[...document.querySelectorAll('#stage .ro-chip')].map(c=>({go:!!c.dataset.pvopen,tag:c.tagName,name:c.getAttribute('aria-label')||'',txt:c.textContent,wait:c.classList.contains('wait'),icon:!!c.querySelector('.ro-ci svg'),tab:c.tabIndex}))`);
+    for (const c of chips) {
+      assert.ok(!/\p{Extended_Pictographic}/u.test(c.txt), `no emoji in the chip "${c.txt}"`);
+      if (c.go) { assert.strictEqual(c.tag, 'BUTTON', 'a go-place chip is a button'); assert.match(c.name, /Open the chat\.$/, 'the chip has an accessible name'); assert.strictEqual(c.tab, 0, 'and is in the tab order'); }
+      if (c.wait) assert.ok(c.icon, 'a needs-you chip carries the alert icon');
+    }
+    if (w === 1440) {
+      const cid = await js(`document.querySelector('#stage .ro-chip[data-pvopen]').dataset.pvopen`);
+      await js(`document.querySelector('#stage .ro-chip[data-pvopen="'+CSS.escape(${jsLiteral(cid)})+'"]').focus()`);
+      await H.key('Return');
+      await must(`document.body.classList.contains('panel-open')`, 'the chat after Enter on a lobby chip');
+      await js(`document.getElementById('backBtn').click()`);
+      await must(`!document.body.classList.contains('panel-open')&&!!document.querySelector('#stage .ro .ro-plate')`, 'the office again');
+      await must(PICS, 'the pictures');
     }
     await H.shot(path.join(OUT, `097-real-15-${w}x${h}.png`), { prep: 'calm' });
     // ---- owner 2026-10-31 ("make a real running pose"): someone at the Terminal jogs in place (stride A in P1), no treadmill; a
@@ -181,13 +239,31 @@ module.exports = async (ctx) => {
   const shared = Object.keys(b0).filter((id) => id in a0);
   assert.ok(shared.length >= 5, `most sessions are drawn in both reads (${shared.length} of ${Object.keys(b0).length})`);
   for (const id of shared) assert.strictEqual(a0[id], b0[id], `every session keeps its person across a filter (${id})`);
-  // ---- FR-047: Serious mode: no light animation ----
-  await js(`document.documentElement.setAttribute('data-serious','')`);
-  const anim = await js(`[...document.querySelectorAll('#stage .ro-lights *')].filter(e=>getComputedStyle(e).animationName!=='none').length`);
-  assert.strictEqual(anim, 0, 'Serious mode: no light moves');
-  await js(`document.documentElement.removeAttribute('data-serious')`);
-  const reduced = await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`);
-  if (reduced) assert.strictEqual(await js(`[...document.querySelectorAll('#stage .ro-lights *')].filter(e=>getComputedStyle(e).animationName!=='none').length`), 0, 'reduced motion: no light moves');
+  // ---- FR-047: Serious mode (the real Settings switch) and reduced motion (emulated, page loaded with it): the scene is still, no light moves ----
+  const MOVING = `[...document.querySelectorAll('#stage .ro-lights *')].filter(e=>getComputedStyle(e).animationName!=='none').length`;
+  const STILL = `document.querySelector('#stage .ro').classList.contains('still')`;
+  await must(`document.querySelectorAll('#stage .ro-call.pulse').length>0`, 'a pulsing call light to hold still');
+  assert.strictEqual(await js(STILL), false, 'normal motion: the scene is not still');
+  await js(`document.getElementById('settingsBtn').click()`);
+  await must(`!!document.getElementById('seriousSw')`, 'the Serious mode switch');
+  await js(`document.getElementById('seriousSw').click()`);
+  await must(`document.getElementById('seriousSw').getAttribute('aria-checked')==='true'`, 'Serious mode on');
+  await js(`document.getElementById('scrClose').click()`);
+  await must(STILL, 'the scene still in Serious mode');
+  assert.strictEqual(await js(MOVING), 0, 'Serious mode: no light moves');
+  await js(`document.getElementById('settingsBtn').click()`);
+  await must(`!!document.getElementById('seriousSw')`, 'the Serious mode switch');
+  await js(`document.getElementById('seriousSw').click()`);
+  await must(`document.getElementById('seriousSw').getAttribute('aria-checked')==='false'`, 'Serious mode off');
+  await js(`document.getElementById('scrClose').click()`);
+  await must(`!(${STILL})`, 'the scene moves again with Serious mode off');
+  await emulate([{ name: 'prefers-reduced-motion', value: 'reduce' }], async () => {
+    await loadReal(1440, 900);
+    assert.ok(await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`), 'reduced motion is emulated');
+    await must(STILL, 'the scene still under reduced motion');
+    assert.strictEqual(await js(MOVING), 0, 'reduced motion: no light moves');
+  });
+  await loadReal(1440, 900);
 
   // ---- FR-043: fewer active agents, a dimmer room (8 agents: bigger desks, every light visible in the picture) ----
   const amb15 = Number(await js(`document.querySelector('#stage .ro').dataset.ambient`));
@@ -280,11 +356,11 @@ module.exports = async (ctx) => {
         const on = await js(`matchMedia('(${name}: ${value})').matches`);
         await js(`document.getElementById('topMoreBtn').click()`);
         await must(`!document.getElementById('topMoreMenu').hidden`, 'the More menu');
-        const m = await js(`(()=>{const m=getComputedStyle(document.getElementById('topMoreMenu')),b=getComputedStyle(document.querySelector('.topbar'));return {bf:m.backdropFilter,bg:m.backgroundColor,img:b.backgroundImage,sh:b.boxShadow};})()`);
+        const m = await js(`(()=>{const m=getComputedStyle(document.getElementById('topMoreMenu')),b=getComputedStyle(document.querySelector('.topbar'));return {bf:m.backdropFilter,bg:m.backgroundColor,img:b.backgroundImage,sh:b.boxShadow,lights:(document.querySelector('#stage .ro-lights')?getComputedStyle(document.querySelector('#stage .ro-lights')).display:'absent')};})()`);
         console.log('[097] world under', name, on, JSON.stringify(m));
         assert.ok(on, `${name} is emulated`);
         assert.strictEqual(m.bf, 'none', `${name}: no glass blur`);
-        if (name === 'forced-colors') assert.ok(m.img === 'none' && m.sh === 'none', 'forced colours: no gradient or shadow on the bar');
+        if (name === 'forced-colors') { assert.ok(m.img === 'none' && m.sh === 'none', 'forced colours: no gradient or shadow on the bar'); assert.strictEqual(m.lights, 'none', 'forced colours: no lights (FR-051): ' + m.lights); }
         else assert.strictEqual(m.bg, RGB(W['--surface']), 'reduced transparency: the menu is opaque');
         await js(`document.getElementById('topMoreBtn').click()`);
         await must(`document.getElementById('topMoreMenu').hidden`, 'the More menu closed');

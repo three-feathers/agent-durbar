@@ -325,6 +325,12 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.feet as Record<s
   const s20 = Array.from({ length: 20 }, (_, i) => ({ id: 't' + i, folder: 'f' + (i % 2) }));
   const m3 = assignPeople({}, s20, ids, r);
   for (const f of ['f0', 'f1']) { const v = s20.filter((x) => x.folder === f).map((x) => m3[x.id]); assert.strictEqual(new Set(v).size, v.length, `no twins in folder ${f} when avoidable`); }
+  /* the folder comes first, then the overall use: A is used twice elsewhere, B once in this folder; the new session takes A (0 in its folder) although B is used less overall */
+  {
+    const two = ['A', 'B'], ss = [{ id: 's1', folder: 'f0' }, { id: 's2', folder: 'f1' }, { id: 's3', folder: 'f1' }, { id: 'n', folder: 'f0' }];
+    const m = assignPeople({ s1: 'B', s2: 'A', s3: 'A' }, ss, two, r);
+    assert.strictEqual(m.n, 'A', 'least-used person in its folder first, then overall');
+  }
   assert.deepStrictEqual(assignPeople({ x: 'p99', y: 'p01' } as Record<string, string>, [{ id: 'x', folder: 'a' }, { id: 'y', folder: 'a' }], ids, r).y, 'p01', 'an unknown stored person is replaced, a known one kept');
 }
 
