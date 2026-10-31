@@ -40,10 +40,10 @@
 
 ## Phase 2: Screens and motion (PR P2) - US3, US4
 
-- [ ] T030 [P] [US3] Screen lines from the live readout buffer through `DurbarSafeText` (after main's `maskMcpEvent`), ANSI strip, 24 lines × 200 chars, `textContent` only; bars for small screens; repaint ≤ every 2 s; status screens. Test: `test:realoffice-layout` (or `test-safetext`) hostile strings: token, MCP secret value, `~/` path, `<img onerror>`, Markdown link, ANSI, 1 MB → masked, inert, capped [FR-030..FR-033, FR-035, SC-005]
-- [ ] T031 [P] [US3] `zoomRect(target, avoid, viewport)` pure placement + zoom panel (hover and focus, Esc, named region). Test: unit: never covers the avoid list, stays in the viewport; `sim:` hover and Tab at 15 agents [FR-034]
-- [ ] T032 [US3] Big screens for n ≤ 4 with real text. Test: `sim:` 3 agents at 1280x800, ≥ 8 lines at ≥ 11 px [FR-020, SC-003]
-- [ ] T033 [US4] Motion: 2-frame swaps per agent period, breathe, visitor motions, pose cross-fade, desk ↔ lobby fade, pause when hidden; off under reduced motion, Serious mode, `characterMotion` off. Test: `sim:` frame captures differ while working and are equal under reduced motion [FR-070..FR-074]
+- [x] T030 [P] [US3] Screen lines from the live readout buffer through `DurbarSafeText` (after main's `maskMcpEvent`), ANSI strip, 24 lines × 200 chars, `textContent` only; bars for small screens; repaint ≤ every 2 s; status screens. Test: `test:realoffice-layout` (or `test-safetext`) hostile strings: token, MCP secret value, `~/` path, `<img onerror>`, Markdown link, ANSI, 1 MB → masked, inert, capped [FR-030..FR-033, FR-035, SC-005] Evidence: `test:liveact`, `test:realoffice-layout`, `sim:` `shots-097-screens`.
+- [x] T031 [P] [US3] `zoomRect(target, avoid, viewport)` pure placement + zoom panel (hover and focus, Esc, named region). Test: unit: never covers the avoid list, stays in the viewport; `sim:` hover and Tab at 15 agents [FR-034] Evidence: `test:realoffice-layout` (270 placements), `sim:` `shots-097-screens` (every awake screen, both sizes).
+- [x] T032 [US3] Big screens for n ≤ 4 with real text. Test: `sim:` 3 agents at 1280x800, ≥ 8 lines at ≥ 11 px [FR-020, SC-003] Evidence: `sim:` `shots-097-screens`: 11 to 14 drawn lines at 13 px.
+- [x] T033 [US4] Motion: 2-frame swaps per agent period, breathe, visitor motions, pose cross-fade, desk ↔ lobby fade, pause when hidden; off under reduced motion, Serious mode, `characterMotion` off. Test: `sim:` frame captures differ while working and are equal under reduced motion [FR-070..FR-074] Evidence: `sim:` `check-097-motion`; `characterMotion` read only, the setting does not exist yet (`[KNOWN GAP]`).
 - [ ] T034 Screenshots of the hover zoom; README limits (no walking, FR-075). Test: `npm run shots:docs`
 
 ## Phase 3: My characters and manual lighting (PR P3) - US5

@@ -522,6 +522,20 @@ async function driver(ctx) {
         minRatio = Math.min(minRatio, k);
         if (k < 4.5) P.push(`contrast ${k.toFixed(2)} on ${e.className || e.tagName} "${e.textContent.slice(0, 20)}"`);
       });
+      /* spec 097 FR-032, FR-044: monitor text: on its own glass, inside it, readable against it; an awake desk's screen is never empty */
+      let screens = 0;
+      document.querySelectorAll('#stage .ro-stext').forEach((e) => {
+        const b = e.getBoundingClientRect(), g = document.elementsFromPoint(b.left + b.width / 2, b.top + b.height / 2).find((x) => x.classList.contains('ro-glass'));
+        if (e.classList.contains('off')) { if (e.textContent) P.push('an asleep screen shows text'); return; }
+        screens++;
+        if (!e.textContent.trim()) P.push(`an empty screen: ${e.className}`);
+        if (!g) { P.push('screen text without its glass'); return; }
+        const gb = g.getBoundingClientRect();
+        if (b.left < gb.left - 1 || b.right > gb.right + 1 || b.top < gb.top - 1 || b.bottom > gb.bottom + 1) P.push('screen text outside its glass');
+        const bg = lum(rgb(getComputedStyle(g).backgroundColor));
+        e.querySelectorAll('.ro-sl').forEach((r) => { const a = lum(rgb(getComputedStyle(r).color)), k = (Math.max(a, bg) + 0.05) / (Math.min(a, bg) + 0.05); minRatio = Math.min(minRatio, k); if (k < 4.5) P.push(`contrast ${k.toFixed(2)} on screen text "${r.textContent.slice(0, 20)}"`); });
+      });
+      if (!screens) P.push('no screen text');
       const se = document.scrollingElement;
       if (se.scrollWidth > innerWidth + 1 || se.scrollHeight > innerHeight + 1) P.push('the page overflows');
       if (amb != null) ro.style.removeProperty('--ro-amb');

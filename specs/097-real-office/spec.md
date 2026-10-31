@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Real office mode (owner request, Vikram 2026-10-30/31): a realistic front-facing open-plan office as a second office mode beside flat (default), live screens, animated people, status lights; folds in #692
-note: P1 (scene, lights) built; P2 (screens, motion), P3 (My characters, manual lighting) not; crews' worlds (FR-100/FR-114) not
+note: P1 (scene, lights) and P2 (screens, hover zoom, motion) built; P3 (My characters, manual lighting) not; crews' worlds (FR-100/FR-114) not
 status: building
 -->
 
@@ -11,7 +11,7 @@ status: building
 
 **Created**: 2026-10-31
 
-**Status**: In progress (2026-10-31). Phase P1 (the scene and the lights) is built (see *Changes*); P2 and P3 are not. Q1-Q6 are answered (Q6: crews appear in Real office in their own art and their own world, Vikram and Paco 2026-10-31; FR-100, FR-114).
+**Status**: In progress (2026-10-31). Phases P1 (the scene and the lights) and P2 (live screens, the hover zoom, motion) are built (see *Changes*); P3 is not. Q1-Q6 are answered (Q6: crews appear in Real office in their own art and their own world, Vikram and Paco 2026-10-31; FR-100, FR-114).
 
 **Input**: Owner requests (Vikram, Telegram DMs, 2026-10-30 and 2026-10-31):
 - "lets make it realistic … it looks like a dashboard and not real office"; "quality is the key as it is visual".
@@ -466,3 +466,26 @@ Numbers checked 2026-10-31 against `main`, the P1 branch and open PRs: 097 uses 
 - **FR-047**: Serious mode (the real Settings switch) and reduced motion (emulated over CDP, page loaded with it) make the scene `.still` with no moving light; **FR-051**: no lights under forced colours (emulated); **FR-037**: the folder-first pick is pinned by `test:realoffice-layout`.
 - The driver waits with `until()` until every awake desk is a person, a visitor or an initials disc, then reads once (simulator visits run on the wall clock). `check-parallel.js` reads the Real office summary line.
 - Site: the docs page links the 1280x800 take of the 3-agent picture (about 120 KB smaller); see FR-092.
+
+### 2026-10-31: phase P2, live screens, the hover zoom and motion (as built; branch `097-p2-screens`, tasks T030..T034)
+
+**Sources.** Tasks T030..T034; the owner's rule "screens look active, not placeholders" and the performance rules FR-180, FR-181, FR-182 of the budgets delta (`origin/097-performance-budgets`, spec only, not yet on this branch). Lamps, dialogs and half-size pictures (T149..T153) are another job: this delta does not touch `lights.ts`, the lamp and glow CSS or the world's blur.
+
+**Choices where the spec left room** (each the safer reading; **awaiting owner review**):
+1. **FR-032 "under 150x60"** is read as narrower *or* lower, so the 15-agent screens (109..127 x 68..79 px) are small: bars for older lines and the newest line as text. *Awaiting owner review:* the newest line wraps over as many rows as the glass holds, at 10.5 px, instead of one cut row, because one row of about 13 characters read as a placeholder. Whole rows only, never half a line at the top.
+2. **FR-070's running stride** is 1 to 1.3 s a pair, not 0.55 s: FR-181 allows at most 2 changes a second a desk, and a 0.55 s pair is 3.6. *Awaiting owner review.*
+3. **FR-070's breath and the visitors' sip and knock** are small stepped transforms (4 changes a breath; a sip and a knock are a few steps of under 1 px), kept although they run at idle: FR-070 asks for them and they cost little (below). If the real-GPU run (T162) says otherwise, resting people stop first. *Awaiting owner review.*
+4. **FR-034's close on leaving**: the panel takes no pointer events and closes when the pointer leaves the screen, as FR-034 says; it cannot be hovered itself. It opens after 120 ms, so crossing the room opens nothing. An Esc holds it shut until the pointer has left that screen. *Awaiting owner review.*
+5. **A held-back word (FR-030, safer than the desk readout):** while a text streams, the word still arriving is not shown, since half a token matches no mask; a text cut at 1200 characters loses its first word for the same reason. The desk readout is unchanged.
+6. **The simulator feeds more in Real office** (FR-093): one live agent adds a line every 1.3 s, in turn, only when Real office is the view, so a demo looks like agents at work (in a real session they write all the time); flat's simulated run is unchanged.
+
+**As built:**
+- **FR-030, FR-031, SC-005**: `liveact.js` keeps a monitor's lines (`screen(id)`, 24 lines of 200 characters) beside the readout, from the same events and the same masks: control codes stripped first (an escape inside a token must not hide it from the mask), then `DurbarSafeText.maskRaw`, `maskHomePaths`, then plain lines, `textContent` only. A finished turn keeps its lines. With no working mask: no lines (fail closed), and the screen shows the status word. Live activity off: no live lines, as in flat.
+- **FR-032, FR-035**: `screenFit` and `screenFor` (pure, `realoffice-layout.ts`): line colours by kind (`cmd`, `ok`, `err`, `ask`, `done`, `think`, `reply`), an amber frame, a red tint, dark glass and no text when asleep. With no lines of its own a screen shows the last reply, then the task, then the status word: never an empty glass.
+- **FR-033**: a monitor repaints on its own, only when its lines changed, at most once per 2 s (`plan`; the driver read gaps of 2.0 s and more under a line every 250 ms). No timer runs in an idle office. The slide is three transform steps. The caret shares its desk's clock.
+- **FR-044**: the text sits in the chrome layer above the lights (`.ro-stext`), the glass stays in the art.
+- **FR-034**: `zoomRect` (pure) and the panel; 270 placements in `test:realoffice-layout` (every plate needing the user among them), and every awake screen at both sizes by real pointer moves in `shots-097-screens`. No blur (FR-182).
+- **FR-020, SC-003, T032**: big screens show real lines; a neck no longer covers the last line.
+- **FR-070..FR-074**: the two frames are stacked pictures with inverse stepped opacity, one clock per desk, one composited change at a time, shown only once decoded. `.still`, `.hold` (simulator drivers, `romotion=1` opts back in; the 096 setting `characterMotion` when it exists), Serious mode and reduced motion leave the first frame. `.paused` for a hidden window or a covered office; `.ro-off` for a desk scrolled away or wholly under the zoom.
+- **P1 bug found and fixed**: a person coming back from the lobby was drawn over the desk (DOM order): z-indexes in `.ro-art`.
+- **Limits**: `[KNOWN GAP]` FR-071's `characterMotion` does not exist yet, so its branch is read, not run. `[KNOWN GAP]` p03 and p15 lift the same leg in both running frames (recorded with T064). `[KNOWN GAP]` Windows and Linux: renderer code only, CI not read; a real session not run.
