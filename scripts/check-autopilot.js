@@ -198,6 +198,7 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(await small('#panel .note.ap-line, #panel .note.ap-question, #modeChip'), [], `${w}: chat lines`);
     const stacked = await js(`(()=>{const n=[...document.querySelectorAll('#panel .note.ap-line, #panel .note.ap-question')].map(x=>x.getBoundingClientRect());return n.every((r,i)=>i===0||r.top>=n[i-1].bottom-1);})()`);
     assert.ok(stacked, `${w}: the lines stack, one under the other`);
+    assert.ok(await js(`document.querySelector('#panel .note.ap-question').getBoundingClientRect().width>300`), `${w}: the question card is not squeezed`);
     await H.shot(path.join(OUT, `099-chip-run-${w}.png`), { prep: 'calm' });
     // Stop: at once, back to Allow all, and the card says so
     await H.click('#stopBtn');

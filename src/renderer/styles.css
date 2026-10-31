@@ -2205,7 +2205,6 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 .note.ap-end .ap-words{font-weight:600;min-width:0;overflow-wrap:anywhere}
 .note.ap-end .note-actions{flex-basis:100%}
 .note.ap-line,.note.ap-question{flex:0 0 100%;box-sizing:border-box;max-width:100%}
-.note.ap-question{width:fit-content;flex-basis:auto;margin-right:100%}
 .note.ap-question b{display:block;font-size:12px}
 .note.ap-question .q-text{margin:4px 0 0;overflow-wrap:anywhere}
 .ap-form{display:flex;flex-direction:column;gap:6px;margin:8px 0}
