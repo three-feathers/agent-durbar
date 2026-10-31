@@ -139,7 +139,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
 
 ## Phase 4: User Story 5, the project file (P2)
 
-- [ ] T040 [US5] [P] Format `src/shared/notesmd.ts`. [FR-052, FR-054, SC-004]
+- [x] T040 [US5] [P] Format `src/shared/notesmd.ts`. [FR-052, FR-054, SC-004] Built 2026-10-31 (spec *Changes*, 2026-10-31): `test:` `scripts/test-notesmd.ts` (`npm run test:notesmd`, 1,000 seeded documents in LF, CRLF, lone CR and with a BOM; hostile cases; every cap).
   - AC1: `parseNotesMd(writeNotesMd(x))` equals `x` (ids, titles, texts, done, times) for 1,000 generated documents with `##` lines, marker-like lines, code fences, CRLF input, Unicode and empty texts.
   - AC2: notes are written in `createdAt` then `id` order; adding a note only appends lines (a diff test).
   - AC3: conflict markers at a line start outside fenced code make `parse` return `conflict`; inside a fence they do not.

@@ -70,7 +70,7 @@ header   := "# Notes" LF LF "<!-- Kept by Agent Durbar (spec 083). One section p
 section  := LF marker LF "## " title LF LF body LF
 marker   := "<!-- durbar-note id=" ID " created=" ISO " updated=" ISO [" done"] " -->"   (written)
           | "<!-- durbar-note" [any attributes] " -->"                                  (read: no or unknown id = a new note)
-body     := lines; a line starting with "<!-- durbar-note" is written as "\<!-- durbar-note…"; trailing blank lines trimmed
+body     := lines; a line starting (after any "\") with "<!-- durbar-note", or with a conflict marker outside a closed fence, gets one more leading "\"; trailing blank lines trimmed; an empty text has no blank line and no body (spec Changes 2026-10-31)
 ```
 
 Read: CRLF accepted and turned into LF; a section ends at the next `marker` line at column 0 (code fences do not hide a marker; the write-side escape is what keeps a note's own marker-like line inside it); a `## ` line right after a marker is the title, else the title is guessed (FR-004). Text before the first marker, other than the header, is not imported: a `## ` heading there starts a new note (FR-054); any other stray text is dropped at the next write, and the view says once *Text outside notes in notes.md is not kept* (tested).
@@ -81,7 +81,7 @@ Read: CRLF accepted and turned into LF; a section ends at the next `marker` line
 
 - `src/shared/notes.ts` (pure): types, `NOTES_LIMITS` (character caps, and `storeBytes` / `mdBytes` computed from them, FR-006), `stripControls`, `fitsCap(bytes, cap)`, `parseNotesDoc`, `cleanTitle`, `guessTitle`, `newNoteId(rand)`, `mergeDocs(a, b)`, `applyChange(doc, change, now)` (rev check), `orderForFolder`, `rawDigestInput` (the normalisation both sides use).
 - `src/shared/redact.ts`: `maskNoteText(text, env?)` (R4).
-- `src/shared/notesmd.ts` (pure): `writeNotesMd(notes)`, `parseNotesMd(text)` → `{ ok, sections, conflict?, strayText? }`.
+- `src/shared/notesmd.ts` (pure): `writeNotesMd(notes)`, `parseNotesMd(text)` → `{ ok: true, sections, strayText, duplicates, overflow }` or `{ ok: false, reason: 'conflict' | 'too-big', error }`, `notesMdText(text)` (the text form both sides compare).
 - `src/main/notesstore.ts`: `NotesStore(dir, { fs?, now?, rand?, platform? })`: `list(folderKey)`, `save`, `update`, `delete`, `deleteAll`, `exportText`; per-folder queue; stat-and-merge; FR-007 read-only state; `notes:changed` callback.
 - `src/main/notesfile.ts`: the project mirror, used only while `notesFile` is on: `count(folderPath)` (the turn-on dialog only), `syncOut(folderPath, notes, mirror)` (checks, `O_EXCL`+`O_NOFOLLOW` temp, then right before the rename: real path and `lstat` of `.durbar`, `lstat` of `notes.md`, hash equal to `mirror.sha256`; a different hash aborts and imports first; returns the new `mirror` for the store to persist), `readBack(folderPath, mirror)` (≤ `mdBytes`, imports as `from: file` / `fileEdited`), `remove(folderPath, mirror)`, `addExclude(folderPath)` (walk up to `.git`, `gitdir`/`commondir`, append one anchored line with `O_APPEND`/`O_NOFOLLOW`; no git process, no `.gitignore`); link, real-path, FIFO, size and Windows-retry guards; injected `fs`.
 - `src/main/ipc/notes.ts`: `register({ agents, store, file, folders, resumeIdFor, adapterOf, showSaveDialog })`; `fromApp`; `import { register as registerNotes } from './ipc/notes'` (the `test:ipcchannels` rule).
