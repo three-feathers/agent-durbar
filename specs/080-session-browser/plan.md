@@ -140,6 +140,8 @@ Owner decisions (Vikram, 2026-10-31 05:17 UTC): the toggle *Open chat links in a
 
 **Data flow.** Window → `browser:newTab/selectTab/closeTab/openLink(how)` → main validates the session id (`known`) and the tab id (shape and owner) → `tabs.ts` decides → `views.ts` makes or closes a view → `controller.ts` emits `browser:tabs` and `browser:state` (active tab). Pages' tab requests come from `setWindowOpenHandler` in main only.
 
+**Built** (2026-10-31, simulator): as above, plus `CLOSE_ASK_MS` for a page that never answers its `beforeunload`, `browser:key` and `browser:linksNewTab` pushes, the shortcut sheet's *In the Browser tab* rows, and `scripts/check-browser-tabs.js` (it serves the test pages on loopback http, because Chromium sends no referrer from the `durbar-sim:` scheme). Spec FR-120..FR-133 record the details.
+
 **Risks.** Memory with many tabs: dropped background tabs close their `webContents` (no process), and the 4-page soft cap is unchanged; T013 AC5 measures it. Key handling on macOS (T025 AC3). `controller.ts` grows: the per-tab split is done by keying, not by a second controller. Conflicts with Phase 2 work in `controller.ts` and `views.ts`: Phase 1b lands first or rebases often.
 
 ### Phases
@@ -188,7 +190,7 @@ src/main/ipc/browser.ts
 src/renderer/browserpane.js   (+ app.js, styles.css, index.html, sim.ts)
 src/adapters/permissions.ts   (classification only)
 scripts/test-browserurl.ts, test-browsertabs.ts (Phase 1b), test-netclass.ts, test-browserpolicy.ts, test-driverstate.ts, test-browsersnapshot.ts, test-toolserver.ts, test-browserhost.ts
-scripts/shots-080-browser.js  (driver checks and screenshots)
+scripts/shots-080-browser.js  (driver checks and screenshots; built as check-browser-tab, -links, -cap, -scenarios, -dialogs, -tabs)
 ```
 
 **Structure Decision**: the existing single-project layout. The new main code goes under `src/main/browser/`, like `src/main/mcp/`.

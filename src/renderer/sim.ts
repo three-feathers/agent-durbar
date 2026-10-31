@@ -1418,7 +1418,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (!/\bquick\b/i.test(text)) for (let i = 0; i < 4; i++) { think(s, 1); await wait(650); } // "quick": a turn where the model sends no reasoning
       if (/\blinks?\b/i.test(text)) {
         // spec 080 T018 AC3: the agent prints links to the simulator's test pages (and a mail link and a refused one), so a driver clicks them
-        const LINKS = 'Here are the pages:\n\n- [the form page](durbar-sim://pages/form)\n- [the links page](durbar-sim://pages/links)\n- [the slow page](durbar-sim://pages/slow?ms=1500)\n- [mail me](mailto:sim@example.invalid)\n- [a web page](https://example.invalid/docs)\n- [a local page](http://127.0.0.1:9/page)\n- [not a web link](ms-msdt:/id)';
+        const LINKS = 'Here are the pages:\n\n- [the form page](durbar-sim://pages/form)\n- [the links page](durbar-sim://pages/links)\n- [the slow page](durbar-sim://pages/slow?ms=1500)\n- [mail me](mailto:sim@example.invalid)\n- [a web page](https://example.invalid/docs)\n- [a local page](http://127.0.0.1:9/page)\n- [not a web link](ms-msdt:/id)\n- [the tabs page](durbar-sim://pages/tabs)\n- [the keys page](durbar-sim://pages/keys)';
         emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: LINKS, final: true, text: LINKS });
         emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'idle' });
         s.state = 'done';

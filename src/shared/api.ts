@@ -1108,8 +1108,17 @@ export interface DurbarApi {
   browserMute?(id: string, muted: boolean): Promise<BrowserResult>;
   /** Open the view's current http(s) address in the system browser (the existing external-link path). */
   browserOpenSystem?(id: string): Promise<{ ok: boolean }>;
-  /** Spec 080 FR-030: a link from the chat (agent text): main classifies it. A web link opens in the session's browser; `link` says why a refused one is not opened (`mailto` waits for the user's click through `browserOpenMail`). */
-  browserOpenLink?(id: string, url: string): Promise<BrowserResult>;
+  /** Spec 080 FR-030: a link from the chat (agent text): main classifies it. A web link opens in the session's browser; `link` says why a refused one is not opened (`mailto` waits for the user's click through `browserOpenMail`). `how: 'newTab'` (FR-124) is the link menu's *Open in a new tab*; the toggle itself is read in main. */
+  browserOpenLink?(id: string, url: string, how?: 'default' | 'newTab'): Promise<BrowserResult>;
+  /** Spec 080 FR-127: page tabs. Main mints every tab id; the window only names tabs main told it about. */
+  browserNewTab?(id: string, address?: string): Promise<BrowserResult>;
+  browserSelectTab?(id: string, tabId: string): Promise<BrowserResult>;
+  browserCloseTab?(id: string, tabId: string): Promise<BrowserResult>;
+  /** FR-123: the app-wide *Open chat links in a new tab* toggle. */
+  browserSetLinksNewTab?(on: boolean): Promise<{ ok: boolean; on?: boolean }>;
+  onBrowserTabs?(cb: (t: BrowserTabs) => void): () => void;
+  onBrowserKey?(cb: (k: BrowserKeyEvent) => void): () => void;
+  onBrowserLinksNewTab?(cb: (on: boolean) => void): () => void;
   /** Spec 080 FR-024: the user pressed *Open* on a mail link; main checks it is a `mailto:` link before it hands it to the system. */
   browserOpenMail?(url: string): Promise<{ ok: boolean }>;
   onBrowserState?(cb: (s: BrowserState) => void): () => void;
@@ -1164,10 +1173,31 @@ export interface BrowserState {
   memory?: 'reloaded' | 'many';
   /** A Chromium network error name such as ERR_CONNECTION_REFUSED after the last load failed. */
   error?: string;
+  /** Spec 080 FR-127: the page tab this state is about (the session's active tab, chosen by main). Absent before the first open. */
+  tabId?: string;
+  /** FR-126: the last tab request hit the 10-tab limit; the bar says so until a tab closes or another tab action. */
+  tabLimit?: true;
 }
-export type BrowserResult = { ok: true; state: BrowserState } | { ok: false; reason: string; state?: BrowserState; needsConsent?: true; link?: 'mailto' | 'refused' };
-/** A page dialog opened (FR-025d): the window raises a toast naming the session and, for a hidden view, brings its chat forward. `text` is masked page text. */
-export interface BrowserDialogEvent { id: string; type: string; text: string; shown: boolean }
+/** Spec 080 FR-127: one page tab as the window may see it. Explicit fields, primitives only; titles cleaned, URLs through `displayUrl`. */
+export interface BrowserTab {
+  tabId: string;
+  kind: 'user' | 'agent';
+  title: string;
+  url: string;
+  loading: boolean;
+  dialogOpen: boolean;
+  /** `dropped`: the cap closed this background tab's page (its address is kept); `reloaded` / `many` as `BrowserState.memory`. */
+  memory?: 'dropped' | 'reloaded' | 'many';
+}
+/** Spec 080 FR-127: the `browser:tabs` push. */
+export interface BrowserTabs { id: string; active: string; tabs: BrowserTab[] }
+export type BrowserResult =
+  | { ok: true; state: BrowserState; tabs?: BrowserTabs; linksNewTab?: boolean }
+  | { ok: false; reason: string; state?: BrowserState; needsConsent?: true; link?: 'mailto' | 'refused'; tabLimit?: true };
+/** A page dialog opened (FR-025d): the window raises a toast naming the session and, for a hidden view, brings its chat forward. `text` is masked page text. `tabId`: the tab it came from (FR-132); `bg`: a background tab of the session that is shown. */
+export interface BrowserDialogEvent { id: string; type: string; text: string; shown: boolean; tabId?: string; bg?: boolean }
+/** Spec 080 FR-130: a tab key pressed inside a page (main kept it from the page). */
+export interface BrowserKeyEvent { id: string; key: 'new' | 'close' | 'next' | 'prev' }
 /** FR-025e: ask *Leave this page?*; answer with `browserLeaveAnswer(req, leave)`. */
 export interface BrowserLeaveAsk { id: string; req: string; known: boolean; shown: boolean }
 export interface BrowserBounds { x: number; y: number; width: number; height: number }
