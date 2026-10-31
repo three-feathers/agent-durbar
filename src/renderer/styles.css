@@ -2192,3 +2192,23 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 .nt-selbtn[hidden]{display:none}
 .cp-btn,.nt-btn,.nt-mark{user-select:none;-webkit-user-select:none}
 
+/* spec 099 FR-056: Autopilot: its own glyph and word, in Allow all's warning ink because it includes Allow all */
+.mode-chip.mode-autopilot{color:var(--red-ink);background:var(--pb-error);border-color:var(--tone-bad-line);font-weight:600;font-variant-numeric:tabular-nums}
+.modeic.mode-autopilot{color:var(--red-ink)}
+.mode-menu .mm-autopilot .mi{color:var(--red-ink)}
+.mm-autopilot{border-top:1px solid var(--line)}
+.ap-noatt{display:inline-grid;place-items:center;opacity:.4;cursor:help}
+.note.ap-line{font-size:12px;color:var(--ink-2)}
+.note.ap-end{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;border-left:3px solid var(--tone-info-line)}
+.note.ap-end:not([data-reason="done"]){border-left-color:var(--tone-bad-line)}
+.note.ap-end .ap-ic{font-weight:700}
+.note.ap-end .ap-words{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.note.ap-end .note-actions{flex-basis:100%}
+.note.ap-question b{display:block;font-size:12px}
+.note.ap-question .q-text{margin:4px 0 0;overflow-wrap:anywhere}
+.ap-form{display:flex;flex-direction:column;gap:6px;margin:8px 0}
+.ap-form .ap-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:13px}
+.ap-form .ap-num{width:88px;height:28px;padding:0 6px;font:inherit}
+.ap-form .ap-hint{margin:0;font-size:12px;color:var(--ink-2)}
+.ap-form .ap-warn{margin:0;font-size:12px;font-weight:600;color:var(--amber-ink)}
+.ap-form [hidden]{display:none}

@@ -57,16 +57,16 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group; FR-007, FR-008, FR-009
 - [x] T031 No progress: the fingerprint at each continuation through the spec 063 runner (read-only), and the end after two
   unchanged ones + tests with a fake runner [FR-023]
 - [x] T032 While T096 is held: a scheduled prompt or a loop's pass that is due for a session on Autopilot is not sent, and the run log says why; a stored `autopilot` on a schedule is refused + test [FR-004, FR-083, FR-084]
-- [ ] T033 Renderer: the mode-menu item (in every mode), the settings form (limit field with its warning above 20, hours field with its warning above 2, optional cap, what the cap counts, no-cap sentence), the remembered `autopilotLimit` setting. The native dialog itself is T030 [FR-002, FR-003, FR-022, FR-055, S1]
-- [ ] T034 Renderer: the chip with its glyph and `n/limit`, the desk line, the List column, the needs-me sorting after a
+- [x] T033 Renderer: the mode-menu item (in every mode), the settings form (limit field with its warning above 20, hours field with its warning above 2, optional cap, what the cap counts, no-cap sentence), the remembered `autopilotLimit` setting. The native dialog itself is T030 [FR-002, FR-003, FR-022, FR-055, S1]
+- [x] T034 Renderer: the chip with its glyph and `n/limit`, the desk line, the List column, the needs-me sorting after a
   non-done end [FR-056]
-- [ ] T035 Renderer: the chat lines, the question card *Decided by itself*, the end card with *Run again on Autopilot…*, the
+- [x] T035 Renderer: the chat lines, the question card *Decided by itself*, the end card with *Run again on Autopilot…*, the
   composer placeholder, the attach button hidden with its tooltip where `autopilot.attachments` is false; the dialog's
   cap-raised-to-30 line for Copilot [FR-022, FR-055, FR-057, FR-058, S4, D9, D10]
-- [ ] T036 Simulator: the capability on every kind, the run with 2 continuations, the `?sim=autopilot-<reason>` scripts [FR-080]
-- [ ] T037 Driver `scripts/check-autopilot.js` at 1440x900 and 1280x800, with 15 agents: menu, dialog, chip, every end reason,
-  no text under 10.5px; screenshots `docs/screenshots/099-autopilot-*` in `DOC_SHOTS` [SC-001, FR-056]
-- [ ] T038 README Safety model, mode-menu sentence, *What Durbar does not do*, *Costs and caps*; changelog fragment [FR-090]
+- [x] T036 Simulator: the capability on every kind, the run with 2 continuations, the `?sim=autopilot-<reason>` scripts [FR-080]
+- [x] T037 Driver `scripts/check-autopilot.js` at 1440x900 and 1280x800, with 15 agents: menu, dialog, chip, every end reason,
+  no text under 10.5px, and the default build with nothing offered; screenshots `docs/screenshots/099-autopilot-*` in `DOC_SHOTS` **wait for the flip**: the driver writes its pictures to `OUT` only [SC-001, FR-056]
+- [ ] T038 **Open until the flip** (spec *Changes*, Phase 3 gate): README Safety model, mode-menu sentence, *What Durbar does not do*, *Costs and caps* wait (the sections moved to `docs/safety.md` and `docs/install.md` with spec 021 FR-065: the flip puts them there). The changelog fragment is done and says not available yet [FR-090]
 - [x] T039 Remote control: `agents:setAutopilot` and the plan answer refused while remote control is on; `setRemote` refused while on Autopilot. IPC tests for both directions [FR-007]
 
 - [x] T095 Main validates every `autopilot` event and `question.autoAnswered` with `eventguard` before use, and drops a bad one with a masked log line; test on a stand-in with a bad event from a fake adapter [FR-082]

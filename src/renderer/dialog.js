@@ -2,6 +2,7 @@
    in Node (tests) `require` gives the same factory. DurbarDialog(document) returns askDialog(opts).
    askDialog({title,body,lines:[text],input:{label,placeholder,max,value,focus,select,error,submitOnEnter,check,multiline},buttons:[{label,value,cls}],check:{label,checked},returnFocus}) resolves {value,checked,text[,picked]} for a
    button (`text` = the optional input's value, `lines` = a short list under the body; `size` 'm' or 'l' picks the wider dialog widths, default S (spec 052 FR-167); all set with textContent, never HTML), or null when dismissed (Cancel button with value null, Escape, click on the backdrop).
+   Spec 099: `custom` {node, value(), valid(), onChange}: a form of its own above the buttons; the primary button follows `valid`; the result carries `custom`: its value.
    Spec 064: `input.multiline` (a textarea), `picks:[{label,note,value,checked,disabled}]` (a checkbox list, result `picked`: the chosen values),
    `need:{text,picks,label(n)}` (the primary button stays disabled until met; `label` names it from the count).
    `input.hint`: a 12px note under the field (the label stays one short line, spec 052 FR-170). `input.submitOnEnter`: Enter in the field presses the primary button unless `need` keeps it disabled; never from a textarea (Escape still cancels). `input.check(text)` returns an error line or '': when
@@ -22,7 +23,7 @@ function endAllBody(n,busyN){
   'use strict';
   const focusIn=(el,o)=>{if(typeof window!=='undefined'&&window.DurbarScroll)window.DurbarScroll.focus(el,o);else if(el&&typeof el.focus==='function')el.focus({preventScroll:true});}; /* spec 052 FR-176: focus never scrolls the page (innerscroll.js, looked up at call time: this file may load first, or run in Node tests) */
   const FOCUSABLE='button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])';
-  return function askDialog({title,body,lines,input,buttons,check,picks,need,returnFocus,size}){
+  return function askDialog({title,body,lines,input,buttons,check,picks,need,returnFocus,size,custom}){
     return new Promise(resolve=>{
       const old=doc.getElementById('modeDlg');if(old)old.remove();
       const opener=returnFocus||(doc.activeElement&&doc.activeElement!==doc.body?doc.activeElement:null);
@@ -68,10 +69,11 @@ function endAllBody(n,busyN){
           const msg=input.check(textOf());const er=d.querySelector('#mdErr'),inp=d.querySelector('#mdIn');
           if(msg){er.textContent=msg;er.hidden=false;er.setAttribute('role','alert');inp.setAttribute('aria-invalid','true');inp.setAttribute('aria-describedby','mdErr');focusIn(inp);return;}
         }
-        done(b.value===null?null:Object.assign({value:b.value,checked:check?d.querySelector('#mdChk').checked:false},input?{text:textOf()}:{},picks?{picked:pickedOf()}:{}));
+        done(b.value===null?null:Object.assign({value:b.value,checked:check?d.querySelector('#mdChk').checked:false},input?{text:textOf()}:{},picks?{picked:pickedOf()}:{},custom?{custom:custom.value()}:{}));
       };row.appendChild(el);});
       /* spec 064 FR-002: the primary button stays disabled until the text and the number of picks it needs are there */
       if(need){const p=row.querySelector('.primary');const check2=()=>{if(!p)return;const okText=!need.text||String(textOf()||'').trim().length>0;const okPicks=!need.picks||(pickedOf()||[]).length>=need.picks;p.disabled=!(okText&&okPicks);if(need.label)p.textContent=need.label((pickedOf()||[]).length);};d.addEventListener('input',check2);d.addEventListener('change',check2);check2();}
+      if(custom){row.parentNode.insertBefore(custom.node,row);const p=row.querySelector('.primary');custom.onChange=v=>{if(p)p.disabled=!v;};if(p)p.disabled=!custom.valid();}
       d.addEventListener('click',e=>{if(e.target===d)done(null);});
       doc.addEventListener('keydown',onKey,true);doc.addEventListener('focusin',onFocusIn,true);
       doc.body.appendChild(d);

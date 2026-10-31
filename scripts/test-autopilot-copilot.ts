@@ -42,6 +42,25 @@ async function main(): Promise<void> {
   process.exitCode = 1;
   assert.deepStrictEqual({ ...COPILOT_CAPABILITIES.autopilot }, { capUnit: 'aiu', attachments: true, planApproval: true, verified: false }, 'T022: capability, not verified');
 
+  // FR-050: Stop acts before anything is awaited: a hung limit answer and a sign-in refresh hold nothing back (Phase 3)
+  {
+    const r = await rig();
+    await r.ad.setAutopilot!(r.sid, { limit: 5 });
+    await r.ad.send(r.sid, { text: 'go' });
+    const live = (r.ad as unknown as { sessions: Map<string, { limitRequestId?: string }> }).sessions.get(r.sid)!;
+    live.limitRequestId = 'stuck';
+    (r.s.rpc as unknown as { ui: unknown }).ui = { handlePendingSessionLimitsExhausted: () => new Promise(() => undefined) };
+    void r.ad.interrupt!(r.sid);
+    assert.deepStrictEqual(reasons(r), ['stopped'], 'ended in the same tick as Stop');
+    const q = await rig();
+    await q.ad.setAutopilot!(q.sid, { limit: 5 });
+    await q.ad.send(q.sid, { text: 'go' });
+    (q.ad as unknown as { refreshing: Promise<void> }).refreshing = new Promise(() => undefined);
+    void q.ad.setAutopilot!(q.sid, null, 'stopped');
+    assert.deepStrictEqual(reasons(q), ['stopped'], 'a refresh does not hold a stop back');
+    (q.ad as unknown as { refreshing?: Promise<void> }).refreshing = undefined;
+  }
+
   // only in Allow all
   {
     const r = await rig({ mode: 'ask' });

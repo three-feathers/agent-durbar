@@ -322,6 +322,10 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
       if (!problems.length && auto && (e as AutopilotEvent).phase !== 'ended' && !a?.autopilot) problems.push('autopilot event on a session not on Autopilot');
       if (!problems.length) return true;
       d.warn?.(`[autopilot] dropped a bad event: ${problemLine(problems)}`);
+      // the adapter runs something main does not count: it is stopped, never left going unseen
+      if (auto && !eventProblems(e).length && a && !a.autopilot && raw.agentId === undefined && (e as AutopilotEvent).phase !== 'ended') {
+        void Promise.resolve().then(() => d.router.forAgent(a.id)?.setAutopilot?.(a.id, null, 'error')).catch(() => failClosed(a));
+      }
       return false;
     },
     /** Main's state follows the (checked) events. Every way a session ends comes through here. */
@@ -332,7 +336,8 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
         // FR-005, FR-052: no card and no event, but the session is no longer on Autopilot
         if (e.status === 'stopped') spend.delete(e.sessionId);
         progress.delete(e.sessionId);
-        if (a) dropState(a, 'The session closed');
+        if (a && e.status !== 'stopped' && a.autopilot) void off(a.id); // the session lives on: its adapter must not keep settings main no longer has
+        else if (a) dropState(a, 'The session closed');
         return;
       }
       if (e.type === 'usage') {

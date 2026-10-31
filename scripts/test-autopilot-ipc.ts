@@ -525,6 +525,13 @@ async function main(): Promise<void> {
     off.emit({ type: 'autopilot', phase: 'started', runId: 'r9', n: 0, limit: 5 });
     assert.strictEqual(off.seen.length, 2, 'dropped in the default build');
     assert.strictEqual(off.warns.length, 2);
+    await tick();
+    assert.deepStrictEqual(off.fake.autopilotCalls.at(-1), { sessionId: off.id, settings: null, reason: 'error' }, 'a run main does not count is stopped, not left going');
+    // the FR-005 line on a session that lives on: its adapter hears too
+    const live = await office();
+    await turnOn(live);
+    live.emit({ type: 'status', status: 'idle', intent: 'Autopilot ended when this session closed. It is in Allow all.' });
+    assert.strictEqual(live.fake.autopilotCalls.at(-1)?.settings, null);
   }
 
   // ---- T031, FR-023: no progress ----
