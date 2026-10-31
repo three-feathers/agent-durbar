@@ -198,6 +198,8 @@ export class FakeClient {
   modelsFail = '';
   listModelsFail = '';
   noQuota = false;
+  /** Spec 011 FR-081: what `account.getQuota` answers; default no snapshots. */
+  quotaResult: unknown = { quotaSnapshots: {} };
   noRpcModels = false;
   async getAuthStatus(): Promise<unknown> {
     this.authCalls.push('getAuthStatus');
@@ -211,7 +213,7 @@ export class FakeClient {
   get rpc(): Record<string, unknown> {
     return {
       sandbox: { getHostSupport: async () => { this.hostCalls++; if (this.sandboxHostFail) throw new Error(this.sandboxHostFail); return this.sandboxHost; } },
-      ...(this.noQuota ? {} : { account: { getQuota: async (p: unknown) => { this.authCalls.push('account.getQuota'); void p; if (this.quotaFail) throw new Error(this.quotaFail); return { quotaSnapshots: {} }; } } }),
+      ...(this.noQuota ? {} : { account: { getQuota: async (p: unknown) => { this.authCalls.push('account.getQuota'); void p; if (this.quotaFail) throw new Error(this.quotaFail); return this.quotaResult; } } }),
       ...(this.noRpcModels ? {} : { models: { list: async () => { this.authCalls.push('models.list'); if (this.modelsFail) throw new Error(this.modelsFail); return { models: [] }; } } }),
       ...(this.managed === undefined && !this.managedFail && !this.managedHangs ? {} : { managedSettings: { resolve: async (p: unknown) => {
         void p; this.managedCalls++;

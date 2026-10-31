@@ -93,6 +93,7 @@ export const SIM_OPTIONAL_MEMBERS: Readonly<Record<string, ((c: Caps) => boolean
   generateText: (c: Caps) => !!c.oneShot,
   setRemote: (c: Caps) => !!c.remote,
   renameSession: (c: Caps) => !!c.renameSession,
+  accountQuota: (c: Caps) => !!c.accountQuota, // spec 011 FR-090
   deleteSession: (c: Caps) => !!c.deleteSession,
   startMcpSignIn: (c: Caps) => !!c.mcpSignIn,
   cancelMcpSignIn: (c: Caps) => !!c.mcpSignIn,

@@ -245,7 +245,7 @@ Spec 011's totals are **session and app usage**, never an account balance. This 
 | Reset | `resetDate` (ISO 8601), `resetDateEpochMs` and `resetDateEstimated` per spec 068 `read:` (the last two not in the SDK 1.0.22 typings: `[KNOWN GAP]`) | `resetsAt` (seconds, no zone) | not reported through a free call |
 | Freshness | no timestamp; `real:` it lagged minutes (spec 030 research, agent-apps), so "can lag" is shown | no timestamp; unknown | n/a |
 | API-key or other sign-in | n/a | `real:` the call refuses an API-key sign-in (spec 012 FR-156 delta): "not reported", not signed out | n/a |
-| Unknown, recorded | whether `getQuota` always reaches the server; overage semantics | fields beyond `primary`/`secondary` (`read:` only those two are mapped); when the windows move | whether any free figure exists: `read:` none found |
+| Unknown, recorded | whether `getQuota` always reaches the server; overage semantics | `read:` the app-server's generated schema also has `rateLimitsByLimitId`, `credits` (a balance as a string), `ordinaryUsageAllowed`, `rateLimitReachedType`, `rateLimitUpsell` and `accountId`: not mapped; only `primary`/`secondary` are, and `accountId` and the upsell banner never leave the adapter. Its note says not to infer recovery from percentages or reset times, so a passed reset reads "not current", never "recovered". When the windows move is unknown | whether any free figure exists: `read:` none found |
 
 The checked time is **when Durbar asked**, never a provider timestamp.
 
@@ -261,7 +261,7 @@ The checked time is **when Durbar asked**, never a provider timestamp.
 - **FR-089** `[IMPLEMENTED]` **The New session dialog** (also as Continue in another app) has one line for the chosen app (`quotaLine`): the reported state, "you can still start". An answer for an app no longer chosen, or a closed dialog, is dropped.
 - **FR-090** `[IMPLEMENTED]` **Reusable channel.** IPC `harness:quota` (`ipcHandle`, in the allow lists, from the app's window only) takes `cached`, `open` or `check` and an optional app id, validated in main, and answers `{ ok: true, apps }` or `{ ok: false, error }`, never an empty success. Refused under the simulator, whose window has its own fake. Bridge `harnessQuota`; `window.exports.quotaLine(view, now)` gives one honest line for another screen. Spec 096 T041's plan line can use exactly these.
 - **FR-091** `[IMPLEMENTED]` **No secrets, no per-session state.** No credential file is read and no token is asked for, collected or forwarded; Codex's fallback asks `getAuthStatus` with `includeToken: false`. The state is per app, in memory, with no session id; nothing is saved, logged or exported.
-- **FR-092** `[IMPLEMENTED]` **Simulator.** `simquota=<mode>` or `simquota=copilot:near,codex:failed` (modes `current`, `near`, `exhausted`, `stale`, `failed`, `failagain`, `ratelimited`, `notreported`, `signedout`, `malformed`, `hostile`, `resetpast`, `unlimited`), through the same pure functions as main. `simkinds=ready` has all three apps ready. Claude Code is always not reported, unless a fixture asks otherwise to test the window.
+- **FR-092** `[IMPLEMENTED]` **Simulator.** `simquota=<mode>` or `simquota=copilot:near,codex:failed` (modes `current`, `near`, `exhausted`, `stale`, `failed`, `failagain`, `ratelimited`, `notreported`, `signedout`, `malformed`, `hostile`, `resetpast`, `unlimited`, `agingsoon`, `resetsoon`, `noread`), through the same pure functions as main. `simkinds=ready` has all three apps ready. Claude Code is always not reported, unless a fixture asks otherwise to test the window.
 - **FR-093** `[IMPLEMENTED]` **Tests.** `scripts/test-quota.ts` (`test:quota`), `scripts/shots-011-quota.js` at 1440x900 and 1280x800.
 - **FR-094** **Awaiting owner review.** Choices taken on the safer side (issue #690 asks for a product decision on the first):
   1. the near-limit threshold is **10 % left**, a note only, not a setting;
@@ -269,4 +269,5 @@ The checked time is **when Durbar asked**, never a provider timestamp.
   3. Settings opening reads at most once per 15 minutes per app;
   4. `signed-out` drops the last figures;
   5. the suggestion offers a session's existing dialog, never a new one by itself.
+- `test:` `scripts/test-quota.ts` (`test:quota`), including the adapters on the fake SDK and fake app-server. `sim:` `scripts/shots-011-quota.js`, both sizes. `read:` the shapes, from SDK typings, the Codex app-server schema and earlier entries.
 - `[KNOWN GAP]` Real shapes are `read:` only; no real account was used. A sign-in changed in a terminal is only seen at the next read, so until then a stale reading of the earlier account can show, marked as stale. `real:` to do: T059.

@@ -35,7 +35,9 @@ export interface FakeCodexOptions {
    * Spec 012 FR-156: how `account/rateLimits/read` answers: `ok` (default, a rate-limit snapshot), `unauthorized` (an auth error),
    * `network` (another error), `missing` (method not found, an older Codex).
    */
-  rateLimits?: 'ok' | 'unauthorized' | 'network' | 'missing';
+  rateLimits?: 'ok' | 'unauthorized' | 'network' | 'missing' | 'limited';
+  /** Spec 011 FR-081: the whole `account/rateLimits/read` result, instead of the default snapshot. */
+  rateLimitsResult?: unknown;
   /** What `getAuthStatus` reports as `authMethod` (default `chatgpt`; null = not signed in). */
   authMethod?: string | null;
   /**
@@ -388,6 +390,8 @@ export class FakeCodexServer {
         if (r === 'missing') return this.fail(child, id, -32601, `method not found: ${method}`);
         if (r === 'unauthorized') return this.fail(child, id, -32603, 'failed to fetch codex rate limits: 401 Unauthorized');
         if (r === 'network') return this.fail(child, id, -32603, 'failed to fetch codex rate limits: error sending request');
+        if (r === 'limited') return this.fail(child, id, -32603, 'failed to fetch codex rate limits: 429 Too Many Requests');
+        if (this.opts.rateLimitsResult !== undefined) return this.reply(child, id, this.opts.rateLimitsResult);
         return this.reply(child, id, { rateLimits: { primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: 1792403999 }, secondary: null } });
       }
       case 'account/read': {

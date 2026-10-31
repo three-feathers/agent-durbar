@@ -6957,6 +6957,7 @@ function newSession(a0,o){
    <label id="sdEffL">Reasoning effort<select id="sdEff"></select></label>
    ${bridge.listProfiles&&a.info&&a.info.profiles?`<div id="sdAgentL" class="sd-agent" hidden><label>Profile<select id="sdAgent"><option value="">Default</option></select></label>${bridge.setFolderDefaultAgent?'<label class="chk"><input type="checkbox" id="sdAgentDef"> Default for new sessions here</label>':''}</div>`:''}
    ${canHandoff(a)?`<label class="chk" id="sdSumL"><input type="checkbox" id="sdSum"${o.summary?' checked':''}> Start with a summary of this conversation (you review it before it is sent)</label>`:''}
+   ${bridge.harnessQuota?'<small class="dhint" id="sdQuota" role="status" hidden></small>':''}
    ${bridge.setCap?'<label id="sdCapL"><span id="sdCapT">Spending limit</span><input id="sdCap" type="number" min="0.001" step="0.01" placeholder="No limit" aria-describedby="sdCapH"></label><small class="dhint" id="sdCapH">In AI credits. Empty means no limit.</small>':''}
    <div class="dbtn"><button class="btn" id="sdCancel" type="button">Cancel</button><button class="btn primary" id="sdGo" type="button">Start session</button></div></div>`;
   document.body.appendChild(d);
@@ -6980,9 +6981,20 @@ function newSession(a0,o){
     }
     if(c)fillPermSelect($('sdPerm'),c,k);else markOrgModes($('sdPerm'),a.info.adapterId);
   };
-  if($('sdKind'))$('sdKind').value=pickKind(ho?handoverTargets(a)[0].id:(a.info.adapterId||defaultKind()));
+  if($('sdKind'))$('sdKind').value=pickKind(ho?(handoverTargets(a).some(t=>t.id===o.to)?o.to:handoverTargets(a)[0].id):(a.info.adapterId||defaultKind()));
+  /* spec 011 FR-089: one line for the chosen app, a note only; an answer for an app no longer chosen, or a closed dialog, is dropped */
+  const quotaNote=()=>{
+    const el=$('sdQuota'),X=window.exports;if(!el||!X||!X.quotaLine)return;
+    const k=kindNow()||a.info.adapterId||'copilot';el.hidden=true;
+    bridge.harnessQuota('open',k).then(r=>{
+      if($('sdQuota')!==el||(kindNow()||a.info.adapterId||'copilot')!==k)return;
+      const v=r&&r.ok&&r.apps?r.apps[k]:null;if(!v)return;
+      const now=Date.now(),d=X.quotaDisplay(v,now);
+      el.textContent=X.quotaLine(v,now)+(d.near||d.exhausted?' You can still start.':'');el.hidden=false;
+    },()=>undefined);
+  };
   kindSelTitle($('sdKind'),'Agent app for this session'); /* spec 051 FR-013 */
-  eff(); $('sdModel').onchange=eff; if($('sdKind'))$('sdKind').onchange=()=>{eff();agentRow();kindSelTitle($('sdKind'),'Agent app for this session');};
+  eff(); $('sdModel').onchange=eff; quotaNote();if($('sdKind'))$('sdKind').onchange=()=>{eff();agentRow();quotaNote();kindSelTitle($('sdKind'),'Agent app for this session');};
   /* spec 043 T010: the new session can start with a custom agent of this folder (the same list as the Agent chip; same kind only) */
   const agentRow=()=>{const l=$('sdAgentL');if(!l)return;l.hidden=!(l.dataset.ready==='1'&&(kindNow()||a.info.adapterId||'')===(a.info.adapterId||kindNow()||''));};
   if($('sdAgentL'))bridge.listProfiles(a.id).then(r=>{
@@ -7999,7 +8011,10 @@ if(bridge){
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
   document.body.classList.toggle('simple',SIMPLE);
-  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},signs:{get:()=>SIGN_PREF,set:setSignsOn,usable:()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign)},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  window.DurbarScreens.init({handover:{ /* spec 011 FR-088: a near-limit card offers the existing dialog for a live session; found again by id at the click */
+    sessions:(kind)=>agents.filter(a=>a.live&&!a.parent&&(a.info&&a.info.adapterId||'copilot')===kind&&canHandover(a)).slice(0,3).map(a=>({id:a.id,name:a.name})),
+    open:(id,to)=>{const a=byId(id);if(!a||!a.live||!canHandover(a))return false;newSession(a,{summary:true,handover:true,to});return true;}
+  },shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},signs:{get:()=>SIGN_PREF,set:setSignsOn,usable:()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign)},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     applyCharacters,charPreview, /* spec 077 FR-068 */

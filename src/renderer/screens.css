@@ -261,6 +261,19 @@ body.has-bridge #topBtns{display:flex}
 .hs-acct-who .hs-reveal{margin-left:4px}
 .hs-plan-uses[hidden]{display:none}
 /* spec 051 FR-021 (owner): a signed-in card's facts, one per line, bold label and colon; in a narrow card the value wraps under its label */
+/* spec 011 FR-086: the account limits, apart from the account facts and from per-session usage */
+.hs-quota{margin:8px 0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:var(--t5-size);color:var(--ink-2);min-width:0}
+.hs-q-head{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:space-between}
+.hs-q-title{color:var(--ink)}
+.hs-q-row{margin:6px 0 0;min-width:0}
+.hs-q-label{display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;font-weight:650;color:var(--ink);overflow-wrap:anywhere}
+.hs-q-facts{margin:2px 0 0;line-height:1.5}
+.hs-q-fact{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:6px}
+.hs-q-fact dt{font-weight:600;color:var(--ink-2)}
+.hs-q-fact dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.hs-q-meta,.hs-q-note,.hs-q-sug,.hs-q-what{overflow-wrap:anywhere}
+.hs-q-hand{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.hs-q-hand .btn{max-width:100%;height:auto;min-height:0;white-space:normal;overflow-wrap:anywhere;text-align:left}
 .hs-facts{margin:4px 0;font-size:var(--t5-size);line-height:1.5;color:var(--ink-2)}
 .hs-fact{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:6px}
 .hs-fact dt{font-weight:700;color:var(--ink)}
