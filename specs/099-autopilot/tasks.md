@@ -6,7 +6,7 @@
 `until()`. Real checks are separate tasks (T090-T094) within the owner's budget (D7; Copilot runs need an OK each, D11).
 
 **Format**: `- [ ] Tnnn [P?] description (file) [requirements]`. `[P]` means the task can run in parallel. One phase is one PR.
-Numbers taken: spec 099, FR-001..FR-090 (sparse by group), T001..T094.
+Numbers taken: spec 099, FR-001..FR-090 (sparse by group), T001..T096.
 
 ## Phase 0: Spec (this PR)
 
@@ -62,6 +62,9 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group), T001..T094.
 - [ ] T037 Driver `scripts/check-autopilot.js` at 1440x900 and 1280x800, with 15 agents: menu, dialog, chip, every end reason,
   no text under 10.5px; screenshots `docs/screenshots/099-autopilot-*` in `DOC_SHOTS` [SC-001, FR-056]
 - [ ] T038 README Safety model, mode-menu sentence, *What Durbar does not do*, *Costs and caps*; changelog fragment [FR-090]
+
+- [ ] T095 Main validates every `autopilot` event and `question.autoAnswered` with `eventguard` before use, and drops a bad one with a masked log line; test on a stand-in with a bad event from a fake adapter [FR-082]
+- [ ] T096 A message that is not a run never reaches the app in its goal mode: the adapter leaves the mode for it and returns, or it is refused with a visible reason and a `[KNOWN GAP]`; fake adapter test for a scheduled message after a done ending [FR-083]
 
 ## Phase 4: Plan first (PR `099-p4-plan`)
 

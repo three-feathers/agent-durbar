@@ -44,7 +44,7 @@ in the mode menu, a confirmation dialog, a chip state and chat lines. Spec 066's
 
 - `AdapterCapabilities.autopilot?: Readonly<{ capUnit: 'aiu' | 'usd' | 'tokens' | null; verified: boolean }>`.
 - `AutopilotSettings = { limit: number /* 1..20 */; cap?: number }`.
-- `AgentAdapter.setAutopilot?(sessionId, s: AutopilotSettings | null): Promise<void>` turns Autopilot on or off for the
+- `AgentAdapter.setAutopilot?(sessionId, s: AutopilotSettings | null, reason?: AutopilotEnd): Promise<void>` turns Autopilot on or off for the
   session's **next** messages. Off also stops a run (FR-050).
 - `AgentEvent` adds `{ type: 'autopilot'; phase: 'started' | 'continued' | 'ended'; runId: string; n: number; limit: number; reason?: AutopilotEnd; spend?: { unit; value } }`,
   with `AutopilotEnd = 'done' | 'cap' | 'limit' | 'no-progress' | 'blocked' | 'stopped' | 'error'`. `eventguard` validates it.
@@ -54,10 +54,10 @@ in the mode menu, a confirmation dialog, a chip state and chat lines. Spec 066's
 ### The shared core (`src/adapters/autopilot.ts`, pure)
 
 - `AutopilotRun`: a small state machine with the counter, the limit, the end-once guard and the no-progress counter. It takes
-  injected `stop()` and `clearGoal()` callbacks and is used by all three adapters, so the rules are written once.
+  one injected `halt()` callback (each adapter writes its own FR-050 order) and is used by all three adapters, so the rules are written once.
 - `AUTOPILOT_ANSWER` and the end-reason words.
-- `goalText(text)`: replaces control characters other than newline with a space, and refuses more than 4000 characters for
-  Claude Code.
+- `goalText(text)`: replaces control characters other than newline with a space, and for Claude Code refuses more than 4000
+  characters, exactly `clear` and empty text, returning the reason (spec *Changes*).
 - `isClaudeContinuation(msg)`: a user message with `isSynthetic` whose text starts with `Stop hook feedback:`.
 - `codexGoalEnd(status)`: maps `complete` to done, `budgetLimited` and `usageLimited` to cap, `blocked` and `paused` to
   blocked, and `active` to nothing.
