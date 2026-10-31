@@ -167,9 +167,9 @@ Someone installs Agent Durbar and sees the new icon in the installer, Finder or 
 ### Provenance, licence, approval
 
 - **FR-060** **Provenance.** `build/logo/ASSETS.md`, one row per file: file, icon, form (`vector`, `palette`, `painted`), tool, date, prompt or "hand-drawn", made by, licence, approved by. Concepts: Codex image generation (`codex exec`) on Vikram's ChatGPT plan, by Vikram's agent, with full prompts copied from `ASSETS-logo.md`. Final SVGs: drawn by the agent, no generator, nothing traced or embedded.
-- **FR-061** **Licence.** MIT, like the code and the crew art, **pending the owner's decision (Q3)**. No file ships until it is answered.
+- **FR-061** **Licence.** MIT, like the code and the crew art, decided 2026-10-31 (Q3).
 - **FR-062** **Approval field.** `approved by` holds a name and a date. `painted` and `palette` rows for `cave` or `loft` need `Paco`; `photo` and base rows need `Vikram`. Cave and loft palette values, drawings and pictures do not appear anywhere in the repo before that, including this spec, screenshots and test fixtures. When the art-pipeline spec arrives (098 FR-080), this field moves to its check.
-- **FR-063** **Same art, same terms.** Painted previews are the existing approved pictures, masked and resized; no new generation is needed, except for Q4. Not checked: no trademark or reverse-image search (Q5).
+- **FR-063** **Same art, same terms.** Painted previews are the existing approved pictures, masked and resized; no new generation is needed, except the plain-crown regeneration (Q4). Not checked: only a quick web search was done (Q5), no registry or reverse-image search.
 
 ### Performance and tests
 
@@ -192,10 +192,10 @@ Tool surface (spec 098): the picker is a Settings section and the top-bar icon t
 ## Assumptions and honest limits
 
 - **Read at real size, on Linux only.** The drawings were checked in headless Chromium. Not on a real macOS or Windows desktop, Dock, Finder or Explorer, a 1.25x or 1.5x Windows scale, or an installer: `[KNOWN GAP]` until a phase's real check. The D3 Mac padding is unverified until then.
-- **The flat palettes are new.** Vikram approved the painted photo set; the photo flat palette (FR-101) and the vectors have not been shown to him (Q2).
+- **The flat palettes are new.** Vikram approved the painted photo set; the photo flat palette (FR-101) and the vectors were approved by him 2026-10-31 (Q2).
 - The photo flat plate is darker walnut than the painted honey oak: 3:1 for the gold is not possible on honey oak. That is a deliberate difference.
 - Worlds depend on spec 097 P1 and its worlds delta; flat works without them.
-- No trademark search (Q5).
+- Trademark: a quick web search only, no registry search, not legal advice (Q5).
 
 ## Decisions made here (D)
 
@@ -204,22 +204,25 @@ Tool surface (spec 098): the picker is a Settings section and the top-bar icon t
 - **D3 Mac padding.** macOS icons get the 824/1024 plate from 128 px up, and full-bleed at tuned sizes, where padding would undo the tuning. ICO and PNG stay full-bleed, as today.
 - **D4 A 20 px grid** (FR-011), in addition to the planned 16 and 32.
 
+## Decided (owner, 2026-10-31 13:41 UTC, answer "Ok" to the recommendations)
+
+- **Q1 choice**: four icons in Settings, the world form follows the world (D1).
+- **Q2 drawings**: the vector drawings and the walnut flat palette for the photo world are approved.
+- **Q3 licence**: MIT (FR-061 is no longer pending).
+- **Q4 crowns**: regenerate painted icons 2 and 3 with a plain three-point crown. Done 2026-10-31 for photo, cave and loft (6 images, `*-v1.png` kept); the new photo 2 and 3 are `Vikram: pending` (his earlier approval was for the old pictures), cave and loft `Paco: pending`.
+- **Q5 trademark**: a quick web search, not legal advice. Done 2026-10-31 (3 queries): no similar crowned ">_" mark, "Agent Durbar" or Durbar software mark found; not a full search; notes in the art folder, not committed.
+- **Q7 Clean palette**: the default Clean top bar uses the new base palette (D2).
+
 ## Open questions
 
-- **Q1 (Vikram) Four choices or twelve?** "Users choose one": four bases with the world form following the world, or any of twelve, for example the cave icon in the photo office? **Recommendation**: four (D1), since the top bar "changes by world".
-- **Q2 (Vikram) Vector drawings and photo flat palette:** approve, or change? Sheet sent separately.
-- **Q3 (Vikram) Licence: MIT?** **Recommendation**: MIT, as for the crew art and 097 Q4.
-- **Q4 (Vikram) The painted versions of icons 2 and 3 have ball-tip crowns**, and the plain crown was asked for. Regenerate those photo pictures (and cave and loft, once Paco looks) on the ChatGPT plan, or keep them for previews? **Recommendation**: regenerate; a few runs, no API credits.
-- **Q5 (Vikram) A trademark search for a public logo?** Money or a lawyer may be involved; not done.
-- **Q6 (Paco) The cave and loft versions:** approve the painted pictures and the flat palettes, or change them? Until then those worlds show the base palette in the top bar and vector previews.
-- **Q7 (Vikram) Should Clean use the base palette (D2)?** The tile goes from pale sage to near-black, the strongest visible change on a default install.
+- **Q6 (Paco) The cave and loft versions:** approve the painted pictures (regenerated with plain crowns) and the flat palettes, or change them? Until then those worlds show the base palette in the top bar and vector previews.
 
 ## Constitution check
 
 - **I Spec Kit**: this PR is spec, plan, tasks; no `src/`.
 - **II Adapter boundary**: not touched.
 - **III Safe by default, no secrets**: no secrets, permissions or spawned process; the build script takes no user input.
-- **IV No AI credits**: tests and drivers use the simulator; Q4's regeneration runs only if the owner says so.
+- **IV No AI credits**: tests and drivers use the simulator; Q4's regeneration ran only after the owner said so (2026-10-31).
 - **V Calm UI**: tile size and layout unchanged, 10.5 px checked, no motion added.
 - **VI Windows, macOS, Linux**: the build script is cross-platform; real desktop checks are a named gap.
 - **VIII Honest limits**: above.
