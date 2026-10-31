@@ -80,7 +80,7 @@ module.exports = async (ctx) => {
   const describe = (t) => js(`(()=>{const d=document.getElementById('cmDesc');d.value=${jsLiteral(t)};d.dispatchEvent(new Event('input',{bubbles:true}));})()`);
   const preview = () => need(`!!document.getElementById('cmName')`, 'the preview opens', 10000);
   const list = () => js(`window.__durbarSimUi.bridge().characterList()`);
-  const toastSeen = (re) => need(`[...document.querySelectorAll('#toasts .toast')].some(t=>${re}.test(t.textContent))`, `a toast ${re}`);
+  const toastSeen = (re) => need(`[...document.querySelectorAll('#toasts .toast')].some(t=>new RegExp(${jsLiteral(re.source)}).test(t.textContent))`, `a toast ${re}`);
   const noMarkup = async (where) => {
     assert.strictEqual(await js(`window.__pwned===undefined`), true, `${where}: no script ran from a name`);
     assert.strictEqual(await js(`document.querySelectorAll('img[src="x"],[onerror]').length`), 0, `${where}: a name made no element`);
@@ -171,7 +171,7 @@ module.exports = async (ctx) => {
     await js(`(()=>{const n=document.getElementById('cmName');n.value='Greta';n.dispatchEvent(new Event('input',{bubbles:true}));})()`);
     await press('Save to My characters');
     await need(`!!document.querySelector('#chmList .chm-row')`, `${tag}: the row appears`);
-    await toastSeen(`/Greta is saved in My characters/`);
+    await toastSeen(/Greta is saved in My characters/);
     let l = await list();
     assert.deepStrictEqual(l.map((c) => c.name), ['Greta'], `${tag}: stored under the name`);
     assert.ok(!JSON.stringify(l).includes('sea captain'), `${tag}: no description in what is stored (D3)`);
@@ -336,11 +336,12 @@ module.exports = async (ctx) => {
   const roomName = await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.room===${jsLiteral(twoRoom)}&&!x.parent);return a.info.workspaceFile||a.info.cwd})()`);
   const short = roomName.split(/[\\/]/).filter(Boolean).pop();
   const chars = await list();
-  const target = chars[2], rowOf = (id) => `document.querySelector('#chmList [data-chid="${id}"]')`;
+  const target = chars[2], rowOf = (id) => `document.querySelector(${jsLiteral(`#chmList [data-chid="${id}"]`)})`;
   await openSettings();
   await need(`!!${rowOf(target.id)}`, 'its row');
-  const dlgPick = async (act, id) => { await js(`${rowOf(id)}.querySelector('[data-chact="${act}"]').click();0`); await need(`!!document.querySelector('.dlg-ov .dlg,#scrDlg .dlg')`, `the ${act} dialog`); };
-  const checkFolder = (label, on) => js(`(()=>{const l=[...document.querySelectorAll('.dlg .dpick')].find(x=>x.querySelector('.dpick-t').textContent===${jsLiteral(label)});if(!l)return false;const c=l.querySelector('input');if(c.checked!==${on})c.click();return true})()`);
+  const rowBtn = (id, act) => `document.querySelector(${jsLiteral(`#chmList [data-chid="${id}"] [data-chact="${act}"]`)})`;
+  const dlgPick = async (act, id) => { await js(rowBtn(id, act) + `.click();0`); await need(`!!document.querySelector('.dlg-ov .dlg,#scrDlg .dlg')`, `the ${act} dialog`); };
+  const checkFolder = (label, on) => js(`(()=>{const l=[...document.querySelectorAll('.dlg .dpick')].find(x=>x.querySelector('.dpick-t').textContent===${jsLiteral(label)});if(!l)return false;const c=l.querySelector('input');if(c.checked!==${jsLiteral(on)})c.click();return true})()`);
   await dlgPick('pin', target.id);
   const folderLabel = await js(`(()=>{const rs=[...document.querySelectorAll('.dlg .dpick .dpick-t')].map(x=>x.textContent);return rs})()`);
   assert.ok(folderLabel.length >= 2, `the open folders are listed (${folderLabel})`);
@@ -434,7 +435,7 @@ module.exports = async (ctx) => {
   await js(`(()=>{const n=document.getElementById('mdIn');n.value='Greta B';n.dispatchEvent(new Event('input',{bubbles:true}));})()`);
   await press('Rename');
   await need(`/Greta B/.test(${rowOf(greta.id)}.textContent)`, 'the row has the new name');
-  await toastSeen(`/Renamed to Greta B/`);
+  await toastSeen(/Renamed to Greta B/);
   assert.strictEqual((await list()).find((c) => c.id === greta.id).name, 'Greta B', 'the store has it, same id');
   assert.strictEqual(await js(`document.activeElement.dataset.chact`), 'rename', 'focus stays on Rename');
   await closeSettings();
@@ -442,8 +443,8 @@ module.exports = async (ctx) => {
   await openSettings();
   await need(`!!${rowOf(greta.id)}`, 'the row again');
   // export: main's folder pick is `test:charstore`'s and test:charipc's; here the reply reaches the window
-  await js(`${rowOf(greta.id)}.querySelector('[data-chact="export"]').click();0`);
-  await toastSeen(`/Exported to \\/simulated\\/export/`);
+  await js(rowBtn(greta.id, 'export') + `.click();0`);
+  await toastSeen(/Exported to \/simulated\/export/);
   // delete in use, with a pin: confirm, desks repick, the toast counts the pin
   const fresh = await list();
   const doomed = fresh[0];
@@ -452,7 +453,7 @@ module.exports = async (ctx) => {
   await press('Save pins');
   await need(`/Pinned to /.test(${rowOf(doomed.id)}.textContent)`, 'pinned');
   await need(`window.__durbarSimUi.crew.state().map&&Object.values(window.__durbarSimUi.crew.state().map).includes(${jsLiteral(doomed.id)})`, 'it is in use');
-  const doomedUrl = await js(`${rowOf(doomed.id)}.querySelector('img').getAttribute('src')`);
+  const doomedUrl = await js(rowOf(doomed.id) + `.querySelector('img').getAttribute('src')`);
   await dlgPick('delete', doomed.id);
   await need(`!!document.getElementById('mdL')`, 'the confirmation');
   assert.ok((await js(`document.getElementById('mdL').textContent`)).includes(doomed.name), 'it names the character');
@@ -464,7 +465,7 @@ module.exports = async (ctx) => {
   await dlgPick('delete', doomed.id);
   await press('Delete');
   await need(`!${rowOf(doomed.id)}`, 'the row is gone');
-  await toastSeen(`/deleted\\. 1 folder pin removed\\./`);
+  await toastSeen(/deleted\. 1 folder pin removed\./);
   assert.ok(!(await list()).some((c) => c.id === doomed.id), 'the store no longer has it');
   assert.deepStrictEqual(await js(`window.__durbarSimUi.crew.own().pins`), {}, 'its pin is gone');
   assert.ok(!(await js(`Object.values(window.__durbarSimUi.crew.state().map)`)).includes(doomed.id), 'no desk wears it (a new pick at once)');
@@ -476,7 +477,7 @@ module.exports = async (ctx) => {
     await press('Delete');
     await need(`!${rowOf(c.id)}`, 'the row is gone');
   }
-  await toastSeen(`/no characters left, so the desks show the theme/`);
+  await toastSeen(/no characters left, so the desks show the theme/);
   assert.strictEqual(await js(`window.THEME.characters()`), 'theme', 'draws the theme\'s own');
   assert.strictEqual(await js(`window.__durbarSimUi.bridge().getSettings().then(s=>s.characters)`), 'mine', 'the stored value stays mine');
   assert.strictEqual(await js(`document.querySelector('#chList [data-characters="mine"]').getAttribute('aria-pressed')`), 'true', 'My characters stays pressed');
