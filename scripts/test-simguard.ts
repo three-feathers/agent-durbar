@@ -151,7 +151,7 @@ for (const f of walk(path.join(ROOT, 'src', 'main'))) {
 }
 const SPENDS = /\brouter\b|\bregistry\b|\baddWorkspace\b|\baddMany\b|generateText|\bspawn\b|harnessSetup\.(?!plans\b)\w+|adaptersList|forAgent|\.instance\(|Op\(|prevSessions|remoteOps|scheduler/;
 const open = Object.keys(SIM_OPEN_CHANNELS);
-assert.ok(open.filter((c) => !c.startsWith('browser:')).length <= 3 && open.length <= 20, `the open list stays short (${open.length}): the simulator's window has its own canned answers; only the session browser's channels (spec 080 T014) are added`);
+assert.ok(open.filter((c) => !c.startsWith('browser:')).length <= 3 && open.length <= 24, `the open list stays short (${open.length}): the simulator's window has its own canned answers; only the session browser's channels (spec 080 T014, T023 page tabs) are added`);
 for (const c of open) {
   assert.ok(blocks.has(c), `open channel "${c}" is registered`);
   assert.ok(SIM_OPEN_CHANNELS[c].length > 20, `open channel "${c}" says why`);

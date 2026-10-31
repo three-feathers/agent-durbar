@@ -169,7 +169,8 @@
     ['mod+shift+KeyI','the developer tools'],
     /* text editing and the window */
     ['mod+KeyA','Select all (and the Needs you inbox outside text)'],['mod+Backspace','Back to the office (and deleting text)'],['mod+KeyC','Copy'],['mod+KeyV','Paste'],['mod+KeyX','Cut'],['mod+KeyZ','Undo'],['mod+KeyY','Redo'],['mod+shift+KeyZ','Redo'],['mod+shift+KeyV','Paste as plain text'],
-    ['mod+KeyW','Close window'],['mod+KeyQ','Quit'],['mod+KeyR','Reload'],['mod+Equal','Zoom in'],['mod+Minus','Zoom out'],['mod+Digit0','Actual size'],
+    ['mod+KeyW','Close window (closes a browser tab in the Browser tab)'],
+    ['mod+KeyT','New browser tab'],['ctrl+Tab','Switching browser tabs'],['ctrl+shift+Tab','Switching browser tabs'], /* spec 080 FR-130 */['mod+KeyQ','Quit'],['mod+KeyR','Reload'],['mod+Equal','Zoom in'],['mod+Minus','Zoom out'],['mod+Digit0','Actual size'],
     ['mod+KeyH','Hide (macOS)','mac'],['mod+alt+KeyH','Hide others (macOS)','mac'],['mod+KeyM','Minimize (macOS)','mac'],['mod+Backquote','switching windows (macOS)','mac'],['mod+ctrl+KeyF','full screen (macOS)','mac'],
     ['alt+F4','closing the window (Windows, Linux)','other'],
     /* operating system shortcuts */
