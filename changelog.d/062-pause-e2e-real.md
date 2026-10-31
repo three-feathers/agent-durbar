@@ -1,1 +1,0 @@
-- **E2E real accounts paused** (spec 062 FR-009, #856): the daily scheduled run of `e2e-real.yml` was red from 2026-10-25 and spent credits, so the `schedule` trigger is off until the cause is fixed; it can still be run by hand. `test:platforms` checks it.

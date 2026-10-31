@@ -47,7 +47,7 @@ import { parseUsdCap } from '../shared/credits';
 import { clipDiff } from '../shared/diff';
 import { MCP_TOOL_OFF_RE, SIGN_IN_REQUEST_TIMEOUT_MS, claudeOAuthOf, signInTtlMs } from '../shared/mcp';
 import { editOf } from './edits';
-import { HANDOFF_PROMPT, cleanSummary } from './handoff';
+import { HANDOFF_PROMPT, ONE_SHOT_MAX_CHARS, cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
 import type { ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import { allowedRemoteUrl, cleanRemoteError } from '../shared/remote';
@@ -577,7 +577,7 @@ export function oneShotArgs(prompt: string): string[] {
 }
 
 /** The `--output-format json` result of that one-shot: the summary text and Claude's cost estimate. */
-export function parseHandoffOutput(stdout: string): HandoffResult {
+export function parseHandoffOutput(stdout: string, maxChars?: number): HandoffResult {
   let o: Record<string, unknown> | undefined;
   for (const line of stdout.split('\n').reverse()) {
     const t = line.trim();
@@ -590,7 +590,7 @@ export function parseHandoffOutput(stdout: string): HandoffResult {
   if (!o) return { summary: '' };
   const cost = typeof o.total_cost_usd === 'number' && Number.isFinite(o.total_cost_usd) && o.total_cost_usd > 0 ? o.total_cost_usd : undefined;
   const ok = o.subtype === 'success' && o.is_error !== true;
-  return { summary: ok ? cleanSummary(o.result) : '', ...(cost !== undefined ? { costUsd: cost } : {}) };
+  return { summary: ok ? cleanSummary(o.result, maxChars) : '', ...(cost !== undefined ? { costUsd: cost } : {}) };
 }
 
 interface Session {
@@ -1312,7 +1312,7 @@ export class ClaudeAdapter implements AgentAdapter {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-gen-'));
     try {
       const r = await (this.deps.runOnce ?? execRunOnce)(file, oneShotArgs(prompt), { cwd: dir, env: (this.deps.env ?? (() => process.env))(), timeoutMs: 180_000 });
-      const out = parseHandoffOutput(r.stdout);
+      const out = parseHandoffOutput(r.stdout, ONE_SHOT_MAX_CHARS); // not the 8,000-character summary cap: a theme is data (spec 040 FR-024)
       if (!out.summary) throw new Error(`Claude gave no answer (exit ${r.code ?? 'timeout'}).`);
       return { text: out.summary, ...(out.costUsd !== undefined ? { costUsd: out.costUsd } : {}) };
     } finally {

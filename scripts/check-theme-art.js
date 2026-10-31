@@ -57,6 +57,16 @@ function survey(shirts) {
     walkers: q('.walker').map((w) => ({ shirt: wears(w), robe: has(w, 'char-robe'), hat: has(w, 'char-headwear'), hatOver: hatOver(w), anyArt: !!w.querySelector('.art-slot'), box: box(w.querySelector('svg') || w) })),
     places: q('#stage .place [data-slot^="place-"]').map((e) => e.getAttribute('data-slot')),
     lobbyArt: q('#stage .lobby-art[data-slot="lobby-art"]').length,
+    /* spec 040 FR-030 (#903): the art band is behind the tiles and the + button (positioned, with a higher z-index), and its scale is the same in x and y (circles stay round) */
+    lobbyTop: (() => {
+      const l = document.querySelector('#stage .lobby'), art = l && l.querySelector('.lobby-art');
+      if (!art) return null;
+      /* elementFromPoint skips the art (pointer-events:none), so compare the paint order: a control is above the band when it is positioned with a higher z-index */
+      const z = (e) => { const c = getComputedStyle(e); return c.position === 'static' || c.zIndex === 'auto' ? -1 : Number(c.zIndex); };
+      const top = (e) => z(e) > z(art);
+      const m = art.getScreenCTM();
+      return { add: [...l.querySelectorAll('.place-add')].map(top), places: [...l.querySelectorAll('.place')].map(top), uniform: !!m && Math.abs(m.a - m.d) < 0.01 && m.a > 0 };
+    })(),
     chips: q('#stripList .sitem .sav').filter((e) => e.getClientRects().length).map((e) => ({ shirt: wears(e), robe: has(e, 'char-robe'), hatOver: hatOver(e), anyArt: !!e.querySelector('.art-slot') })),
     css: (() => {
       const cs = (sel, prop) => { const e = document.querySelector(sel); return e ? getComputedStyle(e)[prop] : ''; };
@@ -148,6 +158,9 @@ module.exports = async (ctx) => {
     }
     for (const p of ['place-library', 'place-terminal', 'place-web']) assert.ok(s.places.includes(p), `${tag}: the lobby draws the pack's ${p} icon`);
     assert.strictEqual(s.lobbyArt, 1, `${tag}: the lobby draws the pack's lobby art`);
+    assert.ok(s.lobbyTop && s.lobbyTop.add.length >= 1 && s.lobbyTop.add.every(Boolean), `${tag}: the + add-place button is above the lobby art (${JSON.stringify(s.lobbyTop)})`);
+    assert.ok(s.lobbyTop.places.length > 0 && s.lobbyTop.places.every(Boolean), `${tag}: every lobby tile is above the lobby art`);
+    assert.ok(s.lobbyTop.uniform, `${tag}: the lobby art is scaled the same in x and y, so circles stay round`);
     await H.shot(path.join(out, `040-theme-art-office-${tag}.png`), { prep: 'toasts', tag: 'theme-art' });
 
     // the chat's agent strip (the one place where the art did show before the fix)

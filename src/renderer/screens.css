@@ -485,3 +485,9 @@ body.has-bridge #topBtns{display:flex}
 .lv-act{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px}
 .scr-adv>summary #advMcpAtt[hidden]{display:none}
 #hsDlg .dbtn{flex-wrap:wrap} /* spec 081: the open-sessions dialog has three buttons; they wrap instead of being cut off at the left */
+/* spec 083 T034a: the folder's Notes screen (the rows are the drawer's .nt-row) */
+.ns-tools{display:flex;align-items:center;gap:8px;margin:0 0 10px}
+.ns-tools .nt-find{margin:0;height:var(--h-ctl,30px);font-size:13px}
+.ns-done{margin:10px 0 0}
+.ns-done>summary{cursor:pointer;margin:0 0 6px;padding:4px 2px;font-size:12px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-2);border-radius:6px}
+.ns-done>summary:focus-visible{outline:2px solid var(--focus);outline-offset:1px}

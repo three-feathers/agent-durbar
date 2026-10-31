@@ -1470,7 +1470,7 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .room-art[data-slot="room-floor"]{top:auto;height:38%}
 .lobby{position:relative;overflow:hidden}
 .lobby-art{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0}
-.lobby .place{position:relative;z-index:1}
+.lobby .place,.lobby .place-add{position:relative;z-index:1} /* spec 040 FR-030 (#903): the + button is above the art band too (a positioned art svg paints over a plain flex child) */
 .place .pic svg{display:block}
 .desk .scene,.helper .scene{z-index:1}
 /* spec 040 FR-014: AI theme maker preview */
