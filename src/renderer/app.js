@@ -2000,6 +2000,7 @@ function addUserMsg(chat,text,atts,ts){
     c.innerHTML=(x.img?ICON('img'):ICON('file'))+'<span>'+esc(x.name)+'</span>';box.appendChild(c);});
   if(!(atts||[]).length)box.remove();
   chat.el.appendChild(m);stickyScroll(chat);
+  return m;
 }
 function getChat(a){
   if(a.live)return liveChat(a);
@@ -4237,7 +4238,7 @@ const sbxWord=a=>SBX&&a&&a.info?SBX.chipWord(a.info.sandbox):'';
 const sbxTip=a=>SBX&&a&&a.info&&a.info.sandbox?SBX.tooltip(a.info.sandbox,kindWord(a.info.adapterId),safeMask):'';
 const sbxTitle=a=>{const w=sbxWord(a);return w?' '+w+'.':'';}; /* the card's mode icon: the word only (its tooltip stays short); details on the chip and in the mode menu */
 const sbxDetails=a=>SBX&&a&&a.info&&a.info.sandbox?SBX.details(a.info.sandbox,kindWord(a.info.adapterId),safeMask):'';
-const modeIcon=(a,text)=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?(modeNow(a)==='allow'&&text?`<span class="modebadge" title="${esc(MODE_NAME.allow)}${a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_SHORT.allow)}.${esc(sbxTitle(a))} Right-click for options." aria-hidden="true">Allow all</span>`:`<span class="modeic mode-${a.info.permMode}" title="${esc(MODE_NAME[a.info.permMode])}${a.info.permMode==='allow'&&a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_SHORT[a.info.permMode])}.${esc(sbxTitle(a))} Right-click for options." aria-hidden="true">${MODE_IC[a.info.permMode]}</span>`):'';
+const modeIcon=(a,text)=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?(modeNow(a)==='allow'&&text?`<span class="modebadge" title="${esc(MODE_NAME.allow)}${a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_SHORT.allow)}.${esc(sbxTitle(a))} Right-click for options." aria-hidden="true">Allow all</span>`:`<span class="modeic mode-${modeNow(a)}" title="${esc(MODE_NAME[modeNow(a)])}${a.info.runMode?' (this turn, for a scheduled run)':modeNow(a)==='allow'&&a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_SHORT[modeNow(a)])}.${esc(sbxTitle(a))} Right-click for options." aria-hidden="true">${MODE_IC[modeNow(a)]}</span>`):'';
 /* spec 033 SC-003 (2026-10-21, issue #454): a floor switch is timed inside the app, from the click to the end of the office render
    that shows it (that render measures the stage, so its layout is done). One User Timing entry, replaced on each switch; the
    simulator check reads it. Nothing else uses it. */
@@ -5807,28 +5808,36 @@ function onRetry(a,e){
   if(ui.selected===a.id)updatePanelHeader();
   scheduleRender();
 }
+function heldSendSays(a,why){toast(esc(safeMask(why)),5000);announce(why);}
 async function sendLive(text,forId,opts){
   const a0=byId(forId||ui.selected); if(!a0)return; const a=liveRoot(a0);
   /* spec 064 FR-003: a message sent from elsewhere (Send to several) leaves the open chat's composer and attachments alone */
   const fromComposer=!(opts&&opts.fromComposer===false);
   const atts=fromComposer?attached.slice():[];
   text=(text||'').trim(); if(!text&&!atts.length)return;
+  /* spec 044 FR-180: a scheduled run holds this session: nothing is touched, the text stays in the box, and the run's turn goes on */
+  if(a.info&&a.info.runMode){heldSendSays(a,'A scheduled run is using this session. Wait for it to end, or stop it, then send your message.');return;}
   /* spec 012 FR-157: an app that is known to be signed out gets the sign-in card first; the typed text stays in the box */
   if(SIGNIN&&SIGNIN.needsSignIn(KINDS,kindOf(a))){PROMPTS.set(a.id,text,atts);showSignInCard(a,{before:true});return;}
   if(PROMPTS)PROMPTS.set(a.id,text,atts); /* memory only, for Send again after a sign-in (never stored) */
   if(a.coffee&&!(opts&&opts.coffee))endCoffee(a,'you sent a message'); /* spec 068 FR-009: a message ends the coffee break */
   a.sent=true;
   const chat=liveChat(a);
-  addUserMsg(chat,text||'(attachment)',atts);
+  const userMsg=addUserMsg(chat,text||'(attachment)',atts);
   if(fromComposer){attached=[];renderAttached();attNotice([]);
     const input=$('msgInput');if(input){input.value='';autoGrow();}}
   if(LIVEACT)LIVEACT.clear(a.id); /* spec 001 FR-028: a new message starts a fresh readout */
+  const was={st:a.state,label:a.stateLabel,task:a.task}; /* put back if main's gate refuses it (spec 044 FR-180) */
   a.worked=true; a.intent=''; closeTurn(a); ensureTurn(a); setState(a,'thinking',null,'Thinking');
   const planFirst=!!a.planNext&&!!(capsFor(a)&&capsFor(a).planMode); /* spec 066: one message only */
   if(a.planNext){a.planNext=false;renderAttached();}
   if(planFirst)addNote(chat,'Asked for a plan first: nothing changes until you approve it.');
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})),planFirst?{plan:true}:undefined);
-  if(!r.ok){if(!r.held)closeTurn(a); /* spec 044 FR-180: a scheduled run's turn goes on */const n=addNote(chat,'Send failed: '+esc((r.error&&safeMask(r.error))||'unknown error'),true); /* spec 041 FR-065 (delta 2026-10-23): the app's error is masked (shown whole, not cut); no mask: a neutral word */modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+safeExcerpt(r.error,100,'unknown error'));}
+  /* spec 044 FR-180: main's gate refused it (a run was setting up): as if never sent: the text back in the box, the reason, and no Error state */
+  if(!r.ok&&r.held){if(userMsg&&userMsg.remove)userMsg.remove();
+    if(fromComposer&&ui.selected===a.id){const input=$('msgInput');if(input&&!input.value){input.value=text;autoGrow();}attached=atts;renderAttached();}
+    setState(a,was.st,was.label,was.task);heldSendSays(a,String(r.error||''));return;}
+  if(!r.ok){closeTurn(a);const n=addNote(chat,'Send failed: '+esc((r.error&&safeMask(r.error))||'unknown error'),true); /* spec 041 FR-065 (delta 2026-10-23): the app's error is masked (shown whole, not cut); no mask: a neutral word */modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+safeExcerpt(r.error,100,'unknown error'));}
   else if(r.slash)addNote(chat,'Sent the text of <code>'+esc(DurbarCutText.cutText(safeMask(r.slash),160))+'</code> (the agent app does not load it in Durbar’s sessions).'+(r.slashNote?' '+esc(DurbarCutText.cutText(safeMask(r.slashNote),200)):'')); /* spec 073 FR-005; slashNote: masked, then cut (FR-013) */
   else if(r.slashNote)addNote(chat,esc(DurbarCutText.cutText(safeMask(r.slashNote),240))); /* spec 073 (review on PR 615): over the size cap, sent as typed; masked, then cut (FR-013) */
 }
@@ -7013,7 +7022,7 @@ function schedLine(s){
 /* ---- spec 044 FR-180..FR-184: a schedule's own mode. The choice is the new-session dialog's (#sdPerm: modesFor, PERM_LABEL, markOrgModes), with confirmAllow ---- */
 const SCHED_MODE_WORD=Object.assign({autopilot:'Autopilot'},PERM_LABEL);
 /* FR-182: the row always shows the mode; one with none says it waits */
-const schedModeWord=s=>s.mode?' · '+(SCHED_MODE_WORD[s.mode]||s.mode):SH().waitingForMode(s)?' · Waiting for a mode':'';
+const schedModeWord=s=>s.mode?' · '+(SCHED_MODE_WORD[s.mode]||s.mode):SH().waitingForMode(s)?' · Waiting for a mode'+(s.modeLost?': its Allow all confirmation could not be checked':''):'';
 /* the agent that would run it now, as the window knows it (main decides again) */
 const schedAgentOf=s=>s.target?agents.find(x=>x.id===s.target.session&&x.info)||null:agents.find(x=>!x.parent&&x.info&&(x.info.workspaceFile||x.info.cwd)===s.folder)||null;
 /* FR-184: only what this agent can do is offered, and Autopilot needs a capability no agent has yet (spec 099 FR-001), so it is never offered here. `keep` shows a stored
@@ -7084,7 +7093,7 @@ function maybeModePopup(tries){
   const list=SCHED.schedules.filter(SH().waitingForMode);
   if(!list.length||demoOn)return;
   /* an Allow all whose seal could not be checked asks at each launch (spec 044 FR-182); everything else once */
-  const again=list.some(s=>s.last&&s.last.reason==='no-seal');
+  const again=list.some(SH().asksAgain);
   try{if(!again&&localStorage.getItem(SCHED_MODE_ASKED))return;}catch(e){}
   if(document.querySelector('.dlg-ov')||(window.DurbarScreens&&window.DurbarScreens.isOpen())){if((tries||0)<60)setTimeout(()=>maybeModePopup((tries||0)+1),2000);return;}
   try{localStorage.setItem(SCHED_MODE_ASKED,'1');}catch(e){}

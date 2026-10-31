@@ -12,6 +12,7 @@ const H = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'schedhist
   KINDS: string[];
   lastWord(last: { at: number; outcome: string; reason?: string }): string;
   waitingForMode(s: unknown): boolean;
+  asksAgain(s: unknown): boolean;
   outcomeWord(o: string): string;
   kindOf(o: string): string;
   reasonWords(c: unknown): string;
@@ -45,6 +46,9 @@ assert.deepStrictEqual(Object.keys(H.REASONS).sort(), ['no-agent', 'send-error',
 for (const s of [{}, { mode: 'ask' }, { mode: 'autopilot' }, { done: true }, { done: true, last: { at: 1, outcome: 'skipped-mode' } }, { done: true, mode: 'ask', last: { at: 1, outcome: 'skipped-mode' } }, { paused: true }, { loop: { ended: { at: 1 } } }, { loop: {} }]) {
   assert.strictEqual(H.waitingForMode(s), waitingForMode(s as never), `the same rule as main: ${JSON.stringify(s)}`);
 }
+assert.strictEqual(H.asksAgain({ modeLost: 'no-seal' }), true);
+assert.strictEqual(H.asksAgain({}), false, 'once only');
+assert.strictEqual(H.asksAgain({ mode: 'ask', modeLost: 'no-seal' }), false);
 assert.strictEqual(H.lastWord({ at: 1, outcome: 'mode-refused', reason: 'mode-org' }), "not sent: this mode was refused: your organization's policy refuses it");
 assert.strictEqual(H.lastWord({ at: 1, outcome: 'mode-refused', reason: 'mode-autopilot' }), 'not sent: this mode was refused: Autopilot is not available on a schedule yet');
 assert.strictEqual(H.lastWord({ at: 1, outcome: 'skipped-mode', reason: 'other-agent' }), 'not sent: waiting for a mode: it would have gone to another agent than the one chosen');

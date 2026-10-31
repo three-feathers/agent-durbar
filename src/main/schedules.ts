@@ -3,7 +3,7 @@
  * once, every N minutes or on a calendar rule (FR-012), only while the app runs. The core is pure (an injected clock, timer, busy check and sender) and unit-tested with a fake clock.
  * Stored as `durbar-schedules.json` in the user-data folder; the prompt text is kept there (it must be sent) and never logged.
  */
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { pidAlive } from './crashmarker';
@@ -99,6 +99,8 @@ export interface Schedule {
   modeFor?: ModeFor;
   /** FR-182: `allow` sealed by main with the OS's safe storage over what it was confirmed for. Missing or wrong at load: no mode. Never sent to the window. */
   modeSeal?: string;
+  /** FR-182: why it waits: an Allow all whose seal could not be checked at a start. Stays until a mode is chosen, so each launch asks again and the row says why. */
+  modeLost?: 'no-seal';
   target?: ScheduleTarget;
   cap?: ScheduleCap;
   /** What this schedule's runs spent, in `cap.unit`, since it was created or resumed after reaching its limit. Kept by main. */
@@ -320,7 +322,7 @@ export function cleanSchedule(o: unknown, now: number, keepId = true): Schedule 
     s.mode = mode;
     if (modeFor) s.modeFor = modeFor;
     if (typeof r.modeSeal === 'string' && r.modeSeal.length <= 4096) s.modeSeal = r.modeSeal;
-  }
+  } else if (r.modeLost === 'no-seal') s.modeLost = 'no-seal';
   // Phase 2 fields: optional; present but not valid drops the schedule (never silently sent elsewhere or without its limit)
   if (r.target !== undefined && r.target !== null) {
     const t = cleanTarget(r.target);
@@ -539,6 +541,8 @@ export function sealFrom(codec: { available(): boolean; encrypt(plain: string): 
 /** Spec 081: how long a held run waits before it is looked at again (a release also brings it forward at once). */
 export const HOLD_RETRY_MS = 5000;
 
+/** A run whose send has not answered by then no longer keeps the other schedules waiting; its outcome is recorded when it does answer. */
+export const SEND_PATIENCE_MS = 30_000;
 /** FR-182: how long the answer of `askMode` stays good. */
 export const MODE_PROOF_MS = 5 * 60_000;
 const MAX_MODE_PROOFS = 20;
@@ -552,13 +556,19 @@ const MODE_WORDS: Record<ModeRefusal | 'no-mode' | 'other-agent' | 'no-seal', st
   'mode-loop-autopilot': 'Autopilot is not offered on a loop.',
   'no-mode': 'Choose a mode for this schedule first.',
   'other-agent': 'This schedule would go to another agent than the one its mode was chosen for. Choose a mode again.',
-  'no-seal': 'The Allow all confirmation of this schedule could not be checked. Choose a mode again.',
+  'no-seal': 'The Allow all confirmation of this schedule could not be checked (the file changed, or your system\'s safe storage is not available or changed). Choose a mode again.',
 };
 const sameTarget = (a?: ScheduleTarget, b?: ScheduleTarget): boolean => (a?.session ?? '') === (b?.session ?? '') && (a?.agent ?? '') === (b?.agent ?? '');
 const sameModeFor = (a?: ModeFor, b?: ModeFor): boolean => !!a && !!b && a.app === b.app && (a.session ?? '') === (b.session ?? '');
 /** FR-182: what a confirmation was given for. Any other prompt, target, mode, folder or agent app is another question. */
 const proofKey = (id: string, s: Pick<Schedule, 'folder' | 'prompt' | 'target'>, mode: ScheduleMode, app: string): string =>
   JSON.stringify([id, s.folder, s.prompt, s.target?.session ?? '', s.target?.agent ?? '', mode, app]);
+/**
+ * FR-182: what a seal holds: a digest (a prompt may be 10,000 characters) of what was confirmed plus the schedule's time and limit, so an old seal does not cover a
+ * schedule whose time or limit was changed outside the app. It does not stop a whole old file put back over a revoked choice: `[KNOWN GAP]`, in the spec.
+ */
+const sealKey = (s: Schedule, mode: ScheduleMode, app: string): string =>
+  createHash('sha256').update(JSON.stringify([proofKey(s.id, s, mode, app), s.every ?? null, s.at ?? null, s.rule ?? null, s.cap ? [s.cap.amount, s.cap.unit] : null])).digest('base64');
 /** The schedule's name in a confirmation: it has no other name than its prompt. */
 const scheduleName = (prompt: string): string => {
   const line = oneLine(prompt);
@@ -592,6 +602,7 @@ export class Scheduler {
       delete s.mode;
       delete s.modeFor;
       delete s.modeSeal;
+      s.modeLost = 'no-seal';
       this.record(s, 'skipped-mode', now, { session: s.target?.session, reason: 'no-seal' });
     }
     for (const s of this.doc.schedules) {
@@ -608,10 +619,10 @@ export class Scheduler {
           s.paused = true;
           s.pausedReason = 'review';
         } else s.done = true;
-        this.record(s, why, now, why === 'skipped-mode' ? { reason: 'no-mode' } : {});
+        this.record(s, why, now, why === 'skipped-mode' ? { session: s.modeLost ? s.target?.session : undefined, reason: s.modeLost ?? 'no-mode' } : {});
       } else if (recurring(s) && (s.next ?? 0) < now - 30_000) {
         s.next = nextAfter(s, now);
-        this.record(s, why, now, why === 'skipped-mode' ? { reason: 'no-mode' } : {});
+        this.record(s, why, now, why === 'skipped-mode' ? { session: s.modeLost ? s.target?.session : undefined, reason: s.modeLost ?? 'no-mode' } : {});
       }
     }
     this.pauseEnded();
@@ -667,7 +678,7 @@ export class Scheduler {
    * waits for a mode again (a later return to that agent does not bring it back). `autopilot` is refused and kept until spec 099 T097.
    */
   private modeBlock(s: Schedule): { outcome: 'skipped-mode' | 'mode-refused'; reason: RunReason } | undefined {
-    if (!s.mode) return { outcome: 'skipped-mode', reason: 'no-mode' };
+    if (!s.mode) return { outcome: 'skipped-mode', reason: s.modeLost ?? 'no-mode' };
     if (s.mode === 'autopilot') return { outcome: 'mode-refused', reason: s.loop ? 'mode-loop-autopilot' : 'mode-autopilot' };
     const v = this.deps.modeCheck(s);
     if (!v) return undefined;
@@ -1006,6 +1017,8 @@ export class Scheduler {
 
   /** Spec 081: schedules held by an update lock, and when each may be tried again. Memory only. */
   private heldUntil = new Map<string, number>();
+  /** Schedules whose send has not answered yet: not due again until it has. Memory only. */
+  private goingOut = new Set<string>();
 
   /** Spec 081 FR-013: the number of held runs that `pick` selects (the update gate's "held prompts" count). */
   heldFor(pick: (s: Schedule) => boolean): number {
@@ -1020,6 +1033,7 @@ export class Scheduler {
   }
 
   private dueNow(s: Schedule): number | undefined {
+    if (this.goingOut.has(s.id)) return undefined;
     const t = dueAt(s);
     const h = this.heldUntil.get(s.id);
     return t === undefined || h === undefined ? t : Math.max(t, h);
@@ -1040,16 +1054,20 @@ export class Scheduler {
     this.running = true;
     try {
       const now = this.deps.now();
-      for (let s of this.doc.schedules) {
+      // by id, looking each up now: `remove`, `save` and `setMode` may have changed the list while a send was awaited, and a deleted schedule must not fire
+      for (const id of this.doc.schedules.map((x) => x.id)) {
+        const s = this.doc.schedules.find((x) => x.id === id);
+        if (!s) continue;
         const t = this.dueNow(s);
         if (t === undefined || t > now) continue;
         if (s.loop) {
-          await this.tickLoop(s, now);
+          this.goingOut.add(s.id);
+          const job = this.tickLoop(s, now).finally(() => this.goingOut.delete(s.id));
+          if (!(await this.answeredInTime(job))) void job.then(() => this.commit());
           continue;
         }
         let outcome: Outcome;
         let held: boolean | 'full' = false;
-        let r: boolean | string = false;
         let reason: RunReason | undefined;
         let blocked: ReturnType<Scheduler['modeBlock']>;
         if (needsReview(s)) outcome = 'skipped-review'; // FR-124: first, so the row always says this reason
@@ -1068,25 +1086,18 @@ export class Scheduler {
           continue;
         } else {
           this.heldUntil.delete(s.id);
-          const sr = await this.sendRun(s, s.prompt);
-          r = sr.r;
-          reason = sr.reason;
-          outcome = r ? 'sent' : sr.refused ? 'mode-refused' : sr.busy ? 'skipped-busy' : 'failed';
-          if (typeof r === 'string' && r) this.attrib.set(r, s.id);
-          // `save` and `setMode` replace the object while the send is awaited: what follows (`done`, `next`) must reach the stored one, or a once schedule would run again
-          s = this.doc.schedules.find((x) => x.id === s.id) ?? s;
+          this.goingOut.add(s.id);
+          const job = this.sendRun(s, s.prompt).then((sr) => {
+            this.goingOut.delete(s.id);
+            const r = sr.r;
+            if (typeof r === 'string' && r) this.attrib.set(r, s.id);
+            // `save` and `setMode` replace the object while the send is awaited: what follows (`done`, `next`) must reach the stored one, or a once schedule would run again
+            this.afterRun(this.doc.schedules.find((x) => x.id === s.id) ?? s, r ? 'sent' : sr.refused ? 'mode-refused' : sr.busy ? 'skipped-busy' : 'failed', now, typeof r === 'string' && r ? r : s.target?.session, sr.reason);
+          });
+          if (!(await this.answeredInTime(job))) void job.then(() => this.commit()); // one hung session does not stop the other schedules
+          continue;
         }
-        this.record(s, outcome, now, { session: typeof r === 'string' && r ? r : s.target?.session, reason });
-        if (outcome === 'skipped-ended' || outcome === 'skipped-cap' || (outcome === 'skipped-review' && !recurring(s))) {
-          // FR-014 / FR-015 / FR-124: paused with a clear reason; the run is not sent, and a once-schedule stays to be resumed, fixed or deleted
-          s.paused = true;
-          s.pausedReason = outcome === 'skipped-cap' ? 'cap' : outcome === 'skipped-review' ? 'review' : 'session-ended';
-          this.real = true;
-        } else if (recurring(s)) s.next = nextAfter(s, now);
-        else {
-          s.done = true;
-          this.real = true;
-        }
+        this.afterRun(s, outcome, now, s.target?.session, reason);
       }
     } finally {
       this.running = false;
@@ -1095,6 +1106,30 @@ export class Scheduler {
       this.real = false;
       this.commit(foldOnly);
     }
+  }
+
+  /** What a due time came to: the log, and the schedule's next state. */
+  private afterRun(s: Schedule, outcome: Outcome, now: number, session: string | undefined, reason: RunReason | undefined): void {
+    this.record(s, outcome, now, { session, reason });
+    if (outcome === 'skipped-ended' || outcome === 'skipped-cap' || (outcome === 'skipped-review' && !recurring(s))) {
+      // FR-014 / FR-015 / FR-124: paused with a clear reason; the run is not sent, and a once-schedule stays to be resumed, fixed or deleted
+      s.paused = true;
+      s.pausedReason = outcome === 'skipped-cap' ? 'cap' : outcome === 'skipped-review' ? 'review' : 'session-ended';
+      this.real = true;
+    } else if (recurring(s)) s.next = nextAfter(s, this.deps.now()); // from now: a send that answered late has used up the time since `now`
+    else {
+      s.done = true;
+      this.real = true;
+    }
+  }
+
+  /** False when the job has not answered within SEND_PATIENCE_MS: the caller goes on, and the job finishes on its own (`goingOut` keeps its schedule from being due). */
+  private async answeredInTime(job: Promise<unknown>): Promise<boolean> {
+    let timer: unknown;
+    const late = new Promise<boolean>((r) => { timer = this.deps.setTimer(SEND_PATIENCE_MS, () => r(false)); });
+    const ok = await Promise.race([job.then(() => true), late]);
+    this.deps.clearTimer(timer);
+    return ok;
   }
 
   /**
@@ -1106,7 +1141,7 @@ export class Scheduler {
   async runNow(id: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
     const s = typeof id === 'string' ? this.doc.schedules.find((x) => x.id === id) : undefined;
     if (!s) return { ok: false, error: 'That schedule is gone.' };
-    if (this.running) return { ok: false, error: 'A scheduled run is going out. Try again in a moment.' };
+    if (this.running || this.goingOut.has(s.id)) return { ok: false, error: 'A scheduled run is going out. Try again in a moment.' };
     if (this.doc.pausedAll) return { ok: false, error: 'Schedules are paused (Pause all). Resume them first.' };
     if (s.paused) return { ok: false, error: 'This schedule is paused. Resume it first.' };
     if (s.loop) return { ok: false, error: 'A loop sends its own passes.' };
@@ -1126,12 +1161,19 @@ export class Scheduler {
     let refused: ModeRefusal | undefined;
     let busy = false;
     try {
-      const sr = await this.sendRun(s, s.prompt);
-      r = sr.r;
-      refused = sr.refused;
-      busy = !!sr.busy;
-      if (typeof r === 'string' && r) this.attrib.set(r, s.id);
-      if (!busy) this.record(this.doc.schedules.find((x) => x.id === s.id) ?? s, r ? 'sent' : refused ? 'mode-refused' : 'failed', this.deps.now(), { session: typeof r === 'string' && r ? r : s.target?.session, reason: sr.reason, manual: true });
+      this.goingOut.add(s.id);
+      const job = this.sendRun(s, s.prompt).then((sr) => {
+        this.goingOut.delete(s.id);
+        r = sr.r;
+        refused = sr.refused;
+        busy = !!sr.busy;
+        if (typeof r === 'string' && r) this.attrib.set(r, s.id);
+        if (!busy) this.record(this.doc.schedules.find((x) => x.id === s.id) ?? s, r ? 'sent' : refused ? 'mode-refused' : 'failed', this.deps.now(), { session: typeof r === 'string' && r ? r : s.target?.session, reason: sr.reason, manual: true });
+      });
+      if (!(await this.answeredInTime(job))) {
+        void job.then(() => this.commit());
+        return { ok: false, error: 'The agent app has not answered yet. Its row will say how it went.' };
+      }
     } finally {
       this.running = false;
       this.commit();
@@ -1168,12 +1210,19 @@ export class Scheduler {
     let refused: ModeRefusal | undefined;
     let busy = false;
     try {
-      const sr = await this.sendRun(s, prompt);
-      r = sr.r;
-      refused = sr.refused;
-      busy = !!sr.busy;
-      if (typeof r === 'string' && r) this.attrib.set(r, s.id);
-      if (!busy) this.record(this.doc.schedules.find((x) => x.id === s.id) ?? s, r ? 'sent' : refused ? 'mode-refused' : 'failed', this.deps.now(), { session: typeof r === 'string' && r ? r : s.target?.session, reason: sr.reason });
+      this.goingOut.add(s.id);
+      const job = this.sendRun(s, prompt).then((sr) => {
+        this.goingOut.delete(s.id);
+        r = sr.r;
+        refused = sr.refused;
+        busy = !!sr.busy;
+        if (typeof r === 'string' && r) this.attrib.set(r, s.id);
+        if (!busy) this.record(this.doc.schedules.find((x) => x.id === s.id) ?? s, r ? 'sent' : refused ? 'mode-refused' : 'failed', this.deps.now(), { session: typeof r === 'string' && r ? r : s.target?.session, reason: sr.reason });
+      });
+      if (!(await this.answeredInTime(job))) {
+        void job.then(() => this.commit());
+        return 'sent'; // it left the door; the row says how it went, and it must not be released twice
+      }
     } finally {
       this.running = false;
       this.commit();
@@ -1289,6 +1338,7 @@ export class Scheduler {
       if (!edit && s.paused && old.paused && old.next !== undefined && recurring(s) && recurring(old)) s.next = old.next;
       this.doc.schedules[i] = s;
     } else this.doc.schedules.push(s);
+    this.sealMode(s); // last: it covers the time and the limit as they are now
     this.commit();
     return { ok: true, schedule: s };
   }
@@ -1305,6 +1355,7 @@ export class Scheduler {
         if (prev.mode) s.mode = prev.mode;
         if (prev.modeFor) s.modeFor = prev.modeFor;
         if (prev.modeSeal) s.modeSeal = prev.modeSeal;
+        if (prev.modeLost) s.modeLost = prev.modeLost;
       }
       return undefined;
     }
@@ -1346,18 +1397,22 @@ export class Scheduler {
     }
     s.mode = want;
     s.modeFor = modeFor;
-    delete s.modeSeal;
-    if (want === 'allow') {
-      const seal = this.deps.seal?.encrypt(proofKey(s.id, s, want, who.app));
-      if (seal) s.modeSeal = seal;
-    }
+    delete s.modeLost;
     return undefined;
+  }
+
+  /** FR-182: seals this schedule's Allow all as it is now. With no safe storage there is no seal: it lasts until the app closes and asks again. */
+  private sealMode(s: Schedule): void {
+    if (s.mode !== 'allow' || !s.modeFor) return;
+    delete s.modeSeal;
+    const seal = this.deps.seal?.encrypt(sealKey(s, s.mode, s.modeFor.app));
+    if (seal) s.modeSeal = seal;
   }
 
   /** FR-182: this schedule's Allow all was sealed by main for what it says now. */
   private sealOk(s: Schedule): boolean {
     if (!s.modeSeal || !s.modeFor || s.mode === undefined) return false;
-    return this.deps.seal?.decrypt(s.modeSeal) === proofKey(s.id, s, s.mode, s.modeFor.app);
+    return this.deps.seal?.decrypt(s.modeSeal) === sealKey(s, s.mode, s.modeFor.app);
   }
 
   /** FR-183: reads the policy of the agent a save or `setMode` is about, so the check that follows sees a real answer. Never throws. */
@@ -1433,6 +1488,7 @@ export class Scheduler {
     delete s.modeSeal;
     const no = this.applyMode(s, prev, want, proof);
     if (no) return { ok: false, error: no };
+    this.sealMode(s);
     this.doc.schedules[this.doc.schedules.indexOf(prev)] = s;
     this.commit();
     return { ok: true, schedule: s };

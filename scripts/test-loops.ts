@@ -505,6 +505,7 @@ async function main(): Promise<void> {
     h.sch.turnEnded('s1', {}); // pass 1's turn ends while its send is still pending
     h.gate.p = new Promise<void>(() => undefined); // pass 2's send stays pending
     (h.sch as unknown as { running: boolean }).running = false; // the guard is defensive: tick() is serial, so free it by hand to reach this order
+    (h.sch as unknown as { goingOut: Set<string> }).goingOut.clear(); // as with `running`: the guard stands behind these two (spec 044)
     await h.advance(30 * MIN);
     assert.deepStrictEqual([h.sent.length, cur(h).loop?.passes, cur(h).loop?.inPass], [2, 2, true]);
     h.failSend.v = true;
@@ -523,6 +524,7 @@ async function main(): Promise<void> {
     await h.advance(MIN); // the restart gets a different startedAt
     h.gate.p = new Promise<void>(() => undefined);
     (h.sch as unknown as { running: boolean }).running = false; // the guard is defensive: tick() is serial, so free it by hand to reach this order
+    (h.sch as unknown as { goingOut: Set<string> }).goingOut.clear();
     assert.ok(h.sch.restartLoop(s.id).ok);
     await h.advance(0);
     assert.deepStrictEqual([h.sent.length, cur(h).loop?.passes, cur(h).loop?.inPass], [2, 1, true]);

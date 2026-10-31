@@ -299,6 +299,8 @@ export interface ScheduleInfo {
   mode?: ScheduleMode;
   /** FR-182: who the mode was chosen for; set by main. */
   modeFor?: { app: string; session?: string };
+  /** FR-182: it waits because its Allow all confirmation could not be checked at a start: each launch asks again. */
+  modeLost?: 'no-seal';
   /** FR-014: one session instead of the folder's agent. */
   target?: { session: string; agent: string; name?: string };
   /** FR-015: the schedule's own limit and what its runs spent. */

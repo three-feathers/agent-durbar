@@ -10,7 +10,8 @@ import type { AgentAdapter } from '../src/adapters/types';
 import { setModeOp, startGuardOp, startModeOf, stopTurnOp } from '../src/main/agentops';
 import { OrgPolicyCache } from '../src/main/orgpolicy';
 import { RunModes, createScheduleWiring, modeCheckOp } from '../src/main/schedmode';
-import { MODE_PROOF_MS, Scheduler, cleanSchedule, loopSupport, parseMode, parseSchedules, publicDoc, publicSchedule, sealFrom, waitingForMode } from '../src/main/schedules';
+import { wholeOrgPolicy } from '../src/shared/orgpolicy';
+import { MODE_PROOF_MS, SEND_PATIENCE_MS, Scheduler, cleanSchedule, loopSupport, parseMode, parseSchedules, publicDoc, publicSchedule, sealFrom, waitingForMode } from '../src/main/schedules';
 import type { ModeAgentInfo, ModeVerdict, Schedule, SchedulesDoc, SchedulerDeps } from '../src/main/schedules';
 import type { AgentInfo, PermMode } from '../src/shared/api';
 
@@ -402,7 +403,7 @@ async function main(): Promise<void> {
   }
 
   // ---- FR-180..FR-184: main's wiring (`createScheduleWiring`) with the real Scheduler and a FakeAdapter's events: every transition of a run ----
-  const wired = async (mode: PermMode = 'read-only', o: { doc?: SchedulesDoc; cfg?: ConstructorParameters<typeof FakeAdapter>[0]; orgRun?: (m: PermMode) => Promise<string | undefined>; orgNow?: (m: PermMode) => string | undefined; remote?: boolean } = {}) => {
+  const wired = async (mode: PermMode = 'read-only', o: { doc?: SchedulesDoc; cfg?: ConstructorParameters<typeof FakeAdapter>[0]; orgRun?: (m: PermMode, raised: boolean) => Promise<string | undefined>; orgNow?: (m: PermMode, raised: boolean) => string | undefined; remote?: boolean } = {}) => {
     const ad = new FakeAdapter({ id: 'copilot', ...o.cfg });
     await ad.start({ sessionId: 'a1', cwd: '/w', permissionMode: mode } as never);
     const a = { id: 'a1', permMode: mode, adapterId: 'copilot', cwd: '/w', name: 'Ada' } as AgentInfo;
@@ -423,8 +424,8 @@ async function main(): Promise<void> {
       changed: (_a, m) => shown.push(m),
       agentOf: () => a,
       ensureLive: async () => { if (live.gate) await live.gate; },
-      orgNow: (_a, m) => o.orgNow?.(m),
-      orgRun: async (_a, m) => o.orgRun?.(m),
+      orgNow: (_a, m, r) => o.orgNow?.(m, r),
+      orgRun: async (_a, m, r) => o.orgRun?.(m, r),
       noteSend: () => undefined,
       noteSendFailed: () => { notes.failed++; },
       noteSent: () => { notes.ok++; },
@@ -504,12 +505,13 @@ async function main(): Promise<void> {
     await s.entered;
     await t.tick();
     t.runs.end('a1');
-    assert.strictEqual(t.w.busy('a1'), true, 'still held');
+    assert.strictEqual(t.w.busy('a1'), true, 'its send has not returned: schedules wait');
+    assert.strictEqual(await t.typed(), 'sent', 'but the person has the session back');
     await t.ad.start({ sessionId: 'a1', cwd: '/w', permissionMode: 'allow' } as never);
     t.emit('working');
     s.release();
     await t.tick();
-    assert.deepStrictEqual(t.sets, ['allow', 'read-only'], 'back when it returned');
+    assert.deepStrictEqual(t.sets, ['allow', 'read-only'], 'back when it returned: it could not take the mode while it reopened');
     assert.strictEqual(t.runs.busy('a1'), false, 'the gate is free (the turn itself is still stopping)');
   }
   // review 2: one gate: a typed message on its way stops a run; a run in setup stops a typed message; a turn that began during the setup stops the switch
@@ -521,7 +523,7 @@ async function main(): Promise<void> {
     await t.h.advance(MIN);
     await t.tick();
     assert.deepStrictEqual(t.sets, [], 'no switch under a message on its way');
-    assert.strictEqual(t.runs.reserve('a1'), false, 'and the gate itself says so, whatever the scheduler\'s busy check saw before');
+    assert.strictEqual(t.runs.reserve('a1'), undefined, 'and the gate itself says so, whatever the scheduler\'s busy check saw before');
     assert.deepStrictEqual(t.h.sent, []);
     assert.strictEqual(t.h.sch.doc.schedules[0].last?.outcome, 'skipped-busy');
     release();
@@ -552,8 +554,7 @@ async function main(): Promise<void> {
   {
     const t = await wired();
     t.emit('working');
-    assert.strictEqual(t.runs.reserve('a1'), false);
-    assert.strictEqual(t.runs.apply(t.a, 'allow'), 'mode-live', 'not reserved: no switch');
+    assert.strictEqual(t.runs.reserve('a1'), undefined);
     assert.deepStrictEqual(t.sets, []);
   }
   // review 3: a typed message before the run's first status does not restore: a Read-only schedule on an Allow all session stays Read-only
@@ -585,19 +586,31 @@ async function main(): Promise<void> {
     const c = t.h.sch.doc.schedules[0];
     assert.deepStrictEqual([reads, t.sets, t.sentOut, c.last?.outcome, c.last?.reason, t.w.busy('a1')], [['allow'], [], [], 'mode-refused', 'mode-org', false]);
   }
-  // with the real cache: nothing cached yet is read first; a read that fails refuses at a run and at a save; a start's advice stays advice
+  // re-review 1: with the real cache. A policy Durbar could not read (a reader that threw, a value it does not know: `doubt`) refuses a raised mode only
   {
-    const mk = (read: () => Promise<undefined>) => new OrgPolicyCache({ ids: () => ['copilot'], adapter: () => ({ displayName: 'App', readOrgPolicy: read }) as never, now: () => 0 });
-    const failing = mk(async () => { throw new Error('no'); });
-    assert.ok(/could not be read/.test((await failing.runRefusal('copilot', { mode: 'allow' })) ?? ''), 'a failed read refuses a run');
-    assert.ok(/could not be read/.test(failing.runRefusalNow('copilot', { mode: 'allow' }) ?? ''), 'and the check that cannot wait');
-    assert.strictEqual(await failing.refusal('copilot', { mode: 'allow' }), undefined, 'a start with the person there: advice as before');
+    const mk = (read: () => Promise<ReturnType<typeof wholeOrgPolicy> | undefined>) => new OrgPolicyCache({ ids: () => ['copilot'], adapter: () => ({ displayName: 'App', readOrgPolicy: read }) as never, now: () => 0 });
+    for (const [name, c] of [['a reader that threw', mk(async () => { throw new Error('no'); })], ['a value it did not know', mk(async () => wholeOrgPolicy('App', [], ['odd'], 'doubt'))]] as Array<[string, OrgPolicyCache]>) {
+      assert.ok(/cannot run unattended/.test((await c.runRefusal('copilot', 'allow', true)) ?? ''), `${name}: a raised mode is refused`);
+      assert.ok(/cannot run unattended/.test(c.runRefusalNow('copilot', 'ask', true) ?? ''), `${name}: also the check that cannot wait`);
+      assert.strictEqual(await c.runRefusal('copilot', 'read-only', false), undefined, `${name}: Read-only is not refused`);
+      assert.strictEqual(await c.runRefusal('copilot', 'allow', false), undefined, `${name}: the mode the session has is not`);
+      assert.strictEqual(await c.refusal('copilot', { mode: 'allow' }), undefined, `${name}: a start with the person there: advice as before`);
+    }
     const c2 = mk(async () => undefined);
-    assert.strictEqual(await c2.runRefusal('copilot', { mode: 'allow' }), undefined, 'a policy with nothing in it refuses nothing');
-    const t = await wired('read-only', { orgRun: (m) => failing.runRefusal('copilot', { mode: m }), orgNow: (m) => failing.runRefusalNow('copilot', { mode: m }) });
+    assert.strictEqual(await c2.runRefusal('copilot', 'allow', true), undefined, 'a policy with nothing in it refuses nothing');
+    const blocked = mk(async () => wholeOrgPolicy('App', [], ['x'], 'fatal'));
+    assert.ok(await blocked.runRefusal('copilot', 'read-only', false), 'a real refusal refuses any mode');
+    const doubt = mk(async () => { throw new Error('no'); });
+    const t = await wired('read-only', { orgRun: (m, r) => doubt.runRefusal('copilot', m, r), orgNow: (m, r) => doubt.runRefusalNow('copilot', m, r) });
     await t.h.sch.readyForMode({ folder: '/w', prompt: 'x' });
     const r = t.h.sch.save({ folder: '/w', prompt: 'x', every: 30, mode: 'ask' }, () => true);
-    assert.ok(!r.ok && /could not be read/.test(r.error), 'refused at a save, in its words');
+    assert.ok(!r.ok && /cannot run unattended/.test(r.error), 'refused at a save, in its words');
+    const ro = t.h.sch.save({ folder: '/w', prompt: 'ro', at: t.h.now + MIN, mode: 'read-only' }, () => true);
+    assert.ok(ro.ok, 'Read-only saves');
+    t.ad.send = async () => { t.emit('working'); t.emit('idle'); };
+    await t.h.advance(MIN);
+    await t.tick();
+    assert.strictEqual(t.h.sch.doc.schedules[0].last?.outcome, 'sent', 'and runs');
     const primed: string[] = [];
     const p = harness(undefined, { primeMode: async (x) => { primed.push(x.folder); throw new Error('a failed read must not throw out of here'); } });
     await p.sch.readyForMode({ folder: '/w' });
@@ -734,20 +747,21 @@ async function main(): Promise<void> {
     // no switch at all, or not live
     const no = await wired('read-only', { cfg: { omit: ['setPermMode'] } });
     no.addRun('read-only');
-    assert.strictEqual(no.runs.reserve('a1'), true);
-    assert.strictEqual(no.runs.apply(no.a, 'allow'), 'mode-live', 'FR-184: a live session that cannot switch (`refusesLive`)');
-    assert.deepStrictEqual(no.runs.settle('a1', false), { started: false });
-    assert.strictEqual(no.runs.reserve('a1'), true);
-    assert.strictEqual(no.runs.apply(no.a, undefined), 'mode-lacking', 'never read as a mode');
-    no.runs.settle('a1', false);
-    assert.strictEqual(no.runs.reserve('a1'), true);
-    assert.strictEqual(no.runs.apply(no.a, 'autopilot'), 'mode-lacking');
-    no.runs.settle('a1', false);
+    const hold = (x: typeof no): NonNullable<ReturnType<typeof no.runs.reserve>> => x.runs.reserve('a1') as NonNullable<ReturnType<typeof no.runs.reserve>>;
+    let k = hold(no);
+    assert.strictEqual(no.runs.apply(no.a, 'allow', k), 'mode-live', 'FR-184: a live session that cannot switch (`refusesLive`)');
+    assert.deepStrictEqual(no.runs.settle('a1', k, false), { started: false });
+    k = hold(no);
+    assert.strictEqual(no.runs.apply(no.a, undefined, k), 'mode-lacking', 'never read as a mode');
+    no.runs.settle('a1', k, false);
+    k = hold(no);
+    assert.strictEqual(no.runs.apply(no.a, 'autopilot', k), 'mode-lacking');
+    no.runs.settle('a1', k, false);
     const stopped = await wired();
     await stopped.ad.stop('a1');
-    assert.strictEqual(stopped.runs.reserve('a1'), true);
-    assert.strictEqual(stopped.runs.apply(stopped.a, 'ask'), 'mode-live', 'not live: the switch would do nothing');
-    stopped.runs.settle('a1', false);
+    k = hold(stopped);
+    assert.strictEqual(stopped.runs.apply(stopped.a, 'ask', k), 'mode-live', 'not live: the switch would do nothing');
+    stopped.runs.settle('a1', k, false);
   }
   // item 7: remote control on: a raised mode is refused; a lowered one is no risk
   {
@@ -795,6 +809,102 @@ async function main(): Promise<void> {
     v.a.permMode = 'ask';
     v.emit('idle');
     assert.strictEqual(v.sets[v.sets.length - 1], 'ask', 'back to what the session has now');
+  }
+  // re-review 3: Stop during the setup: no mode set, nothing sent, the session free
+  {
+    const t = await wired();
+    let open = (): void => undefined;
+    t.live.gate = new Promise((r) => { open = r; });
+    t.addRun('allow');
+    await t.h.advance(MIN);
+    await t.tick();
+    t.runs.end('a1');
+    await t.tick();
+    assert.strictEqual(await t.typed(), 'sent', 'free at once, while ensureLive still waits');
+    open();
+    await t.tick();
+    assert.deepStrictEqual([t.sets, t.sentOut, t.announced], [[], [], []], 'no mode set, no send');
+    assert.strictEqual(t.h.sch.doc.schedules[0].last?.outcome, 'skipped-busy');
+    // the reviewer's N1 at the same point: a run whose setup was stopped cannot apply
+    const u = await wired();
+    const k = u.runs.reserve('a1');
+    assert.ok(k);
+    u.runs.end('a1');
+    assert.strictEqual(u.runs.apply(u.a, 'allow', k as never), 'busy');
+    assert.deepStrictEqual(u.sets, []);
+  }
+  // re-review 4: a send that never returns: a person's Stop or End brings the mode down and frees the session; its late return sets the mode right once more
+  for (const how of ['Stop', 'End'] as const) {
+    const t = await wired();
+    t.addRun('allow');
+    const s = t.holdSend();
+    await t.h.advance(MIN);
+    await s.entered;
+    assert.strictEqual(t.runs.modeOf('a1'), 'allow');
+    if (how === 'Stop') t.runs.end('a1');
+    else t.runs.forget('a1');
+    await t.tick();
+    assert.deepStrictEqual([t.runs.modeOf('a1'), t.a.runMode, t.sets], [undefined, undefined, ['allow', 'read-only']], `${how}: the mode is down`);
+    assert.strictEqual(await t.typed(), 'sent', `${how}: the person has the session`);
+    const c = t.h.sch.doc.schedules[0];
+    assert.deepStrictEqual([c.last?.outcome, c.done], ['failed', true], `${how}: the run's outcome is recorded, once`);
+    if (how === 'End') assert.strictEqual(t.runs.busy('a1'), false, 'End: a hung send\'s count goes with the session');
+    else assert.strictEqual(t.runs.busy('a1'), true, 'Stop: schedules wait for the send still inside the adapter');
+    // a typed mode change while it is hung, then the hung send returns: the session's own mode is set again
+    t.a.permMode = 'ask';
+    s.release();
+    await t.tick();
+    if (how === 'Stop') assert.strictEqual(t.sets[t.sets.length - 1], 'ask', 'its late return sets the mode right');
+    assert.strictEqual(t.runs.busy('a1'), false);
+  }
+  // one hung session does not stop the other schedules; its own schedule is not fired twice; a late answer is recorded
+  {
+    let release = (): void => undefined;
+    const sent: string[] = [];
+    const h = harness(undefined, { send: async (_f, p) => { sent.push(p); if (p === 'hangs') await new Promise<void>((r) => { release = r; }); return 'x'; } });
+    const a = h.sch.save({ folder: '/w', prompt: 'hangs', every: 5, mode: 'ask' }, () => true);
+    const b = h.sch.save({ folder: '/w', prompt: 'other', every: 5, mode: 'ask' }, () => true);
+    assert.ok(a.ok && b.ok);
+    h.sch.start();
+    await h.advance(5 * MIN);
+    assert.deepStrictEqual(sent, ['hangs'], 'the first is out');
+    await h.advance(SEND_PATIENCE_MS);
+    assert.deepStrictEqual(sent, ['hangs', 'other'], 'the other goes after a bounded wait');
+    await h.advance(5 * MIN);
+    await h.advance(SEND_PATIENCE_MS);
+    assert.strictEqual(sent.filter((x) => x === 'hangs').length, 1, 'never twice');
+    assert.strictEqual(sent.filter((x) => x === 'other').length, 2, 'the others keep their times');
+    release();
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    assert.strictEqual(h.sch.doc.schedules[0].last?.outcome, 'sent', 'its answer is recorded when it comes');
+    assert.ok((h.sch.doc.schedules[0].next ?? 0) > h.now, 'and it is due again');
+  }
+  // re-review 5: Stop brings the mode down before an app's stop that never answers
+  {
+    const u = await wired();
+    u.addRun('allow');
+    u.ad.send = async () => { u.emit('working'); };
+    await u.h.advance(MIN);
+    await u.tick();
+    u.ad.interrupt = () => new Promise<void>(() => undefined);
+    void stopTurnOp({ agents: u.agents, router: { forAgent: () => u.ad } as never, wsKey: () => '/w', endRunMode: (id: string) => u.runs.end(id) }, 'a1');
+    assert.strictEqual(u.runs.modeOf('a1'), undefined, 'in the same tick');
+    assert.strictEqual(u.sets[u.sets.length - 1], 'read-only');
+  }
+  // re-review 10: a schedule deleted while an earlier one's send is awaited does not fire
+  {
+    const t = await wired();
+    const q1 = t.h.sch.save({ folder: '/w', prompt: 'first', at: t.h.now + MIN, mode: 'read-only' }, () => true);
+    const q2 = t.h.sch.save({ folder: '/w', prompt: 'deleted', at: t.h.now + MIN, mode: 'read-only' }, () => true);
+    assert.ok(q1.ok && q2.ok);
+    const s = t.holdSend();
+    await t.h.advance(MIN);
+    await s.entered;
+    assert.ok(t.h.sch.remove(q2.schedule.id));
+    s.release();
+    await t.tick();
+    assert.deepStrictEqual(t.sentOut, ['first'], 'the deleted one never goes');
   }
   // the suspicion of a second send: `setMode` or `save` replaces the object while a tick awaits its send: `done` and `next` reach the stored one
   {
@@ -844,13 +954,39 @@ async function main(): Promise<void> {
       ['not decryptable', { modeSeal: 'junk' }, {}],
       ['another prompt', { prompt: 'delete everything' }, {}],
       ['another app', { modeFor: { app: 'claude' } }, {}],
+      ['an old seal with the time changed', { every: 5, next: undefined }, {}],
+      ['an old seal with the limit changed', { cap: { amount: 999, unit: 'aiu' } }, {}],
       ['no safe storage', {}, { seal: undefined }],
       ['safe storage failing', {}, { seal: sealFrom({ available: () => true, encrypt: () => { throw new Error('x'); }, decrypt: () => { throw new Error('x'); } }) }],
     ] as Array<[string, Record<string, unknown>, Partial<SchedulerDeps>]>) {
       const x = load(o, deps);
       const c = x.sch.doc.schedules[0];
-      assert.deepStrictEqual([c.mode, c.modeFor, c.modeSeal, c.last?.outcome, c.last?.reason, waitingForMode(c)], [undefined, undefined, undefined, 'skipped-mode', 'no-seal', true], why);
+      assert.deepStrictEqual([c.mode, c.modeFor, c.modeSeal, c.modeLost, c.last?.outcome, c.last?.reason, waitingForMode(c)], [undefined, undefined, undefined, 'no-seal', 'skipped-mode', 'no-seal', true], why);
     }
+    // a prompt of any length seals: a digest, not the text; an edit of the time in the app seals again and needs no question
+    const long0 = 'y'.repeat(9_500);
+    const lh = harness();
+    const ls = addAllow(lh, { prompt: long0 });
+    assert.ok((ls.modeSeal ?? '').length < 100, 'small whatever the prompt');
+    const back = harness(parseSchedules(JSON.stringify(lh.sch.doc), T0));
+    back.sch.start();
+    assert.strictEqual(back.sch.doc.schedules[0].mode, 'allow', 'a long prompt keeps its Allow all over a restart');
+    assert.ok(lh.sch.save({ id: ls.id, edit: true, prompt: long0, every: 45, mode: 'allow' }, () => true).ok);
+    const back2 = harness(parseSchedules(JSON.stringify(lh.sch.doc), T0));
+    back2.sch.start();
+    assert.strictEqual(back2.sch.doc.schedules[0].mode, 'allow', 'the time edited in the app stays sealed');
+    // re-review 11: overdue at the same start, later due times and later launches keep saying why, and choosing clears it
+    const od = load({ next: T0 - 5 * MIN, modeSeal: undefined });
+    assert.deepStrictEqual([od.sch.doc.schedules[0].last?.outcome, od.sch.doc.schedules[0].last?.reason, od.sch.doc.schedules[0].modeLost], ['skipped-mode', 'no-seal', 'no-seal'], 'overdue does not overwrite it');
+    await od.advance(30 * MIN);
+    assert.strictEqual(od.sch.doc.schedules[0].last?.reason, 'no-seal', 'nor does a due time');
+    const od2 = harness(parseSchedules(JSON.stringify(od.sch.doc), od.now));
+    od2.sch.start();
+    assert.strictEqual(od2.sch.doc.schedules[0].modeLost, 'no-seal', 'nor a later launch: it keeps asking');
+    assert.ok(od2.sch.save({ ...publicSchedule(od2.sch.doc.schedules[0]), paused: true }, () => true).ok);
+    assert.strictEqual(od2.sch.doc.schedules[0].modeLost, 'no-seal', 'nor a Pause');
+    assert.ok(od2.sch.setMode(od2.sch.doc.schedules[0].id, 'ask').ok);
+    assert.strictEqual(od2.sch.doc.schedules[0].modeLost, undefined, 'a choice clears it');
     // no store at all: Allow all works until the app closes, then it asks again
     const none = harness(undefined, { seal: undefined });
     const n = addAllow(none);
@@ -985,8 +1121,8 @@ async function main(): Promise<void> {
       ['orgWords: scheduleWiring.orgWords', 'the refusal at a save'],
       ['primeMode: scheduleWiring.primeMode', 'a save reads the policy'],
       ['seal: sealFrom(safeStorageCodec)', 'a stored Allow all is sealed'],
-      ['orgNow: (a, mode) => orgPolicies.runRefusalNow(', 'a failed read refuses'],
-      ['orgRun: (a, mode) => orgPolicies.runRefusal(', 'the read at a run'],
+      ['orgNow: (a, mode, raised) => orgPolicies.runRefusalNow(', 'a policy not read refuses a raised mode'],
+      ['orgRun: (a, mode, raised) => orgPolicies.runRefusal(', 'the read at a run'],
       ['remote: (id) => remoteOps.has(id)', 'remote control'],
       ['statusBusy: busyStatus', 'the gate reads the status'],
       ['runModes.onStatus(e.sessionId, e.status)', 'a turn\'s end restores'],
@@ -997,7 +1133,7 @@ async function main(): Promise<void> {
       ['runModes.modeOf(a.id) ?? a.permMode', 'the activity log has the real mode'],
       ["toRenderer('schedule:mode'", 'the window is told'],
     ]) assert.ok(m.includes(piece), `main.ts: ${why} (${piece})`);
-    assert.ok(fs.readFileSync(path.join(root, 'main', 'ipc', 'agents.ts'), 'utf8').includes('deps.forgetRunMode?.(a.id)'), 'ipc/agents.ts: a removed agent');
+    assert.ok(fs.readFileSync(path.join(root, 'main', 'ipc', 'agents.ts'), 'utf8').includes('deps.forgetRunMode?.(id); // spec 044'), 'ipc/agents.ts: End frees the session first');
     assert.ok(fs.readFileSync(path.join(root, 'main', 'ipc', 'remote.ts'), 'utf8').includes('deps.runModeOf?.(id) ??'), 'ipc/remote.ts: the real mode');
     const s = fs.readFileSync(path.join(root, 'main', 'schedules.ts'), 'utf8');
     assert.ok(!/validMode/.test(s.replace(/\/\*[\s\S]*?\*\//g, '')), 'schedules.ts must not read a mode with validMode (it turns anything into Read-only)');

@@ -97,7 +97,10 @@ export function register(deps: AgentsIpcDeps): void {
   ipcHandle('agents:stop', (_e, id: string) => stopTurnOp(opsDeps, id));
 
   /** End session (spec 005): remote control off first (spec 054 FR-011: off on GitHub too), then the adapter frees the session. Also Restart session's first step (spec 058 FR-022). */
-  const endSession = (id: string): Promise<void> => endSessionOp({ release: (k) => remoteOps.release(k), router }, id);
+  const endSession = (id: string): Promise<void> => {
+    deps.forgetRunMode?.(id); // spec 044 FR-180: first: a person's End frees the session and its mode, whatever a hung send or the app's own stop does
+    return endSessionOp({ release: (k) => remoteOps.release(k), router }, id);
+  };
   ipcHandle('agents:end', async (_e, id: string) => {
     if (!agents.has(id)) return;
     await endSession(id);

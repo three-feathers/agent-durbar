@@ -223,6 +223,11 @@ module.exports = async (ctx) => {
     await H.calm();
     const pick = await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>!x.parent&&x.info&&x.info.permMode==='read-only'&&document.querySelector('#stage .desk[data-id="'+x.id+'"]'));return a?{id:a.id,cwd:a.info.workspaceFile||a.info.cwd}:null})()`);
     assert.ok(pick, 'a session in Read-only');
+    // the desk card shows the real mode too
+    assert.ok(await js(`window.__durbarSimSched.runMode(${jsLiteral(pick.id)},'allow')`));
+    await wait(`!!document.querySelector(${jsLiteral(`#stage .desk[data-id="${pick.id}"] .modeic.mode-allow`)})`, 'the desk card shows Allow all during the turn');
+    assert.ok(await js(`window.__durbarSimSched.runMode(${jsLiteral(pick.id)},null)`));
+    await wait(`!document.querySelector(${jsLiteral(`#stage .desk[data-id="${pick.id}"] .modeic.mode-allow`)})&&!!document.querySelector(${jsLiteral(`#stage .desk[data-id="${pick.id}"] .modeic.mode-read-only`)})`, 'and its own afterwards');
     await js(`document.querySelector(${jsLiteral(`#stage .desk[data-id="${pick.id}"]`)}).click();0`);
     await wait(`!!document.getElementById('modeChip')`);
     assert.ok(await js(`window.__durbarSimSched.runMode(${jsLiteral(pick.id)},'allow')`));
@@ -234,6 +239,30 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`document.querySelector('#modeMenu [data-mode="allow"]').getAttribute('aria-checked')`), 'true', 'the real one is checked');
     assert.deepStrictEqual(await js(`['read-only','allow'].map(k=>document.querySelector('#modeMenu [data-mode="'+k+'"]').textContent.includes('✓'))`), [false, true], 'and has the check mark');
     await H.shot(path.join(dir, `044-mode-turn-${tag}.png`), { prep: 'mouse', settle: true });
+    await H.key('Escape');
+    await wait(`!document.getElementById('modeMenu')`);
+    // a typed message during that turn: the text stays in the box, the reason shows, no Error state, the chat gets no bubble
+    const typedHeld = async (word) => {
+      const bubbles = await js(`document.querySelectorAll('.msg.user').length`);
+      await js(`(()=>{const m=document.getElementById('msgInput');m.value=${jsLiteral(word)};m.dispatchEvent(new Event('input'));document.getElementById('sendBtn').click()})();0`);
+      await wait(`[...document.querySelectorAll('#toasts .toast')].some(t=>t.textContent.includes('A scheduled run is using this session'))`, 'the reason shows');
+      assert.strictEqual(await js(`document.getElementById('msgInput').value`), word, 'the text stays in the box');
+      await wait(`document.querySelectorAll('.msg.user').length===${jsLiteral(bubbles)}`, 'no bubble stays');
+      assert.notStrictEqual(await js(`window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(pick.id)}).state`), 'error', 'no Error state');
+      assert.strictEqual(await js(`[...document.querySelectorAll('.note')].some(n=>n.textContent.includes('Send failed'))`), false, 'no Send failed');
+      await js(`document.getElementById('msgInput').value='';[...document.querySelectorAll('#toasts .toast')].forEach(t=>t.remove());0`);
+    };
+    await js(`document.querySelectorAll('#toasts').forEach(t=>t.removeAttribute('hidden'));document.getElementById('shotCalm')&&document.getElementById('shotCalm').remove();0`);
+    await typedHeld('during the turn');
+    assert.ok(await js(`window.__durbarSimSched.runMode(${jsLiteral(pick.id)},null)`));
+    await wait(`!document.getElementById('modeChip').textContent.includes('this turn')`);
+    assert.ok(await js(`window.__durbarSimSched.holdSends(true)`)); // main's gate refuses it though the window shows nothing yet (a run setting up)
+    await typedHeld('during a setup');
+    assert.strictEqual(await js(`window.__durbarSimSched.holdSends(false)`), false);
+    assert.ok(await js(`window.__durbarSimSched.runMode(${jsLiteral(pick.id)},'allow')`));
+    await wait(`document.getElementById('modeChip').textContent.includes('this turn')`);
+    await js(`document.getElementById('modeChip').click();0`);
+    await wait(`!!document.getElementById('modeMenu')`);
     const notes0 = await js(`document.querySelectorAll('.note').length`);
     await js(`document.querySelector('#modeMenu [data-mode="read-only"]').click();0`);
     await wait(`!document.getElementById('modeChip').textContent.includes('this turn')&&document.getElementById('modeChip').textContent.includes('Read-only')`, 'the way down works, with no confirmation');

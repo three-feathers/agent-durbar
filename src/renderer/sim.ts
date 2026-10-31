@@ -847,7 +847,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       ...simPF.filter((f) => f.made && f.app === 'copilot').map((f) => { const h = pfHead(f.text); return { id: f.fileName.replace(/\.agent\.md$/, ''), name: h.name || f.fileName, description: h.description ?? '', source: (f.scope === 'user' ? 'user' : 'repo') as 'user' | 'repo', path: f.path }; }),
     ];
     const pfFolders = (): { id: string; path: string }[] => [...new Set(sims.map((s) => s.info.cwd))].map((p) => ({ id: pfHash('folder\0' + p).slice(0, 32), path: p }));
-    const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], modeSubs: [] as ((r: { agentId: string; mode: 'read-only' | 'ask' | 'allow' | null }) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule']; mode?: ScheduleInfo['mode']; modeTurn?: boolean }) => void)[],
+    const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], holdSends: false, modeSubs: [] as ((r: { agentId: string; mode: 'read-only' | 'ask' | 'allow' | null }) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule']; mode?: ScheduleInfo['mode']; modeTurn?: boolean }) => void)[],
       changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); },
       attrib: new Map<string, string>(), runs: {} as Record<string, ScheduleRunInfo[]> };
     /* spec 044 FR-044: the run log with main's rules (Scheduler.record in src/main/schedules.ts): `last` and the log are set together, a repeated
@@ -945,6 +945,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (s) simRunMode(s, mode);
         return !!s;
       },
+      holdSends: (on: boolean): boolean => { simSched.holdSends = on; return on; },
       addWaiting: (prompt: string, folder: string): string => {
         const id = 'sched-wait' + ++simSched.n;
         simSched.list.push({ id, folder, prompt, every: 60, next: Date.now() + 40 * 60000 });
@@ -3029,6 +3030,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true, file: { path: '/tmp/agent-durbar-att-sim/' + clean, name: clean, kind: /^image\//.test(mime) ? 'image' : 'file', size: data.byteLength } };
       },
       send: async (id, text, _atts?: unknown, opts?: { plan?: boolean }) => {
+        if (simSched.holdSends) return { ok: false, held: true as const, error: 'A scheduled run is using this session. Wait for it to end, or stop it, then send your message.' }; // spec 044 FR-180, as main's gate
         if (crashProbe.on) crashProbe.sends++;
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };

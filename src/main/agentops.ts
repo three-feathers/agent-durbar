@@ -109,8 +109,8 @@ export async function setCapOp(d: OpsDeps, id: unknown, credits: unknown): Promi
 /** `agents:stop`: interrupts the running turn only. */
 export async function stopTurnOp(d: OpsDeps, id: string): Promise<{ ok: false; error: string } | undefined> {
   const ad = d.agents.has(id) ? d.router.forAgent(id) : undefined;
+  d.endRunMode?.(id); // spec 044 FR-180: Stop brings a scheduled run's mode down first: the app's own stop may take long or never answer
   if (ad && refusesLive(ad, id, await interruptOf(ad, id))) return { ok: false, error: NO_INTERRUPT };
-  d.endRunMode?.(id); // spec 044 FR-180: Stop ends a scheduled run's mode even if the app says nothing more
 }
 
 /**

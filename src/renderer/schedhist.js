@@ -45,7 +45,7 @@
     'mode-limit':'this session is at its spending limit; raise it and the next run goes',
     'mode-autopilot':'Autopilot is not available on a schedule yet',
     'mode-loop-autopilot':'Autopilot is not offered on a loop',
-    'no-seal':'its Allow all confirmation could not be checked, so it asks again'
+    'no-seal':'its Allow all confirmation could not be checked (the file changed, or your system\'s safe storage is not available or changed), so it asks again'
   };
   const own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
   const WITH_REASON=['failed','ended','skipped-mode','mode-refused'];
@@ -72,6 +72,8 @@
   function waitingForMode(s){
     return !!s&&!s.mode&&!(s.loop&&s.loop.ended)&&(!s.done||!!(s.last&&s.last.outcome==='skipped-mode'));
   }
+  /* spec 044 FR-182: asks again at every launch, not once */
+  function asksAgain(s){return waitingForMode(s)&&s.modeLost==='no-seal';}
   /* FR-037: a skip that repeated is one entry: "3 times, until 08:45" */
   function foldText(run,clockOf){
     if(!run||!(run.n>1))return '';
@@ -110,5 +112,5 @@
     const d=own(P,kind)?P[kind]:P.skip;
     return '<svg class="sh-ic" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'+d+'</svg>';
   }
-  return {OUTCOMES,REASONS,lastWord,waitingForMode,outcomeWord,kindOf,reasonWords,runWords,foldText,runText,emptyText,hereLabel,listName,iconSvg,KINDS:Object.keys(P)};
+  return {OUTCOMES,REASONS,lastWord,waitingForMode,asksAgain,outcomeWord,kindOf,reasonWords,runWords,foldText,runText,emptyText,hereLabel,listName,iconSvg,KINDS:Object.keys(P)};
 })());
