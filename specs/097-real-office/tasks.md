@@ -83,3 +83,15 @@ Numbers: T100..T127 (this delta); FR-100..FR-117.
 - [ ] T125 Each of the 9 missing moments designed or marked `fallback-flat` per world in the registry before that world ships (photo: lounge by Q5, walk by FR-073). Test: `test:surfaces` with the world marked shippable [FR-112]
 - [ ] T126 Photo-world experience art (lift doors, shaft, building, chat backdrop) approved by Vikram; cave and loft art approved by Paco per picture; provenance per the art-pipeline spec (Paco's side, not yet written; spec 098 FR-080). Test: `real:` the approvals quoted in `ASSETS.md`; the art-pipeline asset check green [FR-100, Q6]
 - [ ] T127 Docs: README (worlds, World setting, per-world size, limits), changelog fragment, spec tags and converge. Test: `npm run changelog:check`, `specs:check`
+
+## Facing poses (stacked on #921) - delta 2026-10-31
+
+Numbers: T165..T170; FR-191..FR-194.
+
+- [x] T165 [US1] Art: 105 facing frames (view a, mirrored to face left; book, type, knock, counter, letter, runA, runB) for 15 people, WebP at most 80 KB and 640 px, old standing frames removed, `people.json` `facing` and `foot`, `ASSETS.md` sections `facing-pNN`, the *Removed* records and the likeness record (Vikram 15:29 UTC). Test: `test:realoffice-assets` [FR-191, FR-192, FR-193]
+- [x] T166 [US1] Layout: `FX_POSE`, `POSE_FALLBACK`, the figure on its foot centre, `faces`. Test: `test:realoffice-layout` (every place's pose, fallbacks, the side, foot centre at both sizes) [FR-191, FR-192]
+- [x] T167 [US1] Renderer: `data-faces` and `data-place` on visitors and fixtures. Test: `sim:` `shots-097-realoffice` [FR-194]
+- [x] T168 [US1] Driver: visitors face their fixture, in both sizes, 15 agents, `until()` waits, feet on the floor plane, no overlap. Test: `sim:` `shots-097-realoffice`, mutation-checked [FR-194]
+- [x] T169 [US1] Docs: changelog fragment, README size, spec tags. Test: `npm run changelog:check`, `specs:check` [FR-193]
+- [ ] T170 [US1] Owner look at the lobby screenshots; a real mirrored-picture check by pixels if a side ever changes. Test: `real:` owner verdict [FR-191]
+

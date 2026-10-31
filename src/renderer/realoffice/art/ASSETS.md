@@ -268,291 +268,6 @@ in the repository.
 - cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall
 - licence: MIT
 
-### stand-p01
-
-- files: p01-book.webp p01-coffee.webp p01-letter.webp p01-knock.webp
-- source: `room-art/v2/stand-p01/stand-p01.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/v2/seat-p01/seat-p01.png` (the same person's seated sheet above)
-- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
-- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
-- licence: MIT
-
-### stand-p09
-
-- files: p09-book.webp p09-coffee.webp p09-letter.webp p09-knock.webp
-- source: `room-art/v2/stand-p09/stand-p09.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/v2/seat-p09/seat-p09.png` (the same person's seated sheet above)
-- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
-- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
-- licence: MIT
-
-### stand-p10
-
-- files: p10-book.webp p10-coffee.webp p10-letter.webp p10-knock.webp
-- source: `room-art/v2/stand-p10/stand-p10.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/v2/seat-p10/seat-p10.png` (the same person's seated sheet above)
-- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
-- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
-- licence: MIT
-
-### stand-p11
-
-- files: p11-book.webp p11-coffee.webp p11-letter.webp p11-knock.webp
-- source: `room-art/v2/stand-p11/stand-p11.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/v2/seat-p11/seat-p11.png` (the same person's seated sheet above)
-- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
-- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
-- licence: MIT
-
-### stand-p14
-
-- files: p14-book.webp p14-coffee.webp p14-letter.webp p14-knock.webp
-- source: `room-art/v2/stand-p14/stand-p14.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/v2/seat-p14/seat-p14.png` (the same person's seated sheet above)
-- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
-- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
-- licence: MIT
-
-### stand-p15
-
-- files: p15-book.webp p15-coffee.webp p15-letter.webp p15-knock.webp
-- source: `room-art/v2/stand-p15/stand-p15.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/v2/seat-p15/seat-p15.png` (the same person's seated sheet above)
-- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
-- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
-- licence: MIT
-
-### stand-p05
-
-- files: p05-book.webp p05-coffee.webp p05-letter.webp p05-knock.webp
-- source: `room-art/v2/stand-p05/stand-p05.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/v2/seat-p05/seat-p05.png` (the same person's seated sheet above)
-- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
-- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
-- licence: MIT
-
-### stand-p02
-
-- files: p02-book.webp p02-coffee.webp p02-letter.webp p02-knock.webp
-- source: `room-art/v2/stand-p02/stand-p02.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/v2/seat-p02/seat-p02.png` (the same person's seated sheet above)
-- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
-- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
-- licence: MIT
-
-### stand-p03
-
-- files: p03-book.webp p03-coffee.webp p03-letter.webp p03-knock.webp
-- source: `room-art/v2/stand-p03/stand-p03.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/v2/seat-p03/seat-p03.png` (the same person's seated sheet above)
-- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
-- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
-- licence: MIT
-
-### stand-p04
-
-- files: p04-book.webp p04-coffee.webp p04-letter.webp p04-knock.webp
-- source: `room-art/v2/stand-p04/stand-p04.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/v2/seat-p04/seat-p04.png` (the same person's seated sheet above)
-- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
-- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
-- licence: MIT
-
-### stand-p06
-
-- files: p06-book.webp p06-coffee.webp p06-letter.webp p06-knock.webp
-- source: `room-art/v2/stand-p06/stand-p06.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/v2/seat-p06/seat-p06.png` (the same person's seated sheet above)
-- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
-- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
-- licence: MIT
-
-### stand-p07
-
-- files: p07-book.webp p07-coffee.webp p07-letter.webp p07-knock.webp
-- source: `room-art/v2/stand-p07/stand-p07.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/v2/seat-p07/seat-p07.png` (the same person's seated sheet above)
-- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
-- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
-- licence: MIT
-
-### stand-p08
-
-- files: p08-book.webp p08-coffee.webp p08-letter.webp p08-knock.webp
-- source: `room-art/v2/stand-p08/stand-p08.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/v2/seat-p08/seat-p08.png` (the same person's seated sheet above)
-- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
-- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
-- licence: MIT
-
-### stand-p12
-
-- files: p12-book.webp p12-coffee.webp p12-letter.webp p12-knock.webp
-- source: `room-art/v2/stand-p12/stand-p12.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/v2/seat-p12/seat-p12.png` (the same person's seated sheet above)
-- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
-- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
-- licence: MIT
-
-### stand-p13
-
-- files: p13-book.webp p13-coffee.webp p13-letter.webp p13-knock.webp
-- source: `room-art/v2/stand-p13/stand-p13.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/v2/seat-p13/seat-p13.png` (the same person's seated sheet above)
-- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
-- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
-- licence: MIT
-
-### stand2-p05
-
-- files: p05-box.webp p05-touch.webp p05-tool.webp p05-wait.webp
-- source: `room-art/v2/stand2-p05/stand2-p05.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/v2/seat-p05/seat-p05.png` (the same person's seated sheet above)
-- prompt: Create a character sheet: FOUR standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), standing, body turned slightly toward the viewer. Pose 1: holding a small plain cardboard box in both hands, as if just taken from a shelf. Pose 2: reaching one hand forward to touch something round at chest height, curious. Pose 3: holding a wrench in one hand, looking at it. Pose 4: standing relaxed, hands together, waiting. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
-- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall
-- licence: MIT
-
-### stand2-p02
-
-- files: p02-box.webp p02-touch.webp p02-tool.webp p02-wait.webp
-- source: `room-art/v2/stand2-p02/stand2-p02.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/v2/seat-p02/seat-p02.png` (the same person's seated sheet above)
-- prompt: Create a character sheet: FOUR standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), standing, body turned slightly toward the viewer. Pose 1: holding a small plain cardboard box in both hands, as if just taken from a shelf. Pose 2: reaching one hand forward to touch something round at chest height, curious. Pose 3: holding a wrench in one hand, looking at it. Pose 4: standing relaxed, hands together, waiting. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
-- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall
-- licence: MIT
-
-### stand2-p12
-
-- files: p12-box.webp p12-touch.webp p12-tool.webp p12-wait.webp
-- source: `room-art/v2/stand2-p12/stand2-p12.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/v2/seat-p12/seat-p12.png` (the same person's seated sheet above)
-- prompt: Create a character sheet: FOUR standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), standing, body turned slightly toward the viewer. Pose 1: holding a small plain cardboard box in both hands, as if just taken from a shelf. Pose 2: reaching one hand forward to touch something round at chest height, curious. Pose 3: holding a wrench in one hand, looking at it. Pose 4: standing relaxed, hands together, waiting. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
-- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall
-- licence: MIT
-
-### stand2-p06
-
-- files: p06-box.webp p06-touch.webp p06-tool.webp p06-wait.webp
-- source: `room-art/v2/stand2-p06/stand2-p06.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/v2/seat-p06/seat-p06.png` (the same person's seated sheet above)
-- prompt: Create a character sheet: FOUR standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), standing, body turned slightly toward the viewer. Pose 1: holding a small plain cardboard box in both hands, as if just taken from a shelf. Pose 2: reaching one hand forward to touch something round at chest height, curious. Pose 3: holding a wrench in one hand, looking at it. Pose 4: standing relaxed, hands together, waiting. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
-- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall
-- licence: MIT
-
 ### b-backwall
 
 - files: fx-library.webp fx-software.webp fx-terminal.webp fx-web.webp fx-boss.webp fx-coffee.webp fx-bank.webp fx-postbox.webp fx-other.webp floor.webp
@@ -566,9 +281,550 @@ in the repository.
 - cut: the build PR re-cropped every fixture from the wall at one top (y 192) and one floor line (y 468), so each is whole and all share a scale (FR-023); sides feathered over 14 px; the Terminal keeps the wall screen only (rows above y 331), the Web the globe only (rows from y 332); `floor.webp` is the floor band (y 470..600) at quality 0.70; WebP, no metadata
 - licence: MIT
 
-### run-p01
+## Facing poses (spec 097 FR-191..FR-194; added 2026-10-31)
 
-- files: p01-runA.webp p01-runB.webp
+Fifteen sheets, one per person, view a (three-quarter from behind, turned to the viewer's right), seven poses each: book, type, knock, counter, letter, run, runb. Every frame is **mirrored horizontally** when it is cut, so the shipped pictures face **left**: the lobby puts every visitor to the right of its fixture (spec 097 FR-025), so facing left faces the fixture. The frames show no text, logo or writing (looked at on a contact sheet of all 105 on 2026-10-31); nothing with readable text is mirrored. View b (directly from behind) was generated but is not shipped.
+
+- **Tool:** Codex image generation (`codex exec`), codex-cli 0.163.0, on Vikram's ChatGPT plan with his OK (2026-10-31, 14:34 UTC); one `codex exec` per sheet from an empty folder, with the person's seated-stand reference `room-art/v2/stand-pNN/stand-pNN.png`. Command as in *Tool* above. No API credits.
+- **Prompt** (view a; `pNN` differs only in the attached reference; exact text from `prompts2.py`, wrapper "Use your image generation tool to create ONE image and save it in the current folder as facing-pNN-a.png. Image: <prompt> Do nothing else."):
+
+```
+Create a character sheet: SEVEN standing poses side by side in one single row, wide landscape image, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps so no pose touches or overlaps another; every pose at exactly the same scale, full body from head to shoes, both feet fully visible, all feet on one common horizontal baseline. The SAME person as in the attached image (same hair, build and clothes, same shoes), a fictional person who resembles no real or famous person. Clothes keep the same relaxed, loose, office-appropriate fit as in the attached image: nothing tight or form-fitting anywhere, trousers and tops hang loosely, and no pose emphasises the body. VIEW: in EVERY pose the person is seen THREE-QUARTER FROM BEHIND, turned toward the RIGHT edge of the image. They face away from the camera and to the right, and whatever they do is on their far side toward the right edge. We see their back and their left shoulder blade, the back of the head, and only a sliver of the left cheek and ear in profile; we never see their chest, the eyes looking at us, or the front of the face. Pose 1: taking a book from a shelf: one arm reaching forward to the right at chest height, elbow bent, fingers taking hold of the spine of a single book as if on a shelf at chest height; the arm is not raised high. Pose 2: typing at a standing screen: both arms forward to the right, hands at chest height in the air, head tilted to the right as if reading a screen; no screen drawn. Pose 3: knocking on a door: one arm raised forward to the right, loose fist at head height. Pose 4: standing at a counter: one arm forward to the right at waist height with the hand open and flat in the air as if resting on a counter top; the other hand holds a white coffee cup at chest height. Pose 5: posting a letter: one arm forward to the right at waist height, the hand holding a plain blank white envelope flat, pushing it forward as if into a slot; the other arm relaxed at the side. Pose 6: running in place toward the right, stride A: the left knee lifted, the left foot off the floor, elbows bent, the supporting right foot on the baseline; no treadmill. Pose 7: running in place toward the right, stride B, the OPPOSITE of stride A: the right knee lifted, the right foot off the floor, elbows bent with opposite arm swing, the supporting left foot on the baseline; no treadmill. Nothing else is drawn: no bookshelf, no screen, no door, no counter, no furniture, no mailbox, only the person and the props named. Photoreal 3D render, camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
+```
+
+- **Cut and encoded** (2026-10-31, Pillow 10.2): the frames of the sheets were sliced one per pose, mirrored, resized so each person's head-to-sole height is 600 px (every frame at most 611 px tall), and saved as WebP with alpha, quality 80, method 6, no metadata, 18 to 35 KB each. `people.json` keeps each frame's size in the person's old standing units (so the people keep the heights the owner approved), `feet` and `top` (rows with at least 3 pixels over alpha 128, as a share of the picture) and `foot` (the horizontal centre of the planted feet as a share of the width, the mean of the opaque pixels of the lowest 3 % of the figure). `people.json` `facing` is `left`.
+- **Pose to picture:** `book` and `runA`/`runB` keep their names; `run` is `runA` and `runb` is `runB`; `counter` replaces `coffee`; `type` is new; `letter` and `knock` keep their names. The old `box`, `touch`, `tool`, `wait` pictures (4 people) and the old frames of the same names are removed (records below, *Removed*).
+- **Running frames:** every person has both strides. `[KNOWN GAP]` p03 and p15 lift the same leg in both strides (they differ only in the arm swing); P1 draws only `runA`, so it shows first in P2.
+- **Redone frames:** `p14-a` run and runb and `p10-a` runb come from re-run sheets (2026-10-31, the same command and references); p13's run frame had a remnant of the envelope erased by hand (pixels at x<28, y 232-268 of the frame). The sheets and the first attempts are in the coordinator's art cache, not in the repository.
+- **Weak spots still there:** a faint red or yellow edge fringe at some transparent edges (measured, not removed); p01's `letter` and `runb` come from a second two-pose sheet of the same person, whose scale was matched by head-to-sole height.
+- **Likeness check (FR-068):** Vikram (owner) approved the likeness of the facing frames of all 15 people on 2026-10-31 at 15:29 UTC, including his request to fix the weak spots; the 13 redone frames were shown to him afterwards and he had no objection.
+
+### facing-p01
+
+- files: p01-book.webp p01-type.webp p01-knock.webp p01-counter.webp p01-letter.webp p01-runA.webp p01-runB.webp
+- source: `facing/sheets/facing-p01-a.png` (not shipped) (`letter` and `runb` from the two-pose sheet `facing-p01-extra`, reference unchanged), frames `facing/frames-final/p01-a-*.png`
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 15:29 UTC
+- reference: `room-art/v2/stand-p01/stand-p01.png` (the person's standing sheet above)
+- prompt: the view a prompt under *Facing poses* above, with this reference.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt asks for a fictional person who resembles no real or famous person)
+- likeness-check: Vikram, 2026-10-31 15:29 UTC (facing frames of all 15 reviewed, weak spots fixed, the 13 redone frames shown without objection)
+- cut: one picture per pose, mirrored to face left, head-to-sole 600 px, WebP 0.80 with alpha, no metadata, at most 640 px tall
+- licence: MIT
+
+### facing-p02
+
+- files: p02-book.webp p02-type.webp p02-knock.webp p02-counter.webp p02-letter.webp p02-runA.webp p02-runB.webp
+- source: `facing/sheets/facing-p02-a.png` (not shipped), frames `facing/frames-final/p02-a-*.png`
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 15:29 UTC
+- reference: `room-art/v2/stand-p02/stand-p02.png` (the person's standing sheet above)
+- prompt: the view a prompt under *Facing poses* above, with this reference.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt asks for a fictional person who resembles no real or famous person)
+- likeness-check: Vikram, 2026-10-31 15:29 UTC (facing frames of all 15 reviewed, weak spots fixed, the 13 redone frames shown without objection)
+- cut: one picture per pose, mirrored to face left, head-to-sole 600 px, WebP 0.80 with alpha, no metadata, at most 640 px tall
+- licence: MIT
+
+### facing-p03
+
+- files: p03-book.webp p03-type.webp p03-knock.webp p03-counter.webp p03-letter.webp p03-runA.webp p03-runB.webp
+- source: `facing/sheets/facing-p03-a.png` (not shipped), frames `facing/frames-final/p03-a-*.png`
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 15:29 UTC
+- reference: `room-art/v2/stand-p03/stand-p03.png` (the person's standing sheet above)
+- prompt: the view a prompt under *Facing poses* above, with this reference.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt asks for a fictional person who resembles no real or famous person)
+- likeness-check: Vikram, 2026-10-31 15:29 UTC (facing frames of all 15 reviewed, weak spots fixed, the 13 redone frames shown without objection)
+- cut: one picture per pose, mirrored to face left, head-to-sole 600 px, WebP 0.80 with alpha, no metadata, at most 640 px tall
+- licence: MIT
+
+### facing-p04
+
+- files: p04-book.webp p04-type.webp p04-knock.webp p04-counter.webp p04-letter.webp p04-runA.webp p04-runB.webp
+- source: `facing/sheets/facing-p04-a.png` (not shipped), frames `facing/frames-final/p04-a-*.png`
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 15:29 UTC
+- reference: `room-art/v2/stand-p04/stand-p04.png` (the person's standing sheet above)
+- prompt: the view a prompt under *Facing poses* above, with this reference.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt asks for a fictional person who resembles no real or famous person)
+- likeness-check: Vikram, 2026-10-31 15:29 UTC (facing frames of all 15 reviewed, weak spots fixed, the 13 redone frames shown without objection)
+- cut: one picture per pose, mirrored to face left, head-to-sole 600 px, WebP 0.80 with alpha, no metadata, at most 640 px tall
+- licence: MIT
+
+### facing-p05
+
+- files: p05-book.webp p05-type.webp p05-knock.webp p05-counter.webp p05-letter.webp p05-runA.webp p05-runB.webp
+- source: `facing/sheets/facing-p05-a.png` (not shipped), frames `facing/frames-final/p05-a-*.png`
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 15:29 UTC
+- reference: `room-art/v2/stand-p05/stand-p05.png` (the person's standing sheet above)
+- prompt: the view a prompt under *Facing poses* above, with this reference.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt asks for a fictional person who resembles no real or famous person)
+- likeness-check: Vikram, 2026-10-31 15:29 UTC (facing frames of all 15 reviewed, weak spots fixed, the 13 redone frames shown without objection)
+- cut: one picture per pose, mirrored to face left, head-to-sole 600 px, WebP 0.80 with alpha, no metadata, at most 640 px tall
+- licence: MIT
+
+### facing-p06
+
+- files: p06-book.webp p06-type.webp p06-knock.webp p06-counter.webp p06-letter.webp p06-runA.webp p06-runB.webp
+- source: `facing/sheets/facing-p06-a.png` (not shipped), frames `facing/frames-final/p06-a-*.png`
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 15:29 UTC
+- reference: `room-art/v2/stand-p06/stand-p06.png` (the person's standing sheet above)
+- prompt: the view a prompt under *Facing poses* above, with this reference.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt asks for a fictional person who resembles no real or famous person)
+- likeness-check: Vikram, 2026-10-31 15:29 UTC (facing frames of all 15 reviewed, weak spots fixed, the 13 redone frames shown without objection)
+- cut: one picture per pose, mirrored to face left, head-to-sole 600 px, WebP 0.80 with alpha, no metadata, at most 640 px tall
+- licence: MIT
+
+### facing-p07
+
+- files: p07-book.webp p07-type.webp p07-knock.webp p07-counter.webp p07-letter.webp p07-runA.webp p07-runB.webp
+- source: `facing/sheets/facing-p07-a.png` (not shipped), frames `facing/frames-final/p07-a-*.png`
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 15:29 UTC
+- reference: `room-art/v2/stand-p07/stand-p07.png` (the person's standing sheet above)
+- prompt: the view a prompt under *Facing poses* above, with this reference.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt asks for a fictional person who resembles no real or famous person)
+- likeness-check: Vikram, 2026-10-31 15:29 UTC (facing frames of all 15 reviewed, weak spots fixed, the 13 redone frames shown without objection)
+- cut: one picture per pose, mirrored to face left, head-to-sole 600 px, WebP 0.80 with alpha, no metadata, at most 640 px tall
+- licence: MIT
+
+### facing-p08
+
+- files: p08-book.webp p08-type.webp p08-knock.webp p08-counter.webp p08-letter.webp p08-runA.webp p08-runB.webp
+- source: `facing/sheets/facing-p08-a.png` (not shipped), frames `facing/frames-final/p08-a-*.png`
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 15:29 UTC
+- reference: `room-art/v2/stand-p08/stand-p08.png` (the person's standing sheet above)
+- prompt: the view a prompt under *Facing poses* above, with this reference.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt asks for a fictional person who resembles no real or famous person)
+- likeness-check: Vikram, 2026-10-31 15:29 UTC (facing frames of all 15 reviewed, weak spots fixed, the 13 redone frames shown without objection)
+- cut: one picture per pose, mirrored to face left, head-to-sole 600 px, WebP 0.80 with alpha, no metadata, at most 640 px tall
+- licence: MIT
+
+### facing-p09
+
+- files: p09-book.webp p09-type.webp p09-knock.webp p09-counter.webp p09-letter.webp p09-runA.webp p09-runB.webp
+- source: `facing/sheets/facing-p09-a.png` (not shipped), frames `facing/frames-final/p09-a-*.png`
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 15:29 UTC
+- reference: `room-art/v2/stand-p09/stand-p09.png` (the person's standing sheet above)
+- prompt: the view a prompt under *Facing poses* above, with this reference.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt asks for a fictional person who resembles no real or famous person)
+- likeness-check: Vikram, 2026-10-31 15:29 UTC (facing frames of all 15 reviewed, weak spots fixed, the 13 redone frames shown without objection)
+- cut: one picture per pose, mirrored to face left, head-to-sole 600 px, WebP 0.80 with alpha, no metadata, at most 640 px tall
+- licence: MIT
+
+### facing-p10
+
+- files: p10-book.webp p10-type.webp p10-knock.webp p10-counter.webp p10-letter.webp p10-runA.webp p10-runB.webp
+- source: `facing/sheets/facing-p10-a.png` (not shipped), frames `facing/frames-final/p10-a-*.png`
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 15:29 UTC
+- reference: `room-art/v2/stand-p10/stand-p10.png` (the person's standing sheet above)
+- prompt: the view a prompt under *Facing poses* above, with this reference. `runb` from the re-run sheet.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt asks for a fictional person who resembles no real or famous person)
+- likeness-check: Vikram, 2026-10-31 15:29 UTC (facing frames of all 15 reviewed, weak spots fixed, the 13 redone frames shown without objection)
+- cut: one picture per pose, mirrored to face left, head-to-sole 600 px, WebP 0.80 with alpha, no metadata, at most 640 px tall
+- licence: MIT
+
+### facing-p11
+
+- files: p11-book.webp p11-type.webp p11-knock.webp p11-counter.webp p11-letter.webp p11-runA.webp p11-runB.webp
+- source: `facing/sheets/facing-p11-a.png` (not shipped), frames `facing/frames-final/p11-a-*.png`
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 15:29 UTC
+- reference: `room-art/v2/stand-p11/stand-p11.png` (the person's standing sheet above)
+- prompt: the view a prompt under *Facing poses* above, with this reference.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt asks for a fictional person who resembles no real or famous person)
+- likeness-check: Vikram, 2026-10-31 15:29 UTC (facing frames of all 15 reviewed, weak spots fixed, the 13 redone frames shown without objection)
+- cut: one picture per pose, mirrored to face left, head-to-sole 600 px, WebP 0.80 with alpha, no metadata, at most 640 px tall
+- licence: MIT
+
+### facing-p12
+
+- files: p12-book.webp p12-type.webp p12-knock.webp p12-counter.webp p12-letter.webp p12-runA.webp p12-runB.webp
+- source: `facing/sheets/facing-p12-a.png` (not shipped), frames `facing/frames-final/p12-a-*.png`
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 15:29 UTC
+- reference: `room-art/v2/stand-p12/stand-p12.png` (the person's standing sheet above)
+- prompt: the view a prompt under *Facing poses* above, with this reference.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt asks for a fictional person who resembles no real or famous person)
+- likeness-check: Vikram, 2026-10-31 15:29 UTC (facing frames of all 15 reviewed, weak spots fixed, the 13 redone frames shown without objection)
+- cut: one picture per pose, mirrored to face left, head-to-sole 600 px, WebP 0.80 with alpha, no metadata, at most 640 px tall
+- licence: MIT
+
+### facing-p13
+
+- files: p13-book.webp p13-type.webp p13-knock.webp p13-counter.webp p13-letter.webp p13-runA.webp p13-runB.webp
+- source: `facing/sheets/facing-p13-a.png` (not shipped), frames `facing/frames-final/p13-a-*.png`
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 15:29 UTC
+- reference: `room-art/v2/stand-p13/stand-p13.png` (the person's standing sheet above)
+- prompt: the view a prompt under *Facing poses* above, with this reference. `run` with the envelope remnant erased by hand.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt asks for a fictional person who resembles no real or famous person)
+- likeness-check: Vikram, 2026-10-31 15:29 UTC (facing frames of all 15 reviewed, weak spots fixed, the 13 redone frames shown without objection)
+- cut: one picture per pose, mirrored to face left, head-to-sole 600 px, WebP 0.80 with alpha, no metadata, at most 640 px tall
+- licence: MIT
+
+### facing-p14
+
+- files: p14-book.webp p14-type.webp p14-knock.webp p14-counter.webp p14-letter.webp p14-runA.webp p14-runB.webp
+- source: `facing/sheets/facing-p14-a.png` (not shipped), frames `facing/frames-final/p14-a-*.png`
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 15:29 UTC
+- reference: `room-art/v2/stand-p14/stand-p14.png` (the person's standing sheet above)
+- prompt: the view a prompt under *Facing poses* above, with this reference. `run` and `runb` from the re-run sheet.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt asks for a fictional person who resembles no real or famous person)
+- likeness-check: Vikram, 2026-10-31 15:29 UTC (facing frames of all 15 reviewed, weak spots fixed, the 13 redone frames shown without objection)
+- cut: one picture per pose, mirrored to face left, head-to-sole 600 px, WebP 0.80 with alpha, no metadata, at most 640 px tall
+- licence: MIT
+
+### facing-p15
+
+- files: p15-book.webp p15-type.webp p15-knock.webp p15-counter.webp p15-letter.webp p15-runA.webp p15-runB.webp
+- source: `facing/sheets/facing-p15-a.png` (not shipped), frames `facing/frames-final/p15-a-*.png`
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31 15:29 UTC
+- reference: `room-art/v2/stand-p15/stand-p15.png` (the person's standing sheet above)
+- prompt: the view a prompt under *Facing poses* above, with this reference.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt asks for a fictional person who resembles no real or famous person)
+- likeness-check: Vikram, 2026-10-31 15:29 UTC (facing frames of all 15 reviewed, weak spots fixed, the 13 redone frames shown without objection)
+- cut: one picture per pose, mirrored to face left, head-to-sole 600 px, WebP 0.80 with alpha, no metadata, at most 640 px tall
+- licence: MIT
+
+## References (generated the same day, not shipped)
+
+- `room-art/b-person/b-person-sheet.png` (render-style reference for every seated sheet; an invented woman): A sheet with THREE poses side by side in one row, on a fully TRANSPARENT background (PNG with alpha channel), equal spacing with clear empty gaps between them. The SAME person in all three: a woman in her 30s with curly dark hair and a mustard cardigan over a white top, seen from the front, sitting on a black office chair, only her chair back and her upper body from the lap up are shown (draw NO desk, no table, no monitor). Pose 1 working: typing, looking down. Pose 2 waiting: right arm raised high. Pose 3 resting: leaning back with hands behind her head. Photoreal 3D render look, realistic, soft warm daylight, same camera about 20 degrees down, no text.
+- `room-art/b-desk2/b-desk-front-2.png` (reference for the desk): One office desk seen from the front, centred, on a fully TRANSPARENT background (PNG with alpha channel, no floor, no shadow plane). Light oak desktop, black steel legs. A single monitor seen from behind (we see the back of the monitor) placed at the FAR LEFT end of the desk, occupying only the left third of the desk width. A mug at the far right end. The right two thirds of the desktop behind the monitor are completely empty, open space above them where a person would sit; no chair, no person, no keyboard. Photoreal 3D render, front-facing eye-level-from-slightly-above camera (about 20° down), mild perspective, modern open-plan software office, warm daylight, light oak, white walls, black steel, plants; clean, calm, realistic, no text, no logos.
+
+## Earlier versions, not in the pack
+
+- `seat-p05`, `stand-p05`, `stand2-p05` (first version, 2026-10-31): replaced before the mockup because p05 looked too much like p03 (another invented person of this pack, not a real one); regenerated with "long straight dark-brown hair in a high ponytail". First description: a woman in her mid 20s, Turkish, long dark-brown wavy hair, plum-purple knit sweater, small gold stud earrings.
+
+## Earlier standing and running sets, replaced 2026-10-31 (files removed, not in the pack)
+
+The sections below are kept as the record of how those sheets were made, approved and likeness-checked; their pictures were replaced by the facing frames (see `facing-pNN` above) and removed from the folder. Headings are one level down so the pack check does not expect their files.
+
+#### stand-p01
+
+- files (removed 2026-10-31): p01-book.webp p01-coffee.webp p01-letter.webp p01-knock.webp
+- source: `room-art/v2/stand-p01/stand-p01.png` (not shipped), sliced by the mockup's slicer
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31
+- reference: `room-art/v2/seat-p01/seat-p01.png` (the same person's seated sheet above)
+- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
+- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
+- licence: MIT
+
+#### stand-p09
+
+- files (removed 2026-10-31): p09-book.webp p09-coffee.webp p09-letter.webp p09-knock.webp
+- source: `room-art/v2/stand-p09/stand-p09.png` (not shipped), sliced by the mockup's slicer
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31
+- reference: `room-art/v2/seat-p09/seat-p09.png` (the same person's seated sheet above)
+- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
+- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
+- licence: MIT
+
+#### stand-p10
+
+- files (removed 2026-10-31): p10-book.webp p10-coffee.webp p10-letter.webp p10-knock.webp
+- source: `room-art/v2/stand-p10/stand-p10.png` (not shipped), sliced by the mockup's slicer
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31
+- reference: `room-art/v2/seat-p10/seat-p10.png` (the same person's seated sheet above)
+- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
+- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
+- licence: MIT
+
+#### stand-p11
+
+- files (removed 2026-10-31): p11-book.webp p11-coffee.webp p11-letter.webp p11-knock.webp
+- source: `room-art/v2/stand-p11/stand-p11.png` (not shipped), sliced by the mockup's slicer
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31
+- reference: `room-art/v2/seat-p11/seat-p11.png` (the same person's seated sheet above)
+- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
+- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
+- licence: MIT
+
+#### stand-p14
+
+- files (removed 2026-10-31): p14-book.webp p14-coffee.webp p14-letter.webp p14-knock.webp
+- source: `room-art/v2/stand-p14/stand-p14.png` (not shipped), sliced by the mockup's slicer
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31
+- reference: `room-art/v2/seat-p14/seat-p14.png` (the same person's seated sheet above)
+- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
+- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
+- licence: MIT
+
+#### stand-p15
+
+- files (removed 2026-10-31): p15-book.webp p15-coffee.webp p15-letter.webp p15-knock.webp
+- source: `room-art/v2/stand-p15/stand-p15.png` (not shipped), sliced by the mockup's slicer
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31
+- reference: `room-art/v2/seat-p15/seat-p15.png` (the same person's seated sheet above)
+- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
+- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
+- licence: MIT
+
+#### stand-p05
+
+- files (removed 2026-10-31): p05-book.webp p05-coffee.webp p05-letter.webp p05-knock.webp
+- source: `room-art/v2/stand-p05/stand-p05.png` (not shipped), sliced by the mockup's slicer
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31
+- reference: `room-art/v2/seat-p05/seat-p05.png` (the same person's seated sheet above)
+- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
+- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
+- licence: MIT
+
+#### stand-p02
+
+- files (removed 2026-10-31): p02-book.webp p02-coffee.webp p02-letter.webp p02-knock.webp
+- source: `room-art/v2/stand-p02/stand-p02.png` (not shipped), sliced by the mockup's slicer
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31
+- reference: `room-art/v2/seat-p02/seat-p02.png` (the same person's seated sheet above)
+- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
+- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
+- licence: MIT
+
+#### stand-p03
+
+- files (removed 2026-10-31): p03-book.webp p03-coffee.webp p03-letter.webp p03-knock.webp
+- source: `room-art/v2/stand-p03/stand-p03.png` (not shipped), sliced by the mockup's slicer
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31
+- reference: `room-art/v2/seat-p03/seat-p03.png` (the same person's seated sheet above)
+- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
+- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
+- licence: MIT
+
+#### stand-p04
+
+- files (removed 2026-10-31): p04-book.webp p04-coffee.webp p04-letter.webp p04-knock.webp
+- source: `room-art/v2/stand-p04/stand-p04.png` (not shipped), sliced by the mockup's slicer
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31
+- reference: `room-art/v2/seat-p04/seat-p04.png` (the same person's seated sheet above)
+- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
+- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
+- licence: MIT
+
+#### stand-p06
+
+- files (removed 2026-10-31): p06-book.webp p06-coffee.webp p06-letter.webp p06-knock.webp
+- source: `room-art/v2/stand-p06/stand-p06.png` (not shipped), sliced by the mockup's slicer
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31
+- reference: `room-art/v2/seat-p06/seat-p06.png` (the same person's seated sheet above)
+- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
+- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
+- licence: MIT
+
+#### stand-p07
+
+- files (removed 2026-10-31): p07-book.webp p07-coffee.webp p07-letter.webp p07-knock.webp
+- source: `room-art/v2/stand-p07/stand-p07.png` (not shipped), sliced by the mockup's slicer
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31
+- reference: `room-art/v2/seat-p07/seat-p07.png` (the same person's seated sheet above)
+- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
+- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
+- licence: MIT
+
+#### stand-p08
+
+- files (removed 2026-10-31): p08-book.webp p08-coffee.webp p08-letter.webp p08-knock.webp
+- source: `room-art/v2/stand-p08/stand-p08.png` (not shipped), sliced by the mockup's slicer
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31
+- reference: `room-art/v2/seat-p08/seat-p08.png` (the same person's seated sheet above)
+- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
+- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
+- licence: MIT
+
+#### stand-p12
+
+- files (removed 2026-10-31): p12-book.webp p12-coffee.webp p12-letter.webp p12-knock.webp
+- source: `room-art/v2/stand-p12/stand-p12.png` (not shipped), sliced by the mockup's slicer
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31
+- reference: `room-art/v2/seat-p12/seat-p12.png` (the same person's seated sheet above)
+- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
+- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
+- licence: MIT
+
+#### stand-p13
+
+- files (removed 2026-10-31): p13-book.webp p13-coffee.webp p13-letter.webp p13-knock.webp
+- source: `room-art/v2/stand-p13/stand-p13.png` (not shipped), sliced by the mockup's slicer
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31
+- reference: `room-art/v2/seat-p13/seat-p13.png` (the same person's seated sheet above)
+- prompt: Create a character sheet: FIVE standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), now standing, body turned slightly toward the viewer. Pose 1: flipping through an open book held at chest height, looking at the pages. Pose 2: sipping from a white coffee cup. Pose 3: walking on a compact flat black treadmill walking pad, both hands forward at chest height typing on a small black keyboard on a slim stand. Pose 4: holding a white envelope forward in one hand, as if posting a letter or handing it over a counter. Pose 5: one hand raised in a loose fist at head height, knocking on a door, glancing at the viewer. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
+- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall; the treadmill pose (pose 3, `-tread`) is not shipped: removed 2026-10-31 on the owner\'s word (Vikram, 11:22 UTC, "may be don\'t use treadmill"), the Terminal visitor stands instead
+- licence: MIT
+
+#### stand2-p05
+
+- files (removed 2026-10-31): p05-box.webp p05-touch.webp p05-tool.webp p05-wait.webp
+- source: `room-art/v2/stand2-p05/stand2-p05.png` (not shipped), sliced by the mockup's slicer
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31
+- reference: `room-art/v2/seat-p05/seat-p05.png` (the same person's seated sheet above)
+- prompt: Create a character sheet: FOUR standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), standing, body turned slightly toward the viewer. Pose 1: holding a small plain cardboard box in both hands, as if just taken from a shelf. Pose 2: reaching one hand forward to touch something round at chest height, curious. Pose 3: holding a wrench in one hand, looking at it. Pose 4: standing relaxed, hands together, waiting. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
+- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall
+- licence: MIT
+
+#### stand2-p02
+
+- files (removed 2026-10-31): p02-box.webp p02-touch.webp p02-tool.webp p02-wait.webp
+- source: `room-art/v2/stand2-p02/stand2-p02.png` (not shipped), sliced by the mockup's slicer
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31
+- reference: `room-art/v2/seat-p02/seat-p02.png` (the same person's seated sheet above)
+- prompt: Create a character sheet: FOUR standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), standing, body turned slightly toward the viewer. Pose 1: holding a small plain cardboard box in both hands, as if just taken from a shelf. Pose 2: reaching one hand forward to touch something round at chest height, curious. Pose 3: holding a wrench in one hand, looking at it. Pose 4: standing relaxed, hands together, waiting. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
+- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall
+- licence: MIT
+
+#### stand2-p12
+
+- files (removed 2026-10-31): p12-box.webp p12-touch.webp p12-tool.webp p12-wait.webp
+- source: `room-art/v2/stand2-p12/stand2-p12.png` (not shipped), sliced by the mockup's slicer
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31
+- reference: `room-art/v2/seat-p12/seat-p12.png` (the same person's seated sheet above)
+- prompt: Create a character sheet: FOUR standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), standing, body turned slightly toward the viewer. Pose 1: holding a small plain cardboard box in both hands, as if just taken from a shelf. Pose 2: reaching one hand forward to touch something round at chest height, curious. Pose 3: holding a wrench in one hand, looking at it. Pose 4: standing relaxed, hands together, waiting. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
+- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall
+- licence: MIT
+
+#### stand2-p06
+
+- files (removed 2026-10-31): p06-box.webp p06-touch.webp p06-tool.webp p06-wait.webp
+- source: `room-art/v2/stand2-p06/stand2-p06.png` (not shipped), sliced by the mockup's slicer
+- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
+- date: 2026-10-31
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, 2026-10-31
+- reference: `room-art/v2/seat-p06/seat-p06.png` (the same person's seated sheet above)
+- prompt: Create a character sheet: FOUR standing poses side by side in one single row, on a fully TRANSPARENT background (PNG with alpha channel, no backdrop, no floor, no shadow). Equal spacing with clear gaps; every pose at exactly the same scale, full body from head to shoes. The SAME person as in the attached image (same face, hair and clothes), standing, body turned slightly toward the viewer. Pose 1: holding a small plain cardboard box in both hands, as if just taken from a shelf. Pose 2: reaching one hand forward to touch something round at chest height, curious. Pose 3: holding a wrench in one hand, looking at it. Pose 4: standing relaxed, hands together, waiting. No other props. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
+- likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
+- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall
+- licence: MIT
+
+#### run-p01
+
+- files (removed 2026-10-31): p01-runA.webp p01-runB.webp
 - source: `room-art/run/run-p01.png` (not shipped; attempt 1)
 - tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
 - date: 2026-10-31
@@ -581,9 +837,9 @@ in the repository.
 - cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
 - licence: MIT
 
-### run-p02
+#### run-p02
 
-- files: p02-runA.webp p02-runB.webp
+- files (removed 2026-10-31): p02-runA.webp p02-runB.webp
 - source: `room-art/run/run-p02.png` (not shipped; attempt 2)
 - tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
 - date: 2026-10-31
@@ -596,9 +852,9 @@ in the repository.
 - cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
 - licence: MIT
 
-### run-p03
+#### run-p03
 
-- files: p03-runA.webp p03-runB.webp
+- files (removed 2026-10-31): p03-runA.webp p03-runB.webp
 - source: `room-art/run/run-p03.png` (not shipped; attempt 2)
 - tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
 - date: 2026-10-31
@@ -611,9 +867,9 @@ in the repository.
 - cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
 - licence: MIT
 
-### run-p04
+#### run-p04
 
-- files: p04-runA.webp p04-runB.webp
+- files (removed 2026-10-31): p04-runA.webp p04-runB.webp
 - source: `room-art/run/run-p04.png` (not shipped; attempt 1)
 - tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
 - date: 2026-10-31
@@ -626,9 +882,9 @@ in the repository.
 - cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
 - licence: MIT
 
-### run-p05
+#### run-p05
 
-- files: p05-runA.webp p05-runB.webp
+- files (removed 2026-10-31): p05-runA.webp p05-runB.webp
 - source: `room-art/run/run-p05.png` (not shipped; attempt 1)
 - tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
 - date: 2026-10-31
@@ -641,9 +897,9 @@ in the repository.
 - cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
 - licence: MIT
 
-### run-p06
+#### run-p06
 
-- files: p06-runA.webp p06-runB.webp
+- files (removed 2026-10-31): p06-runA.webp p06-runB.webp
 - source: `room-art/run/run-p06.png` (not shipped; attempt 1)
 - tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
 - date: 2026-10-31
@@ -656,9 +912,9 @@ in the repository.
 - cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
 - licence: MIT
 
-### run-p07
+#### run-p07
 
-- files: p07-runA.webp p07-runB.webp
+- files (removed 2026-10-31): p07-runA.webp p07-runB.webp
 - source: `room-art/run/run-p07.png` (not shipped; attempt 1)
 - tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
 - date: 2026-10-31
@@ -671,9 +927,9 @@ in the repository.
 - cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
 - licence: MIT
 
-### run-p08
+#### run-p08
 
-- files: p08-runA.webp p08-runB.webp
+- files (removed 2026-10-31): p08-runA.webp p08-runB.webp
 - source: `room-art/run/run-p08.png` (not shipped; attempt 1)
 - tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
 - date: 2026-10-31
@@ -686,9 +942,9 @@ in the repository.
 - cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
 - licence: MIT
 
-### run-p09
+#### run-p09
 
-- files: p09-runA.webp p09-runB.webp
+- files (removed 2026-10-31): p09-runA.webp p09-runB.webp
 - source: `room-art/run/run-p09.png` (not shipped; attempt 1)
 - tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
 - date: 2026-10-31
@@ -701,9 +957,9 @@ in the repository.
 - cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
 - licence: MIT
 
-### run-p10
+#### run-p10
 
-- files: p10-runA.webp p10-runB.webp
+- files (removed 2026-10-31): p10-runA.webp p10-runB.webp
 - source: `room-art/run/run-p10.png` (not shipped; attempt 1)
 - tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
 - date: 2026-10-31
@@ -716,9 +972,9 @@ in the repository.
 - cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
 - licence: MIT
 
-### run-p11
+#### run-p11
 
-- files: p11-runA.webp p11-runB.webp
+- files (removed 2026-10-31): p11-runA.webp p11-runB.webp
 - source: `room-art/run/run-p11.png` (not shipped; attempt 1)
 - tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
 - date: 2026-10-31
@@ -731,9 +987,9 @@ in the repository.
 - cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
 - licence: MIT
 
-### run-p12
+#### run-p12
 
-- files: p12-runA.webp p12-runB.webp
+- files (removed 2026-10-31): p12-runA.webp p12-runB.webp
 - source: `room-art/run/run-p12.png` (not shipped; attempt 2)
 - tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
 - date: 2026-10-31
@@ -746,9 +1002,9 @@ in the repository.
 - cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
 - licence: MIT
 
-### run-p13
+#### run-p13
 
-- files: p13-runA.webp p13-runB.webp
+- files (removed 2026-10-31): p13-runA.webp p13-runB.webp
 - source: `room-art/run/run-p13.png` (not shipped; attempt 1)
 - tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
 - date: 2026-10-31
@@ -761,9 +1017,9 @@ in the repository.
 - cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
 - licence: MIT
 
-### run-p14
+#### run-p14
 
-- files: p14-runA.webp p14-runB.webp
+- files (removed 2026-10-31): p14-runA.webp p14-runB.webp
 - source: `room-art/run/run-p14.png` (not shipped; attempt 2)
 - tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
 - date: 2026-10-31
@@ -776,9 +1032,9 @@ in the repository.
 - cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
 - licence: MIT
 
-### run-p15
+#### run-p15
 
-- files: p15-runA.webp p15-runB.webp
+- files (removed 2026-10-31): p15-runA.webp p15-runB.webp
 - source: `room-art/run/run-p15.png` (not shipped; attempt 1)
 - tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
 - date: 2026-10-31
@@ -791,15 +1047,7 @@ in the repository.
 - cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
 - licence: MIT
 
-## References (generated the same day, not shipped)
-
-- `room-art/b-person/b-person-sheet.png` (render-style reference for every seated sheet; an invented woman): A sheet with THREE poses side by side in one row, on a fully TRANSPARENT background (PNG with alpha channel), equal spacing with clear empty gaps between them. The SAME person in all three: a woman in her 30s with curly dark hair and a mustard cardigan over a white top, seen from the front, sitting on a black office chair, only her chair back and her upper body from the lap up are shown (draw NO desk, no table, no monitor). Pose 1 working: typing, looking down. Pose 2 waiting: right arm raised high. Pose 3 resting: leaning back with hands behind her head. Photoreal 3D render look, realistic, soft warm daylight, same camera about 20 degrees down, no text.
-- `room-art/b-desk2/b-desk-front-2.png` (reference for the desk): One office desk seen from the front, centred, on a fully TRANSPARENT background (PNG with alpha channel, no floor, no shadow plane). Light oak desktop, black steel legs. A single monitor seen from behind (we see the back of the monitor) placed at the FAR LEFT end of the desk, occupying only the left third of the desk width. A mug at the far right end. The right two thirds of the desktop behind the monitor are completely empty, open space above them where a person would sit; no chair, no person, no keyboard. Photoreal 3D render, front-facing eye-level-from-slightly-above camera (about 20° down), mild perspective, modern open-plan software office, warm daylight, light oak, white walls, black steel, plants; clean, calm, realistic, no text, no logos.
-
-## Earlier versions, not in the pack
-
-- `seat-p05`, `stand-p05`, `stand2-p05` (first version, 2026-10-31): replaced before the mockup because p05 looked too much like p03 (another invented person of this pack, not a real one); regenerated with "long straight dark-brown hair in a high ponytail". First description: a woman in her mid 20s, Turkish, long dark-brown wavy hair, plum-purple knit sweater, small gold stud earrings.
-
 ## Removed
 
-None.
+- p01..p15 `-coffee.webp`, and the `-box`, `-touch`, `-tool`, `-wait` pictures of p02, p05, p06, p12: removed 2026-10-31, reported by Vikram (owner: the lobby people must face their fixture), replaced by `p01-counter.webp` and the facing frames of the same person.
+- the old front-facing `-book`, `-knock`, `-letter`, `-runA`, `-runB` pictures of all 15 people: removed 2026-10-31, reported by Vikram (same reason), replaced by `p01-book.webp` and the facing frames of the same names.
