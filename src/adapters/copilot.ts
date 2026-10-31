@@ -1307,7 +1307,8 @@ export class CopilotAdapter implements AgentAdapter {
   /**
    * Switch the model of a live session (spec 030 FR-003..FR-009, SDK `rpc.model.switchTo`, @experimental).
    * Built from the SDK 1.0.22-1.0.26 types and docs only, never run on a real account (T041..T046 are Phase 3, they cost credits).
-   * Sent: model, effort, tier, `requireAvailable`, `deferIfModelChangeQueued`, `source: 'model_picker'`, `runCompactionPreflight`.
+   * Sent: model, effort, tier, `deferIfModelChangeQueued`, `source: 'model_picker'`, `runCompactionPreflight`.
+   * Not sent: `requireAvailable` (spec 030 FR-067, real 2026-10-31: on a paid plan it answers `cancelled` for every model but `auto`; main checks the request against the account's list first).
    * NEVER sent: `repoScope`, `modelChangeScope`, `pickerPersistence` (they write Copilot's own settings) and `compactionDecision`
    * (its values are unknown). To "compact and switch" the context is compacted first with `history.compact` (trigger `model_switch`),
    * then the switch is asked again; if it still needs confirmation it is `rejected`, never looped.
@@ -1326,7 +1327,6 @@ export class CopilotAdapter implements AgentAdapter {
       ...(request.effort !== undefined ? { reasoningEffort: request.effort } : {}),
       ...(tier ? { contextTier: tier } : {}),
       ...(autoTier !== undefined ? { autoTier } : {}),
-      requireAvailable: true,
       deferIfModelChangeQueued: true,
       runCompactionPreflight: true,
       source: 'model_picker' as const,

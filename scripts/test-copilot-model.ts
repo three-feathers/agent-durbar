@@ -163,8 +163,8 @@ async function main(): Promise<void> {
     const r = await ad.setModel(sid, { model: 'sim-deep', effort: 'high', contextTier: 'long' });
     assert.strictEqual(r.status, 'applied');
     const p = arg(s, 'switchTo');
-    assert.deepStrictEqual(p, { modelId: 'sim-deep', reasoningEffort: 'high', contextTier: 'long_context', requireAvailable: true, deferIfModelChangeQueued: true, runCompactionPreflight: true, source: 'model_picker' });
-    for (const forbidden of ['repoScope', 'modelChangeScope', 'pickerPersistence', 'compactionDecision', 'autoTier']) assert.ok(!(forbidden in p), forbidden + ' is never sent for a normal switch');
+    assert.deepStrictEqual(p, { modelId: 'sim-deep', reasoningEffort: 'high', contextTier: 'long_context', deferIfModelChangeQueued: true, runCompactionPreflight: true, source: 'model_picker' });
+    for (const forbidden of ['repoScope', 'modelChangeScope', 'pickerPersistence', 'compactionDecision', 'autoTier', 'requireAvailable']) assert.ok(!(forbidden in p), forbidden + ' is never sent for a normal switch');
     // the runtime's confirming event is reported as the user's own choice
     s.fire('session.model_change', { newModel: 'sim-deep', previousModel: 'auto', reasoningEffort: 'high', contextTier: 'long_context' });
     const ev = events.filter((e) => e.type === 'model').slice(-1)[0] as { cause: string; tier?: string };
@@ -223,6 +223,19 @@ async function main(): Promise<void> {
     s.removed = false;
     await assert.rejects(ad.cancelQueuedModel(sid, 'q-7'), /Nothing was queued/);
     await assert.rejects(ad.cancelQueuedModel('nope', 'q'), /./);
+    // spec 030 FR-061: a choice during a reply replaces the queued one: the older leaves the queue first, and the runtime's event for the new one stays the user's
+    s.removed = true;
+    s.switchAnswer = { deferred: true, queueId: 'q-8' };
+    await ad.setModel(sid, { model: 'sim-deep', contextTier: 'default' });
+    await ad.cancelQueuedModel(sid, 'q-8');
+    s.switchAnswer = { deferred: true, queueId: 'q-9' };
+    const q2 = await ad.setModel(sid, { model: 'sim-deep', contextTier: 'long', effort: 'high' });
+    assert.deepStrictEqual([q2.status, q2.queueId], ['queued', 'q-9']);
+    const sw = arg(s, 'switchTo');
+    assert.deepStrictEqual([sw.modelId, sw.contextTier, sw.reasoningEffort], ['sim-deep', 'long_context', 'high'], 'the queued switch holds all three');
+    s.fire('session.model_change', { newModel: 'sim-deep', previousModel: 'sim-fast', reasoningEffort: 'high', contextTier: 'long_context' });
+    const qe = events.filter((e) => e.type === 'model').slice(-1)[0] as { cause: string; tier?: string; effort?: string };
+    assert.deepStrictEqual([qe.cause, qe.tier, qe.effort], ['user', 'long', 'high'], 'and is reported as the user\'s own choice');
 
     // a runtime error becomes a rejected result with its message, and no stale "user" expectation is left behind
     s.rpc.model.switchTo = async () => { throw new Error('model not available'); };

@@ -4,7 +4,7 @@
 group: 030
 title: Switch model, effort and context tier of a live session (chat header and office card menu), see window and % full, compact, start-fresh hint, per-folder default; simulator first, adapter-neutral
 status: built
-note: open: long-tier price above the default window, compactionDecision values
+note: open: long-tier price above the default window, compactionDecision values, a free plan without requireAvailable
 -->
 
 **Feature Branch**: `030-switch-model-context` (spec, research, plan and tasks only; code comes in later `030-<slug>` branches per task)
@@ -129,7 +129,7 @@ The model, effort and tier I last chose for a folder are the ones its next sessi
 
 **Switching**
 - **FR-001** A normalized command `setModel(sessionId, request)` on `AgentAdapter` (optional member): `request = { model, effort?: string | null, contextTier?: 'default' | 'long', confirm?: { compaction?: 'accept' | 'decline' } }`, result `{ status: 'applied' | 'queued' | 'needs-confirmation' | 'rejected', model?, queueId?, message?, warning?, confirmation?: { targetName, currentTokens, targetLimit } }`. No vendor field names cross the interface.
-- **FR-002** The Copilot adapter implements it with `session.rpc.model.switchTo` (never `session.setModel`, which drops the result), `requireAvailable: true`, `deferIfModelChangeQueued: true`, `source: 'model_picker'`, and **never** `repoScope`, `modelChangeScope` or `pickerPersistence` (they write the user's Copilot settings; constitution III).
+- **FR-002** The Copilot adapter implements it with `session.rpc.model.switchTo` (never `session.setModel`, which drops the result), `deferIfModelChangeQueued: true` (`requireAvailable` removed, FR-067), `source: 'model_picker'`, and **never** `repoScope`, `modelChangeScope` or `pickerPersistence` (they write the user's Copilot settings; constitution III).
 - **FR-003** A switch applies from the next message and keeps the conversation. If the runtime queues it (a turn is running) the UI says so, shows the pending model and a **Cancel** (adapter removes the queued item). The running reply is never interrupted by a switch.
 - **FR-004** `setEffort` is part of the same request (effort alone is a request with the current model). The effort list is the target model's own list (007 FR-008 stays a gap until its task).
 - **FR-005** IPC `agents:setModel` validates in the main process (agent id lookup, model id string of at most 100 characters and present in the last model list, effort in the known set or null, tier in `default|long` and only when the model advertises it) and never trusts the renderer (constitution III). `AgentInfo` gains the pending model and tier and an `agent:model` push like `agent:mode`.
@@ -212,6 +212,53 @@ No answers from the owner were available while this was written, so these are **
 - `[KNOWN GAP]` Everything marked unverified in [research.md](research.md) until phase 3 runs.
 
 ## Changes
+
+### 2026-10-31: model, effort and context chosen one after another stay together (owner report, Telegram)
+
+The owner reported that choosing a model and a context size together is flaky: "it does select only model or context based on the order". `sim:` reproduced with `scripts/check-model-choice.js`, see below. This changes how the menu builds a request. **Replaces** the part of FR-004's flow where a request was built from the session's last reported model when the menu opened; adds no new control.
+
+**Causes found:**
+
+1. Each row of the menu built a whole request from `a.info` as it stood when the menu opened (`{model: cur.id, contextTier: tier}`), while `a.info` changes only on a `model` event. So:
+   - **during a reply** (Copilot queues), a second choice was built on the *current* model, not the queued one: model then Long context asked for the old model with long; Long context then model asked for the new model on the default window. The second overwrote the first, in either order;
+   - **on a session that has not started** (main answers `applied` and no event comes, FR-013), the same, on every app; the chip did not change either;
+   - **during a slow answer**, or with a stale menu, the same.
+2. Picking another model always asked for the default window, even when the new model has a long tier.
+3. A second queued switch left the first in the runtime's queue (`deferIfModelChangeQueued`): Cancel removed only the last.
+4. `agents:setModel` checked every session against the **default app's** model list (FR-018's "last list main fetched"), so a Claude Code or Codex session's own model was refused ("not in the list") unless Copilot happened to have the same id. `read:` and `test:`; the FR-041 real run called the adapters directly and did not pass this check.
+5. Claude Code's list calls its default `default`, the session reports `auto`: the menu found no entry, so no tick and no effort group on the default.
+
+6. `real:` on Copilot, `requireAvailable: true` (FR-002) now answers `cancelled` for **every model but `auto`**, on a paid plan with 1500 premium requests, SDK 1.0.24, runtime 1.0.101 (0 prompts, 14 models tried, each listed and enabled). Durbar shows that as "That model is not available on this Copilot account or plan". So a real Copilot session could not change its model, effort or window at all in the picker. The same call without the flag is `applied`.
+
+**Requirements:**
+
+- **FR-060** The menu shows, and every choice is built on, what the session runs **next**: the queued switch when there is one, else the current state. A menu row sends only what it changes (`{model}`, `{effort}` or `{tier}`); `mergeChoice` (`modelswitch.js`) makes the whole request, keeping the other fields. An `applied` answer updates the window's state at once: a session that has not started and a same-model change may send no event. The window's state follows later events as before.
+- **FR-061** One change at a time per agent: a choice waits for the answer to the one before and reads the state then, so a stale menu or a rapid double choice cannot undo the first. A choice during a reply **replaces** the queued switch: the older one is cancelled first, then the whole choice is queued, so one switch waits and Cancel leaves nothing. Changing only the effort of a queued, confirmed model and window does not ask again; anything costlier than what the session runs still asks (FR-004). A choice that changes nothing makes no call.
+- **FR-062** A new model keeps the effort and the long window when it offers them. What it does not offer is not sent and is **said** in the toast or the dialog ("Sim Fast does not offer high effort or long context, so they are not kept."), never silently lost. This is the one change of behaviour: a model pick used to reset the window to the default; a long window on the new model asks first when that costs more (FR-004).
+- **FR-063** `agents:setModel` checks a request against the list of the **session's own agent app** (each app's last list, asked once per app when none is held). Replaces "the last list main fetched" in FR-018 for other apps' sessions; the default app is unchanged.
+- **FR-064** Simulator: the same per-app check; Claude Code and Codex answer `applied` during a reply, as their adapters do. `simmodels=rich` adds a second Copilot model with a long tier, a Claude `[1m]` alias and a Codex list (a simulation), for the driver only; other rosters and pictures are unchanged.
+- **FR-065** On an app with its own default, `auto` is that default: the menu ticks Claude Code's `default` entry and offers its efforts; main accepts `auto` on another app, with those efforts (an Undo back to the default needs it). Copilot's `auto` stays a real entry, with its tiers.
+- **FR-066** The words say when a choice applies, per app, and none says "next session" (table below).
+- **FR-067** Replaces FR-002's `requireAvailable: true`: the Copilot adapter no longer sends it. Availability is checked before the call, against the account's list without its disabled models (FR-018, FR-063); a model that still fails then fails at the message, with the runtime's words. `[KNOWN GAP]` not checked on a free plan, where 2026-10-17's run saw `cancelled` as the answer for a model the plan lacks; that mapping stays.
+
+| App | Idle or not started | During a reply |
+|---|---|---|
+| Copilot | "from the next message" | queued: chip `A → B`, menu "Next: B (high effort, long context), when this reply ends", "Applies when this reply ends" |
+| Claude Code | "from the next message" (the next message relaunches with `--resume`, `--model`, `--effort`) | the same: the running reply finishes on the old model |
+| Codex | "from the next message" (values go on the next `turn/start`) | the same: the running reply finishes on the old model |
+
+A **context size on Claude Code and Codex** is not a separate setting: Claude Code lists long-context models as their own entries (`sonnet[1m]`), so the size is the model; Codex has no tier (FR-038, FR-039).
+
+**Evidence:**
+
+- `test:` `scripts/test-model-choice.ts` (the merge in every order; the channel with a fake adapter per app receives every value; each app's list; a session that has not started saves them all); `scripts/test-claude-adapter.ts` (`--model` and `--effort` on the relaunch, both orders), `scripts/test-codex-adapter.ts` (`turn/start`, both orders), `scripts/test-copilot-model.ts` (a replaced queued switch holds all three and stays the user's).
+- `sim:` `scripts/check-model-choice.js` at 1440x900 and 1280x800: the 6 orders on idle, not-started and busy Copilot; both orders on Claude Code and Codex, idle, not started and during a reply; a stale menu; a rapid double choice; a dropped choice; Undo; a reply that ends, with and without Cancel. With the window's code from before this change it fails **85** checks at one size, for example: during a reply, model then effort then Long context asked for `{sim-deep, no effort, long}`, so the model was lost; on a session that has not started the same; on an idle agent, Long context then model ended on the default window; a rapid model then effort asked for the old model. With this change it fails none. The simulator ends a frozen reply with a driver hook (`__simFinishTurn`), so a queued switch is always in play.
+
+- `real:` 2026-10-31, through Durbar's own adapters, Read-only, throw-away folders, sessions deleted after, owner asked for this test:
+  - **Copilot** (SDK 1.0.24, runtime 1.0.101, `gpt-6-luna`), 0 prompts: effort high, then long with effort high: `getCurrent` reports both, one `session.model_change` per call, also for the same model. A switch with the effort omitted keeps it. During a real turn: a first switch `queued` (id 1), cancelled, a whole one `queued` (id 2): at the end of the turn one event, cause user, `gpt-6-luna`, effort low, long tier, and `getCurrent` agrees. This closes the queued part of the 2026-10-20 `[KNOWN GAP]` on a paid model. 3 tiny prompts, **0.39 AIU** in all (2 of them from runs that found cause 6 and tried the queue).
+  - **Claude Code** (`haiku`): model, then effort, before one message: both `applied`, the turn ran on `claude-haiku-5-5`, no error on the launch with `--model` and `--effort`. **/bin/bash.0066** on Claude's estimate.
+  - **Codex** (`gpt-6-luna`): the same, one tiny turn on the ChatGPT plan (it reports no cost).
+  - Not checked for real: a switch from a session that has not started (`test:` and `sim:` only), the window's own code (`sim:` only, the adapters here were called directly).
 
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
