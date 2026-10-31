@@ -293,6 +293,15 @@ In the drawer I choose **Open source** on a note: the chat it came from opens an
 
 ## Changes
 
+### 2026-10-31: the exclude line and Unicode forms on macOS (found by a real macOS check of PR 931)
+
+**Measured on APFS, git with `core.precomposeunicode=true`:** a folder whose path reached `addExclude` in decomposed form (NFD, `cafe` plus U+0301) got an NFD line, git compared the NFC path, `addExclude` answered *Added*, and `git add -A` staged `.durbar/notes.md`: *Keep it out of commits* failed open. APFS treats both forms as one name, and with `core.precomposeunicode=false` git uses the form on disk, which can differ from the form Durbar was given.
+
+1. **On macOS only** (`platform === 'darwin'`), FR-051's one line becomes up to three, one for each different form of the path: as given, NFC and NFD. Each is added only when that exact line is not there, in one append, so a clone that already has the NFD line gets the others at the next turn-on. A name with one form still gets exactly one line. `line` in the answer stays the line as given.
+2. **Windows and Linux are unchanged**: one line with the bytes as given. There the file system does not merge the forms, so the other form would be another folder.
+3. **No git process is added (FR-051, OD1 stands).** `check-ignore` after the append was considered and not used: FR-051 forbids it by name, and a project's git config is hostile input here. `[KNOWN GAP]` *Added* therefore means the lines are written, not that git was asked. A project's own `.gitignore` can still re-include the file with a `!` line, because git reads it before `info/exclude`. A path mixing the two forms is covered as given, plus its NFC and NFD forms, not in every mix.
+4. `test:` `scripts/test-notesfile.ts`: NFD and NFC folders, given in either form where the file system merges them, precompose on and off, with a real `git add -A` that must not stage the file; one line on other platforms. Those tests start `git`; the module does not. `[KNOWN GAP]` HFS+ and the folder picker's own form were not checked.
+
 ### 2026-10-31: the project-file switch, T042 (decided by the coordinator under Ruben's delegation)
 
 The switch of FR-050 and FR-055 in the Notes screen, the `notesFile` flag, two IPC channels and the states in the screen and the drawer. Points the FRs left open:
