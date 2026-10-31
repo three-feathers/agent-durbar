@@ -2576,7 +2576,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       const chat = { id: 'chat', label: 'Chat requests', unit: 'requests', used: 0, unlimited: true };
       const wins = (first: number, second: number, extra: Record<string, unknown> = {}) => [{ id: 'primary', label: '5-hour window', unit: 'percent', usedPercent: first, windowMins: 300, resetsAt: now + 3 * H, ...extra }, { id: 'secondary', label: 'Weekly window', unit: 'percent', usedPercent: second, windowMins: 10080, resetsAt: now + 5 * D }];
       const source = app === 'copilot' ? 'GitHub Copilot, account.getQuota (experimental; can lag a few minutes)' : app === 'codex' ? 'Codex, account/rateLimits/read' : 'Simulated';
-      const ok = (buckets: unknown[], at?: number) => ({ read: { kind: 'ok', source, buckets }, at });
+      const KEY_A = 'a'.repeat(32), KEY_B = 'b'.repeat(32);
+      const ok = (buckets: unknown[], at?: number) => ({ read: { kind: 'ok', source, buckets, accountKey: KEY_A }, at });
       const copilot = app === 'copilot';
       const fail = (failure: string) => ({ read: { kind: 'failed', failure } });
       switch (mode) {
@@ -2585,6 +2586,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         case 'stale': return ok(copilot ? [reqs(506, 1500, 66.3), chat] : wins(12, 41), now - 40 * 60_000);
         case 'agingsoon': return ok(copilot ? [reqs(506, 1500, 66.3)] : wins(12, 41), now - 15 * 60_000 + 2500);
         case 'resetsoon': return ok(copilot ? [reqs(1410, 1500, 6, { resetsAt: now + 2500 })] : wins(93, 41, { resetsAt: now + 2500 }));
+        case 'partial': return ok(copilot ? [reqs(506, 1500, 66.3), { id: 'chat', label: 'Chat requests', unit: 'requests', used: 'lots' }] : [wins(12, 41)[0], { id: 'secondary', label: 'Weekly window', unit: 'percent', usedPercent: 'lots' }]);
+        case 'switched': return nth === 1 ? ok(copilot ? [reqs(506, 1500, 66.3)] : wins(12, 41)) : { read: { kind: 'failed', failure: 'unavailable', accountKey: KEY_B } };
+        case 'nokey': return { read: { kind: 'ok', source, buckets: copilot ? [reqs(506, 1500, 66.3)] : wins(12, 41) } };
         case 'failed': return fail('unavailable');
         case 'failagain': return nth === 1 ? ok(copilot ? [reqs(506, 1500, 66.3), chat] : wins(12, 41)) : fail('timeout');
         case 'ratelimited': return fail('rate-limited');

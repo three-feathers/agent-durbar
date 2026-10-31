@@ -2,6 +2,7 @@
  * Spec 011 FR-081 (issue #690): vendor quota answers to the neutral `QuotaRead`, and vendor errors to a fixed kind, so neither a vendor
  * shape nor its text leaves the adapter. Shapes are `read:` only (research matrix in the spec); main sanitises the result again.
  */
+import { createHash, randomBytes } from 'crypto';
 import { isAuthError } from './autherrors';
 import { quotaTimeMs, quotaZoneOf } from '../shared/quota';
 import type { QuotaFailureKind, QuotaRead } from '../shared/quota';
@@ -23,6 +24,22 @@ export function quotaFailureOf(e: unknown): QuotaFailureKind {
   return 'unavailable';
 }
 
+/* FR-095: differs per run, so a fingerprint means nothing outside this process */
+const KEY_SALT = randomBytes(16);
+
+/** A one-way fingerprint of an account id, for comparing two reads in memory; undefined without one. Stored nowhere, never sent to the window. */
+export function quotaAccountKey(...parts: unknown[]): string | undefined {
+  if (!parts.some((p) => typeof p === 'string' && p)) return undefined;
+  const h = createHash('sha256').update(KEY_SALT);
+  for (const p of parts) h.update(typeof p === 'string' ? p : '').update('\0');
+  return h.digest('hex').slice(0, 32);
+}
+
+/** The read with the fingerprint, where the kind can carry one. */
+export function quotaWithKey(r: QuotaRead, accountKey: string | undefined): QuotaRead {
+  return accountKey && r.kind !== 'not-reported' ? { ...r, accountKey } : r;
+}
+
 const COPILOT_LABEL: Readonly<Record<string, string>> = { premium_interactions: 'Premium requests', chat: 'Chat requests', completions: 'Code completions' };
 const COPILOT_ORDER = ['premium_interactions', 'chat', 'completions'];
 
@@ -37,17 +54,19 @@ export function copilotQuota(result: unknown): QuotaRead {
     const v = snaps[k];
     const unlimited = own(v, 'isUnlimitedEntitlement') === true;
     const iso = own(v, 'resetDate');
-    const at = quotaTimeMs(own(v, 'resetDateEpochMs')) ?? quotaTimeMs(iso);
+    const at = quotaTimeMs(iso);
+    // read: "Percentage of entitlement remaining" can go below zero past the limit: nothing is left, which is reported, not absent
+    const raw = own(v, 'remainingPercentage');
+    const left = typeof raw === 'number' && Number.isFinite(raw) && raw < 0 ? 0 : raw;
     const zone = quotaZoneOf(iso);
     return {
       id: k,
       label: Object.prototype.hasOwnProperty.call(COPILOT_LABEL, k) ? COPILOT_LABEL[k] : k.replace(/_+/g, ' '),
       unit: 'requests' as const,
       used: own(v, 'usedRequests'),
-      ...(unlimited ? { unlimited } : { limit: own(v, 'entitlementRequests'), remainingPercent: own(v, 'remainingPercentage') }),
+      ...(unlimited ? { unlimited } : { limit: own(v, 'entitlementRequests'), remainingPercent: left }),
       ...(at !== undefined ? { resetsAt: at } : {}),
       ...(zone ? { resetZone: zone } : {}),
-      ...(own(v, 'resetDateEstimated') === true ? { resetEstimated: true } : {}),
       ...(own(v, 'overageAllowedWithExhaustedQuota') === true ? { overageAllowed: true } : {}),
     };
   });
@@ -73,5 +92,5 @@ export function codexQuota(result: unknown): QuotaRead {
     buckets.push({ id: k, label: windowLabel(mins, k), unit: 'percent', usedPercent: own(w, 'usedPercent'), windowMins: mins, ...(at !== undefined ? { resetsAt: at } : {}) });
   }
   if (!buckets.length) return { kind: 'not-reported', reason: 'none' };
-  return { kind: 'ok', source: CODEX_QUOTA_SOURCE, buckets: buckets as never };
+  return quotaWithKey({ kind: 'ok', source: CODEX_QUOTA_SOURCE, buckets: buckets as never }, quotaAccountKey(own(result, 'accountId')));
 }

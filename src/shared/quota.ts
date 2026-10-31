@@ -32,14 +32,15 @@ export interface QuotaBucket {
 
 /** What an adapter answers. No vendor type and no vendor text: a failure is a fixed kind. */
 export type QuotaRead =
-  | { kind: 'ok'; source: string; buckets: QuotaBucket[] }
+  | { kind: 'ok'; source: string; buckets: QuotaBucket[]; accountKey?: string }
   | { kind: 'not-reported'; reason: QuotaReasonKind }
-  | { kind: 'failed'; failure: QuotaFailureKind };
+  | { kind: 'failed'; failure: QuotaFailureKind; accountKey?: string };
 
 /** Per app, in memory: no session id, nothing saved (FR-091). */
 export interface QuotaEntry {
-  good?: { source: string; buckets: QuotaBucket[]; checkedAt: number };
-  failure?: { kind: QuotaFailureKind; at: number };
+  /** `accountKey`: FR-095, a one-way fingerprint of the account, in main's memory only; `quotaView` never passes it on. */
+  good?: { source: string; buckets: QuotaBucket[]; checkedAt: number; accountKey?: string };
+  failure?: { kind: QuotaFailureKind; at: number; keyed?: boolean };
   reason?: { kind: QuotaReasonKind; at: number };
   askedAt?: number;
   backoffUntil?: number;
@@ -55,6 +56,8 @@ export interface QuotaView {
   failedAt?: number;
   reason?: QuotaReasonKind;
   backoffUntil?: number;
+  /** FR-095: nothing tells whose figures these are, so a sign-in change could not be noticed. Only this yes; never the fingerprint. */
+  unkeyed?: boolean;
 }
 
 export type QuotaState = 'current' | 'stale' | 'failed-kept' | 'failed' | 'not-reported' | 'not-checked';
@@ -62,7 +65,7 @@ export type QuotaState = 'current' | 'stale' | 'failed-kept' | 'failed' | 'not-r
 /** FR-094 (awaiting owner review): near a limit at or under this percent left, as a note only. */
 export const NEAR_PERCENT = 10;
 export const QUOTA_STALE_MS = 15 * 60_000;
-export const QUOTA_OPEN_MS = 15 * 60_000;
+export const QUOTA_OPEN_MS = 2 * 60_000;
 export const QUOTA_CHECK_MS = 30_000;
 export const QUOTA_BACKOFF_MS = 5 * 60_000;
 export const QUOTA_TIMEOUT_MS = 8000;
@@ -148,8 +151,18 @@ function qSanitiseBucket(raw: unknown, now: number): QuotaBucket | undefined {
     if (qOwn(raw, 'resetEstimated') === true) b.resetEstimated = true;
   }
   if (qOwn(raw, 'overageAllowed') === true) b.overageAllowed = true;
-  const told = b.used !== undefined || b.limit !== undefined || b.remaining !== undefined || b.usedPercent !== undefined || b.remainingPercent !== undefined || b.unlimited || b.resetsAt !== undefined;
-  return told ? b : undefined;
+  return b;
+}
+
+/** Whether a bucket has anything usable. One without stays as a row reading "not reported" (FR-082), unless no bucket has anything. */
+function qTold(b: QuotaBucket): boolean {
+  return b.used !== undefined || b.limit !== undefined || b.remaining !== undefined || b.usedPercent !== undefined || b.remainingPercent !== undefined || !!b.unlimited || b.resetsAt !== undefined;
+}
+
+/** FR-095: only the shape of a fingerprint passes; a raw id or login never does. */
+function qKey(raw: unknown): { accountKey: string } | Record<string, never> {
+  const k = qOwn(raw, 'accountKey');
+  return typeof k === 'string' && /^[0-9a-f]{32}$/.test(k) ? { accountKey: k } : {};
 }
 
 /** FR-082: anything an adapter (or a fixture) hands over, made safe; a shape that is not understood is a `malformed` failure. */
@@ -161,7 +174,7 @@ export function sanitiseQuotaRead(raw: unknown, now = Date.now()): QuotaRead {
   }
   if (kind === 'failed') {
     const f = qOwn(raw, 'failure');
-    return { kind, failure: typeof f === 'string' && Q_FAILURES.includes(f) ? (f as QuotaFailureKind) : 'unavailable' };
+    return { kind, failure: typeof f === 'string' && Q_FAILURES.includes(f) ? (f as QuotaFailureKind) : 'unavailable', ...qKey(raw) };
   }
   const list = qOwn(raw, 'buckets');
   if (kind !== 'ok' || !Array.isArray(list)) return { kind: 'failed', failure: 'malformed' };
@@ -171,8 +184,8 @@ export function sanitiseQuotaRead(raw: unknown, now = Date.now()): QuotaRead {
     const s = qSanitiseBucket(b, now);
     if (s) buckets.push(s);
   }
-  if (!buckets.length) return { kind: 'failed', failure: 'malformed' };
-  return { kind: 'ok', source: quotaText(qOwn(raw, 'source'), Q_SOURCE_MAX) ?? 'The agent app', buckets };
+  if (!buckets.some(qTold)) return { kind: 'failed', failure: 'malformed' };
+  return { kind: 'ok', source: quotaText(qOwn(raw, 'source'), Q_SOURCE_MAX) ?? 'The agent app', buckets, ...qKey(raw) };
 }
 
 /** FR-083: whether this mode may ask the app now. No polling: only `open` and `check`, each with its floor; a rate-limit answer waits. */
@@ -186,13 +199,15 @@ export function quotaShouldAsk(entry: QuotaEntry | undefined, mode: QuotaMode, n
 /** FR-084: the next entry after a read. A failure keeps the good figures, except `signed-out`; an answer without figures replaces them. */
 export function applyQuotaRead(prev: QuotaEntry | undefined, read: QuotaRead, now: number): QuotaEntry {
   const askedAt = prev?.askedAt ?? now;
-  if (read.kind === 'ok') return { askedAt, good: { source: read.source, buckets: read.buckets, checkedAt: now } };
+  if (read.kind === 'ok') return { askedAt, good: { source: read.source, buckets: read.buckets, checkedAt: now, ...(read.accountKey ? { accountKey: read.accountKey } : {}) } };
   if (read.kind === 'not-reported') return { askedAt, reason: { kind: read.reason, at: now } };
-  const good = read.failure === 'signed-out' ? undefined : prev?.good;
+  // FR-095: another account answered, so the kept figures are not this account's
+  const switched = !!read.accountKey && !!prev?.good?.accountKey && read.accountKey !== prev.good.accountKey;
+  const good = read.failure === 'signed-out' || switched ? undefined : prev?.good;
   return {
     askedAt,
     ...(good ? { good } : {}),
-    failure: { kind: read.failure, at: now },
+    failure: { kind: read.failure, at: now, ...(read.accountKey ? { keyed: true } : {}) },
     ...(read.failure === 'rate-limited' ? { backoffUntil: now + QUOTA_BACKOFF_MS } : {}),
   };
 }
@@ -208,6 +223,7 @@ export function quotaView(app: string, entry: QuotaEntry | undefined): QuotaView
     v.failedAt = entry.failure.at;
   }
   if (entry?.reason) v.reason = entry.reason.kind;
+  if (entry?.good && (!entry.good.accountKey || (entry.failure && !entry.failure.keyed))) v.unkeyed = true;
   if (entry?.backoffUntil !== undefined) v.backoffUntil = entry.backoffUntil;
   return v;
 }
@@ -260,6 +276,7 @@ export function quotaWhen(ms: number, tz?: string): string {
 }
 
 export const QUOTA_NOT_REPORTED = 'not reported';
+export const QUOTA_UNKEYED_TEXT = 'These figures may be from before a sign-in change.';
 
 function qWindowWords(mins: number): string {
   if (mins >= 2880 && mins % 1440 === 0) return `${mins / 1440} days`;
@@ -327,6 +344,7 @@ export function quotaDisplay(v: QuotaView, now: number, opts: { tz?: string } = 
   const notes: string[] = [];
   if (v.failure) notes.push(`Could not read${v.failedAt !== undefined ? ` at ${quotaWhen(v.failedAt, opts.tz)}` : ''}: ${QUOTA_FAILURE_TEXT[v.failure]}`);
   if (v.reason) notes.push(QUOTA_REASON_TEXT[v.reason]);
+  if (v.unkeyed && rows.length) notes.push(QUOTA_UNKEYED_TEXT);
   if (state === 'stale' && v.checkedAt !== undefined && now - v.checkedAt >= QUOTA_STALE_MS) notes.push('This reading is old. Choose Check again to ask now.');
   const times = [v.backoffUntil, v.checkedAt !== undefined && !v.failure ? v.checkedAt + QUOTA_STALE_MS : undefined, ...v.buckets.map((b) => b.resetsAt)].filter((t): t is number => t !== undefined && t > now);
   return {

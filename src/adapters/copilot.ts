@@ -30,7 +30,7 @@ import type {
 } from './types';
 import type { AdapterDescriptor } from './capabilities';
 import type { QuotaRead } from '../shared/quota';
-import { copilotQuota, quotaFailureOf } from './quotamap';
+import { copilotQuota, quotaAccountKey, quotaFailureOf, quotaWithKey } from './quotamap';
 import { EventMapper } from './map';
 import type { EventBody, RawEvent } from './map';
 import { autoTierToSend, compactResultFrom, managedAutoTierFrom, modelConfig, modelOptionFrom, runtimeHasAutoTiers, runtimeMessage, sdkTier, switchResultFrom, withAutoTiers } from './copilotmodel';
@@ -532,14 +532,18 @@ export class CopilotAdapter implements AgentAdapter {
    * billed; @experimental, and it can lag). A runtime without the call is "not reported". Only figures leave; login and token never do.
    */
   async accountQuota(): Promise<QuotaRead> {
+    let key: string | undefined;
     try {
       const client = await this.getClient();
+      // FR-095: getQuota names no account; the local auth status does. Only a one-way fingerprint of it goes on
+      const st = (await client.getAuthStatus().catch(() => undefined)) as { host?: unknown; login?: unknown } | undefined;
+      key = quotaAccountKey(st?.login, st?.host);
       const rpc = (client as unknown as { rpc?: { account?: { getQuota?: (p: object) => Promise<unknown> } } }).rpc;
       if (typeof rpc?.account?.getQuota !== 'function') return { kind: 'not-reported', reason: 'unsupported' };
-      return copilotQuota(await rpc.account.getQuota({}));
+      return quotaWithKey(copilotQuota(await rpc.account.getQuota({})), key);
     } catch (e) {
       if (isMethodNotFound(e)) return { kind: 'not-reported', reason: 'unsupported' };
-      return { kind: 'failed', failure: quotaFailureOf(e) };
+      return quotaWithKey({ kind: 'failed', failure: quotaFailureOf(e) }, key);
     }
   }
 

@@ -7,11 +7,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { cleanName } from '../src/shared/account';
 import {
-  applyQuotaRead, NEAR_PERCENT, QUOTA_BACKOFF_MS, QUOTA_CHECK_MS, QUOTA_NOT_REPORTED, QUOTA_OPEN_MS, QUOTA_STALE_MS, quotaAlternatives, quotaDisplay, quotaLevel, quotaLine, quotaShouldAsk, quotaState,
+  applyQuotaRead, NEAR_PERCENT, QUOTA_BACKOFF_MS, QUOTA_CHECK_MS, QUOTA_NOT_REPORTED, QUOTA_OPEN_MS, QUOTA_STALE_MS, quotaAlternatives, quotaDisplay, quotaLevel, quotaLine, quotaShouldAsk, quotaState, QUOTA_UNKEYED_TEXT,
   quotaText, quotaTimeMs, quotaView, quotaZoneOf, sanitiseQuotaRead,
 } from '../src/shared/quota';
 import type { QuotaBucket, QuotaRead, QuotaView } from '../src/shared/quota';
-import { codexQuota, copilotQuota, quotaFailureOf } from '../src/adapters/quotamap';
+import { codexQuota, copilotQuota, quotaAccountKey, quotaFailureOf } from '../src/adapters/quotamap';
 import { resetMs } from '../src/adapters/usagelimit';
 import { createQuotaCache, quotaCheck, quotaIpcAnswer } from '../src/main/quota';
 import { simChannelOpen } from '../src/main/simguard';
@@ -97,18 +97,28 @@ const facts = (v: QuotaView, now = NOW, i = 0): Record<string, string> => Object
 {
   const c = copilotQuota({ quotaSnapshots: {
     chat: { isUnlimitedEntitlement: true, entitlementRequests: -1, usedRequests: 0, remainingPercentage: 100 },
-    premium_interactions: { isUnlimitedEntitlement: false, entitlementRequests: 1500, usedRequests: 506, remainingPercentage: 66.3, resetDate: '2026-11-12T00:00:00.000Z', overageAllowedWithExhaustedQuota: true, resetDateEstimated: true },
+    premium_interactions: { isUnlimitedEntitlement: false, entitlementRequests: 1500, usedRequests: 506, remainingPercentage: 66.3, resetDate: '2026-11-12T00:00:00.000Z', overageAllowedWithExhaustedQuota: true, resetDateEpochMs: 5, resetDateEstimated: true },
     weird_kind: { entitlementRequests: 'lots' },
   } });
   const s = sanitiseQuotaRead(c, NOW);
   assert.ok(s.kind === 'ok');
   if (s.kind === 'ok') {
-    assert.deepStrictEqual(s.buckets.map((b) => b.id), ['premium_interactions', 'chat'], 'premium first; the one with no usable figure drops out');
+    assert.deepStrictEqual(s.buckets.map((b) => b.id), ['premium_interactions', 'chat', 'weird_kind'], 'premium first; one with no usable figure stays, to read "not reported"');
+    assert.deepStrictEqual(facts(viewOf(s.buckets), NOW, 2), { Used: QUOTA_NOT_REPORTED, Limit: QUOTA_NOT_REPORTED, Left: QUOTA_NOT_REPORTED, Resets: QUOTA_NOT_REPORTED }, 'FR-082: a window with unusable figures is not dropped silently');
     assert.strictEqual(s.buckets[0].label, 'Premium requests');
     assert.deepStrictEqual([s.buckets[0].used, s.buckets[0].limit, s.buckets[0].remainingPercent, s.buckets[0].unit], [506, 1500, 66.3, 'requests']);
-    assert.deepStrictEqual([s.buckets[0].resetZone, s.buckets[0].resetEstimated, s.buckets[0].overageAllowed], ['UTC', true, true]);
+    assert.deepStrictEqual([s.buckets[0].resetZone, s.buckets[0].resetEstimated, s.buckets[0].overageAllowed, s.buckets[0].resetsAt], ['UTC', undefined, true, Date.parse('2026-11-12T00:00:00.000Z')], 'only resetDate: the SDK has no epoch or estimated field');
     assert.ok(s.buckets[1].unlimited && !('limit' in s.buckets[1]) && !('remainingPercent' in s.buckets[1]), 'unlimited: no -1 and no percent');
   }
+  // FR-082: below zero left is used up, not absent
+  const over = sanitiseQuotaRead(copilotQuota({ quotaSnapshots: { premium_interactions: { entitlementRequests: 100, usedRequests: 130, remainingPercentage: -30 } } }), NOW);
+  assert.ok(over.kind === 'ok' && over.buckets[0].remainingPercent === 0 && quotaLevel(over.buckets[0], NOW) === 'exhausted');
+  const inf = sanitiseQuotaRead(copilotQuota({ quotaSnapshots: { x: { usedRequests: 1, remainingPercentage: -Infinity } } }), NOW);
+  assert.ok(inf.kind === 'ok' && !('remainingPercent' in inf.buckets[0]), 'not a number is still absent');
+  // Codex: one good window and one unusable: two rows
+  const part = sanitiseQuotaRead(codexQuota({ rateLimits: { primary: { usedPercent: 12, windowDurationMins: 300 }, secondary: { usedPercent: 'lots', windowDurationMins: 10080 } } }), NOW);
+  assert.ok(part.kind === 'ok' && part.buckets.length === 2);
+  if (part.kind === 'ok') assert.strictEqual(facts(viewOf(part.buckets), NOW, 1).Used, QUOTA_NOT_REPORTED);
   assert.deepStrictEqual(copilotQuota({ quotaSnapshots: {} }), { kind: 'not-reported', reason: 'none' });
   for (const m of [null, undefined, 5, 'x', {}, { quotaSnapshots: [] }, { quotaSnapshots: 'x' }]) assert.deepStrictEqual(copilotQuota(m), { kind: 'failed', failure: 'malformed' }, JSON.stringify(m));
   const x = sanitiseQuotaRead(codexQuota({ rateLimits: { primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: NOW / 1000 + 60 }, secondary: { usedPercent: 40, windowDurationMins: 10080 }, extra: { usedPercent: 99 } } }), NOW);
@@ -162,6 +172,34 @@ const facts = (v: QuotaView, now = NOW, i = 0): Record<string, string> => Object
   // no earlier figures: a plain failure
   assert.strictEqual(quotaDisplay(quotaView('a', applyQuotaRead(undefined, { kind: 'failed', failure: 'malformed' }, NOW)), NOW).word, 'Could not read');
   assert.strictEqual(quotaLine(quotaView('a', applyQuotaRead(undefined, { kind: 'failed', failure: 'malformed' }, NOW)), NOW), 'Account limits: could not be read.');
+}
+
+// ---- FR-095: an account change drops the figures; the fingerprint never leaves main; none: labelled
+{
+  const A = quotaAccountKey('acct-one') as string, B = quotaAccountKey('acct-two') as string;
+  assert.ok(/^[0-9a-f]{32}$/.test(A) && A !== B && A === quotaAccountKey('acct-one'), 'one-way, stable within the run');
+  assert.ok(!A.includes('acct'));
+  assert.strictEqual(quotaAccountKey(undefined, null, ''), undefined, 'no id: no fingerprint');
+  assert.notStrictEqual(quotaAccountKey('a', 'b'), quotaAccountKey('ab', ''), 'parts stay apart');
+  const good = applyQuotaRead(undefined, sanitiseQuotaRead({ kind: 'ok', source: 's', accountKey: A, buckets: [reqs({ used: 5 })] }, NOW), NOW);
+  assert.strictEqual(good.good?.accountKey, A);
+  assert.ok(!JSON.stringify(quotaView('a', good)).includes(A), 'never sent to the window');
+  assert.strictEqual(quotaView('a', good).unkeyed, undefined);
+  assert.ok(!quotaDisplay(quotaView('a', good), NOW).notes.includes(QUOTA_UNKEYED_TEXT));
+  const other = applyQuotaRead(good, sanitiseQuotaRead({ kind: 'failed', failure: 'timeout', accountKey: B }, NOW), NOW + MIN);
+  assert.deepStrictEqual(quotaView('a', other).buckets, [], 'another account answered: the figures go');
+  const same = applyQuotaRead(good, sanitiseQuotaRead({ kind: 'failed', failure: 'timeout', accountKey: A }, NOW), NOW + MIN);
+  assert.deepStrictEqual([quotaView('a', same).buckets.length, quotaView('a', same).unkeyed], [1, undefined], 'the same account: kept');
+  const blind = applyQuotaRead(good, { kind: 'failed', failure: 'timeout' }, NOW + MIN);
+  assert.deepStrictEqual([quotaView('a', blind).buckets.length, quotaView('a', blind).unkeyed], [1, true], 'a failure that cannot tell: kept, labelled');
+  const none = applyQuotaRead(undefined, okRead([reqs({ used: 5 })]), NOW);
+  assert.strictEqual(quotaView('a', none).unkeyed, true);
+  assert.ok(quotaDisplay(quotaView('a', none), NOW).notes.includes(QUOTA_UNKEYED_TEXT), 'no fingerprint: labelled');
+  assert.ok(!quotaDisplay({ app: 'a', buckets: [], unkeyed: true }, NOW).notes.includes(QUOTA_UNKEYED_TEXT), 'no figures: nothing to label');
+  for (const raw of ['acct-one', 'ABC', 'a'.repeat(31), 5]) assert.ok(!('accountKey' in sanitiseQuotaRead({ kind: 'failed', failure: 'timeout', accountKey: raw }, NOW)), 'a raw id does not pass');
+  assert.ok(!JSON.stringify(codexQuota({ accountId: 'acct-RAW', rateLimits: { primary: { usedPercent: 1 } } })).includes('acct-RAW'));
+  assert.ok('accountKey' in codexQuota({ accountId: 'acct-RAW', rateLimits: { primary: { usedPercent: 1 } } }));
+  assert.ok(!('accountKey' in codexQuota({ rateLimits: { primary: { usedPercent: 1 } } })));
 }
 
 // ---- FR-085: stale is never current; the reset boundary
@@ -448,7 +486,8 @@ async function cacheTests(): Promise<void> {
     return { r, calls: client.authCalls, c: client };
   };
   let cr = await copilotRun((x) => { x.quotaResult = { quotaSnapshots: { premium_interactions: { entitlementRequests: 100, usedRequests: 4 } } }; });
-  assert.deepStrictEqual(cr.calls, ['account.getQuota'], 'one read, no auth status');
+  assert.deepStrictEqual(cr.calls, ['getAuthStatus', 'account.getQuota'], 'the local status for the fingerprint, then one read');
+  assert.ok('accountKey' in cr.r && !JSON.stringify(cr.r).includes('someone'), 'a fingerprint of the login, never the login');
   assert.strictEqual(cr.c.sessions.size, 0, 'no session');
   assert.ok(cr.r.kind === 'ok' && cr.r.source.includes('getQuota'));
   cr = await copilotRun(() => undefined);
@@ -458,11 +497,13 @@ async function cacheTests(): Promise<void> {
   cr = await copilotRun((x) => { x.quotaFail = 'Unhandled method account.getQuota'; });
   assert.deepStrictEqual(cr.r, { kind: 'not-reported', reason: 'unsupported' });
   cr = await copilotRun((x) => { x.quotaFail = 'Bad credentials ghp_x'; });
-  assert.deepStrictEqual(cr.r, { kind: 'failed', failure: 'signed-out' });
+  assert.ok(cr.r.kind === 'failed' && cr.r.failure === 'signed-out' && !JSON.stringify(cr.r).includes('ghp_'));
   cr = await copilotRun((x) => { x.quotaFail = '429 Too Many Requests'; });
-  assert.deepStrictEqual(cr.r, { kind: 'failed', failure: 'rate-limited' });
+  assert.ok(cr.r.kind === 'failed' && cr.r.failure === 'rate-limited');
   cr = await copilotRun((x) => { x.quotaFail = 'getaddrinfo ENOTFOUND'; });
-  assert.deepStrictEqual(cr.r, { kind: 'failed', failure: 'unavailable' });
+  assert.ok(cr.r.kind === 'failed' && cr.r.failure === 'unavailable' && !!cr.r.accountKey, 'a failed read still says whose it was');
+  cr = await copilotRun((x) => { x.authStatusFail = 'x'; x.quotaResult = { quotaSnapshots: { chat: { usedRequests: 1 } } }; });
+  assert.ok(cr.r.kind === 'ok' && !cr.r.accountKey, 'no status: no fingerprint, and the read still works');
 
   const codexRun = async (opts: FakeCodexOptions): Promise<{ r: QuotaRead; server: FakeCodexServer }> => {
     const server = new FakeCodexServer(opts);

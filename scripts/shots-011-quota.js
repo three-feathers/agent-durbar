@@ -207,6 +207,26 @@ module.exports = async (ctx) => {
     if (mode === 'resetpast') assert.deepStrictEqual([b.copilot.near, b.copilot.used, b.copilot.sug], [0, 0, false], 'a passed reset is no warning');
   }
 
+  // ---- FR-082: a window with unusable figures stays, reading "not reported"; FR-095: another account, and none to compare
+  await load(w, h, 'partial');
+  let more = await blocks();
+  assert.strictEqual(more.copilot.rows, 2);
+  assert.match(more.copilot.text, /Chat requests Used: not reported Limit: not reported Left: not reported Resets: not reported/);
+  assert.match(more.codex.text, /Weekly window Used: not reported/);
+  await load(w, h, 'copilot:switched', { simquotafloor: '0' });
+  more = await blocks();
+  assert.match(more.copilot.text, /Used: 506 requests/);
+  assert.ok(!/sign-in change/.test(more.copilot.text), 'a known account is not labelled');
+  await checkAgain();
+  assert.ok(await until(`document.querySelector('.hs-quota[data-quota="copilot"] [data-qstate]').textContent==='Could not read'`), 'another account: the figures go');
+  more = await blocks();
+  assert.ok(!/506/.test(more.copilot.text), 'the earlier account\'s figures are gone');
+  await load(w, h, 'copilot:nokey');
+  more = await blocks();
+  assert.strictEqual(more.copilot.state, 'Current');
+  assert.match(more.copilot.text, /These figures may be from before a sign-in change\./);
+  await fit('nokey');
+
   // ---- FR-088: eligibility: an app not known to be signed in, or near its own limit, is not suggested
   await load(w, h, 'copilot:near,codex:near', { simacct: 'unknown' });
   const none = await blocks();
