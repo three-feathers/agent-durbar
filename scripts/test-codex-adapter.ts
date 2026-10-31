@@ -790,6 +790,9 @@ async function main(): Promise<void> {
           assert.ok(!(ad as unknown as { mcpContextReads: Map<string, unknown> }).mcpContextReads.has(sid), 'and a later ask may start');
           server.holdMcpList = false;
           server.releaseMcpList();
+          // a later page that hangs: the limit gives up with nothing, not with the first page's part
+          const partly = await (ad as unknown as { readMcpContext(l: unknown): Promise<unknown> }).readMcpContext({ threadId: 't', rpc: { request: async (_m: string, p: { cursor?: string }) => (p.cursor ? new Promise(() => undefined) : { data: [{ name: 'a', tools: { x: { name: 'x' } } }], nextCursor: '1' }) } });
+          assert.deepStrictEqual(partly, { servers: [] }, 'no figure from part of the list');
           (ad as unknown as { mcpContextLimitMs: number }).mcpContextLimitMs = 10_000;
         }
         assert.deepStrictEqual(await ad.mcpContext!('no-such'), { servers: [] });

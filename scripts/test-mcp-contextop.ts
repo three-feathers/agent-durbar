@@ -182,6 +182,13 @@ async function main(): Promise<void> {
       assert.strictEqual(h.asks, 1);
       assert.deepStrictEqual(h.pushed.at(-1)?.report?.servers, [{ name: 'github', source: 'unknown' }], `junk ${String(junk)}: the running server, no figure`);
     }
+    // the window's end of it throwing (a closed window) rejects nothing either
+    const { h: h2, t: t2 } = harness();
+    const realPush = h2.pushed.push.bind(h2.pushed);
+    h2.pushed.push = (() => { throw new Error('window gone'); }) as never;
+    t2.onEvent(mcpEv(conn('github')));
+    await settle();
+    h2.pushed.push = realPush;
     await new Promise((r) => setImmediate(r));
     process.removeListener('unhandledRejection', onRej);
     assert.deepStrictEqual(seen, [], 'no unhandled rejection');
