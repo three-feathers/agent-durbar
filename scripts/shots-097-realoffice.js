@@ -217,9 +217,11 @@ module.exports = async (ctx) => {
 
   // ---- FR-006: a click on a person opens its chat ----
   await loadReal(1440, 900);
-  const pid = await js(`(document.querySelector('#stage .ro-person')||{dataset:{}}).dataset.for||''`);
-  assert.ok(pid, 'a person is drawn');
-  await js(`document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(pid)})+'"]').click()`);
+  /* a simulator visit can take the person away between a read and a click: pick and click in one script, retry until a person was there */
+  await must(`!!document.querySelector('#stage .ro-person[data-for]')`, 'a person at a desk');
+  let pid = '';
+  for (let t = 0; t < 20 && !pid; t++) { pid = await js(`(()=>{const p=document.querySelector('#stage .ro-person[data-for]');if(!p)return '';const id=p.dataset.for;p.click();return id})()`); if (!pid) await ctx.sleep(250); }
+  assert.ok(pid, 'a person is drawn and clicked');
   await must(`document.body.classList.contains('panel-open')`, 'the chat after a click on a person');
   await js(`document.getElementById('backBtn').click()`);
   await must(`!document.body.classList.contains('panel-open')&&!!document.querySelector('#stage .ro .ro-plate')`, 'the office again');
@@ -242,7 +244,11 @@ module.exports = async (ctx) => {
   // ---- FR-047: Serious mode (the real Settings switch) and reduced motion (emulated, page loaded with it): the scene is still, no light moves ----
   const MOVING = `[...document.querySelectorAll('#stage .ro-lights *')].filter(e=>getComputedStyle(e).animationName!=='none').length`;
   const STILL = `document.querySelector('#stage .ro').classList.contains('still')`;
-  await must(`document.querySelectorAll('#stage .ro-call.pulse').length>0`, 'a pulsing call light to hold still');
+  /* the baseline is emulated "no preference" (a host that prefers reduced motion, as a CI runner may, would never pulse) and reloaded, so the app reads it; a waiting agent at its desk (a simulator visit can take it away for a while) pulses */
+  await emulate([{ name: 'prefers-reduced-motion', value: 'no-preference' }], async () => {
+    await loadReal(1440, 900);
+    assert.ok(await js(`!matchMedia('(prefers-reduced-motion: reduce)').matches`), 'normal motion is emulated');
+    await must(`document.querySelectorAll('#stage .ro-call.pulse').length>0`, 'a pulsing call light to hold still', 60000);
   assert.strictEqual(await js(STILL), false, 'normal motion: the scene is not still');
   await js(`document.getElementById('settingsBtn').click()`);
   await must(`!!document.getElementById('seriousSw')`, 'the Serious mode switch');
@@ -257,6 +263,7 @@ module.exports = async (ctx) => {
   await must(`document.getElementById('seriousSw').getAttribute('aria-checked')==='false'`, 'Serious mode off');
   await js(`document.getElementById('scrClose').click()`);
   await must(`!(${STILL})`, 'the scene moves again with Serious mode off');
+  });
   await emulate([{ name: 'prefers-reduced-motion', value: 'reduce' }], async () => {
     await loadReal(1440, 900);
     assert.ok(await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`), 'reduced motion is emulated');
