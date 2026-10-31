@@ -97,6 +97,7 @@ const DRIVERS = [
   { name: 'check-crew' }, // spec 077: Cheeky portraits (Characters = Cheeky on Clean Office): box vs protected zones, pose, sharpness, the fallback with a picture removed
   { name: 'check-crew', label: 'check-crew retro', env: { CREW_THEME: 'retro' } }, // spec 077 FR-070: the same with Characters = Cheeky on Retro Pixel
   { name: 'check-characters' }, // spec 077 FR-064..FR-069: Settings > Characters on Retro Pixel and Corporate (Cheeky, Minimalist, the theme's own)
+  { name: 'check-charencoder' }, // spec 096 FR-022..FR-026: the sandboxed encoder window on fixture sheets, its refusals, its session; the simulator's fake generator (FR-070)
   { name: 'check-permission-scope' }, // spec 003 FR-108: the approval card says how far "for this session" reaches
   { name: 'check-ro-ask' }, // spec 003 FR-094..FR-097: a Read-only denial's "Switch to Ask first…" opens the mode menu
   { name: 'check-why-allowed' }, // spec 003 FR-099..FR-105 (#605): the why-allowed tag on tool cards and Undo this rule
