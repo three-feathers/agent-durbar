@@ -4,6 +4,7 @@
  * `FakeSession.send` replays a recorded turn (`turnScript`) through the session handler.
  */
 import { CopilotAdapter } from '../../src/adapters/copilot';
+import type { AutopilotTuning } from '../../src/adapters/autopilotHost';
 
 export type ScriptEvent = { type: string; data: unknown; agentId?: string | null };
 export type Call = { name: string; args: unknown[] };
@@ -34,6 +35,11 @@ export class FakeSession {
   /** Spec 087 FR-022c (review on PR #833): `options.update` with `enabled: false` waits until the test settles it from `deferred` (in order). */
   lowerDeferred = false;
   deferred: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
+  /** Spec 099: the runtime's mode; `modeSetFail` / `modeGetFail` reject; `modeSilent`: `mode.set` works but no `session.mode_changed` follows. */
+  mode = 'interactive';
+  modeSetFail = '';
+  modeGetFail = '';
+  modeSilent = false;
   /** `send` rejects with this message (spec 040 FR-015 error path). */
   sendFail = '';
   /** `send` never settles (spec 040 FR-015 timeout path). */
@@ -60,7 +66,18 @@ export class FakeSession {
   rpc = {
     eventLog: { registerInterest: async (a: unknown) => this.rec('registerInterest', undefined, a) },
     options: { update: async (a: unknown) => { this.calls.push({ name: 'options.update', args: [a] }); if (this.updateFail && (a as { sandboxConfig?: unknown }).sandboxConfig) throw new Error(this.updateFail); if (this.updateHangs && (a as { sandboxConfig?: unknown }).sandboxConfig) return new Promise<void>(() => undefined); if (this.lowerDeferred && (a as { sandboxConfig?: { enabled?: unknown } }).sandboxConfig?.enabled === false) return new Promise<void>((resolve, reject) => { this.deferred.push({ resolve, reject }); }); } },
-    mode: { set: async (a: unknown) => this.rec('mode.set', { mode: (a as { mode?: string }).mode }, a) }, // spec 066 (plan first)
+    mode: { // spec 066 (plan first); spec 099: like the runtime it keeps the mode and confirms a change with `session.mode_changed`
+      get: async () => { this.calls.push({ name: 'mode.get', args: [] }); if (this.modeGetFail) throw new Error(this.modeGetFail); return this.mode; },
+      set: async (a: unknown) => {
+        this.calls.push({ name: 'mode.set', args: [a] });
+        if (this.modeSetFail) throw new Error(this.modeSetFail);
+        const next = (a as { mode?: string }).mode ?? 'interactive';
+        const previousMode = this.mode;
+        this.mode = next;
+        if (next !== previousMode && !this.modeSilent) this.fire('session.mode_changed', { newMode: next, previousMode });
+        return { mode: next };
+      },
+    },
     model: { switchTo: async (a: unknown) => this.rec('switchTo', this.switchAnswer, a) },
     queue: { removeAt: async (a: unknown) => this.rec('removeAt', { removed: this.removed }, a) },
     history: { compact: async (a: unknown) => this.rec('compact', this.compactAnswer, a) },
@@ -135,6 +152,9 @@ export class FakeClient {
   sendHangs = false;
   /** Handed to every session this client creates or resumes (spec 059). */
   nameSetFail = '';
+  /** Spec 099: the mode a resumed session comes back in; `modeSetFailOnResume` makes its `mode.set` reject. */
+  resumeMode = 'interactive';
+  modeSetFailOnResume = '';
   private track(s: FakeSession): FakeSession {
     s.turnScript = this.turnScript;
     s.nameAnswer = this.nameAnswer;
@@ -155,6 +175,8 @@ export class FakeClient {
     if (this.resumeGate) { const g = this.resumeGate; this.resumeGate = undefined; await g; } // spec 059: holds the first resume until the test lets it go
     this.resumed.push({ id, config });
     this.last = this.track(new FakeSession(id, config));
+    this.last.mode = this.resumeMode;
+    this.last.modeSetFail = this.modeSetFailOnResume;
     return this.last;
   }
   /** Like the SDK: throws when the session is not on disk. */
@@ -224,7 +246,7 @@ export class FakeClient {
 }
 
 export class FakeCopilot extends CopilotAdapter {
-  constructor(public fake: FakeClient, oneShotTimeoutMs?: number) { super(); if (oneShotTimeoutMs !== undefined) this.oneShotTimeoutMs = oneShotTimeoutMs; }
+  constructor(public fake: FakeClient, oneShotTimeoutMs?: number, autopilotTuning?: AutopilotTuning) { super(); if (oneShotTimeoutMs !== undefined) this.oneShotTimeoutMs = oneShotTimeoutMs; if (autopilotTuning) this.autopilotTuning = autopilotTuning; }
   protected async getClient(): Promise<never> { return this.fake as never; }
 }
 

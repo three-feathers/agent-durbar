@@ -35,7 +35,7 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group; FR-007, FR-008, FR-009
 - [ ] T021 Codex: `thread/goal/set` in place of `turn/start`, `tokenBudget`, the `turn/started` count, the `goal/updated` mapping,
   Stop with `goal/clear` and then `turn/interrupt`, `requestUserInput` auto-answer, never on an ephemeral thread; capability
   `{capUnit: 'tokens', attachments: false, planApproval: false, verified: false}`. Tests on the app-server fake replay the probe's notifications [FR-012, FR-020-FR-022, FR-030, FR-040, FR-050]
-- [ ] T022 Copilot on the fake SDK: `mode.set autopilot` and `interactive`, `agentMode`, `onUserInputRequest` auto-answer,
+- [x] T022 Copilot on the fake SDK: `mode.set autopilot` and `interactive`, `agentMode`, `onUserInputRequest` auto-answer,
   elicitation declined, `task_complete` and objective mapping, a cap below 30 raised to 30 and `cancel` on exhausted, Stop
   order, attachments sent with `agentMode`, the broker still answering permissions (no `setApproveAll`); capability
   `{capUnit: 'aiu', attachments: true, planApproval: true, verified: false}`. Continuations counted from `isAutopilotContinuation` behind a small

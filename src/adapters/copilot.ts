@@ -7,7 +7,11 @@ import { randomUUID } from 'crypto';
 import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
 import { MAX_ANSWER, parseQuestions, SkipNotes } from './questions';
 import type { SkipReason } from './questions';
-import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaiter } from './elicitation';
+import { answerElicitation, cancelElicitations, declineElicitation, runElicitation, type ElicitWaiter } from './elicitation';
+import { AUTOPILOT_ANSWER, goalText } from './autopilot';
+import { AUTOPILOT_NOT_ALLOW, AUTOPILOT_NO_PLAN, AUTOPILOT_ONE_RUN, AUTOPILOT_WAIT_TURN, AUTOPILOT_WIRED, AutopilotState, CLEAR_WAIT_MS, LINE_CAP_NOT_RESTORED, LINE_CLOSED, LINE_SELF_STARTED, capInForce, emitAutoAnswered, goalRefusal, lineNotCleared, within } from './autopilotHost';
+import type { AutopilotTuning } from './autopilotHost';
+import { MIN_CAP } from '../shared/credits';
 import type { ElicitAnswer } from '../shared/elicit';
 import type { CopilotSession, MCPServerConfig, ModelInfo, PermissionRequest, PermissionRequestResult, ResumeSessionConfig, SessionConfig, SessionEvent } from '@github/copilot-sdk';
 import type {
@@ -16,6 +20,8 @@ import type {
   LimitAction,
   AgentEvent,
   AgentMessage,
+  AutopilotEnd,
+  AutopilotSettings,
   CompactResult,
   ModelSwitchRequest,
   ModelSwitchResult,
@@ -131,6 +137,20 @@ interface Live {
   sandboxNoteOpen?: boolean;
   /** Spec 087: an `options.update` for the floor that is still running (a send waits for it). */
   sandboxApplying?: Promise<void>;
+  /** Spec 099: the Autopilot state of this main session (FR-008: never a helper's). */
+  auto?: AutopilotState;
+  /** Spec 099 FR-022: the session's own cap (`a.maxAiCredits`), apart from the Autopilot cap in force in `capNow`. */
+  ownCap?: number | null;
+  /** Spec 099 FR-022: the Autopilot cap Durbar sent: its `session_limits_changed` is not the session's own, so main never saves it for the folder. */
+  apCapSent?: number;
+  /** Spec 099 FR-022: the runtime's limit request answered `cancel` for a run: neither it nor its completion reaches the window. */
+  apLimitId?: string;
+  /** Spec 099 FR-040: `session.task_complete` came; the end follows at `session.idle`. */
+  pendingEnd?: AutopilotEnd;
+  /** Spec 099: this run's own work was seen, so a `session.idle` is not a late one from before it. */
+  sawWork?: boolean;
+  /** Spec 099 FR-054: resolves on `session.mode_changed` to `interactive`. */
+  modeAck?: () => void;
 }
 
 /** Spec 087 FR-022c (review on PR #833): why sends are held while a lowering that passed the time limit has not answered; the way back is a new session. */
@@ -189,6 +209,21 @@ export function profileOf(a: { id?: unknown; name?: unknown; displayName?: unkno
 /** What Copilot gets when the user skips an `ask_user` question (spec 002 FR-058). */
 const SKIPPED_ANSWER = '(The user skipped the question. Decide yourself.)';
 
+/** Spec 099 FR-020 (T090, T093): Copilot's continuation marker, in one place. A helper's message is never one (FR-008). */
+export function copilotIsContinuation(ev: { type?: unknown; agentId?: unknown; data?: unknown }): boolean {
+  return ev.type === 'user.message' && !ev.agentId && (ev.data as { isAutopilotContinuation?: unknown } | undefined)?.isAutopilotContinuation === true;
+}
+
+/**
+ * Spec 099 FR-040: what `session.task_complete` means. No `outcome` is done (`real:` T090, T093); `blocked` is blocked (`read:`). `continue` or
+ * `success: false` means the runtime rejected the completion and goes on (`read:` SDK 1.0.24), so the run goes on and keeps counting.
+ */
+export function copilotTaskEnd(d: { outcome?: unknown; success?: unknown } | undefined): AutopilotEnd | null {
+  if (d?.outcome === 'blocked') return 'blocked';
+  if (d?.outcome === 'continue' || d?.success === false) return null;
+  return 'done';
+}
+
 const COPILOT_ID = 'copilot';
 const COPILOT_NAME = 'GitHub Copilot';
 /** From the code (spec 012 FR-009); not newly verified on a real account. Deeply frozen. */
@@ -225,6 +260,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   osSandbox: true, // spec 087: the local sandbox through session.rpc.options.update (@experimental; read: SDK 1.0.22-1.0.26; not run on a real session)
   deleteSession: true, // spec 006 FR-028: CopilotClient.deleteSession (read: SDK 1.0.22-1.0.26 client.d.ts; never run on a real session)
   oneShot: true, // spec 040 FR-015: a throw-away SDK session with no tools and no MCP, deleted after (real 2026-10-20: no tool ran, nothing left on disk)
+  autopilot: Object.freeze({ capUnit: 'aiu', attachments: true, planApproval: true, verified: false }), // spec 099 FR-001: fakes only until T094; nothing in main or the window reads it before T030, T033
 });
 
 /** Spec 059 FR-007: Copilot's own name rule is stricter than Durbar's: no double quotes, at most 100 UTF-16 units, no control characters (SDK `types.d.ts`, `SessionConfig.name`). */
@@ -373,6 +409,10 @@ export class CopilotAdapter implements AgentAdapter {
   private hostCache?: { client: CopilotClient; host: Promise<CopilotHostSupport | undefined> };
   /** One mapper per session (it remembers tool names, reasoning ids and sub-agent ids of that session). */
   private mappers = new Map<string, EventMapper>();
+  /** Spec 099: test seams (no timers, no real clock). */
+  protected autopilotTuning: AutopilotTuning = {};
+  /** Spec 099 FR-053: `setAutopilot` was called on this adapter, so a goal may exist whatever `AUTOPILOT_WIRED` says. */
+  private autopilotUsed = false;
 
   /**
    * Lazily start the shared runtime. Uses the logged-in Copilot user (e.g. `copilot login`). Protected so a test can hand in a fake client (no runtime process, no credits).
@@ -431,9 +471,16 @@ export class CopilotAdapter implements AgentAdapter {
     const old = this.client ?? (await this.starting?.catch(() => undefined));
     const ids = [...this.sessions.keys()];
     const busy = new Map<string, boolean>();
+    const wasAuto = new Set<string>();
     for (const sid of ids) {
       const live = this.sessions.get(sid)!;
       busy.set(sid, await this.processing(live));
+      // spec 099 FR-052: a sign-in refresh ends a run without a card; the resume below clears first and says so
+      if (live.auto?.on) {
+        live.auto.endQuietly();
+        wasAuto.add(sid);
+        live.capNow = live.ownCap ?? null;
+      }
       live.unsubscribe();
       live.broker.denyPending(); // the old runtime's requests and questions die with it
       this.cancelQuestions(live, 'reconnect');
@@ -468,6 +515,7 @@ export class CopilotAdapter implements AgentAdapter {
         void session.rpc.eventLog.registerInterest({ eventType: 'session_limits_exhausted.requested' }).catch(() => undefined);
         live.sandboxFloor = undefined; // spec 087 FR-022d: the resumed session has no floor until applySandbox sends one (Allow all sends none)
         live.lowerOutstanding = undefined; // spec 087 FR-022c (review on PR #833): a lowering sent to the old runtime is not waited for; its answer is ignored
+        await this.clearOnResume(sid, live, wasAuto.has(sid)); // spec 099 FR-053: before anything is sent; a failure ends the session below
         await this.applySandbox(sid, live, live.broker.getMode(), client); // spec 087: the floor again on the new runtime, before any send
         for (const [name, on] of live.mcpToggles ?? []) {
           await (on ? session.rpc.mcp.enable({ serverName: name }) : session.rpc.mcp.disable({ serverName: name })).catch(() => undefined);
@@ -780,6 +828,11 @@ export class CopilotAdapter implements AgentAdapter {
     const onUserInputRequest = async (req: { question?: unknown; choices?: unknown; allowFreeform?: unknown }): Promise<{ answer: string; wasFreeform: boolean }> => {
       const live = this.sessions.get(sid);
       const asked = parseQuestions({ questions: [{ question: req.question, options: (Array.isArray(req.choices) ? req.choices : []).map((c) => ({ label: c })), multiSelect: false }] });
+      // spec 099 FR-030: on a run every question gets the fixed sentence at once (`real:` T093: `ask_user` reaches this handler)
+      if (live?.auto?.running) {
+        if (asked.length) emitAutoAnswered((b) => this.emit(sid, b), randomUUID(), asked);
+        return { answer: AUTOPILOT_ANSWER, wasFreeform: true };
+      }
       if (!live || !asked.length) return { answer: SKIPPED_ANSWER, wasFreeform: true };
       const requestId = randomUUID();
       live.questions ??= new Map();
@@ -804,6 +857,7 @@ export class CopilotAdapter implements AgentAdapter {
     const onElicitationRequest = async (ctx: { message?: unknown; requestedSchema?: unknown; mode?: unknown; url?: unknown; elicitationSource?: unknown }): Promise<ElicitAnswer> => {
       const live = this.sessions.get(sid);
       if (!live) return { action: 'cancel' };
+      if (live.auto?.running) return declineElicitation((b) => this.emit(sid, b), randomUUID(), { message: ctx.message, schema: ctx.requestedSchema, mode: ctx.mode, url: ctx.url, source: ctx.elicitationSource }); // spec 099 FR-030
       live.elicitations ??= new Map();
       return runElicitation((b) => this.emit(sid, b), live.elicitations, randomUUID(), { message: ctx.message, schema: ctx.requestedSchema, mode: ctx.mode, url: ctx.url, source: ctx.elicitationSource }, (m) => this.debug?.(m));
     };
@@ -893,7 +947,8 @@ export class CopilotAdapter implements AgentAdapter {
         const msg = (ev.data as { message?: unknown }).message;
         this.setSandbox(sid, live, copilotSandboxState({ mode: live.broker.getMode(), platform: this.sandboxPlatform, host: { supported: true, capabilities: [] }, warning: typeof msg === 'string' ? msg : '' }));
       }
-      this.map(sid, ev);
+      const hidden = live ? this.autopilotEvent(sid, live, ev) : false;
+      if (!hidden) this.map(sid, ev);
       if (live) this.trackCap(sid, live, ev);
       if (live && ev.type === 'session.idle') {
         this.askTitle(sid);
@@ -903,7 +958,7 @@ export class CopilotAdapter implements AgentAdapter {
     // FR-158: a reconnect resumes with the same handlers but no model fields, so the session keeps the model the runtime stored
     // (it may have been switched since this start).
     const startCap = options.maxAiCredits && options.maxAiCredits > 0 && Number.isFinite(options.maxAiCredits) ? options.maxAiCredits : null;
-    this.sessions.set(sid, { session, unsubscribe, cwd, folders: [cwd, ...folders], broker, resumeConfig: () => ({ ...config }), onSessionEvent, capNow: startCap, ...(hookDir ? { hookDir } : {}), ...(options.requireOsSandbox ? { requireOsSandbox: true } : {}) });
+    this.sessions.set(sid, { session, unsubscribe, cwd, folders: [cwd, ...folders], broker, resumeConfig: () => ({ ...config }), onSessionEvent, capNow: startCap, ownCap: startCap, ...(hookDir ? { hookDir } : {}), ...(options.requireOsSandbox ? { requireOsSandbox: true } : {}) });
     // spec 043 FR-002: a resumed session keeps its selected agent (stored by the runtime): show it
     if (resumedExisting)
       void Promise.resolve()
@@ -919,6 +974,19 @@ export class CopilotAdapter implements AgentAdapter {
     if (!options.quiet) this.emit(sid, { type: 'status', status: 'idle', intent: `Ready in ${cwd}` });
     // spec 087 FR-004: the floor before the first send of a created or resumed session (a refused update holds the first send back)
     const live87 = this.sessions.get(sid);
+    // spec 099 FR-053: a resumed session may come back in `autopilot`: out of it before anything is sent, or the start fails and nothing is sent
+    if (live87 && resumedExisting) {
+      try {
+        await this.clearOnResume(sid, live87);
+      } catch (e) {
+        live87.unsubscribe();
+        this.sessions.delete(sid);
+        this.mappers.delete(sid);
+        await session.disconnect().catch(() => undefined);
+        if (hookDir) fs.rmSync(hookDir, { recursive: true, force: true });
+        throw new Error(lineNotCleared(errorText(e)));
+      }
+    }
     if (live87) await this.applySandbox(sid, live87, startModeOf(options), client);
     return sid;
   }
@@ -927,6 +995,13 @@ export class CopilotAdapter implements AgentAdapter {
     await this.refreshing?.catch(() => undefined); // FR-158: send on the reconnected session
     const live = this.mustGet(sessionId);
     await live.sandboxApplying?.catch(() => undefined);
+    // spec 099: refusals first, so a refused message leaves everything as it was
+    const auto = live.auto?.on ? live.auto : undefined;
+    if (auto && message.plan) throw new Error(AUTOPILOT_NO_PLAN);
+    const startsRun = !!auto && !auto.running;
+    if (startsRun && live.turnOpen) throw new Error(AUTOPILOT_WAIT_TURN);
+    const goal = startsRun ? goalText(message.text, 'copilot') : undefined;
+    if (goal && !goal.ok) throw new Error(goalRefusal(goal));
     // spec 087 FR-007: the sandbox is not in force: nothing is sent until the person chooses (or, under the policy, ever)
     const hold = live.sandboxHold;
     if (hold && !(this.sandboxContinued.has(sessionId) && !live.requireOsSandbox)) {
@@ -941,6 +1016,8 @@ export class CopilotAdapter implements AgentAdapter {
       this.raiseLocalLimit(sessionId, live, message);
       return;
     }
+    // spec 099: past every hold, so a held message starts no run (it comes back here when it is let go)
+    if (startsRun) await this.applyAutopilotCap(live, auto.settings?.cap);
     live.turnOpen = true;
     // spec 066 FR-003: plan first: the runtime's own plan mode (it reads and proposes; nothing changes until the user approves)
     if (message.plan) {
@@ -970,7 +1047,214 @@ export class CopilotAdapter implements AgentAdapter {
         attachments.map((a) => (a.type === 'blob' ? { type: a.type, mimeType: a.mimeType, displayName: a.displayName, base64Chars: a.data.length } : a)),
       )}`,
     );
-    await live.session.send({ prompt: message.text, attachments: attachments.length ? attachments : undefined });
+    if (!startsRun || !goal?.ok) {
+      await live.session.send({ prompt: message.text, attachments: attachments.length ? attachments : undefined }); // spec 099 FR-058: during a run a plain message, never a new goal
+      return;
+    }
+    // FR-010 (`real:` T090): before the send, whose first events may already belong to the run
+    live.pendingEnd = undefined;
+    live.sawWork = false;
+    const run = auto.begin();
+    try {
+      await live.session.send({ prompt: goal.text, attachments: attachments.length ? attachments : undefined, agentMode: 'autopilot' } as Parameters<CopilotSession['send']>[0]);
+    } catch (e) {
+      auto.finish('error');
+      await run.whenStopped();
+      throw e;
+    }
+  }
+
+  /* ---------------- spec 099: Autopilot ---------------- */
+
+  /** FR-002, FR-010, FR-022: on for the next messages, or off (a running run stops, FR-050). The broker keeps answering `onPermissionRequest`; never `setApproveAll`. */
+  async setAutopilot(sessionId: string, settings: AutopilotSettings | null, reason: AutopilotEnd = 'stopped'): Promise<void> {
+    await this.refreshing?.catch(() => undefined);
+    const live = this.mustGet(sessionId);
+    if (settings === null) return this.autopilotOff(sessionId, live, reason);
+    if (live.broker.getMode() !== 'allow') throw new Error(AUTOPILOT_NOT_ALLOW);
+    if (live.auto?.running) throw new Error(AUTOPILOT_ONE_RUN);
+    let cap = settings.cap;
+    if (cap !== undefined) {
+      if (!(typeof cap === 'number' && Number.isFinite(cap) && cap > 0)) throw new Error('Invalid credit cap.');
+      cap = Math.max(cap, MIN_CAP); // D9: the runtime's own smallest cap
+      this.refuseSpentCap(live, cap);
+    }
+    const auto = (live.auto ??= this.newAutopilot(sessionId, live));
+    auto.turnOn({ ...settings, cap });
+    this.autopilotUsed = true;
+    try {
+      await live.session.rpc.mode.set({ mode: 'autopilot' });
+    } catch (e) {
+      auto.settings = undefined;
+      throw e;
+    }
+  }
+
+  private async autopilotOff(sid: string, live: Live, reason: AutopilotEnd): Promise<void> {
+    const auto = live.auto;
+    if (!auto?.on && !auto?.running) return;
+    if (auto.running) {
+      auto.run?.end(reason);
+      await auto.run?.whenStopped();
+      return;
+    }
+    auto.settings = undefined;
+    const ack = this.modeAck(live);
+    try {
+      await live.session.rpc.mode.set({ mode: 'interactive' });
+      await within(ack, this.autopilotTuning.waitMs ?? CLEAR_WAIT_MS, 'Copilot');
+    } catch {
+      await auto.close();
+    }
+  }
+
+  private newAutopilot(sid: string, live: Live): AutopilotState {
+    return new AutopilotState({
+      // FR-050 (`real:` T093): `mode.set interactive` first, then `abort()`. After done it stays in `autopilot` (D8, FR-041).
+      halt: async (reason) => {
+        if (reason === 'done') return;
+        const ack = this.modeAck(live);
+        let failed: { e: unknown } | undefined;
+        try {
+          await live.session.rpc.mode.set({ mode: 'interactive' });
+        } catch (e) {
+          failed = { e };
+        }
+        await live.session.abort().catch(() => undefined);
+        if (failed) throw failed.e;
+        await ack;
+      },
+      interruptAgain: () => { void live.session.abort().catch(() => undefined); },
+      failClosed: async () => {
+        await this.stop(sid).catch(() => undefined);
+        this.sessions.delete(sid); // a `disconnect` that threw still ends it here
+      },
+      settled: () => this.restoreAutopilotCap(sid, live),
+      emit: (b) => this.emit(sid, b),
+      spend: () => ({ unit: 'aiu', value: usedCredits(live) }),
+    }, this.autopilotTuning);
+  }
+
+  /** FR-054: the next `session.mode_changed` to `interactive`. */
+  private modeAck(live: Live): Promise<void> {
+    return new Promise((resolve) => { live.modeAck = resolve; });
+  }
+
+  /** FR-022: a value at or below what was spent could do nothing. */
+  private refuseSpentCap(live: Live, cap: number): void {
+    const used = usedCredits(live);
+    if (cap <= used) throw new Error(`A cap of ${cap} AI credits is not above what this session has spent (${Math.round(used * 100) / 100}).`);
+  }
+
+  /** FR-022: the lower of the session's cap and the Autopilot cap, for this run. Never touches `live.cap` or `ownCap`. */
+  private async applyAutopilotCap(live: Live, cap: number | undefined): Promise<void> {
+    if (cap === undefined) return;
+    this.refuseSpentCap(live, cap);
+    const want = capInForce(live.ownCap, cap);
+    if (want === null || want === live.capNow) return;
+    live.apCapSent = want;
+    await live.session.rpc.options.update({ sessionLimits: { maxAiCredits: want } });
+    live.capNow = want;
+  }
+
+  /** FR-022: after every end the session's own cap again; a failure leaves the tighter one and says so. The cap card shows only if that cap itself is reached. */
+  private async restoreAutopilotCap(sid: string, live: Live): Promise<void> {
+    if (this.sessions.get(sid) !== live) return;
+    const own = live.ownCap ?? null;
+    if (live.apCapSent !== undefined && own !== live.capNow) {
+      try {
+        await live.session.rpc.options.update({ sessionLimits: own === null ? null : { maxAiCredits: own } });
+        live.capNow = own;
+      } catch {
+        this.emit(sid, { type: 'status', status: 'idle', intent: LINE_CAP_NOT_RESTORED });
+      }
+    }
+    if (overCap(live) && !live.localLimit) this.raiseLocalLimit(sid, live);
+  }
+
+  /** FR-053: on a resume the mode is read, then set; the wait for the app's answer holds only when it really was in `autopilot`. */
+  private async clearOnResume(sid: string, live: Live, wasOn = false): Promise<void> {
+    if (!(this.autopilotTuning.clearFirst ?? AUTOPILOT_WIRED) && !this.autopilotUsed) return;
+    const ms = this.autopilotTuning.waitMs ?? CLEAR_WAIT_MS;
+    const m = (await within(Promise.resolve(live.session.rpc.mode.get()), ms, 'Copilot')) as unknown;
+    const found = (typeof m === 'string' ? m : (m as { mode?: unknown } | undefined)?.mode) === 'autopilot';
+    const ack = found ? this.modeAck(live) : undefined;
+    await within(Promise.resolve(live.session.rpc.mode.set({ mode: 'interactive' })), ms, 'Copilot');
+    if (ack) await within(ack, ms, 'Copilot');
+    if (found || wasOn) this.emit(sid, { type: 'status', status: 'idle', intent: LINE_CLOSED });
+  }
+
+  /** FR-006: the app went into its own loop without Durbar: out of it, and said in the chat. */
+  private selfStarted(sid: string, live: Live): void {
+    this.emit(sid, { type: 'status', status: 'idle', intent: LINE_SELF_STARTED });
+    void live.session.rpc.mode.set({ mode: 'interactive' }).catch(() => undefined);
+    void live.session.abort().catch(() => undefined);
+  }
+
+  /** What a session event means for Autopilot (FR-006, FR-020, FR-021, FR-022, FR-040). True: the event does not reach the window. */
+  private autopilotEvent(sid: string, live: Live, ev: SessionEvent): boolean {
+    const e = ev as unknown as { type: string; agentId?: string | null; data?: Record<string, unknown> };
+    const d = e.data ?? {};
+    const auto = live.auto;
+    if (e.type === 'session.session_limits_changed') {
+      // FR-022: main saves a confirmed cap for the folder, so the Autopilot cap's own confirmation never goes there
+      const cap = (d.sessionLimits as { maxAiCredits?: unknown } | undefined)?.maxAiCredits;
+      return live.apCapSent !== undefined && cap === live.apCapSent && cap !== live.ownCap;
+    }
+    if (e.type === 'session_limits_exhausted.completed') return d.requestId !== undefined && d.requestId === live.apLimitId;
+    if (e.agentId) return false; // FR-008: a helper's events count toward nothing
+    if (e.type === 'session.mode_changed') {
+      if (d.newMode === 'interactive') { live.modeAck?.(); live.modeAck = undefined; }
+      if (d.newMode === 'autopilot' && !auto?.on) this.selfStarted(sid, live);
+      else if (d.newMode !== 'autopilot' && auto?.running) auto.finish('stopped');
+      return false;
+    }
+    if (copilotIsContinuation(e)) {
+      live.sawWork = true;
+      if (auto?.run) {
+        const did = auto.run.continuation();
+        if (did !== 'ignored') return false;
+      }
+      // after a done ending the runtime stays in `autopilot` (D8): a turn nobody counts is stopped as a run of its own that ends at once
+      if (auto?.on) auto.begin().end('error');
+      else this.selfStarted(sid, live);
+      return false;
+    }
+    if (!auto?.running) return false;
+    switch (e.type) {
+      case 'user.message':
+        live.sawWork = true;
+        return false;
+      case 'assistant.turn_start':
+        live.sawWork = true;
+        auto.run?.backstopTurn();
+        return false;
+      case 'session.task_complete': {
+        const end = copilotTaskEnd(d);
+        if (end) live.pendingEnd = end;
+        return false;
+      }
+      case 'session.autopilot_objective_changed':
+        if (d.status === 'paused' || d.status === 'cap_reached') auto.finish('blocked'); // `read:` SDK 1.0.24
+        return false;
+      case 'abort':
+        if (d.reason === 'autopilot_credit_limit') auto.finish('cap'); // `read:` SDK 1.0.24
+        return false;
+      case 'session_limits_exhausted.requested':
+        live.apLimitId = typeof d.requestId === 'string' ? d.requestId : undefined;
+        void this.cancelLimit(live);
+        auto.finish('cap');
+        return true;
+      case 'session.error':
+        auto.finish('error');
+        return false;
+      case 'session.idle':
+        if (!live.sawWork) return false; // an idle from before this run: its turn has not begun
+        auto.finish(live.pendingEnd ?? (d.aborted ? 'stopped' : 'error'));
+        return false;
+      default:
+        return false;
+    }
   }
 
   /**
@@ -1061,6 +1345,12 @@ export class CopilotAdapter implements AgentAdapter {
     live.broker.denyPending();
     this.cancelQuestions(live, 'interrupt');
     await this.cancelLimit(live);
+    // spec 099 FR-050: Stop on Autopilot is the run's own stop order, and the session goes back to Allow all
+    if (live.auto?.on || live.auto?.running) {
+      await this.autopilotOff(sessionId, live, 'stopped');
+      if (this.sessions.get(sessionId) === live) this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Aborted' });
+      return;
+    }
     try {
       await live.session.abort();
     } catch {
@@ -1074,6 +1364,7 @@ export class CopilotAdapter implements AgentAdapter {
     await this.refreshing?.catch(() => undefined);
     const live = this.sessions.get(sessionId);
     if (!live) return;
+    live.auto?.endQuietly(); // spec 099 FR-052
     await this.cancelLimit(live);
     live.broker.stop(); // pending permissions are denied cleanly (renderer clears Approve/Deny) and grants are dropped
     this.cancelQuestions(live, 'stop');
@@ -1107,6 +1398,8 @@ export class CopilotAdapter implements AgentAdapter {
   setPermMode(sessionId: string, mode: PermissionMode, opts: { clearGrants?: boolean; approvePending?: boolean } = {}): { pending: number } {
     const live = this.sessions.get(sessionId);
     if (!live) return { pending: 0 };
+    // spec 099 FR-051: main ends Autopilot first (T030); here too, so no path leaves it on outside Allow all (FR-002)
+    if (mode !== 'allow' && (live.auto?.on || live.auto?.running)) void this.autopilotOff(sessionId, live, 'stopped');
     live.broker.setMode(mode);
     // spec 087 FR-013: the new floor through options.update at the switch (to Allow all a floor in force is lowered, FR-022c)
     this.chainSandbox(sessionId, live, mode);
@@ -1535,8 +1828,22 @@ export class CopilotAdapter implements AgentAdapter {
   async setCap(sessionId: string, credits: number | null): Promise<void> {
     const live = this.mustGet(sessionId);
     if (credits !== null && !(credits > 0 && Number.isFinite(credits))) throw new Error('Invalid credit cap.');
+    // spec 099 FR-022: during a run this changes the session's own cap; only a lower value applies now, and nothing lifts the Autopilot cap
+    const held = live.auto?.running ? live.auto.settings?.cap : undefined;
+    if (held !== undefined) {
+      const want = capInForce(credits, held);
+      if (want !== live.capNow) {
+        live.apCapSent = want ?? undefined;
+        await live.session.rpc.options.update({ sessionLimits: want === null ? null : { maxAiCredits: want } });
+        live.capNow = want;
+      }
+      live.cap = credits;
+      live.ownCap = credits;
+      return;
+    }
     await live.session.rpc.options.update({ sessionLimits: credits === null ? null : { maxAiCredits: credits } });
     live.cap = credits;
+    live.ownCap = credits;
     live.capNow = credits;
   }
 
@@ -1554,7 +1861,10 @@ export class CopilotAdapter implements AgentAdapter {
       live.capNow = cap && cap > 0 ? cap : null;
     } else if (ev.type === 'session.idle') live.turnOpen = false;
     // after a call's report or the runtime's own total (on a resumed session the first checkpoint brings what was spent before)
-    if ((ev.type === 'assistant.usage' || ev.type === 'session.usage_checkpoint') && live.turnOpen && !live.localLimit && overCap(live)) void this.stopAtCap(sid, live);
+    if ((ev.type === 'assistant.usage' || ev.type === 'session.usage_checkpoint') && live.turnOpen && !live.localLimit && overCap(live)) {
+      if (live.auto?.running) live.auto.finish('cap'); // spec 099 FR-022: the run ends with cap; the card only if the restored cap is reached
+      else void this.stopAtCap(sid, live);
+    }
   }
 
   /** FR-071/FR-072: ask the user through the usual limit event; `held` is the message that was not sent. */
