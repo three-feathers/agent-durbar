@@ -11,6 +11,8 @@ import type { NoteSource } from '../shared/notes';
 import { sessionIdOk } from '../shared/sessionid';
 import { folderKeyOf, folderNameOf } from '../shared/usagedoc';
 import type { NotesStore, NotesView, NotesWrote } from './notesstore';
+import type { NotesFileState } from '../shared/notes';
+import { syncNotesFile, type NotesFile } from './notesfile';
 
 export interface NotesOpsDeps {
   agents: Map<string, AgentInfo>;
@@ -25,7 +27,18 @@ export interface NotesOpsDeps {
   /** The secret values the session was given (`secretValuesFor`). */
   sessionValues(agentId: string): readonly string[];
   now?(): Date;
+  /** The project-file mirror (T041, FR-053, FR-054). Absent: never used. */
+  file?(): NotesFile | undefined;
+  /**
+   * Whether a folder's project-file switch is on (FR-050; `notesFile` in folders.json comes with T042). Absent or false: nothing reads,
+   * stats or writes the folder's `.durbar/notes.md`.
+   */
+  fileOn?(folderKey: string): boolean;
+  setTimer?(fn: () => void, ms: number): unknown;
 }
+
+/** FR-053: at most one project-file write per folder in this time. */
+const FILE_EVERY_MS = 500;
 
 type Refusal = { ok: false; code: 'invalid'; error: string };
 const refuse = (error: string): Refusal => ({ ok: false, code: 'invalid', error });
@@ -38,7 +51,55 @@ export function digestOf(raw: string): string {
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
 export class NotesOps {
+  private readonly cycles = new Map<string, Promise<NotesFileState | undefined>>();
+  private readonly timers = new Set<string>();
+
   constructor(private readonly d: NotesOpsDeps) {}
+
+  /** The folder path the project file belongs to, only while its switch is on and it is a plain folder (no `.code-workspace`, FR-050). */
+  private fileTarget(a: AgentInfo, key: string): { file: NotesFile; folderPath: string } | undefined {
+    if (a.workspaceFile || !this.d.fileOn || !this.d.file) return undefined;
+    let on = false;
+    try { on = this.d.fileOn(key) === true; } catch { on = false; }
+    if (!on) return undefined;
+    const file = this.d.file();
+    return file ? { file, folderPath: a.cwd } : undefined;
+  }
+
+  /**
+   * One mirror cycle for the folder (FR-053, FR-054), one at a time per folder; `undefined` while the switch is off. A cycle whose
+   * rename found the file changed runs once more after 500 ms (`retries`), so the outside edit is imported, then written.
+   */
+  syncFile(agentId: unknown, retries = 1): Promise<NotesFileState | undefined> {
+    const t = this.target(agentId);
+    if ('ok' in t) return Promise.resolve(undefined);
+    const ft = this.fileTarget(t.a, t.key);
+    if (!ft) return Promise.resolve(undefined);
+    const prev = this.cycles.get(t.key) ?? Promise.resolve(undefined);
+    const run = prev.then(async (): Promise<NotesFileState> => {
+      const r = await syncNotesFile({ file: ft.file, store: t.store, folderKey: t.key, folderName: t.name, folderPath: ft.folderPath, values: this.values(t.key), now: this.d.now });
+      if (r.retry && retries > 0) this.schedule(t.a.id, t.key, retries - 1);
+      return r.state;
+    }).catch((): NotesFileState => ({ error: 'Could not write .durbar/notes.md: ERROR' }));
+    this.cycles.set(t.key, run);
+    return run;
+  }
+
+  /** After a change: one cycle within 500 ms (changes in between share it). */
+  private schedule(agentId: string, key: string, retries = 1): void {
+    if (this.timers.has(key)) return;
+    this.timers.add(key);
+    const fire = (): void => { this.timers.delete(key); void this.syncFile(agentId, retries); };
+    (this.d.setTimer ?? ((fn: () => void, ms: number) => setTimeout(fn, ms)))(fire, FILE_EVERY_MS);
+  }
+
+  /** A change reached the store: the folder's project file follows while its switch is on. */
+  private changed<T extends { ok: boolean }>(agentId: unknown, r: T): T {
+    if (!r.ok) return r;
+    const t = this.target(agentId);
+    if (!('ok' in t) && this.fileTarget(t.a, t.key)) this.schedule(t.a.id, t.key);
+    return r;
+  }
 
   private target(agentId: unknown): { a: AgentInfo; store: NotesStore; key: string; name: string } | Refusal {
     const a = typeof agentId === 'string' && agentId.length <= 200 ? this.d.agents.get(agentId) : undefined;
@@ -61,8 +122,11 @@ export class NotesOps {
   async list(agentId: unknown): Promise<NotesView | Refusal> {
     const t = this.target(agentId);
     if ('ok' in t) return t;
+    // FR-054: opening the drawer or the view reads an outside edit back (and writes) first, only while the switch is on
+    const fileState = this.fileTarget(t.a, t.key) ? await this.syncFile(agentId) : undefined;
     const v = await t.store.list(t.key);
     if (!v.ok) return v;
+    if (fileState) (v as { file?: NotesFileState }).file = fileState;
     // the chat's own session (main's `resumeIdFor`, never the window's), so the drawer can put "This session" first (FR-021); '' when it is unusable
     const app = this.d.adapterIdOf(t.a.id) ?? t.a.adapterId ?? 'copilot';
     const sid = this.d.resumeIdFor(t.a.id);
@@ -87,7 +151,7 @@ export class NotesOps {
     const source: NoteSource | undefined = sessionIdOk(app, session)
       ? { app, session, role, ord, digest: digestOf(text), at: (this.d.now?.() ?? new Date()).toISOString() }
       : undefined; // no usable session yet: the note is kept without a link
-    return t.store.save(t.key, t.name, { text, from: kind, source, values: this.values(t.key, t.a.id) });
+    return this.changed(agentId, await t.store.save(t.key, t.name, { text, from: kind, source, values: this.values(t.key, t.a.id) }));
   }
 
   /** FR-012: a note typed by hand. */
@@ -96,7 +160,7 @@ export class NotesOps {
     if ('ok' in t) return t;
     if (!isObj(input) || typeof input.text !== 'string' || !input.text.trim()) return refuse('The note is empty.');
     if (input.text.length > NOTES_LIMITS.inputChars) return refuse('That note is too long.');
-    return t.store.add(t.key, t.name, { text: input.text, from: 'typed', values: this.values(t.key) });
+    return this.changed(agentId, await t.store.add(t.key, t.name, { text: input.text, from: 'typed', values: this.values(t.key) }));
   }
 
   async update(agentId: unknown, id: unknown, rev: unknown, patch: unknown): Promise<NotesWrote | Refusal> {
@@ -110,7 +174,7 @@ export class NotesOps {
     if (title !== undefined && (typeof title !== 'string' || title.length > NOTES_LIMITS.titleInputChars)) return refuse('That title is not valid.');
     if (text !== undefined && (typeof text !== 'string' || text.length > NOTES_LIMITS.inputChars)) return refuse('That text is not valid.');
     if (done !== undefined && typeof done !== 'boolean') return refuse('Done is yes or no.');
-    return t.store.update(t.key, t.name, id, rev, { title: title as string | undefined, text: text as string | undefined, done: done as boolean | undefined, values: this.values(t.key, t.a.id) });
+    return this.changed(agentId, await t.store.update(t.key, t.name, id, rev, { title: title as string | undefined, text: text as string | undefined, done: done as boolean | undefined, values: this.values(t.key, t.a.id) }));
   }
 
   async remove(agentId: unknown, id: unknown, rev: unknown): Promise<NotesWrote | Refusal> {
@@ -118,13 +182,13 @@ export class NotesOps {
     if ('ok' in t) return t;
     if (typeof id !== 'string' || !NOTE_ID_RE.test(id)) return refuse('Unknown note.');
     if (typeof rev !== 'number' || !Number.isInteger(rev) || rev < 1) return refuse('Unknown version of the note.');
-    return t.store.remove(t.key, t.name, id, rev);
+    return this.changed(agentId, await t.store.remove(t.key, t.name, id, rev));
   }
 
   async removeAll(agentId: unknown): Promise<NotesWrote | Refusal> {
     const t = this.target(agentId);
     if ('ok' in t) return t;
-    return t.store.removeAll(t.key, t.name);
+    return this.changed(agentId, await t.store.removeAll(t.key, t.name));
   }
 
   async startOver(agentId: unknown): Promise<NotesWrote | Refusal> {
