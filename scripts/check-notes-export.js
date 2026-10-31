@@ -11,7 +11,7 @@
  *   AC4  Delete all… asks with the count, Cancel focused, Esc sends nothing; confirming sends the call, the list empties, both buttons
  *        are disabled and the focus goes to the search field; with the switch on it says notes.md is written again;
  *   AC6  Remove folder's dialog has "Also delete its notes (3)", unticked, with the line that the notes stay; Cancel removes nothing;
- *        ticked, the window sends {deleteNotes:true}; a folder without notes has no box and sends no option; with the switch on it says
+ *        unticked, Remove sends no option; ticked, the window sends {deleteNotes:true}; a folder without notes has no box and sends no option; with the switch on it says
  *        .durbar/notes.md stays in the project.
  * Every dialog's layout: inside the window, no text under 10.5px, the buttons inside the dialog. Screenshots of the Delete all… and
  * Remove folder dialogs at each size. A miss is collected; the run fails at the end unless "all checks passed" is printed.
@@ -140,6 +140,19 @@ module.exports = async (ctx) => {
     await press('Cancel');
     c = (await calls()).filter((x) => x[0] === 'removeFolder');
     check(c.length === 0 && JSON.stringify(await rooms()) === JSON.stringify(before), `${tag}: Cancel removes nothing (${JSON.stringify(c)})`);
+    // unticked: the folder goes, its notes stay (no deleteNotes sent)
+    await folderMenu(rid, tag);
+    await js(`document.querySelector('#modeMenu [data-fact="rm"]').click()`);
+    check(await until(`!!document.querySelector('#modeDlg #mdChk')`, 6000), `${tag}: the dialog with the box (unticked case)`);
+    check(!(await js(`document.getElementById('mdChk').checked`)), `${tag}: precondition: the box is unticked`);
+    await press('Remove folder');
+    check(await until(`![...document.querySelectorAll('#stage .room [data-foldermenu]')].some(b=>b.dataset.foldermenu===${jsLiteral(rid)})`, 5000), `${tag}: unticked: the folder is removed`);
+    c = (await calls()).filter((x) => x[0] === 'removeFolder');
+    check(c.length === 1 && c[0][2] == null, `${tag}: unticked sends no deleteNotes (${JSON.stringify(c)})`);
+    check(await until(`[...document.querySelectorAll('.toast')].some(t=>/ removed\\.$/.test(t.textContent)&&!/notes deleted/.test(t.textContent))`, 3000), `${tag}: unticked says only removed (${await toasts()})`);
+    // ticked: a fresh office, the same folder
+    await load(w, h, { simnotes: 'some' });
+    rid = await roomOf('Noor');
     await folderMenu(rid, tag);
     await js(`document.querySelector('#modeMenu [data-fact="rm"]').click()`);
     check(await until(`!!document.querySelector('#modeDlg #mdChk')`, 6000), `${tag}: the dialog again`);

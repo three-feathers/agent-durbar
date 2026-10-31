@@ -13,7 +13,7 @@ import { pathToFileURL } from 'url';
 import type { AgentInfo } from '../src/shared/api';
 import type { Note } from '../src/shared/notes';
 import { NOTES_LIMITS } from '../src/shared/notes';
-import { writeNotesMd } from '../src/shared/notesmd';
+import { NOTES_EXPORT_HEADER, NOTES_MD_HEADER, writeNotesMd } from '../src/shared/notesmd';
 import { exportDialogOptions, exportFileName, writeNotesExport, type ExportDialogOptions, type NotesExportFs } from '../src/main/notesexport';
 import { NotesFile } from '../src/main/notesfile';
 import { NotesStore } from '../src/main/notesstore';
@@ -92,6 +92,8 @@ async function main(): Promise<void> {
     assert.strictEqual(exportFileName(''), 'folder-notes.md');
     assert.strictEqual(exportFileName('tab\there\u0001'), 'tab-here--notes.md');
     assert.strictEqual(exportFileName('Café 東京'), 'Café 東京-notes.md');
+    // bidi controls would make the offered name read differently from what it is (U+202E turns "txt.md" around)
+    for (const c of ['\u200e', '\u200f', '\u202a', '\u202b', '\u202c', '\u202d', '\u202e', '\u2066', '\u2067', '\u2068', '\u2069']) assert.strictEqual(exportFileName(`a${c}b`), 'a-b-notes.md', `U+${c.charCodeAt(0).toString(16)}`);
     assert.ok(exportFileName('x'.repeat(500)).length <= 60 + '-notes.md'.length);
     for (const n of ['a/b', 'a\\b', 'x:y', '..']) assert.ok(!/[\\/:]/.test(exportFileName(n)) && !exportFileName(n).startsWith('.'), n);
   });
@@ -201,6 +203,47 @@ async function main(): Promise<void> {
     }
   });
 
+  await test('a race: the chosen file swapped for ANOTHER regular file of the same size (delete and recreate): refused', async () => {
+    const dir = fresh();
+    const f = path.join(dir, 'same.md');
+    nodeFs.writeFileSync(f, 'aaaa');
+    const past = new Date(Date.parse('2026-01-01T00:00:00.000Z'));
+    nodeFs.utimesSync(f, past, past);
+    let armed = true;
+    const fs = { ...nodeFs, closeSync: (fd: number) => {
+      nodeFs.closeSync(fd);
+      if (!armed) return;
+      armed = false;
+      nodeFs.unlinkSync(f); nodeFs.writeFileSync(f, 'bbbb'); // the same size; the inode may well be reused
+    } } as unknown as NotesExportFs;
+    refusedWith(await writeNotesExport(f, 'mine\n', { fs }), /changed while Durbar was writing/, 'same size, new file');
+    assert.strictEqual(nodeFs.readFileSync(f, 'utf8'), 'bbbb', 'the other file is not replaced');
+    assert.deepStrictEqual(leftovers(dir), []);
+  });
+  await test('a race: the chosen folder (reached through a link) points elsewhere before the rename: refused, nothing written there', async () => {
+    if (!canLink) return skip('symlinks are not allowed here');
+    const a = fresh('a'), b = fresh('b');
+    const via = path.join(fresh('via'), 'dir');
+    nodeFs.symlinkSync(a, via, 'dir');
+    let armed = true;
+    const fs = { ...nodeFs, closeSync: (fd: number) => {
+      nodeFs.closeSync(fd);
+      if (!armed) return;
+      armed = false;
+      nodeFs.unlinkSync(via); nodeFs.symlinkSync(b, via, 'dir');
+    } } as unknown as NotesExportFs;
+    refusedWith(await writeNotesExport(path.join(via, 'x.md'), 'mine\n', { fs }), /chosen folder changed/, 'folder swapped');
+    assert.deepStrictEqual(nodeFs.readdirSync(b), [], 'nothing written into the other folder');
+    assert.deepStrictEqual(leftovers(a), [], 'the temp file is removed from the first folder');
+  });
+  await test('the export header: its own words; the mirror\'s header and bytes are unchanged; the body is the same format', () => {
+    const n: Note = { id: 'n-abcdefabcdef', title: 'T', text: 'body', createdAt: '2026-10-31T12:00:00.000Z', updatedAt: '2026-10-31T12:00:00.000Z', rev: 1, done: false, from: 'typed', fileEdited: false, hidden: false } as Note;
+    const mirror = writeNotesMd([n]), exp = writeNotesMd([n], NOTES_EXPORT_HEADER);
+    assert.ok(mirror.startsWith(NOTES_MD_HEADER) && /Notes deleted here come back/.test(mirror), 'the mirror keeps its header');
+    assert.ok(exp.startsWith(NOTES_EXPORT_HEADER) && !/come back/.test(exp) && /Exported from Agent Durbar/.test(exp), 'the export says it is an export');
+    assert.strictEqual(exp.slice(NOTES_EXPORT_HEADER.length), mirror.slice(NOTES_MD_HEADER.length), 'the same body');
+  });
+
   // ---- NotesOps.export with a fake save dialog ----
   await test('export: main shows the dialog, writes FR-052\'s format of every note (done ones too), 0600, no session id', async () => {
     const out = fresh('exports');
@@ -216,7 +259,8 @@ async function main(): Promise<void> {
     assert.strictEqual(r.dialogs[0].defaultPath, 'proj-notes.md');
     assert.ok(r.dialogs[0].properties.includes('showOverwriteConfirmation'));
     const text = nodeFs.readFileSync(chosen, 'utf8');
-    assert.strictEqual(text, writeNotesMd(await notesOf(r.store, r.folder)), 'exactly FR-052\'s writer');
+    assert.strictEqual(text, writeNotesMd(await notesOf(r.store, r.folder), NOTES_EXPORT_HEADER), 'exactly FR-052\'s writer, with the export header');
+    assert.ok(!/come back/.test(text), 'no mirror wording in an export');
     assert.ok(/ done -->/.test(text), 'the done note is in it');
     assert.ok(!text.includes(SESSION_ID) && !/session|digest|role=|from=/.test(text), 'no session id, digest, role or from');
     if (posix) assert.strictEqual(modeOf(chosen), 0o600);
@@ -362,6 +406,14 @@ async function main(): Promise<void> {
     okOf(await r.ops.add('a1', { text: 'x' }));
     refusedWith(await r.ops.confirmForget('a1'), NATIVE_CANCELLED, 'Cancel');
     refusedWith(await r.ops.confirmForget('nobody'), /not open/, 'unknown chat');
+    // a store file Durbar cannot read holds notes too: it is confirmed natively like a folder with notes
+    const otherFile = path.join(r.notesDir, `${r.store.fingerprintOf(r.other)}.json`);
+    nodeFs.mkdirSync(r.notesDir, { recursive: true });
+    nodeFs.writeFileSync(otherFile, 'not json');
+    assert.ok(!(await r.store.list(r.other)).ok, 'precondition: the other folder\'s store cannot be read');
+    const n0 = r.asked.length;
+    refusedWith(await r.ops.confirmForget('b1'), NATIVE_CANCELLED, 'unreadable store: asked, Cancel');
+    assert.deepStrictEqual(r.asked.slice(n0).map((x) => x.kind), ['forget'], 'the native box was shown for the unreadable store');
     const fp = r.store.fingerprintOf(r.folder);
     const bad = path.join(r.notesDir, `${fp}.json.bad-20261031T120000Z`);
     nodeFs.writeFileSync(bad, '{}');

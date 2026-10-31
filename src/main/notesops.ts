@@ -13,7 +13,7 @@ import { folderKeyOf, folderNameOf } from '../shared/usagedoc';
 import type { NotesStore, NotesView, NotesWrote } from './notesstore';
 import type { NotesExport, NotesFail, NotesFileCount, NotesFileState, NotesFileSwitch, NotesSetFile } from '../shared/notes';
 import { syncNotesFile, type NotesFile } from './notesfile';
-import { writeNotesMd } from '../shared/notesmd';
+import { NOTES_EXPORT_HEADER, writeNotesMd } from '../shared/notesmd';
 import { exportDialogOptions, writeNotesExport, type ExportDialogOptions, type NotesExportOptions } from './notesexport';
 
 export interface NotesOpsDeps {
@@ -301,7 +301,7 @@ export class NotesOps {
     let pendingNow = false;
     try { pendingNow = this.d.valuesPending?.(t.key) === true; } catch { pendingNow = true; }
     if (pendingNow) return refuse(EXPORT_PENDING);
-    const text = writeNotesMd(file.forFile(now.notes, this.fileValues(t.key)));
+    const text = writeNotesMd(file.forFile(now.notes, this.fileValues(t.key)), NOTES_EXPORT_HEADER);
     const w = await writeNotesExport(chosen, text, this.d.exportOpts);
     if (!w.ok) return refuse(w.error);
     return { ok: true, count: now.notes.length, name: w.name };

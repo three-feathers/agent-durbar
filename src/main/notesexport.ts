@@ -9,7 +9,9 @@
  *   0600 on POSIX), written, synced, closed; right before the rename the folder and the name are checked again (still missing, or the
  *   same file by device, inode, birth and modification times and size,
  *   one link); a rename replaces a link put there in the last moment and never follows it; on
- *   Windows a refused rename is tried once more after 200 ms, checked again first; any failure removes the temp file.
+ *   Windows a refused rename is tried once more after 200 ms, checked again first; on a failure the temp file is removed by its path
+ *   (best effort: when the chosen folder was moved away meanwhile, the temp file stays in it, spec `[KNOWN GAP]`).
+ * The steps follow `NotesFile.syncOut` (`notesfile.ts`), not shared with it: there the re-check is a hash, here the file's identity.
  *
  * No Electron import (the dialog is injected into `NotesOps`); nothing here logs; a refusal is a short reason without a path.
  */
@@ -42,10 +44,11 @@ export const EXPORT_FAIL = (why: string): string => `Could not export the notes:
 
 /**
  * The default file name the dialog offers: `<folder>-notes.md`, with every character a file name cannot hold on Windows, macOS or
- * Linux (`< > : " / \ | ? *`, controls) replaced by `-`, no leading dot, no trailing dot or space, at most 60 characters of the name.
+ * Linux (`< > : " / \ | ? *`, controls) and the bidi controls (U+200E, U+200F, U+202A..U+202E, U+2066..U+2069) replaced
+ * by `-`, no leading dot, no trailing dot or space, at most 60 characters of the name.
  */
 export function exportFileName(folderName: string): string {
-  let n = String(folderName ?? '').replace(/[<>:"/\\|?*\u0000-\u001f\u007f-\u009f]/g, '-').replace(/\s+/g, ' ').trim();
+  let n = String(folderName ?? '').replace(/[<>:"/\\|?*\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '-').replace(/\s+/g, ' ').trim();
   n = n.replace(/^\.+/, '').slice(0, 60).replace(/[. ]+$/, '');
   if (/^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i.test(n)) n += '-';
   return `${n || 'folder'}-notes.md`;
