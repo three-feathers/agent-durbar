@@ -14,6 +14,7 @@
 import { codexEdit } from './edits';
 import type { EventBody } from './map';
 import type { EditInfo } from './types';
+import { appApprovedPermission } from './types';
 import { resetMs, usageLimitClosing } from './usagelimit';
 import { isObj, nonEmptyStr as str } from '../shared/guards';
 import { isMcpAuthChallenge } from './mcpauth';
@@ -181,6 +182,12 @@ export class CodexMapper {
     if (!agentId && method.startsWith('item/')) this.retries.progress(); // not usage: a failed turn can report tokens too
 
     switch (method) {
+      case 'item/autoApprovalReview/completed': {
+        // spec 003 FR-110 ([UNSTABLE] in the app-server schema): only an `approved` review of a named item; the rationale text is never read
+        const id = ownStr(params, 'targetItemId');
+        if (!id || ownStr(own(params, 'review'), 'status') !== 'approved') return;
+        return this.emit({ type: 'permission', permission: appApprovedPermission(id), agentId });
+      }
       case 'error': {
         // spec 034 FR-017: Codex retries the request by itself (`willRetry: true`); a fixed reason and the status only, never the message
         const info = agentId ? null : codexRetry(params);

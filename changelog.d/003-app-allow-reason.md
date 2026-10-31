@@ -1,0 +1,1 @@
+- When Codex's auto-review or Copilot's assisted approval approves a tool call, its card now says so ("Allowed: agent app classifier"). Claude Code reports no reason, so its calls still show no tag.

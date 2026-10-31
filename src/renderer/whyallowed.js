@@ -12,7 +12,7 @@
   const LABEL_MAX=240;
   const KEYS_MAX=50; /* = ALLOWED_BY_KEYS_MAX in src/adapters/types.ts (test:permissions checks they agree) */
   const APP={config:'config',hook:'hook',classifier:'classifier'};
-  const APP_WORDS={config:"the agent app's config",hook:"a hook of the agent app",classifier:"the agent app's auto-mode classifier"};
+  const APP_WORDS={config:"the agent app's config",hook:"a hook of the agent app",classifier:"the agent app's automatic approval review"};
   const cutLabel=l=>{const s=String(l);return CT&&typeof CT.cutText==='function'?CT.cutText(s,LABEL_MAX):s.slice(0,LABEL_MAX);};
   const MODE_WHERE='Change the mode with the mode chip under the message box.';
   /* by: the event's allowedBy (untrusted); live: the keys of the session rules this window knows now (a Set or an array), or null when

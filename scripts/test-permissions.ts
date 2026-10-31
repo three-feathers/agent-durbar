@@ -612,6 +612,7 @@ const mkRoots2 = (m: { ask?: boolean; allow?: boolean }, roots?: string[]) => {
     }
     assert.ok(/mode chip under the message box/.test(W.describe({ kind: 'allow-all' }, live)?.sentence ?? ''));
     assert.strictEqual(W.describe({ kind: 'app', source: 'classifier' }, live)?.pill, 'Allowed: agent app classifier');
+    assert.match(W.describe({ kind: 'app', source: 'classifier' }, live)?.sentence ?? '', /automatic approval review/, 'FR-112: not Claude Code\'s auto-mode word');
     assert.strictEqual(W.describe({ kind: 'app', source: 'classifier' }, live)?.undoKeys, undefined, 'Durbar does not own an app rule');
     const evil = '<img src=x onerror=alert(1)>' + 'A'.repeat(1000);
     const dd = W.describe({ kind: 'session-grant', key: 'k1', label: evil }, live);
