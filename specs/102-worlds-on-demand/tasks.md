@@ -12,7 +12,7 @@
 
 - [x] T001 Spec, plan, tasks, checklist and specs-index block (`specs/102-worlds-on-demand/`). Test: `npm run specs:check`, `npm run rules:check`.
 - [ ] T002 After #921, #925 and #936 land, write FR-190's lines into the `## Changes` of specs 076, 077, 096, 097 and 098, naming 097 FR-060, FR-100, FR-112, FR-114, FR-115, T100, T102, D3, FR-001..FR-004, FR-081, FR-083, FR-084, Q6; add block `room` and `defaultSet` to the registry and its test. Test: `npm run specs:check`, `test:surfaces` [FR-190].
-- [ ] T004 AGENTS.md's *Needs approval* and *Rework rate* lines name `worlds-*` releases, per spec 021 FR-066, with the owner's direct OK on the text (an agent's relay does not authorise a rule-file change). Test: `npm run rules:check`; `read:` [FR-086].
+- [x] T004 AGENTS.md's *Needs approval* and *Rework rate* lines name `worlds-*` releases, per spec 021 FR-066, with the owner's direct OK on the text (an agent's relay does not authorise a rule-file change). Test: `npm run rules:check`; `read:` [FR-086].
 - [ ] T003 Paco's answer on OP-8, and any owner change to the agent decisions OP-1, OP-5, OP-6, written into the spec. Test: `read:` [Open points].
 
 ## Phase 1: Format and validator (PR P1), no UI, no network
@@ -52,7 +52,7 @@ Depends on #921 and T010..T016.
 - [ ] T040 Offline and failures: no retry, the current world unchanged, an installed world works with the layer refusing and recording everything. Test: `test:worldsource` asserts zero requests in main; `sim:` draws [FR-075, FR-076].
 - [ ] T041 **Manage** rows (FR-061), Update and Remove, with the notice, old kept until new passes. Test: `test:worldstore`, `check-worlds` [FR-061, FR-100, FR-101, US6].
 - [ ] T042 Policy slice: machine folder only, 076 FR-005's trust check, `features.worldDownloads`, `worldsPolicyFrom` (`src/main/worlds/policy.ts`). Test: `test:worldsource`: main refuses whatever the window sends; unreadable, a read error and a timeout fail closed; bad types; one bad source entry empties the list; `true` never undoes `false`; a running download stops; `sim:` *Turned off by your organization* [FR-110, FR-112, FR-113, FR-114, SC-009].
-- [ ] T043 First real asset (after T004): publish per OP-2, compare the served bytes with the catalogue, and download once on Linux, macOS, Windows. Test: `real:` recorded in the spec; 0 AI credits; `[KNOWN GAP]` for an OS nobody ran [FR-073, FR-086, FR-182].
+- [ ] T043 First real asset: publish per OP-2, compare the served bytes with the catalogue, and download once on Linux, macOS, Windows. Test: `real:` recorded in the spec; 0 AI credits; `[KNOWN GAP]` for an OS nobody ran [FR-073, FR-086, FR-182].
 - [ ] T044 README *Safety model* table, *Development* names, limits; `docs/agent-apps.md` entry for the redirect host; changelog fragment. Test: `npm run test:docsscripts`, `changelog:check` [FR-074].
 
 ## Phase 4: Picture worlds - US2

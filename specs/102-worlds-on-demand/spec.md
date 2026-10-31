@@ -552,7 +552,7 @@ I choose a world, and its people come with it. If I pick characters myself, they
 Agent decisions stand until the owner changes them.
 
 - **OP-1 Trust for the project's source: agent decision.** Hashes pinned in the app (no key to guard, a new world arrives with an app release), rather than a signed catalogue fetched between releases (needs a signing key and a secret, which is a repo setting). The signature code exists anyway for other sources. The owner may change it.
-- **OP-2 `worlds-*` releases: decided (owner, 2026-10-31).** Asset-only `worlds-*` releases have his standing OK, can happen at any time with no daily rhythm, and are not counted in rework rate (spec 021 FR-066). AGENTS.md's lines are T004; T043 waits for them.
+- **OP-2 `worlds-*` releases: decided (owner, 2026-10-31).** Asset-only `worlds-*` releases have his standing OK, can happen at any time with no daily rhythm, and are not counted in rework rate (spec 021 FR-066). AGENTS.md carries the lines.
 - **OP-3 Art in the repo: decided (owner, 2026-10-31).** Art is committed under `worlds/<id>/`, outside the app.
 - **OP-4 Who can add a source: decided (owner, 2026-10-31).** People as well as organisations; people may also create and share worlds (FR-093..FR-099, FR-162, FR-163). An organisation may forbid it or limit it to a list (FR-110, FR-111).
 - **OP-5 Policy before first ship: agent decision.** 076 has no reader, so FR-114's small slice is built in P3 and a forbidding policy works from the first release. The alternative was leaving it as a `[KNOWN GAP]`. The owner may change it.
