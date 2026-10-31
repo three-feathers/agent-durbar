@@ -42,6 +42,7 @@ export interface NotesOpsDeps {
 /** FR-050 (T042): the reasons the switch is refused or greyed; short fixed texts, never a path. */
 export const SWITCH_WORKSPACE = 'The project file is not offered for a VS Code workspace.';
 export const SWITCH_MISSING = 'The folder is not there, so Durbar cannot keep .durbar/notes.md in it.';
+export const SWITCH_ALREADY_OFF = 'The switch is already off; Durbar does not touch .durbar/notes.md while it is off.';
 export const SWITCH_UNSAVED = 'Could not save the choice in the folder list.';
 export const EXCLUDE_KEPT = 'The .durbar/ line in .git/info/exclude stays (it is harmless).';
 
@@ -62,6 +63,8 @@ const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 
 export class NotesOps {
   private readonly cycles = new Map<string, Promise<NotesFileState | undefined>>();
   private readonly timers = new Set<string>();
+  /** Per folder: the last `setFile` call, so calls run one at a time (T042 review). */
+  private readonly switching = new Map<string, Promise<unknown>>();
 
   constructor(private readonly d: NotesOpsDeps) {}
 
@@ -249,6 +252,13 @@ export class NotesOps {
     if (!on && o.exclude !== undefined) return refuse('Unknown options.');
     const t = this.switchTarget(agentId);
     if ('ok' in t) return t;
+    // one switch call at a time per folder (review of 0be6db42): an on and an off in one tick never interleave around an await
+    const run = (this.switching.get(t.key) ?? Promise.resolve()).then(() => this.setFileNow(t, on, o));
+    this.switching.set(t.key, run.catch(() => undefined));
+    return run;
+  }
+
+  private async setFileNow(t: { a: AgentInfo; store: NotesStore; key: string; file: NotesFile }, on: boolean, o: { deleteFile?: unknown; exclude?: unknown }): Promise<NotesSetFile | Refusal> {
     const setOn = this.d.setFileOn!;
     let was = false;
     try { was = this.d.fileOn?.(t.key) === true; } catch { was = false; }
@@ -268,6 +278,8 @@ export class NotesOps {
       const file = await this.syncFile(t.a.id);
       return { ok: true, on: true, ...(file ? { file } : {}), ...(message ? { message } : {}) };
     }
+    // FR-050: while the switch is off Durbar never reads, stats or writes notes.md, so *Delete* is only part of turning it off
+    if (!was && o.deleteFile === true) return refuse(SWITCH_ALREADY_OFF);
     if (was && !setOn(t.key, false)) return refuse(SWITCH_UNSAVED);
     // a cycle running or queued finishes first (a queued one now finds the switch off and writes nothing), then the file is looked at
     for (let p = this.cycles.get(t.key); p;) { await p.catch(() => undefined); const n = this.cycles.get(t.key); if (n === p) break; p = n; }

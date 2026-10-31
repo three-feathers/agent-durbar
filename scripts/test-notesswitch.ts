@@ -13,7 +13,7 @@ import { pathToFileURL } from 'url';
 import type { AgentInfo } from '../src/shared/api';
 import { COUNT_UNREADABLE, NotesFile, REMOVE_CHANGED, REMOVE_NONE, type NotesFileFs } from '../src/main/notesfile';
 import { NotesStore } from '../src/main/notesstore';
-import { EXCLUDE_KEPT, NotesOps, SWITCH_MISSING, SWITCH_WORKSPACE } from '../src/main/notesops';
+import { EXCLUDE_KEPT, NotesOps, SWITCH_ALREADY_OFF, SWITCH_MISSING, SWITCH_WORKSPACE } from '../src/main/notesops';
 import { FolderStore, parseSavedFolders } from '../src/main/folders';
 import { SIM_OPEN_CHANNELS } from '../src/main/simguard';
 
@@ -213,6 +213,18 @@ async function main(): Promise<void> {
     assert.ok(!/rmSync|recursive|rimraf|readdirSync/.test(body), 'remove() never deletes recursively');
   });
 
+  await test('remove: .durbar swapped for a link after the unlink is never rmdir-ed through the link', async () => {
+    if (!canLink) { skip('cannot make links here'); return; }
+    const c = countingFs();
+    const { folder, store } = await written();
+    const outside = fresh('outside-empty');
+    c.hook.unlinkSync = (real, ...a) => { const r = real(...a); if (a[0] === md(folder)) { nodeFs.rmdirSync(path.join(folder, '.durbar')); nodeFs.symlinkSync(outside, path.join(folder, '.durbar'), 'dir'); } return r; };
+    const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
+    assert.deepStrictEqual(r, { removed: true, dirRemoved: false });
+    assert.strictEqual(c.calls.filter((x) => x.m === 'rmdirSync').length, 0, 'no rmdir at all once .durbar is a link');
+    assert.ok(nodeFs.statSync(outside).isDirectory() && nodeFs.lstatSync(path.join(folder, '.durbar')).isSymbolicLink(), 'the outside folder and the link stay');
+  });
+
   // ---- inRepo, folderThere ----
   await test('inRepo: a .git folder or file walking up; folderThere: a real folder only', () => {
     const base = fresh('repo');
@@ -226,6 +238,11 @@ async function main(): Promise<void> {
     const wt = fresh('worktree');
     nodeFs.writeFileSync(path.join(wt, '.git'), 'gitdir: /elsewhere\n');
     assert.strictEqual(f.inRepo(wt), true, '.git file (worktree)');
+    if (canLink && !repoAbove) {
+      const lk = fresh('linkedgit');
+      nodeFs.symlinkSync(path.join(base, '.git'), path.join(lk, '.git'), 'dir');
+      assert.strictEqual(f.inRepo(lk), false, 'a .git that is a link is not a repository for the dialog');
+    }
     assert.strictEqual(f.folderThere(sub), true);
     assert.strictEqual(f.folderThere(path.join(base, 'missing')), false);
     assert.strictEqual(f.folderThere(path.join(wt, '.git')), false, 'a file is not a folder');
@@ -398,6 +415,28 @@ async function main(): Promise<void> {
     assert.ok(!nodeFs.existsSync(md(r.folder)), 'no file left');
     const renames = c.calls.slice(offAt).filter((x) => x.m === 'renameSync').length;
     assert.strictEqual(renames, 1, 'only the running cycle wrote after turning off began; the queued one wrote nothing');
+  });
+
+  await test('setFile: on and off in one tick end off (and off then on ends on); calls run one at a time', async () => {
+    const r = rig();
+    const [a, b] = await Promise.all([r.ops.setFile('a1', true), r.ops.setFile('a1', false)]);
+    assert.ok(okOf(a).on === true && okOf(b).on === false, JSON.stringify([a, b]));
+    assert.strictEqual(new FolderStore(r.foldersFile).load().find((f) => f.workspace === r.folder)!.notesFile, undefined, 'the last answer (off) is what is saved');
+    assert.deepStrictEqual(okOf(await r.ops.list('a1')).fileSwitch, { on: false });
+    const [c2, d2] = await Promise.all([r.ops.setFile('a1', false), r.ops.setFile('a1', true)]);
+    assert.ok(okOf(c2).on === false && okOf(d2).on === true);
+    assert.strictEqual(new FolderStore(r.foldersFile).load().find((f) => f.workspace === r.folder)!.notesFile, true, 'off then on: on');
+  });
+  await test('setFile off with Delete while the switch is already off: refused, notes.md not even looked at', async () => {
+    const r = rig();
+    okOf(await r.ops.setFile('a1', true));
+    okOf(await r.ops.setFile('a1', false, { deleteFile: false })); // Leave: the file stays
+    const before = nodeFs.readFileSync(md(r.folder));
+    const c = countingFs();
+    const ops = new NotesOps({ ...(r.ops as unknown as { d: ConstructorParameters<typeof NotesOps>[0] }).d, file: () => new NotesFile({ fs: c.fs, now: tickClock }) });
+    refusedWith(await ops.setFile('a1', false, { deleteFile: true }), SWITCH_ALREADY_OFF, 'delete while off');
+    assert.deepStrictEqual(nodeFs.readFileSync(md(r.folder)), before, 'the left file stays');
+    assert.ok(!c.calls.some((x) => /\.durbar/.test(x.p)), `nothing under .durbar touched: ${c.calls.filter((x) => /\.durbar/.test(x.p)).map((x) => x.m).join()}`);
   });
 
   // ---- main wiring and the channels (AC1, IPC) ----
