@@ -20,6 +20,14 @@ import {
 import type { ChangeResult, Note, NoteChange, NoteSource, NotesDoc, NotesFail, NotesMirror, NotesView, NotesWrote } from '../shared/notes';
 export type { NotesFail, NotesView, NotesWrote } from '../shared/notes';
 import { folderFingerprint } from './usagetotalsstore';
+import { notesMdText, type NotesMdSection } from '../shared/notesmd';
+import { HIDDEN_ALL_RE } from '../shared/names';
+
+/** What one import of `.durbar/notes.md` did (FR-054; spec Changes 2026-10-31, T041). Counts only: never a title or a text. */
+export interface NotesImport { added: number; edited: number; older: number; deleted: number; tooLong: number; overCap: number; again: number; keptDurbar: number }
+/** A file title as Durbar keeps it: hidden bidi and zero-width characters removed (T041 AC14), then `cleanTitle` (undefined: none). */
+const fileTitle = (t: string | undefined): string | undefined => (t === undefined ? undefined : cleanTitle(t.replace(HIDDEN_ALL_RE, '')));
+const yieldNow = (): Promise<void> => new Promise((r) => setImmediate(r));
 
 export type NotesFs = Pick<typeof nodeFs, 'mkdirSync' | 'lstatSync' | 'readFileSync' | 'openSync' | 'writeSync' | 'fsyncSync' | 'closeSync' | 'renameSync' | 'unlinkSync' | 'chmodSync' | 'linkSync' | 'readdirSync'>;
 
@@ -163,7 +171,7 @@ export class NotesStore {
   }
 
   /** The change applied under the folder's queue: load (merging another process's change), apply, write, tell the window. */
-  private mutate(folderKey: string, folderName: string, fn: (doc: NotesDoc) => ChangeResult | { ok: true; doc?: undefined; note: Note; existing: true }): Promise<NotesWrote> {
+  private mutate(folderKey: string, folderName: string, fn: (doc: NotesDoc) => ChangeResult | { ok: true; doc?: undefined; note?: Note; existing: true }): Promise<NotesWrote> {
     const fp = this.fingerprintOf(folderKey);
     return this.queue(fp, async (): Promise<NotesWrote> => {
       const lk = await this.lock(fp);
@@ -461,6 +469,140 @@ export class NotesStore {
     }
   }
 
+  /**
+   * FR-054 (T041 AC3, AC11..AC16): the sections parsed from the folder's `.durbar/notes.md`, imported. A known id whose title (hidden
+   * characters removed), text (`notesMdText` form) or `done` differs is an edit, unless its marker's `updated=` is older than the stored
+   * note (an older copy: a branch switch, a revert); `created=` is ignored and the edit's time is `updated=` clamped to now, never
+   * earlier than the stored one; the edit sets `fileEdited`. Any other section is a new note `from: file`, created now (a valid id never
+   * seen is kept; one with a tombstone is not imported). Titles and texts are masked with the folder's `values`, then cut (`fitText`);
+   * a text over `inputChars` is not imported. A section that is gone deletes nothing. Masking runs before the lock, yielding between
+   * sections; everything is applied in one write.
+   */
+  async importFile(folderKey: string, folderName: string, sections: readonly NotesMdSection[], values: readonly string[] = [], fileSha?: string): Promise<NotesWrote & { counts?: NotesImport }> {
+    const counts: NotesImport = { added: 0, edited: 0, older: 0, deleted: 0, tooLong: 0, overCap: 0, again: 0, keptDurbar: 0 };
+    // ids the file holds: a note an earlier import added and that was written back has its id in the file
+    const fileIds = new Set<string>();
+    for (const s of sections) if (s.id !== undefined) fileIds.add(s.id);
+    const snap = await this.list(folderKey);
+    const known = new Map<string, Note>(snap.ok ? snap.notes.map((n) => [n.id, n]) : []);
+    // what the file says differs from the stored note (cheap string compares, no mask yet)
+    // the file holds the note masked with the CURRENT values (a secret registered after the note was saved): compared that way too
+    const differs = (s: NotesMdSection, n: Note): boolean => {
+      const t = fileTitle(s.title);
+      if (s.done !== n.done) return true;
+      if (t !== undefined && t !== n.title && t !== cleanTitle(maskNoteText(n.title, values).text)) return true;
+      return notesMdText(n.text) !== s.text && notesMdText(fitText(maskNoteText(n.text, values).text).text) !== s.text;
+    };
+    const masked = new Map<NotesMdSection, { text: string; title?: string; hidden: boolean }>();
+    const maskOne = (s: NotesMdSection): { text: string; title?: string; hidden: boolean } => {
+      let m = masked.get(s);
+      if (!m) {
+        const mt = this.mask(s.text, values);
+        const rawTitle = fileTitle(s.title);
+        const mTitle = rawTitle === undefined ? undefined : this.mask(rawTitle, values);
+        m = { text: fitText(mt.text).text, title: mTitle ? cleanTitle(mTitle.text) : undefined, hidden: mt.changed || !!mTitle?.changed };
+        masked.set(s, m);
+      }
+      return m;
+    };
+    for (const s of sections) {
+      if (s.text.length > NOTES_LIMITS.inputChars) continue;
+      const n = s.id !== undefined ? known.get(s.id) : undefined;
+      if (n && !differs(s, n)) continue;
+      maskOne(s);
+      await yieldNow(); // a file at the cap is masked in slices: other work runs between sections
+    }
+    const now = this.now();
+    const res = await this.mutate(folderKey, folderName, (doc) => {
+      Object.assign(counts, { added: 0, edited: 0, older: 0, deleted: 0, tooLong: 0, overCap: 0, again: 0, keptDurbar: 0 });
+      let d = doc;
+      const dead = new Set(doc.tombstones.map((t) => t.id));
+      // Pending: notes an earlier import added from sections without an id that never reached the file (a retry, a failing write).
+      // Those sections are their only copy, so each section without an id is first matched exactly (masked title and text) against
+      // them, and the rest are paired in order with the pending notes left: the section is that note, edited again, not a new one.
+      // Only notes that existed BEFORE this import count, so two equal sections in one file stay two notes.
+      // pending: imported from a section without an id and not yet written back (`filePending`, kept across restarts); a note that reached
+      // the file with its id and whose section was later removed is NOT pending, so a new section can never overwrite it
+      const pendingIds = new Set(doc.filePending ?? []);
+      const pending = doc.notes.filter((n) => n.from === 'file' && pendingIds.has(n.id) && !fileIds.has(n.id))
+        .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      const usable = (s: NotesMdSection): boolean => s.id === undefined && s.text.length <= NOTES_LIMITS.inputChars && !!maskOne(s).text.trim();
+      const titleOf = (m: { text: string; title?: string }): string => m.title ?? guessTitle(m.text, now);
+      const used = new Set<string>();
+      const same = new Set<NotesMdSection>();
+      for (const s of sections) {
+        if (!usable(s)) continue;
+        const m = maskOne(s);
+        const p = pending.find((n) => !used.has(n.id) && n.text === m.text && n.title === titleOf(m));
+        if (p) { used.add(p.id); same.add(s); }
+      }
+      // a pending note changed in Durbar since the last import keeps Durbar's version (the state says so)
+      const lastImport = doc.fileImport?.at;
+      let added = 0;
+      const newPending: string[] = [];
+      for (const s of sections) {
+        if (s.text.length > NOTES_LIMITS.inputChars) { counts.tooLong++; continue; }
+        const cur = s.id !== undefined ? d.notes.find((n) => n.id === s.id) : undefined;
+        if (cur) {
+          if (!differs(s, cur)) continue;
+          const curAt = Date.parse(cur.updatedAt);
+          const fileAt = s.updatedAt !== undefined ? Date.parse(s.updatedAt) : NaN;
+          if (!Number.isNaN(fileAt) && fileAt < curAt) { counts.older++; continue; } // an older copy of the note, not an edit
+          const at = new Date(Math.max(Number.isNaN(fileAt) ? now.getTime() : Math.min(fileAt, now.getTime()), curAt));
+          const m = maskOne(s);
+          const r = applyChange(d, { op: 'update', id: cur.id, rev: cur.rev, text: m.text.trim() ? m.text : undefined, ...(m.title !== undefined ? { title: m.title } : {}), done: s.done, hidden: m.hidden }, at, () => '');
+          if (!r.ok || !r.note || r.note.rev === cur.rev) continue;
+          const i = r.doc.notes.findIndex((n) => n.id === cur.id);
+          r.doc.notes[i] = { ...r.doc.notes[i], fileEdited: true };
+          d = r.doc;
+          counts.edited++;
+          continue;
+        }
+        if (s.id !== undefined && dead.has(s.id)) { counts.deleted++; continue; } // deleted in Durbar: it leaves the file at the next write
+        const m = maskOne(s);
+        if (!m.text.trim()) continue;
+        const title = titleOf(m);
+        if (same.has(s)) { counts.again++; continue; } // seen before a write put its id into the file: not a second note
+        const pair = s.id === undefined ? pending.find((n) => !used.has(n.id)) : undefined;
+        if (pair) {
+          used.add(pair.id);
+          const cur = d.notes.find((n) => n.id === pair.id)!;
+          if (lastImport !== undefined && cur.updatedAt > lastImport) { counts.keptDurbar++; continue; }
+          const r = applyChange(d, { op: 'update', id: cur.id, rev: cur.rev, text: m.text, title, done: s.done, hidden: m.hidden }, now, () => '');
+          if (!r.ok || !r.note || r.note.rev === cur.rev) continue;
+          const i = r.doc.notes.findIndex((n) => n.id === cur.id);
+          r.doc.notes[i] = { ...r.doc.notes[i], fileEdited: true };
+          d = r.doc;
+          counts.edited++;
+          continue;
+        }
+        if (d.notes.length >= NOTES_LIMITS.notesPerFolder) { counts.overCap++; continue; }
+        const keepId = s.id !== undefined ? s.id : undefined;
+        // created one millisecond apart, in file order: the notes keep the file's order, and pending notes pair in that order
+        const r = applyChange(d, { op: 'add', text: m.text, title, from: 'file', hidden: m.hidden }, new Date(now.getTime() + added++), () => keepId ?? newNoteId(this.rand));
+        if (!r.ok || !r.note) continue;
+        if (keepId === undefined) newPending.push(r.note.id);
+        if (s.done) { const i = r.doc.notes.findIndex((n) => n.id === r.note!.id); r.doc.notes[i] = { ...r.doc.notes[i], done: true }; }
+        d = r.doc;
+        counts.added++;
+      }
+      if (newPending.length) d = { ...d, filePending: [...(d.filePending ?? []).filter((x) => d.notes.some((n) => n.id === x)), ...newPending] };
+      // a file with sections that could not be added is not recorded as imported: it is read again (and not overwritten) until fixed
+      if (fileSha && !counts.tooLong && !counts.overCap && d.fileImport?.sha256 !== fileSha) d = { ...d, fileImport: { sha256: fileSha, at: new Date(now.getTime() + added).toISOString() } }; // not before a note this import made
+      return d === doc ? { ok: true, existing: true } : { ok: true, doc: d };
+    });
+    return res.ok ? { ...res, counts } : res;
+  }
+
+  /** The hash of the last `notes.md` imported (FR-054), as the document holds it. */
+  async getFileImport(folderKey: string): Promise<string | undefined> {
+    const fp = this.fingerprintOf(folderKey);
+    return this.queue(fp, async () => {
+      const l = this.load(fp);
+      return l.ok ? l.entry.doc.fileImport?.sha256 : undefined;
+    });
+  }
+
   /** The last `notes.md` Durbar wrote (FR-053), as the document holds it. */
   async getMirror(folderKey: string): Promise<NotesMirror | undefined> {
     const fp = this.fingerprintOf(folderKey);
@@ -474,7 +616,7 @@ export class NotesStore {
   setMirror(folderKey: string, folderName: string, mirror: NotesMirror | undefined): Promise<NotesWrote> {
     return this.mutate(folderKey, folderName, (doc) => {
       const next: NotesDoc = { ...doc, notes: doc.notes.map((n) => ({ ...n })), tombstones: doc.tombstones.map((t) => ({ ...t })) };
-      if (mirror) next.mirror = { sha256: mirror.sha256, bytes: mirror.bytes, at: mirror.at };
+      if (mirror) { next.mirror = { sha256: mirror.sha256, bytes: mirror.bytes, at: mirror.at }; delete next.filePending; } // written: every note is in the file now
       else delete next.mirror;
       return { ok: true, doc: next };
     });

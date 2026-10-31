@@ -25,8 +25,8 @@ export const NOTES_LIMITS = (() => {
   /** The fields besides title and text: id, times, flags, source (session id up to 100 characters), digest. */
   const noteExtraBytes = 1_024;
   const tombstoneBytes = 128;
-  /** The document's own fields: version, folder name (3 bytes per character), mirror, punctuation. */
-  const docExtraBytes = 3 * folderNameChars + 1_024;
+  /** The document's own fields: version, folder name (3 bytes per character), mirror, punctuation, and up to one pending id per note (14 characters, quotes, comma). */
+  const docExtraBytes = 3 * folderNameChars + 1_024 + notesPerFolder * 17;
   const noteJsonBytes = 3 * (textChars + titleChars) + noteExtraBytes;
   const storeBytes = notesPerFolder * noteJsonBytes + tombstones * tombstoneBytes + docExtraBytes;
   /**
@@ -36,7 +36,10 @@ export const NOTES_LIMITS = (() => {
    */
   const noteMdBytes = 3 * (textChars + titleChars) + Math.ceil(textChars / 17) + 1 + 256;
   const mdBytes = notesPerFolder * noteMdBytes + 1_024;
-  return { textChars, titleChars, notesPerFolder, tombstones, folderNameChars, inputChars, titleInputChars, ordMax, noteExtraBytes, tombstoneBytes, docExtraBytes, noteJsonBytes, storeBytes, noteMdBytes, mdBytes } as const;
+  /** FR-051: the most read of a worktree's or submodule's `.git` file and of its `commondir` file, and of `info/exclude` (files Durbar did not write). */
+  const gitFileBytes = 4_096;
+  const excludeBytes = 1_048_576;
+  return { textChars, titleChars, notesPerFolder, tombstones, folderNameChars, inputChars, titleInputChars, ordMax, noteExtraBytes, tombstoneBytes, docExtraBytes, noteJsonBytes, storeBytes, noteMdBytes, mdBytes, gitFileBytes, excludeBytes } as const;
 })();
 
 export type NoteFrom = 'agent' | 'user' | 'selection' | 'typed' | 'file';
@@ -79,6 +82,10 @@ export interface NotesDoc {
   notes: Note[];
   tombstones: Tombstone[];
   mirror?: NotesMirror;
+  /** The last `notes.md` imported (FR-054; T041 review): the same file is never imported twice, after a restart too. */
+  fileImport?: { sha256: string; at: string };
+  /** Ids of notes imported from `notes.md` sections without an id that no successful write has put into the file yet (T041 review). */
+  filePending?: string[];
 }
 
 export const NOTE_ID_RE = /^n-[a-z0-9]{12}$/;
@@ -250,7 +257,10 @@ export function parseNotesDoc(raw: string): ParseResult {
   const m = d.mirror as Record<string, unknown> | undefined;
   const mirror = m && typeof m === 'object' && typeof m.sha256 === 'string' && /^[0-9a-f]{64}$/.test(m.sha256) && intIn(m.bytes, 0, NOTES_LIMITS.mdBytes) && isoOk(m.at)
     ? { sha256: m.sha256, bytes: m.bytes as number, at: m.at as string } : undefined;
-  return { ok: true, dropped, doc: { version: 1, folderName: cleanFolderName(d.folderName), notes, tombstones: capTombstones(tombstones), ...(mirror ? { mirror } : {}) } };
+  const fi = d.fileImport as Record<string, unknown> | undefined;
+  const fileImport = fi && typeof fi === 'object' && typeof fi.sha256 === 'string' && /^[0-9a-f]{64}$/.test(fi.sha256) && isoOk(fi.at) ? { sha256: fi.sha256, at: fi.at as string } : undefined;
+  const filePending = Array.isArray(d.filePending) ? [...new Set(d.filePending.filter((x): x is string => typeof x === 'string' && ids.has(x)))] : [];
+  return { ok: true, dropped, doc: { version: 1, folderName: cleanFolderName(d.folderName), notes, tombstones: capTombstones(tombstones), ...(mirror ? { mirror } : {}), ...(fileImport ? { fileImport } : {}), ...(filePending.length ? { filePending } : {}) } };
 }
 
 /** Compact JSON, the way it is written and measured. */
@@ -334,6 +344,17 @@ export function applyChange(doc: NotesDoc, change: NoteChange, now: Date, newId:
   return { ok: true, doc: d, note: next };
 }
 
+/**
+ * The pending ids (T041) of either copy that are still notes AND were created after the newest successful write (`mirror.at`): a note
+ * created before that write was in it, so another copy that still lists it is stale. When in doubt this gives a duplicate, never an
+ * overwrite of a note that is in the file.
+ */
+function pendingOf(a: NotesDoc, b: NotesDoc, notes: readonly Note[], mirror: NotesMirror | undefined): { filePending?: string[] } {
+  const after = new Map(notes.map((n) => [n.id, !mirror || Date.parse(n.createdAt) > Date.parse(mirror.at)]));
+  const ids = [...new Set([...(a.filePending ?? []), ...(b.filePending ?? [])])].filter((x) => after.get(x) === true);
+  return ids.length ? { filePending: ids } : {};
+}
+
 const sameContent = (a: Note, b: Note): boolean => a.title === b.title && a.text === b.text && a.done === b.done && a.hidden === b.hidden && a.fileEdited === b.fileEdited;
 
 /**
@@ -361,12 +382,15 @@ export function mergeDocs(a: NotesDoc, b: NotesDoc): NotesDoc {
   }
   notes.sort((x, y) => (x.createdAt < y.createdAt ? -1 : x.createdAt > y.createdAt ? 1 : x.id < y.id ? -1 : 1));
   const mirror = [a.mirror, b.mirror].filter((m): m is NotesMirror => !!m).sort((x, y) => (x.at < y.at ? 1 : -1))[0];
+  const fileImport = [a.fileImport, b.fileImport].filter((m): m is { sha256: string; at: string } => !!m).sort((x, y) => (x.at < y.at ? 1 : -1))[0];
   return {
     version: 1,
     folderName: a.folderName || b.folderName,
     notes,
     tombstones: capTombstones([...dead].map(([id, deletedAt]) => ({ id, deletedAt }))),
     ...(mirror ? { mirror } : {}),
+    ...(fileImport ? { fileImport } : {}),
+    ...pendingOf(a, b, notes, mirror),
   };
 }
 
@@ -378,5 +402,7 @@ export function orderForFolder(notes: readonly Note[], session?: string): Note[]
 
 /** What the notes calls answer (spec 083 FR-062): a refusal carries a short reason, and `stale` the note as saved. */
 export type NotesFail = { ok: false; code: 'stale' | 'cap' | 'missing' | 'invalid' | 'unreadable' | 'write'; error: string; current?: Note };
-export type NotesView = { ok: true; fingerprint: string; folderName: string; notes: Note[]; max: number; readOnly?: string; session?: string } | NotesFail;
+/** The project file's state while its switch is on (FR-053, FR-054): `error` blocks writing it (a conflict, a refused link, a failed write); `info` is a note for the screen (stray text, notes not imported). */
+export interface NotesFileState { error?: string; info?: string }
+export type NotesView = { ok: true; fingerprint: string; folderName: string; notes: Note[]; max: number; readOnly?: string; session?: string; file?: NotesFileState } | NotesFail;
 export type NotesWrote = { ok: true; fingerprint: string; note?: Note; existing?: boolean } | NotesFail;

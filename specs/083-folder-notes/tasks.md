@@ -145,7 +145,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
   - AC3: conflict markers at a line start outside fenced code make `parse` return `conflict`; inside a fence they do not.
   - AC4: a bare `<!-- durbar-note -->` section and a `## ` heading before the first marker parse as new notes; stray text is reported.
   - AC5: `scripts/test-notesmd.ts` (new `test:notesmd`, in `npm test`).
-- [ ] T041 [US5] Mirror in main `src/main/notesfile.ts`. [FR-050, FR-051, FR-053, FR-054]
+- [x] T041 [US5] Mirror in main `src/main/notesfile.ts`. [FR-050, FR-051, FR-053, FR-054] Built 2026-10-31 (spec *Changes*, 2026-10-31, the project-file mirror): `test:` `scripts/test-notesfile.ts` (`npm run test:notesfile`; real temp folders, a counting fake `fs` that swaps files between checks, FIFO cases in a child process with a time limit). The switch reads as off for every folder until T042 saves `notesFile`; the Windows junction case runs only on Windows (skipped with its reason elsewhere).
   - AC1: writes only when `notesFile` is on; while off, no `stat`, read or write of `notes.md` (a counting fake `fs`), except `count` at turn-on; the temp file opened with `O_EXCL` and `O_NOFOLLOW` where defined; 0600 on POSIX; the new `mirror` returned for the store to persist.
   - AC2: refuses a `.durbar` or `notes.md` that is a link (POSIX symlink; Windows junction where the test can make one, skipped otherwise with a printed reason), a real path outside the folder, a folder, or a FIFO (opened non-blocking; a hang test in a child process with a timeout).
   - AC3: reads at most `mdBytes`; edits of known ids import masked with the folder's values and set `fileEdited`; new sections become `from: file` notes (never `typed`); missing sections delete nothing; conflict or parse error: no import and no write, and the state says why.
@@ -171,6 +171,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
   - AC5: in the simulator the switch answers *Demo: no file written*; README's *Safety model* line on notes (T024 AC4) now also says the file may be committed and that Durbar never adds it to git.
   - AC6: with an existing `notes.md` the dialog says how many notes it will add (*marked "From the project file"*); an unreadable or conflicted file says so and the switch stays off.
   - AC7: inside a git repository the dialog has *Keep it out of commits (adds `.durbar/` to `.git/info/exclude`, local only)*, on by default, with the already-committed line; outside one it is not shown; turning the switch off leaves the line and says so.
+  - AC8 (added 2026-10-31, review of PR #916): the FR-050 warning also says that text outside notes in an existing `notes.md` is removed when Durbar writes the file.
 
 ## Phase 5: User Story 6, back to the source (P3)
 
