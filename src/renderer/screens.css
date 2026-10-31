@@ -487,6 +487,13 @@ body.has-bridge #topBtns{display:flex}
 /* spec 083 T034a: the folder's Notes screen (the rows are the drawer's .nt-row) */
 .ns-tools{display:flex;align-items:center;gap:8px;margin:0 0 10px}
 .ns-tools .nt-find{margin:0;height:var(--h-ctl,30px);font-size:13px}
+.ns-file{margin:0 0 10px}
+.ns-file-row{display:flex;align-items:center;gap:12px;justify-content:space-between;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
+.ns-file-l{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ns-file-l b{font-size:13px;font-weight:600;color:var(--ink)}
+.ns-file-l small{font-size:12px;color:var(--ink-2)}
+.ns-file-why,.ns-file-msg{margin:4px 2px 0;font-size:12px;line-height:1.45;color:var(--ink-2)}
+.ns-file-msg:empty{display:none}
 .ns-done{margin:10px 0 0}
 .ns-done>summary{cursor:pointer;margin:0 0 6px;padding:4px 2px;font-size:12px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-2);border-radius:6px}
 .ns-done>summary:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
