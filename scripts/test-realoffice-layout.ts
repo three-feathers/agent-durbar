@@ -3,7 +3,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
+import { staggerPlan, realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
 
@@ -391,6 +391,30 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.feet as Record<s
     const ex = vm.runInContext('exports', ctx) as Record<string, unknown>;
     for (const k of ['realLayout', 'lobbyWidths', 'assignPeople', 'lightFor', 'lightState', 'ambientFor', 'doneTick', 'fixtureLight', 'redact']) assert.strictEqual(typeof ex[k], 'function', `${k} is on the page's exports with every shared module loaded`);
   } else console.log('(dist/shared not built: the page-load check is skipped; npm test builds first)');
+}
+
+// ---- FR-184: the chips' plan, from measured sizes (the DOM writes and reads are check-office-ops') ----
+{
+  const chip = (x: number, y = 40, w = 60): { x: number; y: number; w: number; h: number; iniW: number } => ({ x, y, w, h: 17, iniW: 24 });
+  assert.deepStrictEqual(staggerPlan([chip(100)], []), [{ x: 100, y: 40, ini: false }], 'a chip alone stays where the layout put it');
+  const nb = staggerPlan([chip(100), chip(120)], []);
+  assert.strictEqual(nb[1].ini, false, 'a neighbour that a small move clears keeps its name');
+  assert.ok(nb[1].x > 120 && nb[1].x - 120 <= 28 || nb[1].y < 40, 'and moves right (up to 28 px) or up a level');
+  assert.deepStrictEqual(staggerPlan([chip(100, 0), chip(100, 0), chip(100, 0)], [])[1].y, 0, 'never above the band');
+  const crowd = staggerPlan(Array.from({ length: 12 }, () => chip(100)), [[60, 70, 0, 80]]);
+  assert.ok(crowd.some((c) => c.ini), 'a crowd falls back to initials');
+  /* no two overlap, and none touches a plate, for any crowd */
+  for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+    let s = seed; const r = (m: number): number => { s = (s * 16807) % 2147483647; return s % m; };
+    const cs = Array.from({ length: 4 + r(20) }, () => ({ x: 40 + r(600), y: 20 + r(60), w: 30 + r(70), h: 17, iniW: 22 })).sort((a, b) => a.x - b.x);
+    const plates = Array.from({ length: 3 }, () => { const l = r(600), t = r(40); return [l, l + 60, t, t + 18]; });
+    const plan = staggerPlan(cs, plates);
+    const rects = plan.map((p, i) => { const w = p.ini ? cs[i].iniW : cs[i].w; return { l: p.x - w / 2, r: p.x + w / 2, t: p.y, b: p.y + cs[i].h }; });
+    for (let i = 0; i < rects.length; i++) {
+      for (let j = i + 1; j < rects.length; j++) assert.ok(rects[i].r <= rects[j].l || rects[j].r <= rects[i].l || rects[i].b <= rects[j].t || rects[j].b <= rects[i].t, `seed ${seed}: chips ${i} and ${j} do not overlap`);
+      for (const [a, b, y0, y1] of plates) assert.ok(rects[i].r <= a || b <= rects[i].l || rects[i].b <= y0 || y1 <= rects[i].t, `seed ${seed}: chip ${i} does not cover a place plate`);
+    }
+  }
 }
 
 console.log(`realoffice layout and lights tests passed (${cases} layouts, faces ${JSON.stringify(faces)})`);

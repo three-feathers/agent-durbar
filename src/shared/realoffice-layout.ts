@@ -374,6 +374,32 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
   return { u, big, lobbyH: Lb, floorH: height - Lb, width: W, height, scroll: !fits, faceH: FACE_U * u, zones, fixtures: lb.fixtures, floorStrip: lb.floorStrip };
 }
 
+/** FR-184: where the lobby's name chips go, from measured sizes (no DOM, so it can be measured once and tested). `chips` left to right
+ *  (`x`: the centre, `y`: the level the layout gave, `w` and `h`: with the whole name, `iniW`: with initials); `plates`: the place plates,
+ *  [left, right, top, bottom], there first: a chip never covers one. A chip that touches something moves right (up to 28 px) or up a level
+ *  (18 px) while it stays in the band, else shows initials (up to 40 px right, or up), else its initials move right until they touch nobody. */
+export function staggerPlan(chips: readonly { x: number; y: number; w: number; h: number; iniW: number }[], plates: readonly (readonly number[])[]): { x: number; y: number; ini: boolean }[] {
+  const placed = plates.map((p) => [...p]);
+  return chips.map((c) => {
+    const hits = (L0: number, R0: number, t: number): number[][] => placed.filter(([a, b, y0, y1]) => a < R0 + 2 && L0 < b + 2 && y0 < t + c.h && t < y1);
+    /* the least move to the right at level top `t` that touches nobody */
+    const shift = (l: number, r: number, t: number): number => { let dx = 0; for (let i = 0; i < 20; i++) { const hit = hits(l + dx, r + dx, t); if (!hit.length) return dx; dx = Math.max(...hit.map(([, b]) => b)) + 3 - l; } return Infinity; };
+    const put = (w: number, t: number, dx: number, ini: boolean): { x: number; y: number; ini: boolean } => { const l = c.x - w / 2 + dx; placed.push([l, l + w, t, t + c.h]); return { x: c.x + dx, y: t, ini }; };
+    for (const ini of [false, true]) {
+      const w = ini ? c.iniW : c.w, l = c.x - w / 2, limit = ini ? 40 : 28;
+      for (let k = 0; k < 3; k++) {
+        const t = c.y - 18 * k;
+        if (t < 0 && k > 0) break;
+        const dx = shift(l, l + w, t);
+        if (dx <= limit) return put(w, t, dx, ini);
+      }
+    }
+    /* a crowd with no room left: the initials move right until they touch nobody (never over another chip) */
+    const dx = shift(c.x - c.iniW / 2, c.x + c.iniW / 2, c.y);
+    return put(c.iniW, c.y, Number.isFinite(dx) ? dx : 0, true);
+  });
+}
+
 /** FR-037: each session keeps one person; a new one gets the least-used person in its folder, then overall (ties: the seeded `rand`).
  *  `map` is session id -> person id; sessions no longer listed are dropped (which frees their person). */
 export function assignPeople(map: Record<string, string>, sessions: readonly { id: string; folder: string }[], ids: readonly string[], rand: (id: string) => number): Record<string, string> {
