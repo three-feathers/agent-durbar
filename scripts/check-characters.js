@@ -52,7 +52,7 @@ module.exports = async (ctx) => {
     assert.ok(await H.until(`window.THEME.characters()===${jsLiteral(v)}`, 4000), `characters ${v} applied`);
     assert.ok(await H.until(`[...document.querySelectorAll('#toasts .toast')].some(t=>/^Characters: /.test(t.textContent))`, 4000), `characters ${v}: the choice is announced`);
     assert.ok(!(await H.js(`[...document.querySelectorAll('#toasts .toast')].some(t=>/could not be saved/.test(t.textContent))`)), `characters ${v}: saved (no refusal toast)`);
-    assert.strictEqual(await H.js(`document.querySelector(${jsLiteral(`#chList [data-characters="${v}"]`)}).getAttribute('aria-pressed')`), 'true', `characters ${v}: the list shows the choice at once`);
+    assert.ok(await H.until(`document.querySelector(${jsLiteral(`#chList [data-characters="${v}"]`)}).getAttribute('aria-pressed')==='true'`, 3000), `characters ${v}: the list shows the choice at once`);
   };
   /* the Characters section, read in Settings */
   const section = () => H.js(`(()=>{const h=document.getElementById('chH'),th=document.getElementById('themeH');const sec=h.closest('section'),prev=sec.previousElementSibling;
@@ -126,7 +126,8 @@ module.exports = async (ctx) => {
       assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>(s.dataset.sig||'').includes(${jsLiteral('|' + kit)}))&&!document.querySelector(${jsLiteral('#stage ' + CREW_IMG)});})()`, 10000), `${where}: The theme's own: ${kit} figures back, no portrait left (${JSON.stringify(await desks())})`);
     }
     // a theme switch keeps the chosen crew: Cheeky on Retro, then Clean Office
-    await pickTheme('retro');
+    // the loop above ends on Retro: picking it again would repaint the Characters list late and race the next click
+    assert.strictEqual(await H.js(`window.THEME.current().id`), 'retro', `${tag}: Retro is the theme here`);
     await pickChars('cheeky');
     await pickTheme('clean-office');
     assert.ok(await H.until(`(document.querySelector('#chList [data-characters="theme"]')||{}).textContent.includes('Minimalist figures')`, 4000), `${tag}: the theme's own figures follow a theme switch in open Settings`);
