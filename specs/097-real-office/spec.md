@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Real office mode (owner request, Vikram 2026-10-30/31): a realistic front-facing open-plan office as a second office mode beside flat (default), live screens, animated people, status lights; folds in #692
-note: spec, plan, tasks drafted; Q1-Q5 open; nothing built
+note: spec, plan, tasks drafted; Q1-Q6 open; nothing built
 status: draft
 -->
 
@@ -11,7 +11,7 @@ status: draft
 
 **Created**: 2026-10-31
 
-**Status**: Draft (2026-10-31). Spec, plan and tasks only; nothing is built. Q1-Q5 below wait for the owner.
+**Status**: Draft (2026-10-31). Spec, plan and tasks only; nothing is built. Q1-Q6 below wait for the owner (Q6 for Paco, the crew owner).
 
 **Input**: Owner requests (Vikram, Telegram DMs, 2026-10-30 and 2026-10-31):
 - "lets make it realistic … it looks like a dashboard and not real office"; "quality is the key as it is visual".
@@ -61,7 +61,7 @@ Listed under *Input*. In short: realistic, front-facing open plan; no wasted spa
 
 - **D1 One model, two renderers.** Real office reads the same `officeModel()`, `agents`, visits and statuses as flat; it never has its own agent state. Switching modes changes the drawing only.
 - **D2 Its own scene, the theme colours the chrome.** Real office is not a theme scene kit (035 FR-013): the art has its own colours and lighting. The theme still colours everything that is UI: top bar, folder signs, name plates, buttons, hover card, zoom frame, focus rings, status icons (`--ui-*`, `--status-*`, `--c-*`). A theme switch repaints the chrome and never reloads the art.
-- **D3 Realistic people only.** Real office always draws the realistic people of its art pack, whatever the Characters setting says (a cartoon crew in a photoreal room breaks the picture). The Characters setting keeps working for flat. My characters (096) join in P3 (FR-080..FR-083).
+- **D3 Realistic people only (default, pending Q6).** Until Paco answers Q6, Real office always draws the realistic people of its art pack, whatever the Characters setting says (a cartoon crew in a photoreal room breaks the picture). The Characters setting keeps working for flat. My characters (096) join in P3 (FR-080..FR-083). This touches the crews of spec 077, so it is Paco's call (Q6); D3 is the recommended answer and the default until he answers.
 - **D4 Lights are overlays.** Every light is CSS (gradients, opacity, `mix-blend-mode`, box-shadow) over the raster art; no new pictures for lights.
 - **D5 Custom places get a generic fixture.** A plain wall kiosk drawn in CSS with the place's own icon (024 FR-018) and name; no generated art per custom place.
 - **D6 Ship the art in the app, load it lazily.** See FR-060..FR-066.
@@ -244,8 +244,11 @@ I can put my own characters (spec 096) in the Real office, and set a room or a d
 
 - **FR-060** **Ships in the app.** The art pack ships inside the app (no download, no network, CSP `img-src 'self'` unchanged), in `src/renderer/realoffice/art/`, copied by `scripts/copy-assets.js`. (Q2)
 - **FR-061** **Lazy.** The Real office script, CSS and pictures load only when Real office is chosen (a `<script>` added on first use, pictures by `<img loading="lazy">` or `decode()`); flat mode fetches none of them.
-- **FR-062** **Format and caps.** Every picture is WebP with alpha, no metadata chunks (EXIF, XMP, ICCP, C2PA), re-encoded at quality 0.80: a person frame at most 80 KB and at most 640 px tall (2x the largest shown size, spec 077 FR-051); a fixture at most 120 KB; the desk at most 60 KB; the floor at most 40 KB; the **whole pack at most 10 MB**. Fixtures are re-cropped from the back-wall render to a common floor line and full height (FR-023).
+- **FR-062** **Format and caps.** Every picture is WebP with alpha, no metadata chunks (EXIF, XMP, ICCP, C2PA; see FR-069 for what this removes), re-encoded at quality 0.80: a person frame at most 80 KB and at most 640 px tall (2x the largest shown size, spec 077 FR-051); a fixture at most 120 KB; the desk at most 60 KB; the floor at most 40 KB; the **whole pack at most 10 MB**. Fixtures are re-cropped from the back-wall render to a common floor line and full height (FR-023).
 - **FR-063** **Provenance.** `src/renderer/realoffice/art/ASSETS.md` lists each source sheet with tool and version (Codex image generation, codex-cli version), date, maker, approver (Vikram), the exact prompt, the reference image, how it was cut and re-encoded, and the licence; it is checked by an extended `test:crew-assets` (or a sibling `test:realoffice-assets`) like spec 077 FR-054. The art moves into the repo only in the build PR, with this file.
+- **FR-067** **Fictional people.** Every person image's prompt in `ASSETS.md` says that the person is fictional and must not resemble any real or famous person, and names no real person, celebrity, brand, logo or franchise. The build PR copies this clause into every prompt used for the pack; spec 096's wrapper rules (no real people, celebrities, franchise characters) are the model.
+- **FR-068** **Resemblance check.** `ASSETS.md` records per person image a field `likeness-check`: the approver's name and the date of the check that no resemblance to a real person was found. A person with no such field is not committed. If a resemblance is reported later, the image is removed from the pack, replaced by a new one (which gets its own prompt clause and check), and the removal is recorded in `ASSETS.md` (image, date, who reported, replacement) and in the changelog; a shipped release carrying it gets a patch release.
+- **FR-069** `[KNOWN GAP]` **Provenance is only in `ASSETS.md`.** The WebP re-encode and metadata stripping (FR-062) remove any C2PA / content-credential manifest the generator embedded, so the shipped files carry no machine-readable provenance. `ASSETS.md` (FR-063, FR-067, FR-068) is the only record of the tool, prompt, date and approver. The strip is kept because it is the spec 077 rule (no metadata in shipped art, privacy and size); the manifest is not re-attached.
 - **FR-064** **Licence.** The art is MIT like the code and the crew art (README "License and credits"). (Q4)
 - **FR-065** **Fallback.** A picture that fails to decode marks that person or fixture unusable for the session; the desk shows the initials disc, the fixture its plate only (spec 077 FR-055 pattern). The page never shows a broken-image icon.
 - **FR-066** **Metadata.** `people.json` (per picture `w`, `h`, `headTop`, `bodyH`, `hand`; per stand pose the size) ships with the pack and is validated by the asset test (every listed file exists, every file is listed, numbers in range).
@@ -262,9 +265,9 @@ I can put my own characters (spec 096) in the Real office, and set a room or a d
 #### My characters (phase P3, with spec 096)
 
 - **FR-080** **What a My character needs here.** Real office needs front-facing seated frames (type ×2, wave ×2, think, rest) and standing frames (at least `letter`, `book`, `coffee`). 096's preset `realistic-office-v1` makes three-quarter isometric portraits, which do not fit; P3 adds a second preset **`real-office-front-v1`** to 096's `STYLE_PRESETS` (a new id, per 096 FR-051) with the seated-sheet and standing-sheet prompts of this pack's `ASSETS.md`, through 096's pipeline (validation, re-encode, store).
-- **FR-081** **Opt-in.** A My character made with `real-office-front-v1` is offered in Real office; others are not. When the Characters setting is `mine` and a folder pin (096 FR-033) names such a character, that folder's agents use it; otherwise built-in people are used (D3).
+- **FR-081** **Opt-in** (pending Q6 for the built-in people part). A My character made with `real-office-front-v1` is offered in Real office; others are not. When the Characters setting is `mine` and a folder pin (096 FR-033) names such a character, that folder's agents use it; otherwise built-in people are used (D3).
 - **FR-082** **Same rules.** My characters' frames follow FR-062 caps and FR-065 fallback, load as `blob:` URLs as in 096 FR-043, and their `people.json`-style metadata is computed by 096's encoder (head top, body height, hand line), checked in range.
-- **FR-083** **Until then.** Before P3, Real office ignores the Characters setting (D3), and Settings says so in one line under the Office layout row ("Real office uses its own people").
+- **FR-083** **Until then** (pending Q6: D3 is the default). Before P3, Real office ignores the Characters setting (D3), and Settings says so in one line under the Office layout row ("Real office uses its own people").
 
 #### Accessibility and checks
 
@@ -304,13 +307,14 @@ I can put my own characters (spec 096) in the Real office, and set a room or a d
 
 ## Open questions
 
-At most 5; each has a recommendation. The build waits for answers to Q1, Q2 and Q4.
+Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for answers to Q1, Q2 and Q4; the P3 part that depends on Q6 and FR-081/FR-083 follow D3 until he answers.
 
 - **Q1 Where to choose the mode.** (a) A third button **Real office** in the existing *Office layout* row; (b) a separate *Office style: Flat / Real* row. **Recommendation: (a)**: one place, and Real office is by nature an open office (it has no cabins), so the row's three choices are mutually exclusive.
 - **Q2 Ship or download the art.** (a) Ship in the app (+up to 10 MB, works offline, no new network code or CSP change); (b) download on first use. **Recommendation: (a)**, lazy-loaded (FR-060, FR-061); a download adds a network path, integrity checks and an offline failure mode for 10 MB.
 - **Q3 Does #692's manual lighting also come to the flat office?** **Recommendation: Real office only** (P3); flat has no lamps to dim, and #692 asks to keep the current look by default. #692 stays open, linked to this spec, and is closed by the P3 PR if the owner agrees.
 - **Q4 Art licence.** **Recommendation: MIT**, like the code and the crew art (spec 077), recorded in `ASSETS.md`; the owner confirms, since he approved the generation on his plan.
 - **Q5 Where finished and asleep agents go.** (a) They stay at their desk with lamp and screen off (asleep) or low (done); (b) a lounge strip with couches as in flat. **Recommendation: (a)**: no extra furniture without function ("dont unnecessarily waste screenspace"); asleep desks are narrow (0.62, like away desks).
+- **Q6 (for Paco) Does Real office ignore the Characters setting?** (a) Yes, it always draws its own realistic people, so a user on Cheeky or Prehistoric (spec 077) never sees those crews in Real office, and only My characters (096, P3) can replace the pack (D3); (b) Real office also offers the 077 crews, drawn flat in front of the photoreal room. **Recommendation: (a) = D3**: a cartoon crew in a photoreal room breaks the picture. D3, FR-081 and FR-083 (and tasks T017, T051) stay as written, as the default, until Paco answers; FR-083's Settings line stays in either case if (a). Crew owner of 077 and 096: Paco (fjcabello); raised in his review of this PR, 2026-10-31.
 
 ## Constitution check
 
