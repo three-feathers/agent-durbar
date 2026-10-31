@@ -353,12 +353,20 @@ assert.deepStrictEqual(pickUnload([mk('v1', { charKeySinceLoad: true }), mk('v2'
 
 // ---- views.ts against a fake Electron (T012 AC5-AC7, Paco/reviewer items) ----
 import { makeViews, type ViewDeps } from '../src/main/browser/views';
+// an unfinished run (a promise that never settles ends the process with exit 0) must fail, not pass with half the suite skipped
+let viewsFinished = false;
+process.on('exit', () => {
+  if (!viewsFinished) {
+    console.error('browser views (fake Electron) tests did not finish');
+    process.exitCode = 1;
+  }
+});
 const T1 = 't00000001';
 function fakeElectron() {
   const log: string[] = [];
   const created: { wc: any; ses: any }[] = [];
   const sesByName = new Map<string, any>();
-  const gate: { loadHold?: Promise<void>; attachFails?: boolean; enableFails?: boolean; unloadBlocks?: boolean; direct?: string[] } = {};
+  const gate: { loadHold?: Promise<void>; attachFails?: boolean; enableFails?: boolean; unloadBlocks?: boolean; direct?: string[]; closeHangs?: boolean } = {};
   const deps: ViewDeps = {
     chromeVersion: '152.0.0.1',
     createView: (prefs) => {
@@ -392,6 +400,7 @@ function fakeElectron() {
         // FR-128: waitForBeforeUnload runs the page's beforeunload; a page that asks keeps the view open (Electron fires will-prevent-unload)
         close: (o: { waitForBeforeUnload?: boolean }) => {
           if (destroyed) return;
+          if (o && o.waitForBeforeUnload && gate.closeHangs) { log.push(`${i}:close hangs`); return; } // a hung page: neither closes nor asks
           if (o && o.waitForBeforeUnload && gate.unloadBlocks && !(wc as unknown as { unload(): boolean }).unload()) { log.push(`${i}:close kept`); return; }
           log.push(`${i}:close ${JSON.stringify(o)}`); destroyed = true; (wc as unknown as EventEmitter).emit('destroyed');
         }, isDestroyed: () => destroyed,
@@ -636,6 +645,11 @@ function fakeElectron() {
     const sv3 = await v3.ensureTabView('s1', 't00000001', { askLeave: async () => false });
     sv3.driver = 'agent';
     assert.strictEqual(await sv3.closeAsk(), true, 'driver agent: closed at once');
+    // a page that never answers its beforeunload (hung) does not keep its tab: closed after the time limit
+    const hg = fakeElectron(); hg.gate.closeHangs = true; const vh = makeViews({ ...hg.deps, closeAskMs: 30 });
+    const svh = await vh.ensureTabView('s1', 't00000001', { askLeave: async () => false });
+    assert.strictEqual(await svh.closeAsk(), true, 'a hung page: closed after CLOSE_ASK_MS');
+    assert.ok(hg.log.includes('0:close hangs') && hg.log.includes('0:close {"waitForBeforeUnload":false}'), 'asked first, then closed without beforeunload');
     // the session ends while the question waits: the close resolves
     const k = fakeElectron(); k.gate.unloadBlocks = true; const v4 = makeViews(k.deps);
     const sv4 = await v4.ensureTabView('s1', 't00000001', { askLeave: () => new Promise<boolean>(() => undefined) });
@@ -670,6 +684,7 @@ function fakeElectron() {
     assert.deepStrictEqual(f.log, [], 'loadURL never called');
     assert.strictEqual(await sv.navigate({ url: 'https://a.com/' }), true);
   }
+  viewsFinished = true;
   console.log('browser views (fake Electron) tests passed');
 })().catch((e) => { console.error(e); process.exit(1); });
 

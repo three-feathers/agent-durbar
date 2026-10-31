@@ -78,6 +78,8 @@ export interface ViewDeps {
   chromeVersion: string;
   /** Called once per new session partition with the simulator decision (T018: the test pages). Absent in the tests that do not need it. */
   onPartition?(ses: SesLike, sim: boolean): void;
+  /** Test hook: `CLOSE_ASK_MS`. */
+  closeAskMs?: number;
 }
 
 /** FR-121: one partition per session, made with its first view and shared by every later tab; cleared once by the session's teardown. */
@@ -182,7 +184,7 @@ export function makeViews(deps: ViewDeps) {
           clearTimeout(closeTimer);
           closeTimer = setTimeout(() => {
             if (closingAsk && !asking) sv.close();
-          }, CLOSE_ASK_MS);
+          }, deps.closeAskMs ?? CLOSE_ASK_MS);
           try {
             // runs the page's beforeunload: with no handler the page closes ('destroyed'); a handler that asks reaches willPreventUnload below
             wc.close({ waitForBeforeUnload: true });

@@ -211,4 +211,19 @@ assert.ok(/\.panel-in\.on-browser #chat\{[^}]*visibility:hidden/.test(block), 't
     assert.ok(/\.btabs\{[^}]*overflow-x:auto;overflow-y:hidden/.test(css), 'then the strip scrolls sideways inside itself');
     assert.ok(!/scrollIntoView/.test(bp), 'the active tab is kept in view by the strip\'s own scrollLeft, never scrollIntoView (it would scroll the office)');
   }
+  // FR-132: a dialog in a background tab of the shown session gives the toast only; a hidden session's dialog brings its chat forward on that tab
+  {
+    let cb: ((d: unknown) => void) | undefined;
+    const said: unknown[] = [], forward: unknown[][] = [];
+    const P = BP as unknown as { init(o: unknown): void };
+    P.init({ bridge: { onBrowserDialog: (f: (d: unknown) => void) => ((cb = f), () => undefined) }, say: (d: unknown) => said.push(d), bringForward: (id: string, tabId?: string) => forward.push([id, tabId]) });
+    cb!({ id: 'a', type: 'alert', text: 'x', shown: true, tabId: 't00000001', bg: false });
+    assert.deepStrictEqual([said.length, forward.length], [0, 0], 'the shown tab\'s own dialog: nothing (the box is next to its chat)');
+    cb!({ id: 'a', type: 'alert', text: 'x', shown: false, tabId: 't00000002', bg: true });
+    assert.deepStrictEqual([said.length, forward.length], [1, 0], 'a background tab of the shown session: the toast only, never selected by itself');
+    cb!({ id: 'b', type: 'confirm', text: 'y', shown: false, tabId: 't00000003', bg: false });
+    assert.deepStrictEqual(forward, [['b', 't00000003']], 'a hidden session: brought forward on the tab that asks');
+    cb!({ id: 'c', type: 'confirm', text: 'z', shown: false, tabId: { evil: 1 }, bg: false });
+    assert.deepStrictEqual(forward[1], ['c', undefined], 'a tab id that is not a string is not passed on');
+  }
 })().then(() => console.log('browser pane tests passed'), (e) => { console.error(e); process.exit(1); });

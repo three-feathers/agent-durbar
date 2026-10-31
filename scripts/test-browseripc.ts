@@ -893,9 +893,14 @@ process.on('exit', () => {
     assert.deepStrictEqual(r.destroyed, [], 'no session teardown');
     assert.strictEqual(activeOf(r), right, 'the tab to its right becomes active');
     assert.deepStrictEqual(r.win.children, [viewOf(r, right)!.view]);
+    // three more pages loaded, so a page load counted for the closed tab would make the cap drop one of them
+    await r.ctl.newTab('s1', 'https://p1.example/'); await r.ctl.newTab('s1', 'https://p2.example/'); await r.ctl.newTab('s1', 'https://p3.example/');
+    await r.ctl.selectTab('s1', right);
     r.flush();
     const nState = r.emitted.length, nTabs = r.tabsSeen.length, nDialogs = r.dialogs.length;
-    // late events of the closed tab
+    assert.strictEqual(r.ctl.tabsOf('s1').tabs.filter((x) => x.url && x.url !== '' && x.memory !== 'dropped').length, 4, 'precondition: four pages loaded, the cap is full');
+    // late events of the closed tab (its webContents still emitting, as during a close in flight)
+    fSlow.wc.destroyed = false;
     fSlow.wc.url = 'https://slow.example/'; fSlow.wc.emit('did-navigate'); fSlow.wc.emit('did-fail-load', {}, -102, 'ERR_CONNECTION_REFUSED', 'x', true); fSlow.wc.emit('page-title-updated');
     ev.onPageDialog!('s1', { type: 'alert', text: 'late', forAgent: false });
     ev.onDialogNote!('s1', 'late note');
@@ -905,13 +910,17 @@ process.on('exit', () => {
     await tick(); r.flush();
     assert.strictEqual(r.dialogs.length, nDialogs, 'no toast from a closed tab');
     assert.deepStrictEqual(r.keys, [], 'no key from a closed tab');
-    assert.strictEqual(r.ctl.tabIds('s1').length, 2);
+    assert.strictEqual(r.ctl.tabIds('s1').length, 5);
+    assert.ok(!r.ctl.tabsOf('s1').tabs.some((x) => x.memory === 'dropped'), 'its late page load made the cap drop nothing');
     assert.ok(r.emitted.length === nState && r.tabsSeen.length === nTabs, 'nothing it sent afterwards was told to the window');
     assert.strictEqual(r.ctl.stateOf('s1').tabId, right);
     assert.strictEqual(r.ctl.stateOf('s1').error, undefined, 'its failure is not the active tab\'s');
     // closing the rightmost active tab activates the one to its left
-    await r.ctl.closeTab('s1', right);
-    assert.strictEqual(activeOf(r), keep, 'else the tab to its left');
+    const rightmost = r.ctl.tabIds('s1')[4];
+    await r.ctl.selectTab('s1', rightmost);
+    await r.ctl.closeTab('s1', rightmost);
+    assert.strictEqual(activeOf(r), r.ctl.tabIds('s1')[3], 'else the tab to its left');
+    assert.ok(r.ctl.tabIds('s1').includes(keep));
   }
   // the list and the active tab change in one step: a close never waits for the view's teardown, and no reader sees a removed tab as active
   {
@@ -1148,6 +1157,10 @@ process.on('exit', () => {
       assert.ok(/\(e, /.test(block) || /\(e\) =>/.test(block), `${m[1]} takes the event`);
     });
     assert.ok(/import \{ fromAppFrame as fromApp, ipcHandle \} from '\.\.\/ipcguard'/.test(ipcSrc), 'the guard is ipcguard.ts\'s own');
+    // spec 080 FR-123, FR-127: the toggle takes only a real boolean; the window never sends the toggle with a link (main reads it)
+    assert.ok(/ipcHandle\('browser:setLinksNewTab', \(e, on: unknown\) => \{\n\s*if \(!fromApp\(e\) \|\| typeof on !== 'boolean'\) return \{ ok: false \};/.test(ipcSrc), 'setLinksNewTab refuses a non-boolean with no effect');
+    assert.ok(/ctl\.openLink\(id, url, how\)/.test(ipcSrc) && /linksNewTab = \(\): boolean => \(simulator \? simLinksNewTab : deps\.getSettingsStore\(\)\?\.chatLinksNewTab === true\)/.test(ipcSrc), 'the toggle is read in main');
+    assert.ok(/if \(simulator\) simLinksNewTab = on;\n\s*else deps\.getSettingsStore\(\)\?\.setChatLinksNewTab\(on\);/.test(ipcSrc), 'the simulator writes no user settings');
     const pre = preloadChannels().all;
     for (const c of CH) assert.ok(pre.has(c), `the preload calls ${c}`);
     assert.deepStrictEqual([...pre].filter((c) => c.startsWith('browser:')).sort(), [...CH].sort(), 'the preload calls nothing else under browser:');
