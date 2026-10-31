@@ -292,7 +292,9 @@ module.exports = async (ctx) => {
   await wait(() => slowWc.isDestroyed(), 'the loading tab\'s view is gone');
   console.log('[browser-tabs] US6.6 ok');
 
-  // US6.12: the strip's keys
+  // US6.12: the strip's keys. The strip must show main's 9 tabs and the new active tab first: read earlier it still lists the tab just closed, and
+  // Home would name a tab that is gone (issue #934 family: a value read before the window caught up; seen as "Home moves the focus to the first tab").
+  await wait(() => js(`(()=>{const e=document.querySelector('#bTabs .btab.on');return document.querySelectorAll('#bTabs .btab').length===9&&!!e&&e.dataset.tab===${jsLiteral(wantNext)}&&!document.querySelector('#bTabs [data-tab=${jsLiteral(order[i])}]')})()`), 'the strip shows the 9 tabs and the tab after the closed one');
   await js(`document.querySelector('#bTabs .btab.on .btab-b').focus()`);
   let st = await stripTabs();
   const sel0 = st.findIndex((x) => x.sel === 'true');
