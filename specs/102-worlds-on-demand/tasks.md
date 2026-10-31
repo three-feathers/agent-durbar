@@ -4,16 +4,16 @@
 
 **Tests**: required (constitution VII; SC-001..SC-018). Node tests and the simulator only; 0 AI credits; no network in `npm test`. Each new rule gets a planted mutation that a test catches, listed in its PR (`docs/review-checklist.md`). Driver waits use `until()`, never a fixed sleep; no wall-clock assertion. `real:` tasks are separate and named.
 
-**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`, then a `Test:` part. `[P]` = can run in parallel. A phase = one PR, except P4 (one PR per world or small batch). Numbers taken: spec 102, FR-001..FR-212 (sparse by group), SC-001..SC-018, T001..T120 (sparse by phase).
+**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`, then a `Test:` part. `[P]` = can run in parallel. A phase = one PR, except P4 (one PR per world or small batch). Numbers taken: spec 102, FR-001..FR-213 (sparse by group), SC-001..SC-018, T001..T121 (sparse by phase).
 
 **Order**: P0 -> P1 -> P2 and P8 -> P3 -> P5 and P6 as ready (OP-7), P4 -> P7. Removals are separate PRs under specs 035 (T083..T088), 040 (T039..T042) and 017 (T020..T027), each after spec 021 T053. **Nothing visible as available, and no maker, reaches a release before spec 097 FR-179 is met** (FR-035, FR-124): T156..T159 of spec 097 and its op rows.
 
 ## Phase 0: Spec (this PR)
 
 - [x] T001 Spec, plan, tasks, checklist and specs-index block (`specs/102-worlds-on-demand/`). Test: `npm run specs:check`, `npm run rules:check`.
-- [ ] T002 After #921, #925 and #936 land, write FR-190's lines into the `## Changes` of specs 076, 077, 096, 097 and 098, naming 097 FR-100, FR-114, T100, T102, D3, FR-001..FR-004, FR-081, FR-083, FR-084, FR-112, Q6; add block `room` and `defaultSet` to the registry and its test. Test: `npm run specs:check`, `test:surfaces` [FR-190].
-- [ ] T004 AGENTS.md's *Needs approval* and *Rework rate* lines name `worlds-*` releases, per spec 021 FR-066, with the owner's direct OK on the text (an agent's relay does not authorise a rule-file change). Test: `npm run rules:check`; `read:` [FR-086].
-- [ ] T003 Owner's answers to the remaining open points (OP-1, OP-5, OP-6, OP-8, OP-10..OP-12) written into the spec, with the spec changed where they differ from the recommendation. Test: `read:` [Open points].
+- [ ] T002 After #921, #925 and #936 land, write FR-190's lines into the `## Changes` of specs 076, 077, 096, 097 and 098, naming 097 FR-060, FR-100, FR-112, FR-114, FR-115, T100, T102, D3, FR-001..FR-004, FR-081, FR-083, FR-084, Q6; add block `room` and `defaultSet` to the registry and its test. Test: `npm run specs:check`, `test:surfaces` [FR-190].
+- [x] T004 AGENTS.md's *Needs approval* and *Rework rate* lines name `worlds-*` releases, per spec 021 FR-066, with the owner's direct OK on the text (an agent's relay does not authorise a rule-file change). Test: `npm run rules:check`; `read:` [FR-086].
+- [ ] T003 Paco's answer on OP-8, and any owner change to the agent decisions OP-1, OP-5, OP-6, written into the spec. Test: `read:` [Open points].
 
 ## Phase 1: Format and validator (PR P1), no UI, no network
 
@@ -44,7 +44,7 @@ Depends on #921 and T010..T016.
 
 ## Phase 3: Download from the project (PR P3) - US1, US5 first slice, US6 part
 
-- [ ] T035 Catalogue format and seed: eleven `coming` rows (`worlds/catalogue.json`, `scripts/copy-assets.js`, `src/shared/worldsource.ts`). Test: `test:worldsource`; a file-list test: the app has the catalogue and no `worlds/` art [FR-002, FR-080, FR-085, SC-007].
+- [ ] T035 Catalogue format and seed: a `coming` row for each downloadable world (`worlds/catalogue.json`, `scripts/copy-assets.js`, `src/shared/worldsource.ts`). Test: `test:worldsource`; a file-list test: the app has the catalogue and no `worlds/` art [FR-002, FR-080, FR-085, SC-007].
 - [ ] T036 Reproducible packer and catalogue test (`scripts/world-pack.js`, `scripts/test-world-catalogue.js`). Lands after #936, which brings T156..T159. The test reads their ticks (split on `/\r?\n/`, all four must be found, a missing task or file counts as not met, a mutant through `npm run test:world-catalogue` must fail) and refuses `available` without them, without a shippable registry row, and without provenance. Test: `test:world-catalogue` with fixtures for each failure [FR-035, FR-085, FR-170].
 - [ ] T037 Hop rules, hash first, length cap, `makeDownloadGet` error words (`src/main/worlds/download.ts`, `netget.ts`). Test: `test:worldsource`, injected layer: off-list redirect not asked for, more than 3 hops, `http:`, longer and shorter than declared, one byte different, HTML answer; temp gone each time [FR-073, FR-074, FR-081, SC-003].
 - [ ] T038 Notice token in main: one use, 5 minutes, names the URL's real host. Test: `test:worldipc`: the registered `world:download` channel without a token, or with a stale or reused one, makes no request; a test clock proves the monotonic timer is the one used [FR-070, FR-072, SC-001].
@@ -52,7 +52,7 @@ Depends on #921 and T010..T016.
 - [ ] T040 Offline and failures: no retry, the current world unchanged, an installed world works with the layer refusing and recording everything. Test: `test:worldsource` asserts zero requests in main; `sim:` draws [FR-075, FR-076].
 - [ ] T041 **Manage** rows (FR-061), Update and Remove, with the notice, old kept until new passes. Test: `test:worldstore`, `check-worlds` [FR-061, FR-100, FR-101, US6].
 - [ ] T042 Policy slice: machine folder only, 076 FR-005's trust check, `features.worldDownloads`, `worldsPolicyFrom` (`src/main/worlds/policy.ts`). Test: `test:worldsource`: main refuses whatever the window sends; unreadable, a read error and a timeout fail closed; bad types; one bad source entry empties the list; `true` never undoes `false`; a running download stops; `sim:` *Turned off by your organization* [FR-110, FR-112, FR-113, FR-114, SC-009].
-- [ ] T043 First real asset (after T004): publish per OP-2, compare the served bytes with the catalogue, and download once on Linux, macOS, Windows. Test: `real:` recorded in the spec; 0 AI credits; `[KNOWN GAP]` for an OS nobody ran [FR-073, FR-086, FR-182].
+- [ ] T043 First real asset: publish per OP-2, compare the served bytes with the catalogue, and download once on Linux, macOS, Windows. Test: `real:` recorded in the spec; 0 AI credits; `[KNOWN GAP]` for an OS nobody ran [FR-073, FR-086, FR-182].
 - [ ] T044 README *Safety model* table, *Development* names, limits; `docs/agent-apps.md` entry for the redirect host; changelog fragment. Test: `npm run test:docsscripts`, `changelog:check` [FR-074].
 
 ## Phase 4: Picture worlds - US2
@@ -72,7 +72,7 @@ Each world waits for T036 and T042 and goes `coming` to `available` only through
 - [ ] T090 [P] Britain [FR-011]
 - [ ] T113 Flat as a World row; not in the registry [FR-001, FR-212]. Test: `test:surfaces`; `sim:` request log.
 - [ ] T114 [P] Calm office, default Office people [FR-011]
-- [ ] T115 [P] Retro game, default Retro pixel people; waits for T111 [FR-011]
+- [ ] T115 Retro game, shipped in the app, default Retro pixel people; waits for T111; lands in the same release as spec 035 T089 [FR-011, FR-213]
 - [ ] T116 [P] Indian kingdom, arches by FR-210 [FR-011, FR-210]
 - [ ] T117 [P] European kingdom, arches by FR-210 [FR-011, FR-210]
 - [ ] T118 [P] Japanese kingdom, post and beam by FR-210 [FR-011, FR-210]
@@ -124,10 +124,11 @@ Needs spec 096's adapter capability and probes.
 - [ ] T104 [US8] Set store and lazy load through `world:part`-style channels. Test: `test:worldstore`, `test:worldipc`; request log in main: one world and one set only [FR-205, SC-018].
 - [ ] T105 [US8] Sets through sources, sharing and the maker: `kind: "set"`. Test: `test:worldsource`, `test:worldstore` round trip [FR-205, FR-209].
 - [ ] T106 [US8] Interoperability in the matrix (`scripts/world-matrix.js`), each full set in two worlds, rotating. Test: `sim:`; `read:` first weekly result [FR-208, SC-016].
+- [ ] T121 [US8] Shipped art: Cave with Prehistoric and Cheeky loft with Cheeky in the app once each passes FR-035, per world under 10 MB, in total at most 30 MB; measured sizes replace FR-213's estimates. Test: `test:realoffice-assets`; a file-list test that nothing else ships; a mutant over the cap fails [FR-213, SC-007].
 - [ ] T107 [US8] Office people as a set pack, checked. Test: `test:world-packs`, `test:realoffice-assets` [FR-206].
 - [ ] T108 Cheeky frames to full, per picture by Paco (cost on his or the owner's plan, on their OK). Test: `test:world-packs`; `read:` approvals in `ASSETS.md` [FR-206].
 - [ ] T109 Prehistoric frames to full, per picture by Paco. Test: `test:world-packs`; `read:` approvals in `ASSETS.md` [FR-206].
-- [ ] T110 Minimalist per OP-11. Test: `sim:` Flat-only note, or `test:world-packs` [FR-206].
+- [ ] T110 Minimalist to full poses, art in progress; until then `sim:` the Flat-only note. Test: `test:world-packs`; `read:` provenance and the owner's look [FR-206].
 - [ ] T111 Retro pixel people, new, with provenance and likeness fields. Test: `test:world-packs`, asset test; `read:` the owner's look [FR-200, FR-209].
 - [ ] T112 My characters: level per character, 096's Real office frames. Test: `test:world-packs` on 096's fixture; `test:charstore` [FR-206].
 

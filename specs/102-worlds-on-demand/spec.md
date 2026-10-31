@@ -11,7 +11,7 @@ status: draft
 
 **Created**: 2026-10-31
 
-**Status**: Draft (2026-10-31). Spec, plan and tasks only; nothing is built. OP-2, OP-3, OP-4, OP-7 and OP-9 are decided by the owner (spec 021 FR-066, FR-067); the other open points have a recommendation, and the spec is written to that recommendation until the owner says otherwise.
+**Status**: Draft (2026-10-31). Spec, plan and tasks only; nothing is built. OP-2, OP-3, OP-4, OP-7 and OP-9..OP-12 are decided by the owner (spec 021 FR-066, FR-067). OP-1, OP-5 and OP-6 are agent decisions the owner may change. OP-8 is Paco's.
 
 **Input**: Owner requests and decisions (Vikram, 2026-10-31), recorded on issues #932 and #933 and restated in the coordinator's brief:
 - **Two flat lists, no families** (owner's final decision, spec 021 FR-067; replaces "crews pick their world"): worlds and character sets are separate packs, any set works in any world, and each world names one default set (FR-200..FR-212). The list of worlds is in FR-011.
@@ -31,7 +31,7 @@ status: draft
 
 Both issues need the same core: **a world pack that arrives from outside the app, is treated as hostile, and is validated, stored and drawn without code**. #932 brings it over the internet, #933 from a person's disk or an agent app. Two specs would either duplicate the validator or make one depend on the other's draft. So one spec, phased so the hand-made path and the download path can land apart (P3, P5, P6).
 
-It is not a delta of 097 or 098: it adds Durbar's first user-started downloads of content, a source model, a signature check and a zip reader; 097 is the renderer and 098 the repo-wide contract. Number **102**. Checked 2026-10-31 against `main` (up to 098), remote branches (`099-autopilot`, `100-mcp-context`, `101-logo-family`, the 097 branches) and open PRs (#923 = 099, #924 = 100, #930 = 101): nothing uses 102. Numbers here are this spec's own: FR-001..FR-212 (sparse by group), SC-001..SC-018, T001..T120 (sparse by phase).
+It is not a delta of 097 or 098: it adds Durbar's first user-started downloads of content, a source model, a signature check and a zip reader; 097 is the renderer and 098 the repo-wide contract. Number **102**. Checked 2026-10-31 against `main` (up to 098), remote branches (`099-autopilot`, `100-mcp-context`, `101-logo-family`, the 097 branches) and open PRs (#923 = 099, #924 = 100, #930 = 101): nothing uses 102. Numbers here are this spec's own: FR-001..FR-213 (sparse by group), SC-001..SC-018, T001..T121 (sparse by phase).
 
 **One rule in, one rule out** (spec 021 FR-063): no `AGENTS.md` line. The checkable rules get scripts (`test:worldpack`, `test:worldzip`, `test:world-catalogue`, FR-180).
 
@@ -70,7 +70,7 @@ No download, zip or signature code for content exists today. Theme import explic
 - **D4 Worlds and sets are separate** (owner's final decision; replaces "shared people"). A world pack holds no people and names one default set (`defaultSet`, FR-040). Any set with the full pose contract (FR-204) works in any world. People stay separate from the country a world shows, so no ethnicity is tied to a place unless a person chooses it (issue #932).
 - **D5 One format everywhere**: a zip whose file names are from a closed list (a hand-made folder goes through the same file-set rules). The path of a stored file is built by Durbar from the list, never from the archive (FR-050).
 - **D6 Nothing connects by itself.** No background catalogue fetch, update check or download. Every connection follows a click on a notice that names the host (FR-070, FR-072).
-- **D7 Art in the repo, not in the app.** Sources under `worlds/<id>/` are committed and reviewed, built reproducibly into a zip, and left out of the app bundle (FR-085, OP-3).
+- **D7 Art in the repo; what ships is few.** Downloadable sources under `worlds/<id>/` and `sets/<id>/` are committed and reviewed, built reproducibly into a zip, and left out of the app bundle (FR-085). Shipped worlds and their default sets live in the app (FR-213).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -217,16 +217,16 @@ I choose a world, and its people come with it. If I pick characters myself, they
 #### The places
 
 - **FR-010** **Art brief, shared rules.** Each place is a real contemporary office: local materials, light and a view; the same layout, words, lights and screens. In every picture and prompt: **no flag, national emblem, logo, text, religious building or symbol, landmark, stereotype, national caricature, or arch, vault or arcade of any kind** (openings have straight heads). **Kingdom worlds are the one exception to arches**: they follow their history, so arches are allowed where that kingdom had them (FR-210). The no-arches rule stays for every other world, Greece included. People are not drawn in the room art.
-- **FR-011** **The worlds.** One flat list; each row names its default set. *Ships* means in the app, *Download* means by FR-070 (OP-10). The art briefs are aligned with the art card of 2026-10-31 (a card the art agent keeps extending; the card and the owner's look may refine a row), and written so that every item differs in every pair (FR-014). Plant lists were trimmed against the card where two worlds shared a species. A light temperature is a target for the picture and a card field, not a measured value.
+- **FR-011** **The worlds.** One flat list; each row names its default set. *Ships* means in the app, once it passes every gate of FR-035; *Download* means by FR-070. The art briefs are aligned with the art card of 2026-10-31 (a card the art agent keeps extending; the card and the owner's look may refine a row), and written so that every item differs in every pair (FR-014). Plant lists were trimmed against the card where two worlds shared a species. A light temperature is a target for the picture and a card field, not a measured value.
 
   | World | Id | From | Default set | Delivery |
   |---|---|---|---|---|
   | Flat | `flat` | Today's clean look, for people who want flat; no pictures, not in FR-014 | Minimalist (a saved theme's own figures while one is in use, FR-203) | Ships |
   | Calm office | `calm` | A real world from today's Clean Office idea | Office people | Download |
-  | Retro game | `retro` | A real world from today's Retro Pixel | Retro pixel people | Download |
+  | Retro game | `retro` | A real world from today's Retro Pixel | Retro pixel people | Ships, in the release that removes the Retro Pixel theme (OP-12) |
   | Photo office | `photo` | 097 | Office people | Ships |
-  | Cave | `cave` | 097 | Prehistoric | Download (OP-10) |
-  | Cheeky loft | `loft` | 097 | Cheeky | Download (OP-10) |
+  | Cave | `cave` | 097 | Prehistoric | Ships, after Paco's art approval and every gate |
+  | Cheeky loft | `loft` | 097 | Cheeky | Ships, after Paco's art approval and every gate |
   | 11 places | below | #932 | Office people | Download |
   | Indian kingdom, European kingdom, Japanese kingdom | `kingdom-indian`, `kingdom-european`, `kingdom-japanese` | New real worlds, not the removed court themes (FR-210) | Office people | Download |
   | User-made and shared | `u-…`, `s-…` | FR-130, FR-150, FR-161, FR-093 | Named by the pack, FR-202 | Own |
@@ -297,7 +297,7 @@ I choose a world, and its people come with it. If I pick characters myself, they
 - **FR-032** **Live screens and animation come from the app.** A pack gives `desk-screen.screenRect`, `callAnchor` and light-slot shapes; app text goes in as `textContent` (097 FR-030, FR-031) and poses are the people's. The validator refuses a `screenRect` smaller than 097 FR-032 needs at the half-size desk, so a pack cannot make screens unreadable.
 - **FR-033** **Motion is named, not supplied.** `rideStyle` is one of `doors`, `gate`, `drop`; light shapes come from 098's fixed list. No keyframe, duration or easing in a pack.
 - **FR-034** **Flagged, not shipped as finished.** A pack with any uncovered moment is `unfinished`. Project catalogue: it cannot be `available` (`test:world-catalogue`). Non-project source: listed as *Unfinished: <n> parts missing* before download. Own world: may be saved, labelled wherever listed, with the missing moments named; missing parts draw the `photo` world's art (issue #933). `unfinished` is one word used everywhere, and a world's status never hides it.
-- **FR-035** **The gate for `available` in the project's catalogue.** All of: (a) spec 097 FR-179 is met: the Real office op rows and FR-180, FR-182 hold in `check-office-ops`, and T156..T159 are ticked in `specs/097-real-office/tasks.md` (`test:world-catalogue` reads the ticks). **T156..T159 and FR-179 land through #936, which must merge first**: T036 builds on them, and until they exist a task that cannot be found counts as not met, so `available` is refused; (b) `test:world-packs` passes and FR-030 is all `covered`; (c) the registry row is `shippable` under 098 FR-024; (d) `check:office` and the world matrix pass at 15 agents at both sizes; (e) provenance (FR-170); (f) the owner's check is recorded per world; (g) FR-016's checks pass and `distinct-check` is recorded (FR-017); (h) its default set is full and installed or available (FR-204, FR-206). Own worlds and the maker UI also wait for (a) before any release has them (097 FR-179 names user-made worlds).
+- **FR-035** **The gate for `available` in the project's catalogue, and for a world to ship in the app.** All of: (a) spec 097 FR-179 is met: the Real office op rows and FR-180, FR-182 hold in `check-office-ops`, and T156..T159 are ticked in `specs/097-real-office/tasks.md` (`test:world-catalogue` reads the ticks). **T156..T159 and FR-179 land through #936, which must merge first**: T036 builds on them, and until they exist a task that cannot be found counts as not met, so `available` is refused; (b) `test:world-packs` passes and FR-030 is all `covered`; (c) the registry row is `shippable` under 098 FR-024; (d) `check:office` and the world matrix pass at 15 agents at both sizes; (e) provenance (FR-170); (f) the owner's check is recorded per world; (g) FR-016's checks pass and `distinct-check` is recorded (FR-017); (h) its default set is full and installed or available (FR-204, FR-206). Own worlds and the maker UI also wait for (a) before any release has them (097 FR-179 names user-made worlds).
 
 #### Pack format
 
@@ -355,7 +355,7 @@ I choose a world, and its people come with it. If I pick characters myself, they
 - **FR-083** **Revocation.** A pack whose hash is in the catalogue's `revoked` list (a likeness report under 097 FR-068, a bad pack) is not drawn and is removed, with a note. `[KNOWN GAP]` for project packs this arrives only with an app update.
 - **FR-084** **Published assets never change.** A new pack is a new version, file name and hash; an asset is never overwritten, so older apps keep working. Removal happens only for a revocation.
 - **FR-085** **Reproducible.** `scripts/world-pack.js` builds `worlds/<id>/` into a stored zip with fixed order and timestamps. `test:world-catalogue` rebuilds it and compares it with the catalogue's hash, offline, so the catalogue provably matches the reviewed files. `worlds/` art is not in the app (`scripts/copy-assets.js` copies only the catalogue; `test:` on the file list). The world matrix reads `worlds/<id>/` from the checkout, with no network.
-- **FR-086** **Publishing.** Packs go up as assets of a `worlds-<YYYY-MM-DD>` release by a human-run or owner-approved step, marked `latest=false`, so that the app's update and release pages keep pointing at `v*`. It does not trigger `release.yml` (tags `v*`). This needs the owner's OK (OP-2). A check after upload compares the real asset's hash with the catalogue (0 AI credits; T043, `real:`).
+- **FR-086** **Publishing.** Packs go up as assets of a `worlds-<YYYY-MM-DD>` release, at any time: there is no daily rhythm and no need for new worlds every day (spec 021 FR-066). It is marked `latest=false`, so that the app's update and release pages keep pointing at `v*`. It does not trigger `release.yml` (tags `v*`). It has the owner's standing OK (OP-2). A check after upload compares the real asset's hash with the catalogue (0 AI credits; T043, `real:`).
 
 #### What a third-party source can and cannot do
 
@@ -441,7 +441,7 @@ I choose a world, and its people come with it. If I pick characters myself, they
   - **Anchors, required**: `headTop`, `bodyH`, `hand`, `faceBox`; `floorLine` on standing frames; `realHeight`, default 1.70 m.
   - **Format**: 098's: WebP with alpha, at most 640 px tall and 80 KB, two sizes (097 FR-183), facing front. Feet on `floorLine` within 2 px by alpha.
   - **Minimum**: one person passes. Fewer than 15 repeats people at 15 agents, and the report says so. A required frame has no fallback.
-- **FR-205** **Separate packs, only chosen ones load.** A set is its own pack: `set.json` (`formatVersion`, `id`, `name`, `level`, people and anchors) and frames named `p<NN>-<pose>[-half].webp` from a closed list, at most 20 people, 10 MB (097 FR-062). A set's entry limit is its own constant: at most 600 files, 128 MB for an upload. Sets go through FR-050..FR-056, FR-060..FR-064, FR-070..FR-099 and FR-160..FR-163 with `kind: "set"` in a catalogue, separately downloadable and shareable. Project sets are committed under `sets/<id>/`, outside the app except Office people and today's flat heads (OP-3, OP-10); `features.userWorlds` also covers user-made sets. No world fetches a set it does not draw, and no set fetches a world: `test:` request log in main, `sim:` on the window's fetches.
+- **FR-205** **Separate packs, only chosen ones load.** A set is its own pack: `set.json` (`formatVersion`, `id`, `name`, `level`, people and anchors) and frames named `p<NN>-<pose>[-half].webp` from a closed list, at most 20 people, 10 MB (097 FR-062). A set's entry limit is its own constant: at most 600 files, 128 MB for an upload. Sets go through FR-050..FR-056, FR-060..FR-064, FR-070..FR-099 and FR-160..FR-163 with `kind: "set"` in a catalogue, separately downloadable and shareable. Project sets not shipped are committed under `sets/<id>/`, outside the app (OP-3, FR-213); `features.userWorlds` also covers user-made sets. No world fetches a set it does not draw, and no set fetches a world: `test:` request log in main, `sim:` on the window's fetches.
 - **FR-206** **The validator check.** `checkSet` in `worldpack.ts` gives each person `full` or the missing poses and anchors, and the set a `level`: **`full`** when at least one person is full (others are dropped, named in the report), **`heads`** when none is but it has the three heads. `test:world-packs` runs it on built-ins. A **heads-only set stays Flat only and says so**, in the row, the report and the note of FR-202. Today's levels, and the art each needs:
 
   | Set | Level today | To be full |
@@ -449,7 +449,7 @@ I choose a world, and its people come with it. If I pick characters myself, they
   | Office people | Full by 097's art (#921; re-checked by the validator, T107) | Nothing |
   | Cheeky | Heads (3 poses, spec 077) | New frames, per picture by Paco (T108) |
   | Prehistoric | Heads (3 poses) | New frames, per picture by Paco (T109) |
-  | Minimalist | Heads (the drawn `office` kit) | New frames for pictures, or stays Flat only and says so (T110, OP-11) |
+  | Minimalist | Heads (the drawn `office` kit) | Full poses like every set; art in progress (T110, OP-11). Until then Flat only, and it says so. Flat keeps drawing the `office` kit |
   | Retro pixel people | Does not exist | New set (T111) |
   | My characters | Heads (096); per character | 096's Real office frames (T112) |
   | Shared | As its validator says | Up to its maker |
@@ -472,12 +472,24 @@ I choose a world, and its people come with it. If I pick characters myself, they
 - **FR-209** **A set's people.** Project sets follow 097 FR-067, FR-068 (fictional, likeness check) and FR-170. Shared sets are as FR-135: `[KNOWN GAP]` a likeness in an uploaded picture cannot be checked by Durbar, and import says "Made by someone else; not checked."
 - **FR-210** **Kingdom worlds follow their history.** Arches appear where that kingdom had them: cusped and pointed in the Indian kingdom, round and pointed in the European kingdom. The Japanese kingdom's architecture is post and beam, so it has no masonry arch, and a curved gable line is allowed. Still in force for them: no real palace copied, no real ruler or person, no flag, coat of arms or religious building or symbol, no caricature. The removed court themes' art and words are not reused; tool and place words stay the app's (098 FR-043).
 - **FR-211** **Retired AI theme maker, what replaces it.** The flat theme maker is retired (spec 040 FR-031) with P6's PR, so AI creation is never absent; before that it is frozen. Saved themes keep working.
+- **FR-213** **What ships, and what it costs** (owner decision, OP-10, OP-12). Flat, Photo office with Office people, Cave with Prehistoric, Cheeky loft with Cheeky; Retro game with Retro pixel people in the release that removes the Retro Pixel theme. Each enters only when it passes FR-035, so a world not approved adds nothing. Estimates, not measurements, from 097 FR-183's photo figure (about 8.7 MB, of which about 0.47 MB a person for 11 frames at two sizes) and FR-042's world caps:
+
+  | Shipped | World | Set | Total |
+  |---|---|---|---|
+  | Photo office, Office people (15) | included | included | about 8.7 MB (097) |
+  | Cave, Prehistoric (6) | up to about 2.5 MB | about 2.8 MB | about 5.3 MB |
+  | Cheeky loft, Cheeky (13) | up to about 2.5 MB | about 6.1 MB | about 8.6 MB |
+  | **Three real worlds** | | | **about 22.6 MB** |
+  | Retro game, Retro pixel people (15) | up to about 2.5 MB | about 1.7 MB, assuming about 10 KB for a pixel frame at two sizes | about 4.2 MB |
+  | **With Retro game** | | | **about 26.8 MB** |
+
+  **Caps.** Every pack stays under 097's 10 MB per world with its default set, on these estimates. A cartoon frame may compress unlike a photo-style one (`[KNOWN GAP]`, not measured): Cheeky at 13 people has 73 KB per frame pair before it passes 10 MB. `test:crew-assets`' 2.5 MB holds today's heads only (1.9 MB now); full-pose sets are checked by their own test and do not go in that folder. **New: shipped art at most 30 MB in total** (`test:realoffice-assets`), since no app-wide budget existed. **Retro pixel people's cost**: 15 fictional people × 11 required frames = 165 frames, each with a half size made by the encoder; about 30 image runs on the owner's ChatGPT plan if each person takes one seated and one standing sheet (an estimate; a run was about a minute, spec 096), plus 097 FR-067, FR-068's checks. Sets that do not ship (Minimalist's frames, shared ones) download.
 - **FR-212** **Flat is not a registry world.** It has no moments in `docs/experience/world-moments.json`: its surfaces are the flat rendering. FR-014, FR-020 and FR-035 do not apply to it. The Calm and Retro game worlds do not change Flat's theme.
 
 #### Relation to other specs
 
 - **FR-190** **Changes to other specs** (written into each `## Changes` by T002 after #921, #925, #936 land, so this PR does not edit the same lines):
-  - 097 FR-060: Flat and Photo office ship, other worlds do not (OP-10). FR-112's "offered worlds equal the registry's shippable worlds" holds for shipped worlds and the project's catalogue. FR-115's path for a shipped world stands.
+  - 097 FR-060: Flat, Photo office, Cave and Cheeky loft ship, and Retro game from its release (FR-213); other worlds do not. FR-115: its per-world 10 MB cap counts a shipped world with its default set; the path stands. FR-112's "offered worlds equal the registry's shippable worlds" holds for shipped worlds and the project's catalogue.
   - 098 FR-011, FR-030: new block `room` (office-floor, lobby, empty-office, first-run name it), `person` may be `shared`, and `fixture.realHeight` moves from the pack to one constant per place (FR-014); FR-031, FR-032 use the shared validator; `worlds[id].pack` may be `worlds/<id>`; FR-052's filter gains `worlds/**`. FR-040's world-CSS rule is untouched (a pack has no CSS).
   - 096 FR-022: the encoder job takes a list of targets. 077 FR-057 was already changed by 096.
   - 097, on the branch of #925 and on P1's: **FR-100** (crews no longer pick worlds; a cartoon crew may be drawn in the photo office; worlds name a default set; the world list is FR-011), **FR-114** (no *Match my characters*; the World and Characters rows are FR-201, stored as FR-201 says), **T100** (`realOfficeWorld(characters, worldPref)` becomes `peopleFor`, FR-202), **T102** (the Settings rows), **D3, FR-081, FR-083, FR-084** (`realOfficeSet`), **Q6** (crews with their own world becomes a default set), **FR-112** (offered worlds), **FR-001, FR-003, FR-004** and the *Doors you closed* edge case (no third Office layout button, no `durbar.doorsigns`, no "Switch to an open office?" question, no doors; spec 017 FR-029). These lines are not edited here, because #921 and #925 hold them.
@@ -507,7 +519,7 @@ I choose a world, and its people come with it. If I pick characters myself, they
 - **SC-004** Every available world shows all 26 moments, passes the 15-agent fit at 1440x900 and 1280x800, and meets the op rows of the Real office table.
 - **SC-005** A window changes no fixture or visitor position by a single pixel.
 - **SC-006** A person with no image-making app gets from "I want my own world" to a saved world using only what the app gives them; a first person's run is recorded (`real:`, one person, T060).
-- **SC-007** The app grows by the catalogue only, under 64 KB, however many worlds exist.
+- **SC-007** The app's shipped world and set art stays at most 30 MB, and a downloadable world adds only its catalogue row, under 64 KB for the whole catalogue, however many exist.
 - **SC-008** A country pack stays under 4 MB and every pack under 10 MB.
 - **SC-009** Under a forbidding or unreadable policy, no download starts, in main, whatever the window sends.
 - **SC-010** `npm test` and CI use 0 AI credits and no network for this feature.
@@ -537,20 +549,20 @@ I choose a world, and its people come with it. If I pick characters myself, they
 
 ## Open points for the owner
 
-The undecided ones have a recommendation; the spec follows it until told otherwise.
+Agent decisions stand until the owner changes them.
 
-- **OP-1 Trust for the project's source.** Hashes pinned in the app (no key to guard, a new world arrives with a daily release) or a signed catalogue fetched between releases (needs a signing key and a secret, which is a repo setting). **Recommendation: pinned**; the signature code exists anyway for other sources.
-- **OP-2 `worlds-*` releases: decided (owner, 2026-10-31).** Asset-only `worlds-*` releases have his standing OK and are not counted in rework rate. Recorded in spec 021 FR-066. AGENTS.md's two lines still need the owner's direct OK (T004); T043 waits for that.
+- **OP-1 Trust for the project's source: agent decision.** Hashes pinned in the app (no key to guard, a new world arrives with an app release), rather than a signed catalogue fetched between releases (needs a signing key and a secret, which is a repo setting). The signature code exists anyway for other sources. The owner may change it.
+- **OP-2 `worlds-*` releases: decided (owner, 2026-10-31).** Asset-only `worlds-*` releases have his standing OK, can happen at any time with no daily rhythm, and are not counted in rework rate (spec 021 FR-066). AGENTS.md carries the lines.
 - **OP-3 Art in the repo: decided (owner, 2026-10-31).** Art is committed under `worlds/<id>/`, outside the app.
 - **OP-4 Who can add a source: decided (owner, 2026-10-31).** People as well as organisations; people may also create and share worlds (FR-093..FR-099, FR-162, FR-163). An organisation may forbid it or limit it to a list (FR-110, FR-111).
-- **OP-5 Policy before first ship.** 076 has no reader, so "a corporate policy that forbids it" would be only a `[KNOWN GAP]`. **Recommendation: build FR-114's small slice in P3**, so a forbidding policy works from the first release; the rest of 076 stays its own work.
-- **OP-6 First batch of places.** Options: a few first, or all eleven at once (more plan usage before the first look). **Recommendation: Spain (a sample exists), Greece, then one per owner's look**, in small batches on your ChatGPT plan; all eleven are shown as *Coming* from the start. Each world is about 15 pictures by FR-132 (estimate).
+- **OP-5 Policy before first ship: agent decision.** 076 has no reader, so FR-114's small slice is built in P3 and a forbidding policy works from the first release. The alternative was leaving it as a `[KNOWN GAP]`. The owner may change it.
+- **OP-6 First batch of places: agent decision.** Spain (a sample exists), Greece, then small batches by the owner's look, on his ChatGPT plan, rather than all at once; every downloadable world shows as *Coming* from the start. About 15 pictures a world by FR-132 (estimate). The owner may change it.
 - **OP-7 In-app or by hand: decided (owner, 2026-10-31).** In-app generation is first-class and the flat AI theme maker is retired for it. The hand-made package stays as the route when the connected app cannot generate images. Order of build: P6 needs spec 096's pipeline, P5 shares its validator; whichever is ready first lands.
-- **OP-8 Windows in cave and loft.** Allowed by the decision on every world. Options: required, optional, or none there. **Recommendation: optional there; Paco decides for his crews' worlds** (097 Q6); photo first.
+- **OP-8 Windows in cave and loft: Paco's call.** Allowed by the decision on every world; optional until he decides for his crews' worlds (097 Q6). Photo first.
 - **OP-9 People per world: decided (owner, 2026-10-31).** Two flat lists, any set in any world, a default per world (D4, FR-200..FR-212); this replaces shared people and the crew edge case.
-- **OP-10 What ships.** Options: only Flat and Photo office with Office people (the rest download, including Cave and Cheeky loft, which changes 097 FR-115), or those plus Cave and Loft. **Recommendation: only Flat and Photo**, since every pack shipped adds up to 10 MB for everyone; Cheeky's and Prehistoric's heads still ship for Flat.
-- **OP-11 Minimalist in picture worlds.** Options: new frames (art work), or Flat only, saying so. **Recommendation: Flat only for now**; "every set has the full pose set" then holds for every set offered in a picture world.
-- **OP-12 Retro Pixel theme.** It is not in the removal list, while Flat is "one world, the clean look". Options: keep it until the Retro game world ships, then remove it the same way; keep it for good; remove it now. **Recommendation: keep it until Retro game ships, then remove it** (spec 035 FR-019).
+- **OP-10 What ships: decided (owner, 2026-10-31).** Flat, Photo office, Cave and Cheeky loft ship, Cave and Loft after Paco's art approval and every gate (FR-213). This changes 097 FR-115's list through T002.
+- **OP-11 Minimalist: decided (owner, 2026-10-31).** Full poses like every set; art is in progress (FR-206, T110).
+- **OP-12 Retro Pixel theme: decided (owner, 2026-10-31).** It stays until the Retro game world ships, and that world ships in the app in the same release that removes the theme (FR-213, spec 035 FR-019).
 
 ## Constitution check
 
@@ -581,3 +593,7 @@ OP-2 and OP-3 as recommended. OP-4 changed from organisation-only to people too,
 ### 2026-10-31: two flat lists, and the owner's final world list (spec 021 FR-067)
 
 D4, OP-7, OP-9 and the crew edge case are replaced; FR-010, FR-011, FR-035 (h), FR-040 changed; FR-011 aligned with the art card; new US8, FR-200..FR-212, SC-016..SC-018, T100..T120. Removals are deltas in their own specs: 035 FR-017..FR-020 (built-in themes), 040 FR-031..FR-033 (AI theme maker), 017 FR-029..FR-035, 044 FR-127, 054 FR-065 (no doors).
+
+### 2026-10-31: owner's answers on OP-10, OP-11, OP-12 (spec 021 FR-067)
+
+Shipped worlds and their cost (FR-213, D7, SC-007); Minimalist to full poses; Retro game ships when the theme goes; `worlds-*` releases at any time. OP-1, OP-5 and OP-6 are marked as agent decisions.
