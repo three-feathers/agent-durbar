@@ -46,3 +46,33 @@
 - [ ] T052 [P] [US5] `cleanLighting()` and level resolution (room → desk inherit/override) in `src/shared/lights.ts`. Test: `test:lights`: malformed, wrong version, > 200 entries, stale sessions; cues never removed [FR-053, FR-054, FR-056, FR-057]
 - [ ] T053 [US5] Room menu *Lighting* and desk menu *Lamp* radio items; `durbar.lighting`; applies at once. Test: `sim:` Dim room + Lit desk + Reset; keyboard-only operation; error desk at Off still shows red light and word [FR-055, FR-058]
 - [ ] T054 Close or update issue #692 per Q3. Test: AGENTS.md linked-issue rule checked at merge (`Closes #692` only if all of it is done)
+
+## Phase 4: Worlds (PR P4) - delta 2026-10-31
+
+Numbers: T100..T127 (this delta); FR-100..FR-117.
+
+- [ ] T100 [P] World seam: `realOfficeWorld(characters, worldPref)` in `crew.js` (crews → worlds, `durbar.world`), `REAL_OFFICE_WORLDS` = registry shippable worlds. Test: unit: every Characters value × every preference, bad and unshippable values → match; `test:surfaces` compares the list with `docs/experience/world-moments.json` [FR-100, FR-112, FR-114]
+- [ ] T101 Pack move `realoffice/art/` → `realoffice/worlds/photo/` with `world.json` (spec 098 T031); per-world lazy load and cap in `test:realoffice-assets`. Test: `test:realoffice-assets` per pack ≤ 10 MB; `sim:` request log: flat loads nothing, photo loads no other world [FR-115]
+- [ ] T102 Settings World row (`screens.js` `signsRow()` area), FR-083 line as "World: <name>". Test: `sim:` radio group by keyboard, only shippable worlds listed, choice survives a restart, bad stored value → match [FR-114, FR-083]
+- [ ] T103 [P] World token sets for each world (070 types). Test: spec 098 T020 lint and T021 driver green per world [FR-113]
+- [ ] T104 [P] Grounding: `realLayout` places standing frames on the band's floor line by `floorLine`, scales by fixture `realHeight`, treadmill deck anchor; contact shadow. Test: `test:realoffice-layout` foot line ± 2 px and scale ± 5 % for every place and pose, 1/5/12 visitors, both sizes; `check:office` Real office variant measures the figure's lowest opaque pixel ± 2 px from the floor line and a shadow under it [FR-117]
+
+## Phase 5: The lift in the world (PR P5; needs 092 phase 3, T022..T027)
+
+- [ ] T110 Lift as the world's shaft; natural order (`liftOrder`, PageUp/PageDown direction in Real office). Test: unit `liftOrder` (1..8 floors, natural and 092 order); `sim:` toolbar names, `aria-current`, badges, roving focus, 40 px buttons and 10.5 px labels at both sizes; `check:office` counts the shaft width [FR-101, FR-116]
+- [ ] T111 The ride (560-640 ms, desk area only, retarget, instant under reduced motion and Serious mode, display held 1 s). Test: `sim:` frames at three times show the cover only over the desk area and the lobby unchanged; reduced-motion emulation instant; announcement once [FR-102]
+- [ ] T112 [P] Floor display. Test: `sim:` text ≥ 10.5 px, `aria-hidden`, shown during the ride and 1 s after [FR-103]
+- [ ] T113 All floors as storeys (slabs, storey tags, natural order). Test: `check:office` All floors in Real office at both sizes with the shaft width out [FR-104, FR-116]
+- [ ] T114 [P] Building preview (optional per world). Test: `sim:` hover and focus on All show counts; not a tab stop; Esc closes; the counts are in the button's name [FR-105]
+- [ ] T115 Jumps ride the lift (with 092 phase 4). Test: `sim:` inbox jump to another floor rides, then opens the chat; under a chat no ride [FR-111]
+
+## Phase 6: Chat and answers in the world (PR P6)
+
+- [ ] T120 Chat in the world: desk-side column (300/250 px, none under 1200 px), panel surface ≥ 78 % opaque, header portrait, card tails. Test: `sim:` at 1440x900, 1280x800 and 1100x800 (no column); contrast of every text pair against the composited surface; same tab order as flat [FR-106]
+- [ ] T121 [P] `lampWords(lightFor(...))` in `src/shared/lights.ts`; hover card, header, plate. Test: unit: every FR-041 row has its phrase; the phrase is identical per world [FR-107]
+- [ ] T122 Question bubble on the floor reusing the answer-bar component. Test: `sim:` hover and focus open it, Esc closes and returns focus, long question shows "Answer in chat" [FR-108]
+- [ ] T123 Approval slip at the Boss door reusing the inbox component; stack, `+N`. Test: `sim:` A/S/D keys act on the oldest slip; Deny styled as danger [FR-109]
+- [ ] T124 Bubble and slip placement and the label test. Test: unit: never covers the avoid list; `test:` labels, order and keys identical in flat and each world [FR-110]
+- [ ] T125 Each of the 9 missing moments designed or marked `fallback-flat` per world in the registry before that world ships (photo: lounge by Q5, walk by FR-073). Test: `test:surfaces` with the world marked shippable [FR-112]
+- [ ] T126 Photo-world experience art (lift doors, shaft, building, chat backdrop) approved by Vikram; cave and loft art approved by Paco per picture; provenance per the art-pipeline spec (Paco's side, not yet written; spec 098 FR-080). Test: `real:` the approvals quoted in `ASSETS.md`; the art-pipeline asset check green [FR-100, Q6]
+- [ ] T127 Docs: README (worlds, World setting, per-world size, limits), changelog fragment, spec tags and converge. Test: `npm run changelog:check`, `specs:check`

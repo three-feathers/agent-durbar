@@ -244,6 +244,12 @@ The slide is short and soft. It never blocks input and never hides a waiting age
 
 ## Changes
 
+### 2026-10-31: open question Q-D, natural floor numbering (raised by spec 097, not decided)
+
+The owner (Vikram, 2026-10-31 10:19 UTC) decided that in Real office (spec 097 FR-116) floor numbering is natural: the ground floor (the first floor of the Floors list, number 1) is drawn at the **bottom** of the in-world lift and of All floors, and PageUp goes to the floor drawn above. This spec's D3 (Q-A, Paco, 2026-10-27) puts the first floor at the **top** of the flat lift. Nothing in this spec changes now.
+
+- **Q-D**: should the flat lift and All floors follow natural numbering too (floor 1 at the bottom, PageUp to the next number up, the button order reversed; names, numbers, badges and announcements unchanged)? **Recommendation: yes**, so the two modes never disagree about which way is up and a user who switches modes keeps the same mental building; it reverses D3, so Paco (who chose Q-A) and Vikram decide. Until then the flat lift keeps D3.
+
 ### 2026-10-29: the FR-011 select check does not assume macOS select behaviour (issue #888)
 
 No behaviour change; the app was right and the driver `scripts/shots-092.js` was wrong on macOS. The scheduled *UI on three OSes* run failed only there at "the select used the key": a closed native select changes its choice on PageDown on Windows and Linux but not on macOS, and the app (`floornav.js`: a key inside a select keeps its meaning, platform-independent) never changed the floor. The step now counts PageDown with a keydown listener on `#wsFilter` on every platform (the press reached the select, so the step is not vacuous), asserts the choice changed only off macOS, and on all three asserts the floor is unchanged and nothing is announced (FR-011). `scripts/shots-092-lift.js` does not press keys in a select. Not verified on macOS locally; the scheduled run shows it.
