@@ -69,14 +69,16 @@ In a chat, the user opens the mode menu and picks **Plan first (next message)**;
   plain **Approve**. It is lifted only for a new, separate button that the user confirms.
 - **FR-006 delta** `[KNOWN GAP]` (not built; spec 099 T040):
   - the plan card gets a fourth button, **Approve and run on Autopilot…**;
-  - it is shown only when the adapter reports `capabilities.autopilot`, the organization policy allows Allow all, and the
+  - it is shown only when the adapter reports `capabilities.autopilot` with `planApproval` (spec 099 FR-001), the organization policy allows Allow all, remote control is off, and the
     session's mode is not Read-only or Ask first;
-  - it opens spec 099's Autopilot confirmation (FR-055). Cancel leaves the plan card open and unanswered.
+  - focus stays on plain **Approve**;
+  - it opens spec 099's Autopilot confirmation (FR-055), which ends in a native dialog the page cannot answer. Cancel leaves the plan card open and unanswered.
+- **FR-007 delta** `[KNOWN GAP]` (not built; spec 099 T042): `agents:resolvePlan` takes a new answer kind, `{kind: 'approve-autopilot', limit, cap?}`, validated in main: the capability, the organization policy, mode `allow`, remote control off, and the settings from the confirmed dialog. A failed check leaves the plan unanswered. The run and its counter start at this answer, with no Durbar send (spec 099 FR-060).
 - **FR-003 delta (Copilot)** `[KNOWN GAP]`: on that button, `{approved: true, selectedAction: 'autopilot'}` (`read:` SDK 1.0.24
   `ExitPlanModeAction`). Plain Approve still answers `interactive`.
 - **FR-004 delta (Claude Code)** `[KNOWN GAP]`: on that button, `allow` for `ExitPlanMode`, `set_permission_mode` back to
   `bypassPermissions`, then the user message `/goal Carry out the approved plan above, completely, and check the result.`
-- **FR-005 delta (Codex)** `[KNOWN GAP]`: on that button, `thread/goal/set` with the objective "Carry out the approved plan above,
+- **FR-005 delta (Codex)** `[KNOWN GAP]`: **the button is not offered for Codex yet.** Whether turns started by a goal after a `plan` turn run in `default` collaboration mode is not checked; until it is, the button is not offered for Codex (spec 099 FR-060, T092). When a run shows that they do: on that button, `thread/goal/set` with the objective "Carry out the approved plan above,
   completely, and check the result." in place of the "Go ahead with the plan above." turn.
 - **Constitution line, corrected**: "III: plan mode only narrows, so nothing runs while planning. Approve uses the folder's
   mode, and Allow all is never chosen for the user. Copilot `autopilot` is selected only by *Approve and run on Autopilot*,
@@ -84,7 +86,9 @@ In a chat, the user opens the mode menu and picks **Plan first (next message)**;
 - Tests (spec 099 T040, in `scripts/test-plan-mode.ts`):
   - plain Approve still sends `interactive`;
   - the new button sends `autopilot` only after the confirmation;
-  - the button is absent in Read-only and Ask first, and when the capability is missing.
+  - the button is absent in Read-only and Ask first, when the capability is missing, when `planApproval` is false, and with remote control on;
+  - focus stays on plain Approve;
+  - `agents:resolvePlan` refuses `approve-autopilot` on each failed check (spec 099 T042).
 
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
