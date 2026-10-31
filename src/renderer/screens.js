@@ -714,7 +714,9 @@
      new mode"): Office with cabins (default) or Open office (the desks exactly as before the cabins); kept per computer */
   function signsRow(){
     const on=!!X.signs.get();
-    return `<div class="scr-row"><span class="scr-row-l" id="dsL">Office layout</span><div class="seg" role="group" aria-labelledby="dsL" aria-describedby="dsN"><button type="button" data-officelayout="cabins" aria-pressed="${on}">Office with cabins</button><button type="button" data-officelayout="open" aria-pressed="${!on}">Open office</button></div><span class="scr-note small" id="dsN">Office with cabins: each session is a cabin. While the agent works, waits or must not be disturbed, its door is closed with its photo and a sign (Busy, In a meeting, Waiting for you, Do not disturb, Away); when it is done or free, the door stands open (Done, Available), and you can close a door yourself. Open office: the plain desks and status words, with no doors; doors you closed are opened first.</span></div>`;
+    /* spec 097 FR-001: a third choice, Real office (a separate preference, durbar.officeview: Open office and cabins keep their own) */
+    const view=X.signs.view?X.signs.view.get():'flat', pressed=k=>k==='real'?view==='real':view!=='real'&&(k==='cabins')===on;
+    return `<div class="scr-row"><span class="scr-row-l" id="dsL">Office layout</span><div class="seg" role="group" aria-labelledby="dsL" aria-describedby="dsN dsR"><button type="button" data-officelayout="cabins" aria-pressed="${pressed('cabins')}">Office with cabins</button><button type="button" data-officelayout="open" aria-pressed="${pressed('open')}">Open office</button>${X.signs.view?`<button type="button" data-officelayout="real" aria-pressed="${pressed('real')}">Real office</button>`:''}</div><span class="scr-note small" id="dsN">Office with cabins: each session is a cabin. While the agent works, waits or must not be disturbed, its door is closed with its photo and a sign (Busy, In a meeting, Waiting for you, Do not disturb, Away); when it is done or free, the door stands open (Done, Available), and you can close a door yourself. Open office: the plain desks and status words, with no doors; doors you closed are opened first.${X.signs.view?' Real office: a realistic open-plan office, with a person at each desk, places along the back wall and lights that follow the status of each agent.':''}</span><span class="scr-note small" id="dsR">${X.signs.view?esc(X.signs.view.note()):''}</span></div>`;
   }
   function liveActRow(){
     const on=!!X.liveAct.get();
@@ -837,9 +839,13 @@
     }
     const olb=e.target.closest('[data-officelayout]');
     if(olb&&X.signs){
-      await X.signs.set(olb.dataset.officelayout==='cabins'); /* FR-027: Open office may ask first about doors you closed (and stay with cabins) */
-      const on=!!X.signs.get(), g=olb.parentElement;
-      if(g)g.querySelectorAll('[data-officelayout]').forEach(b=>b.setAttribute('aria-pressed',String((b.dataset.officelayout==='cabins')===on)));
+      const k=olb.dataset.officelayout, V=X.signs.view;
+      /* FR-027: Open office may ask first about doors you closed (and stay with cabins); spec 097 FR-004: so may Real office */
+      if(k==='real'){if(V)await V.set('real');}
+      else if((await X.signs.set(k==='cabins'))!==false&&V)await V.set('flat');
+      const on=!!X.signs.get(), view=V?V.get():'flat', g=olb.parentElement;
+      if(g)g.querySelectorAll('[data-officelayout]').forEach(b=>{const t=b.dataset.officelayout;b.setAttribute('aria-pressed',String(t==='real'?view==='real':view!=='real'&&(t==='cabins')===on));});
+      const n=$('dsR');if(n&&V)n.textContent=V.note();
       return;
     }
     const shs=e.target.closest('#shutSw');

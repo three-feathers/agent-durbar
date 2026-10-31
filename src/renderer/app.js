@@ -1234,7 +1234,14 @@ const signsOn=()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign)&&SIGN_PREF;
    (a failed open, a stopped Send all, a restart) keeps its cabin and button, so it can always be opened. */
 async function setSignsOn(on){
   on=!!on;
-  if(!on&&SIGN_PREF&&bridge&&bridge.setDoor){
+  if(!on&&SIGN_PREF&&!(await openDoorsFirst('open')))return false;
+  SIGN_PREF=on;try{localStorage.setItem('durbar.doorsigns',SIGN_PREF?'on':'off');}catch(e){}layoutKey='';scheduleRender();
+  return true;
+}
+/* FR-027, and spec 097 FR-004: leaving the cabins for an office without doors (Open office or Real office) asks first when a door you
+   closed is shut or holds prompts, then opens those doors; false when the user keeps the cabins or a door could not be opened */
+async function openDoorsFirst(to){
+  if(bridge&&bridge.setDoor){
     const mine=agents.filter(a=>!a.parent&&(doorOf(a).closed||doorOf(a).held));
     if(mine.length){
       const held=mine.reduce((n,a)=>n+doorOf(a).held,0), shut=mine.filter(a=>doorOf(a).closed).length;
@@ -1242,7 +1249,7 @@ async function setSignsOn(on){
         body:'An open office has no doors. '+(shut?(shut===1?'1 door you closed is opened':shut+' doors you closed are opened')+' first'+(held?', and ':'.'):'')+(held?(held===1?'1 prompt is':held+' prompts are')+' held there: send them (in order, through the schedules) or discard them.':''),
         lines:mine.slice(0,8).map(a=>a.name+(doorOf(a).closed?' · door closed':'')+(doorOf(a).held?' · '+doorOf(a).held+' held':'')).concat(mine.length>8?['and '+(mine.length-8)+' more']:[]),
         buttons:[{label:'Keep cabins',value:null},...(held?[{label:'Discard',value:'discard'},{label:'Send all ('+held+')',value:'send'}]:[{label:'Open the doors',value:'open',cls:'primary'}])],
-        returnFocus:()=>document.querySelector('[data-officelayout="open"]')});
+        returnFocus:()=>document.querySelector(`[data-officelayout="${to}"]`)});
       if(!v||!v.value)return false;
       for(const a of mine){
         const d=doorOf(a);
@@ -1255,7 +1262,6 @@ async function setSignsOn(on){
       }
     }
   }
-  SIGN_PREF=on;try{localStorage.setItem('durbar.doorsigns',SIGN_PREF?'on':'off');}catch(e){}layoutKey='';scheduleRender();
   return true;
 }
 /* FR-027: a door the user closed, or one still holding prompts, stays visible (cabin, sign and button) in an open office */
@@ -1643,6 +1649,80 @@ const EMPTY_DESK='<svg class="empty-desk" viewBox="0 0 120 72" aria-hidden="true
    It waits 600ms and checks the card is still there, so a start that loads agents a moment later does not ring. */
 function ringFolder(){if(reducedMotion())return;setTimeout(()=>{const b=$('addFolder'),st=$('stage');if(!b||!st||!st.querySelector('.welcome')||!b.getClientRects().length)return;
   b.classList.remove('ring-once');void b.offsetWidth;b.classList.add('ring-once');setTimeout(()=>b.classList.remove('ring-once'),1600);},600);}
+/* ---------------- Real office (spec 097 phase P1) ----------------
+   A second renderer of the same office model (D1): Settings > Office layout > Real office (FR-001), kept in localStorage
+   `durbar.officeview` (FR-003; any other value or a storage error is flat, the default). Its script, CSS, pure modules and art load
+   only on first use (FR-061): flat mode never requests them. `durbar.doorsigns` is untouched, so leaving Real office restores the
+   cabins or open choice. */
+let OFFICE_VIEW=(()=>{try{return localStorage.getItem('durbar.officeview')==='real'?'real':'flat';}catch(e){return 'flat';}})();
+if(qs.has('sim')&&/^(real|flat)$/.test(qs.get('officeview')||''))OFFICE_VIEW=qs.get('officeview'); /* drivers: the simulator only */
+const officeView=()=>OFFICE_VIEW;
+/* FR-004: from the cabins, the same "Switch to an open office?" question as Open office; false when the user keeps the cabins */
+async function setOfficeView(v){
+  v=v==='real'?'real':'flat';
+  if(v===OFFICE_VIEW)return true;
+  if(v==='real'&&signsOn()&&!(await openDoorsFirst('real')))return false;
+  OFFICE_VIEW=v;try{localStorage.setItem('durbar.officeview',v);}catch(e){}
+  layoutKey='';scheduleRender();return true;
+}
+/* spec 097 FR-084 (owners 2026-10-31): the Characters setting applies in Real office too; a set without Real office pictures (today
+   every crew) shows the Office people, and Settings says how that crew appears there is still being decided */
+const realOfficeSet=()=>CREW&&CREW.realOfficeSet?CREW.realOfficeSet(crewChoice()):{set:'office',scene:'office',coming:false};
+let RO_LOAD=''; /* '', 'loading', 'ready', 'failed' */
+function loadRealOffice(){
+  if(RO_LOAD)return;
+  RO_LOAD='loading';
+  const css=document.createElement('link');css.rel='stylesheet';css.href='realoffice.css';document.head.appendChild(css);
+  const files=['../shared/lights.js','../shared/realoffice-layout.js','realoffice/art/people.js','realoffice.js']; /* the pure modules write to window.exports (exports-shim.js) */
+  const next=i=>{
+    if(i>=files.length){RO_LOAD=window.DurbarRealOffice&&window.exports&&window.exports.realLayout?'ready':'failed';if(RO_LOAD==='failed')roFailed();layoutKey='';scheduleRender();return;}
+    const sc=document.createElement('script');sc.src=files[i];sc.onload=()=>next(i+1);sc.onerror=()=>{RO_LOAD='failed';roFailed();layoutKey='';scheduleRender();};
+    document.body.appendChild(sc);
+  };
+  next(0);
+}
+function roFailed(){toast('The Real office could not be loaded, so the office is shown flat.',5200).classList.add('err');}
+/* the plain model Real office draws (no markup but the places' own icons): every text is already masked (deskMask = DurbarSafeText) */
+function realModel(model){
+  const D=window.DurbarPlaces, E=window.exports;
+  const stOf=(a,asleep)=>E.lightState(isFailing(a)?'failing':isRetrying(a)?'retrying':isCompacting(a)?'compacting':vis(a),{limit:!!a.limit,paused:!!a.paused,asleep:!!asleep});
+  const folders=model.map(m=>{
+    const r=m.r, old=new Set((m.rolled||[]).filter(x=>x.k==='old').map(x=>x.a.id)); /* Q5: an agent asleep in a nap bed keeps a narrow desk, lamp and screen off */
+    const list=m.mains.concat((m.rolled||[]).map(x=>x.a));
+    const counts=['waiting','error','working','done','idle'].map(k=>{const n=m.all.filter(a=>!a.parent&&(k==='working'?(vis(a)==='working'||vis(a)==='thinking'):vis(a)===k)).length;return {state:k,n,word:LABELS[k].toLowerCase()};}).filter(c=>c.n);
+    const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);
+    return {id:r.id,name:r.name,path:deskMask(showPath(r.path)),cost:u?u.long:'',counts,newSess:!!(bridge&&bridge.newSession&&anyKindReady()&&!demoOn),menu:!!(bridge&&bridge.removeFolder&&!demoOn),
+      agents:list.map(a=>{const v=VISITS.at(a.id),st=stOf(a,old.has(a.id)),task=deskMask(taskOf(a)),place=v?placeLabel(v.place):'',needs=st==='waiting'||st==='limit';
+        return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tip:deskTip(a),selected:ui.selected===a.id,away:v?v.place:null,awayLabel:place,
+          label:`${a.name}, ${a.role}, ${stWord(a)}${task?', '+task:''}${needs?', needs you':''}${place?', at '+place:''}. Open chat panel.`, /* FR-090 */
+          helpers:helpersOf(a).map(h=>stOf(h,false))};})};
+  });
+  const places=lobbyPlaces().map(p=>{
+    const ids=p.id===D.POSTBOX?[]:placeVisitors(p.id), custom=CUSTOM.some(q=>q.id===p.id);
+    const wait=p.id===D.BOSS&&ids.length?bossWait(ids[0]):'';
+    return {id:p.id,label:placeLabel(p.id),custom,icon:custom?placeIcon(p):'',post:p.id===D.POSTBOX,go:p.id===D.BOSS||p.id===D.BANK||p.id===D.COFFEE,
+      title:p.id===D.POSTBOX?placeLabelFull(p.id)+': the next scheduled runs. Open Settings > Schedules.':placeTip(p.id,ids,wait),
+      visitors:ids.map(id=>{const a=byId(id),v=VISITS.at(id);return {id,name:a.name,needsYou:vis(a)==='waiting'||!!a.limit,title:visitorWords(a,v,true)};})};
+  });
+  return {folders,places,sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
+}
+let RO_LAST=null; /* the last layout, for the drivers (window.__durbarSimUi.realLayout) */
+function renderReal(stage,floor,aw,ah,model){
+  if(RO_LOAD!=='ready'){
+    loadRealOffice();
+    if(RO_LOAD==='failed')return false;
+    if(stage.dataset.d!=='real-wait'){stage.dataset.d='real-wait';stage.style.width=aw+'px';stage.style.height='auto';stage.innerHTML='<div class="empty">Opening the Real office…</div>';}
+    return true;
+  }
+  if(stage.dataset.d!=='real'){stage.dataset.d='real';stage.textContent='';}
+  layoutKey='';GROW=0;setGrow(stage,0);spreadOffice(stage,false);stagePrev=null;
+  const set=realOfficeSet();
+  RO_LAST=window.DurbarRealOffice.render(stage,realModel(model),{w:aw,h:ah},{still:REDUCED||SERIOUS,set:set.set,remember:rememberOn(),
+    rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender()});
+  stage.style.width=aw+'px';stage.style.height=RO_LAST.height+'px';
+  stage.dataset.fit=RO_LAST.scroll?'scroll':'ok';floor.classList.toggle('scrolls',!!RO_LAST.scroll);
+  return true;
+}
 function renderOffice(){
   if(ui.view!=='office')return;
   const floor=$('floor'), stage=$('stage');
@@ -1670,6 +1750,7 @@ function renderOffice(){
     stage.innerHTML='<div class="empty">'+EMPTY_DESK+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" at the top left to add a folder'+(SIMPLE?'.':' (or "+ Workspace" for a VS Code .code-workspace file).'):(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open Manage folders (next to the folder filter) to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?(FLOORS.floors.length>1?'All floors are off. Open "Floors" above or Settings > Floors to switch one on.':'Your only floor is off. Switch it on in Settings > Floors.'):agents.length&&ROOMS.every(r=>!roomShown(r))?('Nothing to show: every folder is hidden or on a floor that is off. Open '+(floorsLive()&&FLOORS.floors.length>1?(SIMPLE?'"Floors" above, or ':'"Floors" or "Folders" above, or '):(SIMPLE?'':'"Folders" above, or '))+'Settings > Floors.'):'No agents match these filters.'))+'</div>';
     floor.classList.remove('scrolls'); return;
   }
+  if(officeView()==='real'&&renderReal(stage,floor,aw,ah,model))return; /* spec 097: Real office draws the same model; flat below is unchanged */
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
   const sizing=lastSizing=sizingModel(model); /* what chooseLayout is given (the hook below reads it) */
   const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),THEME.themeIdForCache(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),curFloorId(),allFloorsView(),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]]),(m.rolled||[]).map(x=>[x.a.id,x.k]),!!ui.expanded['shut:'+m.r.id]])]);
@@ -7910,7 +7991,7 @@ if(bridge){
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
   document.body.classList.toggle('simple',SIMPLE);
-  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},signs:{get:()=>SIGN_PREF,set:setSignsOn,usable:()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign)},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},signs:{get:()=>SIGN_PREF,set:setSignsOn,usable:()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign),view:{get:officeView,set:setOfficeView,note:()=>officeView()==='real'&&realOfficeSet().coming?'Real office shows its Office people for now: how this crew appears there is still being decided.':''}},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     applyCharacters,charPreview, /* spec 077 FR-068 */
@@ -7988,7 +8069,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={agents:()=>agents,crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
+if(SIM)window.__durbarSimUi={agents:()=>agents,realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,

@@ -133,5 +133,16 @@
     return out;
   }
 
-  return { CREWS, PREHISTORIC_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
+  /* spec 097 FR-084 (owners 2026-10-31: the Characters setting applies in Real office too; crews keep their own art, and how the
+     scene adapts to them is pending a proposal): the character set and the scene Real office draws for a Characters value. A set
+     listed in REAL_OFFICE_SETS has Real office pictures; today only the Office people (`office`, the default). A crew without them
+     draws the Office people, and `coming` makes Settings say so. The one seam to change when a crew joins. */
+  const REAL_OFFICE_SETS = ['office'];
+  function realOfficeSet(choice) {
+    const c = String(choice || '');
+    if (REAL_OFFICE_SETS.includes(c)) return { set: c, scene: 'office', coming: false };
+    return { set: 'office', scene: 'office', coming: has(CREWS, c) };
+  }
+
+  return { REAL_OFFICE_SETS, realOfficeSet, CREWS, PREHISTORIC_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
 })());
