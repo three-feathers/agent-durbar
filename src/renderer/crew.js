@@ -153,12 +153,17 @@
     s = s.replace(/[\\/]+$/g, '');
     return s || '/';
   }
+  /* the key of a session's folder, or null when it has none (no `info`, no path): such a session is never dressed by a pin, a pin on `/` included */
+  function pinKey(info, platform) {
+    const p = info && (info.workspaceFile || info.cwd);
+    return typeof p === 'string' && p.trim() ? folderKey(p, platform) : null;
+  }
   /* FR-044: before `assignCrew`: a session whose folder has a pin wears the pinned character (when it is usable), so it counts as in use for the others. A session keeping a character that is no longer
      in the list (deleted, or a pin taken away under another crew) loses it, so `assignCrew` gives it a new one. sessions: [{id, key}]; key: folderKey. */
   function pinCrew(map, sessions, pins, ids, bad) {
     const out = Object.assign({}, map || {}), list = new Set(ids || []);
     for (const s of sessions || []) {
-      const pin = pins && has(pins, s.key) ? pins[s.key] : null;
+      const pin = pins && typeof s.key === 'string' && has(pins, s.key) ? pins[s.key] : null;
       if (pin && usable(pin, bad)) out[s.id] = pin;
       else if (has(out, s.id) && !list.has(out[s.id])) delete out[s.id];
     }
@@ -178,5 +183,5 @@
     return out;
   }
 
-  return { registerOwn, ownName, ownRev, viewBoxAt, folderKey, pinCrew, CREWS, PREHISTORIC_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
+  return { registerOwn, ownName, ownRev, viewBoxAt, folderKey, pinKey, pinCrew, CREWS, PREHISTORIC_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
 })());

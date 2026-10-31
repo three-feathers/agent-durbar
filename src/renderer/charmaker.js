@@ -105,8 +105,19 @@
     return { next: 'discard', name };
   }
 
-  /* FR-040, FR-041: the whole flow; the description lives in this function's variable and the dialog's box */
+  /* one flow at a time: a second press while one runs (a try may be running) does nothing, and when the flow ends the focus is back on the button */
+  let flowOpen = false;
   async function openMaker() {
+    if (flowOpen) return;
+    flowOpen = true;
+    try { await makerFlow(); } finally {
+      flowOpen = false;
+      const b = document.getElementById('chMake');
+      if (b && !document.querySelector('.dlg-ov') && !(document.activeElement && document.activeElement.closest && document.activeElement.closest('#chManage'))) S.focusIn(b); /* Manage has put it on a row */
+    }
+  }
+  /* FR-040, FR-041: the whole flow; the description lives in this function's variable and the dialog's box */
+  async function makerFlow() {
     const X = S.X;
     if (!X.bridge.characterGenerate || !X.bridge.listAdapters) { await say('Make a character with AI', NOT_YET); return; }
     let all = [];
@@ -163,7 +174,6 @@
             await X.own.changed();
             X.toast('<b>' + esc(res.name) + '</b> is saved in My characters.' + (X.charactersChosen() === 'mine' ? '' : ' Choose My characters to see it at the desks.'), 4200);
             await paintLists();
-            const b = document.getElementById('chMake'); if (b) S.focusIn(b);
             return;
           }
           saveError = (res && res.error) || 'The character could not be saved.';
@@ -188,7 +198,7 @@
   function rowHtml(c) {
     const X = S.X, urls = X.own.urlsOf(c.id), pinned = pinsOf(X.own.pins(), c.id).map(shortFolder);
     const cur = window.exports && window.exports.DEFAULT_STYLE_ID, old = cur && c.style !== cur;
-    const sub = [pinned.length ? 'Pinned to ' + pinned.join(', ') : '', old ? 'older style' : ''].filter(Boolean).join(' · ');
+    const sub = [urls ? '' : 'Its pictures cannot be read', pinned.length ? 'Pinned to ' + pinned.join(', ') : '', old ? 'older style' : ''].filter(Boolean).join(' · ');
     const n = esc(c.name);
     return `<li class="chm-row" data-chid="${esc(c.id)}"><span class="chm-pic">${urls && urls.working ? `<img alt="" width="44" height="44" src="${esc(urls.working)}">` : ''}</span>
       <span class="chm-tx"><b class="chm-name" title="${n}">${n}</b>${sub ? `<small class="chm-sub" title="${esc(sub)}">${esc(sub)}</small>` : ''}</span>

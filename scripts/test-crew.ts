@@ -13,7 +13,7 @@ const C = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'crew.js')
   pruneCrew: (m: Record<string, string>, ids: string[]) => Record<string, string>;
   loadCrew: (j: unknown, ids?: string[]) => Record<string, string>;
   POSES: string[]; BOX: { x: number; y: number; w: number; h: number }; PX_PER_UNIT: number; FACE: Record<string, Record<string, number[]>>; FACE_W: number; FACE_H: number; faceBox: (id: string, pose: string) => number[] | null; viewBox: (id: string, pose: string, use?: string) => string | null;
-  registerOwn: (l: unknown) => string[]; ownName: (id: string) => string; ownRev: (id: string) => string; folderKey: (p: string, platform: string) => string; pinCrew: (m: Record<string, string>, s: { id: string; key: string }[], pins: Record<string, string>, ids: string[], bad?: Set<string>) => Record<string, string>; viewBoxAt: (f: number[], use?: string) => string;
+  registerOwn: (l: unknown) => string[]; ownName: (id: string) => string; ownRev: (id: string) => string; folderKey: (p: string, platform: string) => string; pinKey: (i: unknown, platform: string) => string | null; pinCrew: (m: Record<string, string>, s: { id: string; key: string }[], pins: Record<string, string>, ids: string[], bad?: Set<string>) => Record<string, string>; viewBoxAt: (f: number[], use?: string) => string;
   poseFor: (st: string) => string; file: (id: string, pose: string) => string; files: (ids?: string[]) => string[]; usable: (id: unknown, bad?: Set<string>) => boolean;
 };
 
@@ -232,6 +232,7 @@ assert.deepStrictEqual(Object.keys(C.FACE).sort(), [...C.ALL_IDS].sort(), 'a fac
   const BAD: unknown[] = [
     null, 'x', { id: A }, { ...own(D), id: '../my-dddddddddddd' }, { ...own(D), id: 'my-DDDDDDDDDDDD' }, { ...own(D), id: 'punk' }, { ...own(D), id: '__proto__' },
     { ...own(D), urls: { ...urls(D), working: 'x" onload="alert(1)' } }, { ...own(D), urls: { ...urls(D), waiting: 'https://example.com/a.webp' } }, { ...own(D), urls: { ...urls(D), resting: 'data:image/svg+xml,<svg/>' } },
+    { ...own(D), urls: { ...urls(D), working: 'blob:x" onload="alert(1)' } }, { ...own(D), urls: { ...urls(D), waiting: "blob:x' onload='alert(1)" } }, { ...own(D), urls: { ...urls(D), resting: 'blob:x><script>' } }, { ...own(D), urls: { ...urls(D), working: 'blob:x y' } }, { ...own(D), urls: { ...urls(D), working: 'blob:' } }, { ...own(D), urls: { ...urls(D), working: 'blob:x&amp;y' } }, { ...own(D), urls: { ...urls(D), working: 'xblob:file:///a' } },
     { ...own(D), urls: { working: urls(D).working } }, { ...own(D), face: { ...face, working: [176, NaN] } }, { ...own(D), face: { ...face, waiting: [176, 'x'] } }, { ...own(D), face: { ...face, resting: [176, 9999] } },
   ];
   for (const b of BAD) assert.deepStrictEqual(C.registerOwn([b]), [], `refused: ${JSON.stringify(b)}`);
@@ -258,6 +259,12 @@ assert.deepStrictEqual(Object.keys(C.FACE).sort(), [...C.ALL_IDS].sort(), 'a fac
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { normaliseFolderKey } = require(path.join(__dirname, '..', 'src', 'shared', 'usagedoc.js')) as { normaliseFolderKey: (p: string, platform: string) => string };
   for (const plat of ['win32', 'darwin', 'linux']) for (const p of ['/a/b', '/a/b/', '/a/b//', '/', '', ' /a/x ', 'C:\\Work\\App\\', 'c:/work/app', 'C:\\', '\\\\srv\\share\\', '~/x/', '/A/B\\']) assert.strictEqual(C.folderKey(p, plat), normaliseFolderKey(p, plat), `${plat} ${p}`);
+  // a session with no folder has no key: a pin on `/` must not dress it
+  for (const info of [undefined, null, {}, { cwd: '' }, { cwd: '   ' }, { cwd: 3 }]) assert.strictEqual(C.pinKey(info, 'darwin'), null, `no folder: ${JSON.stringify(info)}`);
+  assert.strictEqual(C.pinKey({ cwd: '/a/b/' }, 'darwin'), '/a/b');
+  assert.strictEqual(C.pinKey({ cwd: '/' }, 'darwin'), '/', 'a session really in `/` has that key');
+  assert.strictEqual(C.pinKey({ cwd: '/a', workspaceFile: '/w/x.code-workspace' }, 'darwin'), '/w/x.code-workspace', 'the workspace file first, as folderKeyOf');
+  assert.deepStrictEqual(C.pinCrew({}, [{ id: 's', key: null as unknown as string }], { '/': C.idsFor('mine')[0] }, C.idsFor('mine')), {}, 'and it is not dressed');
   // FR-044: pinned first, counted as in use by the others
   const ids = C.idsFor('mine');
   const sess = [{ id: 's1', key: '/a' }, { id: 's2', key: '/a' }, { id: 's3', key: '/b' }];

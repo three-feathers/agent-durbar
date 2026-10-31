@@ -14,6 +14,9 @@ import * as ts from 'typescript';
 import { CHARACTERS_WARN_AT, cleanCharacterName, parseEncoderReply, pinDecision } from '../src/shared/charrules';
 import type { EncoderResult } from '../src/shared/charrules';
 import { MARK_CLOSE, MARK_OPEN, SHEET_NAME } from '../src/shared/chargen';
+import { COPILOT_DESCRIPTOR } from '../src/adapters/copilot';
+import { CLAUDE_DESCRIPTOR } from '../src/adapters/claude';
+import { CODEX_DESCRIPTOR } from '../src/adapters/codex';
 
 type Handler = (e: unknown, ...a: unknown[]) => unknown;
 type Rec = Record<string, unknown>;
@@ -669,15 +672,25 @@ async function loginGateTests(): Promise<void> {
   const cmSrc = fs.readFileSync(path.join(rendererDir, 'charmaker.js'), 'utf8');
   assert.strictEqual((cmSrc.match(/\.characterGenerate\(/g) ?? []).length, 1, 'once');
   assert.ok(/async function gatedGenerate[\s\S]*?\.characterGenerate\(description, adapterId, \{ confirmed \}\)[\s\S]*?\n  \}\n/.test(cmSrc), 'in gatedGenerate');
-  // outside the simulator main refuses whatever the window sends, until T030a gates it: no real adapter may switch imageGen on before that
-  const adapters = path.join(ROOT, 'src', 'adapters');
+  // outside the simulator main refuses whatever the window sends, until T030a gates it: no real adapter may switch imageGen on before that (the descriptors' and instances' real values, not their source text)
   const charIpc = fs.readFileSync(path.join(ROOT, 'src', 'main', 'ipc', 'characters.ts'), 'utf8');
-  if (!/characterLoginKind|loginKindOf|FR-034 gate in main/.test(charIpc)) {
-    for (const f of fs.readdirSync(adapters).filter((n) => n.endsWith('.ts'))) {
-      const src = fs.readFileSync(path.join(adapters, f), 'utf8');
-      assert.ok(!/imageGen:\s*true/.test(src), `${f}: T030a before T030: no adapter sets imageGen until main enforces FR-034`);
-      assert.ok(!/^\s*(async\s+)?generateImage\s*\(/m.test(src) || f === 'types.ts', `${f}: no real generateImage until T030a`);
+  if (!/FR-034 gate in main/.test(charIpc)) {
+    for (const d of [COPILOT_DESCRIPTOR, CLAUDE_DESCRIPTOR, CODEX_DESCRIPTOR]) {
+      assert.notStrictEqual(d.capabilities.imageGen, true, `${d.id}: T030a before T030: no adapter sets imageGen until main enforces FR-034`);
+      const ad = d.create();
+      assert.notStrictEqual(ad.capabilities?.imageGen, true, `${d.id}: and no instance does`);
+      assert.notStrictEqual(typeof ad.generateImage, 'function', `${d.id}: no real generateImage until T030a`);
     }
+  }
+  // the real preload hands main every argument: `{ confirmed }` is T030a's input, and the simulator's fake alone would never show it was dropped
+  {
+    const src = ts.transpileModule(fs.readFileSync(path.join(ROOT, 'src', 'preload', 'preload.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+    const invoked: unknown[][] = [];
+    let api: Rec = {};
+    const fake = { contextBridge: { exposeInMainWorld: (_n: string, a: Rec) => { api = a; } }, ipcRenderer: { invoke: (...a: unknown[]) => { invoked.push(a); return Promise.resolve(); }, on: () => undefined, removeListener: () => undefined, send: () => undefined }, webFrame: {}, webUtils: {} };
+    new Function('require', 'exports', 'module', 'process', src)((m: string) => { if (m === 'electron') return fake; throw new Error(`the preload requires ${m}`); }, {}, { exports: {} }, { platform: 'darwin', argv: [], env: {}, versions: {} });
+    await (api.characterGenerate as (...a: unknown[]) => Promise<unknown>)('a person', 'codex', { confirmed: true });
+    assert.deepStrictEqual(invoked, [['character:generate', 'a person', 'codex', { confirmed: true }]], 'the real preload passes { confirmed } to main');
   }
 }
 

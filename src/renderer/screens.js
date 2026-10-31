@@ -45,12 +45,27 @@
   /* modal: body is an element or html; buttons [{label,value,cls}]; resolves value (or null when dismissed). `validate(root)` may return an error text (keeps it open and shows it), `true` (keeps it open; the caller already showed the error) or a promise of either. */
   function dialog({title,html,buttons,wide,size,cls,validate,onOpen}){
     return new Promise(resolve=>{
-      const old=document.getElementById('scrDlg');if(old)old.remove();
+      /* spec 096: a dialog replaced by another is dismissed, so whoever waits on it hears (a running try is cancelled, never left with no Cancel) */
+      const old=document.getElementById('scrDlg');if(old){if(old._close)old._close();else old.remove();}
+      const back=document.activeElement; /* focus goes back here when it closes (spec 096 review) */
       const d=document.createElement('div');d.id='scrDlg';d.className='dlg-ov';
       d.innerHTML=`<div class="dlg${wide?' wide':''}${size==='m'||size==='l'?' '+size:''}${cls?' '+cls:''}" role="dialog" aria-modal="true" aria-labelledby="scrDlgT"><h3 id="scrDlgT"></h3><div class="dbody">${html||''}</div><p class="derr" id="scrDlgErr" role="alert" hidden></p><div class="dbtn"></div></div>`;
       d.querySelector('#scrDlgT').textContent=title;
       const row=d.querySelector('.dbtn');
-      const done=v=>{d.remove();resolve(v);};
+      /* spec 096 review: keyboard contract as dialog.js: Tab cannot leave, anything that steals focus is undone, Escape works with the focus anywhere. Only the top dialog acts (DurbarDialog may be open over this one, with its own trap). */
+      const onTop=()=>{const a=document.querySelectorAll('.dlg-ov');return a[a.length-1]===d;};
+      const focusables=()=>[...d.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],summary,[tabindex]:not([tabindex="-1"])')].filter(e=>e.getClientRects().length);
+      const onKey=e=>{
+        if(!onTop())return;
+        if(e.key==='Escape'&&!d.contains(document.activeElement)){e.preventDefault();e.stopPropagation();done(null);return;} /* inside, the listener below lets a control keep its own Escape */
+        if(e.key!=='Tab')return;
+        const f=focusables(),i=f.indexOf(document.activeElement);
+        if(!f.length){e.preventDefault();return;}
+        if(i<0||(e.shiftKey?i===0:i===f.length-1)){e.preventDefault();focusIn(e.shiftKey?f[f.length-1]:f[0]);}
+      };
+      const onFocus=e=>{if(onTop()&&!d.contains(e.target)){const f=focusables();if(f[0])focusIn(f[0]);}};
+      document.addEventListener('keydown',onKey,true);document.addEventListener('focusin',onFocus);
+      const done=v=>{if(!d.isConnected&&d._over)return;d._over=true;document.removeEventListener('keydown',onKey,true);document.removeEventListener('focusin',onFocus);d.remove();if(back&&back.isConnected&&back!==document.body&&!document.querySelector('.dlg-ov'))focusIn(back);resolve(v);};
       buttons.forEach(b=>{const el=document.createElement('button');el.type='button';el.className='btn'+(b.cls?' '+b.cls:'');el.textContent=b.label;if(b.value===null)el.dataset.cancel='1';
         el.onclick=async()=>{if(b.value!==null&&validate){el.disabled=true;let err;try{err=await validate(d);}finally{el.disabled=false;}if(err){if(typeof err==='string'){const e=d.querySelector('#scrDlgErr');e.textContent=err;e.hidden=false;}return;}}done(b.value===null?null:{value:b.value,root:d});};row.appendChild(el);});
       d.addEventListener('click',e=>{if(e.target===d)done(null);});
@@ -341,7 +356,8 @@
       const list=[{id:'theme',name:'The theme\u2019s own',sub:(KIT_NAMES[own]||own)+' figures'},{id:'minimalist',name:'Minimalist',sub:'The calm office figure'},{id:'cheeky',name:'Cheeky',sub:crewN?crewN+' cheeky characters':'Cheeky characters'},{id:'prehistoric',name:'Prehistoric',sub:preN?preN+' cave characters':'Cave characters'}];
       /* spec 096 FR-040: My characters; with none yet it says "Make one first" and does nothing else */
       const mineN=X.own&&X.bridge.characterList?X.own.list().length:-1;
-      if(mineN>=0)list.push({id:'mine',name:'My characters',sub:mineN?mineN+(mineN===1?' character':' characters'):'Make one first',off:!mineN});
+      const mineD=mineN>0&&window.DurbarCrew?window.DurbarCrew.idsFor('mine').length:0; /* how many can be drawn: with none, the theme's own figures are */
+      if(mineN>=0)list.push({id:'mine',name:'My characters',sub:!mineN?'Make one first':!mineD?'Pictures cannot be read':mineN+(mineN===1?' character':' characters'),off:!mineN});
       return list.map((c)=>`<li class="throw"><button class="thpick" type="button" data-characters="${esc(c.id)}" aria-pressed="${c.id===cur}"${c.off?' aria-disabled="true"':''} aria-label="Characters ${esc(c.name)}: ${esc(c.sub)}"><span class="chsw" aria-hidden="true">${X.charPreview?X.charPreview(c.id):''}</span><span class="thtx"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc(c.sub)}</small></span></button></li>`).join('');
     };
     const charSec=window.THEME&&window.THEME.setCharacters&&X.applyCharacters?`<section class="scr-sec" aria-labelledby="chH"><h3 id="chH">Characters</h3>
@@ -1744,7 +1760,7 @@
     mcpEvent:id=>{if(mcpDlgHook)mcpDlgHook(id);liveEvent(id);},
     liveEvent, /* spec 058 FR-083: a chat stopped or is ready again */
     placeDialog,
-    dialog, /* spec 061: the folder-setup list uses the same modal */
+    dialog, /* spec 061: the folder-setup list uses the same modal; spec 096: a replaced one is dismissed */
     close,isOpen,
     /* live refresh while the Tools view is open (called when events arrive) */
     refresh:()=>{if(cur&&cur.kind==='tools'&&!document.getElementById('scrDlg'))paintTools();},

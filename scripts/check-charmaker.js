@@ -2,7 +2,8 @@
  * The AI character maker and My characters (spec 096 US1, US2 scenarios 3 and 4, US4, FR-034, FR-035, FR-040..FR-044, T041a..T045). Simulator only, the fake generator, no AI credits.
  * Reads computed values and rectangles, not classes: a class with no effect, or a line under the fold, fails here.
  *
- *   the maker at 1440x900 and 1280x800: the texts, ideas, Made by, Cancel, preview, Try again, Discard, Save (names), the 24-character cap;
+ *   the maker at 1440x900 and 1280x800: the texts, ideas, Made by, Cancel, preview, Try again, Discard, Save (names), the many-characters warning, a late picture after Cancel;
+ *   the dialogs' keyboard contract: Tab and stolen focus stay inside, Escape with the focus anywhere, focus back on the button, a second open cannot orphan a running try;
  *   the login gate (T041a): `chatgpt`, `unknown`, no answer, `apikey`: question or refusal, Cancel starts nothing, a call around the dialog makes nothing;
  *   honest limits: no adapter has `imageGen` (every real app today): the dialog says it cannot make one, offers only Close, and Settings says so before anyone opens it;
  *   My characters in the office: least used, 15 desks, pins (2 sessions in one folder), under a crew too, the desks' tooltip, URLs given back;
@@ -204,18 +205,33 @@ module.exports = async (ctx) => {
     await describe('a calm yoga teacher');
     await press('Make the character');
     await need(`document.getElementById('cmAskCost')&&document.getElementById('cmAskCost').textContent===${jsLiteral(ASK)}`, `${where}: asks first`);
-    assert.deepStrictEqual((await calls()), { generate: 0, started: 0 }, `${where}: no call while it asks`);
+    assert.deepStrictEqual((await calls()), { generate: 0, started: 0, droppedLate: 0 }, `${where}: no call while it asks`);
     assert.deepStrictEqual(await js(`[...document.querySelectorAll('#scrDlg .dbtn button')].map(b=>b.textContent)`), ['Cancel', 'Make it'], `${where}: Cancel, then Make it`);
     assert.strictEqual(await js(`document.activeElement.textContent`), 'Cancel', `${where}: Cancel has the focus`);
-    if (kind === 'unknown') await H.shot(path.join(OUT, `096-charmaker-ask-1280x800.png`), { prep: 'mouse' });
+    if (kind === 'unknown') {
+      await H.shot(path.join(OUT, `096-charmaker-ask-1280x800.png`), { prep: 'mouse' });
+      // the keyboard contract of `dialog`: a real Tab from the last button wraps; stolen focus comes back; Escape works with the focus nowhere
+      ctx.win.show(); ctx.win.focus(); ctx.win.webContents.focus();
+      await js(`${btn('Make it')}.focus();0`);
+      await H.key('Tab');
+      assert.ok(await until(`document.activeElement&&document.activeElement.closest('#scrDlg')!==null`, 2000), `${where}: Tab from Make it stays in the dialog (focus on ${await js(`document.activeElement&&document.activeElement.textContent.slice(0,20)`)})`);
+      assert.strictEqual(await js(`document.activeElement.textContent`), 'Cancel', `${where}: and wraps to Cancel`);
+      await js(`document.getElementById('addFolder').focus();0`);
+      assert.ok(await until(`document.activeElement.closest('#scrDlg')!==null`, 2000), `${where}: focus stolen by the page comes back`);
+      await js(`document.activeElement.blur();document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));0`);
+      await need(`!!document.getElementById('cmDesc')`, `${where}: Escape with the focus on the page is Cancel`);
+      assert.deepStrictEqual((await calls()).started, 0, `${where}: and starts nothing`);
+      await press('Make the character');
+      await need(`!!document.getElementById('cmAskCost')`, `${where}: asks again`);
+    }
     await press('Cancel');
     await need(`!!document.getElementById('cmDesc')`, `${where}: Cancel goes back`);
-    assert.deepStrictEqual((await calls()), { generate: 0, started: 0 }, `${where}: Cancel made no call (FR-034)`);
+    assert.deepStrictEqual((await calls()), { generate: 0, started: 0, droppedLate: 0 }, `${where}: Cancel made no call (FR-034)`);
     await press('Make the character');
     await need(`!!document.getElementById('cmAskCost')`, `${where}: asks again`);
     await js(`document.getElementById('cmAskCost').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
     await need(`!!document.getElementById('cmDesc')`, `${where}: Escape is Cancel`);
-    assert.deepStrictEqual((await calls()), { generate: 0, started: 0 }, `${where}: Escape made no call`);
+    assert.deepStrictEqual((await calls()), { generate: 0, started: 0, droppedLate: 0 }, `${where}: Escape made no call`);
     // a window around the dialog gets no try
     const around = await js(`window.__durbarSimUi.bridge().characterGenerate('around the gate','codex')`);
     assert.strictEqual(around.ok, false, `${where}: a call around the question is refused`);
@@ -242,11 +258,55 @@ module.exports = async (ctx) => {
   await need(`!!document.getElementById('cmSay')`, 'apikey: refused');
   assert.strictEqual(await js(`document.getElementById('cmSay').textContent`), REFUSED, 'apikey: the refusal text');
   assert.deepStrictEqual(await js(`[...document.querySelectorAll('#scrDlg .dbtn button')].map(b=>b.textContent)`), ['Close'], 'apikey: only Close');
-  assert.deepStrictEqual((await calls()), { generate: 0, started: 0 }, 'apikey: no call at all (no process)');
+  assert.deepStrictEqual((await calls()), { generate: 0, started: 0, droppedLate: 0 }, 'apikey: no call at all (no process)');
   assert.strictEqual((await js(`window.__durbarSimUi.bridge().characterGenerate('around the gate','codex')`)).ok, false, 'apikey: a call around the dialog is refused');
   assert.strictEqual((await calls()).started, 0, 'apikey: nothing started');
   await press('Close');
   console.log('[charmaker] gate ok');
+
+  /* ---------- a running try cannot be orphaned; a picture that arrives after Cancel is dropped ---------- */
+  await load({ simfast: undefined });
+  await openMaker();
+  await describe('a person');
+  await press('Make the character');
+  await need(`!!document.getElementById('cmBusy')`, 'orphan: the busy line');
+  await js(`document.getElementById('chMake').click();0`);
+  assert.ok(await js(`!!document.getElementById('cmBusy')`), 'orphan: a second press leaves the busy line and its Cancel');
+  assert.strictEqual((await calls()).started, 1, 'orphan: and starts nothing');
+  // any other dialog replacing it dismisses it: the try is cancelled, not left running with no Cancel
+  await js(`void window.DurbarScreens.dialog({title:'Other',html:'',buttons:[{label:'Close',value:null}]});0`);
+  await need(`!!document.getElementById('cmDesc')`, 'orphan: replaced, the flow goes back to the description');
+  await ctx.sleep(1800); // the fake's whole delay: its picture must not turn up
+  assert.ok(!(await js(`!!document.getElementById('cmName')`)), 'orphan: no preview replaces the form later');
+  assert.strictEqual((await js(`window.__durbarSimUi.bridge().characterCancel()`)).ok, false, 'orphan: no try is running');
+  await press('Cancel');
+  await load({ simfast: undefined, simlate: '1' });
+  await openMaker();
+  await describe('a person');
+  await press('Make the character');
+  await need(`!!document.getElementById('cmBusy')`, 'late: the busy line');
+  await press('Cancel');
+  await need(`!document.getElementById('cmBusy')&&window.__simCharCalls.droppedLate===1`, 'late: a picture that still arrives is dropped in main', 6000);
+  await need(`!!document.getElementById('cmDesc')`, 'late: back to the description');
+  assert.ok(!(await js(`!!document.getElementById('cmName')`)), 'late: it is never shown');
+  assert.strictEqual((await js(`window.__durbarSimUi.bridge().characterSave('x','y')`)).ok, false, 'late: nothing is held');
+  await press('Cancel');
+  await need(`!document.querySelector(${jsLiteral(DLG)})&&document.activeElement.id==='chMake'`, 'form Cancel: the focus is back on the button');
+  console.log('[charmaker] no orphan ok');
+
+  /* ---------- every frame unreadable: said plainly ---------- */
+  await load({ simmine: '2', simminebad: 'all' });
+  await openSettings();
+  await need(`document.querySelectorAll('#chmList .chm-row').length===2`, 'unreadable: the rows');
+  assert.match(await js(`document.querySelector('#chList [data-characters="mine"]').textContent`), /Pictures cannot be read/, 'unreadable: the item says so');
+  assert.ok(await js(`[...document.querySelectorAll('#chmList .chm-sub')].length===2&&[...document.querySelectorAll('#chmList .chm-sub')].every(e=>/pictures cannot be read/.test(e.textContent)&&e.getClientRects().length>0)`), 'unreadable: each row says so');
+  await H.clearToasts();
+  await js(`document.querySelector('#chList [data-characters="mine"]').click();0`);
+  await need(`[...document.querySelectorAll('#toasts .toast')].some(t=>/cannot be read, so the desks show the theme/.test(t.textContent))`, 'unreadable: the toast says what is drawn');
+  assert.ok(!(await js(`[...document.querySelectorAll('#toasts .toast')].some(t=>/^Characters: /.test(t.textContent))`)), 'unreadable: not "Characters: My characters."');
+  assert.strictEqual(await js(`window.THEME.characters()`), 'theme', 'unreadable: the theme\'s own are drawn');
+  await load({ simmine: '2', simminebad: 'all', characters: 'mine' });
+  await toastSeen(/cannot be read, so the desks show the theme/);
 
   /* ---------- honest limits: nothing has imageGen, which is every real app today ---------- */
   for (const [q, what] of [[{ simimagegen: '0' }, 'Codex ready, no imageGen'], [{ simkinds: undefined }, 'Copilot only']]) {
@@ -256,7 +316,7 @@ module.exports = async (ctx) => {
     const note = await js(`(()=>{const n=document.getElementById('chMakeNote'),b=n.getBoundingClientRect(),c=getComputedStyle(n),sc=document.querySelector('#screen .scr-body').getBoundingClientRect();return {t:n.textContent,fs:parseFloat(c.fontSize),d:c.display,inView:b.top>=sc.top&&b.bottom<=sc.bottom}})()`);
     assert.ok(/Not available in this version/.test(note.t) && note.fs >= 10.5 && note.d !== 'none' && note.inView, `${what}: the note shows (${JSON.stringify(note)})`);
     await H.shot(path.join(OUT, `096-charmaker-off-settings-1280x800.png`), { prep: 'mouse' });
-    await js(`document.getElementById('chMake').click();0`);
+    await js(`document.getElementById('chMake').focus();document.getElementById('chMake').click();0`);
     await need(`!!document.getElementById('cmSay')`, `${what}: the dialog`);
     assert.match(await js(`document.getElementById('cmSay').textContent`), NOT_YET_RE, `${what}: it says it cannot make one`);
     assert.ok(!(await js(`document.getElementById('cmSay').textContent`)).includes('signed in with ChatGPT'), `${what}: and does not suggest that signing in would help`);
@@ -265,6 +325,7 @@ module.exports = async (ctx) => {
     await fits(what);
     await H.shot(path.join(OUT, `096-charmaker-off-1280x800.png`), { prep: 'mouse' });
     await press('Close');
+    await need(`document.activeElement.id==='chMake'`, `${what}: Close puts the focus back on the button`);
     assert.strictEqual((await calls()).generate, 0, `${what}: nothing was called`);
   }
   // US1 scenario 5: an app with imageGen exists but is not ready (Codex too old)
@@ -448,7 +509,9 @@ module.exports = async (ctx) => {
   await toastSeen(/Exported to \/simulated\/export/);
   // delete in use, with a pin: confirm, desks repick, the toast counts the pin
   const fresh = await list();
-  const doomed = fresh[0];
+  const wornByHelper = await js(`Object.values(window.__durbarSimUi.crew.state().help)`);
+  const doomed = fresh.find((c) => wornByHelper.includes(c.id));
+  assert.ok(doomed, `a helper wears a character (${wornByHelper})`);
   await dlgPick('pin', doomed.id);
   await js(`document.querySelector('.dlg .dpick input').click()`);
   await press('Save pins');
@@ -470,6 +533,7 @@ module.exports = async (ctx) => {
   assert.ok(!(await list()).some((c) => c.id === doomed.id), 'the store no longer has it');
   assert.deepStrictEqual(await js(`window.__durbarSimUi.crew.own().pins`), {}, 'its pin is gone');
   assert.ok(!(await js(`Object.values(window.__durbarSimUi.crew.state().map)`)).includes(doomed.id), 'no desk wears it (a new pick at once)');
+  assert.ok(!(await js(`Object.values(window.__durbarSimUi.crew.state().help)`)).includes(doomed.id), 'no helper wears it either');
   assert.strictEqual(await js(`new Promise(r=>{const i=new Image();i.onload=()=>r('loaded');i.onerror=()=>r('gone');i.src=${jsLiteral(doomedUrl)};})`), 'gone', 'its URL was revoked');
   await H.clearToasts();
   // delete them all: the theme's own figures, the stored value stays, a toast says so (US2 scenario 4)
@@ -509,6 +573,12 @@ module.exports = async (ctx) => {
   await load({ simmine: '2', characters: 'mine' });
   await need(`document.querySelectorAll('#stage image.crew-pic[href^="blob:"]').length>=12`, 'portraits');
   const victim = (await list())[0].id;
+  // a decode that fails once does not mark it for the run
+  await js(`(()=>{const d=HTMLImageElement.prototype.decode;let n=0;window.__decodeFails=()=>n;HTMLImageElement.prototype.decode=function(){if(n<3){n++;return Promise.reject(new Error('transient'));}return d.call(this);};})()`);
+  await js(`window.__durbarSimUi.crew.preloadOwn(${jsLiteral(victim)});0`);
+  await need(`window.__decodeFails()===3`, 'transient: the decodes failed');
+  await ctx.sleep(1200);
+  assert.ok(!(await js(`window.__durbarSimUi.crew.state().bad`)).includes(victim), 'transient: a decode that fails once does not mark the character bad');
   assert.ok(await js(`window.__durbarSimUi.crew.fallOwn(${jsLiteral(victim)})`), 'one character\'s picture fails');
   await need(`window.__durbarSimUi.crew.state().bad.includes(${jsLiteral(victim)})`, 'it is marked unusable (CREW_BAD)');
   await need(`[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length&&s.querySelector('circle[r="12.5"]')).length>=1`, 'its desks draw the plain figure');

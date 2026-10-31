@@ -330,8 +330,8 @@ Under My characters each character has **Rename**, **Delete** and **Export…**.
 
 ## Success Criteria *(mandatory)*
 
-- **SC-001** On the simulator, making, previewing, saving, renaming, pinning, exporting and deleting a character all work with 0 AI credits and no network (drivers and unit tests in `npm test` and CI).
-- **SC-002** With My characters and 15 simulated agents, `check:office` and `check:crew` pass at 1440x900 and 1280x800 (no overlap, no text under 10.5px, faces visible, idle portraits at full colour).
+- **SC-001** On the simulator, making, previewing, saving, renaming, pinning, exporting and deleting a character all work with 0 AI credits and no network (unit tests in `npm test` and CI; `check-charmaker` in `ui-platforms`: Linux and Windows on a PR that touches its paths, macOS nightly and by hand).
+- **SC-002** With My characters and 15 simulated agents, `check:office` and `check:crew` pass at 1440x900 and 1280x800 (no overlap, no text under 10.5px, faces visible, idle portraits at full colour). `check-crew mine` runs in `ui-platforms`; `check:office` with `OFFICE_CHARACTERS=mine` is **not a required check**: it runs on demand (`npm run check:themes`, or `full_themes` of `ci.yml`), and passed by hand on a Mac at phase 4 (*Changes*).
 - **SC-003** Every stored frame is a 352x352 WebP with alpha, at most 40 KB, with no metadata chunk (`test:imagecheck`, `test:charstore`). No user picture is decoded in the main process (source test: no `nativeImage.createFromBuffer`/`createFromPath` on the character path).
 - **SC-004** No description text appears in any file under userData, any log line, or any IPC reply after the generate call (a test scans the store and captured logs for a marker description).
 - **SC-005** With reduced motion, Serious mode, Motion off, or a hidden window, no portrait animation runs (`check-charmotion`). With motion on, no animated box enters a protected zone at any sampled frame.
@@ -385,6 +385,19 @@ Q1-Q5 are answered (*Clarifications*, owner decisions, 2026-10-31). Their text a
 - **Built** (`[IMPLEMENTED]`, `test:` `npm run test:chargen`, `npm run test:imagecheck`, `npm run test:crew-assets`): `src/shared/charstyle.ts` (FR-050, FR-051), `src/shared/chargen.ts` (FR-010..FR-013: `cleanDescription`, `buildCharacterPrompt`, `CHARACTER_IDEAS`, `pickCharacterIdeas`), `src/shared/imagecheck.ts` (FR-021 header checks), `src/shared/webpcheck.ts` (FR-023: `webpInfo`, `checkFrame`, `checkFrames`, `stripChunks`; the chunk walker moved here from `scripts/test-crew-assets.ts`). Nothing calls them yet: no adapter, IPC, window or store (phases 3 and 4). `[KNOWN GAP]` FR-020 (main's `lstat` and read) and FR-022 (the sandboxed encoder) are not built.
 - **Reuse** (spec 021 FR-031): the idea picker is now the neutral `pickFrom` in `src/shared/ideas.ts` (`themegen.ts`'s `pickIdeas` delegates to it), so the maker does not depend on theme-maker code, which is being removed (coordinator, 2026-10-31); spec 102 (worlds) can reuse it. **Phase 4 note**: T040 plans to factor helpers out of `aiTheme()`; per the same decision they must be extracted as neutral dialog helpers, not built on the theme maker's dialog. Character sets must work in any world: the `crew` kit and `theme.js` character list in T037/T042 must not assume a set belongs to one world or theme.
 - **Decisions of the build** (inside the spec's wording): the 300-code-point cut never leaves a dangling joiner; invisible format characters (zero width, bidi overrides, soft hyphen) and line separators are removed with the control characters, so they cannot hide a marker; angle brackets are removed, so a marker string can never appear (FR-011 says the markers are removed; removing them one by one can build a new one and is quadratic on nested input). `checkImage` also walks the PNG chunks to an `IEND` (a cut file is "cut short"), but does not refuse bytes after it: a PNG+ZIP polyglot passes the header check on purpose, and the sandboxed re-encode (FR-022) drops them. `stripChunks` removes only EXIF, XMP and ICC; any other unexpected chunk stays and `checkFrame` refuses it.
+
+### 2026-10-31: review of phase 4, fixes
+
+- **Modal dialogs** (`dialog` in `screens.js`, used by FR-034's question and the busy line): no focus trap let Tab reach the page behind, and a second open deleted the busy line, leaving a running try with no Cancel. Now: Tab wraps, stolen focus returns, Escape works with the focus anywhere, focus goes back to what opened it; a replaced dialog is dismissed, so its try is cancelled; the maker runs one flow at a time. This applies to every caller of `dialog`.
+- **`{ confirmed }`** never reached main: the preload dropped it. It now passes it (`test:charipc` runs the real preload's source). Main still does not read it (T030a).
+- **Helpers** kept a deleted character; `syncCrew` drops it.
+- **`blob:` URLs with a quote** had no test; added, and `scenekits` escapes the URL as a second line.
+- **All frames unreadable**: the item, the rows and a toast say so, instead of "Characters: My characters." over the theme's figures.
+- **A session with no folder** had the key `/`; it now has none, so a pin on `/` cannot dress it (`pinKey`).
+- **A decode failure** of a My character is tried once more before it counts, and new URLs start clean.
+- **Scale**: a rename or pin no longer decodes every frame again (preload once per set of URLs).
+- **Cost in `ui-platforms`** (macOS runs one at a time, 80-minute limit): SCALE_NOTE
+- T041's plan line is split off as T041c. T061 is done here, since this PR ships the CSP change. SC-001 and SC-002 now say where they run.
 
 ### 2026-10-31: warn and let people pass (owner's principle)
 

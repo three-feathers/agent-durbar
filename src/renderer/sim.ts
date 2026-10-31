@@ -260,7 +260,10 @@ function simCharactersApi(qs: URLSearchParams, openFolders: () => string[]): Pic
   let chars: SimChar[] = [];
   /* FR-034 (T041a): `simlogin=chatgpt` (default), `unknown`, `apikey`, or `absent` (no answer, as the real app today, so `unknown`). The fake holds the gate as T030a will hold it in main: a call around the dialog gets nothing. Every call is counted for the drivers. */
   const login = qs.get('simlogin') ?? 'chatgpt';
-  const calls = { generate: 0, started: 0 };
+  const calls = { generate: 0, started: 0, droppedLate: 0 };
+  /* `simlate=1`: Cancel does not stop the fake, so its picture still arrives (main can answer so, when a cancel comes too late); `simminebad=all`: no saved frames can be read */
+  const late = qs.get('simlate') === '1';
+  const unreadable = qs.get('simminebad') === 'all';
   (window as unknown as { __simCharCalls?: unknown }).__simCharCalls = calls;
   /* FR-070: `simmine=N` starts with N saved characters; `simminename=hostile`: main's name rule is skipped, so the first name and every reply's name are markup: the window must never treat them as markup */
   const HOSTILE = '"><img src=x onerror="window.__pwned=1"><b>Eve</b>&amp;';
@@ -299,7 +302,7 @@ function simCharactersApi(qs: URLSearchParams, openFolders: () => string[]): Pic
     const started = Date.now();
     const go = await new Promise<boolean>((resolve) => {
       const t = setTimeout(() => { running = null; resolve(true); }, delay);
-      running = { stop: () => { clearTimeout(t); running = null; resolve(false); } };
+      running = { stop: () => { if (late) return; clearTimeout(t); running = null; resolve(false); } };
     });
     if (!go) return { ok: false, cancelled: true };
     const hue = hashOf(text) % 360;
@@ -316,6 +319,7 @@ function simCharactersApi(qs: URLSearchParams, openFolders: () => string[]): Pic
       if (tryId === undefined || tryId === null) { if (!running) return { ok: false }; running.stop(); return { ok: true }; }
       if (!held || held.tryId !== tryId) return { ok: false };
       held = null;
+      calls.droppedLate++;
       return { ok: true };
     },
     characterSave: async (tryId, name) => {
@@ -336,7 +340,7 @@ function simCharactersApi(qs: URLSearchParams, openFolders: () => string[]): Pic
       return { ok: true, id: c.id, name: c.name };
     },
     characterList: async () => (await seeded, chars).map((c) => ({ id: c.id, name: c.name, face: FACE, blink: true, style: 'realistic-office-v1', created: c.created })),
-    characterFrames: async (id) => { await seeded; const c = find(id); return c ? { ok: true, frames: c.frames } : UNKNOWN; },
+    characterFrames: async (id) => { await seeded; if (unreadable) return { ok: false, error: 'The pictures of that character could not be read.' }; const c = find(id); return c ? { ok: true, frames: c.frames } : UNKNOWN; },
     characterRename: async (id, name) => {
       const c = find(id);
       if (!c) return UNKNOWN;

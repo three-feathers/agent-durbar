@@ -187,7 +187,7 @@ FR-011..FR-016 describe the drawn SVG option (b′). If Q1 picks raster, FR-050.
 - **FR-054** Provenance: a committed `src/renderer/crew/ASSETS.md` (no such file exists in the repository today) with one row per shipped picture: file, character, tool and version, date, the prompt kept verbatim, who made it and who edited it (and how), the licence it ships under (MIT, or CC0/CC-BY with attribution for (e)) and that the generator's terms were read by an owner. A test in `npm test` (`test:crew-assets`, plain Node) fails when a picture under `src/renderer/crew/` has no row, a row names no file, a file is over its cap or has a metadata chunk.
 - **FR-055** Fallback: every picture is loaded and decoded when the theme is applied (`HTMLImageElement.decode()`); one that is missing or fails to decode marks its character unavailable and those desks draw the office figure (FR-017). Tests: a unit test of the decision, and a driver step that removes one picture from a copy of `dist/renderer` and checks that its desks show the office figure and no broken image.
 - **FR-056** Content: no third-party IP, franchise characters or look-alikes, logos, brands, real people, words or letters, numbers, hand gestures or political symbols; office-safe. **A person reviews each picture** and records the review in the PR (one line per file). Examples the reviewer must check: a creeper-like block head, an anarchy symbol, a finger or horns gesture, lettering on shirts, mugs or screens, logos on headphones, consoles or laptops, a recognisable person or character. The owner's 2026-10-23 sheet has the first three; they are removed or redrawn before any file is committed.
-- **FR-057** CSP unchanged (`img-src 'self' data:`): only bundled files, never a remote URL or a user-supplied picture; theme art slots still may not contain `<image>` (spec 040 FR-005 unchanged).
+- **FR-057** CSP unchanged by this spec (`img-src 'self' data:`; spec 096 FR-043 adds `blob:`, see *Changes*): the crews draw only bundled files, never a remote URL; a user-supplied picture only as spec 096 FR-061 allows; theme art slots still may not contain `<image>` (spec 040 FR-005 unchanged).
 - **FR-058** Checks under raster: FR-014's zones are checked as the picture's box (`getBBox()` of the `<image>`) plus the fixed overlay positions, not per drawn part. `check:office-fill`'s sharpness measure (the share of a scene's pixels in its own flat colours, `scripts/check-office-fill.js:99-112`) cannot judge a picture, whose pixels are not flat colours: the picture's box is **excluded** from that share (so the check keeps judging the SVG furniture and overlays), and the picture's own sharpness is checked separately by FR-051 (natural size at least 2x the shown size, and a capture compared with the picture drawn at the same size in a canvas, within a small mean difference; threshold set from the first 4).
 
 ### Checks
@@ -222,6 +222,10 @@ FR-011..FR-016 describe the drawn SVG option (b′). If Q1 picks raster, FR-050.
 - Persona slots for user and AI themes (one costume per agent from a theme) are out of scope (OD1, later).
 
 ## Changes
+
+### 2026-10-31: user pictures through a main-checked pipeline (spec 096 FR-061)
+
+Spec 096 changes FR-057: pictures from userData that main has validated and re-encoded are drawn through `blob:` URLs, and the page's CSP is `img-src 'self' data: blob:` (`test:crew-assets` pins it). Only `blob:` was added, for images; the crews still draw bundled files only, and a remote URL stays refused. Evidence: [spec 096](../096-ai-character-maker/spec.md) `## Changes`, `sim:` `check-charmaker`.
 
 ### 2026-10-31: crew motion is specified in spec 096
 

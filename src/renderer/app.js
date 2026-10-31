@@ -58,10 +58,19 @@ function crewPreload(choice){
 }
 function crewPreloadIds(ids){
   for(const id of ids)for(const pose of CREW.POSES){
-    const f=CREW.file(id,pose), im=new Image();
-    const bad=()=>{if(CREW_BAD.has(id)||(/^my-/.test(id)&&CREW.file(id,pose)!==f))return;CREW_BAD.add(id);console.warn('[crew] picture '+f+' is missing or cannot be decoded: '+id+' is drawn as the plain figure');crewRefreshAvatars();scheduleRender();};
+    const f=CREW.file(id,pose), im=new Image(), mine=/^my-/.test(id);
+    let tried=false;
+    const bad=()=>{
+      if(CREW_BAD.has(id)||(mine&&CREW.file(id,pose)!==f))return; /* a URL given back is not a broken picture */
+      if(mine&&!tried){tried=true;setTimeout(()=>{if(CREW.file(id,pose)===f)crewPreloadOne(id,pose);},400);return;} /* spec 096 review: a My character's decode may fail for a moment: once more before it counts */
+      CREW_BAD.add(id);console.warn('[crew] picture '+f+' is missing or cannot be decoded: '+id+' is drawn as the plain figure');crewRefreshAvatars();scheduleRender();};
     im.onerror=bad; im.src=f; if(im.decode)im.decode().catch(bad);
   }
+}
+function crewPreloadOne(id,pose){
+  const f=CREW.file(id,pose), im=new Image();
+  const bad=()=>{if(CREW_BAD.has(id)||CREW.file(id,pose)!==f)return;CREW_BAD.add(id);console.warn('[crew] a picture of '+id+' cannot be decoded: it is drawn as the plain figure');crewRefreshAvatars();scheduleRender();};
+  im.onerror=bad; im.src=f; if(im.decode)im.decode().catch(bad);
 }
 /* the open chat's header avatar and the inbox rows are drawn once, not by renderAll: when a character falls back, redraw just those avatars (no rebuild, so focus stays) */
 function crewRefreshAvatars(){
@@ -77,11 +86,11 @@ function syncCrew(){
   const ch=crewChoice(), ids0=crewIds(ch);
   if(crewStale()){CREW_FOR=agents;CREW_CH=ch;CREW_MAP=SIM&&window.DurbarSimCrew?window.DurbarSimCrew.seed(ch,agents,ids0):{};CREW_HELP={};if(!demoOn&&rememberOn()){try{CREW_MAP=CREW.loadCrew(localStorage.getItem(CREW.storeKey(ch)),ids0);}catch(e){CREW_MAP={};}}}
   const ids=crewMainIds(); CREW_IDS=ids.join('\n');
-  if(!ids0.length){CREW_MAP={};return;} /* spec 096: no character in the list: nothing to pick from (My characters then draw the theme's own, `drawableCharacters`) */
-  for(const h of Object.keys(CREW_HELP))if(!agents.some(a=>a.id===h))delete CREW_HELP[h]; /* a removed helper frees its character */
+  if(!ids0.length){CREW_MAP={};CREW_HELP={};return;} /* spec 096: no character in the list: nothing to pick from (My characters then draw the theme's own, `drawableCharacters`) */
+  for(const h of Object.keys(CREW_HELP))if(!agents.some(a=>a.id===h)||!ids0.includes(CREW_HELP[h]))delete CREW_HELP[h]; /* a removed helper frees its character; spec 096: a helper wearing a deleted character gets a new pick */
   /* a session that is gone frees its character once the office has loaded (before that, restored sessions keep theirs) */
   /* spec 096 FR-044: pinned first, so a pinned character counts as in use for the rest of the pick */
-  const next=CREW.assignCrew(CREW.pinCrew(agentsListed||demoOn?CREW.pruneCrew(CREW_MAP,ids):CREW_MAP,agents.filter(a=>!a.parent).map(a=>({id:a.id,key:ownKeyOf(a.info&&(a.info.workspaceFile||a.info.cwd))})),OWN_STATE.pins,ids0,CREW_BAD),ids,ids0,crewRand());
+  const next=CREW.assignCrew(CREW.pinCrew(agentsListed||demoOn?CREW.pruneCrew(CREW_MAP,ids):CREW_MAP,agents.filter(a=>!a.parent).map(a=>({id:a.id,key:CREW.pinKey(a.info,ownPlatform())})),OWN_STATE.pins,ids0,CREW_BAD),ids,ids0,crewRand());
   if(JSON.stringify(next)!==JSON.stringify(CREW_MAP)){CREW_MAP=next;if(!demoOn&&rememberOn()){try{localStorage.setItem(CREW.storeKey(ch),JSON.stringify(CREW_MAP));}catch(e){}}}
 }
 const crewOf=a=>{
@@ -104,11 +113,17 @@ const wearWords=a=>{if(!CREW||THEME.sceneKit()!=='crew')return '';const n=CREW.o
 let CHARS_CHOSEN='theme';
 const OWN_STATE={list:[],urls:new Map(),pins:{}};
 let ownQueue=Promise.resolve();
-const ownKeyOf=p=>CREW.folderKey(p,(window.agentDurbar&&window.agentDurbar.platform)||(/Windows/.test(navigator.userAgent)?'win32':'other'));
+const OWN_PRELOADED=new Set(); /* working-pose URLs already preloaded (a rename or a pin must not decode every frame again) */
+const ownPlatform=()=>(window.agentDurbar&&window.agentDurbar.platform)||(/Windows/.test(navigator.userAgent)?'win32':'other');
+const ownKeyOf=p=>CREW.folderKey(p,ownPlatform());
+/* a stored `mine` that has characters, none of which can be drawn: said plainly, since the desks show the theme's own figures */
+const ownUnreadable=()=>CHARS_CHOSEN==='mine'&&OWN_STATE.list.length>0&&!!CREW&&!CREW.idsFor('mine').length;
+const OWN_UNREADABLE='The pictures of My characters cannot be read, so the desks show the theme\u2019s own figures. My characters stays chosen.';
 const ownNeeded=()=>CHARS_CHOSEN==='mine'||(Object.keys(OWN_STATE.pins).length>0&&THEME.kitFor(THEME.themeKit(),CHARS_CHOSEN)==='crew')||!!(window.DurbarScreens&&window.DurbarScreens.isOpen());
 const drawableCharacters=c=>c==='mine'&&!(CREW&&CREW.idsFor('mine').length)?'theme':c;
-function ownRevoke(id){const u=OWN_STATE.urls.get(id);if(!u)return;OWN_STATE.urls.delete(id);for(const k of Object.keys(u))URL.revokeObjectURL(u[k]);}
-function ownRegister(){CREW.registerOwn(OWN_STATE.list.filter(c=>OWN_STATE.urls.has(c.id)).map(c=>({id:c.id,name:c.name,face:c.face,urls:OWN_STATE.urls.get(c.id)})));}
+function ownRevoke(id){const u=OWN_STATE.urls.get(id);if(!u)return;OWN_STATE.urls.delete(id);OWN_PRELOADED.delete(u.working);for(const k of Object.keys(u))URL.revokeObjectURL(u[k]);}
+/* new URLs are a new start: a failure of the old ones says nothing about them */
+function ownRegister(){for(const id of OWN_STATE.urls.keys())if(CREW_BAD.has(id)&&!OWN_PRELOADED.has(OWN_STATE.urls.get(id).working))CREW_BAD.delete(id);CREW.registerOwn(OWN_STATE.list.filter(c=>OWN_STATE.urls.has(c.id)).map(c=>({id:c.id,name:c.name,face:c.face,urls:OWN_STATE.urls.get(c.id)})));}
 /* asks main, makes the URLs of new characters, drops those of gone ones; a list that cannot be read keeps what is there */
 function ownLoad(){
   ownQueue=ownQueue.then(async()=>{
@@ -141,7 +156,10 @@ function ownApply(){
   if(!CREW)return;
   const want=drawableCharacters(CHARS_CHOSEN);
   if(THEME.characters()!==want)THEME.setCharacters(want);
-  crewLoaded.delete('mine');crewPreloadIds(CREW.idsFor('mine'));
+  crewLoaded.add('mine'); /* preloaded here, once per set of URLs */
+  const fresh=CREW.idsFor('mine').filter(id=>!OWN_PRELOADED.has(CREW.file(id,'working')));
+  for(const id of fresh)OWN_PRELOADED.add(CREW.file(id,'working'));
+  crewPreloadIds(fresh);
   SC_CACHE.clear();
   if(CREW_FOR)syncCrew();
   renderAll();crewRefreshAvatars();
@@ -330,6 +348,7 @@ async function applyCharacters(chosen){
   let saved=false; /* saved only when main (or the simulator) says so: a missing or refused call is announced, never assumed */
   if(bridge&&bridge.setCharacters){const r=await bridge.setCharacters(CHARS_CHOSEN).catch(()=>null);saved=!!(r&&r.ok&&r.characters===CHARS_CHOSEN);}
   if(!saved)toast('The characters could not be saved.',4000);
+  else if(ownUnreadable())toast(esc(OWN_UNREADABLE),6000);
   else toast('Characters: <b>'+esc(CHARACTER_NAMES[CHARS_CHOSEN]||CHARS_CHOSEN)+'</b>.',2600);
   ownRelease();
   return applied;
@@ -8042,7 +8061,7 @@ if(bridge){
     let tid=(v&&v.theme)||'clean-office';
     /* FR-067: the old Cheeky Crew id from a run theme or the simulator's query: Clean Office with Cheeky, for this run (nothing saved) */
     if(tid===THEME.LEGACY_CREW_THEME){if(CHARS_CHOSEN==='theme'){CHARS_CHOSEN='cheeky';THEME.setCharacters('cheeky');}tid='clean-office';}
-    if(CREW&&ownNeeded())ownLoad().then(ownApply); /* spec 096 FR-043 */
+    if(CREW&&ownNeeded())ownLoad().then(()=>{ownApply();if(ownUnreadable())toast(esc(OWN_UNREADABLE),6000);}); /* spec 096 FR-043 */
     const apply=()=>{if(THEME.current().id!==tid)applyTheme(tid,true);else scheduleRender();};
     if(bridge.listUserThemes){bridge.listUserThemes().then(list=>{
       const good={};(list||[]).filter(t=>t.ok&&t.manifest!==false).forEach(t=>{});
@@ -8066,7 +8085,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={agents:()=>agents,crew:{own:()=>({chosen:CHARS_CHOSEN,pins:{...OWN_STATE.pins},list:OWN_STATE.list.map(c=>c.id),entries:OWN_STATE.list.filter(c=>OWN_STATE.urls.has(c.id)).map(c=>({id:c.id,name:c.name,face:c.face,urls:OWN_STATE.urls.get(c.id)})),urls:[...OWN_STATE.urls.keys()],registered:CREW.idsFor('mine')}),fallOwn:id=>{const u=OWN_STATE.urls.get(id);if(!u)return false;URL.revokeObjectURL(u.working);crewPreloadIds([id]);return true;},state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
+if(SIM)window.__durbarSimUi={agents:()=>agents,crew:{own:()=>({chosen:CHARS_CHOSEN,pins:{...OWN_STATE.pins},list:OWN_STATE.list.map(c=>c.id),entries:OWN_STATE.list.filter(c=>OWN_STATE.urls.has(c.id)).map(c=>({id:c.id,name:c.name,face:c.face,urls:OWN_STATE.urls.get(c.id)})),urls:[...OWN_STATE.urls.keys()],registered:CREW.idsFor('mine')}),preloadOwn:id=>{crewPreloadIds([id]);return true;},fallOwn:id=>{const u=OWN_STATE.urls.get(id);if(!u)return false;URL.revokeObjectURL(u.working);crewPreloadIds([id]);return true;},state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,
