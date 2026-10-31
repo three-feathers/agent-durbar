@@ -214,10 +214,10 @@ module.exports = async (ctx) => {
       ctx.win.show(); ctx.win.focus(); ctx.win.webContents.focus();
       await js(`${btn('Make it')}.focus();0`);
       await H.key('Tab');
-      assert.ok(await until(`document.activeElement&&document.activeElement.closest('#scrDlg')!==null`, 2000), `${where}: Tab from Make it stays in the dialog (focus on ${await js(`document.activeElement&&document.activeElement.textContent.slice(0,20)`)})`);
+      await need(`document.activeElement&&document.activeElement.closest('#scrDlg')!==null`, where + ': Tab from Make it stays in the dialog', 2000);
       assert.strictEqual(await js(`document.activeElement.textContent`), 'Cancel', `${where}: and wraps to Cancel`);
       await H.key('Tab', ['shift']);
-      assert.ok(await until(`document.activeElement.textContent==='Make it'`, 2000), `${where}: Shift+Tab from Cancel wraps to Make it (focus on ${await js(`document.activeElement.textContent.slice(0,20)`)})`);
+      await need(`document.activeElement.textContent==='Make it'`, where + ': Shift+Tab from Cancel wraps to Make it', 2000);
       await js(`${btn('Cancel')}.focus();0`);
       await js(`document.getElementById('addFolder').focus();0`);
       assert.ok(await until(`document.activeElement.closest('#scrDlg')!==null`, 2000), `${where}: focus stolen by the page comes back`);
