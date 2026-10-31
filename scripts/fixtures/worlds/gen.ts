@@ -268,7 +268,7 @@ export function hostileSet(): Hostile[] {
   const man = (m: Record<string, unknown>): Buffer => toStored(goodPack(m));
   add('manifest-unknown-field', man({ scripts: 'alert(1)' }));
   add('manifest-proto', toStored({ ...goodPack(), 'world.json': Buffer.from(JSON.stringify(JSON.parse('{"__proto__":{"polluted":true},"formatVersion":1}'))) }));
-  add('manifest-proto-field', (() => { const f = goodPack(); f['world.json'] = Buffer.from(f['world.json'].toString().replace('{', '{"__proto__":{"x":1},')); return toStored(f); })());
+  add('manifest-proto-field', (() => { const f = goodPack(); f['world.json'] = Buffer.from('{"__proto__":{"x":1},' + f['world.json'].toString().slice(1)); return toStored(f); })());
   add('manifest-realheight', man({ realHeight: 2.1 }));
   add('manifest-position-field', man({ x: 10, y: 20 }));
   add('manifest-newer-format', man({ formatVersion: 2 }));
