@@ -279,7 +279,7 @@
     if (!s || s.box !== box2) { if (s) clearTimeout(s.timer); s = { box: box2, last: -Infinity, timer: 0, dirty: true, away: false, sig: '', fit: '' }; SCR.set(k, s); }
     const fit = JSON.stringify(f);
     if (s.fit !== fit) { /* a new size is drawn at once: it is the layout, not a repaint of text */
-      s.fit = fit; setVar(box2, '--ro-sf', f.font + 'px'); setVar(box2, '--ro-sl', f.lh + 'px'); setVar(box2, '--ro-sh', f.whole + 'px');
+      s.fit = fit; setVar(box2, '--ro-sf', f.font + 'px'); setVar(box2, '--ro-sl', f.lh + 'px'); setVar(box2, '--ro-sh', f.whole + 'px'); setVar(box2, '--ro-sr', String(Math.max(1, Math.round(f.whole / f.lh))));
       s.sig = '';
       if (s.painted && !s.away && !hiddenNow()) { paintScreen(k); s.dirty = false; } else s.dirty = true;
     }

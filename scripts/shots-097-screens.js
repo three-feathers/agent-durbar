@@ -51,7 +51,7 @@ module.exports = async (ctx) => {
     const all = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),out=[];for(const d of L.zones.flatMap(z=>z.desks)){const e=window.__scr(d.id);if(!e){out.push({id:d.id,state:d.state,none:true});continue;}
       const rows=[...e.querySelectorAll('.ro-sl')];out.push({id:d.id,state:d.state,text:e.textContent,small:e.classList.contains('small'),glass:[Math.round(d.glass.w),Math.round(d.glass.h)],
         fonts:rows.map(r=>parseFloat(getComputedStyle(r).fontSize)),color:rows.length?getComputedStyle(rows[rows.length-1]).color:'',k:rows.length?rows[rows.length-1].dataset.k:'',
-        bars:e.querySelectorAll('.ro-bars i').length,tags:[...e.querySelectorAll('a,img,script,svg')].length});}return out;})()`);
+        head:rows.length&&e.classList.contains('small')?rows[rows.length-1].getBoundingClientRect().top-e.querySelector('.ro-clip').getBoundingClientRect().top:0,bars:e.querySelectorAll('.ro-bars i').length,tags:[...e.querySelectorAll('a,img,script,svg')].length});}return out;})()`);
     console.log('[097-screens]', w, h, all.map((s) => `${s.state}:${(s.text || '').slice(0, 30)}|${s.bars}`).join(' ; '));
     assert.strictEqual(all.length, 15, '15 desks');
     for (const s of all) {
@@ -60,6 +60,7 @@ module.exports = async (ctx) => {
       assert.ok(s.text.trim().length > 3, `${s.id} (${s.state}) has real text: "${s.text}"`);
       assert.ok(s.fonts.length && s.fonts.every((f) => f >= 10.5), `${s.id}: text at least 10.5 px: ${s.fonts}`);
       assert.strictEqual(s.tags, 0, 'no element but text on a screen');
+      assert.ok(s.head >= -0.5, `${s.id}: a small screen shows its newest line from the start, not a cut tail: "${s.text}" ${s.head}`);
     }
     assert.ok(all.some((s) => s.bars > 0), 'FR-032: bars from earlier lines on small screens');
     // FR-035: status screens, computed
@@ -71,7 +72,7 @@ module.exports = async (ctx) => {
     assert.ok(/rgb\(240, 160, 48\)/.test(look.waitFrame || ''), 'needs-you: an amber frame: ' + look.waitFrame);
     assert.ok(look.errGlass && look.errGlass !== look.workGlass, 'error: a red tint on the glass');
     assert.ok(look.done && look.done[0] === 'done' && /rgb\(159, 220, 174\)/.test(look.done[1]), 'done: the newest line green: ' + look.done);
-    assert.ok(look.ask && look.ask[0] === 'ask' && look.ask[1].length > 3, 'needs-you: the question on the glass');
+    assert.ok(look.ask && look.ask[0] === 'ask' && look.ask[1].length > 3 && !/^Went to see/.test(look.ask[1]), 'needs-you: the question itself on the glass: ' + look.ask);
 
     // the text truly changes, and at the bottom
     const id = (await js(pickWorking))[0];

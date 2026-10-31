@@ -48,6 +48,7 @@
 .ro-bars:empty{display:none}
 .ro-bars i{display:block;height:3px;border-radius:2px;background:var(--ro-scr-plain);opacity:.75}
 .ro-sl{overflow-wrap:anywhere;color:var(--ro-scr-plain)}
+.ro-stext.small .ro-sl{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:var(--ro-sr,2);overflow:hidden} /* a small screen reads its line from the start: a cut tail was a lone word */
 .ro-sl[data-k="think"]{color:var(--ro-scr-think)}.ro-sl[data-k="reply"]{color:var(--ro-scr-reply)}.ro-sl[data-k="cmd"]{color:var(--ro-scr-cmd)}
 .ro-sl[data-k="ok"],.ro-sl[data-k="done"]{color:var(--ro-scr-ok)}.ro-sl[data-k="err"]{color:var(--ro-scr-err)}.ro-sl[data-k="ask"]{color:var(--ro-scr-ask)}
 .ro-bars i[data-k="think"]{background:var(--ro-scr-think)}.ro-bars i[data-k="cmd"]{background:var(--ro-scr-cmd)}

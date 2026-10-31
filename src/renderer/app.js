@@ -1721,7 +1721,7 @@ function realModel(model){
 function realScreen(id,state,word){
   const a=byId(id), log=a&&liveOn()&&!a.parent?LIVEACT.screen(id):[];
   const ask=state==='waiting'||state==='limit'||state==='error';
-  const task=a&&LIVEACT&&(!log.length||ask)?LIVEACT.block(taskOf(a),'plain'):[];
+  const task=a&&LIVEACT&&(!log.length||ask)?LIVEACT.block(ask?taskText(a):taskOf(a),'plain'):[]; /* a question or an error by itself: the plate and the "at Boss" sign say where */
   const reply=a&&LIVEACT&&!log.length&&a.lastOutput?LIVEACT.block(a.lastOutput,'reply'):[];
   return window.exports.screenFor(state,log,task,reply,word);
 }
