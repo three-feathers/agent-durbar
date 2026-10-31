@@ -282,6 +282,7 @@ module.exports = async (ctx) => {
   assert.match(await js(`document.getElementById('cmSay').textContent`), /You have 24 characters\. You can make more/, 'many: says so');
   assert.deepStrictEqual(await js(`[...document.querySelectorAll('#scrDlg .dbtn button')].map(b=>b.textContent)`), ['Cancel', 'Manage', 'Make another'], 'many: it can be passed');
   await fits('many');
+  await H.shot(path.join(OUT, `096-charmaker-many-1280x800.png`), { prep: 'mouse' });
   await press('Manage');
   await need(`!document.querySelector(${jsLiteral(DLG)})&&document.querySelectorAll('#chmList .chm-row').length===24`, 'many: Manage shows the rows');
   assert.ok(await js(`document.activeElement&&document.activeElement.closest('#chmList')!==null`), 'many: the focus is in the rows');
