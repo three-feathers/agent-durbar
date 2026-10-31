@@ -47,10 +47,16 @@ export const ORDER_SEARCH_MAX = 7;
 /** FR-020: big screens with this many visible agents or fewer. */
 export const BIG_MAX = 4;
 /** FR-024: visitors' activity pose per place, and the fallback when a person has no picture for it. */
-export const FX_POSE: Record<string, string> = { library: 'book', software: 'box', terminal: 'tread', web: 'touch', boss: 'knock', coffee: 'coffee', bank: 'letter', postbox: 'letter', other: 'tool' };
+export const FX_POSE: Record<string, string> = { library: 'book', software: 'box', terminal: 'touch', web: 'touch', boss: 'knock', coffee: 'coffee', bank: 'letter', postbox: 'letter', other: 'tool' };
 export const POSE_FALLBACK: Record<string, string> = { box: 'letter', touch: 'letter', tool: 'letter', wait: 'letter' };
 /** Owner 2026-10-31 10:19 ("it must be real"): people in the lobby are scaled against the Boss door: a door is about 2.1 m, a person 1.7 m. */
 export const DOOR_M = 2.1, PERSON_M = 1.7;
+/** Owner 2026-10-31 10:48 ("their feet are above the floor"): visitors stand IN FRONT of the fixtures, on the floor strip, not on the
+ *  wall's base line. Their foot line is FRONT_DEPTH of the way from the wall/floor line down to the band's bottom edge, and they are
+ *  drawn NEAR_SCALE larger than a person at the wall line, since they are nearer. */
+export const FRONT_DEPTH = 0.45, NEAR_SCALE = 1.04;
+/** a visitor's name chip: its height, and the gap above the figure's highest opaque row (raised hands included) */
+export const CHIP_H = 17, CHIP_GAP = 2;
 /** FR-022: the order inside a zone. */
 export const STATE_ORDER: Record<RealState, number> = { waiting: 0, limit: 0, error: 1, working: 2, thinking: 2, done: 3, idle: 4, asleep: 4 };
 /** FR-036: the seated pose per state (the first frame; motion is phase P2). */
@@ -235,7 +241,8 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
   const wallH = floorY, fs0 = wallH / meta.floorLine;
   /* a standing person's height in px: 1.7 m against the Boss door's 2.1 m at the band's own scale (not a fixture's compact scale) */
   const doorPx = (meta.floorLine - (meta.fixtureTop && roOwn(meta.fixtureTop, 'boss') ? meta.fixtureTop.boss : meta.floorLine * 0.03)) * fs0;
-  const personPx = doorPx * PERSON_M / DOOR_M, vw = personPx * 0.42;
+  const personPx = doorPx * PERSON_M / DOOR_M, vw = personPx * 0.42, nearPx = personPx * NEAR_SCALE;
+  const frontY = floorY + FRONT_DEPTH * (Lb - floorY); /* owner 10:48: the front floor plane, inside the floor strip */
   const webW = (meta.fixtures.web || [100, meta.floorLine])[0] * fs0;
   const full = places.map((p) => (!p.custom && roOwn(meta.fixtures, p.id) ? meta.fixtures[p.id][0] * fs0 : webW)); /* FR-027: a custom place is a kiosk the size of the Web fixture */
   const al = lobbyWidths(full, places.map((p) => p.visitors.length), W, vw);
@@ -248,15 +255,21 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
       const cx = x + fw - 0.3 * vw + vw / 2 + j * al.step;
       const sp = standPose(meta, v.person, p.id, !!p.custom);
       let fig: VisitorBox['fig'] = null, face: Rect | null = null, shadow: Rect | null = null;
+      let chipY = Lb - CHIP_H;
       if (sp) {
-        /* the feet (the picture's lowest opaque row) stand on the floor line; one scale per person, from its upright 'letter' pose */
-        const k = personPx / standHeight(meta, String(v.person)), fw2 = sp.size[0] * k, fh2 = sp.size[1] * k;
-        fig = { x: cx - fw2 / 2, y: floorY - sp.feet * fh2, w: fw2, h: fh2, file: `${v.person}-${sp.pose}.webp`, pose: sp.pose, feetY: floorY };
+        /* the feet (the picture's lowest opaque row) stand on the front floor plane, in front of the fixture; one scale per person,
+           from its upright 'letter' pose, NEAR_SCALE larger than at the wall line. */
+        const k = nearPx / standHeight(meta, String(v.person)), fw2 = sp.size[0] * k, fh2 = sp.size[1] * k;
+        fig = { x: cx - fw2 / 2, y: frontY - sp.feet * fh2, w: fw2, h: fh2, file: `${v.person}-${sp.pose}.webp`, pose: sp.pose, feetY: frontY };
         const headY = fig.y + sp.top * fh2;
-        face = { x: cx - 0.065 * personPx, y: headY, w: 0.13 * personPx, h: 0.13 * personPx };
-        shadow = { x: cx - 0.3 * fw2, y: floorY - 3, w: 0.6 * fw2, h: 6 };
+        face = { x: cx - 0.065 * nearPx, y: headY, w: 0.13 * nearPx, h: 0.13 * nearPx };
+        /* a soft elliptical contact shadow on the floor, centred on the foot line, a little wider than the stance */
+        const sw = 0.36 * nearPx, shH = Math.max(5, 0.045 * nearPx);
+        shadow = { x: cx - sw / 2, y: frontY - shH / 2, w: sw, h: shH };
+        /* the name chip goes above the head (the strip is too short to hold it under the feet): it never covers the feet or legs */
+        chipY = Math.max(0, headY - CHIP_GAP - CHIP_H);
       }
-      return { id: v.id, fig, chip: { x: cx, y: Lb - 17 }, face, shadow };
+      return { id: v.id, fig, chip: { x: cx, y: chipY }, face, shadow };
     });
     return { id: p.id, custom: !!p.custom, art, slot: { x, y: 0, w: al.w[i], h: Lb }, plate: { x: x + 2, y: compact ? Math.round(Lb * 0.4) : Math.max(3, objTop - 19), w: al.w[i] + al.gap - 6 }, /* the plate may use the gap up to the next place */ visitors, more: p.visitors.length - visitors.length,
       light: art ? { x: x - 0.1 * fw, y: Math.max(0, objTop - 0.15 * fh), w: 1.2 * fw, h: floorY - Math.max(0, objTop - 0.15 * fh) } : { x, y: 0, w: al.w[i], h: Lb } };

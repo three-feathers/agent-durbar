@@ -59,7 +59,7 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
     if (person) {
       if (!CLAUSE.test(s.fictional || '')) out.push(`ASSETS.md ${name}: no fictional-people clause (FR-067)`);
       const lc = s['likeness-check'] || '';
-      if (!/^(?:[A-Z][\w .'-]*[\w.], \d{4}-\d{2}-\d{2}|pending \([A-Z][\w .'-]*\))$/.test(lc)) out.push(`ASSETS.md ${name}: likeness-check must be "<approver>, <YYYY-MM-DD>" or "pending (<approver>)", got "${lc}" (FR-068)`);
+      if (!/^(?:[A-Z][\w .'-]*[\w.], \d{4}-\d{2}-\d{2}(?: \d{2}:\d{2} UTC)?(?: \([^()]+\))?|pending \([A-Z][\w .'-]*\))$/.test(lc)) out.push(`ASSETS.md ${name}: likeness-check must be "<approver>, <YYYY-MM-DD>[ HH:MM UTC][ (note)]" or "pending (<approver>)", got "${lc}" (FR-068)`);
       if (/\b(?:celebrity|famous|actor|actress|singer|politician) (?:named|called)\b/i.test(s.prompt || '')) out.push(`ASSETS.md ${name}: the prompt names a real person`);
     }
     for (const f of (s.files || '').split(/\s+/).filter(Boolean)) { if (listed.has(f)) out.push(`ASSETS.md: ${f} in ${listed.get(f)} and ${name}`); listed.set(f, name); }
@@ -121,9 +121,9 @@ assert.deepStrictEqual(real, [], 'the shipped pack passes: ' + real.slice(0, 10)
 const total = [...files.values()].reduce((s, b) => s + b.length, 0);
 const META = JSON.parse(pj);
 assert.strictEqual(Object.keys(META.seat).length, 15, '15 seated people (the Office people)');
-assert.ok(Object.values(META.stand as Record<string, { poses: object }>).every((s) => ['book', 'coffee', 'tread', 'letter', 'knock'].every((p) => p in s.poses)), 'every person has the five standing poses');
+assert.ok(Object.values(META.stand as Record<string, { poses: object }>).every((s) => ['book', 'coffee', 'letter', 'knock'].every((p) => p in s.poses) && !('tread' in s.poses)), 'every person has the four standing poses, and no treadmill (owner 2026-10-31 11:22)');
 const pending = [...sections(md)].filter(([, s]) => /^pending/.test(s['likeness-check'] || '')).map(([n]) => n);
-if (pending.length) console.log(`note: ${pending.length} person sheets wait for their likeness check (FR-068; a release must not ship with one pending): ${pending.join(', ')}`);
+assert.deepStrictEqual(pending, [], 'every Office person has its likeness check on record (Vikram, 2026-10-31 10:46 UTC; FR-068)');
 
 // ---- the check itself: each rule fails on its broken case ----
 {
@@ -141,7 +141,9 @@ if (pending.length) console.log(`note: ${pending.length} person sheets wait for 
   assert.ok(only(problems(one('p01-book.webp', book), pj1, okMd.replace(/- likeness-check:.*\n/, ''))).some((p) => /likeness-check/.test(p)), 'red: without the likeness-check field');
   assert.ok(only(problems(one('p01-book.webp', book), pj1, okMd.replace('likeness-check: Vikram, 2026-10-31', 'likeness-check: , 2026-10-31'))).some((p) => /likeness-check/.test(p)), 'red: an empty approver');
   assert.ok(only(problems(one('p01-book.webp', book), pj1, okMd.replace('likeness-check: Vikram, 2026-10-31', 'likeness-check: Vikram, yesterday'))).some((p) => /likeness-check/.test(p)), 'red: not a date');
-  assert.deepStrictEqual(only(problems(one('p01-book.webp', book), pj1, okMd.replace('likeness-check: Vikram, 2026-10-31', 'likeness-check: pending (Vikram)'))), [], 'a pending check is allowed in the repo (a release waits for it)');
+  assert.deepStrictEqual(only(problems(one('p01-book.webp', book), pj1, okMd.replace('likeness-check: Vikram, 2026-10-31', 'likeness-check: pending (Vikram)'))), [], 'a pending check is allowed in the repo for a new sheet (a release waits for it)');
+  assert.deepStrictEqual(only(problems(one('p01-book.webp', book), pj1, okMd.replace('likeness-check: Vikram, 2026-10-31', 'likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet reviewed)'))), [], 'a time and a note after the date pass');
+  assert.ok(only(problems(one('p01-book.webp', book), pj1, okMd.replace('likeness-check: Vikram, 2026-10-31', 'likeness-check: Vikram, 2026-10-31 maybe'))).some((p) => /likeness-check/.test(p)), 'red: free text after the date');
   assert.ok(only(problems(one('p01-book.webp', book), pj1, okMd.replace('None.', '- p01-book.webp: removed 2026-11-02, reported by Paco'))).some((p) => /removal record/.test(p)), 'red: a removal record without its replacement');
   assert.deepStrictEqual(only(problems(one('p01-book.webp', book), pj1, okMd.replace('None.', '- p01-old.webp: removed 2026-11-02, reported by Paco, replaced by `p01-book.webp`'))), [], 'a complete removal record passes');
   // EXIF chunk appended (RIFF size fixed up)
@@ -169,7 +171,7 @@ if (fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) {
   const m = /self\.DurbarRealOfficeArt=(\{.*\});\s*$/.exec(js);
   assert.ok(m, 'people.js sets self.DurbarRealOfficeArt');
   assert.deepStrictEqual(JSON.parse((m as RegExpExecArray)[1]), META, 'people.js carries people.json unchanged');
-  for (const f of ['realoffice.js', 'realoffice.css']) assert.ok(fs.existsSync(path.join(ROOT, 'dist', 'renderer', f)), f + ' is built');
+  for (const f of ['realoffice.js', 'realoffice.css', 'realoffice-world.css']) assert.ok(fs.existsSync(path.join(ROOT, 'dist', 'renderer', f)), f + ' is built');
 }
 const index = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8');
 const csp = /Content-Security-Policy" content="([^"]*)"/.exec(index);

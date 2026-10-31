@@ -1657,18 +1657,27 @@ function ringFolder(){if(reducedMotion())return;setTimeout(()=>{const b=$('addFo
 let OFFICE_VIEW=(()=>{try{return localStorage.getItem('durbar.officeview')==='real'?'real':'flat';}catch(e){return 'flat';}})();
 if(qs.has('sim')&&/^(real|flat)$/.test(qs.get('officeview')||''))OFFICE_VIEW=qs.get('officeview'); /* drivers: the simulator only */
 const officeView=()=>OFFICE_VIEW;
+/* spec 097 FR-100, FR-113 (owner 2026-10-31 10:46: the top bar and menus follow the Real office look): while Real office is shown, its
+   world's token set (today the photo world for every Characters value, until the crew worlds ship) paints the whole chrome; flat, or a
+   Real office that failed to load, gives the user's theme back (theme.js setWorld) */
+const syncWorld=()=>{
+  const on=OFFICE_VIEW==='real'&&RO_LOAD!=='failed';
+  if(on&&!document.getElementById('roWorldCss')){const l=document.createElement('link');l.id='roWorldCss';l.rel='stylesheet';l.href='realoffice-world.css';document.head.appendChild(l);} /* its rules, also in the List view (FR-061: only once Real office is chosen) */
+  if(THEME&&THEME.setWorld)THEME.setWorld(on?'photo':null);
+};
 /* FR-004: from the cabins, the same "Switch to an open office?" question as Open office; false when the user keeps the cabins */
 async function setOfficeView(v){
   v=v==='real'?'real':'flat';
   if(v===OFFICE_VIEW)return true;
   if(v==='real'&&signsOn()&&!(await openDoorsFirst('real')))return false;
   OFFICE_VIEW=v;try{localStorage.setItem('durbar.officeview',v);}catch(e){}
-  layoutKey='';scheduleRender();return true;
+  syncWorld();layoutKey='';scheduleRender();return true;
 }
 /* spec 097 FR-084 (owners 2026-10-31): the Characters setting applies in Real office too; a set without Real office pictures (today
    every crew) shows the Office people, and Settings says how that crew appears there is still being decided */
 const realOfficeSet=()=>CREW&&CREW.realOfficeSet?CREW.realOfficeSet(crewChoice()):{set:'office',scene:'office',coming:false};
 let RO_LOAD=''; /* '', 'loading', 'ready', 'failed' */
+syncWorld();
 function loadRealOffice(){
   if(RO_LOAD)return;
   RO_LOAD='loading';
@@ -1681,7 +1690,7 @@ function loadRealOffice(){
   };
   next(0);
 }
-function roFailed(){toast('The Real office could not be loaded, so the office is shown flat.',5200).classList.add('err');}
+function roFailed(){syncWorld();toast('The Real office could not be loaded, so the office is shown flat.',5200).classList.add('err');}
 /* the plain model Real office draws (no markup but the places' own icons): every text is already masked (deskMask = DurbarSafeText) */
 function realModel(model){
   const D=window.DurbarPlaces, E=window.exports;
@@ -7991,7 +8000,7 @@ if(bridge){
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
   document.body.classList.toggle('simple',SIMPLE);
-  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},signs:{get:()=>SIGN_PREF,set:setSignsOn,usable:()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign),view:{get:officeView,set:setOfficeView,note:()=>officeView()==='real'&&realOfficeSet().coming?'Real office shows its Office people for now: how this crew appears there is still being decided.':''}},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},signs:{get:()=>SIGN_PREF,set:setSignsOn,usable:()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign),view:{get:officeView,set:setOfficeView,note:()=>CREW&&CREW.realOfficeNote?CREW.realOfficeNote(crewChoice(),officeView()):''}},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     applyCharacters,charPreview, /* spec 077 FR-068 */
@@ -8069,7 +8078,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={agents:()=>agents,realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
+if(SIM)window.__durbarSimUi={agents:()=>agents,toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,

@@ -3,7 +3,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { realLayout, lobbyWidths, sortDesks, assignPeople, standPose, lobbyRange, PERSON_M, DOOR_M, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
+import { realLayout, lobbyWidths, sortDesks, assignPeople, standPose, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
 
@@ -212,6 +212,10 @@ for (const [W, H] of SIZES) {
   const m = model(15, 4); m.places[6].visitors = [0, 1, 2].map((i) => ({ id: 'b' + i, person: PEOPLE[i], needsYou: false })); m.places[2].visitors = [{ id: 't0', person: 'p03', needsYou: false }];
   const L = realLayout(m, { w: W, h: H }, META);
   const floorLine = L.floorStrip.y + 3, wallScale = floorLine / META.floorLine;
+  /* owner 10:48: visitors stand in front of the fixtures, on the floor strip: the front floor plane, 35-60 % of the strip below the wall line */
+  const front = floorLine + FRONT_DEPTH * (L.lobbyH - floorLine);
+  assert.ok(FRONT_DEPTH >= 0.35 && FRONT_DEPTH <= 0.6 && NEAR_SCALE >= 1.03 && NEAR_SCALE <= 1.06, 'depth plane and near scale in the owner\'s ranges');
+  assert.ok(front - floorLine >= 6, `the front plane is visibly below the wall line at ${W}: ${(front - floorLine).toFixed(1)} px`);
   const doorPx = (META.floorLine - (META.fixtureTop as Record<string, number>).boss) * wallScale;
   let n = 0;
   for (const f of L.fixtures) for (const v of f.visitors) {
@@ -219,16 +223,30 @@ for (const [W, H] of SIZES) {
     n++;
     const st = META.stand[m.places.find((p) => p.id === f.id)!.visitors.find((x) => x.id === v.id)!.person as string];
     const feet = (st.feet as Record<string, number>)[v.fig.pose], top = (st.top as Record<string, number>)[v.fig.pose];
-    assert.ok(Math.abs(v.fig.y + v.fig.h * feet - floorLine) <= 0.5, `${v.id} (${v.fig.pose}) stands on the floor line at ${W}: feet ${v.fig.y + v.fig.h * feet} vs ${floorLine}`);
-    assert.ok(v.shadow && Math.abs(v.shadow.y + v.shadow.h / 2 - floorLine) <= 0.5, `${v.id} has a contact shadow on the floor line`);
+    assert.ok(Math.abs(v.fig.y + v.fig.h * feet - front) <= 2, `${v.id} (${v.fig.pose}) stands on the front floor plane at ${W}: feet ${v.fig.y + v.fig.h * feet} vs ${front} (wall line ${floorLine})`);
+    assert.ok(v.fig.y + v.fig.h * feet - floorLine >= 6, `${v.id} does not stand on the wall's base line`);
+    assert.ok(v.shadow && Math.abs(v.shadow.y + v.shadow.h / 2 - front) <= 0.5 && v.shadow.w > v.shadow.h * 3, `${v.id} has an elliptical contact shadow on the front plane`);
+    /* the name chip never covers the figure's lower 25 % (feet and legs) */
+    const low = { y0: v.fig.y + v.fig.h * (feet - 0.25 * (feet - top)), y1: v.fig.y + v.fig.h * feet };
+    assert.ok(v.chip.y + CHIP_H <= low.y0 || v.chip.y >= low.y1, `${v.id}: its chip (y ${v.chip.y.toFixed(1)}) does not cover the lower quarter (${low.y0.toFixed(1)}-${low.y1.toFixed(1)})`);
+    assert.ok(v.chip.y >= 0, `${v.id}: the chip stays in the band`);
+    for (const g of L.fixtures) for (const o of g.visitors) if (o.fig && o !== v) {
+      const so = META.stand[m.places.find((p) => p.id === g.id)!.visitors.find((x) => x.id === o.id)!.person as string];
+      const fo = (so.feet as Record<string, number>)[o.fig.pose], to = (so.top as Record<string, number>)[o.fig.pose];
+      const oy0 = o.fig.y + o.fig.h * (fo - 0.25 * (fo - to)), oy1 = o.fig.y + o.fig.h * fo, cw = 70; /* a generous chip width */
+      const xo = Math.abs(v.chip.x - (o.fig.x + o.fig.w / 2)) < cw / 2 + o.fig.w * 0.3, yo = v.chip.y < oy1 && v.chip.y + CHIP_H > oy0;
+      assert.ok(!(xo && yo), `${v.id}'s chip does not cover ${o.id}'s legs`);
+    }
     if (v.fig.pose === 'letter' || v.fig.pose === 'book' || v.fig.pose === 'knock') {
       const tall = v.fig.h * (feet - top);
-      assert.ok(Math.abs(tall / doorPx - PERSON_M / DOOR_M) < 0.06, `${v.id} is ${(tall / doorPx * DOOR_M).toFixed(2)} m against a ${DOOR_M} m door at ${W}`);
+      assert.ok(Math.abs(tall / doorPx - NEAR_SCALE * PERSON_M / DOOR_M) < 0.06, `${v.id} is ${(tall / doorPx * DOOR_M).toFixed(2)} m against a ${DOOR_M} m door at ${W} (drawn ${NEAR_SCALE}x, nearer)`);
     }
   }
   assert.ok(n >= 5, 'visitors were checked: ' + n);
-  const tread = L.fixtures.find((f) => f.id === 'terminal')!.visitors[0];
-  assert.strictEqual(tread.fig!.pose, 'tread', 'the Terminal visitor walks on the treadmill');
+  /* owner 2026-10-31 11:22 ("may be don't use treadmill"): the Terminal visitor stands at the terminal (reaching to it, else the plain standing pose) */
+  const term = L.fixtures.find((f) => f.id === 'terminal')!.visitors[0];
+  assert.ok(['touch', 'letter'].includes(term.fig!.pose), 'the Terminal visitor stands, no treadmill: ' + term.fig!.pose);
+  assert.ok(Math.abs(term.fig!.feetY - front) <= 0.5, 'the Terminal visitor stands on the front floor plane');
 }
 // the anchor uses the measured foot line, not the picture's box: the mockup's art had up to 6 % empty rows under the feet
 assert.ok(Object.values(META.stand).some((s) => Object.values(s.feet as Record<string, number>).some((f) => f < 0.97)), 'some sprite has empty rows under its feet (so a box anchor would float)');
@@ -261,12 +279,18 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.feet as Record<s
 // ---- FR-084: the Characters setting in Real office (the seam in crew.js) ----
 {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as { realOfficeSet: (c: string) => { set: string; scene: string; coming: boolean }; REAL_OFFICE_SETS: string[] };
+  const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as { realOfficeSet: (c: string) => { set: string; scene: string; coming: boolean }; realOfficeNote: (c: string, v: string) => string; REAL_OFFICE_SETS: string[] };
   assert.deepStrictEqual(C.REAL_OFFICE_SETS, ['office'], 'only the Office people have Real office pictures today');
   for (const c of ['theme', 'minimalist', '', 'mine', '__proto__']) assert.deepStrictEqual(C.realOfficeSet(c), { set: 'office', scene: 'office', coming: false }, `${c || '(none)'}: the Office people, no note`);
   for (const c of ['cheeky', 'prehistoric']) assert.deepStrictEqual(C.realOfficeSet(c), { set: 'office', scene: 'office', coming: true }, `${c}: a crew without Real office pictures shows the Office people, and Settings says so`);
+  // FR-083: the Settings line, for a crew only and only with Real office chosen
+  assert.strictEqual(C.realOfficeNote('cheeky', 'real'), 'Real office shows the Office people until the Cheeky loft is ready.', 'Cheeky: the note names its world');
+  assert.strictEqual(C.realOfficeNote('prehistoric', 'real'), 'Real office shows the Office people until the Prehistoric cave is ready.', 'Prehistoric: the note names its world');
+  for (const c of ['theme', 'minimalist', '', 'mine', '__proto__', 'office']) assert.strictEqual(C.realOfficeNote(c, 'real'), '', `${c || '(none)'}: the Office people, no note`);
+  for (const v of ['cabins', 'open', '']) assert.strictEqual(C.realOfficeNote('cheeky', v), '', `${v || '(none)'}: no note outside Real office`);
   C.REAL_OFFICE_SETS.push('cheeky');
   assert.deepStrictEqual(C.realOfficeSet('cheeky'), { set: 'cheeky', scene: 'office', coming: false }, 'a crew with pictures is drawn (the seam)');
+  assert.strictEqual(C.realOfficeNote('cheeky', 'real'), '', 'a crew whose world shipped has no note');
   C.REAL_OFFICE_SETS.pop();
 }
 

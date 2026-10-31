@@ -11,6 +11,8 @@
   let usage=null; /* last all-time view {doc,labels,error} from main */
   const $=id=>document.getElementById(id);
   const esc=s=>X.esc(s);
+  /* spec 097 FR-113: while Real office is shown, its world's colours paint the chrome, so a theme picked in Settings shows in the flat office */
+  const worldWords=()=>{const T=window.THEME,w=T&&T.world?T.world():null;return w?`Real office uses the colours of its world (${T.worldName(w)}); the theme you pick here shows in the flat office.`:'';};
   const root=()=>$('screen');
   const fmt=n=>S.fmtTokens(n);
   const cap=(s,n)=>{s=String(s==null?'':s);return s.length>n?s.slice(0,n-1)+'…':s;};
@@ -324,8 +326,11 @@
     const themes=(window.THEME?window.THEME.list():[{id:'clean-office',name:'Clean Office'}]).map((t)=>({...t,own:false})).concat(userThemes.filter((u)=>u.ok!==false).map((u)=>({id:u.id,name:u.name||u.id,author:typeof u.author==='string'?u.author:'',own:true})));
     const baseAuthor=(themes.find((t)=>t.id==='clean-office')||{}).author||'Three Feathers'; /* FR-030: a card names its author only when it is not the built-in one */
     const badThemes=userThemes.filter((u)=>u.ok===false);
+    /* spec 097 FR-113: while Real office is shown, its world's colours paint the chrome, so a theme picked here shows in the flat office */
+    const worldNote=()=>`<p class="scr-note small" id="thWorld"${worldWords()?'':' hidden'}>${esc(worldWords())}</p>`;
     const themeSec=`<section class="scr-sec" aria-labelledby="themeH"><h3 id="themeH">Theme</h3>
         <p class="scr-note">The look of the office; the choice applies at once and is kept on this computer.</p>
+        ${worldNote()}
         <details class="scr-more"><summary>More</summary><p class="scr-note small">Colours, fonts (system fonts only), corner radii, shadows, the people's clothes and hair, small art (desk gadgets too) and scene words (places, lobby, doors). Status, permission and credit wording never change, and the layout always fits 15 agents at 1280×800. A theme is a folder with a data-only manifest.json (no scripts, no CSS).</p></details>
         <ul class="thlist" id="thList">${themes.map((t)=>{const by=t.author&&t.author!==baseAuthor?t.author:'';const dm=/^Durbar · (.+)$/.exec(t.name||'');return `<li class="throw"><button class="thpick" type="button" data-theme="${esc(t.id)}" aria-pressed="${t.id===curTheme}" aria-label="Theme ${esc(t.name)}${t.own?', yours':''}${by?esc(', by '+by):''}"><span class="thsw" data-theme-sw="${esc(t.id)}" aria-hidden="true"><i class="thsw-wall"></i><i class="thsw-desk"></i><i class="thsw-chair"></i><i class="thsw-ag"></i></span><span class="thtx">${dm?'<span class="thover">Durbar</span>':''}<b title="${esc(t.name)}">${esc(dm?dm[1]:t.name)}</b>${t.own?'<span class="mtag">yours</span>':''}${by?`<small>${esc(by)}</small>`:''}</span></button></li>`;}).join('')}</ul>
         ${themeFallbackNote(themes)}
@@ -846,6 +851,7 @@
       const on=!!X.signs.get(), view=V?V.get():'flat', g=olb.parentElement;
       if(g)g.querySelectorAll('[data-officelayout]').forEach(b=>{const t=b.dataset.officelayout;b.setAttribute('aria-pressed',String(t==='real'?view==='real':view!=='real'&&(t==='cabins')===on));});
       const n=$('dsR');if(n&&V)n.textContent=V.note();
+      const tw=$('thWorld');if(tw){tw.textContent=worldWords();tw.hidden=!tw.textContent;}
       return;
     }
     const shs=e.target.closest('#shutSw');

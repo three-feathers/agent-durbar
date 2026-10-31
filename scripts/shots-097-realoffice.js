@@ -19,7 +19,9 @@
  *   - the room is not dimmer with fewer active agents (FR-043);
  *   - a click on a person or a plate does not open that agent's chat (FR-006);
  *   - a picture that fails to load leaves a broken image instead of the initials disc (FR-065).
- * Screenshots: <SHOTS_OUT>/097-real-15-<w>x<h>.png, 097-real-3-<w>x<h>.png, 097-real-lights-1440x900.png, 097-office-layout-1440x900.png.
+ *   - the world chrome (FR-113): in Real office the top bar, More menu, a toast, Settings and a dialog do not use the photo world's
+ *     tokens (glass, bar ink, page ink), text under 10.5px, or leaving Real office does not restore the theme exactly; flat has no world.
+ * Screenshots: <SHOTS_OUT>/097-world-{menu,toast,settings,dialog}-<w>x<h>.png, 097-real-15-<w>x<h>.png, 097-real-3-<w>x<h>.png, 097-real-lights-1440x900.png, 097-office-layout-1440x900.png.
  */
 const os = require('os');
 const fs = require('fs');
@@ -105,16 +107,24 @@ module.exports = async (ctx) => {
     for (const st of ['working', 'thinking', 'idle', 'asleep']) if (cues[st]) assert.ok(cues[st].every((c) => c === 'none'), `${st}: no call light`);
     const bub = await js(`({e:document.querySelectorAll('#stage .ro-plate[data-state="error"]').length,x:document.querySelectorAll('#stage .ro-bang').length})`);
     assert.strictEqual(bub.x, bub.e, 'one "!" per error desk');
-    // ---- owner 2026-10-31 10:19: every visitor's feet (its measured foot line) on the lobby's floor line within 2 px, with a contact shadow ----
-    const feet = await js(`(()=>{const A=self.DurbarRealOfficeArt,fl=document.querySelector('#stage .ro-strip').getBoundingClientRect().top+3,out=[];
-      for(const im of document.querySelectorAll('#stage .ro-visitor')){const m=/(p\\d\\d)-(\\w+)\\.webp$/.exec(im.getAttribute('src'));const f=A.stand[m[1]].feet[m[2]];
-        const r=im.getBoundingClientRect(),y=r.top+r.height*f,cx=r.left+r.width/2;
+    // ---- owner 2026-10-31 10:19 and 10:48: every visitor's feet (its measured foot line) on the FRONT floor plane (in front of the
+    //      fixtures, FRONT_DEPTH of the strip below the wall line) within 2 px, with a contact shadow there; no chip over a figure's lower 25 % ----
+    const feet = await js(`(()=>{const A=self.DurbarRealOfficeArt,sr=document.querySelector('#stage .ro-strip').getBoundingClientRect(),wl=sr.top+3,fl=wl+self.exports.FRONT_DEPTH*(sr.bottom-wl),out=[];
+      const chips=[...document.querySelectorAll('#stage .ro-chip')].map(c=>c.getBoundingClientRect());
+      for(const im of document.querySelectorAll('#stage .ro-visitor')){const m=/(p\\d\\d)-(\\w+)\\.webp$/.exec(im.getAttribute('src'));const f=A.stand[m[1]].feet[m[2]],t=A.stand[m[1]].top[m[2]];
+        const r=im.getBoundingClientRect(),y=r.top+r.height*f,cx=r.left+r.width/2,lo=r.top+r.height*(f-0.25*(f-t));
         const sh=[...document.querySelectorAll('#stage .ro-shadow')].some(s=>{const q=s.getBoundingClientRect();return q.left<cx&&q.right>cx&&Math.abs((q.top+q.bottom)/2-fl)<=2;});
-        out.push({who:im.dataset.for,pose:m[2],off:Math.round((y-fl)*10)/10,sh});}
+        const legs=chips.filter(q=>q.left<r.left+r.width*0.8&&q.right>r.left+r.width*0.2&&q.top<y&&q.bottom>lo).length;
+        out.push({who:im.dataset.for,pose:m[2],off:Math.round((y-fl)*10)/10,wall:Math.round((y-wl)*10)/10,sh,legs});}
       return out;})()`);
-    console.log('[097] feet vs floor line', w, JSON.stringify(feet.map((f) => f.pose + ':' + f.off)));
+    console.log('[097] feet vs front floor plane', w, JSON.stringify(feet.map((f) => f.pose + ':' + f.off + ' (wall +' + f.wall + ')')));
     assert.ok(feet.length >= 3, 'visitors stand in the lobby');
-    for (const f of feet) { assert.ok(Math.abs(f.off) <= 2, `${f.who} (${f.pose}) floats or sinks: ${f.off} px from the floor line`); assert.ok(f.sh, `${f.who} has a contact shadow`); }
+    for (const f of feet) {
+      assert.ok(Math.abs(f.off) <= 2, `${f.who} (${f.pose}) floats or sinks: ${f.off} px from the front floor plane`);
+      assert.ok(f.wall >= 6, `${f.who} stands in front of the fixtures, not on the wall's base line (${f.wall} px below it)`);
+      assert.ok(f.sh, `${f.who} has a contact shadow`);
+      assert.strictEqual(f.legs, 0, `${f.who}: no name chip covers the feet or legs`);
+    }
     await H.shot(path.join(OUT, `097-real-15-${w}x${h}.png`), { prep: 'calm' });
   }
 
@@ -165,5 +175,107 @@ module.exports = async (ctx) => {
   const victim = await js(`(()=>{const i=document.querySelector('#stage .ro-person');const f=i.dataset.for;i.src='realoffice/art/missing.webp';return f})()`);
   await must(`!!document.querySelector('#stage .ro-initials[data-for="'+CSS.escape(${jsLiteral(victim)})+'"]')`, 'the initials disc after a failed picture');
   assert.strictEqual(await js(`[...document.querySelectorAll('#stage .ro img')].filter(i=>i.complete&&!i.naturalWidth).length`), 0, 'no broken image left on screen');
+
+  // ---- FR-100, FR-113 (owner 2026-10-31 10:46: "the top bar and menu ... should follow the same design"): the world's token set ----
+  // on the top bar, the More menu, Settings, a dialog and a toast, at both sizes; flat keeps the user's theme; leaving restores it
+  const RGB = (hex) => { const h = hex.replace('#', ''); return `rgb(${parseInt(h.slice(0, 2), 16)}, ${parseInt(h.slice(2, 4), 16)}, ${parseInt(h.slice(4, 6), 16)})`; };
+  /* contrast helpers, installed in the page once per load (ensureLum) as window.__roRatio */
+  const lumJs = `{const lum=c=>{const k=/^color\\(/.test(c)?1:255;const v=(c.replace(/^color\\(srgb/,'').match(/[\\d.]+/g)||[]).slice(0,3).map(Number).map(x=>x/k).map(x=>x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4));return .2126*v[0]+.7152*v[1]+.0722*v[2]};const ratio=(a,b)=>{const[x,y]=[lum(a),lum(b)].sort((p,q)=>q-p);return (x+.05)/(y+.05)};window.__roRatio=ratio;}true;`;
+  const ensureLum = () => js(lumJs);
+  const W = await js(`JSON.stringify(window.THEME.worldTokens('photo'))`).then(JSON.parse);
+  await H.load({ w: 1440, h: 900 });
+  const flat = await js(`({w:document.documentElement.dataset.world||'',bar:getComputedStyle(document.querySelector('.topbar')).backgroundColor,img:getComputedStyle(document.querySelector('.topbar')).backgroundImage,css:!!document.getElementById('roWorldCss')})`);
+  assert.deepStrictEqual(flat, { w: '', bar: 'rgb(255, 253, 249)', img: 'none', css: false }, 'flat: the Clean Office bar, no world, no world CSS loaded: ' + JSON.stringify(flat));
+  for (const [w, h] of SIZES) {
+    await loadReal(w, h);
+    await ensureLum();
+    await must(`document.documentElement.dataset.world==='photo'&&!!document.getElementById('roWorldCss')&&getComputedStyle(document.querySelector('.topbar')).backgroundImage.includes('gradient')&&getComputedStyle(document.getElementById('addFolder')).backgroundColor===${jsLiteral(RGB(W['--wb-surface']))}`, 'the world chrome (after the buttons\' colour transition)');
+    const bar = await js(`(()=>{const ratio=window.__roRatio;const b=document.querySelector('.topbar'),cs=getComputedStyle(b),bg=getComputedStyle(document.documentElement).getPropertyValue('--wb-bg').trim();
+      const texts=[...b.querySelectorAll('h1,.btn,.seg button,select,.stat')].filter(e=>e.getClientRects().length&&!e.closest('.more-menu'));
+      const ink=getComputedStyle(b.querySelector('h1')).color, btn=getComputedStyle(document.getElementById('addFolder'));
+      return {ink,btnInk:btn.color,btnBg:btn.backgroundColor,h:b.getBoundingClientRect().height,minFont:Math.min(...texts.map(e=>parseFloat(getComputedStyle(e).fontSize))),bg};})()`);
+    console.log('[097] world top bar', w, JSON.stringify(bar));
+    assert.strictEqual(bar.ink, RGB(W['--wb-ink']), 'the title is the bar ink');
+    assert.strictEqual(bar.btnBg, RGB(W['--wb-surface']), 'a bar button is on the bar surface: ' + JSON.stringify(bar));
+    assert.ok(bar.h <= 52.5, 'the top bar keeps its one row: ' + bar.h);
+    assert.ok(bar.minFont >= 10.5, 'top bar text at least 10.5px: ' + bar.minFont);
+    // every text in the bar reads on what is behind it (its own background, else the bar's): 4.5:1
+    const low = await js(`(()=>{const ratio=window.__roRatio;const out=[];const bgOf=e=>{for(let x=e;x&&x!==document.body;x=x.parentElement){const c=getComputedStyle(x).backgroundColor;if(c&&!/rgba\\(0, 0, 0, 0\\)|transparent/.test(c))return c;}return 'rgb(42, 35, 30)';};
+      for(const e of document.querySelectorAll('.topbar h1,.topbar .btn,.topbar .seg button,.topbar select,.topbar .stat b,.topbar .stat span.l,.topbar .inbox-btn b,.topbar .inbox-btn,.topbar .sched-top,.topbar .proto'))if(e.getClientRects().length&&!e.closest('.more-menu')){const r=ratio(getComputedStyle(e).color,bgOf(e));if(r<4.5)out.push((e.id||e.className||e.tagName)+' '+r.toFixed(2));}return out;})()`);
+    assert.deepStrictEqual(low, [], 'top bar text at 4.5:1 or more');
+    // the More menu: frosted glass with the page values back (dark text on the cream glass), inside the bar
+    await js(`document.getElementById('topMoreBtn').click()`);
+    await must(`!document.getElementById('topMoreMenu').hidden`, 'the More menu');
+    const menu = await js(`(()=>{const m=document.getElementById('topMoreMenu'),cs=getComputedStyle(m),it=m.querySelector('.more-it .mt');return {bf:cs.backdropFilter,bg:cs.backgroundColor,ink:getComputedStyle(it).color,font:parseFloat(getComputedStyle(it.querySelector('small')||it).fontSize)};})()`);
+    console.log('[097] world More menu', w, JSON.stringify(menu));
+    assert.ok(/blur/.test(menu.bf), 'the menu is frosted glass');
+    assert.ok(/color-mix|rgba|color\(srgb/.test(menu.bg) || menu.bg !== RGB(W['--surface']), 'the menu fill is translucent: ' + menu.bg);
+    assert.strictEqual(menu.ink, RGB(W['--ink']), 'menu text is the page ink, not the bar ink');
+    assert.ok(menu.font >= 10.5, 'menu text at least 10.5px');
+    await H.shot(path.join(OUT, `097-world-menu-${w}x${h}.png`), { prep: 'calm' });
+    await js(`document.getElementById('topMoreBtn').click()`);
+    await must(`document.getElementById('topMoreMenu').hidden`, 'the More menu closed');
+    // a toast (with its button): the bar's dark glass
+    await js(`window.__durbarSimUi.toast('Real office: 3 sessions resumed.','Undo')`);
+    await must(`!!document.querySelector('#toasts .toast')`, 'a toast');
+    const toast = await js(`(()=>{const ratio=window.__roRatio;const t=document.querySelector('#toasts .toast'),cs=getComputedStyle(t);return {ink:cs.color,bf:cs.backdropFilter,font:parseFloat(cs.fontSize)};})()`);
+    assert.strictEqual(toast.ink, RGB(W['--wb-ink']), 'toast text is the bar ink');
+    assert.ok(/blur/.test(toast.bf), 'the toast is glass');
+    await js(`(document.getElementById('shotCalm')||{remove(){}}).remove()`); /* the calm style hides every toast once made without keepActions */
+    await H.shot(path.join(OUT, `097-world-toast-${w}x${h}.png`), { prep: 'calm', keepActions: true });
+    await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove());(document.getElementById('shotCalm')||{remove(){}}).remove()`);
+    // Settings: the page set, and the theme note
+    await js(`window.DurbarScreens.openSettings()`);
+    await must(`!!document.getElementById('thWorld')`, 'Settings');
+    const set = await js(`({note:document.getElementById('thWorld').hidden?'':document.getElementById('thWorld').textContent,sec:getComputedStyle(document.querySelector('.scr-sec')).backgroundColor,ink:getComputedStyle(document.querySelector('.scr-sec h3')).color,bg:getComputedStyle(document.body).backgroundColor})`);
+    console.log('[097] world Settings', w, JSON.stringify(set));
+    assert.ok(/Real office uses the colours of its world \(Photo office\)/.test(set.note), 'Settings says the theme shows in the flat office');
+    assert.strictEqual(set.sec, RGB(W['--surface']), 'Settings sections are the world surface');
+    assert.strictEqual(set.ink, RGB(W['--ink']), 'Settings text is the world ink');
+    await H.shot(path.join(OUT, `097-world-settings-${w}x${h}.png`), { prep: 'calm' });
+    await js(`document.getElementById('scrClose').click()`);
+    // a dialog: the keyboard shortcuts sheet, frosted glass on a warm scrim
+    await js(`document.getElementById('kbdHelpBtn').click()`);
+    await must(`!!document.querySelector('.dlg-ov .dlg')`, 'a dialog');
+    const dlg = await js(`(()=>{const d=document.querySelector('.dlg-ov .dlg'),cs=getComputedStyle(d);return {bf:cs.backdropFilter,ink:cs.color,h2:getComputedStyle(d.querySelector('h2,h3')).color};})()`);
+    assert.ok(/blur/.test(dlg.bf), 'the dialog is frosted glass');
+    assert.strictEqual(dlg.h2, RGB(W['--ink']), 'dialog text is the world ink');
+    await H.shot(path.join(OUT, `097-world-dialog-${w}x${h}.png`), { prep: 'calm' });
+    await js(`document.getElementById('kbdClose').click()`);
+    await must(`!document.querySelector('.dlg-ov .dlg')`, 'the dialog closed');
+  }
+  // forced colours: the system colours win (no glass, no gradient); reduced transparency: opaque panels (emulated media)
+  {
+    const dbg = ctx.win.webContents.debugger;
+    if (!dbg.isAttached()) dbg.attach('1.3');
+    try {
+      for (const [name, value] of [['forced-colors', 'active'], ['prefers-reduced-transparency', 'reduce']]) {
+        await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name, value }] });
+        const on = await js(`matchMedia('(${name}: ${value})').matches`);
+        await js(`document.getElementById('topMoreBtn').click()`);
+        await must(`!document.getElementById('topMoreMenu').hidden`, 'the More menu');
+        const m = await js(`(()=>{const m=getComputedStyle(document.getElementById('topMoreMenu')),b=getComputedStyle(document.querySelector('.topbar'));return {bf:m.backdropFilter,bg:m.backgroundColor,img:b.backgroundImage,sh:b.boxShadow};})()`);
+        console.log('[097] world under', name, on, JSON.stringify(m));
+        assert.ok(on, `${name} is emulated`);
+        assert.strictEqual(m.bf, 'none', `${name}: no glass blur`);
+        if (name === 'forced-colors') assert.ok(m.img === 'none' && m.sh === 'none', 'forced colours: no gradient or shadow on the bar');
+        else assert.strictEqual(m.bg, RGB(W['--surface']), 'reduced transparency: the menu is opaque');
+        await js(`document.getElementById('topMoreBtn').click()`);
+        await must(`document.getElementById('topMoreMenu').hidden`, 'the More menu closed');
+      }
+    } finally {
+      await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }).catch(() => undefined);
+      dbg.detach();
+    }
+  }
+  // leaving Real office gives the user's theme back, exactly (Clean Office: the bar is its light surface again)
+  await js(`window.DurbarScreens.openSettings()`);
+  await must(`!!document.querySelector('[data-officelayout="open"]')`, 'the Office layout row');
+  await js(`document.querySelector('[data-officelayout="open"]').click()`);
+  await must(`localStorage.getItem('durbar.officeview')==='flat'&&!document.documentElement.dataset.world`, 'flat again');
+  assert.ok(await js(`document.getElementById('thWorld').hidden`), 'the theme note goes with the world');
+  await js(`document.getElementById('scrClose').click()`);
+  const back = await js(`({bar:getComputedStyle(document.querySelector('.topbar')).backgroundColor,img:getComputedStyle(document.querySelector('.topbar')).backgroundImage,surface:getComputedStyle(document.documentElement).getPropertyValue('--surface').trim(),wb:getComputedStyle(document.documentElement).getPropertyValue('--wb-bg').trim()})`);
+  assert.deepStrictEqual(back, { bar: 'rgb(255, 253, 249)', img: 'none', surface: '#fffdf9', wb: '' }, 'leaving Real office restores Clean Office: ' + JSON.stringify(back));
   console.log('[097] real office checks passed; shots in', OUT);
 };

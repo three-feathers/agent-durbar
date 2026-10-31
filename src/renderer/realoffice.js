@@ -182,11 +182,11 @@
       for (const v of fx.visitors) {
         const ag = p.visitors.find((x) => x.id === v.id);
         if (v.fig && !BAD.has(v.fig.file)) {
-          /* owner 2026-10-31 10:19: the feet on the floor line (layout), with a soft contact shadow under them */
+          /* owner 2026-10-31 10:19 and 10:48: the feet on the front floor plane (layout), with a soft contact shadow under them */
           const sh = el(art, 'vs:' + v.id, 'div', 'ro-shadow'); box(sh, v.shadow);
           const im = el(art, 'v:' + v.id, 'img', 'ro-visitor'); box(im, v.fig); im.dataset.for = v.id; im.dataset.pose = v.fig.pose; im.dataset.feet = String(Math.round(v.fig.feetY * 10) / 10); img(im, v.fig.file);
         }
-        const ch = el(chrome, 'vc:' + v.id, 'span', 'ro-chip' + (ag.needsYou ? ' wait' : '')); box(ch, v.chip);
+        const ch = el(chrome, 'vc:' + v.id, 'span', 'ro-chip' + (ag.needsYou ? ' wait' : '')); box(ch, v.chip); ch.dataset.y = String(v.chip.y); ch.dataset.x = String(v.chip.x);
         if (p.go) ch.dataset.pvopen = v.id; else ch.dataset.for = v.id;
         attr(ch, 'title', ag.title); ch.dataset.name = ag.name; text(ch, (ag.needsYou ? '✋ ' : '') + ag.name);
       }
@@ -199,26 +199,39 @@
       if (pl._sig !== lsig) { pl._sig = lsig; pl.textContent = ''; const s = document.createElement('span'); s.textContent = p.label; pl.appendChild(s); if (fx.more > 0) { const b = document.createElement('b'); b.className = 'ro-more'; b.textContent = '+' + fx.more; pl.appendChild(b); } }
     }
     [art, amb, lights, chrome].forEach(sweep);
-    stagger(chrome, lay.lobbyH);
+    stagger(chrome);
     return lay;
   }
 
-  /* visitors' name chips stand at their feet; when two would touch (a crowd, long names, a neighbour place), the later one moves up a
-     level (over the legs), up to three levels, then shows initials; measured once per render, left to right */
-  function stagger(chrome, Lb) {
-    const chips = [...chrome.querySelectorAll(':scope > .ro-chip')].sort((a, b) => parseFloat(a.style.left) - parseFloat(b.style.left));
-    const levels = [[], [], []];
+  /* visitors' name chips stand above their heads (owner 2026-10-31 10:48: never over the feet or legs; the layout gives each its
+     place); when two would touch (a crowd, long names, a neighbour place), the later one moves a little right (up to 28 px) or up a
+     level while it stays inside the band, else shows initials, which move right until they touch nobody; measured once per render,
+     left to right, so no two chips ever overlap */
+  function stagger(chrome) {
+    const chips = [...chrome.querySelectorAll(':scope > .ro-chip')].sort((a, b) => parseFloat(a.dataset.x || a.style.left) - parseFloat(b.dataset.x || b.style.left));
+    /* the place plates are there first: a chip never covers one */
+    const placed = [...chrome.querySelectorAll(':scope > .ro-lplate')].map((e) => [e.offsetLeft, e.offsetLeft + e.offsetWidth, e.offsetTop, e.offsetTop + e.offsetHeight]);
     for (const c of chips) {
-      c.style.top = px(Lb - 17); if (c.dataset.full) { c.textContent = c.dataset.full; delete c.dataset.full; }
-      let placed = false;
-      for (let tries = 0; tries < 2 && !placed; tries++) {
-        const w = c.offsetWidth, l = parseFloat(c.style.left) - w / 2, r = l + w;
-        for (let k = 0; k < levels.length; k++) {
-          if (levels[k].some(([a, b]) => a < r + 2 && l < b + 2)) continue;
-          levels[k].push([l, r]); c.style.top = px(Lb - 17 - 18 * k); placed = true; break;
+      const base = parseFloat(c.dataset.y || c.style.top) || 0, x0 = parseFloat(c.dataset.x || c.style.left) || 0;
+      c.style.left = px(x0); c.style.top = px(base); if (c.dataset.full) { c.textContent = c.dataset.full; delete c.dataset.full; }
+      const h = c.offsetHeight || 17;
+      const hits = (L0, R0, t) => placed.filter(([a, b, y0, y1]) => a < R0 + 2 && L0 < b + 2 && y0 < t + h && t < y1);
+      /* the least move to the right at level top `t` that touches nobody */
+      const shift = (l, r, t) => { let dx = 0; for (let i = 0; i < 20; i++) { const hit = hits(l + dx, r + dx, t); if (!hit.length) return dx; dx = Math.max(...hit.map(([, b]) => b)) + 3 - l; } return Infinity; };
+      const put = (l, w, t, dx) => { placed.push([l + dx, l + dx + w, t, t + h]); c.style.top = px(t); c.style.left = px(x0 + dx); };
+      let done = false;
+      for (let tries = 0; tries < 2 && !done; tries++) {
+        if (tries) { c.dataset.full = c.textContent; c.textContent = (c.classList.contains('wait') ? '✋ ' : '') + initials(c.dataset.name || ''); }
+        const w = c.offsetWidth, l = x0 - w / 2, limit = tries ? 40 : 28;
+        for (let k = 0; k < 3 && !done; k++) {
+          const t = base - 18 * k;
+          if (t < 0 && k > 0) break;
+          const dx = shift(l, l + w, t);
+          if (dx <= limit) { put(l, w, t, dx); done = true; }
         }
-        if (!placed) { c.dataset.full = c.textContent; c.textContent = (c.classList.contains('wait') ? '✋ ' : '') + initials(c.dataset.name || ''); }
       }
+      /* a crowd with no room left: the initials move right until they touch nobody (never over another chip) */
+      if (!done) { const w = c.offsetWidth, l = x0 - w / 2; put(l, w, base, shift(l, l + w, base)); }
     }
   }
 
