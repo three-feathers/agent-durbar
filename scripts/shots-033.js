@@ -60,7 +60,7 @@ module.exports = async (ctx) => {
     }
     await until(`!document.querySelector('#walkers .walker.walking')`); await settle();
   };
-  /* the whole building: each floor screen in turn (H.eachFloor, PageDown), each with only its own floor tag, merged into the shape state() has for one screen */
+  /* the whole building: each floor screen in turn (H.eachFloor, PageUp), each with only its own floor tag, merged into the shape state() has for one screen */
   const building = async () => {
     const list = await H.floors();
     if (list.length < 2) return state();

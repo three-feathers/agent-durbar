@@ -34,6 +34,9 @@ const N = require(path.join(R, 'floornav.js')) as {
   badgeText(c: Counts | undefined | null): string;
   badgeNum(n: number): string;
   edgeSummary(items: unknown): { up: Counts | null; down: Counts | null };
+  arriveEdge(go: string): string;
+  topDown(floors: unknown): { f: { id: string }; n: number }[];
+  storeysTopDown(rooms: unknown, rank: (r: string) => number): string[];
 };
 let n = 0;
 const eq = (a: unknown, b: unknown, m: string): void => { assert.deepStrictEqual(a, b, m); n++; };
@@ -50,12 +53,12 @@ ok(!N.screens(null) && !N.screens(undefined) && !N.screens('x'), 'no floors supp
 
 // ---- nextOn: the next floor that is on, no wrap (FR-011) ----
 const f4 = fl('a b !c d');
-eq(N.nextOn(f4, 'a', 'next'), 'b', 'PageDown from the first');
-eq(N.nextOn(f4, 'b', 'next'), 'd', 'PageDown skips a floor that is off');
-eq(N.nextOn(f4, 'd', 'next'), null, 'PageDown at the last floor: nothing (no wrap)');
-eq(N.nextOn(f4, 'd', 'prev'), 'b', 'PageUp skips a floor that is off');
-eq(N.nextOn(f4, 'b', 'prev'), 'a', 'PageUp to the first');
-eq(N.nextOn(f4, 'a', 'prev'), null, 'PageUp at the first floor: nothing (no wrap)');
+eq(N.nextOn(f4, 'a', 'next'), 'b', 'PageUp from floor 1 (Q-D)');
+eq(N.nextOn(f4, 'b', 'next'), 'd', 'PageUp skips a floor that is off');
+eq(N.nextOn(f4, 'd', 'next'), null, 'PageUp at the top floor: nothing (no wrap)');
+eq(N.nextOn(f4, 'd', 'prev'), 'b', 'PageDown skips a floor that is off');
+eq(N.nextOn(f4, 'b', 'prev'), 'a', 'PageDown to floor 1');
+eq(N.nextOn(f4, 'a', 'prev'), null, 'PageDown at floor 1: nothing (no wrap)');
 eq(N.nextOn(f4, 'zz', 'next'), null, 'an unknown floor: nothing');
 eq(N.nextOn(f4, 'a', 'sideways'), null, 'an unknown direction: nothing');
 eq(N.nextOn(fl('a b !c'), 'b', 'next'), null, 'only floors that are off after it: nothing');
@@ -92,30 +95,49 @@ eq(N.announceText('Ground floor', 1, 3), 'Floor Ground floor, 1 of 3', 'the anno
 const body = { closest: () => null, isContentEditable: false };
 const inside = (sel: string): { closest: (s: string) => unknown; isContentEditable: boolean } => ({ closest: (s: string) => (s.split(',').some((x) => x.trim().startsWith(sel)) ? {} : null), isContentEditable: false });
 const down: Ev = { key: 'PageDown' }, up: Ev = { key: 'PageUp' };
-eq(N.keyEligible(down, body), 'next', 'PageDown outside text');
-eq(N.keyEligible(up, body), 'prev', 'PageUp outside text');
+eq(N.keyEligible(down, body), 'prev', 'PageDown outside text: the next number down (Q-D)');
+eq(N.keyEligible(up, body), 'next', 'PageUp outside text: the next number up (Q-D)');
 eq(N.keyEligible({ key: 'Enter' }, body), null, 'another key');
 eq(N.keyEligible({ key: 'ArrowDown' }, body), null, 'an arrow key');
 for (const m of ['ctrlKey', 'altKey', 'shiftKey', 'metaKey', 'isComposing', 'repeat', 'defaultPrevented']) eq(N.keyEligible({ ...down, [m]: true }, body), null, `${m}: the key is not ours`);
 for (const sel of ['input', 'textarea', 'select', '[contenteditable]', '[role="textbox"]', '[role="combobox"]', '[role="listbox"]', '[role="menu"]', '[role="dialog"]']) eq(N.keyEligible(down, inside(sel)), null, `inside ${sel}: the key keeps its meaning`);
 eq(N.keyEligible(down, { closest: () => null, isContentEditable: true }), null, 'a contenteditable by property');
-eq(N.keyEligible(down, null), 'next', 'no focused element (the page): ours');
+eq(N.keyEligible(down, null), 'prev', 'no focused element (the page): ours');
 eq(N.keyEligible(down, body, {}, { office: false }), null, 'not in the office view');
 eq(N.keyEligible(down, body, {}, { dialog: true }), null, 'under a dialog or the palette');
 eq(N.keyEligible(down, body, {}, { menu: true }), null, 'with a menu open');
-eq(N.keyEligible(down, body, {}, { office: true, dialog: false, menu: false }), 'next', 'office view, nothing open');
+eq(N.keyEligible(down, body, {}, { office: true, dialog: false, menu: false }), 'prev', 'office view, nothing open');
 // the scroll rule: a floor screen that scrolls scrolls first, and changes floor only from an edge
 eq(N.keyAction(down, body, { scrolls: true, atTop: true, atBottom: false }), { scroll: 1 }, 'scrolling floor, not at the bottom: PageDown scrolls');
-eq(N.keyAction(down, body, { scrolls: true, atTop: false, atBottom: true }), { go: 'next' }, 'scrolling floor, at the bottom: PageDown changes floor');
+eq(N.keyAction(down, body, { scrolls: true, atTop: false, atBottom: true }), { go: 'prev' }, 'scrolling floor, at the bottom: PageDown changes floor');
 eq(N.keyAction(up, body, { scrolls: true, atTop: false, atBottom: true }), { scroll: -1 }, 'scrolling floor, not at the top: PageUp scrolls');
-eq(N.keyAction(up, body, { scrolls: true, atTop: true, atBottom: false }), { go: 'prev' }, 'scrolling floor, at the top: PageUp changes floor');
-eq(N.keyAction(down, body, { scrolls: true, atTop: true, atBottom: true }), { go: 'next' }, 'a screen with no room to scroll counts as at both edges');
-eq(N.keyAction(down, body, { scrolls: false, atTop: false, atBottom: false }), { go: 'next' }, 'a screen that does not scroll: the edges do not matter');
+eq(N.keyAction(up, body, { scrolls: true, atTop: true, atBottom: false }), { go: 'next' }, 'scrolling floor, at the top: PageUp changes floor');
+eq(N.keyAction(down, body, { scrolls: true, atTop: true, atBottom: true }), { go: 'prev' }, 'a screen with no room to scroll counts as at both edges');
+eq(N.keyAction(down, body, { scrolls: false, atTop: false, atBottom: false }), { go: 'prev' }, 'a screen that does not scroll: the edges do not matter');
 eq(N.keyEligible(down, body, { scrolls: true, atTop: true, atBottom: false }), null, 'keyEligible: null while the screen can still scroll');
-eq(N.keyEligible(down, body, { scrolls: true, atTop: false, atBottom: true }), 'next', 'keyEligible: next from the bottom edge');
+eq(N.keyEligible(down, body, { scrolls: true, atTop: false, atBottom: true }), 'prev', 'keyEligible: PageDown goes down from the bottom edge');
 eq(N.keyEligible(up, body, { scrolls: true, atTop: false, atBottom: true }), null, 'keyEligible: PageUp at the bottom edge scrolls, not a floor change');
 eq(N.keyAction(down, inside('input'), { scrolls: true, atTop: true, atBottom: false }), null, 'in a text field the scroll rule is not ours either');
 eq(N.keyAction(down, body, { scrolls: true, atTop: true, atBottom: false }, { dialog: true }), null, 'under a dialog the screen does not scroll by our hand');
+
+// ---- Q-D: natural numbering, floor 1 at the bottom (T050) ----
+eq(N.keyEligible(up, body, { scrolls: true, atTop: true, atBottom: false }), 'next', 'PageUp from the top edge goes up the building');
+eq(N.arriveEdge('next'), 'bottom', 'going up you arrive at the bottom edge of the floor above');
+eq(N.arriveEdge('prev'), 'top', 'going down you arrive at the top edge of the floor below');
+eq(N.topDown(fl('a b c')).map((x) => [x.f.id, x.n]), [['c', 3], ['b', 2], ['a', 1]], 'the lift from the top down: the highest number first, floor 1 last, numbers unchanged');
+eq(N.topDown(null), [], 'the lift of no floors');
+{
+  const f3 = fl('a b c'), input = f3.map((x) => x.id).join();
+  N.topDown(f3);
+  eq(f3.map((x) => x.id).join(), input, 'topDown leaves the list as it was');
+}
+{
+  const rank: Record<string, number> = { a1: 0, a2: 0, b1: 1, c1: 2, c2: 2 };
+  const rooms = ['a1', 'a2', 'b1', 'c1', 'c2'];
+  eq(N.storeysTopDown(rooms, (r) => rank[r]), ['c1', 'c2', 'b1', 'a1', 'a2'], 'All floors from the top down: floor 1 last, a floor keeps its own order');
+  eq(rooms.join(), 'a1,a2,b1,c1,c2', 'storeysTopDown leaves the list as it was');
+  eq(N.storeysTopDown(null, () => 0), [], 'no rooms');
+}
 
 // ---- phase 2: the All floors view (FR-031..FR-037) ----
 eq(N.viewOf('all'), 'all', 'the stored value all is the All floors view');

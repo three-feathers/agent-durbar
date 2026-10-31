@@ -43,7 +43,7 @@ module.exports = async (ctx) => {
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await H.load({ w, h, query: { simfloors: '1' }, focus: true });
     await H.clearToasts();
-    // spec 092: the office shows one floor at a time; this driver works on the first floor's screen and visits the others with PageDown
+    // spec 092: the office shows one floor at a time; this driver works on the first floor's screen and visits the others with PageUp
     const floorList = await H.floors();
     const floorsInOrder = floorList.map((f) => f.name);
     assert.ok(floorsInOrder.length >= 2, `simfloors has two or more floors on: ${floorsInOrder}`);
@@ -106,7 +106,7 @@ module.exports = async (ctx) => {
     console.log('[033-move]', w, 'toast', JSON.stringify(toast));
     assert.ok(toast && toast.text.includes(room.name) && toast.text.includes('moved to') && toast.text.includes(targetName) && toast.act === 'Undo', 'the note names the folder and the floor, with Undo');
     await shot('move-toast', w, h);
-    // the room is on the floor it was moved to (its agents followed), one PageDown away
+    // the room is on the floor it was moved to (its agents followed), one PageUp away
     assert.ok(await H.goToFloor(target), 'the target floor is shown');
     await until(`!!document.querySelector(${jsLiteral(`#stage .room [data-door="${room.id}"]`)})`, 5000);
     await settle();

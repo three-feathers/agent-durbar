@@ -156,7 +156,7 @@ function helpers(ctx) {
   /**
    * Spec 092 (floor screens): with two or more floors on, the office shows one floor at a time. `floors()` lists the floors that are on, in floor order
    * ({id, name}, read from the Floors panel); `shownFloor()` is the id of the floor screen shown (the saved current floor); `goToFloor(id)` presses
-   * PageDown / PageUp, as a user does, until that floor is shown (each press waits for the change); `eachFloor(fn)` goes to the first floor and runs
+   * PageUp / PageDown, as a user does, until that floor is shown (each press waits for the change); `eachFloor(fn)` goes to the first floor and runs
    * `fn(floor, index)` on every floor screen in turn, ending on the last one. Office view only. With one floor on, `eachFloor` runs `fn` once.
    */
   const floors = async () => {
@@ -173,7 +173,7 @@ function helpers(ctx) {
       const here = await shownFloor(), cur = list.findIndex((f) => f.id === here), want = list.findIndex((f) => f.id === id);
       if (want < 0 || cur === want) return cur === want;
       const was = list[cur] ? list[cur].id : null;
-      await key(want > cur ? 'PageDown' : 'PageUp', [], { pause: 30 });
+      await key(want > cur ? 'PageUp' : 'PageDown', [], { pause: 30 }); // spec 092 Q-D: the list goes up the building
       await w.until(`localStorage.getItem('durbar.floor')!==${jsLiteral(was)}`);
     }
     return false;
