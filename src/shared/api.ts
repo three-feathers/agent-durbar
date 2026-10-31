@@ -865,6 +865,12 @@ export interface DurbarApi {
   setTheme?(id: string): Promise<{ ok: boolean; theme?: string; characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' }>;
   /** Spec 077 FR-064: set who sits at the desks; main refuses anything not on the list (`ok: false`, the value in force). */
   setCharacters?(v: string): Promise<{ ok: boolean; characters: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' }>;
+  /** Spec 102 FR-064: installed worlds as main lists them; `state` is *Damaged* when a re-check failed. No path, no description. */
+  worldList?(): Promise<Array<{ key: string; name: string; origin: 'project' | 'source' | 'uploaded' | 'made' | 'imported' | null; version: number; size: number; state: 'ok' | 'unfinished' | 'damaged' | 'revoked'; unfinished: boolean; parts: string[]; date: string }>>;
+  /** Spec 102 FR-062, FR-063: one part's bytes (PNG or WebP) for a key main listed, after the re-check; nothing for anything else. */
+  worldPart?(key: string, name: string): Promise<{ ok: boolean; bytes?: Uint8Array; mime?: 'image/webp' | 'image/png'; reason?: string; error?: string }>;
+  /** Spec 102 FR-061: remove one installed world by key. */
+  worldRemove?(key: string): Promise<{ ok: boolean; error?: string }>;
   /** User themes (spec 040): scan userData/themes; each valid pack listed, each invalid one given back with a reason. */
   listUserThemes?(): Promise<Array<{ id: string; name?: string; ok: boolean; error?: string }>>;
   getUserTheme?(id: string): Promise<Record<string, unknown> | null>;

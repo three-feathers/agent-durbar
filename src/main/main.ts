@@ -15,6 +15,7 @@ import { register as registerBrowserIpc } from './ipc/browser';
 import { noteWindowZoom } from './titledblclick';
 import { register as registerAttachmentsIpc } from './ipc/attachments';
 import { register as registerCheckpointsIpc } from './ipc/checkpoints';
+import { register as registerWorldsIpc } from './ipc/worlds';
 import { register as registerFloorsIpc } from './ipc/floors';
 import { register as registerFoldersIpc } from './ipc/folders';
 import { register as registerNewFolderIpc } from './ipc/newfolder';
@@ -754,6 +755,7 @@ registerAgentsIpc({ browserGone, agents, router, agentState, opsDeps, remoteOps,
 registerAttachmentsIpc({ dev, pickedFiles, getStageDir, sizeOf });
 registerPreviousIpc({ browserGone, renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });
+const worldsIpc = registerWorldsIpc({ simulator: SIMULATOR }); // spec 102 T022: installed worlds, read from disk after a re-check; no network
 registerSchedulesIpc({ getScheduler: () => scheduler, getFolderStore: () => folderStore });
 registerUsageIpc({ agents, getUsageStore: () => usageStore, getUsageTotalsStore: () => usageTotalsStore, usageLabel });
 const newFolderIpc = registerNewFolderIpc({ addMany, getSettingsStore: () => settingsStore, asEffort, toRenderer }); // spec 093: create a folder from + Folder (clone, new repository, empty folder)
@@ -1162,6 +1164,7 @@ app.on('before-quit', (ev) => {
     .finally(() => app.quit());
 });
 app.on('will-quit', () => {
+  worldsIpc.shutdown(); // spec 102: no read starts after quit
   scheduler?.flush(); // spec 044 FR-037: a fold counted during the 3 s dispose window of before-quit
   void destroyAllViews(); // spec 080 FR-023: the session browsers (none exist until the browser pane lands)
   usageStore?.flush();
