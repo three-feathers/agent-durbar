@@ -33,7 +33,7 @@ module.exports = async (ctx) => {
     await must(`document.querySelectorAll('#stage .ro-stext:not(.off) .ro-sl').length>0`, 'text on the screens');
     await H.calm();
   };
-  const emit = (e) => js(`void window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${JSON.stringify(e)}));0`);
+  const emit = (e) => js(`void window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${jsLiteral(e)}));0`);
   /* a screen's text box lies exactly over its glass: find it by the desk's glass rectangle from the layout */
   const INSTALL = `window.__scr=(id)=>{const L=window.__durbarSimUi.realLayout(),d=L.zones.flatMap(z=>z.desks).find(x=>x.id===id),ro=document.querySelector('#stage .ro').getBoundingClientRect();if(!d)return null;
       return [...document.querySelectorAll('#stage .ro-stext')].find(e=>{const b=e.getBoundingClientRect();return Math.abs(b.left-ro.left-d.glass.x)<1&&Math.abs(b.top-ro.top-d.glass.y)<1;})||null;};0`;
@@ -41,7 +41,7 @@ module.exports = async (ctx) => {
 
   /* simulator visits run on the wall clock and take the frozen run's working agents to the lobby: an idle agent told to work stays at its desk */
   const seat = async (nth = 0) => {
-    const id = await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.state==='idle'&&d.person).map(d=>d.id)[${nth}]`);
+    const id = await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.state==='idle'&&d.person).map(d=>d.id)[${jsLiteral(nth)}]`);
     assert.ok(id, 'an idle agent at a desk');
     await emit({ type: 'status', sessionId: id, status: 'working', intent: 'Driver work' });
     await must(`!!document.querySelector('#stage .ro-person[data-pose="typeA"][data-for="'+CSS.escape(${jsLiteral(id)})+'"]')`, 'a person typing at the desk');
@@ -149,7 +149,7 @@ module.exports = async (ctx) => {
     const id = await seat();
     /* the picture of the new pose decodes first; simulator visits end on the wall clock, and a neighbour coming back moves this desk: the read starts
        again from a new place or ambient. On one place it must hold, unchanged, for over a whole frame period. */
-    const place = async () => { await must(`!!document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(id)})+'"]')`, tag + ': the person at the desk'); return js(`JSON.stringify([${CROP(id)},document.querySelector('#stage .ro').dataset.ambient])`); };
+    const place = async () => { await must(`!!document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(id)})+'"]')`, tag + ': the person at the desk'); return js('JSON.stringify([' + CROP(id) + `,document.querySelector('#stage .ro').dataset.ambient])`); };
     let held = 0, worst = 0, at = '', a = null;
     for (let t = 0; t < 60 && held < 7; t++) {
       await ctx.sleep(250);

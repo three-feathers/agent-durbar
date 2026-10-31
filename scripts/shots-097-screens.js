@@ -38,7 +38,7 @@ module.exports = async (ctx) => {
     await must(`document.querySelectorAll('#stage .ro-stext:not(.off) .ro-sl').length>0`, 'text on the screens');
     await H.calm();
   };
-  const emit = (e) => js(`void window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${JSON.stringify(e)}));0`);
+  const emit = (e) => js(`void window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${jsLiteral(e)}));0`);
   /* a screen's text box lies exactly over its glass: find it by the desk's glass rectangle from the layout */
   const INSTALL = `window.__scr=(id)=>{const L=window.__durbarSimUi.realLayout(),d=L.zones.flatMap(z=>z.desks).find(x=>x.id===id),ro=document.querySelector('#stage .ro').getBoundingClientRect();if(!d)return null;
       return [...document.querySelectorAll('#stage .ro-stext')].find(e=>{const b=e.getBoundingClientRect();return Math.abs(b.left-ro.left-d.glass.x)<1&&Math.abs(b.top-ro.top-d.glass.y)<1;})||null;};0`;
@@ -101,7 +101,7 @@ module.exports = async (ctx) => {
     mark('hostile');
     // SC-005: hostile lines through the event path; read the screen and the zoom
     const victim = (await js(pickWorking))[1] || id;
-    const hostile = `See ${TOKEN} and /Users/alice/.ssh/id and <img src=x onerror=window.__pwned=1> and [click](https://evil.example/x) \u001b[31mred\u001b[0m \u001b]0;title\u0007end. `;
+    const hostile = 'See ' + TOKEN + ` and /Users/alice/.ssh/id and <img src=x onerror=window.__pwned=1> and [click](https://evil.example/x) \u001b[31mred\u001b[0m \u001b]0;title\u0007end. `;
     await emit({ type: 'output', sessionId: victim, delta: hostile });
     await must(`window.__scr(${jsLiteral(victim)}).textContent.includes('onerror')`, 'the hostile line on the screen');
     await emit({ type: 'output', sessionId: victim, delta: 'word '.repeat(220000) });
@@ -195,8 +195,8 @@ module.exports = async (ctx) => {
     await js(INSTALL);
     const ids = await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).map(d=>d.id)`);
     for (const id of ids) for (let i = 0; i < 14; i++) await emit({ type: 'toolCall', sessionId: id, callId: 'big' + i, tool: 'read_file', phase: 'start', args: { path: `src/big/line-${i}.ts` } });
-    await must(`${JSON.stringify(ids)}.every(id=>window.__scr(id).textContent.includes('line-13'))`, 'the lines on the big screens');
-    const big = await js(`${JSON.stringify(ids)}.map(id=>{const e=window.__scr(id),b=e.getBoundingClientRect(),rows=[...e.querySelectorAll('.ro-sl')];
+    await must(`${jsLiteral(ids)}.every(id=>window.__scr(id).textContent.includes('line-13'))`, 'the lines on the big screens');
+    const big = await js(`${jsLiteral(ids)}.map(id=>{const e=window.__scr(id),b=e.getBoundingClientRect(),rows=[...e.querySelectorAll('.ro-sl')];
       /* lines really inside the glass: drawn line boxes, not rows that the clip hides */
       let n=0;for(const r of rows){const g=document.createRange();g.selectNodeContents(r);for(const c of g.getClientRects())if(c.top>=b.top-0.5&&c.bottom<=b.bottom+0.5)n++;}
       return {id,h:Math.round(b.height),lines:n,font:rows.length?parseFloat(getComputedStyle(rows[0]).fontSize):0,small:e.classList.contains('small')};})`);
