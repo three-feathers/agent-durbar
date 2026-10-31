@@ -1,0 +1,328 @@
+# Feature Specification: Real office mode
+
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 046
+title: Real office mode (owner request, Vikram 2026-10-30/31): a realistic front-facing open-plan office as a second office mode beside flat (default), live screens, animated people, status lights; folds in #692
+note: spec, plan, tasks drafted; Q1-Q5 open; nothing built
+status: draft
+-->
+
+**Feature Branch**: `097-real-office` (spec); code branches `097-pN-slug`, one per phase
+
+**Created**: 2026-10-31
+
+**Status**: Draft (2026-10-31). Spec, plan and tasks only; nothing is built. Q1-Q5 below wait for the owner.
+
+**Input**: Owner requests (Vikram, Telegram DMs, 2026-10-30 and 2026-10-31):
+- "lets make it realistic … it looks like a dashboard and not real office"; "quality is the key as it is visual".
+- He chose the **front-facing open-plan layout** (mockup variant B) over isometric rooms, because isometric wastes too much screen space.
+- "dont unnecessarily waste screenspace … if there is no functionality … screen space is important to not show details too small".
+- Lobby visitors stand in activity poses at their fixture: flipping books at the Library, sipping coffee, on a treadmill or at a standing terminal, knocking at the Boss door, and so on.
+- Each agent's monitor shows its live screen (output text, scrolling); hover zooms in; with few agents, big screens and readable text.
+- People animate (typing, waving, thinking, resting).
+- "this realistic should be one of the modes, while we still support old modes for people who want flat". **Flat stays the default and is unchanged.**
+- **Lights** (2026-10-31 08:28 UTC): "add lights … red light when error, dim while working, turn off while sleeping … use common sense"; "Lights for library, boss, bank as well"; "We already had an issue for lights, check that". The light scheme in FR-040..FR-052 is the one sent to the owner in reply.
+
+## Why a new spec and not a delta
+
+Spec 001 owns the office, its densities and the 15-agent fit rule; spec 017 owns the *Office layout* setting (cabins or open); spec 024 owns the lobby places; spec 077 owns raster characters; spec 096 (draft) makes characters with AI. Real office is **a second renderer of the same office model**: its own layout engine, its own art pack (about 190 pictures), live screens, and a lighting layer. As a delta it would bury a new renderer in 001's 190 requirements, so it is a new spec, number **097**. Checked 2026-10-31: `main` has specs up to 096; the only remote branches and PRs at 096 are `096-ai-character-maker` and `096-crew-motion`; nothing uses 097.
+
+**Issue #692** (open, by vikramgorla, never built) asks for user-adjustable room and desk lighting: lit, dim or off per room, a desk override that inherits from the room, local persistence, keyboard and screen-reader operable, readability kept, the current look as the default. This spec **folds #692 in for Real office** (FR-053..FR-058, phase P3) and builds the automatic, status-driven lights first (P1). Whether the flat office also gets #692's manual lighting is Q3. The PR says `Refs #692`, not `Closes`.
+
+## Context: what exists today
+
+- **Office model and render path** (`src/renderer/app.js`): `ROOMS` and `agents` are filled from live sessions; `scheduleRender` calls `renderAll`, which runs `syncCrew`, `syncDesks`, `prepareWalkers`, then `renderOffice()` or `renderList()`, then `syncWalkers`. `officeModel()` gives rooms with `mains` and `rolled`, sorted by `prio` (waiting 0, error 1, the rest 2; spec 001 FR-007). `chooseLayout` with `probe.js` picks the density (spec 001 FR-002).
+- **Statuses the renderer shows** (`app.js` labels): working, thinking, waiting, idle, error, done; paused shows as idle. *Limit reached* (`a.limit`, spec 017 FR-019) and *coffee* (`a.coffee`, spec 068) are flags. Finished agents rest on the couch (recent) or a nap bed (old) in the lounge (spec 001 FR-051..FR-057). There is no "asleep" status: this spec calls an agent in a nap bed, or a stopped session still shown, **asleep**.
+- **Office layout setting** (spec 017 FR-027): Settings > Detail level > **Office layout**, buttons *Office with cabins* (default) and *Open office* (`screens.js` `signsRow()`), stored renderer-side in `localStorage` key `durbar.doorsigns` (`on`/`off`). No IPC, no shared type.
+- **Lobby** (spec 024 FR-001; spec 001 FR-034..FR-040; spec 068): built-in places Library, Software library, Terminal, Web, Other tools; plus Boss, Bank (Durbar's spending limit), Postbox (next scheduled runs) and Coffee corner. A tool call running for more than 600 ms puts the agent "at" its place (024 FR-002, FR-003). Users may add **up to 3 custom places** (`c-xxxxxx`, a name of at most 24 code points, one of 12 icons; 024 FR-018..FR-027).
+- **Raster characters** (spec 077): 352x352 WebP with alpha, no metadata, at most 40 KB each (FR-050), provenance in `src/renderer/crew/art/ASSETS.md` checked by `test:crew-assets` (FR-054), MIT like the code, CSP `img-src 'self' data:` (FR-057), fall back to the plain figure on a decode failure (FR-055). The **Characters** setting is `theme`, `minimalist`, `cheeky`, `prehistoric` (FR-064..FR-068); spec 096 adds `mine` (My characters, FR-040) and the style preset `realistic-office-v1` (FR-050: a **three-quarter isometric** view).
+- **Themes** (specs 035, 040, 070): token groups `--room-*`, `--agent-*`, `--status-*`, `--ui-*`, `--scene-*`; a theme may name a scene kit (035 FR-013) that the Characters setting overrides (035 FR-016); sizes are not themeable (070 D2); status colour meanings are fixed (070 FR-050). Forced colours and `prefers-contrast` are handled in `styles.css` (spec 052 FR-052).
+- **Serious mode** (spec 034 FR-004): removes the moods; spec 017 FR-022 also stops its animations in Serious mode.
+- **Live readout and masking** (spec 001 FR-028..FR-031, FR-043): desk readouts go through `src/shared/redact.ts` (`redact`, `maskSecretCommand`, `maskSecretUrl`, `maskHomePaths`) and `DurbarSafeText` (mask before cut, spec 041 FR-065); main masks MCP output with session secret values (`maskMcpEvent`, `src/main/mcpmask.ts`). The chat body itself is Markdown-sanitised (spec 016) but **not** secret-masked, so the screen reuses the **desk readout** path, which is the stricter one (FR-030).
+- **Package size**: no budget exists today (spec 008 has none, no size script). The crew art total cap is 2.5 MB (`test:crew-assets`).
+
+## Evidence: the mockup (outside the repo, not committed)
+
+Kept in the coordinator's scratchpad on 2026-10-31; described here because the pictures are not in the repo (they move in only with the build PR, FR-063).
+- **`office-mockup/index-b2.html` + `b2.js`**: a standalone page with 15 fake agents in 4 folders. The layout engine is specified as FR-010..FR-022 (row packing by permutation and partition search, a `u` unit per person, desk and person placement from per-picture metadata, a lobby band, screens, hover zoom, big screens when n ≤ 4, 2-frame CSS animations).
+- **Screenshots** (`room-art/shots-v2/`): `b2-15-1440x900`, `b2-15-1280x800`, `b2-3-*` (big screens), `b2-hover-zoom-1440x900`, `b2-lobby-closeup-*`, frame strips of a working and a waiting person. At 1280x800 with 15 agents: a lobby band about 145 px high with 9 fixtures and 5 visitors (Mira at the Library, Sven on the treadmill, Jonas knocking at the Boss door, Maya with a coffee, Omar at the Bank), then 3 rows of desks under folder signs; each desk shows a seated person, a front-facing monitor with coloured line bars and the newest line, and a name plate with name, role, status icon and task; away agents leave a narrower desk with "at Boss ↑".
+- **Art** (`office-mockup/art-v2/`, 194 files, 9.7 MB): 15 people (`p01`..`p15`, varied in age, gender and origin) × 6 seated poses (`typeA`, `typeB`, `waveA`, `waveB`, `think`, `rest`), 15 × 5 standing poses (`book`, `coffee`, `tread`, `letter`, `knock`) plus 4 people with 4 more (`box`, `touch`, `tool`, `wait`); 9 fixtures (`fx-library`, `fx-software`, `fx-terminal`, `fx-web`, `fx-boss`, `fx-coffee`, `fx-bank`, `fx-post`, `fx-tools`) cropped from one back-wall render; one desk (900x344 WebP, 38 KB); a floor texture; `people.json` with per-picture metadata (`w`, `h`, `headTop`, `bodyH`, `hand`). Seated frames are about 457x618, 38-70 KB; fixtures are PNG, up to 105 KB.
+- **Provenance** (`room-art/ASSETS.md`): Codex image generation (`codex exec … "Use your image generation tool to create ONE image …"`) on Vikram's ChatGPT plan, made by Vikram's agent, 2026-10-31, approved by Vikram; the exact prompt of every sheet is recorded (style block: "Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos"). One person (p05) was regenerated because she looked too much like p03.
+
+**Known weaknesses of the mockup** (targets or gaps below): lobby faces are about 12 px with 15 agents (FR-024); desk faces are about 36 px at 1280x800, target 40 px (SC-002); tall fixtures (Library shelf, Boss door) are cut at the top (FR-023); the hover zoom covers neighbours (FR-034); people loop 2 frames and never walk between desk and lobby (FR-075, `[KNOWN GAP]`).
+
+## Clarifications
+
+### Owner requirements (binding, Vikram 2026-10-30/31)
+
+Listed under *Input*. In short: realistic, front-facing open plan; no wasted space; activity poses in the lobby; live screens with hover zoom and big screens for few agents; animated people; lights by status and on the lobby fixtures; flat stays the default and unchanged.
+
+### Decisions taken by this spec
+
+- **D1 One model, two renderers.** Real office reads the same `officeModel()`, `agents`, visits and statuses as flat; it never has its own agent state. Switching modes changes the drawing only.
+- **D2 Its own scene, the theme colours the chrome.** Real office is not a theme scene kit (035 FR-013): the art has its own colours and lighting. The theme still colours everything that is UI: top bar, folder signs, name plates, buttons, hover card, zoom frame, focus rings, status icons (`--ui-*`, `--status-*`, `--c-*`). A theme switch repaints the chrome and never reloads the art.
+- **D3 Realistic people only.** Real office always draws the realistic people of its art pack, whatever the Characters setting says (a cartoon crew in a photoreal room breaks the picture). The Characters setting keeps working for flat. My characters (096) join in P3 (FR-080..FR-083).
+- **D4 Lights are overlays.** Every light is CSS (gradients, opacity, `mix-blend-mode`, box-shadow) over the raster art; no new pictures for lights.
+- **D5 Custom places get a generic fixture.** A plain wall kiosk drawn in CSS with the place's own icon (024 FR-018) and name; no generated art per custom place.
+- **D6 Ship the art in the app, load it lazily.** See FR-060..FR-066.
+
+## User Scenarios & Testing *(mandatory)*
+
+### User Story 1 - See my agents in a realistic office (Priority: P1)
+
+I switch Settings > Office layout to **Real office**. The office becomes a front-facing open-plan room: a lobby band along the back wall with the places, then one zone per folder with a desk per agent, each with a realistic person, a monitor and a name plate. Agents that need me are first and stand out. Nothing is too small to read.
+
+**Why this priority**: it is the feature; without it nothing else shows.
+
+**Independent Test**: simulator with 15 agents at both sizes, Real office on, screenshots and the overlap check.
+
+**Acceptance Scenarios**:
+1. `sim:` **Given** flat is the default, **When** a new user starts the app, **Then** the office is the flat office, pixel-identical to before this feature (`check:office` unchanged).
+2. `sim:` **Given** Real office is chosen, **When** the simulator shows 15 agents with helpers at 1440x900 and at 1280x800, chat closed and open, **Then** every desk, name plate, folder sign and lobby plate is visible with no overlap, no clipped text, no page overflow and no text under 10.5 px (`check:office` Real office variant).
+3. `sim:` **Given** a waiting agent and an error agent in a folder, **Then** they sit first in their zone (spec 001 FR-007), the waiting one waves with an amber call light and "?" bubble, the error one has a red desk light and a "!" badge, and each name plate says the status in words and icon.
+4. `sim:` **Given** an agent at the Library for longer than 600 ms (spec 024 FR-003), **Then** it stands at the Library fixture in its reading pose with a name chip, the Library lamp is on, and its desk is narrower with "at Library ↑".
+5. `test:` **Given** the layout engine with 1..40 agents in 1..8 folders at both sizes, **Then** it returns rectangles that do not overlap, stay inside the floor, and give `u` (person height) at least the minimum of FR-012.
+6. `sim:` **Given** the art pack has not loaded yet or fails, **Then** the office shows desks and plates without people (FR-065) and never an empty or broken page.
+
+### User Story 2 - Lights that tell me the state at a glance (Priority: P1)
+
+Every desk has a lamp and a screen glow that follow the agent's state; the room gets darker as fewer agents work; lobby fixtures light up when used.
+
+**Why this priority**: the owner asked for it with the scene, and it is the calm, glanceable status cue of a real office.
+
+**Independent Test**: simulator with one agent in each state, Real office, screenshots; a unit test of the status-to-light table.
+
+**Acceptance Scenarios**:
+1. `test:` **Given** each status and flag, **Then** `lightFor()` returns exactly the row of the FR-041 table.
+2. `sim:` **Given** an error agent, **Then** a small steady red desk light and a faint red screen tint show, the room around it stays normal, and nothing flashes.
+3. `sim:` **Given** 15 agents of which 3 work, **Then** the room ambient is dimmer than with 12 working, and every label keeps the same contrast in both (FR-050).
+4. `sim:` **Given** `prefers-reduced-motion: reduce` or Serious mode, **Then** no light pulses or breathes; steady lights stay.
+5. `sim:` **Given** forced colours (Windows High Contrast), **Then** lights are not drawn, status words and icons remain, and the office stays usable (FR-051).
+
+### User Story 3 - Live screens (Priority: P2)
+
+Each monitor shows the agent's latest output lines, scrolling as it works; hovering (or focusing) a screen zooms it so I can read it; with 4 agents or fewer the screens are big enough to read without zooming.
+
+**Why this priority**: high value but builds on P1's layout.
+
+**Independent Test**: simulator with streaming agents; a unit test that hostile output is masked, capped and inert.
+
+**Acceptance Scenarios**:
+1. `sim:` **Given** a working agent printing output, **Then** its screen gains the new line at a calm pace (at most one repaint per screen every 2 s) and the newest line is at the bottom.
+2. `test:` **Given** output holding a token, a `~/` home path, an MCP secret value, `<img onerror>`, a Markdown link and 1 MB of text, **Then** the screen text has the token and secret masked, the home path shortened, the HTML shown as text, no link element, and at most the capped number of lines and characters (FR-030, FR-031).
+3. `sim:` **Given** 3 agents at 1280x800, **Then** each screen shows at least 8 lines of real text at 11 px or more.
+4. `sim:` **Given** 15 agents, **When** I hover a screen, **Then** a zoom panel shows the last lines readably, does not cover the hovered agent's name plate or any needs-you plate, and closes when the pointer leaves; **When** I Tab to the desk, the same zoom opens and Esc closes it.
+
+### User Story 4 - People that move (Priority: P2)
+
+People type while working, think with a hand on the chin, wave when they need me, lean back when resting; lobby visitors sip coffee, walk on the treadmill, knock at the Boss door.
+
+**Independent Test**: simulator, frame captures of a working and a waiting person; reduced motion turns it off.
+
+**Acceptance Scenarios**:
+1. `sim:` **Given** a working agent, **Then** its two typing frames alternate at its own pace (1.15-1.5 s, varied per agent so the room does not move in step).
+2. `sim:` **Given** reduced motion, Serious mode or a hidden window, **Then** every person shows one still frame and no animation runs.
+3. `sim:` **Given** an agent that goes from its desk to the Terminal, **Then** it cross-fades out at the desk and in at the fixture within 300 ms (walking is FR-075 `[KNOWN GAP]`).
+
+### User Story 5 - My characters and manual lighting (Priority: P3)
+
+I can put my own characters (spec 096) in the Real office, and set a room or a desk lamp to lit, dim or off as in issue #692.
+
+**Acceptance Scenarios**:
+1. `sim:` **Given** a My character with Real office frames pinned to a folder (096 FR-033), **Then** that folder's agents use it at their desks and in the lobby; one without Real office frames is not offered for Real office and a built-in person is used.
+2. `sim:` **Given** a room set to *Dim* and one desk in it set to *Lit*, **Then** the room is dim, that desk is lit, its neighbours inherit *Dim*, and *Reset* returns the desk to the room's setting.
+3. `test:` **Given** a malformed or stale lighting preference, **Then** the default (automatic) lighting applies and the bad entry is dropped.
+4. `sim:` **Given** a desk set to *Off* that errors, **Then** the red error light and the status word still show (manual lighting never hides a status cue).
+
+### Edge Cases
+
+- **1 agent**: one desk, centred, a big screen (n ≤ 4 rule, FR-020) with the person beside it; the lobby band keeps its minimum height; `u` is capped (FR-012) so the person is not a giant.
+- **40 agents**: the engine keeps `u` at its minimum and lets the floor scroll inside itself (constitution V allows it only past the 15-agent scale); the lobby band stays fixed above the scrolling floor; screens become line bars plus the newest line (FR-032).
+- **Many helpers**: helpers are not drawn as people; the name plate shows `+N` and up to 3 status dots (FR-016); the hover card lists them; a helper that needs the user lifts its parent's call light and puts the parent first.
+- **Custom lobby places**: each gets the generic fixture (D5) with its icon and name; with 3 custom places plus the 9 built-ins the fixtures shrink to their minimum width, then the least-used empty fixtures collapse to a plate-only slot (FR-025).
+- **Long names** (folder names, agent names, task text, place names up to 24 code points): one line with an ellipsis, the full text in the hover card and the accessible name; never wrapped into the desk art.
+- **Every status**: working, thinking, waiting, error, limit reached, done, idle, asleep (nap bed or stopped), paused (as idle), compacting and retrying (as thinking, spec 017 FR-026): each has a pose, a light row and a word.
+- **Serious mode**: people still shown, poses still follow the status, no animation, no pulsing, no "?"/"!" bounce; lights stay steady.
+- **Reduced motion**: same as Serious mode for motion; screens update without the slide-in.
+- **Forced colours / high contrast**: art stays, lights and ambient dimming are off, name plates and signs get system colours and borders (`styles.css` forced-colors rules reused), the status word is always shown.
+- **Theme switch**: chrome repaints in place; art, lights and layout do not change; no flash, no reload of pictures.
+- **Window resize**: the layout is recomputed once per animation frame at most; no layout jump when a status changes (constitution V), because plate height is the row maximum (FR-015).
+- **Art fails to load** (missing file, decode error, CSP): the desk, screen and plate still draw; the person slot is empty with the agent's initials in a neutral disc (FR-065).
+- **Doors you closed** (spec 017): Real office is an open office; switching to it asks the same "Switch to an open office?" question as *Open office* when doors are closed or prompts are held.
+- **Window hidden or minimised**: animations and screen repaints pause (FR-074).
+
+## Requirements *(mandatory)*
+
+### Functional Requirements
+
+#### Mode and setting
+
+- **FR-001** **Choosing the mode.** Settings > Detail level > **Office layout** gets a third button, **Real office**, next to *Office with cabins* and *Open office* (spec 017 FR-027, `signsRow()`). Choosing it shows Real office; choosing either of the others shows flat as before. (Q1)
+- **FR-002** **Flat is the default and unchanged.** Without the user's choice the office is flat. Real office's code, CSS and art are not loaded in flat mode; the flat office's DOM, layout and screenshots are byte-identical to before (`check:office`, `shots:docs` unchanged).
+- **FR-003** **Storage.** The choice is a renderer preference in `localStorage` key `durbar.officeview` (`flat` default, `real`), read in a `try`; any other value or a storage error means flat. `durbar.doorsigns` is not changed, so leaving Real office restores the user's cabins or open choice.
+- **FR-004** **Leaving cabins.** Switching from *Office with cabins* to Real office asks the existing "Switch to an open office?" question when a door is closed or prompts are held (`setSignsOn`), with the same wording and outcome.
+- **FR-005** **Same model.** Real office reads `officeModel()`, `agents`, visits (`VISITS`, `places.js`) and status labels; it adds no agent state, no IPC channel and no main-process code, except the art pack files (FR-060).
+- **FR-006** **Same actions.** A click (or Enter/Space) on a person, desk, screen or name plate opens the chat exactly as in flat; folder signs keep the room menu and **+** (new session); the needs-you count and filters in the top bar work unchanged. The List view is not affected.
+
+#### Layout engine (from `b2.js`)
+
+- **FR-010** **Unit.** All geometry is in a unit `u` = the seated person's body height in px (head top to seat), from `people.json` (`headTop`, `bodyH`, `hand` per picture). Constants: person width `PW` = 0.80 u, screen width beside the person `SR` = 0.66 u, folder sign strip 22 px, padding 8 px, gap between zones 8 px.
+- **FR-011** **Row packing.** Folders are zones; a zone's desks stay in one row. The engine tries 1 to 4 rows, every order of the visible folders and every split of that order into contiguous rows; for each, a row's slot width is `Sw = (W − 2·PAD − ZGAP·(zones−1) − 8·zones) / n`, where `n` counts each away agent as 0.62 of a desk; `u` is the largest value (bisection, 30 steps, between the minimum and `min over rows of Sw / (PW + SR)`) whose rows fit the height left under the lobby band. The score is `u − 5·(largest − smallest row count) − 0.08·(unused height)`, and the best score wins. With more than 7 folders, the search over orders is replaced by the given order (sorted by needs-you first, then size) to keep it under 5 ms (FR-019).
+- **FR-012** **Limits on `u`.** `u` is at most 260 px (420 px for big screens, FR-020) and at least the value that gives a desk face of 28 px; below that the floor scrolls (constitution V, past the 15-agent scale only). With 15 agents at 1280x800 and at 1440x900, `u` gives a desk face of **at least 40 px** (SC-002).
+- **FR-013** **Desk and person.** The desk picture spans the slot width minus 6 px; its height is `0.382 × min(slot width, 2u)` (wider desks stretch sideways, not up). The person's hands land on the desk surface: head top = desk back − `hand × u` − 0.015 u. The person stands at the left part of the slot (`x + 0.05 Sw + 0.42 u`), the monitor to the right of the person, facing the viewer.
+- **FR-014** **Row height.** A row's height is the folder strip, plus the head room (larger when a person in that row waves, so the raised hand stays inside the row), plus the desk, plus the name plate; rows share the spare height evenly (no big empty band at the bottom).
+- **FR-015** **No layout jump.** A name plate is 36 px, 50 px when it needs the user (two lines); the row uses the largest plate height that any status could need for its agents, so a status change never moves a desk.
+- **FR-016** **Name plate.** On the desk's front panel: line 1 the name, role and helpers (`+N` and up to 3 status icons); line 2 the status icon and word and the task (a needs-you or error plate shows the question or error instead). Theme tokens only; at least 10.5 px; one line each with an ellipsis.
+- **FR-017** **Away desk.** An agent at a lobby place keeps a desk of 0.62 width with its screen and plate, no person, and "at <Place> ↑".
+- **FR-018** **Folder sign.** Above each zone: name, path (masked by `maskHomePaths`), status counts, cost, **+** and the room menu. It sits at the left unless a waving hand rises into the strip there, then at the right or after the hands.
+- **FR-019** **Pure and fast.** The layout engine is a pure function (`realLayout(model, viewport, meta)` returning rectangles) with no DOM access, under 5 ms for 40 agents in 8 folders on CI hardware (`test:`), so it is unit-tested from any OS.
+- **FR-020** **Few agents, big screens.** With 4 visible agents or fewer, all desks share one row and each gets a big screen above its desk (as tall as the space under the lobby allows, at least 170 px of row), person beside it, text at 13 px when the screen is over 200 px tall, else 11 px.
+- **FR-021** **Chat open.** With the chat panel open the engine lays out in the remaining width; the 15-agent rule holds with the chat closed and open (spec 001 FR-005).
+- **FR-022** **Status order.** Inside a zone desks are sorted waiting and limit first, then error, then working and thinking, then done, then idle and asleep; ties keep the model's order (spec 001 FR-007).
+
+#### Lobby band
+
+- **FR-023** **Band and fixtures.** The lobby is a band across the top, between 116 and 150 px high (15 % of the office height) and at most 24 %; it shows the fixtures in the spec 001 FR-039 order. Each fixture is **scaled to fit the band height whole**, never cut at the top (the mockup's cut Library shelf and Boss door are fixed by re-cropping the art to a common baseline and scaling, FR-062).
+- **FR-024** **Visitors.** A visiting agent stands in front of its fixture in that fixture's activity pose: Library `book`, Software library `box`, Terminal `tread` (treadmill desk), Web `touch`, Boss `knock`, Coffee `coffee`, Bank `letter` (holding the wallet card of spec 017 FR-019), Postbox `letter`, Other tools `tool`, a custom place `wait`; a missing pose falls back (`box`/`touch`/`tool`/`wait` → `letter`). A name chip with a hand icon when it needs the user sits at its feet. **Target: a lobby face of at least 18 px with 15 agents at 1280x800** (mockup: about 12 px); if it cannot be met without taking desk space, it stays a `[KNOWN GAP]` and the chip, plate count and hover card carry the identity.
+- **FR-025** **Crowding.** Several visitors at one place stand side by side, overlapping by 20 %; past 3, the rest are a `+N` on the plate. When fixtures and visitors do not fit the width, empty fixtures shrink to a plate-only slot, least recently used first; occupied fixtures never collapse.
+- **FR-026** **Place plates.** Each fixture has its plate (label, visitor count, a short note when there is room) as today (spec 001 FR-034..FR-040, spec 024); clicking it does what the flat lobby tile does.
+- **FR-027** **Custom places** use the generic fixture (D5): a CSS kiosk the size of the Web fixture with the place's icon and name.
+
+#### Live screens
+
+- **FR-030** **Masked text only.** A screen shows the agent's newest output lines from the same source and through the same masking as the desk live readout (spec 001 FR-028..FR-031: `redact`, `maskSecretCommand`, `maskSecretUrl`, `maskHomePaths` via `DurbarSafeText`, masking before cutting) after main's MCP masking (`maskMcpEvent`). It reuses that function; it adds no parallel masker (spec 021 FR-031).
+- **FR-031** **Inert and capped.** Screen text is set with `textContent` (never `innerHTML`, never Markdown), with no links, no images and no ANSI codes (stripped); at most 24 lines kept per agent and 200 characters per line; thinking text is shown only where the desk readout shows it today.
+- **FR-032** **Small screens.** A screen under 150x60 px shows line-shaped bars (colour by kind: command, ok, error, question, plain) and the newest line as text; larger screens show real lines at 11 px (13 px when taller than 200 px). Text on a screen is never under 10.5 px; bars are decorative (`aria-hidden`).
+- **FR-033** **Calm updates.** A screen repaints at most once every 2 s, adding lines at the bottom with a short slide (none under reduced motion); a caret blinks only on working screens and not under reduced motion or Serious mode.
+- **FR-034** **Zoom.** Hover or keyboard focus on a screen opens a zoom panel (380-480 px wide) with name, role, status and folder, and the last lines at 12.5 px. It is placed in the nearest free area that **does not cover the hovered agent's own name plate or any needs-you plate**: first above the screen, then below, then beside; it never leaves the window. It closes on pointer leave, blur or Esc, and is announced by name to screen readers (a described region, not a live region).
+- **FR-035** **Status screens.** Error screens get a faint red tint (FR-041), needs-you screens an amber frame, asleep screens are off (dark glass, no text), done screens show their last line in green.
+
+#### People
+
+- **FR-036** **Seated poses.** working → `typeA`/`typeB`; thinking, compacting, retrying → `think`; waiting and limit → `waveA`/`waveB`; error → `think` (still); done, idle → `rest`; asleep → no person, chair empty and screen off.
+- **FR-037** **Who is who.** A session keeps the same person (`p01`..`p15`) for its life: the least-used person in its folder, then overall, stored like the crew pick (`durbar.realpeople`, spec 077 `pickCharacter` pattern); with more than 15 agents persons repeat, never two of the same in one zone when avoidable.
+- **FR-038** **Cues.** Needs-you: a "?" bubble at the head and an amber halo; error: a "!" badge on the screen corner; thinking: three dots. All are overlays, inside the slot, never over text.
+
+#### Lights (the owner's scheme)
+
+- **FR-040** **Light parts.** Each desk has a **lamp** (a warm radial light on the desk and person), a **screen glow** (light from the monitor on the face), and a small **call light** (a dot on the desk corner). Each lobby fixture has one light of its own. All are CSS overlays (D4).
+- **FR-041** **Status to light** (`lightFor(status, flags)`, pure):
+
+  | State | Lamp | Screen glow | Call light | Motion |
+  |---|---|---|---|---|
+  | working | warm, steady | on | none | none |
+  | thinking (compacting, retrying) | on | slow breathe (5 s) | none | breathe |
+  | waiting (needs you) | brighter | on | **amber, gentle pulse (2.2 s)**: the strongest cue | pulse |
+  | error | on | faint red tint | **small steady red** | none, no flashing |
+  | limit reached | on | on | **orange**, steady | none |
+  | done | dims to low | dims | brief green tick (2 s, then gone) | one fade |
+  | idle, paused | low | low | none | none |
+  | asleep (nap bed, stopped) | off | off | none | none |
+
+- **FR-042** **Red stays small.** An error never tints more than its own desk's lamp area and screen; the room, zone and neighbours are never red.
+- **FR-043** **Room brightness.** The room ambient follows the share of active agents (working, thinking, waiting, limit, error) among visible ones: from 70 % (none active) to 100 % (all active), eased over 1.5 s (instant under reduced motion). It is an overlay on the art layer only.
+- **FR-044** **Readable at every light.** Name plates, folder signs, lobby plates, chips, the zoom and all text sit **above** the light layer and are never dimmed; their contrast is the theme's (spec 070 D4) whatever the lights do.
+- **FR-045** **Lobby lights.** Library: a reading lamp on when someone is there. Bank: a counter lamp on when someone is there. Boss: a busy light over the door on when a queue forms (2 or more visitors, or 1 that needs the user). Coffee: the machine glows while someone is there. Terminal, Web, Software, Other tools and custom places: a soft fixture light when occupied. Unoccupied fixtures are at room light.
+- **FR-046** **Not colour alone.** Every light repeats a cue that is also in words or icons (plate, badge, bubble); no state is shown by light only (constitution V).
+- **FR-047** **Motion rules.** Under reduced motion or Serious mode no light pulses, breathes or fades: pulsing lights are steady at their bright level, the done tick shows for 2 s without a fade.
+- **FR-048** **Cheap.** Lights use opacity and transforms only (compositor), no blur filters, no per-frame JavaScript; at most one CSS animation per desk.
+- **FR-049** **Theme.** Light colours are fixed (warm white, amber, red, orange, green) for meaning (spec 070 FR-050); dark themes do not change the art or lights, only the chrome.
+- **FR-050** **Contrast check.** The overlap check's Real office variant also measures the contrast of every plate and sign against its own background at room brightness 70 % and 100 % and fails under the theme's ratio.
+- **FR-051** **Forced colours.** Under `forced-colors: active` the light layer and ambient are not drawn (`display:none`), and status words and icons carry the meaning; under `prefers-contrast: more` lights are steady and the ambient stays at 100 %.
+- **FR-052** **Done tick, once.** The green tick shows once per transition to done, not again on re-render or resize.
+
+#### Manual lighting (issue #692, phase P3)
+
+- **FR-053** **Levels.** A room can be *Auto* (default, FR-041..FR-045), *Lit*, *Dim* or *Off*; a desk can *Inherit* (default) or have its own level. Manual levels set the lamp and the room ambient only.
+- **FR-054** **Status cues win.** Call lights, the red error light, screen tints, badges and words are drawn at every level, *Off* included; *Off* never hides a desk or makes an agent look gone (it shows "lamp off" in the hover card, not "asleep").
+- **FR-055** **Controls.** The room menu (`⋯`) gets **Lighting: Auto / Lit / Dim / Off**; the desk's context menu gets **Lamp: Room setting / Lit / Dim / Off**; both are menu radio items with names, keyboard and screen-reader operable, the current level checked.
+- **FR-056** **Scope and storage.** Room levels are per folder path, desk levels per session id, stored locally in `localStorage` (`durbar.lighting`, JSON `{v:1, rooms:{}, desks:{}}`, at most 200 entries, oldest dropped); never synced, never in `durbar-settings.json`, no prompt or session content. A desk entry is dropped when its session is gone.
+- **FR-057** **Bad data.** A malformed, wrong-version or oversized value is ignored and replaced by the default on the next write.
+- **FR-058** **No motion.** Changing a level applies at once; nothing animates continuously because of a manual level.
+
+#### Art pack
+
+- **FR-060** **Ships in the app.** The art pack ships inside the app (no download, no network, CSP `img-src 'self'` unchanged), in `src/renderer/realoffice/art/`, copied by `scripts/copy-assets.js`. (Q2)
+- **FR-061** **Lazy.** The Real office script, CSS and pictures load only when Real office is chosen (a `<script>` added on first use, pictures by `<img loading="lazy">` or `decode()`); flat mode fetches none of them.
+- **FR-062** **Format and caps.** Every picture is WebP with alpha, no metadata chunks (EXIF, XMP, ICCP, C2PA), re-encoded at quality 0.80: a person frame at most 80 KB and at most 640 px tall (2x the largest shown size, spec 077 FR-051); a fixture at most 120 KB; the desk at most 60 KB; the floor at most 40 KB; the **whole pack at most 10 MB**. Fixtures are re-cropped from the back-wall render to a common floor line and full height (FR-023).
+- **FR-063** **Provenance.** `src/renderer/realoffice/art/ASSETS.md` lists each source sheet with tool and version (Codex image generation, codex-cli version), date, maker, approver (Vikram), the exact prompt, the reference image, how it was cut and re-encoded, and the licence; it is checked by an extended `test:crew-assets` (or a sibling `test:realoffice-assets`) like spec 077 FR-054. The art moves into the repo only in the build PR, with this file.
+- **FR-064** **Licence.** The art is MIT like the code and the crew art (README "License and credits"). (Q4)
+- **FR-065** **Fallback.** A picture that fails to decode marks that person or fixture unusable for the session; the desk shows the initials disc, the fixture its plate only (spec 077 FR-055 pattern). The page never shows a broken-image icon.
+- **FR-066** **Metadata.** `people.json` (per picture `w`, `h`, `headTop`, `bodyH`, `hand`; per stand pose the size) ships with the pack and is validated by the asset test (every listed file exists, every file is listed, numbers in range).
+
+#### Motion
+
+- **FR-070** **Frames.** Two-frame poses (`typeA/B`, `waveA/B`) alternate with CSS `steps(1)` at a per-agent period (1.15-1.5 s); `think` and `rest` breathe (scale 1.0-1.01, 4-5.5 s); visitors: treadmill bob (0.55 s), sip (4 s), knock (2.6 s), others breathe.
+- **FR-071** **Off switches.** No person animation under reduced motion, in Serious mode, or with the 096 `characterMotion` setting off when it exists; a still frame (`typeA`, `waveA`) is shown.
+- **FR-072** **Pose change.** A pose change cross-fades in 250 ms (instant under reduced motion).
+- **FR-073** **Desk to lobby.** Leaving for a place: the person fades out at the desk and in at the fixture (300 ms total); coming back, the reverse.
+- **FR-074** **Paused when hidden.** When the window is hidden or minimised (`document.hidden`), animations are paused and screens stop repainting; they catch up once on return.
+- **FR-075** `[KNOWN GAP]` **No walking.** People do not walk between desk and lobby; spec 024 FR-005's walk is not drawn in Real office. Walking needs side-view walk frames that the pack does not have.
+
+#### My characters (phase P3, with spec 096)
+
+- **FR-080** **What a My character needs here.** Real office needs front-facing seated frames (type ×2, wave ×2, think, rest) and standing frames (at least `letter`, `book`, `coffee`). 096's preset `realistic-office-v1` makes three-quarter isometric portraits, which do not fit; P3 adds a second preset **`real-office-front-v1`** to 096's `STYLE_PRESETS` (a new id, per 096 FR-051) with the seated-sheet and standing-sheet prompts of this pack's `ASSETS.md`, through 096's pipeline (validation, re-encode, store).
+- **FR-081** **Opt-in.** A My character made with `real-office-front-v1` is offered in Real office; others are not. When the Characters setting is `mine` and a folder pin (096 FR-033) names such a character, that folder's agents use it; otherwise built-in people are used (D3).
+- **FR-082** **Same rules.** My characters' frames follow FR-062 caps and FR-065 fallback, load as `blob:` URLs as in 096 FR-043, and their `people.json`-style metadata is computed by 096's encoder (head top, body height, hand line), checked in range.
+- **FR-083** **Until then.** Before P3, Real office ignores the Characters setting (D3), and Settings says so in one line under the Office layout row ("Real office uses its own people").
+
+#### Accessibility and checks
+
+- **FR-090** **Names.** Each desk is one focusable button with the accessible name "<name>, <role>, <status word>, <task>[, needs you][, at <Place>]"; screens and people are not separate tab stops; lobby visitors are reachable through their place plate.
+- **FR-091** **Fit check.** `check:office` gets a Real office variant (SIM 12 and 15, 1440x900 and 1280x800, chat closed and open): no overlap of plates, signs, chips, screens and people; no clipped text; no text under 10.5 px; no page overflow; the desk face size reported.
+- **FR-092** **Screenshots.** `shots:docs` gets Real office pictures at both sizes (15 agents, 3 agents, the lights at each status, the hover zoom), each with its `DOC_SHOTS` driver.
+- **FR-093** **Simulator.** The simulator drives every status, a limit, visits to every place (custom ones too), helpers, and streaming output with hostile strings, so Real office is fully testable with 0 AI credits.
+
+### Key Entities
+
+- **Office view preference**: `flat` | `real`, renderer `localStorage` (`durbar.officeview`).
+- **Art pack**: WebP pictures + `people.json` + `ASSETS.md`, shipped, lazy-loaded.
+- **Person assignment**: session id → person id (`p01`..`p15`, later a My character id), `localStorage`.
+- **Light state**: derived per desk and fixture from status, flags, visits and the active share; not stored.
+- **Lighting preference** (P3): `{v:1, rooms:{folderPath: level}, desks:{sessionId: level}}`, `localStorage`.
+- **Layout result**: `{u, lobbyH, rows[{zones[{desks[rect, person, screen, plate]}]}], fixtures[]}`, pure.
+
+## Success Criteria *(mandatory)*
+
+- **SC-001** With 15 agents (helpers included) at 1440x900 and 1280x800, chat closed and open, Real office passes the overlap, clip, 10.5 px and overflow checks (FR-091).
+- **SC-002** Desk faces are at least 40 px tall with 15 agents at 1280x800 (mockup: about 36 px), measured by the check.
+- **SC-003** With 1-4 agents, each screen shows at least 8 readable lines at 11 px or more.
+- **SC-004** Flat mode is unchanged: `check:office` and every existing screenshot driver pass without change, and flat mode loads no Real office file (checked by a request log in the driver).
+- **SC-005** No screen ever shows an unmasked token, MCP secret value or home path from the hostile simulator fixture (test and driver).
+- **SC-006** The art pack is at most 10 MB and every picture is within its cap (asset test).
+- **SC-007** The layout engine runs under 5 ms for 40 agents in 8 folders and is unit-tested for 1..40 agents.
+- **SC-008** The owner looks at the P1 screenshots and says the office looks real and nothing is too small (`real:` owner review, quoted in the spec).
+
+## Assumptions and honest limits
+
+- The art was made by Codex image generation on the owner's plan; re-making or adding people costs plan usage and needs his OK (AGENTS.md *No AI credits*). The build uses the existing 194 files.
+- Lobby faces may stay under 18 px with 15 agents (FR-024): the band cannot grow without taking desk space, which the owner ruled out. Recorded as a target, else `[KNOWN GAP]`.
+- No walking animation (FR-075).
+- People repeat past 15 agents (FR-037).
+- Verified so far only as a standalone mockup in Chromium on Linux; nothing in the app. Windows and macOS: CI only, as for every renderer feature (constitution VI).
+- Installed app size grows by up to 10 MB; there is no package size budget today to check it against (spec 008 has none).
+
+## Open questions
+
+At most 5; each has a recommendation. The build waits for answers to Q1, Q2 and Q4.
+
+- **Q1 Where to choose the mode.** (a) A third button **Real office** in the existing *Office layout* row; (b) a separate *Office style: Flat / Real* row. **Recommendation: (a)**: one place, and Real office is by nature an open office (it has no cabins), so the row's three choices are mutually exclusive.
+- **Q2 Ship or download the art.** (a) Ship in the app (+up to 10 MB, works offline, no new network code or CSP change); (b) download on first use. **Recommendation: (a)**, lazy-loaded (FR-060, FR-061); a download adds a network path, integrity checks and an offline failure mode for 10 MB.
+- **Q3 Does #692's manual lighting also come to the flat office?** **Recommendation: Real office only** (P3); flat has no lamps to dim, and #692 asks to keep the current look by default. #692 stays open, linked to this spec, and is closed by the P3 PR if the owner agrees.
+- **Q4 Art licence.** **Recommendation: MIT**, like the code and the crew art (spec 077), recorded in `ASSETS.md`; the owner confirms, since he approved the generation on his plan.
+- **Q5 Where finished and asleep agents go.** (a) They stay at their desk with lamp and screen off (asleep) or low (done); (b) a lounge strip with couches as in flat. **Recommendation: (a)**: no extra furniture without function ("dont unnecessarily waste screenspace"); asleep desks are narrow (0.62, like away desks).
+
+## Constitution check
+
+- **I Spec Kit**: this PR is spec, plan and tasks only; code follows per phase.
+- **II Adapters**: renderer-only; no adapter or vendor type touched.
+- **III Safe by default**: screen text reuses the masking path (FR-030), inert text only (FR-031); lighting preferences hold no content (FR-056); CSP unchanged in P1-P2 (FR-060), `blob:` only via 096 in P3.
+- **IV No AI credits**: simulator and unit tests only; the art already exists; new art needs the owner's OK.
+- **V Calm, legible UI**: 15-agent rule, 10.5 px, no colour-only state, reduced motion and Serious mode stop motion, no flashing, no blur (FR-044..FR-051, FR-070..FR-074).
+- **VI Parity**: renderer CSS/JS and WebP only; no OS paths.
+- **VII Quality gates**: unit, overlap and screenshot tests per phase (FR-091..FR-093).
+- **VIII Honest limits**: lobby face size, walking and people repetition are written as gaps.
+
+## Changes
+
+None yet.
