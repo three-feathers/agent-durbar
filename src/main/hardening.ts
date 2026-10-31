@@ -242,17 +242,23 @@ export function buildViewHandlers(ctx: ViewHandlerContext): ViewHandlers {
       // `top.location`) must not replace the page through `window.open` (framebusting). An empty or opaque referrer fails closed.
       // FR-125: in a user tab such a request opens a new tab that Durbar makes itself (still `deny` here); the agent's tab loads it in place.
       // (Chromium sends no referrer from a non-web scheme, so the simulator's own test-page scheme never passes this: its driver serves the pages over loopback http)
-      const web = isWebUrl(d.url);
-      const tab = d.disposition === 'foreground-tab' || d.disposition === 'background-tab';
-      let taken = false;
-      if (web && tab && sameWebOrigin(d.referrer?.url, ctx.currentUrl?.())) {
-        if (ctx.openTab) taken = ctx.openTab(d.url, d.disposition === 'foreground-tab') === true;
-        else {
-          ctx.loadInView(d.url);
-          taken = true;
+      // `deny` on every path: what runs here is main's own tab code (FR-125), and a throw in it must neither open a window nor reach the
+      // main process as an uncaught exception (2026-10-31 review of #915). A request that threw gets no tab and no offer.
+      try {
+        const web = isWebUrl(d.url);
+        const tab = d.disposition === 'foreground-tab' || d.disposition === 'background-tab';
+        let taken = false;
+        if (web && tab && sameWebOrigin(d.referrer?.url, ctx.currentUrl?.())) {
+          if (ctx.openTab) taken = ctx.openTab(d.url, d.disposition === 'foreground-tab') === true;
+          else {
+            ctx.loadInView(d.url);
+            taken = true;
+          }
         }
+        if (!taken && web) ctx.onPopupBlocked(d.url); // only http(s) URLs get an *Open in system browser* offer
+      } catch {
+        /* fail closed: no tab, no window */
       }
-      if (!taken && web) ctx.onPopupBlocked(d.url); // only http(s) URLs get an *Open in system browser* offer
       return { action: 'deny' };
     },
     navigate: (d) => {

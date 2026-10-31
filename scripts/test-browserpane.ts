@@ -201,7 +201,7 @@ assert.ok(/\.panel-in\.on-browser #chat\{[^}]*visibility:hidden/.test(block), 't
     assert.ok(/announce\('Opened in a new tab'\)/.test(bp), 'a background tab from a page is announced, no focus move');
     // FR-123: the More menu uses the shared menu element (#modeMenu), no new menu component
     const app3 = fs.readFileSync(path.join(ROOT, 'src/renderer/app.js'), 'utf8');
-    assert.ok(/function openBrowserMenu\(anchor,items,pick\)\{\n  closeModeMenu\(\);\n  const m=document\.createElement\('div'\);m\.id='modeMenu';m\.className='mode-menu';m\.setAttribute\('role','menu'\)/.test(app3), 'the More menu is the shared #modeMenu');
+    assert.ok(/function openBrowserMenu\(anchor,items,pick\)\{\s*closeModeMenu\(\);\s*const m=document\.createElement\('div'\);m\.id='modeMenu';m\.className='mode-menu';m\.setAttribute\('role','menu'\)/.test(app3), 'the More menu is the shared #modeMenu');
     assert.ok(/role="menuitemcheckbox" aria-checked="\$\{x\.checked\?'true':'false'\}"/.test(app3), 'the toggle is a checkable item');
     assert.ok(/menu:openBrowserMenu,/.test(app3), 'lent to the pane');
     assert.ok(/label:'Open chat links in a new tab'/.test(bp), 'the item\'s words');

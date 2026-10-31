@@ -49,8 +49,10 @@ export interface BrowserWc extends EmitterLike {
   isDestroyed(): boolean;
   /** Only `snapshot()` calls it (FR-008's still picture). */
   capturePage(): Promise<{ toDataURL(): string }>;
-  /** FR-129: a page's `foreground-tab` gives the new tab's page the focus. */
+  /** FR-129: a page's `foreground-tab` gives the new tab's page the focus, only when the opener page had it (never from the composer). */
   focus?(): void;
+  /** FR-129 (2026-10-31 delta): whether this page has the keyboard focus now. */
+  isFocused?(): boolean;
   navigationHistory: { canGoBack(): boolean; canGoForward(): boolean };
 }
 export interface BrowserViewLike {
@@ -62,7 +64,7 @@ export interface BrowserWinLike {
   isDestroyed(): boolean;
   contentView: { addChildView(v: never): void; removeChildView(v: never): void };
   getContentBounds(): { width: number; height: number };
-  webContents: { getZoomFactor(): number };
+  webContents: { getZoomFactor(): number; isFocused?(): boolean };
 }
 export interface BrowserDeps {
   /** True for a top-level session of the office (looked up in main); under the simulator also the simulated agents' ids. */
@@ -668,6 +670,9 @@ export function makeBrowserController(deps: BrowserDeps) {
     const tab = addTab(S, opener.tabId);
     tab.pendingUrl = a.url;
     const fg = foreground && S.active === opener.tabId;
+    // FR-129 (2026-10-31 delta): the keyboard focus follows only from the opener page itself. A page asking while the user types in the
+    // composer or the chat (a timer, no gesture: FR-125's known gap) never pulls the keys into a page
+    const openerHadFocus = fg && !!opener.t && !opener.t.wc.isDestroyed() && opener.t.wc.isFocused?.() === true;
     if (fg) S.active = tab.tabId;
     changed(S.id);
     void ensure(S, tab).then((t) => {
@@ -675,7 +680,8 @@ export function makeBrowserController(deps: BrowserDeps) {
       go(S, tab, t, { url: a.url });
       if (S.active === tab.tabId) {
         showActive(S);
-        if (fg) t.wc.focus?.(); // FR-129: the new tab's page gets the focus
+        // and only if the user has not gone to Durbar's own window content (the composer, the chat) while the view was being made
+        if (openerHadFocus && winFor()?.webContents.isFocused?.() !== true) t.wc.focus?.();
       }
     });
     return true;

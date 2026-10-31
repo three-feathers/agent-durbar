@@ -92,6 +92,8 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **A stale-breaker that looks, then deletes by path is a race**: move aside and check identity, or carry a token. Issue #723
 - [ ] **A script that spends credits gates every send**: budget checked in one pure function right before each send; unknown usage is unknown, never 0; only the exact command runs in a mode with no approval card; take a baseline first; plant cap-raised, extra-prompt and stop-disabled mutants. [#827](https://github.com/three-feathers/agent-durbar/pull/827)
 - [ ] **Main changes what the window reads in one synchronous step, then awaits teardown**: a tab list updated before its active tab let a driver name a removed tab (spec 080 closeTab, 2026-10-31).
+- [ ] **A handler main gives Electron answers on every path**: `setWindowOpenHandler` code that calls main's own logic is wrapped so a throw still returns `deny` (and a test makes it throw); a page's request never moves the keyboard focus unless the page itself had it (spec 080, review of #915, 2026-10-31).
+- [ ] **A driver runs a page's script in that page's own `webContents`**, not in "the attached view": a page that opens a tab stops being the attached one mid-step (spec 080 `check-browser-tabs`, 2026-10-31).
 
 ## UI and accessibility
 

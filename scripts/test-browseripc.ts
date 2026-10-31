@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { checkBounds, displayUrl, errorName, makeBrowserController, STATE_KEYS, TAB_KEYS } from '../src/main/browser/controller';
 import { MAX_LIVE_VIEWS } from '../src/main/browser/viewcap';
+import { makeLinksToggle } from '../src/main/browser/tabs';
 import type { BrowserDeps, BrowserWinLike } from '../src/main/browser/controller';
 import { installSimPages, registerSimScheme, simAddress, simPage } from '../src/main/browser/simpages';
 import { makeViews } from '../src/main/browser/views';
@@ -36,7 +37,7 @@ function fakeWin(content = { width: 1000, height: 700 }, zoom = 1) {
     isDestroyed() { return this.destroyed; },
     contentView: { addChildView: (v: unknown) => void children.push(v), removeChildView: (v: unknown) => { const i = children.indexOf(v); if (i >= 0) children.splice(i, 1); } },
     getContentBounds: () => content,
-    webContents: { getZoomFactor: () => zoom },
+    webContents: { focused: false, getZoomFactor: () => zoom, isFocused() { return this.focused; } },
   };
   return win;
 }
@@ -44,8 +45,8 @@ function fakeWin(content = { width: 1000, height: 700 }, zoom = 1) {
 const hold = { on: false, waiting: [] as (() => void)[], release() { const w = this.waiting.splice(0); for (const f of w) f(); } };
 function fakeSession(id: string) {
   const wc = Object.assign(new EventEmitter(), {
-    url: 'about:blank' as unknown, title: '' as unknown, loading: false, muted: true, canBack: false, canForward: false, destroyed: false, stops: 0, focuses: 0,
-    focus() { this.focuses++; },
+    url: 'about:blank' as unknown, title: '' as unknown, loading: false, muted: true, canBack: false, canForward: false, destroyed: false, stops: 0, focuses: 0, focused: false,
+    focus() { this.focuses++; this.focused = true; }, isFocused() { return this.focused; },
     getURL() { return this.url as string; }, getTitle() { return this.title as string; }, isLoading() { return this.loading; }, stop() { this.stops++; },
     setAudioMuted(m: boolean) { this.muted = m; }, isAudioMuted() { return this.muted; }, isDestroyed() { return this.destroyed; },
     navigationHistory: { canGoBack: () => wc.canBack, canGoForward: () => wc.canForward },
@@ -1008,13 +1009,14 @@ process.on('exit', () => {
     const ev = viewOf(r, opener)!.sv.events;
     assert.strictEqual(ev.onTabRequest!('s1', 'https://site.example/a', true), false, 'a session that is not shown never opens a tab (FR-007)');
     r.ctl.bounds('s1', B); r.ctl.visible('s1', true);
+    viewOf(r, opener)!.wc.focused = true; // the user clicked in the page
     assert.strictEqual(ev.onTabRequest!('s1', 'https://site.example/a', true), true, 'foreground-tab');
     await tick(); await tick();
     const fg = activeOf(r);
     assert.notStrictEqual(fg, opener, 'a foreground tab becomes active');
     assert.deepStrictEqual(r.ctl.tabIds('s1'), [opener, fg], 'to the right of the opener');
     assert.deepStrictEqual(lastNav(viewOf(r, fg)), { url: 'https://site.example/a' }, 'loaded through the view helper');
-    assert.strictEqual(viewOf(r, fg)!.wc.focuses, 1, 'its page gets the focus (FR-129)');
+    assert.strictEqual(viewOf(r, fg)!.wc.focuses, 1, 'its page gets the focus (FR-129): the opener page had it');
     await r.ctl.selectTab('s1', opener);
     assert.strictEqual(ev.onTabRequest!('s1', 'https://site.example/b', false), true, 'background-tab');
     await tick(); await tick();
@@ -1040,6 +1042,52 @@ process.on('exit', () => {
     for (const u of ['javascript:alert(1)', 'file:///etc/passwd', 'ms-msdt:/id', 'search-ms:q', 'mailto:a@b.c', 'vscode://x', 'data:text/html,x', 'about:blank', '', 'https://u:p@x.example/']) assert.strictEqual(ev2.onTabRequest!('s1', u, true), false, 'refused: ' + u);
     assert.strictEqual(r2.ctl.tabIds('s1').length, 1, 'zero tabs');
     assert.deepStrictEqual(r2.opened, [], 'zero openExternal calls');
+  }
+  // FR-129 (2026-10-31 delta, review of #915): a page never takes the keyboard focus from the composer or the chat. A foreground-tab request
+  // from a page that does not have the focus (a timer while the user types below the browser) opens its tab, but no page gets the focus;
+  // nor does it when the user went to Durbar's own window content while the new tab's view was being made
+  {
+    const r = rig();
+    await r.ctl.open('s1');
+    r.ctl.bounds('s1', B); r.ctl.visible('s1', true);
+    await r.ctl.navigate('s1', 'https://site.example/');
+    const opener = activeOf(r);
+    const ow = viewOf(r, opener)!;
+    const ev = ow.sv.events;
+    (r.win.webContents as { focused: boolean }).focused = true; // the user types in the composer
+    ow.wc.focused = false;
+    assert.strictEqual(ev.onTabRequest!('s1', 'https://site.example/timer', true), true, 'the tab opens (FR-125 limits apply)');
+    await tick(); await tick();
+    const t1 = activeOf(r);
+    assert.notStrictEqual(t1, opener, 'it is the active tab');
+    assert.deepStrictEqual(lastNav(viewOf(r, t1)), { url: 'https://site.example/timer' });
+    assert.strictEqual(viewOf(r, t1)!.wc.focuses, 0, 'but its page never takes the focus from the composer');
+    assert.strictEqual(ow.wc.focuses, 0, 'nor does the opener page');
+    // the opener had the focus when it asked, but the user went to the composer before the new view was made: no focus either
+    await r.ctl.selectTab('s1', opener);
+    (r.win.webContents as { focused: boolean }).focused = false;
+    ow.wc.focused = true;
+    assert.strictEqual(ev.onTabRequest!('s1', 'https://site.example/late', true), true);
+    ow.wc.focused = false;
+    (r.win.webContents as { focused: boolean }).focused = true;
+    await tick(); await tick();
+    const t2 = activeOf(r);
+    assert.ok(t2 !== opener && t2 !== t1);
+    assert.strictEqual(viewOf(r, t2)!.wc.focuses, 0, 'the user moved to the composer meanwhile: the page does not take the focus back');
+    // neither the opener page nor Durbar's window content has the focus (another app, or the window in the background): no page takes it
+    await r.ctl.selectTab('s1', opener);
+    (r.win.webContents as { focused: boolean }).focused = false;
+    ow.wc.focused = false;
+    assert.strictEqual(ev.onTabRequest!('s1', 'https://site.example/away', true), true);
+    await tick(); await tick();
+    assert.strictEqual(viewOf(r, activeOf(r))!.wc.focuses, 0, 'an opener without the focus never hands it to its new page');
+    // the opener page had the focus and the user stayed in it: the new page gets it (the FR-129 rule of the 2026-10-31 tabs delta)
+    await r.ctl.selectTab('s1', opener);
+    (r.win.webContents as { focused: boolean }).focused = false;
+    ow.wc.focused = true;
+    assert.strictEqual(ev.onTabRequest!('s1', 'https://site.example/click', true), true);
+    await tick(); await tick();
+    assert.strictEqual(viewOf(r, activeOf(r))!.wc.focuses, 1, 'a click in the page: the new page gets the focus');
   }
   // FR-132: a dialog in a background tab of the shown session (toast, marker), or in a hidden session's tab (also brought forward on that tab)
   {
@@ -1127,6 +1175,82 @@ process.on('exit', () => {
       assert.deepStrictEqual(lastNav(viewOf(r, d2.tabId, 's1')), { url: d2.url }, 'and reloaded from its kept address');
     } else assert.fail('the second dropped tab came back by itself');
   }
+  // the #891 rule per tab, in flight (2026-10-31 review of #915): a dropped tab's kept address is never loaded over a newer navigation. Here the
+  // hidden session's active tab is a dropped one (its view closed, its address kept); the user's navigation starts first (the tab's view is
+  // being made), and the session is shown meanwhile, so its restore waits for the same view. go() clears the kept address, so the restore
+  // finds it gone and loads nothing; the session's other dropped tab keeps its own.
+  {
+    let clock = 0;
+    const r = rig({ now: () => ++clock });
+    await r.ctl.open('s1');
+    r.ctl.bounds('s1', B); r.ctl.visible('s1', true);
+    await r.ctl.navigate('s1', 'https://s1.example/a');
+    await r.ctl.newTab('s1', 'https://s1.example/c');
+    await r.ctl.newTab('s1', 'https://s1.example/b');
+    await tick();
+    const [tA, tC, tB] = r.ctl.tabIds('s1'); // C is B's left neighbour: active once B closes
+    assert.strictEqual(activeOf(r), tB, 'precondition: B is the active tab');
+    for (const id of ['s2', 's3', 's4', 's5']) {
+      await r.ctl.open(id);
+      r.ctl.bounds(id, B); r.ctl.visible(id, true);
+      await r.ctl.navigate(id, `https://${id}.example/`);
+      await tick();
+      r.ctl.visible(id, false);
+    }
+    r.flush();
+    await tick();
+    const kept = (tabId: string) => r.ctl.tabsOf('s1').tabs.find((x) => x.tabId === tabId)!;
+    assert.strictEqual(kept(tA).memory, 'dropped', 'precondition: background tab A was dropped');
+    assert.strictEqual(kept(tC).memory, 'dropped', 'precondition: background tab C was dropped');
+    assert.ok(!viewOf(r, tC) || viewOf(r, tC)!.sv.closed, 'precondition: C has no view');
+    const keptA = kept(tA).url, keptC = kept(tC).url;
+    assert.strictEqual(keptC, 'https://s1.example/c');
+    // B is closed while the session is hidden: C, a dropped tab, becomes the active one (nothing restores it while hidden)
+    r.ctl.visible('s1', false);
+    await r.ctl.closeTab('s1', tB);
+    await tick();
+    assert.strictEqual(activeOf(r), tC, 'precondition: the dropped tab C is active');
+    assert.strictEqual(kept(tC).memory, 'dropped', 'precondition: and not restored while hidden');
+    // the user's navigation in C starts (C's view is being made), then the session is shown: C's restore is now in flight too
+    const nav = r.ctl.navigate('s1', 'https://s1.example/typed');
+    r.ctl.bounds('s1', B); r.ctl.visible('s1', true);
+    await nav;
+    for (let i = 0; i < 5; i++) await tick();
+    r.flush();
+    const c = viewOf(r, tC)!;
+    assert.ok(c && !c.sv.closed, 'C has a view again');
+    assert.deepStrictEqual(lastNav(c), { url: 'https://s1.example/typed' }, 'the typed address is the last navigation of C');
+    assert.ok(!c.navs.some((n) => (n as { url?: string }).url === keptC), 'C\'s kept address is never loaded over the typed one');
+    assert.strictEqual(kept(tC).url, 'https://s1.example/typed');
+    assert.strictEqual(kept(tC).memory, undefined, 'and no *Reloaded to save memory* note');
+    assert.strictEqual(kept(tA).url, keptA, 'per tab: A keeps its own kept address');
+    assert.strictEqual(kept(tA).memory, 'dropped', 'and stays dropped');
+  }
+  // FR-123 (2026-10-31 review of #915): the toggle's defaults. The simulator's starts off, is kept in memory and never touches the store; the
+  // app's starts off (no settings) and is the store's value
+  {
+    const writes: unknown[] = [];
+    const store = { chatLinksNewTab: false, setChatLinksNewTab(on: unknown) { writes.push(on); } };
+    const sim = makeLinksToggle(true, () => store);
+    assert.strictEqual(sim.get(), false, 'the simulator\'s toggle is off by default');
+    store.chatLinksNewTab = true;
+    assert.strictEqual(sim.get(), false, 'the simulator never reads the user settings');
+    sim.set(true);
+    assert.strictEqual(sim.get(), true, 'the simulator keeps it in memory');
+    sim.set(false);
+    assert.strictEqual(sim.get(), false);
+    assert.deepStrictEqual(writes, [], 'the simulator writes no user settings');
+    assert.strictEqual(makeLinksToggle(true, () => store).get(), false, 'a new simulator run starts off again');
+    const appT = makeLinksToggle(false, () => undefined);
+    assert.strictEqual(appT.get(), false, 'the app with no settings store: off');
+    const appS = makeLinksToggle(false, () => store);
+    store.chatLinksNewTab = false;
+    assert.strictEqual(appS.get(), false, 'the app: off by default');
+    store.chatLinksNewTab = true;
+    assert.strictEqual(appS.get(), true, 'the app reads the settings store');
+    appS.set(false);
+    assert.deepStrictEqual(writes, [false], 'and writes it');
+  }
   // FR-123: the toggle is saved as `chatLinksNewTab: true` only
   {
     assert.deepStrictEqual(parseSettings('{"chatLinksNewTab":true}'), { chatLinksNewTab: true });
@@ -1159,8 +1283,8 @@ process.on('exit', () => {
     assert.ok(/import \{ fromAppFrame as fromApp, ipcHandle \} from '\.\.\/ipcguard'/.test(ipcSrc), 'the guard is ipcguard.ts\'s own');
     // spec 080 FR-123, FR-127: the toggle takes only a real boolean; the window never sends the toggle with a link (main reads it)
     assert.ok(/ipcHandle\('browser:setLinksNewTab', \(e, on: unknown\) => \{\n\s*if \(!fromApp\(e\) \|\| typeof on !== 'boolean'\) return \{ ok: false \};/.test(ipcSrc), 'setLinksNewTab refuses a non-boolean with no effect');
-    assert.ok(/ctl\.openLink\(id, url, how\)/.test(ipcSrc) && /linksNewTab = \(\): boolean => \(simulator \? simLinksNewTab : deps\.getSettingsStore\(\)\?\.chatLinksNewTab === true\)/.test(ipcSrc), 'the toggle is read in main');
-    assert.ok(/if \(simulator\) simLinksNewTab = on;\n\s*else deps\.getSettingsStore\(\)\?\.setChatLinksNewTab\(on\);/.test(ipcSrc), 'the simulator writes no user settings');
+    assert.ok(/ctl\.openLink\(id, url, how\)/.test(ipcSrc) && /const linksToggle = makeLinksToggle\(simulator, \(\) => deps\.getSettingsStore\(\)\);/.test(ipcSrc) && /linksNewTab = \(\): boolean => linksToggle\.get\(\)/.test(ipcSrc), 'the toggle is read in main (makeLinksToggle, tested below)');
+    assert.ok(/typeof on !== 'boolean'\) return \{ ok: false \};\n\s*linksToggle\.set\(on\);/.test(ipcSrc), 'the toggle is set through makeLinksToggle only');
     const pre = preloadChannels().all;
     for (const c of CH) assert.ok(pre.has(c), `the preload calls ${c}`);
     assert.deepStrictEqual([...pre].filter((c) => c.startsWith('browser:')).sort(), [...CH].sort(), 'the preload calls nothing else under browser:');

@@ -131,6 +131,19 @@ assert.deepStrictEqual(popups, ['https://example.com/b'], 'about:blank and empty
   const st: string[] = [];
   buildViewHandlers({ sim: true, currentUrl: () => 'durbar-sim://pages/links', loadInView: () => undefined, onPopupBlocked: () => undefined, openTab: (u) => (st.push(u), true) }).windowOpen({ url: 'durbar-sim://pages/index', disposition: 'foreground-tab', referrer: { url: 'durbar-sim://pages/links' } });
   assert.deepStrictEqual(st, [], 'http(s) only');
+  // 2026-10-31 review of #915: main's tab code throwing still answers deny, with no tab, no offer and no exception out of the handler
+  const thrown: string[] = [];
+  const hx = buildViewHandlers({ sim: false, currentUrl: () => 'https://example.com/page', loadInView: (u) => thrown.push('view ' + u), onPopupBlocked: (u) => thrown.push('offer ' + u), openTab: () => { throw new Error('boom in openFromPage'); } });
+  for (const disposition of ['foreground-tab', 'background-tab']) {
+    let r: unknown;
+    assert.doesNotThrow(() => (r = hx.windowOpen({ url: 'https://example.com/t', disposition, referrer: { url: 'https://example.com/page' } })), `${disposition}: a throwing openTab does not escape the handler`);
+    assert.deepStrictEqual(r, { action: 'deny' }, `${disposition}: a throwing openTab still answers deny`);
+  }
+  assert.deepStrictEqual(thrown, [], 'nothing loads or is offered after the throw');
+  // and the offer path throwing (the agent's tab: loadInView, or onPopupBlocked) is deny too
+  const hy = buildViewHandlers({ sim: false, currentUrl: () => 'https://example.com/page', loadInView: () => { throw new Error('boom'); }, onPopupBlocked: () => { throw new Error('boom'); } });
+  assert.deepStrictEqual(hy.windowOpen({ url: 'https://example.com/t', disposition: 'foreground-tab', referrer: { url: 'https://example.com/page' } }), { action: 'deny' }, 'loadInView throwing: deny');
+  assert.deepStrictEqual(hy.windowOpen({ url: 'https://example.com/t', disposition: 'new-window' }), { action: 'deny' }, 'onPopupBlocked throwing: deny');
 }
 for (const [url, isMainFrame, ok] of [['https://a.com/', true, true], ['file:///etc/passwd', true, false], ['file:///x', false, false], ['data:text/html,x', true, false], ['data:text/html,x', false, true], ['chrome://gpu', true, false], ['durbar-sim://x', true, false]] as const) {
   const e = ev();

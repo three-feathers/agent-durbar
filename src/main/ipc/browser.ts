@@ -9,6 +9,7 @@ import type { BrowserWindow } from 'electron';
 import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
 import { closeTabView, destroySessionView, ensureTabView } from '../browser/views';
 import { makeBrowserController } from '../browser/controller';
+import { makeLinksToggle } from '../browser/tabs';
 import type { BrowserController, BrowserDeps } from '../browser/controller';
 import type { AgentInfo, BrowserResult, BrowserState, BrowserTabs } from '../../shared/api';
 import type { SettingsStore } from '../settings';
@@ -38,8 +39,8 @@ export function register(deps: BrowserIpcDeps): BrowserController {
   const asks = new Map<string, { id: string; resolve(leave: boolean): void }>();
   const consented = (): boolean => (simulator && !deps.simAsksConsent) || deps.getSettingsStore()?.browserNoteAccepted === true;
   // FR-123: one app-wide toggle, read here and never sent by the window. The simulator keeps it in memory (no user settings are written)
-  let simLinksNewTab = false;
-  const linksNewTab = (): boolean => (simulator ? simLinksNewTab : deps.getSettingsStore()?.chatLinksNewTab === true);
+  const linksToggle = makeLinksToggle(simulator, () => deps.getSettingsStore());
+  const linksNewTab = (): boolean => linksToggle.get();
   const ctl = makeBrowserController({
     consented,
     linksNewTab,
@@ -73,8 +74,7 @@ export function register(deps: BrowserIpcDeps): BrowserController {
   // FR-123: only a real boolean changes it; every window is told, so every session's menu shows it the same
   ipcHandle('browser:setLinksNewTab', (e, on: unknown) => {
     if (!fromApp(e) || typeof on !== 'boolean') return { ok: false };
-    if (simulator) simLinksNewTab = on;
-    else deps.getSettingsStore()?.setChatLinksNewTab(on);
+    linksToggle.set(on);
     const now = linksNewTab();
     deps.toRenderer('browser:linksNewTab', now);
     return { ok: true, on: now };
