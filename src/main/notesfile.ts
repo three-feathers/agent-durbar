@@ -422,6 +422,7 @@ export async function syncNotesFile(d: {
     const c = imp.counts;
     if (rb.strayText) info.push(NOTES_MD_STRAY);
     const notIn = (c?.tooLong ?? 0) + (c?.overCap ?? 0) + rb.overflow;
+    if (c?.keptDurbar) info.push(`${c.keptDurbar} note${c.keptDurbar === 1 ? '' : 's'} added in notes.md ${c.keptDurbar === 1 ? 'was' : 'were'} changed in Durbar before reaching the file; Durbar's version was kept`);
     if (c?.older) info.push(`${c.older} note${c.older === 1 ? '' : 's'} in notes.md ${c.older === 1 ? 'was an older copy' : 'were older copies'}; Durbar's version was kept`);
     if (notIn) info.push(`${notIn} note${notIn === 1 ? '' : 's'} in notes.md could not be added (too long, or over ${NOTES_LIMITS.notesPerFolder} notes)`);
   }

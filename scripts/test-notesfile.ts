@@ -420,6 +420,113 @@ async function main(): Promise<void> {
     }
   });
 
+  await test('review 2: a section without an id edited again before it reached the file is the same note (pairing in order), never a silent merge', async () => {
+    const texts = async (st: NotesStore, key: string): Promise<string> => (await notesOf(st, key)).map((n) => n.text).sort().join('|');
+    const failing = (r: ReturnType<typeof rig>): void => { r.c.hook.renameSync = () => { throw Object.assign(new Error('io'), { code: 'EIO' }); }; };
+    const edit = (r: ReturnType<typeof rig>, from: string, to: string): void => { const t = nodeFs.readFileSync(md(r.folder), 'utf8'); assert.ok(t.includes(from)); nodeFs.writeFileSync(md(r.folder), t.replace(from, to)); };
+    const base = async (r: ReturnType<typeof rig>): Promise<void> => { must(await r.store.add(r.key, 'proj', { text: 'base' })); await cycle(r); };
+    // the designed retry: the section is edited again right before the rename
+    {
+      const r = rig();
+      await base(r);
+      nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\nnew idea text\n');
+      r.c.calls.length = 0;
+      let armed = true;
+      r.c.hook.closeSync = (real, fd) => { const out = real(fd); if (armed && r.c.calls.some((x) => x.m === 'openSync' && x.p.endsWith('.tmp'))) { armed = false; edit(r, 'new idea text\n', 'new idea text/more\n'); } return out; };
+      assert.strictEqual((await cycle(r)).retry, true);
+      assert.deepStrictEqual((await cycle(r)).state, {});
+      assert.strictEqual(await texts(r.store, r.key), 'base|new idea text/more');
+    }
+    // the write fails, then the same section is edited
+    {
+      const r = rig();
+      await base(r);
+      failing(r);
+      nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\nidless\n');
+      await cycle(r);
+      edit(r, '\nidless\n', '\nidless v2\n');
+      await cycle(r);
+      const ns = await notesOf(r.store, r.key);
+      assert.strictEqual(await texts(r.store, r.key), 'base|idless v2');
+      assert.ok(ns.find((n) => n.text === 'idless v2')!.fileEdited);
+    }
+    // two pending notes pair in file order; a changed title is an edit too
+    {
+      const r = rig();
+      await base(r);
+      failing(r);
+      nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\n## Title A\n\none\n\n<!-- durbar-note -->\ntwo\n');
+      await cycle(r);
+      const before = new Map((await notesOf(r.store, r.key)).map((n) => [n.text, n.id]));
+      edit(r, '## Title A\n\none\n', '## Title B\n\none v2\n');
+      edit(r, '\ntwo\n', '\ntwo v2\n');
+      await cycle(r);
+      const after = await notesOf(r.store, r.key);
+      assert.strictEqual(after.length, 3);
+      assert.deepStrictEqual([after.find((n) => n.id === before.get('one'))?.text, after.find((n) => n.id === before.get('one'))?.title, after.find((n) => n.id === before.get('two'))?.text], ['one v2', 'Title B', 'two v2'], 'each section stays its own note, in order');
+      // only the title changed: still the same note
+      edit(r, '## Title B\n', '## Title C\n');
+      await cycle(r);
+      assert.deepStrictEqual((await notesOf(r.store, r.key)).filter((n) => n.text === 'one v2').map((n) => n.title), ['Title C']);
+    }
+    // the pending note was changed in Durbar meanwhile: Durbar's version is kept, and the state says so
+    {
+      let clock = Date.parse('2026-10-31T10:00:00.000Z');
+      const r = rig({ now: () => new Date(clock) });
+      await base(r);
+      failing(r);
+      nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\nidless\n');
+      await cycle(r);
+      clock += 60_000;
+      const n = (await notesOf(r.store, r.key)).find((x) => x.text === 'idless')!;
+      must(await r.store.update(r.key, 'proj', n.id, n.rev, { text: 'changed in Durbar' }));
+      clock += 60_000;
+      edit(r, '\nidless\n', '\nidless v2\n');
+      const st = await cycle(r);
+      assert.strictEqual(await texts(r.store, r.key), 'base|changed in Durbar');
+      assert.match(st.state.info ?? '', /1 note added in notes\.md was changed in Durbar before reaching the file; Durbar's version was kept/);
+    }
+    // two equal sections in one file are two notes; equal text with different titles too
+    {
+      const r = rig();
+      nodeFs.mkdirSync(path.join(r.folder, '.durbar'));
+      nodeFs.writeFileSync(md(r.folder), '<!-- durbar-note -->\nsame\n\n<!-- durbar-note -->\nsame\n\n<!-- durbar-note -->\n## T1\n\nbody\n\n<!-- durbar-note -->\n## T2\n\nbody\n');
+      await cycle(r);
+      assert.strictEqual(await texts(r.store, r.key), 'body|body|same|same');
+    }
+    // a deliberate copy (without the id) of a note already in the file is a new note
+    {
+      const r = rig();
+      nodeFs.mkdirSync(path.join(r.folder, '.durbar'));
+      nodeFs.writeFileSync(md(r.folder), '<!-- durbar-note -->\n## idea\n\nidea\n');
+      await cycle(r); // imported from the file and written back with its id
+      assert.ok(/id=n-/.test(nodeFs.readFileSync(md(r.folder), 'utf8')));
+      nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\n## idea\n\nidea\n');
+      await cycle(r);
+      assert.strictEqual(await texts(r.store, r.key), 'idea|idea');
+    }
+    // a typed note that never reached the file is not matched by a file section with the same text
+    {
+      const r = rig();
+      failing(r);
+      nodeFs.mkdirSync(path.join(r.folder, '.durbar'));
+      const typed = must(await r.store.add(r.key, 'proj', { text: 'typed thing' })).note!;
+      nodeFs.writeFileSync(md(r.folder), '<!-- durbar-note -->\ntyped thing\n\n<!-- durbar-note -->\nother text\n');
+      await cycle(r);
+      const ns = await notesOf(r.store, r.key);
+      assert.deepStrictEqual(ns.map((n) => n.text).sort(), ['other text', 'typed thing', 'typed thing']);
+      assert.deepStrictEqual([ns.find((n) => n.id === typed.id)!.text, ns.find((n) => n.id === typed.id)!.from], ['typed thing', 'typed'], 'the typed note is not touched');
+    }
+  });
+
+  await test('review 2: merging two documents keeps the newer fileImport', () => {
+    const { mergeDocs, emptyNotesDoc } = require('../src/shared/notes') as typeof import('../src/shared/notes');
+    const older = { ...emptyNotesDoc('p'), fileImport: { sha256: 'a'.repeat(64), at: '2026-10-31T10:00:00.000Z' } };
+    const newer = { ...emptyNotesDoc('p'), fileImport: { sha256: 'b'.repeat(64), at: '2026-10-31T11:00:00.000Z' } };
+    assert.strictEqual(mergeDocs(older, newer).fileImport?.sha256, 'b'.repeat(64));
+    assert.strictEqual(mergeDocs(newer, older).fileImport?.sha256, 'b'.repeat(64));
+  });
+
   await test('AC13/AC14: titles from the file are masked and lose bidi and zero-width characters; texts are masked, then cut', async () => {
     const r = rig();
     nodeFs.mkdirSync(path.join(r.folder, '.durbar'));
