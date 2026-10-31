@@ -59,7 +59,7 @@ function crewPreload(choice){
 function crewPreloadIds(ids){
   for(const id of ids)for(const pose of CREW.POSES){
     const f=CREW.file(id,pose), im=new Image();
-    const bad=()=>{if(CREW_BAD.has(id)||CREW.file(id,pose)!==f)return;CREW_BAD.add(id);console.warn('[crew] picture '+f+' is missing or cannot be decoded: '+id+' is drawn as the plain figure');crewRefreshAvatars();scheduleRender();};
+    const bad=()=>{if(CREW_BAD.has(id)||(/^my-/.test(id)&&CREW.file(id,pose)!==f))return;CREW_BAD.add(id);console.warn('[crew] picture '+f+' is missing or cannot be decoded: '+id+' is drawn as the plain figure');crewRefreshAvatars();scheduleRender();};
     im.onerror=bad; im.src=f; if(im.decode)im.decode().catch(bad);
   }
 }
