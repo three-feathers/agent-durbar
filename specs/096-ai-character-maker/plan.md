@@ -64,7 +64,7 @@ renderer: blob: URLs from character:frames bytes → DurbarCrew.registerOwn(list
 | P4 | Does a 2x2 sheet keep one person across 4 panels with clean gutters? Repeat 3 times with different descriptions | 3 turns; the owner looks at them | 3 images |
 | P5 | Can a turn take a reference image (`input` item `localImage`) and keep the face (fallback of D2)? | 1 turn with P4's top-left panel | 1 image |
 | P6 | Can `account/read` tell a ChatGPT login from an API key (FR-034)? Also: does a set `OPENAI_API_KEY` in the child's environment (kept by `codexChildEnv`) change which login Codex bills? | read the schema; spec 051 already calls `account/read` | 0 |
-| P7 | Does Codex still write a copy under `~/.codex/generated_images/` with `--ephemeral` (route B) or an `ephemeral: true` thread (route A)? (FR-033) | list the folder's file names (not contents) before and after P1 | 0 extra |
+| P7 | Does Codex still write a copy under `~/.codex/generated_images/` with `--ephemeral` (route B) or an `ephemeral: true` thread (route A)? (FR-035) | list the folder's file names (not contents) before and after P1 | 0 extra |
 | P8 | Does `workspace-write` without `network_access` block a shell command's network while the image call still works? (FR-002) | in P1's turn family, one extra turn asking for a network command, exit status only | 1 turn, no image |
 
 Results go to `docs/agent-apps.md` (Codex) and this spec's `## Changes`, with `real:` evidence. Total: about 5 images (P7 and P8 add none) and 10 minutes of the owner's plan.
@@ -124,7 +124,7 @@ Results go to `docs/agent-apps.md` (Codex) and this spec's `## Changes`, with `r
 - **R6 Image tool unreliability** (sheets, transparency). D2 has fallbacks; probes P3-P5 decide which one ships, and a failed sheet asks to try again.
 - **R7 Plan usage surprise.** Every try says "one picture from your ChatGPT plan's limits" before it starts. Try again asks the same. There is no automatic retry pass: unlike the theme maker, a second image is never made without a click.
 - **R8 API-key login spends money** (P6). Fails safe (FR-034): until P6 every try asks a confirmation, after P6 an API-key login is refused; the README states it.
-- **R9 Codex keeps its own copies** of each picture (FR-033, P7): a `[KNOWN GAP]`, no cleanup by Durbar; the dialog help and README say where.
+- **R9 Codex keeps its own copies** of each picture (FR-035, P7): a `[KNOWN GAP]`, no cleanup by Durbar; the dialog help and README say where.
 - **R10 Codex environment** (FR-002, P2, P8): `codexChildEnv` unchanged, real `CODEX_HOME`, MCP off and network off to be proven by probes; `generateImage` is not enabled until P2 passes.
 - **R11 Built-in crew motion** is Paco's call (Q1b); v1 animates generated characters only (FR-062).
 
