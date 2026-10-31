@@ -87,6 +87,17 @@ status: built
 
 *Changed*: FR-023 (above), `src/main/mcpstore.ts` (one vault blob, lazy unlock, file version 3), `src/main/mcpipc.ts` (no `isEncryptionAvailable()` on macOS). README *Known limits*, CHANGELOG. T015.
 
+### 2026-10-31: an unreadable store file is moved aside, never overwritten (found by review of PR #958)
+
+*Found by review* (spec 100's review; `read:` the code): `McpStore.load()` treats a truncated, over-size or otherwise unreadable `durbar-mcp.json` as an empty store, and the next user action's `save()` overwrites it, losing every folder's servers and the encrypted `vault`. This spec owns the store (FR-023; 058 and 069 only call it).
+
+*Changed* `[IMPLEMENTED]` `test:` `npm run test:mcp`:
+- **A file that exists and cannot be used** (a read error other than a missing file, over 2 MB, not JSON, or JSON that is not an object) still loads as empty, and the user can go on. Before the first write of that run it is **renamed to a dated sibling** in the same folder, `durbar-mcp.json.unreadable-<UTC time>` (`-1`, `-2`... if the name is taken), mode 0600 where the OS has modes. It is never deleted, never decrypted (the vault stays locked: no codec call), and its contents are never logged; the log line names only the new file name.
+- **If it cannot be moved** (a Windows lock, a permission), the action fails with one plain error and the file stays exactly as it was; a later action tries again.
+- A **missing file** stays normal: an empty store, nothing moved. A readable file is not moved either.
+
+*Not done*, `[KNOWN GAP]`: nothing in the window says a file was moved aside (the list reads empty, as before; the log and *Known limits* say where to look), and Durbar does not read the moved file back. A readable file whose single entries do not validate still drops those entries at the next write (unchanged).
+
 ### 2026-10-21: known gaps revalidated
 
 - **Context for models other than `auto`** closed. `real:` 2026-10-20, Copilot Pro: `usage_info.tokenLimit` per model (`gpt-6-luna` 272000, long tier 872000, `mai-code-1.1-flash` 128000, `claude-haiku-4.5` 128000) and `contextInfo` after a call (spec 030 Changes in #399).
