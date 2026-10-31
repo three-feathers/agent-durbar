@@ -320,6 +320,14 @@ const SIM_CLAUDE_MODELS: ModelChoice[] = [
   { id: 'sonnet', name: 'Sim Sonnet', efforts: ['low', 'medium', 'high'] },
   { id: 'haiku', name: 'Sim Haiku', efforts: [] },
 ];
+/* spec 030 FR-064 (`simmodels=rich`, driver check-model-choice only, so every other roster and picture stays as it is): a second Copilot model with a long
+   tier, a Claude long-context alias (the real list names them `...[1m]`) and a Codex list. A simulation, not any app's real list. */
+const SIM_RICH_MODELS: Record<string, ModelChoice[]> = {
+  copilot: [{ id: 'sim-wide', name: 'Sim Wide', multiplier: 1, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium', contextWindow: 272000, priceClass: 'medium', contextTiers: ['default', 'long'], longWindow: 872000, pricing: { inputPerMTok: 80, outputPerMTok: 400, cachedPerMTok: 8, long: { inputPerMTok: 160, outputPerMTok: 600 } } }],
+  claude: [{ id: 'sonnet[1m]', name: 'Sim Sonnet (1M context)', efforts: ['low', 'medium', 'high'] }],
+  codex: [{ id: 'sim-codex-a', name: 'Sim Codex A', efforts: ['low', 'medium', 'high'] }, { id: 'sim-codex-b', name: 'Sim Codex B', efforts: ['low', 'high'] }, { id: 'sim-codex-c', name: 'Sim Codex C', efforts: [] }],
+};
+const simRichModels = (kind: string): ModelChoice[] => (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simmodels') === 'rich' ? SIM_RICH_MODELS[kind] ?? [] : []);
 /* spec 043: what a session's custom agents look like (made up; no real agent files) */
 /** Spec 073 FR-011: canned "/" entries per agent app (folder, user, and Claude Code's built-ins); nothing is read from disk. */
 type SimSlash = { name: string; description?: string; argumentHint?: string; source: 'folder' | 'user' | 'app'; kind: 'skill' | 'command' | 'prompt' | 'builtin'; where?: string; note?: string };
@@ -2278,17 +2286,23 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const tierQ = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
     const simTierLock = (() => { const v = tierQ.get('simtierlock'); return v === 'efficiency' || v === 'balance' || v === 'intelligence' || v === 'other' ? v : undefined; })();
     const simTierFail = tierQ.get('simtierfail') === '1';
-    const simModelList = (): ModelChoice[] => SIM_MODELS.map((m) => ({ ...m, ...(m.id === 'auto' && simTierLock ? { autoTierManaged: simTierLock === 'other' ? { locked: true } : { tier: simTierLock, locked: true } } : {}) }));
-    const simModel = (id: string | undefined): ModelChoice | undefined => simModelList().find((m) => m.id === id);
+    const simModelList = (): ModelChoice[] => [...SIM_MODELS, ...simRichModels('copilot')].map((m) => ({ ...m, ...(m.id === 'auto' && simTierLock ? { autoTierManaged: simTierLock === 'other' ? { locked: true } : { tier: simTierLock, locked: true } } : {}) }));
+    /** Spec 030 FR-063, as main checks it: each agent app's own list; `auto` is that app's own default even when its list does not name it. */
+    const simKindModels = (kind: string): ModelChoice[] => (kind === 'claude' ? [...SIM_CLAUDE_MODELS, ...simRichModels('claude')] : kind === 'copilot' ? simModelList() : simRichModels(kind));
+    const simModel = (id: string | undefined, kind = 'copilot'): ModelChoice | undefined => {
+      const list = simKindModels(kind);
+      return list.find((m) => m.id === id) ?? (id === 'auto' && kind !== 'copilot' ? { id: 'auto', name: 'Auto', efforts: list.find((m) => m.id === 'default')?.efforts ?? [] } : undefined);
+    };
+    const kindOfSim = (s: SimAgent): string => s.info.adapterId ?? 'copilot';
     const windowFor = (m: ModelChoice | undefined, tier: ContextTier | undefined): number => (tier === 'long' && m?.longWindow ? m.longWindow : m?.contextWindow ?? 0);
     const isBusy = (s: SimAgent): boolean => s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.compacting;
     const needsCompaction = (s: SimAgent, req: ModelSwitchRequest): boolean => {
-      const w = windowFor(simModel(req.model), req.contextTier === 'long' ? 'long' : undefined);
+      const w = windowFor(simModel(req.model, kindOfSim(s)), req.contextTier === 'long' ? 'long' : undefined);
       return w > 0 && !!s.ctx && s.ctx.tokens > w;
     };
 
     function applyModel(s: SimAgent, req: ModelSwitchRequest, cause: 'user' | 'runtime' | 'rate-limit' | 'fallback'): void {
-      const m = simModel(req.model);
+      const m = simModel(req.model, kindOfSim(s));
       if (!m) return;
       const previousModel = s.info.model, previousEffort = s.info.effort;
       s.info.model = m.id;
@@ -2310,6 +2324,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         window.setTimeout(() => emit({ type: 'autoTierFailed', sessionId: sid(s), timestamp: now(), requested: req.autoTier ?? undefined, effective: ownBefore ?? 'efficiency', reason: 'request-failed' }), 0);
       }
     }
+
+    /* Spec 030 FR-064: a driver ends a frozen reply, so a queued switch is always in play when the reply ends (simulator only) */
+    (window as unknown as { __simFinishTurn?: (id: string) => void }).__simFinishTurn = (id) => {
+      const s = sims.find((x) => x.info.id === id);
+      if (!s) return;
+      s.state = 'idle';
+      emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'idle' });
+    };
 
     async function applyPending(s: SimAgent): Promise<void> {
       const p = s.pendingModel;
@@ -2354,7 +2376,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
         if (s.info.modelControl?.switch === 'none') return { ok: false, error: 'This agent cannot change its model in place. Start a new session with the model you want.' };
-        const m = simModel(req?.model);
+        const m = simModel(req?.model, kindOfSim(s));
         if (!m) return { ok: false, error: 'That model is not in the list your account offers.' };
         if (req.effort && !m.efforts.includes(req.effort)) return { ok: false, error: 'That model does not offer this reasoning effort.' };
         if (req.contextTier === 'long' && !m.contextTiers?.includes('long')) return { ok: false, error: 'That model has no long-context tier.' };
@@ -2367,7 +2389,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           if (!req.confirm?.compaction) return { ok: true, result: { status: 'needs-confirmation', model: m.id, confirmation: { targetName: m.name, currentTokens: s.ctx?.tokens ?? 0, targetLimit: windowFor(m, tier) } } };
           if (req.confirm.compaction === 'decline') return { ok: true, result: { status: 'rejected', message: 'The model was not changed.' } };
         }
-        if (isBusy(s)) {
+        // Spec 030 FR-038/FR-039: Claude Code and Codex take the choice at once and use it from the next message; only Copilot's runtime queues during a turn
+        if (isBusy(s) && kindOfSim(s) === 'copilot') {
           const queueId = 'q-' + sid(s) + '-' + ++queueN;
           s.pendingModel = { req, queueId };
           return { ok: true, result: { status: 'queued', model: m.id, queueId } };
@@ -3034,7 +3057,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (opts.grants !== 'stuck' && s && s.grants.delete(key)) grantsEvent(s);
       },
       // No disk, no account: canned answers so the new folder / session / history UI can be exercised without credits.
-      listModels: async (kind) => ({ ok: true, models: (kind === 'claude' ? SIM_CLAUDE_MODELS : !kind || kind === 'copilot' ? simModelList() : []).map((m) => { const ob = simOrgModel(kind, m.id); return ob ? { ...m, orgBlocked: ob } : { ...m }; }) }),
+      listModels: async (kind) => ({ ok: true, models: (simKindModels(kind || 'copilot')).map((m) => { const ob = simOrgModel(kind, m.id); return ob ? { ...m, orgBlocked: ob } : { ...m }; }) }),
       /* spec 076 FR-205/FR-207: main's view of the canned policy (no values) */
       orgPolicyView: async (): Promise<Record<string, import('../shared/orgpolicy').OrgPolicyAppView>> => {
         if (!SIM_ORG) return {};
