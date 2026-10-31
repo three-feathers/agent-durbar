@@ -64,9 +64,9 @@ export const THEME_IDEAS = [
   'a beach shack in the tropics', 'an autumn forest cabin', 'a mid-century airport lounge', 'a chess club in Vienna',
 ];
 
-/** `n` different ideas, picked with `rand` (Math.random by default). */
-export function pickIdeas(n: number, rand: () => number = Math.random): string[] {
-  const pool = THEME_IDEAS.slice();
+/** `n` different ideas, picked with `rand` (Math.random by default) from `from` (the theme ideas by default; spec 096 FR-013 passes its own list). */
+export function pickIdeas(n: number, rand: () => number = Math.random, from: readonly string[] = THEME_IDEAS): string[] {
+  const pool = from.slice();
   const out: string[] = [];
   while (out.length < n && pool.length) out.push(pool.splice(Math.floor(rand() * pool.length), 1)[0]);
   return out;

@@ -25,11 +25,11 @@
 
 ## Phase 2: Pure core (PR 2)
 
-- [ ] T020 [P] `src/shared/charstyle.ts`: `STYLE_PRESETS` with `realistic-office-v1`. Test: `test:chargen` checks the id format and that the prefix mentions transparent background and no text [FR-050, FR-051]
-- [ ] T021 [P] `src/shared/chargen.ts`: `cleanDescription` (trim, 300 code points, control characters, markers and backticks out, at least 3), `buildCharacterPrompt` (preset + layout block + wrapper), `CHARACTER_IDEAS` (24) and `pickIdeas` reuse. Test: `scripts/test-chargen.ts`: hostile descriptions (marker injection, "ignore the above", newline floods, 10,000 characters, emoji at the cut) stay inside the markers; prompt under 4,000 characters; ideas [FR-010..FR-013]
-- [ ] T022 [P] `src/shared/imagecheck.ts`: magic bytes and header dimensions for PNG and WebP (VP8, VP8L, VP8X), no decoder. Test: `scripts/test-imagecheck.ts`: good PNG/WebP, wrong magic, text named `.png`, polyglot PNG+ZIP (header still checked, size cap), huge IHDR, too small, truncated [FR-020, FR-021]
-- [ ] T023 [P] `src/shared/webpcheck.ts`: chunk walker moved from `scripts/test-crew-assets.ts`; `checkFrame` (352x352, alpha, 40 KB, allow-list) and `stripChunks`. Test: `test:crew-assets` unchanged and green on the shipped art; `test:imagecheck` covers EXIF/XMP/ICCP stripped, unknown chunk refused [FR-023]
-- [ ] T024 `package.json`: `test:chargen`, `test:imagecheck` in the `npm test` list. Test: `npm test` runs them
+- [x] T020 [P] `src/shared/charstyle.ts`: `STYLE_PRESETS` with `realistic-office-v1`. Test: `test:chargen` checks the id format and that the prefix mentions transparent background and no text [FR-050, FR-051]
+- [x] T021 [P] `src/shared/chargen.ts`: `cleanDescription` (trim, 300 code points, control characters, markers and backticks out, at least 3), `buildCharacterPrompt` (preset + layout block + wrapper), `CHARACTER_IDEAS` (24) and `pickIdeas` reuse (`pickIdeas(n, rand, from)` gained a list argument; `pickCharacterIdeas` calls it). Test: `scripts/test-chargen.ts`: hostile descriptions (marker injection, "ignore the above", newline floods, 10,000 characters, emoji at the cut) stay inside the markers; prompt under 4,000 characters; ideas [FR-010..FR-013]
+- [x] T022 [P] `src/shared/imagecheck.ts`: magic bytes and header dimensions for PNG and WebP (VP8, VP8L, VP8X), no decoder. Test: `scripts/test-imagecheck.ts`: good PNG/WebP, wrong magic, text named `.png`, polyglot PNG+ZIP (header still checked, size cap), huge IHDR, too small, truncated [FR-020, FR-021]
+- [x] T023 [P] `src/shared/webpcheck.ts`: chunk walker moved from `scripts/test-crew-assets.ts`; `checkFrame` (352x352, alpha, 40 KB, allow-list) and `stripChunks`. Test: `test:crew-assets` unchanged and green on the shipped art; `test:imagecheck` covers EXIF/XMP/ICCP stripped, unknown chunk refused [FR-023]
+- [x] T024 `package.json`: `test:chargen`, `test:imagecheck` in the `npm test` list. Test: `npm test` runs them
 
 ## Phase 3: Adapter, main and IPC (PR 3)
 

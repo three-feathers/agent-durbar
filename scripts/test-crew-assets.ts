@@ -4,6 +4,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { webpInfo } from '../src/shared/webpcheck'; // the chunk walker moved to shared code (spec 096 FR-023)
 
 const ROOT = path.join(__dirname, '..', '..');
 const DIR = path.join(ROOT, 'src', 'renderer', 'crew', 'art');
@@ -12,21 +13,6 @@ const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as { IDS: strin
 
 const MAX_FILE = 40 * 1024, MAX_TOTAL = 2.5 * 1024 * 1024; // FR-050, FR-072 (3 poses per character; 13 Cheeky characters are 1.2 MB, 6 Prehistoric ones 0.6 MB)
 const COLUMNS = ['file', 'character', 'tool', 'date', 'prompt', 'made by', 'edited by', 'licence', 'generator terms read'];
-
-/** The RIFF chunks of a WebP: [fourcc, size] in order, and the picture's size from its VP8, VP8L or VP8X header. */
-export function webpInfo(buf: Buffer): { chunks: string[]; width: number; height: number } {
-  assert.ok(buf.length > 30 && buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WEBP', 'a WebP file');
-  const chunks: string[] = []; let width = 0, height = 0;
-  for (let p = 12; p + 8 <= buf.length;) {
-    const id = buf.toString('latin1', p, p + 4), size = buf.readUInt32LE(p + 4), d = p + 8;
-    chunks.push(id);
-    if (id === 'VP8X') { width = 1 + buf.readUIntLE(d + 4, 3); height = 1 + buf.readUIntLE(d + 7, 3); }
-    else if (id === 'VP8 ' && !width) { width = buf.readUInt16LE(d + 6) & 0x3fff; height = buf.readUInt16LE(d + 8) & 0x3fff; }
-    else if (id === 'VP8L' && !width) { const b = buf.readUInt32LE(d + 1); width = (b & 0x3fff) + 1; height = ((b >> 14) & 0x3fff) + 1; }
-    p = d + size + (size & 1);
-  }
-  return { chunks, width, height };
-}
 
 /** The rows of the provenance table: file name (from backticks) -> its cells. */
 export function assetRows(md: string): Map<string, string[]> {
@@ -57,8 +43,8 @@ export function problems(files: Map<string, Buffer>, md: string, header = md): s
       row.forEach((cell, i) => { if (!cell) out.push(`${name}: ASSETS.md cell "${COLUMNS[i] || i}" is empty`); });
     }
     if (buf.length > MAX_FILE) out.push(`${name}: ${buf.length} bytes, over the ${MAX_FILE} cap`);
-    let info;
-    try { info = webpInfo(buf); } catch (e) { out.push(`${name}: not a WebP file`); continue; }
+    const info = webpInfo(buf);
+    if (!info) { out.push(`${name}: not a WebP file`); continue; }
     for (const c of info.chunks) if (!['VP8 ', 'VP8L', 'VP8X', 'ALPH'].includes(c)) out.push(`${name}: metadata or unexpected chunk "${c}" (strip EXIF, XMP, ICC and text)`);
     if (info.width !== 352 || info.height !== 352) out.push(`${name}: ${info.width}x${info.height}, the art is 352x352 (FR-059)`);
     if (info.width < C.BOX.w * C.PX_PER_UNIT || info.height < C.BOX.h * C.PX_PER_UNIT) out.push(`${name}: ${info.width}x${info.height}, the stage box needs at least ${C.BOX.w * C.PX_PER_UNIT}x${C.BOX.h * C.PX_PER_UNIT} (2x of its largest shown size)`);
