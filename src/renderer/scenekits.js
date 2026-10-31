@@ -306,7 +306,7 @@
   const crewApi = () => { const g = typeof self !== 'undefined' ? self : globalThis; return g.DurbarCrew || (typeof require === 'function' ? require('./crew.js') : null); };
   const crewPic = (o) => { const C = crewApi(); return C && !o.crewFb && C.usable(o.crew) ? C : null; };
   KIT.crew = {
-    sigExtra: (o) => (o.crew || '') + (o.crewFb ? '|fb' : ''),
+    sigExtra: (o) => { const C = crewApi(); return (o.crew || '') + (C && C.ownRev ? C.ownRev(o.crew) : '') + (o.crewFb ? '|fb' : ''); }, // spec 096: a registered character's pictures can move to new URLs
     noFace: (o) => !!crewPic(o),
     /* FR-060: the round avatars crop the face of this picture; `o.view === 'seat'` (a couch in the lounge) shows the whole bust */
     avatarView: (o) => { const C = crewPic(o); return C ? C.viewBox(o.crew, C.poseFor(o.st), o.view) : null; },

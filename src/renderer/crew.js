@@ -15,8 +15,30 @@
   const CREWS = { cheeky: IDS, prehistoric: PREHISTORIC_IDS };
   const ALL_IDS = IDS.concat(PREHISTORIC_IDS);
   /* the characters of a Characters value (an unknown value or the theme's own: the Cheeky crew, as before) and the key the choice is stored under */
-  const idsFor = (choice) => has(CREWS, choice) ? CREWS[choice] : IDS;
-  const storeKey = (choice) => choice === 'prehistoric' ? 'durbar.crew.prehistoric' : 'durbar.crew';
+  const idsFor = (choice) => choice === 'mine' ? [...OWN.keys()] : has(CREWS, choice) ? CREWS[choice] : IDS;
+  const storeKey = (choice) => choice === 'prehistoric' ? 'durbar.crew.prehistoric' : choice === 'mine' ? 'durbar.crew.mine' : 'durbar.crew';
+  /* spec 096 FR-043: My characters, registered by app.js once main has listed them and their frames are URLs; newest first. A set belongs to no theme or world: the crew kit draws any registered id on any of them.
+     Everything is checked here, since these strings end up in scene markup: an id main makes, a blob: URL of this page and numeric face points; anything else is not registered. */
+  const OWN = new Map();
+  const OWN_ID = /^my-[0-9a-f]{12}$/, OWN_URL = /^blob:[A-Za-z0-9:/._-]+$/;
+  let ownRevN = 0;
+  const FACE_OK = (p) => Array.isArray(p) && p.length === 2 && p.every((n) => Number.isFinite(n) && n >= 0 && n <= PIC);
+  function registerOwn(list) {
+    const before = new Map(OWN);
+    OWN.clear();
+    for (const c of Array.isArray(list) ? list : []) {
+      if (!c || typeof c.id !== 'string' || !OWN_ID.test(c.id) || OWN.has(c.id) || !c.urls || !c.face) continue;
+      if (!POSES.every((p) => typeof c.urls[p] === 'string' && OWN_URL.test(c.urls[p]) && FACE_OK(c.face[p]))) continue;
+      const urls = { working: c.urls.working, waiting: c.urls.waiting, resting: c.urls.resting };
+      if (typeof c.urls.blink === 'string' && OWN_URL.test(c.urls.blink)) urls.blink = c.urls.blink;
+      const old = before.get(c.id);
+      OWN.set(c.id, { name: typeof c.name === 'string' ? c.name : '', face: { working: c.face.working, waiting: c.face.waiting, resting: c.face.resting }, urls, rev: old && POSES.every((p) => old.urls[p] === urls[p]) ? old.rev : ++ownRevN });
+    }
+    return [...OWN.keys()];
+  }
+  const ownName = (id) => OWN.has(id) ? OWN.get(id).name : '';
+  /* a registered character's pictures change when it is registered again with new URLs: in a scene's signature, so a scene is never kept with a dead URL; '' for the built-in crews, whose signatures do not change */
+  const ownRev = (id) => OWN.has(id) ? '@' + OWN.get(id).rev : '';
   const MAX_ENTRIES = 500, MAX_ID = 200;
   /* the portraits (spec 077 FR-050..FR-055, FR-059, FR-060): three poses per character, `crew/art/<id>-<pose>.webp`, 352x352 and square, drawn
      in a fixed square box of the 200x124 stage: 88x88 units at x 24, y 22 (twice the first build's, owner 2026-10-23). Its right edge is the
@@ -54,11 +76,15 @@
   };
   const k = BOX.w / PIC;
   /* a face box or the avatar's crop, in stage units: [x, y, w, h]; null for an unknown picture */
-  const facePoint = (id, pose) => (has(FACE, id) && has(FACE[id], pose)) ? FACE[id][pose] : null;
+  const facePoint = (id, pose) => OWN.has(id) ? (OWN.get(id).face[pose] || null) : (has(FACE, id) && has(FACE[id], pose)) ? FACE[id][pose] : null;
   function faceBox(id, pose) { const f = facePoint(id, pose); return f ? [BOX.x + (f[0] - FACE_W / 2) * k, BOX.y + (f[1] - FACE_H / 2) * k, FACE_W * k, FACE_H * k] : null; }
   /* the view box of a round avatar (chip, walker, chat header, inbox): the face fills the circle; of a seat on a couch: the bust from its top edge (FR-060) */
   function viewBox(id, pose, use) {
     const f = facePoint(id, pose); if (!f) return null;
+    return viewBoxAt(f, use);
+  }
+  /* the same for a face point of a character not registered yet (the maker's preview) */
+  function viewBoxAt(f, use) {
     if (use === 'seat') { // from the top of the picture (no hair or hood cut), 3/4 of its width, the face right of centre (the chat badge sits on the seat's top-left corner); the crop may start left of the picture (empty)
       const n = BOX.w * 0.75, x = Math.min(BOX.x + f[0] * k - n * 0.62, BOX.x + BOX.w - n);
       return [x, BOX.y, n, n].map((v) => Math.round(v * 100) / 100).join(' ');
@@ -68,10 +94,10 @@
   }
   /* the pose for a status: working and thinking type, waiting and error need the person, the rest rests */
   const poseFor = (st) => (st === 'working' || st === 'thinking' || st === 'avatar') ? 'working' : (st === 'waiting' || st === 'error') ? 'waiting' : 'resting';
-  const file = (id, pose) => 'crew/art/' + (PREHISTORIC_IDS.includes(id) ? 'prehistoric-' : '') + id + '-' + pose + '.webp';
+  const file = (id, pose) => OWN.has(id) ? OWN.get(id).urls[pose] : 'crew/art/' + (PREHISTORIC_IDS.includes(id) ? 'prehistoric-' : '') + id + '-' + pose + '.webp';
   const files = (ids) => (ids || IDS).reduce((a, id) => a.concat(POSES.map((p) => file(id, p))), []);
   /* FR-055: a character can be drawn when it is known and none of its pictures failed to load (`bad`: a Set of character ids) */
-  const usable = (id, bad) => typeof id === 'string' && ALL_IDS.includes(id) && !(bad && bad.has && bad.has(id));
+  const usable = (id, bad) => typeof id === 'string' && (ALL_IDS.includes(id) || OWN.has(id)) && !(bad && bad.has && bad.has(id));
 
   /* a small repeatable random source from a string (the session id): FNV-1a into mulberry32 */
   function seeded(str) {
@@ -120,6 +146,25 @@
     return out;
   }
 
+  /* spec 096 FR-033, FR-044: a folder key as main stores it (`normaliseFolderKey` in src/shared/usagedoc.ts; test:crew compares them) */
+  function folderKey(p, platform) {
+    let s = String(p == null ? '' : p).trim();
+    if (platform === 'win32') s = s.replace(/\\/g, '/').toLowerCase();
+    s = s.replace(/[\\/]+$/g, '');
+    return s || '/';
+  }
+  /* FR-044: before `assignCrew`: a session whose folder has a pin wears the pinned character (when it is usable), so it counts as in use for the others. A session keeping a character that is no longer
+     in the list (deleted, or a pin taken away under another crew) loses it, so `assignCrew` gives it a new one. sessions: [{id, key}]; key: folderKey. */
+  function pinCrew(map, sessions, pins, ids, bad) {
+    const out = Object.assign({}, map || {}), list = new Set(ids || []);
+    for (const s of sessions || []) {
+      const pin = pins && has(pins, s.key) ? pins[s.key] : null;
+      if (pin && usable(pin, bad)) out[s.id] = pin;
+      else if (has(out, s.id) && !list.has(out[s.id])) delete out[s.id];
+    }
+    return out;
+  }
+
   /* saved JSON -> a clean map: string ids up to 200 characters, known character ids only, at most 500 entries */
   function loadCrew(json, ids) {
     let o = null; try { o = typeof json === 'string' ? JSON.parse(json) : json; } catch (e) { o = null; }
@@ -133,5 +178,5 @@
     return out;
   }
 
-  return { CREWS, PREHISTORIC_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
+  return { registerOwn, ownName, ownRev, viewBoxAt, folderKey, pinCrew, CREWS, PREHISTORIC_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
 })());
