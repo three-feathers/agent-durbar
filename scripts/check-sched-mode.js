@@ -25,7 +25,7 @@ module.exports = async (ctx) => {
   };
   const closeDlg = async () => { await js(`document.getElementById('scClose').click()`); await wait(`!document.getElementById('schedDlg')`); };
   const rowLine = (p) => js(`(()=>{const r=[...document.querySelectorAll('#sdList .sc-row')].find(x=>x.querySelector('.sc-p').textContent.includes(${jsLiteral(p)}));return r?r.querySelector('small').textContent:null})()`);
-  const setForm = (prompt, mode, every) => js(`(()=>{document.getElementById('scPrompt').value=${jsLiteral(prompt)};document.getElementById('scPrompt').dispatchEvent(new Event('input'));const m=document.getElementById('scMode');m.value=${jsLiteral(mode)};m.dispatchEvent(new Event('change'));${every ? `document.getElementById('scEvery').value=${jsLiteral(String(every))};` : ''}return true})()`);
+  const setForm = (prompt, mode) => js(`(()=>{document.getElementById('scPrompt').value=${jsLiteral(prompt)};document.getElementById('scPrompt').dispatchEvent(new Event('input'));const m=document.getElementById('scMode');m.value=${jsLiteral(mode)};m.dispatchEvent(new Event('change'));return true})()`);
   const editOf = async (p) => { await js(`[...document.querySelectorAll('#sdList .sc-row')].find(x=>x.querySelector('.sc-p').textContent.includes(${jsLiteral(p)})).querySelector('[data-sc="edit"]').click()`); await wait(`!document.getElementById('scFormT').hidden`); };
   const noOverflow = () => js(`(()=>{const d=document.querySelector('.sched-dlg');return !!d&&d.scrollWidth<=d.clientWidth+1})()`);
 

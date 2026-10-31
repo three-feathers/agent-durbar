@@ -411,7 +411,7 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   assert.ok(app.includes('BREAKS.tick({hold:COFFEE.holdIds(agents)})'), 'coffeeTick passes holdIds(agents)');
   assert.ok(/function resumeCoffee[\s\S]{0,200}if\(a\.limit\)return false;/.test(app), 'resumeCoffee sends nothing while a Durbar spending limit is pending');
   const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.ts'), 'utf8');
-  assert.ok(/isBusy: \(folder, session\) => scheduleBusy\(folder, session, \{[^\n]*busy: busyStatus, breaks: agentState \}\)/.test(main), 'scheduleDeps.isBusy is scheduleBusy with busyStatus and the tracker');
+  assert.ok(/isBusy: \(folder, session\) => scheduleBusy\(folder, session, \{[^\n]*busy: \(id\) => busyStatus\(id\) \|\| runModes\.holds\(id\), breaks: agentState \}\)/.test(main), 'scheduleDeps.isBusy is scheduleBusy with busyStatus (and a held run mode, spec 044 FR-180) and the tracker');
 }
 
 // 11. Delta 2026-10-23 (owner, #634): the time left on the coffee-corner entry and the chat bar (FR-023), and Retry now (FR-021).
