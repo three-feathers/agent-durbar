@@ -4,7 +4,7 @@
 
 ## Summary
 
-A world pack becomes a validated, code-free data file that can arrive from outside the app. One validator (`src/shared/worldpack.ts`, `worldzip.ts`) sits behind four entrances: download (project source with hashes pinned in the app; other sources with a signed catalogue), upload, generation and import. Main owns network, disk and decisions; a sandboxed encoder window decodes hostile pictures; the renderer gets bytes by key and part name, through the 097 world seam. Eleven countries are packs under `worlds/<id>/`, not in the app; they wait for the 097 FR-179 gate.
+A world pack becomes a validated, code-free data file that can arrive from outside the app. One validator (`src/shared/worldpack.ts`, `worldzip.ts`) sits behind four entrances: download (project source with hashes pinned in the app; an organisation's or person's source, signed or first-seen), upload, generation and import. Main owns network, disk and decisions; a sandboxed encoder window decodes hostile pictures; the renderer gets bytes by key and part name, through the 097 world seam. Eleven countries are packs under `worlds/<id>/`, not in the app; they wait for the 097 FR-179 gate.
 
 ## Technical Context
 
@@ -35,6 +35,7 @@ Facts below were read in the repo or checked on 2026-10-31; the web sources are 
 | R7 | How many pictures for a world? | One back-wall sheet cut to fixtures, plus parts | The mockup did this, and it keeps fixtures in one light and style | One image per fixture: about 18 images and mismatched looks |
 | R8 | How do we enforce FR-179 in a test? | `test:world-catalogue` reads the T156..T159 ticks | Cheap and impossible to forget; 098 style (tests, not rule text) | A rule in text only |
 | R9 | Anchors in hand-made packs | Computed from alpha, shown in the report | People cannot be asked for fractions | An anchor editor: later, `[KNOWN GAP]` |
+| R12 | A person's source, with no key? | `first-seen`: remember, show every change, full validator | A hash cannot be pinned for an address the app has never seen; requiring a key would stop most sharing | Refuse without a key (too strict for the owner's decision); trust the host (no) |
 | R11 | Can "substantially different" be tested? | Partly: card, hashes, colours, and a person's look at thumbnails | A machine can prove a copy and a same-material claim, not a look | Only a person: slow, no record; only thresholds: passes two worlds that merely look alike |
 | R10 | Shared people from a downloaded pack | `people: "office"`, photo world's frames | Decided by #932; a pack near 2.5 MB | A people set per world |
 
@@ -69,6 +70,8 @@ Facts below were read in the repo or checked on 2026-10-31; the web sources are 
 
 **Telling worlds apart.** Three layers, cheapest first: `card.json` per world, compared before any image run (`test:world-catalogue`); picture checks in `check-world-distinct.js` (exact hash, perceptual hash of fixtures, average colour of wall, floor, desk), which decode in Electron because Node has no WebP decoder; the thumbnail contact sheet read by a person, which decides. In the app the same picture comparison only warns (FR-018), in the encoder window.
 
+**A source's label comes only from main.** Main stores origin and source when it stores a world, and sends the words the UI shows. Nothing in a pack or catalogue reaches that field, so a pack cannot claim to be ours by construction, not by a filter.
+
 **Registry.** `docs/experience/world-moments.json` gets one row per country (`pack: worlds/<id>`, `crews: []`, `shippable: false`), and every moment gets a cell (098 FR-011). Own worlds never enter the registry; for them `momentCoverage` is the check.
 
 **World matrix.** The driver mounts a pack from `worlds/<id>` by a dev hook in the simulator (same `world:part` shape), with no network.
@@ -98,7 +101,7 @@ The spec's *Context* table is the list. Changes to reused code:
 - **P4 Country worlds**: one PR per world or small batch (art, `ASSETS.md`, registry row), `coming` to `available` only through the gate (FR-035). Needs #936 built.
 - **P5 Hand path**: prompt pack, upload, report, try, save, export.
 - **P6 In-app**: needs 096's pipeline and probes.
-- **P7 Other sources**: signature, sequence, policy `worlds.sources`, notice wording.
+- **P7 Other sources and sharing**: signature, sequence, policy `worlds.sources`, a person's **Add a source…**, remembered hashes, source labels, look-alikes, sharing. Split if large; the adversarial set lands with the first source.
 
 P1 to P3 may merge before the gate with nothing visible as available; P4 to P6 reach a release only after it. P5 and P7 can swap.
 
@@ -113,4 +116,4 @@ P1 to P3 may merge before the gate with nothing visible as available; P4 to P6 r
 
 ## Done when
 
-Tasks ticked, `/speckit.converge` run, SC-001..SC-013 read, README *Safety model* lists the new connection, and `real:` rows recorded or left as `[KNOWN GAP]`.
+Tasks ticked, `/speckit.converge` run, SC-001..SC-015 read, README *Safety model* lists the new connection, and `real:` rows recorded or left as `[KNOWN GAP]`.

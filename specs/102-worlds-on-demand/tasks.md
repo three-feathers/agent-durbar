@@ -2,9 +2,9 @@
 
 **Input**: [spec.md](spec.md), [plan.md](plan.md)
 
-**Tests**: required (constitution VII; SC-001..SC-013). Node tests and the simulator only; 0 AI credits; no network in `npm test`. Each new rule gets a planted mutation that a test catches, listed in its PR (`docs/review-checklist.md`). Driver waits use `until()`, never a fixed sleep; no wall-clock assertion. `real:` tasks are separate and named.
+**Tests**: required (constitution VII; SC-001..SC-015). Node tests and the simulator only; 0 AI credits; no network in `npm test`. Each new rule gets a planted mutation that a test catches, listed in its PR (`docs/review-checklist.md`). Driver waits use `until()`, never a fixed sleep; no wall-clock assertion. `real:` tasks are separate and named.
 
-**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`, then a `Test:` part. `[P]` = can run in parallel. A phase = one PR, except P4 (one PR per world or small batch). Numbers taken: spec 102, FR-001..FR-199 (sparse by group), SC-001..SC-013, T001..T097 (sparse by phase).
+**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`, then a `Test:` part. `[P]` = can run in parallel. A phase = one PR, except P4 (one PR per world or small batch). Numbers taken: spec 102, FR-001..FR-199 (sparse by group), SC-001..SC-015, T001..T097 (sparse by phase).
 
 **Order**: P0 -> P1 -> P2 -> P3 -> P5 -> P4 and P6 -> P7 (OP-7; P5 and P7 can swap). **Nothing visible as available, and no maker, reaches a release before spec 097 FR-179 is met** (FR-035, FR-124): T156..T159 of spec 097 and its op rows.
 
@@ -12,7 +12,8 @@
 
 - [x] T001 Spec, plan, tasks, checklist and specs-index block (`specs/102-worlds-on-demand/`). Test: `npm run specs:check`, `npm run rules:check`.
 - [ ] T002 After #921, #925 and #936 land, write FR-190's lines into the `## Changes` of specs 096, 097, 098 and 076; add block `room` to the registry and its test. Test: `npm run specs:check`, `test:surfaces` [FR-190].
-- [ ] T003 Owner's answers to OP-1..OP-9 written into the spec, with the spec changed where they differ from the recommendation. Test: `read:` [Open points].
+- [ ] T004 AGENTS.md's *Needs approval* and *Rework rate* lines name `worlds-*` releases, per spec 021 FR-066, with the owner's direct OK on the text (an agent's relay does not authorise a rule-file change). Test: `npm run rules:check`; `read:` [FR-086].
+- [ ] T003 Owner's answers to the remaining open points (OP-1, OP-5..OP-9) written into the spec, with the spec changed where they differ from the recommendation. Test: `read:` [Open points].
 
 ## Phase 1: Format and validator (PR P1), no UI, no network
 
@@ -51,7 +52,7 @@ Depends on #921 and T010..T016.
 - [ ] T040 Offline and failures: no retry, the current world unchanged, an installed world works with the layer refusing and recording everything. Test: `test:worldsource` asserts zero requests in main; `sim:` draws [FR-075, FR-076].
 - [ ] T041 **Manage** rows (FR-061), Update and Remove, with the notice, old kept until new passes. Test: `test:worldstore`, `check-worlds` [FR-061, FR-100, FR-101, US6].
 - [ ] T042 Policy slice: machine folder only, 076 FR-005's trust check, `features.worldDownloads`, `worldsPolicyFrom` (`src/main/worlds/policy.ts`). Test: `test:worldsource`: main refuses whatever the window sends; unreadable, a read error and a timeout fail closed; bad types; one bad source entry empties the list; `true` never undoes `false`; a running download stops; `sim:` *Turned off by your organization* [FR-110, FR-112, FR-113, FR-114, SC-009].
-- [ ] T043 First real asset: publish per OP-2, compare the served bytes with the catalogue, and download once on Linux, macOS, Windows. Test: `real:` recorded in the spec; 0 AI credits; `[KNOWN GAP]` for an OS nobody ran [FR-073, FR-086, FR-182].
+- [ ] T043 First real asset (after T004): publish per OP-2, compare the served bytes with the catalogue, and download once on Linux, macOS, Windows. Test: `real:` recorded in the spec; 0 AI credits; `[KNOWN GAP]` for an OS nobody ran [FR-073, FR-086, FR-182].
 - [ ] T044 README *Safety model* table, *Development* names, limits; `docs/agent-apps.md` entry for the redirect host; changelog fragment. Test: `npm run test:docsscripts`, `changelog:check` [FR-074].
 
 ## Phase 4: Country worlds - US2
@@ -93,23 +94,28 @@ Needs spec 096's adapter capability and probes.
 - [ ] T062 [US4] One small world made in Durbar on the owner's plan, on his OK, after stating the cost. Test: `real:` number of pictures, time per part and any plan usage in the spec; provenance not needed as it stays a local own world [US4, FR-182].
 - [ ] T063 [US4] Idea chips and README notes on copies and cost. Test: `test:worldpack`, `npm run test:docsscripts` [FR-151, FR-152].
 
-## Phase 7: Other sources (PR P7) - US5
+## Phase 7: Other sources and sharing (PR P7, split if large) - US5, US7
 
 - [ ] T050 [US5] Ed25519 catalogue, sequence, last-good copy with date (`src/shared/worldsource.ts`, `src/main/worlds/sources.ts`). Test: `test:worldsource`: bad signature, missing signature, wrong key, lower sequence, oversize, the largest allowed catalogue with a CPU bound, `__proto__` and nested junk, namespaced keys cannot clash [FR-071, FR-076, FR-082, FR-090, FR-091, SC-003].
 - [ ] T051 [US5] URL rules; `worlds.sources` from the policy slice replaces the default; notice wording. Test: `test:worldsource`: private and metadata hosts, user or query in URL, more than 4 hosts, `trustedHosts`, project not contacted [FR-092, FR-110..FR-113].
 - [ ] T052 [US5] Re-encode non-project packs; *Not checked by the Agent Durbar project* and *Unfinished* before download. Test: `check-worlds`, `test:worldstore` [FR-034, FR-053, FR-072].
+- [ ] T065 [US7] **Add a source…**: parse and refuse first, warning, one-use token, record, Remove; `first-seen` and key modes; `features.userSources`, `worlds.userSourceHosts` (`src/main/worlds/sources.ts`, `src/renderer/worlds.js`). Test: `test:worldipc` on the registered channels; `check-worlds` with a wrapped bridge; policy refusal in main [FR-093, FR-094, FR-110, FR-111, US7].
+- [ ] T066 [US7] Adversarial network set: redirect to another host; every SSRF form of US7-2, per hop, and behind a proxy stand-in; a declared size over the cap, a false length, decoded size over the cap, one byte a second on a test clock; a bad `file` name. Test: `test:worldsource`, injected layer asserts no request reached the target; planted mutants per guard [FR-092, FR-099, SC-014].
+- [ ] T067 [US7] Remembered versions and hashes; changes shown, same-version warning, lower version refused, delisted label, nothing replaced until accepted and re-validated. Test: `test:worldsource`, `test:worldstore`, `check-worlds` [FR-096, FR-100].
+- [ ] T068 [US7] Source on every listing, from main's record; look-alike names; a pack claiming `spain`, our source or our hash stays *Imported*. Test: `test:worldpack` with Cyrillic, dotless i and fullwidth names; `check-worlds` reads the source beside the name in the World row, dialog, Manage, notice and try bar; `test:worldstore`: nothing but a pinned download sets the project label [FR-095, FR-097, FR-098, SC-015].
+- [ ] T069 [US7] Share: Export's statement and SHA-256, import's report, **Export as a source folder…**, `docs/worlds-source.md`, `scripts/world-sign.js`. Test: `test:worldstore`: exported source folder serves through the fake layer and passes end to end; a signature from the script verifies; no private key in any app file [FR-161..FR-163].
 - [ ] T053 [US5] An organisation's own location behind a proxy, by whoever has one. Test: `real:`, else `[KNOWN GAP]` kept [FR-182].
 - [ ] T054 [US5] Docs: admin page lines for the keys, 076's schema entry. Test: `read:`, `test:docsscripts` [FR-110, FR-111].
 
 ## Final
 
 - [ ] T095 Screenshots at both sizes for linked pictures, `npm run shots:docs`; a country world only in `docs/` once it is `available` (the matrix stays artifacts only, 098 FR-054). Test: `npm run shots:docs`, look at each.
-- [ ] T096 `/speckit.converge` against SC-001..SC-013; world matrix path filter and weekly run read after 14 worlds (shard if needed). Test: `npm run specs:check`, `read:` [FR-181].
+- [ ] T096 `/speckit.converge` against SC-001..SC-015; world matrix path filter and weekly run read after 14 worlds (shard if needed). Test: `npm run specs:check`, `read:` [FR-181].
 
 ## Dependencies
 
 Other specs: #921 (097 P1), #936 and 097 T156..T159 (gate), 098's checks, 096 (P6, and pieces of P5), 076 (only its first slice here).
 
-**MVP**: P1, P2, P3 and T080: one place, downloaded with a plain notice, after the gate. **Independent tests**: US1 by the fake request layer; US2 per world; US3 by hostile fixtures; US4 by the fake generator; US5 by policy fixtures; US6 by round trip.
+**MVP**: P1, P2, P3 and T080: one place, downloaded with a plain notice, after the gate. **Independent tests**: US1 by the fake request layer; US2 per world; US3 by hostile fixtures; US4 by the fake generator; US5 by policy fixtures; US6 by round trip; US7 by the adversarial set.
 
 **Parallel**: T010, T011 in P1; T082..T090 in P4 (limited by art batches and the owner's looks, not by code); T055, T058 in P5.
