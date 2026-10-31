@@ -82,6 +82,9 @@ module.exports = async (ctx) => {
     assert.ok(alt.seen.includes('1/0') && alt.seen.includes('0/1'), 'both frames seen');
     assert.notStrictEqual(alt.srcA, alt.srcB, 'two pictures');
     assert.strictEqual(alt.startA, alt.startB, 'FR-181: one clock per desk');
+    assert.ok(alt.startA < 1500, 'its own place in the cycle, not the time it was drawn: ' + alt.startA);
+    await must(`!!window.__scr(${jsLiteral(id)}).querySelector('.ro-caret')`, 'a caret on the working screen');
+    assert.strictEqual(await js(`window.__scr(${jsLiteral(id)}).querySelector('.ro-caret').getAnimations()[0].startTime`), alt.startA, 'the caret on the same clock');
     const r = await js(CROP(id)), first = await bitmap(r);
     let most = 0;
     for (let t = 0; t < 12 && most < 0.005; t++) { await ctx.sleep(180); most = Math.max(most, changed(first, await bitmap(r))); }
@@ -95,15 +98,18 @@ module.exports = async (ctx) => {
   await loadReal(1440, 900);
   await js(INSTALL);
   const mover = await seat(0);
-  await js(`(()=>{window.__g=[];new MutationObserver(ms=>{for(const m of ms){for(const n of m.addedNodes)if(n.classList&&n.classList.contains('ro-ghost'))window.__g.push('added');if(m.type==='attributes'&&m.target.classList.contains('ro-ghost'))window.__g.push('class');}}).observe(document.querySelector('#stage .ro-art'),{childList:true,subtree:true,attributes:true,attributeFilter:['class']});})();0`);
+  await js(`(()=>{window.__g=[];new MutationObserver(ms=>{for(const m of ms){for(const n of m.addedNodes)if(n.classList&&n.classList.contains('ro-ghost'))window.__g.push(n.src);if(m.type==='attributes'&&m.target.classList.contains('ro-ghost'))window.__g.push(m.target.src);}}).observe(document.querySelector('#stage .ro-art'),{childList:true,subtree:true,attributes:true,attributeFilter:['class']});})();0`);
+  const SRC = (id) => `document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(id)})+'"]').src`;
+  const oldPose = await js(SRC(mover));
   await emit({ type: 'status', sessionId: mover, status: 'idle' });
-  await must(`window.__g.length>0`, 'FR-072: a ghost of the old pose', 5000);
+  await must(`window.__g.includes(${jsLiteral(oldPose)})`, 'FR-072: a ghost of the old pose', 5000);
   await must(`!document.querySelector('#stage .ro-ghost')`, 'the ghost gone after its fade');
   const lobbyId = await seat(0);
+  const seated = await js(SRC(lobbyId));
   await js(`window.__g=[];0`);
   await emit({ type: 'toolCall', sessionId: lobbyId, callId: 'drv-walk', tool: 'bash', phase: 'start', args: { command: 'npm run a-long-one' } });
   await must(`!!document.querySelector('#stage .ro-visitor[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]')`, 'the agent at its place in the lobby');
-  assert.ok(await H.until(`window.__g.length>0`, 2000), 'FR-073: a fade where the person sat');
+  assert.ok(await H.until(`window.__g.includes(${jsLiteral(seated)})`, 2000), 'FR-073: a fade where the person sat');
   await must(`!document.querySelector('#stage .ro-ghost')`, 'the fade over');
   await emit({ type: 'toolCall', sessionId: lobbyId, callId: 'drv-walk', tool: 'bash', phase: 'complete', output: 'ok' });
   await must(`!!document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]')`, 'the person back at the desk');

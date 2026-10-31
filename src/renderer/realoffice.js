@@ -57,10 +57,9 @@
       e.src = src;
     }
   }
-  /* FR-071 and FR-047: may anything move now? Web Animations do not see the CSS rules, so this is asked before each one (the live media query too) */
+  /* FR-071 and FR-047: may anything move now? Web Animations do not see the CSS rules, so this is asked before each one; `still` holds Serious mode and reduced motion at load, the query a later change */
   function moving() {
     if (!CUR || CUR.still || CUR.hold) return false;
-    if (document.documentElement.hasAttribute('data-serious')) return false;
     try { if (matchMedia('(prefers-reduced-motion: reduce)').matches) return false; } catch (e) { return false; }
     return true;
   }
