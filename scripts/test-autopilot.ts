@@ -516,6 +516,8 @@ process.on('exit', () => { if (!finished) { console.error('autopilot test did no
     assert.strictEqual(isClaudeContinuation(msg({ parent_tool_use_id: 'toolu_1' })), false, 'a helper (FR-008)');
     assert.strictEqual(isClaudeContinuation(msg({ parent_tool_use_id: null })), true);
     assert.strictEqual(isClaudeContinuation(msg({ agentId: 'a1' })), false);
+    assert.strictEqual(isClaudeContinuation(msg({ agent_id: 'a1' })), false, 'FR-008: the stream names it agent_id');
+    assert.strictEqual(isClaudeContinuation(msg({ agent_id: null })), true);
     assert.strictEqual(isClaudeContinuation(msg({ isSidechain: true })), false, 'a sidechain (helper) message');
     assert.strictEqual(isClaudeContinuation(msg({ isSidechain: false })), true);
     assert.strictEqual(isClaudeContinuation(msg({ agentId: null })), true, 'a null agentId is the main stream, like a null parent_tool_use_id');

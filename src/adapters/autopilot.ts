@@ -305,7 +305,7 @@ export function goalText(text: unknown, app?: 'claude' | 'codex' | 'copilot'): G
  */
 export function isClaudeContinuation(msg: unknown): boolean {
   if (!isObj(msg) || msg.type !== 'user' || msg.isSynthetic !== true || msg.isSidechain === true) return false;
-  if ((msg.agentId !== undefined && msg.agentId !== null) || (msg.parent_tool_use_id !== undefined && msg.parent_tool_use_id !== null)) return false;
+  if ((msg.agentId !== undefined && msg.agentId !== null) || (msg.agent_id !== undefined && msg.agent_id !== null) || (msg.parent_tool_use_id !== undefined && msg.parent_tool_use_id !== null)) return false; // `agent_id`: the name the CLI's stream uses (`claudeMap.ts` `who()`)
   const m = msg.message;
   if (!isObj(m)) return false;
   const content = m.content;

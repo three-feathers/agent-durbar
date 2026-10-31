@@ -1174,7 +1174,7 @@ export class CopilotAdapter implements AgentAdapter {
 
   /** FR-053: on a resume the mode is read, then set; the wait for the app's answer holds only when it really was in `autopilot`. */
   private async clearOnResume(sid: string, live: Live, wasOn = false): Promise<void> {
-    if (!(this.autopilotTuning.clearFirst ?? AUTOPILOT_WIRED) && !this.autopilotUsed) return;
+    if (!this.goalsWired()) return;
     const ms = this.autopilotTuning.waitMs ?? CLEAR_WAIT_MS;
     const m = (await within(Promise.resolve(live.session.rpc.mode.get()), ms, 'Copilot')) as unknown;
     const found = (typeof m === 'string' ? m : (m as { mode?: unknown } | undefined)?.mode) === 'autopilot';
@@ -1184,8 +1184,14 @@ export class CopilotAdapter implements AgentAdapter {
     if (found || wasOn) this.emit(sid, { type: 'status', status: 'idle', intent: LINE_CLOSED });
   }
 
+  /** FR-006, FR-053 act on this session: main can turn Autopilot on, or `setAutopilot` ran here. */
+  private goalsWired(): boolean {
+    return (this.autopilotTuning.wired ?? AUTOPILOT_WIRED) || this.autopilotUsed;
+  }
+
   /** FR-006: the app went into its own loop without Durbar: out of it, and said in the chat. */
   private selfStarted(sid: string, live: Live): void {
+    if (!this.goalsWired()) return;
     this.emit(sid, { type: 'status', status: 'idle', intent: LINE_SELF_STARTED });
     void live.session.rpc.mode.set({ mode: 'interactive' }).catch(() => undefined);
     void live.session.abort().catch(() => undefined);
@@ -1343,10 +1349,14 @@ export class CopilotAdapter implements AgentAdapter {
     this.cancelQuestions(live, 'interrupt');
     await this.cancelLimit(live);
     // spec 099 FR-050: Stop on Autopilot is the run's own stop order, and the session goes back to Allow all
-    if (live.auto?.on || live.auto?.running) {
+    if (live.auto?.running) {
       await this.autopilotOff(sessionId, live, 'stopped');
       if (this.sessions.get(sessionId) === live) this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Aborted' });
       return;
+    }
+    if (live.auto?.on) {
+      await this.autopilotOff(sessionId, live, 'stopped'); // no run, but a typed turn may be going: it stops below
+      if (this.sessions.get(sessionId) !== live) return;
     }
     try {
       await live.session.abort();

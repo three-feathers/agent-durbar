@@ -51,7 +51,7 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group; FR-007, FR-008, FR-009
 
 ## Phase 3: Main and window (PR `099-p3-ui`)
 
-- [ ] T030 Set `AUTOPILOT_WIRED` to true in `autopilotHost.ts` in the same commit (FR-053 until now holds only on an adapter where `setAutopilot` ran; `test-autopilot-reach.ts` fails otherwise). `agents:setAutopilot` (`fromApp`), validation, capability and organization checks, `nativeConfirm` through an injected `confirm` with text written in main (merge `main` first: #931), then `setModeOp('allow')` from Read-only or Ask first,
+- [ ] T030 Set `AUTOPILOT_WIRED` to true in `autopilotHost.ts` in the same commit (FR-006 and FR-053 until now hold only on an adapter where `setAutopilot` ran; `test-autopilot-reach.ts` fails otherwise), and leave Durbar's own `/goal clear` out of the Claude replay (`claudeHistory.ts`, FR-053). `agents:setAutopilot` (`fromApp`), validation, capability and organization checks, `nativeConfirm` through an injected `confirm` with text written in main (merge `main` first: #931), then `setModeOp('allow')` from Read-only or Ask first,
   `setModeOp` to Read-only or Ask first ends Autopilot first, nothing saved, activity log lines; IPC tests: not from the app
   refused, from Read-only and Ask first the dialog says the folder becomes Allow all and the folder is unchanged until it is accepted, a limit above 20 or hours above 2 carry the warning, Cancel changes nothing, the MCP tools and remote control have no path, a restart or resume comes back in `allow` [FR-002-FR-005, FR-051, FR-052, FR-055, FR-070, D12]
 - [ ] T031 No progress: the fingerprint at each continuation through the spec 063 runner (read-only), and the end after two
@@ -97,4 +97,4 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group; FR-007, FR-008, FR-009
   and `ask_user` seen, Stop quiet; Claude's `stop-hook-block-cap`; Codex `blocked` [FR-010, FR-020, FR-021, FR-030, FR-040,
   FR-050]
 - [ ] T094 **Copilot** through the built adapter (needs a new owner OK, cap 30): a run to done, one to the limit (limit 1), and
-  one with `ask_user`; whether a resumed session comes back in `autopilot` [FR-005, FR-010, FR-020, FR-021, FR-030, FR-050, FR-053]
+  one with `ask_user`; whether a resumed session comes back in `autopilot`, and whether an Autopilot cap stays in the stored session after an end in the middle of a run [FR-005, FR-010, FR-020, FR-021, FR-030, FR-050, FR-053]

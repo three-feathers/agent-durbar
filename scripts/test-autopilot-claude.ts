@@ -3,7 +3,7 @@
  * `aborted_streaming`, `Goal cleared`, `stop-hook-block-cap`; `No goal set` is `read:` 2.1.316 only.
  */
 import * as assert from 'assert';
-import { CLAUDE_CAPABILITIES, CLAUDE_GOAL_NOT_SENT, CLAUDE_GOAL_TYPED, ClaudeAdapter, claudeArgs, claudeClearAck, claudeDescriptor, claudeRunEnd } from '../src/adapters/claude';
+import { CLAUDE_CAPABILITIES, CLAUDE_GOAL_TYPED, ClaudeAdapter, claudeArgs, claudeClearAck, claudeDescriptor, claudeRunEnd } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import { AUTOPILOT_ANSWER } from '../src/adapters/autopilot';
 import { LINE_BACKSTOP, LINE_CLOSED, LINE_SELF_STARTED, LINE_UNCONFIRMED } from '../src/adapters/autopilotHost';
@@ -395,12 +395,12 @@ async function main(): Promise<void> {
 
   // FR-053: resume with a goal found says so; with none says nothing; a failed clear sends nothing and says why; off until T030 unless setAutopilot ran
   {
-    const r = await rig({ exists: true, id: 'aaaaaaaa-1', tuning: { clearFirst: true } });
+    const r = await rig({ exists: true, id: 'aaaaaaaa-1', tuning: { wired: true } });
     await r.ad.send(r.sid, { text: 'hello' });
     await tick();
     assert.deepStrictEqual(r.users(), ['/goal clear', 'hello'], 'the clear comes first');
     assert.ok(r.lines().includes(LINE_CLOSED), 'FR-005: found');
-    const n = await rig({ exists: true, id: 'aaaaaaaa-2', tuning: { clearFirst: true } });
+    const n = await rig({ exists: true, id: 'aaaaaaaa-2', tuning: { wired: true } });
     n.opts.clear = () => noGoal;
     await n.ad.send(n.sid, { text: 'hello' });
     await tick();
@@ -408,12 +408,12 @@ async function main(): Promise<void> {
     assert.ok(!n.lines().includes(LINE_CLOSED), 'none found: no line');
     assert.ok(!n.events.some((e) => e.type === 'status' && e.status === 'error'));
     // two sends during the clear: one clear, both after it
-    const two = await rig({ exists: true, id: 'aaaaaaaa-5', tuning: { clearFirst: true } });
+    const two = await rig({ exists: true, id: 'aaaaaaaa-5', tuning: { wired: true } });
     await Promise.all([two.ad.send(two.sid, { text: 'one' }), two.ad.send(two.sid, { text: 'two' })]);
     await tick();
     assert.strictEqual(two.users()[0], '/goal clear');
     assert.strictEqual(two.users().filter((u) => u === '/goal clear').length, 1);
-    const f = await rig({ exists: true, id: 'aaaaaaaa-3', tuning: { clearFirst: true } });
+    const f = await rig({ exists: true, id: 'aaaaaaaa-3', tuning: { wired: true } });
     f.opts.clear = () => undefined;
     await f.ad.send(f.sid, { text: 'hello' });
     await sleep(60);
@@ -429,7 +429,7 @@ async function main(): Promise<void> {
     await off.ad.send(off.sid, { text: 'hello' });
     await tick();
     assert.deepStrictEqual(off.users(), ['hello'], 'AUTOPILOT_WIRED is false until T030');
-    const old = await rig({ exists: true, id: 'aaaaaaaa-6', version: '2.1.200', tuning: { clearFirst: true } });
+    const old = await rig({ exists: true, id: 'aaaaaaaa-6', version: '2.1.200', tuning: { wired: true } });
     await old.ad.send(old.sid, { text: 'hello' });
     await tick();
     assert.deepStrictEqual(old.users(), ['hello'], 'an unknown /name would go to the model');
@@ -457,24 +457,93 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(r.reasons(), [], 'FR-052');
   }
 
-  // FR-006: `/goal x` typed off Autopilot is not sent; a clear word goes on; the CLI going on by itself is stopped
+  // nothing changes for a session not on Autopilot in this phase: `/goal` typed goes through, the model's words and the CLI's are left alone
+  {
+    const n = await rig();
+    await n.ad.send(n.sid, { text: '/goal x' });
+    await tick();
+    assert.deepStrictEqual(n.users(), ['/goal x'], 'FR-058 refuses only on Autopilot');
+    n.c().send({ type: 'system', subtype: 'notification', content: 'Goal set: x' });
+    n.c().send(cont);
+    n.c().send(success({ result: 'Goal set: ship the beta by Q4.', num_turns: 1 }));
+    await tick();
+    assert.deepStrictEqual(n.users(), ['/goal x'], 'no clear is written');
+    assert.ok(!n.lines().includes(LINE_SELF_STARTED));
+  }
+
+  // a model's reply that says "Goal set" is a reply, once wired too; an older CLI gets no clear at all
+  {
+    const m = await rig({ tuning: { wired: true } });
+    await m.ad.send(m.sid, { text: 'set a goal for the quarter' });
+    await tick();
+    m.c().send(success({ result: 'Goal set: ship the beta by Q4.', num_turns: 1 }));
+    await tick();
+    assert.deepStrictEqual(m.users(), ['set a goal for the quarter'], "the model's own words start nothing");
+    assert.ok(!m.lines().includes(LINE_SELF_STARTED));
+    const z = await rig({ tuning: { wired: true } });
+    await z.ad.send(z.sid, { text: 'hi' });
+    await tick();
+    z.c().send(success({ result: 'Goal set: x', num_turns: 0 }));
+    await tick();
+    assert.ok(z.lines().includes(LINE_SELF_STARTED), 'the CLI answering with no model turn');
+    const o = await rig({ tuning: { wired: true }, version: '2.1.200' });
+    await o.ad.send(o.sid, { text: 'hi' });
+    await tick();
+    o.c().send(success({ result: 'Goal set: x', num_turns: 0 }));
+    o.c().send(cont);
+    await tick();
+    assert.deepStrictEqual(o.users(), ['hi'], 'an older CLI would send it to the model');
+  }
+
+  // Stop with Autopilot on and no run: a typed turn still going after a done ending is really stopped
   {
     const r = await rig();
-    await r.ad.send(r.sid, { text: '/goal x' });
-    assert.deepStrictEqual(r.users(), []);
-    assert.ok(r.lines().includes(CLAUDE_GOAL_NOT_SENT));
-    await r.ad.send(r.sid, { text: '/goal clear' });
+    await onRun(r);
+    await r.ad.send(r.sid, { text: 'typed during run' });
     await tick();
-    assert.deepStrictEqual(r.users(), ['/goal clear'], 'the off direction goes on');
-    r.c().send(noGoal);
+    r.c().send(success());
+    await tick();
+    assert.deepStrictEqual(r.reasons(), ['done']);
+    const before = r.wire().filter((w) => w === 'interrupt').length;
+    await r.ad.interrupt(r.sid);
+    await tick();
+    assert.strictEqual(r.wire().filter((w) => w === 'interrupt').length, before + 1, 'Stop stops the running turn');
+    await r.ad.send(r.sid, { text: 'plain' });
+    await tick();
+    assert.strictEqual(r.users().at(-1), 'plain', 'and Autopilot is off');
+  }
+
+  // FR-008: the stream names a helper agent_id
+  {
+    const r = await rig();
+    await onRun(r, 1);
+    r.c().send({ ...cont, agent_id: 'a1' });
+    r.c().send({ ...cont, agent_id: 'a1' });
+    r.c().send({ type: 'system', subtype: 'notification', key: 'stop-hook-block-cap', agent_id: 'a1' });
+    for (let i = 0; i < 300; i++) r.c().send({ type: 'assistant', agent_id: 'a1', message: { id: `h${i}`, role: 'assistant', content: [] } });
+    await tick();
+    assert.strictEqual(r.ap().filter((e) => e.phase === 'continued').length, 0, 'not counted');
+    assert.deepStrictEqual(r.reasons(), [], 'neither bound moved');
+    r.c().send(success());
+    await tick();
+    assert.deepStrictEqual(r.reasons(), ['done'], 'and its block cap is not the run');
+  }
+
+  // FR-006, wired: the CLI going on by itself is stopped
+  {
+    const r = await rig({ tuning: { wired: true } });
+    await r.ad.send(r.sid, { text: 'hi' });
+    await tick();
+    r.c().send(success());
     await tick();
     r.opts.clear = () => noGoal;
     r.c().send(cont);
     await tick();
+    await tick();
     assert.ok(r.lines().includes(LINE_SELF_STARTED));
     assert.deepStrictEqual(r.users().slice(-1), ['/goal clear']);
     assert.deepStrictEqual(r.ap(), [], 'Durbar never follows it into Autopilot');
-    const g = await rig();
+    const g = await rig({ tuning: { wired: true } });
     await g.ad.send(g.sid, { text: 'hi' });
     await tick();
     g.c().send({ type: 'system', subtype: 'notification', content: 'Goal set: x' });

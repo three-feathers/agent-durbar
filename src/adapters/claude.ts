@@ -141,8 +141,6 @@ export const CLAUDE_GOAL_MIN_VERSION = '2.1.309';
 const claudeOlderThanGoal = (version: string | undefined): boolean => typeof version === 'string' && /^\d+\.\d+\.\d+/.test(version) && compareVersions(version, CLAUDE_GOAL_MIN_VERSION) < 0;
 /** FR-058. */
 export const CLAUDE_GOAL_TYPED = 'Autopilot sets the goal from your message.';
-/** FR-006: `/goal <condition>` typed outside Autopilot would run a goal loop nobody counts. */
-export const CLAUDE_GOAL_NOT_SENT = 'Not sent: a goal runs only on Autopilot, which counts its turns.';
 
 const textOfMessage = (m: ClaudeMessage): string => {
   const x = m as { type?: unknown; result?: unknown; content?: unknown; message?: { content?: unknown } };
@@ -947,14 +945,8 @@ export class ClaudeAdapter implements AgentAdapter {
     const s = this.mustGet(sessionId);
     // spec 099: refusals first, so a refused message leaves everything as it was
     const auto = s.auto?.on ? s.auto : undefined;
-    const typedGoal = /^\s*\/goal(\s|$)/i.exec(message.text);
     if (auto && message.plan) throw new Error(AUTOPILOT_NO_PLAN);
-    if (auto && typedGoal) throw new Error(CLAUDE_GOAL_TYPED); // FR-058
-    const typedRest = !auto && typedGoal ? goalText(message.text.slice(typedGoal[0].length), 'claude') : undefined;
-    if (typedRest && (typedRest.ok || (typedRest.reason !== 'reserved' && typedRest.reason !== 'empty'))) {
-      this.emit(sessionId, { type: 'status', status: 'idle', intent: CLAUDE_GOAL_NOT_SENT }); // FR-006; a clear word and a bare `/goal` go on: neither starts a loop
-      return;
-    }
+    if (auto && /^\s*\/goal(\s|$)/i.test(message.text)) throw new Error(CLAUDE_GOAL_TYPED); // FR-058
     const startsRun = !!auto && !auto.running;
     if (startsRun && s.turnOpen) throw new Error(AUTOPILOT_WAIT_TURN);
     if (startsRun && message.attachments?.length) throw new Error(AUTOPILOT_TEXT_ONLY); // D10
@@ -1103,9 +1095,10 @@ export class ClaudeAdapter implements AgentAdapter {
   /** FR-006: a goal loop nobody asked Durbar for: the interrupt, the clear, said in the chat. An unconfirmed clear ends the session (FR-054). */
   private selfStarted(s: Session): void {
     const t = s.transport;
-    if (!t?.alive || s.clearWaiter) return;
-    this.emit(s.id, { type: 'status', status: 'idle', intent: LINE_SELF_STARTED });
+    if (!t?.alive || s.clearWaiter || !this.goalsWired()) return;
     void (async () => {
+      if (claudeOlderThanGoal((await this.sandboxFactsNow()).version) || s.clearWaiter || !t.alive) return; // an unknown `/name` goes to the model and spends
+      this.emit(s.id, { type: 'status', status: 'idle', intent: LINE_SELF_STARTED });
       try {
         if (s.turnOpen) await this.interruptTurn(s, t);
         await within(this.clearGoal(s, t), this.deps.autopilot?.waitMs ?? CLEAR_WAIT_MS, 'Claude Code');
@@ -1116,8 +1109,14 @@ export class ClaudeAdapter implements AgentAdapter {
     })();
   }
 
+  /** FR-006, FR-053 act on this session: main can turn Autopilot on, or `setAutopilot` ran here. */
+  private goalsWired(): boolean {
+    return (this.deps.autopilot?.wired ?? AUTOPILOT_WIRED) || this.autopilotUsed;
+  }
+
   /** FR-006, FR-020, FR-021, FR-040. Only the main stream counts (FR-008). */
   private autopilotMessage(s: Session, m: ClaudeMessage): void {
+    if (!mainStream(m)) return;
     const auto = s.auto;
     if (isClaudeContinuation(m)) {
       // after a done ending `halt` already cleared the goal: a turn nobody counts is stopped as a run of its own that ends at once
@@ -1126,8 +1125,7 @@ export class ClaudeAdapter implements AgentAdapter {
       else this.selfStarted(s);
       return;
     }
-    const x = m as { type?: unknown; subtype?: unknown; key?: unknown; message?: { id?: unknown } };
-    if (!mainStream(m)) return;
+    const x = m as { type?: unknown; subtype?: unknown; key?: unknown; num_turns?: unknown; is_error?: unknown; message?: { id?: unknown } };
     if (x.type === 'assistant' && auto?.running) {
       const id = typeof x.message?.id === 'string' ? x.message.id : undefined;
       if (id && id !== s.lastMainId) {
@@ -1135,7 +1133,8 @@ export class ClaudeAdapter implements AgentAdapter {
         auto.run?.backstopTurn();
       }
     } else if (x.type === 'system' && x.subtype === 'notification' && x.key === 'stop-hook-block-cap' && auto?.running) s.blockCap = true;
-    else if ((x.type === 'system' || x.type === 'result') && !auto?.running && /^\s*Goal set\b/.test(textOfMessage(m))) this.selfStarted(s);
+    // the CLI's own words: a `system` line, or a `result` that ran no model turn. A model's reply saying the same has `num_turns` of 1 or more.
+    else if ((x.type === 'system' || (x.type === 'result' && x.num_turns === 0 && x.is_error !== true)) && !auto?.running && /^\s*Goal set\b/.test(textOfMessage(m))) this.selfStarted(s);
   }
 
   /** FR-030: a question on a run: shown once, answered with the fixed sentence. */
@@ -1166,11 +1165,12 @@ export class ClaudeAdapter implements AgentAdapter {
     s.broker.denyPending();
     this.cancelQuestions(s, 'interrupt');
     // spec 099 FR-050: Stop on Autopilot is the run's own stop order, and the session goes back to Allow all
-    if (s.auto?.on || s.auto?.running) {
+    if (s.auto?.running) {
       await this.autopilotOff(s, 'stopped');
       if (this.sessions.get(sessionId) === s) this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Aborted' });
       return;
     }
+    if (s.auto?.on) await this.autopilotOff(s, 'stopped'); // no run, but a typed turn may be going: it stops below
     if (s.transport?.alive) {
       s.mapper.expectAbort();
       try {
@@ -1433,7 +1433,7 @@ export class ClaudeAdapter implements AgentAdapter {
     s.launchedMode = launch.mode;
     s.launchedCap = capInForce(s.capUsd, s.apCap);
     // spec 099 FR-053: a resume or relaunch may bring a goal back; nothing records that across a restart, so every one clears first
-    s.clearDue = launch.resume && ((this.deps.autopilot?.clearFirst ?? AUTOPILOT_WIRED) || this.autopilotUsed) && !claudeOlderThanGoal((await this.sandboxFactsNow()).version);
+    s.clearDue = launch.resume && this.goalsWired() && !claudeOlderThanGoal((await this.sandboxFactsNow()).version);
     s.launchedName = t.kind === 'cli' ? launch.name : undefined; // the SDK transport ignores `name`: it stays pending
     s.launchedOff = new Set(o.disabledMcpServers ?? []);
     s.needsRelaunch = false;

@@ -41,7 +41,7 @@ function view(ad: CodexAdapter, srv: FakeCodexServer, events: AgentEvent[], sid:
   };
 }
 const valid = (r: Rig): void => { for (const e of r.events) assert.deepStrictEqual(eventProblems(e), [], `event ${e.type} is valid: ${JSON.stringify(e).slice(0, 200)}`); };
-const status = (r: Rig, s: string, used?: number): void => r.srv.note(r.tid, 'thread/goal/updated', { goal: { threadId: r.tid, status: s, ...(used !== undefined ? { tokensUsed: used } : {}) } });
+const status = (r: Rig, s: string, used?: number): void => r.srv.goalUpdate(r.tid, s, used);
 async function onRun(r: Rig, limit = 5, more: Record<string, unknown> = {}): Promise<void> {
   await r.ad.setAutopilot(r.sid, { limit, ...more });
   await r.ad.send(r.sid, { text: 'do it' });
@@ -350,6 +350,71 @@ async function main(): Promise<void> {
     valid(r);
   }
 
+  // Stop, a stricter mode and End session while `send` reopens the session: no goal, and the mode read again (the 044 approach)
+  {
+    const reopening = async (): Promise<{ r: Rig; p: Promise<void> }> => {
+      const r = await rig({}, undefined, 'ask');
+      r.ad.setPermMode(r.sid, 'allow');
+      await r.ad.setAutopilot(r.sid, { limit: 5 });
+      const p = r.ad.send(r.sid, { text: 'go' });
+      await new Promise((res) => setImmediate(res));
+      assert.strictEqual(r.ad.isLive(r.sid), false, 'the window: closed, not yet open');
+      return { r, p };
+    };
+    const a = await reopening();
+    await a.r.ad.interrupt(a.r.sid);
+    await a.p;
+    await settle(a.r.srv);
+    assert.strictEqual(a.r.srv.requests('thread/goal/set').length, 0, 'Stop during the reopen sends no goal');
+    assert.strictEqual(a.r.srv.requests('turn/start').length, 0, 'and nothing else');
+    assert.ok(a.r.ad.isLive(a.r.sid), 'the session is back');
+    assert.deepStrictEqual(a.r.ap(), [], 'no run began');
+    assert.strictEqual(a.r.lines().at(-1), 'Aborted');
+    await a.r.ad.send(a.r.sid, { text: 'plain' });
+    await settle(a.r.srv);
+    assert.strictEqual(a.r.srv.requests('thread/goal/set').length, 0, 'Autopilot is off after that Stop');
+    assert.strictEqual(a.r.srv.requests('turn/start').length, 1);
+
+    const b = await reopening();
+    b.r.ad.setPermMode(b.r.sid, 'read-only');
+    await b.p;
+    await settle(b.r.srv);
+    assert.strictEqual(b.r.srv.requests('thread/goal/set').length, 0, 'FR-051: no goal after a stricter mode');
+    const lastLive = (b.r.ad as unknown as { sessions: Map<string, { mode: string; broker: { getMode(): string } }> }).sessions.get(b.r.sid)!;
+    assert.deepStrictEqual([lastLive.mode, lastLive.broker.getMode()], ['read-only', 'read-only'], 'the mode wanted now, not the one read before the awaits');
+    assert.strictEqual(b.r.srv.requests('turn/start').length, 1, 'the message runs in that mode');
+
+    const c = await reopening();
+    await c.r.ad.setAutopilot(c.r.sid, null, 'stopped');
+    await c.p;
+    await settle(c.r.srv);
+    assert.strictEqual(c.r.srv.requests('thread/goal/set').length, 0, 'setAutopilot(null) during the reopen');
+
+    const d = await reopening();
+    await d.r.ad.stop(d.r.sid);
+    await assert.rejects(d.p, /ended/);
+    assert.strictEqual(d.r.ad.isLive(d.r.sid), false, 'End session: it does not open again');
+    assert.strictEqual(d.r.srv.requests('thread/goal/set').length, 0);
+  }
+
+  // Stop with Autopilot on and no run: a typed turn still going after a done ending is really stopped
+  {
+    const r = await rig({ holdTurn: true });
+    await onRun(r);
+    await r.ad.send(r.sid, { text: 'typed' });
+    await settle(r.srv);
+    status(r, 'complete');
+    await settle(r.srv);
+    assert.deepStrictEqual(r.reasons(), ['done']);
+    const before = r.wire().filter((m) => m === 'turn/interrupt').length;
+    await r.ad.interrupt(r.sid);
+    await settle(r.srv);
+    assert.strictEqual(r.wire().filter((m) => m === 'turn/interrupt').length, before + 1, 'Stop stops the running turn');
+    await r.ad.send(r.sid, { text: 'plain' });
+    await settle(r.srv);
+    assert.strictEqual(r.srv.requests('thread/goal/set').length, 1, 'and Autopilot is off');
+  }
+
   // FR-053: the mode-switch relaunch, a fresh child that resumes the same thread, clears before the goal
   {
     const r = await rig({}, undefined, 'ask');
@@ -368,7 +433,7 @@ async function main(): Promise<void> {
 
   // FR-053 on a plain resume: none found says nothing, an older Codex has nothing to clear; off in real sessions until T030
   {
-    const m = make({}, { clearFirst: true });
+    const m = make({}, { wired: true });
     const first = await m.ad.start({ workspace: os.tmpdir(), permissionMode: 'allow', quiet: true });
     const tid = m.ad.resumeIdOf(first) as string;
     await m.ad.stop(first);
@@ -377,7 +442,7 @@ async function main(): Promise<void> {
     assert.ok(m.srv.requests('thread/goal/clear').length === 1);
     assert.ok(!m.events.slice(n).some((e) => e.type === 'status' && e.intent === LINE_CLOSED));
     await m.ad.stop(sid);
-    const old = make({ goals: false }, { clearFirst: true });
+    const old = make({ goals: false }, { wired: true });
     const f2 = await old.ad.start({ workspace: os.tmpdir(), permissionMode: 'allow', quiet: true });
     const t2 = old.ad.resumeIdOf(f2) as string;
     await old.ad.stop(f2);
@@ -401,9 +466,15 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(r.reasons(), [], 'FR-052');
   }
 
-  // FR-006: a goal nobody asked for is cleared and said; Durbar does not follow
+  // FR-006: a goal nobody asked for is cleared and said; Durbar does not follow. Until T030 a session not on Autopilot is left alone.
   {
-    const r = await rig();
+    const n = await rig();
+    n.srv.goals.add(n.tid);
+    status(n, 'active');
+    await settle(n.srv);
+    assert.deepStrictEqual(n.wire(), [], 'nothing changes for a session not on Autopilot in this phase');
+    assert.ok(!n.lines().includes(LINE_SELF_STARTED));
+    const r = await rig({}, { wired: true });
     r.srv.goals.add(r.tid);
     status(r, 'active');
     await settle(r.srv);

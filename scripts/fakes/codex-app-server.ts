@@ -385,7 +385,7 @@ export class FakeCodexServer {
         if (this.opts.goalSetError) return this.fail(child, id, -32600, this.opts.goalSetError);
         const tid = isObj(params) && typeof params.threadId === 'string' ? params.threadId : '';
         this.goals.add(tid);
-        this.reply(child, id, { goal: { threadId: tid, status: 'active' } });
+        this.reply(child, id, { goal: this.goalOf(tid, 'active', isObj(params) ? params : {}) });
         this.goalTurn(tid); // like Codex 0.163 (`real:` T093): the goal starts its first turn with no `turn/start`
         return;
       }
@@ -432,6 +432,14 @@ export class FakeCodexServer {
 
   /** Spec 099: threads with a goal; shared by all children, as a goal lives on the thread. */
   goals = new Set<string>();
+  /** Spec 099: a `ThreadGoal` with every required field (`read:` Codex 0.164.0 generated schema; values made up). */
+  goalOf(tid: string, status: string, o: Record<string, unknown> = {}): Record<string, unknown> {
+    return { threadId: tid, objective: typeof o.objective === 'string' ? o.objective : 'fake objective', status, tokenBudget: typeof o.tokenBudget === 'number' ? o.tokenBudget : null, tokensUsed: typeof o.tokensUsed === 'number' ? o.tokensUsed : 0, timeUsedSeconds: 1, createdAt: 1792403000, updatedAt: 1792403001 };
+  }
+  /** Spec 099: `thread/goal/updated`, as the schema has it: `threadId`, `goal` and an optional `turnId`, with no `origin`. */
+  goalUpdate(tid: string, status: string, tokensUsed?: number): void {
+    this.note(tid, 'thread/goal/updated', { turnId: this.openTurn.get(tid) ?? null, goal: this.goalOf(tid, status, tokensUsed === undefined ? {} : { tokensUsed }) });
+  }
   /** Spec 099: the app starts a turn on its own. Returns its id. */
   goalTurn(tid: string): string {
     const child = this.threadChild.get(tid) as FakeChild;

@@ -10,8 +10,8 @@ import type { AskedQuestion, AutopilotEnd, AutopilotEvent, AutopilotSettings } f
 import type { EventBody } from './map';
 
 /**
- * False until T030 gives `setAutopilot` a caller in main. Until then nothing can set a goal, so a resume in a real session sends no clear
- * (FR-053's no-goal case is not probed: T091, T092, T094). An adapter on which `setAutopilot` was called clears on every later resume whatever this says.
+ * False until T030 gives `setAutopilot` a caller in main. Until then nothing about a session that is not on Autopilot changes: a resume sends no clear
+ * (FR-053's no-goal case is not probed: T091, T092, T094) and a goal the app reports is left alone (FR-006). An adapter on which `setAutopilot` was called does both whatever this says.
  * `scripts/test-autopilot-reach.ts` fails if main calls `setAutopilot` while this is false.
  */
 export const AUTOPILOT_WIRED = false as boolean;
@@ -42,8 +42,8 @@ export interface AutopilotTuning {
   waitMs?: number;
   /** Replaces the backstop's repeating clock sample. Returns its cancel. */
   setTimer?: (fn: () => void, ms: number) => () => void;
-  /** Replaces `AUTOPILOT_WIRED` (FR-053 tests). */
-  clearFirst?: boolean;
+  /** Replaces `AUTOPILOT_WIRED` (the FR-006 and FR-053 tests). */
+  wired?: boolean;
 }
 
 export interface AutopilotPorts {
