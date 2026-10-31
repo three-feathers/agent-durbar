@@ -98,7 +98,7 @@ module.exports = async (ctx) => {
   await loadReal(1440, 900);
   await js(INSTALL);
   const mover = await seat(0);
-  await js(`(()=>{window.__g=[];new MutationObserver(ms=>{for(const m of ms){for(const n of m.addedNodes)if(n.classList&&n.classList.contains('ro-ghost'))window.__g.push(n.src);if(m.type==='attributes'&&m.target.classList.contains('ro-ghost'))window.__g.push(m.target.src);}}).observe(document.querySelector('#stage .ro-art'),{childList:true,subtree:true,attributes:true,attributeFilter:['class']});})();0`);
+  await js(`(()=>{window.__g=[];new MutationObserver(ms=>{for(const m of ms){for(const n of m.addedNodes)if(n.classList&&n.classList.contains('ro-ghost'))window.__g.push(n.src);if(m.type==='attributes'&&m.target.classList.contains('ro-ghost')){window.__g.push(m.target.src);(window.__gz=window.__gz||{})[m.target.src]=getComputedStyle(m.target).zIndex;}}}).observe(document.querySelector('#stage .ro-art'),{childList:true,subtree:true,attributes:true,attributeFilter:['class']});})();0`);
   const SRC = (id) => `document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(id)})+'"]').src`;
   const oldPose = await js(SRC(mover));
   await emit({ type: 'status', sessionId: mover, status: 'idle' });
@@ -111,8 +111,11 @@ module.exports = async (ctx) => {
   await must(`!!document.querySelector('#stage .ro-visitor[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]')`, 'the agent at its place in the lobby');
   assert.ok(await H.until(`window.__g.includes(${jsLiteral(seated)})`, 2000), 'FR-073: a fade where the person sat');
   await must(`!document.querySelector('#stage .ro-ghost')`, 'the fade over');
+  const standing = await js(`document.querySelector('#stage .ro-visitor[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]').src`);
   await emit({ type: 'toolCall', sessionId: lobbyId, callId: 'drv-walk', tool: 'bash', phase: 'complete', output: 'ok' });
   await must(`!!document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]')`, 'the person back at the desk');
+  await must(`window.__g.includes(${jsLiteral(standing)})`, 'FR-073: a fade where the visitor stood');
+  assert.strictEqual(await js(`(window.__gz||{})[${jsLiteral(standing)}]`), '3', 'a visitor fades in front of its fixture');
   const order = await js(`(()=>{const q=(s)=>document.querySelector('#stage '+s+'[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]');return {p:+getComputedStyle(q('.ro-person')).zIndex,d:+getComputedStyle(q('.ro-desk')).zIndex,s:+getComputedStyle(q('.ro-screen')).zIndex};})()`);
   assert.ok(order.p < order.d && order.d < order.s, 'back behind the desk: ' + JSON.stringify(order));
 

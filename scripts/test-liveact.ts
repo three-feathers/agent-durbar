@@ -350,6 +350,49 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   const bad = L.create({ mask: { ...mask, redact: () => { throw new Error('x'); } } }) as unknown as ReturnType<typeof F>;
   bad.onEvent('s', ev({ type: 'output', delta: 'secret words ' }));
   eq(bad.screen('s'), [], 'a throwing mask: no lines');
+  // review of P2: hidden characters inside a token, on a screen and on flat's own path; a joiner stays when nothing is masked
+  const ST = require(path.join(R, 'safetext.js')) as { excerpt(t: string, r: (s: string) => string, n?: number): string; maskRaw(t: string, r: (s: string) => string): string; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
+  const tail = 'E5f6G7h8I9j0K1l2M3n4', head = 'ghp_A1b2C3d4';
+  for (const [nm, ch] of [['ZWSP', '\u200b'], ['SHY', '\u00ad'], ['ALM', '\u061c'], ['LS', '\u2028'], ['ZWJ', '\u200d'], ['tag', '\u{e0041}'], ['VS', '\ufe0f']] as const) {
+    const tok = head + ch + tail;
+    f = F();
+    f.onEvent('s', ev({ type: 'output', delta: 'See ' + tok + ' here. ' }));
+    ok(!/A1b2|M3n4/.test(all(f.screen('s'))), nm + ': masked on a screen: ' + all(f.screen('s')));
+    f = F();
+    f.onEvent('s', ev({ type: 'toolCall', phase: 'start', tool: 'bash', callId: 'c', args: {} }), { kind: 'run', label: 'echo ' + tok });
+    ok(!/A1b2|M3n4/.test(all(f.screen('s'))), nm + ': masked in a tool line');
+    const red = (x: string) => redact(x, {});
+    ok(!/A1b2|M3n4/.test(ST.maskRaw(tok, red)), nm + ': flat maskRaw');
+    ok(!/A1b2|M3n4/.test(ST.excerpt(tok, red, 200)), nm + ': flat excerpt');
+    ok(!/A1b2|M3n4/.test(ST.maskLabel(tok, 'read', mask)), nm + ': flat maskLabel');
+    const lo = L.create({ mask }) as unknown as Feed;
+    lo.onEvent('s', ev({ type: 'output', delta: 'See ' + tok + ' now. Done. ' }));
+    ok(!/A1b2|M3n4/.test(String(lo.of('s')?.lines)), nm + ': flat readout');
+  }
+  const persian = 'می\u200cخواهم', red2 = (x: string) => redact(x, {});
+  eq(ST.maskRaw(persian, red2), persian, 'a joiner stays when nothing is masked (flat)');
+  f = F();
+  f.onEvent('s', ev({ type: 'output', delta: persian + ' done. ' }));
+  ok(all(f.screen('s')).includes('\u200c'), 'a joiner stays when nothing is masked (screen)');
+  // escape introducers: the letter after one may belong to the token
+  for (const intro of ['\x9b', '\x1b[', '\x1b', '\x9d', '\x90']) {
+    f = F();
+    f.onEvent('s', ev({ type: 'output', delta: 'See gh' + intro + 'p_A1b2C3d4E5f6G7h8I9j0K1l2M3n4 here. ' }));
+    ok(!/A1b2|M3n4/.test(all(f.screen('s'))), JSON.stringify(intro) + ': masked: ' + all(f.screen('s')));
+  }
+  // FR-035 strict: a question or approval: the command and URL masks too, one line, 200 characters; a missing mask: nothing
+  f = F();
+  const lines = (f as unknown as { strict(raw: string, k?: string): { k: string; t: string }[] }).strict('Allow: curl --api-key abc123secretvalue9 https://user:pw@example.test/x?token=zzz999 and more. ' + 'word '.repeat(5000));
+  eq(lines.length, 1, 'one line');
+  ok(Array.from(lines[0].t).length <= 200, 'at most 200 characters');
+  ok(!lines[0].t.includes('abc123secretvalue9'), 'the command mask ran: ' + lines[0].t);
+  ok(!lines[0].t.includes('pw@') && !lines[0].t.includes('zzz999'), 'the URL mask ran: ' + lines[0].t);
+  const u1 = (f as unknown as { strict(raw: string): { t: string }[] }).strict('Open https://example.test/cb?code=zzz999&x=1 please')[0].t;
+  ok(!u1.includes('zzz999'), 'a URL secret the command mask leaves: ' + u1);
+  f = F();
+  f.onEvent('s', ev({ type: 'output', delta: 'plain\u200b wo\u00adrd\u061c here. ' }));
+  eq(all(f.screen('s')), 'plain word here.', 'invisible characters do not reach a screen');
+  eq((L.create({ mask: { redact: mask.redact } as never }) as unknown as { strict(r: string): unknown[] }).strict('words'), [], 'no command mask: nothing');
   // helpers' events never reach their parent's screen; a dropped agent keeps nothing
   f = F();
   f.onEvent('s', ev({ type: 'output', agentId: 'h', delta: 'helper words ' }));
@@ -358,6 +401,10 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
   ok(/if\(LIVEACT\.onEvent\(a\.id,e,x\)\)livePaintSoon\(a\);\s*if\(OFFICE_VIEW==='real'&&window\.DurbarRealOffice\)window\.DurbarRealOffice\.feed\(a\.id\);/.test(app), 'liveFeed tells the monitor');
   ok(/home:t=>R\.maskHomePaths\(t\)/.test(app), 'the page masks home paths on screens');
+  const rs = app.slice(app.indexOf('function realScreen'), app.indexOf('const roFrozen='));
+  ok(/quiet=!live&&\(state==='working'\|\|state==='thinking'\)/.test(rs) && /\|\|quiet\?\[\]/.test(rs), 'Live activity off: a busy screen shows no task');
+  ok(/\(state==='done'\|\|state==='idle'\)&&a\.lastOutput/.test(rs), 'the last reply only when done or idle, as flat');
+  ok(/ask\?LIVEACT\.strict\(/.test(rs), 'a question or error through the strict mask');
   const ro = fs.readFileSync(path.join(R, 'realoffice.js'), 'utf8');
   ok(!/\.ro-sl|ro-rows[^]*innerHTML/.test(ro.slice(ro.indexOf('function fillRows'), ro.indexOf('function paintScreen'))), 'rows take no markup');
 }

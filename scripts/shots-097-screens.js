@@ -188,6 +188,22 @@ module.exports = async (ctx) => {
     await js(`document.activeElement.blur();0`);
   }
 
+  /* review of P2: Live activity off (the setting itself, stored before load): a working screen shows its word and bars, not the task or the last reply; a question is cut at 200 */
+  mark('live off');
+  await js(`localStorage.setItem('durbar.liveActivity','off');0`);
+  await loadReal(1440, 900);
+  await js(INSTALL);
+  const quiet = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),out=[];for(const d of L.zones.flatMap(z=>z.desks)){if(d.state!=='working'&&d.state!=='thinking')continue;const e=window.__scr(d.id),a=window.__durbarSimUi.agents().find(x=>x.id===d.id);out.push({id:d.id,text:e.textContent,rows:e.querySelectorAll('.ro-sl').length,bars:e.querySelectorAll('.ro-bars i').length,word:document.querySelector('.ro-plate[data-id="'+CSS.escape(d.id)+'"]').querySelector('.ro-l2').textContent,reply:String(a.lastOutput||'').slice(0,20)});}return out;})()`);
+  console.log('[097-screens] live off', JSON.stringify(quiet.slice(0, 3)));
+  assert.ok(quiet.length > 0, 'working desks with Live activity off');
+  for (const q of quiet) {
+    assert.strictEqual(q.rows, 1, q.id + ': one line: ' + q.text);
+    assert.ok(q.word.includes(q.text), q.id + ': only its status word: "' + q.text + '" against "' + q.word + '"');
+    assert.ok(q.bars >= 1, q.id + ': bars keep it looking at work');
+    assert.ok(!q.reply || !q.text.includes(q.reply), q.id + ': not the last reply');
+  }
+  await js(`localStorage.removeItem('durbar.liveActivity');0`);
+
   mark('big');
   /* ---- T032, FR-020, SC-003: 3 agents, real lines, big ---- */
   for (const [w, h] of SIZES) {

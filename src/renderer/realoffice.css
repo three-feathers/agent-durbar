@@ -25,6 +25,7 @@
 /* zones, people, desks and monitors */
 .ro-zone{border-radius:10px;background:rgba(255,255,255,.10);box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
 .ro-person,.ro-person2{object-fit:fill;cursor:pointer}
+.ro-ghost.v{z-index:3} /* a visitor fades where it stood, in front of its fixture */
 .ro-ghost{object-fit:fill;pointer-events:none} /* FR-072, FR-073: an old pose or a person leaving, for its fade only */
 .ro-initials{display:flex;align-items:center;justify-content:center;border-radius:50%;background:var(--surface);color:var(--ink);border:1px solid var(--line);font-weight:700;font-size:13px;cursor:pointer}
 .ro-desk{overflow:hidden;cursor:pointer}

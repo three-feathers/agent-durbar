@@ -56,9 +56,12 @@
   }
   /* spec 097 FR-031: terminal control codes never reach a screen: CSI, OSC, DCS and the like, control characters and text-direction overrides.
      Stripped BEFORE masking: an escape inside a token (gh<ESC>[0mp_...) would hide it from the mask and be glued back by the strip. */
-  const ANSI=/(?:\x1b\[|\x9b)[0-?]*[ -\/]*[@-~]?|(?:\x1b\]|\x9d)[^\x07\x1b\x9c]*(?:\x07|\x1b\\|\x9c)?|(?:\x1b[P^_X]|[\x90\x98\x9e\x9f])[^\x1b\x9c]*(?:\x1b\\|\x9c)?|\x1b[ -\/]*[0-~]?/g;
-  const CTRL=/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+  const ANSI=/\x1b\[[0-?]*[ -\/]*[@-~]?|\x9b[0-?]+[ -\/]*[@-~]|\x1b\][^\x07\x1b\x9c]*(?:\x07|\x1b\\|\x9c)?|\x9d[^\x07\x1b\x9c]*(?:\x07|\x1b\\|\x9c)|(?:\x1b[P^_X]|[\x90\x98\x9e\x9f])[^\x1b\x9c]*(?:\x1b\\|\x9c)?|\x1b[ -\/]*[0-~]?/g;
+  const CTRL=/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u00ad\u061c\u200b\u200e\u200f\u2028-\u202e\u2066-\u2069\ufeff]/g;
   const stripAnsi=t=>String(t==null?'':t).replace(ANSI,'').replace(/\r\n?/g,'\n').replace(CTRL,'');
+  /* the same text with only the escape's introducer gone: what `gh<ESC>[p_...` or `gh<U+009B>p_...` is if the letter after it belongs to a token, not to the escape */
+  const INTRO=/\x1b\[|\x1b\]|\x1b[P^_X]|\x1b|[\x90\x98\x9b\x9d\x9e\x9f]/g;
+  const introOut=t=>String(t==null?'':t).replace(INTRO,'').replace(/\r\n?/g,'\n').replace(CTRL,'');
   /* A sentence over SCREEN_CHARS goes on as more lines, cut at a word where there is one */
   const chunks=t=>{const c=Array.from(t),out=[];let i=0;
     while(c.length-i>SCREEN_CHARS){let j=i+SCREEN_CHARS;for(let k=j;k>i+SCREEN_CHARS/2;k--)if(c[k]===' '){j=k;break;}out.push(c.slice(i,j).join('').trim());i=j;}
@@ -73,11 +76,13 @@
        characters. No working mask: nothing (fail closed). `done` false: the word still arriving is held back, since half a token matches no shape.
        A text cut at KEEP loses its first word for the same reason. */
     const home=t=>{if(!mask.home)return t;const h=mask.home(t);return typeof h==='string'?h:'';};
+    /* control codes out: as escapes, unless read the other way they leave a token, which must then be masked in that reading */
+    const clear=raw=>{const a=stripAnsi(raw);try{const b=introOut(raw),p=ST.unhide?ST.unhide(b):b;if(b!==a&&mask.redact(p)!==p)return b;}catch(e){return '';}return a;};
     const block=(raw,k,done)=>{
       if(!mask.redact)return [];
       let t=String(raw==null?'':raw);
       if(t.length>=KEEP){t=t.slice(-KEEP);const m=/\s/.exec(t);t=m?t.slice(m.index+1):'';}
-      t=stripAnsi(t);
+      t=clear(t);
       if(!done){let e=t.length;while(e>0&&!/\s/.test(t[e-1]))e--;t=t.slice(0,e);}
       const m=home(ST.maskRaw(t,mask.redact));
       if(!m)return [];
@@ -87,6 +92,19 @@
         if(p)for(const x of p.split(/(?<=[.!?…])\s+/))for(const c of chunks(x))out.push({k,t:c});
       }
       return out.slice(-SCREEN_LINES);};
+    /* spec 097 FR-035 (review of P2): a question, an approval or an error on a monitor: all it shows is one line, cut at 200 like the desk's title, read through the
+       command and URL masks too since an approval quotes a command; any of them missing: nothing */
+    const strict=(raw,k)=>{
+      if(!mask.redact||!mask.cmd||!mask.url)return [];
+      try{let t=String(raw==null?'':raw);
+        if(t.length>KEEP){t=t.slice(0,KEEP);const m=/\s\S*$/.exec(t.slice(-200));t=m?t.slice(0,t.length-200+m.index):'';}
+        t=clear(t);
+        const m0=ST.maskRaw(t,mask.redact);if(!m0)return [];
+        const m1=mask.cmd(m0);if(typeof m1!=='string')return [];
+        const m2=mask.url(m1);if(typeof m2!=='string')return [];
+        const m=home(m2);if(!m)return [];
+        const l=cutOf(plain(m.replace(/```[\s\S]*?(```|$)/g,' ')),SCREEN_CHARS);
+        return l?[{k:k||'plain',t:l}]:[];}catch(e){return [];}};
     const logPush=(s,k,t,cid)=>{s.log.push({n:s.seq++,k,t,cid});if(s.log.length>SCREEN_LINES)s.log.splice(0,s.log.length-SCREEN_LINES);};
     /* the text block being streamed becomes finished lines (a tool, a new turn or a status ends it) */
     const commit=s=>{if(s.blk&&s.buf)for(const l of block(s.buf,s.blk,true))logPush(s,l.k,l.t);s.blk='';s.done=false;};
@@ -118,7 +136,7 @@
         commit(s);
         s.buf='';
         const p=phrase({kind:x.kind,tool:e.tool,label:x.label,simple:x.simple},mask);
-        if(mask.redact){const l=home(phrase({kind:x.kind,tool:stripAnsi(e.tool),label:stripAnsi(x.label),simple:x.simple?stripAnsi(x.simple):x.simple},mask));if(l)logPush(s,'cmd',l,e.callId);}
+        if(mask.redact){const l=home(phrase({kind:x.kind,tool:clear(e.tool),label:clear(x.label),simple:x.simple?clear(x.simple):x.simple},mask));if(l)logPush(s,'cmd',l,e.callId);}
         s.tool=p; /* spec 001 FR-047: the last tool of this turn stays for a wide grown desk while the agent thinks or replies */
         return set(s,'tool',p,p);}
       case 'user':commit(s);s.buf='';s.tool='';return set(s,'','','');
@@ -139,6 +157,7 @@
         return s.log.concat(tail.map((l,i)=>({n:s.seq+i,k:l.k,t:l.t}))).slice(-SCREEN_LINES).map(l=>({n:l.n,k:l.k,t:l.t}));},
       /* a finished text (a last reply, a task) as screen lines, through the same steps */
       block:(raw,k)=>block(raw,k||'reply',true),
+      strict,
       clear:id=>{const s=st.get(id);if(s){commit(s);s.buf='';s.tool='';set(s,'','','');}},
       drop:id=>{st.delete(id);},
       /* FR-030: may this desk be painted now? Records the paint when it may. */

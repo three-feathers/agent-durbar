@@ -414,10 +414,10 @@ export function screenFit(glass: { w: number; h: number }): { small: boolean; fo
 /**
  * FR-030, FR-035: what a screen shows for a state. `log`: the agent's own lines, oldest first; `task` and `reply`: the same masked
  * steps over its task and last reply, used when it has no lines; `word`: the status word, so that a screen never stands empty. Asleep:
- * off, no text. Needs-you and error: the question or the error is the newest line. Done: the newest line is marked done (green).
+ * off, no text. `quiet`: Live activity is off while it works: only the word, with decorative bars. Needs-you and error: the question or the error is the newest line. Done: the newest line is marked done (green).
  */
-export function screenFor(state: RealState, log: readonly ScreenLine[], task: readonly { k: string; t: string }[], reply: readonly { k: string; t: string }[], word: string): { off: boolean; caret: boolean; lines: ScreenLine[] } {
-  if (state === 'asleep') return { off: true, caret: false, lines: [] };
+export function screenFor(state: RealState, log: readonly ScreenLine[], task: readonly { k: string; t: string }[], reply: readonly { k: string; t: string }[], word: string, quiet = false): { off: boolean; caret: boolean; quiet: boolean; lines: ScreenLine[] } {
+  if (state === 'asleep') return { off: true, caret: false, quiet: false, lines: [] };
   const lines: ScreenLine[] = log.map((l) => ({ ...l }));
   const add = (src: readonly { k: string; t: string }[], k?: string) => { for (const l of src) { const last = lines[lines.length - 1]; if (!last || last.t !== l.t) lines.push({ n: last ? last.n + 1 : 0, k: k || l.k, t: l.t }); else if (k) last.k = k; } };
   if (state === 'waiting' || state === 'limit') add(task, 'ask');
@@ -425,7 +425,7 @@ export function screenFor(state: RealState, log: readonly ScreenLine[], task: re
   else if (!lines.length) { add(reply.length ? reply : task); }
   if (!lines.length) lines.push({ n: 0, k: state === 'error' ? 'err' : state === 'waiting' || state === 'limit' ? 'ask' : 'plain', t: word });
   if (state === 'done') lines[lines.length - 1].k = 'done';
-  return { off: false, caret: state === 'working', lines: lines.slice(-24) };
+  return { off: false, caret: state === 'working', quiet, lines: lines.slice(-24) };
 }
 /** A stable number from a session id: the room does not move in step (FR-070). */
 function roHash(id: string): number { let h = 7; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0; return h; }

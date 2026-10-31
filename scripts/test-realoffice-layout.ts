@@ -407,7 +407,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.feet as Record<s
   // FR-030, FR-035: what a state shows
   const log = [{ n: 3, k: 'cmd', t: 'Running x' }, { n: 4, k: 'ok', t: 'Reading y' }];
   const q = [{ k: 'plain', t: 'Allow this?' }], rep = [{ k: 'reply', t: 'All done.' }];
-  assert.deepStrictEqual(screenFor('asleep', log, q, rep, 'Asleep'), { off: true, caret: false, lines: [] }, 'asleep: off, no text');
+  assert.deepStrictEqual(screenFor('asleep', log, q, rep, 'Asleep'), { off: true, caret: false, quiet: false, lines: [] }, 'asleep: off, no text');
   assert.strictEqual(screenFor('working', log, q, rep, 'Working').caret, true, 'a caret only on working screens');
   for (const st of ['thinking', 'waiting', 'error', 'limit', 'done', 'idle'] as RealState[]) assert.strictEqual(screenFor(st, log, q, rep, 'W').caret, false, 'no caret: ' + st);
   assert.deepStrictEqual(screenFor('working', log, q, rep, 'W').lines, log, 'the agent\'s own lines win');
@@ -420,6 +420,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.feet as Record<s
   assert.strictEqual(screenFor('done', [], [], rep, 'W').lines[0].t, 'All done.', 'no lines: the last reply');
   assert.strictEqual(screenFor('working', [], q, [], 'W').lines[0].t, 'Allow this?', 'no reply: the task');
   assert.strictEqual(screenFor('idle', [], [], [], 'Ready').lines[0].t, 'Ready', 'nothing at all: the status word, never an empty screen');
+  assert.deepStrictEqual(screenFor('working', [], [], [], 'Working', true), { off: false, caret: true, quiet: true, lines: [{ n: 0, k: 'plain', t: 'Working' }] }, 'Live activity off: the word, nothing else');
   assert.strictEqual(screenFor('working', Array.from({ length: 30 }, (_, i) => ({ n: i, k: 'cmd', t: 'l' + i })), [], [], 'W').lines.length, 24, 'at most 24');
   // FR-070, FR-071, FR-181: the frames, their pace, per agent
   assert.deepStrictEqual([POSE_FRAME_B.typeA, POSE_FRAME_B.waveA, POSE_FRAME_B.runA], ['typeB', 'waveB', 'runB'], 'the two-frame poses');

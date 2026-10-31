@@ -1719,11 +1719,11 @@ function realModel(model){
 /* spec 097 FR-030..FR-035: what a monitor shows: the agent's lines (liveact.js, masked), else its last reply or task through the same steps, with
    the status lines the state asks for; no working mask: only the status word (fail closed). Live activity off: no live lines, as in flat. */
 function realScreen(id,state,word){
-  const a=byId(id), log=a&&liveOn()&&!a.parent?LIVEACT.screen(id):[];
-  const ask=state==='waiting'||state==='limit'||state==='error';
-  const task=a&&LIVEACT&&(!log.length||ask)?LIVEACT.block(ask?taskText(a):taskOf(a),'plain'):[]; /* a question or an error by itself: the plate and the "at Boss" sign say where */
-  const reply=a&&LIVEACT&&!log.length&&a.lastOutput?LIVEACT.block(a.lastOutput,'reply'):[];
-  return window.exports.screenFor(state,log,task,reply,word);
+  const a=byId(id), live=liveOn(), log=a&&live&&!a.parent?LIVEACT.screen(id):[];
+  const ask=state==='waiting'||state==='limit'||state==='error', quiet=!live&&(state==='working'||state==='thinking'); /* the setting hid what it does: the status and bars, as flat shows no reply while it works */
+  const task=!a||!LIVEACT||quiet?[]:ask?LIVEACT.strict(taskText(a),'plain'):!log.length?LIVEACT.block(taskOf(a),'plain'):[];
+  const reply=a&&LIVEACT&&!log.length&&(state==='done'||state==='idle')&&a.lastOutput?LIVEACT.block(a.lastOutput,'reply'):[]; /* as grownShowsReply */
+  return window.exports.screenFor(state,log,task,reply,word,quiet);
 }
 const roFrozen=()=>SIM&&qs.get('simfreeze')==='1'&&qs.get('romotion')!=='1'; /* simulator drivers measure boxes: the people hold still (as hl-still); romotion=1 opts back in */
 let RO_LAST=null; /* the last layout, for the drivers (window.__durbarSimUi.realLayout) */

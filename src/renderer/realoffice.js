@@ -67,7 +67,7 @@
   function hiddenNow() { return document.hidden || !CUR || !CUR.ro.isConnected || document.body.classList.contains('panel-open'); }
   /* a one-time picture that goes away: FR-072's old pose, FR-073's person leaving a desk or a fixture; stepped opacity only (FR-180, FR-181) */
   function fadeAway(e, ms) {
-    e.className = 'ro-ghost'; delete e.dataset.for;
+    e.className = 'ro-ghost' + (e.classList.contains('ro-visitor') ? ' v' : ''); delete e.dataset.for;
     const a = e.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ms, easing: 'steps(5, end)', fill: 'forwards' });
     a.onfinish = a.oncancel = () => e.remove();
   }
@@ -318,7 +318,9 @@
     if (sig === s.sig) return;
     s.sig = sig;
     if (!s.lines) { const clip = document.createElement('div'); clip.className = 'ro-clip'; s.box.appendChild(clip); s.lines = document.createElement('div'); s.lines.className = 'ro-lines'; clip.appendChild(s.lines); s.bars = document.createElement('div'); s.bars.className = 'ro-bars'; s.lines.appendChild(s.bars); s.rows = document.createElement('div'); s.rows.className = 'ro-rows'; s.lines.appendChild(s.rows); }
-    const shown = data.lines.slice(-f.rows), older = f.bars ? data.lines.slice(0, -f.rows).slice(-f.bars) : [];
+    const shown = data.lines.slice(-f.rows);
+    /* with Live activity off a working screen still looks at work: bars that say nothing, as many as fit, with no text behind them */
+    const older = data.quiet ? Array.from({ length: Math.max(0, Math.floor((f.whole - f.lh - 2) / 6)) }, (_, i) => ({ n: i, k: i % 3 ? 'plain' : 'cmd', t: 'x'.repeat(10 + (i * 17 + id.length * 7) % 40) })) : f.bars ? data.lines.slice(0, -f.rows).slice(-f.bars) : [];
     /* FR-032: older lines as bars, each as long as its line and coloured by its kind */
     while (s.bars.childElementCount > older.length) s.bars.lastChild.remove();
     while (s.bars.childElementCount < older.length) s.bars.appendChild(document.createElement('i'));
