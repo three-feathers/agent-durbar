@@ -57,6 +57,8 @@ export interface AutopilotPorts {
   settled: (reason: AutopilotEnd) => void | Promise<void>;
   emit: (body: EventBody) => void;
   spend?: () => AutopilotEvent['spend'];
+  /** FR-021: what the adapter feeds `backstopTurn()` per `limit + 1`, when it is not the core's default. */
+  backstopPer?: number;
 }
 
 /** Resolves or rejects with `p`, or rejects after `ms`. */
@@ -74,7 +76,12 @@ export function capInForce(own: number | null | undefined, auto: number | undefi
 
 /** Why a goal text was refused, in words for the chat (FR-011). */
 export function goalRefusal(r: Exclude<GoalTextResult, { ok: true }>): string {
-  return r.reason === 'empty' ? 'Write what the finished result should be.' : 'That text would not start a goal on this agent app. Describe the finished result in other words.';
+  switch (r.reason) {
+    case 'empty': return 'Write what the finished result should be.';
+    case 'too-long': return 'Claude Code takes a goal of at most 4000 characters. Shorten it and send again.';
+    case 'command': return 'A goal cannot hold a line that starts with a slash: Claude Code could run it as a command. Reword it and send again.';
+    default: return 'On Claude Code that word would clear the goal instead of setting one. Describe the finished result in other words.';
+  }
 }
 
 /** FR-030: a question shown as decided, answered with the one fixed sentence. Nothing the agent wrote goes into the answer. */
@@ -108,7 +115,7 @@ export class AutopilotState {
   begin(): AutopilotRun {
     const s = this.settings;
     if (!s) throw new Error('This session is not on Autopilot.');
-    const run = new AutopilotRun({ limit: s.limit, hours: s.hours, runId: randomUUID(), halt: (r) => this.halt(r), emit: (e) => this.onRun(e), ...(this.tuning.now ? { now: this.tuning.now } : {}) });
+    const run = new AutopilotRun({ limit: s.limit, hours: s.hours, runId: randomUUID(), halt: (r) => this.halt(r), emit: (e) => this.onRun(e), ...(this.ports.backstopPer ? { backstopPer: this.ports.backstopPer } : {}), ...(this.tuning.now ? { now: this.tuning.now } : {}) });
     this.run = run;
     run.start();
     this.armTimer(run);

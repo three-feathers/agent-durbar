@@ -1211,12 +1211,9 @@ export class CopilotAdapter implements AgentAdapter {
     }
     if (copilotIsContinuation(e)) {
       live.sawWork = true;
-      if (auto?.run) {
-        const did = auto.run.continuation();
-        if (did !== 'ignored') return false;
-      }
-      // after a done ending the runtime stays in `autopilot` (D8): a turn nobody counts is stopped as a run of its own that ends at once
-      if (auto?.on) auto.begin().end('error');
+      // after a done ending the runtime stays in `autopilot` (D8) and `halt` has nothing to do: a turn nobody counts is stopped as a run of its own that ends at once
+      if (auto?.on && auto.run?.ended) auto.begin().end('error');
+      else if (auto?.run) auto.run.continuation(); // counts it, or repeats `halt` after an end
       else this.selfStarted(sid, live);
       return false;
     }

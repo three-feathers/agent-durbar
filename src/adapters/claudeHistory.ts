@@ -48,7 +48,7 @@ const typedPrompt = (o: Record<string, unknown>): string | undefined => {
   const c = o.message.content;
   const text = typeof c === 'string' ? c : Array.isArray(c) && c.every((b) => isObj(b) && b.type === 'text') ? c.map((b) => String((b as { text?: unknown }).text ?? '')).join('\n') : undefined;
   const t = text?.trim();
-  if (!t || t.startsWith('<') || t.startsWith('[Request interrupted')) return undefined;
+  if (!t || t.startsWith('<') || t.startsWith('[Request interrupted') || t === '/goal clear') return undefined; // spec 099 FR-053: Durbar's own clear is not the user's
   return t;
 };
 

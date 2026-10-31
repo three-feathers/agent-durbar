@@ -27,7 +27,7 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group; FR-007, FR-008, FR-009
 
 ## Phase 2: Adapters (PR `099-p2-adapters`)
 
-- [ ] T020 Claude Code: `/goal` send, continuation count, `AskUserQuestion` auto-deny, end mapping, `/goal clear` after every
+- [x] T020 Claude Code: `/goal` send, continuation count, `AskUserQuestion` auto-deny, end mapping, `/goal clear` after every
   end and on Stop, `/goal` typed by the user refused while on Autopilot; capability `{capUnit: 'usd', attachments: false, planApproval: true, verified: false}`.
   Tests on the scripted CLI fake replay the probe's message shapes (`Stop hook feedback`, `aborted_streaming`, `Goal cleared`,
   `stop-hook-block-cap` before a `success` result ends with blocked)

@@ -34,7 +34,7 @@ import type { AdapterCapabilities, AdapterDescriptor, PermissionMode } from './c
 import type { EventBody } from './map';
 import { PermissionBroker, claudeServerPart, mcpToolBlockList, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
-import type { AgentAdapter, AgentEvent, AgentMessage, LimitAction, McpServerSpec, McpSignInResult, PlanAnswer, SignInCheck, StartOptions, Unsubscribe, WriteGuard } from './types';
+import type { AgentAdapter, AgentEvent, AgentMessage, AutopilotEnd, AutopilotSettings, LimitAction, McpServerSpec, McpSignInResult, PlanAnswer, SignInCheck, StartOptions, Unsubscribe, WriteGuard } from './types';
 import type { McpToolInfo } from './types';
 import { normMcpTools } from './mcptools';
 import { PLAN_REJECTED, cleanPlanText, reviseText } from './plan';
@@ -63,7 +63,10 @@ import { compareVersions } from './detect';
 import { agentsArg, listClaudeAgents } from './claudeAgents';
 import type { ClaudeAgentDef } from './claudeAgents';
 import type { AgentProfile, AskedQuestion, ElicitAnswer, SlashCommand, SlashExpansion } from './types';
-import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaiter } from './elicitation';
+import { answerElicitation, cancelElicitations, declineElicitation, runElicitation, type ElicitWaiter } from './elicitation';
+import { AUTOPILOT_ANSWER, goalText, isClaudeContinuation } from './autopilot';
+import { AUTOPILOT_NOT_ALLOW, AUTOPILOT_NO_PLAN, AUTOPILOT_ONE_RUN, AUTOPILOT_TEXT_ONLY, AUTOPILOT_WAIT_TURN, AUTOPILOT_WIRED, AutopilotState, CLEAR_WAIT_MS, LINE_CLOSED, LINE_SELF_STARTED, LINE_UNCONFIRMED, capInForce, emitAutoAnswered, goalRefusal, lineNotCleared, within } from './autopilotHost';
+import type { AutopilotTuning } from './autopilotHost';
 
 export const CLAUDE_ID = 'claude';
 export const CLAUDE_NAME = 'Claude Code';
@@ -101,13 +104,16 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   remote: true, // spec 054 FR-061 (real 2026-10-20): `remote_control` over stream-json; claude.ai sign-in on Pro/Max/Team/Enterprise
   remoteService: Object.freeze({ name: 'Claude', host: 'claude.ai', mobile: 'the Claude app' }),
   osSandbox: true, // spec 087: Claude Code's bash sandbox under Read-only and Ask first (read: docs; not run on a real session, T060-T062)
+  autopilot: Object.freeze({ capUnit: 'usd', attachments: false, planApproval: true, verified: false }), // spec 099 FR-001: fakes only until T091; nothing in main or the window reads it before T030, T033
 }) as AdapterCapabilities;
 
 /** Spec 059 FR-007: the SDK transport (dev opt-in, `DURBAR_CLAUDE_TRANSPORT=sdk`) does not apply `--name`, so it does not offer a rename. */
 export const CLAUDE_SDK_CAPABILITIES: AdapterCapabilities = Object.freeze((() => {
   // the SDK transport sends only a few control requests (claudeSdk.ts): no rename, no mcp_reconnect, no mcp_authenticate (spec 058
   // FR-175); the terminal steps and the note stay (FR-180: the steps show without the in-app call)
-  const { renameSession: _r, mcpRestart: _m, mcpTools: _t, mcpSignIn: _s, mcpSignInRestart: _sr, ...rest } = CLAUDE_CAPABILITIES as AdapterCapabilities & { renameSession?: unknown; mcpRestart?: unknown; mcpTools?: unknown; mcpSignIn?: unknown; mcpSignInRestart?: unknown };
+  // spec 099: `/goal` was never probed on the SDK transport, so no Autopilot there
+  const { renameSession: _r, mcpRestart: _m, mcpTools: _t, mcpSignIn: _s, mcpSignInRestart: _sr, autopilot: _a, ...rest } = CLAUDE_CAPABILITIES as AdapterCapabilities & { renameSession?: unknown; mcpRestart?: unknown; mcpTools?: unknown; mcpSignIn?: unknown; mcpSignInRestart?: unknown };
+  void _a;
   void _r;
   void _m;
   void _t;
@@ -127,6 +133,54 @@ export const CLAUDE_NO_SIGN_IN = 'This Claude Code version cannot start a sign-i
 const UNKNOWN_SUBTYPE = /\b(unknown|unsupported|unrecognized|unrecognised|unhandled)\b[^\n]{0,40}\b(subtype|control request)\b/i;
 /** Spec 066: one sentence added to a plan-first message, so the plan reaches the card (Claude's plan file cannot be written in Read-only). */
 export const CLAUDE_PLAN_NOTE = '(Plan first: write the full plan in your reply, not in a file, then call ExitPlanMode. Do not change anything yet.)';
+/**
+ * Spec 099: the Claude Code the `/goal` probes ran on (T093, `real:`). An older one may not have `/goal`, and an unknown `/name` goes to the model
+ * as a prompt (`real:` 2026-10-22, spec 073), so Durbar neither starts a goal on it nor sends it a clear. A version it cannot read gets the clear.
+ */
+export const CLAUDE_GOAL_MIN_VERSION = '2.1.309';
+const claudeOlderThanGoal = (version: string | undefined): boolean => typeof version === 'string' && /^\d+\.\d+\.\d+/.test(version) && compareVersions(version, CLAUDE_GOAL_MIN_VERSION) < 0;
+/** FR-058. */
+export const CLAUDE_GOAL_TYPED = 'Autopilot sets the goal from your message.';
+/** FR-006: `/goal <condition>` typed outside Autopilot would run a goal loop nobody counts. */
+export const CLAUDE_GOAL_NOT_SENT = 'Not sent: a goal runs only on Autopilot, which counts its turns.';
+
+const textOfMessage = (m: ClaudeMessage): string => {
+  const x = m as { type?: unknown; result?: unknown; content?: unknown; message?: { content?: unknown } };
+  if (x.type === 'result') return typeof x.result === 'string' ? x.result : '';
+  if (x.type === 'system') return typeof x.content === 'string' ? x.content : '';
+  if (x.type === 'user') {
+    const c = x.message?.content;
+    return typeof c === 'string' ? c : '';
+  }
+  return '';
+};
+const mainStream = (m: ClaudeMessage): boolean => !(m as { parent_tool_use_id?: unknown }).parent_tool_use_id && !(m as { agent_id?: unknown }).agent_id;
+
+/**
+ * FR-054: the CLI's answer to `/goal clear`. `real:` T093 saw "Goal cleared" and a `result` with `num_turns: 0`; `read:` 2.1.316 words it `Goal cleared: <condition>`
+ * and `No goal set`. Where the text sits in stream-json is `[KNOWN GAP]` (T091), so a `result`, a `system` line and a local command's stdout are read. A model
+ * cannot answer: assistant text is not read, and a `result` that ran a model turn does not count.
+ */
+export function claudeClearAck(m: ClaudeMessage): 'cleared' | 'none' | undefined {
+  if (!mainStream(m)) return undefined;
+  const r = m as { type?: unknown; num_turns?: unknown; is_error?: unknown };
+  if (r.type === 'result' && (r.is_error === true || (r.num_turns !== undefined && r.num_turns !== 0))) return undefined;
+  const t = textOfMessage(m).replace(/^\s*<local-command-stdout>\s*/, '');
+  if (r.type === 'user' && t === textOfMessage(m)) return undefined; // a person's own words are not an answer
+  return /^\s*Goal cleared\b/.test(t) ? 'cleared' : /^\s*No goal set\b/.test(t) ? 'none' : undefined;
+}
+
+/** FR-040: how the one `result` of a goal ends the run. `bound` is the backstop's turn bound (FR-021): `num_turns` over it is never done. */
+export function claudeRunEnd(m: ClaudeMessage, o: { blockCap: boolean; bound: number }): AutopilotEnd {
+  const r = m as { subtype?: unknown; is_error?: unknown; terminal_reason?: unknown; num_turns?: unknown };
+  if (r.subtype === 'error_max_budget_usd') return 'cap';
+  if (typeof r.terminal_reason === 'string' && /abort/i.test(r.terminal_reason)) return 'stopped';
+  if (r.subtype !== 'success' || r.is_error === true) return 'error';
+  if (typeof r.num_turns === 'number' && r.num_turns > o.bound) return 'error';
+  if (o.blockCap) return 'blocked'; // `real:` T093: the CLI's own cap ends a goal with a `result` that looks like success
+  return r.num_turns === 0 ? 'error' : 'done'; // no model turn: the CLI answered `/goal` without starting it (`read:` 2.1.316: a condition it refuses)
+}
+
 /** The text blocks of one assistant message (top level). */
 const assistantText = (m: ClaudeMessage): string => {
   const c = (m as { message?: { content?: unknown } }).message?.content;
@@ -516,6 +570,8 @@ export interface ClaudeAdapterDeps {
   realpath?: (p: string) => string;
   /** Spec 087: the home folder the credential folders are under (tests inject one). Default the OS account record. */
   home?: string;
+  /** Spec 099: test seams (no timers, no real clock). */
+  autopilot?: AutopilotTuning;
 }
 
 /** Spec 087 FR-006: the real host facts: no shell; `claude --version` through detection, `bwrap`/`socat` located like spec 012's detection. */
@@ -659,6 +715,24 @@ interface Session {
   sandboxAddDirs?: string[];
   /** Spec 087 FR-007a (review on PR 733): the actions of the open sandbox note; Continue is accepted only while it is open. */
   sandboxNote?: ReadonlyArray<'continue' | 'always'>;
+  /** Spec 099: the Autopilot state of this main session (FR-008: never a helper's). */
+  auto?: AutopilotState;
+  /** Spec 099 FR-022: the Autopilot cap of the run on its way (`--max-budget-usd` takes the lower of this and `capUsd`), and the cap the running CLI got. */
+  apCap?: number;
+  launchedCap?: number | null;
+  /** Spec 099 FR-053: this launch resumed a session: `/goal clear` comes before anything else is written. */
+  clearDue?: boolean;
+  clearRun?: Promise<boolean>;
+  /** Spec 099 FR-054: a `/goal clear` waits for its answer. */
+  clearWaiter?: { resolve: (a: 'cleared' | 'none') => void; reject: (e: Error) => void };
+  /** Spec 099 FR-040: `stop-hook-block-cap` came in this run. */
+  blockCap?: boolean;
+  /** Spec 099 FR-021: the main stream's last assistant message id. */
+  lastMainId?: string;
+  /** Spec 099 FR-022: this `result` was the run's cap: its error status is the end card's, not the limit notice's. */
+  capHidden?: boolean;
+  /** Spec 099 FR-030: the question already answered through the hook (the same call may also reach `can_use_tool`). */
+  autoAsked?: string;
 }
 
 export class ClaudeAdapter implements AgentAdapter {
@@ -678,6 +752,8 @@ export class ClaudeAdapter implements AgentAdapter {
    */
   private continuedIds = new Set<string>();
   private factsCache?: { at: number; facts: Promise<ClaudeSandboxFacts> };
+  /** Spec 099 FR-053: `setAutopilot` was called on this adapter, so a goal may exist whatever `AUTOPILOT_WIRED` says. */
+  private autopilotUsed = false;
 
   constructor(private readonly deps: ClaudeAdapterDeps) {
     // spec 059 FR-007: on the SDK transport `--name` is not applied, so no rename is offered (capability and member agree, contract C2)
@@ -687,6 +763,7 @@ export class ClaudeAdapter implements AgentAdapter {
     if (deps.sdkTransport) (this as { listMcpTools?: unknown }).listMcpTools = undefined;
     if (deps.sdkTransport) (this as { startMcpSignIn?: unknown }).startMcpSignIn = undefined;
     if (deps.sdkTransport) (this as { refreshMcpStatus?: unknown }).refreshMcpStatus = undefined;
+    if (deps.sdkTransport) (this as { setAutopilot?: unknown }).setAutopilot = undefined;
   }
 
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe {
@@ -868,14 +945,35 @@ export class ClaudeAdapter implements AgentAdapter {
 
   async send(sessionId: string, message: AgentMessage): Promise<void> {
     const s = this.mustGet(sessionId);
+    // spec 099: refusals first, so a refused message leaves everything as it was
+    const auto = s.auto?.on ? s.auto : undefined;
+    const typedGoal = /^\s*\/goal(\s|$)/i.exec(message.text);
+    if (auto && message.plan) throw new Error(AUTOPILOT_NO_PLAN);
+    if (auto && typedGoal) throw new Error(CLAUDE_GOAL_TYPED); // FR-058
+    const typedRest = !auto && typedGoal ? goalText(message.text.slice(typedGoal[0].length), 'claude') : undefined;
+    if (typedRest && (typedRest.ok || (typedRest.reason !== 'reserved' && typedRest.reason !== 'empty'))) {
+      this.emit(sessionId, { type: 'status', status: 'idle', intent: CLAUDE_GOAL_NOT_SENT }); // FR-006; a clear word and a bare `/goal` go on: neither starts a loop
+      return;
+    }
+    const startsRun = !!auto && !auto.running;
+    if (startsRun && s.turnOpen) throw new Error(AUTOPILOT_WAIT_TURN);
+    if (startsRun && message.attachments?.length) throw new Error(AUTOPILOT_TEXT_ONLY); // D10
+    const goal = startsRun ? goalText(message.text, 'claude') : undefined;
+    if (goal && !goal.ok) throw new Error(goalRefusal(goal));
     // FR-150: at the cap, the message waits for the user's answer to the limit notice (like Copilot's blocked request)
     if (s.limit || this.capReached(s)) {
       this.openLimit(s).held = message;
       return;
     }
+    // spec 099 FR-022: past the holds, so a held message starts no run: the lower cap goes on the relaunch the cap already causes
+    if (startsRun && auto.settings?.cap !== undefined) {
+      this.refuseSpentCap(s, auto.settings.cap);
+      s.apCap = auto.settings.cap;
+      if (capInForce(s.capUsd, s.apCap) !== (s.launchedCap ?? null)) s.needsRelaunch = true;
+    }
     if (message.attachments?.length) s.broker.allowReadPaths(message.attachments.map((a) => a.path));
     // FR-116: new flags for a changed mode, but never in the middle of a turn (the hook keeps the current mode until then)
-    const relaunch = !!s.transport?.alive && !s.turnOpen && ((s.launchedMode !== undefined && s.launchedMode !== s.broker.getMode()) || !!s.needsRelaunch);
+    const relaunch = !!s.transport?.alive && !s.turnOpen && !s.auto?.running && ((s.launchedMode !== undefined && s.launchedMode !== s.broker.getMode()) || !!s.needsRelaunch);
     // spec 087 FR-007: the floor of the launch this message needs is decided before anything is sent; a refusal throws (the send fails)
     if ((relaunch || !s.transport?.alive) && !s.starting && !(await this.planSandbox(s))) return; // held: the note says why, nothing sent
     this.emit(sessionId, { type: 'status', status: 'working', intent: 'Thinking' });
@@ -886,6 +984,16 @@ export class ClaudeAdapter implements AgentAdapter {
     } catch (e) {
       if (s.sandboxExit !== undefined) return; // spec 087 FR-007: the sandbox exit already said why; nothing is re-sent
       this.emit(sessionId, { type: 'status', status: 'error', intent: e instanceof Error ? e.message : 'Claude could not start' });
+      return;
+    }
+    // spec 099 FR-053: before anything is written; a failed clear sends nothing (FR-054)
+    if (s.clearDue && !(await this.clearFirst(s, t))) return;
+    if (startsRun && goal?.ok) {
+      s.blockCap = false;
+      s.lastMainId = undefined;
+      auto.begin();
+      s.turnOpen = true;
+      t.sendUser(`/goal ${goal.text}`); // FR-011
       return;
     }
     // spec 066 FR-004: plan first: Claude Code's own plan mode for this turn (it reads and proposes with ExitPlanMode; nothing changes)
@@ -901,6 +1009,141 @@ export class ClaudeAdapter implements AgentAdapter {
     }
     s.turnOpen = true;
     t.sendUser(userContentOf(message.plan ? { ...message, text: `${message.text}\n\n${CLAUDE_PLAN_NOTE}` } : message, this.deps.readImage));
+  }
+
+  /* ---------------- spec 099: Autopilot ---------------- */
+
+  /** FR-002, FR-011, FR-022: on for the next messages, or off (a running run stops, FR-050). */
+  async setAutopilot(sessionId: string, settings: AutopilotSettings | null, reason: AutopilotEnd = 'stopped'): Promise<void> {
+    const s = this.mustGet(sessionId);
+    if (settings === null) return this.autopilotOff(s, reason);
+    if (s.broker.getMode() !== 'allow') throw new Error(AUTOPILOT_NOT_ALLOW);
+    if (s.auto?.running) throw new Error(AUTOPILOT_ONE_RUN);
+    if (claudeOlderThanGoal((await this.sandboxFactsNow()).version)) throw new Error(`Autopilot needs Claude Code ${CLAUDE_GOAL_MIN_VERSION} or newer.`);
+    let cap = settings.cap;
+    if (cap !== undefined) {
+      cap = usdCap(cap);
+      if (cap === undefined) throw new Error('Invalid cost cap.');
+      this.refuseSpentCap(s, cap);
+    }
+    (s.auto ??= this.newAutopilot(s)).turnOn({ ...settings, cap });
+    this.autopilotUsed = true;
+  }
+
+  private async autopilotOff(s: Session, reason: AutopilotEnd): Promise<void> {
+    const auto = s.auto;
+    if (auto?.running) {
+      auto.run?.end(reason);
+      await auto.run?.whenStopped();
+    } else if (auto) auto.settings = undefined;
+  }
+
+  /** FR-022: a value at or below what was spent could do nothing. */
+  private refuseSpentCap(s: Session, cap: number): void {
+    if (cap <= s.spentUsd) throw new Error(`A cap of $${cap} is not above what this session has spent ($${Math.round(s.spentUsd * 1e4) / 1e4}).`);
+  }
+
+  private newAutopilot(s: Session): AutopilotState {
+    return new AutopilotState({
+      // FR-050 (`real:` T093): the interrupt, then `/goal clear`; the goal survives an interrupt. A turn that already ended needs no interrupt.
+      halt: async () => {
+        const t = s.transport;
+        if (!t?.alive) throw new Error('claude is not running');
+        if (s.turnOpen) await this.interruptTurn(s, t);
+        await this.clearGoal(s, t);
+      },
+      interruptAgain: () => { if (s.transport?.alive) void this.interruptTurn(s, s.transport); },
+      failClosed: () => this.stop(s.id),
+      settled: () => {
+        // FR-022: `--max-budget-usd` goes back at the next relaunch
+        if (s.apCap !== undefined) s.needsRelaunch = true;
+        s.apCap = undefined;
+      },
+      emit: (b) => this.emit(s.id, b),
+      spend: () => ({ unit: 'usd', value: s.spentUsd }),
+    }, this.deps.autopilot);
+  }
+
+  private async interruptTurn(s: Session, t: ClaudeTransport): Promise<void> {
+    s.mapper.expectAbort();
+    await t.request({ subtype: 'interrupt' }, 5000).catch(() => undefined);
+  }
+
+  /** Writes `/goal clear` and resolves on the CLI's answer. Free (`real:`: a `result` with `num_turns: 0`). Never shown (FR-053). */
+  private clearGoal(s: Session, t: ClaudeTransport): Promise<'cleared' | 'none'> {
+    return new Promise((resolve, reject) => {
+      s.clearWaiter = { resolve, reject };
+      s.turnOpen = true; // no relaunch and no new run until it answered
+      t.sendUser('/goal clear');
+    });
+  }
+
+  /** FR-053, FR-054: true when the goal is gone. A failure ends the process (the next message comes back here) and says why. */
+  private clearFirst(s: Session, t: ClaudeTransport): Promise<boolean> {
+    s.clearRun ??= (async () => {
+      try {
+        const a = await within(this.clearGoal(s, t), this.deps.autopilot?.waitMs ?? CLEAR_WAIT_MS, 'Claude Code');
+        s.clearDue = false;
+        if (a === 'cleared') this.emit(s.id, { type: 'status', status: 'working', intent: LINE_CLOSED });
+        return true;
+      } catch (e) {
+        s.clearWaiter = undefined;
+        s.turnOpen = false;
+        s.stopping = true; // this exit is ours: no second status
+        await t.close().catch(() => undefined);
+        s.stopping = false;
+        if (s.transport === t) s.transport = undefined;
+        this.emit(s.id, { type: 'status', status: 'error', intent: lineNotCleared(e instanceof Error ? e.message : String(e)) });
+        return false;
+      }
+    })().finally(() => { s.clearRun = undefined; });
+    return s.clearRun;
+  }
+
+  /** FR-006: a goal loop nobody asked Durbar for: the interrupt, the clear, said in the chat. An unconfirmed clear ends the session (FR-054). */
+  private selfStarted(s: Session): void {
+    const t = s.transport;
+    if (!t?.alive || s.clearWaiter) return;
+    this.emit(s.id, { type: 'status', status: 'idle', intent: LINE_SELF_STARTED });
+    void (async () => {
+      try {
+        if (s.turnOpen) await this.interruptTurn(s, t);
+        await within(this.clearGoal(s, t), this.deps.autopilot?.waitMs ?? CLEAR_WAIT_MS, 'Claude Code');
+      } catch {
+        await this.stop(s.id).catch(() => undefined);
+        this.emit(s.id, { type: 'status', status: 'stopped', intent: LINE_UNCONFIRMED });
+      }
+    })();
+  }
+
+  /** FR-006, FR-020, FR-021, FR-040. Only the main stream counts (FR-008). */
+  private autopilotMessage(s: Session, m: ClaudeMessage): void {
+    const auto = s.auto;
+    if (isClaudeContinuation(m)) {
+      // after a done ending `halt` already cleared the goal: a turn nobody counts is stopped as a run of its own that ends at once
+      if (auto?.on && auto.run?.ended) auto.begin().end('error');
+      else if (auto?.run) auto.run.continuation(); // counts it, or repeats `halt` after an end
+      else this.selfStarted(s);
+      return;
+    }
+    const x = m as { type?: unknown; subtype?: unknown; key?: unknown; message?: { id?: unknown } };
+    if (!mainStream(m)) return;
+    if (x.type === 'assistant' && auto?.running) {
+      const id = typeof x.message?.id === 'string' ? x.message.id : undefined;
+      if (id && id !== s.lastMainId) {
+        s.lastMainId = id;
+        auto.run?.backstopTurn();
+      }
+    } else if (x.type === 'system' && x.subtype === 'notification' && x.key === 'stop-hook-block-cap' && auto?.running) s.blockCap = true;
+    else if ((x.type === 'system' || x.type === 'result') && !auto?.running && /^\s*Goal set\b/.test(textOfMessage(m))) this.selfStarted(s);
+  }
+
+  /** FR-030: a question on a run: shown once, answered with the fixed sentence. */
+  private autoAsk(s: Session, input: Record<string, unknown>, toolUseID: string | undefined): void {
+    if (toolUseID && s.autoAsked === toolUseID) return;
+    s.autoAsked = toolUseID;
+    const { asked } = parseQuestionsWithOriginals(input);
+    if (asked.length) emitAutoAnswered((b) => this.emit(s.id, b), toolUseID ?? randomUUID(), asked);
   }
 
   /** Spec 066 FR-004: back to the launch mode of the folder's permission mode after a plan-first turn (never wider). */
@@ -922,6 +1165,12 @@ export class ClaudeAdapter implements AgentAdapter {
     if (!s) return;
     s.broker.denyPending();
     this.cancelQuestions(s, 'interrupt');
+    // spec 099 FR-050: Stop on Autopilot is the run's own stop order, and the session goes back to Allow all
+    if (s.auto?.on || s.auto?.running) {
+      await this.autopilotOff(s, 'stopped');
+      if (this.sessions.get(sessionId) === s) this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Aborted' });
+      return;
+    }
     if (s.transport?.alive) {
       s.mapper.expectAbort();
       try {
@@ -936,6 +1185,7 @@ export class ClaudeAdapter implements AgentAdapter {
   async stop(sessionId: string): Promise<void> {
     const s = this.sessions.get(sessionId);
     if (!s) return;
+    s.auto?.endQuietly(); // spec 099 FR-052: no card; the next resume clears first
     s.stopping = true;
     s.broker.stop(); // pending permissions are answered deny; grants are dropped
     this.cancelQuestions(s, 'stop');
@@ -955,6 +1205,8 @@ export class ClaudeAdapter implements AgentAdapter {
   setPermMode(sessionId: string, mode: PermissionMode, opts: { clearGrants?: boolean; approvePending?: boolean } = {}): { pending: number } {
     const s = this.sessions.get(sessionId);
     if (!s) return { pending: 0 };
+    // spec 099 FR-051: main ends Autopilot first (T030); here too, so no path leaves it on outside Allow all (FR-002)
+    if (mode !== 'allow' && (s.auto?.on || s.auto?.running)) void this.autopilotOff(s, 'stopped');
     s.broker.setMode(mode);
     s.options = { ...s.options, permissionMode: mode };
     if (opts.clearGrants) s.broker.clearGrants();
@@ -1161,7 +1413,7 @@ export class ClaudeAdapter implements AgentAdapter {
       // spec 087 (review round 4 on PR 733): under the floor a folder it left out is not an `--add-dir` (Claude would grant it writes)
       // under the floor only folders the block holds (review round 5: an allow-list, so a folder dropped for ANY reason is never added)
       ...(s.sandboxBlock ? (s.sandboxAddDirs?.length ? { addDirs: [...s.sandboxAddDirs] } : {}) : s.roots.length > 1 ? { addDirs: s.roots.filter((r) => r !== s.cwd) } : {}),
-      ...(s.capUsd !== undefined ? { maxBudgetUsd: s.capUsd - s.spentUsd } : {}),
+      ...(capInForce(s.capUsd, s.apCap) !== null ? { maxBudgetUsd: (capInForce(s.capUsd, s.apCap) as number) - s.spentUsd } : {}),
       ...(claudeNameOk(s.pendingName) ? { name: s.pendingName } : {}),
       ...(claudeForwardsSubagentText((await this.sandboxFactsNow()).version) ? { forwardSubagentText: true } : {}), // spec 015 FR-016
     };
@@ -1179,6 +1431,9 @@ export class ClaudeAdapter implements AgentAdapter {
     const t = await make({ file, launch, cwd: s.cwd, env, handlers });
     s.transport = t;
     s.launchedMode = launch.mode;
+    s.launchedCap = capInForce(s.capUsd, s.apCap);
+    // spec 099 FR-053: a resume or relaunch may bring a goal back; nothing records that across a restart, so every one clears first
+    s.clearDue = launch.resume && ((this.deps.autopilot?.clearFirst ?? AUTOPILOT_WIRED) || this.autopilotUsed) && !claudeOlderThanGoal((await this.sandboxFactsNow()).version);
     s.launchedName = t.kind === 'cli' ? launch.name : undefined; // the SDK transport ignores `name`: it stays pending
     s.launchedOff = new Set(o.disabledMcpServers ?? []);
     s.needsRelaunch = false;
@@ -1203,13 +1458,25 @@ export class ClaudeAdapter implements AgentAdapter {
   }
 
   private onMessage(s: Session, m: ClaudeMessage): void {
+    // spec 099 FR-053: the answer to Durbar's own `/goal clear` is not a turn and never reaches the chat
+    if (s.clearWaiter) {
+      const ack = claudeClearAck(m);
+      if (ack) {
+        const w = s.clearWaiter;
+        s.clearWaiter = undefined;
+        s.turnOpen = false;
+        w.resolve(ack);
+        return;
+      }
+    }
     if (m.type === 'system' && m.subtype === 'init') {
       s.initSeen = true;
       // spec 087 FR-006: `on` only here: the CLI started with the block (failIfUnavailable: true) and reached init
       if (s.sandboxBlock && s.sandboxFacts && s.sandboxState?.state === 'unknown') this.setSandbox(s, this.withLeftOut(s, claudeSandboxState({ mode: s.sandboxMode ?? 'read-only', facts: s.sandboxFacts, started: true })));
     }
+    if (m.type === 'result' && !s.clearWaiter) s.turnOpen = false;
+    this.autopilotMessage(s, m);
     if (m.type === 'result') {
-      s.turnOpen = false;
       // Spec 059 FR-007: the first turn after a launch with `--name` finished: the CLI stored the title, so report it
       if (s.launchedName) {
         const applied = s.launchedName;
@@ -1220,7 +1487,12 @@ export class ClaudeAdapter implements AgentAdapter {
     }
     if (s.planTurn && m.type === 'assistant') s.planDraft = ((s.planDraft ?? '') + assistantText(m)).slice(-40_000); // spec 066: bounded (the card shows 20k)
     if (m.type === 'result' && s.planTurn && !s.plans?.size) void this.leavePlanMode(s); // spec 066: a plan turn that ended without ExitPlanMode
+    // spec 099 FR-040: the goal's one `result`, read before the mapper (which reports its status) and ended after it (its cost counts in the end's spend)
+    const run = m.type === 'result' && s.auto?.running ? s.auto.run : undefined;
+    const end = run && mainStream(m) ? claudeRunEnd(m, { blockCap: !!s.blockCap, bound: run.backstopTurns }) : undefined;
+    s.capHidden = end === 'cap';
     s.mapper.map(m);
+    if (end) s.auto?.finish(end);
     if (m.type === 'result' && this.capReached(s)) this.openLimit(s);
   }
 
@@ -1228,6 +1500,11 @@ export class ClaudeAdapter implements AgentAdapter {
   private onMapped(sid: string, b: EventBody): void {
     const s = this.sessions.get(sid);
     if (s && b.type === 'usage' && typeof b.costUsd === 'number' && b.costUsd > 0) s.spentUsd += b.costUsd;
+    if (s?.capHidden && b.type === 'status' && b.status === 'error' && /budget/i.test(b.intent ?? '')) {
+      s.capHidden = false; // spec 099 FR-022: the run ended with cap; the notice only if the restored cap is reached (below)
+      this.emit(sid, { type: 'status', status: 'idle' });
+      return;
+    }
     if (s && b.type === 'status' && b.status === 'error' && s.capUsd !== undefined && /budget/i.test(b.intent ?? '')) {
       this.openLimit(s);
       return;
@@ -1406,6 +1683,11 @@ export class ClaudeAdapter implements AgentAdapter {
       const tool = typeof r.tool_name === 'string' ? r.tool_name : '';
       const input = r.input && typeof r.input === 'object' && !Array.isArray(r.input) ? (r.input as Record<string, unknown>) : {};
       const toolUseID = typeof r.tool_use_id === 'string' ? r.tool_use_id : undefined;
+      // spec 099 FR-030 (`real:` T093): deny with the fixed sentence, whatever the call carries
+      if (tool === 'AskUserQuestion' && s.auto?.running) {
+        this.autoAsk(s, input, toolUseID);
+        return { response: { behavior: 'deny', message: AUTOPILOT_ANSWER, ...(toolUseID ? { toolUseID } : {}) } };
+      }
       if (tool === 'ToolSearch' && s.planTurn) return { response: { behavior: 'allow', updatedInput: input, ...(toolUseID ? { toolUseID } : {}) } }; // spec 066: loads definitions only
       if (tool === 'ExitPlanMode' && s.planTurn) {
         // spec 066 FR-004: Claude's proposed plan goes to the plan card; approve continues in the folder's own mode
@@ -1458,6 +1740,7 @@ export class ClaudeAdapter implements AgentAdapter {
     // FR-151: an MCP server's elicitation (a form or a URL flow) goes to the question card; the answer is the MCP `{action, content?}`.
     // The field names follow the Agent SDK's control request (read:, not yet seen from a real CLI).
     if (req.subtype === 'elicitation') {
+      if (s.auto?.running) return { response: { ...declineElicitation((b) => this.emit(s.id, b), `claude-e-${randomUUID()}`, { message: r.message, schema: r.requested_schema, mode: r.mode, url: r.url, source: r.mcp_server_name }) } }; // spec 099 FR-030
       s.elicitations ??= new Map();
       const id = typeof r.elicitation_id === 'string' && r.elicitation_id.length <= 200 ? `claude-e-${r.elicitation_id}` : `claude-e-${randomUUID()}`;
       const a = await runElicitation((b) => this.emit(s.id, b), s.elicitations, id, { message: r.message, schema: r.requested_schema, mode: r.mode, url: r.url, source: r.mcp_server_name }, (m) => this.debug?.(`claude: ${m}`));
@@ -1473,6 +1756,11 @@ export class ClaudeAdapter implements AgentAdapter {
    * process launched in Allow all (`bypassPermissions`, which never calls `canUseTool`) asks through the broker in Ask first.
    */
   private async hookDecision(s: Session, tool: string, toolInput: Record<string, unknown> | undefined, toolUseID: string | undefined): Promise<Record<string, unknown>> {
+    if (tool === 'AskUserQuestion' && s.auto?.running) {
+      // spec 099 FR-030: the hook comes first in a real CLI; the same fixed sentence
+      this.autoAsk(s, toolInput ?? {}, toolUseID);
+      return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: AUTOPILOT_ANSWER } };
+    }
     if (tool === 'AskUserQuestion') return this.askUser(s, toolInput ?? {}, toolUseID); // FR-129: a question, not an action: every mode
     // spec 066: in a plan-first turn only the plan proposal passes (to the plan card, through can_use_tool), plus ToolSearch,
     // which only loads tool definitions (real 2026-10-21: Claude Code 2.1.305 defers ExitPlanMode behind ToolSearch)
@@ -1539,7 +1827,14 @@ export class ClaudeAdapter implements AgentAdapter {
   private onExit(s: Session, info: { code: number | null; signal: string | null; stderrTail: string }): void {
     s.transport = undefined;
     s.turnOpen = false;
+    if (s.clearWaiter) {
+      const w = s.clearWaiter;
+      s.clearWaiter = undefined;
+      w.reject(new Error('claude exited')); // FR-054: a dead child never answers
+    }
     if (s.stopping || !this.sessions.has(s.id)) return;
+    // spec 099 FR-040, FR-054: a run ends with error; its halt finds the child gone, ends the session and says so
+    if (s.auto?.running) return void s.auto.finish('error');
     if (info.stderrTail) this.debug?.(`claude stderr (exit ${String(info.code)}): ${info.stderrTail}`);
     s.broker.denyPending();
     this.cancelQuestions(s, 'exit');

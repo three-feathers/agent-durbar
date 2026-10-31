@@ -135,6 +135,22 @@ async function main(): Promise<void> {
     valid(r);
   }
 
+  // a continuation after a confirmed stop: the app is still going, so the stop repeats and nothing is counted
+  {
+    const r = await rig();
+    await r.ad.setAutopilot(r.sid, { limit: 1 });
+    await r.ad.send(r.sid, { text: 'x' });
+    fire(r.s, cont);
+    fire(r.s, cont);
+    await tick();
+    const before = r.s.calls.filter((c) => c.name === 'abort').length;
+    fire(r.s, cont);
+    await tick();
+    assert.strictEqual(r.s.calls.filter((c) => c.name === 'abort').length, before + 1, 'the guard interrupts a later continuation');
+    assert.strictEqual(r.ap().filter((e) => e.phase === 'continued').length, 1, 'not counted');
+    assert.deepStrictEqual(reasons(r), ['limit'], 'not a new end');
+  }
+
   // Stop mid-run through interrupt
   {
     const r = await rig();
