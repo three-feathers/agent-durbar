@@ -199,10 +199,12 @@ function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: strin
       if (!folderOf(id)) return gone;
       if (fileMode === 'workspace') return { ok: false, code: 'invalid', error: 'The project file is not offered for a VS Code workspace.' };
       if (fileMode === 'unreadable') return { ok: false, code: 'invalid', error: 'The existing file cannot be read; Durbar will not change it.' };
-      return { ok: true, count: fileMode === 'existing' ? 4 : 0, exists: fileMode === 'existing', repo: fileMode !== 'norepo' };
+      return { ok: true, count: fileMode === 'existing' ? 4 : 0, exists: fileMode === 'existing' || fileMode === 'stray', strayText: fileMode === 'stray' ? 3 : 0, repo: fileMode !== 'norepo' };
     },
     /* the demo never turns the switch: it answers its current position (off unless simnotesfile= says on) */
-    notesSetFile: async (id) => (folderOf(id) ? { ok: true, demo: true, on: !!fileSwitch()?.on, message: 'Demo: no file written' } : gone),
+    notesSetFile: async (id, on, opts) => (!folderOf(id) ? gone
+      : fileMode === 'excludefail' && on && opts && opts.exclude === true ? { ok: false, code: 'invalid', error: 'Could not add .durbar/ to .git/info/exclude: no info folder. The switch stays off.', excludeFailed: true }
+        : { ok: true, demo: true, on: !!fileSwitch()?.on, message: 'Demo: no file written' }),
     onNotesChanged: (cb) => { subs.push(cb); return () => { const i = subs.indexOf(cb); if (i >= 0) subs.splice(i, 1); }; },
   };
 }

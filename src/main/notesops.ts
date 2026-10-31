@@ -36,6 +36,16 @@ export interface NotesOpsDeps {
   fileOn?(folderKey: string): boolean;
   /** Saves the switch (`notesFile` in folders.json, T042); false when it could not be saved. Absent: the switch cannot be turned. */
   setFileOn?(folderKey: string, on: boolean): boolean;
+  /**
+   * True while some secret value Durbar may hold is still locked in the vault (main: `!mcpStore.noPrompt()`): the mask would be
+   * incomplete, so no project-file cycle runs (review of PR 931). Absent: never pending.
+   */
+  valuesPending?(folderKey: string): boolean;
+  /**
+   * A native confirmation the page cannot answer (Cancel is the default; `nativeConfirm` in main), before the switch is turned on and
+   * before *Delete the file* (review of PR 931, Q2). Absent: both are refused.
+   */
+  confirmNative?(kind: 'on' | 'delete', folderName: string): Promise<boolean>;
   setTimer?(fn: () => void, ms: number): unknown;
 }
 
@@ -43,6 +53,9 @@ export interface NotesOpsDeps {
 export const SWITCH_WORKSPACE = 'The project file is not offered for a VS Code workspace.';
 export const SWITCH_MISSING = 'The folder is not there, so Durbar cannot keep .durbar/notes.md in it.';
 export const SWITCH_ALREADY_OFF = 'The switch is already off; Durbar does not touch .durbar/notes.md while it is off.';
+export const VALUES_PENDING = 'Waiting for the secret store to unlock (it unlocks when a session with MCP extras starts); notes.md is not updated until then.';
+export const NATIVE_CANCELLED = 'Cancelled: nothing changed.';
+export const DELETE_LEFTOVER = 'A temp file from a crash (.notes.md.*.tmp) may remain in .durbar.';
 export const SWITCH_UNSAVED = 'Could not save the choice in the folder list.';
 export const EXCLUDE_KEPT = 'The .durbar/ line in .git/info/exclude stays (it is harmless).';
 
@@ -90,7 +103,10 @@ export class NotesOps {
     const prev = this.cycles.get(t.key) ?? Promise.resolve(undefined);
     const run = prev.then(async (): Promise<NotesFileState | undefined> => {
       if (!this.fileTarget(t.a, t.key)) return undefined; // turned off while this cycle waited its turn (T042): it writes nothing
-      const r = await syncNotesFile({ file: ft.file, store: t.store, folderKey: t.key, folderName: t.name, folderPath: ft.folderPath, values: this.values(t.key), now: this.d.now });
+      let pending = false;
+      try { pending = this.d.valuesPending?.(t.key) === true; } catch { pending = true; }
+      if (pending) return { error: VALUES_PENDING }; // review of PR 931: an incomplete mask would un-mask the shared file
+      const r = await syncNotesFile({ file: ft.file, store: t.store, folderKey: t.key, folderName: t.name, folderPath: ft.folderPath, values: this.fileValues(t.key), now: this.d.now });
       if (r.retry && retries > 0) this.schedule(t.a.id, t.key, retries - 1);
       return r.state;
     }).catch((): NotesFileState => ({ error: 'Could not write .durbar/notes.md: ERROR' }));
@@ -130,6 +146,20 @@ export class NotesOps {
     let ss: readonly string[] = [];
     if (agentId) { try { ss = this.d.sessionValues(agentId); } catch { /* same */ } }
     return [...new Set([...vs, ...ss])];
+  }
+
+  /**
+   * The values the project file is masked with (review of PR 931): the folder's and the session values of EVERY open chat of the folder
+   * (`sessionValues` also covers the user-wide MCP list), sorted, so the output does not depend on which chat asked.
+   */
+  private fileValues(key: string): string[] {
+    const out = new Set<string>();
+    try { for (const v of this.d.folderValues(key)) out.add(v); } catch { /* the shape mask still runs */ }
+    for (const a of this.d.agents.values()) {
+      if (folderKeyOf(a) !== key) continue;
+      try { for (const v of this.d.sessionValues(a.id)) out.add(v); } catch { /* same */ }
+    }
+    return [...out].sort((x, y) => y.length - x.length || (x < y ? -1 : x > y ? 1 : 0));
   }
 
   async list(agentId: unknown): Promise<NotesView | Refusal> {
@@ -235,7 +265,7 @@ export class NotesOps {
     if (!v.ok) return v;
     const c = t.file.count(t.a.cwd, new Set(v.notes.map((n) => n.id)));
     if (!c.ok) return refuse(c.error);
-    return { ok: true, count: c.count, exists: c.exists, repo: t.file.inRepo(t.a.cwd) };
+    return { ok: true, count: c.count, exists: c.exists, strayText: c.strayText, repo: t.file.inRepo(t.a.cwd) };
   }
 
   /**
@@ -258,6 +288,11 @@ export class NotesOps {
     return run;
   }
 
+  private async native(kind: 'on' | 'delete', a: AgentInfo): Promise<boolean> {
+    if (!this.d.confirmNative) return false;
+    try { return (await this.d.confirmNative(kind, folderNameOf(a))) === true; } catch { return false; }
+  }
+
   private async setFileNow(t: { a: AgentInfo; store: NotesStore; key: string; file: NotesFile }, on: boolean, o: { deleteFile?: unknown; exclude?: unknown }): Promise<NotesSetFile | Refusal> {
     const setOn = this.d.setFileOn!;
     let was = false;
@@ -268,25 +303,35 @@ export class NotesOps {
         if (!v.ok) return v;
         const c = t.file.count(t.a.cwd, new Set(v.notes.map((n) => n.id)));
         if (!c.ok) return refuse(c.error); // COUNT_UNREADABLE for a conflict or a file that does not parse: the switch stays off
-        if (!setOn(t.key, true)) return refuse(SWITCH_UNSAVED);
       }
+      // review of PR 931 (Q2): main asks with a native box the page cannot answer, before anything is written
+      if (!was && !(await this.native('on', t.a))) return refuse(NATIVE_CANCELLED);
       let message: string | undefined;
       if (o.exclude === true && t.file.inRepo(t.a.cwd)) {
+        // review of PR 931 (point 3): the line goes in BEFORE the switch is saved; when it cannot, the switch stays off (no fail-open)
         const x = t.file.addExclude(t.a.cwd);
-        message = x.ok ? (x.added ? 'Added .durbar/ to .git/info/exclude (local only).' : '.durbar/ is already in .git/info/exclude.') : x.error;
+        if (!x.ok) return was ? { ok: true, on: true, message: x.error } : { ...refuse(`${x.error}. The switch stays off.`), excludeFailed: true };
+        message = x.added ? 'Added .durbar/ to .git/info/exclude (local only).' : '.durbar/ is already in .git/info/exclude.';
+      }
+      if (!was) {
+        // review of PR 931 (point 4): turning on starts from no `mirror`, so a file that was gone is written again only now
+        const m = await t.store.setMirror(t.key, folderNameOf(t.a), undefined);
+        if (!m.ok) return m;
+        if (!setOn(t.key, true)) return refuse(SWITCH_UNSAVED);
       }
       const file = await this.syncFile(t.a.id);
       return { ok: true, on: true, ...(file ? { file } : {}), ...(message ? { message } : {}) };
     }
     // FR-050: while the switch is off Durbar never reads, stats or writes notes.md, so *Delete* is only part of turning it off
     if (!was && o.deleteFile === true) return refuse(SWITCH_ALREADY_OFF);
+    if (o.deleteFile === true && !(await this.native('delete', t.a))) return refuse(NATIVE_CANCELLED);
     if (was && !setOn(t.key, false)) return refuse(SWITCH_UNSAVED);
     // a cycle running or queued finishes first (a queued one now finds the switch off and writes nothing), then the file is looked at
     for (let p = this.cycles.get(t.key); p;) { await p.catch(() => undefined); const n = this.cycles.get(t.key); if (n === p) break; p = n; }
     const lines: string[] = [];
     if (o.deleteFile === true) {
       const r = t.file.remove(t.a.cwd, await t.store.getMirror(t.key));
-      lines.push(r.removed ? (r.dirRemoved ? 'Deleted .durbar/notes.md and the empty .durbar folder.' : 'Deleted .durbar/notes.md.') : r.why ?? REMOVE_KEPT);
+      lines.push(r.removed ? (r.dirRemoved ? 'Deleted .durbar/notes.md and the empty .durbar folder.' : `Deleted .durbar/notes.md. ${DELETE_LEFTOVER}`) : r.why ?? REMOVE_KEPT);
     } else lines.push('Durbar stopped writing .durbar/notes.md; the file is left in the project.');
     if (t.file.inRepo(t.a.cwd)) lines.push(EXCLUDE_KEPT);
     return { ok: true, on: false, message: lines.join(' ') };

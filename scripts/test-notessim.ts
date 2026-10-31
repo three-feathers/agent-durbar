@@ -75,7 +75,7 @@ async function main(): Promise<void> {
     assert.strictEqual(view(await N.notesList(a.id)).file, undefined, 'no file state while off');
     assert.deepStrictEqual(await N.notesSetFile(a.id, true, { exclude: true }), { ok: true, demo: true, on: false, message: 'Demo: no file written' });
     assert.deepStrictEqual(view(await N.notesList(a.id)).fileSwitch, { on: false }, 'still off after the demo answer');
-    assert.deepStrictEqual(await N.notesFileCount(a.id), { ok: true, count: 0, exists: false, repo: true });
+    assert.deepStrictEqual(await N.notesFileCount(a.id), { ok: true, count: 0, exists: false, strayText: 0, repo: true });
     assert.ok(!(await N.notesSetFile('nope', true)).ok && !(await N.notesFileCount('nope')).ok, 'an unknown chat is refused');
     assert.ok(events.length >= 4, 'changes are announced');
     off();
@@ -130,8 +130,16 @@ async function main(): Promise<void> {
     const ws = await st('workspace');
     assert.ok(ws.v.fileSwitch === undefined && !ws.c.ok, 'not offered for a .code-workspace');
     const ex = await st('existing');
-    assert.deepStrictEqual(ex.c, { ok: true, count: 4, exists: true, repo: true });
-    assert.deepStrictEqual((await st('norepo')).c, { ok: true, count: 0, exists: false, repo: false });
+    assert.deepStrictEqual(ex.c, { ok: true, count: 4, exists: true, strayText: 0, repo: true });
+    assert.deepStrictEqual((await st('norepo')).c, { ok: true, count: 0, exists: false, strayText: 0, repo: false });
+    assert.deepStrictEqual((await st('stray')).c, { ok: true, count: 0, exists: true, strayText: 3, repo: true });
+    {
+      const sim = make('?simnotesfile=excludefail');
+      const a = (await sim.listAgents())[0];
+      const r = await sim.notesSetFile!(a.id, true, { exclude: true }) as { ok: boolean; excludeFailed?: boolean };
+      assert.ok(!r.ok && r.excludeFailed === true, 'excludefail: refused, the switch stays off');
+      assert.deepStrictEqual(await sim.notesSetFile!(a.id, true, { exclude: false }), { ok: true, demo: true, on: false, message: 'Demo: no file written' });
+    }
     const un = await st('unreadable');
     assert.ok(!un.c.ok && /cannot be read/.test(un.c.error), 'an unreadable file is refused');
   }

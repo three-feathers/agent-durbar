@@ -410,8 +410,8 @@ export interface NotesFileState { error?: string; info?: string }
  */
 export interface NotesFileSwitch { on: boolean; disabled?: string }
 /** `notes:fileCount` (FR-050, only while turning on): notes the existing file would add, whether it exists, whether the folder is in a git repository. */
-export type NotesFileCount = { ok: true; count: number; exists: boolean; repo: boolean } | NotesFail;
+export type NotesFileCount = { ok: true; count: number; exists: boolean; strayText: number; repo: boolean } | NotesFail;
 /** `notes:setFile` (FR-050, FR-055): the switch's new position, the mirror's state after turning on, and a short line for the screen. */
-export type NotesSetFile = { ok: true; on: boolean; file?: NotesFileState; message?: string; demo?: boolean } | NotesFail;
+export type NotesSetFile = { ok: true; on: boolean; file?: NotesFileState; message?: string; demo?: boolean } | (NotesFail & { excludeFailed?: true });
 export type NotesView = { ok: true; fingerprint: string; folderName: string; notes: Note[]; max: number; readOnly?: string; session?: string; file?: NotesFileState; fileSwitch?: NotesFileSwitch } | NotesFail;
 export type NotesWrote = { ok: true; fingerprint: string; note?: Note; existing?: boolean } | NotesFail;

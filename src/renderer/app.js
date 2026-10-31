@@ -3077,6 +3077,7 @@ const NS_FILE_LABEL='Also keep these notes as .durbar/notes.md in the project';
 const NS_FILE_WARN='Durbar will write every note of this folder to .durbar/notes.md in the project. Agents and anyone with the folder can read it, and it may get committed and pushed with your code. Secrets are masked, but private ideas are not. Durbar never adds it to git.';
 const NS_FILE_STRAY='Text outside notes in an existing notes.md is removed when Durbar writes the file.';
 const NS_FILE_EXCLUDE='Keep it out of commits (adds .durbar/ to .git/info/exclude, local only)';
+const NS_FILE_OWN='This is Durbar\'s own write: it also happens in Read-only mode.';
 const NS_FILE_COMMITTED='If .durbar/notes.md was already committed, this does not remove it from the repository.';
 function nsFilePaint(a,st){
   const h=$('nsFile'); if(!h)return;
@@ -3106,20 +3107,29 @@ async function nsFileOn(a,btn){
     nsFileSay(why+' The switch stays off.');return;
   }
   const lines=[];
+  if(c.exists&&c.strayText>0)lines.push(c.strayText+(c.strayText===1?' line':' lines')+' of your text in the existing file will be removed.'); /* review of PR 931: never destroyed with only a generic warning */
   if(c.exists&&c.count>0)lines.push(c.count+(c.count===1?' note':' notes')+' in the existing file will be added, marked "From the project file".');
   lines.push(NS_FILE_STRAY);
+  lines.push(NS_FILE_OWN);
   if(c.repo)lines.push(NS_FILE_COMMITTED);
   const v=await askDialog({title:'Keep these notes in the project?',body:NS_FILE_WARN,lines,size:'m',check:c.repo?{label:NS_FILE_EXCLUDE,checked:true}:undefined,returnFocus:back,
     buttons:[{label:'Cancel',value:null},{label:'Turn on',value:'on',cls:'primary warn'}]});
   if(!v||v.value!=='on')return;
   let r=null;try{r=await bridge.notesSetFile(id,true,c.repo?{exclude:v.checked===true}:undefined);}catch(e){r=null;}
-  if(!r||!r.ok){nsFileSay(((r&&r.error)||'Could not turn it on.')+' The switch stays off.');await notesFetch(a);return;}
+  if(r&&!r.ok&&r.excludeFailed){ /* review of PR 931: the exclude line could not be added, so nothing was turned on; the person decides */
+    nsFileSay(r.error||'');
+    const v2=await askDialog({title:'Could not keep it out of commits',body:(r.error||'')+' Turn it on anyway? .durbar/notes.md may then show in git status and get committed.',size:'m',returnFocus:back,
+      buttons:[{label:'Cancel',value:null},{label:'Turn on without keeping it out of commits',value:'on',cls:'primary warn'}]});
+    if(!v2||v2.value!=='on'){await notesFetch(a);return;}
+    try{r=await bridge.notesSetFile(id,true,{exclude:false});}catch(e){r=null;}
+  }
+  if(!r||!r.ok){nsFileSay(/stays off/.test((r&&r.error)||'')?r.error:((r&&r.error)||'Could not turn it on.')+' The switch stays off.');await notesFetch(a);return;}
   await notesFetch(a);
   nsFileSay(r.demo?(r.message||'Demo: no file written'):[r.file&&r.file.error?'':'Durbar now keeps .durbar/notes.md in the project.',r.message||''].filter(Boolean).join(' '));
 }
 async function nsFileOff(a,btn){
   const id=liveRoot(a).id, back=()=>$('nsFileSw')||btn;
-  const v=await askDialog({title:'Stop keeping .durbar/notes.md?',body:'Durbar stops writing the file. Leave it in the project, or delete it? Durbar deletes it only when it is exactly what Durbar last wrote.',size:'m',returnFocus:back,
+  const v=await askDialog({title:'Stop keeping .durbar/notes.md?',body:'Durbar stops writing the file. Leave it in the project, or delete it? Durbar deletes it only when it holds exactly what Durbar would write.',lines:['If the file is tracked in git, deleting it shows as a deletion.'],size:'m',returnFocus:back,
     buttons:[{label:'Cancel',value:null},{label:'Delete the file',value:'delete',cls:'danger'},{label:'Leave the file',value:'leave',cls:'primary'}]});
   if(!v||(v.value!=='leave'&&v.value!=='delete'))return;
   let r=null;try{r=await bridge.notesSetFile(id,false,{deleteFile:v.value==='delete'});}catch(e){r=null;}

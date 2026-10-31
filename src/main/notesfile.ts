@@ -123,6 +123,8 @@ export type RemoveResult = { removed: boolean; dirRemoved: boolean; why?: string
 /** FR-055: the reasons a delete leaves the file. */
 export const REMOVE_CHANGED = '.durbar/notes.md changed since Durbar last wrote it, so it was left in the project.';
 export const REMOVE_NONE = 'There was no .durbar/notes.md to delete.';
+/** Review of PR 931 (point 4): the switch is on, Durbar wrote the file before, and it is gone (the folder was replaced, or the file deleted). */
+export const NOTES_GONE = 'The project file is gone. Turn the switch off and on again to write .durbar/notes.md.';
 const REMOVE_REFUSED = (why: string): string => `Durbar did not delete .durbar/notes.md: ${why}.`;
 
 export class NotesFile {
@@ -141,10 +143,10 @@ export class NotesFile {
 
   /**
    * Q1 (spec Changes, T041): the notes as the shared file gets them, masked again with the folder's CURRENT secret values, so a value
-   * registered after a note was saved never reaches `notes.md` (then cut, as on save). The store keeps its text as it is.
+   * registered after a note was saved never reaches `notes.md` (then cut, as on save). The token shapes run too when no value is known
+   * (review of PR 931: a shape added to the mask after a note was saved). `syncNotesFile` writes a changed note back to the store.
    */
   forFile(notes: readonly Note[], values: readonly string[]): Note[] {
-    if (!values.length) return [...notes];
     const sig = sha256(values.join('\u0000'));
     return notes.map((n) => {
       let m = this.masked.get(n.id);
@@ -251,16 +253,16 @@ export class NotesFile {
    * FR-050: how many notes an existing `notes.md` would add (sections whose id is not in `knownIds`), for the turn-on dialog only.
    * No file: 0. A conflict, a parse error or a refused file: `COUNT_UNREADABLE` (the switch then stays off).
    */
-  count(folderPath: string, knownIds: ReadonlySet<string> = new Set()): { ok: true; count: number; exists: boolean } | { ok: false; error: string } {
+  count(folderPath: string, knownIds: ReadonlySet<string> = new Set()): { ok: true; count: number; exists: boolean; strayText: number } | { ok: false; error: string } {
     const pl = this.place(folderPath, false);
     if (!pl.ok) return pl.code === 'missing' ? { ok: false, error: pl.error } : { ok: false, error: COUNT_UNREADABLE };
-    if (!pl.p.hasDurbar) return { ok: true, count: 0, exists: false };
+    if (!pl.p.hasDurbar) return { ok: true, count: 0, exists: false, strayText: 0 };
     const cur = this.current(pl.p);
     if (!cur.ok) return { ok: false, error: COUNT_UNREADABLE };
-    if (!cur.buf) return { ok: true, count: 0, exists: false };
+    if (!cur.buf) return { ok: true, count: 0, exists: false, strayText: 0 };
     const parsed = parseNotesMd(cur.buf.toString('utf8'));
     if (!parsed.ok) return { ok: false, error: COUNT_UNREADABLE };
-    return { ok: true, count: parsed.sections.filter((s) => s.id === undefined || !knownIds.has(s.id)).length + parsed.overflow, exists: true };
+    return { ok: true, count: parsed.sections.filter((s) => s.id === undefined || !knownIds.has(s.id)).length + parsed.overflow, exists: true, strayText: parsed.strayText };
   }
 
   /** FR-053 right before the rename: `.durbar` unchanged, `notes.md` missing or a regular file, and its hash still `expect` (`null`: still missing). */
@@ -393,7 +395,25 @@ export class NotesFile {
       if (!mirror || sha256(cur.buf) !== mirror.sha256) return keep(REMOVE_CHANGED);
       const again = this.recheck(pl.p, mirror.sha256);
       if (again) return keep(again.code === 'changed' ? REMOVE_CHANGED : REMOVE_REFUSED(again.error.replace(/^Could not write \.durbar\/notes\.md: /, '').replace(/^notes\.md /, 'it ')));
-      try { this.fs.unlinkSync(pl.p.notes); } catch (e) { return keep(REMOVE_REFUSED(`it could not be deleted (${errCode(e)})`)); }
+      // Review of PR 931: never unlink by the name `notes.md`, which a swapped `.durbar` could point elsewhere. Rename the file to a random
+      // name inside `.durbar`, check THAT name (its folder's real path, a regular file with one link, Durbar's hash), and unlink only it.
+      // A swap before the rename moves the other file to the random name elsewhere, and the real-path check of that name (last, right
+      // before the unlink) fails; a swap after it finds no file with that random name elsewhere, so the unlink fails. Under attack a file may be left renamed (recoverable), never deleted.
+      const doomed = path.join(pl.p.durbar, `.notes.md.${this.pid}.${this.rand(36 ** 8).toString(36)}.del`);
+      try { this.fs.renameSync(pl.p.notes, doomed); } catch (e) { return keep(REMOVE_REFUSED(`it could not be deleted (${errCode(e)})`)); }
+      const putBack = (why: string): RemoveResult => {
+        try { this.fs.renameSync(doomed, pl.p.notes); return keep(REMOVE_REFUSED(why)); } catch { return keep(REMOVE_REFUSED(`${why}; it may be left as .durbar/.notes.md.*.del`)); }
+      };
+      const moved = this.checkDurbar(pl.p.folder, pl.p.durbar);
+      if (moved) return putBack('.durbar changed while it was being deleted');
+      const r = readCapped(this.fs, this.k, doomed, NOTES_LIMITS.mdBytes);
+      if (!r.ok || sha256(r.buf) !== mirror.sha256) return putBack('it changed while it was being deleted');
+      // the decisive check, last before the unlink: the random name really is in this folder's `.durbar` now. A rename that landed
+      // elsewhere through a swapped link left no file with that name here, so a swap after this check finds no such name elsewhere.
+      let rp = '';
+      try { rp = this.fs.realpathSync(doomed); } catch { return putBack('.durbar changed while it was being deleted'); }
+      if (!this.same(rp, doomed)) return putBack('.durbar changed while it was being deleted');
+      try { this.fs.unlinkSync(doomed); } catch (e) { return putBack(`it could not be deleted (${errCode(e)})`); }
       let dirRemoved = false;
       if (!this.checkDurbar(pl.p.folder, pl.p.durbar)) {
         try { this.fs.rmdirSync(pl.p.durbar); dirRemoved = true; } catch { /* not empty (ENOTEMPTY, EEXIST) or held open: it stays */ }
@@ -492,6 +512,8 @@ export async function syncNotesFile(d: {
   const mirror = await d.store.getMirror(d.folderKey);
   const rb = d.file.readBack(d.folderPath, mirror, await d.store.getFileImport(d.folderKey));
   if (!rb.ok) return { state: { error: rb.error } };
+  // review of PR 931 (point 4): a file Durbar wrote is gone (another clone at the same path, a deleted folder): never recreate it unasked
+  if (mirror && rb.sha === null) return { state: { error: NOTES_GONE } };
   const info: string[] = [];
   if (rb.changed) {
     const imp = await d.store.importFile(d.folderKey, d.folderName, rb.sections, d.values, rb.overflow ? undefined : rb.sha);
@@ -507,10 +529,24 @@ export async function syncNotesFile(d: {
     if (c?.keptDurbar) info.push(`${c.keptDurbar} note${c.keptDurbar === 1 ? '' : 's'} added in notes.md ${c.keptDurbar === 1 ? 'was' : 'were'} changed in Durbar before reaching the file; Durbar's version was kept`);
     if (c?.older) info.push(`${c.older} note${c.older === 1 ? '' : 's'} in notes.md ${c.older === 1 ? 'was an older copy' : 'were older copies'}; Durbar's version was kept`);
   }
-  const v = await d.store.list(d.folderKey);
+  let v = await d.store.list(d.folderKey);
   if (!v.ok) return { state: { error: v.error } };
   if (v.readOnly) return { state: { error: v.readOnly } };
-  const text = writeNotesMd(d.file.forFile(v.notes, d.values));
+  // review of PR 931 (point 1b): a note the file masks differently is masked in the store too, so the file never un-masks later
+  let out = d.file.forFile(v.notes, d.values);
+  let fixed = 0;
+  for (let i = 0; i < out.length; i++) {
+    const n = v.notes[i], m = out[i];
+    if (m.title === n.title && m.text === n.text) continue;
+    const u = await d.store.update(d.folderKey, d.folderName, n.id, n.rev, { ...(m.title !== n.title ? { title: n.title } : {}), ...(m.text !== n.text ? { text: n.text } : {}), values: d.values });
+    if (u.ok) fixed++;
+  }
+  if (fixed) {
+    v = await d.store.list(d.folderKey);
+    if (!v.ok) return { state: { error: v.error } };
+    out = d.file.forFile(v.notes, d.values);
+  }
+  const text = writeNotesMd(out);
   const want = sha256(Buffer.from(text, 'utf8'));
   const done = (state: NotesFileState): NotesFileState => (info.length ? { ...state, info: info.join('. ') + '.' } : state);
   if (rb.sha === want) {

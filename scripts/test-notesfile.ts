@@ -192,12 +192,12 @@ async function main(): Promise<void> {
     const r = rig();
     nodeFs.mkdirSync(path.join(r.folder, '.durbar'));
     nodeFs.writeFileSync(md(r.folder), '# Notes\n\n<!-- durbar-note -->\n## one\n\na\n\n<!-- durbar-note -->\nb\n\n<!-- durbar-note id=n-aaaaaaaaaaaa -->\n## three\n\n<!-- durbar-note -->\n## four\n');
-    assert.deepStrictEqual(r.file.count(r.folder), { ok: true, count: 4, exists: true });
-    assert.deepStrictEqual(r.file.count(r.folder, new Set(['n-aaaaaaaaaaaa'])), { ok: true, count: 3, exists: true });
+    assert.deepStrictEqual(r.file.count(r.folder), { ok: true, count: 4, exists: true, strayText: 0 });
+    assert.deepStrictEqual(r.file.count(r.folder, new Set(['n-aaaaaaaaaaaa'])), { ok: true, count: 3, exists: true, strayText: 0 });
     nodeFs.appendFileSync(md(r.folder), '<<<<<<< HEAD\n');
     assert.deepStrictEqual(r.file.count(r.folder), { ok: false, error: COUNT_UNREADABLE });
     const empty = fresh();
-    assert.deepStrictEqual(new NotesFile().count(empty), { ok: true, count: 0, exists: false });
+    assert.deepStrictEqual(new NotesFile().count(empty), { ok: true, count: 0, exists: false, strayText: 0 });
     assert.ok(!nodeFs.existsSync(path.join(empty, '.durbar')), 'count never creates .durbar');
   });
 
@@ -754,7 +754,7 @@ async function main(): Promise<void> {
     assert.strictEqual(nodeFs.readFileSync(md(o.folder), 'utf8'), t2);
   });
 
-  await test('review Q1: the file gets the notes masked with the CURRENT folder values; the store keeps its text and a later file read is no edit', async () => {
+  await test('review Q1: the file gets the notes masked with the CURRENT folder values; since PR 931 the store is masked too, and a later file read is no edit', async () => {
     const r = rig();
     const n = must(await r.store.add(r.key, 'proj', { text: `deploy with ${KNOWN} today` })).note!; // the value was not known when saved
     nodeFs.mkdirSync(path.join(r.folder, '.durbar'));
@@ -764,7 +764,8 @@ async function main(): Promise<void> {
     nodeFs.writeFileSync(md(r.folder), disk + '\n<!-- durbar-note -->\nunrelated new note\n');
     await cycle(r, [KNOWN]);
     const after = (await notesOf(r.store, r.key)).find((x) => x.id === n.id)!;
-    assert.deepStrictEqual([after.rev, after.fileEdited], [1, false], 'its masked copy in the file is not an edit');
+    assert.deepStrictEqual([after.rev, after.fileEdited], [2, false], 'masked in the store once (review of PR 931), and its copy in the file is not an edit');
+    assert.ok(!after.text.includes(KNOWN) && after.hidden, 'the value does not stay in the local store');
     assert.ok(!nodeFs.readFileSync(md(r.folder), 'utf8').includes(KNOWN));
     must(await r.store.update(r.key, 'proj', n.id, after.rev, { text: `now ${KNOWN} again` }));
     await cycle(r, [KNOWN]);
