@@ -48,7 +48,8 @@ module.exports = async (ctx) => {
   /* the line is really seen: inside the chat's scroll area, not only in the page */
   const lineSeen = async (tag) => {
     const seen = await until(`(()=>{const c=document.getElementById('chat'),l=document.querySelector('.mcp-line');if(!c||!l)return false;const a=c.getBoundingClientRect(),b=l.getBoundingClientRect();return b.top>=a.top-1&&b.bottom<=a.bottom+1;})()`);
-    assert.ok(seen, `${tag}: the line is in view ${JSON.stringify(await js(`(()=>{const c=document.getElementById('chat'),l=document.querySelector('.mcp-line'),a=c.getBoundingClientRect(),b=l.getBoundingClientRect();return {top:c.scrollTop,h:c.scrollHeight,ch:c.clientHeight,pin:c.dataset.pin,chatB:a.bottom,lineT:b.top,lineB:b.bottom,last:(c.lastElementChild&&c.lastElementChild.className),lastInner:(l.parentNode.lastElementChild===l)};})()`))}`);
+    const where = await js(`(()=>{const c=document.getElementById('chat'),l=document.querySelector('.mcp-line'),a=c.getBoundingClientRect(),b=l.getBoundingClientRect();return {top:c.scrollTop,h:c.scrollHeight,ch:c.clientHeight,pin:c.dataset.pin,chatB:a.bottom,lineT:b.top,lineB:b.bottom,last:(c.lastElementChild&&c.lastElementChild.className),lastInner:(l.parentNode.lastElementChild===l)};})()`);
+    assert.ok(seen, tag + ': the line is in view ' + JSON.stringify(where));
   };
   /* the colour is really drawn, not only the class */
   const chipBg = () => js(`getComputedStyle(document.getElementById('mcpBtn')).backgroundColor`);
@@ -268,7 +269,7 @@ module.exports = async (ctx) => {
     assert.ok(await js(`document.getElementById('mcpWarnH').compareDocumentPosition(document.getElementById('ambList'))&Node.DOCUMENT_POSITION_FOLLOWING`), 'the section sits above the list');
     assert.ok(await js(`document.getElementById('mcpWarnOff').getBoundingClientRect().width<30`), `${w}: Off is a plain checkbox`);
     await shot(`100-settings-${w}x${h}.png`);
-    const setLv = async (a, b, off) => { await js(`(()=>{document.getElementById('mcpWarnPct').value=${jsLiteral(a)};document.getElementById('mcpStrongPct').value=${jsLiteral(b)};document.getElementById('mcpWarnOff').checked=${off};document.getElementById('mcpWarnMsg').textContent='';document.getElementById('mcpWarnSave').click();})()`); };
+    const setLv = async (a, b, off) => { await js(`(()=>{document.getElementById('mcpWarnPct').value=${jsLiteral(a)};document.getElementById('mcpStrongPct').value=${jsLiteral(b)};document.getElementById('mcpWarnOff').checked=${jsLiteral(off)};document.getElementById('mcpWarnMsg').textContent='';document.getElementById('mcpWarnSave').click();})()`); };
     for (const [a, b] of [['4', '30'], ['15', '91'], ['30', '30'], ['15.5', '30'], ['', '30']]) {
       await setLv(a, b, false);
       assert.ok(await until(`/whole percents from 5 to 90/.test(document.getElementById('mcpWarnMsg').textContent)`), `${w}: refused: ${a}, ${b}`);
