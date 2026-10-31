@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: AI character maker (owner request, Vikram 2026-10-30): make realistic crew characters with Codex image generation (3 poses + blink), My characters, folder pins, light portrait motion
-note: spec, plan, tasks drafted; Q1-Q5 answered 2026-10-31; Q1b (built-in crew motion) answered yes by Paco 2026-10-31; probes P1-P8 not run; pure core built (phase 2: prompt, style, image and WebP checks); adapter, window and motion not built
+note: Q1-Q5 answered; probes P1-P8 not run; phases 2 and 3 (not T030, T031) built, no adapter makes pictures; window and motion not built
 status: draft
 -->
 
@@ -11,7 +11,7 @@ status: draft
 
 **Created**: 2026-10-31
 
-**Status**: Draft (2026-10-31). Spec, plan and tasks only; nothing is built. Q1-Q5 are answered by the owner (*Clarifications*); Paco answered Q1b (yes, built-in crews move too, 2026-10-31; *Changes*). Probes P1-P8 (plan.md) are OK'd by the owner on his ChatGPT plan and not yet run; they come before the adapter phase.
+**Status**: Draft (2026-10-31). Phases 2 and 3 (without T030, T031) are built, see *Changes*; nothing a user can reach yet. Q1-Q5 are answered by the owner (*Clarifications*); Paco answered Q1b (yes, built-in crews move too, 2026-10-31; *Changes*). Probes P1-P8 (plan.md) are OK'd by the owner on his ChatGPT plan and not yet run; they come before the adapter phase.
 
 **Input**: Owner requests (Vikram, Telegram DMs, 2026-10-30 and 2026-10-31):
 - "for characters, add ai character maker";
@@ -397,3 +397,10 @@ These close gaps the spec's wording left while building phase 3. They are the **
 5. **Who removes the temp folder** (FR-001 returns `{ file }` inside it, so it must outlive `generateImage`; plan step 2 and T031 name different owners). Choice: on a success main removes the returned file's parent, only after checking that it sits directly in the OS temp folder, is a real folder and is named `durbar-img-*`; a result that fails the check is refused and nothing is removed. On a throw, the adapter (T031) removes its own folder.
 6. **`mine` before phase 4** (T037, *Why*: nothing can show the characters until T042): `mine` is a valid Characters value for main and the two lists, but Settings' `#chList` does not offer it until T044. `test:characters` pins that.
 7. **`pickFolder`** moves to the small `src/main/pickfolder.ts` (plan, *Code paths reused*), and `ipc/themes.ts` keeps a one-line wrapper, so spec 040's retirement of the theme maker (PR #949), which keeps that function, stays a small merge.
+
+### 2026-10-31: phase 3, main and IPC (T032..T039; T030, T031 not done)
+
+- **Built** (`[IMPLEMENTED]`, `test:` `npm run test:charencoder`, `test:charstore`, `test:charipc`, `test:characters`, `test:simguard`, `test:ipcchannels`; `sim:` `check-charencoder`): the fake app-server's image modes (FR-070), the sandboxed encoder window (FR-022..FR-026, `src/main/charencoder.ts`, `src/renderer/charencoder.html`/`.js`, `src/preload/charencoder-preload.ts`), the shared rules and the check of its reply (`src/shared/charrules.ts`), the store (FR-030, `src/main/charstore.ts`), the IPC with pins and Motion (FR-020, FR-031..FR-033, `src/main/ipc/characters.ts`), preload and `DurbarApi`, the `mine` value (FR-040, not offered by Settings yet) and the simulator's fake generator (FR-070).
+- **T030's declarations only**: `imageGen?` in `capabilities.ts`, `generateImage?`, `GenerateImageOptions` and `GenerateImageResult` in `types.ts`, the `SIM_OPTIONAL_MEMBERS` line and `NOT_IN_FAKE` entry. **No adapter sets `imageGen` or has `generateImage`**, so `character:generate` always answers "This needs OpenAI Codex..." outside the simulator. T030 (its C2 line), T031 and probes P1-P8 are open.
+- **Decisions of the build** (inside the spec's wording; see also the choices above): a sheet that is not square is refused as "did not come out separately", not stretched; `character:generate` starts by dropping a held try, once its input passed; pins and Motion reach the window through `settings:get` and a new `settings:setCharacterMotion`, since FR-031's `character:list` has a fixed shape; a pin is set only on a folder that is open now and can be cleared whatever is open; main has its own limit 10 s past the adapter's; the frames of a save are checked again in the store; `pickFolder` moved to `src/main/pickfolder.ts`.
+- `[KNOWN GAP]` Not verified: everything with real Codex or a real image model (P1-P8, SC-006): the fake sheets are synthetic, so how often real sheets pass FR-024 and FR-026 is unknown. The encoder ran on this Mac only. A partial echo of the description in an error is not removed, only the whole text (FR-032). The login gate of FR-034 is the dialog's (T041a): main has none yet, which is safe only while no adapter has `imageGen`. FR-035's dialog and README text is T041b, T060.

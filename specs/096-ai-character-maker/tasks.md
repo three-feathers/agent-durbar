@@ -42,7 +42,7 @@
 - [x] T036 Preload and `DurbarApi` (`src/shared/api.ts`) types; nothing added to `SIM_OPEN_CHANNELS`. Test: `test:simguard`, `typecheck` [FR-031]
 - [x] T037 `src/shared/characters.ts` + `theme.js`: append `mine` (kit `crew`); `settings:setCharacters` accepts it; Settings does not offer it until T044. Test: `test:characters` (lists equal, round trip, unknown dropped, every theme, not in Settings' list) [FR-040]
 - [x] T038 Simulator fake `generateCharacter` in `src/renderer/sim.ts`: canvas frames from a description hash, 1.5 s (fast flag 0.2 s), cancel; fake store in the page. Test: `check-charencoder` (the bridge, frames through `webpcheck`, cancel), `test:charipc` (the name rule equals main's), used by Phase 4 drivers; `test:simguard` [FR-070]
-- [ ] T039 `package.json`: `test:charstore`, `test:charipc` (and `test:charencoder`) in `npm test`. Test: `npm test`
+- [x] T039 `package.json`: `test:charstore`, `test:charipc` (and `test:charencoder`) in `npm test`. Test: `npm test`
 
 ## Phase 4: The window (PR 4)
 
