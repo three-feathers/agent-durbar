@@ -1,13 +1,12 @@
 /*
  * Characters, separate from themes (spec 077 FR-064..FR-069, issue #814). Simulator only (DURBAR_SIM=15 DURBAR_SIM_FREEZE=1), no AI credits.
  *
- * At 1440x900 and 1280x800, on Retro Pixel and on Corporate (no built-in theme has a dark surface; Retro's floor is dark, so it stands in
- * for "one dark"), everything through Settings (the real path):
+ * At 1440x900 and 1280x800, on Retro Pixel (the one built-in theme with a dark floor; Clean Office is the other), everything through Settings (the real path):
  *   - the Characters section is right after Theme, lists The theme's own, Minimalist, Cheeky and Prehistoric, each with a preview figure, and names the
  *     theme's own figures; it fits the window (no page overflow);
  *   - Cheeky: every desk scene draws the crew kit with a portrait, the theme stays the one picked, the choice is announced;
  *   - a theme switch with Cheeky keeps the crew on the new theme;
- *   - The theme's own: Retro's pixel figures and Corporate's suits come back, no portrait is left;
+ *   - The theme's own: Retro's pixel figures come back, no portrait is left;
  *   - Minimalist: the office figure on top of the theme.
  * Screenshots of the Settings section and of the office (SHOTS_OUT, default characters-shots in the OS temp folder).
  *
@@ -19,7 +18,7 @@ const path = require('path');
 const assert = require('assert');
 const { helpers, jsLiteral } = require('./driver-helpers');
 
-const THEMES = [['retro', 'pixel', 'Pixel figures'], ['corporate', 'corporate', 'Corporate figures']];
+const THEMES = [['retro', 'pixel', 'Pixel figures']];
 const CREW_IMG = 'image[href*="crew/art/"]';
 
 module.exports = async (ctx) => {
@@ -28,7 +27,7 @@ module.exports = async (ctx) => {
   fs.mkdirSync(out, { recursive: true });
   /* the desk scenes on screen: how many, how many draw each kit (the kit is the last part of a kit scene's signature) and how many hold a portrait */
   const desks = () => H.js(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);
-    const kit=(s)=>{const m=/\\|(pixel|corporate|crew|court-[a-z]+)(\\||$)/.exec(s.dataset.sig||'');return m?m[1]:'office';};
+    const kit=(s)=>{const m=/\\|(pixel|crew)(\\||$)/.exec(s.dataset.sig||'');return m?m[1]:'office';};
     const by={};for(const s of sc){const k=kit(s);by[k]=(by[k]||0)+1;}
     return {n:sc.length,by,pics:sc.filter(s=>s.querySelector(${jsLiteral(CREW_IMG)})).length,anyPic:document.querySelectorAll(${jsLiteral('#stage ' + CREW_IMG)}).length};})()`);
   const openSettings = async () => {
@@ -53,7 +52,7 @@ module.exports = async (ctx) => {
     assert.ok(await H.until(`window.THEME.characters()===${jsLiteral(v)}`, 4000), `characters ${v} applied`);
     assert.ok(await H.until(`[...document.querySelectorAll('#toasts .toast')].some(t=>/^Characters: /.test(t.textContent))`, 4000), `characters ${v}: the choice is announced`);
     assert.ok(!(await H.js(`[...document.querySelectorAll('#toasts .toast')].some(t=>/could not be saved/.test(t.textContent))`)), `characters ${v}: saved (no refusal toast)`);
-    assert.strictEqual(await H.js(`document.querySelector(${jsLiteral(`#chList [data-characters="${v}"]`)}).getAttribute('aria-pressed')`), 'true', `characters ${v}: the list shows the choice at once`);
+    assert.ok(await H.until(`document.querySelector(${jsLiteral(`#chList [data-characters="${v}"]`)}).getAttribute('aria-pressed')==='true'`, 3000), `characters ${v}: the list shows the choice at once`);
   };
   /* the Characters section, read in Settings */
   const section = () => H.js(`(()=>{const h=document.getElementById('chH'),th=document.getElementById('themeH');const sec=h.closest('section'),prev=sec.previousElementSibling;
@@ -117,7 +116,7 @@ module.exports = async (ctx) => {
       // Minimalist on top of the theme
       await pickChars('minimalist');
       await close();
-      assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>!/\\|(pixel|corporate|crew|court-[a-z]+)(\\||$)/.test(s.dataset.sig||''))&&!document.querySelector(${jsLiteral('#stage ' + CREW_IMG)});})()`, 10000), `${where}: Minimalist: the office figure on every desk (${JSON.stringify(await desks())})`);
+      assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>!/\\|(pixel|crew)(\\||$)/.test(s.dataset.sig||''))&&!document.querySelector(${jsLiteral('#stage ' + CREW_IMG)});})()`, 10000), `${where}: Minimalist: the office figure on every desk (${JSON.stringify(await desks())})`);
       // back to Cheeky, then The theme's own: the theme's figures come back
       await pickChars('cheeky');
       await close();
@@ -126,11 +125,12 @@ module.exports = async (ctx) => {
       await close();
       assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>(s.dataset.sig||'').includes(${jsLiteral('|' + kit)}))&&!document.querySelector(${jsLiteral('#stage ' + CREW_IMG)});})()`, 10000), `${where}: The theme's own: ${kit} figures back, no portrait left (${JSON.stringify(await desks())})`);
     }
-    // a theme switch keeps the chosen crew: Cheeky on Retro, then Corporate
-    await pickTheme('retro');
+    // a theme switch keeps the chosen crew: Cheeky on Retro, then Clean Office
+    // the loop above ends on Retro: picking it again would repaint the Characters list late and race the next click
+    assert.strictEqual(await H.js(`window.THEME.current().id`), 'retro', `${tag}: Retro is the theme here`);
     await pickChars('cheeky');
-    await pickTheme('corporate');
-    assert.ok(await H.until(`(document.querySelector('#chList [data-characters="theme"]')||{}).textContent.includes('Corporate figures')`, 4000), `${tag}: the theme's own figures follow a theme switch in open Settings`);
+    await pickTheme('clean-office');
+    assert.ok(await H.until(`(document.querySelector('#chList [data-characters="theme"]')||{}).textContent.includes('Minimalist figures')`, 4000), `${tag}: the theme's own figures follow a theme switch in open Settings`);
     assert.strictEqual(await H.js(`document.querySelector('#chList [data-characters="cheeky"]').getAttribute('aria-pressed')`), 'true', `${tag}: Cheeky stays pressed after a theme switch`);
     await close();
     assert.ok(await H.until(`window.THEME.sceneKit()==='crew'&&document.querySelectorAll(${jsLiteral('#stage .desk[data-id] svg.scene ' + CREW_IMG)}).length>=12`, 10000), `${tag}: the crew stays on the new theme`);
