@@ -47,7 +47,7 @@ module.exports = async (ctx) => {
   const resetSpy = (o = {}) => js(`Object.assign(__mc,{reqs:[],cancels:[],queued:0,delay:${Number(o.delay) || 0},quiet:${!!o.quiet}})`);
   /* the agent's state as this scenario starts: through the simulator's own switch, whose event sets the window's state; `keepSim`: an agent mid-reply, whose switch would queue */
   const putOn = async (id, model, o = {}) => {
-    await js(`(async()=>{const a=${agentExpr(id)};__mc.quiet=false;${o.keepSim ? `a.info.model=${jsLiteral(model)};a.info.effort=undefined;a.info.tier=undefined;` : `await window.__durbarSimUi.bridge().setModel(a.id,{model:${jsLiteral(model)},effort:null,contextTier:'default'});`}})()`);
+    await js(`(async(id,model,keep)=>{const a=window.__durbarSimUi.agents().find(x=>x.id===id);__mc.quiet=false;if(keep){a.info.model=model;a.info.effort=undefined;a.info.tier=undefined;}else await window.__durbarSimUi.bridge().setModel(id,{model,effort:null,contextTier:'default'});})(${jsLiteral(id)},${jsLiteral(model)},${jsLiteral(!!o.keepSim)})`);
     await until(`__mc.busy===0`); await settle(); await H.clearToasts(); await resetSpy(o);
   };
   const open = async (id) => {
