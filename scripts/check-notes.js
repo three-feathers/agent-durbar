@@ -394,7 +394,7 @@ module.exports = async (ctx) => {
     /* Rename… */
         await js(`__ntd.row("onerror").querySelector('[data-nt="more"]').click()`);
     check(await until(`!!document.querySelector('#modeMenu [data-nmact="rename"]')`, 2000), `${tag}: a row's ⋯ opens the menu`);
-    check(await js(`[...document.querySelectorAll('#modeMenu [data-nmact] b')].map(b=>b.textContent).join()==='Rename…,Copy,Delete…'`), `${tag}: the row menu holds Rename…, Copy, Delete…`);
+    check(await js(`[...document.querySelectorAll('#modeMenu [data-nmact] b')].map(b=>b.textContent).join()==='Rename…,Copy,Mark done,Delete…'`), `${tag}: the row menu holds Rename…, Copy, Mark done (T034a), Delete…`);
     await js(`document.querySelector('#modeMenu [data-nmact="rename"]').click()`);
     check(await until(`!!document.querySelector('#modeDlg input')`, 3000), `${tag}: Rename… asks for the title`);
     await js(`(()=>{const t=document.querySelector('#modeDlg input');t.value='Renamed idea';t.dispatchEvent(new Event('input',{bubbles:true}));})()`);
@@ -430,7 +430,7 @@ module.exports = async (ctx) => {
 
     /* roving tabindex and arrows */
     const tabs = await js(`[...document.querySelectorAll('#notesDrawer .nt-row')].map(r=>r.tabIndex).join()`);
-    check(/^0(,-1)+$/.test(tabs), `${tag}: roving tabindex ${tabs}`);
+    check(tabs.split(',').filter((x) => x === '0').length === 1 && tabs.split(',').every((x) => x === '0' || x === '-1') && tabs.split(',').length > 1, `${tag}: roving tabindex, one row in the Tab order (the one that kept the focus after the last repaint, T034a review): ${tabs}`);
     await js(`document.querySelector('#notesDrawer .nt-row').focus()`);
     await key('Down');
     check(await js(`(()=>{const r=[...document.querySelectorAll('#notesDrawer .nt-row')];return document.activeElement===r[1]&&r[1].tabIndex===0&&r[0].tabIndex===-1})()`), `${tag}: ArrowDown moves to the second row`);
