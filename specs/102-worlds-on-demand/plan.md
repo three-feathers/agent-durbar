@@ -4,7 +4,7 @@
 
 ## Summary
 
-A world pack becomes a validated, code-free data file that can arrive from outside the app. One validator (`src/shared/worldpack.ts`, `worldzip.ts`) sits behind four entrances: download (project source with hashes pinned in the app; an organisation's or person's source, signed or first-seen), upload, generation and import. Main owns network, disk and decisions; a sandboxed encoder window decodes hostile pictures; the renderer gets bytes by key and part name, through the 097 world seam. Eleven countries are packs under `worlds/<id>/`, not in the app; they wait for the 097 FR-179 gate.
+A world pack becomes a validated, code-free data file that can arrive from outside the app. One validator (`src/shared/worldpack.ts`, `worldzip.ts`) sits behind four entrances: download (project source with hashes pinned in the app; an organisation's or person's source, signed or first-seen), upload, generation and import. Main owns network, disk and decisions; a sandboxed encoder window decodes hostile pictures; the renderer gets bytes by key and part name, through the 097 world seam. Worlds and character sets are two flat lists of separate packs; project art is under `worlds/<id>/` and sets under `sets/<id>/`, outside the app except Flat, Photo and Office people (OP-10). They wait for the 097 FR-179 gate.
 
 ## Technical Context
 
@@ -37,7 +37,7 @@ Facts below were read in the repo or checked on 2026-10-31; the web sources are 
 | R9 | Anchors in hand-made packs | Computed from alpha, shown in the report | People cannot be asked for fractions | An anchor editor: later, `[KNOWN GAP]` |
 | R12 | A person's source, with no key? | `first-seen`: remember, show every change, full validator | A hash cannot be pinned for an address the app has never seen; requiring a key would stop most sharing | Refuse without a key (too strict for the owner's decision); trust the host (no) |
 | R11 | Can "substantially different" be tested? | Partly: card, hashes, colours, and a person's look at thumbnails | A machine can prove a copy and a same-material claim, not a look | Only a person: slow, no record; only thresholds: passes two worlds that merely look alike |
-| R10 | Shared people from a downloaded pack | `people: "office"`, photo world's frames | Decided by #932; a pack near 2.5 MB | A people set per world |
+| R10 | People in a world | Separate set packs, one default per world | Owner's decision; a world pack stays near 2.5 MB, and sets are shareable alone | People per world, or families of world and crew: rejected by the owner |
 
 ## Architecture
 
@@ -98,12 +98,13 @@ The spec's *Context* table is the list. Changes to reused code:
 - **P1 Format and validator** (no UI, no network): `worldzip`, `worldpack`, `worldmoments`, `worldprompts`, fixtures. Depends on 098's block test or builds that piece.
 - **P2 Store, seam, windows**: `worlds/store.ts`, `world:list`, `world:part`, World row, fixture world in the simulator, `placeWindows`. Depends on #921.
 - **P3 Download**: catalogue, sources, notice, policy slice, dialog. All places `coming`.
-- **P4 Country worlds**: one PR per world or small batch (art, `ASSETS.md`, registry row), `coming` to `available` only through the gate (FR-035). Needs #936 built.
-- **P5 Hand path**: prompt pack, upload, report, try, save, export.
-- **P6 In-app**: needs 096's pipeline and probes.
+- **P4 Picture worlds**: one PR per world or small batch (art, `ASSETS.md`, registry row), `coming` to `available` only through the gate (FR-035). Needs #936 built.
+- **P5 Hand path** (when the app cannot generate images): prompt pack, upload, report, try, save, export.
+- **P6 In-app** (first-class): needs 096's pipeline and probes; retires the theme maker in the same PR.
+- **P8 Character sets**: format, `peopleFor`, rows, migration, store; art per set. Replaces 097's seams through T002.
 - **P7 Other sources and sharing**: signature, sequence, policy `worlds.sources`, a person's **Add a source…**, remembered hashes, source labels, look-alikes, sharing. Split if large; the adversarial set lands with the first source.
 
-P1 to P3 may merge before the gate with nothing visible as available; P4 to P6 reach a release only after it. P5 and P7 can swap.
+P1 to P3 may merge before the gate with nothing visible as available; P4 to P6 reach a release only after it. P5 and P6 land as ready (OP-7). Removals are their own PRs (spec 035, 040, 017); spec 040's maker removal goes with P6 so AI creation is never absent.
 
 ## Risks
 
@@ -111,9 +112,10 @@ P1 to P3 may merge before the gate with nothing visible as available; P4 to P6 r
 - **Spec 096 not built**: P5 needs the encoder, `imagecheck.ts` and `webpcheck.ts`. P5 builds them to 096's words and 096 then reuses them.
 - **Daily releases carry the catalogue**: a mis-typed hash breaks one world for one day; `test:world-catalogue` and T043's check catch it first.
 - **Hand-made quality**: anchors from alpha may misplace a visitor; the report and Try it show it; 097 FR-117's check runs on the try (`[KNOWN GAP]` for odd art).
-- **Weekly matrix growth** with 14 worlds; shard per world.
+- **Weekly matrix growth** with 19 picture worlds; shard per world.
+- **Art backlog**: crews to full poses, Retro pixel people and five new worlds are much more art than the places; each gate in FR-035 keeps them from shipping half done, and `coming` keeps the list honest.
 - **Repo growth** from art (OP-3); about 2.5 MB per world version, and redos count.
 
 ## Done when
 
-Tasks ticked, `/speckit.converge` run, SC-001..SC-015 read, README *Safety model* lists the new connection, and `real:` rows recorded or left as `[KNOWN GAP]`.
+Tasks ticked, `/speckit.converge` run, SC-001..SC-018 read, README *Safety model* lists the new connection, and `real:` rows recorded or left as `[KNOWN GAP]`.

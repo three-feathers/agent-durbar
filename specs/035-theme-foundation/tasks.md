@@ -27,3 +27,14 @@
 ## Changes 2026-10-28 (spec 077, issue #814)
 
 - [x] T018 A theme's `scene` is its own characters; Settings > Characters replaces it on any theme (built and tested under spec 077 T077..T082) [FR-016]
+
+## Changes 2026-10-31 (owner decision, spec 021 FR-067): built-in Corporate and court themes removed
+
+All in one PR (spec 021 FR-068). Do not start before T053 of spec 021 if the spec statuses are to be set in it.
+
+- [ ] T083 Code: FR-017's list. Test: `test:theme`, `test:scenekits`, `test:themegen`, `test:userthemes`, `test:characters`, `test:ui-suite`; `git grep` for the removed ids finds only the migration and reserved list [FR-017]
+- [ ] T084 Migration and fallback. Test: `test:userthemes`, `test:theme`: each removed id clears once and writes; repeat changes nothing; a saved theme with `ui: court-indian` and `scene: corporate` draws clean and office with a note; a mutant skipping the write fails; `sim:` start with each stored id [FR-018]
+- [ ] T085 Tests and drivers: `scripts/check-theme-art.js`, `check-theme-geometry.js`, `check-ui-text.js`, `check-composer-toolbar.js`, `check-sched-top.js`, `check-status-tooltip.js`, `check-characters.js`, `check-parallel.js`, `shots-017-signs.js`, `shots-052-addleft.js`, `shots-docs.js`, `scripts/fixtures/themes/check-user.json`, `.github/workflows/ci.yml`'s theme matrix. Test: the suite; no check loses coverage of Clean or Retro [FR-017]
+- [ ] T086 Docs: `docs/themes.md`, `docs/features.md`, `docs/feature-history.md`'s pictures, README, `docs/site/gallery.json`, `docs/site/landing.json`, `scripts/test-site.js`'s "six themes"; screenshots `035-corporate-*`, `035-durbar-*`, `site-theme-corporate-*`, `site-theme-durbar-*` deleted; `npm run shots:docs` and a look. Test: `test-site`, `test:docsscripts` [FR-017]
+- [ ] T087 Changelog fragment saying what went and where saved choices went. Test: `npm run changelog:check` [FR-017]
+- [ ] T088 Spec statuses, notes and pointers in 037, 039, 036; "all 6 themes" wording in 017, 070 updated. Test: `npm run specs:check` [FR-020]

@@ -1,8 +1,8 @@
-# Feature Specification: Worlds on demand (country worlds and user-made worlds)
+# Feature Specification: Worlds and character sets on demand
 
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
-title: Real office worlds as untrusted data packs (owner request, Vikram 2026-10-31; #932, #933): eleven places downloaded on demand with a plain internet notice and an extensible source, and worlds people make themselves (in the app or by a prompt pack and upload); one pack format and one validator for both
+title: Worlds and character sets as two flat lists of untrusted data packs (owner decisions, Vikram 2026-10-31; #932, #933): any set in any world, downloaded on demand with a plain internet notice from an extensible source, made in the app or by a prompt pack, and shared; one validator for all
 note: spec, plan, tasks only; nothing built; art stays outside the repo until each world's own task; first ship waits for spec 097 FR-179
 status: draft
 -->
@@ -11,26 +11,27 @@ status: draft
 
 **Created**: 2026-10-31
 
-**Status**: Draft (2026-10-31). Spec, plan and tasks only; nothing is built. OP-2, OP-3 and OP-4 are decided by the owner; the other open points have a recommendation, and the spec is written to that recommendation until the owner says otherwise.
+**Status**: Draft (2026-10-31). Spec, plan and tasks only; nothing is built. OP-2, OP-3, OP-4, OP-7 and OP-9 are decided by the owner (spec 021 FR-066, FR-067); the other open points have a recommendation, and the spec is written to that recommendation until the owner says otherwise.
 
 **Input**: Owner requests and decisions (Vikram, 2026-10-31), recorded on issues #932 and #933 and restated in the coordinator's brief:
-- Places: Spain, Mexico, Switzerland, USA, Australia, India, Italy, France, Germany, Britain, Greece (Santorini-style blue and white). No flags, no tourist cliches, no arches anywhere. Each place has a local postbox, described rather than copied from real marks.
+- **Two flat lists, no families** (owner's final decision, spec 021 FR-067; replaces "crews pick their world"): worlds and character sets are separate packs, any set works in any world, and each world names one default set (FR-200..FR-212). The list of worlds is in FR-011.
+- Places: Spain, Mexico, Switzerland, USA, Australia, India, Italy, France, Germany, Britain, Greece (Santorini-style blue and white). No flags, no tourist cliches, and no arches, except in the kingdom worlds, which follow their history (FR-010). Each place has a local postbox, described rather than copied from real marks.
 - **Every world looks substantially different from every other** (owner decision, later the same day; it replaces the earlier decision on #932 that places may share a Mediterranean feel). Same layout and fixture boxes; packs do not reuse another world's fixture cutouts. Fixtures stand on the floor line rather than floating on a wall. For user-made worlds this is a warning, not a block.
 - Windows only on wall that already exists: full band height, in fixed wall area, overlapping no fixture; fixtures keep their size and position; lobby visitors may stand in front of windows so they stay a good size.
 - Worlds download on demand. The UI says plainly that it is connecting to the internet and from where. The source is extensible: default the project's GitHub repo; later a domain or an organisation's own location.
 - People may add their own source in Settings, not only organisations, and may create and share worlds with others (owner decision, later the same day; it replaces "organisation only" in the first draft). A user-added source cannot be pinned by hash in the app, so FR-093..FR-099 spell out what it gets instead.
-- User-made worlds: with the connected agent app if it can generate images; if not, instructions and a prompt pack, and people upload a package. An upload is untrusted input.
+- User-made worlds: in-app generation is a first-class path (the flat AI theme maker is retired, spec 040 FR-031); where the connected app cannot generate images, instructions and a prompt pack, and people upload a package. An upload is untrusted input.
 - Performance is a hard rule: a new world's first ship waits for spec 097 FR-179 (the Real office op rows, FR-180, FR-182, flat tasks T156..T159).
 - Every world supplies the moments of spec 098's registry, live screens and animation, at 15 agents at 1440x900 and 1280x800; a pack missing some is flagged, not shipped as finished.
 - No AI credits in checks. Real image runs stay on the owner's ChatGPT plan and get recorded provenance like the existing `ASSETS` files.
 
 **Experience**: tool surfaces (the worlds dialog, the download notice, the maker dialog: tokens only, spec 098 FR-040) plus world moments filled by a pack from shared blocks (all 26 of the registry, FR-030). No new world moment.
 
-## Why one spec for both issues, and a new one
+## Why one spec, and a new one
 
 Both issues need the same core: **a world pack that arrives from outside the app, is treated as hostile, and is validated, stored and drawn without code**. #932 brings it over the internet, #933 from a person's disk or an agent app. Two specs would either duplicate the validator or make one depend on the other's draft. So one spec, phased so the hand-made path and the download path can land apart (P3, P5, P6).
 
-It is not a delta of 097 or 098: it adds Durbar's first user-started downloads of content, a source model, a signature check and a zip reader; 097 is the renderer and 098 the repo-wide contract. Number **102**. Checked 2026-10-31 against `main` (up to 098), remote branches (`099-autopilot`, `100-mcp-context`, `101-logo-family`, the 097 branches) and open PRs (#923 = 099, #924 = 100, #930 = 101): nothing uses 102. Numbers here are this spec's own: FR-001..FR-199 (sparse by group), SC-001..SC-015, T001..T097 (sparse by phase).
+It is not a delta of 097 or 098: it adds Durbar's first user-started downloads of content, a source model, a signature check and a zip reader; 097 is the renderer and 098 the repo-wide contract. Number **102**. Checked 2026-10-31 against `main` (up to 098), remote branches (`099-autopilot`, `100-mcp-context`, `101-logo-family`, the 097 branches) and open PRs (#923 = 099, #924 = 100, #930 = 101): nothing uses 102. Numbers here are this spec's own: FR-001..FR-212 (sparse by group), SC-001..SC-018, T001..T120 (sparse by phase).
 
 **One rule in, one rule out** (spec 021 FR-063): no `AGENTS.md` line. The checkable rules get scripts (`test:worldpack`, `test:worldzip`, `test:world-catalogue`, FR-180).
 
@@ -66,7 +67,7 @@ No download, zip or signature code for content exists today. Theme import explic
 - **D1 Packs are data and art only.** No script, HTML, CSS, SVG, font or URL in a pack, from any source, the project's included. Positions come from the 097 engine and motion from a fixed list named in the manifest. This is what makes a third-party pack safe to draw at all.
 - **D2 The project's catalogue ships inside the app.** Listing worlds needs no network; hashes of project packs are pinned in the app (FR-080), so the project needs no signing key and no secret, and GitHub serving wrong bytes cannot change a picture.
 - **D3 Three kinds of trust.** The project: hashes pinned in the app. A source with a key (an organisation's, or a person's who pastes one): a signed catalogue, the public key in the source record and never in the catalogue (FR-082). A source a person adds without a key: nothing proves who made it, so Durbar says so, remembers what it saw and shows every change (FR-093..FR-099). All three end in the same hostile-pack validator, except the one difference FR-054 names for pinned project bytes.
-- **D4 Shared people.** Country worlds draw the Office people that ship with the app, so no ethnicity is tied to a country (issue #932), and a pack holds no person frames. That also keeps a pack near 2-3 MB instead of 10 (FR-042).
+- **D4 Worlds and sets are separate** (owner's final decision; replaces "shared people"). A world pack holds no people and names one default set (`defaultSet`, FR-040). Any set with the full pose contract (FR-204) works in any world. People stay separate from the country a world shows, so no ethnicity is tied to a place unless a person chooses it (issue #932).
 - **D5 One format everywhere**: a zip whose file names are from a closed list (a hand-made folder goes through the same file-set rules). The path of a stored file is built by Durbar from the list, never from the archive (FR-050).
 - **D6 Nothing connects by itself.** No background catalogue fetch, update check or download. Every connection follows a click on a notice that names the host (FR-070, FR-072).
 - **D7 Art in the repo, not in the app.** Sources under `worlds/<id>/` are committed and reviewed, built reproducibly into a zip, and left out of the app bundle (FR-085, OP-3).
@@ -75,7 +76,7 @@ No download, zip or signature code for content exists today. Theme import explic
 
 ### User Story 1 - Get a place's world (Priority: P1)
 
-In Settings, under the World row of Real office, I open **Get more worlds…** and see the places: finished ones with their size, the rest as *Coming*. I choose Spain. Before anything is sent the app tells me it is connecting to the internet, to which host, how much it will download and what that server sees. I click Download, it arrives, and I can use it, offline from then on.
+In Settings, under the World row, I open **Get more worlds…** and see the places: finished ones with their size, the rest as *Coming*. I choose Spain. Before anything is sent the app tells me it is connecting to the internet, to which host, how much it will download and what that server sees. I click Download, it arrives, and I can use it, offline from then on.
 
 **Why this priority**: it is the owner's delivery decision, and the rest of #932 depends on it.
 
@@ -89,7 +90,7 @@ In Settings, under the World row of Real office, I open **Get more worlds…** a
 5. `test:` **Given** an installed world and a request layer that refuses and records everything, **When** main loads and serves every part, **Then** zero requests are made; `sim:` the same pack draws in full.
 6. `real:` **Given** the first real `worlds-*` release, **Then** one download on Linux, macOS and Windows arrives from GitHub and passes the hash.
 
-### User Story 2 - Places that look like real offices (Priority: P1)
+### User Story 2 - Worlds that never look alike (Priority: P1)
 
 Each place is a contemporary office with its own materials, light and views: no flag, landmark, religious building, caricature or arch. Two worlds are never mistaken for each other, even as thumbnails. Each has a window view, and a postbox that fits the place. The layout, fixture boxes, words, lights and screens are the same as every other world.
 
@@ -118,9 +119,9 @@ No app of mine can make images. The app gives me the exact prompts and a package
 4. `sim:` **Given** a user world, **When** the office is in flat mode, **Then** none of its files are requested.
 5. `sim:` **Given** a package whose fixtures or colours are very close to a world on this machine, **Then** the report warns and names that world, and Save still works.
 
-### User Story 4 - Make a world in the app (Priority: P3)
+### User Story 4 - Make a world in the app (Priority: P1)
 
-Where a connected app can generate images, I describe a world and watch it fill block by block. I see the time and cost honestly first, can cancel, redo one part, try it, save it or discard it.
+Where a connected app can generate images, this is the way to make something new: the flat AI theme maker is retired for it (spec 040 FR-031). I describe a world and watch it fill block by block. I see the time and cost honestly first, can cancel, redo one part, try it, save it or discard it.
 
 **Independent Test**: spec 096's fake generator; the real run is separate.
 
@@ -169,6 +170,21 @@ A friend or a community hosts worlds. I paste the address in Settings. Before an
 8. `test:` **Given** a catalogue with a query, path or absolute URL as a file name, **Then** it is refused.
 9. `test:` **Given** `features.userSources: false`, or a host not on `worlds.userSourceHosts`, **Then** the add is refused in main, whatever the window sends, and an installed world from it is not drawn.
 
+### User Story 8 - Any characters in any world (Priority: P1)
+
+I choose a world, and its people come with it. If I pick characters myself, they stay with me when I change world. My old setup looks the same after the update. Only what I chose is loaded.
+
+**Independent Test**: fixture sets at each level; simulator; no credits.
+
+**Acceptance Scenarios**:
+1. `test:` **Given** each row of FR-207's table, **Then** the migrated pair draws what the old setting drew, a second run changes nothing, and no request is made.
+2. `test:` **Given** every world, choice and level, **Then** `peopleFor` follows FR-202's order.
+3. `sim:` **Given** the default in Spain, **When** I switch to Cave, **Then** people become Prehistoric; **Given** an explicit Cheeky, **Then** Cheeky stays.
+4. `sim:` **Given** a heads-only set picked, **When** I choose a picture world, **Then** the default draws, the row says Flat only, and returning to Flat restores the pick.
+5. `test:` **Given** a set with one required frame missing, **Then** `checkSet` names that person and pose; with no full person it is `heads`; with no heads it is refused.
+6. `sim:` **Given** Flat with any full set, **Then** heads draw at every density.
+7. `test:` **Given** a chosen world and set, **Then** no other pack's file is read.
+
 ### Edge Cases
 
 - **Disk full or a crash during a download or save**: only the temp dot folder holds anything; it is removed at the next start (the `UserThemeStore` pattern).
@@ -183,7 +199,9 @@ A friend or a community hosts worlds. I paste the address in Settings. Before an
 - **Forced colours, Serious mode, reduced motion**: as 097; a pack cannot change them.
 - **Custom lobby places**: the pack's kiosk fixture carries the icon and name (097 D5).
 - **A very wide app window**: the wall repeats; more picture windows may appear, but only in fixed wall areas (FR-021).
-- **Characters set to a crew with a country world chosen**: the World setting wins, the country world draws the Office people (D4), and 097 FR-083's note says why. Crew art is never placed in a country world.
+- **An explicit set that is heads-only, in a world with pictures**: the world draws its default set, the choice is kept, and the Characters row says "<set> is Flat only: it has no Real office poses" (FR-202).
+- **A world's default set is not installed**: FR-202's order; a download never starts by itself.
+- **A chosen set from a source later disallowed by policy**: as FR-113, the default draws and the choice is kept.
 
 ## Requirements *(mandatory)*
 
@@ -192,48 +210,72 @@ A friend or a community hosts worlds. I paste the address in Settings. Before an
 #### Worlds offered
 
 - **FR-001** **Three origins.** A world is `built-in` (097 FR-100), `downloaded` (from a source) or `own` (uploaded, generated or imported). Built-ins never need a network. The World row (097 FR-114) lists installed worlds of every origin; **Get more worlds…** opens the tool-surface dialog.
-- **FR-002** **Available or coming.** A catalogue entry is `available` (has a file and passes the gate, FR-035) or `coming` (a name only, shown disabled as *Coming*). The picker never waits for all the art (issue #932). All eleven places start as `coming`.
-- **FR-003** **Flat is untouched.** With flat chosen, no world file is read and the office is pixel-identical (`check:office` unchanged; 097 FR-061).
+- **FR-002** **Available or coming.** A catalogue entry is `available` (has a file and passes the gate, FR-035) or `coming` (a name only, shown disabled as *Coming*). The picker never waits for all the art (issue #932). Every downloadable world in FR-011's list starts as `coming`.
+- **FR-003** **Flat loads nothing.** With the Flat world chosen, no world file is read and no world pack is fetched (097 FR-061); only the chosen set's heads load. `check:office` holds as today except for what the removal deltas change (spec 035 FR-017, spec 017 FR-029).
 - **FR-004** **No IPC or engine fork.** Downloaded and own worlds go through 097's one world seam; the renderer asks main for bytes by world key and part name, and never holds a path or URL.
 
 #### The places
 
-- **FR-010** **Art brief, shared rules.** Each place is a real contemporary office: local materials, light and a view; the same layout, words, lights and screens. In every picture and prompt: **no flag, national emblem, logo, text, religious building or symbol, landmark, stereotype, national caricature, or arch, vault or arcade of any kind** (openings have straight heads). People are not drawn in the room art.
-- **FR-011** **The eleven places.** A starting brief for the prompts, written so that every item differs in every pair (FR-014); the owner's look decides, and a card of the places may refine it. Light temperature is in the brief and the card, as a target for the picture, not a measured value.
+- **FR-010** **Art brief, shared rules.** Each place is a real contemporary office: local materials, light and a view; the same layout, words, lights and screens. In every picture and prompt: **no flag, national emblem, logo, text, religious building or symbol, landmark, stereotype, national caricature, or arch, vault or arcade of any kind** (openings have straight heads). **Kingdom worlds are the one exception to arches**: they follow their history, so arches are allowed where that kingdom had them (FR-210). The no-arches rule stays for every other world, Greece included. People are not drawn in the room art.
+- **FR-011** **The worlds.** One flat list; each row names its default set. *Ships* means in the app, *Download* means by FR-070 (OP-10). The art briefs are aligned with the art card of 2026-10-31 (a card the art agent keeps extending; the card and the owner's look may refine a row), and written so that every item differs in every pair (FR-014). Plant lists were trimmed against the card where two worlds shared a species. A light temperature is a target for the picture and a card field, not a measured value.
 
-  | Id | Walls | Floor | Desk | Fixture style | Light | Plants | Signature motif |
+  | World | Id | From | Default set | Delivery |
+  |---|---|---|---|---|
+  | Flat | `flat` | Today's clean look, for people who want flat; no pictures, not in FR-014 | Minimalist (a saved theme's own figures while one is in use, FR-203) | Ships |
+  | Calm office | `calm` | A real world from today's Clean Office idea | Office people | Download |
+  | Retro game | `retro` | A real world from today's Retro Pixel | Retro pixel people | Download |
+  | Photo office | `photo` | 097 | Office people | Ships |
+  | Cave | `cave` | 097 | Prehistoric | Download (OP-10) |
+  | Cheeky loft | `loft` | 097 | Cheeky | Download (OP-10) |
+  | 11 places | below | #932 | Office people | Download |
+  | Indian kingdom, European kingdom, Japanese kingdom | `kingdom-indian`, `kingdom-european`, `kingdom-japanese` | New real worlds, not the removed court themes (FR-210) | Office people | Download |
+  | User-made and shared | `u-…`, `s-…` | FR-130, FR-150, FR-161, FR-093 | Named by the pack, FR-202 | Own |
+
+  | World | Wall | Floor | Desk | Fixture style | Light | Plants | Signature |
   |---|---|---|---|---|---|---|---|
-  | `spain` | Warm ochre lime plaster | Calm sand-coloured honed stone (the sample's floor toned down, as recorded on #932) | Pale oak on black trestles | Rounded plaster fronts with tile facing | 3000 K, low warm sun | Orange tree in a clay pot | A band of geometric glazed tile along the wall |
-  | `mexico` | Rust-pink painted plaster | Dark volcanic stone | Dark solid timber slab | Heavy blocks of stone and timber | 3600 K, strong with hard shadow | Large-leaf tropical planting | One large flat plane of a second saturated colour |
-  | `switzerland` | Pale spruce panels | Light grey fair-faced concrete | White laminate with spruce edge | Precise white and spruce cabinetry | 5000 K, clear and cool | Dwarf pine in a concrete pot | Fine horizontal spruce battens |
-  | `usa` | Charcoal-blue painted steel and glass | Wide maple boards | Walnut top on grey steel | Black steel and glass lockers | 4000 K, neutral wide daylight | Fiddle-leaf fig | Exposed round ducts and riveted beams |
-  | `australia` | Pale grey-green corrugated metal | Red-brown hardwood boards | Recycled red hardwood | Hardwood with galvanised metal | 5600 K, very bright | Eucalypt and native grasses | A curved corrugated-metal panel |
-  | `india` | Sage-green lime plaster; **a modern office, never a court** (the owner rejected those themes) | Polished dark green-grey stone | Teak with a cane panel | Teak and cane | 3200 K, warm under tree shade | Banana plant | A cast-concrete geometric sun screen |
-  | `italy` | Deep terracotta-red polished plaster | Speckled cream terrazzo | Walnut with brass trim | Slim walnut and brass | 3400 K, warm and rich | Olive tree | Thin brass inlay lines |
-  | `france` | Pale grey-blue painted panels | Oak herringbone | Pale oak with a zinc top | Zinc and painted panel | 4400 K, soft | Clipped box in pots | Simple square wall-panel mouldings |
-  | `germany` | Board-marked mid-grey concrete | Anthracite rubber | Black linoleum on tubular steel | Tubular steel and glass cabinets | 4700 K, even | Snake plant in steel planters | A single yellow steel rail |
-  | `britain` | Red-brown brick | Dark worn oak boards | Oak with a dark-green metal base | Dark-green painted timber and brass | 3800 K, soft grey daylight with warm lamps | Ferns | A round cast-iron column |
-  | `greece` | White plaster with blue-painted woodwork and rounded plaster edges: **Santorini-style blue and white without a dome, church, arch or vault** | Whitewashed stone slabs | White-painted timber | Blue-painted timber with white edges | 6000 K, hard bright sea light | Bougainvillea | Blue-painted louvred shutters |
+  | Spain | Saffron-ochre hand-troweled plaster over a deep-green and cream tile dado | Muted cocoa-brown clay tile | Very dark espresso walnut, black wrought-iron legs | Dark walnut, black wrought iron, brass | 3000 K, warm golden late afternoon | Orange tree, rosemary in terracotta pots | The green and cream tile dado with a walnut rail |
+  | Greece | Bright white lime-wash, deep window reveals, Aegean-blue skirting: **Santorini-style blue and white without a dome, church, arch or vault** | Pale cool grey-white stone slabs | White lacquer top, white steel legs, pale limed-oak front | White-painted wood, Aegean-blue steel, pale stone | 6000 K, crisp cool white noon | Olive, caper in whitewashed pots | Blue doors and blue skirting against pure white |
+  | Mexico | Deep sun-baked adobe red-brown plaster with a cream band | Near-black volcanic stone, matte | Warm reddish cedar, hand-forged iron legs | Carved cedar, forged iron, glazed clay | 3700 K, hot amber midday | Agave, aloe, marigolds, monstera in terracotta | A hand-woven stripe band in marigold and indigo above the dado |
+  | Switzerland | Vertical pale larch slat cladding | Smooth light-grey concrete screed | Pale birch plywood top, white steel legs | Pale larch, graphite steel, frosted glass | 6500 K, cold clear alpine | Dwarf mountain pine, moss in grey felt planters | The vertical timber slats with a steel rail |
+  | USA | Exposed red brick with a grid of black steel factory windows | Wide dark smoked-oak planks | Butcher-block maple top, black steel legs | Black steel, riveted metal, brick | 5000 K, neutral clear daylight | Tall fiddle-leaf fig, pothos in black pots | Exposed brick and the steel window grid |
+  | Australia | Pale sage-green painted weatherboard | Blond spotted-gum timber boards | Blond birch-ply top, thin black legs | Pale ply, galvanised steel, rattan | 5800 K, bright harsh white sun | Eucalyptus, banksia, tree ferns, a grass tree in cream ceramic | Horizontal weatherboards and galvanised tin trim |
+  | India (a modern office, never a court) | Warm cream plaster with a band of hand-block-printed indigo textile | Dark green-grey honed Kota stone | Mid teak top with thin brass inlay, teak legs | Teak, brass, cane | 3900 K, hazy warm white | Areca palm, banana, jasmine in brass pots | The block-printed indigo band and brass inlay |
+  | Italy | Pale grey travertine ashlar blocks, sage-green painted woodwork | Cream terrazzo with small grey and rose chips | Bone-white marble-look top, fluted oak front | Travertine, fluted oak, sage-green lacquer, brass | 4500 K, soft hazy cool-neutral morning | Slim cypress, clipped bay, fig in stone planters | Fluted wood, travertine blocks and sage-green lacquer |
+  | France | Dove-grey painted panelling with moulded frames | Pale honey-grey oak herringbone | Pale ash top with a zinc edge, slim brass legs | Zinc, grey-painted wood, brass | 5500 K, soft silvery overcast | Box topiary, ivy, lavender in zinc planters | Moulded panelling and zinc |
+  | Germany | Raw board-formed grey concrete | Warm mid-grey linoleum | Matt black steel frame with beech ply top | Tubular steel, plywood, one mustard accent | 5300 K, neutral cool north light | Rubber plant, ficus in white pots | Tubular steel and exposed concrete |
+  | Britain | Deep ink-navy painted panelling under a picture rail | Dark grey slate flagstones | Dark mahogany with an inset green leather top | Mahogany, brass, green leather | 4700 K, low grey-gold overcast | Ferns, hydrangea in glazed stone pots | The dark panelling and the leather desk top |
+  | Calm office | Soft off-white with pale sage felt panels | Pale grey-beige carpet tile | White laminate, rounded corners, soft grey legs | Rounded white and sage, felt | 4300 K, soft even | Peace lily, pilea in white ceramic bowls | Rounded sage felt panels |
+  | Retro game | Pixel-art indigo wall blocks | Pixel-art checked tiles | Blocky beige pixel desk with a chunky monitor | Pixel arcade cabinets | 7200 K, cool glow, in dithered pixels | One blocky pixel pot plant | A visible pixel grid over everything |
+  | Indian kingdom | Red sandstone with white marble inlay, cusped arches | White marble with inlaid geometric bands | Carved rosewood with bone-coloured inlay | Carved sandstone, pierced stone screens | 2700 K, warm light through lattice | Roses, pomegranate in carved stone urns | Cusped arches and pierced stone screens |
+  | European kingdom | Grey limestone ashlar with plain woven hangings, round and pointed arches | Black-and-white marble checker | Dark carved oak trestle | Dark oak, wrought iron, gilt edges | 2400 K, candle-warm with tall window light | Laurel in lead planters | Stone arches and plain hangings, with no real coat of arms |
+  | Japanese kingdom | White plaster, paper screens, dark cedar posts; straight post and beam (a curved gable line is allowed, no masonry arch, FR-210) | Tatami | Dark lacquered wood | Cedar, black lacquer, paper | 3300 K, soft through paper | Maple, bamboo in dark glazed pots | Sliding paper screens in a dark timber frame |
+  | Photo office | From its approved art; the card records it (T093) | Same | Same | Same | 4100 K | Same | Same |
+  | Cave | From its art; the card records it, and Paco approves crew-world art (097 Q6) | Same | Same | Same | 2000 K, flame | Same | Same |
+  | Cheeky loft | From its art; the card records it, and Paco approves crew-world art (097 Q6) | Same | Same | Same | 3500 K | Same | Same |
 
-  Views and postboxes (FR-012); every postbox stands on the floor or on a post from the floor (FR-019), and may share a colour with another place's:
+  Views and postboxes (FR-012); every postbox stands on the floor or on a post from the floor (FR-019), and may share a colour with another world's:
 
-  | Id | View through a window | Postbox, described |
+  | World | View through a window | Postbox, described |
   |---|---|---|
-  | `spain` | Pale street of plastered buildings, a tree | Yellow, free-standing, rounded top, one slot |
-  | `mexico` | Courtyard planting, strong shadow | Red, short hooded box on a post |
-  | `switzerland` | Generic green slopes and distant peaks, no named mountain | Yellow, flat box on a slim post |
-  | `usa` | Generic mid-rise street, no skyline landmark | Blue, four short legs, curved top, pull-down flap |
-  | `australia` | Eucalypts, wide sky | Red, upright street box, a smaller yellow one beside it |
-  | `india` | Green shade, modern low building | Red, round pillar with a small hood |
-  | `italy` | Plain courtyard, pale buildings | Red, slim box on a pedestal |
-  | `france` | Generic pale stone street, no landmark | Yellow, small rounded box on a post |
-  | `germany` | Generic modern street, trees | Yellow box with a rounded top, on a post |
-  | `britain` | Generic brick street, no landmark | Red, round cylinder pillar, no crown or cypher |
-  | `greece` | Calm sea and pale sky | Yellow, small box on a white-painted post |
+  | Spain | Pale street of plastered buildings, a tree | Yellow, free-standing, rounded top, one slot |
+  | Mexico | Courtyard planting, strong shadow | Red, short hooded box on a post |
+  | Switzerland | Generic green slopes and distant peaks, no named mountain | Yellow, flat box on a slim post |
+  | USA | Generic mid-rise street, no skyline landmark | Blue, four short legs, curved top, pull-down flap |
+  | Australia | Eucalypts, wide sky | Red, upright street box, a smaller yellow one beside it |
+  | India | Green shade, modern low building | Red, round pillar with a small hood |
+  | Italy | Plain courtyard, pale buildings | Red, slim box on a pedestal |
+  | France | Generic pale stone street, no landmark | Yellow, small rounded box on a post |
+  | Germany | Generic modern street, trees | Yellow box with a rounded top, on a post |
+  | Britain | Generic brick street, no landmark | Red, round cylinder pillar, no crown or cypher |
+  | Greece | Calm sea and pale sky | Yellow, small box on a white-painted post |
+  | Calm office | Soft sky, a calm tree | White rounded box on a slim post |
+  | Retro game | Pixel skyline with no real building | Pixel-art mailbox on a post |
+  | Indian kingdom, European kingdom, Japanese kingdom | A generic garden or court, no real palace | A messenger's carved box on a stand, in the world's materials |
+  | Photo office, Cave, Cheeky loft | As their art | As their art |
 
 - **FR-012** **Each place has its own postbox, described, not copied.** It is the `post` fixture (098 FR-030), in the local colour and a plausible form. No postal logo, horn, crown, royal cypher, company name, lettering, or a copy of a specific model. Spain's sample decision applies to all. Colours come from the public sources under *Assumptions*; shapes are this spec's description, not facts about each country, and the owner's look decides.
 - **FR-013** **Same lobby everywhere.** The other fixtures (Library, Boss door, Bank and so on) keep their meaning and are drawn in the place's fixture style. Their words are the app's, unchanged per spec 036 FR-003 and 098 FR-043.
-- **FR-014** **Every world looks substantially different from every other** (owner decision; it replaces "places may share a Mediterranean feel"). Between any two worlds with art in the project, the 11 places and the built-ins alike, **all** of these differ: wall, floor and desk materials and colours, fixture style, light temperature, plants, and one signature motif. They can be told apart at a glance at thumbnail size. **What stays the same**: layout, fixture boxes, words, lights and screens (098 FR-030, FR-033), and each place's `realHeight`: one fixed real-world height per lobby place (a Boss door, a Bank counter), the same in every world, so people keep one scale against fixtures everywhere (097 FR-117). It is a constant in `worldpack.ts`, taken from the photo world; a pack cannot set it and a `realHeight` in `world.json` is refused. A motif obeys FR-010: it is never a flag, emblem or landmark.
+- **FR-014** **Every world looks substantially different from every other** (owner decision; it replaces "places may share a Mediterranean feel"). Between any two worlds with art in the project (every row of FR-011 but Flat), **all** of these differ: wall, floor and desk materials and colours, fixture style, light temperature, plants, and one signature motif. They can be told apart at a glance at thumbnail size. **What stays the same**: layout, fixture boxes, words, lights and screens (098 FR-030, FR-033), and each place's `realHeight`: one fixed real-world height per lobby place (a Boss door, a Bank counter), the same in every world, so people keep one scale against fixtures everywhere (097 FR-117). It is a constant in `worldpack.ts`, taken from the photo world; a pack cannot set it and a `realHeight` in `world.json` is refused. A motif obeys FR-010: it is never a flag, emblem or landmark.
 - **FR-015** **No reused cutouts.** A pack does not reuse another world's fixture cutouts, whether copied, recoloured or re-encoded: each world's fixtures are made for it (FR-132's sheet is per world).
 - **FR-016** **Machine checks, as far as a machine can.** Each project world has `worlds/<id>/card.json` (not in the pack), naming the seven items of FR-014; built-ins have one too. `test:world-catalogue` fails on any pair with the same wall, floor, desk, fixture style, plants or motif (normalised text), or light temperatures under 200 K apart; a card cannot prove the picture matches it, which is why FR-017 exists. `scripts/check-world-distinct.js` (simulator, decodes in Electron, weekly and on the PR subset) compares each pair: exact file hash of each fixture, a perceptual hash of each fixture, and average colour of wall, floor and desk. An exact copy always fails. **No near-match threshold is set yet: until T097 sets them from real packs, near results are only reported, and the thumbnail review (FR-017) decides.** After T097 a near result fails; thresholds then move only by evidence (097 FR-190's rule).
 - **FR-017** **Review step.** Before a world's first image run, its card is compared with all others and any overlap is fixed (a batch of pictures costs plan usage; a card costs nothing). Before `available`, `scripts/world-contact-sheet.js` makes one artifact (never committed, 098 FR-054's rule) with every world in the same simulator scene at about 320x200, and the reviewer records `distinct-check` (name, date, how many worlds compared) in the new world's `ASSETS.md`. A world that can be mistaken for another at that size goes back to art, and either world may be the one that changes.
@@ -242,8 +284,8 @@ A friend or a community hosts worlds. I paste the address in Settings. Before an
 
 #### Windows on existing wall
 
-- **FR-020** **Allowed in every world, built-in ones too** (owner decision), through the new optional `room.windows` part (FR-041). A world is not required to have them; an existing world adds them only as an art change approved by its art owner (097 Q6 for crew worlds).
-- **FR-021** **Only on fixed wall area; full band height; no overlap.** Windows go in the wall areas left between the fixture boxes of the layout (owner decision). A window is a straight-sided rectangle, exactly as high as the lobby band and never over a fixture box: it does not intersect any fixture box by a pixel. The engine places windows after fixtures and never feeds them into layout. An area narrower than the picture's minimum width gets no window; a window that would cost space is left out.
+- **FR-020** **Allowed in every picture world, built-in ones too** (owner decision), through the new optional `room.windows` part (FR-041). A world is not required to have them; an existing world adds them only as an art change approved by its art owner (097 Q6 for crew worlds).
+- **FR-021** **Only on fixed wall area; full band height; no overlap.** Windows go in the wall areas left between the fixture boxes of the layout (owner decision). A window's box is a straight-sided rectangle (in a kingdom world the picture may show an arch inside it), exactly as high as the lobby band and never over a fixture box: it does not intersect any fixture box by a pixel. The engine places windows after fixtures and never feeds them into layout. An area narrower than the picture's minimum width gets no window; a window that would cost space is left out.
 - **FR-022** **Fixtures and people do not change.** Fixture sizes and positions, band height and desk layout are the same with and without windows (`test:realoffice-layout`, exact rectangles, both sizes, 1..15 agents, all 9 places plus 3 custom), and the same test checks each window's height equals the band's and that it intersects no fixture box. Fixture boxes are the same in every world.
 - **FR-023** **Visitors may stand in front.** Paint order is floor, wall, windows, fixtures, visitors, plates; a visitor keeps its 097 FR-117 scale and foot line, and 097 FR-025's crowding never shrinks a person because of a window. Plates and chips stay on opaque surfaces, so a window never puts text on a picture.
 - **FR-024** **Calm.** A window is a still picture: no moving clouds or animated view, no animation budget used. Ambient dimming (097 FR-043) applies to it like the rest of the art.
@@ -255,18 +297,18 @@ A friend or a community hosts worlds. I paste the address in Settings. Before an
 - **FR-032** **Live screens and animation come from the app.** A pack gives `desk-screen.screenRect`, `callAnchor` and light-slot shapes; app text goes in as `textContent` (097 FR-030, FR-031) and poses are the people's. The validator refuses a `screenRect` smaller than 097 FR-032 needs at the half-size desk, so a pack cannot make screens unreadable.
 - **FR-033** **Motion is named, not supplied.** `rideStyle` is one of `doors`, `gate`, `drop`; light shapes come from 098's fixed list. No keyframe, duration or easing in a pack.
 - **FR-034** **Flagged, not shipped as finished.** A pack with any uncovered moment is `unfinished`. Project catalogue: it cannot be `available` (`test:world-catalogue`). Non-project source: listed as *Unfinished: <n> parts missing* before download. Own world: may be saved, labelled wherever listed, with the missing moments named; missing parts draw the `photo` world's art (issue #933). `unfinished` is one word used everywhere, and a world's status never hides it.
-- **FR-035** **The gate for `available` in the project's catalogue.** All of: (a) spec 097 FR-179 is met: the Real office op rows and FR-180, FR-182 hold in `check-office-ops`, and T156..T159 are ticked in `specs/097-real-office/tasks.md` (`test:world-catalogue` reads the ticks). **T156..T159 and FR-179 land through #936, which must merge first**: T036 builds on them, and until they exist a task that cannot be found counts as not met, so `available` is refused; (b) `test:world-packs` passes and FR-030 is all `covered`; (c) the registry row is `shippable` under 098 FR-024; (d) `check:office` and the world matrix pass at 15 agents at both sizes; (e) provenance (FR-170); (f) the owner's check is recorded per world; (g) FR-016's checks pass and `distinct-check` is recorded (FR-017). Own worlds and the maker UI also wait for (a) before any release has them (097 FR-179 names user-made worlds).
+- **FR-035** **The gate for `available` in the project's catalogue.** All of: (a) spec 097 FR-179 is met: the Real office op rows and FR-180, FR-182 hold in `check-office-ops`, and T156..T159 are ticked in `specs/097-real-office/tasks.md` (`test:world-catalogue` reads the ticks). **T156..T159 and FR-179 land through #936, which must merge first**: T036 builds on them, and until they exist a task that cannot be found counts as not met, so `available` is refused; (b) `test:world-packs` passes and FR-030 is all `covered`; (c) the registry row is `shippable` under 098 FR-024; (d) `check:office` and the world matrix pass at 15 agents at both sizes; (e) provenance (FR-170); (f) the owner's check is recorded per world; (g) FR-016's checks pass and `distinct-check` is recorded (FR-017); (h) its default set is full and installed or available (FR-204, FR-206). Own worlds and the maker UI also wait for (a) before any release has them (097 FR-179 names user-made worlds).
 
 #### Pack format
 
-- **FR-040** **`world.json`** (at most 64 KB, `v: 1`): `formatVersion`, `id`, `name` (1-40 code points, plain text), `version` (integer, up to 9 digits), `people: "office"`, `tokens` (070 types only), `lights` (shape per slot), `rideStyle`, `parts` (part name to anchors and, for downloaded packs, sha256 and bytes), optional `description` (at most 200 code points, plain text), optional `licence` (at most 40 code points). A field not listed is refused; 098 FR-031's refusal of position, size and layout values stands. Parsed with own-property readers. Packs set no words: tool and scene words are the app's.
+- **FR-040** **`world.json`** (at most 64 KB, `v: 1`): `formatVersion`, `id`, `name` (1-40 code points, plain text), `version` (integer, up to 9 digits), `defaultSet` (a built-in set's id, or a set from the same source; FR-202), `tokens` (070 types only), `lights` (shape per slot), `rideStyle`, `parts` (part name to anchors and, for downloaded packs, sha256 and bytes), optional `description` (at most 200 code points, plain text), optional `licence` (at most 40 code points). A field not listed is refused; 098 FR-031's refusal of position, size and layout values stands. Parsed with own-property readers. Packs set no words: tool and scene words are the app's.
 - **FR-041** **Parts: the closed file list.** Fixed names under 098's blocks, plus one new block `room`:
   - `room`: `wall.webp` (repeating, at most 120 KB), `floor.webp` (at most 40 KB, 097 FR-062), `welcome.webp` (at most 150 KB), optional `window-1.webp`..`window-3.webp` (at most 60 KB each, opaque rectangles, drawn at band height, each with a minimum width);
   - `fixture`: `fx-library`, `fx-software`, `fx-terminal`, `fx-web`, `fx-boss`, `fx-coffee`, `fx-bank`, `fx-post`, `fx-tools`, `fx-kiosk` (`.webp`, at most 120 KB each);
   - `desk-screen`: `desk.webp` and `desk-half.webp` (097 FR-183: two sizes, at most 60 KB each);
   - `lift`, `speech-bubble`, `slip`, `panel-frame`: names and caps as 098 FR-030.
-  - `person`: none (`people: "office"`, D4).
-- **FR-042** **Size.** Whole pack at most 10 MB (097 FR-115, a hard cap); by the part caps a shared-people pack is at most about 2.5 MB (arithmetic, not measured); a project pack over 4 MB fails `test:world-catalogue`. At most 40 files. The zip adds no compression (WebP is stored). Every picture's natural size is capped so that the 097 FR-178 area row (at most 4x the shown device-pixel area) can hold: a fixture, a window and `wall.webp` at most 300 px tall, `welcome.webp` at most 1920x1200; `test:` per part.
+  - `person`: none; a set is its own pack (FR-205, D4). There is no door or board block (spec 017 FR-030).
+- **FR-042** **Size.** Whole pack at most 10 MB (097 FR-115, a hard cap); by the part caps a world pack is at most about 2.5 MB (arithmetic, not measured); a project pack over 4 MB fails `test:world-catalogue`. At most 40 files. The zip adds no compression (WebP is stored). Every picture's natural size is capped so that the 097 FR-178 area row (at most 4x the shown device-pixel area) can hold: a fixture, a window and `wall.webp` at most 300 px tall, `welcome.webp` at most 1920x1200; `test:` per part.
 - **FR-043** **Format version.** `formatVersion` 1 is this contract. Durbar refuses a higher one before download or reading parts, and keeps reading older ones; adding a block that a pack may omit does not raise it.
 
 #### Validation: every pack, every source
@@ -350,16 +392,16 @@ A friend or a community hosts worlds. I paste the address in Settings. Before an
 - **FR-123** **Validation off the office.** Validation and re-encoding run in the encoder window and asynchronously in main, so a running office shows no long task from them beyond the 097 rows; `sim:` long-task count during a fixture import.
 - **FR-124** **Order.** No world of this spec reaches a release before 097 FR-179 is met (FR-035). Phases P1-P3 can merge earlier only with no available world and no maker visible.
 
-#### User-made: the hand path
+#### User-made: the hand path (where the connected app cannot generate images)
 
-- **FR-130** **Instructions in the app.** **Make your own world…** shows, when no ready adapter has `imageGen` (or on request), the steps: get the prompts, make the images in any tool, put them in one zip, upload. Plain words; no knowledge of blocks needed.
+- **FR-130** **Instructions in the app.** **Make your own world…** starts in-app generation (FR-150) when a ready adapter has `imageGen`. When none has, or on request, it shows the steps: get the prompts, make the images in any tool, put them in one zip, upload. Plain words; no knowledge of blocks needed.
 - **FR-131** **Prompt pack.** **Save the prompts…** writes a folder (main opens the picker; overwrite refused) of `README.txt`, one text file per part with the exact prompt, the size, background and framing, and `world.template.json`. Generated from one source (`src/shared/worldprompts.ts`, a `<<<PLACE`/`PLACE>>>` slot for the person's idea) that is also used by the in-app path and the project's own art runs, so the three never drift. Every prompt carries the exclusion clause of FR-010 and "no real person". It costs nothing and uses no network.
 - **FR-132** **Fewest pictures.** The prompts follow the mockup's method: one back-wall sheet cropped to the fixtures (with cut lines in the template), then floor, wall, desk, window, lift, welcome. Frames (`speech-bubble`, `slip`, `panel-frame`) may be left out by choice: they fall back to the photo world's frames, labelled (FR-034).
 - **FR-133** **Upload.** **Upload a world…**: main's picker, zip or folder (`pickFolder` for folders, same file-set rules). Then FR-051, FR-052, FR-053, FR-055; the report (FR-056); a preview; **Try it** (try bar, 040 FR-021); **Save**, **Discard**. Nothing is stored before Save; Discard returns to the person's own stored World choice, `match` included, never to an effective value. Name given by the person, plain text.
 - **FR-134** **Own worlds are user data.** Never synced, uploaded, committed or logged, and shared only by the person's own Export; labelled *Uploaded*, *Made with <app>*, or *Imported*.
 - **FR-135** **What is not checked.** Durbar cannot judge what a picture shows. `[KNOWN GAP]` a person's own world can contain anything, including arches; FR-010 reaches it only through the prompts. An imported world says "Made by someone else; pictures are not checked for content."
 
-#### User-made: in the app
+#### User-made: in the app (first-class, OP-7)
 
 - **FR-150** **Only where it exists.** Offered for ready adapters with `imageGen` (096 FR-003; today Codex with a ChatGPT sign-in, `docs/agent-apps.md`). `AgentAdapter` stays the only route: no vendor name in the renderer beyond the adapter's own display name (constitution II).
 - **FR-151** **Honest before it starts.** Cost line (`oneShotCostLine`; "part of your ChatGPT plan's usage"), number of pictures, the estimate ("about a minute per picture", 096, not measured for this job), 096 FR-034's API-key refusal, and 096 FR-035's note about the copies Codex keeps. One click starts; Cancel stops at the next picture.
@@ -377,23 +419,73 @@ A friend or a community hosts worlds. I paste the address in Settings. Before an
 #### Provenance
 
 - **FR-170** **Project art.** `worlds/<id>/ASSETS.md` per picture or source sheet: tool and version (Codex image generation, codex-cli version), date, maker, approver (Vikram), the exact prompt, how it was cut and re-encoded, licence (097 FR-063, FR-064), `owner-check` with name and date. A sibling of `test:realoffice-assets` checks it (every file listed and every listed file present, the exclusion clause present). `worlds/<id>/` holds no generated originals.
-- **FR-171** **Art pipeline.** Spec 098 FR-080's art-pipeline spec (Paco's side, not written) is followed when it exists; until then FR-170. Country worlds use no crew art, so 097 Q6's approval per picture is not needed; photo-world people are the owner's approved set.
+- **FR-171** **Art pipeline.** Spec 098 FR-080's art-pipeline spec (Paco's side, not written) is followed when it exists; until then FR-170. Countries and kingdoms draw no crew art of their own, so 097 Q6's approval per picture is not needed for them; a crew in another world is the same approved crew art, and new full-pose frames of a crew go through Paco per picture (FR-206).
 - **FR-172** **Cost.** Real image runs are made only for project art by the owner's agent on his plan (issue #932: approved for these worlds), in small batches, and are not part of any check. C2PA and other metadata are stripped, as 097 FR-069 says: `ASSETS.md` is the record.
 
 #### Checks (0 AI credits, no network in `npm test`)
 
 - **FR-180** **Tests.** `test:worldzip` (hostile zips), `test:worldpack` (manifest, parts, anchors, tokens, coverage), `test:worldstore` (temp, rename, caps, links, damage, revocation), `test:worldsource` (hops, hashes, signature, rollback, oversize, policy; an injected request layer, in the style of `test-officialinstall.ts`), `test:world-catalogue` (FR-035, FR-085, FR-170), `test:worldipc`. A synthetic fixture pack lives in `scripts/fixtures/worlds/`, drawn by script, with no generated art.
-- **FR-181** **Drivers.** `check-worlds` (simulator; the dialog, notice, report, try bar and manage rows, at both sizes, every wait `until()`), `check:office` and `check-office-ops` with the fixture world at 15 and 40 agents. In the world matrix (098 FR-050..FR-052) each country is a world; the path filter gains `worlds/**`. Weekly run time grows with 11 more worlds: `[KNOWN GAP]` not measured; shard per world if it passes the job's limit.
+- **FR-181** **Drivers.** `check-worlds` (simulator; the dialog, notice, report, try bar and manage rows, at both sizes, every wait `until()`), `check:office` and `check-office-ops` with the fixture world at 15 and 40 agents. In the world matrix (098 FR-050..FR-052) each picture world is a world with its default set; the path filter gains `worlds/**`. Weekly run time grows with 16 more worlds: `[KNOWN GAP]` not measured; shard per world if it passes the job's limit.
 - **FR-182** **`real:` list** (never CI): a real release download on each OS (T043), proxy and organisation source (T053), real Codex generation (T062), the real-GPU run for a country world (097 FR-189). The owner's look at each world is `read:` (FR-035 (f), FR-017).
+
+#### Worlds and character sets: two flat lists
+
+- **FR-200** **Two flat lists, no families.** Worlds are FR-011's list. Character sets: **Office people**, **Cheeky**, **Prehistoric**, **Minimalist**, **Retro pixel people** (new), **My characters** (096), and shared sets. Any set works in any world. Each world names one default set.
+- **FR-201** **Settings.** A **World** row (Flat first, then the others; it replaces 097's mode button and the Office layout row) and a **Characters** row beginning **World's default (<set name>)**. On the default, people follow the world. An explicit pick sticks across worlds. `world` and `characters` are both in `durbar-settings.json`, through main (`settings:setCharacters`'s path), so policy is checked in one place; `characters: "default"` replaces today's `theme`. Radio groups, keyboard and screen-reader operable, tokens only.
+- **FR-202** **One pure seam, `peopleFor(world, choice)`.** In order: an explicit choice, when installed, allowed and usable in this world (full, or any level in Flat); else the world's `defaultSet`; else Office people, which always ship. A world's `defaultSet` naming anything else than a built-in or a set of the same source falls to Office people. A choice that cannot draw is kept, and a one-line note says why. Unit tested over every value, world and level.
+- **FR-203** **Flat takes any set by heads.** Today's crew kit draws heads: `working`, `waiting`, `resting` (077 FR-050). A full set gives them from its frames: `typeA`, `waveA`, `rest`, cropped by `faceBox`. Minimalist stays the `office` kit. While a saved theme or Retro Pixel is in use, Flat's default is that theme's own figures (077 FR-065), so its look does not change; its row reads "World's default (the theme's own)".
+- **FR-204** **The interoperability contract: every set has the full pose set**, for each person, as in 098 FR-030's `person` block.
+  - **Seated states, required**: `typeA`, `typeB`, `waveA`, `waveB`, `think`, `rest`.
+  - **Standing activity views, required**: `book`, `coffee`, `tread`, `letter`, `knock`.
+  - **Optional, with the only fallbacks**: `box`, `touch`, `tool`, `wait`, each to `letter` (097 FR-024).
+  - **Anchors, required**: `headTop`, `bodyH`, `hand`, `faceBox`; `floorLine` on standing frames; `realHeight`, default 1.70 m.
+  - **Format**: 098's: WebP with alpha, at most 640 px tall and 80 KB, two sizes (097 FR-183), facing front. Feet on `floorLine` within 2 px by alpha.
+  - **Minimum**: one person passes. Fewer than 15 repeats people at 15 agents, and the report says so. A required frame has no fallback.
+- **FR-205** **Separate packs, only chosen ones load.** A set is its own pack: `set.json` (`formatVersion`, `id`, `name`, `level`, people and anchors) and frames named `p<NN>-<pose>[-half].webp` from a closed list, at most 20 people, 10 MB (097 FR-062). A set's entry limit is its own constant: at most 600 files, 128 MB for an upload. Sets go through FR-050..FR-056, FR-060..FR-064, FR-070..FR-099 and FR-160..FR-163 with `kind: "set"` in a catalogue, separately downloadable and shareable. Project sets are committed under `sets/<id>/`, outside the app except Office people and today's flat heads (OP-3, OP-10); `features.userWorlds` also covers user-made sets. No world fetches a set it does not draw, and no set fetches a world: `test:` request log in main, `sim:` on the window's fetches.
+- **FR-206** **The validator check.** `checkSet` in `worldpack.ts` gives each person `full` or the missing poses and anchors, and the set a `level`: **`full`** when at least one person is full (others are dropped, named in the report), **`heads`** when none is but it has the three heads. `test:world-packs` runs it on built-ins. A **heads-only set stays Flat only and says so**, in the row, the report and the note of FR-202. Today's levels, and the art each needs:
+
+  | Set | Level today | To be full |
+  |---|---|---|
+  | Office people | Full by 097's art (#921; re-checked by the validator, T107) | Nothing |
+  | Cheeky | Heads (3 poses, spec 077) | New frames, per picture by Paco (T108) |
+  | Prehistoric | Heads (3 poses) | New frames, per picture by Paco (T109) |
+  | Minimalist | Heads (the drawn `office` kit) | New frames for pictures, or stays Flat only and says so (T110, OP-11) |
+  | Retro pixel people | Does not exist | New set (T111) |
+  | My characters | Heads (096); per character | 096's Real office frames (T112) |
+  | Shared | As its validator says | Up to its maker |
+
+- **FR-207** **Migration, once** (the 077 FR-067 pattern: in main on read, written at once, a repeat changes nothing). It keeps each user's look, and it never downloads anything, closes or sends anything.
+
+  | Today | Becomes |
+  |---|---|
+  | Flat office, Characters `theme` | World Flat, Characters default |
+  | Flat office, Characters `minimalist`, `cheeky`, `prehistoric`, `mine` | World Flat, that set as an explicit pick (`minimalist` on Clean equals the default; stored as explicit so a later world keeps it, where FR-202 allows) |
+  | Real office, Match, `prehistoric` | World Cave, default (owner's example); Cave not installed: World Photo office, default, and a one-line offer of Cave, since Photo is what they saw (097 FR-083) |
+  | Real office, Match, `cheeky` | World Cheeky loft, default; same rule when absent |
+  | Real office, Match, `theme` or `minimalist` | World Photo office, default |
+  | Real office, Match, `mine` | World Photo office, `mine` explicit, where full; else the default with FR-202's note |
+  | Real office, a named world, any Characters value | That world, default, since people always followed the world |
+  | A bad stored value | Flat and default |
+
+  Real office is not in a release yet, so its rows matter only for anyone on a build of #921. `durbar.officeview` and `durbar.world` (097, unreleased) are read once and removed; `durbar.doorsigns` is spec 017 FR-034's.
+- **FR-208** **Interoperability check, not a full product.** Weekly in the world matrix: each world with its default, and each full set in two worlds, the narrowest and the tallest fixture sets (rotating); `check:office` at 15 agents at both sizes. Whether a set looks right in a world is not judged: style clashes are the person's choice. A set can break no layout because positions come from anchors and the engine.
+- **FR-209** **A set's people.** Project sets follow 097 FR-067, FR-068 (fictional, likeness check) and FR-170. Shared sets are as FR-135: `[KNOWN GAP]` a likeness in an uploaded picture cannot be checked by Durbar, and import says "Made by someone else; not checked."
+- **FR-210** **Kingdom worlds follow their history.** Arches appear where that kingdom had them: cusped and pointed in the Indian kingdom, round and pointed in the European kingdom. The Japanese kingdom's architecture is post and beam, so it has no masonry arch, and a curved gable line is allowed. Still in force for them: no real palace copied, no real ruler or person, no flag, coat of arms or religious building or symbol, no caricature. The removed court themes' art and words are not reused; tool and place words stay the app's (098 FR-043).
+- **FR-211** **Retired AI theme maker, what replaces it.** The flat theme maker is retired (spec 040 FR-031) with P6's PR, so AI creation is never absent; before that it is frozen. Saved themes keep working.
+- **FR-212** **Flat is not a registry world.** It has no moments in `docs/experience/world-moments.json`: its surfaces are the flat rendering. FR-014, FR-020 and FR-035 do not apply to it. The Calm and Retro game worlds do not change Flat's theme.
 
 #### Relation to other specs
 
 - **FR-190** **Changes to other specs** (written into each `## Changes` by T002 after #921, #925, #936 land, so this PR does not edit the same lines):
-  - 097 FR-060: built-in worlds ship; other worlds do not. FR-112's "offered worlds equal the registry's shippable worlds" holds for built-ins and the project's catalogue. FR-114's value gains `p--<id>`, `s-…`, `u-…`. FR-100: a world may use `people: "office"`.
+  - 097 FR-060: Flat and Photo office ship, other worlds do not (OP-10). FR-112's "offered worlds equal the registry's shippable worlds" holds for shipped worlds and the project's catalogue. FR-115's path for a shipped world stands.
   - 098 FR-011, FR-030: new block `room` (office-floor, lobby, empty-office, first-run name it), `person` may be `shared`, and `fixture.realHeight` moves from the pack to one constant per place (FR-014); FR-031, FR-032 use the shared validator; `worlds[id].pack` may be `worlds/<id>`; FR-052's filter gains `worlds/**`. FR-040's world-CSS rule is untouched (a pack has no CSS).
   - 096 FR-022: the encoder job takes a list of targets. 077 FR-057 was already changed by 096.
-  - 021: FR-066 records OP-2 (in this PR).
-  - 076 FR-158: the three new features; a reader's first slice (FR-114).
+  - 097, on the branch of #925 and on P1's: **FR-100** (crews no longer pick worlds; a cartoon crew may be drawn in the photo office; worlds name a default set; the world list is FR-011), **FR-114** (no *Match my characters*; the World and Characters rows are FR-201, stored as FR-201 says), **T100** (`realOfficeWorld(characters, worldPref)` becomes `peopleFor`, FR-202), **T102** (the Settings rows), **D3, FR-081, FR-083, FR-084** (`realOfficeSet`), **Q6** (crews with their own world becomes a default set), **FR-112** (offered worlds), **FR-001, FR-003, FR-004** and the *Doors you closed* edge case (no third Office layout button, no `durbar.doorsigns`, no "Switch to an open office?" question, no doors; spec 017 FR-029). These lines are not edited here, because #921 and #925 hold them.
+  - 098 FR-011: `worlds[id].crews` becomes `defaultSet`; FR-030's `person` block moves to a set pack, with the same rules; FR-032 also checks sets; FR-033 "eight blocks" drops `person` and gains `room`.
+  - 096 FR-040 and FR-050: `mine` is a set with a level per character; Real office frames follow FR-204.
+  - 077 FR-064, FR-065: `theme` becomes `default` (FR-201, FR-203).
+  - 021: FR-066, FR-067, FR-068 record the decisions (in this PR).
+  - 076 FR-091, FR-158: the three new features here; `allowThemeMaker` and `features.themeMaker` become no-ops (spec 040 FR-031);  a reader's first slice (FR-114).
   - 097 FR-023, FR-117 and 098 FR-030: fixtures stand on the floor line (FR-019); fixture boxes are the same in every world. #932's Mediterranean note is replaced by FR-014.
   - 101 (#930, open): a pack supplies no icon; the top bar follows the pack's tokens, and a world with no icon of its own uses the base icon.
 
@@ -424,6 +516,9 @@ A friend or a community hosts worlds. I paste the address in Settings. Before an
 - **SC-013** A user-made world close to another gets a warning and can still be saved.
 - **SC-014** Each adversarial case of US7 is refused or shown, in main, with nothing kept; no private, loopback or off-list host receives a request.
 - **SC-015** Every listing of a world shows its source, and nothing from outside the app can show *Agent Durbar project*.
+- **SC-016** Every full set draws in every world without a layout change, at 15 agents at both sizes.
+- **SC-017** Every migrated setup draws what it drew before, and migration makes no request.
+- **SC-018** With one world and one set chosen, no other pack's files are read.
 
 ## Assumptions and honest limits
 
@@ -435,6 +530,7 @@ A friend or a community hosts worlds. I paste the address in Settings. Before an
 - `[KNOWN GAP]` Windows and macOS file behaviours (long paths, a Unicode-normalising file system) are covered by pure tests of the name list until CI's real platforms run the store tests; on-device checks are as constitution VI says.
 - `[KNOWN GAP]` Depends on drafts: 096 (pipeline), 097 P1 (#921), 097's budgets (#936), 098's checks. Their numbers are quoted from the branches on 2026-10-31.
 - `[KNOWN GAP]` A local program with write access to `userData` can change a store; FR-062 catches accidents and pack edits, and a program that also rewrites `installed.json` is out of scope.
+- `[KNOWN GAP]` Art: Cheeky, Prehistoric and My characters are heads-only until new frames exist; the Cave and Cheeky loft worlds cannot be `available` before them (FR-035 (h)). Retro pixel people and five new worlds are plans with no pictures.
 - `[KNOWN GAP]` A `first-seen` source gives no proof of who made a world, only that it changed; a person who wants more pastes a key. The look-alike table is small and will miss some letters; the source beside the name is the real defence.
 - `[KNOWN GAP]` The hash of a project pack is only as trustworthy as the unsigned app that holds it (FR-080).
 - Licences: project art MIT (097 FR-064); third-party licences are shown as given and not verified.
@@ -449,9 +545,12 @@ The undecided ones have a recommendation; the spec follows it until told otherwi
 - **OP-4 Who can add a source: decided (owner, 2026-10-31).** People as well as organisations; people may also create and share worlds (FR-093..FR-099, FR-162, FR-163). An organisation may forbid it or limit it to a list (FR-110, FR-111).
 - **OP-5 Policy before first ship.** 076 has no reader, so "a corporate policy that forbids it" would be only a `[KNOWN GAP]`. **Recommendation: build FR-114's small slice in P3**, so a forbidding policy works from the first release; the rest of 076 stays its own work.
 - **OP-6 First batch of places.** Options: a few first, or all eleven at once (more plan usage before the first look). **Recommendation: Spain (a sample exists), Greece, then one per owner's look**, in small batches on your ChatGPT plan; all eleven are shown as *Coming* from the start. Each world is about 15 pictures by FR-132 (estimate).
-- **OP-7 Order of the two paths.** Options: hand first, in-app first, or both together. **Recommendation: hand path (P5) before in-app (P6)**: it has no dependency on spec 096's build and probes, and it hardens the validator on hostile input first.
+- **OP-7 In-app or by hand: decided (owner, 2026-10-31).** In-app generation is first-class and the flat AI theme maker is retired for it. The hand-made package stays as the route when the connected app cannot generate images. Order of build: P6 needs spec 096's pipeline, P5 shares its validator; whichever is ready first lands.
 - **OP-8 Windows in cave and loft.** Allowed by the decision on every world. Options: required, optional, or none there. **Recommendation: optional there; Paco decides for his crews' worlds** (097 Q6); photo first.
-- **OP-9 Shared people, always?** D4 follows #932. A later choice of per-world people would raise a pack to about 10 MB and bring likeness checks per pack. **Recommendation: keep shared; user-made people stay with spec 096's My characters.**
+- **OP-9 People per world: decided (owner, 2026-10-31).** Two flat lists, any set in any world, a default per world (D4, FR-200..FR-212); this replaces shared people and the crew edge case.
+- **OP-10 What ships.** Options: only Flat and Photo office with Office people (the rest download, including Cave and Cheeky loft, which changes 097 FR-115), or those plus Cave and Loft. **Recommendation: only Flat and Photo**, since every pack shipped adds up to 10 MB for everyone; Cheeky's and Prehistoric's heads still ship for Flat.
+- **OP-11 Minimalist in picture worlds.** Options: new frames (art work), or Flat only, saying so. **Recommendation: Flat only for now**; "every set has the full pose set" then holds for every set offered in a picture world.
+- **OP-12 Retro Pixel theme.** It is not in the removal list, while Flat is "one world, the clean look". Options: keep it until the Retro game world ships, then remove it the same way; keep it for good; remove it now. **Recommendation: keep it until Retro game ships, then remove it** (spec 035 FR-019).
 
 ## Constitution check
 
@@ -478,3 +577,7 @@ Applied by decision: `realHeight` fixed per place (FR-014); #936 merges first (F
 ### 2026-10-31: people's own sources and sharing (owner decisions on OP-2, OP-3, OP-4)
 
 OP-2 and OP-3 as recommended. OP-4 changed from organisation-only to people too, with sharing: US7, D3, FR-071, FR-082, FR-090..FR-099, FR-110..FR-114, FR-161..FR-163, SC-014, SC-015, T004, T065..T069. The character rules (D4, OP-9, the crew edge case) are not changed here.
+
+### 2026-10-31: two flat lists, and the owner's final world list (spec 021 FR-067)
+
+D4, OP-7, OP-9 and the crew edge case are replaced; FR-010, FR-011, FR-035 (h), FR-040 changed; FR-011 aligned with the art card; new US8, FR-200..FR-212, SC-016..SC-018, T100..T120. Removals are deltas in their own specs: 035 FR-017..FR-020 (built-in themes), 040 FR-031..FR-033 (AI theme maker), 017 FR-029..FR-035, 044 FR-127, 054 FR-065 (no doors).
