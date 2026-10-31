@@ -2387,7 +2387,7 @@ function openPanel(id,focus){
   $('panel').querySelector('.panel-in').classList.toggle('ro',!!(a.live&&a.parent));
   $('backBtn').onclick=closePanel;
   refreshFolderStatus(a); /* spec 063: branch and changed files on the folder chip */
-  if(a.live)wireOpenWith(a);else $('vscodeBtn').onclick=()=>toast('Would run <code>code '+esc(room.path)+'</code>',3800);
+  if(a.live)wireOpenWith(a);else{const vb=$('vscodeBtn');['aria-haspopup','aria-expanded','aria-controls'].forEach(k=>vb.removeAttribute(k));vb.onclick=()=>toast('Would run <code>code '+esc(room.path)+'</code>',3800);}
   if(a.live)$('pauseBtn').hidden=true;
   if($('newSessBtn'))$('newSessBtn').onclick=()=>newSession(a);
   if($('newSessHdrBtn'))$('newSessHdrBtn').onclick=()=>newSession(a);
@@ -6026,22 +6026,22 @@ function showSignInCard(a0,o){
 async function pickLive(want){addPicked(await bridge.pickAttachments(want));}
 /* spec 009 FR-019..FR-024 (issue 685): the header's Open with menu. The window sends the agent id and a fixed target id; main owns the folder. It opens a folder only, it never moves the session. */
 async function fillOpenWith(a){
-  const items=$('owItems');if(!items)return;
+  const items=$('owItems'),menu=$('openWithMenu');if(!items||(menu&&!menu.hidden))return; /* never rebuild an open menu: it would drop the focused item */
   let t=null;try{t=bridge.openWithTargets?await bridge.openWithTargets(liveRoot(a).id):null;}catch(err){t=null;}
   if(!Array.isArray(t))t=[{id:'vscode',label:'VS Code',hint:'Opens this folder in VS Code'}];
   items.innerHTML=t.map(x=>`<button class="more-it" role="menuitem" tabindex="-1" type="button" data-ow="${esc(x.id)}" title="${esc(x.hint)}"><span class="mt">${esc(x.label)}<small>${esc(x.hint)}</small></span></button>`).join('');
-  items.querySelectorAll('[data-ow]').forEach(b=>{b.onclick=()=>openWithRun(a,b.dataset.ow,b.querySelector('.mt').firstChild.textContent,$('vscodeBtn'));});
+  items.querySelectorAll('[data-ow]').forEach(b=>{b.onclick=()=>openWithRun(a,b.dataset.ow,b.querySelector('.mt').firstChild.textContent,$('vscodeBtn'),b.dataset.ow==='folder');});
 }
 function wireOpenWith(a){
   const b=$('vscodeBtn');if(!b)return;
   wireMenu('vscodeBtn','openWithMenu');
   fillOpenWith(a);b.addEventListener('pointerenter',()=>fillOpenWith(a));
 }
-async function openWithRun(a,target,label,btn){
+async function openWithRun(a,target,label,btn,isFolder){
   const done=busy(btn,'Opening…');
   try{
     const r=bridge.openWith?await bridge.openWith(liveRoot(a).id,target):await bridge.openInVSCode(liveRoot(a).id);
-    toast(r.ok?'Opening in '+esc(r.edition||label)+'… (this opens the folder only; the conversation stays here)':'Could not open '+esc(label)+': '+esc(r.error||'unknown error'),r.ok?4200:5200).classList.add(r.ok?'ok':'err');
+    toast(r.ok?'Opening '+(isFolder?'the folder in your file manager':'in '+esc(r.edition||label))+'… (this opens the folder only; the conversation stays here)':'Could not open '+esc(label)+': '+esc(r.error||'unknown error'),r.ok?4200:5200).classList.add(r.ok?'ok':'err');
   }catch(err){toast('Could not open '+esc(label)+': '+esc(String(err&&err.message||err)),5000).classList.add('err');}
   finally{done();}
 }

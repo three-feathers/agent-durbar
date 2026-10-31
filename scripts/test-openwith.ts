@@ -15,13 +15,18 @@ const launchEnv = (platform: NodeJS.Platform, files: string[], vars: NodeJS.Proc
 const LINUX_ALL = ['/usr/bin/code', '/usr/bin/code-insiders', '/usr/bin/codium'];
 interface Rec { started: LaunchPlan[]; opened: string[] }
 const mk = (le: LaunchEnv, rec: Rec, over: Partial<Deps> = {}): Deps => ({
-  platform: process.platform,
+  platform: le.platform, // the platform under test, so the Windows branches of abs() and planCmd really run
   launchEnv: le,
-  lstat: (p) => fs.lstatSync(p),
+  lstat: (p) => (p.startsWith(root) ? fs.lstatSync(p) : fakeLstat(p)),
   openPath: async (p) => (rec.opened.push(p), ''),
   start: async (plan) => (rec.started.push(plan), { ok: true, edition: plan.edition }),
   ...over,
 });
+/** Other platforms' paths do not exist on this disk: every absolute path but ones ending in gone/ is a folder. */
+const fakeLstat = (p: string) => {
+  if (/gone$/.test(p)) throw new Error('ENOENT');
+  return { isDirectory: () => true, isFile: () => /\.code-workspace$/.test(p), isSymbolicLink: () => false };
+};
 const rec = (): Rec => ({ started: [], opened: [] });
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-openwith-'));
@@ -98,6 +103,17 @@ fs.writeFileSync(wsFile, '{}');
       }
     }
   }
+  // Windows with only code.cmd: a folder cmd.exe could misread is refused honestly; the editor stays listed
+  { const cmd = 'C:\\L\\Programs\\Microsoft VS Code\\bin\\code.cmd';
+    const le = launchEnv('win32', [cmd], { LOCALAPPDATA: 'C:\\L', ComSpec: 'C:\\Windows\\System32\\cmd.exe' }, 'C:\\Users\\a');
+    assert.deepStrictEqual(listTargets({ cwd: 'C:\\proj & calc' }, mk(le, rec())).map((x) => x.id), ['vscode', 'folder'], 'still listed');
+    for (const bad of ['C:\\a & b', 'C:\\a%x%', 'C:\\a(1)', 'C:\\a,b', 'C:\\a;b', 'C:\\a=b', 'C:\\a!b']) {
+      const r = rec(); const res = await openWith({ cwd: bad }, 'vscode', mk(le, r));
+      assert.strictEqual(res.ok, false, bad); assert.match(res.error!, /installed, but it cannot open a folder with this name/, bad); assert.deepStrictEqual(r.started, []);
+    }
+    const r = rec(); const ok = await openWith({ cwd: 'C:\\ok\\proj' }, 'vscode', mk(le, r)); assert.strictEqual(ok.ok, true); assert.strictEqual(r.started[0].args[0], '/d');
+    // Windows absolute check: a drive path is absolute, a dash name is not
+    assert.strictEqual(checkFolder('-rf', mk(le, rec())).ok, false); assert.strictEqual(checkFolder('C:\\x', mk(le, rec())).ok, true); assert.strictEqual(checkFolder('proj\\sub', mk(le, rec())).ok, false, 'a relative Windows path'); }
   // only installed editors are listed; none installed: still the folder item
   assert.deepStrictEqual(listTargets({ cwd: dir }, mk(launchEnv('linux', ['/usr/bin/codium']), rec())).map((x) => x.id), ['vscodium', 'folder']);
   assert.deepStrictEqual(listTargets({ cwd: dir }, mk(launchEnv('linux', []), rec())).map((x) => x.id), ['folder']);

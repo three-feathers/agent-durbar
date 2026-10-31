@@ -68,14 +68,18 @@ function fileManagerHint(platform: NodeJS.Platform): string {
   return platform === 'darwin' ? 'Finder' : platform === 'win32' ? 'File Explorer' : 'File manager';
 }
 
+/** An edition counts as installed if it can be planned for a harmless folder name (a name cmd.exe could misread must not hide an installed editor). */
+function installed(ed: (typeof EDITIONS)[number], d: Deps): boolean {
+  return !!planEdition(ed, d.platform === 'win32' ? 'C:\\durbar-probe' : '/durbar-probe', d.launchEnv);
+}
+
 /** FR-019: the installed editions (spec 009 discovery) and the file manager, for the agent's own folder. */
 export function listTargets(agent: OwnedAgent | undefined, d: Deps): Target[] {
   if (!agent) return [];
   const out: Target[] = [];
-  const dest = agent.workspaceFile ?? agent.cwd;
   for (const [id, name] of Object.entries(EDITOR_TARGETS)) {
     const ed = EDITIONS.find((e) => e.name === name);
-    if (ed && planEdition(ed, dest, d.launchEnv)) out.push({ id: id as TargetId, label: name, hint: 'Opens this folder in ' + name });
+    if (ed && installed(ed, d)) out.push({ id: id as TargetId, label: name, hint: 'Opens this folder in ' + name });
   }
   out.push({ id: 'folder', label: 'Show in folder', hint: 'Opens it in ' + fileManagerHint(d.platform) });
   return out;
@@ -118,7 +122,14 @@ export async function openWith(agent: OwnedAgent | undefined, targetId: unknown,
     dest = f.path;
   }
   const plan = planEdition(ed, dest, d.launchEnv);
-  if (!plan) return { ok: false, error: `${name} was not found, so nothing was opened.` };
+  if (!plan) {
+    return {
+      ok: false,
+      error: installed(ed, d)
+        ? `${name} is installed, but it cannot open a folder with this name safely (it has one of & % ( ) , ; = ! ^ " | in its path). Rename the folder, or open it from ${name} itself.`
+        : `${name} was not found, so nothing was opened.`,
+    };
+  }
   const r = await d.start({ ...plan, edition: name });
   return r.ok ? { ok: true, edition: name } : { ok: false, error: r.error ?? 'unknown error', edition: name };
 }

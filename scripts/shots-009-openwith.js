@@ -38,6 +38,8 @@ module.exports = async (ctx) => {
     assert.ok(m.focus && m.exp === 'true', `${w}: first item focused, expanded`);
     await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}))`);
     assert.strictEqual(await js(`document.activeElement.querySelector('.mt').firstChild.textContent`), 'VSCodium', 'ArrowDown moves');
+    await js(`document.getElementById('vscodeBtn').dispatchEvent(new PointerEvent('pointerenter'))`); await ctx.sleep(300);
+    assert.ok(await js(`document.activeElement&&document.activeElement.dataset.ow==='vscodium'&&document.activeElement.isConnected`), 'a pointerenter does not rebuild an open menu (focus kept)');
     await H.shot(path.join(OUT, `009-openwith-${w}x${h}.png`), { prep: 'calm', keepHover: true, delay: 300 });
     await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
     assert.ok(await js(`document.getElementById('openWithMenu').hidden&&document.activeElement===document.getElementById('vscodeBtn')`), 'Esc closes, focus back on the button');
@@ -46,7 +48,8 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#openWithMenu [data-ow="folder"]').click()`);
     await ctx.sleep(500);
     const t = await js(`document.getElementById('toasts').innerText`);
-    assert.match(t, /Opening in the file manager.*conversation stays here/);
+    assert.match(t, /Opening the folder in your file manager.*conversation stays here/);
+    assert.ok(!/Show in folder/.test(t), 'the toast names the file manager, not the menu item');
   }
   console.log('[009-openwith] PASS');
 };
