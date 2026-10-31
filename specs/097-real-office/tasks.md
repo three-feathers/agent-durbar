@@ -4,7 +4,7 @@
 
 **Tests**: required (constitution VII; SC-001..SC-008). Node tests and the simulator only; 0 AI credits; no network. Driver waits use `until()`, never a fixed sleep.
 
-**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`, then a `Test:` line. `[P]` = can run in parallel. A phase = one PR. Numbers taken: spec 097, FR-001..FR-093 (sparse by group; FR-084 added 2026-10-31), T001..T063 (T025, T026 added 2026-10-31).
+**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`, then a `Test:` line. `[P]` = can run in parallel. A phase = one PR. Numbers taken: spec 097, FR-001..FR-093 (sparse by group; FR-084 added 2026-10-31), T001..T063 (T025..T027 added 2026-10-31).
 
 ## Phase 0: Spec (this PR)
 
@@ -31,6 +31,7 @@
 - [x] T024 [P] `ASSETS.md` and README limits: the C2PA/content-credential strip known limit and the removal procedure (remove, replace, record, patch release). Test: `npm run specs:check`; read: the note is in `ASSETS.md` [FR-068, FR-069] Evidence: `read:` `ASSETS.md` FR-069 note and the removal procedure.
 - [ ] T022 Owner review of P1 screenshots, quoted in *Changes*. Test: `real:` owner verdict [SC-008]
 - [x] T025 [US1] Character sets in Real office: `crew.js` `realOfficeSet` (the seam; `REAL_OFFICE_SETS = ['office']`), the Office people by default, a crew shows them with the Settings note. Test: `test:realoffice-layout` (the seam, the note case, a crew with pictures) [FR-083, FR-084] Evidence: `test:`.
+- [x] T027 [US1] Lobby realism (owner 2026-10-31 10:19): measured foot and head lines per standing picture (`people.json` `feet`, `top`), feet on the floor line, a contact shadow, people 1.7 m against the 2.1 m Boss door. Test: `test:realoffice-layout` (anchor within 0.5 px, scale within 6 %, the treadmill pose), `test:realoffice-assets` (every standing picture has its lines), `shots-097-realoffice.js` (feet within 2 px of the floor line, a shadow under each) [FR-024] Evidence: `test:`, `sim:`.
 - [x] T026 [US1] Lobby widths (owner 2026-10-31 09:03): one fixture per place, widths that follow the crowd, compact empty fixtures, `+N` only past what fits, chips that do not touch. Test: `test:realoffice-layout` (0, 1, 5 and 12 visitors at one place, all places busy, both sizes); `check:office` Real office variant (chips) [FR-025, FR-026] Evidence: `test:`, `sim:`.
 
 ## Phase 2: Screens and motion (PR P2) - US3, US4

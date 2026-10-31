@@ -181,7 +181,11 @@
       if (fl && fx.art) { const li = el(lights, 'fl:' + fx.id, 'div', 'ro-fxl fxl-' + fl + (fx.id === 'boss' ? ' boss' : '')); box(li, fx.light); }
       for (const v of fx.visitors) {
         const ag = p.visitors.find((x) => x.id === v.id);
-        if (v.fig && !BAD.has(v.fig.file)) { const im = el(art, 'v:' + v.id, 'img', 'ro-visitor'); box(im, v.fig); im.dataset.for = v.id; im.dataset.pose = v.fig.pose; img(im, v.fig.file); }
+        if (v.fig && !BAD.has(v.fig.file)) {
+          /* owner 2026-10-31 10:19: the feet on the floor line (layout), with a soft contact shadow under them */
+          const sh = el(art, 'vs:' + v.id, 'div', 'ro-shadow'); box(sh, v.shadow);
+          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor'); box(im, v.fig); im.dataset.for = v.id; im.dataset.pose = v.fig.pose; im.dataset.feet = String(Math.round(v.fig.feetY * 10) / 10); img(im, v.fig.file);
+        }
         const ch = el(chrome, 'vc:' + v.id, 'span', 'ro-chip' + (ag.needsYou ? ' wait' : '')); box(ch, v.chip);
         if (p.go) ch.dataset.pvopen = v.id; else ch.dataset.for = v.id;
         attr(ch, 'title', ag.title); ch.dataset.name = ag.name; text(ch, (ag.needsYou ? '✋ ' : '') + ag.name);

@@ -1694,7 +1694,7 @@ function realModel(model){
     return {id:r.id,name:r.name,path:deskMask(showPath(r.path)),cost:u?u.long:'',counts,newSess:!!(bridge&&bridge.newSession&&anyKindReady()&&!demoOn),menu:!!(bridge&&bridge.removeFolder&&!demoOn),
       agents:list.map(a=>{const v=VISITS.at(a.id),st=stOf(a,old.has(a.id)),task=deskMask(taskOf(a)),place=v?placeLabel(v.place):'',needs=st==='waiting'||st==='limit';
         return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tip:deskTip(a),selected:ui.selected===a.id,away:v?v.place:null,awayLabel:place,
-          label:`${a.name}, ${a.role}, ${stWord(a)}${task?', '+task:''}${needs?', needs you':''}${place?', at '+place:''}. Open chat panel.`, /* FR-090 */
+          label:[a.name,a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
           helpers:helpersOf(a).map(h=>stOf(h,false))};})};
   });
   const places=lobbyPlaces().map(p=>{

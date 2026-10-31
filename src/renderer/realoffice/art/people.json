@@ -162,6 +162,13 @@
  },
  "stand": {
   "p01": {
+   "feet": {
+    "book": 0.9688,
+    "coffee": 0.9656,
+    "knock": 0.9641,
+    "letter": 0.9656,
+    "tread": 0.9969
+   },
    "figH": 776,
    "poses": {
     "book": [
@@ -184,9 +191,27 @@
      300,
      778
     ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0016,
+    "knock": 0.0016,
+    "letter": 0.0016,
+    "tread": 0.0
    }
   },
   "p02": {
+   "feet": {
+    "book": 0.9891,
+    "box": 0.9969,
+    "coffee": 0.9672,
+    "knock": 0.9891,
+    "letter": 0.9891,
+    "tool": 0.9969,
+    "touch": 0.9969,
+    "tread": 0.9969,
+    "wait": 0.9969
+   },
    "figH": 891,
    "poses": {
     "book": [
@@ -225,9 +250,27 @@
      237,
      889
     ]
+   },
+   "top": {
+    "book": 0.0016,
+    "box": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "tool": 0.0,
+    "touch": 0.0,
+    "tread": 0.0016,
+    "wait": 0.0016
    }
   },
   "p03": {
+   "feet": {
+    "book": 0.9906,
+    "coffee": 0.9906,
+    "knock": 0.9953,
+    "letter": 0.9938,
+    "tread": 0.9953
+   },
    "figH": 700,
    "poses": {
     "book": [
@@ -250,9 +293,23 @@
      280,
      701
     ]
+   },
+   "top": {
+    "book": 0.0016,
+    "coffee": 0.0016,
+    "knock": 0.0016,
+    "letter": 0.0016,
+    "tread": 0.0016
    }
   },
   "p04": {
+   "feet": {
+    "book": 0.9828,
+    "coffee": 0.9812,
+    "knock": 0.9859,
+    "letter": 0.9844,
+    "tread": 0.9969
+   },
    "figH": 823,
    "poses": {
     "book": [
@@ -275,9 +332,27 @@
      483,
      823
     ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0016,
+    "letter": 0.0,
+    "tread": 0.0
    }
   },
   "p05": {
+   "feet": {
+    "book": 0.9812,
+    "box": 0.9906,
+    "coffee": 0.975,
+    "knock": 0.9844,
+    "letter": 0.9797,
+    "tool": 0.9922,
+    "touch": 0.9891,
+    "tread": 0.9969,
+    "wait": 0.9969
+   },
    "figH": 714,
    "poses": {
     "book": [
@@ -316,9 +391,31 @@
      221,
      700
     ]
+   },
+   "top": {
+    "book": 0.0016,
+    "box": 0.0016,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0016,
+    "tool": 0.0016,
+    "touch": 0.0016,
+    "tread": 0.0016,
+    "wait": 0.0
    }
   },
   "p06": {
+   "feet": {
+    "book": 0.9547,
+    "box": 0.9953,
+    "coffee": 0.9531,
+    "knock": 0.9578,
+    "letter": 0.9469,
+    "tool": 0.9844,
+    "touch": 0.9953,
+    "tread": 0.9969,
+    "wait": 0.9969
+   },
    "figH": 846,
    "poses": {
     "book": [
@@ -357,9 +454,27 @@
      317,
      839
     ]
+   },
+   "top": {
+    "book": 0.0016,
+    "box": 0.0016,
+    "coffee": 0.0,
+    "knock": 0.0016,
+    "letter": 0.0016,
+    "tool": 0.0016,
+    "touch": 0.0016,
+    "tread": 0.0016,
+    "wait": 0.0016
    }
   },
   "p07": {
+   "feet": {
+    "book": 0.9828,
+    "coffee": 0.9828,
+    "knock": 0.9906,
+    "letter": 0.9875,
+    "tread": 0.9969
+   },
    "figH": 849,
    "poses": {
     "book": [
@@ -382,9 +497,23 @@
      337,
      851
     ]
+   },
+   "top": {
+    "book": 0.0016,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0016,
+    "tread": 0.0016
    }
   },
   "p08": {
+   "feet": {
+    "book": 0.9828,
+    "coffee": 0.9812,
+    "knock": 0.9844,
+    "letter": 0.9828,
+    "tread": 0.9969
+   },
    "figH": 705,
    "poses": {
     "book": [
@@ -407,9 +536,23 @@
      412,
      704
     ]
+   },
+   "top": {
+    "book": 0.0031,
+    "coffee": 0.0031,
+    "knock": 0.0016,
+    "letter": 0.0031,
+    "tread": 0.0016
    }
   },
   "p09": {
+   "feet": {
+    "book": 0.9797,
+    "coffee": 0.975,
+    "knock": 0.9766,
+    "letter": 0.9844,
+    "tread": 0.9969
+   },
    "figH": 709,
    "poses": {
     "book": [
@@ -432,9 +575,23 @@
      409,
      704
     ]
+   },
+   "top": {
+    "book": 0.0016,
+    "coffee": 0.0016,
+    "knock": 0.0016,
+    "letter": 0.0,
+    "tread": 0.0
    }
   },
   "p10": {
+   "feet": {
+    "book": 0.9688,
+    "coffee": 0.9656,
+    "knock": 0.9656,
+    "letter": 0.9625,
+    "tread": 0.9969
+   },
    "figH": 796,
    "poses": {
     "book": [
@@ -457,9 +614,23 @@
      392,
      798
     ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0016,
+    "knock": 0.0,
+    "letter": 0.0,
+    "tread": 0.0
    }
   },
   "p11": {
+   "feet": {
+    "book": 0.9719,
+    "coffee": 0.9781,
+    "knock": 0.9734,
+    "letter": 0.9766,
+    "tread": 0.9969
+   },
    "figH": 709,
    "poses": {
     "book": [
@@ -482,9 +653,27 @@
      400,
      708
     ]
+   },
+   "top": {
+    "book": 0.0016,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "tread": 0.0016
    }
   },
   "p12": {
+   "feet": {
+    "book": 0.9703,
+    "box": 0.9969,
+    "coffee": 0.9688,
+    "knock": 0.9734,
+    "letter": 0.9734,
+    "tool": 0.9938,
+    "touch": 0.9938,
+    "tread": 0.9969,
+    "wait": 0.9906
+   },
    "figH": 858,
    "poses": {
     "book": [
@@ -523,9 +712,27 @@
      347,
      851
     ]
+   },
+   "top": {
+    "book": 0.0,
+    "box": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "tool": 0.0,
+    "touch": 0.0,
+    "tread": 0.0,
+    "wait": 0.0016
    }
   },
   "p13": {
+   "feet": {
+    "book": 0.9922,
+    "coffee": 0.9391,
+    "knock": 0.9891,
+    "letter": 0.9906,
+    "tread": 0.9969
+   },
    "figH": 856,
    "poses": {
     "book": [
@@ -548,9 +755,23 @@
      453,
      857
     ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "tread": 0.0016
    }
   },
   "p14": {
+   "feet": {
+    "book": 0.9969,
+    "coffee": 0.9875,
+    "knock": 0.9656,
+    "letter": 0.9891,
+    "tread": 0.9969
+   },
    "figH": 773,
    "poses": {
     "book": [
@@ -573,9 +794,23 @@
      316,
      775
     ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0016,
+    "knock": 0.0016,
+    "letter": 0.0016,
+    "tread": 0.0016
    }
   },
   "p15": {
+   "feet": {
+    "book": 0.9906,
+    "coffee": 0.9844,
+    "knock": 0.9875,
+    "letter": 0.9891,
+    "tread": 0.9969
+   },
    "figH": 704,
    "poses": {
     "book": [
@@ -598,6 +833,13 @@
      401,
      704
     ]
+   },
+   "top": {
+    "book": 0.0016,
+    "coffee": 0.0016,
+    "knock": 0.0016,
+    "letter": 0.0,
+    "tread": 0.0016
    }
   }
  },

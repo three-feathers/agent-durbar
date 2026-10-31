@@ -105,6 +105,16 @@ module.exports = async (ctx) => {
     for (const st of ['working', 'thinking', 'idle', 'asleep']) if (cues[st]) assert.ok(cues[st].every((c) => c === 'none'), `${st}: no call light`);
     const bub = await js(`({e:document.querySelectorAll('#stage .ro-plate[data-state="error"]').length,x:document.querySelectorAll('#stage .ro-bang').length})`);
     assert.strictEqual(bub.x, bub.e, 'one "!" per error desk');
+    // ---- owner 2026-10-31 10:19: every visitor's feet (its measured foot line) on the lobby's floor line within 2 px, with a contact shadow ----
+    const feet = await js(`(()=>{const A=self.DurbarRealOfficeArt,fl=document.querySelector('#stage .ro-strip').getBoundingClientRect().top+3,out=[];
+      for(const im of document.querySelectorAll('#stage .ro-visitor')){const m=/(p\\d\\d)-(\\w+)\\.webp$/.exec(im.getAttribute('src'));const f=A.stand[m[1]].feet[m[2]];
+        const r=im.getBoundingClientRect(),y=r.top+r.height*f,cx=r.left+r.width/2;
+        const sh=[...document.querySelectorAll('#stage .ro-shadow')].some(s=>{const q=s.getBoundingClientRect();return q.left<cx&&q.right>cx&&Math.abs((q.top+q.bottom)/2-fl)<=2;});
+        out.push({who:im.dataset.for,pose:m[2],off:Math.round((y-fl)*10)/10,sh});}
+      return out;})()`);
+    console.log('[097] feet vs floor line', w, JSON.stringify(feet.map((f) => f.pose + ':' + f.off)));
+    assert.ok(feet.length >= 3, 'visitors stand in the lobby');
+    for (const f of feet) { assert.ok(Math.abs(f.off) <= 2, `${f.who} (${f.pose}) floats or sinks: ${f.off} px from the floor line`); assert.ok(f.sh, `${f.who} has a contact shadow`); }
     await H.shot(path.join(OUT, `097-real-15-${w}x${h}.png`), { prep: 'calm' });
   }
 
@@ -130,7 +140,7 @@ module.exports = async (ctx) => {
   const before = await js(who);
   const all = await js(`document.querySelectorAll('#stage .ro-plate').length`);
   await js(`document.querySelector('.stat[data-k="waiting"]').click()`);
-  await must(`document.querySelectorAll('#stage .ro-plate').length<${Number(all)}`, 'the filter');
+  await must(`document.querySelectorAll('#stage .ro-plate').length<${jsLiteral(Number(all))}`, 'the filter');
   await js(`document.querySelector('.stat[data-k="waiting"]').click()`);
   await must(`document.querySelectorAll('#stage .ro-plate').length===window.__durbarSimUi.agents().filter(a=>!a.parent).length`, 'the filter off');
   await must(PICS, 'the pictures');

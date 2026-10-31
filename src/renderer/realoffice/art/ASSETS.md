@@ -12,7 +12,9 @@ in the repository.
   then Pillow 10.2 re-encoded every picture as WebP with alpha, quality 0.80, method 6, no EXIF, XMP or ICC chunk, persons resized to at
   most 640 px tall (spec 097 FR-062). `people.json` keeps each picture's metadata in the source sheet's pixels (`w`, `h`, `headTop`,
   `bodyH`, `hand` for a seated pose; `figH` and per-pose `[w, h]` for standing ones; the four extra poses of a `stand2` sheet are
-  converted to its `stand` sheet's scale), so a resize does not change it.
+  converted to its `stand` sheet's scale), so a resize does not change it. For every standing picture it also keeps `feet` and
+  `top` (owner 2026-10-31 10:19): the lowest and highest rows with at least 3 pixels over alpha 128, as a share of the shipped
+  picture's height, measured with Pillow from the alpha channel; the lobby stands people on their feet, not on the picture's box.
 - **Fictional people (FR-067):** the generation prompts of 2026-10-31 describe invented people (age, look, clothes) and name no real
   person, but they did not carry the fictional-people clause, which spec 097 added later the same day. The clause is recorded beside
   each person sheet below (`fictional:`); every new prompt for this pack must carry it in the prompt itself.

@@ -3,7 +3,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { realLayout, lobbyWidths, sortDesks, assignPeople, standPose, lobbyRange, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
+import { realLayout, lobbyWidths, sortDesks, assignPeople, standPose, lobbyRange, PERSON_M, DOOR_M, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
 
@@ -156,7 +156,8 @@ for (const [k, v] of Object.entries(faces)) assert.ok(v >= FACE_FLOOR - 1e-9, `S
   assert.ok(vs.length >= 3, 'visitors stand at fixtures');
   const lobbyFace = Math.min(...vs.map((v) => (v.face as Rect).h));
   console.log('lobby face px with 15 agents at 1280x800:', Math.round(lobbyFace * 10) / 10);
-  assert.ok(lobbyFace >= 18, `FR-024: lobby faces at least 18 px (estimate: 0.12 of the standing height), got ${lobbyFace}`);
+  /* FR-024's 18 px is a [KNOWN GAP] since the owner's realism rule (people 1.7 m against the 2.1 m door): a ratchet keeps the estimate */
+  assert.ok(lobbyFace >= 11, `FR-024 ratchet: lobby faces (estimate: 0.13 of a 1.7 m person) ${lobbyFace}`);
   // owner 2026-10-31 09:03: one fixture per place; a crowd widens its place, empty places shrink; +N only past what fits
   for (const [W, H] of [[1440, 848], [1280, 748]] as [number, number][]) {
     const widths: number[] = [];
@@ -197,14 +198,40 @@ for (const [k, v] of Object.entries(faces)) assert.ok(v >= FACE_FLOOR - 1e-9, `S
   }
   // custom places (FR-027) and a narrow floor: empty fixtures become plate-only slots, occupied ones never
   const m3 = model(15, 4, { custom: 3 });
-  const L3 = realLayout(m3, { w: 810, h: 748 }, META);
+  const L3 = realLayout(m3, { w: 640, h: 748 }, META);
   assert.strictEqual(L3.fixtures.length, 12, '9 built-in places and 3 custom ones');
   for (const f of L3.fixtures) if (m3.places.find((p) => p.id === f.id)!.visitors.length) assert.ok(f.art, `occupied ${f.id} keeps its fixture`);
   const fullH = L3.fixtures.filter((f) => f.art).map((f) => f.art!.h);
   assert.ok(L3.fixtures.some((f) => !f.art) || Math.min(...fullH) < Math.max(...fullH) - 0.5, 'a narrow band: some empty place is a compact fixture or a plate-only slot');
-  assert.deepStrictEqual(problems(L3, 810, 748), [], 'the narrow lobby still has no overlap');
+  assert.deepStrictEqual(problems(L3, 640, 748), [], 'the narrow lobby still has no overlap');
   assert.ok(L3.fixtures.filter((f) => f.custom).every((f) => !f.art || Math.abs(f.art.w - L3.fixtures.find((x) => x.id === 'web')!.art!.w) < 1 || !L3.fixtures.find((x) => x.id === 'web')!.art), 'a custom fixture is the size of the Web one');
 }
+
+// ---- owner 2026-10-31 10:19 ("it must be real"): feet on the floor line, people 1.7 m against a 2.1 m door ----
+for (const [W, H] of SIZES) {
+  const m = model(15, 4); m.places[6].visitors = [0, 1, 2].map((i) => ({ id: 'b' + i, person: PEOPLE[i], needsYou: false })); m.places[2].visitors = [{ id: 't0', person: 'p03', needsYou: false }];
+  const L = realLayout(m, { w: W, h: H }, META);
+  const floorLine = L.floorStrip.y + 3, wallScale = floorLine / META.floorLine;
+  const doorPx = (META.floorLine - (META.fixtureTop as Record<string, number>).boss) * wallScale;
+  let n = 0;
+  for (const f of L.fixtures) for (const v of f.visitors) {
+    if (!v.fig) continue;
+    n++;
+    const st = META.stand[m.places.find((p) => p.id === f.id)!.visitors.find((x) => x.id === v.id)!.person as string];
+    const feet = (st.feet as Record<string, number>)[v.fig.pose], top = (st.top as Record<string, number>)[v.fig.pose];
+    assert.ok(Math.abs(v.fig.y + v.fig.h * feet - floorLine) <= 0.5, `${v.id} (${v.fig.pose}) stands on the floor line at ${W}: feet ${v.fig.y + v.fig.h * feet} vs ${floorLine}`);
+    assert.ok(v.shadow && Math.abs(v.shadow.y + v.shadow.h / 2 - floorLine) <= 0.5, `${v.id} has a contact shadow on the floor line`);
+    if (v.fig.pose === 'letter' || v.fig.pose === 'book' || v.fig.pose === 'knock') {
+      const tall = v.fig.h * (feet - top);
+      assert.ok(Math.abs(tall / doorPx - PERSON_M / DOOR_M) < 0.06, `${v.id} is ${(tall / doorPx * DOOR_M).toFixed(2)} m against a ${DOOR_M} m door at ${W}`);
+    }
+  }
+  assert.ok(n >= 5, 'visitors were checked: ' + n);
+  const tread = L.fixtures.find((f) => f.id === 'terminal')!.visitors[0];
+  assert.strictEqual(tread.fig!.pose, 'tread', 'the Terminal visitor walks on the treadmill');
+}
+// the anchor uses the measured foot line, not the picture's box: the mockup's art had up to 6 % empty rows under the feet
+assert.ok(Object.values(META.stand).some((s) => Object.values(s.feet as Record<string, number>).some((f) => f < 0.97)), 'some sprite has empty rows under its feet (so a box anchor would float)');
 
 // ---- FR-024: stand poses and fallbacks ----
 {

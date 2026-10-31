@@ -10,7 +10,8 @@ export interface RealVisitor { id: string; person?: string | null; needsYou?: bo
 export interface RealPlace { id: string; custom?: boolean; visitors: RealVisitor[] }
 export interface RealModel { folders: RealFolder[]; places: RealPlace[] }
 export interface SeatMeta { w: number; h: number; headTop: number; bodyH: number; hand: number }
-export interface StandMeta { figH: number; poses: Record<string, [number, number]> }
+/** `feet` and `top`: per pose, the lowest and highest opaque row as a share of the picture's height, measured from its alpha (owner 2026-10-31 10:19) */
+export interface StandMeta { figH: number; poses: Record<string, [number, number]>; feet?: Record<string, number>; top?: Record<string, number> }
 export interface RealMeta {
   seat: Record<string, SeatMeta>; stand: Record<string, StandMeta>;
   fixtures: Record<string, [number, number]>; fixtureTop?: Record<string, number>; floorLine: number;
@@ -25,7 +26,7 @@ export interface DeskBox {
 }
 /** `id` is the folder's id; `part` is 1, or 2, 3... for the rest of a folder split over rows */
 export interface ZoneBox { id: string; part: number; box: Rect; sign: Rect; desks: DeskBox[] }
-export interface VisitorBox { id: string; fig: (Rect & { file: string; pose: string }) | null; chip: { x: number; y: number }; face: Rect | null }
+export interface VisitorBox { id: string; fig: (Rect & { file: string; pose: string; feetY: number }) | null; chip: { x: number; y: number }; face: Rect | null; shadow: Rect | null }
 export interface FixtureBox { id: string; custom: boolean; art: Rect | null; slot: Rect; plate: { x: number; y: number; w: number }; visitors: VisitorBox[]; more: number; light: Rect }
 export interface Layout {
   u: number; big: boolean; lobbyH: number; floorH: number; width: number; height: number; scroll: boolean; faceH: number;
@@ -48,6 +49,8 @@ export const BIG_MAX = 4;
 /** FR-024: visitors' activity pose per place, and the fallback when a person has no picture for it. */
 export const FX_POSE: Record<string, string> = { library: 'book', software: 'box', terminal: 'tread', web: 'touch', boss: 'knock', coffee: 'coffee', bank: 'letter', postbox: 'letter', other: 'tool' };
 export const POSE_FALLBACK: Record<string, string> = { box: 'letter', touch: 'letter', tool: 'letter', wait: 'letter' };
+/** Owner 2026-10-31 10:19 ("it must be real"): people in the lobby are scaled against the Boss door: a door is about 2.1 m, a person 1.7 m. */
+export const DOOR_M = 2.1, PERSON_M = 1.7;
 /** FR-022: the order inside a zone. */
 export const STATE_ORDER: Record<RealState, number> = { waiting: 0, limit: 0, error: 1, working: 2, thinking: 2, done: 3, idle: 4, asleep: 4 };
 /** FR-036: the seated pose per state (the first frame; motion is phase P2). */
@@ -169,11 +172,19 @@ function roPack(meta: RealMeta, folders: RealFolder[], W: number, Ho: number, lo
 }
 
 /** FR-024: the standing picture for a visitor at a place (the pose, else its fallback), or null when the person has neither. */
-export function standPose(meta: RealMeta, person: string | null | undefined, place: string, custom: boolean): { pose: string; size: [number, number]; figH: number } | null {
+export function standPose(meta: RealMeta, person: string | null | undefined, place: string, custom: boolean): { pose: string; size: [number, number]; figH: number; feet: number; top: number } | null {
   if (!person || !roOwn(meta.stand, person)) return null;
   const st = meta.stand[person], want = custom ? 'wait' : (roOwn(FX_POSE, place) ? FX_POSE[place] : 'wait');
-  for (const p of [want, POSE_FALLBACK[want]]) if (p && roOwn(st.poses, p)) return { pose: p, size: st.poses[p], figH: st.figH };
+  for (const p of [want, POSE_FALLBACK[want]]) if (p && roOwn(st.poses, p)) return { pose: p, size: st.poses[p], figH: st.figH, feet: st.feet && roOwn(st.feet, p) ? st.feet[p] : 1, top: st.top && roOwn(st.top, p) ? st.top[p] : 0 };
   return null;
+}
+/** a person's standing height (top of the head to the soles) in sheet pixels, from the upright 'letter' pose (else the sheet's figure height) */
+export function standHeight(meta: RealMeta, person: string): number {
+  const st = roOwn(meta.stand, person) ? meta.stand[person] : null;
+  if (!st) return 1;
+  const h = roOwn(st.poses, 'letter') ? st.poses.letter[1] : st.figH;
+  const f = st.feet && roOwn(st.feet, 'letter') ? st.feet.letter : 1, t = st.top && roOwn(st.top, 'letter') ? st.top.letter : 0;
+  return Math.max(1, (f - t) * h);
 }
 
 /** Owner 2026-10-31 09:03 (spec 097 delta): one fixture per place, never two; a place's width grows with the people standing there and
@@ -222,7 +233,9 @@ export const COMPACT_W = 96;
 function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { fixtures: FixtureBox[]; floorStrip: Rect } {
   const FLOOR = Math.round(Math.max(18, Lb * 0.13)), floorY = Lb - FLOOR + 3;
   const wallH = floorY, fs0 = wallH / meta.floorLine;
-  const figH = Lb - 19, vw = figH * 0.4;
+  /* a standing person's height in px: 1.7 m against the Boss door's 2.1 m at the band's own scale (not a fixture's compact scale) */
+  const doorPx = (meta.floorLine - (meta.fixtureTop && roOwn(meta.fixtureTop, 'boss') ? meta.fixtureTop.boss : meta.floorLine * 0.03)) * fs0;
+  const personPx = doorPx * PERSON_M / DOOR_M, vw = personPx * 0.42;
   const webW = (meta.fixtures.web || [100, meta.floorLine])[0] * fs0;
   const full = places.map((p) => (!p.custom && roOwn(meta.fixtures, p.id) ? meta.fixtures[p.id][0] * fs0 : webW)); /* FR-027: a custom place is a kiosk the size of the Web fixture */
   const al = lobbyWidths(full, places.map((p) => p.visitors.length), W, vw);
@@ -234,13 +247,16 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
     const visitors: VisitorBox[] = compact ? [] : p.visitors.slice(0, al.shown[i]).map((v, j) => {
       const cx = x + fw - 0.3 * vw + vw / 2 + j * al.step;
       const sp = standPose(meta, v.person, p.id, !!p.custom);
-      let fig: VisitorBox['fig'] = null, face: Rect | null = null;
+      let fig: VisitorBox['fig'] = null, face: Rect | null = null, shadow: Rect | null = null;
       if (sp) {
-        const k = figH / sp.figH, fw2 = sp.size[0] * k, fh2 = sp.size[1] * k;
-        fig = { x: cx - fw2 / 2, y: Lb - 15 - fh2, w: fw2, h: fh2, file: `${v.person}-${sp.pose}.webp`, pose: sp.pose };
-        face = { x: cx - 0.06 * figH, y: fig.y + 0.02 * figH, w: 0.12 * figH, h: 0.12 * figH };
+        /* the feet (the picture's lowest opaque row) stand on the floor line; one scale per person, from its upright 'letter' pose */
+        const k = personPx / standHeight(meta, String(v.person)), fw2 = sp.size[0] * k, fh2 = sp.size[1] * k;
+        fig = { x: cx - fw2 / 2, y: floorY - sp.feet * fh2, w: fw2, h: fh2, file: `${v.person}-${sp.pose}.webp`, pose: sp.pose, feetY: floorY };
+        const headY = fig.y + sp.top * fh2;
+        face = { x: cx - 0.065 * personPx, y: headY, w: 0.13 * personPx, h: 0.13 * personPx };
+        shadow = { x: cx - 0.3 * fw2, y: floorY - 3, w: 0.6 * fw2, h: 6 };
       }
-      return { id: v.id, fig, chip: { x: cx, y: Lb - 17 }, face };
+      return { id: v.id, fig, chip: { x: cx, y: Lb - 17 }, face, shadow };
     });
     return { id: p.id, custom: !!p.custom, art, slot: { x, y: 0, w: al.w[i], h: Lb }, plate: { x: x + 2, y: compact ? Math.round(Lb * 0.4) : Math.max(3, objTop - 19), w: al.w[i] + al.gap - 6 }, /* the plate may use the gap up to the next place */ visitors, more: p.visitors.length - visitors.length,
       light: art ? { x: x - 0.1 * fw, y: Math.max(0, objTop - 0.15 * fh), w: 1.2 * fw, h: floorY - Math.max(0, objTop - 0.15 * fh) } : { x, y: 0, w: al.w[i], h: Lb } };

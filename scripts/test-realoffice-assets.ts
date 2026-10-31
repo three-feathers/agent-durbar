@@ -95,6 +95,8 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
     for (const [p, wh] of Object.entries(m.poses || {})) {
       want.add(`${pid}-${p}.webp`);
       if (!Array.isArray(wh) || wh.length !== 2 || !(wh[0] > 50 && wh[1] > 100 && wh[1] < 2 * m.figH)) out.push(`people.json stand ${pid} ${p}: size out of range`);
+      const ft = (m as { feet?: Record<string, number> }).feet, tp = (m as { top?: Record<string, number> }).top;
+      if (!ft || !(ft[p] > 0.8 && ft[p] <= 1) || !tp || !(tp[p] >= 0 && tp[p] < 0.2)) out.push(`people.json stand ${pid} ${p}: no measured feet/top line in range (owner 2026-10-31 10:19)`);
     }
   }
   for (const [id, wh] of Object.entries(meta.fixtures || {})) {
@@ -129,11 +131,12 @@ if (pending.length) console.log(`note: ${pending.length} person sheets wait for 
   const one = (name: string, buf: Buffer): Map<string, Buffer> => new Map([[name, buf]]);
   const sec = (name: string, f: string, extra = ''): string => `### ${name}\n- files: ${f}\n- source: s\n- tool: t\n- date: 2026-10-31\n- made by: m\n- approved by: Vikram, 2026-10-31\n- reference: none\n- prompt: a person\n- cut: c\n- licence: MIT\n${extra}\n## Removed\n\nNone.\n`;
   const person = '- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named.\n- likeness-check: Vikram, 2026-10-31\n';
-  const pj1 = JSON.stringify({ seat: {}, stand: { p01: { figH: 700, poses: { book: [300, 700] } } }, fixtures: {}, floorLine: 276, fixtureTop: {} });
+  const pj1 = JSON.stringify({ seat: {}, stand: { p01: { figH: 700, poses: { book: [300, 700] }, feet: { book: 0.97 }, top: { book: 0 } } }, fixtures: {}, floorLine: 276, fixtureTop: {} });
   const only = (p: string[]): string[] => p.filter((x) => !/desk.webp|floor.webp/.test(x)); /* the minimal case has no desk and floor */
   const okMd = sec('stand-p01', 'p01-book.webp', person);
   const book = files.get('p01-book.webp') as Buffer;
   assert.deepStrictEqual(only(problems(one('p01-book.webp', book), pj1, okMd)), [], 'a good person sheet passes');
+  assert.ok(only(problems(one('p01-book.webp', book), pj1.replace('"feet":{"book":0.97},', ''), okMd)).some((p) => /feet\/top/.test(p)), 'red: a standing picture without its measured foot line');
   assert.ok(only(problems(one('p01-book.webp', book), pj1, okMd.replace(/- fictional:.*\n/, ''))).some((p) => /fictional/.test(p)), 'red: a person sheet without the clause');
   assert.ok(only(problems(one('p01-book.webp', book), pj1, okMd.replace(/- likeness-check:.*\n/, ''))).some((p) => /likeness-check/.test(p)), 'red: without the likeness-check field');
   assert.ok(only(problems(one('p01-book.webp', book), pj1, okMd.replace('likeness-check: Vikram, 2026-10-31', 'likeness-check: , 2026-10-31'))).some((p) => /likeness-check/.test(p)), 'red: an empty approver');

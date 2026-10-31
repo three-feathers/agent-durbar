@@ -16,7 +16,8 @@
 .ro-fx{object-fit:fill}
 .ro-kiosk{display:flex;align-items:center;justify-content:center;border-radius:8px 8px 3px 3px;background:linear-gradient(#3b3f45,#24272b);border:2px solid #15171a;color:#dfe8f2}
 .ro-kiosk svg{width:45%;height:auto}
-.ro-visitor{object-fit:fill;filter:drop-shadow(0 2px 2px rgba(0,0,0,.25));cursor:pointer}
+.ro-visitor{object-fit:fill;cursor:pointer}
+.ro-shadow{border-radius:50%;background:radial-gradient(closest-side,rgba(30,20,10,.38),rgba(30,20,10,0))} /* the contact shadow under a visitor's feet */
 
 /* zones, people, desks and monitors */
 .ro-zone{border-radius:10px;background:rgba(255,255,255,.10);box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
