@@ -108,6 +108,7 @@ module.exports = async (ctx) => {
   await room(RO('photo', 'prehistoric'), 'Prehistoric people in the Photo office (any set in any world)');
   await js(`document.getElementById('scrClose').click()`);
   await must(PICS, 'the pictures');
+  await must(`[...document.querySelectorAll('#stage .ro-person')].length>=3&&[...document.querySelectorAll('#stage .ro-person')].every(i=>/\\/sets\\/prehistoric\\//.test(i.getAttribute('src'))&&i.complete&&i.naturalWidth>0)`, 'every person at a desk is a Prehistoric picture, decoded (no half-switched room)');
   await H.shot(path.join(OUT, 'photo-prehistoric-15-1440x900.png'), { prep: 'calm' });
   await js(`window.DurbarScreens.openSettings()`);
   await must(`!!document.querySelector('#wrGroup')`, 'the World row');
