@@ -22,7 +22,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 
 ## What it does
 
-- **An office, not a log:** every agent is a person at a desk in its folder's room; you see at a glance who is working, waiting for you or in trouble. 15 agents fit one screen.
+- **An office, not a log:** every agent is a person at a desk in its folder's room; you see at a glance who is working, waiting for you or in trouble. 15 agents fit one screen. Drag a room, a desk or a lobby place to put them in your order (or Alt+arrows; Alt+Shift+arrows moves the room); the order is saved and the layout stays automatic.
 - **Full-screen chat** with thinking, tool calls, diffs, questions and file attachments streaming live; a browser tab in every chat.
 - **Three agent apps side by side:** Copilot, Claude Code and Codex, with one set of permission modes and model, context and spending controls.
 - **Needs you:** one inbox of every agent waiting for an answer or a permission, oldest first.

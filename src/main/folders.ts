@@ -11,6 +11,8 @@ import { parseAutoTier, parseTier } from '../shared/modelswitch';
 import type { AutoTier, ContextTier } from '../shared/modelswitch';
 import * as floorOps from '../shared/floors';
 import type { FloorOp, FloorsDoc } from '../shared/floors';
+import { emptyOrder, parseOrder } from '../shared/roomorder';
+import type { OrderDoc } from '../shared/roomorder';
 import { cleanDisplayName, nameError, MAX_FOLDER_LABEL } from '../shared/names';
 import type { SessionNameEntry } from '../shared/sessionname';
 import { markIdOk, markSrcOk } from '../shared/sessionid';
@@ -291,8 +293,19 @@ export function parseSavedFloors(text: string): FloorsDoc {
   }
 }
 
+/** The saved manual order of rooms, desks and places (spec 033, delta 2026-11-01, issue #677), read tolerantly from the same file as the floors. */
+export function parseSavedOrder(text: string): OrderDoc {
+  try {
+    const doc = JSON.parse(text) as { order?: unknown } | null;
+    return parseOrder(doc && typeof doc === 'object' ? doc.order : undefined);
+  } catch {
+    return emptyOrder();
+  }
+}
+
 export class FolderStore {
   private folders: SavedFolder[] = [];
+  private orderDoc: OrderDoc = emptyOrder();
   private floorsDoc: FloorsDoc = floorOps.defaultFloors();
   constructor(private readonly file: string) {}
 
@@ -301,8 +314,10 @@ export class FolderStore {
       const text = fs.readFileSync(this.file, 'utf8');
       this.folders = parseSavedFolders(text);
       this.floorsDoc = parseSavedFloors(text);
+      this.orderDoc = parseSavedOrder(text);
     } catch {
       this.folders = [];
+      this.orderDoc = emptyOrder();
       this.floorsDoc = floorOps.defaultFloors();
     }
     // A folder pointing at a floor that is gone is on the ground floor (FR-014).
@@ -313,6 +328,18 @@ export class FolderStore {
   /** A copy of the floors and the default floor for the next added folder. */
   floors(): FloorsDoc {
     return { floors: this.floorsDoc.floors.map((f) => ({ ...f })), lastFloor: this.floorsDoc.lastFloor };
+  }
+
+  /** A copy of the saved manual order of rooms, desks and places. */
+  order(): OrderDoc {
+    return parseOrder(this.orderDoc);
+  }
+
+  /** Replaces the saved order with the cleaned document; the cleaned copy is returned (what was kept). */
+  setOrder(raw: unknown): OrderDoc {
+    this.orderDoc = parseOrder(raw);
+    this.save();
+    return this.order();
   }
 
   /** The floor a saved folder is on (ground for unknown folders). */
@@ -646,7 +673,7 @@ export class FolderStore {
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
       const tmp = `${this.file}.${process.pid}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify({ version: 1, floors: this.floorsDoc.floors, lastFloor: this.floorsDoc.lastFloor, folders: this.folders }, null, 2), { mode: 0o600 });
+      fs.writeFileSync(tmp, JSON.stringify({ version: 1, floors: this.floorsDoc.floors, lastFloor: this.floorsDoc.lastFloor, folders: this.folders, order: this.orderDoc }, null, 2), { mode: 0o600 });
       fs.renameSync(tmp, this.file);
       return true;
     } catch {
