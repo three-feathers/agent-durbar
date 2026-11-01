@@ -25,6 +25,13 @@
 - [ ] T009 `docs/agent-setup/README.md`, `scripts/prereview/README.md`, CODEOWNERS, `docs/agent-notes.md` entry, one line in `AGENTS.md` that a pre-review is not a review, naming what it replaces (FR-063). Test: `rules:check`, `test:docsscripts` [FR-003, FR-013, FR-014]
 - [ ] T010 Mutants, listed in the PR: refusal removed; hook allows outside; symlink kept; env inherits; `--pr-text` shows a comment; a `gh` write; unknown cost is 0; ceiling raised; an extra send; mask after cut. Each fails `test:prereview` or `test:trustedcontent`. Test: SC-001 [SC-001]
 
+## Phase 2b: Added 2026-11-01 (owner's order, FR-026..FR-029)
+
+- [ ] T015 Codex runner (`--runner codex|both`): diff-only prompt, read-only sandbox, refusal when the account holds credential folders. Test: `test:prereview` with a fake `codex` on `PATH`, outside text never on its stdin [FR-026]
+- [ ] T016 `post` as the App behind the off-by-default gate; JWT signed inside one function; token in memory. Test: gate cases (flag off, Paco missing), generated key, fake `fetch`, no other write call [FR-027]
+- [ ] T017 Results folder and `--out`. Test: file modes, `unusable` raw kept local only [FR-028]
+- [ ] T018 Adversarial text in title, body, diff, file contents and model answer stays data. Test: mutants in the PR list [FR-029]
+
 ## Phase 3: Real, owner's ask (spends credits)
 
 - [ ] T011 **Owner:** the key steps in the plan; Q1 to Q3 answered. Then one run, on the smallest open trusted PR. Say the cost first. Check the `init` line, a denial from a planted path, the ledger against the Console, **and that the credit balance is what fell**. Stop if not. Test: `real:` recorded [FR-010, FR-013, FR-014, FR-021]
