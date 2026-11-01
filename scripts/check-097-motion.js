@@ -67,8 +67,8 @@ module.exports = async (ctx) => {
     assert.ok(names['ro-fa'] >= 2 && names['ro-fb'] >= 1 && names['ro-type'] >= 2, 'two-frame animations: ' + JSON.stringify(names));
     for (const a of anims) {
       assert.ok(a.props.every((p) => p === 'opacity' || p === 'transform'), `FR-180: only opacity and transform: ${a.name}: ${a.props}`);
-      if (/ro-(person|visitor)/.test(a.target) && /^ro-(fa|fb|br|type|wave|run|sip|knock)$/.test(a.name)) assert.ok(!/steps|step-/.test(a.ease), `people ease (spec Changes 2026-11-01): ${a.name}: ${a.ease}`);
-      if (/ro-(person|visitor)/.test(a.target) && (a.name === 'ro-fa' || a.name === 'ro-fb')) assert.ok(a.dur >= 620 && a.dur <= 1200, 'a frame period: ' + a.dur);
+      if (/ro-(person|visitor)/.test(a.target) && /^ro-(fa|fb|fa-run|fb-run|br|type|wave|run|sip|knock)$/.test(a.name)) assert.ok(!/steps|step-/.test(a.ease), `people ease (spec Changes 2026-11-01): ${a.name}: ${a.ease}`);
+      if (/ro-(person|visitor)/.test(a.target) && /^ro-f[ab]/.test(a.name)) assert.ok(a.dur >= 620 && a.dur <= 1200, 'a frame period: ' + a.dur);
       if (a.name === 'ro-br' || a.name === 'ro-type') assert.ok(a.dur >= 5000 && a.dur <= 8000, 'a sway: ' + a.dur);
     }
     // the two pictures alternate: computed opacity, always one showing, over two periods; and the pixels differ

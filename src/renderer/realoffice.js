@@ -25,7 +25,11 @@
 
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const px = (n) => Math.round(n * 10) / 10 + 'px';
-  const box = (el, r) => { el.style.left = px(r.x); el.style.top = px(r.y); if (r.w != null) el.style.width = px(r.w); if (r.h != null) el.style.height = px(r.h); };
+  /* spec Changes 2026-11-01: while `SLIDE` is on (a draw of the same window size, people moving), something the layout moved a little slides there on `transform`, so a visitor's arrival does not make the lobby jump */
+  let SLIDE = false;
+  const box = (el, r) => {
+    if (SLIDE && el._x !== undefined) { const dx = el._x - r.x, dy = el._y - r.y; if ((Math.abs(dx) >= 0.5 || Math.abs(dy) >= 0.5) && Math.abs(dx) <= 120 && Math.abs(dy) <= 120 && el.animate) el.animate([{ transform: `translate(${dx}px,${dy}px)` }, { transform: 'none' }], { duration: 280, easing: 'cubic-bezier(.25,.1,.25,1)' }); }
+    el._x = r.x; el._y = r.y; el.style.left = px(r.x); el.style.top = px(r.y); if (r.w != null) el.style.width = px(r.w); if (r.h != null) el.style.height = px(r.h); };
   const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => Array.from(w)[0] || '').join('').toUpperCase() || '?';
 
   /* the keyed layers: one Map per layer, elements reused by key; unseen keys are removed at the end of a render */
@@ -74,8 +78,10 @@
   function fadeIn(e, ms, delay) { e.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms, delay: delay || 0, easing: 'steps(5, end)', fill: 'backwards' }); }
   /* spec Changes 2026-11-01: a person going to or from a place glides from where they were, with a stride bounce; the second picture waits for the arrival (GLIDING) */
   const WHERE = new Map(), GLIDING = new Map();
-  function glide(e, id, from, to) {
+  function glide(e, id, from, to, seated) {
     if (!from || (from.x === to.x && from.y === to.y)) return false;
+    /* a seated picture stops at the waist: it rises into the chair behind the desk, it does not cross the room */
+    if (seated) { const a = e.animate([{ transform: `translateY(${(to.h * 0.12).toFixed(1)}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 420, delay: 120, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'backwards' }); GLIDING.set(id, a); a.onfinish = a.oncancel = () => { if (GLIDING.get(id) === a) { GLIDING.delete(id); if (onArt) onArt(); } }; return true; }
     const dx0 = from.x - to.x, dy0 = from.y - to.y, dist = Math.hypot(dx0, dy0), ms = Math.max(500, Math.min(1200, dist * 2.6)), s0 = to.h ? from.h / to.h : 1;
     const o = getComputedStyle(e).transformOrigin.split(' ').map(parseFloat), ox = o[0] || 0, oy = o[1] || 0;
     const steps = Math.max(2, Math.round(ms / 170)), kf = [];
@@ -136,7 +142,10 @@
     const drawn = !!(CUR && CUR.ro === ro && CUR.drawn);
     if (!drawn) OFF.clear();
     if (ZOOM && !ZOOM.panel.isConnected) closeZoom();
-    CUR = { ro, screenOf: opts.screenOf || null, still: !!opts.still, hold: !!opts.hold, desks: new Map(lay.zones.flatMap((z) => z.desks.map((d) => [d.id, d]))), agents: new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, { ...a, folder: f.name }]))), drawn, scroll: !!lay.scroll };
+    const sized = view.w + 'x' + view.h, sameSize = !!CUR && CUR.sized === sized;
+    CUR = { ro, screenOf: opts.screenOf || null, sized, still: !!opts.still, hold: !!opts.hold, desks: new Map(lay.zones.flatMap((z) => z.desks.map((d) => [d.id, d]))), agents: new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, { ...a, folder: f.name }]))), drawn, scroll: !!lay.scroll };
+    SLIDE = sameSize && !!CUR.drawn0 && moving() && !hiddenNow();
+    CUR.drawn0 = true;
     ro.classList.toggle('paused', hiddenNow());
     /* z-order (plan: art < lights < chrome): floor and fixtures, people and desks; the ambient and the lights; then signs, plates, chips */
     const art = layerOf(ro, 'ro-art'), amb = layerOf(ro, 'ro-amb'), lights = layerOf(ro, 'ro-lights'), chrome = layerOf(ro, 'ro-chrome');
@@ -185,7 +194,7 @@
           const was = pe.getAttribute('src');
           if (was && was !== ART + d.person.file && moving() && !hiddenNow() && !OFF.has(k)) { const g = pe.cloneNode(false); art.insertBefore(g, pe); fadeAway(g, 250); } /* FR-072 */
           img(pe, d.person.file);
-          if (fresh && CUR.drawn && moving() && !hiddenNow() && !OFF.has(k) && !glide(pe, k, WHERE.get(k), d.person)) fadeIn(pe, 150, 150); /* FR-073: in at the desk */
+          if (fresh && CUR.drawn && moving() && !hiddenNow() && !OFF.has(k) && !glide(pe, k, WHERE.get(k), d.person, true)) fadeIn(pe, 150, 150); /* FR-073: in at the desk */
           WHERE.set(k, d.person);
           if (m.kind) { setVar(pe, '--ro-per', m.period + 's'); setVar(pe, '--ro-sw', m.sway + 's'); }
           if (two && two.on && !two.b._clock) { two.b._clock = true; clock(two.b, m.offset); clock(pe, m.offset); }
@@ -274,6 +283,7 @@
     stagger(chrome, lay.width);
     for (const [id, s] of SCR) if (!CUR.desks.has(id)) { clearTimeout(s.timer); if (IO) IO.unobserve(s.box); SCR.delete(id); }
     watchOff(lay);
+    SLIDE = false;
     CUR.drawn = true;
     if (ZOOM) { if (!CUR.desks.has(ZOOM.id) || hiddenNow()) closeZoom(); else placeZoom(); }
     return lay;

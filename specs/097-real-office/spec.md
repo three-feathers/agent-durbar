@@ -337,6 +337,7 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 - **A small movement on top, on both pictures, on one clock:** breathing and a slow sway from the feet; a typing bob; the body following a wave; a running bounce. Each is eased and a per-person loop (`personMotion`'s `sway`, 5 to 8 s), so people are not in step.
 - **Rates:** typing 0.85 to 1.1 s a pair, a wave 1 to 1.2 s, running 0.62 to 0.74 s, about three steps a second.
 - **Going to and from a place glides:** a person who leaves a desk for a fixture, or comes back, moves with an eased `transform` from the old place, with a stride bounce, 500 to 1200 ms by distance, in place of FR-073's stepped fade alone. `[KNOWN GAP]` FR-075 stands: the pack has no side-view walk frames, so this is a person gliding in their pose, not a walk.
+- A person back at a desk rises into the chair: a seated picture stops at the waist, so it cannot cross the room. A stride's fade is shorter than the others, about 45 ms, because its legs differ too much to blend longer. What the layout moves a little (a visitor's arrival moves the lobby) slides there on `transform` for 280 ms, not on a window resize.
 - FR-072's and FR-073's fades are eased, no longer stepped.
 - `test:` `npm run test:realoffice-layout` for the rates; `sim:` `scripts/check-097-motion.js`: both frames seen and in between, the figure never below 0.6, eased timing, nothing but `transform` and `opacity`, the glide, and what stops it. The budget and the owner's verdict on the look are in this delta's PR report; numbers below.
 
