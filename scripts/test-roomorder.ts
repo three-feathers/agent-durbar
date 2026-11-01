@@ -58,6 +58,7 @@ const slots = [0, 1, 2, 3].map((i) => ({ left: i * 100, top: 0, width: 90, heigh
 assert.strictEqual(R.nearest(slots, 5, 5), 0);
 assert.strictEqual(R.nearest(slots, 260, 20), 2);
 assert.strictEqual(R.nearest(slots, 9999, 9999), 3);
+assert.strictEqual(R.nearest(slots, -9999, -9999), 0, 'a pointer far outside the group still picks the nearest slot (FR-082: a drop commits there)');
 assert.strictEqual(R.nearest([], 1, 1), -1);
 assert.strictEqual(R.shiftFor(0, 0, 2, slots), null, 'the dragged item is moved by the pointer, not shifted');
 assert.deepStrictEqual(R.shiftFor(1, 0, 2, slots), { dx: -100, dy: 0 });
@@ -109,6 +110,22 @@ try {
   const again = new FolderStore(file);
   again.load();
   assert.deepStrictEqual(again.order(), kept, 'the order survives a restart');
+  // what reaches the file is the cleaned document, not what the renderer sent (extra keys, long lists, __proto__)
+  const dirty = { rooms: [abs('b'), abs('b'), abs('a'), 5, ...Array.from({ length: MAX_ORDER_ROOMS + 20 }, (_, i) => `/r${i}`)], desks: JSON.parse(`{"${abs('a')}":["s2","s2",3,"s1"],"__proto__":["x"],"":["y"]}`), places: ['mail', 'mail'], bogus: { big: 1 } };
+  const cleaned = st.setOrder(dirty);
+  const onDisk = JSON.parse(fs.readFileSync(file, 'utf8')).order;
+  assert.deepStrictEqual(onDisk, JSON.parse(JSON.stringify(cleaned)), 'the file holds the cleaned order');
+  assert.ok(!('bogus' in onDisk) && onDisk.rooms.length <= MAX_ORDER_ROOMS && !onDisk.desks['']);
+  st.setOrder(kept);
+  // FR-081: a removed folder loses its saved place; added again it comes after the ordered ones
+  st.setOrder({ rooms: [abs('b'), abs('a')], desks: { [abs('b')]: ['s1'], [abs('a')]: ['s2'] }, places: ['mail'] });
+  assert.ok(st.remove(abs('b')));
+  assert.deepStrictEqual(st.order(), { rooms: [abs('a')], desks: { [abs('a')]: ['s2'] }, places: ['mail'] }, 'remove prunes the room and its desks');
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).order.rooms, [abs('a')], 'the file is pruned too');
+  st.upsert({ workspace: abs('b'), permMode: 'ask', model: 'auto' });
+  assert.deepStrictEqual(st.order().rooms, [abs('a')], 'a folder added again has no saved position');
+  assert.deepStrictEqual(st.order().desks[abs('b')], undefined);
+  st.setOrder(kept);
   assert.deepStrictEqual(again.list().map((f) => f.workspace), [abs('a'), abs('b')], 'the saved folder list itself is untouched');
   assert.strictEqual(again.floors().floors.length, 1, 'the floors are untouched');
   again.upsert({ workspace: abs('c'), permMode: 'ask', model: 'auto' });
@@ -156,6 +173,7 @@ assert.ok(!/(^|;)\s*(top|left|right|bottom|width|height|margin|padding)\s*:/.tes
 assert.ok(/\.reo-slot\{[^}]*transition:transform/.test(css) && /prefers-reduced-motion:reduce\)\{\.reo-slot\{transition:none/.test(css), 'the preview slides, and not under reduced motion');
 assert.ok(/function renderAll\(\)\{\s*if\(RO\.busy\(\)\)/.test(app), 'no repaint under a drag in progress');
 assert.ok(/ORDER\.rooms\.indexOf|rk=new Map\(ORDER\.rooms/.test(app) && /RO\.sortBy\(shown,a=>a\.id,ORDER\.desks/.test(app) && /RO\.sortBy\(D\.allPlaces\(CUSTOM\),p=>p\.id,ORDER\.places\)/.test(app), 'rooms, desks and places read the saved order');
+assert.ok(/addEventListener\('pointerup',e=>finish\(e,true\)\)/.test(reo) && /addEventListener\('pointercancel',e=>finish\(e,false\)\)/.test(reo), 'a release anywhere drops, a cancel does not (FR-082)');
 assert.ok(/e\.altKey[\s\S]{0,80}e\.ctrlKey\|\|e\.metaKey/.test(app) && /Move earlier/.test(app) && /Reset the office order/.test(app), 'keyboard, menu and reset exist');
 assert.ok(!/door|cabin/i.test(reo), 'the drag does not build on doors or cabins (issue #954)');
 console.log('roomorder: ok');

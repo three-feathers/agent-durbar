@@ -190,6 +190,12 @@ When more than one floor is on, I can tell at a glance which floor each room bel
 
 ## Changes
 
+### 2026-11-02: a removed folder loses its saved place; a drop outside the group (review of #987)
+
+- **FR-081 (clarified).** `FolderStore.remove` drops the folder from the saved `rooms` and `desks`, so a folder removed and added again has no saved position and comes after the ordered ones. test: `scripts/test-roomorder.ts` (remove, then add; the file is pruned too).
+- **FR-082 (clarified).** The pointer is captured for the drag, so a **release anywhere, also outside the group or the window, drops the item in the slot nearest the pointer**; there is no "outside" cancel. To abandon a drag use **Escape**, a window blur, a scroll or the wheel (or a pointer cancel from the system). Chosen because it needs no second rule and an undo is one more drag; the owner may prefer "cancel outside" (Q6). test: `scripts/test-roomorder.ts` (nearest slot for a far pointer; pointerup drops, pointercancel does not).
+- **FR-085 (tested).** What reaches the file is the cleaned order (caps, types, duplicates, `__proto__`), not the renderer's document. test: `scripts/test-roomorder.ts`.
+
 ### 2026-11-01: a failed order save is reported (sweep finding)
 
 `FolderStore.setOrder` throws when the file could not be written (the order stays in memory for this run), so the drag's *could not be saved* toast shows instead of a silent success. test: `scripts/test-roomorder.ts`.
