@@ -130,7 +130,7 @@ IDs start after T083.
 
 ## 2026-11-01 delta: the agent rail, chat density and width (design sweep, FR-190..FR-208)
 
-PRs, gates and line-count goals: `plan.md`. Each PR measures on `main` first and writes the numbers in its description. All wait for T209 (052) and #1011. **No rail task starts before T125:** the rail's form is pending the owner's look.
+PRs, gates and line-count goals: `plan.md`. Each PR measures on `main` first and writes the numbers in its description. All wait for T220 (052) and #1011. **No rail task starts before T125:** the rail's form is pending the owner's look.
 
 - [ ] T117 [PR C1] Measure first, today's 103 + 31 + 32 = 166 px. Goal: header, tabs and *Previous sessions* on one row, 61 px with the task line under it. Fallback only if the one row fails at 1280x800 by FR-199's test: header 61 px and one 31 px row. State the measurement in the PR (free width, what was cut, which form shipped); also record the free width at a chat 1060 px wide, for the rail's look. Test: new `check-chat-density` header steps at both sizes, longest name, mutant that cuts a control; `check-chat-title`, `check-composer-toolbar` still pass [FR-199]
 - [ ] T118 [PR C1] Composer 122 to 91 px with Stop visible at both sizes; hint on the chips' row. Test: `check-chat-density`, `check-composer-toolbar` [FR-200]

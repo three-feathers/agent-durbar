@@ -177,8 +177,8 @@ specs/005-chat-fullscreen-and-agent-strip/
 
 | # | PR, branch | Tasks | Driver | Measure first, target | Net |
 |---|---|---|---|---|---|
-| 1 | **D1** `052-needs-you-text` | 052 T209 | new, plus pure test | Reproduce "search_companies)Allow…" on `main`; none left | No: a small fix |
-| 2 | **K2** #1011 (open, stacked on #987) | 052 T210; #1011's own | `shots-033` | `.swt.on` 2.47:1 to 6.08:1 and 6.92:1 | Yes: `.fl-sw` goes |
+| 1 | **D1** `052-needs-you-text` | 052 T220 | new, plus pure test | Reproduce "search_companies)Allow…" on `main`; none left | No: a small fix |
+| 2 | **K2** #1011 (open, on main) | 052 T221; #1011's own | `shots-033` | `.swt.on` 2.47:1 to 6.08:1 and 6.92:1 | Yes: `.fl-sw` goes |
 | | *Gate: Retro arcade lands* | | | | |
 | 3 | **C1** `005-chat-header` | 005 T117, T118, 006 T066 | new `check-chat-density` | Header, tabs and Previous on one row, 166 to 61 (fallback at 1280x800: 61 + 31, measurement stated); composer 122 to 91 | Yes: overrides and wrap rules go |
 | 4 | **C2** `005-chat-density` | 005 T119..T121 | `check-chat-density` | 575 to 442, 649 to 509, 1358 to 1167 px | Yes: box rules go |
@@ -189,7 +189,7 @@ specs/005-chat-fullscreen-and-agent-strip/
 | 9 | **#1001, what is left** | 097 T171, T172 | `shots-097-chat` | Header 139 to 61 px; log 700 and 600 px (31 less on the fallback) | Yes: a smaller portrait, moved words, literals gone |
 | 10 | **S** `052-settings-nav`, after spec 102 removes themes | 052 T219 | new `check-settings-nav` | 7238 px, 22 headings re-measured; each section one jump | Yes with themes gone; no alone |
 | | *Gate: the owner's look at the rail's form, T125. Rows below are the list form and are rewritten if he picks a floor plan* | | | | |
-| 11 | **R1** `005-rail` | 005 T113..T115, 052 T211 | new `check-rail`, `test-macos` | Log to FR-195's rail columns; two heights; 1280: scroll 34 px or none; contrast 4.5:1 | No: about 22 strip rules go, groups and tall rows arrive. Ceiling +120 lines |
+| 11 | **R1** `005-rail` | 005 T113..T115, 052 T222 | new `check-rail`, `test-macos` | Log to FR-195's rail columns; two heights; 1280: scroll 34 px or none; contrast 4.5:1 | No: about 22 strip rules go, groups and tall rows arrive. Ceiling +120 lines |
 | 12 | **R2** `005-rail-collapse` | 005 T116 | `check-rail` | 52 px under 1100 px; nothing lost when hidden | No: small addition |
 
 *Alongside, any time after row 2 (spec 070's Phase 3 and spec 052's controls):*
