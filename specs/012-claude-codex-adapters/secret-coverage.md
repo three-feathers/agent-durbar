@@ -15,7 +15,7 @@ No new dependency, at run time or build time.
 
 ## Method and result
 
-For each gitleaks rule a scratch script generated 12 made-up samples from the rule's own regex (random characters, never a real value; a random branch of each alternation each time) and ran them through `redact` and `maskTokenShapes`, once on `main` at 1a8317fa and once on this change. A rule counts as hidden when the rule's secret group is gone from the output in all 12. The samples and script are not committed; the families are tested in `scripts/test-redact-shapes.ts` with their own made-up samples, and each fails when its pattern is removed. *`yes` is a statement about those samples, not about live tokens: no format here was tried on a real token.*
+For each gitleaks rule a scratch script generated 12 made-up samples from the rule's own regex (random characters, never a real value; a random branch of each alternation each time) and ran them through `redact` and `maskTokenShapes`, once on `main` at 1a8317fa and once on this change. A rule counts as hidden when the rule's secret group is gone from the output in all 12. The samples and script are not committed; the families are tested in `scripts/test-redact-shapes.ts` with their own made-up samples, and each fails when its pattern is removed. *`yes` is a statement about those samples, not about live tokens: no format here was tried on a real token.* Shapes beyond gitleaks' rules (for example `cfut_`, `vcp_`, `tskey-`, `gsk_`) are from memory of vendors' public formats, not re-read from each vendor's page.
 
 | | Rules | `redact`, before | `redact`, after | `maskTokenShapes`, after |
 |---|---:|---:|---:|---:|
