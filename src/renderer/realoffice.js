@@ -212,7 +212,8 @@
     if (!drawn) OFF.clear();
     if (ZOOM && !ZOOM.panel.isConnected) closeZoom();
     const sized = view.w + 'x' + view.h, sameSize = !!CUR && CUR.sized === sized && !!CUR.painted;
-    CUR = { ro, screenOf: opts.screenOf || null, sized, still: !!opts.still, hold: !!opts.hold, desks: new Map(lay.zones.flatMap((z) => z.desks.map((d) => [d.id, d]))), agents: new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, { ...a, folder: f.name }]))), drawn, scroll: !!lay.scroll };
+    const wasLive = CUR && CUR.ro === ro ? CUR.live : undefined;
+    CUR = { ro, live: opts.live, screenOf: opts.screenOf || null, sized, still: !!opts.still, hold: !!opts.hold, desks: new Map(lay.zones.flatMap((z) => z.desks.map((d) => [d.id, d]))), agents: new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, { ...a, folder: f.name }]))), drawn, scroll: !!lay.scroll };
     SLIDE = sameSize && moving() && !hiddenNow();
     CUR.painted = true;
     ro.classList.toggle('paused', hiddenNow()); if (hiddenNow()) finishMoves(ro);
@@ -360,7 +361,14 @@
     CUR.drawn = true;
     if (moving() && !hiddenNow()) handOver(ro);
     watchFrames(ro);
-    if (ZOOM) { if (!CUR.desks.has(ZOOM.id) || hiddenNow()) closeZoom(); else placeZoom(); }
+    if (wasLive !== undefined && wasLive !== CUR.live) for (const [id, s] of SCR) { /* the setting holds at once: it does not wait for the next line, or the repaint pace */
+      if (s.away || hiddenNow()) s.dirty = true; else { clearTimeout(s.timer); s.timer = 0; s.dirty = false; paintScreen(id); }
+    }
+    if (ZOOM) {
+      const zd = CUR.desks.get(ZOOM.id);
+      if (!zd || zd.state === 'asleep' || hiddenNow()) closeZoom(); /* FR-035: an asleep screen is off, nothing to read */
+      else placeZoom();
+    }
     settle(chrome, lay.width);
     return lay;
   }
@@ -475,7 +483,7 @@
     if (off) OFF.add(id); else OFF.delete(id);
     if (!CUR) return;
     const art = CUR.ro.querySelector(':scope > .ro-art');
-    for (const key of ['p:', 'pb:']) { const e = art && art._k.get(key + id); if (e) e.classList.toggle('ro-off', off); }
+    for (const key of ['p:', 'pb:', 'rg:']) { const e = art && art._k.get(key + id); if (e) e.classList.toggle('ro-off', off); }
     const s = SCR.get(id); if (s) s.box.classList.toggle('ro-off', off);
   }
   function watchOff(lay) {

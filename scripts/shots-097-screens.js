@@ -188,6 +188,46 @@ module.exports = async (ctx) => {
     await js(`document.activeElement.blur();0`);
   }
 
+  /* review of the rework: what is shown follows the setting and the desk at once, not at the next line */
+  mark('live switched');
+  await loadReal(1440, 900);
+  await js(INSTALL);
+  {
+    ctx.win.show(); ctx.win.focus(); wc().focus();
+    await must(`document.hasFocus()`, 'the window active', 8000);
+    const moveToPoint = async (x, y) => { wc().sendInputEvent({ type: 'mouseMove', x: Math.round(x), y: Math.round(y) }); await must(`true`, 'a tick'); };
+    const SECRET = 'A line the setting must hide ';
+    const ZFOR = (i) => `(document.getElementById('roZoom')||{dataset:{}}).dataset.for===${jsLiteral(i)}`;
+    const at = (i) => js(`(()=>{const b=document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(${jsLiteral(i)})+'"]').getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/3};})()`);
+    const wk = (await js(pickWorking))[0];
+    await emit({ type: 'output', sessionId: wk, delta: SECRET });
+    await must(`window.__scr(${jsLiteral(wk)}).textContent.includes(${jsLiteral(SECRET.trim().slice(0, 12))})`, 'the line on the screen');
+    const w0 = await at(wk);
+    await moveToPoint(1, 1); await moveToPoint(w0.x, w0.y);
+    await must(ZFOR(wk), 'the zoom of the working desk');
+    await js(`window.__durbarSimUi.setLive(false);0`);
+    assert.ok(await H.until(`!window.__scr(${jsLiteral(wk)}).textContent.includes(${jsLiteral(SECRET.trim().slice(0, 12))})`, 1000), 'Live activity off takes the text off the screen at once');
+    assert.ok(await H.until(`!document.getElementById('roZoom')||!document.getElementById('roZoom').textContent.includes(${jsLiteral(SECRET.trim().slice(0, 12))})`, 1000), 'and off the open zoom');
+    await js(`window.__durbarSimUi.setLive(true);0`);
+    assert.ok(await H.until(`window.__scr(${jsLiteral(wk)}).textContent.includes(${jsLiteral(SECRET.trim().slice(0, 12))})`, 1000), 'on again brings it back at once');
+    /* a status change with no new line: the open zoom says it at once */
+    const zs0 = await js(`document.querySelector('#roZoom .ro-zs').textContent`);
+    await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(wk)});a.state='done';a.lastEventAt=Date.now();window.__durbarSimUi.setLive(true);})();0`);
+    assert.ok(await H.until(`(()=>{const e=document.querySelector('#roZoom .ro-zs');return !!e&&e.textContent!==${jsLiteral(zs0)};})()`, 400), 'the open zoom shows the new status: was ' + zs0);
+    await moveToPoint(1, 1);
+    await must(`!document.getElementById('roZoom')`, 'the zoom closed when the pointer left');
+    /* an open zoom of a desk that goes to sleep closes: an asleep screen is off (FR-035) */
+    const sl = await js(`(()=>{const d=window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(x=>(x.state==='done'||x.state==='idle')&&document.querySelector('#stage .ro-person[data-for="'+CSS.escape(x.id)+'"]'));return d&&d.id;})()`);
+    assert.ok(sl, 'an idle desk to send to sleep');
+    const s0 = await at(sl);
+    await moveToPoint(s0.x, s0.y);
+    await must(ZFOR(sl), 'the zoom of the desk about to sleep');
+    await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(sl)});a.state='done';a.lastOutput=a.lastOutput||'done';a.unread=false;a.lastEventAt=Date.now()-30*864e5;window.__durbarSimUi.setLive(true);})();0`);
+    await must(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(x=>x.id===${jsLiteral(sl)}).state==='asleep'`, 'the desk asleep');
+    assert.ok(await H.until(`!document.getElementById('roZoom')`, 1000), 'the zoom of a desk gone to sleep closes');
+    await moveToPoint(1, 1);
+  }
+
   /* review of P2: Live activity off (the setting itself, stored before load): a working screen shows its word and bars, not the task or the last reply; a question is cut at 200 */
   mark('live off');
   await js(`localStorage.setItem('durbar.liveActivity','off');0`);
