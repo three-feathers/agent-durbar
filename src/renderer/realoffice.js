@@ -142,10 +142,10 @@
     const drawn = !!(CUR && CUR.ro === ro && CUR.drawn);
     if (!drawn) OFF.clear();
     if (ZOOM && !ZOOM.panel.isConnected) closeZoom();
-    const sized = view.w + 'x' + view.h, sameSize = !!CUR && CUR.sized === sized;
+    const sized = view.w + 'x' + view.h, sameSize = !!CUR && CUR.sized === sized && !!CUR.painted;
     CUR = { ro, screenOf: opts.screenOf || null, sized, still: !!opts.still, hold: !!opts.hold, desks: new Map(lay.zones.flatMap((z) => z.desks.map((d) => [d.id, d]))), agents: new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, { ...a, folder: f.name }]))), drawn, scroll: !!lay.scroll };
-    SLIDE = sameSize && !!CUR.drawn0 && moving() && !hiddenNow();
-    CUR.drawn0 = true;
+    SLIDE = sameSize && moving() && !hiddenNow();
+    CUR.painted = true;
     ro.classList.toggle('paused', hiddenNow());
     /* z-order (plan: art < lights < chrome): floor and fixtures, people and desks; the ambient and the lights; then signs, plates, chips */
     const art = layerOf(ro, 'ro-art'), amb = layerOf(ro, 'ro-amb'), lights = layerOf(ro, 'ro-lights'), chrome = layerOf(ro, 'ro-chrome');
