@@ -115,7 +115,7 @@ P1 to P3 may merge before the gate with nothing visible as available; P4 to P6 r
 - **Weekly matrix growth** with each picture world; shard per world.
 - **Art backlog**: crews to full poses, Retro pixel people and each new world are much art; each gate in FR-035 keeps them from shipping half done, and `coming` keeps the list honest.
 - **Repo growth** from art (OP-3); about 2.5 MB per world version, and redos count.
-- **App size**: about 22.6 MB of shipped art, then about 26.8 MB with Retro game (estimates, FR-213); the 30 MB budget test stops growth.
+- **App size**: about 22.6 MB of shipped art, then about 26.8 MB with Retro arcade (estimates, FR-213; about 23.0 MB by FR-253); the 30 MB budget test stops growth.
 
 ## Monitor and arrangements (FR-220..FR-236)
 
@@ -136,7 +136,7 @@ world.json  arrangement: "circle"
 
 - **`circle`:** split the floor round a centre `focus` rectangle, pack zones into left, top, right bands with the existing row maths per band, `u` the largest that fits, by bisection like FR-011. Bounded search: FR-019's 5 ms, fall-back attempt included.
 - **`facing-view`:** rows on a floor shortened by the `focus` band; the least code, since it calls the row path.
-- **`flanking`:** two desk blocks either side of a central aisle; fixtures in the aisle. **`aisles`:** staggered angled aisles, geometry open until the owner approves the mockup.
+- **`flanking`:** two desk blocks either side of a central aisle; fixtures in the aisle. **`aisles`:** staggered aisles, in an integer scale `g`, from the mockup (FR-256; [*Retro arcade*](#retro-arcade-fr-250fr-270)).
 - **Few agents:** each arrangement grows its screens inside itself at 4 or fewer (FR-230), so 097 FR-020's one shared row applies to `rows` only.
 - **Monitor in the engine:** `meta` gains an optional `monitor: {w, h, screenRect}`. Absent: today's `screen` and `glass`, byte for byte. A rows world with a monitor picture does pay for its picture: inside the part caps and the 097 FR-178 area row, and the same for every world; "no cost" (FR-231) is about the arrangement code.
 
@@ -153,6 +153,101 @@ world.json  arrangement: "circle"
 | Fire as endless animation | Still picture; FR-227 |
 
 **Order:** after 102 P1 (validator) and #921. T165 and T166 can run first as they are pure and on the simulator.
+
+## Retro arcade (FR-250..FR-270)
+
+**Base for the build: `097-chat-in-world` (#1001)**, the top of the world stack: `main` <- #991 world seam <- #993 cave <- #994 moments <- #1001 chat. It has `world.json`, `set.json`, `world.css`, `WORLD_FLAGS`, `WORLD_SETS`, the World row, the moments and the chat this world follows. New branches `102-arcade-pN-slug`, each off the previous, each merged forward by merge commit as a base lands (no force-push, FR-061; unstack as FR-040 says). #979 is **not** in that stack and is its first need: phases that draw (RA3 on) start after #979 lands and is merged in, because this world follows its still room and replaces its poof. RA0, RA1 and RA2 can start now.
+
+**Reuse (spec 021 FR-031).**
+
+| Need | Existing | Note |
+|---|---|---|
+| Pack layout, lazy load, closed flag | #991, #993: `realoffice/worlds/<id>/`, `sets/<id>/`, `copy-assets.js`, `WORLD_FLAGS` | Same pattern; `WORLD_FLAGS.retro` |
+| Build script | `build-cave-pack.py` (#993) | `build-arcade-pack.py`, same tools |
+| Rectangles | `realLayout`, `Layout`, `ZoneBox`, `DeskBox`, `signWidth`, `sortDesks`, `assignPeople`, `placeBox` | Through FR-228's one seam |
+| Status | `lightFor`, `lampWords` | No new status logic; FR-260 only draws |
+| UI style | `html[data-ui="retro"]`, `themes.css` (41 rules) | Stays (FR-263) |
+| Day tokens | `registerBuiltIn({id:'retro'})`'s tokens | Moved to `WORLD_SETS.retro` |
+| Token check | `worldContrast`, `test:theme-tokens` | Takes the light |
+| Light group | #991's World radios, `focusIn` | Same radios |
+| Moments | #994's slips, plates, ride, tent; world CSS per world | Arcade's looks, same structure |
+| Chat | #1001: surface, column, portrait, tails | Arcade's looks |
+| Checks | `check-office-ops`, `check-perf --record`, `check:office`, `test:realoffice-assets`, `shots-097-cave`'s driver | World id parameter; new `shots-102-arcade` |
+| Heads in Flat | FR-203, 077's kit path | T122 |
+
+```text
+scripts/build-arcade-pack.py (dev only: drawing, grid, lossless) -> committed WebP
+world.json  arrangement "aisles", pixelArt, lightSets, ui "retro", monitor {cells, screenRect, marqueeRect}
+  -> realLayout(model, view, meta, signs, "aisles")   pure; returns g; no light parameter
+  -> realoffice.js   same drawing; adds marquee and glow per desk; picks parts by light
+  -> world.css       .ro[data-world="retro"]: image-rendering, marquee, beat; no filter, no blend (test)
+  -> theme.js        setWorld("retro", light): tokens; data-ui = "retro"
+crew.js  peopleFor; AISLE_POSE with fallback
+```
+
+**The hard questions, in one place.**
+
+| Question | Answer | Where |
+|---|---|---|
+| Canvas or data? | WebP frames at the real grid: 0.3 MB of people, 3 KB of room | FR-254 |
+| Slanted text? | No. Level glass and text on a redrawn cabinet | FR-258 |
+| Day and night vs. the cap? | Night is about 3 KB plus its `welcome`; at most 0.31 MB. About 0.4 MB in all, 4.5 MB at the worst | FR-253 |
+| 60 fps and idle CPU? | Transform and opacity, shared beat, 4 phases, no chase, no canvas; recorded by T216 | FR-261 |
+| Blocked? | Build no; ship yes | FR-269 |
+
+**Measure first**, in this order; each can change what follows, and each costs 0 AI credits:
+
+1. **T200** the owner's look at a level cabinet beside the slanted one.
+2. **T202** pure fit: signs, plates, faces at 1..15 and 40, both sizes, chat closed and open (FR-021); the sign's room is the one most likely to fail.
+3. **T204** even pixels at ratio 1.25 and 1.5.
+4. **T208** real sizes on committed files.
+5. **T215** masks against a plain fade.
+6. **T216** idle CPU in 4 mixes, day and night, then the same on one real GPU.
+
+**Moments** (FR-264; from #994's nine, words and buttons unchanged):
+
+| Moment | In the arcade |
+|---|---|
+| first-run | The hall with its cabinets dark, the flat card word for word on a cream plate |
+| empty-office | The flat sentence on a plate over three dark cabinets |
+| lounge | Cabinet off, shade, `rest` behind the console, `z z`, FR-120's plate |
+| walk | Pixel dissolve (FR-262); a post-it at the cabinet, square, in the world's cream |
+| inbox | Slips at the big attract-mode cabinet (Boss) |
+| limit-card | A slip or pill at the Bank's coin vault; chat card in tokens |
+| elicitation | A pixel bubble with exactly **Answer in chat** / **Show in chat** |
+| coffee-bar | Only the agent on a break at the change machine; tent card as a cream plate |
+| floor-jumps | The ride in hard steps; the lift as the plain panel of the mockup; instant under reduced motion |
+
+The other 17 cells are the same shared code, in tokens, or a `person`, `fixture` or `desk-screen` block already drawn; each is looked at and marked in the registry, not assumed.
+
+**Phases, one reviewer each.** Nothing is visible until RA10: `WORLD_FLAGS.retro` is closed, and a simulator flag opens it for drivers only.
+
+| Phase | PR holds | Depends on | About |
+|---|---|---|---|
+| RA0 | Art in the cache, no repo code | nothing | T200, T201 |
+| RA1 | `aisles`, pure | #1001's base; #955's `ARRANGEMENTS` or its own constant moved later | T202..T205 |
+| RA2 | Frames, packs, asset tests; nothing draws them | RA0 | T206..T208 |
+| RA3 | Draw the hall: pixel scale, cabinet, marquee, CRT, signs, plates, fixtures | RA1, RA2, #979 | T209..T212 |
+| RA4 | Status, beat, flourish, dissolve | RA3 | T213..T216 |
+| RA5 | Light: night parts, tokens, the group | RA3 | T217..T219 |
+| RA6 | UI style, chat, Settings | RA5, #1001 | T220, T221 |
+| RA7 | Nine moments and the registry | RA4, #994 | T222, T223 |
+| RA8 | Set contract and interoperation; `pixel` in Flat, closed | RA2, T111 | T224, T225, T122 |
+| RA9 | Coverage moves off the theme; no behaviour change | nothing | T226 |
+| RA10 | Migration, looks, then **the flip**: the flag, `pixel` value, theme removed | all, FR-269's gate | T227..T232, T115, spec 035 T089 |
+
+**Risks.**
+
+| Risk | Answer |
+|---|---|
+| Folder signs do not fit at 15 at 1280x800 | T202 first; name and controls stay; path and cost to hover; FR-265 names it |
+| An integer scale leaves dead space between sizes | Stagger and rows take it up (T202); the guide's "no dead strips" is looked at |
+| Pixels uneven at 125 % scale | T204; `g x ratio` whole, where the floor fits |
+| The flip is large for one reviewer | Everything else lands first; the flip is deletions, one flag and the Characters value |
+| A release is cut mid-way | T230 is one PR; the flag stays closed until then |
+| The gate takes long | Retro Pixel stays until it opens, so Ruben loses nothing while waiting |
+| Removing the theme shrinks CI coverage | T226 before T230 |
+| The art agent is still changing frames | RA2 reads a dated copy; T208's test holds the result |
 
 ## Done when
 
