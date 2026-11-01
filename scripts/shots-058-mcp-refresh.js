@@ -134,6 +134,10 @@ module.exports = async (ctx) => {
     await failedCall(id, 'tidy', 'HTTP 401', 'c4');
     await failedCall(id, 'agent365-teams', POLICY, 'c5');
     await report(id, all('connected'));
+    // events reach the page in order but it paints them later: the first paint can show c4 alone (the read below then saw no policy words, main runs on Windows and Linux).
+    // A last call on "crm" after the report is the marker: once it shows, the page has painted everything sent before it
+    await failedCall(id, 'crm', 'HTTP 401', 'c6');
+    assert.ok(await until(`(()=>{const li=document.querySelector('#agMcp li.srv[data-n="crm"] .mst-call');return !!li&&li.textContent===${jsLiteral(AUTH_WORDS)};})()`), `${w}: the marker call shows`);
     assert.ok(await until(`(()=>{const li=document.querySelector('#agMcp li.srv[data-n="tidy"] .mst-call');return !!li&&li.textContent===${jsLiteral(AUTH_WORDS)};})()`), `${w}: tidy says the last call needs sign-in`);
     assert.strictEqual((await row('agent365-teams')).call, POLICY_WORDS, `${w}: a policy stays across a repeated connected report`);
     await report(id, all('needs-auth'));

@@ -27,6 +27,7 @@ type AdapterInfo = import('../shared/api').AdapterInfo;
 type McpServerInput = import('../shared/mcp').McpServerInput;
 type McpSourceTag = import('../shared/api').McpSourceTag;
 type FloorsState = import('../shared/api').FloorsState;
+type OrderDoc = import('../shared/roomorder').OrderDoc;
 type FloorsResult = import('../shared/api').FloorsResult;
 type ScheduleInfo = import('../shared/api').ScheduleInfo;
 type SchedulesInfo = import('../shared/api').SchedulesInfo;
@@ -2568,6 +2569,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (nm.length > 40 || /[\u0000-\u001f\u007f-\u009f\u00ad\u034f\u115f\u180e\u200b\u2028\u2029\u202a-\u202e\u2060-\u2064\u2066-\u2069\u3164\ufeff\ufff9-\ufffb]/.test(nm)) return 'Use 1 to 40 characters, without control or hidden characters.';
       return floorsList.some((f) => f.id !== except && f.name.toLowerCase() === nm.toLowerCase()) ? 'A floor with that name exists.' : '';
     };
+    // Manual order of rooms, desks and places (issue #677): kept for the page's session (a reload keeps it), cleaned by the same rules the app uses.
+    const clean = (d: unknown): OrderDoc => ((window as unknown as { DurbarReorder?: { sanitize(x: unknown): OrderDoc } }).DurbarReorder?.sanitize(d) ?? { rooms: [], desks: {}, places: [] });
+    let simOrder: OrderDoc = clean(null);
+    try {
+      simOrder = clean(JSON.parse(sessionStorage.getItem('durbar.simorder') || 'null'));
+    } catch {
+      /* no storage: the order lasts until the next reload */
+    }
     let floorSeq = 0;
     const floorApi: Partial<DurbarApi> = {
       floorsState: async () => floorState(),
@@ -2618,6 +2627,16 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!x || !floorsList.some((f) => f.id === floorId)) return fres('Unknown folder or floor.');
         folderFloor.set(x.info.cwd, floorId);
         return fres();
+      },
+      getOrder: async (): Promise<OrderDoc> => clean(simOrder),
+      setOrder: async (doc: OrderDoc): Promise<OrderDoc> => {
+        simOrder = clean(doc);
+        try {
+          sessionStorage.setItem('durbar.simorder', JSON.stringify(simOrder));
+        } catch {
+          /* ignore */
+        }
+        return clean(simOrder);
       },
     };
 
