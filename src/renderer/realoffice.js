@@ -128,22 +128,18 @@
   const SIT = 420;
   /* two stand-alone pictures that walk (the stride dissolving) from placement A to B: `R` is the standing rect, `hidden` the part of the walk near the chair where only the first picture shows, so a head can land on a head */
   function walkers(host, R, A, B, ms, tail, nearStart) {
-    const mk = (cls, file) => { const g = new Image(); g.className = cls; g.alt = ''; g.src = ART + file; g.style.transformOrigin = '0 0'; box(g, R); host.appendChild(g); setVar(g, '--ro-per', '.76s'); return g; };
-    const out = [mk('ro-ghost v ro-walker' + (R.fileB ? ' m-a m-run' : ''), R.file)];
-    if (R.fileB) out.push(mk('ro-ghost v ro-walker m-b m-run', R.fileB));
+    const mk = (file) => { const g = new Image(); g.className = 'ro-ghost v ro-walker'; g.alt = ''; g.src = ART + file; g.style.transformOrigin = '0 0'; box(g, R); host.appendChild(g); return g; };
+    const out = [mk(R.file)];
+    if (R.fileB) out.push(mk(R.fileB));
     const total = ms + tail;
-    out.forEach((w, i) => {
-      const kf = walkKf(A, B, ms, { ms: tail }, R);
-      w._kf = kf; w._total = total;
-      if (i === 1) { /* the second picture only away from the chair */
-        const t = nearStart ? [{ opacity: 0, offset: 0 }, { opacity: 0, offset: 0.6 }, { opacity: 1, offset: 0.7 }, { opacity: 1, offset: 1 }] : [{ opacity: 1, offset: 0 }, { opacity: 1, offset: 0.3 }, { opacity: 0, offset: 0.4 }, { opacity: 0, offset: 1 }];
-        w.animate(t, { duration: total, easing: 'linear', fill: 'both' });
-      } else {
-        const t = nearStart ? [{ opacity: 1, offset: 0 }, { opacity: 1, offset: 0.6 }] : [{ opacity: 1, offset: 0.3 }, { opacity: 1, offset: 1 }];
-        const anim = w.animate(t, { duration: total, easing: 'linear', fill: nearStart ? 'backwards' : 'forwards' });
-        w._hold = anim;
-      }
-    });
+    out.forEach((w) => { w._kf = walkKf(A, B, ms, { ms: tail }, R); w._total = total; });
+    if (out[1]) {
+      /* the stride: the second picture dissolves in and out over the first, one animation on its opacity (a CSS loop as well shows on the compositor whatever a script says), only while the walker is small, so a head can land on a head */
+      const from = nearStart ? 0.6 : 0, to = nearStart ? 1 : 0.34, per = 0.76, n = Math.max(1, Math.round(((to - from) * total) / 1000 / per)), kf = [{ opacity: 0, offset: 0 }];
+      for (let i = 0; i < n; i++) { const t = from + ((to - from) * i) / n, d = (to - from) / n; kf.push({ opacity: 0, offset: t + 1e-4 }, { opacity: 1, offset: t + d * 0.3 }, { opacity: 1, offset: t + d * 0.55 }, { opacity: 0, offset: t + d * 0.85 }); }
+      kf.push({ opacity: 0, offset: 1 });
+      out[1].animate(kf, { duration: total, easing: 'ease-in-out', fill: 'both' });
+    }
     return out;
   }
   function glide(e, id, from, to, seated) {
