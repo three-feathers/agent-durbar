@@ -33,6 +33,21 @@ export interface GenerateTextResult {
   nanoAiu?: number;
 }
 
+/** Spec 096 FR-001: options of `generateImage`. */
+export interface GenerateImageOptions {
+  /** A fixed file name chosen by main (`sheet.png`). */
+  outName: string;
+  /** Default 300,000. */
+  timeoutMs?: number;
+  /** Cancel: closes the child and removes the temp folder. */
+  signal?: AbortSignal;
+}
+
+/** Spec 096 FR-001: the picture's absolute path, directly inside a `durbar-img-*` temp folder; main reads it and removes that folder. On a throw the adapter removes it itself. */
+export interface GenerateImageResult {
+  file: string;
+}
+
 /** Spec 065 FR-001: the paths a file-edit tool is about to write (absolute, or relative to the session's folder). Never rejects. */
 export type WriteGuard = (sessionId: string, paths: string[]) => Promise<void>;
 
@@ -706,6 +721,8 @@ export interface AgentAdapter {
    * The reply carries the spend the harness reports: a dollar estimate (`costUsd`) or AI credits (`nanoAiu`, 1e9 = 1 credit).
    */
   generateText?(prompt: string, opts?: GenerateTextOptions): Promise<GenerateTextResult>;
+  /** Spec 096 FR-001: one prompt makes one picture, no MCP servers, no session kept, writes only to an empty temp folder. Optional (`capabilities.imageGen`). Throws a short user-facing sentence. */
+  generateImage?(prompt: string, opts: GenerateImageOptions): Promise<GenerateImageResult>;
   /** Spec 054 FR-001: turn remote control (follow and steer from the vendor's web or mobile app) on or off for a live session. Optional (`capabilities.remote`). Never on by default. */
   setRemote?(sessionId: string, on: boolean): Promise<RemoteState>;
   /**

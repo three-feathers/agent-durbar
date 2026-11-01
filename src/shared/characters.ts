@@ -4,12 +4,15 @@
  * (it cannot import TS), and `test:characters` checks both answer alike.
  */
 
-/** The Characters values, in the order Settings lists them. `theme` = the theme's own kit (the default, never written). */
-export const CHARACTER_CHOICES = ['theme', 'minimalist', 'cheeky', 'prehistoric'] as const;
+/**
+ * The Characters values, in the order Settings lists them. `theme` = the theme's own kit (the default, never written). `mine` (spec 096 FR-040) is My characters; it works on
+ * any theme, like the others. Settings offers it only once it can draw them (T042, T044): until then no window control can choose it (`test:characters`; spec `## Changes`, 2026-10-31).
+ */
+export const CHARACTER_CHOICES = ['theme', 'minimalist', 'cheeky', 'prehistoric', 'mine'] as const;
 export type CharacterChoice = (typeof CHARACTER_CHOICES)[number];
 
 /** The scene kit (spec 035 FR-013) each explicit choice draws. */
-export const CHARACTER_KITS: Readonly<Record<Exclude<CharacterChoice, 'theme'>, string>> = { minimalist: 'office', cheeky: 'crew', prehistoric: 'crew' };
+export const CHARACTER_KITS: Readonly<Record<Exclude<CharacterChoice, 'theme'>, string>> = { minimalist: 'office', cheeky: 'crew', prehistoric: 'crew', mine: 'crew' };
 
 /** The theme id that was Cheeky Crew before FR-066; kept reserved, migrated by FR-067. */
 export const LEGACY_CREW_THEME = 'cheeky-crew';

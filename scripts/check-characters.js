@@ -138,6 +138,15 @@ module.exports = async (ctx) => {
     await close();
     console.log(`[characters] ${tag} ok`, JSON.stringify(await desks()));
   }
+  // spec 096 (coordinator's choice of 2026-10-31): a stored `mine` must not draw the Cheeky crew under another name before T042 and T044 can show My characters
+  await H.load({ w: 1280, h: 800, ready: 'fit', settle: false, query: { characters: 'mine', theme: 'retro' } });
+  await H.office(15);
+  assert.strictEqual(await H.js(`window.THEME.characters()`), 'theme', 'a stored mine draws the theme\'s own figures');
+  assert.strictEqual((await desks()).anyPic, 0, 'and no crew portrait');
+  assert.strictEqual(await H.js(`window.__durbarSimUi.bridge().getSettings().then(s=>s.characters)`), 'mine', 'the stored value stays');
+  await openSettings();
+  assert.deepStrictEqual((await section()).items.map((i) => i.id), ['theme', 'minimalist', 'cheeky', 'prehistoric'], 'Settings does not offer mine');
+  await close();
   console.log('[characters] checks passed');
   process.exitCode = 0;
 };
