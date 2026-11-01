@@ -108,7 +108,7 @@ module.exports = async (ctx) => {
   };
   const pageKey = async (keyCode, modifiers) => {
     const wc = view().webContents;
-    wc.focus();
+    assert.ok(await H.focusWc(wc), 'the page has the focus before its key');
     wc.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
     wc.sendInputEvent({ type: 'keyUp', keyCode, modifiers });
   };
@@ -217,12 +217,14 @@ module.exports = async (ctx) => {
     await go(WEB + 'tabs?focus=1'); // a new page load: its own 5
     const n = count();
     await inWc(openerWc, `setTimeout(()=>window.open('/index?timer=1'),300);true`, 'the timer');
-    win().webContents.focus();
-    await js(`document.getElementById('msgInput').focus()`);
-    await wait(() => win().webContents.isFocused() && js(`document.activeElement&&document.activeElement.id==='msgInput'`), 'the composer has the focus');
+    // the OS focus can go to a neighbour on a busy Windows runner: ask again on every round until the window and the composer have it
+    await wait(async () => { if (!win().webContents.isFocused()) win().webContents.focus(); await js(`document.getElementById('msgInput').focus()`); return win().webContents.isFocused() && js(`document.activeElement&&document.activeElement.id==='msgInput'`); }, 'the composer has the focus');
     await wait(() => count() === n + 1 && view() && view().webContents.getURL() === WEB + 'index?timer=1' && !view().webContents.isLoading(), 'the timer\'s tab opens and loads');
     assert.ok(!view().webContents.isFocused(), 'FR-129: the new page did not take the focus');
-    assert.ok(win().webContents.isFocused() && await js(`document.activeElement&&document.activeElement.id==='msgInput'`), 'FR-129: the composer keeps it');
+    // the page did not take it (above), and the composer is still the active element; the OS may have given the window's own focus to a neighbour
+    // meanwhile (Windows CI, Linux under load: nobody focused), so ask for it again until the window reports it
+    assert.strictEqual(await js(`document.activeElement&&document.activeElement.id`), 'msgInput', 'FR-129: the composer keeps it');
+    await wait(() => { if (!win().webContents.isFocused()) win().webContents.focus(); return win().webContents.isFocused() && !view().webContents.isFocused(); }, 'FR-129: the window has the focus and the page does not');
   }
 
   // US6.5: 10 tabs

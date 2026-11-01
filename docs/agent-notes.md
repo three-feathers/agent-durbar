@@ -136,6 +136,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **A destroyed `WebContentsView` has no `webContents`**: keep the `webContents` before `close()` to check `isDestroyed()` and the OS process (`process.kill(pid, 0)` gives `ESRCH`). `Page.getNavigationHistory` gives each entry a `transitionType` (`form_submit` for a form), so main knows a form page without reading it; `sendInputEvent` (`char`) fires a view's `input-event`. `sim:` spec 080 T013/T018.
 - **The simulator's End session never reaches main**: a driver that checks a browser teardown uses the driver-context hooks `ctx.browserGone` / `ctx.browserStates` (`main.ts`), not the renderer.
 - **No referrer from a custom scheme** (2026-10-31): a `durbar-sim:` `_blank` has `referrer.url === ''`; test referrer rules over loopback http (`check-browser-tabs.js`).
+- **Windows CI loses the page focus to a neighbour driver** (2026-11-01, #995): three drivers share one Windows desktop, so `document.hasFocus()` can turn false mid-driver (`:focus-visible` missing, `active:true focus:false`). `H.key` now turns on CDP focus emulation when the page lacks focus; `H.focusPage()` / `H.focusWc(view.webContents)` ask for the real focus and end on a condition. After an event, wait for a marker event's paint, never one DOM read. Not proven on Windows locally.
 
 ## Team chat
 

@@ -162,7 +162,8 @@ module.exports = async (ctx) => {
     await ok(`!document.querySelector(${jsLiteral(SEL)}).matches(':hover')`, `${tag}: the pointer left`);
     // a real Tab from the control before the pencil (a programmatic focus() plus a key press gives no :focus-visible on Windows)
     // the window must own the OS focus first: on a busy Windows runner it can lose it, and then the Tab never reaches the page (main run 40634878862)
-    const ownFocus = async () => { for (let i = 0; i < 3; i++) { ctx.win.show(); ctx.win.focus(); ctx.win.webContents.focus(); if (await until('document.hasFocus()', 3000)) return true; } return false; };
+    // (the shared H.focusPage, which also turns on Chromium's focus emulation when a neighbour driver's window keeps the OS focus: Windows runs three drivers at once)
+    const ownFocus = () => H.focusPage();
     assert.ok(await ownFocus(), `${tag}: the window owns the focus before the Tab`);
     await js(`(()=>{const T='button,a[href],input,select,textarea,[tabindex]:not([tabindex="-1"])',vis=e=>!e.disabled&&e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden',all=[...document.querySelectorAll(T)].filter(vis),p=document.querySelector(${jsLiteral(SEL)});window.__prevTab=all[all.indexOf(p)-1];window.__prevTab.focus();})()`);
     await ok(`document.activeElement===window.__prevTab`, `${tag}: the control before the pencil has focus`);
