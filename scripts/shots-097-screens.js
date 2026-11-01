@@ -123,8 +123,10 @@ module.exports = async (ctx) => {
     let placed = {};
     for (const i of deskIds) {
       const p = await js(`(()=>{const b=document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(${jsLiteral(i)})+'"]').getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/3};})()`);
-      await moveTo(p.x, p.y);
-      await must(OPENED(i), 'the zoom of ' + i);
+      let open = false, nudges = -1;
+      for (let t = 0; t < 8 && !open; t++) { nudges++; await moveTo(p.x + t % 3, p.y); open = await H.until(OPENED(i), 2000); }
+      if (nudges) console.log('[097-screens] hover of', i, 'took', nudges, 'more moves');
+      if (!open) assert.fail('the zoom of ' + i + ': ' + JSON.stringify(await js(`(()=>{const e=document.elementFromPoint(${p.x},${p.y}),a=document.activeElement;return {at:e&&(e.className||e.tagName),for:e&&e.dataset&&e.dataset.for,focus:document.hasFocus(),hidden:document.hidden,zoom:(document.getElementById('roZoom')||{dataset:{}}).dataset.for,active:a&&a.className,state:(window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(d=>d.id===${jsLiteral(i)})||{}).state};})()`)));
       const z = await js(`(()=>{const P=document.getElementById('roZoom'),b=P.getBoundingClientRect(),fl=document.getElementById('floor').getBoundingClientRect();
         const hit=(e)=>{const a=e.getBoundingClientRect();return a.left<b.right&&b.left<a.right&&a.top<b.bottom&&b.top<a.bottom;};
         const own=document.querySelector('.ro-plate[data-id="'+CSS.escape(${jsLiteral(i)})+'"]');
@@ -158,6 +160,9 @@ module.exports = async (ctx) => {
     await must(`!document.getElementById('roZoom')`, 'the zoom closed when the pointer left');
     await moveTo(mp.x, mp.y);
     await must(OPENED(mid), 'the zoom of the middle desk');
+    const CHIPS = `(()=>{const R=e=>e.getBoundingClientRect(),hit=(a,b)=>a.left<b.right-0.3&&b.left<a.right-0.3&&a.top<b.bottom-0.3&&b.top<a.bottom-0.3,C=[...document.querySelectorAll('#stage .ro-chip')],P=[...document.querySelectorAll('#stage .ro-lplate')],out=[];for(const c of C){for(const p of P)if(hit(R(c),R(p)))out.push(c.textContent+' on '+p.textContent);for(const d of C)if(c!==d&&R(c).left<=R(d).left&&hit(R(c),R(d)))out.push(c.textContent+' on '+d.textContent);}return out;})()`;
+    await H.until(`${CHIPS}.length===0`, 5000);
+    assert.deepStrictEqual(await js(CHIPS), [], 'no chip on a plate or a chip in the zoom picture ' + w);
     await H.shot(path.join(OUT, `097-zoom-${w}x${h}.png`), { prep: 'calm', keepHover: true });
     assert.ok(await js(OPENED(mid)), 'the picture has the zoom');
     // Esc: closes; a move inside the same screen does not bring it back; leaving and coming back does
@@ -170,6 +175,9 @@ module.exports = async (ctx) => {
     await moveTo(1, 1);
     await must(`true`, 'a tick');
     await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur();0`);
+    /* this can be a machine in use: another window can have taken the focus since the hover step, and then Tab goes nowhere */
+    ctx.win.show(); ctx.win.focus(); wc().focus();
+    await must(`document.hasFocus()`, 'the window active for the keyboard', 8000);
     // keyboard parity: real Tab presses reach a plate; the same zoom opens; Esc closes it and keeps the focus; the next Tab moves on and opens the next
     await js(`(()=>{const s=document.querySelector('.ro-sign .ro-sb');s&&s.focus();})()`);
     let got = false;
@@ -177,7 +185,7 @@ module.exports = async (ctx) => {
       wc().sendInputEvent({ type: 'keyDown', keyCode: 'Tab' }); wc().sendInputEvent({ type: 'keyUp', keyCode: 'Tab' });
       got = await H.until(`!!document.getElementById('roZoom')&&document.activeElement&&document.activeElement.classList.contains('ro-plate')`, 500);
     }
-    assert.ok(got, 'Tab to a desk opens the zoom');
+    if (!got) assert.fail('Tab to a desk opens the zoom: ' + JSON.stringify(await js(`(()=>{const a=document.activeElement;return {focus:document.hasFocus(),hidden:document.hidden,active:a&&a.tagName+'.'+a.className,id:a&&a.dataset&&a.dataset.id,fv:a&&a.matches&&a.matches(':focus-visible'),zoom:(document.getElementById('roZoom')||{dataset:{}}).dataset.for,panel:document.body.classList.contains('panel-open')};})()`)));
     const kb = await js(`(()=>{const a=document.activeElement,P=document.getElementById('roZoom');return {plate:a.dataset.id,zoom:P.dataset.for,desc:a.getAttribute('aria-describedby'),visible:a.matches(':focus-visible')};})()`);
     assert.strictEqual(kb.zoom, kb.plate, 'the zoom of the focused desk');
     assert.strictEqual(kb.desc, 'roZoom');
@@ -210,10 +218,10 @@ module.exports = async (ctx) => {
     assert.ok(await H.until(`!document.getElementById('roZoom')||!document.getElementById('roZoom').textContent.includes(${jsLiteral(SECRET.trim().slice(0, 12))})`, 1000), 'and off the open zoom');
     await js(`window.__durbarSimUi.setLive(true);0`);
     assert.ok(await H.until(`window.__scr(${jsLiteral(wk)}).textContent.includes(${jsLiteral(SECRET.trim().slice(0, 12))})`, 1000), 'on again brings it back at once');
-    /* a status change with no new line: the open zoom says it at once */
+    /* a status change: the open zoom says it, at the screen's repaint pace (FR-033) */
     const zs0 = await js(`document.querySelector('#roZoom .ro-zs').textContent`);
     await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(wk)});a.state='done';a.lastEventAt=Date.now();window.__durbarSimUi.setLive(true);})();0`);
-    assert.ok(await H.until(`(()=>{const e=document.querySelector('#roZoom .ro-zs');return !!e&&e.textContent!==${jsLiteral(zs0)};})()`, 400), 'the open zoom shows the new status: was ' + zs0);
+    assert.ok(await H.until(`(()=>{const e=document.querySelector('#roZoom .ro-zs');return !!e&&e.textContent!==${jsLiteral(zs0)};})()`, 5000), 'the open zoom shows the new status: was ' + zs0);
     await moveToPoint(1, 1);
     await must(`!document.getElementById('roZoom')`, 'the zoom closed when the pointer left');
     /* an open zoom of a desk that goes to sleep closes: an asleep screen is off (FR-035) */

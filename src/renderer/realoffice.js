@@ -27,8 +27,10 @@
   const px = (n) => Math.round(n * 10) / 10 + 'px';
   /* spec Changes 2026-11-01: while `SLIDE` is on (a draw of the same window size, people moving), something the layout moved a little slides there on `transform`, so a visitor's arrival does not make the lobby jump */
   let SLIDE = false;
+  /* on `translate`, not `transform`: an element keeps its own transform while it slides (a chip's centring, the post-it's tilt, a person's motion) */
+  const slideFrom = (el, dx, dy) => { if ((Math.abs(dx) >= 0.5 || Math.abs(dy) >= 0.5) && el.animate) el.animate([{ translate: `${dx}px ${dy}px` }, { translate: '0 0' }], { duration: Math.max(280, Math.min(520, Math.hypot(dx, dy) * 1.2)), easing: 'cubic-bezier(.25,.1,.25,1)' }); };
   const box = (el, r) => {
-    if (SLIDE && el._x !== undefined) { const dx = el._x - r.x, dy = el._y - r.y; if ((Math.abs(dx) >= 0.5 || Math.abs(dy) >= 0.5) && el.animate) el.animate([{ transform: `translate(${dx}px,${dy}px)` }, { transform: 'none' }], { duration: Math.max(280, Math.min(520, Math.hypot(dx, dy) * 1.2)), easing: 'cubic-bezier(.25,.1,.25,1)' }); }
+    if (SLIDE && el._x !== undefined && !el.classList.contains('ro-chip') && !el.classList.contains('ro-lplate')) slideFrom(el, el._x - r.x, el._y - r.y); /* chips and plates: placeLobby, after they are placed */
     el._x = r.x; el._y = r.y; el.style.left = px(r.x); el.style.top = px(r.y); if (r.w != null) el.style.width = px(r.w); if (r.h != null) el.style.height = px(r.h); };
   const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => Array.from(w)[0] || '').join('').toUpperCase() || '?';
 
@@ -353,8 +355,9 @@
       if (pl._sig !== lsig) { pl._sig = lsig; pl.textContent = ''; const s = document.createElement('span'); s.textContent = p.label; pl.appendChild(s); if (fx.more > 0) { const b = document.createElement('b'); b.className = 'ro-more'; b.textContent = '+' + fx.more; pl.appendChild(b); } }
     }
     sweep(art, drawn && moving() && !hiddenNow()); [amb, lights, chrome].forEach((l) => sweep(l));
-    fitPlates(chrome, lay.width);
-    stagger(chrome, lay.width);
+    placeLobby(chrome, lay.width);
+    if (SLIDE) for (const e of lobbyItems(chrome)) if (e._lx !== undefined) slideFrom(e, e._lx - parseFloat(e.style.left), e._ly - parseFloat(e.style.top));
+    for (const e of lobbyItems(chrome)) { e._lx = parseFloat(e.style.left); e._ly = parseFloat(e.style.top); }
     for (const [id, s] of SCR) if (!CUR.desks.has(id)) { clearTimeout(s.timer); if (IO) IO.unobserve(s.box); SCR.delete(id); }
     watchOff(lay);
     SLIDE = false;
@@ -376,6 +379,12 @@
   /* a font that arrives after the measure (a lazily loaded bold face, another machine's metrics) widens a chip or plate: a
      ResizeObserver sees it and places again, so nothing overlaps in the settled state. A width equal to the one the placement
      used ends it (no loop). */
+  const lobbyItems = (chrome) => chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate');
+  /* measured at rest: a slide still running would place a chip against where a plate is on its way, and it stays wrong until the next draw */
+  function placeLobby(chrome, W) {
+    for (const e of lobbyItems(chrome)) for (const a of e.getAnimations()) if (!a.animationName) { try { a.finish(); } catch (err) { /* one with no end: none is drawn here */ } }
+    fitPlates(chrome, W); stagger(chrome, W);
+  }
   function settle(chrome, W) {
     if (typeof ResizeObserver !== 'function') return;
     chrome._W = W;
@@ -387,7 +396,7 @@
           queued = false;
           if (!chrome.isConnected) return;
           const moved = [...chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')].some((e) => e._w != null && Math.abs(e.getBoundingClientRect().width - e._w) > 0.5);
-          if (moved) { chrome._settled = (chrome._settled || 0) + 1; fitPlates(chrome, chrome._W); stagger(chrome, chrome._W); } /* _settled: the driver sees the observer act */
+          if (moved) { chrome._settled = (chrome._settled || 0) + 1; placeLobby(chrome, chrome._W); } /* _settled: the driver sees the observer act */
         });
       });
     }
