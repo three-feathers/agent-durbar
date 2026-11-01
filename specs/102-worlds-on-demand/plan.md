@@ -66,7 +66,7 @@ Facts below were read in the repo or checked on 2026-10-31; the web sources are 
 
 **Download flow**: list -> notice token -> click -> `makeDownloadGet` per hop with host check -> length and SHA-256 -> zip -> `worldpack` -> encoder -> part hashes -> temp folder -> rename -> `installed.json` -> world offered.
 
-**Windows in the engine.** `realLayout` (097) gives fixtures as now; a new pure step `placeWindows(fixtures, band, picks)` returns band-height rects in the wall areas between fixture boxes and is called after them, never feeding back. A test compares every rect with and without it and checks height and no intersection.
+**Windows in the engine.** `realLayout` (097) gives fixtures by the world's arrangement; a new pure step `placeWindows(fixtures, band, picks)` returns band-height rects in the wall areas between fixture boxes and is called after them, never feeding back. A test compares every rect with and without it and checks height and no intersection.
 
 **Telling worlds apart.** Three layers, cheapest first: `card.json` per world, compared before any image run (`test:world-catalogue`); picture checks in `check-world-distinct.js` (exact hash, perceptual hash of fixtures, average colour of wall, floor, desk), which decode in Electron because Node has no WebP decoder; the thumbnail contact sheet read by a person, which decides. In the app the same picture comparison only warns (FR-018), in the encoder window.
 
