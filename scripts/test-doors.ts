@@ -147,9 +147,9 @@ async function main(): Promise<void> {
   const keyOf = (s: Schedule) => s.target?.session ?? 'folder-agent';
   const h = harness(doc, undefined, { hold: (s, now) => { if (!doors.isClosed(keyOf(s))) return false; const r = doors.hold(keyOf(s), { at: now, prompt: s.prompt, scheduleId: s.id }); return r === 'held' ? true : 'full'; } });
   doors.setClosed('s1', true);
-  doc.schedules.push({ id: 'once-1', folder: '/w', prompt: 'to s1 once', at: h.now + MIN, target: { session: 's1' } } as Schedule);
-  doc.schedules.push({ id: 'rec-1', folder: '/w', prompt: 'to s1 every 10', every: 10, next: h.now + MIN, target: { session: 's1' } } as Schedule);
-  doc.schedules.push({ id: 'open-1', folder: '/w', prompt: 'to s2', at: h.now + MIN, target: { session: 's2' } } as Schedule);
+  doc.schedules.push({ id: 'once-1', folder: '/w', prompt: 'to s1 once', at: h.now + MIN, target: { session: 's1' }, mode: 'ask', modeFor: { app: 'copilot' } } as Schedule);
+  doc.schedules.push({ id: 'rec-1', folder: '/w', prompt: 'to s1 every 10', every: 10, next: h.now + MIN, target: { session: 's1' }, mode: 'ask', modeFor: { app: 'copilot' } } as Schedule);
+  doc.schedules.push({ id: 'open-1', folder: '/w', prompt: 'to s2', at: h.now + MIN, target: { session: 's2' }, mode: 'ask', modeFor: { app: 'copilot' } } as Schedule);
   h.busy.add('s1'); // a busy agent behind a closed door: still held, never skipped (a held run is never lost)
   await h.sch.tick();
   await h.advance(MIN);
@@ -179,7 +179,7 @@ async function main(): Promise<void> {
   {
     const doc3 = { pausedAll: false, schedules: [] as Schedule[] };
     const h3 = harness(doc3, undefined, { hold: () => 'full' });
-    doc3.schedules.push({ id: 'f1', folder: '/w', prompt: 'to s1', at: h3.now + MIN, target: { session: 's1' } } as Schedule);
+    doc3.schedules.push({ id: 'f1', folder: '/w', prompt: 'to s1', at: h3.now + MIN, target: { session: 's1' }, mode: 'ask', modeFor: { app: 'copilot' } } as Schedule);
     await h3.advance(MIN);
     await h3.sch.tick();
     assert.strictEqual((doc3.schedules[0] as Schedule).last?.outcome, 'skipped-door-full', 'a distinct outcome');
@@ -189,7 +189,7 @@ async function main(): Promise<void> {
   {
     const doc2 = { pausedAll: false, schedules: [] as Schedule[] };
     const h2 = harness(doc2);
-    doc2.schedules.push({ id: 'r1', folder: '/w', prompt: 'p', every: 30, next: h2.now + 99 * MIN, target: { session: 's1' } } as Schedule);
+    doc2.schedules.push({ id: 'r1', folder: '/w', prompt: 'p', every: 30, next: h2.now + 99 * MIN, target: { session: 's1' }, mode: 'ask', modeFor: { app: 'copilot' } } as Schedule);
     const by = (id: string) => doc2.schedules.find((x) => x.id === id) as Schedule;
     h2.busy.add('s1');
     assert.strictEqual(await h2.sch.releaseDoorRun('r1', 'held prompt'), 'busy', 'a busy agent: not now');

@@ -308,6 +308,10 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
 
 ## Changes
 
+### 2026-10-31: a pass uses its schedule's mode (open for the owner; spec 044 FR-180)
+
+The owners' ruling that a schedule has its own mode reaches loops, which are schedules: spec 044's *Open, proposed* has a loop use the field per pass for Read-only, Ask first and Allow all, with no Autopilot on a loop. If the owner keeps that, FR-006 and R2 ("passes keep the session's permission mode") are replaced by it. Built on the Scheduler only (spec 044 T143); loops stay off in this build (`loopSupport`).
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):

@@ -2,7 +2,7 @@
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
-import { MAX_PROMPT } from '../src/main/schedules';
+import { MAX_PROMPT, waitingForMode } from '../src/main/schedules';
 
 type Run = { at: number; outcome: string; session?: string; reason?: string; manual?: true; n?: number; until?: number };
 type Item = { time: string; words: string; fold: string; kind: string; session: string; chat: string; closed: boolean };
@@ -10,6 +10,9 @@ const H = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'schedhist
   OUTCOMES: Record<string, { word: string; kind: string }>;
   REASONS: Record<string, string>;
   KINDS: string[];
+  lastWord(last: { at: number; outcome: string; reason?: string }): string;
+  waitingForMode(s: unknown): boolean;
+  asksAgain(s: unknown): boolean;
   outcomeWord(o: string): string;
   kindOf(o: string): string;
   reasonWords(c: unknown): string;
@@ -36,8 +39,23 @@ for (const o of outcomes) {
 assert.deepStrictEqual(Object.keys(H.OUTCOMES).sort(), [...outcomes].sort(), 'no word for an outcome main does not have');
 // every reason main can write (RunReason = no-agent | send-error | LoopEndReason) has fixed words
 const endReasons = [...(/export type LoopEndReason = ([^;]+);/.exec(mainSrc)?.[1] ?? '').matchAll(/'([a-z-]+)'/g)].map((m) => m[1]);
-for (const r of ['no-agent', 'send-error', ...endReasons]) assert.ok(H.reasonWords(r).length > 3, `reason "${r}" has words`);
-assert.deepStrictEqual(Object.keys(H.REASONS).sort(), ['no-agent', 'send-error', ...endReasons].sort());
+const modeReasons = ['no-mode', 'other-agent', 'mode-org', 'mode-lacking', 'mode-live', 'mode-limit', 'mode-autopilot', 'mode-loop-autopilot', 'no-seal']; // spec 044 FR-181..FR-184
+for (const r of ['no-agent', 'send-error', ...endReasons, ...modeReasons]) assert.ok(H.reasonWords(r).length > 3, `reason "${r}" has words`);
+assert.deepStrictEqual(Object.keys(H.REASONS).sort(), ['no-agent', 'send-error', ...endReasons, ...modeReasons].sort());
+// spec 044 FR-181, FR-183: the window's rule is main's, and a refusal says why on the row and in the history
+for (const s of [{}, { mode: 'ask' }, { mode: 'autopilot' }, { done: true }, { done: true, last: { at: 1, outcome: 'skipped-mode' } }, { done: true, mode: 'ask', last: { at: 1, outcome: 'skipped-mode' } }, { paused: true }, { loop: { ended: { at: 1 } } }, { loop: {} }]) {
+  assert.strictEqual(H.waitingForMode(s), waitingForMode(s as never), `the same rule as main: ${JSON.stringify(s)}`);
+}
+assert.strictEqual(H.asksAgain({ modeLost: 'no-seal' }), true);
+assert.strictEqual(H.asksAgain({}), false, 'once only');
+assert.strictEqual(H.asksAgain({ mode: 'ask', modeLost: 'no-seal' }), false);
+assert.strictEqual(H.lastWord({ at: 1, outcome: 'mode-refused', reason: 'mode-org' }), "not sent: this mode was refused: your organization's policy refuses it");
+assert.strictEqual(H.lastWord({ at: 1, outcome: 'mode-refused', reason: 'mode-autopilot' }), 'not sent: this mode was refused: Autopilot is not available on a schedule yet');
+assert.strictEqual(H.lastWord({ at: 1, outcome: 'skipped-mode', reason: 'other-agent' }), 'not sent: waiting for a mode: it would have gone to another agent than the one chosen');
+assert.strictEqual(H.lastWord({ at: 1, outcome: 'sent', reason: 'mode-org' }), 'sent', 'only where it explains the outcome');
+assert.strictEqual(H.runWords({ at: 1, outcome: 'skipped-mode', reason: 'no-mode' }), 'Not sent: waiting for a mode: no mode was chosen');
+assert.strictEqual(H.kindOf('skipped-mode'), 'stop');
+assert.strictEqual(H.kindOf('mode-refused'), 'stop');
 assert.strictEqual(H.reasonWords('/home/me/.ssh'), '', 'an unknown code gives no words (no text from the file is shown)');
 assert.strictEqual(H.reasonWords('__proto__'), '');
 assert.strictEqual(H.reasonWords(undefined), '');

@@ -39,11 +39,11 @@ export class OrgPolicyCache {
   }
 
   /** Read the policy of one agent app now when the cached one is older than the TTL (FR-204); one read at a time per app. */
-  async fresh(id: string | undefined): Promise<OrgPolicy | undefined> {
+  async fresh(id: string | undefined, force = false): Promise<OrgPolicy | undefined> {
     if (!id) return undefined;
     const ad = this.src.adapter(id);
     if (!ad || typeof ad.readOrgPolicy !== 'function') return undefined;
-    if (!this.stale(id)) return this.cache.get(id)?.p;
+    if (!force && !this.stale(id)) return this.cache.get(id)?.p;
     let run = this.pending.get(id);
     if (!run) {
       run = (async () => {
@@ -81,6 +81,31 @@ export class OrgPolicyCache {
   /** FR-203: why a start, resume or switch must be refused (only `blocked` / `fatal`), after a fresh enough read. */
   async refusal(id: string | undefined, ask: OrgAsk): Promise<string | undefined> {
     return OrgPolicyCache.refusalOf(await this.fresh(id), ask);
+  }
+
+  /**
+   * Spec 044 FR-183: for a run nobody is watching, and a save that sets one up. A refusal refuses any mode. For a mode above the session's own, `doubt` refuses too:
+   * Durbar could not read the policy (a reader that threw, a value it does not know), and nobody is there to decide. A mode the session already has, or a lower one, is
+   * as a start would treat it. An app with no policy reader has nothing to refuse.
+   */
+  private static unattended(p: OrgPolicy | undefined, mode: string, raised: boolean, atRun: boolean): string | undefined {
+    const v = modeVerdict(p, mode);
+    if (v?.refuse) return `${v.why}: pick another permission mode.`;
+    if (!raised || !p) return undefined;
+    // a run asks a session that is there; a save may come before any runtime has started, and the run checks again
+    if (p.runtimeUnread === 'failed' || (atRun && p.runtimeUnread === 'none')) return `${p.app}'s managed settings could not be read: this mode cannot run unattended. Pick a lower one.`;
+    return v ? `${v.why}: this mode cannot run unattended. Pick a lower one.` : undefined;
+  }
+
+  async runRefusal(id: string | undefined, mode: string, raised: boolean): Promise<string | undefined> {
+    let p = await this.fresh(id);
+    if (p?.runtimeUnread) p = await this.fresh(id, true); // a read from before the session, or one that failed, is not kept for a run: asked again
+    return OrgPolicyCache.unattended(p, mode, raised, true);
+  }
+
+  /** Spec 044 FR-183: the same from the last read, for a check that cannot wait. */
+  runRefusalNow(id: string | undefined, mode: string, raised: boolean): string | undefined {
+    return OrgPolicyCache.unattended(this.cached(id), mode, raised, false);
   }
 
   /** FR-201: the advice words for a start (`doubt` on its mode or model), or undefined; never a refusal. */

@@ -22,14 +22,14 @@ function endAllBody(n,busyN){
   'use strict';
   const focusIn=(el,o)=>{if(typeof window!=='undefined'&&window.DurbarScroll)window.DurbarScroll.focus(el,o);else if(el&&typeof el.focus==='function')el.focus({preventScroll:true});}; /* spec 052 FR-176: focus never scrolls the page (innerscroll.js, looked up at call time: this file may load first, or run in Node tests) */
   const FOCUSABLE='button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])';
-  return function askDialog({title,body,lines,input,buttons,check,picks,need,returnFocus,size}){
+  return function askDialog({title,body,lines,longLines,input,buttons,check,picks,need,returnFocus,size}){
     return new Promise(resolve=>{
       const old=doc.getElementById('modeDlg');if(old)old.remove();
       const opener=returnFocus||(doc.activeElement&&doc.activeElement!==doc.body?doc.activeElement:null);
       const d=doc.createElement('div');d.id='modeDlg';d.className='dlg-ov';
       d.innerHTML=`<div class="dlg${size==='m'||size==='l'?' '+size:''}" role="alertdialog" aria-modal="true" aria-labelledby="mdT" aria-describedby="mdB mdL"><h3 id="mdT"></h3><p class="dsub" id="mdB"></p>${lines&&lines.length?'<ul class="dlist" id="mdL"></ul>':''}${input?'<label class="dinput"><span></span>'+(input.multiline?'<textarea id="mdIn" rows="4" spellcheck="true"></textarea>':'<input type="text" id="mdIn" autocomplete="off" spellcheck="false">')+'</label>'+(input.hint?'<small class="dhint" id="mdH"></small>':'')+'<p class="derr" id="mdErr" hidden></p>':''}${picks&&picks.length?'<fieldset class="dpicks" id="mdP"><legend class="sr-only">Choose</legend></fieldset>':''}${check?'<label class="chk"><input type="checkbox" id="mdChk"><span></span></label>':''}<div class="dbtn"></div></div>`;
       d.querySelector('#mdT').textContent=title;d.querySelector('#mdB').textContent=body;
-      if(lines&&lines.length)lines.forEach(t=>{const li=doc.createElement('li');li.textContent=t;d.querySelector('#mdL').appendChild(li);});
+      if(lines&&lines.length){lines.forEach(t=>{const li=doc.createElement('li');li.textContent=t;d.querySelector('#mdL').appendChild(li);});if(longLines){const l=d.querySelector('#mdL');l.classList.add('long');l.tabIndex=0;}} /* longLines: one long text that scrolls and is read to its end by keyboard (spec 044 FR-182) */
       if(input){d.querySelector('.dinput span').textContent=input.label||'';if(input.hint){d.querySelector('#mdH').textContent=input.hint;d.querySelector('#mdIn').setAttribute('aria-describedby','mdH');}const inp=d.querySelector('#mdIn');inp.placeholder=input.placeholder||'';inp.maxLength=input.max||200;inp.value=input.value||'';}
       if(check){d.querySelector('.chk span').textContent=check.label;d.querySelector('#mdChk').checked=!!check.checked;}
       /* spec 064 FR-002: a checkbox list (label, a muted note, disabled with its reason); text only, never HTML */

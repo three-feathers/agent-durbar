@@ -42,6 +42,8 @@ export function createRemoteOps(deps: RemoteOpsDeps) {
       if (on && deps.modeOf?.(id) === 'allow') return { ok: false, error: NOT_IN_ALLOW_ALL };
       if (on && deps.doorClosed?.(id)) return { ok: false, error: DOOR_CLOSED };
       if (on && deps.confirm && !(await deps.confirm(id))) return { ok: false, cancelled: true, error: 'Cancelled.' };
+      // spec 044 FR-182: the question took time: a scheduled run may have raised the mode meanwhile
+      if (on && deps.modeOf?.(id) === 'allow') return { ok: false, error: NOT_IN_ALLOW_ALL };
       let r: RemoteState;
       try {
         r = await ad.setRemote(id, on);

@@ -241,6 +241,12 @@ async function main(): Promise<void> {
     const ops = createRemoteOps({ known: () => true, adapterOf: () => ad, open: async () => undefined, modeOf: () => mode, confirm: async () => yes, record: (id, on) => void log.push(id + (on ? ' on' : ' off')) });
     mode = 'allow';
     assert.deepStrictEqual(await ops.setRemote('a', true), { ok: false, error: NOT_IN_ALLOW_ALL }, 'refused in Allow all');
+    // spec 044 FR-182: a scheduled run raises the mode while the confirmation is open: checked again after it
+    {
+      let mode = 'read-only';
+      const raised = createRemoteOps({ known: () => true, adapterOf: () => ({ capabilities: { remote: true }, isLive: () => true, setRemote: async () => { throw new Error('must not turn on'); } }) as unknown as AgentAdapter, open: async () => undefined, modeOf: () => mode, confirm: async () => { mode = 'allow'; return true; } });
+      assert.deepStrictEqual(await raised.setRemote('a', true), { ok: false, error: NOT_IN_ALLOW_ALL }, 'refused after the confirmation');
+    }
     mode = 'ask';
     assert.deepStrictEqual(await ops.setRemote('a', true), { ok: false, cancelled: true, error: 'Cancelled.' }, 'the native No stops it');
     assert.deepStrictEqual(calls, [], 'nothing reached the adapter before consent');

@@ -31,6 +31,8 @@ export interface AgentsIpcDeps {
   opsDeps: OpsDeps;
   remoteOps: ReturnType<typeof createRemoteOps>;
   getScheduler(): Scheduler | undefined;
+  /** Spec 044 FR-180: a removed agent's one-turn run mode goes with it. */
+  forgetRunMode?(id: string): void;
   getCheckpointStore(): CheckpointStore | undefined;
   /** Spec 043 FR-041: the profile list freshness shared with ipc/profiles.ts; a session that ends or is removed is forgotten. */
   profileFreshness?: { forget(id: string): void };
@@ -88,14 +90,17 @@ export function register(deps: AgentsIpcDeps): void {
     agentState.ensure(id, agents.get(id)?.lazy);
     agentState.noteSend(id); // the window shows Thinking from the moment the user sends (app.js sendLive)
     const r = await sendOp(id, text, attachments, ad, plan);
-    if (!r.ok) agentState.noteSendFailed(id); // and Error when the send fails (app.js sendLive)
+    if (!r.ok && !r.held) agentState.noteSendFailed(id); // and Error when the send fails (app.js sendLive); `held`: spec 044 FR-180, a scheduled run's turn goes on
     return r;
   });
   // Stop only interrupts the running turn (the agent returns to Ready); End session frees the runtime session.
   ipcHandle('agents:stop', (_e, id: string) => stopTurnOp(opsDeps, id));
 
   /** End session (spec 005): remote control off first (spec 054 FR-011: off on GitHub too), then the adapter frees the session. Also Restart session's first step (spec 058 FR-022). */
-  const endSession = (id: string): Promise<void> => endSessionOp({ release: (k) => remoteOps.release(k), router }, id);
+  const endSession = (id: string): Promise<void> => {
+    deps.forgetRunMode?.(id); // spec 044 FR-180: first: a person's End frees the session and its mode, whatever a hung send or the app's own stop does
+    return endSessionOp({ release: (k) => remoteOps.release(k), router }, id);
+  };
   ipcHandle('agents:end', async (_e, id: string) => {
     if (!agents.has(id)) return;
     await endSession(id);
@@ -181,6 +186,7 @@ export function register(deps: AgentsIpcDeps): void {
     deps.profileFreshness?.forget(a.id); // spec 043 FR-041
     deps.forgetSandboxNote?.(a.id); // spec 087
     deps.browserGone?.(a.id); // spec 080 FR-023
+    deps.forgetRunMode?.(a.id);
     agents.delete(a.id);
     agentState.remove(a.id);
     vsChatRefs.delete(a.id);

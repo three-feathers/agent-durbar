@@ -24,6 +24,8 @@ export interface OpsDeps {
   orgRefusal?(a: AgentInfo, mode: PermMode): string | undefined;
   /** Spec 076 FR-203: why the agent app's own organization policy refuses switching this MCP server on, or undefined. */
   orgMcpRefusal?(a: AgentInfo, name: string): Promise<string | undefined>;
+  /** Spec 044 FR-180: the user took over a turn a scheduled run holds in its mode: Stop, or a mode chosen now. */
+  endRunMode?(id: string): void;
 }
 
 const MODE_WORDS: Record<PermMode, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
@@ -62,6 +64,7 @@ export function setModeOp(d: OpsDeps, id: unknown, mode: unknown, opts: unknown)
   a.permFrom = undefined;
   d.store?.setPermMode(d.wsKey(a), m); // the folder's mode: new sessions and sessions with nothing remembered
   d.store?.setSessionMode(d.wsKey(a), d.sessionKey?.(a) ?? a.id, m); // this session's own mode (spec 003, 2026-10-21)
+  d.endRunMode?.(a.id); // spec 044 FR-180: the mode chosen now replaces a scheduled run's for this turn too
   const extra = [o.clearGrants === true ? 'session permissions cleared' : '', o.approvePending === true && m === 'allow' ? 'waiting requests approved' : ''].filter(Boolean).join(', ');
   d.log?.(a, 'mode-change', `${MODE_WORDS[validMode(was)]} to ${MODE_WORDS[m]}${extra ? ` (${extra})` : ''}`);
   return { ok: true, mode: m, pending: r.pending };
@@ -106,6 +109,7 @@ export async function setCapOp(d: OpsDeps, id: unknown, credits: unknown): Promi
 /** `agents:stop`: interrupts the running turn only. */
 export async function stopTurnOp(d: OpsDeps, id: string): Promise<{ ok: false; error: string } | undefined> {
   const ad = d.agents.has(id) ? d.router.forAgent(id) : undefined;
+  d.endRunMode?.(id); // spec 044 FR-180: Stop brings a scheduled run's mode down first: the app's own stop may take long or never answer
   if (ad && refusesLive(ad, id, await interruptOf(ad, id))) return { ok: false, error: NO_INTERRUPT };
 }
 

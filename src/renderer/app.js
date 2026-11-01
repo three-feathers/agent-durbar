@@ -2000,6 +2000,7 @@ function addUserMsg(chat,text,atts,ts){
     c.innerHTML=(x.img?ICON('img'):ICON('file'))+'<span>'+esc(x.name)+'</span>';box.appendChild(c);});
   if(!(atts||[]).length)box.remove();
   chat.el.appendChild(m);stickyScroll(chat);
+  return m;
 }
 function getChat(a){
   if(a.live)return liveChat(a);
@@ -4223,7 +4224,7 @@ document.addEventListener('scroll',()=>INL().follow(),{capture:true,passive:true
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='long'?'long':qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':qs.get('simreply')==='secrets'?'secrets':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', sched:qs.get('simsched')==='1',ws:qs.get('simws')==='1', schedFire:Math.max(0,Math.min(600,parseInt(qs.get('simschedfire')||'0',10)||0)), seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), edits:qs.get('simedits')==='1', floors:qs.get('simfloors')==='1'||qs.get('simfloors')==='ground', floorsGround:qs.get('simfloors')==='ground', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='long'?'long':qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':qs.get('simreply')==='secrets'?'secrets':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', sched:qs.get('simsched')==='1',waiting:qs.get('simwaiting')==='1',ws:qs.get('simws')==='1', schedFire:Math.max(0,Math.min(600,parseInt(qs.get('simschedfire')||'0',10)||0)), seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), edits:qs.get('simedits')==='1', floors:qs.get('simfloors')==='1'||qs.get('simfloors')==='ground', floorsGround:qs.get('simfloors')==='ground', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const BP = window.DurbarBrowserPane; /* spec 080 T015: the session browser's tabs and bar; it talks to the real preload API (main refuses it outside the app's own page) */
 /* spec 080 FR-025d (Q3): a hidden session's page dialog brings that session's chat forward on its Browser tab, at most once per session until the user opens that chat themselves */
@@ -4351,7 +4352,9 @@ const remoteTag=a=>a&&!a.parent&&a.remote?' · Remote':'';
 const remoteWords=a=>a&&!a.parent&&a.remote?', remote control on':'';
 /* spec 017 FR-005, FR-028 (review on PR 631): a door you closed is said in the desk's name on every desk, with what it holds */
 const doorWords=a=>{if(!a||a.parent||!doorShown(a))return '';const d=doorOf(a),h=d.held?d.held+' held':'';return d.closed?', door closed by you (do not disturb)'+(h?', '+h:''):h?', '+h:'';};
-const modeWords=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?', '+MODE_NAME[a.info.permMode]+(a.info.permMode==='allow'&&a.info.permRestored?' (restored)':''):'';
+/* spec 044 FR-180: the mode the turn really runs in: a scheduled run's while it holds the session, else the session's own */
+const modeNow=a=>a.info.runMode||a.info.permMode;
+const modeWords=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?', '+MODE_NAME[modeNow(a)]+(a.info.runMode?' (this turn)':a.info.permMode==='allow'&&a.info.permRestored?' (restored)':''):'';
 /* spec 052 FR-065: Allow all is a small red "Allow all" text badge in the icon's slot (the words, not only a padlock); the other modes keep the icon */
 /* spec 052 FR-065: the list row says "Allow all" in a red badge (text=true); a desk card keeps the red icon, because a text badge
    there hides the agent's name at 1280x800 (office check) */
@@ -4361,7 +4364,7 @@ const sbxWord=a=>SBX&&a&&a.info?SBX.chipWord(a.info.sandbox):'';
 const sbxTip=a=>SBX&&a&&a.info&&a.info.sandbox?SBX.tooltip(a.info.sandbox,kindWord(a.info.adapterId),safeMask):'';
 const sbxTitle=a=>{const w=sbxWord(a);return w?' '+w+'.':'';}; /* the card's mode icon: the word only (its tooltip stays short); details on the chip and in the mode menu */
 const sbxDetails=a=>SBX&&a&&a.info&&a.info.sandbox?SBX.details(a.info.sandbox,kindWord(a.info.adapterId),safeMask):'';
-const modeIcon=(a,text)=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?(a.info.permMode==='allow'&&text?`<span class="modebadge" title="${esc(MODE_NAME.allow)}${a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_SHORT.allow)}.${esc(sbxTitle(a))} Right-click for options." aria-hidden="true">Allow all</span>`:`<span class="modeic mode-${a.info.permMode}" title="${esc(MODE_NAME[a.info.permMode])}${a.info.permMode==='allow'&&a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_SHORT[a.info.permMode])}.${esc(sbxTitle(a))} Right-click for options." aria-hidden="true">${MODE_IC[a.info.permMode]}</span>`):'';
+const modeIcon=(a,text)=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?(modeNow(a)==='allow'&&text?`<span class="modebadge" title="${esc(MODE_NAME.allow)}${a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_SHORT.allow)}.${esc(sbxTitle(a))} Right-click for options." aria-hidden="true">Allow all</span>`:`<span class="modeic mode-${modeNow(a)}" title="${esc(MODE_NAME[modeNow(a)])}${a.info.runMode?' (this turn, for a scheduled run)':modeNow(a)==='allow'&&a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_SHORT[modeNow(a)])}.${esc(sbxTitle(a))} Right-click for options." aria-hidden="true">${MODE_IC[modeNow(a)]}</span>`):'';
 /* spec 033 SC-003 (2026-10-21, issue #454): a floor switch is timed inside the app, from the click to the end of the office render
    that shows it (that render measures the stage, so its layout is done). One User Timing entry, replaced on each switch; the
    simulator check reads it. Nothing else uses it. */
@@ -5931,27 +5934,35 @@ function onRetry(a,e){
   if(ui.selected===a.id)updatePanelHeader();
   scheduleRender();
 }
+function heldSendSays(a,why){toast(esc(safeMask(why)),5000);announce(why);}
 async function sendLive(text,forId,opts){
   const a0=byId(forId||ui.selected); if(!a0)return; const a=liveRoot(a0);
   /* spec 064 FR-003: a message sent from elsewhere (Send to several) leaves the open chat's composer and attachments alone */
   const fromComposer=!(opts&&opts.fromComposer===false);
   const atts=fromComposer?attached.slice():[];
   text=(text||'').trim(); if(!text&&!atts.length)return;
+  /* spec 044 FR-180: a scheduled run holds this session: nothing is touched, the text stays in the box, and the run's turn goes on */
+  if(a.info&&a.info.runMode){heldSendSays(a,'A scheduled run is using this session. Wait for it to end, or stop it, then send your message.');return;}
   /* spec 012 FR-157: an app that is known to be signed out gets the sign-in card first; the typed text stays in the box */
   if(SIGNIN&&SIGNIN.needsSignIn(KINDS,kindOf(a))){PROMPTS.set(a.id,text,atts);showSignInCard(a,{before:true});return;}
   if(PROMPTS)PROMPTS.set(a.id,text,atts); /* memory only, for Send again after a sign-in (never stored) */
   if(a.coffee&&!(opts&&opts.coffee))endCoffee(a,'you sent a message'); /* spec 068 FR-009: a message ends the coffee break */
   a.sent=true;
   const chat=liveChat(a);
-  addUserMsg(chat,text||'(attachment)',atts);
+  const userMsg=addUserMsg(chat,text||'(attachment)',atts);
   if(fromComposer){attached=[];renderAttached();attNotice([]);
     const input=$('msgInput');if(input){input.value='';autoGrow();}}
   if(LIVEACT)LIVEACT.clear(a.id); /* spec 001 FR-028: a new message starts a fresh readout */
+  const was={st:a.state,label:a.stateLabel,task:a.task}; /* put back if main's gate refuses it (spec 044 FR-180) */
   a.worked=true; a.intent=''; closeTurn(a); ensureTurn(a); setState(a,'thinking',null,'Thinking');
   const planFirst=!!a.planNext&&!!(capsFor(a)&&capsFor(a).planMode); /* spec 066: one message only */
   if(a.planNext){a.planNext=false;renderAttached();}
   if(planFirst)addNote(chat,'Asked for a plan first: nothing changes until you approve it.');
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})),planFirst?{plan:true}:undefined);
+  /* spec 044 FR-180: main's gate refused it (a run was setting up): as if never sent: the text back in the box, the reason, and no Error state */
+  if(!r.ok&&r.held){if(userMsg&&userMsg.remove)userMsg.remove();
+    if(fromComposer&&ui.selected===a.id){const input=$('msgInput');if(input&&!input.value){input.value=text;autoGrow();}attached=atts;renderAttached();}
+    setState(a,was.st,was.label,was.task);heldSendSays(a,String(r.error||''));return;}
   if(!r.ok){closeTurn(a);const n=addNote(chat,'Send failed: '+esc((r.error&&safeMask(r.error))||'unknown error'),true); /* spec 041 FR-065 (delta 2026-10-23): the app's error is masked (shown whole, not cut); no mask: a neutral word */modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+safeExcerpt(r.error,100,'unknown error'));}
   else if(r.slash)addNote(chat,'Sent the text of <code>'+esc(DurbarCutText.cutText(safeMask(r.slash),160))+'</code> (the agent app does not load it in Durbar’s sessions).'+(r.slashNote?' '+esc(DurbarCutText.cutText(safeMask(r.slashNote),200)):'')); /* spec 073 FR-005; slashNote: masked, then cut (FR-013) */
   else if(r.slashNote)addNote(chat,esc(DurbarCutText.cutText(safeMask(r.slashNote),240))); /* spec 073 (review on PR 615): over the size cap, sent as typed; masked, then cut (FR-013) */
@@ -6110,7 +6121,7 @@ function renderStrip(){
 
 
 /* ---------------- permission mode: change it at any time (spec 018) ---------------- */
-function modeChipHTML(a){const m=a.info.permMode, rs=m==='allow'&&a.info.permRestored;
+function modeChipHTML(a){const m=modeNow(a), turn=!!a.info.runMode, rs=!turn&&m==='allow'&&a.info.permRestored;
   /* spec 061 FR-012: Read-only still means something: when the folder's own hooks or allow rules apply, the chip says so */
   const fr=a.info.folderRules?' + folder rules':'';
   /* spec 087 FR-009: the floor in force after the mode, in words (never colour alone); its tooltip says what it covers (FR-010) */
@@ -6118,7 +6129,7 @@ function modeChipHTML(a){const m=a.info.permMode, rs=m==='allow'&&a.info.permRes
   const sr=canSbxRestart(a), sw=sbxWord(a),sbx=sw&&!sr?`<span class="mode-sbx sbx-${esc(a.info.sandbox.state)}" data-sbx="${esc(a.info.sandbox.state)}" title="${esc(sbxTip(a))}"> · ${esc(sw)}</span>`:'';
   const sbtn=sr?`<button class="mode-sbx mode-sbx-btn sbx-${esc(a.info.sandbox.state)}" id="sbxRestartBtn" type="button" data-act="sbxRestart" data-sbx="${esc(a.info.sandbox.state)}"${a.sbxRestarting?' aria-disabled="true"':''} aria-label="${esc(sw+'. Restart without the sandbox…')}" title="${esc(sbxRestartTip(a))}">${esc(sw)}</button>`:'';
   if(!feat(a,'modes'))return `<span class="modechip${m==='allow'?' modebadge':''}" title="Set when the session starts">${esc(MODE_NAME[m]+fr)}${sbx}</span>${sbtn}`; /* spec 052 FR-065 */
-  return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}${rs?(a.info.permFrom==='session'?' (restored: the mode you last chose for this session)':' (restored from your last run)'):''}. Click to change."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m]+fr)}${sbx}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>${sbtn}`;}
+  return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}${turn?' for this turn, set by a scheduled run. This session\'s own mode is '+esc(MODE_NAME[a.info.permMode])+'; choose it to bring this turn down now':''}${rs?(a.info.permFrom==='session'?' (restored: the mode you last chose for this session)':' (restored from your last run)'):''}. Click to change."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m]+(turn?' (this turn)':'')+fr)}${sbx}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>${sbtn}`;}
 /* the chip and its sandbox button are repainted together (the button is the chip's next sibling) */
 function setModeChip(c,a){const o=$('sbxRestartBtn');if(o)o.remove();c.outerHTML=modeChipHTML(a);}
 /* spec 087 FR-022/FR-022a: the pure rule (sandboxtext.js) on this agent's state, mode and app capabilities; the existing Restart session flow and channel */
@@ -6145,8 +6156,8 @@ function openModeMenu(a0,x,y,anchor,o){ /* o.modesOnly (spec 003 FR-095): the th
   if(!hasMode&&!hasOps)return false;
   closeModeMenu();
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',(hasOps?'Actions for ':'Permission mode for ')+a.name);
-  m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>{const o=orgMode(a.info.adapterId,k),w=o?o.why:''; /* spec 076 FR-202: blocked: disabled, the reason as its text; advice (FR-201): the words, still selectable */
-    return `<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}${w?(o.refuse?' mm-org':' mm-orgdoubt'):''}"${o&&o.refuse?' aria-disabled="true"':''} title="${esc(w||MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(w||MODE_SHORT[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`;}).join('')+(canSbxRestart(a)&&!onCard?`<button type="button" role="menuitem" data-act="sbxRestart" class="mm-sbxrestart"${a.sbxRestarting?' aria-disabled="true"':''} title="${esc(sbxRestartTip(a))}"><span class="mt"><b>Restart without the sandbox</b><small>Keeps this conversation; a new session in Allow all</small></span></button>`:'')+(!only&&bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(!only&&capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(!only&&bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`+(sbxWord(a)?`<p class="mm-note mm-sbx"><b>${esc(sbxWord(a))}.</b> ${esc(sbxDetails(a))}</p>`:''):'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRead?`<button type="button" role="menuitem" data-op="read" class="mm-read"><span class="mt"><b>Mark as read</b><small>Clears \u201cNew\u201d without opening the chat</small></span></button>`:'')+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
+  m.innerHTML=(hasMode&&a.info.runMode?`<p class="mm-note" id="mmRun">This turn runs in ${esc(MODE_NAME[a.info.runMode])} for a schedule. This session's own mode is ${esc(MODE_NAME[a.info.permMode])}: choose a mode to replace it now.</p>`:'')+(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>{const o=orgMode(a.info.adapterId,k),w=o?o.why:''; /* spec 076 FR-202: blocked: disabled, the reason as its text; advice (FR-201): the words, still selectable */
+    return `<button type="button" role="menuitemradio" aria-checked="${modeNow(a)===k}" data-mode="${k}" class="mm-${k}${w?(o.refuse?' mm-org':' mm-orgdoubt'):''}"${o&&o.refuse?' aria-disabled="true"':''} title="${esc(w||MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(w||MODE_SHORT[k])}</small></span><span class="ck">${modeNow(a)===k?'✓':''}</span></button>`;}).join('')+(canSbxRestart(a)&&!onCard?`<button type="button" role="menuitem" data-act="sbxRestart" class="mm-sbxrestart"${a.sbxRestarting?' aria-disabled="true"':''} title="${esc(sbxRestartTip(a))}"><span class="mt"><b>Restart without the sandbox</b><small>Keeps this conversation; a new session in Allow all</small></span></button>`:'')+(!only&&bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(!only&&capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(!only&&bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`+(sbxWord(a)?`<p class="mm-note mm-sbx"><b>${esc(sbxWord(a))}.</b> ${esc(sbxDetails(a))}</p>`:''):'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRead?`<button type="button" role="menuitem" data-op="read" class="mm-read"><span class="mt"><b>Mark as read</b><small>Clears \u201cNew\u201d without opening the chat</small></span></button>`:'')+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
   document.body.appendChild(m);
   const {px,py}=placeMenu(m,x,y,anchor); /* spec 005 FR-037: above a toolbar chip */
   m.addEventListener('click',e=>{const pn=e.target.closest('[data-act="planNext"]');if(pn){a.planNext=!a.planNext;closeModeMenu();renderAttached();announce(a.planNext?'The next message asks for a plan first.':'Plan first is off.');const mi=$('msgInput');if(mi)focusIn(mi);return;}const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}if(e.target.closest('[data-act="foldersetup"]')){closeModeMenu();window.DurbarFolderSetup.openFor(a.info);return;}const sr=e.target.closest('[data-act="sbxRestart"]');if(sr){if(sr.getAttribute('aria-disabled')==='true')return;closeModeMenu();restartWithoutSandbox(a,anchor);return;}const o=e.target.closest('[data-op]');if(o){if(o.getAttribute('aria-disabled')==='true')return;closeModeMenu();cardOp(a,o.dataset.op,anchor);return;}const b=e.target.closest('[data-mode]');if(!b||b.getAttribute('aria-disabled')==='true')return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
@@ -6230,7 +6241,7 @@ async function changeMode(a,mode,anchor){
   try{await changeModeInner(a,mode,anchor);}finally{refocusAnchor(anchor);}
 }
 async function changeModeInner(a,mode,anchor){
-  const cur=a.info.permMode; if(mode===cur||!bridge.setPermMode)return;
+  const cur=modeNow(a); if(mode===cur||!bridge.setPermMode)return; /* spec 044 FR-180: during a scheduled run's turn the session's own mode is a real choice: it brings the turn down */
   const pend=a.pend?a.pend.size:0, grants=(a.grants||[]).length;
   const opts={};
   if(mode==='allow'){
@@ -6416,9 +6427,10 @@ const anyKindReady=()=>!KINDS||DMK().kindChoices(KINDS).some(k=>!k.disabled); /*
 /* spec 052 FR-005: the top bar's mode is the default for NEW sessions, not every agent's mode: it says so (and is narrower than before) */
 const PERM_LABEL={'read-only':'Read-only',ask:'Ask first',allow:'Allow all'}; /* spec 052 FR (2026-10-21): the popover labels the select; no "New: " prefix */
 /* Permissions select of a kind: only the modes it can enforce; a value it cannot hold falls back to read-only, never to a wider mode (spec 012 FR-067) */
+const permOptions=modes=>modes.map(k=>`<option value="${k}">${PERM_LABEL[k]}</option>`).join('');
 function fillPermSelect(sel,caps,kind){
   const modes=DMK().modesFor(caps),cur=sel.value;
-  if([...sel.options].map(o=>o.value).join()!==modes.join())sel.innerHTML=modes.map(k=>`<option value="${k}">${PERM_LABEL[k]}</option>`).join('');
+  if([...sel.options].map(o=>o.value).join()!==modes.join())sel.innerHTML=permOptions(modes);
   sel.value=DMK().fallbackMode(caps,cur);
   markOrgModes(sel,kind);
 }
@@ -6963,7 +6975,7 @@ function doorClosedToast(a){
 }
 async function remoteOn(a){
   /* spec 054 FR-011: never together with Allow all (main refuses too); say why before asking anything */
-  if(a&&a.info&&a.info.permMode==='allow'){toast('Remote control is off in Allow all: anyone steering this session on '+esc(svc(a).name)+' could make it run commands without asking you. Switch '+esc(a.name)+' to Ask first, then turn it on.',7000).classList.add('err');return;}
+  if(a&&a.info&&modeNow(a)==='allow'){toast('Remote control is off in Allow all: anyone steering this session on '+esc(svc(a).name)+' could make it run commands without asking you. Switch '+esc(a.name)+' to Ask first, then turn it on.',7000).classList.add('err');return;}
   if(!canRemote(a)||remoteBusy||a.remote)return;
   /* spec 054 FR-040, spec 017 FR-027 (review on PR 631): a door you closed refuses remote control; offer to open it right here */
   if(doorOf(a).closed){doorClosedToast(a);return;}
@@ -7148,7 +7160,7 @@ const folderKeyOf=r=>{const ag=agents.find(x=>!x.parent&&x.room===r.id);const i=
 const schedulesOf=r=>SCHED.schedules.filter(s=>s.folder===folderKeyOf(r));
 const clock=ms=>{const d=new Date(ms),n=new Date(),t=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});return d.toDateString()===n.toDateString()?t:d.toLocaleDateString([],{month:'short',day:'numeric'})+' '+t;};
 const recurringS=s=>s.every!==undefined||!!s.rule;
-const nextRunOf=ss=>{const t=ss.filter(s=>!s.paused&&!s.done).map(s=>recurringS(s)?s.next:s.at).filter(Boolean).sort((a,b)=>a-b)[0];return t&&!SCHED.pausedAll?clock(t):'';};
+const nextRunOf=ss=>{const t=ss.filter(s=>!s.paused&&!s.done&&!SH().waitingForMode(s)).map(s=>recurringS(s)?s.next:s.at).filter(Boolean).sort((a,b)=>a-b)[0];return t&&!SCHED.pausedAll?clock(t):'';};
 const SH=()=>window.DurbarSchedHist; /* spec 044 FR-040: the words of every outcome live in schedhist.js (the row's last-run line and the history share them) */
 const DAY3=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 /* spec 044 FR-012: "every day at 08:30", "weekdays at 09:00", "weekly on Mon, Thu at 17:00" (Monday first) */
@@ -7160,14 +7172,96 @@ const capAmt=(n,u)=>u==='usd'?'$'+(Number(n)||0).toFixed(2):(Math.round((Number(
 const schedMax=()=>DurbarSchedTemplates.PROMPT_MAX; /* spec 044 FR-120: the one number in the window (schedtemplates.js; test:schedules keeps it equal to main's) */
 const schedReview=s=>String(s.prompt).length>schedMax();
 function schedLine(s){
-  const st=s.done?' · done':s.paused?(s.pausedReason==='review'?' · Paused':s.pausedReason==='session-ended'?' · Paused: the session has ended':s.pausedReason==='cap'?' · Paused: reached its limit':' · paused'):(recurringS(s)&&s.next&&!SCHED.pausedAll?' · next '+clock(s.next):'');
+  const st=s.done?' · done':s.paused?(s.pausedReason==='review'?' · Paused':s.pausedReason==='session-ended'?' · Paused: the session has ended':s.pausedReason==='cap'?' · Paused: reached its limit':' · paused'):(recurringS(s)&&s.next&&!SCHED.pausedAll&&!SH().waitingForMode(s)?' · next '+clock(s.next):'');
   const rv=!s.done&&schedReview(s)?' · Needs review: the prompt is over '+schedMax().toLocaleString('en-US')+' characters, shorten it with Edit…':''; /* spec 044 FR-124: computed from the prompt, so it shows before the first run */
-  return whenOf(s)+(s.target?' · → '+((t=>t?SN().shortName(t.name,40):null)(agents.find(x=>x.id===s.target.session&&x.live))||s.target.name||'one session'):'')+st+rv
+  return whenOf(s)+(s.target?' · → '+((t=>t?SN().shortName(t.name,40):null)(agents.find(x=>x.id===s.target.session&&x.live))||s.target.name||'one session'):'')+schedModeWord(s)+st+rv
     +(s.cap?' · spent '+capAmt(s.spent||0,s.cap.unit)+' of '+capAmt(s.cap.amount,s.cap.unit)+(s.spentUnknown?' (the spend was not fully reported)':''):'')
-    +(s.last?' · last '+clock(s.last.at)+': '+SH().outcomeWord(s.last.outcome):'');
+    +(s.last?' · last '+clock(s.last.at)+': '+SH().lastWord(s.last):'');
+}
+/* ---- spec 044 FR-180..FR-184: a schedule's own mode. The choice is the new-session dialog's (#sdPerm: modesFor, PERM_LABEL, markOrgModes), with confirmAllow ---- */
+const SCHED_MODE_WORD=Object.assign({autopilot:'Autopilot'},PERM_LABEL);
+/* FR-182: the row always shows the mode; one with none says it waits */
+const schedModeWord=s=>s.mode?' · '+(SCHED_MODE_WORD[s.mode]||s.mode):SH().waitingForMode(s)?' · Waiting for a mode'+(s.modeLost?': its Allow all confirmation could not be checked':''):'';
+/* the agent that would run it now, as the window knows it (main decides again) */
+const schedAgentOf=s=>s.target?agents.find(x=>x.id===s.target.session&&x.info)||null:agents.find(x=>!x.parent&&x.info&&(x.info.workspaceFile||x.info.cwd)===s.folder)||null;
+/* FR-184: only what this agent can do is offered, and Autopilot needs a capability no agent has yet (spec 099 FR-001), so it is never offered here. `keep` shows a stored
+   Autopilot, disabled. `blank` starts with no mode at all: nothing is picked for the user (FR-181). */
+function fillSchedMode(sel,a,o){
+  o=o||{};
+  const modes=DMK().modesFor(a&&a.info?capsFor(a):{permissionModes:['read-only','ask','allow']}),cur=o.value!==undefined?o.value:sel.value;
+  sel.innerHTML=(o.blank?'<option value="">Choose a mode…</option>':'')+permOptions(modes)+(o.keep?'<option value="autopilot" disabled>Autopilot (not available yet)</option>':'');
+  markOrgModes(sel,a&&a.info&&a.info.adapterId||undefined);
+  const ap=[...sel.options].find(x=>x.value==='autopilot');if(ap)ap.disabled=true; /* markOrgModes rewrites `disabled` */
+  const ok=[...sel.options].some(x=>x.value===cur&&(!x.disabled||cur==='autopilot'));
+  sel.value=ok?cur:o.blank?'':'read-only';
+}
+/* FR-182: asks main, then a person. {} when no confirmation is needed, {proof} after a yes; null when it may not go on (it said why). Main refuses a save without the proof. */
+async function schedModeProof(q){
+  if(q.mode!=='allow'||!bridge.askScheduleMode)return {};
+  const r=await bridge.askScheduleMode(q).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  if(!r||!r.ok){toast(esc((r&&r.error)||'Could not ask about this mode.'),5000);return null;}
+  if(!r.needed)return {};
+  return (await confirmAllow('','',{title:r.title,body:r.body,prompt:r.prompt}))?{proof:r.token}:null;
+}
+/* FR-181: *Choose a mode* on a row and the first-launch popup: one list, each schedule's own choice, none picked. Closing leaves them waiting; a choice sends nothing. */
+let modePopupOpener=null;
+function closeModePopup(){const d=$('schedModeDlg');if(!d)return;d.remove();const t=modePopupOpener;modePopupOpener=null;if(!t)return;
+  /* a repaint of the list may have replaced the row's button: the new one of the same schedule */
+  const k=t.dataset&&t.dataset.id?(t.dataset.sc?'sc':t.dataset.ss?'ss':''):'',n=document.contains(t)?t:k?[...document.querySelectorAll(`[data-${k}="mode"]`)].find(x=>x.dataset.id===t.dataset.id):null;
+  if(n)focusIn(n);}
+function openModePopup(list,first){
+  closeModePopup();
+  if(!list.length)return;
+  modePopupOpener=document.activeElement&&document.activeElement!==document.body?document.activeElement:null;
+  const d=document.createElement('div');d.id='schedModeDlg';d.className='dlg-ov';
+  const many=list.length>1;
+  d.innerHTML=`<div class="dlg m sched-dlg" role="dialog" aria-modal="true" aria-labelledby="smT"><h3 id="smT">${many?'Choose a mode for these schedules':'Choose a mode for this schedule'}</h3>
+   <p class="dsub">${first?'A schedule now runs in its own mode, one turn at a time, not in the session\'s. These have none yet, so they wait and send nothing. ':''}Choosing sends nothing now: it runs at its next time. Close leaves ${many?'them':'it'} waiting.</p>
+   <div class="sm-list">${list.map(s=>`<div class="sm-row" data-id="${esc(s.id)}"><div class="sc-t">${promptToggle('m:'+s.id,s.prompt)}<small>${esc(whenOf(s))}${(a=>a?' · '+esc(a.name):'')(schedAgentOf(s))}</small></div><label><span class="sr-only">Mode for ${esc(DurbarCutText.cutText(s.prompt,40))}</span><select class="sm-mode" data-id="${esc(s.id)}"></select></label></div>`).join('')}</div>
+   <div class="dbtn"><button class="btn" id="smClose" type="button">Close</button><button class="btn primary" id="smSave" type="button">Save ${many?'choices':'choice'}</button></div></div>`;
+  document.body.appendChild(d);
+  d.querySelectorAll('.sm-mode').forEach(sel=>{const s=SCHED.schedules.find(x=>x.id===sel.dataset.id);fillSchedMode(sel,s&&schedAgentOf(s),{blank:true,value:''});});
+  d.addEventListener('click',e=>{if(e.target===d)closeModePopup();});
+  d.addEventListener('keydown',e=>{
+    if($('modeDlg'))return; /* its own confirmation holds the keys */
+    if(e.key==='Escape'){e.stopPropagation();closeModePopup();return;}
+    if(e.key!=='Tab')return; /* Tab wraps, as askDialog's */
+    const it=[...d.querySelectorAll('button:not([disabled]),select:not([disabled])')].filter(x=>x.offsetParent!==null),i=it.indexOf(document.activeElement);
+    if(i<0||(e.shiftKey&&i===0)||(!e.shiftKey&&i===it.length-1)){e.preventDefault();focusIn(it[e.shiftKey?it.length-1:0]);}
+  });
+  $('smClose').onclick=closeModePopup;
+  $('smSave').onclick=async()=>{
+    const picks=[...d.querySelectorAll('.sm-mode')].filter(x=>x.value);
+    if(!picks.length){toast('Choose a mode first, or Close to leave '+(many?'them':'it')+' waiting.',3500);return;}
+    let saved=0;
+    for(const sel of picks){
+      const pf=await schedModeProof({id:sel.dataset.id,mode:sel.value});
+      if(!pf)continue;
+      const r=await bridge.setScheduleMode(sel.dataset.id,sel.value,pf.proof).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+      if(r&&r.ok){saved++;const row=sel.closest('.sm-row');if(row)row.remove();}else toast(esc((r&&r.error)||'Could not save this mode.'),5000);
+    }
+    await refreshSchedules();
+    if(saved)toast('Saved. Nothing was sent: each runs at its next time.',3500);
+    if(!d.querySelector('.sm-row'))closeModePopup();
+  };
+  focusIn(d.querySelector('.sm-mode'));
+}
+/* FR-181: the first launch that finds schedules without a mode: one popup, once. No such schedule: nothing at all. It waits for other dialogs and never holds up the office, the agents or a driver. */
+const SCHED_MODE_ASKED='durbar.schedModeAsked';
+function maybeModePopup(tries){
+  const list=SCHED.schedules.filter(SH().waitingForMode);
+  if(!list.length||demoOn)return;
+  /* an Allow all whose seal could not be checked asks at each launch (spec 044 FR-182); everything else once */
+  const again=list.some(SH().asksAgain);
+  try{if(!again&&localStorage.getItem(SCHED_MODE_ASKED))return;}catch(e){}
+  if(document.querySelector('.dlg-ov')||(window.DurbarScreens&&window.DurbarScreens.isOpen())){if((tries||0)<60)setTimeout(()=>maybeModePopup((tries||0)+1),2000);return;}
+  try{localStorage.setItem(SCHED_MODE_ASKED,'1');}catch(e){}
+  openModePopup(list,true);
 }
 /* the row's buttons; `k` is the data attribute (sc in the dialog, ss in Settings). An ended session cannot be resumed, only moved to the folder's agent (FR-014); a once schedule paused for review has no Resume (its time has passed, it can only be fixed with Edit…, FR-124). */
-const schedBtns=(s,k)=>`<button class="btn" type="button" data-${k}="edit" data-id="${esc(s.id)}">Edit…</button>`+(s.done||(s.paused&&s.pausedReason==='review')?'':s.paused&&s.pausedReason==='session-ended'?`<button class="btn" type="button" data-${k}="retarget" data-id="${esc(s.id)}" title="Send it to this folder's agent from now on, and resume it">Use the folder's agent</button>`
+const schedBtns=(s,k)=>(SH().waitingForMode(s)||(s.last&&s.last.outcome==='mode-refused')?`<button class="btn" type="button" data-${k}="mode" data-id="${esc(s.id)}">Choose a mode…</button>`:'')
+  +(s.done&&s.mode&&s.last&&(s.last.outcome==='skipped-mode'||s.last.outcome==='mode-refused')&&bridge.runScheduleNow?`<button class="btn" type="button" data-${k}="runmissed" data-id="${esc(s.id)}" title="Its time passed without a mode: one run now, in the mode you chose">Run missed now</button>`:'')
+  +`<button class="btn" type="button" data-${k}="edit" data-id="${esc(s.id)}">Edit…</button>`+(s.done||(s.paused&&s.pausedReason==='review')?'':s.paused&&s.pausedReason==='session-ended'?`<button class="btn" type="button" data-${k}="retarget" data-id="${esc(s.id)}" title="Send it to this folder's agent from now on, and resume it">Use the folder's agent</button>`
   :`<button class="btn" type="button" data-${k}="pause" data-id="${esc(s.id)}"${s.pausedReason==='cap'?' title="Resume starts counting its spending again from zero"':''}>${s.paused?'Resume':'Pause'}</button>`)
   +`<button class="btn danger" type="button" data-${k}="del" data-id="${esc(s.id)}">Delete</button>`
   +`<button class="btn" type="button" data-${k}="hist" data-id="${esc(s.id)}" aria-expanded="${HIST_OPEN.has(k+':'+s.id)}" aria-controls="sh-${k}-${esc(s.id)}" title="When it ran and what happened">History</button>`;
@@ -7180,7 +7274,7 @@ document.addEventListener('click',e=>{
   if(open)SCHED_OPEN.add(k);else SCHED_OPEN.delete(k);
   b.setAttribute('aria-expanded',String(open));const f=b.nextElementSibling;if(f)f.hidden=!open;
 });
-const schedRow=(s,k)=>`<div class="sc-row${s.paused||s.done?' off':''}" data-id="${esc(s.id)}"><div class="sc-t">${promptToggle('s:'+s.id,s.prompt)}<small>${esc(schedLine(s))}</small></div>${schedBtns(s,k)}<ol class="sc-hist" id="sh-${k}-${esc(s.id)}" aria-label="${esc(SH().listName(DurbarCutText.cutText(s.prompt,40)))}"${HIST_OPEN.has(k+':'+s.id)?'':' hidden'}></ol></div>`; /* the list follows the buttons: Tab goes History, then its Open chat buttons */
+const schedRow=(s,k)=>`<div class="sc-row${s.paused||s.done?' off':''}${SH().waitingForMode(s)||(s.last&&s.last.outcome==='mode-refused')?' sc-wait':''}" data-id="${esc(s.id)}"><div class="sc-t">${promptToggle('s:'+s.id,s.prompt)}<small>${esc(schedLine(s))}</small></div>${schedBtns(s,k)}<ol class="sc-hist" id="sh-${k}-${esc(s.id)}" aria-label="${esc(SH().listName(DurbarCutText.cutText(s.prompt,40)))}"${HIST_OPEN.has(k+':'+s.id)?'':' hidden'}></ol></div>`; /* the list follows the buttons: Tab goes History, then its Open chat buttons */
 /* spec 044 FR-040/FR-041/FR-043: a schedule's run history, inline under its row (dialog and Settings). Main keeps the log; the window asks
    for it only while a list is open, and again when a change arrives. */
 const HIST_OPEN=new Set(); /* "<sc|ss>:<schedule id>" of the open lists: a repaint keeps them open */
@@ -7244,6 +7338,8 @@ document.addEventListener('click',e=>{
 });
 /* pause/resume/retarget/delete from a row (dialog or Settings) */
 async function schedAct(act,s){
+  if(act==='mode'){openModePopup([s]);return;} /* FR-181 */
+  if(act==='runmissed'){const r=await bridge.runScheduleNow(s.id).catch(e=>({ok:false,error:String(e&&e.message||e)}));if(r&&r.ok)toast('Sent the scheduled prompt now.',3200);else toast('Could not run it: '+esc((r&&r.error)||'unknown error'),5000);await refreshSchedules();return;}
   if(act==='del')await bridge.removeSchedule(s.id);
   else{const r=await bridge.saveSchedule(act==='retarget'?Object.assign({},s,{target:null,paused:false}):Object.assign({},s,{paused:!s.paused}));if(r&&!r.ok)toast(esc(r.error||'Could not change the schedule.'),5000);}
   await refreshSchedules();
@@ -7283,7 +7379,7 @@ function openSchedules(r,from,opts){
   const soon=new Date(Date.now()+60*60000);soon.setSeconds(0,0);const pad=n=>String(n).padStart(2,'0');
   const local=`${soon.getFullYear()}-${pad(soon.getMonth()+1)}-${pad(soon.getDate())}T${pad(soon.getHours())}:${pad(soon.getMinutes())}`;
   d.innerHTML=`<div class="dlg m sched-dlg" role="dialog" aria-modal="true" aria-labelledby="sdhT"><h3 id="sdhT">Schedules for ${esc(r.name)}</h3>
-   <p class="dsub">A prompt sent to this folder's agent at a time or an interval, <b>only while Agent Durbar is open</b>. A run is skipped when the agent is busy or waiting for you; missed runs are not caught up. The agent's own permission mode and spending limit apply.</p>
+   <p class="dsub">A prompt sent to this folder's agent at a time or an interval, <b>only while Agent Durbar is open</b>. A run is skipped when the agent is busy or waiting for you; missed runs are not caught up. Each schedule runs in its own mode, for that one turn; the agent's spending limit applies.</p>
    <p class="sc-paused" id="sdPausedNote" hidden>All schedules are paused (Folders panel).</p>
    <div class="sc-list" id="sdList"></div>
    <div class="sc-own" id="sdOwn" hidden></div>
@@ -7292,7 +7388,7 @@ function openSchedules(r,from,opts){
     <label class="chk"><input type="radio" name="scKind" value="daily"> <select id="scCal" aria-label="Which days"><option value="daily">Every day</option><option value="weekdays">Weekdays (Mon–Fri)</option><option value="weekly">Weekly on</option></select> at <input type="time" id="scDaily" value="08:30" aria-label="Time of day"></label>
     <label class="chk"><input type="radio" name="scKind" value="once"> Once at <input type="datetime-local" id="scAt" value="${local}" aria-label="Date and time"></label></div>
     <div class="sc-days" id="scDays" role="group" aria-label="Days of the week" hidden>${[1,2,3,4,5,6,0].map(n=>`<label class="chk"><input type="checkbox" value="${n}"${n===today?' checked':''}> ${DAY3[n]}</label>`).join('')}</div>
-    <div class="sc-opts"><label class="sc-to" id="scToL"${ag?'':' hidden'}><span class="sc-lbl">Send to</span> <select id="scTarget" aria-describedby="scToHint"><option value="">This folder's agent</option><option value="${ag?esc(ag.id):''}">This session</option></select></label>
+    <div class="sc-opts"><label id="scModeL" title="The mode this schedule's turns run in. The session keeps its own. Allow all asks you to confirm, and asks again when you change the prompt, the target or the mode."><span class="sc-lbl">Mode</span> <select id="scMode"></select></label><label class="sc-to" id="scToL"${ag?'':' hidden'}><span class="sc-lbl">Send to</span> <select id="scTarget" aria-describedby="scToHint"><option value="">This folder's agent</option><option value="${ag?esc(ag.id):''}">This session</option></select></label>
      <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}><span class="sc-lbl">Limit</span> <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div><p class="sc-hint" id="scToHint" title="${ag?esc(ag.name):''}" hidden>${ag?esc(ag.name):''}</p></div><p class="sc-tpl-note" id="scCapKeep" hidden></p>
    <div class="dbtn"><button class="btn" id="scClose" type="button">Close</button><button class="btn" id="scCancel" type="button" hidden>Cancel</button><button class="btn primary" id="scAdd" type="button">Add schedule</button></div></div>`;
   document.body.appendChild(d);
@@ -7320,12 +7416,16 @@ function openSchedules(r,from,opts){
     /* screen readers hear a change of state only (the counter starts, it goes over, it fits again), never every key */
     if(st!==syncPrompt.last){syncPrompt.last=st;$('scLive').textContent=st==='none'?'':st==='over'?c.text:c.text+' characters';}
   };
+  /* FR-180, FR-184: the modes of the agent the form sends to. `v`: the mode to show; a schedule waiting for one shows none (nothing is picked for the user) */
+  const formAgent=()=>{const sel=$('scTarget');return sel.value&&tgt?tgt.live||folderAg:folderAg;};
+  const syncMode=v=>{const sel=$('scMode'),cur=v!==undefined?v:sel.value;fillSchedMode(sel,formAgent(),{blank:cur===''||!!(editing&&!editing.mode),keep:cur==='autopilot'||!!(editing&&editing.mode==='autopilot'),value:cur});};
   /* the form back to a blank new schedule */
   const blankForm=()=>{
     $('scPrompt').value='';syncPrompt();setKind('every');$('scEvery').value='60';$('scCal').value='daily';$('scDaily').value='08:30';$('scAt').value=local;
     d.querySelectorAll('#scDays input').forEach(x=>{x.checked=Number(x.value)===today;});showDays();
     tgt=ag?{id:ag.id,agent:ag.info.adapterId||'copilot',name:ag.name,live:ag}:null;applyTgt();$('scTarget').value='';$('scToHint').hidden=true;
     if($('scCap'))$('scCap').value='';if($('scTpl')){$('scTpl').value='';$('scTplNote').hidden=true;}syncCap();
+    syncMode('read-only'); /* FR-181: a new schedule starts on Read-only (constitution III) */
   };
   const setMode=on=>{
     $('scFormT').hidden=!on;$('scCancel').hidden=!on;$('scAdd').textContent=on?'Save':'Add schedule';
@@ -7342,6 +7442,7 @@ function openSchedules(r,from,opts){
     if(s.target){const a=agents.find(x=>x.id===s.target.session&&x.live&&x.info);tgt={id:s.target.session,agent:s.target.agent,name:a?a.name:(s.target.name||'one session'),live:a||null};}
     applyTgt();$('scTarget').value=s.target?s.target.session:'';$('scToHint').hidden=!$('scTarget').value;syncCap();
     if(s.cap&&$('scCap')&&!$('scCapL').hidden)$('scCap').value=String(s.cap.amount);
+    syncMode(s.mode||'');
     SCROLL.reveal($('scFormT'));focusIn($('scPrompt'));
   };
   /* one builder for Add and Save (FR-023: main checks it again); null after telling the user what is missing */
@@ -7350,6 +7451,7 @@ function openSchedules(r,from,opts){
     if(DurbarSchedTemplates.promptCheck($('scPrompt').value).over){focusIn($('scPrompt'));return null;} /* Save is disabled; Enter or a script cannot save a cut text either */
     const kind=d.querySelector('input[name="scKind"]:checked').value;
     const input={folder:editing?editing.folder:folderKeyOf(r),prompt};
+    input.mode=$('scMode').value;if(!input.mode){focusIn($('scMode'));toast('Choose a mode for this schedule.',3500);return null;} /* FR-181 */
     if(editing){input.id=editing.id;input.edit=true;}
     if(kind==='daily'){ /* spec 044 FR-012: a calendar rule; main computes the next run from the local wall clock */
       const time=$('scDaily').value;if(!/^\d\d:\d\d$/.test(time)){toast('Choose a time of day.',3500);return null;}
@@ -7380,6 +7482,10 @@ function openSchedules(r,from,opts){
     if(b.id==='scAdd'){
       const input=buildInput();if(!input)return;
       const was=editing;
+      /* FR-182: Allow all is confirmed for exactly this schedule; main says when, and refuses a save without it */
+      const pf=await schedModeProof({id:input.id,folder:input.folder,prompt:input.prompt,target:input.target,mode:input.mode});
+      if(!pf)return;
+      if(pf.proof)input.modeProof=pf.proof;
       const res=await bridge.saveSchedule(input);
       if(!res.ok){toast(esc(res.error||(was?'Could not save the schedule.':'Could not add the schedule.')),5000);if(was&&res.error==='That schedule is gone.'){stopEdit();await refreshSchedules();}return;}
       if(was)stopEdit();else{$('scPrompt').value='';syncPrompt();if($('scCap'))$('scCap').value='';}await refreshSchedules();toast((was?'Schedule saved: ':'Schedule added: ')+esc(whenOf(res.schedule))+'.',3000);return;
@@ -7395,8 +7501,9 @@ function openSchedules(r,from,opts){
   $('scCal').addEventListener('change',()=>{calKind();showDays();});
   $('scDaily').addEventListener('input',calKind);
   $('scDays').addEventListener('change',calKind);
-  $('scTarget').addEventListener('change',()=>{$('scToHint').hidden=!$('scTarget').value;syncCap();});
+  $('scTarget').addEventListener('change',()=>{$('scToHint').hidden=!$('scTarget').value;syncCap();syncMode();});
   applyTgt();
+  syncMode('read-only');
   if(opts&&opts.edit){const s=SCHED.schedules.find(x=>x.id===opts.edit);if(s)startEdit(s);}
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeSchedDlg();}});
   /* spec 044 FR-006: a template fills the form (prompt and when); nothing is saved until Add schedule */
@@ -7479,7 +7586,7 @@ if(bridge&&bridge.onCheckpoint)bridge.onCheckpoint(n=>{const a=n&&liveById(n.id)
 const setDoors=d=>{const o={};if(d&&typeof d==='object')for(const [k,v] of Object.entries(d))if(v&&typeof v==='object')o[k]={closed:v.closed===true,held:Number.isInteger(v.held)&&v.held>0?v.held:0};DOORS=o;scheduleRender();};
 if(bridge&&bridge.doorsList){bridge.doorsList().then(setDoors).catch(()=>{});if(bridge.onDoorsChanged)bridge.onDoorsChanged(setDoors);}
 /* review on PR 631: why Send all stopped (the runs stay held), and a run a full door could not keep: never silent */
-const STOP_WHY={'paused-all':'schedules are paused (Pause all)',paused:'its schedule is paused',cap:"its schedule reached its own limit",ended:'its session has ended',updating:'its agent app is updating',failed:'it could not be sent'};
+const STOP_WHY={'paused-all':'schedules are paused (Pause all)',paused:'its schedule is paused',cap:"its schedule reached its own limit",ended:'its session has ended',updating:'its agent app is updating',mode:'its schedule has no mode it can use (see its row)','prompt-changed':'its schedule was changed after this run was held, and Allow all was confirmed for the new prompt, so the old one stays here: discard it',failed:'it could not be sent'};
 if(bridge&&bridge.onDoorsStopped)bridge.onDoorsStopped(p=>{const a=p&&byId(p.id);if(!a)return;const t=esc(a.name)+': Send all stopped because '+esc(STOP_WHY[p.why]||'it could not go now')+'. The rest stay held; use the door button to send or discard them.';toast(t,6000).classList.add('err');addNote(liveChat(a),t);});
 if(bridge&&bridge.onDoorsFull)bridge.onDoorsFull(p=>{const a=p&&byId(p.id);if(!a)return;const t='A scheduled prompt for '+esc(a.name)+' was not kept: its closed door already holds as many prompts as it can. Open the door to send or discard them.';toast(t,6000).classList.add('err');addNote(liveChat(a),t);});
 /* spec 076 FR-203: a session started while Durbar could not read all of its agent app's organization policy: the advice, once */
@@ -7488,7 +7595,13 @@ if(bridge&&bridge.onRemoteOff){bridge.onRemoteOff(p=>{const id=typeof p==='strin
   /* spec 054 FR-062: the adapter's own reason when it has one; otherwise the sign-in reconnect (spec 012 FR-158) */
   const why=p&&typeof p==='object'&&typeof p.reason==='string'&&p.reason?esc(p.reason.slice(0,300)):esc(a.name)+' reconnected after the new sign-in';
   addNote(liveChat(a),'Remote control ended: '+why+'. Turn it on again from More if you still need it.');});}
-if(bridge&&bridge.onScheduleRan){bridge.onScheduleRan(r=>{const a=liveById(r.agentId);if(!a)return;flyLetter(a.id); /* spec 001 FR-038 */addNote(liveChat(a),'Scheduled prompt ('+esc(r.rule?ruleText(r.rule):r.every!==undefined?whenOf({every:r.every}):'once')+').');});}
+/* spec 044 FR-180: the window shows the mode the turn really runs in, and says when the session is back in its own */
+if(bridge&&bridge.onScheduleMode){bridge.onScheduleMode(r=>{const a=liveById(r.agentId);if(!a||!a.info)return;const was=a.info.runMode;a.info.runMode=r.mode||undefined;
+  if(r.mode)announce(a.name+': '+MODE_NAME[r.mode]+' for this turn, set by a scheduled run.');
+  else if(was){addNote(liveChat(a),'Back to '+esc(MODE_NAME[a.info.permMode])+', this session\'s own mode, after the scheduled turn.');announce(a.name+': back to '+MODE_NAME[a.info.permMode]+'.');}
+  if(ui.selected&&liveRoot(byId(ui.selected)||a)===a){const c=$('modeChip');if(c)setModeChip(c,a);updatePanelHeader();}
+  scheduleRender();});}
+if(bridge&&bridge.onScheduleRan){bridge.onScheduleRan(r=>{const a=liveById(r.agentId);if(!a)return;flyLetter(a.id); /* spec 001 FR-038 */addNote(liveChat(a),'Scheduled prompt ('+esc(r.rule?ruleText(r.rule):r.every!==undefined?whenOf({every:r.every}):'once')+').'+(r.mode?' '+esc(SCHED_MODE_WORD[r.mode]||'')+(r.modeTurn?' for this turn; the session keeps its own mode.':'.'):''));});}
 function renderFolders(){
   const pop=$('foldersPop'); if(pop.hidden)return;
   if(!ROOMS.length){pop.innerHTML='<p class="fp-empty">No folders yet. Use + Folder (top left) to add a folder, or + Workspace for a VS Code .code-workspace file. Folders you add are remembered next time.</p>';return;}
@@ -8024,8 +8137,8 @@ async function announcePrevious(a){
   if(!ui.selected){st.open=true;openPanel(a.id,false);}
 }
 /* extra: one more plain sentence (spec 093 FR-061: a clone's host); text only, askDialog sets it with textContent */
-async function confirmAllow(what,extra){
-  const r=await askDialog({title:'Allow all for '+what+'?',body:(extra?extra+' ':'')+'Edits, shell commands, web requests and tools will run without asking. Nothing is undone automatically. The choice is saved for this folder and comes back after a restart, marked restored.',buttons:[{label:'Cancel',value:null},{label:'Allow all',value:'ok',cls:'primary warn'}]});
+async function confirmAllow(what,extra,words){ /* words: {title, body} when the question is not about a folder (spec 044 FR-182: main's words, naming the schedule and the agent) */
+  const r=await askDialog({...(words&&words.prompt?{lines:[words.prompt],longLines:true,size:'m'}:{}),title:words?words.title:'Allow all for '+what+'?',body:words?words.body:(extra?extra+' ':'')+'Edits, shell commands, web requests and tools will run without asking. Nothing is undone automatically. The choice is saved for this folder and comes back after a restart, marked restored.',buttons:[{label:'Cancel',value:null},{label:'Allow all',value:'ok',cls:'primary warn'}]});
   return !!r;
 }
 /* The options of a folder the window adds (floor, model, effort, agent app): one place for Add existing (addVia) and a created folder
@@ -8128,7 +8241,7 @@ if(bridge){
     /* spec 052 FR-059: what already needs you a few seconds after start is remembered, not notified */
     setTimeout(()=>{renderInboxBtn();ATT_ARMED=true;},3000);});
   loadModels();
-  refreshSchedules();
+  refreshSchedules().then(()=>maybeModePopup()).catch(()=>undefined); /* spec 044 FR-181 */
   /* User themes (spec 040): register imported packs, then apply the saved theme id */
   THEME.setTheme.resolveUser=bridge.getUserTheme?(id)=>bridge.getUserTheme(id):null;
   const themeBoot=(v)=>{

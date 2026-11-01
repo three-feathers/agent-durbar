@@ -870,6 +870,10 @@ export class ClaudeAdapter implements AgentAdapter {
     const s = this.mustGet(sessionId);
     // FR-150: at the cap, the message waits for the user's answer to the limit notice (like Copilot's blocked request)
     if (s.limit || this.capReached(s)) {
+      if (message.noHold) {
+        this.openLimit(s); // spec 044 FR-180: the notice with its way to raise the limit
+        throw Object.assign(new Error('This session is at its spending limit.'), { code: 'at-limit' });
+      }
       this.openLimit(s).held = message;
       return;
     }

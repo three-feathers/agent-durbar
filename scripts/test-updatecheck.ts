@@ -719,6 +719,7 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     let held: string | undefined = 'the app is updating';
     const timers: Array<{ at: number; fn: () => void }> = [];
     const sch = new Scheduler({ pausedAll: false, schedules: [] }, {
+      modeCheck: () => undefined, modeAgent: () => ({ app: 'copilot', appName: 'Copilot', agent: 'a', folderName: 'f' }),
       now: () => now, isBusy: () => false, hasSession: () => true, capUnitOf: () => 'aiu',
       send: async (_f, p) => { sent.push(p); return 's1'; },
       heldBy: () => held,
@@ -727,7 +728,7 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
       save: () => undefined,
     });
     sch.start();
-    const r = sch.save({ folder: '/w', prompt: 'summarise', every: 30 }, () => true);
+    const r = sch.save({ folder: '/w', prompt: 'summarise', every: 30, mode: 'ask' }, () => true);
     assert.ok(r.ok);
     const advance = async (ms: number) => { now += ms; for (;;) { const d = timers.filter((t) => t.at <= now).sort((a, b) => a.at - b.at)[0]; if (!d) return; timers.splice(timers.indexOf(d), 1); d.fn(); await new Promise((x) => setImmediate(x)); } };
     await advance(30 * 60_000);

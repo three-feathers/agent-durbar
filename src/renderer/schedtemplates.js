@@ -1,6 +1,6 @@
 /* Starter kit for scheduled prompts (spec 044 FR-006, issue #128). Pure data and one helper: no DOM, no I/O.
    In the page: window.DurbarSchedTemplates; in Node (tests): module.exports. A template only fills the Schedules form;
-   nothing is sent or saved until the user presses Add schedule, and the agent's own permission mode applies. */
+   nothing is sent or saved until the user presses Add schedule, and the run uses the mode chosen on the schedule (spec 044 FR-180). */
 (function(root, api){
   if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarSchedTemplates=api;
 })(typeof self!=='undefined'?self:this, (function(){
@@ -17,7 +17,7 @@
      needs:'Works in Read-only.',
      prompt:'Summarize my day in this folder: what was done today, what changed (files, commits, pull requests if you can read them), what is still open, and the first thing to do tomorrow. Short bullets, at most 200 words. '+UNTRUSTED+'\n\n'+DECIDE,decides:true},
     {id:'plan-my-day',name:'Plan my day (planned work)',daily:'09:00',
-     needs:'Works in Read-only for the plan; doing the chosen work follows the agent\'s own permission mode.',
+     needs:'Works in Read-only for the plan; doing the chosen work needs Ask first or Allow all on this schedule.',
      prompt:'Help me plan today\'s work in this folder. Look at the open items: TODO notes, open issues and pull requests if you can read them, and what was left unfinished yesterday. Propose at most five pieces of work for today, each with one line on why and a rough size (small, medium, large), most important first. '+UNTRUSTED+'\n\n'+DECIDE,decides:true},
     {id:'open-prs',name:'Open pull requests and CI',every:240,
      needs:'Needs Ask first or Allow all if the agent must run `gh` to read pull requests.',

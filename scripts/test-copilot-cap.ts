@@ -51,6 +51,14 @@ async function main(): Promise<void> {
   s.turnScript = [];
   s.fire('session.usage_checkpoint', { totalNanoAiu: 61 * NANO }); // the runtime's own total wins over the sum
   events.length = 0;
+  // spec 044 FR-180: a scheduled run in a temporary mode is not kept for later: it would run after the mode came back
+  await assert.rejects(ad.send(sid, { text: 'scheduled', noHold: true }), (e: { code?: string }) => e.code === 'at-limit');
+  assert.strictEqual(limits().length, 1, 'the notice still asks the person');
+  assert.strictEqual(sends(s), 3, 'not sent');
+  await ad.resolveLimit(sid, limits()[0].requestId as string, { kind: 'cancel' } as never);
+  await tick();
+  assert.strictEqual(sends(s), 3, 'nothing was kept for later');
+  events.length = 0;
   await ad.send(sid, { text: 'four' });
   assert.strictEqual(sends(s), 3, 'held');
   const ex2 = limits()[0];

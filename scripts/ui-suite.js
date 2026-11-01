@@ -82,6 +82,7 @@ const DRIVERS = [
   { name: 'check-sched-edit' },
   { name: 'check-sched-top' }, // spec 044 FR-027..FR-035: the top-bar Schedules button
   { name: 'check-sched-history' }, // spec 044 FR-040..FR-044: a schedule's run history and Schedules here (N)
+  { name: 'check-sched-mode' }, // spec 044 FR-180..FR-184: a schedule's own mode, its confirmation and the first-launch popup
   { name: 'check-question-options' },
   { name: 'check-question-visible' },
   { name: 'check-chat-no-scroll' },

@@ -8,6 +8,8 @@ import type { ActivityDecision } from '../../shared/activity';
 import { createRemoteOps } from '../remoteops';
 
 export interface RemoteIpcDeps {
+  /** Spec 044 FR-182: the mode a scheduled run holds this session in now. */
+  runModeOf?(id: string): string | undefined;
   agents: Map<string, AgentInfo>;
   router: AdapterRouter;
   toRenderer(channel: string, payload: unknown): void;
@@ -25,7 +27,7 @@ export function register(deps: RemoteIpcDeps): ReturnType<typeof createRemoteOps
     known: (id) => agents.has(id),
     adapterOf: (id) => router.forAgent(id),
     open: (url) => shell.openExternal(url),
-    modeOf: (id) => agents.get(id)?.permMode,
+    modeOf: (id) => deps.runModeOf?.(id) ?? agents.get(id)?.permMode, // spec 044 FR-182: not during a scheduled run's Allow all either
     // FR-011: a native confirmation the page cannot answer (Cancel is the default), like harness setup's (spec 051 FR-004b)
     confirm: async (id) => {
       const a = agents.get(id);

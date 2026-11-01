@@ -257,6 +257,8 @@ interface SimOptions {
   places?: number;
   /** Spec 044 FR-035 / spec 001 FR-038: start with schedules over two folders, one that missed its last run and one that failed (page address `simsched=1`). */
   sched?: boolean;
+  /** Spec 044 FR-181 (`simwaiting=1`): with `sched`: schedules from before modes (none stored), one with a stored Autopilot, for the waiting rows and the first-launch popup. */
+  waiting?: boolean;
   /** Spec 044 FR-044 (`simws=1`): one simulated multi-root workspace room (its key a `.code-workspace` path) with a schedule, for the *Schedules here (N)* count. */
   ws?: boolean;
   /** Pending permission requests carry a time 2 minutes in the past, so "impatient" (spec 034) can be seen at once. */
@@ -873,7 +875,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       ...simPF.filter((f) => f.made && f.app === 'copilot').map((f) => { const h = pfHead(f.text); return { id: f.fileName.replace(/\.agent\.md$/, ''), name: h.name || f.fileName, description: h.description ?? '', source: (f.scope === 'user' ? 'user' : 'repo') as 'user' | 'repo', path: f.path }; }),
     ];
     const pfFolders = (): { id: string; path: string }[] => [...new Set(sims.map((s) => s.info.cwd))].map((p) => ({ id: pfHash('folder\0' + p).slice(0, 32), path: p }));
-    const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void)[],
+    const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], holdSends: false, modeSubs: [] as ((r: { agentId: string; mode: 'read-only' | 'ask' | 'allow' | null }) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule']; mode?: ScheduleInfo['mode']; modeTurn?: boolean }) => void)[],
       changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); },
       attrib: new Map<string, string>(), runs: {} as Record<string, ScheduleRunInfo[]> };
     /* spec 044 FR-044: the run log with main's rules (Scheduler.record in src/main/schedules.ts): `last` and the log are set together, a repeated
@@ -881,12 +883,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
        sequence through it and through main's, and compares the logs. */
     /* simrecord:begin */
     const simRecord = (sc: ScheduleInfo, runs: Record<string, ScheduleRunInfo[]>, outcome: ScheduleOutcome, now: number, x: { session?: string; reason?: ScheduleRunInfo['reason']; manual?: true; update?: boolean } = {}): boolean => {
-      sc.last = { at: now, outcome };
+      sc.last = x.reason && (outcome === 'skipped-mode' || outcome === 'mode-refused') ? { at: now, outcome, reason: x.reason } : { at: now, outcome };
       if (!Object.prototype.hasOwnProperty.call(runs, sc.id)) runs[sc.id] = [];
       const log = runs[sc.id];
       const top = log[log.length - 1];
       const session = x.session !== undefined && /^[A-Za-z0-9._:-]{1,128}$/.test(x.session) ? x.session : undefined;
-      if (top && ['skipped-busy', 'skipped-paused', 'held', 'skipped-door-full', 'skipped-review'].includes(outcome) && top.outcome === outcome && top.session === session && !top.manual) {
+      if (top && ['skipped-busy', 'skipped-paused', 'held', 'skipped-door-full', 'skipped-review', 'skipped-mode', 'mode-refused'].includes(outcome) && top.outcome === outcome && top.session === session && top.reason === x.reason && !top.manual) {
         top.n = Math.min(100000, (top.n ?? 1) + 1);
         top.until = now;
         return true;
@@ -901,6 +903,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       return false;
     };
     /* simrecord:end */
+    /* spec 044 FR-180: a seeded schedule's mode, as main stores it: Ask first, chosen for the agent that runs it */
+    const simSeedMode = (x: ScheduleInfo): ScheduleInfo => {
+      const a = x.target ? sims.find((m) => m.info.id === x.target?.session) : sims.find((m) => (m.info.workspaceFile ?? m.info.cwd) === x.folder);
+      return { ...x, mode: 'ask', modeFor: { app: a?.info.adapterId ?? 'copilot', ...(x.target ? { session: x.target.session } : {}) } };
+    };
     if (opts.sched) {
       /* spec 001 FR-038: four future schedules (nothing is due during a driver run); one missed its last run and one failed, a few hours ago (spec 044 FR-035) */
       const t0 = Date.now(), key = (x: SimAgent | undefined): string => (x ? x.info.workspaceFile ?? x.info.cwd ?? '' : '');
@@ -911,7 +918,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         { id: 'sched-s3', folder: key(a), prompt: (opts.reply === 'secrets' ? FILL(53) + SECRETS_TEXT + ' ' : '') + 'Morning summary of failing checks', rule: { kind: 'weekdays', time: '08:30' }, next: t0 + 20 * 3600000, last: { at: t0 - 4 * 3600000, outcome: 'missed' } },
         { id: 'sched-s4', folder: key(b), prompt: (opts.reply === 'secrets' ? FILL(53) + SECRETS_TEXT + ' ' : '') + 'Nightly dependency check', rule: { kind: 'daily', time: '23:00' }, next: t0 + 30 * 3600000, last: { at: t0 - 6 * 3600000, outcome: 'failed' } },
       ];
-      simSched.list.push(...seed.filter((x) => x.folder)); simSched.n = 4;
+      simSched.list.push(...seed.filter((x) => x.folder).map(simSeedMode)); simSched.n = 4;
+      if (opts.waiting) { // spec 044 FR-181: as an older version left them: no mode at all; and one Autopilot kept for spec 099 T097
+        for (const id of ['sched-s1', 'sched-s2', 'sched-s3']) { const x = simSched.list.find((q) => q.id === id); if (x) { delete x.mode; delete x.modeFor; } }
+        const y = simSched.list.find((q) => q.id === 'sched-s4'); if (y) y.mode = 'autopilot';
+      }
       /* spec 044 FR-044: a seeded history, all in the past (nothing runs during a driver): sched-s1 has sent runs to a live agent of its folder and to an id that is
          not in the office, a folded busy skip and enough runs for Show all; sched-s3 and sched-s4 have their missed and failed run; sched-s2 has no runs at all */
       const s1 = simSched.list.find((x) => x.id === 'sched-s1');
@@ -934,14 +945,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (w) {
         const wcwd = w.info.cwd ?? '~/work/ws', file = wcwd + '.code-workspace';
         for (const m of sims) if (m.room === w.room) { m.info.workspaceFile = file; m.info.folders = [wcwd, wcwd + '-docs']; }
-        simSched.list.push({ id: 'sched-ws1', folder: file, prompt: 'Workspace check: summarise what changed in both folders', every: 60, next: Date.now() + 25 * 60000 });
+        simSched.list.push({ id: 'sched-ws1', folder: file, prompt: 'Workspace check: summarise what changed in both folders', every: 60, next: Date.now() + 25 * 60000, mode: 'ask', modeFor: { app: w.info.adapterId ?? 'copilot' } });
         simSched.n += 1;
       }
     }
     if (opts.schedFire && opts.schedFire > 0) {
       /* spec 001 FR-038: a one-off run for the first idle agent (its own session, so a busy folder-mate does not skip it) */
       const s = sims.find((x) => x.state === 'idle') ?? sims[sims.length - 1];
-      if (s) { simSched.list.push({ id: 'sched-fire', folder: s.info.workspaceFile ?? s.info.cwd ?? '', prompt: 'Scheduled check-in: summarise what changed', at: Date.now() + opts.schedFire * 1000, target: { session: s.info.id, agent: s.info.id, name: s.info.title ?? '' } }); simSched.n += 1; }
+      if (s) { simSched.list.push({ id: 'sched-fire', folder: s.info.workspaceFile ?? s.info.cwd ?? '', prompt: 'Scheduled check-in: summarise what changed', at: Date.now() + opts.schedFire * 1000, target: { session: s.info.id, agent: s.info.id, name: s.info.title ?? '' }, mode: 'ask', modeFor: { app: s.info.adapterId ?? 'copilot', session: s.info.id } }); simSched.n += 1; }
     }
     /* spec 044 FR-033 (check-sched-top): a driver makes a schedule's run fail now, as if the app had sent it and the send had failed */
     const simSchedProbe = { runsCalls: 0 }; // a driver counts how often the window asks for a log (spec 044 FR-043: only while a list is shown)
@@ -955,9 +966,23 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return true;
       },
       /* spec 044 FR-124 (check-sched-edit): a stored prompt over the limit, as a hand-edited file would hold it (`save` refuses a new one) */
+      /* spec 044 FR-181 (check-sched-mode): a stored schedule with no mode, as an older version left it; the prompt is whatever a driver wants to throw at the rows */
+      /* spec 044 FR-180 (check-sched-mode): what the window shows while a run holds a session in its mode, for as long as a driver needs */
+      runMode: (id: string, mode: 'read-only' | 'ask' | 'allow' | null): boolean => {
+        const s = sims.find((x) => x.info.id === id);
+        if (s) simRunMode(s, mode);
+        return !!s;
+      },
+      holdSends: (on: boolean): boolean => { simSched.holdSends = on; return on; },
+      addWaiting: (prompt: string, folder: string): string => {
+        const id = 'sched-wait' + ++simSched.n;
+        simSched.list.push({ id, folder, prompt, every: 60, next: Date.now() + 40 * 60000 });
+        simSched.changed();
+        return id;
+      },
       addRaw: (prompt: string, kind?: 'once'): string => { // in the folder of the newest schedule (the one a driver just added through the form)
         const id = 'sched-raw' + ++simSched.n;
-        simSched.list.push({ id, folder: simSched.list[simSched.list.length - 1]?.folder ?? '', prompt, ...(kind === 'once' ? { at: Date.now() + 3600_000 } : { every: 60, next: Date.now() + 40 * 60000 }) });
+        simSched.list.push({ id, folder: simSched.list[simSched.list.length - 1]?.folder ?? '', prompt, ...(kind === 'once' ? { at: Date.now() + 3600_000 } : { every: 60, next: Date.now() + 40 * 60000 }), mode: 'ask', modeFor: { app: 'copilot' } });
         simSched.changed();
         return id;
       },
@@ -985,9 +1010,60 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     };
     const simAgentOf = (sc: { folder: string; target?: { session: string } }): SimAgent | undefined =>
       sc.target ? sims.find((x) => x.info.id === sc.target?.session) : sims.find((x) => (x.info.workspaceFile ?? x.info.cwd) === sc.folder);
+    /* spec 044 FR-181..FR-184, as main's Scheduler.modeBlock and modeCheckOp (the simulator has no temporary mode to restore: its turns are not gated by one) */
+    const simModeBlock = (sc: ScheduleInfo, s: SimAgent | undefined): { outcome: ScheduleOutcome; reason: NonNullable<ScheduleRunInfo['reason']> } | undefined => {
+      if (!sc.mode) return { outcome: 'skipped-mode', reason: 'no-mode' };
+      if (sc.mode === 'autopilot') return { outcome: 'mode-refused', reason: 'mode-autopilot' };
+      if (!s) return undefined;
+      if (!sc.modeFor || sc.modeFor.app !== (s.info.adapterId ?? 'copilot') || (sc.modeFor.session ?? '') !== (sc.target?.session ?? '')) {
+        delete sc.mode;
+        delete sc.modeFor;
+        return { outcome: 'skipped-mode', reason: 'other-agent' };
+      }
+      if (!(caps(s.info.adapterId ?? 'copilot').permissionModes ?? []).includes(sc.mode)) return { outcome: 'mode-refused', reason: 'mode-lacking' };
+      if (simOrgMode(s.info.adapterId, sc.mode)) return { outcome: 'mode-refused', reason: 'mode-org' };
+      return undefined;
+    };
+    /* FR-182: the same rule as main's applyMode: a confirmation for exactly this question, unless nothing it was asked for changed */
+    const simProofs = new Map<string, string>();
+    const simProofKey = (id: string, sc: { folder: string; prompt: string; target?: { session: string } | null }, mode: string, app: string): string => JSON.stringify([id, sc.folder, sc.prompt, sc.target?.session ?? '', mode, app]);
+    const simApplyMode = (sc: ScheduleInfo, prev: ScheduleInfo | undefined, want: ScheduleInfo['mode'], proof: unknown): string | undefined => {
+      const same = !!prev && prev.prompt === sc.prompt && (prev.target?.session ?? '') === (sc.target?.session ?? '');
+      if (want === 'autopilot') {
+        if (!same || prev?.mode !== 'autopilot') return 'Autopilot is not available on a schedule yet.';
+        sc.mode = want;
+        return undefined;
+      }
+      if (want !== 'read-only' && want !== 'ask' && want !== 'allow') return 'Choose a mode for this schedule first.';
+      const who = simAgentOf(sc);
+      if (!who) return 'There is no agent for this schedule now, so a mode cannot be chosen for it.';
+      const app = who.info.adapterId ?? 'copilot';
+      if (!(caps(app).permissionModes ?? []).includes(want)) return 'This agent app does not have this mode.';
+      const org = simOrgMode(who.info.adapterId, want);
+      if (org) return org;
+      if (want === 'allow' && !(same && prev?.mode === 'allow' && prev.modeFor?.app === app)) {
+        const key = simProofKey(prev?.id ?? '', sc, want, app);
+        if (typeof proof !== 'string' || simProofs.get(proof) !== key) return 'Allow all on a schedule needs your confirmation in its dialog. Nothing was saved.';
+        simProofs.delete(proof);
+      }
+      sc.mode = want;
+      sc.modeFor = { app, ...(sc.target ? { session: sc.target.session } : {}) };
+      return undefined;
+    };
+    /* spec 044 FR-180: what the window shows during a turn in a schedule's mode (the rules behind it: RunModes, tested on main's wiring) */
+    const simRunMode = (s: SimAgent, mode: ScheduleInfo['mode'] | null): void => {
+      const m = mode === 'read-only' || mode === 'ask' || mode === 'allow' ? mode : null;
+      simSched.modeSubs.forEach((f) => f({ agentId: s.info.id, mode: m })); // first: the window's copy may be this very object, and it compares with what it had
+      s.info.runMode = m ?? undefined;
+    };
     simSchedHook = (e) => {
       // FR-015: from a scheduled send until that session's turn ends, its usage counts toward the schedule
-      if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) { simSched.attrib.delete(e.sessionId); return; }
+      if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) {
+        simSched.attrib.delete(e.sessionId);
+        const held = sims.find((x) => x.info.id === e.sessionId);
+        if (held?.info.runMode) simRunMode(held, null);
+        return;
+      }
       if (e.type !== 'usage') return;
       const sc = simSched.list.find((x) => x.id === simSched.attrib.get(e.sessionId));
       if (!sc?.cap) return;
@@ -1018,11 +1094,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (simSched.pausedAll) return stop('paused-all');
         if (sc.paused) return stop('paused');
         if (sc.cap && (sc.spent ?? 0) >= sc.cap.amount) return stop('cap');
+        if (simModeBlock(sc, s)) return stop('mode');
         if (!simIdle(s) || (!!s.breakUntil && Date.now() < s.breakUntil)) return; // busy: next tick
         d.held.shift();
         if (!d.held.length) d.releasing = false;
         emit({ type: 'user', sessionId: id, timestamp: now, text: r.prompt } as AgentEvent);
-        simSched.ran.forEach((f) => f({ agentId: id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
+        simSched.ran.forEach((f) => f({ agentId: id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule, mode: sc.mode, modeTurn: sc.mode !== s.info.permMode }));
         simSched.attrib.set(id, sc.id);
         simRecord(sc, simSched.runs, 'sent', now, { session: id });
         void api.send(id, r.prompt, []);
@@ -1038,15 +1115,17 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = simAgentOf(sc);
         const busy = !!s && (s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.perm || (!!s.breakUntil && Date.now() < s.breakUntil)); // spec 068 FR-008: a coffee break counts as busy
         const door = s ? simDoors.map.get(s.info.id) : undefined;
-        const outcome = sc.prompt.length > simPromptMax() ? 'skipped-review' : simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : !s ? 'failed' : door?.closed ? 'held' : busy ? 'skipped-busy' : 'sent';
+        const modeNo = sc.prompt.length > simPromptMax() || simSched.pausedAll || (sc.cap && (sc.spent ?? 0) >= sc.cap.amount) ? undefined : simModeBlock(sc, s);
+        const outcome: ScheduleOutcome = sc.prompt.length > simPromptMax() ? 'skipped-review' : simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : modeNo ? modeNo.outcome : !s ? 'failed' : door?.closed ? 'held' : busy ? 'skipped-busy' : 'sent';
         if (outcome === 'held' && door) { door.held.push({ prompt: sc.prompt, at: now, scheduleId: sc.id }); simDoors.changed(); } // spec 044 FR-110
         if (outcome === 'sent' && s) {
           emit({ type: 'user', sessionId: s.info.id, timestamp: now, text: sc.prompt } as AgentEvent);
-          simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
+          if (sc.mode !== s.info.permMode) simRunMode(s, sc.mode);
+          simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule, mode: sc.mode, modeTurn: sc.mode !== s.info.permMode }));
           simSched.attrib.set(s.info.id, sc.id);
           void api.send(s.info.id, sc.prompt, []);
         }
-        simRecord(sc, simSched.runs, outcome, now, { session: outcome === 'sent' && s ? s.info.id : sc.target?.session, reason: outcome === 'failed' ? 'no-agent' : undefined });
+        simRecord(sc, simSched.runs, outcome, now, { session: outcome === 'sent' && s ? s.info.id : sc.target?.session, reason: modeNo ? modeNo.reason : outcome === 'failed' ? 'no-agent' : undefined });
         if (outcome === 'skipped-cap') { sc.paused = true; sc.pausedReason = 'cap'; } // FR-015
         else if (outcome === 'skipped-review' && !recurring) { sc.paused = true; sc.pausedReason = 'review'; } // FR-124: a once schedule stays, paused, so it can be fixed
         else if (recurring) sc.next = simNext(sc, now);
@@ -2221,9 +2300,63 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           ...(cap ? { cap, ...(!resumedCap && old?.cap?.unit === cap.unit && old?.spent ? { spent: old.spent } : {}), ...(!resumedCap && old?.cap?.unit === cap.unit && old?.spentUnknown ? { spentUnknown: true } : {}) } : {}) };
         if (edit && old?.pausedReason === 'review' && sc.prompt.length <= simPromptMax()) { delete sc.paused; delete sc.pausedReason; } // FR-124: a fixing edit runs it again
         if (sc.next === undefined && (sc.rule || sc.every !== undefined)) return { ok: false as const, error: 'That calendar rule never runs.' };
+        // spec 044 FR-180..FR-182, as main's saveMode
+        if (prev && !edit) {
+          if (inputIn.mode !== undefined && inputIn.mode !== prev.mode) return { ok: false as const, error: 'Change the mode with Edit… or Choose a mode.' };
+          if (prev.prompt === sc.prompt && (prev.target?.session ?? '') === (sc.target?.session ?? '')) {
+            if (prev.mode) sc.mode = prev.mode;
+            if (prev.modeFor) sc.modeFor = prev.modeFor;
+          }
+        } else {
+          const noMode = simApplyMode(sc, prev, inputIn.mode === undefined ? prev?.mode : inputIn.mode, inputIn.modeProof);
+          if (noMode) return { ok: false as const, error: noMode };
+        }
+        if (old?.last) sc.last = old.last;
         simSched.list = old ? simSched.list.map((x) => (x.id === sc.id ? sc : x)) : [...simSched.list, sc];
         simSched.changed();
         return { ok: true as const, schedule: sc };
+      },
+      askScheduleMode: async (q) => {
+        const prev = q.id === undefined ? undefined : simSched.list.find((x) => x.id === q.id);
+        if (q.id !== undefined && !prev) return { ok: false as const, error: 'That schedule is gone.' };
+        if (q.mode !== 'allow') return { ok: true as const, needed: false as const };
+        const c = { folder: prev?.folder ?? String(q.folder ?? ''), prompt: q.prompt === undefined ? prev?.prompt ?? '' : String(q.prompt).trim(), target: q.target === undefined ? prev?.target : q.target ?? undefined };
+        const who = simAgentOf(c);
+        if (!who) return { ok: false as const, error: 'There is no agent for this schedule now, so a mode cannot be chosen for it.' };
+        const app = who.info.adapterId ?? 'copilot';
+        if (prev?.mode === 'allow' && prev.prompt === c.prompt && (prev.target?.session ?? '') === (c.target?.session ?? '') && prev.modeFor?.app === app) return { ok: true as const, needed: false as const };
+        const token = 'sim-proof-' + Math.random().toString(36).slice(2);
+        simProofs.set(token, simProofKey(prev?.id ?? '', c, 'allow', app));
+        const line = c.prompt.replace(/\s+/g, ' ');
+        const appName = app === 'claude' ? 'Claude Code' : app === 'codex' ? 'Codex' : 'Copilot';
+        return { ok: true as const, needed: true as const, token, title: 'Allow all on this schedule?', body: `Let the schedule “${line.length > 60 ? line.slice(0, 59) + '…' : line}” run ${who.info.name} (${appName}) in ${(who.info.cwd ?? '').split('/').pop()} on Allow all? It will not ask you first, each time it is due, until you change this. Edits, shell commands, web requests and tools will run without asking, and nothing is undone automatically. Only this schedule's turns run this way; the session keeps its own mode. The whole prompt:`, prompt: c.prompt };
+      },
+      setScheduleMode: async (id, mode, proof) => {
+        const prev = simSched.list.find((x) => x.id === id);
+        if (!prev) return { ok: false as const, error: 'That schedule is gone.' };
+        const sc: ScheduleInfo = { ...prev };
+        delete sc.mode;
+        delete sc.modeFor;
+        const no = simApplyMode(sc, prev, mode, proof);
+        if (no) return { ok: false as const, error: no };
+        simSched.list = simSched.list.map((x) => (x.id === id ? sc : x));
+        simSched.changed();
+        return { ok: true as const, schedule: sc };
+      },
+      /* spec 052 FR-089 for a row's Run missed now (spec 044 FR-181): one send now, through the same checks as a due run */
+      runScheduleNow: async (id) => {
+        const sc = simSched.list.find((x) => x.id === id);
+        if (!sc) return { ok: false, error: 'That schedule is gone.' };
+        const s = simAgentOf(sc);
+        const no = simModeBlock(sc, s);
+        if (no) { simRecord(sc, simSched.runs, no.outcome, Date.now(), { reason: no.reason, manual: true }); simSched.changed(); return { ok: false, error: 'Choose a mode for this schedule first.' }; }
+        if (!s) return { ok: false, error: 'Could not send it.' };
+        emit({ type: 'user', sessionId: s.info.id, timestamp: Date.now(), text: sc.prompt } as AgentEvent);
+        simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule, mode: sc.mode, modeTurn: sc.mode !== s.info.permMode }));
+        simRecord(sc, simSched.runs, 'sent', Date.now(), { session: s.info.id, manual: true });
+        void api.send(s.info.id, sc.prompt, []);
+        simSched.changed();
+        return { ok: true };
       },
       removeSchedule: async (id) => { const n = simSched.list.length; simSched.list = simSched.list.filter((x) => x.id !== id); delete simSched.runs[id]; simSched.changed(); return { ok: simSched.list.length !== n }; },
       /* spec 044 FR-043/FR-044: one schedule's log, newest first; the id is checked like main does */
@@ -2231,6 +2364,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       setSchedulesPaused: async (on) => { simSched.pausedAll = on === true; simSched.changed(); return { ok: true, pausedAll: simSched.pausedAll }; },
       onSchedules: (cb) => { simSched.subs.push(cb); return () => undefined; },
       onScheduleRan: (cb) => { simSched.ran.push(cb); return () => undefined; },
+      onScheduleMode: (cb) => { simSched.modeSubs.push(cb); return () => undefined; },
       // spec 017 FR-015..FR-017: doors the user closes (memory only in the simulator)
       doorsList: async () => simDoorsRef?.list() ?? {},
       setDoor: async (id, closed) => {
@@ -2939,6 +3073,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true, file: { path: '/tmp/agent-durbar-att-sim/' + clean, name: clean, kind: /^image\//.test(mime) ? 'image' : 'file', size: data.byteLength } };
       },
       send: async (id, text, _atts?: unknown, opts?: { plan?: boolean }) => {
+        if (simSched.holdSends) return { ok: false, held: true as const, error: 'A scheduled run is using this session. Wait for it to end, or stop it, then send your message.' }; // spec 044 FR-180, as main's gate
         if (crashProbe.on) crashProbe.sends++;
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
@@ -3145,6 +3280,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         s.info.permMode = mode;
         s.info.permRestored = undefined;
         s.info.permFrom = undefined;
+        if (s.info.runMode) simRunMode(s, null); // spec 044 FR-180: a mode chosen now replaces the run's for this turn
         { // spec 087 FR-013: the floor in force after the switch (the simulator applies it at once)
           const kind = s.info.adapterId ?? 'copilot';
           // spec 087 FR-022c: a Copilot floor is lowered at the switch to Allow all and the sim's lowering resolves, so no word is kept; with

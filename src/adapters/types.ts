@@ -98,6 +98,11 @@ export interface AgentMessage {
   attachments?: Attachment[];
   /** Spec 066 FR-001: plan first: the agent proposes a plan in its app's own plan mode and waits for `resolvePlan`. Needs `capabilities.planMode`. */
   plan?: boolean;
+  /**
+   * Spec 044 FR-180: a scheduled run in a temporary mode: at a spending limit the usual notice still asks the user, but this message is not kept to send
+   * after the answer (the mode would be back by then, so it would run in another mode): the send throws with `code: 'at-limit'`, and the schedule's next run goes.
+   */
+  noHold?: boolean;
 }
 
 interface BaseEvent {
