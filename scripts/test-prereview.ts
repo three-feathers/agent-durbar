@@ -659,7 +659,7 @@ async function checkCli(): Promise<void> {
     assert.deepStrictEqual(cli.codeTrustProblems(dep(), codeRoot, ['scripts/trusted-authors.txt', 'scripts/gh-trusted.sh']), [], 'sound permissions pass');
     // the bot's user owns a parent folder: it could rename the code away and plant a trust list
     fs.writeFileSync(calls, ''); put('gate', pr()); put('text', text());
-    err.length = 0; assert.strictEqual(await cli.main(['7'], dep({ stat: fakeStat((q) => (q === path.dirname(codeRoot) ? { uid: me + 1000 } : {})) })), 1); assert.ok(/swapped/.test(err.join('')) && /owned by a user/.test(err.join('')), err.join(''));
+    err.length = 0; assert.strictEqual(await cli.main(['7'], dep({ stat: fakeStat((q) => (q === fs.realpathSync(path.dirname(codeRoot)) ? { uid: me + 1000 } : {})) })), 1); assert.ok(/swapped/.test(err.join('')) && /owned by a user/.test(err.join('')), err.join(''));
     assert.strictEqual(fs.readFileSync(calls, 'utf8').trim(), '', 'nothing was run: no gh call, no script');
     // a folder or a file group- or world-writable
     for (const rel of ['', 'scripts', 'scripts/trusted-authors.txt', 'scripts/gh-trusted.sh', 'scripts/trusted-lib.sh']) {
