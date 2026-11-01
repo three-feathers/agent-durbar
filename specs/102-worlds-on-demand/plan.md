@@ -154,7 +154,7 @@ world.json  arrangement: "circle"
 
 **Order:** after 102 P1 (validator) and #921. T165 and T166 can run first as they are pure and on the simulator.
 
-## Retro arcade (FR-250..FR-271)
+## Retro arcade (FR-250..FR-270)
 
 **Base for the build: `097-chat-in-world` (#1001)**, the top of the world stack: `main` <- #991 world seam <- #993 cave <- #994 moments <- #1001 chat. It has `world.json`, `set.json`, `world.css`, `WORLD_FLAGS`, `WORLD_SETS`, the World row, the moments and the chat this world follows. New branches `102-arcade-pN-slug`, each off the previous, each merged forward by merge commit as a base lands (no force-push, FR-061; unstack as FR-040 says). #979 is **not** in that stack and is its first need: phases that draw (RA3 on) start after #979 lands and is merged in, because this world follows its still room and replaces its poof. RA0, RA1 and RA2 can start now.
 
@@ -166,8 +166,8 @@ world.json  arrangement: "circle"
 | Build script | `build-cave-pack.py` (#993) | `build-arcade-pack.py`, same tools |
 | Rectangles | `realLayout`, `Layout`, `ZoneBox`, `DeskBox`, `signWidth`, `sortDesks`, `assignPeople`, `placeBox` | Through FR-228's one seam |
 | Status | `lightFor`, `lampWords` | No new status logic; FR-260 only draws |
-| UI style | `html[data-ui="retro"]`, `themes.css` (41 rules) | Stays (FR-263) |
-| Day tokens | `registerBuiltIn({id:'retro'})`'s tokens | One source for `WORLD_SETS.retro` and FR-271's Flat look |
+| UI style | `html[data-ui="retro"]`, `themes.css` (41 rules) | The rules the arcade's chrome needs stay; the rest go in T230 (FR-263) |
+| Day tokens | `registerBuiltIn({id:'retro'})`'s tokens | Moved to `WORLD_SETS.retro` |
 | Token check | `worldContrast`, `test:theme-tokens` | Takes the light |
 | Light group | #991's World radios, `focusIn` | Same radios |
 | Moments | #994's slips, plates, ride, tent; world CSS per world | Arcade's looks, same structure |
@@ -232,9 +232,9 @@ The other 17 cells are the same shared code, in tokens, or a `person`, `fixture`
 | RA5 | Light: night parts, tokens, the group | RA3 | T217..T219 |
 | RA6 | UI style, chat, Settings | RA5, #1001 | T220, T221 |
 | RA7 | Nine moments and the registry | RA4, #994 | T222, T223 |
-| RA8 | Set contract and interoperation; `pixel` in Flat with its Retro look, closed | RA2, T111 | T224, T225, T122, T233 |
-| RA9 | Coverage readied for Flat with `pixel`; no behaviour change | nothing | T226 |
-| RA10 | Migration, looks, then **the flip**: the flag, `pixel` value, theme out of the Themes list | all, FR-269's gate | T227..T232, T115, spec 035 T089 |
+| RA8 | Set contract and interoperation; `pixel` in Flat, closed | RA2, T111 | T224, T225, T122 |
+| RA9 | Coverage moves off the theme; no behaviour change | nothing | T226 |
+| RA10 | Migration, looks, then **the flip**: the flag, `pixel` value, automatic move, theme removed, code and docs | all, FR-269's gate | T227..T232, T115, spec 035 T089 |
 
 **Risks.**
 
@@ -243,11 +243,11 @@ The other 17 cells are the same shared code, in tokens, or a `person`, `fixture`
 | Folder signs do not fit at 15 at 1280x800 | T202 first; name and controls stay; path and cost to hover; FR-265 names it |
 | An integer scale leaves dead space between sizes | Stagger and rows take it up (T202); the guide's "no dead strips" is looked at |
 | Pixels uneven at 125 % scale | T204; `g x ratio` whole, where the floor fits |
-| The flip is large for one reviewer | Everything else lands first; the flip is one flag, the Characters value, the list entry and script switches |
+| The flip is large for one reviewer | Everything else lands first; the flip is mostly deletions, one flag and the Characters value |
 | A release is cut mid-way | T230 is one PR; the flag stays closed until then |
 | The gate takes long | Retro Pixel stays until it opens, so its daily user loses nothing while waiting |
-| Removing the theme shrinks CI coverage | T226 readies it; T230 switches, same layouts |
-| A migrated Flat user notices a change | T233's before and after, at both sizes; heads are the one named difference |
+| Removing the theme shrinks CI coverage | T226 before T230 |
+| A user moved with no notice looks for Flat | The changelog says it; Flat is in Settings, one click (FR-266) |
 | The art agent is still changing frames | RA2 reads a dated copy; T208's test holds the result |
 
 ## Done when

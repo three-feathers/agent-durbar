@@ -4,7 +4,7 @@
 
 **Tests**: required (constitution VII; SC-001..SC-027). Node tests and the simulator only; 0 AI credits; no network in `npm test`. Each new rule gets a planted mutation that a test catches, listed in its PR (`docs/review-checklist.md`). Driver waits use `until()`, never a fixed sleep; no wall-clock assertion. `real:` tasks are separate and named.
 
-**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`, then a `Test:` part. `[P]` = can run in parallel. A phase = one PR, except P4 (one PR per world or small batch). Numbers taken: spec 102, FR-001..FR-271 (sparse by group; FR-240..FR-244 on #999), SC-001..SC-027, T001..T233 (sparse by phase; T190..T194 on #999).
+**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`, then a `Test:` part. `[P]` = can run in parallel. A phase = one PR, except P4 (one PR per world or small batch). Numbers taken: spec 102, FR-001..FR-270 (sparse by group; FR-240..FR-244 on #999), SC-001..SC-027, T001..T232 (sparse by phase; T190..T194 on #999).
 
 **Order**: P0 -> P1 -> P2 and P8 -> P3 -> P5 and P6 as ready (OP-7), P4 -> P7. Removals are separate PRs under specs 035 (T083..T088), 040 (T039..T042) and 017 (T020..T027), each after spec 021 T053. **Nothing visible as available, and no maker, reaches a release before spec 097 FR-179 is met** (FR-035, FR-124): T156..T159 of spec 097 and its op rows.
 
@@ -146,9 +146,9 @@ Numbers taken: T164..T178. One small PR per step, after #921, #974 and P1. 0 AI 
 - [ ] T180 `durbar-hall`: card first (FR-016, FR-017), on the owner's new approval (FR-172); `flanking`, gold bead monitor, flags with our mark, period lamp. Test: `sim:` matrix at 3, 4, 8 and 15 agents; `real:` his look in `ASSETS.md`; the numbers against FR-229 [FR-210, FR-237]
 - [ ] T181 Back views `backA`, `backB` per set, for `circle`, `facing-view` and `flanking`: art on the owner's plan and approval, crew art by Paco per image; seat choice in the engine. `[KNOWN GAP]` until drawn. Test: `test:world-packs`, `test:realoffice-layout`, `sim:` hover and keyboard focus show the big screen for a back seat; `read:` approvals in `ASSETS.md` [FR-204, FR-227]
 
-## Retro arcade (FR-250..FR-271, SC-022..SC-027)
+## Retro arcade (FR-250..FR-270, SC-022..SC-027)
 
-Numbers taken: T200..T233. Base for the build: `097-chat-in-world` (#1001); see the plan, including phases and the measure-first order. One reviewer per phase. 0 AI credits; no new image run (the people exist; cabinets, room and fixtures are drawn by a script). Drivers use `until()`, no wall-clock assert. Every phase carries its `changelog.d/` fragment and docs; nothing is visible until T230.
+Numbers taken: T200..T232. Base for the build: `097-chat-in-world` (#1001); see the plan, including phases and the measure-first order. One reviewer per phase. 0 AI credits; no new image run (the people exist; cabinets, room and fixtures are drawn by a script). Drivers use `until()`, no wall-clock assert. Every phase carries its `changelog.d/` fragment and docs; nothing is visible until T230.
 
 ### RA0: art, in the cache, no repo code
 
@@ -186,7 +186,7 @@ The new fields go into `worldpack.ts` (T171's list) when #955 lands; until then 
 
 ### RA5: Light (one PR)
 
-- [ ] T217 `WORLD_SETS.retro` with day (Retro Pixel's values, from one source shared with FR-271's look) and night; `setWorld` and `worldContrast` take the light. Test: `test:theme-tokens`: every pair at AA in both lights and forced colours; a mutant dimming night's ink fails; cream surfaces at night [FR-263, SC-023].
+- [ ] T217 `WORLD_SETS.retro` with day (Retro Pixel's values, moved) and night; `setWorld` and `worldContrast` take the light. Test: `test:theme-tokens`: every pair at AA in both lights and forced colours; a mutant dimming night's ink fails; cream surfaces at night [FR-263, SC-023].
 - [ ] T218 `wall-night`, `floor-night`, `welcome-night` in the drawing; only the shown light fetched; switching drops the other. Test: `shots-102-arcade` request log; memory row with `check-perf --record` [FR-252, SC-023].
 - [ ] T219 **Light** group under the entry: radios, keyboard, screen reader, tokens; stored beside `world`; hidden for any other world with no tab stop; default Day; bad value Day; never follows the system (`prefers-color-scheme` emulated dark changes nothing). Test: `shots-102-arcade` at both sizes; `Layout` byte-equal in both; `test:realoffice-layout` for parsing `__proto__`, numbers, long strings; a mutant following the system fails [FR-251, SC-023].
 
@@ -205,18 +205,16 @@ The new fields go into `worldpack.ts` (T171's list) when #955 lands; until then 
 - [ ] T224 FR-204 and `checkSet` follow 097 FR-191..FR-193; optional `face-*`; `-half` not needed with `pixelArt`. Written into 098 FR-030 by T232. Test: `test:world-packs` or, until #955, `test:realoffice-assets`: Office people and Prehistoric still `full`; a required frame missing refused [FR-259].
 - [ ] T225 Interoperation: Office people and Prehistoric in the arcade (fallback, report line), Retro pixel people in Photo office. Test: `shots-102-arcade` at 15, both sizes; `test:characters` through `peopleFor`; no other pack fetched [FR-200, FR-259, SC-016].
 
-- [ ] T233 `flatLook(world, characters, theme)`, pure, with the theme's tokens, UI style, art, words and motion as one source, closed by the flag until T230. Test: `test:theme`: every value of each argument: the look only for Flat, `pixel`, Clean Office; a saved theme keeps its colours; another Characters pick gives Clean Office at once and `pixel` brings it back; nothing new stored; `shots-102-arcade`: a stored `retro` before and after T227 at 15 agents, 1440x900 and 1280x800: same boxes (`check:geometry`), same computed colours, same UI style and words, heads apart; `read:` the owner's look side by side; mutants: the look with Cheeky, the look in Photo office, and a copied token that drifts from the arcade's Day each fail [FR-271, SC-026].
-
 ### RA9: coverage (one PR, no behaviour change)
 
-- [ ] T226 Coverage ready: a driver option draws Flat with Characters `pixel`, and a saved fixture theme with `ui: "retro"` takes `check-crew retro`'s place; the scripts naming `retro` as their second theme switch in T230, spec 008 FR-111 with a dated line. Test: `test:userthemes`; `check:geometry` and `check-parallel` list the same number of layouts by the new path as by the theme; a saved-theme fixture with `scene: "pixel"` keeps drawing [FR-267, SC-026].
+- [ ] T226 Fixture user theme with a dark page; every script naming `retro` as its second theme moves to it, and the arcade joins the layout checks; spec 008 FR-111 with a dated line. Test: `test:userthemes`; `check:geometry` and `check-parallel` list the same number of layouts as before; a saved-theme fixture naming `ui: "retro"` and `scene: "pixel"` falls back to `clean` and `office` [FR-267, SC-026].
 
 ### RA10: the flip
 
-- [ ] T227 Migration, once, behind the flag: FR-266's rows in FR-207: Flat stays Flat with Characters `pixel` and theme Clean Office, one line naming the arcade; another Characters pick stays with Clean Office colours and a line saying so. Test: `test:characters`: each row; repeat changes nothing; no request; a mutant skipping the write fails; a mutant moving a Flat user to the arcade fails; `sim:` the line, keyboard [FR-266, SC-026].
+- [ ] T227 Migration, once, built behind the flag: FR-266's row in FR-207, `theme` to `pixel`, an explicit Characters choice untouched. Test: `test:characters`: stored `retro` with each Characters value; a repeat changes nothing; no request; mutants: skipping the write, overwriting an explicit choice; `shots-102-arcade`: after the move no dialog, toast or notice appears, day is shown, and Flat is one click away in Settings [FR-266, SC-026].
 - [ ] T228 `worlds/retro/card.json`, both lights; FR-010's words; `distinct-check`. Needs T093, T094. Test: `test:world-catalogue`: a planted world within 200 K of either light fails; `read:` the contact sheet [FR-268].
 - [ ] T229 The owner's look before the flip (FR-035 (f)), day and night, with FR-265's table, each item kept or named. Test: `read:` recorded in `ASSETS.md` and the spec [FR-265, SC-026].
-- [ ] T230 **The flip, one PR:** `WORLD_FLAGS.retro` removed; T115; T122's `pixel` value and FR-271's look on; spec 035 T089 (the theme out of the Themes list, its tests, drivers, docs, screenshots, spec 038 `superseded`); T226's switch; `shippable: true`; README, `docs/themes.md`, `docs/features.md`, `docs/limits.md`, the Characters row, FR-213's measured sizes. Only when FR-269 is met. Test: `npm test`; `test:world-catalogue`; `test:theme`: no `retro` in the Themes list and the world offered, together: a mutant doing one fails; `test-site`; `npm run shots:docs`, each looked at; every check in FR-035 [FR-250, FR-266, SC-027].
+- [ ] T230 **The flip, one PR:** `WORLD_FLAGS.retro` removed; T115; T122's `pixel` value; T227 live; spec 035 T089 (theme and `pixel` kit code, `retro` style rules the arcade does not use, tests, drivers, docs, screenshots, spec 038 `superseded`); a changelog fragment that says Retro Pixel users move to the arcade; `shippable: true`; README, `docs/themes.md`, `docs/features.md`, `docs/limits.md`, the Characters row, FR-213's measured sizes. Only when FR-269 is met. Test: `npm test`; `test:world-catalogue`; `test:theme`: no `retro` built-in and the world offered, together: a mutant doing one fails; `test-site`; `npm run shots:docs`, each looked at; every check in FR-035 [FR-250, FR-266, SC-027].
 - [ ] T231 Real-GPU run for this world, simulator only, 0 AI credits, by whoever has the machine, with 097 T162; and FR-269's list read against the tree on the day. Test: `real:` numbers in a dated delta; `read:` [FR-261, FR-269].
 - [ ] T232 Other specs' lines (FR-270) as their PRs land; `docs/world-design.md` learns: level text, frames not code, shared beat, sign first. `/speckit.converge`. Test: `npm run specs:check`, `npm run test:docsscripts`, `changelog:check` [FR-270].
 
