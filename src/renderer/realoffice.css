@@ -54,7 +54,7 @@
 .ro-sl[data-k="ok"],.ro-sl[data-k="done"]{color:var(--ro-scr-ok)}.ro-sl[data-k="err"]{color:var(--ro-scr-err)}.ro-sl[data-k="ask"]{color:var(--ro-scr-ask)}
 .ro-bars i[data-k="think"]{background:var(--ro-scr-think)}.ro-bars i[data-k="cmd"]{background:var(--ro-scr-cmd)}
 .ro-bars i:is([data-k="ok"],[data-k="done"]){background:var(--ro-scr-ok)}.ro-bars i[data-k="err"]{background:var(--ro-scr-err)}.ro-bars i[data-k="ask"]{background:var(--ro-scr-ask)}
-.ro-caret{position:absolute;right:3px;bottom:5px;width:5px;height:9px;background:var(--ro-scr-reply);animation:ro-fa var(--ro-per,1.3s) step-end infinite}
+.ro-caret{position:absolute;right:3px;bottom:5px;width:5px;height:9px;background:var(--ro-scr-reply);animation:ro-blink var(--ro-per,1.3s) step-end infinite}
 .ro-chrome>:is(.ro-bub,.ro-bang,.ro-dots){pointer-events:none} /* cues over a screen or a person: a hover or a click goes to what is under them */
 /* FR-034: the zoom, over everything; opaque, no blur (FR-182); the theme colours its frame, the glass stays a screen */
 .ro-zoom{position:absolute;z-index:5;display:flex;flex-direction:column;overflow:hidden;pointer-events:none;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow-pop,0 8px 24px rgba(0,0,0,.3))}
@@ -99,24 +99,33 @@
 .ro-call.fade{animation:ro-fade 2s ease-in forwards}
 @keyframes ro-pulse{50%{opacity:.55;transform:scale(1.25)}}
 @keyframes ro-breathe{50%{opacity:.35}}
+@keyframes ro-blink{0%,100%{opacity:1}50%{opacity:0}}
 @keyframes ro-fade{0%,60%{opacity:1}100%{opacity:0}}
 .ro.still .ro-lights *,html[data-serious] .ro-lights *{animation:none!important}
 .ro.still .ro-ambient{transition:none}
 
-/* FR-070: people. Stepped frames and small stepped transforms, per-agent periods; opacity and transform only (FR-180), so a change costs one
-   compositor frame and no paint; at most 2 changes a second a desk (FR-181). The second frame is hidden unless its animation runs, so every off
-   switch below leaves the first frame showing: reduced motion (styles.css), Serious mode, .still and .hold (FR-071). */
+/* People (spec Changes 2026-11-01): two pictures of a pose cross-fade, and a small eased movement runs on both, on one clock; opacity and transform only (FR-180),
+   so the compositor runs them. The second picture is hidden unless its animation runs, so every off switch below leaves the first showing: reduced motion (styles.css), Serious mode, .still and .hold (FR-071). */
 .ro-person2,.ro-visitor2{opacity:0}
-.m-a{animation:ro-fa var(--ro-per,1.3s) step-end infinite}
-.m-b{animation:ro-fb var(--ro-per,1.3s) step-end infinite}
-.m-br{animation:ro-br var(--ro-per,5s) steps(2,end) infinite;transform-origin:var(--ro-org,50% 100%)}
-.m-sip{animation:ro-sip var(--ro-per,4s) step-end infinite;transform-origin:var(--ro-org,50% 100%)}
-.m-knock{animation:ro-knock var(--ro-per,2.6s) step-end infinite;transform-origin:var(--ro-org,50% 100%)}
-@keyframes ro-fa{0%,100%{opacity:1}50%{opacity:0}}
-@keyframes ro-fb{0%,100%{opacity:0}50%{opacity:1}}
-@keyframes ro-br{0%,100%{transform:none}50%{transform:scale(1.01)}}
-@keyframes ro-sip{0%,100%{transform:none}40%{transform:rotate(-.5deg) translateY(-.6px)}55%{transform:none}}
-@keyframes ro-knock{0%,100%{transform:none}4%{transform:translateX(.8px)}10%{transform:none}14%{transform:translateX(.8px)}20%{transform:none}}
+.ro-art>:is(.m-a,.m-b,.m-br,.m-sip,.m-knock){transform-origin:var(--ro-org,50% 100%);backface-visibility:hidden}
+.m-a.m-type{animation:ro-fa var(--ro-per,1s) linear infinite,ro-type var(--ro-sw,6s) ease-in-out infinite}
+.m-b.m-type{animation:ro-fb var(--ro-per,1s) linear infinite,ro-type var(--ro-sw,6s) ease-in-out infinite}
+.m-a.m-wave{animation:ro-fa var(--ro-per,1.1s) linear infinite,ro-wave var(--ro-per,1.1s) ease-in-out infinite}
+.m-b.m-wave{animation:ro-fb var(--ro-per,1.1s) linear infinite,ro-wave var(--ro-per,1.1s) ease-in-out infinite}
+.m-a.m-run{animation:ro-fa var(--ro-per,.68s) linear infinite,ro-run var(--ro-per,.68s) ease-in-out infinite}
+.m-b.m-run{animation:ro-fb var(--ro-per,.68s) linear infinite,ro-run var(--ro-per,.68s) ease-in-out infinite}
+.m-br{animation:ro-br var(--ro-sw,6s) ease-in-out infinite}
+.m-sip{animation:ro-sip var(--ro-per,4s) ease-in-out infinite}
+.m-knock{animation:ro-knock var(--ro-per,2.6s) ease-in-out infinite}
+/* the coming picture first, so the figure never goes see-through */
+@keyframes ro-fa{0%,4%{opacity:1;animation-timing-function:ease-in-out}14%,50%{opacity:0;animation-timing-function:ease-in-out}60%,100%{opacity:1}}
+@keyframes ro-fb{0%{opacity:0;animation-timing-function:ease-in-out}10%,54%{opacity:1;animation-timing-function:ease-in-out}64%,100%{opacity:0}}
+@keyframes ro-br{0%,100%{transform:rotate(-.22deg) scaleY(1)}30%{transform:rotate(.06deg) scaleY(1.013)}55%{transform:rotate(.26deg) scaleY(1.002)}80%{transform:rotate(.02deg) scaleY(1.011)}}
+@keyframes ro-type{0%,100%{transform:rotate(-.18deg) translateY(0)}13%{transform:rotate(-.08deg) translateY(.32%)}26%{transform:rotate(.04deg) translateY(-.12%)}39%{transform:rotate(.16deg) translateY(.26%)}52%{transform:rotate(.24deg) translateY(-.08%)}65%{transform:rotate(.12deg) translateY(.34%)}78%{transform:rotate(.02deg) translateY(-.1%)}90%{transform:rotate(-.1deg) translateY(.22%)}}
+@keyframes ro-wave{0%,100%{transform:rotate(-.55deg) translateY(.1%)}50%{transform:rotate(.55deg) translateY(-.25%)}}
+@keyframes ro-run{0%,50%,100%{transform:translate(0,.5%)}25%{transform:translate(.5%,-1.6%)}75%{transform:translate(-.5%,-1.6%)}}
+@keyframes ro-sip{0%,60%,100%{transform:rotate(-.1deg)}25%,40%{transform:rotate(-.9deg) translateY(-.45%)}}
+@keyframes ro-knock{0%,24%,100%{transform:none}6%,18%{transform:translateX(.7%) rotate(.3deg)}12%{transform:translateX(0)}}
 :is(.ro.still,.ro.hold) .ro-art>*,html[data-serious] .ro-art>*{animation:none!important}
 :is(.ro.still,.ro.hold) .ro-caret,html[data-serious] .ro-caret{display:none}
 /* FR-074: hidden, or a desk scrolled away or covered: stands still and catches up when seen again */

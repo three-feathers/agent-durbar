@@ -434,12 +434,13 @@ function roHash(id: string): number { let h = 7; for (let i = 0; i < id.length; 
  * pictures in step, with `period` s per pair), 'breathe', 'sip', 'knock', or null (a still pose: error, a person on hold). The period is
  * per agent: 1.15-1.5 s for two frames, 4-5.5 s for a breath. `offset` is where its cycle starts, in ms.
  */
-export function personMotion(id: string, pose: string, state: RealState | null): { kind: 'frames' | 'breathe' | 'sip' | 'knock' | null; period: number; offset: number } {
-  const h = roHash(String(id)), share = (h % 1000) / 1000;
-  const out = (kind: 'frames' | 'breathe' | 'sip' | 'knock' | null, period: number) => ({ kind, period: Math.round(period * 100) / 100, offset: Math.round(share * period * 1000) });
+export function personMotion(id: string, pose: string, state: RealState | null): { kind: 'frames' | 'breathe' | 'sip' | 'knock' | null; period: number; offset: number; sway: number; style: 'type' | 'wave' | 'run' | null } {
+  const h = roHash(String(id)), share = (h % 1000) / 1000, share2 = ((h >>> 10) % 1000) / 1000;
+  const out = (kind: 'frames' | 'breathe' | 'sip' | 'knock' | null, period: number, style: 'type' | 'wave' | 'run' | null = null) => ({ kind, period: Math.round(period * 100) / 100, offset: Math.round(share * period * 1000), sway: Math.round((5 + 3 * share2) * 100) / 100, style });
   if (state === 'error') return out(null, 0); /* FR-036: error is still */
-  if (pose === 'runA') return out('frames', 1 + 0.3 * share); /* FR-181 caps a stride at 2 changes a second (FR-070 said 0.55 s) */
-  if (roOwn(POSE_FRAME_B, pose)) return out('frames', 1.15 + 0.35 * share);
+  if (pose === 'runA') return out('frames', 0.62 + 0.12 * share, 'run'); /* about three steps a second (spec Changes 2026-11-01) */
+  if (pose === 'waveA') return out('frames', 1 + 0.2 * share, 'wave');
+  if (roOwn(POSE_FRAME_B, pose)) return out('frames', 0.85 + 0.25 * share, 'type');
   if (pose === 'coffee') return out('sip', 4);
   if (pose === 'knock') return out('knock', 2.6);
   return out('breathe', 4 + 1.5 * share);

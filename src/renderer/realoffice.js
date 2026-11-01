@@ -65,13 +65,30 @@
   }
   /* FR-074: hidden, or the office under a chat or a screen (body.panel-open hides it): nothing paints */
   function hiddenNow() { return document.hidden || !CUR || !CUR.ro.isConnected || document.body.classList.contains('panel-open'); }
-  /* a one-time picture that goes away: FR-072's old pose, FR-073's person leaving a desk or a fixture; stepped opacity only (FR-180, FR-181) */
+  /* a one-time picture that goes away: FR-072's old pose, FR-073's person leaving a desk or a fixture; eased opacity only (FR-180) */
   function fadeAway(e, ms) {
     e.className = 'ro-ghost' + (e.classList.contains('ro-visitor') ? ' v' : ''); delete e.dataset.for;
-    const a = e.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ms, easing: 'steps(5, end)', fill: 'forwards' });
+    const a = e.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ms, easing: 'ease-in-out', fill: 'forwards' });
     a.onfinish = a.oncancel = () => e.remove();
   }
   function fadeIn(e, ms, delay) { e.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms, delay: delay || 0, easing: 'steps(5, end)', fill: 'backwards' }); }
+  /* spec Changes 2026-11-01: a person going to or from a place glides from where they were, with a stride bounce; the second picture waits for the arrival (GLIDING) */
+  const WHERE = new Map(), GLIDING = new Map();
+  function glide(e, id, from, to) {
+    if (!from || (from.x === to.x && from.y === to.y)) return false;
+    const dx0 = from.x - to.x, dy0 = from.y - to.y, dist = Math.hypot(dx0, dy0), ms = Math.max(500, Math.min(1200, dist * 2.6)), s0 = to.h ? from.h / to.h : 1;
+    const o = getComputedStyle(e).transformOrigin.split(' ').map(parseFloat), ox = o[0] || 0, oy = o[1] || 0;
+    const steps = Math.max(2, Math.round(ms / 170)), kf = [];
+    const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+    for (let i = 0; i <= 16; i++) {
+      const t = i / 16, q = 1 - ease(t), sc = 1 + (s0 - 1) * q, bounce = -Math.abs(Math.sin(Math.PI * steps * t)) * to.h * 0.016 * Math.min(1, 4 * Math.min(t, 1 - t));
+      kf.push({ transform: `translate(${(dx0 * q - ox * (1 - sc)).toFixed(2)}px,${(dy0 * q - oy * (1 - sc) + bounce).toFixed(2)}px) scale(${sc.toFixed(4)})`, opacity: Math.min(1, t * 6) });
+    }
+    const a = e.animate(kf, { duration: ms, easing: 'linear' });
+    GLIDING.set(id, a);
+    a.onfinish = a.oncancel = () => { if (GLIDING.get(id) === a) { GLIDING.delete(id); if (onArt) onArt(); } };
+    return true;
+  }
   function setVar(e, k, v) { if (e.style.getPropertyValue(k) !== v) e.style.setProperty(k, v); }
   /* FR-181: a desk's picture frames and caret change on the same frame: one clock per desk, its own place in the cycle */
   function clock(e, ms) { for (const a of e.getAnimations()) a.startTime = ms; }
@@ -162,14 +179,15 @@
         if (d.person) {
           const m = L.personMotion(k, d.person.pose, d.state);
           const fresh = !art._k.has('p:' + k);
-          const two = moving() && m.kind === 'frames' && d.person.fileB && !BAD.has(d.person.fileB) ? second(art, 'pb:' + k, k, d.person, d.person.fileB, 'ro-person2', m) : null;
-          const pe = el(art, 'p:' + k, 'img', 'ro-person' + (two && two.on ? ' m-a' : m.kind === 'breathe' && moving() ? ' m-br' : '') + (OFF.has(k) ? ' ro-off' : ''));
+          const two = moving() && m.kind === 'frames' && d.person.fileB && !BAD.has(d.person.fileB) && !GLIDING.has(k) ? second(art, 'pb:' + k, k, d.person, d.person.fileB, 'ro-person2', m) : null;
+          const pe = el(art, 'p:' + k, 'img', 'ro-person' + (two && two.on ? ' m-a m-' + m.style : m.kind === 'breathe' && moving() ? ' m-br' : '') + (OFF.has(k) ? ' ro-off' : ''));
           box(pe, d.person); pe.dataset.for = k; pe.dataset.pose = d.person.pose;
           const was = pe.getAttribute('src');
           if (was && was !== ART + d.person.file && moving() && !hiddenNow() && !OFF.has(k)) { const g = pe.cloneNode(false); art.insertBefore(g, pe); fadeAway(g, 250); } /* FR-072 */
           img(pe, d.person.file);
-          if (fresh && CUR.drawn && moving() && !hiddenNow() && !OFF.has(k)) fadeIn(pe, 150, 150); /* FR-073: in at the desk after the fade at the fixture */
-          if (m.kind) setVar(pe, '--ro-per', m.period + 's');
+          if (fresh && CUR.drawn && moving() && !hiddenNow() && !OFF.has(k) && !glide(pe, k, WHERE.get(k), d.person)) fadeIn(pe, 150, 150); /* FR-073: in at the desk */
+          WHERE.set(k, d.person);
+          if (m.kind) { setVar(pe, '--ro-per', m.period + 's'); setVar(pe, '--ro-sw', m.sway + 's'); }
           if (two && two.on && !two.b._clock) { two.b._clock = true; clock(two.b, m.offset); clock(pe, m.offset); }
         } else if (!d.narrow) {
           const ini = el(art, 'i:' + k, 'div', 'ro-initials'); const r = 0.5 * lay.u; box(ini, { x: d.slot.x + 0.05 * d.slot.w + 0.42 * lay.u - r / 2, y: d.desk.y - r - 6, w: r, h: r }); ini.dataset.for = k; text(ini, initials(a.name));
@@ -229,11 +247,12 @@
           const sh = el(art, 'vs:' + v.id, 'div', 'ro-shadow'); box(sh, v.shadow);
           /* FR-070: stride frames, a sip, a knock or a breath; FR-073: in at the fixture after the fade at the desk */
           const m = L.personMotion(v.id, v.fig.pose, null), fresh = !art._k.has('v:' + v.id), mov = moving() && !OFF.has(v.id);
-          const two = mov && m.kind === 'frames' && v.fig.fileB && !BAD.has(v.fig.fileB) ? second(art, 'vb:' + v.id, v.id, v.fig, v.fig.fileB, 'ro-visitor2', m) : null;
-          const cl = two && two.on ? ' m-a' : mov ? ({ breathe: ' m-br', sip: ' m-sip', knock: ' m-knock' }[m.kind] || '') : '';
+          const two = mov && m.kind === 'frames' && v.fig.fileB && !BAD.has(v.fig.fileB) && !GLIDING.has(v.id) ? second(art, 'vb:' + v.id, v.id, v.fig, v.fig.fileB, 'ro-visitor2', m) : null;
+          const cl = two && two.on ? ' m-a m-' + m.style : mov ? ({ breathe: ' m-br', sip: ' m-sip', knock: ' m-knock' }[m.kind] || '') : '';
           const im = el(art, 'v:' + v.id, 'img', 'ro-visitor' + cl); box(im, v.fig); im.dataset.for = v.id; im.dataset.pose = v.fig.pose; im.dataset.feet = String(Math.round(v.fig.feetY * 10) / 10); img(im, v.fig.file);
-          if (fresh && CUR.drawn && moving() && !hiddenNow()) fadeIn(im, 150, 150);
-          if (cl) { setVar(im, '--ro-per', m.period + 's'); setVar(im, '--ro-org', '50% ' + px(v.fig.feetY - v.fig.y)); }
+          if (cl) { setVar(im, '--ro-per', m.period + 's'); setVar(im, '--ro-sw', m.sway + 's'); setVar(im, '--ro-org', '50% ' + px(v.fig.feetY - v.fig.y)); }
+          if (fresh && CUR.drawn && moving() && !hiddenNow() && !glide(im, v.id, WHERE.get(v.id), v.fig)) fadeIn(im, 150, 150);
+          WHERE.set(v.id, v.fig);
           if (two && two.on && !two.b._clock) { two.b._clock = true; clock(two.b, m.offset); clock(im, m.offset); }
         }
         /* FR-026 "as the flat lobby": a go-place visitor (Boss, Bank, Coffee) is the flat lobby's own button (data-pvopen, and
@@ -263,8 +282,8 @@
   /* FR-070: the second frame of a pose over the first; it moves only once decoded, so nothing pops; FR-065: a failed one leaves the first frame still */
   function second(art, key, id, rect, file, cls, m) {
     const prev = art._k.get(key), on = !!prev && prev._file === file && prev._ok;
-    const b = el(art, key, 'img', cls + (on ? ' m-b' : '') + (OFF.has(id) ? ' ro-off' : ''));
-    box(b, rect); b.dataset.for = id; setVar(b, '--ro-per', m.period + 's');
+    const b = el(art, key, 'img', cls + (on ? ' m-b m-' + m.style : '') + (OFF.has(id) ? ' ro-off' : ''));
+    box(b, rect); b.dataset.for = id; setVar(b, '--ro-per', m.period + 's'); setVar(b, '--ro-sw', m.sway + 's');
     if (b._file !== file) {
       b._file = file; b._ok = false; b._clock = false;
       img(b, file);

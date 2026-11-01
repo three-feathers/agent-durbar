@@ -64,22 +64,23 @@ module.exports = async (ctx) => {
     const anims = await js(animInfo);
     const names = {}; for (const a of anims) names[a.name] = (names[a.name] || 0) + 1;
     console.log('[097-motion] animations', w, h, JSON.stringify(names));
-    assert.ok(names['ro-fa'] >= 2 && names['ro-fb'] >= 1, 'two-frame animations: ' + JSON.stringify(names));
+    assert.ok(names['ro-fa'] >= 2 && names['ro-fb'] >= 1 && names['ro-type'] >= 2, 'two-frame animations: ' + JSON.stringify(names));
     for (const a of anims) {
       assert.ok(a.props.every((p) => p === 'opacity' || p === 'transform'), `FR-180: only opacity and transform: ${a.name}: ${a.props}`);
-      assert.ok(/steps|step-/.test(a.ease), `FR-181: stepped timing: ${a.name}: ${a.ease}`);
-      if (a.name === 'ro-fa' || a.name === 'ro-fb') { assert.ok(a.dur >= 1000 && a.dur <= 1500, 'a frame period: ' + a.dur); assert.ok(2 / (a.dur / 1000) <= 2, 'FR-181: at most 2 changes a second'); }
-      if (a.name === 'ro-br') assert.ok(a.dur >= 4000 && a.dur <= 5500, 'a breath: ' + a.dur);
+      if (/ro-(person|visitor)/.test(a.target) && /^ro-(fa|fb|br|type|wave|run|sip|knock)$/.test(a.name)) assert.ok(!/steps|step-/.test(a.ease), `people ease (spec Changes 2026-11-01): ${a.name}: ${a.ease}`);
+      if (/ro-(person|visitor)/.test(a.target) && (a.name === 'ro-fa' || a.name === 'ro-fb')) assert.ok(a.dur >= 620 && a.dur <= 1200, 'a frame period: ' + a.dur);
+      if (a.name === 'ro-br' || a.name === 'ro-type') assert.ok(a.dur >= 5000 && a.dur <= 8000, 'a sway: ' + a.dur);
     }
     // the two pictures alternate: computed opacity, always one showing, over two periods; and the pixels differ
     const id = typist;
     const alt = await js(`new Promise(res=>{const A=document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(id)})+'"]'),B=document.querySelector('#stage .ro-person2[data-for="'+CSS.escape(${jsLiteral(id)})+'"]');
       const seen=new Set(),bad=[];const t0=performance.now();const iv=setInterval(()=>{if(!A.isConnected||!B.isConnected||!A.classList.contains('m-a')){clearInterval(iv);res({gone:true});return;}
-        const a=+getComputedStyle(A).opacity,b=+getComputedStyle(B).opacity;seen.add(a+'/'+b);if(a+b!==1)bad.push(a+'/'+b);if(performance.now()-t0>3200){clearInterval(iv);res({seen:[...seen],bad,srcA:A.src.split('/').pop(),srcB:B.src.split('/').pop(),startA:(A.getAnimations()[0]||{}).startTime,startB:(B.getAnimations()[0]||{}).startTime});}},40);})`);
+        const a=+getComputedStyle(A).opacity,b=+getComputedStyle(B).opacity;seen.add(a+'/'+b);if(Math.max(a,b)<0.6)bad.push(a+'/'+b);if(a>0.05&&a<0.95||b>0.05&&b<0.95)window.__between=(window.__between||0)+1;if(performance.now()-t0>3200){clearInterval(iv);res({seen:[...seen],bad,srcA:A.src.split('/').pop(),srcB:B.src.split('/').pop(),startA:(A.getAnimations()[0]||{}).startTime,startB:(B.getAnimations()[0]||{}).startTime});}},40);})`);
     assert.ok(!alt.gone, 'the typist stayed at the desk');
     console.log('[097-motion] frames', JSON.stringify(alt));
-    assert.deepStrictEqual(alt.bad, [], 'always exactly one frame showing');
+    assert.deepStrictEqual(alt.bad, [], 'the figure never goes see-through');
     assert.ok(alt.seen.includes('1/0') && alt.seen.includes('0/1'), 'both frames seen');
+    assert.ok(await js(`window.__between||0`) > 0, 'and in between: it cross-fades, nothing pops');
     assert.notStrictEqual(alt.srcA, alt.srcB, 'two pictures');
     assert.strictEqual(alt.startA, alt.startB, 'FR-181: one clock per desk');
     assert.ok(alt.startA < 1500, 'its own place in the cycle, not the time it was drawn: ' + alt.startA);
@@ -107,9 +108,11 @@ module.exports = async (ctx) => {
   const lobbyId = await seat(0);
   const seated = await js(SRC(lobbyId));
   await js(`window.__g=[];0`);
+  await js(`0`);
   await emit({ type: 'toolCall', sessionId: lobbyId, callId: 'drv-walk', tool: 'bash', phase: 'start', args: { command: 'npm run a-long-one' } });
   await must(`!!document.querySelector('#stage .ro-visitor[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]')`, 'the agent at its place in the lobby');
   assert.ok(await H.until(`window.__g.includes(${jsLiteral(seated)})`, 2000), 'FR-073: a fade where the person sat');
+  assert.ok(await H.until(`(()=>{const v=document.querySelector('#stage .ro-visitor[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]');return !!v&&v.getAnimations().some(a=>!a.animationName&&a.playState==='running'&&(a.effect.getKeyframes()[0].transform||'').startsWith('translate'));})()`, 2000), 'it glides from the desk (spec Changes 2026-11-01)');
   await must(`!document.querySelector('#stage .ro-ghost')`, 'the fade over');
   const standing = await js(`document.querySelector('#stage .ro-visitor[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]').src`);
   await emit({ type: 'toolCall', sessionId: lobbyId, callId: 'drv-walk', tool: 'bash', phase: 'complete', output: 'ok' });
