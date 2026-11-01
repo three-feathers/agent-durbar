@@ -448,7 +448,7 @@
     /* spec 077 FR-068: a Characters pick applies live through app.js's applyCharacters and shows the new choice at once */
     if($('chList'))$('chList').addEventListener('click',(e)=>{
       const b=e.target.closest&&e.target.closest('[data-characters]');if(!b||!X.applyCharacters)return;
-      X.applyCharacters(b.dataset.characters);
+      Promise.resolve(X.applyCharacters(b.dataset.characters)).then(()=>{const n=$('dsR'),V=X.signs&&X.signs.view;if(n&&V)n.textContent=V.note();}); /* spec 102 FR-202: the one line saying a choice has no Real office poses follows the pick */
       $('chList').querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
     });
     if($('thImport'))$('thImport').onclick=async()=>{

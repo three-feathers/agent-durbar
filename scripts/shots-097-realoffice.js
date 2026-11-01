@@ -93,6 +93,20 @@ module.exports = async (ctx) => {
   assert.strictEqual(await js(`localStorage.getItem('durbar.doorsigns')`), 'off', 'durbar.doorsigns untouched');
   await js(`document.getElementById('scrClose').click()`);
   await must(REAL, 'the Real office after the Settings choice');
+  /* spec 097 FR-115, spec 102 FR-201, FR-205: html[data-world] is the shown world; only that world's and that set's packs were asked for; no World row while one world is offered */
+  assert.strictEqual(await js(`document.documentElement.dataset.world`), 'photo', 'html[data-world] is photo in Real office');
+  assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.world+'/'+document.querySelector('#stage .ro').dataset.set`), 'photo/office', 'the room draws the Photo office with the Office people');
+  const packFiles = await js(`[...new Set([...document.querySelectorAll('script[src],link[href],#stage img[src]')].map(e=>e.getAttribute('src')||e.getAttribute('href')).filter(n=>/realoffice\\/(worlds|sets)\\//.test(n)).map(n=>n.replace(/^.*realoffice\\/(worlds|sets)\\/([^/]+)\\/.*$/,'$1/$2')))].sort().join(' ')`);
+  assert.strictEqual(packFiles, 'sets/office worlds/photo', 'Real office asked for the Photo office and the Office people only: ' + packFiles);
+  await js(`window.DurbarScreens.openSettings()`);
+  await must(`!!document.querySelector('[data-officelayout="real"]')`, 'Settings');
+  assert.strictEqual(await js(`!!document.querySelector('#wrGroup')`), false, 'no World row while only one world is offered');
+  assert.ok(/World\u2019s default \(Office people\)/.test(await js(`document.querySelector('#chList [data-characters="theme"]').getAttribute('aria-label')`)), 'Characters starts with the world\u2019s default set');
+  await js(`document.querySelector('#chList [data-characters="cheeky"]').click()`);
+  await must(`document.getElementById('dsR').textContent==='Real office shows Office people until Cheeky has Real office poses.'`, 'Cheeky has no Real office poses: Settings says so under Office layout');
+  await js(`document.querySelector('#chList [data-characters="theme"]').click()`);
+  await must(`document.getElementById('dsR').textContent===''`, 'the line goes with the default');
+  await js(`document.getElementById('scrClose').click()`);
   await js(`window.DurbarScreens.openSettings()`);
   await must(`!!document.querySelector('[data-officelayout="open"]')`, 'the Office layout row');
   await js(`document.querySelector('[data-officelayout="open"]').click()`);
@@ -189,7 +203,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(bub.x, bub.e, 'one "!" per error desk');
     // ---- owner 2026-10-31 10:19 and 10:48: every visitor's feet (its measured foot line) on the FRONT floor plane (in front of the
     //      fixtures, FRONT_DEPTH of the strip below the wall line) within 2 px, with a contact shadow there; no chip over a figure's lower 25 % ----
-    const FEET = `(()=>{const A=self.DurbarRealOfficeArt,sr=document.querySelector('#stage .ro-strip').getBoundingClientRect(),wl=sr.top+3,fl=wl+self.exports.FRONT_DEPTH*(sr.bottom-wl),out=[];
+    const FEET = `(()=>{const A=Object.assign({},self.DurbarRealOfficeWorlds.photo,self.DurbarRealOfficeSets.office),sr=document.querySelector('#stage .ro-strip').getBoundingClientRect(),wl=sr.top+3,fl=wl+self.exports.FRONT_DEPTH*(sr.bottom-wl),out=[];
       const chips=[...document.querySelectorAll('#stage .ro-chip')].map(c=>c.getBoundingClientRect());
       for(const im of document.querySelectorAll('#stage .ro-visitor')){const m=/(p\\d\\d)-(\\w+)\\.webp$/.exec(im.getAttribute('src'));const f=A.stand[m[1]].feet[m[2]],t=A.stand[m[1]].top[m[2]];
         const r=im.getBoundingClientRect(),y=r.top+r.height*f,cx=r.left+r.width/2,lo=r.top+r.height*(f-0.25*(f-t));
