@@ -377,8 +377,13 @@ module.exports = async (ctx) => {
   await H.shot(path.join(OUT, '097-real-lights-1440x900.png'), { prep: 'calm' });
 
   // ---- FR-065: a picture that fails: no broken image, the initials disc ----
-  const victim = await js(`(()=>{const i=document.querySelector('#stage .ro-person');const f=i.dataset.for;i.src='realoffice/art/missing.webp';return f})()`);
-  await must(`!!document.querySelector('#stage .ro-initials[data-for="'+CSS.escape(${jsLiteral(victim)})+'"]')`, 'the initials disc after a failed picture');
+  /* a simulator visit can take the chosen person to the lobby before its picture fails (then no disc is drawn at its desk): try another person, up to six times */
+  let discOk = false;
+  for (let t = 0; t < 6 && !discOk; t++) {
+    const victim = await js(`(()=>{const i=document.querySelector('#stage .ro-person');if(!i)return '';const f=i.dataset.for;i.src='realoffice/art/missing.webp';return f})()`);
+    if (victim) discOk = await H.until(`!!document.querySelector('#stage .ro-initials[data-for="'+CSS.escape(${jsLiteral(victim)})+'"]')`, 5000);
+  }
+  assert.ok(discOk, 'the initials disc after a failed picture');
   assert.strictEqual(await js(`[...document.querySelectorAll('#stage .ro img')].filter(i=>i.complete&&!i.naturalWidth).length`), 0, 'no broken image left on screen');
 
   // ---- FR-100, FR-113 (owner 2026-10-31 10:46: "the top bar and menu ... should follow the same design"): the world's token set ----
