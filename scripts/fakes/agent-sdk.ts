@@ -34,7 +34,7 @@ export function fakeQuery(script: FakeScript | ((n: number) => FakeScript), rec:
     return (async function* () {
       if (s.throws) throw new Error('boom ghp_' + 'a'.repeat(36));
       if (s.init !== null) {
-        yield { type: 'system', subtype: 'init', apiKeySource: 'ANTHROPIC_API_KEY', tools: ['Read', 'Grep', 'Glob'], mcp_servers: [], plugins: [], agents: [], permissionMode: 'dontAsk', cwd: options.cwd, model: options.model, ...(s.init ?? {}) };
+        yield { type: 'system', subtype: 'init', apiKeySource: 'ANTHROPIC_API_KEY', tools: ['Read', 'Grep', 'Glob', 'StructuredOutput'], mcp_servers: [], plugins: [], agents: [], permissionMode: 'dontAsk', cwd: options.cwd, model: options.model, ...(s.init ?? {}) };
       }
       if (s.hang) { await new Promise<void>((res) => { options.abortController.signal.addEventListener('abort', () => res()); }); return; }
       const hook = options.hooks && options.hooks.PreToolUse && options.hooks.PreToolUse[0].hooks[0];

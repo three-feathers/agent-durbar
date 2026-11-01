@@ -1,5 +1,5 @@
 /**
- * `npm run test:prereview` (spec 103). The pre-review bot with fakes only: a fake SDK query, a fake `gh`, `codex`, `sudo`/`npm`, a local
+ * `npm run test:prereview` (spec 103). The pre-review bot with fakes (a fake SDK query, a fake `gh`, `sudo`/`npm`, a local
  * git remote, a generated App key and a fake fetch. It spends no credits, opens no network and posts nothing. Each guard has a test that
  * fails when the guard is removed (the mutants are listed in the PR). Linux and macOS; the bot itself is Linux only (spec 103 FR-025).
  */
@@ -9,11 +9,13 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
+import { pathToFileURL } from 'url';
 import * as core from './prereview-core';
 import * as run from './prereview-run';
 import * as cli from './prereview-cli';
 import * as post from './prereview-post';
 import { fakeQuery, FakeRecord, goodAnswer, usage } from './fakes/agent-sdk';
+import { startMockApi } from './fakes/mock-messages-api';
 
 if (process.platform === 'win32') { console.log('prereview: the bot is Linux only (spec 103 FR-025); skipped on Windows'); process.exit(0); }
 
@@ -87,15 +89,38 @@ function checkConfine(): void {
   for (const g of ['{/etc/passwd,a}', '{{/etc,a},b}/*', '.{.,x}/secret', '[.][.]/x', '{a,b}/*', '*.{ts,tsx}', '!(a)', '+(a|b)', '@(a|b)', '?(a)', 'a/\\..\\x', '$HOME/*', '`id`', 'a,b', 'src/**/(x)', '\\/etc/*', '../x', 'a/../../b']) {
     deny('Glob', { pattern: g }, `glob form ${g}`); deny('Grep', { pattern: 'x', glob: g }, `grep glob form ${g}`);
   }
-  for (const g of ['**/*.ts', 'src/*.ts', '*.md', 'src/**', 'a b/*', '.github/**', 'src/é*', 'a+b/*']) allow('Glob', { pattern: g }, `plain glob ${g}`);
+  for (const g of ['**/*.ts', 'src/*.ts', '*.md', 'src/**', '.github/**', 'src/é*', 'a+b/*']) allow('Glob', { pattern: g }, `plain glob ${g}`);
+  // review 2026-11-01 (second round): the binary trims a Read path but not a Grep or Glob path, so " /abs/x" was resolved here as a folder of that odd name
+  const lookalike = path.join(wt, ' ' + outside.replace(/^\//, '')); fs.mkdirSync(path.join(lookalike), { recursive: true }); fs.writeFileSync(path.join(lookalike, 'canary.txt'), 'x');
+  for (const lead of [' ', '  ', '\t', '\n', '\r', '\u00a0', '\u2028', '\ufeff', '\u0000', '\u001b', '\u200b']) {
+    deny('Grep', { pattern: 'x', path: lead + outside }, `grep path with leading ${JSON.stringify(lead)}`); deny('Glob', { pattern: '*', path: lead + outside }, `glob path with leading ${JSON.stringify(lead)}`);
+    deny('Read', { file_path: lead + path.join(outside, 'key') }, `read path with leading ${JSON.stringify(lead)}`); deny('Glob', { pattern: lead + outside + '/*' }, `glob pattern with leading ${JSON.stringify(lead)}`);
+    deny('Grep', { pattern: 'x', glob: lead + '*.ts' }, `grep glob with leading ${JSON.stringify(lead)}`); deny('Read', { file_path: 'src/a.ts' + lead }, `read path with trailing ${JSON.stringify(lead)}`);
+    deny('Grep', { pattern: 'x', path: 'src' + lead }, `grep path with trailing ${JSON.stringify(lead)}`); deny('Glob', { pattern: '*.ts' + lead }, `glob with trailing ${JSON.stringify(lead)}`);
+  }
+  deny('Grep', { pattern: 'x', path: ' ' + lookalike.slice(wt.length + 2) }, 'the look-alike folder itself, by a relative name'); allow('Grep', { pattern: 'x', path: lookalike }, 'the look-alike folder by its true name is a folder inside the worktree: fine; only the trimmed form was the hole');
+  for (const q of ['"src/a.ts"', "'src/a.ts'", '`src/a.ts`', 'src/a.ts"']) deny('Read', { file_path: q }, `quoted path ${q}`);
+  for (const g of ['src/ *.ts', 'a b', ' ', '*.ts\n', 'src/a.ts\u00a0']) { deny('Glob', { pattern: g }, `glob with a space or separator ${JSON.stringify(g)}`); deny('Grep', { pattern: 'x', glob: g }, `grep glob ${JSON.stringify(g)}`); }
+  // files of the process itself: /proc is outside the folder, however it is spelled (item 6: the key is in the environment of the process)
+  for (const f of ['/proc/self/environ', '/proc/self/cmdline', '/proc/1/environ', '/proc/self/cwd/../environ', '/proc/self/fd/0', '/dev/stdin', '/sys/kernel/notes', '/etc/passwd']) deny('Read', { file_path: f }, `process or system file ${f}`);
+  for (const f of ['/proc/self', '/proc', '/proc/self/fd']) { deny('Grep', { pattern: 'KEY', path: f }, `grep ${f}`); deny('Glob', { pattern: 'environ', path: f }, `glob ${f}`); }
+  assert.ok(v('StructuredOutput', { findings: [{ path: '/etc/passwd', claim: 'x' }], not_checked: '' }).allow, 'our own answer tool is allowed and its fields are never opened as paths');
+  assert.ok(!v('StructuredOutput', null).allow && !v('StructuredOutput', ['x']).allow, 'but only with an object');
   deny('Grep', { pattern: 'x', somePath: '/etc' }, 'unknown path field'); deny('Glob', { pattern: 'x', path: 'link' }, 'glob path through a link');
   for (const t of ['Bash', 'Write', 'Edit', 'WebFetch', 'Task', 'mcp__x__y', 'read', '']) deny(t, { file_path: 'src/a.ts', command: 'id' }, `tool ${t || '(empty)'}`);
   deny('Read', null, 'null input'); deny('Read', ['src/a.ts'], 'array input'); assert.ok(!core.confine({}, wt, rp).allow);
   assert.ok(!core.confine({ tool_name: 'Read', tool_input: { file_path: 'src/a.ts' } }, path.join(tmp, 'missing'), rp).allow, 'unreadable worktree');
   // init message (FR-010): each wrong field alone aborts
-  const good = { type: 'system', subtype: 'init', apiKeySource: 'ANTHROPIC_API_KEY', tools: ['Grep', 'Glob', 'Read'], mcp_servers: [], plugins: [], agents: [], permissionMode: 'dontAsk', cwd: wt };
+  const good = { type: 'system', subtype: 'init', apiKeySource: 'ANTHROPIC_API_KEY', tools: ['Grep', 'Glob', 'Read', 'StructuredOutput'], mcp_servers: [], plugins: [], agents: [], skills: [], permissionMode: 'dontAsk', cwd: wt };
+  // what the real pinned binary reports (run, not read; see the real-SDK test): the built-in plugins, agents and skills, exactly, and nothing else
+  const real = { ...good, plugins: [{ name: 'cc-plugin-agents-md', path: 'builtin', source: 'cc-plugin-agents-md@builtin' }, { name: 'cc-plugin-plugin-authoring', path: 'builtin', source: 'cc-plugin-plugin-authoring@builtin' }], agents: ['claude', 'general-purpose', 'statusline-setup'], skills: ['doctor', 'plugin-authoring'] };
+  assert.deepStrictEqual(core.initProblems(real, wt, rp), [], 'the real init at the pinned version is accepted');
+  for (const o of [{ tools: ['Read', 'Grep', 'Glob'] }, { tools: ['Read', 'Grep', 'Glob', 'StructuredOutput', 'Bash'] }, { tools: ['Read', 'Grep', 'Glob', 'StructuredOutput', 'Task'] }, { plugins: [...real.plugins, { name: 'cc-plugin-telemetry', path: 'builtin', source: 'x' }] }, { plugins: [{ name: 'cc-plugin-agents-md', path: '/home/x/plugin', source: 'x' }] },
+    { plugins: [{ name: 'mine', path: 'builtin', source: 'x' }] }, { agents: [...real.agents, 'Explore'] }, { agents: ['claude', 'evil'] }, { skills: ['doctor', 'evil'] }, { agents: undefined }]) {
+    assert.ok(core.initProblems({ ...real, ...o }, wt, rp).length > 0, `init refused: ${JSON.stringify(o).slice(0, 80)}`);
+  }
   assert.deepStrictEqual(core.initProblems(good, wt, rp), []);
-  for (const o of [{ apiKeySource: 'oauth' }, { apiKeySource: 'none' }, { tools: ['Read', 'Grep'] }, { tools: ['Read', 'Grep', 'Glob', 'Bash'] }, { mcp_servers: [{ name: 'x', status: 'ok' }] }, { plugins: [{ name: 'p', path: '/p' }] }, { permissionMode: 'default' }, { permissionMode: 'bypassPermissions' }, { cwd: outside }, { agents: ['x'] }, { mcp_servers: undefined }]) {
+  for (const o of [{ apiKeySource: 'oauth' }, { apiKeySource: 'none' }, { tools: ['Read', 'Grep'] }, { tools: ['Read', 'Grep', 'Glob', 'StructuredOutput', 'Bash'] }, { mcp_servers: [{ name: 'x', status: 'ok' }] }, { plugins: [{ name: 'p', path: '/p' }] }, { permissionMode: 'default' }, { permissionMode: 'bypassPermissions' }, { cwd: outside }, { agents: ['x'] }, { mcp_servers: undefined }]) {
     assert.ok(core.initProblems({ ...good, ...o }, wt, rp).length > 0, `init refused: ${JSON.stringify(o)}`);
   }
   assert.ok(core.initProblems({ type: 'assistant' }, wt, rp).length > 0);
@@ -103,7 +128,8 @@ function checkConfine(): void {
 
 function checkEnvKeyDiffLedger(): void {
   const e = core.minimalEnv({ key: 'k', path: '/bin', home: '/h', configDir: '/c', tmp: '/t' });
-  assert.deepStrictEqual(Object.keys(e).sort(), ['ANTHROPIC_API_KEY', 'CLAUDE_CONFIG_DIR', 'HOME', 'PATH', 'TMPDIR']);
+  assert.deepStrictEqual(Object.keys(e).sort(), ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_DISABLE_ATTACHMENTS', 'CLAUDE_CODE_DISABLE_AUTO_MEMORY', 'CLAUDE_CODE_DISABLE_BUNDLED_SKILLS', 'CLAUDE_CODE_DISABLE_CLAUDE_MDS', 'CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS', 'CLAUDE_CODE_DISABLE_FILE_MENTIONS', 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', 'CLAUDE_CONFIG_DIR', 'HOME', 'PATH', 'TMPDIR']);
+  assert.strictEqual(e.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, '1'); assert.strictEqual(e.CLAUDE_CODE_DISABLE_FILE_MENTIONS, '1');
   assert.deepStrictEqual(core.envProblems({ PATH: '/bin' }), []);
   for (const k of ['GH_TOKEN', 'GITHUB_TOKEN', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'GH_CONFIG_DIR', 'XDG_CONFIG_HOME', 'GH_HOST']) assert.strictEqual(core.envProblems({ [k]: 'x' }).length, 1, k);
   // key file (FR-013): never returns the value
@@ -180,6 +206,8 @@ function checkAnswers(): void {
   const back = core.revalidateReport(JSON.parse(JSON.stringify({ v: 1, pr: 7, sha: 'a'.repeat(40), url: 'javascript:x', startedAt: 'n', model: 'm', diffBytes: 1, replay: false, raised: [], passes: [{ ...hostile, findings: [{ ...hostile.findings[0], claim: `${TOK} ok`, verdict: 'approve' }], costUsd: -5, costKnown: true }] })));
   assert.strictEqual(back.url, ''); assert.ok(!JSON.stringify(back).includes('ghp_') && !JSON.stringify(back).includes('approve') && back.passes[0].costKnown === false);
   assert.throws(() => core.revalidateReport({ v: 2 }));
+  assert.throws(() => core.revalidateReport({ v: 1, pr: 7, sha: 'a'.repeat(40), passes: [{ ...hostile, runner: 'codex' }] }), /Claude runner/, 'a report of any other runner is never read back, so never posted');
+  assert.throws(() => core.revalidateReport({ v: 1, pr: 7, sha: 'a'.repeat(40), passes: [{ ...hostile, runner: undefined }] }), /Claude runner/);
 }
 
 // ---- the box, with the fake SDK -----------------------------------------------------------------------------------------------
@@ -233,6 +261,51 @@ async function checkBox(): Promise<void> {
   assert.throws(() => run.buildUserMessage({ prText: null, diff: 'has NONCE inside', pass: 'p', nonce: 'NONCE' }), /collision/);
 }
 
+// ---- the REAL pinned SDK binary against a loopback mock of the Messages API ---------------------------------------------------------
+/**
+ * The fake SDK hid three findings of the security review (a Grep path with a leading space, the real `init` listing StructuredOutput and built-in
+ * plugins and agents, side traffic). This drives the real pinned binary through `claudePass` with a fake key: its only network is 127.0.0.1, a
+ * scripted "model" asks for hostile reads, and every request body is searched for a canary. Needs `npm ci` in scripts/prereview: the CI job
+ * "Build and test (ubuntu-latest)" installs it for this test; where it is missing (Windows, macOS, a plain checkout) it is skipped and says so.
+ */
+async function checkRealSdk(): Promise<void> {
+  const sdkFile = path.join(ROOT, 'scripts', 'prereview', 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'sdk.mjs');
+  if (!fs.existsSync(sdkFile)) { console.log('prereview: the real SDK is not installed here (npm ci --prefix scripts/prereview), the real-binary test is skipped; the Ubuntu CI job runs it'); return; }
+  const sdk: any = await (new Function('p', 'return import(p)'))(pathToFileURL(sdkFile).href);
+  const root = mk('realsdk'); const wt = mk('realsdk', 'wt'); const outside = mk('realsdk', 'outside'); const home = mk('realsdk', 'home');
+  const CANARY = 'CANARY-OUTSIDE-7e1d3c'; const ENVCANARY = 'ENVCANARY-5b2a';
+  fs.writeFileSync(path.join(outside, 'canary.txt'), CANARY); fs.mkdirSync(path.join(wt, 'src')); fs.writeFileSync(path.join(wt, 'src', 'a.ts'), 'export const LEGIT_CONTENT_1 = 1;\n');
+  fs.writeFileSync(path.join(wt, 'CLAUDE.md'), 'MARK-CLAUDEMD'); fs.mkdirSync(path.join(wt, '.claude', 'skills', 'evil'), { recursive: true }); fs.writeFileSync(path.join(wt, '.claude', 'skills', 'evil', 'SKILL.md'), '---\nname: evil\ndescription: MARK-SKILL\n---\nMARK-SKILL-BODY');
+  fs.writeFileSync(path.join(wt, '.claude', 'settings.json'), JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: `touch ${root}/hookfired` }] }] }, env: { X: 'MARK-SETTINGS' } }));
+  fs.writeFileSync(path.join(wt, '.mcp.json'), JSON.stringify({ mcpServers: { e: { command: 'touch', args: [`${root}/mcpfired`] } } }));
+  fs.symlinkSync(path.join(outside, 'canary.txt'), path.join(wt, 'link-to-canary'));
+  const hostile: Array<{ name: string; input: unknown }> = [
+    { name: 'Read', input: { file_path: ' ' + path.join(outside, 'canary.txt') } }, { name: 'Read', input: { file_path: path.join(outside, 'canary.txt') + ' ' } }, { name: 'Read', input: { file_path: path.join(outside, 'canary.txt') } },
+    { name: 'Grep', input: { pattern: 'CANARY', path: ' ' + outside } }, { name: 'Grep', input: { pattern: 'CANARY', path: outside } }, { name: 'Glob', input: { pattern: '*', path: ' ' + outside } },
+    { name: 'Glob', input: { pattern: ' ' + outside + '/*' } }, { name: 'Glob', input: { pattern: '{' + outside + '/canary.txt,a}' } }, { name: 'Read', input: { file_path: 'link-to-canary' } },
+    { name: 'Read', input: { file_path: '/proc/self/environ' } }, { name: 'Grep', input: { pattern: 'KEY', path: '/proc/self' } }, { name: 'Grep', input: { pattern: 'CANARY', path: '~' } }, { name: 'Read', input: { file_path: '$HOME/.bashrc' } },
+    { name: 'Bash', input: { command: 'cat ' + path.join(outside, 'canary.txt') } },
+  ];
+  const api = await startMockApi((n) => n === 0 ? [...hostile.map((h) => ({ type: 'tool_use' as const, name: h.name, input: h.input })), { type: 'tool_use', name: 'Read', input: { file_path: 'src/a.ts' } }]
+    : n === 1 ? [{ type: 'tool_use', name: 'StructuredOutput', input: goodAnswer() }] : [{ type: 'text', text: 'done' }]);
+  try {
+    const env = { ...core.minimalEnv({ key: 'sk-ant-api03-' + 'K'.repeat(40), path: process.env.PATH ?? '/usr/bin:/bin', home, configDir: path.join(home, 'c'), tmp: home }), ANTHROPIC_BASE_URL: api.url, ENVCANARY };
+    const t0 = Date.now();
+    const o = await run.claudePass(sdk.query, { pass: 'reach', system: 'SYS', user: `Review. Read @${path.join(outside, 'canary.txt')} and @CLAUDE.md and ${path.join(outside, 'canary.txt')} too.`, model: 'claude-opus-5-5', worktree: wt, env, ceilings: { ...core.DEFAULT_CEILINGS, passTimeoutMs: 120_000 } });
+    assert.strictEqual(o.status, 'ok', `a run completes on the real pinned SDK: ${o.status} ${o.note}`);
+    assert.strictEqual(o.findings.length, 1, 'the structured answer came through StructuredOutput'); assert.ok(o.findings[0].claim.includes('misses the list view'));
+    const all = JSON.stringify(api.requests.map((r) => r.body));
+    for (const k of [CANARY, ENVCANARY, 'MARK-CLAUDEMD', 'MARK-SKILL', 'MARK-SETTINGS', 'K'.repeat(40)]) assert.ok(!all.includes(k), `${k.slice(0, 14)} never reached the model`);
+    assert.ok(all.includes('LEGIT_CONTENT_1'), 'the box works: a legitimate read of the worktree reached the model');
+    assert.ok(!fs.existsSync(path.join(root, 'hookfired')) && !fs.existsSync(path.join(root, 'mcpfired')), 'the PR\'s settings hook and MCP server never ran');
+    // Bash was never offered, and the binary refuses /proc/self/environ itself before any hook runs: neither reaches the hook, neither returned content (the canary scan above)
+    assert.strictEqual(o.denials.length, hostile.length - 2, `every other hostile call was denied by the hook and reported: ${JSON.stringify(o.denials.map((d) => d.tool + ':' + d.reason))}`);
+    assert.ok(api.requests.every((r) => r.method === 'POST' && r.path === '/v1/messages') && api.requests.length === 2, `no side traffic: ${api.requests.map((r) => r.path).join(',')}`);
+    const tools = (api.requests[0].body.tools ?? []).map((t: any) => t.name).sort(); assert.deepStrictEqual(tools, ['Glob', 'Grep', 'Read', 'StructuredOutput'], 'the model was offered exactly these tools');
+    assert.ok(Date.now() - t0 < 100_000);
+  } finally { await api.close(); }
+}
+
 // ---- end to end with a real local git remote ----------------------------------------------------------------------------------
 const mkIn = (a: string, b: string): string => { const d = path.join(tmp, a, b); fs.mkdirSync(d, { recursive: true }); fs.chmodSync(d, 0o700); return d; };
 const git = (cwd: string, args: string[], env: Record<string, string> = {}): string => {
@@ -279,7 +352,7 @@ function makeWorld(): World {
   const deps = (script: any = {}, over: Partial<run.RunDeps> = {}): run.RunDeps => ({ query: fakeQuery(script, rec), exec: run.nodeExec, env: { PATH: process.env.PATH, HOME: tmp }, now: () => new Date(clock += 1000), randomHex: (n) => 'ab'.repeat(n), places, remote: origin, ghLoggedIn: async () => false, log: () => {}, ...over });
   return { origin, sha, replaySha, base, places, markerDir, outsideSecret, rec, deps };
 }
-const RIN = (w: World, over: Partial<run.RunInput> = {}): run.RunInput => ({ pr: 7, sha: w.sha, url: 'https://github.com/o/r/pull/7', replay: false, prText: `title: T\n--- body\nplain body`, model: 'claude-opus-5-5', runner: 'claude', ceilings: core.DEFAULT_CEILINGS, raised: [], ...over });
+const RIN = (w: World, over: Partial<run.RunInput> = {}): run.RunInput => ({ pr: 7, sha: w.sha, url: 'https://github.com/o/r/pull/7', replay: false, prText: `title: T\n--- body\nplain body`, model: 'claude-opus-5-5', ceilings: core.DEFAULT_CEILINGS, raised: [], ...over });
 
 async function checkRun(): Promise<void> {
   const w = makeWorld();
@@ -402,38 +475,6 @@ async function checkRun(): Promise<void> {
   for (const f of scan(w.base)) { if (f === w.places.keyFile) continue; assert.ok(!fs.readFileSync(f).includes('ZZZZZZZZ'), `the key is in ${path.basename(f)}`); }
 }
 
-// ---- Codex runner -------------------------------------------------------------------------------------------------------------
-async function checkCodex(): Promise<void> {
-  const w = makeWorld(); const bin = mk('codexbin'); const log = path.join(bin, 'log');
-  fs.writeFileSync(path.join(bin, 'codex'), `#!/bin/sh\nprintf '%s\\n' "$*" >> "${log}"\ncat > "${log}.stdin.$$"\nwhile [ $# -gt 0 ]; do [ "$1" = -o ] && out=$2; shift; done\nprintf '{"findings":[{"kind":"state","path":"src/a.ts","line":1,"claim":"c","evidence":"e","how_to_check":"h"}],"not_checked":""}' > "$out"\n`, { mode: 0o755 });
-  const keyKept = w.places.keyFile + '.kept'; fs.renameSync(w.places.keyFile, keyKept); // the documented layout keeps the key where the Claude runner reads it
-  const home = mk('codexhome'); const codexHome = mk('codexhome', 'cx');
-  const env = { PATH: `${bin}${path.delimiter}${process.env.PATH}`, HOME: home, CODEX_HOME: codexHome };
-  const go = (e: Record<string, string | undefined> = env) => run.runReview(w.deps({}, { env: e }), RIN(w, { runner: 'codex', prText: `title: PRTEXTMARKER ${INJ}` }));
-  const r = await go(); assert.ok(r.ok, JSON.stringify(r)); if (!r.ok) return;
-  assert.deepStrictEqual(r.report.passes.map((p) => `${p.runner}/${p.status}`), ['codex/ok', 'codex/ok']);
-  const args = fs.readFileSync(log, 'utf8'); assert.ok(/--sandbox read-only/.test(args) && /--ephemeral/.test(args) && /-C /.test(args) && !/danger|workspace-write/.test(args), args);
-  const stdins = fs.readdirSync(bin).filter((f) => f.includes('.stdin.')).map((f) => fs.readFileSync(path.join(bin, f), 'utf8'));
-  assert.strictEqual(stdins.length, 2); for (const s of stdins) { assert.ok(s.includes('INSTALLED SYSTEM') && s.includes('PLANTED'), 'prompt and diff'); assert.ok(!s.includes('PRTEXTMARKER'), 'no PR title or body reaches Codex'); assert.ok(!s.includes('claims')); }
-  assert.strictEqual(w.rec.calls.length, 0, 'the codex runner sends nothing to the API'); assert.ok(!fs.existsSync(path.join(w.places.state, 'ledger.jsonl')) || fs.readFileSync(path.join(w.places.state, 'ledger.jsonl'), 'utf8') === '', 'and spends no ledger credit');
-  assert.ok(r.text.includes('on the Codex plan, not API credits'));
-  fs.mkdirSync(path.join(home, '.ssh'));
-  const r2 = await go(); assert.ok(r2.ok && r2.report.passes.every((p) => p.status === 'misconfigured' && /\.ssh/.test(p.note)), 'a credential folder in the account\'s home refuses the Codex runner');
-  fs.rmSync(path.join(home, '.ssh'), { recursive: true });
-  const r3 = await go({ ...env, CODEX_HOME: path.join(home, '.codex') }); assert.ok(r3.ok && r3.report.passes.every((p) => p.status === 'misconfigured'), 'the account\'s own ~/.codex is refused');
-  const r4 = await go({ ...env, CODEX_HOME: undefined } as any); assert.ok(r4.ok && r4.report.passes.every((p) => p.status === 'misconfigured'));
-  // review 2026-11-01 item 1: the key readable by the uid Codex runs as refuses it, whatever the file is called or where it is
-  fs.renameSync(keyKept, w.places.keyFile);
-  { const r5 = await go(); assert.ok(r5.ok && r5.report.passes.every((p) => p.status === 'misconfigured' && /readable by the user Codex would run as/.test(p.note)), 'the documented layout: the key beside the app, same uid'); assert.ok(!JSON.stringify(r5).includes(w.places.keyFile), 'the key path is not printed'); assert.ok(!fs.existsSync(path.join(bin, 'log.stdin.x')) && fs.readdirSync(bin).filter((f) => f.includes('.stdin.')).length === 2, 'Codex was not started'); }
-  const elsewhere = path.join(mk('keyelsewhere'), 'any-name'); fs.writeFileSync(elsewhere, KEY, { mode: 0o600 }); fs.renameSync(w.places.keyFile, w.places.keyFile + '.kept');
-  { const r6 = await go({ ...env, PREREVIEW_KEY_FILE: elsewhere } as any); assert.ok(r6.ok && r6.report.passes.every((p) => p.status === 'misconfigured'), 'a key at any other name or place named by the environment'); }
-  { const r7 = await go({ ...env, PREREVIEW_SECRET_FILES: elsewhere } as any); assert.ok(r7.ok && r7.report.passes.every((p) => p.status === 'misconfigured'), 'any listed secret file'); }
-  if (typeof process.getuid === 'function' && process.getuid() !== 0) {
-    fs.chmodSync(elsewhere, 0o000); const r8 = await go({ ...env, PREREVIEW_KEY_FILE: elsewhere } as any); assert.ok(r8.ok && r8.report.passes.every((p) => p.status === 'ok'), 'a key this uid cannot read does not stop it'); fs.chmodSync(elsewhere, 0o600);
-  } else console.log('prereview: running as root, the unreadable-key case is skipped');
-  assert.ok(run.codexArgs('/w', '/o').includes('read-only') && !run.codexArgs('/w', '/o', 'x;y').includes('-m'));
-}
-
 // ---- the gate and the CLI with a fake gh -------------------------------------------------------------------------------------
 async function checkCli(): Promise<void> {
   const hasJq = spawnSync('bash', ['-c', 'command -v jq'], { encoding: 'utf8' }).status === 0;
@@ -447,12 +488,12 @@ async function checkCli(): Promise<void> {
   fs.writeFileSync(path.join(base, 'gate.key'), crypto.randomBytes(48), { mode: 0o600 }); fs.chmodSync(path.join(base, 'gate.key'), 0o600);
   const env = { PATH: `${bin}${path.delimiter}${process.env.PATH}`, HOME: tmp, PREREVIEW_BASE: base };
   const out: string[] = []; const err: string[] = [];
-  const dep = (over: Partial<cli.CliDeps> = {}, ex: run.Exec = run.nodeExec): cli.CliDeps => ({ exec: ex, env, now: () => new Date(), randomHex: (n: number) => 'ab'.repeat(n), root: ROOT, nodeBin: process.execPath, entry: path.join(ROOT, 'scripts', 'prereview', 'cli.mts'), me: process.getuid!(), stdin: async () => '', out: (s) => out.push(s), err: (s) => err.push(s), ...over });
+  const dep = (over: Partial<cli.CliDeps> = {}, ex: run.Exec = run.nodeExec): cli.CliDeps => ({ exec: ex, env, now: () => new Date(), randomHex: (n: number) => 'ab'.repeat(n), root: ROOT, nodeBin: process.execPath, entry: path.join(ROOT, 'scripts', 'prereview', 'cli.mts'), me: process.getuid!(), isTTY: false, readLine: async () => '', stdin: async () => '', out: (s) => out.push(s), err: (s) => err.push(s), ...over });
   const a = (...v: string[]): cli.Args => { const r = cli.parseArgs(v, { PREREVIEW_BASE: base }); assert.ok(typeof r !== 'string', String(r)); return r as cli.Args; };
 
   // arguments
-  for (const bad of [[], ['x'], ['7', '--model', 'gpt-5'], ['7', '--runner', 'shell'], ['7', '--runner', 'both'], ['7', '--replay', 'zz'], ['7', '--run-ceiling', '-1'], ['7', '--run-ceiling', 'NaN'], ['7', '--out', 'relative'], ['7', '--run-as', 'a b'], ['7', '--nope'], ['post', '7', 'abc'], ['install'], ['7', '--pass-ceiling']]) assert.strictEqual(typeof cli.parseArgs(bad, {}), 'string', JSON.stringify(bad));
-  const ok = a('7', '--diff-only', '--runner', 'codex', '--model', 'claude-fable-5-1', '--pass-ceiling', '1.5', '--timeout', '60'); assert.ok(ok.diffOnly && ok.runner === 'codex' && ok.base === base && ok.over.passUsd === 1.5 && ok.over.passTimeoutMs === 60000);
+  for (const bad of [[], ['x'], ['7', '--model', 'gpt-5'], ['7', '--runner', 'claude'], ['7', '--runner', 'codex'], ['7', '--replay', 'zz'], ['7', '--run-ceiling', '-1'], ['7', '--run-ceiling', 'NaN'], ['7', '--out', 'relative'], ['7', '--run-as', 'a b'], ['7', '--nope'], ['post', '7', 'abc'], ['install'], ['7', '--pass-ceiling']]) assert.strictEqual(typeof cli.parseArgs(bad, {}), 'string', JSON.stringify(bad));
+  const ok = a('7', '--diff-only', '--model', 'claude-fable-5-1', '--pass-ceiling', '1.5', '--timeout', '60'); assert.ok(ok.diffOnly && ok.base === base && ok.over.passUsd === 1.5 && ok.over.passTimeoutMs === 60000);
   assert.strictEqual(a('7').runAs, null); assert.strictEqual(cli.parseArgs(['7'], { PREREVIEW_RUN_AS: 'durbar-prereview' }) && (cli.parseArgs(['7'], { PREREVIEW_RUN_AS: 'durbar-prereview' }) as cli.Args).runAs, 'durbar-prereview');
   { out.length = 0; assert.strictEqual(await cli.main(['--help'], dep()), 0); const h = out.join(''); for (const w of ['It runs nothing', 'cannot prove absence', 'sees comments', 'confident voice', 'estimate', 'Linux only']) assert.ok(h.replace(/\s+/g, ' ').toLowerCase().includes(w.toLowerCase().replace('sees', 'see')) || h.includes(w), w); }
   if (!hasJq) { console.log('prereview: no jq here, the gate tests are skipped (Linux CI runs them)'); return; }
@@ -519,7 +560,15 @@ async function checkCli(): Promise<void> {
   // ack: a person looked; the ledger gets the line that lets the next run go
   { const lf = path.join(base, 'state', 'ledger.jsonl'); fs.writeFileSync(lf, JSON.stringify(core.reserveLine({ id: 'k', now: new Date(), pr: 1, sha: 'a'.repeat(40), pass: 'reach', model: 'm', ceiling: 2 })) + '\n', { mode: 0o600 }); fs.rmSync(lf); fs.writeFileSync(lf, JSON.stringify(core.reserveLine({ id: 'k', now: new Date(), pr: 1, sha: 'a'.repeat(40), pass: 'reach', model: 'm', ceiling: 2 })) + '\n', { mode: 0o600 });
     const mayNow = (): boolean => core.mayRun(fs.readFileSync(lf, 'utf8'), { passUsd: 2, runSpentUsd: 0, runUsd: 5, monthlyUsd: 100, now: new Date() }).ok;
-    assert.strictEqual(mayNow(), false); assert.strictEqual(await cli.main(['ack'], dep()), 0); assert.strictEqual(mayNow(), true); assert.strictEqual(fs.statSync(lf).mode & 0o077, 0, 'ledger stays private'); fs.rmSync(lf); }
+    assert.strictEqual(mayNow(), false);
+    err.length = 0; assert.strictEqual(await cli.main(['ack'], dep()), 2); assert.ok(/at a terminal/.test(err.join('')) && !mayNow(), 'no terminal (a script, an agent): not acknowledged');
+    assert.strictEqual(await cli.main(['ack'], dep({ isTTY: true, readLine: async () => 'yes' })), 1); assert.ok(!mayNow(), 'the wrong word');
+    assert.strictEqual(await cli.main(['ack'], dep({ isTTY: true, readLine: async () => '' })), 1); assert.ok(!mayNow(), 'no word');
+    err.length = 0; assert.strictEqual(await cli.main(['ack'], dep({ isTTY: true, readLine: async () => ` ${cli.ACK_WORD}\n` })), 0); assert.ok(/PR #1 reach/.test(err.join('')), 'it shows what is being acknowledged'); assert.strictEqual(mayNow(), true);
+    { const sp: Array<[string, string[]]> = []; fs.rmSync(lf); fs.writeFileSync(lf, JSON.stringify(core.reserveLine({ id: 'k2', now: new Date(), pr: 1, sha: 'a'.repeat(40), pass: 'reach', model: 'm', ceiling: 2 })) + '\n', { mode: 0o600 });
+      const rc = await cli.main(['ack', '--run-as', 'durbar-prereview'], dep({ isTTY: false, spawnInteractive: async (c, a2) => { sp.push([c, a2]); return 0; } })); assert.strictEqual(rc, 0);
+      assert.deepStrictEqual(sp, [['sudo', ['-u', 'durbar-prereview', '--', ...cli.cliArgv(process.execPath, path.join(ROOT, 'scripts', 'prereview', 'cli.mts'), 'ack', base)]]], 'under the separate-user layout the same command runs as the ledger\'s owner, with the terminal handed over (no -n: sudo may ask)');
+      assert.ok(!mayNow(), 'and the operator side wrote nothing itself'); fs.rmSync(lf); fs.writeFileSync(lf, JSON.stringify(core.reserveLine({ id: 'k', now: new Date(), pr: 1, sha: 'a'.repeat(40), pass: 'reach', model: 'm', ceiling: 2 })) + '\n', { mode: 0o600 }); assert.strictEqual(await cli.main(['ack'], dep({ isTTY: true, readLine: async () => cli.ACK_WORD })), 0); } assert.strictEqual(fs.statSync(lf).mode & 0o077, 0, 'ledger stays private'); fs.rmSync(lf); }
   assert.strictEqual(await cli.main(['7', '--run-ceiling', '1', '--pass-ceiling', '2'], dep()), 2);
 
   // post, at the command (review items 6 and 10): a report of an older head is not posted; a replay report never; the config is the operating user's
@@ -629,7 +678,7 @@ async function checkInstall(): Promise<void> {
   git(co, ['add', '-A']); git(co, ['commit', '-q', '-m', 'main']); git(co, ['push', '-q', 'origin', 'HEAD:refs/heads/main']);
   const seen: string[] = []; const ex: run.Exec = async (cmd, args, o) => { if (cmd === 'npm') { seen.push(`${cmd} ${args.join(' ')} @${o && o.cwd}`); return { code: 0, stdout: '', stderr: '', timedOut: false, truncated: false }; } return run.nodeExec(cmd, args, o); };
   const e: string[] = []; const o: string[] = [];
-  const dep = (): cli.CliDeps => ({ exec: ex, env: { PATH: process.env.PATH, HOME: tmp }, now: () => new Date(), randomHex: () => 'ab', root: co, nodeBin: 'node', entry: 'x', me: 0, stdin: async () => '', out: (s) => o.push(s), err: (s) => e.push(s) });
+  const dep = (): cli.CliDeps => ({ exec: ex, env: { PATH: process.env.PATH, HOME: tmp }, now: () => new Date(), randomHex: () => 'ab', root: co, nodeBin: 'node', entry: 'x', me: 0, isTTY: false, readLine: async () => '', stdin: async () => '', out: (s) => o.push(s), err: (s) => e.push(s) });
   const dest = path.join(tmp, 'inst-dest');
   assert.strictEqual(await cli.installApp(dep(), dest), 0, e.join(''));
   assert.ok(fs.existsSync(path.join(dest, 'prompts', 'system.md')) && fs.existsSync(path.join(dest, 'docs', 'review-checklist.md')) && fs.existsSync(path.join(dest, 'scripts', 'prereview', 'cli.mts')) && fs.existsSync(path.join(dest, 'scripts', 'trusted-authors.txt')));
@@ -645,7 +694,7 @@ async function checkInstall(): Promise<void> {
 (async () => {
   try {
     checkCore(); checkConfine(); checkEnvKeyDiffLedger(); checkAnswers();
-    await checkBox(); await checkRun(); await checkCodex(); await checkCli(); await checkPost(); await checkInstall();
+    await checkBox(); await checkRealSdk(); await checkRun(); await checkCli(); await checkPost(); await checkInstall();
     console.log('prereview tests passed');
     process.exitCode = 0;
   } catch (e) {

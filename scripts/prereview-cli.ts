@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import {
-  Ceilings, GATE_QUERY, GatePayload, OWNERS_REQUIRED, ceilingsFrom, clean, factsFromGraphql, maskAll, parseTrusted, payloadProblems, refusal, revalidateReport, shaToRead, signPayload,
+  Ceilings, GATE_QUERY, GatePayload, OWNERS_REQUIRED, ceilingsFrom, clean, factsFromGraphql, maskAll, parseLedger, parseTrusted, payloadProblems, refusal, revalidateReport, shaToRead, signPayload,
 } from './prereview-core';
 import { Exec, QueryFn, RunDeps, placesFor, runReview } from './prereview-run';
 import { Fetch, postComment, readPostConfig } from './prereview-post';
@@ -21,10 +21,10 @@ export const DEFAULT_BASE = '/var/lib/durbar-prereview';
 
 export const HELP = `prereview: a read-only first read of one of our PRs (spec 103). Never an approval; posts nothing to GitHub.
 
-  prereview <N> [--replay <sha>] [--diff-only] [--model claude-opus-5-5|claude-fable-5-1] [--runner claude|codex]
+  prereview <N> [--replay <sha>] [--diff-only] [--model claude-opus-5-5|claude-fable-5-1]
                 [--out <dir>] [--base <dir>] [--run-as <unix user>] [--run-ceiling <usd>] [--pass-ceiling <usd>] [--max-turns <n>]
                 [--timeout <seconds>] [--allow-gh-login]
-  prereview ack [--base <dir>]                a person looked at the Console after an unknown or killed send: lets the next run go
+  prereview ack [--base <dir>] [--run-as <user>]  a person (at a terminal) looked at the Console after an unknown or killed send: lets the next run go
   prereview post <N> <sha> [--base <dir>]     one plain comment as the GitHub App; OFF unless all three owners confirmed (FR-027)
   prereview install --dest <dir>              copy reviewed main out of this checkout
 
@@ -37,17 +37,16 @@ What it cannot do (FR-025, [KNOWN GAP], by design in v1):
   - It can be wrong in a confident voice. It can be declined on security-heavy diffs.
   - The cost it prints is an estimate; the Console holds the real number.
   - A key on one server is one secret to guard: an account with sudo there can read the file whatever its mode.
-  - The Codex runner's read-only sandbox can still read any file of its unix user, and it has no hook. It refuses to start if any key file is readable by its user, so it must run as a user of its own (--run-as), never the Claude runner's.
   - The gate's signature on the runner's payload and the post config are local file checks: a process of the operating account can still forge both.
   - Linux only, one server.
 `;
 
 export interface Args {
-  cmd: 'review' | 'run' | 'post' | 'install' | 'ack' | 'help'; pr: number; sha: string; replay: string | null; diffOnly: boolean; model: string; runner: 'claude' | 'codex';
+  cmd: 'review' | 'run' | 'post' | 'install' | 'ack' | 'help'; pr: number; sha: string; replay: string | null; diffOnly: boolean; model: string; 
   out: string | null; base: string; runAs: string | null; allowGhLogin: boolean; over: Partial<Ceilings>; dest: string | null;
 }
 export function parseArgs(argv: string[], env: Record<string, string | undefined> = {}): Args | string {
-  const a: Args = { cmd: 'review', pr: 0, sha: '', replay: null, diffOnly: false, model: DEFAULT_MODEL, runner: 'claude', out: null, base: env.PREREVIEW_BASE && path.isAbsolute(env.PREREVIEW_BASE) ? env.PREREVIEW_BASE : DEFAULT_BASE, runAs: env.PREREVIEW_RUN_AS ?? null, allowGhLogin: false, over: {}, dest: null };
+  const a: Args = { cmd: 'review', pr: 0, sha: '', replay: null, diffOnly: false, model: DEFAULT_MODEL, out: null, base: env.PREREVIEW_BASE && path.isAbsolute(env.PREREVIEW_BASE) ? env.PREREVIEW_BASE : DEFAULT_BASE, runAs: env.PREREVIEW_RUN_AS ?? null, allowGhLogin: false, over: {}, dest: null };
   const rest = [...argv];
   if (rest[0] === 'run' || rest[0] === 'post' || rest[0] === 'install' || rest[0] === 'ack') a.cmd = rest.shift() as Args['cmd'];
   const pos: string[] = [];
@@ -61,7 +60,6 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
       case '--allow-gh-login': a.allowGhLogin = true; break;
       case '--replay': { const x = val(); if (!x || !/^[0-9a-f]{12,40}$/.test(x)) return '--replay needs a commit sha of 12 to 40 hex digits'; a.replay = x; break; }
       case '--model': { const x = val(); if (!x || !(MODELS as readonly string[]).includes(x)) return `--model must be one of ${MODELS.join(', ')}`; a.model = x; break; }
-      case '--runner': { const x = val(); if (x !== 'claude' && x !== 'codex') return '--runner must be claude or codex (two runners are two runs, as two users)'; a.runner = x; break; }
       case '--out': { const x = val(); if (!x || !path.isAbsolute(x)) return '--out needs an absolute folder'; a.out = x; break; }
       case '--base': { const x = val(); if (!x || !path.isAbsolute(x)) return '--base needs an absolute folder'; a.base = x; break; }
       case '--dest': { const x = val(); if (!x || !path.isAbsolute(x)) return '--dest needs an absolute folder'; a.dest = x; break; }
@@ -85,7 +83,7 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
 export interface CliDeps {
   exec: Exec; env: Record<string, string | undefined>; query?: QueryFn; fetch?: Fetch; now: () => Date; randomHex: (n: number) => string;
   /** the folder that holds scripts/ (the installed copy, or the checkout for install) */
-  root: string; nodeBin: string; entry: string; me: number; stdin: () => Promise<string>; out: (s: string) => void; err: (s: string) => void; remote?: string;
+  root: string; nodeBin: string; entry: string; me: number; stdin: () => Promise<string>; isTTY: boolean; readLine: () => Promise<string>; spawnInteractive?: (cmd: string, args: string[]) => Promise<number>; out: (s: string) => void; err: (s: string) => void; remote?: string;
 }
 
 const HUMAN = (reason: string): string => `prereview: ${reason}`;
@@ -118,7 +116,7 @@ export async function gate(d: CliDeps, a: Args): Promise<{ ok: true; sha: string
 }
 
 const isPayload = (p: any): p is GatePayload => !!p && Number.isInteger(p.pr) && p.pr > 0 && /^[0-9a-f]{40}$/.test(p.sha) && typeof p.url === 'string' && (p.prText === null || typeof p.prText === 'string') && typeof p.replay === 'boolean' && typeof p.allowGhLogin === 'boolean' &&
-  (MODELS as readonly string[]).includes(p.model) && ['claude', 'codex'].includes(p.runner) && !!p.ceilings && Array.isArray(p.raised) && p.raised.every((x: unknown) => typeof x === 'string') && (p.outDir === null || (typeof p.outDir === 'string' && path.isAbsolute(p.outDir))) && typeof p.ts === 'number' && typeof p.nonce === 'string';
+  (MODELS as readonly string[]).includes(p.model) && !!p.ceilings && Array.isArray(p.raised) && p.raised.every((x: unknown) => typeof x === 'string') && (p.outDir === null || (typeof p.outDir === 'string' && path.isAbsolute(p.outDir))) && typeof p.ts === 'number' && typeof p.nonce === 'string';
 
 /** The gate's key: 32 bytes or more in a plain file that others cannot write. The gate signs with it, the runner verifies with it. */
 export function readGateKey(file: string): Buffer | null {
@@ -146,15 +144,15 @@ export async function runStage(d: CliDeps, a: Args, payloadText: string): Promis
   if (pp.length) { d.err(HUMAN(`${pp.join('; ')}\n`)); return 2; }
   fs.appendFileSync(nonceFile, p.nonce + '\n', { mode: 0o600 });
   const c = ceilingsFrom(p.ceilings); if (c.problems.length) { d.err(HUMAN(`ceilings refused: ${c.problems.join('; ')}\n`)); return 2; }
-  if (!d.query && p.runner !== 'codex') { d.err(HUMAN('no SDK in this build\n')); return 2; }
+  if (!d.query) { d.err(HUMAN('no SDK in this build\n')); return 2; }
   const kf = d.env.PREREVIEW_KEY_FILE; if (kf && path.isAbsolute(kf)) places.keyFile = kf; // a key file somewhere else, still checked by keyFileProblems; read only by runReview
-  const env = { ...d.env }; if (!env.CODEX_HOME) env.CODEX_HOME = path.join(a.base, 'codex-home');
+  const env = { ...d.env };
   const deps: RunDeps = {
     query: d.query ?? (() => { throw new Error('no SDK'); }), exec: d.exec, env, now: d.now, randomHex: d.randomHex, places, remote: d.remote ?? 'https://github.com/three-feathers/agent-durbar.git',
     ghLoggedIn: async () => { const r = await d.exec('gh', ['auth', 'status'], { env: { PATH: env.PATH ?? '/usr/bin:/bin', HOME: env.HOME ?? '/nonexistent' }, timeoutMs: 20_000 }); return r.code === 0; },
     log: (l) => d.err(maskAll(l) + '\n'),
   };
-  const res = await runReview(deps, { pr: p.pr, sha: p.sha, url: p.url, replay: p.replay, prText: p.prText, model: p.model, runner: p.runner, allowGhLogin: p.allowGhLogin, ceilings: c.ceilings, raised: c.raised, outDir: p.outDir ?? undefined });
+  const res = await runReview(deps, { pr: p.pr, sha: p.sha, url: p.url, replay: p.replay, prText: p.prText, model: p.model, allowGhLogin: p.allowGhLogin, ceilings: c.ceilings, raised: c.raised, outDir: p.outDir ?? undefined });
   if (!res.ok) { d.err(HUMAN(`${res.why}\n`)); return 1; }
   for (const w of res.warnings) d.err(HUMAN(`${w}\n`));
   d.out(res.text); d.err(`report files: ${res.files.length} written under the results folders\n`);
@@ -162,21 +160,42 @@ export async function runStage(d: CliDeps, a: Args, payloadText: string): Promis
 }
 
 /** The command the runner stage is started with (under sudo for --run-as): tsx's loader is imported by path, because a plain `node cli.mts` cannot read TypeScript. */
-export function runnerArgv(nodeBin: string, entry: string, base: string): string[] {
+export function cliArgv(nodeBin: string, entry: string, sub: 'run' | 'ack', base: string): string[] {
   const loader = path.join(path.dirname(entry), 'node_modules', 'tsx', 'dist', 'loader.mjs');
-  return [nodeBin, '--import', pathToFileURL(loader).href, entry, 'run', '--base', base];
+  return [nodeBin, '--import', pathToFileURL(loader).href, entry, sub, '--base', base];
 }
+export const runnerArgv = (nodeBin: string, entry: string, base: string): string[] => cliArgv(nodeBin, entry, 'run', base);
 
-/** `ack`: a person looked at the Console after an unknown or killed send. Adds the line that lets the next run go. */
-export function ackLedger(d: CliDeps, a: Args): number {
+/**
+ * `ack`: a person looked at the Console after an unknown or killed send. Adds the line that lets the next run go. It asks a person: a terminal
+ * on both ends and a typed word, so a script or an agent that cannot type into a terminal cannot clear the look. With --run-as the ledger
+ * belongs to the bot's user, whom the operator cannot write, so the same command is started as that user with the terminal handed over
+ * (sudo asks for the operator's password there); the person types into the process that writes.
+ * `[KNOWN GAP]` a terminal check stops a script, not a person who is told to type the word; the Console is the real look.
+ */
+export const ACK_WORD = 'looked';
+export async function ackLedger(d: CliDeps, a: Args): Promise<number> {
+  if (a.runAs) {
+    if (!d.spawnInteractive) { d.err(HUMAN('ack with --run-as needs a terminal\n')); return 2; }
+    return d.spawnInteractive('sudo', ['-u', a.runAs, '--', ...cliArgv(d.nodeBin, d.entry, 'ack', a.base)]);
+  }
+  if (!d.isTTY) { d.err(HUMAN('ack needs a person at a terminal (standard input and output are not one)\n')); return 2; }
   const places = placesFor(a.base);
+  let pending = '';
+  try {
+    const { lines } = parseLedger(fs.readFileSync(path.join(places.state, 'ledger.jsonl'), 'utf8'));
+    pending = lines.filter((l) => l.kind === 'reserve' || (l.kind === 'final' && l.costKnown !== true)).slice(-8).map((l) => `  PR #${Number(l.pr) || 0} ${String(l.pass).slice(0, 12)} ${clean(l.t, 30)}`).join('\n');
+  } catch { /* no ledger yet */ }
+  d.err(HUMAN(`last sends:\n${pending || '  (none)'}\ncheck them against the Console's usage page, then type "${ACK_WORD}" and Enter: `));
+  const typed = (await d.readLine()).trim();
+  if (typed !== ACK_WORD) { d.err(HUMAN('not acknowledged\n')); return 1; }
   try {
     fs.mkdirSync(places.state, { recursive: true, mode: 0o700 });
     const f = path.join(places.state, 'ledger.jsonl');
     fs.appendFileSync(f, JSON.stringify({ id: `ack-${d.now().getTime()}`, t: d.now().toISOString(), pr: 0, sha: '', pass: '', model: '', kind: 'ack' }) + '\n', { mode: 0o600 });
     fs.chmodSync(f, 0o600);
     d.out('acknowledged: the next run may go\n'); return 0;
-  } catch { d.err(HUMAN('could not write the ledger\n')); return 1; }
+  } catch { d.err(HUMAN('could not write the ledger (is this the user that owns it? use --run-as)\n')); return 1; }
 }
 
 export async function main(argv: string[], d: CliDeps): Promise<number> {
@@ -192,7 +211,7 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
   if (!g.ok) { d.err(`${g.why}\n`); return 1; }
   const key = readGateKey(gateKeyFile(d, a));
   if (!key) { d.err(HUMAN('no usable gate key (32 bytes or more, a plain file others cannot write) at the gate key file; see docs/agent-setup/README.md\n')); return 1; }
-  const payload: GatePayload = { pr: a.pr, sha: g.sha, url: g.url, replay: a.replay !== null, prText: g.prText, model: a.model, runner: a.runner, ceilings: c.ceilings, raised: c.raised, outDir: a.out, allowGhLogin: a.allowGhLogin, ts: d.now().getTime(), nonce: d.randomHex(16) };
+  const payload: GatePayload = { pr: a.pr, sha: g.sha, url: g.url, replay: a.replay !== null, prText: g.prText, model: a.model, ceilings: c.ceilings, raised: c.raised, outDir: a.out, allowGhLogin: a.allowGhLogin, ts: d.now().getTime(), nonce: d.randomHex(16) };
   payload.sig = signPayload(payload, key);
   if (!a.runAs) return runStage(d, a, JSON.stringify(payload));
   const r = await d.exec('sudo', ['-n', '-u', a.runAs, '--', ...runnerArgv(d.nodeBin, d.entry, a.base)], { input: JSON.stringify(payload), env: { PATH: d.env.PATH ?? '/usr/bin:/bin' }, timeoutMs: c.ceilings.passTimeoutMs * 3 + 300_000, maxBytes: 4_000_000 });

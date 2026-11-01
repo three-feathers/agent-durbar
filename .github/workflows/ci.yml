@@ -80,6 +80,9 @@ jobs:
           cache: npm
       - if: steps.changes.outputs.code == 'true'
         run: npm ci
+      # spec 103: test:prereview drives the real pinned Agent SDK binary against a loopback mock (fake key, no network); only this job installs it
+      - if: steps.changes.outputs.code == 'true' && matrix.os == 'ubuntu-latest'
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix scripts/prereview
       - if: steps.changes.outputs.code == 'true'
         run: npm run typecheck
       - if: steps.changes.outputs.code == 'true'

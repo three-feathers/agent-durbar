@@ -18,6 +18,8 @@ export function isTrusted(login: string | null | undefined, trusted: readonly st
 }
 /** The three owners whose confirmation posting needs (spec 103 FR-027). */
 export const OWNERS_REQUIRED = ['vikramgorla', 'fjcabello', 'rubenlupi'] as const;
+/** C0 and C1 controls, line and paragraph separators: never part of a path or glob we pass on. */
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 const SAFE_LOGIN = /^[A-Za-z0-9-]{1,39}(\[bot\])?$/;
 /** A login that is safe to print (never free text from an outsider). */
 export const printable = (login: string | null | undefined): string => (typeof login === 'string' && SAFE_LOGIN.test(login) ? login : 'unknown account');
@@ -108,19 +110,32 @@ export function shaToRead(pr: PrFacts, replay?: string | null): string {
 // ---- the box (FR-008, FR-009, FR-010) ---------------------------------------------------------------------------------------
 
 export const BOX_TOOLS = ['Read', 'Grep', 'Glob'] as const;
+/** What the SDK's `init` lists at the pinned version: the box plus `StructuredOutput`, the tool it adds itself for `outputFormat: json_schema` (its input is our answer, checked by validateAnswer). */
+export const INIT_TOOLS = [...BOX_TOOLS, 'StructuredOutput'] as const;
+/**
+ * `[KNOWN GAP]`, pinned: the SDK 0.3.310 binary loads these built-in plugins and agents and no option or environment variable switches
+ * them off (read: sdk.d.ts; run: the real `init`, with skills: [] and the DISABLE_* variables of minimalEnv). They are harmless here because
+ * the only tools are the four above (no Task, Agent or Skill tool exists in the session, and the hook denies every other name). The check
+ * allows exactly these names and nothing else: a new SDK version that adds one fails closed until a person reads what it is.
+ */
+export const BUILTIN_PLUGINS = ['cc-plugin-agents-md', 'cc-plugin-plugin-authoring'] as const;
+export const BUILTIN_AGENTS = ['claude', 'general-purpose', 'statusline-setup'] as const;
+export const BUILTIN_SKILLS = ['doctor', 'plugin-authoring'] as const;
 export type Verdict = { allow: true } | { allow: false; reason: string };
 
 /**
  * A glob is read by the tools, not by this check, so it is refused unless it is made only of characters whose meaning is plain: letters,
- * digits, `_ . / * ? @ + -` and a space. No brace, bracket, parenthesis, `!`, `~`, `,`, `\\` or `$` form (`{/etc/passwd,a}`, `{{/etc,a},b}/*`,
+ * digits, `_ . / * ? @ + -` (no space: a leading one escaped the hook). No brace, bracket, parenthesis, `!`, `~`, `,`, `\\` or `$` form (`{/etc/passwd,a}`, `{{/etc,a},b}/*`,
  * `.{.,x}/secret`, `[.][.]/x` all get through a deny-list). Also not absolute, no `..` segment. A model that wanted `*.{ts,tsx}` asks twice.
  */
 export function badPattern(p: string): boolean {
-  return p.includes('\0') || !/^[\p{L}\p{N}_.\/*?@+ -]*$/u.test(p) || p.startsWith('/') || p.split('/').includes('..');
+  return p !== p.trim() || CONTROL_CHARS.test(p) || p.includes('\0') || !/^[\p{L}\p{N}_.\/*?@+-]*$/u.test(p) || p.startsWith('/') || p.split('/').includes('..');
 }
 /** A path the tools would expand before this check sees it: a leading `~` (their home), `$` or `%` variables, a drive or UNC form. */
 export function badPathText(p: string): boolean {
-  return p.includes('\0') || p.startsWith('~') || /[$%]/.test(p) || /^[A-Za-z]:/.test(p) || p.startsWith('\\\\');
+  // The binary trims a path for Read but not for Grep or Glob, so the hook would resolve " /abs/x" as a folder of that odd name while the tool
+  // opens "/abs/x" (review 2026-11-01). Any leading or trailing whitespace, a quote, or a control character: refused.
+  return p !== p.trim() || /^[\s"'`]|[\s"'`]$/.test(p) || CONTROL_CHARS.test(p) || p.includes('\0') || p.startsWith('~') || /[$%]/.test(p) || /^[A-Za-z]:/.test(p) || p.startsWith('\\\\');
 }
 
 /**
@@ -131,7 +146,8 @@ export function badPathText(p: string): boolean {
 export function confine(call: { tool_name?: unknown; tool_input?: unknown }, worktree: string, realpath: (p: string) => string, sep = '/'): Verdict {
   const deny = (reason: string): Verdict => ({ allow: false, reason });
   const tool = call.tool_name;
-  if (typeof tool !== 'string' || !(BOX_TOOLS as readonly string[]).includes(tool)) return deny('tool not allowed');
+  if (typeof tool !== 'string' || !(INIT_TOOLS as readonly string[]).includes(tool)) return deny('tool not allowed');
+  if (tool === 'StructuredOutput') return typeof call.tool_input === 'object' && call.tool_input !== null && !Array.isArray(call.tool_input) ? { allow: true } : deny('unreadable input'); // our own answer: no path in it is ever opened
   const input = call.tool_input;
   if (!input || typeof input !== 'object' || Array.isArray(input)) return deny('unreadable input');
   const rec = input as Record<string, unknown>;
@@ -170,12 +186,13 @@ export function initProblems(init: any, worktree: string, realpath: (p: string) 
   if (!init || init.type !== 'system' || init.subtype !== 'init') return ['first message is not init'];
   if (init.apiKeySource !== 'ANTHROPIC_API_KEY') out.push(`apiKeySource is ${String(init.apiKeySource).slice(0, 30)}, not ANTHROPIC_API_KEY`);
   const tools = Array.isArray(init.tools) ? [...init.tools].map(String).sort() : null;
-  if (!tools || tools.join(',') !== [...BOX_TOOLS].sort().join(',')) out.push('tools are not exactly Read, Grep, Glob');
+  if (!tools || tools.join(',') !== [...INIT_TOOLS].sort().join(',')) out.push('tools are not exactly Read, Grep, Glob and StructuredOutput');
   if (!Array.isArray(init.mcp_servers) || init.mcp_servers.length !== 0) out.push('an MCP server is present');
-  if (!Array.isArray(init.plugins) || init.plugins.length !== 0) out.push('a plugin is present');
+  if (!Array.isArray(init.plugins) || init.plugins.some((p: any) => !p || p.path !== 'builtin' || !(BUILTIN_PLUGINS as readonly string[]).includes(p.name))) out.push('a plugin other than the pinned built-in ones is present');
   if (init.permissionMode !== 'dontAsk') out.push(`permissionMode is ${String(init.permissionMode).slice(0, 20)}, not dontAsk`);
   try { if (typeof init.cwd !== 'string' || realpath(init.cwd) !== realpath(worktree)) out.push('cwd is not the worktree'); } catch { out.push('cwd is not the worktree'); }
-  if (Array.isArray(init.agents) && init.agents.length > 0) out.push('a sub-agent is present');
+  if (!Array.isArray(init.agents) || init.agents.some((a: unknown) => !(BUILTIN_AGENTS as readonly string[]).includes(String(a)))) out.push('an agent other than the pinned built-in ones is present');
+  if (Array.isArray(init.skills) && init.skills.some((a: unknown) => !(BUILTIN_SKILLS as readonly string[]).includes(String(a)))) out.push('a skill other than the pinned built-in ones is present');
   return out;
 }
 
@@ -183,7 +200,12 @@ export function initProblems(init: any, worktree: string, realpath: (p: string) 
 
 /** The SDK's `env` replaces the environment: only these. */
 export function minimalEnv(a: { key: string; path: string; home: string; configDir: string; tmp: string }): Record<string, string> {
-  return { ANTHROPIC_API_KEY: a.key, PATH: a.path, HOME: a.home, CLAUDE_CONFIG_DIR: a.configDir, TMPDIR: a.tmp };
+  return {
+    ANTHROPIC_API_KEY: a.key, PATH: a.path, HOME: a.home, CLAUDE_CONFIG_DIR: a.configDir, TMPDIR: a.tmp,
+    // verified against the real binary: no side traffic (it would also use up a scripted reply), no @file attachments, no CLAUDE.md of the PR, no extra agents or skills
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', CLAUDE_CODE_DISABLE_FILE_MENTIONS: '1', CLAUDE_CODE_DISABLE_ATTACHMENTS: '1', CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1',
+    CLAUDE_CODE_DISABLE_BUNDLED_SKILLS: '1', CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
+  };
 }
 /** Variables that, set in the running process, refuse the run: a GitHub credential, or another way to pay or another place to send the key. */
 const REFUSED_ENV = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', 'GH_CONFIG_DIR', 'XDG_CONFIG_HOME', 'GH_HOST'];
@@ -388,7 +410,7 @@ export function validateAnswer(raw: unknown, pass: Pass): { ok: true; findings: 
 
 export type Status = 'ok' | 'declined' | 'stopped' | 'unusable' | 'misconfigured' | 'failed';
 export interface PassReport {
-  pass: Pass; runner: 'claude' | 'codex'; status: Status; note: string; partial: boolean;
+  pass: Pass; runner: 'claude'; status: Status; note: string; partial: boolean;
   findings: Finding[]; notChecked: string; dropped: number;
   turns: number; tokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
   costUsd: number | null; costKnown: boolean; denials: Array<{ tool: string; path: string; reason: string }>; durationMs: number;
@@ -413,8 +435,8 @@ export function renderReport(r: Report): string {
   for (const p of r.passes) {
     const t = p.tokens;
     head.push(`pass ${p.pass} (${p.runner}): ${p.status}${p.partial ? ' (partial, not a clean result)' : ''}; ${p.findings.length} finding(s); turns ${p.turns}; tokens in ${t.input} out ${t.output} cache read ${t.cacheRead} write ${t.cacheWrite}; ` +
-      `cost ${p.costKnown && p.costUsd !== null ? `~${p.costUsd.toFixed(4)} USD (estimate)` : p.runner === 'codex' ? 'on the Codex plan, not API credits' : 'unknown, counted at its ceiling'}; denied calls ${p.denials.length}`);
-    if (p.runner === 'claude') { if (p.costKnown && p.costUsd !== null) total += p.costUsd; else allKnown = false; }
+      `cost ${p.costKnown && p.costUsd !== null ? `~${p.costUsd.toFixed(4)} USD (estimate)` : 'unknown, counted at its ceiling'}; denied calls ${p.denials.length}`);
+    if (p.costKnown && p.costUsd !== null) total += p.costUsd; else allKnown = false;
   }
   head.push(`estimated API cost of the run: ${allKnown ? `~${total.toFixed(4)} USD` : 'not fully known'}`);
   const body = JSON.stringify({
@@ -426,22 +448,6 @@ export function renderReport(r: Report): string {
   return [...head, '', `${DATA_NOTE}`, `${f}json`, body, f, ''].join('\n');
 }
 
-// ---- Codex runner start check (FR-026) --------------------------------------------------------------------------------------
-
-/** Folders under the running account's home that a read-only Codex sandbox could still read. Any of them present refuses the Codex runner. */
-export const CREDENTIAL_DIRS = ['.ssh', '.gnupg', '.aws', '.claude', '.config/gh', '.config/durbar-samikshak', '.config/durbar-prereview', '.npmrc', '.netrc'];
-export function codexStartProblems(a: { home: string; codexHome: string | undefined; exists: (p: string) => boolean; join: (...p: string[]) => string; inRepo: boolean; readable?: string[] }): string[] {
-  const out: string[] = [];
-  // the cause, not a list of names: a secret this uid can read is a secret a hostile diff can ask the sandbox-less Codex to read (it has no hook)
-  for (const f of a.readable ?? []) out.push(`${f} is readable by the user Codex would run as; run Codex as a user that cannot read any key (spec 103 FR-026)`);
-  if (!a.home) out.push('HOME is not set, so the account\'s credential folders cannot be checked');
-  for (const d of CREDENTIAL_DIRS) if (a.home) if (a.exists(a.join(a.home, ...d.split('/')))) out.push(`${d} exists in the running account's home; a read-only Codex sandbox can still read it; run as the separate unix user (FR-012)`);
-  if (!a.codexHome || !a.codexHome.startsWith('/')) out.push('CODEX_HOME must be an absolute folder of its own');
-  else if (a.codexHome === a.join(a.home, '.codex')) out.push('CODEX_HOME is the account\'s own ~/.codex; use a separate folder');
-  if (a.inRepo) out.push('CODEX_HOME is inside a git folder');
-  return out;
-}
-
 /**
  * A report read back from a file (for `post`): every field is checked and cleaned again, never trusted because it was ours once.
  * Throws on a shape it does not know.
@@ -451,12 +457,13 @@ export function revalidateReport(raw: unknown): Report {
   if (!o || typeof o !== 'object' || o.v !== 1 || !Number.isInteger(o.pr) || o.pr < 1 || typeof o.sha !== 'string' || !/^[0-9a-f]{40}$/.test(o.sha) || !Array.isArray(o.passes)) throw new Error('not a report');
   const STATUSES: Status[] = ['ok', 'declined', 'stopped', 'unusable', 'misconfigured', 'failed'];
   const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0);
+  if (o.passes.some((p: any) => !p || p.runner !== 'claude')) throw new Error('not from the Claude runner'); // review 2026-11-01: a report of any other runner is never read back, so never posted
   const passes: PassReport[] = o.passes.slice(0, 8).map((p: any): PassReport => {
     const pass: Pass = p && p.pass === 'evidence' ? 'evidence' : 'reach';
     const v = validateAnswer({ findings: Array.isArray(p && p.findings) ? p.findings : [], not_checked: p && p.notChecked }, pass);
     const t = (p && p.tokens) || {};
     return {
-      pass, runner: p && p.runner === 'codex' ? 'codex' : 'claude', status: STATUSES.includes(p && p.status) ? p.status : 'failed', note: clean(p && p.note, 300), partial: !!(p && p.partial),
+      pass, runner: 'claude', status: STATUSES.includes(p && p.status) ? p.status : 'failed', note: clean(p && p.note, 300), partial: !!(p && p.partial),
       findings: v.ok ? v.findings : [], notChecked: v.ok ? v.notChecked : '', dropped: n(p && p.dropped), turns: Math.floor(n(p && p.turns)),
       tokens: { input: n(t.input), output: n(t.output), cacheRead: n(t.cacheRead), cacheWrite: n(t.cacheWrite) },
       costUsd: p && p.costKnown === true && typeof p.costUsd === 'number' && p.costUsd >= 0 ? p.costUsd : null, costKnown: !!(p && p.costKnown === true && typeof p.costUsd === 'number' && p.costUsd >= 0),
@@ -469,12 +476,12 @@ export function revalidateReport(raw: unknown): Report {
 // ---- the gate's payload, signed (FR-004 at the runner) -------------------------------------------------------------------------
 
 export interface GatePayload {
-  pr: number; sha: string; url: string; replay: boolean; prText: string | null; model: string; runner: 'claude' | 'codex';
+  pr: number; sha: string; url: string; replay: boolean; prText: string | null; model: string;
   ceilings: Ceilings; raised: string[]; outDir: string | null; allowGhLogin: boolean; ts: number; nonce: string; sig?: string;
 }
 /** A fixed-order encoding of everything the runner will act on, so no field can change without the signature changing. */
 export function canonicalPayload(p: GatePayload): string {
-  return JSON.stringify([p.pr, p.sha, p.url, p.replay, p.prText, p.model, p.runner, p.ceilings.runUsd, p.ceilings.passUsd, p.ceilings.maxTurns, p.ceilings.passTimeoutMs, p.raised, p.outDir, p.allowGhLogin, p.ts, p.nonce]);
+  return JSON.stringify([p.pr, p.sha, p.url, p.replay, p.prText, p.model, p.ceilings.runUsd, p.ceilings.passUsd, p.ceilings.maxTurns, p.ceilings.passTimeoutMs, p.raised, p.outDir, p.allowGhLogin, p.ts, p.nonce]);
 }
 export const signPayload = (p: GatePayload, key: Buffer): string => crypto.createHmac('sha256', key).update(canonicalPayload(p)).digest('hex');
 export const PAYLOAD_MAX_AGE_MS = 10 * 60_000;

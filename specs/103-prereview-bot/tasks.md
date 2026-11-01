@@ -27,12 +27,14 @@
 
 ## Phase 2b: Added 2026-11-01 (owner's order, FR-026..FR-029)
 
-- [x] T015 Codex runner (`--runner codex|both`): diff-only prompt, read-only sandbox, refusal when the account holds credential folders. Test: `test:prereview` with a fake `codex` on `PATH`, outside text never on its stdin [FR-026]
+- [x] T015 [REMOVED 2026-11-01, FR-034] Codex runner (`--runner codex|both`): diff-only prompt, read-only sandbox, refusal when the account holds credential folders. Test: `test:prereview` with a fake `codex` on `PATH`, outside text never on its stdin [FR-026]
 - [x] T016 `post` as the App behind the off-by-default gate; JWT signed inside one function; token in memory. Test: gate cases (flag off, Paco missing), generated key, fake `fetch`, no other write call [FR-027]
 - [x] T017 Results folder and `--out`. Test: file modes, `unusable` raw kept local only [FR-028]
 - [x] T018 Adversarial text in title, body, diff, file contents and model answer stays data. Test: mutants in the PR list [FR-029]
 
 - [x] T019 Review fixes of #997 (FR-030..FR-033): Codex key-readability refusal and no `both`, runnable `--run-as` command, signed gate payload, safe results writes, glob and `~` allow-list, post gate limits, killed-run needs-look and `ack`, gh-config env refusals, Dependabot entry, tsx upgrade. Test: `test:prereview` (each case fails when its fix is removed), `test:supplychain` [FR-030..FR-033]
+
+- [x] T020 Second review round (FR-034..FR-038): Codex runner removed; hook whitespace, quote and control refusal; real `init` allow-list incl. StructuredOutput; the real binary against a loopback mock in `test:prereview` (+ the Ubuntu CI install step); `ack` needs a terminal and a typed word, `--run-as` for the bot user's ledger. Test: `test:prereview` [FR-034..FR-038]
 
 ## Phase 3: Real, owner's ask (spends credits)
 

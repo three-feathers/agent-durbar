@@ -1,5 +1,5 @@
 /**
- * Pre-review bot, the runner (spec 103; FR-001..FR-003, FR-006..FR-012, FR-016, FR-017, FR-019, FR-026, FR-028). Runs under the
+ * Pre-review bot, the runner (spec 103; FR-001..FR-003, FR-006..FR-012, FR-016, FR-017, FR-019, FR-028). Runs under the
  * bot's own unix user. The SDK's `query`, the process runner, the clock and the environment are injected, so `npm run test:prereview`
  * drives all of it with fakes; this file never imports the SDK, and holds no GitHub credential and no GitHub write call.
  * Everything a model or a PR says is data: it is allow-listed and masked in prereview-core.ts, and nothing here starts a command from it.
@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import {
-  BOX_TOOLS, Ceilings, OUTPUT_SCHEMA, Pass, PassReport, Report, DIFF_CAP_BYTES, clean, codexStartProblems, confine, costOf, diffProblems,
+  BOX_TOOLS, Ceilings, OUTPUT_SCHEMA, Pass, PassReport, Report, DIFF_CAP_BYTES, clean, confine, costOf, diffProblems,
   envProblems, finalLine, initProblems, keyFileProblems, maskAll, mayRun, minimalEnv, renderReport, reserveLine, tokensOf, validateAnswer,
 } from './prereview-core';
 
@@ -92,13 +92,13 @@ export interface PassInput {
 }
 export type PassOutcome = PassReport & { raw?: string };
 const emptyTokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-const base = (pass: Pass, runner: 'claude' | 'codex'): PassOutcome => ({ pass, runner, status: 'failed', note: '', partial: false, findings: [], notChecked: '', dropped: 0, turns: 0, tokens: { ...emptyTokens }, costUsd: null, costKnown: false, denials: [], durationMs: 0 });
+const base = (pass: Pass, runner: 'claude'): PassOutcome => ({ pass, runner, status: 'failed', note: '', partial: false, findings: [], notChecked: '', dropped: 0, turns: 0, tokens: { ...emptyTokens }, costUsd: null, costKnown: false, denials: [], durationMs: 0 });
 
 export function boxOptions(i: PassInput, hook: (input: any) => Promise<any>, abort: AbortController): Record<string, unknown> {
   return {
     cwd: i.worktree, model: i.model, effort: 'high', systemPrompt: i.system,
     tools: [...BOX_TOOLS], allowedTools: [...BOX_TOOLS], disallowedTools: ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Task', 'Agent', 'TodoWrite'],
-    permissionMode: 'dontAsk', permissionPrompts: 'none', settingSources: [], strictMcpConfig: true, mcpServers: {}, agents: {}, additionalDirectories: [], persistSession: false,
+    permissionMode: 'dontAsk', permissionPrompts: 'none', settingSources: [], skills: [], strictMcpConfig: true, mcpServers: {}, agents: {}, additionalDirectories: [], persistSession: false,
     maxTurns: i.ceilings.maxTurns, maxBudgetUsd: i.ceilings.passUsd, abortController: abort, env: i.env,
     hooks: { PreToolUse: [{ hooks: [hook] }] },
     outputFormat: { type: 'json_schema', schema: OUTPUT_SCHEMA },
@@ -111,12 +111,14 @@ export async function claudePass(query: QueryFn, i: PassInput, clock: () => numb
   const t0 = clock();
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), i.ceilings.passTimeoutMs);
+  const hooked = new Set<string>(); // tool_use ids the hook denied itself: the SDK lists them again in `permission_denials`
   const hook = async (input: any): Promise<any> => {
     try {
       if (!input || input.hook_event_name !== 'PreToolUse') return {};
       const v = confine(input, i.worktree, realpath);
       if (v.allow) return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' } };
       const ti = input.tool_input && typeof input.tool_input === 'object' ? input.tool_input : {};
+      if (typeof input.tool_use_id === 'string') hooked.add(input.tool_use_id);
       out.denials.push({ tool: clean(input.tool_name, 30), path: clean(ti.file_path ?? ti.path ?? ti.glob ?? ti.pattern ?? '', 120), reason: v.reason });
       return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `denied: ${v.reason}` } };
     } catch {
@@ -147,7 +149,7 @@ export async function claudePass(query: QueryFn, i: PassInput, clock: () => numb
   out.turns = Number.isInteger(result.num_turns) ? result.num_turns : 0;
   out.tokens = tokensOf(result);
   const c = costOf(result); out.costUsd = c.cost; out.costKnown = c.known;
-  if (Array.isArray(result.permission_denials)) for (const d of result.permission_denials.slice(0, 20)) out.denials.push({ tool: clean(d && d.tool_name, 30), path: '', reason: 'denied by permission mode' });
+  if (Array.isArray(result.permission_denials)) for (const d of result.permission_denials.slice(0, 20)) if (!(d && hooked.has(d.tool_use_id))) out.denials.push({ tool: clean(d && d.tool_name, 30), path: '', reason: 'denied by permission mode' });
   if (result.subtype === 'success') {
     if (result.stop_reason === 'refusal' || refusalSeen) { out.status = 'declined'; out.note = 'the model declined this pass'; return out; }
     const answer = result.structured_output !== undefined ? result.structured_output : result.result;
@@ -158,30 +160,6 @@ export async function claudePass(query: QueryFn, i: PassInput, clock: () => numb
   if (result.subtype === 'error_max_turns' || result.subtype === 'error_max_budget_usd') { out.status = 'stopped'; out.partial = true; out.note = result.subtype === 'error_max_turns' ? 'turn limit reached' : 'budget limit reached'; return out; }
   if (result.subtype === 'error_max_structured_output_retries') { out.status = 'unusable'; out.note = 'no answer in the schema'; return out; }
   out.status = result.stop_reason === 'refusal' || refusalSeen ? 'declined' : 'failed'; out.note = 'the run ended with an error'; return out;
-}
-
-// ---- the Codex pass (FR-026) --------------------------------------------------------------------------------------------------
-
-/** `codex exec` arguments: read-only sandbox, no session kept, the worktree as its folder, the last message to a file. The prompt goes on stdin. */
-export function codexArgs(worktree: string, outFile: string, model?: string): string[] {
-  const a = ['exec', '--sandbox', 'read-only', '--ephemeral', '--skip-git-repo-check', '--ignore-user-config', '-C', worktree, '-o', outFile];
-  if (model && /^[A-Za-z0-9._-]{1,60}$/.test(model)) a.push('-m', model);
-  a.push('-');
-  return a;
-}
-export async function codexPass(exec: Exec, i: { pass: Pass; prompt: string; worktree: string; tmp: string; env: Record<string, string>; timeoutMs: number; model?: string; codexBin?: string }): Promise<PassOutcome> {
-  const out = base(i.pass, 'codex'); const t0 = Date.now();
-  const outFile = path.join(i.tmp, `codex-${i.pass}.out`);
-  const r = await exec(i.codexBin ?? 'codex', codexArgs(i.worktree, outFile, i.model), { cwd: i.worktree, env: i.env, input: i.prompt, timeoutMs: i.timeoutMs, maxBytes: 2_000_000 });
-  out.durationMs = Date.now() - t0; out.costKnown = false; out.costUsd = null;
-  if (r.timedOut) { out.status = 'stopped'; out.partial = true; out.note = 'timed out'; return out; }
-  if (r.code !== 0) { out.status = 'failed'; out.note = `codex exited ${r.code}`; return out; }
-  let raw = ''; try { raw = fs.readFileSync(outFile, 'utf8'); } catch { out.status = 'unusable'; out.note = 'no answer file'; return out; }
-  const start = raw.indexOf('{'); const end = raw.lastIndexOf('}');
-  const v = validateAnswer(start >= 0 && end > start ? raw.slice(start, end + 1) : raw, i.pass);
-  if (!v.ok) { out.status = 'unusable'; out.note = v.why; out.raw = raw.slice(0, 200_000); return out; }
-  out.status = 'ok'; out.findings = v.findings; out.notChecked = v.notChecked; out.dropped = v.dropped;
-  return out;
 }
 
 // ---- tree (FR-006) --------------------------------------------------------------------------------------------------------------
@@ -212,8 +190,8 @@ export interface RunDeps {
   places: Places; remote: string; ghLoggedIn: () => Promise<boolean>; log: (line: string) => void;
 }
 export interface RunInput {
-  pr: number; sha: string; url: string; replay: boolean; prText: string | null; model: string; runner: 'claude' | 'codex';
-  ceilings: Ceilings; raised: string[]; outDir?: string; allowGhLogin?: boolean; codexBin?: string;
+  pr: number; sha: string; url: string; replay: boolean; prText: string | null; model: string;
+  ceilings: Ceilings; raised: string[]; outDir?: string; allowGhLogin?: boolean;
 }
 export type RunResult = { ok: true; report: Report; text: string; files: string[]; warnings: string[] } | { ok: false; why: string };
 
@@ -270,9 +248,9 @@ export async function runReview(d: RunDeps, i: RunInput): Promise<RunResult> {
     let prompts: Prompts;
     try { prompts = loadPrompts(P.app); } catch { return refuse('the installed prompts are missing; run install from reviewed main'); }
 
-    // the key, only when a Claude pass will run
+    // the key, read here and nowhere else
     let key = '';
-    if (i.runner !== 'codex') {
+    {
       let st: fs.Stats | null = null; try { st = fs.lstatSync(P.keyFile); } catch { st = null; }
       let text: string | undefined;
       if (st && st.isFile() && !st.isSymbolicLink()) { try { text = fs.readFileSync(P.keyFile, 'utf8'); } catch { text = undefined; } }
@@ -318,7 +296,7 @@ export async function runReview(d: RunDeps, i: RunInput): Promise<RunResult> {
     let runSpent = 0;
     const passes: Pass[] = ['reach', 'evidence'];
 
-    if (i.runner !== 'codex') {
+    {
       for (const pass of passes) {
         const ceilText = (() => { try { return fs.readFileSync(ledgerFile, 'utf8'); } catch { return ''; } })();
         const gate = mayRun(ceilText, { passUsd: i.ceilings.passUsd, runSpentUsd: runSpent, runUsd: i.ceilings.runUsd, monthlyUsd: limits.monthlyUsd, now: d.now() });
@@ -341,21 +319,6 @@ export async function runReview(d: RunDeps, i: RunInput): Promise<RunResult> {
         if (outcome.status === 'misconfigured') break; // a wrong box stops the whole run
       }
     }
-    if (i.runner !== 'claude') {
-      const secretLike = [P.keyFile, d.env.PREREVIEW_KEY_FILE, d.env.PREREVIEW_APP_KEY_FILE, ...(d.env.PREREVIEW_SECRET_FILES ?? '').split(path.delimiter)].filter((f): f is string => !!f && path.isAbsolute(f));
-      const readable = [...new Set(secretLike)].filter((f) => { try { fs.accessSync(f, fs.constants.R_OK); return true; } catch { return false; } }).map(() => 'a key file');
-      const cp = codexStartProblems({ readable, home: d.env.HOME ?? '', codexHome: d.env.CODEX_HOME, exists: (p) => fs.existsSync(p), join: path.join, inRepo: (() => { let p = d.env.CODEX_HOME ?? '/'; for (let n = 0; n < 40; n++) { if (fs.existsSync(path.join(p, '.git'))) return true; const up = path.dirname(p); if (up === p) break; p = up; } return false; })() });
-      for (const pass of passes) {
-        if (cp.length) { const p = base(pass, 'codex'); p.status = 'misconfigured'; p.note = clean(cp.join('; '), 300); reports.push(p); continue; }
-        // diff and the fixed prompts only: no PR title, body or comment ever reaches Codex (FR-026)
-        const prompt = `${prompts.system}\n\n${buildUserMessage({ prText: null, diff, pass: pass === 'reach' ? prompts.reach : prompts.evidence, nonce })}\n\nAnswer with one JSON object: {"findings":[{"kind","path","line","claim","evidence","how_to_check"}],"not_checked":""} and nothing else.`;
-        const cenv: Record<string, string> = { PATH: d.env.PATH ?? '/usr/bin:/bin', HOME: home, CODEX_HOME: d.env.CODEX_HOME as string, TMPDIR: work };
-        const o = await codexPass(d.exec, { pass, prompt, worktree: wt, tmp: work, env: cenv, timeoutMs: i.ceilings.passTimeoutMs, codexBin: i.codexBin });
-        if (o.raw !== undefined) raws.push({ pass: `codex-${pass}`, text: o.raw });
-        delete o.raw; reports.push(o);
-      }
-    }
-
     const report: Report = { v: 1, pr: i.pr, sha: i.sha, url: i.url, startedAt: d.now().toISOString(), model: i.model, diffBytes: Buffer.byteLength(diff, 'utf8'), replay: i.replay, raised: i.raised, passes: reports };
     const text = renderReport(report);
     const files: string[] = []; const warnings: string[] = [];
