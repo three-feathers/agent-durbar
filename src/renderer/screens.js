@@ -875,7 +875,7 @@
       const n=$('dsR');if(n&&V)n.textContent=V.note();
       const hadFocus=document.activeElement===olb;
       paint(); /* the World row appears with Real office, and Characters names the world's default set */
-      if(hadFocus){const nb=document.querySelector('[data-officelayout="'+k+'"]');if(nb)nb.focus();} /* the repaint replaced the pressed button: keep the keyboard where it was */
+      if(hadFocus){const nb=document.querySelector('[data-officelayout="'+k+'"]');if(nb)focusIn(nb);} /* the repaint replaced the pressed button: keep the keyboard where it was */
       const tw=$('thWorld');if(tw){tw.textContent=worldWords();tw.hidden=!tw.textContent;}
       return;
     }
