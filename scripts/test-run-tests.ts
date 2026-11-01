@@ -7,6 +7,8 @@ import { EventEmitter } from 'events';
 const rt = require(path.join(__dirname, '..', '..', 'scripts', 'run-tests.js')) as {
   parseArgs: (argv: string[], env: Record<string, string | undefined>) => { bail: boolean; ignoredBail: boolean; filters: string[] };
   readSuiteList: (text?: string) => string[];
+  unlistedSuites: (scripts: Record<string, string>, names?: string[], allow?: string[]) => string[];
+  NOT_SUITES: string[];
   loadSuites: (pkg: unknown, filters: string[], names?: string[]) => { name: string; steps: string[][] }[];
   stopChild: (c: unknown, o: unknown) => void;
   runSuites: (o: Record<string, unknown>) => Promise<{ failed: string[]; bailed: string | null }>;
@@ -84,6 +86,12 @@ process.on('exit', () => { if (!done) { console.error('test-run-tests: did not f
     assert.strictEqual(new Set(names).size, names.length);
     for (const n of names) assert.ok(real.scripts[n], `${n} is a script`);
     assert.ok(names.includes('test:checknames') && names.length > 100, 'the real list is read');
+    // every test:* script is listed or is an allowed chain: a forgotten suite would never run
+    assert.deepStrictEqual(rt.unlistedSuites(real.scripts), [], 'a test:* script is in neither scripts/test-suites.txt nor NOT_SUITES');
+    for (const n of rt.NOT_SUITES) assert.ok(real.scripts[n] && !names.includes(n), `${n} is a real script and not in the list`);
+    // mutant: a test script that is not in the list is found; a listed one and an allowed chain are not
+    assert.deepStrictEqual(rt.unlistedSuites({ ...real.scripts, 'test:forgotten': 'node x.js' }), ['test:forgotten'], 'red: a test not in the list');
+    assert.deepStrictEqual(rt.unlistedSuites({ 'test:a': 'x', 'test:chain': 'x', build: 'x' }, ['test:a'], ['test:chain']), [], 'listed, allowed and non-test scripts pass');
     assert.strictEqual(real.scripts['test:serial'], 'node scripts/run-tests.js --serial');
   }
 

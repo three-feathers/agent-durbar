@@ -39,6 +39,13 @@ function readSuiteList(text = fs.readFileSync(SUITE_LIST, 'utf8')) {
   return names;
 }
 
+// `test:*` scripts that are not suites on purpose: chains that run listed suites, and the manual matrix against the real Claude CLI (no AI credits in `npm test`)
+const NOT_SUITES = ['test:serial', 'test:runtime', 'test:notes', 'test:claudecli'];
+// every `test:*` script of package.json that neither the list nor NOT_SUITES names: a forgotten suite, which would never run
+function unlistedSuites(scripts, names = readSuiteList(), allow = NOT_SUITES) {
+  return Object.keys(scripts).filter((k) => /^test:/.test(k) && !names.includes(k) && !allow.includes(k));
+}
+
 // the suites: the names of the list, each as the ordered `node <file>` steps of its script
 function loadSuites(pkg, filters, names = readSuiteList()) {
   return names
@@ -152,7 +159,7 @@ function runMain({ suites, jobs, bail, t0 = Date.now(), exit = process.exit, run
   });
 }
 
-module.exports = { parseArgs, readSuiteList, loadSuites, stopChild, runSuites, runMain };
+module.exports = { parseArgs, readSuiteList, unlistedSuites, NOT_SUITES, loadSuites, stopChild, runSuites, runMain };
 
 if (require.main === module) {
   const { ensureElectron } = require('./ensure-electron');
