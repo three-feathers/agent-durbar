@@ -306,12 +306,12 @@ module.exports = async (ctx) => {
     await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ContextMenu',bubbles:true,cancelable:true}));true`);
     await must(`!!document.getElementById('modeMenu')`, 'the card menu on the Menu key at a plate (contextmenu blocked)');
     await H.key('Escape');
-    await must(`!document.getElementById('modeMenu')&&(${FOCUSED})`, 'the Menu key menu closed and focus is back on the plate');
+    await must("!document.getElementById('modeMenu')&&(" + FOCUSED + ')', 'the Menu key menu closed and focus is back on the plate');
     await js(`window.removeEventListener('contextmenu',window.__roNoCtx,true);true`);
     await js(`(()=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(onId)})+'"]'),r=p.getBoundingClientRect();p.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+20,clientY:r.top+10}));return true})()`);
     await must(`!!document.getElementById('modeMenu')`, 'the card menu on a right-click at a plate');
     await H.key('Escape');
-    await must(`!document.getElementById('modeMenu')&&(${FOCUSED})`, 'the right-click menu closed and focus is back on the plate');
+    await must("!document.getElementById('modeMenu')&&(" + FOCUSED + ')', 'the right-click menu closed and focus is back on the plate');
   }
 
   // ---- the guards of the chip placement, deterministically (no font needed): chips widened after the drawing are placed again by the
@@ -323,7 +323,8 @@ module.exports = async (ctx) => {
   await must(NOOVER, 'no overlap before the chips are widened');
   /* no drawing may rescue the placement (the simulator draws often): the page keeps its last layout while the chips are widened, so only the observer can place them again */
   await js(`(()=>{const R=window.DurbarRealOffice;window.__roRender=R.render;R.render=()=>window.__durbarSimUi.realLayout();return true})()`);
-  const widened = await js(`(()=>{const st=document.createElement('style');st.id='roWiden';st.textContent='.ro-chip{padding:0 60px!important}';document.head.appendChild(st);const r=${PLATES};return r.pp.length+r.cp.length+r.cc.length})()`);
+  const WIDEN = "(()=>{const st=document.createElement('style');st.id='roWiden';st.textContent='.ro-chip{padding:0 60px!important}';document.head.appendChild(st);const r=" + PLATES + ';return r.pp.length+r.cp.length+r.cc.length})()';
+  const widened = await js(WIDEN);
   assert.ok(widened > 0, 'widened chips overlap right after the style (the observer has not run yet): ' + widened);
   await must(NOOVER, 'no overlap after the chips were widened (placed again by the observer)', 20000);
   await must(`(document.querySelector('#stage .ro-chrome')._settled||0)>=1`, 'the resize observer placed them again');
