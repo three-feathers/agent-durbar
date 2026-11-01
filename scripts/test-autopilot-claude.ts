@@ -457,9 +457,9 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(r.reasons(), [], 'FR-052');
   }
 
-  // nothing changes for a session not on Autopilot in this phase: `/goal` typed goes through, the model's words and the CLI's are left alone
+  // nothing changes for a session not on Autopilot where `wired` is false (the default build): `/goal` typed goes through, the model's words and the CLI's are left alone
   {
-    const n = await rig();
+    const n = await rig({ tuning: { wired: false } });
     await n.ad.send(n.sid, { text: '/goal x' });
     await tick();
     assert.deepStrictEqual(n.users(), ['/goal x'], 'FR-058 refuses only on Autopilot');

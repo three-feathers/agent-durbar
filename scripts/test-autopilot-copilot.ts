@@ -481,11 +481,11 @@ async function main(): Promise<void> {
 
   // FR-006: until T030 a session not on Autopilot is left alone
   {
-    const n = await rig();
+    const n = await rig({ tuning: { wired: false } });
     fire(n.s, { type: 'session.mode_changed', data: { newMode: 'autopilot', previousMode: 'interactive' } });
     fire(n.s, cont);
     await tick();
-    assert.deepStrictEqual(n.order(), [], 'nothing changes for a session not on Autopilot in this phase');
+    assert.deepStrictEqual(n.order(), [], 'nothing changes for a session not on Autopilot where `wired` is false (the default build)');
     assert.ok(!n.lines().includes(LINE_SELF_STARTED));
   }
 

@@ -510,11 +510,11 @@ async function main(): Promise<void> {
 
   // FR-006: a goal nobody asked for is cleared and said; Durbar does not follow. Until T030 a session not on Autopilot is left alone.
   {
-    const n = await rig();
+    const n = await rig({}, { wired: false });
     n.srv.goals.add(n.tid);
     status(n, 'active');
     await settle(n.srv);
-    assert.deepStrictEqual(n.wire(), [], 'nothing changes for a session not on Autopilot in this phase');
+    assert.deepStrictEqual(n.wire(), [], 'nothing changes for a session not on Autopilot where `wired` is false (the default build)');
     assert.ok(!n.lines().includes(LINE_SELF_STARTED));
     const r = await rig({}, { wired: true });
     r.srv.goals.add(r.tid);
