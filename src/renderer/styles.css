@@ -1765,6 +1765,8 @@ html.hl-still .desk .pp,html.hl-still .desk::after{animation:none!important} /* 
 .spin{display:inline-block;flex:none;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite;opacity:.8}
 @keyframes spin{to{transform:rotate(360deg)}}
 /* FR-048: an answered inbox row shows the answer, then folds away; the empty state has a check badge */
+.inbox-row .ib-ans .ib-amt{width:84px;height:28px;border:1px solid var(--line-ctl);border-radius:8px;padding:0 8px;font:inherit;font-size:12px;background:var(--raised);color:var(--ink)} /* FR-207: the limit row's amount, as the card's */
+.inbox-row .ib-ans .ib-amt[aria-invalid="true"]{border-color:var(--red-ink)}
 .inbox-row.settled .ib-done{margin:0;font-size:var(--t3-size);font-weight:650;color:var(--ink-2);min-height:28px;display:flex;align-items:center}
 .inbox-row.settled .ib-done.yes{color:var(--pc-done)}
 .inbox-row.settled .ib-done.no{color:var(--red-ink)}
