@@ -1701,6 +1701,8 @@ function setRoWorld(id){
   RO_WORLD=id;try{localStorage.setItem('durbar.world',id);}catch(e){}
   syncWorld();layoutKey='';if(OFFICE_VIEW==='real')scheduleRender();return id;
 }
+/* a loaded pack's numbers (the pack script assigns DurbarRealOfficeWorlds / DurbarRealOfficeSets), or null */
+const packMeta=(kind,id)=>{const g=window[kind==='worlds'?'DurbarRealOfficeWorlds':'DurbarRealOfficeSets'];return g&&Object.prototype.hasOwnProperty.call(g,id)?g[id]:null;};
 /* loads one pack's script (and its stylesheet when world.json names one) the first time it is shown */
 function ensurePack(kind,id){
   const key=kind+'/'+id;
@@ -1708,7 +1710,7 @@ function ensurePack(kind,id){
   PACKS[key]='loading';
   const sc=document.createElement('script');sc.src='realoffice/'+kind+'/'+id+'/'+(kind==='worlds'?'world':'set')+'.js';
   sc.onload=()=>{
-    const g=window[kind==='worlds'?'DurbarRealOfficeWorlds':'DurbarRealOfficeSets'], m=g&&g[id];
+    const m=packMeta(kind,id);
     if(!m){PACKS[key]='failed';}else{
       PACKS[key]='ready';
       if(kind==='worlds'&&typeof m.css==='string'&&/^[\w.-]+\.css$/.test(m.css)&&!document.getElementById('roWorldCss-'+id)){const l=document.createElement('link');l.id='roWorldCss-'+id;l.rel='stylesheet';l.href='realoffice/worlds/'+id+'/'+m.css;document.head.appendChild(l);}
@@ -2362,7 +2364,7 @@ function syncChatHeader(){
     if(port)port.remove();
     port=document.createElement('span');port.id='roPortrait';port.className='ro-portrait';port.setAttribute('aria-hidden','true');port._k=key;
     port.dataset.lamp=lt.lamp;port.dataset.call=lt.call||'';
-    const sm=((window.DurbarRealOfficeSets||{})[pp.set]||{}).seat, seatM=sm&&person&&Object.prototype.hasOwnProperty.call(sm,person)?sm[person]:null, crop=seatM&&E.portraitCrop?E.portraitCrop(seatM):null;
+    const sm=(packMeta('sets',pp.set)||{}).seat, seatM=sm&&person&&Object.prototype.hasOwnProperty.call(sm,person)?sm[person]:null, crop=seatM&&E.portraitCrop?E.portraitCrop(seatM):null;
     if(file&&pack){const clip=document.createElement('span');clip.className='rp-clip';const im=document.createElement('img');im.alt='';im.draggable=false;im.src=file;
       if(crop&&seatM){im.style.width=(seatM.w/crop.s*100)+'%';im.style.left=(-crop.x/crop.s*100)+'%';im.style.top=(-crop.y/crop.s*100)+'%';} /* the face fills the circle: the data of the layout's face box */
       clip.appendChild(im);port.appendChild(clip);}
