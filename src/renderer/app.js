@@ -2337,7 +2337,7 @@ function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-acti
 /* spec 052 FR-060: the key of a permission card's button, and the one click path the bar and the keys share */
 const answerKeyOf=b=>b.dataset.act==='session'?'S':/\bdanger\b/.test(b.className)?'D':/\bprimary\b/.test(b.className)?'A':'';
 const chatKeyText=k=>keyText(KEYS.chatParts(k,IS_MAC)), chatKeyAria=k=>ariaKeys(KEYS.chatParts(k,IS_MAC)); /* FR-084: Alt+A elsewhere, ⌥⌘A on a Mac */
-const answerPress=(src,what)=>()=>{const word=src.textContent;src.click();announce(word+': '+what);const m=$('msgInput');if(m)focusIn(m);};
+const answerPress=(src,what)=>()=>{if(src.disabled)return;const word=src.textContent;src.click();announce(word+': '+what);const m=$('msgInput');if(m)focusIn(m);};
 function wireAnswerBar(a){
   if(answerObs){answerObs.m.disconnect();answerObs.i.disconnect();answerObs=null;}
   const bar=$('answerBar'), chat=$('chat'); if(!bar||!chat)return;
@@ -2368,7 +2368,7 @@ function wireAnswerBar(a){
     const n=waiting().length, text=textOf(card);
     /* the same request, count and words: keep the bar as it is (a repaint would drop what you type in its box and its focus) */
     const key=n+'\u0001'+text;if(painted&&bar._card===card&&painted===key&&!bar.hidden)return;
-    const hadFocus=bar.contains(document.activeElement);
+    const ae=document.activeElement, hadFocus=bar.contains(ae), prevCard=bar._card, hadIdx=hadFocus?[...bar.querySelectorAll('.ab-act button,.ab-act input')].indexOf(ae):-1; /* by position, never by text: option labels come from the agent */
     painted=key;bar._card=card;
     const q=card.classList.contains('question'), long=text.length>480, fit=q&&!long?qFits(card):null;
     bar.innerHTML='<span class="ab-q"><b><span class="ab-n" dir="auto"></span></b> <span></span></span><span class="ab-act"></span>';
@@ -2382,24 +2382,27 @@ function wireAnswerBar(a){
     const add=(label,cls,fn,title,keys)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;if(keys)b.setAttribute('aria-keyshortcuts',keys);b.onclick=fn;act.appendChild(b);return b;};
     if(fit){
       const said=w=>{announce('Answered: '+w);const m=$('msgInput');if(m)focusIn(m);};
-      for(const o of fit.opts){const lb=(o.querySelector('.q-lbl')||o).textContent;add(lb,'ab-opt',()=>{o.click();fit.ok.click();said(lb);},o.title);}
+      for(const o of fit.opts){const lb=(o.querySelector('.q-lbl')||o).textContent;add(lb,'ab-opt',()=>{if(o.disabled||fit.ok.disabled)return;o.click();fit.ok.click();said(lb);},o.title);}
       const box=document.createElement('input');box.type='text';box.className='ab-other';box.maxLength=window.exports.MAX_ANSWER;box.placeholder='Other answer';box.setAttribute('aria-label','Other answer: '+fit.q);box.setAttribute('aria-keyshortcuts','Enter');box.title='Type your own answer; Enter sends it';
       box.addEventListener('keydown',ev=>{if(ev.key!=='Enter'||ev.shiftKey||ev.isComposing||ev.altKey||ev.ctrlKey||ev.metaKey)return;ev.preventDefault();
         const v=box.value.replace(/\s+/g,' ').trim();if(!v){announce('Type an answer first, or choose an option.');return;}
-        fit.other.value=v;fit.other.dispatchEvent(new Event('input',{bubbles:true}));fit.ok.click();said(v);});
+        if(fit.ok.disabled)return;fit.other.value=v;fit.other.dispatchEvent(new Event('input',{bubbles:true}));fit.ok.click();said(v);});
       act.appendChild(box);
-      if(fit.skip)add(fit.skip.textContent,'danger',()=>{fit.skip.click();announce('Skipped');const m=$('msgInput');if(m)focusIn(m);},fit.skip.title);
+      if(fit.skip)add(fit.skip.textContent,'danger',()=>{if(fit.skip.disabled)return;fit.skip.click();announce('Skipped');const m=$('msgInput');if(m)focusIn(m);},fit.skip.title);
     }
     else if(q)add('Answer in chat','primary',show);
     /* FR-016: a long request is answered in the chat only; the wide grant (any arguments) stays in the card */
     /* FR-060: Alt+A / Alt+S / Alt+D (⌥⌘A/S/D on a Mac, FR-084) press the same buttons (permission requests only) */
-    else if(!long)for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad){
+    else if(!long&&!card.classList.contains('limit'))for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad){ /* a spending limit has an amount the bar cannot show: only "Show in chat" (review of PR 1004) */
       /* spec 003 FR-095: a Read-only denial's "Switch to Ask first…" opens the mode menu here, anchored to the bar's own button */
       if(src.dataset.act==='ro-ask'){const b=add(src.textContent,'',()=>roAskOpen(a,b),src.title);b.dataset.act='ro-ask';b.setAttribute('aria-haspopup','menu');b.setAttribute('aria-expanded','false');continue;}
       const k=card.classList.contains('limit')?'':answerKeyOf(src);add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,text),k?(src.title?src.title+' ':'')+'('+chatKeyText(k)+')':src.title,k?chatKeyAria(k):'');}
     add(q?'Show question':'Show in chat','ghost',show,q?'Scroll to the question in the chat':'Scroll to the request in the chat');
     bar.hidden=false;
-    if(hadFocus){const f=act.querySelector('button,input');if(f)focusIn(f);}
+    /* FR-016 (review of PR 1004): a repaint keeps focus on the same control only while the card is the same; a new card or a changed count never puts it on an answering
+       button (a native Enter would answer): it goes to "Show in chat" / "Show question", which answers nothing */
+    if(hadFocus){const same=prevCard===card, cs=[...act.querySelectorAll('button,input')];
+      const f=(same&&hadIdx>=0&&cs[hadIdx])||act.querySelector('.ghost');if(f)focusIn(f);}
   }
   const check=()=>{const p=pending();if(p!==card){card=p;cardVisible=inView();}else cardVisible=inView();paint();};
   const mo=new MutationObserver(()=>check());mo.observe(chat,{childList:true,subtree:true});
@@ -2600,7 +2603,7 @@ function openPanel(id,focus){
   fitPlaceholder();if(window.ResizeObserver){if(phRO)phRO.disconnect();else phRO=new ResizeObserver(fitPlaceholder);phRO.observe(input);}
   input.addEventListener('input',autoGrow);
   initSlash(a,input); /* spec 073: the "/" list; its keydown runs first, so Enter / Tab / Esc pick or close while it is open */
-  input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(input.value);}});
+  input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(e.repeat)return; /* spec 052 FR-208: a held Enter (from an answer that moved focus here) sends nothing */sendMessage(input.value);}});
   $('sendBtn').onclick=()=>{if($('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value);};
   setSend(); wireToolbar(); /* spec 005 FR-037..FR-040 */
   wireComposerGrip(); /* spec 005 FR-044..FR-048 */
@@ -3656,7 +3659,7 @@ document.addEventListener('click',e=>{
   const sc=e.target.closest('[data-schedroom]'); if(sc){const r=ROOMS.find(x=>x.id===sc.dataset.schedroom);if(r)openSchedules(r);return;}
   const fm=e.target.closest('[data-foldermenu]'); if(fm){const r=ROOMS.find(x=>x.id===fm.dataset.foldermenu),b=fm.getBoundingClientRect();openFolderMenu(r,b.left,b.bottom+4,fm);return;}
   const ns=e.target.closest('[data-newsess]'); if(ns){const r=ROOMS.find(x=>x.id===ns.dataset.newsess),ag=r&&agents.find(x=>!x.parent&&x.room===r.id);if(ag)newSession(ag);return;}
-  const t=e.target.closest('[data-id]'); if(t&&!t.closest('#panel')){openPanel(t.dataset.id,true);} /* spec 074 FR-019: mouse or keyboard, desk or list row */
+  const t=e.target.closest('[data-id]'); if(t&&!t.closest('#panel,#inboxDlg')){openPanel(t.dataset.id,true);} /* spec 074 FR-019: mouse or keyboard, desk or list row */
 });
 
 /* ---- issue 677 (spec 033 delta 2026-11-01): rearrange rooms, desks and places by drag and by keyboard. Order is sequencing only: the layout
@@ -3787,6 +3790,7 @@ document.addEventListener('keydown',e=>{
   if(KEYS.chatKeyDown(e,IS_MAC)&&/^Key[ASDN]$/.test(e.code)&&ui.selected&&$('panel')&&!modalOpen()){
     const t=e.target, typing=t&&t.matches&&t.matches('input,textarea,[contenteditable="true"]')&&String((t.value!=null?t.value:t.textContent)||'').length>0;
     if(!typing){const k=e.code.slice(3);
+      if(e.repeat&&k!=='N'){e.preventDefault();return;} /* spec 052 FR-208: a held Alt+A, Alt+S or Alt+D answers nothing */
       if(k==='N'){e.preventDefault();openNextNeedsMe();return;}
       if(answerObs&&answerObs.answerKey&&answerObs.answerKey(k)){e.preventDefault();return;}}
   }
@@ -3985,9 +3989,13 @@ function rollCount(box,n){
   box.replaceChildren(inn,out);
   box._roll=setTimeout(()=>{if(box.dataset.n===txt)box.textContent=txt;},260);
 }
+/* spec 052 FR-206: each pending card is one request, its id made once and kept (the same lines as PR 994's, spec 097 FR-122: keep one when both land) */
+const CARD_REQ=new WeakMap(); let CARD_REQ_N=0;
+const reqOf=c=>{if(!CARD_REQ.has(c))CARD_REQ.set(c,'rq'+(++CARD_REQ_N));return CARD_REQ.get(c);};
 function pendingCardOf(a){const c=getChat(a);const all=[...c.el.querySelectorAll('.note.perm:not(.settled)')].filter(n=>n.querySelector(':scope > .note-actions button'));return all[0]||null;}
 /* spec 052 FR-048: focus goes back to where it was when the inbox opened (still in the page and shown), else to the inbox button */
 let inboxBack=null;
+const INBOX_AMT=new Map(); /* FR-209: what was typed in a limit row's amount, per request id, so a repaint does not lose it */
 let inboxTick=0;
 function closeInbox(){clearInterval(inboxTick);inboxTick=0;const d=$('inboxDlg');if(!d)return;d.remove();const back=inboxBack;inboxBack=null;
   const b=back&&back.isConnected&&back.getClientRects().length&&!back.disabled?back:$('inboxBtn');if(b&&b.getClientRects().length)focusIn(b);}
@@ -3998,7 +4006,7 @@ function openInbox(focusId){
   const back=$('inboxDlg')?inboxBack:document.activeElement;
   closeInbox(); inboxBack=back&&back!==document.body?back:null;
   const d=document.createElement('div');d.id='inboxDlg';d.className='dlg-ov';
-  d.innerHTML='<div class="dlg l inbox-dlg" role="dialog" aria-modal="true" aria-labelledby="inboxT" aria-describedby="inboxKeys"><h3 id="inboxT">Needs you</h3><div class="dbody" id="inboxBody"></div><p class="inbox-keys" id="inboxKeys"'+(SIMPLE?' hidden':'')+'>Keys: J/K move · A allow · S session · D deny · O open</p><div class="dbtn"><button class="btn" type="button" id="inboxClose">Close</button></div></div>';
+  d.innerHTML='<div class="dlg l inbox-dlg" role="dialog" aria-modal="true" aria-labelledby="inboxT" aria-describedby="inboxKeys"><h3 id="inboxT">Needs you</h3><div class="dbody" id="inboxBody"></div><p class="inbox-keys" id="inboxKeys"'+(SIMPLE?' hidden':'')+'>Keys: J/K move · A allow · S session · D deny · O open · spending limits: buttons only</p><div class="dbtn"><button class="btn" type="button" id="inboxClose">Close</button></div></div>';
   document.body.appendChild(d);
   d.addEventListener('click',e=>{if(e.target===d)closeInbox();});
   d.addEventListener('keydown',inboxKey);
@@ -4015,13 +4023,17 @@ function inboxKey(e){
   if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeInbox();return;}
   if(e.key==='Tab'){const f=[...d.querySelectorAll('button,summary,[tabindex="-1"].ib-h,input')].filter(x=>x.getClientRects().length);if(!f.length)return;const i=f.indexOf(document.activeElement);if(e.shiftKey&&(i<=0)){e.preventDefault();focusIn(f[f.length-1]);}else if(!e.shiftKey&&i===f.length-1){e.preventDefault();focusIn(f[0]);}return;}
   if(e.altKey||e.ctrlKey||e.metaKey)return;
+  if(e.target&&e.target.tagName==='INPUT')return; /* spec 052 FR-207: typing an amount is not a command */
   const rows=[...d.querySelectorAll('.inbox-row')], row=document.activeElement&&document.activeElement.closest('.inbox-row'), ri=rows.indexOf(row);
   const go=i=>{const r=rows[Math.max(0,Math.min(rows.length-1,i))];if(r)focusIn(r.querySelector('.ib-h'));};
   const k=e.key.toLowerCase();
+  /* spec 052 FR-208: a held key answers nothing (and a held Enter does not press the focused button again); J and K may still repeat */
+  if(e.repeat&&(k==='a'||k==='s'||k==='d'||k==='o'||e.key==='Enter'||e.key===' ')){e.preventDefault();return;}
   if(k==='j'||e.key==='ArrowDown'){e.preventDefault();go(ri+1);return;}
   if(k==='k'||e.key==='ArrowUp'){e.preventDefault();go(ri<0?0:ri-1);return;}
   if(!row)return;
   const act=x=>{const b=row.querySelector(`[data-k="${x}"]`);if(b){e.preventDefault();b.click();}};
+  if(row.classList.contains('settled')||row.dataset.answering)return; /* FR-208: a row being answered or answered takes no key (O or Enter during the fold would open its chat) */
   if(k==='a')act('approve');else if(k==='d')act('deny');else if(k==='s')act('session');
   else if(k==='o'||(e.key==='Enter'&&document.activeElement.classList.contains('ib-h'))){e.preventDefault();row.querySelector('[data-k="open"]').click();}
 }
@@ -4036,10 +4048,12 @@ function flipInbox(paint){
 }
 function paintInbox(focusIndex){
   const body=$('inboxBody'); if(!body)return;
+  const ae0=document.activeElement, typing=ae0&&ae0.classList&&ae0.classList.contains('ib-amt')&&body.contains(ae0)?{rq:ae0.dataset.rq,a:ae0.selectionStart,b:ae0.selectionEnd}:null; /* a repaint leaves focus in an amount field (restored to the same request's field) */
   const list=needsMeOrder();
   body.innerHTML=list.length?'':'<p class="inbox-empty" tabindex="-1"><span class="ib-ok" aria-hidden="true"></span><span><b>All clear. Nobody needs you right now.</b><small>Agents that ask for permission, ask a question, reach their limit or hit an error appear here.</small></span></p>'; /* spec 052 FR-048 */
   list.forEach((a,i)=>{
     const card=pendingCardOf(a), row=document.createElement('section');row.className='inbox-row';
+    const rq=card?reqOf(card):'', isLimit=!!card&&card.classList.contains('limit'); /* FR-206: the request this row was painted for; FR-207: a limit row has its own amount and no letter key */
     const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?'reached its spending limit':card.classList.contains('coffee')?'is on a '+coffeeWord().toLowerCase():'needs your OK'):(st==='error'?'has an error':a.limit?'reached its limit':LABELS[st]||st);
     row.setAttribute('aria-labelledby','ibh'+i);row.dataset.id=a.id;
     row.innerHTML='<div class="ib-av" aria-hidden="true">'+avatar(a)+'</div><div class="ib-main"><div class="ib-top"><h4 class="ib-h" id="ibh'+i+'" tabindex="-1"><b class="ib-n"></b> <span class="ib-sub"><span class="ib-w"></span> <span class="ib-f"></span> <span class="ib-wait"></span></span></h4></div><p class="ib-t" id="ibt'+i+'"></p><div class="ib-act"></div></div>';
@@ -4054,19 +4068,29 @@ function paintInbox(focusIndex){
     const ans=document.createElement('span');ans.className='ib-ans';act.appendChild(ans);
     const add=(label,cls,k,fn,title,box)=>{const b=document.createElement('button');b.type='button';b.className=cls==='link'?'linkbtn ib-open':'btn sm '+cls;b.textContent=label;b.dataset.k=k;b.setAttribute('aria-describedby','ibh'+i+' ibt'+i);
       if(KEY[k]){b.setAttribute('aria-keyshortcuts',KEY[k]);title=(title?title+' ':'')+'(key '+KEY[k]+')';}if(title)b.title=title;b.onclick=fn;(box||ans).appendChild(b);};
-    const kOf=src=>src.dataset.act==='session'?'session':/danger/.test(src.className)?'deny':/primary/.test(src.className)?'approve':'other';
+    const kOf=src=>isLimit?'other':src.dataset.act==='session'?'session':/danger/.test(src.className)?'deny':/primary/.test(src.className)?'approve':'other';
+    let amt=null; /* FR-207: the amount the card would send, shown in the row and sent from it */
+    if(isLimit){const ci=card.querySelector('.limit-amt');if(ci){amt=document.createElement('input');amt.type='number';amt.min=ci.min;amt.step=ci.step;amt.value=INBOX_AMT.has(rq)?INBOX_AMT.get(rq):ci.value;amt.className='limit-amt ib-amt';amt.dataset.rq=rq;
+      amt.setAttribute('aria-label',ci.getAttribute('aria-label')||'Amount to add');amt.title=amt.getAttribute('aria-label');amt.oninput=()=>{amt.removeAttribute('aria-invalid');INBOX_AMT.set(rq,amt.value);};
+      amt.onkeydown=ev=>{if(ev.key!=='Enter'||ev.isComposing)return;ev.preventDefault();if(!ev.repeat){const r=[...ans.querySelectorAll('button')].find(x=>x.dataset.k==='other'&&x.classList.contains('primary'));if(r)r.click();}}; /* Enter in the field presses the row's own Raise limit; a held Enter does nothing */ans.appendChild(amt);}}
     if(card&&!q)for(const src of [...card.querySelectorAll(':scope > .note-actions button')].filter(x=>!x.dataset.broad).sort((x,y)=>RANK[kOf(x)]-RANK[kOf(y)])){
       const k=kOf(src);
       /* spec 003 FR-097: the Read-only denial's "Switch to Ask first…" opens the same mode menu, from the chat (the inbox is modal) */
       if(src.dataset.act==='ro-ask'){add(src.textContent,'',k,()=>{closeInbox();openPanel(a.id,true);requestAnimationFrame(()=>{if(!src.isConnected)return;src.focus({preventScroll:true});src.click();});},src.title);ans.lastElementChild.setAttribute('aria-haspopup','menu');continue;}
       add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],k,ev=>{const word=k==='deny'?'Denied':k==='other'?src.textContent:'Allowed';
         /* spec 052 FR-047/FR-048: the row's buttons go busy, then the row shows the answer for 600ms, folds away in 200ms, then the list repaints */
-        if(row.classList.contains('settled')||row.dataset.answering)return; row.dataset.answering='1';
-        act.querySelectorAll('button').forEach(x=>{if(x!==ev.currentTarget)x.disabled=true;});const done=busy(ev.currentTarget,'Sending…');
-        focusIn(row.querySelector('.ib-h'));src.click();
-        setTimeout(()=>{const left=needsMeOrder().length;announce(word+' '+a.name+'. '+(left?left+' left.':'Nobody else needs you.'));renderInboxBtn();
+        if(row.classList.contains('settled')||row.dataset.answering)return;
+        /* FR-207: the Raise button sends the number the row shows; an empty or zero amount sends nothing */
+        const raises=isLimit&&/primary/.test(src.className)&&amt; if(raises&&!(Math.round(parseFloat(amt.value)*100)/100>0)){amt.setAttribute('aria-invalid','true');announce('Enter an amount above zero to raise the limit.');focusIn(amt);return;}
+        row.dataset.answering='1';
+        /* FR-206: the card must still be this agent's live pending card with this request id and its button still there; else nothing is sent */
+        const live=rq&&[...getChat(a).el.querySelectorAll('.note.perm:not(.settled)')].find(n=>reqOf(n)===rq), waiting=!!live&&live.contains(src)&&src.disabled, stale=!live||!live.contains(src)||waiting; /* the card is live and still holds this very button (a card may rebuild its buttons); a disabled one is still on its way, not answered */
+        act.querySelectorAll('button,input').forEach(x=>{if(x!==ev.currentTarget)x.disabled=true;});const done=busy(ev.currentTarget,'Sending…');
+        focusIn(row.querySelector('.ib-h'));
+        if(!stale){if(raises){const ci=live.querySelector('.limit-amt');if(ci)ci.value=amt.value;}src.click();}
+        setTimeout(()=>{const left=needsMeOrder().length;announce(stale?(waiting?'Still waiting for the answer. ':'Already answered. ')+a.name+'.':word+' '+a.name+'. '+(left?left+' left.':'Nobody else needs you.'));renderInboxBtn();
           if(!row.isConnected){done();paintInbox(i);return;}
-          row.classList.add('settled');act.innerHTML='';const p=document.createElement('p');p.className='ib-done '+(k==='deny'?'no':k==='other'?'':'yes');p.textContent=k==='deny'?'Denied':k==='other'?word:'✓ '+word;act.appendChild(p);
+          row.classList.add('settled');act.innerHTML='';const p=document.createElement('p');p.className='ib-done '+(stale||k==='other'?'':k==='deny'?'no':'yes');p.textContent=stale?(waiting?'Still waiting':'Already answered'):k==='deny'?'Denied':k==='other'?word:'✓ '+word;act.appendChild(p);
           setTimeout(()=>{if(!row.isConnected)return paintInbox(i);if(reducedMotion())return paintInbox(i);
             row.classList.add('gone');setTimeout(()=>flipInbox(()=>paintInbox(i)),180);},600);},250);},src.title);
     }
@@ -4075,7 +4099,9 @@ function paintInbox(focusIndex){
     body.appendChild(row);
   });
   /* FR-033: focus a heading (it reads the agent and its request through the row), never a button */
-  if(focusIndex!=null){const hs=body.querySelectorAll('.ib-h');const h=hs[Math.min(focusIndex,hs.length-1)]||body.querySelector('.inbox-empty')||$('inboxClose');if(h)focusIn(h);}
+  const again=typing&&[...body.querySelectorAll('.ib-amt')].find(x=>x.dataset.rq===typing.rq);
+  if(again){focusIn(again);try{again.setSelectionRange(typing.a,typing.b);}catch(e){}}
+  else if(focusIndex!=null){const hs=body.querySelectorAll('.ib-h');const h=hs[Math.min(focusIndex,hs.length-1)]||body.querySelector('.inbox-empty')||$('inboxClose');if(h)focusIn(h);}
 }
 function openNextNeedsMe(){
   const list=needsMeOrder(); if(!list.length){toast('Nobody needs you right now.',2600);return;}
@@ -5475,13 +5501,22 @@ function showLimit(a,e){
   const row=document.createElement('div');row.className='note-actions';
   const amt=document.createElement('input');amt.type='number';amt.min='0.01';amt.step=usd?'0.01':'1';amt.value=String(max||(usd?MIN_USD_CAP:MIN_CAP));amt.className='limit-amt';amt.setAttribute('aria-label',usd?'Dollars to add to the limit':'AI credits to add to the limit');
   const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);return b;};
+  let inFlight=0,seq=0; /* FR-209: one answer at a time; the buttons and the field are off while it is on its way (the card says "Sending…"), back on if it fails or after 30 s */
+  const pst=n.querySelector('.pstate');
+  const lock=on=>{row.querySelectorAll('button,input').forEach(x=>{x.disabled=on;});pst.textContent=on?' → Sending…':'';};
   const answer=async choice=>{
+    if(inFlight)return; const my=++seq; inFlight=my; lock(true);
+    const timer=setTimeout(()=>{if(inFlight===my){inFlight=0;lock(false);addNote(liveChat(a),'No reply after '+Math.round(LIMIT_WAIT_MS/1000)+' seconds. You can answer again; if the first answer arrives late, both may count.',true);}},LIMIT_WAIT_MS);
     const r=await bridge.resolveLimit(a.id,e.requestId,choice).catch(err=>({ok:false,error:String(err&&err.message||err)}));
-    if(!r||!r.ok){addNote(liveChat(a),'Could not answer the spending limit: '+esc((r&&r.error)||'unknown error'),true);return;}
-    settleLimit(a,choice.kind);
+    clearTimeout(timer); const mine=inFlight===my; if(mine)inFlight=0;
+    if(!r||!r.ok){if(mine){lock(false);addNote(liveChat(a),'Could not answer the spending limit: '+esc((r&&r.error)||'unknown error'),true);}return;}
+    if(a.limit&&a.limit.requestId===e.requestId)settleLimit(a,choice.kind);
+    else if(!n.classList.contains('settled')){ /* a late answer settles its own card only, and only if the adapter's `resolved` event (which comes first) has not: it never rewrites what happened */
+      row.remove();n.classList.add('settled',choice.kind==='cancel'?'denied':'approved');
+      n.querySelector('.pstate').textContent=' → '+(choice.kind==='cancel'?'stopped here':choice.kind==='unset'?'limit removed':'limit raised');}
   };
   row.appendChild(amt);
-  mk('Raise limit','primary',usd?'Let the agent use this many more dollars (counted from what it used or the limit, whichever is higher) and continue':'Raise the limit by this many AI credits and let the agent continue',()=>{const v=parseFloat(amt.value);if(!(v>0)){focusIn(amt);return;}answer({kind:'add',credits:Math.round(v*100)/100});});
+  mk('Raise limit','primary',usd?'Let the agent use this many more dollars (counted from what it used or the limit, whichever is higher) and continue':'Raise the limit by this many AI credits and let the agent continue',()=>{const v=Math.round(parseFloat(amt.value)*100)/100;if(!(v>0)){focusIn(amt);return;}answer({kind:'add',credits:v});});
   mk('Remove limit','session','Remove the limit and let the agent continue',()=>answer({kind:'unset'}));
   mk('Stop here','danger','Cancel the blocked request. The agent is ready for your next message (the limit stays).',()=>answer({kind:'cancel'}));
   n.appendChild(row);
@@ -5508,7 +5543,13 @@ function showPlan(a,e){
   n.appendChild(row);
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   a.plan={requestId:e.requestId,n,st,row};
-  if(ui.selected===a.id)focusIn(ok);
+  /* spec 066 (2026-11-01 delta): the plan never takes focus from typing: with text in the message box, or focus in any text field, Approve is left alone */
+  const ae=document.activeElement, mb=$('msgInput');
+  if(ui.selected===a.id&&!modalOpen()&&!(mb&&mb.value)&&(!ae||ae===document.body||ae===mb))focusIn(ok);
+  row.addEventListener('keydown',ev=>{
+    if(ev.repeat&&(ev.key==='Enter'||ev.key===' '))ev.preventDefault(); /* a held Enter or Space on Approve, Revise or Reject answers nothing */
+    else if(ev.key.length===1&&ev.key!==' '&&!ev.ctrlKey&&!ev.metaKey&&!ev.altKey){const mb2=$('msgInput');if(mb2)focusIn(mb2);} /* starting to type goes to the message box, so the next Enter cannot approve the plan unread */
+  });
 }
 function settlePlan(a,action){
   const P=a.plan;if(!P)return;a.plan=null;
@@ -5548,9 +5589,12 @@ function showQuestion(a,e){
     others.push(other);opts.appendChild(other);opts.appendChild(hint);box.appendChild(opts);n.appendChild(box);
   });
   const row=document.createElement('div');row.className='note-actions';
+  let sending=false; /* one answer at a time: the buttons and boxes are off while it is on its way, back on if it fails (a held Enter sent six) */
+  const lockQ=on=>{sending=on;n.querySelectorAll('.note-actions button,.q-opt,.q-other').forEach(x=>{x.disabled=on;});};
   const send=async answers=>{
+    if(sending)return; lockQ(true);
     const r=await bridge.answerQuestion(a.id,e.requestId,answers).catch(err=>({ok:false,error:String(err&&err.message||err)}));
-    if(!r||!r.ok){addNote(liveChat(a),'Could not answer: '+esc((r&&r.error)||'unknown error'),true);return;}
+    if(!r||!r.ok){lockQ(false);addNote(liveChat(a),'Could not answer: '+esc((r&&r.error)||'unknown error'),true);return;}
     settleQuestion(a,answers,undefined,e.requestId);
   };
   const ok=document.createElement('button');ok.type='button';ok.className='btn primary';ok.textContent='Answer';
@@ -5703,6 +5747,7 @@ function settleLimit(a,action){
 /* ---------------- coffee break (spec 068): a usage limit puts the agent in the coffee corner until the limit resets ---------------- */
 const COFFEE=window.DurbarCoffee;
 let BREAK_RESUME='auto'; /* the setting (FR-006): 'auto' resumes by itself when it costs nothing extra; 'ask' always asks */
+const LIMIT_WAIT_MS=(()=>{try{const q=new URLSearchParams(location.search),v=Number(q.get('simlimitwait'));return q.has('sim')&&v>0?v:30000;}catch(e){return 30000;}})(); /* how long a limit answer may take before its card unlocks (the simulator drivers shorten it) */
 const SIM_BREAK=(()=>{try{const q=new URLSearchParams(location.search);return q.has('sim')&&q.has('simbreak');}catch(e){return false;}})(); /* simulator drivers: short waits (FR-017) */
 const BREAKS=COFFEE.createBreaks(SIM_BREAK?{marginMs:2000,gapMs:3000,lateMs:600000,remindMs:20000}:{});
 const coffeeWord=()=>'Coffee break'; /* a status word: plain in every theme (spec 035: status pills keep their size); only the corner's name is themed */

@@ -345,3 +345,15 @@
 
 ## FR-181: no Demo / Live badge in the top bar (2026-10-31, owner)
 - [x] T193 `check-no-demo-badge.js` first (fails with the badge), then `#protoBadge`, `.proto` and `setBadge` removed; UI-suite entry; the cues that remain are listed in the spec delta [FR-181]
+
+## FR-206..FR-208: the Needs you inbox cannot answer a request by accident (2026-11-01)
+- [x] T203 `check-inbox-safety.js` first (on `main` it fails: a stale button re-answers a request, a held A answers, key A sends a limit's hidden amount), then `reqOf` and the live-card check in `paintInbox` [FR-206]; UI-suite entry
+- [x] T204 Limit row: the amount field in the row, no letter keys, own words, empty amount sends nothing, typing is not a command [FR-207]
+- [x] T205 `inboxKey` ignores `e.repeat` on A, S, D, O, Enter, Space and the chat's Alt+A/S/D; no key on a row being answered [FR-208]; five mutants run
+- [x] T206 Review of #1004 (independent security review): `check-answer-safety.js` first, then the answer bar's focus rule and no limit buttons in the bar [FR-210], the composer's repeat guard [FR-211], the limit card's in-flight lock, rounding and late-answer rule, the row's kept amount and Open key [FR-209]; native key steps with `isAutoRepeat`; every mutant run one at a time and listed in the PR
+- [x] T207 Plan card focus (spec 066 FR-064) [FR-212]; driver step in `check-answer-safety.js`
+- [x] T208 Corrected FR-206's wording (the broker ignores a second answer: no wrong approval from the stale row)
+- [x] T209 Re-review of #1004 at 97a9e6d7: inbox clicks stay in the inbox (`#inboxDlg` excluded at the document click handler), Enter in the limit amount raises, focus stays in the dialog after an answer [FR-213]; real-mouse and native-key steps
+- [x] T210 Plan focus rule (no modal, empty box, focus on the page or in the box) and held Enter/Space on the plan's buttons (spec 066 FR-064, an agent decision) [FR-212]
+- [x] T211 Answer bar same-card rule by position (agent-supplied option labels cannot catch focus); late limit reply skips a settled card; `inboxKey` row guard, Space guard and `live.contains(src)` kept and tested; question answers locked in flight [FR-209, FR-210, FR-206, FR-208]
+- [x] T212 Third review of #1004: typing on a plan goes to the box; a hung limit answer (Sending…, 30 s unlock, "Still waiting", Copilot `cancelLimit` time limit); Space guard step; bar ignores locked cards; repaint keeps focus in the amount; tests for the question unlock and the amount's repeat check [FR-209, FR-210, FR-212, FR-213]
