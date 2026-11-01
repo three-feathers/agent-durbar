@@ -1,1 +1,1 @@
-A failed save of the rearranged office order is now reported instead of ignored.
+- **Rearranged office order** (spec 033): a failed save of the order is reported instead of ignored.
