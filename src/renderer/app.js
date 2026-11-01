@@ -2340,58 +2340,39 @@ function wireComposerGrip(){const g=$('composerGrip'),t=$('msgInput');if(!g||!t)
 function autoGrow(){sizeComposer();setSend();ntNoticeSync();}
 function setSend(){const b=$('sendBtn'),t=$('msgInput');if(!b||!t)return;const a=byId(ui.selected);const busy=a&&chats[a.id]&&chats[a.id].busy;b.setAttribute('aria-disabled',String(!!busy||(!t.value.trim()&&!attached.length)));syncRunState();}
 
-/* spec 097 FR-106 (T120): the chat in Real office. The panel keeps its structure; it gains a header portrait (64 px) with a lamp ring, and, when the window is at least
-   1200 px wide and the chat would still be 480 px or more beside it (spec 005's minimum), a desk-side column: the agent's person at its desk in the pose of its status,
-   the lamp and call light, a plate with the name, status word, lamp words (FR-107) and helpers. Decorative and aria-hidden (the header says it all in words); no tab stop,
-   so the tab order is the flat one. The same person the office draws (DurbarRealOffice.personOf). Built from text nodes and the pack's own file names only. */
-function syncChatColumn(){
+/* spec 097 FR-106 (T120): the chat in Real office. The panel keeps its structure and the whole window's width; it gains a header portrait (64 px, cropped on the face by
+   portraitCrop) with a ring in the lamp's colour and the status dot, and the lamp in words (FR-107) in the header's meta line. Decorative and aria-hidden, no tab stop, so the tab
+   order is the flat one. The same person the office draws (DurbarRealOffice.personOf). (The desk-side column of the first design was removed by the owner on 2026-11-01.) */
+function syncChatHeader(){
   const p=$('panel'); if(!p)return;
   const E=window.exports||{}, RO=window.DurbarRealOffice, a=byId(ui.selected);
   const on=document.body.classList.contains('panel-open')&&officeView()==='real'&&RO_LOAD==='ready'&&!!RO&&!!RO.personOf&&!!E.lightFor&&!!E.lampWords&&!!a&&!a.parent;
-  const col0=p.querySelector(':scope > .ro-col'), port0=document.getElementById('roPortrait');
+  const port0=document.getElementById('roPortrait');
   document.body.classList.toggle('ro-chat',on);
-  if(!on){if(col0)col0.remove();if(port0)port0.remove();document.body.classList.remove('ro-chatcol');return;}
+  if(!on){if(port0)port0.remove();return;}
   const pp=roPeople(), person=RO.personOf(a.id), v=VISITS.at(a.id), old=shutPlan(roomOf(a)).get(a.id)==='old'&&!v;
   const ls=E.lightState(isFailing(a)?'failing':isRetrying(a)?'retrying':isCompacting(a)?'compacting':vis(a),{limit:!!a.limit,paused:!!a.paused,asleep:old});
   const lt=E.lightFor(ls,{still:REDUCED||SERIOUS}), words=E.lampWords(lt), pose=(E.SEAT_POSE||{})[ls]||'rest';
-  const cw=window.innerWidth>=1440?300:250, pw=Math.min(window.innerWidth,parseFloat(getComputedStyle(p).maxWidth)||Infinity), show=window.innerWidth>=1200&&pw-cw>=480; /* the chat is full-window: the panel can be as wide as the window, or its max-width (not measured from its box, which the column changes) */
   const file=person&&!v&&/^[a-z0-9-]{1,24}$/.test(person)?'realoffice/sets/'+pp.set+'/'+person+'-'+pose+'.webp':'';
   const pack=/^[a-z0-9-]{1,24}$/.test(pp.set)&&/^[a-z0-9-]{1,24}$/.test(pp.world);
-  const key=[a.id,ls,words,file,stWord(a),v?v.place:'',helpersOf(a).length,cw,show,pp.world,pp.set].join('|');
-  document.body.classList.toggle('ro-chatcol',show);
+  const key=[a.id,ls,words,file,stWord(a),v?v.place:'',helpersOf(a).length,pp.world,pp.set].join('|');
   /* the header portrait: the person's head and shoulders in a ring that carries the lamp's colour, with the status dot */
   let port=port0; const top=p.querySelector('.ph-top');
   if(top&&(!port||port._k!==key)){
     if(port)port.remove();
     port=document.createElement('span');port.id='roPortrait';port.className='ro-portrait';port.setAttribute('aria-hidden','true');port._k=key;
     port.dataset.lamp=lt.lamp;port.dataset.call=lt.call||'';
-    if(file&&pack){const im=document.createElement('img');im.alt='';im.draggable=false;im.src=file;port.appendChild(im);}
+    const sm=((window.DurbarRealOfficeSets||{})[pp.set]||{}).seat, seatM=sm&&person&&Object.prototype.hasOwnProperty.call(sm,person)?sm[person]:null, crop=seatM&&E.portraitCrop?E.portraitCrop(seatM):null;
+    if(file&&pack){const clip=document.createElement('span');clip.className='rp-clip';const im=document.createElement('img');im.alt='';im.draggable=false;im.src=file;
+      if(crop&&seatM){im.style.width=(seatM.w/crop.s*100)+'%';im.style.left=(-crop.x/crop.s*100)+'%';im.style.top=(-crop.y/crop.s*100)+'%';} /* the face fills the circle: the data of the layout's face box */
+      clip.appendChild(im);port.appendChild(clip);}
     else{const t=document.createElement('b');t.className='rp-ini';t.textContent=Array.from(String(a.name||'?'))[0].toUpperCase();port.appendChild(t);} /* away or no picture: the initial, as the office's disc */
     const d=document.createElement('i');d.className='dot '+({limit:'waiting',asleep:'idle'}[ls]||ls);port.appendChild(d);
     top.insertBefore(port,top.firstChild);
   }
   /* the lamp in words in the header's meta line (FR-107) */
   const meta=p.querySelector('.ph-meta'); if(meta){let lw=meta.querySelector('.ro-lampwords');if(!lw){lw=document.createElement('span');lw.className='ro-lampwords';meta.appendChild(lw);}if(lw.textContent!==words)lw.textContent=words;}
-  let col=col0;
-  if(!show){if(col)col.remove();return;}
-  if(col&&col._k===key)return;
-  if(col)col.remove();
-  col=document.createElement('div');col.className='ro-col';col.dataset.surface='chat-column';col.setAttribute('aria-hidden','true');col._k=key;
-  col.dataset.lamp=lt.lamp;col.dataset.call=lt.call||'';col.style.setProperty('--rc-w',cw+'px');
-  const stage=document.createElement('div');stage.className='rc-stage';
-  const glow=document.createElement('div');glow.className='rc-glow';stage.appendChild(glow);
-  if(file&&pack){const im=document.createElement('img');im.className='rc-person';im.alt='';im.draggable=false;im.src=file;stage.appendChild(im);}
-  if(pack){const dk=document.createElement('img');dk.className='rc-desk';dk.alt='';dk.draggable=false;dk.src='realoffice/worlds/'+pp.world+'/desk.webp';stage.appendChild(dk);}
-  const call=document.createElement('i');call.className='rc-call';stage.appendChild(call);
-  const pl=document.createElement('div');pl.className='rc-plate';
-  const nm=document.createElement('b');nm.textContent=a.name;pl.appendChild(nm);
-  const l2=document.createElement('span');l2.className='rc-l2';const dt=document.createElement('i');dt.className='dot '+({limit:'waiting',asleep:'idle'}[ls]||ls);l2.appendChild(dt);l2.appendChild(document.createTextNode(' '+(v?'at '+placeLabel(v.place):stWord(a))));pl.appendChild(l2);
-  const l3=document.createElement('span');l3.className='rc-l3';l3.textContent=words;pl.appendChild(l3);
-  const hn=helpersOf(a).length;if(hn){const h=document.createElement('span');h.className='rc-l3';h.textContent=hn+(hn===1?' helper':' helpers');pl.appendChild(h);}
-  col.appendChild(stage);col.appendChild(pl);
-  p.insertBefore(col,p.firstChild);
 }
-window.addEventListener('resize',()=>{if(document.body.classList.contains('ro-chat')||document.body.classList.contains('panel-open'))syncChatColumn();});
 function updatePanelHeader(){
   const a=byId(ui.selected); if(!a)return; const st=vis(a);
   const ph=$('panelHead'); if(!ph)return;
@@ -2402,8 +2383,8 @@ function updatePanelHeader(){
   updateCapChip(a);
   $('pauseBtn').querySelector('span').textContent=a.paused?'Resume':'Pause';
   syncRunState(); /* spec 005 FR-038: Send or Stop follows the turn */
-  syncChatColumn(); /* spec 097 FR-106: the portrait, the lamp words and the column follow the header */
-  requestAnimationFrame(syncChatColumn); /* once more when the panel has its layout */
+  syncChatHeader(); /* spec 097 FR-106: the portrait and the lamp words follow the header */
+  requestAnimationFrame(syncChatHeader); /* once more when the panel has its layout */
 }
 /* spec 052 FR-003: the chat header's More menu. A real menu: arrows move, Home/End jump, Esc closes and returns focus to More;
    a choice or a click elsewhere closes it. The items are the old buttons with their ids, so their handlers stay as they were. */
