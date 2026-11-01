@@ -338,6 +338,7 @@ Vikram judged the walk and the head-anchored sit-down *not natural enough*: two 
 - **An empty seat says where they went:** a post-it on the desk, square, 66 to 112 px with the desk's size, *at Library*: real text, 12 px, in Photo office yellow with a slight tilt, easing in with the zoom. Other worlds style it their own way later. It replaces the *at Library up-arrow* label.
 - A pose change at the desk fades the old one out before the new one in, so two big poses do not stand in each other.
 - **The cost:** with everyone in a full-width slot, a desk face at 15 agents is 31.9 px at 1280x800, where it was 35.2 with some desks narrow; SC-002's ratchet moves from 35 to 31 (30.5 in the office check, which measures 31.0 and 34.9 px), and FR-024's lobby estimate from 11 to 10.5. `[KNOWN GAP]` Owners to weigh this against the still room.
+- **What is shown follows at once:** turning Live activity off or on repaints every screen in view straight away, not at the next line and not at the repaint pace; a screen out of view catches up when it is back. An open zoom of a desk that goes to sleep closes (FR-035). A rig out of view stands still in the same frame as its person (FR-181).
 - **The typing rig is in the pack** for the 15 people: head and two hands as WebP, `rig` in `people.json`. Cut with on-device Apple Vision by a one-off script, not at app time.
 - This delta's own sections below on the walk and the head anchor are superseded by this one.
 
