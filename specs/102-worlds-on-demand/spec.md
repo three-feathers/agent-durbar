@@ -31,7 +31,7 @@ status: draft
 
 Both issues need the same core: **a world pack that arrives from outside the app, is treated as hostile, and is validated, stored and drawn without code**. #932 brings it over the internet, #933 from a person's disk or an agent app. Two specs would either duplicate the validator or make one depend on the other's draft. So one spec, phased so the hand-made path and the download path can land apart (P3, P5, P6).
 
-It is not a delta of 097 or 098: it adds Durbar's first user-started downloads of content, a source model, a signature check and a zip reader; 097 is the renderer and 098 the repo-wide contract. Number **102**. Checked 2026-10-31 against `main` (up to 098), remote branches (`099-autopilot`, `100-mcp-context`, `101-logo-family`, the 097 branches) and open PRs (#923 = 099, #924 = 100, #930 = 101): nothing uses 102. Numbers here are this spec's own: FR-001..FR-213 (sparse by group), SC-001..SC-018, T001..T121 (sparse by phase).
+It is not a delta of 097 or 098: it adds Durbar's first user-started downloads of content, a source model, a signature check and a zip reader; 097 is the renderer and 098 the repo-wide contract. Number **102**. Checked 2026-10-31 against `main` (up to 098), remote branches (`099-autopilot`, `100-mcp-context`, `101-logo-family`, the 097 branches) and open PRs (#923 = 099, #924 = 100, #930 = 101): nothing uses 102. Numbers here are this spec's own: FR-001..FR-214 (sparse by group), SC-001..SC-018, T001..T122 (sparse by phase).
 
 **One rule in, one rule out** (spec 021 FR-063): no `AGENTS.md` line. The checkable rules get scripts (`test:worldpack`, `test:worldzip`, `test:world-catalogue`, FR-180).
 
@@ -458,6 +458,7 @@ I choose a world, and its people come with it. If I pick characters myself, they
   | **With Retro game** | | | **about 26.8 MB** |
 
   **Caps.** Every pack stays under 097's 10 MB per world with its default set, on these estimates. A cartoon frame may compress unlike a photo-style one (`[KNOWN GAP]`, not measured): Cheeky at 13 people has 73 KB per frame pair before it passes 10 MB. `test:crew-assets`' 2.5 MB holds today's heads only (1.9 MB now); full-pose sets are checked by their own test and do not go in that folder. **New: shipped art at most 30 MB in total** (`test:realoffice-assets`), since no app-wide budget existed. **Retro pixel people's cost**: 15 fictional people × 11 required frames = 165 frames, each with a half size made by the encoder; about 30 image runs on the owner's ChatGPT plan if each person takes one seated and one standing sheet (an estimate; a run was about a minute, spec 096), plus 097 FR-067, FR-068's checks. Sets that do not ship (Minimalist's frames, shared ones) download.
+- **FR-214** **Pixel people stay in Flat** (decision of 2026-11-01). Flat stays one world and keeps getting character sets (owner, 2026-11-01). Removing the Retro Pixel theme must not take pixel people out of Flat, so Retro pixel people also become a Characters value in Flat, `pixel`, in spec 077's pattern (077 FR-064, FR-072), with heads by FR-203. It lands in the same release as the theme's removal (FR-213, OP-12; spec 035 FR-019, T089), and a person who picks it in Flat stays in Flat. `[KNOWN GAP]` T111's frames do not exist yet, so how close their heads come to today's `pixel` scene kit is not known; `test:crew-assets`' 2.5 MB is not yet checked with them.
 - **FR-212** **Flat is not a registry world.** It has no moments in `docs/experience/world-moments.json`: its surfaces are the flat rendering. FR-014, FR-020 and FR-035 do not apply to it. The Retro game world does not change Flat's theme.
 
 #### Relation to other specs
@@ -606,3 +607,7 @@ Replaces, in the entry above, the removal of FR-210, its "no project world has a
 ### 2026-11-01: back views (owner decision: "ok to show back")
 
 FR-204 gains optional `backA`, `backB` for arrangements that use them, with hover or keyboard focus showing the big screen; FR-190 and T100 follow. Art is later work and a `[KNOWN GAP]` until drawn; crew art approval still applies per image.
+
+### 2026-11-01: pixel people stay in Flat
+
+Removing the Retro Pixel theme must not take pixel people out of Flat, so Retro pixel people also become a Characters value in Flat, in spec 077's pattern, in the same release as the theme's removal (FR-213, OP-12). Flat stays one world and keeps getting character sets (owner, 2026-11-01). New FR-214 and T122; spec 035 FR-019 and T089 point to them.
