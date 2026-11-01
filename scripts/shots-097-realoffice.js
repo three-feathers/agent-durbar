@@ -356,6 +356,17 @@ module.exports = async (ctx) => {
     await must("!document.getElementById('modeMenu')&&(" + FOCUSED + ')', 'the right-click menu closed and focus is back on the plate');
   }
 
+  // ---- owner 2026-11-01: with motion on, a chip and a plate never touch, in any frame while a crowd changes: they fade in place, they do not travel ----
+  await loadReal(1280, 800, { sim: '15', romotion: '1' });
+  await must(`!!document.querySelector('#stage .ro-lplate')`, 'the lobby plates');
+  await js(`document.querySelector('style#roNoAnim')&&document.querySelector('style#roNoAnim').remove();0`);
+  for (const [pid, n, from] of [['terminal', 4, 0], ['software', 3, 2], ['boss', 5, 6], ['terminal', 2, 9]]) {
+    const frames = await js(`new Promise((done)=>{const bad=new Set();let n=0;const t0=performance.now();window.__durbarSimUi.uncrowd();window.__durbarSimUi.crowd(${jsLiteral(pid)},${jsLiteral(n)},${jsLiteral(from)});const look=()=>{const r=${PLATES};n++;for(const x of r.cp)bad.add(x);if(performance.now()-t0<1500)requestAnimationFrame(look);else done({n,bad:[...bad]});};requestAnimationFrame(look);})`);
+    assert.ok(frames.n > 5, 'frames were looked at: ' + JSON.stringify(frames));
+    assert.deepStrictEqual(frames.bad, [], `no chip on a plate in any frame (${pid} ${n}): ${JSON.stringify(frames)}`);
+  }
+  await js(`window.__durbarSimUi.uncrowd();0`);
+
   // ---- the guards of the chip placement, deterministically (no font needed): chips widened after the drawing are placed again by the
   //      ResizeObserver (settle), and a chip that sits on a plate is moved off it (resolve) ----
   await loadReal(1280, 800, { sim: '12' });

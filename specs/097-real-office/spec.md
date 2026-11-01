@@ -342,6 +342,7 @@ Vikram judged the walk and the head-anchored sit-down *not natural enough*: two 
 - **With the facing pictures (FR-191):** the two running pictures have their own canvases, so each has its own box with the feet on one spot, and changing picture moves no foot. The sip at the coffee corner is gone with the front-facing coffee pictures: someone at a counter breathes, as at the Bank, where a sip would be wrong.
 - **Lobby chips and plates never travel (owner 2026-11-01):** a chip or plate that moves fades in at its new place, so nothing passes over anything. A slide uses `translate`, so an element keeps its own transform (the post-it's tilt, a person's motion).
 - **A session count change eases (owner 2026-11-01):** what the layout makes bigger or smaller eases there on `translate` and `scale`, in the same 280 to 520 ms as a move, with no layout during it; the text inside takes its new size at once.
+- **The lobby's own widths still follow who is there,** and fade in place. `[KNOWN GAP]` Keeping them fixed would need a new lobby rule.
 - **The typing rig is in the pack** for the 15 people: head and two hands as WebP, `rig` in `people.json`. Cut with on-device Apple Vision by a one-off script, not at app time.
 - This delta's own sections below on the walk and the head anchor are superseded by this one.
 

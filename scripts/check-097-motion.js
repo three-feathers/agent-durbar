@@ -213,6 +213,20 @@ module.exports = async (ctx) => {
   await must(REAL + `&&!document.body.classList.contains('panel-open')`, 'back in the office');
 
   mark('forty');
+  /* ---- owner 2026-11-01: a session count change eases: sizes go there on translate and scale, from where they were; frames are recorded, not asserted ---- */
+  {
+    await motionOn();
+    await loadReal(1280, 800, { sim: '8' });
+    await js(INSTALL);
+    const pick = await js(`(()=>{const d=window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(x=>x.person&&document.querySelector('#stage .ro-desk[data-for="'+CSS.escape(x.id)+'"]'));const e=document.querySelector('#stage .ro-desk[data-for="'+CSS.escape(d.id)+'"]'),b=e.getBoundingClientRect();return {id:d.id,w:b.width,x:b.left,y:b.top,total:window.__durbarSimUi.agents().filter(a=>!a.parent).length};})()`);
+    const out = await js(`new Promise((done)=>{const id=${jsLiteral(pick.id)},e=()=>document.querySelector('#stage .ro-desk[data-for="'+CSS.escape(id)+'"]');const L=window.__durbarSimUi.agents();const go=L.filter(a=>!a.parent&&a.id!==id).slice(0,5).map(a=>a.id);for(const g of go)window.__durbarSimUi.removeAgent(g);const t0=performance.now();let last=t0,first=null,sized=[];const look=(t)=>{const n=performance.now(),x=e();if(x){const b=x.getBoundingClientRect(),st=parseFloat(x.style.width);const anim=x.getAnimations().find(a=>!a.animationName&&a.effect.getKeyframes().some(k=>k.scale&&k.scale!=='1 1'));if(st&&Math.abs(st-${jsLiteral(pick.w)})>=1&&first===null)first={visual:b.width,layout:st,anim:!!anim,x:b.left,y:b.top};}sized.push(n-last);last=n;if(n-t0<1200)requestAnimationFrame(look);else{const s=sized.slice(1).sort((p,q)=>p-q);done({first,frames:s.length,median:s[s.length>>1],p95:s[Math.floor(s.length*.95)],max:s[s.length-1],over33:s.filter(v=>v>33.4).length,final:x&&x.getBoundingClientRect().width,layout:x&&parseFloat(x.style.width)});}};requestAnimationFrame(look);})`);
+    console.log('[097-motion] count change', JSON.stringify({ was: pick.w, ...out }));
+    assert.ok(out.first, 'the desk changed size when the count did: ' + JSON.stringify(out));
+    assert.ok(out.first.anim, 'it eases on scale: ' + JSON.stringify(out));
+    assert.ok(Math.abs(out.first.visual - pick.w) < Math.abs(out.first.layout - pick.w) * 0.25, 'it starts near the size it was: ' + JSON.stringify({ was: pick.w, ...out.first }));
+    assert.ok(Math.abs(out.final - out.layout) < 0.6, 'it ends at the size the layout says: ' + JSON.stringify(out));
+  }
+
   /* ---- FR-181: 40 agents: a desk scrolled away stands still and does not paint; scrolled back it catches up ---- */
   await loadReal(1280, 560, { sim: '40' }); // a short window: past the 15-agent scale, whole rows are out of view
   await js(INSTALL);
