@@ -22,3 +22,7 @@
 - [x] T016 Review on #518 (rubenlupi): rows not committed (website and `specs/INDEX.md`), strict by a marker instead of a date, `--add` for new specs, `-->`/`--!>` refused in values, one section per version, CLI and group-twice tests, CLAUDE.md, `migrate` dropped [FR-010..FR-013, FR-016]
 - [x] T019 (2026-11-01) `specs:check` refuses conflict markers (`scripts/specs-index.js`). Test: `test:specsindex`, a mutant that drops the exit code fails [FR-018]
 - [ ] T018 `deprecated` status word: built under spec 021 T053 [FR-017]
+
+## Delta 2026-11-01: feature inventory
+
+- [x] T021 `docs/feature-inventory.md`, `scripts/feature-inventory.js`, `scripts/test-feature-inventory.js` (mutants), `test:featureinventory` in `npm test`, AGENTS.md line (replaces the wording named in FR-023), review-checklist line, changelog fragment [FR-021..FR-023]

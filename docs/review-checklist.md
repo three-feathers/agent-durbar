@@ -123,7 +123,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 ## Reuse and docs
 
 - [ ] **Search for an existing helper, predicate, dialog or matcher** first (`git grep` the concept) and name it in the PR. [#628](https://github.com/three-feathers/agent-durbar/pull/628), [#560](https://github.com/three-feathers/agent-durbar/pull/560)
-- [ ] **Docs in the same PR**: `changelog.d/` fragment, `specs-index` status, task ticked, README and notes. [#535](https://github.com/three-feathers/agent-durbar/pull/535)
+- [ ] **Docs in the same PR**: `changelog.d/`, `specs-index` status, task ticked, README, notes, `feature-inventory.md` row. [#535](https://github.com/three-feathers/agent-durbar/pull/535)
 
 ## How we review
 

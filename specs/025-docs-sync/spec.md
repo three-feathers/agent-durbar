@@ -73,3 +73,10 @@ A merge was committed with conflict markers in a spec, and `specs:check` passed 
 ### 2026-10-31: `deprecated` (spec 021 FR-068; planned, not built)
 
 - **FR-017** The fixed status words gain `deprecated`: removed with no direct replacement; the note says why and when. Built by spec 021 T053. Which specs change: spec 021 FR-068's PRs; see spec 035 FR-020, spec 040 FR-033, spec 017 FR-035.
+
+### 2026-11-01: feature inventory (owner request, Vikram: "Maintain inventory of features somewhere and continuously update it")
+
+- **FR-021** `[IMPLEMENTED]` `test:` `docs/feature-inventory.md` has one row per user-visible feature: Flat and Real office state (`works`, `in PR`, `planned`, `missing`), arrangement worlds (`mock`, `planned`, `built`, optionally a spec 098 registry moment), owning specs and a proof tag (`test:`, `driver:`, `read:`). `docs/features.md` stays the user-facing text (FR-031 reuse: the table links, it does not copy).
+- **FR-022** `[IMPLEMENTED]` `test:` `npm run test:featureinventory` (in `npm test`) fails on a bad state word, a spec with no folder, a proof tag that does not resolve, an unknown registry moment, `built` without a registry `code: present`, a `status: built` spec in no row and not on the `Exempt:` line, and a registry world with `shippable: true` while the Helpers row is not `built` for worlds. The test mutates a copy of each input and expects each failure.
+- **FR-023** `[IMPLEMENTED]` Upkeep: a PR that adds, changes or removes a user-visible feature updates its row (one line in `AGENTS.md` *Keep docs in sync*, one in the review checklist). Replaces: the README "features" item, the `features.md (features, MCP, Tools)` aside, the duplicate "Cannot: say so" in *Screenshots*, and the merge-freeze aside on changelog fragments.
+- `[KNOWN GAP]` Real office and world cells come from the 2026-11-01 parity audit (`read:`, one simulator run), not from a driver per row; `in PR` branch names go stale when a PR merges (the row is updated by that PR). The check cannot tell whether a row's state is true, only that its spec and proof exist.
