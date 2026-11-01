@@ -1534,13 +1534,13 @@ tool call in the chat, a code list that covers the claims challenge, and the hin
 - **FR-193** **The matcher knows the claims challenge, narrowly.** In `classifyMcpCall` the `policy` class also answers for
   `AADSTS53000`..`AADSTS53099` (the five-digit Conditional Access codes, `AADSTS53000`, `53001`, `53003`, with the six-digit
   `AADSTS53xxxx` such as `530003` already there), for `insufficient_claims` and for `interaction_required` (the claims-challenge pair),
-  each as a whole word, any case. Nothing else is added. The match runs on text that has already passed through masking: `maskMcpEvent`
+  each as a whole word, any case. `interaction_required` counts only when nothing says sign-in: Entra's normal MFA and re-sign-in answers carry it too (`AADSTS50076`, `AADSTS50173`), and those stay `auth`. `[KNOWN GAP]` a bare `interaction_required` is broader than Conditional Access, so the line says what it *usually* means. Nothing else is added. The match runs on text that has already passed through masking: `maskMcpEvent`
   sets `mcpCall: 'policy'` on a failed `toolCall` of an MCP server from the **masked** output, a word and never any text; the
   simulator's marked copy does the same. `mcpCall` is never stored and never carries the output, claims, `capolids`, IDs or tenant data.
   [IMPLEMENTED] `test:` `test-mcpcall.ts` (matcher, fixtures with made-up ids, `maskMcpEvent`).
 - **FR-194** **One calm line and a button under the failed call.** A failed MCP tool chip with `mcpCall: 'policy'` shows, under it,
   fixed text written in Durbar: "Your organization's sign-in rules refused this tool. This usually means a managed-device check. Sign
-  in again from Safari or Edge (Chrome needs the Microsoft Single Sign On extension)." (said as what it *usually* means: the cause is
+  in again using a browser your organization allows." (neutral: Durbar does not choose the browser, and the browsers differ per system; the macOS detail is in `docs/agent-apps.md`) (said as what it *usually* means: the cause is
   a guess from the code), with a **Sign in again…** `<button>`. The text is built from this fixed string only (set with `textContent`),
   so hostile tool output cannot add markup, and the line never appears from anything but the word. The button **opens the existing
   MCP servers dialog** (`DurbarScreens.agentMcp`) whose row already has the per-server **Sign in again…** (FR-164) with its confirmation;
