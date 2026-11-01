@@ -240,6 +240,8 @@ A spec author fills the template's *Experience* line: "tool surface", or "world 
 
 ## Changes
 
+- **2026-11-01** (owner request, Vikram): `docs/world-design.md` writes down the visual principles learnt from reviewing real world mockups. It is guidance for making worlds: this spec and spec 102 stay the contract. `read:` no code changes.
+
 ### 2026-10-31: strict release gate (owner decision, Q1)
 
 Vikram (Telegram DM, 2026-10-31 10:27 UTC): "design all 9, I don't want partly done ui". Real office ships only when every registered world moment is `designed` in each world that ships; `fallback-flat` is not allowed for a shipping world. FR-024, D3, US1, SC-001, Q1 and tasks T010, T032, T033 updated. No code yet.
