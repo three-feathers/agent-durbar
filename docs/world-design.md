@@ -9,24 +9,28 @@ How to design a world for Real office, built-in or user-made. Spec [098](../spec
 3. **Design for 15 on one floor; make 3 to 4 beautiful.** Fifteen must fit at 1440x900 and 1280x800, with no overlap, no office scroll and text at least 10.5 px. Most real floors hold 3 or 4 people, so that view gets the most care. Lifts carry the rest.
 4. **Space is for people and screens.** Decoration earns its pixels or goes. Grow people and screens to fill the room when few are present.
 5. **Fast before fancy.** A world that lags does not ship. See [Performance](#performance).
-6. **Worlds differ; contracts do not.** Layout rules, status colours and accessibility stay the same everywhere, and everything you can see changes.
+6. **Worlds differ; contracts do not.** Fit rules, status colours and accessibility stay the same everywhere. Everything you can see changes, the seating plan included.
 
 ## Make each world its own
 
 Between any two worlds, all of these differ, and you can tell them apart from a thumbnail:
 
+- **arrangement**: how people sit on the floor (for example round a fire, along a hall, on loungers facing the sea), chosen from the arrangements the spec lists
+- **monitor**: a design element like the desk (for example gold with beadwork, rock, flowers around driftwood), with the same dark face and real text
+- **light and mood**: temperature, direction and the feeling of the room
 - wall, floor and desk: material and colour
 - fixtures: drawn for this world, never shared cutouts
-- **monitor**: a design element like the desk (for example gold with beadwork, rock, flowers around driftwood), with the same dark face and real text
-- light temperature, plants or props, and one signature material or motif
+- plants or props, and one signature material or motif
 
-A palette swap is not a new world. Sharing a cultural region is no excuse for looking alike. Plan a new world against the others before drawing it.
+**A new wall, floor and desk on the same layout is a re-skin,** even when every material row differs. Sixteen such mockups, each with its own materials, looked the same to the owner. A palette swap is less still.
 
-Be specific without being a cliche: no flags of countries, tourist symbols, stereotypes, or copied logos and postal marks. Arches appear only in kingdom worlds whose history had them. Anything sacred stays out of decoration.
+**The side-by-side test:** put two worlds side by side at thumbnail size. If the seating plan and screen shapes match, it is not a new world. Plan a new world against the others before drawing it.
+
+Be specific without being a cliche: no tourist symbols, stereotypes, or copied logos and postal marks. **Flags:** invented flags with our golden logo mark are fine, as in the Durbar hall; flags of countries are not. No arches. Anything sacred stays out of decoration.
 
 ## State must be obvious
 
-- **One status signal per person, large and in the world's own language:** coloured flames in earthen lamps, royal flags, beacons, umbrellas. It is the first thing you see at 15.
+- **One status signal per person, large and in the world's own language:** coloured flames in earthen lamps, flags with our mark, beacons, umbrellas. It is the first thing you see at 15.
 - **The same colours in every world.** People learn them once.
 - **Never colour alone.** Pose, expression and a bubble say it too: working types, waiting turns and waves, thinking holds a chin, done and relaxing lean back, error shows distress.
 - **Let the light reach the surroundings** with a glow on the ground, so state reads at low size.
@@ -84,7 +88,7 @@ Spec 097 FR-178 and after hold the budgets. In short:
 
 ## Review a world like this
 
-1. Thumbnail test against every other world.
+1. The side-by-side test against every other world.
 2. Look at 3, 4, 8 and 15, at both sizes, not only the flattering one.
 3. Can you say who needs you in one second at 15?
 4. Crop check: every person, every pose, at every count.
