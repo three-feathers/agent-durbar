@@ -85,7 +85,7 @@ All `npm run` commands, the repository layout and how we work (spec-driven with 
 
 Agent Durbar is by **Three Feathers**. Key contributors: [vikramgorla](https://github.com/vikramgorla), [fjcabello](https://github.com/fjcabello) and [rubenlupi](https://github.com/rubenlupi) (GitHub handles are used as the names). The names live in [`src/shared/about.ts`](src/shared/about.ts) and are shown in the OS About panel and in Settings > About.
 
-The Cheeky, Prehistoric and Pirate Crew pictures (`src/renderer/crew/art/`) were made by Paco with ChatGPT image generation, and Paco did the final pass; [`ASSETS.md`](src/renderer/crew/art/ASSETS.md) gives the tool and date of each (spec 077). The app id is `io.github.three-feathers.agentdurbar` since 2026-10-16; a build from before then is a separate app to the OS.
+The Cheeky, Prehistoric, Pirate and Monster Crew pictures (`src/renderer/crew/art/`) were made by Paco with ChatGPT image generation, and Paco did the final pass; [`ASSETS.md`](src/renderer/crew/art/ASSETS.md) gives the tool and date of each (spec 077). The app id is `io.github.three-feathers.agentdurbar` since 2026-10-16; a build from before then is a separate app to the OS.
 
 The Real office pictures (`src/renderer/realoffice/worlds/photo/` for the room, `src/renderer/realoffice/sets/office/` for the people) were made with Codex image generation on Vikram's plan and approved by Vikram, MIT like the code; the `ASSETS.md` in each folder ([room](src/renderer/realoffice/worlds/photo/ASSETS.md), [people](src/renderer/realoffice/sets/office/ASSETS.md)) gives each sheet's tool, date and prompt (spec 097). A world and a set of people are separate packs that load only when shown (the Photo office with the Office people: 6.1 MB).
 

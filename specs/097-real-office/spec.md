@@ -39,7 +39,7 @@ Spec 001 owns the office, its densities and the 15-agent fit rule; spec 017 owns
 - **Themes** (specs 035, 040, 070): token groups `--room-*`, `--agent-*`, `--status-*`, `--ui-*`, `--scene-*`; a theme may name a scene kit (035 FR-013) that the Characters setting overrides (035 FR-016); sizes are not themeable (070 D2); status colour meanings are fixed (070 FR-050). Forced colours and `prefers-contrast` are handled in `styles.css` (spec 052 FR-052).
 - **Serious mode** (spec 034 FR-004): removes the moods; spec 017 FR-022 also stops its animations in Serious mode.
 - **Live readout and masking** (spec 001 FR-028..FR-031, FR-043): desk readouts go through `src/shared/redact.ts` (`redact`, `maskSecretCommand`, `maskSecretUrl`, `maskHomePaths`) and `DurbarSafeText` (mask before cut, spec 041 FR-065); main masks MCP output with session secret values (`maskMcpEvent`, `src/main/mcpmask.ts`). The chat body itself is Markdown-sanitised (spec 016) but **not** secret-masked, so the screen reuses the **desk readout** path, which is the stricter one (FR-030).
-- **Package size**: no budget exists today (spec 008 has none, no size script). The crew art total cap is 2.5 MB (`test:crew-assets`).
+- **Package size**: no budget exists today (spec 008 has none, no size script). The crew art total cap is 3 MiB (`test:crew-assets`; 2.5 MiB until the Monster crew, spec 077 FR-075).
 
 ## Evidence: the mockup (outside the repo, not committed)
 

@@ -208,7 +208,7 @@ export interface AppSettingsView {
   /** Active theme id (specs 035-040). Omitted = Clean Office. */
   theme?: string;
   /** Spec 077 FR-064: who sits at the desks (`theme`: the theme's own). */
-  characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate';
+  characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster';
   /** OS notifications when an agent needs you while the window is in the background (spec 052 FR-059). On unless turned off. */
   notifyNeedsMe?: boolean;
   /** Spec 068 FR-006: after a coffee break, `auto` resumes by itself when it costs nothing extra; `ask` always asks. */
@@ -871,9 +871,9 @@ export interface DurbarApi {
   /** Bring the window to the front (a click on a "needs you" notification, spec 052 FR-059). */
   focusWindow?(): Promise<{ ok: boolean }>;
   /** Set the theme (specs 037-040): a built-in id or an imported user theme id. */
-  setTheme?(id: string): Promise<{ ok: boolean; theme?: string; characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' }>;
+  setTheme?(id: string): Promise<{ ok: boolean; theme?: string; characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' }>;
   /** Spec 077 FR-064: set who sits at the desks; main refuses anything not on the list (`ok: false`, the value in force). */
-  setCharacters?(v: string): Promise<{ ok: boolean; characters: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' }>;
+  setCharacters?(v: string): Promise<{ ok: boolean; characters: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' }>;
   /** User themes (spec 040): scan userData/themes; each valid pack listed, each invalid one given back with a reason. */
   listUserThemes?(): Promise<Array<{ id: string; name?: string; ok: boolean; error?: string }>>;
   getUserTheme?(id: string): Promise<Record<string, unknown> | null>;

@@ -363,6 +363,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   C.CREWS.futurecrew = []; // a future crew (mutant check: a hand list of names would miss it)
   try { assert.strictEqual(note('futurecrew'), 'Real office shows Office people until Futurecrew has Real office poses.', 'a new crew gets its note by construction'); } finally { delete C.CREWS.futurecrew; }
   assert.strictEqual(note('pirate'), 'Real office shows Office people until Pirate has Real office poses.', 'spec 077 FR-074: the Pirate crew has its Real office note');
+  assert.strictEqual(note('monster'), 'Real office shows Office people until Monster has Real office poses.', 'spec 077 FR-075: the Monster crew has its Real office note');
 }
 
 // ---- FR-037: who sits where ----
