@@ -111,9 +111,11 @@ function helpers(ctx) {
   /**
    * Windows CI: the drivers run three at a time on one desktop and a hidden runner window loses the OS focus to a neighbour, so `document.hasFocus()`
    * turns false in the middle of a driver (seen as `pageFocus:false, active:true, focus:false` in check-list-columns). `focusPage()` asks for the real
-   * focus until the page has it; if it cannot get it, it turns on Chromium's focus emulation (CDP `Emulation.setFocusEmulationEnabled`) so the page
-   * behaves as focused whatever the OS does (`:focus`, `:focus-visible`, `hasFocus()`). Returns whether the page has focus; the caller's assertion follows.
-   * It never waits on a fixed time: every wait ends as soon as the condition holds. `webContents.isFocused()` is the host's view and stays real.
+   * focus until the page has it and returns whether it does. Only with `{ emulate: true }` does it then fall back to Chromium's focus emulation (CDP
+   * `Emulation.setFocusEmulationEnabled`), which makes `hasFocus()` true whatever the OS does and so hides every real blur: the caller owns that
+   * and ends it with `releaseFocus()` (try/finally) before any step that tests a focus loss. Nothing turns it on by itself, `H.key` included.
+   * `loseFocus()` releases, blurs the window and returns whether the page reports no focus, for a driver that tests a blur (assert its result).
+   * Every wait ends as soon as the condition holds. `webContents.isFocused()` is the host's view and stays real.
    */
   const emulating = new WeakSet();
   const emulateFocus = async () => {
@@ -125,16 +127,25 @@ function helpers(ctx) {
       emulating.add(c);
     } catch (e) { console.log('focus emulation unavailable:', String(e && e.message).slice(0, 80)); }
   };
-  const focusPage = async (ms = 3000) => {
-    const end = Date.now() + ms;
+  const releaseFocus = async () => {
+    const c = wc();
+    if (!c || !c.debugger || !emulating.has(c)) return;
+    emulating.delete(c);
+    try { await c.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: false }); } catch { /* the page is gone */ }
+    try { if (c.debugger.isAttached()) c.debugger.detach(); } catch { /* already detached */ }
+  };
+  const focusPage = async (o = {}) => {
+    const end = Date.now() + (o.ms || 3000);
     for (;;) {
       try { if (ctx.win.show) ctx.win.show(); if (ctx.win.focus) ctx.win.focus(); wc().focus(); } catch { /* the window is going away: the guard reports it */ }
       if (await w.until('document.hasFocus()', 400)) return true;
       if (Date.now() > end) break;
     }
+    if (!o.emulate) return false;
     await emulateFocus();
     return w.until('document.hasFocus()', 1500);
   };
+  const loseFocus = async () => { await releaseFocus(); try { ctx.win.blur(); } catch { /* gone */ } return w.until('!document.hasFocus()', 4000); };
   /** Give another web contents (a Browser tab's view) the real focus and wait until it reports it; false when it never does. */
   const focusWc = async (target, ms = 3000) => {
     const end = Date.now() + ms;
@@ -151,9 +162,6 @@ function helpers(ctx) {
    */
   const key = async (keyCode, modifiers, o = {}) => {
     const mods = modifiers || [];
-    // a key sent while the page lacks focus has no :focus-visible and can miss its handler (Windows CI, issue: windows focus flakes). Emulated focus
-    // does not move the real focus, so a Browser tab's view that has it keeps it; `focus: false` leaves the page as it is
-    if (o.focus !== false && !(await ctx.js('document.hasFocus()'))) await emulateFocus();
     wc().sendInputEvent({ type: 'keyDown', keyCode, modifiers: mods });
     if (o.char === 'never') { /* a shortcut: key down and up only */ }
     else if (o.char === 'always') wc().sendInputEvent({ type: 'char', keyCode, modifiers: mods });
@@ -254,7 +262,7 @@ function helpers(ctx) {
     await goToFloor(list[0].id);
     for (let i = 0; i < list.length; i++) { await goToFloor(list[i].id); await w.settle(); await fn(list[i], i); }
   };
-  return { ...w, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, focusPage, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
+  return { ...w, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, focusPage, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
 }
 
 /**
