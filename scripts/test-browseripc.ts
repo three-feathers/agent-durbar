@@ -13,7 +13,9 @@ import * as assert from 'assert';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
-import { checkBounds, displayUrl, errorName, makeBrowserController, STATE_KEYS } from '../src/main/browser/controller';
+import { checkBounds, displayUrl, errorName, makeBrowserController, STATE_KEYS, TAB_KEYS } from '../src/main/browser/controller';
+import { MAX_LIVE_VIEWS } from '../src/main/browser/viewcap';
+import { makeLinksToggle } from '../src/main/browser/tabs';
 import type { BrowserDeps, BrowserWinLike } from '../src/main/browser/controller';
 import { installSimPages, registerSimScheme, simAddress, simPage } from '../src/main/browser/simpages';
 import { makeViews } from '../src/main/browser/views';
@@ -35,13 +37,16 @@ function fakeWin(content = { width: 1000, height: 700 }, zoom = 1) {
     isDestroyed() { return this.destroyed; },
     contentView: { addChildView: (v: unknown) => void children.push(v), removeChildView: (v: unknown) => { const i = children.indexOf(v); if (i >= 0) children.splice(i, 1); } },
     getContentBounds: () => content,
-    webContents: { getZoomFactor: () => zoom },
+    webContents: { focused: false, focuses: 0, getZoomFactor: () => zoom, isFocused() { return this.focused; }, focus() { this.focuses++; this.focused = true; } },
   };
   return win;
 }
+/** Spec 080 T023: `hold.on` keeps the next navigations from committing (a page that is still loading); `release()` answers them (refused). */
+const hold = { on: false, waiting: [] as (() => void)[], release() { const w = this.waiting.splice(0); for (const f of w) f(); } };
 function fakeSession(id: string) {
   const wc = Object.assign(new EventEmitter(), {
-    url: 'about:blank' as unknown, title: '' as unknown, loading: false, muted: true, canBack: false, canForward: false, destroyed: false, stops: 0,
+    url: 'about:blank' as unknown, title: '' as unknown, loading: false, muted: true, canBack: false, canForward: false, destroyed: false, stops: 0, focuses: 0, focused: false,
+    focus() { this.focuses++; this.focused = true; }, isFocused() { return this.focused; },
     getURL() { return this.url as string; }, getTitle() { return this.title as string; }, isLoading() { return this.loading; }, stop() { this.stops++; },
     setAudioMuted(m: boolean) { this.muted = m; }, isAudioMuted() { return this.muted; }, isDestroyed() { return this.destroyed; },
     navigationHistory: { canGoBack: () => wc.canBack, canGoForward: () => wc.canForward },
@@ -50,12 +55,31 @@ function fakeSession(id: string) {
   });
   const view = { webContents: wc, bounds: undefined as unknown, setBounds(b: unknown) { this.bounds = b; } };
   const navs: unknown[] = [];
-  const sv = { id, view, driver: 'user' as const, navs, events: undefined as unknown as import('../src/main/browser/views').ViewEvents, navigate: async (a: unknown) => { navs.push(a); if (a && typeof a === 'object') { wc.url = (a as { url: string }).url; wc.emit('did-start-navigation'); wc.emit('did-navigate'); } return true; }, destroy: async () => undefined };
+  const sv = {
+    id, view, driver: 'user' as const, navs, tabId: '', closed: false, closeAsks: 0, leaveOnClose: true as boolean | undefined,
+    events: undefined as unknown as import('../src/main/browser/views').ViewEvents,
+    navigate: async (a: unknown) => {
+      navs.push(a);
+      if (sv.closed) return false;
+      if (hold.on && a && typeof a === 'object' && (a as { url: string }).url !== 'about:blank') { wc.loading = true; return new Promise<boolean>((res) => hold.waiting.push(() => res(false))); }
+      if (a && typeof a === 'object') { wc.url = (a as { url: string }).url; wc.emit('did-start-navigation'); wc.emit('did-navigate'); }
+      return true;
+    },
+    close: () => { sv.closed = true; wc.destroyed = true; },
+    // FR-128: `leaveOnClose` true = no beforeunload or Leave; false = Stay
+    closeAsk: async () => { sv.closeAsks++; if (sv.leaveOnClose === false) return false; sv.close(); return true; },
+  };
   return { wc, view, sv, navs };
 }
 function rig(opts: { sim?: boolean; known?: (id: string) => boolean; win?: ReturnType<typeof fakeWin> | undefined; zoom?: number; consent?: boolean; snapshotMs?: number; now?: () => number } = {}) {
   const win = 'win' in opts ? opts.win : fakeWin(undefined, opts.zoom);
   const sessions = new Map<string, ReturnType<typeof fakeSession>>();
+  const tabViews = new Map<string, ReturnType<typeof fakeSession>>(); // spec 080 T023: one fake view per (session, tab)
+  const closedTabs: string[] = [];
+  const keys: { id: string; key: string }[] = [];
+  const tabsSeen: import('../src/shared/api').BrowserTabs[] = [];
+  const links = { on: false };
+  const closeHold = { on: false };
   const ensured: string[] = [];
   const destroyed: string[] = [];
   const emitted: BrowserState[] = [];
@@ -76,21 +100,37 @@ function rig(opts: { sim?: boolean; known?: (id: string) => boolean; win?: Retur
     sim: !!opts.sim,
     window: () => win as unknown as BrowserWinLike | undefined,
     views: {
-      ensureSessionView: async (id, events) => {
+      ensureTabView: async (id, tabId, events) => {
         ensured.push(id);
-        if (!sessions.has(id)) sessions.set(id, fakeSession(id));
-        sessions.get(id)!.sv.events = events;
-        return sessions.get(id)!.sv as never;
+        const key = id + '/' + tabId;
+        if (!tabViews.has(key)) tabViews.set(key, fakeSession(id));
+        const f = tabViews.get(key)!;
+        if (!sessions.has(id) || sessions.get(id)!.sv.closed) sessions.set(id, f); // the session's first (live) view
+        f.sv.events = events;
+        f.sv.tabId = tabId;
+        return f.sv as never;
       },
-      destroySessionView: async (id) => void destroyed.push(id),
+      closeTabView: async (id, tabId) => {
+        closedTabs.push(id + '/' + tabId);
+        if (closeHold.on) return new Promise<void>(() => undefined); // a view still being made: its close waits for it
+        const f = tabViews.get(id + '/' + tabId);
+        if (f) { f.sv.close(); tabViews.delete(id + '/' + tabId); }
+      },
+      destroySessionView: async (id) => {
+        destroyed.push(id);
+        for (const [k, f] of [...tabViews]) if (k.startsWith(id + '/')) { f.sv.close(); tabViews.delete(k); }
+      },
     },
     emit: (s) => void emitted.push(s),
+    emitTabs: (t) => void tabsSeen.push(t),
+    linksNewTab: () => links.on,
+    tabKey: (k) => void keys.push(k),
     openExternal: async (u) => void opened.push(u),
     later: (f) => void queue.push(f),
   };
   const ctl = makeBrowserController(deps);
   const flush = (): void => { while (queue.length) queue.shift()!(); };
-  return { ctl, win: win!, sessions, ensured, destroyed, emitted, opened, flush, dialogs, leaves, dropped, consent };
+  return { ctl, win: win!, sessions, tabViews, closedTabs, closeHold, keys, tabsSeen, links, ensured, destroyed, emitted, opened, flush, dialogs, leaves, dropped, consent };
 }
 const B = { x: 10, y: 120, width: 600, height: 400 };
 
@@ -217,7 +257,7 @@ process.on('exit', () => {
     wc.emit('did-navigate');
     r.flush();
     const s = r.emitted[r.emitted.length - 1];
-    assert.deepStrictEqual(Object.keys(s).sort(), STATE_KEYS.filter((k) => k !== 'error' && k !== 'note' && k !== 'memory').sort(), 'exactly the BrowserState keys');
+    assert.deepStrictEqual(Object.keys(s).sort(), STATE_KEYS.filter((k) => k !== 'error' && k !== 'note' && k !== 'memory' && k !== 'tabLimit').sort(), 'exactly the BrowserState keys');
     for (const [k, v] of Object.entries(s)) assert.ok(['string', 'boolean'].includes(typeof v), `${k} is a primitive (${typeof v})`);
     assert.strictEqual(s.url, 'https://example.invalid/a?q=1', 'userinfo dropped');
     assert.ok(!/pw/.test(JSON.stringify(s)));
@@ -335,7 +375,7 @@ process.on('exit', () => {
     const r = rig();
     const bad = makeBrowserController({
       known: () => true, sim: false, window: () => undefined, emit: () => undefined, openExternal: async () => undefined, consented: () => true, pageDialog: () => undefined, askLeave: async () => false,
-      views: { ensureSessionView: async () => { throw new Error('boom'); }, destroySessionView: async () => undefined },
+      views: { ensureTabView: async () => { throw new Error('boom'); }, closeTabView: async () => undefined, destroySessionView: async () => undefined },
     });
     const res = await bad.open('s1');
     assert.ok(!res.ok && /could not start/.test(res.reason));
@@ -359,7 +399,7 @@ process.on('exit', () => {
     r.ctl.bounds('s1', B); r.ctl.visible('s1', true);
     ev.onPageDialog!('s1', { type: 'confirm', text: 'Delete?', forAgent: false });
     r.flush();
-    assert.deepStrictEqual(r.dialogs, [{ id: 's1', type: 'confirm', text: 'Delete?', shown: true }], 'a shown view says so');
+    assert.deepStrictEqual(r.dialogs, [{ id: 's1', type: 'confirm', text: 'Delete?', shown: true, tabId: r.ctl.tabIds('s1')[0], bg: false }], 'a shown view says so');
     assert.strictEqual(r.emitted[r.emitted.length - 1].dialogOpen, true, 'the Dialog open marker');
     ev.onPageDialogClosed!('s1');
     r.flush();
@@ -644,8 +684,618 @@ process.on('exit', () => {
     assert.strictEqual(dialogText('a\u0000b\u001fc', 80), 'a b c');
   }
 
+  // ---- 1b. spec 080 T021/T023: page tabs (US6, FR-120..FR-133, SC-010) ----
+  const tabsNow = (r: ReturnType<typeof rig>, id = 's1') => r.ctl.tabsOf(id);
+  const activeOf = (r: ReturnType<typeof rig>, id = 's1') => r.ctl.tabsOf(id).active;
+  const viewOf = (r: ReturnType<typeof rig>, tabId: string, id = 's1') => r.tabViews.get(id + '/' + tabId);
+  const lastNav = (f: ReturnType<typeof fakeSession> | undefined) => (f ? f.navs[f.navs.length - 1] : undefined);
+  const tick = (): Promise<void> => new Promise((res) => setImmediate(res));
+  // US6.1: the toggle off (the default): a chat link loads in the active tab, no tab is added
+  {
+    const r = rig();
+    await r.ctl.open('s1');
+    await r.ctl.navigate('s1', 'https://a.example/one');
+    const first = activeOf(r);
+    const o = await r.ctl.openLink('s1', 'https://b.example/two');
+    assert.ok(o.ok);
+    assert.strictEqual(r.ctl.tabIds('s1').length, 1, 'toggle off: no tab added');
+    assert.deepStrictEqual(lastNav(viewOf(r, first)), { url: 'https://b.example/two' }, 'loaded in the active tab, as FR-030');
+    assert.ok(o.ok && o.linksNewTab === false, 'the window learns the toggle from main');
+  }
+  // US6.2, US6.3: the toggle on: a new tab to the right, active, the old page stays; the same link focuses its tab without reloading it
+  {
+    const r = rig();
+    r.links.on = true;
+    await r.ctl.open('s1');
+    await r.ctl.openLink('s1', 'http://localhost:5173/'); // the first, empty tab takes the first link
+    const t1 = activeOf(r);
+    assert.strictEqual(r.ctl.tabIds('s1').length, 1, 'the empty first tab took the link (no empty tab left beside it)');
+    await r.ctl.openLink('s1', 'https://docs.example/x');
+    const ids = r.ctl.tabIds('s1');
+    assert.strictEqual(ids.length, 2, 'a new tab');
+    const t2 = activeOf(r);
+    assert.notStrictEqual(t2, t1, 'the new tab is active');
+    assert.deepStrictEqual(ids, [t1, t2], 'to the right of the active tab');
+    assert.strictEqual(viewOf(r, t1)!.wc.url, 'http://localhost:5173/', 'the page I was on stays loaded in its tab');
+    const n1 = viewOf(r, t1)!.navs.length;
+    await r.ctl.openLink('s1', 'http://localhost:5173/#top');
+    assert.strictEqual(activeOf(r), t1, 'the same link (fragment aside) focuses its tab');
+    assert.strictEqual(r.ctl.tabIds('s1').length, 2, 'no tab added');
+    assert.strictEqual(viewOf(r, t1)!.navs.length, n1, 'a live match is not reloaded');
+    await r.ctl.openLink('s1', 'http://LOCALHOST:5173');
+    assert.strictEqual(r.ctl.tabIds('s1').length, 2, 'host case and the trailing slash match too');
+    // the menu's Open in a new tab takes the same path with the toggle off
+    r.links.on = false;
+    await r.ctl.openLink('s1', 'https://third.example/', 'newTab');
+    assert.strictEqual(r.ctl.tabIds('s1').length, 3, 'how=newTab opens a tab whatever the toggle');
+    // a link clicked twice before it commits: the second finds the first through its pending address
+    hold.on = true;
+    await r.ctl.openLink('s1', 'https://slow.example/', 'newTab');
+    await r.ctl.openLink('s1', 'https://slow.example/', 'newTab');
+    assert.strictEqual(r.ctl.tabIds('s1').length, 4, 'one tab for a double click');
+    hold.on = false; hold.release();
+    await tick();
+    // refused links make no tab
+    for (const bad of ['javascript:alert(1)', 'file:///etc/passwd', 'ms-msdt:/id x', 'search-ms:query=x', 'chrome://gpu', 'https://u:p@evil.example/', ' VSCODE://x', 'data:text/html,x']) {
+      const res = await r.ctl.openLink('s1', bad, 'newTab');
+      assert.strictEqual(res.ok, false, `refused: ${bad}`);
+    }
+    const mail = await r.ctl.openLink('s1', 'mailto:a@b.example', 'newTab');
+    assert.ok(!mail.ok && mail.link === 'mailto', 'mailto keeps its offer, no tab');
+    assert.strictEqual(r.ctl.tabIds('s1').length, 4, 'a refused or mail link makes no tab');
+    assert.deepStrictEqual(r.opened, [], 'and nothing reaches the system');
+    // `how` is checked in main
+    for (const how of ['evil', 1, {}, null, 'NEWTAB']) assert.strictEqual((await r.ctl.openLink('s1', 'https://x.example/', how)).ok, false, `how=${JSON.stringify(how)} refused`);
+    assert.strictEqual(r.ctl.tabIds('s1').length, 4, 'a refused how has no effect');
+  }
+  // US6.5, FR-126: 10 tabs per session, on every path
+  {
+    const r = rig();
+    await r.ctl.open('s1');
+    r.ctl.bounds('s1', B); r.ctl.visible('s1', true);
+    for (let i = 1; i < 10; i++) assert.ok((await r.ctl.newTab('s1')).ok, 'tab ' + (i + 1));
+    assert.strictEqual(r.ctl.tabIds('s1').length, 10);
+    const full = await r.ctl.newTab('s1');
+    assert.ok(!full.ok && full.tabLimit === true && /10 tabs/.test(full.reason), '+ and Ctrl+T at 10: refused with the limit text');
+    assert.strictEqual(r.ctl.tabIds('s1').length, 10, 'no 11th tab');
+    r.flush();
+    assert.strictEqual(r.emitted[r.emitted.length - 1].tabLimit, true, 'the bar says so');
+    r.links.on = true;
+    const act = activeOf(r);
+    await r.ctl.navigate('s1', 'https://ten.example/'); // the active tab has a page (an empty one would simply take the link)
+    await r.ctl.openLink('s1', 'https://eleven.example/');
+    assert.strictEqual(r.ctl.tabIds('s1').length, 10, 'a chat link at 10 makes no tab');
+    assert.deepStrictEqual(lastNav(viewOf(r, act)), { url: 'https://eleven.example/' }, 'it loads in the active tab instead');
+    assert.strictEqual(r.ctl.stateOf('s1').tabLimit, true, 'with the limit note');
+    const ev = viewOf(r, act)!.sv.events;
+    assert.strictEqual(ev.onTabRequest!('s1', 'https://eleven.example/more', true), false, 'a page request at 10: refused (offered like a popup)');
+    assert.strictEqual(r.ctl.tabIds('s1').length, 10);
+    // other sessions are not affected
+    await r.ctl.open('s2');
+    assert.ok((await r.ctl.newTab('s2')).ok, 'the limit is per session');
+    await r.ctl.closeTab('s1', r.ctl.tabIds('s1')[3]);
+    assert.strictEqual(r.ctl.stateOf('s1').tabLimit, undefined, 'closing a tab clears the note');
+  }
+  // FR-004, FR-129: + makes an empty tab with no view; an address loads there
+  {
+    const r = rig();
+    await r.ctl.open('s1');
+    const views0 = r.ensured.length;
+    const nt = await r.ctl.newTab('s1');
+    assert.ok(nt.ok && nt.state.open && nt.state.url === '' && nt.state.tabId === activeOf(r));
+    assert.strictEqual(r.ensured.length, views0, 'an empty New tab has no view');
+    const t = activeOf(r);
+    await r.ctl.navigate('s1', 'https://a.example/');
+    assert.deepStrictEqual(lastNav(viewOf(r, t)), { url: 'https://a.example/' }, 'the address loads in the new tab');
+    const nt2 = await r.ctl.newTab('s1', 'https://b.example/');
+    assert.ok(nt2.ok && r.ctl.tabIds('s1').length === 3);
+    assert.deepStrictEqual(lastNav(viewOf(r, activeOf(r))), { url: 'https://b.example/' }, 'newTab with an address loads it');
+    for (const bad of ['file:///etc/passwd', 'javascript:alert(1)', 'https://u:p@x.example/']) assert.strictEqual((await r.ctl.newTab('s1', bad)).ok, false, 'refused address: ' + bad);
+    assert.strictEqual(r.ctl.tabIds('s1').length, 3, 'a refused address makes no tab');
+    const n = rig({ consent: false });
+    assert.ok((await n.ctl.newTab('s1')).ok === false && n.ctl.tabIds('s1').length === 0, 'no tab before the one-time note');
+  }
+  // FR-127 AC1: tab ids must have the shape AND belong to the session; anything else has no effect
+  {
+    const r = rig();
+    await r.ctl.open('s1'); await r.ctl.newTab('s1');
+    await r.ctl.open('s2');
+    const [a1, a2] = r.ctl.tabIds('s1');
+    const b1 = r.ctl.tabIds('s2')[0];
+    const act = activeOf(r);
+    for (const bad of [b1, '', 't123', 'T' + a1.slice(1), a1 + '0', '../' + a1, 5, null, undefined, {}, [a1], { toString: () => a1 }, 'tgggggggg', 't00000000']) {
+      assert.strictEqual((await r.ctl.selectTab('s1', bad)).ok, false, `selectTab ${JSON.stringify(bad)} refused`);
+      assert.strictEqual((await r.ctl.closeTab('s1', bad)).ok, false, `closeTab ${JSON.stringify(bad)} refused`);
+    }
+    assert.strictEqual(activeOf(r), act, 'nothing changed');
+    assert.deepStrictEqual(r.ctl.tabIds('s1'), [a1, a2]);
+    assert.deepStrictEqual(r.ctl.tabIds('s2'), [b1], 'another session\'s tab is untouched');
+    for (const bad of [undefined, null, 5, 'nobody', '']) {
+      assert.strictEqual((await r.ctl.newTab(bad)).ok, false);
+      assert.strictEqual((await r.ctl.selectTab(bad, a1)).ok, false);
+      assert.strictEqual((await r.ctl.closeTab(bad, a1)).ok, false);
+    }
+    assert.ok((await r.ctl.selectTab('s1', a1)).ok && activeOf(r) === a1, 'its own tab id works');
+  }
+  // FR-127 AC2: only the shown session's ACTIVE tab is attached; the existing channels act on the active tab
+  {
+    const r = rig();
+    await r.ctl.open('s1');
+    await r.ctl.navigate('s1', 'https://a.example/');
+    const t1 = activeOf(r);
+    await r.ctl.newTab('s1', 'https://b.example/');
+    const t2 = activeOf(r);
+    r.ctl.bounds('s1', B); r.ctl.visible('s1', true);
+    assert.deepStrictEqual(r.win.children, [viewOf(r, t2)!.view], 'the active tab is attached');
+    await r.ctl.selectTab('s1', t1);
+    assert.deepStrictEqual(r.win.children, [viewOf(r, t1)!.view], 'selecting a tab swaps the view; the background tab comes off');
+    assert.deepStrictEqual(viewOf(r, t1)!.view.bounds, B, 'with the pane bounds');
+    await r.ctl.history('s1', 'reload');
+    assert.strictEqual(lastNav(viewOf(r, t1)), 'reload', 'reload acts on the active tab');
+    assert.notStrictEqual(lastNav(viewOf(r, t2)), 'reload');
+    r.ctl.mute('s1', false);
+    assert.strictEqual(viewOf(r, t1)!.wc.muted, false);
+    assert.strictEqual(viewOf(r, t2)!.wc.muted, true, 'mute is per tab');
+    r.ctl.stop('s1');
+    assert.strictEqual(viewOf(r, t1)!.wc.stops, 1);
+    assert.strictEqual(viewOf(r, t2)!.wc.stops, 0);
+    r.ctl.overlay('s1', true);
+    assert.deepStrictEqual(r.win.children, [], 'an overlay hides the active tab');
+    r.ctl.overlay('s1', false);
+    r.ctl.visible('s1', false);
+    assert.deepStrictEqual(r.win.children, []);
+    await r.ctl.selectTab('s1', t2);
+    assert.deepStrictEqual(r.win.children, [], 'a session that is not shown attaches nothing when its tab changes');
+  }
+  // FR-127 AC3: the tabs push has only the listed fields, primitives, cleaned titles and displayUrl addresses
+  {
+    const r = rig();
+    await r.ctl.open('s1');
+    await r.ctl.navigate('s1', 'https://a.example/');
+    const f = viewOf(r, activeOf(r))!;
+    f.wc.url = 'https://user:pw@a.example/x';
+    f.wc.title = 'T\u0000\u0007itle ' + 'y'.repeat(400);
+    f.wc.emit('page-title-updated');
+    await r.ctl.newTab('s1');
+    r.flush();
+    const t = r.tabsSeen[r.tabsSeen.length - 1];
+    assert.deepStrictEqual(Object.keys(t).sort(), ['active', 'id', 'tabs']);
+    assert.strictEqual(t.tabs.length, 2);
+    for (const e of t.tabs) {
+      for (const k of Object.keys(e)) assert.ok((TAB_KEYS as readonly string[]).includes(k), `tab key ${k}`);
+      for (const [k, v] of Object.entries(e)) assert.ok(['string', 'boolean'].includes(typeof v), `${k} is a primitive`);
+      assert.ok(/^t[0-9a-f]{8}$/.test(e.tabId));
+    }
+    assert.strictEqual(t.tabs[0].url, 'https://a.example/x', 'userinfo dropped');
+    assert.ok(!/pw/.test(JSON.stringify(t)), 'no password in the push');
+    assert.ok(t.tabs[0].title.length <= 200 && !/[\u0000-\u001f]/.test(t.tabs[0].title), 'title cleaned and cut');
+    assert.strictEqual(t.tabs[1].title, '', 'an empty tab has no title (the window says New tab)');
+    assert.strictEqual(r.emitted[r.emitted.length - 1].tabId, t.active, 'BrowserState carries the active tab id');
+  }
+  // US6.6: a tab closed while loading: its load stops, its view goes, nothing it sends afterwards changes anything
+  {
+    const r = rig();
+    await r.ctl.open('s1');
+    await r.ctl.navigate('s1', 'https://keep.example/');
+    const keep = activeOf(r);
+    r.ctl.bounds('s1', B); r.ctl.visible('s1', true);
+    hold.on = true;
+    await r.ctl.newTab('s1', 'https://slow.example/');
+    const slow = activeOf(r);
+    await r.ctl.newTab('s1', 'https://right.example/');
+    const right = activeOf(r);
+    await r.ctl.selectTab('s1', slow);
+    const fSlow = viewOf(r, slow)!;
+    const ev = fSlow.sv.events;
+    hold.on = false;
+    await r.ctl.closeTab('s1', slow);
+    assert.ok(fSlow.sv.closed, 'its view went');
+    assert.ok(r.closedTabs.includes('s1/' + slow), 'through closeTabView (the partition stays)');
+    assert.deepStrictEqual(r.destroyed, [], 'no session teardown');
+    assert.strictEqual(activeOf(r), right, 'the tab to its right becomes active');
+    assert.deepStrictEqual(r.win.children, [viewOf(r, right)!.view]);
+    // three more pages loaded, so a page load counted for the closed tab would make the cap drop one of them
+    await r.ctl.newTab('s1', 'https://p1.example/'); await r.ctl.newTab('s1', 'https://p2.example/'); await r.ctl.newTab('s1', 'https://p3.example/');
+    await r.ctl.selectTab('s1', right);
+    r.flush();
+    const nState = r.emitted.length, nTabs = r.tabsSeen.length, nDialogs = r.dialogs.length;
+    assert.strictEqual(r.ctl.tabsOf('s1').tabs.filter((x) => x.url && x.url !== '' && x.memory !== 'dropped').length, 4, 'precondition: four pages loaded, the cap is full');
+    // late events of the closed tab (its webContents still emitting, as during a close in flight)
+    fSlow.wc.destroyed = false;
+    fSlow.wc.url = 'https://slow.example/'; fSlow.wc.emit('did-navigate'); fSlow.wc.emit('did-fail-load', {}, -102, 'ERR_CONNECTION_REFUSED', 'x', true); fSlow.wc.emit('page-title-updated');
+    ev.onPageDialog!('s1', { type: 'alert', text: 'late', forAgent: false });
+    ev.onDialogNote!('s1', 'late note');
+    assert.strictEqual(ev.onTabRequest!('s1', 'https://slow.example/pop', true), false, 'a closed tab opens no tab');
+    ev.onTabKey!('s1', 'close');
+    hold.release(); // its navigate promise settles now
+    await tick(); r.flush();
+    assert.strictEqual(r.dialogs.length, nDialogs, 'no toast from a closed tab');
+    assert.deepStrictEqual(r.keys, [], 'no key from a closed tab');
+    assert.strictEqual(r.ctl.tabIds('s1').length, 5);
+    assert.ok(!r.ctl.tabsOf('s1').tabs.some((x) => x.memory === 'dropped'), 'its late page load made the cap drop nothing');
+    assert.ok(r.emitted.length === nState && r.tabsSeen.length === nTabs, 'nothing it sent afterwards was told to the window');
+    assert.strictEqual(r.ctl.stateOf('s1').tabId, right);
+    assert.strictEqual(r.ctl.stateOf('s1').error, undefined, 'its failure is not the active tab\'s');
+    // closing the rightmost active tab activates the one to its left
+    const rightmost = r.ctl.tabIds('s1')[4];
+    await r.ctl.selectTab('s1', rightmost);
+    await r.ctl.closeTab('s1', rightmost);
+    assert.strictEqual(activeOf(r), r.ctl.tabIds('s1')[3], 'else the tab to its left');
+    assert.ok(r.ctl.tabIds('s1').includes(keep));
+  }
+  // the list and the active tab change in one step: a close never waits for the view's teardown, and no reader sees a removed tab as active
+  {
+    const r = rig();
+    await r.ctl.open('s1');
+    await r.ctl.newTab('s1', 'https://a.example/');
+    const a = activeOf(r);
+    await r.ctl.newTab('s1', 'https://b.example/');
+    await r.ctl.selectTab('s1', a);
+    r.closeHold.on = true;
+    const res = await r.ctl.closeTab('s1', a); // resolves although the view's teardown is still pending
+    assert.ok(res.ok && res.state.tabId !== a && res.tabs!.active !== a && !res.tabs!.tabs.some((x) => x.tabId === a), 'the answer already has the new active tab');
+    assert.notStrictEqual(activeOf(r), a, 'main\'s active tab moved with the list (a check-browser-tabs race, 2026-10-31)');
+  }
+  // a tab closed while its view is still being made never keeps a view
+  {
+    const r = rig();
+    await r.ctl.open('s1');
+    const p = r.ctl.newTab('s1', 'https://a.example/');
+    const t = activeOf(r);
+    const c = r.ctl.closeTab('s1', t);
+    await p; await c; await tick();
+    assert.ok(!r.ctl.tabIds('s1').includes(t), 'closed');
+    assert.ok(r.closedTabs.includes('s1/' + t), 'its view is closed when it arrives');
+  }
+  // FR-128: closing a tab whose page asks: Stay keeps it, Leave closes it
+  {
+    const r = rig();
+    await r.ctl.open('s1');
+    await r.ctl.newTab('s1', 'https://form.example/');
+    const t = activeOf(r);
+    viewOf(r, t)!.sv.leaveOnClose = false;
+    await r.ctl.closeTab('s1', t);
+    assert.ok(r.ctl.tabIds('s1').includes(t), 'Stay: the tab stays');
+    assert.strictEqual(viewOf(r, t)!.sv.closeAsks, 1, 'the page was asked (beforeunload, Durbar\'s box)');
+    viewOf(r, t)!.sv.leaveOnClose = true;
+    await r.ctl.closeTab('s1', t);
+    assert.ok(!r.ctl.tabIds('s1').includes(t), 'Leave: closed');
+  }
+  // US6.7: the last tab closed leaves one empty New tab with no view; the session browser (and its partition) stays
+  {
+    const r = rig();
+    await r.ctl.open('s1');
+    await r.ctl.navigate('s1', 'https://a.example/');
+    const only = activeOf(r);
+    const n = r.ensured.length;
+    const res = await r.ctl.closeTab('s1', only);
+    assert.ok(res.ok);
+    const ids = r.ctl.tabIds('s1');
+    assert.strictEqual(ids.length, 1, 'one tab');
+    assert.notStrictEqual(ids[0], only, 'a new, empty one');
+    assert.strictEqual(r.ensured.length, n, 'with no view (FR-004)');
+    assert.ok(res.ok && res.state.open && res.state.url === '', 'the browser is open on an empty tab');
+    assert.deepStrictEqual(r.destroyed, [], 'only a session end wipes the partition');
+    assert.ok((await r.ctl.open('s1')).ok && r.ensured.length === n, 'opening the Browser tab again keeps it empty');
+    await r.ctl.navigate('s1', 'https://b.example/');
+    assert.deepStrictEqual(lastNav(viewOf(r, ids[0])), { url: 'https://b.example/' }, 'an address makes its view');
+  }
+  // US6.8, FR-128: a session ending with several tabs, one asking Leave this page?: every view closes, the question drops, the partition goes once
+  {
+    const r = rig();
+    await r.ctl.open('s1');
+    await r.ctl.navigate('s1', 'https://a.example/');
+    await r.ctl.newTab('s1', 'https://b.example/');
+    await r.ctl.newTab('s1');
+    await r.ctl.newTab('s1', 'https://c.example/');
+    const fakes = r.ctl.tabIds('s1').map((t) => viewOf(r, t)).filter(Boolean);
+    assert.strictEqual(fakes.length, 3, 'three tabs with views, one empty');
+    void fakes[1]!.sv.events.askLeave!('s1', true);
+    await r.ctl.destroy('s1');
+    assert.deepStrictEqual(r.destroyed, ['s1'], 'one session teardown (it closes every view, then clears the partition once)');
+    assert.ok(fakes.every((f) => f!.sv.closed), 'every tab\'s view is closed');
+    assert.ok(r.dropped.includes('s1'), 'the waiting question is dropped');
+    assert.strictEqual(r.emitted[r.emitted.length - 1].open, false);
+    assert.deepStrictEqual(r.tabsSeen[r.tabsSeen.length - 1], { id: 's1', active: '', tabs: [] }, 'the window is told the tabs are gone');
+    assert.deepStrictEqual(r.ctl.tabIds('s1'), []);
+    assert.strictEqual((await r.ctl.selectTab('s1', fakes[0]!.sv.tabId)).ok, false, 'an old tab id is refused after the end');
+  }
+  // FR-125: pages opening tabs (the hardening's windowOpen calls onTabRequest only for a same-origin http(s) request; see test:browserviews)
+  {
+    const r = rig();
+    await r.ctl.open('s1');
+    await r.ctl.navigate('s1', 'https://site.example/');
+    const opener = activeOf(r);
+    const ev = viewOf(r, opener)!.sv.events;
+    assert.strictEqual(ev.onTabRequest!('s1', 'https://site.example/a', true), false, 'a session that is not shown never opens a tab (FR-007)');
+    r.ctl.bounds('s1', B); r.ctl.visible('s1', true);
+    viewOf(r, opener)!.wc.focused = true; // the user clicked in the page
+    assert.strictEqual(ev.onTabRequest!('s1', 'https://site.example/a', true), true, 'foreground-tab');
+    await tick(); await tick();
+    const fg = activeOf(r);
+    assert.notStrictEqual(fg, opener, 'a foreground tab becomes active');
+    assert.deepStrictEqual(r.ctl.tabIds('s1'), [opener, fg], 'to the right of the opener');
+    assert.deepStrictEqual(lastNav(viewOf(r, fg)), { url: 'https://site.example/a' }, 'loaded through the view helper');
+    assert.strictEqual(viewOf(r, fg)!.wc.focuses, 1, 'its page gets the focus (FR-129): the opener page had it');
+    await r.ctl.selectTab('s1', opener);
+    assert.strictEqual(ev.onTabRequest!('s1', 'https://site.example/b', false), true, 'background-tab');
+    await tick(); await tick();
+    assert.strictEqual(activeOf(r), opener, 'a background tab does not become active');
+    assert.deepStrictEqual(r.ctl.tabIds('s1'), [opener, r.ctl.tabIds('s1')[1], fg], 'next to the opener');
+    // a page that opens 50 tabs: 5 per page load, then refused
+    let opened = 2;
+    for (let i = 0; i < 50; i++) if (ev.onTabRequest!('s1', 'https://site.example/p' + i, false)) opened++;
+    assert.strictEqual(opened, 5, 'at most 5 tabs per page load of one opener');
+    await tick(); await tick();
+    assert.strictEqual(r.ctl.tabIds('s1').length, 6);
+    assert.strictEqual(activeOf(r), opener, 'none of them took the focus');
+    // a new page load may open its own: until the 10-tab limit
+    viewOf(r, opener)!.wc.emit('did-navigate');
+    let more = 0;
+    for (let i = 0; i < 50; i++) if (ev.onTabRequest!('s1', 'https://site.example/q' + i, false)) more++;
+    assert.strictEqual(more, 4, 'the next load opens up to the 10-tab limit');
+    assert.strictEqual(r.ctl.tabIds('s1').length, 10, 'never an 11th tab');
+    // hostile schemes reaching the controller (defence in depth: the hardening refuses them first) make no tab and call nothing
+    const r2 = rig();
+    await r2.ctl.open('s1'); r2.ctl.bounds('s1', B); r2.ctl.visible('s1', true);
+    const ev2 = viewOf(r2, activeOf(r2))!.sv.events;
+    for (const u of ['javascript:alert(1)', 'file:///etc/passwd', 'ms-msdt:/id', 'search-ms:q', 'mailto:a@b.c', 'vscode://x', 'data:text/html,x', 'about:blank', '', 'https://u:p@x.example/']) assert.strictEqual(ev2.onTabRequest!('s1', u, true), false, 'refused: ' + u);
+    assert.strictEqual(r2.ctl.tabIds('s1').length, 1, 'zero tabs');
+    assert.deepStrictEqual(r2.opened, [], 'zero openExternal calls');
+  }
+  // FR-129 (2026-10-31 delta, review of #915): a page never takes the keyboard focus from the composer or the chat. A foreground-tab request
+  // from a page that does not have the focus (a timer while the user types below the browser) opens its tab, but no page gets the focus;
+  // nor does it when the user went to Durbar's own window content while the new tab's view was being made
+  {
+    const r = rig();
+    await r.ctl.open('s1');
+    r.ctl.bounds('s1', B); r.ctl.visible('s1', true);
+    await r.ctl.navigate('s1', 'https://site.example/');
+    const opener = activeOf(r);
+    const ow = viewOf(r, opener)!;
+    const ev = ow.sv.events;
+    (r.win.webContents as { focused: boolean }).focused = true; // the user types in the composer
+    ow.wc.focused = false;
+    assert.strictEqual(ev.onTabRequest!('s1', 'https://site.example/timer', true), true, 'the tab opens (FR-125 limits apply)');
+    await tick(); await tick();
+    const t1 = activeOf(r);
+    assert.notStrictEqual(t1, opener, 'it is the active tab');
+    assert.deepStrictEqual(lastNav(viewOf(r, t1)), { url: 'https://site.example/timer' });
+    assert.strictEqual(viewOf(r, t1)!.wc.focuses, 0, 'but its page never takes the focus from the composer');
+    assert.strictEqual(ow.wc.focuses, 0, 'nor does the opener page');
+    // Electron focuses an attached view while main loads it: that first focus during the load goes back to the window
+    const uiWc = r.win.webContents as { focused: boolean; focuses: number };
+    uiWc.focused = false;
+    { const w = viewOf(r, t1)!.wc; w.focused = true; w.emit('focus'); }
+    r.flush();
+    { const w = viewOf(r, t1)!.wc; w.focused = true; w.emit('focus'); }
+    r.flush();
+    assert.strictEqual(uiWc.focuses, 2, 'each focus Electron gives the loading page goes back to Durbar\'s window content');
+    viewOf(r, t1)!.wc.emit('did-stop-loading');
+    { const w = viewOf(r, t1)!.wc; w.focused = true; w.emit('focus'); } // the user clicks in the page later
+    r.flush();
+    assert.strictEqual(uiWc.focuses, 2, 'after the load, a focus the user gives the page stays there');
+    uiWc.focused = true;
+    // the opener had the focus when it asked, but the user went to the composer before the new view was made: no focus either
+    await r.ctl.selectTab('s1', opener);
+    (r.win.webContents as { focused: boolean }).focused = false;
+    ow.wc.focused = true;
+    assert.strictEqual(ev.onTabRequest!('s1', 'https://site.example/late', true), true);
+    ow.wc.focused = false;
+    (r.win.webContents as { focused: boolean }).focused = true;
+    await tick(); await tick();
+    const t2 = activeOf(r);
+    assert.ok(t2 !== opener && t2 !== t1);
+    assert.strictEqual(viewOf(r, t2)!.wc.focuses, 0, 'the user moved to the composer meanwhile: the page does not take the focus back');
+    const f0 = uiWc.focuses;
+    viewOf(r, t2)!.wc.emit('did-stop-loading');
+    { const w = viewOf(r, t2)!.wc; w.focused = true; w.emit('focus'); } // the load is over: a click in the page is the user's
+    r.flush();
+    assert.strictEqual(uiWc.focuses, f0, 'a focus after the load is never taken back');
+    // neither the opener page nor Durbar's window content has the focus (another app, or the window in the background): no page takes it
+    await r.ctl.selectTab('s1', opener);
+    (r.win.webContents as { focused: boolean }).focused = false;
+    ow.wc.focused = false;
+    assert.strictEqual(ev.onTabRequest!('s1', 'https://site.example/away', true), true);
+    await tick(); await tick();
+    assert.strictEqual(viewOf(r, activeOf(r))!.wc.focuses, 0, 'an opener without the focus never hands it to its new page');
+    const f1 = uiWc.focuses;
+    { const w = viewOf(r, activeOf(r))!.wc; w.focused = true; w.emit('focus'); }
+    r.flush();
+    assert.strictEqual(uiWc.focuses, f1, 'Durbar\'s window content did not have it either: nothing is pulled into the window');
+    // the opener page had the focus and the user stayed in it: the new page gets it (the FR-129 rule of the 2026-10-31 tabs delta)
+    await r.ctl.selectTab('s1', opener);
+    (r.win.webContents as { focused: boolean }).focused = false;
+    ow.wc.focused = true;
+    assert.strictEqual(ev.onTabRequest!('s1', 'https://site.example/click', true), true);
+    await tick(); await tick();
+    assert.strictEqual(viewOf(r, activeOf(r))!.wc.focuses, 1, 'a click in the page: the new page gets the focus');
+    const f2 = uiWc.focuses;
+    { const w = viewOf(r, activeOf(r))!.wc; w.focused = true; w.emit('focus'); }
+    r.flush();
+    assert.strictEqual(uiWc.focuses, f2, 'and keeps it');
+  }
+  // FR-132: a dialog in a background tab of the shown session (toast, marker), or in a hidden session's tab (also brought forward on that tab)
+  {
+    const r = rig();
+    await r.ctl.open('s1'); await r.ctl.navigate('s1', 'https://a.example/');
+    const t1 = activeOf(r);
+    await r.ctl.newTab('s1', 'https://b.example/');
+    r.ctl.bounds('s1', B); r.ctl.visible('s1', true);
+    viewOf(r, t1)!.sv.events.onPageDialog!('s1', { type: 'confirm', text: 'Delete?', forAgent: false });
+    assert.deepStrictEqual(r.dialogs[0], { id: 's1', type: 'confirm', text: 'Delete?', shown: false, tabId: t1, bg: true }, 'a background tab of the shown session: not shown, bg');
+    r.flush();
+    const tl = r.tabsSeen[r.tabsSeen.length - 1];
+    assert.strictEqual(tl.tabs.find((x) => x.tabId === t1)!.dialogOpen, true, 'the tab is marked Dialog open');
+    assert.strictEqual(r.emitted[r.emitted.length - 1].dialogOpen, false, 'the active tab is not');
+    assert.notStrictEqual(activeOf(r), t1, 'it is not selected by itself');
+    r.ctl.visible('s1', false);
+    viewOf(r, t1)!.sv.events.onPageDialog!('s1', { type: 'alert', text: 'x', forAgent: false });
+    assert.deepStrictEqual(r.dialogs[1], { id: 's1', type: 'alert', text: 'x', shown: false, tabId: t1, bg: false }, 'a hidden session\'s tab: brought forward on that tab by the window');
+  }
+  // FR-130: a tab key inside a page goes to the window
+  {
+    const r = rig();
+    await r.ctl.open('s1');
+    viewOf(r, activeOf(r))!.sv.events.onTabKey!('s1', 'new');
+    assert.deepStrictEqual(r.keys, [{ id: 's1', key: 'new' }]);
+  }
+  // US6.9, SC-010: 3 sessions x 10 tabs with pages loading in turn, through the real controller
+  {
+    let clock = 0;
+    const r = rig({ now: () => ++clock });
+    for (const id of ['s1', 's2', 's3']) await r.ctl.open(id);
+    r.ctl.bounds('s1', B); r.ctl.visible('s1', true);
+    const loadedNow = (): number => [...r.tabViews.values()].filter((f) => !f.sv.closed && typeof f.wc.url === 'string' && f.wc.url !== 'about:blank').length;
+    let maxLoaded = 0;
+    for (let round = 0; round < 11; round++) {
+      for (const id of ['s1', 's2', 's3']) {
+        const res = round === 0 ? await r.ctl.navigate(id, `https://${id}.example/0`) : await r.ctl.newTab(id, `https://${id}.example/${round}`);
+        if (round === 10) assert.ok(!res.ok && (res as { tabLimit?: true }).tabLimit, 'the 11th tab is refused');
+        await tick();
+        maxLoaded = Math.max(maxLoaded, loadedNow());
+        assert.ok(loadedNow() <= MAX_LIVE_VIEWS, `${id} round ${round}: ${loadedNow()} pages loaded`);
+        // every pick is a background tab while one is loaded (all are safe here): an active tab of a hidden session is dropped only after them
+        for (const h of ['s2', 's3']) {
+          const tl = r.ctl.tabsOf(h);
+          const act = tl.tabs.find((x) => x.tabId === tl.active);
+          if (act && act.memory === 'dropped') {
+            const bgLoaded = ['s1', 's2', 's3'].some((k) => r.ctl.tabsOf(k).tabs.some((x) => x.tabId !== r.ctl.tabsOf(k).active && x.memory !== 'dropped' && x.url));
+            assert.ok(!bgLoaded, `${h}'s active tab was dropped while a background tab stayed loaded`);
+          }
+        }
+      }
+    }
+    for (const id of ['s1', 's2', 's3']) assert.strictEqual(r.ctl.tabIds(id).length, 10, `${id} holds 10 tabs, never 11`);
+    assert.strictEqual(maxLoaded, MAX_LIVE_VIEWS, 'the cap was reached and held');
+    const shownActive = viewOf(r, activeOf(r, 's1'), 's1')!;
+    assert.ok(!shownActive.sv.closed && shownActive.wc.url !== 'about:blank', 'the shown tab is never dropped');
+    // US6.10: a dropped background tab brought back reloads its kept address; the #891 rule holds per tab
+    const tl = r.ctl.tabsOf('s1');
+    const dropped = tl.tabs.filter((x) => x.memory === 'dropped' && x.tabId !== tl.active);
+    assert.ok(dropped.length >= 2, 'background tabs of the shown session were dropped');
+    const [d1, d2] = dropped;
+    const oldView = viewOf(r, d1.tabId, 's1');
+    assert.ok(!oldView || oldView.sv.closed, 'a dropped background tab has no live view (its webContents closed)');
+    assert.ok(r.closedTabs.includes('s1/' + d1.tabId), 'closed through closeTabView: no process left, partition kept');
+    assert.ok(d1.url.startsWith('https://s1.example/'), 'its address is kept');
+    // the #891 rule per tab: a navigation in the active tab never touches another tab's kept address
+    await r.ctl.navigate('s1', 'https://s1.example/new-in-active');
+    assert.strictEqual(r.ctl.tabsOf('s1').tabs.find((x) => x.tabId === d1.tabId)!.url, d1.url, 'tab B\'s kept address is untouched');
+    await r.ctl.selectTab('s1', d1.tabId);
+    await tick();
+    const back = viewOf(r, d1.tabId, 's1')!;
+    assert.ok(back && !back.sv.closed, 'selecting it makes a new view in the session');
+    assert.deepStrictEqual(lastNav(back), { url: d1.url }, 'and loads the kept address');
+    assert.strictEqual(r.ctl.stateOf('s1').memory, 'reloaded', 'with Reloaded to save memory');
+    assert.deepStrictEqual(r.win.children, [back.view], 'and it is the one on the window');
+    // reuse while dropped: with the toggle on, a chat link to a dropped tab's kept address focuses that tab, which reloads it
+    r.links.on = true;
+    const d2now = r.ctl.tabsOf('s1').tabs.find((x) => x.tabId === d2.tabId)!;
+    if (d2now.memory === 'dropped') {
+      const n = r.ctl.tabIds('s1').length;
+      await r.ctl.openLink('s1', d2.url);
+      await tick();
+      assert.strictEqual(activeOf(r, 's1'), d2.tabId, 'the dropped tab with that address is focused');
+      assert.strictEqual(r.ctl.tabIds('s1').length, n, 'no tab added');
+      assert.deepStrictEqual(lastNav(viewOf(r, d2.tabId, 's1')), { url: d2.url }, 'and reloaded from its kept address');
+    } else assert.fail('the second dropped tab came back by itself');
+  }
+  // the #891 rule per tab, in flight (2026-10-31 review of #915): a dropped tab's kept address is never loaded over a newer navigation. Here the
+  // hidden session's active tab is a dropped one (its view closed, its address kept); the user's navigation starts first (the tab's view is
+  // being made), and the session is shown meanwhile, so its restore waits for the same view. go() clears the kept address, so the restore
+  // finds it gone and loads nothing; the session's other dropped tab keeps its own.
+  {
+    let clock = 0;
+    const r = rig({ now: () => ++clock });
+    await r.ctl.open('s1');
+    r.ctl.bounds('s1', B); r.ctl.visible('s1', true);
+    await r.ctl.navigate('s1', 'https://s1.example/a');
+    await r.ctl.newTab('s1', 'https://s1.example/c');
+    await r.ctl.newTab('s1', 'https://s1.example/b');
+    await tick();
+    const [tA, tC, tB] = r.ctl.tabIds('s1'); // C is B's left neighbour: active once B closes
+    assert.strictEqual(activeOf(r), tB, 'precondition: B is the active tab');
+    for (const id of ['s2', 's3', 's4', 's5']) {
+      await r.ctl.open(id);
+      r.ctl.bounds(id, B); r.ctl.visible(id, true);
+      await r.ctl.navigate(id, `https://${id}.example/`);
+      await tick();
+      r.ctl.visible(id, false);
+    }
+    r.flush();
+    await tick();
+    const kept = (tabId: string) => r.ctl.tabsOf('s1').tabs.find((x) => x.tabId === tabId)!;
+    assert.strictEqual(kept(tA).memory, 'dropped', 'precondition: background tab A was dropped');
+    assert.strictEqual(kept(tC).memory, 'dropped', 'precondition: background tab C was dropped');
+    assert.ok(!viewOf(r, tC) || viewOf(r, tC)!.sv.closed, 'precondition: C has no view');
+    const keptA = kept(tA).url, keptC = kept(tC).url;
+    assert.strictEqual(keptC, 'https://s1.example/c');
+    // B is closed while the session is hidden: C, a dropped tab, becomes the active one (nothing restores it while hidden)
+    r.ctl.visible('s1', false);
+    await r.ctl.closeTab('s1', tB);
+    await tick();
+    assert.strictEqual(activeOf(r), tC, 'precondition: the dropped tab C is active');
+    assert.strictEqual(kept(tC).memory, 'dropped', 'precondition: and not restored while hidden');
+    // the user's navigation in C starts (C's view is being made), then the session is shown: C's restore is now in flight too
+    const nav = r.ctl.navigate('s1', 'https://s1.example/typed');
+    r.ctl.bounds('s1', B); r.ctl.visible('s1', true);
+    await nav;
+    for (let i = 0; i < 5; i++) await tick();
+    r.flush();
+    const c = viewOf(r, tC)!;
+    assert.ok(c && !c.sv.closed, 'C has a view again');
+    assert.deepStrictEqual(lastNav(c), { url: 'https://s1.example/typed' }, 'the typed address is the last navigation of C');
+    assert.ok(!c.navs.some((n) => (n as { url?: string }).url === keptC), 'C\'s kept address is never loaded over the typed one');
+    assert.strictEqual(kept(tC).url, 'https://s1.example/typed');
+    assert.strictEqual(kept(tC).memory, undefined, 'and no *Reloaded to save memory* note');
+    assert.strictEqual(kept(tA).url, keptA, 'per tab: A keeps its own kept address');
+    assert.strictEqual(kept(tA).memory, 'dropped', 'and stays dropped');
+  }
+  // FR-123 (2026-10-31 review of #915): the toggle's defaults. The simulator's starts off, is kept in memory and never touches the store; the
+  // app's starts off (no settings) and is the store's value
+  {
+    const writes: unknown[] = [];
+    const store = { chatLinksNewTab: false, setChatLinksNewTab(on: unknown) { writes.push(on); } };
+    const sim = makeLinksToggle(true, () => store);
+    assert.strictEqual(sim.get(), false, 'the simulator\'s toggle is off by default');
+    store.chatLinksNewTab = true;
+    assert.strictEqual(sim.get(), false, 'the simulator never reads the user settings');
+    sim.set(true);
+    assert.strictEqual(sim.get(), true, 'the simulator keeps it in memory');
+    sim.set(false);
+    assert.strictEqual(sim.get(), false);
+    assert.deepStrictEqual(writes, [], 'the simulator writes no user settings');
+    assert.strictEqual(makeLinksToggle(true, () => store).get(), false, 'a new simulator run starts off again');
+    const appT = makeLinksToggle(false, () => undefined);
+    assert.strictEqual(appT.get(), false, 'the app with no settings store: off');
+    const appS = makeLinksToggle(false, () => store);
+    store.chatLinksNewTab = false;
+    assert.strictEqual(appS.get(), false, 'the app: off by default');
+    store.chatLinksNewTab = true;
+    assert.strictEqual(appS.get(), true, 'the app reads the settings store');
+    appS.set(false);
+    assert.deepStrictEqual(writes, [false], 'and writes it');
+  }
+  // FR-123: the toggle is saved as `chatLinksNewTab: true` only
+  {
+    assert.deepStrictEqual(parseSettings('{"chatLinksNewTab":true}'), { chatLinksNewTab: true });
+    for (const v of ['false', '"true"', '1', 'null', '{}']) assert.deepStrictEqual(parseSettings('{"chatLinksNewTab":' + v + '}'), {}, 'only true is kept: ' + v);
+    const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-lt-')), 'durbar-settings.json');
+    const st = new SettingsStore(f);
+    st.load();
+    assert.strictEqual(st.chatLinksNewTab, false, 'off by default');
+    for (const bad of ['yes', 1, null, undefined, {}]) assert.strictEqual(st.setChatLinksNewTab(bad), false, 'a non-boolean changes nothing');
+    st.setChatLinksNewTab(true);
+    const back = new SettingsStore(f); back.load();
+    assert.strictEqual(back.chatLinksNewTab, true, 'kept after a restart');
+    back.setChatLinksNewTab(false);
+    assert.ok(!/chatLinksNewTab/.test(fs.readFileSync(f, 'utf8')), 'the default is not written');
+    fs.rmSync(path.dirname(f), { recursive: true, force: true });
+  }
+
   // ---- 2. the wiring ----
-  const CH = ['open', 'state', 'navigate', 'back', 'forward', 'reload', 'stop', 'bounds', 'visible', 'overlay', 'mute', 'openSystem', 'consentAccept', 'snapshot', 'leaveAnswer', 'openLink', 'openMail'].map((c) => 'browser:' + c);
+  const CH = ['open', 'state', 'navigate', 'back', 'forward', 'reload', 'stop', 'bounds', 'visible', 'overlay', 'mute', 'openSystem', 'consentAccept', 'snapshot', 'leaveAnswer', 'openLink', 'openMail', 'newTab', 'selectTab', 'closeTab', 'setLinksNewTab'].map((c) => 'browser:' + c);
   const ipcSrc = read('src/main/ipc/browser.ts');
   const ctlSrc = read('src/main/browser/controller.ts');
   {
@@ -657,6 +1307,10 @@ process.on('exit', () => {
       assert.ok(/\(e, /.test(block) || /\(e\) =>/.test(block), `${m[1]} takes the event`);
     });
     assert.ok(/import \{ fromAppFrame as fromApp, ipcHandle \} from '\.\.\/ipcguard'/.test(ipcSrc), 'the guard is ipcguard.ts\'s own');
+    // spec 080 FR-123, FR-127: the toggle takes only a real boolean; the window never sends the toggle with a link (main reads it)
+    assert.ok(/ipcHandle\('browser:setLinksNewTab', \(e, on: unknown\) => \{\n\s*if \(!fromApp\(e\) \|\| typeof on !== 'boolean'\) return \{ ok: false \};/.test(ipcSrc), 'setLinksNewTab refuses a non-boolean with no effect');
+    assert.ok(/ctl\.openLink\(id, url, how\)/.test(ipcSrc) && /const linksToggle = makeLinksToggle\(simulator, \(\) => deps\.getSettingsStore\(\)\);/.test(ipcSrc) && /linksNewTab = \(\): boolean => linksToggle\.get\(\)/.test(ipcSrc), 'the toggle is read in main (makeLinksToggle, tested below)');
+    assert.ok(/typeof on !== 'boolean'\) return \{ ok: false \};\n\s*linksToggle\.set\(on\);/.test(ipcSrc), 'the toggle is set through makeLinksToggle only');
     const pre = preloadChannels().all;
     for (const c of CH) assert.ok(pre.has(c), `the preload calls ${c}`);
     assert.deepStrictEqual([...pre].filter((c) => c.startsWith('browser:')).sort(), [...CH].sort(), 'the preload calls nothing else under browser:');
@@ -777,13 +1431,13 @@ process.on('exit', () => {
         },
       };
       const v = makeViews(deps as never);
-      await v.ensureSessionView('x1', {}, sim, false).catch(() => undefined);
+      await v.ensureTabView('x1', 't00000001', {}, sim, false).catch(() => undefined);
       assert.deepStrictEqual(made, sim ? ['durbar-sim'] : [], `view builder, sim=${sim}: ${made.join(',') || 'no scheme handler'}`);
       await v.destroyAllViews();
     }
     const viewsSrc = read('src/main/browser/views.ts');
     assert.ok(/onPartition: \(ses, sim\) => void installSimPages\(ses as unknown as Parameters<typeof installSimPages>\[0\], sim\)/.test(viewsSrc), 'the real views call installSimPages with the view\'s sim flag');
-    assert.ok(/ensureSessionView = \(sessionId: string, events: ViewEvents = \{\}, sim = false\)/.test(viewsSrc), 'sim defaults to off');
+    assert.ok(/ensureTabView = \(sessionId: string, tabId: string, events: ViewEvents = \{\}, sim = false\)/.test(viewsSrc), 'sim defaults to off');
     const mainSrc = read('src/main/main.ts');
     assert.ok(/registerSimScheme\(protocol, SIMULATOR\);/.test(mainSrc), 'main registers the scheme with its simulator decision');
     assert.strictEqual((mainSrc.match(/registerSchemesAsPrivileged/g) ?? []).length, 0, 'main.ts has no other scheme registration');

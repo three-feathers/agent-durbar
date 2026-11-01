@@ -47,6 +47,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **Every surface is masked**: `title`, `aria-label`, tooltips, notes, toasts, notifications, copied diagnostics, lists, the lobby. [#567](https://github.com/three-feathers/agent-durbar/pull/567), [#614](https://github.com/three-feathers/agent-durbar/pull/614)
 - [ ] **Glued and encoded tokens** (`_ghp_…_`, `my_ghp_…`, `ghp\_…`, `%3Dghp_…`, OAuth `code`/`state`, lowercase `bearer`): use `maskTokenShapes` in `src/shared/redact.ts`, never a copy. [#543](https://github.com/three-feathers/agent-durbar/pull/543), [#532](https://github.com/three-feathers/agent-durbar/pull/532)
 - [ ] **No user paths, user names or time zone** in text meant for a public issue. [#630](https://github.com/three-feathers/agent-durbar/pull/630)
+- [ ] **A mask for a shared file must not depend on what happens to be known at write time**: shapes always, all values, wait while locked. PR #931
 
 ## Hostile input and security
 
@@ -77,7 +78,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **Test the behaviour, not the source text**; source regexes let wiring mutations through. [#594](https://github.com/three-feathers/agent-durbar/pull/594)
 - [ ] **A source-scan test must not pass vacuously**: resolve the repo root (walk up to `package.json`, not `__dirname/../src` from `dist-scripts/`), assert a minimum match count, check the mutant through `npm run test:<x>`. PR #832
 - [ ] **Repo files read as text split on `/\r?\n/`**: Windows CI checks out CRLF; check a scan against a CRLF copy (`sed -i 's/$/\r/'`). PRs #825, #832
-- [ ] **Drivers wait on a condition**: `assert.ok(await until(...), '<what>')`, never a fixed sleep or single read (`until()` returns `false`, it does not throw). [#622](https://github.com/three-feathers/agent-durbar/pull/622), [#845](https://github.com/three-feathers/agent-durbar/pull/845)
+- [ ] **Drivers wait on a condition**: `assert.ok(await until(...), '<what>')`, never a fixed sleep or single/mid-change read (`until()` returns `false`, it does not throw; #934). [#622](https://github.com/three-feathers/agent-durbar/pull/622), [#845](https://github.com/three-feathers/agent-durbar/pull/845)
 - [ ] **A same-before-and-after driver check reads one settled render**: a DOM read before an action can lag the model, so do the action and its undo, then read, act and read in one page task. [#864](https://github.com/three-feathers/agent-durbar/pull/864)
 - [ ] **Shortcut drivers branch on the platform's mod key** (Meta and ⌘ on macOS, Control elsewhere) for the key, label and `aria-keyshortcuts`. PR #560
 - [ ] **No wall-clock limits in unit tests**: CPU time or growth ratios against a baseline from the same run, with a generous floor. [#527](https://github.com/three-feathers/agent-durbar/pull/527)
@@ -89,8 +90,17 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **Shared desk markup changes run the whole UI suite** (`node scripts/ui-suite.js`), keeping each feature's own wording. [#631](https://github.com/three-feathers/agent-durbar/pull/631)
 - [ ] **A setting that hides a feature also releases what it holds** (a closed door's prompts, a refused remote control): ask and release, or keep that piece visible. PR 631
 - [ ] **When the simulator bypasses main, test main's logic in a pure function**; never open a sim channel to main (spec 010 FR-022..FR-027). [#693](https://github.com/three-feathers/agent-durbar/pull/693)
+- [ ] **File identity = device, inode, birth time**: test delete and recreate, and the failure path. PR #931
+- [ ] **A destructive call behind a native confirmation has no side door**: another call deleting the same data asks the same way. Spec 083 T034b
 - [ ] **A stale-breaker that looks, then deletes by path is a race**: move aside and check identity, or carry a token. Issue #723
 - [ ] **A script that spends credits gates every send**: budget checked in one pure function right before each send; unknown usage is unknown, never 0; only the exact command runs in a mode with no approval card; take a baseline first; plant cap-raised, extra-prompt and stop-disabled mutants. [#827](https://github.com/three-feathers/agent-durbar/pull/827)
+- [ ] **Main changes what the window reads in one synchronous step, then awaits teardown**: a tab list updated before its active tab let a driver name a removed tab (spec 080 closeTab, 2026-10-31).
+- [ ] **A handler main gives Electron answers on every path**: `setWindowOpenHandler` code that calls main's own logic is wrapped so a throw still returns `deny` (and a test makes it throw); a page's request never moves the keyboard focus unless the page itself had it (spec 080, review of #915, 2026-10-31).
+- [ ] **A driver runs a page's script in that page's own `webContents`**, not in "the attached view": a page that opens a tab stops being the attached one mid-step (spec 080 `check-browser-tabs`, 2026-10-31).
+- [ ] **A menu row sends only its own field**, merged when its turn comes; a fake answers as the real runtime does (spec 030).
+- [ ] **Mutate each guard both ways**: surviving mutants hid four real gaps (#935).
+- [ ] **No unquoted `$` or heredoc in a shell comment body**: `$0.0066` became `/bin/bash.0066`.
+- [ ] **Sub-agents get unique scratch folders and one PR-body file each**: files overwritten on 2026-10-23 and again 2026-10-31.
 
 ## UI and accessibility
 
@@ -111,9 +121,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 
 - [ ] **Search for an existing helper, predicate, dialog or matcher** first (`git grep` the concept) and name it in the PR. [#628](https://github.com/three-feathers/agent-durbar/pull/628), [#560](https://github.com/three-feathers/agent-durbar/pull/560)
 - [ ] **Docs in the same PR**: `changelog.d/` fragment, `specs-index` status, task ticked, README and notes. [#535](https://github.com/three-feathers/agent-durbar/pull/535)
-- [ ] **Sub-agents get unique scratch folders and one PR-body file each**: three PR bodies were overwritten on 2026-10-23.
 
 ## How we review
 
 - **Format**: **Strengths**, **Required fixes** (numbered, each with `file:line`, a concrete failure from a probe or mutation, and the fix), then **Questions**; end with what you ran and what you did not.
-- **What reviewers praised**: one helper owns an order (mask, plain, cut) and fails closed ([#567](https://github.com/three-feathers/agent-durbar/pull/567)); drivers that scan every text node and attribute with planted secrets ([#567](https://github.com/three-feathers/agent-durbar/pull/567)); mutations listed, each caught ([#588](https://github.com/three-feathers/agent-durbar/pull/588)); reuse named ([#629](https://github.com/three-feathers/agent-durbar/pull/629)); allow-lists tight by construction ([#594](https://github.com/three-feathers/agent-durbar/pull/594)); "simulator and fakes only" said plainly ([#598](https://github.com/three-feathers/agent-durbar/pull/598)); seams for spawn, kill and clock, no shell on Windows ([#565](https://github.com/three-feathers/agent-durbar/pull/565)).

@@ -37,7 +37,7 @@ const page = (title: string, body: string, head = ''): string =>
   `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${esc(title)}</title>${head}<style>body{font:16px system-ui,sans-serif;margin:24px;line-height:1.5}a{color:#0b57d0}nav a{margin-right:12px}label{display:block;margin:8px 0}</style></head><body><nav><a href="/index">Index</a><a href="/links">Links</a><a href="/form">Form</a><a href="/slow">Slow</a></nav><h1>${esc(title)}</h1>${body}</body></html>`;
 
 const PAGES: Record<string, (req: { method: string; body: string; query: URLSearchParams }) => SimResponse | Promise<SimResponse>> = {
-  '/index': () => html('Simulator test pages', '<ul><li><a href="/links">Links</a></li><li><a href="/form">Form (POST)</a></li><li><a href="/getform">Form (GET)</a></li><li><a href="/download">Download</a></li><li><a href="/file">File input</a></li><li><a href="/slow">Slow load</a></li><li><a href="/unload">Page that asks before leaving</a></li><li><a href="/alert">Alert</a></li><li><a href="/confirm">Confirm</a></li><li><a href="/prompt">Prompt</a></li><li><a href="/fields">Sensitive fields</a></li><li><a href="/slide">Sliding element</a></li><li><a href="/redirect">Script redirect</a></li><li><a href="/auth">Basic-auth challenge</a></li><li><a href="/storage">Storage</a></li></ul>'),
+  '/index': () => html('Simulator test pages', '<ul><li><a href="/links">Links</a></li><li><a href="/form">Form (POST)</a></li><li><a href="/getform">Form (GET)</a></li><li><a href="/download">Download</a></li><li><a href="/file">File input</a></li><li><a href="/slow">Slow load</a></li><li><a href="/unload">Page that asks before leaving</a></li><li><a href="/alert">Alert</a></li><li><a href="/confirm">Confirm</a></li><li><a href="/prompt">Prompt</a></li><li><a href="/fields">Sensitive fields</a></li><li><a href="/slide">Sliding element</a></li><li><a href="/redirect">Script redirect</a></li><li><a href="/auth">Basic-auth challenge</a></li><li><a href="/storage">Storage</a></li><li><a href="/tabs">Tabs</a></li><li><a href="/keys">Keys</a></li></ul>'),
   '/links': () => html('Links', '<p><a id="l-form" href="/form">Form page</a></p><p><a id="l-blank" target="_blank" href="/index">Opens in a new tab</a></p><p><a id="l-web" href="https://example.com/">A web page (needs the network)</a></p><p><a id="l-file" href="file:///etc/hostname">A file link (refused)</a></p>'),
   '/form': (r) =>
     r.method === 'POST'
@@ -68,6 +68,24 @@ const PAGES: Record<string, (req: { method: string; body: string; query: URLSear
   '/auth': () => ({ status: 401, headers: { 'content-type': 'text/html; charset=utf-8', 'www-authenticate': 'Basic realm="sim"' }, body: page('Unauthorized', '<p id="result">Authentication is cancelled in the session browser.</p>') }),
   // SC-002 / SC-004: what a session's storage holds; `?set=v` writes it
   '/storage': (r) => html('Storage', '<p id="result"></p><script>(function(){var v=' + JSON.stringify(r.query.get('set')).replace(/</g, '\\u003c') + ';if(v!==null){localStorage.setItem("k",v);document.cookie="c="+encodeURIComponent(v)+"; path=/";}document.getElementById("result").textContent="k="+localStorage.getItem("k")+";c="+(document.cookie||"none");})();</script>'),
+  // spec 080 T026 (FR-125): pages opening tabs. Same-origin target=_blank links (one rel=noreferrer: an empty referrer, so it is offered, not
+  // opened), a window.open loop of 7 (at most 5 tabs per page load), a sandboxed frame (an opaque origin) that calls window.open, and
+  // target=_blank links to each hostile scheme of the T011 list (no tab, nothing outside)
+  '/tabs': () =>
+    html(
+      'Tabs',
+      '<p><a id="t-blank" target="_blank" href="/index">Index in a new tab</a></p><p><a id="t-blank2" target="_blank" href="/form">Form in a new tab</a></p>' +
+        '<p><a id="t-noref" target="_blank" rel="noreferrer" href="/links">No referrer</a></p>' +
+        '<p><button id="t-loop" onclick="for(var i=0;i<7;i++)window.open(\'/index?n=\'+i)">Open seven</button></p>' +
+        '<p><iframe id="t-frame" sandbox="allow-scripts allow-popups" srcdoc="&lt;button id=f onclick=&quot;window.open(\'durbar-sim://pages/index?frame=1\')&quot;&gt;Frame opens&lt;/button&gt;" style="height:44px;border:1px solid #ccc"></iframe></p>' +
+        '<ul>' +
+        ['javascript:alert(1)', 'file:///etc/hostname', 'chrome://settings', 'ms-msdt:/id%20x', 'search-ms:query=x', 'search:query=x', 'ms-officecmd:x', 'ms-settings:privacy', 'smb://host/share', 'vscode://x', 'slack://open', 'tel:123', 'mailto:sim@example.invalid']
+          .map((u, i) => `<li><a id="t-bad${i}" target="_blank" href="${esc(u)}">${esc(u)}</a></li>`)
+          .join('') +
+        '</ul>',
+    ),
+  // spec 080 T025 AC2 (FR-130): a page that logs the keys it sees, so a driver can check the tab keys never reach it
+  '/keys': () => html('Keys', '<p><input id="k" autofocus></p><p id="log"></p>', '<script>document.addEventListener("keydown",function(e){var l=document.getElementById("log");if(l)l.textContent+=(e.ctrlKey?"C-":"")+(e.metaKey?"M-":"")+(e.shiftKey?"S-":"")+e.key+" ";},true);</script>'),
   '/slow': async (r) => {
     const asked = Number(r.query.get('ms'));
     const ms = Number.isFinite(asked) && asked >= 0 ? Math.min(asked, 10_000) : SIM_SLOW_MS;

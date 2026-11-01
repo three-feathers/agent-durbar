@@ -1,6 +1,6 @@
 name: Project site
 
-# Spec 050: the GitHub Pages site is built from the repository (README sections, the specs index, docs/screenshots,
+# Spec 050: the GitHub Pages site is built from the repository (README top, docs/*.md pages, the specs index, docs/screenshots,
 # docs/site/gallery.json, CHANGELOG, the latest release) by scripts/build-site.js, and rebuilt daily for new releases. No hand-made copy to keep in sync:
 # a change to those files on main republishes the site. A pull request that touches them only builds and checks it.
 on:
@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - 'README.md'
+      - 'docs/*.md'
       - 'CHANGELOG.md'
       - 'specs/README.md'
       - 'specs/*/spec.md'
@@ -22,6 +23,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'README.md'
+      - 'docs/*.md'
       - 'specs/README.md'
       - 'specs/*/spec.md'
       - 'scripts/specs-index.js'
