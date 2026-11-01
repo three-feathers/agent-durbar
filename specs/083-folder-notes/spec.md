@@ -293,6 +293,15 @@ In the drawer I choose **Open source** on a note: the chat it came from opens an
 
 ## Changes
 
+### 2026-10-31: one capped, non-blocking, no-follow read for three callers (issue #917; no new behaviour except the two stricter checks below)
+
+`readCapped` (T041) had two older copies, in `src/main/mcp/auth.ts` (the connection key file) and `src/adapters/slashcommands.ts` (command and skill files). It now lives once in `src/shared/cappedread.ts` (T062): `src/adapters` must not import `src/main`, and the module has no imports, so it can load in the page. The file system and the open flags are passed in (`O_NOFOLLOW` and `O_NONBLOCK` are missing on Windows; the regular-file and link-count checks still apply there). Each caller keeps its cap and its wording.
+
+1. **Order:** open `O_RDONLY | O_NOFOLLOW | O_NONBLOCK`, `fstat` the descriptor (regular file, one link), an optional caller check (the key file's owner and mode), the size cap, then at most `size + 1` bytes.
+2. **Stricter for the other two callers (kept, not weakened):** the key file and a slash command file are now refused when they have more than one hard link (new text for the key file: *The connection key file has more than one link, so it is not used.*); a slash command file is also opened `O_NOFOLLOW` (it was only re-checked by `realpath` before the open), and a file that grows during the read is refused (`changing`) instead of cut. The notes file is unchanged.
+3. **Slash discovery reads more, then cuts (review of PR 964):** it used to read only the first 8 KiB (`SLASH_HEAD_BYTES`) of each command file; it now reads the whole file up to 64 KiB (`MAX_SLASH_BYTES`, the shared read checks the cap and growth first) and slices the text to 8 KiB, so the text used is the same and a file over 64 KiB is still skipped. Tested on the real reader (`realFs.readHead`) in `scripts/test-cappedread.ts`: the slice, and a file swapped for a symlink after `realpath` is refused (`O_NOFOLLOW`). The key file's `nodeMcpFs` flags (`O_NONBLOCK`) are tested with a real FIFO in a child process with a time limit, and its errors name only the code, never a path, in `scripts/test-mcp-auth.ts`.
+4. **Other reads not changed** (named, not in this issue): `profilefiles.ts` and `claudeHistory.ts` `readHead` and `crashmarker.ts` `readMarkerFile` open with plain `'r'` (they can block on a FIFO); a follow-up if wanted. No charstore read exists on `main`.
+
 ### 2026-10-31: export, delete all and removed folders, T034b (decided by the coordinator under Ruben's delegation)
 
 FR-048's three deletion and export paths through main, and FR-062's `notes:export` and `removeFolder {deleteNotes}`. Points the FRs left open:

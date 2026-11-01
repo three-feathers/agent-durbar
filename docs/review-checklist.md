@@ -1,6 +1,6 @@
 # Review checklist: first time right
 
-Run this on your own diff **before you ask for review**, as a reviewer who assumes it is wrong: read the real diff (`git diff origin/main...HEAD`). Every line is a mistake a reviewer here found. Rules: [AGENTS.md](../AGENTS.md) (*First time right*). Add a line for a new mistake (reason, one evidence link); fix or delete a wrong one. Guidance only: nothing here overrides AGENTS.md, the constitution or the safety rules. Tool pitfalls: [agent-notes.md](agent-notes.md).
+Run this on your own diff **before you ask for review**, as a reviewer who assumes it is wrong: read the real diff (`git diff origin/main...HEAD`). Rules: [AGENTS.md](../AGENTS.md) (*First time right*). Add a line for a new mistake (reason, one evidence link); fix or delete a wrong one. Guidance only: nothing here overrides AGENTS.md, the constitution or the safety rules. Tool pitfalls: [agent-notes.md](agent-notes.md).
 
 ## Where the list comes from
 
@@ -97,6 +97,10 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **Main changes what the window reads in one synchronous step, then awaits teardown**: a tab list updated before its active tab let a driver name a removed tab (spec 080 closeTab, 2026-10-31).
 - [ ] **A handler main gives Electron answers on every path**: `setWindowOpenHandler` code that calls main's logic is wrapped so a throw still returns `deny` (a test makes it throw); a page's request never moves focus unless the page had it (spec 080, #915).
 - [ ] **A driver runs a page's script in that page's own `webContents`**, not in "the attached view": a page that opens a tab stops being the attached one mid-step (spec 080 `check-browser-tabs`, 2026-10-31).
+- [ ] **A menu row sends only its own field**, merged when its turn comes; a fake answers as the real runtime does (spec 030).
+- [ ] **Mutate each guard both ways**: surviving mutants hid four real gaps (#935).
+- [ ] **No unquoted `$` or heredoc in a shell comment body**: `$0.0066` became `/bin/bash.0066`.
+- [ ] **Sub-agents get unique scratch folders and one PR-body file each**: files overwritten on 2026-10-23 and again 2026-10-31.
 
 ## UI and accessibility
 
@@ -104,8 +108,8 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **A refusable action says so**: the handler returns whether it acted, the UI announces success only then, the button is disabled with the reason. [#640](https://github.com/three-feathers/agent-durbar/pull/640)
 - [ ] **Announcements reach a screen reader** (live region used and tested); focus lands sensibly after Escape. [#622](https://github.com/three-feathers/agent-durbar/pull/622)
 - [ ] **Theme tokens, not literals**; check one dark and one non-default theme. [#530](https://github.com/three-feathers/agent-durbar/pull/530), [#588](https://github.com/three-feathers/agent-durbar/pull/588)
-- [ ] **A driver's contrast check parses `color(srgb 0-1 …)`** too (`color-mix()` computes to it); an `rgb()`-only parser reads it as black and passes. [#921](https://github.com/three-feathers/agent-durbar/pull/921)
-- [ ] **No emoji as an icon** (constitution V; a missing glyph on Linux): the app's SVG icon; a clickable chip is a `button`. A driver on wall-clock sim state waits with `until()` for what it counts and is looped under load. [#921](https://github.com/three-feathers/agent-durbar/pull/921)
+- [ ] **A driver's contrast check parses `color(srgb …)`** too: an `rgb()`-only parser reads it as black and passes. [#921](https://github.com/three-feathers/agent-durbar/pull/921)
+- [ ] **No emoji as an icon** (a missing glyph on Linux): the app's SVG icon; a clickable chip is a `button`. A driver on wall-clock sim state waits with `until()` and is looped under load. [#921](https://github.com/three-feathers/agent-durbar/pull/921)
 - [ ] **Tooltips stay within the limit** with the longest real value. [#630](https://github.com/three-feathers/agent-durbar/pull/630)
 - [ ] **Screenshots at 1440x900 and 1280x800**, every linked picture of the changed screen retaken (`npm run shots:docs`) and looked at (no figures mid-walk). [#632](https://github.com/three-feathers/agent-durbar/pull/632), [#574](https://github.com/three-feathers/agent-durbar/pull/574)
 
@@ -119,9 +123,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 
 - [ ] **Search for an existing helper, predicate, dialog or matcher** first (`git grep` the concept) and name it in the PR. [#628](https://github.com/three-feathers/agent-durbar/pull/628), [#560](https://github.com/three-feathers/agent-durbar/pull/560)
 - [ ] **Docs in the same PR**: `changelog.d/` fragment, `specs-index` status, task ticked, README and notes. [#535](https://github.com/three-feathers/agent-durbar/pull/535)
-- [ ] **Sub-agents get unique scratch folders and one PR-body file each** (three PR bodies were overwritten).
 
 ## How we review
 
 - **Format**: **Strengths**, **Required fixes** (numbered, each with `file:line`, a concrete failure from a probe or mutation, and the fix), then **Questions**; end with what you ran and what you did not.
-- **What reviewers praised**: one helper owns an order (mask, plain, cut) and fails closed ([#567](https://github.com/three-feathers/agent-durbar/pull/567)); drivers scanning every text node with planted secrets; mutations listed, each caught; reuse named; tight allow-lists; "simulator and fakes only" said plainly; seams for spawn, kill and clock.

@@ -6644,9 +6644,18 @@ async function aboutKinds(){
 
 /* ---------------- switch model and context, compact (spec 030) ---------------- */
 const DM=window.DurbarModels;
-const modelOf=(id,kind)=>modelsFor(kind).find(m=>m.id===(id||'auto'))||{id:id||'auto',name:(id||'auto')==='auto'?'Auto':String(id),efforts:[]};
+const modelOf=(id,kind)=>{const l=modelsFor(kind),w=id||'auto';return l.find(m=>m.id===w)||(w==='auto'&&l.find(m=>m.id==='default'))||{id:w,name:w==='auto'?'Auto':String(w),efforts:[]};}; /* spec 030 FR-065: a session on `auto` is on the app's own default, which Claude Code's list calls `default` */
 const ctrlOf=a=>(a.info&&a.info.modelControl)||{switch:'none',compact:false};
 const tierOf=a=>a.info&&a.info.tier==='long'?'long':'default';
+/* spec 030 FR-060: what the session will run next: a queued switch when there is one, else what it has. Every choice is built on this, and the menu ticks it. */
+function choiceOf(a){
+  const p=a.pendingModel&&a.pendingModel.req;
+  if(p)return {model:p.model,effort:p.effort!==undefined?p.effort:a.info.effort,tier:p.contextTier==='long'?'long':'default',autoTier:p.autoTier};
+  return {model:modelOf(a.info.model,a.info.adapterId).id,effort:a.info.effort,tier:tierOf(a)};
+}
+/* spec 030 FR-061: one change at a time per agent: the next is built on the answer to the one before, never on a state read before it came */
+function modelTurn(a,fn){const p=(a.modelChain||Promise.resolve()).then(fn,fn);a.modelChain=p.catch(()=>undefined);return p;}
+const pendLabel=p=>{const w=DM.choiceWords(p.req);return p.name+(w?' ('+w+')':'');};
 const busyNow=a=>a.state==='working'||a.state==='thinking'||a.state==='waiting'||!!a.worked||!!a.compacting;
 const UNVERIFIED_WHY='Not verified on a real account yet: if a switch does nothing or fails, start a new session.';
 const NO_SWITCH_WHY='This agent cannot change its model in place yet. Start a new session with the model you want; this one keeps its model until it ends.';
@@ -6670,8 +6679,8 @@ function addInfoNote(chat,text,cls){
 function modelChipHTML(a){
   const m=modelLabel(a.info),pend=a.pendingModel;
   const win=modelWindow(a), txt=m.name+(pend?' → '+pend.name:''); /* spec 005 FR-050 (issue 627): the name only (and a queued switch); effort, tier and window are in the name and the tooltip */
-  const title=m.title+(pend?'. Next: '+pend.name+(pend.tier==='long'?' (long context)':'')+', when the current reply ends.':'')+(ctrlOf(a).switch==='none'?' This agent cannot switch in place; click for why.':' Click to change the model or the context.');
-  return `<button class="mchip mchip-btn" id="modelChip" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="${esc('Model: '+m.text+(win?', '+DM.fmtTokens(win)+' tokens context window':'')+(pend?'; next: '+pend.name:''))}" title="${esc(title+(win?' Context window: '+DM.fmtTokens(win)+' tokens.':''))}">${CT_IC.model}<span>${esc(txt)}</span><svg class="chev" viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg></button>`;
+  const title=m.title+(pend?'. Next: '+pendLabel(pend)+', when the current reply ends.':'')+(ctrlOf(a).switch==='none'?' This agent cannot switch in place; click for why.':' Click to change the model or the context.');
+  return `<button class="mchip mchip-btn" id="modelChip" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="${esc('Model: '+m.text+(win?', '+DM.fmtTokens(win)+' tokens context window':'')+(pend?'; next: '+pendLabel(pend):''))}" title="${esc(title+(win?' Context window: '+DM.fmtTokens(win)+' tokens.':''))}">${CT_IC.model}<span>${esc(txt)}</span><svg class="chev" viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg></button>`;
 }
 /* spec 005 FR-037: the window in use: as the runtime reported it for this session, else the model list's (spec 030), else none */
 function modelWindow(a){
@@ -6758,7 +6767,8 @@ function closeModelMenu(){const m=document.getElementById('modelMenu');if(m){m.r
 function openModelMenu(a0,x,y,anchor){
   const a=liveRoot(a0); if(!a||!a.live||!a.info||!bridge.setModel)return;
   closeModelMenu();closeModeMenu();
-  const on=ctrlOf(a).switch!=='none'&&!!bridge.setModel, curId=a.info.model||'auto', cur=modelOf(curId,a.info.adapterId), tier=tierOf(a), pend=a.pendingModel;
+  /* spec 030 FR-060: the menu shows what comes next: with a queued switch its model, effort and window are the ticked ones */
+  const on=ctrlOf(a).switch!=='none'&&!!bridge.setModel, next=choiceOf(a), cur=modelOf(next.model,a.info.adapterId), curId=cur.id, tier=next.tier, pend=a.pendingModel;
   const dis=on?'':' aria-disabled="true"';
   const kl=modelsFor(a.info.adapterId), list=kl.length?kl:[cur];
   let h=on?'':`<p class="mm-why" role="note">${esc(NO_SWITCH_WHY)}</p>`;
@@ -6769,16 +6779,16 @@ function openModelMenu(a0,x,y,anchor){
     return `<button type="button" role="menuitemradio" aria-checked="${chk}" data-pick="${esc(m.id)}"${dis||(ob?' aria-disabled="true"':'')}${ow?` class="${m.orgBlocked?'mm-org':'mm-orgdoubt'}" title="${esc(ow)}"`:''}><span class="mt"><b>${esc(m.name)}${m.multiplier!=null?' ×'+esc(m.multiplier):''}</b><small>${ow?esc(ow):esc(DM.priceLine(m))+(w?' · '+esc(DM.fmtTokens(w))+' window':'')}</small></span><span class="ck">${chk?'✓':''}</span></button>`;}).join('');
   /* spec 007 FR-013/FR-017: the Auto routing tier, a group like the effort (Copilot's Auto only); a locked organization tier shows disabled */
   const ats=curId==='auto'?DM.autoTiersOf(cur):[];
-  if(ats.length){const atNow=DM.autoTierOf(cur,a.info.autoTier),lock=DM.autoTierLocked(cur);
+  if(ats.length){const atNow=DM.autoTierOf(cur,next.autoTier||a.info.autoTier),lock=DM.autoTierLocked(cur);
     /* review on PR 642: the locked reason is the buttons' description (aria-describedby), not only a title; a lock with no known name still locks */
     h+='<p class="mm-h">Auto routing</p><div class="mm-seg" role="group" aria-label="Auto routing"'+(lock?' aria-describedby="mmAutoLock"':'')+'>'+ats.map(t=>`<button type="button" data-autotier="${esc(t)}" aria-pressed="${t===atNow}"${lock?' aria-disabled="true" aria-describedby="mmAutoLock"':dis} title="${esc(DM.AUTO_TIER_HINT[t]+(lock?'. Set by your organization\'s Copilot policy.':'.'))}">${esc(DM.autoTierName(t))}</button>`).join('')+'</div>'+(lock?`<p class="mm-why mm-lock" id="mmAutoLock" role="note">Set by your organization's Copilot policy${atNow?': '+esc(DM.autoTierName(atNow)):''}.</p>`:'');}
-  if((cur.efforts||[]).length)h+='<p class="mm-h">Reasoning effort</p><div class="mm-seg" role="group" aria-label="Reasoning effort">'+['',...cur.efforts].map(x=>{const on2=(a.info.effort||'')===x;return `<button type="button" data-effort="${esc(x)}" aria-pressed="${on2}"${dis}>${x?esc(x):'Default'}</button>`;}).join('')+'</div>';
+  if((cur.efforts||[]).length)h+='<p class="mm-h">Reasoning effort</p><div class="mm-seg" role="group" aria-label="Reasoning effort">'+['',...cur.efforts].map(x=>{const on2=(next.effort||'')===x;return `<button type="button" data-effort="${esc(x)}" aria-pressed="${on2}"${dis}>${x?esc(x):'Default'}</button>`;}).join('')+'</div>';
   /* spec 005 FR-050: the window choice of this model only: Long context where it has one, else the one window it has */
   const w0=DM.windowOf(cur);
   if(DM.hasLong(cur)||w0>0)h+=`<p class="mm-h">Context window</p>`+(DM.hasLong(cur)?'':`<p class="mm-info">${esc(DM.fmtTokens(w0))} (the only window of this model)</p>`);
   if(DM.hasLong(cur))h+=`<button type="button" role="menuitemcheckbox" aria-checked="${tier==='long'}" data-tier="1"${dis} class="mm-tier"><span class="mt"><b>Long context</b><small>${esc(DM.fmtTokens(DM.windowOf(cur,'long')))} window · ${esc(DM.priceLine(cur,'long'))}</small></span><span class="ck">${tier==='long'?'✓':''}</span></button>`;
-  if(pend)h+=`<div class="mm-pend" role="status"><span>Next: <b>${esc(pend.name)}</b>${pend.tier==='long'?' (long context)':''}, when this reply ends.</span><button type="button" data-cancelq="1">Cancel</button></div>`;
-  h+=on?'<p class="mm-note">Applies from the next message; the conversation is kept. Costlier switches ask first, and your spending limit never changes.'+(ctrlOf(a).unverified?' '+esc(UNVERIFIED_WHY):'')+'</p>':'<div class="mm-foot"><button type="button" class="btn" data-newsess="1">New session…</button></div>';
+  if(pend)h+=`<div class="mm-pend" role="status"><span>Next: <b>${esc(pend.name)}</b>${DM.choiceWords(pend.req)?' ('+esc(DM.choiceWords(pend.req))+')':''}, when this reply ends.</span><button type="button" data-cancelq="1">Cancel</button></div>`;
+  h+=on?'<p class="mm-note">'+(pend?'Applies when this reply ends':'Applies from the next message')+'; the conversation is kept. Costlier switches ask first, and your spending limit never changes.'+(ctrlOf(a).unverified?' '+esc(UNVERIFIED_WHY):'')+'</p>':'<div class="mm-foot"><button type="button" class="btn" data-newsess="1">New session…</button></div>';
   const m=document.createElement('div');m.id='modelMenu';m.className='mode-menu model-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Model and context for '+a.name);
   m.innerHTML=h;document.body.appendChild(m);
   const {px,py}=placeMenu(m,x,y,anchor); /* spec 005 FR-037: above a toolbar chip */
@@ -6788,9 +6798,10 @@ function openModelMenu(a0,x,y,anchor){
     if(b.dataset.cancelq){closeModelMenu();cancelPendingModel(a,anchor);return;}
     if(b.getAttribute('aria-disabled')==='true')return;
     closeModelMenu();
-    if(b.dataset.pick!==undefined){const t=modelOf(b.dataset.pick,a.info.adapterId),own=a.info.autoTier;chooseModel(a,Object.assign({model:t.id,contextTier:t.id===cur.id?tier:'default'},t.id!==cur.id&&own&&DM.autoTiersOf(t).includes(own)&&!DM.autoTierLocked(t)?{autoTier:own}:{}),anchor);} /* spec 007 FR-016: back on Auto with the agent's own tier */
-    else if(b.dataset.effort!==undefined)chooseModel(a,{model:cur.id,effort:b.dataset.effort||null,contextTier:tier},anchor);
-    else if(b.dataset.tier)chooseModel(a,{model:cur.id,contextTier:tier==='long'?'default':'long'},anchor);
+    /* spec 030 FR-060, FR-061: a row says only what it changes; the rest comes from the state when its turn comes, not from this menu's picture of it */
+    if(b.dataset.pick!==undefined)chooseModel(a,{model:b.dataset.pick},anchor);
+    else if(b.dataset.effort!==undefined)chooseModel(a,{effort:b.dataset.effort||null},anchor);
+    else if(b.dataset.tier)chooseModel(a,{tier:tier==='long'?'default':'long'},anchor);
     else if(b.dataset.autotier!==undefined)chooseAutoTier(a,b.dataset.autotier,anchor);
   });
   m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('button')],i=it.indexOf(document.activeElement);
@@ -6800,43 +6811,47 @@ function openModelMenu(a0,x,y,anchor){
   const c=$('modelChip');if(c&&anchor===c)c.setAttribute('aria-expanded','true');
 }
 
-async function chooseModel(a,req,anchor){
-  try{await chooseModelInner(a,req,anchor);}finally{refocusAnchor(anchor);}
+function chooseModel(a,change,anchor){
+  return modelTurn(a,async()=>{try{await chooseModelInner(a,change,anchor);}finally{refocusAnchor(anchor);}});
 }
-async function chooseModelInner(a,req,anchor){
-  const cur=modelOf(a.info.model,a.info.adapterId),tgt=modelOf(req.model,a.info.adapterId),tierFrom=tierOf(a),tierTo=req.contextTier==='long'?'long':'default';
-  const sameEffort=req.effort===undefined||(req.effort||'')===(a.info.effort||'');
-  const pend=a.pendingModel;
-  if(!pend&&tgt.id===cur.id&&tierTo===tierFrom&&sameEffort)return;
+async function chooseModelInner(a,change,anchor){
+  const kind=a.info.adapterId,base=choiceOf(a),cur=modelOf(a.info.model,kind),tierFrom=tierOf(a),pend=a.pendingModel;
+  const {req:merged,dropped}=DM.mergeChoice(base,change,id=>modelOf(id,kind));
+  if(DM.sameChoice(base,merged))return;
+  const tgt=modelOf(merged.model,kind),tierTo=merged.contextTier;
+  /* spec 007 FR-016: back on Auto with the agent's own tier; a tier queued for this same Auto stays */
+  const own=a.info.autoTier,autoTier=tgt.id!==base.model?(own&&DM.autoTiersOf(tgt).includes(own)&&!DM.autoTierLocked(tgt)?own:undefined):base.autoTier;
   const c=STATS.agent(a.id).ctx,tokens=c?c.tokens:undefined;
   const cap=isUsdCap(a)?undefined:a.info.maxAiCredits,used=a.usage?a.usage.nano/1e9:0; /* the switch estimate is in AI credits: a dollar cap is not compared */
   const cf=DM.confirmFor(cur,tgt,{tokens,cap,used,tierFrom,tierTo});
-  const confirm={};
-  if(cf.needed||(req.autoTier&&tgt.id==='auto'&&DM.autoTierConfirm('efficiency',req.autoTier).needed)){
+  const confirm={},gone=DM.droppedText(dropped,tgt.name);
+  /* spec 030 FR-061: the model and window of the queued switch were confirmed already: changing only the effort on top does not ask again */
+  const asked=pend&&pend.req&&pend.req.model===merged.model&&(pend.req.contextTier||'default')===tierTo;
+  if(!asked&&(cf.needed||(autoTier&&tgt.id==='auto'&&DM.autoTierConfirm('efficiency',autoTier).needed))){
     const lines=cf.reasons.map(r=>r.text);
+    if(gone)lines.push(gone);
     lines.push('Price now: '+DM.priceLine(cur,tierFrom)+'. New: '+DM.priceLine(tgt,tierTo)+'.');
     if(cf.estimate!==undefined&&!cf.overCap)lines.push('Reading this conversation once would cost about '+DM.fmtCredits(cf.estimate)+' AI credits with '+tgt.name+' (an estimate, if nothing is cached).');
     if(cap>0)lines.push('Your spending limit of '+fmtCap(cap)+' AI credits is not changed.');
     if(busyNow(a))lines.push('A reply is running: the switch applies when it ends.'+(ctrlOf(a).unverified?' If you stop the reply, whether the switch still applies is not verified.':''));
     if(ctrlOf(a).unverified)lines.push(UNVERIFIED_WHY);
     /* review on PR 642: back on Auto with the agent's own tier: the dialog names it, with the higher-tier reasons when it is above Efficiency */
-    const at=req.autoTier&&tgt.id==='auto'?req.autoTier:'';
+    const at=autoTier&&tgt.id==='auto'?autoTier:'';
     if(at)lines.unshift(...DM.autoTierConfirm('efficiency',at).reasons,'Auto routes with '+DM.autoTierName(at)+', the tier this agent chose before.');
     const r=await askDialog({title:'Switch '+a.name+' to '+tgt.name+(at?' ('+DM.autoTierName(at)+' routing)':'')+(tierTo==='long'?' (long context)':'')+'?',body:'The conversation is kept. From the next message this agent uses the new model.',lines,returnFocus:anchor,
       buttons:[{label:'Cancel',value:null},{label:cf.compaction?'Compact and switch':cf.overCap?'Switch anyway':'Switch',value:'ok',cls:'primary'+(cf.overCap?' warn':'')}]});
     if(!r)return;
     if(cf.compaction)confirm.compaction='accept';
   }
-  /* an effort the new model does not support is cleared (its default), never sent: the runtime would refuse the switch */
-  const effort=req.effort!==undefined?req.effort:(a.info.effort&&tgt.id!==cur.id&&!(tgt.efforts||[]).includes(a.info.effort)?null:undefined);
-  await sendModelChange(a,Object.assign({model:tgt.id,contextTier:tierTo},effort!==undefined?{effort}:{},req.autoTier?{autoTier:req.autoTier}:{},confirm.compaction?{confirm}:{}),{prev:{model:cur.id,effort:a.info.effort,tier:tierFrom,autoTier:a.info.autoTier},tgt,anchor});
+  await sendModelChange(a,Object.assign({},merged,autoTier?{autoTier}:{},confirm.compaction?{confirm}:{}),{prev:{model:cur.id,effort:a.info.effort,tier:tierFrom,autoTier:a.info.autoTier},tgt,anchor,gone});
 }
 /* spec 007 FR-014: a tier of Auto, switched like a model (same call, Undo, queue); a higher tier asks first with the app's dialog */
-async function chooseAutoTier(a,to,anchor){
+function chooseAutoTier(a,to,anchor){return modelTurn(a,()=>chooseAutoTierInner(a,to,anchor));}
+async function chooseAutoTierInner(a,to,anchor){
   try{
-    const cur=modelOf('auto',a.info.adapterId);
-    if((a.info.model||'auto')!=='auto'||!DM.autoTiersOf(cur).includes(to)||DM.autoTierLocked(cur))return;
-    const from=DM.autoTierOf(cur,a.info.autoTier);
+    const cur=modelOf('auto',a.info.adapterId),next=choiceOf(a);
+    if(next.model!=='auto'||!DM.autoTiersOf(cur).includes(to)||DM.autoTierLocked(cur))return;
+    const from=DM.autoTierOf(cur,next.autoTier||a.info.autoTier);
     if(from===to&&!a.pendingModel)return;
     const cf=DM.autoTierConfirm(from,to);
     if(cf.needed){
@@ -6848,38 +6863,57 @@ async function chooseAutoTier(a,to,anchor){
         buttons:[{label:'Cancel',value:null},{label:'Switch',value:'ok',cls:'primary'}]});
       if(!r)return;
     }
-    await sendModelChange(a,{model:'auto',autoTier:to,contextTier:tierOf(a)},{prev:{model:'auto',effort:a.info.effort,tier:tierOf(a),autoTier:a.info.autoTier},tgt:cur,anchor}); /* Undo restores the agent's own choice, "none" included */
+    await sendModelChange(a,{model:'auto',autoTier:to,contextTier:next.tier},{prev:{model:modelOf(a.info.model,a.info.adapterId).id,effort:a.info.effort,tier:tierOf(a),autoTier:a.info.autoTier},tgt:cur,anchor}); /* Undo restores the agent's own choice, "none" included */
   }finally{refocusAnchor(anchor);}
 }
 async function sendModelChange(a,req,ctx){
+  /* spec 030 FR-061: this request holds the whole choice, so it replaces a queued one: the older switch leaves the runtime's queue first, or it would run too and Cancel would miss it */
+  const old=a.pendingModel||ctx.old,queuedNow=a.pendingModel;
+  let cancelled=!!ctx.cancelled; /* review on PR 935: the earlier switch is asked for again only when it really left the runtime's queue, or it would be queued twice (or an applied one sent again) */
+  if(queuedNow){const c=bridge.cancelQueuedModel?await bridge.cancelQueuedModel(a.id,queuedNow.queueId).catch(()=>undefined):undefined;cancelled=!!(c&&c.ok);a.pendingModel=undefined;updateModelChip(a);}
+  /* review on PR 935: when this request does not take, the earlier valid switch is asked for again, so a refusal never loses it */
+  const keep=async()=>old&&cancelled?await sendModelChange(a,old.req,{tgt:modelOf(old.req.model,a.info.adapterId),prev:old.prev,anchor:ctx.anchor,quiet:true}):false;
+  /* the line about the earlier switch is shown only once it is queued again; a quiet re-send says nothing when it fails */
+  const fail=async(msg,ms)=>{const kept=await keep();if(!ctx.quiet)toast(msg+(kept?' The switch queued before stays.':old&&!cancelled?' The earlier queued switch could not be cancelled, so it may still apply when this reply ends.':''),ms);return false;};
   const res=await bridge.setModel(a.id,req).catch(e=>({ok:false,error:String(e&&e.message||e)}));
-  if(!res||!res.ok){toast('Could not change the model: '+esc((res&&res.error)||'unknown error'),6000);return;}
-  const r=res.result||{},nm=ctx.tgt.name+(req.autoTier?' ('+DM.autoTierName(req.autoTier)+' routing)':'')+(req.contextTier==='long'?' (long context)':'');
+  if(!res||!res.ok)return fail('Could not change the model: '+esc((res&&res.error)||'unknown error'),6000);
+  const r=res.result||{},nm=ctx.tgt.name+(req.autoTier?' ('+DM.autoTierName(req.autoTier)+' routing)':'')+(DM.choiceWords(req)?' ('+DM.choiceWords(req)+')':''),gone=ctx.gone?' '+esc(ctx.gone):'';
   if(r.status==='applied'){
-    if(req.autoTier){a.info.autoTier=req.autoTier;updateModelChip(a);} /* spec 007 FR-016: also when the runtime sends no model change for a tier */
-    else if(req.autoTier===null){a.info.autoTier=undefined;updateModelChip(a);}
+    /* spec 030 FR-060: the answer is the state: a session that has not started and a same-model change send no model event, and the next choice is built on this */
+    a.info.model=r.model||req.model;
+    if(req.effort===null)a.info.effort=undefined;else if(req.effort!==undefined)a.info.effort=req.effort;
+    a.info.tier=req.contextTier==='long'?'long':undefined;
+    a.role=roleFor(a.info);a.ctxWaiting=true;
+    if(req.autoTier)a.info.autoTier=req.autoTier; /* spec 007 FR-016: also when the runtime sends no model change for a tier */
+    else if(req.autoTier===null)a.info.autoTier=undefined;
+    updateModelChip(a);updateCtxChip(a);scheduleRender();
     /* spec 052 (2026-10-21): one Undo toast per agent; a newer switch replaces the older toast (only the last switch can be undone) */
-    if(!ctx.undo){document.querySelectorAll('#toasts .toast[data-undo-model="'+CSS.escape(a.id)+'"]').forEach(t=>t.remove());const t=toastAction(esc(a.name)+': <b>'+esc(nm)+'</b> from the next message.','Undo',()=>undoModel(a,ctx.prev,ctx.anchor),8000);if(t&&t.dataset)t.dataset.undoModel=a.id;}
+    if(!ctx.undo){document.querySelectorAll('#toasts .toast[data-undo-model="'+CSS.escape(a.id)+'"]').forEach(t=>t.remove());const t=toastAction(esc(a.name)+': <b>'+esc(nm)+'</b> from the next message.'+gone,'Undo',()=>undoModel(a,ctx.prev,ctx.anchor),8000);if(t&&t.dataset)t.dataset.undoModel=a.id;}
     else toast(esc(a.name)+': back to <b>'+esc(nm)+'</b>.',3800);
+    return true;
   }else if(r.status==='queued'){
-    a.pendingModel={queueId:r.queueId,name:ctx.tgt.name+(req.autoTier?' ('+DM.autoTierName(req.autoTier)+')':''),tier:req.contextTier,prev:ctx.prev};updateModelChip(a);
-    toast(esc(a.name)+' is replying: <b>'+esc(nm)+'</b> applies when the reply ends.',5000);
+    a.pendingModel={queueId:r.queueId,name:ctx.tgt.name+(req.autoTier?' ('+DM.autoTierName(req.autoTier)+')':''),req,prev:ctx.prev};updateModelChip(a);
+    if(!ctx.quiet)toast(esc(a.name)+' is replying: <b>'+esc(nm)+'</b> applies when the reply ends.'+gone,5000);
+    return true;
   }else if(r.status==='needs-confirmation'){
     const cf=r.confirmation||{};
     const d=await askDialog({title:'Compact the context first?',body:(cf.targetName||ctx.tgt.name)+' has a window of '+DM.fmtTokens(cf.targetLimit)+' tokens, and this conversation uses '+DM.fmtTokens(cf.currentTokens)+'. It must be compacted before the switch, which costs one model call.',returnFocus:ctx.anchor,
       buttons:[{label:'Cancel',value:null},{label:'Compact and switch',value:'ok',cls:'primary'}]});
-    if(d)await sendModelChange(a,Object.assign({},req,{confirm:{compaction:'accept'}}),ctx);
-  }else toast(esc(r.message||'The model was not changed.'),5000);
+    if(d)return sendModelChange(a,Object.assign({},req,{confirm:{compaction:'accept'}}),Object.assign({},ctx,{old,cancelled}));
+    return fail(esc(a.name)+': the model was not changed.',5000);
+  }else return fail(esc(r.message||'The model was not changed.'),5000);
 }
-async function undoModel(a,prev,anchor){
+function undoModel(a,prev,anchor){return modelTurn(a,()=>undoModelInner(a,prev,anchor));}
+async function undoModelInner(a,prev,anchor){
   if(!bridge.setModel)return;
   /* spec 007 FR-014/FR-016: back to the agent's own tier, or to none of its own (null: the default again); never against a lock */
   const am=modelOf('auto',a.info.adapterId),tierOk=prev.model==='auto'&&DM.autoTiersOf(am).length&&!DM.autoTierLocked(am);
   const req=Object.assign({model:prev.model,contextTier:prev.tier,effort:prev.effort||null},tierOk?{autoTier:DM.autoTiersOf(am).includes(prev.autoTier)?prev.autoTier:null}:{});
-  await sendModelChange(a,req,{prev,tgt:modelOf(prev.model),anchor,undo:true});
+  await sendModelChange(a,req,{prev,tgt:modelOf(prev.model,a.info.adapterId),anchor,undo:true});
   refocusAnchor(anchor);
 }
-async function cancelPendingModel(a,anchor){
+function cancelPendingModel(a,anchor){return modelTurn(a,()=>cancelPendingInner(a,anchor));}
+async function cancelPendingInner(a,anchor){
   const p=a.pendingModel;if(!p||!bridge.cancelQueuedModel)return;
   const r=await bridge.cancelQueuedModel(a.id,p.queueId).catch(()=>({ok:false}));
   if(r&&r.ok){a.pendingModel=undefined;updateModelChip(a);toast(esc(a.name)+': the queued switch to <b>'+esc(p.name)+'</b> was cancelled.',3800);}
