@@ -345,3 +345,8 @@
 
 ## FR-181: no Demo / Live badge in the top bar (2026-10-31, owner)
 - [x] T193 `check-no-demo-badge.js` first (fails with the badge), then `#protoBadge`, `.proto` and `setBadge` removed; UI-suite entry; the cues that remain are listed in the spec delta [FR-181]
+
+## FR-206..FR-208: the Needs you inbox cannot answer a request by accident (2026-11-01)
+- [x] T203 `check-inbox-safety.js` first (on `main` it fails: a stale button re-answers a request, a held A answers, key A sends a limit's hidden amount), then `reqOf` and the live-card check in `paintInbox` [FR-206]; UI-suite entry
+- [x] T204 Limit row: the amount field in the row, no letter keys, own words, empty amount sends nothing, typing is not a command [FR-207]
+- [x] T205 `inboxKey` ignores `e.repeat` on A, S, D, O, Enter, Space and the chat's Alt+A/S/D; no key on a row being answered [FR-208]; five mutants run

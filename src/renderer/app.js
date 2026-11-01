@@ -3636,6 +3636,7 @@ document.addEventListener('keydown',e=>{
   if(KEYS.chatKeyDown(e,IS_MAC)&&/^Key[ASDN]$/.test(e.code)&&ui.selected&&$('panel')&&!modalOpen()){
     const t=e.target, typing=t&&t.matches&&t.matches('input,textarea,[contenteditable="true"]')&&String((t.value!=null?t.value:t.textContent)||'').length>0;
     if(!typing){const k=e.code.slice(3);
+      if(e.repeat&&k!=='N'){e.preventDefault();return;} /* spec 052 FR-208: a held Alt+A, Alt+S or Alt+D answers nothing */
       if(k==='N'){e.preventDefault();openNextNeedsMe();return;}
       if(answerObs&&answerObs.answerKey&&answerObs.answerKey(k)){e.preventDefault();return;}}
   }
@@ -3834,6 +3835,9 @@ function rollCount(box,n){
   box.replaceChildren(inn,out);
   box._roll=setTimeout(()=>{if(box.dataset.n===txt)box.textContent=txt;},260);
 }
+/* spec 052 FR-206: each pending card is one request, its id made once and kept (the same lines as PR 994's, spec 097 FR-122: keep one when both land) */
+const CARD_REQ=new WeakMap(); let CARD_REQ_N=0;
+const reqOf=c=>{if(!CARD_REQ.has(c))CARD_REQ.set(c,'rq'+(++CARD_REQ_N));return CARD_REQ.get(c);};
 function pendingCardOf(a){const c=getChat(a);const all=[...c.el.querySelectorAll('.note.perm:not(.settled)')].filter(n=>n.querySelector(':scope > .note-actions button'));return all[0]||null;}
 /* spec 052 FR-048: focus goes back to where it was when the inbox opened (still in the page and shown), else to the inbox button */
 let inboxBack=null;
@@ -3847,7 +3851,7 @@ function openInbox(focusId){
   const back=$('inboxDlg')?inboxBack:document.activeElement;
   closeInbox(); inboxBack=back&&back!==document.body?back:null;
   const d=document.createElement('div');d.id='inboxDlg';d.className='dlg-ov';
-  d.innerHTML='<div class="dlg l inbox-dlg" role="dialog" aria-modal="true" aria-labelledby="inboxT" aria-describedby="inboxKeys"><h3 id="inboxT">Needs you</h3><div class="dbody" id="inboxBody"></div><p class="inbox-keys" id="inboxKeys"'+(SIMPLE?' hidden':'')+'>Keys: J/K move · A allow · S session · D deny · O open</p><div class="dbtn"><button class="btn" type="button" id="inboxClose">Close</button></div></div>';
+  d.innerHTML='<div class="dlg l inbox-dlg" role="dialog" aria-modal="true" aria-labelledby="inboxT" aria-describedby="inboxKeys"><h3 id="inboxT">Needs you</h3><div class="dbody" id="inboxBody"></div><p class="inbox-keys" id="inboxKeys"'+(SIMPLE?' hidden':'')+'>Keys: J/K move · A allow · S session · D deny · O open · spending limits: buttons only</p><div class="dbtn"><button class="btn" type="button" id="inboxClose">Close</button></div></div>';
   document.body.appendChild(d);
   d.addEventListener('click',e=>{if(e.target===d)closeInbox();});
   d.addEventListener('keydown',inboxKey);
@@ -3864,13 +3868,17 @@ function inboxKey(e){
   if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeInbox();return;}
   if(e.key==='Tab'){const f=[...d.querySelectorAll('button,summary,[tabindex="-1"].ib-h,input')].filter(x=>x.getClientRects().length);if(!f.length)return;const i=f.indexOf(document.activeElement);if(e.shiftKey&&(i<=0)){e.preventDefault();focusIn(f[f.length-1]);}else if(!e.shiftKey&&i===f.length-1){e.preventDefault();focusIn(f[0]);}return;}
   if(e.altKey||e.ctrlKey||e.metaKey)return;
+  if(e.target&&e.target.tagName==='INPUT')return; /* spec 052 FR-207: typing an amount is not a command */
   const rows=[...d.querySelectorAll('.inbox-row')], row=document.activeElement&&document.activeElement.closest('.inbox-row'), ri=rows.indexOf(row);
   const go=i=>{const r=rows[Math.max(0,Math.min(rows.length-1,i))];if(r)focusIn(r.querySelector('.ib-h'));};
   const k=e.key.toLowerCase();
+  /* spec 052 FR-208: a held key answers nothing (and a held Enter or Space does not press the focused button again); J and K may still repeat */
+  if(e.repeat&&(k==='a'||k==='s'||k==='d'||k==='o'||e.key==='Enter'||e.key===' ')){e.preventDefault();return;}
   if(k==='j'||e.key==='ArrowDown'){e.preventDefault();go(ri+1);return;}
   if(k==='k'||e.key==='ArrowUp'){e.preventDefault();go(ri<0?0:ri-1);return;}
   if(!row)return;
   const act=x=>{const b=row.querySelector(`[data-k="${x}"]`);if(b){e.preventDefault();b.click();}};
+  if(row.classList.contains('settled')||row.dataset.answering)return;
   if(k==='a')act('approve');else if(k==='d')act('deny');else if(k==='s')act('session');
   else if(k==='o'||(e.key==='Enter'&&document.activeElement.classList.contains('ib-h'))){e.preventDefault();row.querySelector('[data-k="open"]').click();}
 }
@@ -3889,6 +3897,7 @@ function paintInbox(focusIndex){
   body.innerHTML=list.length?'':'<p class="inbox-empty" tabindex="-1"><span class="ib-ok" aria-hidden="true"></span><span><b>All clear. Nobody needs you right now.</b><small>Agents that ask for permission, ask a question, reach their limit or hit an error appear here.</small></span></p>'; /* spec 052 FR-048 */
   list.forEach((a,i)=>{
     const card=pendingCardOf(a), row=document.createElement('section');row.className='inbox-row';
+    const rq=card?reqOf(card):'', isLimit=!!card&&card.classList.contains('limit'); /* FR-206: the request this row was painted for; FR-207: a limit row has its own amount and no letter key */
     const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?'reached its spending limit':card.classList.contains('coffee')?'is on a '+coffeeWord().toLowerCase():'needs your OK'):(st==='error'?'has an error':a.limit?'reached its limit':LABELS[st]||st);
     row.setAttribute('aria-labelledby','ibh'+i);row.dataset.id=a.id;
     row.innerHTML='<div class="ib-av" aria-hidden="true">'+avatar(a)+'</div><div class="ib-main"><div class="ib-top"><h4 class="ib-h" id="ibh'+i+'" tabindex="-1"><b class="ib-n"></b> <span class="ib-sub"><span class="ib-w"></span> <span class="ib-f"></span> <span class="ib-wait"></span></span></h4></div><p class="ib-t" id="ibt'+i+'"></p><div class="ib-act"></div></div>';
@@ -3902,20 +3911,29 @@ function paintInbox(focusIndex){
     const KEY={approve:'A',session:'S',deny:'D',open:'O'}, RANK={approve:0,session:1,deny:2,other:3};
     const ans=document.createElement('span');ans.className='ib-ans';act.appendChild(ans);
     const add=(label,cls,k,fn,title,box)=>{const b=document.createElement('button');b.type='button';b.className=cls==='link'?'linkbtn ib-open':'btn sm '+cls;b.textContent=label;b.dataset.k=k;b.setAttribute('aria-describedby','ibh'+i+' ibt'+i);
-      if(KEY[k]){b.setAttribute('aria-keyshortcuts',KEY[k]);title=(title?title+' ':'')+'(key '+KEY[k]+')';}if(title)b.title=title;b.onclick=fn;(box||ans).appendChild(b);};
-    const kOf=src=>src.dataset.act==='session'?'session':/danger/.test(src.className)?'deny':/primary/.test(src.className)?'approve':'other';
+      if(KEY[k]&&!isLimit){b.setAttribute('aria-keyshortcuts',KEY[k]);title=(title?title+' ':'')+'(key '+KEY[k]+')';}if(title)b.title=title;b.onclick=fn;(box||ans).appendChild(b);};
+    const kOf=src=>isLimit?'other':src.dataset.act==='session'?'session':/danger/.test(src.className)?'deny':/primary/.test(src.className)?'approve':'other';
+    let amt=null; /* FR-207: the amount the card would send, shown in the row and sent from it */
+    if(isLimit){const ci=card.querySelector('.limit-amt');if(ci){amt=document.createElement('input');amt.type='number';amt.min=ci.min;amt.step=ci.step;amt.value=ci.value;amt.className='limit-amt ib-amt';
+      amt.setAttribute('aria-label',ci.getAttribute('aria-label')||'Amount to add');amt.title=amt.getAttribute('aria-label');amt.oninput=()=>amt.removeAttribute('aria-invalid');ans.appendChild(amt);}}
     if(card&&!q)for(const src of [...card.querySelectorAll(':scope > .note-actions button')].filter(x=>!x.dataset.broad).sort((x,y)=>RANK[kOf(x)]-RANK[kOf(y)])){
       const k=kOf(src);
       /* spec 003 FR-097: the Read-only denial's "Switch to Ask first…" opens the same mode menu, from the chat (the inbox is modal) */
       if(src.dataset.act==='ro-ask'){add(src.textContent,'',k,()=>{closeInbox();openPanel(a.id,true);requestAnimationFrame(()=>{if(!src.isConnected)return;src.focus({preventScroll:true});src.click();});},src.title);ans.lastElementChild.setAttribute('aria-haspopup','menu');continue;}
       add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],k,ev=>{const word=k==='deny'?'Denied':k==='other'?src.textContent:'Allowed';
         /* spec 052 FR-047/FR-048: the row's buttons go busy, then the row shows the answer for 600ms, folds away in 200ms, then the list repaints */
-        if(row.classList.contains('settled')||row.dataset.answering)return; row.dataset.answering='1';
-        act.querySelectorAll('button').forEach(x=>{if(x!==ev.currentTarget)x.disabled=true;});const done=busy(ev.currentTarget,'Sending…');
-        focusIn(row.querySelector('.ib-h'));src.click();
-        setTimeout(()=>{const left=needsMeOrder().length;announce(word+' '+a.name+'. '+(left?left+' left.':'Nobody else needs you.'));renderInboxBtn();
+        if(row.classList.contains('settled')||row.dataset.answering)return;
+        /* FR-207: the Raise button sends the number the row shows; an empty or zero amount sends nothing */
+        const raises=isLimit&&/primary/.test(src.className)&&amt; if(raises&&!(parseFloat(amt.value)>0)){amt.setAttribute('aria-invalid','true');announce('Enter an amount above zero to raise the limit.');focusIn(amt);return;}
+        row.dataset.answering='1';
+        /* FR-206: the card must still be this agent's live pending card with this request id and its button still there; else nothing is sent */
+        const live=rq&&[...getChat(a).el.querySelectorAll('.note.perm:not(.settled)')].find(n=>reqOf(n)===rq), stale=!live||!live.contains(src)||src.disabled;
+        act.querySelectorAll('button,input').forEach(x=>{if(x!==ev.currentTarget)x.disabled=true;});const done=busy(ev.currentTarget,'Sending…');
+        focusIn(row.querySelector('.ib-h'));
+        if(!stale){if(raises){const ci=live.querySelector('.limit-amt');if(ci)ci.value=amt.value;}src.click();}
+        setTimeout(()=>{const left=needsMeOrder().length;announce(stale?'Already answered. '+a.name+'.':word+' '+a.name+'. '+(left?left+' left.':'Nobody else needs you.'));renderInboxBtn();
           if(!row.isConnected){done();paintInbox(i);return;}
-          row.classList.add('settled');act.innerHTML='';const p=document.createElement('p');p.className='ib-done '+(k==='deny'?'no':k==='other'?'':'yes');p.textContent=k==='deny'?'Denied':k==='other'?word:'✓ '+word;act.appendChild(p);
+          row.classList.add('settled');act.innerHTML='';const p=document.createElement('p');p.className='ib-done '+(stale||k==='other'?'':k==='deny'?'no':'yes');p.textContent=stale?'Already answered':k==='deny'?'Denied':k==='other'?word:'✓ '+word;act.appendChild(p);
           setTimeout(()=>{if(!row.isConnected)return paintInbox(i);if(reducedMotion())return paintInbox(i);
             row.classList.add('gone');setTimeout(()=>flipInbox(()=>paintInbox(i)),180);},600);},250);},src.title);
     }
