@@ -330,6 +330,16 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
+### 2026-11-01: no walking; a person zooms out and zooms in, and the room stays still (Vikram, after watching; supersedes the walk, the head anchor and FR-017's narrower away and asleep desks)
+
+Vikram judged the walk and the head-anchored sit-down *not natural enough*: two bodies in the dissolves, a walker over the screens at a wrong scale, the room jumping when someone leaves. Replaced:
+- **A person going to or from a place zooms.** At the place they leave: eases smaller and fades, about 280 ms. Then, at the place they go to: eases up from small and fades in, about 320 ms, feet on the floor, with a soft glow at each end. Never two bodies at one place, nothing crosses the room. Walk frames are not in the pack, and the face table goes.
+- **The room does not reflow when someone leaves or sleeps.** A desk keeps its slot, its screen and its plate; only the number of sessions changes the rows, and then things slide to their new place. The lobby's own widths still follow who is there, and slide. `[KNOWN GAP]` Keeping them fixed would need a new lobby rule.
+- **An empty seat says where they went:** a small note on the desk, *at Library*: real text, at least 10.5 px, in Photo office a yellow note with a slight tilt, easing in with the zoom. Other worlds style it their own way later. It replaces the *at Library up-arrow* label.
+- A pose change at the desk fades the old one out before the new one in, so two big poses do not stand in each other.
+- **The typing rig is in the pack** for the 15 people: head and two hands as WebP, `rig` in `people.json`. Cut with on-device Apple Vision by a one-off script, not at app time.
+- This delta's own sections below on the walk and the head anchor are superseded by this one.
+
 ### 2026-11-01: people move smoothly (Vikram's requirement on #979, relayed 2026-11-01)
 
 *"Animation must be smooth and look natural, with no lag; stepped frame swaps alone are not enough."* This replaces FR-070's stepped frames and periods, this delta's item 2 and item 3 below, and, for people only, FR-181's stepped timing and 2 changes a second. FR-180 stands: `transform` and `opacity` only, no layout, no `mix-blend-mode`. FR-071 and FR-074 stand: nothing moves under reduced motion or Serious mode, and hidden or off-screen desks pause.
