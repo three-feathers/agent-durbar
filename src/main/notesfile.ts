@@ -113,7 +113,7 @@ export function excludeLine(segments: readonly string[], durbar = '.durbar'): st
 }
 
 /**
- * The line for a folder on macOS whatever form git holds (spec Changes, review of #957): each non-ASCII run, and the ASCII letter before it, which a mark can compose with, becomes `*`.
+ * The line for a folder on macOS whatever form git holds (spec Changes, review of #957): each non-ASCII run, and the ASCII character before it, which a mark can compose with, becomes `*`. It can also match the `.durbar/` of other folders (spec Changes, owner's call pending).
  * Git's composition cannot be read without a process, and ASCII never composes, so this needs no table. One `*` for adjacent runs: `**` alone in a segment would cross folders.
  */
 export function wildcardExcludeLine(segments: readonly string[], durbar = '.durbar'): string {
