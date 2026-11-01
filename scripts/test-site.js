@@ -123,7 +123,7 @@ assert.match(docs, /\.docs\{grid-template-columns:minmax\(0,1fr\)/, 'the docs co
 assert.match(docs, /<a class="keep" href="index\.html#download">Download<\/a>/, 'Download stays in the docs header on phones');
 
 // spec 050 FR-012 (issue #759): every picture the site links is a palette PNG (colour type 3), made by `npm run shots:docs` or `npm run shots:compress`;
-// a linked picture the quality guard refused to compress is named in KEPT_ORIGINAL with the reason (none today)
+// a linked picture the quality guard refused to compress is named in KEPT_ORIGINAL with the reason
 const KEPT_ORIGINAL = {};
 for (const f of require('./shots-docs.js').linkedImages(ROOT)) {
   const b = fs.readFileSync(path.join(ROOT, 'docs', 'screenshots', f)).subarray(0, 26);
