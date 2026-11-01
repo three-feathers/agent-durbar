@@ -301,6 +301,8 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   }
   /* a picture set that faced right would be wrong for every visitor: the check reads the meta, not the code path */
   const flipped = JSON.parse(JSON.stringify(META)) as RealMeta; flipped.facing = 'right';
+  const bare = JSON.parse(JSON.stringify(META)) as RealMeta; delete bare.facing;
+  assert.strictEqual(realLayout(model(15, 4), { w: 1440, h: 900 }, bare).fixtures.flatMap((f) => f.visitors).find((v) => v.fig)!.fig!.faces, 'left', 'no `facing` in people.json: the shipped pictures face left');
   assert.strictEqual(realLayout(model(15, 4), { w: 1440, h: 900 }, flipped).fixtures.flatMap((f) => f.visitors).find((v) => v.fig)!.fig!.faces, 'right', 'red: the side follows the meta');
 }
 
