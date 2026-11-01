@@ -199,9 +199,11 @@ export function initProblems(init: any, worktree: string, realpath: (p: string) 
 // ---- environment and key (FR-011, FR-013) -----------------------------------------------------------------------------------
 
 /** The SDK's `env` replaces the environment: only these. */
-export function minimalEnv(a: { key: string; path: string; home: string; configDir: string; tmp: string }): Record<string, string> {
+export function minimalEnv(a: { path: string; home: string; configDir: string; tmp: string }): Record<string, string> {
   return {
-    ANTHROPIC_API_KEY: a.key, PATH: a.path, HOME: a.home, CLAUDE_CONFIG_DIR: a.configDir, TMPDIR: a.tmp,
+    // The key is NOT here: it goes to the claude process on file descriptor 3 (spawnWithKeyFd), so /proc/<pid>/environ of that process, the
+    // file a hook escape would read first, does not hold it. The variable tells the binary where to read it.
+    CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR: '3', PATH: a.path, HOME: a.home, CLAUDE_CONFIG_DIR: a.configDir, TMPDIR: a.tmp,
     // verified against the real binary: no side traffic (it would also use up a scripted reply), no @file attachments, no CLAUDE.md of the PR, no extra agents or skills
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', CLAUDE_CODE_DISABLE_FILE_MENTIONS: '1', CLAUDE_CODE_DISABLE_ATTACHMENTS: '1', CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1',
     CLAUDE_CODE_DISABLE_BUNDLED_SKILLS: '1', CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
@@ -342,14 +344,23 @@ export function tokensOf(result: any): { input: number; output: number; cacheRea
 
 // ---- masking and cutting (FR-017; the checklist's "mask, then cut") ----------------------------------------------------------
 
-/** Control characters (ANSI escapes included) and bidirectional controls: a terminal or a reader must not be steered by them. */
-const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩﻿]/g;
-/** Everything that leaves the process goes through this first: token shapes, PEM blocks, control characters. Then (and only then) a cut. */
+/**
+ * Controls (ANSI escapes included), every format character (zero-width, bidirectional, soft hyphen, tag characters, word joiners), line and
+ * paragraph separators, variation selectors and the combining grapheme joiner: nothing a reader sees, all of them able to split a token
+ * so a shape no longer matches. Tab, newline and carriage return stay.
+ */
+const INVISIBLE = /(?![\t\n\r])[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\u034f\ufe00-\ufe0f\u{e0100}-\u{e01ef}\u115f\u1160\u3164\uffa0]/gu;
+/**
+ * Everything that leaves the process goes through this first, in this order: strip what is invisible, THEN mask token shapes and PEM
+ * blocks (masking first let `sk-ant-<zero-width>AAAA…` through whole: the shape did not match until the split character was gone), and only
+ * then, in `clean`, a cut.
+ */
 export function maskAll(text: string): string {
-  let t = maskTokenShapes(String(text), '[redacted]');
+  let t = String(text).replace(INVISIBLE, '');
+  t = maskTokenShapes(t, '[redacted]');
   t = t.replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, '[redacted]');
   t = t.replace(/\bsk-ant-[A-Za-z0-9_-]{8,}/g, '[redacted]');
-  return t.replace(CONTROL, '');
+  return maskTokenShapes(t, '[redacted]'); // a second pass: the first masks can expose a shape that touched one
 }
 export function cut(text: string, max: number): string {
   const a = Array.from(text);
@@ -420,6 +431,13 @@ export interface Report {
   passes: PassReport[];
 }
 
+/** Every string in a structure through maskAll BEFORE it is serialised: JSON.stringify writes a control character as the six visible characters `\\u0001`, after which no mask can see the split token it makes. */
+function deepMask(v: any): any {
+  if (typeof v === 'string') return maskAll(v);
+  if (Array.isArray(v)) return v.map(deepMask);
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [maskAll(k), deepMask(x)]));
+  return v;
+}
 /** A fence longer than any run of backticks inside, so nothing in the text can close it. */
 export function fenceFor(text: string): string {
   let longest = 0;
@@ -439,13 +457,14 @@ export function renderReport(r: Report): string {
     if (p.costKnown && p.costUsd !== null) total += p.costUsd; else allKnown = false;
   }
   head.push(`estimated API cost of the run: ${allKnown ? `~${total.toFixed(4)} USD` : 'not fully known'}`);
-  const body = JSON.stringify({
+  const body = JSON.stringify(deepMask({
     findings: r.passes.flatMap((p) => p.findings),
     not_checked: r.passes.map((p) => ({ pass: p.pass, runner: p.runner, status: p.status, text: p.notChecked, note: p.note, dropped_findings: p.dropped })),
     denied_calls: r.passes.flatMap((p) => p.denials.map((d) => ({ pass: p.pass, ...d }))),
-  }, null, 2);
+  }), null, 2);
   const f = fenceFor(body);
-  return [...head, '', `${DATA_NOTE}`, `${f}json`, body, f, ''].join('\n');
+  // every field was cleaned when it was made; this is the last wall for what a caller built by hand (a note, a denied path): strip, then mask, once more
+  return maskAll([...head, '', `${DATA_NOTE}`, `${f}json`, body, f, ''].join('\n'));
 }
 
 /**

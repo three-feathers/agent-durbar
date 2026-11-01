@@ -127,8 +127,12 @@ function checkConfine(): void {
 }
 
 function checkEnvKeyDiffLedger(): void {
-  const e = core.minimalEnv({ key: 'k', path: '/bin', home: '/h', configDir: '/c', tmp: '/t' });
-  assert.deepStrictEqual(Object.keys(e).sort(), ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_DISABLE_ATTACHMENTS', 'CLAUDE_CODE_DISABLE_AUTO_MEMORY', 'CLAUDE_CODE_DISABLE_BUNDLED_SKILLS', 'CLAUDE_CODE_DISABLE_CLAUDE_MDS', 'CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS', 'CLAUDE_CODE_DISABLE_FILE_MENTIONS', 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', 'CLAUDE_CONFIG_DIR', 'HOME', 'PATH', 'TMPDIR']);
+  const e = core.minimalEnv({ path: '/bin', home: '/h', configDir: '/c', tmp: '/t' });
+  assert.deepStrictEqual(Object.keys(e).sort(), ['CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR', 'CLAUDE_CODE_DISABLE_ATTACHMENTS', 'CLAUDE_CODE_DISABLE_AUTO_MEMORY', 'CLAUDE_CODE_DISABLE_BUNDLED_SKILLS', 'CLAUDE_CODE_DISABLE_CLAUDE_MDS', 'CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS', 'CLAUDE_CODE_DISABLE_FILE_MENTIONS', 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', 'CLAUDE_CONFIG_DIR', 'HOME', 'PATH', 'TMPDIR']);
+  assert.ok(!('ANTHROPIC_API_KEY' in e), 'the key is not in the environment the SDK gives the claude process'); assert.strictEqual(e.CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR, '3');
+  { const sp: any[] = []; const fakeSpawn: any = (c: string, a: string[], o: any) => { sp.push({ c, a, o }); return { stdio: [null, null, null, { on() {}, end(x: string) { sp.push({ fd: x }); } }] }; };
+    run.spawnWithKeyFd('sk-ant-KEYTEXT', fakeSpawn)({ command: 'claude', args: ['x'], cwd: '/w', env: { PATH: '/bin', ANTHROPIC_API_KEY: 'LEAK', A: 'b', U: undefined } });
+    assert.deepStrictEqual(sp[0].o.env, { PATH: '/bin', A: 'b', CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR: '3' }, 'no key in the spawned environment'); assert.deepStrictEqual(sp[0].o.stdio, ['pipe', 'pipe', 'ignore', 'pipe']); assert.strictEqual(sp[1].fd, 'sk-ant-KEYTEXT\n', 'the key is written to fd 3, once'); }
   assert.strictEqual(e.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, '1'); assert.strictEqual(e.CLAUDE_CODE_DISABLE_FILE_MENTIONS, '1');
   assert.deepStrictEqual(core.envProblems({ PATH: '/bin' }), []);
   for (const k of ['GH_TOKEN', 'GITHUB_TOKEN', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'GH_CONFIG_DIR', 'XDG_CONFIG_HOME', 'GH_HOST']) assert.strictEqual(core.envProblems({ [k]: 'x' }).length, 1, k);
@@ -188,6 +192,22 @@ function checkAnswers(): void {
   const c = core.validateAnswer({ findings: [{ kind: 'reach', path: 'a', line: 1, claim: padded }], not_checked: '' }, 'reach');
   assert.ok(c.ok && !c.findings[0].claim.includes('ghp_') && c.findings[0].claim.length <= 1200, 'mask before cut');
   assert.ok(!core.maskAll('-----BEGIN RSA PRIVATE KEY-----\nMIIB\n-----END RSA PRIVATE KEY-----').includes('MIIB') && !core.maskAll('sk-ant-api03-' + 'B'.repeat(40)).includes('BBBB'));
+  // review 2026-11-01 (third round): strip first, then mask: a split token came out whole
+  { const body = 'A'.repeat(40); const splits = ['\u200b', '\u200d', '\u2060', '\u00ad', '\ufeff', '\u202e', '\u2066', '\u0001', '\u001b', '\u007f', '\u0085', '\u2028', '\ufe0f', '\u034f', '\u{e0041}'];
+    for (const z of splits) {
+      for (const tok of [`sk-ant-${z}${body}`, `sk-${z}ant-${body}`, `ghp_${z}${'B'.repeat(36)}`, `gh${z}p_${'B'.repeat(36)}`, `s${z}k-ant-api03-${body}`, `-----BEGIN ${z}PRIVATE KEY-----\nMIIBsecret\n-----END PRIVATE KEY-----`, `github_pat_${z}${'C'.repeat(40)}`]) {
+        const m = core.maskAll(tok); assert.ok(!/AAAA|BBBB|CCCC|MIIB/.test(m), `masked: ${JSON.stringify(tok.slice(0, 24))} gave ${JSON.stringify(m.slice(0, 40))}`);
+        assert.ok(!/AAAA|BBBB|CCCC|MIIB/.test(core.clean(tok, 1200)), 'clean() masks it too');
+      }
+    }
+    // the report the coordinating session reads, with the split tokens in every field a model controls
+    const bad = `sk-ant-\u200b${body} and ghp_\u0001${'B'.repeat(36)}`;
+    const ans = core.validateAnswer({ findings: [{ kind: 'reach', path: `src/${bad}.ts`, line: 1, claim: bad, evidence: bad, how_to_check: bad }], not_checked: bad }, 'reach'); assert.ok(ans.ok);
+    if (ans.ok) {
+      const rep1: core.Report = { v: 1, pr: 7, sha: 'a'.repeat(40), url: '', startedAt: 'n', model: 'm', diffBytes: 1, replay: false, raised: [], passes: [{ pass: 'reach', runner: 'claude', status: 'ok', note: bad, partial: false, findings: ans.findings, notChecked: ans.notChecked, dropped: 0, turns: 1, tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }, costUsd: 0.1, costKnown: true, denials: [{ tool: 'Read', path: bad, reason: 'x' }], durationMs: 1 }] };
+      const txt = core.renderReport(rep1); assert.ok(!/AAAA|BBBB/.test(txt), 'renderReport output holds no split token');
+      assert.ok(!/AAAA|BBBB/.test(core.renderReport(core.revalidateReport(JSON.parse(JSON.stringify(rep1))))), 'nor does a report read back from a file');
+    } }
   assert.ok(!core.maskAll('-----BEGIN PRIVATE KEY-----\nMIIBcut-off with no end').includes('MIIB'), 'a cut-off PEM block is masked to its end');
   assert.ok(core.validateAnswer('{"findings":[]}', 'reach').ok); assert.ok(!core.validateAnswer('nope', 'reach').ok && !core.validateAnswer({}, 'reach').ok && !core.validateAnswer([], 'reach').ok && !core.validateAnswer('x'.repeat(1_000_001), 'reach').ok);
   const many = core.validateAnswer({ findings: Array.from({ length: 60 }, () => ({ kind: 'reach', claim: 'c' })), not_checked: '' }, 'reach'); assert.ok(many.ok && many.findings.length === core.MAX_FINDINGS && many.dropped === 20);
@@ -213,8 +233,8 @@ function checkAnswers(): void {
 // ---- the box, with the fake SDK -----------------------------------------------------------------------------------------------
 async function checkBox(): Promise<void> {
   const wt = mk('boxwt'); fs.writeFileSync(path.join(wt, 'a.ts'), 'x'); const outside = mk('boxout'); fs.writeFileSync(path.join(outside, 'key'), 's');
-  const ceil = core.DEFAULT_CEILINGS; const env = core.minimalEnv({ key: 'sk-ant-' + 'k'.repeat(30), path: '/bin', home: '/h', configDir: '/c', tmp: '/t' });
-  const input = { pass: 'reach' as const, system: 'SYS', user: 'USER', model: 'claude-opus-5-5', worktree: wt, env, ceilings: ceil };
+  const ceil = core.DEFAULT_CEILINGS; const env = core.minimalEnv({ path: '/bin', home: '/h', configDir: '/c', tmp: '/t' });
+  const input = { pass: 'reach' as const, system: 'SYS', user: 'USER', model: 'claude-opus-5-5', worktree: wt, env, ceilings: ceil, key: 'sk-ant-api03-' + 'k'.repeat(40) };
   const go = async (script: any, ceilings = ceil): Promise<{ o: run.PassOutcome; rec: FakeRecord }> => { const rec: FakeRecord = { calls: [], decisions: [] }; const o = await run.claudePass(fakeQuery(script, rec), { ...input, ceilings }); return { o, rec }; };
 
   let { o, rec } = await go({ toolCalls: [{ tool_name: 'Read', tool_input: { file_path: 'a.ts' } }, { tool_name: 'Read', tool_input: { file_path: path.join(outside, 'key') } }, { tool_name: 'Bash', tool_input: { command: 'id' } }, { tool_name: 'Glob', tool_input: { pattern: '/etc/*' } }] });
@@ -270,10 +290,14 @@ async function checkBox(): Promise<void> {
  */
 async function checkRealSdk(): Promise<void> {
   const sdkFile = path.join(ROOT, 'scripts', 'prereview', 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'sdk.mjs');
+  if (!fs.existsSync(sdkFile) && process.env.PREREVIEW_REQUIRE_REAL_SDK) throw new Error('PREREVIEW_REQUIRE_REAL_SDK is set (the Ubuntu CI job) but the real SDK is not installed in scripts/prereview: the install step failed or was dropped, so the real-binary test would have skipped silently');
   if (!fs.existsSync(sdkFile)) { console.log('prereview: the real SDK is not installed here (npm ci --prefix scripts/prereview), the real-binary test is skipped; the Ubuntu CI job runs it'); return; }
   const sdk: any = await (new Function('p', 'return import(p)'))(pathToFileURL(sdkFile).href);
   const root = mk('realsdk'); const wt = mk('realsdk', 'wt'); const outside = mk('realsdk', 'outside'); const home = mk('realsdk', 'home');
-  const CANARY = 'CANARY-OUTSIDE-7e1d3c'; const ENVCANARY = 'ENVCANARY-5b2a';
+  const CANARY = 'CANARY-OUTSIDE-7e1d3c'; const ENVCANARY = 'ENVCANARY-5b2a'; const REALKEY = 'sk-ant-api03-' + 'K'.repeat(40);
+  // the key reaches the claude process on file descriptor 3: record what its /proc environ holds a moment after it starts (the file a hook escape would read first)
+  const environs: string[] = [];
+  const spawnSpy = ((cmd: string, args: string[], o: any) => { const c = (require('child_process').spawn as typeof import('child_process').spawn)(cmd, args, o); const grab = (): void => { try { environs.push(fs.readFileSync(`/proc/${c.pid}/environ`, 'utf8')); } catch { environs.push('(unreadable)'); } }; c.once('spawn', () => { grab(); setTimeout(grab, 300); }); return c; }) as any;
   fs.writeFileSync(path.join(outside, 'canary.txt'), CANARY); fs.mkdirSync(path.join(wt, 'src')); fs.writeFileSync(path.join(wt, 'src', 'a.ts'), 'export const LEGIT_CONTENT_1 = 1;\n');
   fs.writeFileSync(path.join(wt, 'CLAUDE.md'), 'MARK-CLAUDEMD'); fs.mkdirSync(path.join(wt, '.claude', 'skills', 'evil'), { recursive: true }); fs.writeFileSync(path.join(wt, '.claude', 'skills', 'evil', 'SKILL.md'), '---\nname: evil\ndescription: MARK-SKILL\n---\nMARK-SKILL-BODY');
   fs.writeFileSync(path.join(wt, '.claude', 'settings.json'), JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: `touch ${root}/hookfired` }] }] }, env: { X: 'MARK-SETTINGS' } }));
@@ -289,9 +313,9 @@ async function checkRealSdk(): Promise<void> {
   const api = await startMockApi((n) => n === 0 ? [...hostile.map((h) => ({ type: 'tool_use' as const, name: h.name, input: h.input })), { type: 'tool_use', name: 'Read', input: { file_path: 'src/a.ts' } }]
     : n === 1 ? [{ type: 'tool_use', name: 'StructuredOutput', input: goodAnswer() }] : [{ type: 'text', text: 'done' }]);
   try {
-    const env = { ...core.minimalEnv({ key: 'sk-ant-api03-' + 'K'.repeat(40), path: process.env.PATH ?? '/usr/bin:/bin', home, configDir: path.join(home, 'c'), tmp: home }), ANTHROPIC_BASE_URL: api.url, ENVCANARY };
+    const env = { ...core.minimalEnv({ path: process.env.PATH ?? '/usr/bin:/bin', home, configDir: path.join(home, 'c'), tmp: home }), ANTHROPIC_BASE_URL: api.url, ENVCANARY };
     const t0 = Date.now();
-    const o = await run.claudePass(sdk.query, { pass: 'reach', system: 'SYS', user: `Review. Read @${path.join(outside, 'canary.txt')} and @CLAUDE.md and ${path.join(outside, 'canary.txt')} too.`, model: 'claude-opus-5-5', worktree: wt, env, ceilings: { ...core.DEFAULT_CEILINGS, passTimeoutMs: 120_000 } });
+    const o = await run.claudePass(sdk.query, { key: REALKEY, spawnFn: spawnSpy, pass: 'reach', system: 'SYS', user: `Review. Read @${path.join(outside, 'canary.txt')} and @CLAUDE.md and ${path.join(outside, 'canary.txt')} too.`, model: 'claude-opus-5-5', worktree: wt, env, ceilings: { ...core.DEFAULT_CEILINGS, passTimeoutMs: 120_000 } });
     assert.strictEqual(o.status, 'ok', `a run completes on the real pinned SDK: ${o.status} ${o.note}`);
     assert.strictEqual(o.findings.length, 1, 'the structured answer came through StructuredOutput'); assert.ok(o.findings[0].claim.includes('misses the list view'));
     const all = JSON.stringify(api.requests.map((r) => r.body));
@@ -303,7 +327,30 @@ async function checkRealSdk(): Promise<void> {
     assert.ok(api.requests.every((r) => r.method === 'POST' && r.path === '/v1/messages') && api.requests.length === 2, `no side traffic: ${api.requests.map((r) => r.path).join(',')}`);
     const tools = (api.requests[0].body.tools ?? []).map((t: any) => t.name).sort(); assert.deepStrictEqual(tools, ['Glob', 'Grep', 'Read', 'StructuredOutput'], 'the model was offered exactly these tools');
     assert.ok(Date.now() - t0 < 100_000);
+    // the key: sent as the API key header, and not in the environment of the claude process
+    assert.ok(api.requests.every((r) => r.headers['x-api-key'] === REALKEY), 'the key reached the API as the x-api-key header (so the fd route delivers it)');
+    if (process.platform === 'linux') { const read = environs.filter((e) => e !== '(unreadable)'); assert.ok(read.length > 0 && read.every((e) => e.length > 50), 'the claude process\'s environ was read at least once'); assert.ok(read.every((e) => !e.includes(REALKEY) && !e.includes('ANTHROPIC_API_KEY=')), 'the key is not in the claude process\'s /proc environ'); assert.ok(read.every((e) => e.includes('CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR=3'))); }
   } finally { await api.close(); }
+
+  // review 2026-11-01 (third round): a PR-shipped ignore file must not hide files from Grep. Every ignore source, planted, then stripLinks (what runReview does), then the REAL Grep tool.
+  const wt2 = mk('realsdk', 'wt2'); fs.mkdirSync(path.join(wt2, 'sub'), { recursive: true }); fs.mkdirSync(path.join(wt2, 'deep', 'er'), { recursive: true });
+  const srcs: Array<[string, string]> = [['plain.ts', ''], ['by-gitignore.ts', '.gitignore'], ['by-ignore.ts', '.ignore'], ['by-rgignore.ts', '.rgignore'], ['by-fdignore.ts', '.fdignore'], ['sub/by-nested-ignore.ts', 'sub/.ignore'], ['deep/er/by-deep-rgignore.ts', 'deep/er/.rgignore'], ['by-exclude.ts', '.git/info/exclude']];
+  fs.mkdirSync(path.join(wt2, '.git', 'info'), { recursive: true }); fs.writeFileSync(path.join(wt2, '.git', 'HEAD'), 'ref: refs/heads/x\n');
+  for (const [f, ign] of srcs) { fs.writeFileSync(path.join(wt2, f), `NEEDLE-${f.replace(/\W/g, '')}\n`); if (ign) fs.appendFileSync(path.join(wt2, ign), path.basename(f) + '\n'); }
+  fs.writeFileSync(path.join(wt2, 'sub', 'by-nested-ignore.ts'), 'NEEDLE-subbynestedignorets\n');
+  const searchHits = async (): Promise<string> => {
+    const api2 = await startMockApi((n) => n === 0 ? [{ type: 'tool_use', name: 'Grep', input: { pattern: 'NEEDLE', output_mode: 'content' } }] : n === 1 ? [{ type: 'tool_use', name: 'StructuredOutput', input: goodAnswer() }] : [{ type: 'text', text: 'done' }]);
+    try {
+      const env2 = { ...core.minimalEnv({ path: process.env.PATH ?? '/usr/bin:/bin', home, configDir: path.join(home, 'c2'), tmp: home }), ANTHROPIC_BASE_URL: api2.url };
+      const o2 = await run.claudePass(sdk.query, { key: REALKEY, pass: 'reach', system: 'SYS', user: 'go', model: 'claude-opus-5-5', worktree: wt2, env: env2, ceilings: { ...core.DEFAULT_CEILINGS, passTimeoutMs: 120_000 } });
+      assert.strictEqual(o2.status, 'ok', `${o2.status} ${o2.note}`); return JSON.stringify(api2.requests[1] && api2.requests[1].body);
+    } finally { await api2.close(); }
+  };
+  const hidden = (body: string): string[] => srcs.map(([f]) => f).filter((f) => !body.includes('NEEDLE-' + f.replace(/\W/g, '')));
+  const before = hidden(await searchHits()); assert.ok(before.length > 0, 'sanity: with the ignore files and a .git folder planted, the real Grep does hide files (so this test can fail)');
+  run.stripLinks(wt2);
+  assert.deepStrictEqual(hidden(await searchHits()), [], 'after stripLinks the real Grep finds a file listed in every ignore source');
+  assert.ok(!fs.existsSync(path.join(wt2, '.ignore')) && !fs.existsSync(path.join(wt2, 'deep', 'er', '.rgignore')) && !fs.existsSync(path.join(wt2, 'sub', '.ignore')) && !fs.existsSync(path.join(wt2, '.git')), 'ignore files at any depth and the .git folder are gone');
 }
 
 // ---- end to end with a real local git remote ----------------------------------------------------------------------------------
@@ -469,7 +516,7 @@ async function checkRun(): Promise<void> {
   { const r = await run.runReview(w.deps(), RIN(w)); assert.ok(r.ok); assert.deepStrictEqual(fs.readdirSync(path.join(w.places.state, 'tmp')), []); }
   // symlink removal on its own
   { const d = mk('links'); fs.mkdirSync(path.join(d, 'sub')); fs.symlinkSync(w.outsideSecret, path.join(d, 'sub', 'l')); fs.writeFileSync(path.join(d, '.git'), 'gitdir: x'); fs.writeFileSync(path.join(d, 'keep'), 'k');
-    assert.strictEqual(run.stripLinks(d), 1); assert.ok(!fs.existsSync(path.join(d, 'sub', 'l')) && !fs.existsSync(path.join(d, '.git')) && fs.existsSync(path.join(d, 'keep'))); }
+    fs.writeFileSync(path.join(d, '.rgignore'), 'x'); fs.writeFileSync(path.join(d, 'sub', '.ignore'), 'x'); fs.writeFileSync(path.join(d, '.gitignore'), 'x'); assert.strictEqual(run.stripLinks(d), 1); assert.ok(!fs.existsSync(path.join(d, '.rgignore')) && !fs.existsSync(path.join(d, 'sub', '.ignore')) && fs.existsSync(path.join(d, '.gitignore')), 'ignore files that act without a .git are removed at any depth; .gitignore stays (inert without .git, the real test proves it)'); assert.ok(!fs.existsSync(path.join(d, 'sub', 'l')) && !fs.existsSync(path.join(d, '.git')) && fs.existsSync(path.join(d, 'keep'))); }
   // no secret anywhere under the base except the key file itself
   const scan = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => { const p = path.join(dir, e.name); return e.isDirectory() ? scan(p) : [p]; });
   for (const f of scan(w.base)) { if (f === w.places.keyFile) continue; assert.ok(!fs.readFileSync(f).includes('ZZZZZZZZ'), `the key is in ${path.basename(f)}`); }

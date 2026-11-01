@@ -88,18 +88,39 @@ export function buildUserMessage(m: UserMessage): string {
 export type QueryFn = (p: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<any>;
 export interface PassInput {
   pass: Pass; system: string; user: string; model: string; worktree: string; env: Record<string, string>; ceilings: Ceilings;
+  /** the API key, handed to the claude process on file descriptor 3 and nowhere else */
+  key: string;
   realpath?: (p: string) => string;
+  /** test seam: the process starter (default child_process.spawn) */
+  spawnFn?: typeof spawn;
 }
 export type PassOutcome = PassReport & { raw?: string };
 const emptyTokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 const base = (pass: Pass, runner: 'claude'): PassOutcome => ({ pass, runner, status: 'failed', note: '', partial: false, findings: [], notChecked: '', dropped: 0, turns: 0, tokens: { ...emptyTokens }, costUsd: null, costKnown: false, denials: [], durationMs: 0 });
 
+/**
+ * Starts the claude binary with the API key on file descriptor 3 (CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR, which minimalEnv sets), never in its
+ * environment. Spiked against the loopback mock: the header carries the key, `init` still reports apiKeySource ANTHROPIC_API_KEY, and the
+ * process's /proc environ does not hold it. `[KNOWN GAP]` the key file stays readable by this user until the operator hands the key over
+ * (spec 103, third delta); this removes one place it is found, not the file.
+ */
+export function spawnWithKeyFd(key: string, spawnFn: typeof spawn = spawn): (o: { command: string; args: string[]; cwd?: string; env: Record<string, string | undefined>; signal?: AbortSignal }) => any {
+  return (o) => {
+    const env: Record<string, string> = {};
+    for (const [k, v] of Object.entries(o.env)) if (typeof v === 'string' && k !== 'ANTHROPIC_API_KEY') env[k] = v;
+    env.CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR = '3';
+    const c = spawnFn(o.command, o.args, { cwd: o.cwd, env, stdio: ['pipe', 'pipe', 'ignore', 'pipe'], signal: o.signal, shell: false, windowsHide: true });
+    const fd = c.stdio[3] as NodeJS.WritableStream | null;
+    if (fd) { fd.on('error', () => {}); fd.end(key + '\n'); }
+    return c;
+  };
+}
 export function boxOptions(i: PassInput, hook: (input: any) => Promise<any>, abort: AbortController): Record<string, unknown> {
   return {
     cwd: i.worktree, model: i.model, effort: 'high', systemPrompt: i.system,
     tools: [...BOX_TOOLS], allowedTools: [...BOX_TOOLS], disallowedTools: ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Task', 'Agent', 'TodoWrite'],
     permissionMode: 'dontAsk', permissionPrompts: 'none', settingSources: [], skills: [], strictMcpConfig: true, mcpServers: {}, agents: {}, additionalDirectories: [], persistSession: false,
-    maxTurns: i.ceilings.maxTurns, maxBudgetUsd: i.ceilings.passUsd, abortController: abort, env: i.env,
+    maxTurns: i.ceilings.maxTurns, maxBudgetUsd: i.ceilings.passUsd, abortController: abort, env: i.env, spawnClaudeCodeProcess: spawnWithKeyFd(i.key, i.spawnFn),
     hooks: { PreToolUse: [{ hooks: [hook] }] },
     outputFormat: { type: 'json_schema', schema: OUTPUT_SCHEMA },
   };
@@ -171,13 +192,18 @@ export function gitEnv(tmpHome: string, emptyHooks: string): { env: Record<strin
     pre: ['-c', `core.hooksPath=${emptyHooks}`, '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', '-c', 'core.symlinks=true', '-c', 'diff.external=', '-c', 'core.attributesFile=/dev/null'],
   };
 }
+/** Files the search tools read to skip paths, at any depth. */
+/** Checked against the real binary: `.ignore` and `.rgignore` hide files from Grep with or without a git folder, at any depth; `.gitignore` and `.git/info/exclude` only act next to a `.git` (removed below), `.fdignore` not at all. */
+export const IGNORE_FILES = new Set(['.rgignore', '.ignore']);
 /** Removes every symlink under `dir` (lstat, never followed) and the `.git` link file; returns how many links went. */
 export function stripLinks(dir: string): number {
   let n = 0;
   const walk = (d: string): void => {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
       const p = path.join(d, e.name);
-      if (e.isSymbolicLink()) { fs.unlinkSync(p); n++; } else if (e.isDirectory() && e.name !== '.git') walk(p);
+      if (e.isSymbolicLink()) { fs.unlinkSync(p); n++; }
+      else if (IGNORE_FILES.has(e.name) && !e.isDirectory()) fs.unlinkSync(p); // a PR-shipped ignore file would hide files from the Grep tool and blind a pass
+      else if (e.isDirectory() && e.name !== '.git') walk(p);
     }
   };
   walk(dir);
@@ -309,7 +335,7 @@ export async function runReview(d: RunDeps, i: RunInput): Promise<RunResult> {
           outcome = await claudePass(d.query, {
             pass, system: prompts.system, user: buildUserMessage({ prText: i.prText, diff, pass: pass === 'reach' ? prompts.reach : prompts.evidence, nonce }),
             model: i.model, worktree: wt, ceilings: i.ceilings,
-            env: minimalEnv({ key, path: d.env.PATH ?? '/usr/bin:/bin', home, configDir: cfg, tmp: work }),
+            key, env: minimalEnv({ path: d.env.PATH ?? '/usr/bin:/bin', home, configDir: cfg, tmp: work }),
           });
         } catch (e: any) { outcome = base(pass, 'claude'); outcome.note = `pass failed: ${clean(e && e.name, 40)}`; }
         if (outcome.costKnown && outcome.costUsd !== null) runSpent = runSpent - i.ceilings.passUsd + outcome.costUsd;

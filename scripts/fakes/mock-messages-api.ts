@@ -9,7 +9,7 @@ import * as http from 'http';
 export type Block = { type: 'tool_use'; name: string; input: unknown } | { type: 'text'; text: string };
 /** Answers turn `n` (0-based) given the request body; return the blocks of the assistant message. */
 export type Turn = (n: number, body: any) => Block[];
-export interface MockApi { url: string; requests: Array<{ method: string; path: string; body: any }>; close(): Promise<void> }
+export interface MockApi { url: string; requests: Array<{ method: string; path: string; body: any; headers: Record<string, string | string[] | undefined> }>; close(): Promise<void> }
 
 const sse = (event: string, data: unknown): string => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 
@@ -21,7 +21,7 @@ export function startMockApi(turn: Turn): Promise<MockApi> {
     req.on('end', () => {
       let body: any = null; try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { body = null; }
       const p = (req.url ?? '').split('?')[0];
-      requests.push({ method: req.method ?? '', path: p, body });
+      requests.push({ method: req.method ?? '', path: p, body, headers: req.headers });
       if (req.method === 'POST' && p === '/v1/messages') {
         const blocks = turn(n++, body);
         const content = blocks.map((b) => (b.type === 'tool_use' ? { type: 'tool_use', id: `toolu_${++seq}`, name: b.name, input: b.input } : { type: 'text', text: b.text }));
