@@ -28,7 +28,7 @@
   /* spec Changes 2026-11-01: while `SLIDE` is on (a draw of the same window size, people moving), something the layout moved a little slides there on `transform`, so a visitor's arrival does not make the lobby jump */
   let SLIDE = false;
   const box = (el, r) => {
-    if (SLIDE && el._x !== undefined) { const dx = el._x - r.x, dy = el._y - r.y; if ((Math.abs(dx) >= 0.5 || Math.abs(dy) >= 0.5) && Math.abs(dx) <= 120 && Math.abs(dy) <= 120 && el.animate) el.animate([{ transform: `translate(${dx}px,${dy}px)` }, { transform: 'none' }], { duration: 280, easing: 'cubic-bezier(.25,.1,.25,1)' }); }
+    if (SLIDE && el._x !== undefined) { const dx = el._x - r.x, dy = el._y - r.y; if ((Math.abs(dx) >= 0.5 || Math.abs(dy) >= 0.5) && el.animate) el.animate([{ transform: `translate(${dx}px,${dy}px)` }, { transform: 'none' }], { duration: Math.max(280, Math.min(520, Math.hypot(dx, dy) * 1.2)), easing: 'cubic-bezier(.25,.1,.25,1)' }); }
     el._x = r.x; el._y = r.y; el.style.left = px(r.x); el.style.top = px(r.y); if (r.w != null) el.style.width = px(r.w); if (r.h != null) el.style.height = px(r.h); };
   const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => Array.from(w)[0] || '').join('').toUpperCase() || '?';
 
@@ -128,6 +128,8 @@
   const SIT = 420;
   /* two stand-alone pictures that walk (the stride dissolving) from placement A to B: `R` is the standing rect, `hidden` the part of the walk near the chair where only the first picture shows, so a head can land on a head */
   function walkers(host, R, A, B, ms, tail, nearStart) {
+    const pid = String(R.file || '').split('-')[0], mo = root.DurbarRealOfficeArt.motion && root.DurbarRealOfficeArt.motion[pid];
+    if (mo && mo.walka && mo.walkb) return [sideWalker(host, R, A, B, ms, tail, nearStart, pid, mo)];
     const mk = (file) => { const g = new Image(); g.className = 'ro-ghost v ro-walker'; g.alt = ''; g.src = ART + file; g.style.transformOrigin = '0 0'; box(g, R); host.appendChild(g); return g; };
     const out = [mk(R.file)];
     if (R.fileB) out.push(mk(R.fileB));
@@ -141,6 +143,33 @@
       out[1].animate(kf, { duration: total, easing: 'ease-in-out', fill: 'both' });
     }
     return out;
+  }
+  /* the side-view walk (spec Changes 2026-11-01): a wrapper takes the path; in it the two walking pictures dissolve in stride, facing the way it goes, and the front picture takes over near the chair, so a head can land on a head */
+  function sideWalker(host, R, A, B, ms, tail, nearStart, pid, mo) {
+    const wrap = document.createElement('div'); wrap.className = 'ro-ghost v ro-walker ro-walkwrap'; wrap.style.transformOrigin = '0 0'; box(wrap, R); host.appendChild(wrap);
+    const total = ms + tail;
+    const chairOnRight = (nearStart ? A.tx : B.tx) > 0, right = nearStart ? !chairOnRight : chairOnRight; /* the pictures face left: mirrored when the way goes right */
+    const place = (file, f) => {
+      const k = (R.h * 0.97) / f.h, g = new Image(); g.alt = ''; g.src = ART + 'motion/' + file;
+      const w = f.w * k, h = f.h * k, x = R.w / 2 - f.torsoCentreX * k, y = R.h - f.footLine * k;
+      g.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:${w}px;height:${h}px;max-width:none;transform-origin:${f.torsoCentreX * k}px 50%;` + (right ? 'transform:scaleX(-1);' : '');
+      wrap.appendChild(g); return g;
+    };
+    const a = place(pid + '-walka.webp', mo.walka), b = place(pid + '-walkb.webp', mo.walkb);
+    const front = new Image(); front.alt = ''; front.src = ART + R.file; front.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;max-width:none;';
+    wrap.appendChild(front);
+    const lo = nearStart ? 0.32 : 0, hi = nearStart ? 1 : 0.68, turn = 0.07; /* the part of the whole that walks side on */
+    const per = 0.95, n = Math.max(1, Math.round(((hi - lo) * total) / 1000 / per));
+    const kb = [{ opacity: 0, offset: 0 }];
+    for (let i = 0; i < n; i++) { const t = lo + ((hi - lo) * i) / n, d = (hi - lo) / n; kb.push({ opacity: 0, offset: t + 1e-4 }, { opacity: 1, offset: t + d * 0.32 }, { opacity: 1, offset: t + d * 0.5 }, { opacity: 0, offset: t + d * 0.82 }); }
+    kb.push({ opacity: 0, offset: 1 });
+    b.animate(kb, { duration: total, easing: 'ease-in-out', fill: 'both' });
+    const ka = nearStart ? [{ opacity: 0, offset: 0 }, { opacity: 0, offset: lo - turn }, { opacity: 1, offset: lo }, { opacity: 1, offset: 1 }] : [{ opacity: 1, offset: 0 }, { opacity: 1, offset: hi }, { opacity: 0, offset: hi + turn }, { opacity: 0, offset: 1 }];
+    a.animate(ka, { duration: total, easing: 'linear', fill: 'both' });
+    const kf = nearStart ? [{ opacity: 1, offset: 0 }, { opacity: 1, offset: lo - turn }, { opacity: 0, offset: lo }, { opacity: 0, offset: 1 }] : [{ opacity: 0, offset: 0 }, { opacity: 0, offset: hi - turn }, { opacity: 1, offset: hi }, { opacity: 1, offset: 1 }];
+    front.animate(kf, { duration: total, easing: 'linear', fill: 'both' });
+    wrap._kf = walkKf(A, B, ms, { ms: tail }, R); wrap._total = total;
+    return wrap;
   }
   function glide(e, id, from, to, seated) {
     if (!from || (from.x === to.x && from.y === to.y)) return false;
@@ -181,6 +210,47 @@
   function setVar(e, k, v) { if (e.style.getPropertyValue(k) !== v) e.style.setProperty(k, v); }
   /* one clock per desk, its own place in the cycle: a desk's two pictures and caret stay together */
   function clock(e, ms) { for (const a of e.getAnimations()) if (a.animationName) a.startTime = ms; } /* the CSS loops only: a walk under way keeps its own time */
+
+  /* the typing rig: a wrapper with the body's movement on the body's clock, over it a head and two hands cut from the same picture (spec Changes 2026-11-01) */
+  function rigOf(art, k, rect, r, m, pe) {
+    const w = el(art, 'rg:' + k, 'div', 'ro-rig m-rig' + (OFF.has(k) ? ' ro-off' : ''));
+    box(w, rect); w.dataset.for = k;
+    const org = getComputedStyle(pe).transformOrigin; if (w.style.transformOrigin !== org) w.style.transformOrigin = org;
+    for (const [v, val] of [['--ro-sw', m.sway + 's'], ['--ro-u', (rect.h / 100).toFixed(3) + 'px'], ['--ro-pat', (2.2 + (m.offset % 900) / 900) .toFixed(2) + 's']]) setVar(w, v, val);
+    if (w._pid !== rect.pid) {
+      w._pid = rect.pid; w.textContent = '';
+      for (const [cls, part, key] of [['h', r.head, 'head'], ['l', r.l, 'l'], ['r', r.r, 'r']]) {
+        if (!part) continue;
+        const i = new Image(); i.className = cls; i.alt = ''; i.src = ART + 'rig/' + rect.pid + '-' + key + '.png';
+        i.style.left = (part.x * 100) + '%'; i.style.top = (part.y * 100) + '%'; i.style.width = (part.w * 100) + '%'; i.style.height = (part.h * 100) + '%';
+        i.style.transformOrigin = (part.px * 100) + '% ' + (part.py * 100) + '%';
+        w.appendChild(i);
+      }
+      w._clock = false;
+    }
+    if (!w._clock) { w._clock = true; clock(w, m.offset); clock(pe, m.offset); for (const i of w.children) clock(i, m.offset + (i.className === 'r' ? 700 : 0)); }
+  }
+
+  /* fewer layers when frames drop: about 1 s in 20, read 40 frames (spec Changes 2026-11-01). lod 1: no rig; lod 2: no body movement either */
+  let LOD = 0, lodBad = 0, lodGood = 0, lodTimer = 0;
+  function watchFrames(ro) {
+    if (lodTimer || !root.requestAnimationFrame) return;
+    lodTimer = setTimeout(() => {
+      lodTimer = 0;
+      if (!CUR || CUR.ro !== ro || !ro.isConnected) return;
+      if (!moving() || hiddenNow()) { watchFrames(ro); return; }
+      let n = 0, t0 = 0;
+      const step = (t) => {
+        if (!t0) t0 = t;
+        if (++n < 40) { root.requestAnimationFrame(step); return; }
+        const fps = (n - 1) * 1000 / (t - t0);
+        if (fps < 45) { lodGood = 0; if (++lodBad >= 2 && LOD < 2) { LOD++; lodBad = 0; apply(); } } else if (fps > 57) { lodBad = 0; if (++lodGood >= 6 && LOD > 0) { LOD--; lodGood = 0; apply(); } }
+        watchFrames(ro);
+      };
+      const apply = () => { ro.classList.toggle('lod1', LOD === 1); ro.classList.toggle('lod2', LOD === 2); if (onArt) onArt(); };
+      root.requestAnimationFrame(step);
+    }, 20000);
+  }
 
   /* a span with a status dot (the app's .dot classes, forced-colours aware) */
   function dotHTML(state) { return '<span class="dot ' + ({ limit: 'waiting', asleep: 'idle' }[state] || state) + '" aria-hidden="true"></span>'; }
@@ -271,8 +341,9 @@
         if (d.person) {
           const m = L.personMotion(k, d.person.pose, d.state);
           const fresh = !art._k.has('p:' + k);
-          const two = moving() && m.kind === 'frames' && d.person.fileB && !BAD.has(d.person.fileB) && !GLIDING.has(k) ? second(art, 'pb:' + k, k, d.person, d.person.fileB, 'ro-person2', m) : null;
-          const pe = el(art, 'p:' + k, 'img', 'ro-person' + (two && two.on ? ' m-a m-' + m.style : m.kind === 'breathe' && moving() ? ' m-br' : '') + (OFF.has(k) ? ' ro-off' : ''));
+          const rigged = d.person.pose === 'typeA' && moving() && LOD === 0 && !GLIDING.has(k) && !(fresh && CUR.drawn && WHERE.has(k)) && meta.rig && has(meta.rig, d.person.pid) ? meta.rig[d.person.pid] : null;
+          const two = !rigged && moving() && m.kind === 'frames' && d.person.fileB && !BAD.has(d.person.fileB) && !GLIDING.has(k) ? second(art, 'pb:' + k, k, d.person, d.person.fileB, 'ro-person2', m) : null;
+          const pe = el(art, 'p:' + k, 'img', 'ro-person' + (rigged ? ' m-rig' : two && two.on ? ' m-a m-' + m.style : m.kind === 'breathe' && moving() ? ' m-br' : '') + (OFF.has(k) ? ' ro-off' : ''));
           box(pe, d.person); pe.dataset.for = k; pe.dataset.pose = d.person.pose;
           const was = pe.getAttribute('src');
           if (was && was !== ART + d.person.file && moving() && !hiddenNow() && !OFF.has(k)) { const g = pe.cloneNode(false); art.insertBefore(g, pe); fadeAway(g, 250); } /* FR-072 */
@@ -280,6 +351,7 @@
           if (fresh && CUR.drawn && moving() && !hiddenNow() && !OFF.has(k) && !glide(pe, k, WHERE.get(k), d.person, true)) fadeIn(pe, 150, 150); /* FR-073: in at the desk */
           WHERE.set(k, d.person);
           if (m.kind) { setVar(pe, '--ro-per', m.period + 's'); setVar(pe, '--ro-sw', m.sway + 's'); setVar(pe, '--ro-u', (d.person.h / 100).toFixed(3) + 'px'); }
+          if (rigged) rigOf(art, k, d.person, rigged, m, pe);
           if (two && two.on && !two.b._clock) { two.b._clock = true; clock(two.b, m.offset); clock(pe, m.offset); }
         } else if (!d.narrow) {
           const ini = el(art, 'i:' + k, 'div', 'ro-initials'); const r = 0.5 * lay.u; box(ini, { x: d.slot.x + 0.05 * d.slot.w + 0.42 * lay.u - r / 2, y: d.desk.y - r - 6, w: r, h: r }); ini.dataset.for = k; text(ini, initials(a.name));
@@ -369,6 +441,7 @@
     SLIDE = false;
     CUR.drawn = true;
     if (moving() && !hiddenNow()) handOver(ro);
+    watchFrames(ro);
     if (ZOOM) { if (!CUR.desks.has(ZOOM.id) || hiddenNow()) closeZoom(); else placeZoom(); }
     return lay;
   }
