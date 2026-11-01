@@ -102,6 +102,7 @@ try {
   st.load();
   st.upsert({ workspace: abs('a'), permMode: 'ask', model: 'auto' });
   st.upsert({ workspace: abs('b'), permMode: 'ask', model: 'auto' });
+  assert.ok(!('order' in JSON.parse(fs.readFileSync(file, 'utf8'))), 'with no order saved the file has no order key');
   assert.deepStrictEqual(st.order(), { rooms: [], desks: {}, places: [] });
   const kept = st.setOrder({ rooms: [abs('b'), abs('a'), 7], desks: { [abs('a')]: ['s2', 's1'] }, places: ['mail'], bogus: 1 });
   assert.deepStrictEqual(kept, { rooms: [abs('b'), abs('a')], desks: { [abs('a')]: ['s2', 's1'] }, places: ['mail'] });

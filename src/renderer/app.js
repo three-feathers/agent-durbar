@@ -153,7 +153,7 @@ const floorsOnList=()=>floorsLive()?FLOORS.floors.filter(f=>f.on):[];
 const floorTagsOn=()=>floorsOnList().length>1;
 const floorRank=r=>{const f=floorById(r.floor);return f?FLOORS.floors.indexOf(f):0;};
 /* rooms in floor order; inside a floor, the order they were added (stable) */
-/* issue #677 (spec 033 delta 2026-11-01): inside a floor, the saved manual order first (by folder path), then the rest in the order they were added. Sequencing only. */
+/* issue 677 (spec 033 delta 2026-11-01): inside a floor, the saved manual order first (by folder path), then the rest in the order they were added. Sequencing only. */
 const RO=window.DurbarReorder;
 let ORDER=RO.empty();
 const roomsInOrder=()=>{const rk=new Map(ORDER.rooms.map((k,i)=>[k,i])),at=r=>rk.has(r.path)?rk.get(r.path):1e9;return ROOMS.map((r,i)=>[r,i]).sort((x,y)=>floorRank(x[0])-floorRank(y[0])||at(x[0])-at(y[0])||x[1]-y[1]).map(p=>p[0]);};
@@ -299,7 +299,7 @@ const SEEN_SERVERS=new Set(); /* MCP server names seen in tool events this run (
 let CUSTOM=[]; /* the user's own places [{id,name,icon}] (spec 024 FR-018), from the settings; changed only through setCustomPlaces */
 const customIds=()=>CUSTOM.map(p=>p.id);
 /* One name for a place everywhere it is shown (tile, card text, Settings options, toasts). A custom place shows the user's own text; callers escape it. */
-const reorderablePlace=id=>!window.DurbarPlaces.SPECIAL.includes(id)&&window.DurbarPlaces.allPlaces(CUSTOM).some(p=>p.id===id); /* issue #677: the Boss, coffee corner, Bank and Postbox stay where they are */
+const reorderablePlace=id=>!window.DurbarPlaces.SPECIAL.includes(id)&&window.DurbarPlaces.allPlaces(CUSTOM).some(p=>p.id===id); /* issue 677: the Boss, coffee corner, Bank and Postbox stay where they are */
 const fixedPlace=id=>window.DurbarPlaces.IDS.includes(id)||window.DurbarPlaces.SPECIAL.includes(id); /* built-ins, coffee corner, Boss, Bank, Postbox: theme words */
 const placeLabel=id=>fixedPlace(id)?wordOf('place-'+id):window.DurbarPlaces.placeName(id,CUSTOM);
 /* spec 052 FR-013: a themed place name with its plain name, for tooltips and screen readers ("Cartridge Bay (Software library)") */
@@ -334,7 +334,7 @@ const lobbyArt=()=>{
 /* the lobby's tiles (spec 001 FR-039): the places with the Boss in the middle of the row, then the coffee corner (spec 068), the Bank and the
    Postbox (only where the app has schedules, not in the demo); the fixed tiles are never mapping choices */
 const postShown=()=>!!(bridge&&bridge.listSchedules)&&!demoOn;
-const lobbyPlaces=()=>{const D=window.DurbarPlaces,ps=RO.sortBy(D.allPlaces(CUSTOM),p=>p.id,ORDER.places),m=new Map(ps.map(p=>[p.id,p]));return D.lobbyOrder(ps.map(p=>p.id),postShown()).map(id=>m.get(id)||{id,name:''});}; /* issue #677: the places in the saved order; the Boss, coffee corner, Bank and Postbox keep their fixed spots */
+const lobbyPlaces=()=>{const D=window.DurbarPlaces,ps=RO.sortBy(D.allPlaces(CUSTOM),p=>p.id,ORDER.places),m=new Map(ps.map(p=>[p.id,p]));return D.lobbyOrder(ps.map(p=>p.id),postShown()).map(id=>m.get(id)||{id,name:''});}; /* issue 677: the places in the saved order; the Boss, coffee corner, Bank and Postbox keep their fixed spots */
 const lobbyOn=()=>!demoOn&&agents.some(a=>a.live&&!a.parent);
 const MAX_TILES=8, canAddPlace=()=>!!(bridge&&bridge.addPlace)&&window.DurbarPlaces.allPlaces(CUSTOM).length<MAX_TILES;
 /* who is at a place and visible under the current filters (a hidden room or a filtered-out agent has no figure) */
@@ -1186,7 +1186,7 @@ function officeModel(ignoreStatus){
     if(!shown.length)return;
     const key=a=>Math.min(prio(a),...helpersOf(a).map(prio));
     shown.sort((x,y)=>key(x)-key(y));
-    if(ORDER.desks[r.path])shown=RO.sortBy(shown,a=>a.id,ORDER.desks[r.path]); /* issue #677: the desks the user put in order come first, in that order */
+    if(ORDER.desks[r.path])shown=RO.sortBy(shown,a=>a.id,ORDER.desks[r.path]); /* issue 677: the desks the user put in order come first, in that order */
     const mains=shown.filter(a=>!plan.has(a.id)), rolled=shown.filter(a=>plan.has(a.id)).map(a=>({a,k:plan.get(a.id)}));
     rooms.push({r,mains,rolled,all:agents.filter(a=>wsOf(a)===r.id)});
   });
@@ -1865,7 +1865,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('#list [data-lsor
 
 let REO_LATE=false;
 function renderAll(){
-  if(RO.busy()){REO_LATE=true;return;} /* issue #677: no repaint under a drag in progress; it comes when the drag ends */
+  if(RO.busy()){REO_LATE=true;return;} /* issue 677: no repaint under a drag in progress; it comes when the drag ends */
   syncChatNos(); /* spec 074 FR-011 */
   if(CREW_FOR)syncCrew(); /* spec 077: a closed session frees its character even when no desk is drawn (the last one) */
   AMB_ID=pickAmbulanceId();
@@ -3505,7 +3505,7 @@ document.addEventListener('click',e=>{
   const t=e.target.closest('[data-id]'); if(t&&!t.closest('#panel')){openPanel(t.dataset.id,true);} /* spec 074 FR-019: mouse or keyboard, desk or list row */
 });
 
-/* ---- issue #677 (spec 033 delta 2026-11-01): rearrange rooms, desks and places by drag and by keyboard. Order is sequencing only: the layout
+/* ---- issue 677 (spec 033 delta 2026-11-01): rearrange rooms, desks and places by drag and by keyboard. Order is sequencing only: the layout
    stays automatic. Mouse: press and drag a room's header, a desk or a place tile. Keyboard: Alt+arrows move the focused desk or place,
    Alt+Shift+arrows the room of the focused element; the folder menu has Move earlier / Move later for rooms. ---- */
 function roomOfEl(el){const k=(el.getAttribute('data-key')||'').replace(/^room:/,'');return ROOMS.find(r=>r.id===k)||null;}
@@ -3955,7 +3955,7 @@ function palActions(){
     {label:SIMPLE?'Show or hide earlier chats':'Show or hide previous sessions',kw:'previous earlier sessions chats history resume list collapse expand',keys:keyLabels(PREV_KEYS),run:togglePrevByKey,ok:()=>{const b=$('prevBtn'),x=$('prev');return !!b&&!!x&&!x.hidden&&!vsViewing;}}, /* spec 006 FR-036 */
     {label:'Notes',hint:'Saved messages and ideas of this folder',kw:'notes saved messages ideas drawer insert keep',keys:keyLabels(NOTES_KEYS),run:()=>toggleNotes(byId(ui.selected)),ok:()=>!!ui.selected&&!!$('notesDrawer')&&notesOn(byId(ui.selected))}, /* spec 083 */
     {label:'Keyboard shortcuts',kw:'keys shortcuts help hotkeys',keys:['?'],run:openKbdHelp},
-    {label:'Reset the office order',hint:'Rooms, desks and places go back to the automatic order',kw:'reorder rearrange order reset arrange drag sequence',run:resetOrder,ok:()=>!RO.isEmpty(ORDER)}, /* issue #677 */
+    {label:'Reset the office order',hint:'Rooms, desks and places go back to the automatic order',kw:'reorder rearrange order reset arrange drag sequence',run:resetOrder,ok:()=>!RO.isEmpty(ORDER)}, /* issue 677 */
     {label:'Go to… (navigator)',hint:'Floor, folder, agent or a chat by number',kw:'navigator go jump floor folder chat number spotlight',keys:keyLabels(navKeyParts()),run:()=>openPalette({nav:true}),nav:true}, /* spec 074 FR-015 */
     {label:'Send to several sessions…',hint:'One message to the running sessions you pick',kw:'send several many all broadcast message group sessions',run:()=>sendToSeveral(),ok:()=>!!bridge&&!!bridge.send&&sendTargets().filter(x=>!x.why).length>=2}, /* spec 064 FR-001 */
     {label:'End all sessions',hint:'Ends every running session; the chats stay',kw:'end stop all sessions quit day close',run:()=>endAllSessions(),ok:()=>!!bridge&&!!bridge.end&&endAllTargets().length>0},
@@ -4121,7 +4121,7 @@ function openKbdHelp(back){
     [keyLabels(PREV_KEYS),SIMPLE?'Show or hide earlier chats in a chat':'Show or hide previous sessions in a chat'], /* spec 006 FR-036 */
     [keyLabels(NOTES_KEYS),'Show or hide the Notes drawer in a chat'], /* spec 083 FR-026 */
     [['←','→','↑','↓'],'Move between desks'],
-    [['Alt','← →'],'Move the focused desk or place earlier or later; with Shift, its room (Option on a Mac)'], /* issue #677 */
+    [['Alt','← →'],'Move the focused desk or place earlier or later; with Shift, its room (Option on a Mac)'], /* issue 677 */
     [['F2'],'Rename the focused session or folder (Fn+F2 on a Mac)'], /* spec 059 FR-024: in place, on a desk, row, door or chat title */
     [['Esc'],'Back, or close'],
     [keyLabels(['mod',IS_MAC?'⌫':'Backspace']),'Back to the office from a chat, outside text (in a text box it deletes)'], /* spec 074 FR-020 */
@@ -6366,7 +6366,7 @@ document.addEventListener('click',e=>{
 /* spec 006 FR-022: folder actions on a room's header (right-click, or the context-menu key on its door), same menu element as the mode menu.
    spec 033 FR-024 (issue 590): with two or more floors, "Move to floor ▸" opens a second level in the same element (‹ Back, one radio
    item per floor, the current one ticked and disabled); the move is the Floors panel's moveRoomToFloor, then an Undo toast. */
-/* issue #677: the folder menu's Move earlier / Move later. The neighbours are the rooms of its floor that are shown (also in the List view). */
+/* issue 677: the folder menu's Move earlier / Move later. The neighbours are the rooms of its floor that are shown (also in the List view). */
 const roomPeers=r=>roomsInOrder().filter(x=>x.floor===r.floor&&roomShown(x)&&agents.some(a=>!a.parent&&a.room===x.id));
 const roomMoveOk=r=>ui.view==='office'&&roomPeers(r).length>1;
 const roomStepAt=(r,d)=>{const l=roomPeers(r),i=l.indexOf(r);return i>=0&&i+d>=0&&i+d<l.length;};
@@ -6386,7 +6386,7 @@ function openFolderMenu(r,x,y,anchor){
       +(nsAgentOf(r)?it('notes',NSX().menuLabel(nsMenuCount(r)),'Saved messages and ideas of this folder'):'') /* spec 083 FR-044, D10 */
       +(bridge.renameFolder?it('rename','Rename…','A display name for this room'):'')
       +(canMove?`<button type="button" role="menuitem" data-fact="floor" aria-haspopup="menu" aria-expanded="false"><span class="mt"><b>Move to floor</b><small>${esc(here?'Now on '+here.name+'. Its agents go with it':'Its agents go with it')}</small></span><span class="ck" aria-hidden="true">▸</span></button>`:'')
-      +(roomMoveOk(r)?it('rup','Move earlier','One place earlier in its floor',null,roomStepAt(r,-1)?'':' aria-disabled="true"')+it('rdn','Move later','One place later in its floor',null,roomStepAt(r,1)?'':' aria-disabled="true"'):'') /* issue #677 */
+      +(roomMoveOk(r)?it('rup','Move earlier','One place earlier in its floor',null,roomStepAt(r,-1)?'':' aria-disabled="true"')+it('rdn','Move later','One place later in its floor',null,roomStepAt(r,1)?'':' aria-disabled="true"'):'') /* issue 677 */
       +(bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))?it('mcp','MCP extras…','Optional servers for this folder only'):'')
       +(()=>{const u=roomAiu(r);return u?it('cost','Cost',u.long+' in this folder. Click for the cost by folder'):'';})()
       +(bridge.setFolderHidden?it('hide','Hide','Out of the office; its sessions keep running'):'')
@@ -8241,7 +8241,7 @@ if(bridge){
       :apply();
     }).catch(()=>apply());}else apply();
   };
-  if(bridge.getOrder)bridge.getOrder().then(d=>{ORDER=RO.sanitize(d);scheduleRender();}).catch(()=>{}); /* issue #677: a failed or corrupt read keeps the automatic order */
+  if(bridge.getOrder)bridge.getOrder().then(d=>{ORDER=RO.sanitize(d);scheduleRender();}).catch(()=>{}); /* issue 677: a failed or corrupt read keeps the automatic order */
   if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();NOTIFY=!!(v&&v.notifyNeedsMe!==false);BREAK_RESUME=v&&v.breakResume==='ask'?'ask':'auto';CHAT_LINKS=v&&v.chatLinksIn==='system'?'system':'session';themeBoot(v);}).catch(()=>{});
   setInterval(()=>{if(VISITS.tick())scheduleRender();},250);
   setInterval(coffeeTick,SIM_BREAK?1000:5000); /* spec 068: resume, ask or remind when a break is due */
@@ -8257,7 +8257,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={agents:()=>agents,order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue #677 (check 033-order): the order held and saved, Reset, a room's key */
+if(SIM)window.__durbarSimUi={agents:()=>agents,order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
   crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */

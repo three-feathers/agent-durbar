@@ -1,4 +1,4 @@
-/* Rearranging the office (spec 033, delta 2026-11-01, issue #677): the rules for a saved manual order of rooms, desks and places, and the
+/* Rearranging the office (spec 033, delta 2026-11-01, issue 677): the rules for a saved manual order of rooms, desks and places, and the
    pointer drag that changes it. Order is sequencing only: it never turns the automatic layout off (density, columns, fit are chosen as before).
    Pure part: no DOM, no timers, no storage. Drag part: touches the DOM only through `attach`, moves nothing but `transform` and `opacity`,
    reads layout once when a drag starts and never again until it ends. In the page: window.DurbarReorder; in Node: module.exports.

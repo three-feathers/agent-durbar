@@ -673,7 +673,7 @@ export class FolderStore {
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
       const tmp = `${this.file}.${process.pid}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify({ version: 1, floors: this.floorsDoc.floors, lastFloor: this.floorsDoc.lastFloor, folders: this.folders, order: this.orderDoc }, null, 2), { mode: 0o600 });
+      fs.writeFileSync(tmp, JSON.stringify({ version: 1, floors: this.floorsDoc.floors, lastFloor: this.floorsDoc.lastFloor, folders: this.folders, ...(this.orderDoc.rooms.length || this.orderDoc.places.length || Object.keys(this.orderDoc.desks).length ? { order: this.orderDoc } : {}) }, null, 2), { mode: 0o600 });
       fs.renameSync(tmp, this.file);
       return true;
     } catch {
