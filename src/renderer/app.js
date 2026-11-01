@@ -1731,7 +1731,7 @@ function loadRealOffice(){
   if(RO_LOAD)return;
   RO_LOAD='loading';
   const css=document.createElement('link');css.rel='stylesheet';css.href='realoffice.css';document.head.appendChild(css);
-  const files=['../shared/lights.js','../shared/realoffice-layout.js','realoffice.js']; /* the pure modules write to window.exports (exports-shim.js) */
+  const files=['../shared/lights.js','../shared/realoffice-layout.js','../shared/realoffice-arrangements.js','realoffice.js']; /* the pure modules write to window.exports (exports-shim.js) */
   const next=i=>{
     if(i>=files.length){RO_LOAD=window.DurbarRealOffice&&window.exports&&window.exports.realLayout?'ready':'failed';if(RO_LOAD==='failed')roFailed();layoutKey='';scheduleRender();return;}
     const sc=document.createElement('script');sc.src=files[i];sc.onload=()=>next(i+1);sc.onerror=()=>{RO_LOAD='failed';roFailed();layoutKey='';scheduleRender();};

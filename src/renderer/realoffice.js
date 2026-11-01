@@ -36,7 +36,8 @@
     if (sx === 1 && sy === 1) { el.animate([{ translate: `${dx}px ${dy}px` }, { translate: '0 0' }], ease); return; }
     /* scaled about the element's own origin: the translate brings its top left to where it was */
     const o = getComputedStyle(el).transformOrigin.split(' '), ox = parseFloat(o[0]) || 0, oy = parseFloat(o[1]) || 0;
-    el.animate([{ translate: `${dx - ox * (1 - sx)}px ${dy - oy * (1 - sy)}px`, scale: `${sx} ${sy}` }, { translate: '0 0', scale: '1 1' }], ease);
+    const flip = el.classList.contains('mir') ? -1 : 1; /* a mirrored picture stays mirrored while it eases (spec 102 FR-256) */
+    el.animate([{ translate: `${dx - ox * (1 - sx)}px ${dy - oy * (1 - sy)}px`, scale: `${flip * sx} ${sy}` }, { translate: '0 0', scale: `${flip} 1` }], ease);
   };
   const box = (el, r) => {
     if (SLIDE && el._x !== undefined && !el.classList.contains('ro-chip') && !el.classList.contains('ro-lplate')) {
@@ -144,6 +145,15 @@
   function clock(e, ms) { for (const a of e.getAnimations()) if (a.animationName) a.startTime = ms; } /* the CSS loops only: a walk under way keeps its own time */
 
   /* the typing rig: a wrapper with the body's movement on the body's clock, over it a head and two hands cut from the same picture (spec Changes 2026-11-01) */
+  /* spec 102 FR-257: the cabinet: one of the world's drawings, a strip of colour variants; the colour stays with the session */
+  function cabinetOf(dc, meta, cab, k) {
+    const kind = cab.gw === meta.monitor.big.glass[2] ? 'big' : cab.gw === meta.monitor.small.glass[2] ? 'small' : 'narrow', m = meta.monitor[kind];
+    let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    const url = 'url("' + WD + m.file + '")', size = m.cells * 100 + '% 100%', pos = ((h % m.cells) / Math.max(1, m.cells - 1)) * 100 + '% 0';
+    if (dc.style.backgroundImage !== url) dc.style.backgroundImage = url;
+    if (dc.style.backgroundSize !== size) dc.style.backgroundSize = size;
+    if (dc.style.backgroundPosition !== pos) dc.style.backgroundPosition = pos;
+  }
   function rigOf(art, k, rect, r, m, pe) {
     const w = el(art, 'rg:' + k, 'div', 'ro-rig m-rig' + (OFF.has(k) ? ' ro-off' : ''));
     box(w, rect); w.dataset.for = k;
@@ -219,11 +229,12 @@
     };
     const signs = {};
     for (const f of model.folders) signs[f.id] = { name: f.name, path: f.path, counts: f.counts.length + (f.cost ? 1 : 0) };
-    const lay = L.realLayout(engine, view, meta, signs);
+    const lay = meta.arrangement && meta.arrangement !== 'rows' && L.layoutFor ? L.layoutFor(meta.arrangement, engine, view, meta, signs) : L.realLayout(engine, view, meta, signs); /* spec 102 FR-228: the one seam */
 
     let ro = stage.querySelector(':scope > .ro');
     if (!ro) { stage.textContent = ''; ro = document.createElement('div'); ro.className = 'ro'; stage.appendChild(ro); ro.addEventListener('click', forward); wireZoom(ro); }
     ro.style.width = px(lay.width); ro.style.height = px(lay.height);
+    if (lay.g) setVar(ro, '--ro-g', String(lay.g)); /* spec 102 FR-255: one integer scale for the world's art */
     ro.dataset.set = set; ro.dataset.world = world; ro.dataset.u = String(Math.round(lay.u)); ro.dataset.face = String(Math.round(lay.faceH * 10) / 10); ro.dataset.big = lay.big ? '1' : '0';
     ro.classList.toggle('still', !!opts.still);
     ro.classList.toggle('hold', !!opts.hold); /* the people stand still, the lights may not (FR-071) */
@@ -255,7 +266,7 @@
       const zk = z.id + '\u0000' + z.part; /* a folder too big for one row has more parts, each its own zone (the sign repeats, "continued") */
       const zb = el(art, 'z:' + zk, 'div', 'ro-zone'); box(zb, z.box);
       /* FR-018: the folder sign: name, path, counts, cost, + and the room menu (the app's own handlers: data-newsess, data-foldermenu) */
-      const sg = el(chrome, 's:' + zk, 'div', 'ro-sign'); box(sg, { x: z.sign.x, y: z.sign.y, h: z.sign.h }); sg.style.maxWidth = px(z.sign.w);
+      const sg = el(chrome, 's:' + zk, 'div', 'ro-sign' + (z.signShort ? ' short' : '')); box(sg, { x: z.sign.x, y: z.sign.y, h: z.sign.h }); sg.style.maxWidth = px(z.sign.w);
       sg.dataset.folder = z.id;
       const sig = JSON.stringify([f.name, f.path, f.counts, f.cost, f.newSess, f.menu, z.part]);
       if (sg._sig !== sig && z.part > 1) { sg._sig = sig; sg.textContent = ''; const b = document.createElement('b'); b.textContent = f.name + ' (continued)'; b.title = f.name + '\n' + f.path; sg.appendChild(b); }
@@ -281,6 +292,7 @@
           const two = !rigged && moving() && m.kind === 'frames' && d.person.fileB && !BAD.has(SD + d.person.fileB) && !GLIDING.has(k) ? second(art, 'pb:' + k, k, d.person, d.person.fileB, 'ro-person2', m) : null;
           const pe = el(art, 'p:' + k, 'img', 'ro-person' + (rigged ? ' m-rig' : two && two.on ? ' m-a m-' + m.style : m.kind === 'breathe' && moving() ? ' m-br' : '') + (OFF.has(k) ? ' ro-off' : ''));
           box(pe, d.person); pe.dataset.for = k; pe.dataset.pose = d.person.pose;
+          if (d.facing) pe.classList.toggle('mir', d.facing === 'right');
           const was = pe.getAttribute('src');
           if (was && was !== SD + d.person.file && moving() && !hiddenNow() && !OFF.has(k)) { const g = pe.cloneNode(false); art.insertBefore(g, pe); fadeAway(g, 120); pe.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 170, delay: 90, easing: 'ease-in-out', fill: 'backwards' }); } /* FR-072, spec Changes 2026-11-01: the old out, then the new in */
           img(pe, d.person.file, true);
@@ -289,16 +301,19 @@
           if (m.kind) { setVar(pe, '--ro-per', m.period + 's'); setVar(pe, '--ro-sw', m.sway + 's'); setVar(pe, '--ro-u', (d.person.h / 100).toFixed(3) + 'px'); }
           if (rigged) rigOf(art, k, d.person, rigged, m, pe);
           if (two && two.on && !two.b._clock) { two.b._clock = true; clock(two.b, m.offset); clock(pe, m.offset); }
-        } else if (!d.narrow) {
+        } else if (!d.narrow && !(lay.cabinet && a.away)) { /* at a cabinet, an empty place is the note on its glass */
           const ini = el(art, 'i:' + k, 'div', 'ro-initials'); const r = 0.5 * lay.u; box(ini, { x: d.slot.x + 0.05 * d.slot.w + 0.42 * lay.u - r / 2, y: d.desk.y - r - 6, w: r, h: r }); ini.dataset.for = k; text(ini, initials(a.name));
         }
-        const dc = el(art, 'd:' + k, 'div', 'ro-desk' + (d.narrow ? ' narrow' : '')); box(dc, d.desk); dc.dataset.for = k;
-        const dk = dc.firstChild || dc.appendChild(document.createElement('img')); dk.style.height = px(d.desk.full); img(dk, 'desk.webp');
+        const dc = el(art, 'd:' + k, 'div', 'ro-desk' + (d.narrow ? ' narrow' : '') + (lay.cabinet ? ' ro-cab' + (d.facing === 'right' ? ' mir' : '') : '')); box(dc, d.desk); dc.dataset.for = k;
+        if (lay.cabinet) cabinetOf(dc, meta, lay.cabinet, k);
+        else { const dk = dc.firstChild || dc.appendChild(document.createElement('img')); dk.style.height = px(d.desk.full); img(dk, 'desk.webp'); }
         /* the monitor: the glass in the art; its text sits with the chrome, above the lights (FR-044), and repaints on its own (FR-033) */
         const sc = el(art, 'm:' + k, 'div', 'ro-screen st-' + d.state + (lt.glow === 'off' ? ' off' : '')); box(sc, d.screen); sc.dataset.for = k;
         if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass" aria-hidden="true"></div></div><div class="ro-neck"></div><div class="ro-foot"></div>';
         const bez = sc.firstChild; bez.style.height = px(d.glass.h + 6);
         screenBox(chrome, d, k);
+        /* spec 102 FR-257: the marquee carries the name: real text, level, never inside the mirrored picture */
+        if (d.marquee) { const mq = el(chrome, 'mq:' + k, 'div', 'ro-marquee'); box(mq, d.marquee); attr(mq, 'aria-hidden', 'true'); text(mq, a.name); }
         /* FR-040, FR-041: lamp, screen glow and call light, as classes over the art (D4) */
         const lamp = el(lights, 'l:' + k, 'div', 'ro-lamp lamp-' + lt.lamp + (lt.motion === 'pulse' ? ' pulse' : '')); box(lamp, d.lamp);
         const glow = el(lights, 'g:' + k, 'div', 'ro-glow glow-' + lt.glow + (lt.motion === 'breathe' ? ' breathe' : '')); box(glow, { x: d.glass.x - 6, y: d.glass.y - 6, w: d.glass.w + 12, h: d.glass.h + 12 });
