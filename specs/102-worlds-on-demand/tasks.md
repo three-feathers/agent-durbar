@@ -13,7 +13,7 @@
 - [x] T001 Spec, plan, tasks, checklist and specs-index block (`specs/102-worlds-on-demand/`). Test: `npm run specs:check`, `npm run rules:check`.
 - [ ] T002 After #921, #925 and #936 land, write FR-190's lines into the `## Changes` of specs 076, 077, 096, 097 and 098, naming 097 FR-060, FR-100, FR-112, FR-114, FR-115, T100, T102, D3, FR-001..FR-004, FR-081, FR-083, FR-084, Q6; add block `room` and `defaultSet` to the registry and its test. Test: `npm run specs:check`, `test:surfaces` [FR-190].
 - [x] T004 AGENTS.md's *Needs approval* and *Rework rate* lines name `worlds-*` releases, per spec 021 FR-066, with the owner's direct OK on the text (an agent's relay does not authorise a rule-file change). Test: `npm run rules:check`; `read:` [FR-086].
-- [ ] T003 Paco's answer on OP-8, and any owner change to the agent decisions OP-1, OP-5, OP-6, written into the spec. Test: `read:` [Open points].
+- [ ] T003 Paco's answer on OP-8, the owner's answer on OP-13, and any owner change to the agent decisions OP-1, OP-5, written into the spec. Test: `read:` [Open points].
 
 ## Phase 1: Format and validator (PR P1), no UI, no network
 
@@ -57,31 +57,16 @@ Depends on #921 and T010..T016.
 
 ## Phase 4: Picture worlds - US2
 
-Each world waits for T036 and T042 and goes `coming` to `available` only through FR-035. Each costs image runs on the owner's ChatGPT plan, in small batches; the mockups stay out of the repo until the world's PR. Each task: card first (T093), compared with all others before any image run; brief from FR-011, one back-wall sheet plus parts by `worldprompts.ts`, windows only by FR-020..FR-024, postbox by FR-012, `worlds/<id>/` with `world.json`, parts and `ASSETS.md`, a registry row with every moment's cell, catalogue hash; no cutout from another world. Test for each: `test:world-packs`, `test:world-catalogue`, world matrix at both sizes, `check-office-ops`, `check-perf --record` (097 T163), `check-world-distinct`, and `read:` the owner's look and `distinct-check` recorded in `ASSETS.md` (T094).
+Each world waits for T036 and T042 and goes `coming` to `available` only through FR-035. Each new world's seating plan and monitor are planned against the others first (FR-010, FR-014). Each costs image runs on the owner's ChatGPT plan, in small batches; the mockups stay out of the repo until the world's PR. Each task: card first (T093), compared with all others before any image run; brief from FR-011, one back-wall sheet plus parts by `worldprompts.ts`, windows only by FR-020..FR-024, postbox by FR-012, `worlds/<id>/` with `world.json`, parts and `ASSETS.md`, a registry row with every moment's cell, catalogue hash; no cutout from another world. Test for each: `test:world-packs`, `test:world-catalogue`, world matrix at both sizes, `check-office-ops`, `check-perf --record` (097 T163), `check-world-distinct`, and `read:` the owner's look and `distinct-check` recorded in `ASSETS.md` (T094).
 
-- [ ] T080 Spain (from the sample: its look, calm floor colour; it stays different from Italy and Mexico by FR-014) [FR-010..FR-013, FR-170]
-- [ ] T081 Greece, Santorini-style blue and white without a dome, church, arch or vault [FR-011]
-- [ ] T082 [P] Italy [FR-011]
-- [ ] T083 [P] Mexico [FR-011]
-- [ ] T084 [P] Switzerland [FR-011]
-- [ ] T085 [P] USA [FR-011]
-- [ ] T086 [P] Australia [FR-011]
-- [ ] T087 [P] India, a modern office and never a court [FR-011]
-- [ ] T088 [P] France [FR-011]
-- [ ] T089 [P] Germany [FR-011]
-- [ ] T090 [P] Britain [FR-011]
 - [ ] T113 Flat as a World row; not in the registry [FR-001, FR-212]. Test: `test:surfaces`; `sim:` request log.
-- [ ] T114 [P] Calm office, default Office people [FR-011]
 - [ ] T115 Retro game, shipped in the app, default Retro pixel people; waits for T111; lands in the same release as spec 035 T089 [FR-011, FR-213]
-- [ ] T116 [P] Indian kingdom, arches by FR-210 [FR-011, FR-210]
-- [ ] T117 [P] European kingdom, arches by FR-210 [FR-011, FR-210]
-- [ ] T118 [P] Japanese kingdom, post and beam by FR-210 [FR-011, FR-210]
-- [ ] T119 Cards for Photo office, Cave and Cheeky loft from their art; default sets recorded; any clash with a new world changes the new world. Test: `test:world-catalogue` card pairs [FR-011, FR-014].
+- [ ] T119 Cards for Photo office, Cave and Cheeky loft from their art, arrangement, monitor and mood included; default sets recorded; any clash with a new world changes the new world. Test: `test:world-catalogue` card pairs [FR-011, FR-014].
 - [ ] T091 Windows in built-in worlds: photo after the owner's look; cave and loft only on Paco's decision (OP-8). Test: T027's test; `read:` approvals in `ASSETS.md` [FR-020].
-- [ ] T093 Cards and the card check: `worlds/<id>/card.json` for every picture world of FR-011; pairs in `test:world-catalogue`; `scripts/check-world-distinct.js` (hash, perceptual hash, average colour; near results reported only until T097). Needs to come before T080. Test: fixtures with a same-material pair, a light temperature under 200 K apart and a copied cutout each fail, named; a recoloured cutout is reported [FR-014..FR-016, SC-011].
+- [ ] T093 Cards and the card check: `worlds/<id>/card.json` for every picture world of FR-011; pairs in `test:world-catalogue`; `scripts/check-world-distinct.js` (hash, perceptual hash, average colour; near results reported only until T097). Needs to come before any world's first image run. Test: fixtures with a same-material pair, a same-monitor pair, a light temperature under 200 K apart and a copied cutout each fail, named; a recoloured cutout and a shared arrangement are reported, not failed, until OP-13 is answered [FR-014..FR-016, SC-011].
 - [ ] T094 Contact sheet (`scripts/world-contact-sheet.js`, artifact only, outside `DOC_SHOTS`) and the required `distinct-check` field. Test: `test:world-catalogue` fails without the field; `read:` the reviewer's look per new world [FR-017, FR-035, SC-011].
-- [ ] T097 Set FR-016's near-match thresholds from real packs: measure every pair once at least two real worlds exist (T080, T081), plant a recoloured and a re-encoded cutout, record the numbers and the reasoning in a dated delta, and turn near results from reported to failing. Until then the thumbnail review decides. Test: `sim:` the planted recoloured and re-encoded cutouts fail and the real pairs pass; `read:` the delta [FR-016, SC-011].
-- [ ] T092 The real-GPU run with one country world, simulator only, 0 AI credits, by whoever has the machine. Test: `real:` recorded with 097 T162 [FR-182, 097 FR-189].
+- [ ] T097 Set FR-016's near-match thresholds from real packs: measure every pair once at least two real worlds exist, plant a recoloured and a re-encoded cutout, record the numbers and the reasoning in a dated delta, and turn near results from reported to failing. Until then the thumbnail review decides. Test: `sim:` the planted recoloured and re-encoded cutouts fail and the real pairs pass; `read:` the delta [FR-016, SC-011].
+- [ ] T092 The real-GPU run with one downloadable world, simulator only, 0 AI credits, by whoever has the machine. Test: `real:` recorded with 097 T162 [FR-182, 097 FR-189].
 
 ## Phase 5: Hand path (PR P5) - US3, US6
 
@@ -110,7 +95,7 @@ Needs spec 096's adapter capability and probes.
 - [ ] T065 [US7] **Add a source…**: parse and refuse first, warning, one-use token, record, Remove; `first-seen` and key modes; `features.userSources`, `worlds.userSourceHosts` (`src/main/worlds/sources.ts`, `src/renderer/worlds.js`). Test: `test:worldipc` on the registered channels; `check-worlds` with a wrapped bridge; policy refusal in main [FR-093, FR-094, FR-110, FR-111, US7].
 - [ ] T066 [US7] Adversarial network set: redirect to another host; every SSRF form of US7-2, per hop, and behind a proxy stand-in; a declared size over the cap, a false length, decoded size over the cap, one byte a second on a test clock; a bad `file` name. Test: `test:worldsource`, injected layer asserts no request reached the target; planted mutants per guard [FR-092, FR-099, SC-014].
 - [ ] T067 [US7] Remembered versions and hashes; changes shown, same-version warning, lower version refused, delisted label, nothing replaced until accepted and re-validated. Test: `test:worldsource`, `test:worldstore`, `check-worlds` [FR-096, FR-100].
-- [ ] T068 [US7] Source on every listing, from main's record; look-alike names; a pack claiming `spain`, our source or our hash stays *Imported*. Test: `test:worldpack` with Cyrillic, dotless i and fullwidth names; `check-worlds` reads the source beside the name in the World row, dialog, Manage, notice and try bar; `test:worldstore`: nothing but a pinned download sets the project label [FR-095, FR-097, FR-098, SC-015].
+- [ ] T068 [US7] Source on every listing, from main's record; look-alike names; a pack claiming `photo`, our source or our hash stays *Imported*. Test: `test:worldpack` with Cyrillic, dotless i and fullwidth names; `check-worlds` reads the source beside the name in the World row, dialog, Manage, notice and try bar; `test:worldstore`: nothing but a pinned download sets the project label [FR-095, FR-097, FR-098, SC-015].
 - [ ] T069 [US7] Share: Export's statement and SHA-256, import's report, **Export as a source folder…**, `docs/worlds-source.md`, `scripts/world-sign.js`. Test: `test:worldstore`: exported source folder serves through the fake layer and passes end to end; a signature from the script verifies; no private key in any app file [FR-161..FR-163].
 - [ ] T053 [US5] An organisation's own location behind a proxy, by whoever has one. Test: `real:`, else `[KNOWN GAP]` kept [FR-182].
 - [ ] T054 [US5] Docs: admin page lines for the keys, 076's schema entry. Test: `read:`, `test:docsscripts` [FR-110, FR-111].
@@ -134,13 +119,13 @@ Needs spec 096's adapter capability and probes.
 
 ## Final
 
-- [ ] T095 Screenshots at both sizes for linked pictures, `npm run shots:docs`; a country world only in `docs/` once it is `available` (the matrix stays artifacts only, 098 FR-054). Test: `npm run shots:docs`, look at each.
-- [ ] T096 `/speckit.converge` against SC-001..SC-018; world matrix path filter and weekly run read after 14 worlds (shard if needed). Test: `npm run specs:check`, `read:` [FR-181].
+- [ ] T095 Screenshots at both sizes for linked pictures, `npm run shots:docs`; a downloadable world only in `docs/` once it is `available` (the matrix stays artifacts only, 098 FR-054). Test: `npm run shots:docs`, look at each.
+- [ ] T096 `/speckit.converge` against SC-001..SC-018; world matrix path filter and weekly run read as worlds are added (shard if needed). Test: `npm run specs:check`, `read:` [FR-181].
 
 ## Dependencies
 
 Other specs: #921 (097 P1), #936 and 097 T156..T159 (gate), 098's checks, 096 (P6, and pieces of P5), 076 (only its first slice here).
 
-**MVP**: P1, P2, P3 and T080: one place, downloaded with a plain notice, after the gate. **Independent tests**: US1 by the fake request layer; US2 per world; US3 by hostile fixtures; US4 by the fake generator; US5 by policy fixtures; US6 by round trip; US7 by the adversarial set; US8 by `peopleFor`, migration and request logs.
+**MVP**: P1, P2, P3 and one world: downloaded with a plain notice, after the gate. **Independent tests**: US1 by the fake request layer; US2 per world; US3 by hostile fixtures; US4 by the fake generator; US5 by policy fixtures; US6 by round trip; US7 by the adversarial set; US8 by `peopleFor`, migration and request logs.
 
-**Parallel**: T010, T011 in P1; T082..T090, T114, T116..T118 in P4 (limited by art batches and the owner's looks, not by code); T055, T058 in P5.
+**Parallel**: T010, T011 in P1; worlds in P4 (limited by art batches and the owner's looks, not by code); T055, T058 in P5.
