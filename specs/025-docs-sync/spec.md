@@ -69,3 +69,7 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 A merge was committed with conflict markers in a spec, and `specs:check` passed (spec 102's PR #999, fixed forward).
 
 - **FR-018** `[IMPLEMENTED]` `test:` `npm run specs:check` fails on a line starting with `<<<<<<<`, `|||||||` or `>>>>>>>` followed by a space or the end of the line, in any `.md` file under `specs/`, and names the file and line. It is an error whether or not `specs/README.md` has the strict marker of FR-012. A line of `=======` alone is not looked for, because it is a Markdown heading underline.
+
+### 2026-10-31: `deprecated` (spec 021 FR-068; planned, not built)
+
+- **FR-017** The fixed status words gain `deprecated`: removed with no direct replacement; the note says why and when. Built by spec 021 T053. Which specs change: spec 021 FR-068's PRs; see spec 035 FR-020, spec 040 FR-033, spec 017 FR-035.
