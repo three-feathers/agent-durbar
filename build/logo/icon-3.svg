@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Agent Durbar">
+  <title>Agent Durbar: Figure with badge</title>
+  <rect data-slot="plate" fill="#061C4A" x="0" y="0" width="1024" height="1024" rx="200"/>
+  <path data-slot="gold" fill="#FFC21A" d="M443 196L426 106L472 155L512 94L554 155L600 106L580 196Z"/>
+  <circle data-slot="cream" fill="#FBF6EE" cx="512" cy="328" r="111"/>
+  <path data-slot="cream" fill="#FBF6EE" d="M340 644V536A110 110 0 0 1 450 426H574A110 110 0 0 1 684 536V644A30 30 0 0 1 654 674H370A30 30 0 0 1 340 644Z"/>
+  <path data-slot="badge" fill="#061C4A" d="M429.9 503.3Q421.8 512.1 430.6 520.3L461.7 549L430.6 577.7Q421.8 585.9 429.9 594.7L436.1 601.3Q444.2 610.1 453 602L505.9 553.1Q510.3 549 505.9 544.9L453 496Q444.2 487.9 436.1 496.7Z"/>
+  <rect data-slot="badge" fill="#061C4A" x="502" y="578" width="125" height="36" rx="18"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="225.5" y="714" width="13" height="95"/>
+  <circle data-slot="bot" fill="#C2DEFF" cx="232" cy="714" r="21"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="124" y="757" width="216" height="156" rx="52"/>
+  <circle data-slot="eye" fill="#0E1420" cx="186" cy="835" r="20"/>
+  <circle data-slot="eye" fill="#0E1420" cx="278" cy="835" r="20"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="505.5" y="714" width="13" height="95"/>
+  <circle data-slot="bot" fill="#C2DEFF" cx="512" cy="714" r="21"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="404" y="757" width="216" height="156" rx="52"/>
+  <circle data-slot="eye" fill="#0E1420" cx="466" cy="835" r="20"/>
+  <circle data-slot="eye" fill="#0E1420" cx="558" cy="835" r="20"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="785.5" y="714" width="13" height="95"/>
+  <circle data-slot="bot" fill="#C2DEFF" cx="792" cy="714" r="21"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="684" y="757" width="216" height="156" rx="52"/>
+  <circle data-slot="eye" fill="#0E1420" cx="746" cy="835" r="20"/>
+  <circle data-slot="eye" fill="#0E1420" cx="838" cy="835" r="20"/>
+</svg>

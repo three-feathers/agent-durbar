@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Agent Durbar">
+  <title>Agent Durbar: Underscore floor</title>
+  <rect data-slot="plate" fill="#07111F" x="0" y="0" width="1024" height="1024" rx="200"/>
+  <path data-slot="gold" fill="#FFC21A" d="M132 183L114 103L176 144L218 87L260 144L322 103L304 183Z"/>
+  <path data-slot="gold" fill="#FFC21A" d="M134 250.5Q116.6 272.4 138.5 289.9L244.3 374L138.5 458.1Q116.6 475.6 134 497.5L154 522.5Q171.4 544.4 193.3 527L370 386.4Q385.7 374 370 361.6L193.3 221Q171.4 203.6 154 225.5Z"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="205" y="607" width="18" height="110"/>
+  <circle data-slot="bot" fill="#C2DEFF" cx="214" cy="607" r="25"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="96" y="659" width="236" height="192" rx="58"/>
+  <circle data-slot="eye" fill="#0E1420" cx="160" cy="755" r="30"/>
+  <circle data-slot="eye" fill="#0E1420" cx="268" cy="755" r="30"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="503" y="607" width="18" height="110"/>
+  <circle data-slot="bot" fill="#C2DEFF" cx="512" cy="607" r="25"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="394" y="659" width="236" height="192" rx="58"/>
+  <circle data-slot="eye" fill="#0E1420" cx="458" cy="755" r="30"/>
+  <circle data-slot="eye" fill="#0E1420" cx="566" cy="755" r="30"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="801" y="607" width="18" height="110"/>
+  <circle data-slot="bot" fill="#C2DEFF" cx="810" cy="607" r="25"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="692" y="659" width="236" height="192" rx="58"/>
+  <circle data-slot="eye" fill="#0E1420" cx="756" cy="755" r="30"/>
+  <circle data-slot="eye" fill="#0E1420" cx="864" cy="755" r="30"/>
+  <rect data-slot="gold" fill="#FFC21A" x="55" y="848" width="914" height="63" rx="20"/>
+</svg>

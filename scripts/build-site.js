@@ -427,11 +427,11 @@ function page({ title, description, css, nav, body, og }) {
 <meta property="og:image:width" content="1440"><meta property="og:image:height" content="900"><meta property="og:image:alt" content="${esc(og.imageAlt)}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#f7f4ee" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#141210" media="(prefers-color-scheme: dark)">` : ''}
-<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <style>${CSS_BASE}${css}</style></head>
 <body>
-<header class="top"><div class="wrap"><a class="brand" href="index.html"><img src="icon.svg" alt="" width="28" height="28">Agent Durbar</a>
+<header class="top"><div class="wrap"><a class="brand" href="index.html"><img src="favicon.svg" alt="" width="28" height="28">Agent Durbar</a>
 <nav aria-label="Site">${nav}</nav></div></header>
 ${body}
 <footer class="foot"><div class="wrap">
@@ -636,7 +636,7 @@ async function main() {
   fs.mkdirSync(path.join(OUT, 'screenshots'), { recursive: true });
   fs.writeFileSync(path.join(OUT, 'index.html'), index);
   fs.writeFileSync(path.join(OUT, 'docs.html'), docs);
-  fs.copyFileSync(path.join(ROOT, 'build', 'icon.svg'), path.join(OUT, 'icon.svg'));
+  fs.copyFileSync(path.join(ROOT, 'build', 'logo', 'icon-1-32.svg'), path.join(OUT, 'favicon.svg')); // spec 101 FR-051: icon 1 on its 32 px grid, a browser scales it for a tab
   fs.writeFileSync(path.join(OUT, '.nojekyll'), '');
   for (const r of copied) {
     const src = path.join(ROOT, r);

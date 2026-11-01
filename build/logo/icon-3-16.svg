@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" role="img" aria-label="Agent Durbar">
+  <title>Agent Durbar: Figure with badge</title>
+  <rect data-slot="plate" fill="#061C4A" x="0" y="0" width="16" height="16" rx="3"/>
+  <path data-slot="gold" fill="#FFC21A" d="M6 2L5.5 0.2L6.9 1L8 0L9.1 1L10.5 0.2L10 2Z"/>
+  <circle data-slot="cream" fill="#FBF6EE" cx="8" cy="5" r="2"/>
+  <path data-slot="cream" fill="#FBF6EE" d="M4 11V8.5A1.5 1.5 0 0 1 5.5 7H10.5A1.5 1.5 0 0 1 12 8.5V11Z"/>
+  <path data-slot="badge" fill="#061C4A" d="M6.5 7.5H7.7L9.7 9L7.7 10.5H6.5V9.7L7.7 9L6.5 8.3Z"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="2" y="12" width="3" height="3" rx="0.5"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="7" y="12" width="3" height="3" rx="0.5"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="12" y="12" width="3" height="3" rx="0.5"/>
+</svg>

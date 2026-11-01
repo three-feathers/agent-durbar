@@ -3,15 +3,15 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: New logo family: the human user is the sovereign, agents are the court. Four base icons (vector, hand-tuned at 16, 20 and 32 px), a Settings picker, a top bar that follows the world's flat palette, build icons fixed at icon 1
-note: spec, plan, tasks only; vector drawings and art stay outside the repo until the tasks that bring them in; nothing built
-status: draft
+note: phases 1 to 3 built (icons, picker, palettes); painted previews (phase 4) not built
+status: building
 -->
 
 **Feature Branch**: `101-logo-family` (spec); code branches `101-pN-slug`, one per phase
 
 **Created**: 2026-10-31
 
-**Status**: Draft (2026-10-31). Spec, plan and tasks only; no art, no code.
+**Status**: Building (2026-11-01). Phases 1 to 3 are built on `101-logo-build` (flat vector icons, build icons, top bar, picker, palettes of the photo, cave and loft worlds); phase 4 (painted previews) is not built.
 
 **Input**: Owner decisions (Vikram, Telegram and terminal, 2026-10-31), listed below; concepts and vector drawings by Vikram's agent, outside the repo (*Evidence*).
 
@@ -229,4 +229,15 @@ Tool surface (spec 098): the picker is a Settings section and the top-bar icon t
 
 ## Changes
 
-No deltas yet.
+### 2026-11-01: phases 1 to 3 built (`101-logo-build`)
+
+- **Paco approved the cave and loft columns on 2026-11-01** (relayed in Vikram's build instruction; Q6): FR-062 is met for their flat palettes, which are in `src/renderer/logo.css` with a `Paco` row in `build/logo/ASSETS.md`. Painted cave and loft pictures are still not in the repo (phase 4 not built).
+- `[IMPLEMENTED]` `test:` `sim:` FR-010..FR-014, FR-020..FR-023 (vector previews), FR-030..FR-032, FR-034, FR-035, FR-040..FR-044, FR-050, FR-051, FR-060..FR-062, FR-070..FR-072. FR-033 and FR-101/FR-102 are implemented as the selectors `html[data-world="photo"|"cave"|"loft"][data-world]`; `[KNOWN GAP]` nothing on `main` sets `data-world` yet (spec 097 P1 does, on its own branch), so the driver sets it by hand; a world with no block (country, kingdom) keeps the base palette.
+- **Deltas to the text above, made while building:**
+  - FR-036: the forced-colours rules are in `src/renderer/logo.css` (loaded after `styles.css`, so they beat the slot rules at equal weight), not in `styles.css`'s block; the tile keeps its size with an inset outline instead of a border.
+  - FR-032: the palettes live in `src/renderer/logo.css`, a file outside the theme-literals ratchet of spec 070; its colours are token declarations, and `index.html` and `styles.css` gain no literal. `--logo-plate` is the chosen icon's plate, from `--logo-plate-1..5` (one per icon in Clean; all equal in a theme or a world), so a Settings preview can show its own plate.
+  - FR-012/FR-020: the renderer's copy (`src/renderer/logo-marks.js`, 12 KB) and the inline top-bar icon have no `fill` attribute; the tokens paint every slot. The files in `build/logo` keep their literal `fill`.
+  - FR-072: `check-logo-family.js` sets `data-world` by hand and attaches the DevTools protocol to emulate forced colours; the window-icon call site is held by `test:logo-assets` (no `setIcon` or `setOverlayIcon` anywhere in `src`), since the renderer cannot call it.
+  - FR-041: the ICNS and ICO entries are PNGs written by `scripts/build-icons.js`; `ic07..ic10` (128 px and up) carry the plate at 824/1024 of the canvas (D3).
+  - FR-024, FR-040 (painted): not built; the picker shows the vector previews (FR-023's fallback) in every world.
+

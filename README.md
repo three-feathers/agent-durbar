@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="build/icon.svg" alt="Agent Durbar icon: a lead and a working team" width="96" height="96">
+  <img src="build/icon.svg" alt="Agent Durbar icon: a command prompt wearing a crown, with three bots below" width="96" height="96">
 </p>
 
 <h1 align="center">Agent Durbar</h1>
@@ -28,7 +28,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - **Needs you:** one inbox of every agent waiting for an answer or a permission, oldest first.
 - **Sessions that last:** resume after a restart or a crash, scheduled prompts, undo an agent's file changes, notes, continue in another app.
 - **MCP servers** shared across your agent apps, with health, sign-in and per-tool switches.
-- **Six themes** and a theme maker.
+- **Six themes** and a theme maker; **four logos** to choose in Settings (the top-bar icon takes your theme's or world's colours; the app's own icon stays the same).
 
 ![Full-screen chat with the other agents in a slim strip, 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
 

@@ -15,7 +15,7 @@ on:
       - 'scripts/specs-index.js'
       - 'docs/screenshots/**'
       - 'docs/site/**'
-      - 'build/icon.svg'
+      - 'build/logo/icon-1-32.svg'
       - 'scripts/build-site.js'
       - 'scripts/test-site.js'
       - '.github/workflows/pages.yml'
