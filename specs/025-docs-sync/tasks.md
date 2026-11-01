@@ -20,4 +20,5 @@
 - [ ] T017 After T014, once no open PR edits `specs/README.md` rows: add `<!-- specs-index: strict -->` (#520) [FR-012]
 - [x] T015 First release with `npm run changelog:build` (alpha.12 or later) writes the cut-over marker; check that the release notes read well (#520)
 - [x] T016 Review on #518 (rubenlupi): rows not committed (website and `specs/INDEX.md`), strict by a marker instead of a date, `--add` for new specs, `-->`/`--!>` refused in values, one section per version, CLI and group-twice tests, CLAUDE.md, `migrate` dropped [FR-010..FR-013, FR-016]
+- [x] T019 (2026-11-01) `specs:check` refuses conflict markers (`scripts/specs-index.js`). Test: `test:specsindex`, a mutant that drops the exit code fails [FR-018]
 - [ ] T018 `deprecated` status word: built under spec 021 T053 [FR-017]

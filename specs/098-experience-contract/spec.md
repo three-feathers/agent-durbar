@@ -240,6 +240,8 @@ A spec author fills the template's *Experience* line: "tool surface", or "world 
 
 ## Changes
 
+- **2026-11-01** (owner request, Vikram): `docs/world-design.md` writes down the visual principles learnt from reviewing real world mockups. It is guidance for making worlds: this spec and spec 102 stay the contract. `read:` no code changes.
+
 ### 2026-10-31: the weekly performance record (spec 097 FR-187)
 
 - **FR-057** **The weekly job records performance.** The scheduled run of `world-matrix.yml` also runs `scripts/check-perf.js --record` (spec 097 FR-187): flat and every shippable world, 15 and 40 agents; 0 AI credits. Its JSON is part of the artifact (FR-054), and `world-coverage.js` lists rows over budget in the "World coverage" issue (FR-060). **It records and never asserts a time** (AGENTS.md *Timing*, spec 021 FR-048b, FR-063): a CI machine's clock is no pass or fail, and comparisons are to flat in the same run and to last week's artifact. Not in the pull-request subset (FR-052), which stays at its 12-minute timeout; what pull requests get is the count-based `check-office-ops` (097 FR-186) in the ordinary suite. T044.
