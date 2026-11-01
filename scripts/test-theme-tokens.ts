@@ -307,7 +307,7 @@ console.log(`theme tokens guard passed (${n} corpus checks, ${FILES.length} file
 // ---- 7. the toggle switch (.swt, spec 033 delta 2026-11-01): contrast per world, tokens only ----
 {
   const scr = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.css'), 'utf8');
-  const rule = (sel: string): string => { const m = scr.match(new RegExp('(?:^|\\n)' + sel.replace(/[.]/g, '\\.') + '\\{([^}]*)\\}')); assert.ok(m, `${sel} rule exists`); return (m as RegExpMatchArray)[1]; };
+  const rule = (sel: string): string => { const at = ('\n' + scr).indexOf('\n' + sel + '{'); assert.ok(at >= 0, `${sel} rule exists`); const from = at + sel.length + 1; return scr.slice(from, scr.indexOf('}', from)); }; // plain string search: no selector is turned into a pattern
   for (const sel of ['.swt', '.swt i', '.swt.on', '.swt.on i']) assert.ok(!/#[0-9a-fA-F]{3,8}\b|rgba?\(/.test(rule(sel)), `${sel}: no colour literal, tokens only`);
   assert.ok(/background:var\(--sage-ink\)/.test(rule('.swt.on')) && /background:var\(--surface\)/.test(rule('.swt.on i')) && /background:var\(--ink-2\)/.test(rule('.swt i')), 'the on track is --sage-ink, the knobs --surface (on) and --ink-2 (off)');
   assert.ok(/@media \(forced-colors:active\)\{[^@]*\.swt\.on\{background:Highlight/.test(scr), 'forced colours: on and off still differ');
