@@ -133,5 +133,24 @@
     return out;
   }
 
-  return { CREWS, PREHISTORIC_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
+  /* spec 097 FR-084, FR-100, FR-114 (merged with #920): the Characters setting applies in Real office too, and a crew appears in
+     its own world (Cheeky in the loft, Prehistoric in the cave), keeping its own art. The character set and the scene Real office
+     draws for a Characters value: a set listed in REAL_OFFICE_SETS has Real office pictures; today only the Office people (`office`,
+     the default), since the crew worlds are not built yet. A crew without them draws the Office people, and `coming` makes
+     Settings say so (FR-083, `realOfficeNote`). The one seam to change when a crew's world ships. */
+  const REAL_OFFICE_SETS = ['office'];
+  const CREW_WORLDS = { cheeky: 'Cheeky loft', prehistoric: 'Prehistoric cave' };
+  function realOfficeSet(choice) {
+    const c = String(choice || '');
+    if (REAL_OFFICE_SETS.includes(c)) return { set: c, scene: 'office', coming: false };
+    return { set: 'office', scene: 'office', coming: has(CREWS, c) };
+  }
+  /* FR-083: the one Settings line under Office layout when Real office is on and the chosen crew's world is not built yet. */
+  function realOfficeNote(choice, view) {
+    if (view !== 'real' || !realOfficeSet(choice).coming) return '';
+    const c = String(choice || ''), w = has(CREW_WORLDS, c) ? CREW_WORLDS[c] : "this crew's world";
+    return `Real office shows the Office people until the ${w} is ready.`;
+  }
+
+  return { REAL_OFFICE_SETS, realOfficeSet, realOfficeNote, CREWS, PREHISTORIC_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
 })());
