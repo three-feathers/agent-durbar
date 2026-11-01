@@ -111,7 +111,7 @@ try {
   again.load();
   assert.deepStrictEqual(again.order(), kept, 'the order survives a restart');
   // what reaches the file is the cleaned document, not what the renderer sent (extra keys, long lists, __proto__)
-  const dirty = { rooms: [abs('b'), abs('b'), abs('a'), 5, ...Array.from({ length: MAX_ORDER_ROOMS + 20 }, (_, i) => `/r${i}`)], desks: JSON.parse(`{"${abs('a')}":["s2","s2",3,"s1"],"__proto__":["x"],"":["y"]}`), places: ['mail', 'mail'], bogus: { big: 1 } };
+  const dirty = { rooms: [abs('b'), abs('b'), abs('a'), 5, ...Array.from({ length: MAX_ORDER_ROOMS + 20 }, (_, i) => `/r${i}`)], desks: JSON.parse(JSON.stringify({ [abs('a')]: ['s2', 's2', 3, 's1'], '': ['y'] }).replace(/}$/, ',"__proto__":["x"]}')), places: ['mail', 'mail'], bogus: { big: 1 } };
   const cleaned = st.setOrder(dirty);
   const onDisk = JSON.parse(fs.readFileSync(file, 'utf8')).order;
   assert.deepStrictEqual(onDisk, JSON.parse(JSON.stringify(cleaned)), 'the file holds the cleaned order');
