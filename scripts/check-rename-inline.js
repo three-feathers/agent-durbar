@@ -316,7 +316,7 @@ module.exports = async (ctx) => {
       assert.strictEqual(await js(`document.querySelectorAll('.inl-input').length`), 1, `${tag}: one field on screen while a save runs`);
       assert.strictEqual((await st()).anchorKey, 'desk:' + B);
       // the window loses its OS focus while the second field is open (a CI window may do it at any time): the field stays, as FR-021 item 2 says
-      ctx.win.blur(); await until(`!document.hasFocus()`, 4000);
+      ctx.win.blur(); assert.ok(await until(`!document.hasFocus()`, 4000), `${tag}: the page saw the focus loss`);
       await until(`__durbarSimUi.agents().find(x=>x.id===${jsLiteral(A)}).alias==='Slow save'`, 6000); await settle();
       assert.ok((await st()).open && (await st()).anchorKey === 'desk:' + B, `${tag}: an OS focus loss kept the second field open`);
       ctx.win.show(); ctx.win.focus(); ctx.win.webContents.focus(); await until(`document.hasFocus()`, 4000);

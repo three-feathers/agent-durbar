@@ -3,7 +3,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { placeBox, realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
+import { placeBox, portraitCrop, PORTRAIT_SIDE, realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { lampWords, lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
 
@@ -353,7 +353,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
 // ---- spec 102 FR-200..FR-202: the world and set seam in crew.js (two flat lists of data, any set in any world) ----
 {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as unknown as { WORLD_FLAGS: Record<string, boolean>;  WORLDS: { id: string; name: string; defaultSet: string; flag?: string }[]; REAL_SETS: { id: string; name: string; choice: string; flag?: string }[]; offeredWorlds: (f?: Record<string, boolean>) => { id: string }[]; parseWorld: (v: unknown, f?: Record<string, boolean>) => string; peopleFor: (w: unknown, c: unknown, f?: Record<string, boolean>) => { world: string; set: string; setName: string; note: string }; realOfficeNote: (c: string, v: string, w?: string, f?: Record<string, boolean>) => string };
+  const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as unknown as { WORLD_FLAGS: Record<string, boolean>;  WORLDS: { id: string; name: string; defaultSet: string; flag?: string }[]; REAL_SETS: { id: string; name: string; choice: string; flag?: string }[]; offeredWorlds: (f?: Record<string, boolean>) => { id: string }[]; parseWorld: (v: unknown, f?: Record<string, boolean>) => string; peopleFor: (w: unknown, c: unknown, f?: Record<string, boolean>) => { world: string; set: string; setName: string; note: string }; CREWS: Record<string, unknown> };
   assert.deepStrictEqual(C.WORLD_FLAGS, { cave: false }, 'the cave is behind an off-by-default flag until the owner opens it (spec 097 phase 4 gate)');
   assert.deepStrictEqual(C.offeredWorlds().map((w) => w.id), ['photo'], 'flag off: only Photo office is offered');
   assert.deepStrictEqual(C.offeredWorlds({ cave: true }).map((w) => w.id), ['photo', 'cave'], 'flag on: Photo office first, then the cave');
@@ -388,12 +388,13 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     assert.strictEqual(C.peopleFor('photo', 'pirates', ON).set, 'pirates', 'any set in any world');
     assert.strictEqual(C.peopleFor('photo', 'pirates', OFF).set, 'office', 'flag off: the set is not drawn');
   } finally { C.WORLDS.pop(); C.REAL_SETS.pop(); delete (C.WORLD_FLAGS as Record<string, boolean>).pirate; }
-  // FR-083 / FR-202: the note, only for a choice with no Real office poses and only with Real office on
-  assert.strictEqual(C.realOfficeNote('cheeky', 'real', 'photo'), 'Real office shows Office people until Cheeky has Real office poses.');
-  assert.strictEqual(C.realOfficeNote('minimalist', 'real', 'photo'), 'Real office shows Office people until Minimalist has Real office poses.');
-  assert.strictEqual(C.realOfficeNote('prehistoric', 'real', 'photo'), 'Real office shows Office people until Prehistoric has Real office poses.', 'flag off: Prehistoric has no poses yet (the flag is what is closed)');
-  for (const c of ['theme', 'mine', '', '__proto__', 'office']) assert.strictEqual(C.realOfficeNote(c, 'real', 'photo'), '', `${c || '(none)'}: no note`);
-  for (const v of ['cabins', 'open', '']) assert.strictEqual(C.realOfficeNote('cheeky', v, 'photo'), '', `${v || '(none)'}: no note outside Real office`);
+  // FR-083 / FR-202: the note (peopleFor's), for a crew choice with no Real office poses; the names come from CREWS, so every crew without a REAL_SETS row has one
+  const note = (c: string): string => C.peopleFor('photo', c).note;
+  for (const c of ['minimalist', ...Object.keys(C.CREWS)]) if (!C.REAL_SETS.some((s) => s.choice === c)) assert.strictEqual(note(c), `Real office shows Office people until ${c[0].toUpperCase() + c.slice(1)} has Real office poses.`, `${c}: has its note`);
+  for (const c of ['theme', 'mine', '', '__proto__', 'constructor', 'office']) assert.strictEqual(note(c), '', `${c || '(none)'}: no note`);
+  assert.strictEqual(note('prehistoric'), 'Real office shows Office people until Prehistoric has Real office poses.', 'flag off: Prehistoric has no poses yet (the flag is what is closed)');
+  C.CREWS.pirate = []; // a future crew (mutant check: a hand list of names would miss it)
+  try { assert.strictEqual(note('pirate'), 'Real office shows Office people until Pirate has Real office poses.', 'a new crew gets its note by construction'); } finally { delete C.CREWS.pirate; }
 }
 
 // ---- FR-037: who sits where ----
@@ -519,6 +520,24 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   const W = Object.fromEntries((Object.keys(LIGHT_TABLE) as LightState[]).map((k) => [k, lampWords(lightFor(k))]));
   assert.deepStrictEqual(W, { working: 'Lamp warm, steady', thinking: 'Lamp on, breathing', waiting: 'Lamp bright, amber call light', error: 'Lamp on, red error light', limit: 'Lamp on, orange call light', done: 'Lamp low', idle: 'Lamp low', asleep: 'Lamp off' }, 'a phrase per light row');
   assert.strictEqual(lampWords(lightFor('waiting', { still: true })), W.waiting, 'reduced motion does not change the words');
+}
+
+// ---- FR-106 (owner 2026-11-01): the chat's round portrait is cropped tight on the face, for every person of every set ----
+{
+  let n = 0;
+  for (const set of ['office', 'prehistoric']) {
+    const seat = (readJson('sets', set, 'set.json') as { seat: Record<string, { w: number; h: number; headTop: number; bodyH: number }> }).seat;
+    for (const [id, m] of Object.entries(seat)) {
+      const c = portraitCrop(m);
+      assert.ok(c.x >= 0 && c.y >= 0 && c.x + c.s <= m.w + 1e-6 && c.y + c.s <= m.h + 1e-6, `${set}/${id}: the crop is inside the picture`);
+      const head = (m.headTop - c.y) / c.s, face = (FACE_U * m.bodyH) / c.s;
+      assert.ok(head >= 0 && head <= 0.15, `${set}/${id}: headroom ${head.toFixed(3)} of the circle is at most 15 %`);
+      assert.ok(face >= 0.30, `${set}/${id}: the face is at least 30 % of the circle (${face.toFixed(3)})`);
+      assert.ok(Math.abs(c.s - Math.min(PORTRAIT_SIDE * m.bodyH, m.w, m.h)) < 1e-6);
+      n++;
+    }
+  }
+  assert.ok(n >= 21, 'every person of both sets was checked');
 }
 
 console.log(`realoffice layout and lights tests passed (${cases} layouts, faces ${JSON.stringify(faces)})`);
