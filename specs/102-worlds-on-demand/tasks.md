@@ -115,6 +115,7 @@ Needs spec 096's adapter capability and probes.
 - [ ] T109 Prehistoric frames to full, per picture by Paco. Test: `test:world-packs`; `read:` approvals in `ASSETS.md` [FR-206].
 - [ ] T110 Minimalist to full poses, art in progress; until then `sim:` the Flat-only note. Test: `test:world-packs`; `read:` provenance and the owner's look [FR-206].
 - [ ] T111 Retro pixel people, new, with provenance and likeness fields. Test: `test:world-packs`, asset test; `read:` the owner's look [FR-200, FR-209].
+- [ ] T122 Retro pixel people as the `pixel` Characters value in Flat, with a dated delta in spec 077 (its FR number taken at build): the Settings pick, heads by FR-203, in the same release as spec 035 T089 and not after it. Needs T111. Test: `test:characters`, `test:crew`, `test:crew-assets`, `check-characters`; a mutant that drops the value fails [FR-214]
 - [ ] T112 My characters: level per character, 096's Real office frames. Test: `test:world-packs` on 096's fixture; `test:charstore` [FR-206].
 
 ## Final
