@@ -57,7 +57,7 @@ Phase 1 needs neither spec 041 nor any MCP server. The agent paces the loop with
 - **R2 Off by default.** A loop starts only from a user action, or after the user's explicit OK. Its passes keep the session's permission mode and never raise it.
 - **R3 Pauses, never wakes into a wait.** A loop holds while the agent waits for a person (a question or a permission), during a coffee break (a usage limit, spec 068) and at Durbar's spending cap. It never sends a pass into any of these.
 - **R4 Visible and ends cleanly.** Every wake shows its reason on the desk and in Schedules. Quitting the app or pressing Stop ends the loop. It does not come back after a restart unless the user says so.
-- **R5 Durbar holds the limits.** Durbar enforces the minimum delay, maximum delay, maximum passes and a credit cap. The agent can only ask within them.
+- **R5 Durbar holds the limits.** *(Replaced 2026-11-01, owner: warn, do not limit; see *Changes*.)* Durbar enforces the minimum delay, maximum delay, maximum passes and a credit cap. The agent can only ask within them.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -307,6 +307,16 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
 - **Q9 Where "Loop this…" lives, and quiet hours:** (a) the session's card/mode menu (beside *Plan first*) and the chat's Schedules dialog, one shared form; quiet hours later.
 
 ## Changes
+
+### 2026-11-01: loop limits are defaults the user can raise, never a refusal; a run limit cannot be off (owner decision, Vikram: warn, do not limit)
+
+Owner rule of Vikram, restated 2026-11-01 (matching Paco): Durbar warns and lets the user override; it does not cap a person's use. Replaces R5 ("Durbar holds the limits"), FR-003's refusals, and the *Open* conflict that PR #965's table recorded.
+
+- **R5, new wording:** Durbar sets **defaults** (FR-003's list) and the agent can only ask within the limits the user set for that loop. The **user** may raise the defaults and the run limit (passes, end time, cap) per loop, after a warning that says what it could cost (the cap, or "no cap" stated plainly if none). A number above FR-003's former ceilings (1440 min, 100 passes, 24 h) is warned about, not refused. `[KNOWN GAP]` Reading the owner's rule as reaching those ceilings is the author's; the owner has not said it in those words.
+- **A run limit cannot be switched off:** a loop always carries a pass limit (and an end time) that the user can raise but not remove, so a loop never has "no limit at all". This is the continuation rule (spec 099 S1) applied to loops; the agent still cannot change any limit (the *Prompt injection* paragraph stands).
+- **FR-003:** the ranges are the **default warning thresholds**, no longer refusals, except `minDelay` of at least 5 (the spec 044 floor) and `maxPasses` of at least 1.
+- **`[KNOWN GAP]`** The code still refuses: `src/shared/looppace.ts:11-13` (`LOOP_MAX_DELAY`, `LOOP_MAX_PASSES`, `LOOP_MAX_HOURS` as hard bounds), `src/main/schedules.ts` at the `loop` validation (the `LOOP_MAX_DELAY`/`LOOP_MAX_PASSES` check) and at the `endAt` check (`LOOP_MAX_HOURS`). Changing them is a later task (not numbered here), with the warning in the loop form and tests that a raised number is accepted and that a loop with no pass limit is not.
+- Loops no longer carry a per-pass mode: a pass runs in the session's mode (R2, FR-006 stand; spec 044 *Changes*, 2026-11-01).
 
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 

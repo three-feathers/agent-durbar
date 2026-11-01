@@ -36,6 +36,7 @@ const DRIVERS = [
   { name: 'shots-033', env: { DURBAR_SIM_FLOORS: '1' } },
   { name: 'shots-092', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 092 phase 1: floor screens (one floor at a time), PageUp/PageDown, the scroll rule, floors going off and on, an empty floor
   { name: 'shots-092-lift', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 092 phase 2: the lift panel, its badges and the All floors view (FR-006..FR-008, FR-013..FR-017, FR-028, FR-031..FR-037)
+  { name: 'shots-033-order' }, // spec 033 delta 2026-11-01 (#677): drag and Alt+arrows to rearrange rooms, desks and places; saved, survives a reload, corrupt order tolerated
   { name: 'shots-033-move', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 033 FR-024 (#590): Move to floor in the folder menu, with Undo
   { name: 'shots-034-list' },
   { name: 'shots-015-compact' }, // spec 015 FR-014: Compacting on the desk, list, header, strip and ring (simcompact=1 in its own query)
@@ -97,6 +98,7 @@ const DRIVERS = [
   { name: 'check-theme-art' }, // spec 040 FR-023: a picked theme's characters and gadgets on desks, walkers, places and chips
   { name: 'check-crew' }, // spec 077: Cheeky portraits (Characters = Cheeky on Clean Office): box vs protected zones, pose, sharpness, the fallback with a picture removed
   { name: 'check-crew', label: 'check-crew retro', env: { CREW_THEME: 'retro' } }, // spec 077 FR-070: the same with Characters = Cheeky on Retro Pixel
+  { name: 'check-office-ops' }, // spec 097 FR-185, FR-186 (T142, T148): operation counts of the flat office, never times: elements recalculated by one text change at 15 and 40 agents
   { name: 'check-characters' }, // spec 077 FR-064..FR-069: Settings > Characters on Retro Pixel and Corporate (Cheeky, Minimalist, the theme's own)
   { name: 'check-permission-scope' }, // spec 003 FR-108: the approval card says how far "for this session" reaches
   { name: 'check-ro-ask' }, // spec 003 FR-094..FR-097: a Read-only denial's "Switch to Ask first…" opens the mode menu
@@ -110,6 +112,8 @@ const DRIVERS = [
   { name: 'check-notes-export' }, // spec 083 T034b: Export…, Delete all… and Remove folder's Also delete its notes (FR-048)
   { name: 'check-edits' }, // spec 005 FR-020..FR-026: file edits in the chat
   { name: 'shots-068-coffee' }, // spec 068: coffee break (simbreak=8 in its own query)
+  { name: 'shots-097-realoffice' }, // spec 097 P1: Real office mode (the switch, the scene, the lights, flat loads none of it)
+  { name: 'shots-097-cave' }, // spec 097 phase 4: the Prehistoric cave behind its flag (World row, its set, any set in any world, no blend)
   { name: 'shots-001-lobby' }, // spec 001 FR-034..FR-040: Boss queue, Bank, Postbox and its letter, who is at a place (simsched in its own query)
   { name: 'check-done-desk-mask' }, // spec 041 FR-065: no token of a done reply on the office floor
   // spec 052 FR-171: wrapping, sizes, box widths, field weight, dark contrast. Two drivers that run at once (issue #738: one took ~650 s
