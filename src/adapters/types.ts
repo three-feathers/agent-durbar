@@ -464,6 +464,8 @@ export interface QuestionEvent extends BaseEvent {
   elicitAction?: ElicitAction;
   /** `cancelled` only (spec 052 FR-178): why the question ended unanswered. */
   reason?: QuestionSkipReason;
+  /** Spec 099 FR-030, FR-081: the question was answered at once with the fixed Autopilot sentence; only ever `true`. */
+  autoAnswered?: true;
 }
 
 /** A custom agent the user can select for a session (spec 043 FR-001); generic across adapters. */
@@ -575,10 +577,33 @@ export interface SandboxEvent extends BaseEvent {
   notLowered?: boolean;
 }
 
+/** Spec 099 FR-040: why an Autopilot run ended; exactly one per run. */
+export type AutopilotEnd = 'done' | 'cap' | 'limit' | 'no-progress' | 'blocked' | 'stopped' | 'error';
+
+/** Spec 099 FR-021, FR-022: what a person chose for a run. `limit`: extra turns, 1-1000 (default 5, always on); `hours`: backstop time, 1-168 (default 2); `cap`: optional, in the capability's unit. */
+export interface AutopilotSettings {
+  limit: number;
+  cap?: number;
+  hours?: number;
+}
+
+/** Spec 099 FR-081: a run started, a continuation began, or the run ended (with exactly one `reason`). `n` counts continuations; never above `limit` as emitted by `AutopilotRun`. */
+export interface AutopilotEvent extends BaseEvent {
+  type: 'autopilot';
+  phase: 'started' | 'continued' | 'ended';
+  runId: string;
+  n: number;
+  limit: number;
+  /** `ended` only. */
+  reason?: AutopilotEnd;
+  spend?: { unit: 'aiu' | 'usd' | 'tokens'; value: number };
+}
+
 /** Spec 066 FR-002: the user's answer to a proposed plan. */
 export type PlanAnswer = { kind: 'approve' } | { kind: 'reject' } | { kind: 'revise'; feedback: string };
 
 export type AgentEvent =
+  | AutopilotEvent
   | SandboxEvent
   | PlanEvent
   | RemoteEvent
@@ -708,6 +733,11 @@ export interface AgentAdapter {
   generateText?(prompt: string, opts?: GenerateTextOptions): Promise<GenerateTextResult>;
   /** Spec 054 FR-001: turn remote control (follow and steer from the vendor's web or mobile app) on or off for a live session. Optional (`capabilities.remote`). Never on by default. */
   setRemote?(sessionId: string, on: boolean): Promise<RemoteState>;
+  /**
+   * Spec 099 FR-002, FR-050: turn Autopilot on (settings) or off (`null`; a run in progress is stopped, FR-050) for the session's **next** messages;
+   * `reason` is why it ends (default `stopped`). Optional (`capabilities.autopilot`). Never saved, never a default; only main's confirmed path calls it.
+   */
+  setAutopilot?(sessionId: string, settings: AutopilotSettings | null, reason?: AutopilotEnd): Promise<void>;
   /**
    * Spec 059 FR-007: store the user's name for a session in the agent app. Optional (`capabilities.renameSession`). `sessionId` is the
    * vendor's own id (also of a stored session that is not live). `name` already passed Durbar's name rule. Throws when the app refuses

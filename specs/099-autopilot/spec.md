@@ -4,7 +4,7 @@
 group: 046
 title: Autopilot mode: a fourth safety mode above Allow all, per session and confirmed each time, only for agent apps that support it; the agent's questions are shown but not waited on, the app keeps going after each turn until the task is done, up to a continuation limit (default 5) and an optional spend cap; Stop ends it; plan approval may offer Approve and run on Autopilot (spec 066 delta)
 status: draft
-note: spec, plan, tasks; owner answers Q1-Q4; real probes T090, T093; review of PR 923 applied; owner ruling D13; schedules out of the first build; nothing built
+note: spec, plan, tasks; owner answers; probes T090, T093; D13 applied; schedules out; phase 1 (core, types, event guard) built, no adapter or UI
 -->
 
 **Feature Branch**: `099-autopilot` (spec). Code branches `099-pN-slug`, one per phase. It touches 003 (the permission modes), 002, 012
@@ -15,7 +15,7 @@ organization policy), 018 (the mode switch) and 010 (the simulator).
 
 **Status**: Draft. The owner decided the shape (D1-D7), answered Q1-Q4 (D8-D11 below) Q-D (D12) and, in one ruling, Q-A, Q-B and Q-C (D13; Q-A still pending Paco and Ruben). Real probes ran on Claude Code, Codex
 and, for Copilot, one autopilot turn capped at 30 AI credits (T090), then longer runs on all three apps with a question,
-several continuations and Stop at the limit (T093, *Evidence*). Nothing is built.
+several continuations and Stop at the limit (T093, *Evidence*). Phase 1 (the core, the types and the event guard) is built; no adapter, IPC or window yet.
 
 **Input**: Owner (Vikram, Telegram DM, 2026-10-31 10:43 UTC): "I go with your suggestions except spend cap as mandatory, have it
 optional", answering the coordinator's proposal for an Autopilot mode.
@@ -251,11 +251,10 @@ the cap is reached, the run ends with **cap**. Without a cap, the dialog says pl
   - **On**: the Allow all launch (`bypassPermissions`, unchanged).
   - **Send**: each message on Autopilot is sent as the user message `/goal <text>`. The CLI answers "Goal set: …" and starts on
     the condition by itself.
-  - `<text>` is the user's message (S2), with each run of control characters other than newline replaced by a space. A message
-    over 4000 characters gets a warning in the composer, and the user may still send it: "Goals this long were not checked on Claude Code." (D13; it was a refusal.)
+  - `<text>` is the user's message (S2), with each run of control characters other than newline replaced by a space. Hidden characters (bidi marks, tag characters, zero-width space; not ZWNJ or ZWJ) are removed, U+2028/9 become newlines, and text with no visible character is empty. Durbar **refuses with a visible reason**, never sending: empty text (all apps); on Claude Code a text that is only `clear`, `stop`, `off`, `reset`, `none` or `cancel` (trimmed, any case: the CLI clears the goal on these), a text over 4000 trimmed characters (the CLI's own limit, `read:` 2.1.316: it answers in plain text, which could read as done), and a line shaped like a slash command, `/word` with no further `/` in that word (it could run a second command; a safe default: `/usr/bin/env is broken` passes, `/tmp is full` is refused). See *Changes* 2026-10-31 (review of 716acc3b).
   - `real:` 2026-10-31: `/goal` works under `--setting-sources "" --strict-mcp-config`.
-  - `[KNOWN GAP]`: whether newlines inside the condition survive (the probes used one line); the 4000-character warning is
-    Durbar's own choice, not a documented CLI limit, and what the CLI does with a longer goal is not checked (a refusal shows as an error).
+  - `[KNOWN GAP]`: whether newlines inside the condition survive (the probes used one line); the 4000-character limit and the reserved words are the CLI's own (`read:` 2.1.316 binary, not run), and
+    whether such a line really runs a second command is not checked: it is refused as the safe default.
 - **FR-012** **Codex.**
   - **On**: the Allow all thread settings (unchanged; from the next message, FR-144).
   - **Send**: `thread/goal/set {threadId, objective: <text>, tokenBudget: <cap or null>, origin: 'user'}` **instead of**
@@ -630,7 +629,7 @@ Each recommendation is the reviewer's (rubenlupi, review of PR #923 at `dfe6428e
   - **Every number checked against the principle** (a hard limit stays only if it protects user data or is an organization rule). **Changed**:
     - run limit 1-20: now default 5, a warning above 20, technical bound 1-1000, never off (FR-021, T011, T012);
     - backstop time 2 hours: a raisable default, technical bound 1-168 hours, never off (FR-021);
-    - goal text 4000 characters on Claude Code: a warning, not a refusal (FR-011, T012).
+    - goal text 4000 characters on Claude Code: a warning, not a refusal (FR-011, T012); adjusted the same day to a refusal with a reason because the CLI itself refuses it (*Changes*, review of 716acc3b, awaiting owner review).
   - **Kept, with why**:
     - run limit default 5: a default the person can raise;
     - backstop turn counts `100 × (limit + 1)` and Codex `limit + 1`: a safety bound against a changed app, not a money limit, and they grow with the person's limit;
@@ -645,3 +644,9 @@ Each recommendation is the reviewer's (rubenlupi, review of PR #923 at `dfe6428e
     - `empty` and `reserved` goal text: not limits, the message would do something else (`/goal clear`, a bare `/goal`).
   - **Warnings, new**: more than 3 sessions on Autopilot at once, proposed (FR-072).
   - **Spec 044's new FRs** (FR-180..FR-184) hold no number. Stored `autopilot` refused and no Autopilot on a loop are held or open for the owners, not limits on money. The 10,000 character prompt limit is an older owner decision, not in these FRs, and is not changed.
+- **2026-10-31 (Phase 1 built, T010-T014; review of 716acc3b applied; choices awaiting owner review, none is an owner decision)**: `src/adapters/autopilot.ts`, the types, `eventguard`, `scripts/test-autopilot.ts`. No adapter, IPC or UI; no descriptor reports `autopilot`.
+  - `AgentInfo.autopilot.run` is `{continuation, startedAt}` as FR-002 has it (the plan said `n`; plan brought into line).
+  - **Goal text** (FR-011) **adjusts D13's application, awaiting owner review**: a goal over 4000 trimmed characters on Claude Code is **refused with a reason**, not warned. The CLI answers it in plain text and sends nothing, which could read as done; this is the app's own limit, like Copilot's 30 AI credits, not a limit Durbar adds. `empty` is refused on every app; `reserved` and the 4000 limit apply on Claude Code only (and with no app named, the strictest rules). Reserved: `clear`, `stop`, `off`, `reset`, `none`, `cancel`, trimmed and case-insensitive (`read:` CLI 2.1.316 binary). A line shaped like a slash command (`/word`, no further `/` in that word, after hidden characters are removed) is refused on Claude Code: reading cannot exclude that it runs a second command (a safe default, awaiting review; the first wording refused any line starting with `/`, which was too broad). Hidden characters are removed with `HIDDEN_ALL_RE` (`src/shared/names.ts`) plus LRM, RLM, ALM, U+206A-F and tag characters, joiners kept; U+2028/9 become newlines; a goal with no visible character is `empty`.
+  - **Event guard** (T011): the machine never emits `n` above `limit`, so the guard is as tight as the machine: `started` n 0, `continued` n 1 to `limit`, `ended` n 0 to `limit`, `spend` on `ended` only, a `runId` of letters, digits and `._:-`. (An earlier draft of this entry allowed `limit + 1`; that was wrong.)
+  - **`AutopilotRun`**: `halt` is called for every end reason, `done` included (FR-041). The guard is armed from the moment of the end until the newest `halt` is confirmed (FR-054); a continuation after the end, confirmed or not, repeats `halt` and is not counted (a later continuation after a confirmed stop means the app is still going). Backstop time counts only forward clock steps between samples, and a clock reading that is not a number ends the run as `error` (fail closed). The core owns no timer: the adapter calls `checkElapsed()` at least every `CLOCK_SAMPLE_MS` (60 s). `[KNOWN GAP]`: a step back between two samples still delays the end by its size; a backstop of turns takes `backstopPer`: 100 by default, 1 for Codex (`limit + 1`, FR-021). Hours 1-168 may be fractional.
+  - `isClaudeContinuation` refuses `isSidechain: true` too, and reads `isSynthetic` at the top level of the stream message, counts a marker in any text block, and treats a null `agentId` or `parent_tool_use_id` as the main stream; the probe's exact placement of `isSynthetic` is not checked (`[KNOWN GAP]`, T091).

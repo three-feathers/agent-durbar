@@ -1,6 +1,7 @@
 import { ALLOWED_BY_KEYS_MAX } from './types';
 import { isObj } from '../shared/guards';
 import { cleanSandboxState } from '../shared/sandbox';
+import { isAutopilotEnd, isSpendUnit, MAX_LIMIT, validLimit, validRunId } from './autopilot';
 /**
  * A runtime check of normalized events (spec 010 FR-010, T023): what every producer (the real adapters, the simulator) must send
  * so the renderer can rely on it. Pure; returns the problems found (none = valid). Shared by the simulator contract test and the
@@ -11,7 +12,7 @@ const optStr = (v: unknown): boolean => v === undefined || typeof v === 'string'
 const optNum = (v: unknown): boolean => v === undefined || (typeof v === 'number' && Number.isFinite(v) && v >= 0);
 const oneOf = (v: unknown, xs: readonly string[]): boolean => typeof v === 'string' && xs.includes(v);
 
-export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'usageLimit', 'retry', 'title', 'agentSchedule', 'remote', 'plan', 'sandbox'] as const;
+export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'usageLimit', 'retry', 'title', 'agentSchedule', 'remote', 'plan', 'sandbox', 'autopilot'] as const;
 const RETRY_REASONS = ['rate-limit', 'overloaded', 'server', 'network', 'timeout', 'auth', 'other'] as const;
 const STATUSES = ['idle', 'working', 'needs-permission', 'error', 'stopped'] as const;
 /** Spec 058 FR-180: the values of `McpServerStatus.signInEnd`. */
@@ -58,6 +59,33 @@ function editProblems(x: unknown): string[] {
   });
   if (x.partial !== undefined && typeof x.partial !== 'boolean') out.push('toolCall.edit.partial is not a boolean');
   if (!optNum(x.more)) out.push('toolCall.edit.more is not a number');
+  return out;
+}
+
+/**
+ * Spec 099 FR-081, T011: an `autopilot` event, as `AutopilotRun` emits it: a `limit` of 1 to 1000; `n` a whole number that is 0 on `started`,
+ * 1 to `limit` on `continued` and 0 to `limit` on `ended`; a known `reason` on `ended` only; `spend` on `ended` only; a bounded `runId` of safe characters.
+ */
+function autopilotProblems(e: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  const phase = e.phase;
+  if (!oneOf(phase, ['started', 'continued', 'ended'])) out.push(`autopilot.phase ${String(phase)}`);
+  if (!validRunId(e.runId)) out.push('autopilot.runId missing, too long or not plain');
+  const limitOk = validLimit(e.limit);
+  if (!limitOk) out.push(`autopilot.limit is not a whole number from 1 to ${MAX_LIMIT}`);
+  if (!(typeof e.n === 'number' && Number.isInteger(e.n) && e.n >= 0 && e.n <= MAX_LIMIT)) out.push(`autopilot.n is not a whole number from 0 to ${MAX_LIMIT}`);
+  else {
+    if (phase === 'started' && e.n !== 0) out.push('autopilot.n is not 0 on started');
+    if (phase === 'continued' && e.n < 1) out.push('autopilot.n is below 1 on continued');
+    if (limitOk && e.n > (e.limit as number)) out.push('autopilot.n is above limit');
+  }
+  if (phase === 'ended') {
+    if (!isAutopilotEnd(e.reason)) out.push('autopilot.reason missing or unknown on ended');
+  } else if (e.reason !== undefined) out.push(`autopilot.reason on phase ${String(phase)}`);
+  if (e.spend !== undefined) {
+    if (phase !== 'ended') out.push(`autopilot.spend on phase ${String(phase)}`);
+    if (!isObj(e.spend) || !isSpendUnit(e.spend.unit) || !(typeof e.spend.value === 'number' && Number.isFinite(e.spend.value) && e.spend.value >= 0)) out.push('autopilot.spend malformed');
+  }
   return out;
 }
 
@@ -154,7 +182,11 @@ export function eventProblems(e: unknown): string[] {
       if (!str(e.requestId) || !e.requestId) out.push('question.requestId missing');
       if (e.phase === 'asked' && (!Array.isArray(e.questions) || !e.questions.length || e.questions.some((q) => !isObj(q) || !str(q.question) || !Array.isArray(q.options)))) out.push('question.questions malformed');
       if (e.elicitation !== undefined && (!isObj(e.elicitation) || !str(e.elicitation.message) || !(Array.isArray(e.elicitation.fields) || str(e.elicitation.url)))) out.push('question.elicitation malformed');
+      if (e.autoAnswered !== undefined && e.autoAnswered !== true) out.push('question.autoAnswered is not true'); // spec 099 FR-081
       if (e.elicitAction !== undefined && !oneOf(e.elicitAction, ['accept', 'decline', 'cancel'])) out.push(`question.elicitAction ${String(e.elicitAction)}`);
+      break;
+    case 'autopilot':
+      out.push(...autopilotProblems(e));
       break;
     case 'plan':
       if (!oneOf(e.phase, ['proposed', 'resolved'])) out.push(`plan.phase ${String(e.phase)}`);

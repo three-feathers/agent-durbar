@@ -92,6 +92,7 @@ export const SIM_OPTIONAL_MEMBERS: Readonly<Record<string, ((c: Caps) => boolean
   handoffSummary: (c: Caps) => !!c.handoff,
   generateText: (c: Caps) => !!c.oneShot,
   setRemote: (c: Caps) => !!c.remote,
+  setAutopilot: (c: Caps) => !!c.autopilot, // spec 099 FR-001
   renameSession: (c: Caps) => !!c.renameSession,
   deleteSession: (c: Caps) => !!c.deleteSession,
   startMcpSignIn: (c: Caps) => !!c.mcpSignIn,

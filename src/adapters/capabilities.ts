@@ -80,6 +80,12 @@ export interface AdapterCapabilities {
   readonly osSandbox?: boolean;
   /** Spec 030 FR-040: how `setModel` behaves: `verified` = checked on a real account (else the UI says it is not), `contextTier` = a long-context tier can be chosen. Missing = not verified, tier offered (the Copilot default before this field). */
   readonly modelSwitch?: Readonly<{ verified: boolean; contextTier: boolean }>;
+  /**
+   * Spec 099 FR-001: `setAutopilot()` exists: the app can keep going on its own goal loop under Allow all. Missing = no Autopilot, never offered.
+   * `capUnit` is the unit of the optional spend cap (`null`: none possible); `attachments`: the Autopilot send takes attachments (D10);
+   * `planApproval`: the plan card may offer Autopilot (FR-060); `verified`: true only after a real run is recorded in the spec.
+   */
+  readonly autopilot?: Readonly<{ capUnit: 'aiu' | 'usd' | 'tokens' | null; attachments: boolean; planApproval: boolean; verified: boolean }>;
 }
 
 /** Where an adapter stands on this machine (spec 012 FR-030). `unknown` also covers a detect that failed. */

@@ -16,14 +16,14 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group; FR-007, FR-008, FR-009
 
 ## Phase 1: Core and types (PR `099-p1-core`)
 
-- [ ] T010 `AdapterCapabilities.autopilot` (with `attachments`, D10), `AutopilotSettings`, `setAutopilot?`, the `autopilot` event, `question.autoAnswered`,
+- [x] T010 `AdapterCapabilities.autopilot` (with `attachments`, D10), `AutopilotSettings`, `setAutopilot?`, the `autopilot` event, `question.autoAnswered`,
   `AgentInfo.autopilot` (`capabilities.ts`, `types.ts`, `src/shared/api.ts`) [FR-001, FR-002, FR-081]
-- [ ] T011 `eventguard` accepts and bounds the `autopilot` event (`n` 0-1000, `limit` 1-1000, the technical bound of FR-021, a known reason) + test [FR-081]
-- [ ] T012 `src/adapters/autopilot.ts`: `AutopilotRun` (count, limit, end once, no-progress counter), `AUTOPILOT_ANSWER`,
+- [x] T011 `eventguard` accepts and bounds the `autopilot` event (`limit` 1-1000, the technical bound of FR-021, `n` 0 to `limit` as the run emits it, a known reason, a plain `runId`) + test [FR-081]
+- [x] T012 `src/adapters/autopilot.ts`: `AutopilotRun` (count, limit, end once, no-progress counter), `AUTOPILOT_ANSWER`,
   `goalText`, `isClaudeContinuation`, `codexGoalEnd` + `scripts/test-autopilot.ts`. Test lines: stop at exactly
-  `limit + 1`; a second end is ignored; a limit of 21 and of 1000 accepted, 0 and 1001 refused, none means the default of 5, and it cannot be turned off; control characters; over 4000 characters flagged, not refused; every Codex status [FR-020, FR-021, FR-030, FR-040]
-- [ ] T013 `package.json`: `test:autopilot` in the `npm test` list
-- [ ] T014 `AutopilotRun`: the backstop (a second counter and elapsed time from an injected clock, 2 hours by default, raisable, 1-168 hours, ending with `error`), and the guard that stays armed after a failed stop or clear + `scripts/test-autopilot.ts`. Test lines: the marker never comes and the run still ends; exactly at each bound; the guard interrupts a later continuation [FR-021, FR-054, SC-003]
+  `limit + 1`; a second end is ignored; a limit of 21 and of 1000 accepted, 0 and 1001 refused, none means the default of 5, and it cannot be turned off; control characters; over 4000 characters on Claude Code refused with a reason, with `clear`, `stop`, `off`, `reset`, `none`, `cancel` and a line starting with `/`; every Codex status [FR-020, FR-021, FR-030, FR-040]
+- [x] T013 `package.json`: `test:autopilot` in the `npm test` list
+- [x] T014 `AutopilotRun`: the backstop (a second counter and elapsed time from an injected clock, 2 hours by default, raisable, 1-168 hours, ending with `error`), and the guard that stays armed after a failed stop or clear + `scripts/test-autopilot.ts`. Test lines: the marker never comes and the run still ends; exactly at each bound; the guard interrupts a later continuation [FR-021, FR-054, SC-003]
 
 ## Phase 2: Adapters (PR `099-p2-adapters`)
 
@@ -40,12 +40,12 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group; FR-007, FR-008, FR-009
   order, attachments sent with `agentMode`, the broker still answering permissions (no `setApproveAll`); capability
   `{capUnit: 'aiu', attachments: true, planApproval: true, verified: false}`. Continuations counted from `isAutopilotContinuation` behind a small
   function (T090)
-  [FR-010, FR-020-FR-022, FR-030, FR-040, FR-050]
+  `halt('done')` keeps Copilot's mode (D8), so a repeated halt would not stop it: the adapter's `halt` does a real stop (`mode.set interactive`, `abort`) for a continuation after done. [FR-010, FR-020-FR-022, FR-030, FR-040, FR-050]
 - [ ] T023 [P] FR-006: an app entering its own autopilot or goal without Durbar is switched back and said in the chat, for each
   adapter + tests [FR-006]
 - [ ] T024 Clear first on every resume and relaunch (Codex mode-switch relaunch and Claude `--resume` included), before anything is sent. Fake adapter tests per app: the clear comes first in the recorded order; a failed clear sends nothing [FR-005, FR-052, FR-053]
-- [ ] T025 A stop or clear that fails: RPC error, dead child, `/goal clear` not acknowledged. Fake adapter tests per app: the guard interrupts a later continuation, the session is ended after the wait, the chat says so, the next message clears first [FR-041, FR-050, FR-054]
-- [ ] T026 Feed the backstop per app, and tell a typed Codex message from a continuation by its `turn/start` id. Fake adapter tests per app with the marker removed: the run ends with `error`; Claude's `num_turns` over the bound reports `error`, not done; Codex: a typed message is not counted, a `turn/started` before its reply is held, a failed reply counts [FR-020, FR-021, FR-040, FR-058]
+- [ ] T025 A stop or clear that fails: RPC error, dead child, `/goal clear` not acknowledged. Fake adapter tests per app: the guard interrupts a later continuation, the session is ended after the wait, the chat says so, the next message clears first The core repeats `halt` for every continuation after an end, so each adapter's `halt` must really stop the app when repeated after `done` (Copilot: not just keep its mode). [FR-041, FR-050, FR-054]
+- [ ] T026 Feed the backstop per app, and tell a typed Codex message from a continuation by its `turn/start` id. Fake adapter tests per app with the marker removed: the run ends with `error`; Claude's `num_turns` over the bound reports `error`, not done; Codex: a typed message is not counted, a `turn/started` before its reply is held, a failed reply counts Codex passes `backstopPer: 1` to `AutopilotRun` (an omitted value gives 100, which is Copilot's and Claude Code's); every adapter calls `checkElapsed()` at least every `CLOCK_SAMPLE_MS` from its own timer (the core owns none; a step back between two samples is a `[KNOWN GAP]`). [FR-020, FR-021, FR-040, FR-058]
 - [ ] T027 Cap scope per app: the lower wins, a higher value never loosens, a value at or below what was spent is refused, restored after every end (a failed restore leaves the tighter cap), a cap change during a run follows FR-022, nothing reaches `store.setMaxAiCredits`. Fake adapter tests [FR-022]
 - [ ] T028 Helpers: helper and sub-agent events do not count toward either bound, a helper gets no goal and no `autopilot` state, a new session opened from this one is not on Autopilot. Fake adapter test [FR-008]
 
