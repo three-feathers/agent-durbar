@@ -240,6 +240,7 @@ A spec author fills the template's *Experience* line: "tool surface", or "world 
 
 ## Changes
 
+- 2026-11-01 (sweep of the build): **FR-056**: a moment's root that is on the page but hidden (`display:none`, also from a parent, or `visibility:hidden`) counts as not found, so it always fails: with nothing visible to check it passed as clean.
 ### 2026-10-31: strict release gate (owner decision, Q1)
 
 Vikram (Telegram DM, 2026-10-31 10:27 UTC): "design all 9, I don't want partly done ui". Real office ships only when every registered world moment is `designed` in each world that ships; `fallback-flat` is not allowed for a shipping world. FR-024, D3, US1, SC-001, Q1 and tasks T010, T032, T033 updated. No code yet.
