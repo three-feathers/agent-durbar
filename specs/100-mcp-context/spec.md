@@ -3,15 +3,15 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: MCP context cost (owner 2026-10-31): each MCP server's tool-definition tokens (the agent app's own figure where it reports one, else estimated) in the MCP chip and dialogs, a calm warning at 15 % / 30 % of the session's window naming the heaviest servers, a compaction hint, never changes anything by itself
-status: draft
-note: spec, research, plan and tasks only; Q1-Q6 decided by the owner 2026-10-31; nothing built
+status: building
+note: phases 1-3 built, unit tests, fakes and simulator; real check T031 and the per-folder off T032 to do
 -->
 
 **Feature Branch**: `100-mcp-context` (spec); code branches `100-pN-slug`, one per phase
 
 **Created**: 2026-10-31
 
-**Status**: Draft. Nothing is built. Q1-Q6 decided by the owner 2026-10-31 (*Clarifications*).
+**Status**: Building. Phases 1-3 are built and checked with unit tests, fakes and the simulator (`test:mcpcost`, `test:mcpcontextop`, the adapter tests, `sim:` `shots-100-mcp-context`); `[KNOWN GAP]` `real:` no real session has run them (T031, needs an owner's OK). Q1-Q6 decided by the owner 2026-10-31 (*Clarifications*).
 
 **Input**: Owner (Vikram, Telegram 2026-10-31 11:16 UTC): "I had an issue this week, I selected 200k context on Claude opus and it
 compacted like 200 times in a session. And then realized that majority was taken by MCP servers in the context - can you raise warning
@@ -101,8 +101,8 @@ and "Off". Kept in Durbar's settings.
 - **Window unknown** (before the first message on Claude and Codex): the figure shows in tokens, no percentage and no warning until the
   window is known; the share is then computed once.
 - **1M window**: the same percentages; the line also shows the absolute tokens so a large but small-share cost is still visible.
-- **Tool search on** (Claude Code, Copilot `deferTools: auto`): deferred tools count with their reported (small) cost, and the dialog
-  says "loaded on demand". A warning on Claude Code with tool search on is therefore rare, which is correct.
+- **Tool search on** (Claude Code, Copilot `deferTools: auto`): deferred tools are not in the window and not in the share; the dialog
+  says "loaded on demand" with the figure the agent app reports for them (spec *Changes* 2026-10-31). A warning on Claude Code with tool search on is therefore rare, which is correct.
 - **Model or tier change** (spec 030): the share is recomputed against the new window when it is reported.
 - **Sub-agents**: only the main agent's window counts (as the context ring).
 - **Servers switched on or off live**: the figure is asked again after the agent app reports the new list (spec 058 FR-190 refresh).
@@ -130,7 +130,7 @@ and "Off". Kept in Durbar's settings.
 - **FR-003** When asked: once after the session's servers are first reported loaded, after any MCP switch or restart in that session,
   after a model or tier change, and when the per-agent MCP dialog opens (at most once a minute per session, as spec 058 FR-190). Never
   on a timer, never while a turn streams on Claude Code if the control channel is busy (queued to the turn's end). Time limit 10 s.
-- **FR-004** Main holds the last report per agent in memory. Only server names, token numbers and the time persist (decided Q3); tool names,
+- **FR-004** Main holds the last report per agent in memory. Only server names, token numbers and the time persist (decided Q3), in their own file `durbar-mcp-costs.json`, never in the server store; tool names,
   descriptions and schemas are never stored or logged. Server names pass the existing masking (`maskMcpError`) where shown in text.
 
 ### Showing
@@ -148,7 +148,7 @@ and "Off". Kept in Durbar's settings.
 ### Warning
 
 - **FR-020** Levels: warn above 15 %, strong above 30 % of the window (defaults, decided Q1); configurable 5-90 % in Settings, or off. The
-  share uses only the tokens in the window (deferred tools count at their reported cost).
+  share uses only the tokens in the window: deferred tools are left out (spec *Changes* 2026-10-31, `read:` Claude Code 2.1.316; `[KNOWN GAP]` `real:` T031).
 - **FR-021** Chip colour: amber at warn, red at strong; level also in the name and tooltip.
 - **FR-022** One chat line per session at the first crossing (session start included: shown with the first figure), calm style
   (`note info`, the existing compaction-line look), naming at most the three heaviest servers with their figures, and actions:
@@ -170,8 +170,8 @@ and "Off". Kept in Durbar's settings.
 
 - **FR-040** Only server names and numbers reach the window; no env, header, URL, command, or secret value; no tool schema is stored.
 - **FR-041** Read-only mode: same behaviour; the actions change Durbar's MCP choices only (as today's switch).
-- **FR-042** No credits: the Copilot attribution and Claude `summary` reads make no model call (`read:`); Claude `full` is not used
-  (decided Q2). The simulator and unit tests cover the feature; a real check needs the owner (`[KNOWN GAP]` until run).
+- **FR-042** `[KNOWN GAP]` `real:` to do (T031). No credits: the Copilot attribution and Claude `summary` reads make no model call (`read:`); Claude `full` is not used
+  (decided Q2). The simulator and unit tests cover the feature; a real check needs the owner.
 - **FR-043** Adapter-neutral: vendor calls stay in adapters; `src/shared` and the renderer see `McpContextReport` only.
 - **FR-044** `[KNOWN GAP]` Codex figures are estimates only, and whether Codex defers MCP tools is unknown. Copilot's call is
   experimental and may be missing on some plans, a primary-case risk: then "not reported by Copilot" shows, never an estimate. Claude `summary` figures are Claude Code's own estimates.
@@ -190,7 +190,7 @@ All decided by the owner on 2026-10-31 (Telegram 11:25 UTC: "Agree on all, mine 
 
 - **Q1 Levels**: warn at 15 %, strong at 30 % of the window, configurable or off (FR-020).
 - **Q2 Claude Code `detail`**: `summary`; `full` only behind a "Measure exactly" button in a later spec (FR-001, FR-042).
-- **Q3 Persist the last figures**: yes, server names, numbers and time only, in the MCP store file (FR-004, FR-012).
+- **Q3 Persist the last figures**: yes, server names, numbers and time only (FR-004, FR-012). The owner said "in the MCP store file"; built as a file of its own beside it (spec *Changes* 2026-10-31).
 - **Q4 Copilot fallback**: "not reported by Copilot"; no estimate from `listTools` (FR-001, FR-024).
 - **Q5 Measure before a session**: no; Durbar never starts servers itself to measure (FR-012).
 - **Q6 "Turn off for this folder"**: for global servers, a small follow-up spec delta to
@@ -199,5 +199,15 @@ All decided by the owner on 2026-10-31 (Telegram 11:25 UTC: "Agree on all, mine 
 
 ## Changes
 
+- 2026-11-01 (sweep of the build): **FR-020, FR-024**: after a model change, a report measured under the old model gives no window, so the share shows nothing until the new window is known; a new report's own window counts again. **FR-012**: a read that times out keeps only the servers still loaded, as a failed read does, so a switched-off server does not stay in the warning.
+- 2026-10-31 (found by review of the build): the bad-read overwrite named under **Q3, FR-004** is fixed in the store's own spec: [019](../019-mcp-tools-and-context/spec.md), change of 2026-10-31. Nothing in spec 100 changes.
+- 2026-10-31 (build, awaiting the owner's review): **FR-003**: Copilot's `getContextAttribution` returns `null` until the session has initialised, and SC-001 wants the figure with the first context figure. A first ask that brought no figure is asked again **once**, on the next `context` event; never on a timer. A coordinator's choice, not yet the owner's.
+- 2026-10-31 (build, awaiting the owner's review): **FR-020, deferred tools**: `read:` Claude Code 2.1.316's program: `get_context_usage` gives an unloaded tool its **full** definition size in `tokens` (`isLoaded: false`) and its own `mcpToolTokens` leaves those out. So "deferred tools count at their reported cost" would warn about tokens that are not in the window. The share counts only `tokens`, as FR-020's first sentence says; `deferredTokens` shows as "loaded on demand" and is never in the share. `[KNOWN GAP]` `real:` to do (T031).
+- 2026-10-31 (build): **FR-001, Copilot parents**: the SDK types do not say whether an `mcpServer` entry's `tokens` already hold its children's (the runtime is not readable with a plain search). So as not to double count, a server's figure is the larger of its own and its children's sum, not their sum. `[KNOWN GAP]` `real:` to do (T031).
+- 2026-10-31 (build): **FR-012** has no task of its own; it is built under T020.
+- 2026-10-31 (review of the build, awaiting the owner's review): **Q3, FR-004**: the figures live in `durbar-mcp-costs.json`, not in the MCP store file. The store loads as empty when it cannot be read, and figures are written with no user action, so they would have overwritten a truncated or oversize store (folder servers and the secrets vault). Names, numbers and the time only, as decided.
+- 2026-10-31 (reviews of the build): `058-mcp-settings-*` retaken by the drivers and looked at, at 1440x900 and 1280x800: the new Settings section is not in those frames, so the linked pictures stay. A failed read keeps the last figures only for servers still loaded. A name holding a session secret gets no list mark.
+- 2026-10-31 (second review of the build): **FR-001, FR-012**: a failed read (a time-out, an error, an app not ready) keeps the last figures; only a real answer replaces them. **FR-012**: a figure goes only when it was on its app's own user list and that list, read completely, no longer has it, or when the last folder holding that extra removes it; runtime, built-in and project servers have no such list, so theirs stay, dated, until the 200 cap. **FR-004**: names are masked on a copy without invisible characters and shown as written when nothing was masked; a row finds its figure by a salted key of this run, never by the shown name.
+- 2026-10-31 (review of the build): **FR-003**: a restart goes through `pending`; any change of the running servers asks. A server stuck `pending` no longer holds the ask back: the first figure comes with the others, that server reads "size not known" and the figure "at least" (FR-024). **FR-001**: Copilot's `categories.mcpTools` is a floor under the servers' sum (a max, never added).
 - 2026-10-31: owner answers recorded (Q1-Q6, Copilot is the primary case); FRs and tasks updated.
 - 2026-10-31: spec, research, plan and tasks drafted (owner report of 2026-10-31).

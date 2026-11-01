@@ -2201,6 +2201,22 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 .nt-selbtn:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
 .nt-selbtn[hidden]{display:none}
 .cp-btn,.nt-btn,.nt-mark{user-select:none;-webkit-user-select:none}
+/* spec 100: MCP tool definitions in the context window (FR-010, FR-011, FR-012, FR-021, FR-022); text at least 10.5px */
+.ctoolbar .ct-mcpk{white-space:nowrap;font-size:var(--t5-size)}
+.ctoolbar.ct-tight .ct-mcpk{display:none}
+.ctoolbar .mchip.mcp-warn,.ctoolbar .mchip.mcp-warn:hover{background:var(--warn-bg);border-color:var(--tone-warn-line);color:var(--amber-ink)}
+.ctoolbar .mchip.mcp-strong,.ctoolbar .mchip.mcp-strong:hover{background:var(--bad-bg);border-color:var(--tone-bad-line);color:var(--red-ink)}
+.note.info.mcp-line{display:block;background:var(--warn-bg);border-color:var(--tone-warn-line)}
+.note.info.mcp-line.mcp-strong{background:var(--bad-bg);border-color:var(--tone-bad-line)}
+.mcp-acts{display:inline-flex;flex-wrap:wrap;gap:2px 10px;margin-left:8px}
+.mcp-acts .linkbtn{font-size:12px}
+.mcp-cost{font-size:12px;color:var(--ink-2);white-space:nowrap}
+.mcp-total{margin-top:8px}
+.mcp-levels input[type=number]{width:56px}
+.mcp-off{display:inline-flex;align-items:center;gap:6px;font-size:13px}
+.mcp-off input{width:auto;margin:0}
+.mcp-costs{margin:6px 0 10px;padding:0;list-style:none;font-size:12px;color:var(--ink-2)}
+.mcp-costs li{padding:2px 0}
 
 
 /* Rearranging the office (spec 033 delta 2026-11-01, issue 677): while a drag runs, only transform and opacity change; nothing moves in the layout. */

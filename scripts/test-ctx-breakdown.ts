@@ -15,7 +15,7 @@ type Bar = { key: string; label: string; tokens: number; share: number };
 type Sum = { known: boolean; tokens?: number; limit: number; pct: number | null; level: string; bars: Bar[]; note: string; tip: string; name: string };
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const B = require(path.join(ROOT, 'src', 'renderer', 'ctxbreakdown.js')) as {
-  summary: (ctx: unknown, o?: { limit?: number; app?: string; waiting?: boolean }) => Sum;
+  summary: (ctx: unknown, o?: { limit?: number; app?: string; waiting?: boolean; mcp?: { tokens: number; estimated?: boolean } }) => Sum;
 };
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const S = require(path.join(ROOT, 'src', 'renderer', 'toolstats.js')) as { createStats: () => { setContext: (id: string, e: unknown) => void; agent: (id: string) => { ctx: unknown } } };
@@ -133,6 +133,18 @@ t('shares of the used total when the window is unknown; junk parts are ignored',
   const nan = B.summary({ tokens: 1000, limit: 2000, system: NaN, conversation: Infinity });
   assert.deepStrictEqual(nan.bars, []); assert.strictEqual(nan.note, 'Breakdown not reported by this agent app.');
   assert.strictEqual(B.summary({ tokens: -1, limit: 10 }).known, false, 'a negative total is not a figure');
+});
+
+t('spec 100 FR-013: the MCP tools bar; inside Tool definitions, so the other parts do not change; labelled as estimated', () => {
+  const s = B.summary({ tokens: 100_000, limit: 200_000, system: 10_000, toolDefinitions: 50_000, conversation: 20_000 }, { mcp: { tokens: 40_000, estimated: false } });
+  assert.deepStrictEqual(keys(s), ['system:10000', 'toolDefinitions:50000', 'conversation:20000', 'other:20000', 'mcp:40000'], 'the sum for Other leaves it out');
+  const bar = s.bars.find((b) => b.key === 'mcp');
+  assert.deepStrictEqual([bar?.label, bar?.share], ['MCP tools', 20]);
+  assert.strictEqual(B.summary({ tokens: 100, limit: 1000 }, { mcp: { tokens: 50, estimated: true } }).bars[0].label, 'MCP tools (estimated)');
+  const only = B.summary({ tokens: 100, limit: 1000 }, { mcp: { tokens: 50 }, app: 'Codex' });
+  assert.strictEqual(only.note, 'Breakdown not reported by Codex.', 'a total-only app still says so');
+  assert.deepStrictEqual(B.summary({ tokens: 100, limit: 1000 }, { mcp: { tokens: NaN } }).bars, [], 'a bad figure: no bar');
+  assert.deepStrictEqual(B.summary({ tokens: 100, limit: 1000 }).bars, [], 'no report: no bar');
 });
 
 console.log(`ctxbreakdown: ${n} checks passed`);

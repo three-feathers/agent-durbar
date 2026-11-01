@@ -38,8 +38,9 @@ import { PermissionBroker, isInsideRoots, mcpToolBlockList, startModeOf } from '
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
 import type { AgentProfile, PlanAnswer, SlashCommand, SlashExpansion } from './types';
-import type { McpSignInResult, McpToolInfo } from './types';
+import type { McpContextReport, McpSignInResult, McpToolInfo } from './types';
 import { normMcpTools } from './mcptools';
+import { copilotMcpContext } from './mcpcontext';
 import { copilotHomeDir, copilotSlashPlaces, SlashCache, vscodeUserPromptDirs } from './slashcommands';
 import type { SlashPlace } from './slashcommands';
 import { cleanPlanText } from './plan';
@@ -211,6 +212,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToggleApplies: 'live', // spec 019 (real: mcp.enable/disable)
   mcpToolFilter: true, // spec 069 FR-062: session excludedTools (read: SDK types; not run on a real account)
   mcpTools: true, // spec 069 FR-031: rpc.mcp.listTools (@experimental; read: SDK 1.0.22-1.0.26 rpc.d.ts; not run on a real account)
+  mcpContext: 'reported', // spec 100 FR-001: rpc.metadata.getContextAttribution (@experimental; read: SDK 1.0.22 rpc.d.ts; not run on a real account, T031)
   mcpRestart: true, // spec 058 FR-012: rpc.mcp.restartServer (@experimental; real 2026-10-21, runtime 1.0.22), else disable then enable (fallback read: only)
   mcpSignInAgain: true, // spec 058 FR-164: oauth.login forceReauth ("clears any cached OAuth token for the server and runs a full new authorization", read: SDK 1.0.22-1.0.26 rpc.d.ts; not run on a real account)
   mcpSignIn: true, // spec 058 FR-064: rpc.mcp.oauth.login (@experimental; read: SDK 1.0.22-1.0.26 rpc.d.ts; real: worked once, macOS 2026-10-23, one server; the rest in T105)
@@ -1731,6 +1733,17 @@ export class CopilotAdapter implements AgentAdapter {
       return normMcpTools(r?.tools);
     } catch (err) {
       throw new Error(sdkErrorText(err));
+    }
+  }
+
+  /** Spec 100 FR-001: the runtime's own attribution; a missing method, a failure or `null` (not initialised yet) is a report with no figures, never an estimate (decided Q4). */
+  async mcpContext(sessionId: string): Promise<McpContextReport> {
+    const metadata = this.sessions.get(sessionId)?.session.rpc.metadata as unknown as { getContextAttribution?: () => Promise<unknown> } | undefined;
+    if (typeof metadata?.getContextAttribution !== 'function') return { servers: [] };
+    try {
+      return copilotMcpContext(await metadata.getContextAttribution());
+    } catch {
+      return { servers: [], failed: true };
     }
   }
 

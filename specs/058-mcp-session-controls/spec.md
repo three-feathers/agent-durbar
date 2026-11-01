@@ -388,6 +388,10 @@ All answered by the owner: option A for each (see *Clarifications*). The options
 
 ## Changes
 
+### 2026-10-31: MCP context cost (spec 100)
+
+the per-agent MCP dialog's rows add each server's tokens and label, with a total and a footnote; a warning line in the chat opens this dialog with the heaviest server focused. Owned by [spec 100](../100-mcp-context/spec.md) FR-011, FR-022.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):

@@ -3,6 +3,7 @@
  * `npm run test:claudeadapter`. No claude, no account, no credits.
  */
 import * as assert from 'assert';
+import { McpContextTracker } from '../src/main/mcpcontextop';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -653,6 +654,9 @@ async function main(): Promise<void> {
     const sp = fakeSpawn();
     const reqs: Record<string, unknown>[] = [];
     let servers = [{ name: 'notes', status: 'failed', error: 'spawn notes ENOENT' }, { name: 'web', status: 'connected' }];
+    const usageReqs: Record<string, unknown>[] = []; // spec 100 T013
+    let usageMode: 'ok' | 'silent' | 'unknown' = 'ok';
+    let usageReply: unknown = {};
     sp.next = (c) => {
       c.onWrite = (o) => {
         if (o.type !== 'control_request') {
@@ -662,11 +666,17 @@ async function main(): Promise<void> {
         const r = o.request as { subtype: string; serverName?: string };
         if (r.subtype.startsWith('mcp_')) reqs.push(r);
         if (r.subtype === 'mcp_reconnect') servers = servers.map((x) => (x.name === r.serverName ? { name: x.name, status: 'connected' } : x));
+        if (r.subtype === 'get_context_usage') {
+          usageReqs.push(r);
+          if (usageMode === 'silent') return; // never answers: the time limit
+          if (usageMode === 'unknown') return void setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'error', request_id: o.request_id, error: 'Unsupported control request subtype: get_context_usage' } }), 0);
+          return void setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response: usageReply } }), 0);
+        }
         const response = r.subtype === 'mcp_status' ? { mcpServers: servers } : {};
         setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response } }), 0);
       };
     };
-    const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const ad = new ClaudeAdapter({ mcpContextTimeoutMs: 40, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
     assert.deepStrictEqual([ad.capabilities.mcpRestart, ad.capabilities.mcpStart, ad.capabilities.mcpToggleApplies, typeof ad.restartMcpServer], [true, 'next-message', 'live', 'function']);
     const ev: AgentEvent[] = [];
     ad.onEvent((e) => ev.push(e));
@@ -690,11 +700,45 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(reqs, [{ subtype: 'mcp_status' }], 'only mcp_status is asked');
     assert.deepStrictEqual(await ad.listMcpTools(sid, 'notes'), [], 'a server without tools in the reply: none');
     await assert.rejects(ad.listMcpTools(sid, 'gone'), /not running in this session/);
+    // spec 100 T013: get_context_usage, summary only; grouped per server, deferred apart, the window, a turn never disturbed
+    assert.strictEqual(ad.capabilities.mcpContext, 'reported');
+    usageReply = { rawMaxTokens: 200_000, maxTokens: 160_000, mcpTools: [
+      { name: 'mcp__web__fetch', serverName: 'web', tokens: 900, isLoaded: true },
+      { name: 'mcp__web__search', serverName: 'web', tokens: 100 },
+      { name: 'mcp__web__rare', serverName: 'web', tokens: 40_000, isLoaded: false },
+      { name: 'mcp__notes__read', serverName: 'notes', tokens: 50, isLoaded: true },
+    ] };
+    assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [{ name: 'web', tokens: 1000, deferredTokens: 40_000, tools: 3, source: 'reported' }, { name: 'notes', tokens: 50, deferredTokens: 0, tools: 1, source: 'reported' }], window: 200_000 });
+    assert.deepStrictEqual(usageReqs, [{ subtype: 'get_context_usage', detail: 'summary' }], 'summary, never full (decided Q2)');
+    usageMode = 'unknown';
+    assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [], failed: true }, 'a CLI that does not know the request: a failed read');
+    usageMode = 'silent';
+    assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [], failed: true }, 'a CLI that never answers: the time limit, a failed read');
+    usageMode = 'ok';
+    // finding 1, through the tracker: a failure after figures keeps them; a real empty list replaces them
+    {
+      let now = 0;
+      const t = new McpContextTracker({ agents: new Map([[sid, { id: sid } as never]]), router: { forAgent: () => ad } as never, secrets: () => [], live: () => [], off: () => new Set(), push: () => undefined, now: () => now });
+      assert.strictEqual((await t.get(sid, true)).report?.servers[0].name, 'web');
+      for (const mode of ['unknown', 'silent'] as const) {
+        usageMode = mode;
+        now += 61_000;
+        assert.strictEqual((await t.get(sid, true)).report?.servers[0].name, 'web', `${mode}: the last figures stay`);
+      }
+      usageMode = 'ok';
+    }
+    (ad as unknown as { sessions: Map<string, { turnOpen?: boolean }> }).sessions.get(sid)!.turnOpen = true;
+    usageReqs.length = 0;
+    assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [], busy: true }, 'during a turn: nothing asked, main asks at its end (FR-003)');
+    assert.strictEqual(usageReqs.length, 0);
+    (ad as unknown as { sessions: Map<string, { turnOpen?: boolean }> }).sessions.get(sid)!.turnOpen = false;
     await ad.stop(sid);
+    assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [], failed: true }, 'a stopped CLI is not started for it');
     // the SDK transport (dev opt-in) sends no mcp_reconnect: no Restart there (C2)
     const sdk = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, sdkTransport: true, claudePath: async () => '/usr/bin/claude', sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) } as never);
     assert.deepStrictEqual([sdk.capabilities.mcpRestart, typeof sdk.restartMcpServer], [undefined, 'undefined'], 'SDK transport: no restartMcpServer');
     assert.deepStrictEqual([sdk.capabilities.mcpTools, typeof sdk.listMcpTools], [undefined, 'undefined'], 'SDK transport: no listMcpTools (spec 069)');
+    assert.deepStrictEqual([sdk.capabilities.mcpContext, typeof sdk.mcpContext], [undefined, 'undefined'], 'SDK transport: no mcpContext (spec 100)');
     // spec 069 FR-062: the launch carries the turned-off tools into --disallowedTools
     const sp2 = fakeSpawn();
     const ad2 = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp2.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });

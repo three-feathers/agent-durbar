@@ -12,6 +12,9 @@
  */
 type AgentEvent = import('../adapters/types').AgentEvent;
 type McpServerStatus = import('../adapters/types').McpServerStatus;
+type McpContextReport = import('../shared/mcpcost').McpContextReport;
+type McpWarnLevels = import('../shared/mcpcost').McpWarnLevels;
+type McpContextView = import('../shared/api').McpContextView;
 type AgentInfo = import('../shared/api').AgentInfo;
 type DurbarApi = import('../shared/api').DurbarApi;
 type UpdatesView = import('../shared/api').UpdatesView;
@@ -1512,6 +1515,49 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const fakeLegacy: FakeSrv[] = [
       { name: 'old-fetch', transport: 'stdio', command: 'uvx', args: ['mcp-server-fetch'], enabled: false, trusted: false, env: [], headers: [], needsSecrets: false },
     ];
+    /* ---- spec 100 T017, T024: MCP figures as fixtures. Only with `simmcpctx=<scenario>` in the address (other pictures stay as they are), or a driver's `__durbarSimMcpCtx.set(id, report)`. Never an agent app call. ---- */
+    const simMcpCtxParam = simQs?.get('simmcpctx') ?? '';
+    const simMcpCostsOn = !!simMcpCtxParam;
+    const simFix = (window_: number | undefined, rows: [string, number][], o: Partial<McpContextReport> & { source?: 'reported' | 'estimated' } = {}): McpContextReport => {
+      const { source, ...rest } = o;
+      return { servers: rows.map(([name, tokens]) => ({ name, tokens, source: source ?? 'reported' })), ...(window_ ? { window: window_ } : {}), ...rest };
+    };
+    const SIM_MCP_FIX: Record<string, McpContextReport> = {
+      owner: simFix(200_000, [['github', 41_000], ['my-notes', 12_000], ['github-mcp-server', 9000]]), // the owner's case: 200k, 31 %
+      '10': simFix(200_000, [['github', 14_000], ['my-notes', 4000], ['github-mcp-server', 2000]]),
+      '20': simFix(200_000, [['github', 28_000], ['my-notes', 8000], ['github-mcp-server', 4000]]),
+      '35': simFix(200_000, [['github', 50_000], ['my-notes', 12_000], ['github-mcp-server', 8000]]),
+      '1m': simFix(1_000_000, [['github', 150_000], ['my-notes', 30_000], ['github-mcp-server', 20_000]]), // 20 % of 1M; fixtures name what main would keep, and main adds "unknown" and "at least" for a running server left out
+      notreported: { servers: [] }, // Copilot's call missing or null
+      nowindow: simFix(undefined, [['github', 28_000]]),
+      estimated: simFix(undefined, [['github', 26_000], ['my-notes', 8000], ['github-mcp-server', 4000]], { source: 'estimated' }), // Codex: no window of its own, as a real report (the context event gives it)
+      failed: { servers: [{ name: 'github', tokens: 34_000, source: 'estimated' }, { name: 'my-notes', source: 'unknown', error: 'list failed' }, { name: 'github-mcp-server', tokens: 6000, source: 'estimated' }], partial: true }, // Codex: no window in the report; 20 % of a 200k window: "at least"
+      failedlow: { servers: [{ name: 'github', tokens: 10_000, source: 'estimated' }, { name: 'my-notes', source: 'unknown', error: 'list failed' }], partial: true },
+      deferred: { servers: [{ name: 'github', tokens: 1500, deferredTokens: 40_000, tools: 30, source: 'reported' }, { name: 'my-notes', tokens: 0, deferredTokens: 400, tools: 2, source: 'reported' }, { name: 'github-mcp-server', tokens: 500, tools: 3, source: 'reported' }], window: 200_000 }, // tool search on: no warning
+    };
+    let simMcpLevels: McpWarnLevels = { warn: 15, strong: 30, off: false };
+    const simMcpCtxListeners = new Set<(p: { id: string; view: McpContextView }) => void>();
+    const simMcpCtxHook = { opens: 0, refuseSave: false, costs: undefined as import('../shared/api').McpCosts | undefined, set: (id: string, r: McpContextReport | null) => { if (r) simMcpOver.set(id, r); else simMcpOver.delete(id); simMcpCtxPush(id); }, push: (id: string) => simMcpCtxPush(id) };
+    const simMcpOver = new Map<string, McpContextReport>();
+    (window as unknown as { __durbarSimMcpCtx?: unknown }).__durbarSimMcpCtx = simMcpCtxHook;
+    const simMcpScenario = (s: SimAgent): McpContextReport | undefined => {
+      const over = simMcpOver.get(s.info.id);
+      if (over) return over;
+      if (!simMcpCtxParam) return undefined;
+      if (simMcpCtxParam !== 'mixed') return SIM_MCP_FIX[simMcpCtxParam];
+      return SIM_MCP_FIX[s.info.adapterId === 'codex' ? 'estimated' : s.info.adapterId === 'claude' ? 'deferred' : 'owner']; // Copilot first: the owner's case
+    };
+    /* like main's cleanReport: a switched-off server is not in the figures */
+    function simMcpCtxView(id: string): McpContextView {
+      const s = sims.find((x) => x.info.id === id);
+      const r = s && (s.state !== 'idle' || !!s.ctx) ? simMcpScenario(s) : undefined;
+      if (!s || !r) return { ok: true, supported: true };
+      return { ok: true, supported: true, at: Date.now(), report: { ...r, servers: r.servers.filter((x) => !s.mcpOff?.has(x.name)) } };
+    }
+    function simMcpCtxPush(id: string): void {
+      const view = simMcpCtxView(id);
+      simMcpCtxListeners.forEach((l) => l({ id, view }));
+    }
     const fakeCli = [
       { name: 'github', origin: 'copilot-config' as const, transport: 'stdio' as const, command: 'npx', args: ['-y', '@example/github-mcp'], enabled: true },
       { name: 'my-notes', origin: 'copilot-config' as const, transport: 'stdio' as const, command: 'node', args: ['/home/vikram/tools/notes-mcp.js'], enabled: true },
@@ -1907,7 +1953,21 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         s.mcpOff ??= new Set();
         if (enabled) s.mcpOff.delete(name); else s.mcpOff.add(name);
         if (s.state !== 'idle') mcpStatus(s, sims.indexOf(s));
+        simMcpCtxPush(id); // spec 100 FR-003: a switch: the figures again
         return { ok: true };
+      },
+      /* spec 100: fixture figures per app, no agent app call */
+      agentMcpContext: async (id, open) => {
+        if (open === true) simMcpCtxHook.opens++;
+        return simMcpCtxView(id);
+      },
+      onMcpContext: (cb) => { simMcpCtxListeners.add(cb); return () => simMcpCtxListeners.delete(cb); },
+      mcpCosts: async () => ({ ok: true, costs: (simMcpCtxHook.costs ?? (simMcpCostsOn ? { copilot: { github: { tokens: 41_000, source: 'reported', at: Date.now() }, 'github-mcp-server': { tokens: 12_000, source: 'reported', at: Date.now() } }, codex: { github: { tokens: 38_000, source: 'estimated', at: Date.now() } }, claude: { github: { tokens: 0, deferredTokens: 400, source: 'reported', at: Date.now() } } } : {})) as import('../shared/api').McpCosts }),
+      setMcpWarnLevels: async (v) => {
+        const X = (window as unknown as { exports: { parseWarnLevels(x: unknown): McpWarnLevels | undefined } }).exports;
+        const l = X.parseWarnLevels(v);
+        if (l) simMcpLevels = l;
+        return { ok: !!l && !simMcpCtxHook.refuseSave, levels: simMcpLevels };
       },
     };
 
@@ -2026,7 +2086,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.5 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.5 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
@@ -3086,6 +3146,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         }
         s.ctx ??= { tokens: 0, limit: 128000 }; // agentMcp reads "live" from it
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Ready in ' + s.info.cwd });
+        simMcpCtxPush(id); // spec 100: the resumed session reports its figures again
         return { ok: true };
       },
       resolvePermission: async (id, req, approve, remember) => {

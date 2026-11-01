@@ -14,8 +14,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, PlanAnswer, SignInCheck, SlashCommand, SlashExpansion, StartOptions, Unsubscribe, WriteGuard } from './types';
-import type { McpToolInfo } from './types';
+import type { McpContextReport, McpToolInfo } from './types';
 import { normMcpTools } from './mcptools';
+import { codexMcpContext, MCP_CONTEXT_TIMEOUT_MS } from './mcpcontext';
 import { codexSlashPlaces, SlashCache, vscodeUserPromptDirs } from './slashcommands';
 import type { SlashPlace } from './slashcommands';
 import { cleanPlanText, reviseText } from './plan';
@@ -74,6 +75,7 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToggleApplies: 'next-message', // FR-147
   mcpToolFilter: true, // spec 069 FR-062: config.mcp_servers.<name>.disabled_tools (real: codex-cli 0.163.0 hides the tool, T060)
   mcpTools: true, // spec 069 FR-031: mcpServerStatus/list with serverName, the tools map (read: generated app-server schema, codex-cli 0.163.0; not run on a real account)
+  mcpContext: 'estimated', // spec 100 FR-001: Codex reports no figures; estimated from the same list's schemas (read: generated schema; not run on a real account, T031)
   mcpRestart: false, // spec 058 FR-012 (Q8): no per-server restart; Restart session with these servers instead
   handoff: true, // spec 030 FR-034: an ephemeral fork, the thread is not changed
   renameSession: 'any', // spec 059 FR-007: thread/name/set on the live child or a short-lived app-server (real 2026-10-20: codex resume lists the name once the thread has had a turn)
@@ -89,6 +91,8 @@ export interface CodexLocation {
 }
 
 export interface CodexAdapterOptions {
+  /** Spec 100: the limit over all pages of one `mcpContext` read (tests). */
+  mcpContextTimeoutMs?: number;
   spawn?: SpawnFn;
   locate?: () => Promise<CodexLocation | undefined>;
   platform?: string;
@@ -294,6 +298,9 @@ export class CodexAdapter implements AgentAdapter {
   writeGuard?: WriteGuard;
   private listeners = new Set<(event: AgentEvent) => void>();
   private sessions = new Map<string, Live>();
+  /** Spec 100: the read under way per session, and its limit. */
+  private readonly mcpContextReads = new Map<string, Promise<McpContextReport>>();
+  private mcpContextLimitMs = MCP_CONTEXT_TIMEOUT_MS;
   /** Ids this run has used, live or not: a stopped one cannot be silently restarted as a new thread (resume is T043b). */
   private known = new Set<string>();
   /** FR-143: Durbar session id -> Codex thread id, so a known session restarts by resuming its thread. */
@@ -313,6 +320,7 @@ export class CodexAdapter implements AgentAdapter {
   private readonly killGraceMs?: number;
 
   constructor(o: CodexAdapterOptions = {}) {
+    if (o.mcpContextTimeoutMs !== undefined) this.mcpContextLimitMs = o.mcpContextTimeoutMs;
     this.spawnFn = o.spawn ?? realSpawn;
     this.locate = o.locate ?? detectLocate;
     this.platform = o.platform ?? process.platform;
@@ -1278,6 +1286,43 @@ export class CodexAdapter implements AgentAdapter {
       cursor = next;
     }
     throw new Error(`${name} is not running in this session.`);
+  }
+
+  /**
+   * Spec 100 FR-001, FR-004: every server's tools on this thread's connection, estimated here; the schemas stay in this call and are dropped
+   * with it. One read per session at a time, with one limit over all its pages: a second ask joins the read, none starts beside it.
+   */
+  mcpContext(sessionId: string): Promise<McpContextReport> {
+    const live = this.sessions.get(sessionId);
+    if (!live || !live.rpc || !live.threadId) return Promise.resolve({ servers: [], failed: true });
+    const running = this.mcpContextReads.get(sessionId);
+    if (running) return running;
+    const read = this.readMcpContext(live).finally(() => this.mcpContextReads.delete(sessionId));
+    this.mcpContextReads.set(sessionId, read);
+    return read;
+  }
+
+  private async readMcpContext(live: { rpc?: { request(method: string, params: unknown): Promise<unknown> }; threadId?: string }): Promise<McpContextReport> {
+    const limit = this.mcpContextLimitMs;
+    const all: unknown[] = [];
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<'expired'>((r) => { timer = setTimeout(() => r('expired'), limit); });
+    try {
+      let cursor: string | undefined;
+      for (let page = 0; page < 20; page++) {
+        const res = await Promise.race([live.rpc?.request('mcpServerStatus/list', { threadId: live.threadId, detail: 'toolsAndAuthOnly', limit: 100, ...(cursor ? { cursor } : {}) }), expired]);
+        if (res === 'expired') return { servers: [], failed: true };
+        if (isObj(res) && Array.isArray(res.data)) all.push(...res.data);
+        const next = isObj(res) && typeof res.nextCursor === 'string' && res.nextCursor ? res.nextCursor : undefined;
+        if (!next || next === cursor) break;
+        cursor = next;
+      }
+    } catch {
+      return { servers: [], failed: true };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    return codexMcpContext(all);
   }
 
   answerQuestion(sessionId: string, requestId: string, answers: Record<string, string> | null): void {
