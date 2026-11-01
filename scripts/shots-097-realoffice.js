@@ -282,6 +282,7 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(pl.cp, [], 'no chip covers a place plate');
     assert.deepStrictEqual(pl.cc, [], 'no two chips overlap');
     assert.deepStrictEqual(pl.initials, [], `no bare initial in the lobby (names, or their first letters and an ellipsis): ${JSON.stringify(pl.initials)} of ${pl.chips}`);
+    await H.until(`window.DurbarRealOffice.walks().length===0`, 5000); /* no leave/arrive trail in a picture (spec 097 FR-126) */
     await H.shot(path.join(OUT, `097-real-15-${w}x${h}.png`), { prep: 'calm' });
     // ---- owner 2026-10-31 ("make a real running pose"): someone at the Terminal jogs in place (stride A in P1), no treadmill; a
     //      close crop of the lobby band shows it ----
@@ -425,6 +426,7 @@ module.exports = async (ctx) => {
     await loadReal(w, h, { sim: '3' });
     const big = await js(`document.querySelector('#stage .ro').dataset.big`);
     assert.strictEqual(big, '1', 'big screens with 3 agents');
+    await H.until(`window.DurbarRealOffice.walks().length===0`, 5000); /* no leave/arrive trail in a picture (spec 097 FR-126) */
     await H.shot(path.join(OUT, `097-real-3-${w}x${h}.png`), { prep: 'calm' });
   }
 
@@ -491,6 +493,7 @@ module.exports = async (ctx) => {
   const amb = Number(await js(`document.querySelector('#stage .ro').dataset.ambient`));
   assert.ok(amb >= 0.7 && amb <= 1 && amb15 >= 0.7 && amb15 <= 1, 'ambient in 0.7..1: ' + amb + ', ' + amb15);
   console.log('[097] ambient: 15 agents', amb15, '8 agents', amb);
+    await H.until(`window.DurbarRealOffice.walks().length===0`, 5000); /* no leave/arrive trail in a picture (spec 097 FR-126) */
   await H.shot(path.join(OUT, '097-real-lights-1440x900.png'), { prep: 'calm' });
 
   // ---- FR-065: a picture that fails: no broken image, the initials disc ----

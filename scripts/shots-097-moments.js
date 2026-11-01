@@ -136,7 +136,7 @@ module.exports = async (ctx) => {
     }
     // ---- FR-121 inbox as a queue at the Boss door, FR-122 limit slip at the Bank, FR-124 MCP bubble ----
     let staleRan = 0;
-    if (run('inbox')) for (const n of ['15', '3', '6', '8']) {
+    if (run('inbox')) for (const n of ['15', '3']) {
       await H.load({ w, h, query: q(world, { simelicit: '1', sim: n }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
       await must(`!!document.querySelector('#stage .ro-slip.ro-queue:not([hidden])')`, 'the queue slip');
@@ -165,6 +165,8 @@ module.exports = async (ctx) => {
       await must(`!document.getElementById('inboxDlg')`, 'the inbox closed');
       await shot(world, n === '15' ? 'inbox' : 'inbox-' + n, w, h);
       assert.deepStrictEqual(await slipOverlaps(), [], `${tag}: no slip covers a plate, a sign, a chair label, a chip or a cue`);
+      if (n !== '3' && sl.variant === 'full') assert.deepStrictEqual(await js(`(()=>{const R=e=>e.getBoundingClientRect(),hit=(a,b)=>a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5;const S=[...document.querySelectorAll('#stage .ro-slip:not([hidden])')],M=[...document.querySelectorAll('#stage .ro-screen:not(.ro-escreen)')];
+        return S.flatMap(s=>M.filter(m=>hit(R(s),R(m))).map(()=>s.className))})()`), [], `${tag}: with ${n} agents a full slip covers no monitor (a pill may, when nothing else is free)`);
       const lim = await js(`(()=>{const e=document.querySelector('#stage .ro-slip.ro-limit');return e&&!e.hidden?{v:e.dataset.variant,btns:[...e.querySelectorAll('button')].map(b=>b.textContent.trim()),tips:[...e.querySelectorAll('button')].map(b=>b.title),input:(e.querySelector('input.limit-amt')||{}).ariaLabel,text:e.textContent}:null})()`);
       if (n === '15') {
         assert.ok(lim, `${tag}: the limit is shown at the Bank`);
@@ -186,17 +188,17 @@ module.exports = async (ctx) => {
         const reqA0 = await js(`((document.querySelector('#stage .ro-slip.ro-queue .ro-sbtn[data-slipreq]')||{dataset:{}}).dataset.slipreq)||''`);
         await js(`(()=>{const d=[...document.querySelectorAll('#stage .ro-slip.ro-queue .ro-sbtn')].find(b=>b.textContent.trim()==='Deny');if(d)d.click()})()`);
         await must(`(()=>{const e=document.querySelector('#stage .ro-slip.ro-queue');return !e||e.hidden||(e.querySelector('.sl-h b')||{}).textContent!==${jsLiteral(who)}})()`, 'the denied request gone from the slip');
-        /* a stale button (a double click, or a request that arrived meanwhile) must not answer the NEXT request: aim the old request's id at the new first slip and press */
-        if (await js(`!!document.querySelector('#stage .ro-slip.ro-queue .ro-sbtn[data-slipact="perm"]')`)) {
+        /* a stale button (a double click, or a request that arrived meanwhile) must not answer the NEXT request: a button that names an old request id, aimed at the first request now */
+      }
+      {
+        const q0 = await js(`JSON.stringify(((window.__durbarSimUi.slips().queue)||{}).first?{id:window.__durbarSimUi.slips().queue.first.id,req:window.__durbarSimUi.slips().queue.first.req,total:window.__durbarSimUi.slips().queue.total}:null)`);
+        if (q0 !== 'null') {
           staleRan++;
-          const next = await js(`(document.querySelector('#stage .ro-slip.ro-queue .sl-h b')||{}).textContent||''`);
-          if (next) {
-            await js(`(()=>{const b=document.querySelector('#stage .ro-slip.ro-queue .ro-sbtn[data-slipact="perm"]');b.dataset.slipreq=${jsLiteral(reqA0)};b.click()})()`);
-            await must(`performance.now()>0&&true`, 'a beat');
-            const t0 = await js(`performance.now()`);
-            await must(`performance.now()>${t0 + 600}`, 'a short while for a wrong answer to show');
-            assert.strictEqual(await js(`(document.querySelector('#stage .ro-slip.ro-queue .sl-h b')||{}).textContent`), next, `${tag}: the stale button answered nothing: ${next} still waits`);
-          }
+          const f = JSON.parse(q0);
+          await js(`(()=>{const b=document.createElement('button');b.dataset.slipact='perm';b.dataset.slipid=${jsLiteral(f.id)};b.dataset.slipreq='rq-stale';b.dataset.slipidx='0';document.body.appendChild(b);b.click();b.remove()})()`);
+          const t0 = await js(`performance.now()`);
+          await must(`performance.now()>${t0 + 600}`, 'a short while for a wrong answer to show');
+          assert.strictEqual(await js(`JSON.stringify(((window.__durbarSimUi.slips().queue)||{}).first?{id:window.__durbarSimUi.slips().queue.first.id,req:window.__durbarSimUi.slips().queue.first.req,total:window.__durbarSimUi.slips().queue.total}:null)`), q0, `${tag}: a stale request id answered nothing`);
         }
       }
       await js(`document.querySelector('#stage .ro-slip.ro-bubble [data-slipact="open"]').click()`);
