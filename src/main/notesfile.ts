@@ -10,7 +10,7 @@
  * - Writes go to a temp file in `.durbar` opened `O_CREAT | O_EXCL | O_WRONLY` (and `O_NOFOLLOW`), 0600 on POSIX; right before the
  *   rename everything is checked again, including that `notes.md` still has the hash this cycle started from (an outside edit is
  *   imported first, never overwritten). On Windows a refused rename is tried once more after 200 ms.
- * - FR-051: no process is ever started (no git), no `.gitignore` or other committed file is written; `addExclude` appends one (on macOS, one per form of the path as given and on disk, read with `readdir`)
+ * - FR-051: no process is ever started (no git), no `.gitignore` or other committed file is written; `addExclude` appends one (on macOS also a wildcard over the name on disk, read with `readdir`)
  *   escaped, anchored line to a real git directory's `info/exclude` and never creates `info/`.
  *
  * Nothing here logs; messages carry a short reason, never a path or a note's text. The caller (`NotesOps`) decides whether the switch
@@ -112,21 +112,14 @@ export function excludeLine(segments: readonly string[], durbar = '.durbar'): st
   return segments.length ? `/${segments.map(escapeGitSegment).join('/')}/${durbar}/` : `/${durbar}/`;
 }
 
-/** A canonical singleton or composition exclusion: a character NFC replaces, which git's precompose on macOS keeps (U+212B, U+F900...). */
-const isSingleton = (c: string): boolean => c.normalize('NFC') !== c;
-/** The composed form git's `core.precomposeunicode` gives: runs composed, singletons kept (spec Changes, review of #957). */
-function composeKeepingSingletons(s: string): string {
-  let out = '';
-  let run = '';
-  for (const c of s) {
-    if (isSingleton(c)) { out += run.normalize('NFC') + c; run = ''; } else run += c;
-  }
-  return out + run.normalize('NFC');
+/**
+ * The line for a folder on macOS whatever form git holds (spec Changes, review of #957): each non-ASCII run, and the ASCII letter before it, which a mark can compose with, becomes `*`.
+ * Git's composition cannot be read without a process, and ASCII never composes, so this needs no table. One `*` for adjacent runs: `**` alone in a segment would cross folders.
+ */
+export function wildcardExcludeLine(segments: readonly string[], durbar = '.durbar'): string {
+  const seg = (s: string): string => s.replace(/[\u0000-\u007f]?[^\u0000-\u007f]+/gu, '\u0000').replace(/\u0000+/g, '\u0000').split('\u0000').map(escapeGitSegment).join('*');
+  return segments.length ? `/${segments.map(seg).join('/')}/${durbar}/` : `/${durbar}/`;
 }
-/** Decomposed Balinese vowels: NFC composes them and git's precompose does not, so beside a composed letter no form matches. */
-const DECOMPOSED_BALINESE = /[ᬅᬇᬉᬋᬍᬑᬺᬼᬾᬿᭂ]ᬵ/;
-/** The two shapes a sweep of real git found no form for (spec Changes): `addExclude` refuses them. A singleton before a combining mark, and decomposed Balinese. */
-const noFormMatches = (s: string): boolean => { if (DECOMPOSED_BALINESE.test(s)) return true; const cs = [...s]; return cs.some((c, i) => isSingleton(c) && i + 1 < cs.length && /^\p{M}/u.test(cs[i + 1])); };
 
 interface Place { folder: string; durbar: string; notes: string; hasDurbar: boolean }
 export type ReadBack =
@@ -505,16 +498,13 @@ export class NotesFile {
     const line = excludeLine(segments);
     let lines = [line];
     if (this.platform === 'darwin') {
-      // macOS merges names by form and case, while git compares the form on disk or a composed form with singletons kept, and folds ASCII only: each form of the given path and of the name on disk gets its line (spec Changes)
-      let hasDurbar = true;
-      try { this.fs.lstatSync(path.join(folder, '.durbar')); } catch { hasDurbar = false; }
+      // macOS merges names by form and case, and git compares the form on disk or a composed form it alone knows, folding ASCII only: a wildcard over the name on disk matches every form (spec Changes)
+      let hasDurbar = false;
+      try { hasDurbar = this.fs.lstatSync(path.join(folder, '.durbar')).isDirectory(); } catch { /* none yet */ }
       const disk = this.nameOnDisk(root, hasDurbar ? [...segments, '.durbar'] : segments);
       if (!disk) return fail('the name of a folder on disk could not be read');
       const durbar = hasDurbar ? disk[disk.length - 1] : '.durbar';
-      const diskPath = hasDurbar ? disk.slice(0, -1) : disk;
-      if ([...segments, ...diskPath].some(noFormMatches)) return { ok: false, error: EXCLUDE_UNSAFE_NAME };
-      const forms = (p: readonly string[]): string[] => [(s: string) => s, (s: string) => s.normalize('NFC'), (s: string) => s.normalize('NFD'), composeKeepingSingletons].map((f) => excludeLine(p.map(f), durbar));
-      lines = [...new Set([line, ...forms(segments), ...forms(diskPath)])];
+      lines = [...new Set([line, wildcardExcludeLine(hasDurbar ? disk.slice(0, -1) : disk, durbar)])];
     }
 
     let target: string;

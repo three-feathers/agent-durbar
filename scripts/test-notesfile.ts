@@ -1098,28 +1098,7 @@ async function main(): Promise<void> {
         assert.deepStrictEqual(excl(repo), before, `${tag}: no line twice`);
       }
     }
-    // the lines, on any machine (injected platform; the name need not exist in the other form)
-    const repo = fresh('repo');
-    gitDir(path.join(repo, '.git'));
-    nodeFs.mkdirSync(path.join(repo, NFD));
-    const res = must(new NotesFile({ platform: 'darwin' }).addExclude(path.join(repo, NFD)));
-    assert.strictEqual(res.line, `/${NFD}/.durbar/`, 'the answer keeps the line as given');
-    assert.deepStrictEqual(excl(repo).sort(), [`/${NFC}/.durbar/`, `/${NFD}/.durbar/`].sort(), 'both forms on macOS');
-    // an older clone that has only the NFD line gets the other one
-    const old = fresh('repo');
-    gitDir(path.join(old, '.git'));
-    nodeFs.mkdirSync(path.join(old, NFD));
-    nodeFs.writeFileSync(path.join(old, '.git', 'info', 'exclude'), `/${NFD}/.durbar/\n`);
-    assert.strictEqual(must(new NotesFile({ platform: 'darwin' }).addExclude(path.join(old, NFD))).added, true, 'the missing form is added');
-    assert.deepStrictEqual(excl(old).sort(), [`/${NFC}/.durbar/`, `/${NFD}/.durbar/`].sort());
-    for (const platform of ['linux', 'win32']) {
-      const r = fresh('repo');
-      gitDir(path.join(r, '.git'));
-      nodeFs.mkdirSync(path.join(r, NFD));
-      must(new NotesFile({ platform, uid: () => undefined }).addExclude(path.join(r, NFD)));
-      assert.deepStrictEqual(excl(r), [`/${NFD}/.durbar/`], `${platform}: one line, as given`);
-    }
-    // a given NFC path gets the NFD line too; no NFKC line: git never compares that form
+    // the lines, on any machine (injected platform)
     const darwinLines = (name: string): string[] => {
       const r = fresh('repo');
       gitDir(path.join(r, '.git'));
@@ -1127,13 +1106,32 @@ async function main(): Promise<void> {
       must(new NotesFile({ platform: 'darwin' }).addExclude(path.join(r, name)));
       return excl(r).sort();
     };
-    assert.deepStrictEqual(darwinLines(NFC), [`/${NFC}/.durbar/`, `/${NFD}/.durbar/`].sort(), 'given NFC: both forms');
-    assert.deepStrictEqual(darwinLines('ﬁle'), ['/ﬁle/.durbar/'], 'U+FB01 stays: no NFKC line');
-    assert.deepStrictEqual(darwinLines('Å'), ['/Å/.durbar/', '/Å/.durbar/', '/Å/.durbar/'].sort(), 'U+212B: as given, NFC, NFD');
-    assert.deepStrictEqual(darwinLines('éÅ'), ['/éÅ/.durbar/', '/éÅ/.durbar/', '/éÅ/.durbar/', '/éÅ/.durbar/'].sort(), 'a decomposed letter beside a singleton: also composed with the singleton kept');
-    assert.strictEqual(new NotesFile({ platform: 'darwin' }).addExclude((() => { const r = fresh('repo'); gitDir(path.join(r, '.git')); nodeFs.mkdirSync(path.join(r, 'Ǻ')); return path.join(r, 'Ǻ'); })()).ok, false, 'a singleton before a combining mark: refused, no form was measured to match');
-    assert.strictEqual(new NotesFile({ platform: 'darwin' }).addExclude((() => { const r = fresh('repo'); gitDir(path.join(r, '.git')); nodeFs.mkdirSync(path.join(r, 'ᬆ')); return path.join(r, 'ᬆ'); })()).ok, false, 'decomposed Balinese: refused, NFC composes it and git does not');
-    assert.ok(must(new NotesFile({ platform: 'darwin' }).addExclude((() => { const r = fresh('repo'); gitDir(path.join(r, '.git')); nodeFs.mkdirSync(path.join(r, 'ᬆ')); return path.join(r, 'ᬆ'); })())).added, 'composed Balinese is fine');
+    const repo = fresh('repo');
+    gitDir(path.join(repo, '.git'));
+    nodeFs.mkdirSync(path.join(repo, NFD));
+    const res = must(new NotesFile({ platform: 'darwin' }).addExclude(path.join(repo, NFD)));
+    assert.strictEqual(res.line, `/${NFD}/.durbar/`, 'the answer keeps the line as given');
+    assert.deepStrictEqual(excl(repo).sort(), [`/${NFD}/.durbar/`, '/caf*/.durbar/'].sort(), 'NFD: the letter before the mark goes too');
+    assert.deepStrictEqual(darwinLines(NFC), [`/${NFC}/.durbar/`, '/ca*/.durbar/'].sort(), 'NFC');
+    assert.deepStrictEqual(darwinLines('ﬁle'), ['/ﬁle/.durbar/', '/*le/.durbar/'].sort(), 'no NFKC: only a wildcard');
+    assert.deepStrictEqual(darwinLines('日本'), ['/日本/.durbar/', '/*/.durbar/'].sort(), 'no ASCII: one star');
+    assert.deepStrictEqual(darwinLines('éá'), ['/éá/.durbar/', '/*/.durbar/'].sort(), 'adjacent runs: one star, never **, which would cross folders');
+    assert.deepStrictEqual(darwinLines('a*b é c'), ['/a*b é c/.durbar/'.replace('*', '\\*'), '/a\\*b* c/.durbar/'].sort(), 'specials stay escaped, the wildcard does not');
+    assert.deepStrictEqual(darwinLines('ascii'), ['/ascii/.durbar/'], 'ASCII: one line');
+    // an older clone that has only the NFD line gets the other one
+    const old = fresh('repo');
+    gitDir(path.join(old, '.git'));
+    nodeFs.mkdirSync(path.join(old, NFD));
+    nodeFs.writeFileSync(path.join(old, '.git', 'info', 'exclude'), `/${NFD}/.durbar/\n`);
+    assert.strictEqual(must(new NotesFile({ platform: 'darwin' }).addExclude(path.join(old, NFD))).added, true, 'the missing line is added');
+    assert.deepStrictEqual(excl(old).sort(), [`/${NFD}/.durbar/`, '/caf*/.durbar/'].sort());
+    for (const platform of ['linux', 'win32']) {
+      const r = fresh('repo');
+      gitDir(path.join(r, '.git'));
+      nodeFs.mkdirSync(path.join(r, NFD));
+      must(new NotesFile({ platform, uid: () => undefined }).addExclude(path.join(r, NFD)));
+      assert.deepStrictEqual(excl(r), [`/${NFD}/.durbar/`], `${platform}: one line, as given`);
+    }
     // the name on disk, on any machine: the fs answers as a volume that merges names would
     const onDisk = (given: string, disk: string, over: Partial<NotesFileFs> = {}): { res: ReturnType<NotesFile['addExclude']>; lines: string[] } => {
       const r = fresh('repo');
@@ -1147,63 +1145,76 @@ async function main(): Promise<void> {
       return { res, lines: excl(r).sort() };
     };
     const UPPER = 'CAFÉ';
-    const cased = onDisk(UPPER, NFC);
-    assert.ok(cased.res.ok, JSON.stringify(cased.res));
-    assert.deepStrictEqual(cased.lines, [`/${UPPER}/.durbar/`, `/${UPPER.normalize('NFD')}/.durbar/`, `/${NFC}/.durbar/`, `/${NFD}/.durbar/`].sort(), 'a non-ASCII case difference: the name on disk in both forms');
+    assert.deepStrictEqual(onDisk(UPPER, NFC).lines, [`/${UPPER}/.durbar/`, '/ca*/.durbar/'].sort(), 'a non-ASCII case difference: the wildcard is from the name on disk');
+    assert.deepStrictEqual(onDisk('Sub', 'sub').lines, ['/Sub/.durbar/', '/sub/.durbar/'].sort(), 'an ASCII case difference: the name on disk');
     assert.ok(onDisk(NFC, NFD).res.ok, 'given NFC, NFD on disk: the fold compares composed names');
-    const sigma = onDisk('σασ', 'σας');
-    assert.ok(sigma.res.ok, 'final sigma: the fold finds it (' + JSON.stringify(sigma.res) + ')');
-    assert.ok(sigma.lines.includes('/σας/.durbar/'), 'and the name on disk has its line');
-    { // a folder that cannot be listed: the native call answers, so the old protection stays
-      const r = fresh('repo');
-      gitDir(path.join(r, '.git'));
-      nodeFs.mkdirSync(path.join(r, 'shut'));
-      const fsx = { ...nodeFs, readdirSync: () => { throw Object.assign(new Error('x'), { code: 'EACCES' }); } } as unknown as NotesFileFs;
-      assert.strictEqual(must(new NotesFile({ platform: 'darwin', fs: fsx }).addExclude(path.join(r, 'shut'))).added, true, 'the native call answers');
-      assert.deepStrictEqual(excl(r), ['/shut/.durbar/']);
-    }
+    assert.ok(onDisk('σασ', 'σας').res.ok, 'final sigma: the fold finds it');
     const shut = onDisk(NFC, NFC, { readdirSync: () => { throw Object.assign(new Error('x'), { code: 'EACCES' }); } } as unknown as Partial<NotesFileFs>);
-    assert.strictEqual(shut.res.ok, false, 'neither readdir nor the native call: refused, not Added');
+    assert.strictEqual(shut.res.ok, false, 'neither readdir nor the native call (this fake has none): refused, not Added');
     assert.deepStrictEqual(shut.lines, [], 'and no line written');
     // UPPER exists and folds the same, but is another folder (here: lstat answers for .git)
     const other = onDisk(NFC, NFC, { readdirSync: () => ['.git', UPPER], lstatSync: (q: string, o?: nodeFs.StatOptions) => nodeFs.lstatSync(q.endsWith(UPPER) ? path.join(path.dirname(q), '.git') : q.endsWith(NFC) ? path.join(path.dirname(q), 'plain' + NFC) : q, o) } as unknown as Partial<NotesFileFs>);
-    assert.strictEqual(other.res.ok, false, 'an entry with the same fold that is not this file is not taken: refused');
+    assert.strictEqual(other.res.ok, false, 'an entry with the same fold that is another file is not taken; the fake has no native call: refused');
     assert.deepStrictEqual(other.lines, [], 'and no line written');
+    const noList = { ...nodeFs, readdirSync: () => { throw Object.assign(new Error('x'), { code: 'EACCES' }); } } as unknown as NotesFileFs;
+    { // a folder that cannot be listed: the native call answers, so the protection stays
+      const r = fresh('repo');
+      gitDir(path.join(r, '.git'));
+      nodeFs.mkdirSync(path.join(r, 'shut'));
+      assert.strictEqual(must(new NotesFile({ platform: 'darwin', fs: noList }).addExclude(path.join(r, 'shut'))).added, true, 'the native call answers');
+      assert.deepStrictEqual(excl(r), ['/shut/.durbar/']);
+    }
+    { // a native answer of another depth is not believed
+      const r = fresh('repo');
+      gitDir(path.join(r, '.git'));
+      nodeFs.mkdirSync(path.join(r, 'kid', 'deep'), { recursive: true });
+      const native = Object.assign((p: string) => (p.endsWith('kid') ? path.join(p, 'deep') : nodeFs.realpathSync(p)), {});
+      const fsx = { ...noList, realpathSync: Object.assign((p: string) => nodeFs.realpathSync(p), { native }) } as unknown as NotesFileFs;
+      assert.strictEqual(new NotesFile({ platform: 'darwin', fs: fsx }).addExclude(path.join(r, 'kid')).ok, false, 'refused');
+    }
+    for (const fsOverride of [undefined, noList]) { // a link named .durbar: a line for its own name, never for its target (the review's real code folder)
+      const r = fresh('repo');
+      gitDir(path.join(r, '.git'));
+      nodeFs.mkdirSync(path.join(r, 'kid', 'src'), { recursive: true });
+      nodeFs.symlinkSync('src', path.join(r, 'kid', '.durbar'));
+      must(new NotesFile({ platform: 'darwin', ...(fsOverride ? { fs: fsOverride } : {}) }).addExclude(path.join(r, 'kid')));
+      assert.deepStrictEqual(nodeFs.readFileSync(path.join(r, '.git', 'info', 'exclude'), 'utf8').split('\n').filter(Boolean), ['/kid/.durbar/'], 'a linked .durbar: no other line at all');
+    }
     if (process.platform === 'darwin') {
-      // real APFS and real git: the cases the review of #957 found. With the given and NFC and NFD forms alone, mixed forms staged notes.md under precompose false, a non-ASCII case under both, singletons under true
-      for (const precompose of ['true', 'false']) for (const [tag, diskPath, givenPath] of [['mixed forms, given NFC', [NFC, NFD], [NFC, NFC]], ['mixed forms, given NFD', [NFC, NFD], [NFD, NFD]], ['case in a non-ASCII letter', [NFC], [UPPER]], ['a singleton beside a decomposed letter', ['éÅ'], ['éÅ']], ['Japanese with a CJK singleton', ['ガ豈'], ['ガ豈']], ['two folders', [NFD, '豈'], [NFD, '豈']], ['sharp s, which JS folds another way', ['ß'], ['ẞ']]] as [string, string[], string[]][]) {
-        const repo = fresh('repo');
-        git(repo, 'init', '-q');
-        git(repo, 'config', 'core.precomposeunicode', precompose);
-        nodeFs.mkdirSync(path.join(repo, ...diskPath), { recursive: true });
-        nodeFs.writeFileSync(path.join(repo, 'keep.txt'), 'k');
-        const res = must(new NotesFile().addExclude(path.join(repo, ...givenPath)));
-        assert.strictEqual(res.added, true, tag);
-        nodeFs.mkdirSync(path.join(repo, ...diskPath, '.durbar'));
-        nodeFs.writeFileSync(md(path.join(repo, ...diskPath)), 'private');
-        git(repo, 'add', '-A');
-        const staged = git(repo, 'diff', '--cached', '--name-only', '-z').split('\0').filter(Boolean);
+      // real APFS and real git: the cases the two reviews of #957 found, each staged notes.md with a list of forms
+      const VIET = 'Việt Hà';
+      for (const precompose of ['true', 'false']) for (const [tag, diskPath, givenPath] of [['mixed forms, given NFC', [NFC, NFD], [NFC, NFC]], ['mixed forms, given NFD', [NFC, NFD], [NFD, NFD]], ['case in a non-ASCII letter', [NFC], [UPPER]], ['a singleton beside a decomposed letter', ['éÅ'], ['éÅ']], ['Japanese with a CJK singleton', ['ガ豈'], ['ガ豈']], ['two folders', [NFD, '豈'], [NFD, '豈']], ['sharp s, which JS folds another way', ['ß'], ['ẞ']], ['Vietnamese, two marks', [VIET], [VIET]], ['Vietnamese, given NFC', [VIET], [VIET.normalize('NFC')]], ['Balinese beside a decomposed letter', ['éᬆ'], ['éᬆ']], ['a singleton before a mark', ['Ǻ'], ['Ǻ']], ['greek with two marks', ['éᾄ'], ['éᾄ']]] as [string, string[], string[]][]) {
+        const r = fresh('repo');
+        git(r, 'init', '-q');
+        git(r, 'config', 'core.precomposeunicode', precompose);
+        nodeFs.mkdirSync(path.join(r, ...diskPath), { recursive: true });
+        nodeFs.writeFileSync(path.join(r, 'keep.txt'), 'k');
+        assert.strictEqual(must(new NotesFile().addExclude(path.join(r, ...givenPath))).added, true, tag);
+        nodeFs.mkdirSync(path.join(r, ...diskPath, '.durbar'));
+        nodeFs.writeFileSync(md(path.join(r, ...diskPath)), 'private');
+        git(r, 'add', '-A');
+        const staged = git(r, 'diff', '--cached', '--name-only', '-z').split('\0').filter(Boolean);
         assert.deepStrictEqual(staged, ['keep.txt'], `${tag}, precompose ${precompose}: notes.md is not staged`);
       }
       {
-        const repo = fresh('repo');
-        git(repo, 'init', '-q');
-        git(repo, 'config', 'core.ignorecase', 'false');
-        nodeFs.mkdirSync(path.join(repo, 'sub', '.DURBAR'), { recursive: true });
-        nodeFs.writeFileSync(path.join(repo, 'sub', '.DURBAR', 'notes.md'), 'private');
-        nodeFs.writeFileSync(path.join(repo, 'keep.txt'), 'k');
-        must(new NotesFile().addExclude(path.join(repo, 'sub')));
-        git(repo, 'add', '-A');
-        assert.deepStrictEqual(git(repo, 'diff', '--cached', '--name-only', '-z').split('\0').filter(Boolean), ['keep.txt'], '.DURBAR on disk, ignorecase false');
+        const r = fresh('repo');
+        git(r, 'init', '-q');
+        git(r, 'config', 'core.ignorecase', 'false');
+        nodeFs.mkdirSync(path.join(r, 'sub', '.DURBAR'), { recursive: true });
+        nodeFs.writeFileSync(path.join(r, 'sub', '.DURBAR', 'notes.md'), 'private');
+        nodeFs.writeFileSync(path.join(r, 'keep.txt'), 'k');
+        must(new NotesFile().addExclude(path.join(r, 'sub')));
+        git(r, 'add', '-A');
+        assert.deepStrictEqual(git(r, 'diff', '--cached', '--name-only', '-z').split('\0').filter(Boolean), ['keep.txt'], '.DURBAR on disk, ignorecase false');
       }
       if (process.getuid?.() !== 0) {
-        const repo = fresh('repo');
-        git(repo, 'init', '-q');
-        const kid = path.join(repo, 'shut', 'kid');
+        const r = fresh('repo');
+        git(r, 'init', '-q');
+        const kid = path.join(r, 'shut', 'kid');
         nodeFs.mkdirSync(kid, { recursive: true });
-        nodeFs.chmodSync(path.join(repo, 'shut'), 0o311);
-        try { assert.strictEqual(must(new NotesFile().addExclude(kid)).added, true, 'a parent that cannot be listed still gets the line'); } finally { nodeFs.chmodSync(path.join(repo, 'shut'), 0o755); }
-        assert.deepStrictEqual(excl(repo), ['/shut/kid/.durbar/']);
+        nodeFs.chmodSync(path.join(r, 'shut'), 0o311);
+        try { assert.strictEqual(must(new NotesFile().addExclude(kid)).added, true, 'a parent that cannot be listed still gets the line'); } finally { nodeFs.chmodSync(path.join(r, 'shut'), 0o755); }
+        assert.deepStrictEqual(excl(r), ['/shut/kid/.durbar/']);
       }
     }
     const plain = fresh('repo');
