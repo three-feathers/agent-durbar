@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { placeBox, realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
-import { lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
+import { lampWords, lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
 
 process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
@@ -514,5 +514,12 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   const scr = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8');
   assert.ok(/const hadFocus=document\.activeElement===olb;\s*await paint\(\);[^\n]*\n\s*if\(hadFocus\)\{const nb=document\.querySelector\('\[data-officelayout="'\+k\+'"\]'\);if\(nb\)focusIn\(nb\);\}/.test(scr), 'the Office layout pick restores focus after the repaint');
 }
+// ---- FR-107: the lamp in words, one phrase per FR-041 row, the same for every world ----
+{
+  const W = Object.fromEntries((Object.keys(LIGHT_TABLE) as LightState[]).map((k) => [k, lampWords(lightFor(k))]));
+  assert.deepStrictEqual(W, { working: 'Lamp warm, steady', thinking: 'Lamp on, breathing', waiting: 'Lamp bright, amber call light', error: 'Lamp on, red error light', limit: 'Lamp on, orange call light', done: 'Lamp low', idle: 'Lamp low', asleep: 'Lamp off' }, 'a phrase per light row');
+  assert.strictEqual(lampWords(lightFor('waiting', { still: true })), W.waiting, 'reduced motion does not change the words');
+}
+
 console.log(`realoffice layout and lights tests passed (${cases} layouts, faces ${JSON.stringify(faces)})`);
 process.exitCode = 0;

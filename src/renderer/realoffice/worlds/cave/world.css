@@ -58,3 +58,7 @@ html[data-world="cave"] #chat .note.elicit{background:#e3e6dc;border-color:#7d8a
 
 /* spec 097 FR-118 first run: no counts in the top bar (all zero); the space stays, so the bar does not move */
 html[data-world="cave"] body:has(#stage > .welcome) #stats{visibility:hidden}
+
+/* spec 097 FR-106 the chat in the world: the panel's surface is the world's tint over the token surface, opaque (at least 78 %, checked by the driver); the column takes the world's floor */
+html[data-world="cave"] body.panel-open #panel{background:color-mix(in srgb,var(--surface) 92%,#4a3524)}
+html[data-world="cave"] .ro-col{background:color-mix(in srgb,var(--surface-2) 80%,#4a3524)}

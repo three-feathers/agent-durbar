@@ -40,3 +40,7 @@ html[data-world="photo"] #chat .note.elicit{background:#eef4fb;border-color:#a9c
 
 /* spec 097 FR-118 first run: no counts in the top bar (all zero); the space stays, so the bar does not move */
 html[data-world="photo"] body:has(#stage > .welcome) #stats{visibility:hidden}
+
+/* spec 097 FR-106 the chat in the world: the panel's surface is the world's tint over the token surface, opaque (at least 78 %, checked by the driver); the column takes the world's floor */
+html[data-world="photo"] body.panel-open #panel{background:color-mix(in srgb,var(--surface) 92%,#c9a77c)}
+html[data-world="photo"] .ro-col{background:color-mix(in srgb,var(--surface-2) 80%,#c9a77c)}

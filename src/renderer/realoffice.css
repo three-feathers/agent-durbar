@@ -200,3 +200,37 @@ html[data-world] .inbox-dlg .ibw-faces{margin-left:auto;display:flex}
 html[data-world] .inbox-dlg .ibw-face{width:30px;height:30px;margin-left:-6px;border-radius:50%;overflow:hidden;border:2px solid var(--surface);background:var(--surface-2);display:block}
 html[data-world] .inbox-dlg .ibw-face:first-child{margin-left:0}
 html[data-world] .inbox-dlg .ibw-face>*{width:100%;height:100%}
+
+/* spec 097 FR-106 (T120): the chat in the world. The panel keeps its structure; a decorative desk-side column (aria-hidden, no tab stop) stands beside it when the window is
+   1200 px or wider and the chat keeps 480 px or more; a 64 px portrait with a lamp ring sits in the header. The text is never on a picture: the plate is an opaque face. */
+body.panel-open.ro-chatcol :is(.workspace,#panel){width:100%}
+body.panel-open.ro-chatcol #panel{flex-direction:row}
+body.panel-open.ro-chatcol #panel>.panel-in{flex:1;min-width:480px}
+.ro-col{--rc-lamp:#8c8579;flex:none;width:var(--rc-w,300px);box-sizing:border-box;display:flex;flex-direction:column;justify-content:flex-end;gap:10px;padding:12px;background:var(--surface-2);border-right:1px solid var(--line);overflow:hidden}
+.ro-col[data-lamp="warm"],.ro-portrait[data-lamp="warm"]{--rc-lamp:#f2c27a}
+.ro-col[data-lamp="bright"],.ro-portrait[data-lamp="bright"]{--rc-lamp:#f0a030}
+.ro-col[data-lamp="on"],.ro-portrait[data-lamp="on"]{--rc-lamp:#d9c29a}
+.ro-col[data-lamp="low"],.ro-portrait[data-lamp="low"]{--rc-lamp:#8c8579}
+.ro-col[data-lamp="off"],.ro-portrait[data-lamp="off"]{--rc-lamp:#4a4640}
+.ro-col[data-call="red"],.ro-portrait[data-call="red"]{--rc-lamp:#d9443a}
+.ro-col[data-call="orange"],.ro-portrait[data-call="orange"]{--rc-lamp:#f07a20}
+.rc-stage{position:relative;height:290px;flex:none}
+.rc-glow{position:absolute;left:-10%;right:-10%;top:0;bottom:30px;background:radial-gradient(closest-side,var(--rc-lamp),transparent);opacity:.32}
+.ro-col[data-lamp="off"] .rc-glow{opacity:.1}
+.rc-person{position:absolute;left:50%;bottom:52px;height:200px;width:auto;transform:translateX(-50%);z-index:1}
+.rc-desk{position:absolute;left:0;bottom:0;width:100%;height:auto;z-index:2}
+.rc-call{position:absolute;right:8%;bottom:12px;width:10px;height:10px;border-radius:50%;z-index:3;background:var(--rc-lamp);border:1.5px solid #fff}
+.rc-plate{display:flex;flex-direction:column;gap:2px;padding:6px 9px;border-radius:6px;background:var(--surface);color:var(--ink);border:1px solid var(--line);font-size:12px;line-height:1.35}
+.rc-plate b{font-size:13px}
+.rc-l2{font-size:11.5px}
+.rc-l3{font-size:11px;color:var(--ink-2)}
+.ro-portrait{position:relative;flex:none;display:inline-block;width:64px;height:64px;border-radius:50%;margin-right:10px;background:var(--surface-2);box-shadow:0 0 0 3px var(--rc-lamp,#8c8579)}
+.ro-portrait>img{display:block;width:100%;height:100%;border-radius:50%;object-fit:cover;object-position:50% 6%}
+.ro-portrait>.dot{position:absolute;right:-2px;bottom:-2px;box-shadow:0 0 0 2px var(--surface)}
+body.ro-chat .ph .avatar{display:none}
+.ro-lampwords{font-size:11px;color:var(--ink-2)}
+/* the question, permission and elicitation cards point a speech tail at the person in the column (when it is shown) */
+body.panel-open.ro-chatcol #chat .note.perm:not(.settled){position:relative;margin-left:16px}
+body.panel-open.ro-chatcol #chat .note.perm:not(.settled)::before{content:"";position:absolute;left:-7px;top:16px;width:12px;height:12px;background:inherit;border:1px solid;border-color:inherit;border-width:0 0 1px 1px;transform:rotate(45deg)}
+@media (forced-colors:active){.rc-glow,.rc-call{display:none}.ro-portrait{box-shadow:none;border:2px solid CanvasText}.rc-plate,.ro-col{border-color:CanvasText}}
+.ro-portrait>.rp-ini{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:26px;color:var(--ink)}
