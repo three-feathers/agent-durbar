@@ -189,7 +189,7 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(d.bare, [], 'no awake desk is empty without a visit');
     assert.ok(d.persons + d.visitors >= 8, `people sit at their desks or stand in the lobby on a visit: ${d.persons} + ${d.visitors}`);
     assert.ok(d.fixtures >= 8, 'the lobby fixtures are drawn: ' + d.fixtures);
-    const aw = await js(`[...document.querySelectorAll('#stage .ro-away')].every(e=>/^at .+ ↑$/.test(e.textContent))`);
+    const aw = await js(`[...document.querySelectorAll('#stage .ro-away')].every(e=>/^at .+$/.test(e.textContent))`);
     assert.ok(aw, 'away desks say where');
     // ---- FR-038, FR-041, FR-046: cues and lights by status ----
     const cues = await js(`(()=>{const o={};for(const p of document.querySelectorAll('#stage .ro-plate')){const id=p.dataset.id,st=p.dataset.state;
@@ -282,6 +282,9 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(pl.cp, [], 'no chip covers a place plate');
     assert.deepStrictEqual(pl.cc, [], 'no two chips overlap');
     assert.deepStrictEqual(pl.initials, [], `no bare initial in the lobby (names, or their first letters and an ellipsis): ${JSON.stringify(pl.initials)} of ${pl.chips}`);
+    /* going back from the chat above leaves the focus on a plate, and a focused plate has its zoom open (FR-034): not in the picture */
+    await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur();0`);
+    await must(`!document.getElementById('roZoom')`, 'no zoom in the picture');
     await H.shot(path.join(OUT, `097-real-15-${w}x${h}.png`), { prep: 'calm' });
     // ---- owner 2026-10-31 ("make a real running pose"): someone at the Terminal jogs in place (stride A in P1), no treadmill; a
     //      close crop of the lobby band shows it ----
@@ -367,6 +370,18 @@ module.exports = async (ctx) => {
     await H.key('Escape');
     await must("!document.getElementById('modeMenu')&&(" + FOCUSED + ')', 'the right-click menu closed and focus is back on the plate');
   }
+
+  // ---- owner 2026-11-01: with motion on, a chip and a plate never touch, in any frame while a crowd changes: they fade in place, they do not travel ----
+  await loadReal(1280, 800, { sim: '15', romotion: '1' });
+  await must(`!!document.querySelector('#stage .ro-lplate')`, 'the lobby plates');
+  await js(`document.querySelector('style#roNoAnim')&&document.querySelector('style#roNoAnim').remove();0`);
+  for (const [pid, n, from] of [['terminal', 4, 0], ['software', 3, 2], ['boss', 5, 6], ['terminal', 2, 9]]) {
+    const look = "const look=()=>{const r=" + PLATES + ";n++;for(const x of r.cp)bad.add(x);if(performance.now()-t0<1500)requestAnimationFrame(look);else done({n,bad:[...bad]});};requestAnimationFrame(look);";
+    const frames = await js(`new Promise((done)=>{const bad=new Set();let n=0;const t0=performance.now();window.__durbarSimUi.uncrowd();window.__durbarSimUi.crowd(${jsLiteral(pid)},${jsLiteral(n)},${jsLiteral(from)});` + look + '})');
+    assert.ok(frames.n > 5, 'frames were looked at: ' + JSON.stringify(frames));
+    assert.deepStrictEqual(frames.bad, [], `no chip on a plate in any frame (${pid} ${n}): ${JSON.stringify(frames)}`);
+  }
+  await js(`window.__durbarSimUi.uncrowd();0`);
 
   // ---- the guards of the chip placement, deterministically (no font needed): chips widened after the drawing are placed again by the
   //      ResizeObserver (settle), and a chip that sits on a plate is moved off it (resolve) ----

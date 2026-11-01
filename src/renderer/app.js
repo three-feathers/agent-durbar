@@ -917,7 +917,7 @@ const CANDIDATES=[['full',3,'side'],['full',2,'side'],['full',3],['full',2],['ro
 let LIVE_SIDE=false; const SIDE_W=196, SIDE_GAP=8;
 let LIVE_PREF=(()=>{try{return localStorage.getItem('durbar.liveActivity')!=='off';}catch(e){return true;}})();
 const LIVE_MASK=(()=>{const L=window.DurbarLiveAct,R=NO_REDACT?null:window.DurbarRedact;if(!L||!R||typeof R.redact!=='function')return null;
-  return {redact:t=>R.redact(t),cmd:t=>R.maskSecretCommand(t),url:t=>R.maskSecretUrl(t)};})();
+  return {redact:t=>R.redact(t),cmd:t=>R.maskSecretCommand(t),url:t=>R.maskSecretUrl(t),home:t=>R.maskHomePaths(t)};})();
 const LIVEACT=LIVE_MASK?window.DurbarLiveAct.create({mask:LIVE_MASK}):null;
 const liveOn=()=>!!LIVEACT&&LIVE_PREF;
 function setLiveOn(on){LIVE_PREF=!!on;try{localStorage.setItem('durbar.liveActivity',LIVE_PREF?'on':'off');}catch(e){}scheduleRender();}
@@ -1010,6 +1010,7 @@ function liveFeed(a,e){
   let x;
   if(e.type==='toolCall'&&e.phase==='start'){const k=toolKind(e.tool),l0=editLabel(e)||toolLabel(e.args),l=k==='edit'&&l0&&!e.mcpServer?EV.displayPath(l0,a.info&&a.info.cwd).rel:l0; /* spec 005 FR-020: an edit names its file relative to the folder */x={kind:k,label:l,simple:SIMPLE?plainChip(k,e.tool,l,true):'',skip:isTaskTool(e.tool)};}
   if(LIVEACT.onEvent(a.id,e,x))livePaintSoon(a);
+  if(OFFICE_VIEW==='real'&&window.DurbarRealOffice)window.DurbarRealOffice.feed(a.id); /* spec 097 FR-033: its monitor repaints at its own pace */
 }
 let HCAP=1; /* helpers shown on a compact strip before "+N more" (a layout parameter, chosen with the density) */
 let HX_OFF=false; /* simulator only (__durbarSimUi.hxOff): the helper step is skipped, so a driver can compare a layout with and without it (FR-091 item 2) */
@@ -1677,6 +1678,7 @@ async function setOfficeView(v){
   if(v===OFFICE_VIEW)return true;
   if(v==='real'&&signsOn()&&!(await openDoorsFirst('real')))return false;
   OFFICE_VIEW=v;try{localStorage.setItem('durbar.officeview',v);}catch(e){}
+  if(v==='flat'&&window.DurbarRealOffice&&window.DurbarRealOffice.leave)window.DurbarRealOffice.leave(); /* spec 097 Changes 2026-11-01 */
   syncWorld();layoutKey='';scheduleRender();return true;
 }
 /* spec 097 FR-084 (owners 2026-10-31): the Characters setting applies in Real office too; a set without Real office pictures (today
@@ -1762,6 +1764,16 @@ function realModel(model){
   });
   return {folders,places,alertIcon:signIcon('alert'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
 }
+/* spec 097 FR-030..FR-035: what a monitor shows: the agent's lines (liveact.js, masked), else its last reply or task through the same steps, with
+   the status lines the state asks for; no working mask: only the status word (fail closed). Live activity off: no live lines, as in flat. */
+function realScreen(id,state,word){
+  const a=byId(id), live=liveOn(), log=a&&live&&!a.parent?LIVEACT.screen(id):[];
+  const ask=state==='waiting'||state==='limit'||state==='error', quiet=!live&&(state==='working'||state==='thinking'); /* the setting hid what it does: the status and bars, as flat shows no reply while it works */
+  const task=!a||!LIVEACT||quiet?[]:ask?LIVEACT.strict(taskText(a),'plain'):!log.length?LIVEACT.block(taskOf(a),'plain'):[];
+  const reply=a&&LIVEACT&&!log.length&&(state==='done'||state==='idle')&&a.lastOutput?LIVEACT.block(a.lastOutput,'reply'):[]; /* as grownShowsReply */
+  return window.exports.screenFor(state,log,task,reply,word,quiet);
+}
+const roFrozen=()=>SIM&&qs.get('simfreeze')==='1'&&qs.get('romotion')!=='1'; /* simulator drivers measure boxes: the people hold still (as hl-still); romotion=1 opts back in */
 let RO_LAST=null; /* the last layout, for the drivers (window.__durbarSimUi.realLayout) */
 function renderReal(stage,floor,aw,ah,model){
   if(RO_LOAD!=='ready'){
@@ -1783,7 +1795,7 @@ function renderReal(stage,floor,aw,ah,model){
   }
   if(stage.dataset.d!=='real'){stage.dataset.d='real';stage.textContent='';}
   layoutKey='';GROW=0;setGrow(stage,0);spreadOffice(stage,false);stagePrev=null;
-  RO_LAST=window.DurbarRealOffice.render(stage,realModel(model),{w:aw,h:ah},{still:REDUCED||SERIOUS,world:pp.world,set:pp.set,remember:rememberOn(),
+  RO_LAST=window.DurbarRealOffice.render(stage,realModel(model),{w:aw,h:ah},{live:liveOn(),still:REDUCED||SERIOUS,hold:roFrozen()||(!!APP_SETTINGS&&APP_SETTINGS.characterMotion===false),screenOf:realScreen,world:pp.world,set:pp.set,remember:rememberOn(), /* FR-071: the 096 Motion setting, once it exists, stops the people */
     rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender()});
   stage.style.width=aw+'px';stage.style.height=RO_LAST.height+'px';
   stage.dataset.fit=RO_LAST.scroll?'scroll':'ok';floor.classList.toggle('scrolls',!!RO_LAST.scroll);
@@ -8423,7 +8435,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={agents:()=>agents,order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
+if(SIM)window.__durbarSimUi={agents:()=>agents,setLive:setLiveOn,setOfficeView,order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
   toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */uncrowd:()=>{agents.forEach(x=>VISITS.unpin(x.id));scheduleRender();return true;},crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
