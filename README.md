@@ -27,7 +27,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - **Three agent apps side by side:** Copilot, Claude Code and Codex, with one set of permission modes and model, context and spending controls.
 - **Needs you:** one inbox of every agent waiting for an answer or a permission, oldest first.
 - **Sessions that last:** resume after a restart or a crash, scheduled prompts, undo an agent's file changes, notes, continue in another app.
-- **MCP servers** shared across your agent apps, with health, sign-in and per-tool switches. When your organization's sign-in rules (Entra Conditional Access, for example a managed-device check) refuse a tool, the chat says so under the failed call and offers Sign in again…; try Safari or Edge.
+- **MCP servers** shared across your agent apps, with health, sign-in and per-tool switches. When your organization's sign-in rules (Entra Conditional Access, for example a managed-device check) refuse a tool, the chat says so under the failed call and offers Sign in again….
 - **Six themes** and a theme maker.
 
 ![Full-screen chat with the other agents in a slim strip, 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)

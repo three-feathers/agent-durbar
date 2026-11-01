@@ -5013,7 +5013,7 @@ function tTool(T,e){
 /* spec 058 FR-194 (issue 841): under a failed MCP call that main marked `policy` (an Entra Conditional Access refusal, from the masked text),
    one fixed line and a Sign in again... button. The words are written here: nothing of the tool's output reaches them, they are set as
    text (no markup), and only a person's press opens the existing MCP servers dialog, where the row's own Sign in again... is. */
-const MCP_POLICY_LINE='Your organization\u2019s sign-in rules refused this tool. This usually means a managed-device check. Sign in again from Safari or Edge (Chrome needs the Microsoft Single Sign On extension).';
+const MCP_POLICY_LINE='Your organization\u2019s sign-in rules refused this tool. This usually means a managed-device check. Sign in again using a browser your organization allows.';
 function mcpPolicyNote(c){
   const n=document.createElement('div');n.className='mcpwhy';n.setAttribute('role','note');
   const t=document.createElement('span');t.textContent=MCP_POLICY_LINE;

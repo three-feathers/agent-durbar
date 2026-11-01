@@ -26,7 +26,7 @@ process.on('exit', (code) => {
 });
 
 // made-up shapes of a Conditional Access refusal: a code, a sentence, a claims blob, a trace id, an e-mail address
-const MAIL = 'jane.doe@contoso.example';
+const MAIL = 'jane.doe@example.invalid';
 const TRACE = '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0';
 const CLAIMS = 'eyJhY2Nlc3NfdG9rZW4iOnsibmJmIjp7ImVzc2VudGlhbCI6dHJ1ZX19fQ';
 const POLICY_TEXT = `AADSTS530003: Your device is required to be managed to access this resource. Trace ID: ${TRACE}. User: ${MAIL}. claims=${CLAIMS}`;
@@ -43,6 +43,15 @@ async function main(): Promise<void> {
     ['error=insufficient_claims', 'policy'],
     ['{"error":"interaction_required"}', 'policy'],
     ['AADSTS5300: too short', undefined],
+    // review of #980: what signing in again fixes says sign-in, also with interaction_required beside it
+    ['{"error":"interaction_required","error_description":"AADSTS50076: multi-factor authentication is required"}', 'auth'],
+    ['invalid_grant AADSTS50173 interaction_required', 'auth'],
+    ['{"error":"interaction_required"} AADSTS530003', 'policy'],
+    // whole words: a code inside a longer word is not that code
+    ['XAADSTS53000: blocked', undefined],
+    ['AADSTS53000_suffix', undefined],
+    ['XAADSTS50076 failed', undefined],
+    ['AADSTS50076_suffix', undefined],
     ['AADSTS5300001: seven digits', undefined],
     ['not_insufficient_claims_at_all', undefined],
     ['interaction_required_not', undefined],
