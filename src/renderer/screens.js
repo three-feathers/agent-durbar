@@ -729,7 +729,7 @@
   /* the pick applies at once; the page is painted again (Characters names the new default) and focus returns to the radio */
   async function pickWorld(b){
     const id=b.dataset.world;X.signs.view.world.set(id);await paintSettings();
-    const nb=document.querySelector('#wrGroup [data-world="'+CSS.escape(id)+'"]');if(nb)nb.focus();
+    const nb=document.querySelector('#wrGroup [data-world="'+CSS.escape(id)+'"]');if(nb)focusIn(nb);
   }
   function worldKeys(e){
     const b=e.target.closest&&e.target.closest('#wrGroup [data-world]');if(!b)return;
