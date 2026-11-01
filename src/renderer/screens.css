@@ -498,5 +498,6 @@ body.has-bridge #topBtns{display:flex}
 .ns-done{margin:10px 0 0}
 .ns-done>summary{cursor:pointer;margin:0 0 6px;padding:4px 2px;font-size:12px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-2);border-radius:6px}
 .ns-done>summary:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.orgrows{list-style:none;margin:0;padding:0}.orgrow{padding:6px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:2px;font-size:var(--t3-size,12px)}.orgrow small{font-size:11px;color:var(--muted,inherit);overflow-wrap:anywhere}.orgrow ul{margin:2px 0 0;padding-left:18px}
 
 @media (forced-colors:active){.swt{border-color:ButtonText;forced-color-adjust:none;background:Canvas}.swt i{background:ButtonText;box-shadow:none}.swt.on{background:Highlight;border-color:Highlight}.swt.on i{background:HighlightText}} /* on and off differ by the knob's place and by colour: both survive */

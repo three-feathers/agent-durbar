@@ -1012,8 +1012,20 @@ https://learn.chatgpt.com/docs/enterprise/managed-configuration.md (`allowed_app
 - **FR-207 For the Organization page.** `orgpolicy:view` returns, per app: whether a policy applies, whether part of it could not be
   read, where it came from (`paths`: file paths, or *the Copilot runtime*), what was wrong (`problems`: path and kind, never a value),
   the mode verdicts (words and whether refused), and counts of the model, server and tool rules (no values). The window uses it for the
-  mode menus; spec 076's Settings > Organization page (FR-194) will list it.
-  `[IMPLEMENTED]` test: `test-orgpolicy.ts` (e: no value of any list, valid or not, reaches the view). The Organization page itself is FR-194 (not built).
+  mode menus; Settings > Organization (FR-208) lists it.
+  `[IMPLEMENTED]` test: `test-orgpolicy.ts` (e: no value of any list, valid or not, reaches the view). The Organization page is FR-208 (built; FR-194's key list is not).
+
+- **FR-208 Settings > Organization (issue #602, spec delta 2026-10-31).** A read-only section of Settings, built only from `orgpolicy:view` (FR-207; no
+  new read, nothing written, no values of any rule). One row per agent app in the view: its name, one status line, where it came from
+  (`paths`), the mode verdicts in FR-202's words, the counts of model, server and tool rules, and each problem (path and kind). The status
+  line keeps three states apart, and **a failed read is never "no policy"**: *No policy file found on this computer* (found: no, unreadable:
+  no; with the note that a company profile, registry value or server-managed setting can still apply, FR-206); *Policy applies* (found,
+  fully read); *Policy found, but Agent Durbar could not read all of it, so what it blocks is unknown* (unreadable, in any case of found).
+  If `orgpolicy:view` itself fails, the section says the policies are unknown and shows no row as clear. Apps absent from the view have no
+  reader and are not listed. The text is escaped, at least 10.5px, and the section is not shown when the bridge has no view or the view is
+  empty. Not built here: showing top-level keys of the vendor files (FR-194's key list), FR-195's "which one wins" line, macOS MDM and the
+  Windows registry (P17), server-managed settings, Codex `mcp_servers` identity rules and a real managed machine (`[KNOWN GAP]`, FR-206).
+  Section O's phase P27 stays open for those. `[IMPLEMENTED]` `test:` `test-orgwords.ts`; `sim:` `shots-076-orgpolicy.js` (`?simorgpolicy=1`).
 
 ### M. Testing
 
@@ -1157,6 +1169,13 @@ All three answered on PR #575 (09:03-09:06 UTC) with option a, the recommended o
 - **SC-005** All policy tests run with zero AI credits on Windows, macOS and Linux CI.
 
 ## Changes
+
+- 2026-11-01 (sweep of the build): **FR-208**: a slow reply of an earlier paint of Settings does not overwrite the Organization section of a later one.
+
+### 2026-10-31: Settings > Organization, the part of issue #602 that needs no native code (FR-208)
+
+Issue #602 asks for the Organization page that lists `orgpolicy:view`. FR-208 adds it, read-only, from the view that already exists; the
+sources that still need native code or a managed machine stay `[KNOWN GAP]` (FR-206). Tasks T206..T209.
 
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 

@@ -184,6 +184,23 @@ module.exports = async (ctx) => {
     } else assert.fail('tools: the Claude Code session is not running, so the tools list was not checked');
     await shot('076-orgpolicy-mcp', w, h);
     await closeAll();
+
+    // ---- FR-208: Settings > Organization lists each app; a partly read policy is "unknown", never "no policy" ----
+    await js(`document.getElementById('settingsBtn').click()`);
+    assert.ok(await until(`document.querySelectorAll('#orgSet li.orgrow').length===3`), 'Organization: three apps listed');
+    const orgRows = await js(`[...document.querySelectorAll('#orgSet li.orgrow')].map(l=>({id:l.dataset.org,state:l.dataset.state,text:l.textContent}))`);
+    const byId = Object.fromEntries(orgRows.map((r) => [r.id, r]));
+    assert.strictEqual(byId.claude.state, 'applies');
+    assert.ok(byId.claude.text.includes('Allow all: ' + CLAUDE_TEXT), 'Organization: Claude Code row has the reason');
+    assert.strictEqual(byId.codex.state, 'unknown', 'Organization: Codex (partly read) is unknown');
+    assert.ok(/so what it blocks is unknown/.test(byId.codex.text) && !/No policy file found/.test(byId.codex.text), 'Organization: Codex is not "no policy"');
+    await js(`document.getElementById('orgH').scrollIntoView({block:'start'})`);
+    await settle();
+    const of = await minFont('#orgSec');
+    assert.ok(of.min >= 10.5, `Organization: text >= 10.5px (${of.min} ${of.who})`);
+    await shot('076-orgpolicy-organization', w, h);
+    await js(`document.getElementById('scrClose').click()`);
+    await until(`!document.getElementById('orgSec')`);
   }
 
   // ---- without the canned policy nothing is greyed ----
@@ -195,6 +212,24 @@ module.exports = async (ctx) => {
   assert.ok(await until(`!!document.querySelector('#agMcp li.srv[data-n="my-notes"]')`), 'no policy: the dialog lists my-notes');
   assert.strictEqual(await js(`document.querySelectorAll('#agMcp .org-tag,#agMcp .srv-org').length`), 0, 'no policy: no row is greyed');
   await closeAll();
+
+  // no canned policy: the view is empty, so the section is not shown
+  await js(`document.getElementById('settingsBtn').click()`);
+  assert.ok(await until(`!!document.getElementById('scrClose')&&!document.getElementById('orgSec')`), 'no policy: no Organization section');
+  await js(`document.getElementById('scrClose').click()`);
+
+  /* sweep: a slow reply of an earlier paint does not overwrite the section of a later one */
+  await H.load({ w: 1440, h: 900, ready: 'fit', focus: true, query: { simkinds: 'mixed', simorgpolicy: '1' } });
+  await js(`(()=>{const b=window.__durbarSimUi.bridge(),f=b.orgPolicyView;let n=0;window.__orgLate=null;b.orgPolicyView=function(...a){n++;if(n===1)return new Promise((_ok,no)=>{window.__orgLate=()=>no(new Error('late'));});return f.apply(this,a);};})();0`);
+  await js(`document.getElementById('settingsBtn').click()`);
+  assert.ok(await until(`!!window.__orgLate&&!!document.getElementById('orgSet')`), 'the first read is held');
+  await js(`document.getElementById('scrClose').click()`);
+  await js(`document.getElementById('settingsBtn').click()`);
+  assert.ok(await until(`document.querySelectorAll('#orgSet li.orgrow').length===3`), 'the later read fills the section');
+  await js(`window.__orgLate();new Promise(r=>setTimeout(r,200))`); // a bound on a negative
+  assert.strictEqual(await js(`document.querySelectorAll('#orgSet li.orgrow').length`), 3, 'the earlier reply, a failure, does not overwrite it');
+  assert.strictEqual(await js(`!!document.querySelector('#orgSet p.scr-note.warn')`), false, 'no failure line from the earlier read');
+  await js(`document.getElementById('scrClose').click()`);
 
   console.log('[076] orgpolicy PASS');
 };
