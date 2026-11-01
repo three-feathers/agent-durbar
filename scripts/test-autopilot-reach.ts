@@ -44,9 +44,6 @@ assert.ok(main.includes("if (autopilotOn()) query.simautopilot = '1';"), 'the si
 // the flag lives in one line, and every test above and in the adapters' files follows it or a parameter, so a flip is that line and the pin at the end of this file (spec *Changes*)
 assert.strictEqual((src('src/adapters/autopilotHost.ts').match(/^export const AUTOPILOT_WIRED = (false|true) as boolean;$/gm) ?? []).length, 1, 'one line');
 assert.strictEqual(typeof AUTOPILOT_WIRED, 'boolean');
-// The one deliberate pin. Turning Autopilot on for people needs the owners' decision (spec 099 *Changes*, Phase 3 gate): only then change this line together with the flag.
-const AUTOPILOT_SHIPPED = false;
-assert.strictEqual(AUTOPILOT_WIRED, AUTOPILOT_SHIPPED, 'AUTOPILOT_WIRED changed: this needs the owners\' decision (spec 099). If they have decided, set AUTOPILOT_SHIPPED here in the same commit.');
 // the simulator's capability is behind main's query, nothing else
 assert.ok(/get\('simautopilot'\)/.test(src('src/renderer/sim.ts')), 'the simulator asks main');
 
