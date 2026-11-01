@@ -97,6 +97,10 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **Main changes what the window reads in one synchronous step, then awaits teardown**: a tab list updated before its active tab let a driver name a removed tab (spec 080 closeTab, 2026-10-31).
 - [ ] **A handler main gives Electron answers on every path**: `setWindowOpenHandler` code that calls main's own logic is wrapped so a throw still returns `deny` (and a test makes it throw); a page's request never moves the keyboard focus unless the page itself had it (spec 080, review of #915, 2026-10-31).
 - [ ] **A driver runs a page's script in that page's own `webContents`**, not in "the attached view": a page that opens a tab stops being the attached one mid-step (spec 080 `check-browser-tabs`, 2026-10-31).
+- [ ] **A menu row sends only its own field**, merged when its turn comes; a fake answers as the real runtime does (spec 030).
+- [ ] **Mutate each guard both ways**: surviving mutants hid four real gaps (#935).
+- [ ] **No unquoted `$` or heredoc in a shell comment body**: `$0.0066` became `/bin/bash.0066`.
+- [ ] **Sub-agents get unique scratch folders and one PR-body file each**: files overwritten on 2026-10-23 and again 2026-10-31.
 
 ## UI and accessibility
 
@@ -117,9 +121,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 
 - [ ] **Search for an existing helper, predicate, dialog or matcher** first (`git grep` the concept) and name it in the PR. [#628](https://github.com/three-feathers/agent-durbar/pull/628), [#560](https://github.com/three-feathers/agent-durbar/pull/560)
 - [ ] **Docs in the same PR**: `changelog.d/` fragment, `specs-index` status, task ticked, README and notes. [#535](https://github.com/three-feathers/agent-durbar/pull/535)
-- [ ] **Sub-agents get unique scratch folders and one PR-body file each**: three PR bodies were overwritten on 2026-10-23.
 
 ## How we review
 
 - **Format**: **Strengths**, **Required fixes** (numbered, each with `file:line`, a concrete failure from a probe or mutation, and the fix), then **Questions**; end with what you ran and what you did not.
-- **What reviewers praised**: one helper owns an order (mask, plain, cut) and fails closed ([#567](https://github.com/three-feathers/agent-durbar/pull/567)); drivers that scan every text node and attribute with planted secrets ([#567](https://github.com/three-feathers/agent-durbar/pull/567)); mutations listed, each caught ([#588](https://github.com/three-feathers/agent-durbar/pull/588)); reuse named ([#629](https://github.com/three-feathers/agent-durbar/pull/629)); allow-lists tight by construction ([#594](https://github.com/three-feathers/agent-durbar/pull/594)); "simulator and fakes only" said plainly ([#598](https://github.com/three-feathers/agent-durbar/pull/598)); seams for spawn, kill and clock, no shell on Windows ([#565](https://github.com/three-feathers/agent-durbar/pull/565)).
