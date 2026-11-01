@@ -122,6 +122,31 @@ assert.ok(has(checkFrames([goodFrame, goodFrame, riff([vp8l(1, 1, true)]), goodF
   assert.ok(has(checkFrame(stripChunks(riff([vp8x(352, 352, 0x10), vp8l(352, 352, true), meta('ZZZZ')])) as Uint8Array), /ZZZZ/), 'an unknown chunk is NOT stripped silently: it is still refused');
   assert.strictEqual(stripChunks(Buffer.from('nope')), null, 'not a WebP');
   assert.strictEqual(stripChunks(dirty.subarray(0, dirty.length - 5)), null, 'truncated');
+  { // the input stays as it was, a Buffer included (its `slice` shares memory), and only the output's VP8X flags change
+    const flagged = riff([vp8x(352, 352, 0x10 | 0x20 | 0x08 | 0x04), vp8l(352, 352, true), meta('EXIF')]);
+    const before = Buffer.from(flagged);
+    const stripped = stripChunks(flagged) as Uint8Array;
+    assert.ok(before.equals(flagged), 'stripChunks does not change a Buffer it is given');
+    assert.strictEqual(stripped[20], 0x10, 'the output has the metadata flags off');
+    const u8 = new Uint8Array(before);
+    stripChunks(u8);
+    assert.ok(before.equals(Buffer.from(u8)), 'nor a Uint8Array');
+  }
+  { // an odd final chunk without its pad byte, whether or not the RIFF size counts the missing byte
+    const payload = Buffer.alloc(11);
+    const head = Buffer.alloc(20);
+    head.write('RIFF', 0, 'latin1'); head.write('WEBP', 8, 'latin1'); head.write('VP8L', 12, 'latin1'); head.writeUInt32LE(11, 16);
+    const noPad = Buffer.concat([head, payload]);
+    noPad.writeUInt32LE(noPad.length - 8, 4);
+    assert.strictEqual(webpInfo(noPad)?.truncated, true, 'RIFF size without the pad');
+    assert.strictEqual(stripChunks(noPad), null);
+    const claims = Buffer.from(noPad);
+    claims.writeUInt32LE(claims.length - 8 + 1, 4);
+    assert.strictEqual(webpInfo(claims)?.truncated, true, 'RIFF size counting a pad byte that is not there');
+    const padded = Buffer.concat([noPad, Buffer.alloc(1)]);
+    padded.writeUInt32LE(padded.length - 8, 4);
+    assert.strictEqual(webpInfo(padded)?.truncated, false, 'with the pad byte: whole');
+  }
   // an odd-sized metadata chunk (padded) is removed with its pad byte
   const odd = riff([vp8x(352, 352, 0x10), vp8l(352, 352, true), chunk('EXIF', Buffer.from('abc'))]);
   assert.deepStrictEqual(checkFrame(stripChunks(odd) as Uint8Array), [], 'odd-sized EXIF with its pad byte');
