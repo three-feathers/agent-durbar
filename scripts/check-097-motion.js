@@ -40,6 +40,9 @@ module.exports = async (ctx) => {
   const pickWorking = `window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.state==='working').map(d=>d.id)`;
 
   /* simulator visits run on the wall clock and take the frozen run's working agents to the lobby: an idle agent told to work stays at its desk */
+  const onRig = (i) => `!!document.querySelector('#stage .ro-person.m-rig[data-for="'+CSS.escape(${jsLiteral(i)})+'"]')&&document.querySelectorAll('#stage .ro-rig[data-for="'+CSS.escape(${jsLiteral(i)})+'"] img').length===3`;
+  /* what the page says about a desk that is not on the rig, for the log */
+  const rigState = (i) => js(`(()=>{const q=(c)=>document.querySelector('#stage '+c+'[data-for="'+CSS.escape(${jsLiteral(i)})+'"]'),p=q('.ro-person'),r=q('.ro-rig'),d=window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(x=>x.id===${jsLiteral(i)});return {reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,hidden:document.hidden,focus:document.hasFocus(),ro:document.querySelector('#stage .ro').className,person:p&&p.className,pose:p&&p.dataset.pose,anims:p&&p.getAnimations().map(a=>a.animationName||a.playState),rig:r&&r.querySelectorAll('img').length,state:d&&d.state,layoutPose:d&&d.person&&d.person.pose,pid:d&&d.person&&d.person.pid,hasRig:!!(d&&d.person&&window.DurbarRealOfficeArt.rig&&window.DurbarRealOfficeArt.rig[d.person.pid])};})()`);
   const seat = async (nth = 0) => {
     const id = await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.state==='idle'&&d.person).map(d=>d.id)[${jsLiteral(nth)}]`);
     assert.ok(id, 'an idle agent at a desk');
@@ -60,9 +63,14 @@ module.exports = async (ctx) => {
     await loadReal(w, h);
     await js(INSTALL);
     /* simulator visits run on the wall clock and can take a person from the desk on a slow machine: another idle one then */
-    const onRig = (i) => `!!document.querySelector('#stage .ro-person.m-rig[data-for="'+CSS.escape(${jsLiteral(i)})+'"]')&&document.querySelectorAll('#stage .ro-rig[data-for="'+CSS.escape(${jsLiteral(i)})+'"] img').length===3`;
     let typist = await seat();
-    if (!(await H.until(onRig(typist), 15000))) typist = await seat(0); /* the idle desks are few: another only once */
+    if (!(await H.until(onRig(typist), 15000))) {
+      console.log('[097-motion] not on the rig', typist, JSON.stringify(await rigState(typist)));
+      await emit({ type: 'status', sessionId: typist, status: 'working', intent: 'Driver work again' }); /* does one more draw cure it? */
+      const cured = await H.until(onRig(typist), 5000);
+      console.log('[097-motion] after one more draw', cured, JSON.stringify(await rigState(typist)));
+      if (!cured) assert.fail('the typist on the rig: ' + JSON.stringify(await rigState(typist)));
+    }
     await must(onRig(typist), 'the typist on the rig: head and two hands (spec Changes 2026-11-01)');
     const anims = await js(animInfo);
     const names = {}; for (const a of anims) names[a.name] = (names[a.name] || 0) + 1;
@@ -210,11 +218,14 @@ module.exports = async (ctx) => {
   const OUTRUN = `(()=>{const fl=document.getElementById('floor').getBoundingClientRect();return [...document.querySelectorAll('#stage .ro-person,#stage .ro-rig img')].filter(e=>e.getBoundingClientRect().top>fl.bottom+20&&e.getAnimations().some(a=>a.playState==='running'));})()`;
   assert.ok(await H.until(`${OUTRUN}.length===0`, 8000), 'nothing out of view runs');
   /* a rig goes still with its person, in the same frame: not only when the next draw sets the class */
+  await js(`document.getElementById('floor').scrollTop=0;0`);
+  const rigAway = await seat();
+  await must(onRig(rigAway), 'a desk on the rig to scroll away');
   const late = await js(`new Promise((done)=>{const f=document.getElementById('floor');f.scrollTop=0;const t0=performance.now();let bad=0,seen=0;const look=()=>{for(const r of document.querySelectorAll('#stage .ro-rig')){const p=document.querySelector('#stage .ro-person[data-for="'+CSS.escape(r.dataset.for)+'"]');if(!p)continue;if(p.classList.contains('ro-off'))seen++;if(p.classList.contains('ro-off')!==r.classList.contains('ro-off'))bad++;}if(performance.now()-t0<1500)requestAnimationFrame(look);else done({bad,seen});};f.scrollTop=f.scrollHeight;requestAnimationFrame(look);})`);
   console.log('[097-motion] rig with its person', JSON.stringify(late));
   const lod = await js(`document.querySelector('#stage .ro').className`);
   if (/lod[12]/.test(lod)) console.log('[097-motion] no rig check: the frame rate dropped them here', lod);
-  else assert.ok(late.seen > 0, 'rigs went out of view: ' + JSON.stringify(late) + ' ' + lod);
+  else assert.ok(late.seen > 0, 'rigs went out of view: ' + JSON.stringify(late) + ' ' + JSON.stringify(await rigState(rigAway)));
   assert.strictEqual(late.bad, 0, 'a rig out of step with its person');
   await js(`document.getElementById('floor').scrollTop=0;0`);
   const off = await js(`(()=>{const fl=document.getElementById('floor').getBoundingClientRect();const out=[...document.querySelectorAll('#stage .ro-person')].filter(e=>e.getBoundingClientRect().top>fl.bottom+20);
