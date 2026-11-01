@@ -67,13 +67,15 @@ export const CHIP_H = 17, CHIP_GAP = 2;
 /** FR-022: the order inside a zone. */
 export const STATE_ORDER: Record<RealState, number> = { waiting: 0, limit: 0, error: 1, working: 2, thinking: 2, done: 3, idle: 4, asleep: 4 };
 /** FR-036: the seated pose per state (the first frame; motion is phase P2). */
-export const SEAT_POSE: Record<RealState, string | null> = { working: 'typeA', thinking: 'think', waiting: 'waveA', limit: 'waveA', error: 'think', done: 'rest', idle: 'rest', asleep: null };
+export const SEAT_POSE: Record<RealState, string | null> = { working: 'typeA', thinking: 'think', waiting: 'waveA', limit: 'waveA', error: 'think', done: 'rest', idle: 'rest', asleep: 'rest' };
 
 const roOwn = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
 const roNeedsYou = (s: RealState): boolean => s === 'waiting' || s === 'limit';
-/** An agent without a person at its desk: away in the lobby, or asleep (Q5: lamp and screen off, a narrower desk). */
-const roNarrow = (a: RealAgent): boolean => !!a.away || a.state === 'asleep';
+/** A narrower desk (0.62): asleep (Q5, FR-120: lamp and screen off). An away desk never narrows (owner, 2026-11-01: a still room): it keeps its width with an empty seat. */
+const roNarrow = (a: RealAgent): boolean => a.state === 'asleep';
 const roWidthOf = (a: RealAgent): number => (roNarrow(a) ? AWAY_W : 1);
+/** FR-129: an empty chair now only ever means away; an asleep agent rests at the desk, in the dark. */
+const roSeated = (a: RealAgent): boolean => !a.away;
 const roSeatOf = (meta: RealMeta, a: RealAgent): SeatMeta | null => (a.person && roOwn(meta.seat, a.person) ? meta.seat[a.person] : null);
 
 /** FR-022: a zone's desks in status order; ties keep the model's order. */
@@ -116,7 +118,7 @@ function roZoneStats(meta: RealMeta, z: RealFolder): { seated: boolean; rise: nu
   if (!st) {
     st = { seated: false, rise: 0, hand: DESK_AT * 0.9 };
     for (const a of z.agents) {
-      if (roNarrow(a)) continue;
+      /* an away desk holds the room of its person's raised hand as well: the room never moves when someone leaves or comes back */
       const m = roSeatOf(meta, a);
       st.seated = true; st.rise = Math.max(st.rise, m ? m.headTop / m.bodyH : 0.3); st.hand = Math.max(st.hand, m ? m.hand : DESK_AT);
     }
@@ -290,33 +292,33 @@ function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: numb
   const narrow = roNarrow(a);
   const slotW = Sw * roWidthOf(a);
   const deskY = y + g.deskBack, dw = slotW - 6, dh = g.dh;
-  const m = narrow ? null : roSeatOf(meta, a);
+  const m = roSeated(a) ? roSeatOf(meta, a) : null;
   const hand = m ? m.hand : DESK_AT;
   const headY = deskY - 0.015 * u - hand * u;
-  const px = big || narrow ? sx + slotW / 2 : sx + 0.05 * Sw + 0.42 * u;
+  const px = big || narrow || !!a.away ? sx + slotW / 2 : sx + 0.05 * Sw + 0.42 * u;
   let person: DeskBox['person'] = null, face: Rect | null = null;
   const pose = SEAT_POSE[a.state];
   if (m && pose) {
     const k = u / m.bodyH, w = m.w * k, h = m.h * k, top = headY - m.headTop * k;
     person = { x: px - w / 2, y: top, w, h, file: `${a.person}-${pose}.webp`, pose, pid: String(a.person),
-      vis: { x: px - 0.3 * u, y: headY, w: 0.6 * u, h: Math.max(0, deskY - headY) } }; /* the head and shoulders: the monitor may cover a shoulder edge, never the face */
+      vis: { x: Math.max(sx, Math.min(px - 0.3 * u, sx + slotW - 0.6 * u)), y: headY, w: Math.min(0.6 * u, slotW), h: Math.max(0, deskY - headY) } }; /* the head and shoulders: the monitor may cover a shoulder edge, never the face */
     face = { x: px - FACE_U * u * 0.4, y: headY, w: FACE_U * u * 0.8, h: FACE_U * u };
   }
   let sl = px + 0.36 * u, sr = sx + slotW - 0.05 * Sw, sw = sr - sl;
   let foot = deskY + 0.13 * dh, neck = Math.max(6, 0.07 * u);
   let sh = Math.min(sw * (Sw > 300 ? 0.78 : 0.64), foot - neck - (y + STRIP + 3));
-  if (narrow && !big) { sl = sx + 0.1 * slotW; sr = sx + 0.9 * slotW; sw = sr - sl; sh = Math.min(sw * 0.64, foot - neck - (y + STRIP + 22)); }
-  if (big) { const top = narrow ? 22 : 6; /* an away desk's "at <place>" label sits above its screen */ sl = sx + 0.04 * slotW; sr = sx + 0.96 * slotW; sw = sr - sl; sh = scrH - 4 - top; neck = 0; foot = y + STRIP + top + sh; }
+  if ((narrow || a.away) && !big) { sl = sx + 0.1 * slotW; sr = sx + 0.9 * slotW; sw = sr - sl; sh = Math.min(sw * 0.64, foot - neck - (y + STRIP + 22)); }
+  if (big) { const top = a.away ? 22 : 6; /* an away desk's "at <place>" label sits above its screen */ sl = sx + 0.04 * slotW; sr = sx + 0.96 * slotW; sw = sr - sl; sh = scrH - 4 - top; neck = 0; foot = y + STRIP + top + sh; }
   sh = Math.max(12, sh);
   const screen = { x: sl, y: foot - neck - sh, w: sw, h: sh + neck + 4 };
   const glass = { x: sl + 3, y: foot - neck - sh + 3, w: sw - 6, h: sh - 6 };
-  const plateH = roNeedsYou(a.state) ? PLATE_H_ASK : PLATE_H;
+  const plateH = roNeedsYou(a.state) || a.state === 'asleep' ? PLATE_H_ASK : PLATE_H; /* FR-120: the asleep plate's words take two lines in its narrower desk (the row already holds the room, FR-015) */
   const plate = { x: sx + 8, y: deskY + 0.22 * dh + 2, w: slotW - 16, h: plateH };
   /* the desk picture is dh tall; the row shows its top (desktop, front panel, the upper legs), so the box is cut at the row's bottom */
   const desk = { x: sx + 3, y: deskY, w: dw, h: Math.min(dh, g.bottom - g.deskBack - 2), full: dh };
   return {
     id: a.id, state: a.state, narrow, slot: { x: sx, y, w: slotW, h: 0 }, desk, plate, screen, glass, person, face,
-    away: narrow && a.away ? { x: sx + slotW / 2, y: y + STRIP + 2 } : null,
+    away: a.away ? { x: sx + slotW / 2, y: y + STRIP + 2 } : null,
     lamp: { x: sx + 0.02 * slotW, y: Math.max(y + STRIP, headY - 0.35 * u), w: 0.96 * slotW, h: deskY + dh * 0.5 - Math.max(y + STRIP, headY - 0.35 * u) },
     bubble: person && roNeedsYou(a.state) ? { x: px + 0.2 * u - 6, y: headY - 0.04 * u } : null,
     bang: a.state === 'error' ? { x: sr - 10, y: screen.y - 8 } : null,
@@ -395,4 +397,19 @@ export function assignPeople(map: Record<string, string>, sessions: readonly { i
     out[s.id] = pool[Math.floor((Number.isFinite(r) ? Math.min(Math.max(r, 0), 0.999999) : 0) * pool.length)];
   }
   return out;
+}
+
+/** Spec 097 FR-110, FR-121: where a slip, a bubble or a pill goes. The first free spot nearest `anchor` inside `bounds` that touches nothing in `avoid`
+ *  (a plate, a sign, a chair label, a chip), or null when there is none. Pure; a 10 px grid keeps it cheap (a few hundred thousand comparisons at most). */
+export function placeBox(size: { w: number; h: number }, avoid: readonly Rect[], bounds: Rect, anchor: { x: number; y: number }, step = 10): Rect | null {
+  const hit = (x: number, y: number): boolean => avoid.some((r) => x < r.x + r.w && r.x < x + size.w && y < r.y + r.h && r.y < y + size.h);
+  let best: { x: number; y: number; s: number } | null = null;
+  for (let y = bounds.y; y + size.h <= bounds.y + bounds.h + 0.01; y += step) {
+    for (let x = bounds.x; x + size.w <= bounds.x + bounds.w + 0.01; x += step) {
+      const s = Math.abs(x + size.w / 2 - anchor.x) + 0.6 * Math.abs(y - anchor.y);
+      if (best && s >= best.s) continue;
+      if (!hit(x, y)) best = { x, y, s };
+    }
+  }
+  return best ? { x: best.x, y: best.y, w: size.w, h: size.h } : null;
 }

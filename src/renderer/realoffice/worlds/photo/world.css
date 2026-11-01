@@ -1,0 +1,42 @@
+/* The Photo office world (spec 097 phase 4, spec 102 FR-205): the room's own rules, loaded only when the Photo office is shown. Everything is
+   scoped by [data-world="photo"] (html or .ro), so it changes nothing in another world. Performance rules (spec 097 FR-180, FR-182): no
+   blend modes, no blur, no filter; only picture backgrounds, gradients and plain opacity (test:realoffice-assets holds this). Colours here
+   belong to the art (oak, paper, morning light); every text colour is the app's token, so text contrast is the world token set's. */
+
+/* lights without a blend mode: a warm lamp is a plain translucent gradient, the lamp's shade a darker one */
+.ro[data-world="photo"] :is(.ro-lamp,.ro-fxl){mix-blend-mode:normal}
+.ro[data-world="photo"] .ro-lamp.lamp-off{background:radial-gradient(closest-side,rgba(14,10,6,.62),rgba(14,10,6,.34) 80%,rgba(14,10,6,0));opacity:1}
+
+/* spec 097 FR-118 first run: the entrance in morning light, the card on a paper plate */
+html[data-world="photo"] #floor:has(> #stage > .welcome){background:linear-gradient(180deg,rgba(255,246,226,.62),rgba(255,236,205,.18) 55%,rgba(60,38,20,.18)),url(floor.webp) center/cover}
+html[data-world="photo"] #stage > .welcome{background:var(--surface);border-color:var(--line-2);box-shadow:0 14px 34px rgba(60,38,20,.28)}
+
+/* spec 097 FR-119 empty office: the plate is paper, the desks oak with dark monitors */
+.ro[data-world="photo"] .ro-eplate{background:var(--surface);box-shadow:0 8px 20px rgba(60,38,20,.28)}
+
+/* spec 097 FR-120 asleep at the desk: the plate is a quieter paper */
+.ro[data-world="photo"] .ro-plate.asleep{background:var(--surface-2)}
+
+@media (forced-colors:active){
+  html[data-world="photo"] #floor:has(> #stage > .welcome){background:Canvas}
+}
+
+/* spec 097 FR-121 the inbox: paper slips with a red pin at the Boss door */
+.ro[data-world="photo"] .ro-queue::before{content:"";position:absolute;left:18px;top:-5px;width:10px;height:10px;border-radius:50%;background:#c4372a;box-shadow:0 1px 2px rgba(0,0,0,.4)}
+/* spec 097 FR-123 coffee break: the tent card is cream card stock */
+.ro[data-world="photo"] .ro-tent{background:#fff8ec;color:#5a3a17;border-color:#c9a46a;border-bottom-color:#8a6233}
+/* spec 097 FR-125 the ride: brushed steel doors, drawn in CSS */
+.ro[data-world="photo"] .ro-ride .rr-door{background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(0,0,0,.12)),repeating-linear-gradient(90deg,#b7bbbf 0 1px,#c4c8cc 1px 4px,#bdc1c5 4px 6px)}
+.ro[data-world="photo"] .ro-ride .rr-door.l{box-shadow:inset -6px 0 10px rgba(0,0,0,.25)}
+.ro[data-world="photo"] .ro-ride .rr-door.r{box-shadow:inset 6px 0 10px rgba(0,0,0,.25)}
+/* spec 097 FR-122, FR-123, FR-124 the cards in the chat: the paper tones of the world (the words, buttons and order are the flat ones) */
+html[data-world="photo"] #chat .note.limit{background:#fdf3e2;border-color:#ebc07a}
+html[data-world="photo"] #chat .note.coffee,html[data-world="photo"] #coffeeBar{background:#f6ecdf;border-color:#c9a46a}
+html[data-world="photo"] #chat .note.elicit{background:#eef4fb;border-color:#a9c3dc}
+@media (forced-colors:active){
+  .ro[data-world="photo"] .ro-ride .rr-door{background:Canvas}
+  html[data-world="photo"] #chat :is(.note.limit,.note.coffee,.note.elicit),html[data-world="photo"] #coffeeBar{background:Canvas;border-color:CanvasText}
+}
+
+/* spec 097 FR-118 first run: no counts in the top bar (all zero); the space stays, so the bar does not move */
+html[data-world="photo"] body:has(#stage > .welcome) #stats{visibility:hidden}

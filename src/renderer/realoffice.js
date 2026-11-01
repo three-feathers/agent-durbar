@@ -16,6 +16,7 @@
   let SET_SHOWN = '';
   const peopleKey = () => SET_SHOWN === 'office' || !SET_SHOWN ? 'durbar.realpeople' : 'durbar.realpeople.' + SET_SHOWN;
   let onArt = null;
+  let EMPTY_BOX = null, SLIP_RO = null;
 
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const px = (n) => Math.round(n * 10) / 10 + 'px';
@@ -39,8 +40,7 @@
     layer._seen.add(key);
     return e;
   }
-  /* an element that leaves is also unobserved (the resize observer of the chrome layer, settle), so the observed set cannot grow all day */
-  function sweep(layer) { for (const [k, e] of layer._k) if (!layer._seen.has(k)) { if (layer._obs && layer._obs.delete(e)) layer._ro.unobserve(e); e.remove(); layer._k.delete(k); } }
+  function sweep(layer) { for (const [k, e] of layer._k) if (!layer._seen.has(k)) { if (layer._obs && layer._obs.delete(e)) layer._ro.unobserve(e); /* an element that leaves is also unobserved (the resize observer of the chrome layer, settle), so the observed set cannot grow all day */ e.remove(); layer._k.delete(k); } }
   function text(e, t) { t = String(t == null ? '' : t); if (e.textContent !== t) e.textContent = t; }
   function attr(e, k, v) { if (v == null || v === false) { if (e.hasAttribute(k)) e.removeAttribute(k); } else if (e.getAttribute(k) !== String(v)) e.setAttribute(k, String(v)); }
   function img(e, file, set) {
@@ -98,12 +98,14 @@
     const lobby = el(art, 'lobby', 'div', 'ro-lobby'); box(lobby, { x: 0, y: 0, w: lay.width, h: lay.lobbyH });
     const strip = el(art, 'strip', 'div', 'ro-strip'); box(strip, lay.floorStrip);
     /* FR-043: the room ambient: the share of active desks among the visible ones */
-    const states = lay.zones.flatMap((z) => z.desks.map((d) => d.state));
+    const states = model.empty ? ['idle'] : lay.zones.flatMap((z) => z.desks.map((d) => d.state)); /* FR-119: an empty floor is lit at 70 % (FR-043) */
     const ambient = L.ambientFor(states);
     ro.style.setProperty('--ro-amb', String(Math.round((1 - ambient) * 1000) / 1000));
     ro.dataset.ambient = String(ambient);
     const ambEl = el(amb, 'amb', 'div', 'ro-ambient'); box(ambEl, { x: 0, y: 0, w: lay.width, h: lay.height });
 
+    EMPTY_BOX = null;
+    if (model.empty) drawEmpty(art, chrome, lay, meta, model.empty);
     const byFolder = new Map(model.folders.map((f) => [f.id, f]));
     const byAgent = new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, a])));
     const now = Date.now();
@@ -132,14 +134,14 @@
         const lt = L.lightFor(d.state, { still: !!opts.still });
         /* the person (FR-036 first frame; P2 adds the second frame and motion), behind the desk; FR-065: the initials disc when the picture failed */
         if (d.person) {
-          const pe = el(art, 'p:' + k, 'img', 'ro-person'); box(pe, d.person); pe.dataset.for = k; pe.dataset.pose = d.person.pose; img(pe, d.person.file, true);
-        } else if (!d.narrow) {
+          const pe = el(art, 'p:' + k, 'img', 'ro-person' + (a.asleep ? ' asleep' : '')); box(pe, d.person); pe.dataset.for = k; pe.dataset.pose = d.person.pose; img(pe, d.person.file, true);
+        } else if (!d.narrow && !a.away) {
           const ini = el(art, 'i:' + k, 'div', 'ro-initials'); const r = 0.5 * lay.u; box(ini, { x: d.slot.x + 0.05 * d.slot.w + 0.42 * lay.u - r / 2, y: d.desk.y - r - 6, w: r, h: r }); ini.dataset.for = k; text(ini, initials(a.name));
         }
-        const dc = el(art, 'd:' + k, 'div', 'ro-desk' + (d.narrow ? ' narrow' : '')); box(dc, d.desk); dc.dataset.for = k;
+        const dc = el(art, 'd:' + k, 'div', 'ro-desk' + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '')); box(dc, d.desk); dc.dataset.for = k;
         const dk = dc.firstChild || dc.appendChild(document.createElement('img')); dk.style.height = px(d.desk.full); img(dk, 'desk.webp');
         /* the monitor: P1 shows the status on the glass (decorative line bars; live, masked text is phase P2, FR-030..FR-035) */
-        const sc = el(art, 'm:' + k, 'div', 'ro-screen st-' + d.state + (lt.glow === 'off' ? ' off' : '')); box(sc, d.screen); sc.dataset.for = k;
+        const sc = el(art, 'm:' + k, 'div', 'ro-screen st-' + d.state + (lt.glow === 'off' ? ' off' : '') + (a.asleep ? ' asleep' : '')); box(sc, d.screen); sc.dataset.for = k;
         if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass"></div></div><div class="ro-neck"></div><div class="ro-foot"></div>';
         const bez = sc.firstChild; bez.style.height = px(d.glass.h + 6);
         const nb = Math.max(2, Math.min(24, Math.floor((d.glass.h - 10) / 7))), gl = bez.firstChild; /* decorative line bars as many as the glass holds (aria-hidden) */
@@ -158,10 +160,14 @@
         if (d.bubble) { const b = el(chrome, 'b:' + k, 'div', 'ro-bub'); box(b, d.bubble); attr(b, 'aria-hidden', 'true'); text(b, '?'); }
         if (d.bang) { const b = el(chrome, 'x:' + k, 'div', 'ro-bang'); box(b, d.bang); attr(b, 'aria-hidden', 'true'); text(b, '!'); }
         if (d.dots) { const b = el(chrome, 't:' + k, 'div', 'ro-dots'); box(b, d.dots); attr(b, 'aria-hidden', 'true'); if (!b.firstChild) b.innerHTML = '<i></i><i></i><i></i>'; }
-        if (d.away) { const w = el(chrome, 'a:' + k, 'div', 'ro-away'); box(w, d.away); text(w, 'at ' + a.awayLabel + ' ↑'); }
+        if (d.away) { const w = el(chrome, 'a:' + k, 'div', 'ro-away'); box(w, d.away); text(w, 'at ' + a.awayLabel + ' \u2191'); }
+        /* FR-123: the tent card of a coffee break stands on the empty desk (aria-hidden; the plate and the chip say it too) */
+        if (a.tent && d.away) { const t = el(chrome, 'tn:' + k, 'div', 'ro-tent'); t.dataset.surface = 'coffee-bar'; box(t, { x: d.slot.x + d.slot.w / 2, y: d.plate.y - 21 }); attr(t, 'aria-hidden', 'true'); text(t, a.tent); }
+        /* FR-120: a static "z z" over a sleeping person (carved in the cave); aria-hidden, the plate and the name carry the meaning */
+        if (a.asleep && d.person) { const z = el(chrome, 'z:' + k, 'div', 'ro-zz'); box(z, { x: d.person.x + d.person.w * 0.62, y: Math.max(d.slot.y + 2, d.person.y + d.person.h * 0.04) }); attr(z, 'aria-hidden', 'true'); text(z, 'z z'); }
         /* FR-016, FR-090: the name plate is the desk's one focusable button; the app's click handler opens the chat ([data-id]) */
-        const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '')); box(pl, d.plate);
-        pl.type = 'button'; pl.dataset.id = k; pl.dataset.state = d.state;
+        const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '')); box(pl, d.plate);
+        pl.type = 'button'; pl.dataset.id = k; pl.dataset.state = d.state; if (a.asleep) pl.dataset.surface = 'lounge'; /* spec 098 FR-010: the moment's marker */
         attr(pl, 'aria-pressed', a.selected ? 'true' : 'false'); attr(pl, 'aria-label', a.label); attr(pl, 'title', a.tip);
         const psig = JSON.stringify([a.name, a.role, a.word, a.task, a.helpers, d.state]);
         if (pl._sig !== psig) {
@@ -172,7 +178,7 @@
           if (a.helpers.length) { const h = document.createElement('span'); h.className = 'ro-help'; h.textContent = '+' + a.helpers.length + ' '; a.helpers.slice(0, 3).forEach((s) => h.insertAdjacentHTML('beforeend', dotHTML(s))); l1.appendChild(h); }
           const l2 = document.createElement('span'); l2.className = 'ro-l2';
           l2.insertAdjacentHTML('beforeend', dotHTML(d.state));
-          l2.appendChild(document.createTextNode(' ' + a.word + (a.task ? ' · ' + a.task : '')));
+          l2.appendChild(document.createTextNode(' ' + (a.word + (a.task ? ' · ' + a.task : ''))));
           pl.appendChild(l1); pl.appendChild(l2);
         }
       }
@@ -208,11 +214,147 @@
       const lsig = JSON.stringify([p.label, fx.more]);
       if (pl._sig !== lsig) { pl._sig = lsig; pl.textContent = ''; const s = document.createElement('span'); s.textContent = p.label; pl.appendChild(s); if (fx.more > 0) { const b = document.createElement('b'); b.className = 'ro-more'; b.textContent = '+' + fx.more; pl.appendChild(b); } }
     }
+    drawSlips(chrome, lay, model.slips);
     [art, amb, lights, chrome].forEach(sweep);
     fitPlates(chrome, lay.width);
     stagger(chrome, lay.width);
     settle(chrome, lay.width);
     return lay;
+  }
+
+  /* spec 097 FR-119 (empty office): a floor with nothing on it. Three empty desks of the world, their screens off, under the plate that holds
+     the flat office's own sentence (word for word, textContent). The shared lobby above is the real one (the caller passes the places). */
+  function drawEmpty(art, chrome, lay, meta, empty) {
+    const W = lay.width, top = lay.lobbyH, H = lay.height - top;
+    const dw = Math.max(120, Math.min(W * 0.26, 340, (H - 60) / 0.7)), dh = dw * (meta.desk[1] / meta.desk[0]);
+    const gap = (W - 3 * dw) / 4, y0 = top + Math.max(70, H * 0.42);
+    for (let i = 0; i < 3; i++) {
+      const x = gap + i * (dw + gap);
+      const dc = el(art, 'ed:' + i, 'div', 'ro-desk ro-edesk'); box(dc, { x, y: y0, w: dw, h: Math.min(dh * 0.72, lay.height - y0 - 6) }); attr(dc, 'aria-hidden', 'true');
+      const dk = dc.firstChild || dc.appendChild(document.createElement('img')); dk.style.height = px(dh); img(dk, 'desk.webp');
+      const sw = dw * 0.5, sh = sw * 0.64;
+      const sc = el(art, 'em:' + i, 'div', 'ro-screen ro-escreen st-idle off'); box(sc, { x: x + dw / 2 - sw / 2, y: y0 - sh - 10, w: sw, h: sh + 14 }); attr(sc, 'aria-hidden', 'true');
+      if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass"></div></div><div class="ro-neck"></div><div class="ro-foot"></div>';
+      sc.firstChild.style.height = px(sh);
+    }
+    const pw = Math.min(560, W - 40);
+    const pl = el(chrome, 'ep', 'div', 'ro-eplate'); box(pl, { x: (W - pw) / 2, y: top + 14, w: pw });
+    pl.dataset.surface = 'empty-office'; pl.dataset.floorEmpty = empty.id || '';
+    text(pl, empty.text);
+    EMPTY_BOX = { x: (W - pw) / 2 - 4, y: top + 10, w: pw + 8, h: 64 }; /* the plate (two lines at most) is on the avoid list of the slips */
+  }
+
+  /* spec 097 FR-121, FR-122, FR-124: slips and a bubble. The words, buttons and their order come from the app (the cards' own); this draws them on
+     the free spot nearest their door or desk (placeBox: never on a plate, a sign, a chair label or a cue; always under the lobby band, FR-110).
+     A queue slip that has no room for its words becomes a one-line pill; a limit slip or bubble with no room is not drawn (the Bank's chip, the
+     desk's plate and the top bar's Inbox button say it too). The buttons carry data-slipact; app.js clicks the card's own button. */
+  function drawSlips(chrome, lay, slips) {
+    const P = root.exports && root.exports.placeBox;
+    const want = [];
+    if (slips && slips.queue) want.push('queue');
+    if (slips && slips.limit) want.push('limit');
+    for (const e of (slips && slips.elicit) || []) want.push('elicit:' + e.id);
+    if (!want.length || !P) return;
+    const avoid = [];
+    for (const z of lay.zones) {
+      avoid.push({ x: z.sign.x, y: z.sign.y, w: z.sign.w, h: z.sign.h });
+      for (const d of z.desks) {
+        avoid.push(d.plate);
+        if (d.face) avoid.push(d.face); /* who needs you is read from the faces: a slip never covers one */
+        if (d.away) avoid.push({ x: d.away.x - 80, y: d.away.y - 1, w: 160, h: 21 }); /* the chair label, \"at Software library\" at its longest */
+        if (d.bubble) avoid.push({ x: d.bubble.x, y: d.bubble.y - 24, w: 24, h: 24 });
+        if (d.bang) avoid.push({ x: d.bang.x, y: d.bang.y, w: 20, h: 20 });
+      }
+    }
+    if (EMPTY_BOX) avoid.push(EMPTY_BOX);
+    /* with more than four agents the monitors are read from afar: a slip takes a spot clear of them, else a smaller variant (the pill); with big screens (four or fewer) it may sit over one */
+    const softAvoid = lay.big ? [] : lay.zones.flatMap((z) => z.desks.map((d) => d.screen));
+    const bounds = { x: 4, y: lay.lobbyH + 4, w: lay.width - 8, h: lay.height - lay.lobbyH - 8 };
+    const door = (id) => { const f = lay.fixtures.find((x) => x.id === id); return f ? { x: f.slot.x + f.slot.w / 2, y: lay.lobbyH } : { x: lay.width / 2, y: lay.lobbyH }; };
+    const hits = (r) => avoid.some((q) => r.x < q.x + q.w && q.x < r.x + r.w && r.y < q.y + q.h && q.y < r.y + r.h);
+    const put = (key, cls, build, anchor, variants, surface) => {
+      const e = el(chrome, key, 'div', cls); e.dataset.surface = surface;
+      /* a late stylesheet, font or text change gives the slip another box than the one it was placed with: it is placed again (once per change) */
+      if (typeof ResizeObserver === 'function') {
+        if (!SLIP_RO) SLIP_RO = new ResizeObserver((list) => { for (const en of list) { const t = en.target; if (t._at && (Math.ceil(t.offsetWidth) + 2 > t._at.w || Math.ceil(t.offsetHeight) + 2 > t._at.h) && onArt) onArt(); } });
+        if (!e._obs) { e._obs = true; SLIP_RO.observe(e); }
+      }
+      /* the fullest variant that fits is used; a spot that is still free is kept, so a slip does not hop from render to render */
+      const order = variants;
+      for (const v of order) {
+        const sig = JSON.stringify([v, build.sig]);
+        if (e._sig !== sig) { e._sig = sig; e._at = null; e.textContent = ''; build.fill(e, v); }
+        e.hidden = false;
+        if (e._at && e._v === v) { e.style.left = px(e._at.x); e.style.top = px(e._at.y); }
+        else { e.style.left = '0px'; e.style.top = '0px'; }
+        e.style.width = ''; e.style.height = '';
+        const size = () => ({ w: Math.ceil(e.offsetWidth) + 2, h: Math.ceil(e.offsetHeight) + 2 });
+        let r = size();
+        if (e._at && e._v === v && e._at.w >= r.w && e._at.h >= r.h && !hits({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }) && e._at.x + r.w <= bounds.x + bounds.w && e._at.y + r.h <= bounds.y + bounds.h) { avoid.push({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }); e.dataset.variant = v; return true; }
+        for (let pass = 0; pass < 2; pass++) { /* the second pass re-places with the box it really has (a late font can widen the text) */
+          const at = P(r, avoid.concat(softAvoid), bounds, anchor) || (lay.big || v === 'pill' ? P(r, avoid, bounds, anchor) : null); /* a one-line pill may sit over a monitor when there is no other spot */
+          if (!at) break;
+          e.style.left = px(at.x); e.style.top = px(at.y);
+          const r2 = size();
+          if (r2.w <= r.w && r2.h <= r.h) { e._at = at; e._v = v; e.dataset.variant = v; avoid.push(at); return true; }
+          r = r2;
+        }
+      }
+      e.hidden = true; e._at = null; e._v = null; e.dataset.variant = 'none'; return false;
+    };
+    const btn = (label, title, cls, data) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls === 'link' ? 'linkbtn ro-sbtn' : cls === 'sl-fold' || cls === 'sl-more' || cls === 'ro-pill' ? 'ro-sbtn ' + cls : 'btn sm ro-sbtn ' + cls; /* the inbox's own button classes (spec 052 FR-076) */ b.textContent = label; if (title) b.title = title; for (const k of Object.keys(data)) b.dataset[k] = String(data[k]); return b; };
+    const p = (cls, t) => { const n = document.createElement('p'); n.className = cls; n.textContent = t; return n; };
+    if (slips.queue) {
+      const Q = slips.queue;
+      put('slip:queue', 'ro-slip ro-queue', {
+        sig: Q,
+        fill: (e, v) => {
+          e.setAttribute('role', 'group'); e.setAttribute('aria-label', Q.total + (Q.total === 1 ? ' request needs you' : ' requests need you'));
+          if (v === 'pill') { e.appendChild(btn(Q.total + (Q.total === 1 ? ' needs you' : ' need you') + ' \u00B7 Open the inbox', '', 'ro-pill', { slipact: 'inbox' })); return; }
+          const f = Q.first, h = document.createElement('p'); h.className = 'sl-h';
+          const nm = document.createElement('b'); nm.textContent = f.name; h.appendChild(nm);
+          const w = document.createElement('span'); w.textContent = ' ' + f.what + ' \u00B7 ' + f.folder; h.appendChild(w); e.appendChild(h);
+          e.appendChild(p('sl-t', f.text));
+          const row = document.createElement('div'); row.className = 'sl-act';
+          for (const a of f.actions) row.appendChild(btn(a.label, a.title, a.cls, a.k === 'open' ? { slipact: 'open', slipid: f.id } : { slipact: 'perm', slipid: f.id, slipreq: f.req, slipidx: a.idx }));
+          row.appendChild(btn('Show in chat', 'Open the chat', 'link', { slipact: 'open', slipid: f.id }));
+          e.appendChild(row);
+          for (const g of Q.folded) { const b = btn(g.text, '', 'sl-fold', { slipact: 'open', slipid: g.id }); e.appendChild(b); }
+          if (Q.more > 0) e.appendChild(btn('+' + Q.more + ' more \u00B7 Open the inbox', '', 'sl-more', { slipact: 'inbox' }));
+        },
+      }, door('boss'), ['full', 'pill'], 'inbox');
+    }
+    if (slips.limit) {
+      const L = slips.limit;
+      put('slip:limit', 'ro-slip ro-limit', {
+        sig: [L.id, L.name, L.who, L.text, L.actions, L.input && [L.input.label, L.input.min, L.input.step, L.input.value]],
+        fill: (e, v) => {
+          e.setAttribute('role', 'group'); e.setAttribute('aria-label', 'Spending limit reached');
+          if (v === 'pill') { e.appendChild(btn(L.name + ': Spending limit reached \u00B7 Show in chat', 'Open the chat', 'ro-pill', { slipact: 'open', slipid: L.id, slipfocus: 'limit' })); return; }
+          e.appendChild(p('sl-h', L.who)); e.appendChild(p('sl-t', L.text));
+          const row = document.createElement('div'); row.className = 'sl-act';
+          if (L.input) { const i = document.createElement('input'); i.type = 'number'; i.className = 'limit-amt'; i.min = L.input.min; i.step = L.input.step; i.value = L.input.value; i.setAttribute('aria-label', L.input.label); row.appendChild(i); }
+          for (const a of L.actions) row.appendChild(btn(a.label, a.title, a.cls, { slipact: 'limit', slipid: L.id, slipreq: L.req, slipidx: a.idx }));
+          row.appendChild(btn('Show in chat', 'Open the chat', 'link', { slipact: 'open', slipid: L.id, slipfocus: 'limit' }));
+          e.appendChild(row);
+        },
+      }, door('bank'), ['full', 'pill'], 'limit-card');
+    }
+    for (const B of slips.elicit || []) {
+      const d = lay.zones.flatMap((z) => z.desks).find((x) => x.id === B.id);
+      if (!d) continue;
+      put('slip:' + B.id, 'ro-slip ro-bubble', {
+        sig: B,
+        fill: (e) => {
+          e.setAttribute('role', 'group'); e.setAttribute('aria-label', B.head);
+          e.appendChild(p('sl-h', B.head)); e.appendChild(p('sl-t', B.text));
+          const row = document.createElement('div'); row.className = 'sl-act';
+          row.appendChild(btn('Answer in chat', '', 'primary', { slipact: 'open', slipid: B.id }));
+          row.appendChild(btn('Show in chat', 'Open the chat', 'link', { slipact: 'open', slipid: B.id }));
+          e.appendChild(row);
+        },
+      }, { x: d.slot.x + d.slot.w / 2, y: d.slot.y }, ['full'], 'elicitation');
+    }
   }
 
   /* a font that arrives after the measure (a lazily loaded bold face, another machine's metrics) widens a chip or plate: a

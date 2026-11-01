@@ -161,15 +161,15 @@
       "name": "Lounge: couch and nap bunks",
       "spec": "001 FR-051..057, 097 Q5",
       "where": "shutters.js, app.js ~1089",
-      "code": "planned",
+      "code": "present",
       "blocks": [
         "person",
         "desk-screen",
         "light-slots"
       ],
       "worlds": {
-        "photo": "missing",
-        "cave": "missing",
+        "photo": "built",
+        "cave": "built",
         "loft": "missing"
       },
       "nonNegotiables": "FMK"
@@ -185,8 +185,8 @@
         "fixture"
       ],
       "worlds": {
-        "photo": "missing",
-        "cave": "missing",
+        "photo": "designed",
+        "cave": "designed",
         "loft": "missing"
       },
       "nonNegotiables": "M"
@@ -196,13 +196,13 @@
       "name": "Empty office",
       "spec": "052 FR-070",
       "where": ".empty-desk",
-      "code": "planned",
+      "code": "present",
       "blocks": [
         "desk-screen"
       ],
       "worlds": {
-        "photo": "missing",
-        "cave": "missing",
+        "photo": "built",
+        "cave": "built",
         "loft": "missing"
       },
       "nonNegotiables": "TK"
@@ -212,14 +212,14 @@
       "name": "Welcome / first run",
       "spec": "001 FR-026, 052 FR-031/082",
       "where": "WELCOME_HTML section.welcome",
-      "code": "planned",
+      "code": "present",
       "blocks": [
         "fixture",
         "panel-frame"
       ],
       "worlds": {
-        "photo": "missing",
-        "cave": "missing",
+        "photo": "built",
+        "cave": "built",
         "loft": "missing"
       },
       "nonNegotiables": "TKS"
@@ -311,13 +311,13 @@
       "name": "Jump to an agent's floor",
       "spec": "092 FR-018/019/027 (phase 4)",
       "where": "goToFloor (jumps not built)",
-      "code": "planned",
+      "code": "present",
       "blocks": [
         "lift"
       ],
       "worlds": {
-        "photo": "missing",
-        "cave": "missing",
+        "photo": "designed",
+        "cave": "designed",
         "loft": "missing"
       },
       "nonNegotiables": "KM"
@@ -327,14 +327,14 @@
       "name": "Needs-you inbox",
       "spec": "052 FR-027",
       "where": "#inboxBtn, openInbox() app.js:3642",
-      "code": "planned",
+      "code": "present",
       "blocks": [
         "slip",
         "fixture"
       ],
       "worlds": {
-        "photo": "missing",
-        "cave": "missing",
+        "photo": "built",
+        "cave": "built",
         "loft": "missing"
       },
       "nonNegotiables": "AKTS"
@@ -398,15 +398,15 @@
       "name": "Spending-limit card",
       "spec": "011",
       "where": ".note.perm.limit",
-      "code": "planned",
+      "code": "present",
       "blocks": [
         "panel-frame",
         "person",
         "fixture"
       ],
       "worlds": {
-        "photo": "missing",
-        "cave": "missing",
+        "photo": "designed",
+        "cave": "designed",
         "loft": "missing"
       },
       "nonNegotiables": "ATSK"
@@ -452,15 +452,15 @@
       "name": "MCP elicitation card",
       "spec": "012 FR-151",
       "where": "showElicitation",
-      "code": "planned",
+      "code": "present",
       "blocks": [
         "panel-frame",
         "person",
         "fixture"
       ],
       "worlds": {
-        "photo": "missing",
-        "cave": "missing",
+        "photo": "designed",
+        "cave": "designed",
         "loft": "missing"
       },
       "nonNegotiables": "AKS"
@@ -487,15 +487,15 @@
       "name": "Coffee-break bar",
       "spec": "068",
       "where": "#coffeeBar",
-      "code": "planned",
+      "code": "present",
       "blocks": [
         "person",
         "fixture",
         "panel-frame"
       ],
       "worlds": {
-        "photo": "missing",
-        "cave": "missing",
+        "photo": "designed",
+        "cave": "designed",
         "loft": "missing"
       },
       "nonNegotiables": "TK"

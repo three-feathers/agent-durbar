@@ -476,7 +476,7 @@ async function driver(ctx) {
   };
   /* spec 097 FR-091, FR-050, SC-001, SC-002, SC-004 (OFFICE_VIEW=real): the Real office variant, run alone (check-parallel.js adds it as its own
      job): SIM 12 and 15 (and 15 in one folder, and in 15 folders) at both sizes, chat closed, open, closed again; no overlap of plates, signs, place plates, chips, screens and faces; nothing
-     outside the floor; no text under 10.5px; no page overflow; no office scroll at the 15-agent scale; the desk face size (SC-002, a ratchet: 35px,
+     outside the floor; no text under 10.5px; no page overflow; no office scroll at the 15-agent scale; the desk face size (SC-002, a ratchet: 31px since FR-127; was 35px,
      the 40px target is a KNOWN GAP); every plate, sign and chip readable (4.5:1) at the room's dimmest (70%) and full ambient (FR-050); and flat
      mode requests no Real office file (SC-004). */
   if (process.env.OFFICE_VIEW === 'real') {
@@ -543,7 +543,9 @@ async function driver(ctx) {
         const res = await ctx.js(`(${realCheck.toString()})(${amb})`);
         total++;
         if (sim === 15 && res.info.scroll) res.problems.push('the office scrolls at the 15-agent scale');
-        if (sim === 15 && !rooms && res.info.face < 35) res.problems.push(`desk face ${res.info.face.toFixed(1)}px (ratchet 35px; SC-002 target 40px is a KNOWN GAP)`);
+        /* FR-127 (2026-11-01): a desk keeps its width during a lobby visit, so the room is sized for everyone seated: 31.9 px at 1280x800 with 15 agents
+           (the earlier 35 px floor was measured with the away desks narrowed, which a visit no longer does until the next real layout change) */
+        if (sim === 15 && !rooms && res.info.face < 31) res.problems.push(`desk face ${res.info.face.toFixed(1)}px (ratchet 31px; SC-002 target 40px is a KNOWN GAP)`);
         if (res.problems.length) { failed++; console.log(`FAIL ${tag} ${step} ambient ${amb}: ${res.problems.slice(0, 12).join('; ')}`); }
         rows.push({ label: `${tag} ${step} ambient ${amb}`, d: 'real', h: '-', rooms: '-', plates: res.info.plates, desks: res.info.plates, stageH: Math.round(res.info.u || 0), floorH: 0, minFont: res.info.minFont, problems: res.problems.length });
         console.log(`  ${tag}: face ${res.info.face ? res.info.face.toFixed(1) : '?'}px, u ${res.info.u ? res.info.u.toFixed(0) : '?'}, contrast >= ${res.info.minRatio ? res.info.minRatio.toFixed(2) : '?'}`);

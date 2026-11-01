@@ -211,9 +211,9 @@ for (const f of FILES) {
 
 // ---- 6. spec 097 FR-100, FR-113: a Real office world's token set (owner 2026-10-31 10:46: the top bar and menus follow the world) ----
 {
-  assert.deepStrictEqual(T.WORLD_IDS, ['photo'], 'one world today: the photo office');
+  assert.deepStrictEqual(T.WORLD_IDS, ['photo', 'cave'], 'the photo office and the cave (the cave is behind its flag, spec 097 phase 4)');
   const t = T.worldTokens('photo') as Record<string, string>;
-  assert.strictEqual(T.worldTokens('cave'), null, 'a world that is not built has no set');
+  assert.strictEqual(T.worldTokens('loft'), null, 'a world that is not built has no set');
   assert.strictEqual(T.worldTokens('__proto__'), null, 'own keys only');
   // complete: every Clean Office colour token has a value, so contrast never depends on the user's theme
   for (const k of Object.keys(T._builtins()[T.CLEAN_ID].tokens).concat(Object.keys(T._tokens()))) assert.ok(t[k] !== undefined, `the world set has ${k}`);
@@ -239,6 +239,15 @@ for (const f of FILES) {
   for (const [fg, bg, min, why] of UI_PAIRS) assert.ok(contrast(t[fg], t[bg]) >= min, `${fg} on ${bg} (${why}): ${contrast(t[fg], t[bg]).toFixed(2)}:1`);
   for (const ui of ['clean', ...BRAND_UIS]) assert.deepStrictEqual(themeIssues(t, clean, ui).filter((x) => !/the top bar/.test(x)), [], `no contrast issue with ui ${ui}`);
   const worst = Math.min(...rows.map((r) => r.ratio / r.min));
+  // the cave's set: complete, status colours unchanged, every pair AA with the glass composited (the same checks as the photo set)
+  {
+    const c = T.worldTokens('cave') as Record<string, string>, cr = T.worldContrast('cave') as Array<{ fg: string; bg: string; min: number; ratio: number }>;
+    for (const k of Object.keys(T._builtins()[T.CLEAN_ID].tokens).concat(Object.keys(T._tokens()))) assert.ok(c[k] !== undefined, `the cave set has ${k}`);
+    for (const k of Object.keys(clean).filter((x) => /^--(c|pb|pc|halo)-|^--(amber|red|green|blue)(-ink)?$|^--desk-(new|needs)$/.test(x))) assert.strictEqual(c[k], clean[k], `cave: status colour ${k} is unchanged`);
+    assert.deepStrictEqual(cr.filter((r) => !(r.ratio >= r.min)).map((r) => `${r.fg} on ${r.bg} ${r.ratio.toFixed(2)}:1 < ${r.min}`), [], 'every pair of the cave world passes WCAG AA');
+    for (const [fg, bg, min] of CONTRAST_PAIRS) if (hex(c[fg]) && hex(c[bg])) assert.ok(contrast(c[fg], c[bg]) >= min, `cave: ${fg} on ${bg}: themegen agrees`);
+    for (const [fg, bg, min, why] of UI_PAIRS) assert.ok(contrast(c[fg], c[bg]) >= min, `cave: ${fg} on ${bg} (${why})`);
+  }
   console.log(`photo world: ${rows.length} pairs + ${UI_PAIRS.length} UI pairs pass; tightest margin ${worst.toFixed(2)}x its minimum`);
   // the CSS: the world rules are tokens only, the glass share equals WORLD_GLASS, forced colours win, reduced transparency is opaque
   const block = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'realoffice-world.css'), 'utf8');
