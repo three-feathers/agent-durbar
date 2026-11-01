@@ -74,6 +74,31 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
   assert.ok(!/shell: true|execSync\(|exec\(/.test(dsrc) && /suite\.runOne/.test(dsrc), 'shots-docs starts drivers through ui-suite runOne, never a shell');
   assert.ok(/DURBAR_SIM_CLOCK: clock/.test(dsrc), 'shots-docs pins the page clock (FR-084)');
 }
+// spec 008 FR-136 (issue #922): a driver's window that closes fails the run, once per window; allow() is for a deliberate close; a normal end closes nothing
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { guardWindow } = require(path.join(ROOT, 'scripts', 'driver-helpers.js')) as { guardWindow: (w: unknown, fail: (m: string) => void, app?: unknown) => { allow: () => void } };
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { EventEmitter } = require('events') as typeof import('events');
+  type Setup = (w: InstanceType<typeof EventEmitter>, a: InstanceType<typeof EventEmitter>, g: { allow: () => void }) => void;
+  const run = (setup: Setup): string[] => {
+    const w = new EventEmitter(), a = new EventEmitter(), fails: string[] = [];
+    setup(w, a, guardWindow(w, (m) => fails.push(m), a));
+    return fails;
+  };
+  assert.strictEqual(run(() => undefined).length, 0, 'a driver that ends normally (no close) is not a failure');
+  assert.strictEqual(run((w) => w.emit('closed')).length, 0, 'the window closing alone (the normal end: app.exit) is not a failure; the quit-less exit never emits window-all-closed');
+  const closed = run((w, a) => { w.emit('closed'); a.emit('window-all-closed'); });
+  assert.ok(closed.length === 1 && /DRIVER FAILED/.test(closed[0]) && /window closed/.test(closed[0]), 'a closed window that ends the app fails with a clear DRIVER FAILED message');
+  assert.strictEqual(run((w, a, g) => { g.allow(); w.emit('closed'); a.emit('window-all-closed'); }).length, 0, 'allow() before a deliberate close: no failure');
+  assert.strictEqual(run((w, a) => { a.emit('window-all-closed'); w.emit('closed'); }).length, 0, 'window-all-closed from another window is not this one closing');
+  { const w = new EventEmitter(), a = new EventEmitter(), fails: string[] = []; guardWindow(w, (m) => fails.push(m), a); guardWindow(w, (m) => fails.push(m), a); w.emit('closed'); a.emit('window-all-closed'); assert.strictEqual(fails.length, 1, 'helpers() twice on one window reports once'); }
+  assert.doesNotThrow(() => guardWindow(undefined, () => undefined), 'no window, no guard');
+  const dh = fs.readFileSync(path.join(ROOT, 'scripts', 'driver-helpers.js'), 'utf8');
+  assert.ok(/function waits\(ctx\) \{\s*guardWindow\(ctx\.win\)/.test(dh), 'waits(ctx) arms the guard, so every driver (helpers() calls waits) is covered');
+  // every ui-suite driver takes its waits from the shared helpers, so none escapes the guard
+  for (const n of new Set(names.map((x) => x.split(' ')[0]))) assert.ok(/driver-helpers/.test(fs.readFileSync(path.join(ROOT, 'scripts', n + '.js'), 'utf8')), `driver ${n} uses the shared helpers (and so the window guard)`);
+}
 const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.ts'), 'utf8');
 assert.ok(/app\.exit\(failed \? 1 : 0\)/.test(main), 'a failing driver exits 1 (FR-090)');
 assert.ok(/dev\.DURBAR_DRIVER \|\| dev\.DURBAR_SHOT \? \{ enableLargerThanScreen: true \}/.test(main), 'test windows may be larger than the screen (FR-093, macOS runners)');
