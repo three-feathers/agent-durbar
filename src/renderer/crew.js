@@ -12,11 +12,13 @@
   /* spec 077 FR-072 (issue #815): more crews as more Characters values. `IDS` stays the Cheeky crew (its ids, order and saved choices never change);
      the Prehistoric crew has 6 characters, shown as `crew/art/prehistoric-<id>-<pose>.webp` so a name can never clash with Cheeky's. Every id is unique across crews. */
   const PREHISTORIC_IDS = ['youngbeard', 'braids', 'bigbeard', 'ponytail', 'inventor', 'shaman'];
-  const CREWS = { cheeky: IDS, prehistoric: PREHISTORIC_IDS };
-  const ALL_IDS = IDS.concat(PREHISTORIC_IDS);
+  /* spec 077 FR-074 (issue #815): the Pirate crew, 6 characters, `crew/art/pirate-<id>-<pose>.webp` */
+  const PIRATE_IDS = ['captain', 'eyepatch', 'hook', 'cook', 'privateer', 'cabinboy'];
+  const CREWS = { cheeky: IDS, prehistoric: PREHISTORIC_IDS, pirate: PIRATE_IDS };
+  const ALL_IDS = IDS.concat(PREHISTORIC_IDS, PIRATE_IDS);
   /* the characters of a Characters value (an unknown value or the theme's own: the Cheeky crew, as before) and the key the choice is stored under */
   const idsFor = (choice) => has(CREWS, choice) ? CREWS[choice] : IDS;
-  const storeKey = (choice) => choice === 'prehistoric' ? 'durbar.crew.prehistoric' : 'durbar.crew';
+  const storeKey = (choice) => (choice === 'prehistoric' || choice === 'pirate') ? 'durbar.crew.' + choice : 'durbar.crew';
   const MAX_ENTRIES = 500, MAX_ID = 200;
   /* the portraits (spec 077 FR-050..FR-055, FR-059, FR-060): three poses per character, `crew/art/<id>-<pose>.webp`, 352x352 and square, drawn
      in a fixed square box of the 200x124 stage: 88x88 units at x 24, y 22 (twice the first build's, owner 2026-10-23). Its right edge is the
@@ -51,6 +53,13 @@
     ponytail: { working: [200, 160], waiting: [210, 160], resting: [216, 160] },
     inventor: { working: [195, 170], waiting: [185, 170], resting: [205, 170] },
     shaman: { working: [198, 160], waiting: [190, 160], resting: [211, 160] },
+    /* Pirate (FR-074): read the same way, from a contact sheet of the three poses with a 50 px grid */
+    captain: { working: [190, 155], waiting: [185, 150], resting: [172, 155] },
+    eyepatch: { working: [200, 160], waiting: [178, 155], resting: [195, 160] },
+    hook: { working: [190, 140], waiting: [170, 135], resting: [180, 140] },
+    cook: { working: [185, 150], waiting: [190, 150], resting: [180, 150] },
+    privateer: { working: [220, 135], waiting: [205, 140], resting: [220, 140] },
+    cabinboy: { working: [200, 150], waiting: [190, 140], resting: [168, 150] },
   };
   const k = BOX.w / PIC;
   /* a face box or the avatar's crop, in stage units: [x, y, w, h]; null for an unknown picture */
@@ -68,7 +77,7 @@
   }
   /* the pose for a status: working and thinking type, waiting and error need the person, the rest rests */
   const poseFor = (st) => (st === 'working' || st === 'thinking' || st === 'avatar') ? 'working' : (st === 'waiting' || st === 'error') ? 'waiting' : 'resting';
-  const file = (id, pose) => 'crew/art/' + (PREHISTORIC_IDS.includes(id) ? 'prehistoric-' : '') + id + '-' + pose + '.webp';
+  const file = (id, pose) => 'crew/art/' + (PREHISTORIC_IDS.includes(id) ? 'prehistoric-' : PIRATE_IDS.includes(id) ? 'pirate-' : '') + id + '-' + pose + '.webp';
   const files = (ids) => (ids || IDS).reduce((a, id) => a.concat(POSES.map((p) => file(id, p))), []);
   /* FR-055: a character can be drawn when it is known and none of its pictures failed to load (`bad`: a Set of character ids) */
   const usable = (id, bad) => typeof id === 'string' && ALL_IDS.includes(id) && !(bad && bad.has && bad.has(id));
@@ -139,7 +148,7 @@
      the default), since the crew worlds are not built yet. A crew without them draws the Office people, and `coming` makes
      Settings say so (FR-083, `realOfficeNote`). The one seam to change when a crew's world ships. */
   const REAL_OFFICE_SETS = ['office'];
-  const CREW_WORLDS = { cheeky: 'Cheeky loft', prehistoric: 'Prehistoric cave' };
+  const CREW_WORLDS = { cheeky: 'Cheeky loft', prehistoric: 'Prehistoric cave', pirate: 'Pirate ship' };
   function realOfficeSet(choice) {
     const c = String(choice || '');
     if (REAL_OFFICE_SETS.includes(c)) return { set: c, scene: 'office', coming: false };
@@ -152,5 +161,5 @@
     return `Real office shows the Office people until the ${w} is ready.`;
   }
 
-  return { REAL_OFFICE_SETS, realOfficeSet, realOfficeNote, CREWS, PREHISTORIC_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
+  return { REAL_OFFICE_SETS, realOfficeSet, realOfficeNote, CREWS, PREHISTORIC_IDS, PIRATE_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
 })());
