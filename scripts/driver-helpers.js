@@ -21,6 +21,7 @@ const LIMIT = 8000;
 const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 
 function waits(ctx) {
+  guardWindow(ctx.win); // spec 008 FR-136: a driver whose window closes fails (every driver uses waits or helpers)
   /** Wait until the page expression is truthy (polled every 50 ms), at most `ms`. */
   const until = async (expr, ms = LIMIT) => {
     const end = Date.now() + ms;
@@ -60,12 +61,41 @@ function waits(ctx) {
   return { until, settle, settleWalk, office, chatOf };
 }
 
+
+/**
+ * Spec 008 FR-136 (issue #922): a driver whose window closes fails. On Windows and Linux a closed window quits the app with exit 0
+ * (`window-all-closed`) before the driver's next assertion runs, and ui-suite counted that as a pass. `waits(ctx)` (so every driver, since `helpers(ctx)`
+ * calls it) fails the run when the window closes and main's `window-all-closed` fires. The driver's normal end (main's `app.exit`) closes the window
+ * too but quits without that event, so it stays a pass. A driver that closes its window on purpose calls the returned `allow()` before it does. On a Mac a close only hides the
+ * window (appmenu.ts hideOnClose), so there is nothing to catch. `fail` is injectable for the unit test.
+ */
+const guards = new WeakMap();
+function guardWindow(win, fail = failDriver, appLike = null) {
+  if (!win || typeof win.once !== 'function') return { allow() {} };
+  if (guards.has(win)) return guards.get(win);
+  let allowed = false, closed = false;
+  const g = { allow() { allowed = true; } };
+  guards.set(win, g);
+  const gone = () => { if (!allowed) fail('DRIVER FAILED AssertionError: the window closed before the driver finished (spec 008 FR-136)'); };
+  /* The verdict waits for main's `window-all-closed`, which only a real close emits: the driver's normal end (`app.exit`) closes the window too, but quits
+     without that event, and must stay a pass. */
+  const app = appLike || require('electron').app;
+  win.once('closed', () => { closed = true; });
+  app.on('window-all-closed', () => { if (closed || (typeof win.isDestroyed === 'function' && win.isDestroyed())) gone(); });
+  return g;
+}
+function failDriver(message) {
+  console.error(message);
+  require('electron').app.exit(1);
+}
+
 /**
  * The helpers every driver used to define for itself (FR-097). `H = helpers(ctx)`; it also carries `until`, `settle`, `office`, `chatOf`.
  * Values spliced into page code go through jsLiteral.
  */
 function helpers(ctx) {
   const w = waits(ctx);
+  const closeGuard = guardWindow(ctx.win);
   const wc = () => ctx.win.webContents;
   /** Run code in the page. A failure names the code (first 90 chars) and is thrown again, so the driver fails as before. */
   const js = async (code) => { try { return await ctx.js(code); } catch (e) { console.log('JS ERR for', String(code).slice(0, 90)); throw e; } };
@@ -184,7 +214,7 @@ function helpers(ctx) {
     await goToFloor(list[0].id);
     for (let i = 0; i < list.length; i++) { await goToFloor(list[i].id); await w.settle(); await fn(list[i], i); }
   };
-  return { ...w, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
+  return { ...w, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
 }
 
 /**
@@ -211,4 +241,4 @@ async function shotWithView(win, view, file) {
   fs.writeFileSync(file, nativeImage.createFromBitmap(base, { width: size.width, height: size.height }).toPNG());
 }
 
-module.exports = { waits, helpers, jsLiteral, shotWithView, LIMIT, INDEX };
+module.exports = { waits, helpers, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX };

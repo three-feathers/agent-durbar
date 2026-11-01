@@ -1,0 +1,1 @@
+- **The account check test no longer times hung cleanups with the clock** (spec 052): `test:account` proves hung Copilot cleanup calls do not hold the account answer by the answer arriving at all (a 10 s race guards a hang), instead of a 1 s wall-clock budget that failed under CI load. Test-only.
