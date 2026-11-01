@@ -142,7 +142,7 @@ Numbers taken: T164..T178. One small PR per step, after #921, #974 and P1. 0 AI 
 - [ ] T176 Mutants, listed in the PR: object lookup for the id; a position field let through; `arrangementFits` keyed on state; rows calling new code; fall-back without a margin; text under the floor on a monitor; `innerHTML` on a screen. Each fails a test. Test: SC-021 [SC-021]
 - [ ] T177 `barcelona-beach`: card first (FR-016, FR-017), then one image run on the owner's plan, on his new approval (FR-172); `facing-view`, furniture, monitor as laptop, umbrellas in `desk-back`. Test: `sim:` matrix, faces at least 24 px at 15 agents at both sizes, `[KNOWN GAP]` until the redesign reaches it; `real:` his look in `ASSETS.md`, naming the FR-235 exception [FR-223..FR-225, FR-235]
 - [ ] T178 Docs: `docs/features.md` and `docs/limits.md`, world-maker notes, a `changelog.d/` fragment in each build PR; `/speckit.converge`. Test: `test:docsscripts`, `changelog:check` [FR-236]
-- [ ] T179 Retro arcade's `aisles`, split by the plan into T200, T202..T205, T211. The owner's look at the mockup is done, his look at the level cabinet is T200. Test: as those tasks say [FR-227, FR-238, FR-256]
+- [ ] T179 Retro arcade's `aisles`, split by the plan into T200, T202..T205, T211. The owner's look at the mockup is done, he chose the level cabinet on 2026-11-01 (T200). Test: as those tasks say [FR-227, FR-238, FR-256]
 - [ ] T180 `durbar-hall`: card first (FR-016, FR-017), on the owner's new approval (FR-172); `flanking`, gold bead monitor, flags with our mark, period lamp. Test: `sim:` matrix at 3, 4, 8 and 15 agents; `real:` his look in `ASSETS.md`; the numbers against FR-229 [FR-210, FR-237]
 - [ ] T181 Back views `backA`, `backB` per set, for `circle`, `facing-view` and `flanking`: art on the owner's plan and approval, crew art by Paco per image; seat choice in the engine. `[KNOWN GAP]` until drawn. Test: `test:world-packs`, `test:realoffice-layout`, `sim:` hover and keyboard focus show the big screen for a back seat; `read:` approvals in `ASSETS.md` [FR-204, FR-227]
 
@@ -152,7 +152,7 @@ Numbers taken: T200..T232. Base for the build: `097-chat-in-world` (#1001); see 
 
 ### RA0: art, in the cache, no repo code
 
-- [ ] T200 **Measure first.** Level cabinet (two sizes, four colours, level glass and marquee, side panel) beside the slanted one, at 15 and 4, with real text at 10.5 px; fixtures at Q6's size if he agrees. Test: `read:` the owner's look recorded in the spec (Q1, Q6) [FR-258].
+- [x] T200 **Measure first.** `[IMPLEMENTED]` decided: the owner chose level glass and text on 2026-11-01, after seeing the side-by-side (Q1, FR-258). Level cabinet (two sizes, four colours, level glass and marquee, side panel) beside the slanted one, at 15 and 4, with real text at 10.5 px; fixtures at Q6's size if he agrees. Test: `read:` the owner's look recorded in the spec (Q1, Q6) [FR-258].
 - [ ] T201 Art clean-up: `r8-waveA` and `r4-waveB` are not on the 8x grid and one more frame has mixed blocks; `faceBox` measured per person; provenance corrected (the notes contradict themselves, Q11); likeness per 097 FR-067, FR-068. Test: the script of T206 refuses a frame off the grid; `read:` the notes [FR-256, FR-269].
 
 ### RA1: `aisles`, pure (one PR)

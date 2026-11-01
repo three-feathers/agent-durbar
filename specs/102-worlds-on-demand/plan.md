@@ -197,7 +197,7 @@ crew.js  peopleFor; AISLE_POSE with fallback
 
 **Measure first**, in this order; each can change what follows, and each costs 0 AI credits:
 
-1. **T200** the owner's look at a level cabinet beside the slanted one.
+1. **T200** the owner's look at a level cabinet beside the slanted one. Done: he chose level, 2026-11-01.
 2. **T202** pure fit: signs, plates, faces at 1..15 and 40, both sizes, chat closed and open (FR-021); the sign's room is the one most likely to fail.
 3. **T204** even pixels at ratio 1.25 and 1.5.
 4. **T208** real sizes on committed files.
