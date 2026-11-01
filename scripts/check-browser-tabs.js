@@ -253,7 +253,11 @@ module.exports = async (ctx) => {
     return P})()`);
   assert.deepStrictEqual(fit, [], 'SC-011 at ' + size);
   if (process.env.OUT || process.env.SHOTS_OUT) {
-    await js(`(async()=>{const r=await window.agentDurbar.browserSelectTab('sim-1',${jsLiteral(tabs().tabs[0].tabId)});return true})()`);
+    const firstId = tabs().tabs[0].tabId;
+    await js(`(async()=>{const r=await window.agentDurbar.browserSelectTab('sim-1',${jsLiteral(firstId)});return true})()`);
+    // This tab was dropped by the cap (US6.10), so selecting it reloads it: right after the call its entry still reads `about:blank`, no address, loading
+    // (issue #934, seen on Ubuntu CI as "timed out: the first tab for the picture"). Read the address to expect only once the page has loaded again.
+    await wait(() => { const t = tabs(), f = t.tabs[0]; return t.active === firstId && f.tabId === firstId && f.url && !f.loading && view() && !view().webContents.isLoading(); }, 'the first tab has loaded again');
     const first = tabs().tabs[0];
     await wait(async () => tabs().active === first.tabId && view() && !view().webContents.isLoading() && (await js(`(()=>{const e=document.querySelector('#bTabs .btab.on');return !!e&&e.dataset.tab===${jsLiteral(first.tabId)}&&document.getElementById('bAddr').value===${jsLiteral(first.url)}})()`)), 'the first tab for the picture, in the strip and the bar too');
     win().webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
@@ -288,7 +292,9 @@ module.exports = async (ctx) => {
   await wait(() => slowWc.isDestroyed(), 'the loading tab\'s view is gone');
   console.log('[browser-tabs] US6.6 ok');
 
-  // US6.12: the strip's keys
+  // US6.12: the strip's keys. The strip must show main's 9 tabs and the new active tab first: read earlier it still lists the tab just closed, and
+  // Home would name a tab that is gone (issue #934 family: a value read before the window caught up; seen as "Home moves the focus to the first tab").
+  await wait(() => js(`(()=>{const e=document.querySelector('#bTabs .btab.on');return document.querySelectorAll('#bTabs .btab').length===9&&!!e&&e.dataset.tab===${jsLiteral(wantNext)}&&!document.querySelector('#bTabs [data-tab=${jsLiteral(order[i])}]')})()`), 'the strip shows the 9 tabs and the tab after the closed one');
   await js(`document.querySelector('#bTabs .btab.on .btab-b').focus()`);
   let st = await stripTabs();
   const sel0 = st.findIndex((x) => x.sel === 'true');
@@ -341,6 +347,9 @@ module.exports = async (ctx) => {
   const a0 = tabs().active;
   await H.key('Tab', ['control'], { char: 'never' });
   await wait(() => tabs().active !== a0, 'Ctrl+Tab in the bar');
+  // the window works out "previous" from the tab list it last received, so the strip must show main's new active tab before the next key (issue #934)
+  const a1 = tabs().active;
+  await wait(() => js(`(()=>{const e=document.querySelector('#bTabs .btab.on');return !!e&&e.dataset.tab===${jsLiteral(a1)}})()`), 'the strip shows the tab Ctrl+Tab chose');
   await H.key('Tab', ['control', 'shift'], { char: 'never' });
   await wait(() => tabs().active === a0, 'Ctrl+Shift+Tab back');
   assert.ok(afterTab);
