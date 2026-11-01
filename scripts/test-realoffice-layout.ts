@@ -332,7 +332,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
 {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as unknown as { WORLD_FLAGS: Record<string, boolean>;  WORLDS: { id: string; name: string; defaultSet: string; flag?: string }[]; REAL_SETS: { id: string; name: string; choice: string; flag?: string }[]; offeredWorlds: (f?: Record<string, boolean>) => { id: string }[]; parseWorld: (v: unknown, f?: Record<string, boolean>) => string; peopleFor: (w: unknown, c: unknown, f?: Record<string, boolean>) => { world: string; set: string; setName: string; note: string }; CREWS: Record<string, unknown> };
-  assert.deepStrictEqual(C.WORLD_FLAGS, { cave: false }, 'the cave is behind an off-by-default flag until the owner opens it (spec 097 phase 4 gate)');
+  assert.deepStrictEqual(C.WORLD_FLAGS, { cave: false, retro: false }, 'the cave is behind an off-by-default flag until the owner opens it (spec 097 phase 4 gate)');
   assert.deepStrictEqual(C.offeredWorlds().map((w) => w.id), ['photo'], 'flag off: only Photo office is offered');
   assert.deepStrictEqual(C.offeredWorlds({ cave: true }).map((w) => w.id), ['photo', 'cave'], 'flag on: Photo office first, then the cave');
   assert.deepStrictEqual(C.REAL_SETS.map((s) => s.id), ['office', 'prehistoric'], 'Office people and Prehistoric have Real office poses');
