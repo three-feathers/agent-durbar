@@ -27,7 +27,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 
 - [ ] **Mergeable, and CI ran on this head.** A conflicting PR runs only CodeQL (no build, tests, gate or UI). Merge `origin/main`, push, read the checks of *that* sha (`scripts/pr-gate.sh <N>`). [#620](https://github.com/three-feathers/agent-durbar/pull/620), [#560](https://github.com/three-feathers/agent-durbar/pull/560)
 - [ ] **After every merge of `main`, `git diff --stat origin/main...HEAD` lists only your files**: a bad resolution silently dropped another PR's code and its tests. [#560](https://github.com/three-feathers/agent-durbar/pull/560)
-- [ ] **`package.json` test lists: keep both sides** of a `test:serial` conflict, then `npm test`. [#565](https://github.com/three-feathers/agent-durbar/pull/565)
+- [ ] **Keep both sides** of a `scripts/test-suites.txt` conflict, then `npm test`. [#565](https://github.com/three-feathers/agent-durbar/pull/565)
 - [ ] **CI for the exact sha, never "green" from memory**: `gh pr checks <N>`, then post `checks run at <sha>: …`. [#630](https://github.com/three-feathers/agent-durbar/pull/630), [#588](https://github.com/three-feathers/agent-durbar/pull/588)
 - [ ] **New CodeQL alerts fixed at the cause**, test code included (or dismissed with a reason). [#598](https://github.com/three-feathers/agent-durbar/pull/598)
 

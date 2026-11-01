@@ -6,7 +6,8 @@ import { EventEmitter } from 'events';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const rt = require(path.join(__dirname, '..', '..', 'scripts', 'run-tests.js')) as {
   parseArgs: (argv: string[], env: Record<string, string | undefined>) => { bail: boolean; ignoredBail: boolean; filters: string[] };
-  loadSuites: (pkg: unknown, filters: string[]) => { name: string; steps: string[][] }[];
+  readSuiteList: (text?: string) => string[];
+  loadSuites: (pkg: unknown, filters: string[], names?: string[]) => { name: string; steps: string[][] }[];
   stopChild: (c: unknown, o: unknown) => void;
   runSuites: (o: Record<string, unknown>) => Promise<{ failed: string[]; bailed: string | null }>;
 };
@@ -67,11 +68,24 @@ process.on('exit', () => { if (!done) { console.error('test-run-tests: did not f
   }
   for (const ci of ['', '0', 'false']) assert.strictEqual(rt.parseArgs(['--bail'], { CI: ci }).bail, true, `CI=${ci} is not CI`);
   assert.deepStrictEqual(rt.parseArgs([], { CI: 'true' }), { bail: false, ignoredBail: false, filters: [] }, 'nothing asked, nothing ignored');
-  const pkg = { scripts: { 'test:serial': 'npm run test:a && npm run test:folders && npm run test:folderx', 'test:a': 'tsc -p tsconfig.scripts.json && node a.js && node a2.js', 'test:folders': 'node f.js', 'test:folderx': 'node x.js' } };
-  assert.deepStrictEqual(rt.loadSuites(pkg, []).map((s) => s.name), ['test:a', 'test:folders', 'test:folderx']);
-  assert.deepStrictEqual(rt.loadSuites(pkg, ['folder']).map((s) => s.name), ['test:folders', 'test:folderx'], 'the name filter still works');
-  assert.deepStrictEqual(rt.loadSuites(pkg, [])[0].steps, [['a.js'], ['a2.js']], 'a suite keeps its steps in order');
-  assert.throws(() => rt.loadSuites({ scripts: { 'test:serial': 'npm run test:z', 'test:z': 'echo hi' } }, []), /only "node <file>"/);
+  const pkg = { scripts: { 'test:a': 'tsc -p tsconfig.scripts.json && node a.js && node a2.js', 'test:folders': 'node f.js', 'test:folderx': 'node x.js' } };
+  const list = rt.readSuiteList('# a comment\ntest:a\n\n  test:folders  # trailing\r\ntest:folderx\n');
+  assert.deepStrictEqual(list, ['test:a', 'test:folders', 'test:folderx'], 'the list: one name per line, comments and blanks ignored');
+  assert.throws(() => rt.readSuiteList('test:a\ntest:a\n'), /twice/, 'a name listed twice is an error');
+  assert.deepStrictEqual(rt.loadSuites(pkg, [], list).map((s) => s.name), ['test:a', 'test:folders', 'test:folderx']);
+  assert.deepStrictEqual(rt.loadSuites(pkg, ['folder'], list).map((s) => s.name), ['test:folders', 'test:folderx'], 'the name filter still works');
+  assert.deepStrictEqual(rt.loadSuites(pkg, [], list)[0].steps, [['a.js'], ['a2.js']], 'a suite keeps its steps in order');
+  assert.throws(() => rt.loadSuites({ scripts: { 'test:z': 'echo hi' } }, [], ['test:z']), /only "node <file>"/);
+  assert.throws(() => rt.loadSuites({ scripts: {} }, [], ['test:nope']), /not a script/);
+  {
+    // the real list: every name is a script, nothing twice, and every `test:*` script is listed or is one of the few chains
+    const real = require(path.join(__dirname, '..', '..', 'package.json')) as { scripts: Record<string, string> };
+    const names = rt.readSuiteList();
+    assert.strictEqual(new Set(names).size, names.length);
+    for (const n of names) assert.ok(real.scripts[n], `${n} is a script`);
+    assert.ok(names.includes('test:checknames') && names.length > 100, 'the real list is read');
+    assert.strictEqual(real.scripts['test:serial'], 'node scripts/run-tests.js --serial');
+  }
 
   // default: everything runs even after a failure
   {
