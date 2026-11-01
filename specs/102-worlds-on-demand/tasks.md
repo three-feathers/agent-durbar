@@ -4,7 +4,7 @@
 
 **Tests**: required (constitution VII; SC-001..SC-021). Node tests and the simulator only; 0 AI credits; no network in `npm test`. Each new rule gets a planted mutation that a test catches, listed in its PR (`docs/review-checklist.md`). Driver waits use `until()`, never a fixed sleep; no wall-clock assertion. `real:` tasks are separate and named.
 
-**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`, then a `Test:` part. `[P]` = can run in parallel. A phase = one PR, except P4 (one PR per world or small batch). Numbers taken: spec 102, FR-001..FR-239 (sparse by group), SC-001..SC-021, T001..T180 (sparse by phase).
+**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`, then a `Test:` part. `[P]` = can run in parallel. A phase = one PR, except P4 (one PR per world or small batch). Numbers taken: spec 102, FR-001..FR-239 (sparse by group), SC-001..SC-021, T001..T181 (sparse by phase).
 
 **Order**: P0 -> P1 -> P2 and P8 -> P3 -> P5 and P6 as ready (OP-7), P4 -> P7. Removals are separate PRs under specs 035 (T083..T088), 040 (T039..T042) and 017 (T020..T027), each after spec 021 T053. **Nothing visible as available, and no maker, reaches a release before spec 097 FR-179 is met** (FR-035, FR-124): T156..T159 of spec 097 and its op rows.
 
@@ -128,7 +128,7 @@ Numbers taken: T164..T178. One small PR per step, after #921, #974 and P1. 0 AI 
 
 - [ ] T164 After #921 lands, write into spec 097's `## Changes`: `realLayout` takes an arrangement; `meta.monitor`; 097 FR-013's `screen` and `glass` with a monitor; FR-229's limits. Test: `npm run specs:check` [FR-220, FR-228]
 - [ ] T165 **Before anything else:** `src/shared/realoffice-arrangements.ts`, `circle`, `facing-view` and `flanking` (`aisles` after T179), with `arrangementFits`; not wired to the app. `test:realoffice-layout` at 1..40 agents in 1..8 folders at both sizes, chat closed and open: rectangles do not overlap, stay in the floor; face at least 40 px at 15 agents. **If 15 agents do not fit, stop and take the numbers to the owner (A5).** [FR-227, FR-229, FR-230]
-- [ ] T166 Seam in `realLayout` and `realoffice.js`, `Layout.arrangement`, `Layout.focus`, lazy load; a fixture world in the simulator with a plain test `focus`. Test: `sim:` `shots-097-realoffice`-style driver with `until()` at both sizes; `check:office`; simulator shots to the owner and Paco (A2, A4) [FR-228, FR-234]
+- [ ] T166 Seam in `realLayout` and `realoffice.js`, `Layout.arrangement`, `Layout.focus`, lazy load; a fixture world in the simulator with a plain test `focus`. Test: `sim:` `shots-097-realoffice`-style driver with `until()` at both sizes; `check:office`; simulator shots to the owner and Paco (A4) [FR-228, FR-234]
 - [ ] T167 Rows proof: byte-identical `Layout` to today over seeded models; the arrangement file not fetched with `rows` (a driver lists the page's scripts); `check-office-ops` rows limits unchanged. Test: `test:realoffice-layout`, `sim:` [FR-231, SC-020]
 - [ ] T168 A project world never falls back on count and keeps its arrangement at 1..4 with bigger screens; a shared pack's fall-back: count only, two-agent margin, status changes never switch; All floors and small windows. Test: `test:realoffice-layout`, including a run through every status at the boundary count [FR-230]
 - [ ] T169 Keyboard order: DOM and Tab order follow the sequence, neighbours on screen; a screen reader's order is the same. Test: `test:` pure on rectangles; `sim:` real Tab presses at 15 agents [FR-229]
@@ -143,6 +143,7 @@ Numbers taken: T164..T178. One small PR per step, after #921, #974 and P1. 0 AI 
 - [ ] T178 Docs: `docs/features.md` and `docs/limits.md`, world-maker notes, a `changelog.d/` fragment in each build PR; `/speckit.converge`. Test: `test:docsscripts`, `changelog:check` [FR-236]
 - [ ] T179 Retro game's `aisles`: the owner's look at a mockup first, then the geometry in `realoffice-arrangements.ts` and FR-229's checks. Test: `test:realoffice-layout`, `sim:` at 15 agents, both sizes; `read:` his approval [FR-227, FR-238]
 - [ ] T180 `durbar-hall`: card first (FR-016, FR-017), on the owner's new approval (FR-172); `flanking`, gold bead monitor, flags with our mark, period lamp. Test: `sim:` matrix at 3, 4, 8 and 15 agents; `real:` his look in `ASSETS.md`; the numbers against FR-229 [FR-210, FR-237]
+- [ ] T181 Back views `backA`, `backB` per set, for `circle`, `facing-view` and `flanking`: art on the owner's plan and approval, crew art by Paco per image; seat choice in the engine. `[KNOWN GAP]` until drawn. Test: `test:world-packs`, `test:realoffice-layout`, `sim:` hover and keyboard focus show the big screen for a back seat; `read:` approvals in `ASSETS.md` [FR-204, FR-227]
 
 ## Dependencies
 

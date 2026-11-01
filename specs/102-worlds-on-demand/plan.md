@@ -146,7 +146,7 @@ world.json  arrangement: "circle"
 |---|---|
 | 15 agents do not fit with a `focus` area | T165 first, pure and free; stop and ask (A5) |
 | A project world has no fall-back, and the mockups measured under 40 px at 15 | FR-229's `[KNOWN GAP]`; T165 first, and the numbers go to the owner |
-| A lounger looks wrong with an upright seated frame | FR-224; art brief; the owner's look. No new poses |
+| A lounger looks wrong with an upright seated frame | FR-224; art brief; the owner's look. No reclining poses |
 | Screens on small laptops | Same `screenRect` floor; bars under 150x60 (097 FR-032) |
 | Hostile `arrangement` | FR-226, fixtures in `test:worldpack` |
 | Conflict with 097's engine on open PRs | Build after #921 and #974; 097's text through T164 |
