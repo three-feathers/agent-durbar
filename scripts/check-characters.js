@@ -113,7 +113,7 @@ module.exports = async (ctx) => {
       await close();
       assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector('image[href*="crew/art/prehistoric-"]'));})()`, 10000), `${where}: Prehistoric: every desk draws the crew kit with a Prehistoric portrait`);
       assert.strictEqual(await H.js(`window.THEME.current().id`), theme, `${where}: the theme stays ${theme} under Prehistoric`);
-      assert.strictEqual(await H.js(`document.querySelectorAll('#stage image[href^="crew/art/"]:not([href*="prehistoric-"])').length`), 0, `${where}: no Cheeky picture under Prehistoric`);
+      assert.ok(await H.until(`document.querySelectorAll('#stage image[href^="crew/art/"]:not([href*="prehistoric-"])').length===0`, 10000), `${where}: no Cheeky picture under Prehistoric`);
       // Minimalist on top of the theme
       await pickChars('minimalist');
       await close();
