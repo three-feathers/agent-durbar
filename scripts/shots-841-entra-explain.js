@@ -67,11 +67,11 @@ module.exports = async (ctx) => {
       const chipOf = `(()=>{const e=document.querySelector('#chat .mcpwhy');return e&&e.previousElementSibling&&e.previousElementSibling.getClientRects().length>0;})()`;
       assert.strictEqual(await js(chipOf), false, `${w}: its chip has collapsed under the newer ones`);
       assert.strictEqual(await js(shown), false, `${w}: and the line with it`);
-      await js(`document.querySelector('#chat .chips-more').click();0`);
+      await js(`document.querySelector('#chat .mcpwhy').parentElement.querySelector('.chips-more').click();0`);
       assert.ok(await until(shown), `${w}: Show earlier brings the line back`);
-      await js(`document.querySelector('#chat .chips-more').click();0`);
+      await js(`document.querySelector('#chat .mcpwhy').parentElement.querySelector('.chips-more').click();0`);
       assert.ok(await until(`!${shown}`), `${w}: Show fewer hides it again`);
-      await js(`document.querySelector('#chat .chips-more').click();0`);
+      await js(`document.querySelector('#chat .mcpwhy').parentElement.querySelector('.chips-more').click();0`);
       await until(shown);
     }
     let n = (await notes())[0];
