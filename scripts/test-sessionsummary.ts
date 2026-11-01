@@ -327,6 +327,24 @@ async function main(): Promise<void> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-days-'));
   const file = path.join(dir, 'durbar-summary-days.json');
   let dayNow = new Date(2026, 9, 31, 10, 0, 0);
+  // sweep: a very large file is refused before it is read into memory: at most the cap plus one byte is ever asked for
+  {
+    const big = path.join(dir, 'big.json');
+    const fd = fs.openSync(big, 'w'); fs.ftruncateSync(fd, 512 * 1024 * 1024); fs.closeSync(fd); // sparse: no disk used
+    const realRead = fs.readSync, realFile = fs.readFileSync; let asked = 0, whole = 0;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const m = require('fs') as { readSync: typeof fs.readSync; readFileSync: typeof fs.readFileSync };
+    m.readSync = ((...a: unknown[]) => { asked += Number(a[3] ?? 0); return (realRead as unknown as (...x: unknown[]) => number)(...a); }) as unknown as typeof fs.readSync;
+    m.readFileSync = ((...a: Parameters<typeof fs.readFileSync>) => { if (String(a[0]) === big) whole++; return realFile(...a); }) as typeof fs.readFileSync;
+    try {
+      const B = new SummaryDays(big, () => dayNow);
+      B.load();
+      assert.strictEqual(B.recent(), undefined, 'a file over the cap is an empty rollup');
+    } finally { m.readSync = realRead; m.readFileSync = realFile; }
+    assert.strictEqual(whole, 0, 'never read whole');
+    assert.ok(asked <= 64 * 1024 + 1, 'at most the cap is read: ' + asked);
+    fs.rmSync(big);
+  }
   const D = new SummaryDays(file, () => dayNow);
   D.load();
   assert.strictEqual(D.recent(), undefined, 'nothing ended: nothing to say');

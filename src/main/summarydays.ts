@@ -6,6 +6,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { readCapped } from '../shared/cappedread';
 
 export interface DayTotals { day: string; sessions: number; files: number; added: number; removed: number; commits: number; minutes: number }
 export type DaySum = Omit<DayTotals, 'day'>;
@@ -48,7 +49,8 @@ export class SummaryDays {
 
   load(): void {
     try {
-      this.days = parseDays(fs.readFileSync(this.file, 'utf8'));
+      const r = readCapped(fs, fs.constants, this.file, MAX_FILE); /* the limit before the read: a huge file never reaches memory */
+      this.days = r.ok ? parseDays(r.buf.toString('utf8')) : [];
     } catch {
       this.days = [];
     }
