@@ -27,6 +27,9 @@ module.exports = async (ctx) => {
   const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
   const PICS = `[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
   /* a frozen simulator (nothing changes but what the driver emits); romotion=1: the people move, as outside a driver */
+  /* the machine's own setting must not decide this driver: Windows CI runners have "reduce motion" on, and then everyone rightly stands still */
+  const motionOn = () => { const d = ctx.win.webContents.debugger; if (!d.isAttached()) d.attach('1.3'); return d.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] }); };
+  await motionOn();
   const loadReal = async (w, h, query = {}) => {
     await H.load({ w, h, query: { officeview: 'real', romotion: '1', ...query }, ready: REAL, settle: false });
     await must(PICS, 'the pictures');
@@ -192,7 +195,7 @@ module.exports = async (ctx) => {
   await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   await loadReal(1440, 900);
   await stillChecks('reduced');
-  await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] });
+  await motionOn();
   await loadReal(1440, 900);
   await must(`document.querySelectorAll('#stage .ro-rig,#stage .ro-person2,#stage .ro-visitor2').length>0`, 'the rig or second frames without reduced motion');
   await js(`document.getElementById('settingsBtn').click()`);
