@@ -288,6 +288,10 @@
     const notifySec=X.bridge.setNotifyNeedsMe&&X.isNotify?`<section class="scr-sec" aria-labelledby="ntfH"><h3 id="ntfH">Notifications</h3>
         <p class="scr-note">While Agent Durbar is in the background, one notification tells you when an agent asks for permission, asks a question, reaches its spending limit or hits an error. It shows only the agent's name and a short summary of the request, never file contents. The window title and the app icon show how many need you.</p>
         <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Notify me when an agent needs me (when Durbar is in the background)</b>${sw(!!X.isNotify(),'Notify me when an agent needs me (when Durbar is in the background)','id="notifySw"')}</span><span class="scr-note small" id="notifyMsg" role="status"></span></div></section>`:'';
+    /* spec 052 FR-182 (issue 686): Auto-follow work, off by default; its pause is on the strip, not here */
+    const followSec=X.bridge.setAutoFollowWork&&X.autoFollow?`<section class="scr-sec" aria-labelledby="afH"><h3 id="afH">Auto-follow work</h3>
+        <p class="scr-note">After you send a message, Durbar can take you back to the office and mark that agent's desk, then open its chat when it finishes, asks you something, hits an error or reaches its limit. It never allows, denies or answers anything for you, and it waits while you type, have a dialog or menu open, or are reading an older part of a chat. A strip under the top bar shows where it stands, with Previous and Next for the agents that need you, and a Pause button. Off by default; kept on this computer.</p>
+        <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Auto-follow work</b> <small>(off: nothing moves by itself)</small>${sw(!!X.autoFollow.get(),'Auto-follow work (off: nothing moves by itself)','id="followSw"')}</span><span class="scr-note small" id="followMsg" role="status"></span></div></section>`:'';
     let placesSec='';
     if(X.bridge.setPlace&&X.places){
       const P=X.places, map=app.placeMap||{};
@@ -377,7 +381,7 @@
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${schedSec}${floorsSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${followSec}${schedSec}${floorsSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3><span class="mtag warn" id="advMcpAtt"${live&&live.agg.attention?'':' hidden'}>${esc(attText(live?live.agg.attention:0))}</span></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         ${liveSection()}
@@ -853,6 +857,15 @@
     }
     const la=e.target.closest('#liveActSw');
     if(la&&X.liveAct){const on=!X.liveAct.get();X.liveAct.set(on);la.classList.toggle('on',on);la.setAttribute('aria-checked',on?'true':'false');return;}
+    const fw=e.target.closest('#followSw');
+    if(fw&&X.bridge.setAutoFollowWork&&X.autoFollow){
+      const on=fw.getAttribute('aria-checked')!=='true';
+      let res=null; try{res=await X.bridge.setAutoFollowWork(on);}catch(err){res=null;}
+      const m=$('followMsg');
+      if(res&&res.ok===true&&typeof res.autoFollowWork==='boolean'){const v=res.autoFollowWork;X.autoFollow.set(v);fw.classList.toggle('on',v);fw.setAttribute('aria-checked',v?'true':'false');if(m)m.textContent=v?'Auto-follow work is on.':'Auto-follow work is off.';}
+      else if(m)m.textContent='Could not change Auto-follow work'+(res&&res.error?': '+res.error:'.'); /* a refused value or no answer: the switch stays where it was */
+      return;
+    }
     const ns=e.target.closest('#notifySw');
     if(ns&&X.bridge.setNotifyNeedsMe){
       const on=ns.getAttribute('aria-checked')!=='true';

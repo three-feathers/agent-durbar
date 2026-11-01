@@ -1908,6 +1908,7 @@ html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{content:"";f
 @media (max-width:2039px){html[data-platform="darwin"]:not([data-fullscreen]) .stats>.stat:not(.stat-aiu) span.l{display:none}}
 @media (min-width:1600px) and (max-width:1799px){html[data-platform="darwin"]:not([data-fullscreen]) .topbar #defaultsBtn{max-width:140px}}
 html[data-platform="darwin"] body.panel-open :is(#restoreStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip[hidden]+#crashStrip:not([hidden])){min-height:40px}
+html[data-platform="darwin"] body.panel-open #restoreStrip[hidden]+#awayStrip[hidden]+#crashStrip[hidden]+#followStrip:not([hidden]){min-height:40px}
 html[data-platform="darwin"] .notice-strip:not([hidden]) ~ #screen .scr-head{padding-left:max(24px,calc((100% - 880px)/2 + 24px))}
 html[data-platform="darwin"] .strip{padding-right:0}
 /* FR-138: the grab area at the right end of the chat strip is a 32px handle (plus the 8px gap before it = 40px of drag) with grip dots */
@@ -2192,3 +2193,11 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 .nt-selbtn[hidden]{display:none}
 .cp-btn,.nt-btn,.nt-mark{user-select:none;-webkit-user-select:none}
 
+
+/* spec 052 FR-182..FR-190 (issue 686): Auto-follow. No animation or transition anywhere (FR-189): reduced motion and Still highlights change nothing. */
+.desk.is-followed,button.lrow.is-followed{outline-style:dashed;outline-width:2px;outline-color:var(--focus);outline-offset:-4px}
+.follow-strip{gap:6px 10px;flex-wrap:nowrap}
+.follow-strip .af-t{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.follow-strip .af-pos{flex:none;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.follow-strip .btn{flex:none;white-space:nowrap}
+.follow-strip.paused .af-t{font-weight:700}

@@ -79,6 +79,8 @@ export interface AppSettings {
   customPlaces?: CustomPlace[];
   /** Serious mode (spec 034 FR-004): no heavy or monster bodies and no trouble drawings on the agent figures. Only `true` is kept. */
   seriousMode?: boolean;
+  /** Auto-follow work (spec 052 FR-182, issue 686): off by default; only `true` is kept. */
+  autoFollowWork?: boolean;
   /** Active theme id (specs 035-040). Omitted = Clean Office. */
   theme?: string;
   /** Spec 077 FR-064: who sits at the desks. Omitted = the theme's own (the default is not written). */
@@ -125,7 +127,7 @@ export function parseAnnounced(v: unknown): Record<string, string> {
 /** Tolerant parse: a missing, corrupt or odd file means no settings. */
 export function parseSettings(text: string): AppSettings {
   try {
-    const doc = JSON.parse(text) as { defaultMaxAiCredits?: unknown; placeMap?: unknown; customPlaces?: unknown; seriousMode?: unknown; theme?: unknown; notifyNeedsMe?: unknown; breakResume?: unknown; browserNoteAccepted?: unknown; chatLinksIn?: unknown; chatLinksNewTab?: unknown } | null;
+    const doc = JSON.parse(text) as { defaultMaxAiCredits?: unknown; placeMap?: unknown; customPlaces?: unknown; seriousMode?: unknown; autoFollowWork?: unknown; theme?: unknown; notifyNeedsMe?: unknown; breakResume?: unknown; browserNoteAccepted?: unknown; chatLinksIn?: unknown; chatLinksNewTab?: unknown } | null;
     const obj = doc && typeof doc === 'object' && !Array.isArray(doc) ? doc : {};
     const cap = parseCap((obj as { defaultMaxAiCredits?: unknown }).defaultMaxAiCredits);
     // the custom places first: the mapping may only point to ones that exist (spec 024 FR-019)
@@ -134,7 +136,7 @@ export function parseSettings(text: string): AppSettings {
     const theme = parseThemeId((obj as { theme?: unknown }).theme);
     const chars = parseCharacters((obj as { characters?: unknown }).characters); // spec 077 FR-064: anything not on the list is dropped
     const announced = parseAnnounced((obj as { announcedVersions?: unknown }).announcedVersions);
-    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...(custom.length ? { customPlaces: custom } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}), ...(theme === undefined ? {} : { theme }), ...(chars === undefined || chars === 'theme' ? {} : { characters: chars }), ...((obj as { notifyNeedsMe?: unknown }).notifyNeedsMe === false ? { notifyNeedsMe: false as const } : {}), ...((obj as { breakResume?: unknown }).breakResume === 'ask' ? { breakResume: 'ask' as const } : {}), ...(Object.keys(announced).length ? { announcedVersions: announced } : {}), ...((obj as { checkUpdatesAtStart?: unknown }).checkUpdatesAtStart === false ? { checkUpdatesAtStart: false as const } : {}), ...((obj as { browserNoteAccepted?: unknown }).browserNoteAccepted === true ? { browserNoteAccepted: true as const } : {}), ...(parseSandboxAlways((obj as { sandboxAlwaysContinue?: unknown }).sandboxAlwaysContinue).length ? { sandboxAlwaysContinue: parseSandboxAlways((obj as { sandboxAlwaysContinue?: unknown }).sandboxAlwaysContinue) } : {}), ...(parseNewFolderParent((obj as { newFolderParent?: unknown }).newFolderParent) ? { newFolderParent: parseNewFolderParent((obj as { newFolderParent?: unknown }).newFolderParent) } : {}), ...((obj as { chatLinksIn?: unknown }).chatLinksIn === 'system' ? { chatLinksIn: 'system' as const } : {}), ...((obj as { chatLinksNewTab?: unknown }).chatLinksNewTab === true ? { chatLinksNewTab: true as const } : {}) };
+    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...(custom.length ? { customPlaces: custom } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}), ...((obj as { autoFollowWork?: unknown }).autoFollowWork === true ? { autoFollowWork: true } : {}), ...(theme === undefined ? {} : { theme }), ...(chars === undefined || chars === 'theme' ? {} : { characters: chars }), ...((obj as { notifyNeedsMe?: unknown }).notifyNeedsMe === false ? { notifyNeedsMe: false as const } : {}), ...((obj as { breakResume?: unknown }).breakResume === 'ask' ? { breakResume: 'ask' as const } : {}), ...(Object.keys(announced).length ? { announcedVersions: announced } : {}), ...((obj as { checkUpdatesAtStart?: unknown }).checkUpdatesAtStart === false ? { checkUpdatesAtStart: false as const } : {}), ...((obj as { browserNoteAccepted?: unknown }).browserNoteAccepted === true ? { browserNoteAccepted: true as const } : {}), ...(parseSandboxAlways((obj as { sandboxAlwaysContinue?: unknown }).sandboxAlwaysContinue).length ? { sandboxAlwaysContinue: parseSandboxAlways((obj as { sandboxAlwaysContinue?: unknown }).sandboxAlwaysContinue) } : {}), ...(parseNewFolderParent((obj as { newFolderParent?: unknown }).newFolderParent) ? { newFolderParent: parseNewFolderParent((obj as { newFolderParent?: unknown }).newFolderParent) } : {}), ...((obj as { chatLinksIn?: unknown }).chatLinksIn === 'system' ? { chatLinksIn: 'system' as const } : {}), ...((obj as { chatLinksNewTab?: unknown }).chatLinksNewTab === true ? { chatLinksNewTab: true as const } : {}) };
   } catch {
     return {};
   }
