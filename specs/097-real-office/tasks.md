@@ -106,7 +106,7 @@ Each fix is its own small PR. "Expected" is what a patched copy of the built pag
 - [x] T150 Lamps without `mix-blend-mode`: pre-tinted gradients per lamp colour, off lamp dark. Expected: GPU process 64 to 24 % of a core under software; looks checked against today's screenshots by the owner (light is his call). Test: `sim:` `shots-097-realoffice`; `test:theme-tokens` [FR-180]
 - [x] T151 Lights in stepped timing, running only when the state asks for attention; `box-shadow` of glow and bezel not repainted under motion (a static glow picture or none). Expected: *estimate* with T150, idle under 15 % of a core under software (all off today: 4-8 %). Test: `sim:` `check-office-ops` animation count; `document.getAnimations()` under reduced motion and Serious mode [FR-180, FR-181]
 - [x] T152 `.dlg` and the large panels without `backdrop-filter` in the photo world: opaque token surface; contrast rechecked; FR-113's driver updated. Expected: dialog 30 to 59 fps under software. Test: `sim:` `shots-097-realoffice`; `test:theme-tokens` [FR-182]
-- [x] T153 Half-size set of person and desk pictures, `srcset` in `img()`, `people.js` scale unchanged. Expected: decoded 14.7 to 4.9 MB, about 19 MB PSS and 60 ms of the first switch at 15; pack about 8.7 MB. Test: `sim:` `check-office-ops` area ratio at 1440x900 and at big screens (3 agents); `test:realoffice-assets` [FR-183]
+- [x] T153 Half-size set of person and desk pictures, `srcset` in `img()`, `people.js` scale unchanged; the half-size picture only when shown at least 1.5 times smaller than it is (owner 2026-11-01). Expected: decoded 14.7 to 4.9 MB, about 19 MB PSS and 60 ms of the first switch at 15; pack about 8.7 MB. Test: `sim:` `check-office-ops` area ratio at 1440x900 and at big screens (3 agents); `test:realoffice-assets` [FR-183]
 - [ ] T154 Leaving Real office drops its elements' `src` and the session's picture references. Expected: *estimate*: under 30 MB over a fresh flat; if Chromium's cache keeps it, this budget moves by evidence (FR-190). Test: `sim:` `check-perf --record` [FR-183]
 - [ ] T155 [P] P2 motion (FR-070) respects FR-181; P2's live screen text (FR-030) updates in place. Test: `sim:` `check-office-ops` with motion on [FR-181, FR-184]
 
@@ -124,3 +124,14 @@ Each fix is its own small PR. "Expected" is what a patched copy of the built pag
 - [ ] T162 Real-GPU run, simulator only, 0 AI credits: a real Mac (device pixel ratio 2) and a Windows or Linux laptop with an integrated GPU. Records idle CPU, blur on and off, lamps on and off, raster, scroll, Retina memory. Test: `real:` numbers in a dated delta, and the `real:` rows and FR-182's list confirmed or moved [FR-189]
 - [ ] T163 The world budgets recorded for the cave and loft worlds when they exist. Test: `check-perf --record` includes each shippable world [FR-187]
 - [ ] T164 Review after the first fixes: `/speckit.converge` against FR-178's tables. Test: `npm run specs:check` [FR-190]
+## Facing poses (stacked on #921) - delta 2026-10-31
+
+Numbers: T165..T170; FR-191..FR-194.
+
+- [x] T165 [US1] Art: 105 facing frames (view a, mirrored to face left; book, type, knock, counter, letter, runA, runB) for 15 people, WebP at most 80 KB and 640 px, old standing frames removed, `people.json` `facing` and `foot`, `ASSETS.md` sections `facing-pNN`, the *Removed* records and the likeness record (Vikram 15:29 UTC). Test: `test:realoffice-assets` [FR-191, FR-192, FR-193]
+- [x] T166 [US1] Layout: `FX_POSE`, `POSE_FALLBACK`, the figure on its foot centre, `faces`. Test: `test:realoffice-layout` (every place's pose, fallbacks, the side, foot centre at both sizes) [FR-191, FR-192]
+- [x] T167 [US1] Renderer: `data-faces` and `data-place` on visitors and fixtures. Test: `sim:` `shots-097-realoffice` [FR-194]
+- [x] T168 [US1] Driver: visitors face their fixture, in both sizes, 15 agents, `until()` waits, feet on the floor plane, no overlap. Test: `sim:` `shots-097-realoffice`, mutation-checked [FR-194]
+- [x] T169 [US1] Docs: changelog fragment, `docs/limits.md` size and facing note, spec tags (the README states no pack size, so none to change). Test: `npm run changelog:check`, `specs:check` [FR-193]
+- [ ] T170 [US1] Owner look at the lobby screenshots; a real mirrored-picture check by pixels if a side ever changes. Test: `real:` owner verdict [FR-191]
+

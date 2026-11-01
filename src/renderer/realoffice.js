@@ -45,9 +45,11 @@
   function text(e, t) { t = String(t == null ? '' : t); if (e.textContent !== t) e.textContent = t; }
   function attr(e, k, v) { if (v == null || v === false) { if (e.hasAttribute(k)) e.removeAttribute(k); } else if (e.getAttribute(k) !== String(v)) e.setAttribute(k, String(v)); }
   /* FR-183: a person or the desk comes in two sizes, chosen by what it is shown at (`shown`, CSS px; the browser multiplies by the device pixel ratio); `px` is the full picture's width. FR-065: a failed picture marks `file`, whichever size failed */
+  /* owner 2026-11-01: faces stay sharp. The half-size picture only when it is shown at least this much smaller than it is, where the softness cannot be seen; a little more memory for that */
+  const HALF_MARGIN = 1.5;
   function img(e, file, shown) {
     const src = ART + file, meta = root.DurbarRealOfficeArt, w = meta && meta.px && meta.px[file];
-    if (w) { const sizes = Math.ceil(shown) + 'px'; if (e.getAttribute('sizes') !== sizes) e.setAttribute('sizes', sizes); }
+    if (w) { const sizes = Math.ceil(shown * HALF_MARGIN) + 'px'; if (e.getAttribute('sizes') !== sizes) e.setAttribute('sizes', sizes); }
     if (e.getAttribute('src') !== src) {
       if (e.getAttribute('aria-hidden') !== 'true') { e.alt = ''; e.decoding = 'async'; e.draggable = false; e.setAttribute('aria-hidden', 'true'); }
       e.onerror = () => { if (!BAD.has(file)) { BAD.add(file); if (onArt) onArt(); } };
@@ -162,8 +164,8 @@
     const byPlace = new Map(model.places.map((p) => [p.id, p]));
     for (const fx of lay.fixtures) {
       const p = byPlace.get(fx.id), file = 'fx-' + fx.id + '.webp';
-      if (fx.art && !fx.custom && !BAD.has(file)) { const im = el(art, 'f:' + fx.id, 'img', 'ro-fx'); box(im, fx.art); img(im, file); }
-      else if (fx.art && fx.custom) { const ki = el(art, 'f:' + fx.id, 'div', 'ro-kiosk'); box(ki, { x: fx.art.x + fx.art.w * 0.2, y: fx.art.y + fx.art.h * 0.35, w: fx.art.w * 0.6, h: fx.art.h * 0.65 }); if (ki._ic !== p.icon) { ki._ic = p.icon; ki.innerHTML = p.icon || ''; } }
+      if (fx.art && !fx.custom && !BAD.has(file)) { const im = el(art, 'f:' + fx.id, 'img', 'ro-fx'); box(im, fx.art); im.dataset.place = fx.id; img(im, file); }
+      else if (fx.art && fx.custom) { const ki = el(art, 'f:' + fx.id, 'div', 'ro-kiosk'); ki.dataset.place = fx.id; box(ki, { x: fx.art.x + fx.art.w * 0.2, y: fx.art.y + fx.art.h * 0.35, w: fx.art.w * 0.6, h: fx.art.h * 0.65 }); if (ki._ic !== p.icon) { ki._ic = p.icon; ki.innerHTML = p.icon || ''; } }
       const fl = L.fixtureLight(fx.id, p.visitors.length, p.visitors.some((v) => v.needsYou));
       if (fl && fx.art) { const li = el(lights, 'fl:' + fx.id, 'div', 'ro-fxl fxl-' + fl + (fx.id === 'boss' ? ' boss' : '')); box(li, fx.light); }
       for (const v of fx.visitors) {
@@ -171,7 +173,7 @@
         if (v.fig && !BAD.has(v.fig.file)) {
           /* owner 2026-10-31 10:19 and 10:48: the feet on the front floor plane (layout), with a soft contact shadow under them */
           const sh = el(art, 'vs:' + v.id, 'div', 'ro-shadow'); box(sh, v.shadow);
-          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor'); box(im, v.fig); dset(im, 'for', v.id); dset(im, 'pose', v.fig.pose); dset(im, 'feet', String(Math.round(v.fig.feetY * 10) / 10)); img(im, v.fig.file, v.fig.w);
+          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor'); box(im, v.fig); dset(im, 'for', v.id); dset(im, 'place', fx.id); dset(im, 'pose', v.fig.pose); dset(im, 'faces', v.fig.faces); dset(im, 'feet', String(Math.round(v.fig.feetY * 10) / 10)); img(im, v.fig.file, v.fig.w);
         }
         /* FR-026 "as the flat lobby": a go-place visitor (Boss, Bank, Coffee) is the flat lobby's own button (data-pvopen, and
            data-coffeeid for the coffee menu): app.js's delegated handlers open the chat; others forward to their plate (data-for) */
@@ -192,7 +194,7 @@
     [art, amb, lights, chrome].forEach(sweep);
     /* FR-184: a status update reads no layout here: chips and plates are measured and placed again only when one of them or the width changed */
     const lobbySig = JSON.stringify([lay.width, [...chrome.querySelectorAll(':scope > .ro-chip')].map((c) => [c.dataset.name, c.dataset.x, c.dataset.y, !!c._ic]), [...chrome.querySelectorAll(':scope > .ro-lplate')].map((e) => [e.dataset.place, e.title, e.style.left, e.style.top])]);
-    if (chrome._lobbySig !== lobbySig) { placeLobby(chrome, lay.width); chrome._lobbySig = document.hidden || document.body.classList.contains('panel-open') || !ro.getClientRects().length ? null : lobbySig; } /* under a chat nothing is laid out: what it measures there is not remembered */
+    if (chrome._lobbySig !== lobbySig) { placeLobby(chrome, lay.width); chrome._lobbySig = document.hidden || document.body.classList.contains('panel-open') ? null : lobbySig; } /* under a chat nothing is laid out: what it measures there is not remembered */
     else for (const e of chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')) if (e._at) { sty(e, 'left', e._at[0]); sty(e, 'top', e._at[1]); if (e._at[2]) sty(e, 'maxWidth', e._at[2]); } /* the draw above wrote the unplaced box: back to where they were placed */
     settle(chrome, lay.width);
     return lay;
@@ -316,8 +318,6 @@
   }
 
   /* the width of a text in a chip's font, without touching the chip (no write, no layout): what its initials will take */
-  let PEN = null;
-  function textWidth(font, t) { if (!PEN) PEN = document.createElement('canvas').getContext('2d'); if (PEN.font !== font) PEN.font = font; return PEN.measureText(t).width; }
 
   /* visitors' name chips stand above their heads (owner 2026-10-31 10:48: never over the feet or legs; the layout gives each its
      place); when two would touch, the chip takes the nearest free spot (up to 64 px left or right, up to three levels up, inside the
