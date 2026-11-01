@@ -8,7 +8,7 @@
     "caption": "Simulator demo data: names, costs and tasks are invented.",
     "nameNote": "Why “Durbar”? A durbar is a royal court where everyone gets a hearing. Here your agents are the court, and you decide who gets your attention."
   },
-  "status": "Stable v0.1.3 · unsigned · used by hand on Linux and on real Macs; on Windows it was tried once by hand on a real PC (2026-10-21) and is checked in CI (builds start on all three, and real-account end-to-end runs passed on all three, 9 of 9, 2026-10-20).",
+  "status": "Stable v0.1.5 · unsigned · used by hand on Linux and on real Macs; on Windows it was tried once by hand on a real PC (2026-10-21) and is checked in CI (builds start on all three, and real-account end-to-end runs passed on all three, 9 of 9, 2026-10-20).",
   "cards": [
     {
       "title": "Never miss a waiting agent",

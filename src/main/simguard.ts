@@ -46,6 +46,10 @@ export const SIM_OPEN_CHANNELS: Readonly<Record<string, string>> = Object.freeze
   'browser:leaveAnswer': 'spec 080 T014: passes the answer of the Leave this page box to the view; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
   'browser:openLink': 'spec 080 T017: classifies a link from the chat and opens a web one in the session browser view; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses, and the simulator opens nothing outside the window',
   'browser:openMail': 'spec 080 T017: checks a mail link after the click; under the simulator nothing is handed to the system; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses, and the simulator opens nothing outside the window',
+  'browser:newTab': 'spec 080 T023 FR-127: adds a page tab to the session browser (main mints its id), optionally loading an address; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
+  'browser:selectTab': 'spec 080 T023 FR-127: makes one of the session own tabs active, after main checked the tab id belongs to it; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
+  'browser:closeTab': 'spec 080 T023 FR-127: closes one of the session own tabs, after main checked the tab id belongs to it; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
+  'browser:setLinksNewTab': 'spec 080 T023 FR-123: the Open chat links in a new tab toggle; under the simulator main keeps it in memory and writes no settings; no adapter, no agent app, no agent session: the view loads only simulator pages or http(s) addresses typed in the window',
 });
 
 export function simChannelOpen(channel: string): boolean {

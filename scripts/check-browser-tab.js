@@ -24,14 +24,13 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const assert = require('assert');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, shotWithView: shotWithViewOf } = require('./driver-helpers');
 
 const SIM_URL = (name) => 'durbar-sim://pages/' + name;
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { until, js } = H;
-  const { nativeImage } = require('electron');
   const OUT = process.env.SHOTS_DIR || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-browser-tab-'));
   fs.mkdirSync(OUT, { recursive: true });
   const win = () => ctx.win;
@@ -63,24 +62,8 @@ module.exports = async (ctx) => {
     assert.ok(near(r.x, b.x) && near(r.y, b.y) && near(r.w, b.width) && near(r.h, b.height), `${label}: the view sits on the page area: area ${JSON.stringify(r)} view ${JSON.stringify(b)}`);
     return b;
   };
-  /** The window's page with the native view blitted in (capturePage of the window leaves the child view out). */
-  const shotWithView = async (file) => {
-    const page = await win().webContents.capturePage();
-    const size = page.getSize();
-    const base = Buffer.from(page.toBitmap());
-    if (view()) {
-      const b = view().getBounds();
-      const vi = await view().webContents.capturePage();
-      const vs = vi.getSize();
-      const vb = vi.toBitmap();
-      for (let y = 0; y < Math.min(vs.height, size.height - b.y); y++) {
-        const src = y * vs.width * 4;
-        const dst = ((b.y + y) * size.width + b.x) * 4;
-        vb.copy(base, dst, src, src + Math.min(vs.width, size.width - b.x) * 4);
-      }
-    }
-    fs.writeFileSync(file, nativeImage.createFromBitmap(base, { width: size.width, height: size.height }).toPNG());
-  };
+  /** The window's page with the native view blitted in (driver-helpers.js). */
+  const shotWithView = (file) => shotWithViewOf(win(), view(), file);
   const openChat = async (pick) => {
     const o = await H.openSimAgent(pick, '#panelTabs');
     assert.ok(o.ok, 'the chat of a simulated agent is open with its tabs: ' + JSON.stringify(o.seen));

@@ -104,8 +104,10 @@ for (const [sample, found] of [["const { openExternal } = shell;", 1], ["shell['
   assert.ok(/const lk=e\.target\.closest\('\.md a'\);\n\s*if\(lk\)\{e\.preventDefault\(\);/.test(click), 'a chat link click never navigates the window: preventDefault first');
   assert.ok(/openChatLink\(u,IS_MAC\?e\.metaKey:e\.ctrlKey\)/.test(click), 'Cmd on a Mac, Ctrl elsewhere');
   const fn = app.slice(app.indexOf('async function openChatLink'), app.indexOf('function openLinkMenu'));
-  assert.ok(/const route=BP\.linkRoute\(web,mod,CHAT_LINKS,!!root&&BP\.available\(root\)\);\n\s*if\(route==='system'\)return openLinkExternal\(u\)/.test(fn), 'Ctrl/Cmd+click, the System setting and a missing root use the existing openExternal (BP.linkRoute is tested in test:browserpane)');
-  assert.ok(/BP\.openLink\(root\.id,u\)/.test(fn), 'a plain click asks main for the chat\'s root session');
+  assert.ok(/const route=BP\.linkRoute\(web,mod,how==='newTab'\?'session':CHAT_LINKS,!!root&&BP\.available\(root\)\);[^\n]*\n\s*if\(route==='system'\)return openLinkExternal\(u\)/.test(fn), 'Ctrl/Cmd+click, the System setting and a missing root use the existing openExternal (BP.linkRoute is tested in test:browserpane); only the menu\'s Open in a new tab (spec 080 FR-124) takes the session browser whatever the setting');
+  assert.ok(/const r=await BP\.openLink\(root\.id,u,how\);/.test(fn), 'spec 080 FR-124: the menu\'s choice goes to main as `how`; the toggle itself is read in main');
+  assert.ok(/data-lact==='newtab'\?'newTab':undefined|t\.dataset\.lact==='newtab'\?'newTab':undefined/.test(app) && /it\('newtab','Open in a new tab'/.test(app), 'the link menu has Open in a new tab (FR-124)');
+  assert.ok(/BP\.openLink\(root\.id,u,how\)/.test(fn), 'a plain click asks main for the chat\'s root session');
   assert.ok(/r\.fallback\)\{if\(web\)openLinkExternal\(u\)/.test(fn), 'Not now on the note: the system browser, this time');
   assert.ok(/r\.link==='mailto'\)\{toastAction\(esc\(r\.reason\),'Open',\(\)=>BP\.openMail\(u\)/.test(fn), 'a mail link offers Open; only that click reaches the system');
   assert.ok(/toast\(esc\(\(r&&r\.reason\)\|\|REFUSED_LINK\),4200\)/.test(fn) && !/toastAction\([^)]*REFUSED_LINK/.test(fn), 'every other scheme: the refusal text, no button');
@@ -119,6 +121,6 @@ for (const [sample, found] of [["const { openExternal } = shell;", 1], ["shell['
   assert.ok(/ALLOWED_URI_REGEXP:\/\^\(\?:https\?:\\\/\\\/\|mailto:\)\/i/.test(md), 'the sanitiser lets http(s) and mailto: through, nothing else');
   assert.ok(/if\(SIM&&window\.DurbarMD&&window\.DurbarMD\.allowSimLinks\)window\.DurbarMD\.allowSimLinks\(\)/.test(app), 'the simulator pages are links only under the simulator');
   // channels
-  assert.ok(/browserOpenLink: \(id, url\) => ipcRenderer\.invoke\('browser:openLink', id, url\)/.test(code('src/preload/preload.ts')));
+  assert.ok(/browserOpenLink: \(id, url, how\) => ipcRenderer\.invoke\('browser:openLink', id, url, how\)/.test(code('src/preload/preload.ts')), 'the preload passes `how` through; main checks it (spec 080 FR-124)');
 }
 console.log('chat links tests passed');

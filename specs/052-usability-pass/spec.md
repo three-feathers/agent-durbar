@@ -108,6 +108,15 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
 
 ## Changes
 
+### 2026-10-31: no Demo / Live badge in the top bar (owner, FR-181)
+
+Vikram, 2026-10-31 (Telegram): "you can also remove demo/live from top bar as demo is only once at open."
+
+- **What the badge was**: a label only, no button and no action: a pill under the app name reading "Demo: sample data" (demo mode), "Demo" (the simulator) or "Live" (a real run). Its tooltip named the ready agent apps ("Live: Copilot, Claude Code") or "fake events, no sessions started, no AI credits used". Nothing else read it: no test, driver or screenshot tool looked it up by id (`protoBadge`); spec 001 FR-027's agent-app list is also in the New agent picker, and the user-visible names stay in the table of FR-165 (its "Demo" row is superseded by this delta).
+- **FR-181** `[IMPLEMENTED]` `sim:` `scripts/check-no-demo-badge.js` (in the UI suite) The top bar has no badge in any mode: `#protoBadge`, `.proto` and their CSS are deleted. The brand block is the mark and the app name, name centred on the mark. Checked at 1440x900 and 1280x800 in the default theme, Retro and Corporate, with demo off and on.
+- **Honest-UI cues that remain** (a user in demo mode can still tell the agents are fake): (1) the ⋯ menu's checked item "Turn off demo" (unchecked: "Turn on demo"; sub-line "Sample agents; no real sessions"); (2) the composer hint of every chat: "Demo, no credits used" in the simulator, "Demo: sample data" for a sample agent, "Live <app>" for a real one (FR-095); (3) the demo option offered at open. The check tests (1) and the simulator form of (2).
+- `[KNOWN GAP]` the tooltip that listed the ready agent apps is gone with the badge; no screenshot-based check of other sizes or the real (non-simulator) top bar was made.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
