@@ -422,3 +422,14 @@ export function placeBox(size: { w: number; h: number }, avoid: readonly Rect[],
 
 /** the lobby band (fixtures and their visitors), for arrangements other than `rows` (spec 102 FR-256: the arcade hall keeps today's band) */
 export { roLobby as lobbyBand };
+
+/** Spec 097 FR-106 (owner 2026-11-01: "too much space above head"): the square of a seated picture that the chat's round header portrait shows. The side is 0.72 of the
+ *  body height (the face, FACE_U of it, fills about 40 % of the circle), its top is 12 % of the side above the top of the head, and it stays inside the picture (moved down or
+ *  sideways, never smaller). Same data as the layout's face box (FACE_U, `headTop`, `bodyH`): one definition of where the face is. */
+export const PORTRAIT_SIDE = 0.72, PORTRAIT_AIR = 0.12;
+export function portraitCrop(seat: { w: number; h: number; headTop: number; bodyH: number }): { x: number; y: number; s: number } {
+  const s = Math.min(PORTRAIT_SIDE * seat.bodyH, seat.w, seat.h);
+  const y = Math.max(0, Math.min(seat.h - s, seat.headTop - PORTRAIT_AIR * s));
+  const x = Math.max(0, Math.min(seat.w - s, seat.w / 2 - s / 2));
+  return { x, y, s };
+}
