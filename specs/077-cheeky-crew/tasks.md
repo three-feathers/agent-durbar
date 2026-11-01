@@ -110,3 +110,11 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 - [x] T096 18 pictures `crew/art/pirate-*.webp` and their `ASSETS.md` rows; the size cap unchanged [FR-074, FR-050, FR-054]
 - [x] T097 Tests: `test:crew`, `test:characters`, `test:crew-assets`; `check-crew` and `check-characters` cover Pirate [FR-074]
 - [x] T098 Docs: README, `docs/themes.md`, changelog fragment, the linked Settings screenshots retaken [FR-074]
+
+## The Monster Crew (delta 2026-11-01, issue #815, crew 3 of 5; FR-075)
+
+- [x] T099 Spec delta FR-075 [spec]
+- [x] T100 `crew.js` (`MONSTER_IDS`, `CREWS.monster`, `storeKey`, file prefix, `FACE` points, `CREW_WORLDS`), `characters.ts`, `theme.js`, `api.ts`, `sim.ts`, `screens.js`, `app.js` and `simcrew.js` (Monster column) with the `monster` value [FR-075, FR-073]
+- [x] T101 18 pictures `crew/art/monster-*.webp` and their `ASSETS.md` rows; the `test:crew-assets` total cap raised from 2.5 MiB to 3 MiB [FR-075, FR-050, FR-054]
+- [x] T102 Tests: `test:crew`, `test:characters`, `test:crew-assets`, `test:realoffice-layout`; `check-crew`, `check-characters` and `check-office-overlap` cover Monster [FR-075]
+- [x] T103 Docs: README, `docs/themes.md`, changelog fragment, the linked Settings screenshots retaken [FR-075]
