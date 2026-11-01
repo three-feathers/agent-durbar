@@ -1,4 +1,4 @@
-/* Real office mode (spec 097 phase P1): the second renderer of the office. app.js builds a plain model from the same state as the flat
+/* Real office mode (spec 097 phases P1, P2): the second renderer of the office. app.js builds a plain model from the same state as the flat
    office (officeModel, VISITS, status words, masked task text) and calls render(); this file lays it out with the pure engine
    (src/shared/realoffice-layout.ts), picks the lights (src/shared/lights.ts) and draws absolutely placed elements in #stage. It is
    loaded only when Real office is chosen (FR-061): app.js adds this script, its CSS, the two compiled shared modules and the art
@@ -16,10 +16,36 @@
   let SET_SHOWN = '';
   const peopleKey = () => SET_SHOWN === 'office' || !SET_SHOWN ? 'durbar.realpeople' : 'durbar.realpeople.' + SET_SHOWN;
   let onArt = null;
+  /* phase P2 (FR-030..FR-035, FR-070..FR-074). CUR: the drawn scene; a monitor repaints on its own, at most once per REPAINT_MS, only when its
+     lines changed, and not at all while the office is hidden or the desk is scrolled away: so no timer runs in an idle office. */
+  const REPAINT_MS = 2000; /* FR-033 */
+  const SCR = new Map(); /* desk id -> {box, last, timer, dirty, away, fit, sig} */
+  const OFF = new Set(); /* keys of desks whose motion stands still: scrolled away or under the zoom */
+  let CUR = null; /* {ro, screenOf, still, hold, desks: Map id -> desk, agents: Map id -> model agent, folders: Map, drawn} */
+  let ZOOM = null; /* {id, hover, focus, panel, plate} */
+  let IO = null, DISMISSED = '';
 
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const px = (n) => Math.round(n * 10) / 10 + 'px';
-  const box = (el, r) => { el.style.left = px(r.x); el.style.top = px(r.y); if (r.w != null) el.style.width = px(r.w); if (r.h != null) el.style.height = px(r.h); };
+  /* spec Changes 2026-11-01: while `SLIDE` is on (a draw of the same window size, people moving), something the layout moved or resized eases there on `translate` and `scale`, so a change does not make the room jump; chips and plates fade in place instead */
+  let SLIDE = false;
+  /* on `translate` and `scale`, not `transform`: an element keeps its own transform while it moves (the post-it's tilt, a person's motion); no layout during it (spec Changes 2026-11-01) */
+  const easeFrom = (el, dx, dy, sx, sy) => {
+    if (!el.animate || (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5 && sx === 1 && sy === 1)) return;
+    const ms = Math.max(280, Math.min(520, Math.hypot(dx, dy) * 1.2)), ease = { duration: ms, easing: 'cubic-bezier(.25,.1,.25,1)' };
+    if (sx === 1 && sy === 1) { el.animate([{ translate: `${dx}px ${dy}px` }, { translate: '0 0' }], ease); return; }
+    /* scaled about the element's own origin: the translate brings its top left to where it was */
+    const o = getComputedStyle(el).transformOrigin.split(' '), ox = parseFloat(o[0]) || 0, oy = parseFloat(o[1]) || 0;
+    el.animate([{ translate: `${dx - ox * (1 - sx)}px ${dy - oy * (1 - sy)}px`, scale: `${sx} ${sy}` }, { translate: '0 0', scale: '1 1' }], ease);
+  };
+  const box = (el, r) => {
+    if (SLIDE && el._x !== undefined && !el.classList.contains('ro-chip') && !el.classList.contains('ro-lplate')) {
+      const sw = r.w != null && el._bw > 0 && Math.abs(el._bw - r.w) >= 1 && r.w > 0 ? el._bw / r.w : 1, sh = r.h != null && el._bh > 0 && Math.abs(el._bh - r.h) >= 1 && r.h > 0 ? el._bh / r.h : 1;
+      easeFrom(el, el._x - r.x, el._y - r.y, sw, sh);
+    }
+    if (r.w != null) el._bw = r.w;
+    if (r.h != null) el._bh = r.h;
+    el._x = r.x; el._y = r.y; el.style.left = px(r.x); el.style.top = px(r.y); if (r.w != null) el.style.width = px(r.w); if (r.h != null) el.style.height = px(r.h); };
   const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => Array.from(w)[0] || '').join('').toUpperCase() || '?';
 
   /* the keyed layers: one Map per layer, elements reused by key; unseen keys are removed at the end of a render */
@@ -39,8 +65,8 @@
     layer._seen.add(key);
     return e;
   }
-  /* an element that leaves is also unobserved (the resize observer of the chrome layer, settle), so the observed set cannot grow all day */
-  function sweep(layer) { for (const [k, e] of layer._k) if (!layer._seen.has(k)) { if (layer._obs && layer._obs.delete(e)) layer._ro.unobserve(e); e.remove(); layer._k.delete(k); } }
+  /* FR-073: `fade`: a person or visitor who left fades where they stood (the fade itself is a picture nobody can click); an element that leaves is also unobserved (the resize observer of the chrome layer, settle), so the observed set cannot grow all day */
+  function sweep(layer, fade) { for (const [k, e] of layer._k) if (!layer._seen.has(k)) { if (layer._obs && layer._obs.delete(e)) layer._ro.unobserve(e); if (fade && (k.startsWith('p:') || k.startsWith('v:'))) zoomOut(e); else e.remove(); layer._k.delete(k); } }
   function text(e, t) { t = String(t == null ? '' : t); if (e.textContent !== t) e.textContent = t; }
   function attr(e, k, v) { if (v == null || v === false) { if (e.hasAttribute(k)) e.removeAttribute(k); } else if (e.getAttribute(k) !== String(v)) e.setAttribute(k, String(v)); }
   function img(e, file, set) {
@@ -51,6 +77,113 @@
       e.src = src;
     }
   }
+  /* FR-071 and FR-047: may anything move now? Web Animations do not see the CSS rules, so this is asked before each one; `still` holds Serious mode and reduced motion at load, the query a later change */
+  function moving() {
+    if (!CUR || CUR.still || CUR.hold) return false;
+    try { if (matchMedia('(prefers-reduced-motion: reduce)').matches) return false; } catch (e) { return false; }
+    return true;
+  }
+  /* FR-074: hidden, or the office under a chat or a screen (body.panel-open hides it): nothing paints */
+  function hiddenNow() { return document.hidden || !CUR || !CUR.ro.isConnected || document.body.classList.contains('panel-open'); }
+  /* a one-time picture that goes away: FR-072's old pose, FR-073's person leaving a desk or a fixture; eased opacity only (FR-180) */
+  function fadeAway(e, ms) {
+    e.className = 'ro-ghost' + (e.classList.contains('ro-visitor') ? ' v' : ''); delete e.dataset.for;
+    const a = e.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ms, easing: 'ease-in-out', fill: 'forwards' });
+    a.onfinish = a.oncancel = () => e.remove();
+  }
+  function fadeIn(e, ms, delay) { e.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms, delay: delay || 0, easing: 'steps(5, end)', fill: 'backwards' }); }
+  /* spec Changes 2026-11-01: measured on macOS at 15 agents, CSS animations that started during a draw stay on the main thread until they restart (renderer main 11.9 % of a core, then 0.6 %): once settled, each gets its own start time set again, so the compositor takes it and nobody's timing changes */
+  /* FR-074: nothing runs while hidden: a walk, a slide or a fade under way ends where it was going (the CSS ones pause by `animation-play-state`) */
+  function finishMoves(ro) { if (ro.getAnimations) for (const a of ro.getAnimations({ subtree: true })) if (!a.animationName) { try { a.finish(); } catch (e) { /* one with no end: none is drawn here */ } } }
+  let handTimer = 0, handStep = 0;
+  const HAND_MS = [3000, 8000, 15000, 30000]; /* measured: at 3 s it does not hold, at 15 s it does; the reason is not known, so it tries again */
+  function handOver(ro) {
+    handStep = 0;
+    if (handTimer) return;
+    const next = () => {
+      handTimer = setTimeout(() => {
+        handTimer = 0;
+        if (!CUR || CUR.ro !== ro || !ro.isConnected || !ro.getAnimations || !moving() || hiddenNow()) return;
+        for (const a of ro.getAnimations({ subtree: true })) {
+          if (!a.animationName || a.playState !== 'running' || a.startTime == null) continue;
+          a.startTime = a.startTime; /* the same place: not pause and play, which would take the animation away from `animation-play-state` and so from FR-074's pause */
+        }
+        if (++handStep < HAND_MS.length) next();
+      }, HAND_MS[handStep]);
+    };
+    next();
+  }
+  /* spec Changes 2026-11-01: a person going to or from a place glides from where they were, with a stride bounce; the second picture waits for the arrival (GLIDING) */
+  const WHERE = new Map(), GLIDING = new Map();
+  /* spec Changes 2026-11-01: a person zooms out where they were and zooms in where they go: never two bodies, nothing crosses the room */
+  const ZOOM_OUT = 280, ZOOM_IN = 320;
+  function poof(host, r, delay) {
+    const d = document.createElement('div'); d.className = 'ro-poof';
+    const w = r.h * 0.8; box(d, { x: r.x + r.w / 2 - w / 2, y: r.y + r.h * 0.45 - w / 2, w, h: w }); host.appendChild(d);
+    const a = d.animate([{ transform: 'scale(.5)', opacity: 0 }, { opacity: 1, offset: 0.4 }, { transform: 'scale(1.2)', opacity: 0 }], { duration: ZOOM_IN, delay, easing: 'ease-out', fill: 'backwards' });
+    a.onfinish = a.oncancel = () => d.remove();
+  }
+  function zoomOut(e) {
+    const r = { x: parseFloat(e.style.left) || 0, y: parseFloat(e.style.top) || 0, w: parseFloat(e.style.width) || 0, h: parseFloat(e.style.height) || 0 };
+    e.className = 'ro-ghost' + (e.classList.contains('ro-visitor') ? ' v' : ''); delete e.dataset.for;
+    if (e.parentNode && r.h) poof(e.parentNode, r, 0);
+    const a = e.animate([{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(.62)', opacity: 0 }], { duration: ZOOM_OUT, easing: 'cubic-bezier(.5,0,.8,.5)', fill: 'forwards' });
+    a.onfinish = a.oncancel = () => e.remove();
+  }
+  function glide(e, id, from, to) {
+    if (!from || (from.x === to.x && from.y === to.y)) return false;
+    if (e.parentNode) poof(e.parentNode, to, ZOOM_OUT - 40);
+    const a = e.animate([{ transform: 'scale(.62)', opacity: 0 }, { transform: 'scale(1.03)', opacity: 1, offset: 0.72 }, { transform: 'none', opacity: 1 }], { duration: ZOOM_IN, delay: ZOOM_OUT - 40, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'backwards' });
+    GLIDING.set(id, a);
+    a.onfinish = a.oncancel = () => { if (GLIDING.get(id) === a) { GLIDING.delete(id); if (onArt) onArt(); } };
+    return true;
+  }
+
+  function setVar(e, k, v) { if (e.style.getPropertyValue(k) !== v) e.style.setProperty(k, v); }
+  /* one clock per desk, its own place in the cycle: a desk's two pictures and caret stay together */
+  function clock(e, ms) { for (const a of e.getAnimations()) if (a.animationName) a.startTime = ms; } /* the CSS loops only: a walk under way keeps its own time */
+
+  /* the typing rig: a wrapper with the body's movement on the body's clock, over it a head and two hands cut from the same picture (spec Changes 2026-11-01) */
+  function rigOf(art, k, rect, r, m, pe) {
+    const w = el(art, 'rg:' + k, 'div', 'ro-rig m-rig' + (OFF.has(k) ? ' ro-off' : ''));
+    box(w, rect); w.dataset.for = k;
+    const org = getComputedStyle(pe).transformOrigin; if (w.style.transformOrigin !== org) w.style.transformOrigin = org;
+    for (const [v, val] of [['--ro-sw', m.sway + 's'], ['--ro-u', (rect.h / 100).toFixed(3) + 'px'], ['--ro-pat', (2.2 + (m.offset % 900) / 900) .toFixed(2) + 's']]) setVar(w, v, val);
+    if (w._pid !== rect.pid) {
+      w._pid = rect.pid; w.textContent = '';
+      for (const [cls, part, key] of [['h', r.head, 'head'], ['l', r.l, 'l'], ['r', r.r, 'r']]) {
+        if (!part) continue;
+        const i = new Image(); i.className = cls; i.alt = ''; i.src = SD + rect.pid + '-rig' + key + '.webp';
+        i.style.left = (part.x * 100) + '%'; i.style.top = (part.y * 100) + '%'; i.style.width = (part.w * 100) + '%'; i.style.height = (part.h * 100) + '%';
+        i.style.transformOrigin = (part.px * 100) + '% ' + (part.py * 100) + '%';
+        w.appendChild(i);
+      }
+      w._clock = false;
+    }
+    if (!w._clock) { w._clock = true; clock(w, m.offset); clock(pe, m.offset); for (const i of w.children) clock(i, m.offset + (i.className === 'r' ? 700 : 0)); }
+  }
+
+  /* fewer layers when frames drop: about 1 s in 20, read 40 frames (spec Changes 2026-11-01). lod 1: no rig; lod 2: no body movement either */
+  let LOD = 0, lodBad = 0, lodGood = 0, lodTimer = 0;
+  function watchFrames(ro) {
+    if (lodTimer || !root.requestAnimationFrame) return;
+    lodTimer = setTimeout(() => {
+      lodTimer = 0;
+      if (!CUR || CUR.ro !== ro || !ro.isConnected) return;
+      if (!moving() || hiddenNow()) { watchFrames(ro); return; }
+      let n = 0, t0 = 0;
+      const step = (t) => {
+        if (!t0) t0 = t;
+        if (++n < 40) { root.requestAnimationFrame(step); return; }
+        const fps = (n - 1) * 1000 / (t - t0);
+        if (fps < 45) { lodGood = 0; if (++lodBad >= 2 && LOD < 2) { LOD++; lodBad = 0; apply(); } } else if (fps > 57) { lodBad = 0; if (++lodGood >= 6 && LOD > 0) { LOD--; lodGood = 0; apply(); } }
+        watchFrames(ro);
+      };
+      const apply = () => { ro.classList.toggle('lod1', LOD === 1); ro.classList.toggle('lod2', LOD === 2); if (onArt) onArt(); };
+      root.requestAnimationFrame(step);
+    }, 20000);
+  }
+
   /* a span with a status dot (the app's .dot classes, forced-colours aware) */
   function dotHTML(state) { return '<span class="dot ' + ({ limit: 'waiting', asleep: 'idle' }[state] || state) + '" aria-hidden="true"></span>'; }
 
@@ -89,10 +222,20 @@
     const lay = L.realLayout(engine, view, meta, signs);
 
     let ro = stage.querySelector(':scope > .ro');
-    if (!ro) { stage.textContent = ''; ro = document.createElement('div'); ro.className = 'ro'; stage.appendChild(ro); ro.addEventListener('click', forward); }
+    if (!ro) { stage.textContent = ''; ro = document.createElement('div'); ro.className = 'ro'; stage.appendChild(ro); ro.addEventListener('click', forward); wireZoom(ro); }
     ro.style.width = px(lay.width); ro.style.height = px(lay.height);
     ro.dataset.set = set; ro.dataset.world = world; ro.dataset.u = String(Math.round(lay.u)); ro.dataset.face = String(Math.round(lay.faceH * 10) / 10); ro.dataset.big = lay.big ? '1' : '0';
     ro.classList.toggle('still', !!opts.still);
+    ro.classList.toggle('hold', !!opts.hold); /* the people stand still, the lights may not (FR-071) */
+    const drawn = !!(CUR && CUR.ro === ro && CUR.drawn);
+    if (!drawn) OFF.clear();
+    if (ZOOM && !ZOOM.panel.isConnected) closeZoom();
+    const sized = view.w + 'x' + view.h, sameSize = !!CUR && CUR.sized === sized && !!CUR.painted;
+    const wasLive = CUR && CUR.ro === ro ? CUR.live : undefined;
+    CUR = { ro, live: opts.live, screenOf: opts.screenOf || null, sized, still: !!opts.still, hold: !!opts.hold, desks: new Map(lay.zones.flatMap((z) => z.desks.map((d) => [d.id, d]))), agents: new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, { ...a, folder: f.name }]))), drawn, scroll: !!lay.scroll };
+    SLIDE = sameSize && moving() && !hiddenNow();
+    CUR.painted = true;
+    ro.classList.toggle('paused', hiddenNow()); if (hiddenNow()) finishMoves(ro);
     /* z-order (plan: art < lights < chrome): floor and fixtures, people and desks; the ambient and the lights; then signs, plates, chips */
     const art = layerOf(ro, 'ro-art'), amb = layerOf(ro, 'ro-amb'), lights = layerOf(ro, 'ro-lights'), chrome = layerOf(ro, 'ro-chrome');
     const lobby = el(art, 'lobby', 'div', 'ro-lobby'); box(lobby, { x: 0, y: 0, w: lay.width, h: lay.lobbyH });
@@ -130,20 +273,32 @@
       for (const d of z.desks) {
         const a = byAgent.get(d.id), k = d.id;
         const lt = L.lightFor(d.state, { still: !!opts.still });
-        /* the person (FR-036 first frame; P2 adds the second frame and motion), behind the desk; FR-065: the initials disc when the picture failed */
+        /* the person, behind the desk: FR-036's pose, FR-070's second frame or breath, FR-072's cross-fade; FR-065: the initials disc when the picture failed */
         if (d.person) {
-          const pe = el(art, 'p:' + k, 'img', 'ro-person'); box(pe, d.person); pe.dataset.for = k; pe.dataset.pose = d.person.pose; img(pe, d.person.file, true);
+          const m = L.personMotion(k, d.person.pose, d.state);
+          const fresh = !art._k.has('p:' + k);
+          const rigged = d.person.pose === 'typeA' && moving() && LOD === 0 && !GLIDING.has(k) && !(fresh && CUR.drawn && WHERE.has(k)) && meta.rig && has(meta.rig, d.person.pid) ? meta.rig[d.person.pid] : null;
+          const two = !rigged && moving() && m.kind === 'frames' && d.person.fileB && !BAD.has(SD + d.person.fileB) && !GLIDING.has(k) ? second(art, 'pb:' + k, k, d.person, d.person.fileB, 'ro-person2', m) : null;
+          const pe = el(art, 'p:' + k, 'img', 'ro-person' + (rigged ? ' m-rig' : two && two.on ? ' m-a m-' + m.style : m.kind === 'breathe' && moving() ? ' m-br' : '') + (OFF.has(k) ? ' ro-off' : ''));
+          box(pe, d.person); pe.dataset.for = k; pe.dataset.pose = d.person.pose;
+          const was = pe.getAttribute('src');
+          if (was && was !== SD + d.person.file && moving() && !hiddenNow() && !OFF.has(k)) { const g = pe.cloneNode(false); art.insertBefore(g, pe); fadeAway(g, 120); pe.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 170, delay: 90, easing: 'ease-in-out', fill: 'backwards' }); } /* FR-072, spec Changes 2026-11-01: the old out, then the new in */
+          img(pe, d.person.file, true);
+          if (fresh && CUR.drawn && moving() && !hiddenNow() && !OFF.has(k) && !glide(pe, k, WHERE.get(k), d.person)) fadeIn(pe, 150, 150); /* FR-073: in at the desk */
+          WHERE.set(k, d.person);
+          if (m.kind) { setVar(pe, '--ro-per', m.period + 's'); setVar(pe, '--ro-sw', m.sway + 's'); setVar(pe, '--ro-u', (d.person.h / 100).toFixed(3) + 'px'); }
+          if (rigged) rigOf(art, k, d.person, rigged, m, pe);
+          if (two && two.on && !two.b._clock) { two.b._clock = true; clock(two.b, m.offset); clock(pe, m.offset); }
         } else if (!d.narrow) {
           const ini = el(art, 'i:' + k, 'div', 'ro-initials'); const r = 0.5 * lay.u; box(ini, { x: d.slot.x + 0.05 * d.slot.w + 0.42 * lay.u - r / 2, y: d.desk.y - r - 6, w: r, h: r }); ini.dataset.for = k; text(ini, initials(a.name));
         }
         const dc = el(art, 'd:' + k, 'div', 'ro-desk' + (d.narrow ? ' narrow' : '')); box(dc, d.desk); dc.dataset.for = k;
         const dk = dc.firstChild || dc.appendChild(document.createElement('img')); dk.style.height = px(d.desk.full); img(dk, 'desk.webp');
-        /* the monitor: P1 shows the status on the glass (decorative line bars; live, masked text is phase P2, FR-030..FR-035) */
+        /* the monitor: the glass in the art; its text sits with the chrome, above the lights (FR-044), and repaints on its own (FR-033) */
         const sc = el(art, 'm:' + k, 'div', 'ro-screen st-' + d.state + (lt.glow === 'off' ? ' off' : '')); box(sc, d.screen); sc.dataset.for = k;
-        if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass"></div></div><div class="ro-neck"></div><div class="ro-foot"></div>';
+        if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass" aria-hidden="true"></div></div><div class="ro-neck"></div><div class="ro-foot"></div>';
         const bez = sc.firstChild; bez.style.height = px(d.glass.h + 6);
-        const nb = Math.max(2, Math.min(24, Math.floor((d.glass.h - 10) / 7))), gl = bez.firstChild; /* decorative line bars as many as the glass holds (aria-hidden) */
-        if (gl.childElementCount !== nb) { gl.setAttribute('aria-hidden', 'true'); gl.textContent = ''; for (let i = 0; i < nb; i++) { const b = document.createElement('i'); b.style.width = (22 + ((i * 37 + k.length * 13) % 60)) + '%'; gl.appendChild(b); } }
+        screenBox(chrome, d, k);
         /* FR-040, FR-041: lamp, screen glow and call light, as classes over the art (D4) */
         const lamp = el(lights, 'l:' + k, 'div', 'ro-lamp lamp-' + lt.lamp + (lt.motion === 'pulse' ? ' pulse' : '')); box(lamp, d.lamp);
         const glow = el(lights, 'g:' + k, 'div', 'ro-glow glow-' + lt.glow + (lt.motion === 'breathe' ? ' breathe' : '')); box(glow, { x: d.glass.x - 6, y: d.glass.y - 6, w: d.glass.w + 12, h: d.glass.h + 12 });
@@ -158,7 +313,7 @@
         if (d.bubble) { const b = el(chrome, 'b:' + k, 'div', 'ro-bub'); box(b, d.bubble); attr(b, 'aria-hidden', 'true'); text(b, '?'); }
         if (d.bang) { const b = el(chrome, 'x:' + k, 'div', 'ro-bang'); box(b, d.bang); attr(b, 'aria-hidden', 'true'); text(b, '!'); }
         if (d.dots) { const b = el(chrome, 't:' + k, 'div', 'ro-dots'); box(b, d.dots); attr(b, 'aria-hidden', 'true'); if (!b.firstChild) b.innerHTML = '<i></i><i></i><i></i>'; }
-        if (d.away) { const w = el(chrome, 'a:' + k, 'div', 'ro-away'); box(w, d.away); text(w, 'at ' + a.awayLabel + ' ↑'); }
+        if (d.away) { const w = el(chrome, 'a:' + k, 'div', 'ro-away'); box(w, { x: d.away.x, y: d.away.y, w: d.away.s, h: d.away.s }); text(w, 'at ' + a.awayLabel); if (!w._in && CUR.drawn && moving() && !hiddenNow()) w.animate([{ transform: 'translateX(-50%) rotate(-2.5deg) scale(.7)', opacity: 0 }, { transform: 'translateX(-50%) rotate(-2.5deg)', opacity: 1 }], { duration: ZOOM_IN, delay: ZOOM_OUT - 40, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'backwards' }); w._in = true; }
         /* FR-016, FR-090: the name plate is the desk's one focusable button; the app's click handler opens the chat ([data-id]) */
         const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '')); box(pl, d.plate);
         pl.type = 'button'; pl.dataset.id = k; pl.dataset.state = d.state;
@@ -190,7 +345,15 @@
         if (v.fig && !BAD.has(SD + v.fig.file)) {
           /* owner 2026-10-31 10:19 and 10:48: the feet on the front floor plane (layout), with a soft contact shadow under them */
           const sh = el(art, 'vs:' + v.id, 'div', 'ro-shadow'); box(sh, v.shadow);
-          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor'); box(im, v.fig); im.dataset.for = v.id; im.dataset.place = fx.id; im.dataset.pose = v.fig.pose; im.dataset.faces = v.fig.faces; im.dataset.feet = String(Math.round(v.fig.feetY * 10) / 10); img(im, v.fig.file, true);
+          /* FR-070: stride frames, a knock or a breath; FR-073: in at the fixture after the fade at the desk */
+          const m = L.personMotion(v.id, v.fig.pose, null), fresh = !art._k.has('v:' + v.id), mov = moving() && !OFF.has(v.id);
+          const two = mov && m.kind === 'frames' && v.fig.fileB && !BAD.has(SD + v.fig.fileB) && !(GLIDING.has(v.id) || (fresh && CUR.drawn && WHERE.has(v.id))) ? second(art, 'vb:' + v.id, v.id, v.fig.b || v.fig, v.fig.fileB, 'ro-visitor2', m) : null;
+          const cl = two && two.on ? ' m-a m-' + m.style : mov ? ({ breathe: ' m-br', knock: ' m-knock' }[m.kind] || '') : '';
+          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor' + cl); box(im, v.fig); im.dataset.for = v.id; im.dataset.place = fx.id; im.dataset.pose = v.fig.pose; im.dataset.faces = v.fig.faces; im.dataset.feet = String(Math.round(v.fig.feetY * 10) / 10); img(im, v.fig.file, true);
+          if (cl) { setVar(im, '--ro-per', m.period + 's'); setVar(im, '--ro-sw', m.sway + 's'); setVar(im, '--ro-u', (v.fig.h / 100).toFixed(3) + 'px'); setVar(im, '--ro-org', '50% ' + px(v.fig.feetY - v.fig.y)); }
+          if (fresh && CUR.drawn && moving() && !hiddenNow() && !glide(im, v.id, WHERE.get(v.id), v.fig)) fadeIn(im, 150, 150);
+          WHERE.set(v.id, v.fig);
+          if (two && two.on && !two.b._clock) { two.b._clock = true; clock(two.b, m.offset); clock(im, m.offset); }
         }
         /* FR-026 "as the flat lobby": a go-place visitor (Boss, Bank, Coffee) is the flat lobby's own button (data-pvopen, and
            data-coffeeid for the coffee menu): app.js's delegated handlers open the chat; others forward to their plate (data-for) */
@@ -208,9 +371,31 @@
       const lsig = JSON.stringify([p.label, fx.more]);
       if (pl._sig !== lsig) { pl._sig = lsig; pl.textContent = ''; const s = document.createElement('span'); s.textContent = p.label; pl.appendChild(s); if (fx.more > 0) { const b = document.createElement('b'); b.className = 'ro-more'; b.textContent = '+' + fx.more; pl.appendChild(b); } }
     }
-    [art, amb, lights, chrome].forEach(sweep);
+    sweep(art, drawn && moving() && !hiddenNow()); [amb, lights, chrome].forEach((l) => sweep(l));
+    for (const id of WHERE.keys()) if (!CUR.agents.has(id)) WHERE.delete(id); /* a session gone: what stays is bounded by the sessions there are */
+    watchBody(); wasHidden = hiddenNow();
     fitPlates(chrome, lay.width);
     stagger(chrome, lay.width);
+    /* a chip or plate does not travel: it fades in where it now is, so nothing passes over anything (owner 2026-11-01) */
+    for (const e of chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')) {
+      const L = parseFloat(e.style.left), T = parseFloat(e.style.top);
+      if (SLIDE && e._lx !== undefined && (Math.abs(e._lx - L) >= 0.5 || Math.abs(e._ly - T) >= 0.5)) e.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220, easing: 'ease-out' });
+      e._lx = L; e._ly = T;
+    }
+    for (const [id, s] of SCR) if (!CUR.desks.has(id)) { clearTimeout(s.timer); if (IO) IO.unobserve(s.box); SCR.delete(id); }
+    watchOff(lay);
+    SLIDE = false;
+    CUR.drawn = true;
+    if (moving() && !hiddenNow()) handOver(ro);
+    watchFrames(ro);
+    if (wasLive !== undefined && wasLive !== CUR.live) for (const [id, s] of SCR) { /* the setting holds at once: it does not wait for the next line, or the repaint pace */
+      if (s.away || hiddenNow()) s.dirty = true; else { clearTimeout(s.timer); s.timer = 0; s.dirty = false; paintScreen(id); }
+    }
+    if (ZOOM) {
+      const zd = CUR.desks.get(ZOOM.id);
+      if (!zd || zd.state === 'asleep' || hiddenNow()) closeZoom(); /* FR-035: an asleep screen is off, nothing to read */
+      else placeZoom();
+    }
     settle(chrome, lay.width);
     return lay;
   }
@@ -235,6 +420,199 @@
     }
     if (!chrome._obs) chrome._obs = new Set();
     for (const e of chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')) if (!chrome._obs.has(e)) { chrome._obs.add(e); chrome._ro.observe(e, { box: 'border-box' }); }
+  }
+
+  /* FR-070: the second frame of a pose over the first; it moves only once decoded, so nothing pops; FR-065: a failed one leaves the first frame still */
+  function second(art, key, id, rect, file, cls, m) {
+    const prev = art._k.get(key), on = !!prev && prev._file === file && prev._ok;
+    const b = el(art, key, 'img', cls + (on ? ' m-b m-' + m.style : '') + (OFF.has(id) ? ' ro-off' : ''));
+    box(b, rect); b.dataset.for = id; setVar(b, '--ro-per', m.period + 's'); setVar(b, '--ro-sw', m.sway + 's'); setVar(b, '--ro-u', (rect.h / 100).toFixed(3) + 'px');
+    if (b._file !== file) {
+      b._file = file; b._ok = false; b._clock = false;
+      img(b, file, true);
+      b.decode().then(() => { if (b._file === file) { b._ok = true; if (onArt) onArt(); } }, () => {});
+    }
+    return { b, on };
+  }
+
+  /* ---- FR-030..FR-035: the monitors ---- */
+  function screenBox(chrome, d, k) {
+    const L = X(), f = L.screenFit(d.glass), box2 = el(chrome, 'st:' + k, 'div', 'ro-stext st-' + d.state + (f.small ? ' small' : '') + (d.state === 'asleep' ? ' off' : '') + (OFF.has(k) ? ' ro-off' : '')); box(box2, d.glass); attr(box2, 'aria-hidden', 'true');
+    let s = SCR.get(k);
+    if (!s || s.box !== box2) { if (s) clearTimeout(s.timer); s = { box: box2, last: -Infinity, timer: 0, dirty: true, away: false, sig: '', fit: '' }; SCR.set(k, s); }
+    const fit = JSON.stringify(f);
+    if (s.fit !== fit) { /* a new size is drawn at once: it is the layout, not a repaint of text */
+      s.fit = fit; setVar(box2, '--ro-sf', f.font + 'px'); setVar(box2, '--ro-sl', f.lh + 'px'); setVar(box2, '--ro-sh', f.whole + 'px'); setVar(box2, '--ro-sr', String(Math.max(1, Math.round(f.whole / f.lh))));
+      s.sig = '';
+      if (s.painted && !s.away && !hiddenNow()) { paintScreen(k); s.dirty = false; } else s.dirty = true;
+    }
+    if (d.state !== s.state) { s.state = d.state; s.dirty = true; }
+    if (s.dirty) plan(k);
+  }
+  /* FR-033: at most once per REPAINT_MS, the newest text; a trailing paint when it comes in between */
+  function plan(id) {
+    const s = SCR.get(id);
+    if (!s || s.timer || s.away || hiddenNow()) return;
+    const wait = s.last + REPAINT_MS - performance.now();
+    if (wait <= 0) { s.dirty = false; s.last = performance.now(); paintScreen(id); return; }
+    s.timer = setTimeout(() => { s.timer = 0; if (!s.dirty) return; plan(id); }, wait + 1);
+  }
+  /* the agent's lines changed (app.js liveFeed) */
+  function feed(id) { const s = SCR.get(id); if (s) { s.dirty = true; plan(id); } }
+  /* rows of a text box: the lines keep their elements while they scroll, and only what changed is written (FR-184). Returns the rows added. */
+  function fillRows(host, lines) {
+    const old = host._rows || (host._rows = new Map()), keep = new Set(lines.map((l) => l.n));
+    for (const [n, e] of old) if (!keep.has(n)) { e.remove(); old.delete(n); }
+    let added = 0, at = host.firstChild;
+    for (const l of lines) {
+      let e = old.get(l.n);
+      if (!e) { e = document.createElement('div'); e.className = 'ro-sl'; old.set(l.n, e); host.insertBefore(e, at); added++; } else at = e.nextSibling;
+      if (e.dataset.k !== l.k) e.dataset.k = l.k;
+      text(e, l.t); /* textContent only: no markup, no link (FR-031) */
+    }
+    return added;
+  }
+  function paintScreen(id) {
+    const s = SCR.get(id), d = CUR && CUR.desks.get(id), a = CUR && CUR.agents.get(id);
+    if (!s || !d || !a || !CUR.screenOf) return;
+    const L = X(), data = CUR.screenOf(id, d.state, a.word), f = L.screenFit(d.glass);
+    if (data.off) { if (s.painted) { s.box.textContent = ''; s.painted = false; s.lines = null; s.bars = null; s.caret = null; } s.sig = ''; return; }
+    const sig = JSON.stringify([data.lines, data.caret, s.fit]);
+    if (sig === s.sig) return;
+    s.sig = sig;
+    if (!s.lines) { const clip = document.createElement('div'); clip.className = 'ro-clip'; s.box.appendChild(clip); s.lines = document.createElement('div'); s.lines.className = 'ro-lines'; clip.appendChild(s.lines); s.bars = document.createElement('div'); s.bars.className = 'ro-bars'; s.lines.appendChild(s.bars); s.rows = document.createElement('div'); s.rows.className = 'ro-rows'; s.lines.appendChild(s.rows); }
+    const shown = data.lines.slice(-f.rows);
+    /* with Live activity off a working screen still looks at work: bars that say nothing, as many as fit, with no text behind them */
+    const older = data.quiet ? Array.from({ length: Math.max(0, Math.floor((f.whole - f.lh - 2) / 6)) }, (_, i) => ({ n: i, k: i % 3 ? 'plain' : 'cmd', t: 'x'.repeat(10 + (i * 17 + id.length * 7) % 40) })) : f.bars ? data.lines.slice(0, -f.rows).slice(-f.bars) : [];
+    /* FR-032: older lines as bars, each as long as its line and coloured by its kind */
+    while (s.bars.childElementCount > older.length) s.bars.lastChild.remove();
+    while (s.bars.childElementCount < older.length) s.bars.appendChild(document.createElement('i'));
+    older.forEach((l, i) => { const b = s.bars.children[i], w = Math.min(96, 18 + Array.from(l.t).length * 1.4).toFixed(0) + '%'; if (b.style.width !== w) b.style.width = w; if (b.dataset.k !== l.k) b.dataset.k = l.k; });
+    const added = fillRows(s.rows, shown);
+    /* FR-033: the new line slides in, three steps, transform only; the text is already right, so a dropped frame costs nothing */
+    if (added && s.painted && moving() && !s.away) s.lines.animate([{ transform: 'translateY(' + Math.min(added, 2) * f.lh + 'px)' }, { transform: 'none' }], { duration: 180, easing: 'steps(3, end)' });
+    if (data.caret && !s.caret) { s.caret = document.createElement('i'); s.caret.className = 'ro-caret'; s.box.appendChild(s.caret); const m = L.personMotion(id, 'typeA', d.state); setVar(s.caret, '--ro-per', '1.2s'); if (moving()) clock(s.caret, m.offset); }
+    else if (!data.caret && s.caret) { s.caret.remove(); s.caret = null; }
+    s.painted = true;
+    if (ZOOM && ZOOM.id === id) fillZoom();
+  }
+
+  /* FR-074: a window hidden or back; FR-181: desks scrolled away stand still and do not paint, and catch up once when they are back */
+  /* body.panel-open comes and goes between draws: the room pauses and resumes at once */
+  let bodyWatch = null, wasHidden = false;
+  function watchBody() {
+    if (bodyWatch || typeof MutationObserver !== 'function') return;
+    bodyWatch = new MutationObserver(() => { if (hiddenNow() !== wasHidden) resume(); });
+    bodyWatch.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  }
+  function resume() {
+    if (!CUR) return;
+    wasHidden = hiddenNow();
+    const h = hiddenNow(); CUR.ro.classList.toggle('paused', h); if (h) finishMoves(CUR.ro);
+    if (h) { closeZoom(); return; }
+    for (const [id, s] of SCR) if (s.dirty) plan(id);
+  }
+  document.addEventListener('visibilitychange', resume);
+  function setOff(id, off) {
+    if (off === OFF.has(id)) return;
+    if (off) OFF.add(id); else OFF.delete(id);
+    if (!CUR) return;
+    const art = CUR.ro.querySelector(':scope > .ro-art');
+    for (const key of ['p:', 'pb:', 'rg:']) { const e = art && art._k.get(key + id); if (e) e.classList.toggle('ro-off', off); }
+    const s = SCR.get(id); if (s) s.box.classList.toggle('ro-off', off);
+  }
+  function watchOff(lay) {
+    if (!lay.scroll || typeof IntersectionObserver !== 'function') {
+      if (IO) { IO.disconnect(); IO = null; }
+      for (const [id, s] of SCR) { s.watched = false; if (s.away) { s.away = false; setOff(id, false); if (s.dirty) plan(id); } }
+      return;
+    }
+    const root = CUR.ro.closest('#floor') || null;
+    if (IO && IO.root !== root) { IO.disconnect(); IO = null; for (const s of SCR.values()) s.watched = false; }
+    if (!IO) IO = new IntersectionObserver((list) => { for (const n of list) { const id = n.target._id, s = SCR.get(id); if (!s || s.box !== n.target) continue; s.away = !n.isIntersecting; setOff(id, s.away); if (!s.away && s.dirty) plan(id); } }, { root });
+    for (const [id, s] of SCR) if (!s.watched) { s.watched = true; s.box._id = id; IO.observe(s.box); }
+  }
+
+  /* ---- FR-034: the zoom ---- */
+  const ZOOM_W = [380, 480], ZOOM_HEAD = 44, ZOOM_LH = 17, ZOOM_ROWS = 12, ZOOM_MIN_ROWS = 4;
+  function wireZoom(ro) {
+    let wait = 0;
+    ro.addEventListener('pointerover', (e) => {
+      const sc = e.target.closest && e.target.closest('.ro-screen');
+      if (!sc || e.pointerType === 'touch' || !sc.dataset.for) return;
+      if ((ZOOM && ZOOM.hover && ZOOM.id === sc.dataset.for) || DISMISSED === sc.dataset.for) return; /* Esc holds until the pointer has left */
+      clearTimeout(wait); wait = setTimeout(() => openZoom(sc.dataset.for, 'hover'), 120); /* crossing the room opens nothing */
+    });
+    ro.addEventListener('pointerout', (e) => {
+      const sc = e.target.closest && e.target.closest('.ro-screen');
+      if (!sc || (e.relatedTarget && sc.contains(e.relatedTarget))) return;
+      clearTimeout(wait); DISMISSED = '';
+      if (ZOOM && ZOOM.id === sc.dataset.for) leaveZoom('hover');
+    });
+    ro.addEventListener('focusin', (e) => { const p = e.target.closest && e.target.closest('.ro-plate'); if (p && p.matches(':focus-visible')) openZoom(p.dataset.id, 'focus'); });
+    ro.addEventListener('focusout', (e) => { const p = e.target.closest && e.target.closest('.ro-plate'); if (p && ZOOM && ZOOM.id === p.dataset.id) leaveZoom('focus'); });
+  }
+  function zoomKey(e) {
+    if (e.key !== 'Escape' || !ZOOM) return;
+    if (hiddenNow()) { closeZoom(); return; } /* the office is covered: this Escape is for what covers it */
+    e.preventDefault(); e.stopPropagation(); DISMISSED = ZOOM.hover ? ZOOM.id : ''; closeZoom();
+  }
+  function openZoom(id, why) {
+    if (!CUR || hiddenNow() || !CUR.desks.has(id) || !CUR.screenOf) return;
+    if (CUR.desks.get(id).state === 'asleep') return; /* FR-035: an asleep screen is off, nothing to read */
+    if (!ZOOM || ZOOM.id !== id) {
+      closeZoom();
+      const p = document.createElement('div'); p.className = 'ro-zoom'; p.id = 'roZoom'; p.setAttribute('role', 'region');
+      p.innerHTML = '<div class="ro-zh"><b></b><span class="ro-zr"></span><span class="ro-zs"></span><span class="ro-zf"></span></div><div class="ro-zb"><div class="ro-zl"></div></div>';
+      CUR.ro.appendChild(p);
+      ZOOM = { id, hover: false, focus: false, panel: p, plate: CUR.ro.querySelector('.ro-plate[data-id="' + CSS.escape(id) + '"]') };
+      if (ZOOM.plate) ZOOM.plate.setAttribute('aria-describedby', 'roZoom');
+      document.addEventListener('keydown', zoomKey, true);
+      addEventListener('blur', closeZoom);
+      const fl = CUR.ro.closest('#floor'); if (fl) { ZOOM.floor = fl; fl.addEventListener('scroll', closeZoom, { passive: true }); }
+      fillZoom(); placeZoom();
+    }
+    ZOOM[why] = true;
+  }
+  function leaveZoom(why) { if (!ZOOM) return; ZOOM[why] = false; if (!ZOOM.hover && !ZOOM.focus) closeZoom(); }
+  function closeZoom() {
+    if (!ZOOM) return;
+    const z = ZOOM; ZOOM = null;
+    z.panel.remove();
+    if (z.plate) z.plate.removeAttribute('aria-describedby');
+    document.removeEventListener('keydown', zoomKey, true);
+    removeEventListener('blur', closeZoom);
+    if (z.floor) z.floor.removeEventListener('scroll', closeZoom);
+    for (const id of z.under || []) { const s = SCR.get(id); if (!s || !s.away) setOff(id, false); }
+  }
+  /* name, role, status, folder and the last lines, textContent only (FR-031, FR-034); a described region, not a live one */
+  function fillZoom() {
+    const a = CUR.agents.get(ZOOM.id), d = CUR.desks.get(ZOOM.id), p = ZOOM.panel;
+    if (!a || !d) return;
+    p.setAttribute('aria-label', 'Screen of ' + a.name);
+    p.dataset.state = d.state; p.dataset.for = ZOOM.id;
+    text(p.querySelector('.ro-zh b'), a.name); text(p.querySelector('.ro-zr'), a.role); text(p.querySelector('.ro-zs'), a.word); text(p.querySelector('.ro-zf'), a.folder);
+    const data = CUR.screenOf(ZOOM.id, d.state, a.word);
+    const host = p.querySelector('.ro-zl');
+    fillRows(host, data.lines);
+    ZOOM.rows = data.lines.reduce((n, l) => n + Math.max(1, Math.ceil(Array.from(l.t).length / 52)), 0);
+  }
+  function placeZoom() {
+    const ro = CUR.ro, o = ro.getBoundingClientRect(), fl = ro.closest('#floor'), f = fl ? fl.getBoundingClientRect() : o, d = CUR.desks.get(ZOOM.id);
+    const near = (e) => { const b = e.getBoundingClientRect(); return { x: b.left - o.left, y: b.top - o.top, w: b.width, h: b.height }; };
+    const avoid = [d.screen, ...[...ro.querySelectorAll('.ro-plate:is(.st-waiting,.st-limit), .ro-lplate.wait, .ro-chip.wait')].map(near)];
+    if (ZOOM.plate) avoid.push(near(ZOOM.plate));
+    const view = { x: Math.max(0, f.left - o.left), y: Math.max(0, f.top - o.top), w: Math.min(f.right, o.right) - Math.max(f.left, o.left), h: Math.min(f.bottom, o.bottom) - Math.max(f.top, o.top) };
+    const w = Math.max(ZOOM_W[0], Math.min(ZOOM_W[1], view.w * 0.34));
+    const rows = Math.max(ZOOM_MIN_ROWS, Math.min(ZOOM_ROWS, ZOOM.rows || 0));
+    const r = X().zoomRect(d.screen, avoid, view, { w, h: ZOOM_HEAD + rows * ZOOM_LH + 12, minH: ZOOM_HEAD + ZOOM_MIN_ROWS * ZOOM_LH + 12 });
+    box(ZOOM.panel, r); ZOOM.panel.dataset.side = r.side;
+    setVar(ZOOM.panel, '--ro-zh', Math.max(1, Math.floor((r.h - ZOOM_HEAD - 8) / ZOOM_LH)) * ZOOM_LH + 'px');
+    /* what the panel covers whole stands still until it closes */
+    const under = [];
+    for (const [id, de] of CUR.desks) if (id !== ZOOM.id && de.person && de.person.x >= r.x && de.person.x + de.person.w <= r.x + r.w && de.person.y >= r.y && de.person.y + de.person.h <= r.y + r.h) { under.push(id); setOff(id, true); }
+    for (const id of ZOOM.under || []) if (!under.includes(id)) { const s = SCR.get(id); if (!s || !s.away) setOff(id, false); }
+    ZOOM.under = under;
   }
 
   /* Paco's review of #921 (art): a lobby place plate reads in full (never an ellipsis) when there is room: a plate wider than its
@@ -378,6 +756,18 @@
   }
 
   /* forget the session picks (Settings change of Characters, a test) */
-  function reset() { PEOPLE = null; SEEN.clear(); TICKS.clear(); }
-  root.DurbarRealOffice = { render, reset, bad: () => [...BAD], resolve, stagger }; /* resolve: for the driver's deterministic check */
+  function reset() { PEOPLE = null; SEEN.clear(); TICKS.clear(); WHERE.clear(); }
+  /* leaving Real office: nothing of it goes on, and no key listener of the zoom stays to swallow an Escape */
+  function leave() {
+    closeZoom();
+    if (IO) { IO.disconnect(); IO = null; }
+    for (const s of SCR.values()) clearTimeout(s.timer);
+    SCR.clear(); OFF.clear(); WHERE.clear(); GLIDING.clear();
+    clearTimeout(handTimer); handTimer = 0; clearTimeout(lodTimer); lodTimer = 0;
+    LOD = 0; lodBad = 0; lodGood = 0; DISMISSED = '';
+    if (bodyWatch) { bodyWatch.disconnect(); bodyWatch = null; }
+    wasHidden = false;
+    CUR = null;
+  }
+  root.DurbarRealOffice = { render, reset, leave, feed, resume, whereSize: () => WHERE.size, bad: () => [...BAD], resolve, stagger }; /* resolve: for the driver's deterministic check */
 })(typeof self !== 'undefined' ? self : this);
