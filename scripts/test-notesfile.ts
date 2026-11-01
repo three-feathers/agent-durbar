@@ -30,7 +30,7 @@ const sha = (b: Buffer | string): string => createHash('sha256').update(b).diges
 const md = (folder: string): string => path.join(folder, '.durbar', 'notes.md');
 const must = <T extends { ok: boolean }>(r: T): Extract<T, { ok: true }> => { assert.ok(r.ok, JSON.stringify(r)); return r as Extract<T, { ok: true }>; };
 const ROOT = path.join(__dirname, '..', '..');
-const FS_METHODS = ['realpathSync', 'lstatSync', 'statSync', 'openSync', 'fstatSync', 'readSync', 'writeSync', 'fsyncSync', 'closeSync', 'renameSync', 'unlinkSync', 'mkdirSync'] as const;
+const FS_METHODS = ['realpathSync', 'readdirSync', 'lstatSync', 'statSync', 'openSync', 'fstatSync', 'readSync', 'writeSync', 'fsyncSync', 'closeSync', 'renameSync', 'unlinkSync', 'mkdirSync'] as const;
 type Method = typeof FS_METHODS[number];
 
 /** A fake fs that counts every call and lets a test change a call (to swap a file between two checks). */
@@ -1118,6 +1118,57 @@ async function main(): Promise<void> {
       nodeFs.mkdirSync(path.join(r, NFD));
       must(new NotesFile({ platform, uid: () => undefined }).addExclude(path.join(r, NFD)));
       assert.deepStrictEqual(excl(r), [`/${NFD}/.durbar/`], `${platform}: one line, as given`);
+    }
+    // a given NFC path gets the NFD line too; compatibility characters keep their own name (never NFKC: U+FB01 is not `fi` on APFS)
+    const darwinLines = (name: string): string[] => {
+      const r = fresh('repo');
+      gitDir(path.join(r, '.git'));
+      nodeFs.mkdirSync(path.join(r, name));
+      must(new NotesFile({ platform: 'darwin' }).addExclude(path.join(r, name)));
+      return excl(r).sort();
+    };
+    assert.deepStrictEqual(darwinLines(NFC), [`/${NFC}/.durbar/`, `/${NFD}/.durbar/`].sort(), 'given NFC: both forms');
+    assert.deepStrictEqual(darwinLines('ﬁle'), ['/ﬁle/.durbar/'], 'U+FB01 stays: no line for another folder');
+    assert.deepStrictEqual(darwinLines('Å'), ['/Å/.durbar/', '/Å/.durbar/', '/Å/.durbar/'].sort(), 'U+212B: as given, NFC, NFD');
+    // the name on disk, on any machine: the fs answers as a volume that merges names would
+    const onDisk = (given: string, disk: string, over: Partial<NotesFileFs> = {}): { res: ReturnType<NotesFile['addExclude']>; lines: string[] } => {
+      const r = fresh('repo');
+      gitDir(path.join(r, '.git'));
+      nodeFs.mkdirSync(path.join(r, 'plain' + given));
+      nodeFs.writeFileSync(path.join(r, '.git', 'info', 'exclude'), '');
+      const real = 'plain' + given;
+      const toReal = (p: unknown): string => String(p).split(path.sep).map((x) => (x === given || x === disk ? real : x)).join(path.sep);
+      const fsx = { ...nodeFs, realpathSync: (p: string) => nodeFs.realpathSync(toReal(p)).split(path.sep).map((x) => (x === real ? given : x)).join(path.sep), readdirSync: (d: string) => nodeFs.readdirSync(toReal(d)).map((n) => (n === real ? disk : n)), lstatSync: (p: string, o?: nodeFs.StatOptions) => nodeFs.lstatSync(toReal(p), o), ...over } as unknown as NotesFileFs;
+      const res = new NotesFile({ platform: 'darwin', fs: fsx }).addExclude(path.join(r, given));
+      return { res, lines: excl(r).sort() };
+    };
+    const UPPER = 'CAFÉ';
+    const cased = onDisk(UPPER, NFC);
+    assert.ok(cased.res.ok, JSON.stringify(cased.res));
+    assert.deepStrictEqual(cased.lines, [`/${UPPER}/.durbar/`, `/${UPPER.normalize('NFD')}/.durbar/`, `/${NFC}/.durbar/`, `/${NFD}/.durbar/`].sort(), 'a non-ASCII case difference: the name on disk in both forms');
+    const shut = onDisk(NFC, NFC, { readdirSync: () => { throw Object.assign(new Error('x'), { code: 'EACCES' }); } } as unknown as Partial<NotesFileFs>);
+    assert.strictEqual(shut.res.ok, false, 'a folder that cannot be listed: refused, not Added');
+    assert.deepStrictEqual(shut.lines, [], 'and no line written');
+    // UPPER exists and folds the same, but is another folder (here: lstat answers for .git)
+    const other = onDisk(NFC, NFC, { readdirSync: () => ['.git', UPPER], lstatSync: (q: string, o?: nodeFs.StatOptions) => nodeFs.lstatSync(q.endsWith(UPPER) ? path.join(path.dirname(q), '.git') : q.endsWith(NFC) ? path.join(path.dirname(q), 'plain' + NFC) : q, o) } as unknown as Partial<NotesFileFs>);
+    assert.strictEqual(other.res.ok, false, 'an entry with the same fold that is not this file is not taken: refused');
+    assert.deepStrictEqual(other.lines, [], 'and no line written');
+    if (process.platform === 'darwin') {
+      // real APFS and real git: the two cases the review of #957 found; each staged notes.md with the three lines alone
+      for (const precompose of ['true', 'false']) for (const [tag, diskPath, givenPath] of [['mixed forms, given NFC', [NFC, NFD], [NFC, NFC]], ['mixed forms, given NFD', [NFC, NFD], [NFD, NFD]], ['case in a non-ASCII letter', [NFC], [UPPER]]] as [string, string[], string[]][]) {
+        const repo = fresh('repo');
+        git(repo, 'init', '-q');
+        git(repo, 'config', 'core.precomposeunicode', precompose);
+        nodeFs.mkdirSync(path.join(repo, ...diskPath), { recursive: true });
+        nodeFs.writeFileSync(path.join(repo, 'keep.txt'), 'k');
+        const res = must(new NotesFile().addExclude(path.join(repo, ...givenPath)));
+        assert.strictEqual(res.added, true, tag);
+        nodeFs.mkdirSync(path.join(repo, ...diskPath, '.durbar'));
+        nodeFs.writeFileSync(md(path.join(repo, ...diskPath)), 'private');
+        git(repo, 'add', '-A');
+        const staged = git(repo, 'diff', '--cached', '--name-only', '-z').split('\0').filter(Boolean);
+        assert.deepStrictEqual(staged, ['keep.txt'], `${tag}, precompose ${precompose}: notes.md is not staged`);
+      }
     }
     const plain = fresh('repo');
     gitDir(path.join(plain, '.git'));

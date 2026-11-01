@@ -35,7 +35,7 @@ const canHardLink = ((): boolean => { try { const a = path.join(root, 'h1'), b =
 const repoAbove = ((): boolean => { for (let d = root; ; d = path.dirname(d)) { if (nodeFs.existsSync(path.join(d, '.git'))) return true; if (path.dirname(d) === d) return false; } })();
 const skip = (why: string): void => console.log(`  (skipped: ${why})`);
 
-const METHODS = ['realpathSync', 'lstatSync', 'statSync', 'openSync', 'fstatSync', 'readSync', 'writeSync', 'fsyncSync', 'closeSync', 'renameSync', 'unlinkSync', 'mkdirSync', 'rmdirSync', 'linkSync'] as const;
+const METHODS = ['realpathSync', 'readdirSync', 'lstatSync', 'statSync', 'openSync', 'fstatSync', 'readSync', 'writeSync', 'fsyncSync', 'closeSync', 'renameSync', 'unlinkSync', 'mkdirSync', 'rmdirSync', 'linkSync'] as const;
 type Method = typeof METHODS[number];
 function countingFs(): { fs: NotesFileFs; calls: { m: Method; p: string }[]; hook: Partial<Record<Method, (real: (...a: unknown[]) => unknown, ...a: unknown[]) => unknown>> } {
   const calls: { m: Method; p: string }[] = [];

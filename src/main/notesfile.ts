@@ -10,7 +10,7 @@
  * - Writes go to a temp file in `.durbar` opened `O_CREAT | O_EXCL | O_WRONLY` (and `O_NOFOLLOW`), 0600 on POSIX; right before the
  *   rename everything is checked again, including that `notes.md` still has the hash this cycle started from (an outside edit is
  *   imported first, never overwritten). On Windows a refused rename is tried once more after 200 ms.
- * - FR-051: no process is ever started (no git), no `.gitignore` or other committed file is written; `addExclude` appends one (on macOS, one per Unicode form of the path)
+ * - FR-051: no process is ever started (no git), no `.gitignore` or other committed file is written; `addExclude` appends one (on macOS, one per form of the path as given and on disk, read with `readdir`)
  *   escaped, anchored line to a real git directory's `info/exclude` and never creates `info/`.
  *
  * Nothing here logs; messages carry a short reason, never a path or a note's text. The caller (`NotesOps`) decides whether the switch
@@ -26,7 +26,7 @@ import { isInsideRoots } from '../adapters/permissions';
 import type { NotesStore } from './notesstore';
 import { maskNoteText } from '../shared/redact';
 
-export type NotesFileFs = Pick<typeof nodeFs, 'realpathSync' | 'lstatSync' | 'statSync' | 'openSync' | 'fstatSync' | 'readSync' | 'writeSync' | 'fsyncSync' | 'closeSync' | 'renameSync' | 'unlinkSync' | 'mkdirSync' | 'rmdirSync' | 'linkSync'>;
+export type NotesFileFs = Pick<typeof nodeFs, 'realpathSync' | 'readdirSync' | 'lstatSync' | 'statSync' | 'openSync' | 'fstatSync' | 'readSync' | 'writeSync' | 'fsyncSync' | 'closeSync' | 'renameSync' | 'unlinkSync' | 'mkdirSync' | 'rmdirSync' | 'linkSync'>;
 /** The open flags used; tests pass a set without `O_NOFOLLOW` to act like Windows. */
 export type NotesFileFlags = Pick<typeof nodeFs.constants, 'O_RDONLY' | 'O_WRONLY' | 'O_CREAT' | 'O_EXCL' | 'O_APPEND'> & { O_NOFOLLOW?: number; O_NONBLOCK?: number };
 
@@ -487,8 +487,15 @@ export class NotesFile {
     const segments = rel ? rel.split(path.sep) : [];
     if (segments.some((s) => /[\u0000-\u001f\u007f]/.test(s))) return { ok: false, error: EXCLUDE_UNSAFE_NAME };
     const line = excludeLine(segments);
-    // macOS merges NFC and NFD names, and git may compare either form (core.precomposeunicode), so every form gets its line (spec Changes)
-    const lines = this.platform === 'darwin' ? [...new Set([line, excludeLine(segments.map((s) => s.normalize('NFC'))), excludeLine(segments.map((s) => s.normalize('NFD')))])] : [line];
+    let lines = [line];
+    if (this.platform === 'darwin') {
+      // macOS merges NFC and NFD names and upper and lower case; git compares the form on disk or its NFC (core.precomposeunicode) and folds ASCII only, so each form of the given path and of the name on disk gets its line (spec Changes)
+      const disk = this.nameOnDisk(root, segments);
+      if (!disk) return fail('the name of a folder on disk could not be read');
+      if (disk.some((s) => /[\u0000-\u001f\u007f]/.test(s))) return { ok: false, error: EXCLUDE_UNSAFE_NAME };
+      const forms = (p: readonly string[]): string[] => [excludeLine(p), excludeLine(p.map((s) => s.normalize('NFC'))), excludeLine(p.map((s) => s.normalize('NFD')))];
+      lines = [...new Set([...forms(segments), ...forms(disk)])];
+    }
 
     let target: string;
     if (dotGit.isSymbolicLink()) return fail('.git is a link');
@@ -548,6 +555,26 @@ export class NotesFile {
     } finally {
       if (fd !== undefined) { try { this.fs.closeSync(fd); } catch { /* gone */ } }
     }
+  }
+
+  /**
+   * The path below `root` as it is stored on disk, one `readdir` per folder (spec Changes, review of #957): the entry with the same NFC and case fold that is the same file
+   * (`dev` and `ino`), so a twin on a volume that does not merge names is not taken. `undefined` when a folder cannot be listed or no entry is that file: the caller refuses rather than answer *Added* on a guess.
+   */
+  private nameOnDisk(root: string, segments: readonly string[]): string[] | undefined {
+    const fold = (s: string): string => s.normalize('NFC').toUpperCase().toLowerCase();
+    const out: string[] = [];
+    let dir = root;
+    try {
+      for (const seg of segments) {
+        const want = this.fs.lstatSync(path.join(dir, seg));
+        const name = this.fs.readdirSync(dir).find((n) => { if (fold(n) !== fold(seg)) return false; const st = this.fs.lstatSync(path.join(dir, n)); return st.dev === want.dev && st.ino === want.ino; });
+        if (name === undefined) return undefined;
+        out.push(name);
+        dir = path.join(dir, name);
+      }
+    } catch { return undefined; }
+    return out;
   }
 }
 
