@@ -595,7 +595,7 @@ async function checkCli(): Promise<void> {
   for (const bad of [Buffer.alloc(10, 1), null]) { const kf = path.join(base, 'gate.key'); const keep = fs.readFileSync(kf); if (bad) fs.writeFileSync(kf, bad, { mode: 0o600 }); else fs.chmodSync(kf, 0o666); assert.strictEqual(await rs2(signed()), 2, 'a short or open gate key'); assert.strictEqual(await cli.main(['7'], dep()), 1, 'main needs a usable key too'); fs.writeFileSync(kf, keep, { mode: 0o600 }); fs.chmodSync(kf, 0o600); }
   // the exact runner command (minus sudo) really starts under tsx; the plain form of before cannot (review item 2)
   { const entry = path.join(ROOT, 'scripts', 'prereview', 'cli.mts'); const argv = cli.runnerArgv(process.execPath, entry, base);
-    if (!fs.existsSync(path.join(ROOT, 'scripts', 'prereview', 'node_modules', 'tsx', 'dist', 'loader.mjs'))) console.log('prereview: tsx is not installed in scripts/prereview here (root npm ci does not install it), the real-command check is skipped');
+    if (!fs.existsSync(path.join(ROOT, 'scripts', 'prereview', 'node_modules', 'tsx', 'dist', 'loader.mjs')) || !fs.existsSync(path.join(ROOT, 'scripts', 'prereview', 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'sdk.mjs'))) console.log('prereview: tsx is not installed in scripts/prereview here (root npm ci does not install it), the real-command check is skipped');
     else {
       const envc = { PATH: process.env.PATH ?? '', HOME: tmp };
       const real = spawnSync(argv[0], argv.slice(1), { input: '{"pr":7}', encoding: 'utf8', env: envc, timeout: 60000 });
