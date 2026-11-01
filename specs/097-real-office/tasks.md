@@ -104,6 +104,46 @@ Numbers: T128..T141; FR-118..FR-129. All nine are designed in the spec; the buil
 - [ ] T139 Forced-colours and reduced-motion shots for the nine (art hidden, words carry the meaning). Test: `sim:` forced-colours emulation per moment; reduced-motion emulation instant [FR-118..FR-126]
 - [ ] T140 Art approvals: cave and loft art and the three welcome images per picture by Paco, photo art by Vikram, before commit; loft standing sheets decision. Test: `real:` approvals quoted in `ASSETS.md` [FR-100, Q6]
 - [ ] T141 Docs: README (worlds, moments, limits), changelog fragment, spec tags and converge. Test: `npm run changelog:check`, `specs:check`
+
+## Phase 7: Performance budgets (spec delta 2026-10-31; FR-178..FR-190; numbers from `sim:` measurement at `ac122ff1`)
+
+Each fix is its own small PR. "Expected" is what a patched copy of the built page measured, unless it says *estimate*. The checks (T142..T145) go first: an op row that fails today is listed in the driver's table of known failures with its fix task, and that task's PR deletes the entry.
+
+### Checks
+
+- [ ] T142 `scripts/check-office-ops.js`: op rows of FR-178 in flat and Real office, 15 and 40 agents, in `ui-suite.js`; `until()`, no timing assert; a table of today's known failures, each naming its fix task. Test: `sim:` the driver passes with the table; a mutant re-adding a layout read in `stagger()` fails it [FR-186]
+- [ ] T143 [P] `test:theme-tokens` gains FR-180 (keyframes and transitions name only `transform`, `opacity`; no `mix-blend-mode`; `will-change` list) and FR-182 (the `backdrop-filter` allow list). Test: unit with bad fixtures for each rule; known failures named until T150 and T151 [FR-180, FR-182]
+- [ ] T144 [P] `test:realoffice-assets`: every person and desk has both sizes, and the half-size set stays inside FR-062's cap. Test: unit; a missing variant fails [FR-183]
+- [ ] T145 `scripts/check-perf.js --record <file>`: every measure of the first table as JSON, with machine, load average and the GPU feature status; no new asserts. Test: `test:` schema of the output on a fixture; `sim:` one run; `read:` it stays in `NOT_IN_SUITE` [FR-187, FR-188]
+- [ ] T146 Weekly: `world-matrix.yml` runs T145 (spec 098 T044); `world-coverage.js` adds the over-budget lines. Test: `test:` the lines from a fixture record, a 25 % regression against last week's artifact, a flagged loaded machine; `real:` the first scheduled run [FR-187]
+- [ ] T147 [P] Block contract: `test:world-packs` applies FR-180 to each world's CSS. Test: unit with a bad fixture pack [FR-180]
+
+### Fixes in Real office
+
+- [ ] T148 The `:has` rule (`styles.css`, spec 077 FR-061): a class set on the crew portrait's `svg` by the code, the same look. Expected: Real 40 update p50 116 to 22 ms, 7 to 55 fps at 10x, 47 to 1 long tasks; flat 15 update p50 66 to 47 ms, long tasks 81 to 32. Test: `sim:` `check-office-ops` elements recalculated ≤ 50; `check-crew` keeps the idle look; the mutant restoring the rule fails [FR-185]
+- [ ] T149 `stagger()`: measure only when a chip or plate changed, reads before writes, the chip's new text once; plates in place on a status-only change; attribute and style writes only when the value differs (`box`, `dataset`, `type`, `maxWidth`). Expected: layout reads 59 to 3 and 103 to 3; with T148 update p95 at 15 from 33.5 to 22 ms, p50 at 40 to 11 ms; attribute writes *estimate* under 10. Focus (FR-090) and no chip overlap keep their tests. Test: `sim:` `check-office-ops`; `test:realoffice-layout`; `shots-097-realoffice` [FR-184]
+- [ ] T150 Lamps without `mix-blend-mode`: pre-tinted gradients per lamp colour, off lamp dark. Expected: GPU process 64 to 24 % of a core under software; looks checked against today's screenshots by the owner (light is his call). Test: `sim:` `shots-097-realoffice`; `test:theme-tokens` [FR-180]
+- [ ] T151 Lights in stepped timing, running only when the state asks for attention; `box-shadow` of glow and bezel not repainted under motion (a static glow picture or none). Expected: *estimate* with T150, idle under 15 % of a core under software (all off today: 4-8 %). Test: `sim:` `check-office-ops` animation count; `document.getAnimations()` under reduced motion and Serious mode [FR-180, FR-181]
+- [ ] T152 `.dlg` and the large panels without `backdrop-filter` in the photo world: opaque token surface; contrast rechecked; FR-113's driver updated. Expected: dialog 30 to 59 fps under software. Test: `sim:` `shots-097-realoffice`; `test:theme-tokens` [FR-182]
+- [ ] T153 Half-size set of person and desk pictures, `srcset` in `img()`, `people.js` scale unchanged. Expected: decoded 14.7 to 4.9 MB, about 19 MB PSS and 60 ms of the first switch at 15; pack about 8.7 MB. Test: `sim:` `check-office-ops` area ratio at 1440x900 and at big screens (3 agents); `test:realoffice-assets` [FR-183]
+- [ ] T154 Leaving Real office drops its elements' `src` and the session's picture references. Expected: *estimate*: under 30 MB over a fresh flat; if Chromium's cache keeps it, this budget moves by evidence (FR-190). Test: `sim:` `check-perf --record` [FR-183]
+- [ ] T155 [P] P2 motion (FR-070) respects FR-181; P2's live screen text (FR-030) updates in place. Test: `sim:` `check-office-ops` with motion on [FR-181, FR-184]
+
+### Fixes in the flat app
+
+- [ ] T156 Flat layout: a status change that changes no room head text or desk count reuses the last search (`chooseLayout`, `headHolds`, `fitHead`, `nameCut`); `fitUsage` and `placePencils` read once. Expected: *estimate* layout reads 335 to under 40; status update p95 405 to under 17 ms. Test: `sim:` `check-office-ops`; `check:office` and `check-office-overlap` unchanged [FR-184]
+- [ ] T157 Flat first paint: one layout search at start, not one per event batch. Expected: *estimate* start from 2465 to under 1500 ms at 15, 4738 to under 2000 at 40 (a Real office start, with no search, is 1391). Test: `sim:` `check-perf --record` [FR-178]
+- [ ] T158 Flat animations: the SVG ones (`bar`, `tap`, `halo`, `wave`, `steam`) stepped at under 10 changes a second, or composited on their own layer. Expected: *estimate* idle 63 to under 15 % of a core (all off: 5-9 %), on every machine because it is main-thread. Test: `sim:` `check-office-ops` main-thread frames a second; `check-crew`; reduced motion unchanged [FR-178]
+- [ ] T159 Flat: one render per status update (today about 2, measured by the proxy `getComputedStyle(#floor)`; confirm the proxy first). Test: `sim:` `check-office-ops` [FR-184]
+
+### Docs and real runs
+
+- [ ] T160 README: *Development* (`check-perf --record`, where the record is); limits (what is unmeasured on real GPUs). Test: `npm run test:docsscripts` [FR-187]
+- [ ] T161 Spec 052 FR-145's numbers are corrected with the first weekly record. Test: `read:` [FR-178]
+- [ ] T162 Real-GPU run, simulator only, 0 AI credits: a real Mac (device pixel ratio 2) and a Windows or Linux laptop with an integrated GPU. Records idle CPU, blur on and off, lamps on and off, raster, scroll, Retina memory. Test: `real:` numbers in a dated delta, and the `real:` rows and FR-182's list confirmed or moved [FR-189]
+- [ ] T163 The world budgets recorded for the cave and loft worlds when they exist. Test: `check-perf --record` includes each shippable world [FR-187]
+- [ ] T164 Review after the first fixes: `/speckit.converge` against FR-178's tables. Test: `npm run specs:check` [FR-190]
+
 ## Facing poses (stacked on #921) - delta 2026-10-31
 
 Numbers: T165..T170; FR-191..FR-194.

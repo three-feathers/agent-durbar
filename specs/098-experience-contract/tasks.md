@@ -35,6 +35,7 @@
 - [ ] T041 [US3] `.github/workflows/world-matrix.yml`: weekly schedule (full, 2 sizes, forced colours, `issues: write`) and `pull_request` with the FR-052 paths (subset at 1280x800, touched worlds, `contents: read`, `timeout-minutes: 12`); artifact upload (14 days); pinned action SHAs as the other workflows; changed files via `env:`. Test: `test:surfaces` checks the filter covers moment files; `test:platforms` (or the existing workflow checks) for pinned actions; `real:` one `workflow_dispatch` run on the branch (Actions minutes only, no AI credits) [FR-050, FR-052, FR-053, FR-054, FR-063, SC-003]
 - [ ] T042 [P] `nightly-watch.yml`: add "World matrix" to its workflow list. Test: `read:` the list; the first scheduled failure opens its issue [FR-055]
 - [ ] T043 [US3] `scripts/world-coverage.js`: body from the registry and `matrix.json` only; find the issue by exact title and author `github-actions[bot]`, edit or create; never opens other issues. Test: unit test with a fake `gh` runner: creates once, edits on the second run, ignores a same-titled issue by another author, body has no path outside the repo [FR-060..FR-063, SC-005]
+- [ ] T044 [US3] `world-matrix.yml` weekly job: `scripts/check-perf.js --record` (spec 097 T145), the record in the artifact, over-budget rows in the coverage issue (spec 097 T146). Test: `real:` the first scheduled run; no time assert, `read:` [FR-057]
 
 ## Phase 5: Docs and convergence
 
