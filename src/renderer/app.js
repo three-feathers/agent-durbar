@@ -1175,7 +1175,7 @@ const shutAim=e=>{const b=e.target&&e.target.closest&&e.target.closest('#stage .
 document.addEventListener('pointerover',shutAim);document.addEventListener('focusin',shutAim);
 function officeModel(ignoreStatus){
   const rooms=[];
-  roomsInOrder().forEach(r=>{
+  (allFloorsView()?window.DurbarFloorNav.storeysTopDown(roomsInOrder(),floorRank):roomsInOrder()).forEach(r=>{ /* spec 092 Q-D: in All floors, floor 1 is at the bottom */
     if(!roomShown(r)||!onScreen(r)||(ui.ws!=='all'&&ui.ws!==r.id))return;
     const plan=shutPlan(r); /* spec 001 FR-051: from the whole room, not the status filter */
     const shown=agents.filter(a=>!a.parent&&a.room===r.id&&(ignoreStatus||matchStatus(a)));
@@ -4494,7 +4494,7 @@ function goToFloor(id,o){
   if(o.announce!==false)announceFloor(f.id);
   return true;
 }
-/* spec 092 FR-011: PageDown goes to the next floor that is on, PageUp to the previous one, in the office view, outside text fields and under no dialog or menu.
+/* spec 092 FR-011, Q-D: PageUp goes to the next floor up that is on, PageDown to the next one down, in the office view, outside text fields and under no dialog or menu.
    A floor screen that scrolls scrolls first and changes floor only from an edge (floornav.keyAction). */
 document.addEventListener('keydown',e=>{
   if(e.key!=='PageDown'&&e.key!=='PageUp')return;
@@ -4507,8 +4507,8 @@ document.addEventListener('keydown',e=>{
   const act=window.DurbarFloorNav.keyAction(e,e.target,scroll,open); if(!act)return;
   /* the office area is not the page's scroller, so the browser's PageDown does not scroll it from the body: the page does it by the same page step */
   if(act.scroll){e.preventDefault();fl.scrollBy({top:act.scroll*Math.round(fl.clientHeight*0.875),behavior:'auto'});return;}
-  const to=window.DurbarFloorNav.nextOn(FLOORS.floors,curFloorId(),act.go); if(!to)return; /* the first or last floor: nothing happens */
-  e.preventDefault(); goToFloor(to,{edge:act.go==='next'?'top':'bottom'});
+  const to=window.DurbarFloorNav.nextOn(FLOORS.floors,curFloorId(),act.go); if(!to)return; /* the top or bottom floor: nothing happens */
+  e.preventDefault(); goToFloor(to,{edge:window.DurbarFloorNav.arriveEdge(act.go)});
 });
 /* spec 092 FR-031..FR-037: switch between the one-floor view (on floor `id`, or the current one) and the All floors view. Instant in every phase (FR-036);
    one announcement; nothing when the view and floor shown do not change. */
@@ -4545,7 +4545,7 @@ function renderLift(){
     el.dataset.sig=sig;
     el.innerHTML='<button type="button" class="lift-edge" data-lift-edge="up" tabindex="-1" hidden></button><div class="lift-shaft">'
       +'<button type="button" class="lift-b lift-all" data-lift="*all" tabindex="-1">All</button>'
-      +on.map((f,i)=>`<button type="button" class="lift-b" data-lift="${esc(f.id)}" tabindex="-1"><span class="lift-n">${i+1}</span><span class="lift-badge" aria-hidden="true" hidden></span></button>`).join('')
+      +FN.topDown(on).map(({f,n})=>`<button type="button" class="lift-b" data-lift="${esc(f.id)}" tabindex="-1"><span class="lift-n">${n}</span><span class="lift-badge" aria-hidden="true" hidden></span></button>`).join('')
       +'</div><button type="button" class="lift-edge" data-lift-edge="down" tabindex="-1" hidden></button>';
     el.querySelector('.lift-shaft').addEventListener('scroll',updateLiftEdges,{passive:true});
   }
