@@ -110,7 +110,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **A dark-theme screenshot needs a user manifest** (`window.THEME.setTheme({id, extends:'clean-office', tokens})`, see `shots-043-editor.js`); no built-in theme has a dark surface (spec 043 T012d).
 - **jsdom has no `localStorage` on a `file:` URL**: use `http://localhost/` in unit tests (spec 043).
 - **Timing the renderer**: patch a copy of the built `dist/renderer/app.js` (never `src/`), run old and new builds alternately and compare medians. Layout cost is mostly style recalculation: skip `<svg>` children in `#probe` and register self-only custom properties with `@property` (spec 001 FR-033).
-- **Windows runners take the window's focus at random** (2026-10-30, #891's CI): `check-status-tooltip` failed at 3 different steps, the tooltip rightly hidden by a window blur, resize or scroll. A step needing focus records those trusted events and retries only when one came, else fails naming what it saw (`osRetry` in `scripts/check-status-tooltip.js`); never a longer wait, which cannot bring a lost hover back.
+- **Windows runners take the window's focus at random** (2026-10-30 #891, 2026-11-01 #995): three drivers share one desktop, so `document.hasFocus()` goes false mid-driver (`:focus-visible` missing; `check-status-tooltip` failed at 3 steps). A step needing focus retries only when a blur came (`osRetry` there), else fails naming what it saw. `H.key` turns on CDP focus emulation when the page lacks focus; `H.focusPage()` / `H.focusWc()` ask for the real one.
 
 - **A driver whose window closes passes silently** (PR #915): `window-all-closed` exits 0 off a Mac; guard such a step with `win.once('closed', ...)` printing `DRIVER FAILED` and `app.exit(1)`. Windows CI reports `isVisible()` false: check `isDestroyed()`.
 
@@ -136,7 +136,6 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **A destroyed `WebContentsView` has no `webContents`**: keep the `webContents` before `close()` to check `isDestroyed()` and the OS process (`process.kill(pid, 0)` gives `ESRCH`). `Page.getNavigationHistory` gives each entry a `transitionType` (`form_submit` for a form), so main knows a form page without reading it; `sendInputEvent` (`char`) fires a view's `input-event`. `sim:` spec 080 T013/T018.
 - **The simulator's End session never reaches main**: a driver that checks a browser teardown uses the driver-context hooks `ctx.browserGone` / `ctx.browserStates` (`main.ts`), not the renderer.
 - **No referrer from a custom scheme** (2026-10-31): a `durbar-sim:` `_blank` has `referrer.url === ''`; test referrer rules over loopback http (`check-browser-tabs.js`).
-- **Windows CI loses the page focus to a neighbour driver** (2026-11-01, #995): three drivers share one Windows desktop, so `document.hasFocus()` can turn false mid-driver (`:focus-visible` missing, `active:true focus:false`). `H.key` now turns on CDP focus emulation when the page lacks focus; `H.focusPage()` / `H.focusWc(view.webContents)` ask for the real focus and end on a condition. After an event, wait for a marker event's paint, never one DOM read. Not proven on Windows locally.
 
 ## Team chat
 
