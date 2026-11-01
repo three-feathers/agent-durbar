@@ -204,7 +204,8 @@ module.exports = async (ctx) => {
     await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(C)});const c=a.limit&&a.limit.n;[...c.querySelectorAll('.note-actions button')].find(b=>b.textContent==='Raise limit').click();})()`);
     assert.ok(await until(`window.__lim.length===1`, 3000), `${w}: the card's answer is in flight`);
     await js(`[...document.querySelectorAll(${jsLiteral(row(C) + ' button')})].find(b=>b.textContent==='Raise limit').click()`);
-    assert.ok(await until(`window.__done.some(t=>/Already answered/.test(t))`, 3000), `${w}: and the row says so ${jsLiteral(await js('window.__done'))}`);
+    assert.ok(await until(`window.__done.some(t=>/Still waiting/.test(t))`, 3000), `${w}: and the row says it is still waiting, not that it was answered ${jsLiteral(await js('window.__done'))}`);
+    assert.strictEqual(await js(`window.__done.some(t=>/Already answered/.test(t))`), false, `${w}: and never "Already answered"`);
     assert.strictEqual((await lims()).length, 1, `${w}: the row does not answer it a second time ${jsLiteral(await lims())}`);
     await closeInbox();
 
@@ -273,6 +274,50 @@ module.exports = async (ctx) => {
     await js(`document.querySelector(${jsLiteral(row(A) + ' [data-k="approve"]')}).click()`);
     assert.ok(await until(`window.__done.some(t=>/Already answered/.test(t))`, 3000), `${w}: the row says so ${jsLiteral(await js('window.__done'))}`);
     assert.deepStrictEqual(await perms(), [], `${w}: nothing is sent through the replaced button ${jsLiteral(await perms())}`);
+    await closeInbox().catch(() => {});
+
+    // ---- FR-208: the Space guard: Space goes down on a heading, focus is moved to Deny, it repeats, is released: nothing is sent ----
+    await fresh();
+    await perm(B, 's3-' + w, 'Run space');
+    await openInbox();
+    assert.ok(await until(`!!document.querySelector(${jsLiteral(row(B) + ' [data-k="deny"]')})`, 5000));
+    await js(`document.querySelector(${jsLiteral(row(B) + ' .ib-h')}).focus()`);
+    wc().sendInputEvent({ type: 'keyDown', keyCode: 'Space' });
+    await ctx.sleep(150); // let this key go down on the heading before the focus moves
+    await js(`document.querySelector(${jsLiteral(row(B) + ' [data-k="deny"]')}).focus()`);
+    for (let i = 0; i < 3; i++) wc().sendInputEvent({ type: 'keyDown', keyCode: 'Space', modifiers: ['isAutoRepeat'] });
+    wc().sendInputEvent({ type: 'keyUp', keyCode: 'Space' });
+    await ctx.sleep(300);
+    assert.deepStrictEqual(await perms(), [], `${w}: a held Space does not press Deny ${jsLiteral(await perms())}`);
+    await closeInbox().catch(() => {});
+
+    // ---- FR-213: a held Enter in the amount raises nothing (only a pressed one does) ----
+    await fresh();
+    await emit({ type: 'limit', sessionId: C, phase: 'exhausted', requestId: 'lh-' + w, maxAiCredits: 5, usedAiCredits: 5 });
+    await openInbox();
+    assert.ok(await until(`!!document.querySelector(${jsLiteral(row(C) + ' .ib-amt')})`, 5000));
+    await js(`document.querySelector(${jsLiteral(row(C) + ' .ib-amt')}).focus()`);
+    for (let i = 0; i < 3; i++) await nkey('Return', { repeat: true });
+    assert.deepStrictEqual(await lims(), [], `${w}: a held Enter in the amount sends nothing ${jsLiteral(await lims())}`);
+    await closeInbox().catch(() => {});
+
+    // ---- FR-213: a repaint leaves focus in an amount field (Allow on row B, then type into row C's amount during the fold) ----
+    await fresh();
+    await perm(B, 'rp-' + w, 'Run repaint');
+    await emit({ type: 'limit', sessionId: C, phase: 'exhausted', requestId: 'lp-' + w, maxAiCredits: 5, usedAiCredits: 5 });
+    await openInbox();
+    assert.ok(await until(`!!document.querySelector(${jsLiteral(row(B) + ' [data-k="approve"]')})&&!!document.querySelector(${jsLiteral(row(C) + ' .ib-amt')})`, 5000));
+    await js(`document.querySelector(${jsLiteral(row(B) + ' [data-k="approve"]')}).click()`);
+    await js(`(()=>{const a=document.querySelector(${jsLiteral(row(C) + ' .ib-amt')});a.value='';a.focus();})()`);
+    await nkey('8', { char: '8' });
+    assert.ok(await until(`window.__done.length>=1`, 3000), `${w}: row B shows its answer`);
+    assert.ok(await until(`!document.querySelector('.ib-done')`, 5000), `${w}: the list repainted`);
+    const stillIn = await js(`document.activeElement.classList.contains('ib-amt')&&document.activeElement.dataset.rq!==undefined`);
+    assert.strictEqual(stillIn, true, w + ': focus is still in the amount after the repaint (is ' + (await js('document.activeElement.tagName+"."+document.activeElement.className')) + ')');
+    assert.strictEqual(await js(`document.activeElement.value`), '8', `${w}: with what was typed`);
+    await nkey('Return');
+    assert.strictEqual(await js(`!!document.getElementById('inboxDlg')`), true, `${w}: Enter did not close the inbox`);
+    assert.ok(await until(`window.__lim.length===1`, 3000), `${w}: Enter in the amount raised the limit`);
     await closeInbox().catch(() => {});
   }
   if (failed.length) throw new Error(failed.length + ' checks failed (INBOX_SOFT)');

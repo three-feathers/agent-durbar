@@ -2325,7 +2325,7 @@ function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-acti
 /* spec 052 FR-060: the key of a permission card's button, and the one click path the bar and the keys share */
 const answerKeyOf=b=>b.dataset.act==='session'?'S':/\bdanger\b/.test(b.className)?'D':/\bprimary\b/.test(b.className)?'A':'';
 const chatKeyText=k=>keyText(KEYS.chatParts(k,IS_MAC)), chatKeyAria=k=>ariaKeys(KEYS.chatParts(k,IS_MAC)); /* FR-084: Alt+A elsewhere, ⌥⌘A on a Mac */
-const answerPress=(src,what)=>()=>{const word=src.textContent;src.click();announce(word+': '+what);const m=$('msgInput');if(m)focusIn(m);};
+const answerPress=(src,what)=>()=>{if(src.disabled)return;const word=src.textContent;src.click();announce(word+': '+what);const m=$('msgInput');if(m)focusIn(m);};
 function wireAnswerBar(a){
   if(answerObs){answerObs.m.disconnect();answerObs.i.disconnect();answerObs=null;}
   const bar=$('answerBar'), chat=$('chat'); if(!bar||!chat)return;
@@ -2370,13 +2370,13 @@ function wireAnswerBar(a){
     const add=(label,cls,fn,title,keys)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;if(keys)b.setAttribute('aria-keyshortcuts',keys);b.onclick=fn;act.appendChild(b);return b;};
     if(fit){
       const said=w=>{announce('Answered: '+w);const m=$('msgInput');if(m)focusIn(m);};
-      for(const o of fit.opts){const lb=(o.querySelector('.q-lbl')||o).textContent;add(lb,'ab-opt',()=>{o.click();fit.ok.click();said(lb);},o.title);}
+      for(const o of fit.opts){const lb=(o.querySelector('.q-lbl')||o).textContent;add(lb,'ab-opt',()=>{if(o.disabled||fit.ok.disabled)return;o.click();fit.ok.click();said(lb);},o.title);}
       const box=document.createElement('input');box.type='text';box.className='ab-other';box.maxLength=window.exports.MAX_ANSWER;box.placeholder='Other answer';box.setAttribute('aria-label','Other answer: '+fit.q);box.setAttribute('aria-keyshortcuts','Enter');box.title='Type your own answer; Enter sends it';
       box.addEventListener('keydown',ev=>{if(ev.key!=='Enter'||ev.shiftKey||ev.isComposing||ev.altKey||ev.ctrlKey||ev.metaKey)return;ev.preventDefault();
         const v=box.value.replace(/\s+/g,' ').trim();if(!v){announce('Type an answer first, or choose an option.');return;}
-        fit.other.value=v;fit.other.dispatchEvent(new Event('input',{bubbles:true}));fit.ok.click();said(v);});
+        if(fit.ok.disabled)return;fit.other.value=v;fit.other.dispatchEvent(new Event('input',{bubbles:true}));fit.ok.click();said(v);});
       act.appendChild(box);
-      if(fit.skip)add(fit.skip.textContent,'danger',()=>{fit.skip.click();announce('Skipped');const m=$('msgInput');if(m)focusIn(m);},fit.skip.title);
+      if(fit.skip)add(fit.skip.textContent,'danger',()=>{if(fit.skip.disabled)return;fit.skip.click();announce('Skipped');const m=$('msgInput');if(m)focusIn(m);},fit.skip.title);
     }
     else if(q)add('Answer in chat','primary',show);
     /* FR-016: a long request is answered in the chat only; the wide grant (any arguments) stays in the card */
@@ -4036,6 +4036,7 @@ function flipInbox(paint){
 }
 function paintInbox(focusIndex){
   const body=$('inboxBody'); if(!body)return;
+  const ae0=document.activeElement, typing=ae0&&ae0.classList&&ae0.classList.contains('ib-amt')&&body.contains(ae0)?{rq:ae0.dataset.rq,a:ae0.selectionStart,b:ae0.selectionEnd}:null; /* a repaint leaves focus in an amount field (restored to the same request's field) */
   const list=needsMeOrder();
   body.innerHTML=list.length?'':'<p class="inbox-empty" tabindex="-1"><span class="ib-ok" aria-hidden="true"></span><span><b>All clear. Nobody needs you right now.</b><small>Agents that ask for permission, ask a question, reach their limit or hit an error appear here.</small></span></p>'; /* spec 052 FR-048 */
   list.forEach((a,i)=>{
@@ -4057,7 +4058,7 @@ function paintInbox(focusIndex){
       if(KEY[k]){b.setAttribute('aria-keyshortcuts',KEY[k]);title=(title?title+' ':'')+'(key '+KEY[k]+')';}if(title)b.title=title;b.onclick=fn;(box||ans).appendChild(b);};
     const kOf=src=>isLimit?'other':src.dataset.act==='session'?'session':/danger/.test(src.className)?'deny':/primary/.test(src.className)?'approve':'other';
     let amt=null; /* FR-207: the amount the card would send, shown in the row and sent from it */
-    if(isLimit){const ci=card.querySelector('.limit-amt');if(ci){amt=document.createElement('input');amt.type='number';amt.min=ci.min;amt.step=ci.step;amt.value=INBOX_AMT.has(rq)?INBOX_AMT.get(rq):ci.value;amt.className='limit-amt ib-amt';
+    if(isLimit){const ci=card.querySelector('.limit-amt');if(ci){amt=document.createElement('input');amt.type='number';amt.min=ci.min;amt.step=ci.step;amt.value=INBOX_AMT.has(rq)?INBOX_AMT.get(rq):ci.value;amt.className='limit-amt ib-amt';amt.dataset.rq=rq;
       amt.setAttribute('aria-label',ci.getAttribute('aria-label')||'Amount to add');amt.title=amt.getAttribute('aria-label');amt.oninput=()=>{amt.removeAttribute('aria-invalid');INBOX_AMT.set(rq,amt.value);};
       amt.onkeydown=ev=>{if(ev.key!=='Enter'||ev.isComposing)return;ev.preventDefault();if(!ev.repeat){const r=[...ans.querySelectorAll('button')].find(x=>x.dataset.k==='other'&&x.classList.contains('primary'));if(r)r.click();}}; /* Enter in the field presses the row's own Raise limit; a held Enter does nothing */ans.appendChild(amt);}}
     if(card&&!q)for(const src of [...card.querySelectorAll(':scope > .note-actions button')].filter(x=>!x.dataset.broad).sort((x,y)=>RANK[kOf(x)]-RANK[kOf(y)])){
@@ -4071,13 +4072,13 @@ function paintInbox(focusIndex){
         const raises=isLimit&&/primary/.test(src.className)&&amt; if(raises&&!(Math.round(parseFloat(amt.value)*100)/100>0)){amt.setAttribute('aria-invalid','true');announce('Enter an amount above zero to raise the limit.');focusIn(amt);return;}
         row.dataset.answering='1';
         /* FR-206: the card must still be this agent's live pending card with this request id and its button still there; else nothing is sent */
-        const live=rq&&[...getChat(a).el.querySelectorAll('.note.perm:not(.settled)')].find(n=>reqOf(n)===rq), stale=!live||!live.contains(src)||src.disabled; /* the card is live and still holds this very button (a card may rebuild its buttons) */
+        const live=rq&&[...getChat(a).el.querySelectorAll('.note.perm:not(.settled)')].find(n=>reqOf(n)===rq), waiting=!!live&&live.contains(src)&&src.disabled, stale=!live||!live.contains(src)||waiting; /* the card is live and still holds this very button (a card may rebuild its buttons); a disabled one is still on its way, not answered */
         act.querySelectorAll('button,input').forEach(x=>{if(x!==ev.currentTarget)x.disabled=true;});const done=busy(ev.currentTarget,'Sending…');
         focusIn(row.querySelector('.ib-h'));
         if(!stale){if(raises){const ci=live.querySelector('.limit-amt');if(ci)ci.value=amt.value;}src.click();}
-        setTimeout(()=>{const left=needsMeOrder().length;announce(stale?'Already answered. '+a.name+'.':word+' '+a.name+'. '+(left?left+' left.':'Nobody else needs you.'));renderInboxBtn();
+        setTimeout(()=>{const left=needsMeOrder().length;announce(stale?(waiting?'Still waiting for the answer. ':'Already answered. ')+a.name+'.':word+' '+a.name+'. '+(left?left+' left.':'Nobody else needs you.'));renderInboxBtn();
           if(!row.isConnected){done();paintInbox(i);return;}
-          row.classList.add('settled');act.innerHTML='';const p=document.createElement('p');p.className='ib-done '+(stale||k==='other'?'':k==='deny'?'no':'yes');p.textContent=stale?'Already answered':k==='deny'?'Denied':k==='other'?word:'✓ '+word;act.appendChild(p);
+          row.classList.add('settled');act.innerHTML='';const p=document.createElement('p');p.className='ib-done '+(stale||k==='other'?'':k==='deny'?'no':'yes');p.textContent=stale?(waiting?'Still waiting':'Already answered'):k==='deny'?'Denied':k==='other'?word:'✓ '+word;act.appendChild(p);
           setTimeout(()=>{if(!row.isConnected)return paintInbox(i);if(reducedMotion())return paintInbox(i);
             row.classList.add('gone');setTimeout(()=>flipInbox(()=>paintInbox(i)),180);},600);},250);},src.title);
     }
@@ -4086,7 +4087,9 @@ function paintInbox(focusIndex){
     body.appendChild(row);
   });
   /* FR-033: focus a heading (it reads the agent and its request through the row), never a button */
-  if(focusIndex!=null){const hs=body.querySelectorAll('.ib-h');const h=hs[Math.min(focusIndex,hs.length-1)]||body.querySelector('.inbox-empty')||$('inboxClose');if(h)focusIn(h);}
+  const again=typing&&[...body.querySelectorAll('.ib-amt')].find(x=>x.dataset.rq===typing.rq);
+  if(again){focusIn(again);try{again.setSelectionRange(typing.a,typing.b);}catch(e){}}
+  else if(focusIndex!=null){const hs=body.querySelectorAll('.ib-h');const h=hs[Math.min(focusIndex,hs.length-1)]||body.querySelector('.inbox-empty')||$('inboxClose');if(h)focusIn(h);}
 }
 function openNextNeedsMe(){
   const list=needsMeOrder(); if(!list.length){toast('Nobody needs you right now.',2600);return;}
@@ -5462,12 +5465,15 @@ function showLimit(a,e){
   const row=document.createElement('div');row.className='note-actions';
   const amt=document.createElement('input');amt.type='number';amt.min='0.01';amt.step=usd?'0.01':'1';amt.value=String(max||(usd?MIN_USD_CAP:MIN_CAP));amt.className='limit-amt';amt.setAttribute('aria-label',usd?'Dollars to add to the limit':'AI credits to add to the limit');
   const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);return b;};
-  let inFlight=false; /* FR-209: one answer at a time; the buttons and the field are off while it is on its way, back on if it fails */
-  const lock=on=>{inFlight=on;row.querySelectorAll('button,input').forEach(x=>{x.disabled=on;});};
+  let inFlight=0,seq=0; /* FR-209: one answer at a time; the buttons and the field are off while it is on its way (the card says "Sending…"), back on if it fails or after 30 s */
+  const pst=n.querySelector('.pstate');
+  const lock=on=>{row.querySelectorAll('button,input').forEach(x=>{x.disabled=on;});pst.textContent=on?' → Sending…':'';};
   const answer=async choice=>{
-    if(inFlight)return; lock(true);
+    if(inFlight)return; const my=++seq; inFlight=my; lock(true);
+    const timer=setTimeout(()=>{if(inFlight===my){inFlight=0;lock(false);addNote(liveChat(a),'No reply after '+Math.round(LIMIT_WAIT_MS/1000)+' seconds. You can answer again; if the first answer arrives late, both may count.',true);}},LIMIT_WAIT_MS);
     const r=await bridge.resolveLimit(a.id,e.requestId,choice).catch(err=>({ok:false,error:String(err&&err.message||err)}));
-    if(!r||!r.ok){lock(false);addNote(liveChat(a),'Could not answer the spending limit: '+esc((r&&r.error)||'unknown error'),true);return;}
+    clearTimeout(timer); const mine=inFlight===my; if(mine)inFlight=0;
+    if(!r||!r.ok){if(mine){lock(false);addNote(liveChat(a),'Could not answer the spending limit: '+esc((r&&r.error)||'unknown error'),true);}return;}
     if(a.limit&&a.limit.requestId===e.requestId)settleLimit(a,choice.kind);
     else if(!n.classList.contains('settled')){ /* a late answer settles its own card only, and only if the adapter's `resolved` event (which comes first) has not: it never rewrites what happened */
       row.remove();n.classList.add('settled',choice.kind==='cancel'?'denied':'approved');
@@ -5504,7 +5510,10 @@ function showPlan(a,e){
   /* spec 066 (2026-11-01 delta): the plan never takes focus from typing: with text in the message box, or focus in any text field, Approve is left alone */
   const ae=document.activeElement, mb=$('msgInput');
   if(ui.selected===a.id&&!modalOpen()&&!(mb&&mb.value)&&(!ae||ae===document.body||ae===mb))focusIn(ok);
-  row.addEventListener('keydown',ev=>{if(ev.repeat&&(ev.key==='Enter'||ev.key===' '))ev.preventDefault();}); /* a held Enter or Space on Approve, Revise or Reject answers nothing */
+  row.addEventListener('keydown',ev=>{
+    if(ev.repeat&&(ev.key==='Enter'||ev.key===' '))ev.preventDefault(); /* a held Enter or Space on Approve, Revise or Reject answers nothing */
+    else if(ev.key.length===1&&ev.key!==' '&&!ev.ctrlKey&&!ev.metaKey&&!ev.altKey){const mb2=$('msgInput');if(mb2)focusIn(mb2);} /* starting to type goes to the message box, so the next Enter cannot approve the plan unread */
+  });
 }
 function settlePlan(a,action){
   const P=a.plan;if(!P)return;a.plan=null;
@@ -5545,7 +5554,7 @@ function showQuestion(a,e){
   });
   const row=document.createElement('div');row.className='note-actions';
   let sending=false; /* one answer at a time: the buttons and boxes are off while it is on its way, back on if it fails (a held Enter sent six) */
-  const lockQ=on=>{sending=on;n.querySelectorAll('.note-actions button,.q-other').forEach(x=>{x.disabled=on;});};
+  const lockQ=on=>{sending=on;n.querySelectorAll('.note-actions button,.q-opt,.q-other').forEach(x=>{x.disabled=on;});};
   const send=async answers=>{
     if(sending)return; lockQ(true);
     const r=await bridge.answerQuestion(a.id,e.requestId,answers).catch(err=>({ok:false,error:String(err&&err.message||err)}));
@@ -5702,6 +5711,7 @@ function settleLimit(a,action){
 /* ---------------- coffee break (spec 068): a usage limit puts the agent in the coffee corner until the limit resets ---------------- */
 const COFFEE=window.DurbarCoffee;
 let BREAK_RESUME='auto'; /* the setting (FR-006): 'auto' resumes by itself when it costs nothing extra; 'ask' always asks */
+const LIMIT_WAIT_MS=(()=>{try{const q=new URLSearchParams(location.search),v=Number(q.get('simlimitwait'));return q.has('sim')&&v>0?v:30000;}catch(e){return 30000;}})(); /* how long a limit answer may take before its card unlocks (the simulator drivers shorten it) */
 const SIM_BREAK=(()=>{try{const q=new URLSearchParams(location.search);return q.has('sim')&&q.has('simbreak');}catch(e){return false;}})(); /* simulator drivers: short waits (FR-017) */
 const BREAKS=COFFEE.createBreaks(SIM_BREAK?{marginMs:2000,gapMs:3000,lateMs:600000,remindMs:20000}:{});
 const coffeeWord=()=>'Coffee break'; /* a status word: plain in every theme (spec 035: status pills keep their size); only the corner's name is themed */

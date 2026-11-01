@@ -36,20 +36,21 @@ module.exports = async (ctx) => {
     const limit = (rid) => emit({ type: 'limit', phase: 'exhausted', requestId: rid, maxAiCredits: 5, usedAiCredits: 5 });
     const ask = (rid, q, labels) => emit({ type: 'question', phase: 'asked', requestId: rid, questions: [{ question: q, multiSelect: false, options: (labels || ['yes', 'no']).map((label) => ({ label })) }] });
     // a page per part; every answer that reaches the bridge is counted, and a limit answer can be held in flight (window.__hold)
-    const fresh = async () => {
-      await H.load({ w, h, focus: true });
+    const fresh = async (query) => {
+      await H.load({ w, h, focus: true, query });
       const first = await H.openSimAgent(`a=>!a.parent&&a.live&&a.info&&(a.state==='idle'||a.state==='done')`, '#msgInput');
       assert.ok(first.ok, `${w}: opened an idle agent's chat ${jsLiteral(first.seen)}`);
       A = first.id;
-      await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__perm=[];window.__lim=[];window.__ans=[];window.__plan=[];window.__sent=[];window.__hold=false;window.__holdq=false;window.__relq=[];window.__rel=[];
+      await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__perm=[];window.__lim=[];window.__ans=[];window.__plan=[];window.__sent=[];window.__hold=false;window.__holdq=false;window.__holdp=false;window.__relq=[];window.__relp=[];window.__rel=[];window.__ann=[];const sr=document.getElementById('srAnnounce');new MutationObserver(()=>window.__ann.push(sr.textContent)).observe(sr,{childList:true,characterData:true,subtree:true});
         const p=b.resolvePermission,l=b.resolveLimit,q=b.answerQuestion,pl=b.resolvePlan,s=b.send;
         b.resolvePermission=function(id,rid,ok){window.__perm.push(rid+':'+ok);return p.apply(this,arguments)};
         b.resolveLimit=function(id,rid,c){window.__lim.push(JSON.stringify(c));if(window.__hold)return new Promise(r=>window.__rel.push(r));return l.apply(this,arguments)};
         b.answerQuestion=function(id,rid){window.__ans.push(rid);if(window.__holdq)return new Promise(r=>window.__relq.push(r));return q.apply(this,arguments)};
-        b.resolvePlan=function(id,rid,a){window.__plan.push(rid+':'+(a&&a.kind));return pl.apply(this,arguments)};
+        b.resolvePlan=function(id,rid,a){window.__plan.push(rid+':'+(a&&a.kind));if(window.__holdp)return new Promise(r=>window.__relp.push(r));return pl.apply(this,arguments)};
         b.send=function(){window.__sent.push(1);return s.apply(this,arguments)};})()`);
       await setup();
     };
+    const plan = (n) => emit({ type: 'plan', phase: 'proposed', requestId: 'pl' + n + '-' + w, text: '1. Do a thing' });
     const got = (n) => js(`window[${jsLiteral('__' + n)}].slice()`);
     const barUp = async () => {
       await js(`(()=>{const c=document.getElementById('chat');if(!document.getElementById('fillerX')){const f=document.createElement('div');f.id='fillerX';f.style.height='4000px';c.prepend(f);}c.scrollTop=0;c.dispatchEvent(new Event('scroll'));})()`);
@@ -228,8 +229,68 @@ module.exports = async (ctx) => {
     const stateText = await js(`document.querySelector('#chat .note.limit .pstate').textContent`);
     assert.ok(/stopped here/.test(stateText), w + ': the late reply left it "stopped here" (is ' + stateText + ')');
 
+    // ---- FR-209: a limit answer that never returns: "Sending…", then after the wait a note and the card unlocks (the trade-off: a late first answer and a new second one can both arrive) ----
+    await fresh({ simlimitwait: '1500' });
+    await limit('lw-' + w);
+    assert.ok(await until(`!!document.querySelector('#chat .note.limit .note-actions')`, 5000));
+    await js(`window.__hold=true`);
+    await js(`window.__cb('Raise limit').click()`);
+    assert.ok(await until(`/Sending/.test(document.querySelector('#chat .note.limit .pstate').textContent)`, 3000), w + ': the card says Sending…');
+    assert.ok(await until(`!window.__cb('Remove limit').disabled`, 6000), w + ': after the wait the card unlocks');
+    assert.ok(await until(`[...document.querySelectorAll('#chat .note')].some(x=>/No reply after/.test(x.textContent))`, 3000), w + ': and says so in a note');
+    assert.strictEqual(await js(`document.querySelector('#chat .note.limit .pstate').textContent`), '', w + ': the Sending… text is gone');
+    await js(`window.__cb('Remove limit').click()`);
+    assert.strictEqual((await got('lim')).length, 2, w + ': a second answer can be sent now ' + jsLiteral(await got('lim')));
+    await js(`window.__hold=false;window.__rel.splice(0).forEach(r=>r({ok:true}))`);
+
+    // ---- FR-209: a question answer that fails unlocks the whole card again (buttons, options and boxes) ----
+    await fresh();
+    await ask('ql-' + w, 'Lock?', ['yes', 'no']);
+    assert.ok(await until(`!!document.querySelector('#chat .note.question .q-other')`, 5000));
+    await js(`window.__holdq=true`);
+    await js(`(()=>{const o=document.querySelector('#chat .note.question .q-other');o.value='typed';o.dispatchEvent(new Event('input',{bubbles:true}));o.focus();})()`);
+    await nkey('Return');
+    assert.ok(await until(`window.__ans.length===1`, 3000));
+    assert.strictEqual(await js(`[...document.querySelectorAll('#chat .note.question .note-actions button,#chat .note.question .q-opt,#chat .note.question .q-other')].every(x=>x.disabled)`), true, w + ': the whole question card is locked in flight');
+    await js(`window.__relq.shift()({ok:false,error:'no'})`);
+    assert.ok(await until(`[...document.querySelectorAll('#chat .note.question .note-actions button,#chat .note.question .q-opt,#chat .note.question .q-other')].every(x=>!x.disabled)`, 3000), w + ': after a failure the whole card is back on');
+
+    // ---- FR-210: the bar acts on a locked card: nothing happens and nothing is said ----
+    await fresh();
+    await ask('qb-' + w, 'Locked bar?', ['yes', 'no']);
+    await barUp();
+    await js(`window.__holdq=true`);
+    await js(`window.__bb('yes').click()`);
+    assert.ok(await until(`window.__ans.length===1`, 3000), w + ': the first bar option is on its way');
+    await js(`window.__ann.length=0;window.__bb('no').click()`);
+    await H.settle(500).catch(() => {});
+    assert.strictEqual(await js(`window.__ann.some(t=>/Answered: no/.test(t))`), false, w + ': the second option announces nothing ' + jsLiteral(await js('window.__ann')));
+    assert.ok(/yes/.test(await js(`document.querySelector('#chat .note.question .q-opt[aria-checked="true"]').textContent`)), w + ': the pick is still yes');
+    assert.strictEqual((await got('ans')).length, 1, w + ': one answer only');
+    // a plan card in flight: the bar's other buttons do nothing and say nothing
+    await fresh();
+    await emit({ type: 'plan', phase: 'proposed', requestId: 'pb-' + w, text: '1. A plan' });
+    await barUp();
+    await js(`window.__holdp=true`);
+    await js(`window.__bb('Approve').click()`);
+    assert.ok(await until(`window.__plan.length===1`, 3000), w + ': Approve is on its way');
+    await js(`window.__ann.length=0;window.__bb('Reject').click()`);
+    await H.settle(500).catch(() => {});
+    assert.strictEqual((await got('plan')).length, 1, w + ': Reject is not sent');
+    assert.strictEqual(await js(`window.__ann.some(t=>/^Reject/.test(t))`), false, w + ': and not announced');
+
+    // ---- FR-212: typing when a plan arrives goes to the box; the next Enter cannot approve it ----
+    await fresh();
+    await js(`document.getElementById('msgInput').focus()`);
+    await plan(7);
+    assert.ok(await until(`document.activeElement&&document.activeElement.textContent==='Approve'`, 5000), w + ': (the plan took the focus: the box was empty)');
+    await nkey('G', { char: 'g' });
+    await nkey('O', { char: 'o' });
+    assert.strictEqual(await js(`document.getElementById('msgInput').value`), 'go', w + ': the typed letters are in the message box');
+    await nkey('Return');
+    assert.deepStrictEqual(await got('plan'), [], w + ': Enter after typing does not approve the plan ' + jsLiteral(await got('plan')));
+
     // ---- FR-212 (E): the plan takes focus on Approve only if no modal is open, the box is empty, and focus is on the page or in the empty box ----
-    const plan = (n) => emit({ type: 'plan', phase: 'proposed', requestId: 'pl' + n + '-' + w, text: '1. Do a thing' });
     const onApprove = () => js(`!!document.activeElement&&document.activeElement.textContent==='Approve'`);
     // typing: stays, and Enter does not approve
     await fresh();

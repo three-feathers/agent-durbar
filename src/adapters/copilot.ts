@@ -1617,12 +1617,20 @@ export class CopilotAdapter implements AgentAdapter {
     const id = live.limitRequestId;
     if (!id) return;
     live.limitRequestId = undefined;
+    // a hung runtime call must not keep Stop or End session from going on: after `limitCancelMs` the cancel is given up (spec 052 FR-209)
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const gaveUp = new Promise<void>((resolve) => { timer = setTimeout(resolve, this.limitCancelMs); });
     try {
-      await live.session.rpc.ui.handlePendingSessionLimitsExhausted({ requestId: id, response: { action: 'cancel' } });
+      await Promise.race([live.session.rpc.ui.handlePendingSessionLimitsExhausted({ requestId: id, response: { action: 'cancel' } }), gaveUp]);
     } catch {
       /* already answered elsewhere */
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
+
+  /** How long Stop waits for the runtime to take back a pending limit (test hook: set it low). */
+  private limitCancelMs = 5000;
 
   /** Switch one MCP server on or off in a running session (the runtime does not write this to ~/.copilot). */
   async setMcpEnabled(sessionId: string, name: string, enabled: boolean): Promise<void> {
