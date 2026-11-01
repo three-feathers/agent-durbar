@@ -27,7 +27,7 @@
 
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const px = (n) => Math.round(n * 10) / 10 + 'px';
-  /* spec Changes 2026-11-01: while `SLIDE` is on (a draw of the same window size, people moving), something the layout moved a little slides there on `transform`, so a visitor's arrival does not make the lobby jump */
+  /* spec Changes 2026-11-01: while `SLIDE` is on (a draw of the same window size, people moving), something the layout moved or resized eases there on `translate` and `scale`, so a change does not make the room jump; chips and plates fade in place instead */
   let SLIDE = false;
   /* on `translate` and `scale`, not `transform`: an element keeps its own transform while it moves (the post-it's tilt, a person's motion); no layout during it (spec Changes 2026-11-01) */
   const easeFrom = (el, dx, dy, sx, sy) => {
