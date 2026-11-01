@@ -20,7 +20,7 @@ npm run check:ui          # every simulator driver that asserts, one after anoth
 npm run check:themes      # on demand: the full layout check in every theme, a few at a time, low priority, memory limits
 npm run pack:dir          # unpacked app for this OS in release/ (also dist, dist:mac:arm64, dist:mac:x64, dist:win, dist:linux; unsigned); then checks the Electron fuses and the display names
 npm run check:fuses-launch  # on demand, after pack:dir: the packed Linux app opens its window and offers no debugger (xvfb on Linux)
-npm run specs:index       # the full specs index from each spec's specs-index block, into specs/INDEX.md (git-ignored); --add specs/NNN-x for a new spec; specs:check in npm test
+npm run specs:index       # the full specs index from each spec's specs-index block, into specs/INDEX.md (git-ignored); --add specs/NNN-x for a new spec; specs:check in npm test, which also refuses conflict markers
 npm run labels:backfill   # dry run: the labels each issue and PR is missing (spec 021 FR-045); -- --create-labels --apply adds them (add-only)
 npm run changelog:check   # check the changelog.d/ fragments (in npm test); changelog:preview lists them; a tag's notes come from them, then changelog:build folds them (changelog.d/README.md)
 npm run rules:check       # word budgets of the rule files (AGENTS.md, CLAUDE.md, agent notes, checklist, ...; in npm test): one rule in, one rule out
