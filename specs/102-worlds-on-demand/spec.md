@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Worlds and character sets as two flat lists of untrusted data packs (owner decisions, Vikram 2026-10-31; #932, #933): any set in any world, downloaded on demand with a plain internet notice from an extensible source, made in the app or by a prompt pack, and shared; one validator for all
-note: spec, plan, tasks only; nothing built; first ship waits for spec 097 FR-179; monitor part and arrangements specified; Retro arcade plan (FR-250..FR-270)
+note: spec, plan, tasks only; nothing built; first ship waits for spec 097 FR-179; monitor part and arrangements specified; Retro arcade plan (FR-250..FR-271)
 status: draft
 -->
 
@@ -463,7 +463,7 @@ I choose a world, and its people come with it. If I pick characters myself, they
   | **With Retro arcade** | | | **about 26.8 MB; about 23.0 MB by FR-253** |
 
   **Caps.** Every pack stays under 097's 10 MB per world with its default set, on these estimates. A cartoon frame may compress unlike a photo-style one (`[KNOWN GAP]`, not measured): Cheeky at 13 people has 73 KB per frame pair before it passes 10 MB. `test:crew-assets`' 2.5 MB holds today's heads only (1.9 MB now); full-pose sets are checked by their own test and do not go in that folder. **New: shipped art at most 30 MB in total** (`test:realoffice-assets`), since no app-wide budget existed. **Retro pixel people's cost**: as first estimated, 15 fictional people × 11 required frames with half sizes and about 30 image runs. The art now exists: 15 people x 17 frames, no half size, no new run (FR-253, FR-254), plus 097 FR-067, FR-068's checks. Sets that do not ship (Minimalist's frames, shared ones) download.
-- **FR-214** **Pixel people stay in Flat** (decision of 2026-11-01). Flat stays one world and keeps getting character sets (owner, 2026-11-01). Removing the Retro Pixel theme must not take pixel people out of Flat, so Retro pixel people also become a Characters value in Flat, `pixel`, in spec 077's pattern (077 FR-064, FR-072), with heads by FR-203. It lands in the same release as the theme's removal (FR-213, OP-12; spec 035 FR-019, T089), and a person who picks it in Flat stays in Flat. `[KNOWN GAP]` T111's frames do not exist yet, so how close their heads come to today's `pixel` scene kit is not known; `test:crew-assets`' 2.5 MB is not yet checked with them.
+- **FR-214** **Pixel people stay in Flat** (decision of 2026-11-01). Flat stays one world and keeps getting character sets (owner, 2026-11-01). Removing the Retro Pixel theme must not take pixel people out of Flat, so Retro pixel people also become a Characters value in Flat, `pixel`, in spec 077's pattern (077 FR-064, FR-072), with heads by FR-203. It lands in the same release as the theme's removal (FR-213, OP-12; spec 035 FR-019, T089), and a person who picks it in Flat stays in Flat. With it, Flat keeps the Retro look (FR-271). `[KNOWN GAP]` T111's frames are not in the repo yet, so how close their heads come to today's `pixel` scene kit is not known; `test:crew-assets`' 2.5 MB is not yet checked with them.
 - **FR-212** **Flat is not a registry world.** It has no moments in `docs/experience/world-moments.json`: its surfaces are the flat rendering. FR-014, FR-020 and FR-035 do not apply to it. The Retro arcade world does not change Flat's theme.
 
 #### Relation to other specs
@@ -607,14 +607,14 @@ Why, and what it replaces, is under *Changes*. Plan: [*Retro arcade*](plan.md#re
 - **FR-263** **Chat and Settings follow the world.**
   - **UI style (FR-031):** the world row names `ui: "retro"`. While the world is shown, `data-ui` is `retro`, so square corners, hard shadows, the yellow focus halo and the mono display font are today's code, and leaving restores the theme's. **This amends 097 FR-130 and #1001's reading ("no world changes a font or a radius") for this one world, inside 035 FR-010's limits:** no size change, `test:theme`'s allow-list holds, 070 D2 holds.
   - **Fonts:** display text only, as 035 FR-010 says. The mockup also sets body text in mono, which is wider and would break 070 D2; it is not adopted (Q5).
-  - **Tokens:** two complete sets in `WORLD_SETS.retro`. **Day is Retro Pixel's own token values, moved, not redrawn**, so the List view and Settings are what the daily user knows. Note: that page colour is navy with cream cards; the cream is the room's art. **Night** has a darker page and bar, and **keeps cream surfaces for cards, plates, Settings and chat**, because 038 FR-001 allows no small text on a dark surface. `worldContrast` and `test:theme-tokens` check both; `paintWorld` takes the light.
+  - **Tokens:** two complete sets in `WORLD_SETS.retro`. **Day is Retro Pixel's own token values, read from the one source FR-271 also uses, not copied or redrawn**, so the List view and Settings are what the daily user knows. Note: that page colour is navy with cream cards; the cream is the room's art. **Night** has a darker page and bar, and **keeps cream surfaces for cards, plates, Settings and chat**, because 038 FR-001 allows no small text on a dark surface. `worldContrast` and `test:theme-tokens` check both; `paintWorld` takes the light.
   - **Chat:** #1001's surface, tails and portrait. The header carries the name on a marquee, with `lampWords`. The desk-side column shows the cabinet and person (FR-259). The mockup shows the floor beside a 440 px chat; the app's chat is full-window (#1001), which this does not change (Q7).
   - **Settings:** tokens only (097 FR-113), opaque (FR-182). The Light group is FR-251's. The mockup's `Arcade` badge in the top bar is dropped: packs set no words.
 - **FR-264** **Every moment.** All 26 registry moments get a cell for `retro`, the 9 of #994 by the plan's table, with `shippable` only under 098 FR-024. Same words and same buttons as the other worlds (FR-013).
 
 **Replacing the theme**
 
-- **FR-265** **What its daily user would miss** (Ruben uses Retro Pixel daily; owner, 2026-11-01). Each item is kept or named. `[KNOWN GAP]` this table comes from reading the theme's code and Flat, not from asking him: T229 puts it to him before anything flips.
+- **FR-265** **What its daily user would miss** (Ruben uses Retro Pixel daily; owner, 2026-11-01). Each item is kept or named. `[KNOWN GAP]` this table comes from reading the theme's code and Flat; T233 compares the two looks on screen.
 
   | Today, Flat with Retro Pixel | After | State |
   |---|---|---|
@@ -627,15 +627,15 @@ Why, and what it replaces, is under *Changes*. Plan: [*Retro arcade*](plan.md#re
   | Latest output | Real lines on the CRT; zoom on hover or focus | **Kept** |
   | Lobby: who is where, boss, bank, post | Fixtures, visitors, slips (#994) | **Kept** |
   | Per-agent tokens and cost on the card | Chat header; `[KNOWN GAP]` not on the plate. 097 FR-016 has no such field, and T202 sees if it fits | **Moved, named** |
-  | **Flat's whole layout:** rooms as coloured folder blocks, densities, Detail level, wrapping | One click: World Flat with Characters `pixel` (FR-214), in Clean Office colours | **Named, one click away** |
-  | **Flat in retro colours** | Gone with the theme (OP-12) | **Named, Q8** |
-  | Pixel desks and CRTs in Flat, floppy rim, pixel plant, brick wall, `arcade` motion preset | The `pixel` kit goes; the arcade has its own art | **Named** |
-  | Theme words: Arcade, Snack bar, Boss level, Coin bank, Mailbox, Cartridge Bay, Console, Modem | The app's words in every world (FR-013, FR-040; the mockup shows them) | **Named, Q4** |
-  | Flat's densities fit more than 15 on one floor | Rows scroll inside the floor past 15 (FR-256) | **Named** |
-  | Picture weight: Flat loads no world pack | About 0.4 MB, loaded only here | **Small cost** |
+  | **Flat's whole layout:** rooms as coloured folder blocks, densities, Detail level, wrapping | Unchanged: a Flat user stays in Flat (FR-266) | **Kept** |
+  | **Flat in retro colours** | Flat with Characters `pixel` (FR-271; the owner's answer to Q8) | **Kept** |
+  | Pixel desks and CRTs in Flat, floppy rim, pixel plant, brick wall, `arcade` motion preset | Stay with FR-271's look; the arcade has its own art | **Kept** |
+  | Theme words: Arcade, Snack bar, Boss level, Coin bank, Mailbox, Cartridge Bay, Console, Modem | Stay in Flat with FR-271's look (FR-212: Flat is no registry world). In the arcade, the app's words (FR-013, FR-040; the mockup shows them) | **Kept in Flat; named in the arcade, Q4** |
+  | Flat's densities fit more than 15 on one floor | Kept in Flat. In the arcade, rows scroll inside the floor past 15 (FR-256) | **Kept in Flat; named in the arcade** |
+  | Picture weight: Flat loads no world pack | Still none in Flat; about 0.4 MB only in the arcade | **Kept** |
 
-- **FR-266** **Migration, once, in the same release.** 035 FR-019 and FR-207's pattern: in main on read, written at once, a repeat changes nothing, no request. A stored theme `retro` becomes World `retro`, Office layout Real office, Light Day, theme Clean Office, with one notice, and **Flat** one click away in that notice. Characters: `pixel`, as an explicit pick (Q10): the same people in the arcade, and the same people when the notice's Flat is clicked, which with `default` would give Minimalist. A saved theme naming `ui: "retro"` keeps it (FR-263); one naming `scene: "pixel"` draws the `office` kit with Characters unchanged, and the report says so. **Same release:** a daily release may be cut between any two merges (FR-064), so opening the flag, `pixel` in Flat and removing the theme are one PR (T230), with everything else landed before it behind `WORLD_FLAGS.retro` (#993's pattern).
-- **FR-267** **Removing a theme does not remove coverage** (AGENTS.md: never reduce CI coverage). Retro is the one theme, besides Clean Office, that pull requests lay out (spec 008 FR-111: dark page, its own display font), and scripts name it as their second theme: `check-theme-geometry`, `check-parallel`, `check-crew retro` and about 20 others. Before it goes, a fixture user theme with `ui: "retro"`, a dark page and the same tokens takes those places, so the same layouts run (T226).
+- **FR-266** **Migration, once, in the same release; a Flat user looks the same in Flat** (the owner's requirement, 2026-11-01). 035 FR-019 and FR-207's pattern: in main on read, written at once, a repeat changes nothing, no request. A stored theme `retro` with Office layout Flat becomes **World Flat, Characters `pixel`, theme Clean Office**, which FR-271 draws as today's look, with one line naming **Retro arcade**, one click away. So they are not moved to the arcade: this replaces 035 FR-019's "moves to the World". **Named exception:** with Characters `minimalist`, `cheeky`, `prehistoric` or `mine` on Retro Pixel, the pick stays and FR-271 makes it Clean Office colours; the one line says that Characters Pixel brings the colours back. A stored Retro Pixel with Real office, a layout no release has by default, becomes World `retro`, Light Day, Characters `pixel`. A saved theme naming `ui: "retro"` or `scene: "pixel"` keeps working (FR-271). **Same release:** a daily release may be cut between any two merges (FR-064), so opening the flag, `pixel` in Flat and taking the theme out of the picker are one PR (T230), with everything else landed before it behind `WORLD_FLAGS.retro` (#993's pattern).
+- **FR-267** **Removing a theme does not remove coverage** (AGENTS.md: never reduce CI coverage). Retro is the one theme, besides Clean Office, that pull requests lay out (spec 008 FR-111: dark page, its own display font), and scripts name it as their second theme: `check-theme-geometry`, `check-parallel`, `check-crew retro` and about 20 others. FR-271 keeps that look in the app, so each moves to Flat with Characters `pixel` and runs the same layouts, in T230's PR (T226 readies the switch). `check-crew retro`'s case, Cheeky on Retro colours, no longer exists for users: its place goes to a saved fixture theme with `ui: "retro"`, so the combination of a crew and that style stays tested.
 
 **The rest**
 
@@ -644,7 +644,15 @@ Why, and what it replaces, is under *Changes*. Plan: [*Retro arcade*](plan.md#re
   - **The build is not blocked** and can start on the base in the plan.
   - **The ship is blocked** by FR-035 (a): 097 FR-179 and T156..T159, which are not on `main`. **#936 must merge first** (it holds FR-179 and the tasks). Of the four tasks, on #950's branch (stacked on #941): T159 is ticked; T156 is built but not ticked and stands at 98 reads at 15 against a budget under 40; T157 is not built; T158 is in progress. On `main`, none of them exists. The owner's gate is spec 001's search and renders (#984, spec only, nothing built, with its own spike T167 first and a real Mac run T181, then spec 001 T182 ticks or moves 097 T156, T157). `test:world-catalogue` counts a missing task as not met.
   - **Also blocked by:** FR-035 (b) and T036: `test:world-packs`, `test:world-catalogue` and the validator (#955) are not on `main`; (c) all 26 moments, FR-264; (d) FR-229 for `aisles`, unmeasured; (e) provenance, T201; (f) the owner's look; (g) T093, T094, not built; (h) T111's set, full, T207. 097 FR-189: the real-GPU run T162 before a world ships as finished. 097 FR-179 also sits under Cave, Durbar hall and every other new world, so this is not particular to this world.
-- **FR-270** **Other specs**, written into each by T232 once the PRs holding those lines land, as FR-190 does: 097 FR-032, FR-041, FR-130 and FR-012 (`aisles`), #1001's reconciling delta; 098 FR-030 (`face-*`, `marqueeRect`, `pixelArt`, `lightSets`), FR-031; 077 by T122; 008 FR-111 by T226. Spec 035 FR-019 and T089 are changed in this PR; spec 038 becomes `superseded` as it already says.
+- **FR-271** **Flat with Pixel people keeps the Retro look** (owner, 2026-11-01, Q8, answer A; replaces "gone with the theme"). No new setting: it is derived, by one pure `flatLook(world, characters, theme)` in `theme.js`.
+  - **When:** World Flat, Characters `pixel`, and the theme is Clean Office. Then Flat draws Retro Pixel's tokens, the `retro` UI style, its art slots and the `pixel` scene furniture, its words and its `arcade` motion: **one source, the same values the arcade's Day reads** (FR-263), kept in `theme.js` as a look, no longer a row in the Themes list.
+  - **An explicit other Characters choice in Flat** (`default`, `minimalist`, `cheeky`, `prehistoric`, `mine`): Clean Office, at once. Picking `pixel` again brings the look back; nothing else is stored.
+  - **A saved theme:** it is an explicit choice, so its own colours stay and pixel heads go on top (077 FR-064).
+  - **Any world other than Flat:** the world's colours (097 FR-130); an explicit `pixel` changes people only.
+  - **Named consequence:** with no new setting, Pixel people on plain Clean Office colours is not a choice any more.
+  - **The one difference from today, named:** the people's heads are the approved Retro pixel people (FR-214), not the old kit's. `[KNOWN GAP]` how close they come has not been looked at; T233 puts them side by side.
+  - **Flat stays light:** no world file is read (FR-003); the words and tokens are already in the app.
+- **FR-270** **Other specs**, written into each by T232 once the PRs holding those lines land, as FR-190 does: 097 FR-032, FR-041, FR-130 and FR-012 (`aisles`), #1001's reconciling delta; 098 FR-030 (`face-*`, `marqueeRect`, `pixelArt`, `lightSets`), FR-031; 077 by T122; 008 FR-111 by T226. Spec 035 FR-019 and T089 are changed in this PR; spec 038 becomes `superseded`, with a note that its pack lives on as FR-271's look.
 
 ### Key Entities
 
@@ -683,7 +691,7 @@ Why, and what it replaces, is under *Changes*. Plan: [*Retro arcade*](plan.md#re
 - **SC-023** Day and night give the same `Layout`; only the shown light's files load; both token sets pass at AA; the stored value survives a restart and a bad one means Day; the system's appearance changes nothing.
 - **SC-024** With `retro`, 097 FR-178's op rows hold at 15 and 40 agents with no new allowance; nothing in the world's CSS animates other than `transform` and `opacity`; no canvas in the world's code path; all flashes share one phase; idle CPU is recorded in 4 mixes, and is no worse than Photo office on the same machine.
 - **SC-025** The world with its set is under every cap by committed files, and every `pixelArt` picture is lossless.
-- **SC-026** Each row of FR-265 is kept or named, and Ruben's answer is recorded; a migrated setup keeps its look's parts as FR-266 says, once; pull requests lay out as many theme cases after the theme goes as before.
+- **SC-026** Each row of FR-265 is kept or named; a Flat user on Retro Pixel, once migrated, has the same boxes, colours, UI style and words in Flat as before, heads apart; a repeat changes nothing; pull requests lay out as many theme cases after the theme goes as before.
 - **SC-027** No build has the world offered with the theme still there, or the theme gone with the world not offered.
 
 ## Assumptions and honest limits
@@ -717,16 +725,16 @@ Agent decisions stand until the owner changes them.
 - **OP-12 Retro Pixel theme: decided (owner, 2026-10-31).** It stays until the Retro arcade world ships, and that world ships in the app in the same release that removes the theme (FR-213, spec 035 FR-019).
 - **OP-13 Arrangements against worlds: decided (owner, 2026-11-01, relayed).** The closed list of arrangements grows, and no two project worlds share one ("substantially different"). Photo office keeps `rows`, the baseline. FR-226 has the list and who holds what. FR-016 fails a shared arrangement.
 - **Retro arcade questions** (2026-11-01; each has the recommended answer, which holds until he says otherwise):
-  - **Q1 Slant.** Level glass and text, on a redrawn cabinet (FR-258). Recommended: yes; he confirms on T200's side-by-side. Otherwise the cabinet body may slant, with level glass.
-  - **Q2 Chase lights on a working marquee** (in the mockup). Recommended: none in the first build; working is steady and the person moves (FR-261). T216 gives the cost if he wants them.
-  - **Q3 Which states flash.** Recommended: waiting and error; limit steady. Error's flash amends 097 FR-041's "no flashing" for this world only (FR-260).
-  - **Q4 Words on the floor.** Recommended: no `+100`, a coin only; and the app's words, not the theme's Arcade, Snack bar, Boss level and so on (FR-013, FR-040), named in FR-265.
+  - **Q1 Slant. Held as told to the owner, 2026-11-01:** level glass and text, on a redrawn cabinet (FR-258). His look at T200 stands.
+  - **Q2 Chase lights. Held as told to the owner, 2026-11-01:** none; working is steady and the person moves (FR-261).
+  - **Q3 Which states flash. Held as told to the owner, 2026-11-01:** only waiting and error; limit steady. Error's flash amends 097 FR-041's "no flashing" for this world only (FR-260).
+  - **Q4 Words on the floor. Held as told to the owner, 2026-11-01:** no `+100`, a coin only. Still a recommendation: in the arcade the app's words, not the theme's (FR-013, FR-040); in Flat they stay (FR-271).
   - **Q5 Body font.** Recommended: mono for display text only, as Retro Pixel today (035 FR-010); not the mockup's all-mono, which would change sizes (070 D2).
-  - **Q6 Fixture scale.** In the mockup fixtures are 34 to 48 grid px tall and a person 72, so a visitor towers over a change machine and hides it (at 1280x800, Web and half of Boss), against FR-014's one scale and the guide's "scale tells the truth". Recommended: redraw fixtures to about 60 to 66 grid px, in the band, at no change to their count.
+  - **Q6 Fixture scale. Held as told to the owner, 2026-11-01:** bigger fixtures, about 60 to 66 grid px, in the band, no change to their count. In the mockup they are 34 to 48 against a person's 72, so a visitor hides them (at 1280x800, Web and half of Boss), against FR-014's one scale.
   - **Q7 Chat beside the floor.** The mockup shows the floor beside a 440 px chat; the app's chat is full-window (#1001). Recommended: follow #1001; a narrower chat is a separate change for every world.
-  - **Q8 Flat in retro colours.** It goes with the theme (OP-12). Recommended: named as a loss, and Ruben asked in T229. If he needs it, the Retro tokens with `ui: "retro"` can be a theme file he imports, since saved themes keep working.
+  - **Q8 Flat in retro colours. Decided (owner, 2026-11-01): A.** Flat with Pixel people gets the Retro colours, so a daily Retro Pixel user keeps that look in Flat (FR-271).
   - **Q9 Past 15 on one floor.** Recommended: more rows at `g = 2`, scrolling inside the floor (FR-256), as 097 does for `rows`. No smaller scale: `g = 1` is a 12 px eyes-to-chin face.
-  - **Q10 The migrated Characters value.** Recommended: an explicit `pixel`, not `default`, so the notice's Flat button keeps pixel people (FR-266). Cost: it also stays when they pick Photo office, where FR-202 keeps an explicit pick. Changes 035 FR-019's "with its default set".
+  - **Q10 The migrated Characters value. Settled by Q8:** an explicit `pixel`, since FR-271 needs it (FR-266). Cost: it stays when they pick Photo office, where FR-202 keeps an explicit pick. Changes 035 FR-019's "with its default set".
   - **Q11 Who approves.** The art notes still say "Paco: pending" for Retro pixel people, and their first paragraph says drawn by code while rows say sheets and snapped. Recommended: the owner's approval of the 15 is the record, since this is no crew of Paco's (097 Q6); T201 corrects the notes.
 
 ## Constitution check
@@ -830,6 +838,10 @@ Removing the Retro Pixel theme must not take pixel people out of Flat, so Retro 
 
 **Replaces:** FR-011's Retro game rows; FR-227's and FR-238's "concept" (FR-256); FR-213's 4.2 MB estimate (FR-253); in spec 035 FR-019, "the `retro` UI style goes"; 035 FR-019's "with its default set" for the migrated Characters value, pending Q10.
 
-**Open:** the questions are in *Open points*, Q1..Q11. **Numbers checked** 2026-11-01 against `main`, remote branches and open PRs: FR-240..FR-244 and T190..T194 are on #999; this delta takes FR-250..FR-270, SC-022..SC-027, T200..T232; spec 021 FR-074.
+**Open:** the questions are in *Open points*, Q1..Q11. **Numbers checked** 2026-11-01 against `main`, remote branches and open PRs: FR-240..FR-244 and T190..T194 are on #999; this delta takes FR-250..FR-270, SC-022..SC-027, T200..T232; spec 021 FR-074; the next entry adds FR-271, T233, 021 FR-075.
 
-`[KNOWN GAP]` Nothing built. No art, mockup image or canvas code of the mockup is in this PR. Measured from a private copy of the mockup and from the art cache, in headless Chromium and PIL, with the art agent still at work in it: all sizes may move. Not run in the app; not looked at on a real GPU; not on macOS or Windows; not at device pixel ratio 1.25 or 1.5. Ruben was not asked (T229).
+`[KNOWN GAP]` Nothing built. No art, mockup image or canvas code of the mockup is in this PR. Measured from a private copy of the mockup and from the art cache, in headless Chromium and PIL, with the art agent still at work in it: all sizes may move. Not run in the app; not looked at on a real GPU; not on macOS or Windows; not at device pixel ratio 1.25 or 1.5.
+
+### 2026-11-01: Flat with Pixel people keeps the Retro colours (owner decision on Q8, relayed by his coordinating agent; spec 021 FR-075)
+
+The owner answered Q8: A. New FR-271 and T233; FR-214, FR-263, FR-265, FR-266, FR-267, SC-026, T217, T226, T227, T229, T230 and spec 035 FR-019, T089 follow. **Replaces:** "Flat in retro colours goes with the theme"; moving a Flat user to the arcade at migration; removing the `pixel` kit and the theme's tokens, art and words (the theme leaves the picker, the look stays). T229 is now the owner's look only. He also held, as told to him, Q1, Q2, Q3, the `+100` of Q4, and Q6. `[KNOWN GAP]` nothing built; whether "looks the same" holds is T233's to show.
