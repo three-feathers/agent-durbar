@@ -346,6 +346,9 @@ module.exports = async (ctx) => {
   await wait(() => inView(`document.getElementById('log').textContent.includes('a')`), 'the page logs its own keys');
   const log = await inView(`document.getElementById('log').textContent`);
   assert.ok(!/(C-|M-)(t|T|Tab|w|W)\b/.test(log), 'the page never saw the tab keys: ' + log);
+  // the window closes "its active tab" from the tab list it last received: main's active tab must be the strip's before the key, or the key closes the one the
+  // strip still shows (seen on Windows CI as the 1280 run's "Ctrl/Cmd+W in the page closes its tab", the #934 family)
+  await wait(() => js(`(()=>{const e=document.querySelector('#bTabs .btab.on');return !!e&&e.dataset.tab===${jsLiteral(keysTab)}})()`), 'the strip shows the keys page as the active tab');
   const n1 = count();
   await pageKey('W', [MOD]);
   await wait(() => count() === n1 - 1 && !tabs().tabs.some((x) => x.tabId === keysTab), 'Ctrl/Cmd+W in the page closes its tab (main saw: ' + lastKeys.join(' ') + ')');
