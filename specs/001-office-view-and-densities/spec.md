@@ -680,4 +680,6 @@ Nothing here was run on a real session for this delta (0 credits); the `real:` e
   - **Checked:** `check-unread` (switch on: no `hl-in`, no animation on the person, the glow or the badge, the glow colour and the New badge still drawn, no card transform; switch off again: animation back; both sizes), the Settings driver (the switch is in Settings, toggles, is labelled, text at least 10.5 px).
   - **Honest limits:** `[KNOWN GAP]` the switch is not read by a screen reader here (labelled `role="switch"`, as the other switches); the persistence is proved through main's handler and store, not by restarting a packaged app; not verified on Windows or macOS.
 
+**Changed 2026-11-01 (sweep of the build):** a save that fails is said: the switch answers not saved and the setting goes back to what it was, as Settings' own words say (*It stays off*).
+
 **Tasks:** T165..T166 in `tasks.md` (issue #780). Numbers taken here: FR-192, T165..T166 (checked against `main`, the remote branches and the open PRs on 2026-10-31).
