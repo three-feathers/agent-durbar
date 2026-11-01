@@ -30,7 +30,7 @@
   function el(layer, key, tag, cls) {
     let e = layer._k.get(key);
     if (!e || e.tagName !== tag.toUpperCase()) {
-      if (e) e.remove();
+      if (e) { if (layer._obs && layer._obs.delete(e)) layer._ro.unobserve(e); e.remove(); } /* a replaced element is unobserved too */
       e = document.createElement(tag); layer.appendChild(e); layer._k.set(key, e);
     }
     if (e.className !== cls) e.className = cls;
@@ -275,16 +275,18 @@
      band), and shows initials only when no spot is free for the name; measured once per render, left to right, so no two chips ever
      overlap */
   function stagger(chrome, W) {
+    const GAPC = 1; /* px between two chips, or a chip and a plate */
     const chips = [...chrome.querySelectorAll(':scope > .ro-chip')].sort((a, b) => parseFloat(a.dataset.x || a.style.left) - parseFloat(b.dataset.x || b.style.left));
     /* the place plates are there first: a chip never covers one */
     const cr = chrome.getBoundingClientRect(); /* fractional boxes: a rounded offsetLeft hides half a pixel of overlap */
     const placed = [...chrome.querySelectorAll(':scope > .ro-lplate')].map((e) => { const r = e.getBoundingClientRect(); return [r.left - cr.left, r.right - cr.left, r.top - cr.top, r.bottom - cr.top]; });
+    const plates = placed.slice(), chipsPlaced = []; /* plates stay fixed; a placed chip may move left to make room (pushLeft) */
     const band = W || chrome.clientWidth || 1e9;
     for (const c of chips) {
       const base = parseFloat(c.dataset.y || c.style.top) || 0, x0 = parseFloat(c.dataset.x || c.style.left) || 0;
       c.style.left = px(x0); c.style.top = px(base); if (c.dataset.full) { text(c.querySelector('.ro-cn'), c.dataset.full); delete c.dataset.full; }
       const h = c.getBoundingClientRect().height || 17;
-      const hitList = (L0, R0, t) => placed.filter(([a, b, y0, y1]) => a < R0 + 1.5 && L0 < b + 1.5 && y0 < t + h && t < y1);
+      const hitList = (L0, R0, t) => placed.filter(([a, b, y0, y1]) => a < R0 + GAPC && L0 < b + GAPC && y0 < t + h && t < y1);
       const hits = (L0, R0, t) => hitList(L0, R0, t).length > 0;
       /* Paco's review of #921: names while there is room. Every spot within 64 px left or right on up to three levels is tried, the
          least move first (a level costs 12 px); only when none is free do the initials try the same, then (a crowd with no room) the
@@ -300,15 +302,46 @@
         }
         return pick;
       };
-      let pick = best();
-      /* no free spot for the whole name: a shorter name (first letters and "…") before bare initials */
+      /* no free spot even by sliding: the chips already placed on this row may move left (up to 64 px from their person, never onto a
+         plate) to make room: a chain, right to left; the cheapest spot counts a little more for each chip it moves */
+      const pushLeft = (L, t) => {
+        const moves = []; let limit = L - GAPC;
+        const row = chipsPlaced.filter((q) => q.t < t + h && t < q.t + q.h).sort((a, b) => b.l + b.w - (a.l + a.w));
+        for (const q of row) {
+          if (q.l + q.w <= limit) break;
+          const nl = limit - q.w;
+          if (nl < 0 || Math.abs(nl + q.w / 2 - q.x0) > 64 || plates.some(([a, b, y0, y1]) => a < nl + q.w + GAPC && nl < b + GAPC && y0 < q.t + q.h && q.t < y1)) return null;
+          moves.push([q, nl]); limit = nl - GAPC;
+        }
+        return moves;
+      };
+      const withPush = () => {
+        const w = c.getBoundingClientRect().width, l = x0 - w / 2; let found = null;
+        for (let k = 0; k < 3; k++) {
+          const t = base - 18 * k; if (t < 0 && k > 0) break;
+          for (let d = 0; d <= 64; d += 2) for (const dx of d ? [d, -d] : [0]) {
+            const L = l + dx;
+            if (L < 0 || L + w > band || plates.some(([a, b, y0, y1]) => a < L + w + GAPC && L < b + GAPC && y0 < t + h && t < y1)) continue;
+            const moves = pushLeft(L, t); if (!moves) continue;
+            const moved = new Map(moves);
+            if (!chipsPlaced.every((q) => { const ql = moved.has(q) ? moved.get(q) : q.l; return !(ql < L + w + GAPC && L < ql + q.w + GAPC && q.t < t + h && t < q.t + q.h); })) continue;
+            const score = d + 12 * k + 4 * moves.length; if (!found || score < found.score) found = { score, t, dx, l, w, moves };
+          }
+        }
+        if (!found) return null;
+        for (const [q, nl] of found.moves) { q.l = nl; q.ent[0] = nl; q.ent[1] = nl + q.w; q.c.style.left = px(nl + q.w / 2); }
+        return found;
+      };
+      let pick = best() || withPush();
+      /* no free spot for the whole name: a shorter one (its first letters and "…", from 6 down to 2), never bare initials (Paco, #921) */
       const nm = c.dataset.name || '', n = c.querySelector('.ro-cn'), g = Array.from(nm);
-      for (const v of [g.length > 7 ? g.slice(0, 6).join('') + '\u2026' : '', g.length > 5 ? g.slice(0, 4).join('') + '\u2026' : '', initials(nm)]) {
-        if (pick || !v) continue;
-        c.dataset.full = nm; text(n, v); pick = best();
+      for (const k of [6, 5, 4, 3, 2]) {
+        if (pick || k > g.length - 2) continue;
+        c.dataset.full = nm; text(n, g.slice(0, k).join('') + '\u2026'); pick = best() || withPush();
       }
       if (!pick) { const w = c.getBoundingClientRect().width, l = x0 - w / 2; let dx = 0; for (let i = 0; i < 40; i++) { const hl = hitList(l + dx, l + dx + w, base); if (!hl.length) break; dx = Math.max(...hl.map(([, b]) => b)) + 2 - l; } pick = { t: base, dx, l, w }; }
-      placed.push([pick.l + pick.dx, pick.l + pick.dx + pick.w, pick.t, pick.t + h]);
+      const ent = [pick.l + pick.dx, pick.l + pick.dx + pick.w, pick.t, pick.t + h];
+      placed.push(ent); chipsPlaced.push({ c, l: pick.l + pick.dx, w: pick.w, t: pick.t, h, x0, ent });
       c.style.top = px(pick.t); c.style.left = px(x0 + pick.dx); c._w = pick.w;
     }
     resolve(chrome);
@@ -341,5 +374,5 @@
 
   /* forget the session picks (Settings change of Characters, a test) */
   function reset() { PEOPLE = null; SEEN.clear(); TICKS.clear(); }
-  root.DurbarRealOffice = { render, reset, bad: () => [...BAD], resolve }; /* resolve: for the driver's deterministic check */
+  root.DurbarRealOffice = { render, reset, bad: () => [...BAD], resolve, stagger }; /* resolve: for the driver's deterministic check */
 })(typeof self !== 'undefined' ? self : this);
