@@ -30,14 +30,15 @@
   function el(layer, key, tag, cls) {
     let e = layer._k.get(key);
     if (!e || e.tagName !== tag.toUpperCase()) {
-      if (e) e.remove();
+      if (e) { if (layer._obs && layer._obs.delete(e)) layer._ro.unobserve(e); e.remove(); } /* a replaced element is unobserved too */
       e = document.createElement(tag); layer.appendChild(e); layer._k.set(key, e);
     }
     if (e.className !== cls) e.className = cls;
     layer._seen.add(key);
     return e;
   }
-  function sweep(layer) { for (const [k, e] of layer._k) if (!layer._seen.has(k)) { e.remove(); layer._k.delete(k); } }
+  /* an element that leaves is also unobserved (the resize observer of the chrome layer, settle), so the observed set cannot grow all day */
+  function sweep(layer) { for (const [k, e] of layer._k) if (!layer._seen.has(k)) { if (layer._obs && layer._obs.delete(e)) layer._ro.unobserve(e); e.remove(); layer._k.delete(k); } }
   function text(e, t) { t = String(t == null ? '' : t); if (e.textContent !== t) e.textContent = t; }
   function attr(e, k, v) { if (v == null || v === false) { if (e.hasAttribute(k)) e.removeAttribute(k); } else if (e.getAttribute(k) !== String(v)) e.setAttribute(k, String(v)); }
   function img(e, file) {
@@ -192,10 +193,12 @@
         if (p.go) { ch.type = 'button'; ch.dataset.pvopen = v.id; if (fx.id === 'coffee') ch.dataset.coffeeid = v.id; attr(ch, 'aria-label', ag.title + '. Open the chat.'); } else ch.dataset.for = v.id;
         attr(ch, 'title', ag.title); ch.dataset.name = ag.name; chipFill(ch, ag.name, ag.needsYou, model.alertIcon);
       }
-      const pl = el(chrome, 'fp:' + fx.id, p.post ? 'button' : 'div', 'ro-lplate' + (p.visitors.some((v) => v.needsYou) ? ' wait' : '')); box(pl, { x: fx.plate.x, y: fx.plate.y });
-      if (p.post) { pl.type = 'button'; pl.dataset.post = '1'; } else { attr(pl, 'role', 'group'); }
+      /* FR-025/FR-026 "as the flat lobby": the people that do not fit ("+N") open the flat lobby's own list (data-placemore, app.js
+         openPlaceMenu), so the plate is a button then, with a name that says so */
+      const pl = el(chrome, 'fp:' + fx.id, p.post || fx.more > 0 ? 'button' : 'div', 'ro-lplate' + (p.visitors.some((v) => v.needsYou) ? ' wait' : '')); box(pl, { x: fx.plate.x, y: fx.plate.y });
+      if (p.post) { pl.type = 'button'; pl.dataset.post = '1'; } else if (fx.more > 0) { pl.type = 'button'; pl.dataset.placemore = fx.id; attr(pl, 'aria-haspopup', 'menu'); } else { attr(pl, 'role', 'group'); }
       pl.dataset.place = fx.id; pl.style.maxWidth = px(Math.max(44, fx.plate.w));
-      attr(pl, 'title', p.title); attr(pl, 'aria-label', p.title);
+      attr(pl, 'title', fx.more > 0 ? p.title + '. ' + fx.more + ' more: open the list.' : p.title); attr(pl, 'aria-label', fx.more > 0 ? p.title + '. ' + fx.more + ' more: open the list.' : p.title);
       /* owner 2026-10-31 09:03: no bare count when the people are visible; "+N" only for those that do not fit */
       const lsig = JSON.stringify([p.label, fx.more]);
       if (pl._sig !== lsig) { pl._sig = lsig; pl.textContent = ''; const s = document.createElement('span'); s.textContent = p.label; pl.appendChild(s); if (fx.more > 0) { const b = document.createElement('b'); b.className = 'ro-more'; b.textContent = '+' + fx.more; pl.appendChild(b); } }
@@ -203,7 +206,30 @@
     [art, amb, lights, chrome].forEach(sweep);
     fitPlates(chrome, lay.width);
     stagger(chrome, lay.width);
+    settle(chrome, lay.width);
     return lay;
+  }
+
+  /* a font that arrives after the measure (a lazily loaded bold face, another machine's metrics) widens a chip or plate: a
+     ResizeObserver sees it and places again, so nothing overlaps in the settled state. A width equal to the one the placement
+     used ends it (no loop). */
+  function settle(chrome, W) {
+    if (typeof ResizeObserver !== 'function') return;
+    chrome._W = W;
+    if (!chrome._ro) {
+      let queued = false;
+      chrome._ro = new ResizeObserver(() => {
+        if (queued) return; queued = true;
+        requestAnimationFrame(() => {
+          queued = false;
+          if (!chrome.isConnected) return;
+          const moved = [...chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')].some((e) => e._w != null && Math.abs(e.getBoundingClientRect().width - e._w) > 0.5);
+          if (moved) { chrome._settled = (chrome._settled || 0) + 1; fitPlates(chrome, chrome._W); stagger(chrome, chrome._W); } /* _settled: the driver sees the observer act */
+        });
+      });
+    }
+    if (!chrome._obs) chrome._obs = new Set();
+    for (const e of chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')) if (!chrome._obs.has(e)) { chrome._obs.add(e); chrome._ro.observe(e, { box: 'border-box' }); }
   }
 
   /* Paco's review of #921 (art): a lobby place plate reads in full (never an ellipsis) when there is room: a plate wider than its
@@ -227,6 +253,7 @@
         p.style.left = px(l); p.style.maxWidth = px(Math.max(base, Math.min(r - l, need)));
       }
       const rr = p.getBoundingClientRect(), cr = chrome.getBoundingClientRect();
+      p._w = rr.width;
       done.push({ x0: rr.left - cr.left, x1: rr.right - cr.left, y0, y1 });
     }
   }
@@ -248,16 +275,19 @@
      band), and shows initials only when no spot is free for the name; measured once per render, left to right, so no two chips ever
      overlap */
   function stagger(chrome, W) {
+    const GAPC = 1; /* px between two chips, or a chip and a plate */
     const chips = [...chrome.querySelectorAll(':scope > .ro-chip')].sort((a, b) => parseFloat(a.dataset.x || a.style.left) - parseFloat(b.dataset.x || b.style.left));
     /* the place plates are there first: a chip never covers one */
     const cr = chrome.getBoundingClientRect(); /* fractional boxes: a rounded offsetLeft hides half a pixel of overlap */
     const placed = [...chrome.querySelectorAll(':scope > .ro-lplate')].map((e) => { const r = e.getBoundingClientRect(); return [r.left - cr.left, r.right - cr.left, r.top - cr.top, r.bottom - cr.top]; });
+    const plates = placed.slice(), chipsPlaced = []; /* plates stay fixed; a placed chip may move left to make room (pushLeft) */
     const band = W || chrome.clientWidth || 1e9;
     for (const c of chips) {
       const base = parseFloat(c.dataset.y || c.style.top) || 0, x0 = parseFloat(c.dataset.x || c.style.left) || 0;
       c.style.left = px(x0); c.style.top = px(base); if (c.dataset.full) { text(c.querySelector('.ro-cn'), c.dataset.full); delete c.dataset.full; }
       const h = c.getBoundingClientRect().height || 17;
-      const hits = (L0, R0, t) => placed.some(([a, b, y0, y1]) => a < R0 + 1.5 && L0 < b + 1.5 && y0 < t + h && t < y1);
+      const hitList = (L0, R0, t) => placed.filter(([a, b, y0, y1]) => a < R0 + GAPC && L0 < b + GAPC && y0 < t + h && t < y1);
+      const hits = (L0, R0, t) => hitList(L0, R0, t).length > 0;
       /* Paco's review of #921: names while there is room. Every spot within 64 px left or right on up to three levels is tried, the
          least move first (a level costs 12 px); only when none is free do the initials try the same, then (a crowd with no room) the
          initials move right until they touch nobody */
@@ -272,16 +302,65 @@
         }
         return pick;
       };
-      let pick = best();
-      /* no free spot for the whole name: a shorter name (first letters and "…") before bare initials */
+      /* no free spot even by sliding: the chips already placed on this row may move left (up to 64 px from their person, never onto a
+         plate) to make room: a chain, right to left; the cheapest spot counts a little more for each chip it moves */
+      const pushLeft = (L, t) => {
+        const moves = []; let limit = L - GAPC;
+        const row = chipsPlaced.filter((q) => q.t < t + h && t < q.t + q.h).sort((a, b) => b.l + b.w - (a.l + a.w));
+        for (const q of row) {
+          if (q.l + q.w <= limit) break;
+          const nl = limit - q.w;
+          if (nl < 0 || Math.abs(nl + q.w / 2 - q.x0) > 64 || plates.some(([a, b, y0, y1]) => a < nl + q.w + GAPC && nl < b + GAPC && y0 < q.t + q.h && q.t < y1)) return null;
+          moves.push([q, nl]); limit = nl - GAPC;
+        }
+        return moves;
+      };
+      const withPush = () => {
+        const w = c.getBoundingClientRect().width, l = x0 - w / 2; let found = null;
+        for (let k = 0; k < 3; k++) {
+          const t = base - 18 * k; if (t < 0 && k > 0) break;
+          for (let d = 0; d <= 64; d += 2) for (const dx of d ? [d, -d] : [0]) {
+            const L = l + dx;
+            if (L < 0 || L + w > band || plates.some(([a, b, y0, y1]) => a < L + w + GAPC && L < b + GAPC && y0 < t + h && t < y1)) continue;
+            const moves = pushLeft(L, t); if (!moves) continue;
+            const moved = new Map(moves);
+            if (!chipsPlaced.every((q) => { const ql = moved.has(q) ? moved.get(q) : q.l; return !(ql < L + w + GAPC && L < ql + q.w + GAPC && q.t < t + h && t < q.t + q.h); })) continue;
+            const score = d + 12 * k + 4 * moves.length; if (!found || score < found.score) found = { score, t, dx, l, w, moves };
+          }
+        }
+        if (!found) return null;
+        for (const [q, nl] of found.moves) { q.l = nl; q.ent[0] = nl; q.ent[1] = nl + q.w; q.c.style.left = px(nl + q.w / 2); }
+        return found;
+      };
+      let pick = best() || withPush();
+      /* no free spot for the whole name: a shorter one (its first letters and "…", from 6 down to 2), never bare initials (Paco, #921) */
       const nm = c.dataset.name || '', n = c.querySelector('.ro-cn'), g = Array.from(nm);
-      for (const v of [g.length > 7 ? g.slice(0, 6).join('') + '\u2026' : '', g.length > 5 ? g.slice(0, 4).join('') + '\u2026' : '', initials(nm)]) {
-        if (pick || !v) continue;
-        c.dataset.full = nm; text(n, v); pick = best();
+      for (const k of [6, 5, 4, 3, 2]) {
+        if (pick || k > g.length - 2) continue;
+        c.dataset.full = nm; text(n, g.slice(0, k).join('') + '\u2026'); pick = best() || withPush();
       }
-      if (!pick) { const w = c.getBoundingClientRect().width, l = x0 - w / 2; let dx = 0; for (let i = 0; i < 20 && hits(l + dx, l + dx + w, base); i++) dx += 6; pick = { t: base, dx, l, w }; }
-      placed.push([pick.l + pick.dx, pick.l + pick.dx + pick.w, pick.t, pick.t + h]);
-      c.style.top = px(pick.t); c.style.left = px(x0 + pick.dx);
+      if (!pick) { const w = c.getBoundingClientRect().width, l = x0 - w / 2; let dx = 0; for (let i = 0; i < 40; i++) { const hl = hitList(l + dx, l + dx + w, base); if (!hl.length) break; dx = Math.max(...hl.map(([, b]) => b)) + 2 - l; } pick = { t: base, dx, l, w }; }
+      const ent = [pick.l + pick.dx, pick.l + pick.dx + pick.w, pick.t, pick.t + h];
+      placed.push(ent); chipsPlaced.push({ c, l: pick.l + pick.dx, w: pick.w, t: pick.t, h, x0, ent });
+      c.style.top = px(pick.t); c.style.left = px(x0 + pick.dx); c._w = pick.w;
+    }
+    resolve(chrome);
+  }
+
+  /* the last word, on what is really drawn: a chip whose drawn box still touches a plate or an earlier chip (its width was not what
+     was measured: a font face that arrived in between, another machine's metrics) moves right past it. Left to right, a few passes. */
+  function resolve(chrome) {
+    const cr = chrome.getBoundingClientRect(), rel = (e) => { const r = e.getBoundingClientRect(); return { x0: r.left - cr.left, x1: r.right - cr.left, y0: r.top - cr.top, y1: r.bottom - cr.top }; };
+    const chips = [...chrome.querySelectorAll(':scope > .ro-chip')].sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+    for (let pass = 0; pass < 4; pass++) {
+      const placed = [...chrome.querySelectorAll(':scope > .ro-lplate')].map(rel);
+      let moved = false;
+      for (const c of chips) {
+        const r = rel(c), hit = placed.filter((q) => q.x0 < r.x1 - 0.3 && r.x0 < q.x1 - 0.3 && q.y0 < r.y1 - 0.3 && r.y0 < q.y1 - 0.3);
+        if (hit.length) { c.style.left = px((parseFloat(c.style.left) || 0) + Math.max(...hit.map((q) => q.x1)) + 1.5 - r.x0); moved = true; }
+        placed.push(rel(c));
+      }
+      if (!moved) break;
     }
   }
 
@@ -295,5 +374,5 @@
 
   /* forget the session picks (Settings change of Characters, a test) */
   function reset() { PEOPLE = null; SEEN.clear(); TICKS.clear(); }
-  root.DurbarRealOffice = { render, reset, bad: () => [...BAD] };
+  root.DurbarRealOffice = { render, reset, bad: () => [...BAD], resolve, stagger }; /* resolve: for the driver's deterministic check */
 })(typeof self !== 'undefined' ? self : this);
