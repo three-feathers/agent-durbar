@@ -1314,6 +1314,20 @@ async function main(): Promise<void> {
     await until('relaunch', () => (sp.calls.length >= 2 ? sp.calls[1] : undefined));
     const a2 = sp.calls[1].args;
     assert.deepStrictEqual([at(a2, '--model'), at(a2, '--effort'), at(a2, '--resume')], ['sonnet', 'high', sid], 'same session, new model and effort');
+    // spec 030 FR-060: the picker's choices one after another, each a whole request, before one message: the launch has them all, in either order
+    const idleTurns = (n: number) => until(`turn ${n} ended`, () => (events.filter((e) => e.sessionId === sid && e.type === 'status' && (e as { status: string }).status === 'idle').length >= n ? true : undefined));
+    await idleTurns(3);
+    await ad.setModel!(sid, { model: 'sonnet[1m]', contextTier: 'default', effort: 'high' });
+    await ad.setModel!(sid, { model: 'sonnet[1m]', contextTier: 'default', effort: 'low' });
+    await ad.send(sid, { text: 'three' });
+    await until('relaunch 2', () => (sp.calls.length >= 3 ? sp.calls[2] : undefined));
+    assert.deepStrictEqual([at(sp.calls[2].args, '--model'), at(sp.calls[2].args, '--effort')], ['sonnet[1m]', 'low'], 'effort after model');
+    await idleTurns(4);
+    await ad.setModel!(sid, { model: 'sonnet[1m]', contextTier: 'default', effort: 'high' });
+    await ad.setModel!(sid, { model: 'haiku', contextTier: 'default', effort: 'high' });
+    await ad.send(sid, { text: 'four' });
+    await until('relaunch 3', () => (sp.calls.length >= 4 ? sp.calls[3] : undefined));
+    assert.deepStrictEqual([at(sp.calls[3].args, '--model'), at(sp.calls[3].args, '--effort')], ['haiku', 'high'], 'model after effort');
     await ad.stop(sid);
     await ad.dispose();
   }
