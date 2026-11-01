@@ -416,6 +416,7 @@ I choose a world, and its people come with it. If I pick characters myself, they
   - **Seated states, required**: `typeA`, `typeB`, `waveA`, `waveB`, `think`, `rest`.
   - **Standing activity views, required**: `book`, `coffee`, `tread`, `letter`, `knock`.
   - **Optional, with the only fallbacks**: `box`, `touch`, `tool`, `wait`, each to `letter` (097 FR-024).
+  - **Back views, optional, for arrangements that use them** (owner, 2026-11-01: "ok to show back"): `backA`, `backB`, a seated person from behind, with `headTop`, `bodyH` and `floorLine` but no `faceBox`. Hover or keyboard focus shows the big screen as for any desk (097). A set without them draws its front seated frames in those seats, and the report says so, so `full` does not need them and any set still works in any world. `[KNOWN GAP]` no set has them until drawn; crew art approval still applies per image (FR-206, 097 Q6).
   - **Anchors, required**: `headTop`, `bodyH`, `hand`, `faceBox`; `floorLine` on standing frames; `realHeight`, default 1.70 m.
   - **Format**: 098's: WebP with alpha, at most 640 px tall and 80 KB, two sizes (097 FR-183), facing front. Feet on `floorLine` within 2 px by alpha.
   - **Minimum**: one person passes. Fewer than 15 repeats people at 15 agents, and the report says so. A required frame has no fallback.
@@ -472,6 +473,7 @@ I choose a world, and its people come with it. If I pick characters myself, they
   - 096 FR-022: the encoder job takes a list of targets. 077 FR-057 was already changed by 096.
   - 097, on the branch of #925 and on P1's: **FR-100** (crews no longer pick worlds; a cartoon crew may be drawn in the photo office; worlds name a default set; the world list is FR-011), **FR-114** (no *Match my characters*; the World and Characters rows are FR-201, stored as FR-201 says), **T100** (`realOfficeWorld(characters, worldPref)` becomes `peopleFor`, FR-202), **T102** (the Settings rows), **D3, FR-081, FR-083, FR-084** (`realOfficeSet`), **Q6** (crews with their own world becomes a default set), **FR-112** (offered worlds), **FR-001, FR-003, FR-004** and the *Doors you closed* edge case (no third Office layout button, no `durbar.doorsigns`, no "Switch to an open office?" question, no doors; spec 017 FR-029). These lines are not edited here, because #921 and #925 hold them.
   - 098 FR-011: `worlds[id].crews` becomes `defaultSet`; FR-030's `person` block moves to a set pack, with the same rules; FR-032 also checks sets; FR-033 "eight blocks" drops `person` and gains `room`.
+  - 098 FR-030: the `person` block gains the optional back views of FR-204.
   - 096 FR-040 and FR-050: `mine` is a set with a level per character; Real office frames follow FR-204.
   - 077 FR-064, FR-065: `theme` becomes `default` (FR-201, FR-203).
   - 021: FR-066, FR-067, FR-068 record the decisions (in this PR).
@@ -654,3 +656,7 @@ Replaces, in the entry above, the removal of FR-210, its "no project world has a
 - **New:** `aisles`, `flanking`; FR-237..FR-239; T179, T180. FR-041, FR-226..FR-229, SC-019 and 098 FR-082 follow. Numbers checked: FR-240 and up, T190 and up are on #999.
 - `flanking` is named from the mockup: two desk blocks either side of a central aisle holding the fixtures. Durbar hall's row uses only what the mockup shows, plus the owner's points: flags with our golden mark, period lamp on the desk, gold bead monitor.
 - `[KNOWN GAP]` no mockup proves 15 fits (FR-229). Pirate ship deck: a row is pending; none is invented here.
+
+### 2026-11-01: back views (owner decision: "ok to show back")
+
+FR-204 gains optional `backA`, `backB` for arrangements that use them, with hover or keyboard focus showing the big screen; FR-190 and T100 follow. Art is later work and a `[KNOWN GAP]` until drawn; crew art approval still applies per image.
