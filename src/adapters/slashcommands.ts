@@ -19,6 +19,7 @@ import * as path from 'path';
 import { cleanSessionTitle } from './history';
 import { isInsideRoots } from './permissions';
 import { redact, redactMarkdown } from '../shared/redact';
+import { readCapped } from '../shared/cappedread';
 import type { SlashCommand, SlashExpansion } from './types';
 
 export const MAX_SLASH_PER_DIR = 100;
@@ -94,22 +95,15 @@ export interface SlashFs {
   mtime(p: string): number;
 }
 
-const realFs: SlashFs = {
+export const realFs: SlashFs = {
   realpath: (p) => fs.realpathSync(p),
   lstat: (p) => fs.lstatSync(p),
   readdir: (p) => fs.readdirSync(p),
   readHead: (p, max, limit) => {
-    // never blocks: a FIFO or device swapped in after discovery opens at once and fails the regular-file check (review on #535)
-    const fd = fs.openSync(p, fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK ?? 0));
-    try {
-      const st = fs.fstatSync(fd);
-      if (!st.isFile() || st.size > limit) throw new Error('too large');
-      const buf = Buffer.alloc(Math.min(max, st.size));
-      const n = buf.length ? fs.readSync(fd, buf, 0, buf.length, 0) : 0;
-      return buf.subarray(0, n).toString('utf8');
-    } finally {
-      fs.closeSync(fd);
-    }
+    // the shared read (issue #917): never blocks, never follows a final link, regular file with one link, at most `limit` bytes (review on #535)
+    const r = readCapped(fs, fs.constants, p, limit);
+    if (!r.ok) throw new Error(r.code === 'not-file' || r.code === 'too-big' ? 'too large' : `cannot read (${r.code})`);
+    return r.buf.subarray(0, Math.min(max, r.buf.length)).toString('utf8');
   },
   mtime: (p) => fs.statSync(p).mtimeMs,
 };

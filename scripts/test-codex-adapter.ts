@@ -410,6 +410,19 @@ async function main(): Promise<void> {
       await server.flush();
       const tp2 = server.requests('turn/start').pop()!.params as Record<string, unknown>;
       assert.deepStrictEqual([tp2.model, tp2.effort, tp2.threadId], ['gpt-6.1-sol', 'high', tp.threadId], 'the next turn uses the new model on the same thread');
+      // spec 030 FR-060: the picker's choices one after another, each a whole request: the next turn has them all, in either order
+      await ad.setModel!(sid, { model: 'gpt-6-luna', contextTier: 'default', effort: 'high' });
+      await ad.setModel!(sid, { model: 'gpt-6-luna', contextTier: 'default', effort: 'low' });
+      await ad.send(sid, { text: 'effort after model' });
+      await server.flush();
+      const tpA = server.requests('turn/start').pop()!.params as Record<string, unknown>;
+      assert.deepStrictEqual([tpA.model, tpA.effort], ['gpt-6-luna', 'low'], 'effort after model');
+      await ad.setModel!(sid, { model: 'gpt-6-luna', contextTier: 'default', effort: 'high' });
+      await ad.setModel!(sid, { model: 'gpt-6.1-sol', contextTier: 'default', effort: 'high' });
+      await ad.send(sid, { text: 'model after effort' });
+      await server.flush();
+      const tpB = server.requests('turn/start').pop()!.params as Record<string, unknown>;
+      assert.deepStrictEqual([tpB.model, tpB.effort], ['gpt-6.1-sol', 'high'], 'model after effort');
       assert.strictEqual((await ad.setModel!(sid, { model: 'auto', effort: null })).status, 'applied');
       await ad.send(sid, { text: 'third' });
       await server.flush();
