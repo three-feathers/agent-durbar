@@ -218,5 +218,18 @@ module.exports = async (ctx) => {
   assert.ok(await until(`!!document.getElementById('scrClose')&&!document.getElementById('orgSec')`), 'no policy: no Organization section');
   await js(`document.getElementById('scrClose').click()`);
 
+  /* sweep: a slow reply of an earlier paint does not overwrite the section of a later one */
+  await H.load({ w: 1440, h: 900, ready: 'fit', focus: true, query: { simkinds: 'mixed', simorgpolicy: '1' } });
+  await js(`(()=>{const b=window.__durbarSimUi.bridge(),f=b.orgPolicyView;let n=0;window.__orgLate=null;b.orgPolicyView=function(...a){n++;if(n===1)return new Promise((_ok,no)=>{window.__orgLate=()=>no(new Error('late'));});return f.apply(this,a);};})();0`);
+  await js(`document.getElementById('settingsBtn').click()`);
+  assert.ok(await until(`!!window.__orgLate&&!!document.getElementById('orgSet')`), 'the first read is held');
+  await js(`document.getElementById('scrClose').click()`);
+  await js(`document.getElementById('settingsBtn').click()`);
+  assert.ok(await until(`document.querySelectorAll('#orgSet li.orgrow').length===3`), 'the later read fills the section');
+  await js(`window.__orgLate();new Promise(r=>setTimeout(r,200))`); // a bound on a negative
+  assert.strictEqual(await js(`document.querySelectorAll('#orgSet li.orgrow').length`), 3, 'the earlier reply, a failure, does not overwrite it');
+  assert.strictEqual(await js(`!!document.querySelector('#orgSet p.scr-note.warn')`), false, 'no failure line from the earlier read');
+  await js(`document.getElementById('scrClose').click()`);
+
   console.log('[076] orgpolicy PASS');
 };

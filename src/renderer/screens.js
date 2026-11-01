@@ -117,6 +117,7 @@
   const liveBusy=new Set(); /* `<server>\0<chat>`: a Restart under way; `\0<chat>`: a Restart session under way */
   let liveSeen=new Map(); /* server -> the summary last shown (state changes are announced, FR-083) */
   const liveMore=new Set(); /* `<server>\0<chat>` whose More (Restart behind a needs-sign-in row) is open */
+  let orgSeq=0;
   let liveSeq=0; /* review on PR 609: each load has a number; a reply of an older load that ends later is dropped */
   let liveStale=false; /* an event came while the list was hidden (Advanced collapsed): reload when it opens */
   function onLiveToggle(e){const d=e.target;if(!d||!d.matches||!d.matches('details.lv-more'))return;if(d.open)liveMore.add(d.dataset.lvk);else liveMore.delete(d.dataset.lvk);}
@@ -401,7 +402,9 @@
     if(window.DurbarHarnesses&&window.DurbarHarnesses.shown)window.DurbarHarnesses.shown(!!hsSec); /* spec 081 FR-016: the card is the announcement while it is on screen */
     if(hsSec)window.DurbarHarnesses.loadAccounts(acctAgain); /* spec 051 FR-014: the account lines fill in after the paint (Codex takes about 2 s) */
     if(orgSec){(async()=>{ /* FR-208: a failed read is "unknown", never "no policy"; an empty view hides the section */
+      const seq=++orgSeq; /* as liveSeq: only the newest paint's reply counts */
       let v=null,failed=false;try{v=await X.bridge.orgPolicyView();}catch(e){failed=true;}
+      if(seq!==orgSeq)return;
       const box=$('orgSet');if(!box||!(cur&&cur.kind==='settings'))return;
       const sec=window.DurbarOrgWords.sectionOf(v,failed);
       if(!sec.failed&&!sec.rows.length){const w=$('orgSec');if(w)w.remove();return;}
