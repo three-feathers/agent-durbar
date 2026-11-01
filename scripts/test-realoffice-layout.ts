@@ -501,7 +501,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   const L3 = realLayout(model(15, 4, { states: ['working', 'waiting', 'thinking', 'error', 'done'] }), { w: 1280, h: 740 }, META);
   for (const d of L3.zones.flatMap((z) => z.desks)) if (d.person) {
     assert.strictEqual(d.person.fileB, POSE_FRAME_B[d.person.pose] ? d.person.file.replace(d.person.pose, POSE_FRAME_B[d.person.pose]) : null, 'frame B of ' + d.person.file);
-    if (d.person.fileB) assert.ok(fs.existsSync(path.join(ROOT, 'src', 'renderer', 'realoffice', 'art', d.person.fileB)), 'frame B exists: ' + d.person.fileB);
+    if (d.person.fileB) assert.ok(fs.existsSync(path.join(ROOT, 'src', 'renderer', 'realoffice', 'sets', 'office', d.person.fileB)), 'frame B exists: ' + d.person.fileB);
   }
   // FR-034: zoomRect
   const view = { x: 0, y: 0, w: 1280, h: 740 }, size = { w: 420, h: 248, minH: 124 };

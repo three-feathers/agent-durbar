@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Real office mode (owner request, Vikram 2026-10-30/31): a realistic front-facing open-plan office as a second office mode beside flat (default), live screens, animated people, status lights; folds in #692
-note: P1 (scene, lights) and P2 (screens, hover zoom, motion) built; world seam (T100..T102, pack move) built, no second world offered; P3 (My characters, manual lighting) not; crews' worlds (FR-100/FR-114) not
+note: P1, P2 (screens, zoom, motion) and the world seam built, no second world offered; P3 (My characters, lighting) and crews' worlds not
 status: building
 -->
 
