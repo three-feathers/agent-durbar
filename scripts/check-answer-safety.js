@@ -115,7 +115,9 @@ module.exports = async (ctx) => {
       assert.ok(await js(`(()=>{const b=[...document.querySelectorAll('#answerBar .ab-opt')].find(x=>x.textContent===${jsLiteral(lbl)});if(!b)return false;b.focus();return document.activeElement===b})()`), `${w}: focus on the agent's option "${lbl}"`);
       await emit({ type: 'question', phase: 'cancelled', requestId: 'r1-' + w, reason: 'stop' });
       assert.ok(await until(`/Second\?/.test(document.getElementById('answerBar').textContent)`, 5000), `${w}: the bar shows the second question`);
-      assert.ok(await until(`document.activeElement.classList.contains('ghost')`, 3000), `${w}: focus is on the bar's own Show button, not on the option "${lbl}" (is ${await js('document.activeElement.className+"/"+document.activeElement.textContent')})`);
+      const okGhost = await until(`document.activeElement.classList.contains('ghost')`, 3000);
+      const here = await js('document.activeElement.className+"/"+document.activeElement.textContent');
+      assert.ok(okGhost, w + ": focus is on the bar's own Show button, not on the option " + lbl + ' (is ' + here + ')');
       await nkey('Return');
       assert.deepStrictEqual(await got('ans'), [], `${w}: Enter answers neither (option "${lbl}") ${jsLiteral(await got('ans'))}`);
     }
@@ -125,11 +127,14 @@ module.exports = async (ctx) => {
       await fresh();
       await ask('s1-' + w, 'First?', [lbl, 'other']);
       await barUp();
-      assert.ok(await until(`!!document.querySelector('#answerBar .${cls}')`, 5000), `${w}: the bar has its ${cls} button`);
-      await js(`document.querySelector('#answerBar .${cls}').focus()`);
+      const sel = '#answerBar .' + cls;
+      assert.ok(await until(`!!document.querySelector(${jsLiteral(sel)})`, 5000), w + ': the bar has its ' + cls + ' button');
+      await js(`document.querySelector(${jsLiteral(sel)}).focus()`);
       await ask('s2-' + w, 'Second?', ['x', 'y']);
       assert.ok(await until(`/1 of 2/.test(document.getElementById('answerBar').textContent)`, 5000), `${w}: the bar repainted with the count`);
-      assert.ok(await js(`document.activeElement.classList.contains('${cls}')&&!document.activeElement.classList.contains('ab-opt')`), `${w}: focus stays on the real "${lbl}" control, not the agent's option of that name (is ${await js('document.activeElement.className+"/"+document.activeElement.textContent')})`);
+      const stays = await js(`document.activeElement.classList.contains(${jsLiteral(cls)})&&!document.activeElement.classList.contains('ab-opt')`);
+      const now = await js('document.activeElement.className+"/"+document.activeElement.textContent');
+      assert.ok(stays, w + ': focus stays on the real ' + lbl + " control, not the agent's option of that name (is " + now + ')');
     }
 
     // ---- a held Enter in a chat question's "Other" box, with a slow bridge: one answer ----
@@ -220,7 +225,8 @@ module.exports = async (ctx) => {
     assert.ok(await until(`/stopped here/.test(document.querySelector('#chat .note.limit .pstate').textContent)`, 3000), `${w}: the event settled the card as stopped`);
     await js(`window.__rel.shift()({ok:true})`);
     await H.settle(600).catch(() => {});
-    assert.ok(/stopped here/.test(await js(`document.querySelector('#chat .note.limit .pstate').textContent`)), `${w}: the late reply left it "stopped here" (is ${await js(`document.querySelector('#chat .note.limit .pstate').textContent`)})`);
+    const stateText = await js(`document.querySelector('#chat .note.limit .pstate').textContent`);
+    assert.ok(/stopped here/.test(stateText), w + ': the late reply left it "stopped here" (is ' + stateText + ')');
 
     // ---- FR-212 (E): the plan takes focus on Approve only if no modal is open, the box is empty, and focus is on the page or in the empty box ----
     const plan = (n) => emit({ type: 'plan', phase: 'proposed', requestId: 'pl' + n + '-' + w, text: '1. Do a thing' });

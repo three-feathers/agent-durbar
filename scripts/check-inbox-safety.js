@@ -218,12 +218,14 @@ module.exports = async (ctx) => {
     // empty amount, real click on Raise limit: the focus is in the amount, nothing is sent
     await js(`document.querySelector(${jsLiteral(row(C) + ' .ib-amt')}).value=''`);
     await click(row(C) + ' button.primary');
-    assert.ok(await until(`document.activeElement.classList.contains('ib-amt')`, 3000), `${w}: after an empty Raise limit the focus is in the amount (is ${await js('document.activeElement.tagName+"."+document.activeElement.className')})`);
+    const inAmt = await until(`document.activeElement.classList.contains('ib-amt')`, 3000);
+    assert.ok(inAmt, w + ': after an empty Raise limit the focus is in the amount (is ' + (await js('document.activeElement.tagName+"."+document.activeElement.className')) + ')');
     assert.deepStrictEqual(await lims(), [], `${w}: nothing is sent`);
     // real click into the field, type 50, Enter: the amount is 50, no message goes to the agent
     await js(`document.querySelector(${jsLiteral(row(C) + ' .ib-amt')}).value=''`);
     await click(row(C) + ' .ib-amt');
-    assert.ok(await until(`document.activeElement.classList.contains('ib-amt')`, 3000), `${w}: a click into the amount focuses it (is ${await js('document.activeElement.tagName+"."+document.activeElement.className')})`);
+    const clicked = await until(`document.activeElement.classList.contains('ib-amt')`, 3000);
+    assert.ok(clicked, w + ': a click into the amount focuses it (is ' + (await js('document.activeElement.tagName+"."+document.activeElement.className')) + ')');
     await nkey('5', { char: '5' });
     await nkey('0', { char: '0' });
     assert.strictEqual(await js(`document.querySelector(${jsLiteral(row(C) + ' .ib-amt')}).value`), '50', `${w}: the typed digits are in the amount`);
@@ -245,7 +247,8 @@ module.exports = async (ctx) => {
     assert.ok(await until(`window.__perm.length===1`, 3000), `${w}: A answers the row`);
     for (const t of [50, 300, 500]) {
       await ctx.sleep(t === 50 ? 50 : 150);
-      assert.ok(await js(`!!document.activeElement.closest('#inboxDlg')`), `${w}: focus is still in the dialog after the answer (is ${await js('document.activeElement.id+"/"+document.activeElement.tagName')})`);
+      const inDlg = await js(`!!document.activeElement.closest('#inboxDlg')`);
+      assert.ok(inDlg, w + ': focus is still in the dialog after the answer (is ' + (await js('document.activeElement.id+"/"+document.activeElement.tagName')) + ')');
     }
     await nkey('Return');
     assert.deepStrictEqual(await js('window.__sent'), [], `${w}: the next Enter sends no draft`);
