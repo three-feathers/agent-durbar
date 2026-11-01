@@ -22,6 +22,16 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until } = H;
+  const wc = () => ctx.win.webContents;
+  // a real key through the input pipeline; `repeat` marks it as held down (Electron: the 'isAutoRepeat' modifier)
+  const nkey = async (keyCode, o = {}) => {
+    const modifiers = o.repeat ? ['isAutoRepeat'] : [];
+    wc().sendInputEvent({ type: 'keyDown', keyCode, modifiers });
+    if (keyCode === 'Return') wc().sendInputEvent({ type: 'char', keyCode: '\r', modifiers });
+    else if (o.char) wc().sendInputEvent({ type: 'char', keyCode: o.char, modifiers });
+    wc().sendInputEvent({ type: 'keyUp', keyCode });
+    await ctx.sleep(80);
+  };
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     let A, B, C;
     const emit = (e) => js(`window.__durbarSimUi.emit(${jsLiteral(Object.assign({ timestamp: 1 }, e))})`);
@@ -36,7 +46,8 @@ module.exports = async (ctx) => {
       [A, B, C] = ids;
       await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__perm=[];window.__lim=[];if(!b.__w2){const p=b.resolvePermission,l=b.resolveLimit;
         b.resolvePermission=function(id,rid,ok){window.__perm.push(rid+':'+ok);return p.apply(this,arguments)};
-        b.resolveLimit=function(id,rid,c){window.__lim.push(JSON.stringify(c));return l.apply(this,arguments)};b.__w2=1;}})()`);
+        b.resolveLimit=function(id,rid,c){window.__lim.push(JSON.stringify(c));if(window.__hold)return new Promise(r=>window.__rel.push(r));return l.apply(this,arguments)};b.__w2=1;}
+        window.__hold=false;window.__rel=[];window.__ann=[];const sr=document.getElementById('srAnnounce');new MutationObserver(()=>window.__ann.push(sr.textContent)).observe(sr,{childList:true,characterData:true,subtree:true});})()`);
     };
     await fresh();
     const perms = () => js('window.__perm.slice()');
@@ -65,6 +76,7 @@ module.exports = async (ctx) => {
     assert.ok(await until(`window.__perm.length>1||/Already answered/.test((document.querySelector(${jsLiteral(row(A) + ' .ib-done')})||{}).textContent||'')`, 3000), `${w}: the stale press ends`);
     assert.deepStrictEqual(await perms(), before, `${w}: a stale button sends nothing (card 1 was answered, card 2 is not its request): ${jsLiteral(await perms())}`);
     assert.ok(await until(`/Already answered/.test((document.querySelector(${jsLiteral(row(A) + ' .ib-done')})||{}).textContent||'')`, 3000), `${w}: the stale button says so`);
+    assert.ok(await until(`window.__ann.some(t=>/^Already answered/.test(t))`, 3000), `${w}: and it is announced ${jsLiteral(await js('window.__ann.slice(-4)'))}`);
     assert.strictEqual(await js(`document.querySelectorAll('#chat .note.perm.pending').length`), 1, `${w}: card 2 is still waiting`);
     await closeInbox();
     // a fresh row answers card 2, which proves the live path still works
@@ -88,6 +100,16 @@ module.exports = async (ctx) => {
     await H.settle(800).catch(() => {});
     assert.strictEqual((await perms()).length, n0, `${w}: a held A, S, D or Enter answers nothing`);
     assert.strictEqual(await js(`!!document.querySelector(${jsLiteral(row(B) + '[data-answering]')})`), false, `${w}: the row is not being answered`);
+    // a held Space and O do nothing (synthetic); a native held Enter on a focused Deny, a native held A and a native held O (their default actions need the real pipeline)
+    await kd(row(B) + ' .ib-h', ' ', true);
+    await kd(row(B) + ' .ib-h', 'o', true);
+    await js(`document.querySelector(${jsLiteral(row(B) + ' [data-k="deny"]')}).focus()`);
+    for (let i = 1; i <= 3; i++) await nkey('Return', { repeat: true });
+    await js(`document.querySelector(${jsLiteral(row(B) + ' .ib-h')}).focus()`);
+    for (let i = 1; i <= 3; i++) await nkey('A', { repeat: true, char: 'a' });
+    for (let i = 1; i <= 3; i++) await nkey('O', { repeat: true, char: 'o' });
+    assert.strictEqual((await perms()).length, n0, `${w}: native held Enter, A, O answer nothing ${jsLiteral(await perms())}`);
+    assert.strictEqual(await js(`!!document.getElementById('inboxDlg')`), true, `${w}: a held O does not open the chat`);
     await kd(row(B) + ' .ib-h', 'a', false); // the same key, pressed once, still answers (the positive control)
     assert.ok(await until(`window.__perm.length===${jsLiteral(n0 + 1)}`, 3000), `${w}: one press of A answers`);
     assert.ok(await until(`!document.querySelector(${jsLiteral(row(B) + ' [data-k="approve"]')})`, 6000), `${w}: the answered row is repainted without the answer`);
@@ -105,7 +127,7 @@ module.exports = async (ctx) => {
     assert.ok(await until(`!!document.querySelector(${jsLiteral(row(C) + ' .ib-amt')})`, 1500).catch(() => false), `${w}: the limit row shows the amount field`);
     const lr = await js(`(()=>{const r=document.querySelector(${jsLiteral(row(C))});const amt=r.querySelector('.ib-amt')||{value:'(none)',getAttribute(){return ''},getClientRects(){return []}};
       return {amt:amt.value,label:amt.getAttribute('aria-label'),shown:amt.getClientRects().length>0,btns:[...r.querySelectorAll('.ib-ans button')].map(b=>b.textContent),
-        keyed:[...r.querySelectorAll('button')].filter(b=>b.getAttribute('aria-keyshortcuts')||/approve|session|deny/.test(b.dataset.k||'')).length}})()`);
+        keyed:[...r.querySelectorAll('button')].filter(b=>b.dataset.k!=='open').filter(b=>b.getAttribute('aria-keyshortcuts')||/approve|session|deny/.test(b.dataset.k||'')).length}})()`);
     assert.strictEqual(lr.amt, '5', `${w}: the field shows what would be sent`);
     assert.ok(lr.shown && lr.label, `${w}: the field is visible and named`);
     assert.deepStrictEqual(lr.btns, ['Raise limit', 'Remove limit', 'Stop here'], `${w}: the buttons keep their own words`);
@@ -119,9 +141,29 @@ module.exports = async (ctx) => {
     assert.ok(await until(`document.querySelector(${jsLiteral(row(C) + ' .ib-amt')}).getAttribute('aria-invalid')==='true'`, 3000), `${w}: the empty amount is flagged (aria-invalid)`);
     assert.deepStrictEqual(await lims(), [], `${w}: an empty amount sends nothing`);
     assert.strictEqual(await js(`!!document.querySelector(${jsLiteral(row(C) + '[data-answering]')})`), false, `${w}: the row is not being answered`);
+    // zero and a number that rounds to zero send nothing
+    for (const v of ['0', '0.004']) {
+      await js(`document.querySelector(${jsLiteral(row(C) + ' .ib-amt')}).value=${jsLiteral(v)}`);
+      await js(`[...document.querySelectorAll(${jsLiteral(row(C) + ' button')})].find(b=>b.textContent==='Raise limit').click()`);
+      assert.deepStrictEqual(await lims(), [], `${w}: ${v} sends nothing from the row ${jsLiteral(await lims())}`);
+      assert.strictEqual(await js(`!!document.querySelector(${jsLiteral(row(C) + '[data-answering], ' + row(C) + ' .ib-done')})`), false, `${w}: ${v}: the row is not answering and says nothing was done`);
+    }
+    // really typing in the amount is not a command: J moves nowhere, and A, S, D send nothing
+    await js(`(()=>{const a=document.querySelector(${jsLiteral(row(C) + ' .ib-amt')});a.value='';a.focus();})()`);
+    for (const [kc, ch] of [['J', 'j'], ['K', 'k'], ['A', 'a'], ['S', 's'], ['D', 'd']]) await nkey(kc, { char: ch });
+    assert.strictEqual(await js(`document.activeElement.classList.contains('ib-amt')`), true, `${w}: typing j, k, a, s, d in the amount keeps focus there`);
+    assert.deepStrictEqual(await lims(), [], `${w}: and sends nothing`);
+    // what was typed survives a repaint (closing and opening paints again), and the Open button keeps its O
+    await js(`(()=>{const a=document.querySelector(${jsLiteral(row(C) + ' .ib-amt')});a.value='12';a.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await closeInbox();
+    await openInbox();
+    assert.ok(await until(`!!document.querySelector(${jsLiteral(row(C) + ' .ib-amt')})`, 5000));
+    assert.strictEqual(await js(`document.querySelector(${jsLiteral(row(C) + ' .ib-amt')}).value`), '12', `${w}: the typed amount is kept for the same request`);
+    assert.strictEqual(await js(`document.querySelector(${jsLiteral(row(C) + ' .ib-open')}).getAttribute('aria-keyshortcuts')`), 'O', `${w}: a limit row's Open still names its key`);
     // the number in the row is the number sent
     await js(`document.querySelector(${jsLiteral(row(C) + ' .ib-amt')}).value='7'`);
     await js(`[...document.querySelectorAll(${jsLiteral(row(C) + ' button')})].find(b=>b.textContent==='Raise limit').click()`);
+    assert.strictEqual(await js(`document.querySelector(${jsLiteral(row(C) + ' .ib-amt')}).disabled`), true, `${w}: the amount is off while the row is answering`);
     assert.ok(await until(`window.__lim.length===1`, 3000), `${w}: Raise limit sends`);
     assert.strictEqual((await lims())[0], JSON.stringify({ kind: 'add', credits: 7 }), `${w}: it sent the 7 the row showed`);
     const said = await until(`/Raise limit/.test((document.querySelector(${jsLiteral(row(C) + ' .ib-done')})||{}).textContent||'')`, 3000);
@@ -141,6 +183,29 @@ module.exports = async (ctx) => {
     await alt(false);
     assert.ok(await until(`window.__perm.length===1`, 3000), `${w}: one Alt+A answers the oldest`);
     assert.strictEqual((await perms())[0], 'k1-' + w + ':true', `${w}: ... and it is the first card`);
+    // held Alt+S and Alt+D answer nothing; one Alt+D denies the oldest (k2 carries a session grant so Alt+S has a button)
+    const altKey = (k, repeat) => js(`document.getElementById('msgInput').dispatchEvent(new KeyboardEvent('keydown',{key:${jsLiteral(k.toLowerCase())},code:${jsLiteral('Key' + k)},altKey:true,repeat:${jsLiteral(!!repeat)},bubbles:true,cancelable:true}))`);
+    for (let i = 0; i < 3; i++) { await altKey('S', true); await altKey('D', true); }
+    await H.settle(800).catch(() => {});
+    assert.strictEqual((await perms()).length, 1, `${w}: a held Alt+S and Alt+D answer nothing ${jsLiteral(await perms())}`);
+    await altKey('D', false);
+    assert.ok(await until(`window.__perm.length===2`, 3000), `${w}: one Alt+D denies the next`);
+    assert.strictEqual((await perms())[1], 'k2-' + w + ':false', `${w}: ... k2`);
+
+    // ---- FR-206: a card whose answer is already on its way (its button disabled) is not answered again from the row ----
+    await fresh();
+    await emit({ type: 'limit', sessionId: C, phase: 'exhausted', requestId: 'lf-' + w, maxAiCredits: 5, usedAiCredits: 5 });
+    await openInbox();
+    assert.ok(await until(`!!document.querySelector(${jsLiteral(row(C) + ' .ib-amt')})`, 5000));
+    await js(`window.__hold=true`);
+    // the card's own Raise limit (in the chat DOM of that agent) goes out and waits
+    await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(C)});const c=a.limit&&a.limit.n;[...c.querySelectorAll('.note-actions button')].find(b=>b.textContent==='Raise limit').click();})()`);
+    assert.ok(await until(`window.__lim.length===1`, 3000), `${w}: the card's answer is in flight`);
+    await js(`[...document.querySelectorAll(${jsLiteral(row(C) + ' button')})].find(b=>b.textContent==='Raise limit').click()`);
+    await H.settle(800).catch(() => {});
+    assert.strictEqual((await lims()).length, 1, `${w}: the row does not answer it a second time ${jsLiteral(await lims())}`);
+    assert.ok(await until(`/Already answered/.test((document.querySelector(${jsLiteral(row(C) + ' .ib-done')})||{}).textContent||'')`, 3000), `${w}: and the row says so`);
+    await closeInbox();
   }
   if (failed.length) throw new Error(failed.length + ' checks failed (INBOX_SOFT)');
   console.log('[inbox-safety] PASS');

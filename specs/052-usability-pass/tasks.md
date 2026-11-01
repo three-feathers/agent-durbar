@@ -350,3 +350,6 @@
 - [x] T203 `check-inbox-safety.js` first (on `main` it fails: a stale button re-answers a request, a held A answers, key A sends a limit's hidden amount), then `reqOf` and the live-card check in `paintInbox` [FR-206]; UI-suite entry
 - [x] T204 Limit row: the amount field in the row, no letter keys, own words, empty amount sends nothing, typing is not a command [FR-207]
 - [x] T205 `inboxKey` ignores `e.repeat` on A, S, D, O, Enter, Space and the chat's Alt+A/S/D; no key on a row being answered [FR-208]; five mutants run
+- [x] T206 Review of #1004 (independent security review): `check-answer-safety.js` first, then the answer bar's focus rule and no limit buttons in the bar [FR-210], the composer's repeat guard [FR-211], the limit card's in-flight lock, rounding and late-answer rule, the row's kept amount and Open key [FR-209]; native key steps with `isAutoRepeat`; every mutant run one at a time and listed in the PR
+- [x] T207 Plan card focus (spec 066 FR-064) [FR-212]; driver step in `check-answer-safety.js`
+- [x] T208 Corrected FR-206's wording (the broker ignores a second answer: no wrong approval from the stale row)

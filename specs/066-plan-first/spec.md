@@ -62,6 +62,11 @@ In a chat, the user opens the mode menu and picks **Plan first (next message)**;
 
 ## Changes
 
+### 2026-11-01: the plan card does not take focus from typing (FR-064; owner decision, review of PR 1004)
+
+- **Why**: FR-005 puts focus on Approve when the card appears. If the user is typing, one Enter approves a plan they have not read.
+- **FR-064** `[IMPLEMENTED]` `sim:` `scripts/check-answer-safety.js`: when the card appears, focus goes to **Approve** only if the message box is empty and focus is not in any text field (input, textarea, select, editable). Otherwise focus stays where it was and Enter does not answer the plan. All else as FR-005 (a mouse user, or a user with nothing typed, still lands on Approve).
+
 ### 2026-10-31: Approve and run on Autopilot (spec 099 FR-060; owner decision D6)
 
 - **Why**: the owner chose an Autopilot mode (spec 099, Vikram, Telegram DM, 2026-10-31), and he chose for the plan card to be
