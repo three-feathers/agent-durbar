@@ -81,22 +81,25 @@ module.exports = async (ctx) => {
     // start from all floors on (the previous size may have left them off)
     await panel(true);
     for (const id of ['ground', 'f-clienta0', 'f-personal']) {
-      const on = await js(`document.querySelector(${jsLiteral(`[data-fl="on"][data-floor="${id}"]`)}).getAttribute('aria-pressed')`);
-      if (on !== 'true') { await click(`[data-fl="on"][data-floor="${id}"]`); await until(`document.querySelector(${jsLiteral(`[data-fl="on"][data-floor="${id}"]`)}).getAttribute('aria-pressed')==='true'`); }
+      const on = await js(`document.querySelector(${jsLiteral(`[data-fl="on"][data-floor="${id}"]`)}).getAttribute('aria-checked')`);
+      if (on !== 'true') { await click(`[data-fl="on"][data-floor="${id}"]`); await until(`document.querySelector(${jsLiteral(`[data-fl="on"][data-floor="${id}"]`)}).getAttribute('aria-checked')==='true'`); }
     }
     await panel(false);
     await calm();
 
     // FR-023: Settings > Floors, same controls, same state as the panel
     await js(`document.getElementById('settingsBtn').click()`);
-    await ctx.waitFor(`!!document.querySelector('#floorsSet .fl-sw')`, 5000);
+    await ctx.waitFor(`!!document.querySelector('#floorsSet .swt[data-fl="on"]')`, 5000);
     await js(`document.querySelector('#floorsSet [data-fl="on"][data-floor="f-personal"]').click()`);
     await until(`document.getElementById('floorsBtn').textContent.trim()==='2/3'`);
-    let st = await js(`({btn:document.getElementById('floorsBtn').textContent.trim(),set:document.querySelector('#floorsSet [data-fl="on"][data-floor="f-personal"]').getAttribute('aria-pressed')})`);
+    let st = await js(`({btn:document.getElementById('floorsBtn').textContent.trim(),set:document.querySelector('#floorsSet [data-fl="on"][data-floor="f-personal"]').getAttribute('aria-checked')})`);
     assert.strictEqual(st.btn, '2/3', 'FR-023: a switch in Settings updates the top-bar button');
     assert.strictEqual(st.set, 'false');
     await panel(true);
-    assert.strictEqual(await js(`document.querySelector('#floorsPop [data-fl="on"][data-floor="f-personal"]').getAttribute('aria-pressed')`), 'false', 'FR-023: the panel shows the same state');
+    // 2026-11-01: the floor on/off is the same toggle as the MCP server one (.swt, role=switch), not a text button
+    const sw = await js(`(()=>{const b=document.querySelector('#floorsPop [data-fl="on"][data-floor="f-personal"]'),r=b.getBoundingClientRect();return {cls:b.className.split(' ').includes('swt'),role:b.getAttribute('role'),on:b.classList.contains('on')===(b.getAttribute('aria-checked')==='true'),w:Math.round(r.width),h:Math.round(r.height),knob:!!b.querySelector('i')}})()`);
+    assert.deepStrictEqual(sw, { cls: true, role: 'switch', on: true, w: 38, h: 22, knob: true }, 'the floor switch is the shared toggle');
+    assert.strictEqual(await js(`document.querySelector('#floorsPop [data-fl="on"][data-floor="f-personal"]').getAttribute('aria-checked')`), 'false', 'FR-023: the panel shows the same state');
     await panel(false);
     await js(`document.getElementById('floorsSet').closest('section').scrollIntoView({block:'start'})`);
     await shot('settings-floors', w, h);

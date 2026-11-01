@@ -190,6 +190,10 @@ When more than one floor is on, I can tell at a glance which floor each room bel
 
 ## Changes
 
+### 2026-11-01: the floor on/off is the MCP toggle (issue #1010, owner request)
+
+Vikram: the floor On/Off was a text pill and "not easy to catch that it was the button". The control in the Floors panel and in Settings > Floors (one renderer, `renderFloorsPanel` markup) is now the shared switch of the MCP servers list (`.swt` in `screens.css`, 38x22 px, `role="switch"`, `aria-checked`, the shared focus ring), not a second toggle; the On/Off word is gone and the accessible name still says "<floor>: on. Switch off." Behaviour is unchanged (`floorAction`, confirmations, agents keep running, SC-003). FR-007 and FR-023 are unchanged. Text size: no visible text on the switch; the rest keeps its sizes (10.5px minimum). Task T052.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
@@ -231,3 +235,5 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 - FR-019: CI runs `npm test` on Windows, macOS and Linux; the layout was looked at on macOS only.
 - Deviation from the first design: the floor for new folders is chosen in the Floors panel, not in the top bar (no room at 1280x800; research R7, FR-006 updated).
 - `[KNOWN GAP]` The Tools view is not filtered by floor (out of scope). An older build that saves the folder file drops floors (folders kept).
+
+- `[IMPLEMENTED]` sim: 2026-11-01 (issue #1010): `scripts/shots-033.js` asserts the floor switch in the panel is a `.swt` `role=switch` 38x22 px whose class matches `aria-checked`; drivers read `aria-checked`; mutation: changing the markup back to a text button fails it.

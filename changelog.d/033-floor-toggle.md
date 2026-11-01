@@ -1,0 +1,1 @@
+- The floor On/Off in the Floors panel and Settings is now a toggle switch like the one for MCP servers, so it is easy to see it can be clicked (issue #1010).

@@ -133,3 +133,7 @@
 ## Phase 15: Change 2026-10-26 (SC-003 as a ratio to a same-run yardstick, issue #454)
 
 - [x] T051 `scripts/shots-033.js`: time a fixed DOM + layout workload in the same page (best of 3, floor 2 ms) and assert switch-off own time < 16x it, plus a 2000 ms sanity cap, instead of a fixed 500 ms; logs both and the ratio. Measured unloaded and under 6 niced busy loops (5 runs each); two mutants (per-agent delay, repeated layout search) fail [SC-003]
+
+## Phase 16: Change 2026-11-01 (floor switch looks like the MCP toggle, issue #1010)
+
+- [x] T052 Floor on/off uses the shared `.swt` switch (`role=switch`, `aria-checked`) in the panel and Settings; `.fl-sw` removed; drivers read `aria-checked`; `shots-033.js` asserts it [FR-007, FR-023]; screenshots, changelog fragment, docs

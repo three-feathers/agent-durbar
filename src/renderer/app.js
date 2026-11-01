@@ -4676,7 +4676,7 @@ function floorsBodyHTML(px){
     FLOORS.floors.map((f,i)=>{
       const rooms=roomsOnFloor(f.id);
       return `<div class="fl-floor${f.on?'':' off'}"><div class="fl-row">
-        <button class="fl-sw" type="button" data-fl="on" data-floor="${esc(f.id)}" aria-pressed="${f.on}" aria-label="${esc(f.name)}: ${f.on?'on':'off'}. Switch ${f.on?'off':'on'}.">${f.on?'On':'Off'}</button>
+        <button class="swt${f.on?' on':''}" type="button" role="switch" data-fl="on" data-floor="${esc(f.id)}" aria-checked="${f.on}" aria-label="${esc(f.name)}: ${f.on?'on':'off'}. Switch ${f.on?'off':'on'}."><i></i></button>
         <div class="fl-t"><b title="${esc(f.name)}">${esc(f.name)}</b><small>${rooms.length} folder${rooms.length===1?'':'s'}</small><small class="fl-att" data-att="${esc(f.id)}"${offFloorAttention(f.id)?'':' hidden'}>${esc(offFloorAttention(f.id))}</small></div>
         <button class="btn" type="button" data-fl="only" data-floor="${esc(f.id)}" title="Switch ${esc(f.name)} on and every other floor off" aria-label="Show only ${esc(f.name)}">Show only</button>
         <button class="btn" type="button" data-fl="rename" data-floor="${esc(f.id)}" aria-label="Rename ${esc(f.name)}">Rename…</button>
