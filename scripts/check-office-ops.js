@@ -192,6 +192,7 @@ module.exports = async (ctx) => {
       await drawn(status(pick.id, 'error')); await compare("a neighbour's width, an agent stops matching the status filter");
       await js(`document.getElementById('ops-width').remove()`);
       await drawn(pill('working')); // the filter off
+      await js(`window.DurbarFit()`); // so that the next case starts from fitted headers
 
       /* The fit key (what else decides a fit): the body's classes change with no change to any room's HTML. A class that squeezes every name stands for chat open, zoom...;
          the office is drawn again with the same rooms and the headers must be fitted to it. */
