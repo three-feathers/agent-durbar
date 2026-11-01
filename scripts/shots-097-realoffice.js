@@ -410,7 +410,7 @@ module.exports = async (ctx) => {
   /* a simulator visit can take the chosen person to the lobby before its picture fails (then no disc is drawn at its desk): try another person, up to six times */
   let discOk = false;
   for (let t = 0; t < 6 && !discOk; t++) {
-    const victim = await js(`(()=>{const i=document.querySelector('#stage .ro-person');if(!i)return '';const f=i.dataset.for;i.src='realoffice/art/missing.webp';return f})()`);
+    const victim = await js(`(()=>{const i=document.querySelector('#stage .ro-person');if(!i)return '';const f=i.dataset.for;i.src='realoffice/sets/office/missing.webp';return f})()`);
     if (victim) discOk = await H.until(`!!document.querySelector('#stage .ro-initials[data-for="'+CSS.escape(${jsLiteral(victim)})+'"]')`, 5000);
   }
   assert.ok(discOk, 'the initials disc after a failed picture');

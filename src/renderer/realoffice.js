@@ -2,17 +2,19 @@
    office (officeModel, VISITS, status words, masked task text) and calls render(); this file lays it out with the pure engine
    (src/shared/realoffice-layout.ts), picks the lights (src/shared/lights.ts) and draws absolutely placed elements in #stage. It is
    loaded only when Real office is chosen (FR-061): app.js adds this script, its CSS, the two compiled shared modules and the art
-   metadata (realoffice/art/people.js, made from people.json by copy-assets.js) on first use. The DOM is keyed: a re-render moves
+   metadata (realoffice/worlds/<id>/world.js and realoffice/sets/<id>/set.js, made by copy-assets.js) on first use. The DOM is keyed: a re-render moves
    and re-classes the same elements, so focus stays (FR-090). No text is set with innerHTML from the model: names, roles, tasks
    and paths go in with textContent (the model's text is already masked by app.js, FR-030's path). */
 (function (root) {
   'use strict';
   const X = () => root.exports || {};
-  const ART = 'realoffice/art/';
+  let WD = 'realoffice/worlds/photo/', SD = 'realoffice/sets/office/'; /* the shown world's and set's folders (spec 102 FR-205): a world loads no other world's files */
   const BAD = new Set(); /* FR-065: pictures that failed to load in this session */
   const SEEN = new Map(); /* FR-052: the light state each desk had at the last render */
   const TICKS = new Map(); /* desk id -> time the green tick started */
-  let PEOPLE = null; /* session id -> person id, durbar.realpeople */
+  let PEOPLE = null; /* session id -> person id, durbar.realpeople (Office people) or durbar.realpeople.<set> */
+  let SET_SHOWN = '';
+  const peopleKey = () => SET_SHOWN === 'office' || !SET_SHOWN ? 'durbar.realpeople' : 'durbar.realpeople.' + SET_SHOWN;
   let onArt = null;
 
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
@@ -40,11 +42,11 @@
   function sweep(layer) { for (const [k, e] of layer._k) if (!layer._seen.has(k)) { e.remove(); layer._k.delete(k); } }
   function text(e, t) { t = String(t == null ? '' : t); if (e.textContent !== t) e.textContent = t; }
   function attr(e, k, v) { if (v == null || v === false) { if (e.hasAttribute(k)) e.removeAttribute(k); } else if (e.getAttribute(k) !== String(v)) e.setAttribute(k, String(v)); }
-  function img(e, file) {
-    const src = ART + file;
+  function img(e, file, set) {
+    const src = (set ? SD : WD) + file;
     if (e.getAttribute('src') !== src) {
       e.alt = ''; e.decoding = 'async'; e.draggable = false; e.setAttribute('aria-hidden', 'true');
-      e.onerror = () => { if (!BAD.has(file)) { BAD.add(file); if (onArt) onArt(); } };
+      e.onerror = () => { if (!BAD.has(src)) { BAD.add(src); if (onArt) onArt(); } };
       e.src = src;
     }
   }
@@ -54,26 +56,29 @@
   /* FR-037: one person per session, kept in durbar.realpeople; the simulator uses a seeded pick so pictures repeat run to run */
   function people(model, ids, rand, remember) {
     const L = X();
-    if (!PEOPLE) { PEOPLE = {}; if (remember) { try { const o = JSON.parse(localStorage.getItem('durbar.realpeople') || '{}'); if (o && typeof o === 'object' && !Array.isArray(o)) for (const [k, v] of Object.entries(o)) if (typeof v === 'string' && k.length <= 200 && ids.includes(v)) PEOPLE[k] = v; } catch (e) { PEOPLE = {}; } } }
+    if (!PEOPLE) { PEOPLE = {}; if (remember) { try { const o = JSON.parse(localStorage.getItem(peopleKey()) || '{}'); if (o && typeof o === 'object' && !Array.isArray(o)) for (const [k, v] of Object.entries(o)) if (typeof v === 'string' && k.length <= 200 && ids.includes(v)) PEOPLE[k] = v; } catch (e) { PEOPLE = {}; } } }
     /* every main session of the app (model.sessions), not only the folders on screen: a filter must not hand a hidden session a new person */
     const sessions = model.sessions || model.folders.flatMap((f) => f.agents.map((a) => ({ id: a.id, folder: f.id })));
     const next = L.assignPeople(PEOPLE, sessions, ids, rand);
-    if (JSON.stringify(next) !== JSON.stringify(PEOPLE)) { PEOPLE = next; if (remember) { try { localStorage.setItem('durbar.realpeople', JSON.stringify(PEOPLE)); } catch (e) { /* storage full or off: the pick still holds for this window */ } } }
+    if (JSON.stringify(next) !== JSON.stringify(PEOPLE)) { PEOPLE = next; if (remember) { try { localStorage.setItem(peopleKey(), JSON.stringify(PEOPLE)); } catch (e) { /* storage full or off: the pick still holds for this window */ } } }
     return PEOPLE;
   }
 
   /**
    * Draw the office into `stage`. `model`: {folders:[{id,name,path,cost,counts:[{state,n,word}],newSess,menu,agents:[{id,name,role,
    * state,word,task,label,tip,selected,away,awayLabel,helpers:[state]}]}], places:[{id,label,custom,post,title,go,visitors:[{id,name,
-   * needsYou,title}]}]}; `view`: {w,h}; `opts`: {still, set, rand, remember, onArt}. Returns the layout (for the app's checks).
+   * needsYou,title}]}]}; `view`: {w,h}; `opts`: {still, world, set, rand, remember, onArt}. Returns the layout (for the app's checks).
    */
   function render(stage, model, view, opts) {
-    const L = X(), meta = root.DurbarRealOfficeArt;
+    const L = X();
+    const world = has(root.DurbarRealOfficeWorlds || {}, opts.world || 'photo') ? opts.world || 'photo' : 'photo', set = has(root.DurbarRealOfficeSets || {}, opts.set || 'office') ? opts.set || 'office' : 'office';
+    WD = 'realoffice/worlds/' + world + '/'; SD = 'realoffice/sets/' + set + '/';
+    if (SET_SHOWN !== set) { SET_SHOWN = set; PEOPLE = null; SEEN.clear(); TICKS.clear(); } /* the people belong to a set: switching sets draws its own, kept apart */
+    const meta = Object.assign({}, root.DurbarRealOfficeWorlds[world], root.DurbarRealOfficeSets[set]); /* the world's furniture numbers with the set's people numbers */
     onArt = opts.onArt || null;
-    const set = opts.set || 'office';
     const ids = Object.keys(meta.seat).sort();
     const who = people(model, ids, opts.rand, !!opts.remember);
-    const seatOk = (p) => !!p && !['typeA', 'think', 'waveA', 'rest'].some((f) => BAD.has(p + '-' + f + '.webp'));
+    const seatOk = (p) => !!p && !['typeA', 'think', 'waveA', 'rest'].some((f) => BAD.has(SD + p + '-' + f + '.webp'));
     const engine = {
       folders: model.folders.map((f) => ({ id: f.id, agents: f.agents.map((a) => ({ id: a.id, state: a.state, away: a.away || null, person: seatOk(who[a.id]) ? who[a.id] : null })) })),
       places: model.places.map((p) => ({ id: p.id, custom: !!p.custom, visitors: p.visitors.map((v) => ({ id: v.id, needsYou: !!v.needsYou, person: who[v.id] || null })) })),
@@ -85,7 +90,7 @@
     let ro = stage.querySelector(':scope > .ro');
     if (!ro) { stage.textContent = ''; ro = document.createElement('div'); ro.className = 'ro'; stage.appendChild(ro); ro.addEventListener('click', forward); }
     ro.style.width = px(lay.width); ro.style.height = px(lay.height);
-    ro.dataset.set = set; ro.dataset.u = String(Math.round(lay.u)); ro.dataset.face = String(Math.round(lay.faceH * 10) / 10); ro.dataset.big = lay.big ? '1' : '0';
+    ro.dataset.set = set; ro.dataset.world = world; ro.dataset.u = String(Math.round(lay.u)); ro.dataset.face = String(Math.round(lay.faceH * 10) / 10); ro.dataset.big = lay.big ? '1' : '0';
     ro.classList.toggle('still', !!opts.still);
     /* z-order (plan: art < lights < chrome): floor and fixtures, people and desks; the ambient and the lights; then signs, plates, chips */
     const art = layerOf(ro, 'ro-art'), amb = layerOf(ro, 'ro-amb'), lights = layerOf(ro, 'ro-lights'), chrome = layerOf(ro, 'ro-chrome');
@@ -126,7 +131,7 @@
         const lt = L.lightFor(d.state, { still: !!opts.still });
         /* the person (FR-036 first frame; P2 adds the second frame and motion), behind the desk; FR-065: the initials disc when the picture failed */
         if (d.person) {
-          const pe = el(art, 'p:' + k, 'img', 'ro-person'); box(pe, d.person); pe.dataset.for = k; pe.dataset.pose = d.person.pose; img(pe, d.person.file);
+          const pe = el(art, 'p:' + k, 'img', 'ro-person'); box(pe, d.person); pe.dataset.for = k; pe.dataset.pose = d.person.pose; img(pe, d.person.file, true);
         } else if (!d.narrow) {
           const ini = el(art, 'i:' + k, 'div', 'ro-initials'); const r = 0.5 * lay.u; box(ini, { x: d.slot.x + 0.05 * d.slot.w + 0.42 * lay.u - r / 2, y: d.desk.y - r - 6, w: r, h: r }); ini.dataset.for = k; text(ini, initials(a.name));
         }
@@ -175,16 +180,16 @@
     const byPlace = new Map(model.places.map((p) => [p.id, p]));
     for (const fx of lay.fixtures) {
       const p = byPlace.get(fx.id), file = 'fx-' + fx.id + '.webp';
-      if (fx.art && !fx.custom && !BAD.has(file)) { const im = el(art, 'f:' + fx.id, 'img', 'ro-fx'); box(im, fx.art); img(im, file); }
+      if (fx.art && !fx.custom && !BAD.has(WD + file)) { const im = el(art, 'f:' + fx.id, 'img', 'ro-fx'); box(im, fx.art); img(im, file); }
       else if (fx.art && fx.custom) { const ki = el(art, 'f:' + fx.id, 'div', 'ro-kiosk'); box(ki, { x: fx.art.x + fx.art.w * 0.2, y: fx.art.y + fx.art.h * 0.35, w: fx.art.w * 0.6, h: fx.art.h * 0.65 }); if (ki._ic !== p.icon) { ki._ic = p.icon; ki.innerHTML = p.icon || ''; } }
       const fl = L.fixtureLight(fx.id, p.visitors.length, p.visitors.some((v) => v.needsYou));
       if (fl && fx.art) { const li = el(lights, 'fl:' + fx.id, 'div', 'ro-fxl fxl-' + fl + (fx.id === 'boss' ? ' boss' : '')); box(li, fx.light); }
       for (const v of fx.visitors) {
         const ag = p.visitors.find((x) => x.id === v.id);
-        if (v.fig && !BAD.has(v.fig.file)) {
+        if (v.fig && !BAD.has(SD + v.fig.file)) {
           /* owner 2026-10-31 10:19 and 10:48: the feet on the front floor plane (layout), with a soft contact shadow under them */
           const sh = el(art, 'vs:' + v.id, 'div', 'ro-shadow'); box(sh, v.shadow);
-          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor'); box(im, v.fig); im.dataset.for = v.id; im.dataset.pose = v.fig.pose; im.dataset.feet = String(Math.round(v.fig.feetY * 10) / 10); img(im, v.fig.file);
+          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor'); box(im, v.fig); im.dataset.for = v.id; im.dataset.pose = v.fig.pose; im.dataset.feet = String(Math.round(v.fig.feetY * 10) / 10); img(im, v.fig.file, true);
         }
         /* FR-026 "as the flat lobby": a go-place visitor (Boss, Bank, Coffee) is the flat lobby's own button (data-pvopen, and
            data-coffeeid for the coffee menu): app.js's delegated handlers open the chat; others forward to their plate (data-for) */

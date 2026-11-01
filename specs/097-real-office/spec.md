@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Real office mode (owner request, Vikram 2026-10-30/31): a realistic front-facing open-plan office as a second office mode beside flat (default), live screens, animated people, status lights; folds in #692
-note: P1 (scene, lights) built; P2 (screens, motion), P3 (My characters, manual lighting) not; crews' worlds (FR-100/FR-114) not
+note: P1 (scene, lights) built; world seam (T100..T102, pack move) built, no second world offered; P2 (screens, motion), P3 (My characters, manual lighting) not
 status: building
 -->
 
@@ -484,3 +484,11 @@ Numbers checked 2026-10-31 against `main`, the P1 branch and open PRs: 097 uses 
 
 - **[KNOWN GAP] bare initial in a crowded lobby (FR-026)**: with 15 agents at 1280x800 a chip can still show a bare initial (the Software library and Terminal plates leave no free spot beside the Elif chip, so Rosa shows "R"). Names get the nearest free spot first, then the first letters with an ellipsis; initials only when none is free, at most one chip in the driver's 15-agent office. Paco's art note: the lobby band is the place to give a crowd more room (fixture spacing), not a fix in the chips. Listed in `docs/limits.md`.
 - The Shift+F10 and Menu-key tests block the native `contextmenu` event so only the keydown handler can open the card menu; Escape returns focus to the plate (and to the "+N" plate); the placement guards have deterministic checks (chips widened by a style after the drawing, and a chip put on a plate, no font needed); the 400 ms sleep is a second `until()` that sees the same placement twice. Each has a mutant.
+
+### 2026-11-01: the world seam, following spec 102 where it differs (T100, T101, T102)
+
+Spec 102 FR-200..FR-213 are the owner's latest on worlds (two flat lists, any set in any world, a default set per world); where this spec says otherwise they win:
+- **FR-100, FR-114** ("crews pick their world", *Match my characters*) are replaced: `peopleFor(world, choice)` in `crew.js` (FR-202's order: an explicit choice with full poses, else the world's default set, else Office people). `realOfficeSet` is gone. Worlds and sets are data rows (`WORLDS`, `REAL_SETS`, `WORLD_FLAGS`): a row with a `flag` that is off is not offered. `[IMPLEMENTED]` `test:` `test:realoffice-layout` (every value x world x flag, plus a made-up third world added by rows alone).
+- **FR-115** (per-world packs) and spec 102 FR-205: `realoffice/worlds/<id>/` (room: desk, floor, fixtures, `world.json`, optional `world.css`) and `realoffice/sets/<id>/` (people, `set.json`), each lazy; `html[data-world]` is the shown world's id. `test:realoffice-assets` checks a world together with its default set under the 10 MB cap (spec 102 FR-213). `[IMPLEMENTED]` `test:` `test:realoffice-assets`.
+- **T102 / spec 102 FR-201**: a **World** radio row under Office layout, shown only when Real office is on and more than one world is offered (none is yet, so nothing shows); Characters' first choice reads *World's default (<set>)* in Real office. `[KNOWN GAP]` spec 102 FR-201 replaces the Office layout row and keeps `world` in `durbar-settings.json` through main; here the World choice is `localStorage` `durbar.world` and Real office is still the opt-in third layout button (the owner keeps it opt-in), because the main-process path and the layout migration (FR-207) are not built. `[KNOWN GAP]` an explicit Office people choice is not in the Characters list yet (the default is the way to get it).
+- A set with fewer people than agents repeats people (spread across folders by `assignPeople`).
