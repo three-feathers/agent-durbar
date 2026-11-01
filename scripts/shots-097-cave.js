@@ -19,7 +19,7 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
-const { helpers } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 
 const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-cave-'));
 const SIZES = [[1440, 900], [1280, 800]];
@@ -98,7 +98,7 @@ module.exports = async (ctx) => {
     await js(`window.DurbarScreens.openSettings()`);
     await must(`!!document.querySelector('#wrGroup')`, 'the World row again');
   };
-  const RO = (world, set) => `(()=>{const r=document.querySelector('#stage .ro');return !!r&&r.dataset.world===${JSON.stringify(world)}&&r.dataset.set===${JSON.stringify(set)}})()`;
+  const RO = (world, set) => `(()=>{const r=document.querySelector('#stage .ro');return !!r&&r.dataset.world===${jsLiteral(world)}&&r.dataset.set===${jsLiteral(set)}})()`;
   await H.key('Left');
   await must(`document.documentElement.dataset.world==='photo'&&document.activeElement&&document.activeElement.dataset.world==='photo'`, 'ArrowLeft moves to the Photo office and keeps focus on the radio');
   assert.strictEqual(await js(`localStorage.getItem('durbar.world')`), 'photo', 'the choice is kept');
