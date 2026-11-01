@@ -41,6 +41,10 @@ Lounge bubble and daily briefing placement; vendor-reported numbers (Copilot `se
 
 ## Changes
 
+### 2026-11-01: the rollup's size limit comes before the read (sweep of the build)
+
+A very large `durbar-summary-days.json` was read whole into memory at start before its size was checked. It is now refused from its size, through the shared capped read, and is an empty rollup.
+
 ### 2026-11-01: the peek card's line is text (sweep of the build)
 
 The peek card takes no pointer and no keyboard (`pointer-events: none`, `aria-hidden`), so its *Show changed files* could never be used: the line now says the numbers and who counted them. The bubble's line opens the changed files, and the desk's label says the numbers.
