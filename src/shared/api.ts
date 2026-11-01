@@ -13,7 +13,7 @@ import type { AdapterInfo } from './adapters';
 import type { OrgPolicyAppView } from './orgpolicy';
 import type { ActivityRow } from './activity';
 import type { RemoteState } from './remote';
-import type { NotesView, NotesWrote } from './notes';
+import type { NotesExport, NotesFileCount, NotesSetFile, NotesView, NotesWrote } from './notes';
 export type { RemoteState };
 export type { AdapterInfo };
 
@@ -819,7 +819,11 @@ export interface DurbarApi {
   /** Hide or show the folder of agent `id`; the choice is remembered. */
   setFolderHidden?(id: string, hidden: boolean): Promise<{ ok: boolean }>;
   /** Remove the folder of agent `id`: ends its sessions and forgets the folder. */
-  removeFolder?(id: string): Promise<{ ok: boolean; removedIds: string[] }>;
+  /**
+   * Spec 083 FR-048 (T034b): `deleteNotes` also deletes the folder's notes file, after main's native confirmation (Cancel: nothing is
+   * removed, `cancelled`). `notesDeleted` / `notesError` say what happened to the notes.
+   */
+  removeFolder?(id: string, opts?: { deleteNotes?: boolean }): Promise<{ ok: boolean; removedIds: string[]; cancelled?: boolean; error?: string; notesDeleted?: boolean; notesError?: string }>;
   /** Ends one main session and takes it out of the office (spec 006 FR-017); refused for the last main session of a folder and for helpers. */
   removeSession?(id: string): Promise<{ ok: boolean; error?: string }>;
   /** Sets the folder's display name (spec 006 FR-018); empty = the folder's own name. */
@@ -1038,7 +1042,7 @@ export interface DurbarApi {
   slashCommands?(id: string): Promise<{ ok: boolean; error?: string; entries: SlashCommandInfo[] }>;
   /**
    * Spec 083 FR-062 (issue 699): the folder's notes, by agent id (the window never passes a path). Everything stored is masked in main
-   * before it is written; a refusal carries a short reason. `notesSetFile` is answered by the simulator only for now (*Demo: no file written*).
+   * before it is written; a refusal carries a short reason. `notesFileCount` / `notesSetFile` are the project-file switch (T042; the simulator answers *Demo: no file written*).
    */
   notesList?(id: string): Promise<NotesView>;
   notesSave?(id: string, input: { role: 'user' | 'agent'; ord: number; text: string; from?: 'agent' | 'user' | 'selection' }): Promise<NotesWrote>;
@@ -1047,7 +1051,10 @@ export interface DurbarApi {
   notesDelete?(id: string, noteId: string, rev: number): Promise<NotesWrote>;
   notesDeleteAll?(id: string): Promise<NotesWrote>;
   notesStartOver?(id: string): Promise<NotesWrote>;
-  notesSetFile?(id: string, on: boolean): Promise<{ ok: boolean; demo?: boolean; message?: string; error?: string }>;
+  notesFileCount?(id: string): Promise<NotesFileCount>;
+  notesSetFile?(id: string, on: boolean, opts?: { deleteFile?: boolean; exclude?: boolean }): Promise<NotesSetFile>;
+  /** FR-048 (T034b): main shows the save dialog and writes the chosen file; the window sends no path. The simulator writes nothing (`demo`). */
+  notesExport?(id: string): Promise<NotesExport>;
   /** A folder's notes changed (another chat, another process): refetch the open folder's notes when the fingerprint is its own. */
   onNotesChanged?(cb: (v: { fingerprint: string }) => void): () => void;
   /** Spec 066: answer a proposed plan (window only). */
